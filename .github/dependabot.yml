@@ -1,0 +1,38 @@
+# Dependabot: автоматические PR с обновлениями зависимостей.
+# Документация: https://docs.github.com/code-security/dependabot/working-with-dependabot/dependabot-options-reference
+#
+# Сейчас включены только экосистемы, которые уже решены для проекта:
+# GitHub Actions и контейнеры (Dockerfile, docker compose).
+# Экосистему языка (nuget / gomod / pip) добавить, когда язык будет выбран.
+version: 2
+
+updates:
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      timezone: "Europe/Tallinn"
+    groups:
+      github-actions:
+        patterns: ["*"]
+
+  - package-ecosystem: "docker"
+    directories: ["**/*"]
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      timezone: "Europe/Tallinn"
+    groups:
+      docker-images:
+        patterns: ["*"]
+
+  - package-ecosystem: "docker-compose"
+    directories: ["**/*"]
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      timezone: "Europe/Tallinn"
+    groups:
+      compose-images:
+        patterns: ["*"]
