@@ -2,20 +2,30 @@
 
 ## Supported Versions
 
-Use this section to tell people about which versions of your project are
-currently being supported with security updates.
+botaru has no released version yet. Until the first release, only the latest commit on the `main` branch receives security fixes.
 
-| Version | Supported          |
-| ------- | ------------------ |
-| 5.1.x   | :white_check_mark: |
-| 5.0.x   | :x:                |
-| 4.0.x   | :white_check_mark: |
-| < 4.0   | :x:                |
+| Version | Supported |
+| ------- | --------- |
+| `main` (unreleased) | :white_check_mark: |
+
+When releases start, this table will list which ones still get fixes.
 
 ## Reporting a Vulnerability
 
-Use this section to tell people how to report a vulnerability.
+Please do not report security problems in public issues, pull requests or discussions.
 
-Tell them where to go, how often they can expect to get an update on a
-reported vulnerability, what to expect if the vulnerability is accepted or
-declined, etc.
+Report them privately through GitHub: open the repository's **Security** tab and choose **Report a vulnerability** (GitHub private vulnerability reporting). Only the maintainers see the report.
+
+Please include:
+
+- what is affected (file, component or port) and the commit you looked at;
+- how to reproduce the problem;
+- what an attacker could achieve.
+
+What to expect:
+
+- an acknowledgement within 7 days;
+- an assessment and a plan, or a reason for declining, within 30 days;
+- a fix and a published advisory for accepted reports, with credit to you if you want it.
+
+Use only test data and your own installation. Do not access data that is not yours, and do not degrade other people's services.
