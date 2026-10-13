@@ -22,7 +22,8 @@ spec/model/*.yaml with their state at the branch point from the base branch
 - not, if, contains, minContains, maxContains, uniqueItems: true, anyOf or
   oneOf appeared; minContains increased, maxContains decreased; if changed;
   a not schema widened (it is compared with reversed polarity);
-- allOf got a new item (a new constraint), anyOf or oneOf lost branches,
+- allOf or prefixItems got a new item (a new constraint; an absent prefixItems
+  counts as empty), anyOf or oneOf lost branches,
   oneOf got a new or changed branch that is not provably disjoint from every
   other branch (different const or enum values, disjoint types, or a property
   required in both with disjoint const or enum values), dependentSchemas got
@@ -164,7 +165,8 @@ def compare(old, new, where):
     for k in ('additionalProperties', 'items', 'unevaluatedProperties', 'unevaluatedItems'):
         if old.get(k, True) is not False and new.get(k, True) is False:
             rep.error(where, f'[closed_now] {k} became false')
-    if len(new.get('prefixItems', [])) > len(old.get('prefixItems', [])) and 'prefixItems' in old:
+    # an absent prefixItems is an empty list: every new item constrains a position that was free
+    if len(new.get('prefixItems', [])) > len(old.get('prefixItems', [])):
         rep.error(where, '[prefix_items_added] new items in prefixItems')
     for key in ('properties', '$defs', 'patternProperties', 'dependentSchemas'):
         op, np = old.get(key, {}), new.get(key, {})
