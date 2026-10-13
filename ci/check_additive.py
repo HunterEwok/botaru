@@ -361,7 +361,24 @@ def by_id(docs):
     return {d['$id']: rp for rp, d in docs.items() if isinstance(d, dict) and isinstance(d.get('$id'), str)}
 
 
+def anchored(s, name):
+    """The subschema with $anchor name, or None."""
+    if isinstance(s, dict):
+        if s.get('$anchor') == name:
+            return s
+        s = [v for k, v in s.items() if k not in LITERALS]
+    if isinstance(s, list):
+        for x in s:
+            found = anchored(x, name)
+            if found is not None:
+                return found
+    return None
+
+
 def pointer(doc, ptr):
+    """The subschema at a fragment: a JSON Pointer (empty or /...) or a named $anchor."""
+    if ptr and not ptr.startswith('/'):
+        return anchored(doc, ptr)
     for part in [p.replace('~1', '/').replace('~0', '~') for p in ptr.split('/')[1:]]:
         if isinstance(doc, dict) and part in doc:
             doc = doc[part]
