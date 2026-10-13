@@ -13,7 +13,8 @@ spec/model/*.yaml with their state at the branch point from the base branch
 - a value left enum, enum or const appeared, const changed;
 - additionalProperties, items, unevaluatedProperties or unevaluatedItems
   became false where it was not; a schema that was absent, true or {} got any
-  keyword other than an annotation (title, description, ...);
+  keyword other than an annotation (title, description, ..., x-botaru-*
+  metadata except x-botaru-format);
 - a limit became stricter: maxLength, maxItems, maxProperties, maximum,
   exclusiveMaximum decreased, minLength, minItems, minProperties,
   minimum, exclusiveMinimum increased or appeared;
@@ -23,8 +24,8 @@ spec/model/*.yaml with their state at the branch point from the base branch
   oneOf appeared; minContains increased, maxContains decreased; if or not
   changed (a changed negated schema is not compared, it is an error);
 - allOf got a new item (a new constraint), prefixItems got an item narrower
-  than the old items at its position (absent items accepts anything, items:
-  false accepted nothing), anyOf or oneOf lost branches,
+  than the old items (or unevaluatedItems) at its position (absent accepts
+  anything, false accepted nothing), anyOf or oneOf lost branches,
   oneOf got a new or changed branch (branches are matched by content without
   annotations, not by position) that is not provably disjoint from every
   other branch (different const or enum values, disjoint types, or a property
@@ -168,6 +169,15 @@ ANNOTATIONS = {'title', 'description', '$comment', 'examples', 'default', 'depre
                '$id', '$schema', '$anchor'}
 # Keywords that assert nothing by themselves: annotations and definitions used only through $ref
 NON_ASSERTING = ANNOTATIONS | {'$defs', 'definitions'}
+
+
+def annotation(k):
+    # the x-botaru-* keys are metadata for the ci/ linters; x-botaru-format is a format and stays asserting
+    return k in ANNOTATIONS or (k.startswith('x-botaru-') and k != 'x-botaru-format')
+
+
+def asserting(s):
+    return sorted(k for k in s if k not in NON_ASSERTING and not annotation(k))
 # Keywords whose value maps names to subschemas, and keywords whose value is data, not a schema
 NAME_MAPS = {'properties', 'patternProperties', '$defs', 'definitions', 'dependentSchemas'}
 LITERALS = {'const', 'enum', 'required', 'dependentRequired'}
@@ -181,7 +191,7 @@ def bare(s, names=False):
         return s
     if names:
         return {k: bare(v) for k, v in s.items()}
-    return {k: (v if k in LITERALS else bare(v, k in NAME_MAPS)) for k, v in s.items() if k not in ANNOTATIONS}
+    return {k: (v if k in LITERALS else bare(v, k in NAME_MAPS)) for k, v in s.items() if not annotation(k)}
 
 
 def unmatched(old_list, new_list):
@@ -206,8 +216,8 @@ def compare(old, new, where):
         if old is not False and new is False:
             rep.error(where, '[schema_narrowed] the schema became false: no values are left')
         return
-    if not set(old) - NON_ASSERTING and set(new) - NON_ASSERTING:
-        rep.error(where, f'[schema_narrowed] a schema that accepted every value got {sorted(set(new) - NON_ASSERTING)}')
+    if not asserting(old) and asserting(new):
+        rep.error(where, f'[schema_narrowed] a schema that accepted every value got {asserting(new)}')
         return
     ot, nt = types(old), types(new)
     if ot is not None and nt is not None and not ot <= nt:
@@ -237,12 +247,16 @@ def compare(old, new, where):
     for k in CLOSABLE:
         if old.get(k, True) is not False and new.get(k, True) is False:
             rep.error(where, f'[closed_now] {k} became false')
-    # a new prefixItems item takes a position that old items governed (absent items accepts anything,
-    # items: false accepted nothing there), so it is compared with old items like a changed subschema
+    # a new prefixItems item takes a position that old items (or unevaluatedItems) governed: absent accepts
+    # anything, false accepted nothing there; so it is compared with that schema like a changed subschema
     old_prefix, new_prefix = old.get('prefixItems') or [], new.get('prefixItems') or []
+    # without items, a position is left to unevaluatedItems, unless an applicator may evaluate it
+    applied = any(k in old for k in ('allOf', 'anyOf', 'oneOf', 'if', '$ref', '$dynamicRef', 'contains'))
+    old_position = old['items'] if 'items' in old else (
+        True if applied else old.get('unevaluatedItems', True))
     if isinstance(old_prefix, list) and isinstance(new_prefix, list):
         for i in range(len(old_prefix), len(new_prefix)):
-            compare(old.get('items', True), new_prefix[i], f'{where}/prefixItems/{i}')
+            compare(old_position, new_prefix[i], f'{where}/prefixItems/{i}')
     for key in ('properties', '$defs', 'patternProperties', 'dependentSchemas'):
         op, np = old.get(key, {}), new.get(key, {})
         if not isinstance(op, dict) or not isinstance(np, dict):
