@@ -148,6 +148,7 @@ Then `farmctl audit verify demo` answers `"ok": true`. A message from someone wh
 ## Troubleshooting
 
 - The core does not start with `an address outside the binding list is allowed only on the test bench`: the settings have a mock address while `test_bench` is false.
+- `apply` says git could not read the commit, with `dubious ownership`: the checkout belongs to another user than the one running `farmctl`; pass `-commit $(git -C /opt/botaru/src rev-parse HEAD)` run as the owner of the checkout.
 - `apply` answers `test_bench_production`: a tenant with `kind: production` on a test bench; add `-as-test`.
 - The agent logs `provider_config`: the provider of the profile has no entry in `providers`, no key for the tenant, or the tenant's `privacy.subprocessors` does not list that provider.
 - Nothing arrives in Telegram: check the channel log; a `403` from the Bot API means the bot was blocked in that chat.

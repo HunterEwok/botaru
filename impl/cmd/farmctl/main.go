@@ -154,7 +154,15 @@ func apply(c *client, args []string) error {
 		}
 		out, err := exec.Command("git", "-C", dir, "rev-parse", "HEAD").Output()
 		if err != nil {
-			return errors.New("apply: no -commit and the path is not in a git checkout")
+			msg := ""
+			var ee *exec.ExitError
+			if errors.As(err, &ee) {
+				msg = strings.TrimSpace(string(ee.Stderr))
+			}
+			if msg == "" {
+				msg = err.Error()
+			}
+			return fmt.Errorf("apply: no -commit, and git could not read the commit of %s: %s", dir, msg)
 		}
 		*commit = strings.TrimSpace(string(out))
 	}
