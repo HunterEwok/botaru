@@ -24,11 +24,12 @@ spec/model/*.yaml with their state at the branch point from the base branch
   changed (a changed negated schema is not compared, it is an error);
 - allOf or prefixItems got a new item (a new constraint; an absent prefixItems
   counts as empty), anyOf or oneOf lost branches,
-  oneOf got a new or changed branch (branches are matched by content, not by
-  position) that is not provably disjoint from every
+  oneOf got a new or changed branch (branches are matched by content without
+  annotations, not by position) that is not provably disjoint from every
   other branch (different const or enum values, disjoint types, or a property
   required in both with disjoint const or enum values), dependentSchemas got
   a new name;
+- values are compared as JSON compares them: true is not 1, 1 equals 1.0;
 - an entry (id) left a registry, or entries changed while the registry version did not.
 A breaking schema change is made as a new file .v(N+1) next to .vN;
 a retired registry value stays an entry marked retired.
@@ -96,6 +97,8 @@ TIGHTER = {'maxLength': LT, 'maxItems': LT, 'maxProperties': LT, 'maximum': LT, 
            'minLength': GT, 'minItems': GT, 'minProperties': GT, 'minimum': GT, 'exclusiveMinimum': GT,
            'minContains': GT, 'maxContains': LT}
 CHANGED = ('pattern', 'const', 'format', 'x-botaru-format', 'propertyNames', '$ref', 'multipleOf', 'if', 'not')
+# Keywords in CHANGED whose value is a schema: an annotation edit inside them changes nothing
+SCHEMA_VALUED = ('propertyNames', 'if', 'not')
 # Keywords whose appearance narrows the schema
 NEW_NARROWING = ('contains',)  # not and if are caught by CHANGED  # minContains, maxContains, multipleOf are caught by TIGHTER and CHANGED
 
@@ -104,6 +107,29 @@ def types(s):
     t = s.get('type')
     ts = set(t) if isinstance(t, list) else ({t} if t else None)
     return ts | {'integer'} if ts and 'number' in ts else ts
+
+
+def canon(v):
+    """A JSON value as JSON Schema compares it: true is not 1, 1 equals 1.0, key order has no meaning."""
+    if isinstance(v, bool) or v is None:
+        return ('lit', v)
+    if isinstance(v, (int, float)):
+        return ('num', v)
+    if isinstance(v, str):
+        return ('str', v)
+    if isinstance(v, list):
+        return ('list', tuple(canon(x) for x in v))
+    if isinstance(v, dict):
+        return ('obj', tuple(sorted((k, canon(x)) for k, x in v.items())))
+    return ('other', repr(v))
+
+
+def same(a, b):
+    return canon(a) == canon(b)
+
+
+def among(v, vs):
+    return any(same(v, x) for x in vs)
 
 
 def values(s):
@@ -119,7 +145,7 @@ def disjoint(a, b):
     if not isinstance(a, dict) or not isinstance(b, dict):
         return a is False or b is False
     va, vb = values(a), values(b)
-    if va is not None and vb is not None and not any(v in vb for v in va):
+    if va is not None and vb is not None and not any(among(v, vb) for v in va):
         return True
     ta, tb = types(a), types(b)
     if ta is not None and tb is not None and not ta & tb:
@@ -131,7 +157,7 @@ def disjoint(a, b):
     both = set(a.get('required') or []) & set(b.get('required') or [])
     return any(isinstance(pa, dict) and isinstance(pb, dict) and k in pa and k in pb
                and values(pa[k]) is not None and values(pb[k]) is not None
-               and not any(v in values(pb[k]) for v in values(pa[k])) for k in both)
+               and not any(among(v, values(pb[k])) for v in values(pa[k])) for k in both)
 
 
 # Keywords that do not change which values pass
@@ -139,17 +165,33 @@ ANNOTATIONS = {'title', 'description', '$comment', 'examples', 'default', 'depre
                '$id', '$schema', '$anchor'}
 # Keywords that assert nothing by themselves: annotations and definitions used only through $ref
 NON_ASSERTING = ANNOTATIONS | {'$defs', 'definitions'}
+# Keywords whose value maps names to subschemas, and keywords whose value is data, not a schema
+NAME_MAPS = {'properties', 'patternProperties', '$defs', 'definitions', 'dependentSchemas'}
+LITERALS = {'const', 'enum', 'required', 'dependentRequired'}
+
+
+def bare(s, names=False):
+    """The schema without annotations, for telling whether two schemas accept the same values."""
+    if isinstance(s, list):
+        return [bare(x) for x in s]
+    if not isinstance(s, dict):
+        return s
+    if names:
+        return {k: bare(v) for k, v in s.items()}
+    return {k: (v if k in LITERALS else bare(v, k in NAME_MAPS)) for k, v in s.items() if k not in ANNOTATIONS}
 
 
 def unmatched(old_list, new_list):
-    """Branches matched by content with multiplicity: (old ones left over, (index, new) ones left over)."""
+    """Branches matched by content without annotations, with multiplicity:
+    (old ones left over, (index, new) ones left over)."""
     left = list(old_list)
     fresh = []
     for i, b in enumerate(new_list):
-        if b in left:
-            left.remove(b)
-        else:
+        k = next((j for j, a in enumerate(left) if same(bare(a), bare(b))), None)
+        if k is None:
             fresh.append((i, b))
+        else:
+            del left[k]
     return left, fresh
 
 
@@ -170,7 +212,7 @@ def compare(old, new, where):
     if ot is None and nt is not None:
         rep.error(where, f'[type_added] type {sorted(nt)} appeared: the set of values is narrowed')
     if 'enum' in old and 'enum' in new:
-        gone = [v for v in old['enum'] if v not in new['enum']]
+        gone = [v for v in old['enum'] if not among(v, new['enum'])]
         if gone:
             rep.error(where, f'[enum_value_removed] values {gone} left enum')
     if 'enum' not in old and 'enum' in new:
@@ -179,7 +221,8 @@ def compare(old, new, where):
         if k in new and (k not in old or tighter(new[k], old[k])):
             rep.error(where, f'[limit_tightened] {k} is stricter: {old.get(k)} -> {new[k]}')
     for k in CHANGED:
-        if k in new and old.get(k) != new[k]:
+        prep = bare if k in SCHEMA_VALUED else (lambda v: v)
+        if k in new and (k not in old or not same(prep(old[k]), prep(new[k]))):
             rep.error(where, f'[keyword_changed] {k} changed: {old.get(k)!r} -> {new[k]!r}')
     added_req = set(new.get('required', [])) - set(old.get('required', []))
     if added_req:
