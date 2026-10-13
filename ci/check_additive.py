@@ -22,8 +22,9 @@ spec/model/*.yaml with their state at the branch point from the base branch
 - not, if, contains, minContains, maxContains, uniqueItems: true, anyOf or
   oneOf appeared; minContains increased, maxContains decreased; if or not
   changed (a changed negated schema is not compared, it is an error);
-- allOf or prefixItems got a new item (a new constraint; an absent prefixItems
-  counts as empty), anyOf or oneOf lost branches,
+- allOf got a new item (a new constraint), prefixItems got an item narrower
+  than the old items at its position (absent items accepts anything, items:
+  false accepted nothing), anyOf or oneOf lost branches,
   oneOf got a new or changed branch (branches are matched by content without
   annotations, not by position) that is not provably disjoint from every
   other branch (different const or enum values, disjoint types, or a property
@@ -99,6 +100,8 @@ TIGHTER = {'maxLength': LT, 'maxItems': LT, 'maxProperties': LT, 'maximum': LT, 
 CHANGED = ('pattern', 'const', 'format', 'x-botaru-format', 'propertyNames', '$ref', 'multipleOf', 'if', 'not')
 # Keywords in CHANGED whose value is a schema: an annotation edit inside them changes nothing
 SCHEMA_VALUED = ('propertyNames', 'if', 'not')
+# Subschemas whose change to false is reported as [closed_now]
+CLOSABLE = ('additionalProperties', 'items', 'unevaluatedProperties', 'unevaluatedItems')
 # Keywords whose appearance narrows the schema
 NEW_NARROWING = ('contains',)  # not and if are caught by CHANGED  # minContains, maxContains, multipleOf are caught by TIGHTER and CHANGED
 
@@ -231,12 +234,15 @@ def compare(old, new, where):
         more = set(deps) - set((old.get('dependentRequired') or {}).get(prop, []))
         if more:
             rep.error(where, f'[required_added] dependentRequired.{prop}: new {sorted(more)}')
-    for k in ('additionalProperties', 'items', 'unevaluatedProperties', 'unevaluatedItems'):
+    for k in CLOSABLE:
         if old.get(k, True) is not False and new.get(k, True) is False:
             rep.error(where, f'[closed_now] {k} became false')
-    # an absent prefixItems is an empty list: every new item constrains a position that was free
-    if len(new.get('prefixItems', [])) > len(old.get('prefixItems', [])):
-        rep.error(where, '[prefix_items_added] new items in prefixItems')
+    # a new prefixItems item takes a position that old items governed (absent items accepts anything,
+    # items: false accepted nothing there), so it is compared with old items like a changed subschema
+    old_prefix, new_prefix = old.get('prefixItems') or [], new.get('prefixItems') or []
+    if isinstance(old_prefix, list) and isinstance(new_prefix, list):
+        for i in range(len(old_prefix), len(new_prefix)):
+            compare(old.get('items', True), new_prefix[i], f'{where}/prefixItems/{i}')
     for key in ('properties', '$defs', 'patternProperties', 'dependentSchemas'):
         op, np = old.get(key, {}), new.get(key, {})
         if not isinstance(op, dict) or not isinstance(np, dict):
@@ -248,11 +254,11 @@ def compare(old, new, where):
                 compare(sub, np[name], f'{where}/{key}/{name}')
     for key in ('items', 'additionalProperties', 'then', 'else', 'contains', 'propertyNames',
                 'unevaluatedProperties', 'unevaluatedItems'):
-        if isinstance(old.get(key), dict) and isinstance(new.get(key), (dict, bool)):
-            compare(old[key], new[key], f'{where}/{key}')
-        elif old.get(key, True) is True and isinstance(new.get(key), dict) and new[key]:
-            # an absent subschema (or true) accepts everything: any non-empty schema in its place narrows
-            rep.error(where, f'[keyword_added] {key} became a schema: the set of values is narrowed')
+        # an absent subschema accepts everything, like true: compare reports any asserting keyword in its place
+        # (a subschema that became false is already [closed_now] for the keys checked above)
+        closed = new.get(key) is False and key in CLOSABLE
+        if old.get(key, True) is not False and isinstance(new.get(key), (dict, bool)) and not closed:
+            compare(old.get(key, True), new[key], f'{where}/{key}')
     for k in NEW_NARROWING:
         if k in new and k not in old:
             rep.error(where, f'[keyword_added] {k} appeared: the set of values is narrowed')
