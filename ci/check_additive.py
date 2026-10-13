@@ -393,18 +393,24 @@ def by_id(docs):
     return {d['$id']: rp for rp, d in docs.items() if isinstance(d, dict) and isinstance(d.get('$id'), str)}
 
 
-def anchored(s, name):
-    """The subschema with $anchor name, or None."""
+def anchored(s, name, root=True):
+    """The subschema with $anchor name inside the same schema resource, or None."""
     if isinstance(s, dict):
+        if not root and '$id' in s:
+            return None  # a nested $id starts another resource with its own anchors
         if s.get('$anchor') == name:
             return s
         s = [v for k, v in s.items() if k not in LITERALS]
     if isinstance(s, list):
         for x in s:
-            found = anchored(x, name)
+            found = anchored(x, name, False)
             if found is not None:
                 return found
     return None
+
+
+def escape(key):
+    return key.replace('~', '~0').replace('/', '~1')
 
 
 def pointer(doc, ptr):
@@ -441,7 +447,7 @@ def negated(s, path=''):
                 continue
             if k in ('not', 'if'):
                 yield f'{path}/{k}', v
-            yield from negated(v, f'{path}/{k}')
+            yield from negated(v, f'{path}/{escape(k)}')
     elif isinstance(s, list):
         for i, x in enumerate(s):
             yield from negated(x, f'{path}/{i}')
@@ -470,7 +476,7 @@ def reached(rp, sub):
 def deref(s, frm, docs, ids):
     """(schema, file) behind a chain of bare $ref, or s itself."""
     for _ in range(16):
-        if not isinstance(s, dict) or not isinstance(s.get('$ref'), str) or set(s) - {'$ref'} - ANNOTATIONS:
+        if not isinstance(s, dict) or not isinstance(s.get('$ref'), str) or [k for k in s if k != '$ref' and not annotation(k)]:
             return s, frm
         base, _, frag = s['$ref'].partition('#')
         frm = ids.get(base) if base else frm
@@ -500,7 +506,7 @@ def oneofs(s, path=''):
                 continue
             if k == 'oneOf' and isinstance(v, list):
                 yield f'{path}/oneOf', v, s
-            yield from oneofs(v, f'{path}/{k}')
+            yield from oneofs(v, f'{path}/{escape(k)}')
     elif isinstance(s, list):
         for i, x in enumerate(s):
             yield from oneofs(x, f'{path}/{i}')
