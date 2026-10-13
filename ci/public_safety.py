@@ -361,8 +361,7 @@ def history(stems, words):
             # paths of deleted or renamed files stay public in the history too
             if any(is_forbidden(w.group(0).lower(), stems, words) for w in WORD.finditer(rp)):
                 rep.error(f'{c[:12]}:{rp}', '[forbidden_word] a word from the forbidden list (BOTARU_FORBIDDEN) in the path')
-            if rp in SKIP:
-                continue
+            # unlike the normal scan, LICENSE is read too: only its copyright line start is allowed
             text = git('cat-file', '-p', blob).decode('utf-8', 'replace')
             allowed = copyright_spans(rp, text) + owner_spans(rp, text)
             starts = [0] + [i + 1 for i, ch in enumerate(text) if ch == '\n']
