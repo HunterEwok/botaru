@@ -1,0 +1,59 @@
+# A tenant that opted out of the manager lens and the apply lint of GOV-25 (MGR-42, D-77).
+id: gov-fx-12
+rules: [GOV-25]
+version: v0.2
+description: 'With farm_manager.enabled false or lens false the tenant commission has neither the manager lens nor the manager vote,
+  and the verdict is computed without them and without a mark. apply lint: every active tenant with the manager lens names a seat
+  role whose seat slot allows the manager seat profile (or the tenant''s own farm_manager.model_profile) and keeps the governance
+  line above 0.'
+given:
+  manager_seat: {state: held, holder: bot_41, model_profile: manager-std}
+cases:
+- id: gov-fx-12-a
+  description: lens false; the proposal gets no manager review, the verdict carries no mark, the manager is not a voter.
+  given:
+    tenant: {name: demo2, farm_manager: {enabled: true, lens: false}}
+    proposal: {id: p_301, kind: schedule, state: screened}
+    queue: [{bot: bot_77}]
+  steps:
+  - stand: {op: loop.tick, loop: proposal}
+  - stand: {op: loop.tick, loop: governance}
+  expect:
+    tasks_of_type: {review.farm_manager.v1: 0}
+    verdict_mark: null
+    case: {snapshot: {voters_without: bot_41}}
+- id: gov-fx-12-b
+  description: enabled false; the same, and no seat task of any purpose in the tenant.
+  given:
+    tenant: {name: demo2, farm_manager: {enabled: false}}
+    proposal: {id: p_301, kind: schedule, state: screened}
+  steps:
+  - stand: {op: loop.tick, loop: proposal}
+  expect:
+    tasks_of_type: {review.farm_manager.v1: 0}
+    seat_tasks_in_tenant: 0
+    verdict_mark: null
+- id: gov-fx-12-c
+  description: 'apply lint: the seat role does not allow the manager seat profile on its seat slot; the tenant has no seat role;
+    the governance line is 0; with lens false the same tenant passes.'
+  cases:
+  - id: gov-fx-12-c1
+    given:
+      tenant: {name: demo, farm_manager: {enabled: true, lens: true}, models_allowed: [seat-std]}
+      commission: {seat_role: commission-member}
+    expect: {apply: {result: rejected}}
+  - id: gov-fx-12-c2
+    given:
+      tenant: {name: demo, farm_manager: {enabled: true, lens: true}, models_allowed: [seat-std, manager-std]}
+      commission: null
+    expect: {apply: {result: rejected}}
+  - id: gov-fx-12-c3
+    given:
+      tenant: {name: demo, farm_manager: {enabled: true, lens: true}, models_allowed: [seat-std, manager-std], budgets: {lines: {governance: {month_eur: 0}}}}
+      commission: {seat_role: commission-member}
+    expect: {apply: {result: rejected}}
+  - id: gov-fx-12-c4
+    given:
+      tenant: {name: demo, farm_manager: {enabled: true, lens: false}, models_allowed: [seat-std]}
+      commission: {seat_role: commission-member}
+    expect: {apply: ok}

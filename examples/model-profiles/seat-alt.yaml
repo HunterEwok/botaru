@@ -11,6 +11,7 @@ spec:
   fallback: []
   fallback_on: [overloaded, unavailable, retired]
   max_output_tokens: 8000
+  forced_schema: true
   tokens_per_s: 45
   price: {input: 3.00, output: 12.00, checked: 2026-10-01}
   provider_retention_days: {value: 30, checked: 2026-10-01}

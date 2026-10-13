@@ -1,5 +1,5 @@
 registry: governance-decline-reasons
-version: 1
+version: 2
 description: >-
   Reason codes of the "Reject" button on the promotion card promotion_card
   (GOV-31). Without a reason code "Reject" is not accepted. Entry fields: label
@@ -26,6 +26,6 @@ entries:
   - id: wrong_candidate
     since: v0.2
     label: Wrong candidate
-    effect: the first "Reject" returns the entry to the head of the queue, the second one for the same candidate removes it until the candidate's next success
+    effect: the first "Reject" returns the entry to the head of the queue with its own swap_cooldown pause (30 days), during which the next entries may go ahead (D-101); the second one for the same candidate removes it until the candidate's next success
     modes: [removal, vacancy]
     rules: [GOV-31, GOV-14]

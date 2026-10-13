@@ -85,7 +85,7 @@ checks:
   section: Tests without a model
   source: docs/quality.md:225
   spec:
-    What arrives: (v0.2) "Lift veto" on an audit sample item, "Approve" on a case outcome and "Yes" on an attribution without
+    What arrives: (v0.2) "Lift veto" on an audit sample item, "Confirm" on a case outcome and "Yes" on an attribution without
       "Details" opened
     Expectation: refusal `details_not_opened`, the card asks to open "Details"
 - id: blackbox:channel/grant-privileged
@@ -183,17 +183,30 @@ checks:
   - IDM-3
   version: v0.1
   section: Tests without a model
-  source: docs/quality.md:488
+  source: docs/quality.md:491
   spec:
     What: a repeat `decide` by the same person with the same decision and `nonce`; a different decision; a different person
     Expectation: the same success; `already_decided`; `already_decided`
+- id: blackbox:channel/promotion-confirm-checks
+  method: blackbox
+  rules:
+  - APR-14
+  - GOV-9
+  version: v0.2
+  section: Tests without a model
+  source: docs/quality.md:493
+  spec:
+    What: (v0.2) "Confirm" on a promotion card without "Details" opened; by a person without `governance.confirm:commission`;
+      twice; after the case was canceled
+    Expectation: '`details_not_opened`; `forbidden`; the same success then `already_decided`; `subject_closed`, nothing applied;
+      with a valid confirm exactly one `seat.assign` and the audit line'
 - id: blackbox:channel/grant-delegated
   method: blackbox
   rules:
   - PRM-16
   version: v0.1
   section: Tests without a model
-  source: docs/quality.md:496
+  source: docs/quality.md:501
   spec:
     What: '`alice` (`admin`) writes `/grant researcher carol`; `/grant approver carol`'
     Expectation: the first passes without an operator (the group is in `delegated_groups`); the second gets `privileged_group`
@@ -203,7 +216,7 @@ checks:
   - PRM-17
   version: v0.1
   section: Tests without a model
-  source: docs/quality.md:497
+  source: docs/quality.md:502
   spec:
     What: '`/cancel` of someone else''s task; of one''s own in `working` with a pending approval'
     Expectation: '`not_found`; the tree and the approval are canceled with `canceled(initiator)`'
@@ -213,7 +226,7 @@ checks:
   - PRM-17
   version: v0.1
   section: Tests without a model
-  source: docs/quality.md:498
+  source: docs/quality.md:503
   spec:
     What: '`/team` without `team.view:<group>`'
     Expectation: '`forbidden`, the text names the needed group (`needs`)'
@@ -223,7 +236,7 @@ checks:
   - CNT-5
   version: v0.1
   section: Tests without a model
-  source: docs/quality.md:500
+  source: docs/quality.md:505
   spec:
     What: 'the bot finished a task with `need_input: true`; `bob` writes free text after 10 minutes; after 40 minutes'
     Expectation: the first text becomes a task with `continues` pointing to the previous one; the second a new task from `default_types`
@@ -233,7 +246,7 @@ checks:
   - SEC-13
   version: v0.1
   section: Tests without a model
-  source: docs/quality.md:524
+  source: docs/quality.md:529
   spec:
     What: 'the first contact of `bob` in a channel with `ai_disclosure: native`; a change of `notice_version`'
     Expectation: a `privacy_notice` delivery before the first model text; after the version change the notice is repeated
@@ -244,7 +257,7 @@ checks:
   - SEC-13
   version: v0.1
   section: Tests without a model
-  source: docs/quality.md:525
+  source: docs/quality.md:530
   spec:
     What: '`alice` joined the group chat `staff` (`membership_assurance: enforced`)'
     Expectation: '`privacy_notice` to her direct messages, no more often than `notice_repeat`'

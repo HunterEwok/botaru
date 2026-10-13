@@ -1,0 +1,191 @@
+# Ballot and count of the "who leaves" vote (GOV-7, GOV-8). Numbers of identities, seats and cases are
+# shortened as in docs/commission.md, section "Example on demo".
+id: gov-fx-02
+rules: [GOV-7, GOV-8]
+version: v0.2
+description: 'A ballot is a governance task of tier 0 in a clean context with the core key system:governance:<case>:<round>:<bot>;
+  its input is only the case package; its output is a choice from the enum the core built for this voter and up to 3 reason
+  codes; the core takes the value from the P4 answer with the forced schema, not from the complete body; a one-value enum gives
+  a forced ballot without a model call. Code counts the rounds with need = ceil(2/3 x |expected|), strikes out the seat with
+  the fewest votes, resolves ties by K1-K4 and always finds exactly one leaver in at most |L| - 1 rounds.'
+given:
+  tenant: demo
+  commission:
+    seat_role: commission-member
+    model_profile: seat-std
+    seats:
+      'commission:1': {lens: security, holder: bot_05, on_commission_days: 300, calibration: 0.05}
+      'commission:2': {lens: operational, holder: bot_07, on_commission_days: 150, calibration: -0.02}
+      'commission:3': {lens: cost, holder: bot_09, on_commission_days: 210, calibration: 0.04}
+      'commission:4': {lens: value, holder: bot_12, on_commission_days: 40, calibration: insufficient}
+  manager_seat: {state: held, holder: bot_40}
+  case:
+    id: gc_7
+    mode: removal
+    candidate: bot_17
+    snapshot:
+      voters: [bot_05, bot_07, bot_09, bot_12, bot_40]
+      list: ['commission:1', 'commission:2', 'commission:3']
+cases:
+- id: gov-fx-02-a
+  rules: [GOV-7]
+  description: The ballot task of bot_05 in round 1 is a clean context task with the case package only.
+  steps:
+  - stand: {op: loop.tick, loop: governance}
+  expect:
+    task:
+      type: governance.ballot.v1
+      purpose: governance
+      tier: 0
+      key: 'system:governance:gc_7:1:bot_05'
+      slot: seat
+      memory: none
+      session: none
+      inbox: none
+      tools_list: []
+      input_blocks: [case_package]
+    enum: ['commission:2', 'commission:3']
+    enum_order_differs_between_voters: true
+    package_per_seat: [lens, tenure_days, reviews, calibration, recommended, vetoed, confirmed, refuted]
+- id: gov-fx-02-b
+  rules: [GOV-7]
+  description: The value comes from the P4 answer with the forced schema; the complete body says something else.
+  steps:
+  - model: {forced_output: {choice: 'commission:3', reasons: [calibration_low]}}
+    by: attempt:governance.ballot.v1
+  - check: complete body of the same attempt carries choice commission:2
+    note: the complete body is not read for the ballot value
+  expect:
+    ballot: {case: gc_7, round: 1, voter: bot_05, choice: 'commission:3', reasons: [calibration_low], forced: false, defaulted: false}
+- id: gov-fx-02-c
+  rules: [GOV-7]
+  description: A P4 value outside the voter's enum (its own seat), a fourth reason code, free text or "abstain" is not a ballot.
+  cases:
+  - id: gov-fx-02-c1
+    steps:
+    - model: {forced_output: {choice: 'commission:1', reasons: []}}
+      by: attempt:governance.ballot.v1
+      expect: {reason: output_schema_invalid}
+    expect: {ballot: null, reissue: 1}
+  - id: gov-fx-02-c2
+    steps:
+    - model: {forced_output: {choice: abstain}}
+      by: attempt:governance.ballot.v1
+      expect: {reason: output_schema_invalid}
+    expect: {ballot: null}
+  - id: gov-fx-02-c3
+    steps:
+    - model: {forced_output: {choice: 'commission:3', reasons: [calibration_low, refuted_vetoes, tenure_long, reviews_few]}}
+      by: attempt:governance.ballot.v1
+      expect: {reason: output_schema_invalid}
+    expect: {ballot: null}
+- id: gov-fx-02-d
+  rules: [GOV-7]
+  description: A one-value enum gives a forced ballot without a model call (round 2 of the example, bot_07 and bot_09).
+  given:
+    round: 2
+    list: ['commission:2', 'commission:3']
+  expect:
+    ballots:
+      bot_07: {choice: 'commission:3', forced: true}
+      bot_09: {choice: 'commission:2', forced: true}
+    model_calls: {bot_07: 0, bot_09: 0}
+- id: gov-fx-02-e
+  rules: [GOV-7]
+  description: Until the round closes no bot sees the ballots, and no ballot is published as an event.
+  given: {recorded: [bot_05, bot_07], round_open: true}
+  expect:
+    events_published: {governance.ballot: 0}
+    bot_views_with_ballots: 0
+    p4_requests_contain: {ballot_of_other_voter: false}
+- id: gov-fx-02-f
+  rules: [GOV-7]
+  description: 'apply lint: the model profile of the seat slot that ballots run on declares forced schema support.'
+  given:
+    model_profiles:
+      seat-std: {rank: 3, forced_schema: false}
+  expect:
+    apply: {result: rejected, error: forced_schema_unsupported}
+- id: gov-fx-02-g
+  rules: [GOV-8]
+  description: 'The count of the example: round 1 tally seat 3: 3, seat 1: 1, seat 2: 1; need 4; seats 1 and 2 tie, K1 does
+    not decide, K2 strikes seat 1 first (calibration +0.05 above -0.02); round 2 seat 3 gets 4 of 5 and leaves.'
+  given:
+    ballots:
+      round_1: {bot_05: 'commission:3', bot_07: 'commission:3', bot_09: 'commission:1', bot_12: 'commission:3', bot_40: 'commission:2'}
+      round_2: {bot_05: 'commission:3', bot_07: 'commission:3', bot_09: 'commission:2', bot_12: 'commission:3', bot_40: 'commission:3'}
+  expect:
+    rounds:
+    - {n: 1, need: 4, tally: {'commission:3': 3, 'commission:1': 1, 'commission:2': 1}, result: {struck: 'commission:1'}, tie: [K2]}
+    - {n: 2, need: 4, tally: {'commission:3': 4, 'commission:2': 1}, result: {leaver: 'commission:3'}}
+    case_outcome: {leaver: 'commission:3'}
+    state: confirming
+    struck_seat_holder_state: active
+- id: gov-fx-02-h
+  rules: [GOV-8]
+  description: K1 strikes first the tied seat with fewer votes in all previous rounds of the case.
+  given:
+    snapshot_list: ['commission:1', 'commission:2', 'commission:3', 'commission:4']
+    seat_4_on_commission_days: 70
+    rounds:
+    - {n: 1, tally: {'commission:1': 1, 'commission:2': 2, 'commission:3': 2, 'commission:4': 0}}
+    - {n: 2, tally: {'commission:1': 1, 'commission:2': 1, 'commission:3': 3}}
+  expect:
+    rounds:
+    - {n: 1, result: {struck: 'commission:4'}}
+    - {n: 2, result: {struck: 'commission:1'}, tie: [K1]}
+- id: gov-fx-02-i
+  rules: [GOV-8]
+  description: K2 treats insufficient as below any number, so the holder with insufficient calibration is struck out last.
+  given:
+    snapshot_list: ['commission:2', 'commission:3', 'commission:4']
+    seat_4_on_commission_days: 70
+    round_tally: {'commission:2': 1, 'commission:4': 1, 'commission:3': 3}
+    calibration: {'commission:2': -0.30, 'commission:4': insufficient}
+  expect:
+    round_result: {struck: 'commission:2'}
+    tie: [K2]
+- id: gov-fx-02-j
+  rules: [GOV-8]
+  description: K3 strikes first the holder with the shorter continuous term when K1 and K2 tie.
+  given:
+    round_tally: {'commission:1': 1, 'commission:2': 1, 'commission:3': 3}
+    calibration: {'commission:1': 0.01, 'commission:2': 0.01}
+    on_commission_days: {'commission:1': 300, 'commission:2': 150}
+  expect:
+    round_result: {struck: 'commission:2'}
+    tie: [K3]
+- id: gov-fx-02-k
+  rules: [GOV-8]
+  description: K4 strikes first the smaller sha256(tie_seed || seat id); the core draws tie_seed only after all ballots of the
+    round are recorded.
+  given:
+    round_tally: {'commission:1': 1, 'commission:2': 1, 'commission:3': 3}
+    calibration: {'commission:1': 0.01, 'commission:2': 0.01}
+    on_commission_days: {'commission:1': 150, 'commission:2': 150}
+  expect:
+    tie: [K4]
+    tie_seed_drawn_after_last_ballot: true
+    result_matches: sha256 order of tie_seed and seat id
+- id: gov-fx-02-l
+  rules: [GOV-8]
+  description: L with one seat gives its holder as the leaver without ballots.
+  given:
+    case: {id: gc_8, mode: removal, candidate: bot_17, snapshot: {voters: [bot_05, bot_40], list: ['commission:3']}}
+  steps:
+  - stand: {op: loop.tick, loop: governance}
+  expect:
+    state: confirming
+    rounds: []
+    ballot_tasks: 0
+    case_outcome: {leaver: 'commission:3'}
+- id: gov-fx-02-m
+  rules: [GOV-8]
+  description: Identical snapshot, expected, seed and ballots give an identical outcome; forced and defaulted ballots count.
+  given:
+    replay_of: gov-fx-02-g
+    ballots_marked: {bot_07: {forced: true}, bot_09: {defaulted: true}}
+  expect:
+    case_outcome: {leaver: 'commission:3'}
+    same_as: gov-fx-02-g
+    counted_forced_and_defaulted: true

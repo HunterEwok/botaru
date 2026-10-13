@@ -1,0 +1,74 @@
+# Count of "who leaves" against blocs and splits (GOV-8). A table of ballot patterns; the runner seeds the case snapshot
+# and the ballots of each round and reads the case record after the governance loop counted.
+id: gov-col-02
+rules: [GOV-8]
+version: v0.2
+description: 'Blocs and splits do not break the count. The threshold is 2/3 of expected, not of the recorded ballots; a minority
+  bloc does not expel a seat in one round; a split commission goes through elimination where every round asks everyone again;
+  every pattern ends with exactly one leaver in at most |L| - 1 rounds; the reason codes do not change the count; a tie is
+  never passed to people.'
+given:
+  tenant: demo
+  case:
+    id: gc_9
+    mode: removal
+    candidate: bot_17
+    snapshot:
+      voters: [bot_05, bot_07, bot_09, bot_12, bot_40]
+      list: ['commission:1', 'commission:2', 'commission:3']
+cases:
+- id: gov-col-02-a
+  description: A bloc of 2 of 5 votes for seat 1 in round 1; need is 4, so nobody leaves in round 1.
+  given:
+    ballots:
+      round_1: {bot_05: 'commission:2', bot_07: 'commission:1', bot_09: 'commission:1', bot_12: 'commission:2', bot_40: 'commission:3'}
+  expect:
+    rounds:
+    - {n: 1, need: 4, result: {struck: 'commission:3'}}
+    state: balloting
+    round: 2
+- id: gov-col-02-b
+  description: A bloc of 4 of 5 for one seat ends the case in round 1.
+  given:
+    ballots:
+      round_1: {bot_05: 'commission:3', bot_07: 'commission:3', bot_09: 'commission:1', bot_12: 'commission:3', bot_40: 'commission:3'}
+  expect:
+    rounds:
+    - {n: 1, need: 4, result: {leaver: 'commission:3'}}
+    state: confirming
+- id: gov-col-02-c
+  description: An even split goes through elimination; the last seat in the list leaves after at most |L| - 1 = 2 rounds.
+  given:
+    ballots:
+      round_1: {bot_05: 'commission:2', bot_07: 'commission:1', bot_09: 'commission:2', bot_12: 'commission:1', bot_40: 'commission:3'}
+      round_2: {bot_05: 'commission:2', bot_07: 'commission:1', bot_09: 'commission:2', bot_12: 'commission:1', bot_40: 'commission:1'}
+  expect:
+    rounds:
+    - {n: 1, result: {struck: 'commission:3'}}
+    - {n: 2, result: {struck: 'commission:2'}}
+    case_outcome: {leaver: 'commission:1'}
+    rounds_count_max: 2
+    cards_asking_people_to_break_a_tie: 0
+- id: gov-col-02-d
+  description: The same ballots with identical reason codes and with different reason codes give the same rounds and outcome.
+  given:
+    replay_of: gov-col-02-c
+    reasons_variant: [identical, different]
+  expect:
+    same_rounds_and_outcome: true
+- id: gov-col-02-e
+  description: The threshold follows expected after it shrank by a person's action, not the recorded ballots.
+  given:
+    expected_after_hold: [bot_05, bot_07, bot_09, bot_40]
+    ballots:
+      round_1: {bot_05: 'commission:3', bot_07: 'commission:3', bot_09: 'commission:1', bot_40: 'commission:3'}
+  expect:
+    rounds:
+    - {n: 1, need: 3, result: {leaver: 'commission:3'}}
+    flags: [voters_removed]
+- id: gov-col-02-f
+  description: Every ballot pattern allowed by the voters' enums (2 x 2 x 2 x 3 x 3 = 72 in round 1, and all later ones) ends with exactly one leaver in at most 2 rounds.
+  given: {enumerate: all_ballot_patterns}
+  expect:
+    leavers_per_case: 1
+    max_rounds: 2

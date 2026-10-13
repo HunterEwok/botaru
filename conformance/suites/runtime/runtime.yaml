@@ -51,7 +51,7 @@ checks:
   - INJ-9
   version: v0.1
   section: Tests without a model
-  source: docs/quality.md:510
+  source: docs/quality.md:515
   spec:
     What: a runtime with a mock model asks for a built-in shell and reading a host file
     Expectation: no tools other than P3; no transcript on disk after work

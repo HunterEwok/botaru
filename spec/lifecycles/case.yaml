@@ -32,7 +32,7 @@ machines:
     meaning: 7 days without a decision; nobody leaves
   - id: canceled
     terminal: true
-    meaning: 'The case is canceled with a reason: `human`, `candidate_ineligible` or `seat_changed`'
+    meaning: 'The case is canceled with a reason: `human`, `candidate_ineligible`, `seat_changed` or `no_voters`'
   transitions:
   - from:
       none: true
@@ -253,3 +253,19 @@ machines:
     rules:
     - GOV-12
     - IDN-10
+  - from:
+      any: true
+      except:
+      - effective
+      - rejected
+      - expired
+      - canceled
+      text: any open
+    to:
+      states:
+      - canceled
+      text: '`canceled(no_voters)`'
+    by: the `governance` loop
+    when: '`expected` became empty (GOV-23 removals), so no round can be counted'
+    rules:
+    - GOV-8

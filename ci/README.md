@@ -42,7 +42,7 @@ Every message starts with a stable code in square brackets, then the place and t
 - rules covered by data for an implementation runner or an eval: the behavior fixtures in `conformance/fixtures/` and the `evals/` cases; the skeleton CI checks their form and call bodies, and the implementation runner or an eval with a model runs the behavior;
 - rules covered only by a check description: a `conformance/suites/` entry (given, action, expectation; the implementation writes the check code), a `state-machine/` fixture (transitions in prose), a behavior fixture whose call body fails its request schema, or an eval case of a later version.
 
-A separate line gives the number of `core` rules with `waivable: false` that are covered only by a description. The note `[fixture_not_citing]` means that a fixture from the `fixtures` field of a rule does not name that rule in its `rules`. A version is ready when `python3 ci/readiness.py v0.1 --strict` passes; `run_all.py` and CI run v0.1 readiness with `--strict`, so a version rule without a check fails the PR. The black-box runner, which runs the suites against a live implementation, is not part of the skeleton: it is written together with the first implementation (`docs/quality.md`).
+A separate line gives the number of `core` rules with `waivable: false` that are covered only by a description. The note `[fixture_not_citing]` means that a fixture from the `fixtures` field of a rule does not name that rule in its `rules`. A version is ready when `python3 ci/readiness.py v0.1 --strict` passes; `run_all.py` and CI run v0.1 and v0.2 readiness with `--strict`, so a version rule without a check fails the PR. The black-box runner, which runs the suites against a live implementation, is not part of the skeleton: it is written together with the first implementation (`docs/quality.md`).
 
 ## Your own files outside the skeleton
 
@@ -175,6 +175,7 @@ The codes of `check_manifests.py` that fixtures refer to (`expect: {error: <code
 | `driver_schema_missing` | own channel with a driver that has neither a skeleton binding note nor a driver schema (note) | MAN-4 |
 | `duplicate_object` | an object of the same kind and name is already declared | MAN-1 |
 | `enum_from_unknown_list` | the enum_from list is in no catalog of the set (note) |  |
+| `escalation_threshold_lowered` | a commission escalation threshold below its default (2, untrusted 3) | COM-13 |
 | `executor_unknown` | action executor is missing or not a write tool | MAN-9 |
 | `expected_failure_not_waivable` | expected failures list a rule with waivable: false | MAN-8 |
 | `export_only_recipient` | export_only without exactly one of recipient and recipient_ref | SEC-10 |
@@ -184,6 +185,7 @@ The codes of `check_manifests.py` that fixtures refer to (`expect: {error: <code
 | `flow_body_invalid` | flow step body fails the P1 schema or the type params |  |
 | `flow_denied_passes` | a call from the denied section passes the closed schema |  |
 | `flow_ref_missing` | flow step type not found |  |
+| `forced_schema_unsupported` | a commission seat profile has no forced_schema: true, which ballots need | GOV-7 |
 | `format_unknown` | x-botaru-format or resource format is not in spec/model/formats.yaml | INJ-1, MAN-10 |
 | `global_tenant_data` | a global manifest holds a value that looks like tenant data | TEN-6 |
 | `high_risk_one_approver` | production tenant lets a high risk action with approvals: 1 be requested | APR-16 |
@@ -235,6 +237,7 @@ The codes of `check_manifests.py` that fixtures refer to (`expect: {error: <code
 | `service_no_card` | service no_card holds something other than restart | MON-8 |
 | `service_script_unknown` | no script from monitor_scripts_allowed for a service verb | MON-8, MON-10 |
 | `service_unit_missing` | via: host without unit, or unit with via: monitor | MON-8 |
+| `shadow_zero_without_off` | a commission shadow share of 0 instead of an explicit shadow: off | COM-10 |
 | `skill_format` | skill folder breaks the format: files, types, sizes, front matter or name | SKL-1 |
 | `state_agent_producer` | state message kind has producers other than code | STA-1, MSG-2 |
 | `status_in_git` | manifest has a status field: status is kept by the core | MAN-1 |

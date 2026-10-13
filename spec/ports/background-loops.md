@@ -46,7 +46,7 @@ Each loop:
 | `identity` | Deadlines of identities and seats: after `decide_within` (7 days) a stopped farm manager seat becomes `vacant`, and the bot leaves with the trigger `replaced_after_incident`; an identity in `unbound` for longer than `unbound_ttl` (30 days) leaves with the trigger `worker_gone`; fact offers close by `open_until`; at the end of `seal_ttl` what is sealed gets an erasure request with the reason `bot_retired`; the alarm `alarm.manager.absent` if a seat task waits for a worker longer than 5 minutes | v0.1 | IDN-11, GOV-22, MEM-7, MEM-9, MGR-2 |
 | `retention` | Deletes content by the tenant's retention class periods without an erasure request: in v0.1 only the classes `content` and `observation` older than the default period (RET-2), from v0.2 all classes, including files after `expires_at` with the fragments and embeddings of corpora; tombstones remain | v0.1 | RET-2, RET-3, RET-5, KNW-5 |
 | `grant` | Model grant deadlines | v0.2 | MGR-18 |
-| `governance` | Promotion trigger and queue, attribution candidates linking an incident to a change by `attribution-rules.yaml` and weekly reminders about them, opening cases, rounds, the `stuck` flag | v0.2 | GOV-12, GOV-13, GOV-14, GOV-23, GOV-30 |
+| `governance` | Promotion trigger and queue, attribution candidates linking an incident to a change by `attribution-rules.yaml` and weekly reminders about them, opening cases, rounds, the `stuck` flag, the reopened case after `wrong_leaver` and the entry pause after `wrong_candidate`, the monthly `commission_review` card | v0.2 | GOV-12, GOV-13, GOV-14, GOV-23, GOV-30, GOV-31, GOV-35 |
 | `expectation` | Timeouts of waiting for external events declared in the task type | v0.2 | CNT-6 |
 
 ## Why this way

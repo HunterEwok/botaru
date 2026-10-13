@@ -1,0 +1,192 @@
+# Promotion queue, case opening and eligibility (GOV-14). The demo commission of docs/commission.md; seat 4 is protected
+# by protect_new, so L is seats 1-3.
+id: gov-fx-20
+rules: [GOV-14]
+version: v0.2
+description: 'The governance loop keeps one queue entry per bot, without expiry or length ceiling, in order of the trigger time.
+  A case opens for the head if the tenant has no open case and no hold on the scope governance. A vacant seat is taken without
+  a pause; freeing a seat by vote needs a non-empty L and swap_cooldown since the last freeing by vote, the last expired and the
+  last "Reject" with not_now. Eligibility is checked at opening: active, tenure at least min_tenure, no confirmed attribution to
+  its changes in 90 days; a failure gives not_eligible and lets the next entry go ahead; eligibility lost in a case gives
+  canceled(candidate_ineligible). Charter lint keeps the deadlines at or above their floors.'
+given:
+  tenant: demo
+  commission:
+    seats:
+      'commission:1': {lens: security, holder: bot_05, on_commission_days: 300}
+      'commission:2': {lens: operational, holder: bot_07, on_commission_days: 150}
+      'commission:3': {lens: cost, holder: bot_09, on_commission_days: 210}
+      'commission:4': {lens: value, holder: bot_12, on_commission_days: 40}
+  bots:
+    bot_17: {role: ops-runner, state: active, tenure_days: 31}
+    bot_18: {role: ops-runner, state: active, tenure_days: 45}
+  last_freeing_by_vote_days_ago: 31
+cases:
+- id: gov-fx-20-a
+  description: One entry per bot; the second success goes to the track record; the order is the trigger time.
+  given:
+    triggers:
+    - {bot: bot_18, at: '2026-11-20T00:00:00Z'}
+    - {bot: bot_17, at: '2026-11-24T00:00:00Z'}
+    - {bot: bot_18, at: '2026-11-25T00:00:00Z'}
+  steps:
+  - stand: {op: loop.tick, loop: governance}
+  expect:
+    queue: [{bot: bot_18, trigger_at: '2026-11-20T00:00:00Z'}, {bot: bot_17, trigger_at: '2026-11-24T00:00:00Z'}]
+    track_record_triggers: {bot_18: 2}
+- id: gov-fx-20-b
+  description: The head is not eligible (tenure 20 days); the event not_eligible, the next entry gets the case.
+  given:
+    bots:
+      bot_18: {role: ops-runner, state: active, tenure_days: 20}
+    queue: [{bot: bot_18}, {bot: bot_17}]
+  steps:
+  - stand: {op: loop.tick, loop: governance}
+  expect:
+    events: [{type: governance.not_eligible, bot: bot_18}]
+    case: {candidate: bot_17, mode: removal}
+    queue: [{bot: bot_18, state: queued}, {bot: bot_17, state: in_case}]
+- id: gov-fx-20-c
+  description: A confirmed attribution to a change of the head within 90 days makes it not eligible.
+  given:
+    queue: [{bot: bot_18}]
+    attributions: [{proposal_author: bot_18, state: confirmed, decided_days_ago: 60}]
+  steps:
+  - stand: {op: loop.tick, loop: governance}
+  expect:
+    events: [{type: governance.not_eligible, bot: bot_18}]
+    case: null
+- id: gov-fx-20-d
+  description: A vacant seat is taken without the swap_cooldown pause; freeing by vote waits for swap_cooldown.
+  cases:
+  - id: gov-fx-20-d1
+    given:
+      last_freeing_by_vote_days_ago: 5
+      commission:
+        seats:
+          'commission:4': {lens: value, holder: null}
+      queue: [{bot: bot_17}]
+    steps:
+    - stand: {op: loop.tick, loop: governance}
+    expect:
+      case: {candidate: bot_17, mode: vacancy}
+  - id: gov-fx-20-d2
+    given:
+      last_freeing_by_vote_days_ago: 5
+      queue: [{bot: bot_17}]
+    steps:
+    - stand: {op: loop.tick, loop: governance}
+    expect: {case: null, queue: [{bot: bot_17, state: queued}]}
+  - id: gov-fx-20-d3
+    given:
+      last_case_end: {state: expired, days_ago: 10}
+      queue: [{bot: bot_17}]
+    steps:
+    - stand: {op: loop.tick, loop: governance}
+    expect: {case: null}
+- id: gov-fx-20-e
+  description: Removal mode needs a non-empty L; all seats protected by protect_new give no case.
+  given:
+    commission:
+      seats:
+        'commission:1': {lens: security, holder: bot_05, on_commission_days: 10}
+        'commission:2': {lens: operational, holder: bot_07, on_commission_days: 10}
+        'commission:3': {lens: cost, holder: bot_09, on_commission_days: 10}
+        'commission:4': {lens: value, holder: bot_12, on_commission_days: 10}
+    queue: [{bot: bot_17}]
+  steps:
+  - stand: {op: loop.tick, loop: governance}
+  expect: {case: null}
+- id: gov-fx-20-f
+  description: An open case or a hold on the scope governance blocks opening.
+  cases:
+  - id: gov-fx-20-f1
+    given:
+      open_case: gc_7
+      queue: [{bot: bot_18}]
+    steps:
+    - stand: {op: loop.tick, loop: governance}
+    expect: {new_cases: 0}
+  - id: gov-fx-20-f2
+    given:
+      holds: [{scope: {kind: governance, tenant: demo}}]
+      queue: [{bot: bot_17}]
+    steps:
+    - stand: {op: loop.tick, loop: governance}
+    expect: {case: null}
+- id: gov-fx-20-g
+  description: Eligibility lost in the middle of a case cancels the case; the entry returns to its place.
+  given:
+    case: {id: gc_7, candidate: bot_17, state: balloting, round: 1}
+  steps:
+  - occur: {attribution: confirmed, proposal_author: bot_17}
+  - stand: {op: loop.tick, loop: governance}
+  expect:
+    case: {state: canceled, reason: candidate_ineligible}
+- id: gov-fx-20-h
+  description: Entries are removed by retirement and by seat.assign.
+  cases:
+  - id: gov-fx-20-h1
+    given: {queue: [{bot: bot_17}]}
+    steps:
+    - call:
+        port: P2
+        op: bot.retire
+        request: {bot: bot_17}
+      by: operator
+    expect: {queue: []}
+  - id: gov-fx-20-h2
+    given:
+      queue: [{bot: bot_17}]
+      commission:
+        seats:
+          'commission:4': {lens: value, holder: null}
+    steps:
+    - call:
+        port: P2
+        op: seat.assign
+        request: {seat: 'commission:4', bot: bot_17}
+      by: operator
+    expect: {queue: []}
+- id: gov-fx-20-i
+  description: A later confirmed attribution to the change that gave the trigger moves the entry to a later trigger of the track
+    record, or removes it when there is none.
+  cases:
+  - id: gov-fx-20-i1
+    given:
+      queue: [{bot: bot_17, trigger: p_101}]
+      track_record_triggers: {bot_17: [{proposal: p_101, at: '2026-11-24T00:00:00Z'}, {proposal: p_133, at: '2026-12-05T00:00:00Z'}]}
+    steps:
+    - occur: {attribution: confirmed, proposal: p_101}
+    - stand: {op: loop.tick, loop: governance}
+    expect: {queue: [{bot: bot_17, trigger: p_133, trigger_at: '2026-12-05T00:00:00Z'}]}
+  - id: gov-fx-20-i2
+    given:
+      queue: [{bot: bot_17, trigger: p_101}]
+    steps:
+    - occur: {attribution: confirmed, proposal: p_101}
+    - stand: {op: loop.tick, loop: governance}
+    expect: {queue: []}
+- id: gov-fx-20-j
+  description: 'Charter lint: probation at least 14d, min_tenure and swap_cooldown at least 30d, protect_new at least 60d.'
+  cases:
+  - id: gov-fx-20-j1
+    given:
+      manifest: {kind: Governance, metadata: {name: demo}, spec: {promotion: {probation: 13d}}}
+    expect: {apply: {result: rejected}}
+  - id: gov-fx-20-j2
+    given:
+      manifest: {kind: Governance, metadata: {name: demo}, spec: {promotion: {min_tenure: 29d}}}
+    expect: {apply: {result: rejected}}
+  - id: gov-fx-20-j3
+    given:
+      manifest: {kind: Governance, metadata: {name: demo}, spec: {promotion: {swap_cooldown: 29d}}}
+    expect: {apply: {result: rejected}}
+  - id: gov-fx-20-j4
+    given:
+      manifest: {kind: Governance, metadata: {name: demo}, spec: {removal: {protect_new: 59d}}}
+    expect: {apply: {result: rejected}}
+  - id: gov-fx-20-j5
+    given:
+      manifest: {kind: Governance, metadata: {name: demo}, spec: {promotion: {probation: 21d, min_tenure: 45d, swap_cooldown: 60d}, removal: {protect_new: 90d}}}
+    expect: {apply: ok}

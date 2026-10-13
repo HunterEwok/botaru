@@ -100,7 +100,7 @@ checks:
   - MON-8
   version: v0.1
   section: Tests without a model
-  source: docs/quality.md:550
+  source: docs/quality.md:555
   spec:
     What: a mock machine with systemd, an access rule generated from the `demo` catalog for `web1`; `systemctl restart nginx.service`
       from the action toolhost user `botaru-act-demo`
@@ -111,7 +111,7 @@ checks:
   - DEP-4
   version: v0.1
   section: Tests without a model
-  source: docs/quality.md:551
+  source: docs/quality.md:556
   spec:
     What: '`systemctl restart postgresql.service` from the same user'
     Expectation: 'refused by the access rule: the unit is not in the catalog'
@@ -122,7 +122,7 @@ checks:
   - DEP-9
   version: v0.1
   section: Tests without a model
-  source: docs/quality.md:552
+  source: docs/quality.md:557
   spec:
     What: '`systemctl restart nginx.service` from another OS user'
     Expectation: 'refusal: the rule is only for the action toolhost user'

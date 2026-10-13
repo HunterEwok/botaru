@@ -989,29 +989,26 @@ entries:
     port: P2
     op: governance.list
     since: v0.2
-    request: null
-    response: null
-    rules: [GOV-12]
+    request: p2-tenant-request
+    response: p2-list-response
+    rules: [GOV-12, GOV-21]
     profiles: [governance]
-    note: 'v0.2: the schemas will appear with v0.2'
   - id: P2.governance.show
     port: P2
     op: governance.show
     since: v0.2
-    request: null
-    response: null
-    rules: [GOV-12]
+    request: p2-object-request
+    response: governance-case
+    rules: [GOV-12, GOV-21]
     profiles: [governance]
-    note: 'v0.2: the schemas will appear with v0.2'
   - id: P2.governance.cancel
     port: P2
     op: governance.cancel
     since: v0.2
-    request: null
-    response: null
+    request: p2-object-request
+    response: done-response
     rules: [GOV-12, GOV-23]
     profiles: [governance]
-    note: 'v0.2: the schemas will appear with v0.2'
   - id: P2.attribution.list
     port: P2
     op: attribution.list

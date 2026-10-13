@@ -314,7 +314,7 @@ entries:
       unknown: {right: governance.attribute}
     recipients: people with governance.attribute
     ttl: 7d
-    on_silence: {state: unknown, outcome: not decided; no promotion trigger appears (GOV-30), remind: 7d}
+    on_silence: {state: unknown, outcome: not decided; no promotion trigger appears (GOV-30), remind: 7d, remind_max: 3}
     undo: '"No" and "Don''t know" can be changed while the attribution window is open (GOV-13); "Yes" can be removed only by its author on the dispute card after the incident is marked as false (D-79)'
     urgent: false
     rules: [APR-12, APR-14]
@@ -376,3 +376,13 @@ entries:
     undo: none
     urgent: false
     rules: [APR-12, AUD-4, APR-8]
+  - id: commission_review
+    since: v0.2
+    kind: notice
+    subject: null
+    recipients: tenant admins with admin:governance; the seats, the lens, the holders, the flag and code figures, and the ready commands farmctl seat vacate and farmctl seat assign; no buttons
+    ttl: repeated once a month while the flag holds
+    on_silence: {state: null, outcome: "the card repeats while the flag holds; nothing changes", remind: 30d}
+    undo: none
+    urgent: false
+    rules: [APR-12, GOV-35]

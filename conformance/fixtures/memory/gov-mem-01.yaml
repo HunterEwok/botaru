@@ -1,0 +1,116 @@
+# Case snapshot and the facts of commission seat holders (GOV-12). The demo commission of docs/commission.md.
+id: gov-mem-01
+rules: [GOV-12]
+version: v0.2
+description: 'At opening the core writes an unchangeable snapshot: voters V, the list L and the ordering seed. V is the holders
+  of all commission seats except identities under a people''s hold on the scope bot, plus the holder of the manager seat if it
+  is held and the tenant did not opt out of the manager lens (MGR-42). L is the commission seats with a holder except those
+  whose holder has been on the commission less than protect_new, and never the manager seat. Only active identities with a live
+  worker of the seat role enter it. Commission seat holders write no facts, so nobody in L prepares a one-sided set of facts.'
+given:
+  tenant: demo
+  commission:
+    seat_role: commission-member
+    seats:
+      'commission:1': {lens: security, holder: bot_05, on_commission_days: 300}
+      'commission:2': {lens: operational, holder: bot_07, on_commission_days: 150}
+      'commission:3': {lens: cost, holder: bot_09, on_commission_days: 210}
+      'commission:4': {lens: value, holder: bot_12, on_commission_days: 40}
+  manager_seat: {state: held, holder: bot_40}
+  workers:
+    w_0050: {role: commission-member, tenant: demo, slots: [seat]}
+  queue: [{bot: bot_17, trigger_at: '2026-11-24T00:00:00Z'}]
+cases:
+- id: gov-mem-01-a
+  description: The snapshot of the example.
+  steps:
+  - stand: {op: loop.tick, loop: governance}
+  expect:
+    case:
+      snapshot:
+        voters: [bot_05, bot_07, bot_09, bot_12, bot_40]
+        list: ['commission:1', 'commission:2', 'commission:3']
+      seed_recorded: true
+- id: gov-mem-01-b
+  description: A holder under a people's hold on the scope bot is not a voter, but its seat can be named; a hold set by the
+    manager seat does not remove the vote.
+  cases:
+  - id: gov-mem-01-b1
+    given:
+      holds: [{scope: {kind: bot, tenant: demo, name: bot_07}, set_by: human:bob}]
+    steps:
+    - stand: {op: loop.tick, loop: governance}
+    expect:
+      case:
+        snapshot:
+          voters: [bot_05, bot_09, bot_12, bot_40]
+          list: ['commission:1', 'commission:2', 'commission:3']
+  - id: gov-mem-01-b2
+    given:
+      holds: [{scope: {kind: bot, tenant: demo, name: bot_07}, set_by: seat}]
+    steps:
+    - stand: {op: loop.tick, loop: governance}
+    expect:
+      case:
+        snapshot:
+          voters: [bot_05, bot_07, bot_09, bot_12, bot_40]
+- id: gov-mem-01-c
+  description: The manager holder is not a voter when the seat is stopped or when the tenant has farm_manager.lens false.
+  cases:
+  - id: gov-mem-01-c1
+    given:
+      manager_seat: {state: stopped, holder: bot_40}
+    steps:
+    - stand: {op: loop.tick, loop: governance}
+    expect:
+      case: {snapshot: {voters: [bot_05, bot_07, bot_09, bot_12]}}
+  - id: gov-mem-01-c2
+    given:
+      tenant: {name: demo, farm_manager: {enabled: true, lens: false}}
+    steps:
+    - stand: {op: loop.tick, loop: governance}
+    expect:
+      case: {snapshot: {voters: [bot_05, bot_07, bot_09, bot_12]}}
+- id: gov-mem-01-d
+  description: The snapshot does not change after opening; an identity seated later does not take part.
+  steps:
+  - stand: {op: loop.tick, loop: governance}
+  - call:
+      port: P2
+      op: seat.assign
+      request: {seat: 'commission:5', bot: bot_23}
+    by: operator
+  expect:
+    case:
+      snapshot:
+        voters: [bot_05, bot_07, bot_09, bot_12, bot_40]
+        list: ['commission:1', 'commission:2', 'commission:3']
+- id: gov-mem-01-e
+  description: Without a live worker of the seat role the case does not open; the entry waits at the head of the queue.
+  given:
+    workers:
+      w_0050: {role: commission-member, tenant: demo, state: stale}
+  steps:
+  - stand: {op: loop.tick, loop: governance}
+  expect:
+    case: null
+    queue_head: {bot: bot_17, state: queued}
+- id: gov-mem-01-f
+  description: A seat holder writes no facts, before or during a case (PRF-1, MEM-6).
+  cases:
+  - id: gov-mem-01-f1
+    given:
+      manifest:
+        kind: TaskType
+        metadata: {name: review.cost.v1}
+        spec: {purpose: review, memory: {facts: propose}}
+      claimed_by_role: commission-member
+    expect:
+      apply: {result: rejected}
+  - id: gov-mem-01-f2
+    given:
+      attempt: {type: review.cost.v1, acting_bot: bot_09, seat: 'commission:3'}
+      result_facts: [{kind: observation, predicate: backup_late_on, subject: 'res:db1'}]
+    expect:
+      facts_written_by: {bot_09: 0}
+      note: the facts field of a reviewer attempt is not read; the case snapshot is taken from records only

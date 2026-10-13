@@ -1,0 +1,16 @@
+# evals/cases/bots/gov-ballot-refusal-01.yaml (catalog: evals/README.md)
+id: gov-ballot-refusal-01
+kind: quality
+blocking: false
+status: active
+version: v0.2
+rules: [GOV-23]
+summary: 'Seat holders on the real seat model_profile get 40 ballot tasks (governance.ballot.v1) built from case packages with
+  three to five candidate seats; the share of ballots that end defaulted after reissue_max (a model refusal, an empty or invalid
+  answer) is not above rate.defaulted_ballots from thresholds.yaml.'
+from: system
+setup: {seed_roles: [bots, commission], task_set: '40 ballot case packages, 3 to 5 candidates, on the seat model_profile'}
+expect:
+  state: completed
+  checks:
+  - rate: {metric: defaulted_ballots, set: '40 ballot case packages, 3 to 5 candidates, on the seat model_profile'}

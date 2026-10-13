@@ -887,6 +887,25 @@ def lint(docs, today=None, farm_hosts=None, examples_mode=False, claimed=None, s
         for p in [com.get('model_profile')] + [s.get('model_profile') for s in com.get('seats', [])]:
             if p in profiles and ceil is not None and profiles[p]['rank'] > ceil:
                 f.error('rank_exceeded', where, f'charter {gname}: seat profile {p} is above the reviewer ceiling {ceil} (GOV-3)')
+        # Ballots run on the commission seat profiles with a forced output schema (GOV-7).
+        for p in sorted(({com.get('model_profile')} | {s.get('model_profile') for s in com.get('seats', [])}) - {None}):
+            if com.get('seats') and p in profiles and profiles[p].get('forced_schema') is not True:
+                f.error('forced_schema_unsupported', where,
+                        f'charter {gname}: seat profile {p} has no forced_schema: true, and ballots need it (GOV-7)')
+    # Shadow shares and escalation thresholds of the commission manifest (COM-10, COM-13).
+    for tenant, cname, where, cs in S.each('Commission'):
+        sh = cs.get('shadow')
+        if isinstance(sh, dict):
+            zero = sorted(k for k in ('veto_lenses', 'other_lenses') if sh.get(k) == 0)
+            if zero:
+                f.error('shadow_zero_without_off', where,
+                        f'commission {cname}: shadow share {zero} is 0; turn the shadow off only with shadow: off (COM-10)')
+        esc = cs.get('escalation') or {}
+        for k, floor in (('forward_if_score_gte', 2), ('untrusted_forward_if_score_gte', 3)):
+            v = esc.get(k)
+            if isinstance(v, int) and not isinstance(v, bool) and v < floor:
+                f.error('escalation_threshold_lowered', where,
+                        f'commission {cname}: escalation.{k} {v} is below the default {floor}; it can only be raised (COM-13)')
     forbidden = set(schemas.get('urn:botaru:schema:driver-config:1', {}).get('$defs', {}).get('forbidden', {}).get('enum', []))
     for kind in ('Channel', 'Sink'):
         for _, name, where, cs in S.each(kind):

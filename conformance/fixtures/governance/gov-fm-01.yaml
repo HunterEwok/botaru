@@ -1,0 +1,92 @@
+# The farm manager lens in the commission of a tenant (GOV-25, COM-4). The manager seat is held by bot_40 (tenant farm).
+id: gov-fm-01
+rules: [GOV-25]
+version: v0.2
+description: 'While the manager seat is held, every proposal in in_review of a tenant that did not opt out gets a review.farm_manager.v1
+  task in that tenant: on a worker of the tenant''s seat role commission.seat_role, slot seat with the manager seat profile (or the
+  tenant''s own farm_manager.model_profile), the tenant''s key and review line; input as for seat lenses plus the holder''s facts of
+  the tenant section with untrusted_origin false. Weight 1, no veto, not in min, high_risk and untrusted, not needed for the quorum;
+  in the vote the manager has one vote and its enum is the whole L.'
+given:
+  tenant: demo
+  commission:
+    seat_role: commission-member
+    model_profile: seat-std
+  manager_seat: {state: held, holder: bot_41, epoch: 9, model_profile: manager-std}
+  workers:
+    w_0050: {role: commission-member, tenant: demo, slots: [seat]}
+  facts:
+  - {owner: bot_41, section: demo, untrusted_origin: false, canary: CANARY-NOT-A-SECRET-fm-trusted}
+  - {owner: bot_41, section: demo, untrusted_origin: true, canary: CANARY-NOT-A-SECRET-fm-untrusted}
+  - {owner: bot_41, section: demo2, untrusted_origin: false, canary: CANARY-NOT-A-SECRET-fm-demo2}
+  proposal: {id: p_201, kind: schedule, state: screened}
+cases:
+- id: gov-fm-01-a
+  description: Task placement, key, line and input.
+  steps:
+  - stand: {op: loop.tick, loop: proposal}
+  expect:
+    task:
+      type: review.farm_manager.v1
+      tenant: demo
+      key: 'system:review:p_201:farm_manager'
+      acting_bot: bot_41
+      claimed_by_role: commission-member
+      slot: seat
+      model_profile: manager-std
+      budget_line: review@demo
+    p4_requests_contain:
+      CANARY-NOT-A-SECRET-fm-trusted: true
+      CANARY-NOT-A-SECRET-fm-untrusted: false
+      CANARY-NOT-A-SECRET-fm-demo2: false
+- id: gov-fm-01-b
+  description: The tenant's own farm_manager.model_profile replaces the farm charter profile for seat attempts in the tenant.
+  given:
+    tenant: {name: demo, farm_manager: {enabled: true, lens: true, model_profile: manager-alt}}
+  steps:
+  - stand: {op: loop.tick, loop: proposal}
+  expect:
+    task: {type: review.farm_manager.v1, model_profile: manager-alt}
+- id: gov-fm-01-c
+  description: A veto in the manager review does not pass the schema; the lens weight is 1 whatever the manifest says.
+  cases:
+  - id: gov-fm-01-c1
+    given:
+      review: {lens: farm_manager, score: 0, veto: true}
+    expect: {review_schema: rejected}
+  - id: gov-fm-01-c2
+    given:
+      manifest:
+        kind: Commission
+        metadata: {name: demo}
+        spec: {weights: {farm_manager: 3}}
+    expect:
+      apply: {result: rejected}
+- id: gov-fm-01-d
+  description: The verdict does not need the manager review for the quorum; min, high_risk and untrusted do not read it.
+  given:
+    commission_manifest: {weights: {security: 3, operational: 2, cost: 1, value: 2}, recommend_if: {weighted_mean_gte: 2.5, value_gte: 2}, min: {security: 2, operational: 2}}
+    reviews:
+      p_201: {security: 3, operational: 3, cost: 3, value: 3, farm_manager: 0}
+  expect:
+    weighted_mean: 2.67
+    verdict: recommended
+    verdict_reads_farm_manager_in: [weighted_mean]
+- id: gov-fm-01-e
+  description: A stopped manager seat gives no manager lens task; the verdict is marked "without the manager's vote".
+  given:
+    manager_seat: {state: stopped, holder: bot_41, epoch: 10}
+  steps:
+  - stand: {op: loop.tick, loop: proposal}
+  expect:
+    tasks_of_type: {review.farm_manager.v1: 0}
+    verdict_mark: without_manager_vote
+- id: gov-fm-01-f
+  description: In the vote the manager's enum is the whole L.
+  given:
+    case: {id: gc_7, snapshot: {voters: [bot_05, bot_07, bot_09, bot_12, bot_41], list: ['commission:1', 'commission:2', 'commission:3']}}
+  steps:
+  - stand: {op: loop.tick, loop: governance}
+  expect:
+    enum: {bot_41: ['commission:1', 'commission:2', 'commission:3']}
+    ballot_task: {acting_bot: bot_41, tenant: demo, claimed_by_role: commission-member, slot: seat, budget_line: governance@demo}

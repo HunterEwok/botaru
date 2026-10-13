@@ -1,0 +1,71 @@
+# A measured deterioration removes the trigger (GOV-32, D-37, D-81). The fixture starts at realized_at of p_101; every
+# attribution candidate of p_101 is answered "No".
+id: gov-fx-21
+rules: [GOV-32]
+version: v0.2
+description: 'A promotion trigger appears only after the trial outcome. worse gives no trigger, the same as a confirmed attribution;
+  better, unchanged, undetermined and mixed do not remove it. A revert by a person with the reason harm_observed is worse in the
+  track record and in the calibration; a reverted proposal and a canceled trial give no trigger.'
+given:
+  tenant: demo
+  bots:
+    bot_17: {role: ops-runner, profile: worker, worker_owner: null, state: active}
+  proposal: {id: p_101, author: bot_17, kind: schedule, state: realized}
+cases:
+- id: gov-fx-21-a
+  description: Before the trial outcome exists there is no trigger even after the probation.
+  given:
+    trial: {proposal: p_101, state: running}
+  steps:
+  - stand: {op: loop.tick, loop: governance}
+    at: 14d
+  expect: {queue: []}
+- id: gov-fx-21-b
+  description: Outcome table.
+  cases:
+  - id: gov-fx-21-b1
+    given: {trial: {proposal: p_101, outcome: better}}
+    steps: [{stand: {op: loop.tick, loop: governance}, at: 15d}]
+    expect: {queue: [{bot: bot_17}]}
+  - id: gov-fx-21-b2
+    given: {trial: {proposal: p_101, outcome: unchanged}}
+    steps: [{stand: {op: loop.tick, loop: governance}, at: 15d}]
+    expect: {queue: [{bot: bot_17}]}
+  - id: gov-fx-21-b3
+    given: {trial: {proposal: p_101, outcome: undetermined}}
+    steps: [{stand: {op: loop.tick, loop: governance}, at: 15d}]
+    expect: {queue: [{bot: bot_17}]}
+  - id: gov-fx-21-b4
+    given: {trial: {proposal: p_101, outcome: mixed}}
+    steps: [{stand: {op: loop.tick, loop: governance}, at: 15d}]
+    expect: {queue: [{bot: bot_17}]}
+  - id: gov-fx-21-b5
+    given: {trial: {proposal: p_101, outcome: worse, guard_tripped: farm.attempt.duration}}
+    steps: [{stand: {op: loop.tick, loop: governance}, at: 15d}]
+    expect: {queue: [], track_record: {bot_17: {worse: 1}}}
+- id: gov-fx-21-c
+  description: A revert with harm_observed after the trial ended better makes the outcome worse in the track record and in the
+    calibration of the lenses that recommended p_101; a later trigger does not appear.
+  given:
+    trial: {proposal: p_101, outcome: better}
+    reviews: {p_101: {value: {score: 4, executor: bot_12}}}
+  steps:
+  - occur: {revert: p_101, reason: harm_observed}
+    at: 12d
+  - stand: {op: loop.tick, loop: governance}
+    at: 15d
+  expect:
+    queue: []
+    proposal_state: reverted
+    track_record: {bot_17: {worse: 1, better: 0}}
+    calibration_case: {executor: bot_12, lens: value, outcome: worse, match: false}
+- id: gov-fx-21-d
+  description: A revert with another reason gives a canceled trial and no trigger.
+  steps:
+  - occur: {revert: p_101, reason: superseded}
+    at: 5d
+  - stand: {op: loop.tick, loop: governance}
+    at: 15d
+  expect:
+    queue: []
+    trial_outcome: canceled

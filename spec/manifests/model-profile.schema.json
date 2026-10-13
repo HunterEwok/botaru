@@ -84,6 +84,11 @@
       "maximum": 1000000,
       "description": "Output limit of one call."
     },
+    "forced_schema": {
+      "type": "boolean",
+      "description": "The provider binding of this profile supports a forced output schema in the P4 answer. Ballots (governance.ballot.v1) run only on profiles with true: the lint forced_schema_unsupported rejects a commission seat profile without it (GOV-7). False when absent.",
+      "x-botaru-version": "v0.2"
+    },
     "tokens_per_s": {
       "type": "integer",
       "minimum": 1,

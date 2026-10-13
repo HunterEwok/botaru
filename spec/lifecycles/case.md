@@ -16,7 +16,7 @@ A case (`GovernanceCase`) is one promotion of a functionary into the commission 
 | `effective` | A person confirmed; the change is done in one transaction | yes |
 | `rejected` | A person rejected with a reason code | yes |
 | `expired` | 7 days without a decision; nobody leaves | yes |
-| `canceled` | The case is canceled with a reason: `human`, `candidate_ineligible` or `seat_changed` | yes |
+| `canceled` | The case is canceled with a reason: `human`, `candidate_ineligible`, `seat_changed` or `no_voters` | yes |
 
 The flags `hold` (a pause by people, a hold on the `governance` scope) and `stuck` (a round waits for votes longer than `stuck_after`) are not states: they are set on top of any open state.
 
@@ -40,6 +40,7 @@ The flags `hold` (a pause by people, a hold on the `governance` scope) and `stuc
 | any open | `canceled(human)` | P2 `governance.cancel` or the "Cancel" button on the `governance_stuck` card | a person with `admin:governance` in the case's tenant | GOV-23 |
 | any open | `canceled(candidate_ineligible)` | the `governance` loop | the candidate lost eligibility: left, is under a hold by people on the `bot` scope, or got a confirmed attribution | GOV-14 |
 | any open | `canceled(seat_changed)` | the core on a holder change | a seat from L changed its holder or became free | GOV-12, IDN-10 |
+| any open | `canceled(no_voters)` | the `governance` loop | `expected` became empty (GOV-23 removals), so no round can be counted | GOV-8 |
 
 ## Invariants
 
@@ -52,7 +53,7 @@ The flags `hold` (a pause by people, a hold on the `governance` scope) and `stuc
 - No bot sees the case; a ballot sees only its own package (GOV-29).
 - Every transition, ballot, count, flag and decision writes audit metadata (GOV-21).
 - After `effective` the change is done in one transaction: the holder, the epochs, the leaving, the new worker identity of the candidate, the fact offers, the seal, the `swap_cooldown` clocks and the newcomer protection.
-- After `rejected` the outcome is set by the reason code (GOV-31): `wrong_leaver` immediately opens a new case without the rejected seat, with the flag `reopened_after_wrong_leaver`, and is accepted at most once per queue entry; `not_now` keeps the entry as the queue head and gives a `swap_cooldown` pause; `wrong_candidate` returns the entry to the queue head the first time and removes it the second time.
+- After `rejected` the outcome is set by the reason code (GOV-31): `wrong_leaver` immediately opens a new case without the rejected seat, with the flag `reopened_after_wrong_leaver`, and is accepted at most once per queue entry; `not_now` keeps the entry as the queue head and gives a `swap_cooldown` pause; `wrong_candidate` returns the entry to the queue head the first time with its own `swap_cooldown` pause, during which the next entries may go ahead (D-101), and removes it the second time.
 - After `expired` nobody leaves, the entry stays the queue head, and the next case comes no earlier than after `swap_cooldown`; `expired` does not count toward the "Reject" count.
 - After `canceled` the candidate's entry returns to its previous place in the queue; if the candidate left, the entry is removed.
 

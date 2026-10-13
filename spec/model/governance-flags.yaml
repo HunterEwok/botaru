@@ -1,12 +1,11 @@
 registry: governance-flags
-version: 1
+version: 2
 description: >-
   Flags of a governance case. Code sets them only from this closed list; people
   see the flags on the promotion card and in P2, and they decide nothing (GOV-19).
-  The when field says when code sets the flag. The text of GOV-19 also has the item
-  "ballot reissues" without a value code: the number of reissues goes into the case as the counter
-  rounds[].ballots.reissued and onto the card as the line "Ballot reissues", but
-  it is not recorded as a flag.
+  The when field says when code sets the flag. The number of ballot reissues is not a flag:
+  it goes into the case as the counter rounds[].ballots.reissued and onto the card as the
+  line "Ballot reissues" (GOV-19).
 source: docs/commission.md
 entries:
   - id: identical_reasons

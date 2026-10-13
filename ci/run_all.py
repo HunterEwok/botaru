@@ -36,6 +36,7 @@ STEPS = [
     ['check_additive.py', *args[:1]],
     ['public_safety.py'],
     ['readiness.py', 'v0.1', '--strict'],
+    ['readiness.py', 'v0.2', '--strict'],
 ]
 failed = []
 gh = bool(os.environ.get('GITHUB_ACTIONS'))

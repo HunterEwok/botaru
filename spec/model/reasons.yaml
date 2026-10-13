@@ -818,14 +818,14 @@ entries:
   outcome: apply_error
   rules: [GOV-34]
 - id: defaulted_majority
-  since: v0.1
+  since: v0.2
   meaning: 'Case result mark: decided by the default majority.'
   spends_attempt: null
   retry: null
   outcome: mark
   rules: [GOV-9, GOV-19, GOV-23]
 - id: reopened_after_wrong_leaver
-  since: v0.1
+  since: v0.2
   meaning: 'Case mark: reopened after a mistaken leave.'
   spends_attempt: null
   retry: null
@@ -836,7 +836,7 @@ entries:
   meaning: 'Case flag: the farm manager vote dropped out.'
   spends_attempt: null
   retry: null
-  outcome: rejected
+  outcome: mark
   rules: [GOV-12, GOV-19]
 - id: not_eligible
   since: v0.2
@@ -864,14 +864,14 @@ entries:
   meaning: 'Case flag: the set of voters shrank.'
   spends_attempt: null
   retry: null
-  outcome: rejected
+  outcome: mark
   rules: [GOV-19, GOV-23]
 - id: commission_locked
   since: v0.2
   meaning: 'Flag: the commission is locked.'
   spends_attempt: null
   retry: null
-  outcome: rejected
+  outcome: mark
   rules: [GOV-35, OBS-11]
 - id: target_not_implicated
   since: v0.1
@@ -1411,3 +1411,33 @@ entries:
   retry: null
   outcome: rejected
   rules: [LCY-1]
+- id: reason_code_required
+  since: v0.2
+  meaning: '"Reject" on a promotion card without a reason code from `spec/model/governance-decline-reasons.yaml`.'
+  spends_attempt: null
+  retry: null
+  outcome: rejected
+  rules: [GOV-9, GOV-31]
+- id: reason_not_allowed
+  since: v0.2
+  meaning: 'A "Reject" reason code that this case does not allow: `wrong_leaver` in a vacancy case or in a case reopened after
+    `wrong_leaver`.'
+  spends_attempt: null
+  retry: null
+  outcome: rejected
+  rules: [GOV-31]
+- id: attribution_pending
+  since: v0.2
+  meaning: '"Confirm" on a promotion card while the candidate''s change has attribution candidates without a "Yes" or "No"
+    answer or in a dispute.'
+  spends_attempt: null
+  retry: null
+  outcome: rejected
+  rules: [GOV-9, GOV-30]
+- id: no_voters
+  since: v0.2
+  meaning: 'Case cancellation reason: the set `expected` became empty, so no round can be counted.'
+  spends_attempt: null
+  retry: null
+  outcome: canceled
+  rules: [GOV-8]
