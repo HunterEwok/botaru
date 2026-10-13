@@ -260,7 +260,8 @@ botaru/
 ├── evals/                         eval case format, cases, test bench data, thresholds
 ├── deploy/compose.example.yaml    topology: what runs on which machine, not runnable
 ├── deploy/monitor/                farm nodes and template and the account role for the monitoring system
-└── ci/                            the only executable code
+├── ci/                            the skeleton checks
+└── impl/                          the reference implementation in Go (D-92)
 ```
 
 This document and the other texts of the skeleton are written in words and tables. The machine forms (JSON Schema in `spec/model/` and `spec/manifests/`, the closed registries `spec/model/*.yaml`, the bindings in `spec/bindings/`, the lifecycle YAML next to the files `spec/lifecycles/<object>.md`, the registry `conformance/requirements.yaml`, the fixtures and suites in `conformance/`) live next to the text and are maintained as the single source of their facts.

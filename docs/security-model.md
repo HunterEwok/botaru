@@ -670,7 +670,6 @@ The repository is public, so it has no secrets and no ties to an organization (D
 ## What is not decided
 
 - **A card for a restart after external logs.** Whether a restart needs a card if the task has seen external logs rather than the monitoring system. By default yes, a card (D-70, D-82); the decision depends on how many restarts based on logs wait for a person.
-- **Who reviews the commit history before the repository is opened.** This is the organization's decision; until it is made, the repository is not opened.
 
 <!-- generated: rules -->
 ## Rules of this section

@@ -12,19 +12,20 @@ spec/model/*.yaml with their state at the branch point from the base branch
   type appeared where there was none;
 - a value left enum, enum or const appeared, const changed;
 - additionalProperties, items, unevaluatedProperties or unevaluatedItems
-  became false where it was not; a subschema that was absent or true became
-  a non-empty schema (true is compared as an empty schema);
+  became false where it was not; a schema that was absent, true or {} got any
+  keyword other than an annotation (title, description, ...);
 - a limit became stricter: maxLength, maxItems, maxProperties, maximum,
   exclusiveMaximum decreased, minLength, minItems, minProperties,
   minimum, exclusiveMinimum increased or appeared;
 - pattern, format, x-botaru-format, propertyNames, $ref, multipleOf changed
   or appeared;
 - not, if, contains, minContains, maxContains, uniqueItems: true, anyOf or
-  oneOf appeared; minContains increased, maxContains decreased; if changed;
-  a not schema widened (it is compared with reversed polarity);
+  oneOf appeared; minContains increased, maxContains decreased; if or not
+  changed (a changed negated schema is not compared, it is an error);
 - allOf or prefixItems got a new item (a new constraint; an absent prefixItems
   counts as empty), anyOf or oneOf lost branches,
-  oneOf got a new or changed branch that is not provably disjoint from every
+  oneOf got a new or changed branch (branches are matched by content, not by
+  position) that is not provably disjoint from every
   other branch (different const or enum values, disjoint types, or a property
   required in both with disjoint const or enum values), dependentSchemas got
   a new name;
@@ -94,9 +95,9 @@ LT, GT = (lambda a, b: a < b), (lambda a, b: a > b)
 TIGHTER = {'maxLength': LT, 'maxItems': LT, 'maxProperties': LT, 'maximum': LT, 'exclusiveMaximum': LT,
            'minLength': GT, 'minItems': GT, 'minProperties': GT, 'minimum': GT, 'exclusiveMinimum': GT,
            'minContains': GT, 'maxContains': LT}
-CHANGED = ('pattern', 'const', 'format', 'x-botaru-format', 'propertyNames', '$ref', 'multipleOf', 'if')
+CHANGED = ('pattern', 'const', 'format', 'x-botaru-format', 'propertyNames', '$ref', 'multipleOf', 'if', 'not')
 # Keywords whose appearance narrows the schema
-NEW_NARROWING = ('not', 'if', 'contains')  # minContains, maxContains, multipleOf are caught by TIGHTER and CHANGED
+NEW_NARROWING = ('contains',)  # not and if are caught by CHANGED  # minContains, maxContains, multipleOf are caught by TIGHTER and CHANGED
 
 
 def types(s):
@@ -130,6 +131,11 @@ def disjoint(a, b):
                and not any(v in values(pb[k]) for v in values(pa[k])) for k in both)
 
 
+# Keywords that do not change which values pass
+ANNOTATIONS = {'title', 'description', '$comment', 'examples', 'default', 'deprecated', 'readOnly', 'writeOnly',
+               '$id', '$schema', '$anchor'}
+
+
 def compare(old, new, where):
     # true accepts everything, like an empty schema
     old = {} if old is True else old
@@ -137,6 +143,9 @@ def compare(old, new, where):
     if not isinstance(old, dict) or not isinstance(new, dict):
         if old is not False and new is False:
             rep.error(where, '[schema_narrowed] the schema became false: no values are left')
+        return
+    if not set(old) - ANNOTATIONS and set(new) - ANNOTATIONS:
+        rep.error(where, f'[schema_narrowed] a schema that accepted every value got {sorted(set(new) - ANNOTATIONS)}')
         return
     ot, nt = types(old), types(new)
     if ot is not None and nt is not None and not ot <= nt:
@@ -177,9 +186,6 @@ def compare(old, new, where):
                 rep.error(where, f'[field_removed] {key}.{name} removed')
             else:
                 compare(sub, np[name], f'{where}/{key}/{name}')
-    # not is compared with reversed polarity: the new negated schema must not accept more than the old one
-    if 'not' in old and 'not' in new:
-        compare(new['not'], old['not'], f'{where}/not(reversed)')
     for key in ('items', 'additionalProperties', 'then', 'else', 'contains', 'propertyNames',
                 'unevaluatedProperties', 'unevaluatedItems'):
         if isinstance(old.get(key), dict) and isinstance(new.get(key), (dict, bool)):
@@ -202,20 +208,30 @@ def compare(old, new, where):
             rep.error(where, f'[keyword_added] {key} appeared: the set of values is narrowed')
     ob, nb = old.get('oneOf'), new.get('oneOf')
     if isinstance(ob, list) and isinstance(nb, list):
-        # a new branch, or a changed one (even widened), can make an old value match two branches
+        # a new branch, or a changed one (even widened), can make an old value match two branches;
+        # branch order has no meaning, so a branch equal to an old one is unchanged wherever it stands
         for i in range(len(nb)):
-            if i < len(ob) and nb[i] == ob[i]:
+            if nb[i] in ob:
                 continue
             if not all(disjoint(nb[i], b) for j, b in enumerate(nb) if j != i):
-                what = 'new' if i >= len(ob) else 'changed'
+                what = 'changed' if any(b not in nb for b in ob) else 'new'
                 rep.error(where, f'[oneof_overlap] {what} oneOf branch {i} is not provably disjoint from the others: '
                           'values matching two branches would stop passing')
     od, nd = old.get('dependentSchemas') or {}, new.get('dependentSchemas') or {}
     if isinstance(od, dict) and isinstance(nd, dict):
         for name in sorted(set(nd) - set(od)):
             rep.error(where, f'[keyword_added] new name dependentSchemas.{name}: a new conditional constraint')
-    for key in ('allOf', 'anyOf', 'oneOf', 'prefixItems'):
+    for key in ('allOf', 'prefixItems'):
         for i, (a, b) in enumerate(zip(old.get(key, []), new.get(key, []))):
+            compare(a, b, f'{where}/{key}/{i}')
+    for key in ('anyOf', 'oneOf'):
+        # match branches by content: an unchanged branch may move; the rest are paired in order
+        ob, nb = old.get(key) or [], new.get(key) or []
+        if not isinstance(ob, list) or not isinstance(nb, list):
+            continue
+        gone = [b for b in ob if b not in nb]
+        fresh = [(i, b) for i, b in enumerate(nb) if b not in ob]
+        for a, (i, b) in zip(gone, fresh):
             compare(a, b, f'{where}/{key}/{i}')
 
 
