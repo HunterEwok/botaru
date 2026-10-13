@@ -30,7 +30,8 @@ spec/model/*.yaml with their state at the branch point from the base branch
   annotations, not by position) that is not provably disjoint from every
   other branch (different const or enum values, disjoint types, or a property
   required in both with disjoint const or enum values), dependentSchemas got
-  a new name;
+  a new name, patternProperties got a new pattern with an asserting schema
+  (unless the object allowed no names before);
 - values are compared as JSON compares them: true is not 1, 1 equals 1.0;
 - an entry (id) left a registry, or entries changed while the registry version did not.
 A breaking schema change is made as a new file .v(N+1) next to .vN;
@@ -266,6 +267,13 @@ def compare(old, new, where):
                 rep.error(where, f'[field_removed] {key}.{name} removed')
             else:
                 compare(sub, np[name], f'{where}/{key}/{name}')
+    # a new pattern constrains names that other keywords governed before; it widens only where
+    # no name was allowed at all, otherwise it is compared with true, conservatively
+    op, np = old.get('patternProperties') or {}, new.get('patternProperties') or {}
+    if isinstance(op, dict) and isinstance(np, dict):
+        closed = old.get('additionalProperties') is False and not old.get('properties') and not op
+        for name in sorted(set(np) - set(op)):
+            compare(False if closed else True, np[name], f'{where}/patternProperties/{name}')
     for key in ('items', 'additionalProperties', 'then', 'else', 'contains', 'propertyNames',
                 'unevaluatedProperties', 'unevaluatedItems'):
         # an absent subschema accepts everything, like true: compare reports any asserting keyword in its place
