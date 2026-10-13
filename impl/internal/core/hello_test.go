@@ -4,6 +4,7 @@ package core
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 
@@ -528,5 +529,92 @@ func TestFailRetriesThenExhausts(t *testing.T) {
 	r, err = b.c.Fail(ctx, b.agent, header(t, att2), FailRequest{Reason: "runtime_error", Retryable: true})
 	if err != nil || !r.Final || r.Reason != "attempts_exhausted" {
 		t.Fatalf("second fail: %+v %v", r, err)
+	}
+}
+
+// TestOffRevokesWork: disabling the initiator ends the task in work and fences its worker.
+func TestOffRevokesWork(t *testing.T) {
+	ctx := context.Background()
+	b := newBench(t)
+	a := Activity{Kind: "message", Channel: "telegram", UpdateID: "31", Chat: Chat{Kind: "direct", ExternalID: "1001"}, Text: "/hello"}
+	a.Sender.Identity, a.Sender.Verified = "telegram:1001", true
+	res, err := b.c.SubmitActivity(ctx, b.channel, a)
+	if err != nil || res.Task == "" {
+		t.Fatalf("submit: %+v %v", res, err)
+	}
+	att := b.claim(t, b.agent, "attempt")
+	if att == nil {
+		t.Fatal("no attempt")
+	}
+	if _, err := b.c.Principal(ctx, b.op, PrincipalRequest{Op: "principal.off", Subject: b.alice}); err != nil {
+		t.Fatal(err)
+	}
+	var state, reason string
+	var handles int
+	if err := b.c.st.Pool.QueryRow(ctx, `SELECT state, coalesce(reason, ''), (SELECT count(*) FROM handles WHERE work_id = $1) FROM tasks WHERE id = $1`, res.Task).
+		Scan(&state, &reason, &handles); err != nil || state != "failed" || reason != "person_inactive" || handles != 0 {
+		t.Fatalf("task %s %s handles %d %v", state, reason, handles, err)
+	}
+	if _, err := b.c.Complete(ctx, b.agent, header(t, att), CompleteRequest{Result: map[string]any{"answer": "hi"}}); err == nil {
+		t.Fatal("a revoked lease completed")
+	}
+}
+
+// TestApplyRefusesPrivilegeRaise: a group with members does not become privileged by apply.
+func TestApplyRefusesPrivilegeRaise(t *testing.T) {
+	ctx := context.Background()
+	b := newBench(t)
+	root, err := spec.FindRoot("")
+	if err != nil {
+		t.Fatal(err)
+	}
+	ms, err := testbench.HelloBotManifests(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, m := range ms {
+		if m["kind"] == "Group" {
+			m["spec"].(map[string]any)["data"] = []any{"summary", "raw_logs"}
+		}
+	}
+	_, err = b.c.Apply(ctx, b.op, ApplyRequest{Commit: "2222222222222222222222222222222222222222", Manifests: ms})
+	var p *Problem
+	if !errors.As(err, &p) || p.Reason != "privileged_group" {
+		t.Fatalf("apply: %v", err)
+	}
+	if _, err := b.c.Grant(ctx, b.op, GrantRequest{Op: "ungrant", Subject: b.alice, Group: "hello"}); err != nil {
+		t.Fatal(err)
+	}
+	if res, err := b.c.Apply(ctx, b.op, ApplyRequest{Commit: "2222222222222222222222222222222222222222", Manifests: ms}); err != nil || !res.Applied {
+		t.Fatalf("apply of an empty group: %+v %v", res, err)
+	}
+}
+
+// TestAINoticeDeadWithholds: model text that waited for a dead ai_notice ends withheld.
+func TestAINoticeDeadWithholds(t *testing.T) {
+	ctx := context.Background()
+	b := newBench(t)
+	a := Activity{Kind: "message", Channel: "telegram", UpdateID: "41", Chat: Chat{Kind: "direct", ExternalID: "1001"}, Text: "/hello"}
+	a.Sender.Identity, a.Sender.Verified = "telegram:1001", true
+	if _, err := b.c.SubmitActivity(ctx, b.channel, a); err != nil {
+		t.Fatal(err)
+	}
+	att := b.claim(t, b.agent, "attempt")
+	if att == nil {
+		t.Fatal("no attempt")
+	}
+	if _, err := b.c.Complete(ctx, b.agent, header(t, att), CompleteRequest{Result: map[string]any{"answer": "hi"}}); err != nil {
+		t.Fatal(err)
+	}
+	notice := b.claim(t, b.channel, "delivery")
+	if notice == nil || notice.Payload["delivery"].(map[string]any)["kind"] != "ai_notice" {
+		t.Fatalf("first delivery %v", notice)
+	}
+	if _, err := b.c.Fail(ctx, b.channel, header(t, notice), FailRequest{Reason: "unknown_member", Retryable: false}); err != nil {
+		t.Fatal(err)
+	}
+	var reason string
+	if err := b.c.st.Pool.QueryRow(ctx, `SELECT coalesce(reason, '') FROM deliveries WHERE kind = 'task_result' AND dataorigin = 'model' AND state = 'withheld'`).Scan(&reason); err != nil || reason != "ai_notice_dead" {
+		t.Fatalf("model text: %q %v", reason, err)
 	}
 }

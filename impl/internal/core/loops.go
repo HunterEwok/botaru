@@ -43,14 +43,15 @@ func (c *Core) Tick(ctx context.Context) error {
 	return nil
 }
 
-// endLeasesOfDowntime extends, from readiness, the leases that expired while the core was not
-// running, so a holder that is still alive keeps its work. The mark core_unavailable stays on
+// endLeasesOfDowntime gives every active lease a full lease period from readiness, so a holder
+// that is still alive keeps its work: a lease granted before the downtime ends before readiness
+// plus one period, so this covers every lease that overlaps the downtime. The mark core_unavailable stays on
 // the lease until the holder renews it; one that is not renewed ends with core_unavailable,
 // which does not spend the attempt (FEN-5).
 func (c *Core) endLeasesOfDowntime(ctx context.Context) error {
 	return c.tx(ctx, func(tx pgx.Tx, now time.Time) error {
-		_, err := tx.Exec(ctx, `UPDATE leases SET lease_until = $1, reason = 'core_unavailable' WHERE state = 'active' AND lease_until <= $2`,
-			now.Add(time.Duration(c.cfg.LeaseS)*time.Second), now)
+		_, err := tx.Exec(ctx, `UPDATE leases SET lease_until = $1, reason = 'core_unavailable' WHERE state = 'active' AND lease_until < $1`,
+			now.Add(time.Duration(c.cfg.LeaseS)*time.Second))
 		return err
 	})
 }

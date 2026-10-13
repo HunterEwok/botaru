@@ -161,6 +161,56 @@ func (c *Core) accessLost(ctx context.Context, tx pgx.Tx, now time.Time, tv *Ten
 	return "", nil
 }
 
+// revokeWorkOf ends the tasks a principal has in work once their access no longer covers
+// them: the lease and handles go in the same transaction, so the worker is fenced at its next
+// call and no more task data reaches the model in their name (PRM-8, FEN-4).
+func (c *Core) revokeWorkOf(ctx context.Context, tx pgx.Tx, now time.Time, tv *TenantView, principal string) error {
+	cat, err := c.Catalog(ctx)
+	if err != nil {
+		return err
+	}
+	type working struct {
+		id, typ string
+		rec     []byte
+	}
+	rows, err := tx.Query(ctx, `SELECT id, type, record FROM tasks WHERE tenant = $1 AND initiator = $2 AND state = 'working' ORDER BY id FOR UPDATE`, tv.Name, principal)
+	if err != nil {
+		return err
+	}
+	var ws []working
+	for rows.Next() {
+		var w working
+		if err := rows.Scan(&w.id, &w.typ, &w.rec); err != nil {
+			rows.Close()
+			return err
+		}
+		ws = append(ws, w)
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	for _, w := range ws {
+		reason, err := c.accessLost(ctx, tx, now, tv, principal, "task:"+w.typ, cat.TaskTypes[w.typ].DataClass)
+		if err != nil {
+			return err
+		}
+		if reason == "" {
+			continue
+		}
+		if _, err := tx.Exec(ctx, `DELETE FROM handles WHERE work_id = $1`, w.id); err != nil {
+			return err
+		}
+		if _, err := tx.Exec(ctx, `UPDATE leases SET state = 'revoked', reason = $3, closed_at = $2 WHERE work_id = $1 AND state = 'active'`, w.id, now, reason); err != nil {
+			return err
+		}
+		if err := c.failTask(ctx, tx, now, tv.Name, w.id, principal, w.rec, reason); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // hasLabels says whether a worker has every label a task type requires.
 func hasLabels(labels, requires map[string]string) bool {
 	for k, v := range requires {

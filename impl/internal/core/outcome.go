@@ -353,10 +353,11 @@ func (c *Core) endAttempt(ctx context.Context, tx pgx.Tx, now time.Time, tenant 
 	if retryable && spent >= maxAttempts {
 		retryable, finalReason = false, "attempts_exhausted"
 	}
-	// A run counts when the model answered during this attempt; retry.max_runs caps them.
+	// A run counts when the model answered during this attempt; retry.max_runs caps them. An
+	// error answer of the provider leaves no token counts, so it is not a run.
 	var answered bool
 	if err := tx.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM spend s JOIN leases l ON l.work_id = s.task
-		WHERE s.task = $1 AND l.lease_no = $2 AND s.unit = 'tokens' AND s.state = 'committed' AND s.time >= l.created_at)`,
+		WHERE s.task = $1 AND l.lease_no = $2 AND s.unit = 'tokens' AND s.state = 'committed' AND s.tokens IS NOT NULL AND s.time >= l.created_at)`,
 		l.WorkID, l.LeaseNo).Scan(&answered); err != nil {
 		return nil, err
 	}
@@ -453,6 +454,34 @@ func (c *Core) endDelivery(ctx context.Context, tx pgx.Tx, now time.Time, tenant
 		if _, err := tx.Exec(ctx, `UPDATE contacts ct SET privacy_version = NULL FROM deliveries d
 			WHERE d.id = $1 AND ct.tenant = d.tenant AND ct.channel = d.exec_name AND ct.principal = d.recipient`, l.WorkID); err != nil {
 			return nil, err
+		}
+	}
+	// Model text that waited for a dead ai_notice is withheld; the next contact gets a new
+	// notice, but not these stale results (DLV-12, ai_notice_dead).
+	if kind == "ai_notice" {
+		rows, err := tx.Query(ctx, `UPDATE deliveries m SET state = 'withheld', reason = 'ai_notice_dead', updated_at = $2 FROM deliveries d
+			WHERE d.id = $1 AND m.tenant = d.tenant AND m.exec_name = d.exec_name AND m.recipient = d.recipient
+			AND m.dataorigin = 'model' AND m.state = 'planned' RETURNING m.id, m.kind`, l.WorkID, now)
+		if err != nil {
+			return nil, err
+		}
+		var held [][2]string
+		for rows.Next() {
+			var id, k string
+			if err := rows.Scan(&id, &k); err != nil {
+				rows.Close()
+				return nil, err
+			}
+			held = append(held, [2]string{id, k})
+		}
+		rows.Close()
+		if err := rows.Err(); err != nil {
+			return nil, err
+		}
+		for _, h := range held {
+			if err := c.appendEvent(ctx, tx, now, tenant, Event{Type: "delivery.withheld", Subject: h[0], Data: map[string]any{"delivery": h[0], "kind": h[1], "reason": "ai_notice_dead"}}); err != nil {
+				return nil, err
+			}
 		}
 	}
 	if err := c.appendEvent(ctx, tx, now, tenant, Event{Type: "delivery.dead", Subject: l.WorkID, Data: map[string]any{"delivery": l.WorkID, "kind": kind, "reason": final}}); err != nil {

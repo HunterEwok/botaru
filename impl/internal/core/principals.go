@@ -53,11 +53,12 @@ func (c *Core) requireTenant(ctx context.Context, name string) (*TenantView, *Ca
 
 // Principal runs principal.add, principal.off, principal.on and principal.set_identity.
 func (c *Core) Principal(ctx context.Context, op Operator, req PrincipalRequest) (*Done, error) {
-	if _, _, err := c.requireTenant(ctx, op.Tenant); err != nil {
+	tv, _, err := c.requireTenant(ctx, op.Tenant)
+	if err != nil {
 		return nil, err
 	}
 	var out Done
-	err := c.tx(ctx, func(tx pgx.Tx, now time.Time) error {
+	err = c.tx(ctx, func(tx pgx.Tx, now time.Time) error {
 		var state string
 		err := tx.QueryRow(ctx, `SELECT state FROM principals WHERE tenant = $1 AND id = $2 FOR UPDATE`, op.Tenant, req.Subject).Scan(&state)
 		exists := err == nil
@@ -91,6 +92,9 @@ func (c *Core) Principal(ctx context.Context, op Operator, req PrincipalRequest)
 			}
 			state = map[string]string{"principal.off": "off", "principal.on": "active"}[req.Op]
 			if _, err := tx.Exec(ctx, `UPDATE principals SET state = $3 WHERE tenant = $1 AND id = $2`, op.Tenant, req.Subject, state); err != nil {
+				return err
+			}
+			if err := c.revokeWorkOf(ctx, tx, now, tv, req.Subject); err != nil {
 				return err
 			}
 		case "principal.set_identity":
@@ -196,6 +200,9 @@ func (c *Core) Grant(ctx context.Context, op Operator, req GrantRequest) (*Done,
 			}
 		case "ungrant":
 			if _, err := tx.Exec(ctx, `DELETE FROM memberships WHERE tenant = $1 AND principal = $2 AND grp = $3`, op.Tenant, req.Subject, req.Group); err != nil {
+				return err
+			}
+			if err := c.revokeWorkOf(ctx, tx, now, tv, req.Subject); err != nil {
 				return err
 			}
 		default:

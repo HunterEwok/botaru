@@ -186,7 +186,7 @@ func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if resp.StatusCode != http.StatusOK {
-		_ = g.c.Charge(context.WithoutCancel(ctx), spendID, 0, &core.Tokens{}, requestID, false)
+		_ = g.c.Charge(context.WithoutCancel(ctx), spendID, 0, nil, requestID, false)
 		reason, retry := mapError(resp)
 		problem(w, reason, "provider answered "+strconv.Itoa(resp.StatusCode), retry)
 		return

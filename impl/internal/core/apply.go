@@ -22,11 +22,14 @@ type ApplyRequest struct {
 	Commit    string           `json:"commit"`
 	Manifests []map[string]any `json:"manifests"`
 	DryRun    bool             `json:"dry_run"`
-	Delete    []struct {
-		Kind   string `json:"kind"`
-		Tenant string `json:"tenant"`
-		Name   string `json:"name"`
-	} `json:"delete"`
+	Delete    []ApplyDelete    `json:"delete"`
+}
+
+// ApplyDelete names an object that apply deletes.
+type ApplyDelete struct {
+	Kind   string `json:"kind"`
+	Tenant string `json:"tenant"`
+	Name   string `json:"name"`
 }
 
 // ApplyError is one entry of the errors list of p2-apply-response.
@@ -186,6 +189,12 @@ func (c *Core) Apply(ctx context.Context, op Operator, req ApplyRequest) (*Apply
 		if err := rows.Err(); err != nil {
 			return err
 		}
+		if p, err := c.privilegeRaised(ctx, tx, now, docs, req.Delete); err != nil || p != nil {
+			if err != nil {
+				return err
+			}
+			return p
+		}
 		for _, d := range docs {
 			h, err := jcs.Hash(d.Value)
 			if err != nil {
@@ -279,4 +288,63 @@ func (c *Core) Apply(ctx context.Context, op Operator, req ApplyRequest) (*Apply
 		}
 	}
 	return res, nil
+}
+
+// privilegeRaised refuses a set that makes a group privileged while it has members: they would
+// gain the privilege without the verification that grant asks for (PRM-13). Such a group is
+// emptied first and granted again after the change.
+func (c *Core) privilegeRaised(ctx context.Context, tx pgx.Tx, now time.Time, docs []manifest.Doc, del []ApplyDelete) (*Problem, error) {
+	cur, _, err := loadManifests(ctx, tx)
+	if err != nil {
+		return nil, err
+	}
+	next := map[manifest.Key]manifest.Doc{}
+	for _, d := range cur {
+		next[d.Key()] = d
+	}
+	for _, d := range docs {
+		next[d.Key()] = d
+	}
+	for _, d := range del {
+		delete(next, manifest.Key{Kind: d.Kind, Tenant: d.Tenant, Name: d.Name})
+	}
+	var nextDocs []manifest.Doc
+	for _, d := range next {
+		nextDocs = append(nextDocs, d)
+	}
+	before, err := buildCatalog(cur)
+	if err != nil {
+		return nil, err
+	}
+	after, err := buildCatalog(nextDocs)
+	if err != nil {
+		return nil, err
+	}
+	rows, err := tx.Query(ctx, `SELECT DISTINCT tenant, grp FROM memberships WHERE state = 'active' AND (until IS NULL OR until > $1) ORDER BY tenant, grp`, now)
+	if err != nil {
+		return nil, err
+	}
+	var held [][2]string
+	for rows.Next() {
+		var t, g string
+		if err := rows.Scan(&t, &g); err != nil {
+			rows.Close()
+			return nil, err
+		}
+		held = append(held, [2]string{t, g})
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	for _, h := range held {
+		tb, ta := before.Tenants[h[0]], after.Tenants[h[0]]
+		if tb == nil || ta == nil {
+			continue
+		}
+		if !privilegedGroup(tb, before, h[1], map[string]bool{}) && privilegedGroup(ta, after, h[1], map[string]bool{}) {
+			return refuse("privileged_group", "group %s of tenant %s becomes privileged while it has members", h[1], h[0]), nil
+		}
+	}
+	return nil, nil
 }
