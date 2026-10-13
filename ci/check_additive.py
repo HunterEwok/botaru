@@ -137,6 +137,20 @@ def disjoint(a, b):
 # Keywords that do not change which values pass
 ANNOTATIONS = {'title', 'description', '$comment', 'examples', 'default', 'deprecated', 'readOnly', 'writeOnly',
                '$id', '$schema', '$anchor'}
+# Keywords that assert nothing by themselves: annotations and definitions used only through $ref
+NON_ASSERTING = ANNOTATIONS | {'$defs', 'definitions'}
+
+
+def unmatched(old_list, new_list):
+    """Branches matched by content with multiplicity: (old ones left over, (index, new) ones left over)."""
+    left = list(old_list)
+    fresh = []
+    for i, b in enumerate(new_list):
+        if b in left:
+            left.remove(b)
+        else:
+            fresh.append((i, b))
+    return left, fresh
 
 
 def compare(old, new, where):
@@ -147,8 +161,8 @@ def compare(old, new, where):
         if old is not False and new is False:
             rep.error(where, '[schema_narrowed] the schema became false: no values are left')
         return
-    if not set(old) - ANNOTATIONS and set(new) - ANNOTATIONS:
-        rep.error(where, f'[schema_narrowed] a schema that accepted every value got {sorted(set(new) - ANNOTATIONS)}')
+    if not set(old) - NON_ASSERTING and set(new) - NON_ASSERTING:
+        rep.error(where, f'[schema_narrowed] a schema that accepted every value got {sorted(set(new) - NON_ASSERTING)}')
         return
     ot, nt = types(old), types(new)
     if ot is not None and nt is not None and not ot <= nt:
@@ -213,11 +227,10 @@ def compare(old, new, where):
     if isinstance(ob, list) and isinstance(nb, list):
         # a new branch, or a changed one (even widened), can make an old value match two branches;
         # branch order has no meaning, so a branch equal to an old one is unchanged wherever it stands
-        for i in range(len(nb)):
-            if nb[i] in ob:
-                continue
+        left, fresh = unmatched(ob, nb)
+        for i, _ in fresh:
             if not all(disjoint(nb[i], b) for j, b in enumerate(nb) if j != i):
-                what = 'changed' if any(b not in nb for b in ob) else 'new'
+                what = 'changed' if left else 'new'
                 rep.error(where, f'[oneof_overlap] {what} oneOf branch {i} is not provably disjoint from the others: '
                           'values matching two branches would stop passing')
     od, nd = old.get('dependentSchemas') or {}, new.get('dependentSchemas') or {}
@@ -232,8 +245,7 @@ def compare(old, new, where):
         ob, nb = old.get(key) or [], new.get(key) or []
         if not isinstance(ob, list) or not isinstance(nb, list):
             continue
-        gone = [b for b in ob if b not in nb]
-        fresh = [(i, b) for i, b in enumerate(nb) if b not in ob]
+        gone, fresh = unmatched(ob, nb)
         for a, (i, b) in zip(gone, fresh):
             compare(a, b, f'{where}/{key}/{i}')
 
