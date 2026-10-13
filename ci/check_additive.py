@@ -25,7 +25,8 @@ spec/model/*.yaml with their state at the branch point from the base branch
   changed (a changed negated schema is not compared, it is an error);
 - allOf got a new item (a new constraint), prefixItems got an item narrower
   than the old items (or unevaluatedItems) at its position (absent accepts
-  anything, false accepted nothing), anyOf or oneOf lost branches,
+  anything, false accepted nothing) or lost an item wider than what now
+  governs its position, anyOf or oneOf lost branches,
   oneOf got a new or changed branch (branches are matched by content without
   annotations, not by position) that is not provably disjoint from every
   other branch (different const or enum values, disjoint types, or a property
@@ -261,6 +262,11 @@ def compare(old, new, where):
     if isinstance(old_prefix, list) and isinstance(new_prefix, list):
         for i in range(len(old_prefix), len(new_prefix)):
             compare(old_position, new_prefix[i], f'{where}/prefixItems/{i}')
+        # a removed prefixItems item leaves its position to new items, or else to new unevaluatedItems
+        # (assumed to apply even where an applicator may evaluate the position, which is the stricter case)
+        new_position = new['items'] if 'items' in new else new.get('unevaluatedItems', True)
+        for i in range(len(new_prefix), len(old_prefix)):
+            compare(old_prefix[i], new_position, f'{where}/prefixItems/{i}')
     for key in ('properties', '$defs', 'patternProperties', 'dependentSchemas'):
         op, np = old.get(key, {}), new.get(key, {})
         if not isinstance(op, dict) or not isinstance(np, dict):
