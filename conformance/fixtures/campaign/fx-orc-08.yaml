@@ -1,0 +1,83 @@
+id: fx-orc-08
+rules: [ORC-8, BUD-1, BUD-12]
+description: Tree limits, the whole reserve and payment by card. When proposed, a campaign reserves its whole set of
+  items and the continuation in the tree amount and their cost estimate. An item that does not fit into the rest of the reserve
+  is not released, and the campaign pauses with estimate_exceeded; the "Continue" button does not lift such a pause. A read
+  campaign without a card that lacks only the person's daily limit gets the same card as above the threshold
+  confirm_read_over.
+given:
+  tenant: demo
+  tenant_campaigns:
+    max_items: 100
+    max_tree_tasks: 300
+    confirm_read_over: {items: 50, eur: 2}
+expect: {spend_above_reserve: impossible}
+cases:
+- description: the tree does not fit
+  given:
+    tree: {root_tasks: 295}
+    catalog_selectors:
+      hosts-10: {resources: 10}
+  steps:
+  - call:
+      port: P1
+      op: campaign.propose
+      request:
+        template: {kind: task, type: ops.summary.v1}
+        items: {selector: hosts-10}
+  expect: {result: rejected, reason: tree_too_large, reserve: none}
+- description: the budget does not fit
+  given:
+    budgets: {tenant_month_left_eur: 0.5}
+    catalog_selectors:
+      hosts-10: {resources: 10}
+  steps:
+  - call:
+      port: P1
+      op: campaign.propose
+      request:
+        template: {kind: task, type: ops.summary.v1}
+        items: {selector: hosts-10}
+    context: {estimate_eur: 1}
+  expect: {result: rejected, reason: budget_exhausted, reserve: none}
+- description: only the daily limit of alice is short
+  given:
+    budgets: {initiator_day_left_eur: 0.2, tenant_month_left_eur: 50}
+    catalog_selectors:
+      hosts-10: {resources: 10}
+  steps:
+  - call:
+      port: P1
+      op: campaign.propose
+      request:
+        template: {kind: task, type: ops.summary.v1}
+        items: {selector: hosts-10}
+    context: {initiator: 'human:alice', estimate_eur: 1}
+  expect: {outcome: accepted, card: campaign, card_shows_over_day_limit: true, paid_by: tenant_month}
+- description: the reserve ran out
+  given:
+    campaign: {state: running, reserve_left_eur: 0.05, next_item_estimate_eur: 0.1}
+  expect: {campaign: paused, pause_reason: estimate_exceeded}
+- description: '"Continue" on an estimate_exceeded pause'
+  given:
+    campaign: {state: paused, pause_reason: estimate_exceeded, id: k_8}
+  steps:
+  - call:
+      port: P1
+      op: campaign.control
+      request: {id: k_8, command: resume}
+    by: human:alice
+  expect: {result: rejected, campaign: paused}
+- description: items do not count in max_children
+  given:
+    task: {children: 10}
+    catalog_selectors:
+      hosts-5: {resources: 5}
+  steps:
+  - call:
+      port: P1
+      op: campaign.propose
+      request:
+        template: {kind: task, type: ops.summary.v1}
+        items: {selector: hosts-5}
+  expect: {outcome: accepted}

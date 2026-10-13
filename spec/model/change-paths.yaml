@@ -1,0 +1,20 @@
+registry: change-paths
+version: 1
+description: >-
+  Field paths for the change kind `human_change` ("a change made by people by hand", PRP-13). The description of such
+  a change is closed: a tenant object (kind and name), a path from here, a direction (`up`, `down` or
+  `set`) and a value (a number or an `enum`); there is no free text. The registry contains no targets forbidden
+  by the allowlist (PRP-3): permissions, groups, tools, addresses, models, budgets, retention periods,
+  commission, charter, seats, incident classes, observation series and others. Entry fields: `object`
+  (kind of the tenant object), `value` (value kind: `number` or `enum`), `values` (the `enum` values,
+  if the kind is `enum`), `directions` (allowed directions), `meaning`, `rules`.
+source: docs/improvements.md
+entries:
+  - id: catalog.host.disk_gb
+    since: v0.1
+    object: Host
+    value: number
+    values: null
+    directions: [up, down, set]
+    meaning: Disk size of a machine in the tenant catalog, in gigabytes.
+    rules: [PRP-13]

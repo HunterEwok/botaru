@@ -1,0 +1,288 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:botaru:schema:incident-class:1",
+  "title": "Incident class",
+  "description": "spec of the IncidentClass manifest: a file in the farm's git with a review by a person (MGR-7). The class name is metadata.name.",
+  "x-botaru-direction": "input",
+  "x-botaru-rules": [
+    "MGR-7",
+    "MGR-8",
+    "GOV-28",
+    "INJ-7"
+  ],
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "title",
+    "severity",
+    "detect",
+    "subject"
+  ],
+  "properties": {
+    "title": {
+      "type": "string",
+      "maxLength": 120,
+      "description": "Name for people."
+    },
+    "severity": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/incident_severity"
+    },
+    "change_sensitive": {
+      "type": "boolean",
+      "description": "The class can be a consequence of a change (GOV-13)."
+    },
+    "stops_manager": {
+      "type": "boolean",
+      "description": "Stops the seat; only for a class whose alarm is built from series with dataorigin: code (GOV-28)."
+    },
+    "inspect": {
+      "type": "boolean",
+      "description": "Reading the data of involved parties, if the incident_review purpose is enabled."
+    },
+    "detect": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "alarm": {
+          "$ref": "urn:botaru:schema:common:1#/$defs/type_name",
+          "description": "Code alarm alarm.<name>.vN (INJ-7)."
+        },
+        "when": {
+          "type": "array",
+          "maxItems": 8,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "atom": {
+                "type": "string",
+                "maxLength": 20,
+                "description": "Condition atom.",
+                "pattern": "^[a-z_]+$"
+              },
+              "field": {
+                "type": "string",
+                "maxLength": 80,
+                "description": "Closed alarm field.",
+                "pattern": "^[a-z][a-z0-9_.]*$"
+              },
+              "value": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "maxLength": 200
+                  },
+                  {
+                    "type": "integer"
+                  },
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "boolean"
+                  }
+                ]
+              }
+            },
+            "required": [
+              "atom",
+              "field",
+              "value"
+            ]
+          }
+        },
+        "for": {
+          "$ref": "urn:botaru:schema:common:1#/$defs/duration"
+        }
+      },
+      "required": [
+        "alarm"
+      ]
+    },
+    "subject": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind"
+      ],
+      "description": "Subject of an incident of the class; the kind field of the incident record (incident.subject.kind) is taken from here.",
+      "properties": {
+        "kind": {
+          "enum": [
+            "resource",
+            "farm",
+            "tenant",
+            "role",
+            "worker"
+          ]
+        }
+      }
+    },
+    "implicate": {
+      "type": "array",
+      "maxItems": 10,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "fn": {
+            "type": "string",
+            "maxLength": 40,
+            "description": "Involvement function.",
+            "pattern": "^[a-z_]+$"
+          },
+          "args": {
+            "type": "object",
+            "maxProperties": 8,
+            "additionalProperties": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "maxLength": 200
+                },
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "boolean"
+                }
+              ]
+            }
+          }
+        },
+        "required": [
+          "fn"
+        ]
+      }
+    },
+    "contain_auto": {
+      "type": "array",
+      "maxItems": 10,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "op": {
+            "type": "string",
+            "maxLength": 40,
+            "description": "Code operation.",
+            "pattern": "^[a-z_]+$"
+          },
+          "scope": {
+            "type": "object",
+            "maxProperties": 4,
+            "additionalProperties": {
+              "type": "string",
+              "maxLength": 80
+            }
+          },
+          "effects": {
+            "type": "array",
+            "maxItems": 10,
+            "items": {
+              "type": "string",
+              "maxLength": 40,
+              "description": "Hold effect.",
+              "pattern": "^[a-z_]+$"
+            }
+          },
+          "ttl": {
+            "$ref": "urn:botaru:schema:common:1#/$defs/duration"
+          }
+        },
+        "required": [
+          "op"
+        ]
+      },
+      "description": "First measure by code."
+    },
+    "responses": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "ops": {
+          "type": "array",
+          "maxItems": 30,
+          "items": {
+            "type": "string",
+            "maxLength": 40,
+            "description": "Operation from control-ops.yaml.",
+            "pattern": "^[a-z_]+$"
+          }
+        },
+        "actions": {
+          "type": "array",
+          "maxItems": 30,
+          "items": {
+            "$ref": "urn:botaru:schema:common:1#/$defs/dotted_name"
+          }
+        },
+        "pin_types": {
+          "type": "array",
+          "maxItems": 30,
+          "items": {
+            "$ref": "urn:botaru:schema:common:1#/$defs/type_name"
+          }
+        },
+        "services": {
+          "type": "array",
+          "maxItems": 3,
+          "items": {
+            "$ref": "urn:botaru:schema:common:1#/$defs/service_verb"
+          }
+        },
+        "monitor_scripts": {
+          "type": "boolean",
+          "description": "Monitoring scripts on the subject's node."
+        }
+      },
+      "description": "What the farm manager is allowed (MON-8, MON-10)."
+    },
+    "takeover": {
+      "type": "boolean",
+      "description": "Whether a takeover is allowed."
+    },
+    "humans": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "notify_on_open": {
+          "type": "boolean",
+          "description": "Notify people on opening."
+        },
+        "page_if_unhandled_after": {
+          "$ref": "urn:botaru:schema:common:1#/$defs/duration"
+        }
+      }
+    },
+    "resolve": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "alarm_state": {
+          "enum": [
+            "resolved"
+          ]
+        },
+        "for": {
+          "$ref": "urn:botaru:schema:common:1#/$defs/duration"
+        }
+      }
+    },
+    "limits": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "ops_max": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 1000,
+          "description": "Operations per incident."
+        }
+      }
+    }
+  }
+}

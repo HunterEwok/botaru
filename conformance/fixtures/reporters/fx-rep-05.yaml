@@ -1,0 +1,69 @@
+id: fx-rep-05
+rules: [REP-2, REP-4, DLV-15]
+description: 'A report consists of a table, cards, the number hidden and an optional model paragraph. Code builds the table, the numbers,
+  the names and the set of cards from the snapshot snapshot_id. The model paragraph goes as a separate marked part of up to 800
+  characters without links, mentions, markup and commands. With untrusted_seen the paragraph does not go to a group chat by default;
+  with ChatBinding.model_text: labeled it goes with a code line and a list of the distrust sources. If a number in the paragraph
+  does not match the table, the paragraph is dropped and digest.text_dropped is written.'
+given:
+  tenant: demo
+  snapshot:
+    id: snap-01
+    rows:
+    - {resource: web1, failed: 2}
+    - {resource: db1, failed: 0}
+expect: {table_built_by: core code from snapshot_id, paragraph_replaces_table: false}
+cases:
+- description: summary_only and untrusted_seen
+  given:
+    binding: {target: 'chat:lab', kind: group, model_text: summary_only}
+    attempt:
+      untrusted_seen: true
+      untrusted_sources:
+      - {kind: tool, name: logs/tail}
+  steps:
+  - model: {text: Two failures on web1.}
+  expect:
+    parts: [table, cards, hidden]
+    paragraph: absent
+- description: labeled and untrusted_seen
+  given:
+    binding: {target: 'chat:lab', kind: group, model_text: labeled, ceiling: internal}
+    attempt:
+      untrusted_seen: true
+      untrusted_sources:
+      - {kind: tool, name: logs/tail}
+  steps:
+  - model: {text: Two failures on web1.}
+  expect:
+    parts: [table, cards, hidden, code_label, untrusted_sources, paragraph]
+    code_label_key: bot text, check the numbers against the table
+    untrusted_sources:
+    - {kind: tool, name: logs/tail}
+    paragraph_dataorigin: model
+- description: private chat and untrusted_seen
+  given:
+    binding: {target: 'direct:alice', kind: direct}
+    attempt: {untrusted_seen: true}
+  steps:
+  - model: {text: Two failures on web1.}
+  expect: {paragraph: present, source_mark: present}
+- description: a link, a mention and a command in the paragraph
+  given:
+    binding: {target: 'direct:alice', kind: direct}
+  steps:
+  - model: {text: 'See https://example.org/x, @bob, /cancel 12'}
+  expect:
+    paragraph_contains: {url: false, mention: false, command: false}
+- description: the number does not match the table
+  given:
+    binding: {target: 'direct:alice', kind: direct}
+  steps:
+  - model: {text: Five failures on web1.}
+  expect:
+    paragraph: absent
+    parts: [table, cards, hidden]
+    event: digest.text_dropped
+- description: long paragraph
+  given: {model_paragraph_chars: 801}
+  expect: {paragraph: absent}

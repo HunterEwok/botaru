@@ -1,0 +1,10 @@
+schema: spec/model/p1-file-put-request.schema.json
+rules: [TEN-7, TEN-2]
+description: 'file.put metadata that the schema rejects: the sender''s own file_ref (content hash instead of random bits);
+  tenant; no content type.'
+cases:
+- media_type: text/plain
+  file_ref: file:AbCdEfGhIjKlMnOpQrStUv
+- media_type: text/plain
+  tenant: demo2
+- filename: a.txt

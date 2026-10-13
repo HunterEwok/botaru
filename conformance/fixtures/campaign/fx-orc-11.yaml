@@ -1,0 +1,91 @@
+id: fx-orc-11
+rules: [ORC-2, APR-4, APR-9]
+description: 'A campaign with an action starts only after one approval with subject campaign whose snapshot contains
+  the action, all items with arguments, the rollout policy, the cost estimate and plan_hash. The approval covers exactly
+  the snapshot. The decision and the "Continue" command are accepted only from a principal of kind human in the chat where the card was delivered, with its
+  nonce; with self_approve: false the person who presses is not the initiator.'
+given:
+  tenant: demo
+  campaign:
+    id: k_01JB0000000000000000000011
+    initiator: human:alice
+    template:
+      kind: action
+      action: cleanup_pipeline_tmp
+      args: {older_than_days: 7}
+    items: [web1, db1, ctd1]
+    rollout:
+      canary: 1
+      after_canary: manual
+      max_in_flight: 2
+      max_failures: 0
+      on_unknown: pause
+      deadline: 2h
+    card_delivered_to: chat:lab
+  self_approve: false
+cases:
+- description: before the decision
+  expect:
+    state: proposed
+    released: []
+- description: card snapshot
+  expect:
+    snapshot_fields: [action, items_with_args, rollout, estimate_eur, plan_hash]
+    card_shows_first: 5
+- description: the initiator presses it themselves
+  steps:
+  - call:
+      port: P1
+      op: decide
+      request: {subject_kind: campaign, id: k_01JB0000000000000000000011, decision: approve}
+    by: human:alice
+    chat: chat:lab
+  expect: {result: rejected, state: proposed}
+- description: not from that chat
+  steps:
+  - call:
+      port: P1
+      op: decide
+      request: {subject_kind: campaign, id: k_01JB0000000000000000000011, decision: approve}
+    by: human:bob
+    chat: chat:ops
+  expect: {result: rejected}
+- description: someone else's nonce
+  steps:
+  - call:
+      port: P1
+      op: decide
+      request: {subject_kind: campaign, id: k_01JB0000000000000000000011, nonce: $stale, decision: approve}
+    by: human:bob
+    chat: chat:lab
+  expect: {result: rejected}
+- description: bob approves
+  steps:
+  - call:
+      port: P1
+      op: decide
+      request: {subject_kind: campaign, id: k_01JB0000000000000000000011, decision: approve}
+    by: human:bob
+    chat: chat:lab
+  expect: {state: running, approval_covers: snapshot}
+- description: item outside the snapshot
+  given:
+    after_approve: {add_item: 192.0.2.20}
+  expect: {result: rejected, note: a new campaign is needed}
+- description: '"Continue" after the gate from an attempt'
+  steps:
+  - call:
+      port: P1
+      op: campaign.control
+      request: {id: k_01JB0000000000000000000011, command: resume}
+    by: attempt
+  expect: {result: rejected}
+- description: '"Continue" from bob'
+  steps:
+  - call:
+      port: P1
+      op: campaign.control
+      request: {id: k_01JB0000000000000000000011, command: resume}
+    by: human:bob
+    chat: lab
+  expect: {state: running}

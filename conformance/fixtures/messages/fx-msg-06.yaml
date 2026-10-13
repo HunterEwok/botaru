@@ -1,0 +1,68 @@
+id: fx-msg-06
+rules: [MSG-6, PRM-5]
+description: A data class does not go down through a message. Sending a kind whose data_class is below the mark of the sender's attempt
+  is rejected with data_class_exceeded. A reading attempt gets only entries with a mark not above its own; the others are not
+  given out and arrive as the number hidden, and the reading attempt's mark does not change from reading.
+given:
+  tenant: demo
+  data_classes: [summary, internal, raw_logs]
+  messagetypes:
+  - {name: report.qc_note.v1, data_class: internal}
+  - {name: report.disk_usage.v1, data_class: summary}
+expect: {record_above_reader_mark_in_context: never}
+cases:
+- given:
+    sender: {role: analyst, data_mark: internal}
+  steps:
+  - call:
+      port: P1
+      op: msg.send
+      request:
+        type: report.qc_note.v1
+        to: role:ops-lead
+        fields: {}
+    by: role:analyst
+  expect: {outcome: staged, datamark: internal}
+- given:
+    sender: {role: analyst, data_mark: raw_logs}
+  steps:
+  - call:
+      port: P1
+      op: msg.send
+      request:
+        type: report.qc_note.v1
+        to: role:ops-lead
+        fields: {}
+    by: role:analyst
+  expect: {result: rejected, reason: data_class_exceeded}
+- given:
+    sender: {role: analyst, data_mark: internal}
+  steps:
+  - call:
+      port: P1
+      op: msg.send
+      request:
+        type: report.disk_usage.v1
+        to: role:ops-lead
+        fields: {}
+    by: role:analyst
+  expect: {result: rejected, reason: data_class_exceeded}
+- description: reading with a mark below the entry
+  given:
+    reader: {role: reporter, task_data_mark: summary}
+    inbox:
+    - {message: m_01JB0000000000000000000101, datamark: summary}
+    - {message: m_01JB0000000000000000000102, datamark: internal}
+    - {message: m_01JB0000000000000000000103, datamark: internal}
+  steps:
+  - call:
+      port: P3
+      op: tools/call
+      request:
+        name: inbox_read
+        arguments: {max: 20}
+  expect:
+    records: [m_01JB0000000000000000000101]
+    hidden: 2
+    reader_data_mark: summary
+    hidden_entries_state: queued

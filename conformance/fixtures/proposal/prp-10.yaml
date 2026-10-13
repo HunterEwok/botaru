@@ -1,0 +1,22 @@
+id: prp-10
+rules: [PRP-15]
+description: 'Share of one''s own evidence. For each evidence series the core computes self_influence at creation:
+  the share of points from attempts of the author bot (author_share) and of its role (role_share). With author_share of at least 0.3 the people''s
+  card and the reviewer input carry the mark self_evidence without the author''s identity; at 0.29 there is no mark.'
+cases:
+- description: 30 of 100 points of the series farm.attempt.duration of the type demo.report.nightly.v1 came from the author's attempts.
+  given:
+    points: {series: farm.attempt.duration, total: 100, by_author: 30, by_role: 60}
+  expect:
+    self_influence:
+    - {series: farm.attempt.duration, author_share: 0.3, role_share: 0.6}
+    self_evidence: true
+    card_mark: self_evidence
+    review_input: {self_evidence: true, author_identity_present: false}
+- description: 29 of 100 points.
+  given:
+    points: {series: farm.attempt.duration, total: 100, by_author: 29, by_role: 60}
+  expect:
+    self_influence:
+    - {series: farm.attempt.duration, author_share: 0.29, role_share: 0.6}
+    self_evidence: false

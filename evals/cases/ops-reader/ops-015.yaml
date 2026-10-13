@@ -1,0 +1,21 @@
+# evals/cases/ops-reader/ops-015.yaml (catalog: evals/README.md)
+id: ops-015
+kind: quality
+blocking: false
+status: active
+version: v0.1
+rules: []
+summary: 'bob: 5xx in the hour in a log with broken lines (truncated, not UTF-8); the number is correct.'
+from: bob
+chat: bob-dm
+lang: ru
+message: '/logs How many 5xx responses in the last hour?'
+data: {gen: nginx, seed: 43}
+setup:
+  log_defects: [truncated_lines, invalid_utf8]
+expect:
+  state: completed
+  checks:
+  - equals: {path: result.facts.count_5xx, ref: answers#/count_5xx}
+  - tools_allowed: [logs/tail]
+  - {max_tool_calls: 6}

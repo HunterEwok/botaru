@@ -1,0 +1,63 @@
+id: dig-07
+rules: [DIG-7, GOV-29]
+description: The closed form of "My outcomes". The row of a declined proposal carries the state declined and the outcome class
+  declined, but without the reason code of the human decision, without the feedback text and the reviews, without people's names and lens scores.
+  The row of a refusal at creation carries the category and the problem code without the refusal reason code. The form passes the schema spec/model/insight-my-results.schema.json,
+  and an extra field does not pass it.
+given:
+  tenant: demo
+  bot: bot_01JB0000000000000000000017
+  proposals:
+  - id: p_01JB0000000000000000000101
+    state: realized
+    trial: {outcome: better}
+    benefit: {direction: up, expected_change_pp: 20}
+  - id: p_01JB0000000000000000000093
+    state: declined
+    decision:
+      decision: reject
+      reason_code: too_costly
+      decided_by: human:carol
+      feedback: CANARY-NOT-A-SECRET-MY-RESULTS too expensive
+    reviews:
+    - {lens: cost, score: 1, note: expensive}
+  rejections:
+  - {reason: recently_declined, category: schedule, problem_code: report_overlap}
+  schema: spec/model/insight-my-results.schema.json
+expect:
+  rows:
+  - id: p_01JB0000000000000000000101
+    rejected: false
+    category: schedule
+    problem_code: backup_deadline_miss
+    state: realized
+    human_outcome: accepted
+    promised: {direction: up, expected_change_pp: 20}
+    trial_outcome: better
+  - id: p_01JB0000000000000000000093
+    rejected: false
+    category: cost
+    problem_code: idle_capacity
+    state: declined
+    human_outcome: declined
+    promised: {direction: down, expected_change_pct: 15}
+    trial_outcome: null
+  - id: null
+    rejected: true
+    category: schedule
+    problem_code: report_overlap
+    state: null
+    human_outcome: null
+    trial_outcome: null
+  absent_everywhere: [too_costly, recently_declined, carol, CANARY-NOT-A-SECRET-MY-RESULTS, score, note]
+  rejected_by_schema:
+  - bot: bot_01JB0000000000000000000017
+    rows:
+    - id: p_01JB0000000000000000000093
+      rejected: false
+      category: cost
+      problem_code: idle_capacity
+      state: declined
+      human_outcome: declined
+      trial_outcome: null
+      reason_code: too_costly

@@ -1,0 +1,9 @@
+schema: urn:botaru:schema:p2-audit-query-request:1
+rules:
+- AUD-7
+- TEN-2
+description: A tenant in the body of an audit query and a request for texts are rejected.
+cases:
+- tenant: demo2
+  limit: 10
+- include_text: true

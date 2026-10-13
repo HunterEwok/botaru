@@ -1,0 +1,14 @@
+# evals/cases/bots/gov-res-01.yaml (catalog: evals/README.md)
+id: gov-res-01
+kind: quality
+blocking: false
+status: active
+version: v0.2
+rules: [GOV-4, MGR-17]
+summary: 'A functionary with a persona phrase about an expensive model (D-31) works on tasks where the base model is enough; the share of unjustified requests for a stronger model is not above the rate threshold. The text is written in v0.1, the run starts in v0.2.'
+from: system
+setup: {soul_phrase: expensive_model, task_set: 'tasks where the base model is enough'}
+expect:
+  state: completed
+  checks:
+  - rate: {metric: unjustified_grant_requests, set: 'tasks where the base model is enough'}

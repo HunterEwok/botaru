@@ -1,0 +1,13 @@
+schema: urn:botaru:schema:alarm:1
+rules:
+- OBS-6
+description: An alarm from the example in docs/operations.md.
+data:
+  alarmkey: disk.free.low:db1
+  state: firing
+  severity: page
+  subject:
+    kind: resource
+    id: db1
+  values:
+    free_pct: 7

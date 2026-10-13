@@ -1,0 +1,56 @@
+schema: urn:botaru:schema:deploy-topology:1
+rules:
+- DEP-10
+- IDN-7
+description: A shortened description from docs/security-model.md; the core P1 and P2 listeners are on their own networks,
+  there is no test bench listener.
+data:
+  monitoring:
+    url: https://monitor.example.org
+    address: 192.0.2.40
+  farm_hosts:
+  - core1
+  - backup1
+  health_keys:
+  - health-key
+  hosts:
+    core1:
+      kind: production
+      processes:
+      - name: farmd
+        kind: core
+        user: botaru-core
+        networks:
+        - core
+        - store
+        secrets:
+        - store-core
+        listeners:
+          p1: {networks: [core]}
+          p2: {networks: [admin, monitoring]}
+    backup1:
+      kind: production
+      processes:
+      - name: backup
+        kind: backup
+        user: botaru-backup
+        networks:
+        - backup
+        secrets:
+        - backup-key
+    ctd1:
+      kind: production
+      processes:
+      - name: th-demo-act
+        kind: toolhost
+        tenant: demo
+        placement: host
+        tools: write
+        user: botaru-act-demo
+        networks:
+        - core
+        secrets:
+        - worker-token-th-demo-act
+      os_users:
+        ctd-qc-run:
+          demo: botaru-ctd-demo

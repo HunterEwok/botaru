@@ -1,0 +1,147 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:botaru:schema:p2-commission-status-response:1",
+  "title": "P2 commission.status: response",
+  "description": "The tenant's commission lenses and who covers them: seats or the fallback role (COM-7); usage of the review line (COM-6); for a lens the shadow share or \"shadow off\" (shadow: off, COM-10); since v0.2 \"commission locked\" (commission_locked) with the basis of the commission_review card (GOV-35). Denial: forbidden.",
+  "x-botaru-direction": "output",
+  "x-botaru-rules": [
+    "COM-6",
+    "COM-7",
+    "COM-8",
+    "COM-10",
+    "GOV-35"
+  ],
+  "type": "object",
+  "required": [
+    "tenant",
+    "lenses",
+    "review_line"
+  ],
+  "properties": {
+    "tenant": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/tenant_name"
+    },
+    "lenses": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "lens",
+          "veto",
+          "executor"
+        ],
+        "properties": {
+          "lens": {
+            "type": "string",
+            "x-botaru-registry": "lenses"
+          },
+          "veto": {
+            "type": "boolean"
+          },
+          "executor": {
+            "enum": [
+              "seats",
+              "fallback_role",
+              "none"
+            ],
+            "description": "The single current source of the executor (COM-7); none for a lens without an executor."
+          },
+          "seats": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "id",
+                "holder"
+              ],
+              "properties": {
+                "id": {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                "holder": {
+                  "anyOf": [
+                    {
+                      "$ref": "urn:botaru:schema:common:1#/$defs/object_id"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "held_by_stop": {
+                  "type": "boolean"
+                }
+              }
+            },
+            "maxItems": 20
+          },
+          "fallback_role": {
+            "anyOf": [
+              {
+                "$ref": "urn:botaru:schema:common:1#/$defs/name"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "shadow": {
+            "anyOf": [
+              {
+                "type": "number",
+                "minimum": 0,
+                "maximum": 1
+              },
+              {
+                "const": "off"
+              }
+            ],
+            "description": "Shadow share of the lens, or off."
+          }
+        }
+      },
+      "maxItems": 10
+    },
+    "review_line": {
+      "type": "object",
+      "properties": {
+        "month_eur": {
+          "type": "number",
+          "minimum": 0
+        },
+        "spent_eur": {
+          "type": "number",
+          "minimum": 0
+        },
+        "reserved_eur": {
+          "type": "number",
+          "minimum": 0
+        }
+      }
+    },
+    "commission_locked": {
+      "anyOf": [
+        {
+          "type": "object",
+          "description": "Since v0.2: the commission is locked (GOV-35).",
+          "properties": {
+            "seat": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "lens": {
+              "type": "string"
+            },
+            "flag": {
+              "type": "string"
+            }
+          }
+        },
+        {
+          "type": "null"
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,55 @@
+id: fx-mgr-12
+rules: [MGR-25]
+description: 'Finding check at complete of a reader attempt: the subject is from the attempt''s tenant, the evidence from the read log
+  of this attempt, closed names and number bounds, no more than 10 findings. The core always sets untrusted: true
+  and the field subject_in_code_targets; the decision role sees all fields except note.'
+given:
+  attempt:
+    tenant: demo
+    type: manager.inspect.v1
+    role: farm-manager-reader
+    read_journal: [lw_01jd7, t_501]
+  code_targets: [w_7]
+cases:
+- id: fx-mgr-12-a
+  given:
+    finding:
+      kind: runaway_loop
+      subject: {kind: worker, id: w_7}
+      evidence: [lw_01jd7]
+      values: {retries_15m: 410}
+      confidence: medium
+      note: CANARY-NOT-A-SECRET-finding-note
+  expect:
+    stored: true
+    untrusted: true
+    subject_in_code_targets: true
+    decision_view_contains: {CANARY-NOT-A-SECRET-finding-note: false}
+    audit_note: [sha256, length]
+- id: fx-mgr-12-b
+  given:
+    finding:
+      kind: runaway_loop
+      subject: {kind: worker, id: w_7}
+      evidence: [lw_other_attempt]
+      confidence: medium
+  expect: {stored: false, reason: output_schema_invalid}
+- id: fx-mgr-12-c
+  given:
+    finding:
+      kind: runaway_loop
+      subject: {kind: worker, id: w_404}
+      evidence: [lw_01jd7]
+      confidence: low
+  expect: {stored: false}
+- id: fx-mgr-12-d
+  given: {findings_count: 11}
+  expect: {stored: false, reason: output_schema_invalid}
+- id: fx-mgr-12-e
+  given:
+    finding:
+      kind: worker_misbehaving
+      subject: {kind: worker, id: w_12}
+      evidence: [t_501]
+      confidence: high
+  expect: {stored: true, untrusted: true, subject_in_code_targets: false}

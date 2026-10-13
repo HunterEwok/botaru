@@ -1,0 +1,34 @@
+# Sample farm on one server without a monitoring system (D-88), following
+# spec/model/deploy-topology.schema.json. The file is not run: the deployment lint checks against it
+# that a watchdog of kind: watch polls core liveness (MON-2) and that backups go encrypted to external
+# storage instead of a second machine (RET-5). The installation does not claim the monitor profile: the core
+# delivers alarms to people with the code text alarm_notice (MON-13). The main example with backup1 and a
+# monitoring system is next to it, in farm.yaml.
+farm_hosts: [core1]                 # the only farm node: core, store, channel, watchdog (DEP-11)
+health_keys: [health-key]
+watch: {notify_ref: watch-notify, interval_s: 60}     # its own notification path, not the tenant's channel token
+backup:
+  target: external
+  url: https://backup.example.org/farm
+  location_id: offsite-1
+  encrypted: true                   # encrypted on core1 before sending, the storage has no key (RET-5)
+  key_ref: backup-encryption-key
+  credentials_ref: backup-write-only
+hosts:
+  core1:
+    kind: production
+    processes:
+      - {name: farmd, kind: core, user: botaru-core, networks: [core, store], secrets: [store-core],
+         listeners: {p1: {networks: [core]}, p2: {networks: [admin, watch]}}}
+      - {name: store, kind: store, user: botaru-store, networks: [store]}
+      - {name: channel-demo, kind: channel, tenant: demo, user: botaru-ch-demo, networks: [core],
+         secrets: [worker-token-channel-demo]}
+      - {name: watch, kind: watch, user: botaru-watch, networks: [watch, notify-out],
+         secrets: [health-key, watch-notify]}
+      - {name: backup, kind: backup, user: botaru-backup, networks: [store, backup-out],
+         secrets: [backup-encryption-key, backup-write-only]}
+  web1:
+    kind: production
+    processes:
+      - {name: th-demo-read, kind: toolhost, tenant: demo, placement: host, user: botaru-read-demo,
+         networks: [core], secrets: [worker-token-th-demo-read]}

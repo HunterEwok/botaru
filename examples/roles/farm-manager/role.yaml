@@ -1,0 +1,11 @@
+# Farm manager, decision role: profile farm-manager, the seat model (slot seat).
+apiVersion: botaru/v1alpha1
+kind: Role
+metadata: {name: farm-manager}
+spec:
+  profile: farm-manager
+  worker_kind: agent
+  claims: [manager.review.v1]
+  monitor_scripts: ["*"]
+  models: {base: manager-std}
+  memory: bot

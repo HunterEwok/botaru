@@ -1,0 +1,65 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:botaru:schema:authz-decision:1",
+  "title": "C2 authorize: decision",
+  "description": "Authorizer answer: allow or deny and a reason code from the registry. The full reason is written to the audit; for a stop and for a permission denial the model gets the same short \"no permission\" (HLD-1, PRM-8). The needs field names the permissions the initiator lacked, as a code only (PRM-8).",
+  "x-botaru-direction": "output",
+  "x-botaru-rules": [
+    "PRM-1",
+    "PRM-2",
+    "PRM-8"
+  ],
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "decision"
+  ],
+  "if": {
+    "properties": {
+      "decision": {
+        "const": "deny"
+      }
+    }
+  },
+  "then": {
+    "required": [
+      "reason"
+    ]
+  },
+  "properties": {
+    "decision": {
+      "enum": [
+        "allow",
+        "deny"
+      ]
+    },
+    "reason": {
+      "description": "Denial reason, required for deny: for example held, no_group_cap, tenant_mismatch, self_approve, privileged_group, operator_only.",
+      "$ref": "urn:botaru:schema:common:1#/$defs/reason"
+    },
+    "needs": {
+      "description": "Which capability was missing; a closed field of the denial (PRM-8).",
+      "type": "array",
+      "items": {
+        "description": "Group capability: a string of the form <form>:<name> from capabilities.yaml, without an asterisk, for example task:ops.investigate.v1, service.control:nginx, admin:people.",
+        "type": "string",
+        "pattern": "^[a-z][a-z_]*(\\.[a-z_]+)*(:[a-z0-9][a-z0-9_.:-]{0,159})?$",
+        "maxLength": 200
+      },
+      "maxItems": 16,
+      "uniqueItems": true
+    },
+    "hold": {
+      "description": "The stop that fired, if the reason is held.",
+      "$ref": "urn:botaru:schema:common:1#/$defs/object_id"
+    },
+    "stage": {
+      "description": "At which step the decision was made: stops, unconditional prohibitions or permission intersection (PRM-2).",
+      "enum": [
+        "hold",
+        "ban",
+        "intersection"
+      ]
+    }
+  }
+}

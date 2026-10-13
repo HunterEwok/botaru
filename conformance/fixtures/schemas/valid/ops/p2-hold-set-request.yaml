@@ -1,0 +1,30 @@
+schema: urn:botaru:schema:p2-hold-set-request:1
+rules:
+- HLD-1
+description: A hold.set body from the example in docs/operations.md and a hold without a deadline.
+cases:
+- scope:
+    kind: tasktype
+    tenant: demo
+    name: report.daily.v1
+  effects:
+  - no_enqueue
+  - no_claim
+  - cancel_running
+  reason: runaway_loop
+  until: '2026-10-07T18:00:00Z'
+- scope:
+    kind: plugin
+    tenant: demo
+    name: logs
+  effects:
+  - no_tool
+  reason: suspected_vulnerability
+  until: null
+- scope:
+    kind: farm
+  effects:
+  - no_action
+  - no_tool
+  reason: compromised
+  until: null

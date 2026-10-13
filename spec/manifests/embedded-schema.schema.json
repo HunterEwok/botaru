@@ -1,0 +1,749 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:botaru:schema:embedded-schema:1",
+  "title": "Schemas inside manifests",
+  "description": "Meta-schema of the schemas that come from manifests: params_schema and result_schema of a task type, args of an action, tool parameters, fields_schema of a message type, the value of an observation series, the mapping of incoming events. A leaf of such a schema is enum, enum_from, const, a number with minimum and maximum, boolean, or a string with x-botaru-format from the format registry; objects have additionalProperties: false, arrays have maxItems; there is no own pattern, patternProperties, $ref or format (INJ-1). The manifest lint checks the format name against the formats.yaml registry. This schema itself accepts nothing from outside and serves as a building block of the kind schemas.",
+  "x-botaru-rules": [
+    "INJ-1",
+    "OUT-1",
+    "MAN-9"
+  ],
+  "$defs": {
+    "closed": {
+      "description": "Closed schema by INJ-1.",
+      "anyOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "enum"
+          ],
+          "properties": {
+            "description": {
+              "type": "string",
+              "maxLength": 2000,
+              "description": "Field description for people and the model."
+            },
+            "title": {
+              "type": "string",
+              "maxLength": 200,
+              "description": "Field title."
+            },
+            "x-botaru-read-by": {
+              "const": "code",
+              "description": "The field is read by core code or a route (OUT-1)."
+            },
+            "x-botaru-version": {
+              "enum": [
+                "v0.1",
+                "v0.2"
+              ],
+              "description": "Skeleton version from which the field exists."
+            },
+            "type": {
+              "enum": [
+                "string",
+                "integer",
+                "number"
+              ]
+            },
+            "enum": {
+              "type": "array",
+              "maxItems": 500,
+              "items": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "maxLength": 200
+                  },
+                  {
+                    "type": "integer"
+                  },
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "boolean"
+                  }
+                ]
+              },
+              "minItems": 1
+            },
+            "default": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "maxLength": 200
+                },
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "boolean"
+                }
+              ]
+            }
+          },
+          "description": "enum leaf: a closed list of values."
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "enum_from"
+          ],
+          "properties": {
+            "description": {
+              "type": "string",
+              "maxLength": 2000,
+              "description": "Field description for people and the model."
+            },
+            "title": {
+              "type": "string",
+              "maxLength": 200,
+              "description": "Field title."
+            },
+            "x-botaru-read-by": {
+              "const": "code",
+              "description": "The field is read by core code or a route (OUT-1)."
+            },
+            "x-botaru-version": {
+              "enum": [
+                "v0.1",
+                "v0.2"
+              ],
+              "description": "Skeleton version from which the field exists."
+            },
+            "type": {
+              "const": "string"
+            },
+            "enum_from": {
+              "type": "string",
+              "maxLength": 80,
+              "description": "Name of the list whose values the core fills in: catalog.<list>, task.attachments, reasons.<group>.",
+              "pattern": "^(catalog|task|reasons)\\.[a-z][a-z0-9_]*$"
+            }
+          },
+          "description": "enum_from leaf: values from the catalog of the task's tenant, from the task's attachments or from a code registry."
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "const"
+          ],
+          "properties": {
+            "description": {
+              "type": "string",
+              "maxLength": 2000,
+              "description": "Field description for people and the model."
+            },
+            "title": {
+              "type": "string",
+              "maxLength": 200,
+              "description": "Field title."
+            },
+            "x-botaru-read-by": {
+              "const": "code",
+              "description": "The field is read by core code or a route (OUT-1)."
+            },
+            "x-botaru-version": {
+              "enum": [
+                "v0.1",
+                "v0.2"
+              ],
+              "description": "Skeleton version from which the field exists."
+            },
+            "const": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "maxLength": 200
+                },
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "boolean"
+                }
+              ]
+            }
+          },
+          "description": "const leaf."
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "type",
+            "minimum",
+            "maximum"
+          ],
+          "properties": {
+            "description": {
+              "type": "string",
+              "maxLength": 2000,
+              "description": "Field description for people and the model."
+            },
+            "title": {
+              "type": "string",
+              "maxLength": 200,
+              "description": "Field title."
+            },
+            "x-botaru-read-by": {
+              "const": "code",
+              "description": "The field is read by core code or a route (OUT-1)."
+            },
+            "x-botaru-version": {
+              "enum": [
+                "v0.1",
+                "v0.2"
+              ],
+              "description": "Skeleton version from which the field exists."
+            },
+            "type": {
+              "enum": [
+                "integer",
+                "number"
+              ]
+            },
+            "minimum": {
+              "type": "number"
+            },
+            "maximum": {
+              "type": "number"
+            },
+            "default": {
+              "type": "number"
+            }
+          },
+          "description": "Number with both bounds."
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "type"
+          ],
+          "properties": {
+            "description": {
+              "type": "string",
+              "maxLength": 2000,
+              "description": "Field description for people and the model."
+            },
+            "title": {
+              "type": "string",
+              "maxLength": 200,
+              "description": "Field title."
+            },
+            "x-botaru-read-by": {
+              "const": "code",
+              "description": "The field is read by core code or a route (OUT-1)."
+            },
+            "x-botaru-version": {
+              "enum": [
+                "v0.1",
+                "v0.2"
+              ],
+              "description": "Skeleton version from which the field exists."
+            },
+            "type": {
+              "const": "boolean"
+            },
+            "default": {
+              "type": "boolean"
+            }
+          },
+          "description": "boolean leaf."
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "x-botaru-format"
+          ],
+          "description": "String with a format from the registry spec/model/formats.yaml; there is no own pattern (INJ-1).",
+          "properties": {
+            "description": {
+              "type": "string",
+              "maxLength": 2000,
+              "description": "Field description for people and the model."
+            },
+            "title": {
+              "type": "string",
+              "maxLength": 200,
+              "description": "Field title."
+            },
+            "x-botaru-read-by": {
+              "const": "code",
+              "description": "The field is read by core code or a route (OUT-1)."
+            },
+            "x-botaru-version": {
+              "enum": [
+                "v0.1",
+                "v0.2"
+              ],
+              "description": "Skeleton version from which the field exists."
+            },
+            "type": {
+              "const": "string"
+            },
+            "maxLength": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 256,
+              "description": "Length ceiling, not above the format's max_length."
+            },
+            "minLength": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 256,
+              "description": "Lower length bound."
+            },
+            "default": {
+              "type": "string",
+              "maxLength": 256
+            }
+          },
+          "patternProperties": {
+            "^x-botaru-format$": {
+              "type": "string",
+              "pattern": "^[a-z][a-z0-9_]*$",
+              "maxLength": 40,
+              "description": "Format name from formats.yaml."
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "type",
+            "items",
+            "maxItems"
+          ],
+          "properties": {
+            "description": {
+              "type": "string",
+              "maxLength": 2000,
+              "description": "Field description for people and the model."
+            },
+            "title": {
+              "type": "string",
+              "maxLength": 200,
+              "description": "Field title."
+            },
+            "x-botaru-read-by": {
+              "const": "code",
+              "description": "The field is read by core code or a route (OUT-1)."
+            },
+            "x-botaru-version": {
+              "enum": [
+                "v0.1",
+                "v0.2"
+              ],
+              "description": "Skeleton version from which the field exists."
+            },
+            "type": {
+              "const": "array"
+            },
+            "items": {
+              "$ref": "#/$defs/closed"
+            },
+            "maxItems": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 1000,
+              "description": "Array length ceiling."
+            },
+            "minItems": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 1000,
+              "description": "Lower array length bound."
+            },
+            "uniqueItems": {
+              "type": "boolean"
+            }
+          },
+          "description": "Array of closed leaves with maxItems."
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "type",
+            "additionalProperties"
+          ],
+          "properties": {
+            "description": {
+              "type": "string",
+              "maxLength": 2000,
+              "description": "Field description for people and the model."
+            },
+            "title": {
+              "type": "string",
+              "maxLength": 200,
+              "description": "Field title."
+            },
+            "x-botaru-read-by": {
+              "const": "code",
+              "description": "The field is read by core code or a route (OUT-1)."
+            },
+            "x-botaru-version": {
+              "enum": [
+                "v0.1",
+                "v0.2"
+              ],
+              "description": "Skeleton version from which the field exists."
+            },
+            "type": {
+              "const": "object"
+            },
+            "additionalProperties": {
+              "const": false
+            },
+            "properties": {
+              "type": "object",
+              "maxProperties": 64,
+              "additionalProperties": {
+                "$ref": "#/$defs/closed"
+              },
+              "propertyNames": {
+                "pattern": "^[a-z][a-z0-9_]{0,63}$"
+              }
+            },
+            "required": {
+              "type": "array",
+              "maxItems": 64,
+              "items": {
+                "type": "string",
+                "pattern": "^[a-z][a-z0-9_]{0,63}$"
+              }
+            }
+          },
+          "description": "Object with additionalProperties: false."
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "anyOf"
+          ],
+          "properties": {
+            "description": {
+              "type": "string",
+              "maxLength": 2000,
+              "description": "Field description for people and the model."
+            },
+            "title": {
+              "type": "string",
+              "maxLength": 200,
+              "description": "Field title."
+            },
+            "x-botaru-read-by": {
+              "const": "code",
+              "description": "The field is read by core code or a route (OUT-1)."
+            },
+            "x-botaru-version": {
+              "enum": [
+                "v0.1",
+                "v0.2"
+              ],
+              "description": "Skeleton version from which the field exists."
+            },
+            "anyOf": {
+              "type": "array",
+              "maxItems": 16,
+              "items": {
+                "$ref": "#/$defs/closed"
+              },
+              "minItems": 1
+            }
+          },
+          "description": "Choice among closed schemas."
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "oneOf"
+          ],
+          "properties": {
+            "description": {
+              "type": "string",
+              "maxLength": 2000,
+              "description": "Field description for people and the model."
+            },
+            "title": {
+              "type": "string",
+              "maxLength": 200,
+              "description": "Field title."
+            },
+            "x-botaru-read-by": {
+              "const": "code",
+              "description": "The field is read by core code or a route (OUT-1)."
+            },
+            "x-botaru-version": {
+              "enum": [
+                "v0.1",
+                "v0.2"
+              ],
+              "description": "Skeleton version from which the field exists."
+            },
+            "oneOf": {
+              "type": "array",
+              "maxItems": 16,
+              "items": {
+                "$ref": "#/$defs/closed"
+              },
+              "minItems": 1
+            }
+          },
+          "description": "Exactly one of the closed schemas."
+        }
+      ]
+    },
+    "closed_object": {
+      "description": "Closed top-level object schema: params_schema, args, fields_schema.",
+      "allOf": [
+        {
+          "$ref": "#/$defs/closed"
+        },
+        {
+          "required": [
+            "type"
+          ],
+          "properties": {
+            "type": {
+              "const": "object"
+            }
+          }
+        }
+      ]
+    },
+    "result": {
+      "description": "Result schema node: a closed leaf or model text with a length ceiling (OUT-1).",
+      "anyOf": [
+        {
+          "$ref": "#/$defs/closed"
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "type",
+            "maxLength"
+          ],
+          "properties": {
+            "description": {
+              "type": "string",
+              "maxLength": 2000,
+              "description": "Field description for people and the model."
+            },
+            "title": {
+              "type": "string",
+              "maxLength": 200,
+              "description": "Field title."
+            },
+            "x-botaru-version": {
+              "enum": [
+                "v0.1",
+                "v0.2"
+              ],
+              "description": "Skeleton version from which the field exists."
+            },
+            "type": {
+              "const": "string"
+            },
+            "maxLength": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100000,
+              "description": "Text length ceiling."
+            },
+            "minLength": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 100000,
+              "description": "Lower length bound."
+            }
+          },
+          "description": "Model text with a length ceiling; code does not read it, and it cannot have an x-botaru-read-by mark (OUT-1)."
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "type",
+            "additionalProperties"
+          ],
+          "properties": {
+            "description": {
+              "type": "string",
+              "maxLength": 2000,
+              "description": "Field description for people and the model."
+            },
+            "title": {
+              "type": "string",
+              "maxLength": 200,
+              "description": "Field title."
+            },
+            "x-botaru-read-by": {
+              "const": "code",
+              "description": "The field is read by core code or a route (OUT-1)."
+            },
+            "x-botaru-version": {
+              "enum": [
+                "v0.1",
+                "v0.2"
+              ],
+              "description": "Skeleton version from which the field exists."
+            },
+            "type": {
+              "const": "object"
+            },
+            "additionalProperties": {
+              "const": false
+            },
+            "properties": {
+              "type": "object",
+              "maxProperties": 64,
+              "additionalProperties": {
+                "$ref": "#/$defs/result"
+              },
+              "propertyNames": {
+                "pattern": "^[a-z][a-z0-9_]{0,63}$"
+              }
+            },
+            "required": {
+              "type": "array",
+              "maxItems": 64,
+              "items": {
+                "type": "string",
+                "pattern": "^[a-z][a-z0-9_]{0,63}$"
+              }
+            }
+          },
+          "description": "Result object."
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "type",
+            "items",
+            "maxItems"
+          ],
+          "properties": {
+            "description": {
+              "type": "string",
+              "maxLength": 2000,
+              "description": "Field description for people and the model."
+            },
+            "title": {
+              "type": "string",
+              "maxLength": 200,
+              "description": "Field title."
+            },
+            "x-botaru-read-by": {
+              "const": "code",
+              "description": "The field is read by core code or a route (OUT-1)."
+            },
+            "x-botaru-version": {
+              "enum": [
+                "v0.1",
+                "v0.2"
+              ],
+              "description": "Skeleton version from which the field exists."
+            },
+            "type": {
+              "const": "array"
+            },
+            "items": {
+              "$ref": "#/$defs/result"
+            },
+            "maxItems": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 1000,
+              "description": "Array length ceiling."
+            },
+            "minItems": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 1000,
+              "description": "Lower length bound."
+            }
+          },
+          "description": "Array in the result."
+        }
+      ]
+    },
+    "result_object": {
+      "description": "Top-level result schema of a task type.",
+      "allOf": [
+        {
+          "$ref": "#/$defs/result"
+        },
+        {
+          "required": [
+            "type"
+          ],
+          "properties": {
+            "type": {
+              "const": "object"
+            }
+          }
+        }
+      ]
+    },
+    "sandbox_param": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "type",
+        "maxLength"
+      ],
+      "properties": {
+        "description": {
+          "type": "string",
+          "maxLength": 2000,
+          "description": "Field description for people and the model."
+        },
+        "title": {
+          "type": "string",
+          "maxLength": 200,
+          "description": "Field title."
+        },
+        "x-botaru-read-by": {
+          "const": "code",
+          "description": "The field is read by core code or a route (OUT-1)."
+        },
+        "x-botaru-version": {
+          "enum": [
+            "v0.1",
+            "v0.2"
+          ],
+          "description": "Skeleton version from which the field exists."
+        },
+        "type": {
+          "const": "string"
+        },
+        "maxLength": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 100000,
+          "description": "Length ceiling."
+        }
+      },
+      "description": "String without a format: allowed only for tools with placement: sandbox (INJ-1)."
+    }
+  }
+}

@@ -1,0 +1,117 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:botaru:schema:attribution:1",
+  "title": "Incident attribution candidate",
+  "description": "Attribution candidate (Attribution): a possible link between an incident and an executed change. Only code under attribution-rules.yaml or a person through P2 attribution.create creates it; only a person with governance.attribute decides it; no bot creates, changes or hides it (GOV-13). State follows spec/lifecycles/attribution.md.",
+  "x-botaru-direction": "record",
+  "x-botaru-retention": "metadata",
+  "x-botaru-version": "v0.2",
+  "x-botaru-rules": [
+    "GOV-13",
+    "GOV-30"
+  ],
+  "type": "object",
+  "required": [
+    "id",
+    "tenant",
+    "incident",
+    "proposal",
+    "rule",
+    "created_by",
+    "state"
+  ],
+  "properties": {
+    "id": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/object_id"
+    },
+    "tenant": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/tenant_name"
+    },
+    "incident": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/object_id"
+    },
+    "proposal": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/object_id",
+      "description": "The executed proposal whose change may be linked to the incident."
+    },
+    "rule": {
+      "enum": [
+        "direct",
+        "dependency_1",
+        "human"
+      ],
+      "description": "Under which rule the candidate was created; human when created through P2 attribution.create."
+    },
+    "created_by": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/principal_ref",
+      "description": "system for code, human:<name> for P2 attribution.create."
+    },
+    "created_at": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/datetime"
+    },
+    "state": {
+      "enum": [
+        "candidate",
+        "unknown",
+        "confirmed",
+        "rejected",
+        "disputed",
+        "canceled"
+      ]
+    },
+    "answer": {
+      "anyOf": [
+        {
+          "type": "object",
+          "required": [
+            "decision",
+            "by",
+            "at"
+          ],
+          "properties": {
+            "decision": {
+              "enum": [
+                "yes",
+                "no",
+                "unknown"
+              ]
+            },
+            "by": {
+              "$ref": "urn:botaru:schema:common:1#/$defs/principal_ref",
+              "description": "The person who answered."
+            },
+            "at": {
+              "$ref": "urn:botaru:schema:common:1#/$defs/datetime"
+            },
+            "response_ms": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "details_opened": {
+              "type": "boolean"
+            }
+          }
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "reminders": {
+      "type": "integer",
+      "description": "Reminders once a week, at most 3 (GOV-30).",
+      "minimum": 0,
+      "maximum": 3
+    },
+    "cancel_reason": {
+      "anyOf": [
+        {
+          "const": "incident_dismissed"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    }
+  }
+}

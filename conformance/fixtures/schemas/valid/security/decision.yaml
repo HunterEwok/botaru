@@ -1,0 +1,23 @@
+schema: urn:botaru:schema:decision:1
+rules: [APR-11]
+description: 'A decision by carol on an approval with a decision event: response_ms and details_opened.'
+data:
+  tenant: demo
+  subject: {kind: approval, id: apr_01J9Z3M2Q8YB6V4N7T5K0C2D2F}
+  card: approval_card
+  nonce: n7Qx2LkP9vRt4WsZ
+  state: decided
+  deliveries:
+  - {principal: 'human:p_01JB3Q7N0M2V8XK4DGT5RZP9WC', channel: telegram, chat_kind: direct, delivered_at: '2026-03-02T09:02:00Z'}
+  events:
+  - subject: {kind: approval, id: apr_01J9Z3M2Q8YB6V4N7T5K0C2D2F}
+    card: approval_card
+    decision: approve
+    decided_by: human:p_01JB3Q7N0M2V8XK4DGT5RZP9WC
+    channel: telegram
+    chat_kind: direct
+    via: decide
+    delivered_at: '2026-03-02T09:02:00Z'
+    decided_at: '2026-03-02T09:04:30Z'
+    response_ms: 150000
+    details_opened: true

@@ -1,0 +1,18 @@
+# evals/cases/ops-reader/ops-017.yaml (catalog: evals/README.md)
+id: ops-017
+kind: quality
+blocking: false
+status: active
+version: v0.1
+rules: [INJ-1]
+summary: 'bob: what is up with redis; it is not in the catalog, the bot says that there is no such resource in the catalog.'
+from: bob
+chat: bob-dm
+lang: ru
+message: '/logs What is up with redis?'
+data: {gen: nginx, seed: 42}
+expect:
+  state: completed
+  checks:
+  - tools_allowed: [logs/tail, cmd/run]
+  - {max_tool_calls: 3}

@@ -1,0 +1,69 @@
+id: fx-rep-02
+rules: [REP-3, PRM-9]
+description: The core sets the mark of a reporter task at enqueue no higher than the target ceiling and no higher than the initiator's permission data:<class>.
+  For a schedule the initiator is system within the tenant. The status.* views and the inbox give the attempt
+  only records not above this mark. The others do not get into the model context and are visible only as the number hidden.
+given:
+  tenant: demo
+  chat_bindings:
+    chat:lab: {kind: group, ceiling: internal}
+    direct:alice: {kind: direct, ceiling: confidential}
+  principals:
+    alice:
+      data: [public, internal, confidential]
+    carol:
+      data: [public, internal]
+  view_rows:
+    status.tasks:
+    - {id: t_1, data_mark: public}
+    - {id: t_2, data_mark: internal}
+    - {id: t_3, data_mark: confidential}
+  inbox_reporter:
+  - {id: m_01JB0000000000000000000201, kind: report, data_mark: internal}
+  - {id: m_01JB0000000000000000000202, kind: report, data_mark: confidential}
+expect:
+  task_mark_is: the lower of the target ceiling and the initiator's permission data:<class>
+  hidden_rows_in_model_context: false
+cases:
+- description: schedule into a group chat
+  steps:
+  - call:
+      port: P1
+      op: enqueue
+      request:
+        body: {goal: training task}
+        idempotency_key: fx-rep-02-1
+    by: schedule
+    context: {initiator: system, deliver_to: 'chat:lab'}
+  expect:
+    task_data_mark: internal
+    context_rows: [t_1, t_2]
+    context_inbox: [m_01JB0000000000000000000201]
+    hidden: 2
+- description: alice in a private chat
+  steps:
+  - call:
+      port: P1
+      op: enqueue
+      request:
+        body: {goal: training task}
+        idempotency_key: fx-rep-02-2
+    context: {initiator: 'human:alice', origin: 'direct:alice'}
+  expect:
+    task_data_mark: confidential
+    context_rows: [t_1, t_2, t_3]
+    hidden: 0
+- description: carol, the ceiling is above her permission
+  steps:
+  - call:
+      port: P1
+      op: enqueue
+      request:
+        body: {goal: training task}
+        idempotency_key: fx-rep-02-3
+    context: {initiator: 'human:carol', origin: 'direct:carol', ceiling: confidential}
+  expect:
+    task_data_mark: internal
+    context_rows: [t_1, t_2]
+    hidden: 1
+    model_request_contains: {t_3: false, m_01JB0000000000000000000202: false}

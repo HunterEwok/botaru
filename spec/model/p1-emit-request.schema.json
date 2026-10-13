@@ -1,0 +1,27 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:botaru:schema:p1-emit-request:1",
+  "title": "P1 emit: request",
+  "description": "A job worker with an attempt token publishes an event of a type from the events of its task type with data by the event schema. The core sets the source and id fields from the credentials, so the request does not have them (IDM-4). Denials: type_not_allowed, fenced. The lease token is not passed in the body: the holder sends it in the Botaru-Lease header (spec/bindings/http/README.md), one way for all operations under a lease (FEN-2).",
+  "x-botaru-direction": "input",
+  "x-botaru-rules": [
+    "IDM-4"
+  ],
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "type",
+    "data"
+  ],
+  "properties": {
+    "type": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/type_name"
+    },
+    "data": {
+      "description": "Data by the event type schema.",
+      "type": "object",
+      "maxProperties": 64,
+      "x-botaru-closed-by": "data schema of the event type from spec/bindings/events/catalog.yaml"
+    }
+  }
+}

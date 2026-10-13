@@ -1,0 +1,69 @@
+# Tenant kind and the self-approval prohibition (APR-9); two approvers (APR-16, v0.2).
+id: fx-approval-self-approve
+rules: [APR-9, APR-16]
+description: For a production tenant the initiator does not approve their own request and does not continue their own campaign. Without the field
+  kind the tenant is production.
+cases:
+- id: apr-self-01
+  rules: [APR-9]
+  steps:
+  - lint:
+      tenant_yaml: {kind: production, self_approve: true}
+  expect: {result: rejected, stage: apply}
+- id: apr-self-02
+  rules: [APR-9]
+  steps:
+  - lint:
+      tenant_yaml: {self_approve: true}
+  expect: {result: rejected, stage: apply, note: without kind the tenant is production}
+- id: apr-self-03
+  rules: [APR-9]
+  steps:
+  - lint:
+      tenant_yaml: {kind: test, self_approve: true}
+  expect: {result: ok}
+- id: apr-self-04
+  rules: [APR-9]
+  given: {actor: 'human:bob', tenant: demo, approve: cleanup_pipeline_tmp, initiator: 'human:bob'}
+  expect: {result: denied, reason: self_approve}
+- id: apr-self-05
+  rules: [APR-9]
+  given:
+    tenant: demo
+    campaign: {initiator: 'human:bob'}
+  steps:
+  - call:
+      port: P1
+      op: decide
+      request: {subject_kind: approval, id: $last, decision: exclude}
+    by: human:bob
+  expect: {result: denied, reason: self_approve}
+- id: apr-self-06
+  rules: [APR-16]
+  given:
+    since: v0.2
+    tenant: demo
+    action: {risk: high, approvals: 2}
+    people:
+    - principal: human:carol
+      groups: [approver]
+  steps:
+  - call:
+      port: P1
+      op: decide
+      request: {subject_kind: approval, id: $last, decision: approve}
+    by: human:carol
+  - call:
+      port: P1
+      op: decide
+      request: {subject_kind: approval, id: $last, decision: approve}
+    by: human:carol
+  expect: {state: pending, votes: 1, note: a second vote of the same person does not count}
+- id: apr-self-07
+  rules: [APR-16]
+  given: {since: v0.2}
+  steps:
+  - lint:
+      tenant_yaml: {kind: production}
+      action_yaml: 'risk: high, approvals: 1'
+  expect: {result: rejected, stage: apply}

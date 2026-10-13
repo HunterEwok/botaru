@@ -1,0 +1,12 @@
+schema: urn:botaru:schema:health-report:1
+rules:
+- OBS-10
+description: A toolhost report about a plugin.
+data:
+  component: plugin
+  name: logs
+  state: down
+  checks:
+  - code: process_exit
+    state: down
+  time: '2026-10-12T10:00:00Z'

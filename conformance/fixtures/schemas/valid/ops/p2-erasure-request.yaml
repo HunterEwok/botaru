@@ -1,0 +1,15 @@
+schema: urn:botaru:schema:p2-erasure-request:1
+rules:
+- RET-7
+description: Scopes (tenant, subject) and a list of ids.
+cases:
+- scope:
+    tenant: demo
+    subject: 'human:p_01JB3Q7N0M2V8XK4DGT5RZP9WC'
+  reason: manual
+- scope:
+    tenant: demo
+    ids:
+    - t_01JB8M0000000000000000000A
+    - f_01JB8M0000000000000000000B
+  reason: subject_request

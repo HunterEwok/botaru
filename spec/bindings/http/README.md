@@ -1,0 +1,96 @@
+# HTTP binding v1
+
+## In short
+
+This is the wire envelope of the core protocols over HTTP: paths, method, headers, where the worker token, the lease token and the handles go, how a channel speaks on behalf of a person, how long polling of `claim` works, how files, errors and idempotency are passed. The binding is needed from v0.1: the black-box runner and the first bot talk to the core only through it, so two core implementations and any worker are compatible on the wire. Body shapes are not repeated here: the request and response body of each operation is a schema from `spec/model/` named in the map `spec/ports/operations.yaml`. An OpenAPI 3.1 description referencing the same schemas will appear from v0.2 and will add nothing to this envelope.
+
+What the binding implements: P1 in full, P2 (`admin.md` in this folder), the transport of P3 and P4 (their content is set by `spec/bindings/mcp/README.md` and `spec/bindings/model-providers/`), the test-control port `spec/ports/test-control.md`. Technology version: HTTP/1.1 and HTTP/2 over TLS, JSON in UTF-8 in the strict I-JSON subset (RFC 7493), problem details by RFC 9457. A JSON body with a repeated key in an object, a string with a lone surrogate or invalid UTF-8, or a number outside `±(2^53 - 1)` gets `400 input_schema_invalid` before the schema check: otherwise the schema and the handler would see different values, and the hashes of `spec/hashing.md` would diverge. The deployment sets the limit on JSON body size and nesting depth; exceeding it gives `413` with `input_schema_invalid`.
+
+## Listeners and paths
+
+| Port | Listener | Path | Method |
+|---|---|---|---|
+| P1 | P1 | `/v1/p1/<operation>`, for example `/v1/p1/claim`, `/v1/p1/task.get`, `/v1/p1/submit_activity` | `POST` |
+| P2 | a separate P2 listener (IDN-7), see `admin.md` | `/v1/p2/<operation>`, for example `/v1/p2/hold.set` | `POST` |
+| P3 | P1 | `/v1/p3/mcp`: sessionless MCP over HTTP, JSON-RPC 2.0 in the body (`spec/bindings/mcp/README.md`) | `POST` |
+| P4 | P1 | `/v1/p4/<provider>/<path>` only for the paths and methods listed in the provider binding (`anthropic` has one: `POST /v1/messages`); another path or method gets `404 not_found` before the provider is contacted. P4 is not a transparent proxy | `POST` |
+| test-control port | a separate listener, only on the test bench | `/v1/test/<operation>`, for example `/v1/test/clock.advance` | `POST` |
+
+- `<operation>` is the `op` field of the row of the map `spec/ports/operations.yaml` for this port, letter for letter. There are no operations with substitution in the path: the object id is always in the body.
+- All P1 and P2 operations are `POST` with an `application/json` body, including reads: the body is closed by the request schema, and a `GET` with parameters in the address cannot be closed by a schema. For an operation without parameters the body is `{}` (schema `empty-request`).
+- If a request schema is shared by several operations of the map and its `op` field lists their names (for example `p2-principal-request` for `principal.add` and `principal.off`), the value of `op` equals the operation of the path; another value is refused with the reason `input_schema_invalid`. In `control.apply` and `manager.direct` the `op` field names the control measure (`hold`, `release` and others), not the operation of the path, and this rule does not apply to it.
+- `/v1` is the major version of P1 (`v1` in `protocol_versions` of the `hello` request). The core keeps a window of the current and the previous major version (LCY-7): when `/v2` comes out, the `/v1` path works until the end of the window, and a worker outside the window gets `version_unsupported` at `hello`.
+
+## Credentials and headers
+
+| Header | What it carries | When |
+|---|---|---|
+| `Authorization: Bearer <value>` | the worker token (P1); the tool handle (P3), the model handle (P4), the session and memory handle (`session.*`, `memory.*` of P1); on P2 a person's credentials through `farmctl`, the P2 secret of a channel driver, the `health` key or a report key | always |
+| `Botaru-Lease: <lease token>` | the holder's current lease token | every P1 call under a lease: map rows with `lease` |
+| `Botaru-On-Behalf: <identity>` | the identity of a person verified by the channel, for example `telegram:1001` | channel calls on behalf of a person: map rows with `on_behalf` and commands of people on P2 |
+| `Botaru-Chat: <kind>:<chat id>` | the chat from which the press or command came: `direct:1001`, `group:-1009001` | together with `Botaru-On-Behalf` |
+| `Botaru-Message: <external message id>` | the channel message on which a card button was pressed (`message_id` in Telegram); the core compares it with the `external_id` of the delivery of this card to this chat | together with `Botaru-On-Behalf` for `decide`, `card.*`, `campaign.control` and `script.control` from a button |
+| `traceparent` | W3C trace context; does not affect core decisions | optional |
+| `Retry-After` | seconds until a retry, the same number as `retry_after_s` in the answer | in an answer with `retry_after_s` |
+
+- **The tenant and the subject** the core takes only from `Authorization` (TEN-2). The schema rejects a tenant field in the body, except for P2 operator operations, which name the target tenant by their schema.
+- **The lease token** is issued by the core in the work unit (field `token` in `work-item`, schema `urn:botaru:schema:lease:1#/$defs/token`). The token is not a credential but a fencing number: it holds the holder's `worker_id`. The core may sign the token (`key_id` and `sig` over the other fields, `spec/hashing.md`, "lease token signature"), but it accepts a call by comparison with the lease record, not by the signature: a forged field without a signature is caught by the same comparison (D-87 (5)). The header value is base64url without padding (RFC 4648, section 5) of the canonical form of the token by RFC 8785; the holder returns it as received, without parsing. This is the one way for all operations under a lease: P1 request bodies have no token field.
+- The core accepts a call under a lease only if the token's `worker_id` equals the worker from `Authorization`, the lease's tenant equals the tenant of the credentials, and `epoch`, `lease_no` and the identity and seat epochs match the active lease record. A foreign `worker_id` (not equal to the worker from `Authorization` or to the holder of the lease record with this `lease_no`), and for a signed token also a wrong signature, give `lease_mismatch`; a token of a past lease, of a past store or seat epoch and a call without the header give `fenced` (FEN-2, RET-6, MGR-1). Both refusals have no side effects, and the core writes them to the audit with the code.
+- **P3 and P4** carry no lease token: the core binds the handle in `Authorization` to the attempt's lease (or to the worker's lease under `model_attribution: per_profile`) and to the store epoch, so a call by a handle of a dead lease gets `fenced`, and an unknown handle `handle_invalid` (SEC-3, FEN-4). The handle goes neither into the body, nor into `_meta`, nor into logs.
+- **On behalf of a person.** A channel authenticates with its worker token on P1 and with the P2 secret of its driver on P2 (one secret per driver in a tenant, issued by `worker.enroll` of the channel process, D-87 (3)) and passes `Botaru-On-Behalf` and `Botaru-Chat` by the schema `spec/model/on-behalf.schema.json`. The person and the chat come only from these headers. The core accepts them only from the channel process through whose driver the person came, and checks in order (APR-4, IDN-3, TEN-4, PRM-15):
+  1. the identity kind matches the driver from the `enroll` record for which the P1 token or the P2 secret was issued: a channel with the `telegram` driver asserts only `telegram:*`; otherwise `forbidden`, and the core writes the refusal to the audit with an alarm;
+  2. the identity is among the subjects of the channel's tenant, and it is an active `human` subject with a strong identity;
+  3. for `decide`, `card.*`, `campaign.control` and `script.control` the channel from `Authorization` is the channel process that delivered the card, the chat from `Botaru-Chat` is the one it was delivered to, and the message from `Botaru-Message` (for a button press) equals the `external_id` of this delivery; in a group chat the driver declared `membership_assurance: enforced`;
+  4. for a P2 text command the chat from `Botaru-Chat` is `direct:` and the private chat of this person with this channel (in Telegram the private chat id equals the user id, so `direct:<n>` with `telegram:<n>`); the private chat is checked by the person's identity, no `ChatBinding` is needed for it; otherwise `forbidden`. An operation button on a card passes check 3, not 4 (`admin.md`).
+
+  Without these headers `decide`, `card.*`, `campaign.control` and `script.control` get `forbidden`. The messenger chat id is not written to the audit: `service_grant.author.chat` is the id of the chat binding (`ChatBinding`).
+
+## Answers
+
+- Success is `200` with a body by the operation's response schema. An answer by the output schema may carry fields the recipient does not know; the recipient tolerates them (MAN-3).
+- **Long polling of `claim`.** `wait_s` from the request is from 0 to 60 seconds, default 30; the core treats a value above 60 as 60. The core answers no later than `wait_s` plus 5 seconds: with a work unit or `200` with the body `{"work": null}`. An empty answer is not an error, the worker repeats `claim`. Waiting in `claim` updates the worker's `last_seen` (STA-2), so `alarm.worker.stale` is raised only for a worker that stays silent for longer than two such periods. The same rule applies to `msg.receive` with `wait_s`.
+- **Files.** `file.put` uses a `multipart/form-data` body of two parts: `meta` (`application/json` by the `p1-file-put-request` schema) and `content` (bytes). The core determines the content type by the bytes, not by the declared `media_type`. `file.get` answers with the file bytes: `Content-Type` is the record's `media_type`, `Content-Length` is the size, the headers `Botaru-File-Ref` and `Botaru-Data-Mark` carry the other fields of the `p1-file-get-response` schema. The deployment sets the body size limit.
+
+## Errors
+
+Every refusal from the "Refusals" column of the sheets is problem details by RFC 9457 with the media type `application/problem+json` and a body by the schema `urn:botaru:schema:common:1#/$defs/problem`:
+
+```json
+{ "type": "urn:botaru:reason:fenced", "title": "fenced", "status": 409,
+  "reason": "fenced", "detail": "lease token is stale" }
+```
+
+- `type` is `urn:botaru:reason:<reason>`, `reason` is the code from `spec/model/reasons.yaml`, `title` repeats the code. Free text appears only in `detail`, and the core does not put tenant content there.
+- The enqueue refusal `rejected{reason}` of the sheets (`enqueue`, `campaign.propose`) is also problem details, with status `422`; the additional members `needs` (which groups or permissions were missing, PRM-8) and `retry_after_s` go in the same object. The branch of the `p1-enqueue-response` answer with a `reason` field in a success body is deprecated and not used in binding v1.
+- The model does not get the reason of a permission refusal: P3 answers with a short "no permission", the full reason is written to the audit (PRM-8). On P1 and P2 the caller gets the full reason.
+
+| Status | `reason` codes |
+|---|---|
+| 400 | `input_schema_invalid`, `version_unsupported`, `data_schema_invalid`, `address_invalid`, `msg_type_not_allowed`, `note_not_allowed`, `schema_invalid` |
+| 401 | `unauthenticated`, `handle_invalid` |
+| 403 | `forbidden`, `operator_only`, `self_approve`, `privileged_group`, `blocked`, `identity_unknown`, `held`, `type_not_allowed`, `data_class_exceeded`, `details_not_opened`, `proposal_scope`, `sink_not_export`, `rank_exceeded` |
+| 404 | `not_found` (the same for a foreign and a nonexistent object, PRM-9) |
+| 409 | `fenced`, `lease_mismatch`, `already_decided`, `already_terminal`, `idempotency_conflict`, `tenant_mismatch` |
+| 410 | `gone`, `expired` |
+| 422 | refusals of enqueue and content checks: `ref_invalid`, `no_group_cap`, `no_data_class`, `tier_exceeded`, `depth_exceeded`, `tree_too_large`, `person_inactive`, `budget_exhausted`, `memory_untrusted`, `group_invalid`, `output_schema_invalid`, `hops_exceeded`, `target_not_implicated`, `target_excluded`, `protected_target`, and any code whose outcome in `reasons.yaml` is `rejected` and which is not in the other rows |
+| 429 | `over_capacity`, `service_rate_limited`, `sender_quota`, `inbox_full`, `control_rate_limited`, `provider_rate_limited`, `provider_quota` |
+| 503 | `not_ready`, `draining`, `store_unavailable`, `provider_unavailable` (with `retry_after_s` and `Retry-After`) |
+| 502 | `provider_config`, `provider_spend_cap` |
+
+A code that is not in the table answers with status `422`. A new reason code is a row of `reasons.yaml`; the binding does not introduce it, it only assigns it to a status.
+
+## Idempotency
+
+- A repeat of a changing operation with the same arguments gives the same status and the same body, and the side records appear once (IDM-3). The key of each operation is named in the `idempotent_by` field of the map: the arguments for `heartbeat`, `complete`, `fail`, `release`, `cancel`, `decide`; `idempotency_key` in the body for `enqueue`, `msg.send`, `campaign.propose`; `(channel, update_id)` for `submit_activity`; `entry.uuid` for `session.append`; the content hash for `memory.propose`. The binding has no `Idempotency-Key` header: the key is always part of the body or follows from it.
+- A client repeats a request after a dropped connection only for operations with `idempotent_by`. `claim` is not idempotent: a repeat after a lost answer gives a new lease, and the lost lease ends by its deadline.
+- `not_ready` and `503` are repeated after `Retry-After`. The runtime does not retry a P4 error (GW-12).
+
+## Erasure and search work for edge stores
+
+The core pushes work to nobody, so the steps of an erasure request reach the edge stores by the same pull. A work unit has the kind `erasure` (schema `erasure-work`): the core's `erasure` loop creates one work unit for each edge store that holds the tenant's content, with `op: erase` or `op: match` and the `target`. A channel, a sink and a monitoring adapter get it if they ask `claim` with the kind `erasure` in `kinds`, their name from the `enroll` record matches `target.name`, and the worker's tenant equals `scope.tenant` (channel names like `telegram` repeat in different tenants, TEN-3); an agent adapter gets the work if `target.worker_id` is the adapter itself, and passes it to the runtime as `purge` or `match` of sheet E4. For `erase` with the scope `(tenant, subject)` and for `match` the work carries `needles`: the person's external identities, addresses and display name at the time of the request, because the edge store does not know the core's subject id. The core keeps the `needles` until the end of the erasure request and then erases them; the store writes them neither to logs nor to telemetry. The result is handed in with `complete` with the `erasure` field by the `erasure-outcome` schema (`done`, `failed` or `not_applicable` and, for `match`, a list of ids without content). `not_applicable` is accepted only with the `basis` field, which names by what sign the store made sure that there is nothing to delete. A channel that declared `driver.stores_content: none` in `hello` gets no `erasure` work: the core itself writes its step with the result `not_applicable` and `basis: declared_none`, so in v0.1 a request does not hang because of E1. A store that does not take `erasure` work or hands in `failed` leaves the request open, and an alarm is raised by the deadline (RET-7).
+
+## Checks
+
+- The `conformance/suites/core-blackbox` suite drives the runner through this binding: the paths and headers of this file, bodies by the schemas of the map.
+- A token of another worker of the same tenant with a valid lease number and a token with a changed field get `409 lease_mismatch`; a body with a repeated key gets `400 input_schema_invalid`; `Botaru-On-Behalf: telegram:1001` from a channel with another driver and a P2 command from a foreign chat get `403 forbidden`; a P4 path outside the binding gets `404 not_found`, and the mock provider does not see the call.
+- A call under a lease without `Botaru-Lease` and with an old token gets `409 fenced`; `decide` without `Botaru-On-Behalf` gets `403 forbidden`; `claim` with `wait_s: 1` without work gets `{"work": null}` no later than in 6 seconds.

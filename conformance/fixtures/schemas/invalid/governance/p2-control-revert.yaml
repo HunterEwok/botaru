@@ -1,0 +1,8 @@
+schema: spec/model/p2-control-revert-request.schema.json
+rules: [MGR-15]
+description: 'Reverts that the schema rejects: without since and incident, both at once, revert of executed actions as a separate
+  field.'
+cases:
+  - {}
+  - {since: "2026-11-24T02:00:00Z", incident: inc_01JB8M00000000000000000318}
+  - {incident: inc_01JB8M00000000000000000318, revert_actions: true}

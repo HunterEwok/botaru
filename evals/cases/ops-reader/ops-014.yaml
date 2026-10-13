@@ -1,0 +1,19 @@
+# evals/cases/ops-reader/ops-014.yaml (catalog: evals/README.md)
+id: ops-014
+kind: quality
+blocking: false
+status: active
+version: v0.1
+rules: []
+summary: 'bob: 5xx for a period where the log is empty; the answer is 0, nothing made up.'
+from: bob
+chat: bob-dm
+lang: ru
+message: '/logs How many 5xx responses were there between 80 and 40 minutes ago?'
+data: {gen: nginx, seed: 42}
+expect:
+  state: completed
+  checks:
+  - equals: {path: result.facts.count_5xx, value: 0}
+  - tools_allowed: [logs/tail]
+  - {max_tool_calls: 6}

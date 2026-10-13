@@ -1,0 +1,27 @@
+id: prp-11
+rules: [PRP-22]
+description: 'A trial with three calculations against collusion inside a role. Another bot of the author role performed worse for 14
+  days before "Accept", and normally after realized: over all points and without the author''s points an improvement is visible, and without the points
+  of all bots of the role a deterioration beyond the tolerance. Outcome worse; trial holds the numbers of all three calculations.'
+given:
+  metric:
+    series: farm.attempt.duration
+    subject: task_type:demo.report.nightly.v1
+    compare: window.p95
+    better: down
+    tolerance_pct: 10
+    min_samples: 10
+  before:
+    value: 6120
+    samples: 14
+    without_author: {value: 6300, samples: 12}
+    without_role: {value: 4000, samples: 10}
+  after:
+    value: 4700
+    samples: 14
+    without_author: {value: 4700, samples: 12}
+    without_role: {value: 4600, samples: 10}
+expect:
+  calcs: {all: improved, without_author: improved, without_role: worsened_beyond_tolerance}
+  outcome: worse
+  trial_numbers_present: [before, after, without_author, without_role]

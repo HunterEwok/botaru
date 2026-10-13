@@ -1,0 +1,14 @@
+schema: urn:botaru:schema:service-control-result:1
+rules:
+- APR-18
+- PRM-8
+description: A restart outcome and a denial with needs.
+cases:
+- code: done
+  state: active
+  grant_id: sg_01J9Z3M2Q8YB6V4N7T5K0C2D3G
+- code: approval_required
+  approval_id: apr_01J9Z3M2Q8YB6V4N7T5K0C2D2F
+- code: forbidden
+  needs:
+  - service.control:nginx

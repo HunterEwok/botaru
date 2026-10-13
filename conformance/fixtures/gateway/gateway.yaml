@@ -1,0 +1,60 @@
+id: fx-gateway-gateway
+rules: [GW-10, GW-13]
+description: A rate limiter on a model pool with a tenant share (GW-10) and counting runs in max_runs only with a model
+  answer (GW-13). The reasons provider_quota and provider_config do not spend an attempt.
+given: {tenant: demo}
+cases:
+- id: gw-fx-16
+  rules: [GW-10]
+  description: The dispatcher does not give out a task whose pool has no free share for the tenant, and the runtime is not
+    started for it.
+  given:
+    demo_rpm_used: 50
+    pool:
+      name: family-a
+      rpm: 100
+      shares: {demo: 0.5, demo2: 0.5}
+    task: {type: ops.investigate.v1, slot: base, profile: base-std}
+  expect: {claim_gives_task: false, waiting_reason: provider_quota, runtime_started: false}
+- id: gw-fx-17
+  rules: [GW-10, GW-13]
+  description: P4 delays a call of a running run beyond the share until the share is freed; if it does not get it within the attempt period,
+    the run ends with provider_quota without spending an attempt and without counting in max_runs.
+  given: {attempt_deadline_s: 120, share_frees_after_s: 300}
+  expect: {run_end_reason: provider_quota, spends_attempt: false, counts_to_max_runs: false}
+- id: gw-fx-18
+  rules: [GW-10]
+  description: The share was freed within the attempt period; the call goes after a delay.
+  given: {attempt_deadline_s: 120, share_frees_after_s: 20}
+  expect: {call_sent: true, delayed_s: 20}
+- id: gw-fx-19
+  rules: [GW-13]
+  description: A run that ended before the first model answer with a provider reason or core_unavailable does not count
+    in max_runs.
+  given: {max_runs: 2}
+  expect: {runs_counted: 1, task_state: submitted}
+  cases:
+  - given: {reason: provider_unavailable, answered: false}
+  - given: {reason: provider_rate_limited, answered: false}
+  - given: {reason: provider_quota, answered: false}
+  - given: {reason: provider_config, answered: false}
+  - given: {reason: core_unavailable, answered: false}
+  - given: {reason: runtime_error, answered: true}
+- id: gw-fx-20
+  rules: [GW-13]
+  description: A provider configuration error gives provider_config; the attempt is not spent, it is not retried by timer,
+    there is a code alarm, the circuit of the pair opens, and the task waits for a fix until deadline.
+  given: {provider_error: key_revoked}
+  expect:
+    reason: provider_config
+    spends_attempt: false
+    timer_retry: false
+    alarm: true
+    breaker: open
+    waits_until: deadline
+- id: gw-fx-21
+  rules: [GW-13]
+  description: A task that waited for a provider and ended failed(deadline_exceeded) keeps the provider reason in its
+    outcome.
+  given: {waited_reason: provider_unavailable}
+  expect: {state: failed, reason: deadline_exceeded, provider_reason: provider_unavailable}

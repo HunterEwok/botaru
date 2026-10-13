@@ -1,9 +1,11 @@
-# Dependabot: автоматические PR с обновлениями зависимостей.
-# Документация: https://docs.github.com/code-security/dependabot/working-with-dependabot/dependabot-options-reference
+# Dependabot: automatic PRs with dependency updates.
+# Documentation: https://docs.github.com/code-security/dependabot/working-with-dependabot/dependabot-options-reference
 #
-# Сейчас включены только экосистемы, которые уже решены для проекта:
-# GitHub Actions и контейнеры (Dockerfile, docker compose).
-# Экосистему языка (nuget / gomod / pip) добавить, когда язык будет выбран.
+# Enabled: GitHub Actions (actions are pinned to a commit SHA, Dependabot
+# updates the SHA and the version comment) and pip for the skeleton checks in ci/
+# (requirements.txt with hashes). The skeleton has no container images:
+# deploy/compose.example.yaml is an example, not a launch file.
+# The skeleton does not choose an implementation language. The schedule time zone is UTC.
 version: 2
 
 updates:
@@ -12,27 +14,17 @@ updates:
     schedule:
       interval: "weekly"
       day: "monday"
-      timezone: "Europe/Tallinn"
+      timezone: "UTC"
     groups:
       github-actions:
         patterns: ["*"]
 
-  - package-ecosystem: "docker"
-    directories: ["**/*"]
+  - package-ecosystem: "pip"
+    directory: "/ci"
     schedule:
       interval: "weekly"
       day: "monday"
-      timezone: "Europe/Tallinn"
+      timezone: "UTC"
     groups:
-      docker-images:
-        patterns: ["*"]
-
-  - package-ecosystem: "docker-compose"
-    directories: ["**/*"]
-    schedule:
-      interval: "weekly"
-      day: "monday"
-      timezone: "Europe/Tallinn"
-    groups:
-      compose-images:
+      ci-python:
         patterns: ["*"]

@@ -1,0 +1,6 @@
+schema: spec/model/p1-obs-query-request.schema.json
+rules: [OBV-3]
+description: 'A P1 obs.query request that the schema rejects: with group_by, which the job worker does not have. The attempt
+  lease goes in the Botaru-Lease header, not in the body.'
+cases:
+- {series: farm.backup.age, subject: 'dataset:ctd-2026', window: 93d, rollup: day.max, group_by: dataset}

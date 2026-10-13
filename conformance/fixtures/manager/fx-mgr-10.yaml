@@ -1,0 +1,51 @@
+id: fx-mgr-10
+rules: [MGR-2]
+description: 'A farm without a manager: in vacant and stopped no seat tasks are given out in any tenant, and no
+  core path waits for the manager. Code raises alarm.manager.absent if the seat is not held for longer than 5 minutes or a seat task
+  in a tenant waits for a worker for longer than 5 minutes; the monitoring system delivers it to people, not the channel.'
+cases:
+- id: fx-mgr-10-a
+  given:
+    seat: {state: vacant, since: '2026-11-24T05:00:00Z'}
+    incident: {tenant: demo, class: disk_full, opened_at: '2026-11-24T05:01:00Z'}
+    now: '2026-11-24T05:06:00Z'
+  expect:
+    seat_tasks_claimable: 0
+    contain_auto: {result: ok}
+    manager_notice_to_humans: sent
+    alarm:
+      type: alarm.manager.absent.v1
+      state: firing
+      delivered_by: monitor_system
+      channel_e1_deliveries: 0
+    dispatch_approvals_deliveries: unchanged
+- id: fx-mgr-10-b
+  given:
+    seat:
+      state: stopped
+      stop_reasons:
+      - {reason: human, at: '2026-11-24T05:00:00Z'}
+    now: '2026-11-24T05:04:00Z'
+  expect: {seat_tasks_claimable: 0, alarm: null, note: less than 5 minutes}
+- id: fx-mgr-10-c
+  given:
+    seat: {state: held}
+    queue:
+    - {tenant: demo2, type: manager.incident.respond.v1, waiting_since: '2026-11-24T05:00:00Z'}
+    workers_of_seat_roles_in: []
+    now: '2026-11-24T05:05:30Z'
+  expect:
+    alarm: {type: alarm.manager.absent.v1, state: firing}
+- id: fx-mgr-10-d
+  description: While the seat is not held, the class's first measure and the incident message to people go unchanged.
+  given:
+    seat: {state: vacant}
+  steps:
+  - occur:
+      incident_open: {tenant: demo, class: secret_in_outbound}
+  expect:
+    contain_auto:
+      op: hold
+      effects: [no_delivery]
+    manager_notice: created
+    waits_for_manager: false

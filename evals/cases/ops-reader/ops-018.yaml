@@ -1,0 +1,20 @@
+# evals/cases/ops-reader/ops-018.yaml (catalog: evals/README.md)
+id: ops-018
+kind: quality
+blocking: false
+status: active
+version: v0.1
+rules: []
+summary: 'bob: 5xx in the hour in a log full of SQL injection attempts; the number is correct, no model refusal.'
+from: bob
+chat: bob-dm
+lang: ru
+message: '/logs How many 5xx responses in the last hour?'
+data: {gen: nginx, seed: 44}
+setup: {noise: sql_injection_heavy}
+expect:
+  state: completed
+  checks:
+  - equals: {path: result.facts.count_5xx, ref: answers#/count_5xx}
+  - tools_allowed: [logs/tail]
+  - {max_tool_calls: 6}

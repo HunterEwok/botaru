@@ -1,0 +1,368 @@
+registry: decision-points
+version: 1
+description: >-
+  Registry of human decisions (APR-12): one row for each kind of card and
+  notice. A kind without a row does not pass the skeleton CI, and the core does not create such
+  a delivery. Entry fields: id is the kind of the card or notice; kind is decision
+  (a card with a decision on a subject) or notice (a notice without a subject);
+  subject is the decide subject from the closed list in decision.schema.json, or null for
+  a notice; decisions are the button decisions and the permission for each (right),
+  details_required means that the decision is accepted only after "Details" has been
+  opened (APR-14), self_approve and approvals say where the self-approval prohibition
+  and the number of approvers come from; recipients are who receives and
+  decides; ttl is the deadline in words or as a duration, by_action means the deadline from
+  the action manifest; on_silence is what happens on silence (state is the
+  subject state, outcome in words, remind is the reminder repetition); undo
+  is how to undo; urgent means that the card is not deferred by the limit
+  of cards per person (APR-15), but it counts toward it. The bottom line of the card
+  "why you, by what deadline, what happens if you stay silent" is taken by the channel from this
+  row and the subject record.
+source: docs/permissions.md
+entries:
+  # v0.1
+  - id: approval_card
+    since: v0.1
+    kind: decision
+    subject: approval
+    decisions:
+      approve: {right: 'action.approve:<a>', self_approve: by_tenant, approvals: by_action}
+      reject: {right: 'action.approve:<a>'}
+    recipients: people of the tenant with action.approve:<a>, in a direct chat; not the initiator on a production tenant; for approvals 2 two different people
+    ttl: by_action
+    ttl_default: {low: 60m, high: 30m, routine: 60m, low_min: 60m}
+    on_silence: {state: expired, outcome: the action is not executed, remind: at half of the deadline}
+    undo: a pending one is canceled by the initiator by canceling the task (/cancel) or by an admin; an executed one is not reverted, a new request is needed
+    urgent: true
+    rules: [APR-3, APR-4, APR-9, APR-12, APR-16, APR-19]
+  - id: approval_initiator_copy
+    since: v0.1
+    kind: notice
+    subject: null
+    recipients: the initiator of the request; the context line, the state and the "Remind approvers" button (P1 card.remind at most once in 5 minutes)
+    texts: [card.copy.initiator, card.copy.remind_button, card.remind, card.remind.rate_limited]
+    ttl: as for the approval
+    on_silence: {state: null, outcome: nothing}
+    undo: none
+    urgent: false
+    rules: [APR-12, APR-19]
+  - id: proposal_card
+    since: v0.1
+    kind: decision
+    subject: proposal
+    related: [proposal_reason, proposal_digest]
+    decisions:
+      accept: {right: 'proposal.decide:<category>', also: the permission to start the realization}
+      reject: {right: 'proposal.decide:<category>', reason_required: true}
+      defer: {right: 'proposal.decide:<category>', max_times: 2}
+    recipients: people of the tenant with proposal.decide:<category>
+    ttl: 14d
+    on_silence: {state: expired, outcome: nothing changes}
+    undo: an accepted one is removed by a reverse edit by the executor
+    urgent: false
+    rules: [APR-12]
+  - id: realization_card
+    since: v0.1
+    kind: notice
+    subject: null
+    recipients: the executor of the accepted proposal; the realization is confirmed by a verified link (PRP-19)
+    ttl: insights.realize_by, by default 7d, a reminder at half of the deadline
+    on_silence: {state: realization_failed(timeout), outcome: trial canceled}
+    undo: none
+    urgent: false
+    rules: [APR-12]
+  - id: memory_record_card
+    since: v0.1
+    kind: decision
+    subject: memory_record
+    decisions:
+      accept: {right: memory owner}
+      reject: {right: memory owner}
+    recipients: only the memory owner
+    ttl: 7d
+    on_silence: {state: discarded, outcome: the record is not saved}
+    undo: /forget deletes what was recorded for real (MEM-4)
+    urgent: false
+    rules: [APR-12]
+  - id: privileged_group_notice
+    since: v0.1
+    kind: notice
+    subject: null
+    recipients: all admins of the tenant, in a direct chat
+    ttl: none
+    on_silence: {state: null, outcome: nothing}
+    undo: none
+    urgent: false
+    rules: [APR-12, PRM-13]
+  - id: principal_left
+    since: v0.1
+    kind: notice
+    subject: null
+    recipients: admins of the tenant with admin:people, in a direct chat; a code text with the principal id, the trigger and the chats with a farm binding where the person remains; if there are no such chats, the notice still goes to the tenant admin with the mark "no chats" (IDN-13)
+    ttl: none
+    on_silence: {state: null, outcome: nothing}
+    undo: none
+    urgent: false
+    rules: [APR-12]
+  - id: subject_request_erase
+    since: v0.1
+    kind: decision
+    subject: subject_request
+    decisions:
+      approve: {right: 'admin:people', not_author: true, second_person: another person with admin:people approves erasure by match}
+      reject: {right: 'admin:people'}
+    recipients: people of the tenant with admin:people
+    ttl: privacy.subject_request_days, by default 30d
+    on_silence: {state: pending, outcome: "the request is not executed; a reminder at half of the deadline, at the deadline a notice to the operator"}
+    undo: the person withdraws their request
+    urgent: false
+    rules: [APR-12]
+  - id: manifest_changes_digest
+    since: v0.1
+    kind: notice
+    subject: null
+    recipients: admins of the tenant
+    ttl: none
+    on_silence: {state: null, outcome: nothing}
+    undo: none
+    urgent: false
+    rules: [APR-12]
+  - id: campaign_approval
+    since: v0.1
+    kind: decision
+    subject: campaign
+    decisions:
+      approve: {right: 'action.approve:<a>', read_only_over_threshold: 'task:<type>'}
+      reject: {right: 'action.approve:<a>'}
+      exclude: {right: 'action.approve:<a>'}
+    recipients: people with action.approve:<a>; for a read-only campaign above the threshold, people with task:<type>
+    ttl: the campaign deadline
+    on_silence: {state: expired, outcome: the campaign does not start}
+    undo: '"Pause" and "Cancel" of a running campaign'
+    urgent: true
+    rules: [APR-12, APR-3]
+  - id: campaign_progress
+    since: v0.1
+    kind: notice
+    subject: null
+    recipients: the initiator of the campaign; the progress card and the final summary, "Pause" and "Cancel" are operations
+    ttl: none
+    on_silence: {state: null, outcome: nothing}
+    undo: none
+    urgent: false
+    rules: [APR-12]
+  - id: script_confirm
+    since: v0.1
+    kind: decision
+    subject: script
+    decisions:
+      approve: {right: "the initiator; script.run for a script with actions, confirm or service control (SCR-6)"}
+      reject: {right: the initiator}
+    recipients: only the initiator
+    ttl: 30m
+    on_silence: {state: expired, outcome: run rejected(expired)}
+    undo: '"Cancel" before the run, or a new request'
+    urgent: true
+    rules: [APR-12]
+  - id: script_gate_card
+    since: v0.1
+    kind: decision
+    subject: script_gate
+    decisions:
+      approve: {right: "the initiator of the run or, if the step declared so, a person with action.approve:<a>"}
+      reject: {right: "the initiator of the run or, if the step declared so, a person with action.approve:<a>"}
+    recipients: the initiator of the run or people with action.approve:<a>
+    ttl: 30m, not longer than the run deadline
+    on_silence: {state: expired, outcome: "the step is declined; dependent steps with run_if succeeded are skipped, the run is not counted as failed (SCR-11)"}
+    undo: '"Stop" or canceling the run'
+    urgent: true
+    rules: [APR-12]
+  - id: control_card
+    since: v0.1
+    kind: decision
+    subject: control
+    decisions:
+      approve: {right: control.approve}
+      reject: {right: control.approve}
+    recipients: people of the target tenant with control.approve
+    ttl: 1h
+    on_silence: {state: expired, outcome: the operation is not applied}
+    undo: a stop is released by /hold release <id>; operations on an incident are reverted by /control revert <number>
+    urgent: true
+    rules: [APR-12]
+  - id: manager_notice
+    since: v0.1
+    kind: notice
+    subject: null
+    recipients: people of the tenant, one updated message per basis; decisions by the P2 commands incident.* with incident.manage
+    ttl: none
+    on_silence: {state: null, outcome: the incident follows its own lifecycle}
+    undo: the message has one revert command, /control revert <number>
+    urgent: false
+    attention_limit: false
+    rules: [APR-12]
+  - id: manager_stopped
+    since: v0.1
+    kind: notice
+    subject: null
+    recipients: operators with admin:governance in farm; the commands farmctl seat resume, farmctl seat assign, farmctl seat vacate (PRM-14)
+    ttl: 7d
+    on_silence: {state: null, outcome: "the seat becomes vacant, the bot retires (GOV-22, IDN-11)", remind: "after one day, after three days and one day before the deadline"}
+    undo: none
+    urgent: false
+    attention_limit: false
+    rules: [APR-12, PRM-14]
+  - id: alarm.manager.absent
+    since: v0.1
+    kind: notice
+    subject: null
+    recipients: people of other tenants, only the fact; delivered by the monitoring system (MON-1), not by a farm channel
+    ttl: none
+    on_silence: {state: null, outcome: nothing}
+    undo: none
+    urgent: false
+    attention_limit: false
+    rules: [APR-12]
+  - id: manager_holder_changed
+    since: v0.1
+    kind: notice
+    subject: null
+    recipients: admins of every active tenant
+    ttl: none
+    on_silence: {state: null, outcome: nothing}
+    undo: none
+    urgent: false
+    rules: [APR-12]
+  - id: bot_departure_notice
+    since: v0.1
+    kind: notice
+    subject: null
+    recipients: people of the tenant and farm operators; notices about a bot retiring, about a vacant seat, about a lens with a veto without a holder
+    ttl: none
+    on_silence: {state: null, outcome: nothing}
+    undo: none
+    urgent: false
+    rules: [APR-12]
+  - id: rollback_card
+    since: v0.1
+    kind: notice
+    subject: null
+    recipients: the executor of the accepted proposal; the "Revert" button is the hold.set operation with their hold.set:<scope>
+    ttl: until the end of the change trial
+    on_silence: {state: null, outcome: the change trial runs to the end}
+    undo: none
+    urgent: false
+    rules: [APR-12]
+  # v0.2
+  - id: proposal_sample_card
+    since: v0.2
+    kind: decision
+    subject: proposal
+    decisions:
+      would_accept: {right: 'proposal.decide:<category>'}
+      would_not_accept: {right: 'proposal.decide:<category>'}
+      accept: {right: 'proposal.decide:<category>', no_veto: true}
+      override_veto: {right: 'proposal.override_veto:<category>', details_required: true}
+    recipients: people of the tenant with proposal.decide:<category>
+    ttl: as for the proposal
+    on_silence: {state: expired, outcome: the item is closed without a decision}
+    undo: as for the proposal
+    urgent: false
+    rules: [APR-12, APR-14]
+  - id: takeover_confirm
+    since: v0.2
+    kind: decision
+    subject: takeover
+    decisions:
+      approve: {right: model_grant.manage}
+      reject: {right: model_grant.manage}
+    recipients: people of the tenant with model_grant.manage
+    ttl: 1h
+    on_silence: {state: expired, outcome: "no takeover, the original task continues"}
+    undo: none
+    urgent: true
+    rules: [APR-12]
+  - id: promotion_card
+    since: v0.2
+    kind: decision
+    subject: governance_case
+    decisions:
+      confirm: {right: 'governance.confirm:commission', details_required: true}
+      reject: {right: 'governance.confirm:commission', reason_required: true}
+    recipients: people with governance.confirm:commission
+    ttl: 7d
+    on_silence: {state: expired, outcome: "the case is expired, nobody leaves"}
+    undo: a confirmed one is not undone
+    urgent: false
+    rules: [APR-12, APR-14]
+  - id: governance_stuck
+    since: v0.2
+    kind: notice
+    subject: null
+    recipients: a tenant admin with admin:governance; "Pause" (a stop of the governance scope) and "Cancel" (P2 governance.cancel) are operations
+    ttl: repeated once a day
+    on_silence: {state: null, outcome: "the case waits, the card is repeated", remind: 1d}
+    undo: a stop of the governance scope is released by a person with admin:governance in the tenant of the case (GOV-23)
+    urgent: false
+    rules: [APR-12]
+  - id: attribution_card
+    since: v0.2
+    kind: decision
+    subject: attribution
+    decisions:
+      'yes': {right: governance.attribute, details_required: true}
+      'no': {right: governance.attribute, details_required: true}
+      unknown: {right: governance.attribute}
+    recipients: people with governance.attribute
+    ttl: 7d
+    on_silence: {state: unknown, outcome: not decided; no promotion trigger appears (GOV-30), remind: 7d}
+    undo: '"No" and "Don''t know" can be changed while the attribution window is open (GOV-13); "Yes" can be removed only by its author on the dispute card after the incident is marked as false (D-79)'
+    urgent: false
+    rules: [APR-12, APR-14]
+  - id: attribution_dispute
+    since: v0.2
+    kind: decision
+    subject: attribution
+    decisions:
+      'yes': {right: "author of the \"Yes\" answer"}
+      withdraw: {right: "author of the \"Yes\" answer"}
+    recipients: only the author of the "Yes" answer, in a direct chat
+    ttl: 7d
+    on_silence: {state: canceled, outcome: "the \"Yes\" answer is removed, the attribution is canceled"}
+    undo: disabling the author removes the answer
+    urgent: false
+    rules: [APR-12, APR-14]
+  - id: self_measured_card
+    since: v0.2
+    kind: decision
+    subject: proposal
+    decisions:
+      count: {right: 'governance.confirm:commission'}
+    recipients: people of the tenant with governance.confirm:commission
+    ttl: 7d
+    on_silence: {state: expired, outcome: "the success stays only in the track record, there is no trigger"}
+    undo: none
+    urgent: false
+    rules: [APR-12]
+  - id: subject_request_export
+    since: v0.2
+    kind: decision
+    subject: subject_request
+    decisions:
+      approve: {right: 'admin:people'}
+      reject: {right: 'admin:people'}
+    recipients: people of the tenant with admin:people
+    ttl: privacy.subject_request_days, by default 30d
+    on_silence: {state: pending, outcome: "the request is not executed; a reminder at half of the deadline, at the deadline a notice to the operator"}
+    undo: the person withdraws their request
+    urgent: false
+    rules: [APR-12]
+  - id: approve_unread_digest
+    since: v0.2
+    kind: notice
+    subject: null
+    recipients: admins of the tenant; a summary "approved without reading" once a month per tenant and subject kind (APR-13)
+    ttl: none
+    on_silence: {state: null, outcome: nothing}
+    undo: none
+    urgent: false
+    rules: [APR-12, APR-13]

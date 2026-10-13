@@ -1,0 +1,54 @@
+registry: rollups
+version: 1
+description: >-
+  Closed list of observation rollups (rollup: the value of a series over a window). The rollup of a series is set by its manifest
+  `ObservationSeries` with a value from here, and code computes the rollups (OBV-4). The same values appear in the `compare` field
+  of the `outcome` block for core series (`core-series.yaml`) and for tenant series (OBV-6), and in the `rollup` parameter
+  of the closed observation query (OBV-3). Record fields: `period` (rollup window: `hour` an hour, `day` a day,
+  `window` the whole query or trial window), `function` (function over the window points: `max` the highest,
+  `mean` the mean, `p95` the 95th percentile, `share` the share of good events by the series field `good`),
+  `meaning`, `rules`.
+source: docs/improvements.md
+entries:
+  - id: hour.max
+    since: v0.1
+    period: hour
+    function: max
+    meaning: The highest value of the series for each hour.
+    rules: [OBV-4]
+  - id: hour.mean
+    since: v0.1
+    period: hour
+    function: mean
+    meaning: The mean value of the series for each hour.
+    rules: [OBV-4]
+  - id: day.p95
+    since: v0.1
+    period: day
+    function: p95
+    meaning: The 95th percentile of the series values for each day.
+    rules: [OBV-4, OBV-6]
+  - id: day.max
+    since: v0.1
+    period: day
+    function: max
+    meaning: The highest value of the series for each day; the comparison rollup of the series `farm.backup.age`.
+    rules: [OBV-4, OBV-6]
+  - id: window.p95
+    since: v0.1
+    period: window
+    function: p95
+    meaning: The 95th percentile of the series values over the whole window; the comparison rollup of duration and waiting series.
+    rules: [OBV-4, OBV-6]
+  - id: window.mean
+    since: v0.1
+    period: window
+    function: mean
+    meaning: The mean value of the series over the whole window; the comparison rollup of series of attempt counts, price and retries.
+    rules: [OBV-4, OBV-6]
+  - id: window.share
+    since: v0.1
+    period: window
+    function: share
+    meaning: The share of good events of the series (the value of the `good` field of the `outcome` block) over the whole window; the comparison rollup of outcome and slot series.
+    rules: [OBV-4, OBV-6]

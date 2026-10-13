@@ -1,0 +1,111 @@
+id: com-03
+rules: [COM-4, COM-9, COM-14]
+description: 'Verdict table. Deterministic code computes the verdict from the commission manifest: identical inputs give
+  an identical verdict, and the model does not change it. Order: reviews of veto lenses are required (otherwise parked(veto_lens_missing));
+  a veto of any lens gives dismissed(veto); a score of a veto lens below min gives dismissed(below_min); the weighted average
+  over the lenses with reviews; for risk high or a guarded field the high_risk threshold is needed, for untrusted_seen the untrusted threshold,
+  and for an untrusted proposal a threshold that refers to a lens without a review counts as not met; an unmet strict threshold
+  gives parked(score); then recommend_if, park_if, otherwise dismissed(low_score). Code does not read shadow reviews. The table
+  has every outcome of the closed list.'
+given:
+  commission:
+    review_deadline: 24h
+    min: {security: 2, operational: 2}
+    weights: {value: 2, cost: 1, operational: 1, security: 1}
+    recommend_if: {weighted_mean_gte: 2.5, value_gte: 3}
+    park_if: {weighted_mean_gte: 1.5}
+    high_risk: {security_gte: 3, operational_gte: 3}
+    untrusted: {value_gte: 4, risk_max: medium}
+expect:
+  deterministic: true
+  outcomes_covered:
+  - recommended
+  - parked(score)
+  - parked(veto_lens_missing)
+  - dismissed(veto)
+  - dismissed(below_min)
+  - dismissed(low_score)
+cases:
+- description: example p_0101, all scores 3
+  given:
+    reviews: {security: 3, operational: 3, cost: 3, value: 3}
+  expect: {verdict: recommended, weighted_mean: 3.0}
+- description: three high scores out of four, no security review
+  given:
+    reviews: {operational: 4, cost: 4, value: 4}
+  expect:
+    verdict: {state: parked, reason: veto_lens_missing}
+- description: the operational review was late for review_deadline
+  given:
+    reviews: {security: 4, operational: late, cost: 4, value: 4}
+  expect:
+    verdict: {state: parked, reason: veto_lens_missing}
+- description: the security review did not pass the review-result schema
+  given:
+    reviews: {security: schema_invalid, operational: 4, cost: 4, value: 4}
+  expect:
+    verdict: {state: parked, reason: veto_lens_missing}
+- description: operational veto with the others high
+  given:
+    reviews:
+      security: 4
+      operational: {score: 1, veto: true}
+      cost: 4
+      value: 4
+  expect:
+    verdict: {state: dismissed, reason: veto}
+- description: security 1 below min 2
+  given:
+    reviews: {security: 1, operational: 3, cost: 4, value: 4}
+  expect:
+    verdict: {state: dismissed, reason: below_min}
+- description: average 2.2 with value 2 (example p_0102)
+  given:
+    reviews: {security: 3, operational: 2, cost: 2, value: 2}
+  expect:
+    verdict: {state: parked, reason: score}
+    weighted_mean: 2.2
+- description: low scores
+  given:
+    reviews: {security: 2, operational: 2, cost: 1, value: 0}
+  expect:
+    verdict: {state: dismissed, reason: low_score}
+    weighted_mean: 1.0
+- description: no cost review (a lens without veto); verdict from the others with a mark on the card
+  given:
+    reviews: {security: 3, operational: 3, value: 3}
+  expect:
+    verdict: recommended
+    weighted_mean: 3.0
+    missing_lenses: [cost]
+- description: risk high, operational 2 below the high_risk threshold
+  given:
+    risk: high
+    reviews: {security: 3, operational: 2, cost: 4, value: 4}
+  expect:
+    verdict: {state: parked, reason: score}
+    strict: [high_risk]
+- description: untrusted_seen, value 3 below the untrusted threshold 4
+  given:
+    untrusted_seen: true
+    reviews: {security: 3, operational: 3, cost: 3, value: 3}
+  expect:
+    verdict: {state: parked, reason: score}
+    strict: [untrusted]
+- description: untrusted_seen, no value review; the untrusted threshold that refers to a lens without a review is not met
+  given:
+    untrusted_seen: true
+    reviews: {security: 4, operational: 4, cost: 4}
+  expect:
+    verdict: {state: parked, reason: score}
+    strict: [untrusted]
+- description: shadow review with a low score; code does not read it
+  given:
+    reviews:
+      security: 3
+      operational: 3
+      cost: 3
+      value: 3
+      shadow:
+      - {lens: value, score: 0, shadow: true}
+  expect: {verdict: recommended, weighted_mean: 3.0}

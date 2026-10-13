@@ -1,0 +1,27 @@
+schema: spec/manifests/group.schema.json
+rules:
+- MAN-1
+description: Group manifest specs from examples/ that the kind schema accepts.
+cases:
+- caps:
+  - task:hello.greet.v1
+  data:
+  - summary
+- caps:
+  - task:ops.summary.v1
+  - task:ops.health.v1
+  data:
+  - summary
+  - internal
+  day_eur: 1.0
+- title: Reports where money is visible
+  caps:
+  - task:report.monthly.v1
+  - task:report.monthly.numbers.v1
+  data:
+  - summary
+  - internal
+- caps:
+  - task:assist.chat.v1
+  data:
+  - summary

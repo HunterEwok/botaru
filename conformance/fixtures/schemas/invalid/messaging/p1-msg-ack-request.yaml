@@ -1,0 +1,11 @@
+schema: spec/model/p1-msg-ack-request.schema.json
+rules:
+- MSG-9
+description: 'Requests that the schema rejects: empty list; message id instead of a handle with a different field; repeated
+  handle.'
+cases:
+- handles: []
+- message_id: m_01JB0000000000000000000101
+- handles:
+  - hQ3vX9kLmN2pR7sT
+  - hQ3vX9kLmN2pR7sT

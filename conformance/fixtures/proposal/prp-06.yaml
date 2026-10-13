@@ -1,0 +1,61 @@
+id: prp-06
+rules: [PRP-9]
+description: Conflicts of proposals about one object. A and B change spec.cron of the same schedule report-nightly and carry
+  each other in conflicts_with. When A has moved to realizing, the open B goes to parked(conflict), its card goes dark
+  and it has no "Accept" button. A new proposal C about the same field, while the trial of A is running, also waits in parked(conflict).
+  When the trial of A has ended, B and C return to screened.
+given:
+  tenant: demo
+  proposals:
+  - id: p_01JB0000000000000000000101
+    state: presented
+    change:
+      kind: manifest_change
+      field: spec.cron
+      target: {kind: Schedule, name: report-nightly}
+  - id: p_01JB0000000000000000000102
+    state: presented
+    change:
+      kind: manifest_change
+      field: spec.cron
+      target: {kind: Schedule, name: report-nightly}
+steps:
+- check: state
+  expect:
+    p_01JB0000000000000000000101:
+      conflicts_with: [p_01JB0000000000000000000102]
+    p_01JB0000000000000000000102:
+      conflicts_with: [p_01JB0000000000000000000101]
+    digest:
+      same_block: [p_01JB0000000000000000000101, p_01JB0000000000000000000102]
+- call:
+    port: P1
+    op: decide
+    request: {subject_kind: proposal, id: p_01JB0000000000000000000101, decision: accept}
+  by: human:alice
+  expect:
+    p_01JB0000000000000000000101: {state: realizing}
+    p_01JB0000000000000000000102: {state: parked, state_reason: conflict, card: extinguished, accept_button: false}
+- call:
+    port: P1
+    op: decide
+    request: {subject_kind: proposal, id: p_01JB0000000000000000000102, decision: accept}
+  by: human:carol
+  expect:
+    result: rejected
+    p_01JB0000000000000000000102: {state: parked}
+- check:
+    realized: {id: p_01JB0000000000000000000101}
+    submit:
+      id: p_01JB0000000000000000000103
+      change:
+        kind: manifest_change
+        field: spec.cron
+        target: {kind: Schedule, name: report-nightly}
+  expect:
+    p_01JB0000000000000000000103: {state: parked, state_reason: conflict}
+- check:
+    trial_ended: {id: p_01JB0000000000000000000101, outcome: better}
+  expect:
+    p_01JB0000000000000000000102: {state: screened}
+    p_01JB0000000000000000000103: {state: screened}

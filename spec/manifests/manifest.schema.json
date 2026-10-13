@@ -1,0 +1,1294 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:botaru:schema:manifest:1",
+  "title": "Manifest wrapper",
+  "description": "A manifest in git lies in the wrapper {apiVersion, kind, metadata, spec} and passes the schema of its kind and apiVersion (MAN-1): botaru/v1alpha1 until release 1.0.0. A kind without a registered schema is rejected; the kind registry is spec/manifests/kinds.yaml. There is no status field in git: the core keeps the status. metadata.tenant exists only for kinds that belong to a tenant; global kinds carry no tenant data (TEN-6).",
+  "x-botaru-direction": "input",
+  "x-botaru-rules": [
+    "MAN-1",
+    "TEN-6",
+    "MAN-3"
+  ],
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "apiVersion",
+    "kind",
+    "metadata",
+    "spec"
+  ],
+  "properties": {
+    "apiVersion": {
+      "const": "botaru/v1alpha1",
+      "description": "Wrapper version; botaru/v1 will appear with release 1.0.0 (D-44)."
+    },
+    "kind": {
+      "enum": [
+        "Tenant",
+        "Group",
+        "Role",
+        "TaskType",
+        "ToolPlugin",
+        "Action",
+        "Catalog",
+        "Route",
+        "Schedule",
+        "Channel",
+        "Sink",
+        "MessageType",
+        "BotGroup",
+        "ObservationSeries",
+        "ModelProfile",
+        "Commission",
+        "IncidentClass",
+        "Governance"
+      ],
+      "description": "Manifest kind from the kinds.yaml registry."
+    },
+    "metadata": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "description": "Object name; the format depends on the kind.",
+          "anyOf": [
+            {
+              "$ref": "urn:botaru:schema:common:1#/$defs/name"
+            },
+            {
+              "$ref": "urn:botaru:schema:common:1#/$defs/dotted_name"
+            },
+            {
+              "$ref": "urn:botaru:schema:common:1#/$defs/type_name"
+            }
+          ]
+        },
+        "tenant": {
+          "$ref": "urn:botaru:schema:common:1#/$defs/tenant_name",
+          "description": "The tenant the object belongs to; only for tenant kinds."
+        },
+        "labels": {
+          "$ref": "#/$defs/labels"
+        },
+        "deprecated": {
+          "type": "boolean",
+          "description": "From v0.2: the object is deprecated; apply warns about references to it (MAN-7).",
+          "x-botaru-version": "v0.2"
+        },
+        "sunset": {
+          "$ref": "#/$defs/date",
+          "description": "From v0.2: the date after which the object is removed (MAN-7).",
+          "x-botaru-version": "v0.2"
+        }
+      },
+      "required": [
+        "name"
+      ],
+      "description": "Name, tenant and labels of the object."
+    },
+    "spec": {
+      "type": "object",
+      "description": "The spec schema is set by the kind: spec/manifests/<kind>.schema.json.",
+      "x-botaru-closed-by": "spec/manifests/<kind>.schema.json by the kind field"
+    }
+  },
+  "oneOf": [
+    {
+      "$ref": "#/$defs/kind_tenant"
+    },
+    {
+      "$ref": "#/$defs/kind_group"
+    },
+    {
+      "$ref": "#/$defs/kind_role"
+    },
+    {
+      "$ref": "#/$defs/kind_task_type"
+    },
+    {
+      "$ref": "#/$defs/kind_tool_plugin"
+    },
+    {
+      "$ref": "#/$defs/kind_action"
+    },
+    {
+      "$ref": "#/$defs/kind_catalog"
+    },
+    {
+      "$ref": "#/$defs/kind_route"
+    },
+    {
+      "$ref": "#/$defs/kind_schedule"
+    },
+    {
+      "$ref": "#/$defs/kind_channel"
+    },
+    {
+      "$ref": "#/$defs/kind_sink"
+    },
+    {
+      "$ref": "#/$defs/kind_message_type"
+    },
+    {
+      "$ref": "#/$defs/kind_bot_group"
+    },
+    {
+      "$ref": "#/$defs/kind_observation_series"
+    },
+    {
+      "$ref": "#/$defs/kind_model_profile"
+    },
+    {
+      "$ref": "#/$defs/kind_commission"
+    },
+    {
+      "$ref": "#/$defs/kind_incident_class"
+    },
+    {
+      "$ref": "#/$defs/kind_governance"
+    }
+  ],
+  "$defs": {
+    "labels": {
+      "type": "object",
+      "maxProperties": 32,
+      "description": "Object labels: a key and a value in the id format.",
+      "propertyNames": {
+        "pattern": "^[a-z][a-z0-9-]{0,62}$"
+      },
+      "additionalProperties": {
+        "$ref": "urn:botaru:schema:common:1#/$defs/name"
+      }
+    },
+    "date": {
+      "type": "string",
+      "pattern": "^[0-9]{4}-(0[1-9]|1[0-2])-(0[1-9]|[12][0-9]|3[01])$",
+      "maxLength": 10,
+      "description": "Date in the form YYYY-MM-DD."
+    },
+    "cap": {
+      "type": "string",
+      "maxLength": 160,
+      "pattern": "^[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*)*(:[a-z0-9_.*-]+){0,3}$",
+      "description": "A capability from the capabilities.yaml registry with an argument after a colon, for example task:ops.investigate.v1 or action.request:pipeline.ctd_qc. The lint checks asterisks (PRM-7)."
+    },
+    "address": {
+      "description": "Delivery address to people or a sink (DLV-6).",
+      "anyOf": [
+        {
+          "type": "string",
+          "maxLength": 70,
+          "pattern": "^(group|chat|sink):[a-z][a-z0-9-]{0,62}$"
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "approval_initiator": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "action": {
+                  "$ref": "urn:botaru:schema:common:1#/$defs/dotted_name"
+                }
+              },
+              "required": [
+                "action"
+              ]
+            }
+          },
+          "required": [
+            "approval_initiator"
+          ],
+          "description": "The direct chat of the initiator of the approval of this action; accepted only if the approval belongs to the route's tenant, its action is named here, it is executed, and the initiator is a person."
+        }
+      ]
+    },
+    "role_address": {
+      "type": "string",
+      "maxLength": 70,
+      "pattern": "^(role|group):[a-z][a-z0-9-]{0,62}$",
+      "description": "Inbox address of a role or a bot group."
+    },
+    "tool_ref": {
+      "type": "string",
+      "maxLength": 130,
+      "pattern": "^[a-z][a-z0-9-]{0,62}(/[a-z][a-z0-9_]{0,62})?$",
+      "description": "A tool in the form <plugin>/<tool>, or the whole plugin <plugin>."
+    },
+    "task_template": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "$ref": "urn:botaru:schema:common:1#/$defs/type_name",
+          "description": "Task type with a version."
+        },
+        "goal": {
+          "type": "string",
+          "maxLength": 4000,
+          "description": "Goal template; without it the goal comes from the type's template."
+        },
+        "params": {
+          "type": "object",
+          "maxProperties": 64,
+          "description": "params by the type's closed params_schema; apply checks them against the type's schema.",
+          "x-botaru-closed-by": "params_schema of the task type"
+        }
+      },
+      "required": [
+        "type"
+      ],
+      "description": "A task that the core enqueues: the type, the goal template and params."
+    },
+    "os_mechanism": {
+      "description": "OS mechanism of the executor: exactly one kind of the two (DEP-4).",
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "oneshot": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "unit": {
+                  "type": "string",
+                  "maxLength": 120,
+                  "description": "Oneshot unit, owned by root; the deployment substitutes {tenant}.",
+                  "pattern": "^[a-z0-9][a-z0-9-]*(\\{tenant\\}[a-z0-9-]*)?\\.service$"
+                },
+                "started_by": {
+                  "type": "string",
+                  "maxLength": 120,
+                  "description": "Path unit that starts the oneshot on a run request file of the plugin.",
+                  "pattern": "^[a-z0-9][a-z0-9-]*(\\{tenant\\}[a-z0-9-]*)?\\.path$"
+                },
+                "wait": {
+                  "const": false,
+                  "description": "Mandatory and equal to false: the write call ends with the outcome \"accepted for run\"."
+                }
+              },
+              "required": [
+                "unit",
+                "started_by",
+                "wait"
+              ]
+            }
+          },
+          "required": [
+            "oneshot"
+          ]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "unit": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "unit_from": {
+                  "type": "string",
+                  "maxLength": 64,
+                  "description": "Parameter from whose catalog service the core takes the unit.",
+                  "pattern": "^[a-z][a-z0-9_]*$"
+                },
+                "verb_from": {
+                  "type": "string",
+                  "maxLength": 64,
+                  "description": "Where the allowed verbs come from: the service's control field.",
+                  "pattern": "^[a-z][a-z0-9_]*$"
+                },
+                "wait": {
+                  "type": "boolean",
+                  "description": "Whether to wait for the verb to finish; a restart fits into timeout_s."
+                }
+              },
+              "required": [
+                "unit_from",
+                "verb_from",
+                "wait"
+              ]
+            }
+          },
+          "required": [
+            "unit"
+          ]
+        }
+      ]
+    },
+    "secret_name": {
+      "type": "string",
+      "maxLength": 64,
+      "pattern": "^[A-Z][A-Z0-9_]{0,63}$",
+      "description": "Name of a deployment secret; the value is not visible to the model and the manifest (SEC-1)."
+    },
+    "hostname": {
+      "type": "string",
+      "maxLength": 253,
+      "pattern": "^[a-z0-9]([a-z0-9-]{0,62}\\.)*[a-z0-9-]{1,63}$",
+      "description": "Node name or domain."
+    },
+    "eur": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1000000,
+      "description": "Amount in euros."
+    },
+    "kind_tenant": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "apiVersion": {
+          "const": "botaru/v1alpha1",
+          "description": "Wrapper version."
+        },
+        "kind": {
+          "const": "Tenant",
+          "description": "Manifest kind."
+        },
+        "metadata": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "name": {
+              "$ref": "urn:botaru:schema:common:1#/$defs/tenant_name"
+            },
+            "labels": {
+              "$ref": "#/$defs/labels"
+            },
+            "deprecated": {
+              "type": "boolean",
+              "description": "From v0.2: the object is deprecated; apply warns about references to it (MAN-7).",
+              "x-botaru-version": "v0.2"
+            },
+            "sunset": {
+              "$ref": "#/$defs/date",
+              "description": "From v0.2: the date after which the object is removed (MAN-7).",
+              "x-botaru-version": "v0.2"
+            }
+          },
+          "required": [
+            "name"
+          ],
+          "description": "Name and labels of the object; there is no tenant field (TEN-6)."
+        },
+        "spec": {
+          "$ref": "urn:botaru:schema:tenant:1"
+        }
+      },
+      "required": [
+        "apiVersion",
+        "kind",
+        "metadata",
+        "spec"
+      ],
+      "description": "Manifest of kind Tenant."
+    },
+    "kind_group": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "apiVersion": {
+          "const": "botaru/v1alpha1",
+          "description": "Wrapper version."
+        },
+        "kind": {
+          "const": "Group",
+          "description": "Manifest kind."
+        },
+        "metadata": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "name": {
+              "$ref": "urn:botaru:schema:common:1#/$defs/name"
+            },
+            "labels": {
+              "$ref": "#/$defs/labels"
+            },
+            "deprecated": {
+              "type": "boolean",
+              "description": "From v0.2: the object is deprecated; apply warns about references to it (MAN-7).",
+              "x-botaru-version": "v0.2"
+            },
+            "sunset": {
+              "$ref": "#/$defs/date",
+              "description": "From v0.2: the date after which the object is removed (MAN-7).",
+              "x-botaru-version": "v0.2"
+            },
+            "tenant": {
+              "$ref": "urn:botaru:schema:common:1#/$defs/tenant_name",
+              "description": "The tenant the object belongs to."
+            }
+          },
+          "required": [
+            "name",
+            "tenant"
+          ],
+          "description": "Name and labels of the object, the tenant is mandatory."
+        },
+        "spec": {
+          "$ref": "urn:botaru:schema:group:1"
+        }
+      },
+      "required": [
+        "apiVersion",
+        "kind",
+        "metadata",
+        "spec"
+      ],
+      "description": "Manifest of kind Group."
+    },
+    "kind_role": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "apiVersion": {
+          "const": "botaru/v1alpha1",
+          "description": "Wrapper version."
+        },
+        "kind": {
+          "const": "Role",
+          "description": "Manifest kind."
+        },
+        "metadata": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "name": {
+              "$ref": "urn:botaru:schema:common:1#/$defs/name"
+            },
+            "labels": {
+              "$ref": "#/$defs/labels"
+            },
+            "deprecated": {
+              "type": "boolean",
+              "description": "From v0.2: the object is deprecated; apply warns about references to it (MAN-7).",
+              "x-botaru-version": "v0.2"
+            },
+            "sunset": {
+              "$ref": "#/$defs/date",
+              "description": "From v0.2: the date after which the object is removed (MAN-7).",
+              "x-botaru-version": "v0.2"
+            }
+          },
+          "required": [
+            "name"
+          ],
+          "description": "Name and labels of the object; there is no tenant field (TEN-6)."
+        },
+        "spec": {
+          "$ref": "urn:botaru:schema:role:1"
+        }
+      },
+      "required": [
+        "apiVersion",
+        "kind",
+        "metadata",
+        "spec"
+      ],
+      "description": "Manifest of kind Role."
+    },
+    "kind_task_type": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "apiVersion": {
+          "const": "botaru/v1alpha1",
+          "description": "Wrapper version."
+        },
+        "kind": {
+          "const": "TaskType",
+          "description": "Manifest kind."
+        },
+        "metadata": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "name": {
+              "$ref": "urn:botaru:schema:common:1#/$defs/type_name"
+            },
+            "labels": {
+              "$ref": "#/$defs/labels"
+            },
+            "deprecated": {
+              "type": "boolean",
+              "description": "From v0.2: the object is deprecated; apply warns about references to it (MAN-7).",
+              "x-botaru-version": "v0.2"
+            },
+            "sunset": {
+              "$ref": "#/$defs/date",
+              "description": "From v0.2: the date after which the object is removed (MAN-7).",
+              "x-botaru-version": "v0.2"
+            }
+          },
+          "required": [
+            "name"
+          ],
+          "description": "Name and labels of the object; there is no tenant field (TEN-6)."
+        },
+        "spec": {
+          "$ref": "urn:botaru:schema:task-type:1"
+        }
+      },
+      "required": [
+        "apiVersion",
+        "kind",
+        "metadata",
+        "spec"
+      ],
+      "description": "Manifest of kind TaskType."
+    },
+    "kind_tool_plugin": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "apiVersion": {
+          "const": "botaru/v1alpha1",
+          "description": "Wrapper version."
+        },
+        "kind": {
+          "const": "ToolPlugin",
+          "description": "Manifest kind."
+        },
+        "metadata": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "name": {
+              "$ref": "urn:botaru:schema:common:1#/$defs/name"
+            },
+            "labels": {
+              "$ref": "#/$defs/labels"
+            },
+            "deprecated": {
+              "type": "boolean",
+              "description": "From v0.2: the object is deprecated; apply warns about references to it (MAN-7).",
+              "x-botaru-version": "v0.2"
+            },
+            "sunset": {
+              "$ref": "#/$defs/date",
+              "description": "From v0.2: the date after which the object is removed (MAN-7).",
+              "x-botaru-version": "v0.2"
+            }
+          },
+          "required": [
+            "name"
+          ],
+          "description": "Name and labels of the object; there is no tenant field (TEN-6)."
+        },
+        "spec": {
+          "$ref": "urn:botaru:schema:tool-plugin:1"
+        }
+      },
+      "required": [
+        "apiVersion",
+        "kind",
+        "metadata",
+        "spec"
+      ],
+      "description": "Manifest of kind ToolPlugin."
+    },
+    "kind_action": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "apiVersion": {
+          "const": "botaru/v1alpha1",
+          "description": "Wrapper version."
+        },
+        "kind": {
+          "const": "Action",
+          "description": "Manifest kind."
+        },
+        "metadata": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "name": {
+              "$ref": "urn:botaru:schema:common:1#/$defs/dotted_name"
+            },
+            "labels": {
+              "$ref": "#/$defs/labels"
+            },
+            "deprecated": {
+              "type": "boolean",
+              "description": "From v0.2: the object is deprecated; apply warns about references to it (MAN-7).",
+              "x-botaru-version": "v0.2"
+            },
+            "sunset": {
+              "$ref": "#/$defs/date",
+              "description": "From v0.2: the date after which the object is removed (MAN-7).",
+              "x-botaru-version": "v0.2"
+            }
+          },
+          "required": [
+            "name"
+          ],
+          "description": "Name and labels of the object; there is no tenant field (TEN-6)."
+        },
+        "spec": {
+          "$ref": "urn:botaru:schema:action:1"
+        }
+      },
+      "required": [
+        "apiVersion",
+        "kind",
+        "metadata",
+        "spec"
+      ],
+      "description": "Manifest of kind Action."
+    },
+    "kind_catalog": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "apiVersion": {
+          "const": "botaru/v1alpha1",
+          "description": "Wrapper version."
+        },
+        "kind": {
+          "const": "Catalog",
+          "description": "Manifest kind."
+        },
+        "metadata": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "name": {
+              "$ref": "urn:botaru:schema:common:1#/$defs/name"
+            },
+            "labels": {
+              "$ref": "#/$defs/labels"
+            },
+            "deprecated": {
+              "type": "boolean",
+              "description": "From v0.2: the object is deprecated; apply warns about references to it (MAN-7).",
+              "x-botaru-version": "v0.2"
+            },
+            "sunset": {
+              "$ref": "#/$defs/date",
+              "description": "From v0.2: the date after which the object is removed (MAN-7).",
+              "x-botaru-version": "v0.2"
+            },
+            "tenant": {
+              "$ref": "urn:botaru:schema:common:1#/$defs/tenant_name",
+              "description": "The tenant the object belongs to."
+            }
+          },
+          "required": [
+            "name",
+            "tenant"
+          ],
+          "description": "Name and labels of the object, the tenant is mandatory."
+        },
+        "spec": {
+          "$ref": "urn:botaru:schema:catalog:1"
+        }
+      },
+      "required": [
+        "apiVersion",
+        "kind",
+        "metadata",
+        "spec"
+      ],
+      "description": "Manifest of kind Catalog."
+    },
+    "kind_route": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "apiVersion": {
+          "const": "botaru/v1alpha1",
+          "description": "Wrapper version."
+        },
+        "kind": {
+          "const": "Route",
+          "description": "Manifest kind."
+        },
+        "metadata": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "name": {
+              "$ref": "urn:botaru:schema:common:1#/$defs/name"
+            },
+            "labels": {
+              "$ref": "#/$defs/labels"
+            },
+            "deprecated": {
+              "type": "boolean",
+              "description": "From v0.2: the object is deprecated; apply warns about references to it (MAN-7).",
+              "x-botaru-version": "v0.2"
+            },
+            "sunset": {
+              "$ref": "#/$defs/date",
+              "description": "From v0.2: the date after which the object is removed (MAN-7).",
+              "x-botaru-version": "v0.2"
+            },
+            "tenant": {
+              "$ref": "urn:botaru:schema:common:1#/$defs/tenant_name",
+              "description": "The tenant the object belongs to."
+            }
+          },
+          "required": [
+            "name",
+            "tenant"
+          ],
+          "description": "Name and labels of the object, the tenant is mandatory."
+        },
+        "spec": {
+          "$ref": "urn:botaru:schema:route:1"
+        }
+      },
+      "required": [
+        "apiVersion",
+        "kind",
+        "metadata",
+        "spec"
+      ],
+      "description": "Manifest of kind Route."
+    },
+    "kind_schedule": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "apiVersion": {
+          "const": "botaru/v1alpha1",
+          "description": "Wrapper version."
+        },
+        "kind": {
+          "const": "Schedule",
+          "description": "Manifest kind."
+        },
+        "metadata": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "name": {
+              "$ref": "urn:botaru:schema:common:1#/$defs/name"
+            },
+            "labels": {
+              "$ref": "#/$defs/labels"
+            },
+            "deprecated": {
+              "type": "boolean",
+              "description": "From v0.2: the object is deprecated; apply warns about references to it (MAN-7).",
+              "x-botaru-version": "v0.2"
+            },
+            "sunset": {
+              "$ref": "#/$defs/date",
+              "description": "From v0.2: the date after which the object is removed (MAN-7).",
+              "x-botaru-version": "v0.2"
+            },
+            "tenant": {
+              "$ref": "urn:botaru:schema:common:1#/$defs/tenant_name",
+              "description": "The tenant the object belongs to."
+            }
+          },
+          "required": [
+            "name",
+            "tenant"
+          ],
+          "description": "Name and labels of the object, the tenant is mandatory."
+        },
+        "spec": {
+          "$ref": "urn:botaru:schema:schedule:1"
+        }
+      },
+      "required": [
+        "apiVersion",
+        "kind",
+        "metadata",
+        "spec"
+      ],
+      "description": "Manifest of kind Schedule."
+    },
+    "kind_channel": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "apiVersion": {
+          "const": "botaru/v1alpha1",
+          "description": "Wrapper version."
+        },
+        "kind": {
+          "const": "Channel",
+          "description": "Manifest kind."
+        },
+        "metadata": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "name": {
+              "$ref": "urn:botaru:schema:common:1#/$defs/name"
+            },
+            "labels": {
+              "$ref": "#/$defs/labels"
+            },
+            "deprecated": {
+              "type": "boolean",
+              "description": "From v0.2: the object is deprecated; apply warns about references to it (MAN-7).",
+              "x-botaru-version": "v0.2"
+            },
+            "sunset": {
+              "$ref": "#/$defs/date",
+              "description": "From v0.2: the date after which the object is removed (MAN-7).",
+              "x-botaru-version": "v0.2"
+            },
+            "tenant": {
+              "$ref": "urn:botaru:schema:common:1#/$defs/tenant_name",
+              "description": "The tenant the object belongs to."
+            }
+          },
+          "required": [
+            "name",
+            "tenant"
+          ],
+          "description": "Name and labels of the object, the tenant is mandatory."
+        },
+        "spec": {
+          "$ref": "urn:botaru:schema:channel:1"
+        }
+      },
+      "required": [
+        "apiVersion",
+        "kind",
+        "metadata",
+        "spec"
+      ],
+      "description": "Manifest of kind Channel."
+    },
+    "kind_sink": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "apiVersion": {
+          "const": "botaru/v1alpha1",
+          "description": "Wrapper version."
+        },
+        "kind": {
+          "const": "Sink",
+          "description": "Manifest kind."
+        },
+        "metadata": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "name": {
+              "$ref": "urn:botaru:schema:common:1#/$defs/name"
+            },
+            "labels": {
+              "$ref": "#/$defs/labels"
+            },
+            "deprecated": {
+              "type": "boolean",
+              "description": "From v0.2: the object is deprecated; apply warns about references to it (MAN-7).",
+              "x-botaru-version": "v0.2"
+            },
+            "sunset": {
+              "$ref": "#/$defs/date",
+              "description": "From v0.2: the date after which the object is removed (MAN-7).",
+              "x-botaru-version": "v0.2"
+            },
+            "tenant": {
+              "$ref": "urn:botaru:schema:common:1#/$defs/tenant_name",
+              "description": "The tenant the object belongs to."
+            }
+          },
+          "required": [
+            "name",
+            "tenant"
+          ],
+          "description": "Name and labels of the object, the tenant is mandatory."
+        },
+        "spec": {
+          "$ref": "urn:botaru:schema:sink:1"
+        }
+      },
+      "required": [
+        "apiVersion",
+        "kind",
+        "metadata",
+        "spec"
+      ],
+      "description": "Manifest of kind Sink."
+    },
+    "kind_message_type": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "apiVersion": {
+          "const": "botaru/v1alpha1",
+          "description": "Wrapper version."
+        },
+        "kind": {
+          "const": "MessageType",
+          "description": "Manifest kind."
+        },
+        "metadata": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "name": {
+              "$ref": "urn:botaru:schema:common:1#/$defs/type_name"
+            },
+            "labels": {
+              "$ref": "#/$defs/labels"
+            },
+            "deprecated": {
+              "type": "boolean",
+              "description": "From v0.2: the object is deprecated; apply warns about references to it (MAN-7).",
+              "x-botaru-version": "v0.2"
+            },
+            "sunset": {
+              "$ref": "#/$defs/date",
+              "description": "From v0.2: the date after which the object is removed (MAN-7).",
+              "x-botaru-version": "v0.2"
+            }
+          },
+          "required": [
+            "name"
+          ],
+          "description": "Name and labels of the object; there is no tenant field (TEN-6)."
+        },
+        "spec": {
+          "$ref": "urn:botaru:schema:message-type:1"
+        }
+      },
+      "required": [
+        "apiVersion",
+        "kind",
+        "metadata",
+        "spec"
+      ],
+      "description": "Manifest of kind MessageType."
+    },
+    "kind_bot_group": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "apiVersion": {
+          "const": "botaru/v1alpha1",
+          "description": "Wrapper version."
+        },
+        "kind": {
+          "const": "BotGroup",
+          "description": "Manifest kind."
+        },
+        "metadata": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "name": {
+              "$ref": "urn:botaru:schema:common:1#/$defs/name"
+            },
+            "labels": {
+              "$ref": "#/$defs/labels"
+            },
+            "deprecated": {
+              "type": "boolean",
+              "description": "From v0.2: the object is deprecated; apply warns about references to it (MAN-7).",
+              "x-botaru-version": "v0.2"
+            },
+            "sunset": {
+              "$ref": "#/$defs/date",
+              "description": "From v0.2: the date after which the object is removed (MAN-7).",
+              "x-botaru-version": "v0.2"
+            },
+            "tenant": {
+              "$ref": "urn:botaru:schema:common:1#/$defs/tenant_name",
+              "description": "The tenant the object belongs to."
+            }
+          },
+          "required": [
+            "name",
+            "tenant"
+          ],
+          "description": "Name and labels of the object, the tenant is mandatory."
+        },
+        "spec": {
+          "$ref": "urn:botaru:schema:bot-group:1"
+        }
+      },
+      "required": [
+        "apiVersion",
+        "kind",
+        "metadata",
+        "spec"
+      ],
+      "description": "Manifest of kind BotGroup."
+    },
+    "kind_observation_series": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "apiVersion": {
+          "const": "botaru/v1alpha1",
+          "description": "Wrapper version."
+        },
+        "kind": {
+          "const": "ObservationSeries",
+          "description": "Manifest kind."
+        },
+        "metadata": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "name": {
+              "$ref": "urn:botaru:schema:common:1#/$defs/dotted_name"
+            },
+            "labels": {
+              "$ref": "#/$defs/labels"
+            },
+            "deprecated": {
+              "type": "boolean",
+              "description": "From v0.2: the object is deprecated; apply warns about references to it (MAN-7).",
+              "x-botaru-version": "v0.2"
+            },
+            "sunset": {
+              "$ref": "#/$defs/date",
+              "description": "From v0.2: the date after which the object is removed (MAN-7).",
+              "x-botaru-version": "v0.2"
+            },
+            "tenant": {
+              "$ref": "urn:botaru:schema:common:1#/$defs/tenant_name",
+              "description": "The tenant the object belongs to."
+            }
+          },
+          "required": [
+            "name",
+            "tenant"
+          ],
+          "description": "Name and labels of the object, the tenant is mandatory."
+        },
+        "spec": {
+          "$ref": "urn:botaru:schema:observation-series:1"
+        }
+      },
+      "required": [
+        "apiVersion",
+        "kind",
+        "metadata",
+        "spec"
+      ],
+      "description": "Manifest of kind ObservationSeries."
+    },
+    "kind_model_profile": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "apiVersion": {
+          "const": "botaru/v1alpha1",
+          "description": "Wrapper version."
+        },
+        "kind": {
+          "const": "ModelProfile",
+          "description": "Manifest kind."
+        },
+        "metadata": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "name": {
+              "$ref": "urn:botaru:schema:common:1#/$defs/name"
+            },
+            "labels": {
+              "$ref": "#/$defs/labels"
+            },
+            "deprecated": {
+              "type": "boolean",
+              "description": "From v0.2: the object is deprecated; apply warns about references to it (MAN-7).",
+              "x-botaru-version": "v0.2"
+            },
+            "sunset": {
+              "$ref": "#/$defs/date",
+              "description": "From v0.2: the date after which the object is removed (MAN-7).",
+              "x-botaru-version": "v0.2"
+            },
+            "tenant": {
+              "$ref": "urn:botaru:schema:common:1#/$defs/tenant_name",
+              "description": "The tenant the object belongs to."
+            }
+          },
+          "required": [
+            "name"
+          ],
+          "description": "Name and labels of the object, the tenant depending on the location."
+        },
+        "spec": {
+          "$ref": "urn:botaru:schema:model-profile:1"
+        }
+      },
+      "required": [
+        "apiVersion",
+        "kind",
+        "metadata",
+        "spec"
+      ],
+      "description": "Manifest of kind ModelProfile."
+    },
+    "kind_commission": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "apiVersion": {
+          "const": "botaru/v1alpha1",
+          "description": "Wrapper version."
+        },
+        "kind": {
+          "const": "Commission",
+          "description": "Manifest kind."
+        },
+        "metadata": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "name": {
+              "$ref": "urn:botaru:schema:common:1#/$defs/name"
+            },
+            "labels": {
+              "$ref": "#/$defs/labels"
+            },
+            "deprecated": {
+              "type": "boolean",
+              "description": "From v0.2: the object is deprecated; apply warns about references to it (MAN-7).",
+              "x-botaru-version": "v0.2"
+            },
+            "sunset": {
+              "$ref": "#/$defs/date",
+              "description": "From v0.2: the date after which the object is removed (MAN-7).",
+              "x-botaru-version": "v0.2"
+            },
+            "tenant": {
+              "$ref": "urn:botaru:schema:common:1#/$defs/tenant_name",
+              "description": "The tenant the object belongs to."
+            }
+          },
+          "required": [
+            "name",
+            "tenant"
+          ],
+          "description": "Name and labels of the object, the tenant is mandatory."
+        },
+        "spec": {
+          "$ref": "urn:botaru:schema:commission:1"
+        }
+      },
+      "required": [
+        "apiVersion",
+        "kind",
+        "metadata",
+        "spec"
+      ],
+      "description": "Manifest of kind Commission."
+    },
+    "kind_incident_class": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "apiVersion": {
+          "const": "botaru/v1alpha1",
+          "description": "Wrapper version."
+        },
+        "kind": {
+          "const": "IncidentClass",
+          "description": "Manifest kind."
+        },
+        "metadata": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "name": {
+              "$ref": "urn:botaru:schema:common:1#/$defs/dotted_name"
+            },
+            "labels": {
+              "$ref": "#/$defs/labels"
+            },
+            "deprecated": {
+              "type": "boolean",
+              "description": "From v0.2: the object is deprecated; apply warns about references to it (MAN-7).",
+              "x-botaru-version": "v0.2"
+            },
+            "sunset": {
+              "$ref": "#/$defs/date",
+              "description": "From v0.2: the date after which the object is removed (MAN-7).",
+              "x-botaru-version": "v0.2"
+            }
+          },
+          "required": [
+            "name"
+          ],
+          "description": "Name and labels of the object; there is no tenant field (TEN-6)."
+        },
+        "spec": {
+          "$ref": "urn:botaru:schema:incident-class:1"
+        }
+      },
+      "required": [
+        "apiVersion",
+        "kind",
+        "metadata",
+        "spec"
+      ],
+      "description": "Manifest of kind IncidentClass."
+    },
+    "kind_governance": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "apiVersion": {
+          "const": "botaru/v1alpha1",
+          "description": "Wrapper version."
+        },
+        "kind": {
+          "const": "Governance",
+          "description": "Manifest kind."
+        },
+        "metadata": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "name": {
+              "$ref": "urn:botaru:schema:common:1#/$defs/name"
+            },
+            "labels": {
+              "$ref": "#/$defs/labels"
+            },
+            "deprecated": {
+              "type": "boolean",
+              "description": "From v0.2: the object is deprecated; apply warns about references to it (MAN-7).",
+              "x-botaru-version": "v0.2"
+            },
+            "sunset": {
+              "$ref": "#/$defs/date",
+              "description": "From v0.2: the date after which the object is removed (MAN-7).",
+              "x-botaru-version": "v0.2"
+            },
+            "tenant": {
+              "$ref": "urn:botaru:schema:common:1#/$defs/tenant_name",
+              "description": "The tenant the object belongs to."
+            }
+          },
+          "required": [
+            "name",
+            "tenant"
+          ],
+          "description": "Name and labels of the object, the tenant is mandatory."
+        },
+        "spec": {
+          "$ref": "urn:botaru:schema:governance:1"
+        }
+      },
+      "required": [
+        "apiVersion",
+        "kind",
+        "metadata",
+        "spec"
+      ],
+      "description": "Manifest of kind Governance."
+    }
+  }
+}

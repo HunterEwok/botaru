@@ -1,0 +1,95 @@
+id: fx-mgr-tenant-optout
+rules: [MGR-42, GOV-25, GOV-22]
+description: 'demo2 with farm_manager.enabled: false: an incident in demo2 gives no seat task and no seat stop; control.apply
+  on a demo2 target gets manager_disabled; the demo2 commission has no manager lens; seat tasks in demo run; apply
+  with a model_profile above the seat ceiling is rejected. Changing the block to disabled cancels running seat attempts in T with reason
+  manager_disabled, the holder''s holds in T live no longer than 15 minutes, and waiting cards close with canceled(manager_disabled).'
+given:
+  seat:
+    id: farm-manager
+    tenant: farm
+    state: held
+    holder: bot_41
+    epoch: 9
+    stop_reasons: []
+  tenants:
+    demo:
+      farm_manager: {enabled: true}
+    demo2:
+      farm_manager: {enabled: false}
+cases:
+- id: fx-mgr-tenant-optout-a
+  steps:
+  - occur:
+      incident_open: {tenant: demo2, class: disk_full}
+  expect:
+    seat_tasks_created: 0
+    seat: {state: held, epoch: 9}
+    manager_notice_to: demo2 humans only
+    farm_operators_see: numbers in daily digest
+- id: fx-mgr-tenant-optout-b
+  steps:
+  - call:
+      port: P3
+      op: tools/call
+      request:
+        name: control_ops
+        arguments:
+          op: quarantine
+          target: {kind: worker, id: w_d2_3}
+    by: attempt
+  expect: {result: rejected, reason: manager_disabled}
+- id: fx-mgr-tenant-optout-c
+  steps:
+  - call:
+      port: P3
+      op: tools/call
+      request:
+        name: service/control
+        arguments: {service: nginx, verb: restart}
+    context: {host: demo2-host}
+  expect: {result: rejected, reason: manager_disabled}
+- id: fx-mgr-tenant-optout-d
+  given:
+    proposal_in_review: {tenant: demo2}
+  expect:
+    review_tasks: {review.farm_manager.v1: 0}
+    verdict_mark: null
+- id: fx-mgr-tenant-optout-e
+  steps:
+  - occur:
+      incident_open: {tenant: demo, class: disk_filling}
+  expect: {seat_tasks_created: 1}
+- id: fx-mgr-tenant-optout-f
+  given:
+    apply:
+      tenant: demo
+      farm_manager: {model_profile: rank-5-profile}
+  expect:
+    apply: {result: rejected}
+    note: rank above the ceiling of the seat slot of the seat role or the profile is not in models_allowed
+- id: fx-mgr-tenant-optout-g
+  given:
+    tenant: demo
+    running_seat_attempts: 2
+    bot_41_holds:
+    - {id: h_9, until: '2026-11-24T08:00:00Z'}
+    pending_cards: [ap_7]
+    apply:
+      tenant: demo
+      farm_manager: {enabled: false}
+      at: '2026-11-24T06:00:00Z'
+  expect:
+    attempts_canceled: {count: 2, reason: manager_disabled}
+    holds:
+      h_9: {until: '2026-11-24T06:15:00Z'}
+    cards: {ap_7: canceled(manager_disabled)}
+    doctor_lists_tenant_without_manager: true
+- id: fx-mgr-tenant-optout-h
+  given:
+    apply:
+      tenant: demo
+      farm_manager: {enabled: true, lens: false}
+  expect:
+    review_tasks: {review.farm_manager.v1: 0}
+    seat_tasks_on_incident: created

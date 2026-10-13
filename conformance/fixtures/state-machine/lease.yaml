@@ -1,0 +1,293 @@
+# Collected from spec/lifecycles/lease.yaml. The value null in from means "the object does not exist yet".
+lifecycle: spec/lifecycles/lease.yaml
+object: lease
+rules: [APR-7, DLV-1, DLV-11, DLV-6, DSP-1, FEN-1, FEN-2, FEN-3, FEN-4, FEN-5, GW-13, HLD-1, HLD-3, IDM-3, IDN-10,
+  IDN-4, LCY-4, MGR-1, MGR-11, OBS-8, PRM-3, RET-6, SEC-3, TEN-3, TEN-3a, TIM-1]
+description: Allowed and forbidden transitions of the "lease" lifecycle, collected from the tables of spec/lifecycles/lease.md.
+  The implementation accepts a transition from the allowed list under the condition of its row; a pair from the forbidden
+  list does not change the state, and the call that asks for it is rejected. The without_transition rows are calls that
+  have no transition by the table. A changing call on a lease that is not active gets fenced without writes (FEN-2).
+states:
+- id: active
+  terminal: false
+- id: closed
+  terminal: true
+- id: released
+  terminal: true
+- id: expired
+  terminal: true
+- id: revoked
+  terminal: true
+- id: preempted
+  terminal: true
+allowed:
+- from: null
+  to: active
+  by: P1 `claim` with the kinds `attempt`, `toolcall` or `delivery`
+  rules: [DLV-6, DSP-1, FEN-1, HLD-1, TEN-3, TEN-3a, TIM-1]
+- from: active
+  to: active
+  by: P1 `heartbeat` with the current token
+  rules: [DLV-11, FEN-2, FEN-3]
+- from: active
+  to: active
+  by: C1 `lease.extend` when the core leaves `not_ready`
+  rules: [FEN-5, OBS-8]
+- from: active
+  to: closed
+  by: P1 `complete` or P1 `fail` with the current token
+  rules: [FEN-2, IDM-3]
+- from: active
+  to: released
+  by: P1 `release`
+  rules: [FEN-2]
+- from: active
+  to: expired
+  by: the `reaper` loop
+  rules: [APR-7, DLV-1, FEN-1, FEN-3]
+- from: active
+  to: expired
+  by: the `reaper` loop after a downtime window
+  rules: [FEN-1, FEN-5, GW-13]
+- from: active
+  to: revoked
+  by: P1 `cancel`; P2 `task.cancel`; cancellation of the parent
+  rules: [FEN-4]
+- from: active
+  to: revoked
+  by: P2 `worker.revoke`
+  rules: [FEN-2, IDN-4]
+- from: active
+  to: revoked
+  by: 'the core in the transaction of the cause: P2 `principal.off`, P2 `ungrant`'
+  rules: [PRM-3]
+- from: active
+  to: revoked
+  by: P2 `hold.set` with the effect `cancel_running`
+  rules: [HLD-3]
+- from: active
+  to: revoked
+  by: P2 `seat.assign`, P2 `seat.vacate`, a seat hold
+  rules: [IDN-10, MGR-1]
+- from: active
+  to: revoked
+  by: C1 `epoch.advance` on restore from backup
+  rules: [RET-6, SEC-3]
+- from: active
+  to: preempted
+  by: the control operation `preempt`
+  rules: [MGR-11]
+- from: active
+  to: released
+  by: the `drain_deadline` of a worker in `draining`
+  rules: [LCY-4]
+forbidden:
+- from: null
+  to: closed
+  expect: rejected
+  rules: &id001 [FEN-1, DSP-1]
+  why: the object does not appear directly in the state closed
+- from: null
+  to: released
+  expect: rejected
+  rules: *id001
+  why: the object does not appear directly in the state released
+- from: null
+  to: expired
+  expect: rejected
+  rules: *id001
+  why: the object does not appear directly in the state expired
+- from: null
+  to: revoked
+  expect: rejected
+  rules: *id001
+  why: the object does not appear directly in the state revoked
+- from: null
+  to: preempted
+  expect: rejected
+  rules: *id001
+  why: the object does not appear directly in the state preempted
+- from: closed
+  to: active
+  expect: rejected
+  rules: &id002 [FEN-2]
+  why: closed is a terminal state
+- from: closed
+  to: closed
+  expect: rejected
+  rules: *id002
+  why: closed is a terminal state
+- from: closed
+  to: released
+  expect: rejected
+  rules: *id002
+  why: closed is a terminal state
+- from: closed
+  to: expired
+  expect: rejected
+  rules: *id002
+  why: closed is a terminal state
+- from: closed
+  to: revoked
+  expect: rejected
+  rules: *id002
+  why: closed is a terminal state
+- from: closed
+  to: preempted
+  expect: rejected
+  rules: *id002
+  why: closed is a terminal state
+- from: released
+  to: active
+  expect: rejected
+  rules: *id002
+  why: released is a terminal state
+- from: released
+  to: closed
+  expect: rejected
+  rules: *id002
+  why: released is a terminal state
+- from: released
+  to: released
+  expect: rejected
+  rules: *id002
+  why: released is a terminal state
+- from: released
+  to: expired
+  expect: rejected
+  rules: *id002
+  why: released is a terminal state
+- from: released
+  to: revoked
+  expect: rejected
+  rules: *id002
+  why: released is a terminal state
+- from: released
+  to: preempted
+  expect: rejected
+  rules: *id002
+  why: released is a terminal state
+- from: expired
+  to: active
+  expect: rejected
+  rules: *id002
+  why: expired is a terminal state
+- from: expired
+  to: closed
+  expect: rejected
+  rules: *id002
+  why: expired is a terminal state
+- from: expired
+  to: released
+  expect: rejected
+  rules: *id002
+  why: expired is a terminal state
+- from: expired
+  to: expired
+  expect: rejected
+  rules: *id002
+  why: expired is a terminal state
+- from: expired
+  to: revoked
+  expect: rejected
+  rules: *id002
+  why: expired is a terminal state
+- from: expired
+  to: preempted
+  expect: rejected
+  rules: *id002
+  why: expired is a terminal state
+- from: revoked
+  to: active
+  expect: rejected
+  rules: *id002
+  why: revoked is a terminal state
+- from: revoked
+  to: closed
+  expect: rejected
+  rules: *id002
+  why: revoked is a terminal state
+- from: revoked
+  to: released
+  expect: rejected
+  rules: *id002
+  why: revoked is a terminal state
+- from: revoked
+  to: expired
+  expect: rejected
+  rules: *id002
+  why: revoked is a terminal state
+- from: revoked
+  to: revoked
+  expect: rejected
+  rules: *id002
+  why: revoked is a terminal state
+- from: revoked
+  to: preempted
+  expect: rejected
+  rules: *id002
+  why: revoked is a terminal state
+- from: preempted
+  to: active
+  expect: rejected
+  rules: *id002
+  why: preempted is a terminal state
+- from: preempted
+  to: closed
+  expect: rejected
+  rules: *id002
+  why: preempted is a terminal state
+- from: preempted
+  to: released
+  expect: rejected
+  rules: *id002
+  why: preempted is a terminal state
+- from: preempted
+  to: expired
+  expect: rejected
+  rules: *id002
+  why: preempted is a terminal state
+- from: preempted
+  to: revoked
+  expect: rejected
+  rules: *id002
+  why: preempted is a terminal state
+- from: preempted
+  to: preempted
+  expect: rejected
+  rules: *id002
+  why: preempted is a terminal state
+without_transition:
+- from: closed
+  to: null
+  by: a changing call with an old token, with a token of a previous store epoch or with a previous seat epoch
+  when: the answer `fenced`, not a single write
+  expect: no_transition
+  rules: &id003 [FEN-2]
+- from: released
+  to: null
+  by: a changing call with an old token, with a token of a previous store epoch or with a previous seat epoch
+  when: the answer `fenced`, not a single write
+  expect: no_transition
+  rules: *id003
+- from: expired
+  to: null
+  by: a changing call with an old token, with a token of a previous store epoch or with a previous seat epoch
+  when: the answer `fenced`, not a single write
+  expect: no_transition
+  rules: *id003
+- from: revoked
+  to: null
+  by: a changing call with an old token, with a token of a previous store epoch or with a previous seat epoch
+  when: the answer `fenced`, not a single write
+  expect: no_transition
+  rules: *id003
+- from: preempted
+  to: null
+  by: a changing call with an old token, with a token of a previous store epoch or with a previous seat epoch
+  when: the answer `fenced`, not a single write
+  expect: no_transition
+  rules: *id003
+expect:
+  allowed: 15
+  forbidden: 35

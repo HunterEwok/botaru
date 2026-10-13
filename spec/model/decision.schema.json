@@ -1,0 +1,228 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:botaru:schema:decision:1",
+  "title": "Human decision on a subject",
+  "description": "The common part of any subject that waits for a person's button: the pending card, deliveries, openings of \"Details\", votes and outcome. Lifecycle: spec/lifecycles/decision.md. Every decision is recorded as an event (APR-11). The card kind is taken from the registry decision-points.yaml (APR-12).",
+  "x-botaru-direction": "record",
+  "x-botaru-retention": "metadata",
+  "x-botaru-rules": [
+    "APR-4",
+    "APR-11",
+    "APR-12",
+    "APR-14"
+  ],
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "tenant",
+    "subject",
+    "card",
+    "nonce",
+    "state"
+  ],
+  "$defs": {
+    "subject_kind": {
+      "description": "Decision subject from a closed list. v0.1: approval, proposal, memory_record, campaign, script, script_gate, control, subject_request (kind erase, D-76); v0.2: takeover, governance_case, attribution and subject_request of kind export.",
+      "enum": [
+        "approval",
+        "proposal",
+        "memory_record",
+        "campaign",
+        "script",
+        "script_gate",
+        "control",
+        "subject_request",
+        "takeover",
+        "governance_case",
+        "attribution"
+      ],
+      "x-botaru-registry": "decision-subjects"
+    },
+    "event": {
+      "description": "Decision event (APR-11): metadata without texts (AUD-2). Only summaries per tenant are computed from them; no series per individual person are built.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "subject",
+        "decision",
+        "decided_by",
+        "via",
+        "decided_at",
+        "details_opened"
+      ],
+      "properties": {
+        "subject": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "id"
+          ],
+          "properties": {
+            "kind": {
+              "description": "Decision subject from a closed list. v0.1: approval, proposal, memory_record, campaign, script, script_gate, control, subject_request (kind erase, D-76); v0.2: takeover, governance_case, attribution and subject_request of kind export.",
+              "$ref": "#/$defs/subject_kind"
+            },
+            "id": {
+              "$ref": "urn:botaru:schema:common:1#/$defs/object_id"
+            }
+          }
+        },
+        "card": {
+          "description": "Card kind from decision-points.yaml.",
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_.]{0,63}$",
+          "maxLength": 64
+        },
+        "decision": {
+          "description": "Decision by a button from the row of the registry decision-points.yaml for the card kind, for example approve, reject, defer, yes, no, unknown, override_veto.",
+          "type": "string",
+          "pattern": "^[a-z][a-z_]{0,31}$",
+          "maxLength": 32
+        },
+        "reason_code": {
+          "$ref": "urn:botaru:schema:common:1#/$defs/reason"
+        },
+        "decided_by": {
+          "description": "Internal id of the person who decided.",
+          "$ref": "urn:botaru:schema:common:1#/$defs/principal_ref"
+        },
+        "channel": {
+          "$ref": "urn:botaru:schema:common:1#/$defs/name"
+        },
+        "chat_kind": {
+          "description": "Chat kind: direct or group.",
+          "enum": [
+            "direct",
+            "group"
+          ]
+        },
+        "via": {
+          "description": "decide for a card button; p2 for an operator decision by command (PRM-14).",
+          "enum": [
+            "decide",
+            "p2"
+          ]
+        },
+        "delivered_at": {
+          "description": "When the card was delivered to this person.",
+          "$ref": "urn:botaru:schema:common:1#/$defs/datetime"
+        },
+        "decided_at": {
+          "$ref": "urn:botaru:schema:common:1#/$defs/datetime"
+        },
+        "response_ms": {
+          "description": "How much time passed from delivery to decision.",
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 31622400000
+        },
+        "details_opened": {
+          "description": "Whether the person opened \"Details\" before deciding (APR-14).",
+          "type": "boolean"
+        }
+      }
+    }
+  },
+  "properties": {
+    "tenant": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/tenant_name"
+    },
+    "subject": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "id"
+      ],
+      "properties": {
+        "kind": {
+          "$ref": "#/$defs/subject_kind"
+        },
+        "id": {
+          "$ref": "urn:botaru:schema:common:1#/$defs/object_id"
+        }
+      }
+    },
+    "card": {
+      "description": "Card kind.",
+      "type": "string",
+      "maxLength": 64,
+      "x-botaru-registry": "decision-points"
+    },
+    "nonce": {
+      "description": "One-time value of the card: the button carries it together with the subject and id (APR-3).",
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_-]{16,64}$",
+      "maxLength": 64
+    },
+    "expires_at": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/datetime"
+    },
+    "state": {
+      "enum": [
+        "pending",
+        "decided",
+        "expired",
+        "canceled"
+      ]
+    },
+    "deliveries": {
+      "description": "Deliveries of the card to the people from the registry row.",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "principal",
+          "channel",
+          "chat_kind"
+        ],
+        "properties": {
+          "principal": {
+            "$ref": "urn:botaru:schema:common:1#/$defs/principal_ref"
+          },
+          "channel": {
+            "$ref": "urn:botaru:schema:common:1#/$defs/name"
+          },
+          "chat_kind": {
+            "description": "Chat kind: direct or group.",
+            "enum": [
+              "direct",
+              "group"
+            ]
+          },
+          "delivered_at": {
+            "$ref": "urn:botaru:schema:common:1#/$defs/datetime"
+          },
+          "details_opened_at": {
+            "$ref": "urn:botaru:schema:common:1#/$defs/datetime"
+          }
+        }
+      },
+      "maxItems": 200
+    },
+    "events": {
+      "description": "Decision events on the subject.",
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/event"
+      },
+      "maxItems": 16
+    },
+    "cancel_reason": {
+      "enum": [
+        "person_inactive",
+        "rights_revoked",
+        "held",
+        "restored",
+        "seat_changed",
+        "admin",
+        "initiator",
+        "ref_invalid",
+        "subject_closed"
+      ],
+      "x-botaru-registry": "reasons"
+    }
+  }
+}

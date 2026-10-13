@@ -1,0 +1,116 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:botaru:schema:grant:1",
+  "title": "Model grant",
+  "description": "ModelGrant record: a stronger model profile for one task of an executor for one or two attempts. Lifecycle: spec/lifecycles/grant.md. The whole lifecycle comes in v0.2; until then the granted slot is reserved.",
+  "x-botaru-direction": "record",
+  "x-botaru-retention": "metadata",
+  "x-botaru-version": "v0.2",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "id",
+    "tenant",
+    "task",
+    "role",
+    "profile",
+    "line",
+    "state"
+  ],
+  "properties": {
+    "id": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/object_id"
+    },
+    "tenant": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/tenant_name"
+    },
+    "task": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/object_id"
+    },
+    "role": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/name"
+    },
+    "profile": {
+      "description": "Model profile from the role's ladder and those allowed to the tenant.",
+      "$ref": "urn:botaru:schema:common:1#/$defs/name"
+    },
+    "attempts_left": {
+      "description": "Grant attempts left; 1 or 2 at grant time.",
+      "enum": [
+        0,
+        1,
+        2
+      ]
+    },
+    "cap_eur": {
+      "description": "Ceiling for the whole grant in euro cents (BUD-9).",
+      "$ref": "urn:botaru:schema:common:1#/$defs/eurocents"
+    },
+    "expires_at": {
+      "description": "Not later than 6 h from the decision.",
+      "$ref": "urn:botaru:schema:common:1#/$defs/datetime"
+    },
+    "line": {
+      "const": "grant"
+    },
+    "decided_by": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "epoch"
+          ],
+          "properties": {
+            "kind": {
+              "const": "seat"
+            },
+            "epoch": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 1000000
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "principal"
+          ],
+          "properties": {
+            "kind": {
+              "const": "human"
+            },
+            "principal": {
+              "$ref": "urn:botaru:schema:common:1#/$defs/principal_ref"
+            }
+          }
+        }
+      ]
+    },
+    "untrusted": {
+      "description": "The request was made in distrust mode: only the first step of the ladder.",
+      "type": "boolean"
+    },
+    "reason": {
+      "description": "Reason for the denial or the end: grant_not_eligible, grant_over_budget, grant_rate_limited, grant_expired_unanswered, grant_revoked.",
+      "$ref": "urn:botaru:schema:common:1#/$defs/reason"
+    },
+    "state": {
+      "enum": [
+        "requested",
+        "screened",
+        "pending",
+        "approved",
+        "active",
+        "consumed",
+        "denied",
+        "expired",
+        "revoked"
+      ]
+    }
+  }
+}

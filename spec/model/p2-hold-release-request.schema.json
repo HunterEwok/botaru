@@ -1,0 +1,21 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:botaru:schema:p2-hold-release-request:1",
+  "title": "P2 hold.release: request",
+  "description": "Release of a hold. C2 at the hold.release check point compares the rank of the stop author and the rank of the principal; denial forbidden (HLD-2).",
+  "x-botaru-direction": "input",
+  "x-botaru-rules": [
+    "HLD-2"
+  ],
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "id"
+  ],
+  "properties": {
+    "id": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/object_id",
+      "description": "Stop id."
+    }
+  }
+}

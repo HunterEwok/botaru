@@ -1,0 +1,98 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:botaru:schema:erasure-work:1",
+  "title": "Erasure or match work",
+  "description": "Payload of a work item of kind erasure from P1 claim: a step of an erasure request for one edge store (E1, E2, E4, E5). The core creates one work item for each store that holds tenant content: the channel, sink and monitoring adapter by the name from the enroll record, the runtime by the id of the worker that declared runtime_internal. Erase work deletes by scope, and for the scope (tenant, subject) recognizes the person by needles; match work searches for the exact needles strings and returns only a list of ids. claim(erasure) gives the work only to a process with this target and the tenant scope.tenant (TEN-3). The outcome is handed in through P1 complete in the erasure field (schema erasure-outcome). A store without the needed operation hands in failed, and the request stays open with an alarm (RET-7).",
+  "x-botaru-direction": "output",
+  "x-botaru-rules": [
+    "RET-4",
+    "RET-7",
+    "SEC-11",
+    "RT-5",
+    "TEN-3"
+  ],
+  "type": "object",
+  "required": [
+    "request_id",
+    "op",
+    "target",
+    "scope"
+  ],
+  "properties": {
+    "request_id": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/object_id",
+      "description": "Erasure request (spec/model/deletion-request.schema.json)."
+    },
+    "op": {
+      "enum": [
+        "erase",
+        "match"
+      ],
+      "description": "erase: delete by scope (for E4 this is the purge operation of the sheet); match: find the exact strings of the principal."
+    },
+    "reason": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/reason",
+      "description": "Reason for the erasure request: forget, offboarding, bot_retired, tenant_delete, subject_request, manual."
+    },
+    "target": {
+      "type": "object",
+      "description": "Which store performs the step; claim(erasure) gives the work only to a process with this target (TEN-3).",
+      "required": [
+        "kind"
+      ],
+      "properties": {
+        "kind": {
+          "enum": [
+            "channel",
+            "sink",
+            "monitor",
+            "runtime"
+          ]
+        },
+        "name": {
+          "$ref": "urn:botaru:schema:common:1#/$defs/name",
+          "description": "Name of the channel, sink or monitoring adapter from the enroll record."
+        },
+        "worker_id": {
+          "$ref": "urn:botaru:schema:common:1#/$defs/object_id",
+          "description": "Only runtime: the agent worker whose runtime stores the data."
+        }
+      }
+    },
+    "scope": {
+      "type": "object",
+      "description": "Scope of the erasure request: (tenant), (tenant, subject) or a list of ids (RET-4).",
+      "required": [
+        "tenant"
+      ],
+      "properties": {
+        "tenant": {
+          "$ref": "urn:botaru:schema:common:1#/$defs/tenant_name"
+        },
+        "subject": {
+          "$ref": "urn:botaru:schema:common:1#/$defs/principal_ref",
+          "description": "Principal of the scope (tenant, subject)."
+        },
+        "ids": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "maxLength": 200
+          },
+          "maxItems": 1000,
+          "description": "List of ids of store objects, including those found by its own match operation."
+        }
+      }
+    },
+    "needles": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "maxLength": 200,
+        "minLength": 1
+      },
+      "maxItems": 32,
+      "description": "For match and for erase with a principal: the principal's exact strings at the time of the request (external identities of the form telegram:1001, addresses, display name) by which the edge store recognizes the person, because it does not know the core principal id. The core keeps them until the end of the erasure request and then wipes them; they do not get into logs, telemetry or the erasure request record (SEC-11)."
+    }
+  }
+}

@@ -1,0 +1,5 @@
+schema: spec/model/p1-cancel-request.schema.json
+rules: [PRM-9]
+description: A cancel request.
+cases:
+- task: t_01JB0000000000000000000001

@@ -1,0 +1,65 @@
+id: fx-dsp-05
+rules: [DSP-7, CAP-1]
+description: 'Pressure is expressed by counters, and work is not lost. The tenant has `max_queued: 2`, and two tasks are already
+  waiting: the third enqueue gets `rejected(over_capacity)` with `retry_after_s`, there is no task record, and the key is not taken,
+  so the same key after space frees up gives a new task with `existing: false`. A dispatcher rule sets
+  `max_running: 4` for `data.qc.ctd.v1`: with four running the fifth task waits in `submitted` with `waiting_reason: type_quota`,
+  no attempt is spent on it, and when one of the four ends, the fifth is given out.'
+given:
+  tenant: demo
+  tenant_spec:
+    limits: {max_queued: 2}
+    dispatch:
+      rules:
+      - match: {type: data.qc.ctd.v1}
+        max_running: 4
+  queued: 2
+  running: {data.qc.ctd.v1: 4}
+  waiting:
+  - {id: t_01JB0000000000000000000005, type: data.qc.ctd.v1, state: submitted, attempts_spent: 0}
+  roles:
+  - name: analyst
+    claims: [data.qc.ctd.v1]
+  workers:
+  - {id: wk_01JB000000000000000000000A, role: analyst, state: active, ready: true}
+steps:
+- call:
+    port: P1
+    op: enqueue
+    request:
+      body: {type: report.nightly.v1, goal: nightly report}
+      idempotency_key: nightly-2026-10-05
+  by: service:report-client
+  expect:
+    state: {result: rejected}
+    reason: over_capacity
+    retry_after_s: present
+    task_created: false
+    key_taken: false
+- call:
+    port: P1
+    op: claim
+    request:
+      kinds: [attempt]
+  by: worker:wk_01JB000000000000000000000A
+  expect: {task: null}
+- check:
+    observe: {task: t_01JB0000000000000000000005}
+  expect: {state: submitted, waiting_reason: type_quota, attempts_spent: 0, lease_no: 0}
+- occur: {one_running_task: completed, queued: 1}
+- call:
+    port: P1
+    op: enqueue
+    request:
+      body: {type: report.nightly.v1, goal: nightly report}
+      idempotency_key: nightly-2026-10-05
+  by: service:report-client
+  expect: {state: submitted, existing: false}
+- call:
+    port: P1
+    op: claim
+    request:
+      kinds: [attempt]
+  by: worker:wk_01JB000000000000000000000A
+  expect: {task: t_01JB0000000000000000000005}
+expect: {dropped_tasks: 0, attempts_spent_by_pressure: 0}

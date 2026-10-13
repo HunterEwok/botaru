@@ -1,0 +1,1332 @@
+registry: reasons
+version: 4
+description: 'Closed registry of reasons: end of an attempt, refusals at enqueue and at a call, waiting, outcomes of calls,
+  approvals and deliveries, and also codes of other parts of the farm. A worker in P1 `fail` passes only a code from here; there is no free
+  reason text in the records. Record fields: `meaning` (what it means); `spends_attempt` (whether it spends an attempt: true,
+  false, or null if the reason does not end an attempt); `retry` (retry: `backoff` with the pause from the type `retry.backoff`, `immediate`
+  at once, `jitter` with a pause and full random spread up to `deadline`, `on_fix` waits for a fix until `deadline`,
+  `after_release` after the stop is released, `on_share` waits for a share of the model pool, `requeue` the task returns to the queue,
+  `after_grant` after the model grant decision, `none` no retry, null for codes that do not end work); `outcome`
+  (result when there is no retry: `failed(attempts_exhausted)`, `failed(deadline_exceeded)`, `failed`, `canceled`, `rejected`
+  at enqueue or refusal of an operation, `response` an answer to a call with no change to records, `error` an outcome of a tool call,
+  `withheld` and `dead` delivery outcomes, `apply_error` a refusal by the `apply` lint, `mark` a mark or notice without refusal,
+  `value` a field value: reason for a stop, an erasure request, a revert, or a `health` answer); `rules` (rule numbers).'
+source: docs/tasks-and-delivery.md
+entries:
+- id: lease_expired
+  since: v0.1
+  meaning: The lease expired without renewal. The attempt is spent; for a read call this is the error `error(lease_expired)`, which
+    the model sees.
+  spends_attempt: true
+  retry: backoff
+  outcome: failed(attempts_exhausted)
+  rules: [FEN-1, FEN-3]
+- id: runtime_error
+  since: v0.1
+  meaning: The agent runtime ended the run with an error.
+  spends_attempt: true
+  retry: backoff
+  outcome: failed(attempts_exhausted)
+  rules: [FEN-1, FEN-3]
+- id: model_error
+  since: v0.1
+  meaning: The model returned an error after which the run cannot continue.
+  spends_attempt: true
+  retry: backoff
+  outcome: failed(attempts_exhausted)
+  rules: [FEN-1, FEN-3]
+- id: attempt_timeout
+  since: v0.1
+  meaning: The time limit of one attempt `timeouts.attempt` ran out.
+  spends_attempt: true
+  retry: backoff
+  outcome: failed(attempts_exhausted)
+  rules: [FEN-1, FEN-3]
+- id: output_schema_invalid
+  since: v0.1
+  meaning: The result at `complete` did not pass the full schema of the task type. The attempt is spent.
+  spends_attempt: true
+  retry: backoff
+  outcome: failed(attempts_exhausted)
+  rules: [FEN-3, OUT-2]
+- id: stalled
+  since: v0.1
+  meaning: For longer than `stall_after` there is no completed P3 or P4 call and the progress in `heartbeat` does not change.
+    The attempt is spent, and the core raises the alarm `alarm.task.stalled`.
+  spends_attempt: true
+  retry: backoff
+  outcome: failed(attempts_exhausted)
+  rules: [CNT-4]
+- id: worker_drain
+  since: v0.1
+  meaning: The holder returned the work with `release` when the worker stopped. The attempt is not spent.
+  spends_attempt: false
+  retry: immediate
+  outcome: null
+  rules: [FEN-1, FEN-2]
+- id: core_unavailable
+  since: v0.1
+  meaning: The lease expired while the core was down and was not renewed by the holder after `lease.extend`. The attempt is not spent
+    and does not count toward `runs_counted`; a read call gets `error(core_unavailable)`, a write call `exec_unknown`, a delivery
+    returns to `planned`.
+  spends_attempt: false
+  retry: immediate
+  outcome: null
+  rules: [FEN-5, FEN-3]
+- id: provider_unavailable
+  since: v0.1
+  meaning: The model provider is unavailable or the circuit of the pair (workspace, model pool) is open. The attempt is not spent; this
+    is also a waiting reason of a task.
+  spends_attempt: false
+  retry: jitter
+  outcome: failed(deadline_exceeded)
+  rules: [CAP-2, GW-11, GW-12, FEN-3]
+- id: provider_rate_limited
+  since: v0.1
+  meaning: A rate limit answer from the model provider. The attempt is not spent. Do not confuse with `service_rate_limited`,
+    the limiter of the farm itself.
+  spends_attempt: false
+  retry: jitter
+  outcome: failed(deadline_exceeded)
+  rules: [CAP-2, GW-12, FEN-3]
+- id: provider_config
+  since: v0.1
+  meaning: 'Model provider configuration error. The retry is not on a timer: the task waits for a fix until `deadline`, the alarm
+    is raised by code.'
+  spends_attempt: false
+  retry: on_fix
+  outcome: failed(deadline_exceeded)
+  rules: [GW-13, FEN-3]
+- id: held
+  since: v0.1
+  meaning: A stop on the scope of work is in effect. For an attempt this is a stop with `cancel_running` without spending the attempt; at enqueue
+    `rejected(held)` under a stop with `no_enqueue`; for a waiting task a waiting reason; for a call `denied(held)`; for a delivery
+    `withheld` under `no_delivery`; for a message `discarded(held)`.
+  spends_attempt: false
+  retry: after_release
+  outcome: rejected
+  rules: [HLD-1, HLD-3]
+- id: provider_quota
+  since: v0.1
+  meaning: The tenant has no free share of the needed model pool. The attempt is not spent; this is also a waiting reason
+    of a task.
+  spends_attempt: false
+  retry: on_share
+  outcome: failed(deadline_exceeded)
+  rules: [GW-10, FEN-3]
+- id: preempted
+  since: v0.1
+  meaning: The core preempted the attempt with the control operation `preempt`. The attempt is not spent.
+  spends_attempt: false
+  retry: requeue
+  outcome: null
+  rules: [MGR-11, FEN-1]
+- id: seat_changed
+  since: v0.1
+  meaning: 'The seat epoch changed: a holder was assigned or removed, or the seat has a new stop reason. An attempt of a seat
+    task is not spent.'
+  spends_attempt: false
+  retry: requeue
+  outcome: null
+  rules: [IDN-10, MGR-1]
+- id: awaiting_model_grant
+  since: v0.2
+  meaning: The attempt ended because the task asked for a grant of a stronger model.
+  spends_attempt: false
+  retry: after_grant
+  outcome: null
+  rules: [MGR-17]
+- id: grant_revoked
+  since: v0.2
+  meaning: The model grant was revoked; the task continues on the base model or waits for a decision.
+  spends_attempt: false
+  retry: after_grant
+  outcome: null
+  rules: [MGR-17, MGR-18]
+- id: provider_spend_cap
+  since: v0.1
+  meaning: The money ceiling of the provider workspace was reached. There is no retry; the alarm is raised by code.
+  spends_attempt: false
+  retry: none
+  outcome: failed
+  rules: [CAP-2, GW-9]
+- id: budget_exhausted
+  since: v0.1
+  meaning: 'The budget limit is exhausted: at enqueue the reserve did not pass (`rejected`), during work the task ends
+    `failed`. Also a value of a wake-up skip `wake.skipped(budget_exhausted)`.'
+  spends_attempt: false
+  retry: none
+  outcome: failed
+  rules: [BUD-1, BUD-2, FEN-3]
+- id: deadline_exceeded
+  since: v0.1
+  meaning: The task `deadline` passed, counting all attempts.
+  spends_attempt: false
+  retry: none
+  outcome: failed
+  rules: [DLV-4]
+- id: attempts_exhausted
+  since: v0.1
+  meaning: All `retry.max_attempts` attempts were spent; for a delivery the delivery attempts ran out. The work shows up in "dead".
+  spends_attempt: null
+  retry: none
+  outcome: failed
+  rules: [FEN-3, DLV-4]
+- id: runs_exhausted
+  since: v0.1
+  meaning: The ceiling of runtime runs with a model answer `retry.max_runs` was exhausted. The task shows up in "dead".
+  spends_attempt: null
+  retry: none
+  outcome: failed
+  rules: [FEN-3, DLV-4]
+- id: exec_failed
+  since: v0.1
+  meaning: 'The write call of the action ended with an error (`error` or `denied(held)`): approval `exec_failed`, task
+    `action.<a>` `failed(exec_failed)`. A new action request is needed.'
+  spends_attempt: null
+  retry: none
+  outcome: failed
+  rules: [CNT-7, APR-7]
+- id: exec_unknown
+  since: v0.1
+  meaning: 'It is unknown whether the action was executed: the write call lease expired with no result or the storage epoch grew.
+    Task `action.<a>` `failed(exec_unknown)`; delivery `monitor_script` ends `dead(exec_unknown)`. There is
+    no retry.'
+  spends_attempt: null
+  retry: none
+  outcome: failed
+  rules: [CNT-7, APR-7, DLV-1]
+- id: no_executor
+  since: v0.1
+  meaning: No toolhost of the target took the tool call in `queued` within `start_by`. The call is not retried; the model sees the
+    error; for a write call the approval is `exec_failed(no_executor)`.
+  spends_attempt: false
+  retry: none
+  outcome: error
+  rules: [DLV-16, CNT-7]
+- id: plugin_unavailable
+  since: v0.1
+  meaning: The call target has no live toolhost or the plugin is in state `down`; the call ends with an error at once.
+  spends_attempt: false
+  retry: none
+  outcome: error
+  rules: [DLV-16, OBS-10]
+- id: admin
+  since: v0.1
+  meaning: 'Result `canceled(admin)`: the task, campaign or waiting approval was canceled by the tenant admin or the operator
+    (P2 `task.cancel`, P2 `campaign.control`); children in a cascade get the same reason.'
+  spends_attempt: false
+  retry: none
+  outcome: canceled
+  rules: [APR-6, FEN-4, PRM-9, ORC-4]
+- id: rights_revoked
+  since: v0.1
+  meaning: The initiator lost `task:<type>` or `data:<class>`; the task is canceled on recheck.
+  spends_attempt: false
+  retry: none
+  outcome: canceled
+  rules: [PRM-3]
+- id: person_inactive
+  since: v0.1
+  meaning: 'The initiator is turned off: a refusal at enqueue, a cancellation for a running or waiting task.'
+  spends_attempt: false
+  retry: none
+  outcome: canceled
+  rules: [PRM-3]
+- id: by_manager
+  since: v0.1
+  meaning: The task was canceled by the control operation `cancel`.
+  spends_attempt: false
+  retry: none
+  outcome: canceled
+  rules: [MGR-9]
+- id: preempt_limit
+  since: v0.1
+  meaning: The third preemption of the same task; the task is canceled.
+  spends_attempt: false
+  retry: none
+  outcome: canceled
+  rules: [MGR-11]
+- id: superseded_by_takeover
+  since: v0.2
+  meaning: The task was replaced by a takeover.
+  spends_attempt: false
+  retry: none
+  outcome: canceled
+  rules: [MGR-21]
+- id: tenant_mismatch
+  since: v0.1
+  meaning: The tenant in the request does not match the tenant of the credentials; the core raises an alarm.
+  spends_attempt: null
+  retry: none
+  outcome: rejected
+  rules: [TEN-2]
+- id: input_schema_invalid
+  since: v0.1
+  meaning: 'The request or body did not pass the schema: a record field, a "this worker" field, a `system:` key not from the core, an `action.*` type,
+    an unknown type, `params` outside `params_schema`.'
+  spends_attempt: null
+  retry: none
+  outcome: rejected
+  rules: [IDN-1, DSP-4, APR-5, INJ-1]
+- id: no_group_cap
+  since: v0.1
+  meaning: The initiator lacks the permission `task:<type>`; the refusal carries the field `needs`.
+  spends_attempt: null
+  retry: none
+  outcome: rejected
+  rules: [PRM-7, PRM-8]
+- id: no_data_class
+  since: v0.1
+  meaning: The initiator or recipient lacks `data:<class>`; a refusal at enqueue carries the field `needs`, for a delivery this is
+    `withheld`.
+  spends_attempt: null
+  retry: none
+  outcome: rejected
+  rules: [PRM-5, DLV-6]
+- id: tier_exceeded
+  since: v0.1
+  meaning: 'The task or tool tier is above the allowed one: a child above its parent, or a tool above the `max_tier`
+    of the task.'
+  spends_attempt: null
+  retry: none
+  outcome: rejected
+  rules: [PRM-4, PRM-6]
+- id: depth_exceeded
+  since: v0.1
+  meaning: The task tree is deeper than 5.
+  spends_attempt: null
+  retry: none
+  outcome: rejected
+  rules: [PRM-6]
+- id: tree_too_large
+  since: v0.1
+  meaning: More children than `max_children` or more tasks in the tree than `max_tree_tasks`.
+  spends_attempt: null
+  retry: none
+  outcome: rejected
+  rules: [PRM-6]
+- id: group_invalid
+  since: v0.1
+  meaning: The bot group `to.group` belongs to someone else, does not exist or is not allowed; the answer is the same in all three cases.
+  spends_attempt: null
+  retry: none
+  outcome: rejected
+  rules: [DSP-4]
+- id: ref_invalid
+  since: v0.1
+  meaning: A `file_ref` or `refs` link to an object that belongs to someone else or does not exist; the answer is the same. Also an approval outcome
+    `canceled(ref_invalid)`.
+  spends_attempt: null
+  retry: none
+  outcome: rejected
+  rules: [TEN-7]
+- id: subject_closed
+  since: v0.1
+  meaning: The decision subject was closed by its own lifecycle (the campaign was canceled, the case was canceled, the person withdrew their request,
+    the binding candidate was canceled together with a false incident); the decision outcome is `canceled(subject_closed)`.
+  spends_attempt: null
+  retry: none
+  outcome: canceled
+  rules: [APR-6]
+- id: over_capacity
+  since: v0.1
+  meaning: The tenant queue ceiling `max_queued` or `max_enqueue_per_hour` was exceeded, or the soft threshold of storage space;
+    the refusal carries `retry_after_s`, and the idempotency key is not taken.
+  spends_attempt: null
+  retry: none
+  outcome: rejected
+  rules: [CAP-1, DSP-7]
+- id: memory_untrusted
+  since: v0.1
+  meaning: A type that writes memory, or a role with memory inside the runtime, does not accept a task with `untrusted_seen`.
+  spends_attempt: null
+  retry: none
+  outcome: rejected
+  rules: [MEM-3, RT-2]
+- id: idempotency_conflict
+  since: v0.1
+  meaning: The idempotency key is already taken by a task with a different initiator or a different body; the answer has no id.
+  spends_attempt: null
+  retry: null
+  outcome: response
+  rules: [IDM-1]
+- id: gone
+  since: v0.1
+  meaning: 'The object was deleted: the key of a deleted task (tombstone) or a read of a file in `expired` or `purged`.'
+  spends_attempt: null
+  retry: null
+  outcome: response
+  rules: [IDM-1, RET-3]
+- id: not_ready
+  since: v0.1
+  meaning: 'The core is not ready: storage is unavailable, or recovery or drain is in progress; the answer carries `retry_after_s`. Also
+    a value of the `reason` field of the P2 `health` answer.'
+  spends_attempt: null
+  retry: null
+  outcome: response
+  rules: [OBS-8, RET-6, DLV-5]
+- id: fenced
+  since: v0.1
+  meaning: A mutating call with a stale token, with a past storage or seat epoch, or from an attempt that lost
+    its lease or was canceled. The holder stops work; no record changes.
+  spends_attempt: null
+  retry: null
+  outcome: response
+  rules: [FEN-2, FEN-4]
+- id: lease_mismatch
+  since: v0.1
+  meaning: The worker_id of the lease token is not equal to the worker from the credentials or to the holder of the lease record with this
+    lease_no, or, for a token signed by the core, the signature is invalid. There are no side effects; the refusal is written to the audit.
+  spends_attempt: false
+  retry: none
+  outcome: rejected
+  rules: [FEN-2]
+- id: not_found
+  since: v0.1
+  meaning: One answer for an object that belongs to someone else and for one that does not exist.
+  spends_attempt: null
+  retry: null
+  outcome: response
+  rules: [PRM-9]
+- id: type_not_allowed
+  since: v0.1
+  meaning: An event type outside the task type `events` (P1 `emit`) or an observation request outside `observes`.
+  spends_attempt: null
+  retry: null
+  outcome: response
+  rules: [IDM-4]
+- id: handle_invalid
+  since: v0.1
+  meaning: The handle is invalid, expired, or belongs to other work or another tenant.
+  spends_attempt: null
+  retry: null
+  outcome: response
+  rules: [SEC-3]
+- id: forbidden
+  since: v0.1
+  meaning: 'Permission denied: the principal has no permission for the operation or object; a service or script lacks the role permission or
+    its own initiator permission `service.control:<service>` or `monitor.script_run`, or the node is outside the catalog.'
+  spends_attempt: null
+  retry: null
+  outcome: response
+  rules: [PRM-9, APR-18]
+- id: already_terminal
+  since: v0.1
+  meaning: A command to an object that is already in a final state.
+  spends_attempt: null
+  retry: null
+  outcome: response
+  rules: []
+- id: version_unsupported
+  since: v0.1
+  meaning: The protocol version is outside the window; the worker gets this at `hello`, not in the middle of work.
+  spends_attempt: null
+  retry: null
+  outcome: response
+  rules: [LCY-7]
+- id: unauthenticated
+  since: v0.1
+  meaning: The credentials are not recognized.
+  spends_attempt: null
+  retry: null
+  outcome: response
+  rules: []
+- id: blocked
+  since: v0.1
+  meaning: 'The worker is in state `blocked`: `hello` diverged from the `enroll` record, or a runtime with `runtime_internal`
+    has no `match` operation.'
+  spends_attempt: null
+  retry: null
+  outcome: response
+  rules: [RT-5]
+- id: draining
+  since: v0.1
+  meaning: 'The core or worker is draining: `claim` and `msg.receive` give no new work. Also a `health` value.'
+  spends_attempt: null
+  retry: null
+  outcome: response
+  rules: [LCY-4, LCY-6, MON-2]
+- id: identity_unknown
+  since: v0.1
+  meaning: The identity that a channel or monitoring adapter asserts is not found among the tenant principals.
+  spends_attempt: null
+  retry: null
+  outcome: response
+  rules: [TEN-4]
+- id: egress_denied
+  since: v0.1
+  meaning: Outbound access to an address that is not in the allowed list.
+  spends_attempt: null
+  retry: null
+  outcome: response
+  rules: []
+- id: self_approve
+  since: v0.1
+  meaning: The approver is the same as the initiator.
+  spends_attempt: null
+  retry: null
+  outcome: response
+  rules: []
+- id: privileged_group
+  since: v0.1
+  meaning: A privileged group cannot be granted in chat.
+  spends_attempt: null
+  retry: null
+  outcome: response
+  rules: [PRM-16]
+- id: already_decided
+  since: v0.1
+  meaning: Another decision or another person on an already decided subject; nothing changes.
+  spends_attempt: null
+  retry: null
+  outcome: response
+  rules: [IDM-3, APR-4]
+- id: expired
+  since: v0.1
+  meaning: The deadline of the decision subject or of the card has passed.
+  spends_attempt: null
+  retry: null
+  outcome: response
+  rules: [APR-4]
+- id: service_rate_limited
+  since: v0.1
+  meaning: 'A limiter of the farm itself fired: actions with services and scripts, cards, wake-ups, `card.remind`,
+    `routine` runs.'
+  spends_attempt: null
+  retry: null
+  outcome: response
+  rules: [MON-8, MSG-11, APR-19]
+- id: operator_only
+  since: v0.1
+  meaning: The operation is available only to the operator through `farmctl`.
+  spends_attempt: null
+  retry: null
+  outcome: response
+  rules: [PRM-14]
+- id: details_not_opened
+  since: v0.2
+  meaning: The decision requires that this person first opened `card.details` of this card.
+  spends_attempt: null
+  retry: null
+  outcome: response
+  rules: [APR-14]
+- id: initiator
+  since: v0.1
+  meaning: 'Result `canceled(initiator)`: the task or campaign was canceled by its initiator (P1 `cancel`, the `/cancel` command through
+    P2 `task.cancel`, the campaign "Cancel" button) or by an external program for its own task; children in a cascade and waiting
+    approvals get the same reason.'
+  spends_attempt: false
+  retry: none
+  outcome: canceled
+  rules: [APR-6, FEN-4, PRM-9, PRM-17]
+- id: restored
+  since: v0.1
+  meaning: Outcome `canceled(restored)` of a waiting approval after storage is restored from a backup.
+  spends_attempt: null
+  retry: null
+  outcome: canceled
+  rules: [RET-6]
+- id: not_subject
+  since: v0.1
+  meaning: 'Audit value `activity.ignored(not_subject)`: an incoming message in a group from an identity that is not a principal
+    of the tenant.'
+  spends_attempt: null
+  retry: null
+  outcome: mark
+  rules: [MSG-17]
+- id: assistant_in_default_types
+  since: v0.1
+  meaning: 'Lint `apply`: a personal assistant type in the tenant `default_types`.'
+  spends_attempt: null
+  retry: null
+  outcome: apply_error
+  rules: [DSP-10]
+- id: address_invalid
+  since: v0.1
+  meaning: The message address is not from the role `messages.send` and is not a reply to an entry that was read.
+  spends_attempt: null
+  retry: null
+  outcome: rejected
+  rules: [MSG-4]
+- id: data_class_exceeded
+  since: v0.1
+  meaning: The data mark is above what is allowed for the recipient, inbox or file.
+  spends_attempt: null
+  retry: null
+  outcome: rejected
+  rules: [MSG-6]
+- id: delivery_exhausted
+  since: v0.1
+  meaning: An inbox entry was handed out three times without acknowledgement and ends `dead(delivery_exhausted)`.
+  spends_attempt: null
+  retry: null
+  outcome: dead
+  rules: [MSG-9]
+- id: inbox_full
+  since: v0.1
+  meaning: The recipient inbox is full.
+  spends_attempt: null
+  retry: null
+  outcome: rejected
+  rules: [MSG-10]
+- id: sender_quota
+  since: v0.1
+  meaning: The sender share in the inbox is exhausted.
+  spends_attempt: null
+  retry: null
+  outcome: rejected
+  rules: [MSG-10]
+- id: hops_exceeded
+  since: v0.1
+  meaning: 'The reply chain between bots reached the hop limit: a refusal on the sixth hop.'
+  spends_attempt: null
+  retry: null
+  outcome: rejected
+  rules: [MSG-11]
+- id: msg_type_not_allowed
+  since: v0.1
+  meaning: The message kind is outside the role `messages.send`.
+  spends_attempt: null
+  retry: null
+  outcome: rejected
+  rules: []
+- id: note_not_allowed
+  since: v0.1
+  meaning: A note on a message kind that has no right to one.
+  spends_attempt: null
+  retry: null
+  outcome: rejected
+  rules: [MSG-13]
+- id: data_schema_invalid
+  since: v0.1
+  meaning: The message data did not pass the kind schema.
+  spends_attempt: null
+  retry: null
+  outcome: rejected
+  rules: [MSG-15]
+- id: summary_fields_required
+  since: v0.1
+  meaning: 'Lint `apply`: a type for group chats has no `summary_fields`.'
+  spends_attempt: null
+  retry: null
+  outcome: apply_error
+  rules: [REP-11]
+- id: resource_busy
+  since: v0.1
+  meaning: 'The resource is taken by another issued write call (`exclusive: resource`); also a waiting reason of a task.'
+  spends_attempt: null
+  retry: null
+  outcome: response
+  rules: [ORC-12]
+- id: estimate_exceeded
+  since: v0.1
+  meaning: Campaign spending exceeded the amount the person saw on the card.
+  spends_attempt: null
+  retry: null
+  outcome: response
+  rules: [BUD-12, ORC-8]
+- id: unknown
+  since: v0.1
+  meaning: 'A `health` value: the state is unknown.'
+  spends_attempt: null
+  retry: null
+  outcome: value
+  rules: [OBS-10]
+- id: runaway_loop
+  since: v0.1
+  meaning: The reason for a stop that a person places on a task type that went into a loop.
+  spends_attempt: null
+  retry: null
+  outcome: value
+  rules: [HLD-1]
+- id: suspected_vulnerability
+  since: v0.1
+  meaning: The reason for a stop on a plugin in which a vulnerability was found.
+  spends_attempt: null
+  retry: null
+  outcome: value
+  rules: [HLD-1]
+- id: compromised
+  since: v0.1
+  meaning: The reason for an operator stop when a compromised secret is revoked; only the operator releases it.
+  spends_attempt: null
+  retry: null
+  outcome: value
+  rules: [HLD-1, HLD-2, SEC-6]
+- id: runaway_spend
+  since: v0.1
+  meaning: The reason for a stop for exceeding `hour_eur`.
+  spends_attempt: null
+  retry: null
+  outcome: value
+  rules: [HLD-7, BUD-4]
+- id: contain_auto
+  since: v0.1
+  meaning: The reason for the stop of the first incident measure and of a maintenance window; the tenant admin or the operator releases it.
+  spends_attempt: null
+  retry: null
+  outcome: value
+  rules: [HLD-7, MGR-7]
+- id: pause_action
+  since: v0.1
+  meaning: 'Effect and stop reason of a maintenance window without `maintenance_hold`: waiting approvals are paused.'
+  spends_attempt: null
+  retry: null
+  outcome: value
+  rules: [HLD-3, MON-9]
+- id: monitor_export_stalled
+  since: v0.1
+  meaning: 'Code message to admins and the operator: export to the monitoring system has been failing for more than 15 minutes.'
+  spends_attempt: null
+  retry: null
+  outcome: mark
+  rules: [MON-11]
+- id: schedule_time_invalid
+  since: v0.2
+  meaning: Refusal of a proposal after which the backup schedule loses a slot.
+  spends_attempt: null
+  retry: null
+  outcome: rejected
+  rules: [TIM-5]
+- id: secret_in_outbound
+  since: v0.1
+  meaning: 'The channel found a secret in outgoing text: the message is not sent (`withheld`), admins get an event without content;
+    two cases in an hour for one role place an auto-stop with this reason.'
+  spends_attempt: null
+  retry: null
+  outcome: withheld
+  rules: [INJ-11, HLD-6]
+- id: spend_rate
+  since: v0.2
+  meaning: The stop reason from `holds.yaml` for the spending rate.
+  spends_attempt: null
+  retry: null
+  outcome: value
+  rules: []
+- id: suspended
+  since: v0.2
+  meaning: 'Stop reason from `holds.yaml`: the tenant is suspended.'
+  spends_attempt: null
+  retry: null
+  outcome: value
+  rules: [HLD-2, HLD-3, LCY-1]
+- id: forget
+  since: v0.1
+  meaning: 'Erasure request reason: the person asked to be forgotten.'
+  spends_attempt: null
+  retry: null
+  outcome: value
+  rules: [RET-7]
+- id: offboarding
+  since: v0.1
+  meaning: 'Erasure request reason: the person left.'
+  spends_attempt: null
+  retry: null
+  outcome: value
+  rules: [RET-7]
+- id: bot_retired
+  since: v0.1
+  meaning: 'Erasure request reason: retirement of a bot identity, end of the seal.'
+  spends_attempt: null
+  retry: null
+  outcome: value
+  rules: [MEM-9, RET-7]
+- id: tenant_delete
+  since: v0.1
+  meaning: 'Erasure request reason: tenant deletion.'
+  spends_attempt: null
+  retry: null
+  outcome: value
+  rules: [RET-7]
+- id: worker_revoke
+  since: v0.1
+  meaning: 'Erasure request reason: worker revocation.'
+  spends_attempt: null
+  retry: null
+  outcome: value
+  rules: [RET-7]
+- id: subject_request
+  since: v0.1
+  meaning: 'Erasure request reason: a request by a principal about their own data.'
+  spends_attempt: null
+  retry: null
+  outcome: value
+  rules: [RET-7]
+- id: manual
+  since: v0.1
+  meaning: 'Erasure request reason: a decision by a person with the permission.'
+  spends_attempt: null
+  retry: null
+  outcome: value
+  rules: [RET-7]
+- id: store_unavailable
+  since: v0.1
+  meaning: 'Value of the `reason` field of the P2 `health` answer at `alive: false`: storage does not respond.'
+  spends_attempt: null
+  retry: null
+  outcome: value
+  rules: [MON-2]
+- id: loop_stale
+  since: v0.1
+  meaning: 'Value of the `reason` field of the P2 `health` answer at `alive: false`: a background loop did not mark its tick on time.'
+  spends_attempt: null
+  retry: null
+  outcome: value
+  rules: [MON-2]
+- id: rank_exceeded
+  since: v0.1
+  meaning: The request exceeds the rank allowed to the bot.
+  spends_attempt: null
+  retry: null
+  outcome: rejected
+  rules: [GOV-3]
+- id: principal_left
+  since: v0.1
+  meaning: 'Code notice: a person left.'
+  spends_attempt: null
+  retry: null
+  outcome: mark
+  rules: [IDN-13, PRM-13, REP-5, REP-12]
+- id: fact_insufficient
+  since: v0.1
+  meaning: 'The fact is not created: there are fewer observations than `min_samples`; event `fact.rejected`.'
+  spends_attempt: null
+  retry: null
+  outcome: rejected
+  rules: [MEM-6]
+- id: fact_mismatch
+  since: v0.1
+  meaning: The fact record differs from a recount over the same evidence.
+  spends_attempt: null
+  retry: null
+  outcome: rejected
+  rules: [MEM-6]
+- id: stale
+  since: v0.1
+  meaning: 'The fact is stale: its evidence was erased.'
+  spends_attempt: null
+  retry: null
+  outcome: rejected
+  rules: [MEM-6]
+- id: veto_lenses_same_family
+  since: v0.1
+  meaning: Lenses with veto power from the same model family.
+  spends_attempt: null
+  retry: null
+  outcome: apply_error
+  rules: [GOV-34]
+- id: defaulted_majority
+  since: v0.1
+  meaning: 'Case result mark: decided by the default majority.'
+  spends_attempt: null
+  retry: null
+  outcome: mark
+  rules: [GOV-9, GOV-19, GOV-23]
+- id: reopened_after_wrong_leaver
+  since: v0.1
+  meaning: 'Case mark: reopened after a mistaken leave.'
+  spends_attempt: null
+  retry: null
+  outcome: mark
+  rules: [GOV-19, GOV-31]
+- id: manager_absent
+  since: v0.2
+  meaning: 'Case flag: the farm manager vote dropped out.'
+  spends_attempt: null
+  retry: null
+  outcome: rejected
+  rules: [GOV-12, GOV-19]
+- id: not_eligible
+  since: v0.2
+  meaning: 'Promotion queue event: the record did not pass admission and waits.'
+  spends_attempt: null
+  retry: null
+  outcome: rejected
+  rules: [GOV-14]
+- id: candidate_ineligible
+  since: v0.2
+  meaning: The candidate does not meet the conditions.
+  spends_attempt: null
+  retry: null
+  outcome: rejected
+  rules: [GOV-14]
+- id: governance_budget
+  since: v0.2
+  meaning: The case budget is exhausted.
+  spends_attempt: null
+  retry: null
+  outcome: rejected
+  rules: [GOV-15]
+- id: voters_removed
+  since: v0.2
+  meaning: 'Case flag: the set of voters shrank.'
+  spends_attempt: null
+  retry: null
+  outcome: rejected
+  rules: [GOV-19, GOV-23]
+- id: commission_locked
+  since: v0.2
+  meaning: 'Flag: the commission is locked.'
+  spends_attempt: null
+  retry: null
+  outcome: rejected
+  rules: [GOV-35, OBS-11]
+- id: target_not_implicated
+  since: v0.1
+  meaning: The control operation target is not linked to the incident.
+  spends_attempt: null
+  retry: null
+  outcome: rejected
+  rules: [MGR-9]
+- id: target_excluded
+  since: v0.1
+  meaning: The target is excluded from control operations.
+  spends_attempt: null
+  retry: null
+  outcome: rejected
+  rules: [MGR-9]
+- id: protected_target
+  since: v0.1
+  meaning: The target is in the protected set.
+  spends_attempt: null
+  retry: null
+  outcome: rejected
+  rules: [MGR-32]
+- id: control_rate_limited
+  since: v0.1
+  meaning: The rate limit of control operations fired.
+  spends_attempt: null
+  retry: null
+  outcome: rejected
+  rules: [MGR-14]
+- id: manager_line_too_small
+  since: v0.1
+  meaning: 'Lint `apply`: the farm manager budget line is too small.'
+  spends_attempt: null
+  retry: null
+  outcome: apply_error
+  rules: [MGR-20]
+- id: manager_spend_paused
+  since: v0.1
+  meaning: 'Code notice: money pause of the farm manager seat for the tenant.'
+  spends_attempt: null
+  retry: null
+  outcome: mark
+  rules: [MGR-14]
+- id: dismiss_reason_required
+  since: v0.1
+  meaning: Refusal of `incident.dismiss` without a reason code.
+  spends_attempt: null
+  retry: null
+  outcome: rejected
+  rules: [MGR-8]
+- id: disputed
+  since: v0.1
+  meaning: A disputed binding of an incident to a change.
+  spends_attempt: null
+  retry: null
+  outcome: mark
+  rules: [COM-11, GOV-13, GOV-14, GOV-30, MGR-8, PRP-22]
+- id: manager_disabled
+  since: v0.1
+  meaning: 'The farm manager is turned off in the tenant (`farm_manager.enabled: false`): operations are refused, and `canceled(manager_disabled)`
+    for farm manager tasks.'
+  spends_attempt: null
+  retry: none
+  outcome: canceled
+  rules: [MGR-42]
+- id: use_normal_path
+  since: v0.2
+  meaning: The request must go by the normal path, not through the farm manager.
+  spends_attempt: null
+  retry: null
+  outcome: rejected
+  rules: [MGR-6]
+- id: chain_too_deep
+  since: v0.2
+  meaning: The chain of requests is too deep.
+  spends_attempt: null
+  retry: null
+  outcome: rejected
+  rules: [MGR-6]
+- id: grant_not_eligible
+  since: v0.2
+  meaning: A model grant cannot be requested for this task.
+  spends_attempt: null
+  retry: null
+  outcome: rejected
+  rules: []
+- id: grant_over_budget
+  since: v0.2
+  meaning: The model grant exceeds the budget.
+  spends_attempt: null
+  retry: null
+  outcome: rejected
+  rules: []
+- id: grant_rate_limited
+  since: v0.2
+  meaning: The rate limit of model grant requests fired.
+  spends_attempt: null
+  retry: null
+  outcome: rejected
+  rules: [MGR-40]
+- id: grant_expired_unanswered
+  since: v0.2
+  meaning: The model grant request expired without an answer.
+  spends_attempt: null
+  retry: null
+  outcome: rejected
+  rules: [MGR-18]
+- id: script_unknown
+  since: v0.1
+  meaning: 'The catalog script is not in the node list at the monitoring adapter: `error(script_unknown)`.'
+  spends_attempt: null
+  retry: null
+  outcome: error
+  rules: [MON-10]
+- id: approval_required
+  since: v0.1
+  meaning: 'A request to a service or script goes through an approval card: `start`, `stop` or untrusted text in the task.'
+  spends_attempt: null
+  retry: null
+  outcome: response
+  rules: [INJ-15, APR-18]
+- id: script_invalid
+  since: v0.1
+  meaning: The script did not pass the check.
+  spends_attempt: null
+  retry: null
+  outcome: rejected
+  rules: []
+- id: script_ref_unknown
+  since: v0.1
+  meaning: The script refers to an unknown object.
+  spends_attempt: null
+  retry: null
+  outcome: rejected
+  rules: [SCR-2]
+- id: script_too_large
+  since: v0.1
+  meaning: The script exceeds the limit.
+  spends_attempt: null
+  retry: null
+  outcome: rejected
+  rules: []
+- id: script_untrusted_limit
+  since: v0.1
+  meaning: A script from untrusted text goes beyond the limit.
+  spends_attempt: null
+  retry: null
+  outcome: rejected
+  rules: [TRN-4]
+- id: script_superseded
+  since: v0.1
+  meaning: The script was replaced by a new one.
+  spends_attempt: null
+  retry: null
+  outcome: rejected
+  rules: []
+- id: proposal_scope
+  since: v0.1
+  meaning: 'The commit changes files outside the proposal scope: `apply` is rejected as a whole.'
+  spends_attempt: null
+  retry: null
+  outcome: apply_error
+  rules: [MAN-5, PRP-8]
+- id: forbidden_change
+  since: v0.1
+  meaning: The proposal changes something that must not be changed.
+  spends_attempt: null
+  retry: null
+  outcome: rejected
+  rules: [PRP-3, PRP-8, PRP-10, PRP-11]
+- id: untrusted_direction
+  since: v0.1
+  meaning: The proposal direction was taken from untrusted text.
+  spends_attempt: null
+  retry: null
+  outcome: rejected
+  rules: [PRP-11]
+- id: metric_unknown
+  since: v0.1
+  meaning: The proposal refers to an unknown metric.
+  spends_attempt: null
+  retry: null
+  outcome: rejected
+  rules: [PRP-21]
+- id: harm_observed
+  since: v0.1
+  meaning: 'Change revert reason: harm was noticed.'
+  spends_attempt: null
+  retry: null
+  outcome: value
+  rules: [GOV-14, GOV-32, MAN-5, PRP-20, PRP-22]
+- id: superseded
+  since: v0.1
+  meaning: 'Change revert reason: replaced by another change.'
+  spends_attempt: null
+  retry: null
+  outcome: value
+  rules: [MAN-5, PRP-20]
+- id: other
+  since: v0.1
+  meaning: 'Change revert reason: other.'
+  spends_attempt: null
+  retry: null
+  outcome: value
+  rules: [MAN-5, MGR-8, PRP-20]
+- id: self_measured
+  since: v0.1
+  meaning: 'Mark: the change was measured by itself.'
+  spends_attempt: null
+  retry: null
+  outcome: mark
+  rules: [GOV-14, PRP-22, REP-12]
+- id: channel_ceiling
+  since: v0.1
+  meaning: 'The mark is above the channel or binding ceiling: `withheld(channel_ceiling)`; the person gets the ready-made text
+    from code, and a reply from a group chat goes to a direct chat.'
+  spends_attempt: null
+  retry: null
+  outcome: withheld
+  rules: [SEC-9, DLV-6]
+- id: unknown_member
+  since: v0.1
+  meaning: An unknown member in a group chat; deliveries to the chat stop until a check.
+  spends_attempt: null
+  retry: null
+  outcome: withheld
+  rules: [DLV-7]
+- id: recipient_inactive
+  since: v0.1
+  meaning: The delivery recipient is turned off.
+  spends_attempt: null
+  retry: null
+  outcome: withheld
+  rules: [DLV-6]
+- id: ai_notice_dead
+  since: v0.1
+  meaning: The `ai_notice` delivery to this recipient ended `dead`; waiting deliveries with model text end `withheld(ai_notice_dead)`,
+    and on the next incoming message `ai_notice` is created again.
+  spends_attempt: null
+  retry: null
+  outcome: withheld
+  rules: [DLV-12]
+- id: sink_not_export
+  since: v0.1
+  meaning: Export of principal data goes only to a sink with `export_only`.
+  spends_attempt: null
+  retry: null
+  outcome: rejected
+  rules: [SEC-10]
+- id: campaign_frozen
+  since: v0.1
+  meaning: 'The template, items, policy and `plan_hash` of the campaign are frozen: an attempt to add an item, change an argument
+    or the policy gets `rejected(campaign_frozen)`; you can only cancel the campaign and propose a new one with the reference
+    `refs`.'
+  spends_attempt: null
+  retry: null
+  outcome: rejected
+  rules: [ORC-1]
+- id: campaign_policy_exceeded
+  since: v0.1
+  meaning: The policy or size in the campaign proposal is wider than the ceilings of the action, role or tenant.
+  spends_attempt: null
+  retry: null
+  outcome: rejected
+  rules: [ORC-5]
+- id: campaign_untrusted_limit
+  since: v0.1
+  meaning: 'The proposing task has `untrusted_seen: true` or the initiator is `system`, and the campaign has more than `max_items_untrusted`
+    items with an action, more than 10 read items without a card, or is set by a selector; the model gets a short
+    "no permission".'
+  spends_attempt: null
+  retry: null
+  outcome: rejected
+  rules: [ORC-14]
+- id: gate
+  since: v0.1
+  meaning: 'Campaign pause reason: the gate after a successful canary with `after_canary: manual`; a person continues.'
+  spends_attempt: null
+  retry: null
+  outcome: value
+  rules: [ORC-4]
+- id: human
+  since: v0.1
+  meaning: 'Campaign pause reason for the "Pause" button, and stop reason of the farm manager seat under a stop on the `seat` scope
+    (kill switch).'
+  spends_attempt: null
+  retry: null
+  outcome: value
+  rules: [ORC-4, MGR-15]
+- id: threshold_exceeded
+  since: v0.1
+  meaning: 'Campaign stop reason: the number of failed items exceeded the threshold; the campaign ends `failed`, and the core
+    raises `alarm.campaign.threshold`.'
+  spends_attempt: null
+  retry: null
+  outcome: failed
+  rules: [ORC-4]
+- id: recipient_gone
+  since: v0.1
+  meaning: 'The recipient of an inbox entry no longer exists: `apply` removed the role, the bot group or `receive` of this kind, or P2
+    `worker.revoke` for a worker inbox; the entry is `discarded(recipient_gone)`, and the core writes an event.'
+  spends_attempt: null
+  retry: null
+  outcome: null
+  rules: [MSG-3, MSG-10]
+- id: waiting
+  since: v0.1
+  meaning: 'The schedule slot is skipped with the event `schedule.skipped(waiting)` while the task of the previous slot waits (`skip_if_waiting:
+    true`).'
+  spends_attempt: null
+  retry: null
+  outcome: mark
+  rules: [TIM-3]
+- id: no_role_cap
+  since: v0.1
+  meaning: The types and actions of the script draft are not in `scripts.step_types` and `scripts.actions` of the author role.
+  spends_attempt: null
+  retry: null
+  outcome: rejected
+  rules: [SCR-5]
+- id: schema_invalid
+  since: v0.1
+  meaning: 'The proposal body did not pass the closed schema: there is no record, there is a `proposal.rejected.v1` event; with the same code
+    `apply` rejects a manifest that did not pass the wrapper or the kind schema.'
+  spends_attempt: null
+  retry: null
+  outcome: rejected
+  rules: [PRP-1, MAN-1]
+- id: evidence_mismatch
+  since: v0.1
+  meaning: The evidence values given in the proposal at creation differ from those the core re-read by more than
+    the series tolerance.
+  spends_attempt: null
+  retry: null
+  outcome: rejected
+  rules: [PRP-2]
+- id: recently_declined
+  since: v0.1
+  meaning: A person rejected the proposal fingerprint less than `redecide_after` ago, and the evidence did not change
+    by more than the declared share.
+  spends_attempt: null
+  retry: null
+  outcome: rejected
+  rules: [PRP-5]
+- id: proposal_rate_limited
+  since: v0.1
+  meaning: The proposal flow limit of the role or tenant was exceeded, and since v0.2 also one open proposal per bot;
+    a refusal with an event and without a record.
+  spends_attempt: null
+  retry: null
+  outcome: rejected
+  rules: [PRP-5, PRP-16]
+- id: score
+  since: v0.1
+  meaning: 'Proposal `parked` reason: code verdict `parked(score)`.'
+  spends_attempt: null
+  retry: null
+  outcome: value
+  rules: [COM-4]
+- id: veto_lens_missing
+  since: v0.1
+  meaning: 'Proposal `parked` reason: no review by a veto lens.'
+  spends_attempt: null
+  retry: null
+  outcome: value
+  rules: [COM-4, COM-7]
+- id: review_budget
+  since: v0.1
+  meaning: 'Proposal `parked` reason: no money for reviews for longer than `review_wait_max`.'
+  spends_attempt: null
+  retry: null
+  outcome: value
+  rules: [COM-6]
+- id: conflict
+  since: v0.1
+  meaning: 'Proposal `parked` reason: the target is locked by a conflicting proposal or a running trial.'
+  spends_attempt: null
+  retry: null
+  outcome: value
+  rules: [PRP-9]
+- id: evidence_drift
+  since: v0.1
+  meaning: 'Proposal `parked` reason: the evidence re-read before display diverged by more than the tolerance.'
+  spends_attempt: null
+  retry: null
+  outcome: value
+  rules: [PRP-2]
+- id: no_op
+  since: v0.1
+  meaning: 'Proposal `dismissed` reason: the code check `no_op` failed.'
+  spends_attempt: null
+  retry: null
+  outcome: value
+  rules: [COM-5]
+- id: veto
+  since: v0.1
+  meaning: 'Proposal `dismissed` reason: code verdict `dismissed(veto)`.'
+  spends_attempt: null
+  retry: null
+  outcome: value
+  rules: [COM-4]
+- id: below_min
+  since: v0.1
+  meaning: 'Proposal `dismissed` reason: code verdict `dismissed(below_min)`.'
+  spends_attempt: null
+  retry: null
+  outcome: value
+  rules: [COM-4]
+- id: low_score
+  since: v0.1
+  meaning: 'Proposal `dismissed` reason: code verdict `dismissed(low_score)`.'
+  spends_attempt: null
+  retry: null
+  outcome: value
+  rules: [COM-4]
+- id: object_failed
+  since: v0.1
+  meaning: 'Proposal `realization_failed` reason: the normal-path object was not executed.'
+  spends_attempt: null
+  retry: null
+  outcome: value
+  rules: [PRP-18]
+- id: timeout
+  since: v0.1
+  meaning: 'Proposal `realization_failed` reason: the `realize_by` deadline passed.'
+  spends_attempt: null
+  retry: null
+  outcome: value
+  rules: [PRP-18]
+- id: incident_dismissed
+  since: v0.1
+  meaning: 'The binding of an incident to a change is canceled: the incident was found to be a false alarm with no "Yes" answer, or the author
+    of the "Yes" answer withdrew it, stayed silent for 7 days or was turned off.'
+  spends_attempt: null
+  retry: null
+  outcome: canceled
+  rules: [GOV-13]
+- id: evidence_below_threshold
+  since: v0.2
+  meaning: 'Reason of the `necessity` lens for `dismissed` of a request to the farm manager: too little evidence.'
+  spends_attempt: null
+  retry: null
+  outcome: rejected
+  rules: [MGR-6]
+- id: covered_by_alarm
+  since: v0.2
+  meaning: 'Reason of the `necessity` lens for `dismissed` of a request: a farm alarm is already firing on the same subject, or
+    a monitoring system problem is open, and people get it through the monitoring system.'
+  spends_attempt: null
+  retry: null
+  outcome: rejected
+  rules: [MGR-6]
+- id: out_of_scope
+  since: v0.2
+  meaning: 'Reason of the `necessity` lens for `dismissed` of a request: not a farm manager matter.'
+  spends_attempt: null
+  retry: null
+  outcome: rejected
+  rules: [MGR-6]

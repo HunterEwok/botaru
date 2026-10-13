@@ -1,0 +1,117 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:botaru:schema:p1-hello-request:1",
+  "title": "P1 hello: request",
+  "description": "The worker reports its kind, implementation, labels, capacity and protocol versions; a toolhost also its plugins, placement and the fingerprint of the live tools/list; a channel its driver capabilities. Labels can only narrow those recorded at enroll; a mismatch with the enroll record moves the worker to blocked (DEP-2, INJ-2). The request has no tenant: it is taken from the credentials (TEN-2, TEN-4). It can be repeated.",
+  "x-botaru-direction": "input",
+  "x-botaru-rules": [
+    "TEN-2",
+    "TEN-4",
+    "LCY-7"
+  ],
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "kind",
+    "protocol_versions"
+  ],
+  "properties": {
+    "kind": {
+      "enum": [
+        "agent",
+        "job",
+        "toolhost",
+        "channel",
+        "sink",
+        "monitor"
+      ]
+    },
+    "implementation": {
+      "description": "Name and version of the worker implementation.",
+      "type": "string",
+      "maxLength": 200
+    },
+    "labels": {
+      "description": "Worker labels; only a narrowing of those recorded at enroll.",
+      "type": "object",
+      "maxProperties": 32,
+      "propertyNames": {
+        "pattern": "^[a-z][a-z0-9_-]{0,31}$"
+      },
+      "additionalProperties": {
+        "type": "string",
+        "maxLength": 64
+      }
+    },
+    "capacity": {
+      "description": "Worker capacity; for a runtime with model_attribution: per_profile it equals 1 (RT-3).",
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 1024
+    },
+    "protocol_versions": {
+      "description": "Major P1 versions that the worker knows; the core accepts the current and the previous one (LCY-7).",
+      "type": "array",
+      "maxItems": 4,
+      "items": {
+        "type": "string",
+        "pattern": "^v[1-9][0-9]*$",
+        "maxLength": 4
+      }
+    },
+    "plugins": {
+      "description": "Only a toolhost: plugins.",
+      "type": "array",
+      "maxItems": 64,
+      "items": {
+        "$ref": "urn:botaru:schema:common:1#/$defs/name"
+      }
+    },
+    "placement": {
+      "description": "Only a toolhost.",
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_]*$",
+      "maxLength": 32
+    },
+    "tools_fingerprint": {
+      "description": "Only a toolhost: the fingerprint of the live tools/list per spec/hashing.md.",
+      "$ref": "urn:botaru:schema:common:1#/$defs/hash"
+    },
+    "driver": {
+      "description": "Only a channel: driver capabilities.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "ai_disclosure": {
+          "description": "native or first_contact; a driver without it does not pass apply (DLV-12).",
+          "enum": [
+            "native",
+            "first_contact"
+          ]
+        },
+        "provenance": {
+          "description": "How the channel passes the dataorigin mark (DLV-13).",
+          "enum": [
+            "metadata",
+            "visible_label"
+          ]
+        },
+        "membership_assurance": {
+          "description": "enforced if the driver sees members joining a group chat (DLV-7).",
+          "enum": [
+            "enforced",
+            "none"
+          ]
+        },
+        "stores_content": {
+          "description": "What tenant content the channel keeps itself: none (nothing: attachments go straight to C1 through file.put, there is no cache), attachments, cache. For a channel with none the core itself closes the E1 erasure step with the outcome not_applicable with basis declared_none, without a work item (RET-7). By default none.",
+          "enum": [
+            "none",
+            "attachments",
+            "cache"
+          ]
+        }
+      }
+    }
+  }
+}

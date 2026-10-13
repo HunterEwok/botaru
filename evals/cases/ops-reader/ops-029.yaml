@@ -1,0 +1,29 @@
+# evals/cases/ops-reader/ops-029.yaml (catalog: evals/README.md)
+id: ops-029
+kind: quality
+blocking: false
+status: active
+version: v0.1
+rules: [APR-18, MON-8]
+summary: 'bob: restart nginx on web1; exactly one service/control call with {service: nginx, verb: restart}, zero request_action; the answer names the outcome from the closed fields of the call.'
+from: bob
+chat: bob-dm
+lang: ru
+message: '/logs Restart nginx on web1'
+setup:
+  role:
+    service_control: [nginx]
+    monitor_scripts: [nginx-cache-clear]
+    catalog_no_card:
+      nginx: [restart]
+expect:
+  state: completed
+  checks:
+  - side_effects:
+      service_control:
+        count: 1
+        allowed: [nginx]
+      request_action: 0
+  - store:
+      path: tool_calls[?task==self && tool==service/control].args
+      equals: {service: nginx, verb: restart}

@@ -1,0 +1,63 @@
+registry: retention-classes
+version: 1
+description: >-
+  Retention classes. Every kind of stored object and every store, including
+  journals with content, runtime stores, sinks and the channel cache, belongs
+  to exactly one class; the schema of the stored object names it in
+  x-botaru-retention (RET-1). The field default is the default period in words and
+  numbers, deletion is the way of deletion, retention_cycle_v01 says whether
+  the retention cycle already deletes objects of the class by period in v0.1 (RET-2); since v0.2 the periods are set by
+  Tenant.spec.retention within the farm ceilings, and the cycle deletes all classes.
+  Before its period ends, any class is deleted only by an erasure request (RET-7).
+source: docs/operations.md
+entries:
+  - id: content
+    since: v0.1
+    meaning: >-
+      Task bodies, results, artifacts, files, attachments, sessions, runtime
+      transcripts, script run records, attempt journals and other journals with
+      content, bot messages, the sink archive, the channel cache.
+    default:
+      text: 30 days; sessions of roles with memory none 7 days; the attempt journal by retention.journals
+      days: 30
+      sessions_without_memory_days: 7
+    deletion: one object at a time
+    retention_cycle_v01: true
+    rules: [RET-1, RET-2, OBS-1, AUD-4]
+  - id: memory
+    since: v0.1
+    meaning: Memory records of people and bots.
+    default:
+      text: until forget, the person leaving or the end of the tenant
+    deletion: only by an erasure request, with the C4 erase operation
+    retention_cycle_v01: false
+    rules: [RET-1, RET-7, MEM-4]
+  - id: metadata
+    since: v0.1
+    meaning: Audit, transition journal, events, spending, human decisions, final holds.
+    default:
+      text: 400 days
+      days: 400
+    deletion: only in whole periods (a month), without selective editing of rows
+    retention_cycle_v01: false
+    rules: [RET-1, RET-2, AUD-3]
+  - id: tombstone
+    since: v0.1
+    meaning: >-
+      Tombstones and the deletion journal: id, hash of the idempotency key, time, results
+      of deletion; without content and without a hash of the external id.
+    default:
+      text: while the tenant exists; after its deletion, as metadata
+    deletion: in whole periods
+    retention_cycle_v01: false
+    rules: [RET-1, RET-3, RET-7]
+  - id: observation
+    since: v0.1
+    meaning: Points and rollups of observation series.
+    default:
+      text: points 14 days, rollups 93 days
+      points_days: 14
+      rollups_days: 93
+    deletion: in whole periods
+    retention_cycle_v01: true
+    rules: [RET-1, RET-2, OBV-4]

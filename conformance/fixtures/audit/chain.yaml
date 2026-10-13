@@ -1,0 +1,51 @@
+# Audit hash chain (AUD-6). The hash of a record covers all its fields; prev_hash equals the hash of the previous record.
+# Records per the schema spec/model/audit-record.schema.json; the hashes here are placeholders (h1, h2, ...), the runner computes them itself.
+id: fx-audit-chain
+rules: [AUD-6, AUD-3]
+description: The chain is intact, editing a field without recomputing shows as a break, deleting a period leaves one period_deleted record
+  with the bounds, the count and the last hash; deleting a record from the middle shows as a gap in the sequence number.
+cases:
+- id: aud-chain-01
+  rules: [AUD-6]
+  given:
+    chain:
+    - {seq: 1, kind: command, command: grant, prev_hash: h0, hash: h1}
+    - {seq: 2, kind: decision, command: decide, prev_hash: h1, hash: h2}
+    - {seq: 3, kind: service_grant, command: service/control, prev_hash: h2, hash: h3}
+  expect: {audit.verify: ok}
+- id: aud-chain-02
+  rules: [AUD-6]
+  given:
+    chain:
+    - {seq: 1, kind: command, command: grant, prev_hash: h0, hash: h1}
+    - seq: 2
+      kind: decision
+      command: decide
+      prev_hash: h1
+      hash: h2
+      edited: {ok: false}
+    - {seq: 3, kind: command, command: hold.set, prev_hash: h2, hash: h3}
+  expect: {audit.verify: broken, at_seq: 2}
+- id: aud-chain-03
+  rules: [AUD-6]
+  given:
+    chain:
+    - {seq: 1, kind: command, prev_hash: h0, hash: h1}
+    - {seq: 3, kind: command, prev_hash: h2, hash: h3}
+  expect: {audit.verify: broken, at_seq: 3, why: record 2 is missing}
+- id: aud-chain-04
+  rules: [AUD-6]
+  given:
+    chain:
+    - seq: 101
+      kind: period_deleted
+      period: {from: '2025-01-01T00:00:00Z', to: '2025-04-01T00:00:00Z', count: 100, last_hash: h100}
+      prev_hash: h100
+      hash: h101
+    - {seq: 102, kind: command, prev_hash: h101, hash: h102}
+  expect: {audit.verify: ok}
+- id: aud-chain-05
+  rules: [AUD-6]
+  given:
+    tenants: [demo, farm]
+  expect: {chains: 2, note: each tenant and the service tenant farm have their own chain}

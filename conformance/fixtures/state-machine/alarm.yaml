@@ -1,0 +1,88 @@
+# Collected from spec/lifecycles/alarm.yaml. The value null in from means "the object does not exist yet".
+lifecycle: spec/lifecycles/alarm.yaml
+object: alarm
+rules:
+- INJ-7
+- MON-1
+- MON-11
+- MON-5
+- OBS-6
+description: Allowed and forbidden transitions of the "alarm" lifecycle, collected from the tables of spec/lifecycles/alarm.md.
+  The implementation accepts a transition from the allowed list under the condition of its row; a pair from the forbidden
+  list does not change the state, and the call that asks for it is rejected. At most one episode is open per alarmkey; a
+  repeated firing of an open episode writes no event and no export, it increments repeat_count. A person in the farm does
+  not change the state of an alarm.
+states:
+- id: firing
+  terminal: false
+- id: resolved
+  terminal: true
+allowed:
+- from: null
+  to: firing
+  by: 'an `alarm.<name>.vN` event with `state: firing` from the core or a `job` worker; for monitoring problems, from a
+    `job` task that rechecked the problem in code'
+  when: 'there is no open episode with this `alarmkey`; `seq` 1, `repeat_count` 0; in the same transaction the `alarm` loop
+    puts a delivery for E5 with `seq` and the tags `tenant`, `alarm`, `subject`, `severity` (alarms about the farm also
+    carry `scope: farm`)'
+  rules:
+  - INJ-7
+  - MON-1
+  - MON-11
+  - MON-5
+  - OBS-6
+- from: firing
+  to: firing
+  by: a repeated `firing` event with the same key
+  when: no event and no export; the episode increments `repeat_count` and updates `last_seen_at`
+  rules:
+  - MON-1
+  - OBS-6
+- from: firing
+  to: firing
+  by: the `alarm` loop when the connection to the monitoring system is restored (the first successful `complete` of a delivery
+    for E5 after a failure)
+  when: 're-export: a new opening delivery with the same `seq` for every open episode; the state does not change'
+  rules:
+  - MON-11
+- from: firing
+  to: resolved
+  by: 'an event with `state: resolved` from code; for monitoring problems, after the problem is closed and rechecked by
+    a `job` task'
+  when: the same `alarmkey`; `seq` 2; the `alarm` loop puts a closing delivery for E5, which does not reach the monitoring
+    system before the opening delivery
+  rules:
+  - MON-1
+  - MON-11
+  - MON-5
+  - OBS-6
+forbidden:
+- from: null
+  to: resolved
+  expect: rejected
+  rules:
+  - INJ-7
+  - MON-1
+  - MON-11
+  - MON-5
+  - OBS-6
+  why: the object does not appear directly in the state resolved
+- from: resolved
+  to: firing
+  expect: rejected
+  rules:
+  - INJ-7
+  - MON-1
+  - MON-11
+  - MON-5
+  - OBS-6
+  why: 'resolved is a terminal state: there are no transitions out of it'
+- from: resolved
+  to: resolved
+  expect: rejected
+  rules:
+  - MON-1
+  - MON-11
+  - MON-5
+  - OBS-6
+  why: 'resolved is a terminal state: there are no transitions out of it'

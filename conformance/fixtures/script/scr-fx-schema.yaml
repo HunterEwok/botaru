@@ -1,0 +1,82 @@
+id: scr-fx-schema
+rules: [SCR-1, SCR-4]
+description: 'A script is data under the closed schema botaru.script/v1, not code. The step kind is only from spec/model/script-step-kinds.yaml;
+  run_if is only succeeded, always or failed; on_failure only stop or continue; needs only backward; the field then
+  is forbidden inside fanout; steps are no more than the tenant ceiling (10), which is not above the farm ceiling (20). A script
+  does not enqueue another script or a translator task. The step target is only {template: <id>} or {assignment: true}. Valid
+  and invalid documents for the schema itself are in schemas/valid/messaging/script.yaml and schemas/invalid/messaging/script.yaml.'
+given: {schema_ref: spec/model/script.schema.json}
+cases:
+- description: kind shell
+  given:
+    step: {id: a, kind: shell, cmd: rm -rf /tmp/x}
+  expect: {result: rejected}
+- description: a kind from v0.2 in v0.1
+  given:
+    step: {id: a, kind: wait, for: 10m}
+  expect: {result: rejected}
+- description: run_if outside the list
+  given:
+    step:
+      id: b
+      kind: task
+      type: ops.summary.v1
+      needs: [a]
+      run_if: sometimes
+      goal: {assignment: true}
+  expect: {result: rejected}
+- description: on_failure outside the list
+  given:
+    step:
+      id: b
+      kind: task
+      type: ops.summary.v1
+      on_failure: retry
+      goal: {assignment: true}
+  expect: {result: rejected}
+- description: needs forward
+  steps:
+  - check:
+      id: a
+      kind: task
+      type: ops.summary.v1
+      needs: [b]
+      goal: {assignment: true}
+  - check:
+      id: b
+      kind: task
+      type: ops.summary.v1
+      goal: {assignment: true}
+  expect: {result: rejected, reason: script_invalid}
+- description: then inside fanout
+  given:
+    step:
+      id: f
+      kind: fanout
+      type: ops.summary.v1
+      goal: {assignment: true}
+      items:
+        resources: [web1]
+      then: {kind: action}
+  expect: {result: rejected}
+- description: free target
+  given:
+    step: {id: a, kind: task, type: ops.summary.v1, goal: restart everything}
+  expect: {result: rejected}
+- description: 11 steps with a tenant ceiling of 10
+  given: {steps_count: 11}
+  expect: {result: rejected, reason: script_too_large}
+- description: tenant ceiling above the farm
+  given:
+    tenant_manifest:
+      scripts: {max_steps: 25}
+  expect:
+    apply: {result: rejected}
+- description: type translate in a step
+  given:
+    step:
+      id: a
+      kind: task
+      type: translate.v1
+      goal: {assignment: true}
+  expect: {result: rejected, reason: script_ref_unknown}

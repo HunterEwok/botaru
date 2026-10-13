@@ -1,0 +1,104 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:botaru:schema:file-record:1",
+  "title": "File record",
+  "description": "Record of a file in the farm file store: bytes plus a record that only the core writes (ART-1). Fields per docs/capabilities.md, section \"Files and artifacts\"; lifecycle spec/lifecycles/file.md. The file content is always untrusted for the model (ART-2). The sha256 of the content lives only inside the core and is not part of the record that is handed out.",
+  "x-botaru-direction": "record",
+  "x-botaru-retention": "content",
+  "x-botaru-rules": [
+    "ART-1",
+    "ART-2",
+    "ART-3",
+    "ART-6",
+    "TEN-7",
+    "TEN-1",
+    "RET-3"
+  ],
+  "type": "object",
+  "required": [
+    "file_ref",
+    "tenant",
+    "origin",
+    "producer",
+    "media_type",
+    "size",
+    "data_mark",
+    "untrusted",
+    "state",
+    "created_at"
+  ],
+  "properties": {
+    "file_ref": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/file_ref"
+    },
+    "tenant": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/tenant_name"
+    },
+    "origin": {
+      "enum": [
+        "upload",
+        "produced",
+        "ingested"
+      ],
+      "description": "upload: a principal uploaded it in a chat; produced: an attempt or a toolhost created it; ingested: a job task brought it."
+    },
+    "producer": {
+      "description": "Producer: a task or a principal.",
+      "oneOf": [
+        {
+          "$ref": "urn:botaru:schema:common:1#/$defs/object_id"
+        },
+        {
+          "$ref": "urn:botaru:schema:common:1#/$defs/principal_ref"
+        }
+      ]
+    },
+    "media_type": {
+      "type": "string",
+      "maxLength": 100,
+      "pattern": "^[a-z0-9.+-]+/[a-z0-9.+-]+$",
+      "description": "Content type that the core determined from the bytes."
+    },
+    "size": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 1099511627776,
+      "description": "Size in bytes."
+    },
+    "data_mark": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/data_mark"
+    },
+    "untrusted": {
+      "const": true,
+      "description": "The file content is untrusted for the model in any state (ART-2)."
+    },
+    "personal_seen": {
+      "description": "Whether the content saw personal data and how this is known; only the core sets it and never clears it (AUD-5, ART-6).",
+      "anyOf": [
+        {
+          "type": "null"
+        },
+        {
+          "enum": [
+            "declared",
+            "masking"
+          ]
+        }
+      ]
+    },
+    "state": {
+      "enum": [
+        "stored",
+        "expired",
+        "purged"
+      ],
+      "description": "State from spec/lifecycles/file.md; expired since v0.2."
+    },
+    "created_at": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/datetime"
+    },
+    "expires_at": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/datetime"
+    }
+  }
+}

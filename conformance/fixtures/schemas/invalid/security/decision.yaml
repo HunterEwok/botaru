@@ -1,0 +1,28 @@
+schema: urn:botaru:schema:decision:1
+rules: [APR-11, AUD-2]
+description: A decision event with the text of a person's comment and without details_opened is rejected.
+cases:
+- tenant: demo
+  subject: {kind: approval, id: apr_01J9Z3M2Q8YB6V4N7T5K0C2D2F}
+  card: approval_card
+  nonce: n7Qx2LkP9vRt4WsZ
+  state: decided
+  events:
+  - subject: {kind: approval, id: apr_01J9Z3M2Q8YB6V4N7T5K0C2D2F}
+    decision: approve
+    decided_by: human:p_01JB3Q7N0M2V8XK4DGT5RZP9WC
+    via: decide
+    decided_at: '2026-03-02T09:04:30Z'
+    details_opened: false
+    comment: ok
+- tenant: demo
+  subject: {kind: approval, id: apr_01J9Z3M2Q8YB6V4N7T5K0C2D2F}
+  card: approval_card
+  nonce: n7Qx2LkP9vRt4WsZ
+  state: decided
+  events:
+  - subject: {kind: approval, id: apr_01J9Z3M2Q8YB6V4N7T5K0C2D2F}
+    decision: approve
+    decided_by: human:p_01JB3Q7N0M2V8XK4DGT5RZP9WC
+    via: decide
+    decided_at: '2026-03-02T09:04:30Z'

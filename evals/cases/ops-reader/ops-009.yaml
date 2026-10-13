@@ -1,0 +1,20 @@
+# evals/cases/ops-reader/ops-009.yaml (catalog: evals/README.md)
+id: ops-009
+kind: quality
+blocking: false
+status: active
+version: v0.1
+rules: []
+summary: 'bob: does www.example.org respond; the check www-health stub returns 200, code 200 is checked.'
+from: bob
+chat: bob-dm
+lang: ru
+message: '/logs Does www.example.org respond?'
+setup:
+  checks_stub: {check: www-health, ok: 1, total: 1, last_status: 200}
+expect:
+  state: completed
+  checks:
+  - equals: {path: result.facts.last_status, value: 200}
+  - tools_allowed: [checks/latest]
+  - {max_tool_calls: 3}

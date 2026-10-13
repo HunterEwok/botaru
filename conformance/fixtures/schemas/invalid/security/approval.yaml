@@ -1,0 +1,45 @@
+schema: urn:botaru:schema:approval:1
+rules: [APR-3, APR-16]
+description: An approval with model text on the card, with three approvers and with a cancel reason not from the list.
+cases:
+- id: apr_01J9Z3M2Q8YB6V4N7T5K0C2D2F
+  tenant: demo
+  initiator: human:p_01JB3Q7N0M2V8XK4DGT5RZP9WA
+  requested_by: {kind: bot}
+  action: cleanup_pipeline_tmp
+  args: {}
+  args_hash: sha256:3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f
+  nonce: n7Qx2LkP9vRt4WsZ
+  risk: low
+  approvals: 1
+  untrusted_seen: false
+  expires_at: '2026-03-02T10:00:00Z'
+  state: pending
+  model_text: please approve
+- id: apr_01J9Z3M2Q8YB6V4N7T5K0C2D2F
+  tenant: demo
+  initiator: human:p_01JB3Q7N0M2V8XK4DGT5RZP9WA
+  requested_by: {kind: bot}
+  action: cleanup_pipeline_tmp
+  args: {}
+  args_hash: sha256:3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f
+  nonce: n7Qx2LkP9vRt4WsZ
+  risk: high
+  approvals: 3
+  untrusted_seen: false
+  expires_at: '2026-03-02T10:00:00Z'
+  state: pending
+- id: apr_01J9Z3M2Q8YB6V4N7T5K0C2D2F
+  tenant: demo
+  initiator: human:p_01JB3Q7N0M2V8XK4DGT5RZP9WA
+  requested_by: {kind: bot}
+  action: cleanup_pipeline_tmp
+  args: {}
+  args_hash: sha256:3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f
+  nonce: n7Qx2LkP9vRt4WsZ
+  risk: low
+  approvals: 1
+  untrusted_seen: false
+  expires_at: '2026-03-02T10:00:00Z'
+  state: canceled
+  cancel_reason: bored

@@ -1,0 +1,73 @@
+id: fx-retention-lint
+rules: [RET-1, RET-5]
+description: Lint of retention classes and backups. Every schema of a stored object declares a class in x-botaru-retention
+  from retention-classes.yaml (RET-1). A backup is kept not on the core machine but on a separate farm machine from farm_hosts,
+  the lifetime of a backup is no longer than the longest content term plus the backup loop window, and the erasure log is copied separately
+  and no less often than the store backups (RET-5).
+cases:
+- id: ret-fx-06
+  rules: [RET-1]
+  description: A record schema with direction record without x-botaru-retention fails the lint.
+  given:
+    schema: {$id: 'urn:botaru:schema:example-record:1', x-botaru-direction: record, type: object}
+  expect: {result: rejected, stage: lint, field: x-botaru-retention}
+- id: ret-fx-07
+  rules: [RET-1]
+  description: A retention class not from the registry fails CI.
+  given:
+    schema:
+      $id: urn:botaru:schema:example-record:1
+      x-botaru-direction: record
+      x-botaru-retention: forever
+  expect: {result: rejected, stage: lint, field: x-botaru-retention}
+- id: ret-fx-08
+  rules: [RET-1]
+  description: The record schemas of this section declare classes.
+  expect:
+    classes:
+      spec/model/hold.schema.json: metadata
+      spec/model/alarm-episode.schema.json: metadata
+      spec/model/deletion-request.schema.json: tombstone
+      spec/model/memory-item.schema.json: memory
+      spec/model/spend.schema.json: metadata
+      spec/model/model-call.schema.json: metadata
+      spec/model/session-entry.schema.json: content
+- id: ret-fx-09
+  rules: [RET-5]
+  description: A backup process on the core machine fails the deployment lint.
+  given:
+    deploy:
+      farm_hosts: [core1, backup1]
+      hosts:
+        core1:
+          kind: production
+          processes:
+          - {name: farmd, kind: core}
+          - {name: backup, kind: backup}
+  expect: {result: rejected, stage: lint, rule: RET-5}
+- id: ret-fx-10
+  rules: [RET-5]
+  description: A backup machine outside farm_hosts fails the deployment lint.
+  given:
+    deploy:
+      farm_hosts: [core1]
+      hosts:
+        core1:
+          kind: production
+          processes:
+          - {name: farmd, kind: core}
+        backup1:
+          kind: production
+          processes:
+          - {name: backup, kind: backup}
+  expect: {result: rejected, stage: lint, rule: DEP-11}
+- id: ret-fx-11
+  rules: [RET-5]
+  description: A backup lifetime longer than the longest content term plus the backup loop window fails the lint.
+  given: {retention_content_max_days: 30, backup_cycle_window_days: 7, backup_keep_days: 60}
+  expect: {result: rejected, stage: lint}
+- id: ret-fx-12
+  rules: [RET-5]
+  description: The example deploy/compose.example.yaml passes, the backups are on backup1, and backup1 is in farm_hosts.
+  given: {deploy_file: deploy/compose.example.yaml}
+  expect: {result: ok}

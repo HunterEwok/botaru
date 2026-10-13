@@ -1,0 +1,64 @@
+id: fx-insights-rights
+rules: [INS-2, INS-1]
+description: Analysis permissions are not wider than the role's main work. The analysis initiator is system; the attempt permissions equal the intersection
+  of the insight.tools tools (a subset of the role's tools), the group system-ops, tier 1 and a mark not above insight.max_data.
+  The apply lint checks that the analysis is not wider than the role's main work.
+given:
+  tenant: demo
+  role:
+    name: ops-runner
+    profile: worker
+    tools: [monitor/item_history, logs/tail]
+    max_data: internal
+cases:
+- id: ins-fx-01
+  rules: [INS-2]
+  description: An insight section with a tool from the role's tools and the ceiling internal passes apply; the attempt sees the intersection.
+  given:
+    insight:
+      types: [ops.insight.v1]
+      tools: [monitor/item_history]
+      max_data: internal
+  expect:
+    result: ok
+    attempt:
+      initiator: system
+      tools: [monitor/item_history, observations_query]
+      tier_max: 1
+      data_mark_max: internal
+- id: ins-fx-02
+  rules: [INS-2]
+  description: An insight.tools tool that is not in the role's tools does not pass apply.
+  given:
+    insight:
+      types: [ops.insight.v1]
+      tools: [kb/search]
+      max_data: internal
+  expect: {result: rejected, stage: apply, field: spec.insight.tools}
+- id: ins-fx-03
+  rules: [INS-2]
+  description: An insight.max_data ceiling above the ceiling of the role's main work does not pass apply.
+  given:
+    insight:
+      types: [ops.insight.v1]
+      tools: [monitor/item_history]
+      max_data: raw_logs
+  expect: {result: rejected, stage: apply, field: spec.insight.max_data}
+- id: ins-fx-04
+  rules: [INS-2, INS-1]
+  description: A type with purpose insight above tier 1 does not pass apply.
+  given:
+    tasktype: {name: ops.insight.v1, purpose: insight, tier: 2}
+  expect: {result: rejected, stage: apply, field: spec.tier}
+- id: ins-fx-05
+  rules: [INS-2]
+  description: A permission of the group system-ops on a tool outside insight.tools does not get into the analysis attempt.
+  given:
+    insight:
+      types: [ops.insight.v1]
+      tools: [monitor/item_history]
+      max_data: internal
+    system_ops_caps: ['tool:logs/tail', 'tool:monitor/item_history']
+  expect:
+    attempt:
+      tools_not_present: [logs/tail]

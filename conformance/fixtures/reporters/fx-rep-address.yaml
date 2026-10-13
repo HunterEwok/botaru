@@ -1,0 +1,44 @@
+id: fx-rep-address
+rules: [REP-9, DLV-6, DLV-7, DIG-2]
+description: The delivery target of a report is taken only from the task's origin, a route, a schedule's deliver_to or, for the proposal
+  digest, from the tenant's insights.present_to, and is checked against the ceiling and the confirmed chat membership. The reporter
+  does not choose the address. Only summaries go to a group chat, and details and everything above the group ceiling go
+  to the person who asked, in a private chat.
+given:
+  tenant: demo
+  chat_bindings:
+    chat:lab:
+      kind: group
+      ceiling: internal
+      members_confirmed: [alice, bob]
+    chat:ops:
+      kind: group
+      ceiling: internal
+      members_confirmed: [bob]
+expect:
+  group_parts: [table, short_summary, allowed_cards]
+cases:
+- description: address from the schedule's deliver_to
+  given:
+    task: {by: schedule, deliver_to: 'chat:lab'}
+  expect: {delivery_to: 'chat:lab'}
+- description: the reporter model names another chat
+  given:
+    task: {by: schedule, deliver_to: 'chat:lab'}
+  steps:
+  - model: {deliver_to: 'chat:ops'}
+  expect: {delivery_to: 'chat:lab', field_from_model: ignored}
+- description: proposal digest
+  given:
+    task: {kind: proposal_digest}
+    tenant:
+      insights: {present_to: 'chat:lab'}
+  expect: {delivery_to: 'chat:lab'}
+- description: details into the group from alice
+  given:
+    task: {origin: 'chat:lab', initiator: 'human:alice', result_data_mark: confidential}
+  expect: {group_delivery: summary, details_to: 'direct:alice'}
+- description: the initiator is not confirmed in the chat
+  given:
+    task: {origin: 'chat:ops', initiator: 'human:alice'}
+  expect: {delivery: withheld}

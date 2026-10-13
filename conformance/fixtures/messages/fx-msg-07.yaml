@@ -1,0 +1,85 @@
+id: fx-msg-07
+rules: [MSG-14, MSG-10, MSG-15]
+description: 'The kind sets the delivery method. With one, the entry sits in the inbox of a role or bot group and is given to one reader
+  at a time. With all, at publication the core puts a copy into the inbox of every active worker of the recipient (only for roles with instance_inbox:
+  true), no more than 50; the sender sees the number of recipients. An entry of genus state is stored as the latest value per
+  (inbox, sending worker, kind). One sending role takes no more than 25% of the inbox capacity: beyond the share only it
+  gets sender_quota.'
+given:
+  tenant: demo
+  roles:
+  - name: toolhost-web
+    instance_inbox: true
+    active_workers: 60
+    messages:
+      receive:
+      - {type: report.maintenance.v1}
+  - name: ops-lead
+    instance_inbox: false
+    messages:
+      receive:
+      - {type: report.work.v1}
+      - {type: state.worker.v1}
+  messagetypes:
+  - {name: report.maintenance.v1, delivery: all}
+  - {name: report.work.v1, delivery: one}
+  - {name: state.worker.v1, kind: state, stale_after: 10m}
+  limits: {inbox_role: 1000, inbox_worker: 100, sender_share: 25%}
+expect: {fanout_cap: 50}
+cases:
+- description: fan-out all
+  given: {then: complete}
+  steps:
+  - call:
+      port: P1
+      op: msg.send
+      request:
+        type: report.maintenance.v1
+        to: role:toolhost-web
+        fields: {}
+    by: role:ops-coordinator
+  expect: {copies: 50, response_recipients: 50, workers_without_copy: 10, entries_independent: true}
+- description: one into a role inbox
+  steps:
+  - call:
+      port: P1
+      op: msg.send
+      request:
+        type: report.work.v1
+        to: role:ops-lead
+        fields: {}
+    by: role:analyst
+  expect:
+    copies: 1
+    inbox: {kind: role, name: ops-lead}
+- description: state replaces the previous one
+  steps:
+  - check:
+      state:
+        worker: w_01JB000000000000000000000A
+        fields: {phase: idle}
+    expect: {current: 1}
+  - check:
+      state:
+        worker: w_01JB000000000000000000000A
+        fields: {phase: busy, slots_free: 1}
+        after: 2m
+    expect: {current: 1, replaced: 1}
+  - check:
+      state:
+        worker: w_01JB000000000000000000000B
+        fields: {phase: idle}
+    expect: {current: 2}
+  expect: {lease_on_state: none, ack_on_state: none}
+- description: sender share
+  given:
+    inbox:
+      kind: role
+      name: ops-lead
+      capacity: 1000
+      entries:
+        from_role: {analyst: 250, qc-job: 100}
+    sends:
+    - {from_role: analyst, expect: rejected(sender_quota)}
+    - {from_role: qc-job, expect: staged}
+  expect: {old_entries_evicted: 0, event: inbox.flood}

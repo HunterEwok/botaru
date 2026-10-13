@@ -1,0 +1,228 @@
+registry: holds
+version: 2
+description: >-
+  Closed lists of the stop (Hold): scopes, effects, auto-stop rules and ranks
+  of authors. The kind field of an entry says which list it belongs to: scope
+  (stop scope), effect (effect), autostop (auto-stop rule) or rank (rank
+  of the stop author at release). For a scope the set_by field lists who sets a stop
+  of this scope, and record_tenant says whose record it becomes (farm is
+  the service tenant farm, own is the tenant of its own scope, TEN-1). For an effect
+  the checked_at field lists the check points. For an auto-stop the fields scope, effects,
+  reason, author, until and alarm repeat the auto-stop table of docs/operations.md;
+  until null means without a deadline. For a rank the order field is the position from top to bottom (1 is the
+  highest). A new auto-stop rule is added only by an architecture decision of the
+  skeleton (ADR).
+source: docs/operations.md
+entries:
+  # Scopes
+  - id: farm
+    kind: scope
+    since: v0.1
+    meaning: the whole farm
+    set_by: [operator]
+    record_tenant: farm
+    rules: [HLD-1, HLD-2, PRM-14]
+  - id: tenant
+    kind: scope
+    since: v0.1
+    meaning: one tenant
+    set_by: [operator, tenant_human]
+    record_tenant: own
+    rules: [HLD-1, HLD-2]
+  - id: role
+    kind: scope
+    since: v0.1
+    meaning: a role in the tenant
+    set_by: [operator, tenant_human, autostop, seat_holder]
+    record_tenant: own
+    rules: [HLD-1, HLD-2, HLD-6, HLD-7]
+  - id: tasktype
+    kind: scope
+    since: v0.1
+    meaning: a task type in the tenant
+    set_by: [operator, tenant_human, autostop, seat_holder]
+    record_tenant: own
+    rules: [HLD-1, HLD-2]
+  - id: worker
+    kind: scope
+    since: v0.1
+    meaning: one worker (quarantine)
+    set_by: [operator, tenant_human, seat_holder]
+    record_tenant: own
+    rules: [HLD-1, HLD-2]
+  - id: plugin
+    kind: scope
+    since: v0.1
+    meaning: a plugin in the tenant
+    set_by: [operator, tenant_human]
+    record_tenant: own
+    rules: [HLD-1, HLD-2]
+  - id: action
+    kind: scope
+    since: v0.1
+    meaning: an action in the tenant
+    set_by: [operator, tenant_human]
+    record_tenant: own
+    rules: [HLD-1, HLD-2]
+  - id: channel
+    kind: scope
+    since: v0.1
+    meaning: a channel of the tenant
+    set_by: [operator, tenant_human]
+    record_tenant: own
+    rules: [HLD-1, HLD-2]
+  - id: host
+    kind: scope
+    since: v0.1
+    meaning: a machine from the catalog
+    set_by: [operator, tenant_human]
+    record_tenant: own
+    rules: [HLD-1, HLD-2]
+  - id: resource
+    kind: scope
+    since: v0.1
+    meaning: a catalog resource
+    set_by: [operator, tenant_human, seat_holder]
+    record_tenant: own
+    rules: [HLD-1, HLD-2]
+  - id: bot_group
+    kind: scope
+    since: v0.1
+    meaning: a bot group
+    set_by: [operator, tenant_human, seat_holder]
+    record_tenant: own
+    rules: [HLD-1, HLD-2]
+  - id: bot
+    kind: scope
+    since: v0.1
+    meaning: one bot
+    set_by: [operator, tenant_human, seat_holder]
+    record_tenant: own
+    rules: [HLD-1, HLD-2, HLD-3]
+  - id: seat
+    kind: scope
+    since: v0.1
+    meaning: the farm manager seat
+    set_by: [operator, autostop]
+    record_tenant: farm
+    rules: [HLD-1, HLD-2, MGR-14, MGR-15]
+  - id: governance
+    kind: scope
+    since: v0.2
+    meaning: one governance case (its pause)
+    set_by: [governance_admin]
+    record_tenant: own
+    rules: [HLD-2, GOV-23]
+  - id: schedule
+    kind: scope
+    since: v0.2
+    meaning: one schedule
+    set_by: [operator, tenant_human, autostop]
+    record_tenant: own
+    rules: [HLD-1, CAP-4]
+  # Effects
+  - id: no_enqueue
+    kind: effect
+    since: v0.1
+    meaning: new tasks in the scope, except core tasks for erasure and export, get rejected(held)
+    checked_at: [p1.enqueue, p3.enqueue_child, routes, schedules]
+    rules: [HLD-3]
+  - id: no_claim
+    kind: effect
+    since: v0.1
+    meaning: claim does not give out work of the scope
+    checked_at: [p1.claim]
+    rules: [HLD-3]
+  - id: no_message
+    kind: effect
+    since: v0.1
+    meaning: sending bot messages gets rejected(held), entries accumulated at complete are dropped (discarded(held)), wake-ups are not set; reading inboxes is allowed
+    checked_at: [p1.messages, p3.messages, p1.complete]
+    rules: [HLD-3]
+  - id: cancel_running
+    kind: effect
+    since: v0.1
+    meaning: running attempts get cancel_requested, their handles are revoked, the attempt ends as held without being spent; claim does not give out the task
+    checked_at: [p1.heartbeat, p1.claim]
+    rules: [HLD-3, FEN-4]
+  - id: no_tool
+    kind: effect
+    since: v0.1
+    meaning: tool calls get denied(held), the toolhost does not receive the call, including a call in queued
+    checked_at: [p3.tools_call, toolhost_dispatch]
+    rules: [HLD-3]
+  - id: no_action
+    kind: effect
+    since: v0.1
+    meaning: new request_action calls are rejected, pending approvals of the scope go to canceled(held) with card_update
+    checked_at: [p3.request_action, p1.decide]
+    rules: [HLD-3]
+  - id: no_delivery
+    kind: effect
+    since: v0.1
+    meaning: deliveries to the scope get withheld, except messages to admins about the stop itself
+    checked_at: [loop.delivery]
+    rules: [HLD-3, HLD-6]
+  - id: no_control
+    kind: effect
+    since: v0.1
+    meaning: the holder of the farm manager seat does not apply control operations
+    checked_at: [c1.control_apply]
+    rules: [HLD-3, MGR-14]
+  - id: pause_action
+    kind: effect
+    since: v0.2
+    meaning: new request_action calls are rejected, pending approvals are not canceled but wait; their deadline is extended by the length of the stop
+    checked_at: [p3.request_action, p1.decide, loop.approval-expiry]
+    rules: [HLD-3, MON-9]
+  # Auto-stops
+  - id: secret_in_outbound_twice
+    kind: autostop
+    since: v0.1
+    meaning: the channel twice within an hour refused to send a message of one role of the tenant because it found a secret in it (INJ-11)
+    scope: role
+    effects: [no_delivery]
+    reason: secret_in_outbound
+    author: contain_auto
+    until: null
+    alarm: alarm.hold.auto.v1
+    rules: [HLD-6]
+  - id: runaway_spend_hour
+    kind: autostop
+    since: v0.1
+    meaning: the tenant's usage over a sliding hour is greater than Tenant.spec.budgets.hour_eur (by default month_eur/100); a stop on every agent role of the tenant, job tasks without a model keep running
+    scope: role
+    effects: [no_claim]
+    reason: runaway_spend
+    author: contain_auto
+    until: 1h
+    alarm: alarm.hold.auto.v1
+    rules: [HLD-7, BUD-4]
+  - id: schedule_attempts_exhausted
+    kind: autostop
+    since: v0.2
+    meaning: the schedule produced K slots in a row with attempts_exhausted
+    scope: schedule
+    effects: [no_enqueue]
+    author: contain_auto
+    alarm: alarm.hold.auto.v1
+    rules: [CAP-4]
+  # Ranks of authors at release, from top to bottom
+  - id: operator
+    kind: rank
+    since: v0.1
+    order: 1
+    meaning: the farm operator; their stop with any reason and stops of the farm and seat scopes are released only by the operator
+    rules: [HLD-2, PRM-14]
+  - id: tenant_admin
+    kind: rank
+    since: v0.1
+    order: 2
+    meaning: a tenant admin, that is a person of the tenant with hold.release; releases stops of the tenant's people, contain_auto stops and stops of the seat holder
+    rules: [HLD-2]
+  - id: seat_holder
+    kind: rank
+    since: v0.1
+    order: 3
+    meaning: the holder of the farm manager seat with the current epoch; releases only its own stops
+    rules: [HLD-2, MGR-9]

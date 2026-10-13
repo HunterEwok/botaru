@@ -1,0 +1,272 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:botaru:schema:message:1",
+  "title": "Message envelope botaru.message/v1",
+  "description": "A bot message in the store: a CloudEvents 1.0 event in structured JSON. The sender writes only data.fields and data.note; the core writes all CloudEvents attributes and botaru extensions from the credentials, the attempt record and the type manifest (MSG-1). Extension names in lowercase Latin letters and digits, at most 20 characters. Within a version the envelope changes only by adding optional fields (MAN-3). The envelope gets into logs only as metadata, without data.note (MSG-3, MSG-13).",
+  "x-botaru-direction": "record",
+  "x-botaru-retention": "content",
+  "x-botaru-rules": [
+    "MSG-1",
+    "MSG-3",
+    "MSG-6",
+    "MSG-7",
+    "MSG-11",
+    "MSG-12",
+    "MSG-13",
+    "MSG-14",
+    "MSG-16"
+  ],
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "specversion",
+    "id",
+    "source",
+    "type",
+    "time",
+    "datacontenttype",
+    "dataschema",
+    "tenant",
+    "msgkind",
+    "msgto",
+    "fromrole",
+    "correlationid",
+    "idempotencykey",
+    "hops",
+    "datamark",
+    "untrusted",
+    "dataorigin",
+    "expiresat",
+    "data"
+  ],
+  "properties": {
+    "specversion": {
+      "const": "1.0",
+      "description": "CloudEvents version."
+    },
+    "id": {
+      "type": "string",
+      "pattern": "^m_[0-9A-HJKMNP-TV-Z]{26}$",
+      "maxLength": 28,
+      "description": "Message id m_<ulid>; the pair (source, id) is unique (IDM-4)."
+    },
+    "source": {
+      "type": "string",
+      "pattern": "^/(w/[a-z]{1,8}_[0-9A-HJKMNP-TV-Z]{26}|core)$",
+      "maxLength": 40,
+      "description": "Sender by the credentials: /w/<worker id> or /core."
+    },
+    "type": {
+      "type": "string",
+      "pattern": "^botaru\\.msg\\.(report|state)\\.[a-z0-9_]+(\\.[a-z0-9_]+)*\\.v[1-9][0-9]*$",
+      "maxLength": 140,
+      "description": "botaru.msg.<type>, for example botaru.msg.report.work.v1; the type comes from git (MSG-2)."
+    },
+    "time": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/datetime",
+      "description": "Publication time."
+    },
+    "datacontenttype": {
+      "const": "application/json"
+    },
+    "dataschema": {
+      "type": "string",
+      "pattern": "^urn:botaru:schema:msg:(report|state)\\.[a-z0-9_]+(\\.[a-z0-9_]+)*\\.v[1-9][0-9]*$",
+      "maxLength": 160,
+      "description": "urn:botaru:schema:msg:<type>."
+    },
+    "subject": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/name",
+      "description": "Catalog id from the type's subject_from field; routes are filtered by it by exact match and by prefix (MSG-16)."
+    },
+    "tenant": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/tenant_name",
+      "description": "Tenant from the credentials; not accepted from the body (MSG-4)."
+    },
+    "msgkind": {
+      "enum": [
+        "report",
+        "state"
+      ],
+      "x-botaru-registry": "message-kinds",
+      "description": "Genus from the type (MSG-2)."
+    },
+    "msgto": {
+      "type": "string",
+      "pattern": "^((role|group):[a-z][a-z0-9-]{0,62}|worker:[a-z]{1,8}_[0-9A-HJKMNP-TV-Z]{26})$",
+      "maxLength": 70,
+      "description": "Address after the check: role:<name>, group:<name>; worker:<id> only for messages that the core addressed (MSG-4)."
+    },
+    "msgdelivery": {
+      "enum": [
+        "one",
+        "all"
+      ],
+      "description": "Delivery method of the report genus from the type (MSG-14). The state genus has no such field: a new value replaces the previous one."
+    },
+    "replyto": {
+      "type": "string",
+      "pattern": "^m_[0-9A-HJKMNP-TV-Z]{26}$",
+      "maxLength": 28,
+      "description": "Id of the read message this one replies to."
+    },
+    "fromrole": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/name",
+      "description": "Sender role; core for core messages."
+    },
+    "fromworker": {
+      "type": "string",
+      "pattern": "^[a-z]{1,8}_[0-9A-HJKMNP-TV-Z]{26}$",
+      "maxLength": 40,
+      "description": "Sender worker; not shown to the model."
+    },
+    "fromtask": {
+      "type": "string",
+      "pattern": "^[a-z]{1,8}_[0-9A-HJKMNP-TV-Z]{26}$",
+      "maxLength": 40,
+      "description": "Sender task; not shown to the model."
+    },
+    "correlationid": {
+      "type": "string",
+      "pattern": "^[a-z]{1,8}_[0-9A-HJKMNP-TV-Z]{26}$",
+      "maxLength": 40,
+      "description": "Root of the original task tree; tree limits are counted by it (MSG-11, ORC-8)."
+    },
+    "causationid": {
+      "type": "string",
+      "pattern": "^[a-z]{1,8}_[0-9A-HJKMNP-TV-Z]{26}$",
+      "maxLength": 40,
+      "description": "The sender task or the message this one replies to."
+    },
+    "idempotencykey": {
+      "type": "string",
+      "pattern": "^(system:(msg|report):[A-Za-z0-9_:.-]{1,180}|[a-z]{1,8}_[A-Za-z0-9]{1,40}:[A-Za-z0-9][A-Za-z0-9_.:-]{0,127})$",
+      "maxLength": 200,
+      "description": "system:msg:<attempt>:<n>, system:report:<task>:<route> or a code key with the sender prefix (MSG-9, MSG-16)."
+    },
+    "hops": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 5,
+      "description": "The sender's effective depth plus one; sending with hops greater than 5 is rejected (MSG-11)."
+    },
+    "datamark": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/data_mark",
+      "description": "Mark of the sender attempt; for code outside an attempt, the class of the type (MSG-6)."
+    },
+    "untrusted": {
+      "type": "boolean",
+      "description": "Distrust flag: untrusted_seen of the attempt OR a note OR the model wrote the fields (MSG-6)."
+    },
+    "untrustedsrc": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_]{0,31}(,[a-z][a-z0-9_]{0,31}){0,15}$",
+      "maxLength": 512,
+      "description": "Sources of the flag as comma-separated codes, for example note,tool_output."
+    },
+    "dataorigin": {
+      "enum": [
+        "code",
+        "model"
+      ],
+      "description": "Who wrote the fields: model if the model did, including in an auto-report on an agent task; otherwise code (MSG-1)."
+    },
+    "origininitiators": {
+      "type": "string",
+      "pattern": "^[a-z]{1,8}_[A-Za-z0-9]{1,40}(,[a-z]{1,8}_[A-Za-z0-9]{1,40}){0,31}$",
+      "maxLength": 1400,
+      "description": "The initiator of the root of the sender attempt and the initiators of everything it read, comma-separated (MSG-7)."
+    },
+    "expiresat": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/datetime",
+      "description": "Expiry of the entry (MSG-12)."
+    },
+    "traceparent": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{2}-[0-9a-f]{32}-[0-9a-f]{16}-[0-9a-f]{2}$",
+      "maxLength": 55,
+      "description": "W3C trace context without content (v0.2).",
+      "x-botaru-version": "v0.2"
+    },
+    "data": {
+      "type": "object",
+      "description": "Sender content.",
+      "additionalProperties": false,
+      "required": [
+        "fields"
+      ],
+      "properties": {
+        "fields": {
+          "type": "object",
+          "description": "Fields by the closed schema of the type (MSG-2); here only an object, the type schema checks the leaves.",
+          "maxProperties": 64
+        },
+        "note": {
+          "type": "string",
+          "maxLength": 500,
+          "description": "Note: a short text up to the type's note.max_chars, ceiling 500 characters; present only for report genus types that allow it; always untrusted (MSG-13)."
+        }
+      }
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "msgkind": {
+            "const": "report"
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "msgdelivery"
+        ]
+      },
+      "else": {
+        "not": {
+          "anyOf": [
+            {
+              "required": [
+                "msgdelivery"
+              ]
+            },
+            {
+              "properties": {
+                "data": {
+                  "required": [
+                    "note"
+                  ]
+                }
+              },
+              "required": [
+                "data"
+              ]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "if": {
+        "required": [
+          "data"
+        ],
+        "properties": {
+          "data": {
+            "required": [
+              "note"
+            ]
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "untrusted": {
+            "const": true
+          }
+        }
+      }
+    }
+  ]
+}

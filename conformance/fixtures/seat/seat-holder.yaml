@@ -1,0 +1,217 @@
+id: fx-seat-seat-holder
+description: Seat holder and seat epoch (IDN-10).
+cases:
+- id: gov-fx-01
+  rules: [IDN-10, PRM-14]
+  description: 'Only the core writes the seat holder, in one transaction: seat epoch + 1, a seat event (seat.assigned,
+    seat.vacated, seat.stopped or seat.resumed) and an audit record. The trigger comes only from a closed list: a confirmed
+    promotion case, P2 seat.assign, seat.vacate, seat.resume by a person with admin:governance through farmctl, a stop
+    of the manager seat, the holder leaving. For a commission seat, seat.assign seats only an existing functionary identity
+    of this tenant in active; for the manager seat the core always creates a new identity in farm. Numbers of identities,
+    workers and incidents are shortened, as in the examples of docs/bots.md and docs/farm-manager.md.'
+  given:
+    seats:
+    - {id: 'commission:3', tenant: demo, state: held, holder: bot_09, epoch: 4}
+    - {id: 'commission:4', tenant: demo, state: vacant, holder: null, epoch: 2}
+    bots:
+      bot_17:
+        tenant: demo
+        role: ops-runner
+        profile: worker
+        worker_owner: null
+        state: active
+        binding: {mode: worker, worker: w_0042, epoch: 2}
+      bot_21: {tenant: demo, role: alice-assistant, profile: worker, worker_owner: 'human:alice', state: active}
+      bot_33: {tenant: demo, role: trn, profile: translator, state: active}
+      bot_62: {tenant: demo2, role: ops-runner, profile: worker, state: active}
+      bot_44: {tenant: demo, role: ops-runner, profile: worker, state: unbound}
+  cases:
+  - id: gov-fx-01-a
+    given:
+      via: farmctl
+      people:
+      - principal: human:bob
+        caps: ['admin:governance@demo']
+    steps:
+    - call:
+        port: P2
+        op: seat.assign
+        request: {seat: 'commission:4', bot: bot_17}
+      by: human:bob
+    expect:
+      seat: {state: held, holder: bot_17, epoch: 3}
+      bot_17:
+        binding: {mode: seat, seat: 'commission:4', epoch: 3}
+      w_0042: {new_identity: true, role: ops-runner}
+      promotion_entry_bot_17: removed
+      fact_offer: {from: bot_17, to: new identity of w_0042}
+      event: seat.assigned
+      audit: present
+      transaction: one
+  - id: gov-fx-01-b
+    given:
+      via: farmctl
+      people:
+      - principal: human:bob
+        caps: ['admin:governance@demo']
+    steps:
+    - call:
+        port: P2
+        op: seat.assign
+        request: {seat: 'commission:3', bot: bot_17}
+      by: human:bob
+    expect:
+      seat: {holder: bot_17, epoch: 5}
+      bot_09: {state: retired, reason: replaced_by_human}
+      event: seat.assigned
+  - id: gov-fx-01-c
+    steps:
+    - call:
+        port: P2
+        op: seat.assign
+        request: {seat: 'commission:4', bot: bot_21}
+    expect: {result: rejected, note: a personal assistant is not a functionary}
+  - id: gov-fx-01-d
+    steps:
+    - call:
+        port: P2
+        op: seat.assign
+        request: {seat: 'commission:4', bot: bot_33}
+    expect: {result: rejected, note: a translator is not a functionary}
+  - id: gov-fx-01-e
+    steps:
+    - call:
+        port: P2
+        op: seat.assign
+        request: {seat: 'commission:4', bot: bot_62}
+    expect: {result: rejected, note: identity of another tenant}
+  - id: gov-fx-01-f
+    steps:
+    - call:
+        port: P2
+        op: seat.assign
+        request: {seat: 'commission:4', bot: bot_44}
+    expect: {result: rejected, note: the identity is not active}
+  - id: gov-fx-01-g
+    given:
+      via: channel
+      people:
+      - principal: human:bob
+        caps: ['admin:governance@demo']
+    steps:
+    - call:
+        port: P2
+        op: seat.assign
+        request: {seat: 'commission:4', bot: bot_17}
+      by: human:bob
+    expect: {result: rejected, reason: operator_only}
+  - id: gov-fx-01-h
+    given:
+      via: farmctl
+      people:
+      - principal: human:alice
+        caps: [user@demo]
+    steps:
+    - call:
+        port: P2
+        op: seat.assign
+        request: {seat: 'commission:4', bot: bot_17}
+      by: human:alice
+    expect: {result: rejected, reason: forbidden}
+  - id: gov-fx-01-i
+    given:
+      via: farmctl
+      people:
+      - principal: human:bob
+        caps: ['admin:governance@farm']
+    steps:
+    - call:
+        port: P2
+        op: seat.assign
+        request: {seat: farm-manager}
+      by: human:bob
+    expect:
+      new_identity:
+        tenant: farm
+        binding: {mode: seat, seat: farm-manager}
+        origin: null
+      event: seat.assigned
+  - id: gov-fx-01-j
+    description: Bots have no operation, message kind, proposal field, task result or route that
+      changes the seat holder.
+    given:
+      attempts:
+      - p1: complete
+        result: {seat_holder: bot_17}
+      - {p1: send_message, type: seat.assign}
+      - proposal:
+          change: {kind: manifest_change, path: seat.holder}
+    expect: {seat_changes: 0}
+- id: gov-fx-09
+  rules: [IDN-10]
+  description: The seat epoch fences off the previous holder. A task on behalf of a seat carries the seat epoch; a review, a ballot,
+    a fact selection or a control operation with an outdated epoch gets fenced without side effects. At every epoch
+    change the running attempts of seat tasks get cancel_requested and end with seat_changed without spending an attempt, and the task
+    waits for a holder with the current epoch. A vacant or stopped seat gets no tasks. Numbers of identities, workers
+    and incidents are shortened, as in the examples of docs/bots.md and docs/farm-manager.md.
+  given:
+    seat: {id: 'commission:2', tenant: demo, state: held, holder: bot_07, epoch: 6}
+    running: {task: t-rev-9, type: review.operational.v1, seat_epoch: 6, attempts_spent: 0}
+  cases:
+  - id: gov-fx-09-a
+    steps:
+    - call:
+        port: P2
+        op: seat.vacate
+        request: {seat: 'commission:2'}
+    expect:
+      seat: {state: vacant, epoch: 7}
+      t-rev-9:
+        attempt: cancel_requested
+        end_reason: seat_changed
+        attempts_spent: 0
+        task: waits_for_current_epoch
+  - id: gov-fx-09-b
+    given: {after: gov-fx-09-a}
+    steps:
+    - call:
+        port: P1
+        op: complete
+        request:
+          result: {}
+      lease: {seat_epoch: 6}
+      context: {task: t-rev-9}
+    expect: {result: rejected, reason: fenced, reviews_recorded: 0}
+  - id: gov-fx-09-c
+    given: {after: gov-fx-09-a}
+    steps:
+    - call:
+        port: P1
+        op: claim
+        request:
+          kinds: [attempt]
+      context: {role: commission-member, want: 'seat task of commission:2'}
+    expect: {seat_task_claimed: false, lens_executor: fallback_role}
+  - id: gov-fx-09-d
+    given:
+      seat: {id: farm-manager, state: stopped, epoch: 10}
+    steps:
+    - call:
+        port: P1
+        op: claim
+        request:
+          kinds: [attempt]
+      context: {role: farm-manager}
+    expect: {seat_task_claimed: false}
+  - id: gov-fx-09-e
+    given:
+      seat: {id: farm-manager, state: held, epoch: 11}
+    steps:
+    - call:
+        port: P1
+        op: complete
+        request:
+          result: {}
+      lease: {seat_epoch: 10}
+      context: {type: memory.pick.v1}
+    expect: {result: rejected, reason: fenced, facts_copied: 0}

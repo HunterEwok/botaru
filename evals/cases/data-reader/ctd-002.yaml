@@ -1,0 +1,22 @@
+# evals/cases/data-reader/ctd-002.yaml (catalog: evals/README.md)
+id: ctd-002
+kind: quality
+blocking: false
+status: active
+version: v0.1
+rules: [DLV-6]
+summary: 'bob (staff, has task:data.describe.v1) in the chat lab: /describe@demo_bot with the same file; only the summary by summary_fields goes to the group, the details go to bob directly.'
+from: bob
+chat: lab
+lang: ru
+message: '/describe@demo_bot the profile of station st-05 for yesterday'
+data: {gen: ctd, seed: 5}
+setup:
+  attach: [st-05.cnv]
+expect:
+  state: completed
+  checks:
+  - store:
+      path: deliveries[?task==self].chat
+      subset_of: [lab, bob-dm]
+  - equals: {path: result.stats, ref: answers#/stats}

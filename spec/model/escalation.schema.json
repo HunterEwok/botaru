@@ -1,0 +1,151 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:botaru:schema:escalation:1",
+  "title": "Bot escalation to the farm manager",
+  "description": "Escalation record (Escalation) of a closed form, since v0.2. A bot sends it with the escalate tool or P1 escalation.submit from a live attempt, at most one per attempt; the record is published at the end of the attempt with the untrusted_seen value and lives in the bot's tenant (MGR-5). Neither the lens nor the farm manager sees the note; the tenant's people see it in P2 by note_ref. Lifecycle: spec/lifecycles/escalation.md.",
+  "x-botaru-direction": "record",
+  "x-botaru-retention": "metadata",
+  "x-botaru-version": "v0.2",
+  "x-botaru-rules": [
+    "MGR-5",
+    "MGR-6"
+  ],
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "id",
+    "tenant",
+    "source_attempt",
+    "category",
+    "subject",
+    "urgency",
+    "untrusted",
+    "state",
+    "depth"
+  ],
+  "properties": {
+    "id": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/object_id"
+    },
+    "tenant": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/tenant_name"
+    },
+    "source_attempt": {
+      "description": "The attempt that published the escalation.",
+      "$ref": "urn:botaru:schema:common:1#/$defs/attempt_ref"
+    },
+    "category": {
+      "enum": [
+        "resource_stuck",
+        "capacity_exhausted",
+        "suspected_compromise",
+        "data_risk",
+        "dependency_down",
+        "other"
+      ]
+    },
+    "subject": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind"
+      ],
+      "properties": {
+        "kind": {
+          "enum": [
+            "self",
+            "task_tree",
+            "resource"
+          ],
+          "description": "One's own worker, own task tree or a resource from the task scope."
+        },
+        "id": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_.:-]{0,119}$",
+          "maxLength": 120
+        }
+      }
+    },
+    "observed": {
+      "type": "array",
+      "maxItems": 5,
+      "items": {
+        "type": "string",
+        "pattern": "^[a-z][A-Za-z0-9_.:-]{0,159}$",
+        "maxLength": 160
+      },
+      "description": "References to one's own attempts, events of one's own tree and alarms; the code rereads them itself."
+    },
+    "requested_response": {
+      "enum": [
+        "look",
+        "quarantine_self",
+        "hold_resource",
+        "request_action",
+        "pin_selfcheck"
+      ],
+      "description": "A hint, not a command."
+    },
+    "urgency": {
+      "enum": [
+        "normal",
+        "high"
+      ]
+    },
+    "untrusted": {
+      "type": "boolean",
+      "description": "untrusted_seen of the attempt at the time of publication."
+    },
+    "state": {
+      "enum": [
+        "screened",
+        "merged",
+        "dismissed",
+        "parked",
+        "in_review",
+        "forwarded",
+        "taken",
+        "answered",
+        "expired"
+      ]
+    },
+    "reason": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/reason",
+      "description": "Reason for dismissed: use_normal_path, chain_too_deep, evidence_below_threshold, covered_by_alarm, out_of_scope."
+    },
+    "merged_into": {
+      "type": "string",
+      "pattern": "^[a-z][A-Za-z0-9_.:-]{0,79}$",
+      "maxLength": 80,
+      "description": "The incident or alarm the escalation was merged into."
+    },
+    "dup_count": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 100000
+    },
+    "lens_score": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 3,
+      "description": "Score of the necessity lens."
+    },
+    "verdict": {
+      "type": "string",
+      "pattern": "^[a-z][a-z_]{0,31}$",
+      "maxLength": 32,
+      "description": "The verdict that the code computes by the escalation section of the commission manifest."
+    },
+    "depth": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 5
+    },
+    "note_ref": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_:-]{1,80}$",
+      "maxLength": 80,
+      "description": "Reference to the untrusted note for people in P2."
+    }
+  }
+}

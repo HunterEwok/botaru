@@ -1,0 +1,58 @@
+id: fx-mgr-reader-tools
+rules: [MGR-25, PRF-1]
+description: 'Lint of tools/list of the seat roles. The role farm-manager-reader has only read tools (access: read, among
+  them the plugins logs and monitor) and the built-in file_read. The role farm-manager has no tools with untrusted_output; its
+  may_enqueue, campaigns, scripts and messages are empty, there is no built-in escalate; its result service/control and monitor/script_run
+  use closed fields only.'
+given: {lint: roles/seat-tools}
+cases:
+- given:
+    role_profile: farm-manager-reader
+    tools:
+    - {plugin: logs, tool: tail, access: read}
+    - {plugin: monitor, tool: problems, access: read}
+    builtin: [file_read]
+  expect: {apply: ok}
+- given:
+    role_profile: farm-manager-reader
+    tools:
+    - {plugin: service, tool: control, access: write}
+  expect:
+    apply: {result: rejected}
+    error: role_profile_forbidden
+- given:
+    role_profile: farm-manager-reader
+    spec: {memory: bot}
+  expect:
+    apply: {result: rejected}
+    error: role_profile_forbidden
+- given:
+    role_profile: farm-manager
+    tools:
+    - {plugin: logs, tool: tail, access: read, untrusted_output: true}
+  expect:
+    apply: {result: rejected}
+    error: role_profile_forbidden
+- given:
+    role_profile: farm-manager
+    spec:
+      may_enqueue: [ops.selfcheck.v1]
+  expect:
+    apply: {result: rejected}
+    error: role_profile_forbidden
+- given:
+    role_profile: farm-manager
+    spec:
+      messages:
+        send: [report.note.v1]
+  expect:
+    apply: {result: rejected}
+    error: role_profile_forbidden
+- given:
+    role_profile: farm-manager
+    spec:
+      service_control: ['*']
+      monitor_scripts: ['*']
+  expect:
+    apply: ok
+    service_result_fields: [code, service_state, service_grant]

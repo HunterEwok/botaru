@@ -1,0 +1,11 @@
+# Commission of tenant demo: only thresholds, weights and shadow shares (COM-8, COM-10).
+# Only the charter governance.yaml declares seats and lenses (GOV-33); there are no seats here.
+apiVersion: botaru/v1alpha1
+kind: Commission
+metadata: {name: demo, tenant: demo}
+spec:
+  review_deadline: 48h
+  weights: {security: 3, operational: 2, cost: 1, value: 2}
+  recommend_if: {weighted_mean_gte: 2.5, value_gte: 2}
+  park_if: {weighted_mean_gte: 1.5}
+  shadow: {veto_lenses: 0.25, other_lenses: 0.2}

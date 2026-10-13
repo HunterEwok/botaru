@@ -1,0 +1,54 @@
+# P4 ModelGateway
+
+Sheet version: 0.1.0.
+
+## In short
+
+P4 is the model gateway inside the trust boundary of the core (D-45). The runtime talks to it in the provider's format through a model handle, because runtimes can already do that, but P4 is not a pass-through proxy: it checks the request, chooses the model by the role slot, reserves the worst case, charges the actual usage after the answer and keeps the provider key and workspace separate for each tenant (D-42). Only P4 has the provider key. This is also the only retry layer and the circuit breaker for provider failures. Whether P4 lives in the core process or as a separate process next to it is decided by the deployment.
+
+## Who calls and who implements
+
+- **Implemented by** the core. The request field allowlist, the mapping of provider error codes to reasons, the counting of iterations and the prompt cache are described for each provider in `spec/bindings/model-providers/<provider>.md`.
+- **Called by** the agent runtime with the model handle of its attempt (or of its profile under `model_attribution: per_profile`, RT-3; the `granted` slot does not apply to a profile handle, because a grant belongs to one task).
+- **Outwards** P4 goes only to the model provider, with the key and in the workspace of the task's tenant. There are no fallback providers bypassing P4.
+
+## Operations
+
+| Operation | Who calls | What it does | Refusals (reason codes) | Version | Rules |
+|---|---|---|---|---|---|
+| model call | runtime by model handle | There is no named operation: the call goes in the provider's format through the handle. P4 checks the request against the provider allowlist and compares `tools` with the P3 catalog of this handle by names and schema hashes; chooses the model by the role slot and the tenant's list; reserves the worst case; sends the request to the provider with the tenant's key and with the region that P4 sets itself; waits for the answer no longer than a deadline computed from the profile: `max_output_tokens` divided by the profile's `tokens_per_s`, multiplied by 2, but not less than 60 seconds; charges usage by the provider's answer | request refusal (GW-1); `handle_invalid`, `fenced`, `budget_exhausted`, `rank_exceeded`, `provider_unavailable`, `provider_rate_limited`, `provider_spend_cap`, `provider_config`, `not_ready` | v0.1 | GW-1, GW-2, GW-3, GW-5, GW-6, GW-7, GW-11..GW-16, BUD-2, BUD-3, BUD-9, BUD-11, TEN-5 |
+| `seat` slot | the runtime of a worker whose attempt acts on behalf of a seat with the current epoch | The model of the seat profile from the charter (`model_profile`); the rank is checked against the position ceiling of the acting identity (`acting_bot`) at the attempt's epoch, so the same role in an ordinary review does not get the seat model. The call goes with the key and in the workspace of the attempt's tenant, usage goes to the task's purpose line: `review` for a lens review, `governance` for a ballot, `work` for fact picking, `manager` for manager tasks | as for a model call | v0.1 | GOV-3, GOV-15, BUD-7, MGR-20, MGR-24 |
+| rate limiter per model pool | P4 | Requests and tokens per minute per provider model pool with a share for each tenant; a task without a free share waits | `provider_quota` | v0.1 | GW-10 |
+| usage reconciliation and estimate by type price | the operator's reconciliation process outside the core; the core on enqueue | Once a day the usage of each workspace is reconciled with the provider report (result of P2 `spend.reconcile`): the daily total of the lines against the provider's daily total, the difference as one correction line, `spend_estimated` lines get `spend_reconciled` without changing the price, a difference above the tolerance from the settings gives `alarm.spend.estimate_drift`, no reconciliation for two days gives `alarm.spend.reconcile_overdue`; the enqueue estimate is computed from the actual price of finished tasks of the type | | v0.1 | BUD-10, BUD-14 |
+| `granted` slot | the runtime of an executor with a grant | The model of the profile from the grant for 1-2 attempts with a deadline and a ceiling as a sum in euros from the grant record (stored in euro cents); P4 takes the reserve of each call from the remainder of this ceiling, and the output limit is the model profile's `max_output_tokens`. Until v0.2 the slot is reserved and not allowed | as for a model call | v0.2 | MGR-18, GW-7, GW-2, BUD-9 |
+
+## Guarantees
+
+- MUST: a request with a field outside the binding allowlist, with provider server tools, `mcp_servers`, `container` or with `tools` different from the P3 catalog of this handle is rejected; a runtime that added a built-in tool fails at the gateway (GW-1).
+- MUST: the model is chosen only by the role slot (`base`, `analysis`, `seat`; `granted` from v0.2) and the tenant's list; a model name from the request body is not accepted (GW-7). The rank of the handle's profile is checked against the position ceiling of the acting identity (`acting_bot`) at the attempt's epoch, and while there are no identities, against the role profile ceiling: `max_rank` for the `base` and `seat` slots, `analysis_max_rank` for the `analysis` slot; above the ceiling only a call under a valid grant passes, otherwise `rank_exceeded` (GOV-3, PRF-1). A fallback model only if declared in the profile and with the same rank check (GW-5).
+- MUST: before each call the worst case is reserved in micro-euros by the most expensive model that P4 may use in this call, with cache and reasoning; charging follows the provider's answer with the sum of all iterations, including server-side compaction; the number of calls to the mock provider equals the number of usage lines (GW-2, GW-6, BUD-2, BUD-3, BUD-9).
+- MUST: a call without a provider answer charges its whole reserve (BUD-11).
+- MUST: P4 is not a transparent proxy: only the paths and methods listed in the provider binding are open (others get `not_found` before the provider is contacted); the provider address comes only from the closed list of the binding (another is allowed only on the test bench); only P4 sets headers towards the provider, runtime headers do not reach the provider; the request body is I-JSON, a repeated key gives a refusal (GW-1, GW-3).
+- MUST: a stream break on the runtime side does not break reading the provider's answer: P4 reads the stream to the end and charges usage by the tokens actually sent, and if their number is unknown, by the reserve with `spend_estimated` (GW-2, BUD-11). The usage of one call is stored in micro-euros without rounding; reconciliation with the provider uses the daily total per workspace with a tolerance from the settings (BUD-9, BUD-10).
+- MUST: each tenant has its own workspace and key at the provider, with its own spend and rate ceilings; the core checks every day that the ceilings are set (GW-3, GW-9, D-42). A canary of tenant A does not appear in any request of tenant B (TEN-5).
+- MUST: a model handle is valid only while the lease it is bound to is alive: the attempt's lease or, under `per_profile`, the worker's (GW-3, RT-3).
+- MUST: P4 holds the only retry layer: a circuit breaker per pair (workspace, model pool), no more than one provider client retry, and only if the request was not sent (the call has no provider `request_id`), a pause ceiling and jitter; the answer waiting deadline is computed from the profile's `max_output_tokens` and `tokens_per_s`, not fixed; the runtime does not retry a P4 error (GW-11, GW-12). Rate limiting by the provider gives `provider_rate_limited`, farm limiters give `service_rate_limited`; these are different codes. Provider unavailability gives `provider_unavailable`: the attempt is not spent, the task waits until the type's `deadline`; an exhausted spend ceiling at the provider gives `provider_spend_cap`, `failed` and an alarm (CAP-2). A provider configuration error (`provider_config`) does not spend the attempt. Only runs in which the model answered count toward the task run ceiling (`max_runs`) (GW-13, FEN-3).
+- MUST: while the C1 store is unavailable, P4 does not start new calls (OBS-8).
+- MUST: the provider of the call is in the tenant's `privacy.subprocessors` (SEC-8); only P4 sets the call region, from `privacy.subprocessors[].region` of this provider, the runtime does not set it (GW-14); the retention period at the provider from the model profile is not above what `privacy.subprocessors[].retention` allows (`{mode: standard, max_days: N}` or `{mode: zero}`), otherwise the call gets `provider_config` (GW-15). The model profile declares `provider_training: false` (training on the data is forbidden by the terms), `provider_human_review` (`none`, `abuse_only`, `yes`) and the provider's own `subprocessors[]`; a production tenant allows only profiles with `provider_training: false` and `provider_human_review` not above what its privacy block allows, otherwise `provider_config`. All P4 calls go through the same check, including embeddings for corpora and eval runs.
+- MUST: the service tenant `farm` has no model calls for control; seat tasks run in tenants with their keys (MGR-3, MGR-24).
+- MUST: the prompt cache is part of the provider binding: P4 itself sets the cache point after the unchanging part of the request, and the cache is isolated by the tenant's workspace (GW-16).
+
+Order on every call: (1) the handle is alive and the epoch is current; (2) the request is checked against the allowlist and the P3 catalog (GW-1); (3) the model profile by slot, rank, region and retention period (GW-7, GOV-3, GW-14, GW-15); (4) the pair circuit breaker and the pool limiter (GW-11, GW-10); (5) the worst-case reserve (GW-2, GW-6); (6) region and cache point, sending with the tenant's key and in the tenant's workspace (GW-3, GW-16); (7) charging by the answer and the usage line (BUD-3); (8) without an answer the whole reserve is charged (BUD-11).
+
+## Bindings
+
+- `spec/bindings/model-providers/<provider>.md`: field allowlist, counting of iterations, error codes and reasons, cache, region.
+- `spec/model/model-run.schema.json` (the P4 "model answered" mark in the run record, GW-13), `spec/model/model-families.yaml`, the `ModelProfile` manifest (`max_output_tokens`, `tokens_per_s`, `provider_training`, `provider_human_review`, `subprocessors[]`), `spec/model/role-profiles.yaml` (`max_rank`, `analysis_max_rank`), budget lines.
+- Checks: the `conformance/suites/model-gateway` suite with a mock provider, tenant canaries.
+
+## What the port does not do
+
+- It does not give the model tools: tools come only from P3, P4 only compares them with the catalog.
+- It does not store prompts and answers in telemetry, audit and events: only usage numbers and metadata (AUD-2, OBS-1).
+- It does not switch to another provider by itself; another provider is another binding and another model profile.
+- It does not decide who gets a strong model: manifests and grant records set the slot and the grant.

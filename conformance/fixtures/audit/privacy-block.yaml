@@ -1,0 +1,122 @@
+# Tenant privacy block (SEC-8, apply lint) and the ceiling of a channel with third-party storage (SEC-9).
+id: fx-audit-privacy-block
+rules: [SEC-8, SEC-9]
+description: Permissions and audit that depend on the privacy block of the Tenant manifest. Processing purposes from spec/model/processing-purposes.yaml.
+cases:
+- id: sec-8-01
+  rules: [SEC-8]
+  steps:
+  - lint:
+      tenant_yaml:
+        kind: production
+        privacy: {controller: null}
+  expect: {result: rejected, stage: apply, note: empty block field for a production tenant}
+- id: sec-8-02
+  rules: [SEC-8]
+  steps:
+  - lint:
+      tenant_yaml:
+        kind: production
+        privacy: {dpia_ref: none}
+  expect: {result: ok, note: an explicit none is allowed for dpia_ref}
+- id: sec-8-03
+  rules: [SEC-8]
+  steps:
+  - lint:
+      tenant_yaml:
+        privacy:
+          recipients: [sink-archive]
+  expect: {result: rejected, stage: apply, note: monitoring is not in recipients}
+- id: sec-8-04
+  rules: [SEC-8]
+  steps:
+  - lint:
+      tenant_yaml:
+        providers_allowed: [provider-a]
+        privacy:
+          subprocessors:
+          - {provider: provider-b}
+  expect:
+    result: rejected
+    stage: apply
+    note: a provider from providers_allowed is not listed in subprocessors
+- id: sec-8-05
+  rules: [SEC-8]
+  steps:
+  - lint:
+      tenant_yaml:
+        privacy:
+          purposes:
+          - {purpose: marketing}
+  expect: {result: rejected, stage: apply, note: the purpose is not in processing-purposes.yaml}
+- id: sec-8-06
+  rules: [SEC-8]
+  steps:
+  - lint:
+      tenant_yaml:
+        privacy:
+          purposes:
+          - {purpose: assistance, lawful_basis: consent}
+  expect: {result: rejected, stage: apply, note: consent without a consent record and a withdrawal operation}
+- id: sec-8-07
+  rules: [SEC-8]
+  given:
+    tenant_yaml:
+      privacy:
+        purposes:
+        - {purpose: operations}
+  steps:
+  - call:
+      port: P1
+      op: enqueue
+      request:
+        body: {goal: training task}
+        idempotency_key: sec-8-07-1
+    context: {purpose: inspect}
+  expect:
+    decision: {result: denied}
+    why: the incident_review purpose is disabled
+- id: sec-8-08
+  rules: [SEC-8]
+  given: {change: privacy_block}
+  expect: {event: true, notice: admins}
+- id: sec-9-01
+  rules: [SEC-9]
+  given:
+    channel: {driver: telegram, third_party_storage: true}
+    delivery: {data_mark: raw_logs, to: dm}
+  expect:
+    delivery: {state: withheld, reason: channel_ceiling}
+    human_gets: code_text
+- id: sec-9-02
+  rules: [SEC-9]
+  given:
+    channel: {driver: telegram, third_party_storage: true, ceiling: raw_logs, in_git: true}
+    delivery: {data_mark: raw_logs, to: dm}
+  expect: {delivery: sent}
+- id: sec-9-03
+  rules: [SEC-9]
+  given:
+    channel: {driver: telegram, ceiling: raw_logs}
+    chat_bind: {name: lab, ceiling: summary}
+    delivery: {data_mark: internal, to: lab}
+  expect:
+    delivery: {state: withheld, reason: channel_ceiling}
+    why: the lower ceiling applies
+- id: sec-9-04
+  rules: [SEC-9]
+  given:
+    channel: {driver: email, not_in_channels: true}
+    delivery: {data_mark: raw_logs}
+  expect:
+    delivery: {state: withheld, reason: channel_ceiling}
+    why: a channel outside channels is third-party with ceiling internal
+- id: sec-9-05
+  rules: [SEC-9]
+  steps:
+  - lint:
+      tenant_yaml:
+        privacy:
+          channels:
+          - {driver: monitoring, ceiling: internal}
+  expect: {result: rejected, stage: apply, note: the monitoring system ceiling summary cannot be raised}

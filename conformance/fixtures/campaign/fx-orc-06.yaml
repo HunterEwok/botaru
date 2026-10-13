@@ -1,0 +1,44 @@
+id: fx-orc-06
+rules: [ORC-14, APR-2]
+description: 'If the proposing task has untrusted_seen: true or its initiator is system, the core accepts a campaign with
+  an action only up to max_items_untrusted items (3 by default), and a read-only campaign without a card up to 10
+  items; both only with an explicit list of resources, without a selector. Otherwise rejected(campaign_untrusted_limit).'
+given:
+  tenant: demo
+  tenant_campaigns:
+    max_items_untrusted: 3
+    confirm_read_over: {items: 50, eur: 2}
+expect: {model_sees_on_reject: a short "no permission"}
+cases:
+- given:
+    proposer: {untrusted_seen: true}
+    template: {kind: action, action: cleanup_pipeline_tmp}
+    items: 3
+  expect: {outcome: accepted}
+- given:
+    proposer: {untrusted_seen: true}
+    template: {kind: action, action: cleanup_pipeline_tmp}
+    items: 4
+  expect: {result: rejected, reason: campaign_untrusted_limit}
+- given:
+    proposer: {initiator: system}
+    template: {kind: action, action: cleanup_pipeline_tmp}
+    items:
+      selector:
+        labels: {zone: a}
+  expect: {result: rejected, reason: campaign_untrusted_limit}
+- given:
+    proposer: {untrusted_seen: true}
+    template: {kind: task, type: ops.summary.v1}
+    items: 10
+  expect: {outcome: accepted, card: none}
+- given:
+    proposer: {untrusted_seen: true}
+    template: {kind: task, type: ops.summary.v1}
+    items: 11
+  expect: {outcome: accepted, card: campaign}
+- given:
+    proposer: {untrusted_seen: false, initiator: 'human:alice'}
+    template: {kind: action, action: cleanup_pipeline_tmp}
+    items: 4
+  expect: {outcome: accepted}

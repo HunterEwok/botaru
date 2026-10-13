@@ -1,0 +1,56 @@
+id: scr-fx-refs
+rules: [SCR-2]
+description: 'A script step refers only to applied manifests of its own tenant: a task type, an action with
+  script.allowed: true, a selector or a catalog resource. A type in a step has purpose work or report; action.* types
+  and types with purpose translate and other service purposes do not go into a step. Refusal script_ref_unknown with the step
+  number.'
+given:
+  tenant: demo
+  applied:
+    types: [ops.summary.v1, report.work.v1]
+    actions:
+      cleanup_tmp:
+        script: {allowed: true}
+      cleanup_pipeline_tmp:
+        script: {allowed: false}
+    resources: [web1, db1, ctd1]
+  other_tenant:
+    demo2:
+      types: [ops.secret.v1]
+cases:
+- given:
+    step:
+      id: a
+      kind: task
+      type: ops.summary.v1
+      goal: {assignment: true}
+  expect: {result: ok}
+- given:
+    step:
+      id: a
+      kind: task
+      type: ops.secret.v1
+      goal: {assignment: true}
+  expect: {result: rejected, reason: script_ref_unknown, note: a type of tenant demo2}
+- given:
+    step:
+      id: a
+      kind: action
+      action: cleanup_pipeline_tmp
+      args: {resource: web1}
+  expect: {result: rejected, reason: script_ref_unknown, note: script.allowed false}
+- given:
+    step:
+      id: a
+      kind: task
+      type: action.cleanup_tmp
+      goal: {assignment: true}
+  expect: {result: rejected, reason: script_ref_unknown}
+- given:
+    step:
+      id: a
+      kind: task
+      type: ops.summary.v1
+      goal: {assignment: true}
+      params: {resource: 203.0.113.5}
+  expect: {result: rejected, reason: script_ref_unknown, note: the resource is not in the catalog}

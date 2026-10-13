@@ -1,0 +1,4 @@
+schema: spec/model/p2-obs-series-request.schema.json
+rules: [OBV-3, OBV-4]
+description: A P2 obs.series request by a person that the schema accepts; the tenant comes from the credentials.
+data: {series: farm.schedule.slot, subject: 'schedule:report-nightly', window: 14d, rollup: window.share}

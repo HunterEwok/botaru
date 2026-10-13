@@ -1,0 +1,11 @@
+schema: spec/model/p1-msg-receive-request.schema.json
+rules:
+- MSG-7
+- TEN-2
+description: 'Requests that the schema rejects: without max; wait longer than the binding; another worker''s inbox.'
+cases:
+- wait_s: 30
+- max: 10
+  wait_s: 3600
+- max: 10
+  worker: w_01JB000000000000000000000A

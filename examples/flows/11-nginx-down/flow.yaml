@@ -1,0 +1,35 @@
+# Flow 11 from examples/flows.md: nginx is down on web1.
+id: flow-11-nginx-down
+rules: [APR-18, MON-8, MON-10, INJ-15, INJ-16, TEN-3a, DEP-4]
+description: >-
+  bob from ops-oncall reports that the site does not open. Check www-health returns 502, there is no
+  untrusted flag, and nginx is listed in no_card: [restart], so the restart goes by service_grant without
+  a card. Under the same conditions stop would go out as a card.
+given:
+  tenant: demo
+  people: [{principal: bob, kind: user, groups: [user, staff, approver, ops-oncall]}]
+  manifests: [examples/tenants/demo/, examples/roles/ops-reader/role.yaml, examples/tasktypes/ops.investigate.v1.yaml,
+              examples/tools/checks/tool.yaml, examples/tools/service/tool.yaml]
+steps:
+  - {port: P1, op: submit_activity, by: channel:telegram, activity: {kind: message, channel: telegram, update_id: "9", sender: {identity: "telegram:1002", verified: true}, chat: {kind: direct, external_id: "1002"}, text: "/logs the site www.example.org does not open, look into it"},
+     expect: {task: {type: ops.investigate.v1, record: {initiator: bob, max_tier: 1, data_mark: raw_logs, untrusted_seen: false}}}}
+  - {port: P1, op: claim, by: role:ops-reader, request: {kinds: [attempt]}}
+  - {port: P3, op: tools/call, tool: checks/latest, args: {check: www-health}, expect: {untrusted_seen: false}}
+  - {port: P3, op: tools/call, tool: service/control, args: {service: nginx, verb: restart},
+     expect: {service_grant: {id: "733", role: ops-reader, initiator: bob, service: nginx, verb: restart}, card: false,
+              payload: {grant_id: "733"}, target: {machine: web1}}}
+  - {port: P1, op: claim, by: toolhost:th-demo-act@web1, request: {kinds: [toolcall]}}
+  - {port: P1, op: complete, by: toolhost:th-demo-act@web1, request_output: {result: done, state: active},
+     expect: {deliveries: [{kind: monitor_note, template: service_control_done}]}}
+  - {port: P1, op: complete, by: role:ops-reader, result: {answer: "I restarted nginx on web1 (#733).", verdict: cause_found, services: [nginx]},
+     expect: {deliveries: [{kind: task_result, to: origin}]}}
+expect:
+  events: [task.submitted, task.working, task.completed]
+  variants:
+    - {verb: stop, expect: {card: true}}
+    - {initiator: carol, expect: {denied: forbidden, needs: ["service.control:nginx"]}}
+    - {after: logs/tail, expect: {card: true, untrusted_before: true}}
+  not:
+    - "restarting a service outside the catalog or the role's permission"
+    - "a free-form unit or script name from the model (MON-8, MON-10)"
+    - "a seventh action on nginx within an hour: service_rate_limited"

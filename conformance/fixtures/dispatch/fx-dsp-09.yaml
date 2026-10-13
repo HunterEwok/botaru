@@ -1,0 +1,50 @@
+id: fx-dsp-09
+rules: [DSP-1, DSP-4]
+description: 'Work goes only through P1 `claim`. There are no other paths: a bot message that asks to pass a task
+  to worker B assigns nothing; a worker that did not `claim` cannot submit the result of another task (its call
+  without a lease gets `fenced`); the task stays in the C1 queue and is given only to whoever took it through `claim`
+  by the dispatcher''s filter and order.'
+given:
+  tenant: demo
+  roles:
+  - name: ops-reader
+    claims: [ops.investigate.v1]
+    messages:
+      send: [status.note.v1]
+  workers:
+  - {id: wk_01JB000000000000000000000A, role: ops-reader, state: active, ready: true}
+  - {id: wk_01JB000000000000000000000B, role: ops-reader, state: active, ready: true}
+  tasks:
+  - id: t_01JB0000000000000000000002
+    type: ops.investigate.v1
+    priority_class: 3
+    state: submitted
+    enqueued_at: '2026-10-05T10:00:00Z'
+steps:
+- check:
+    message:
+      from: wk_01JB000000000000000000000A
+      to: role:ops-reader
+      note: passing t_01JB0000000000000000000002 to worker B, take it
+  expect: {task_state: submitted, lease_created: false}
+- call:
+    port: P1
+    op: complete
+    request:
+      result: {answer: done}
+  lease:
+    epoch: 7
+    work_id: w_01JB0000000000000000000002
+    lease_no: 1
+    worker_id: wk_01JB000000000000000000000B
+  by: worker:wk_01JB000000000000000000000B
+  expect: {reason: fenced, records_changed: 0}
+- call:
+    port: P1
+    op: claim
+    request:
+      kinds: [attempt]
+  by: worker:wk_01JB000000000000000000000A
+  expect: {task: t_01JB0000000000000000000002, lease_no: 1}
+expect:
+  work_paths: [P1.claim]

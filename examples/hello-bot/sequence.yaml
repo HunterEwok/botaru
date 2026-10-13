@@ -1,0 +1,153 @@
+# Expected hello-bot sequence as a behavior fixture envelope (conformance/runner.md,
+# schema conformance/fixtures/fixture.schema.json). The runner plays the channel and the worker of role hello:
+# P1 hello, the channel's submit_activity, the ai_notice and privacy_notice deliveries, claim, heartbeat
+# and complete of the attempt, then the task_result delivery to alice's private chat by the task origin.
+# The request body of a call step is the body from the operation's request schema in spec/ports/operations.yaml.
+# The runner sends the lease token in the Botaru-Lease header (modifier lease); it is not in the body.
+# Ids and times are illustrative; the lease timeouts here are core defaults, the task type does not set them.
+id: hello-bot.sequence
+rules: [DLV-1, DLV-2, DLV-6, DLV-11, DLV-12, DLV-13, SEC-13, FEN-1, FEN-2, IDN-1, IDN-6, DSP-1]
+description: >-
+  alice writes "/hello hi" to @demo_bot in a private chat; the text after the command becomes the goal. The channel
+  passes the Activity, the core code picks task type hello.greet.v1 from the commands of tenant demo and writes
+  the task. The worker of role hello claims the attempt, sends a heartbeat and submits the result. In the same
+  transaction the core writes the event task.completed and the delivery of the answer to alice's private chat by the task origin.
+  alice writes to the farm for the first time and channel demo declares ai_disclosure: first_contact, so on
+  accepting the Activity the core plans deliveries of the code texts ai_notice and privacy_notice, the channel sends
+  them first, and the model answer waits until ai_notice is delivered.
+  The runner links identity telegram:1001 to alice when seeding, with the P2 call principal.set_identity.
+  On the test bench the runner applies the manifest examples/tenants/demo/tenant.yaml (kind: production) with kind: test
+  (conformance/runner.md, "Initial state").
+given:
+  tenant: demo
+  people:
+    - {principal: "human:alice", groups: [user, hello]}
+  workers:
+    - {id: wk_01JB0000000000000000000H01, role: hello, kind: agent}
+    - {id: wk_01JB0000000000000000000C01, kind: channel, name: telegram}
+  manifests: [examples/hello-bot/role.yaml, examples/hello-bot/tasktype.yaml, examples/hello-bot/group.yaml,
+              examples/tenants/demo/tenant.yaml, examples/tenants/demo/channels.yaml]
+steps:
+  - by: "worker:wk_01JB0000000000000000000H01"
+    call:
+      port: P1
+      op: hello
+      request: {kind: agent, implementation: "hello-bot 0.1.0", capacity: 1, protocol_versions: [v1]}
+    expect: {result: ok}
+  - by: "channel:telegram"
+    call:
+      port: P1
+      op: submit_activity
+      request:
+        kind: message
+        channel: telegram
+        update_id: "1"
+        sender: {identity: "telegram:1001", verified: true}
+        chat: {kind: direct, external_id: "1001"}
+        text: "/hello hi"
+    expect:
+      result: ok
+      task: {id: t_01JB0000000000000000000H01, type: hello.greet.v1, state: submitted,
+             record: {tenant: demo, initiator: "human:alice", origin: {channel: telegram, chat: {kind: direct, external_id: "1001"}},
+                      max_tier: 0, data_mark: summary, untrusted_seen: false}}
+      deliveries:                  # alice's first contact with the channel: code texts before the model answer (DLV-12, SEC-13)
+        - {kind: ai_notice, to: origin, target: {kind: chat, id: "direct:1001"}, state: planned, dataorigin: code}
+        - {kind: privacy_notice, to: origin, target: {kind: chat, id: "direct:1001"}, state: planned, dataorigin: code}
+  - by: "worker:wk_01JB0000000000000000000C01"
+    call:
+      port: P1
+      op: claim
+      request: {kinds: [delivery], wait_s: 30}
+    expect: {result: ok, delivery_kind: ai_notice, delivery_state: sending}
+  - by: "worker:wk_01JB0000000000000000000C01"
+    lease: current
+    call:
+      port: P1
+      op: complete
+      request: {receipt: {external_id: "4709"}}
+    expect: {result: ok, delivery_state: delivered, ai_disclosure_ack: true}
+  - by: "worker:wk_01JB0000000000000000000C01"
+    call:
+      port: P1
+      op: claim
+      request: {kinds: [delivery], wait_s: 30}
+    expect: {result: ok, delivery_kind: privacy_notice, delivery_state: sending}
+  - by: "worker:wk_01JB0000000000000000000C01"
+    lease: current
+    call:
+      port: P1
+      op: complete
+      request: {receipt: {external_id: "4710"}}
+    expect: {result: ok, delivery_state: delivered}
+  - by: "worker:wk_01JB0000000000000000000H01"
+    call:
+      port: P1
+      op: claim
+      request: {kinds: [attempt], wait_s: 30}
+    expect:
+      result: ok
+      task_state: working
+      work: {kind: attempt, lease_no: 1, epoch: 1, tenant: demo,
+             payload: {task: {id: t_01JB0000000000000000000H01, type: hello.greet.v1,
+                              body: {type: hello.greet.v1, goal: "hi"}},
+                       instruction: "Greet the person in one sentence and say that you are a farm bot."}}
+  - by: "worker:wk_01JB0000000000000000000H01"
+    lease: current
+    call:
+      port: P1
+      op: heartbeat
+      request: {progress: 0.5}
+    expect: {result: ok, cancel_requested: false}
+  - model: {script: examples/hello-bot/mock-model.yaml}
+    note: the mock model behind P4 answers with the recorded result (spec/bindings/model-providers/mock.md)
+  - by: "worker:wk_01JB0000000000000000000H01"
+    call:
+      port: P4
+      op: model.call
+      request:
+        model: base
+        max_tokens: 1000
+        system: "Greet the person in one sentence and say that you are a farm bot."
+        messages: [{role: user, content: "hi"}]
+    expect: {result: ok, note: "the call reserve on profile base-std is below the task type's tree_budget_eur (GW-2, BUD-2)"}
+  - by: "worker:wk_01JB0000000000000000000H01"
+    lease: current
+    call:
+      port: P1
+      op: complete
+      request:
+        result: {answer: "Hello, alice! I am the farm bot @demo_bot."}
+    expect:
+      result: ok
+      task_state: completed
+      deliveries:
+        - {kind: task_result, to: origin, target: {kind: chat, id: "direct:1001"}, state: planned,
+           data_mark: summary, dataorigin: model}
+  - by: "worker:wk_01JB0000000000000000000C01"
+    call:
+      port: P1
+      op: claim
+      request: {kinds: [delivery], wait_s: 30}
+    expect: {result: ok, delivery_kind: task_result, delivery_state: sending}
+  - by: "worker:wk_01JB0000000000000000000C01"
+    lease: current
+    call:
+      port: P1
+      op: complete
+      request: {receipt: {external_id: "4711"}}
+    expect: {result: ok, delivery_state: delivered}
+expect:
+  events:                          # every transition writes an event task.<state> without content
+    - {type: task.submitted, task: t_01JB0000000000000000000H01}
+    - {type: task.working, task: t_01JB0000000000000000000H01}
+    - {type: task.completed, task: t_01JB0000000000000000000H01}
+  audit:                           # metadata only (AUD-2); the person is recorded by an opaque id
+    - {action: task.enqueue, principal: "human:alice", tenant: demo, type: hello.greet.v1, decision: allow}
+    - {action: task.claim, worker: wk_01JB0000000000000000000H01, tenant: demo, task: t_01JB0000000000000000000H01}
+    - {action: task.complete, worker: wk_01JB0000000000000000000H01, tenant: demo, task: t_01JB0000000000000000000H01}
+    - {action: delivery.complete, worker: wk_01JB0000000000000000000C01, tenant: demo, kind: task_result}
+  not:
+    - "no messages between bots (msg.send): the messaging profile is not needed (D-71)"
+    - "no delivery target in the task body or in the result: the core takes it from origin (DLV-6)"
+    - "the model text goes to the channel only as a whole, after complete (DLV-11)"
+    - "task_result is not sent before ai_notice is delivered (DLV-13)"

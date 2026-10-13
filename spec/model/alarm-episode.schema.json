@@ -1,0 +1,69 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:botaru:schema:alarm-episode:1",
+  "title": "Alarm episode",
+  "description": "Core record of one alarm episode with the key alarmkey (spec/lifecycles/alarm.md). seq is 1 on opening and 2 on closing; a repeated firing increments repeat_count and updates last_seen_at without an event or export (OBS-6).",
+  "x-botaru-direction": "record",
+  "x-botaru-retention": "metadata",
+  "x-botaru-rules": [
+    "OBS-6",
+    "MON-11"
+  ],
+  "type": "object",
+  "required": [
+    "tenant",
+    "alarmkey",
+    "alarm",
+    "state",
+    "severity",
+    "seq",
+    "repeat_count"
+  ],
+  "properties": {
+    "tenant": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/tenant_name",
+      "description": "Tenant of the episode; farm for alarms about the farm itself."
+    },
+    "alarmkey": {
+      "$ref": "urn:botaru:schema:alarm:1#/properties/alarmkey"
+    },
+    "alarm": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/type_name",
+      "description": "Alarm event type alarm.<name>.vN."
+    },
+    "state": {
+      "description": "Episode state.",
+      "enum": [
+        "firing",
+        "resolved"
+      ]
+    },
+    "severity": {
+      "description": "Severity.",
+      "$ref": "urn:botaru:schema:common:1#/$defs/alarm_severity"
+    },
+    "seq": {
+      "description": "Episode change number.",
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 2
+    },
+    "repeat_count": {
+      "description": "Number of repeated firings.",
+      "type": "integer",
+      "minimum": 0
+    },
+    "opened_at": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/datetime",
+      "description": "Episode opening."
+    },
+    "last_seen_at": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/datetime",
+      "description": "Last repeated firing."
+    },
+    "resolved_at": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/datetime",
+      "description": "Episode closing."
+    }
+  }
+}

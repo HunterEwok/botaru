@@ -1,0 +1,26 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:botaru:schema:p2-task-show-response:1",
+  "title": "P2 task.show: response",
+  "description": "The task record without the address signature, and the artifacts (PRM-9).",
+  "x-botaru-direction": "output",
+  "x-botaru-rules": [
+    "PRM-9"
+  ],
+  "type": "object",
+  "required": [
+    "task"
+  ],
+  "properties": {
+    "task": {
+      "$ref": "urn:botaru:schema:task-record:1"
+    },
+    "artifacts": {
+      "type": "array",
+      "items": {
+        "$ref": "urn:botaru:schema:common:1#/$defs/file_ref"
+      },
+      "maxItems": 100
+    }
+  }
+}

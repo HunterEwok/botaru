@@ -1,0 +1,297 @@
+# Collected from spec/lifecycles/attribution.yaml. The value null in from means "the object does not exist yet".
+lifecycle: spec/lifecycles/attribution.yaml
+object: attribution
+rules: [GOV-9, GOV-13, GOV-30, MGR-8]
+description: Allowed and forbidden transitions of the "incident attribution candidate" lifecycle, collected from the tables
+  of spec/lifecycles/attribution.md. The implementation accepts a transition from the allowed list under the condition of
+  its row (when); a pair from the forbidden list does not change the state, and the call that asks for it is rejected. In
+  v0.1 bots have no operations on attributions (GOV-13); the whole lifecycle arrives in v0.2. The answers "No" and "Don't
+  know" can be changed while the attribution window is open.
+version: v0.2
+states:
+- id: candidate
+  terminal: false
+- id: unknown
+  terminal: true
+- id: confirmed
+  terminal: true
+- id: rejected
+  terminal: true
+- id: disputed
+  terminal: false
+- id: canceled
+  terminal: true
+allowed:
+- id: sm-att-01
+  from: null
+  to: candidate
+  by: the `governance` loop by `attribution-rules.yaml`
+  when: 'an incident of a class with `change_sensitive` touches the changed object directly (`direct`) or through a first-level
+    dependency in the catalog (`dependency_1`) and is opened within the attribution window: 14 days from `realized`, longer
+    until the promotion trigger appears, and for a change that gave the trigger of a queue entry, until the case of that
+    entry is `effective`'
+  rules: [GOV-13]
+- id: sm-att-02
+  from: null
+  to: candidate
+  by: P2 `attribution.create`
+  when: a person with `governance.attribute` in the change's tenant; the attribution window is open
+  rules: [GOV-13]
+- id: sm-att-03
+  from: candidate
+  to: confirmed
+  by: the "Yes" button on the card or the reminder
+  when: '`governance.attribute`; "Details" was opened (APR-14); the attribution window is open'
+  rules: [GOV-9, GOV-13]
+- id: sm-att-04
+  from: unknown
+  to: confirmed
+  by: the "Yes" button on the card or the reminder
+  when: '`governance.attribute`; "Details" was opened (APR-14); the attribution window is open'
+  rules: [GOV-9, GOV-13]
+- id: sm-att-05
+  from: rejected
+  to: confirmed
+  by: the "Yes" button on the card or the reminder
+  when: '`governance.attribute`; "Details" was opened (APR-14); the attribution window is open'
+  rules: [GOV-9, GOV-13]
+- id: sm-att-06
+  from: candidate
+  to: rejected
+  by: the "No" button
+  when: '`governance.attribute`; "Details" was opened (APR-14)'
+  rules: [GOV-13]
+- id: sm-att-07
+  from: unknown
+  to: rejected
+  by: the "No" button
+  when: '`governance.attribute`; "Details" was opened (APR-14)'
+  rules: [GOV-13]
+- id: sm-att-08
+  from: candidate
+  to: unknown
+  by: the "Don't know" button or the `approval-expiry` loop (the outcome on silence from the decision registry row, APR-12)
+  when: the answer "Don't know", or the card's deadline (7 days) passed without an answer
+  rules: [GOV-30]
+- id: sm-att-09
+  from: rejected
+  to: unknown
+  by: the "Don't know" button
+  when: '`governance.attribute`; the attribution window is open'
+  rules: [GOV-13]
+- id: sm-att-10
+  from: candidate
+  to: canceled
+  by: the core in the transaction of the incident's transition to `dismissed` (P2 `incident.dismiss {reason_code, details}`
+    or a channel command of a person with `incident.manage`)
+  when: the incident of this attribution is judged false; the pending card is closed; the attribution window does not matter
+    here
+  rules: [GOV-13, MGR-8]
+- id: sm-att-11
+  from: unknown
+  to: canceled
+  by: the core in the transaction of the incident's transition to `dismissed` (P2 `incident.dismiss {reason_code, details}`
+    or a channel command of a person with `incident.manage`)
+  when: the incident of this attribution is judged false; the pending card is closed; the attribution window does not matter
+    here
+  rules: [GOV-13, MGR-8]
+- id: sm-att-12
+  from: rejected
+  to: canceled
+  by: the core in the transaction of the incident's transition to `dismissed` (P2 `incident.dismiss {reason_code, details}`
+    or a channel command of a person with `incident.manage`)
+  when: the incident of this attribution is judged false; the pending card is closed; the attribution window does not matter
+    here
+  rules: [GOV-13, MGR-8]
+- id: sm-att-13
+  from: confirmed
+  to: disputed
+  by: the core in the same `dismissed` transaction
+  when: the attribution has a "Yes" answer; the author of the answer gets an `attribution_dispute` card in a direct chat
+    with the reason code and the "Details" of the person who dismissed the incident
+  rules: [GOV-13]
+- id: sm-att-14
+  from: disputed
+  to: confirmed
+  by: the "Yes" button on the `attribution_dispute` card
+  when: only the author of the "Yes" answer; the card's deadline is 7 days
+  rules: [GOV-13]
+- id: sm-att-15
+  from: disputed
+  to: canceled
+  by: the "Withdraw" button on the `attribution_dispute` card; the `approval-expiry` loop at the card's deadline; `disabled`
+    of the answer's author
+  when: the author withdrew the answer, stayed silent for 7 days or is disabled; reason `incident_dismissed`
+  rules: [GOV-13]
+forbidden:
+- id: sm-att-x01
+  from: null
+  to: unknown
+  expect: rejected
+  rules: [GOV-13]
+  why: the object does not appear directly in the state unknown
+- id: sm-att-x02
+  from: null
+  to: confirmed
+  expect: rejected
+  rules: [GOV-13]
+  why: the object does not appear directly in the state confirmed
+- id: sm-att-x03
+  from: null
+  to: rejected
+  expect: rejected
+  rules: [GOV-13]
+  why: the object does not appear directly in the state rejected
+- id: sm-att-x04
+  from: null
+  to: disputed
+  expect: rejected
+  rules: [GOV-13]
+  why: the object does not appear directly in the state disputed
+- id: sm-att-x05
+  from: null
+  to: canceled
+  expect: rejected
+  rules: [GOV-13]
+  why: the object does not appear directly in the state canceled
+- id: sm-att-x06
+  from: candidate
+  to: candidate
+  expect: rejected
+  rules: [GOV-9, GOV-13, GOV-30, MGR-8]
+  why: the lifecycle table has no such transition
+- id: sm-att-x07
+  from: candidate
+  to: disputed
+  expect: rejected
+  rules: [GOV-9, GOV-13, GOV-30, MGR-8]
+  why: the lifecycle table has no such transition
+- id: sm-att-x08
+  from: unknown
+  to: candidate
+  expect: rejected
+  rules: [GOV-13, GOV-30]
+  why: unknown is a terminal state
+- id: sm-att-x09
+  from: unknown
+  to: unknown
+  expect: rejected
+  rules: [GOV-13, GOV-30]
+  why: unknown is a terminal state
+- id: sm-att-x10
+  from: unknown
+  to: disputed
+  expect: rejected
+  rules: [GOV-13, GOV-30]
+  why: unknown is a terminal state
+- id: sm-att-x11
+  from: confirmed
+  to: candidate
+  expect: rejected
+  rules: [GOV-9, GOV-13]
+  why: confirmed is a terminal state
+- id: sm-att-x12
+  from: confirmed
+  to: unknown
+  expect: rejected
+  rules: [GOV-9, GOV-13]
+  why: confirmed is a terminal state
+- id: sm-att-x13
+  from: confirmed
+  to: confirmed
+  expect: rejected
+  rules: [GOV-9, GOV-13]
+  why: confirmed is a terminal state
+- id: sm-att-x14
+  from: confirmed
+  to: rejected
+  expect: rejected
+  rules: [GOV-9, GOV-13]
+  why: confirmed is a terminal state
+- id: sm-att-x15
+  from: confirmed
+  to: canceled
+  expect: rejected
+  rules: [GOV-9, GOV-13]
+  why: confirmed is a terminal state
+- id: sm-att-x16
+  from: rejected
+  to: candidate
+  expect: rejected
+  rules: [GOV-13]
+  why: rejected is a terminal state
+- id: sm-att-x17
+  from: rejected
+  to: rejected
+  expect: rejected
+  rules: [GOV-13]
+  why: rejected is a terminal state
+- id: sm-att-x18
+  from: rejected
+  to: disputed
+  expect: rejected
+  rules: [GOV-13]
+  why: rejected is a terminal state
+- id: sm-att-x19
+  from: disputed
+  to: candidate
+  expect: rejected
+  rules: [GOV-13]
+  why: the lifecycle table has no such transition
+- id: sm-att-x20
+  from: disputed
+  to: unknown
+  expect: rejected
+  rules: [GOV-13]
+  why: the lifecycle table has no such transition
+- id: sm-att-x21
+  from: disputed
+  to: rejected
+  expect: rejected
+  rules: [GOV-13]
+  why: the lifecycle table has no such transition
+- id: sm-att-x22
+  from: disputed
+  to: disputed
+  expect: rejected
+  rules: [GOV-13]
+  why: the lifecycle table has no such transition
+- id: sm-att-x23
+  from: canceled
+  to: candidate
+  expect: rejected
+  rules: [GOV-13, MGR-8]
+  why: canceled is a terminal state
+- id: sm-att-x24
+  from: canceled
+  to: unknown
+  expect: rejected
+  rules: [GOV-13, MGR-8]
+  why: canceled is a terminal state
+- id: sm-att-x25
+  from: canceled
+  to: confirmed
+  expect: rejected
+  rules: [GOV-13, MGR-8]
+  why: canceled is a terminal state
+- id: sm-att-x26
+  from: canceled
+  to: rejected
+  expect: rejected
+  rules: [GOV-13, MGR-8]
+  why: canceled is a terminal state
+- id: sm-att-x27
+  from: canceled
+  to: disputed
+  expect: rejected
+  rules: [GOV-13, MGR-8]
+  why: canceled is a terminal state
+- id: sm-att-x28
+  from: canceled
+  to: canceled
+  expect: rejected
+  rules: [GOV-13, MGR-8]
+  why: canceled is a terminal state
+expect:
+  allowed: 15
+  forbidden: 28

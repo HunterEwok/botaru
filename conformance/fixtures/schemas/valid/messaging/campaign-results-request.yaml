@@ -1,0 +1,8 @@
+schema: spec/model/campaign-results-request.schema.json
+rules:
+- ORC-9
+description: campaign_results arguments.
+cases:
+- campaign: k_01JB0000000000000000000201
+- campaign: k_01JB0000000000000000000201
+  page: 2

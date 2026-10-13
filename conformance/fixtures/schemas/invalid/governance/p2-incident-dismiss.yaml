@@ -1,0 +1,9 @@
+schema: spec/model/p2-incident-dismiss-request.schema.json
+rules: [MGR-8]
+description: 'Dismissals that the schema rejects (input_schema_invalid): empty details, code outside the closed list, details longer
+  than 500 characters. The schema lets a body without reason_code or details through, and the code rejects it with dismiss_reason_required:
+  that is the behavior fixture conformance/fixtures/manager/fx-mgr-dismiss-reason.yaml.'
+cases:
+  - {incident: inc_01JB8M00000000000000000318, reason_code: false_alarm, details: ""}
+  - {incident: inc_01JB8M00000000000000000318, reason_code: bot_said_so, details: False alarm.}
+  - {incident: inc_01JB8M00000000000000000318, reason_code: other, details: xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx}

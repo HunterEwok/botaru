@@ -1,0 +1,11 @@
+# Second bot of the core profile (D-72): describes CTD files with the single tool data/describe.
+apiVersion: botaru/v1alpha1
+kind: Role
+metadata: {name: data-reader}
+spec:
+  profile: worker
+  worker_kind: agent
+  claims: [data.describe.v1]
+  tools: [data/describe]
+  models: {base: base-std}
+  memory: none

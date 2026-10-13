@@ -1,0 +1,45 @@
+id: fx-dlv-04
+rules: [DLV-14, OUT-1]
+description: 'Farm records do not rate people. The schema lint does not allow a principal of kind `human` in the subject field of records
+  written by the model or by code from model output: a finding, a fact, an observation series, a proposal, a review, a report,
+  a result field with `x-botaru-read-by: code`; a field rating a person is rejected too. A report counts people only
+  by group or tenant, and a person pressing a button is an audit fact.'
+expect: {human_subject_in_model_records: 0}
+cases:
+- given:
+    result_schema:
+      properties:
+        subject: {const: 'human:alice', x-botaru-read-by: code}
+  expect: {result: rejected, stage: lint}
+- given:
+    result_schema:
+      properties:
+        subject_kind:
+          enum: [human, host]
+          x-botaru-read-by: code
+  expect: {result: rejected, stage: lint}
+- given:
+    result_schema:
+      properties:
+        operator_score: {type: integer, minimum: 0, maximum: 10, x-botaru-read-by: code}
+        subject: {const: 'human:bob'}
+  expect: {result: rejected, stage: lint}
+- given:
+    result_schema:
+      properties:
+        subject: {enum_from: catalog.hosts, x-botaru-read-by: code}
+        checked: {type: integer, minimum: 0, maximum: 100000, x-botaru-read-by: code}
+  expect: {result: ok}
+- given:
+    report: {counts_people_by: group}
+  expect: {result: ok}
+- given:
+    report: {counts_people_by: person}
+  expect: {result: rejected, stage: lint}
+- steps:
+  - call:
+      port: P1
+      op: decide
+      request: {subject_kind: approval, id: $last, decision: approve}
+    by: human:carol
+  expect: {audit_fact: true, score_record: false}

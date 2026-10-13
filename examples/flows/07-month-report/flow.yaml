@@ -1,0 +1,37 @@
+# Flow 7 from examples/flows.md: the monthly report through /run without a card.
+id: flow-07-month-report
+rules: [APR-17, OBV-3, IDN-2, PRM-6, INJ-1]
+description: >-
+  alice from lead runs /run month-report 2026-09. Task type report.monthly.numbers.v1 declares
+  run.approval: none, so there is no card. The job reads closed rollups, stores a CSV and enqueues
+  a child report for the reporter.
+given:
+  tenant: demo
+  people: [{principal: alice, kind: user, groups: [user, researcher, ctd, lead, admin]}]
+  manifests: [examples/tenants/demo/, examples/roles/data-job/role.yaml, examples/roles/reporter/role.yaml,
+              examples/tasktypes/report.monthly.numbers.v1.yaml, examples/tasktypes/report.monthly.v1.yaml]
+steps:
+  - {port: P1, op: submit_activity, by: channel:telegram, activity: {kind: message, channel: telegram, update_id: "4", sender: {identity: "telegram:1001", verified: true}, chat: {kind: direct, external_id: "1001"}, text: "/run month-report 2026-09"},
+     expect: {task: {type: report.monthly.numbers.v1, params: {month: "2026-09"}, record: {initiator: alice, data_mark: internal}}, approvals: 0}}
+  - {port: P1, op: claim, by: role:data-job, request: {kinds: [attempt]}}
+  - {port: P1, op: obs.query, by: role:data-job, series: farm.task.cost, window: "2026-09"}
+  - {port: P1, op: file.put, by: role:data-job, file: {filename: report-2026-09.csv, media_type: text/csv}}
+  - port: P1
+    op: enqueue
+    by: role:data-job
+    body:
+      type: report.monthly.v1
+      goal: "Report for the month. One paragraph. Numbers only from params."
+      params: {month: "2026-09", ctd_qc_runs: 12, ctd_qc_ok: 11, lab_runs: 9, lab_ok: 8, sensor_slots_on_time_pct: 96.8, cost_eur: 14.3}
+    expect: {task: {record: {initiator: alice}}}
+  - {port: P1, op: complete, by: role:data-job, result: {month: "2026-09", ctd_qc_runs: 12, lab_runs: 9, cost_eur: 14.3}}
+  - {port: P1, op: claim, by: role:reporter, request: {kinds: [attempt]}}
+  - {port: P1, op: complete, by: role:reporter, result: {text: "In September there were 12 CTD QC runs, 11 of them successful."},
+     expect: {deliveries: [{kind: task_result, to: origin, dataorigin: model}]}}
+expect:
+  events: [task.submitted, task.working, task.completed]
+  denied:
+    - {port: P1, op: submit_activity, activity: {kind: message, channel: telegram, update_id: "5", sender: {identity: "telegram:1001", verified: true}, chat: {kind: direct, external_id: "1001"}, text: "/run month-report September"}, reason: input_schema_invalid}
+  not:
+    - "an approval card: the task type declares run.approval: none (APR-17)"
+    - "numbers of another tenant (OBV-3)"

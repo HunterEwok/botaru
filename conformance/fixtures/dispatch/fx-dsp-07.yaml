@@ -1,0 +1,94 @@
+id: fx-dsp-07
+rules: [DSP-10]
+description: A personal assistant is a pool of workers, not a worker per person. Two workers of the role `assistant` without an `owner` field
+  in the record. `alice` and `bob` write `/a <text>` in a private chat; the `assist.chat.v1` tasks are given to different workers, in the lease
+  of each the core recorded its own `owner`, and the memory handle of one attempt does not open the memory store of another owner.
+  Free text in a private chat without the command does not reach the assistant. A tenant catalog with `assist.chat.v1` in `default_types`
+  does not pass `apply`, with reason `assistant_in_default_types`, and P2 `worker.enroll` with an `owner` field is rejected.
+given:
+  tenant: demo
+  roles:
+  - name: assistant
+    claims: [assist.chat.v1]
+    memory: person
+  workers:
+  - {id: wk_01JB000000000000000000000A, role: assistant, state: active, ready: true}
+  - {id: wk_01JB000000000000000000000B, role: assistant, state: active, ready: true}
+  tenant_spec:
+    commands: {a: assist.chat.v1}
+    default_types: [ops.status.v1]
+steps:
+- call:
+    port: P1
+    op: submit_activity
+    request:
+      kind: message
+      channel: telegram
+      update_id: '1'
+      sender: {identity: 'telegram:1001', verified: true}
+      chat: {kind: direct, external_id: '1001'}
+      text: /a remind me about the report
+  by: human:alice
+  expect: {task: t_01JB0000000000000000000001, type: assist.chat.v1, initiator: 'human:alice'}
+- call:
+    port: P1
+    op: submit_activity
+    request:
+      kind: message
+      channel: telegram
+      update_id: '2'
+      sender: {identity: 'telegram:1002', verified: true}
+      chat: {kind: direct, external_id: '1002'}
+      text: /a draft a letter
+  by: human:bob
+  expect: {task: t_01JB0000000000000000000002, type: assist.chat.v1, initiator: 'human:bob'}
+- call:
+    port: P1
+    op: submit_activity
+    request:
+      kind: message
+      channel: telegram
+      update_id: '3'
+      sender: {identity: 'telegram:1002', verified: true}
+      chat: {kind: direct, external_id: '1002'}
+      text: draft a letter
+  by: human:bob
+  expect: {type: ops.status.v1}
+- call:
+    port: P1
+    op: claim
+    request:
+      kinds: [attempt]
+  by: worker:wk_01JB000000000000000000000A
+  expect:
+    task: t_01JB0000000000000000000001
+    lease: {owner: 'human:alice'}
+- call:
+    port: P1
+    op: claim
+    request:
+      kinds: [attempt]
+  by: worker:wk_01JB000000000000000000000B
+  expect:
+    task: t_01JB0000000000000000000002
+    lease: {owner: 'human:bob'}
+- call:
+    port: P1
+    op: memory.search
+    request: {query: letter, limit: 10}
+  context: {handle_of: t_01JB0000000000000000000001, space_of: 'human:bob'}
+  expect: {visible_records: 0}
+- lint:
+    tenant_yaml:
+      spec:
+        default_types: [ops.status.v1, assist.chat.v1]
+  expect: {result: rejected, stage: apply, error: assistant_in_default_types}
+- call:
+    port: P2
+    op: worker.enroll
+    request: {tenant: demo, role: assistant, kind: agent}
+  context: {owner: 'human:alice'}
+  expect: {result: rejected}
+expect:
+  worker_record_has_owner: false
+  owners_in_leases: {t_01JB0000000000000000000001: 'human:alice', t_01JB0000000000000000000002: 'human:bob'}

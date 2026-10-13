@@ -1,0 +1,88 @@
+schema: spec/model/proposal-body.schema.json
+rules: [PRP-1, PRP-3, PRP-13]
+description: >-
+  Proposal bodies that the schema rejects: a core record field in the body (state, origin); two change kinds at once;
+  eleven manifest_change operations; note longer than 1000 characters; a change by people's hands with free text;
+  change kind not from the closed list; a kind that changes the world without a promised benefit; eleven pieces of
+  evidence.
+cases:
+  - category: schedule
+    problem: {code: report_overlap, subjects: ['schedule:report-nightly'], severity: low}
+    evidence: [{kind: observation, series: farm.schedule.slot, subject: 'schedule:report-nightly', window: 14d, rollup: window.share, value: 0.86}]
+    change: {kind: none}
+    state: recommended
+  - category: schedule
+    problem: {code: report_overlap, subjects: ['schedule:report-nightly'], severity: low}
+    evidence: [{kind: observation, series: farm.schedule.slot, subject: 'schedule:report-nightly', window: 14d, rollup: window.share, value: 0.86}]
+    change: {kind: none}
+    origin: {role: ops-runner, level: 0}
+  - category: schedule
+    problem: {code: report_overlap, subjects: ['schedule:report-nightly'], severity: low}
+    evidence: [{kind: observation, series: farm.schedule.slot, subject: 'schedule:report-nightly', window: 14d, rollup: window.share, value: 0.86}]
+    change:
+      kind: manifest_change
+      manifest_change: {ops: [{op: set, target: {kind: Schedule, name: report-nightly}, field: spec.cron, value: '30 3 * * *'}]}
+      human_change: {target: {kind: Host, name: db1}, path: catalog.host.disk_gb, direction: up, value: 200}
+    benefit: {metric: farm.schedule.slot, subject: 'schedule:report-nightly', direction: up, expected_change_pp: 10, confidence: low}
+    cost: {one_time_eur: 0, monthly_eur: 0, effort: minutes}
+    risk: {level: low}
+  - category: schedule
+    problem: {code: report_overlap, subjects: ['schedule:report-nightly'], severity: low}
+    evidence: [{kind: observation, series: farm.schedule.slot, subject: 'schedule:report-nightly', window: 14d, rollup: window.share, value: 0.86}]
+    change:
+      kind: manifest_change
+      manifest_change:
+        ops:
+          - &op {op: set, target: {kind: Schedule, name: report-nightly}, field: spec.timezone, value: Europe/Berlin}
+          - *op
+          - *op
+          - *op
+          - *op
+          - *op
+          - *op
+          - *op
+          - *op
+          - *op
+          - *op
+    benefit: {metric: farm.schedule.slot, subject: 'schedule:report-nightly', direction: up, expected_change_pp: 10, confidence: low}
+    cost: {one_time_eur: 0, monthly_eur: 0, effort: minutes}
+    risk: {level: low}
+  - category: schedule
+    problem: {code: report_overlap, subjects: ['schedule:report-nightly'], severity: low}
+    evidence: [{kind: observation, series: farm.schedule.slot, subject: 'schedule:report-nightly', window: 14d, rollup: window.share, value: 0.86}]
+    change: {kind: none}
+    note: "CANARY-NOT-A-SECRET-PRP-NOTE-1001 ......................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................."
+  - category: capacity
+    problem: {code: queue_wait_high, subjects: ['host:db1'], severity: medium}
+    evidence: [{kind: observation, series: host.load.v1, subject: 'host:db1', window: 14d, rollup: day.p95, value: 410}]
+    change:
+      kind: human_change
+      human_change: {target: {kind: Host, name: db1}, path: catalog.host.disk_gb, direction: up, value: 200, text: add a bigger disk}
+    benefit: {metric: farm.queue.wait, subject: 'task_type:demo.db.backup.v1', direction: down, expected_change_pct: 10, confidence: low}
+    cost: {one_time_eur: 40, monthly_eur: 5, effort: hours}
+    risk: {level: low}
+  - category: security
+    problem: {code: report_overlap, subjects: ['host:web1'], severity: high}
+    evidence: [{kind: observation, series: farm.task.outcome, subject: 'task_type:demo.report.nightly.v1', window: 7d, rollup: window.share, value: 0.5}]
+    change: {kind: grant_change, grant_change: {group: staff}}
+  - category: schedule
+    problem: {code: report_overlap, subjects: ['schedule:report-nightly'], severity: low}
+    evidence: [{kind: observation, series: farm.schedule.slot, subject: 'schedule:report-nightly', window: 14d, rollup: window.share, value: 0.86}]
+    change:
+      kind: manifest_change
+      manifest_change: {ops: [{op: set, target: {kind: Schedule, name: report-nightly}, field: spec.cron, value: '30 3 * * *'}]}
+  - category: schedule
+    problem: {code: report_overlap, subjects: ['schedule:report-nightly'], severity: low}
+    evidence:
+      - &ev {kind: observation, series: farm.schedule.slot, subject: 'schedule:report-nightly', window: 14d, rollup: window.share, value: 0.86}
+      - *ev
+      - *ev
+      - *ev
+      - *ev
+      - *ev
+      - *ev
+      - *ev
+      - *ev
+      - *ev
+      - *ev
+    change: {kind: none}

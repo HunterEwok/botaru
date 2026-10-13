@@ -1,0 +1,51 @@
+registry: governance-flags
+version: 1
+description: >-
+  Flags of a governance case. Code sets them only from this closed list; people
+  see the flags on the promotion card and in P2, and they decide nothing (GOV-19).
+  The when field says when code sets the flag. The text of GOV-19 also has the item
+  "ballot reissues" without a value code: the number of reissues goes into the case as the counter
+  rounds[].ballots.reissued and onto the card as the line "Ballot reissues", but
+  it is not recorded as a flag.
+source: docs/commission.md
+entries:
+  - id: identical_reasons
+    since: v0.2
+    when: all votes for the leaving seat have the same reason codes
+    rules: [GOV-19]
+  - id: evicts_top_calibrated
+    since: v0.2
+    when: the holder with the best calibration leaves
+    rules: [GOV-19]
+  - id: evicts_upheld_veto
+    since: v0.2
+    when: a holder leaves whose veto people supported
+    rules: [GOV-19]
+  - id: single_model_bloc
+    since: v0.2
+    when: in a round all votes are for one seat, and all voters have the same model profile (COM-12)
+    rules: [GOV-19, COM-12]
+  - id: stuck
+    since: v0.2
+    when: the round waits for votes longer than ballots.stuck_after (24 h) for an infrastructure reason
+    rules: [GOV-19, GOV-23]
+  - id: defaulted
+    since: v0.2
+    when: the case has a ballot by the code rule
+    rules: [GOV-19, GOV-23]
+  - id: defaulted_majority
+    since: v0.2
+    when: in a round the ballots by the code rule are more than half of expected; the card has the line "outcome by the code rule"
+    rules: [GOV-19, GOV-23, GOV-9]
+  - id: voters_removed
+    since: v0.2
+    when: the expected voter set shrank by a person's action or a core loop
+    rules: [GOV-19, GOV-23]
+  - id: manager_absent
+    since: v0.2
+    when: the farm manager's vote dropped out because the farm manager seat left held or changed its holder
+    rules: [GOV-19, GOV-12]
+  - id: reopened_after_wrong_leaver
+    since: v0.2
+    when: the case was opened after "Reject" with the reason wrong_leaver
+    rules: [GOV-19, GOV-31]

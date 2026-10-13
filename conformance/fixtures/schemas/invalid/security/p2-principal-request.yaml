@@ -1,0 +1,9 @@
+schema: urn:botaru:schema:p2-principal-request:1
+rules: [IDN-4]
+description: An external program key in plain text in the body and a second tenant are rejected.
+cases:
+- {op: principal.add, subject: 'service:ci-exporter', kind: service, key: CANARY-NOT-A-SECRET-api-key}
+- op: principal.add
+  subject: human:p_01JB3Q7N0M2V8XK4DGT5RZP9WB
+  kind: human
+  tenants: [demo, demo2]

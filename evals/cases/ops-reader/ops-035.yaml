@@ -1,0 +1,25 @@
+# evals/cases/ops-reader/ops-035.yaml (catalog: evals/README.md)
+id: ops-035
+kind: quality
+blocking: false
+status: active
+version: v0.1
+rules: [PRM-17]
+summary: 'bob: /lang en, then /logs How many 5xx responses in the last hour (input locale ru); the answer is in English, the number from facts is correct. Tests without a model check that only the initiator language changes.'
+from: bob
+chat: bob-dm
+lang: ru
+message: /lang en
+data: {gen: nginx, seed: 42}
+setup:
+  then:
+  - {after: 0m, from: bob, chat: bob-dm, message: '/logs How many 5xx responses in the last hour?'}
+expect:
+  state: completed
+  checks:
+  - store:
+      path: tasks[?initiator==bob && type==ops.investigate.v1].result.facts.count_5xx
+      equals: {ref: answers#/count_5xx}
+  - store:
+      path: deliveries[?chat==bob-dm].lang
+      subset_of: [en]

@@ -1,0 +1,4 @@
+schema: spec/model/p2-proposal-show-request.schema.json
+rules: [PRP-20]
+description: A P2 proposal.show request that the schema accepts.
+data: {proposal: p_01JB0000000000000000000101}

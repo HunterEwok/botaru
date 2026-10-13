@@ -1,0 +1,31 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:botaru:schema:p3-tool-call-response:1",
+  "title": "P3 tools/call: response",
+  "description": "Outcome of a call by the MCP profile: the tool output as a separate content block with the untrusted mark (INJ-4); on denial isError: true, the model gets only a short \"no permission\", the full reason is in the audit (PRM-8). Outcomes of built-in tools go as closed fields in structuredContent by the tool schema (for example request-action-result, service-control-result).",
+  "x-botaru-direction": "output",
+  "x-botaru-rules": [
+    "INJ-4",
+    "INJ-13",
+    "PRM-8"
+  ],
+  "type": "object",
+  "required": [
+    "content"
+  ],
+  "properties": {
+    "content": {
+      "type": "array",
+      "items": {
+        "type": "object"
+      },
+      "maxItems": 100
+    },
+    "structuredContent": {
+      "type": "object"
+    },
+    "isError": {
+      "type": "boolean"
+    }
+  }
+}

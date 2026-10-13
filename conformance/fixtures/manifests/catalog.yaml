@@ -1,0 +1,82 @@
+id: fx-man-cat-01
+rules: [MON-8, DEP-11, TEN-4, MON-10]
+description: >-
+  Catalog checks: no_card holds only restart (row lint:manifests/service-no-card);
+  via: host without unit and via: monitor without a script from monitor_scripts_allowed are rejected;
+  a farm node is never a catalog machine (row lint:manifests/farm-host-in-catalog);
+  a machine and a pair (machine, service) belong to one tenant (row
+  lint:catalog/host-one-tenant). Farm nodes core1 and backup1.
+with_examples: true
+farm_hosts: [core1, backup1]
+cases:
+  - name: empty no_card, everything by card
+    manifests:
+      - apiVersion: botaru/v1alpha1
+        kind: Catalog
+        metadata: {name: demo2, tenant: demo2}
+        spec:
+          hosts:
+            - {id: app2, services: [{name: worker, unit: worker.service, control: [restart], via: host, no_card: []}]}
+    expect: ok
+  - name: stop in no_card
+    manifests:
+      - apiVersion: botaru/v1alpha1
+        kind: Catalog
+        metadata: {name: demo2, tenant: demo2}
+        spec:
+          hosts:
+            - {id: app2, services: [{name: worker, unit: worker.service, control: [stop, restart], via: host, no_card: [stop]}]}
+    expect: {error: schema_invalid}            # no_card is closed by the Catalog schema: only restart
+  - name: service via host without unit
+    manifests:
+      - apiVersion: botaru/v1alpha1
+        kind: Catalog
+        metadata: {name: demo2, tenant: demo2}
+        spec:
+          hosts:
+            - {id: app2, services: [{name: worker, control: [restart], via: host}]}
+    expect: {error: service_unit_missing}
+  - name: service via monitor with a script outside the node's list
+    manifests:
+      - apiVersion: botaru/v1alpha1
+        kind: Catalog
+        metadata: {name: demo2, tenant: demo2}
+        spec:
+          hosts:
+            - id: app2
+              monitor_host: app2.example.org
+              services: [{name: worker, control: [restart], via: monitor, scripts: {restart: worker-restart}}]
+    expect: {error: service_script_unknown}
+  - name: monitor_host on a farm node
+    manifests:
+      - apiVersion: botaru/v1alpha1
+        kind: Catalog
+        metadata: {name: demo2, tenant: demo2}
+        spec:
+          hosts: [{id: app2, monitor_host: core1.example.org}]
+    expect: {error: farm_host_in_catalog}
+  - name: resource on a farm node
+    manifests:
+      - apiVersion: botaru/v1alpha1
+        kind: Catalog
+        metadata: {name: demo2, tenant: demo2}
+        spec:
+          hosts: [{id: core1}]
+          resources: [{id: core-logs, title: "Core logs", host: core1, list: log_sources, values: [core]}]
+    expect: {error: farm_host_in_catalog}
+  - name: machine web1 already belongs to demo
+    manifests:
+      - apiVersion: botaru/v1alpha1
+        kind: Catalog
+        metadata: {name: demo2, tenant: demo2}
+        spec:
+          hosts: [{id: web1}]
+    expect: {error: host_two_tenants}
+  - name: monitoring node db1 already belongs to demo
+    manifests:
+      - apiVersion: botaru/v1alpha1
+        kind: Catalog
+        metadata: {name: demo2, tenant: demo2}
+        spec:
+          hosts: [{id: db2, monitor_host: db1.example.org}]
+    expect: {error: host_two_tenants}

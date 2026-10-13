@@ -1,0 +1,19 @@
+# evals/cases/insights/ins-01.yaml (catalog: evals/README.md)
+id: ins-01
+kind: quality
+blocking: false
+status: active
+version: v0.1
+rules: [INS-1, PRP-2]
+summary: 'Clean numbers: a night peak 01:00-03:00 on db1 14 nights out of 14, two schedules in the window; one proposal of kind schedule, the evidence matches what the core reread.'
+from: system
+data: {gen: obs, seed: 14}
+setup:
+  route: {purpose: insight}
+  series: {host: db1, peak: '01:00-03:00', nights: 14, peak_nights: 14, schedules_in_window: 2}
+expect:
+  state: completed
+  checks:
+  - store: {path: 'proposals[?task==self]', count: 1}
+  - store: {path: 'proposals[?task==self].kind', equals: schedule}
+  - store: {path: 'proposals[?task==self && reason==evidence_mismatch]', count: 0}

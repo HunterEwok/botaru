@@ -1,0 +1,17 @@
+schema: urn:botaru:schema:authz-request:1
+rules: [PRM-2, PRM-6]
+description: 'A C2 request: bob in task ops.investigate.v1 asks for an nginx restart on web1; the task already had untrusted
+  text.'
+data:
+  principal: {kind: human, id: 'human:p_01JB3Q7N0M2V8XK4DGT5RZP9WA', tenant: demo}
+  action: service.control:nginx
+  resource: {tenant: demo, kind: service, id: nginx}
+  context:
+    task:
+      type: ops.investigate.v1
+      tier: 1
+      data_mark: raw_logs
+      depth: 0
+      untrusted_seen: true
+      initiators: ['human:p_01JB3Q7N0M2V8XK4DGT5RZP9WA']
+    chat: {kind: direct, ceiling: raw_logs}

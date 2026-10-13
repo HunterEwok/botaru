@@ -1,0 +1,53 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:botaru:schema:monitor-audit-head:1",
+  "title": "Audit head for monitoring",
+  "description": "The monitor_audit_head delivery: the signed head of the tenant's audit chain in the history of the monitoring system at least once a day (MON-3, AUD-6). The core signs it.",
+  "x-botaru-direction": "output",
+  "x-botaru-rules": [
+    "MON-3",
+    "AUD-6",
+    "RET-6"
+  ],
+  "type": "object",
+  "required": [
+    "tenant",
+    "epoch",
+    "seq",
+    "hash",
+    "sig",
+    "key_id"
+  ],
+  "properties": {
+    "tenant": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/tenant_name",
+      "description": "Tenant or farm."
+    },
+    "epoch": {
+      "description": "Store epoch in which the head was issued. A restore from backup starts a new epoch with a restore record in the farm chain; a smaller seq is allowed only with a larger epoch (spec/hashing.md, RET-6, D-86 (7)).",
+      "type": "integer",
+      "minimum": 0
+    },
+    "seq": {
+      "description": "Number of the last audit record; within one epoch it only grows.",
+      "type": "integer",
+      "minimum": 1
+    },
+    "hash": {
+      "description": "Hash of the head.",
+      "$ref": "urn:botaru:schema:common:1#/$defs/hash"
+    },
+    "sig": {
+      "description": "Signature with the core key over the object {type: botaru.audit-head.v1, tenant, epoch, seq, hash, key_id} in the RFC 8785 form (spec/hashing.md).",
+      "type": "string",
+      "maxLength": 512,
+      "pattern": "^[A-Za-z0-9+/=_-]+$"
+    },
+    "key_id": {
+      "description": "Signing key id.",
+      "type": "string",
+      "maxLength": 64,
+      "pattern": "^[A-Za-z0-9:_-]+$"
+    }
+  }
+}

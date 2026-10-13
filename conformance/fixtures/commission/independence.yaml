@@ -1,0 +1,107 @@
+id: fx-commission-independence
+rules: [COM-2, GOV-34]
+description: 'Independence of reviews (COM-2). The reviewer role is not the author role; a review task is not given to the worker
+  and the bot of the author; the reviewer model profile is not the author''s analysis profile. The profiles of the veto lenses (security, operational)
+  belong to different ModelProfile.family families: for a tenant with kind production a match is the apply error veto_lenses_same_family,
+  for a test bench tenant a doctor warning (GOV-34). The lint warns if the lens executors have fewer than two model
+  profiles.'
+given:
+  model_profiles:
+  - {name: analysis-std, family: alpha}
+  - {name: review-a, family: alpha}
+  - {name: review-b, family: beta}
+  - {name: seat-std, family: alpha}
+  roles:
+  - name: ops-runner
+    profile: worker
+    models: {base: base-std, analysis: analysis-std}
+    insight:
+      types: [ops.insight.v1]
+cases:
+- id: com-02
+  rules: [COM-2]
+  description: A lens fallback role with the profile analysis-std, equal to the analysis profile of the author ops-runner, does not pass
+    apply.
+  given:
+    tenant: {name: demo, kind: production}
+    roles_add:
+    - name: reviewer-a
+      profile: reviewer
+      models: {base: analysis-std}
+      claims: [review.security.v1, review.operational.v1]
+    governance:
+      commission:
+        seats:
+        - {id: 1, lens: security, fallback_role: reviewer-a}
+        - {id: 2, lens: operational, fallback_role: reviewer-a}
+  expect: {result: rejected, stage: apply}
+- id: com-08
+  rules: [COM-2, GOV-34]
+  description: 'Production charter of demo: the security and operational lenses on profiles of one family (review-a and seat-std,
+    family alpha) do not pass apply with code veto_lenses_same_family; the same charter for a test bench tenant (kind test)
+    passes with a doctor warning.'
+  given:
+    roles_add:
+    - name: reviewer-a
+      profile: reviewer
+      models: {base: review-a}
+      claims: [review.security.v1]
+    - name: reviewer-c
+      profile: reviewer
+      models: {base: seat-std}
+      claims: [review.operational.v1]
+    governance:
+      commission:
+        seats:
+        - {id: 1, lens: security, fallback_role: reviewer-a}
+        - {id: 2, lens: operational, fallback_role: reviewer-c}
+    tenants:
+    - name: demo
+      kind: production
+      expect: {result: rejected, stage: apply, error: veto_lenses_same_family}
+    - name: demo2
+      kind: test
+      expect: {result: ok, doctor_warning: veto_lenses_same_family}
+- id: com-fx-20
+  rules: [COM-2]
+  description: 'Lenses on review-a (alpha) and review-b (beta): apply passes. The review task of a proposal of bot bot_..17
+    is not given to its worker or to the bot itself, even if they hold the reviewer role.'
+  given:
+    tenant: {name: demo, kind: production}
+    roles_add:
+    - name: reviewer-a
+      profile: reviewer
+      models: {base: review-a}
+      claims: [review.security.v1, review.cost.v1]
+    - name: reviewer-b
+      profile: reviewer
+      models: {base: review-b}
+      claims: [review.operational.v1, review.value.v1]
+    governance:
+      commission:
+        seats:
+        - {id: 1, lens: security, fallback_role: reviewer-a}
+        - {id: 2, lens: operational, fallback_role: reviewer-b}
+        - {id: 3, lens: cost, fallback_role: reviewer-a}
+        - {id: 4, lens: value, fallback_role: reviewer-b}
+    proposal:
+      origin:
+        role: ops-runner
+        worker: wk_01JB000000000000000000000A
+        acting_bot: bot_01JB0000000000000000000017
+  expect:
+    result: ok
+    review_task_key: system:review:<proposal>:<lens>
+    not_claimable_by: [wk_01JB000000000000000000000A, bot_01JB0000000000000000000017]
+    reviews_per_task: 1
+- id: com-fx-21
+  rules: [COM-2]
+  description: All lens executors are on one profile review-b; the lint warns about fewer than two profiles.
+  given:
+    tenant: {name: demo2, kind: test}
+    roles_add:
+    - name: reviewer-b
+      profile: reviewer
+      models: {base: review-b}
+      claims: [review.security.v1, review.operational.v1, review.cost.v1, review.value.v1]
+  expect: {result: ok, lint_warning: fewer than two model profiles among the lens executors}

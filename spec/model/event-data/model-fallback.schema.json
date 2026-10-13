@@ -1,0 +1,49 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:botaru:schema:model-fallback:1",
+  "title": "Data of the event model.fallback.v1",
+  "description": "A call on a fallback model: the actual profile and the fallback flag are written into the usage line and into this event (GW-5). The fallback profile comes only from the fallback list of the slot profile and only for a reason from fallback_on.",
+  "x-botaru-direction": "output",
+  "x-botaru-rules": [
+    "GW-5"
+  ],
+  "type": "object",
+  "required": [
+    "task",
+    "profile",
+    "fallback_profile",
+    "reason"
+  ],
+  "properties": {
+    "task": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/object_id",
+      "description": "Task id."
+    },
+    "slot": {
+      "description": "Model slot of the role.",
+      "enum": [
+        "base",
+        "analysis",
+        "seat",
+        "granted"
+      ]
+    },
+    "profile": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/name",
+      "description": "Profile of the slot (primary)."
+    },
+    "fallback_profile": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/name",
+      "description": "The actual fallback profile."
+    },
+    "reason": {
+      "description": "Reason from the closed list fallback_on.",
+      "enum": [
+        "overloaded",
+        "unavailable",
+        "retired"
+      ],
+      "x-botaru-registry": "model-fallback-reasons"
+    }
+  }
+}

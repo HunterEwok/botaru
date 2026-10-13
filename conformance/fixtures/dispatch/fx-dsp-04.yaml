@@ -1,0 +1,104 @@
+id: fx-dsp-04
+rules: [DSP-4, DSP-5]
+description: 'Only the core assigns work to a specific worker. The schema rejects a P1 `enqueue` request with a worker field
+  (`input_schema_invalid`), and a worker field inside `to` too. Another tenant''s bot group (a group of tenant `demo2`), a nonexistent
+  group and a group outside the role''s `may_target_groups` get the same refusal `rejected(group_invalid)`, from which
+  one cannot tell whether the group exists. Pinning a task to a worker exists only as the control operation `pin_task`:
+  a pinned task goes in class 1, and only the pinned worker gets it (condition D12).'
+given:
+  tenant: demo
+  role:
+    name: ops-lead
+    may_enqueue: [ops.investigate.v1]
+    may_target_groups: [science-pool]
+  botgroups:
+  - {name: science-pool, tenant: demo}
+  - {name: reporters, tenant: demo}
+  - {name: science-pool-2, tenant: demo2}
+  workers:
+  - {id: wk_01JB000000000000000000000A, role: ops-reader, state: active, ready: true}
+  - {id: wk_01JB000000000000000000000B, role: ops-reader, state: active, ready: true}
+  tasks:
+  - id: t_01JB0000000000000000000001
+    type: ops.investigate.v1
+    priority_class: 3
+    state: submitted
+    enqueued_at: '2026-10-05T10:00:00Z'
+steps:
+- call:
+    port: P1
+    op: enqueue
+    request:
+      body: {type: ops.investigate.v1, goal: analyze the overnight journal}
+      idempotency_key: k1
+      worker: wk_01JB000000000000000000000B
+  by: role:ops-lead
+  expect: {reason: input_schema_invalid, task_created: false}
+- call:
+    port: P1
+    op: enqueue
+    request:
+      body: {type: ops.investigate.v1, goal: analyze the overnight journal}
+      idempotency_key: k2
+      to: {group: science-pool, worker: wk_01JB000000000000000000000B}
+  by: role:ops-lead
+  expect: {reason: input_schema_invalid, task_created: false}
+- call:
+    port: P1
+    op: enqueue
+    request:
+      body: {type: ops.investigate.v1, goal: analyze the overnight journal}
+      idempotency_key: k3
+      to: {group: science-pool-2}
+  by: role:ops-lead
+  expect:
+    state: {result: rejected}
+    reason: group_invalid
+- call:
+    port: P1
+    op: enqueue
+    request:
+      body: {type: ops.investigate.v1, goal: analyze the overnight journal}
+      idempotency_key: k4
+      to: {group: no-such-group}
+  by: role:ops-lead
+  expect:
+    state: {result: rejected}
+    reason: group_invalid
+- call:
+    port: P1
+    op: enqueue
+    request:
+      body: {type: ops.investigate.v1, goal: analyze the overnight journal}
+      idempotency_key: k5
+      to: {group: reporters}
+  by: role:ops-lead
+  expect:
+    state: {result: rejected}
+    reason: group_invalid
+- call:
+    port: P2
+    op: control.apply
+    request:
+      op: pin_task
+      target: {kind: task, id: t_01JB0000000000000000000001}
+  by: operator
+  context: {pin_worker: wk_01JB000000000000000000000B}
+  expect:
+    task: {pin: wk_01JB000000000000000000000B, priority_class: 1}
+    audit: 1
+- call:
+    port: P1
+    op: claim
+    request:
+      kinds: [attempt]
+  by: worker:wk_01JB000000000000000000000A
+  expect: {task: null}
+- call:
+    port: P1
+    op: claim
+    request:
+      kinds: [attempt]
+  by: worker:wk_01JB000000000000000000000B
+  expect: {task: t_01JB0000000000000000000001}
+expect: {group_invalid_responses_identical: true, worker_field_in_any_request_schema: false}

@@ -1,0 +1,6 @@
+# Python bytecode and environments
+__pycache__/
+*.py[cod]
+.venv/
+# Working material kept out of the public repository
+_review/

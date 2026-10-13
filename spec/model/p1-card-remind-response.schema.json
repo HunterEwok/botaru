@@ -1,0 +1,21 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:botaru:schema:p1-card-remind-response:1",
+  "title": "P1 card.remind: response",
+  "description": "The reminder is set: how many approvers who have not decided yet will get card_update. More often than once in 5 minutes per approval gives the denial service_rate_limited (APR-19).",
+  "x-botaru-direction": "output",
+  "x-botaru-rules": [
+    "APR-19"
+  ],
+  "type": "object",
+  "required": [
+    "reminded"
+  ],
+  "properties": {
+    "reminded": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 1000
+    }
+  }
+}

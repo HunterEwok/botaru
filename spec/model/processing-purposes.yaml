@@ -1,0 +1,33 @@
+registry: processing-purposes
+version: 1
+description: >-
+  Data processing purposes in the tenant privacy block
+  (Tenant.spec.privacy.purposes[].purpose). The effect field says whether the purpose changes
+  core behavior: none (only the privacy report and the organization's register) or
+  inspect (without the purpose the core does not enqueue tasks with the purpose inspect in the tenant).
+  The lawful basis of the purpose (lawful_basis: public_task, legitimate_interest,
+  contract, consent, legal_obligation; by default public_task) is set by the schema
+  of the Tenant manifest; consent is allowed only for a purpose with a consent record and
+  a withdrawal operation (SEC-7).
+source: docs/privacy.md
+entries:
+  - id: operations
+    since: v0.1
+    title: Operation of the tenant's systems
+    effect: none
+    rules: [SEC-8]
+  - id: assistance
+    since: v0.1
+    title: Answers to people and personal assistants
+    effect: none
+    rules: [SEC-8]
+  - id: data_processing
+    since: v0.1
+    title: Processing of tenant data by pipelines and reports
+    effect: none
+    rules: [SEC-8]
+  - id: incident_review
+    since: v0.1
+    title: Incident review by the farm manager
+    effect: inspect
+    rules: [SEC-8, MGR-20]

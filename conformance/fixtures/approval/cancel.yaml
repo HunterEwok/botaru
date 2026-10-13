@@ -1,0 +1,48 @@
+# Cancellation of a waiting decision in the transaction of its cause (APR-6).
+id: fx-approval-cancel
+rules: [APR-6]
+description: Each cancellation creates a card_update delivery; the decider losing the permission does not cancel the subject.
+given:
+  approval: {id: apr_4812, tenant: demo, action: cleanup_pipeline_tmp, initiator: 'human:bob', state: pending}
+cases:
+- id: apr-cancel-01
+  rules: [APR-6]
+  given:
+    cause: {op: principal.off, subject: 'human:bob'}
+  expect: {state: canceled, reason: person_inactive, card_update: true}
+- id: apr-cancel-02
+  rules: [APR-6]
+  given:
+    cause: {op: ungrant, subject: 'human:bob', group: staff}
+  expect: {state: canceled, reason: rights_revoked}
+- id: apr-cancel-03
+  rules: [APR-6]
+  given:
+    cause:
+      op: hold.set
+      scope: {kind: action, name: cleanup_pipeline_tmp}
+      effects: [no_action]
+  expect: {state: canceled, reason: held}
+- id: apr-cancel-04
+  rules: [APR-6]
+  given:
+    cause: {op: restore}
+  expect: {state: canceled, reason: restored}
+- id: apr-cancel-05
+  rules: [APR-6]
+  given:
+    cause: {op: task.cancel, by: 'human:bob', via: /cancel}
+  expect: {state: canceled, reason: initiator}
+- id: apr-cancel-06
+  rules: [APR-6]
+  given:
+    cause: {op: ungrant, subject: 'human:carol', group: approver}
+  expect: {state: pending, note: others with the permission can decide}
+- id: apr-cancel-07
+  rules: [APR-6, MAN-10]
+  given:
+    cause: {decide: approve, by: 'human:carol', catalog: ctd1 removed from the catalog}
+    people:
+    - principal: human:carol
+      groups: [approver]
+  expect: {state: canceled, reason: ref_invalid, write_calls: 0}

@@ -1,0 +1,10 @@
+schema: spec/model/inbox-read-request.schema.json
+rules:
+- MSG-8
+description: inbox_read arguments that the schema accepts.
+cases:
+- max: 20
+- types:
+  - report.work.v1
+  - report.qc_note.v1
+  max: 5

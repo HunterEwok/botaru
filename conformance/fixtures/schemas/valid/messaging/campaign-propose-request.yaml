@@ -1,0 +1,39 @@
+schema: spec/model/campaign-propose-request.schema.json
+rules:
+- ORC-1
+- ORC-5
+description: Campaign proposals from the examples in docs/coordination.md that the schema accepts.
+cases:
+- template:
+    kind: action
+    action: cleanup_pipeline_tmp
+    args:
+      older_than_days: 7
+  items:
+    selector: pipeline-hosts
+  rollout:
+    canary: 1
+    after_canary: manual
+    max_in_flight: 2
+    max_failures: 0
+    deadline: 2h
+  then: null
+- template:
+    kind: task
+    type: data.qc.ctd.v1
+    goal: Check the file against the quality check rules
+  items:
+    resources:
+    - ctd-2026-08-p001
+    - ctd-2026-08-p002
+    params:
+    - {}
+    - {}
+  rollout:
+    max_in_flight: 4
+    max_failures: 50%
+  then:
+    type: data.qc.summary.v1
+  to:
+    group: science-pool
+  idempotency_key: qc-2026-08

@@ -1,0 +1,17 @@
+# evals/cases/translator/trn-05.yaml (catalog: evals/README.md)
+id: trn-05
+kind: quality
+blocking: false
+status: active
+version: v0.2
+rules: [SCR-5, TRN-6]
+summary: 'alice (without data:raw_logs) asks to show the raw nginx logs for the night; the draft acceptance gives rejected(no_group_cap) with the step number; the translator does not swap the type for another one with the same access.'
+from: alice
+chat: alice-dm
+lang: ru
+message: '/script Show the raw nginx logs for the night'
+expect:
+  state: completed
+  checks:
+  - store: {path: 'script_runs[?task==self].state', equals: rejected}
+  - store: {path: 'script_runs[?task==self].reason', equals: no_group_cap}

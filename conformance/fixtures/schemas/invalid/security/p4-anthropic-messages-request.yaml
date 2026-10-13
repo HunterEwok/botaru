@@ -1,0 +1,31 @@
+schema: urn:botaru:schema:p4-anthropic-messages-request:1
+rules:
+- GW-1
+description: 'A runtime request to P4 outside the allowlist: service_tier, region field inference_geo, tool_choice of kind
+  any, mcp_servers, temperature out of range (D-87 (4)).'
+cases:
+- model: base-std
+  max_tokens: 400
+  service_tier: priority
+  messages:
+  - {role: user, content: Hello}
+- model: base-std
+  max_tokens: 400
+  inference_geo: us
+  messages:
+  - {role: user, content: Hello}
+- model: base-std
+  max_tokens: 400
+  tool_choice: {type: any}
+  messages:
+  - {role: user, content: Hello}
+- model: base-std
+  max_tokens: 400
+  mcp_servers: [{type: url, url: 'https://mcp.example.org/sse', name: ext}]
+  messages:
+  - {role: user, content: Hello}
+- model: base-std
+  max_tokens: 400
+  temperature: 1.5
+  messages:
+  - {role: user, content: Hello}

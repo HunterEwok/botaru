@@ -1,0 +1,111 @@
+id: fx-observations-run-finished
+rules: [OBV-7, IDM-4]
+description: 'Event of the end of work outside the farm, run.finished.v1. A job worker submits it with the P1 operation emit if the event type
+  is in the events of its task type; the fields are closed: run_id, an optional approval_id, a subject from the catalog of its tenant,
+  duration_s, retries, exit_code and outcome from the list done, failed, timeout, canceled. The core sets the fields source and id
+  (IDM-4). The core itself writes the points of the farm.external.* series and the backup age from the event in the observe loop, without obs.append.'
+given:
+  tenant: demo
+  tasktypes:
+  - name: demo.pipeline.run.v1
+    worker_kind: job
+    events: [run.finished.v1]
+  - name: demo.report.render.v1
+    worker_kind: job
+    events: []
+cases:
+- id: obv-fx-30
+  rules: [OBV-7, IDM-4]
+  description: The event from the docs/improvements.md example is accepted; the core sets source and id and writes farm.external.* points.
+  steps:
+  - call:
+      port: P1
+      op: emit
+      request:
+        type: run.finished.v1
+        data:
+          run_id: r_7f3a
+          approval_id: 4813
+          subject: ctd-stations
+          duration_s: 2710
+          retries: 1
+          exit_code: 0
+          outcome: done
+    by: attempt:demo.pipeline.run.v1
+  expect:
+    result: ok
+    event_fields_set_by_core: [source, id]
+    points:
+    - series: farm.external.duration
+      subject: task_type:demo.pipeline.run.v1
+      value: 2710
+      producer: {source: core}
+    - series: farm.external.retries
+      subject: task_type:demo.pipeline.run.v1
+      value: 1
+      producer: {source: core}
+    - series: farm.external.outcome
+      subject: task_type:demo.pipeline.run.v1
+      value: done
+      producer: {source: core}
+    obs_append_calls: 0
+- id: obv-fx-31
+  rules: [OBV-7]
+  description: A task type without run.finished.v1 in events submits the event; refusal type_not_allowed.
+  steps:
+  - call:
+      port: P1
+      op: emit
+      request:
+        type: run.finished.v1
+        data: {run_id: r_7f3b, subject: ctd-stations, duration_s: 10, retries: 0, exit_code: 0, outcome: done}
+    by: attempt:demo.report.render.v1
+  expect: {result: rejected, reason: type_not_allowed}
+- id: obv-fx-32
+  rules: [OBV-7, IDM-4]
+  description: Event data with an extra field (free text, source) or an outcome not from the list are rejected by the event
+    schema; there are no points.
+  given:
+    emits:
+    - by: demo.pipeline.run.v1
+      type: run.finished.v1
+      data:
+        run_id: r_7f3c
+        subject: ctd-stations
+        duration_s: 10
+        retries: 0
+        exit_code: 0
+        outcome: done
+        note: everything went well
+    - by: demo.pipeline.run.v1
+      type: run.finished.v1
+      data:
+        run_id: r_7f3d
+        subject: ctd-stations
+        duration_s: 10
+        retries: 0
+        exit_code: 0
+        outcome: done
+        source: core
+    - by: demo.pipeline.run.v1
+      type: run.finished.v1
+      data:
+        run_id: r_7f3e
+        subject: ctd-stations
+        duration_s: 10
+        retries: 0
+        exit_code: 0
+        outcome: partial
+  expect: {result: rejected, points_written: 0}
+- id: obv-fx-33
+  rules: [OBV-7, TEN-7]
+  description: A subject not from the catalog of its tenant (a resource of tenant demo2) is not accepted.
+  steps:
+  - call:
+      port: P1
+      op: emit
+      request:
+        type: run.finished.v1
+        data: {run_id: r_7f3f, subject: demo2-stations, duration_s: 10, retries: 0, exit_code: 0, outcome: done}
+    by: attempt:demo.pipeline.run.v1
+  expect: {result: rejected, points_written: 0}

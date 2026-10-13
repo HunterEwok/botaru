@@ -1,0 +1,51 @@
+id: fx-rep-07
+rules: [REP-12, REP-7, PRM-9, PRM-15, DLV-9, DLV-14]
+description: 'The commands /tasks, /status, /cancel, /help, /team, /about and /lang are answered by core and channel code without a model
+  and without a reporter task. The texts come from the code text catalog per the principal''s locale. In a group chat only
+  /help and /about answer. Catalog demo: /tasks from carol shows only her tasks with the type titles; /team from alice
+  with team.view shows the tasks of the group lab without spend per person; /cancel from bob on someone else''s task gets forbidden.'
+given:
+  tenant: demo
+  principals:
+    alice:
+      groups: [lab]
+      caps: [team.view]
+      locale: ru
+    bob:
+      groups: [lab]
+      locale: ru
+    carol:
+      groups: [lab]
+      locale: en
+  tasks:
+  - {number: 11, initiator: 'human:carol', type: ops.summary.v1}
+  - {number: 12, initiator: 'human:alice', type: ops.summary.v1}
+expect: {model_calls_total: 0, texts_from: code text catalog}
+cases:
+- given: {command: /tasks, from: carol, chat: direct}
+  expect:
+    rows: [11]
+    columns_include: title
+    locale: en
+    model_calls: 0
+    reporter_task: none
+- given: {command: /team, from: alice, chat: direct}
+  expect:
+    group: lab
+    rows: [11, 12]
+    spend_by_person: absent
+    spend_by_type: present
+    model_calls: 0
+- given: {command: /cancel 12, from: bob, chat: direct}
+  expect: {result: rejected, reason: forbidden, task_12_state: unchanged}
+- given: {command: /status 11, from: carol, chat: 'chat:lab'}
+  expect: {reply_key: only in a private chat with the bot, rows: none}
+- given: {command: /help, from: carol, chat: 'chat:lab'}
+  expect:
+    reply: code_text
+    lists: [commands, run]
+    model_calls: 0
+- given: {command: /lang en, from: bob, chat: direct}
+  expect: {locale_set: en, reply_locale: en}
+- given: {command: /lang xx, from: bob, chat: direct}
+  expect: {locale_set: unchanged, note: language outside the closed list of the catalog}

@@ -1,0 +1,33 @@
+id: fx-mgr-tenant
+rules: [MGR-24, TEN-5]
+description: 'One seat attempt sees objects of exactly one tenant, the one its worker is enrolled in: views,
+  findings, facts, tools and the P4 key. Batches of grants and escalations are assembled per tenant. The canary of one tenant
+  does not appear in the seat''s model calls for objects of another.'
+given:
+  seat:
+    id: farm-manager
+    tenant: farm
+    state: held
+    holder: bot_41
+    epoch: 9
+    stop_reasons: []
+  data:
+    demo: {log_line: CANARY-NOT-A-SECRET-mgr-demo, fact: f_demo_1}
+    demo2: {log_line: CANARY-NOT-A-SECRET-mgr-demo2, fact: f_demo2_1}
+  incidents:
+  - {tenant: demo, id: i_311}
+  - {tenant: demo2, id: i_312}
+  run:
+    attempts:
+    - {tenant: demo, worker_enrolled_in: demo}
+    - {tenant: demo2, worker_enrolled_in: demo2}
+expect:
+  p4_requests:
+    tenant=demo:
+      contains: [CANARY-NOT-A-SECRET-mgr-demo]
+      not_contains: [CANARY-NOT-A-SECRET-mgr-demo2, f_demo2_1, i_312]
+      p4_key: demo
+    tenant=demo2:
+      not_contains: [CANARY-NOT-A-SECRET-mgr-demo, f_demo_1, i_311]
+      p4_key: demo2
+  tool_call_other_tenant: {result: not_found}

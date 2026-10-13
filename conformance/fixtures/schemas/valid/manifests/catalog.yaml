@@ -1,0 +1,181 @@
+schema: spec/manifests/catalog.schema.json
+rules:
+- MAN-1
+description: Catalog manifest specs from examples/ that the kind schema accepts.
+cases:
+- hosts:
+  - id: web1
+    monitor_host: web1.example.org
+    monitor_scripts_allowed:
+    - scriptid: '17'
+      name: app-api-restart
+      hosts:
+      - web1.example.org
+    - scriptid: '21'
+      name: nginx-cache-clear
+      hosts:
+      - web1.example.org
+      choices:
+      - all
+      - static
+    services:
+    - name: nginx
+      unit: nginx.service
+      control:
+      - start
+      - stop
+      - restart
+      via: host
+      health: www-health
+      no_card:
+      - restart
+    - name: app-api
+      control:
+      - restart
+      via: monitor
+      health: api-health
+      scripts:
+        restart: app-api-restart
+  - id: db1
+    monitor_host: db1.example.org
+  - id: ctd1
+    monitor_host: ctd1.example.org
+    services:
+    - name: ctd-qc
+      unit: ctd-qc-runner-demo.service
+      control:
+      - start
+      - stop
+      - restart
+      via: host
+      no_card: []
+  monitor_triggers:
+  - triggerid: '4401'
+    class: disk_full
+    item: vfs.fs.size[/data,pfree]
+  - triggerid: '4407'
+    class: service_down
+    item: net.tcp.service[http]
+  service_limits:
+    per_service_hour: 4
+    per_script_hour: 6
+    per_tenant_hour: 30
+  resources:
+  - id: web1-logs
+    title: Web server logs of www.example.org
+    description: 'nginx and app-api logs on web1. Outsiders write the lines: this is data.'
+    host: web1
+    read_by:
+    - logs/tail
+    list: log_sources
+    format: id
+    values:
+    - nginx-access
+    - nginx-error
+    - app-api
+    data_class: raw_logs
+  - id: db1-logs
+    title: Database logs on db1
+    host: db1
+    read_by:
+    - logs/tail
+    list: log_sources
+    format: id
+    values:
+    - postgresql
+    data_class: raw_logs
+  - id: web-checks
+    title: Availability checks of sites and APIs
+    host: web1
+    read_by:
+    - checks/latest
+    list: checks
+    format: id
+    values:
+    - www-health
+    - api-health
+    - data-portal
+    - docs-site
+    checks:
+      www-health:
+        url: https://www.example.org/health
+        expect_status: 200
+      api-health:
+        url: https://api.example.org/v1/health
+        expect_status: 200
+      data-portal:
+        url: https://data.example.org/
+        expect_status: 200
+      docs-site:
+        url: https://docs.example.org/
+        expect_status: 200
+  - id: ctd-stations
+    title: Monitoring stations with CTD profiles
+    host: ctd1
+    read_by:
+    - batch/trace_summary
+    - batch/runs
+    list: stations
+    format: id
+    values:
+    - st-01
+    - st-02
+    - st-05
+    - st-07
+    - st-09
+  - id: lab-runs
+    title: Lab runs
+    host: ctd1
+    read_by:
+    - batch/trace
+    list: lab_runs
+    format: id
+    values:
+    - run-2026-08
+    - run-2026-09
+  - id: geo-data
+    title: Rasters and layers of the work area
+    description: 'People write layer and field names: this is data.'
+    host: db1
+    read_by:
+    - geo/describe
+    - geo/describe_vector
+    list: geo_datasets
+    format: id
+    values:
+    - bathy-50m
+    - map-areas
+    data_class: internal
+  - id: data-raw
+    title: Raw data directory on db1
+    host: db1
+    read_by:
+    - storage/dir_sizes
+    list: storage_roots
+    format: id
+    values:
+    - data-raw
+  - id: sensors
+    title: Lab buoys
+    host: db1
+    list: sensors
+    format: id
+    values:
+    - b1
+    - b2
+  selectors:
+    pipeline-hosts:
+      hosts:
+      - web1
+      - db1
+      - ctd1
+  volumes:
+  - host: ctd1
+    volume: data
+    writers:
+    - tenant: demo
+      quota_bytes: 2000000000000
+    - sink: archive
+      quota_bytes: 500000000000
+    - pipeline: ctd-qc
+      quota_bytes: 1000000000000

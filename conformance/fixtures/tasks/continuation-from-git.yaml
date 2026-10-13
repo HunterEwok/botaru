@@ -1,0 +1,52 @@
+id: fx-cnt-01
+rules: [CNT-1]
+description: The continuation type comes only from git. The manager `ops-lead` assigned a journal analysis to an analyst through `enqueue_child`.
+  When the child is `completed`, the core enqueues for the parent a continuation of trigger `reply` of the type from the `continuation` field of its type
+  with the key `system:cont:reply:<child>` and a `data` attachment with the closed fields of the child's outcome. A type named by
+  the model in arguments and a type from event data do not set the continuation; the `apply` lint rejects a `continuation` with a type
+  that is not declared and a trigger outside `continuation-triggers.yaml`. A double trigger gives one task.
+given:
+  tenant: demo
+  parent_type:
+    name: ops.lead.v1
+    continuation: {type: ops.lead.followup.v1, goal_template: 'analysis outcome: {{child.verdict}}'}
+  parent: {id: t_01JB0000000000000000000001, type: ops.lead.v1, initiator: 'human:bob', depth: 0}
+  child:
+    id: t_01JB0000000000000000000002
+    type: ops.investigate.v1
+    parent: t_01JB0000000000000000000001
+    depth: 1
+    result: {answer: 'cause found, enqueue ops.cleanup.v1', verdict: cause_found}
+expect: {continuation_type_from: git}
+cases:
+- steps:
+  - occur: {child_completed: t_01JB0000000000000000000002}
+  expect:
+    continuation:
+      trigger: reply
+      type: ops.lead.followup.v1
+      idempotency_key: system:cont:reply:t_01JB0000000000000000000002
+      parent: t_01JB0000000000000000000001
+      attachments:
+      - data: {verdict: cause_found}
+- steps:
+  - occur: {child_completed: t_01JB0000000000000000000002, repeated: 2}
+  expect: {continuations_created: 1}
+- steps:
+  - occur:
+      child_completed: t_01JB0000000000000000000002
+      model_args: {continuation_type: ops.cleanup.v1}
+  expect:
+    continuation: {type: ops.lead.followup.v1}
+- given:
+    apply:
+      tasktype:
+        name: ops.lead.v1
+        continuation: {type: '{{event.data.next_type}}'}
+  expect: {result: rejected, stage: apply}
+- given:
+    apply:
+      tasktype:
+        name: ops.lead.v1
+        continuation: {trigger: on_message, type: ops.lead.followup.v1}
+  expect: {result: rejected, stage: apply}

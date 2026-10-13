@@ -1,0 +1,10 @@
+schema: spec/model/p1-emit-request.schema.json
+rules: [IDM-4]
+description: 'emit requests that the schema rejects: the worker sets source and the event id itself; a type without a version.'
+cases:
+- type: run.finished.v1
+  data: {}
+  source: core
+  id: alarm-1
+- type: run.finished
+  data: {}

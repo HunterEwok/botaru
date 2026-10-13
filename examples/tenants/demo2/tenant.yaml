@@ -1,0 +1,15 @@
+# Second tenant for isolation examples: without the farm manager (D-77).
+apiVersion: botaru/v1alpha1
+kind: Tenant
+metadata: {name: demo2}
+spec:
+  kind: production
+  timezone: Europe/Berlin
+  self_approve: false
+  farm_manager: {enabled: false}
+  budgets: {month_eur: 60, day_eur: 4, hour_eur: 1}
+  models_allowed: [base-std]
+  privacy:
+    purposes:
+      - {purpose: operations, lawful_basis: legitimate_interest}
+    recipients: [model_provider, messenger, monitoring]

@@ -1,0 +1,196 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:botaru:schema:channel:1",
+  "title": "Channel",
+  "description": "spec of the Channel manifest: the channel driver and its declarations (E1). The driver configuration spec.config passes the driver schema under the meta-schema spec/manifests/drivers/ (MAN-4).",
+  "x-botaru-direction": "input",
+  "x-botaru-rules": [
+    "MAN-4",
+    "IDN-3",
+    "DLV-7",
+    "DLV-12",
+    "DLV-13",
+    "ING-1",
+    "ING-2"
+  ],
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "driver",
+    "identity_assurance",
+    "membership_assurance",
+    "ai_disclosure",
+    "provenance"
+  ],
+  "properties": {
+    "driver": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/name",
+      "description": "Channel driver."
+    },
+    "direction": {
+      "enum": [
+        "out",
+        "in"
+      ],
+      "description": "From v0.2: in for a source channel of external events.",
+      "x-botaru-version": "v0.2"
+    },
+    "identity_assurance": {
+      "enum": [
+        "strong",
+        "weak"
+      ],
+      "description": "How reliably the driver knows the sender (IDN-3)."
+    },
+    "membership_assurance": {
+      "enum": [
+        "enforced",
+        "none"
+      ],
+      "description": "Whether the driver knows the chat membership (DLV-7)."
+    },
+    "identity_kind": {
+      "type": "string",
+      "maxLength": 40,
+      "description": "Identity kind, for example telegram or email.",
+      "pattern": "^[a-z][a-z0-9_]*$"
+    },
+    "capabilities": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "max_text": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 100000,
+          "description": "Message length."
+        },
+        "buttons": {
+          "type": "boolean",
+          "description": "Whether there are buttons."
+        },
+        "files": {
+          "type": "boolean",
+          "description": "Whether there are files."
+        },
+        "edit": {
+          "type": "boolean",
+          "description": "Whether messages can be edited."
+        }
+      }
+    },
+    "ai_disclosure": {
+      "enum": [
+        "native",
+        "first_contact"
+      ],
+      "description": "How a person learns that they are talking to a bot (DLV-12)."
+    },
+    "provenance": {
+      "enum": [
+        "metadata",
+        "visible_label"
+      ],
+      "description": "How the channel passes the dataorigin mark (DLV-13)."
+    },
+    "rate": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "per_minute": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 10000,
+          "description": "Deliveries per minute."
+        }
+      },
+      "description": "From v0.2: the delivery pace to the channel.",
+      "x-botaru-version": "v0.2"
+    },
+    "ingress": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "event": {
+          "type": "string",
+          "maxLength": 120,
+          "description": "Event name ext.<source>.<name>.vN.",
+          "pattern": "^ext\\.[a-z][a-z0-9_]*(\\.[a-z0-9_]+)*\\.v[1-9][0-9]*$"
+        },
+        "auth": {
+          "enum": [
+            "signature",
+            "tls_token"
+          ],
+          "description": "Delivery authenticity check (ING-1)."
+        },
+        "tolerance": {
+          "$ref": "urn:botaru:schema:common:1#/$defs/duration",
+          "description": "Tolerance on the signature timestamp."
+        },
+        "limits": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "per_minute": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100000,
+              "description": "Deliveries per minute."
+            },
+            "max_body_bytes": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100000000,
+              "description": "Body size limit."
+            }
+          },
+          "required": [
+            "per_minute",
+            "max_body_bytes"
+          ]
+        },
+        "mapping": {
+          "type": "object",
+          "maxProperties": 32,
+          "propertyNames": {
+            "pattern": "^[a-z][a-z0-9_]{0,63}$"
+          },
+          "additionalProperties": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "from": {
+                "type": "string",
+                "maxLength": 200,
+                "description": "Pointer to a field of the delivery body.",
+                "pattern": "^(/[A-Za-z0-9_.-]+)+$"
+              },
+              "schema": {
+                "$ref": "urn:botaru:schema:embedded-schema:1#/$defs/closed"
+              }
+            },
+            "required": [
+              "from",
+              "schema"
+            ]
+          },
+          "description": "Mapping of body fields to closed kinds; the rest of the body goes as a file (ING-2)."
+        }
+      },
+      "required": [
+        "event",
+        "auth",
+        "limits",
+        "mapping"
+      ],
+      "description": "From v0.2: a source channel of external events.",
+      "x-botaru-version": "v0.2"
+    },
+    "config": {
+      "type": "object",
+      "description": "Driver configuration; it is closed by the driver schema under the meta-schema drivers/driver-config.schema.json.",
+      "x-botaru-closed-by": "channel driver schema under drivers/driver-config.schema.json"
+    }
+  }
+}

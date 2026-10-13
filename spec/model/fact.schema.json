@@ -1,0 +1,311 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:botaru:schema:fact:1",
+  "title": "Bot memory fact",
+  "description": "Fact (Fact): a verified record about the farm in memory of the bot scope (MEM-6). The model proposes only the kind, the predicate and the subject ($defs/proposal, at most 3 per attempt, $defs/proposals); the predicate sets the window and the selection rule, the core collects the evidence and computes the value. The data_mark equals the highest mark of the evidence and is not above the ceiling of the space. A fact from an attempt with untrusted_seen gets untrusted_origin: true. Only the core writes it at complete in the same transaction; a space holds at most 100 active facts.",
+  "x-botaru-direction": "record",
+  "x-botaru-retention": "memory",
+  "x-botaru-rules": [
+    "MEM-6",
+    "MEM-7",
+    "MEM-8",
+    "IDN-8"
+  ],
+  "type": "object",
+  "required": [
+    "id",
+    "tenant",
+    "space",
+    "kind",
+    "predicate",
+    "subject",
+    "value",
+    "state",
+    "untrusted_origin",
+    "data_mark"
+  ],
+  "properties": {
+    "id": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/object_id",
+      "description": "Fact id."
+    },
+    "tenant": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/tenant_name",
+      "description": "Tenant; a fact does not cross tenants (GOV-16)."
+    },
+    "space": {
+      "type": "object",
+      "required": [
+        "scope",
+        "subject"
+      ],
+      "properties": {
+        "scope": {
+          "const": "bot",
+          "description": "Memory scope bot."
+        },
+        "subject": {
+          "$ref": "urn:botaru:schema:common:1#/$defs/object_id",
+          "description": "Identity that owns the space."
+        }
+      },
+      "description": "Memory space; the core computes it (MEM-1). The holder of the farm manager seat has a separate space in each tenant (MGR-27)."
+    },
+    "kind": {
+      "type": "string",
+      "maxLength": 32,
+      "pattern": "^[a-z][a-z0-9_]*$",
+      "x-botaru-registry": "fact-kinds",
+      "description": "Fact kind."
+    },
+    "predicate": {
+      "type": "string",
+      "maxLength": 64,
+      "pattern": "^[a-z][a-z0-9_]*(\\.[a-z0-9_]+)*$",
+      "x-botaru-registry": "fact-predicates",
+      "description": "Fact predicate."
+    },
+    "subject": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": [
+        "type",
+        "id"
+      ],
+      "properties": {
+        "type": {
+          "enum": [
+            "resource",
+            "tasktype",
+            "dataset",
+            "schedule"
+          ],
+          "description": "Subject kind: a catalog resource, task type, dataset or schedule of this tenant. An identity, a seat, a principal or a proposal is never a subject."
+        },
+        "id": {
+          "type": "string",
+          "maxLength": 64,
+          "pattern": "^[a-z0-9:_.-]{1,64}$",
+          "description": "Object id from the restricted character set [a-z0-9:_.-]{1,64}: catalog name, resource, task type, worker, task."
+        },
+        "on": {
+          "type": "string",
+          "maxLength": 64,
+          "pattern": "^[a-z0-9:_.-]{1,64}$",
+          "description": "The resource on which the task type runs (for example the machine db1), if the predicate distinguishes it."
+        }
+      },
+      "description": "Fact subject."
+    },
+    "value": {
+      "description": "The value the core computed: a number, a resource id or a code.",
+      "anyOf": [
+        {
+          "type": "number"
+        },
+        {
+          "type": "string",
+          "maxLength": 120,
+          "pattern": "^[a-z0-9:_.-]{1,120}$"
+        }
+      ]
+    },
+    "unit": {
+      "type": "string",
+      "maxLength": 8,
+      "description": "Unit of the value from the predicate, for example min or d."
+    },
+    "window": {
+      "type": "object",
+      "required": [
+        "from",
+        "to"
+      ],
+      "properties": {
+        "from": {
+          "$ref": "urn:botaru:schema:common:1#/$defs/datetime",
+          "description": "Start of the window."
+        },
+        "to": {
+          "$ref": "urn:botaru:schema:common:1#/$defs/datetime",
+          "description": "End of the window."
+        }
+      },
+      "description": "The window that the predicate sets."
+    },
+    "evidence": {
+      "type": "array",
+      "maxItems": 1000,
+      "description": "Evidence that the core collected by the predicate rule: objects of the same tenant, not erased and accessible to the role of the space owner.",
+      "items": {
+        "type": "object",
+        "required": [
+          "kind"
+        ],
+        "properties": {
+          "kind": {
+            "type": "string",
+            "maxLength": 32,
+            "description": "Evidence kind, for example obs_rollup."
+          }
+        }
+      }
+    },
+    "state": {
+      "enum": [
+        "active",
+        "stale",
+        "sealed",
+        "erased"
+      ],
+      "description": "State of the fact lifecycle (spec/lifecycles/fact.md)."
+    },
+    "verified": {
+      "type": "object",
+      "required": [
+        "at",
+        "derivation"
+      ],
+      "properties": {
+        "at": {
+          "$ref": "urn:botaru:schema:common:1#/$defs/datetime",
+          "description": "Check time."
+        },
+        "derivation": {
+          "type": "string",
+          "maxLength": 80,
+          "description": "Predicate derivation with a version, for example task.duration.p95_min@1."
+        }
+      },
+      "description": "The last check by code."
+    },
+    "untrusted_origin": {
+      "type": "boolean",
+      "description": "The author attempt saw untrusted text; tasks with the purposes review and manage get only facts with false."
+    },
+    "inherited": {
+      "description": "For a copy taken by a successor (MEM-8); the model does not see whom the fact came from.",
+      "anyOf": [
+        {
+          "type": "object",
+          "required": [
+            "from_bot",
+            "offer",
+            "at"
+          ],
+          "properties": {
+            "from_bot": {
+              "$ref": "urn:botaru:schema:common:1#/$defs/object_id",
+              "description": "The identity that retired or changed its binding."
+            },
+            "offer": {
+              "$ref": "urn:botaru:schema:common:1#/$defs/object_id",
+              "description": "Fact offer."
+            },
+            "at": {
+              "$ref": "urn:botaru:schema:common:1#/$defs/datetime",
+              "description": "Copy time."
+            }
+          }
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "data_mark": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/data_mark",
+      "description": "The highest mark of the evidence, not above the ceiling of the space; the fact gets only into a task with a mark not lower."
+    },
+    "personal_seen": {
+      "type": "boolean",
+      "description": "The personal_seen flag of the author attempt (AUD-5)."
+    },
+    "uses": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "How many times the fact was inserted into a task."
+    },
+    "last_used_at": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/datetime",
+      "description": "Last read; on overflow the fact with the oldest last_used_at is evicted."
+    },
+    "acting_bot": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/object_id",
+      "description": "Identity of the author attempt (IDN-8)."
+    },
+    "bot_epoch": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "Binding epoch of the author attempt."
+    }
+  },
+  "$defs": {
+    "proposal": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "predicate",
+        "subject"
+      ],
+      "properties": {
+        "kind": {
+          "type": "string",
+          "maxLength": 32,
+          "pattern": "^[a-z][a-z0-9_]*$",
+          "x-botaru-registry": "fact-kinds",
+          "description": "Fact kind."
+        },
+        "predicate": {
+          "type": "string",
+          "maxLength": 64,
+          "pattern": "^[a-z][a-z0-9_]*(\\.[a-z0-9_]+)*$",
+          "x-botaru-registry": "fact-predicates",
+          "description": "Fact predicate."
+        },
+        "subject": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "type",
+            "id"
+          ],
+          "properties": {
+            "type": {
+              "enum": [
+                "resource",
+                "tasktype",
+                "dataset",
+                "schedule"
+              ],
+              "description": "Subject kind: a catalog resource, task type, dataset or schedule of this tenant. An identity, a seat, a principal or a proposal is never a subject."
+            },
+            "id": {
+              "type": "string",
+              "maxLength": 64,
+              "pattern": "^[a-z0-9:_.-]{1,64}$",
+              "description": "Object id from the restricted character set [a-z0-9:_.-]{1,64}: catalog name, resource, task type, worker, task."
+            },
+            "on": {
+              "type": "string",
+              "maxLength": 64,
+              "pattern": "^[a-z0-9:_.-]{1,64}$",
+              "description": "The resource on which the task type runs (for example the machine db1), if the predicate distinguishes it."
+            }
+          },
+          "description": "Fact subject."
+        }
+      },
+      "description": "A fact proposal by the model in the attempt result: only the kind, the predicate and the subject. The schema rejects window, evidence and value fields (MEM-6)."
+    },
+    "proposals": {
+      "type": "array",
+      "maxItems": 3,
+      "items": {
+        "$ref": "#/$defs/proposal"
+      },
+      "description": "The facts field of the result of an attempt of a type with memory.facts: propose: at most memory.facts.per_attempt (3) triples."
+    }
+  }
+}

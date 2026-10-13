@@ -1,0 +1,31 @@
+id: fx-mgr-store-low
+rules: [MGR-38]
+description: 'Free space on the core store volume is below the soft threshold: the core raises alarm.store.free.low and opens
+  an incident store_low with subject farm while the store still accepts writes; the first measure by code is an over_capacity refusal
+  for enqueues of classes 3-5; there are no seat tasks for it, and the class has no stops_manager field. A catalog without the class store_low
+  does not pass approval.'
+cases:
+- id: fx-mgr-store-low-a
+  given: {store_volume_free_below_soft: true, store_accepts_writes: true}
+  expect:
+    alarm: alarm.store.free.low.v1
+    incident:
+      class: store_low
+      subject: {kind: farm}
+      tenant: farm
+    seat_tasks_created: 0
+    seat: unchanged
+    enqueue_class_3: {result: rejected, reason: over_capacity}
+    health_response_field: present
+- id: fx-mgr-store-low-b
+  given:
+    lint: catalog/store-low-required
+    catalog_classes: [disk_full, disk_filling]
+  expect:
+    apply: {result: rejected}
+- id: fx-mgr-store-low-c
+  given:
+    lint: catalog/store-low-no-stop
+    class: {name: store_low, subject: {kind: farm}, stops_manager: true}
+  expect:
+    apply: {result: rejected}

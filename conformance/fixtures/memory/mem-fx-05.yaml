@@ -1,0 +1,67 @@
+id: mem-fx-05
+rules: [MEM-6]
+description: 'The fact mark data_mark equals the highest mark of the evidence and is not above the store ceiling; a fact is inserted
+  and proposed only into a task with a mark not below its own. A fact from an attempt with untrusted_seen gets untrusted_origin:
+  true; tasks with purposes review and manage get only facts with untrusted_origin: false. Reading a fact (memory.read:
+  bot) does not set untrusted_seen. Numbers of identities, facts, tasks and proposals are shortened, as in the example in docs/bots.md.'
+given:
+  facts:
+  - {id: f_0311, data_mark: internal, untrusted_origin: false}
+  - {id: f_0312, data_mark: raw_logs, untrusted_origin: false}
+  - {id: f_0313, data_mark: internal, untrusted_origin: true}
+  tenant: demo
+cases:
+- id: mem-fx-05-a
+  given:
+    evidence_marks: [internal, raw_logs]
+    space_ceiling: raw_logs
+  steps:
+  - call:
+      port: P1
+      op: complete
+      request:
+        result:
+          proposal:
+            kind: how_long
+            predicate: task.duration.p95_min
+            subject: {type: tasktype, id: demo.db.backup.v1, 'on': db1}
+    context:
+      attempt: {untrusted_seen: false}
+  expect:
+    fact: {data_mark: raw_logs, untrusted_origin: false}
+- id: mem-fx-05-b
+  steps:
+  - call:
+      port: P1
+      op: complete
+      request:
+        result:
+          proposal:
+            kind: how_long
+            predicate: task.duration.p95_min
+            subject: {type: tasktype, id: demo.db.backup.v1, 'on': db1}
+    context:
+      attempt: {untrusted_seen: true}
+  expect:
+    fact: {untrusted_origin: true}
+- id: mem-fx-05-c
+  given:
+    task: {type: ops.backup.watch.v1, purpose: work, data_mark: internal, memory.read: bot}
+  expect:
+    facts_inserted: [f_0311, f_0313]
+    task_untrusted_seen: false
+- id: mem-fx-05-d
+  given:
+    task: {type: ops.backup.watch.v1, purpose: work, data_mark: raw_logs, memory.read: bot}
+  expect:
+    facts_inserted: [f_0311, f_0312, f_0313]
+- id: mem-fx-05-e
+  given:
+    task: {type: review.operational.v1, purpose: review, data_mark: raw_logs, memory.read: bot}
+  expect:
+    facts_inserted: [f_0311, f_0312]
+- id: mem-fx-05-f
+  given:
+    task: {type: manager.watch.v1, purpose: manage, data_mark: internal, memory.read: bot}
+  expect:
+    facts_inserted: [f_0311]

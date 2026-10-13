@@ -1,0 +1,77 @@
+id: fx-dlv-02
+rules: [DLV-12]
+description: A person knows they are talking to a bot. A driver without `ai_disclosure` does not pass `apply`. With `first_contact`
+  the core creates a delivery of the code text `ai_notice` before the first model text; the delivery of the model answer waits in `planned`
+  while the pair (principal, channel) has no `ai_disclosure.ack` flag. If `ai_notice` ended `dead`, the waiting deliveries
+  with model text end `withheld(ai_notice_dead)`, the flag is not set, and the next activity from the principal creates
+  `ai_notice` again. With `native` there is no notification. `privacy_notice` goes separately and does not depend on `ai_disclosure`.
+expect: {model_text_before_ack: 0}
+cases:
+- given:
+    apply:
+      channel_driver: {name: telegram, ai_disclosure: null}
+  expect: {result: rejected, stage: apply}
+- given:
+    driver: {ai_disclosure: first_contact}
+    subject: human:bob
+    ack: false
+  steps:
+  - occur:
+      event: {type: task_completed}
+      task: t_01JB0000000000000000000001
+  expect:
+    deliveries:
+    - {kind: ai_notice, state: planned, dataorigin: code}
+    - {kind: task_result, state: planned, dataorigin: model, waits_for: ai_disclosure.ack}
+    - {kind: privacy_notice, state: planned}
+- given:
+    driver: {ai_disclosure: first_contact}
+    subject: human:bob
+    ack: false
+  steps:
+  - check: {delivery: ai_notice, result: delivered}
+    at: '2026-10-05T16:30:00Z'
+  expect:
+    ack: {subject: 'human:bob', channel: telegram-demo, at: '2026-10-05T16:30:00Z'}
+    task_result: sending
+- given:
+    driver: {ai_disclosure: first_contact}
+    subject: human:bob
+    ack: false
+  steps:
+  - check: {delivery: ai_notice, result: dead}
+  - call:
+      port: P1
+      op: submit_activity
+      request:
+        kind: message
+        channel: telegram
+        update_id: '1'
+        sender: {identity: 'telegram:1002', verified: true}
+        chat: {kind: direct, external_id: '1002'}
+        text: are you there?
+    by: human:bob
+  expect:
+    task_result: {state: withheld, reason: ai_notice_dead}
+    ack: false
+    new_deliveries:
+    - {kind: ai_notice, state: planned}
+- given:
+    driver: {ai_disclosure: native}
+    subject: human:bob
+    ack: false
+  steps:
+  - occur:
+      event: {type: task_completed}
+      task: t_01JB0000000000000000000001
+  expect:
+    deliveries:
+    - {kind: task_result, state: planned}
+    - {kind: privacy_notice, state: planned}
+    ai_notice: 0
+- given:
+    driver: {ai_disclosure: first_contact}
+    chat_bind: {name: lab}
+  expect:
+    deliveries:
+    - {kind: ai_notice, to: 'chat:lab'}

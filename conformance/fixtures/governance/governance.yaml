@@ -1,0 +1,698 @@
+id: fx-governance-governance
+description: 'Model rank, charter, lenses, attributions and unawareness: fixtures without a model (GOV-3, GOV-6, GOV-13,
+  GOV-16, GOV-28, GOV-33, GOV-34).'
+cases:
+- id: gov-fx-03
+  rules: [GOV-3, GW-5]
+  description: Apply lint on the rank ceiling. The ceiling is carried by the role profile (max_rank for base and seat, analysis_max_rank
+    for analysis); the charter can only lower it. apply rejects a role whose base or analysis profile rank is above the ceiling
+    of its profile, a charter whose seat model_profile rank is above the ceiling of the seat's role profile, and the same for every fallback
+    profile in fallback.
+  given:
+    role_profile_ceilings:
+      worker: {max_rank: 1, analysis_max_rank: 2}
+      reviewer: {max_rank: 3}
+      farm-manager: {max_rank: 4}
+    model_profiles:
+      base-std: {rank: 1}
+      analysis-std: {rank: 2}
+      seat-std: {rank: 3}
+      manager-std: {rank: 4}
+      big-r3: {rank: 3}
+  cases:
+  - given:
+      manifest:
+        kind: Role
+        spec:
+          profile: worker
+          models: {base: base-std, analysis: analysis-std}
+    expect: {apply: ok}
+  - given:
+      manifest:
+        kind: Role
+        spec:
+          profile: worker
+          models: {base: base-std, analysis: big-r3}
+    expect:
+      apply: {result: rejected}
+  - given:
+      manifest:
+        kind: Role
+        spec:
+          profile: worker
+          models: {base: analysis-std}
+    expect:
+      apply: {result: rejected}
+  - given:
+      manifest:
+        kind: ModelProfile
+        metadata: {name: base-std}
+        spec:
+          rank: 1
+          fallback: [seat-std]
+      with_role:
+        profile: worker
+        models: {base: base-std}
+    expect:
+      apply: {result: rejected}
+      note: fallback profile above the ceiling
+  - given:
+      manifest:
+        kind: Governance
+        metadata: {name: demo}
+        spec:
+          commission: {seat_role: commission-member, model_profile: manager-std}
+      seat_role_profile: reviewer
+    expect:
+      apply: {result: rejected}
+  - given:
+      manifest:
+        kind: Governance
+        metadata: {name: demo}
+        spec:
+          positions:
+            functional: {max_rank: 1, analysis_max_rank: 1}
+      with_role:
+        profile: worker
+        models: {analysis: analysis-std}
+    expect:
+      apply: {result: rejected}
+      note: the charter lowered the analysis ceiling to 1
+  - given:
+      manifest:
+        kind: Governance
+        metadata: {name: farm}
+        spec:
+          farm_manager: {max_rank: 4, model_profile: manager-std}
+    expect: {apply: ok}
+- id: gov-fx-04
+  rules: [GOV-3, IDN-8]
+  description: On every call P4 compares the rank of the handle's profile with the position ceiling of the acting identity (acting_bot)
+    at the attempt's epoch, not with the worker's role; while there are no identities, with the role ceiling. Above the ceiling only a call
+    under an active manager grant passes, otherwise rejected(rank_exceeded); the same for a fallback profile. The seat slot gives
+    the seat profile only to an attempt on behalf of the seat with the current seat epoch.
+  given:
+    tenant: demo
+    worker: {id: w_rv1, role: commission-member, profile: reviewer}
+    seats:
+      farm-manager: {epoch: 9, model_profile: manager-std(rank 4)}
+      commission:1: {holder: bot_05, epoch: 4}
+  cases:
+  - id: gov-fx-04-a
+    given:
+      attempt: {type: review.farm_manager.v1, acting_bot: bot_41, seat: farm-manager, seat_epoch: 9, slot: seat}
+      call_rank: 4
+    expect: {result: ok}
+  - id: gov-fx-04-b
+    given:
+      attempt: {type: review.security.v1, acting_bot: bot_05, seat: 'commission:1', seat_epoch: 4, slot: seat}
+      call_rank: 4
+    expect: {result: rejected, reason: rank_exceeded}
+  - id: gov-fx-04-c
+    given:
+      attempt: {type: review.farm_manager.v1, acting_bot: bot_41, seat: farm-manager, seat_epoch: 8, slot: seat}
+      call_rank: 4
+    expect: {result: rejected, reason: fenced}
+  - id: gov-fx-04-d
+    given:
+      attempt: {type: ops.investigate.v1, acting_bot: bot_17, position: functional, slot: base}
+      call_rank: 2
+    expect: {result: rejected, reason: rank_exceeded}
+  - id: gov-fx-04-e
+    given:
+      attempt: {type: ops.investigate.v1, acting_bot: null, role_profile: worker, slot: base}
+      call_rank: 1
+    expect: {result: ok, checked_against: role ceiling}
+  - id: gov-fx-04-f
+    given:
+      attempt: {type: ops.investigate.v1, acting_bot: bot_17, slot: base, fallback_used: seat-std(rank 3)}
+    expect: {result: rejected, reason: rank_exceeded}
+  - id: gov-fx-04-g
+    version: v0.2
+    given:
+      attempt: {type: ops.investigate.v1, acting_bot: bot_17, slot: granted, grant: active}
+      call_rank: 3
+    expect: {result: ok}
+- id: gov-fx-10
+  rules: [GOV-16, TEN-1, TEN-5]
+  description: Governance lives in the tenant. An identity, its memory, the commission seats, the queue and the cases live in one
+    tenant. In farm there is only the farm manager seat registry and the holder's identity as numbers and codes. Tasks of the manager seat
+    in T go into T, on workers of T, with the key and budget line of T. A canary of tenant A does not appear in case packets,
+    ballots, facts and model requests of tasks of another tenant.
+  given:
+    canaries: {demo: CANARY-NOT-A-SECRET-gov-demo, demo2: CANARY-NOT-A-SECRET-gov-demo2}
+    seat:
+      id: farm-manager
+      tenant: farm
+      state: held
+      holder: bot_41
+      epoch: 9
+      stop_reasons: []
+    run:
+    - {tenant: demo, type: review.farm_manager.v1}
+    - {tenant: demo2, type: review.farm_manager.v1}
+    - {tenant: demo, type: memory.pick.v1, for: bot_41}
+  expect:
+    review.farm_manager.v1@demo:
+      tenant: demo
+      worker_tenant: demo
+      p4_key: demo
+      budget_line: review@demo
+      p4_requests_contain: {CANARY-NOT-A-SECRET-gov-demo2: false}
+    review.farm_manager.v1@demo2:
+      p4_requests_contain: {CANARY-NOT-A-SECRET-gov-demo: false}
+    memory.pick.v1@demo: {budget_line: work@demo, offer_facts_tenant: demo}
+    farm_records:
+      seat: [holder, epoch, state, stop_reasons]
+      bot: [id, role, state, binding]
+      model_calls: 0
+- id: gov-fx-13
+  rules: [GOV-28]
+  description: 'Catalog lint: an incident class with stops_manager: true builds its alarm only from series with dataorigin:
+    code, written by the core or by job roles on a code schedule with a series freshness check. A class whose alarm is fed
+    by a series without dataorigin: code or without a freshness check does not pass. In the initial catalog only disk_full has the field.'
+  given: {lint: catalog/stops-manager-series}
+  cases:
+  - given:
+      class:
+        name: disk_full
+        stops_manager: true
+        detect: {alarm: alarm.disk.free.low.v1}
+      series: {dataorigin: code, writer: job, freshness_check: true}
+    expect: {apply: ok}
+  - given:
+      class: {name: runaway_spend, stops_manager: true}
+      series: {dataorigin: model}
+    expect:
+      apply: {result: rejected}
+  - given:
+      class: {name: disk_full, stops_manager: true}
+      series: {dataorigin: code, writer: job, freshness_check: false}
+    expect:
+      apply: {result: rejected}
+  - given: {initial_catalog: true}
+    expect:
+      classes_with_stops_manager: [disk_full]
+- id: gov-fx-14
+  rules: [GOV-28]
+  description: 'Apply lint: roles that write series of classes with stops_manager have no model slot; a series that
+    a job role without a model carries over from the monitoring system history (used volume space, CAP-6) is a code series.'
+  given: {lint: roles/stops-manager-writers}
+  cases:
+  - given:
+      role: {name: volume-series, worker_kind: job, models: null}
+      writes: farm.volume.used_bytes
+    expect: {apply: ok}
+  - given:
+      role:
+        name: volume-series
+        worker_kind: agent
+        models: {base: base-std}
+      writes: farm.volume.used_bytes
+    expect:
+      apply: {result: rejected}
+- id: gov-fx-25
+  rules: [GOV-28]
+  description: Series of classes with stops_manager are not fed by model output and choice, schema and model refusals, token
+    spend, names from request_action, the volume of agent task results, or series of roles of the profiles reviewer, farm-manager,
+    farm-manager-reader and the purposes review, governance, manage, inspect, handover. The lint rejects every such series
+    source.
+  given: {lint: catalog/stops-manager-sources}
+  cases:
+  - given:
+      class: {name: disk_full, stops_manager: true}
+      series_source: model_output
+    expect:
+      apply: {result: rejected}
+  - given:
+      class: {name: disk_full, stops_manager: true}
+      series_source: model_choice
+    expect:
+      apply: {result: rejected}
+  - given:
+      class: {name: disk_full, stops_manager: true}
+      series_source: output_schema_invalid_count
+    expect:
+      apply: {result: rejected}
+  - given:
+      class: {name: disk_full, stops_manager: true}
+      series_source: model_refusal_count
+    expect:
+      apply: {result: rejected}
+  - given:
+      class: {name: disk_full, stops_manager: true}
+      series_source: tokens_spent
+    expect:
+      apply: {result: rejected}
+  - given:
+      class: {name: disk_full, stops_manager: true}
+      series_source: request_action_names
+    expect:
+      apply: {result: rejected}
+  - given:
+      class: {name: disk_full, stops_manager: true}
+      series_source: agent_task_result_bytes
+    expect:
+      apply: {result: rejected}
+  - given:
+      class: {name: disk_full, stops_manager: true}
+      series_source: role_profile:reviewer
+    expect:
+      apply: {result: rejected}
+  - given:
+      class: {name: disk_full, stops_manager: true}
+      series_source: role_profile:farm-manager
+    expect:
+      apply: {result: rejected}
+  - given:
+      class: {name: disk_full, stops_manager: true}
+      series_source: role_profile:farm-manager-reader
+    expect:
+      apply: {result: rejected}
+  - given:
+      class: {name: disk_full, stops_manager: true}
+      series_source: purpose:review
+    expect:
+      apply: {result: rejected}
+  - given:
+      class: {name: disk_full, stops_manager: true}
+      series_source: purpose:governance
+    expect:
+      apply: {result: rejected}
+  - given:
+      class: {name: disk_full, stops_manager: true}
+      series_source: purpose:manage
+    expect:
+      apply: {result: rejected}
+  - given:
+      class: {name: disk_full, stops_manager: true}
+      series_source: purpose:inspect
+    expect:
+      apply: {result: rejected}
+  - given:
+      class: {name: disk_full, stops_manager: true}
+      series_source: purpose:handover
+    expect:
+      apply: {result: rejected}
+  - given:
+      class: {name: disk_full, stops_manager: true}
+      series_source: monitor_history_via_job
+    expect: {apply: ok}
+- id: gov-fx-26
+  rules: [GOV-33]
+  description: Only the charter declares seats. apply rejects a set where seats, their lenses or executors are declared
+    elsewhere or twice; does not delete a seat that has a holder; does not accept tenant charter blocks outside commission,
+    positions, promotion, removal, attribution, confirmation, ballots, identity, memory; numeric fields change
+    in one direction only; a farm_manager block exists only in the farm charter, and the tenant's relation to the manager
+    only in the tenant specification.
+  given: {lint: governance/charter}
+  cases:
+  - given:
+      manifests:
+      - kind: Commission
+        spec:
+          seats:
+          - {id: 5, lens: cost}
+    expect:
+      apply: {result: rejected}
+      note: the commission manifest sets only thresholds and weights
+  - given:
+      manifests:
+      - kind: Governance
+        metadata: {name: demo}
+        spec:
+          commission:
+            seats:
+            - {id: 1, lens: security}
+            - {id: 1, lens: cost}
+    expect:
+      apply: {result: rejected}
+      note: the seat is declared twice
+  - given:
+      seat: {id: 'commission:4', holder: bot_12}
+      manifests:
+      - kind: Governance
+        metadata: {name: demo}
+        spec:
+          commission:
+            seats:
+            - {id: 1}
+            - {id: 2}
+            - {id: 3}
+    expect:
+      apply: {result: rejected}
+      note: P2 seat.vacate first
+  - given:
+      manifests:
+      - kind: Governance
+        metadata: {name: demo}
+        spec:
+          rewards: {}
+    expect:
+      apply: {result: rejected}
+  - given:
+      manifests:
+      - kind: Governance
+        metadata: {name: demo}
+        spec:
+          farm_manager: {max_rank: 4}
+    expect:
+      apply: {result: rejected}
+      note: only the farm charter declares the manager seat
+  - given:
+      manifests:
+      - kind: Governance
+        metadata: {name: farm}
+        spec:
+          farm_manager: {enabled: false}
+    expect:
+      apply: {result: rejected}
+      note: the tenant specification sets enabled
+  - given:
+      manifests:
+      - kind: Governance
+        metadata: {name: demo}
+        spec:
+          promotion: {probation: 7d}
+    expect:
+      apply: {result: rejected}
+  - given:
+      manifests:
+      - kind: Governance
+        metadata: {name: demo}
+        spec:
+          promotion: {min_tenure: 20d}
+    expect:
+      apply: {result: rejected}
+  - given:
+      manifests:
+      - kind: Governance
+        metadata: {name: demo}
+        spec:
+          removal: {protect_new: 30d}
+    expect:
+      apply: {result: rejected}
+  - given:
+      manifests:
+      - kind: Governance
+        metadata: {name: demo}
+        spec:
+          ballots: {stuck_after: 48h}
+    expect:
+      apply: {result: rejected}
+  - given:
+      manifests:
+      - kind: Governance
+        metadata: {name: demo}
+        spec:
+          memory:
+            facts: {max_active: 200}
+    expect:
+      apply: {result: rejected}
+  - given:
+      manifests:
+      - kind: Governance
+        metadata: {name: demo}
+        spec:
+          memory:
+            offer: {take_max: 80}
+    expect:
+      apply: {result: rejected}
+  - given:
+      manifests:
+      - kind: Governance
+        metadata: {name: demo}
+        spec:
+          identity: {unbound_ttl: 10d}
+    expect:
+      apply: {result: rejected}
+  - given:
+      manifests:
+      - kind: Governance
+        metadata: {name: demo}
+        spec:
+          promotion:
+            exclude_change_kinds: [script]
+    expect:
+      apply: {result: rejected}
+      note: kind none is always in the list
+  - given:
+      manifests:
+      - kind: Governance
+        metadata: {name: demo}
+        spec:
+          commission:
+            audit_sample: {min_per_month: 2}
+    expect:
+      apply: {result: rejected}
+  - given:
+      manifests:
+      - kind: Governance
+        metadata: {name: demo}
+        spec:
+          promotion: {probation: 21d, swap_cooldown: 45d}
+          memory:
+            seal_ttl: 45d
+            facts: {max_active: 50, per_attempt: 2}
+    expect: {apply: ok}
+- id: gov-fx-28
+  rules: [GOV-34]
+  description: 'For a tenant with kind: production the model profiles of the seats of the veto lenses (security, operational) come from different
+    families: a match is the apply error veto_lenses_same_family; on a test bench the same gives a doctor warning. Default shadow
+    shares are 0.25 for veto lenses and 0.2 for the others; a share of 0 is allowed only with an explicit shadow: off, and doctor
+    shows "shadow off".'
+  given:
+    model_profiles:
+      seat-std: {family: family-a, rank: 3}
+      seat-alt: {family: family-b, rank: 3}
+  cases:
+  - given:
+      tenant: {name: demo, kind: production}
+      seats:
+      - {id: 1, lens: security}
+      - {id: 2, lens: operational}
+      model_profile: seat-std
+    expect:
+      apply: {result: rejected}
+      reason: veto_lenses_same_family
+  - given:
+      tenant: {name: demo, kind: production}
+      seats:
+      - {id: 1, lens: security}
+      - {id: 2, lens: operational, model_profile: seat-alt}
+      model_profile: seat-std
+    expect: {apply: ok}
+  - given:
+      tenant: {name: demo2, kind: test}
+      seats:
+      - {id: 1, lens: security}
+      - {id: 2, lens: operational}
+      model_profile: seat-std
+    expect: {apply: ok, doctor: warning veto_lenses_same_family}
+  - given:
+      commission_manifest:
+        shadow: {veto_lenses: 0}
+    expect:
+      apply: {result: rejected}
+  - given:
+      commission_manifest: {shadow: 'off'}
+    expect: {apply: ok, doctor: shadow off}
+  - given:
+      commission_manifest: {}
+    expect:
+      shadow_share: {veto_lenses: 0.25, other_lenses: 0.2}
+- id: gov-att-02
+  rules: [GOV-13, MON-4]
+  description: 'Lint and refusals: no bot, including seat holders and the manager, has an operation, message kind,
+    proposal field, task result or route that creates, changes, confirms or hides an attribution,
+    an incident record or an alarm. decide on an attribution from a bot, service or system is rejected. A bot cannot confirm, close,
+    silence a monitoring system problem or change its severity.'
+  cases:
+  - given:
+      lint: roles/no-attribution
+      manifest:
+        kind: Role
+        spec:
+          builtin: [attribution_create]
+    expect:
+      apply: {result: rejected}
+  - given:
+      lint: messages/no-attribution
+      manifest:
+        kind: MessageType
+        metadata: {name: attribution.confirm.v1}
+    expect:
+      apply: {result: rejected}
+  - given:
+      lint: routes/no-attribution
+      manifest:
+        kind: Route
+        spec: {'on': task.completed, do: attribution.create}
+    expect:
+      apply: {result: rejected}
+  - given:
+      lint: tasktypes/no-incident-fields
+      manifest:
+        kind: TaskType
+        spec:
+          result_schema:
+            properties:
+              incident_state:
+                enum: [dismissed]
+          x-botaru-read-by: code
+    expect:
+      apply: {result: rejected}
+  - given:
+      proposal:
+        change: {kind: manifest_change, path: attribution-rules}
+    expect: {result: rejected, reason: forbidden_change}
+  - steps:
+    - call:
+        port: P1
+        op: decide
+        request: {subject_kind: attribution, id: $last, decision: 'no'}
+      by: bot:bot_17
+    expect: {result: rejected, reason: forbidden}
+  - steps:
+    - call:
+        port: P1
+        op: decide
+        request: {subject_kind: attribution, id: $last, decision: 'no'}
+      by: service:ci-exporter
+    expect: {result: rejected, reason: forbidden}
+  - steps:
+    - call:
+        port: P1
+        op: decide
+        request: {subject_kind: attribution, id: $last, decision: 'no'}
+      by: system
+    expect: {result: rejected, reason: forbidden}
+  - given: {attempt_tool: monitor/problem_ack}
+    expect:
+      tool_listed: false
+      farm_account_rights_in_monitor: [read, note]
+- id: gov-att-05
+  rules: [GOV-13]
+  version: v0.2
+  description: 'Without a model: an incident with a confirmed attribution is dismissed with reason_code: false_alarm. The attribution becomes
+    disputed, the author of the "Yes" answer gets an attribution_dispute card in a private chat, and there is no promotion trigger. "Yes" on
+    the card restores confirmed; 7 days of silence give canceled, and the trigger appears no earlier than that; the unknown candidate
+    of the same incident becomes canceled at once, the waiting card closes, and there are no new candidates for this incident.'
+  given:
+    incident: {id: i_0913, tenant: demo, class: backup_late, state: resolved}
+    attributions:
+    - {id: at_0042, change: p_0101, state: confirmed, answered_yes_by: 'human:alice'}
+    - {id: at_0043, change: p_0102, state: unknown}
+    people:
+    - principal: human:carol
+      caps: [incident.manage@demo]
+  steps:
+  - call:
+      port: P2
+      op: incident.dismiss
+      request:
+        incident: i_0913
+        reason_code: false_alarm
+        details: The backup was late because of a planned window move.
+    by: human:carol
+  cases:
+  - id: gov-att-05-a
+    expect:
+      at_0042: disputed
+      at_0043: canceled
+      card:
+        kind: attribution_dispute
+        to: dm:human:alice
+        shows: [reason_code, details of carol]
+      promotion_trigger_p_0101: none
+      new_candidates_for_i_0913: 0
+      same_transaction: true
+  - id: gov-att-05-b
+    steps:
+    - call:
+        port: P1
+        op: decide
+        request: {subject_kind: attribution, id: $last, decision: 'yes'}
+      by: human:alice
+      card: attribution_dispute
+    expect: {at_0042: confirmed}
+  - id: gov-att-05-c
+    steps:
+    - call:
+        port: P1
+        op: decide
+        request: {subject_kind: attribution, id: $last, decision: withdraw}
+      by: human:alice
+      card: attribution_dispute
+    expect: {at_0042: canceled}
+  - id: gov-att-05-d
+    given: {now_plus: 7d}
+    expect: {at_0042: canceled, promotion_trigger_not_before: cancel time}
+  - id: gov-att-05-e
+    steps:
+    - call:
+        port: P1
+        op: decide
+        request: {subject_kind: attribution, id: $last, decision: withdraw}
+      by: human:carol
+      card: attribution_dispute
+    expect: {result: rejected, note: only the author of the "Yes" answer replies}
+  - id: gov-att-05-f
+    given: {'human:alice': disabled}
+    expect: {at_0042: canceled, note: 'the author''s principal is disabled: the dispute closes at once with the dismissal'}
+- id: gov-fx-06
+  rules: [GOV-6]
+  description: 'Lint: no role, task type, message kind or route refers to case management operations.
+    There is no P2 operation that opens a case; bots have no P1 or P3 operation, message kind, proposal field,
+    task result or route that opens, moves, closes or cancels a case, or changes the count, the seat holder,
+    the queue or an identity retirement. The prohibition applies from v0.1.'
+  given: {lint: governance/no-bot-path}
+  cases:
+  - given:
+      manifest:
+        kind: Role
+        spec:
+          builtin: [governance_open]
+    expect:
+      apply: {result: rejected}
+  - given:
+      manifest:
+        kind: TaskType
+        spec:
+          result_schema:
+            properties:
+              case_action:
+                enum: [open, cancel]
+    expect:
+      apply: {result: rejected}
+  - given:
+      manifest:
+        kind: MessageType
+        metadata: {name: governance.vote.v1}
+    expect:
+      apply: {result: rejected}
+  - given:
+      manifest:
+        kind: Route
+        spec: {'on': governance.case.opened, enqueue: ops.investigate.v1}
+    expect:
+      apply: {result: rejected}
+      note: route on governance.* events
+  - given:
+      manifest:
+        kind: Route
+        spec: {'on': seat.assigned, enqueue: report.render.v1}
+    expect:
+      apply: {result: rejected}
+      note: route on seat.* events (GOV-29)
+  - given:
+      proposal:
+        change: {kind: manifest_change, path: promotion.queue}
+    expect: {result: rejected, reason: forbidden_change}
+  - given: {p2_operations: all}
+    expect:
+      contains: [governance.list, governance.show, governance.cancel]
+      not_contains: [governance.open]
+  - given: {p1_p3_operations: all}
+    expect:
+      not_contains_any: [governance.*, seat.*, bot.retire, promotion.*]

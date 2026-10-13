@@ -1,0 +1,20 @@
+# evals/cases/ops-reader/ops-013.yaml (catalog: evals/README.md)
+id: ops-013
+kind: quality
+blocking: false
+status: active
+version: v0.1
+rules: [DLV-6]
+summary: 'alice in the group chat lab: /health@demo_bot what is up with the site; only the summary goes to the chat, the rest goes to alice directly (D-48).'
+from: alice
+chat: lab
+lang: ru
+message: '/health@demo_bot what is up with the site?'
+data: {gen: nginx, seed: 42}
+expect:
+  state: completed
+  checks:
+  - store:
+      path: deliveries[?task==self].chat
+      subset_of: [lab, alice-dm]
+  - not_contains: {ref: answers#/raw_line_markers}

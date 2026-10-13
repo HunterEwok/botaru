@@ -1,0 +1,18 @@
+# Mock model scenario behind P4 for the black-box runner (docs/quality.md,
+# "Hello bot example and skeleton readiness"). The mock model answers the very first
+# request of the attempt with recorded text and calls no tools.
+id: hello-bot/mock-model
+rules: [GW-7, DLV-11, DLV-13]
+description: >-
+  The mock model accepts one attempt request of task hello.greet.v1 on the profile
+  of slot base of role hello and answers with a ready result that matches the task type's result_schema.
+profile: base-std
+turns:
+  - expect_request:
+      slot: base
+      tools: []                    # the role has no plugins; the task type needs no built-in tools of the worker profile
+      instruction_contains: "Greet the person"
+    respond:
+      stop_reason: end_turn
+      result: {answer: "Hello, alice! I am the farm bot @demo_bot."}
+      usage: {input_tokens: 180, output_tokens: 20}

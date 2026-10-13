@@ -1,0 +1,81 @@
+id: prp-05
+rules: [PRP-23, PRP-20, HLD-1]
+description: 'The "Roll back" card. At realized by commit the core saves a reverse edit: the earlier values of the same
+  fields of the same objects. The core checks the guards once a day; when a guard has gone beyond the tolerance in the bad
+  direction, the executor gets a rollback_card with the reverse edit and, if the change can be neutralized by a hold,
+  with a button for the P2 operation hold.set, which the core accepts only from an executor with the permission hold.set:<scope>. The farm
+  rolls nothing back itself and does not write to git; the trial runs until the end of the window.'
+given:
+  tenant: demo
+  insights:
+    realizers: [bob]
+  humans:
+  - name: bob
+    caps: ['hold.set:schedule']
+  - name: carol
+    caps: []
+  proposal:
+    id: p_01JB0000000000000000000101
+    change:
+      kind: manifest_change
+      target: {kind: Schedule, name: report-nightly}
+      field: spec.cron
+      value: 30 3 * * *
+    previous: {spec.cron: 0 2 * * *}
+steps:
+- check:
+    realized_by_commit: {trailer: 'Botaru-Proposal: p_01JB0000000000000000000101'}
+  expect:
+    state: realized
+    revert_patch:
+    - target: {kind: Schedule, name: report-nightly}
+      field: spec.cron
+      previous: 0 2 * * *
+    trial: {state: running}
+- stand:
+    op: loop.tick
+    loop: proposal
+    point: daily_check
+    day: 3
+    guard: {series: farm.schedule.slot, subject: 'schedule:report-nightly', broken: true}
+  expect:
+    trial: {state: guard_broken}
+    cards:
+    - kind: rollback_card
+      to: bob
+      revert_patch: true
+      hold_button:
+        op: hold.set
+        scope: {kind: schedule, name: report-nightly}
+    git_writes: 0
+    farm_reverts: 0
+- call:
+    port: P2
+    op: hold.set
+    request:
+      scope: {kind: schedule, tenant: demo, name: report-nightly}
+      effects: [no_enqueue]
+      reason: manual
+      until: null
+  by: human:carol
+  card: rollback_card
+  note: the "Roll back" button of the rollback_card is the P2 operation hold.set
+  expect: {result: rejected, reason: forbidden}
+- call:
+    port: P2
+    op: hold.set
+    request:
+      scope: {kind: schedule, tenant: demo, name: report-nightly}
+      effects: [no_enqueue]
+      reason: manual
+      until: null
+  by: human:bob
+  card: rollback_card
+  note: the "Roll back" button of the rollback_card is the P2 operation hold.set
+  expect:
+    result: ok
+    hold:
+      scope: {kind: schedule, name: report-nightly}
+- stand: {op: loop.tick, loop: proposal, point: window_end, day: 14}
+  expect:
+    trial: {state: worse, outcome: worse}

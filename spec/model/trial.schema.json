@@ -1,0 +1,332 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:botaru:schema:trial:1",
+  "title": "Change trial",
+  "description": "A change trial record in the trial field of a proposal. The core creates it on \"Accept\" or \"Override veto\" of any kind except none, in the same transaction: the metric from benefit.metric (a series with a full outcome block), the promise, the subjects, the before values over 14 days and from one to five guards with before values (PRP-21). The window is 14 days from realized; only code computes the result (PRP-22). The model does not write to the record.",
+  "x-botaru-direction": "record",
+  "x-botaru-rules": [
+    "PRP-21",
+    "PRP-22",
+    "PRP-23",
+    "OBV-6"
+  ],
+  "type": "object",
+  "required": [
+    "metric",
+    "promised",
+    "before",
+    "guards",
+    "window",
+    "state",
+    "self_measured",
+    "outcome"
+  ],
+  "properties": {
+    "metric": {
+      "type": "object",
+      "required": [
+        "series",
+        "subject",
+        "compare",
+        "better"
+      ],
+      "properties": {
+        "series": {
+          "$ref": "urn:botaru:schema:observation-query:1#/$defs/series"
+        },
+        "subject": {
+          "$ref": "urn:botaru:schema:observation-query:1#/$defs/subject"
+        },
+        "compare": {
+          "$ref": "urn:botaru:schema:observation-query:1#/$defs/rollup"
+        },
+        "better": {
+          "$ref": "urn:botaru:schema:proposal-body:1#/$defs/direction"
+        }
+      }
+    },
+    "promised": {
+      "type": "object",
+      "required": [
+        "direction"
+      ],
+      "properties": {
+        "direction": {
+          "$ref": "urn:botaru:schema:proposal-body:1#/$defs/direction"
+        },
+        "change_pp": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 100
+        },
+        "change_pct": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1000
+        }
+      }
+    },
+    "subjects": {
+      "type": "array",
+      "items": {
+        "$ref": "urn:botaru:schema:observation-query:1#/$defs/subject"
+      },
+      "maxItems": 20,
+      "description": "Subjects that the core derived from the change targets."
+    },
+    "before": {
+      "type": "object",
+      "description": "Metric value over all points, without the points of the author bot and without the points of all bots of its role (PRP-22).",
+      "required": [
+        "value",
+        "samples"
+      ],
+      "properties": {
+        "value": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "samples": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "without_author": {
+          "type": "object",
+          "required": [
+            "value",
+            "samples"
+          ],
+          "properties": {
+            "value": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "samples": {
+              "type": "integer",
+              "minimum": 0
+            }
+          }
+        },
+        "without_role": {
+          "type": "object",
+          "required": [
+            "value",
+            "samples"
+          ],
+          "properties": {
+            "value": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "samples": {
+              "type": "integer",
+              "minimum": 0
+            }
+          }
+        }
+      }
+    },
+    "after": {
+      "type": "object",
+      "description": "Metric value over all points, without the points of the author bot and without the points of all bots of its role (PRP-22).",
+      "required": [
+        "value",
+        "samples"
+      ],
+      "properties": {
+        "value": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "samples": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "without_author": {
+          "type": "object",
+          "required": [
+            "value",
+            "samples"
+          ],
+          "properties": {
+            "value": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "samples": {
+              "type": "integer",
+              "minimum": 0
+            }
+          }
+        },
+        "without_role": {
+          "type": "object",
+          "required": [
+            "value",
+            "samples"
+          ],
+          "properties": {
+            "value": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "samples": {
+              "type": "integer",
+              "minimum": 0
+            }
+          }
+        }
+      }
+    },
+    "guards": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "series",
+          "subject",
+          "before"
+        ],
+        "properties": {
+          "series": {
+            "$ref": "urn:botaru:schema:observation-query:1#/$defs/series"
+          },
+          "subject": {
+            "$ref": "urn:botaru:schema:observation-query:1#/$defs/subject"
+          },
+          "compare": {
+            "$ref": "urn:botaru:schema:observation-query:1#/$defs/rollup"
+          },
+          "before": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "source": {
+            "enum": [
+              "target",
+              "metric",
+              "extra_guards"
+            ],
+            "description": "Where the guard comes from: the table by target kind, the table by metric, or insights.extra_guards."
+          },
+          "broken_at": {
+            "anyOf": [
+              {
+                "$ref": "urn:botaru:schema:common:1#/$defs/datetime"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        }
+      },
+      "maxItems": 5,
+      "description": "From one to five guards (PRP-21).",
+      "minItems": 1
+    },
+    "window": {
+      "type": "object",
+      "required": [
+        "from",
+        "days"
+      ],
+      "properties": {
+        "from": {
+          "const": "realized"
+        },
+        "days": {
+          "const": 14
+        },
+        "starts_at": {
+          "anyOf": [
+            {
+              "$ref": "urn:botaru:schema:common:1#/$defs/datetime"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      }
+    },
+    "state": {
+      "enum": [
+        "baseline",
+        "running",
+        "guard_broken",
+        "better",
+        "unchanged",
+        "worse",
+        "undetermined",
+        "mixed",
+        "canceled"
+      ],
+      "description": "State by spec/lifecycles/trial.md."
+    },
+    "self_measured": {
+      "type": "boolean",
+      "description": "The metric points are produced only by attempts of the author or its role; the result is computed from the remaining ones (PRP-22)."
+    },
+    "outcome": {
+      "anyOf": [
+        {
+          "enum": [
+            "better",
+            "unchanged",
+            "worse",
+            "undetermined",
+            "mixed",
+            "canceled"
+          ],
+          "description": "Result from a closed list (PRP-22); canceled on a revert without a triggered guard and not for harm_observed, or on realization_failed."
+        },
+        {
+          "type": "null"
+        }
+      ]
+    }
+  }
+}

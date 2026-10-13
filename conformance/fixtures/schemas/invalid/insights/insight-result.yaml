@@ -1,0 +1,20 @@
+schema: spec/model/insight-result.schema.json
+rules: [INS-1]
+description: >-
+  Analysis results that the schema rejects: four proposals; an empty list of proposals; proposals together with the
+  code nothing_found; a send_message field next to the result.
+cases:
+  - proposals:
+      - &p
+        category: schedule
+        problem: {code: report_overlap, subjects: ['schedule:report-nightly'], severity: low}
+        evidence: [{kind: observation, series: farm.schedule.slot, subject: 'schedule:report-nightly', window: 14d, rollup: window.share, value: 0.86}]
+        change: {kind: none}
+      - *p
+      - *p
+      - *p
+  - proposals: []
+  - code: nothing_found
+    proposals: [*p]
+  - code: nothing_found
+    send_message: {to: chat:demo-ops, text: done}

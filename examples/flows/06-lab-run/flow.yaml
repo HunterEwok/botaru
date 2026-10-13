@@ -1,0 +1,40 @@
+# Flow 6 from examples/flows.md: where is the lab run.
+# In the text erin from runs asks; here it is alice with groups user and runs (the brief's training names), and carol approves.
+id: flow-06-lab-run
+rules: [INJ-13, APR-2, APR-4, APR-7, DEP-4, INJ-1]
+description: >-
+  alice asks about the run. The output of batch/trace sets untrusted_seen. The model requests
+  action pipeline.batch_resume, carol from runs-lead approves, the core enqueues the action task
+  and one write call, and the oneshot unit starts without waiting.
+given:
+  tenant: demo
+  people:
+    - {principal: alice, kind: user, groups: [user, runs]}
+    - {principal: carol, kind: user, groups: [staff, approver, ctd-lead, runs-lead]}
+  manifests: [examples/tenants/demo/, examples/roles/pipeline-reader/role.yaml, examples/tasktypes/pipeline.status.v1.yaml,
+              examples/tools/batch/tool.yaml, examples/tools/pipeline/tool.yaml, examples/actions.yaml]
+steps:
+  - {port: P1, op: submit_activity, by: channel:telegram,
+     activity: {kind: message, channel: telegram, update_id: "3", sender: {identity: "telegram:1001", verified: true}, chat: {kind: direct, external_id: "1001"}, text: "/pipeline how is the run doing?"},
+     expect: {task: {type: pipeline.status.v1, record: {max_tier: 1, data_mark: internal}}}}
+  - {port: P1, op: claim, by: role:pipeline-reader, request: {kinds: [attempt]}}
+  - {port: P3, op: tools/call, tool: batch/runs, args: {}}
+  - {port: P3, op: tools/call, tool: batch/trace, args: {run: run-2026-09},
+     expect: {untrusted_seen: true, untrusted_source: batch/trace}}
+  - {port: P3, op: request_action, action: pipeline.batch_resume, args: {run: run-2026-09, profile: highmem},
+     expect: {approval: {id: "4816", state: pending, untrusted_before: true}}}
+  - {port: P1, op: complete, by: role:pipeline-reader,
+     result: {answer: "Run run-2026-09 has stopped; request #4816 is waiting for approval.", run: run-2026-09, state: failed}}
+  - {port: P1, op: decide, by: channel:telegram, decide: {subject_kind: approval, id: "4816", decision: approve}, principal: carol,
+     expect: {task: {type: action.pipeline.batch_resume, idempotency_key: "system:approval:4816"}, write_calls: 1}}
+  - {port: P1, op: claim, by: toolhost:th-demo-act@ctd1, request: {kinds: [toolcall]},
+     expect: {payload: {tool: pipeline/resume_batch, approval_id: "4816"}}}
+  - {port: P1, op: complete, by: toolhost:th-demo-act@ctd1, request_output: {accepted: true},
+     expect: {task_state: completed, card_update: all_approvers}}
+expect:
+  events: [task.submitted, task.working, task.completed, approval.created, approval.approved]
+  denied:
+    - {port: P1, op: decide, principal: alice, decide: {subject_kind: approval, id: "4816", decision: approve}, reason: self_approve}
+  not:
+    - "custom command line flags: arguments only from lists (INJ-1)"
+    - "sample names acting as instructions"

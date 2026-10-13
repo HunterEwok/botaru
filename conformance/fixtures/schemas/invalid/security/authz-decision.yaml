@@ -1,0 +1,9 @@
+schema: urn:botaru:schema:authz-decision:1
+rules:
+- PRM-8
+description: A denial without a reason and a denial with free text.
+cases:
+- decision: deny
+- decision: deny
+  reason: no_group_cap
+  message: alice has no permissions

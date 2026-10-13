@@ -1,0 +1,142 @@
+registry: manifest-kinds
+version: 1
+description: >-
+  Manifest kinds of the farm. A manifest in git lies in the wrapper apiVersion, kind,
+  metadata and spec and passes the wrapper schema spec/manifests/manifest.schema.json
+  and the spec schema of its kind (MAN-1). A kind without an entry here is rejected
+  by farmctl apply. The scope field says whose object it is: tenant means that the
+  object must have metadata.tenant; global means that the object is common to the
+  farm and carries no tenant data (TEN-6); self means that the object is the
+  tenant itself; either means that the object can be either common or the tenant's. The path
+  field repeats the "Where it lives" column of the "Manifest kinds" table in
+  docs/task-language.md, and name_format names the format of metadata.name from
+  spec/model/common.schema.json. The Script kind will appear in v0.2 together with its
+  schema; until then no entry for the kind is created.
+source: docs/task-language.md
+entries:
+  - id: Tenant
+    since: v0.1
+    schema: urn:botaru:schema:tenant:1
+    scope: self
+    path: tenants/<t>/tenant.yaml
+    name_format: tenant_name
+    rules: [MAN-1, TEN-6, APR-9, CAP-1, SEC-8, PRM-13, APR-17]
+  - id: Group
+    since: v0.1
+    schema: urn:botaru:schema:group:1
+    scope: tenant
+    path: tenants/<t>/groups.yaml
+    name_format: name
+    rules: [MAN-1, PRM-2, PRM-7]
+  - id: Role
+    since: v0.1
+    schema: urn:botaru:schema:role:1
+    scope: global
+    path: roles/<role>/role.yaml
+    name_format: name
+    rules: [MAN-1, TEN-6, PRF-1]
+  - id: TaskType
+    since: v0.1
+    schema: urn:botaru:schema:task-type:1
+    scope: global
+    path: tasktypes/<type>.yaml
+    name_format: type_name
+    rules: [MAN-1, MAN-5, MAN-8, INJ-1]
+  - id: ToolPlugin
+    since: v0.1
+    schema: urn:botaru:schema:tool-plugin:1
+    scope: global
+    path: tools/<plugin>/tool.yaml
+    name_format: name
+    rules: [MAN-1, INJ-1, INJ-2, INJ-3, INJ-4]
+  - id: Action
+    since: v0.1
+    schema: urn:botaru:schema:action:1
+    scope: global
+    path: actions.yaml
+    name_format: dotted_name
+    rules: [MAN-1, MAN-9, INJ-1]
+  - id: Catalog
+    since: v0.1
+    schema: urn:botaru:schema:catalog:1
+    scope: tenant
+    path: tenants/<t>/catalog.yaml
+    name_format: name
+    rules: [MAN-1, MAN-10]
+  - id: Route
+    since: v0.1
+    schema: urn:botaru:schema:route:1
+    scope: tenant
+    path: tenants/<t>/routes.yaml
+    name_format: name
+    rules: [MAN-1]
+  - id: Schedule
+    since: v0.1
+    schema: urn:botaru:schema:schedule:1
+    scope: tenant
+    path: tenants/<t>/schedules.yaml
+    name_format: name
+    rules: [MAN-1, TIM-2]
+  - id: Channel
+    since: v0.1
+    schema: urn:botaru:schema:channel:1
+    scope: tenant
+    path: tenants/<t>/channels.yaml
+    name_format: name
+    rules: [MAN-1]
+  - id: Sink
+    since: v0.1
+    schema: urn:botaru:schema:sink:1
+    scope: tenant
+    path: tenants/<t>/sinks.yaml
+    name_format: name
+    rules: [MAN-1]
+  - id: MessageType
+    since: v0.1
+    schema: urn:botaru:schema:message-type:1
+    scope: global
+    path: farm git
+    name_format: type_name
+    rules: [MAN-1]
+  - id: BotGroup
+    since: v0.1
+    schema: urn:botaru:schema:bot-group:1
+    scope: tenant
+    path: tenants/<t>/botgroups/
+    name_format: name
+    rules: [MAN-1]
+  - id: ObservationSeries
+    since: v0.1
+    schema: urn:botaru:schema:observation-series:1
+    scope: tenant
+    path: tenant git
+    name_format: dotted_name
+    rules: [MAN-1]
+  - id: ModelProfile
+    since: v0.1
+    schema: urn:botaru:schema:model-profile:1
+    scope: either
+    path: farm or tenant git
+    name_format: name
+    rules: [MAN-1, GOV-34]
+  - id: Commission
+    since: v0.1
+    schema: urn:botaru:schema:commission:1
+    scope: tenant
+    path: tenant git
+    name_format: name
+    rules: [MAN-1, COM-10]
+  - id: IncidentClass
+    since: v0.1
+    schema: urn:botaru:schema:incident-class:1
+    scope: global
+    path: farm git
+    name_format: dotted_name
+    rules: [MAN-1]
+  - id: Governance
+    since: v0.1
+    schema: urn:botaru:schema:governance:1
+    scope: tenant
+    path: farm git
+    name_format: name
+    rules: [MAN-1]

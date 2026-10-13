@@ -1,0 +1,191 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:botaru:schema:spend:1",
+  "title": "Usage line",
+  "description": "A usage line for each model and tool call and for each publication of a bot message (BUD-3). The core sets the budget line line by the type purpose (BUD-7). The principal is kept for 93 days, the period of the class observation; since v0.2 the retention cycle replaces its id with the group or tenant id in whole periods (BUD-16). Model numbers come only from the provider answer through P4.",
+  "x-botaru-direction": "record",
+  "x-botaru-retention": "metadata",
+  "x-botaru-rules": [
+    "BUD-3",
+    "BUD-7",
+    "BUD-9",
+    "BUD-10",
+    "BUD-11",
+    "GW-5"
+  ],
+  "type": "object",
+  "required": [
+    "time",
+    "tenant",
+    "line",
+    "unit",
+    "eur_micros"
+  ],
+  "properties": {
+    "time": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/datetime",
+      "description": "Time."
+    },
+    "tenant": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/tenant_name",
+      "description": "Tenant."
+    },
+    "task": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/object_id",
+      "description": "Task."
+    },
+    "root": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/object_id",
+      "description": "Root of the task tree."
+    },
+    "subject": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/principal_ref",
+      "description": "Initiator principal."
+    },
+    "chat": {
+      "description": "Conversation.",
+      "type": "string",
+      "maxLength": 64,
+      "pattern": "^[a-z][a-z0-9_.:-]*$"
+    },
+    "role": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/name",
+      "description": "Role."
+    },
+    "worker": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/object_id",
+      "description": "Worker."
+    },
+    "bot": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/object_id",
+      "description": "The bot identity on whose behalf the attempt ran."
+    },
+    "purpose": {
+      "description": "Purpose of the task type.",
+      "type": "string",
+      "maxLength": 32,
+      "pattern": "^[a-z][a-z0-9_]*$",
+      "x-botaru-registry": "task-purposes"
+    },
+    "line": {
+      "description": "Budget line (BUD-7).",
+      "enum": [
+        "work",
+        "insight",
+        "aggregate",
+        "review",
+        "governance",
+        "manager",
+        "grant",
+        "takeover"
+      ]
+    },
+    "model": {
+      "type": "object",
+      "description": "Actual model profile and the fallback flag.",
+      "required": [
+        "profile",
+        "fallback"
+      ],
+      "properties": {
+        "profile": {
+          "$ref": "urn:botaru:schema:common:1#/$defs/name",
+          "description": "Profile."
+        },
+        "fallback": {
+          "description": "Fallback model (GW-5).",
+          "type": "boolean"
+        }
+      }
+    },
+    "unit": {
+      "description": "Unit from spec/model/meters.yaml.",
+      "type": "string",
+      "maxLength": 32,
+      "pattern": "^[a-z][a-z0-9_]*$",
+      "x-botaru-registry": "meters"
+    },
+    "tokens": {
+      "type": "object",
+      "description": "Token counts by kind.",
+      "properties": {
+        "input": {
+          "description": "Input.",
+          "type": "integer",
+          "minimum": 0
+        },
+        "output": {
+          "description": "Output.",
+          "type": "integer",
+          "minimum": 0
+        },
+        "cache_write": {
+          "description": "Cache write.",
+          "type": "integer",
+          "minimum": 0
+        },
+        "cache_read": {
+          "description": "Cache read.",
+          "type": "integer",
+          "minimum": 0
+        },
+        "reasoning": {
+          "description": "Reasoning.",
+          "type": "integer",
+          "minimum": 0
+        },
+        "compaction_iterations": {
+          "description": "Server-side compaction iterations.",
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "quantity": {
+      "description": "Quantity in the unit unit.",
+      "type": "integer",
+      "minimum": 0
+    },
+    "message": {
+      "type": "object",
+      "description": "Bot message: size and kind.",
+      "properties": {
+        "size": {
+          "description": "Size in bytes.",
+          "type": "integer",
+          "minimum": 0
+        },
+        "kind": {
+          "description": "Message kind.",
+          "type": "string",
+          "maxLength": 64,
+          "pattern": "^[a-z][a-z0-9_.]*$"
+        }
+      }
+    },
+    "eur_micros": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/eur_micros",
+      "description": "Row price in micro-euros as an integer, without rounding (BUD-9, D-87 (1)). Euro cents appear only in limits and reports: a window sum is rounded up to a euro cent. For a reconciliation correction row the signed price is in correction_eur_micros."
+    },
+    "correction_eur_micros": {
+      "description": "Correction row of the daily reconciliation: the signed difference between the provider actual and the sum of the workspace rows for the day, in micro-euros (BUD-10). For such a row eur_micros equals 0.",
+      "type": "integer",
+      "minimum": -9000000000000000,
+      "maximum": 9000000000000000
+    },
+    "fingerprint": {
+      "description": "Attempt execution fingerprint (PRV-1).",
+      "type": "string",
+      "maxLength": 128,
+      "pattern": "^[A-Za-z0-9:_-]+$"
+    },
+    "spend_estimated": {
+      "description": "Write-off of the reserve of a call without an answer (BUD-11).",
+      "type": "boolean"
+    },
+    "spend_reconciled": {
+      "description": "The row entered the daily reconciliation: the daily sum of workspace rows is compared with the daily provider sum with a tolerance from the deployment settings, the difference is written as one correction row, and the row price is not edited (BUD-10, D-87 (1)).",
+      "type": "boolean"
+    }
+  }
+}

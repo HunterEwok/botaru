@@ -1,0 +1,5 @@
+schema: spec/model/p1-file-get-request.schema.json
+rules: [TEN-7]
+description: A file.get request under a lease.
+cases:
+- {file_ref: 'file:AbCdEfGhIjKlMnOpQrStUv'}

@@ -1,0 +1,50 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:botaru:schema:p2-backup-report-request:1",
+  "title": "P2 backup.report: request",
+  "description": "Report of the external backup process with its narrow key after each store backup, erasure log backup and restore check (RET-8). location_id is the id of the storage location from the deployment configuration, without paths or addresses.",
+  "x-botaru-direction": "input",
+  "x-botaru-rules": [
+    "RET-8",
+    "RET-5"
+  ],
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "kind",
+    "started_at",
+    "finished_at",
+    "ok",
+    "location_id"
+  ],
+  "properties": {
+    "kind": {
+      "description": "Report kind.",
+      "enum": [
+        "backup",
+        "restore_check"
+      ]
+    },
+    "started_at": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/datetime",
+      "description": "Start."
+    },
+    "finished_at": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/datetime",
+      "description": "End."
+    },
+    "ok": {
+      "description": "Success.",
+      "type": "boolean"
+    },
+    "size": {
+      "description": "Backup size in bytes.",
+      "type": "integer",
+      "minimum": 0
+    },
+    "location_id": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/name",
+      "description": "Id of the backup storage location from the deployment configuration."
+    }
+  }
+}

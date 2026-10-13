@@ -1,0 +1,88 @@
+id: ins-04
+rules: [INS-6]
+description: 'The "improvement cycle disabled" signal. The core counts a tenant''s cycle as disabled if at least one
+  reason from a closed list holds. farmctl doctor and the apply lint print "improvement cycle disabled" with the reasons for each
+  role; with the cycle disabled the weekly digest arrives without items and carries a code line with the reasons, if there is an address
+  for it. Main case: the tenant''s review line is 0.'
+given:
+  tenant: demo
+  roles:
+  - name: ops-runner
+    insight:
+      types: [ops.insight.v1]
+  budgets:
+    lines:
+      insight: {month_eur: 15, per_role_month_eur: 5}
+      review: {month_eur: 0}
+  insights: {present_to: 'chat:demo-ops'}
+  humans:
+  - name: alice
+    state: active
+    caps: ['proposal.decide:*']
+expect:
+  loop_off: true
+  doctor:
+    line: improvement cycle disabled
+    reasons: [the tenant review line is 0]
+  apply_lint:
+    line: improvement cycle disabled
+    reasons: [the tenant review line is 0]
+  digest: {delivered_to: 'chat:demo-ops', items: 0, code_line: loop disabled}
+cases:
+- description: No role has an insight section.
+  given:
+    roles:
+    - {name: ops-runner}
+  expect: {loop_off: true, note: no role has an insight section}
+- description: For a role with an insight section the insight line is 0; the digest line names the role.
+  given:
+    budgets:
+      lines:
+        insight: {month_eur: 0}
+        review: {month_eur: 50}
+  expect:
+    loop_off: true
+    code_line: 'Improvement cycle disabled: role ops-runner has insight line 0 EUR'
+    note: for a role with an insight section the insight line is 0
+- description: There is no insights.present_to address; the digest has nowhere to go, doctor and apply show the reason.
+  given:
+    insights: {}
+    budgets:
+      lines:
+        insight: {month_eur: 15}
+        review: {month_eur: 50}
+  expect: {loop_off: true, digest: null, note: there is no insights.present_to address}
+- description: A veto lens has no executor (neither a seat holder nor a fallback role).
+  given:
+    budgets:
+      lines:
+        insight: {month_eur: 15}
+        review: {month_eur: 50}
+    governance:
+      commission:
+        seats:
+        - {id: 1, lens: security}
+  expect: {loop_off: true, note: a veto lens has no executor}
+- description: The tenant has no active person with proposal.decide.
+  given:
+    budgets:
+      lines:
+        insight: {month_eur: 15}
+        review: {month_eur: 50}
+    humans:
+    - name: alice
+      state: inactive
+      caps: ['proposal.decide:*']
+  expect: {loop_off: true, note: the tenant has no active person with proposal.decide}
+- description: All conditions hold; the cycle is enabled.
+  given:
+    budgets:
+      lines:
+        insight: {month_eur: 15, per_role_month_eur: 5}
+        review: {month_eur: 50}
+    governance:
+      commission:
+        seats:
+        - {id: 1, lens: security, fallback_role: reviewer-a}
+        - {id: 2, lens: operational, fallback_role: reviewer-a}
+  expect: {loop_off: false}

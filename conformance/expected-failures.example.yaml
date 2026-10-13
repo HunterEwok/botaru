@@ -1,0 +1,11 @@
+# Example file of an implementation's expected failures (docs/quality.md, section "Runner"; conformance/runner.md).
+# The file lives in the implementation's repository, not in the skeleton. The runner fails the run if a check failed
+# that is not listed here; if a check from this file passed (the entry must be removed); if an entry here names
+# a rule with waivable: false in conformance/requirements.yaml.
+conforms_to: {skeleton: 0.1.0, profiles: [core]}
+expected_failures:
+  - rule: BUD-4
+    check: blackbox:model/budget-loop
+    reason: the 80% and 100% threshold events are not yet tied to the limit windows
+    until: 0.1.1
+  # - rule: INJ-11     such an entry fails the run: the rule is non-waivable (waivable: false)

@@ -1,0 +1,15 @@
+# Telegram channel of tenant demo (bot @demo_bot). The operator binds group chats
+# with the P2 command chat.bind (PRM-14); the bindings are not in git. The deployment keeps the bot token
+# and the driver's P2 secret (the worker.enroll answer, D-87 (3)).
+apiVersion: botaru/v1alpha1
+kind: Channel
+metadata: {name: telegram, tenant: demo}
+spec:
+  driver: telegram
+  identity_kind: telegram
+  identity_assurance: strong
+  membership_assurance: enforced
+  ai_disclosure: first_contact
+  provenance: visible_label
+  capabilities: {max_text: 4096, buttons: true, files: true, edit: true}
+  rate: {per_minute: 20}

@@ -1,0 +1,190 @@
+# Releasing a hold by the author's rank (HLD-2). Ranks from spec/model/holds.yaml: operator > tenant_admin > seat_holder.
+id: fx-authorize-holds-release-rank
+rules: [HLD-2, PRM-14]
+description: A hold is released by a principal with hold.release on its scope and not below the hold's author in rank. An operator hold
+  with any reason (including suspended and compromised) is released only by the operator; a contain_auto hold is released by a tenant
+  admin or the operator; a hold of a tenant person is released by a tenant admin or the operator; a hold of a seat holder
+  is released by the holder, by a tenant admin through control.revert on the incident, or by the operator. Holds of scopes farm and seat are released
+  only by the operator.
+given:
+  tenant: demo
+  people:
+  - principal: human:alice
+    groups: [admin]
+  - principal: human:carol
+    groups: [staff, approver]
+cases:
+- id: rank-01
+  rules: [HLD-2]
+  given: {release_by: alice(admin)}
+  steps:
+  - call:
+      port: P2
+      op: hold.set
+      request:
+        scope: {kind: tenant, tenant: demo}
+        reason: suspended
+        effects: [no_claim]
+        until: null
+    by: operator
+  expect: {result: denied, reason: forbidden}
+- id: rank-02
+  rules: [HLD-2]
+  given: {release_by: alice(admin)}
+  steps:
+  - call:
+      port: P2
+      op: hold.set
+      request:
+        scope: {kind: role, tenant: demo, name: ops-reader}
+        reason: runaway_spend
+        effects: [no_claim]
+        until: null
+    context: {author: contain_auto}
+  expect: {result: ok}
+- id: rank-03
+  rules: [HLD-2]
+  given: {release_by: alice(admin)}
+  steps:
+  - call:
+      port: P2
+      op: hold.set
+      request:
+        scope: {kind: worker, tenant: demo, name: w-ops-1}
+        reason: compromised
+        effects: [no_claim]
+        until: null
+    by: operator
+  expect: {result: denied, reason: forbidden}
+- id: rank-04
+  rules: [HLD-2]
+  given: {release_by: operator(farmctl)}
+  steps:
+  - call:
+      port: P2
+      op: hold.set
+      request:
+        scope: {kind: worker, tenant: demo, name: w-ops-1}
+        reason: compromised
+        effects: [no_claim]
+        until: null
+    by: operator
+  expect: {result: ok}
+- id: rank-05
+  rules: [HLD-2]
+  given: {release_by: alice(admin)}
+  steps:
+  - call:
+      port: P2
+      op: hold.set
+      request:
+        scope: {kind: action, tenant: demo, name: cleanup_pipeline_tmp}
+        reason: manual
+        effects: [no_claim]
+        until: null
+    by: human:carol
+  expect: {result: ok}
+- id: rank-06
+  rules: [HLD-2]
+  given: {release_by: carol(staff)}
+  steps:
+  - call:
+      port: P2
+      op: hold.set
+      request:
+        scope: {kind: action, tenant: demo, name: cleanup_pipeline_tmp}
+        reason: manual
+        effects: [no_claim]
+        until: null
+    by: human:alice
+  expect: {result: denied, reason: no_group_cap, note: carol does not have hold.release}
+- id: rank-07
+  rules: [HLD-2]
+  given: {release_by: seat_holder(epoch 4)}
+  steps:
+  - call:
+      port: P2
+      op: hold.set
+      request:
+        scope: {kind: resource, tenant: demo, name: web1}
+        effects: [no_claim]
+        reason: manual
+        until: null
+    by: seat
+    context: {epoch: 4}
+  expect: {result: ok}
+- id: rank-08
+  rules: [HLD-2]
+  given: {release_by: seat_holder(epoch 4)}
+  steps:
+  - call:
+      port: P2
+      op: hold.set
+      request:
+        scope: {kind: resource, tenant: demo, name: web1}
+        reason: manual
+        effects: [no_claim]
+        until: null
+    by: human:alice
+  expect: {result: denied, reason: forbidden, note: a seat holder releases only their own holds}
+- id: rank-09
+  rules: [HLD-2]
+  given: {release_by: alice(admin), via: control.revert --incident i_207}
+  steps:
+  - call:
+      port: P2
+      op: hold.set
+      request:
+        scope: {kind: resource, tenant: demo, name: web1}
+        effects: [no_claim]
+        reason: manual
+        until: null
+    by: seat
+    context: {epoch: 4, incident: i_207}
+  expect: {result: ok}
+- id: rank-10
+  rules: [HLD-2, PRM-14]
+  given: {release_by: alice(admin)}
+  steps:
+  - call:
+      port: P2
+      op: hold.set
+      request:
+        scope: {kind: seat, tenant: farm, name: farm-manager}
+        effects: [no_control]
+        reason: manual
+        until: null
+    context: {author: breaker}
+  expect:
+    result: denied
+    reason: operator_only
+    note: only a person with admin:farm releases the reason no_control set by the seat safeguard (MGR-14)
+- id: rank-11
+  rules: [HLD-2, PRM-14]
+  given: {release_by: alice(admin)}
+  steps:
+  - call:
+      port: P2
+      op: hold.set
+      request:
+        scope: {kind: farm}
+        effects: [no_claim]
+        reason: manual
+        until: null
+    by: operator
+  expect: {result: denied, reason: operator_only}
+- id: rank-12
+  rules: [HLD-2]
+  given: {release_by: seat_holder(epoch 5)}
+  steps:
+  - call:
+      port: P2
+      op: hold.set
+      request:
+        scope: {kind: resource, tenant: demo, name: web1}
+        effects: [no_claim]
+        reason: manual
+        until: null
+    by: seat
+    context: {epoch: 4}
+  expect: {result: denied, reason: fenced, note: the new holder does not release a hold of the old epoch as their own}

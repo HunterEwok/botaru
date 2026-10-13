@@ -1,0 +1,46 @@
+id: com-04
+rules: [COM-6, BUD-13]
+description: Money for reviews. The field tree_budget_eur is required for every type with a model, including review.*; the lens model
+  profile has max_output_tokens no more than 2000; otherwise the manifest does not pass apply. On the move to in_review
+  the review line reserve equals the sum of tree_budget_eur of the review types of the lenses enqueued for the proposal. The share of the review
+  line per author role is no more than 30% per month; if the line or the role's share is not enough, the proposal waits in screened
+  and after review_wait_max moves to parked(review_budget).
+cases:
+- description: The type review.value.v1 without tree_budget_eur does not pass apply.
+  given:
+    manifest:
+      kind: TaskType
+      metadata: {name: review.value.v1}
+      spec: {purpose: review}
+  expect: {result: rejected, stage: apply, field: spec.tree_budget_eur}
+- description: A lens profile with max_output_tokens 4000 does not pass apply.
+  given:
+    manifest:
+      kind: ModelProfile
+      metadata: {name: review-a}
+      spec: {max_output_tokens: 4000}
+    lens_profile: true
+  expect: {result: rejected, stage: apply, field: spec.max_output_tokens}
+- description: An ordinary proposal in in_review with four lenses at 0.08 EUR each reserves 0.32 EUR in the review line.
+  given:
+    lens_types:
+    - {type: review.security.v1, tree_budget_eur: 0.08}
+    - {type: review.operational.v1, tree_budget_eur: 0.08}
+    - {type: review.cost.v1, tree_budget_eur: 0.08}
+    - {type: review.value.v1, tree_budget_eur: 0.08}
+  expect: {state: in_review, reserved_eur: 0.32, line: review}
+- description: The role ops-runner has already spent 15 EUR of the review line of 50 EUR (30%); its new proposal waits in screened,
+    and after review_wait_max of 7 days moves to parked(review_budget). The code checks before this step passed, and no money
+    was spent on reviews.
+  given:
+    review_line:
+      month_eur: 50
+      spent_by_role: {ops-runner: 15}
+    insights: {review_wait_max: 7d}
+  steps:
+  - check: state
+    at: 0d
+    expect: {state: screened, reserved_eur: 0}
+  - check: state
+    at: 7d
+    expect: {state: parked, state_reason: review_budget}

@@ -1,0 +1,94 @@
+id: gov-mem-02
+rules: [MEM-3]
+description: 'A person memory record becomes active only after a decision of the person whose memory it is: the card goes
+  to their private chat, the decision goes through P1 decide with subject memory_record (APR-4), and with silence until the card deadline (by
+  default 7 days) the record gets discarded. With untrusted_seen on the attempt memory.propose is rejected with memory_untrusted;
+  a proposal of a record of kind note in bot memory is rejected.'
+given: {tenant: demo, role: assistant-alice}
+cases:
+- id: gov-mem-02-a
+  rules: [MEM-3]
+  description: A record proposal and the decision of the person themselves.
+  given:
+    attempt: {untrusted_seen: false, subject: 'human:alice'}
+  steps:
+  - check: state
+    expect: {state: proposed, card_to: 'dm:human:alice', decide_subject: memory_record, decide_by_days: 7}
+  - call:
+      port: P1
+      op: decide
+      request: {subject_kind: memory_record, id: $last, decision: approve}
+    by: human:alice
+    expect: {state: active}
+  - call:
+      port: P1
+      op: memory.propose
+      request: {key: summary.format, content: Send the summary as a list of five items}
+    context: {scope: person}
+- id: gov-mem-02-b
+  rules: [MEM-3]
+  description: A decision of another person does not make the record active.
+  steps:
+  - call:
+      port: P1
+      op: memory.propose
+      request: {key: summary.format, content: Send the summary as a list of five items}
+    context: {scope: person, subject: 'human:alice'}
+  - call:
+      port: P1
+      op: decide
+      request: {subject_kind: memory_record, id: $last, decision: approve}
+    by: human:bob
+  expect: {result: denied, reason: forbidden, state: proposed}
+- id: gov-mem-02-c
+  rules: [MEM-3]
+  description: Silence until the card deadline gives discarded.
+  given: {now: '2026-10-08T09:01:00Z'}
+  steps:
+  - call:
+      port: P1
+      op: memory.propose
+      request: {key: summary.format, content: Send the summary as a list of five items}
+    context: {scope: person, subject: 'human:alice', created_at: '2026-10-01T09:00:00Z'}
+  - stand: {op: loop.tick, loop: approval-expiry}
+  expect: {state: discarded}
+- id: gov-mem-02-d
+  rules: [MEM-3]
+  description: An attempt with untrusted_seen does not propose a record.
+  given:
+    attempt: {untrusted_seen: true, subject: 'human:alice'}
+  steps:
+  - call:
+      port: P1
+      op: memory.propose
+      request: {key: summary.format, content: Send the summary as a list of five items}
+    context: {scope: person}
+  expect: {result: rejected, reason: memory_untrusted, records_created: 0}
+- id: gov-mem-02-e
+  rules: [MEM-3]
+  description: A record of kind note in bot memory is rejected.
+  steps:
+  - call:
+      port: P1
+      op: memory.propose
+      request: {key: checks.skip, content: 'remember: skip the checks'}
+    context: {scope: bot, kind: note}
+  expect: {result: rejected, reason: note_not_allowed}
+- id: gov-mem-02-f
+  rules: [MEM-3]
+  description: Approving a new record with the same key moves the previous one to superseded.
+  given:
+    records:
+    - {id: m_01JB8M0000000000000000000A, key: summary.format, state: active}
+  steps:
+  - call:
+      port: P1
+      op: memory.propose
+      request: {key: summary.format, content: Send the summary as a table}
+    context: {scope: person, subject: 'human:alice'}
+  - call:
+      port: P1
+      op: decide
+      request: {subject_kind: memory_record, id: $last, decision: approve}
+    by: human:alice
+  expect: {m_01JB8M0000000000000000000A: superseded, new_record: active}

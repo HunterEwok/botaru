@@ -1,0 +1,11 @@
+schema: spec/model/p1-script-control-request.schema.json
+rules:
+- SCR-11
+description: Script run card buttons.
+cases:
+- id: s_01JB0000000000000000000301
+  command: pause
+  nonce: nX7kQ2pL9vR4tY8wZ1aB
+- id: s_01JB0000000000000000000301
+  command: cancel
+  nonce: nX7kQ2pL9vR4tY8wZ1aB

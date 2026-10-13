@@ -1,0 +1,34 @@
+# Site checks against catalog addresses: a job on schedule ext-checks, the result goes to the checks sink (flow 9).
+apiVersion: botaru/v1alpha1
+kind: TaskType
+metadata: {name: check.http.v1}
+spec:
+  title: "Site checks"
+  worker_kind: job
+  purpose: work
+  tier: 0
+  data_class: summary
+  params_schema: {type: object, additionalProperties: false, properties: {}}
+  result_schema:
+    type: object
+    additionalProperties: false
+    required: [checks]
+    properties:
+      checks:
+        type: array
+        maxItems: 20
+        items:
+          type: object
+          additionalProperties: false
+          required: [check, status, ms]
+          properties:
+            check: {enum_from: catalog.checks}
+            status: {type: integer, minimum: 0, maximum: 599}
+            ms: {type: integer, minimum: 0, maximum: 60000}
+            cert_days: {type: integer, minimum: 0, maximum: 3650}
+        x-botaru-read-by: code
+  dispatch: {priority_class: 4}
+  timeouts: {start_by: 10m, lease: 60s, heartbeat: 20s, attempt: 2m, deadline: 14m}
+  retry: {max_attempts: 1, max_runs: 1}
+  tree_budget_eur: 0
+  max_children: 0

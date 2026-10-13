@@ -1,0 +1,22 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:botaru:schema:p2-bot-retire-request:1",
+  "title": "P2 bot.retire: request",
+  "description": "Body of P2 bot.retire. An operator operation, only through farmctl, with admin:workers: the identity retires with the trigger human_retire, a live worker at once gets a new identity of the same role (IDN-11, PRM-14).",
+  "x-botaru-direction": "input",
+  "x-botaru-rules": [
+    "IDN-11",
+    "PRM-14"
+  ],
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "bot"
+  ],
+  "properties": {
+    "bot": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/object_id",
+      "description": "Bot identity."
+    }
+  }
+}

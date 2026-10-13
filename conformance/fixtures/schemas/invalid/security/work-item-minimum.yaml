@@ -1,0 +1,39 @@
+id: sec-4-work-item-minimum
+schema: urn:botaru:schema:work-item:1
+rules:
+- SEC-4
+description: A tool call for toolhost does not carry goal, initiator and origin; an attempt does not carry origin.
+cases:
+- work_id: tc_01J9Z3M2Q8YB6V4N7T5K0C2D4H
+  kind: toolcall
+  lease_no: 1
+  epoch: 3
+  tenant: demo
+  lease_until: '2026-03-02T09:10:30Z'
+  lease_remaining_s: 30
+  start_by: '2026-03-02T09:10:30Z'
+  payload:
+    target:
+      plugin: logs
+      placement: read
+      host: web1
+    tool: logs/tail
+    args:
+      unit: nginx
+    goal: look at the logs and fix it
+- work_id: tc_01J9Z3M2Q8YB6V4N7T5K0C2D4H
+  kind: toolcall
+  lease_no: 1
+  epoch: 3
+  tenant: demo
+  lease_until: '2026-03-02T09:10:30Z'
+  lease_remaining_s: 30
+  start_by: '2026-03-02T09:10:30Z'
+  payload:
+    target:
+      plugin: logs
+      placement: read
+      host: web1
+    tool: logs/tail
+    args: {}
+    initiator: human:bob

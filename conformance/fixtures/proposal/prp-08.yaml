@@ -1,0 +1,52 @@
+id: prp-08
+rules: [PRP-19]
+description: '"Realized" only through a verified link. The accepted value is already in place; a commit sets it without a
+  Botaru-Proposal line and without P2 proposal.link_commit; a linked commit sets another value. In no case is the proposal
+  realized. Realized is set when the "Accept" object is executed or a linked applied commit touches only
+  the tenant folder and sets the accepted value.'
+given:
+  tenant: demo
+  proposal:
+    id: p_01JB0000000000000000000101
+    state: realizing
+    change:
+      kind: manifest_change
+      target: {kind: Schedule, name: report-nightly}
+      field: spec.cron
+      value: 30 3 * * *
+cases:
+- description: The value "30 3 * * *" is already in git before "Accept".
+  given:
+    current: {spec.cron: 30 3 * * *}
+  expect: {state: realizing}
+- description: A commit sets the value without a Botaru-Proposal line and without a link.
+  given:
+    commit:
+      files: [tenants/demo/schedules.yaml]
+      sets: {spec.cron: 30 3 * * *}
+  expect: {state: realizing}
+- description: A linked commit sets another value.
+  given:
+    commit:
+      trailer: 'Botaru-Proposal: p_01JB0000000000000000000101'
+      files: [tenants/demo/schedules.yaml]
+      sets: {spec.cron: 0 4 * * *}
+  expect: {state: realizing}
+- description: A commit without the line, linked by the executor through P2 proposal.link_commit, sets the accepted value.
+  given:
+    commit:
+      files: [tenants/demo/schedules.yaml]
+      sets: {spec.cron: 30 3 * * *}
+  steps:
+  - call:
+      port: P2
+      op: proposal.link_commit
+      request: {proposal: p_01JB0000000000000000000101, commit: 0123456789abcdef0123456789abcdef01234567}
+    by: human:bob
+    context: {role: realizer}
+  expect: {state: realized, link: link_commit}
+- description: An action_request proposal; the approval created by "Accept" is executed.
+  given:
+    proposal_kind: action_request
+    object: {kind: approval, state: executed}
+  expect: {state: realized, link: object}

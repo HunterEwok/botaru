@@ -1,0 +1,50 @@
+id: fx-mgr-human-file
+rules: [MGR-30, AUD-5]
+description: A reader attempt opens a file uploaded by a person only if code named that file by id as the subject
+  of the incident; otherwise not_found. inspect_request of the decision role does not widen the condition. A finding from an attempt that opened such
+  a file gets personal_seen.
+given:
+  files:
+    file:AAAAAAAAAAAAAAAAAAAAAA: {uploaded_by: 'human:alice', personal_seen: true}
+    file:BBBBBBBBBBBBBBBBBBBBBB: {uploaded_by: 'human:bob', personal_seen: true}
+  incident:
+    id: i_320
+    subject_files: ['file:AAAAAAAAAAAAAAAAAAAAAA']
+cases:
+- id: fx-mgr-human-file-a
+  given:
+    attempt: {type: manager.inspect.v1, basis: i_320}
+  steps:
+  - call:
+      port: P3
+      op: tools/call
+      request:
+        name: file_read
+        arguments: {file_ref: 'file:BBBBBBBBBBBBBBBBBBBBBB'}
+  expect: {result: rejected, reason: not_found}
+- id: fx-mgr-human-file-b
+  given:
+    attempt:
+      type: manager.inspect.v1
+      basis: i_320
+      started_by: inspect_request
+      inspect_request_files: ['file:BBBBBBBBBBBBBBBBBBBBBB']
+  steps:
+  - call:
+      port: P3
+      op: tools/call
+      request:
+        name: file_read
+        arguments: {file_ref: 'file:BBBBBBBBBBBBBBBBBBBBBB'}
+  expect: {result: rejected, reason: not_found}
+- id: fx-mgr-human-file-c
+  given:
+    attempt: {type: manager.inspect.v1, basis: i_320}
+  steps:
+  - call:
+      port: P3
+      op: tools/call
+      request:
+        name: file_read
+        arguments: {file_ref: 'file:AAAAAAAAAAAAAAAAAAAAAA'}
+  expect: {result: ok, read_journal_basis: i_320, finding_personal_seen: true}

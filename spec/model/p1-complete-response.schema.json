@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:botaru:schema:p1-complete-response:1",
+  "title": "P1 complete: response",
+  "description": "The outcome is accepted; a repeat of the same call gives the same answer (IDM-3). Denials: fenced, output_schema_invalid.",
+  "x-botaru-direction": "output",
+  "x-botaru-rules": [
+    "IDM-3"
+  ],
+  "type": "object",
+  "required": [
+    "lease_state"
+  ],
+  "properties": {
+    "lease_state": {
+      "const": "closed"
+    }
+  }
+}

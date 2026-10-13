@@ -1,0 +1,195 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:botaru:schema:route:1",
+  "title": "Route",
+  "description": "spec of the Route manifest: what the core does on an event, an inbox, a message or the end of a task. A route does not deliver alarms to people (MON-1).",
+  "x-botaru-direction": "input",
+  "x-botaru-rules": [
+    "IDM-4",
+    "MSG-16",
+    "INJ-7",
+    "MON-1",
+    "PRM-10",
+    "DLV-6"
+  ],
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "on"
+  ],
+  "properties": {
+    "on": {
+      "description": "Exactly one route source.",
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "event": {
+              "$ref": "urn:botaru:schema:common:1#/$defs/type_name"
+            },
+            "subject": {
+              "$ref": "urn:botaru:schema:common:1#/$defs/name",
+              "description": "Catalog id."
+            },
+            "match": {
+              "type": "object",
+              "maxProperties": 16,
+              "propertyNames": {
+                "pattern": "^[a-z][a-z0-9_.]{0,63}$"
+              },
+              "additionalProperties": {
+                "anyOf": [
+                  {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "maxLength": 200
+                      },
+                      {
+                        "type": "integer"
+                      },
+                      {
+                        "type": "number"
+                      },
+                      {
+                        "type": "boolean"
+                      }
+                    ]
+                  },
+                  {
+                    "type": "array",
+                    "maxItems": 50,
+                    "items": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "maxLength": 200
+                        },
+                        {
+                          "type": "integer"
+                        },
+                        {
+                          "type": "number"
+                        },
+                        {
+                          "type": "boolean"
+                        }
+                      ]
+                    }
+                  }
+                ]
+              },
+              "description": "Matching only on closed fields of the event data (OUT-1)."
+            }
+          },
+          "required": [
+            "event"
+          ]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "inbox": {
+              "$ref": "urn:botaru:schema:manifest:1#/$defs/role_address"
+            },
+            "kinds": {
+              "type": "array",
+              "maxItems": 2,
+              "items": {
+                "enum": [
+                  "report",
+                  "state"
+                ]
+              }
+            },
+            "min": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 1000,
+              "description": "At least this many entries."
+            },
+            "debounce": {
+              "$ref": "urn:botaru:schema:common:1#/$defs/duration"
+            }
+          },
+          "required": [
+            "inbox"
+          ]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "message": {
+              "$ref": "urn:botaru:schema:common:1#/$defs/type_name"
+            },
+            "subject_prefix": {
+              "type": "string",
+              "maxLength": 63,
+              "description": "subject prefix.",
+              "pattern": "^[a-z0-9-]{1,63}$"
+            }
+          },
+          "required": [
+            "message"
+          ]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "task_done": {
+              "$ref": "urn:botaru:schema:common:1#/$defs/type_name"
+            }
+          },
+          "required": [
+            "task_done"
+          ]
+        }
+      ]
+    },
+    "mode": {
+      "enum": [
+        "task",
+        "notify",
+        "report"
+      ],
+      "description": "task by default; inbox and event only with task, message only with notify, task_done only with report (MSG-16)."
+    },
+    "task": {
+      "$ref": "urn:botaru:schema:manifest:1#/$defs/task_template",
+      "description": "With mode: task: a type from the system-ops group (PRM-10)."
+    },
+    "template": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/name",
+      "description": "With mode: notify: a code text template."
+    },
+    "report": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "$ref": "urn:botaru:schema:common:1#/$defs/type_name"
+        },
+        "to": {
+          "$ref": "urn:botaru:schema:manifest:1#/$defs/role_address"
+        }
+      },
+      "required": [
+        "type",
+        "to"
+      ],
+      "description": "With mode: report."
+    },
+    "deliver_to": {
+      "type": "array",
+      "maxItems": 20,
+      "items": {
+        "$ref": "urn:botaru:schema:manifest:1#/$defs/address"
+      },
+      "description": "Delivery addresses to people (DLV-6)."
+    }
+  }
+}

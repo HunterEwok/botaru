@@ -1,0 +1,95 @@
+id: fx-mgr-17
+rules: [GOV-28, MGR-9]
+description: 'Workers and types that write series for classes with stops_manager (including a job role that carries
+  the used volume space from the monitoring system history into a code series) are excluded from the targets of hold, quarantine, drain,
+  preemption and cancellation: the manager cannot blind the alarm that stops it.'
+given:
+  catalog:
+    disk_full:
+      stops_manager: true
+      series: [farm.volume.used_bytes]
+  writers:
+    farm.volume.used_bytes:
+      role: volume-series
+      kind: job
+      tasktype: ops.volume.series.v1
+      workers: [w_j1]
+  incident:
+    tenant: demo
+    class: disk_filling
+    implicated:
+    - {worker: w_j1}
+    - {worker: w_7}
+cases:
+- id: fx-mgr-17-a
+  steps:
+  - call:
+      port: P3
+      op: tools/call
+      request:
+        name: control_ops
+        arguments:
+          op: hold
+          target: {kind: worker, id: w_j1}
+    by: attempt
+  expect: {result: rejected, reason: target_excluded}
+- id: fx-mgr-17-b
+  steps:
+  - call:
+      port: P3
+      op: tools/call
+      request:
+        name: control_ops
+        arguments:
+          op: quarantine
+          target: {kind: worker, id: w_j1}
+    by: attempt
+  expect: {result: rejected, reason: target_excluded}
+- id: fx-mgr-17-c
+  steps:
+  - call:
+      port: P3
+      op: tools/call
+      request:
+        name: control_ops
+        arguments:
+          op: drain
+          target: {kind: role, id: volume-series}
+    by: attempt
+  expect: {result: rejected, reason: target_excluded}
+- id: fx-mgr-17-d
+  steps:
+  - call:
+      port: P3
+      op: tools/call
+      request:
+        name: control_ops
+        arguments:
+          op: cancel
+          target: {kind: task, id: t-series-1, type: ops.volume.series.v1}
+    by: attempt
+  expect: {result: rejected, reason: target_excluded}
+- id: fx-mgr-17-e
+  steps:
+  - call:
+      port: P3
+      op: tools/call
+      request:
+        name: control_ops
+        arguments:
+          op: hold
+          target: {kind: tasktype, id: ops.volume.series.v1}
+    by: attempt
+  expect: {result: rejected, reason: target_excluded}
+- id: fx-mgr-17-f
+  steps:
+  - call:
+      port: P3
+      op: tools/call
+      request:
+        name: control_ops
+        arguments:
+          op: drain
+          target: {kind: worker, id: w_7}
+    by: attempt
+  expect: {result: ok}

@@ -1,0 +1,8 @@
+schema: spec/model/p1-obs-query-request.schema.json
+rules: [OBV-3]
+description: A P1 obs.query request of the job worker under an attempt lease that the schema accepts.
+data:
+  series: farm.backup.age
+  subject: 'dataset:ctd-2026'
+  window: 93d
+  rollup: day.max

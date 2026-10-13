@@ -1,0 +1,6 @@
+schema: spec/model/p2-proposal-list-request.schema.json
+rules: [DIG-1]
+description: P2 proposal.list requests that the schema accepts.
+cases:
+  - {}
+  - {state: [recommended, presented], category: [schedule], limit: 50}

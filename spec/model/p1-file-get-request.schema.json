@@ -1,0 +1,22 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:botaru:schema:p1-file-get-request:1",
+  "title": "P1 file.get: request",
+  "description": "Reading the bytes of a file under the lease of a delivery, call or attempt. The file is returned only if it belongs to the tenant of the work and its mark is not above what the recipient is allowed; otherwise not_found (TEN-7, PRM-9). The lease token is not passed in the body: the holder sends it in the Botaru-Lease header (spec/bindings/http/README.md), one way for all operations under a lease (FEN-2).",
+  "x-botaru-direction": "input",
+  "x-botaru-rules": [
+    "TEN-7",
+    "PRM-9",
+    "FEN-2"
+  ],
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "file_ref"
+  ],
+  "properties": {
+    "file_ref": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/file_ref"
+    }
+  }
+}

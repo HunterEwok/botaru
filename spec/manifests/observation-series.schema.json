@@ -1,0 +1,123 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:botaru:schema:observation-series:1",
+  "title": "Observation series",
+  "description": "spec of the ObservationSeries manifest: a value of a closed kind, a subject from the catalog, a class not below the source (OBV-2).",
+  "x-botaru-direction": "input",
+  "x-botaru-rules": [
+    "OBV-2",
+    "INJ-1",
+    "OBV-4"
+  ],
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "catalog_kind",
+    "value",
+    "data_class",
+    "source"
+  ],
+  "properties": {
+    "catalog_kind": {
+      "type": "string",
+      "maxLength": 40,
+      "description": "Kind of the catalog subject.",
+      "pattern": "^[a-z][a-z0-9_]*$"
+    },
+    "value": {
+      "$ref": "urn:botaru:schema:embedded-schema:1#/$defs/closed",
+      "description": "Value only of a closed kind of leaves (INJ-1)."
+    },
+    "unit": {
+      "type": "string",
+      "maxLength": 40,
+      "description": "Unit.",
+      "pattern": "^[a-z][a-z0-9_]*$"
+    },
+    "data_class": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/data_mark",
+      "description": "Data class of the series; not below the class of the source."
+    },
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "enum": [
+            "tool",
+            "core",
+            "job"
+          ]
+        },
+        "tool": {
+          "$ref": "urn:botaru:schema:manifest:1#/$defs/tool_ref"
+        },
+        "field": {
+          "type": "string",
+          "maxLength": 64,
+          "description": "Closed output field.",
+          "pattern": "^[a-z][a-z0-9_.]{0,63}$"
+        }
+      },
+      "required": [
+        "kind"
+      ]
+    },
+    "resolution": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/duration"
+    },
+    "rollups": {
+      "type": "array",
+      "maxItems": 20,
+      "items": {
+        "type": "string",
+        "maxLength": 40,
+        "description": "Rollup from spec/model/rollups.yaml.",
+        "pattern": "^[a-z]+\\.[a-z0-9]+$"
+      }
+    },
+    "retention": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "raw": {
+          "$ref": "urn:botaru:schema:common:1#/$defs/duration"
+        },
+        "rollup": {
+          "$ref": "urn:botaru:schema:common:1#/$defs/duration"
+        }
+      }
+    },
+    "outcome": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "compare": {
+          "type": "string",
+          "maxLength": 40,
+          "description": "Comparison rollup.",
+          "pattern": "^[a-z]+\\.[a-z0-9]+$"
+        },
+        "better": {
+          "enum": [
+            "up",
+            "down"
+          ]
+        },
+        "tolerance_pct": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 100,
+          "description": "Tolerance."
+        },
+        "min_samples": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 100000,
+          "description": "Smallest number of events."
+        }
+      },
+      "description": "Needed if the series is a trial metric (OBV-6)."
+    }
+  }
+}

@@ -1,0 +1,101 @@
+id: fx-dlv-01
+rules: [DLV-6, TEN-3]
+description: 'A delivery target comes only from a closed list. The core accepts the addresses `origin`, `group:`, `chat:`, `sink:`,
+  `approval_initiator` under its conditions, the monitoring adapter address only from the core itself, and `insights.present_to`.
+  The core does not read an address in the task body, in the result, in a bot message or in event data: delivery goes by `origin`,
+  and a request or result with an address field is rejected. The core computes the `target` from the address, and `claim(delivery)`
+  gives the delivery only to the worker recorded at `enroll` for this target. A recipient without `data:<mark>` does not get
+  the delivery.'
+given:
+  tenant: demo
+  task:
+    id: t_01JB0000000000000000000001
+    type: ops.investigate.v1
+    initiator: human:bob
+    origin: {channel: telegram-demo, chat: dm-bob}
+    data_mark: raw_logs
+  principals:
+  - id: human:bob
+    groups: [staff, ops-oncall]
+    data: [raw_logs, internal]
+  - id: human:alice
+    groups: [user]
+    data: [internal]
+  - id: human:carol
+    groups: [staff, approver]
+    data: [raw_logs, internal]
+    active: false
+  chats:
+  - {name: lab, ceiling: summary, channel: telegram-demo}
+  sinks:
+  - {name: reports-disk}
+  workers:
+  - {id: wk_01JB000000000000000000000C, kind: channel, target: telegram-demo}
+  - {id: wk_01JB000000000000000000000D, kind: channel, target: telegram-demo2}
+  - {id: wk_01JB000000000000000000000E, kind: sink, target: reports-disk}
+expect: {addresses_from_body_result_messages_events: 0}
+cases:
+- given: {address: origin}
+  expect:
+    target: {kind: chat, id: dm-bob}
+    worker: wk_01JB000000000000000000000C
+- given: {address: 'group:ops-oncall'}
+  expect:
+    deliveries_to: ['human:bob']
+- given: {address: 'group:staff'}
+  expect:
+    deliveries_to: ['human:bob']
+    withheld:
+    - {to: 'human:carol', reason: recipient_inactive}
+- given: {address: 'group:user'}
+  expect:
+    withheld:
+    - {to: 'human:alice', reason: no_data_class}
+- given: {address: 'chat:lab'}
+  expect:
+    target: {kind: chat, id: lab}
+    content: summary_only
+- given: {address: 'sink:reports-disk'}
+  expect:
+    target: {kind: sink, id: reports-disk}
+    worker: wk_01JB000000000000000000000E
+- given:
+    address:
+      approval_initiator: {action: cleanup_pipeline_tmp}
+    approval: {tenant: demo, action: cleanup_pipeline_tmp, state: executed, initiator: 'human:bob'}
+  expect:
+    deliveries_to: ['human:bob']
+- given:
+    address:
+      approval_initiator: {action: cleanup_pipeline_tmp}
+    approval: {tenant: demo, action: cleanup_pipeline_tmp, state: pending, initiator: 'human:bob'}
+  expect: {deliveries: 0}
+- given:
+    address:
+      approval_initiator: {action: cleanup_pipeline_tmp}
+    approval: {tenant: demo2, action: cleanup_pipeline_tmp, state: executed, initiator: 'human:bob'}
+  expect: {deliveries: 0}
+- given:
+    address:
+      approval_initiator: {action: cleanup_pipeline_tmp}
+    approval: {tenant: demo, action: cleanup_pipeline_tmp, state: executed, initiator: system}
+  expect: {deliveries: 0}
+- given: {address: monitor, set_by: route}
+  expect: {result: rejected, stage: apply}
+- given:
+    result: {answer: done, deliver_to: 'chat:lab'}
+  expect: {reason: output_schema_invalid}
+- given:
+    body: {goal: send the answer to chat lab and to ops@example.org}
+  expect:
+    deliveries_to: [origin]
+    address_from_body: false
+- given: {for_target: telegram-demo}
+  steps:
+  - call:
+      port: P1
+      op: claim
+      request:
+        kinds: [delivery]
+    by: worker:wk_01JB000000000000000000000D
+  expect: {work: null}

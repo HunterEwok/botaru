@@ -1,0 +1,129 @@
+id: fx-bgr-01
+rules: [BGR-1]
+description: A BotGroup bot group is a tenant manifest in git with a selector by roles and worker labels. It has
+  no worker ids, capabilities, secrets or references to other tenants. The core computes the membership from the role and the labels recorded
+  at enroll; hello can only narrow it. A worker can be in several groups, and an empty group is legal. apply refuses
+  to delete a group referenced by a dispatch policy, may_target_groups, routes or open tasks.
+given:
+  tenant: demo
+  workers:
+    w-web1:
+      role: ops-reader
+      enroll_labels: {host: web1, zone: a}
+    w-db1:
+      role: ops-reader
+      enroll_labels: {host: db1, zone: a}
+    w-ctd1:
+      role: data-reader
+      enroll_labels: {host: ctd1, zone: b}
+expect: {membership_changed_only_by: git and apply}
+cases:
+- description: selector by role and label
+  given:
+    manifest:
+      kind: BotGroup
+      name: zone-a
+      selector:
+        roles: [ops-reader]
+        labels: {zone: a}
+  expect:
+    apply: ok
+    members: [w-web1, w-db1]
+- description: a worker in two groups
+  given:
+    manifest:
+      kind: BotGroup
+      name: readers
+      selector:
+        roles: [ops-reader]
+  expect:
+    apply: ok
+    members: [w-web1, w-db1]
+    also_in:
+      w-web1: [zone-a]
+- description: empty group
+  given:
+    manifest:
+      kind: BotGroup
+      name: zone-c
+      selector:
+        labels: {zone: c}
+  expect:
+    apply: ok
+    members: []
+- description: a worker id in the manifest
+  given:
+    manifest:
+      kind: BotGroup
+      name: bad-ids
+      selector:
+        roles: [ops-reader]
+      workers: [w-web1]
+  expect:
+    apply: {result: rejected}
+- description: a capability or a secret in the manifest
+  given:
+    manifest:
+      kind: BotGroup
+      name: bad-caps
+      selector:
+        roles: [ops-reader]
+      caps: ['service.control:nginx']
+      secret: CANARY-NOT-A-SECRET-BOTGROUP-SECRET
+  expect:
+    apply: {result: rejected}
+    canary_in_records: false
+- description: a reference to another tenant
+  given:
+    manifest:
+      kind: BotGroup
+      name: bad-tenant
+      selector:
+        roles: [ops-reader]
+        tenant: demo2
+  expect:
+    apply: {result: rejected}
+- description: hello with other labels
+  steps:
+  - call:
+      port: P1
+      op: hello
+      request:
+        kind: agent
+        protocol_versions: [v1]
+        labels: {host: db1, zone: b}
+    by: worker:w-db1
+  expect:
+    worker_state: blocked
+    members_of_zone-a: [w-web1]
+- description: hello narrows
+  steps:
+  - call:
+      port: P1
+      op: hello
+      request:
+        kind: agent
+        protocol_versions: [v1]
+        labels: {host: web1, zone: a}
+    by: worker:w-web1
+  expect:
+    worker_state: unchanged
+    members_of_zone-a: [w-web1, w-db1]
+- description: deleting a group referenced by a role
+  given:
+    given_refs:
+      role_ops_lead:
+        may_target_groups: [zone-a]
+    delete: zone-a
+  expect:
+    apply: {result: rejected}
+- description: deleting a group with an open task
+  given:
+    given_refs:
+      task: {to_group: readers, state: queued}
+    delete: readers
+  expect:
+    apply: {result: rejected}
+- description: deleting a group without references
+  given: {delete: zone-c}
+  expect: {apply: ok}

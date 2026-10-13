@@ -1,0 +1,31 @@
+id: fx-mgr-stopped-repeat
+rules: [MGR-36]
+description: 'The reason incident holds for a week: the manager_stopped card is repeated to the farm operators after 24 h,
+  after 72 h and 24 h before the end of decide_within; a repeat after the deadline or one that coincides with another is not sent; repeats stop
+  when the reason incident is removed or the seat is assigned or released.'
+cases:
+- id: fx-mgr-stopped-repeat-a
+  given: {stopped_at: '2026-11-24T05:10:00Z', decide_within: 7d}
+  expect:
+    repeats_at: ['2026-11-25T05:10:00Z', '2026-11-27T05:10:00Z', '2026-11-30T05:10:00Z']
+- id: fx-mgr-stopped-repeat-b
+  given: {stopped_at: '2026-11-24T05:10:00Z', decide_within: 4d}
+  expect:
+    repeats_at: ['2026-11-25T05:10:00Z', '2026-11-27T05:10:00Z']
+    note: the repeat 24 h before the end coincides with the repeat after 72 h
+- id: fx-mgr-stopped-repeat-c
+  given: {stopped_at: '2026-11-24T05:10:00Z', decide_within: 2d}
+  expect:
+    repeats_at: ['2026-11-25T05:10:00Z']
+    note: the repeat after 72 h is after the deadline; the repeat 24 h before coincides with the repeat after 24 h
+- id: fx-mgr-stopped-repeat-d
+  given: {stopped_at: '2026-11-24T05:10:00Z', decide_within: 7d}
+  steps:
+  - call:
+      port: P2
+      op: seat.assign
+      request: {seat: farm-manager}
+    by: operator
+    at: '2026-11-26T09:00:00Z'
+  expect:
+    repeats_at: ['2026-11-25T05:10:00Z']

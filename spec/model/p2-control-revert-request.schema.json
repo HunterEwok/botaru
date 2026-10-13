@@ -1,0 +1,36 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:botaru:schema:p2-control-revert-request:1",
+  "title": "P2 control.revert: request",
+  "description": "Body of P2 control.revert: revert of the seat's operations in one transaction: the seat's stops are released, pending action requests, control cards and pinned tasks not yet started are canceled; the revert does not touch executed actions (MGR-15). With since the operator with admin:farm calls it, only through farmctl; with incident the operator or a person of the tenant with hold.release.",
+  "x-botaru-direction": "input",
+  "x-botaru-rules": [
+    "MGR-15",
+    "MGR-39",
+    "PRM-14"
+  ],
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "since": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/datetime",
+      "description": "Revert of all seat operations after this instant."
+    },
+    "incident": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/object_id",
+      "description": "Revert of the seat operations on one incident."
+    }
+  },
+  "oneOf": [
+    {
+      "required": [
+        "since"
+      ]
+    },
+    {
+      "required": [
+        "incident"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,8 @@
+schema: urn:botaru:schema:monitor-script-run:1
+rules:
+- APR-18
+- INJ-16
+description: The nginx-cache-clear script on web1.
+data:
+  resource: web1
+  script: nginx-cache-clear

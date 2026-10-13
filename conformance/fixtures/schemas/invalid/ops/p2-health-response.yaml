@@ -1,0 +1,11 @@
+schema: urn:botaru:schema:p2-health-response:1
+rules:
+- MON-2
+- LCY-6
+description: Not alive without a reason, draining without drain_until_s, reason not from the list.
+cases:
+- alive: false
+- alive: false
+  reason: draining
+- alive: false
+  reason: tired

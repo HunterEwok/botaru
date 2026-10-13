@@ -1,0 +1,85 @@
+id: fx-msg-10
+rules: [MSG-11, BUD-1, BUD-3]
+description: Wake-up budget. A wake-up task reserves the estimate in all BUD-1 limits, including the daily
+  limit of each principal from origininitiators, and also in the daily wake-up ceiling Tenant.spec.messaging.wake_day_eur,
+  which the core keeps per pair (tenant, recipient role); the number of wake-ups per day per tenant is no more than Tenant.spec.messaging.wakes_per_day.
+  If the money is exhausted, the wake-up is skipped with the event wake.skipped(budget_exhausted), if the count is, with wake.skipped(service_rate_limited);
+  the entries wait until their deadline. The core writes the message itself as a usage line with unit message into the sender's tree.
+given:
+  tenant: demo
+  tenant_spec:
+    budgets: {day_eur: 10}
+    messaging: {wake_day_eur: 1, wakes_per_day: 3}
+  route:
+    name: lead-wake
+    true:
+      inbox: role:ops-lead
+      kinds: [report]
+      min: 1
+      debounce: 5m
+    task: {type: ops.lead.review.v1}
+  wake_estimate_eur: 0.3
+  initiators_day_limit: {carol: 5}
+expect:
+  defaults: {wake_day_eur: a tenth of day_eur, wakes_per_day: 200}
+cases:
+- description: money ceiling of the recipient role
+  given:
+    wakes:
+    - at: '2026-10-06T08:00:00Z'
+      expect:
+        task: created
+        reserved:
+          wake_day_eur: {role: ops-lead, eur: 0.3}
+          day_eur_of: [carol]
+    - at: '2026-10-06T08:06:00Z'
+      expect: {task: created}
+    - at: '2026-10-06T08:12:00Z'
+      expect: {task: created}
+    tenant_spec:
+      messaging: {wake_day_eur: 0.8, wakes_per_day: 10}
+  expect:
+    third_wake: {task: none, event: wake.skipped(budget_exhausted)}
+    entries_state: queued
+- description: number of wake-ups per day
+  given:
+    wakes:
+    - {at: '2026-10-06T08:00:00Z'}
+    - {at: '2026-10-06T08:06:00Z'}
+    - {at: '2026-10-06T08:12:00Z'}
+    - {at: '2026-10-06T08:18:00Z'}
+  expect:
+    tasks: 3
+    fourth_wake: {task: none, event: wake.skipped(service_rate_limited)}
+    entries_state: queued
+- description: daily limit of the initiator of what was read
+  given:
+    initiators_day_limit: {carol: 0.1}
+    wakes:
+    - at: '2026-10-06T08:00:00Z'
+      origininitiators: ['human:carol']
+  expect: {task: none, event: wake.skipped(budget_exhausted)}
+- description: the tenant raises the ceiling above the default
+  given:
+    tenant_spec:
+      budgets: {day_eur: 10}
+      messaging: {wake_day_eur: 5}
+  expect:
+    result: rejected
+    stage: apply
+    error: messaging_limit_raised
+    note: the default is 1 EUR, a tenth of day_eur; the tenant can only lower it
+- description: usage line of a message
+  given: {then: complete}
+  steps:
+  - call:
+      port: P1
+      op: msg.send
+      request:
+        type: report.qc_note.v1
+        fields: {}
+        to: role:ops-lead
+    by: role:analyst
+    context: {task: t_01JB0000000000000000000002, size_bytes: 420}
+  expect:
+    spend_row: {unit: message, type: report.qc_note.v1, size_bytes: 420, tree: t_01JB0000000000000000000001}

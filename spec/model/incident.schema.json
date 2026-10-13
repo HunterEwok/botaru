@@ -1,0 +1,288 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:botaru:schema:incident:1",
+  "title": "Incident",
+  "description": "Incident record (spec/lifecycles/incident.md). Only the core opens it, by a code alarm and a catalog class (MGR-8); only code sets resolved; only a person sets dismissed, with a reason code and a \"Details\" text, which the core shows only to people and does not pass into model context. Code builds the list of involved parties with catalog functions, at most 20 targets. For a class with stops_manager whose subject is a disk, the record keeps a reason code in stops_manager_effect if there is no seat stop (GOV-22, MGR-33, MGR-34). No bot creates, changes or hides the record (GOV-13).",
+  "x-botaru-direction": "record",
+  "x-botaru-retention": "metadata",
+  "x-botaru-rules": [
+    "MGR-8",
+    "MGR-7",
+    "GOV-13",
+    "GOV-22",
+    "MGR-33",
+    "MGR-34"
+  ],
+  "type": "object",
+  "required": [
+    "id",
+    "tenant",
+    "class",
+    "severity",
+    "state",
+    "subject",
+    "alarm",
+    "opened_at"
+  ],
+  "properties": {
+    "id": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/object_id",
+      "description": "Incident id."
+    },
+    "tenant": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/tenant_name",
+      "description": "Tenant of the incident; for incidents with the subject farm this is farm."
+    },
+    "class": {
+      "type": "string",
+      "maxLength": 63,
+      "pattern": "^[a-z][a-z0-9_]{0,62}$",
+      "description": "Name of the incident class (metadata.name of the IncidentClass file, MGR-7)."
+    },
+    "severity": {
+      "description": "Severity; only a person can change it.",
+      "$ref": "urn:botaru:schema:common:1#/$defs/incident_severity"
+    },
+    "state": {
+      "enum": [
+        "open",
+        "contained",
+        "mitigating",
+        "resolved",
+        "reopened",
+        "closed",
+        "dismissed"
+      ],
+      "description": "State of the incident lifecycle."
+    },
+    "subject": {
+      "type": "object",
+      "required": [
+        "kind"
+      ],
+      "properties": {
+        "kind": {
+          "enum": [
+            "resource",
+            "farm",
+            "tenant",
+            "role",
+            "worker"
+          ],
+          "description": "Kind of the incident subject by the class's subject.kind."
+        },
+        "id": {
+          "type": "string",
+          "maxLength": 64,
+          "pattern": "^[a-z0-9:_.-]{1,64}$",
+          "description": "Object id from the restricted character set [a-z0-9:_.-]{1,64}: catalog name, resource, task type, worker, task."
+        }
+      },
+      "description": "Incident subject."
+    },
+    "alarm": {
+      "type": "object",
+      "required": [
+        "alarmkey",
+        "origin"
+      ],
+      "properties": {
+        "alarmkey": {
+          "type": "string",
+          "maxLength": 200,
+          "description": "Alarm key."
+        },
+        "values": {
+          "type": "object",
+          "maxProperties": 10,
+          "additionalProperties": {
+            "type": "number"
+          },
+          "description": "Alarm numbers."
+        },
+        "origin": {
+          "enum": [
+            "code",
+            "monitor"
+          ],
+          "description": "code: a measurement by the core or a job role over farm series; monitor: a job role raised the alarm from a monitoring system problem (MON-5)."
+        },
+        "monitor_event": {
+          "type": "string",
+          "maxLength": 64,
+          "description": "Problem number in the monitoring system for origin: monitor."
+        }
+      },
+      "description": "The code alarm that opened the incident."
+    },
+    "implicated": {
+      "type": "array",
+      "maxItems": 20,
+      "description": "Involved parties: workers and tasks that the class functions returned; code recomputes the list once a minute while the incident is open.",
+      "items": {
+        "type": "object",
+        "properties": {
+          "worker": {
+            "type": "string",
+            "maxLength": 64,
+            "pattern": "^[a-z0-9:_.-]{1,64}$",
+            "description": "Object id from the restricted character set [a-z0-9:_.-]{1,64}: catalog name, resource, task type, worker, task."
+          },
+          "task": {
+            "type": "string",
+            "maxLength": 64,
+            "pattern": "^[a-z0-9:_.-]{1,64}$",
+            "description": "Object id from the restricted character set [a-z0-9:_.-]{1,64}: catalog name, resource, task type, worker, task."
+          },
+          "bot": {
+            "$ref": "urn:botaru:schema:common:1#/$defs/object_id",
+            "description": "Identity of the worker."
+          },
+          "role": {
+            "$ref": "urn:botaru:schema:common:1#/$defs/name",
+            "description": "Role of the worker."
+          },
+          "tasktype": {
+            "$ref": "urn:botaru:schema:common:1#/$defs/type_name",
+            "description": "Task type."
+          }
+        }
+      }
+    },
+    "stops_manager_effect": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/reason",
+      "description": "For a class with stops_manager: a reason code why there is no seat stop (the condition of MGR-33 or MGR-34 does not hold, the seat is not in held, the farm manager is disabled in the tenant)."
+    },
+    "ops": {
+      "description": "Control operations on the incident (C1 control.apply by the seat holder, or by people through P2 control.*) in the order of application: the operation from control-ops.yaml, its record and time.",
+      "type": "array",
+      "maxItems": 100,
+      "items": {
+        "type": "object",
+        "required": [
+          "op",
+          "at"
+        ],
+        "properties": {
+          "op": {
+            "type": "string",
+            "maxLength": 32,
+            "pattern": "^[a-z][a-z0-9_]*$",
+            "x-botaru-registry": "control-ops",
+            "description": "Operation from control-ops.yaml."
+          },
+          "id": {
+            "$ref": "urn:botaru:schema:common:1#/$defs/object_id",
+            "description": "The record the operation created (for example a stop)."
+          },
+          "by": {
+            "description": "Who applied it: the seat holder with an epoch, or a person.",
+            "$ref": "#/$defs/actor"
+          },
+          "at": {
+            "$ref": "urn:botaru:schema:common:1#/$defs/datetime"
+          }
+        }
+      }
+    },
+    "humans_took": {
+      "type": "boolean",
+      "description": "A person took on the incident (P2 incident.ack); the same as a non-empty taken_by."
+    },
+    "taken_by": {
+      "description": "Which people took on the incident (P2 incident.ack), in the order of the marks.",
+      "type": "array",
+      "maxItems": 20,
+      "uniqueItems": true,
+      "items": {
+        "$ref": "urn:botaru:schema:common:1#/$defs/principal_ref"
+      }
+    },
+    "dismiss": {
+      "type": "object",
+      "required": [
+        "reason_code",
+        "details",
+        "by",
+        "at"
+      ],
+      "properties": {
+        "reason_code": {
+          "description": "Reason code.",
+          "$ref": "#/$defs/dismiss_reason"
+        },
+        "details": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 500,
+          "description": "The \"Details\" text typed by a person."
+        },
+        "by": {
+          "$ref": "urn:botaru:schema:common:1#/$defs/principal_ref",
+          "description": "The person who dismissed the incident."
+        },
+        "at": {
+          "$ref": "urn:botaru:schema:common:1#/$defs/datetime",
+          "description": "Time."
+        }
+      },
+      "description": "Dismissal as false: only people see it, it does not go into model context."
+    },
+    "opened_at": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/datetime",
+      "description": "Opening."
+    },
+    "resolved_at": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/datetime",
+      "description": "Transition to resolved."
+    },
+    "closed_at": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/datetime",
+      "description": "Closing."
+    },
+    "closed_by": {
+      "description": "Who closed the incident after resolved: a person or the seat holder with an epoch.",
+      "$ref": "#/$defs/actor"
+    }
+  },
+  "$defs": {
+    "dismiss_reason": {
+      "description": "Reason code for dismissing an incident from the registry incident-dismiss-reasons.yaml.",
+      "enum": [
+        "false_alarm",
+        "threshold_misconfigured",
+        "maintenance",
+        "duplicate",
+        "test",
+        "other"
+      ],
+      "x-botaru-registry": "incident-dismiss-reasons"
+    },
+    "actor": {
+      "description": "A person or the holder of the farm manager seat with the seat epoch.",
+      "oneOf": [
+        {
+          "$ref": "urn:botaru:schema:common:1#/$defs/principal_ref"
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "epoch"
+          ],
+          "properties": {
+            "kind": {
+              "const": "seat"
+            },
+            "epoch": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 1000000
+            }
+          }
+        }
+      ]
+    }
+  }
+}

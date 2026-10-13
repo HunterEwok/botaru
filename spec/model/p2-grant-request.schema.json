@@ -1,0 +1,47 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:botaru:schema:p2-grant-request:1",
+  "title": "P2 grant and ungrant: request",
+  "description": "Membership of a principal in a group with a deadline, and its removal. Ordinary groups are granted by an admin with admin:people (farmctl or /grant in a direct chat), groups from delegated_groups also by them (PRM-16); privileged ones only by the operator through farmctl with a verification code, on a production tenant on the written request of another person (PRM-13). One can grant only what one has oneself (PRM-7). Removal cancels pending approvals (APR-6).",
+  "x-botaru-direction": "input",
+  "x-botaru-rules": [
+    "PRM-7",
+    "PRM-13",
+    "PRM-16",
+    "APR-6"
+  ],
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "op",
+    "subject",
+    "group"
+  ],
+  "properties": {
+    "op": {
+      "enum": [
+        "grant",
+        "ungrant"
+      ]
+    },
+    "subject": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/principal_ref"
+    },
+    "group": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/name"
+    },
+    "until": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/datetime"
+    },
+    "code": {
+      "description": "Verification code that the operator checked by voice or in person (--code); stored only as a hash.",
+      "type": "string",
+      "pattern": "^[0-9]{6,16}$",
+      "maxLength": 16
+    },
+    "requested_by": {
+      "description": "Admin of the production tenant, another person (--requested-by).",
+      "$ref": "urn:botaru:schema:common:1#/$defs/principal_ref"
+    }
+  }
+}

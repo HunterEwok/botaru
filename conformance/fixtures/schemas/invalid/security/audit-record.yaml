@@ -1,0 +1,52 @@
+schema: urn:botaru:schema:audit-record:1
+rules: [AUD-2, AUD-5, LCY-3]
+description: An audit record with message text, without a chain hash, with source personal_seen not from the closed list,
+  with a raw Telegram chat id for the author of service_grant and with an email in target.id.
+cases:
+- seq: 1
+  at: '2026-03-02T09:10:00Z'
+  tenant: demo
+  kind: command
+  actor: {principal: 'human:p_01JB3Q7N0M2V8XK4DGT5RZP9WB', via: channel}
+  ok: true
+  prev_hash: sha256:3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f
+  hash: sha256:3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f
+  text: restart everything
+- seq: 2
+  at: '2026-03-02T09:10:00Z'
+  tenant: demo
+  kind: command
+  actor: {principal: 'human:p_01JB3Q7N0M2V8XK4DGT5RZP9WB', via: channel}
+  ok: true
+- seq: 3
+  at: '2026-03-02T09:10:00Z'
+  tenant: demo
+  kind: read
+  actor: {principal: 'human:p_01JB3Q7N0M2V8XK4DGT5RZP9WB', via: channel}
+  ok: true
+  prev_hash: sha256:3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f
+  hash: sha256:3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f
+  personal_seen: [guess]
+- seq: 4
+  at: '2026-03-02T09:10:00Z'
+  tenant: demo
+  kind: service_grant
+  actor: {principal: 'human:p_01JB3Q7N0M2V8XK4DGT5RZP9WA', via: channel}
+  ok: true
+  service_grant:
+    author: {kind: human, principal: 'human:p_01JB3Q7N0M2V8XK4DGT5RZP9WA', chat: 'direct:1002'}
+    service: nginx
+    verb: restart
+    args_hash: sha256:3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f
+  prev_hash: sha256:3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f
+  hash: sha256:3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f
+- seq: 5
+  at: '2026-03-02T09:10:00Z'
+  tenant: demo
+  kind: command
+  actor: {principal: system, via: farmctl}
+  command: grant
+  target: {kind: identity, id: bob@example.org}
+  ok: true
+  prev_hash: sha256:3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f
+  hash: sha256:3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f

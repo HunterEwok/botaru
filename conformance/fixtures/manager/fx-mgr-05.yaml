@@ -1,0 +1,136 @@
+id: fx-mgr-05
+rules: [MGR-9]
+description: Targets and effects of seat operations. A target only from the code's list for the task basis, otherwise target_not_implicated;
+  excluded targets give target_excluded; effects only narrow; a hold lasts no longer than hold_ttl_max (2 h); only
+  one's own holds can be released; a seat hold of scope bot only delays the identity's tasks, and its state does not change.
+  Numbers of identities, workers, tasks and incidents are shortened, as in the examples of docs/farm-manager.md.
+given:
+  seat:
+    id: farm-manager
+    tenant: farm
+    state: held
+    holder: bot_41
+    epoch: 9
+    stop_reasons: []
+  incident:
+    id: i_311
+    tenant: demo
+    class: disk_filling
+    implicated:
+    - {worker: w_7, bot: bot_23, role: pipeline-runner}
+  workers:
+    w_7: {role: pipeline-runner}
+    w_12: {role: pipeline-runner}
+    w_r1: {role: reporter-demo, profile: reporter}
+    w_j1: {role: disk-series, kind: job, writes_series_of: disk_full}
+cases:
+- id: fx-mgr-05-a
+  steps:
+  - call:
+      port: P3
+      op: tools/call
+      request:
+        name: control_ops
+        arguments:
+          op: hold
+          target: {kind: worker, id: w_12}
+          effects: [no_claim]
+          ttl: 1h
+    by: attempt
+  expect: {result: rejected, reason: target_not_implicated}
+- id: fx-mgr-05-b
+  steps:
+  - call:
+      port: P3
+      op: tools/call
+      request:
+        name: control_ops
+        arguments:
+          op: quarantine
+          target: {kind: worker, id: w_r1}
+    by: attempt
+  expect: {result: rejected, reason: target_excluded, note: a role of profile reporter}
+- id: fx-mgr-05-c
+  steps:
+  - call:
+      port: P3
+      op: tools/call
+      request:
+        name: control_ops
+        arguments:
+          op: drain
+          target: {kind: worker, id: w_j1}
+    by: attempt
+  expect: {result: rejected, reason: target_excluded, note: the worker writes series of a class with stops_manager}
+- id: fx-mgr-05-d
+  steps:
+  - call:
+      port: P3
+      op: tools/call
+      request:
+        name: control_ops
+        arguments:
+          op: cancel
+          target: {kind: task, id: t-gov-1, purpose: governance}
+    by: attempt
+  expect: {result: rejected, reason: target_excluded}
+- id: fx-mgr-05-e
+  steps:
+  - call:
+      port: P3
+      op: tools/call
+      request:
+        name: control_ops
+        arguments:
+          op: hold
+          target: {kind: worker, id: w_7}
+          effects: [no_claim]
+          ttl: 3h
+    by: attempt
+  expect: {result: rejected, reason: input_schema_invalid, note: the term is longer than hold_ttl_max}
+- id: fx-mgr-05-f
+  given:
+    holds:
+    - {id: h_human_1, author: 'human:alice'}
+  steps:
+  - call:
+      port: P3
+      op: tools/call
+      request:
+        name: control_ops
+        arguments:
+          op: release
+          target: {kind: hold, id: h_human_1}
+    by: attempt
+  expect: {result: rejected, reason: forbidden, note: only one's own holds can be released}
+- id: fx-mgr-05-g
+  steps:
+  - call:
+      port: P3
+      op: tools/call
+      request:
+        name: control_ops
+        arguments:
+          op: hold
+          target: {kind: bot, id: bot_23}
+          effects: [no_claim]
+          ttl: 1h
+    by: attempt
+  expect:
+    result: ok
+    bot_23: {state: active, promotion_eligibility: unchanged, vote: unchanged}
+    governance_tasks_delayed: false
+- id: fx-mgr-05-h
+  steps:
+  - call:
+      port: P3
+      op: tools/call
+      request:
+        name: control_ops
+        arguments:
+          op: hold
+          target: {kind: worker, id: w_7}
+          effects: [no_claim]
+          ttl: 1h
+    by: attempt
+  expect: {result: ok, target_origin: code}

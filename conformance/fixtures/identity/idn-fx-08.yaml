@@ -1,0 +1,96 @@
+id: idn-fx-08
+rules: [IDN-8]
+description: 'A bot identity is a core record: only the core issues the id bot_<ulid> and does not reuse it, and the tenant
+  is taken from the credentials at creation and does not change. Only the core writes the fields acting_bot and bot_epoch in all records;
+  the task body, parameters, a message and the model output do not set them. Records without a bot identity have empty fields. Numbers
+  of identities, workers and tasks are shortened, as in the examples of docs/bots.md.'
+given: {tenant: demo}
+cases:
+- id: idn-fx-08-a
+  description: 'P2 worker.enroll of a role with a model without the parameter bot creates an identity with a binding mode: worker and epoch
+    1.'
+  given:
+    people:
+    - principal: human:bob
+      caps: ['admin:workers@demo']
+  steps:
+  - call:
+      port: P2
+      op: worker.enroll
+      request: {tenant: demo, role: ops-runner, kind: agent, host: web1}
+    by: human:bob
+  expect:
+    bot:
+      id_pattern: ^bot_[0-9A-HJKMNP-TV-Z]{26}$
+      tenant: demo
+      role: ops-runner
+      state: active
+      binding: {mode: worker, epoch: 1}
+    id_from: core
+- id: idn-fx-08-b
+  description: Records of an attempt, a model call and spend carry acting_bot and bot_epoch from the core.
+  given:
+    bot: bot_17
+    binding_epoch: 1
+    run: {task: ops.backup.watch.v1, attempt: 1}
+  expect:
+    attempt: {acting_bot: bot_17, bot_epoch: 1}
+    model_call: {acting_bot: bot_17, bot_epoch: 1}
+    spend_row: {acting_bot: bot_17, bot_epoch: 1}
+    audit: {acting_bot: bot_17, bot_epoch: 1}
+- id: idn-fx-08-c
+  description: 'The task body and parameters do not set the identity: the core rejects the field or writes its own value.'
+  steps:
+  - call:
+      port: P1
+      op: enqueue
+      request:
+        body: {type: ops.backup.watch.v1, goal: backup check, acting_bot: bot_99, bot_epoch: 7}
+        idempotency_key: idn-fx-08-c-1
+    expect:
+      result: rejected
+      reason: input_schema_invalid
+      note: acting_bot and bot_epoch are not in the task body schema
+- id: idn-fx-08-d
+  description: Model output with the field acting_bot does not change the identity of the attempt.
+  given: {bot: bot_17, binding_epoch: 1}
+  steps:
+  - call:
+      port: P1
+      op: complete
+      request:
+        result: {summary: ok, acting_bot: bot_99}
+  expect:
+    result: rejected
+    reason: output_schema_invalid
+    attempt: {acting_bot: bot_17}
+- id: idn-fx-08-e
+  description: A message record in the store carries the sender's identity, and the field does not go into the message envelope.
+  given: {bot: bot_17, binding_epoch: 1}
+  steps:
+  - call:
+      port: P1
+      op: msg.send
+      request:
+        type: report.ops.v1
+        to: role:ops-lead
+        fields: {}
+  expect:
+    stored_message: {acting_bot: bot_17, bot_epoch: 1}
+    envelope_has_acting_bot: false
+- id: idn-fx-08-f
+  description: 'A task of a role without a model and a core task go without an identity: the fields are empty.'
+  given:
+    run: {task: ops.disk.check.v1, role: disk-checker, model: false}
+  expect:
+    attempt: {acting_bot: null, bot_epoch: null}
+- id: idn-fx-08-g
+  description: The identity's tenant does not change, and the id is not reused.
+  given:
+    tombstone: {id: bot_31, tenant: demo, role: ops-runner, state: erased}
+  steps:
+  - call:
+      port: P2
+      op: worker.enroll
+      request: {tenant: demo, role: ops-runner, kind: agent, host: db1}
+  expect: {new_bot_id_differs_from: bot_31, tenant_change_ops: 0}

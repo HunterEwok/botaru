@@ -1,0 +1,5 @@
+schema: spec/model/p1-release-request.schema.json
+rules: [FEN-2]
+description: A release request under a lease (the Botaru-Lease header).
+cases:
+- {}

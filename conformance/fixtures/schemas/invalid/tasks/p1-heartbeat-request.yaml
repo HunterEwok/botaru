@@ -1,0 +1,8 @@
+schema: spec/model/p1-heartbeat-request.schema.json
+rules: [FEN-2, DLV-11, STA-2]
+description: 'heartbeat requests that the schema rejects: partial model text instead of a stage; fraction above 1; a self-report
+  about free slots instead of progress.'
+cases:
+- {text: From 19:05 to 19:40 nginx did not wait for}
+- {progress: 1.5}
+- {slots_free: 64}

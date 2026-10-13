@@ -1,0 +1,97 @@
+id: idn-fx-13
+rules: [IDN-13]
+description: 'When a person is disabled (P2 principal.off) or removed for good (P2 principal.offboard), in the same
+  transaction the core sends the admins of their tenant with admin:people a code notification principal_left, only to their private chats:
+  the principal id, the trigger and the list of chats with a farm binding where the person remains a member per the E1 channel, with
+  a mark on chats with membership_assurance: enforced. If the person has no chats with a farm binding, the tenant administrator still
+  gets the notification, and instead of the list it says that there are no chats. Text by the key notice.principal_left,
+  no model text. In v0.1 the core only reports the list.'
+given:
+  people:
+  - principal: human:alice
+    groups: ['admin:people']
+  - principal: human:bob
+    groups: ['admin:people']
+  - principal: human:carol
+    groups: [user]
+  chat_bindings:
+  - chat: tg:-1001
+    name: ops
+    members_from_e1: ['human:carol', 'human:bob']
+    membership_assurance: enforced
+  - chat: tg:-1002
+    name: lab
+    members_from_e1: ['human:carol']
+    membership_assurance: reported
+  - chat: tg:-1003
+    name: night
+    members_from_e1: ['human:bob']
+  tenant: demo
+cases:
+- id: idn-fx-13-a
+  given:
+    people:
+    - principal: human:alice
+      caps: ['admin:people@demo']
+  steps:
+  - call:
+      port: P2
+      op: principal.off
+      request: {op: principal.off, subject: 'human:p_01JB3Q7N0M2V8XK4DGT5RZP9WC'}
+    by: human:alice
+  expect:
+    transaction: one
+    notice:
+      code: principal_left
+      key: notice.principal_left
+      to: ['dm:human:alice', 'dm:human:bob']
+      to_group: false
+      subject: human:carol
+      reason: person_inactive
+      chats:
+      - {chat: 'tg:-1001', enforced: true}
+      - {chat: 'tg:-1002', enforced: false}
+      model_text: false
+      via: principal.off
+    chat_leave_actions: 0
+- id: idn-fx-13-b
+  given:
+    people:
+    - principal: human:alice
+      caps: ['admin:people@demo']
+  steps:
+  - call:
+      port: P2
+      op: principal.offboard
+      request: {subject: 'human:p_01JB3Q7N0M2V8XK4DGT5RZP9WC'}
+    by: human:alice
+  expect:
+    notice:
+      code: principal_left
+      reason: offboarding
+      chats:
+      - {chat: 'tg:-1001', enforced: true}
+      - {chat: 'tg:-1002', enforced: false}
+      via: principal.offboard
+    erasure_request: {reason: offboarding}
+- id: idn-fx-13-c
+  given:
+    chat_bindings: []
+    people:
+    - principal: human:alice
+      caps: ['admin:people@demo']
+  steps:
+  - call:
+      port: P2
+      op: principal.off
+      request: {op: principal.off, subject: 'human:p_01JB3Q7N0M2V8XK4DGT5RZP9WC'}
+    by: human:alice
+  expect:
+    notice:
+      code: principal_left
+      key: notice.principal_left
+      to: ['dm:human:alice', 'dm:human:bob']
+      reason: person_inactive
+      chats: []
+      chats_text: none
+      via: principal.off

@@ -1,0 +1,124 @@
+id: fx-mgr-reader-gov
+rules: [MGR-25]
+description: 'The role farm-manager-reader has no access to governance data, tasks with purposes governance, review, handover,
+  inspect, manage, memory of people and bots, sessions, sealed data, tasks of workers with an owner, secrets, marks above
+  the ceiling and anything of another tenant: on them it gets not_found, as for something nonexistent. The lint of the group farm-manager-ops
+  does not allow removing these exclusions.'
+given:
+  attempt: {tenant: demo, role: farm-manager-reader, type: manager.inspect.v1}
+cases:
+- id: fx-mgr-reader-gov-a
+  steps:
+  - call:
+      port: P1
+      op: msg.receive
+      request: {max: 20}
+    context: {governance_case: gc_0007}
+  expect: {result: rejected, reason: not_found}
+- id: fx-mgr-reader-gov-b
+  steps:
+  - call:
+      port: P1
+      op: msg.receive
+      request: {max: 20}
+    context: {ballot: gc_0007/1/bot_05}
+  expect: {result: rejected, reason: not_found}
+- id: fx-mgr-reader-gov-c
+  steps:
+  - call:
+      port: P1
+      op: msg.receive
+      request: {max: 20}
+    context: {task: t-rev-1, purpose: review}
+  expect: {result: rejected, reason: not_found}
+- id: fx-mgr-reader-gov-d
+  steps:
+  - call:
+      port: P1
+      op: msg.receive
+      request: {max: 20}
+    context: {task: t-hand-1, purpose: handover}
+  expect: {result: rejected, reason: not_found}
+- id: fx-mgr-reader-gov-e
+  steps:
+  - call:
+      port: P1
+      op: msg.receive
+      request: {max: 20}
+    context: {fact_offer: fo_1}
+  expect: {result: rejected, reason: not_found}
+- id: fx-mgr-reader-gov-f
+  steps:
+  - call:
+      port: P1
+      op: msg.receive
+      request: {max: 20}
+    context:
+      memory: {scope: person, subject: 'human:alice'}
+  expect: {result: rejected, reason: not_found}
+- id: fx-mgr-reader-gov-g
+  steps:
+  - call:
+      port: P1
+      op: msg.receive
+      request: {max: 20}
+    context:
+      memory: {scope: bot, subject: bot_17}
+  expect: {result: rejected, reason: not_found}
+- id: fx-mgr-reader-gov-h
+  steps:
+  - call:
+      port: P1
+      op: msg.receive
+      request: {max: 20}
+    context: {session: demo/ops-runner/alice/c1}
+  expect: {result: rejected, reason: not_found}
+- id: fx-mgr-reader-gov-i
+  steps:
+  - call:
+      port: P1
+      op: msg.receive
+      request: {max: 20}
+    context: {sealed: bot_31}
+  expect: {result: rejected, reason: not_found}
+- id: fx-mgr-reader-gov-j
+  steps:
+  - call:
+      port: P1
+      op: msg.receive
+      request: {max: 20}
+    context: {task: t-asst-1, worker_owner: 'human:alice'}
+  expect: {result: rejected, reason: not_found}
+- id: fx-mgr-reader-gov-k
+  steps:
+  - call:
+      port: P1
+      op: msg.receive
+      request: {max: 20}
+    context: {secret: db1-password}
+  expect: {result: rejected, reason: not_found}
+- id: fx-mgr-reader-gov-l
+  steps:
+  - call:
+      port: P1
+      op: msg.receive
+      request: {max: 20}
+    context: {task: t-d2-1, tenant: demo2}
+  expect: {result: rejected, reason: not_found}
+- id: fx-mgr-reader-gov-m
+  steps:
+  - call:
+      port: P1
+      op: msg.receive
+      request: {max: 20}
+    context: {task: t-sec-1, data_mark: secret}
+  expect: {result: rejected, reason: not_found}
+- id: fx-mgr-reader-gov-n
+  given:
+    manifests:
+    - kind: Group
+      metadata: {name: farm-manager-ops}
+      spec:
+        capabilities: ['task.read:governance.ballot.v1']
+  expect:
+    apply: {result: rejected}

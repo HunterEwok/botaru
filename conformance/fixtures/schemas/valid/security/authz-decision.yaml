@@ -1,0 +1,12 @@
+schema: urn:botaru:schema:authz-decision:1
+rules:
+- PRM-8
+description: A denial with the needs field and a permit without a reason.
+cases:
+- decision: deny
+  reason: forbidden
+  needs:
+  - service.control:nginx
+  stage: intersection
+- decision: allow
+  stage: intersection

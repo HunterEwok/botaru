@@ -1,0 +1,33 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:botaru:schema:p2-invite-response:1",
+  "title": "P2 invite: response",
+  "description": "Invitation: id, one-time code (only in the invite.create answer), deadline and state; membership of a privileged group is pending until the code is checked (PRM-13).",
+  "x-botaru-direction": "output",
+  "x-botaru-rules": [
+    "PRM-7",
+    "PRM-13"
+  ],
+  "type": "object",
+  "required": [
+    "invite",
+    "state"
+  ],
+  "properties": {
+    "invite": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/object_id"
+    },
+    "code": {
+      "type": "string",
+      "maxLength": 64
+    },
+    "expires_at": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/datetime"
+    },
+    "state": {
+      "type": "string",
+      "maxLength": 64,
+      "pattern": "^[a-z][a-z0-9_]*$"
+    }
+  }
+}

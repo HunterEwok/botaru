@@ -1,0 +1,20 @@
+schema: urn:botaru:schema:approval:1
+rules: [APR-3, APR-19]
+description: Approval No. 4812 cleanup_pipeline_tmp from bob with a context line and a 60-minute deadline.
+data:
+  id: apr_01J9Z3M2Q8YB6V4N7T5K0C2D2F
+  tenant: demo
+  source_task: t_01J9Z3M2Q8YB6V4N7T5K0C2D1E
+  initiator: human:p_01JB3Q7N0M2V8XK4DGT5RZP9WA
+  requested_by: {kind: bot, role: ops-reader, task: t_01J9Z3M2Q8YB6V4N7T5K0C2D1E}
+  action: cleanup_pipeline_tmp
+  args: {older_than_days: 7}
+  args_hash: sha256:3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f
+  nonce: n7Qx2LkP9vRt4WsZ
+  risk: low
+  approvals: 1
+  untrusted_seen: true
+  untrusted_source: logs/tail
+  context: {verdict: cause_found, free_pct: 0}
+  expires_at: '2026-03-02T10:00:00Z'
+  state: pending

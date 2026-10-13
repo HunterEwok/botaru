@@ -1,0 +1,9 @@
+schema: spec/model/p1-heartbeat-request.schema.json
+rules: [FEN-2, DLV-11]
+description: 'heartbeat requests that the schema accepts: an empty body (the lease is in the Botaru-Lease header); a stage,
+  a fraction and informational usage.'
+cases:
+- {}
+- stage: reading_logs
+  progress: 0.4
+  usage: {input_tokens: 1200, output_tokens: 80}

@@ -1,0 +1,70 @@
+id: fx-proposal-human-change
+rules: [PRP-13, PRP-19, PRP-18]
+description: 'A change by people''s hands (human_change). The description is closed: a tenant object, a path from spec/model/change-paths.yaml,
+  a direction up, down or set and a value (a number or an enum); there is no free text. After "Accept" the executor gets
+  a card with the description and a deadline; the proposal becomes realized only through a linked commit that changes
+  the named field in the named direction.'
+given:
+  tenant: demo
+  insights:
+    realizers: [bob]
+    realize_by: 7d
+  catalog:
+    hosts:
+    - {id: db1, disk_gb: 100}
+cases:
+- id: prp-fx-20
+  rules: [PRP-13]
+  description: A path from the change-paths.yaml registry is accepted; the card shows the description in code words.
+  given:
+    change:
+      kind: human_change
+      human_change:
+        target: {kind: Host, name: db1}
+        path: catalog.host.disk_gb
+        direction: up
+        value: 200
+  expect: {result: ok, state: screened}
+- id: prp-fx-21
+  rules: [PRP-13]
+  description: A path not from the registry (group permissions) is rejected; the registry contains no targets forbidden by the allowlist.
+  given:
+    change:
+      kind: human_change
+      human_change:
+        target: {kind: Group, name: staff}
+        path: groups.staff.caps
+        direction: set
+        value: admin
+  expect: {result: rejected, reason: forbidden_change}
+- id: prp-fx-22
+  rules: [PRP-13, PRP-18, PRP-19]
+  description: '"Accept" is pressed by alice (not in realizers): the executor is bob, the deadline 7 days, a reminder at half
+    the term. A commit with a Botaru-Proposal line that raises disk_gb from 100 to 200 makes the proposal realized;
+    a commit that lowers the field does not.'
+  given:
+    commits:
+    - trailer: 'Botaru-Proposal: <id>'
+      sets: {catalog.host.disk_gb: 80}
+      expect: {state: realizing}
+    - trailer: 'Botaru-Proposal: <id>'
+      sets: {catalog.host.disk_gb: 200}
+      expect: {state: realized}
+  steps:
+  - call:
+      port: P1
+      op: decide
+      request: {subject_kind: proposal, id: $last, decision: accept}
+    by: human:alice
+  expect:
+    state: realizing
+    realization: {realizer: bob, realize_by: 7d, reminder_at: 3.5d}
+    card: {kind: realization_card, to: bob}
+- id: prp-fx-23
+  rules: [PRP-18]
+  description: By the realize_by deadline there is no realization; the proposal is realization_failed(timeout), the trial canceled.
+  given: {after: 7d}
+  expect:
+    state: realization_failed
+    state_reason: timeout
+    trial: {state: canceled}

@@ -1,0 +1,14 @@
+schema: spec/model/session-entry.schema.json
+rules: [MEM-1, TEN-2]
+description: 'Session entries that the schema rejects: no uuid; uuid of the wrong kind; session key from the runtime; tenant.'
+cases:
+- content: x
+- uuid: entry-1
+  content: x
+- uuid: 0f8a3c2e-5b1d-4c7a-9e2f-1a2b3c4d5e6f
+  content: x
+  key:
+    subject: human:bob
+- uuid: 0f8a3c2e-5b1d-4c7a-9e2f-1a2b3c4d5e6f
+  content: x
+  tenant: demo2

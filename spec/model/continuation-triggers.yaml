@@ -1,0 +1,44 @@
+registry: continuation-triggers
+version: 1
+description: >-
+  Continuation triggers. A continuation is a task that the core enqueues on a trigger from this list in the
+  same transaction as the trigger, with a key from the closed list of core keys (CNT-2, IDM-2). The type and the goal
+  template of a continuation come only from the declaration in git that the `declared_by` field names; the model
+  can choose a value only from the declared list, and the model's arguments and the event data do not set
+  the type (CNT-1). A continuation copies the initiator, the `origin` and the conversation of the source, the depth is 1 greater
+  and at most 5, the mark is the maximum of the participants' marks, `untrusted_seen` is the OR over the participants (CNT-3).
+  An action task after an approval is approved is not a continuation: the core enqueues it by APR-7. Entry fields:
+  `meaning` (what fires), `declared_by` (where the type and goal template come from), `key` (kind of the idempotency
+  key), `rules`.
+source: docs/tasks-and-delivery.md
+entries:
+  - id: reply
+    since: v0.1
+    meaning: End of a child task that the parent enqueued through P3 `enqueue_child`.
+    declared_by: the `continuation` field of the parent's task type
+    key: 'system:cont:reply:<child task>'
+    rules: [CNT-1, CNT-2, CNT-3]
+  - id: campaign
+    since: v0.1
+    meaning: End of a campaign.
+    declared_by: the campaign's `then` field from the role's `campaigns.then` list
+    key: 'system:cont:campaign:<campaign>'
+    rules: [CNT-1, CNT-2, CNT-3]
+  - id: script
+    since: v0.1
+    meaning: End of a script step; the next step is released as a task.
+    declared_by: the script step
+    key: 'system:script:<run>:<step>'
+    rules: [CNT-1, CNT-2, CNT-3, SCR-8]
+  - id: timer
+    since: v0.2
+    meaning: Timeout of a waiting record from the type's `await`.
+    declared_by: the `await.on_timeout` field of the task type
+    key: 'system:cont:timer:<source id>'
+    rules: [CNT-1, CNT-2, CNT-6]
+  - id: await
+    since: v0.2
+    meaning: An external event matching a waiting record from the type's `await`.
+    declared_by: the `await.then` field of the task type
+    key: 'system:cont:await:<source id>'
+    rules: [CNT-1, CNT-2, CNT-6]

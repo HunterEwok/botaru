@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:botaru:schema:worker-stale:1",
+  "title": "Data of the event worker.stale",
+  "description": "The worker has not been seen for longer than two long-poll periods by last_seen. This is a core observation, not a state of the worker lifecycle; the worker's self-report does not change it (OBS-4, STA-2).",
+  "x-botaru-direction": "output",
+  "x-botaru-rules": [
+    "OBS-4"
+  ],
+  "type": "object",
+  "required": [
+    "worker",
+    "last_seen"
+  ],
+  "properties": {
+    "worker": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/object_id",
+      "description": "Worker id."
+    },
+    "last_seen": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/datetime",
+      "description": "Time of the worker's last P1 call of any kind."
+    }
+  }
+}

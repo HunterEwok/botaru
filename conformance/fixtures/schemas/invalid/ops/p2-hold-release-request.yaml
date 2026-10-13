@@ -1,0 +1,8 @@
+schema: urn:botaru:schema:p2-hold-release-request:1
+rules:
+- HLD-2
+description: 'Without an id and with a rank in the body: C2 computes the rank, not the request.'
+cases:
+- {}
+- id: h_01JB8M0000000000000000000A
+  rank: operator

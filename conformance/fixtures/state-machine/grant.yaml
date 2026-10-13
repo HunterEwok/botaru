@@ -1,0 +1,580 @@
+# Collected from spec/lifecycles/grant.yaml. The value null in from means "the object does not exist yet".
+lifecycle: spec/lifecycles/grant.yaml
+object: grant
+rules: [GW-2, MGR-17, MGR-18, MGR-2, MGR-22, MGR-40]
+description: Allowed and forbidden transitions of the "model grant" lifecycle, collected from the tables of spec/lifecycles/grant.md.
+  The implementation accepts a transition from the allowed list under the condition of its row (when); a pair from the forbidden
+  list does not change the state, and the call that asks for it is rejected. A grant lives in the task's tenant and ends
+  together with the task; at most 2 attempts, a term of at most 6 h. The whole lifecycle arrives in v0.2.
+version: v0.2
+states:
+- id: requested
+  terminal: false
+- id: screened
+  terminal: false
+- id: pending
+  terminal: false
+- id: approved
+  terminal: false
+- id: active
+  terminal: false
+- id: consumed
+  terminal: true
+- id: denied
+  terminal: true
+- id: expired
+  terminal: true
+- id: revoked
+  terminal: true
+allowed:
+- id: sm-grt-01
+  from: null
+  to: requested
+  by: P3 request_model_grant; P1 grant.request for job
+  when: the role has the ladder model_grants.ladder, the tenant's grant line is above 0; one request per task; a profile
+    from the ladder ∩ those allowed to the tenant, not the seat's profile
+  rules: [MGR-17]
+- id: sm-grt-02
+  from: requested
+  to: denied
+  by: the core on receipt
+  when: 'no right to ask (grant_not_eligible: neither the initial input above the class threshold nor the type history by
+    MGR-40); the evidence did not match reason; the price does not fit (grant_over_budget); rate (grant_rate_limited: more
+    than 3 requests per role in the tenant per day, MGR-40)'
+  rules: [MGR-17, MGR-40]
+- id: sm-grt-03
+  from: requested
+  to: screened
+  by: the core on receipt
+  when: all code checks passed
+  rules: [MGR-17]
+- id: sm-grt-04
+  from: screened
+  to: pending
+  by: the core
+  when: always, right after the code checks; the request waits for the seat holder's nearest batch or a person's decision
+  rules: [MGR-18]
+- id: sm-grt-05
+  from: pending
+  to: approved
+  by: P3 grant_decide of the seat holder (task manager.grants.v1, in a batch once every 10 minutes, key system:grants:<tenant>:<window>,
+    IDM-2); P2 model_grant.issue by a person with model_grant.manage
+  when: the epoch is current; at most 2 attempts, a term of at most 6 h, the sum cap_eur within the grant line and within
+    the seat's daily grant ceiling seat_grants_eur_day; in distrust mode only the first step of the ladder
+  rules: [MGR-18, MGR-22]
+- id: sm-grt-06
+  from: pending
+  to: denied
+  by: P3 grant_decide with a refusal; P2 by a person with model_grant.manage
+  when: a reason from the closed list
+  rules: [MGR-18]
+- id: sm-grt-07
+  from: pending
+  to: expired
+  by: the grant loop
+  when: no decision within grant_wait_max (15 minutes), reason grant_expired_unanswered; the task continues on the base
+    model
+  rules: [MGR-18, MGR-2]
+- id: sm-grt-08
+  from: approved
+  to: active
+  by: the core at the start of a task attempt
+  when: P4 allows the granted slot only to this task
+  rules: [MGR-18]
+- id: sm-grt-09
+  from: active
+  to: approved
+  by: the core at the end of an attempt
+  when: attempts_left is above 0 and the task has not finished
+  rules: [MGR-18]
+- id: sm-grt-10
+  from: active
+  to: consumed
+  by: the core
+  when: 'the grant attempts ran out, the task finished, or the rest of cap_eur does not hold the reserve of the next call:
+    such a call does not start (budget_exhausted), no attempt is spent, the task continues on the base model'
+  rules: [GW-2, MGR-18]
+- id: sm-grt-11
+  from: approved
+  to: consumed
+  by: the core
+  when: 'the grant attempts ran out, the task finished, or the rest of cap_eur does not hold the reserve of the next call:
+    such a call does not start (budget_exhausted), no attempt is spent, the task continues on the base model'
+  rules: [GW-2, MGR-18]
+- id: sm-grt-12
+  from: approved
+  to: expired
+  by: the grant loop
+  when: expires_at has come; P4 no longer allows the granted slot, the running attempt finishes without spending, the task
+    continues on the base model
+  rules: [MGR-18]
+- id: sm-grt-13
+  from: active
+  to: expired
+  by: the grant loop
+  when: expires_at has come; P4 no longer allows the granted slot, the running attempt finishes without spending, the task
+    continues on the base model
+  rules: [MGR-18]
+- id: sm-grt-14
+  from: approved
+  to: revoked
+  by: P2 model_grant.revoke by a person with model_grant.manage
+  when: the running attempt is canceled with the reason grant_revoked without spending, the task continues on the base model
+  rules: [MGR-18]
+- id: sm-grt-15
+  from: active
+  to: revoked
+  by: P2 model_grant.revoke by a person with model_grant.manage
+  when: the running attempt is canceled with the reason grant_revoked without spending, the task continues on the base model
+  rules: [MGR-18]
+forbidden:
+- id: sm-grt-x01
+  from: null
+  to: screened
+  expect: rejected
+  rules: [MGR-17]
+  why: the object does not appear directly in the state screened
+- id: sm-grt-x02
+  from: null
+  to: pending
+  expect: rejected
+  rules: [MGR-17, MGR-18]
+  why: the object does not appear directly in the state pending
+- id: sm-grt-x03
+  from: null
+  to: approved
+  expect: rejected
+  rules: [MGR-17, MGR-18, MGR-22]
+  why: the object does not appear directly in the state approved
+- id: sm-grt-x04
+  from: null
+  to: active
+  expect: rejected
+  rules: [MGR-17, MGR-18]
+  why: the object does not appear directly in the state active
+- id: sm-grt-x05
+  from: null
+  to: consumed
+  expect: rejected
+  rules: [GW-2, MGR-17, MGR-18]
+  why: the object does not appear directly in the state consumed
+- id: sm-grt-x06
+  from: null
+  to: denied
+  expect: rejected
+  rules: [MGR-17, MGR-18, MGR-40]
+  why: the object does not appear directly in the state denied
+- id: sm-grt-x07
+  from: null
+  to: expired
+  expect: rejected
+  rules: [MGR-17, MGR-18, MGR-2]
+  why: the object does not appear directly in the state expired
+- id: sm-grt-x08
+  from: null
+  to: revoked
+  expect: rejected
+  rules: [MGR-17, MGR-18]
+  why: the object does not appear directly in the state revoked
+- id: sm-grt-x09
+  from: requested
+  to: requested
+  expect: rejected
+  rules: [MGR-17, MGR-40]
+  why: the lifecycle table has no such transition
+- id: sm-grt-x10
+  from: requested
+  to: pending
+  expect: rejected
+  rules: [MGR-17, MGR-18, MGR-40]
+  why: the lifecycle table has no such transition
+- id: sm-grt-x11
+  from: requested
+  to: approved
+  expect: rejected
+  rules: [MGR-17, MGR-18, MGR-22]
+  why: the lifecycle table has no such transition
+- id: sm-grt-x12
+  from: requested
+  to: active
+  expect: rejected
+  rules: [MGR-17, MGR-18, MGR-40]
+  why: the lifecycle table has no such transition
+- id: sm-grt-x13
+  from: requested
+  to: consumed
+  expect: rejected
+  rules: [GW-2, MGR-17, MGR-18]
+  why: the lifecycle table has no such transition
+- id: sm-grt-x14
+  from: requested
+  to: expired
+  expect: rejected
+  rules: [MGR-17, MGR-18, MGR-2]
+  why: the lifecycle table has no such transition
+- id: sm-grt-x15
+  from: requested
+  to: revoked
+  expect: rejected
+  rules: [MGR-17, MGR-18, MGR-40]
+  why: the lifecycle table has no such transition
+- id: sm-grt-x16
+  from: screened
+  to: requested
+  expect: rejected
+  rules: [MGR-17, MGR-18]
+  why: the lifecycle table has no such transition
+- id: sm-grt-x17
+  from: screened
+  to: screened
+  expect: rejected
+  rules: [MGR-17, MGR-18]
+  why: the lifecycle table has no such transition
+- id: sm-grt-x18
+  from: screened
+  to: approved
+  expect: rejected
+  rules: [MGR-18, MGR-22]
+  why: the lifecycle table has no such transition
+- id: sm-grt-x19
+  from: screened
+  to: active
+  expect: rejected
+  rules: [MGR-18]
+  why: the lifecycle table has no such transition
+- id: sm-grt-x20
+  from: screened
+  to: consumed
+  expect: rejected
+  rules: [GW-2, MGR-18]
+  why: the lifecycle table has no such transition
+- id: sm-grt-x21
+  from: screened
+  to: denied
+  expect: rejected
+  rules: [MGR-17, MGR-18, MGR-40]
+  why: the lifecycle table has no such transition
+- id: sm-grt-x22
+  from: screened
+  to: expired
+  expect: rejected
+  rules: [MGR-18, MGR-2]
+  why: the lifecycle table has no such transition
+- id: sm-grt-x23
+  from: screened
+  to: revoked
+  expect: rejected
+  rules: [MGR-18]
+  why: the lifecycle table has no such transition
+- id: sm-grt-x24
+  from: pending
+  to: requested
+  expect: rejected
+  rules: [MGR-17, MGR-18, MGR-2]
+  why: the lifecycle table has no such transition
+- id: sm-grt-x25
+  from: pending
+  to: screened
+  expect: rejected
+  rules: [MGR-17, MGR-18, MGR-2]
+  why: the lifecycle table has no such transition
+- id: sm-grt-x26
+  from: pending
+  to: pending
+  expect: rejected
+  rules: [MGR-18, MGR-2, MGR-22]
+  why: the lifecycle table has no such transition
+- id: sm-grt-x27
+  from: pending
+  to: active
+  expect: rejected
+  rules: [MGR-18, MGR-2, MGR-22]
+  why: the lifecycle table has no such transition
+- id: sm-grt-x28
+  from: pending
+  to: consumed
+  expect: rejected
+  rules: [GW-2, MGR-18, MGR-2]
+  why: the lifecycle table has no such transition
+- id: sm-grt-x29
+  from: pending
+  to: revoked
+  expect: rejected
+  rules: [MGR-18, MGR-2, MGR-22]
+  why: the lifecycle table has no such transition
+- id: sm-grt-x30
+  from: approved
+  to: requested
+  expect: rejected
+  rules: [GW-2, MGR-17, MGR-18]
+  why: the lifecycle table has no such transition
+- id: sm-grt-x31
+  from: approved
+  to: screened
+  expect: rejected
+  rules: [GW-2, MGR-17, MGR-18]
+  why: the lifecycle table has no such transition
+- id: sm-grt-x32
+  from: approved
+  to: pending
+  expect: rejected
+  rules: [GW-2, MGR-18]
+  why: the lifecycle table has no such transition
+- id: sm-grt-x33
+  from: approved
+  to: approved
+  expect: rejected
+  rules: [GW-2, MGR-18, MGR-22]
+  why: the lifecycle table has no such transition
+- id: sm-grt-x34
+  from: approved
+  to: denied
+  expect: rejected
+  rules: [GW-2, MGR-17, MGR-18]
+  why: the lifecycle table has no such transition
+- id: sm-grt-x35
+  from: active
+  to: requested
+  expect: rejected
+  rules: [GW-2, MGR-17, MGR-18]
+  why: the lifecycle table has no such transition
+- id: sm-grt-x36
+  from: active
+  to: screened
+  expect: rejected
+  rules: [GW-2, MGR-17, MGR-18]
+  why: the lifecycle table has no such transition
+- id: sm-grt-x37
+  from: active
+  to: pending
+  expect: rejected
+  rules: [GW-2, MGR-18]
+  why: the lifecycle table has no such transition
+- id: sm-grt-x38
+  from: active
+  to: active
+  expect: rejected
+  rules: [GW-2, MGR-18]
+  why: the lifecycle table has no such transition
+- id: sm-grt-x39
+  from: active
+  to: denied
+  expect: rejected
+  rules: [GW-2, MGR-17, MGR-18]
+  why: the lifecycle table has no such transition
+- id: sm-grt-x40
+  from: consumed
+  to: requested
+  expect: rejected
+  rules: [MGR-17]
+  why: consumed is a terminal state
+- id: sm-grt-x41
+  from: consumed
+  to: screened
+  expect: rejected
+  rules: [MGR-17]
+  why: consumed is a terminal state
+- id: sm-grt-x42
+  from: consumed
+  to: pending
+  expect: rejected
+  rules: [MGR-18]
+  why: consumed is a terminal state
+- id: sm-grt-x43
+  from: consumed
+  to: approved
+  expect: rejected
+  rules: [MGR-18, MGR-22]
+  why: consumed is a terminal state
+- id: sm-grt-x44
+  from: consumed
+  to: active
+  expect: rejected
+  rules: [MGR-18]
+  why: consumed is a terminal state
+- id: sm-grt-x45
+  from: consumed
+  to: consumed
+  expect: rejected
+  rules: [GW-2, MGR-18]
+  why: consumed is a terminal state
+- id: sm-grt-x46
+  from: consumed
+  to: denied
+  expect: rejected
+  rules: [MGR-17, MGR-18, MGR-40]
+  why: consumed is a terminal state
+- id: sm-grt-x47
+  from: consumed
+  to: expired
+  expect: rejected
+  rules: [MGR-18, MGR-2]
+  why: consumed is a terminal state
+- id: sm-grt-x48
+  from: consumed
+  to: revoked
+  expect: rejected
+  rules: [MGR-18]
+  why: consumed is a terminal state
+- id: sm-grt-x49
+  from: denied
+  to: requested
+  expect: rejected
+  rules: [MGR-17]
+  why: denied is a terminal state
+- id: sm-grt-x50
+  from: denied
+  to: screened
+  expect: rejected
+  rules: [MGR-17]
+  why: denied is a terminal state
+- id: sm-grt-x51
+  from: denied
+  to: pending
+  expect: rejected
+  rules: [MGR-18]
+  why: denied is a terminal state
+- id: sm-grt-x52
+  from: denied
+  to: approved
+  expect: rejected
+  rules: [MGR-18, MGR-22]
+  why: denied is a terminal state
+- id: sm-grt-x53
+  from: denied
+  to: active
+  expect: rejected
+  rules: [MGR-18]
+  why: denied is a terminal state
+- id: sm-grt-x54
+  from: denied
+  to: consumed
+  expect: rejected
+  rules: [GW-2, MGR-18]
+  why: denied is a terminal state
+- id: sm-grt-x55
+  from: denied
+  to: denied
+  expect: rejected
+  rules: [MGR-17, MGR-18, MGR-40]
+  why: denied is a terminal state
+- id: sm-grt-x56
+  from: denied
+  to: expired
+  expect: rejected
+  rules: [MGR-18, MGR-2]
+  why: denied is a terminal state
+- id: sm-grt-x57
+  from: denied
+  to: revoked
+  expect: rejected
+  rules: [MGR-18]
+  why: denied is a terminal state
+- id: sm-grt-x58
+  from: expired
+  to: requested
+  expect: rejected
+  rules: [MGR-17]
+  why: expired is a terminal state
+- id: sm-grt-x59
+  from: expired
+  to: screened
+  expect: rejected
+  rules: [MGR-17]
+  why: expired is a terminal state
+- id: sm-grt-x60
+  from: expired
+  to: pending
+  expect: rejected
+  rules: [MGR-18]
+  why: expired is a terminal state
+- id: sm-grt-x61
+  from: expired
+  to: approved
+  expect: rejected
+  rules: [MGR-18, MGR-22]
+  why: expired is a terminal state
+- id: sm-grt-x62
+  from: expired
+  to: active
+  expect: rejected
+  rules: [MGR-18]
+  why: expired is a terminal state
+- id: sm-grt-x63
+  from: expired
+  to: consumed
+  expect: rejected
+  rules: [GW-2, MGR-18]
+  why: expired is a terminal state
+- id: sm-grt-x64
+  from: expired
+  to: denied
+  expect: rejected
+  rules: [MGR-17, MGR-18, MGR-40]
+  why: expired is a terminal state
+- id: sm-grt-x65
+  from: expired
+  to: expired
+  expect: rejected
+  rules: [MGR-18, MGR-2]
+  why: expired is a terminal state
+- id: sm-grt-x66
+  from: expired
+  to: revoked
+  expect: rejected
+  rules: [MGR-18]
+  why: expired is a terminal state
+- id: sm-grt-x67
+  from: revoked
+  to: requested
+  expect: rejected
+  rules: [MGR-17]
+  why: revoked is a terminal state
+- id: sm-grt-x68
+  from: revoked
+  to: screened
+  expect: rejected
+  rules: [MGR-17]
+  why: revoked is a terminal state
+- id: sm-grt-x69
+  from: revoked
+  to: pending
+  expect: rejected
+  rules: [MGR-18]
+  why: revoked is a terminal state
+- id: sm-grt-x70
+  from: revoked
+  to: approved
+  expect: rejected
+  rules: [MGR-18, MGR-22]
+  why: revoked is a terminal state
+- id: sm-grt-x71
+  from: revoked
+  to: active
+  expect: rejected
+  rules: [MGR-18]
+  why: revoked is a terminal state
+- id: sm-grt-x72
+  from: revoked
+  to: consumed
+  expect: rejected
+  rules: [GW-2, MGR-18]
+  why: revoked is a terminal state
+- id: sm-grt-x73
+  from: revoked
+  to: denied
+  expect: rejected
+  rules: [MGR-17, MGR-18, MGR-40]
+  why: revoked is a terminal state
+- id: sm-grt-x74
+  from: revoked
+  to: expired
+  expect: rejected
+  rules: [MGR-18, MGR-2]
+  why: revoked is a terminal state
+- id: sm-grt-x75
+  from: revoked
+  to: revoked
+  expect: rejected
+  rules: [MGR-18]
+  why: revoked is a terminal state

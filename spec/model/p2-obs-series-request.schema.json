@@ -1,0 +1,33 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:botaru:schema:p2-obs-series-request:1",
+  "title": "P2 obs.series: request",
+  "description": "Rollups of observation series of one's own tenant for a person with the permission to read series; the tenant is taken from the credentials (TEN-2). Denial: forbidden.",
+  "x-botaru-direction": "input",
+  "x-botaru-rules": [
+    "OBV-3",
+    "OBV-4"
+  ],
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "series",
+    "subject",
+    "window",
+    "rollup"
+  ],
+  "properties": {
+    "series": {
+      "$ref": "urn:botaru:schema:observation-query:1#/$defs/series"
+    },
+    "subject": {
+      "$ref": "urn:botaru:schema:observation-query:1#/$defs/subject"
+    },
+    "window": {
+      "$ref": "urn:botaru:schema:observation-query:1#/$defs/window"
+    },
+    "rollup": {
+      "$ref": "urn:botaru:schema:observation-query:1#/$defs/rollup"
+    }
+  }
+}

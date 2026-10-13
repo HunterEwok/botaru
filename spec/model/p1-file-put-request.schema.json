@@ -1,0 +1,31 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:botaru:schema:p1-file-put-request:1",
+  "title": "P1 file.put: request metadata",
+  "description": "File metadata, the binding passes the bytes. The core writes the file record (tenant, producer, class, deadline) and returns a file_ref with 128 random bits (ART-1, TEN-7). The lease token is not passed in the body: the holder sends it in the Botaru-Lease header (spec/bindings/http/README.md), one way for all operations under a lease (FEN-2).",
+  "x-botaru-direction": "input",
+  "x-botaru-rules": [
+    "TEN-7",
+    "FEN-2"
+  ],
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "media_type"
+  ],
+  "properties": {
+    "filename": {
+      "type": "string",
+      "maxLength": 200
+    },
+    "media_type": {
+      "type": "string",
+      "pattern": "^[a-z0-9.+-]+/[a-z0-9.+-]+$",
+      "maxLength": 100
+    },
+    "data_mark": {
+      "description": "File mark; not lower than the task mark and not above what the uploader is allowed.",
+      "$ref": "urn:botaru:schema:common:1#/$defs/data_mark"
+    }
+  }
+}

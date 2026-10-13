@@ -1,0 +1,226 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:botaru:schema:model-profile:1",
+  "title": "Model profile",
+  "description": "spec of the ModelProfile manifest: the exact model, the family, the rank, the limits, the prices and the provider terms (docs/models-and-money.md).",
+  "x-botaru-direction": "input",
+  "x-botaru-rules": [
+    "GW-5",
+    "GW-7",
+    "GW-15",
+    "GW-17",
+    "GOV-3",
+    "GOV-34",
+    "BUD-9",
+    "GW-14"
+  ],
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "provider",
+    "model",
+    "family",
+    "rank",
+    "max_output_tokens",
+    "tokens_per_s",
+    "price",
+    "provider_training",
+    "provider_human_review"
+  ],
+  "properties": {
+    "provider": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/name",
+      "description": "Provider binding."
+    },
+    "model": {
+      "type": "string",
+      "maxLength": 120,
+      "description": "Exact model name with a version; an alias without a version does not pass apply (GW-7).",
+      "pattern": "^([a-z0-9][a-z0-9._:-]*|<[^>]+>)$"
+    },
+    "family": {
+      "type": "string",
+      "maxLength": 40,
+      "description": "Family from model-families.yaml (GOV-34).",
+      "pattern": "^[a-z][a-z0-9-]*$",
+      "x-botaru-registry": "model-families"
+    },
+    "rank": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 4,
+      "description": "Rank 1-4 (GOV-3)."
+    },
+    "pool": {
+      "type": "string",
+      "maxLength": 40,
+      "description": "Pool of rate limits at the provider.",
+      "pattern": "^[a-z][a-z0-9-]*$"
+    },
+    "fallback": {
+      "type": "array",
+      "maxItems": 5,
+      "items": {
+        "$ref": "urn:botaru:schema:common:1#/$defs/name"
+      },
+      "description": "Fallback profiles (GW-5)."
+    },
+    "fallback_on": {
+      "type": "array",
+      "maxItems": 3,
+      "items": {
+        "enum": [
+          "overloaded",
+          "unavailable",
+          "retired"
+        ],
+        "x-botaru-registry": "model-fallback-reasons"
+      },
+      "uniqueItems": true
+    },
+    "max_output_tokens": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 1000000,
+      "description": "Output limit of one call."
+    },
+    "tokens_per_s": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 100000,
+      "description": "Output speed (GW-12)."
+    },
+    "price": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "input": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1000000,
+          "description": "Amount in euros."
+        },
+        "output": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1000000,
+          "description": "Amount in euros."
+        },
+        "cache_write": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1000000,
+          "description": "Amount in euros."
+        },
+        "cache_read": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1000000,
+          "description": "Amount in euros."
+        },
+        "checked": {
+          "$ref": "urn:botaru:schema:manifest:1#/$defs/date"
+        }
+      },
+      "required": [
+        "input",
+        "output",
+        "checked"
+      ],
+      "description": "Prices in euros per million tokens with the check date (BUD-9, GW-17)."
+    },
+    "provider_retention_days": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "value": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 3650,
+          "description": "Days of retention at the provider."
+        },
+        "checked": {
+          "$ref": "urn:botaru:schema:manifest:1#/$defs/date"
+        }
+      },
+      "required": [
+        "value",
+        "checked"
+      ],
+      "description": "Retention period at the provider (GW-15)."
+    },
+    "requires_retention": {
+      "type": "boolean",
+      "description": "Whether the model is unavailable with zero retention."
+    },
+    "provider_training": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "value": {
+          "type": "boolean"
+        },
+        "checked": {
+          "$ref": "urn:botaru:schema:manifest:1#/$defs/date"
+        }
+      },
+      "required": [
+        "value",
+        "checked"
+      ],
+      "description": "Whether the provider trains models on requests."
+    },
+    "provider_human_review": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "value": {
+          "enum": [
+            "none",
+            "abuse_only",
+            "yes"
+          ]
+        },
+        "checked": {
+          "$ref": "urn:botaru:schema:manifest:1#/$defs/date"
+        }
+      },
+      "required": [
+        "value",
+        "checked"
+      ],
+      "description": "Whether the provider's people read requests."
+    },
+    "subprocessors": {
+      "type": "array",
+      "maxItems": 10,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "provider": {
+            "$ref": "urn:botaru:schema:common:1#/$defs/name"
+          },
+          "region": {
+            "$ref": "urn:botaru:schema:common:1#/$defs/name"
+          }
+        },
+        "required": [
+          "provider"
+        ]
+      },
+      "description": "Subprocessors of the provider for this model."
+    },
+    "retires_at": {
+      "anyOf": [
+        {
+          "$ref": "urn:botaru:schema:manifest:1#/$defs/date"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "description": "Announced retirement date of the model."
+    }
+  }
+}

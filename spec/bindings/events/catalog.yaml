@@ -1,0 +1,330 @@
+registry: events-catalog
+version: 3
+description: >-
+  Catalog of events for observability, hold, retention and erasure, time and
+  external monitoring, plus events of campaigns, scripts, seats and proposal
+  refusals. An event is a CloudEvents 1.0 record with the required id,
+  source, specversion and type; the core sets the source and id pair and keeps it
+  unique (IDM-4). The data_schema field is the schema of the event data; producer
+  lists who publishes it (core: the core, job: a job worker through P1
+  emit, adapter: an adapter through submit_activity). Alarms use one data schema,
+  alarm (OBS-6); the severity field of an alarm is set only where the text
+  names the severity. Event data is metadata only (AUD-2). Alarms of
+  other parts of the farm (alarm.task.unclaimed, alarm.task.stalled,
+  alarm.manager.absent, campaign alarms and incident catalog alarms) are recorded
+  here too with the same schema; the alarm field of the incident-classes and holds registries
+  names the full event type of this catalog, with .v1.
+source: docs/operations.md
+entries:
+  - id: alarm.worker.stale.v1
+    since: v0.1
+    data_schema: spec/model/event-data/alarm.schema.json
+    producer: [core]
+    rules: [OBS-4, OBS-6]
+  - id: alarm.store.free.low.v1
+    since: v0.1
+    data_schema: spec/model/event-data/alarm.schema.json
+    producer: [core]
+    rules: [CAP-5, OBS-6]
+  - id: alarm.erasure.overdue.v1
+    since: v0.1
+    data_schema: spec/model/event-data/alarm.schema.json
+    producer: [core]
+    rules: [RET-7, OBS-6]
+  - id: alarm.provider.spend_cap.v1
+    since: v0.1
+    data_schema: spec/model/event-data/alarm.schema.json
+    producer: [core]
+    rules: [CAP-2, OBS-6]
+  - id: alarm.hold.auto.v1
+    since: v0.1
+    data_schema: spec/model/event-data/alarm.schema.json
+    producer: [core]
+    rules: [HLD-6, HLD-7, OBS-6]
+  - id: alarm.health.urgent_age.v1
+    since: v0.1
+    data_schema: spec/model/event-data/alarm.schema.json
+    producer: [core]
+    rules: [OBS-9, OBS-6]
+  - id: alarm.health.delivery_share.v1
+    since: v0.1
+    data_schema: spec/model/event-data/alarm.schema.json
+    producer: [core]
+    rules: [OBS-9, OBS-6]
+  - id: alarm.health.loop_tick.v1
+    since: v0.1
+    data_schema: spec/model/event-data/alarm.schema.json
+    producer: [core]
+    severity: page
+    rules: [OBS-9, OBS-6]
+  - id: alarm.backup.overdue.v1
+    since: v0.1
+    data_schema: spec/model/event-data/alarm.schema.json
+    producer: [core]
+    severity: warn
+    rules: [RET-8, OBS-6]
+  - id: alarm.backup.restore_check_overdue.v1
+    since: v0.1
+    data_schema: spec/model/event-data/alarm.schema.json
+    producer: [core]
+    severity: warn
+    rules: [RET-8, OBS-6]
+  - id: alarm.spend.unreconciled.v1
+    since: v0.1
+    data_schema: spec/model/event-data/alarm.schema.json
+    producer: [core]
+    severity: warn
+    rules: [RET-6, OBS-6]
+  - id: alarm.spend.reconcile_overdue.v1
+    since: v0.1
+    data_schema: spec/model/event-data/alarm.schema.json
+    producer: [core]
+    severity: warn
+    rules: [OBS-12, OBS-6]
+  - id: alarm.spend.estimate_drift.v1
+    since: v0.1
+    data_schema: spec/model/event-data/alarm.schema.json
+    producer: [core]
+    severity: warn
+    rules: [BUD-10, OBS-6]
+  - id: alarm.monitor.export_stalled.v1
+    since: v0.1
+    data_schema: spec/model/event-data/alarm.schema.json
+    producer: [core]
+    severity: warn
+    rules: [MON-11, OBS-6]
+  - id: alarm.incident.unhandled.v1
+    since: v0.1
+    data_schema: spec/model/event-data/alarm.schema.json
+    producer: [core]
+    severity: page
+    rules: [MGR-7, OBS-6]
+  - id: alarm.manager.breaker.v1
+    since: v0.1
+    data_schema: spec/model/event-data/alarm.schema.json
+    producer: [core]
+    severity: page
+    rules: [MGR-14, OBS-6]
+  - id: alarm.disk.free.low.v1
+    since: v0.1
+    data_schema: spec/model/event-data/alarm.schema.json
+    producer: [job]
+    severity: page
+    origin: monitor
+    rules: [MON-5, OBS-6]
+  - id: alarm.disk.fill.rate.v1
+    since: v0.1
+    data_schema: spec/model/event-data/alarm.schema.json
+    producer: [job]
+    severity: warn
+    origin: monitor
+    rules: [MON-5, OBS-6]
+  - id: alarm.monitor.problem.v1
+    since: v0.1
+    data_schema: spec/model/event-data/alarm.schema.json
+    producer: [job]
+    severity: info
+    origin: monitor
+    rules: [MON-5, OBS-6]
+  - id: alarm.service.control.rate.v1
+    since: v0.1
+    data_schema: spec/model/event-data/alarm.schema.json
+    producer: [core]
+    severity: warn
+    rules: [MON-8, MON-10, OBS-6]
+  - id: alarm.budget.burn.rate.v1
+    since: v0.1
+    data_schema: spec/model/event-data/alarm.schema.json
+    producer: [core]
+    rules: [MGR-7, OBS-6]
+  - id: alarm.outbound.secret.detected.v1
+    since: v0.1
+    data_schema: spec/model/event-data/alarm.schema.json
+    producer: [core]
+    rules: [MGR-7, OBS-6]
+  - id: alarm.auth.tenant_mismatch.count.v1
+    since: v0.1
+    data_schema: spec/model/event-data/alarm.schema.json
+    producer: [core]
+    rules: [MGR-7, OBS-6]
+  - id: alarm.worker.crash.rate.v1
+    since: v0.1
+    data_schema: spec/model/event-data/alarm.schema.json
+    producer: [core]
+    rules: [MGR-7, OBS-6]
+  - id: alarm.action.unknown.attempt.v1
+    since: v0.1
+    data_schema: spec/model/event-data/alarm.schema.json
+    producer: [core]
+    rules: [MGR-7, OBS-6]
+  - id: alarm.model.provider.errors.v1
+    since: v0.1
+    data_schema: spec/model/event-data/alarm.schema.json
+    producer: [core]
+    rules: [MGR-7, OBS-6]
+  - id: alarm.queue.age.p95.v1
+    since: v0.1
+    data_schema: spec/model/event-data/alarm.schema.json
+    producer: [core]
+    rules: [MGR-7, OBS-6]
+  - id: alarm.task.unclaimed.v1
+    since: v0.1
+    data_schema: spec/model/event-data/alarm.schema.json
+    producer: [core]
+    rules: [DLV-1, OBS-6]
+  - id: alarm.task.stalled.v1
+    since: v0.1
+    data_schema: spec/model/event-data/alarm.schema.json
+    producer: [core]
+    rules: [CNT-4, DLV-1, OBS-6]
+  - id: alarm.manager.absent.v1
+    since: v0.1
+    data_schema: spec/model/event-data/alarm.schema.json
+    producer: [core]
+    rules: [MGR-2, OBS-6]
+  - id: alarm.campaign.threshold.v1
+    since: v0.1
+    data_schema: spec/model/event-data/alarm.schema.json
+    producer: [core]
+    rules: [ORC-4, OBS-6]
+  - id: alarm.campaign.unknown.v1
+    since: v0.1
+    data_schema: spec/model/event-data/alarm.schema.json
+    producer: [core]
+    rules: [ORC-4, OBS-6]
+  - id: hold.set.v1
+    since: v0.1
+    data_schema: spec/model/event-data/hold-event.schema.json
+    producer: [core]
+    rules: [HLD-5]
+  - id: hold.released.v1
+    since: v0.1
+    data_schema: spec/model/event-data/hold-event.schema.json
+    producer: [core]
+    rules: [HLD-5]
+  - id: hold.expired.v1
+    since: v0.1
+    data_schema: spec/model/event-data/hold-event.schema.json
+    producer: [core]
+    rules: [HLD-5]
+  - id: worker.stale.v1
+    since: v0.1
+    data_schema: spec/model/event-data/worker-stale.schema.json
+    producer: [core]
+    rules: [OBS-4]
+  - id: schedule.skipped.v1
+    since: v0.1
+    data_schema: spec/model/event-data/schedule-skipped.schema.json
+    producer: [core]
+    rules: [TIM-3]
+  - id: model.fallback.v1
+    since: v0.1
+    data_schema: spec/model/event-data/model-fallback.schema.json
+    producer: [core]
+    rules: [GW-5]
+  - id: erasure.requested.v1
+    since: v0.1
+    data_schema: spec/model/event-data/erasure-event.schema.json
+    producer: [core]
+    rules: [RET-7]
+  - id: erasure.done.v1
+    since: v0.1
+    data_schema: spec/model/event-data/erasure-event.schema.json
+    producer: [core]
+    rules: [RET-7]
+  - id: erasure.failed.v1
+    since: v0.1
+    data_schema: spec/model/event-data/erasure-event.schema.json
+    producer: [core]
+    rules: [RET-7]
+  - id: ext.monitor.problem.v1
+    since: v0.1
+    data_schema: spec/model/event-data/ext-monitor-problem.schema.json
+    producer: [adapter]
+    rules: [MON-5]
+  - id: ext.monitor.scripts.v1
+    since: v0.1
+    data_schema: spec/model/event-data/ext-monitor-scripts.schema.json
+    producer: [adapter]
+    rules: [MON-10]
+  - id: ext.monitor.maintenance.v1
+    since: v0.2
+    data_schema: spec/model/event-data/ext-monitor-maintenance.schema.json
+    producer: [adapter]
+    rules: [MON-9]
+  - id: tenant.suspended.v1
+    since: v0.2
+    producer: [core]
+    rules: [LCY-1]
+  - id: tenant.resumed.v1
+    since: v0.2
+    producer: [core]
+    rules: [LCY-1]
+  - id: tenant.offboarding.v1
+    since: v0.2
+    producer: [core]
+    rules: [LCY-1]
+  - id: tenant.deleted.v1
+    since: v0.2
+    producer: [core]
+    rules: [LCY-1]
+  - id: campaign.proposed.v1
+    since: v0.1
+    data_schema: spec/model/campaign-event.schema.json
+    producer: [core]
+    rules: [ORC-4, AUD-2]
+  - id: campaign.rejected.v1
+    since: v0.1
+    data_schema: spec/model/campaign-event.schema.json
+    producer: [core]
+    rules: [ORC-4, AUD-2]
+  - id: campaign.state.v1
+    since: v0.1
+    data_schema: spec/model/campaign-event.schema.json
+    producer: [core]
+    rules: [ORC-4, AUD-2]
+  - id: script.drafted.v1
+    since: v0.1
+    data_schema: spec/model/script-event.schema.json
+    producer: [core]
+    rules: [SCR-11, AUD-2]
+  - id: script.started.v1
+    since: v0.1
+    data_schema: spec/model/script-event.schema.json
+    producer: [core]
+    rules: [SCR-11, AUD-2]
+  - id: script.state.v1
+    since: v0.1
+    data_schema: spec/model/script-event.schema.json
+    producer: [core]
+    rules: [SCR-11, AUD-2]
+  - id: script.step.v1
+    since: v0.1
+    data_schema: spec/model/script-event.schema.json
+    producer: [core]
+    rules: [SCR-11, AUD-2]
+  - id: seat.assigned.v1
+    since: v0.1
+    data_schema: spec/model/seat-event.schema.json
+    producer: [core]
+    rules: [IDN-10, GOV-29, GOV-21]
+  - id: seat.vacated.v1
+    since: v0.1
+    data_schema: spec/model/seat-event.schema.json
+    producer: [core]
+    rules: [IDN-10, GOV-29, GOV-21]
+  - id: seat.stopped.v1
+    since: v0.1
+    data_schema: spec/model/seat-event.schema.json
+    producer: [core]
+    rules: [IDN-10, GOV-29, GOV-21]
+  - id: seat.resumed.v1
+    since: v0.1
+    data_schema: spec/model/seat-event.schema.json
+    producer: [core]
+    rules: [IDN-10, GOV-29, GOV-21]
+  - id: proposal.rejected.v1
+    since: v0.1
+    data_schema: spec/model/proposal-rejected.schema.json
+    producer: [core]
+    rules: [PRP-1, PRP-2, PRP-3, PRP-5, PRP-11, PRP-21]

@@ -1,0 +1,67 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:botaru:schema:monitor-script:1",
+  "title": "Monitoring script run",
+  "description": "The monitor_script delivery: a run of a monitoring system script on a node of one's own tenant on a call of monitor/script_run or service/control for a service with via: monitor (MON-10, MON-8).",
+  "x-botaru-direction": "output",
+  "x-botaru-rules": [
+    "MON-10"
+  ],
+  "type": "object",
+  "required": [
+    "resource",
+    "monitor_host",
+    "scriptid",
+    "bot_id",
+    "timeout_s"
+  ],
+  "properties": {
+    "resource": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/name",
+      "description": "Catalog resource."
+    },
+    "monitor_host": {
+      "description": "Node in the monitoring system from the catalog.",
+      "type": "string",
+      "maxLength": 120,
+      "pattern": "^[A-Za-z0-9_.-]+$"
+    },
+    "scriptid": {
+      "description": "Script id.",
+      "type": "string",
+      "maxLength": 32,
+      "pattern": "^[0-9]{1,20}$"
+    },
+    "input": {
+      "description": "A value from the choices list, or empty.",
+      "anyOf": [
+        {
+          "type": "string",
+          "maxLength": 64,
+          "pattern": "^[A-Za-z0-9_.:-]+$"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "bot_id": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/object_id",
+      "description": "Bot id."
+    },
+    "grant_id": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/object_id",
+      "description": "The service_grant grant."
+    },
+    "approval_id": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/object_id",
+      "description": "Approval."
+    },
+    "timeout_s": {
+      "description": "Script time limit in seconds.",
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 3600
+    }
+  }
+}

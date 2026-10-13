@@ -1,0 +1,32 @@
+id: fx-mgr-review-off-production
+rules: [MGR-20]
+description: 'The incident_review purpose is disabled in the template of a tenant with kind: production, and enabled on a test bench. While the purpose
+  is disabled, the core does not enqueue tasks with purpose inspect, and the class field inspect and inspect_request start nothing;
+  disabling the purpose cancels running reader attempts in the same transaction. The purpose is enabled, but there is no farm-manager-reader
+  worker: a doctor warning, and inspect tasks wait for a worker.'
+cases:
+- id: fx-mgr-review-off-production-a
+  given:
+    apply_template: {kind: production, name: demo}
+  expect:
+    privacy.purposes: {contains_incident_review: false}
+    inspect_tasks_created_on_incident: 0
+- id: fx-mgr-review-off-production-b
+  given:
+    apply_template: {kind: test, name: demo2}
+  expect:
+    privacy.purposes: {contains_incident_review: true}
+- id: fx-mgr-review-off-production-c
+  given:
+    tenant: demo
+    purposes: [incident_review]
+    running_inspect: 2
+    apply:
+      purposes: []
+  expect: {inspect_attempts_canceled: 2, same_transaction: true}
+- id: fx-mgr-review-off-production-d
+  given:
+    tenant: demo
+    purposes: [incident_review]
+    reader_workers: 0
+  expect: {doctor: warning, inspect_task: waits_for_worker}

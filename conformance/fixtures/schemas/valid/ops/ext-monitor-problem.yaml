@@ -1,0 +1,12 @@
+schema: urn:botaru:schema:ext-monitor-problem:1
+rules:
+- MON-5
+description: A problem from the example in docs/monitoring.md.
+data:
+  eventid: '4417203'
+  triggerid: '23801'
+  resource: db1
+  severity: 4
+  state: open
+  values:
+    free_pct: 7

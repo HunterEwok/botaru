@@ -1,0 +1,11 @@
+# The smallest bot of the core profile (D-71): one role, one task type, no plugin
+# tools, no messages between bots and no messaging profile.
+apiVersion: botaru/v1alpha1
+kind: Role
+metadata: {name: hello}
+spec:
+  profile: worker
+  worker_kind: agent
+  claims: [hello.greet.v1]
+  models: {base: base-std}
+  memory: none

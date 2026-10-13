@@ -1,0 +1,96 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:botaru:schema:message-event:1",
+  "title": "Message and inbox event data",
+  "description": "Data of the events message.published, message.rejected, message.dead, message.expired, inbox.flood and wake.skipped. Only the core produces them; metadata only: id, type, genus, address, roles, sizes, reasons, without text fields and without the note (MSG-3, AUD-2). inbox.flood is raised at the first denial by share or fullness within a period (MSG-10); wake.skipped when a wake-up is skipped by budget or count (MSG-11).",
+  "x-botaru-direction": "output",
+  "x-botaru-rules": [
+    "MSG-3",
+    "MSG-10",
+    "MSG-11",
+    "AUD-2"
+  ],
+  "type": "object",
+  "required": [
+    "event"
+  ],
+  "properties": {
+    "event": {
+      "enum": [
+        "message.published",
+        "message.rejected",
+        "message.dead",
+        "message.expired",
+        "inbox.flood",
+        "wake.skipped"
+      ]
+    },
+    "message": {
+      "type": "string",
+      "pattern": "^m_[0-9A-HJKMNP-TV-Z]{26}$",
+      "maxLength": 28
+    },
+    "type": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/type_name"
+    },
+    "kind": {
+      "enum": [
+        "report",
+        "state"
+      ],
+      "x-botaru-registry": "message-kinds"
+    },
+    "to": {
+      "type": "string",
+      "pattern": "^((role|group):[a-z][a-z0-9-]{0,62}|worker:[a-z]{1,8}_[0-9A-HJKMNP-TV-Z]{26})$",
+      "maxLength": 70
+    },
+    "from_role": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/name"
+    },
+    "inbox": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "name"
+      ],
+      "properties": {
+        "kind": {
+          "enum": [
+            "role",
+            "group",
+            "worker"
+          ]
+        },
+        "name": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_-]{0,62}$",
+          "maxLength": 63
+        }
+      }
+    },
+    "route": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/name",
+      "description": "Wake-up route for wake.skipped."
+    },
+    "reason": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/reason",
+      "description": "Reason: address_invalid, inbox_full, sender_quota, hops_exceeded, delivery_exhausted, held, budget_exhausted, service_rate_limited and others."
+    },
+    "size_bytes": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 8192
+    },
+    "recipients": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 50
+    },
+    "period_start": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/datetime",
+      "description": "Start of the period for which there is one event."
+    }
+  }
+}

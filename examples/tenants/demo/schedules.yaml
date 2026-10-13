@@ -1,0 +1,37 @@
+# Schedules of tenant demo: five-field cron without CRON_TZ and TZ, the time zone in the timezone field (TIM-2).
+apiVersion: botaru/v1alpha1
+kind: Schedule
+metadata: {name: sensor-nightly, tenant: demo}
+spec:
+  cron: "15 6 * * *"
+  timezone: Europe/Berlin
+  task: {type: data.sensor_check.v1, params: {window_h: 24}}
+  deliver_to: ["chat:lab"]
+  skip_if_waiting: true
+  proposable: true
+---
+apiVersion: botaru/v1alpha1
+kind: Schedule
+metadata: {name: sensor-watch, tenant: demo}
+spec:
+  cron: "*/30 * * * *"
+  task: {type: data.sensor_watch.v1}
+  proposable: false                        # task type with alarm.* in events (PRP-10)
+---
+apiVersion: botaru/v1alpha1
+kind: Schedule
+metadata: {name: pipelines-watch, tenant: demo}
+spec:
+  cron: "*/5 * * * *"
+  task: {type: pipeline.watch.v1}
+---
+apiVersion: botaru/v1alpha1
+kind: Schedule
+metadata: {name: ext-checks, tenant: demo}
+spec:
+  cron: "*/15 * * * *"
+  task: {type: check.http.v1}
+  deliver_to: ["sink:checks"]
+# The schedule month-report-archive from flow 7 is not declared here: the params_schema of task type
+# report.monthly.numbers.v1 requires month, and a schedule has no way yet to say "last month"
+# (open question in docs/open-questions.md).

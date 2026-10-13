@@ -1,0 +1,158 @@
+registry: proposable-fields
+version: 1
+description: >-
+  Allowlist of the fields that a proposal of kind `manifest_change` may change (PRP-3). The skeleton sets the list,
+  a tenant can only narrow it. The target of a change is only an object from the tenant's folder in
+  the farm git (PRP-8); a target with `proposable: false` gives `rejected(forbidden_change)`, except a shift of the window
+  of a backup schedule by a guarded field (PRP-10, PRP-12). The section `guarded: true` holds the guarded fields:
+  they change only with trial guards, a proposal with them is recommended only if both
+  lenses with a veto gave at least 3, and an untrusted proposal does not change them (PRP-12). Entry fields:
+  `object` (manifest kind of the target), `field` (path of the field in the manifest's `spec`; `*` any field of the section; null
+  if the path is not yet named in the manifest schema), `ops` (operations: `set`, `create_from_template`),
+  `safe_direction` (the safe direction: `down`, `more_frequent`; null if there is none; a proposal
+  with `untrusted_seen` changes only fields with a safe direction and only in that direction, PRP-11),
+  `limits` (value limits in code words), `guarded`, `required_guards` (required trial guards
+  of a guarded field), `meaning`, `rules`. The lists `none_only` and `never` below the entries
+  repeat the table "What can be changed" of docs/improvements.md: objects for which only the kind
+  `none` is possible, and objects and fields that never change (`rejected(forbidden_change)`).
+source: docs/improvements.md
+entries:
+  - id: schedule.cron
+    since: v0.1
+    object: Schedule
+    field: spec.cron
+    ops: [set]
+    safe_direction: null
+    limits: only a shift of the window without lowering the frequency by more than 2 times; since v0.2 cumulatively over 90 days by the field history in git (PRP-16)
+    guarded: false
+    required_guards: []
+    meaning: Schedule expression of the tenant; the card and the patch show the frequency before and after and the affected alarms.
+    rules: [PRP-3]
+  - id: schedule.timezone
+    since: v0.1
+    object: Schedule
+    field: spec.timezone
+    ops: [set]
+    safe_direction: null
+    limits: a time zone name from the time zone database (TIM-4)
+    guarded: false
+    required_guards: []
+    meaning: Schedule time zone of the tenant.
+    rules: [PRP-3]
+  - id: schedule.create_from_template
+    since: v0.1
+    object: Schedule
+    field: null
+    ops: [create_from_template]
+    safe_direction: null
+    limits: only from a template in git
+    guarded: false
+    required_guards: []
+    meaning: A new tenant schedule from a template in git.
+    rules: [PRP-3]
+  - id: catalog.dataset.backup_ref
+    since: v0.1
+    object: Catalog
+    field: null
+    ops: [set]
+    safe_direction: more_frequent
+    limits: a dataset's reference to a backup schedule can be added or replaced by a more frequent one; it cannot be removed and the backup cannot be made less frequent
+    guarded: false
+    required_guards: []
+    meaning: Reference of a catalog dataset to a backup schedule.
+    rules: [PRP-3, PRP-11]
+  - id: catalog.labels
+    since: v0.1
+    object: Catalog
+    field: null
+    ops: [set]
+    safe_direction: null
+    limits: only labels that selectors, the dispatcher and the involvement rules do not read
+    guarded: false
+    required_guards: []
+    meaning: Labels of resources in the tenant catalog.
+    rules: [PRP-3]
+  - id: tenant.limits
+    since: v0.1
+    object: Tenant
+    field: spec.limits.*
+    ops: [set]
+    safe_direction: down
+    limits: only lower
+    guarded: false
+    required_guards: []
+    meaning: Tenant limits, for example `spec.limits.max_queued`.
+    rules: [PRP-3, PRP-11]
+  - id: tenant.campaigns
+    since: v0.1
+    object: Tenant
+    field: spec.campaigns.*
+    ops: [set]
+    safe_direction: down
+    limits: only lower
+    guarded: false
+    required_guards: []
+    meaning: Campaign limits of the tenant.
+    rules: [PRP-3, PRP-11]
+  - id: tenant.scripts
+    since: v0.1
+    object: Tenant
+    field: spec.scripts.*
+    ops: [set]
+    safe_direction: down
+    limits: only lower
+    guarded: false
+    required_guards: []
+    meaning: Script limits of the tenant.
+    rules: [PRP-3, PRP-11]
+  - id: dispatch.timeouts.attempt
+    since: v0.1
+    object: Tenant
+    field: spec.dispatch.rules[].timeouts.attempt
+    ops: [set]
+    safe_direction: null
+    limits: up by at most two times and not beyond the task deadline
+    guarded: true
+    required_guards: [farm.task.outcome, farm.queue.wait]
+    meaning: Attempt deadline of a type in a dispatcher rule of the tenant.
+    rules: [PRP-12]
+  - id: dispatch.retry.max_attempts
+    since: v0.1
+    object: Tenant
+    field: spec.dispatch.rules[].retry.max_attempts
+    ops: [set]
+    safe_direction: null
+    limits: only down, not less than 1
+    guarded: true
+    required_guards: [farm.task.outcome]
+    meaning: Number of attempts in a dispatcher rule of the tenant.
+    rules: [PRP-12]
+  - id: dispatch.max_running
+    since: v0.1
+    object: Tenant
+    field: spec.dispatch.rules[].max_running
+    ops: [set]
+    safe_direction: null
+    limits: by 1 up or down within the tenant ceilings
+    guarded: true
+    required_guards: [farm.queue.wait, farm.task.cost]
+    meaning: Concurrency of a dispatcher rule of the tenant.
+    rules: [PRP-12]
+  - id: backup_schedule.window
+    since: v0.1
+    object: Schedule
+    field: spec.cron
+    ops: [set]
+    safe_direction: null
+    limits: "a shift of the window without changing the frequency; the only exception from the prohibition for a target with `proposable: false`"
+    guarded: true
+    required_guards: [farm.backup.age]
+    meaning: "Window of a backup schedule (a type with `makes_backup: true`)."
+    rules: [PRP-12, PRP-10, PRP-11]
+none_only: [TaskType, Role, ToolPlugin, Action]
+never:
+  - {object: Schedule, fields: [spec.paused, spec.deliver_to, spec.task], note: spec.paused is proposed only with the kind none}
+  - {object: Catalog, fields: [remove the backup reference, make the backup less frequent, new resources with addresses, egress]}
+  - {object: Tenant, fields: [budgets up, spec.budgets.lines, spec.retention, spec.self_approve, spec.models_allowed]}
+  - {object: dispatch.rules, fields: [all fields, except the guarded ones]}
+  - {object: '*', kinds: [Group, Membership, Channel, ChatBinding, Sink, ModelProfile, Commission, Governance, Seat, IncidentClass, ObservationSeries]}

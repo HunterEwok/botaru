@@ -1,0 +1,29 @@
+# Flow 3 from examples/flows.md: the projection of a raster and of a map area layer.
+# alice from group researcher asks, as in the text.
+id: flow-03-geo-describe
+rules: [INJ-1, INJ-13, PRM-4]
+description: >-
+  alice asks about the coordinate system of a raster and a layer. geo/describe and geo/describe_vector
+  accept only a dataset id from the catalog; their output is untrusted and sets untrusted_seen.
+given:
+  tenant: demo
+  people: [{principal: alice, kind: user, groups: [user, researcher]}]
+  manifests: [examples/tenants/demo/, examples/roles/geo-reader/role.yaml, examples/tasktypes/geo.describe.v1.yaml,
+              examples/tools/geo/tool.yaml]
+steps:
+  - {port: P1, op: submit_activity, by: channel:telegram,
+     activity: {kind: message, channel: telegram, update_id: "2", sender: {identity: "telegram:1001", verified: true}, chat: {kind: direct, external_id: "1001"}, text: "/geo what projection and resolution does the bathymetry raster have?"},
+     expect: {task: {type: geo.describe.v1, record: {max_tier: 1, data_mark: internal}}}}
+  - {port: P1, op: claim, by: role:geo-reader, request: {kinds: [attempt]}}
+  - {port: P3, op: tools/call, tool: geo/describe, args: {dataset: bathy-50m}, expect: {untrusted_seen: true, untrusted_source: geo/describe}}
+  - {port: P3, op: tools/call, tool: geo/describe_vector, args: {dataset: map-areas}}
+  - {port: P1, op: complete, by: role:geo-reader,
+     result: {answer: "The coordinate systems differ; reprojection is needed before overlaying.", datasets: [bathy-50m, map-areas], same_crs: false},
+     expect: {task_state: completed, deliveries: [{kind: task_result, to: origin}]}}
+expect:
+  events: [task.submitted, task.working, task.completed]
+  denied:
+    - {port: P3, op: tools/call, tool: geo/describe, args: {dataset: "/data/geo/bathy.tif"}, reason: input_schema_invalid}
+  not:
+    - "a file path in the parameters (INJ-1)"
+    - "reprojection on a production machine: a person raises the tier with a new task (PRM-4)"

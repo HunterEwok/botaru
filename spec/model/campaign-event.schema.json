@@ -1,0 +1,113 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:botaru:schema:campaign-event:1",
+  "title": "Campaign event data",
+  "description": "Data of the events campaign.proposed.v1, campaign.rejected.v1 and campaign.state.v1: from which state, to which, the reason and the counters. Metadata only (AUD-2).",
+  "x-botaru-direction": "output",
+  "x-botaru-rules": [
+    "ORC-4",
+    "AUD-2"
+  ],
+  "type": "object",
+  "required": [
+    "event",
+    "to"
+  ],
+  "properties": {
+    "event": {
+      "enum": [
+        "campaign.proposed.v1",
+        "campaign.rejected.v1",
+        "campaign.state.v1"
+      ]
+    },
+    "campaign": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/object_id"
+    },
+    "from": {
+      "anyOf": [
+        {
+          "type": "null"
+        },
+        {
+          "enum": [
+            "proposed",
+            "running",
+            "paused",
+            "stopping",
+            "completed",
+            "failed",
+            "canceled",
+            "rejected"
+          ]
+        }
+      ]
+    },
+    "to": {
+      "enum": [
+        "proposed",
+        "running",
+        "paused",
+        "stopping",
+        "completed",
+        "failed",
+        "canceled",
+        "rejected"
+      ]
+    },
+    "reason": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/reason"
+    },
+    "counters": {
+      "type": "object",
+      "description": "Item counters by state; always equal to the number of items in each state (ORC-4).",
+      "additionalProperties": false,
+      "required": [
+        "pending",
+        "released",
+        "ok",
+        "failed",
+        "unknown",
+        "skipped",
+        "canceled"
+      ],
+      "properties": {
+        "pending": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 500
+        },
+        "released": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 500
+        },
+        "ok": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 500
+        },
+        "failed": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 500
+        },
+        "unknown": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 500
+        },
+        "skipped": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 500
+        },
+        "canceled": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 500
+        }
+      }
+    }
+  }
+}

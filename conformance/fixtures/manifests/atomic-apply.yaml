@@ -1,0 +1,61 @@
+id: fx-man-06
+rules: [MAN-6, MAN-2]
+description: >-
+  apply is atomic: the set is applied in full in one transaction or not applied
+  at all. In a set of a role, a task type and a group the third file has an error: the lint
+  rejects the whole set, and after apply all three objects are unchanged (field state_after
+  for the store runner). Repeating the same valid set changes nothing (MAN-2).
+with_examples: true
+given:
+  tenant: demo
+  state_before:
+    - {kind: Role, name: fx-atomic, commit: c1}
+    - {kind: TaskType, name: fx.atomic.v1, commit: c1}
+    - {kind: Group, tenant: demo, name: fx-atomic, commit: c1}
+cases:
+  - name: third file with a schema error fails the whole set
+    manifests:
+      - apiVersion: botaru/v1alpha1
+        kind: Role
+        metadata: {name: fx-atomic}
+        spec: {worker_kind: agent, claims: [fx.atomic.v1], models: {base: base-std}}
+      - apiVersion: botaru/v1alpha1
+        kind: TaskType
+        metadata: {name: fx.atomic.v1}
+        spec:
+          title: "Atomicity"
+          worker_kind: agent
+          purpose: work
+          tier: 0
+          data_class: summary
+          params_schema: {type: object, additionalProperties: false, properties: {}}
+          tree_budget_eur: 0.05
+      - apiVersion: botaru/v1alpha1
+        kind: Group
+        metadata: {name: fx-atomic, tenant: demo}
+        spec: {caps: ["action.approve:*"]}
+    expect: {error: cap_star}
+    state_after: unchanged
+  - name: the same set with a valid group is applied in full
+    manifests:
+      - apiVersion: botaru/v1alpha1
+        kind: Role
+        metadata: {name: fx-atomic}
+        spec: {worker_kind: agent, claims: [fx.atomic.v1], models: {base: base-std}}
+      - apiVersion: botaru/v1alpha1
+        kind: TaskType
+        metadata: {name: fx.atomic.v1}
+        spec:
+          title: "Atomicity"
+          worker_kind: agent
+          purpose: work
+          tier: 0
+          data_class: summary
+          params_schema: {type: object, additionalProperties: false, properties: {}}
+          tree_budget_eur: 0.05
+      - apiVersion: botaru/v1alpha1
+        kind: Group
+        metadata: {name: fx-atomic, tenant: demo}
+        spec: {caps: ["task:fx.atomic.v1"]}
+    expect: ok
+    state_after: {applied: 3, repeat_changes: 0}

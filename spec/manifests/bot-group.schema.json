@@ -1,0 +1,50 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:botaru:schema:bot-group:1",
+  "title": "Bot group",
+  "description": "spec of the BotGroup manifest: a selector by roles and labels; grants no rights (BGR-1, BGR-2).",
+  "x-botaru-direction": "input",
+  "x-botaru-rules": [
+    "BGR-1",
+    "BGR-2"
+  ],
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "select"
+  ],
+  "properties": {
+    "select": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "roles": {
+          "type": "array",
+          "maxItems": 50,
+          "items": {
+            "$ref": "urn:botaru:schema:common:1#/$defs/name"
+          },
+          "minItems": 1
+        },
+        "labels": {
+          "$ref": "urn:botaru:schema:manifest:1#/$defs/labels"
+        }
+      },
+      "required": [
+        "roles"
+      ]
+    },
+    "max_running": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 100000,
+      "description": "From v0.2: the group quota (D10).",
+      "x-botaru-version": "v0.2"
+    },
+    "summary_for_managers": {
+      "type": "string",
+      "maxLength": 500,
+      "description": "Description for managers, only from git."
+    }
+  }
+}

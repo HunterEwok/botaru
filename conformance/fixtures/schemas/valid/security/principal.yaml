@@ -1,0 +1,15 @@
+schema: urn:botaru:schema:principal:1
+rules: [IDN-4]
+description: Principal bob with an identity and ops-oncall membership pending until the code is verified.
+data:
+  id: human:p_01JB3Q7N0M2V8XK4DGT5RZP9WA
+  tenant: demo
+  kind: human
+  state: active
+  name: bob
+  verification_code_hash: sha256:3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f
+  identities:
+  - {subject: 'human:p_01JB3Q7N0M2V8XK4DGT5RZP9WA', channel: telegram, external: 'telegram:100200301', strength: strong}
+  memberships:
+  - {subject: 'human:p_01JB3Q7N0M2V8XK4DGT5RZP9WA', group: staff, state: active, granted_by: system}
+  - {subject: 'human:p_01JB3Q7N0M2V8XK4DGT5RZP9WA', group: ops-oncall, state: pending, requested_by: 'human:p_01JB3Q7N0M2V8XK4DGT5RZP9WC'}

@@ -1,0 +1,100 @@
+registry: delivery-kinds
+version: 2
+description: >-
+  Delivery kinds (the kind field of the Delivery record) on which the core code and the recipient
+  worker branch. A decision card and a notice to people are delivered with
+  the kind equal to the id of their row in decision-points.yaml (for example script_confirm,
+  proposal_card); the other kinds are listed here. Entry fields: since,
+  meaning, target (the kind of the target that the core computes from the address), rules.
+source: spec/lifecycles/delivery.md
+entries:
+  - id: task_result
+    since: v0.1
+    meaning: the task answer by origin, to a group chat only as a summary, or a write to a sink
+    target: [chat, subject, sink]
+    rules: [DLV-6, DLV-15]
+  - id: card_update
+    since: v0.1
+    meaning: an edit of an already sent card by its external id on every transition of the subject and on opening "Details"
+    target: [chat, subject]
+    rules: [APR-3, FEN-7]
+  - id: ai_notice
+    since: v0.1
+    meaning: a code text saying that an AI answers, on the principal's first contact in the channel and in every new bound chat
+    target: [chat, subject]
+    rules: [DLV-12]
+  - id: privacy_notice
+    since: v0.1
+    meaning: a code text about data processing with notice_version on first contact and on a version change
+    target: [chat, subject]
+    rules: [DLV-12]
+  - id: script_summary
+    since: v0.1
+    meaning: the outcome of a script run as code from the record, only in a direct chat to the initiator
+    target: [subject]
+    rules: [SCR-11]
+  - id: monitor_alarm
+    since: v0.1
+    meaning: a change of an alarm episode for the E5 monitoring adapter
+    target: [monitor]
+    rules: [MON-1]
+  - id: monitor_audit_head
+    since: v0.1
+    meaning: the head of the audit chain for the E5 monitoring adapter
+    target: [monitor]
+    rules: [MON-1]
+  - id: monitor_script
+    since: v0.1
+    meaning: a monitoring system script on a tenant node; issued at most once, without an outcome it ends as dead(exec_unknown)
+    target: [monitor]
+    rules: [MON-7, DLV-4]
+  - id: monitor_note
+    since: v0.1
+    meaning: the code note service_control_done on a monitoring problem; since v0.2 also a bot note on a problem
+    target: [monitor]
+    rules: [MON-8, MON-10]
+  - id: alarm_notice
+    since: v0.1
+    meaning: a code text about an alarm in a direct chat to the tenant admins (farm alarms to the farm admins) in an installation without the monitor profile; alarm name, severity, state, subject, seq and time, without people's ids or model text
+    target: [subject]
+    rules: [MON-1, MON-13]
+  - id: monitor_export_stalled
+    since: v0.1
+    meaning: a code text to the tenant admins and the operator in a direct chat when export to the monitoring system fails for longer than 15 minutes; only the tenant and the age of the last successful export, at most once in 6 hours
+    target: [subject]
+    rules: [MON-12, MON-11]
+  - id: manager_spend_paused
+    since: v0.1
+    meaning: a code notice to the tenant admins about a pause of the farm manager seat in this tenant by the money safeguard
+    target: [subject]
+    rules: [MGR-14]
+  - id: digest
+    since: v0.1
+    meaning: a reporter's digest to people; the code builds the table, numbers and cards from a snapshot, the model paragraph is a separate labeled part
+    target: [chat, subject]
+    rules: [REP-2]
+  - id: proposal_digest
+    since: v0.1
+    meaning: proposal digest to the address insights.present_to; the code assembles items and cards
+    target: [chat, subject]
+    rules: [DIG-2, REP-2]
+  - id: proposal_reason
+    since: v0.1
+    meaning: continuation of the "Reject" button of the proposal_card card (the same subject proposal) with a reason from decline-reasons.yaml; the decision is recorded when a reason is chosen
+    target: [chat, subject]
+    rules: [DIG-4]
+  - id: campaign_summary
+    since: v0.1
+    meaning: campaign summary from its record; the mark of the summary equals the mark of the campaign
+    target: [chat, subject]
+    rules: [ORC-10]
+  - id: campaign_list
+    since: v0.1
+    meaning: the full list of campaign items from its record as a separate delivery
+    target: [chat, subject]
+    rules: [ORC-10]
+  - id: commission_review
+    since: v0.2
+    meaning: a card without buttons to the tenant admins about a locked commission, with review commands
+    target: [subject]
+    rules: [GOV-35]

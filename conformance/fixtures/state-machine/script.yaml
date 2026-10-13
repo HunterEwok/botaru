@@ -1,0 +1,1219 @@
+# Collected from spec/lifecycles/script.yaml. The value null in from means "the object does not exist yet".
+lifecycle: spec/lifecycles/script.yaml
+object: script
+rules:
+- SCR-10
+- SCR-11
+- SCR-3
+- SCR-5
+- SCR-6
+- SCR-7
+- SCR-8
+- SCR-9
+- TRN-4
+description: Allowed and forbidden transitions of the "script run and its steps" lifecycle, collected from the tables of
+  spec/lifecycles/script.md. The implementation accepts a transition from the allowed list under the condition of its row
+  (when); a pair from the forbidden list does not change the state, and the call that asks for it is rejected. The value
+  null in from means "the object does not exist yet". After a terminal state of the run no step is released; the "Run" button
+  does not approve actions (SCR-7, SCR-11).
+machines:
+- name: Run
+  states:
+  - id: proposed
+    terminal: false
+  - id: running
+    terminal: false
+  - id: paused
+    terminal: false
+  - id: completed
+    terminal: true
+  - id: failed
+    terminal: true
+  - id: canceled
+    terminal: true
+  - id: rejected
+    terminal: true
+  allowed:
+  - id: sm-scr-01
+    from: null
+    to: proposed
+    by: P3 propose_script of a translator attempt; the "Accept" button on a proposal with a script change (P1 decide, subject
+      proposal)
+    when: all acceptance checks passed; the record, the steps in pending, the script.drafted event and the script_confirm
+      delivery are created
+    rules:
+    - SCR-5
+    - SCR-6
+  - id: sm-scr-02
+    from: null
+    to: rejected
+    by: the same calls
+    when: 'a check did not pass: script_invalid, script_ref_unknown, no_role_cap, no_group_cap and other rights reasons,
+      script_too_large, script_untrusted_limit; there is no record, the key is not taken, the refusal is written to the
+      audit'
+    rules:
+    - SCR-5
+    - TRN-4
+  - id: sm-scr-03
+    from: proposed
+    to: running
+    by: the "Run" button (P1 decide, subject script)
+    when: 'the initiator pressed it themselves: a human principal, with script.run if the script has actions, confirm or
+      service control (SCR-6), the card''s channel, a valid nonce, once; the deadline has not expired; plan_hash matched;
+      there is no hold on the scope; the budget reserve and the tree size reserve are taken in full. The event script.started'
+    rules:
+    - SCR-6
+    - SCR-8
+  - id: sm-scr-04
+    from: proposed
+    to: rejected
+    by: the "Cancel" button (declined); the script loop at the decision deadline (expired); the initiator is disabled (person_inactive);
+      a new draft in the same conversation (script_superseded); the reserve did not fit at the press (budget_exhausted)
+    when: code updates the card; no reserve is taken
+    rules:
+    - SCR-11
+    - SCR-6
+  - id: sm-scr-05
+    from: running
+    to: paused
+    by: P1 script.control with pause from the channel by the initiator's button; from v0.2 a hold whose scope touches the
+      run (held)
+    when: new steps are not released; released work continues unless the hold itself stopped it
+    rules:
+    - SCR-10
+    - SCR-11
+  - id: sm-scr-06
+    from: paused
+    to: running
+    by: P1 script.control with resume from the channel by the initiator's button
+    when: there is no hold on the scope, the deadline has not expired, the initiator is active
+    rules:
+    - SCR-10
+    - SCR-11
+  - id: sm-scr-07
+    from: running
+    to: completed
+    by: the core when closing the last step (C1 script.step_close)
+    when: 'all steps are terminal, no failure with on_failure: stop happened; the script_summary delivery'
+    rules:
+    - SCR-11
+  - id: sm-scr-08
+    from: paused
+    to: completed
+    by: the core when closing the last step (C1 script.step_close)
+    when: 'all steps are terminal, no failure with on_failure: stop happened; the script_summary delivery'
+    rules:
+    - SCR-11
+  - id: sm-scr-09
+    from: running
+    to: failed
+    by: the core when closing the last step
+    when: 'all steps are terminal and a failure with on_failure: stop happened; the script_summary delivery'
+    rules:
+    - SCR-11
+  - id: sm-scr-10
+    from: paused
+    to: failed
+    by: the core when closing the last step
+    when: 'all steps are terminal and a failure with on_failure: stop happened; the script_summary delivery'
+    rules:
+    - SCR-11
+  - id: sm-scr-11
+    from: running
+    to: failed
+    by: the script loop at the run's deadline (deadline_exceeded)
+    when: 'the deadline expired: unreleased steps are canceled, pending approvals are canceled, released ones get a cancellation'
+    rules:
+    - SCR-11
+  - id: sm-scr-12
+    from: running
+    to: canceled
+    by: P1 script.control with cancel from the channel by the initiator's button; P2 script.cancel (the initiator or a person
+      with admin:people); cancellation of the anchor task; the initiator is disabled (person_inactive)
+    when: in the same transaction unreleased steps are canceled, pending step approvals are canceled, the tasks and campaigns
+      of released steps get a cancellation
+    rules:
+    - SCR-11
+  - id: sm-scr-13
+    from: paused
+    to: canceled
+    by: the same calls as for running; the script loop at the run's deadline
+    when: same
+    rules:
+    - SCR-10
+    - SCR-11
+  forbidden:
+  - id: sm-scr-x01
+    from: null
+    to: running
+    expect: rejected
+    rules:
+    - SCR-10
+    - SCR-11
+    - SCR-6
+    - SCR-8
+    why: the object does not appear directly in the state running
+  - id: sm-scr-x02
+    from: null
+    to: paused
+    expect: rejected
+    rules:
+    - SCR-10
+    - SCR-11
+    why: the object does not appear directly in the state paused
+  - id: sm-scr-x03
+    from: null
+    to: completed
+    expect: rejected
+    rules:
+    - SCR-11
+    why: the object does not appear directly in the state completed
+  - id: sm-scr-x04
+    from: null
+    to: failed
+    expect: rejected
+    rules:
+    - SCR-11
+    why: the object does not appear directly in the state failed
+  - id: sm-scr-x05
+    from: null
+    to: canceled
+    expect: rejected
+    rules:
+    - SCR-10
+    - SCR-11
+    why: the object does not appear directly in the state canceled
+  - id: sm-scr-x06
+    from: proposed
+    to: proposed
+    expect: rejected
+    rules:
+    - SCR-5
+    - SCR-6
+    why: the lifecycle table has no such transition
+  - id: sm-scr-x07
+    from: proposed
+    to: paused
+    expect: rejected
+    rules:
+    - SCR-10
+    - SCR-11
+    why: the lifecycle table has no such transition
+  - id: sm-scr-x08
+    from: proposed
+    to: completed
+    expect: rejected
+    rules:
+    - SCR-11
+    why: the lifecycle table has no such transition
+  - id: sm-scr-x09
+    from: proposed
+    to: failed
+    expect: rejected
+    rules:
+    - SCR-11
+    why: the lifecycle table has no such transition
+  - id: sm-scr-x10
+    from: proposed
+    to: canceled
+    expect: rejected
+    rules:
+    - SCR-10
+    - SCR-11
+    why: the lifecycle table has no such transition
+  - id: sm-scr-x11
+    from: running
+    to: proposed
+    expect: rejected
+    rules:
+    - SCR-5
+    - SCR-6
+    why: the lifecycle table has no such transition
+  - id: sm-scr-x12
+    from: running
+    to: running
+    expect: rejected
+    rules:
+    - SCR-10
+    - SCR-11
+    - SCR-6
+    - SCR-8
+    why: the lifecycle table has no such transition
+  - id: sm-scr-x13
+    from: running
+    to: rejected
+    expect: rejected
+    rules:
+    - SCR-11
+    - SCR-5
+    - SCR-6
+    - TRN-4
+    why: the lifecycle table has no such transition
+  - id: sm-scr-x14
+    from: paused
+    to: proposed
+    expect: rejected
+    rules:
+    - SCR-5
+    - SCR-6
+    why: the lifecycle table has no such transition
+  - id: sm-scr-x15
+    from: paused
+    to: paused
+    expect: rejected
+    rules:
+    - SCR-10
+    - SCR-11
+    why: the lifecycle table has no such transition
+  - id: sm-scr-x16
+    from: paused
+    to: rejected
+    expect: rejected
+    rules:
+    - SCR-11
+    - SCR-5
+    - SCR-6
+    - TRN-4
+    why: the lifecycle table has no such transition
+  - id: sm-scr-x17
+    from: completed
+    to: proposed
+    expect: rejected
+    rules:
+    - SCR-5
+    - SCR-6
+    why: completed is a terminal state
+  - id: sm-scr-x18
+    from: completed
+    to: running
+    expect: rejected
+    rules:
+    - SCR-10
+    - SCR-11
+    - SCR-6
+    - SCR-8
+    why: completed is a terminal state
+  - id: sm-scr-x19
+    from: completed
+    to: paused
+    expect: rejected
+    rules:
+    - SCR-10
+    - SCR-11
+    why: completed is a terminal state
+  - id: sm-scr-x20
+    from: completed
+    to: completed
+    expect: rejected
+    rules:
+    - SCR-11
+    why: completed is a terminal state
+  - id: sm-scr-x21
+    from: completed
+    to: failed
+    expect: rejected
+    rules:
+    - SCR-11
+    why: completed is a terminal state
+  - id: sm-scr-x22
+    from: completed
+    to: canceled
+    expect: rejected
+    rules:
+    - SCR-10
+    - SCR-11
+    why: completed is a terminal state
+  - id: sm-scr-x23
+    from: completed
+    to: rejected
+    expect: rejected
+    rules:
+    - SCR-11
+    - SCR-5
+    - SCR-6
+    - TRN-4
+    why: completed is a terminal state
+  - id: sm-scr-x24
+    from: failed
+    to: proposed
+    expect: rejected
+    rules:
+    - SCR-5
+    - SCR-6
+    why: failed is a terminal state
+  - id: sm-scr-x25
+    from: failed
+    to: running
+    expect: rejected
+    rules:
+    - SCR-10
+    - SCR-11
+    - SCR-6
+    - SCR-8
+    why: failed is a terminal state
+  - id: sm-scr-x26
+    from: failed
+    to: paused
+    expect: rejected
+    rules:
+    - SCR-10
+    - SCR-11
+    why: failed is a terminal state
+  - id: sm-scr-x27
+    from: failed
+    to: completed
+    expect: rejected
+    rules:
+    - SCR-11
+    why: failed is a terminal state
+  - id: sm-scr-x28
+    from: failed
+    to: failed
+    expect: rejected
+    rules:
+    - SCR-11
+    why: failed is a terminal state
+  - id: sm-scr-x29
+    from: failed
+    to: canceled
+    expect: rejected
+    rules:
+    - SCR-10
+    - SCR-11
+    why: failed is a terminal state
+  - id: sm-scr-x30
+    from: failed
+    to: rejected
+    expect: rejected
+    rules:
+    - SCR-11
+    - SCR-5
+    - SCR-6
+    - TRN-4
+    why: failed is a terminal state
+  - id: sm-scr-x31
+    from: canceled
+    to: proposed
+    expect: rejected
+    rules:
+    - SCR-5
+    - SCR-6
+    why: canceled is a terminal state
+  - id: sm-scr-x32
+    from: canceled
+    to: running
+    expect: rejected
+    rules:
+    - SCR-10
+    - SCR-11
+    - SCR-6
+    - SCR-8
+    why: canceled is a terminal state
+  - id: sm-scr-x33
+    from: canceled
+    to: paused
+    expect: rejected
+    rules:
+    - SCR-10
+    - SCR-11
+    why: canceled is a terminal state
+  - id: sm-scr-x34
+    from: canceled
+    to: completed
+    expect: rejected
+    rules:
+    - SCR-11
+    why: canceled is a terminal state
+  - id: sm-scr-x35
+    from: canceled
+    to: failed
+    expect: rejected
+    rules:
+    - SCR-11
+    why: canceled is a terminal state
+  - id: sm-scr-x36
+    from: canceled
+    to: canceled
+    expect: rejected
+    rules:
+    - SCR-10
+    - SCR-11
+    why: canceled is a terminal state
+  - id: sm-scr-x37
+    from: canceled
+    to: rejected
+    expect: rejected
+    rules:
+    - SCR-11
+    - SCR-5
+    - SCR-6
+    - TRN-4
+    why: canceled is a terminal state
+  - id: sm-scr-x38
+    from: rejected
+    to: proposed
+    expect: rejected
+    rules:
+    - SCR-5
+    - SCR-6
+    why: rejected is a terminal state
+  - id: sm-scr-x39
+    from: rejected
+    to: running
+    expect: rejected
+    rules:
+    - SCR-10
+    - SCR-11
+    - SCR-6
+    - SCR-8
+    why: rejected is a terminal state
+  - id: sm-scr-x40
+    from: rejected
+    to: paused
+    expect: rejected
+    rules:
+    - SCR-10
+    - SCR-11
+    why: rejected is a terminal state
+  - id: sm-scr-x41
+    from: rejected
+    to: completed
+    expect: rejected
+    rules:
+    - SCR-11
+    why: rejected is a terminal state
+  - id: sm-scr-x42
+    from: rejected
+    to: failed
+    expect: rejected
+    rules:
+    - SCR-11
+    why: rejected is a terminal state
+  - id: sm-scr-x43
+    from: rejected
+    to: canceled
+    expect: rejected
+    rules:
+    - SCR-10
+    - SCR-11
+    why: rejected is a terminal state
+  - id: sm-scr-x44
+    from: rejected
+    to: rejected
+    expect: rejected
+    rules:
+    - SCR-11
+    - SCR-5
+    - SCR-6
+    - TRN-4
+    why: rejected is a terminal state
+- name: Step
+  states:
+  - id: pending
+    terminal: false
+  - id: waiting
+    terminal: false
+  - id: released
+    terminal: false
+  - id: ok
+    terminal: true
+  - id: failed
+    terminal: true
+  - id: unknown
+    terminal: true
+  - id: declined
+    terminal: true
+  - id: skipped
+    terminal: true
+  - id: canceled
+    terminal: true
+  allowed:
+  - id: sm-scs-01
+    from: null
+    to: pending
+    by: C1 script.create together with the run
+    when: all steps of the draft
+    rules:
+    - SCR-5
+  - id: sm-scs-02
+    from: pending
+    to: skipped
+    by: the core in the transaction that closes a predecessor; the script loop
+    when: 'all steps from needs are terminal, but when is false or run_if is not met; or a failure with on_failure: stop
+      stopped the release, and the step has run_if: succeeded'
+    rules:
+    - SCR-11
+    - SCR-3
+  - id: sm-scs-03
+    from: pending
+    to: released
+    by: C1 script.release_step in the transaction that closes a predecessor; the script loop for steps without predecessors
+    when: the run is in running; needs are terminal, run_if and when are met; the initiator's rights are rechecked; a task
+      with the key system:script:<run>:<step> (task) or a campaign (fanout without an action) is created; for wait and await
+      (v0.2) a waiting record is created
+    rules:
+    - SCR-8
+    - SCR-9
+  - id: sm-scs-04
+    from: pending
+    to: waiting
+    by: same
+    when: 'same, but of kind action, confirm or fanout with an action: an approval with an exact snapshot is created (subject
+      approval, script_gate or a campaign approval); an action step with risk: routine without untrusted text creates no
+      approval and goes directly to released by a service_grant record authored by the initiator (D-78)'
+    rules:
+    - SCR-7
+    - SCR-8
+  - id: sm-scs-05
+    from: pending
+    to: failed
+    by: same
+    when: the initiator's rights at release did not pass (rights_revoked, no_group_cap); in v0.1 a hold rejected the enqueue
+      (held)
+    rules:
+    - SCR-8
+  - id: sm-scs-06
+    from: waiting
+    to: released
+    by: P1 decide "Approve" on an action or a campaign
+    when: a person with action.approve:<a> decided by the approval rules; the core enqueues action.<a> tasks
+    rules:
+    - SCR-7
+  - id: sm-scs-07
+    from: waiting
+    to: ok
+    by: P1 decide "Continue" on script_gate
+    when: a person decided by the step's who
+    rules:
+    - SCR-7
+  - id: sm-scs-08
+    from: waiting
+    to: declined
+    by: P1 decide "Reject" or "Stop"; the decision deadline (expired)
+    rules:
+    - SCR-11
+  - id: sm-scs-09
+    from: waiting
+    to: failed
+    by: a hold with the effect no_action on the step's scope
+    when: the step's pending approval moved to canceled(held) (HLD-3); the step is failed(held)
+    rules:
+    - SCR-11
+  - id: sm-scs-10
+    from: released
+    to: ok
+    by: the core at the end of a task, a campaign or an action; for wait the deadline came, for await the event arrived
+      (v0.2)
+    when: the task is completed, the campaign ended successfully, the action is executed
+    rules:
+    - SCR-8
+  - id: sm-scs-11
+    from: released
+    to: failed
+    by: same; for await the timeout expired (v0.2)
+    when: the task failed, the campaign failed, the action failed
+    rules:
+    - SCR-11
+  - id: sm-scs-12
+    from: released
+    to: unknown
+    by: the core by the outcome of the action
+    when: the outcome of the write call is unknown (exec_unknown)
+    rules:
+    - SCR-11
+  - id: sm-scs-13
+    from: pending
+    to: canceled
+    by: cancellation of the run or expiry of its deadline
+    when: the pending approval is canceled, the released task or campaign gets a cancellation
+    rules:
+    - SCR-11
+  - id: sm-scs-14
+    from: waiting
+    to: canceled
+    by: cancellation of the run or expiry of its deadline
+    when: the pending approval is canceled, the released task or campaign gets a cancellation
+    rules:
+    - SCR-11
+  - id: sm-scs-15
+    from: released
+    to: canceled
+    by: cancellation of the run or expiry of its deadline
+    when: the pending approval is canceled, the released task or campaign gets a cancellation
+    rules:
+    - SCR-11
+  forbidden:
+  - id: sm-scs-x01
+    from: null
+    to: waiting
+    expect: rejected
+    rules:
+    - SCR-7
+    - SCR-8
+    why: the object does not appear directly in the state waiting
+  - id: sm-scs-x02
+    from: null
+    to: released
+    expect: rejected
+    rules:
+    - SCR-7
+    - SCR-8
+    - SCR-9
+    why: the object does not appear directly in the state released
+  - id: sm-scs-x03
+    from: null
+    to: ok
+    expect: rejected
+    rules:
+    - SCR-7
+    - SCR-8
+    why: the object does not appear directly in the state ok
+  - id: sm-scs-x04
+    from: null
+    to: failed
+    expect: rejected
+    rules:
+    - SCR-11
+    - SCR-8
+    why: the object does not appear directly in the state failed
+  - id: sm-scs-x05
+    from: null
+    to: unknown
+    expect: rejected
+    rules:
+    - SCR-11
+    why: the object does not appear directly in the state unknown
+  - id: sm-scs-x06
+    from: null
+    to: declined
+    expect: rejected
+    rules:
+    - SCR-11
+    why: the object does not appear directly in the state declined
+  - id: sm-scs-x07
+    from: null
+    to: skipped
+    expect: rejected
+    rules:
+    - SCR-11
+    - SCR-3
+    why: the object does not appear directly in the state skipped
+  - id: sm-scs-x08
+    from: null
+    to: canceled
+    expect: rejected
+    rules:
+    - SCR-11
+    why: the object does not appear directly in the state canceled
+  - id: sm-scs-x09
+    from: pending
+    to: pending
+    expect: rejected
+    rules:
+    - SCR-5
+    why: the lifecycle table has no such transition
+  - id: sm-scs-x10
+    from: pending
+    to: ok
+    expect: rejected
+    rules:
+    - SCR-7
+    - SCR-8
+    why: the lifecycle table has no such transition
+  - id: sm-scs-x11
+    from: pending
+    to: unknown
+    expect: rejected
+    rules:
+    - SCR-11
+    why: the lifecycle table has no such transition
+  - id: sm-scs-x12
+    from: pending
+    to: declined
+    expect: rejected
+    rules:
+    - SCR-11
+    why: the lifecycle table has no such transition
+  - id: sm-scs-x13
+    from: waiting
+    to: pending
+    expect: rejected
+    rules:
+    - SCR-5
+    why: the lifecycle table has no such transition
+  - id: sm-scs-x14
+    from: waiting
+    to: waiting
+    expect: rejected
+    rules:
+    - SCR-7
+    - SCR-8
+    why: the lifecycle table has no such transition
+  - id: sm-scs-x15
+    from: waiting
+    to: unknown
+    expect: rejected
+    rules:
+    - SCR-11
+    why: the lifecycle table has no such transition
+  - id: sm-scs-x16
+    from: waiting
+    to: skipped
+    expect: rejected
+    rules:
+    - SCR-11
+    - SCR-3
+    why: the lifecycle table has no such transition
+  - id: sm-scs-x17
+    from: released
+    to: pending
+    expect: rejected
+    rules:
+    - SCR-5
+    why: the lifecycle table has no such transition
+  - id: sm-scs-x18
+    from: released
+    to: waiting
+    expect: rejected
+    rules:
+    - SCR-7
+    - SCR-8
+    why: the lifecycle table has no such transition
+  - id: sm-scs-x19
+    from: released
+    to: released
+    expect: rejected
+    rules:
+    - SCR-7
+    - SCR-8
+    - SCR-9
+    why: the lifecycle table has no such transition
+  - id: sm-scs-x20
+    from: released
+    to: declined
+    expect: rejected
+    rules:
+    - SCR-11
+    why: the lifecycle table has no such transition
+  - id: sm-scs-x21
+    from: released
+    to: skipped
+    expect: rejected
+    rules:
+    - SCR-11
+    - SCR-3
+    why: the lifecycle table has no such transition
+  - id: sm-scs-x22
+    from: ok
+    to: pending
+    expect: rejected
+    rules:
+    - SCR-5
+    why: ok is a terminal state
+  - id: sm-scs-x23
+    from: ok
+    to: waiting
+    expect: rejected
+    rules:
+    - SCR-7
+    - SCR-8
+    why: ok is a terminal state
+  - id: sm-scs-x24
+    from: ok
+    to: released
+    expect: rejected
+    rules:
+    - SCR-7
+    - SCR-8
+    - SCR-9
+    why: ok is a terminal state
+  - id: sm-scs-x25
+    from: ok
+    to: ok
+    expect: rejected
+    rules:
+    - SCR-7
+    - SCR-8
+    why: ok is a terminal state
+  - id: sm-scs-x26
+    from: ok
+    to: failed
+    expect: rejected
+    rules:
+    - SCR-11
+    - SCR-8
+    why: ok is a terminal state
+  - id: sm-scs-x27
+    from: ok
+    to: unknown
+    expect: rejected
+    rules:
+    - SCR-11
+    why: ok is a terminal state
+  - id: sm-scs-x28
+    from: ok
+    to: declined
+    expect: rejected
+    rules:
+    - SCR-11
+    why: ok is a terminal state
+  - id: sm-scs-x29
+    from: ok
+    to: skipped
+    expect: rejected
+    rules:
+    - SCR-11
+    - SCR-3
+    why: ok is a terminal state
+  - id: sm-scs-x30
+    from: ok
+    to: canceled
+    expect: rejected
+    rules:
+    - SCR-11
+    why: ok is a terminal state
+  - id: sm-scs-x31
+    from: failed
+    to: pending
+    expect: rejected
+    rules:
+    - SCR-5
+    why: failed is a terminal state
+  - id: sm-scs-x32
+    from: failed
+    to: waiting
+    expect: rejected
+    rules:
+    - SCR-7
+    - SCR-8
+    why: failed is a terminal state
+  - id: sm-scs-x33
+    from: failed
+    to: released
+    expect: rejected
+    rules:
+    - SCR-7
+    - SCR-8
+    - SCR-9
+    why: failed is a terminal state
+  - id: sm-scs-x34
+    from: failed
+    to: ok
+    expect: rejected
+    rules:
+    - SCR-7
+    - SCR-8
+    why: failed is a terminal state
+  - id: sm-scs-x35
+    from: failed
+    to: failed
+    expect: rejected
+    rules:
+    - SCR-11
+    - SCR-8
+    why: failed is a terminal state
+  - id: sm-scs-x36
+    from: failed
+    to: unknown
+    expect: rejected
+    rules:
+    - SCR-11
+    why: failed is a terminal state
+  - id: sm-scs-x37
+    from: failed
+    to: declined
+    expect: rejected
+    rules:
+    - SCR-11
+    why: failed is a terminal state
+  - id: sm-scs-x38
+    from: failed
+    to: skipped
+    expect: rejected
+    rules:
+    - SCR-11
+    - SCR-3
+    why: failed is a terminal state
+  - id: sm-scs-x39
+    from: failed
+    to: canceled
+    expect: rejected
+    rules:
+    - SCR-11
+    why: failed is a terminal state
+  - id: sm-scs-x40
+    from: unknown
+    to: pending
+    expect: rejected
+    rules:
+    - SCR-5
+    why: unknown is a terminal state
+  - id: sm-scs-x41
+    from: unknown
+    to: waiting
+    expect: rejected
+    rules:
+    - SCR-7
+    - SCR-8
+    why: unknown is a terminal state
+  - id: sm-scs-x42
+    from: unknown
+    to: released
+    expect: rejected
+    rules:
+    - SCR-7
+    - SCR-8
+    - SCR-9
+    why: unknown is a terminal state
+  - id: sm-scs-x43
+    from: unknown
+    to: ok
+    expect: rejected
+    rules:
+    - SCR-7
+    - SCR-8
+    why: unknown is a terminal state
+  - id: sm-scs-x44
+    from: unknown
+    to: failed
+    expect: rejected
+    rules:
+    - SCR-11
+    - SCR-8
+    why: unknown is a terminal state
+  - id: sm-scs-x45
+    from: unknown
+    to: unknown
+    expect: rejected
+    rules:
+    - SCR-11
+    why: unknown is a terminal state
+  - id: sm-scs-x46
+    from: unknown
+    to: declined
+    expect: rejected
+    rules:
+    - SCR-11
+    why: unknown is a terminal state
+  - id: sm-scs-x47
+    from: unknown
+    to: skipped
+    expect: rejected
+    rules:
+    - SCR-11
+    - SCR-3
+    why: unknown is a terminal state
+  - id: sm-scs-x48
+    from: unknown
+    to: canceled
+    expect: rejected
+    rules:
+    - SCR-11
+    why: unknown is a terminal state
+  - id: sm-scs-x49
+    from: declined
+    to: pending
+    expect: rejected
+    rules:
+    - SCR-5
+    why: declined is a terminal state
+  - id: sm-scs-x50
+    from: declined
+    to: waiting
+    expect: rejected
+    rules:
+    - SCR-7
+    - SCR-8
+    why: declined is a terminal state
+  - id: sm-scs-x51
+    from: declined
+    to: released
+    expect: rejected
+    rules:
+    - SCR-7
+    - SCR-8
+    - SCR-9
+    why: declined is a terminal state
+  - id: sm-scs-x52
+    from: declined
+    to: ok
+    expect: rejected
+    rules:
+    - SCR-7
+    - SCR-8
+    why: declined is a terminal state
+  - id: sm-scs-x53
+    from: declined
+    to: failed
+    expect: rejected
+    rules:
+    - SCR-11
+    - SCR-8
+    why: declined is a terminal state
+  - id: sm-scs-x54
+    from: declined
+    to: unknown
+    expect: rejected
+    rules:
+    - SCR-11
+    why: declined is a terminal state
+  - id: sm-scs-x55
+    from: declined
+    to: declined
+    expect: rejected
+    rules:
+    - SCR-11
+    why: declined is a terminal state
+  - id: sm-scs-x56
+    from: declined
+    to: skipped
+    expect: rejected
+    rules:
+    - SCR-11
+    - SCR-3
+    why: declined is a terminal state
+  - id: sm-scs-x57
+    from: declined
+    to: canceled
+    expect: rejected
+    rules:
+    - SCR-11
+    why: declined is a terminal state
+  - id: sm-scs-x58
+    from: skipped
+    to: pending
+    expect: rejected
+    rules:
+    - SCR-5
+    why: skipped is a terminal state
+  - id: sm-scs-x59
+    from: skipped
+    to: waiting
+    expect: rejected
+    rules:
+    - SCR-7
+    - SCR-8
+    why: skipped is a terminal state
+  - id: sm-scs-x60
+    from: skipped
+    to: released
+    expect: rejected
+    rules:
+    - SCR-7
+    - SCR-8
+    - SCR-9
+    why: skipped is a terminal state
+  - id: sm-scs-x61
+    from: skipped
+    to: ok
+    expect: rejected
+    rules:
+    - SCR-7
+    - SCR-8
+    why: skipped is a terminal state
+  - id: sm-scs-x62
+    from: skipped
+    to: failed
+    expect: rejected
+    rules:
+    - SCR-11
+    - SCR-8
+    why: skipped is a terminal state
+  - id: sm-scs-x63
+    from: skipped
+    to: unknown
+    expect: rejected
+    rules:
+    - SCR-11
+    why: skipped is a terminal state
+  - id: sm-scs-x64
+    from: skipped
+    to: declined
+    expect: rejected
+    rules:
+    - SCR-11
+    why: skipped is a terminal state
+  - id: sm-scs-x65
+    from: skipped
+    to: skipped
+    expect: rejected
+    rules:
+    - SCR-11
+    - SCR-3
+    why: skipped is a terminal state
+  - id: sm-scs-x66
+    from: skipped
+    to: canceled
+    expect: rejected
+    rules:
+    - SCR-11
+    why: skipped is a terminal state
+  - id: sm-scs-x67
+    from: canceled
+    to: pending
+    expect: rejected
+    rules:
+    - SCR-5
+    why: canceled is a terminal state
+  - id: sm-scs-x68
+    from: canceled
+    to: waiting
+    expect: rejected
+    rules:
+    - SCR-7
+    - SCR-8
+    why: canceled is a terminal state
+  - id: sm-scs-x69
+    from: canceled
+    to: released
+    expect: rejected
+    rules:
+    - SCR-7
+    - SCR-8
+    - SCR-9
+    why: canceled is a terminal state
+  - id: sm-scs-x70
+    from: canceled
+    to: ok
+    expect: rejected
+    rules:
+    - SCR-7
+    - SCR-8
+    why: canceled is a terminal state
+  - id: sm-scs-x71
+    from: canceled
+    to: failed
+    expect: rejected
+    rules:
+    - SCR-11
+    - SCR-8
+    why: canceled is a terminal state
+  - id: sm-scs-x72
+    from: canceled
+    to: unknown
+    expect: rejected
+    rules:
+    - SCR-11
+    why: canceled is a terminal state
+  - id: sm-scs-x73
+    from: canceled
+    to: declined
+    expect: rejected
+    rules:
+    - SCR-11
+    why: canceled is a terminal state
+  - id: sm-scs-x74
+    from: canceled
+    to: skipped
+    expect: rejected
+    rules:
+    - SCR-11
+    - SCR-3
+    why: canceled is a terminal state
+  - id: sm-scs-x75
+    from: canceled
+    to: canceled
+    expect: rejected
+    rules:
+    - SCR-11
+    why: canceled is a terminal state

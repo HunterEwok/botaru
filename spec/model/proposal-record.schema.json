@@ -1,0 +1,532 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:botaru:schema:proposal-record:1",
+  "title": "Proposal record",
+  "description": "Only the core writes a proposal record (PRP-1, IDN-1); a bot hands in only the proposal-body. Closed fields and decisions belong to the storage class metadata; the author note body.note and free-form human feedback belong to the class content. The state changes only by spec/lifecycles/proposal.md (PRP-6).",
+  "x-botaru-direction": "record",
+  "x-botaru-retention": "metadata",
+  "x-botaru-rules": [
+    "PRP-1",
+    "PRP-5",
+    "PRP-6",
+    "PRP-7",
+    "PRP-9",
+    "PRP-14",
+    "PRP-15",
+    "PRP-18",
+    "PRP-19",
+    "PRP-20",
+    "INS-3"
+  ],
+  "type": "object",
+  "required": [
+    "id",
+    "tenant",
+    "origin",
+    "fingerprint",
+    "data_mark",
+    "untrusted_seen",
+    "self_influence",
+    "conflicts_with",
+    "overlaps_with",
+    "seen_count",
+    "state",
+    "body",
+    "reviews",
+    "verdict",
+    "decision",
+    "realization",
+    "trial"
+  ],
+  "properties": {
+    "id": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/object_id"
+    },
+    "tenant": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/tenant_name"
+    },
+    "origin": {
+      "type": "object",
+      "required": [
+        "role",
+        "worker",
+        "acting_bot",
+        "task",
+        "level"
+      ],
+      "properties": {
+        "role": {
+          "$ref": "urn:botaru:schema:common:1#/$defs/name"
+        },
+        "worker": {
+          "$ref": "urn:botaru:schema:common:1#/$defs/object_id"
+        },
+        "acting_bot": {
+          "anyOf": [
+            {
+              "$ref": "urn:botaru:schema:common:1#/$defs/object_id",
+              "description": "The author bot from the attempt that handed in the result; empty for a worker without a numbered bot (PRP-14)."
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "bot_epoch": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": 0
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "task": {
+          "$ref": "urn:botaru:schema:common:1#/$defs/object_id"
+        },
+        "level": {
+          "enum": [
+            0,
+            1,
+            2
+          ],
+          "description": "Author level: 0 a seat bot, 1 an aggregator; 2 the farm manager from the daily review (since v0.2, MGR-41)."
+        }
+      }
+    },
+    "fingerprint": {
+      "description": "Hash of the category, problem code, subjects, kind and targets of the change; the core computes it (PRP-5).",
+      "$ref": "urn:botaru:schema:common:1#/$defs/hash"
+    },
+    "data_mark": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/data_mark",
+      "description": "Inherited from the attempt (INS-3); for an aggregator, the highest mark among its inputs (AGG-4)."
+    },
+    "untrusted_seen": {
+      "type": "object",
+      "description": "Untrusted text flag of the attempt together with the sources (INS-3, PRP-7, AGG-4).",
+      "required": [
+        "value",
+        "sources"
+      ],
+      "properties": {
+        "value": {
+          "type": "boolean"
+        },
+        "sources": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "maxLength": 64
+          },
+          "maxItems": 20
+        }
+      }
+    },
+    "self_influence": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "series",
+          "author_share",
+          "role_share"
+        ],
+        "properties": {
+          "series": {
+            "$ref": "urn:botaru:schema:observation-query:1#/$defs/series"
+          },
+          "author_share": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1
+          },
+          "role_share": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1
+          }
+        }
+      },
+      "maxItems": 10,
+      "description": "Share of the author's own points in the evidence series (PRP-15)."
+    },
+    "self_evidence": {
+      "type": "boolean",
+      "description": "author_share of at least one series is at least 0.3 (PRP-15)."
+    },
+    "related_to": {
+      "type": "array",
+      "items": {
+        "$ref": "urn:botaru:schema:common:1#/$defs/object_id"
+      },
+      "maxItems": 20,
+      "description": "Since v0.2 (PRP-17)."
+    },
+    "conflicts_with": {
+      "type": "array",
+      "items": {
+        "$ref": "urn:botaru:schema:common:1#/$defs/object_id"
+      },
+      "maxItems": 50,
+      "description": "Proposals that change the same field of the same object (PRP-9)."
+    },
+    "overlaps_with": {
+      "type": "array",
+      "items": {
+        "$ref": "urn:botaru:schema:common:1#/$defs/object_id"
+      },
+      "maxItems": 50,
+      "description": "Proposals with shared subjects among the change targets (PRP-9)."
+    },
+    "seen_count": {
+      "type": "integer",
+      "description": "How many times an open duplicate arrived (PRP-5).",
+      "minimum": 1
+    },
+    "state": {
+      "enum": [
+        "screened",
+        "in_review",
+        "recommended",
+        "parked",
+        "dismissed",
+        "presented",
+        "declined",
+        "expired",
+        "noted",
+        "realizing",
+        "realized",
+        "realization_failed",
+        "reverted",
+        "sampled",
+        "sample_presented",
+        "sample_judged",
+        "sample_closed"
+      ],
+      "description": "State by spec/lifecycles/proposal.md."
+    },
+    "state_reason": {
+      "anyOf": [
+        {
+          "enum": [
+            "score",
+            "veto_lens_missing",
+            "review_budget",
+            "conflict",
+            "evidence_drift",
+            "no_op",
+            "veto",
+            "below_min",
+            "low_score",
+            "object_failed",
+            "timeout",
+            "harm_observed",
+            "superseded",
+            "other"
+          ],
+          "description": "Reason for the state parked, dismissed, realization_failed or reverted.",
+          "x-botaru-registry": "reasons"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "body": {
+      "$ref": "urn:botaru:schema:proposal-body:1"
+    },
+    "reviews": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "lens",
+          "task",
+          "executor",
+          "state"
+        ],
+        "properties": {
+          "lens": {
+            "enum": [
+              "security",
+              "operational",
+              "cost",
+              "value",
+              "farm_manager"
+            ],
+            "x-botaru-registry": "lenses"
+          },
+          "task": {
+            "$ref": "urn:botaru:schema:common:1#/$defs/object_id",
+            "description": "Review task with the key system:review:<proposal>:<lens> (IDM-2)."
+          },
+          "executor": {
+            "enum": [
+              "seat",
+              "fallback_role",
+              "shadow"
+            ],
+            "description": "Source of the lens executor (COM-7, COM-10)."
+          },
+          "state": {
+            "enum": [
+              "pending",
+              "done",
+              "failed",
+              "late",
+              "schema_invalid"
+            ],
+            "description": "Fate of the review; without a review by a veto lens the result is parked(veto_lens_missing)."
+          },
+          "result": {
+            "$ref": "urn:botaru:schema:review-result:1"
+          }
+        }
+      },
+      "maxItems": 10
+    },
+    "verdict": {
+      "anyOf": [
+        {
+          "$ref": "urn:botaru:schema:verdict:1"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "decision": {
+      "anyOf": [
+        {
+          "type": "object",
+          "required": [
+            "decision",
+            "decided_by",
+            "at"
+          ],
+          "properties": {
+            "decision": {
+              "enum": [
+                "accept",
+                "reject",
+                "defer",
+                "would_accept",
+                "would_not_accept",
+                "override_veto"
+              ],
+              "description": "Button from decision-points.yaml."
+            },
+            "reason_code": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "maxLength": 32,
+                  "x-botaru-registry": "decline-reasons",
+                  "description": "Reason for \"Reject\" from decline-reasons.yaml."
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "decided_by": {
+              "$ref": "urn:botaru:schema:common:1#/$defs/principal_ref",
+              "description": "Opaque id of the person who decided."
+            },
+            "at": {
+              "$ref": "urn:botaru:schema:common:1#/$defs/datetime"
+            },
+            "response_ms": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "details_opened": {
+              "type": "boolean"
+            },
+            "defer_count": {
+              "type": "integer",
+              "description": "How many times \"Postpone\" was pressed; at most 2.",
+              "minimum": 0,
+              "maximum": 2
+            }
+          }
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "veto_overridden": {
+      "type": "boolean",
+      "description": "Since v0.2: the veto was overridden by a person; the author gets no credit (DIG-6)."
+    },
+    "realization": {
+      "anyOf": [
+        {
+          "type": "object",
+          "required": [
+            "realizer",
+            "realize_by"
+          ],
+          "properties": {
+            "realizer": {
+              "$ref": "urn:botaru:schema:common:1#/$defs/object_id",
+              "description": "Executor (PRP-18)."
+            },
+            "realize_by": {
+              "$ref": "urn:botaru:schema:common:1#/$defs/datetime"
+            },
+            "object": {
+              "anyOf": [
+                {
+                  "$ref": "urn:botaru:schema:common:1#/$defs/object_id",
+                  "description": "Normal-path object created by \"Accept\": an approval or a script run."
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "commit": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "pattern": "^[0-9a-f]{40}([0-9a-f]{24})?$",
+                  "description": "Linked commit (PRP-19)."
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "link": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "object",
+                    "commit_trailer",
+                    "link_commit"
+                  ],
+                  "description": "How the link was verified (PRP-19)."
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "realized_at": {
+              "anyOf": [
+                {
+                  "$ref": "urn:botaru:schema:common:1#/$defs/datetime"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "revert_patch": {
+              "anyOf": [
+                {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "required": [
+                      "target",
+                      "field",
+                      "previous"
+                    ],
+                    "properties": {
+                      "target": {
+                        "type": "object",
+                        "required": [
+                          "kind",
+                          "name"
+                        ],
+                        "properties": {
+                          "kind": {
+                            "type": "string"
+                          },
+                          "name": {
+                            "$ref": "urn:botaru:schema:common:1#/$defs/name"
+                          }
+                        }
+                      },
+                      "field": {
+                        "type": "string",
+                        "maxLength": 120
+                      },
+                      "previous": {
+                        "description": "New field value.",
+                        "anyOf": [
+                          {
+                            "type": "string",
+                            "maxLength": 200
+                          },
+                          {
+                            "type": "number"
+                          },
+                          {
+                            "type": "boolean"
+                          }
+                        ]
+                      }
+                    }
+                  },
+                  "maxItems": 10,
+                  "description": "Reverse edit: the previous values of the same fields of the same objects (PRP-20)."
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "batch": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "maxLength": 64,
+                  "description": "Batch number, if one commit is linked to several proposals."
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "revert_reason": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "harm_observed",
+                    "superseded",
+                    "other"
+                  ],
+                  "description": "Revert reason from the Botaru-Revert line; without a reason, other (PRP-20).",
+                  "x-botaru-registry": "reasons"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "trial": {
+      "anyOf": [
+        {
+          "$ref": "urn:botaru:schema:trial:1"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,15 @@
+schema: spec/model/p1-script-control-request.schema.json
+rules:
+- SCR-6
+- SCR-7
+description: 'Buttons that the schema rejects: "Run" goes through decide, not script.control; approval of run actions; without
+  nonce.'
+cases:
+- id: s_01JB0000000000000000000301
+  command: start
+  nonce: nX7kQ2pL9vR4tY8wZ1aB
+- id: s_01JB0000000000000000000301
+  command: approve_actions
+  nonce: nX7kQ2pL9vR4tY8wZ1aB
+- id: s_01JB0000000000000000000301
+  command: resume

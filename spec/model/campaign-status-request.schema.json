@@ -1,0 +1,21 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:botaru:schema:campaign-status-request:1",
+  "title": "P3 campaign_status: arguments",
+  "description": "State, counters and closed item fields of the campaigns of its own tree; the tool exists together with propose_campaign.",
+  "x-botaru-direction": "input",
+  "x-botaru-rules": [
+    "ORC-4",
+    "ORC-9"
+  ],
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "campaign"
+  ],
+  "properties": {
+    "campaign": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/object_id"
+    }
+  }
+}

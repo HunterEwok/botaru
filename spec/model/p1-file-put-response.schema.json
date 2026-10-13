@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:botaru:schema:p1-file-put-response:1",
+  "title": "P1 file.put: response",
+  "description": "Reference to the file. Denials: data_class_exceeded, over_capacity, fenced.",
+  "x-botaru-direction": "output",
+  "x-botaru-rules": [
+    "TEN-7"
+  ],
+  "type": "object",
+  "required": [
+    "file_ref"
+  ],
+  "properties": {
+    "file_ref": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/file_ref"
+    }
+  }
+}

@@ -1,0 +1,7 @@
+schema: spec/model/p2-proposal-list-request.schema.json
+rules: [DIG-1, PRP-4]
+description: P2 proposal.list requests that the schema rejects; state not from the lifecycle; attempt to decide through
+  P2.
+cases:
+  - {state: [approved]}
+  - {decision: accept}

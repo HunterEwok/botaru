@@ -1,0 +1,13 @@
+schema: spec/model/inbox-read-request.schema.json
+rules:
+- MSG-8
+- TEN-2
+description: 'Arguments that the schema rejects: more than 20 entries; another party''s inbox; tenant; empty list of kinds.'
+cases:
+- max: 21
+- max: 5
+  inbox: role:reporter
+- max: 5
+  tenant: demo2
+- types: []
+  max: 5

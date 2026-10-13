@@ -1,0 +1,57 @@
+id: fx-mgr-breaker-evasion
+rules: [MGR-34, GOV-22]
+description: 'The seat left held by no_control inside the responsibility window (the holder could have tripped the safeguard
+  itself), then disk_full opened while stopped: the reason incident is added to the seat, and the ways out of the stop are the same. Leaving
+  held by human inside the window removes the responsibility.'
+given:
+  seat: {holder: bot_41, state: held, held_since: '2026-11-24T01:00:00Z', epoch: 9}
+  quotas: met
+  growth_visible: true
+  disk_filling_open_since: '2026-11-24T02:50:00Z'
+cases:
+- id: fx-mgr-breaker-evasion-a
+  steps:
+  - occur:
+      event: {type: three control.apply denials in a row}
+    at: '2026-11-24T04:40:00Z'
+    expect:
+      seat:
+        state: stopped
+        stop_reasons: [no_control]
+        epoch: 10
+  - occur:
+      incident_open: {class: disk_full}
+    at: '2026-11-24T05:10:00Z'
+    expect:
+      seat:
+        state: stopped
+        stop_reasons: [no_control, incident]
+        epoch: 11
+      card: manager_stopped
+      exits: [seat.resume, seat.assign, seat.vacate, decide_within]
+- id: fx-mgr-breaker-evasion-b
+  given:
+    people:
+    - principal: human:bob
+      caps: ['admin:farm']
+  steps:
+  - call:
+      port: P2
+      op: hold.set
+      request:
+        scope: {kind: seat, name: farm-manager}
+        effects: [no_claim]
+        reason: manual
+        until: null
+    by: human:bob
+    at: '2026-11-24T04:40:00Z'
+    expect:
+      seat:
+        stop_reasons: [human]
+  - occur:
+      incident_open: {class: disk_full}
+    at: '2026-11-24T05:10:00Z'
+    expect:
+      seat:
+        stop_reasons: [human]
+      incident: {stops_manager_effect: present}

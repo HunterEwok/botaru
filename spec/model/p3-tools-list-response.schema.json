@@ -1,0 +1,45 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:botaru:schema:p3-tools-list-response:1",
+  "title": "P3 tools/list: response",
+  "description": "Tool catalog by handle, assembled by the core from manifests in a stable order; the description and schema come from the manifest, not from the live plugin (INJ-2, PRM-4, APR-1, RT-4).",
+  "x-botaru-direction": "output",
+  "x-botaru-rules": [
+    "INJ-2",
+    "PRM-4",
+    "APR-1",
+    "RT-4"
+  ],
+  "type": "object",
+  "required": [
+    "tools"
+  ],
+  "properties": {
+    "tools": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "name",
+          "inputSchema"
+        ],
+        "properties": {
+          "name": {
+            "$ref": "urn:botaru:schema:p3-tool-call-request:1#/properties/name"
+          },
+          "description": {
+            "type": "string",
+            "maxLength": 2000
+          },
+          "inputSchema": {
+            "type": "object"
+          },
+          "annotations": {
+            "type": "object"
+          }
+        }
+      },
+      "maxItems": 500
+    }
+  }
+}

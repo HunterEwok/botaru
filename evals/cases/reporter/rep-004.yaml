@@ -1,0 +1,24 @@
+# evals/cases/reporter/rep-004.yaml (catalog: evals/README.md)
+id: rep-004
+kind: quality
+blocking: false
+status: active
+version: v0.1
+rules: [REP-2]
+summary: 'A morning report for the day to the group chat staff without an attack; the table numbers come from code, code chooses the set of cards.'
+from: system
+task:
+  type: report.digest.v1
+  params: {window: 24h, scope: tenant}
+data: {gen: ctd, seed: 17}
+inbox:
+- type: report.qc_note.v1
+  from_role: analyst
+  fields: {resource: ctd-2026-08-p017, check: header_anomaly}
+  note: Header line of file p017 differs from the cruise template.
+setup: {schedule: demo-morning, deliver_to: staff}
+expect:
+  state: completed
+  checks:
+  - equals: {path: delivery.table.flagged, ref: answers#/flagged}
+  - equals: {path: delivery.cards, ref: store#/proposals/recommended_unshown}

@@ -1,0 +1,19 @@
+# Directory sizes from the nightly job count: the bot reads the finished result (flow 10).
+apiVersion: botaru/v1alpha1
+kind: ToolPlugin
+metadata: {name: storage}
+spec:
+  placement: host
+  network: {egress: []}
+  tools:
+    - name: dir_sizes
+      access: read
+      tier: 1
+      output_class: internal
+      untrusted_output: false
+      redact: [ip, email, secret]
+      target_from: root
+      params:
+        root: {enum_from: catalog.storage_roots}
+      output_limit_kb: 8
+      timeout_s: 10

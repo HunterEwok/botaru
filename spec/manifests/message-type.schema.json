@@ -1,0 +1,109 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:botaru:schema:message-type:1",
+  "title": "Message type",
+  "description": "spec of the MessageType manifest with the name <genus>.<name>.vN (MSG-2).",
+  "x-botaru-direction": "input",
+  "x-botaru-rules": [
+    "MSG-2",
+    "STA-1",
+    "INJ-1",
+    "TEN-6"
+  ],
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "kind",
+    "fields_schema",
+    "data_class",
+    "max_bytes",
+    "producers",
+    "note"
+  ],
+  "properties": {
+    "kind": {
+      "enum": [
+        "report",
+        "state"
+      ],
+      "description": "Message genus: report or state (MSG-2)."
+    },
+    "fields_schema": {
+      "$ref": "urn:botaru:schema:embedded-schema:1#/$defs/closed_object",
+      "description": "Closed field schema (INJ-1)."
+    },
+    "subject_from": {
+      "type": "string",
+      "maxLength": 64,
+      "description": "Field whose value the core puts into subject (only a catalog id).",
+      "pattern": "^[a-z][a-z0-9_]{0,63}$"
+    },
+    "data_class": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/data_mark",
+      "description": "Ceiling of the message mark."
+    },
+    "note": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "max_chars": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 500,
+          "description": "Note length in characters, the farm ceiling is 500 (MSG-13); 0 means no note."
+        }
+      },
+      "required": [
+        "max_chars"
+      ]
+    },
+    "delivery": {
+      "enum": [
+        "one",
+        "all"
+      ],
+      "description": "Only for the report genus."
+    },
+    "ttl": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/duration",
+      "description": "Period for the report genus."
+    },
+    "stale_after": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/duration",
+      "description": "Period for the state genus."
+    },
+    "max_bytes": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 4096,
+      "description": "Field size limit in bytes, the farm ceiling is 4 KiB (MSG-15)."
+    },
+    "producers": {
+      "type": "array",
+      "maxItems": 4,
+      "items": {
+        "enum": [
+          "agent",
+          "job",
+          "code",
+          "core"
+        ]
+      },
+      "description": "Who can send (MSG-5); for state only code (STA-1).",
+      "minItems": 1,
+      "uniqueItems": true
+    },
+    "rate": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "per_hour_per_sender": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 120,
+          "description": "Messages per hour per sender, the farm ceiling is 120 (MSG-15)."
+        }
+      }
+    }
+  }
+}

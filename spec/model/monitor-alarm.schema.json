@@ -1,0 +1,105 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:botaru:schema:monitor-alarm:1",
+  "title": "Alarm episode export",
+  "description": "The monitor_alarm delivery for the E5 adapter: every change of an alarm episode as one delivery with tags; only numbers, enum values, tags and catalog ids (MON-1, MON-11).",
+  "x-botaru-direction": "output",
+  "x-botaru-rules": [
+    "MON-1",
+    "MON-11",
+    "OBS-6"
+  ],
+  "type": "object",
+  "required": [
+    "seq",
+    "state",
+    "tenant",
+    "alarm",
+    "subject",
+    "severity",
+    "scope",
+    "origin",
+    "key"
+  ],
+  "properties": {
+    "seq": {
+      "description": "Change number within the episode.",
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 2
+    },
+    "repeat_count": {
+      "description": "Repeated firings; not exported separately.",
+      "type": "integer",
+      "minimum": 0
+    },
+    "state": {
+      "description": "State.",
+      "enum": [
+        "firing",
+        "resolved"
+      ]
+    },
+    "tenant": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/tenant_name",
+      "description": "Tenant."
+    },
+    "alarm": {
+      "description": "Alarm name without alarm. and .vN, for example task.stalled.",
+      "type": "string",
+      "maxLength": 120,
+      "pattern": "^[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*)*$"
+    },
+    "subject": {
+      "description": "Id from the tenant catalog or the name of a farm object (for example db1, res:ctd1:data).",
+      "type": "string",
+      "maxLength": 120,
+      "pattern": "^[a-z][a-z0-9_.:-]*$"
+    },
+    "severity": {
+      "description": "Severity.",
+      "$ref": "urn:botaru:schema:common:1#/$defs/alarm_severity"
+    },
+    "scope": {
+      "description": "tenant, or farm for alarms about the farm itself.",
+      "enum": [
+        "tenant",
+        "farm"
+      ]
+    },
+    "origin": {
+      "description": "code, or monitor for an alarm from a monitoring system problem.",
+      "enum": [
+        "code",
+        "monitor"
+      ]
+    },
+    "key": {
+      "description": "Key <tenant>:<alarm>:<subject>.",
+      "type": "string",
+      "maxLength": 260,
+      "pattern": "^[a-z][a-z0-9-]*:[a-z][a-z0-9_.]*:[a-z0-9][a-z0-9_.:-]*$"
+    },
+    "values": {
+      "description": "Alarm values: only numbers and enum values (codes), without texts or people's ids (OBS-6, MON-1).",
+      "type": "object",
+      "maxProperties": 16,
+      "propertyNames": {
+        "pattern": "^[a-z][a-z0-9_]*$",
+        "maxLength": 64
+      },
+      "additionalProperties": {
+        "anyOf": [
+          {
+            "type": "number"
+          },
+          {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_]*$",
+            "maxLength": 64
+          }
+        ]
+      }
+    }
+  }
+}

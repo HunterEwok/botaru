@@ -1,0 +1,7 @@
+schema: spec/model/p1-fail-request.schema.json
+rules: [FEN-3]
+description: 'fail requests that the schema rejects: free text of the reason; reason of the wrong kind; no retryable.'
+cases:
+- {reason: runtime_error, retryable: true, message: runtime crashed}
+- {reason: Runtime Error, retryable: true}
+- {reason: runtime_error}

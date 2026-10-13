@@ -1,0 +1,170 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:botaru:schema:manager-finding:1",
+  "title": "Reader role finding",
+  "description": "Finding manager-finding/v1: the only output of the farm-manager-reader role. The read attempt writes the body, the core makes the record at complete: the subject exists in the attempt's tenant (another tenant's id gets the same answer as a nonexistent one), every id in evidence is in the read log of this attempt, the names and values of values are from a closed list and within bounds, there are at most 10 findings per attempt (MGR-25). The core always sets untrusted: true on a finding, the personal_seen flag by AUD-5 and the field subject_in_code_targets; the decision role sees all fields except note.",
+  "x-botaru-direction": "input",
+  "x-botaru-rules": [
+    "MGR-25",
+    "MGR-24",
+    "MGR-26",
+    "MGR-28",
+    "MGR-30"
+  ],
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "kind",
+    "subject",
+    "evidence",
+    "confidence"
+  ],
+  "properties": {
+    "kind": {
+      "enum": [
+        "error_burst",
+        "disk_growth",
+        "runaway_loop",
+        "secret_suspected",
+        "data_corruption_suspected",
+        "misconfig_suspected",
+        "worker_misbehaving",
+        "dependency_down",
+        "none"
+      ],
+      "description": "Finding kind."
+    },
+    "subject": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "id"
+      ],
+      "properties": {
+        "kind": {
+          "enum": [
+            "worker",
+            "task",
+            "resource",
+            "role",
+            "tasktype",
+            "schedule"
+          ],
+          "description": "Subject kind: only an object of the attempt's tenant."
+        },
+        "id": {
+          "type": "string",
+          "maxLength": 64,
+          "pattern": "^[a-z0-9:_.-]{1,64}$",
+          "description": "Object id from the restricted character set [a-z0-9:_.-]{1,64}: catalog name, resource, task type, worker, task."
+        }
+      }
+    },
+    "evidence": {
+      "type": "array",
+      "maxItems": 5,
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "maxLength": 64,
+        "pattern": "^[a-z0-9:_.-]{1,64}$",
+        "description": "Object id from the restricted character set [a-z0-9:_.-]{1,64}: catalog name, resource, task type, worker, task."
+      },
+      "description": "Up to 5 ids of objects read in this attempt."
+    },
+    "values": {
+      "type": "object",
+      "maxProperties": 5,
+      "propertyNames": {
+        "pattern": "^[a-z][a-z0-9_]{0,31}$"
+      },
+      "additionalProperties": {
+        "type": "number",
+        "minimum": -1000000000,
+        "maximum": 1000000000
+      },
+      "description": "Up to 5 numbers from a closed list of names, within bounds."
+    },
+    "suggested": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "op": {
+          "description": "Operation from control-ops.yaml.",
+          "anyOf": [
+            {
+              "enum": [
+                "hold",
+                "quarantine",
+                "drain",
+                "preempt",
+                "cancel",
+                "pin_task",
+                "request_action",
+                "release",
+                "notify"
+              ],
+              "x-botaru-registry": "control-ops"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "action": {
+          "description": "Catalog action.",
+          "anyOf": [
+            {
+              "$ref": "urn:botaru:schema:common:1#/$defs/dotted_name"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "service": {
+          "description": "A hint about an action on a service; the core checks the service and the verb against the catalog; it executes nothing.",
+          "anyOf": [
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "name",
+                "verb"
+              ],
+              "properties": {
+                "name": {
+                  "type": "string",
+                  "maxLength": 64,
+                  "pattern": "^[a-z][a-z0-9_.-]{0,63}$",
+                  "description": "Service from the tenant catalog."
+                },
+                "verb": {
+                  "$ref": "urn:botaru:schema:common:1#/$defs/service_verb"
+                }
+              }
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "description": "Hint to the decision role."
+    },
+    "confidence": {
+      "enum": [
+        "low",
+        "medium",
+        "high"
+      ],
+      "description": "Confidence."
+    },
+    "note": {
+      "type": "string",
+      "maxLength": 300,
+      "description": "Untrusted note: only for the tenant's people behind the \"Details\" button; the audit has only its hash and length."
+    }
+  }
+}

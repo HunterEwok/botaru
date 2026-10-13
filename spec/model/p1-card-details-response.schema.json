@@ -1,0 +1,41 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:botaru:schema:p1-card-details-response:1",
+  "title": "P1 card.details: response",
+  "description": "Card details from a code template: the template name and the closed fields of the subject record; model text only in the untrusted_text field, which the channel shows in the untrusted text wrapper. If the mark is above the group chat ceiling, deliver_to: direct, and the channel sends the details in a direct chat to the person who pressed (APR-11, APR-14).",
+  "x-botaru-direction": "output",
+  "x-botaru-rules": [
+    "APR-11",
+    "APR-14"
+  ],
+  "type": "object",
+  "required": [
+    "template",
+    "fields",
+    "deliver_to"
+  ],
+  "properties": {
+    "template": {
+      "type": "string",
+      "maxLength": 64,
+      "pattern": "^[a-z][a-z0-9_.]*$",
+      "description": "Code template from the text catalog."
+    },
+    "fields": {
+      "type": "object",
+      "maxProperties": 64,
+      "description": "Closed fields of the subject record for the template."
+    },
+    "untrusted_text": {
+      "type": "string",
+      "maxLength": 4000,
+      "description": "Model text, if the template shows it; only in the untrusted text wrapper."
+    },
+    "deliver_to": {
+      "enum": [
+        "same_chat",
+        "direct"
+      ]
+    }
+  }
+}

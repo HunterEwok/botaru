@@ -1,0 +1,1421 @@
+# Collected from spec/lifecycles/message.yaml. The value null in from means "the object does not exist yet".
+lifecycle: spec/lifecycles/message.yaml
+object: message
+rules:
+- DLV-2
+- FEN-4
+- FEN-5
+- HLD-3
+- MSG-1
+- MSG-10
+- MSG-11
+- MSG-12
+- MSG-13
+- MSG-14
+- MSG-15
+- MSG-16
+- MSG-2
+- MSG-3
+- MSG-4
+- MSG-5
+- MSG-6
+- MSG-7
+- MSG-8
+- MSG-9
+- PRM-8
+- STA-1
+- STA-2
+description: 'Allowed and forbidden transitions of the "message (inbox entry)" lifecycle, collected from the tables of spec/lifecycles/message.md.
+  The implementation accepts a transition from the allowed list under the condition of its row (when); a pair from the forbidden
+  list does not change the state, and the call that asks for it is rejected. The value null in from means "the object does
+  not exist yet". A refusal at sending creates no record: the transition to rejected is an answer to the sender. Terminal
+  states do not change: an entry after acked, dead, expired or discarded is never handed out; there are at most three returns
+  that count a handout (MSG-9).'
+states:
+- id: staged
+  terminal: false
+- id: queued
+  terminal: false
+- id: leased
+  terminal: false
+- id: acked
+  terminal: true
+- id: discarded
+  terminal: true
+- id: dead
+  terminal: true
+- id: expired
+  terminal: true
+- id: current
+  terminal: false
+- id: stale
+  terminal: false
+- id: replaced
+  terminal: true
+- id: removed
+  terminal: true
+- id: rejected
+  terminal: true
+allowed:
+- id: sm-msg-01
+  from: null
+  to: staged
+  by: P3 send_message from an agent attempt; P1 msg.send with a job attempt token
+  when: the attempt is alive and holds the lease; a kind of the report genus with the needed producers; the pair (kind,
+    address) is in the role's messages.send, the initiator has msg.send:<kind>; the address is allowed inside the tenant;
+    the fields passed the kind's closed schema, the size and the note are within limits; the kind's data_class is not below
+    the attempt's mark; at most 3 sends per attempt, the kind's rate; hops at most 5; the inbox has room counting staged,
+    and the sender role's share is not exceeded; there is no hold with no_message
+  rules:
+  - MSG-1
+  - MSG-10
+  - MSG-11
+  - MSG-13
+  - MSG-15
+  - MSG-2
+  - MSG-4
+  - MSG-5
+  - MSG-6
+- id: sm-msg-02
+  from: null
+  to: rejected
+  by: P3 send_message, P1 msg.send
+  when: 'any check above failed: address_invalid, msg_type_not_allowed, data_schema_invalid, note_not_allowed, data_class_exceeded,
+    inbox_full, sender_quota, hops_exceeded, service_rate_limited, held, fenced; the model gets a short "no"'
+  rules:
+  - FEN-4
+  - HLD-3
+  - MSG-10
+  - MSG-15
+  - MSG-4
+  - MSG-5
+  - PRM-8
+- id: sm-msg-03
+  from: staged
+  to: queued
+  by: C1 complete of the sending attempt (the same transaction)
+  when: at this moment there is no hold with no_message on the sender's scope; for delivery all, copies are created here
+    in the inboxes of the recipient's active workers, at most 50, and a copy that has no room in a worker's inbox is not
+    created, and the core writes an event
+  rules:
+  - DLV-2
+  - MSG-14
+  - MSG-9
+- id: sm-msg-04
+  from: staged
+  to: discarded
+  by: C1 fail of the sending attempt, its cancellation, preemption or loss of the lease; C1 complete under a hold with no_message
+  when: the attempt ended without complete, or a hold forbids publication (reason held); a retry of the task by a new attempt
+    sends its own and does not duplicate the key system:msg:<attempt>:<n>
+  rules:
+  - FEN-4
+  - HLD-3
+  - MSG-9
+- id: sm-msg-05
+  from: null
+  to: queued
+  by: 'the core in the transaction of a terminal transition of a task (a route on: task_done with mode: report); the core
+    for its own message to a specific worker'
+  when: an auto-report with summary_fields fields, the task's mark and flag, the key system:report:<task>:<route>; only
+    the core writes the address worker:<id>; an auto-report that has no room is not created, the core writes a message.rejected
+    event, and the task transition goes through
+  rules:
+  - DLV-2
+  - MSG-16
+  - MSG-4
+- id: sm-msg-06
+  from: queued
+  to: leased
+  by: P3 inbox_read; P1 msg.receive with a job attempt token
+  when: the task type of the reading attempt declared inbox.read with this kind, the kind is in the role's receive; the
+    entry's mark is not above the attempt's mark (otherwise the entry is not handed out and is counted in hidden); a worker
+    reads the inbox of its role, the inboxes of its bot groups and, if the role declared instance_inbox, its own inbox
+  rules:
+  - MSG-11
+  - MSG-6
+  - MSG-7
+  - MSG-8
+- id: sm-msg-07
+  from: leased
+  to: acked
+  by: C1 complete of the reading attempt (the same transaction)
+  when: all entries that the attempt read and did not return with msg.nack; P1 msg.ack only marks the entry, the acknowledgement
+    happens here anyway
+  rules:
+  - DLV-2
+  - MSG-9
+- id: sm-msg-08
+  from: leased
+  to: queued
+  by: C1 fail of the reading attempt; loss of its lease (the reaper loop); P1 msg.nack
+  when: the entry's term has not expired; the handout count plus one, and after that it is below 3
+  rules:
+  - MSG-9
+- id: sm-msg-09
+  from: leased
+  to: queued
+  by: cancellation or preemption of the reading attempt; a lease that expired while the core was not running
+  when: the entry's term has not expired; the handout count does not change
+  rules:
+  - FEN-5
+  - MSG-9
+- id: sm-msg-10
+  from: leased
+  to: dead
+  by: C1 fail of the reading attempt; loss of its lease; P1 msg.nack
+  when: this is the third return that counts a handout (delivery_exhausted); the core writes a message.dead event
+  rules:
+  - MSG-9
+- id: sm-msg-11
+  from: leased
+  to: expired
+  by: any return of an entry to the inbox
+  when: the entry's term expired while it was leased
+  rules:
+  - MSG-12
+- id: sm-msg-12
+  from: queued
+  to: expired
+  by: the background loop inbox
+  when: expiresat has passed; the entry is no longer handed out, wakes nobody and creates no tasks
+  rules:
+  - MSG-12
+- id: sm-msg-13
+  from: queued
+  to: discarded
+  by: apply removed the role, the bot group or the receive of this kind; P2 worker.revoke for a worker inbox
+  when: the recipient no longer exists (reason recipient_gone); the core writes an event, the entry is not lost silently
+  rules:
+  - MSG-10
+  - MSG-3
+- id: sm-msg-14
+  from: null
+  to: current
+  by: P1 msg.send with a worker token (code outside an attempt)
+  when: 'a kind of the state genus with producers: [code]; the sender is the worker from the credentials; at most once per
+    minute per (worker, kind), plus on a phase change'
+  rules:
+  - MSG-14
+  - STA-1
+- id: sm-msg-15
+  from: current
+  to: replaced
+  by: P1 msg.send of the same worker with the same kind
+  when: a new value in the same inbox; in the same transaction it becomes current
+  rules:
+  - MSG-14
+  - MSG-9
+- id: sm-msg-16
+  from: current
+  to: stale
+  by: the background loop inbox
+  when: the value is older than the kind's stale_after
+  rules:
+  - MSG-12
+- id: sm-msg-17
+  from: stale
+  to: replaced
+  by: P1 msg.send of the same worker with the same kind
+  when: the new value becomes current
+  rules:
+  - MSG-14
+- id: sm-msg-18
+  from: current
+  to: removed
+  by: P2 worker.revoke; apply removed the kind or the receiving role
+  when: the value of a revoked worker is no longer shown as state
+  rules:
+  - MSG-14
+  - STA-2
+- id: sm-msg-19
+  from: stale
+  to: removed
+  by: P2 worker.revoke; apply removed the kind or the receiving role
+  when: the value of a revoked worker is no longer shown as state
+  rules:
+  - MSG-14
+  - STA-2
+forbidden:
+- id: sm-msg-x01
+  from: null
+  to: leased
+  expect: rejected
+  rules:
+  - MSG-11
+  - MSG-6
+  - MSG-7
+  - MSG-8
+  why: the object does not appear directly in the state leased
+- id: sm-msg-x02
+  from: null
+  to: acked
+  expect: rejected
+  rules:
+  - DLV-2
+  - MSG-9
+  why: the object does not appear directly in the state acked
+- id: sm-msg-x03
+  from: null
+  to: discarded
+  expect: rejected
+  rules:
+  - FEN-4
+  - HLD-3
+  - MSG-10
+  - MSG-3
+  why: the object does not appear directly in the state discarded
+- id: sm-msg-x04
+  from: null
+  to: dead
+  expect: rejected
+  rules:
+  - MSG-9
+  why: the object does not appear directly in the state dead
+- id: sm-msg-x05
+  from: null
+  to: expired
+  expect: rejected
+  rules:
+  - MSG-12
+  why: the object does not appear directly in the state expired
+- id: sm-msg-x06
+  from: null
+  to: stale
+  expect: rejected
+  rules:
+  - MSG-12
+  why: the object does not appear directly in the state stale
+- id: sm-msg-x07
+  from: null
+  to: replaced
+  expect: rejected
+  rules:
+  - MSG-14
+  - MSG-9
+  why: the object does not appear directly in the state replaced
+- id: sm-msg-x08
+  from: null
+  to: removed
+  expect: rejected
+  rules:
+  - MSG-14
+  - STA-2
+  why: the object does not appear directly in the state removed
+- id: sm-msg-x09
+  from: staged
+  to: staged
+  expect: rejected
+  rules:
+  - MSG-1
+  - MSG-10
+  - MSG-11
+  - MSG-13
+  why: the lifecycle table has no such transition
+- id: sm-msg-x10
+  from: staged
+  to: leased
+  expect: rejected
+  rules:
+  - MSG-11
+  - MSG-6
+  - MSG-7
+  - MSG-8
+  why: the lifecycle table has no such transition
+- id: sm-msg-x11
+  from: staged
+  to: acked
+  expect: rejected
+  rules:
+  - DLV-2
+  - MSG-9
+  why: the lifecycle table has no such transition
+- id: sm-msg-x12
+  from: staged
+  to: dead
+  expect: rejected
+  rules:
+  - MSG-9
+  why: the lifecycle table has no such transition
+- id: sm-msg-x13
+  from: staged
+  to: expired
+  expect: rejected
+  rules:
+  - MSG-12
+  why: the lifecycle table has no such transition
+- id: sm-msg-x14
+  from: staged
+  to: current
+  expect: rejected
+  rules:
+  - MSG-14
+  - STA-1
+  why: the lifecycle table has no such transition
+- id: sm-msg-x15
+  from: staged
+  to: stale
+  expect: rejected
+  rules:
+  - MSG-12
+  why: the lifecycle table has no such transition
+- id: sm-msg-x16
+  from: staged
+  to: replaced
+  expect: rejected
+  rules:
+  - MSG-14
+  - MSG-9
+  why: the lifecycle table has no such transition
+- id: sm-msg-x17
+  from: staged
+  to: removed
+  expect: rejected
+  rules:
+  - MSG-14
+  - STA-2
+  why: the lifecycle table has no such transition
+- id: sm-msg-x18
+  from: staged
+  to: rejected
+  expect: rejected
+  rules:
+  - FEN-4
+  - HLD-3
+  - MSG-10
+  - MSG-15
+  why: the lifecycle table has no such transition
+- id: sm-msg-x19
+  from: queued
+  to: staged
+  expect: rejected
+  rules:
+  - MSG-1
+  - MSG-10
+  - MSG-11
+  - MSG-13
+  why: the lifecycle table has no such transition
+- id: sm-msg-x20
+  from: queued
+  to: queued
+  expect: rejected
+  rules:
+  - DLV-2
+  - FEN-5
+  - MSG-14
+  - MSG-16
+  why: the lifecycle table has no such transition
+- id: sm-msg-x21
+  from: queued
+  to: acked
+  expect: rejected
+  rules:
+  - DLV-2
+  - MSG-9
+  why: the lifecycle table has no such transition
+- id: sm-msg-x22
+  from: queued
+  to: dead
+  expect: rejected
+  rules:
+  - MSG-9
+  why: the lifecycle table has no such transition
+- id: sm-msg-x23
+  from: queued
+  to: current
+  expect: rejected
+  rules:
+  - MSG-14
+  - STA-1
+  why: the lifecycle table has no such transition
+- id: sm-msg-x24
+  from: queued
+  to: stale
+  expect: rejected
+  rules:
+  - MSG-12
+  why: the lifecycle table has no such transition
+- id: sm-msg-x25
+  from: queued
+  to: replaced
+  expect: rejected
+  rules:
+  - MSG-14
+  - MSG-9
+  why: the lifecycle table has no such transition
+- id: sm-msg-x26
+  from: queued
+  to: removed
+  expect: rejected
+  rules:
+  - MSG-14
+  - STA-2
+  why: the lifecycle table has no such transition
+- id: sm-msg-x27
+  from: queued
+  to: rejected
+  expect: rejected
+  rules:
+  - FEN-4
+  - HLD-3
+  - MSG-10
+  - MSG-15
+  why: the lifecycle table has no such transition
+- id: sm-msg-x28
+  from: leased
+  to: staged
+  expect: rejected
+  rules:
+  - MSG-1
+  - MSG-10
+  - MSG-11
+  - MSG-13
+  why: the lifecycle table has no such transition
+- id: sm-msg-x29
+  from: leased
+  to: leased
+  expect: rejected
+  rules:
+  - MSG-11
+  - MSG-6
+  - MSG-7
+  - MSG-8
+  why: the lifecycle table has no such transition
+- id: sm-msg-x30
+  from: leased
+  to: discarded
+  expect: rejected
+  rules:
+  - FEN-4
+  - HLD-3
+  - MSG-10
+  - MSG-3
+  why: the lifecycle table has no such transition
+- id: sm-msg-x31
+  from: leased
+  to: current
+  expect: rejected
+  rules:
+  - MSG-14
+  - STA-1
+  why: the lifecycle table has no such transition
+- id: sm-msg-x32
+  from: leased
+  to: stale
+  expect: rejected
+  rules:
+  - MSG-12
+  why: the lifecycle table has no such transition
+- id: sm-msg-x33
+  from: leased
+  to: replaced
+  expect: rejected
+  rules:
+  - MSG-14
+  - MSG-9
+  why: the lifecycle table has no such transition
+- id: sm-msg-x34
+  from: leased
+  to: removed
+  expect: rejected
+  rules:
+  - MSG-14
+  - STA-2
+  why: the lifecycle table has no such transition
+- id: sm-msg-x35
+  from: leased
+  to: rejected
+  expect: rejected
+  rules:
+  - FEN-4
+  - HLD-3
+  - MSG-10
+  - MSG-15
+  why: the lifecycle table has no such transition
+- id: sm-msg-x36
+  from: acked
+  to: staged
+  expect: rejected
+  rules:
+  - MSG-1
+  - MSG-10
+  - MSG-11
+  - MSG-13
+  why: acked is a terminal state
+- id: sm-msg-x37
+  from: acked
+  to: queued
+  expect: rejected
+  rules:
+  - DLV-2
+  - FEN-5
+  - MSG-14
+  - MSG-16
+  why: acked is a terminal state
+- id: sm-msg-x38
+  from: acked
+  to: leased
+  expect: rejected
+  rules:
+  - MSG-11
+  - MSG-6
+  - MSG-7
+  - MSG-8
+  why: acked is a terminal state
+- id: sm-msg-x39
+  from: acked
+  to: acked
+  expect: rejected
+  rules:
+  - DLV-2
+  - MSG-9
+  why: acked is a terminal state
+- id: sm-msg-x40
+  from: acked
+  to: discarded
+  expect: rejected
+  rules:
+  - FEN-4
+  - HLD-3
+  - MSG-10
+  - MSG-3
+  why: acked is a terminal state
+- id: sm-msg-x41
+  from: acked
+  to: dead
+  expect: rejected
+  rules:
+  - MSG-9
+  why: acked is a terminal state
+- id: sm-msg-x42
+  from: acked
+  to: expired
+  expect: rejected
+  rules:
+  - MSG-12
+  why: acked is a terminal state
+- id: sm-msg-x43
+  from: acked
+  to: current
+  expect: rejected
+  rules:
+  - MSG-14
+  - STA-1
+  why: acked is a terminal state
+- id: sm-msg-x44
+  from: acked
+  to: stale
+  expect: rejected
+  rules:
+  - MSG-12
+  why: acked is a terminal state
+- id: sm-msg-x45
+  from: acked
+  to: replaced
+  expect: rejected
+  rules:
+  - MSG-14
+  - MSG-9
+  why: acked is a terminal state
+- id: sm-msg-x46
+  from: acked
+  to: removed
+  expect: rejected
+  rules:
+  - MSG-14
+  - STA-2
+  why: acked is a terminal state
+- id: sm-msg-x47
+  from: acked
+  to: rejected
+  expect: rejected
+  rules:
+  - FEN-4
+  - HLD-3
+  - MSG-10
+  - MSG-15
+  why: acked is a terminal state
+- id: sm-msg-x48
+  from: discarded
+  to: staged
+  expect: rejected
+  rules:
+  - MSG-1
+  - MSG-10
+  - MSG-11
+  - MSG-13
+  why: discarded is a terminal state
+- id: sm-msg-x49
+  from: discarded
+  to: queued
+  expect: rejected
+  rules:
+  - DLV-2
+  - FEN-5
+  - MSG-14
+  - MSG-16
+  why: discarded is a terminal state
+- id: sm-msg-x50
+  from: discarded
+  to: leased
+  expect: rejected
+  rules:
+  - MSG-11
+  - MSG-6
+  - MSG-7
+  - MSG-8
+  why: discarded is a terminal state
+- id: sm-msg-x51
+  from: discarded
+  to: acked
+  expect: rejected
+  rules:
+  - DLV-2
+  - MSG-9
+  why: discarded is a terminal state
+- id: sm-msg-x52
+  from: discarded
+  to: discarded
+  expect: rejected
+  rules:
+  - FEN-4
+  - HLD-3
+  - MSG-10
+  - MSG-3
+  why: discarded is a terminal state
+- id: sm-msg-x53
+  from: discarded
+  to: dead
+  expect: rejected
+  rules:
+  - MSG-9
+  why: discarded is a terminal state
+- id: sm-msg-x54
+  from: discarded
+  to: expired
+  expect: rejected
+  rules:
+  - MSG-12
+  why: discarded is a terminal state
+- id: sm-msg-x55
+  from: discarded
+  to: current
+  expect: rejected
+  rules:
+  - MSG-14
+  - STA-1
+  why: discarded is a terminal state
+- id: sm-msg-x56
+  from: discarded
+  to: stale
+  expect: rejected
+  rules:
+  - MSG-12
+  why: discarded is a terminal state
+- id: sm-msg-x57
+  from: discarded
+  to: replaced
+  expect: rejected
+  rules:
+  - MSG-14
+  - MSG-9
+  why: discarded is a terminal state
+- id: sm-msg-x58
+  from: discarded
+  to: removed
+  expect: rejected
+  rules:
+  - MSG-14
+  - STA-2
+  why: discarded is a terminal state
+- id: sm-msg-x59
+  from: discarded
+  to: rejected
+  expect: rejected
+  rules:
+  - FEN-4
+  - HLD-3
+  - MSG-10
+  - MSG-15
+  why: discarded is a terminal state
+- id: sm-msg-x60
+  from: dead
+  to: staged
+  expect: rejected
+  rules:
+  - MSG-1
+  - MSG-10
+  - MSG-11
+  - MSG-13
+  why: dead is a terminal state
+- id: sm-msg-x61
+  from: dead
+  to: queued
+  expect: rejected
+  rules:
+  - DLV-2
+  - FEN-5
+  - MSG-14
+  - MSG-16
+  why: dead is a terminal state
+- id: sm-msg-x62
+  from: dead
+  to: leased
+  expect: rejected
+  rules:
+  - MSG-11
+  - MSG-6
+  - MSG-7
+  - MSG-8
+  why: dead is a terminal state
+- id: sm-msg-x63
+  from: dead
+  to: acked
+  expect: rejected
+  rules:
+  - DLV-2
+  - MSG-9
+  why: dead is a terminal state
+- id: sm-msg-x64
+  from: dead
+  to: discarded
+  expect: rejected
+  rules:
+  - FEN-4
+  - HLD-3
+  - MSG-10
+  - MSG-3
+  why: dead is a terminal state
+- id: sm-msg-x65
+  from: dead
+  to: dead
+  expect: rejected
+  rules:
+  - MSG-9
+  why: dead is a terminal state
+- id: sm-msg-x66
+  from: dead
+  to: expired
+  expect: rejected
+  rules:
+  - MSG-12
+  why: dead is a terminal state
+- id: sm-msg-x67
+  from: dead
+  to: current
+  expect: rejected
+  rules:
+  - MSG-14
+  - STA-1
+  why: dead is a terminal state
+- id: sm-msg-x68
+  from: dead
+  to: stale
+  expect: rejected
+  rules:
+  - MSG-12
+  why: dead is a terminal state
+- id: sm-msg-x69
+  from: dead
+  to: replaced
+  expect: rejected
+  rules:
+  - MSG-14
+  - MSG-9
+  why: dead is a terminal state
+- id: sm-msg-x70
+  from: dead
+  to: removed
+  expect: rejected
+  rules:
+  - MSG-14
+  - STA-2
+  why: dead is a terminal state
+- id: sm-msg-x71
+  from: dead
+  to: rejected
+  expect: rejected
+  rules:
+  - FEN-4
+  - HLD-3
+  - MSG-10
+  - MSG-15
+  why: dead is a terminal state
+- id: sm-msg-x72
+  from: expired
+  to: staged
+  expect: rejected
+  rules:
+  - MSG-1
+  - MSG-10
+  - MSG-11
+  - MSG-13
+  why: expired is a terminal state
+- id: sm-msg-x73
+  from: expired
+  to: queued
+  expect: rejected
+  rules:
+  - DLV-2
+  - FEN-5
+  - MSG-14
+  - MSG-16
+  why: expired is a terminal state
+- id: sm-msg-x74
+  from: expired
+  to: leased
+  expect: rejected
+  rules:
+  - MSG-11
+  - MSG-6
+  - MSG-7
+  - MSG-8
+  why: expired is a terminal state
+- id: sm-msg-x75
+  from: expired
+  to: acked
+  expect: rejected
+  rules:
+  - DLV-2
+  - MSG-9
+  why: expired is a terminal state
+- id: sm-msg-x76
+  from: expired
+  to: discarded
+  expect: rejected
+  rules:
+  - FEN-4
+  - HLD-3
+  - MSG-10
+  - MSG-3
+  why: expired is a terminal state
+- id: sm-msg-x77
+  from: expired
+  to: dead
+  expect: rejected
+  rules:
+  - MSG-9
+  why: expired is a terminal state
+- id: sm-msg-x78
+  from: expired
+  to: expired
+  expect: rejected
+  rules:
+  - MSG-12
+  why: expired is a terminal state
+- id: sm-msg-x79
+  from: expired
+  to: current
+  expect: rejected
+  rules:
+  - MSG-14
+  - STA-1
+  why: expired is a terminal state
+- id: sm-msg-x80
+  from: expired
+  to: stale
+  expect: rejected
+  rules:
+  - MSG-12
+  why: expired is a terminal state
+- id: sm-msg-x81
+  from: expired
+  to: replaced
+  expect: rejected
+  rules:
+  - MSG-14
+  - MSG-9
+  why: expired is a terminal state
+- id: sm-msg-x82
+  from: expired
+  to: removed
+  expect: rejected
+  rules:
+  - MSG-14
+  - STA-2
+  why: expired is a terminal state
+- id: sm-msg-x83
+  from: expired
+  to: rejected
+  expect: rejected
+  rules:
+  - FEN-4
+  - HLD-3
+  - MSG-10
+  - MSG-15
+  why: expired is a terminal state
+- id: sm-msg-x84
+  from: current
+  to: staged
+  expect: rejected
+  rules:
+  - MSG-1
+  - MSG-10
+  - MSG-11
+  - MSG-13
+  why: the lifecycle table has no such transition
+- id: sm-msg-x85
+  from: current
+  to: queued
+  expect: rejected
+  rules:
+  - DLV-2
+  - FEN-5
+  - MSG-14
+  - MSG-16
+  why: the lifecycle table has no such transition
+- id: sm-msg-x86
+  from: current
+  to: leased
+  expect: rejected
+  rules:
+  - MSG-11
+  - MSG-6
+  - MSG-7
+  - MSG-8
+  why: the lifecycle table has no such transition
+- id: sm-msg-x87
+  from: current
+  to: acked
+  expect: rejected
+  rules:
+  - DLV-2
+  - MSG-9
+  why: the lifecycle table has no such transition
+- id: sm-msg-x88
+  from: current
+  to: discarded
+  expect: rejected
+  rules:
+  - FEN-4
+  - HLD-3
+  - MSG-10
+  - MSG-3
+  why: the lifecycle table has no such transition
+- id: sm-msg-x89
+  from: current
+  to: dead
+  expect: rejected
+  rules:
+  - MSG-9
+  why: the lifecycle table has no such transition
+- id: sm-msg-x90
+  from: current
+  to: expired
+  expect: rejected
+  rules:
+  - MSG-12
+  why: the lifecycle table has no such transition
+- id: sm-msg-x91
+  from: current
+  to: current
+  expect: rejected
+  rules:
+  - MSG-14
+  - STA-1
+  why: the lifecycle table has no such transition
+- id: sm-msg-x92
+  from: current
+  to: rejected
+  expect: rejected
+  rules:
+  - FEN-4
+  - HLD-3
+  - MSG-10
+  - MSG-15
+  why: the lifecycle table has no such transition
+- id: sm-msg-x93
+  from: stale
+  to: staged
+  expect: rejected
+  rules:
+  - MSG-1
+  - MSG-10
+  - MSG-11
+  - MSG-13
+  why: the lifecycle table has no such transition
+- id: sm-msg-x94
+  from: stale
+  to: queued
+  expect: rejected
+  rules:
+  - DLV-2
+  - FEN-5
+  - MSG-14
+  - MSG-16
+  why: the lifecycle table has no such transition
+- id: sm-msg-x95
+  from: stale
+  to: leased
+  expect: rejected
+  rules:
+  - MSG-11
+  - MSG-6
+  - MSG-7
+  - MSG-8
+  why: the lifecycle table has no such transition
+- id: sm-msg-x96
+  from: stale
+  to: acked
+  expect: rejected
+  rules:
+  - DLV-2
+  - MSG-9
+  why: the lifecycle table has no such transition
+- id: sm-msg-x97
+  from: stale
+  to: discarded
+  expect: rejected
+  rules:
+  - FEN-4
+  - HLD-3
+  - MSG-10
+  - MSG-3
+  why: the lifecycle table has no such transition
+- id: sm-msg-x98
+  from: stale
+  to: dead
+  expect: rejected
+  rules:
+  - MSG-9
+  why: the lifecycle table has no such transition
+- id: sm-msg-x99
+  from: stale
+  to: expired
+  expect: rejected
+  rules:
+  - MSG-12
+  why: the lifecycle table has no such transition
+- id: sm-msg-x100
+  from: stale
+  to: current
+  expect: rejected
+  rules:
+  - MSG-14
+  - STA-1
+  why: the lifecycle table has no such transition
+- id: sm-msg-x101
+  from: stale
+  to: stale
+  expect: rejected
+  rules:
+  - MSG-12
+  why: the lifecycle table has no such transition
+- id: sm-msg-x102
+  from: stale
+  to: rejected
+  expect: rejected
+  rules:
+  - FEN-4
+  - HLD-3
+  - MSG-10
+  - MSG-15
+  why: the lifecycle table has no such transition
+- id: sm-msg-x103
+  from: replaced
+  to: staged
+  expect: rejected
+  rules:
+  - MSG-1
+  - MSG-10
+  - MSG-11
+  - MSG-13
+  why: replaced is a terminal state
+- id: sm-msg-x104
+  from: replaced
+  to: queued
+  expect: rejected
+  rules:
+  - DLV-2
+  - FEN-5
+  - MSG-14
+  - MSG-16
+  why: replaced is a terminal state
+- id: sm-msg-x105
+  from: replaced
+  to: leased
+  expect: rejected
+  rules:
+  - MSG-11
+  - MSG-6
+  - MSG-7
+  - MSG-8
+  why: replaced is a terminal state
+- id: sm-msg-x106
+  from: replaced
+  to: acked
+  expect: rejected
+  rules:
+  - DLV-2
+  - MSG-9
+  why: replaced is a terminal state
+- id: sm-msg-x107
+  from: replaced
+  to: discarded
+  expect: rejected
+  rules:
+  - FEN-4
+  - HLD-3
+  - MSG-10
+  - MSG-3
+  why: replaced is a terminal state
+- id: sm-msg-x108
+  from: replaced
+  to: dead
+  expect: rejected
+  rules:
+  - MSG-9
+  why: replaced is a terminal state
+- id: sm-msg-x109
+  from: replaced
+  to: expired
+  expect: rejected
+  rules:
+  - MSG-12
+  why: replaced is a terminal state
+- id: sm-msg-x110
+  from: replaced
+  to: current
+  expect: rejected
+  rules:
+  - MSG-14
+  - STA-1
+  why: replaced is a terminal state
+- id: sm-msg-x111
+  from: replaced
+  to: stale
+  expect: rejected
+  rules:
+  - MSG-12
+  why: replaced is a terminal state
+- id: sm-msg-x112
+  from: replaced
+  to: replaced
+  expect: rejected
+  rules:
+  - MSG-14
+  - MSG-9
+  why: replaced is a terminal state
+- id: sm-msg-x113
+  from: replaced
+  to: removed
+  expect: rejected
+  rules:
+  - MSG-14
+  - STA-2
+  why: replaced is a terminal state
+- id: sm-msg-x114
+  from: replaced
+  to: rejected
+  expect: rejected
+  rules:
+  - FEN-4
+  - HLD-3
+  - MSG-10
+  - MSG-15
+  why: replaced is a terminal state
+- id: sm-msg-x115
+  from: removed
+  to: staged
+  expect: rejected
+  rules:
+  - MSG-1
+  - MSG-10
+  - MSG-11
+  - MSG-13
+  why: removed is a terminal state
+- id: sm-msg-x116
+  from: removed
+  to: queued
+  expect: rejected
+  rules:
+  - DLV-2
+  - FEN-5
+  - MSG-14
+  - MSG-16
+  why: removed is a terminal state
+- id: sm-msg-x117
+  from: removed
+  to: leased
+  expect: rejected
+  rules:
+  - MSG-11
+  - MSG-6
+  - MSG-7
+  - MSG-8
+  why: removed is a terminal state
+- id: sm-msg-x118
+  from: removed
+  to: acked
+  expect: rejected
+  rules:
+  - DLV-2
+  - MSG-9
+  why: removed is a terminal state
+- id: sm-msg-x119
+  from: removed
+  to: discarded
+  expect: rejected
+  rules:
+  - FEN-4
+  - HLD-3
+  - MSG-10
+  - MSG-3
+  why: removed is a terminal state
+- id: sm-msg-x120
+  from: removed
+  to: dead
+  expect: rejected
+  rules:
+  - MSG-9
+  why: removed is a terminal state
+- id: sm-msg-x121
+  from: removed
+  to: expired
+  expect: rejected
+  rules:
+  - MSG-12
+  why: removed is a terminal state
+- id: sm-msg-x122
+  from: removed
+  to: current
+  expect: rejected
+  rules:
+  - MSG-14
+  - STA-1
+  why: removed is a terminal state
+- id: sm-msg-x123
+  from: removed
+  to: stale
+  expect: rejected
+  rules:
+  - MSG-12
+  why: removed is a terminal state
+- id: sm-msg-x124
+  from: removed
+  to: replaced
+  expect: rejected
+  rules:
+  - MSG-14
+  - MSG-9
+  why: removed is a terminal state
+- id: sm-msg-x125
+  from: removed
+  to: removed
+  expect: rejected
+  rules:
+  - MSG-14
+  - STA-2
+  why: removed is a terminal state
+- id: sm-msg-x126
+  from: removed
+  to: rejected
+  expect: rejected
+  rules:
+  - FEN-4
+  - HLD-3
+  - MSG-10
+  - MSG-15
+  why: removed is a terminal state
+- id: sm-msg-x127
+  from: rejected
+  to: staged
+  expect: rejected
+  rules:
+  - MSG-1
+  - MSG-10
+  - MSG-11
+  - MSG-13
+  why: rejected is a terminal state
+- id: sm-msg-x128
+  from: rejected
+  to: queued
+  expect: rejected
+  rules:
+  - DLV-2
+  - FEN-5
+  - MSG-14
+  - MSG-16
+  why: rejected is a terminal state
+- id: sm-msg-x129
+  from: rejected
+  to: leased
+  expect: rejected
+  rules:
+  - MSG-11
+  - MSG-6
+  - MSG-7
+  - MSG-8
+  why: rejected is a terminal state
+- id: sm-msg-x130
+  from: rejected
+  to: acked
+  expect: rejected
+  rules:
+  - DLV-2
+  - MSG-9
+  why: rejected is a terminal state
+- id: sm-msg-x131
+  from: rejected
+  to: discarded
+  expect: rejected
+  rules:
+  - FEN-4
+  - HLD-3
+  - MSG-10
+  - MSG-3
+  why: rejected is a terminal state
+- id: sm-msg-x132
+  from: rejected
+  to: dead
+  expect: rejected
+  rules:
+  - MSG-9
+  why: rejected is a terminal state
+- id: sm-msg-x133
+  from: rejected
+  to: expired
+  expect: rejected
+  rules:
+  - MSG-12
+  why: rejected is a terminal state
+- id: sm-msg-x134
+  from: rejected
+  to: current
+  expect: rejected
+  rules:
+  - MSG-14
+  - STA-1
+  why: rejected is a terminal state
+- id: sm-msg-x135
+  from: rejected
+  to: stale
+  expect: rejected
+  rules:
+  - MSG-12
+  why: rejected is a terminal state
+- id: sm-msg-x136
+  from: rejected
+  to: replaced
+  expect: rejected
+  rules:
+  - MSG-14
+  - MSG-9
+  why: rejected is a terminal state
+- id: sm-msg-x137
+  from: rejected
+  to: removed
+  expect: rejected
+  rules:
+  - MSG-14
+  - STA-2
+  why: rejected is a terminal state
+- id: sm-msg-x138
+  from: rejected
+  to: rejected
+  expect: rejected
+  rules:
+  - FEN-4
+  - HLD-3
+  - MSG-10
+  - MSG-15
+  why: rejected is a terminal state

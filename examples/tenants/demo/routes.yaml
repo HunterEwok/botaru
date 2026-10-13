@@ -1,0 +1,18 @@
+# Routes of tenant demo: what the core does on an event or at the end of a task.
+apiVersion: botaru/v1alpha1
+kind: Route
+metadata: {name: ctd-qc-finished, tenant: demo}
+spec:
+  on: {event: run.finished.v1, subject: ctd-stations}
+  task: {type: pipeline.ctd_qc.report.v1}
+  deliver_to:
+    - approval_initiator: {action: pipeline.ctd_qc}
+---
+# Flow 6, event variant: pipeline-reader explains a failed run to everyone in group runs.
+apiVersion: botaru/v1alpha1
+kind: Route
+metadata: {name: lab-run-failed, tenant: demo}
+spec:
+  on: {event: run.finished.v1, subject: lab-runs, match: {outcome: failed}}
+  task: {type: pipeline.status.v1, goal: "Explain why the run failed."}
+  deliver_to: ["group:runs"]

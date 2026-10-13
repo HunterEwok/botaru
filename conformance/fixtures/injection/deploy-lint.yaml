@@ -1,0 +1,107 @@
+# Deployment topology lint: production machine and sandbox (DEP-1), runtime without keys (DEP-5),
+# plugin without inbound paths (DEP-6). The deployment description is deploy/farm.yaml.
+id: fx-injection-deploy-lint
+rules: [DEP-1, DEP-5, DEP-6]
+description: Each row is a fragment of the deployment description and the lint outcome at farmctl apply.
+cases:
+- id: dep-1-01
+  rules: [DEP-1]
+  given:
+    deploy_yaml:
+      hosts:
+        web1:
+          runs: [toolhost-host, toolhost-sandbox]
+  expect: {result: rejected, stage: lint, note: sandbox on a production machine}
+- id: dep-1-02
+  rules: [DEP-1]
+  given:
+    deploy_yaml:
+      hosts:
+        sbx1:
+          runs: [toolhost-sandbox]
+          volumes: [backup]
+  expect: {result: rejected, stage: lint, note: backups are stored on the sandbox VM}
+- id: dep-1-03
+  rules: [DEP-1]
+  given:
+    deploy_yaml:
+      hosts:
+        sbx1:
+          runs: [toolhost-sandbox]
+          network: [p1]
+  expect: {result: ok}
+- id: dep-1-04
+  rules: [DEP-1]
+  given:
+    deploy_yaml:
+      sandbox:
+        containers: {network: bridge}
+  expect: {result: rejected, stage: lint, note: sandbox task container with network}
+- id: dep-5-01
+  rules: [DEP-5]
+  given:
+    deploy_yaml:
+      runtime:
+        secrets: [provider-a]
+  expect: {result: rejected, stage: lint, note: provider key at the runtime}
+- id: dep-5-02
+  rules: [DEP-5]
+  given:
+    deploy_yaml:
+      runtime:
+        secrets: [worker-token]
+  expect: {result: rejected, stage: lint, note: 'the E4 adapter holds the worker token, not the runtime'}
+- id: dep-5-03
+  rules: [DEP-5]
+  given:
+    deploy_yaml:
+      runtime:
+        volumes: [/var/run/docker.sock]
+  expect: {result: rejected, stage: lint}
+- id: dep-5-04
+  rules: [DEP-5]
+  given:
+    deploy_yaml:
+      runtime:
+        network: [p3, p4, adapter, runtime-2]
+  expect: {result: rejected, stage: lint, note: path to another runtime}
+- id: dep-5-05
+  rules: [DEP-5]
+  given:
+    deploy_yaml:
+      runtime:
+        config: {mode: rw}
+  expect: {result: rejected, stage: lint}
+- id: dep-5-06
+  rules: [DEP-5]
+  given:
+    deploy_yaml:
+      runtime:
+        network: [p3, p4, adapter]
+        config: {mode: ro}
+  expect: {result: ok}
+- id: dep-6-01
+  rules: [DEP-6]
+  given:
+    deploy_yaml:
+      toolhost:
+        ports: [8080]
+  expect: {result: rejected, stage: lint, note: inbound toolhost port}
+- id: dep-6-02
+  rules: [DEP-6]
+  given:
+    deploy_yaml:
+      plugin: {image: 'registry.example.org/logs:1.2'}
+  expect: {result: rejected, stage: lint, note: image not pinned by digest}
+- id: dep-6-03
+  rules: [DEP-6]
+  given:
+    deploy_yaml:
+      plugin: {listen: '0.0.0.0:9000', auth: none}
+  expect: {result: rejected, stage: lint}
+- id: dep-6-04
+  rules: [DEP-6]
+  given:
+    deploy_yaml:
+      plugin: {listen: 'unix:/run/botaru/logs.sock', image: 'registry.example.org/logs@sha256:<digest>'}
+  expect: {result: ok}

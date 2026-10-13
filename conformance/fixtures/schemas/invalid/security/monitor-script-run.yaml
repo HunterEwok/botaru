@@ -1,0 +1,12 @@
+schema: urn:botaru:schema:monitor-script-run:1
+rules:
+- INJ-16
+description: scriptid as a number, a script name from the monitoring API with spaces and a command in an argument are rejected.
+cases:
+- resource: web1
+  script: 41
+- resource: web1
+  script: Clear nginx cache
+- resource: web1
+  script: nginx-cache-clear
+  command: rm -rf /var/cache/nginx

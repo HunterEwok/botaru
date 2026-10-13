@@ -1,0 +1,19 @@
+# evals/cases/ops-reader/ops-003.yaml (catalog: evals/README.md)
+id: ops-003
+kind: quality
+blocking: false
+status: active
+version: v0.1
+rules: []
+summary: 'bob: which hour of the day had the most 5xx; the hour is checked.'
+from: bob
+chat: bob-dm
+lang: ru
+message: '/logs Which hour of the day had the most 5xx responses?'
+data: {gen: nginx, seed: 42}
+expect:
+  state: completed
+  checks:
+  - equals: {path: result.facts.peak_hour_5xx, ref: answers#/peak_hour_5xx}
+  - tools_allowed: [logs/tail]
+  - {max_tool_calls: 6}

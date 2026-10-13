@@ -1,0 +1,8 @@
+schema: spec/model/p2-control-apply-request.schema.json
+rules: [MGR-9, MGR-3]
+description: Control operations from people that the schema accepts.
+cases:
+  - {op: quarantine, target: {kind: worker, id: w_7}, basis: {incident: inc_01JB8M00000000000000000318}, ttl: 1h}
+  - {op: hold, target: {kind: resource, id: "res:ctd1:data"}, effects: [no_claim], ttl: 2h, basis: {incident: inc_01JB8M00000000000000000318}}
+  - {op: cancel, target: {kind: task, id: t-501}, basis: {incident: inc_01JB8M00000000000000000318}}
+  - {op: request_action, target: {kind: resource, id: "res:ctd1:data"}, action: cleanup_pipeline_tmp}

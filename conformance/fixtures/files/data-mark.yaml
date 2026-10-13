@@ -1,0 +1,99 @@
+# Fixture of the file mark (ART-3). The data are for training.
+id: fx-art-03
+rules: [ART-3, PRM-9, DLV-6]
+description: The data_mark of a produced file is not below the mark of the producing task. The data_mark of an uploaded file is not
+  below the tenant's attachment class (internal by default) and not above the class allowed to the uploader. P1 file.get
+  and delivery check the file mark against the recipient.
+given:
+  data_classes_order: [public, internal, confidential, restricted]
+  tenant_attachments_class: internal
+  principals:
+  - {id: 'human:alice', data_ceiling: confidential}
+  - {id: 'human:bob', data_ceiling: internal}
+  receivers:
+  - {id: 'chat:demo-ops', data_ceiling: internal}
+  - {id: 'sink:archive', data_ceiling: confidential}
+  tenant: demo
+cases:
+- id: fx-art-03-a
+  rules: [ART-3]
+  description: A produced file inherits the task mark if it is higher.
+  steps:
+  - call:
+      port: P1
+      op: file.put
+      request: {media_type: text/csv, data_mark: internal}
+    by: attempt:data.describe.v1
+    context: {task_data_mark: confidential, origin: produced}
+  expect:
+    result: ok
+    record: {data_mark: confidential}
+- id: fx-art-03-b
+  rules: [ART-3]
+  description: An attachment without a mark gets the tenant's attachment class.
+  steps:
+  - call:
+      port: P1
+      op: file.put
+      request: {media_type: text/csv}
+    by: human:bob
+    context: {origin: upload}
+  expect:
+    result: ok
+    record: {data_mark: internal}
+- id: fx-art-03-c
+  rules: [ART-3]
+  description: An attachment mark below the tenant's attachment class is raised to it.
+  steps:
+  - call:
+      port: P1
+      op: file.put
+      request: {media_type: text/csv, data_mark: public}
+    by: human:bob
+    context: {origin: upload}
+  expect:
+    result: ok
+    record: {data_mark: internal}
+- id: fx-art-03-d
+  rules: [ART-3]
+  description: The uploader does not set a mark above their class.
+  steps:
+  - call:
+      port: P1
+      op: file.put
+      request: {media_type: text/csv, data_mark: confidential}
+    by: human:bob
+    context: {origin: upload}
+  expect: {result: denied, reason: forbidden}
+- id: fx-art-03-e
+  rules: [ART-3, PRM-9]
+  description: Giving out a file above the recipient's ceiling is rejected.
+  given:
+    given_file:
+      data_mark: confidential
+      origin: upload
+      by: human:alice
+      file_ref: file:markEAAAAAAAAAAAAAAAAA
+  steps:
+  - call:
+      port: P1
+      op: file.get
+      request: {file_ref: 'file:markEAAAAAAAAAAAAAAAAA'}
+    context: {for: 'chat:demo-ops'}
+  expect: {result: denied, reason: forbidden, bytes_sent: 0}
+- id: fx-art-03-f
+  rules: [ART-3, DLV-6]
+  description: Delivery to a sink with a ceiling not below the mark passes.
+  given:
+    given_file:
+      data_mark: confidential
+      origin: upload
+      by: human:alice
+      file_ref: file:markFAAAAAAAAAAAAAAAAA
+  steps:
+  - call:
+      port: P1
+      op: file.get
+      request: {file_ref: 'file:markFAAAAAAAAAAAAAAAAA'}
+    context: {for: 'sink:archive', under_delivery_lease: true}
+  expect: {result: ok}

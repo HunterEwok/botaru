@@ -1,0 +1,66 @@
+registry: formats
+version: 1
+description: >-
+  Closed string formats. A string leaf of a schema from a manifest (params_schema,
+  result_schema, an action schema, tool arguments) passes only with a format
+  from this registry; only the skeleton sets a regular expression (INJ-1). A new
+  format is an edit of the registry with review, not a manifest field. The max_length field is
+  the length ceiling of the value.
+source: docs/task-language.md
+entries:
+  - id: datetime
+    since: v0.1
+    meaning: a UTC instant
+    pattern: '^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\.[0-9]{1,6})?Z$'
+    max_length: 32
+    example: '2026-10-04T16:00:00Z'
+    rules: [INJ-1, TIM-1]
+  - id: duration
+    since: v0.1
+    meaning: a duration with a unit s, m, h or d
+    pattern: '^[1-9][0-9]{0,5}(s|m|h|d)$'
+    max_length: 8
+    example: 15m
+    rules: [INJ-1]
+  - id: id
+    since: v0.1
+    meaning: a tenant catalog id and a manifest object name; lowercase Latin letters, digits, hyphen
+    pattern: '^[a-z][a-z0-9-]{0,62}$'
+    max_length: 63
+    example: st-05
+    rules: [INJ-1]
+  - id: year_month
+    since: v0.1
+    meaning: year and month
+    pattern: '^[0-9]{4}-(0[1-9]|1[0-2])$'
+    max_length: 7
+    example: '2026-09'
+    rules: [INJ-1]
+  - id: schedule_slot
+    since: v0.1
+    meaning: a schedule slot, a UTC instant to the minute; part of the key of the slot's task
+    pattern: '^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}Z$'
+    max_length: 17
+    example: '2026-10-25T00:30Z'
+    rules: [INJ-1, TIM-3]
+  - id: tz
+    since: v0.1
+    meaning: a time zone name from the time zone database, only for a tenant and a schedule
+    pattern: '^[A-Za-z][A-Za-z0-9_+-]*(/[A-Za-z0-9_+-]+){0,2}$'
+    max_length: 64
+    example: Europe/Berlin
+    rules: [INJ-1, TIM-4]
+  - id: type_name
+    since: v0.1
+    meaning: name of a task type, event or message type with the version .vN
+    pattern: '^[a-z][a-z0-9_]*(\.[a-z0-9_]+)*\.v[1-9][0-9]*$'
+    max_length: 120
+    example: ops.investigate.v1
+    rules: [INJ-1, MAN-3]
+  - id: search_query
+    since: v0.2
+    meaning: a search string over a knowledge corpus without control characters
+    pattern: '^[^\x00-\x1f\x7f]{1,256}$'
+    max_length: 256
+    example: sensor calibration
+    rules: [INJ-1]

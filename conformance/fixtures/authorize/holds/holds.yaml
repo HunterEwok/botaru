@@ -1,0 +1,138 @@
+id: fx-authorize-holds-holds
+rules: [HLD-1, HLD-2]
+description: 'A hold as a record and who sets it: whose tenant record a hold becomes, who may set and release
+  a hold. The action of holds on checks and work (effects) is described once, in effects.yaml of this folder. The hold reasons
+  are taken from the examples in docs/operations.md and docs/security-model.md.'
+given:
+  holds:
+  - id: h_01JB8M0000000000000000000A
+    tenant: demo
+    scope: {kind: tasktype, tenant: demo, name: report.daily.v1}
+    effects: [no_enqueue, no_claim, cancel_running]
+    reason: runaway_loop
+    until: '2026-10-07T18:00:00Z'
+    author: human:bob
+    author_kind: tenant_admin
+  - id: h_01JB8M0000000000000000000B
+    tenant: demo
+    scope: {kind: plugin, tenant: demo, name: logs}
+    effects: [no_tool]
+    reason: suspected_vulnerability
+    until: null
+    author: human:bob
+    author_kind: tenant_admin
+  - id: h_01JB8M0000000000000000000C
+    tenant: demo
+    scope: {kind: worker, tenant: demo, name: w_01JB8M0000000000000000000W}
+    effects: [no_claim, cancel_running]
+    reason: compromised
+    until: null
+    author: human:carol
+    author_kind: operator
+  - id: h_01JB8M0000000000000000000D
+    tenant: farm
+    scope: {kind: farm}
+    effects: [no_action, no_tool]
+    reason: compromised
+    until: null
+    author: human:carol
+    author_kind: operator
+cases:
+- id: hld-fx-07
+  rules: [HLD-1]
+  description: A hold of scope farm is a record of the service tenant farm; a hold of another scope is a record of the tenant
+    of its scope.
+  expect:
+    h_01JB8M0000000000000000000D: {record_tenant: farm}
+    h_01JB8M0000000000000000000B: {record_tenant: demo}
+- id: hld-fx-09
+  rules: [HLD-2]
+  description: A model, a route and a schedule do not set or release a hold.
+  given: {tenant: demo}
+  cases:
+  - steps:
+    - call:
+        port: P2
+        op: hold.set
+        request:
+          scope: &id001 {kind: role, tenant: demo, name: ops-reader}
+          effects: &id002 [no_claim]
+          reason: manual
+          until: null
+      by: model
+    expect: {result: denied, reason: forbidden}
+  - steps:
+    - call:
+        port: P2
+        op: hold.set
+        request:
+          scope: *id001
+          effects: *id002
+          reason: manual
+          until: null
+      by: route
+    expect: {result: denied, reason: forbidden}
+  - steps:
+    - call:
+        port: P2
+        op: hold.release
+        request: {id: h_1}
+      by: schedule
+    expect: {result: denied, reason: forbidden}
+    given:
+      holds:
+      - id: h_1
+        scope: *id001
+        effects: [no_claim]
+        reason: manual
+        author: human:bob
+- id: hld-fx-10
+  rules: [HLD-2]
+  description: A manager seat holder with an old epoch is refused a hold through control.apply.
+  given:
+    tenant: demo
+    seat: {holder: bot_01JB8M0000000000000000000S, epoch: 4, current_epoch: 5}
+    op:
+      control.apply: hold
+      scope: {kind: worker, tenant: demo, name: w_01JB8M0000000000000000000W}
+  expect: {result: denied, hold_written: false}
+- id: hld-fx-11
+  rules: [HLD-2]
+  description: A tenant person with hold.set:plugin sets a hold only on scopes of their own tenant.
+  given:
+    tenant: demo
+    grants: ['hold.set:plugin']
+  cases:
+  - steps:
+    - call:
+        port: P2
+        op: hold.set
+        request:
+          scope: {kind: plugin, tenant: demo, name: logs}
+          effects: [no_tool]
+          reason: manual
+          until: null
+      by: human:bob
+    expect: {result: ok}
+  - steps:
+    - call:
+        port: P2
+        op: hold.set
+        request:
+          scope: {kind: plugin, tenant: demo2, name: logs}
+          effects: [no_tool]
+          reason: manual
+          until: null
+      by: human:bob
+    expect: {result: denied, reason: forbidden}
+  - steps:
+    - call:
+        port: P2
+        op: hold.set
+        request:
+          scope: {kind: farm}
+          effects: [no_tool]
+          reason: manual
+          until: null
+      by: human:bob
+    expect: {result: denied, reason: operator_only}

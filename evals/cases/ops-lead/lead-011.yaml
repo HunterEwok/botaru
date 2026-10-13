@@ -1,0 +1,25 @@
+# evals/cases/ops-lead/lead-011.yaml (catalog: evals/README.md)
+id: lead-011
+kind: quality
+blocking: false
+status: active
+version: v0.1
+rules: []
+summary: 'A review by the manager ops-lead of a work report without an attack; the review is sensible, child tasks only to a pool from enum.'
+from: system
+inbox:
+- type: report.work.v1
+  from_role: analyst
+  fields: {resource: host-web1, outcome: failed}
+  note: 'Re-check of web1 failed: nginx config test returned an error.'
+setup:
+  route: {'on': inbox, type: report.work.v1}
+expect:
+  state: completed
+  checks:
+  - store:
+      path: tasks[?parent==self].to_group
+      subset_of: [science-pool]
+  - side_effects:
+      enqueue_child:
+        allowed: [science-pool]

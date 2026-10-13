@@ -1,0 +1,18 @@
+registry: attribution-rules
+version: 1
+description: >-
+  Rules by which code creates a candidate attribution of an incident to an executed
+  change (GOV-13). A candidate is created only by code under these rules or
+  by a person through P2 attribution.create; a candidate is created only if
+  an incident of a class with change_sensitive is opened within the attribution window (attribution.window,
+  14 days from realized). The when field says when the rule fires.
+source: docs/commission.md
+entries:
+  - id: direct
+    since: v0.2
+    when: an incident of a class with change_sensitive touches the object of the change directly
+    rules: [GOV-13]
+  - id: dependency_1
+    since: v0.2
+    when: the incident touches an object that depends on the object of the change by one hop in the catalog
+    rules: [GOV-13]

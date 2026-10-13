@@ -1,0 +1,25 @@
+schema: urn:botaru:schema:deletion-request:1
+rules: [RET-7]
+description: A bot identity id scope without the reason bot_retired, outcome not from the list, reason not from the list.
+cases:
+- id: er_01JB8M0000000000000000000E
+  scope: {tenant: demo, bot: bot_01JB8M0000000000000000000B}
+  reason: manual
+  author: {kind: principal, id: 'human:p_01JB3Q7N0M2V8XK4DGT5RZP9WC'}
+  created_at: '2026-10-12T09:00:00Z'
+  state: running
+  results: {c3_sessions: done, c4_memory: done, c1_files: done, e2_archive: done, e1_channel: failed}
+- id: er_01JB8M0000000000000000000E
+  scope: {tenant: demo, subject: 'human:p_01JB3Q7N0M2V8XK4DGT5RZP9WC'}
+  reason: subject_request
+  author: {kind: principal, id: 'human:p_01JB3Q7N0M2V8XK4DGT5RZP9WC'}
+  created_at: '2026-10-12T09:00:00Z'
+  state: running
+  results: {c3_sessions: done, c4_memory: partial, c1_files: done, e2_archive: done, e1_channel: failed}
+- id: er_01JB8M0000000000000000000E
+  scope: {tenant: demo, subject: 'human:p_01JB3Q7N0M2V8XK4DGT5RZP9WC'}
+  reason: cleanup
+  author: {kind: principal, id: 'human:p_01JB3Q7N0M2V8XK4DGT5RZP9WC'}
+  created_at: '2026-10-12T09:00:00Z'
+  state: running
+  results: {c3_sessions: done, c4_memory: done, c1_files: done, e2_archive: done, e1_channel: failed}

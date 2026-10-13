@@ -1,0 +1,23 @@
+schema: spec/manifests/group.schema.json
+rules:
+- MAN-1
+description: 'Group manifest specs that the kind schema rejects: extra field, missing required field, value outside the
+  closed list or format.'
+cases:
+- caps:
+  - task:hello.greet.v1
+  data:
+  - summary
+  unexpected_field: true
+- data:
+  - summary
+- caps:
+  - task:hello.greet.v1
+  data:
+  - summary
+  inherits:
+  - Admin
+- caps:
+  - TASK:ops.summary.v1
+  data:
+  - summary

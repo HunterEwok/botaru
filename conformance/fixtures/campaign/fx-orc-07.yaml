@@ -1,0 +1,92 @@
+id: fx-orc-07
+rules: [ORC-6, PRM-6, MSG-7]
+description: Permissions are not laundered through a manager. A manager role with a broad may_enqueue does not give an initiator from the group
+  user raw logs. As in the docs/coordination.md example, alice acts as a person with only the group user. alice enqueues
+  ops.investigate.v1 through ops-lead and gets rejected(no_group_cap). The initiator's permissions are rechecked at the release
+  of every item.
+given:
+  tenant: demo
+  principals:
+    alice:
+      groups: [user]
+      caps: ['task:ops.summary.v1']
+    bob:
+      groups: [ops]
+  roles:
+    ops-lead:
+      may_enqueue: [ops.summary.v1, ops.investigate.v1]
+expect:
+  record_has:
+    enqueued_by: [role, worker, attempt]
+cases:
+- description: a child on behalf of alice
+  given:
+    attempt:
+      role: ops-lead
+      initiators: ['human:alice']
+  steps:
+  - call:
+      port: P1
+      op: enqueue
+      request:
+        body: {type: ops.investigate.v1, goal: training task ops.investigate.v1}
+        idempotency_key: fx-orc-07-1
+    by: attempt
+  expect: {result: rejected, reason: no_group_cap}
+- description: a campaign item on behalf of alice
+  given:
+    attempt:
+      role: ops-lead
+      initiators: ['human:alice']
+  steps:
+  - call:
+      port: P1
+      op: campaign.propose
+      request:
+        template: {kind: task, type: ops.investigate.v1}
+        items:
+          resources: [web1, db1]
+  expect: {result: rejected, reason: no_group_cap}
+- description: several initiators
+  given:
+    attempt:
+      role: ops-lead
+      initiators: [system, 'human:alice', 'human:bob']
+  steps:
+  - call:
+      port: P1
+      op: enqueue
+      request:
+        body: {type: ops.investigate.v1, goal: training task ops.investigate.v1}
+        idempotency_key: fx-orc-07-2
+    by: attempt
+  expect: {result: rejected, reason: no_group_cap}
+- description: the permission is removed in the middle of a campaign
+  given:
+    campaign:
+      initiator: human:bob
+      state: running
+      template: {kind: task, type: ops.investigate.v1}
+      items: [web1, db1, ctd1]
+      released: [1]
+  steps:
+  - call:
+      port: P2
+      op: ungrant
+      request: {op: ungrant, subject: 'human:p_01JB3Q7N0M2V8XK4DGT5RZP9WA', group: ops}
+    by: operator
+    note: the group ops gave bob the permission task:ops.investigate.v1
+  expect:
+    campaign: stopping
+    stop_reason: rights_revoked
+    released_after_revoke: []
+- description: the initiator is disabled
+  given:
+    campaign: {initiator: 'human:bob', state: running}
+  steps:
+  - call:
+      port: P2
+      op: principal.off
+      request: {op: principal.off, subject: 'human:p_01JB3Q7N0M2V8XK4DGT5RZP9WA'}
+    by: operator
+  expect: {campaign: stopping, stop_reason: person_inactive}

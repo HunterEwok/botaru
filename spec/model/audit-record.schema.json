@@ -1,0 +1,323 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:botaru:schema:audit-record:1",
+  "title": "Audit record",
+  "description": "Audit log record: who, through what, which command and on what, before and after, reason, git revision, outcome and hash chain (AUD-6). Metadata only, without texts, sandbox run arguments or content (AUD-2); argv is stored as a hash and a length. The log is append-only (AUD-3); deleting a period leaves one period_deleted record with the bounds, the count and the last hash. A service_grant record replaces the approval number for actions without a card (APR-17, APR-18). A restore record in the farm chain opens a new epoch after a restore from backup; a tenant's seq decreases only together with a growing epoch (AUD-6, RET-6, D-86 (7)).",
+  "x-botaru-direction": "record",
+  "x-botaru-retention": "metadata",
+  "x-botaru-rules": [
+    "AUD-1",
+    "AUD-2",
+    "AUD-3",
+    "AUD-5",
+    "AUD-6",
+    "APR-18",
+    "RET-6"
+  ],
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "seq",
+    "at",
+    "tenant",
+    "kind",
+    "actor",
+    "ok",
+    "prev_hash",
+    "hash"
+  ],
+  "properties": {
+    "seq": {
+      "description": "Record number in the tenant chain.",
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 9007199254740991
+    },
+    "at": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/datetime"
+    },
+    "tenant": {
+      "description": "Tenant of the record; for farm and seat stops this is the service tenant farm.",
+      "$ref": "urn:botaru:schema:common:1#/$defs/tenant_name"
+    },
+    "kind": {
+      "description": "Record kind.",
+      "enum": [
+        "command",
+        "decision",
+        "authorize",
+        "service_grant",
+        "read",
+        "period_deleted",
+        "restore"
+      ]
+    },
+    "actor": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "principal",
+        "via"
+      ],
+      "properties": {
+        "principal": {
+          "$ref": "urn:botaru:schema:common:1#/$defs/principal_ref"
+        },
+        "via": {
+          "enum": [
+            "bot",
+            "farmctl",
+            "system",
+            "core",
+            "channel"
+          ]
+        },
+        "role": {
+          "$ref": "urn:botaru:schema:common:1#/$defs/name"
+        },
+        "task": {
+          "$ref": "urn:botaru:schema:common:1#/$defs/object_id"
+        }
+      }
+    },
+    "command": {
+      "description": "Command or operation, for example grant, hold.set, decide, service/control.",
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_./-]{0,79}$",
+      "maxLength": 80
+    },
+    "target": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind"
+      ],
+      "properties": {
+        "kind": {
+          "$ref": "urn:botaru:schema:common:1#/$defs/dotted_name"
+        },
+        "id": {
+          "description": "Target id: object id, principal reference, name or membership of the form human:p_<ULID>/<group>. Email, identities and messenger ids do not go here (D-85).",
+          "anyOf": [
+            {
+              "$ref": "urn:botaru:schema:common:1#/$defs/object_id"
+            },
+            {
+              "$ref": "urn:botaru:schema:common:1#/$defs/principal_ref"
+            },
+            {
+              "$ref": "urn:botaru:schema:common:1#/$defs/name"
+            },
+            {
+              "$ref": "urn:botaru:schema:common:1#/$defs/dotted_name"
+            },
+            {
+              "type": "string",
+              "pattern": "^human:p_[0-9A-HJKMNP-TV-Z]{26}/[a-z][a-z0-9-]{0,62}$",
+              "maxLength": 100
+            }
+          ]
+        }
+      }
+    },
+    "before": {
+      "description": "State before: codes and ids only.",
+      "type": "object",
+      "maxProperties": 32
+    },
+    "after": {
+      "description": "State after: codes and ids only.",
+      "type": "object",
+      "maxProperties": 32
+    },
+    "reason": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/reason"
+    },
+    "git_rev": {
+      "description": "Git revision that was applied.",
+      "type": "string",
+      "pattern": "^[0-9a-f]{7,64}$",
+      "maxLength": 64
+    },
+    "ok": {
+      "type": "boolean"
+    },
+    "flags": {
+      "description": "Record flags.",
+      "type": "array",
+      "items": {
+        "enum": [
+          "dry_run",
+          "cached",
+          "raw_logs_issued",
+          "tenant_mismatch",
+          "secret_found"
+        ]
+      },
+      "maxItems": 8,
+      "uniqueItems": true
+    },
+    "personal_seen": {
+      "description": "Sources of the \"personal data seen\" flag, without content (AUD-5).",
+      "type": "array",
+      "items": {
+        "enum": [
+          "masking",
+          "human_file",
+          "other_person",
+          "forward",
+          "quote",
+          "declared",
+          "inherited"
+        ]
+      },
+      "maxItems": 7,
+      "uniqueItems": true
+    },
+    "personal_subjects": {
+      "description": "Ids of principals whose data is in the object; only added to (AUD-5).",
+      "type": "array",
+      "items": {
+        "$ref": "urn:botaru:schema:common:1#/$defs/principal_ref"
+      },
+      "maxItems": 64,
+      "uniqueItems": true
+    },
+    "service_grant": {
+      "description": "Block of the service_grant record: who (bot, role, task or person and chat), what (service and verb, node and script or routine action), argument snapshot as a hash, why and outcome. The record number is the grant_id (FEN-7).",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "author",
+        "args_hash"
+      ],
+      "properties": {
+        "author": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "principal"
+          ],
+          "properties": {
+            "kind": {
+              "enum": [
+                "bot",
+                "human"
+              ]
+            },
+            "principal": {
+              "$ref": "urn:botaru:schema:common:1#/$defs/principal_ref"
+            },
+            "role": {
+              "$ref": "urn:botaru:schema:common:1#/$defs/name"
+            },
+            "task": {
+              "$ref": "urn:botaru:schema:common:1#/$defs/object_id"
+            },
+            "chat": {
+              "description": "Chat binding id (ChatBinding), not the messenger id: in Telegram the id of a direct chat equals the person's id (D-85).",
+              "$ref": "urn:botaru:schema:common:1#/$defs/object_id"
+            }
+          }
+        },
+        "service": {
+          "$ref": "urn:botaru:schema:common:1#/$defs/name"
+        },
+        "verb": {
+          "$ref": "urn:botaru:schema:common:1#/$defs/service_verb"
+        },
+        "host": {
+          "$ref": "urn:botaru:schema:common:1#/$defs/name"
+        },
+        "script": {
+          "$ref": "urn:botaru:schema:common:1#/$defs/name"
+        },
+        "action": {
+          "description": "Action of the routine pipeline (risk routine).",
+          "$ref": "urn:botaru:schema:common:1#/$defs/dotted_name"
+        },
+        "args_hash": {
+          "description": "SHA-256 hash of the form sha256:<64 hex digits>.",
+          "$ref": "urn:botaru:schema:common:1#/$defs/hash"
+        },
+        "task_reason": {
+          "description": "Reason code of the task under which the action runs.",
+          "$ref": "urn:botaru:schema:common:1#/$defs/reason"
+        },
+        "outcome": {
+          "enum": [
+            "done",
+            "failed",
+            "exec_unknown",
+            "service_rate_limited",
+            "held",
+            "resource_busy"
+          ]
+        }
+      }
+    },
+    "period": {
+      "description": "period_deleted record: bounds, count and last hash of the deleted period.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "from",
+        "to",
+        "count",
+        "last_hash"
+      ],
+      "properties": {
+        "from": {
+          "$ref": "urn:botaru:schema:common:1#/$defs/datetime"
+        },
+        "to": {
+          "$ref": "urn:botaru:schema:common:1#/$defs/datetime"
+        },
+        "count": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "last_hash": {
+          "description": "SHA-256 hash of the form sha256:<64 hex digits>.",
+          "$ref": "urn:botaru:schema:common:1#/$defs/hash"
+        }
+      }
+    },
+    "restore": {
+      "description": "restore record: a new epoch of the chains after a restore from backup (D-86 (7)).",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "epoch",
+        "previous_epoch",
+        "backup_at"
+      ],
+      "properties": {
+        "epoch": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "previous_epoch": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "backup_at": {
+          "description": "Time the backup that was restored was taken.",
+          "$ref": "urn:botaru:schema:common:1#/$defs/datetime"
+        }
+      }
+    },
+    "prev_hash": {
+      "description": "SHA-256 hash of the form sha256:<64 hex digits>.",
+      "$ref": "urn:botaru:schema:common:1#/$defs/hash"
+    },
+    "hash": {
+      "description": "SHA-256 hash of the form sha256:<64 hex digits>.",
+      "$ref": "urn:botaru:schema:common:1#/$defs/hash"
+    }
+  }
+}

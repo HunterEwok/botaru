@@ -1,0 +1,162 @@
+id: fx-msg-05
+rules: [MSG-6, MSG-11, INJ-13, PRM-6]
+description: 'Mark, distrust flag and depth travel with a message. The core writes into the message datamark, equal to the mark
+  of the sender''s attempt, untrusted, equal to the attempt''s flag, the presence of a note or the fact that the model wrote the fields, and hops,
+  equal to the sender''s effective depth plus one. Reading an entry with untrusted: true sets untrusted_seen on the reading attempt
+  with the source "message of kind V from role R" and raises its depth floor to the highest hops read; the mark of the reading
+  attempt does not change. A wake-up task gets a depth no smaller than the highest hops of its entries. Ping-pong between two
+  roles through inboxes is cut off: a send with hops greater than 5 gives rejected(hops_exceeded).'
+given:
+  tenant: demo
+  roles:
+  - name: analyst
+    messages:
+      send:
+      - type: report.qc_note.v1
+        to: ['role:ops-lead']
+      receive:
+      - {type: report.lead_summary.v1}
+  - name: ops-lead
+    messages:
+      send:
+      - type: report.lead_summary.v1
+        to: ['role:analyst']
+      receive:
+      - {type: report.qc_note.v1}
+  routes:
+  - name: lead-wake
+    true:
+      inbox: role:ops-lead
+      kinds: [report]
+      min: 1
+      debounce: 15m
+    task: {type: ops.lead.review.v1}
+  - name: analyst-wake
+    true:
+      inbox: role:analyst
+      kinds: [report]
+      min: 1
+      debounce: 15m
+    task: {type: data.qc.reply.v1}
+expect: {label_lowered_by_message: never, depth_reset_by_wake: never}
+cases:
+- description: sender mark and flag
+  given:
+    sender:
+      role: analyst
+      data_mark: internal
+      depth: 1
+      untrusted_seen: {value: true, source: file}
+  steps:
+  - call:
+      port: P1
+      op: msg.send
+      request:
+        type: report.qc_note.v1
+        to: role:ops-lead
+        fields: {resource: ctd-2026-08-p017, points_rejected: 13}
+  expect:
+    datamark: internal
+    untrusted: true
+    untrustedsrc_includes: [file]
+    hops: 2
+- description: model fields without a flag and a note
+  given:
+    sender:
+      role: analyst
+      worker_kind: agent
+      data_mark: summary
+      depth: 0
+      untrusted_seen: {value: false, source: null}
+  steps:
+  - call:
+      port: P1
+      op: msg.send
+      request:
+        type: report.qc_note.v1
+        to: role:ops-lead
+        fields: {resource: ctd-2026-08-p017, points_rejected: 0}
+  expect: {untrusted: true, dataorigin: model, hops: 1}
+- description: reading carries the flag and the depth floor
+  given:
+    reader:
+      role: ops-lead
+      data_mark: internal
+      depth: 0
+      untrusted_seen: {value: false, source: null}
+    reads:
+    - {type: report.qc_note.v1, from_role: analyst, untrusted: true, hops: 3, datamark: summary}
+  expect:
+    reader_untrusted_seen: {value: true, source: 'message:report.qc_note.v1:analyst'}
+    reader_depth_floor: 3
+    reader_data_mark: internal
+- description: wake-up task
+  given:
+    inbox_entries:
+    - {hops: 2}
+    - {hops: 4}
+    route: lead-wake
+  expect: {wake_task_depth_at_least: 4, initiator: system}
+- description: ping-pong
+  steps:
+  - call:
+      port: P1
+      op: msg.send
+      request:
+        type: report.qc_note.v1
+        to: role:ops-lead
+        fields: {}
+    by: role:analyst
+    context: {depth: 0}
+    expect: {hops: 1}
+  - call:
+      port: P1
+      op: msg.send
+      request:
+        type: report.lead_summary.v1
+        to: role:analyst
+        fields: {}
+    by: role:ops-lead
+    context: {wake: ops-lead}
+    expect: {hops: 2}
+  - call:
+      port: P1
+      op: msg.send
+      request:
+        type: report.qc_note.v1
+        to: role:ops-lead
+        fields: {}
+    by: role:analyst
+    context: {wake: analyst}
+    expect: {hops: 3}
+  - call:
+      port: P1
+      op: msg.send
+      request:
+        type: report.lead_summary.v1
+        to: role:analyst
+        fields: {}
+    by: role:ops-lead
+    context: {wake: ops-lead}
+    expect: {hops: 4}
+  - call:
+      port: P1
+      op: msg.send
+      request:
+        type: report.qc_note.v1
+        to: role:ops-lead
+        fields: {}
+    by: role:analyst
+    context: {wake: analyst}
+    expect: {hops: 5}
+  - call:
+      port: P1
+      op: msg.send
+      request:
+        type: report.lead_summary.v1
+        to: role:analyst
+        fields: {}
+    by: role:ops-lead
+    context: {wake: ops-lead}
+    expect: {result: rejected, reason: hops_exceeded}
+  expect: {messages_published: 5}

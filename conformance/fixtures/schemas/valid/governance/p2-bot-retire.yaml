@@ -1,0 +1,4 @@
+schema: spec/model/p2-bot-retire-request.schema.json
+rules: [IDN-11]
+description: A bot.retire request that the schema accepts.
+data: {bot: bot_01JB8M00000000000000000017}

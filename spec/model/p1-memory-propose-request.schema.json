@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:botaru:schema:p1-memory-propose-request:1",
+  "title": "P1 memory.propose: request",
+  "description": "Proposal of a memory item of the person scope by a memory handle; the item becomes active only after the decision of the person whose memory it is (P1 decide, subject memory_record, MEM-3). With untrusted_seen of the attempt, the denial memory_untrusted. Idempotent by the hash of {key, content} (spec/hashing.md).",
+  "x-botaru-direction": "input",
+  "x-botaru-rules": [
+    "MEM-3",
+    "MEM-1"
+  ],
+  "type": "object",
+  "required": [
+    "key",
+    "content"
+  ],
+  "properties": {
+    "key": {
+      "$ref": "urn:botaru:schema:memory-item:1#/properties/key"
+    },
+    "content": {
+      "$ref": "urn:botaru:schema:memory-item:1#/properties/content"
+    }
+  },
+  "additionalProperties": false
+}

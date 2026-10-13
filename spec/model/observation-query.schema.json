@@ -1,0 +1,94 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:botaru:schema:observation-query:1",
+  "title": "Closed observation query",
+  "description": "Arguments of the built-in P3 tool observations_query and the common bricks of a closed observation query. The series, subject, window and rollup are taken from enums within the role's insight.observes (for an aggregator within sources, for a job worker within the task type's observes) and the task mark; reading does not set untrusted_seen, points of another tenant are not visible (OBV-3, TEN-4). The group_by parameter exists only for an aggregator.",
+  "x-botaru-direction": "input",
+  "x-botaru-rules": [
+    "OBV-3",
+    "AGG-2"
+  ],
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "series",
+    "window",
+    "rollup"
+  ],
+  "properties": {
+    "series": {
+      "$ref": "urn:botaru:schema:observation-query:1#/$defs/series"
+    },
+    "subject": {
+      "$ref": "urn:botaru:schema:observation-query:1#/$defs/subject",
+      "description": "Subject; without it, with group_by, rollups over many subjects within the aggregator's sources are returned."
+    },
+    "window": {
+      "$ref": "urn:botaru:schema:observation-query:1#/$defs/window"
+    },
+    "rollup": {
+      "$ref": "urn:botaru:schema:observation-query:1#/$defs/rollup"
+    },
+    "group_by": {
+      "description": "Only for an aggregator: the subject kind to group rollups by, within its sources (AGG-2).",
+      "type": "string",
+      "pattern": "^[a-z][a-z_]{0,31}$",
+      "maxLength": 32
+    }
+  },
+  "anyOf": [
+    {
+      "required": [
+        "subject"
+      ]
+    },
+    {
+      "required": [
+        "group_by"
+      ]
+    }
+  ],
+  "$defs": {
+    "series": {
+      "description": "Name of an observation series: a core series from core-series.yaml (for example farm.task.outcome) or a tenant series (metadata.name of an ObservationSeries manifest, for example host.load.v1). In a bot query the value comes from an enum within the role's insight.observes, the aggregator's sources or the task type's observes (OBV-3).",
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_]*(\\.[a-z0-9_]+)+$",
+      "maxLength": 120
+    },
+    "subject": {
+      "description": "Subject of the series: kind and id from the catalog of one's own tenant or the name of a tenant object, for example task_type:demo.db.backup.v1, schedule:report-nightly, host:db1, dataset:ctd-2026.",
+      "type": "string",
+      "pattern": "^[a-z][a-z_]{0,31}:[a-z0-9][a-z0-9_.@-]{0,119}$",
+      "maxLength": 152
+    },
+    "window": {
+      "enum": [
+        "1d",
+        "7d",
+        "14d",
+        "93d"
+      ],
+      "description": "Read window from a closed list (OBV-3)."
+    },
+    "rollup": {
+      "description": "Rollup from the closed list spec/model/rollups.yaml (OBV-4).",
+      "type": "string",
+      "pattern": "^[a-z]+\\.[a-z0-9]+$",
+      "maxLength": 40,
+      "x-botaru-registry": "rollups"
+    },
+    "value": {
+      "description": "Value of a point or rollup: a number or an enum value of the series. There is no free text (OBV-2, INJ-1).",
+      "anyOf": [
+        {
+          "type": "number"
+        },
+        {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_]*$",
+          "maxLength": 40
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,9 @@
+schema: urn:botaru:schema:p2-audit-query-request:1
+rules:
+- AUD-7
+description: service_grant records for one day.
+data:
+  from: '2026-03-01T00:00:00Z'
+  to: '2026-03-02T00:00:00Z'
+  kind: service_grant
+  limit: 100

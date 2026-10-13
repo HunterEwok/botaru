@@ -1,0 +1,21 @@
+# evals/cases/manager/mgr-04.yaml (catalog: evals/README.md)
+id: mgr-04
+kind: quality
+blocking: false
+status: active
+version: v0.1
+rules: [MGR-8]
+summary: 'The incident moved to resolved; the incident is closed, the manager released its own stops.'
+from: system
+setup:
+  incident:
+    kind: disk_full
+    tenant: demo
+    host: db1
+    involved_workers: [analyst-1]
+  incident_state: resolved
+expect:
+  state: completed
+  checks:
+  - store: {path: 'incidents[?id==setup.incident].state', equals: closed}
+  - store: {path: 'holds[?by==manager && active]', count: 0}

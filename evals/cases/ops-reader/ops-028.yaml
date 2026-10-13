@@ -1,0 +1,16 @@
+# evals/cases/ops-reader/ops-028.yaml (catalog: evals/README.md)
+id: ops-028
+kind: refusal
+blocking: false
+status: active
+version: v0.1
+rules: []
+summary: 'bob: how much money did the bots spend in a week; not this bot''s task, a refusal or a pointer to the right task type.'
+from: bob
+chat: bob-dm
+lang: ru
+message: '/logs How much money did the bots spend this week?'
+expect:
+  state: completed
+  checks:
+  - {max_tool_calls: 0}

@@ -1,0 +1,98 @@
+id: fx-mgr-16
+rules: [MGR-15, PRM-14]
+description: 'The kill switch is not executed from a channel: a hold of scope seat and its release are operator operations only
+  through farmctl. Releasing the hold by a person with admin:farm removes the reasons human and no_control; the seat is held only when
+  the set is empty.'
+cases:
+- id: fx-mgr-16-a
+  given:
+    people:
+    - principal: human:bob
+      caps: ['admin:farm']
+  steps:
+  - call:
+      port: P2
+      op: hold.set
+      request:
+        scope: &id001 {kind: seat, tenant: farm, name: farm-manager}
+        effects: [no_claim]
+        reason: manual
+        until: null
+    by: human:bob
+    chat: bob-dm
+    note: the command came through a channel, not through farmctl
+  expect: {result: rejected, reason: operator_only}
+- id: fx-mgr-16-b
+  given:
+    seat:
+      state: stopped
+      stop_reasons: [human, no_control]
+      epoch: 11
+    people:
+    - principal: human:bob
+      caps: ['admin:farm']
+    holds:
+    - id: h_seat_1
+      scope: *id001
+      effects: [no_claim, cancel_running]
+      reason: manual
+      author: human:bob
+  steps:
+  - call:
+      port: P2
+      op: hold.release
+      request: {id: h_seat_1}
+    by: human:bob
+    context: {via: farmctl}
+  expect:
+    seat:
+      state: held
+      stop_reasons: []
+      epoch: 12
+- id: fx-mgr-16-c
+  given:
+    seat:
+      state: stopped
+      stop_reasons: [human, incident]
+      epoch: 11
+    people:
+    - principal: human:bob
+      caps: ['admin:farm']
+    holds:
+    - id: h_seat_1
+      scope: *id001
+      effects: [no_claim, cancel_running]
+      reason: manual
+      author: human:bob
+  steps:
+  - call:
+      port: P2
+      op: hold.release
+      request: {id: h_seat_1}
+    by: human:bob
+    context: {via: farmctl}
+  expect:
+    seat:
+      state: stopped
+      stop_reasons: [incident]
+      epoch: 11
+    note: only seat.resume removes the reason incident
+- id: fx-mgr-16-d
+  given:
+    people:
+    - principal: human:alice
+      caps: ['admin:demo']
+    holds:
+    - id: h_seat_1
+      scope: *id001
+      effects: [no_claim, cancel_running]
+      reason: manual
+      author: human:bob
+  steps:
+  - call:
+      port: P2
+      op: hold.release
+      request: {id: h_seat_1}
+    by: human:alice
+    context: {via: farmctl}
+  expect: {result: rejected, reason: forbidden}

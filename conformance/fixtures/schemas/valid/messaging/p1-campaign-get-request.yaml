@@ -1,0 +1,6 @@
+schema: spec/model/p1-campaign-get-request.schema.json
+rules:
+- PRM-9
+description: A request for a campaign record.
+cases:
+- id: k_01JB0000000000000000000201

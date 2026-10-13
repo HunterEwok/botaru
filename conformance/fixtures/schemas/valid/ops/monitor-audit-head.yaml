@@ -1,0 +1,10 @@
+schema: urn:botaru:schema:monitor-audit-head:1
+rules: [MON-3, AUD-6, RET-6]
+description: The head of the demo audit chain in epoch 3 signed with the core key.
+data:
+  tenant: demo
+  epoch: 3
+  seq: 1042
+  hash: sha256:c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3
+  sig: Y29yZS1zaWduYXR1cmUtb3Zlci1hdWRpdC1oZWFkLXYx
+  key_id: k1

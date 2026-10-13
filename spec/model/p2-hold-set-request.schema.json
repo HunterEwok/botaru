@@ -1,0 +1,70 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:botaru:schema:p2-hold-set-request:1",
+  "title": "P2 hold.set: request",
+  "description": "Request body of P2 hold.set. The core writes the id, author, source and time; the body does not have them (HLD-1). The scope and effects come from the closed lists of the current version.",
+  "x-botaru-direction": "input",
+  "x-botaru-rules": [
+    "HLD-1",
+    "HLD-2"
+  ],
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "scope",
+    "effects",
+    "reason",
+    "until"
+  ],
+  "properties": {
+    "scope": {
+      "type": "object",
+      "description": "Stop scope: a kind from the closed list spec/model/holds.yaml, the tenant and the name of the scope object. The farm scope has no tenant and no name; the tenant scope has no name.",
+      "additionalProperties": false,
+      "required": [
+        "kind"
+      ],
+      "properties": {
+        "kind": {
+          "$ref": "urn:botaru:schema:hold:1#/$defs/scope_kind",
+          "description": "Scope kind (holds.yaml, kind: scope). The schedule and governance scopes since v0.2."
+        },
+        "tenant": {
+          "$ref": "urn:botaru:schema:common:1#/$defs/tenant_name",
+          "description": "Tenant of the scope."
+        },
+        "name": {
+          "description": "Name of the scope object: role, task type, worker id, plugin, action, channel, machine, resource, bot group, bot, seat, schedule or case.",
+          "type": "string",
+          "maxLength": 120,
+          "pattern": "^[a-z@][a-z0-9_.:@-]*$"
+        }
+      }
+    },
+    "effects": {
+      "description": "Stop effects from the closed list spec/model/holds.yaml (kind: effect); pause_action since v0.2.",
+      "type": "array",
+      "items": {
+        "$ref": "urn:botaru:schema:hold:1#/$defs/effect"
+      },
+      "maxItems": 9,
+      "minItems": 1,
+      "uniqueItems": true
+    },
+    "reason": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/reason",
+      "description": "Reason from reasons.yaml."
+    },
+    "until": {
+      "description": "Deadline, or null: until released.",
+      "anyOf": [
+        {
+          "$ref": "urn:botaru:schema:common:1#/$defs/datetime"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    }
+  }
+}

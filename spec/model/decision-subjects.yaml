@@ -1,0 +1,54 @@
+registry: decision-subjects
+version: 1
+description: >-
+  Subjects of human decisions: the closed list of subject_kind values in P1 decide,
+  card.details and card.remind, in the card and in the decision event. Entry fields:
+  since (the skeleton version from which the subject is accepted), meaning (what the
+  person decides), rules (rule numbers). The card rows with this subject are in
+  decision-points.yaml (field subject).
+source: spec/ports/p1-worker-protocol.md
+entries:
+  - id: approval
+    since: v0.1
+    meaning: approval of a request for an action (request_action)
+    rules: [APR-4]
+  - id: proposal
+    since: v0.1
+    meaning: a change proposal in presented; since v0.2 also the answers of the blind sample card and "Lift veto"
+    rules: [APR-4]
+  - id: memory_record
+    since: v0.1
+    meaning: a person's memory record (MEM-3)
+    rules: [APR-4, MEM-3]
+  - id: campaign
+    since: v0.1
+    meaning: a campaign awaiting approval
+    rules: [APR-4, ORC-1]
+  - id: script
+    since: v0.1
+    meaning: a script run from a draft
+    rules: [APR-4, SCR-6]
+  - id: script_gate
+    since: v0.1
+    meaning: a confirm step of a running script
+    rules: [APR-4, SCR-6]
+  - id: control
+    since: v0.1
+    meaning: a farm manager operation with a card
+    rules: [APR-4, MGR-9]
+  - id: subject_request
+    since: v0.1
+    meaning: a person's request about their own data; in v0.1 only the kind erase (D-76), the kind export since v0.2
+    rules: [APR-4, SEC-11]
+  - id: takeover
+    since: v0.2
+    meaning: work takeover
+    rules: [APR-4]
+  - id: governance_case
+    since: v0.2
+    meaning: outcome of a commission case
+    rules: [APR-4, APR-14]
+  - id: attribution
+    since: v0.2
+    meaning: an incident attribution candidate; "No" and "Don't know" can be changed while the window is open
+    rules: [APR-4, GOV-13]

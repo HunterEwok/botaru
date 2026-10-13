@@ -1,0 +1,165 @@
+# Collected from spec/lifecycles/worker.yaml. The value null in from means "the object does not exist yet".
+lifecycle: spec/lifecycles/worker.yaml
+object: worker
+rules: [BGR-1, DEP-2, DSP-1, HLD-2, HLD-3, IDN-4, IDN-8, INJ-2, LCY-4, MGR-9, RT-1, RT-2, TEN-2, TEN-4]
+description: Allowed and forbidden transitions of the "worker" lifecycle, collected from the tables of spec/lifecycles/worker.md.
+  The implementation accepts a transition from the allowed list under the condition of its row; a pair from the forbidden
+  list does not change the state, and the call that asks for it is rejected. The without_transition rows are calls that
+  have no transition by the table. Only a worker in active gets work; a revoked worker no longer exists for the core.
+states:
+- id: enrolled
+  terminal: false
+- id: active
+  terminal: false
+- id: blocked
+  terminal: false
+- id: draining
+  terminal: false
+- id: revoked
+  terminal: true
+allowed:
+- from: null
+  to: enrolled
+  by: P2 `worker.enroll`
+  rules: [DEP-2, IDN-4, IDN-8, TEN-4]
+- from: enrolled
+  to: active
+  by: P1 `hello`
+  rules: [DEP-2, INJ-2]
+- from: enrolled
+  to: blocked
+  by: P1 `hello`
+  rules: &id001 [BGR-1, DEP-2, INJ-2]
+- from: active
+  to: blocked
+  by: P1 `hello`
+  rules: *id001
+- from: active
+  to: blocked
+  by: the core
+  rules: [TEN-2]
+- from: blocked
+  to: active
+  by: P2 `worker.unblock`, then P1 `hello`
+  rules: [DEP-2]
+- from: active
+  to: draining
+  by: P2 `worker.drain`; also the control operation `drain`
+  rules: [HLD-2, HLD-3, MGR-9]
+- from: draining
+  to: active
+  by: P2 `hold.release` of this hold, then P1 `hello`
+  rules: [HLD-3]
+- from: draining
+  to: draining
+  by: the `drain_deadline` term (v0.2)
+  rules: [LCY-4]
+- from: active
+  to: active
+  by: P2 `worker.rotate`
+  rules: [IDN-4]
+- from: enrolled
+  to: revoked
+  by: P2 `worker.revoke`
+  rules: &id002 [IDN-4, LCY-4, RT-1, RT-2]
+- from: active
+  to: revoked
+  by: P2 `worker.revoke`
+  rules: *id002
+- from: blocked
+  to: revoked
+  by: P2 `worker.revoke`
+  rules: *id002
+- from: draining
+  to: revoked
+  by: P2 `worker.revoke`
+  rules: *id002
+forbidden:
+- from: null
+  to: active
+  expect: rejected
+  rules: &id003 [TEN-4]
+  why: the object does not appear directly in the state active
+- from: null
+  to: blocked
+  expect: rejected
+  rules: *id003
+  why: the object does not appear directly in the state blocked
+- from: null
+  to: draining
+  expect: rejected
+  rules: *id003
+  why: the object does not appear directly in the state draining
+- from: null
+  to: revoked
+  expect: rejected
+  rules: *id003
+  why: the object does not appear directly in the state revoked
+- from: enrolled
+  to: enrolled
+  expect: rejected
+  rules: &id004 [DSP-1, TEN-4]
+  why: the lifecycle table has no such transition
+- from: enrolled
+  to: draining
+  expect: rejected
+  rules: *id004
+  why: the lifecycle table has no such transition
+- from: active
+  to: enrolled
+  expect: rejected
+  rules: *id004
+  why: the lifecycle table has no such transition
+- from: blocked
+  to: enrolled
+  expect: rejected
+  rules: *id004
+  why: the lifecycle table has no such transition
+- from: blocked
+  to: blocked
+  expect: rejected
+  rules: *id004
+  why: the lifecycle table has no such transition
+- from: blocked
+  to: draining
+  expect: rejected
+  rules: *id004
+  why: the lifecycle table has no such transition
+- from: draining
+  to: enrolled
+  expect: rejected
+  rules: *id004
+  why: the lifecycle table has no such transition
+- from: draining
+  to: blocked
+  expect: rejected
+  rules: *id004
+  why: the lifecycle table has no such transition
+- from: revoked
+  to: enrolled
+  expect: rejected
+  rules: &id005 [TEN-4, DSP-1]
+  why: revoked is a terminal state
+- from: revoked
+  to: active
+  expect: rejected
+  rules: *id005
+  why: revoked is a terminal state
+- from: revoked
+  to: blocked
+  expect: rejected
+  rules: *id005
+  why: revoked is a terminal state
+- from: revoked
+  to: draining
+  expect: rejected
+  rules: *id005
+  why: revoked is a terminal state
+- from: revoked
+  to: revoked
+  expect: rejected
+  rules: *id005
+  why: revoked is a terminal state
+expect:
+  allowed: 14
+  forbidden: 17

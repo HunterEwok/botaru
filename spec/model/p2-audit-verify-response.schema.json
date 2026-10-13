@@ -1,0 +1,45 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:botaru:schema:p2-audit-verify-response:1",
+  "title": "P2 audit.verify: response",
+  "description": "Outcome of the chain check: up to which seq it was recomputed, the last head of the witness and the first point of a break or mismatch (AUD-6, MON-3).",
+  "x-botaru-direction": "output",
+  "x-botaru-rules": [
+    "AUD-6",
+    "MON-3"
+  ],
+  "type": "object",
+  "required": [
+    "tenant",
+    "ok",
+    "checked_to_seq"
+  ],
+  "properties": {
+    "tenant": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/tenant_name"
+    },
+    "ok": {
+      "type": "boolean"
+    },
+    "checked_to_seq": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9007199254740991
+    },
+    "head_seq": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9007199254740991
+    },
+    "break_at_seq": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 9007199254740991
+    },
+    "reason": {
+      "type": "string",
+      "maxLength": 64,
+      "pattern": "^[a-z][a-z0-9_]*$"
+    }
+  }
+}

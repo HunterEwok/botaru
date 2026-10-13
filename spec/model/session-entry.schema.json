@@ -1,0 +1,20 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:botaru:schema:session-entry:1",
+  "title": "Session entry",
+  "description": "An entry of a conversation transcript that the E4 adapter appends through P1 session.append by the session handle. Entries are only appended; runtime compaction appends a summary entry. append is idempotent by the entry uuid. The core does not read the content: it keeps the session key (tenant, role, subject, conversation), the untrusted_seen mark and the periods (MEM-1, INJ-13). A session is content of the class content.",
+  "x-botaru-direction": "input",
+  "x-botaru-retention": "content",
+  "x-botaru-rules": ["MEM-1", "INJ-13", "IDM-3"],
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["uuid", "content"],
+  "properties": {
+    "uuid": {
+      "description": "Idempotency key of the entry.",
+      "type": "string", "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$", "maxLength": 36
+    },
+    "summary": { "description": "true for a summary entry that runtime compaction appends.", "type": "boolean" },
+    "content": { "description": "Entry content; the runtime sets its shape, the core does not read it." }
+  }
+}

@@ -1,0 +1,106 @@
+# The "personal data seen" flag (AUD-5). The source comes from a closed list: masking, human_file,
+# other_person, forward, quote, declared, inherited. Only the core sets the flag, and it only adds.
+id: fx-audit-personal-seen
+rules: [AUD-5]
+description: An event that code sees, and the expected flag, source and personal_subjects of the object.
+cases:
+- id: aud-ps-01
+  rules: [AUD-5]
+  given:
+    event:
+      masking_replaced: {ipv4: 1}
+      sample: 203.0.113.7 -> 203.0.113.0/24
+    object: task
+  expect:
+    personal_seen: [masking]
+    personal_subjects: []
+- id: aud-ps-02
+  rules: [AUD-5]
+  given:
+    event:
+      read_file: {uploaded_by: 'human:alice', kind: human_upload}
+    object: task
+  expect:
+    personal_seen: [human_file]
+- id: aud-ps-03
+  rules: [AUD-5]
+  given:
+    event:
+      read_result: {task_initiator: 'human:bob'}
+      reader_task_initiator: human:alice
+    object: task
+  expect:
+    personal_seen: [other_person]
+    personal_subjects: ['human:bob']
+- id: aud-ps-04
+  rules: [AUD-5]
+  given:
+    event:
+      activity: {from: 'human:alice', forwarded_from: 'human:carol'}
+    object: task
+  expect:
+    personal_seen: [forward]
+    personal_subjects: ['human:carol']
+- id: aud-ps-05
+  rules: [AUD-5]
+  given:
+    event:
+      activity: {from: 'human:alice', quoted_from: 'human:bob'}
+    object: task
+  expect:
+    personal_seen: [quote]
+    personal_subjects: ['human:bob']
+- id: aud-ps-06
+  rules: [AUD-5]
+  given:
+    event:
+      file_put: {by: 'service:ci-exporter', uploads_personal: true}
+    object: file
+  expect:
+    personal_seen: [declared]
+- id: aud-ps-07
+  rules: [AUD-5]
+  given:
+    event:
+      read_object:
+        personal_seen: [masking]
+    object: artifact
+  expect:
+    personal_seen: [inherited]
+- id: aud-ps-08
+  rules: [AUD-5]
+  given:
+    event:
+      child_of:
+        personal_seen: [forward]
+        personal_subjects: ['human:carol']
+    object: task
+  expect:
+    personal_seen: [inherited]
+    personal_subjects: ['human:carol']
+- id: aud-ps-09
+  rules: [AUD-5]
+  given:
+    event:
+      model_output: {personal_seen: false}
+    before:
+      personal_seen: [masking]
+    object: task
+  expect:
+    personal_seen: [masking]
+    note: the model does not see the flag and cannot remove it
+- id: aud-ps-10
+  rules: [AUD-5]
+  given:
+    event:
+      masking_replaced: {}
+    object: task
+  expect:
+    personal_seen: []
+    note: redaction replaced nothing
+- id: aud-ps-11
+  rules: [AUD-5]
+  given:
+    audit_record:
+      personal_seen: [masking]
+  expect: {audit_has_content: false, note: the audit holds only the source code}

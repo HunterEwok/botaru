@@ -1,0 +1,21 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:botaru:schema:p1-msg-ack-response:1",
+  "title": "P1 msg.ack and msg.nack: response",
+  "description": "How many inbox entries were acknowledged or returned to the queue. The acknowledgement is part of the complete transaction of the attempt (MSG-9).",
+  "x-botaru-direction": "output",
+  "x-botaru-rules": [
+    "MSG-9"
+  ],
+  "type": "object",
+  "required": [
+    "count"
+  ],
+  "properties": {
+    "count": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 20
+    }
+  }
+}

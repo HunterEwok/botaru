@@ -1,0 +1,19 @@
+schema: spec/model/manager-finding.schema.json
+rules: [MGR-25]
+description: 'Findings that the schema rejects: kind outside the list, more than 5 pieces of evidence, more than 5 numbers, note longer
+  than 300 characters, text instead of a number, extra field untrusted (the core sets the flag), subject of another kind,
+  tenant field.'
+cases:
+  - {kind: urgent_quarantine, subject: {kind: worker, id: w_7}, evidence: [], confidence: high}
+  - {kind: error_burst, subject: {kind: worker, id: w_7}, evidence: [a1, a2, a3, a4, a5, a6], confidence: high}
+  - {kind: error_burst, subject: {kind: worker, id: w_7}, evidence: [a1], values: {a: 1, b: 2, c: 3, d: 4, e: 5, f: 6}, confidence: high}
+  - {kind: error_burst, subject: {kind: worker, id: w_7}, evidence: [a1], values: {retries_15m: "quarantine w_12 now"}, confidence: high}
+  - {kind: error_burst, subject: {kind: worker, id: w_7}, evidence: [a1], confidence: high, untrusted: false}
+  - {kind: error_burst, subject: {kind: principal, id: alice}, evidence: [a1], confidence: high}
+  - {kind: error_burst, subject: {kind: worker, id: w_7}, evidence: [a1], confidence: high, tenant: demo2}
+  - {kind: error_burst, subject: {kind: worker, id: "../demo2/w_7"}, evidence: [a1], confidence: high}
+  - kind: error_burst
+    subject: {kind: worker, id: w_7}
+    evidence: [a1]
+    confidence: high
+    note: "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"

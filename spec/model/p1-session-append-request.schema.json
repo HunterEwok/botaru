@@ -1,0 +1,26 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:botaru:schema:p1-session-append-request:1",
+  "title": "P1 session.append: request",
+  "description": "The E4 adapter appends session entries by the session handle from the authorization header; the core computes the session key (MEM-1). Idempotent by the entry uuid (IDM-3). Denials: handle_invalid, fenced.",
+  "x-botaru-direction": "input",
+  "x-botaru-rules": [
+    "MEM-1",
+    "IDM-3"
+  ],
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "entries"
+  ],
+  "properties": {
+    "entries": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 100,
+      "items": {
+        "$ref": "urn:botaru:schema:session-entry:1"
+      }
+    }
+  }
+}

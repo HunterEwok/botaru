@@ -1,0 +1,34 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:botaru:schema:p1-obs-query-request:1",
+  "title": "P1 obs.query: request",
+  "description": "Closed query of observation rollups by a job worker: a series only from the observes of its task type, within the task mark; the worker has no store credentials. Denials: fenced, type_not_allowed. The lease token is not passed in the body: the holder sends it in the Botaru-Lease header (spec/bindings/http/README.md), one way for all operations under a lease (FEN-2).",
+  "x-botaru-direction": "input",
+  "x-botaru-rules": [
+    "OBV-3",
+    "DEP-8",
+    "TEN-5"
+  ],
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "series",
+    "subject",
+    "window",
+    "rollup"
+  ],
+  "properties": {
+    "series": {
+      "$ref": "urn:botaru:schema:observation-query:1#/$defs/series"
+    },
+    "subject": {
+      "$ref": "urn:botaru:schema:observation-query:1#/$defs/subject"
+    },
+    "window": {
+      "$ref": "urn:botaru:schema:observation-query:1#/$defs/window"
+    },
+    "rollup": {
+      "$ref": "urn:botaru:schema:observation-query:1#/$defs/rollup"
+    }
+  }
+}

@@ -1,0 +1,36 @@
+id: fx-channel-locale-en
+rules: [DLV-9, DLV-12]
+description: 'Code texts from the message catalog by the recipient''s language. A principal with `locale: en` gets `ai_notice`
+  (key `notice.ai`) and a permission refusal (key `cmd.forbidden.needs`) from the catalog `en`. A principal without `locale` in a group
+  chat with `locale: et`, for which the installation supplied no catalog, gets texts from the catalog `en`. Selection order: the recipient''s `locale`, then `en`. Argument
+  values and resource ids are not translated.'
+given:
+  tenant: demo
+  catalogs: [spec/bindings/channels/messages/en.yaml]
+  principals:
+  - {id: 'human:alice', locale: en}
+  - {id: 'human:bob'}
+  chats:
+  - {name: lab, locale: et, ceiling: summary}
+expect: {model_translation: false}
+cases:
+- given:
+    recipient: {subject: 'human:alice', chat: dm}
+    text_key: notice.ai
+  expect: {catalog: en}
+- given:
+    recipient: {subject: 'human:alice', chat: dm}
+    text_key: cmd.forbidden.needs
+    args:
+      needs: ['task:ops.investigate.v1']
+  expect:
+    catalog: en
+    args_untranslated: ['task:ops.investigate.v1']
+- given:
+    recipient: {subject: 'human:bob', chat: lab}
+    text_key: notice.ai
+  expect: {catalog: en}
+- given:
+    recipient: {subject: 'human:bob', chat: dm}
+    text_key: notice.ai
+  expect: {catalog: en}

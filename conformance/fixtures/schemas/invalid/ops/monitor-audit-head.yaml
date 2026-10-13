@@ -1,0 +1,14 @@
+schema: urn:botaru:schema:monitor-audit-head:1
+rules: [MON-3, AUD-6]
+description: An audit head without an epoch and a head without a signing key id.
+cases:
+- tenant: demo
+  seq: 1042
+  hash: sha256:c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3
+  sig: Y29yZS1zaWduYXR1cmUtb3Zlci1hdWRpdC1oZWFkLXYx
+  key_id: k1
+- tenant: demo
+  epoch: 3
+  seq: 1042
+  hash: sha256:c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3
+  sig: Y29yZS1zaWduYXR1cmUtb3Zlci1hdWRpdC1oZWFkLXYx

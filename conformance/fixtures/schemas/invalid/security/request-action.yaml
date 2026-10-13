@@ -1,0 +1,15 @@
+schema: urn:botaru:schema:request-action:1
+rules:
+- APR-2
+- APR-1
+description: A machine in a model argument outside args, an extra approver field and an action name with a version are rejected.
+cases:
+- action: cleanup_pipeline_tmp
+  args:
+    older_than_days: 7
+  host: ctd1
+- action: cleanup_pipeline_tmp
+  args: {}
+  approver: human:carol
+- action: Cleanup Pipeline
+  args: {}

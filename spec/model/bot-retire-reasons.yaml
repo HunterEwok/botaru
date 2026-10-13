@@ -1,0 +1,49 @@
+registry: bot-retire-reasons
+version: 1
+description: >-
+  Triggers for a bot identity's retirement (retired). The list is closed: only the
+  core sets the trigger; bots have no operation, message type, field or route that sets
+  a trigger or postpones retirement (IDN-11). Entry fields: meaning (when the trigger
+  applies), caller (who calls the transition), seat_only (the trigger exists only for the
+  farm manager seat).
+source: docs/bots.md
+entries:
+  - id: removed_by_vote
+    since: v0.2
+    meaning: the governance case is effective, a commission seat holder leaves by the outcome of the "who leaves" vote
+    caller: the core after a person's "Confirm" button (GOV-9)
+    rules: [IDN-11, GOV-9]
+  - id: replaced_after_incident
+    since: v0.1
+    meaning: >-
+      only the farm manager seat: replacement (P2 seat.assign), vacating (P2
+      seat.vacate) or the decide_within deadline while the seat's stop reason set
+      contains incident
+    caller: the core on P2, or the identity loop
+    seat_only: farm-manager
+    rules: [IDN-11, GOV-22]
+  - id: replaced_by_human
+    since: v0.1
+    meaning: P2 seat.assign on an occupied seat, or P2 seat.vacate
+    caller: the core on an operator operation
+    rules: [IDN-11, IDN-10]
+  - id: role_removed
+    since: v0.1
+    meaning: the role is not in the applied manifests of the tenant
+    caller: the core on apply
+    rules: [IDN-11]
+  - id: worker_gone
+    since: v0.1
+    meaning: the identity is unbound for longer than identity.unbound_ttl (30 days)
+    caller: the identity loop
+    rules: [IDN-11]
+  - id: human_retire
+    since: v0.1
+    meaning: P2 bot.retire by a person with admin:workers, only through farmctl
+    caller: the core on an operator operation
+    rules: [IDN-11, PRM-14]
+  - id: tenant_offboarded
+    since: v0.2
+    meaning: tenant offboarding, P2 tenant.offboard
+    caller: the core
+    rules: [IDN-11]

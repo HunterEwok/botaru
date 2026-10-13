@@ -1,0 +1,9 @@
+schema: spec/model/campaign-status-request.schema.json
+rules:
+- ORC-4
+description: 'Arguments that the schema rejects: without a campaign; with a counter change.'
+cases:
+- {}
+- campaign: k_01JB0000000000000000000201
+  counters:
+    failed: 0

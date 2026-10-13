@@ -1,0 +1,20 @@
+schema: spec/model/escalation.schema.json
+rules:
+- MGR-5
+description: An escalation record from the example in docs/farm-manager.md (v0.2).
+cases:
+- id: e_01JB0000000000000000000501
+  tenant: demo
+  source_attempt: "t_01J9Z3M2Q8YB6V4N7T5K0C2D1E:1"
+  category: resource_stuck
+  subject:
+    kind: resource
+    id: res:ctd1:data
+  observed:
+  - att_01J9X
+  - alarm:disk.free.low:res:ctd1:data
+  requested_response: hold_resource
+  urgency: normal
+  untrusted: false
+  state: screened
+  depth: 2

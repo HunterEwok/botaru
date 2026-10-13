@@ -1,0 +1,9 @@
+schema: urn:botaru:schema:p2-invite-request:1
+rules:
+- PRM-7
+description: An admin invites to the user group for one day.
+data:
+  op: invite.create
+  groups:
+  - user
+  ttl: 24h

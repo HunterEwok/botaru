@@ -1,0 +1,34 @@
+registry: monitor-map
+version: 1
+description: >-
+  Closed table "monitoring system problem class -> farm alarm".
+  A problem gets its class not from a trigger tag but from the monitor_triggers row of the
+  tenant catalog by triggerid; a problem from a trigger outside the catalog gets the class
+  unknown. A job task rechecks it with code, the number is taken from the history of
+  the item of the catalog row (MON-5). The alarm field is the alarm name without
+  the suffix .vN, severity is the severity of the farm alarm: this table sets it, not
+  the severity of the problem in the monitoring system. The incident field says whether
+  an alarm of the class can open an incident.
+source: docs/monitoring.md
+entries:
+  - id: disk_free
+    since: v0.1
+    meaning: little free space on the volume
+    alarm: alarm.disk.free.low
+    severity: page
+    incident: disk_full, if the volume has a full set of quotas (MGR-33, CAP-6)
+    rules: [MON-5, CAP-6]
+  - id: disk_fill
+    since: v0.1
+    meaning: the volume fills up fast
+    alarm: alarm.disk.fill.rate
+    severity: warn
+    incident: by the incident catalog, on the fill rate
+    rules: [MON-5]
+  - id: unknown
+    since: v0.1
+    meaning: the trigger is not in monitor_triggers of the tenant catalog
+    alarm: alarm.monitor.problem
+    severity: warn
+    incident: none; only a record and export, it gives no incident and no stop
+    rules: [MON-5]

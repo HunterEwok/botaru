@@ -1,0 +1,79 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:botaru:schema:p4-anthropic-messages-response:1",
+  "title": "P4 Anthropic Messages: response fields that P4 reads",
+  "description": "Fields of the provider answer by which P4 charges usage and marks the model answer (BUD-3, GW-13); P4 passes the other fields to the runtime unchanged. Binding spec/bindings/model-providers/anthropic.md.",
+  "x-botaru-direction": "output",
+  "x-botaru-rules": [
+    "BUD-2",
+    "BUD-3",
+    "GW-13"
+  ],
+  "type": "object",
+  "required": [
+    "id",
+    "type",
+    "model",
+    "usage"
+  ],
+  "properties": {
+    "id": {
+      "type": "string",
+      "maxLength": 200
+    },
+    "type": {
+      "const": "message"
+    },
+    "model": {
+      "type": "string",
+      "maxLength": 128
+    },
+    "stop_reason": {
+      "type": "string",
+      "maxLength": 64
+    },
+    "content": {
+      "type": "array",
+      "items": {
+        "type": "object"
+      },
+      "maxItems": 10000
+    },
+    "usage": {
+      "type": "object",
+      "required": [
+        "input_tokens",
+        "output_tokens"
+      ],
+      "properties": {
+        "input_tokens": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 100000000
+        },
+        "output_tokens": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 100000000
+        },
+        "cache_creation_input_tokens": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 100000000
+        },
+        "cache_read_input_tokens": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 100000000
+        },
+        "iterations": {
+          "type": "array",
+          "items": {
+            "type": "object"
+          },
+          "maxItems": 1000
+        }
+      }
+    }
+  }
+}

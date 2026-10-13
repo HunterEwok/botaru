@@ -1,0 +1,6 @@
+schema: urn:botaru:schema:memory-item:1
+rules: [MEM-3]
+description: A proposed memory record of alice.
+data: {id: m_01JB8M0000000000000000000A, tenant: demo, scope: person, subject: 'human:p_01JB3Q7N0M2V8XK4DGT5RZP9WB', role: assistant-alice,
+  key: summary.format, content: Send the summary as a list of five points, state: proposed, personal_seen: false, created_at: '2026-10-12T09:00:00Z',
+  decide_by: '2026-10-19T09:00:00Z'}

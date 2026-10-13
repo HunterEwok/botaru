@@ -1,0 +1,21 @@
+registry: model-fallback-reasons
+version: 1
+description: >-
+  Reasons for which P4 takes a fallback profile from the fallback list of the slot
+  profile (the fallback_on field of the model profile and the reason of the event of switching to
+  a fallback model). There are no other reasons for switching. Entry fields: since, meaning,
+  rules.
+source: docs/models-and-money.md
+entries:
+  - id: overloaded
+    since: v0.1
+    meaning: the provider is overloaded
+    rules: [GW-5]
+  - id: unavailable
+    since: v0.1
+    meaning: the model is unavailable
+    rules: [GW-5]
+  - id: retired
+    since: v0.1
+    meaning: the model was withdrawn by the provider
+    rules: [GW-5]

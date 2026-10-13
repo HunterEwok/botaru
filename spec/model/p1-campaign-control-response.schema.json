@@ -1,0 +1,23 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:botaru:schema:p1-campaign-control-response:1",
+  "title": "P1 campaign.control: response",
+  "description": "The campaign and its state after the command.",
+  "x-botaru-direction": "output",
+  "x-botaru-rules": [
+    "ORC-1"
+  ],
+  "type": "object",
+  "required": [
+    "id",
+    "state"
+  ],
+  "properties": {
+    "id": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/object_id"
+    },
+    "state": {
+      "$ref": "urn:botaru:schema:campaign:1#/properties/state"
+    }
+  }
+}

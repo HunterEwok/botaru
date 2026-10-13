@@ -1,0 +1,45 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:botaru:schema:p1-decide-request:1",
+  "title": "P1 decide: request",
+  "description": "A person's button on a card. The channel passes only the subject, id, nonce, decision code and reason code; it is accepted only from an active human principal with strong identity and the permission for this subject and this decision, only from the channel and chat where the card was delivered (APR-4). A repeat gives the same answer (IDM-3). Who pressed and from which chat, the channel passes in the headers Botaru-On-Behalf and Botaru-Chat by the on-behalf schema (spec/bindings/http/README.md); the body has no such fields.",
+  "x-botaru-direction": "input",
+  "x-botaru-rules": [
+    "APR-4",
+    "APR-9",
+    "APR-14"
+  ],
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "subject_kind",
+    "id",
+    "nonce",
+    "decision"
+  ],
+  "properties": {
+    "subject_kind": {
+      "$ref": "urn:botaru:schema:decision:1#/$defs/subject_kind",
+      "description": "Decision subject from a closed list. v0.1: approval, proposal, memory_record, campaign, script, script_gate, control, subject_request (kind erase, D-76); v0.2: takeover, governance_case, attribution and subject_request of kind export."
+    },
+    "id": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/object_id"
+    },
+    "nonce": {
+      "description": "One-time value of the card: the button carries it together with the subject and id (APR-3).",
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_-]{16,64}$",
+      "maxLength": 64
+    },
+    "decision": {
+      "description": "Decision by a button from the row of the registry decision-points.yaml for the card kind, for example approve, reject, defer, yes, no, unknown, override_veto.",
+      "type": "string",
+      "pattern": "^[a-z][a-z_]{0,31}$",
+      "maxLength": 32
+    },
+    "reason_code": {
+      "description": "Reason code from a closed list, for example for \"Reject\" on a proposal.",
+      "$ref": "urn:botaru:schema:common:1#/$defs/reason"
+    }
+  }
+}

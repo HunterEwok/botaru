@@ -1,0 +1,8 @@
+schema: spec/model/p2-bot-retire-request.schema.json
+rules: [IDN-11]
+description: 'bot.retire requests that the schema rejects: trigger in the body (the core sets the human_retire trigger), successor
+  in the body, id not of the form bot_<ulid>.'
+cases:
+  - {bot: bot_01JB8M00000000000000000017, reason: removed_by_vote}
+  - {bot: bot_01JB8M00000000000000000017, successor: bot_01JB8M00000000000000000031}
+  - {bot: bot_17}

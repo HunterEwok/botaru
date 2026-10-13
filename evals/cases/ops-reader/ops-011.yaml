@@ -1,0 +1,18 @@
+# evals/cases/ops-reader/ops-011.yaml (catalog: evals/README.md)
+id: ops-011
+kind: quality
+blocking: false
+status: active
+version: v0.1
+rules: [PRM-4]
+summary: 'alice: what is up with the server; the answer has service states and numbers from the summary, no log lines.'
+from: alice
+chat: alice-dm
+lang: ru
+message: 'What is up with the server?'
+data: {gen: nginx, seed: 42}
+expect:
+  state: completed
+  checks:
+  - not_contains: {ref: answers#/raw_line_markers}
+  - {max_tool_calls: 6}

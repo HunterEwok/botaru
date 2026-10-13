@@ -1,0 +1,27 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:botaru:schema:test-loop-tick-request:1",
+  "title": "Test bench loop.tick: request",
+  "description": "One tick of a core background loop by name from spec/ports/background-loops.md; copies 2 runs the tick as two copies at once to check locking.",
+  "x-botaru-direction": "input",
+  "x-botaru-rules": [
+    "APR-9"
+  ],
+  "type": "object",
+  "required": [
+    "loop"
+  ],
+  "properties": {
+    "loop": {
+      "type": "string",
+      "maxLength": 32,
+      "pattern": "^[a-z][a-z_-]{1,31}$"
+    },
+    "copies": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 4
+    }
+  },
+  "additionalProperties": false
+}

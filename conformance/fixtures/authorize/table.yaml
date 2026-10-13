@@ -1,0 +1,687 @@
+# Permission table "who, what, where: decision and reason" (PRM-2, docs/quality.md).
+# Fixture kind: decision table (conformance/runner.md, section "Decision table"). Each row is
+# an input of the C2 authorize function (request.action is the requested permission) or of the apply lint (verb lint) and its
+# expected decision; the runner executes C2 rows with the test-control operation authorize.eval, and lint rows through P2 apply
+# with dry_run, without records. Tenant demo is production here (kind: production, self_approve: false),
+# delegated_groups: [researcher]: the runner passes this kind in the tenant_kind field of the authorize.eval request and does not create a production
+# tenant (APR-9). A row in given.people names only the groups
+# and permissions of a person that grant or withhold the permission in that row. Shape of steps and expectations:
+# conformance/runner.md.
+id: fx-authorize-table
+rules: [PRM-1, PRM-2, PRM-5, PRM-6, PRM-7, PRM-9, PRM-10, APR-4, APR-5, APR-9, APR-18, INJ-15]
+description: 'Rows of the permission table. C2 decision order: holds, then unconditional prohibitions, then the intersection of the permissions
+  of all initiators; the first rule that fires gives the reason (PRM-2). No allowing row means no (PRM-1).'
+given:
+  tenant: demo
+  people:
+  - principal: human:alice
+    groups: [user, researcher, ctd, lead, admin]
+  - principal: human:bob
+    groups: [user, staff, approver, ops-oncall]
+  - principal: human:carol
+    groups: [staff, approver, ctd-lead, seq-lead]
+  system: [system-ops]
+  roles:
+    ops-reader:
+      service_control: [nginx]
+      monitor_scripts: [nginx-cache-clear]
+  catalog:
+    web1:
+      services:
+        nginx:
+          no_card: [restart]
+        app-api: {via: monitor}
+      monitor_scripts_allowed: [app-api-restart, nginx-cache-clear]
+    db1:
+      services: {}
+    ctd1:
+      services:
+        ctd-qc:
+          no_card: []
+cases:
+# Default deny and intersection of permissions
+- id: authz-01
+  rules: [PRM-1, PRM-2]
+  given:
+    tenant: demo
+    people:
+    - principal: human:alice
+      groups: [user]
+  steps:
+  - call:
+      port: C2
+      op: authorize
+      request:
+        principal: {kind: human, id: 'human:p_01JB3Q7N0M2V8XK4DGT5RZP9WB', tenant: demo}
+        action: task:ops.investigate.v1
+        resource: {tenant: demo, kind: task_type, id: ops.investigate.v1}
+    by: human:alice
+  expect: {result: denied, reason: no_group_cap}
+- id: authz-02
+  rules: [PRM-2]
+  given:
+    tenant: demo
+    people:
+    - principal: human:bob
+      groups: [staff]
+  steps:
+  - call:
+      port: C2
+      op: authorize
+      request:
+        principal: {kind: human, id: 'human:p_01JB3Q7N0M2V8XK4DGT5RZP9WA', tenant: demo}
+        action: task:ops.investigate.v1
+        resource: {tenant: demo, kind: task_type, id: ops.investigate.v1}
+    by: human:bob
+  expect: {result: ok}
+- id: authz-03
+  rules: [PRM-1]
+  given:
+    tenant: demo
+    people:
+    - principal: human:carol
+      groups: [staff]
+  steps:
+  - call:
+      port: C2
+      op: authorize
+      request:
+        principal: {kind: human, id: 'human:p_01JB3Q7N0M2V8XK4DGT5RZP9WC', tenant: demo}
+        action: task:report.monthly.v1
+        resource: {tenant: demo, kind: task_type, id: report.monthly.v1}
+    by: human:carol
+  expect: {result: denied, reason: no_group_cap, note: money is visible only to admin and lead}
+- id: authz-04
+  rules: [PRM-1, PRM-2]
+  given:
+    tenant: demo
+    people:
+    - principal: human:bob
+      groups: [staff]
+  steps:
+  - call:
+      port: C2
+      op: authorize
+      request:
+        principal: {kind: human, id: 'human:p_01JB3Q7N0M2V8XK4DGT5RZP9WA', tenant: demo}
+        action: proposal.decide:schedule
+        resource: {tenant: demo, kind: proposal}
+    by: human:bob
+  expect: {result: denied, reason: no_group_cap}
+# Holds come before the intersection of permissions
+- id: authz-05
+  rules: [PRM-2]
+  given:
+    tenant: demo
+    holds:
+    - scope: {kind: tenant, name: demo}
+      effects: [no_enqueue]
+    people:
+    - principal: human:bob
+      groups: [staff]
+  steps:
+  - call:
+      port: C2
+      op: authorize
+      request:
+        principal: {kind: human, id: 'human:p_01JB3Q7N0M2V8XK4DGT5RZP9WA', tenant: demo}
+        action: task:ops.investigate.v1
+        resource: {tenant: demo, kind: task_type, id: ops.investigate.v1}
+    by: human:bob
+  expect: {result: denied, reason: held, stage: hold}
+- id: authz-06
+  rules: [PRM-2]
+  given:
+    tenant: demo
+    holds:
+    - scope: {kind: tasktype, name: ops.investigate.v1}
+      effects: [no_enqueue]
+    people:
+    - principal: human:alice
+      groups: [user]
+  steps:
+  - call:
+      port: C2
+      op: authorize
+      request:
+        principal: {kind: human, id: 'human:p_01JB3Q7N0M2V8XK4DGT5RZP9WB', tenant: demo}
+        action: task:ops.investigate.v1
+        resource: {tenant: demo, kind: task_type, id: ops.investigate.v1}
+    by: human:alice
+  expect:
+    result: denied
+    reason: held
+    stage: hold
+    note: the hold fired first, although alice lacks the permission too
+- id: authz-07
+  rules: [PRM-2]
+  given: {tenant: demo, worker: ops-reader@demo2, task_tenant: demo}
+  expect: {result: denied, reason: tenant_mismatch, stage: ban}
+- id: authz-08
+  rules: [PRM-2]
+  given:
+    tenant: demo
+    budget: {line: day_eur, exhausted: true}
+    people:
+    - principal: human:bob
+      groups: [staff]
+  steps:
+  - call:
+      port: C2
+      op: authorize
+      request:
+        principal: {kind: human, id: 'human:p_01JB3Q7N0M2V8XK4DGT5RZP9WA', tenant: demo}
+        action: task:ops.investigate.v1
+        resource: {tenant: demo, kind: task_type, id: ops.investigate.v1}
+    by: human:bob
+  expect: {result: denied, reason: budget_exhausted, stage: ban}
+# Data mark (PRM-5)
+- id: authz-09
+  rules: [PRM-5]
+  given:
+    tenant: demo
+    people:
+    - principal: human:alice
+      groups: [user]
+  steps:
+  - call:
+      port: C2
+      op: authorize
+      request:
+        principal: {kind: human, id: 'human:p_01JB3Q7N0M2V8XK4DGT5RZP9WB', tenant: demo}
+        action: data:raw_logs
+        resource: {tenant: demo, kind: task}
+        context:
+          task: {type: ops.summary.v1}
+    by: human:alice
+  expect: {result: denied, reason: no_data_class}
+- id: authz-10
+  rules: [PRM-5, PRM-6, INJ-13]
+  given:
+    actor: human:bob
+    tenant: demo
+    chat: lab(summary)
+    task: ops.investigate.v1
+    child: report.render.v1
+    people:
+    - principal: human:bob
+      groups: [staff]
+  expect: {child.data_mark: raw_logs, child.untrusted_seen: true, child.deliver: dm}
+- id: authz-11
+  rules: [PRM-5]
+  given:
+    tenant: demo
+    task: {type: ops.summary.v1, data_mark: internal}
+    tool_output_class: raw_logs
+    people:
+    - principal: human:bob
+      groups: [staff]
+  steps:
+  - call:
+      port: P3
+      op: tools/call
+      request:
+        name: logs/tail
+        arguments: {}
+    by: human:bob
+  expect: {result: denied, reason: data_class_exceeded, note: the task mark does not grow}
+- id: authz-12
+  rules: [PRM-5]
+  given: {tenant: demo}
+  steps:
+  - lint: {task_type_yaml: 'data_class: pii'}
+  expect: {result: rejected, stage: apply, reason: forbidden}
+- id: authz-13
+  rules: [PRM-5]
+  given: {tenant: demo}
+  steps:
+  - lint: {tool_yaml: 'output_class: secret'}
+  expect: {result: rejected, stage: apply, reason: forbidden}
+# Permissions do not grow along a chain (PRM-6)
+- id: authz-14
+  rules: [PRM-6, IDN-2]
+  given:
+    tenant: demo
+    people:
+    - principal: human:alice
+      groups: [user]
+  steps:
+  - call:
+      port: C2
+      op: authorize
+      request:
+        principal: {kind: human, id: 'human:p_01JB3Q7N0M2V8XK4DGT5RZP9WB', tenant: demo}
+        action: task:ops.investigate.v1
+        resource: {tenant: demo, kind: task_type, id: ops.investigate.v1}
+        context:
+          task:
+            initiators: ['human:p_01JB3Q7N0M2V8XK4DGT5RZP9WB', 'human:p_01JB3Q7N0M2V8XK4DGT5RZP9WA']
+    by: human:alice
+  expect:
+    result: denied
+    reason: no_group_cap
+    note: the task read a record of bob, but the permissions are intersected with all initiators
+# Granting (PRM-7, PRM-13, PRM-16)
+- id: authz-15
+  rules: [PRM-7]
+  given: {tenant: demo}
+  steps:
+  - lint: {groups_yaml: 'approver: action.approve:*'}
+  expect: {result: rejected, stage: apply}
+- id: authz-16
+  rules: [PRM-7]
+  given: {tenant: demo}
+  steps:
+  - lint: {groups_yaml: 'user: task:ops.*', adds_type: ops.investigate.v1 (tier 1)}
+  expect: {result: rejected, stage: apply, note: the asterisk would make an ordinary group privileged}
+- id: authz-17
+  rules: [PRM-7, APR-5]
+  given: {tenant: demo}
+  steps:
+  - lint: {groups_yaml: 'staff: task:action.cleanup_pipeline_tmp.v1'}
+  expect: {result: rejected, stage: apply, reason: forbidden}
+- id: authz-18
+  rules: [PRM-7]
+  given: {tenant: demo}
+  steps:
+  - lint: {groups_yaml: 'staff: data:*'}
+  expect: {result: rejected, stage: apply}
+- id: authz-19
+  rules: [PRM-7]
+  given:
+    tenant: demo
+    grant_in_chat: {group: staff, by: 'human:alice'}
+    people:
+    - principal: human:alice
+      groups: [admin]
+  expect: {result: denied, reason: privileged_group}
+- id: authz-20
+  rules: [PRM-7]
+  given:
+    tenant: demo
+    people:
+    - principal: human:alice
+      groups: [admin]
+  steps:
+  - call:
+      port: P1
+      op: submit_activity
+      request:
+        kind: message
+        channel: telegram
+        update_id: '1'
+        sender: {identity: 'telegram:1001', verified: true}
+        chat: {kind: direct, external_id: '1001'}
+        text: /invite staff
+    by: human:alice
+  expect: {result: denied, reason: privileged_group}
+- id: authz-21
+  rules: [PRM-7]
+  given:
+    tenant: demo
+    people:
+    - principal: human:alice
+      groups: [admin]
+  steps:
+  - call:
+      port: P1
+      op: submit_activity
+      request:
+        kind: message
+        channel: telegram
+        update_id: '2'
+        sender: {identity: 'telegram:1001', verified: true}
+        chat: {kind: direct, external_id: '1001'}
+        text: /grant researcher carol
+    by: human:alice
+  expect: {result: ok, note: researcher is in delegated_groups and entirely within the permissions of alice (PRM-16)}
+- id: authz-22
+  rules: [PRM-7]
+  given:
+    tenant: demo
+    people:
+    - principal: human:alice
+      groups: [admin]
+  steps:
+  - call:
+      port: P1
+      op: submit_activity
+      request:
+        kind: message
+        channel: telegram
+        update_id: '3'
+        sender: {identity: 'telegram:1001', verified: true}
+        chat: {kind: direct, external_id: '1001'}
+        text: /invite assist
+    by: human:alice
+  expect: {result: denied, reason: forbidden, note: alice has no assist capabilities}
+- id: authz-23
+  rules: [PRM-7]
+  given:
+    actor: human:alice
+    tenant: demo
+    channel_cmd: seat assign farm-manager
+    people:
+    - principal: human:alice
+      groups: [admin]
+  expect: {result: denied, reason: operator_only}
+# Service principal system (PRM-10)
+- id: authz-24
+  rules: [PRM-10]
+  given:
+    tenant: demo
+    people:
+    - principal: system
+      groups: [system-ops]
+  steps:
+  - call:
+      port: C2
+      op: authorize
+      request:
+        principal: {kind: system, id: system, tenant: demo}
+        action: task:ops.investigate.v1
+        resource: {tenant: demo, kind: task_type, id: ops.investigate.v1}
+    by: system
+  expect: {result: denied, reason: no_group_cap}
+- id: authz-25
+  rules: [PRM-10]
+  given: {tenant: demo}
+  steps:
+  - lint: {groups_yaml: 'system-ops: task:data.*'}
+  expect: {result: rejected, stage: apply}
+- id: authz-26
+  rules: [PRM-10]
+  given: {tenant: demo}
+  steps:
+  - lint: {schedule_yaml: 'type: data.sensor_check.v2'}
+  expect: {result: rejected, stage: apply, note: the type is not in system-ops}
+- id: authz-27
+  rules: [PRM-10, APR-4]
+  given: {tenant: demo}
+  steps:
+  - call:
+      port: P1
+      op: decide
+      request: {subject_kind: approval, id: $last, decision: approve}
+    by: system
+  expect: {result: denied, reason: no_group_cap, note: system has no decision permissions}
+# Reading a task, a result and a file (PRM-9)
+- id: authz-28
+  rules: [PRM-9]
+  given:
+    tenant: demo
+    people:
+    - principal: human:alice
+      groups: [user]
+    task: {id: t_28, initiator: 'human:bob', type: ops.investigate.v1}
+  steps:
+  - call:
+      port: P1
+      op: task.get
+      request: {task: t_28}
+    by: human:alice
+  expect: {result: denied, reason: not_found}
+- id: authz-29
+  rules: [PRM-9]
+  given:
+    tenant: demo
+    people:
+    - principal: human:alice
+      groups: [user]
+    task: {id: t_29, initiator: 'human:alice', type: ops.summary.v1}
+  steps:
+  - call:
+      port: P1
+      op: task.get
+      request: {task: t_29}
+    by: human:alice
+  expect: {result: ok}
+- id: authz-30
+  rules: [PRM-9]
+  given:
+    tenant: demo
+    people:
+    - principal: human:alice
+      groups: [user]
+  steps:
+  - call:
+      port: P1
+      op: task.get
+      request: {task: t_01J9Z3M2Q8YB6V4N7T5K0C2D9Z}
+    by: human:alice
+    note: there is no task with this id
+  expect: {result: denied, reason: not_found, note: 'the answer is the same as for someone else''s task'}
+- id: authz-31
+  rules: [PRM-9, PRM-5]
+  given:
+    tenant: demo
+    people:
+    - principal: human:alice
+      groups: [user]
+    file: {file_ref: 'file:AAAAAAAAAAAAAAAAAAAA31', producer: 'human:bob', data_mark: raw_logs}
+  steps:
+  - call:
+      port: P1
+      op: file.get
+      request: {file_ref: 'file:AAAAAAAAAAAAAAAAAAAA31'}
+    by: human:alice
+  expect: {result: denied, reason: not_found}
+- id: authz-32
+  rules: [PRM-9]
+  given:
+    tenant: demo2
+    people:
+    - principal: human:carol
+      groups: [staff]
+    task: {id: t_32, tenant: demo, initiator: 'human:carol', type: ops.summary.v1}
+  steps:
+  - call:
+      port: P1
+      op: task.get
+      request: {task: t_32}
+    by: human:carol
+  expect: {result: denied, reason: not_found}
+# Human decisions (APR-4, APR-9)
+- id: authz-33
+  rules: [APR-4, APR-9]
+  given: {actor: 'human:bob', tenant: demo, approve: cleanup_pipeline_tmp, initiator: 'human:bob'}
+  expect: {result: denied, reason: self_approve}
+- id: authz-34
+  rules: [APR-4]
+  given:
+    actor: human:carol
+    tenant: demo
+    approve: cleanup_pipeline_tmp
+    initiator: human:bob
+    people:
+    - principal: human:carol
+      groups: [approver]
+  expect: {result: ok}
+- id: authz-35
+  rules: [APR-4]
+  given:
+    actor: human:bob
+    tenant: demo
+    approve: pipeline.ctd_qc
+    initiator: human:alice
+    people:
+    - principal: human:bob
+      groups: [approver]
+  expect: {result: denied, reason: no_group_cap}
+- id: authz-36
+  rules: [APR-4]
+  given:
+    actor: human:carol
+    tenant: demo
+    approve: pipeline.ctd_qc
+    initiator: human:alice
+    people:
+    - principal: human:carol
+      groups: [ctd-lead]
+  expect: {result: ok}
+- id: authz-37
+  rules: [APR-4, APR-7]
+  given:
+    tenant: demo
+    times: 2
+    second_reason: already_decided
+    people:
+    - principal: human:carol
+      groups: [approver]
+  steps:
+  - call:
+      port: P1
+      op: decide
+      request: {subject_kind: approval, id: $last, decision: approve}
+    by: human:carol
+  expect: {write_calls: 1}
+- id: authz-38
+  rules: [APR-4]
+  given: {tenant: demo}
+  steps:
+  - call:
+      port: P1
+      op: decide
+      request: {subject_kind: approval, id: $last, decision: approve}
+    by: service:api-k1
+  expect: {result: denied, reason: no_group_cap}
+- id: authz-39
+  rules: [APR-4]
+  given:
+    tenant: demo
+    people:
+    - principal: human:carol
+      groups: [approver]
+    membership_assurance: none
+  steps:
+  - call:
+      port: P1
+      op: decide
+      request: {subject_kind: approval, id: $last, decision: approve}
+    by: human:carol
+    chat: lab
+  expect: {result: denied, reason: forbidden}
+- id: authz-40
+  rules: [APR-4]
+  given:
+    tenant: demo2
+    people:
+    - principal: human:carol
+      groups: [approver]
+    approval_tenant: demo
+  steps:
+  - call:
+      port: P1
+      op: decide
+      request: {subject_kind: approval, id: $last, decision: approve}
+    by: human:carol
+  expect: {result: denied, reason: tenant_mismatch}
+- id: authz-41
+  rules: [APR-9]
+  given: {tenant: demo}
+  steps:
+  - lint: {tenant_yaml: 'kind: production, self_approve: true'}
+  expect: {result: rejected, stage: apply}
+- id: authz-42
+  rules: [APR-4]
+  given: {tenant: demo, since: v0.2, details_opened: false}
+  steps:
+  - call:
+      port: P1
+      op: decide
+      request: {subject_kind: governance_case, id: $last, decision: confirm}
+  expect: {result: denied, reason: details_not_opened}
+# Only the core sets action.* types (APR-5)
+- id: authz-43
+  rules: [APR-5]
+  given:
+    tenant: demo
+    people:
+    - principal: human:bob
+      groups: [staff]
+  steps:
+  - call:
+      port: P1
+      op: enqueue
+      request:
+        body: {type: action.cleanup_pipeline_tmp.v1, goal: training task action.cleanup_pipeline_tmp.v1}
+        idempotency_key: authz-43-4
+    by: human:bob
+    context: {via: P1}
+  expect: {result: denied, reason: forbidden}
+- id: authz-44
+  rules: [APR-5]
+  given: {tenant: demo}
+  steps:
+  - lint: {route_yaml: 'type: action.cleanup_pipeline_tmp.v1'}
+  expect: {result: rejected, stage: apply}
+- id: authz-45
+  rules: [APR-5]
+  given: {tenant: demo}
+  steps:
+  - lint: {role_yaml: 'may_enqueue: [action.cleanup_pipeline_tmp.v1]'}
+  expect: {result: rejected, stage: apply}
+# Services and scripts (APR-18, INJ-15)
+- id: authz-46
+  rules: [APR-18]
+  given:
+    tenant: demo
+    bot: ops-reader
+    initiator: human:bob
+    tool: service/control
+    args: {service: nginx, verb: restart}
+    untrusted_seen: false
+    people:
+    - principal: human:bob
+      groups: [ops-oncall]
+  expect: {code: done, card: false, audit: service_grant}
+- id: authz-47
+  rules: [APR-18, INJ-15]
+  given:
+    tenant: demo
+    bot: ops-reader
+    initiator: human:bob
+    tool: service/control
+    args: {service: nginx, verb: restart}
+    untrusted_seen: true
+    people:
+    - principal: human:bob
+      groups: [ops-oncall]
+  expect: {code: approval_required, card: approval_card, approver_right: 'action.approve:service.control'}
+- id: authz-48
+  rules: [APR-18]
+  given:
+    tenant: demo
+    bot: ops-reader
+    initiator: human:bob
+    tool: service/control
+    args: {service: nginx, verb: stop}
+    untrusted_seen: false
+    people:
+    - principal: human:bob
+      groups: [ops-oncall]
+  expect: {code: approval_required, card: approval_card}
+- id: authz-49
+  rules: [APR-18]
+  given:
+    tenant: demo
+    bot: ops-reader
+    initiator: human:bob
+    tool: service/control
+    args: {service: ctd-qc, verb: restart}
+    people:
+    - principal: human:bob
+      groups: [ops-oncall]
+  expect: {result: denied, reason: forbidden, note: ctd-qc is not in the service_control of the role}
+- id: authz-50
+  rules: [APR-18]
+  given:
+    tenant: demo
+    bot: ops-reader
+    initiator: human:bob
+    tool: monitor/script_run
+    args: {resource: web1, script: app-api-restart}
+    people:
+    - principal: human:bob
+      groups: [ops-oncall]
+  expect: {result: denied, reason: forbidden, note: the script is not in the monitor_scripts of the role}

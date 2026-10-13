@@ -1,0 +1,90 @@
+id: tim-fx-10
+rules: [TIM-4]
+description: A change of the schedule time zone between two slots takes effect from the next slot after apply. The slot key
+  in UTC gives no second run of an instant already run and does not lose the next slot.
+given:
+  tenant: demo
+  schedule:
+    name: daily-report
+    cron: 30 3 * * *
+    task: {type: report.daily.v1}
+steps:
+- call:
+    port: P2
+    op: apply
+    request:
+      commit: 0123456789abcdef0123456789abcdef01234567
+      manifests:
+      - apiVersion: botaru/v1alpha1
+        kind: Schedule
+        metadata: {name: daily-report, tenant: demo}
+        spec:
+          cron: 30 3 * * *
+          timezone: Europe/Berlin
+          task: {type: report.daily.v1}
+  by: operator
+  at: '2026-10-11T12:00:00Z'
+- check: {slot: '2026-10-12T01:30Z'}
+  expect: {outcome: enqueued, key: 'system:schedule:daily-report:2026-10-12T01:30Z'}
+- call:
+    port: P2
+    op: apply
+    request:
+      commit: 0123456789abcdef0123456789abcdef01234567
+      manifests:
+      - apiVersion: botaru/v1alpha1
+        kind: Schedule
+        metadata: {name: daily-report, tenant: demo}
+        spec:
+          cron: 30 3 * * *
+          timezone: UTC
+          task: {type: report.daily.v1}
+  by: operator
+  at: '2026-10-12T02:00:00Z'
+- check: {slot: '2026-10-12T03:30Z'}
+  expect: {outcome: enqueued, key: 'system:schedule:daily-report:2026-10-12T03:30Z'}
+- check: {slot: '2026-10-13T03:30Z'}
+  expect: {outcome: enqueued}
+expect: {duplicate_keys: 0, lost_slots: 0}
+cases:
+- id: tim-fx-11
+  rules: [TIM-4]
+  description: A change to a time zone where the next slot coincides with an instant already run; there is no second task with the
+    same key.
+  steps:
+  - call:
+      port: P2
+      op: apply
+      request:
+        commit: 0123456789abcdef0123456789abcdef01234567
+        manifests:
+        - apiVersion: botaru/v1alpha1
+          kind: Schedule
+          metadata: {name: daily-report, tenant: demo}
+          spec:
+            cron: 30 3 * * *
+            timezone: UTC
+            task: {type: report.daily.v1}
+    by: operator
+    at: '2026-10-12T00:00:00Z'
+  - check: {slot: '2026-10-12T03:30Z'}
+    expect: {outcome: enqueued}
+  - call:
+      port: P2
+      op: apply
+      request:
+        commit: 0123456789abcdef0123456789abcdef01234567
+        manifests:
+        - apiVersion: botaru/v1alpha1
+          kind: Schedule
+          metadata: {name: daily-report, tenant: demo}
+          spec:
+            cron: 30 3 * * *
+            timezone: UTC
+            task: {type: report.daily.v1}
+    by: operator
+    at: '2026-10-12T03:31:00Z'
+  - check: {slot: '2026-10-12T03:30Z'}
+    expect: {outcome: not_run, new_tasks: 0}
+  expect:
+    tasks_with_key: {'system:schedule:daily-report:2026-10-12T03:30Z': 1}

@@ -1,0 +1,22 @@
+# Bot message type of genus report (MSG-2): a sensor note for the inbox of role ops-reader.
+apiVersion: botaru/v1alpha1
+kind: MessageType
+metadata: {name: report.sensor_note.v1}
+spec:
+  kind: report
+  fields_schema:
+    type: object
+    additionalProperties: false
+    required: [sensor, issue]
+    properties:
+      sensor: {enum_from: catalog.sensors}
+      issue: {enum: [gap, stuck, out_of_range]}
+      hours: {type: integer, minimum: 0, maximum: 168}
+  subject_from: sensor
+  data_class: summary
+  delivery: one
+  ttl: 24h
+  max_bytes: 2048
+  producers: [job]
+  rate: {per_hour_per_sender: 20}
+  note: {max_chars: 280}

@@ -1,0 +1,43 @@
+id: dig-03
+rules: [DIG-3, PRP-4]
+description: '"Accept" on a proposal of kind action_request. Before the button no transition of the proposal creates a tool
+  call, an approval or a message, except the delivery of the digest and the cards; there are zero write calls. "Accept" creates
+  exactly one approval on behalf of the person who accepted, with the source "proposal p"; this also needs the permission to start realization
+  action.request:<action>.'
+given:
+  tenant: demo
+  proposal:
+    id: p_01JB0000000000000000000301
+    state: presented
+    category: reliability
+    change:
+      kind: action_request
+      action_request:
+        action: cleanup_pipeline_tmp
+        args: {older_than_days: 7}
+  humans:
+  - name: alice
+    caps: ['proposal.decide:reliability']
+  - name: carol
+    caps: ['proposal.decide:reliability', 'action.request:cleanup_pipeline_tmp']
+steps:
+- check:
+    lifecycle: [screened, in_review, recommended, presented]
+  expect: {write_calls: 0, approvals: 0, tool_calls: 0, messages_except_digest_and_cards: 0}
+- call:
+    port: P1
+    op: decide
+    request: {subject_kind: proposal, id: p_01JB0000000000000000000301, decision: accept}
+  by: human:alice
+  expect: {result: rejected, reason: forbidden, approvals: 0}
+- call:
+    port: P1
+    op: decide
+    request: {subject_kind: proposal, id: p_01JB0000000000000000000301, decision: accept}
+  by: human:carol
+  expect:
+    state: realizing
+    approvals: 1
+    approval: {action: cleanup_pipeline_tmp, initiator: 'human:carol', source: proposal}
+    write_calls: 0
+    realization: {realizer: carol}

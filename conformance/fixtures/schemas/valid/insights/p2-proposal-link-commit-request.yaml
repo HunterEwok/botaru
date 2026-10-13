@@ -1,0 +1,4 @@
+schema: spec/model/p2-proposal-link-commit-request.schema.json
+rules: [PRP-19]
+description: A P2 proposal.link_commit request that the schema accepts.
+data: {proposal: p_01JB0000000000000000000101, commit: 3f2a9c0d1e4b5a6978c0d1e2f3a4b5c6d7e8f901}

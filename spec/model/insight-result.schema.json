@@ -1,0 +1,40 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:botaru:schema:insight-result:1",
+  "title": "Analysis result (insight-result)",
+  "description": "Result of a task with the purpose insight or aggregate: at most three proposals or the code nothing_found. There is no separate \"propose\" tool: the core creates proposals only on a successful complete of the attempt, in the same transaction (INS-1, INS-3).",
+  "x-botaru-direction": "input",
+  "x-botaru-rules": [
+    "INS-1",
+    "INS-3"
+  ],
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "proposals": {
+      "type": "array",
+      "items": {
+        "$ref": "urn:botaru:schema:proposal-body:1"
+      },
+      "maxItems": 3,
+      "description": "Proposal bodies by the schema botaru.proposal/v1.",
+      "minItems": 1
+    },
+    "code": {
+      "const": "nothing_found",
+      "description": "Nothing found; there are no proposals."
+    }
+  },
+  "oneOf": [
+    {
+      "required": [
+        "proposals"
+      ]
+    },
+    {
+      "required": [
+        "code"
+      ]
+    }
+  ]
+}

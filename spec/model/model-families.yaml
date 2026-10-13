@@ -1,0 +1,15 @@
+registry: model-families
+version: 1
+description: >-
+  Model families for the family field of the ModelProfile manifest. On a production
+  tenant the profiles of the seats of lenses with a veto belong to different families:
+  a match is the apply error veto_lenses_same_family, on a test bench tenant
+  a doctor warning (GOV-34). The skeleton text names only the training
+  family family-a; the deployment adds real families together with
+  the provider binding sheet.
+source: docs/models-and-money.md
+entries:
+  - id: family-a
+    since: v0.1
+    meaning: the training family of the skeleton examples; a common pool of rate limits for the example profiles
+    rules: [GOV-34, GW-10]

@@ -1,0 +1,26 @@
+# Program launch plugin: named argv commands without a shell (INJ-14), the machine comes from host (TEN-3a).
+apiVersion: botaru/v1alpha1
+kind: ToolPlugin
+metadata: {name: cmd}
+spec:
+  placement: host
+  network: {egress: []}
+  tools:
+    - name: run
+      description: "Runs one named command on a catalog machine and returns its output."
+      access: read
+      tier: 1
+      output_class: raw_logs                # service_status prints lines of the service journal (INJ-14)
+      untrusted_output: true
+      redact: [ip, email, secret]
+      target_from: host
+      output_limit_kb: 32
+      timeout_s: 20
+      params:
+        command: {enum: [disk_usage, service_status]}
+        host: {enum_from: catalog.hosts}
+      commands:
+        disk_usage: {argv: [/usr/bin/df, -h, -x, tmpfs]}
+        service_status:
+          argv: [/usr/bin/systemctl, status, --no-pager, -n, "0", --, "{service.unit}"]
+          params: {service: {enum_from: catalog.services}}

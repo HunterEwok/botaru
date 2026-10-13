@@ -1,0 +1,47 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:botaru:schema:p1-heartbeat-request:1",
+  "title": "P1 heartbeat: request",
+  "description": "The holder extends the lease. Progress only as a stage from the closed list stages of the type and a completion share; there is no streaming of model text (DLV-11). The usage is informational. A repeat with the same arguments gives the same answer (IDM-3). The lease token is not passed in the body: the holder sends it in the Botaru-Lease header (spec/bindings/http/README.md), one way for all operations under a lease (FEN-2).",
+  "x-botaru-direction": "input",
+  "x-botaru-rules": [
+    "FEN-2",
+    "FEN-4",
+    "DLV-11",
+    "IDM-3",
+    "STA-2"
+  ],
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "stage": {
+      "description": "Progress stage from the stages of the task type.",
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_]*$",
+      "maxLength": 64
+    },
+    "progress": {
+      "description": "Completion share from 0 to 1.",
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1
+    },
+    "usage": {
+      "description": "Informational usage; only P4 counts money (BUD-3).",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "input_tokens": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 100000000
+        },
+        "output_tokens": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 100000000
+        }
+      }
+    }
+  }
+}

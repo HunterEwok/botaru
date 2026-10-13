@@ -1,0 +1,398 @@
+# Collected from spec/lifecycles/toolcall.yaml. The value null in from means "the object does not exist yet".
+lifecycle: spec/lifecycles/toolcall.yaml
+object: toolcall
+rules: [APR-18, APR-7, CNT-7, DEP-2, DLV-1, DLV-16, FEN-1, FEN-4, FEN-5, FEN-6, HLD-1, HLD-3, INJ-1, INJ-13, INJ-4,
+  INJ-5, MAN-10, MON-8, OBS-10, ORC-12, ORC-3, PRM-3, PRM-4, PRM-5, PRM-8, RET-6, SEC-3, SEC-4, TEN-2, TEN-3a]
+description: Allowed and forbidden transitions of the "tool call" lifecycle, collected from the tables of spec/lifecycles/toolcall.md.
+  The implementation accepts a transition from the allowed list under the condition of its row; a pair from the forbidden
+  list does not change the state, and the call that asks for it is rejected. The without_transition rows are calls that
+  have no transition by the table. A tool call is not handed out again; a write call is executed at most once (DLV-1).
+states:
+- id: requested
+  terminal: false
+- id: denied
+  terminal: true
+- id: queued
+  terminal: false
+- id: leased
+  terminal: false
+- id: done
+  terminal: true
+- id: error
+  terminal: true
+- id: exec_unknown
+  terminal: true
+- id: abandoned
+  terminal: true
+allowed:
+- from: null
+  to: requested
+  by: P3 `tools/call` with the tool handle of a live attempt
+  rules: [SEC-3, TEN-2]
+- from: null
+  to: requested
+  by: the core in the transaction of the approval transition `approved` -> `executing`
+  rules: [APR-7, MAN-10]
+- from: null
+  to: requested
+  by: the `campaign` loop when releasing a campaign item with an action
+  rules: [ORC-12, ORC-3]
+- from: null
+  to: requested
+  by: the core on a call of the built-in tool P3 `service/control`
+  rules: [APR-18, MON-8]
+- from: requested
+  to: denied
+  by: the core (C2 in the same transaction)
+  rules: [HLD-1, INJ-1, PRM-3, PRM-4, PRM-5, PRM-8]
+- from: requested
+  to: queued
+  by: the core
+  rules: [SEC-4, TEN-3a]
+- from: requested
+  to: error
+  by: the core
+  rules: [DLV-16, OBS-10]
+- from: queued
+  to: error
+  by: the `deadline` loop
+  rules: [CNT-7, DLV-16]
+- from: queued
+  to: leased
+  by: P1 `claim` with the kind `toolcall` from a toolhost
+  rules: [DEP-2, FEN-1, TEN-3a]
+- from: queued
+  to: denied
+  by: P2 `hold.set` with `no_tool` on a plugin or `no_action` on an action
+  rules: [HLD-3]
+- from: leased
+  to: done
+  by: P1 `complete` from the toolhost
+  rules: [APR-7, CNT-7, INJ-13, INJ-4]
+- from: leased
+  to: error
+  by: P1 `fail` from the toolhost
+  rules: [APR-7, CNT-7, INJ-5]
+- from: leased
+  to: error
+  by: the `reaper` loop
+  rules: [DLV-1, FEN-5]
+- from: leased
+  to: exec_unknown
+  by: the `reaper` loop
+  rules: [APR-7, CNT-7, FEN-5]
+- from: queued
+  to: exec_unknown
+  by: C1 `epoch.advance` on restore from backup
+  rules: &id001 [RET-6]
+- from: leased
+  to: exec_unknown
+  by: C1 `epoch.advance` on restore from backup
+  rules: *id001
+- from: queued
+  to: abandoned
+  by: the core when the attempt that owns the call loses its lease, when the task is canceled, when the lease is revoked
+  rules: &id002 [FEN-4, FEN-6]
+- from: leased
+  to: abandoned
+  by: the core when the attempt that owns the call loses its lease, when the task is canceled, when the lease is revoked
+  rules: *id002
+forbidden:
+- from: null
+  to: denied
+  expect: rejected
+  rules: &id003 [TEN-3a]
+  why: the object does not appear directly in the state denied
+- from: null
+  to: queued
+  expect: rejected
+  rules: *id003
+  why: the object does not appear directly in the state queued
+- from: null
+  to: leased
+  expect: rejected
+  rules: *id003
+  why: the object does not appear directly in the state leased
+- from: null
+  to: done
+  expect: rejected
+  rules: *id003
+  why: the object does not appear directly in the state done
+- from: null
+  to: error
+  expect: rejected
+  rules: *id003
+  why: the object does not appear directly in the state error
+- from: null
+  to: exec_unknown
+  expect: rejected
+  rules: *id003
+  why: the object does not appear directly in the state exec_unknown
+- from: null
+  to: abandoned
+  expect: rejected
+  rules: *id003
+  why: the object does not appear directly in the state abandoned
+- from: requested
+  to: requested
+  expect: rejected
+  rules: &id004 [DLV-1, TEN-3a]
+  why: the lifecycle table has no such transition
+- from: requested
+  to: leased
+  expect: rejected
+  rules: *id004
+  why: the lifecycle table has no such transition
+- from: requested
+  to: done
+  expect: rejected
+  rules: *id004
+  why: the lifecycle table has no such transition
+- from: requested
+  to: exec_unknown
+  expect: rejected
+  rules: *id004
+  why: the lifecycle table has no such transition
+- from: requested
+  to: abandoned
+  expect: rejected
+  rules: *id004
+  why: the lifecycle table has no such transition
+- from: denied
+  to: requested
+  expect: rejected
+  rules: &id005 [DLV-1]
+  why: denied is a terminal state
+- from: denied
+  to: denied
+  expect: rejected
+  rules: *id005
+  why: denied is a terminal state
+- from: denied
+  to: queued
+  expect: rejected
+  rules: *id005
+  why: denied is a terminal state
+- from: denied
+  to: leased
+  expect: rejected
+  rules: *id005
+  why: denied is a terminal state
+- from: denied
+  to: done
+  expect: rejected
+  rules: *id005
+  why: denied is a terminal state
+- from: denied
+  to: error
+  expect: rejected
+  rules: *id005
+  why: denied is a terminal state
+- from: denied
+  to: exec_unknown
+  expect: rejected
+  rules: *id005
+  why: denied is a terminal state
+- from: denied
+  to: abandoned
+  expect: rejected
+  rules: *id005
+  why: denied is a terminal state
+- from: queued
+  to: requested
+  expect: rejected
+  rules: *id004
+  why: the lifecycle table has no such transition
+- from: queued
+  to: queued
+  expect: rejected
+  rules: *id004
+  why: the lifecycle table has no such transition
+- from: queued
+  to: done
+  expect: rejected
+  rules: *id004
+  why: the lifecycle table has no such transition
+- from: leased
+  to: requested
+  expect: rejected
+  rules: *id004
+  why: the lifecycle table has no such transition
+- from: leased
+  to: denied
+  expect: rejected
+  rules: *id004
+  why: the lifecycle table has no such transition
+- from: leased
+  to: queued
+  expect: rejected
+  rules: *id004
+  why: the lifecycle table has no such transition
+- from: leased
+  to: leased
+  expect: rejected
+  rules: *id004
+  why: the lifecycle table has no such transition
+- from: done
+  to: requested
+  expect: rejected
+  rules: *id005
+  why: done is a terminal state
+- from: done
+  to: denied
+  expect: rejected
+  rules: *id005
+  why: done is a terminal state
+- from: done
+  to: queued
+  expect: rejected
+  rules: *id005
+  why: done is a terminal state
+- from: done
+  to: leased
+  expect: rejected
+  rules: *id005
+  why: done is a terminal state
+- from: done
+  to: done
+  expect: rejected
+  rules: *id005
+  why: done is a terminal state
+- from: done
+  to: error
+  expect: rejected
+  rules: *id005
+  why: done is a terminal state
+- from: done
+  to: exec_unknown
+  expect: rejected
+  rules: *id005
+  why: done is a terminal state
+- from: done
+  to: abandoned
+  expect: rejected
+  rules: *id005
+  why: done is a terminal state
+- from: error
+  to: requested
+  expect: rejected
+  rules: *id005
+  why: error is a terminal state
+- from: error
+  to: denied
+  expect: rejected
+  rules: *id005
+  why: error is a terminal state
+- from: error
+  to: queued
+  expect: rejected
+  rules: *id005
+  why: error is a terminal state
+- from: error
+  to: leased
+  expect: rejected
+  rules: *id005
+  why: error is a terminal state
+- from: error
+  to: done
+  expect: rejected
+  rules: *id005
+  why: error is a terminal state
+- from: error
+  to: error
+  expect: rejected
+  rules: *id005
+  why: error is a terminal state
+- from: error
+  to: exec_unknown
+  expect: rejected
+  rules: *id005
+  why: error is a terminal state
+- from: error
+  to: abandoned
+  expect: rejected
+  rules: *id005
+  why: error is a terminal state
+- from: exec_unknown
+  to: requested
+  expect: rejected
+  rules: *id005
+  why: exec_unknown is a terminal state
+- from: exec_unknown
+  to: denied
+  expect: rejected
+  rules: *id005
+  why: exec_unknown is a terminal state
+- from: exec_unknown
+  to: queued
+  expect: rejected
+  rules: *id005
+  why: exec_unknown is a terminal state
+- from: exec_unknown
+  to: leased
+  expect: rejected
+  rules: *id005
+  why: exec_unknown is a terminal state
+- from: exec_unknown
+  to: done
+  expect: rejected
+  rules: *id005
+  why: exec_unknown is a terminal state
+- from: exec_unknown
+  to: error
+  expect: rejected
+  rules: *id005
+  why: exec_unknown is a terminal state
+- from: exec_unknown
+  to: exec_unknown
+  expect: rejected
+  rules: *id005
+  why: exec_unknown is a terminal state
+- from: exec_unknown
+  to: abandoned
+  expect: rejected
+  rules: *id005
+  why: exec_unknown is a terminal state
+- from: abandoned
+  to: requested
+  expect: rejected
+  rules: *id005
+  why: abandoned is a terminal state
+- from: abandoned
+  to: denied
+  expect: rejected
+  rules: *id005
+  why: abandoned is a terminal state
+- from: abandoned
+  to: queued
+  expect: rejected
+  rules: *id005
+  why: abandoned is a terminal state
+- from: abandoned
+  to: leased
+  expect: rejected
+  rules: *id005
+  why: abandoned is a terminal state
+- from: abandoned
+  to: done
+  expect: rejected
+  rules: *id005
+  why: abandoned is a terminal state
+- from: abandoned
+  to: error
+  expect: rejected
+  rules: *id005
+  why: abandoned is a terminal state
+- from: abandoned
+  to: exec_unknown
+  expect: rejected
+  rules: *id005
+  why: abandoned is a terminal state
+- from: abandoned
+  to: abandoned
+  expect: rejected
+  rules: *id005
+  why: abandoned is a terminal state
+expect:
+  allowed: 18
+  forbidden: 59

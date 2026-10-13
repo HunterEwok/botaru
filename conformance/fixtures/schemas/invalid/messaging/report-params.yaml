@@ -1,0 +1,21 @@
+schema: spec/model/report-params.schema.json
+rules:
+- REP-9
+- INJ-1
+description: 'Parameters that the schema rejects: delivery target in the parameters; window outside the list; campaign scope
+  without an id; id on the tenant scope.'
+cases:
+- window: 24h
+  scope:
+    kind: tenant
+  deliver_to: chat:lab
+- window: 7d
+  scope:
+    kind: tenant
+- window: 1h
+  scope:
+    kind: campaign
+- window: 1h
+  scope:
+    kind: tenant
+    id: k_01JB0000000000000000000201

@@ -1,0 +1,29 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:botaru:schema:p1-heartbeat-response:1",
+  "title": "P1 heartbeat: response",
+  "description": "New lease deadline and the cancellation flag. A holder that got cancel_requested stops the work before the next heartbeat (FEN-4). Denial: fenced.",
+  "x-botaru-direction": "output",
+  "x-botaru-rules": [
+    "FEN-4",
+    "TIM-1"
+  ],
+  "type": "object",
+  "required": [
+    "lease_remaining_s",
+    "cancel_requested"
+  ],
+  "properties": {
+    "lease_until": {
+      "description": "Informational absolute time.",
+      "$ref": "urn:botaru:schema:common:1#/$defs/datetime"
+    },
+    "lease_remaining_s": {
+      "description": "Remaining seconds by the store clock (TIM-1).",
+      "$ref": "urn:botaru:schema:common:1#/$defs/seconds"
+    },
+    "cancel_requested": {
+      "type": "boolean"
+    }
+  }
+}

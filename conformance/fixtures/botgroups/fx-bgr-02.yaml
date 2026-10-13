@@ -1,0 +1,71 @@
+id: fx-bgr-02
+rules: [BGR-2, HLD-1]
+description: 'A bot group gives no permissions: the permission table has no "bot group" input, and C2 does not read membership at authorize.
+  Membership only narrows dispatch (condition D5) and serves as an address for to.group tasks and group: messages. A whole group
+  can be stopped with a hold of scope bot_group.'
+given:
+  tenant: demo
+  groups:
+    zone-a:
+      selector:
+        roles: [ops-reader]
+        labels: {zone: a}
+  workers:
+    w-web1:
+      role: ops-reader
+      labels: {zone: a}
+    w-ctd1:
+      role: data-reader
+      labels: {zone: b}
+cases:
+- description: membership does not add permissions
+  given:
+    rights_of_role: {service_control: false}
+  steps:
+  - call:
+      port: P3
+      op: tools/call
+      request:
+        name: service/control
+        arguments: {service: nginx, verb: restart}
+    by: worker:w-web1
+  expect: {result: denied, authorize_reads_membership: false}
+- description: a permission row with a bot group
+  steps:
+  - lint:
+      permissions:
+      - {bot_group: zone-a, grant: 'task:ops.investigate.v1'}
+  expect:
+    apply: {result: rejected}
+- description: a task to a group
+  steps:
+  - call:
+      port: P1
+      op: enqueue
+      request:
+        body: {type: ops.summary.v1, goal: training task ops.summary.v1}
+        idempotency_key: fx-bgr-02-1
+        to: {group: zone-a}
+  expect:
+    claimable_by: [w-web1]
+    not_claimable_by: [w-ctd1]
+- description: hold of scope bot_group
+  steps:
+  - call:
+      port: P2
+      op: hold.set
+      request:
+        scope: {kind: bot_group, name: zone-a}
+        effects: [no_claim]
+        reason: manual
+        until: null
+  - call:
+      port: P1
+      op: enqueue
+      request:
+        body: {type: ops.summary.v1, goal: training task ops.summary.v1}
+        idempotency_key: fx-bgr-02-2
+        to: {group: zone-a}
+  expect:
+    task: {state: queued, waiting_reason: held}
+    claim_by_w-web1: none

@@ -1,0 +1,48 @@
+id: fx-msg-flood
+rules: [MSG-10, MSG-15]
+description: Overflow does not evict entries silently. A full inbox immediately gives the sender rejected(inbox_full), and
+  the core writes one event per (inbox, period). The first refusal by share or fullness in a period raises the event inbox.flood
+  by code; old entries are not evicted or lost. Staged entries already take space in the inbox and in the sender's share.
+given:
+  tenant: demo
+  inbox: {kind: worker, name: w_01JB000000000000000000000A, capacity: 100}
+  entries: {queued: 90, leased: 5, staged: 5}
+  senders: {ops-coordinator: 20, core: 80}
+steps:
+- call:
+    port: P1
+    op: msg.send
+    request:
+      type: report.maintenance.v1
+      fields: {}
+      to: role:toolhost-web
+  by: role:ops-lead
+  expect:
+    result: rejected
+    reason: inbox_full
+    events: [inbox.flood]
+- call:
+    port: P1
+    op: msg.send
+    request:
+      type: report.maintenance.v1
+      fields: {}
+      to: role:toolhost-web
+  by: role:ops-lead
+  context: {after: 1m}
+  expect:
+    result: rejected
+    reason: inbox_full
+    events: []
+- occur: {inbox_entries_acked: 10, inbox: 'worker:w_01JB000000000000000000000A'}
+  expect: {free: 10}
+- call:
+    port: P1
+    op: msg.send
+    request:
+      type: report.maintenance.v1
+      fields: {}
+      to: role:toolhost-web
+  by: role:ops-lead
+  expect: {outcome: staged}
+expect: {entries_lost: 0, events_per_inbox_period: 1}

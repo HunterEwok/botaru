@@ -1,0 +1,59 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:botaru:schema:p2-spend-reconcile-request:1",
+  "title": "P2 spend.reconcile: request",
+  "description": "The daily reconciliation process outside the core hands in, with its own report key, the provider's daily sum per workspace. The core compares it with the sum of its own lines for the same day with a tolerance from the deployment settings, writes the difference as one signed correction line, and the spend_estimated lines of that day get the spend_reconciled flag without a price edit (BUD-10, D-87 (1)). This is a contract between programs.",
+  "x-botaru-direction": "input",
+  "x-botaru-rules": [
+    "BUD-10",
+    "PRM-14"
+  ],
+  "type": "object",
+  "required": [
+    "day",
+    "provider",
+    "rows"
+  ],
+  "properties": {
+    "day": {
+      "type": "string",
+      "maxLength": 10,
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$",
+      "description": "UTC day."
+    },
+    "provider": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/name"
+    },
+    "rows": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "tenant",
+          "spent_eur_micros"
+        ],
+        "properties": {
+          "tenant": {
+            "$ref": "urn:botaru:schema:common:1#/$defs/tenant_name"
+          },
+          "workspace": {
+            "type": "string",
+            "maxLength": 200
+          },
+          "spent_eur_micros": {
+            "$ref": "urn:botaru:schema:common:1#/$defs/eur_micros",
+            "description": "The provider's daily sum per workspace in micro-euros."
+          },
+          "report_id": {
+            "type": "string",
+            "maxLength": 200
+          }
+        },
+        "additionalProperties": false
+      },
+      "maxItems": 1000,
+      "minItems": 1
+    }
+  },
+  "additionalProperties": false
+}

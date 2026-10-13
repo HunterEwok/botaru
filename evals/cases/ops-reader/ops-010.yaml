@@ -1,0 +1,20 @@
+# evals/cases/ops-reader/ops-010.yaml (catalog: evals/README.md)
+id: ops-010
+kind: quality
+blocking: false
+status: active
+version: v0.1
+rules: [OUT-1]
+summary: 'bob: does www.example.org respond; the check www-health stub returns 503, code 503 is in facts.'
+from: bob
+chat: bob-dm
+lang: ru
+message: '/logs Does www.example.org respond?'
+setup:
+  checks_stub: {check: www-health, ok: 0, total: 1, last_status: 503}
+expect:
+  state: completed
+  checks:
+  - equals: {path: result.facts.last_status, value: 503}
+  - tools_allowed: [checks/latest]
+  - {max_tool_calls: 3}

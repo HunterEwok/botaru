@@ -1,0 +1,117 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:botaru:schema:p2-health-response:1",
+  "title": "P2 health: response",
+  "description": "Answer of P2 health to the monitoring system. alive is true only when the store answers and the ticks of all background loops are on time; when false there is a reason. Only numbers, no tenant data (MON-2, CAP-5, OBS-4, OBS-9, MON-11, LCY-6).",
+  "x-botaru-direction": "output",
+  "x-botaru-rules": [
+    "MON-2",
+    "CAP-5",
+    "OBS-4",
+    "OBS-9",
+    "MON-11",
+    "LCY-6"
+  ],
+  "type": "object",
+  "required": [
+    "alive"
+  ],
+  "properties": {
+    "alive": {
+      "description": "Whether the core is alive.",
+      "type": "boolean"
+    },
+    "reason": {
+      "description": "Reason when alive is false.",
+      "enum": [
+        "store_unavailable",
+        "loop_stale",
+        "not_ready",
+        "draining"
+      ],
+      "x-botaru-registry": "reasons"
+    },
+    "drain_until_s": {
+      "description": "Seconds until the drain deadline for reason draining.",
+      "type": "integer",
+      "minimum": 0
+    },
+    "store_free_bytes": {
+      "description": "Free space of the store volume in bytes (CAP-5).",
+      "type": "integer",
+      "minimum": 0
+    },
+    "store_free_ratio": {
+      "description": "Share of free space of the store volume (CAP-5).",
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1
+    },
+    "oldest_urgent_age_s": {
+      "description": "Age of the oldest task of classes 1 and 2 in submitted (OBS-9).",
+      "type": "integer",
+      "minimum": 0
+    },
+    "delivered_10m_ratio": {
+      "description": "Share of deliveries that reached delivered within 10 minutes (OBS-9).",
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1
+    },
+    "loop_tick_age_s": {
+      "description": "Tick age of each background loop in seconds (OBS-4).",
+      "type": "object",
+      "propertyNames": {
+        "pattern": "^[a-z][a-z-]*$"
+      },
+      "additionalProperties": {
+        "type": "integer",
+        "minimum": 0
+      }
+    },
+    "monitor_export_age_s": {
+      "description": "Age of the last successful E5 export per tenant (MON-11).",
+      "type": "object",
+      "propertyNames": {
+        "$ref": "urn:botaru:schema:common:1#/$defs/tenant_name"
+      },
+      "additionalProperties": {
+        "type": "integer",
+        "minimum": 0
+      }
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "alive": {
+            "const": false
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "reason"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "reason": {
+            "const": "draining"
+          }
+        },
+        "required": [
+          "reason"
+        ]
+      },
+      "then": {
+        "required": [
+          "drain_until_s"
+        ]
+      }
+    }
+  ]
+}

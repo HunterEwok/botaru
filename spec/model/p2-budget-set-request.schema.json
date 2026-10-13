@@ -1,0 +1,35 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:botaru:schema:p2-budget-set-request:1",
+  "title": "P2 budget.set: request",
+  "description": "A temporary narrowing of a limit with a deadline; the limits themselves live in the tenant manifest (MAN-5).",
+  "x-botaru-direction": "input",
+  "x-botaru-rules": [
+    "MAN-5",
+    "PRM-14"
+  ],
+  "type": "object",
+  "required": [
+    "tenant",
+    "line",
+    "limit",
+    "until"
+  ],
+  "properties": {
+    "tenant": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/tenant_name"
+    },
+    "line": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/name",
+      "description": "Budget line or limit of the tenant."
+    },
+    "limit": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/eurocents",
+      "description": "New limit, not above the one recorded in git."
+    },
+    "until": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/datetime"
+    }
+  },
+  "additionalProperties": false
+}

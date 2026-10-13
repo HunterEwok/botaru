@@ -1,0 +1,158 @@
+registry: dispatch-predicates
+version: 1
+description: >-
+  Closed list of the dispatcher's filter conditions inside P1 `claim`. A task goes only to a worker
+  for which all conditions hold; then the order: priority class strictly, since v0.2 fairness within
+  the class, enqueue time, task id (DSP-5). Each condition takes its fact only from the task record,
+  manifests or core observations, and never from the task body, messages, model output or the worker's
+  self-report (DSP-2). A new condition appears only through an ADR and a new version of the list; a tenant
+  policy adds no conditions, it only narrows dispatch (DSP-3). Entry fields: `checks` (what
+  it checks), `fact_from` (where the fact comes from), `applies_to` (work kinds the condition applies to:
+  `attempt`, `toolcall`), `waiting_reason` (the task's waiting reason if the condition holds for no
+  worker), `rules`.
+source: docs/coordination.md
+entries:
+  - id: D1
+    since: v0.1
+    checks: The worker's tenant matches the task's tenant.
+    fact_from: credentials, task record
+    applies_to: [attempt, toolcall]
+    rules: [TEN-3, DSP-3]
+  - id: D2
+    since: v0.1
+    checks: The task type is in the `claims` of the worker's role.
+    fact_from: role manifest
+    applies_to: [attempt]
+    rules: [DSP-3]
+  - id: D3
+    since: v0.1
+    checks: 'The type''s `requires` is among the worker labels recorded at `enroll`.'
+    fact_from: type manifest, worker record
+    applies_to: [attempt]
+    rules: [DSP-3]
+  - id: D4
+    since: v0.1
+    checks: The `target` of the tool call matches the worker's node.
+    fact_from: call record
+    applies_to: [toolcall]
+    rules: [TEN-3a]
+  - id: D5
+    since: v0.1
+    checks: If the task has `to_group`, the worker is a member of this bot group.
+    fact_from: '`BotGroup`, worker record'
+    applies_to: [attempt]
+    waiting_reason: no_member
+    rules: [DSP-4, DSP-8, BGR-1]
+  - id: D6
+    since: v0.1
+    checks: >-
+      A personal assistant task goes to a ready worker of the assistant role; the core writes the owner `owner`
+      (the initiator from the direct chat) into the lease at `claim`, there is no worker per person.
+    fact_from: task record, role record
+    applies_to: [attempt]
+    rules: [DSP-10, IDN-5]
+  - id: D7
+    since: v0.1
+    checks: '`run_at` has come; for a campaign item the release is recorded in the campaign.'
+    fact_from: task and campaign record
+    applies_to: [attempt]
+    waiting_reason: run_at
+    rules: [DSP-7]
+  - id: D8
+    since: v0.1
+    checks: The worker is `active` (not `draining` and not `blocked`) and `ready` by core observation.
+    fact_from: core observation
+    applies_to: [attempt, toolcall]
+    waiting_reason: no_member_ready
+    rules: [STA-2, OBS-4]
+  - id: D9
+    since: v0.1
+    checks: >-
+      There is no active stop with the effect `no_claim` or `cancel_running` whose scope covers
+      the farm, tenant, role, type, bot group, bot, seat, worker, machine or resource of the task.
+    fact_from: stop records
+    applies_to: [attempt]
+    waiting_reason: held
+    rules: [HLD-1, HLD-3]
+  - id: D10
+    since: v0.1
+    checks: >-
+      Counters are not exceeded: `max_running` per (tenant, type); since v0.2 also `max_running` of the bot
+      group and `max_share` of the rule.
+    fact_from: lease counters
+    applies_to: [attempt]
+    waiting_reason: type_quota
+    rules: [DSP-7]
+  - id: D11
+    since: v0.1
+    checks: 'The resource is free, if the action declared `exclusive: resource`.'
+    fact_from: campaign and approval records
+    applies_to: [attempt]
+    waiting_reason: resource_busy
+    rules: [ORC-12]
+  - id: D12
+    since: v0.1
+    checks: 'If the task has a `pin`, this is that very worker; only the `control` lane writes a pin.'
+    fact_from: task record
+    applies_to: [attempt]
+    rules: [DSP-4, MGR-12]
+  - id: D13
+    since: v0.1
+    checks: The initiator is active and has the permissions (rechecked at the `claim` point).
+    fact_from: C2
+    applies_to: [attempt]
+    rules: [PRM-3]
+  - id: D14
+    since: v0.1
+    checks: '`max_tier` of the task is not above the tiers that the worker''s role can execute with its tools at all.'
+    fact_from: role manifest
+    applies_to: [attempt]
+    rules: [PRM-4]
+  - id: D15
+    since: v0.1
+    checks: >-
+      A task with the purpose `manage` goes only to a worker of the farm manager seat role enrolled
+      in the task's tenant, while the seat is in `held`; the core writes the seat epoch into the attempt, and an attempt with
+      an old epoch gets `fenced`.
+    fact_from: seat record
+    applies_to: [attempt]
+    rules: [DSP-4, MGR-1]
+  - id: D16
+    since: v0.1
+    checks: >-
+      A task with the purpose `insight` goes only to the bot of the role that, among the bots of this role with a ready
+      worker, has gone longest without such a task; on a tie the bot with the smaller id.
+    fact_from: core records of dispatched tasks
+    applies_to: [attempt]
+    rules: [INS-5]
+  - id: D17
+    since: v0.2
+    checks: >-
+      For a type with `conversation_concurrency: serial`, the same conversation has no running attempt of the same role, and
+      the task is the first by enqueue time among the waiting tasks of this conversation.
+    fact_from: task and attempt records
+    applies_to: [attempt]
+    rules: [MEM-5]
+  - id: D18
+    since: v0.1
+    checks: The circuit of the pair (workspace, model pool) the task needs is not open.
+    fact_from: observation of the P4 model gateway
+    applies_to: [attempt]
+    waiting_reason: provider_unavailable
+    rules: [GW-11]
+  - id: D19
+    since: v0.1
+    checks: The tenant has a free share of the model pool the task needs.
+    fact_from: P4 rate limiter
+    applies_to: [attempt]
+    waiting_reason: provider_quota
+    rules: [GW-10]
+  - id: D20
+    since: v0.1
+    checks: >-
+      A task that the core enqueued for a specific bot identity bound to a worker goes only to
+      the worker of this binding with the current binding epoch; a clean-context task and a task of an identity on
+      a seat go to a worker of the role that IDN-12 names.
+    fact_from: '`acting_bot` and `bot_epoch` of the task, identity binding'
+    applies_to: [attempt]
+    rules: [DSP-4, IDN-8, IDN-12]

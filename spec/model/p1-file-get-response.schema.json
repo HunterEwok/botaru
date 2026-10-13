@@ -1,0 +1,36 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:botaru:schema:p1-file-get-response:1",
+  "title": "P1 file.get: response metadata",
+  "description": "Metadata of the returned file; the binding passes the bytes as the response body (spec/bindings/http/README.md). The content is untrusted (ART-2). Denials: not_found, fenced; since v0.2 gone.",
+  "x-botaru-direction": "output",
+  "x-botaru-rules": [
+    "ART-2",
+    "ART-3",
+    "TEN-7"
+  ],
+  "type": "object",
+  "required": [
+    "file_ref",
+    "media_type",
+    "size",
+    "data_mark"
+  ],
+  "properties": {
+    "file_ref": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/file_ref"
+    },
+    "media_type": {
+      "type": "string",
+      "maxLength": 100
+    },
+    "size": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 1099511627776
+    },
+    "data_mark": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/data_mark"
+    }
+  }
+}

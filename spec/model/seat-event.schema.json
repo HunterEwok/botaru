@@ -1,0 +1,78 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:botaru:schema:seat-event:1",
+  "title": "Seat event data",
+  "description": "Data of the events seat.assigned, seat.vacated, seat.stopped and seat.resumed: every holder change and seat stop writes an event and an audit record in the same transaction as the epoch (IDN-10). Metadata only. Routes do not start bot tasks on seat.* events (GOV-29).",
+  "x-botaru-direction": "output",
+  "x-botaru-rules": [
+    "IDN-10",
+    "GOV-29",
+    "GOV-21"
+  ],
+  "type": "object",
+  "required": [
+    "seat",
+    "tenant",
+    "event",
+    "epoch",
+    "at"
+  ],
+  "properties": {
+    "seat": {
+      "type": "string",
+      "maxLength": 16,
+      "pattern": "^(farm-manager|commission:[1-9][0-9]{0,2})$",
+      "description": "Seat id: farm-manager (the farm manager seat, tenant farm) or commission:<seat number from the tenant charter>."
+    },
+    "tenant": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/tenant_name",
+      "description": "Seat tenant."
+    },
+    "event": {
+      "enum": [
+        "seat.assigned",
+        "seat.vacated",
+        "seat.stopped",
+        "seat.resumed"
+      ],
+      "description": "Event kind."
+    },
+    "epoch": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "New seat epoch."
+    },
+    "holder": {
+      "description": "New holder or null.",
+      "anyOf": [
+        {
+          "$ref": "urn:botaru:schema:common:1#/$defs/object_id"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "previous": {
+      "description": "Previous holder or null.",
+      "anyOf": [
+        {
+          "$ref": "urn:botaru:schema:common:1#/$defs/object_id"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "cause": {
+      "type": "string",
+      "maxLength": 64,
+      "pattern": "^[a-z][a-z0-9_.]*$",
+      "description": "Trigger: a P2 operation (seat.assign, seat.vacate, seat.resume), a promotion case, a stop reason (human, no_control, incident) or the retirement trigger of the previous holder."
+    },
+    "at": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/datetime",
+      "description": "Transition time."
+    }
+  }
+}

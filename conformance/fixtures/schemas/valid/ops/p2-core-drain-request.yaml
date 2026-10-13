@@ -1,0 +1,7 @@
+schema: urn:botaru:schema:p2-core-drain-request:1
+rules:
+- LCY-6
+description: A drain for 10 minutes and by default.
+cases:
+- until: 10m
+- {}

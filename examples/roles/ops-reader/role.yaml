@@ -1,0 +1,15 @@
+# First reference bot (eval suite ops-reader): logs, disk, checks and catalog services.
+apiVersion: botaru/v1alpha1
+kind: Role
+metadata: {name: ops-reader}
+spec:
+  profile: worker
+  worker_kind: agent
+  claims: [ops.investigate.v1, ops.health.v1, ops.summary.v1]
+  tools: [cmd/run, logs/tail, checks/latest, storage/dir_sizes, monitor/problems, monitor/item_history,
+          monitor/maintenance, monitor/item_text, monitor/problem_comments]
+  actions_may_request: [cleanup_pipeline_tmp]
+  service_control: [nginx]                 # catalog services the role may touch (APR-18)
+  monitor_scripts: [nginx-cache-clear]     # names only from the catalog's monitor_scripts_allowed (MON-10)
+  models: {base: base-std, analysis: analysis-std}
+  memory: none

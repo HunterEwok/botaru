@@ -1,0 +1,71 @@
+id: fx-man-msg-01
+rules: [MSG-2, STA-1]
+description: >-
+  Message kind: name <genus>.<name>.vN, genus report or state; for genus state producers
+  is only code (STA-1), report has a delivery method and ttl, state has stale_after (MSG-2).
+cases:
+  - name: bots' report
+    manifests:
+      - &note
+        apiVersion: botaru/v1alpha1
+        kind: MessageType
+        metadata: {name: report.sensor_note.v1}
+        spec:
+          kind: report
+          fields_schema:
+            type: object
+            additionalProperties: false
+            required: [sensor, issue]
+            properties:
+              sensor: {enum_from: catalog.sensors}
+              issue: {enum: [gap, stuck, out_of_range]}
+          data_class: summary
+          delivery: one
+          ttl: 24h
+          max_bytes: 2048
+          producers: [agent, job]
+          note: {max_chars: 280}
+    expect: ok
+  - name: self-report state from an agent
+    manifests:
+      - apiVersion: botaru/v1alpha1
+        kind: MessageType
+        metadata: {name: state.worker_load.v1}
+        spec:
+          kind: state
+          fields_schema: {type: object, additionalProperties: false, properties: {phase: {enum: [idle, busy]}}}
+          data_class: summary
+          stale_after: 5m
+          max_bytes: 512
+          producers: [agent, code]
+          note: {max_chars: 0}
+    expect: {error: state_agent_producer}
+  - name: report without a ttl
+    manifests:
+      - apiVersion: botaru/v1alpha1
+        kind: MessageType
+        metadata: {name: report.sensor_note.v1}
+        spec:
+          kind: report
+          fields_schema: {type: object, additionalProperties: false, properties: {issue: {enum: [gap, stuck]}}}
+          data_class: summary
+          delivery: one
+          max_bytes: 2048
+          producers: [job]
+          note: {max_chars: 0}
+    expect: {error: message_fields}
+  - name: name does not start with a genus
+    manifests:
+      - apiVersion: botaru/v1alpha1
+        kind: MessageType
+        metadata: {name: sensor.note.v1}
+        spec:
+          kind: report
+          fields_schema: {type: object, additionalProperties: false, properties: {issue: {enum: [gap, stuck]}}}
+          data_class: summary
+          delivery: one
+          ttl: 24h
+          max_bytes: 2048
+          producers: [job]
+          note: {max_chars: 0}
+    expect: {error: message_name}

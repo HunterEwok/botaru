@@ -1,0 +1,332 @@
+# Permission table rows with active holds (HLD-1..3). Scopes and effects from spec/model/holds.yaml.
+# Each row: active holds, a request and the expected outcome. A hold is checked before the permission formula,
+# as a non-waivable prohibition (PRM-2); the model gets the same "no permission" for a hold and for a permission refusal (PRM-8).
+id: fx-authorize-holds-effects
+rules: [HLD-1, HLD-2, HLD-3, PRM-2, PRM-8]
+description: 'A hold as a recorded object and its effects. A hold only narrows: no permissions appear, data and manifests
+  do not change. The principal in each row has the permissions, and only the hold causes the refusal.'
+given:
+  tenant: demo
+  people:
+  - principal: human:bob
+    groups: [staff, approver, ops-oncall]
+  - principal: human:carol
+    groups: [staff, approver]
+cases:
+- id: hold-01
+  rules: [HLD-1, HLD-3, PRM-2]
+  given:
+    holds:
+    - scope: {kind: tenant, tenant: demo}
+      effects: [no_enqueue]
+      reason: manual
+      author: human:carol
+  steps:
+  - call:
+      port: P1
+      op: enqueue
+      request:
+        body: {type: ops.investigate.v1, goal: training task ops.investigate.v1}
+        idempotency_key: hold-01-1
+    by: human:bob
+  expect:
+    decision: {result: denied}
+    reason: held
+    stage: hold
+    task: {result: rejected, reason: held}
+- id: hold-02
+  rules: [HLD-3]
+  given:
+    holds:
+    - scope: {kind: tenant, tenant: demo}
+      effects: [no_enqueue]
+      reason: manual
+      author: human:carol
+  steps:
+  - occur:
+      core_task: {kind: erasure, origin: subject_request}
+    note: the core itself enqueues the erasure task for a confirmed request
+  expect:
+    decision: {result: ok}
+    note: a no_enqueue hold does not delay core tasks for erasure and export
+- id: hold-03
+  rules: [HLD-3]
+  given:
+    holds:
+    - scope: {kind: role, tenant: demo, name: ops-reader}
+      effects: [no_claim]
+  steps:
+  - call:
+      port: P1
+      op: claim
+      request:
+        kinds: [attempt]
+    by: role:ops-reader
+  expect: {work: none}
+- id: hold-04
+  rules: [HLD-3, PRM-8]
+  given:
+    holds:
+    - scope: {kind: plugin, tenant: demo, name: logs}
+      effects: [no_tool]
+  steps:
+  - call:
+      port: P3
+      op: tools/call
+      request:
+        name: logs/tail
+        arguments: {host: web1}
+    context: {task: ops.investigate.v1, initiator: 'human:bob'}
+  expect:
+    toolcall: {result: denied, reason: held}
+    toolhost_receives: false
+    model_sees: forbidden
+    audit_reason: held
+- id: hold-05
+  rules: [HLD-3, APR-6]
+  given:
+    holds:
+    - scope: {kind: action, tenant: demo, name: cleanup_pipeline_tmp}
+      effects: [no_action]
+    pending:
+    - {approval: apr_4812, action: cleanup_pipeline_tmp, state: pending}
+  steps:
+  - call:
+      port: P3
+      op: tools/call
+      request:
+        name: control_ops
+        arguments:
+          op: request_action
+          action: cleanup_pipeline_tmp
+          initiator: human:p_01JB3Q7N0M2V8XK4DGT5RZP9WA
+    by: attempt
+  expect:
+    new_request: {result: rejected, reason: held}
+    apr_4812: {state: canceled, reason: held}
+    card_update: true
+- id: hold-06
+  rules: [HLD-3, APR-7]
+  given:
+    holds:
+    - scope: {kind: host, tenant: demo, name: ctd1}
+      effects: [no_tool]
+      set_while: write call in queued
+    pending:
+    - {approval: apr_4812, state: executing, toolcall: queued}
+  expect:
+    toolcall: {result: denied, reason: held}
+    apr_4812: {state: exec_failed, reason: held}
+    executed_later: false
+- id: hold-07
+  rules: [HLD-3, APR-18]
+  given:
+    holds:
+    - scope: {kind: resource, tenant: demo, name: web1}
+      effects: [no_action]
+  steps:
+  - call:
+      port: P3
+      op: tools/call
+      request:
+        name: service/control
+        arguments: {service: nginx, verb: restart}
+    context: {initiator: 'human:bob', untrusted_seen: false}
+  expect:
+    toolcall: {result: denied, reason: held}
+    service_grant: false
+    model_sees: forbidden
+- id: hold-08
+  rules: [HLD-3]
+  given:
+    holds:
+    - scope: {kind: channel, tenant: demo, name: telegram}
+      effects: [no_delivery]
+  steps:
+  - check:
+      delivery: {to: 'human:alice', kind: task_result}
+  expect: {delivery: withheld, except: the message to admins about the hold itself goes out}
+- id: hold-09
+  rules: [HLD-3]
+  given:
+    holds:
+    - scope: {kind: bot_group, tenant: demo, name: ops}
+      effects: [no_message]
+  steps:
+  - call:
+      port: P1
+      op: msg.send
+      request:
+        type: report.ops.v1
+        to: role:ops-lead
+        fields: {}
+    by: role:ops-reader
+  expect:
+    send: {result: rejected, reason: held}
+    inbox_read: {result: ok}
+    wakes: none
+- id: hold-10
+  rules: [HLD-3]
+  given:
+    holds:
+    - scope: {kind: tasktype, tenant: demo, name: ops.investigate.v1}
+      effects: [cancel_running]
+    running:
+    - {task: t_1, type: ops.investigate.v1, state: working}
+  steps:
+  - call:
+      port: P1
+      op: heartbeat
+      request: {}
+    context: {task: t_1}
+  expect:
+    heartbeat: cancel_requested
+    handles_revoked: true
+    attempt_end_reason: held
+    attempt_spent: false
+    claim_again: none
+- id: hold-11
+  rules: [HLD-3]
+  given:
+    holds:
+    - scope: {kind: seat, tenant: farm, name: farm-manager}
+      effects: [no_control]
+      author: breaker
+  steps:
+  - call:
+      port: P2
+      op: control.apply
+      request:
+        op: hold
+        target: {kind: worker, id: w_7}
+        effects: [no_claim]
+        ttl: 1h
+    by: seat
+  expect:
+    decision: {result: denied}
+    reason: held
+- id: hold-12
+  rules: [HLD-1, HLD-2]
+  given:
+    holds: []
+  steps:
+  - call:
+      port: P2
+      op: hold.set
+      request:
+        scope: {kind: role, tenant: demo, name: ops-reader}
+        effects: [no_claim]
+        reason: manual
+        until: null
+    by: bot:ops-reader
+  expect:
+    decision: {result: denied}
+    reason: forbidden
+    note: a model, a worker, a route and a schedule do not set holds
+- id: hold-13
+  rules: [HLD-1, HLD-2, PRM-14]
+  steps:
+  - call:
+      port: P2
+      op: hold.set
+      request:
+        scope: {kind: farm}
+        effects: [no_claim]
+        reason: manual
+        until: null
+    by: human:carol
+    context: {via: channel}
+  expect:
+    decision: {result: denied}
+    reason: operator_only
+- id: hold-14
+  rules: [HLD-1, HLD-2]
+  steps:
+  - call:
+      port: P2
+      op: hold.set
+      request:
+        scope: {kind: farm}
+        effects: [no_claim]
+        reason: manual
+        until: null
+    by: operator
+    context: {via: farmctl, core_running: false}
+  expect:
+    decision: {result: ok}
+    record_tenant: farm
+    note: farmctl hold farm writes the hold directly to the store without a core process
+- id: hold-15
+  rules: [HLD-1, HLD-2]
+  steps:
+  - call:
+      port: P2
+      op: hold.set
+      request:
+        scope: {kind: tenant, tenant: demo2}
+        effects: [no_enqueue]
+        reason: manual
+        until: null
+    by: human:carol
+  expect:
+    decision: {result: denied}
+    reason: tenant_mismatch
+- id: hold-16
+  rules: [HLD-1]
+  given:
+    holds:
+    - scope: {kind: tenant, tenant: demo}
+      effects: [no_enqueue]
+      until: '2026-03-02T10:00:00Z'
+  steps:
+  - call:
+      port: P1
+      op: enqueue
+      request:
+        body: {type: ops.investigate.v1, goal: training task ops.investigate.v1}
+        idempotency_key: hold-16-3
+    by: human:bob
+    at: '2026-03-02T10:00:01Z'
+  expect:
+    decision: {result: ok}
+    note: the hold ended by until; the core does not release it itself, but it no longer applies
+- id: hold-17
+  rules: [HLD-1, HLD-3]
+  description: A hold of scope farm with no_action forbids new request_action calls in any tenant.
+  given:
+    holds:
+    - scope: {kind: farm}
+      effects: [no_action, no_tool]
+      reason: compromised
+      author: human:carol
+      author_kind: operator
+  steps:
+  - call:
+      port: P3
+      op: tools/call
+      request:
+        name: control_ops
+        arguments:
+          op: request_action
+          tenant: demo2
+          action: cleanup_pipeline_tmp
+          initiator: human:p_01JB3Q7N0M2V8XK4DGT5RZP9WB
+    by: attempt
+  expect:
+    decision: {result: denied}
+    reason: held
+- id: hold-18
+  rules: [HLD-3]
+  description: A worker quarantine no_claim gives it no work; another worker of the same role still claims.
+  given:
+    holds:
+    - scope: {kind: worker, tenant: demo, name: w_01JB8M0000000000000000000W}
+      effects: [no_claim, cancel_running]
+      reason: compromised
+      author: human:carol
+      author_kind: operator
+    claims:
+    - worker: w_01JB8M0000000000000000000W
+      expect: {work: none}
+    - worker: w_01JB8M0000000000000000000X
+      expect: {work: given}

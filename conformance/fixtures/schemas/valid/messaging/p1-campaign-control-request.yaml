@@ -1,0 +1,16 @@
+schema: spec/model/p1-campaign-control-request.schema.json
+rules:
+- ORC-1
+- APR-4
+description: Campaign card buttons that the schema accepts.
+cases:
+- id: k_01JB0000000000000000000201
+  command: pause
+  nonce: nX7kQ2pL9vR4tY8wZ1aB
+- id: k_01JB0000000000000000000201
+  command: skip
+  n: 3
+  nonce: nX7kQ2pL9vR4tY8wZ1aB
+- id: k_01JB0000000000000000000201
+  command: retry_failed
+  nonce: nX7kQ2pL9vR4tY8wZ1aB

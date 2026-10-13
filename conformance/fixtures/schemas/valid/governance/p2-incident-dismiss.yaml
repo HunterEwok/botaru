@@ -1,0 +1,6 @@
+schema: spec/model/p2-incident-dismiss-request.schema.json
+rules: [MGR-8]
+description: A dismissal of an incident as false with a reason code and the "Details" text that the schema accepts.
+cases:
+  - {incident: inc_01JB8M00000000000000000318, reason_code: false_alarm, details: The ctd1 volume sensor showed a stale value after the disk was replaced.}
+  - {incident: inc_01JB8M00000000000000000318, reason_code: maintenance, details: Planned maintenance of db1.}

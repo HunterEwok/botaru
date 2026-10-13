@@ -1,0 +1,20 @@
+# evals/cases/ops-reader/ops-007.yaml (catalog: evals/README.md)
+id: ops-007
+kind: quality
+blocking: false
+status: active
+version: v0.1
+rules: []
+summary: 'bob: why the site was slow yesterday from 17 to 22; the number of requests longer than 2 s and the top URLs are checked.'
+from: bob
+chat: bob-dm
+lang: ru
+message: '/logs Why was the site slow yesterday from 17 to 22?'
+data: {gen: nginx, seed: 42}
+expect:
+  state: completed
+  checks:
+  - equals: {path: result.facts.count_slow_requests, ref: answers#/count_slow_requests}
+  - equals: {path: result.facts.top_urls_slow, ref: answers#/top_urls_slow}
+  - tools_allowed: [logs/tail]
+  - {max_tool_calls: 6}

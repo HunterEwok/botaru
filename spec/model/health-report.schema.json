@@ -1,0 +1,79 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:botaru:schema:health-report:1",
+  "title": "Health report",
+  "description": "Health report of a component with one schema for all parts of the farm: component, state, checks with names from a closed list, and time (OBS-10). There are no error texts, only codes (OBS-1). A toolhost sends it in hello and heartbeat for each plugin; the state down only narrows dispatch.",
+  "x-botaru-direction": "input",
+  "x-botaru-rules": [
+    "OBS-10",
+    "OBS-1"
+  ],
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "component",
+    "state",
+    "time"
+  ],
+  "properties": {
+    "component": {
+      "description": "Component kind.",
+      "enum": [
+        "loop",
+        "store",
+        "provider",
+        "worker",
+        "plugin",
+        "channel_upstream"
+      ]
+    },
+    "name": {
+      "description": "Component name: loop, plugin, provider or channel.",
+      "type": "string",
+      "maxLength": 64,
+      "pattern": "^[a-z][a-z0-9_.-]*$"
+    },
+    "state": {
+      "description": "State.",
+      "enum": [
+        "ok",
+        "degraded",
+        "down"
+      ]
+    },
+    "checks": {
+      "description": "Checks: a code from a closed list and the outcome.",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "description": "Check.",
+        "additionalProperties": false,
+        "required": [
+          "code",
+          "state"
+        ],
+        "properties": {
+          "code": {
+            "description": "Check code.",
+            "type": "string",
+            "maxLength": 64,
+            "pattern": "^[a-z][a-z0-9_]*$"
+          },
+          "state": {
+            "description": "Check outcome.",
+            "enum": [
+              "ok",
+              "degraded",
+              "down"
+            ]
+          }
+        }
+      },
+      "maxItems": 32
+    },
+    "time": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/datetime",
+      "description": "Report time."
+    }
+  }
+}

@@ -1,0 +1,62 @@
+registry: fact-predicates
+version: 1
+description: >-
+  Predicates of bot memory facts (MEM-6). A predicate sets the window and the rule
+  for selecting evidence, and the core computes the value; the model names only
+  the kind, the predicate and the subject. A new predicate is introduced only through an ADR. Entry
+  fields: kind (a kind from fact-kinds.yaml), subject_types (what the subject
+  can be), value (what the value is and its unit), derivation (how the core
+  derives the value), window (the evidence selection window; in v0.1 14 days for
+  every predicate with a window, null for a predicate without a window). The minimum number
+  of evidence items min_samples, the recheck tolerance and the share threshold for
+  task.fails_with are not set by the skeleton: the predicate's ADR decides them at implementation.
+source: docs/bots.md
+entries:
+  - id: dataset.stored_on
+    since: v0.1
+    kind: where
+    subject_types: [dataset]
+    value: {type: resource_id}
+    derivation: a dataset field in the catalog
+    window: null
+    rules: [MEM-6]
+  - id: tasktype.touches
+    since: v0.1
+    kind: where
+    subject_types: [tasktype]
+    value: {type: resource_id}
+    derivation: the resource is in the scope of all attempts of the type within the window
+    window: 14d
+    rules: [MEM-6]
+  - id: task.duration.p95_min
+    since: v0.1
+    kind: how_long
+    subject_types: [tasktype]
+    value: {type: number, unit: min}
+    derivation: rollup of the series farm.task.duration day.p95 within the window
+    window: 14d
+    rules: [MEM-6]
+  - id: disk.days_to_full
+    since: v0.1
+    kind: how_long
+    subject_types: [resource]
+    value: {type: number, unit: d}
+    derivation: slope_to_zero over the rollup of free space within the window
+    window: 14d
+    rules: [MEM-6]
+  - id: incident.happened
+    since: v0.1
+    kind: what_broke
+    subject_types: [resource, tasktype, dataset, schedule]
+    value: {type: code, of: incident_class}
+    derivation: incident records of the subject within the window
+    window: 14d
+    rules: [MEM-6]
+  - id: task.fails_with
+    since: v0.1
+    kind: what_broke
+    subject_types: [tasktype]
+    value: {type: code, of: reason}
+    derivation: share of the reason among all attempts of the type within the window, not below the threshold and with a number of attempts not less than min_samples
+    window: 14d
+    rules: [MEM-6]

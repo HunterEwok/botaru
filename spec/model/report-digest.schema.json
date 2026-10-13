@@ -1,0 +1,157 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:botaru:schema:report-digest:1",
+  "title": "Report to people",
+  "description": "A delivery record of kind digest or proposal_digest. The table, numbers, catalog names and the set of cards are built by core code from the snapshot of views at the moment the task starts (snapshot_id); code chooses which cards go in. The model paragraph goes only as a separate marked part: plain text up to 800 characters, without links, mentions, markup, commands, or stop and approval ids; with untrusted_seen it does not go to a group chat, except for a binding with model_text: labeled (REP-2). What is hidden by mark is counted in hidden; what is hidden by permissions is not counted (REP-3, REP-7). The reporter draws no cards and makes no decisions (REP-6).",
+  "x-botaru-direction": "record",
+  "x-botaru-retention": "content",
+  "x-botaru-rules": [
+    "REP-2",
+    "REP-3",
+    "REP-6",
+    "REP-7",
+    "REP-9"
+  ],
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "id",
+    "tenant",
+    "kind",
+    "task",
+    "snapshot_id",
+    "data_mark",
+    "table",
+    "hidden"
+  ],
+  "properties": {
+    "id": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/object_id"
+    },
+    "tenant": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/tenant_name"
+    },
+    "kind": {
+      "enum": [
+        "digest",
+        "proposal_digest"
+      ],
+      "description": "Delivery kind of the report."
+    },
+    "task": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/object_id",
+      "description": "The reporter task."
+    },
+    "snapshot_id": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_-]{8,64}$",
+      "maxLength": 64,
+      "description": "Snapshot of views at the moment the task starts."
+    },
+    "chat": {
+      "type": "string",
+      "pattern": "^chat:[a-z][a-z0-9-]{0,62}$",
+      "maxLength": 70,
+      "description": "Chat binding from the delivery address."
+    },
+    "data_mark": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/data_mark",
+      "description": "Mark of the reporter task: not above the target ceiling and the initiator data:<class> (REP-3)."
+    },
+    "table": {
+      "type": "object",
+      "description": "Code table.",
+      "additionalProperties": false,
+      "required": [
+        "rows"
+      ],
+      "properties": {
+        "rows": {
+          "type": "array",
+          "maxItems": 200,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "key",
+              "values"
+            ],
+            "properties": {
+              "key": {
+                "type": "string",
+                "pattern": "^[a-z][a-z0-9_.]{0,63}$",
+                "maxLength": 64,
+                "description": "Row key from the message catalog."
+              },
+              "values": {
+                "type": "object",
+                "description": "Numbers, states, catalog names and reason codes.",
+                "maxProperties": 32
+              }
+            }
+          }
+        }
+      }
+    },
+    "cards": {
+      "type": "array",
+      "maxItems": 20,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "kind",
+          "id"
+        ],
+        "properties": {
+          "kind": {
+            "enum": [
+              "proposal",
+              "approval"
+            ],
+            "description": "Kind of the card subject: a proposal or an approval."
+          },
+          "id": {
+            "$ref": "urn:botaru:schema:common:1#/$defs/object_id"
+          }
+        }
+      },
+      "description": "Cards that code chose; the channel draws them from the records (REP-6)."
+    },
+    "text": {
+      "type": "object",
+      "description": "Optional model paragraph, only for the agent runtime.",
+      "additionalProperties": false,
+      "required": [
+        "body",
+        "dataorigin"
+      ],
+      "properties": {
+        "body": {
+          "type": "string",
+          "maxLength": 800,
+          "description": "Model paragraph as plain text."
+        },
+        "dataorigin": {
+          "const": "model"
+        },
+        "untrusted_sources": {
+          "type": "array",
+          "maxItems": 8,
+          "items": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_:./-]{0,63}$",
+            "maxLength": 64
+          },
+          "description": "Untrusted sources from a closed list: source kind, role or tool, without text."
+        }
+      }
+    },
+    "hidden": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 1000000,
+      "description": "Hidden by the audience ceiling."
+    }
+  }
+}

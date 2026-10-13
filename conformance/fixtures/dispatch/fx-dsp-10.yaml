@@ -1,0 +1,87 @@
+id: fx-dsp-10
+rules: [DSP-3, FEN-3]
+description: 'The list of conditions is closed, and the tenant policy only narrows. The `apply` lint accepts the dispatcher rule
+  from the `docs/coordination.md` example and rejects rules that widen dispatch or go beyond the limits: a reference
+  to a condition outside `dispatch-predicates.yaml`, a match not by name, type name prefix or source kind, a group
+  that does not exist, a group whose selector does not intersect the roles that take the type, dispatch to roles outside `claims`, an attempt
+  period longer than two type periods or beyond `deadline`, a number of attempts not smaller than the type''s, or smaller than 1.'
+given:
+  tenant: demo
+  tasktype:
+    name: data.qc.ctd.v1
+    timeouts: {attempt: 5m, deadline: 30m}
+    retry: {max_attempts: 3}
+  roles:
+  - name: analyst
+    claims: [data.qc.ctd.v1]
+  - name: reporter
+    claims: [report.render.v1]
+  botgroups:
+  - name: science-pool
+    select:
+      roles: [analyst]
+      labels: {zone: lab}
+  - name: reporters
+    select:
+      roles: [reporter]
+expect: {accepted_cases: 2, rejected_cases: 9}
+cases:
+- given:
+    rule:
+      match: {type: data.qc.ctd.v1}
+      group: science-pool
+      priority_class: 4
+      max_running: 4
+      timeouts: {attempt: 8m}
+      retry: {max_attempts: 2}
+  expect: {result: ok}
+- given:
+    rule:
+      match: {type: data.qc.ctd.v1}
+      predicates: [D21]
+  expect: {result: rejected, stage: apply}
+- given:
+    rule:
+      match: {goal_contains: urgent}
+      priority_class: 3
+  expect: {result: rejected, stage: apply}
+- given:
+    rule:
+      match: {type: data.qc.ctd.v1}
+      group: no-such-group
+  expect: {result: rejected, stage: apply}
+- given:
+    rule:
+      match: {type: data.qc.ctd.v1}
+      group: reporters
+  expect: {result: rejected, stage: apply}
+- given:
+    rule:
+      match: {type: data.qc.ctd.v1}
+      roles: [reporter]
+  expect: {result: rejected, stage: apply}
+- given:
+    rule:
+      match: {type: data.qc.ctd.v1}
+      timeouts: {attempt: 11m}
+  expect: {result: rejected, stage: apply}
+- given:
+    rule:
+      match: {type: data.qc.ctd.v1}
+      timeouts: {attempt: 10m}
+  expect: {result: ok}
+- given:
+    rule:
+      match: {type: data.qc.ctd.v1}
+      retry: {max_attempts: 3}
+  expect: {result: rejected, stage: apply}
+- given:
+    rule:
+      match: {type: data.qc.ctd.v1}
+      retry: {max_attempts: 0}
+  expect: {result: rejected, stage: apply}
+- given:
+    rule:
+      match: {type: data.qc.ctd.v1}
+      priority_class: 1
+  expect: {result: rejected, stage: apply}

@@ -1,0 +1,125 @@
+id: fx-mgr-spend-pause
+rules: [MGR-14]
+description: 'Money safeguard: spend of the manager line in demo2 within an hour above half of the day gives a pause paused_in
+  only in demo2 until the start of the next daily window; seat tasks in demo run, the epoch does not change, the seat is held, and the notification
+  manager_spend_paused goes to the admins of demo2. Global safeguard: three control.apply refusals in a row (the count is shared across
+  tenants and reset by an applied operation) give no_control, epoch + 1 and the alarm alarm.manager.breaker with severity
+  page. protected_target answers and conversion into a card do not count as refusals.'
+given:
+  seat:
+    id: farm-manager
+    tenant: farm
+    state: held
+    holder: bot_41
+    epoch: 9
+    stop_reasons: []
+  lines:
+    demo2: {manager_day_eur: 2.0}
+    demo: {manager_day_eur: 2.0}
+cases:
+- id: fx-mgr-spend-pause-a
+  given:
+    spend: {tenant: demo2, last_hour_eur: 1.05}
+    now: '2026-11-24T10:00:00Z'
+  expect:
+    seat:
+      state: held
+      epoch: 9
+      paused_in:
+      - {tenant: demo2, until: start of next day window of line, reason: manager_spend}
+    claim_seat_tasks: {demo2: refused, demo: ok}
+    running_in_demo2: finish
+    notice: {code: manager_spend_paused, to: admins of demo2}
+- id: fx-mgr-spend-pause-b
+  given:
+    after: fx-mgr-spend-pause-a
+    people:
+    - principal: human:carol
+      caps: ['admin:governance@demo2']
+  steps:
+  - call:
+      port: P2
+      op: manager.resume
+      request: {tenant: demo2}
+    by: human:carol
+  expect:
+    seat:
+      paused_in: []
+- id: fx-mgr-spend-pause-c
+  steps:
+  - call:
+      port: P3
+      op: tools/call
+      request:
+        name: control_ops
+        arguments: {tenant: demo}
+    by: attempt
+    expect: {result: rejected, reason: target_not_implicated}
+  - call:
+      port: P3
+      op: tools/call
+      request:
+        name: control_ops
+        arguments: {tenant: demo}
+    by: attempt
+    expect: {result: rejected, reason: protected_target}
+  - call:
+      port: P3
+      op: tools/call
+      request:
+        name: control_ops
+        arguments: {tenant: demo2}
+    by: attempt
+    expect: {result: rejected, reason: service_rate_limited}
+  - call:
+      port: P3
+      op: tools/call
+      request:
+        name: control_ops
+        arguments: {tenant: demo}
+    by: attempt
+    expect: {result: rejected, reason: target_excluded}
+  expect:
+    seat:
+      state: stopped
+      stop_reasons: [no_control]
+      epoch: 10
+    alarm: {type: alarm.manager.breaker.v1, severity: page, delivered_by: monitor_system}
+    attempts_canceled_in: [demo, demo2]
+- id: fx-mgr-spend-pause-d
+  steps:
+  - call:
+      port: P3
+      op: tools/call
+      request:
+        name: control_ops
+        arguments: {}
+    by: attempt
+    expect: {result: rejected, reason: target_not_implicated}
+  - call:
+      port: P3
+      op: tools/call
+      request:
+        name: control_ops
+        arguments: {}
+    by: attempt
+    expect: {result: rejected, reason: control_rate_limited}
+  - call:
+      port: P3
+      op: tools/call
+      request:
+        name: control_ops
+        arguments: {}
+    by: attempt
+    expect: {result: ok}
+  - call:
+      port: P3
+      op: tools/call
+      request:
+        name: control_ops
+        arguments: {}
+    by: attempt
+    expect: {result: rejected, reason: target_excluded}
+  expect:
+    seat: {state: held}
+    breaker_denials_in_row: 1

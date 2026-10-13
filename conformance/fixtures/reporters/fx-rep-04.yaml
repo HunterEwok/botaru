@@ -1,0 +1,45 @@
+id: fx-rep-04
+rules: [REP-7, PRM-9, IDN-5]
+description: Views for a reporter task into a chat are filtered by the intersection of task.read:<type> and data:<mark> of all
+  admitted members of the chat binding, or by an explicit list ChatBinding.views from git, which apply checks against
+  these permissions. In a private chat the filter goes by the addressee's permissions. Tasks of workers with an owner do not get into group reports.
+  Rows hidden by permissions are not counted in hidden either.
+given:
+  tenant: demo
+  chat_bindings:
+    chat:lab:
+      kind: group
+      members: [alice, bob, carol]
+  principals:
+    alice:
+      task_read: [ops.summary.v1, ops.investigate.v1]
+      data: [public, internal]
+    bob:
+      task_read: [ops.summary.v1, ops.investigate.v1]
+      data: [public, internal]
+    carol:
+      task_read: [ops.summary.v1]
+      data: [public, internal]
+  rows:
+  - {id: t_1, type: ops.summary.v1, data_mark: internal}
+  - {id: t_2, type: ops.investigate.v1, data_mark: internal}
+  - {id: t_3, type: ops.summary.v1, data_mark: internal, worker_owner: 'human:bob'}
+expect: {owner_worker_tasks_in_group_digest: false, rights_hidden_rows_counted: false}
+cases:
+- description: group chat
+  given: {target: 'chat:lab'}
+  expect:
+    rows: [t_1]
+    hidden: 0
+- description: private chat of alice
+  given: {target: 'direct:alice'}
+  expect:
+    rows: [t_1, t_2]
+- description: an explicit views list wider than the members' permissions
+  given:
+    apply:
+      chat_binding: chat:lab
+      views: [status.tasks, status.campaigns]
+      participants_lack: task.read:ops.investigate.v1
+  expect:
+    apply: {result: rejected}

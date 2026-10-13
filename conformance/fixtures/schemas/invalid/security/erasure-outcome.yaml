@@ -1,0 +1,6 @@
+schema: urn:botaru:schema:erasure-outcome:1
+rules: [RET-4, RET-7]
+description: not_applicable without the basis flag and basis on the outcome done (D-86 (8)).
+cases:
+- {outcome: not_applicable}
+- {outcome: done, basis: no_match}

@@ -1,0 +1,62 @@
+id: fx-mgr-01
+rules: [MGR-1]
+description: 'Two decision tasks of the manager seat in one tenant: one attempt runs, the second waits. An attempt
+  with an old seat epoch gets fenced and changes nothing. Numbers of identities, workers, tasks and incidents are shortened,
+  as in the examples of docs/farm-manager.md.'
+given:
+  seat:
+    id: farm-manager
+    tenant: farm
+    state: held
+    holder: bot_41
+    epoch: 9
+    stop_reasons: []
+  tenant: demo
+  queue:
+  - {task: t-m1, type: manager.incident.respond.v1, purpose: manage, incident: i_311}
+  - {task: t-m2, type: manager.directive.v1, purpose: manage}
+  workers:
+  - {id: w_m1, role: farm-manager, enrolled_in: demo}
+  - {id: w_m2, role: farm-manager, enrolled_in: demo}
+cases:
+- id: fx-mgr-01-a
+  description: Both workers of the decision role in demo call claim.
+  steps:
+  - call:
+      port: P1
+      op: claim
+      request:
+        kinds: [attempt]
+    by: worker:w_m1
+    expect:
+      lease: {task: t-m1, acting_bot: bot_41, seat_epoch: 9}
+  - call:
+      port: P1
+      op: claim
+      request:
+        kinds: [attempt]
+    by: worker:w_m2
+    expect: {lease: null, note: no more than one decision attempt in one tenant}
+- id: fx-mgr-01-b
+  description: While an attempt with epoch 9 runs, the seat gets the new epoch 10; the old attempt calls control.apply and
+    complete.
+  given: {seat_epoch_now: 10}
+  steps:
+  - call:
+      port: P3
+      op: tools/call
+      request:
+        name: control_ops
+        arguments:
+          token_seat_epoch: 9
+          op: quarantine
+          target: {kind: worker, id: w_7}
+    by: attempt
+    expect: {result: rejected, reason: fenced, holds_created: 0}
+  - call:
+      port: P1
+      op: complete
+      request:
+        result: {}
+    lease: {seat_epoch: 9}
+    expect: {result: rejected, reason: fenced, records_changed: 0}

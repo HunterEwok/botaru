@@ -1,0 +1,58 @@
+id: cap-fx-05
+rules: [CAP-6]
+description: A volume is a disk of a tenant catalog resource that farm work writes to. The catalog declares volumes in Catalog.spec.volumes
+  and links each volume to all its writers (writers) with a quota quota_bytes. At catalog approval and at apply
+  the core shows for each volume whether every writer has a quota and whether the sum of quotas is below the alarm threshold of the class
+  disk_full; a disk_full incident stops the manager seat only if the volume has a full set of quotas (MGR-33).
+given:
+  tenant: demo
+  catalog:
+    volumes:
+    - id: res:ctd1:data
+      size_bytes: 4000000000000
+      writers:
+      - {kind: tenant, name: demo, quota_bytes: 2000000000000}
+      - {kind: sink, name: archive, quota_bytes: 500000000000}
+      - {kind: pipeline, name: ctd-qc, quota_bytes: 1000000000000}
+  disk_full_alarm_free_ratio: 0.05
+cases:
+- id: cap-fx-06
+  rules: [CAP-6]
+  description: A full set of quotas, a sum of 3.5 TB below the alarm threshold (4 TB minus 5%); apply shows the volume as full,
+    and a disk_full incident can stop the seat.
+  expect:
+    volume: res:ctd1:data
+    all_writers_have_quota: true
+    quota_sum_below_alarm: true
+    disk_full_can_stop_seat: true
+- id: cap-fx-07
+  rules: [CAP-6]
+  description: A sink writes to a volume without a quota; apply shows the volume without a full set of quotas, and a disk_full incident
+    on it does not stop the seat.
+  given:
+    catalog_override:
+      writers:
+      - {kind: tenant, name: demo, quota_bytes: 2000000000000}
+      - {kind: sink, name: archive}
+      - {kind: pipeline, name: ctd-qc, quota_bytes: 1000000000000}
+  expect:
+    volume: res:ctd1:data
+    all_writers_have_quota: false
+    missing_quota: [archive]
+    disk_full_can_stop_seat: false
+- id: cap-fx-08
+  rules: [CAP-6]
+  description: The sum of quotas is above the disk_full alarm threshold; apply shows this, and the incident does not stop the seat.
+  given:
+    catalog_override:
+      writers:
+      - {kind: tenant, name: demo, quota_bytes: 2500000000000}
+      - {kind: sink, name: archive, quota_bytes: 500000000000}
+      - {kind: pipeline, name: ctd-qc, quota_bytes: 1000000000000}
+  expect: {quota_sum_below_alarm: false, disk_full_can_stop_seat: false}
+- id: cap-fx-09
+  rules: [CAP-6, MON-5]
+  description: The used volume space series is written by a job role from the monitoring system history, dataorigin code.
+  given:
+    series: {subject: 'res:ctd1:data', dataorigin: code, source: monitor_history, model_involved: false}
+  expect: {usable_for_stopping_incident_class: true}

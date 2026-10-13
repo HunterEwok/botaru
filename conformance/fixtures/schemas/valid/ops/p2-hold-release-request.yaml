@@ -1,0 +1,6 @@
+schema: urn:botaru:schema:p2-hold-release-request:1
+rules:
+- HLD-2
+description: Release by hold id.
+data:
+  id: h_01JB8M0000000000000000000A

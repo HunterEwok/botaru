@@ -1,0 +1,119 @@
+id: fx-man-03
+rules: [MAN-3]
+description: >-
+  Within version .vN of a task type, a message kind and an action schema only
+  additions of optional fields are allowed. The case compares the earlier manifest before with the new
+  manifests the same way ci/check-additive compares a schema with the previous commit.
+with_examples: true
+cases:
+  - name: new optional result field
+    before: &before
+      - apiVersion: botaru/v1alpha1
+        kind: TaskType
+        metadata: {name: ops.health.v1}
+        spec:
+          title: "Availability of sites and services"
+          worker_kind: agent
+          purpose: work
+          tier: 0
+          data_class: summary
+          params_schema: {type: object, additionalProperties: false, properties: {}}
+          result_schema:
+            type: object
+            additionalProperties: false
+            required: [answer, verdict]
+            properties:
+              answer: {type: string, maxLength: 1000}
+              verdict: {enum: [up, degraded, down, unknown], x-botaru-read-by: code}
+          tree_budget_eur: 0.05
+    manifests:
+      - apiVersion: botaru/v1alpha1
+        kind: TaskType
+        metadata: {name: ops.health.v1}
+        spec:
+          title: "Availability of sites and services"
+          worker_kind: agent
+          purpose: work
+          tier: 0
+          data_class: summary
+          params_schema: {type: object, additionalProperties: false, properties: {}}
+          result_schema:
+            type: object
+            additionalProperties: false
+            required: [answer, verdict]
+            properties:
+              answer: {type: string, maxLength: 1000}
+              verdict: {enum: [up, degraded, down, unknown], x-botaru-read-by: code}
+              checks: {type: array, maxItems: 10, items: {enum_from: catalog.checks}, x-botaru-read-by: code}
+          tree_budget_eur: 0.05
+    expect: ok
+  - name: a removed field is a new version
+    before: *before
+    manifests:
+      - apiVersion: botaru/v1alpha1
+        kind: TaskType
+        metadata: {name: ops.health.v1}
+        spec:
+          title: "Availability of sites and services"
+          worker_kind: agent
+          purpose: work
+          tier: 0
+          data_class: summary
+          params_schema: {type: object, additionalProperties: false, properties: {}}
+          result_schema:
+            type: object
+            additionalProperties: false
+            required: [answer]
+            properties:
+              answer: {type: string, maxLength: 1000}
+          tree_budget_eur: 0.05
+    expect: {error: breaking_change}
+  - name: new required parameter field
+    before: *before
+    manifests:
+      - apiVersion: botaru/v1alpha1
+        kind: TaskType
+        metadata: {name: ops.health.v1}
+        spec:
+          title: "Availability of sites and services"
+          worker_kind: agent
+          purpose: work
+          tier: 0
+          data_class: summary
+          params_schema:
+            type: object
+            additionalProperties: false
+            required: [check]
+            properties:
+              check: {enum_from: catalog.checks}
+          result_schema:
+            type: object
+            additionalProperties: false
+            required: [answer, verdict]
+            properties:
+              answer: {type: string, maxLength: 1000}
+              verdict: {enum: [up, degraded, down, unknown], x-botaru-read-by: code}
+          tree_budget_eur: 0.05
+    expect: {error: breaking_change}
+  - name: narrowing the enum of a field for code
+    before: *before
+    manifests:
+      - apiVersion: botaru/v1alpha1
+        kind: TaskType
+        metadata: {name: ops.health.v1}
+        spec:
+          title: "Availability of sites and services"
+          worker_kind: agent
+          purpose: work
+          tier: 0
+          data_class: summary
+          params_schema: {type: object, additionalProperties: false, properties: {}}
+          result_schema:
+            type: object
+            additionalProperties: false
+            required: [answer, verdict]
+            properties:
+              answer: {type: string, maxLength: 1000}
+              verdict: {enum: [up, down], x-botaru-read-by: code}
+          tree_budget_eur: 0.05
+    expect: {error: breaking_change}

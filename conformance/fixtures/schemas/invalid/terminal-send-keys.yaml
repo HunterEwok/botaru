@@ -1,0 +1,12 @@
+id: schemas/invalid/terminal-send-keys.yaml
+schema: urn:botaru:schema:closed-schema:1
+rules:
+- INJ-1
+description: 'A terminal MCP server with the tool send_keys(text): a free string on a production machine does not pass with
+  any pattern, even with a length limit.'
+data:
+  text:
+    type: string
+    pattern: ^[\s\S]*$
+    maxLength: 10000
+    description: Keys for the terminal

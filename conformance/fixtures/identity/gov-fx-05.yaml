@@ -1,0 +1,99 @@
+id: gov-fx-05
+rules: [IDN-9]
+description: An identity, a position, a seat, a persona and a track record give no permissions. The table of C2 authorize answers is the same
+  for an identity of any position; the authorize input does not contain them, except narrowing by a hold of scope bot. The attempt permissions are
+  the permissions of the worker role ∩ the permissions of the initiator's groups. Numbers of identities, workers and tasks are shortened, as in the examples of docs/bots.md.
+given:
+  tenant: demo
+  check: authorize
+  table: The rows repeat authz-01, authz-02 and authz-09 from authorize/table.yaml for each identity.
+  bots:
+  - {bot: bot_17, position: functional, role: ops-runner}
+  - bot: bot_07
+    position: commission
+    seat: commission:2
+    role: ops-runner
+    record: {reviews: 40}
+  - {bot: bot_41, position: farm_manager, seat: farm-manager, role: ops-runner}
+  - {bot: bot_21, position: assistant, role: ops-runner}
+steps:
+- lint:
+    authorize_input_fields_forbidden: [acting_bot, position, seat, soul, record]
+    expect: not in the authorize input schema
+expect:
+  note: For a fair comparison all identities have one worker role ops-runner; in a production farm the roles differ,
+    and then the permissions differ only by role.
+cases:
+- id: gov-fx-05-a
+  given:
+    people:
+    - principal: human:bob
+      groups: [staff]
+  steps:
+  - call:
+      port: C2
+      op: authorize
+      request:
+        principal: {kind: human, id: 'human:p_01JB3Q7N0M2V8XK4DGT5RZP9WA', tenant: demo}
+        action: task:ops.investigate.v1
+        resource: {tenant: demo, kind: task_type, id: ops.investigate.v1}
+    by: human:bob
+  expect:
+    same_for_all_bots: {result: ok}
+- id: gov-fx-05-b
+  given:
+    people:
+    - principal: human:alice
+      groups: [user]
+  steps:
+  - call:
+      port: C2
+      op: authorize
+      request:
+        principal: {kind: human, id: 'human:p_01JB3Q7N0M2V8XK4DGT5RZP9WB', tenant: demo}
+        action: task:ops.investigate.v1
+        resource: {tenant: demo, kind: task_type, id: ops.investigate.v1}
+    by: human:alice
+  expect:
+    same_for_all_bots:
+      decision: {result: denied}
+      reason: no_group_cap
+- id: gov-fx-05-c
+  given:
+    people:
+    - principal: human:alice
+      groups: [user]
+  steps:
+  - call:
+      port: C2
+      op: authorize
+      request:
+        principal: {kind: human, id: 'human:p_01JB3Q7N0M2V8XK4DGT5RZP9WB', tenant: demo}
+        action: data:raw_logs
+        resource: {tenant: demo, kind: task}
+    by: human:alice
+  expect:
+    same_for_all_bots:
+      decision: {result: denied}
+      reason: no_data_class
+- id: gov-fx-05-d
+  given:
+    holds:
+    - scope: {kind: bot, name: bot_07}
+      effects: [no_claim]
+    people:
+    - principal: human:bob
+      groups: [staff]
+  steps:
+  - call:
+      port: C2
+      op: authorize
+      request:
+        principal: {kind: human, id: 'human:p_01JB3Q7N0M2V8XK4DGT5RZP9WA', tenant: demo}
+        action: task:ops.investigate.v1
+        resource: {tenant: demo, kind: task_type, id: ops.investigate.v1}
+    by: human:bob
+  expect:
+    bot_07: {decision: deny, reason: held}
+    others: {result: ok}
+    note: a hold of scope bot is the only thing that narrows by identity

@@ -1,0 +1,66 @@
+id: fx-dsp-01
+rules: [DSP-4, BGR-1]
+description: 'A bot group address only narrows dispatch. The group `science-pool` selects the role `analyst` with the label `zone:
+  lab`. A task with `to_group: science-pool` goes only to a member of the group (condition D5); a worker of the same role with the label
+  `zone: cloud` does not get it, even if it is free, and a task without `to_group` goes to any worker of the role. The core computes the group''s
+  membership from the role and the labels recorded at `enroll`.'
+given:
+  tenant: demo
+  botgroups:
+  - name: science-pool
+    select:
+      roles: [analyst]
+      labels: {zone: lab}
+  workers:
+  - id: wk_01JB000000000000000000000A
+    role: analyst
+    labels: {zone: lab}
+    state: active
+    ready: true
+  - id: wk_01JB000000000000000000000B
+    role: analyst
+    labels: {zone: cloud}
+    state: active
+    ready: true
+  roles:
+  - name: analyst
+    claims: [data.qc.ctd.v1]
+  tasks:
+  - id: t_01JB0000000000000000000001
+    type: data.qc.ctd.v1
+    state: submitted
+    priority_class: 4
+    to_group: science-pool
+    enqueued_at: '2026-10-05T10:00:00Z'
+  - id: t_01JB0000000000000000000002
+    type: data.qc.ctd.v1
+    state: submitted
+    priority_class: 4
+    enqueued_at: '2026-10-05T10:01:00Z'
+steps:
+- call:
+    port: P1
+    op: claim
+    request:
+      kinds: [attempt]
+  by: worker:wk_01JB000000000000000000000B
+  expect: {task: t_01JB0000000000000000000002}
+- call:
+    port: P1
+    op: claim
+    request:
+      kinds: [attempt]
+  by: worker:wk_01JB000000000000000000000B
+  expect: {task: null}
+- call:
+    port: P1
+    op: claim
+    request:
+      kinds: [attempt]
+  by: worker:wk_01JB000000000000000000000A
+  expect: {task: t_01JB0000000000000000000001}
+expect:
+  group_members:
+    science-pool: [wk_01JB000000000000000000000A]
+  t_01JB0000000000000000000001: {state: working, lease_no: 1, held_by: wk_01JB000000000000000000000A}
+  spill_outside_group: false

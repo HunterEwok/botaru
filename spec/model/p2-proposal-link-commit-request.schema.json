@@ -1,0 +1,28 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:botaru:schema:p2-proposal-link-commit-request:1",
+  "title": "P2 proposal.link_commit: request",
+  "description": "The proposal executor or a person with proposal.decide:<category> links an accepted proposal with an applied commit. The core checks the commit: it is applied (MAN-5), touches only the tenant's folder, changes the named fields to the accepted values or in the named direction; only then is the proposal realized (PRP-19). A commit that touches other folders is not linked: proposal_scope (PRP-8). Denials: not_found, forbidden, proposal_scope.",
+  "x-botaru-direction": "input",
+  "x-botaru-rules": [
+    "PRP-19",
+    "PRP-8"
+  ],
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "proposal",
+    "commit"
+  ],
+  "properties": {
+    "proposal": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/object_id"
+    },
+    "commit": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{40}([0-9a-f]{24})?$",
+      "maxLength": 64,
+      "description": "Id of the applied git commit."
+    }
+  }
+}

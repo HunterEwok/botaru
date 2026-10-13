@@ -1,0 +1,55 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:botaru:schema:msg-send-response:1",
+  "title": "Message send response",
+  "description": "Answer of P1 msg.send: message id, entry state and number of recipients (for an all delivery the sender sees to how many workers a copy went, at most 50, MSG-14). Through P3 send_message the model gets only {staged: true} or a short \"no\" (PRM-8). A repeat by (tenant, sender, key) within the expiry returns the same answer.",
+  "x-botaru-direction": "output",
+  "x-botaru-rules": [
+    "MSG-9",
+    "MSG-14",
+    "PRM-8"
+  ],
+  "oneOf": [
+    {
+      "type": "object",
+      "description": "P1 answer.",
+      "required": [
+        "message_id",
+        "state"
+      ],
+      "properties": {
+        "message_id": {
+          "type": "string",
+          "pattern": "^m_[0-9A-HJKMNP-TV-Z]{26}$",
+          "maxLength": 28
+        },
+        "state": {
+          "enum": [
+            "staged",
+            "queued",
+            "current"
+          ],
+          "description": "staged for an attempt (publication at complete, MSG-9); current for the state genus."
+        },
+        "recipients": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 50,
+          "description": "Number of copy recipients for an all delivery."
+        }
+      }
+    },
+    {
+      "type": "object",
+      "description": "Model answer of P3 send_message.",
+      "required": [
+        "staged"
+      ],
+      "properties": {
+        "staged": {
+          "const": true
+        }
+      }
+    }
+  ]
+}

@@ -1,0 +1,10 @@
+schema: spec/model/p2-seat-assign-request.schema.json
+rules: [IDN-10, MGR-1, TEN-2]
+description: 'seat.assign requests that the schema rejects: farm manager seat with the bot parameter (a bot from the commission does
+  not move to the seat), commission seat without an identity, tenant field, seat not of the seat id form, epoch field.'
+cases:
+  - {seat: farm-manager, bot: bot_01JB8M00000000000000000017}
+  - {seat: "commission:3"}
+  - {seat: "commission:3", bot: bot_01JB8M00000000000000000017, tenant: demo2}
+  - {seat: "lens:security", bot: bot_01JB8M00000000000000000017}
+  - {seat: "commission:3", bot: bot_01JB8M00000000000000000017, epoch: 7}

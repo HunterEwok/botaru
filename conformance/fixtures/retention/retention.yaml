@@ -1,0 +1,130 @@
+id: fx-retention-retention
+rules: [RET-2, RET-3, RET-4]
+description: The retention loop in v0.1 deletes only objects of the classes content and observation older than the default term
+  from spec/model/retention-classes.yaml; everything else is deleted before its term only by an erasure request. From v0.2 the terms
+  are set by Tenant.spec.retention, and after the term the canary is not found in any store. An erasure request by
+  scope (tenant, subject) deletes task content with the C1 operation task.purge and leaves a tombstone.
+given: {tenant: demo, now: '2026-10-12T00:00:00Z'}
+cases:
+- id: ret-fx-01
+  rules: [RET-2]
+  version: v0.1
+  description: A canary of class content older than the default term is not found in C3 after a loop tick, and a metadata
+    record of the same age remains.
+  given:
+    records:
+    - store: c3
+      kind: session_entry
+      class: content
+      created_at: '2026-09-01T00:00:00Z'
+      content: CANARY-NOT-A-SECRET-ret2-content
+    - {store: c1, kind: audit_record, class: metadata, created_at: '2026-09-01T00:00:00Z'}
+  steps:
+  - stand: {op: loop.tick, loop: retention}
+  expect:
+    c3_contains: {CANARY-NOT-A-SECRET-ret2-content: false}
+    metadata_record: present
+- id: ret-fx-02
+  rules: [RET-2]
+  version: v0.1
+  description: The loop does not touch a content object younger than the default term (30 days).
+  given:
+    records:
+    - store: c3
+      kind: session_entry
+      class: content
+      created_at: '2026-09-20T00:00:00Z'
+      content: CANARY-NOT-A-SECRET-ret2-young
+  steps:
+  - stand: {op: loop.tick, loop: retention}
+  expect:
+    c3_contains: {CANARY-NOT-A-SECRET-ret2-young: true}
+- id: ret-fx-03
+  rules: [RET-2]
+  version: v0.1
+  description: A session of a role with memory none is kept 7 days.
+  given:
+    records:
+    - store: c3
+      kind: session_entry
+      class: content
+      role_memory: none
+      created_at: '2026-10-04T00:00:00Z'
+      content: CANARY-NOT-A-SECRET-ret2-nomem
+  steps:
+  - stand: {op: loop.tick, loop: retention}
+  expect:
+    c3_contains: {CANARY-NOT-A-SECRET-ret2-nomem: false}
+- id: ret-fx-04
+  rules: [RET-2]
+  version: v0.1
+  description: In v0.1 the loop does not delete a memory record of class memory, however old it is.
+  given:
+    records:
+    - {store: c4, kind: memory_item, class: memory, created_at: '2025-10-01T00:00:00Z'}
+  steps:
+  - stand: {op: loop.tick, loop: retention}
+  expect: {c4_record: present}
+- id: ret-fx-05
+  rules: [RET-2]
+  version: v0.2
+  description: From v0.2, after the Tenant.spec.retention term, the canary is not found in any store that the farm
+    keeps.
+  given:
+    tenant_retention: {content_days: 14, files: 14d}
+    records:
+    - store: c3
+      class: content
+      created_at: '2026-09-20T00:00:00Z'
+      content: CANARY-NOT-A-SECRET-ret2-all
+    - {store: c1, kind: file, expires_at: '2026-10-04T00:00:00Z', content: CANARY-NOT-A-SECRET-ret2-all}
+    - store: runtime
+      class: content
+      created_at: '2026-09-20T00:00:00Z'
+      content: CANARY-NOT-A-SECRET-ret2-all
+  steps:
+  - stand: {op: loop.tick, loop: retention}
+  expect:
+    found_in_any_store: {CANARY-NOT-A-SECRET-ret2-all: false}
+- id: ret-fx-13
+  rules: [RET-3, RET-4]
+  version: v0.1
+  description: 'After a confirmed /mydata erase of carol her task has no goal, result or delivery bodies: C1 task.purge
+    left a tombstone (tenant, key hash, id, state, times). A repeated enqueue with the same key gets gone
+    (D-86 (8)).'
+  given:
+    records:
+    - store: c1
+      kind: task
+      id: t_9
+      initiator: human:carol
+      state: completed
+      idempotency_key: ret-fx-13-1
+      content: CANARY-NOT-A-SECRET-ret3-goal
+  steps:
+  - call:
+      port: P2
+      op: erasure.request
+      request:
+        scope: {tenant: demo, subject: 'human:p_01JB3Q7N0M2V8XK4DGT5RZP9WC'}
+        reason: subject_request
+    by: operator
+  - occur: {erasure_request: done}
+  - call:
+      port: P2
+      op: task.show
+      request: {op: task.show, task: t_9}
+    by: operator
+    expect: {task: {id: t_9, state: completed, goal: absent, result: absent}}
+  - call:
+      port: P1
+      op: enqueue
+      request:
+        body: {goal: 'why is www.example.org slow'}
+        idempotency_key: ret-fx-13-1
+    by: human:carol
+    context: {type: ops.investigate.v1}
+    expect: {reason: gone}
+  expect:
+    c1_contains: {CANARY-NOT-A-SECRET-ret3-goal: false}
+    tombstone: {id: t_9, fields: [tenant, key_hash, id, state, created_at, finished_at]}

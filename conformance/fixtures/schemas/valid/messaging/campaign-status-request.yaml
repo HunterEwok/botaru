@@ -1,0 +1,6 @@
+schema: spec/model/campaign-status-request.schema.json
+rules:
+- ORC-4
+description: campaign_status arguments.
+cases:
+- campaign: k_01JB0000000000000000000201

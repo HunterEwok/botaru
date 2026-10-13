@@ -1,0 +1,58 @@
+# Links from messages are not downloaded (INJ-8); outbound text has no previews and no links outside the list (INJ-11).
+id: fx-injection-links
+rules: [INJ-8, INJ-11]
+description: A link stays text; the channel saves attachments and passes file_ref, and the file content is untrusted.
+cases:
+- id: inj-8-01
+  rules: [INJ-8]
+  steps:
+  - call:
+      port: P1
+      op: submit_activity
+      request:
+        kind: message
+        channel: telegram
+        update_id: '1'
+        sender: {identity: 'telegram:1001', verified: true}
+        chat: {kind: direct, external_id: '1001'}
+        text: take a look at https://files.example.org/report.pdf
+    by: human:alice
+  expect:
+    fetched_urls: 0
+    task_body_text: unchanged
+    attachments: []
+- id: inj-8-02
+  rules: [INJ-8]
+  steps:
+  - call:
+      port: P1
+      op: submit_activity
+      request:
+        kind: message
+        channel: telegram
+        update_id: '2'
+        sender: {identity: 'telegram:1001', verified: true}
+        chat: {kind: direct, external_id: '1001'}
+        attachments: ['file:upload1AAAAAAAAAAAAAAA']
+    by: human:alice
+  expect:
+    file_record: {origin: upload, untrusted: true}
+    fetched_urls: 0
+- id: inj-8-03
+  rules: [INJ-8]
+  given: {tool_output: 'see http://198.51.100.20/payload'}
+  expect: {fetched_urls: 0, resource_link_opened: false}
+- id: inj-8-04
+  rules: [INJ-8, INJ-11]
+  given: {tenant: demo}
+  steps:
+  - model: {text: 'see https://203.0.113.7/?d=abc'}
+  expect: {url_removed: true, link_preview: disabled}
+- id: inj-8-05
+  rules: [INJ-11]
+  given:
+    tenant: demo
+    link_allowlist: [docs.example.org]
+  steps:
+  - model: {text: 'instructions: https://docs.example.org/runbook'}
+  expect: {url_removed: false, link_preview: disabled}

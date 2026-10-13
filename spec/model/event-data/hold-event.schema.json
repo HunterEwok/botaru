@@ -1,0 +1,84 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:botaru:schema:hold-event:1",
+  "title": "Stop event data",
+  "description": "Data of the events hold.set, hold.released and hold.expired: every stop transition publishes an event and writes an audit record (HLD-5, spec/lifecycles/hold.md). Metadata only: id, scope, effects, reason, deadline and author.",
+  "x-botaru-direction": "output",
+  "x-botaru-rules": [
+    "HLD-5",
+    "HLD-1"
+  ],
+  "type": "object",
+  "required": [
+    "hold",
+    "scope",
+    "effects",
+    "reason",
+    "author_kind"
+  ],
+  "properties": {
+    "hold": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/object_id",
+      "description": "Stop id."
+    },
+    "scope": {
+      "type": "object",
+      "description": "Stop scope: a kind from the closed list spec/model/holds.yaml, the tenant and the name of the scope object. The farm scope has no tenant and no name; the tenant scope has no name.",
+      "additionalProperties": false,
+      "required": [
+        "kind"
+      ],
+      "properties": {
+        "kind": {
+          "$ref": "urn:botaru:schema:hold:1#/$defs/scope_kind"
+        },
+        "tenant": {
+          "$ref": "urn:botaru:schema:common:1#/$defs/tenant_name",
+          "description": "Tenant of the scope."
+        },
+        "name": {
+          "description": "Name of the scope object: role, task type, worker id, plugin, action, channel, machine, resource, bot group, bot, seat, schedule or case.",
+          "type": "string",
+          "maxLength": 120,
+          "pattern": "^[a-z@][a-z0-9_.:@-]*$"
+        }
+      }
+    },
+    "effects": {
+      "description": "Stop effects from the closed list spec/model/holds.yaml (kind: effect); pause_action since v0.2.",
+      "type": "array",
+      "items": {
+        "$ref": "urn:botaru:schema:hold:1#/$defs/effect"
+      },
+      "maxItems": 9,
+      "minItems": 1,
+      "uniqueItems": true
+    },
+    "reason": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/reason",
+      "description": "Stop reason from reasons.yaml."
+    },
+    "until": {
+      "description": "Stop deadline, or null: until released.",
+      "anyOf": [
+        {
+          "$ref": "urn:botaru:schema:common:1#/$defs/datetime"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "author": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/principal_ref",
+      "description": "Stop author; for code stops inside a tenant the author contain_auto is written in the author_kind field."
+    },
+    "author_kind": {
+      "$ref": "urn:botaru:schema:hold:1#/$defs/author_kind"
+    },
+    "released_by": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/principal_ref",
+      "description": "Who released the stop; only for hold.released."
+    }
+  }
+}

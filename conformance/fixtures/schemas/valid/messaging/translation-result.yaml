@@ -1,0 +1,15 @@
+schema: spec/model/translation-result.schema.json
+rules:
+- TRN-3
+- TRN-5
+description: Translator results that the schema accepts.
+cases:
+- outcome: drafted
+  run_ref: s_01JB0000000000000000000301
+- outcome: ambiguous
+  missing:
+  - resource_missing
+  - action_unclear
+- outcome: unsupported
+  missing:
+  - resource_missing

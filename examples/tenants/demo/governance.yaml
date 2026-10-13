@@ -1,0 +1,26 @@
+# Charter of tenant demo (docs/commission.md, docs/bots.md): commission seats, path deadlines and memory limits.
+apiVersion: botaru/v1alpha1
+kind: Governance
+metadata: {name: demo, tenant: demo}
+spec:
+  positions:
+    functional: {max_rank: 1, analysis_max_rank: 2}
+  commission:
+    seat_role: commission-member
+    model_profile: seat-std
+    seats:
+      - {id: 1, lens: security, fallback_role: reviewer-a}
+      - {id: 2, lens: operational, fallback_role: reviewer-a, model_profile: seat-alt}
+      - {id: 3, lens: cost, fallback_role: reviewer-b}
+      - {id: 4, lens: value, fallback_role: reviewer-b}
+    audit_sample: {min_per_month: 4, share: 0.25, max_per_digest: 2}
+  promotion: {probation: 14d, exclude_change_kinds: [none], min_tenure: 30d, swap_cooldown: 30d}
+  removal: {protect_new: 60d}
+  ballots: {reissue_max: 3, stuck_after: 24h}
+  confirmation: {ttl: 7d}
+  attribution: {window: 14d}
+  identity: {unbound_ttl: 30d}
+  memory:
+    seal_ttl: 30d
+    facts: {max_active: 100, per_attempt: 3}
+    offer: {max: 100, take_max: 50}

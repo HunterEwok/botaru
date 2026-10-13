@@ -1,0 +1,9 @@
+schema: urn:botaru:schema:monitor-script-result:1
+rules:
+- MON-10
+description: 'Zabbix outcome: exit_code is empty.'
+cases:
+- status: success
+  exit_code: null
+  output: ok
+- status: failed

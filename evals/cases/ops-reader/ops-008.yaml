@@ -1,0 +1,20 @@
+# evals/cases/ops-reader/ops-008.yaml (catalog: evals/README.md)
+id: ops-008
+kind: quality
+blocking: false
+status: active
+version: v0.1
+rules: [INJ-4]
+summary: 'bob: how many different subnets accessed the site in the hour; the number is checked, no full IPs in the answer.'
+from: bob
+chat: bob-dm
+lang: ru
+message: '/logs How many different subnets accessed the site in the last hour?'
+data: {gen: nginx, seed: 42}
+expect:
+  state: completed
+  checks:
+  - equals: {path: result.facts.count_subnets, ref: answers#/count_subnets}
+  - not_contains: {ref: answers#/full_ips_401}
+  - tools_allowed: [logs/tail]
+  - {max_tool_calls: 6}

@@ -1,0 +1,52 @@
+id: fx-orc-05
+rules: [ORC-11, HLD-1, HLD-3]
+description: A hold whose scope covers a campaign or its items and whose effect forbids release or execution
+  pauses the affected campaigns in the same transaction with reason held. New proposals of campaigns with an action in the scope
+  are rejected, waiting approvals are canceled. Released write calls are not revoked. Releasing the hold does not resume
+  the campaign.
+given:
+  tenant: demo
+  campaigns:
+    k_01JB0000000000000000000005:
+      state: running
+      template: {kind: action, action: cleanup_pipeline_tmp}
+      released: [1]
+    k_01JB0000000000000000000006:
+      state: proposed
+      template: {kind: action, action: cleanup_pipeline_tmp}
+steps:
+- call:
+    port: P2
+    op: hold.set
+    request:
+      scope: {kind: tenant, tenant: demo}
+      effects: [no_action]
+      reason: manual
+      until: null
+  by: human:alice
+- call:
+    port: P1
+    op: campaign.propose
+    request:
+      template:
+        kind: action
+        action: cleanup_pipeline_tmp
+        args: {older_than_days: 7}
+      items:
+        resources: [web1]
+- call:
+    port: P2
+    op: hold.release
+    request: {id: $last}
+  by: human:alice
+  note: the hold set by the first step is being released
+- stand: {op: loop.tick, loop: campaign}
+expect:
+  k_01JB0000000000000000000005:
+    state: paused
+    pause_reason: held
+    in_same_transaction_as_hold: true
+    released_item_1_write_call: kept
+  k_01JB0000000000000000000006: {state: canceled}
+  new_proposal: {result: rejected, reason: held}
+  after_release: {k_01JB0000000000000000000005: paused}

@@ -1,0 +1,7 @@
+schema: spec/model/p1-session-append-request.schema.json
+rules: [MEM-1]
+description: Appending one entry.
+cases:
+- entries:
+  - uuid: 0f8a3c2e-5b1d-4c7a-9e2f-1a2b3c4d5e6f
+    content: x

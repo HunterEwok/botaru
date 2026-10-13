@@ -1,0 +1,158 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:botaru:schema:p2-control-apply-request:1",
+  "title": "P2 control.apply: request",
+  "description": "Body of P2 control.apply: a person of the tenant calls a control operation from the closed list control-ops.yaml by the same C1 path as the farm manager (MGR-9). There is no tenant field: the core derives the tenant of the target from the target object (MGR-3, TEN-2). pin_task and preempt from people are operator operations, only through farmctl (PRM-14).",
+  "x-botaru-direction": "input",
+  "x-botaru-rules": [
+    "MGR-9",
+    "MGR-3",
+    "MGR-13",
+    "PRM-14"
+  ],
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "op",
+    "target"
+  ],
+  "properties": {
+    "op": {
+      "enum": [
+        "hold",
+        "quarantine",
+        "drain",
+        "preempt",
+        "cancel",
+        "pin_task",
+        "request_action",
+        "release",
+        "notify"
+      ],
+      "description": "Operation from control-ops.yaml.",
+      "x-botaru-registry": "control-ops"
+    },
+    "target": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "id"
+      ],
+      "properties": {
+        "kind": {
+          "enum": [
+            "worker",
+            "bot",
+            "bot_group",
+            "role",
+            "tasktype",
+            "resource",
+            "task",
+            "hold"
+          ],
+          "description": "Target kind; a stop is set with the scope worker, bot, bot_group, role, tasktype or resource (MGR-9). For the release operation the target is a seat hold: kind hold and the stop id."
+        },
+        "id": {
+          "description": "Target id: object_id for a worker, bot, task and stop (kind hold); a name from the catalog or manifest for a bot group, role, task type and resource.",
+          "anyOf": [
+            {
+              "$ref": "urn:botaru:schema:common:1#/$defs/object_id"
+            },
+            {
+              "type": "string",
+              "maxLength": 64,
+              "pattern": "^[a-z0-9:_.-]{1,64}$"
+            }
+          ]
+        }
+      },
+      "description": "Target of the operation. The core derives the tenant of the target from the target object; there is no tenant field (MGR-3)."
+    },
+    "basis": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "incident": {
+          "$ref": "urn:botaru:schema:common:1#/$defs/object_id",
+          "description": "Basis incident."
+        }
+      },
+      "description": "Basis of the operation."
+    },
+    "effects": {
+      "type": "array",
+      "maxItems": 6,
+      "uniqueItems": true,
+      "items": {
+        "enum": [
+          "no_enqueue",
+          "no_claim",
+          "no_tool",
+          "no_action",
+          "no_delivery",
+          "cancel_running"
+        ],
+        "x-botaru-registry": "holds",
+        "x-botaru-registry-kind": "effect"
+      },
+      "description": "Effects of the stop operation; they only narrow (HLD-2)."
+    },
+    "ttl": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/duration",
+      "description": "Stop duration, at most hold_ttl_max (2 h)."
+    },
+    "action": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/dotted_name",
+      "description": "Action for request_action."
+    },
+    "tasktype": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/type_name",
+      "description": "Task type for pin_task from the class's responses.pin_types."
+    },
+    "template": {
+      "type": "string",
+      "maxLength": 64,
+      "pattern": "^[a-z][a-z0-9_]*$",
+      "description": "Code template for notify."
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "patternProperties": {
+          "^op$": {
+            "const": "release"
+          }
+        },
+        "required": [
+          "op"
+        ]
+      },
+      "then": {
+        "patternProperties": {
+          "^target$": {
+            "patternProperties": {
+              "^kind$": {
+                "const": "hold"
+              }
+            }
+          }
+        }
+      },
+      "else": {
+        "patternProperties": {
+          "^target$": {
+            "patternProperties": {
+              "^kind$": {
+                "not": {
+                  "const": "hold"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  ]
+}

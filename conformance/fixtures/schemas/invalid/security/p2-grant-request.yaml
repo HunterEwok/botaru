@@ -1,0 +1,7 @@
+schema: urn:botaru:schema:p2-grant-request:1
+rules: [PRM-7, PRM-13]
+description: A grant without a group, with a capability instead of a group and with a code not made of digits is rejected.
+cases:
+- {op: grant, subject: 'human:p_01JB3Q7N0M2V8XK4DGT5RZP9WA'}
+- {op: grant, subject: 'human:p_01JB3Q7N0M2V8XK4DGT5RZP9WA', group: 'action.approve:*'}
+- {op: grant, subject: 'human:p_01JB3Q7N0M2V8XK4DGT5RZP9WA', group: staff, code: abc}

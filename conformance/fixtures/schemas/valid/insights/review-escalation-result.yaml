@@ -1,0 +1,6 @@
+schema: spec/model/review-escalation-result.schema.json
+rules: [COM-13]
+description: Necessity lens outputs (v0.2) that the schema accepts.
+cases:
+  - {score: 2, reason: plausible_risk}
+  - {score: 0, reason: covered_by_alarm}

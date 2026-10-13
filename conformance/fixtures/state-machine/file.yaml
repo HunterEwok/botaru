@@ -1,0 +1,78 @@
+# Collected from spec/lifecycles/file.yaml. The value null in from means "the object does not exist yet".
+lifecycle: spec/lifecycles/file.yaml
+object: file
+rules: [ART-1, ART-3, ART-4, ART-6, CAP-1, KNW-5, RET-2, RET-3, RET-4, RET-7, TEN-7]
+description: Allowed and forbidden transitions of the "file" lifecycle, collected from the tables of spec/lifecycles/file.md.
+  The implementation accepts a transition from the allowed list under the condition of its row; a pair from the forbidden
+  list does not change the state, and the call that asks for it is rejected. The without_transition rows are calls that
+  have no transition by the table. A file does not change in place; after purged the record stays as a tombstone, and the
+  file_ref is not used again.
+states:
+- id: stored
+  terminal: false
+- id: expired
+  terminal: false
+- id: purged
+  terminal: true
+allowed:
+- from: null
+  to: stored
+  by: 'P1 `file.put`: a channel (a person''s attachment), a `job` worker or a sandbox toolhost (a result file)'
+  rules: [ART-1, ART-3, ART-4, ART-6, CAP-1]
+- from: stored
+  to: expired
+  by: '`expires_at` has come; the core loop `retention` marks the transition, and a handout after `expires_at` already answers
+    `gone`'
+  rules: [ART-1, RET-2]
+- from: expired
+  to: purged
+  by: the core loop `retention` or the `erasure` loop by an erasure request; C1 `file.purge` (from v0.2)
+  rules: [KNW-5, RET-2, RET-4, RET-7]
+- from: stored
+  to: purged
+  by: the core loop `erasure` by an erasure request; C1 `file.purge` (from v0.1, D-76)
+  rules: [KNW-5, RET-4, RET-7]
+forbidden:
+- from: null
+  to: expired
+  expect: rejected
+  rules: &id001 [ART-1]
+  why: the object does not appear directly in the state expired
+- from: null
+  to: purged
+  expect: rejected
+  rules: *id001
+  why: the object does not appear directly in the state purged
+- from: stored
+  to: stored
+  expect: rejected
+  rules: &id002 [ART-1]
+  why: the lifecycle table has no such transition
+- from: expired
+  to: stored
+  expect: rejected
+  rules: *id002
+  why: the lifecycle table has no such transition
+- from: expired
+  to: expired
+  expect: rejected
+  rules: *id002
+  why: the lifecycle table has no such transition
+- from: purged
+  to: stored
+  expect: rejected
+  rules: &id003 [RET-3, TEN-7]
+  why: purged is a terminal state
+- from: purged
+  to: expired
+  expect: rejected
+  rules: *id003
+  why: purged is a terminal state
+- from: purged
+  to: purged
+  expect: rejected
+  rules: *id003
+  why: purged is a terminal state
+expect:
+  allowed: 4
+  forbidden: 8

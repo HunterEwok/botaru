@@ -1,0 +1,13 @@
+schema: spec/manifests/sink.schema.json
+rules:
+- MAN-1
+description: Sink manifest specs from examples/ that the kind schema accepts.
+cases:
+- driver: disk
+  base: /srv/botaru/archive
+  ceiling: internal
+  retention: 365d
+- driver: disk
+  base: /srv/botaru/checks
+  ceiling: summary
+  retention: 30d

@@ -1,0 +1,39 @@
+id: fx-mgr-line-too-small
+rules: [MGR-20]
+description: 'apply of a tenant with manager.day_eur below the price of three reads of one worst-case incident (input of 60
+  thousand tokens together and three answers at the seat profile''s max_output_tokens) by the same calculation as the price table of the fixed
+  parts in BUD-15: refusal manager_line_too_small. The lint skips a tenant with farm_manager.enabled: false.'
+cases:
+- id: fx-mgr-line-too-small-a
+  given:
+    tenant: demo
+    budget:
+      manager: {day_eur: 0.2}
+    worst_case_three_reads_eur: 1.94
+  expect:
+    apply: {result: rejected}
+    reason: manager_line_too_small
+    note: the price of a read is about 0.75 USD per docs/farm-manager.md, rate 0.86
+- id: fx-mgr-line-too-small-b
+  given:
+    tenant: demo
+    budget:
+      manager: {day_eur: 2.0}
+    worst_case_three_reads_eur: 1.94
+    models_allowed_has_seat_profile: true
+  expect: {apply: ok}
+- id: fx-mgr-line-too-small-c
+  given:
+    tenant: demo
+    budget:
+      manager: {day_eur: 2.0}
+    models_allowed_has_seat_profile: false
+  expect:
+    apply: {result: rejected}
+- id: fx-mgr-line-too-small-d
+  given:
+    tenant: demo2
+    tenant_spec:
+      farm_manager: {enabled: false}
+    budget: {}
+  expect: {apply: ok}

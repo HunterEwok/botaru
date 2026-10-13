@@ -1,0 +1,365 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:botaru:schema:task-type:1",
+  "title": "Task type",
+  "description": "spec of the TaskType manifest: who executes, what is allowed, what to return, how long to wait and how much to spend (docs/task-language.md, \"Type fields\").",
+  "x-botaru-direction": "input",
+  "x-botaru-rules": [
+    "MAN-3",
+    "INJ-1",
+    "OUT-1",
+    "BUD-9",
+    "PRM-4",
+    "PRM-5",
+    "FEN-3",
+    "CNT-5",
+    "PRP-10",
+    "APR-17"
+  ],
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "title",
+    "worker_kind",
+    "purpose",
+    "tier",
+    "data_class",
+    "params_schema",
+    "tree_budget_eur"
+  ],
+  "properties": {
+    "title": {
+      "type": "string",
+      "maxLength": 120,
+      "description": "Title for people; a person writes it in git."
+    },
+    "summary_for_managers": {
+      "type": "string",
+      "maxLength": 500,
+      "description": "Description for the manager (ORC-13)."
+    },
+    "worker_kind": {
+      "enum": [
+        "agent",
+        "job"
+      ]
+    },
+    "purpose": {
+      "type": "string",
+      "maxLength": 20,
+      "description": "Purpose from spec/model/task-purposes.yaml (BUD-7).",
+      "pattern": "^[a-z]+$",
+      "x-botaru-registry": "task-purposes"
+    },
+    "tier": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/tier",
+      "description": "Task tier 0, 1 or 3; 2 from v0.2 (PRM-4)."
+    },
+    "data_class": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/data_mark",
+      "description": "Data class of the type (PRM-5)."
+    },
+    "instruction": {
+      "type": "string",
+      "maxLength": 20000,
+      "description": "Instruction to the model; only people write it in git (INJ-10)."
+    },
+    "params_schema": {
+      "$ref": "urn:botaru:schema:embedded-schema:1#/$defs/closed_object",
+      "description": "Closed params schema (INJ-1)."
+    },
+    "result_schema": {
+      "$ref": "urn:botaru:schema:embedded-schema:1#/$defs/result_object",
+      "description": "Result schema; the fields that code reads are marked x-botaru-read-by: code and are closed (OUT-1)."
+    },
+    "summary_fields": {
+      "type": "array",
+      "maxItems": 20,
+      "items": {
+        "type": "string",
+        "maxLength": 64,
+        "pattern": "^[a-z][a-z0-9_]{0,63}$"
+      },
+      "description": "Closed result fields for the auto-report and summaries (DLV-15)."
+    },
+    "stages": {
+      "type": "array",
+      "maxItems": 20,
+      "items": {
+        "type": "string",
+        "maxLength": 64,
+        "pattern": "^[a-z][a-z0-9_]{0,63}$"
+      },
+      "description": "Progress stages for heartbeat (DLV-11)."
+    },
+    "dispatch": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "priority_class": {
+          "type": "integer",
+          "minimum": 3,
+          "maximum": 5,
+          "description": "Priority class 3-5 (DSP-5)."
+        }
+      }
+    },
+    "interactive": {
+      "type": "boolean",
+      "description": "Right to class 2 on a direct request from a person (DSP-5)."
+    },
+    "requires": {
+      "type": "object",
+      "maxProperties": 16,
+      "propertyNames": {
+        "pattern": "^[a-z][a-z0-9-]{0,62}$"
+      },
+      "additionalProperties": {
+        "$ref": "urn:botaru:schema:common:1#/$defs/name"
+      },
+      "description": "Worker labels that the task needs."
+    },
+    "timeouts": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "start_by": {
+          "$ref": "urn:botaru:schema:common:1#/$defs/duration"
+        },
+        "lease": {
+          "$ref": "urn:botaru:schema:common:1#/$defs/duration"
+        },
+        "heartbeat": {
+          "$ref": "urn:botaru:schema:common:1#/$defs/duration"
+        },
+        "attempt": {
+          "$ref": "urn:botaru:schema:common:1#/$defs/duration"
+        },
+        "stall_after": {
+          "$ref": "urn:botaru:schema:common:1#/$defs/duration"
+        },
+        "deadline": {
+          "$ref": "urn:botaru:schema:common:1#/$defs/duration"
+        },
+        "tool_start_by": {
+          "$ref": "urn:botaru:schema:common:1#/$defs/duration"
+        }
+      },
+      "description": "Type deadlines; lease not above 120 s, heartbeat not above 30 s, tool_start_by not above 30 s (FEN-3, DLV-16)."
+    },
+    "retry": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "max_attempts": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 3,
+          "description": "Attempts, at most 3 (FEN-1, FEN-3)."
+        },
+        "max_runs": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 6,
+          "description": "Runtime runs, at most 6."
+        },
+        "backoff": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "initial": {
+              "$ref": "urn:botaru:schema:common:1#/$defs/duration"
+            },
+            "factor": {
+              "type": "number",
+              "minimum": 1,
+              "maximum": 10,
+              "description": "Pause multiplier."
+            },
+            "max": {
+              "$ref": "urn:botaru:schema:common:1#/$defs/duration"
+            },
+            "jitter": {
+              "type": "boolean",
+              "description": "Pause jitter."
+            }
+          }
+        },
+        "non_retryable": {
+          "type": "array",
+          "maxItems": 30,
+          "items": {
+            "$ref": "urn:botaru:schema:common:1#/$defs/reason"
+          },
+          "description": "Reasons without a retry."
+        }
+      }
+    },
+    "tree_budget_eur": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1000000,
+      "description": "Spending limit for the whole task tree in euros; mandatory (BUD-9)."
+    },
+    "max_children": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 1000,
+      "description": "Limit of direct children; 10 by default (PRM-6)."
+    },
+    "events": {
+      "type": "array",
+      "maxItems": 30,
+      "items": {
+        "$ref": "urn:botaru:schema:common:1#/$defs/type_name"
+      },
+      "description": "Event types that a job worker can submit through P1 emit (IDM-4, INJ-7).",
+      "uniqueItems": true
+    },
+    "observes": {
+      "type": "array",
+      "maxItems": 50,
+      "items": {
+        "$ref": "urn:botaru:schema:common:1#/$defs/dotted_name"
+      },
+      "description": "Only for job: the series that the worker reads through P1 obs.query (OBV-3).",
+      "uniqueItems": true
+    },
+    "inbox": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "read": {
+          "type": "array",
+          "maxItems": 30,
+          "items": {
+            "$ref": "urn:botaru:schema:common:1#/$defs/type_name"
+          },
+          "description": "Message types for reading (MSG-8)."
+        }
+      }
+    },
+    "side_effects": {
+      "const": "external",
+      "description": "The job worker writes to an external system and passes it work_id (FEN-7)."
+    },
+    "followup_window_s": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 86400,
+      "description": "Follow-up window after need_input: true; 1800 by default, 0 turns it off (CNT-5)."
+    },
+    "goal_trust": {
+      "enum": [
+        "untrusted",
+        "authored"
+      ],
+      "description": "Whether to trust a goal from an external program; untrusted by default."
+    },
+    "continuation": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "$ref": "urn:botaru:schema:common:1#/$defs/type_name"
+        },
+        "goal": {
+          "type": "string",
+          "maxLength": 4000,
+          "description": "Goal template of the continuation."
+        }
+      },
+      "required": [
+        "type"
+      ],
+      "description": "reply continuation (CNT-1)."
+    },
+    "goal_templates": {
+      "type": "array",
+      "maxItems": 20,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "name": {
+            "$ref": "urn:botaru:schema:common:1#/$defs/name"
+          },
+          "goal": {
+            "type": "string",
+            "maxLength": 4000,
+            "description": "Goal template of a step."
+          }
+        },
+        "required": [
+          "name",
+          "goal"
+        ]
+      },
+      "description": "Goal templates for script steps (SCR-2)."
+    },
+    "pinnable": {
+      "type": "boolean",
+      "description": "Whether the task can be pinned to a worker under quarantine (MGR-12)."
+    },
+    "proposable": {
+      "type": "boolean",
+      "description": "Whether a change of the type and its schedules can be proposed; true by default (PRP-10)."
+    },
+    "makes_backup": {
+      "type": "boolean",
+      "description": "The type makes a backup; such a type is always proposable: false (RET-7)."
+    },
+    "run": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "approval": {
+          "const": "none",
+          "description": "A job pipeline that /run starts without a button (APR-17)."
+        }
+      },
+      "required": [
+        "approval"
+      ]
+    },
+    "result_ttl": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/duration",
+      "description": "Retention period of the result (ART-1)."
+    },
+    "result_media_types": {
+      "type": "array",
+      "maxItems": 20,
+      "items": {
+        "type": "string",
+        "maxLength": 100,
+        "pattern": "^[a-z]+/[a-z0-9.+-]+$"
+      },
+      "description": "Result file types (ART-5)."
+    },
+    "await": {
+      "type": "object",
+      "maxProperties": 0,
+      "description": "From v0.2: waiting for an external event after complete (CNT-6); v0.2 sets the fields.",
+      "x-botaru-version": "v0.2",
+      "x-botaru-closed-by": "maxProperties: 0 until v0.2; v0.2 sets the fields"
+    },
+    "conversation_concurrency": {
+      "enum": [
+        "serial",
+        "parallel"
+      ],
+      "description": "From v0.2: attempts in one conversation for one role (MEM-5).",
+      "x-botaru-version": "v0.2"
+    },
+    "grant_eligible": {
+      "type": "boolean",
+      "description": "From v0.2: the type can be asked to be executed by a stronger model (MGR-40).",
+      "x-botaru-version": "v0.2"
+    },
+    "grant_eval_set": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/name",
+      "description": "From v0.2: the set of inputs for checking the type history (MGR-40).",
+      "x-botaru-version": "v0.2"
+    }
+  }
+}

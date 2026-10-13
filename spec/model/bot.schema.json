@@ -1,0 +1,242 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:botaru:schema:bot:1",
+  "title": "Bot identity",
+  "description": "Bot identity record (Bot). Only the core writes it: the core issues the id bot_<ulid> and never reuses it, the tenant is taken from the credentials at creation and never changes (IDN-8, TEN-1). Binding to a worker or a seat with the epoch bot_epoch; the epoch grows on every binding change (IDN-10). The track record (record) is only core numbers and codes; the model neither writes nor sees it, and it grants no permissions (IDN-9). Retirement only for a trigger from spec/model/bot-retire-reasons.yaml (IDN-11). After erasure a tombstone remains: id, tenant, role, time, trigger and successor id (MEM-9).",
+  "x-botaru-direction": "record",
+  "x-botaru-retention": "metadata",
+  "x-botaru-rules": [
+    "IDN-8",
+    "IDN-9",
+    "IDN-10",
+    "IDN-11",
+    "MEM-9"
+  ],
+  "type": "object",
+  "required": [
+    "id",
+    "tenant",
+    "role",
+    "state",
+    "created_at"
+  ],
+  "properties": {
+    "id": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/object_id",
+      "description": "Identity id, prefix bot."
+    },
+    "tenant": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/tenant_name",
+      "description": "Tenant of the identity; farm for the holder of the farm manager seat."
+    },
+    "role": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/name",
+      "description": "Role of the identity."
+    },
+    "state": {
+      "enum": [
+        "active",
+        "suspended",
+        "unbound",
+        "retired",
+        "erased"
+      ],
+      "description": "State of the identity lifecycle (spec/lifecycles/identity.md)."
+    },
+    "binding": {
+      "type": "object",
+      "required": [
+        "mode",
+        "epoch"
+      ],
+      "properties": {
+        "mode": {
+          "enum": [
+            "worker",
+            "seat"
+          ],
+          "description": "Binding to one worker or to a seat."
+        },
+        "worker": {
+          "description": "Worker of the binding for mode: worker; an identity on a seat has no worker of its own.",
+          "anyOf": [
+            {
+              "$ref": "urn:botaru:schema:common:1#/$defs/object_id"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "seat": {
+          "description": "Seat of the binding for mode: seat.",
+          "anyOf": [
+            {
+              "type": "string",
+              "maxLength": 16,
+              "pattern": "^(farm-manager|commission:[1-9][0-9]{0,2})$",
+              "description": "Seat id: farm-manager (the farm manager seat, tenant farm) or commission:<seat number from the tenant charter>."
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "epoch": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Binding epoch bot_epoch; an attempt write with an old epoch gets fenced."
+        }
+      },
+      "description": "Identity binding (IDN-8)."
+    },
+    "created_at": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/datetime",
+      "description": "Time the identity was created."
+    },
+    "record": {
+      "type": "object",
+      "properties": {
+        "proposals": {
+          "type": "object",
+          "properties": {
+            "realized": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 100000,
+              "description": "Executed proposals."
+            },
+            "better": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 100000,
+              "description": "Trial outcome better."
+            },
+            "unchanged": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 100000,
+              "description": "Trial outcome unchanged."
+            },
+            "worse": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 100000,
+              "description": "Trial outcome worse, including a revert by a person with the reason harm_observed (GOV-32)."
+            },
+            "undetermined": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 100000,
+              "description": "Trial outcome undetermined."
+            },
+            "mixed": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 100000,
+              "description": "Trial outcome mixed."
+            }
+          },
+          "description": "Number of proposals by change trial outcome (PRP-22)."
+        },
+        "reviews": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "For seat holders: number of reviews."
+        },
+        "calibration": {
+          "description": "For seat holders: calibration of the seat's lens (COM-11); insufficient when there are fewer than 10 cases.",
+          "anyOf": [
+            {
+              "type": "number",
+              "minimum": -1,
+              "maximum": 1
+            },
+            {
+              "const": "insufficient"
+            }
+          ]
+        },
+        "seats": {
+          "type": "array",
+          "maxItems": 100,
+          "description": "Seat assignments.",
+          "items": {
+            "type": "object",
+            "required": [
+              "seat",
+              "from"
+            ],
+            "properties": {
+              "seat": {
+                "type": "string",
+                "maxLength": 16,
+                "pattern": "^(farm-manager|commission:[1-9][0-9]{0,2})$",
+                "description": "Seat id: farm-manager (the farm manager seat, tenant farm) or commission:<seat number from the tenant charter>."
+              },
+              "from": {
+                "$ref": "urn:botaru:schema:common:1#/$defs/datetime",
+                "description": "Start."
+              },
+              "to": {
+                "description": "End, or null.",
+                "anyOf": [
+                  {
+                    "$ref": "urn:botaru:schema:common:1#/$defs/datetime"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            }
+          }
+        }
+      },
+      "description": "Track record: core numbers and codes only; people see it in P2 bot.show."
+    },
+    "sealed_until": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/datetime",
+      "description": "End of the seal seal_ttl (30 days from retirement); the seal does not extend retention periods (MEM-9)."
+    },
+    "retired": {
+      "description": "On retirement: trigger, time and successor; the same remains in the tombstone.",
+      "anyOf": [
+        {
+          "type": "object",
+          "required": [
+            "reason",
+            "at"
+          ],
+          "properties": {
+            "reason": {
+              "type": "string",
+              "maxLength": 64,
+              "pattern": "^[a-z][a-z0-9_]*$",
+              "x-botaru-registry": "bot-retire-reasons",
+              "description": "Retirement trigger."
+            },
+            "at": {
+              "$ref": "urn:botaru:schema:common:1#/$defs/datetime",
+              "description": "Retirement time."
+            },
+            "successor": {
+              "description": "Successor id by the MEM-7 table, or null if there is no successor.",
+              "anyOf": [
+                {
+                  "$ref": "urn:botaru:schema:common:1#/$defs/object_id"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "type": "null"
+        }
+      ]
+    }
+  }
+}

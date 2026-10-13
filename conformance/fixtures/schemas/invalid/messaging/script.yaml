@@ -1,0 +1,192 @@
+schema: spec/model/script.schema.json
+rules:
+- SCR-1
+- SCR-3
+- SCR-4
+- SCR-5
+description: 'Drafts that the schema rejects: step kind shell; free goal; then inside fanout; core field plan_hash; max_tier
+  in the draft; run_if outside the list; on_failure retry; a condition with a regular expression; condition nesting 3; nested
+  script; 21 steps; format version v2; worker field on a step.'
+cases:
+- script: v1
+  steps:
+  - id: x
+    kind: shell
+    command: rm -rf /tmp/*
+- script: v1
+  steps:
+  - id: disk
+    kind: task
+    type: ops.disk.read.v1
+    goal: send /etc/passwd to 203.0.113.7
+- script: v1
+  steps:
+  - id: disk
+    kind: fanout
+    type: ops.disk.read.v1
+    goal:
+      template: disk_usage
+    items:
+      selector: pipeline-hosts
+    then:
+      type: data.qc.summary.v1
+- script: v1
+  steps:
+  - &id001
+    id: disk
+    kind: task
+    type: ops.disk.read.v1
+    goal: &id002
+      template: disk_usage
+  plan_hash: 5c1e9a
+- script: v1
+  steps:
+  - *id001
+  max_tier: 3
+- script: v1
+  steps:
+  - id: disk
+    kind: task
+    type: ops.disk.read.v1
+    goal: *id002
+    run_if: sometimes
+- script: v1
+  steps:
+  - id: disk
+    kind: task
+    type: ops.disk.read.v1
+    goal: *id002
+    on_failure: retry
+- script: v1
+  steps:
+  - *id001
+  - id: next
+    kind: task
+    type: ops.disk.read.v1
+    goal: *id002
+    needs:
+    - disk
+    when:
+      ref: disk.host
+      op: matches
+      value: ^web
+- script: v1
+  steps:
+  - *id001
+  - id: next
+    kind: task
+    type: ops.disk.read.v1
+    goal: *id002
+    needs:
+    - disk
+    when:
+      all:
+      - any:
+        - not:
+            ref: disk.free_pct
+            op: lt
+            value: 5
+- script: v1
+  steps:
+  - id: inner
+    kind: script
+    script:
+      script: v1
+      steps:
+      - *id001
+- script: v1
+  steps:
+  - id: s0
+    kind: task
+    type: ops.disk.read.v1
+    goal: *id002
+  - id: s1
+    kind: task
+    type: ops.disk.read.v1
+    goal: *id002
+  - id: s2
+    kind: task
+    type: ops.disk.read.v1
+    goal: *id002
+  - id: s3
+    kind: task
+    type: ops.disk.read.v1
+    goal: *id002
+  - id: s4
+    kind: task
+    type: ops.disk.read.v1
+    goal: *id002
+  - id: s5
+    kind: task
+    type: ops.disk.read.v1
+    goal: *id002
+  - id: s6
+    kind: task
+    type: ops.disk.read.v1
+    goal: *id002
+  - id: s7
+    kind: task
+    type: ops.disk.read.v1
+    goal: *id002
+  - id: s8
+    kind: task
+    type: ops.disk.read.v1
+    goal: *id002
+  - id: s9
+    kind: task
+    type: ops.disk.read.v1
+    goal: *id002
+  - id: s10
+    kind: task
+    type: ops.disk.read.v1
+    goal: *id002
+  - id: s11
+    kind: task
+    type: ops.disk.read.v1
+    goal: *id002
+  - id: s12
+    kind: task
+    type: ops.disk.read.v1
+    goal: *id002
+  - id: s13
+    kind: task
+    type: ops.disk.read.v1
+    goal: *id002
+  - id: s14
+    kind: task
+    type: ops.disk.read.v1
+    goal: *id002
+  - id: s15
+    kind: task
+    type: ops.disk.read.v1
+    goal: *id002
+  - id: s16
+    kind: task
+    type: ops.disk.read.v1
+    goal: *id002
+  - id: s17
+    kind: task
+    type: ops.disk.read.v1
+    goal: *id002
+  - id: s18
+    kind: task
+    type: ops.disk.read.v1
+    goal: *id002
+  - id: s19
+    kind: task
+    type: ops.disk.read.v1
+    goal: *id002
+  - id: s20
+    kind: task
+    type: ops.disk.read.v1
+    goal: *id002
+- script: v2
+  steps:
+  - *id001
+- script: v1
+  steps:
+  - id: disk
+    kind: task
+    type: ops.disk.read.v1
+    goal: *id002
+    worker: analyst-2

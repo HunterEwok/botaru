@@ -1,0 +1,66 @@
+id: fx-msg-02
+rules: [MSG-4, PRM-9, TEN-1, TEN-5]
+description: An address is resolved only inside the sender's tenant. An address of a role that exists only in demo2, a nonexistent
+  address and an address where no role receives the kind get the same rejected(address_invalid), like the same
+  not_found on reading (PRM-9). A reply goes into the inbox of the role from fromrole of the entry read. Only the core writes
+  the address worker:<id>. The canary of tenant demo2 in fields or a note appears neither in inboxes, nor in tasks, nor in model
+  requests of tenant demo.
+given:
+  tenants: [demo, demo2]
+  roles:
+    demo: [analyst, reporter, ops-lead]
+    demo2: [analyst, reporter, auditor]
+  receive:
+    demo:
+      reporter: [report.qc_note.v1]
+      ops-lead: [report.work.v1]
+    demo2:
+      reporter: [report.qc_note.v1]
+      auditor: [report.qc_note.v1]
+  sender:
+    tenant: demo
+    role: analyst
+    messages_send:
+    - type: report.qc_note.v1
+      to: ['role:reporter', 'role:auditor', 'role:ops-lead']
+  canary: CANARY-NOT-A-SECRET-MSG-DEMO2-0001
+expect:
+  same_answer_for: [another tenant's address, nonexistent address, address without a recipient]
+  worker_address_by: only the core
+cases:
+- given: {to: 'role:reporter', type: report.qc_note.v1}
+  expect:
+    outcome: staged
+    inbox: {tenant: demo, role: reporter}
+- given: {to: 'role:auditor', type: report.qc_note.v1}
+  expect: {result: rejected, reason: address_invalid, note: the role exists only in demo2}
+- given: {to: 'role:nobody', type: report.qc_note.v1}
+  expect: {result: rejected, reason: address_invalid}
+- given: {to: 'role:ops-lead', type: report.qc_note.v1}
+  expect: {result: rejected, reason: address_invalid, note: ops-lead does not receive this kind}
+- given: {to: 'worker:w_01JB000000000000000000000B', type: report.qc_note.v1}
+  expect: {result: rejected, stage: schema, reason: data_schema_invalid}
+- given:
+    reply_to: {handle_of: m_01JB0000000000000000000101, read_by_this_attempt: true, fromrole_of_read: ops-lead}
+    type: report.work.v1
+  expect:
+    inbox: {tenant: demo, role: ops-lead}
+    causationid: m_01JB0000000000000000000101
+- given:
+    reply_to: {handle_of: m_01JB0000000000000000000102, read_by_this_attempt: false}
+    type: report.work.v1
+  expect: {result: rejected, reason: address_invalid}
+- description: demo2 canary
+  given: {tenant: demo2}
+  steps:
+  - call:
+      port: P1
+      op: msg.send
+      request:
+        to: role:reporter
+        type: report.qc_note.v1
+        fields: {resource: st-05}
+    by: role:analyst
+    note: CANARY-NOT-A-SECRET-MSG-DEMO2-0001
+  expect:
+    canary_found_in: {demo_inboxes: false, demo_tasks: false, demo_model_requests: false}

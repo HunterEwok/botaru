@@ -1,0 +1,5 @@
+schema: spec/model/p1-task-get-request.schema.json
+rules: [PRM-9]
+description: A task.get request without a task id.
+cases:
+- {}

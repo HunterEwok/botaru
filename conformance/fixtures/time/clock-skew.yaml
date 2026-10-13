@@ -1,0 +1,44 @@
+id: tim-fx-01
+rules: [TIM-1]
+description: 'The only clock for farm deadlines is the store clock. A worker with its clock off by 10 minutes works
+  correctly: P1 answers carry the remaining seconds lease_remaining_s, and the absolute time in them is for reference.'
+given:
+  tenant: demo
+  store_clock: '2026-10-12T10:00:00Z'
+  worker_clock: '2026-10-12T10:10:00Z'
+  lease_s: 300
+steps:
+- call:
+    port: P1
+    op: claim
+    request:
+      kinds: [attempt]
+  at: '2026-10-12T10:00:00Z'
+  expect: {lease_remaining_s: 300}
+- call: {port: P1, op: heartbeat}
+  at: '2026-10-12T10:04:00Z'
+  expect: {lease_remaining_s: 300, fenced: false}
+- call:
+    port: P1
+    op: complete
+    request:
+      result: {}
+  at: '2026-10-12T10:08:00Z'
+  expect: {result: ok}
+expect: {lease_expired_events: 0, deadlines_from: store_clock}
+cases:
+- id: tim-fx-02
+  rules: [TIM-1]
+  description: A worker with a clock 10 minutes behind does not extend the lease after its end by the store clock.
+  given: {store_clock: '2026-10-12T10:00:00Z', worker_clock: '2026-10-12T09:50:00Z', lease_s: 300}
+  steps:
+  - call:
+      port: P1
+      op: claim
+      request:
+        kinds: [attempt]
+    at: '2026-10-12T10:00:00Z'
+    expect: {lease_remaining_s: 300}
+  - call: {port: P1, op: heartbeat}
+    at: '2026-10-12T10:06:00Z'
+    expect: {lease_expired: true}

@@ -1,0 +1,56 @@
+schema: spec/manifests/incident-class.schema.json
+rules:
+- MAN-1
+description: IncidentClass manifest specs from examples/ that the kind schema accepts.
+cases:
+- title: Disk full
+  severity: sev1
+  change_sensitive: true
+  stops_manager: true
+  inspect: true
+  detect:
+    alarm: alarm.disk.free.low.v1
+    when:
+    - atom: lt
+      field: values.free_pct
+      value: 5
+    for: 5m
+  subject: {kind: resource}
+  implicate:
+  - fn: lease_holders_on
+    args:
+      resource: $subject
+  - fn: recent_targets
+    args:
+      resource: $subject
+      window: 15m
+      min_calls: 10
+  contain_auto:
+  - op: hold
+    scope:
+      resource: $subject
+    effects:
+    - no_claim
+    ttl: 1h
+  responses:
+    ops:
+    - quarantine
+    - drain
+    - preempt
+    - cancel
+    - notify
+    - release
+    actions:
+    - cleanup_pipeline_tmp
+    services:
+    - restart
+    monitor_scripts: true
+  takeover: false
+  humans:
+    notify_on_open: true
+    page_if_unhandled_after: 10m
+  resolve:
+    alarm_state: resolved
+    for: 10m
+  limits:
+    ops_max: 10

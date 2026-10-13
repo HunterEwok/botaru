@@ -1,0 +1,139 @@
+# Collected from spec/lifecycles/promotion-entry.yaml. The value null in from means "the object does not exist yet".
+lifecycle: spec/lifecycles/promotion-entry.yaml
+object: promotion-entry
+rules: [GOV-6, GOV-9, GOV-13, GOV-14, GOV-31, IDN-11]
+description: Allowed and forbidden transitions of the "promotion queue entry" lifecycle, collected from the tables of spec/lifecycles/promotion-entry.md.
+  The implementation accepts a transition from the allowed list under the condition of its row (when); a pair from the forbidden
+  list does not change the state, and the call that asks for it is rejected. The value null in from means "the object does
+  not exist yet". Only the core governance loop writes a queue entry (GOV-6, GOV-14).
+states:
+- id: queued
+  terminal: false
+- id: in_case
+  terminal: false
+- id: removed
+  terminal: true
+allowed:
+- id: sm-pe-01
+  from: null
+  to: queued
+  by: the governance loop
+  when: a promotion trigger by GOV-14; the bot has no entry; the bot is a functionary (a role of profile worker, manager,
+    reporter or aggregator, the worker is registered without an owner)
+  rules: [GOV-14]
+- id: sm-pe-02
+  from: queued
+  to: queued
+  to_note: queued, its place by the time of the new trigger
+  by: the governance loop
+  when: a person confirmed the attribution of an incident to the change that gave the trigger, and the track record has
+    a later trigger; the open case gets canceled(candidate_ineligible)
+  rules: [GOV-13, GOV-14]
+- id: sm-pe-03
+  from: in_case
+  to: queued
+  to_note: queued, its place by the time of the new trigger
+  by: the governance loop
+  when: a person confirmed the attribution of an incident to the change that gave the trigger, and the track record has
+    a later trigger; the open case gets canceled(candidate_ineligible)
+  rules: [GOV-13, GOV-14]
+- id: sm-pe-04
+  from: queued
+  to: removed
+  by: the governance loop
+  when: same, but there is no later trigger
+  rules: [GOV-13, GOV-14]
+- id: sm-pe-05
+  from: in_case
+  to: removed
+  by: the governance loop
+  when: same, but there is no later trigger
+  rules: [GOV-13, GOV-14]
+- id: sm-pe-06
+  from: queued
+  to: queued
+  by: the governance loop when trying to open a case
+  when: 'eligibility did not pass (not_eligible): the entry waits and lets the next one go ahead'
+  rules: [GOV-14]
+- id: sm-pe-07
+  from: queued
+  to: in_case
+  by: the governance loop
+  when: the entry is the first of the eligible ones, the conditions for opening a case are met
+  rules: [GOV-6, GOV-14]
+- id: sm-pe-08
+  from: in_case
+  to: removed
+  by: case effective
+  when: the candidate took the seat
+  rules: [GOV-9]
+- id: sm-pe-09
+  from: in_case
+  to: in_case
+  by: case rejected with the reason wrong_leaver
+  when: 'only once per entry: the governance loop immediately opens a new case without the rejected seat with the flag reopened_after_wrong_leaver;
+    if L is empty, the entry becomes queued first'
+  rules: [GOV-31]
+- id: sm-pe-10
+  from: in_case
+  to: queued
+  to_note: queued, first
+  by: case rejected with the reason not_now, or the first one with the reason wrong_candidate; case expired
+  when: the next case no earlier than swap_cooldown after not_now and expired
+  rules: [GOV-14, GOV-31]
+- id: sm-pe-11
+  from: in_case
+  to: removed
+  by: the second case of this entry is rejected with the reason wrong_candidate
+  when: the entry comes back only with the bot's next success
+  rules: [GOV-31]
+- id: sm-pe-12
+  from: in_case
+  to: queued
+  to_note: queued, its previous place
+  by: case canceled
+  when: the candidate did not leave
+  rules: [GOV-14]
+- id: sm-pe-13
+  from: queued
+  to: removed
+  by: the core
+  when: the bot left (retired) or a person put it on a seat with P2 seat.assign
+  rules: [GOV-14, IDN-11]
+- id: sm-pe-14
+  from: in_case
+  to: removed
+  by: the core
+  when: the bot left (retired) or a person put it on a seat with P2 seat.assign
+  rules: [GOV-14, IDN-11]
+forbidden:
+- id: sm-pe-x01
+  from: null
+  to: in_case
+  expect: rejected
+  rules: [GOV-14]
+  why: the object does not appear directly in the state in_case
+- id: sm-pe-x02
+  from: null
+  to: removed
+  expect: rejected
+  rules: [GOV-14]
+  why: the object does not appear directly in the state removed
+- id: sm-pe-x03
+  from: removed
+  to: queued
+  expect: rejected
+  rules: [GOV-9, GOV-13, GOV-14, GOV-31]
+  why: 'removed is a terminal state: there are no transitions out of it'
+- id: sm-pe-x04
+  from: removed
+  to: in_case
+  expect: rejected
+  rules: [GOV-9, GOV-13, GOV-14, GOV-31]
+  why: 'removed is a terminal state: there are no transitions out of it'
+- id: sm-pe-x05
+  from: removed
+  to: removed
+  expect: rejected
+  rules: [GOV-9, GOV-13, GOV-14, GOV-31]
+  why: 'removed is a terminal state: there are no transitions out of it'

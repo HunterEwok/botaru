@@ -1,0 +1,59 @@
+id: fx-man-04
+rules: [MAN-4]
+description: >-
+  The meta-schema of a driver's spec.config (spec/manifests/drivers/driver-config.schema.json)
+  forbids fields that rules depend on: link previews, markup, accepting messages "on behalf of
+  a chat", egress, placement, ceilings, fallback providers. Such fields exist only in the common
+  wrapper. driver_schema cases check the schema the driver brings; cases with
+  a manifest check the spec.config values of a channel and a sink.
+with_examples: true
+cases:
+  - name: closed driver schema with safe fields
+    driver_schema:
+      $id: urn:botaru:schema:driver.telegram:1
+      type: object
+      additionalProperties: false
+      properties:
+        poll_timeout_s: {type: integer}
+        api_base: {type: string}
+    expect: ok
+  - name: driver schema declares link_preview
+    driver_schema:
+      $id: urn:botaru:schema:driver.telegram:1
+      type: object
+      additionalProperties: false
+      properties:
+        link_preview: {type: boolean}
+    expect: {error: driver_config_forbidden}
+  - name: driver schema open to extra fields
+    driver_schema:
+      $id: urn:botaru:schema:driver.disk:1
+      type: object
+      additionalProperties: true
+      properties:
+        fsync: {type: boolean}
+    expect: {error: driver_config_forbidden}
+  - name: egress value in a sink config
+    manifests:
+      - apiVersion: botaru/v1alpha1
+        kind: Sink
+        metadata: {name: archive, tenant: demo}
+        spec:
+          driver: disk
+          base: "/srv/botaru/archive"
+          ceiling: internal
+          config: {fsync: true, egress: [backup-host]}
+    expect: {error: driver_config_forbidden}
+  - name: channel config without forbidden fields
+    manifests:
+      - apiVersion: botaru/v1alpha1
+        kind: Channel
+        metadata: {name: telegram, tenant: demo}
+        spec:
+          driver: telegram
+          identity_assurance: strong
+          membership_assurance: enforced
+          ai_disclosure: first_contact
+          provenance: visible_label
+          config: {poll_timeout_s: 30}
+    expect: ok

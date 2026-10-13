@@ -1,0 +1,29 @@
+schema: spec/manifests/route.schema.json
+rules:
+- MAN-1
+description: 'Route manifest specs that the kind schema rejects: extra field, missing required field, value outside the
+  closed list or format.'
+cases:
+- 'on':
+    event: run.finished.v1
+    subject: ctd-stations
+  task:
+    type: pipeline.ctd_qc.report.v1
+  deliver_to:
+  - approval_initiator:
+      action: pipeline.ctd_qc
+  unexpected_field: true
+- task:
+    type: pipeline.ctd_qc.report.v1
+  deliver_to:
+  - approval_initiator:
+      action: pipeline.ctd_qc
+- 'on':
+    event: run.finished.v1
+    subject: ctd-stations
+  task:
+    type: pipeline.ctd_qc.report.v1
+  deliver_to:
+  - approval_initiator:
+      action: pipeline.ctd_qc
+  mode: shout

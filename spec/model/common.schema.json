@@ -1,0 +1,207 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:botaru:schema:common:1",
+  "title": "Common bricks of the skeleton schemas",
+  "description": "Definitions that the other schemas refer to. This schema by itself describes nothing.",
+  "$defs": {
+    "tenant_name": {
+      "description": "Tenant name: lowercase Latin letters, digits and hyphens, starting with a letter. The core computes the tenant from the credentials; the request body has no tenant field (TEN-2).",
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9-]{1,30}$"
+    },
+    "name": {
+      "description": "Object name in a manifest (metadata.name) and id in the tenant catalog.",
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9-]{0,62}$",
+      "x-botaru-format": "id"
+    },
+    "dotted_name": {
+      "description": "A dotted name without a version: name of an action, plugin, tool, event.",
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*)*$",
+      "maxLength": 120
+    },
+    "type_name": {
+      "description": "Name of a task, event or message type with the version .vN, for example ops.investigate.v1 (MAN-3).",
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_]*(\\.[a-z0-9_]+)*\\.v[1-9][0-9]*$",
+      "maxLength": 120,
+      "x-botaru-format": "type_name"
+    },
+    "object_id": {
+      "description": "Core object id: a kind prefix and a ULID, for example t_01J9Z3M2Q8YB6V4N7T5K0C2D1E or bot_01J9Z3M2Q8YB6V4N7T5K0C2D1E.",
+      "type": "string",
+      "pattern": "^[a-z]{1,8}_[0-9A-HJKMNP-TV-Z]{26}$"
+    },
+    "attempt_ref": {
+      "description": "Reference to a task attempt: run_id of the form <task id>:<lease_no> (one runtime run per attempt lease, FEN-1; spec/ports/e4-agent-runtime.md).",
+      "type": "string",
+      "pattern": "^[a-z]{1,8}_[0-9A-HJKMNP-TV-Z]{26}:[1-9][0-9]*$",
+      "maxLength": 64
+    },
+    "file_ref": {
+      "description": "Reference to a file in the farm file store.",
+      "type": "string",
+      "pattern": "^file:[A-Za-z0-9_-]{22}$"
+    },
+    "datetime": {
+      "description": "A UTC instant as RFC 3339 with Z, to seconds or fractions of a second.",
+      "type": "string",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\\.[0-9]{1,6})?Z$",
+      "x-botaru-format": "datetime"
+    },
+    "schedule_slot": {
+      "description": "Schedule slot: a UTC instant to the minute (TIM-3).",
+      "type": "string",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}Z$",
+      "x-botaru-format": "schedule_slot"
+    },
+    "duration": {
+      "description": "Duration with a unit: s, m, h or d, for example 15m.",
+      "type": "string",
+      "pattern": "^[1-9][0-9]{0,5}(s|m|h|d)$",
+      "x-botaru-format": "duration"
+    },
+    "seconds": {
+      "description": "Duration in seconds.",
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 31622400
+    },
+    "eurocents": {
+      "description": "Money in euro cents as an integer: limits, reports and window sums (BUD-1, BUD-9). The usage of a call is stored in eur_micros.",
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 100000000000
+    },
+    "eur_micros": {
+      "description": "Money in micro-euros as an integer, 1 EUR = 1 000 000: usage and reserve of one call, usage lines, daily reconciliation sums; no rounding for a call (BUD-9, D-87 (1)).",
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9000000000000000
+    },
+    "rule_id": {
+      "description": "Rule number in the registry conformance/requirements.yaml.",
+      "type": "string",
+      "pattern": "^[A-Z]{2,3}-[0-9]+[a-z]?$"
+    },
+    "reason": {
+      "description": "Reason from the closed registry spec/model/reasons.yaml.",
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_]*$",
+      "maxLength": 64,
+      "x-botaru-registry": "reasons"
+    },
+    "locale": {
+      "description": "Language of code texts.",
+      "enum": [
+        "ru",
+        "en",
+        "et"
+      ]
+    },
+    "tz": {
+      "description": "Time zone name from the time zone database (TIM-4).",
+      "type": "string",
+      "pattern": "^[A-Za-z][A-Za-z0-9_+-]*(/[A-Za-z0-9_+-]+){0,2}$",
+      "maxLength": 64,
+      "x-botaru-format": "tz"
+    },
+    "tier": {
+      "description": "Tier of a task or tool (PRM-4): 0 summary, ready summaries; 1 read, reading with closed parameters; 2 sandbox, a one-time container without network (since v0.2); 3 action, changing the world only through a request and a person's button.",
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 3
+    },
+    "data_mark": {
+      "description": "Data mark of the task; fixed at enqueue (PRM-5).",
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_]*$",
+      "maxLength": 32
+    },
+    "service_verb": {
+      "description": "Verb of an action on a catalog service (service.control, monitor/script_run).",
+      "enum": [
+        "start",
+        "stop",
+        "restart"
+      ]
+    },
+    "alarm_severity": {
+      "description": "Severity of a farm alarm and of an alarm episode.",
+      "enum": [
+        "info",
+        "warn",
+        "page"
+      ]
+    },
+    "incident_severity": {
+      "description": "Severity of an incident; on the incident record only a person can change it (MGR-8).",
+      "enum": [
+        "sev1",
+        "sev2",
+        "sev3"
+      ]
+    },
+    "principal_ref": {
+      "description": "Reference to a principal or an executor: kind and id. A person is recorded by the opaque principal id human:p_<ULID>; after the colon comes an id, not the person's name, and after the person leaves the records keep the same id (LCY-3). service names an external program, bot and worker name a bot identity and a worker, system is the service principal. For example human:p_01JB00000000000000000000A1, service:ci-exporter, system. Handles of the form human:alice are written only by manifests, examples and fixtures; the runner maps them to ids by evals/fixtures/seed.yaml or the fixture's given.",
+      "type": "string",
+      "pattern": "^(system|human:p_[0-9A-HJKMNP-TV-Z]{26}|(service|bot|worker):[a-z][a-z0-9_.-]{0,62})$",
+      "maxLength": 80
+    },
+    "hash": {
+      "description": "SHA-256 hash of the form sha256:<64 lowercase hex digits>. What is hashed and in which canonical form (RFC 8785) is set by spec/hashing.md.",
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$",
+      "maxLength": 71
+    },
+    "problem": {
+      "description": "Port error: problem details per RFC 9457 with a reason member from the reason registry.",
+      "type": "object",
+      "required": [
+        "type",
+        "title",
+        "status",
+        "reason"
+      ],
+      "properties": {
+        "type": {
+          "type": "string",
+          "maxLength": 200
+        },
+        "title": {
+          "type": "string",
+          "maxLength": 200
+        },
+        "status": {
+          "type": "integer",
+          "minimum": 400,
+          "maximum": 599
+        },
+        "detail": {
+          "type": "string",
+          "maxLength": 2000
+        },
+        "instance": {
+          "type": "string",
+          "maxLength": 200
+        },
+        "reason": {
+          "$ref": "#/$defs/reason"
+        },
+        "retry_after_s": {
+          "$ref": "#/$defs/seconds"
+        },
+        "needs": {
+          "description": "Which permissions or groups were missing (enqueue denial; the HTTP binding returns it in a problem with status 422).",
+          "type": "array",
+          "maxItems": 32,
+          "items": {
+            "type": "string",
+            "maxLength": 120
+          }
+        }
+      }
+    }
+  }
+}

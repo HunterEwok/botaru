@@ -1,0 +1,12 @@
+# Observation series of tenant demo: the duration of CTD QC runs from the event run.finished.v1 (OBV-7).
+apiVersion: botaru/v1alpha1
+kind: ObservationSeries
+metadata: {name: ctd_qc.duration, tenant: demo}
+spec:
+  catalog_kind: resource
+  value: {type: integer, minimum: 0, maximum: 604800}
+  unit: s
+  data_class: internal
+  source: {kind: job, field: duration_s}
+  resolution: 1h
+  retention: {raw: 90d, rollup: 365d}

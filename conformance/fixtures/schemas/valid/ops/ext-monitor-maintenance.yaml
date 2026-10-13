@@ -1,0 +1,9 @@
+schema: urn:botaru:schema:ext-monitor-maintenance:1
+rules:
+- MON-9
+description: A two-hour maintenance window for db1 (v0.2).
+data:
+  maintenanceid: '77'
+  resource: db1
+  state: active
+  until: '2026-10-12T22:00:00Z'

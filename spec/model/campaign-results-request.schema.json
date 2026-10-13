@@ -1,0 +1,27 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:botaru:schema:campaign-results-request:1",
+  "title": "P3 campaign_results: arguments",
+  "description": "Free text of item results page by page, in the untrusted text wrapper; only in a campaign continuation task (ORC-9, INJ-4).",
+  "x-botaru-direction": "input",
+  "x-botaru-rules": [
+    "ORC-9",
+    "INJ-4"
+  ],
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "campaign"
+  ],
+  "properties": {
+    "campaign": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/object_id"
+    },
+    "page": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 500,
+      "description": "Page number."
+    }
+  }
+}

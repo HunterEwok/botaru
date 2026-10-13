@@ -1,0 +1,10 @@
+schema: spec/model/p1-obs-append-request.schema.json
+rules: [OBV-1, OBV-2]
+description: P1 obs.append requests that the schema rejects; free text instead of a value; time and producer in the body.
+cases:
+- {series: backup.verify.v1, subject: 'dataset:ctd-2026', value: 'backup checked, all good'}
+- series: backup.verify.v1
+  subject: dataset:ctd-2026
+  value: 1
+  at: '2026-10-05T02:00:00Z'
+  producer: {source: core}

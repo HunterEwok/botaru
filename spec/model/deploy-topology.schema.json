@@ -1,0 +1,371 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:botaru:schema:deploy-topology:1",
+  "title": "Deployment description",
+  "description": "Deployment description as data (DEP-10): machines and their kind, farm processes and plugins with the OS user, networks and named secrets, OS users of executors per tenant (os_users), the monitoring system (MON-2) or the watch guard without it, the backup location (RET-5), the farm nodes farm_hosts (DEP-11) and the health keys. The deployment lint checks the placement rules against it; the file is not run.",
+  "x-botaru-direction": "input",
+  "x-botaru-rules": [
+    "DEP-10",
+    "DEP-11",
+    "MON-2",
+    "RET-5",
+    "IDN-7"
+  ],
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "farm_hosts",
+    "hosts"
+  ],
+  "properties": {
+    "monitoring": {
+      "type": "object",
+      "description": "The organization's monitoring system; not on the core machine (MON-2). Present only if the installation declares the monitor profile (D-88); without it a watch guard is needed.",
+      "additionalProperties": false,
+      "required": [
+        "url",
+        "address"
+      ],
+      "properties": {
+        "url": {
+          "description": "API address.",
+          "type": "string",
+          "maxLength": 200,
+          "pattern": "^https://[a-z0-9.-]+(/[A-Za-z0-9._/-]*)?$"
+        },
+        "address": {
+          "description": "IP address.",
+          "type": "string",
+          "maxLength": 45,
+          "pattern": "^[0-9a-f:.]+$"
+        }
+      }
+    },
+    "watch": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "notify_ref"
+      ],
+      "description": "Deployment guard without a monitoring system (MON-2, D-88): a kind: watch process polls P2 health with the health key and sends an alert by its own path.",
+      "properties": {
+        "notify_ref": {
+          "description": "Secret name of its own alert path (its own bot or email), not the tenant's channel token.",
+          "type": "string",
+          "maxLength": 64,
+          "pattern": "^[a-z][a-z0-9-]*$"
+        },
+        "interval_s": {
+          "description": "Health polling period in seconds.",
+          "type": "integer",
+          "minimum": 10,
+          "maximum": 300
+        }
+      }
+    },
+    "backup": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "target",
+        "location_id"
+      ],
+      "description": "Location of the store and erasure log backups (RET-5, D-88): a separate farm machine or an external store; to an external store the backup goes encrypted on the core machine.",
+      "properties": {
+        "target": {
+          "description": "host: a farm machine from farm_hosts; external: an external store.",
+          "enum": [
+            "host",
+            "external"
+          ]
+        },
+        "host": {
+          "$ref": "urn:botaru:schema:common:1#/$defs/name",
+          "description": "Backup machine for target: host."
+        },
+        "url": {
+          "description": "Address of the external store for target: external.",
+          "type": "string",
+          "maxLength": 200,
+          "pattern": "^https://[a-z0-9.-]+(/[A-Za-z0-9._/-]*)?$"
+        },
+        "location_id": {
+          "description": "Id of the storage location for backup.report (RET-8).",
+          "type": "string",
+          "maxLength": 64,
+          "pattern": "^[a-z][a-z0-9-]*$"
+        },
+        "encrypted": {
+          "description": "The backup is encrypted on the core machine before sending.",
+          "type": "boolean"
+        },
+        "key_ref": {
+          "description": "Secret name of the backup encryption key; an external store does not have it.",
+          "type": "string",
+          "maxLength": 64,
+          "pattern": "^[a-z][a-z0-9-]*$"
+        },
+        "credentials_ref": {
+          "description": "Secret name for writing to the external store: writing new objects only.",
+          "type": "string",
+          "maxLength": 64,
+          "pattern": "^[a-z][a-z0-9-]*$"
+        }
+      }
+    },
+    "farm_hosts": {
+      "description": "Farm nodes: core, store, farmctl, channel, backups (DEP-11).",
+      "type": "array",
+      "items": {
+        "$ref": "urn:botaru:schema:common:1#/$defs/name"
+      },
+      "maxItems": 16,
+      "minItems": 1,
+      "uniqueItems": true
+    },
+    "health_keys": {
+      "description": "One or two active values of the health key: secret names.",
+      "type": "array",
+      "items": {
+        "description": "Secret name.",
+        "type": "string",
+        "maxLength": 64,
+        "pattern": "^[a-z][a-z0-9-]*$"
+      },
+      "maxItems": 2,
+      "minItems": 1
+    },
+    "hosts": {
+      "description": "Machines by name.",
+      "type": "object",
+      "maxProperties": 64,
+      "propertyNames": {
+        "$ref": "urn:botaru:schema:common:1#/$defs/name"
+      },
+      "additionalProperties": {
+        "type": "object",
+        "description": "Machine.",
+        "additionalProperties": false,
+        "required": [
+          "kind",
+          "processes"
+        ],
+        "properties": {
+          "kind": {
+            "description": "Machine kind: production or sandbox VM (DEP-1).",
+            "enum": [
+              "production",
+              "sandbox"
+            ]
+          },
+          "processes": {
+            "description": "Processes.",
+            "type": "array",
+            "items": {
+              "type": "object",
+              "description": "A farm or plugin process on the machine.",
+              "additionalProperties": false,
+              "required": [
+                "name",
+                "kind"
+              ],
+              "properties": {
+                "name": {
+                  "$ref": "urn:botaru:schema:common:1#/$defs/name",
+                  "description": "Process name."
+                },
+                "kind": {
+                  "description": "Process kind.",
+                  "enum": [
+                    "core",
+                    "store",
+                    "channel",
+                    "monitor",
+                    "backup",
+                    "toolhost",
+                    "plugin",
+                    "watch"
+                  ]
+                },
+                "tenant": {
+                  "$ref": "urn:botaru:schema:common:1#/$defs/tenant_name",
+                  "description": "Tenant of the process."
+                },
+                "user": {
+                  "description": "OS user; not root.",
+                  "type": "string",
+                  "maxLength": 32,
+                  "pattern": "^[a-z_][a-z0-9_-]{0,31}$",
+                  "not": {
+                    "const": "root"
+                  }
+                },
+                "networks": {
+                  "description": "Networks.",
+                  "type": "array",
+                  "items": {
+                    "description": "Network.",
+                    "type": "string",
+                    "maxLength": 64,
+                    "pattern": "^[a-z][a-z0-9-]*$"
+                  },
+                  "maxItems": 16,
+                  "uniqueItems": true
+                },
+                "secrets": {
+                  "description": "Named secrets.",
+                  "type": "array",
+                  "items": {
+                    "description": "Secret name.",
+                    "type": "string",
+                    "maxLength": 64,
+                    "pattern": "^[a-z][a-z0-9-]*$"
+                  },
+                  "maxItems": 16,
+                  "uniqueItems": true
+                },
+                "placement": {
+                  "description": "Toolhost placement.",
+                  "enum": [
+                    "host",
+                    "sandbox"
+                  ]
+                },
+                "tools": {
+                  "description": "Toolhost with write tools.",
+                  "enum": [
+                    "write"
+                  ]
+                },
+                "parent": {
+                  "$ref": "urn:botaru:schema:common:1#/$defs/name",
+                  "description": "Toolhost of the plugin."
+                },
+                "mode": {
+                  "description": "Plugin mode.",
+                  "enum": [
+                    "stdio",
+                    "container"
+                  ]
+                },
+                "egress": {
+                  "description": "Network egress of the plugin: domains.",
+                  "type": "array",
+                  "items": {
+                    "description": "Domain.",
+                    "type": "string",
+                    "maxLength": 253,
+                    "pattern": "^[a-z0-9][a-z0-9.-]*$"
+                  },
+                  "maxItems": 16
+                },
+                "listeners": {
+                  "description": "Only for kind: core: on which networks the listeners of P1, P2 and the test-control port are open (IDN-7, DEP-10). There is no test listener on a kind: production machine; the P2 network is not among the worker networks; the monitoring network is let through only to P2 health.",
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "p1": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": [
+                        "networks"
+                      ],
+                      "properties": {
+                        "networks": {
+                          "$ref": "#/$defs/listener_networks"
+                        }
+                      }
+                    },
+                    "p2": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": [
+                        "networks"
+                      ],
+                      "properties": {
+                        "networks": {
+                          "$ref": "#/$defs/listener_networks"
+                        }
+                      }
+                    },
+                    "test": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": [
+                        "networks"
+                      ],
+                      "properties": {
+                        "networks": {
+                          "$ref": "#/$defs/listener_networks"
+                        }
+                      }
+                    }
+                  }
+                }
+              },
+              "allOf": [
+                {
+                  "if": {
+                    "properties": {
+                      "kind": {
+                        "not": {
+                          "const": "core"
+                        }
+                      }
+                    }
+                  },
+                  "then": {
+                    "not": {
+                      "required": [
+                        "listeners"
+                      ]
+                    }
+                  }
+                }
+              ]
+            },
+            "maxItems": 64
+          },
+          "os_users": {
+            "description": "OS users of action executors: action -> tenant -> user; root is not allowed.",
+            "type": "object",
+            "maxProperties": 32,
+            "propertyNames": {
+              "$ref": "urn:botaru:schema:common:1#/$defs/name"
+            },
+            "additionalProperties": {
+              "type": "object",
+              "maxProperties": 16,
+              "propertyNames": {
+                "$ref": "urn:botaru:schema:common:1#/$defs/tenant_name"
+              },
+              "additionalProperties": {
+                "description": "OS user.",
+                "type": "string",
+                "maxLength": 32,
+                "pattern": "^[a-z_][a-z0-9_-]{0,31}$",
+                "not": {
+                  "const": "root"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "listener_networks": {
+      "description": "Networks on which the listener is open.",
+      "type": "array",
+      "items": {
+        "type": "string",
+        "maxLength": 64,
+        "pattern": "^[a-z][a-z0-9-]*$"
+      },
+      "minItems": 1,
+      "maxItems": 8,
+      "uniqueItems": true
+    }
+  }
+}

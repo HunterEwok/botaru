@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:botaru:schema:test-store-snapshot-request:1",
+  "title": "Test bench store.snapshot: request",
+  "description": "Take a backup of the test bench store with the label label in the same way as the external backup process (RET-5). Test bench port only (spec/ports/test-control.md).",
+  "x-botaru-direction": "input",
+  "x-botaru-rules": [
+    "APR-9",
+    "RET-5",
+    "RET-6"
+  ],
+  "type": "object",
+  "required": [
+    "label"
+  ],
+  "properties": {
+    "label": {
+      "description": "Label of a test bench backup.",
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9_.-]{0,63}$",
+      "maxLength": 64
+    }
+  },
+  "additionalProperties": false
+}

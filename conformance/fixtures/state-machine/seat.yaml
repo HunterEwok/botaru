@@ -1,0 +1,265 @@
+# Collected from spec/lifecycles/seat.yaml. The value null in from means "the object does not exist yet".
+lifecycle: spec/lifecycles/seat.yaml
+object: seat
+rules: [GOV-9, GOV-14, GOV-22, GOV-28, GOV-33, HLD-2, HLD-5, IDN-10, IDN-11, MEM-7, MGR-1, MGR-2, MGR-14, MGR-15, MGR-23, MGR-31, MGR-34]
+description: Allowed and forbidden transitions of the "seat" lifecycle, collected from the tables of spec/lifecycles/seat.md.
+  The implementation accepts a transition from the allowed list under the condition of its row (when); a pair from the forbidden
+  list does not change the state, and the call that asks for it is rejected. The value null in from means "the object does
+  not exist yet". The tables of commission seats and of the farm manager seat are split into two machines, as in spec/lifecycles/seat.md.
+  Every holder transition increments the seat epoch by 1 in one core transaction with a seat event and an audit record (IDN-10).
+machines:
+- name: Commission seat
+  states:
+  - id: vacant
+    terminal: false
+  - id: held
+    terminal: false
+  - id: removed
+    terminal: true
+  allowed:
+  - id: sm-seatc-01
+    from: null
+    to: vacant
+    by: apply of the tenant charter with a new seat
+    when: an id, a lens from lenses.yaml, an optional fallback role
+    rules: [GOV-33]
+  - id: sm-seatc-02
+    from: vacant
+    to: held
+    by: P2 seat.assign (farmctl, admin:governance in the seat's tenant)
+    when: a functionary identity of this tenant (a role of profile worker, manager, reporter or aggregator, the worker is
+      registered without an owner) in active; its worker gets a new identity, its queue entry is removed
+    rules: [GOV-14, IDN-10]
+  - id: sm-seatc-03
+    from: vacant
+    to: held
+    by: 'the "Confirm" button on a case with mode: vacancy'
+    when: 'case effective: the head of the queue takes the seat without a vote'
+    rules: [GOV-9, GOV-14]
+  - id: sm-seatc-04
+    from: held
+    to: held
+    to_note: held, a new holder, epoch + 1
+    by: 'the "Confirm" button on a case with mode: removal'
+    when: 'case effective: the leaving holder is retired(removed_by_vote), the candidate is on the seat'
+    rules: [GOV-9, IDN-11]
+  - id: sm-seatc-05
+    from: held
+    to: held
+    to_note: held, a new holder, epoch + 1
+    by: P2 seat.assign to an occupied seat
+    when: the previous holder is retired(replaced_by_human)
+    rules: [IDN-10, IDN-11]
+  - id: sm-seatc-06
+    from: held
+    to: vacant
+    by: P2 seat.vacate
+    when: the previous holder is retired(replaced_by_human)
+    rules: [IDN-10, IDN-11]
+  - id: sm-seatc-07
+    from: held
+    to: vacant
+    by: the core when the holder leaves for another reason (human_retire, role_removed, tenant_offboarded)
+    when: the holder's identity is retired
+    rules: [IDN-11]
+  - id: sm-seatc-08
+    from: vacant
+    to: removed
+    by: apply of the charter without this seat
+    when: the seat has no holder; apply does not remove a seat with a holder
+    rules: [GOV-33]
+  forbidden:
+  - id: sm-seatc-x01
+    from: null
+    to: held
+    expect: rejected
+    rules: [GOV-33]
+    why: the object does not appear directly in the state held
+  - id: sm-seatc-x02
+    from: null
+    to: removed
+    expect: rejected
+    rules: [GOV-33]
+    why: the object does not appear directly in the state removed
+  - id: sm-seatc-x03
+    from: vacant
+    to: vacant
+    expect: rejected
+    rules: [GOV-9, GOV-14, GOV-33, IDN-10]
+    why: the lifecycle table has no such transition
+  - id: sm-seatc-x04
+    from: held
+    to: removed
+    expect: rejected
+    rules: [GOV-9, GOV-33, IDN-10, IDN-11]
+    why: the lifecycle table has no such transition
+  - id: sm-seatc-x05
+    from: removed
+    to: vacant
+    expect: rejected
+    rules: [GOV-33]
+    why: 'removed is a terminal state: there are no transitions out of it'
+  - id: sm-seatc-x06
+    from: removed
+    to: held
+    expect: rejected
+    rules: [GOV-33]
+    why: 'removed is a terminal state: there are no transitions out of it'
+  - id: sm-seatc-x07
+    from: removed
+    to: removed
+    expect: rejected
+    rules: [GOV-33]
+    why: 'removed is a terminal state: there are no transitions out of it'
+- name: Farm manager seat
+  states:
+  - id: vacant
+    terminal: false
+  - id: held
+    terminal: false
+  - id: stopped
+    terminal: false
+  allowed:
+  - id: sm-seatm-01
+    from: null
+    to: vacant
+    by: the farm charter
+    when: the initial state
+    rules: [MGR-2]
+  - id: sm-seatm-02
+    from: vacant
+    to: held
+    by: P2 seat.assign (farmctl, admin:governance in farm)
+    when: the core creates a new identity in farm without origin, epoch + 1, the reason set is empty, a notice to the tenant
+      admins (MGR-31); from v0.2 the MGR-23 check before the first real work
+    rules: [IDN-10, MGR-1, MGR-23, MGR-31]
+    version: v0.2
+  - id: sm-seatm-03
+    from: held
+    to: held
+    to_note: held, a new holder, epoch + 1
+    by: P2 seat.assign
+    when: 'the previous holder leaves: replaced_by_human, and if the set had the reason incident, then replaced_after_incident;
+      its pending cards are canceled(seat_changed), its holds live at most 15 minutes, its facts for each tenant are offered
+      to the new holder; the reason set is cleared; the MGR-31 notice'
+    rules: [IDN-10, IDN-11, MEM-7, MGR-1, MGR-31]
+  - id: sm-seatm-04
+    from: stopped
+    to: held
+    to_note: held, a new holder, epoch + 1
+    by: P2 seat.assign
+    when: 'the previous holder leaves: replaced_by_human, and if the set had the reason incident, then replaced_after_incident;
+      its pending cards are canceled(seat_changed), its holds live at most 15 minutes, its facts for each tenant are offered
+      to the new holder; the reason set is cleared; the MGR-31 notice'
+    rules: [IDN-10, IDN-11, MEM-7, MGR-1, MGR-31]
+  - id: sm-seatm-05
+    from: held
+    to: vacant
+    to_note: vacant, epoch + 1
+    by: P2 seat.vacate
+    when: the previous holder leaves with the same trigger; its running attempts are canceled, its facts wait for the next
+      holder until the end of the seal; the reason set is cleared; the MGR-31 notice
+    rules: [IDN-10, IDN-11, MGR-31]
+  - id: sm-seatm-06
+    from: stopped
+    to: vacant
+    to_note: vacant, epoch + 1
+    by: P2 seat.vacate
+    when: the previous holder leaves with the same trigger; its running attempts are canceled, its facts wait for the next
+      holder until the end of the seal; the reason set is cleared; the MGR-31 notice
+    rules: [IDN-10, IDN-11, MGR-31]
+  - id: sm-seatm-07
+    from: held
+    to: stopped
+    by: P2 hold.set on the seat scope (admin:farm)
+    when: the reason human is added to the set; epoch + 1, all running attempts of the holder in all tenants are canceled,
+      claim of seat tasks is forbidden
+    rules: [MGR-15]
+  - id: sm-seatm-08
+    from: held
+    to: stopped
+    by: the core safeguard (the control loop)
+    when: the reason no_control is added to the set; epoch + 1, the holder's running attempts in all tenants are canceled
+    rules: [MGR-14]
+  - id: sm-seatm-09
+    from: held
+    to: stopped
+    by: the core incident loop
+    when: 'a new incident of a class with stops_manager: true in any tenant, opened while the seat is in held; for a disk
+      also the conditions of MGR-33 and MGR-34; the reason incident is added to the set; epoch + 1, the holder''s running
+      attempts in all tenants are canceled'
+    rules: [GOV-22, GOV-28]
+  - id: sm-seatm-10
+    from: stopped
+    to: stopped
+    to_note: stopped, epoch + 1
+    by: P2 hold.set on the seat scope or the core safeguard
+    when: a reason human or no_control that is new for the set is added to it; the other reasons stay
+    rules: [MGR-1, MGR-14, MGR-15]
+  - id: sm-seatm-11
+    from: stopped
+    to: stopped
+    by: the core incident loop
+    when: 'an incident of a class with stops_manager: true, opened during the hold, adds no reason and does not change the
+      epoch: it is only appended to the manager_stopped card and gives no hold after the return, because it was opened before
+      the return'
+    rules: [GOV-22]
+  - id: sm-seatm-12
+    from: stopped
+    to: stopped
+    to_note: stopped, reason incident, epoch + 1
+    from_note: stopped (only no_control)
+    by: the core incident loop
+    when: 'the safeguard fired inside the prevent_window of an incident for which the holder is responsible (MGR-34): at
+      the start of the window the seat was in held with this holder; the reason incident is added to the stopped seat, the
+      exits are the same'
+    rules: [GOV-22, MGR-34]
+  - id: sm-seatm-13
+    from: stopped
+    to: held
+    to_note: held, epoch + 1
+    by: P2 hold.release on the seat scope (admin:farm) or the background loop hold by until
+    when: 'a hold on the seat scope was lifted or expired: its reasons human or no_control go away; the seat is held only
+      if the set is empty'
+    rules: [HLD-2, HLD-5, MGR-15]
+  - id: sm-seatm-14
+    from: stopped
+    to: held
+    to_note: held, epoch + 1
+    by: P2 seat.resume (farmctl, admin:governance in farm)
+    when: the incident that caused the stop and the incidents of the same minute were dismissed by people as false; this
+      removes only the reason incident; the seat is held only if the set is empty; the MGR-31 notice
+    rules: [GOV-22, MGR-31]
+  - id: sm-seatm-15
+    from: stopped
+    to: vacant
+    by: the core identity loop
+    when: the set has incident, and there has been no decision longer than decide_within (by default and at most 7 days);
+      the previous holder is retired(replaced_after_incident), epoch + 1, its facts wait for the next holder until the end
+      of the seal; the MGR-31 notice
+    rules: [GOV-22, IDN-11, MGR-31]
+  forbidden:
+  - id: sm-seatm-x01
+    from: null
+    to: held
+    expect: rejected
+    rules: [MGR-2]
+    why: the object does not appear directly in the state held
+  - id: sm-seatm-x02
+    from: null
+    to: stopped
+    expect: rejected
+    rules: [MGR-2]
+    why: the object does not appear directly in the state stopped
+  - id: sm-seatm-x03
+    from: vacant
+    to: vacant
+    expect: rejected
+    rules: [GOV-22, IDN-10, IDN-11, MGR-1]
+    why: the lifecycle table has no such transition
+  - id: sm-seatm-x04
+    from: vacant
+    to: stopped
+    expect: rejected
+    rules: [GOV-22, GOV-28, IDN-10, MGR-1]
+    why: the lifecycle table has no such transition

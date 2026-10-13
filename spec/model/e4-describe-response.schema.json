@@ -1,0 +1,66 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:botaru:schema:e4-describe-response:1",
+  "title": "E4 describe: response",
+  "description": "How the runtime performs the farm mechanisms: values only from spec/model/runtime-deviations.yaml; any value except the first one turns on its non-waivable replacement RT rule. The adapter passes the answer to the core in P1 hello, and the core blocks the worker if runtime_internal has no match and purge (RT-5).",
+  "x-botaru-direction": "output",
+  "x-botaru-rules": [
+    "RT-1",
+    "RT-2",
+    "RT-3",
+    "RT-4",
+    "RT-5",
+    "INJ-9"
+  ],
+  "type": "object",
+  "required": [
+    "session",
+    "memory",
+    "model_attribution",
+    "catalog",
+    "built_in_tools"
+  ],
+  "properties": {
+    "session": {
+      "enum": [
+        "farm",
+        "runtime_internal",
+        "none"
+      ],
+      "x-botaru-registry": "runtime-deviations"
+    },
+    "memory": {
+      "enum": [
+        "farm",
+        "bridge",
+        "runtime_internal",
+        "none"
+      ],
+      "x-botaru-registry": "runtime-deviations"
+    },
+    "model_attribution": {
+      "enum": [
+        "per_attempt",
+        "per_profile"
+      ],
+      "x-botaru-registry": "runtime-deviations"
+    },
+    "catalog": {
+      "enum": [
+        "per_attempt",
+        "per_role"
+      ],
+      "x-botaru-registry": "runtime-deviations"
+    },
+    "built_in_tools": {
+      "type": "array",
+      "maxItems": 0,
+      "description": "Only an empty list (INJ-9)."
+    },
+    "implementation": {
+      "type": "string",
+      "maxLength": 200,
+      "description": "Name and version of the runtime."
+    }
+  }
+}

@@ -1,0 +1,134 @@
+id: fx-man-tt-01
+rules: [INJ-7, PRP-10, BUD-9, APR-5, OBV-3, FEN-1]
+description: >-
+  Task type checks: alarm.* in events only for job and without inbox.read (INJ-7);
+  proposable: false for a type whose purpose is not work and for a type with alarms (PRP-10); no
+  max_tokens field (BUD-9); only the core sets an action.* name (APR-5); observes only for
+  job (OBV-3); lease and heartbeat periods not above the farm ceilings of 120 s and 30 s, the call
+  issue period not above 30 s.
+with_examples: true
+cases:
+  - name: alarm on an agent type
+    manifests:
+      - apiVersion: botaru/v1alpha1
+        kind: TaskType
+        metadata: {name: fx.alarmer.v1}
+        spec:
+          title: "Agent with an alarm"
+          worker_kind: agent
+          purpose: work
+          tier: 0
+          data_class: summary
+          params_schema: {type: object, additionalProperties: false, properties: {}}
+          events: [alarm.sensor.silent.v1]
+          proposable: false
+          tree_budget_eur: 0.01
+    expect: {error: alarm_not_job}
+  - name: alarm on a job that reads the inbox
+    manifests:
+      - apiVersion: botaru/v1alpha1
+        kind: TaskType
+        metadata: {name: fx.alarmer.v1}
+        spec:
+          title: "Job with an inbox"
+          worker_kind: job
+          purpose: work
+          tier: 0
+          data_class: summary
+          params_schema: {type: object, additionalProperties: false, properties: {}}
+          events: [alarm.sensor.silent.v1]
+          inbox: {read: [report.sensor_note.v1]}
+          proposable: false
+          tree_budget_eur: 0
+    expect: {error: alarm_inbox}
+  - name: report type without proposable false
+    manifests:
+      - apiVersion: botaru/v1alpha1
+        kind: TaskType
+        metadata: {name: fx.report.v1}
+        spec:
+          title: "Report"
+          worker_kind: agent
+          purpose: report
+          tier: 0
+          data_class: summary
+          params_schema: {type: object, additionalProperties: false, properties: {}}
+          tree_budget_eur: 0.01
+    expect: {error: proposable_required_false}
+  - name: max_tokens field
+    manifests:
+      - apiVersion: botaru/v1alpha1
+        kind: TaskType
+        metadata: {name: fx.tokens.v1}
+        spec:
+          title: "Tokens"
+          worker_kind: agent
+          purpose: work
+          tier: 0
+          data_class: summary
+          params_schema:
+            type: object
+            additionalProperties: false
+            properties:
+              max_tokens: {type: integer, minimum: 1, maximum: 1000}
+          tree_budget_eur: 0.01
+    expect: {error: max_tokens_field}
+  - name: type in the action namespace
+    manifests:
+      - apiVersion: botaru/v1alpha1
+        kind: TaskType
+        metadata: {name: action.fx_cleanup.v1}
+        spec:
+          title: "Bypassing approval"
+          worker_kind: job
+          purpose: work
+          tier: 3
+          data_class: internal
+          params_schema: {type: object, additionalProperties: false, properties: {}}
+          tree_budget_eur: 0
+    expect: {error: action_type_grant}
+  - name: observes on an agent
+    manifests:
+      - apiVersion: botaru/v1alpha1
+        kind: TaskType
+        metadata: {name: fx.observer.v1}
+        spec:
+          title: "Agent with rollups"
+          worker_kind: agent
+          purpose: work
+          tier: 0
+          data_class: internal
+          params_schema: {type: object, additionalProperties: false, properties: {}}
+          observes: [farm.task.cost]
+          tree_budget_eur: 0.01
+    expect: {error: observes_not_job}
+  - name: lease longer than the farm ceiling
+    manifests:
+      - apiVersion: botaru/v1alpha1
+        kind: TaskType
+        metadata: {name: fx.slow.v1}
+        spec:
+          title: "Long lease"
+          worker_kind: agent
+          purpose: work
+          tier: 0
+          data_class: summary
+          params_schema: {type: object, additionalProperties: false, properties: {}}
+          timeouts: {lease: 10m, heartbeat: 30s}
+          tree_budget_eur: 0.01
+    expect: {error: timeout_ceiling}
+  - name: four attempts
+    manifests:
+      - apiVersion: botaru/v1alpha1
+        kind: TaskType
+        metadata: {name: fx.retry.v1}
+        spec:
+          title: "Many attempts"
+          worker_kind: agent
+          purpose: work
+          tier: 0
+          data_class: summary
+          params_schema: {type: object, additionalProperties: false, properties: {}}
+          retry: {max_attempts: 4}
+          tree_budget_eur: 0.01
+    expect: {error: schema_invalid}

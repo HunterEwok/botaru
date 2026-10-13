@@ -1,0 +1,31 @@
+id: fx-mgr-declared-file
+rules: [MGR-30]
+description: 'A reader attempt opens a file of the external program service (or of the sink ingested) with personal_seen:
+  declared that is not named as the subject of an incident: not_found. A reader role opens a service file without the personal_seen flag
+  like any task file.'
+given:
+  files:
+    file:CCCCCCCCCCCCCCCCCCCCCC: {uploaded_by: 'service:ci-exporter', personal_seen: declared}
+    file:DDDDDDDDDDDDDDDDDDDDDD: {uploaded_by: 'service:ci-exporter', personal_seen: false}
+  incident:
+    id: i_321
+    subject_files: []
+cases:
+- id: fx-mgr-declared-file-a
+  steps:
+  - call:
+      port: P3
+      op: tools/call
+      request:
+        name: file_read
+        arguments: {file_ref: 'file:CCCCCCCCCCCCCCCCCCCCCC'}
+  expect: {result: rejected, reason: not_found}
+- id: fx-mgr-declared-file-b
+  steps:
+  - call:
+      port: P3
+      op: tools/call
+      request:
+        name: file_read
+        arguments: {file_ref: 'file:DDDDDDDDDDDDDDDDDDDDDD'}
+  expect: {result: ok}

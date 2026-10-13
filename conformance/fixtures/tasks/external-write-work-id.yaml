@@ -1,0 +1,64 @@
+id: fx-fen-01
+rules: [FEN-7]
+description: 'An external write carries the work id. `apply` lint: a task type whose `job` worker writes to an external system
+  declares `side_effects: external` and passes it the `work_id`; a type without such a declaration gets `max_attempts:
+  1`, and a type with `max_attempts` greater than 1 and without `side_effects: external` is rejected. The write call of an action passes
+  `approval_id` to the plugin, a campaign item passes `<approval_id>:<n>`, the `service/control` write call and the `monitor_script` delivery
+  pass `grant_id`; a sink writes by `delivery.id`.'
+expect: {external_write_without_work_id: never}
+cases:
+- given:
+    tasktype:
+      name: report.export.v1
+      worker_kind: job
+      side_effects: external
+      retry: {max_attempts: 3}
+  expect: {result: ok}
+- given:
+    tasktype:
+      name: report.push.v1
+      worker_kind: job
+      retry: {max_attempts: 1}
+  expect: {result: ok}
+- given:
+    tasktype:
+      name: report.push.v1
+      worker_kind: job
+      retry: {max_attempts: 3}
+      writes_external: true
+  expect: {result: rejected, stage: apply}
+- steps:
+  - call:
+      port: P3
+      op: tools/call
+      request:
+        name: pipeline/cleanup_tmp
+        arguments: {older_than_days: 7}
+    by: attempt
+    context: {access: write, from: approval, approval_id: ap_17}
+  expect: {payload_has: approval_id, value: ap_17}
+- steps:
+  - call:
+      port: P3
+      op: tools/call
+      request:
+        name: pipeline/cleanup_tmp
+        arguments: {older_than_days: 7}
+    by: attempt
+    context: {access: write, from: campaign_item, approval_id: ap_17, item: 3}
+  expect: {payload_has: approval_id, value: 'ap_17:3'}
+- steps:
+  - call:
+      port: P3
+      op: tools/call
+      request:
+        name: service/control
+        arguments: {}
+    context: {access: write, grant: sg-5}
+  expect: {payload_has: grant_id, value: sg-5}
+- given:
+    delivery: {kind: monitor_script, grant: sg-6}
+  expect: {payload_has: grant_id, value: sg-6}
+- given:
+    delivery: {kind: task_result, to: 'sink:reports-disk', id: d_01JB0000000000000000000001}
+  expect: {sink_idempotency_key: d_01JB0000000000000000000001}

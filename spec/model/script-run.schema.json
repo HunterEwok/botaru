@@ -1,0 +1,237 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:botaru:schema:script-run:1",
+  "title": "Script run",
+  "description": "A run record (ScriptRun): a core-checked copy of the script with computed fields, step states and links to the created tasks, campaigns and approvals. Only the core writes it; the computed fields do not change after proposed (SCR-5). Storage class content, run events metadata. Lifecycle: spec/lifecycles/script.md.",
+  "x-botaru-direction": "record",
+  "x-botaru-retention": "content",
+  "x-botaru-rules": [
+    "SCR-5",
+    "SCR-6",
+    "SCR-8",
+    "SCR-9",
+    "SCR-11"
+  ],
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "id",
+    "tenant",
+    "initiator",
+    "script",
+    "max_tier",
+    "data_mark",
+    "untrusted_seen",
+    "actions",
+    "estimate",
+    "plan_hash",
+    "state",
+    "steps"
+  ],
+  "properties": {
+    "id": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/object_id"
+    },
+    "tenant": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/tenant_name"
+    },
+    "anchor_task": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/object_id",
+      "description": "The anchor task where the draft was written; a run from an accepted proposal has none."
+    },
+    "proposal": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/object_id",
+      "description": "The accepted proposal from which the run was created."
+    },
+    "initiator": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/principal_ref",
+      "description": "The person who gave the assignment or pressed \"Accept\"."
+    },
+    "script": {
+      "$ref": "urn:botaru:schema:script:1",
+      "description": "The accepted draft without changes."
+    },
+    "max_tier": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/tier"
+    },
+    "data_mark": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/data_mark"
+    },
+    "untrusted_seen": {
+      "type": "object",
+      "description": "Untrusted text flag with all sources (INJ-13, SCR-9).",
+      "additionalProperties": false,
+      "required": [
+        "value"
+      ],
+      "properties": {
+        "value": {
+          "type": "boolean",
+          "description": "Value of the untrusted_seen flag."
+        },
+        "sources": {
+          "type": "array",
+          "maxItems": 16,
+          "items": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_:./ -]{0,119}$",
+            "maxLength": 120
+          },
+          "description": "Flag sources as codes without text, for example tool_output, file, message, script_step."
+        }
+      }
+    },
+    "actions": {
+      "type": "array",
+      "maxItems": 20,
+      "items": {
+        "$ref": "urn:botaru:schema:common:1#/$defs/dotted_name"
+      },
+      "description": "List of the script actions."
+    },
+    "estimate": {
+      "type": "object",
+      "description": "Estimate of all branches at once (SCR-5, BUD-14).",
+      "additionalProperties": false,
+      "required": [
+        "eur",
+        "tree_tasks"
+      ],
+      "properties": {
+        "eur": {
+          "type": "number",
+          "minimum": 0,
+          "multipleOf": 0.01
+        },
+        "minutes": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 10080
+        },
+        "tree_tasks": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 1000
+        }
+      }
+    },
+    "plan_hash": {
+      "description": "Hash of the checked plan; the card shows it.",
+      "$ref": "urn:botaru:schema:common:1#/$defs/hash"
+    },
+    "fanout_lists": {
+      "type": "array",
+      "maxItems": 20,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "step",
+          "resources"
+        ],
+        "properties": {
+          "step": {
+            "$ref": "urn:botaru:schema:common:1#/$defs/name"
+          },
+          "resources": {
+            "type": "array",
+            "maxItems": 500,
+            "items": {
+              "$ref": "urn:botaru:schema:common:1#/$defs/name"
+            }
+          }
+        }
+      },
+      "description": "Frozen item lists of fanout steps: the selector is expanded at draft acceptance."
+    },
+    "deadline": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/datetime"
+    },
+    "state": {
+      "enum": [
+        "proposed",
+        "running",
+        "paused",
+        "completed",
+        "failed",
+        "canceled",
+        "rejected"
+      ]
+    },
+    "reason": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/reason",
+      "description": "Reason for the final state: expired, script_superseded, deadline_exceeded, person_inactive, budget_exhausted."
+    },
+    "steps": {
+      "type": "array",
+      "maxItems": 20,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "state"
+        ],
+        "properties": {
+          "id": {
+            "$ref": "urn:botaru:schema:common:1#/$defs/name"
+          },
+          "state": {
+            "enum": [
+              "pending",
+              "waiting",
+              "released",
+              "ok",
+              "failed",
+              "unknown",
+              "declined",
+              "skipped",
+              "canceled"
+            ]
+          },
+          "reason": {
+            "$ref": "urn:botaru:schema:common:1#/$defs/reason"
+          },
+          "task": {
+            "$ref": "urn:botaru:schema:common:1#/$defs/object_id"
+          },
+          "campaign": {
+            "$ref": "urn:botaru:schema:common:1#/$defs/object_id"
+          },
+          "approval": {
+            "$ref": "urn:botaru:schema:common:1#/$defs/object_id"
+          },
+          "untrusted_seen": {
+            "type": "object",
+            "description": "Untrusted text flag with all sources (INJ-13, SCR-9).",
+            "additionalProperties": false,
+            "required": [
+              "value"
+            ],
+            "properties": {
+              "value": {
+                "type": "boolean",
+                "description": "Value of the untrusted_seen flag."
+              },
+              "sources": {
+                "type": "array",
+                "maxItems": 16,
+                "items": {
+                  "type": "string",
+                  "pattern": "^[a-z][a-z0-9_:./ -]{0,119}$",
+                  "maxLength": 120
+                },
+                "description": "Flag sources as codes without text, for example tool_output, file, message, script_step."
+              }
+            }
+          },
+          "fields": {
+            "type": "object",
+            "description": "Closed result fields carried over by the core.",
+            "maxProperties": 32
+          }
+        }
+      }
+    }
+  }
+}

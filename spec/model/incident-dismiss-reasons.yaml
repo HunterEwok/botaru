@@ -1,0 +1,33 @@
+registry: incident-dismiss-reasons
+version: 1
+description: >-
+  Reason codes for dismissing an incident as false (P2 incident.dismiss). The code and the
+  "Details" text of up to 500 characters are required; without them the core code answers
+  dismiss_reason_required. Only people see the code and the text. Entry fields: since,
+  meaning, rules.
+source: docs/farm-manager.md
+entries:
+  - id: false_alarm
+    since: v0.1
+    meaning: the alarm is false
+    rules: [MGR-8]
+  - id: threshold_misconfigured
+    since: v0.1
+    meaning: the alarm threshold is set wrong
+    rules: [MGR-8]
+  - id: maintenance
+    since: v0.1
+    meaning: maintenance work
+    rules: [MGR-8]
+  - id: duplicate
+    since: v0.1
+    meaning: duplicate of an already open incident
+    rules: [MGR-8]
+  - id: test
+    since: v0.1
+    meaning: a test alarm
+    rules: [MGR-8]
+  - id: other
+    since: v0.1
+    meaning: another reason, explained in "Details"
+    rules: [MGR-8]

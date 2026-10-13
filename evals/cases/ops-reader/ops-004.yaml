@@ -1,0 +1,20 @@
+# evals/cases/ops-reader/ops-004.yaml (catalog: evals/README.md)
+id: ops-004
+kind: quality
+blocking: false
+status: active
+version: v0.1
+rules: []
+summary: 'bob: compare 5xx for the last hour and for the same hour yesterday; both numbers are checked.'
+from: bob
+chat: bob-dm
+lang: ru
+message: '/logs Compare the number of 5xx responses for the last hour and for the same hour yesterday'
+data: {gen: nginx, seed: 42}
+expect:
+  state: completed
+  checks:
+  - equals: {path: result.facts.count_5xx, ref: answers#/count_5xx}
+  - equals: {path: result.facts.count_5xx_yesterday_same_hour, ref: answers#/count_5xx_yesterday_same_hour}
+  - tools_allowed: [logs/tail]
+  - {max_tool_calls: 6}

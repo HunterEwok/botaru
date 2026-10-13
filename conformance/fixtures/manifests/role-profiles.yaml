@@ -1,0 +1,83 @@
+id: fx-prf-01
+rules: [PRF-1, GOV-3, MEM-2, APR-1, APR-5]
+check: lint:roles/profile-limits
+description: >-
+  Limits of the other role profiles per spec/model/role-profiles.yaml (the same fixtures
+  as fx-rep-01, for the other profiles), model rank ceilings for the base and analysis slots
+  (GOV-3), person memory (MEM-2), write tools for the model (APR-1, PRM-2) and action.*
+  types in may_enqueue (APR-5).
+with_examples: true
+cases:
+  - name: profile outside the registry
+    manifests:
+      - {apiVersion: botaru/v1alpha1, kind: Role, metadata: {name: fx-role}, spec: {profile: superuser, worker_kind: agent, claims: [ops.summary.v1], models: {base: base-std}}}
+    expect: {error: role_profile_unknown}
+  - name: worker bot with a rank 3 model profile
+    manifests:
+      - {apiVersion: botaru/v1alpha1, kind: Role, metadata: {name: fx-role}, spec: {worker_kind: agent, claims: [ops.summary.v1], models: {base: review-a}}}
+    expect: {error: rank_exceeded, also: [tree_budget_below_call]}
+  - name: worker bot analysis at rank 2 passes
+    manifests:
+      - {apiVersion: botaru/v1alpha1, kind: Role, metadata: {name: fx-role}, spec: {worker_kind: agent, claims: [ops.summary.v1], models: {base: base-std, analysis: analysis-std}}}
+    expect: ok
+  - name: reviewer with a plugin tool
+    manifests:
+      - apiVersion: botaru/v1alpha1
+        kind: TaskType
+        metadata: {name: fx.review.v1}
+        spec: {title: "Review", worker_kind: agent, purpose: review, tier: 0, data_class: summary,
+               params_schema: {type: object, additionalProperties: false, properties: {}}, proposable: false, tree_budget_eur: 0.2}
+      - {apiVersion: botaru/v1alpha1, kind: Role, metadata: {name: fx-reviewer}, spec: {profile: reviewer, worker_kind: agent, claims: [fx.review.v1], tools: [checks/latest], models: {base: review-a}}}
+    expect: {error: role_profile_forbidden}
+  - name: reviewer reads bot memory
+    manifests:
+      - apiVersion: botaru/v1alpha1
+        kind: TaskType
+        metadata: {name: fx.review.v1}
+        spec: {title: "Review", worker_kind: agent, purpose: review, tier: 0, data_class: summary,
+               params_schema: {type: object, additionalProperties: false, properties: {}}, proposable: false, tree_budget_eur: 0.2}
+      - {apiVersion: botaru/v1alpha1, kind: Role, metadata: {name: fx-reviewer}, spec: {profile: reviewer, worker_kind: agent, claims: [fx.review.v1], memory: {read: bot}, models: {base: review-a}}}
+    expect: ok
+  - name: aggregator declares services
+    manifests:
+      - apiVersion: botaru/v1alpha1
+        kind: TaskType
+        metadata: {name: fx.aggregate.v1}
+        spec: {title: "Summary", worker_kind: agent, purpose: aggregate, tier: 0, data_class: summary,
+               params_schema: {type: object, additionalProperties: false, properties: {}}, proposable: false, tree_budget_eur: 0.2}
+      - {apiVersion: botaru/v1alpha1, kind: Role, metadata: {name: fx-agg}, spec: {profile: aggregator, worker_kind: agent, claims: [fx.aggregate.v1], service_control: [nginx], models: {base: base-std, analysis: analysis-std}}}
+    expect: {error: role_profile_forbidden}
+  - name: translator on a tier 1 type
+    manifests:
+      - apiVersion: botaru/v1alpha1
+        kind: TaskType
+        metadata: {name: fx.translate.v1}
+        spec: {title: "Translation", worker_kind: agent, purpose: translate, tier: 1, data_class: summary,
+               params_schema: {type: object, additionalProperties: false, properties: {}}, proposable: false, tree_budget_eur: 0.2}
+      - {apiVersion: botaru/v1alpha1, kind: Role, metadata: {name: fx-trn}, spec: {profile: translator, worker_kind: agent, claims: [fx.translate.v1], models: {base: translate-std}}}
+    expect: {error: role_profile_tier}
+  - name: model role with a write tool
+    manifests:
+      - {apiVersion: botaru/v1alpha1, kind: Role, metadata: {name: fx-role}, spec: {worker_kind: agent, claims: [ops.summary.v1], tools: [pipeline/cleanup_tmp], models: {base: base-std}}}
+    expect: {error: role_write_tool}
+  - name: action in may_enqueue
+    manifests:
+      - {apiVersion: botaru/v1alpha1, kind: Role, metadata: {name: fx-role}, spec: {worker_kind: job, claims: [data.sensor_check.v1], may_enqueue: [action.cleanup_pipeline_tmp.v1]}}
+    expect: {error: action_type_grant}
+  - name: person memory with untrusted output
+    manifests:
+      - {apiVersion: botaru/v1alpha1, kind: Role, metadata: {name: assistant}, spec: {worker_kind: agent, claims: [assist.chat.v1], tools: [logs/tail], memory: person, models: {base: base-std}}}
+    expect: {error: memory_person}
+  - name: person memory for a type of class internal
+    manifests:
+      - {apiVersion: botaru/v1alpha1, kind: Role, metadata: {name: fx-role}, spec: {worker_kind: agent, claims: [geo.describe.v1], memory: person, models: {base: base-std}}}
+    expect: {error: memory_person}
+  - name: manager read role with action requests
+    manifests:
+      - apiVersion: botaru/v1alpha1
+        kind: TaskType
+        metadata: {name: fx.inspect.v1}
+        spec: {title: "Read", worker_kind: agent, purpose: inspect, tier: 1, data_class: internal,
+               params_schema: {type: object, additionalProperties: false, properties: {}}, proposable: false, tree_budget_eur: 0.2}
+      - {apiVersion: botaru/v1alpha1, kind: Role, metadata: {name: fx-mgr-reader}, spec: {profile: farm-manager-reader, worker_kind: agent, claims: [fx.inspect.v1], actions_may_request: [cleanup_pipeline_tmp], models: {base: manager-std}}}
+    expect: {error: role_profile_forbidden}

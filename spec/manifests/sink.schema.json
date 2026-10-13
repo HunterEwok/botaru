@@ -1,0 +1,63 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:botaru:schema:sink:1",
+  "title": "Sink",
+  "description": "spec of the Sink manifest: the address base, the class ceiling, the retention period and, for exports, export_only (E2).",
+  "x-botaru-direction": "input",
+  "x-botaru-rules": [
+    "DLV-6",
+    "TEN-3",
+    "SEC-10",
+    "MAN-4"
+  ],
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "driver",
+    "ceiling"
+  ],
+  "properties": {
+    "driver": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/name",
+      "description": "Sink driver."
+    },
+    "base": {
+      "type": "string",
+      "maxLength": 300,
+      "description": "Address base; the address is built from the base, the tenant and the delivery id (DLV-6)."
+    },
+    "ceiling": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/data_mark",
+      "description": "Ceiling of the class of what is written."
+    },
+    "retention": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/duration",
+      "description": "Retention period of what is written."
+    },
+    "export_only": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "recipient": {
+          "type": "string",
+          "maxLength": 80,
+          "description": "The only recipient: the principal or admin.",
+          "pattern": "^(admin|(user|staff|service):[a-z][a-z0-9_.-]{0,62})$"
+        },
+        "key_ref": {
+          "$ref": "urn:botaru:schema:manifest:1#/$defs/secret_name"
+        }
+      },
+      "required": [
+        "recipient",
+        "key_ref"
+      ],
+      "description": "Sink for operator exports (SEC-10)."
+    },
+    "config": {
+      "type": "object",
+      "description": "Driver configuration; it is closed by the driver schema.",
+      "x-botaru-closed-by": "sink driver schema under drivers/driver-config.schema.json"
+    }
+  }
+}

@@ -1,0 +1,29 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:botaru:schema:p2-manager-cost-response:1",
+  "title": "P2 manager.cost: response",
+  "description": "Cost of the farm manager's work in the tenant for a period in euro cents (MGR-28).",
+  "x-botaru-direction": "output",
+  "x-botaru-rules": [
+    "MGR-28"
+  ],
+  "type": "object",
+  "required": [
+    "tenant",
+    "spent"
+  ],
+  "properties": {
+    "tenant": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/tenant_name"
+    },
+    "from": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/datetime"
+    },
+    "to": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/datetime"
+    },
+    "spent": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/eurocents"
+    }
+  }
+}

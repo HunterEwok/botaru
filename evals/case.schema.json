@@ -1,0 +1,282 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:botaru:schema:eval-case:1",
+  "title": "Eval case",
+  "description": "One bot evaluation case with a real model: input, test bench data and expectations (evals/README.md, sections \"Case fields\", \"Input\", \"Case checks\", \"Set checks\"). A case names only a name from the test bench seed; the core writes the task record (IDN-1, TEN-2). The file lies in evals/cases/<role>/<id>.yaml.",
+  "x-botaru-version": "v0.1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["id", "kind", "status", "version", "rules"],
+  "properties": {
+    "id": {"$ref": "#/$defs/case_id", "description": "The case id: a role or area prefix and a number, in lowercase. Matches the file name."},
+    "kind": {
+      "description": "quality: an ordinary question; refusal: a request wider than the rights; twin: the twin of a refusal, the same question from someone who is allowed; injection: an instruction is hidden in the data; isolation: an attempt to see someone else's data.",
+      "enum": ["quality", "refusal", "twin", "injection", "isolation"]
+    },
+    "blocking": {"type": "boolean", "description": "true for injection and isolation: any failure stops a release (INJ-12); false for quality, refusal and twin cases."},
+    "status": {"enum": ["active", "pending"], "description": "pending exists only for a case of the next skeleton version: the file has id, kind, version, rules and one summary line."},
+    "version": {"type": "string", "pattern": "^v[0-9]+\\.[0-9]+$", "maxLength": 8, "description": "From which skeleton version the case is part of the run."},
+    "rules": {
+      "type": "array",
+      "description": "The ids of the rules that the case confirms; can be empty for a quality case.",
+      "maxItems": 16,
+      "uniqueItems": true,
+      "items": {"$ref": "urn:botaru:schema:common:1#/$defs/rule_id"}
+    },
+    "summary": {"type": "string", "maxLength": 600, "description": "One line: what is done and what is checked. Mandatory for pending."},
+    "base_case": {"$ref": "#/$defs/case_id", "description": "For injection: the same input without the attack. If only the case with the attack failed, the attack replaced the outcome."},
+    "twin": {"$ref": "#/$defs/case_id", "description": "For refusal and twin: the id of the paired case."},
+    "from": {"$ref": "#/$defs/seed_name", "description": "Who asks: the name of a person or an external program from the test bench seed, or system."},
+    "chat": {"$ref": "#/$defs/seed_name", "description": "For a message input: a chat from the seed, a direct chat (bob-dm) or a group chat (lab)."},
+    "message": {"type": "string", "maxLength": 4000, "description": "A person's message to the channel; the real channel code builds the task body (IDN-6)."},
+    "task": {"$ref": "#/$defs/task_input"},
+    "data": {"$ref": "#/$defs/data"},
+    "inbox": {
+      "type": "array",
+      "description": "Entries that lie in the role's inbox before the run.",
+      "maxItems": 50,
+      "items": {"$ref": "#/$defs/inbox_entry"}
+    },
+    "setup": {
+      "type": "object",
+      "description": "The rest of the test bench state: an incident, escalations, files, the runtime kind of the role, a mock model script for a check without a model. Each case has its own keys; the implementation run script reads them.",
+      "maxProperties": 32
+    },
+    "lang": {"enum": ["ru", "en", "et"], "description": "The input locale, en by default. The case text in the repository is English; the locale is data, and a case with lang ru or et checks behavior for a person with that locale."},
+    "expect": {"$ref": "#/$defs/expect"}
+  },
+  "allOf": [
+    {
+      "if": {"properties": {"status": {"const": "pending"}}},
+      "then": {"required": ["summary"]},
+      "else": {"required": ["blocking", "from", "expect"]}
+    },
+    {
+      "if": {"properties": {"kind": {"enum": ["injection", "isolation"]}}, "required": ["kind"]},
+      "then": {"properties": {"blocking": {"const": true}}}
+    },
+    {
+      "if": {"properties": {"kind": {"const": "twin"}}, "required": ["kind"]},
+      "then": {"required": ["twin"]}
+    },
+    {
+      "if": {"required": ["message"]},
+      "then": {"required": ["chat"], "not": {"required": ["task"]}}
+    },
+    {
+      "if": {
+        "properties": {"status": {"const": "active"}, "from": {"not": {"const": "system"}}},
+        "required": ["status", "from"]
+      },
+      "then": {"oneOf": [{"required": ["message"]}, {"required": ["task"]}]}
+    }
+  ],
+  "$defs": {
+    "case_id": {"type": "string", "pattern": "^[a-z]+(-[a-z]+)*-[0-9]{2,3}$", "maxLength": 64},
+    "seed_name": {"type": "string", "pattern": "^[a-z][a-z0-9-]*$", "maxLength": 64},
+    "task_input": {
+      "type": "object",
+      "description": "The task body, if an external program enqueues the task (P1 enqueue with the program's key from the seed) or a test bench schedule does.",
+      "additionalProperties": false,
+      "required": ["type"],
+      "properties": {
+        "type": {"$ref": "urn:botaru:schema:common:1#/$defs/type_name"},
+        "goal": {"type": "string", "maxLength": 2000},
+        "params": {"type": "object", "maxProperties": 32, "description": "Parameters by the params_schema of the task type."},
+        "attachments": {"type": "array", "maxItems": 10, "items": {"type": "string", "maxLength": 256}}
+      }
+    },
+    "inject": {
+      "type": "object",
+      "description": "Where and what to hide in the test bench data. The text is test data of the attack.",
+      "additionalProperties": false,
+      "required": ["where", "text"],
+      "properties": {
+        "where": {"type": "string", "pattern": "^[a-z][a-z0-9_]*$", "maxLength": 64, "description": "The place in the data, for example user_agent in access.log."},
+        "line": {"type": "integer", "minimum": 1},
+        "item": {"type": "string", "maxLength": 256, "description": "A data item: a file, a record, a monitoring item."},
+        "host": {"$ref": "#/$defs/seed_name"},
+        "text": {"type": "string", "maxLength": 4000}
+      }
+    },
+    "data": {
+      "type": "object",
+      "description": "Test bench data: the generator, its seed and the injected lines.",
+      "additionalProperties": false,
+      "properties": {
+        "gen": {"enum": ["nginx", "app", "alerts", "ctd", "obs"], "description": "The data generator; it writes answers.json next to the data."},
+        "seed": {"type": "integer", "minimum": 0},
+        "inject": {
+          "oneOf": [
+            {"$ref": "#/$defs/inject"},
+            {"type": "array", "minItems": 1, "maxItems": 8, "items": {"$ref": "#/$defs/inject"}}
+          ]
+        }
+      }
+    },
+    "inbox_entry": {
+      "type": "object",
+      "description": "An entry in the role's inbox: kind, sending role, closed fields, note.",
+      "additionalProperties": false,
+      "required": ["type", "from_role"],
+      "properties": {
+        "type": {"$ref": "urn:botaru:schema:common:1#/$defs/type_name"},
+        "from_role": {"$ref": "#/$defs/seed_name"},
+        "fields": {"type": "object", "maxProperties": 32},
+        "note": {"type": "string", "maxLength": 4000}
+      }
+    },
+    "expect": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["state", "checks"],
+      "properties": {
+        "state": {"enum": ["completed", "rejected", "failed"], "description": "The terminal state of the task."},
+        "checks": {"type": "array", "maxItems": 32, "items": {"$ref": "#/$defs/check"}}
+      }
+    },
+    "ref": {"type": "string", "pattern": "^(answers|store)#/[A-Za-z0-9_./-]+$", "maxLength": 256, "description": "answers#/... is the generator answer, store#/... is the test bench store state after the run."},
+    "path": {"type": "string", "maxLength": 256, "description": "A path in result (the data part of the task artifact), in the delivery or in the test bench store."},
+    "strings": {"type": "array", "minItems": 1, "maxItems": 32, "items": {"type": "string", "maxLength": 512}},
+    "text_match": {
+      "description": "A list of strings, a reference to the generator answer, or an object with strings and a search scope.",
+      "oneOf": [
+        {"$ref": "#/$defs/strings"},
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "minProperties": 1,
+          "properties": {
+            "ref": {"$ref": "#/$defs/ref"},
+            "values": {"$ref": "#/$defs/strings"},
+            "scope": {"enum": ["outputs", "model_requests", "all"], "description": "Where to look: the outputs (the default), the bodies of the model requests that the test bench P4 writes to the run results, or both."}
+          }
+        }
+      ]
+    },
+    "counter": {
+      "description": "The number of attempts by the audit, including those rejected by the core. A number means exactly that many; an object sets count (exactly), max (at most) and allowed (targets named in the person's request; an attempt outside the list is a failure).",
+      "oneOf": [
+        {"type": "integer", "minimum": 0},
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "minProperties": 1,
+          "properties": {
+            "count": {"type": "integer", "minimum": 0},
+            "max": {"type": "integer", "minimum": 0},
+            "allowed": {"type": "array", "maxItems": 32, "items": {"type": "string", "maxLength": 128}}
+          }
+        }
+      ]
+    },
+    "side_effects": {
+      "type": "object",
+      "description": "Side effect counters; a counter that is not named equals zero.",
+      "additionalProperties": false,
+      "minProperties": 1,
+      "properties": {
+        "request_action": {"$ref": "#/$defs/counter"},
+        "service_control": {"$ref": "#/$defs/counter"},
+        "enqueue_child": {"$ref": "#/$defs/counter"},
+        "messages_sent": {
+          "type": "object",
+          "description": "Sent bot messages by kind; any means any kind.",
+          "maxProperties": 16,
+          "propertyNames": {"pattern": "^(any|[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*)*\\.v[0-9]+)$"},
+          "additionalProperties": {"$ref": "#/$defs/counter"}
+        },
+        "memory_proposals": {"$ref": "#/$defs/counter"},
+        "decides": {"$ref": "#/$defs/counter"},
+        "pins": {"$ref": "#/$defs/counter"},
+        "holds": {"$ref": "#/$defs/counter"},
+        "digest_cards": {"$ref": "#/$defs/counter"},
+        "campaign_proposals": {"$ref": "#/$defs/counter"},
+        "campaign_items_outside": {"$ref": "#/$defs/counter"},
+        "campaign_selectors": {"$ref": "#/$defs/counter"},
+        "script_items_outside": {"$ref": "#/$defs/counter"},
+        "control_ops": {"$ref": "#/$defs/counter"},
+        "grant_requests": {"$ref": "#/$defs/counter"},
+        "attributions": {"$ref": "#/$defs/counter"},
+        "cases_opened": {"$ref": "#/$defs/counter"}
+      }
+    },
+    "check": {
+      "type": "object",
+      "description": "One case or set check. id is set for a named check of the form eval:<area>/<name> that a rule refers to.",
+      "additionalProperties": false,
+      "properties": {
+        "id": {"type": "string", "pattern": "^eval:[a-z0-9-]+/[a-z0-9-]+$", "maxLength": 128},
+        "equals": {
+          "type": "object",
+          "description": "A result or delivery field equals the reference; fractions with a tolerance, lists as sets.",
+          "additionalProperties": false,
+          "required": ["path"],
+          "properties": {
+            "path": {"$ref": "#/$defs/path"},
+            "ref": {"$ref": "#/$defs/ref"},
+            "value": {"description": "A reference that the case itself sets, for example the response code of the site stub."}
+          },
+          "oneOf": [{"required": ["ref"]}, {"required": ["value"]}]
+        },
+        "tools_allowed": {
+          "type": "array",
+          "description": "All tool calls are from this list; an empty list means not a single call.",
+          "maxItems": 16,
+          "items": {"type": "string", "pattern": "^[a-z][a-z0-9_]*/[a-z][a-z0-9_]*$", "maxLength": 64}
+        },
+        "max_tool_calls": {"type": "integer", "minimum": 0},
+        "side_effects": {"$ref": "#/$defs/side_effects"},
+        "not_contains": {"$ref": "#/$defs/text_match"},
+        "contains": {"$ref": "#/$defs/text_match"},
+        "store": {
+          "type": "object",
+          "description": "The test bench store state after the run; the script reads it only from outside, through P2 and the audit.",
+          "additionalProperties": false,
+          "required": ["path"],
+          "minProperties": 2,
+          "properties": {
+            "path": {"$ref": "#/$defs/path"},
+            "equals": {},
+            "subset_of": {"type": "array", "maxItems": 32},
+            "count": {"type": "integer", "minimum": 0},
+            "min": {"type": "number"},
+            "max": {"type": "number"}
+          }
+        },
+        "drift": {
+          "type": "object",
+          "description": "A set check: the outcome differs from a reference run of the same set without the checked change by no more than the drift threshold from thresholds.yaml.",
+          "additionalProperties": false,
+          "required": ["metrics", "baseline"],
+          "properties": {
+            "metrics": {"type": "array", "minItems": 1, "maxItems": 3, "uniqueItems": true, "items": {"enum": ["mean_score", "veto_share", "category_share"]}},
+            "baseline": {"type": "string", "maxLength": 600},
+            "set": {"type": "string", "maxLength": 600}
+          }
+        },
+        "rate": {
+          "type": "object",
+          "description": "A set check: the share of events on the set is not above the rate threshold from thresholds.yaml.",
+          "additionalProperties": false,
+          "required": ["metric"],
+          "properties": {
+            "metric": {"enum": ["unjustified_grant_requests", "defaulted_ballots"]},
+            "set": {"type": "string", "maxLength": 600}
+          }
+        }
+      },
+      "oneOf": [
+        {"required": ["equals"]},
+        {"required": ["tools_allowed"]},
+        {"required": ["max_tool_calls"]},
+        {"required": ["side_effects"]},
+        {"required": ["not_contains"]},
+        {"required": ["contains"]},
+        {"required": ["store"]},
+        {"required": ["drift"]},
+        {"required": ["rate"]}
+      ]
+    }
+  }
+}

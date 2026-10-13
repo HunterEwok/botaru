@@ -1,0 +1,38 @@
+id: fx-mgr-07
+rules: [MGR-11]
+description: 'Preemption: preempt moves an attempt to preempted, the attempt is not spent, the task goes back to the queue;
+  no more than 2 preemptions per task, the next one gives canceled(preempt_limit). Preemption and cancellation do not revoke writes
+  already done by tools.'
+given:
+  task: {id: t_501, tenant: demo, attempts_spent: 1, preempted: 0, tool_writes_done: 1}
+steps:
+- call:
+    port: P3
+    op: tools/call
+    request:
+      name: control_ops
+      arguments:
+        op: preempt
+        target: {kind: task, id: t_501}
+  by: attempt
+  expect: {attempt: preempted, attempts_spent: 1, task: queued, preempted: 1}
+- call:
+    port: P3
+    op: tools/call
+    request:
+      name: control_ops
+      arguments:
+        op: preempt
+        target: {kind: task, id: t_501}
+  by: attempt
+  expect: {attempt: preempted, attempts_spent: 1, task: queued, preempted: 2}
+- call:
+    port: P3
+    op: tools/call
+    request:
+      name: control_ops
+      arguments:
+        op: preempt
+        target: {kind: task, id: t_501}
+  by: attempt
+  expect: {task: canceled, reason: preempt_limit, tool_writes_reverted: 0}

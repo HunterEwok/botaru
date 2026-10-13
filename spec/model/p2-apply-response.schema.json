@@ -1,0 +1,135 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:botaru:schema:p2-apply-response:1",
+  "title": "P2 apply: response",
+  "description": "Plan or outcome of apply: whether the set was applied, the set hash, changes by object, objects that disappeared from git and their dependents, the privileged flag of each group, catalog volume quotas (CAP-6) and schema and lint errors by object; on any error the set is not applied as a whole.",
+  "x-botaru-direction": "output",
+  "x-botaru-rules": [
+    "MAN-1",
+    "MAN-2",
+    "MAN-6",
+    "PRM-13",
+    "CAP-6"
+  ],
+  "type": "object",
+  "required": [
+    "applied",
+    "errors"
+  ],
+  "properties": {
+    "applied": {
+      "type": "boolean"
+    },
+    "commit": {
+      "type": "string",
+      "maxLength": 64
+    },
+    "set_hash": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/hash",
+      "description": "Set hash per spec/hashing.md."
+    },
+    "changes": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "op",
+          "kind",
+          "name"
+        ],
+        "properties": {
+          "op": {
+            "enum": [
+              "create",
+              "update",
+              "delete",
+              "orphaned",
+              "unchanged"
+            ]
+          },
+          "kind": {
+            "type": "string",
+            "maxLength": 64
+          },
+          "tenant": {
+            "$ref": "urn:botaru:schema:common:1#/$defs/tenant_name"
+          },
+          "name": {
+            "$ref": "urn:botaru:schema:common:1#/$defs/name"
+          },
+          "dependents": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "maxLength": 200
+            },
+            "maxItems": 100
+          }
+        }
+      },
+      "maxItems": 10000
+    },
+    "groups": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "name",
+          "privileged"
+        ],
+        "properties": {
+          "tenant": {
+            "$ref": "urn:botaru:schema:common:1#/$defs/tenant_name"
+          },
+          "name": {
+            "$ref": "urn:botaru:schema:common:1#/$defs/name"
+          },
+          "privileged": {
+            "type": "boolean"
+          }
+        }
+      },
+      "maxItems": 2000
+    },
+    "volumes": {
+      "type": "array",
+      "items": {
+        "type": "object"
+      },
+      "maxItems": 1000,
+      "description": "For each catalog volume: whether every writer has a quota and whether the sum of quotas is below the disk_full alarm threshold (CAP-6)."
+    },
+    "errors": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "code"
+        ],
+        "properties": {
+          "kind": {
+            "type": "string",
+            "maxLength": 64
+          },
+          "tenant": {
+            "$ref": "urn:botaru:schema:common:1#/$defs/tenant_name"
+          },
+          "name": {
+            "$ref": "urn:botaru:schema:common:1#/$defs/name"
+          },
+          "code": {
+            "type": "string",
+            "maxLength": 64,
+            "pattern": "^[a-z][a-z0-9_]*$"
+          },
+          "path": {
+            "type": "string",
+            "maxLength": 500,
+            "description": "JSON Pointer of the field."
+          }
+        }
+      },
+      "maxItems": 10000
+    }
+  }
+}

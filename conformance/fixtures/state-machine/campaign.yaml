@@ -1,0 +1,1315 @@
+# Collected from spec/lifecycles/campaign.yaml. The value null in from means "the object does not exist yet".
+lifecycle: spec/lifecycles/campaign.yaml
+object: campaign
+rules:
+- APR-2
+- APR-4
+- APR-6
+- APR-7
+- APR-9
+- FEN-3
+- HLD-3
+- ORC-1
+- ORC-11
+- ORC-12
+- ORC-14
+- ORC-2
+- ORC-3
+- ORC-4
+- ORC-5
+- ORC-6
+- ORC-8
+- ORC-9
+- PRM-3
+- PRM-8
+- SCR-7
+- SCR-8
+description: Allowed and forbidden transitions of the "campaign and campaign item" lifecycle, collected from the tables
+  of spec/lifecycles/campaign.md. The implementation accepts a transition from the allowed list under the condition of its
+  row (when); a pair from the forbidden list does not change the state, and the call that asks for it is rejected. The value
+  null in from means "the object does not exist yet". The plan is frozen; an item is executed at most once, a terminal item
+  does not return to pending and is not released again (ORC-1, ORC-3). The "Resume" button does not lift the estimate_exceeded
+  pause (ORC-8).
+machines:
+- name: Campaign
+  states:
+  - id: proposed
+    terminal: false
+  - id: running
+    terminal: false
+  - id: paused
+    terminal: false
+  - id: stopping
+    terminal: false
+  - id: completed
+    terminal: true
+  - id: failed
+    terminal: true
+  - id: canceled
+    terminal: true
+  - id: rejected
+    terminal: true
+  allowed:
+  - id: sm-cmp-01
+    from: null
+    to: proposed
+    by: P3 propose_campaign; P1 campaign.propose with an attempt token
+    when: a live attempt; a role with campaigns.propose of the needed kind; the rights of every item on behalf of every
+      initiator; policy and size no wider than the ceilings; the ceiling under distrust or with the initiator system; the
+      tree size and the whole price estimate fit into the reserve; a campaign with an action has no hold in its scope (ORC-11);
+      a card is needed (a campaign with an action, a read campaign above confirm_read_over, or a read campaign that only
+      lacks the human initiator's daily limit); the core creates an approval with the subject campaign
+    rules:
+    - APR-2
+    - ORC-1
+    - ORC-14
+    - ORC-2
+    - ORC-5
+    - ORC-6
+    - ORC-8
+  - id: sm-cmp-02
+    from: null
+    to: rejected
+    by: P3 propose_campaign; P1 campaign.propose
+    when: 'the first failed check: campaign_policy_exceeded, campaign_untrusted_limit, no_group_cap, tree_too_large, budget_exhausted,
+      held (a campaign with an action in the scope of a hold), fenced; the same key with a different plan gives idempotency_conflict;
+      the model gets a short "no"'
+    rules:
+    - ORC-1
+    - ORC-14
+    - ORC-5
+    - ORC-6
+    - ORC-8
+    - PRM-8
+  - id: sm-cmp-03
+    from: null
+    to: proposed
+    by: the "Retry failed" button (P1 campaign.control with retry_failed, P2 campaign.retry_failed)
+    when: a human initiator pressed it; the original campaign is terminal; a new campaign from its failed, unknown and skipped
+      items with the same template, a policy no wider, the original's untrusted_seen and a refs link, without then; a campaign
+      with an action always gets a new approval
+    rules:
+    - ORC-1
+    - ORC-2
+  - id: sm-cmp-04
+    from: null
+    to: proposed
+    by: release of a fanout step of a script run (the core loop script)
+    when: a person approved the run; the list is a subset of the list frozen at approval; a campaign with an action gets
+      its own approval; the reserve is taken from the run's reserve; there is no then
+    rules:
+    - ORC-1
+    - ORC-8
+    - SCR-7
+    - SCR-8
+  - id: sm-cmp-05
+    from: proposed
+    to: running
+    by: the core in the same creation transaction
+    when: 'no card is needed: a read campaign below confirm_read_over whose estimate also fits into the initiator''s daily
+      limit (under distrust or with the initiator system, at most 10 items as an explicit list), or a read campaign of a
+      fanout step; no hold covers the scope; the first items are released'
+    rules:
+    - ORC-14
+    - ORC-2
+    - ORC-4
+  - id: sm-cmp-06
+    from: proposed
+    to: running
+    by: the "Approve" button (P1 decide with the subject campaign)
+    when: a human principal from the card's chat with its nonce, the right action.approve:<a> (for a read campaign task:<type>),
+      the self_approve rule, and for a production tenant the person who pressed is not the initiator; the initiator is active
+      and has the rights; in the same transaction the approval goes to executing and the canary is released
+    rules:
+    - APR-4
+    - APR-9
+    - ORC-2
+    - ORC-3
+  - id: sm-cmp-07
+    from: proposed
+    to: paused
+    by: the core in the same creation transaction; the "Approve" button
+    when: no card is needed or a person approved, but the campaign scope is covered by a hold with an effect that forbids
+      release or execution; items are not released; for a campaign with an action the approval is executing
+    rules:
+    - ORC-11
+  - id: sm-cmp-08
+    from: proposed
+    to: rejected
+    by: the "Reject" button (P1 decide); the background loop approval-expiry; P2 hold.set with no_action; cancellation of
+      the approval together with its reason
+    when: the approval moved to rejected, expired or canceled; the reserve is released, no items were released
+    rules:
+    - APR-6
+    - HLD-3
+    - ORC-11
+    - ORC-2
+  - id: sm-cmp-09
+    from: running
+    to: paused
+    by: the core in the transaction that closes the last canary item
+    when: 'all canary items are ok, after_canary: manual; with after_canary: auto there is no pause, the campaign loop waits
+      out bake'
+    rules:
+    - ORC-4
+  - id: sm-cmp-10
+    from: running
+    to: paused
+    by: the core in the transaction where an item became unknown
+    when: 'on_unknown: pause'
+    rules:
+    - ORC-4
+  - id: sm-cmp-11
+    from: running
+    to: paused
+    by: the "Pause" button (P1 campaign.control); P2 campaign.control
+    when: the human initiator, a person with the right to approve, or the tenant admin (admin:people)
+    rules:
+    - ORC-4
+  - id: sm-cmp-12
+    from: running
+    to: paused
+    by: P2 hold.set and core auto-stops
+    when: the hold scope covers the campaign or its items, effect no_enqueue, no_claim, no_action or cancel_running; the
+      same transaction as the hold record
+    rules:
+    - HLD-3
+    - ORC-11
+  - id: sm-cmp-13
+    from: running
+    to: paused
+    by: the background loop campaign
+    when: no live executor of its type takes a released item for longer than start_by
+    rules:
+    - ORC-4
+  - id: sm-cmp-14
+    from: running
+    to: paused
+    by: the core at release
+    when: the next item does not fit into the rest of the campaign reserve
+    rules:
+    - ORC-8
+  - id: sm-cmp-15
+    from: paused
+    to: running
+    by: the "Resume" button (P1 campaign.control with resume)
+    when: 'a human principal from the card''s chat with its nonce, the right to approve, not the initiator when self_approve:
+      false and for a production tenant; the initiator is active and has the rights; reason gate, unknown, human or no_executor;
+      reason held only when no hold covers the campaign any more; reason estimate_exceeded is never lifted'
+    rules:
+    - APR-4
+    - APR-9
+    - ORC-11
+    - ORC-2
+    - ORC-8
+  - id: sm-cmp-16
+    from: running
+    to: stopping
+    by: the core in the transaction that closes an item
+    when: the number of failed items exceeded the threshold (threshold_exceeded) or a canary item failed
+    rules:
+    - ORC-4
+  - id: sm-cmp-17
+    from: paused
+    to: stopping
+    by: the core in the transaction that closes an item
+    when: the number of failed items exceeded the threshold (threshold_exceeded) or a canary item failed
+    rules:
+    - ORC-4
+  - id: sm-cmp-18
+    from: running
+    to: stopping
+    by: the background loop campaign
+    when: the deadline passed (deadline_exceeded)
+    rules:
+    - ORC-4
+  - id: sm-cmp-19
+    from: paused
+    to: stopping
+    by: the background loop campaign
+    when: the deadline passed (deadline_exceeded)
+    rules:
+    - ORC-4
+  - id: sm-cmp-20
+    from: running
+    to: stopping
+    by: the "Cancel" button (P1 campaign.control with cancel); P2 campaign.control
+    when: the human initiator, a person with the right to approve, or the tenant admin (admin:people); reason initiator
+      if the initiator canceled, and admin if a person with the right to approve or the tenant admin did
+    rules:
+    - ORC-4
+  - id: sm-cmp-21
+    from: paused
+    to: stopping
+    by: the "Cancel" button (P1 campaign.control with cancel); P2 campaign.control
+    when: the human initiator, a person with the right to approve, or the tenant admin (admin:people); reason initiator
+      if the initiator canceled, and admin if a person with the right to approve or the tenant admin did
+    rules:
+    - ORC-4
+  - id: sm-cmp-22
+    from: running
+    to: stopping
+    by: cancellation of the tree root; rights recheck at release
+    when: the root is canceled; the initiator lost the right (rights_revoked) or is disabled (person_inactive)
+    rules:
+    - ORC-6
+    - PRM-3
+  - id: sm-cmp-23
+    from: paused
+    to: stopping
+    by: cancellation of the tree root; rights recheck at release
+    when: the root is canceled; the initiator lost the right (rights_revoked) or is disabled (person_inactive)
+    rules:
+    - ORC-6
+    - PRM-3
+  - id: sm-cmp-24
+    from: stopping
+    to: failed
+    by: the core in the transaction where the last released item became terminal, or at once if none were released
+    when: stop reason threshold_exceeded or deadline_exceeded; the core raises alarm.campaign.threshold on the threshold
+    rules:
+    - ORC-4
+  - id: sm-cmp-25
+    from: stopping
+    to: canceled
+    by: same
+    when: stop reason initiator or admin, cancellation of the root, rights_revoked or person_inactive
+    rules:
+    - ORC-4
+    - ORC-6
+  - id: sm-cmp-26
+    from: running
+    to: completed
+    by: the core in the transaction where the last item became terminal
+    when: all items are terminal, failed items do not exceed the threshold
+    rules:
+    - ORC-4
+  - id: sm-cmp-27
+    from: paused
+    to: completed
+    by: the core in the transaction where the last item became terminal
+    when: all items are terminal, failed items do not exceed the threshold
+    rules:
+    - ORC-4
+  forbidden:
+  - id: sm-cmp-x01
+    from: null
+    to: running
+    expect: rejected
+    rules:
+    - APR-4
+    - APR-9
+    - ORC-11
+    - ORC-14
+    why: the object does not appear directly in the state running
+  - id: sm-cmp-x02
+    from: null
+    to: paused
+    expect: rejected
+    rules:
+    - HLD-3
+    - ORC-11
+    - ORC-4
+    - ORC-8
+    why: the object does not appear directly in the state paused
+  - id: sm-cmp-x03
+    from: null
+    to: stopping
+    expect: rejected
+    rules:
+    - ORC-4
+    - ORC-6
+    - PRM-3
+    why: the object does not appear directly in the state stopping
+  - id: sm-cmp-x04
+    from: null
+    to: completed
+    expect: rejected
+    rules:
+    - ORC-4
+    why: the object does not appear directly in the state completed
+  - id: sm-cmp-x05
+    from: null
+    to: failed
+    expect: rejected
+    rules:
+    - ORC-4
+    why: the object does not appear directly in the state failed
+  - id: sm-cmp-x06
+    from: null
+    to: canceled
+    expect: rejected
+    rules:
+    - ORC-4
+    - ORC-6
+    why: the object does not appear directly in the state canceled
+  - id: sm-cmp-x07
+    from: proposed
+    to: proposed
+    expect: rejected
+    rules:
+    - APR-2
+    - ORC-1
+    - ORC-14
+    - ORC-2
+    why: the lifecycle table has no such transition
+  - id: sm-cmp-x08
+    from: proposed
+    to: stopping
+    expect: rejected
+    rules:
+    - ORC-4
+    - ORC-6
+    - PRM-3
+    why: the lifecycle table has no such transition
+  - id: sm-cmp-x09
+    from: proposed
+    to: completed
+    expect: rejected
+    rules:
+    - ORC-4
+    why: the lifecycle table has no such transition
+  - id: sm-cmp-x10
+    from: proposed
+    to: failed
+    expect: rejected
+    rules:
+    - ORC-4
+    why: the lifecycle table has no such transition
+  - id: sm-cmp-x11
+    from: proposed
+    to: canceled
+    expect: rejected
+    rules:
+    - ORC-4
+    - ORC-6
+    why: the lifecycle table has no such transition
+  - id: sm-cmp-x12
+    from: running
+    to: proposed
+    expect: rejected
+    rules:
+    - APR-2
+    - ORC-1
+    - ORC-14
+    - ORC-2
+    why: the lifecycle table has no such transition
+  - id: sm-cmp-x13
+    from: running
+    to: running
+    expect: rejected
+    rules:
+    - APR-4
+    - APR-9
+    - ORC-11
+    - ORC-14
+    why: the lifecycle table has no such transition
+  - id: sm-cmp-x14
+    from: running
+    to: failed
+    expect: rejected
+    rules:
+    - ORC-4
+    why: the lifecycle table has no such transition
+  - id: sm-cmp-x15
+    from: running
+    to: canceled
+    expect: rejected
+    rules:
+    - ORC-4
+    - ORC-6
+    why: the lifecycle table has no such transition
+  - id: sm-cmp-x16
+    from: running
+    to: rejected
+    expect: rejected
+    rules:
+    - APR-6
+    - HLD-3
+    - ORC-1
+    - ORC-11
+    why: the lifecycle table has no such transition
+  - id: sm-cmp-x17
+    from: paused
+    to: proposed
+    expect: rejected
+    rules:
+    - APR-2
+    - ORC-1
+    - ORC-14
+    - ORC-2
+    why: the lifecycle table has no such transition
+  - id: sm-cmp-x18
+    from: paused
+    to: paused
+    expect: rejected
+    rules:
+    - HLD-3
+    - ORC-11
+    - ORC-4
+    - ORC-8
+    why: the lifecycle table has no such transition
+  - id: sm-cmp-x19
+    from: paused
+    to: failed
+    expect: rejected
+    rules:
+    - ORC-4
+    why: the lifecycle table has no such transition
+  - id: sm-cmp-x20
+    from: paused
+    to: canceled
+    expect: rejected
+    rules:
+    - ORC-4
+    - ORC-6
+    why: the lifecycle table has no such transition
+  - id: sm-cmp-x21
+    from: paused
+    to: rejected
+    expect: rejected
+    rules:
+    - APR-6
+    - HLD-3
+    - ORC-1
+    - ORC-11
+    why: the lifecycle table has no such transition
+  - id: sm-cmp-x22
+    from: stopping
+    to: proposed
+    expect: rejected
+    rules:
+    - APR-2
+    - ORC-1
+    - ORC-14
+    - ORC-2
+    why: the lifecycle table has no such transition
+  - id: sm-cmp-x23
+    from: stopping
+    to: running
+    expect: rejected
+    rules:
+    - APR-4
+    - APR-9
+    - ORC-11
+    - ORC-14
+    why: the lifecycle table has no such transition
+  - id: sm-cmp-x24
+    from: stopping
+    to: paused
+    expect: rejected
+    rules:
+    - HLD-3
+    - ORC-11
+    - ORC-4
+    - ORC-8
+    why: the lifecycle table has no such transition
+  - id: sm-cmp-x25
+    from: stopping
+    to: stopping
+    expect: rejected
+    rules:
+    - ORC-4
+    - ORC-6
+    - PRM-3
+    why: the lifecycle table has no such transition
+  - id: sm-cmp-x26
+    from: stopping
+    to: completed
+    expect: rejected
+    rules:
+    - ORC-4
+    why: the lifecycle table has no such transition
+  - id: sm-cmp-x27
+    from: stopping
+    to: rejected
+    expect: rejected
+    rules:
+    - APR-6
+    - HLD-3
+    - ORC-1
+    - ORC-11
+    why: the lifecycle table has no such transition
+  - id: sm-cmp-x28
+    from: completed
+    to: proposed
+    expect: rejected
+    rules:
+    - APR-2
+    - ORC-1
+    - ORC-14
+    - ORC-2
+    why: completed is a terminal state
+  - id: sm-cmp-x29
+    from: completed
+    to: running
+    expect: rejected
+    rules:
+    - APR-4
+    - APR-9
+    - ORC-11
+    - ORC-14
+    why: completed is a terminal state
+  - id: sm-cmp-x30
+    from: completed
+    to: paused
+    expect: rejected
+    rules:
+    - HLD-3
+    - ORC-11
+    - ORC-4
+    - ORC-8
+    why: completed is a terminal state
+  - id: sm-cmp-x31
+    from: completed
+    to: stopping
+    expect: rejected
+    rules:
+    - ORC-4
+    - ORC-6
+    - PRM-3
+    why: completed is a terminal state
+  - id: sm-cmp-x32
+    from: completed
+    to: completed
+    expect: rejected
+    rules:
+    - ORC-4
+    why: completed is a terminal state
+  - id: sm-cmp-x33
+    from: completed
+    to: failed
+    expect: rejected
+    rules:
+    - ORC-4
+    why: completed is a terminal state
+  - id: sm-cmp-x34
+    from: completed
+    to: canceled
+    expect: rejected
+    rules:
+    - ORC-4
+    - ORC-6
+    why: completed is a terminal state
+  - id: sm-cmp-x35
+    from: completed
+    to: rejected
+    expect: rejected
+    rules:
+    - APR-6
+    - HLD-3
+    - ORC-1
+    - ORC-11
+    why: completed is a terminal state
+  - id: sm-cmp-x36
+    from: failed
+    to: proposed
+    expect: rejected
+    rules:
+    - APR-2
+    - ORC-1
+    - ORC-14
+    - ORC-2
+    why: failed is a terminal state
+  - id: sm-cmp-x37
+    from: failed
+    to: running
+    expect: rejected
+    rules:
+    - APR-4
+    - APR-9
+    - ORC-11
+    - ORC-14
+    why: failed is a terminal state
+  - id: sm-cmp-x38
+    from: failed
+    to: paused
+    expect: rejected
+    rules:
+    - HLD-3
+    - ORC-11
+    - ORC-4
+    - ORC-8
+    why: failed is a terminal state
+  - id: sm-cmp-x39
+    from: failed
+    to: stopping
+    expect: rejected
+    rules:
+    - ORC-4
+    - ORC-6
+    - PRM-3
+    why: failed is a terminal state
+  - id: sm-cmp-x40
+    from: failed
+    to: completed
+    expect: rejected
+    rules:
+    - ORC-4
+    why: failed is a terminal state
+  - id: sm-cmp-x41
+    from: failed
+    to: failed
+    expect: rejected
+    rules:
+    - ORC-4
+    why: failed is a terminal state
+  - id: sm-cmp-x42
+    from: failed
+    to: canceled
+    expect: rejected
+    rules:
+    - ORC-4
+    - ORC-6
+    why: failed is a terminal state
+  - id: sm-cmp-x43
+    from: failed
+    to: rejected
+    expect: rejected
+    rules:
+    - APR-6
+    - HLD-3
+    - ORC-1
+    - ORC-11
+    why: failed is a terminal state
+  - id: sm-cmp-x44
+    from: canceled
+    to: proposed
+    expect: rejected
+    rules:
+    - APR-2
+    - ORC-1
+    - ORC-14
+    - ORC-2
+    why: canceled is a terminal state
+  - id: sm-cmp-x45
+    from: canceled
+    to: running
+    expect: rejected
+    rules:
+    - APR-4
+    - APR-9
+    - ORC-11
+    - ORC-14
+    why: canceled is a terminal state
+  - id: sm-cmp-x46
+    from: canceled
+    to: paused
+    expect: rejected
+    rules:
+    - HLD-3
+    - ORC-11
+    - ORC-4
+    - ORC-8
+    why: canceled is a terminal state
+  - id: sm-cmp-x47
+    from: canceled
+    to: stopping
+    expect: rejected
+    rules:
+    - ORC-4
+    - ORC-6
+    - PRM-3
+    why: canceled is a terminal state
+  - id: sm-cmp-x48
+    from: canceled
+    to: completed
+    expect: rejected
+    rules:
+    - ORC-4
+    why: canceled is a terminal state
+  - id: sm-cmp-x49
+    from: canceled
+    to: failed
+    expect: rejected
+    rules:
+    - ORC-4
+    why: canceled is a terminal state
+  - id: sm-cmp-x50
+    from: canceled
+    to: canceled
+    expect: rejected
+    rules:
+    - ORC-4
+    - ORC-6
+    why: canceled is a terminal state
+  - id: sm-cmp-x51
+    from: canceled
+    to: rejected
+    expect: rejected
+    rules:
+    - APR-6
+    - HLD-3
+    - ORC-1
+    - ORC-11
+    why: canceled is a terminal state
+  - id: sm-cmp-x52
+    from: rejected
+    to: proposed
+    expect: rejected
+    rules:
+    - APR-2
+    - ORC-1
+    - ORC-14
+    - ORC-2
+    why: rejected is a terminal state
+  - id: sm-cmp-x53
+    from: rejected
+    to: running
+    expect: rejected
+    rules:
+    - APR-4
+    - APR-9
+    - ORC-11
+    - ORC-14
+    why: rejected is a terminal state
+  - id: sm-cmp-x54
+    from: rejected
+    to: paused
+    expect: rejected
+    rules:
+    - HLD-3
+    - ORC-11
+    - ORC-4
+    - ORC-8
+    why: rejected is a terminal state
+  - id: sm-cmp-x55
+    from: rejected
+    to: stopping
+    expect: rejected
+    rules:
+    - ORC-4
+    - ORC-6
+    - PRM-3
+    why: rejected is a terminal state
+  - id: sm-cmp-x56
+    from: rejected
+    to: completed
+    expect: rejected
+    rules:
+    - ORC-4
+    why: rejected is a terminal state
+  - id: sm-cmp-x57
+    from: rejected
+    to: failed
+    expect: rejected
+    rules:
+    - ORC-4
+    why: rejected is a terminal state
+  - id: sm-cmp-x58
+    from: rejected
+    to: canceled
+    expect: rejected
+    rules:
+    - ORC-4
+    - ORC-6
+    why: rejected is a terminal state
+  - id: sm-cmp-x59
+    from: rejected
+    to: rejected
+    expect: rejected
+    rules:
+    - APR-6
+    - HLD-3
+    - ORC-1
+    - ORC-11
+    why: rejected is a terminal state
+- name: Item
+  states:
+  - id: pending
+    terminal: false
+  - id: released
+    terminal: false
+  - id: ok
+    terminal: true
+  - id: failed
+    terminal: true
+  - id: unknown
+    terminal: true
+  - id: skipped
+    terminal: true
+  - id: canceled
+    terminal: true
+  allowed:
+  - id: sm-cmi-01
+    from: null
+    to: pending
+    by: C1 campaign.create
+    when: all items of the plan are created together with the campaign
+    rules:
+    - ORC-1
+  - id: sm-cmi-02
+    from: pending
+    to: released
+    by: the core in the transaction that closes the previous item or in the approval transaction; the background loop campaign
+      (bake)
+    when: 'the campaign is running; there is no hold in its scope; fewer than max_in_flight are released and not finished;
+      the resource is free with exclusive: resource; the tenant''s queue of the item type is not longer than queue_max;
+      every initiator has the rights; the item fits into the rest of the reserve; from v0.2 the pace rate_per_min is not
+      exceeded and the wave is open. In the same transaction, the item''s task with the key system:campaign:<campaign>:<n>,
+      and for an action also one write call from the snapshot'
+    rules:
+    - ORC-11
+    - ORC-12
+    - ORC-3
+    - ORC-4
+    - ORC-6
+    - ORC-8
+  - id: sm-cmi-03
+    from: pending
+    to: skipped
+    by: the "Exclude item" button (P1 campaign.control with skip); the campaign's transition to stopping
+    when: the button was pressed by a human principal from the card's chat with the right to approve, not the initiator
+      for a production tenant; with stopping, all unreleased items at once
+    rules:
+    - APR-9
+    - ORC-1
+    - ORC-2
+    - ORC-4
+  - id: sm-cmi-04
+    from: released
+    to: ok
+    by: C1 campaign.item_close in the transaction of the terminal transition of the item's task
+    when: the task is completed (for an action, the write call is executed); the summary_fields fields are copied into the
+      item record
+    rules:
+    - ORC-4
+    - ORC-9
+  - id: sm-cmi-05
+    from: released
+    to: failed
+    by: same
+    when: the task failed after its attempts (for an action, the write call is exec_failed)
+    rules:
+    - FEN-3
+    - ORC-4
+  - id: sm-cmi-06
+    from: released
+    to: unknown
+    by: the background loop reaper
+    when: the lease of the write call expired without an outcome; there is no retry and no redrive
+    rules:
+    - APR-7
+    - ORC-3
+  - id: sm-cmi-07
+    from: released
+    to: canceled
+    by: the campaign's transition to stopping by cancellation; cancellation of the item's task
+    when: a read item; released write calls are not revoked, their outcome is recorded as ok, failed or unknown
+    rules:
+    - ORC-11
+    - ORC-4
+  forbidden:
+  - id: sm-cmi-x01
+    from: null
+    to: released
+    expect: rejected
+    rules:
+    - ORC-11
+    - ORC-12
+    - ORC-3
+    - ORC-4
+    why: the object does not appear directly in the state released
+  - id: sm-cmi-x02
+    from: null
+    to: ok
+    expect: rejected
+    rules:
+    - ORC-4
+    - ORC-9
+    why: the object does not appear directly in the state ok
+  - id: sm-cmi-x03
+    from: null
+    to: failed
+    expect: rejected
+    rules:
+    - FEN-3
+    - ORC-4
+    why: the object does not appear directly in the state failed
+  - id: sm-cmi-x04
+    from: null
+    to: unknown
+    expect: rejected
+    rules:
+    - APR-7
+    - ORC-3
+    why: the object does not appear directly in the state unknown
+  - id: sm-cmi-x05
+    from: null
+    to: skipped
+    expect: rejected
+    rules:
+    - APR-9
+    - ORC-1
+    - ORC-2
+    - ORC-4
+    why: the object does not appear directly in the state skipped
+  - id: sm-cmi-x06
+    from: null
+    to: canceled
+    expect: rejected
+    rules:
+    - ORC-11
+    - ORC-4
+    why: the object does not appear directly in the state canceled
+  - id: sm-cmi-x07
+    from: pending
+    to: pending
+    expect: rejected
+    rules:
+    - ORC-1
+    why: the lifecycle table has no such transition
+  - id: sm-cmi-x08
+    from: pending
+    to: ok
+    expect: rejected
+    rules:
+    - ORC-4
+    - ORC-9
+    why: the lifecycle table has no such transition
+  - id: sm-cmi-x09
+    from: pending
+    to: failed
+    expect: rejected
+    rules:
+    - FEN-3
+    - ORC-4
+    why: the lifecycle table has no such transition
+  - id: sm-cmi-x10
+    from: pending
+    to: unknown
+    expect: rejected
+    rules:
+    - APR-7
+    - ORC-3
+    why: the lifecycle table has no such transition
+  - id: sm-cmi-x11
+    from: pending
+    to: canceled
+    expect: rejected
+    rules:
+    - ORC-11
+    - ORC-4
+    why: the lifecycle table has no such transition
+  - id: sm-cmi-x12
+    from: released
+    to: pending
+    expect: rejected
+    rules:
+    - ORC-1
+    why: the lifecycle table has no such transition
+  - id: sm-cmi-x13
+    from: released
+    to: released
+    expect: rejected
+    rules:
+    - ORC-11
+    - ORC-12
+    - ORC-3
+    - ORC-4
+    why: the lifecycle table has no such transition
+  - id: sm-cmi-x14
+    from: released
+    to: skipped
+    expect: rejected
+    rules:
+    - APR-9
+    - ORC-1
+    - ORC-2
+    - ORC-4
+    why: the lifecycle table has no such transition
+  - id: sm-cmi-x15
+    from: ok
+    to: pending
+    expect: rejected
+    rules:
+    - ORC-1
+    why: ok is a terminal state
+  - id: sm-cmi-x16
+    from: ok
+    to: released
+    expect: rejected
+    rules:
+    - ORC-11
+    - ORC-12
+    - ORC-3
+    - ORC-4
+    why: ok is a terminal state
+  - id: sm-cmi-x17
+    from: ok
+    to: ok
+    expect: rejected
+    rules:
+    - ORC-4
+    - ORC-9
+    why: ok is a terminal state
+  - id: sm-cmi-x18
+    from: ok
+    to: failed
+    expect: rejected
+    rules:
+    - FEN-3
+    - ORC-4
+    why: ok is a terminal state
+  - id: sm-cmi-x19
+    from: ok
+    to: unknown
+    expect: rejected
+    rules:
+    - APR-7
+    - ORC-3
+    why: ok is a terminal state
+  - id: sm-cmi-x20
+    from: ok
+    to: skipped
+    expect: rejected
+    rules:
+    - APR-9
+    - ORC-1
+    - ORC-2
+    - ORC-4
+    why: ok is a terminal state
+  - id: sm-cmi-x21
+    from: ok
+    to: canceled
+    expect: rejected
+    rules:
+    - ORC-11
+    - ORC-4
+    why: ok is a terminal state
+  - id: sm-cmi-x22
+    from: failed
+    to: pending
+    expect: rejected
+    rules:
+    - ORC-1
+    why: failed is a terminal state
+  - id: sm-cmi-x23
+    from: failed
+    to: released
+    expect: rejected
+    rules:
+    - ORC-11
+    - ORC-12
+    - ORC-3
+    - ORC-4
+    why: failed is a terminal state
+  - id: sm-cmi-x24
+    from: failed
+    to: ok
+    expect: rejected
+    rules:
+    - ORC-4
+    - ORC-9
+    why: failed is a terminal state
+  - id: sm-cmi-x25
+    from: failed
+    to: failed
+    expect: rejected
+    rules:
+    - FEN-3
+    - ORC-4
+    why: failed is a terminal state
+  - id: sm-cmi-x26
+    from: failed
+    to: unknown
+    expect: rejected
+    rules:
+    - APR-7
+    - ORC-3
+    why: failed is a terminal state
+  - id: sm-cmi-x27
+    from: failed
+    to: skipped
+    expect: rejected
+    rules:
+    - APR-9
+    - ORC-1
+    - ORC-2
+    - ORC-4
+    why: failed is a terminal state
+  - id: sm-cmi-x28
+    from: failed
+    to: canceled
+    expect: rejected
+    rules:
+    - ORC-11
+    - ORC-4
+    why: failed is a terminal state
+  - id: sm-cmi-x29
+    from: unknown
+    to: pending
+    expect: rejected
+    rules:
+    - ORC-1
+    why: unknown is a terminal state
+  - id: sm-cmi-x30
+    from: unknown
+    to: released
+    expect: rejected
+    rules:
+    - ORC-11
+    - ORC-12
+    - ORC-3
+    - ORC-4
+    why: unknown is a terminal state
+  - id: sm-cmi-x31
+    from: unknown
+    to: ok
+    expect: rejected
+    rules:
+    - ORC-4
+    - ORC-9
+    why: unknown is a terminal state
+  - id: sm-cmi-x32
+    from: unknown
+    to: failed
+    expect: rejected
+    rules:
+    - FEN-3
+    - ORC-4
+    why: unknown is a terminal state
+  - id: sm-cmi-x33
+    from: unknown
+    to: unknown
+    expect: rejected
+    rules:
+    - APR-7
+    - ORC-3
+    why: unknown is a terminal state
+  - id: sm-cmi-x34
+    from: unknown
+    to: skipped
+    expect: rejected
+    rules:
+    - APR-9
+    - ORC-1
+    - ORC-2
+    - ORC-4
+    why: unknown is a terminal state
+  - id: sm-cmi-x35
+    from: unknown
+    to: canceled
+    expect: rejected
+    rules:
+    - ORC-11
+    - ORC-4
+    why: unknown is a terminal state
+  - id: sm-cmi-x36
+    from: skipped
+    to: pending
+    expect: rejected
+    rules:
+    - ORC-1
+    why: skipped is a terminal state
+  - id: sm-cmi-x37
+    from: skipped
+    to: released
+    expect: rejected
+    rules:
+    - ORC-11
+    - ORC-12
+    - ORC-3
+    - ORC-4
+    why: skipped is a terminal state
+  - id: sm-cmi-x38
+    from: skipped
+    to: ok
+    expect: rejected
+    rules:
+    - ORC-4
+    - ORC-9
+    why: skipped is a terminal state
+  - id: sm-cmi-x39
+    from: skipped
+    to: failed
+    expect: rejected
+    rules:
+    - FEN-3
+    - ORC-4
+    why: skipped is a terminal state
+  - id: sm-cmi-x40
+    from: skipped
+    to: unknown
+    expect: rejected
+    rules:
+    - APR-7
+    - ORC-3
+    why: skipped is a terminal state
+  - id: sm-cmi-x41
+    from: skipped
+    to: skipped
+    expect: rejected
+    rules:
+    - APR-9
+    - ORC-1
+    - ORC-2
+    - ORC-4
+    why: skipped is a terminal state
+  - id: sm-cmi-x42
+    from: skipped
+    to: canceled
+    expect: rejected
+    rules:
+    - ORC-11
+    - ORC-4
+    why: skipped is a terminal state
+  - id: sm-cmi-x43
+    from: canceled
+    to: pending
+    expect: rejected
+    rules:
+    - ORC-1
+    why: canceled is a terminal state
+  - id: sm-cmi-x44
+    from: canceled
+    to: released
+    expect: rejected
+    rules:
+    - ORC-11
+    - ORC-12
+    - ORC-3
+    - ORC-4
+    why: canceled is a terminal state
+  - id: sm-cmi-x45
+    from: canceled
+    to: ok
+    expect: rejected
+    rules:
+    - ORC-4
+    - ORC-9
+    why: canceled is a terminal state
+  - id: sm-cmi-x46
+    from: canceled
+    to: failed
+    expect: rejected
+    rules:
+    - FEN-3
+    - ORC-4
+    why: canceled is a terminal state
+  - id: sm-cmi-x47
+    from: canceled
+    to: unknown
+    expect: rejected
+    rules:
+    - APR-7
+    - ORC-3
+    why: canceled is a terminal state
+  - id: sm-cmi-x48
+    from: canceled
+    to: skipped
+    expect: rejected
+    rules:
+    - APR-9
+    - ORC-1
+    - ORC-2
+    - ORC-4
+    why: canceled is a terminal state
+  - id: sm-cmi-x49
+    from: canceled
+    to: canceled
+    expect: rejected
+    rules:
+    - ORC-11
+    - ORC-4
+    why: canceled is a terminal state

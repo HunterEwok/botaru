@@ -1,0 +1,172 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:botaru:schema:hold:1",
+  "title": "Stop",
+  "description": "Stop record (Hold): scope, effects from a closed list, a reason from reasons.yaml, a deadline or until released, author (HLD-1). The core writes the id, author, source and record time. A stop of the farm and seat scopes is a record of the service tenant farm, the others are records of the tenant of their scope (TEN-1). Final stops remain records of the metadata class.",
+  "x-botaru-direction": "record",
+  "x-botaru-retention": "metadata",
+  "x-botaru-rules": [
+    "HLD-1",
+    "HLD-2",
+    "HLD-5",
+    "TEN-1"
+  ],
+  "type": "object",
+  "required": [
+    "id",
+    "tenant",
+    "scope",
+    "effects",
+    "reason",
+    "until",
+    "author",
+    "author_kind",
+    "state",
+    "created_at"
+  ],
+  "properties": {
+    "id": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/object_id",
+      "description": "Stop id."
+    },
+    "tenant": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/tenant_name",
+      "description": "Tenant of the record: farm for the farm and seat scopes."
+    },
+    "scope": {
+      "type": "object",
+      "description": "Stop scope: a kind from the closed list spec/model/holds.yaml, the tenant and the name of the scope object. The farm scope has no tenant and no name; the tenant scope has no name.",
+      "additionalProperties": false,
+      "required": [
+        "kind"
+      ],
+      "properties": {
+        "kind": {
+          "$ref": "#/$defs/scope_kind"
+        },
+        "tenant": {
+          "$ref": "urn:botaru:schema:common:1#/$defs/tenant_name",
+          "description": "Tenant of the scope."
+        },
+        "name": {
+          "description": "Name of the scope object: role, task type, worker id, plugin, action, channel, machine, resource, bot group, bot, seat, schedule or case.",
+          "type": "string",
+          "maxLength": 120,
+          "pattern": "^[a-z@][a-z0-9_.:@-]*$"
+        }
+      }
+    },
+    "effects": {
+      "description": "Stop effects from the closed list spec/model/holds.yaml (kind: effect); pause_action since v0.2.",
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/effect"
+      },
+      "maxItems": 9,
+      "minItems": 1,
+      "uniqueItems": true
+    },
+    "reason": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/reason",
+      "description": "Reason from reasons.yaml."
+    },
+    "until": {
+      "description": "Deadline by the store clock, or null: until released (TIM-1).",
+      "anyOf": [
+        {
+          "$ref": "urn:botaru:schema:common:1#/$defs/datetime"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "author": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/principal_ref",
+      "description": "Who set the hold."
+    },
+    "author_kind": {
+      "$ref": "#/$defs/author_kind"
+    },
+    "source": {
+      "description": "Source of a code hold: an auto-stop rule from holds.yaml, an incident class or system:monitor.",
+      "type": "string",
+      "maxLength": 120,
+      "pattern": "^[a-z][a-z0-9_.:-]*$"
+    },
+    "seat_epoch": {
+      "description": "Seat epoch for a stop by the holder of the farm manager seat.",
+      "type": "integer",
+      "minimum": 0
+    },
+    "state": {
+      "description": "State of the stop lifecycle.",
+      "enum": [
+        "active",
+        "expired",
+        "released"
+      ]
+    },
+    "created_at": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/datetime",
+      "description": "Record time."
+    },
+    "released_by": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/principal_ref",
+      "description": "Who released the hold."
+    },
+    "ended_at": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/datetime",
+      "description": "When the stop expired or was released."
+    }
+  },
+  "$defs": {
+    "scope_kind": {
+      "description": "Scope kind (holds.yaml, kind: scope). The schedule and governance scopes since v0.2.",
+      "enum": [
+        "farm",
+        "tenant",
+        "role",
+        "tasktype",
+        "worker",
+        "plugin",
+        "action",
+        "channel",
+        "host",
+        "resource",
+        "bot_group",
+        "bot",
+        "seat",
+        "schedule",
+        "governance"
+      ],
+      "x-botaru-registry": "holds",
+      "x-botaru-registry-kind": "scope"
+    },
+    "effect": {
+      "description": "Stop effect.",
+      "enum": [
+        "no_enqueue",
+        "no_claim",
+        "no_message",
+        "cancel_running",
+        "no_tool",
+        "no_action",
+        "no_delivery",
+        "no_control",
+        "pause_action"
+      ],
+      "x-botaru-registry": "holds",
+      "x-botaru-registry-kind": "effect"
+    },
+    "author_kind": {
+      "description": "Rank of the author for release (holds.yaml, kind: rank) or contain_auto for a code hold.",
+      "enum": [
+        "operator",
+        "tenant_admin",
+        "seat_holder",
+        "contain_auto"
+      ]
+    }
+  }
+}

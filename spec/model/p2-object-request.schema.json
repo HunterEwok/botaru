@@ -1,0 +1,30 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:botaru:schema:p2-object-request:1",
+  "title": "P2: request by object id",
+  "description": "Body of operations on one object by id: campaign.show, campaign.retry_failed, script.show, script.cancel, incident.show, incident.ack, incident.close, bot.show and others per spec/ports/operations.yaml. The op field matches the operation of the path.",
+  "x-botaru-direction": "input",
+  "x-botaru-rules": [
+    "PRM-9"
+  ],
+  "type": "object",
+  "required": [
+    "op",
+    "id"
+  ],
+  "properties": {
+    "op": {
+      "type": "string",
+      "maxLength": 64,
+      "pattern": "^[a-z_]+\\.[a-z_]+$"
+    },
+    "id": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/object_id"
+    },
+    "sealed": {
+      "type": "boolean",
+      "description": "Only bot.show --sealed: the operator with admin:governance."
+    }
+  },
+  "additionalProperties": false
+}

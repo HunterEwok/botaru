@@ -1,0 +1,105 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:botaru:schema:fact-offer:1",
+  "title": "Fact offer",
+  "description": "Fact offer (FactOffer) to a successor when an identity retires or its binding changes (MEM-7). Only the core writes it. It contains only active facts, rechecked at creation, at most memory.offer.max (100), only in the same tenant and only to one recipient by the closed successor table. It is open until the end of the seal of the leaving identity (open_until). A person does not approve the handover; P2 and the summary show only numbers.",
+  "x-botaru-direction": "record",
+  "x-botaru-retention": "memory",
+  "x-botaru-rules": [
+    "MEM-7",
+    "MEM-8",
+    "IDN-11",
+    "GOV-16"
+  ],
+  "type": "object",
+  "required": [
+    "id",
+    "tenant",
+    "from_bot",
+    "facts",
+    "state",
+    "recipient",
+    "open_until"
+  ],
+  "properties": {
+    "id": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/object_id",
+      "description": "Offer id."
+    },
+    "tenant": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/tenant_name",
+      "description": "Tenant of the offer and the recipient; the farm manager has a separate offer for the section of each tenant."
+    },
+    "from_bot": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/object_id",
+      "description": "The leaving identity or the identity that changed its binding."
+    },
+    "facts": {
+      "type": "array",
+      "maxItems": 100,
+      "uniqueItems": true,
+      "items": {
+        "$ref": "urn:botaru:schema:common:1#/$defs/object_id"
+      },
+      "description": "Ids of active rechecked facts."
+    },
+    "state": {
+      "enum": [
+        "open",
+        "closed"
+      ],
+      "description": "Offer state."
+    },
+    "recipient": {
+      "type": "object",
+      "required": [
+        "state"
+      ],
+      "properties": {
+        "bot": {
+          "description": "Successor, or null while there is none.",
+          "anyOf": [
+            {
+              "$ref": "urn:botaru:schema:common:1#/$defs/object_id"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "state": {
+          "enum": [
+            "waiting",
+            "pending",
+            "picked",
+            "declined",
+            "expired"
+          ],
+          "description": "Recipient state."
+        },
+        "task": {
+          "$ref": "urn:botaru:schema:common:1#/$defs/object_id",
+          "description": "Task memory.pick.v1 with the key system:handover:<fact offer>."
+        },
+        "taken": {
+          "type": "array",
+          "maxItems": 50,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "urn:botaru:schema:common:1#/$defs/object_id"
+          },
+          "description": "Taken facts, at most memory.offer.take_max (50)."
+        }
+      },
+      "description": "Recipient within the offer: one, the successor by the MEM-7 table."
+    },
+    "open_until": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/datetime",
+      "description": "End of the seal of the leaving identity."
+    },
+    "created_at": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/datetime",
+      "description": "Creation time."
+    }
+  }
+}

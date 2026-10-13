@@ -1,0 +1,171 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:botaru:schema:action:1",
+  "title": "Action",
+  "description": "spec of the Action manifest: a button with a closed form. What is approved is what is executed (MAN-9).",
+  "x-botaru-direction": "input",
+  "x-botaru-rules": [
+    "MAN-9",
+    "APR-10",
+    "APR-17",
+    "APR-19",
+    "DEP-4",
+    "INJ-1"
+  ],
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "title",
+    "description",
+    "risk",
+    "args",
+    "executor"
+  ],
+  "properties": {
+    "title": {
+      "type": "string",
+      "maxLength": 120,
+      "description": "Card title; a person writes it in git."
+    },
+    "description": {
+      "type": "string",
+      "maxLength": 2000,
+      "description": "Text for the model: what the action does and when to propose it."
+    },
+    "risk": {
+      "enum": [
+        "low",
+        "high",
+        "routine"
+      ],
+      "description": "Mandatory; shown on the card (APR-10)."
+    },
+    "args": {
+      "$ref": "urn:botaru:schema:embedded-schema:1#/$defs/closed_object",
+      "description": "Closed argument schema with required; a resource is set by enum_from: catalog.<list> (INJ-1, MAN-9)."
+    },
+    "ttl": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/duration",
+      "description": "Card deadline; without the field 60 minutes for low, 30 minutes for high, routine as low (APR-19)."
+    },
+    "idempotent": {
+      "type": "boolean",
+      "description": "A repeat with the same work id is not executed a second time (FEN-3)."
+    },
+    "approvals": {
+      "enum": [
+        1,
+        2
+      ],
+      "description": "How many different people approve; 1 by default (APR-10, APR-16)."
+    },
+    "executor": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "plugin": {
+          "$ref": "urn:botaru:schema:common:1#/$defs/name"
+        },
+        "tool": {
+          "type": "string",
+          "maxLength": 63,
+          "description": "Write tool of the plugin.",
+          "pattern": "^[a-z][a-z0-9_]{0,62}$"
+        },
+        "os_mechanism": {
+          "$ref": "urn:botaru:schema:manifest:1#/$defs/os_mechanism"
+        }
+      },
+      "required": [
+        "plugin",
+        "tool",
+        "os_mechanism"
+      ],
+      "description": "Executor (DEP-4)."
+    },
+    "writes_only": {
+      "type": "array",
+      "maxItems": 20,
+      "items": {
+        "type": "string",
+        "maxLength": 140,
+        "pattern": "^(res:[a-z][a-z0-9-]{0,62}:[a-z][a-z0-9-]{0,62}|[a-z][a-z0-9-]{0,62})$"
+      },
+      "description": "Only and mandatory with risk: routine: volumes res:<machine>:<volume> or catalog resources (MAN-9).",
+      "minItems": 1
+    },
+    "runs_per_hour": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 1000,
+      "description": "With risk: routine: runs per hour per tenant."
+    },
+    "runs_per_day": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 10000,
+      "description": "With risk: routine: runs per day per tenant."
+    },
+    "campaign": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "allowed": {
+          "type": "boolean",
+          "description": "Whether the action can be a campaign item."
+        },
+        "max_items": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 500,
+          "description": "Items."
+        },
+        "max_in_flight": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 100,
+          "description": "At the same time."
+        },
+        "canary_min": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 100,
+          "description": "Canary items."
+        },
+        "after_canary": {
+          "enum": [
+            "manual",
+            "auto"
+          ]
+        },
+        "max_failures_max": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 500,
+          "description": "Ceiling of the failure threshold."
+        }
+      },
+      "required": [
+        "allowed"
+      ],
+      "description": "Campaigns (ORC-5)."
+    },
+    "exclusive": {
+      "const": "resource",
+      "description": "At most one released write call per resource (ORC-12)."
+    },
+    "script": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "allowed": {
+          "type": "boolean",
+          "description": "Whether the action can be a script step (SCR-2)."
+        }
+      },
+      "required": [
+        "allowed"
+      ]
+    }
+  }
+}

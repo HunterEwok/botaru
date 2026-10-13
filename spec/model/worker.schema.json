@@ -1,0 +1,29 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:botaru:schema:worker:1",
+  "title": "Worker",
+  "description": "A worker record that P2 worker.enroll writes: tenant, role, kind, labels, and for a toolhost the plugins, placement and machine. A worker process serves one tenant (TEN-4). Liveness is last_seen at the core, not a worker self-report (STA-2). A worker record has no owner field: a personal assistant is a pool of workers, and the core writes the owner into the lease (DSP-10). Worker lifecycle: spec/lifecycles/worker.md.",
+  "x-botaru-direction": "record",
+  "x-botaru-rules": ["TEN-4", "STA-2", "DSP-10", "TEN-1"],
+  "type": "object",
+  "required": ["id", "tenant", "kind", "state"],
+  "properties": {
+    "id": { "$ref": "urn:botaru:schema:common:1#/$defs/object_id" },
+    "tenant": { "$ref": "urn:botaru:schema:common:1#/$defs/tenant_name" },
+    "role": { "$ref": "urn:botaru:schema:common:1#/$defs/name" },
+    "kind": { "enum": ["agent", "job", "toolhost", "channel", "sink", "monitor"] },
+    "labels": {
+      "description": "Labels recorded at enroll; hello may only narrow them.",
+      "type": "object", "additionalProperties": { "type": "string", "maxLength": 64 }
+    },
+    "plugins": { "description": "Toolhost only: plugins.", "type": "array", "items": { "$ref": "urn:botaru:schema:common:1#/$defs/name" } },
+    "placement": { "description": "Toolhost only.", "type": "string", "maxLength": 32 },
+    "host": { "description": "Toolhost only: a machine from the tenant catalog.", "$ref": "urn:botaru:schema:common:1#/$defs/name" },
+    "target": { "description": "Channel, sink or monitoring adapter: the name of the target the worker is recorded for; claim(delivery) hands out deliveries by it (TEN-3).", "$ref": "urn:botaru:schema:common:1#/$defs/name" },
+    "state": { "enum": ["enrolled", "active", "blocked", "draining", "revoked"] },
+    "last_seen": { "description": "Time of the last P1 call; any call updates it.", "$ref": "urn:botaru:schema:common:1#/$defs/datetime" },
+    "bot": { "description": "The bot identity bound to the worker.", "$ref": "urn:botaru:schema:common:1#/$defs/object_id" },
+    "bot_epoch": { "type": "integer", "minimum": 0 },
+    "owner": false
+  }
+}

@@ -1,0 +1,42 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:botaru:schema:monitor-script-result:1",
+  "title": "Monitoring script outcome",
+  "description": "Outcome of a monitor_script delivery from the E5 adapter through P1. output is untrusted data: only into the task's journal file; the model sees only closed fields (MON-10, INJ-13).",
+  "x-botaru-direction": "input",
+  "x-botaru-rules": [
+    "MON-10"
+  ],
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "status"
+  ],
+  "properties": {
+    "status": {
+      "description": "Outcome.",
+      "enum": [
+        "success",
+        "failed"
+      ]
+    },
+    "exit_code": {
+      "description": "Exit code; may be empty.",
+      "anyOf": [
+        {
+          "type": "integer",
+          "minimum": -255,
+          "maximum": 255
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "output": {
+      "description": "Script output up to 4096 bytes.",
+      "type": "string",
+      "maxLength": 4096
+    }
+  }
+}

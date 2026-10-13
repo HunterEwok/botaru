@@ -1,0 +1,14 @@
+schema: urn:botaru:schema:authz-request:1
+rules: [PRM-2, PRM-1]
+description: 'C2 requests that the schema rejects: an asterisk in a capability, extra field, unknown principal kind.'
+cases:
+- principal: {kind: human, id: 'human:p_01JB3Q7N0M2V8XK4DGT5RZP9WB', tenant: demo}
+  action: task:ops.*
+  resource: {tenant: demo, kind: task_type, id: ops.investigate.v1}
+- principal: {kind: human, id: 'human:p_01JB3Q7N0M2V8XK4DGT5RZP9WB', tenant: demo}
+  action: task:ops.investigate.v1
+  resource: {tenant: demo, kind: task_type}
+  cache: true
+- principal: {kind: bot, id: ops-reader, tenant: demo}
+  action: data:raw_logs
+  resource: {tenant: demo, kind: task}

@@ -1,0 +1,82 @@
+# Approval deadline and reminders (APR-19). The deadline comes from the ttl of the action manifest; without ttl it is 60 minutes for risk low,
+# 30 minutes for risk high; for risk low no less than 60 minutes; a reminder at half the term, once.
+id: fx-approval-ttl
+rules: [APR-19]
+description: The approval deadline and reminder are counted from the creation of the record; card.remind no more often than once per 5 minutes.
+cases:
+- id: apr-ttl-01
+  rules: [APR-19]
+  given:
+    action: {risk: low}
+    created_at: '2026-03-02T09:00:00Z'
+  expect: {expires_at: '2026-03-02T10:00:00Z', remind_at: '2026-03-02T09:30:00Z'}
+- id: apr-ttl-02
+  rules: [APR-19]
+  given:
+    action: {risk: high}
+    created_at: '2026-03-02T09:00:00Z'
+  expect: {expires_at: '2026-03-02T09:30:00Z', remind_at: '2026-03-02T09:15:00Z'}
+- id: apr-ttl-03
+  rules: [APR-19]
+  given:
+    action: {risk: high, ttl: 2h}
+    created_at: '2026-03-02T09:00:00Z'
+  expect: {expires_at: '2026-03-02T11:00:00Z'}
+- id: apr-ttl-04
+  rules: [APR-19]
+  steps:
+  - lint: {action_yaml: 'risk: low, ttl: 15m'}
+  expect: {result: rejected, stage: apply, note: for risk low the deadline is no less than 60 minutes}
+- id: apr-ttl-05
+  rules: [APR-19]
+  given:
+    action: {risk: routine}
+  expect: {approval: none, note: a routine pipeline does not create an approval (APR-17)}
+- id: apr-ttl-06
+  rules: [APR-19]
+  steps:
+  - call:
+      port: P1
+      op: card.remind
+      request: {op: card.remind, subject_kind: approval, id: $last}
+    by: human:bob
+    at: '2026-03-02T09:10:00Z'
+    expect: {card_update: undecided_approvers}
+  - call:
+      port: P1
+      op: card.remind
+      request: {op: card.remind, subject_kind: approval, id: $last}
+    by: human:bob
+    at: '2026-03-02T09:12:00Z'
+    expect: {reason: service_rate_limited}
+  - call:
+      port: P1
+      op: card.remind
+      request: {op: card.remind, subject_kind: approval, id: $last}
+    by: human:bob
+    at: '2026-03-02T09:16:00Z'
+    expect: {card_update: undecided_approvers}
+- id: apr-ttl-07
+  rules: [APR-19, APR-4]
+  steps:
+  - call:
+      port: P1
+      op: card.remind
+      request: {op: card.remind, subject_kind: approval, id: $last}
+    by: human:carol
+    note: not the initiator
+  expect: {reason: forbidden}
+- id: apr-ttl-08
+  rules: [APR-19]
+  given:
+    people:
+    - principal: human:carol
+      groups: [approver]
+  steps:
+  - call:
+      port: P1
+      op: decide
+      request: {subject_kind: approval, id: $last, decision: approve}
+    by: human:carol
+    at: '2026-03-02T10:00:01Z'
+  expect: {reason: expired, state: expired, write_calls: 0}

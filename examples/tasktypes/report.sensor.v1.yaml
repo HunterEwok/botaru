@@ -1,0 +1,43 @@
+# Morning sensor summary by the reporter: child task of data.sensor_check.v1 (flow 5).
+# The date field from flow 5 is absent here: formats.yaml has no date format yet (open question in docs/open-questions.md).
+apiVersion: botaru/v1alpha1
+kind: TaskType
+metadata: {name: report.sensor.v1}
+spec:
+  title: "Morning sensor summary"
+  worker_kind: agent
+  purpose: report
+  tier: 0
+  data_class: summary
+  instruction: |
+    Write 2-3 sentences for the lab chat. Numbers only from params: the code draws the table.
+  params_schema:
+    type: object
+    additionalProperties: false
+    required: [sensors]
+    properties:
+      sensors:
+        type: array
+        maxItems: 50
+        items:
+          type: object
+          additionalProperties: false
+          required: [id, completeness_pct, gaps, out_of_range, stuck_channel]
+          properties:
+            id: {enum_from: catalog.sensors}
+            completeness_pct: {type: number, minimum: 0, maximum: 100}
+            gaps: {type: integer, minimum: 0, maximum: 1000}
+            out_of_range: {type: integer, minimum: 0, maximum: 100000}
+            stuck_channel: {enum: [none, temp, humidity, pressure]}
+  result_schema:
+    type: object
+    additionalProperties: false
+    required: [text]
+    properties:
+      text: {type: string, maxLength: 800}
+  dispatch: {priority_class: 4}
+  timeouts: {start_by: 30m, lease: 60s, heartbeat: 20s, attempt: 2m, deadline: 1h}
+  retry: {max_attempts: 2, max_runs: 3}
+  tree_budget_eur: 0.05
+  max_children: 0
+  proposable: false                  # purpose is not work, or an alarm in events (PRP-10)

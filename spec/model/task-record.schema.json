@@ -1,0 +1,260 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:botaru:schema:task-record:1",
+  "title": "Task record",
+  "description": "A task record that only the core writes. The sender sends the body (task-body); the schema rejects a request with any record field (IDN-1). The record belongs to exactly one tenant, and it does not change (TEN-1). There are five stored states: rejected is an answer to an enqueue, and there is no task record with it. Task lifecycle: spec/lifecycles/task.md.",
+  "x-botaru-direction": "record",
+  "x-botaru-rules": [
+    "IDN-1",
+    "TEN-1",
+    "FEN-1",
+    "FEN-3",
+    "DSP-7",
+    "CNT-5",
+    "IDM-1"
+  ],
+  "type": "object",
+  "required": [
+    "id",
+    "tenant",
+    "type",
+    "initiator",
+    "enqueued_by",
+    "depth",
+    "state",
+    "lease_no",
+    "attempts_spent",
+    "runs_counted",
+    "max_tier",
+    "data_mark",
+    "untrusted_seen",
+    "priority_class"
+  ],
+  "properties": {
+    "id": {
+      "description": "Task id; never reused.",
+      "$ref": "urn:botaru:schema:common:1#/$defs/object_id"
+    },
+    "tenant": {
+      "description": "Tenant from the credentials (TEN-2).",
+      "$ref": "urn:botaru:schema:common:1#/$defs/tenant_name"
+    },
+    "type": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/type_name"
+    },
+    "idempotency_key": {
+      "description": "Idempotency key; the pair (tenant, idempotency_key) stays unique even after the task is deleted (IDM-1).",
+      "type": "string",
+      "maxLength": 300
+    },
+    "initiator": {
+      "description": "The principal on whose behalf the task runs: a person, an external program service, or system.",
+      "$ref": "urn:botaru:schema:common:1#/$defs/principal_ref"
+    },
+    "initiators": {
+      "description": "Set of initiators: the initiator and the initiators of everything the attempt read; the attempt permissions are intersected with all of them (PRM-6).",
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "$ref": "urn:botaru:schema:common:1#/$defs/principal_ref"
+      }
+    },
+    "enqueued_by": {
+      "description": "Who enqueued it: a channel, a worker with an attempt, a schedule, a route, the core.",
+      "type": "string",
+      "maxLength": 200
+    },
+    "origin": {
+      "description": "Where to reply: the channel and chat, signed by the core on intake. Not part of the attempt work item (SEC-4).",
+      "type": "object",
+      "required": [
+        "channel",
+        "chat"
+      ],
+      "properties": {
+        "channel": {
+          "description": "Name of the channel through which the task came.",
+          "$ref": "urn:botaru:schema:common:1#/$defs/name"
+        },
+        "chat": {
+          "$ref": "urn:botaru:schema:activity:1#/properties/chat"
+        }
+      },
+      "additionalProperties": false
+    },
+    "conversation": {
+      "description": "Opaque conversation id computed by the core from origin.",
+      "type": "string",
+      "maxLength": 200
+    },
+    "parent": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/object_id"
+    },
+    "root": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/object_id"
+    },
+    "depth": {
+      "description": "Depth in the task tree, at most 5 (PRM-6).",
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 5
+    },
+    "correlationid": {
+      "description": "Tree root for limits.",
+      "type": "string",
+      "maxLength": 200
+    },
+    "refs": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "maxLength": 200
+      }
+    },
+    "continues": {
+      "description": "The task that this one continues; only the core sets it, on a reply or within the continuation window (CNT-5).",
+      "$ref": "urn:botaru:schema:common:1#/$defs/object_id"
+    },
+    "max_tier": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/tier"
+    },
+    "data_mark": {
+      "description": "Data mark; fixed at enqueue (PRM-5).",
+      "$ref": "urn:botaru:schema:common:1#/$defs/data_mark"
+    },
+    "untrusted_seen": {
+      "description": "Untrusted flag; it is only set, never cleared (INJ-13).",
+      "type": "boolean"
+    },
+    "untrusted_source": {
+      "description": "Source of the untrusted flag, for example logs/tail or goal:service.",
+      "type": "string",
+      "maxLength": 120
+    },
+    "personal_subjects": {
+      "description": "Principals whose personal data is in the body, attachments or result.",
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "$ref": "urn:botaru:schema:common:1#/$defs/principal_ref"
+      }
+    },
+    "approval_id": {
+      "description": "Approval number of an action.<a> task (CNT-7).",
+      "$ref": "urn:botaru:schema:common:1#/$defs/object_id"
+    },
+    "to_group": {
+      "description": "Bot group the task is addressed to (D5).",
+      "$ref": "urn:botaru:schema:common:1#/$defs/name"
+    },
+    "priority_class": {
+      "description": "Priority class: 1 control, 2 interactive, 3 normal, 4 batch, 5 background (DSP-5).",
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 5
+    },
+    "fairness_key": {
+      "description": "Dispatcher fairness key; the core writes it.",
+      "type": "string",
+      "maxLength": 200
+    },
+    "scope": {
+      "description": "Resource scope.",
+      "type": "array",
+      "items": {
+        "$ref": "urn:botaru:schema:common:1#/$defs/name"
+      }
+    },
+    "state": {
+      "enum": [
+        "submitted",
+        "working",
+        "completed",
+        "failed",
+        "canceled"
+      ]
+    },
+    "reason": {
+      "description": "Reason for the final state from the reason registry, for example attempts_exhausted or initiator (result canceled(initiator)).",
+      "$ref": "urn:botaru:schema:common:1#/$defs/reason"
+    },
+    "lease_no": {
+      "description": "Number of the last lease; grows with each claim.",
+      "type": "integer",
+      "minimum": 0
+    },
+    "attempts_spent": {
+      "description": "Spent attempts; compared with retry.max_attempts, ceiling 3.",
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 3
+    },
+    "runs_counted": {
+      "description": "Runtime runs with a model answer; compared with retry.max_runs, ceiling 6.",
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 6
+    },
+    "waiting_reason": {
+      "description": "Why a task in submitted is not handed out right now.",
+      "type": "string",
+      "maxLength": 64,
+      "x-botaru-registry": "waiting-reasons"
+    },
+    "run_at": {
+      "description": "Time before which the task is not handed out (retry pause).",
+      "$ref": "urn:botaru:schema:common:1#/$defs/datetime"
+    },
+    "followup_until": {
+      "description": "End of the continuation window after a result with need_input: true (CNT-5).",
+      "$ref": "urn:botaru:schema:common:1#/$defs/datetime"
+    },
+    "pin": {
+      "description": "Pinning to a worker; only the control lane writes it (D12).",
+      "$ref": "urn:botaru:schema:common:1#/$defs/object_id"
+    },
+    "campaign": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/object_id"
+    },
+    "campaign_item": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "script_run": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/object_id"
+    },
+    "script_step": {
+      "type": "string",
+      "maxLength": 64
+    },
+    "acting_bot": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/object_id"
+    },
+    "bot_epoch": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "seat_epoch": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "incident": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/object_id"
+    },
+    "grant": {
+      "x-botaru-version": "v0.2",
+      "description": "Model grant.",
+      "type": "string",
+      "maxLength": 80
+    },
+    "takeover_of": {
+      "x-botaru-version": "v0.2",
+      "$ref": "urn:botaru:schema:common:1#/$defs/object_id"
+    },
+    "trace": {
+      "x-botaru-version": "v0.2",
+      "type": "string",
+      "maxLength": 200
+    }
+  }
+}

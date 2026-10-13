@@ -1,0 +1,81 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:botaru:schema:p1-complete-request:1",
+  "title": "P1 complete: request",
+  "description": "The holder hands in the outcome: the attempt result by the type's schema (result), a delivery receipt or the outcome of a monitor_script delivery (receipt), a tool call result (output), the outcome of erasure or match work (erasure). In the same transaction the core writes the transition, event, deliveries and usage (DLV-2). The request has neither addresses nor record fields (DLV-6, IDN-1). The lease token is not passed in the body: the holder sends it in the Botaru-Lease header (spec/bindings/http/README.md), one way for all operations under a lease (FEN-2).",
+  "x-botaru-direction": "input",
+  "x-botaru-rules": [
+    "FEN-2",
+    "DLV-2",
+    "DLV-6",
+    "OUT-1",
+    "IDM-3"
+  ],
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "result": {
+      "description": "Attempt result; the core checks it with the full result_schema of the type, otherwise output_schema_invalid.",
+      "type": "object",
+      "maxProperties": 64,
+      "x-botaru-closed-by": "result_schema of the task type (OUT-2)"
+    },
+    "output": {
+      "description": "Plugin outcome for a tool call; for a write call the toolhost has checked the approval_id or grant_id, the tenant and the argument hash.",
+      "type": "object",
+      "maxProperties": 64,
+      "x-botaru-closed-by": "result_schema of the tool from the catalog (builtin-tools.yaml or the plugin manifest)"
+    },
+    "receipt": {
+      "description": "Delivery receipt: the external message id; for a monitor_script delivery the exit code and the output truncated to 4096 bytes, which the core writes to the task journal as untrusted data (DLV-3).",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "external_id": {
+          "type": "string",
+          "maxLength": 200
+        },
+        "exit_code": {
+          "type": "integer",
+          "minimum": -255,
+          "maximum": 255
+        },
+        "output": {
+          "type": "string",
+          "maxLength": 4096
+        },
+        "location": {
+          "description": "Only the E2 sink: where the artifact is written; built from the manifest base, the tenant and the id (DLV-6).",
+          "type": "string",
+          "maxLength": 500
+        }
+      }
+    },
+    "erasure": {
+      "description": "Outcome of work of kind erasure: a step of an erasure or match request at an edge store (RET-4, RET-7).",
+      "$ref": "urn:botaru:schema:erasure-outcome:1"
+    }
+  },
+  "oneOf": [
+    {
+      "required": [
+        "result"
+      ]
+    },
+    {
+      "required": [
+        "output"
+      ]
+    },
+    {
+      "required": [
+        "receipt"
+      ]
+    },
+    {
+      "required": [
+        "erasure"
+      ]
+    }
+  ]
+}

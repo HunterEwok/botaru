@@ -1,0 +1,197 @@
+schema: spec/manifests/action.schema.json
+rules:
+- MAN-1
+description: 'Action manifest specs that the kind schema rejects: extra field, missing required field, value outside the
+  closed list or format.'
+cases:
+- title: Clean the pipeline temporary directory
+  description: Deletes files older than the given number of days from the tenant's pipeline temporary directory on the machine.
+    Propose it when the pipeline volume runs out of space and the code's numbers confirm it.
+  risk: low
+  args:
+    type: object
+    additionalProperties: false
+    required:
+    - older_than_days
+    properties:
+      older_than_days:
+        type: integer
+        minimum: 3
+        maximum: 30
+  ttl: 60m
+  idempotent: true
+  exclusive: resource
+  campaign:
+    allowed: true
+    max_items: 20
+    max_in_flight: 2
+    canary_min: 1
+    after_canary: manual
+    max_failures_max: 0
+  executor:
+    plugin: pipeline
+    tool: cleanup_tmp
+    os_mechanism:
+      oneshot:
+        unit: pipeline-tmp-clean-{tenant}.service
+        started_by: pipeline-tmp-clean-{tenant}.path
+        wait: false
+  unexpected_field: true
+- description: Deletes files older than the given number of days from the tenant's pipeline temporary directory on the machine.
+    Propose it when the pipeline volume runs out of space and the code's numbers confirm it.
+  risk: low
+  args:
+    type: object
+    additionalProperties: false
+    required:
+    - older_than_days
+    properties:
+      older_than_days:
+        type: integer
+        minimum: 3
+        maximum: 30
+  ttl: 60m
+  idempotent: true
+  exclusive: resource
+  campaign:
+    allowed: true
+    max_items: 20
+    max_in_flight: 2
+    canary_min: 1
+    after_canary: manual
+    max_failures_max: 0
+  executor:
+    plugin: pipeline
+    tool: cleanup_tmp
+    os_mechanism:
+      oneshot:
+        unit: pipeline-tmp-clean-{tenant}.service
+        started_by: pipeline-tmp-clean-{tenant}.path
+        wait: false
+- title: Clean the pipeline temporary directory
+  risk: low
+  args:
+    type: object
+    additionalProperties: false
+    required:
+    - older_than_days
+    properties:
+      older_than_days:
+        type: integer
+        minimum: 3
+        maximum: 30
+  ttl: 60m
+  idempotent: true
+  exclusive: resource
+  campaign:
+    allowed: true
+    max_items: 20
+    max_in_flight: 2
+    canary_min: 1
+    after_canary: manual
+    max_failures_max: 0
+  executor:
+    plugin: pipeline
+    tool: cleanup_tmp
+    os_mechanism:
+      oneshot:
+        unit: pipeline-tmp-clean-{tenant}.service
+        started_by: pipeline-tmp-clean-{tenant}.path
+        wait: false
+- title: Clean the pipeline temporary directory
+  description: Deletes files older than the given number of days from the tenant's pipeline temporary directory on the machine.
+    Propose it when the pipeline volume runs out of space and the code's numbers confirm it.
+  risk: medium
+  args:
+    type: object
+    additionalProperties: false
+    required:
+    - older_than_days
+    properties:
+      older_than_days:
+        type: integer
+        minimum: 3
+        maximum: 30
+  ttl: 60m
+  idempotent: true
+  exclusive: resource
+  campaign:
+    allowed: true
+    max_items: 20
+    max_in_flight: 2
+    canary_min: 1
+    after_canary: manual
+    max_failures_max: 0
+  executor:
+    plugin: pipeline
+    tool: cleanup_tmp
+    os_mechanism:
+      oneshot:
+        unit: pipeline-tmp-clean-{tenant}.service
+        started_by: pipeline-tmp-clean-{tenant}.path
+        wait: false
+- title: Clean the pipeline temporary directory
+  description: Deletes files older than the given number of days from the tenant's pipeline temporary directory on the machine.
+    Propose it when the pipeline volume runs out of space and the code's numbers confirm it.
+  risk: low
+  args:
+    type: object
+    additionalProperties: false
+    required:
+    - older_than_days
+    properties:
+      older_than_days:
+        type: integer
+        minimum: 3
+        maximum: 30
+  ttl: 60m
+  idempotent: true
+  exclusive: resource
+  campaign:
+    allowed: true
+    max_items: 20
+    max_in_flight: 2
+    canary_min: 1
+    after_canary: manual
+    max_failures_max: 0
+  executor:
+    plugin: pipeline
+    tool: cleanup_tmp
+    os_mechanism:
+      oneshot:
+        unit: pipeline-tmp-clean-{tenant}.service
+        started_by: pipeline-tmp-clean-{tenant}.path
+        wait: false
+  approvals: 3
+- title: Clean the pipeline temporary directory
+  description: Deletes files older than the given number of days from the tenant's pipeline temporary directory on the machine.
+    Propose it when the pipeline volume runs out of space and the code's numbers confirm it.
+  risk: low
+  args:
+    type: object
+    additionalProperties: false
+    required:
+    - older_than_days
+    properties:
+      older_than_days:
+        type: integer
+        minimum: 3
+        maximum: 30
+  ttl: '60'
+  idempotent: true
+  exclusive: resource
+  campaign:
+    allowed: true
+    max_items: 20
+    max_in_flight: 2
+    canary_min: 1
+    after_canary: manual
+    max_failures_max: 0
+  executor:
+    plugin: pipeline
+    tool: cleanup_tmp
+    os_mechanism:
+      oneshot:
+        unit: pipeline-tmp-clean-{tenant}.service
+        started_by: pipeline-tmp-clean-{tenant}.path
+        wait: false

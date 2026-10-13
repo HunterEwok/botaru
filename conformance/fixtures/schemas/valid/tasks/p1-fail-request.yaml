@@ -1,0 +1,6 @@
+schema: spec/model/p1-fail-request.schema.json
+rules: [FEN-3]
+description: 'fail requests that the schema accepts: a code from the registry with a retry flag and a pause.'
+cases:
+- {reason: runtime_error, retryable: true}
+- {reason: provider_rate_limited, retryable: true, retry_after_s: 20}

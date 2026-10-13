@@ -1,0 +1,77 @@
+id: fx-mgr-15
+rules: [MGR-1, IDN-10]
+description: Only P2 seat.assign from a person with admin:governance in farm through farmctl assigns a holder, and the core
+  always creates a new identity without origin; a bot from the commission does not move to the seat. When a person replaces the holder,
+  the previous holder's waiting cards move to canceled(seat_changed), and their holds live no longer than 15 minutes.
+given:
+  seat:
+    id: farm-manager
+    tenant: farm
+    state: held
+    holder: bot_41
+    epoch: 9
+    stop_reasons: []
+  bot_41_pending_cards: [cc_2, ap_4]
+  bot_41_holds:
+  - {id: h_7, until: '2026-11-24T07:00:00Z'}
+  commission_bot: bot_05
+cases:
+- id: fx-mgr-15-a
+  given:
+    via: farmctl
+    people:
+    - principal: human:bob
+      caps: ['admin:governance@farm']
+  steps:
+  - call:
+      port: P2
+      op: seat.assign
+      request: {seat: farm-manager}
+    by: human:bob
+    at: '2026-11-24T06:00:00Z'
+  expect:
+    new_holder: {tenant: farm, origin: null, is_new_identity: true}
+    bot_41: {state: retired, reason: replaced_by_human}
+    cards: {cc_2: canceled(seat_changed), ap_4: canceled(seat_changed)}
+    holds:
+      h_7: {until: '2026-11-24T06:15:00Z'}
+    seat_epoch: 10
+- id: fx-mgr-15-b
+  given:
+    via: farmctl
+    people:
+    - principal: human:bob
+      caps: ['admin:governance@farm']
+  steps:
+  - call:
+      port: P2
+      op: seat.assign
+      request: {seat: farm-manager, bot: bot_05}
+    by: human:bob
+    expect: {result: rejected, reason: input_schema_invalid}
+- id: fx-mgr-15-c
+  given:
+    via: channel
+    people:
+    - principal: human:bob
+      caps: ['admin:governance@farm']
+  steps:
+  - call:
+      port: P2
+      op: seat.assign
+      request: {seat: farm-manager}
+    by: human:bob
+  expect: {result: rejected, reason: operator_only}
+- id: fx-mgr-15-d
+  given:
+    via: farmctl
+    people:
+    - principal: human:alice
+      caps: ['admin:governance@demo']
+  steps:
+  - call:
+      port: P2
+      op: seat.assign
+      request: {seat: farm-manager}
+    by: human:alice
+  expect: {result: rejected, reason: forbidden}

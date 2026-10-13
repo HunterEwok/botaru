@@ -1,0 +1,79 @@
+id: fx-man-prm-01
+rules: [PRM-7, APR-5, PRM-2, PRM-10, PRM-16, PRM-17]
+description: >-
+  Group permissions by file: an asterisk only at the end of task:<prefix>.* and never on
+  action.*; action.request, action.approve, admin, data and decision permissions have
+  no asterisks (PRM-7); a grant on an action.* type is rejected (APR-5); system has no
+  decision permissions, and its group system-ops contains the schedule and route types
+  (PRM-10); delegated_groups only without actions and decisions (PRM-16, row
+  lint:manifests/delegated-groups-level); built-in channel commands cannot be taken
+  (PRM-17).
+with_examples: true
+cases:
+  - name: asterisk over a family of types
+    manifests:
+      - {apiVersion: botaru/v1alpha1, kind: Group, metadata: {name: fx-ops, tenant: demo}, spec: {caps: ["task:ops.*"]}}
+    expect: ok
+  - name: asterisk in action approval
+    manifests:
+      - {apiVersion: botaru/v1alpha1, kind: Group, metadata: {name: fx-ops, tenant: demo}, spec: {caps: ["action.approve:*"]}}
+    expect: {error: cap_star}
+  - name: asterisk in action request
+    manifests:
+      - {apiVersion: botaru/v1alpha1, kind: Group, metadata: {name: fx-ops, tenant: demo}, spec: {caps: ["action.request:pipeline.*"]}}
+    expect: {error: cap_star}
+  - name: asterisk in services
+    manifests:
+      - {apiVersion: botaru/v1alpha1, kind: Group, metadata: {name: fx-ops, tenant: demo}, spec: {caps: ["service.control:*"]}}
+    expect: {error: cap_star}
+  - name: asterisk on all types
+    manifests:
+      - {apiVersion: botaru/v1alpha1, kind: Group, metadata: {name: fx-ops, tenant: demo}, spec: {caps: ["task:*"]}}
+    expect: {error: cap_star}
+  - name: grant on action types
+    manifests:
+      - {apiVersion: botaru/v1alpha1, kind: Group, metadata: {name: fx-ops, tenant: demo}, spec: {caps: ["task:action.cleanup_pipeline_tmp"]}}
+    expect: {error: action_type_grant}
+  - name: request for an undeclared action
+    manifests:
+      - {apiVersion: botaru/v1alpha1, kind: Group, metadata: {name: fx-ops, tenant: demo}, spec: {caps: ["action.request:rm_rf"]}}
+    expect: {error: cap_unknown_action}
+  - name: data class pii is not granted
+    manifests:
+      - {apiVersion: botaru/v1alpha1, kind: Group, metadata: {name: fx-ops, tenant: demo}, spec: {caps: ["task:ops.summary.v1"], data: [pii]}}
+    expect: {error: cap_data_class}
+  - name: group with action.request in delegated_groups
+    manifests:
+      - apiVersion: botaru/v1alpha1
+        kind: Group
+        metadata: {name: researcher, tenant: demo}
+        spec: {caps: ["task:geo.describe.v1", "action.request:cleanup_pipeline_tmp"], data: [summary, internal]}
+    expect: {error: delegated_group_privileged}
+  - name: group with class raw_logs in delegated_groups
+    manifests:
+      - apiVersion: botaru/v1alpha1
+        kind: Group
+        metadata: {name: researcher, tenant: demo}
+        spec: {caps: ["task:geo.describe.v1"], data: [summary, internal, raw_logs]}
+    expect: {error: delegated_group_privileged}
+  - name: decision permission for system
+    manifests:
+      - apiVersion: botaru/v1alpha1
+        kind: Group
+        metadata: {name: system-ops, tenant: demo}
+        spec:
+          caps: ["task:data.sensor_check.v1", "task:data.sensor_watch.v1", "task:report.sensor.v1", "task:check.http.v1",
+                 "task:pipeline.watch.v1", "task:pipeline.status.v1", "task:pipeline.ctd_qc.report.v1",
+                 "task:report.monthly.numbers.v1", "task:report.monthly.v1", "proposal.decide:schedule"]
+          data: [summary, internal]
+    expect: {error: system_decision_cap}
+  - name: schedule type without a row in system-ops
+    manifests:
+      - apiVersion: botaru/v1alpha1
+        kind: Group
+        metadata: {name: system-ops, tenant: demo}
+        spec:
+          caps: ["task:data.sensor_watch.v1", "task:report.sensor.v1", "task:check.http.v1",
+                 "task:pipeline.watch.v1", "task:pipeline.status.v1", "task:pipeline.ctd_qc.report.v1"]
+          data: [summary, internal]
+    expect: {error: system_ops_missing}

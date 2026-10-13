@@ -1,0 +1,46 @@
+schema: urn:botaru:schema:p2-hold-set-request:1
+rules:
+- HLD-1
+- TIM-2
+description: Effect not from the list, extra field author (the core writes it), empty effects, time not in UTC, scope not
+  from the list.
+cases:
+- scope:
+    kind: tasktype
+    tenant: demo
+    name: report.daily.v1
+  effects:
+  - no_everything
+  reason: held
+  until: null
+- scope:
+    kind: plugin
+    tenant: demo
+    name: logs
+  effects:
+  - no_tool
+  reason: held
+  until: null
+  author: human:bob
+- scope:
+    kind: plugin
+    tenant: demo
+    name: logs
+  effects: []
+  reason: held
+  until: null
+- scope:
+    kind: plugin
+    tenant: demo
+    name: logs
+  effects:
+  - no_tool
+  reason: held
+  until: '2026-10-07T21:00:00+02:00'
+- scope:
+    kind: datacenter
+    tenant: demo
+  effects:
+  - no_tool
+  reason: held
+  until: null

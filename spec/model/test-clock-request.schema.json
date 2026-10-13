@@ -1,0 +1,30 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:botaru:schema:test-clock-request:1",
+  "title": "Test bench clock.set and clock.advance: request",
+  "description": "Shift of the test bench store clock: set an instant or move forward by seconds. The store clock is primary for all deadlines (TIM-1), so lease, approval and schedule deadlines are counted from the new clock. Test bench port only (spec/ports/test-control.md).",
+  "x-botaru-direction": "input",
+  "x-botaru-rules": [
+    "APR-9",
+    "TIM-1"
+  ],
+  "type": "object",
+  "required": [
+    "op"
+  ],
+  "properties": {
+    "op": {
+      "enum": [
+        "clock.set",
+        "clock.advance"
+      ]
+    },
+    "at": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/datetime"
+    },
+    "by_s": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/seconds"
+    }
+  },
+  "additionalProperties": false
+}

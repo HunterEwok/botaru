@@ -1,0 +1,44 @@
+schema: urn:botaru:schema:audit-record:1
+rules: [AUD-6, APR-18, RET-6]
+description: A service_grant record about an nginx restart by the bot ops-reader for a task of bob, a group grant record
+  and a restore record about a new epoch after a restore from backup in the farm chain.
+cases:
+- seq: 1041
+  at: '2026-03-02T09:10:00Z'
+  tenant: demo
+  kind: service_grant
+  actor: {principal: 'human:p_01JB3Q7N0M2V8XK4DGT5RZP9WA', via: bot, role: ops-reader, task: t_01J9Z3M2Q8YB6V4N7T5K0C2D1E}
+  command: service/control
+  target: {kind: service, id: nginx}
+  ok: true
+  service_grant:
+    author: {kind: bot, principal: 'human:p_01JB3Q7N0M2V8XK4DGT5RZP9WA', role: ops-reader, task: t_01J9Z3M2Q8YB6V4N7T5K0C2D1E}
+    service: nginx
+    verb: restart
+    host: web1
+    args_hash: sha256:3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f
+    task_reason: exec_failed
+    outcome: done
+  prev_hash: sha256:a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1
+  hash: sha256:b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2
+- seq: 1042
+  at: '2026-03-02T09:11:00Z'
+  tenant: demo
+  kind: command
+  actor: {principal: system, via: farmctl}
+  command: grant
+  target: {kind: membership, id: 'human:p_01JB3Q7N0M2V8XK4DGT5RZP9WA/ops-oncall'}
+  git_rev: 9c1e2f7
+  ok: true
+  prev_hash: sha256:b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2
+  hash: sha256:c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3
+- seq: 88
+  at: '2026-03-03T06:00:00Z'
+  tenant: farm
+  kind: restore
+  actor: {principal: system, via: farmctl}
+  command: restore
+  ok: true
+  restore: {epoch: 3, previous_epoch: 2, backup_at: '2026-03-03T02:00:00Z'}
+  prev_hash: sha256:d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4
+  hash: sha256:e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5

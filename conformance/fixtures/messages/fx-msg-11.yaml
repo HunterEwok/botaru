@@ -1,0 +1,85 @@
+id: fx-msg-11
+rules: [MSG-17, DLV-9, DLV-12]
+description: 'Activity from a non-principal in a bound chat. A channel identity that is not mapped to a principal
+  of the tenant (here a member of the group chat lab with membership_assurance: none) creates no Activity, task, file
+  (file.put is not called) or session record; the core does not store the text and attachments, and only activity.ignored goes to the audit
+  with reason not_subject, the channel identity and the chat. The channel code replies by repeating ai_notice and privacy_notice
+  as code text no more often than once per notice_repeat (90 days by default) per pair (chat, identity); in a private chat the reply
+  also carries notice.not_registered.'
+given:
+  tenant: demo
+  chat: {name: lab, kind: group, membership_assurance: none, notice_repeat: 90d}
+  identity: {channel: telegram, user_id: 'tg:900000001', mapped_subject: null}
+steps:
+- call:
+    port: P1
+    op: submit_activity
+    request:
+      kind: message
+      channel: telegram
+      update_id: '1'
+      sender: {identity: 'telegram:900000001', verified: true}
+      chat: {kind: group, external_id: '-1001001'}
+      text: can I use this too?
+  context: {attachment: notes.txt}
+  at: '2026-10-06T09:00:00Z'
+  expect:
+    activity: none
+    task: none
+    file_put_calls: 0
+    session_entries: 0
+    stored_text: none
+    audit:
+    - {event: activity.ignored, reason: not_subject, identity: 'tg:900000001', chat: lab}
+    deliveries:
+    - to: chat:lab
+      text_keys: [notice.ai, notice.privacy]
+      dataorigin: code
+- call:
+    port: P1
+    op: submit_activity
+    request:
+      kind: message
+      channel: telegram
+      update_id: '2'
+      sender: {identity: 'telegram:900000001', verified: true}
+      chat: {kind: group, external_id: '-1001001'}
+      text: /health@demo_bot
+  at: '2026-10-06T15:00:00Z'
+  expect:
+    activity: none
+    audit:
+    - {event: activity.ignored, reason: not_subject}
+    deliveries: []
+- call:
+    port: P1
+    op: submit_activity
+    request:
+      kind: message
+      channel: telegram
+      update_id: '3'
+      sender: {identity: 'telegram:900000002', verified: true}
+      chat: {kind: direct, external_id: '1001'}
+      text: hello
+  at: '2026-10-06T16:00:00Z'
+  expect:
+    activity: none
+    deliveries:
+    - to: direct
+      text_keys: [notice.ai, notice.privacy, notice.not_registered]
+- call:
+    port: P1
+    op: submit_activity
+    request:
+      kind: message
+      channel: telegram
+      update_id: '4'
+      sender: {identity: 'telegram:900000001', verified: true}
+      chat: {kind: group, external_id: '-1001001'}
+      text: me again
+  at: '2027-01-05T09:00:01Z'
+  expect:
+    deliveries:
+    - to: chat:lab
+      text_keys: [notice.ai, notice.privacy]
+expect: {model_calls: 0}

@@ -1,0 +1,16 @@
+# evals/cases/hello/hello-001.yaml (catalog: evals/README.md)
+id: hello-001
+kind: quality
+blocking: false
+status: active
+version: v0.1
+rules: [DLV-12]
+summary: 'dave (only this case) in a direct chat: /hello; on first contact first ai_notice and privacy_notice, then the task answer in one sentence; no tools (D-86 (10)).'
+from: dave
+chat: dave-dm
+message: /hello
+expect:
+  state: completed
+  checks:
+  - {max_tool_calls: 0}
+  - store: {path: 'deliveries[?chat==dave-dm].kind', equals: [ai_notice, privacy_notice, task_result]}

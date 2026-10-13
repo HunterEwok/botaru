@@ -1,0 +1,11 @@
+schema: spec/model/observation-query.schema.json
+rules: [OBV-3, TEN-2]
+description: >-
+  observations_query arguments that the schema rejects: window not from the list (30d); rollup of the wrong kind;
+  tenant field; path instead of subject; query without subject and without group_by.
+cases:
+  - {series: farm.task.outcome, subject: 'task_type:demo.db.backup.v1', window: 30d, rollup: window.share}
+  - {series: farm.task.outcome, subject: 'task_type:demo.db.backup.v1', window: 14d, rollup: 'SELECT *'}
+  - {series: farm.task.outcome, subject: 'task_type:demo.db.backup.v1', window: 14d, rollup: window.share, tenant: demo2}
+  - {series: host.load.v1, subject: '../demo2/db1', window: 14d, rollup: hour.max}
+  - {series: host.load.v1, window: 14d, rollup: hour.max}

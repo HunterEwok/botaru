@@ -1,0 +1,8 @@
+schema: urn:botaru:schema:p2-core-drain-request:1
+rules:
+- LCY-6
+description: A duration without a unit and an extra field.
+cases:
+- until: '600'
+- until: 10m
+  force: true

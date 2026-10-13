@@ -1,0 +1,96 @@
+id: fx-commission-executor
+rules: [COM-7, COM-8]
+description: 'A lens has one executor (COM-7). At any moment a lens has one executor source: the seat holders
+  of this lens, if at least one seat is taken (in rotation), otherwise the fallback role fallback_role. A seat whose holder
+  is under a people hold of scope bot counts as vacant. Lens tasks are not given to two sources at once, and one proposal
+  does not get two reviews of one lens, except a shadow review. The apply lint requires a holder or a fallback role for every veto lens;
+  without seats in the charter the lens is executed by a role of profile reviewer whose claims contain the lens type
+  (COM-8).'
+given:
+  tenant: demo
+  governance:
+    commission:
+      seat_role: commission-member
+      model_profile: seat-std
+      seats:
+      - {id: 1, lens: security, fallback_role: reviewer-a}
+      - {id: 2, lens: operational, fallback_role: reviewer-a}
+      - {id: 3, lens: cost, fallback_role: reviewer-b}
+      - {id: 4, lens: value, fallback_role: reviewer-b}
+cases:
+- id: com-fx-01
+  rules: [COM-7]
+  description: The seats are vacant; fallback roles execute the lenses, and commission.status shows this.
+  given:
+    seats_held: {}
+  expect:
+    executors:
+      security: {executor: fallback_role, role: reviewer-a}
+      operational: {executor: fallback_role, role: reviewer-a}
+      cost: {executor: fallback_role, role: reviewer-b}
+      value: {executor: fallback_role, role: reviewer-b}
+- id: com-fx-02
+  rules: [COM-7]
+  description: Seat 1 is taken by bot_..05; only the holder takes the tasks of the security lens, and the fallback role reviewer-a
+    does not get them.
+  given:
+    seats_held: {1: bot_01JB0000000000000000000005}
+  expect:
+    executors:
+      security:
+        executor: seats
+        holders: [bot_01JB0000000000000000000005]
+    reviewer-a_claims_security: false
+    reviews_per_proposal_lens: 1
+- id: com-fx-03
+  rules: [COM-7, HLD-1]
+  description: The holder of seat 1 is under a people hold of scope bot; the seat counts as vacant, and reviewer-a takes the lens.
+  given:
+    seats_held: {1: bot_01JB0000000000000000000005}
+    holds:
+    - scope: {kind: bot, name: bot_01JB0000000000000000000005}
+  expect:
+    executors:
+      security: {executor: fallback_role, role: reviewer-a}
+- id: com-fx-04
+  rules: [COM-7]
+  description: The seat of the operational lens has neither a holder nor a fallback role; the charter does not pass apply.
+  given:
+    governance:
+      commission:
+        seats:
+        - {id: 1, lens: security, fallback_role: reviewer-a}
+        - {id: 2, lens: operational}
+  expect: {result: rejected, stage: apply}
+- id: com-fx-05
+  rules: [COM-7, COM-4]
+  description: The lens cost without veto has no executor; the lens is silent, and the verdict is computed without it with a mark. People
+    get a notification about the vacant lens seat.
+  given:
+    governance:
+      commission:
+        seats:
+        - {id: 1, lens: security, fallback_role: reviewer-a}
+        - {id: 2, lens: operational, fallback_role: reviewer-a}
+        - {id: 3, lens: cost}
+  expect:
+    result: ok
+    executors:
+      cost: {executor: none}
+    verdict_missing_lenses: [cost]
+- id: com-fx-06
+  rules: [COM-8, COM-7]
+  description: There are no seats in the charter; the security lens is executed by a role of profile reviewer whose claims contain
+    review.security.v1.
+  given:
+    governance:
+      commission:
+        seats: []
+    roles:
+    - name: reviewer-a
+      profile: reviewer
+      claims: [review.security.v1, review.operational.v1]
+  expect:
+    executors:
+      security: {executor: fallback_role, role: reviewer-a}
+      operational: {executor: fallback_role, role: reviewer-a}

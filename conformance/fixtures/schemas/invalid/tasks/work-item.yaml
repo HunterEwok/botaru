@@ -1,0 +1,123 @@
+schema: spec/model/work-item.schema.json
+rules: [SEC-4, DLV-16, TEN-3]
+description: 'Work units that the core does not hand out: an attempt with origin in the task or in the payload; a call for
+  toolhost with a task goal or with an initiator; a call without the start_by deadline.'
+cases:
+- work_id: w_01JB0000000000000000000001
+  kind: attempt
+  lease_no: 2
+  epoch: 7
+  tenant: demo
+  lease_until: '2026-10-05T16:20:00Z'
+  lease_remaining_s: 118
+  token: {epoch: 7, work_id: w_01JB0000000000000000000001, lease_no: 2, worker_id: wk_01JB000000000000000000000A, key_id: k1, sig: Y29yZS1zaWduYXR1cmUtb3Zlci1sZWFzZS10b2tlbi12MQ}
+  payload:
+    task:
+      id: t_01JB0000000000000000000001
+      type: ops.investigate.v1
+      body:
+        type: ops.investigate.v1
+        goal: why was www.example.org slow last night?
+      record:
+        max_tier: 1
+        data_mark: raw_logs
+        untrusted_seen: false
+      origin:
+        chat: dm:bob
+    instruction: role text and task type text
+    handles:
+      tools: h1
+      model: h2
+      session: null
+      memory: null
+- work_id: w_01JB0000000000000000000001
+  kind: attempt
+  lease_no: 2
+  epoch: 7
+  tenant: demo
+  lease_until: '2026-10-05T16:20:00Z'
+  lease_remaining_s: 118
+  token: {epoch: 7, work_id: w_01JB0000000000000000000001, lease_no: 2, worker_id: wk_01JB000000000000000000000A, key_id: k1, sig: Y29yZS1zaWduYXR1cmUtb3Zlci1sZWFzZS10b2tlbi12MQ}
+  payload:
+    task:
+      id: t_01JB0000000000000000000001
+      type: ops.investigate.v1
+      body:
+        type: ops.investigate.v1
+        goal: why was www.example.org slow last night?
+      record:
+        max_tier: 1
+        data_mark: raw_logs
+        untrusted_seen: false
+    instruction: role text and task type text
+    handles:
+      tools: h1
+      model: h2
+      session: null
+      memory: null
+    origin:
+      chat: dm:bob
+- work_id: c_01JB0000000000000000000001
+  kind: toolcall
+  lease_no: 1
+  epoch: 7
+  tenant: demo
+  lease_until: '2026-10-05T16:07:00Z'
+  lease_remaining_s: 120
+  start_by: '2026-10-05T16:05:30Z'
+  token: {epoch: 7, work_id: c_01JB0000000000000000000001, lease_no: 1, worker_id: wk_01JB000000000000000000000A, key_id: k1, sig: Y29yZS1zaWduYXR1cmUtb3Zlci1sZWFzZS10b2tlbi12MQ}
+  payload:
+    target:
+      plugin: logs
+      placement: host
+      host: web1
+    tool: tail
+    args:
+      source: nginx-access
+      lines: 200
+    approval_id: null
+    grant_id: null
+    args_hash: null
+    goal: why was the site slow
+- work_id: c_01JB0000000000000000000001
+  kind: toolcall
+  lease_no: 1
+  epoch: 7
+  tenant: demo
+  lease_until: '2026-10-05T16:07:00Z'
+  lease_remaining_s: 120
+  start_by: '2026-10-05T16:05:30Z'
+  token: {epoch: 7, work_id: c_01JB0000000000000000000001, lease_no: 1, worker_id: wk_01JB000000000000000000000A, key_id: k1, sig: Y29yZS1zaWduYXR1cmUtb3Zlci1sZWFzZS10b2tlbi12MQ}
+  payload:
+    target:
+      plugin: logs
+      placement: host
+      host: web1
+    tool: tail
+    args:
+      source: nginx-access
+      lines: 200
+    approval_id: null
+    grant_id: null
+    args_hash: null
+    initiator: human:bob
+- work_id: c_01JB0000000000000000000001
+  kind: toolcall
+  lease_no: 1
+  epoch: 7
+  tenant: demo
+  lease_until: '2026-10-05T16:07:00Z'
+  lease_remaining_s: 120
+  token: {epoch: 7, work_id: c_01JB0000000000000000000001, lease_no: 1, worker_id: wk_01JB000000000000000000000A, key_id: k1, sig: Y29yZS1zaWduYXR1cmUtb3Zlci1sZWFzZS10b2tlbi12MQ}
+  payload:
+    target:
+      plugin: logs
+      placement: host
+      host: web1
+    tool: tail
+    args:
+      source: nginx-access
+      lines: 200
+    approval_id: null
+    grant_id: null
+    args_hash: null

@@ -1,0 +1,96 @@
+id: cap-fx-01
+rules: [CAP-5]
+description: The core itself measures the free space of the store volume and keeps headroom. Below the soft threshold enqueuing tasks
+  of priority classes 3-5 gets rejected(over_capacity), the core raises alarm.store.free.low by code, and the free space
+  number goes into the P2 health answer. Below the hard threshold P1 answers not_ready to everything except heartbeat, complete,
+  fail and release; P2 and hold operations work, and health answers "not live". The deployment binding sets the thresholds;
+  below are the fixture numbers on a mock space measurement.
+given:
+  thresholds: {soft_free_ratio: 0.1, hard_free_ratio: 0.03}
+cases:
+- id: cap-fx-02
+  rules: [CAP-5]
+  description: The soft threshold gives a refusal to a class 4 task and an alarm; a class 1 task passes.
+  given:
+    measured: {store_free_bytes: 8589934592, store_free_ratio: 0.08}
+  steps:
+  - call:
+      port: P1
+      op: enqueue
+      request:
+        body: {goal: training task}
+        idempotency_key: cap-fx-02-1
+    context: {tenant: demo, priority_class: 4}
+    expect: {result: rejected, reason: over_capacity}
+  - call:
+      port: P1
+      op: enqueue
+      request:
+        body: {goal: training task}
+        idempotency_key: cap-fx-02-2
+    context: {tenant: demo, priority_class: 1}
+    expect: {outcome: accepted}
+  expect:
+    alarms:
+    - {type: alarm.store.free.low.v1, state: firing}
+    health: {alive: true, store_free_bytes: 8589934592, store_free_ratio: 0.08}
+- id: cap-fx-03
+  rules: [CAP-5]
+  description: The hard threshold gives not_ready on claim, and complete passes; hold.set works; health is not live.
+  given:
+    measured: {store_free_bytes: 2147483648, store_free_ratio: 0.02}
+  steps:
+  - call:
+      port: P1
+      op: claim
+      request:
+        kinds: [attempt]
+    expect: {result: rejected, reason: not_ready}
+  - call:
+      port: P1
+      op: enqueue
+      request:
+        body: {goal: training task}
+        idempotency_key: cap-fx-03-1
+    expect: {result: rejected, reason: not_ready}
+  - call: {port: P1, op: heartbeat}
+    expect: {result: ok}
+  - call:
+      port: P1
+      op: complete
+      request:
+        result: {}
+    expect: {result: ok}
+  - call:
+      port: P1
+      op: fail
+      request: {reason: tool_error, retryable: false}
+    expect: {result: ok}
+  - call: {port: P1, op: release}
+    expect: {result: ok}
+  - call:
+      port: P2
+      op: hold.set
+      request:
+        scope: {kind: tenant, tenant: demo}
+        effects: [no_enqueue]
+        reason: manual
+        until: null
+    expect: {result: ok}
+  expect:
+    health: {alive: false}
+- id: cap-fx-04
+  rules: [CAP-5]
+  description: The storage headroom is not part of any tenant's max_storage_bytes.
+  given:
+    tenant_used_bytes: 10737418240
+    tenant: demo
+    limits: {max_storage_bytes: 10737418240}
+    measured: {store_free_ratio: 0.5}
+  steps:
+  - call:
+      port: P1
+      op: file.put
+      request: {media_type: text/csv}
+    context: {bytes: 1048576}
+  expect: {result: rejected, reason: over_capacity, store_reserve_used: false}

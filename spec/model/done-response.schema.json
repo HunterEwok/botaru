@@ -1,0 +1,36 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:botaru:schema:done-response:1",
+  "title": "Operation accepted",
+  "description": "Answer of a changing operation without its own answer form: the change is recorded, a created object has an id, the audit record of the operation has the number audit_seq (AUD-1). A repeat with the same arguments gives the same answer (IDM-3).",
+  "x-botaru-direction": "output",
+  "x-botaru-rules": [
+    "AUD-1",
+    "IDM-3"
+  ],
+  "type": "object",
+  "required": [
+    "ok"
+  ],
+  "properties": {
+    "ok": {
+      "const": true
+    },
+    "id": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/object_id",
+      "description": "Id of the created or changed object, if there is one."
+    },
+    "audit_seq": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 9007199254740991,
+      "description": "Number of the operation's audit record in the tenant chain."
+    },
+    "state": {
+      "type": "string",
+      "maxLength": 64,
+      "pattern": "^[a-z][a-z0-9_]*$",
+      "description": "State of the object after the operation, if the object has one."
+    }
+  }
+}

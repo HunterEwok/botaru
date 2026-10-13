@@ -1,0 +1,57 @@
+schema: spec/manifests/observation-series.schema.json
+rules:
+- MAN-1
+description: 'ObservationSeries manifest specs that the kind schema rejects: extra field, missing required field, value
+  outside the closed list or format.'
+cases:
+- catalog_kind: resource
+  value:
+    type: integer
+    minimum: 0
+    maximum: 604800
+  unit: s
+  data_class: internal
+  source:
+    kind: job
+    field: duration_s
+  resolution: 1h
+  retention:
+    raw: 90d
+    rollup: 365d
+  unexpected_field: true
+- value:
+    type: integer
+    minimum: 0
+    maximum: 604800
+  unit: s
+  data_class: internal
+  source:
+    kind: job
+    field: duration_s
+  resolution: 1h
+  retention:
+    raw: 90d
+    rollup: 365d
+- catalog_kind: resource
+  unit: s
+  data_class: internal
+  source:
+    kind: job
+    field: duration_s
+  resolution: 1h
+  retention:
+    raw: 90d
+    rollup: 365d
+- catalog_kind: resource
+  value:
+    type: string
+    maxLength: 100
+  unit: s
+  data_class: internal
+  source:
+    kind: job
+    field: duration_s
+  resolution: 1h
+  retention:
+    raw: 90d
+    rollup: 365d

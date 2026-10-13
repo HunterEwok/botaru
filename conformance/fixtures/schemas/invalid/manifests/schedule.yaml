@@ -1,0 +1,52 @@
+schema: spec/manifests/schedule.schema.json
+rules:
+- MAN-1
+description: 'Schedule manifest specs that the kind schema rejects: extra field, missing required field, value outside the
+  closed list or format.'
+cases:
+- cron: 15 6 * * *
+  timezone: Europe/Berlin
+  task:
+    type: data.sensor_check.v1
+    params:
+      window_h: 24
+  deliver_to:
+  - chat:lab
+  skip_if_waiting: true
+  proposable: true
+  unexpected_field: true
+- timezone: Europe/Berlin
+  task:
+    type: data.sensor_check.v1
+    params:
+      window_h: 24
+  deliver_to:
+  - chat:lab
+  skip_if_waiting: true
+  proposable: true
+- cron: 15 6 * * *
+  timezone: Europe/Berlin
+  deliver_to:
+  - chat:lab
+  skip_if_waiting: true
+  proposable: true
+- cron: 15 6 * * * TZ=Europe/Berlin
+  timezone: Europe/Berlin
+  task:
+    type: data.sensor_check.v1
+    params:
+      window_h: 24
+  deliver_to:
+  - chat:lab
+  skip_if_waiting: true
+  proposable: true
+- cron: 15 6 * * *
+  timezone: Europe/Berlin City
+  task:
+    type: data.sensor_check.v1
+    params:
+      window_h: 24
+  deliver_to:
+  - chat:lab
+  skip_if_waiting: true
+  proposable: true

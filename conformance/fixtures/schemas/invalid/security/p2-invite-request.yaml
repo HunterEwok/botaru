@@ -1,0 +1,11 @@
+schema: urn:botaru:schema:p2-invite-request:1
+rules:
+- PRM-7
+description: An invitation with permissions as a string and an unknown operation is rejected.
+cases:
+- op: invite.create
+  groups:
+  - user
+  caps:
+  - task:ops.investigate.v1
+- op: invite.accept_all

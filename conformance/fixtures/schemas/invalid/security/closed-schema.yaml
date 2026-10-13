@@ -1,0 +1,32 @@
+schema: urn:botaru:schema:closed-schema:1
+rules:
+- INJ-1
+description: 'Free input: a string without a format, a string with pattern, a number without bounds, an open object, an
+  array without maxItems, format instead of x-botaru-format.'
+cases:
+- query:
+    type: string
+    maxLength: 200
+- path:
+    type: string
+    pattern: ^/var/log/.*$
+    maxLength: 200
+- lines:
+    type: integer
+    minimum: 1
+- filter:
+    type: object
+    properties:
+      unit:
+        type: string
+        enum:
+        - nginx
+- units:
+    type: array
+    items:
+      type: string
+      enum:
+      - nginx
+- since:
+    type: string
+    format: date-time

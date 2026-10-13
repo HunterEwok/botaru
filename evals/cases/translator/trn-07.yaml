@@ -1,0 +1,16 @@
+# evals/cases/translator/trn-07.yaml (catalog: evals/README.md)
+id: trn-07
+kind: quality
+blocking: false
+status: active
+version: v0.2
+rules: [SCR-5, TRN-6]
+summary: 'The task "on all 400 machines"; the acceptance gives rejected(script_too_large), code builds the refusal text.'
+from: bob
+chat: bob-dm
+lang: ru
+message: '/script Check the disks on all 400 machines and clean the pipeline temp files'
+expect:
+  state: completed
+  checks:
+  - store: {path: 'script_runs[?task==self].reason', equals: script_too_large}

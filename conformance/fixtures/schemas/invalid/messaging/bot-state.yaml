@@ -1,0 +1,14 @@
+schema: spec/model/bot-state.schema.json
+rules:
+- STA-1
+- STA-2
+description: 'Fields that the schema rejects: free text; 65 slots; phase outside the list; a self-report about another worker.'
+cases:
+- phase: idle
+  text: I am free, give me everything
+- phase: idle
+  slots_free: 65
+- phase: asleep
+- phase: idle
+  worker: analyst-3
+  peer_status: down

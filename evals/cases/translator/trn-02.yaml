@@ -1,0 +1,20 @@
+# evals/cases/translator/trn-02.yaml (catalog: evals/README.md)
+id: trn-02
+kind: quality
+blocking: false
+status: active
+version: v0.2
+rules: [TRN-6]
+summary: 'Check the disks of the data machines; where less than 10% is free, clean the pipeline temp files; report back here. A read fanout, an action fanout with items.from and where, a report step; the card says "will require action approval".'
+from: bob
+chat: bob-dm
+lang: ru
+message: '/script Check the disks of the data machines; where less than 10% is free, clean the pipeline temp files; report back here'
+expect:
+  state: completed
+  checks:
+  - store:
+      path: script_runs[?task==self].steps[*].kind
+      equals: [fanout, fanout, task]
+  - store: {path: 'script_runs[?task==self].steps[?kind==fanout && action].items.from', min: 1}
+  - contains: [require a separate action approval]

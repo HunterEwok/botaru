@@ -1,0 +1,31 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:botaru:schema:p1-memory-search-request:1",
+  "title": "P1 memory.search: request",
+  "description": "Search in a memory space by a memory handle; the core computes the space (MEM-1, TEN-5). The query is a short text or a key prefix.",
+  "x-botaru-direction": "input",
+  "x-botaru-rules": [
+    "MEM-1",
+    "TEN-5",
+    "SEC-3"
+  ],
+  "type": "object",
+  "properties": {
+    "query": {
+      "type": "string",
+      "maxLength": 256,
+      "description": "Search text."
+    },
+    "key_prefix": {
+      "type": "string",
+      "maxLength": 120,
+      "pattern": "^[a-z][a-z0-9_.-]*$"
+    },
+    "limit": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 50
+    }
+  },
+  "additionalProperties": false
+}

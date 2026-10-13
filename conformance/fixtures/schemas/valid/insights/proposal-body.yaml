@@ -1,0 +1,46 @@
+schema: spec/model/proposal-body.schema.json
+rules: [PRP-1, PRP-3, PRP-13]
+description: >-
+  botaru.proposal/v1 proposal bodies that the schema accepts: moving the report schedule from the example in
+  docs/improvements.md (manifest_change), kind none with only a problem and evidence, a change by people's hands with
+  a path from change-paths.yaml, and a request to restart a service with kind action_request.
+cases:
+  - category: schedule
+    problem: {code: backup_deadline_miss, subjects: ['task_type:demo.db.backup.v1', 'schedule:report-nightly', 'host:db1'], severity: medium}
+    evidence:
+      - {kind: observation, series: farm.task.outcome, subject: 'task_type:demo.db.backup.v1', window: 14d, rollup: window.share, value: 0.71}
+      - {kind: observation, series: host.load.v1, subject: 'host:db1', window: 14d, rollup: hour.max, slot: '02:00', value: 910}
+    change:
+      kind: manifest_change
+      manifest_change:
+        ops:
+          - {op: set, target: {kind: Schedule, name: report-nightly}, field: spec.cron, value: '30 3 * * *'}
+    benefit: {metric: farm.task.outcome, subject: 'task_type:demo.db.backup.v1', direction: up, expected_change_pp: 20, confidence: medium}
+    cost: {one_time_eur: 0, monthly_eur: 0, effort: minutes}
+    risk: {level: low, kinds: [report_delay]}
+    note: The report and the backup fall into the same window on db1.
+  - category: backup
+    problem: {code: backup_deadline_miss, subjects: ['dataset:ctd-2026'], severity: high}
+    evidence:
+      - {kind: observation, series: farm.backup.age, subject: 'dataset:ctd-2026', window: 7d, rollup: day.max, value: 0}
+    change: {kind: none}
+  - category: capacity
+    problem: {code: queue_wait_high, subjects: ['host:db1'], severity: medium}
+    evidence:
+      - {kind: observation, series: host.load.v1, subject: 'host:db1', window: 14d, rollup: day.p95, value: 410}
+    change:
+      kind: human_change
+      human_change: {target: {kind: Host, name: db1}, path: catalog.host.disk_gb, direction: up, value: 200}
+    benefit: {metric: farm.task.outcome, subject: 'task_type:demo.db.backup.v1', direction: up, expected_change_pp: 10, confidence: low}
+    cost: {one_time_eur: 40, monthly_eur: 5, effort: hours}
+    risk: {level: low}
+  - category: reliability
+    problem: {code: backup_deadline_miss, subjects: ['host:web1'], severity: high}
+    evidence:
+      - {kind: observation, series: farm.task.outcome, subject: 'task_type:demo.report.nightly.v1', window: 7d, rollup: window.share, value: 0.5}
+    change:
+      kind: action_request
+      action_request: {tool: service/control, args: {service: nginx, verb: restart}}
+    benefit: {metric: farm.task.outcome, subject: 'task_type:demo.report.nightly.v1', direction: up, expected_change_pp: 30, confidence: medium}
+    cost: {one_time_eur: 0, monthly_eur: 0, effort: minutes}
+    risk: {level: medium}

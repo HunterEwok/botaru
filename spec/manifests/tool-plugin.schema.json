@@ -1,0 +1,286 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:botaru:schema:tool-plugin:1",
+  "title": "Tool plugin",
+  "description": "spec of the ToolPlugin manifest: a program with an MCP server, placement, network, secrets and tools (docs/task-language.md, \"New kind of bot: a program and MCP\").",
+  "x-botaru-direction": "input",
+  "x-botaru-rules": [
+    "INJ-1",
+    "INJ-2",
+    "INJ-3",
+    "INJ-4",
+    "INJ-14",
+    "TEN-3a",
+    "DEP-4",
+    "DEP-6",
+    "MAN-9"
+  ],
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "placement",
+    "tools"
+  ],
+  "properties": {
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "image": {
+          "type": "string",
+          "maxLength": 300,
+          "description": "Image pinned by digest (DEP-6).",
+          "pattern": "^[a-z0-9.-]+(/[a-z0-9._-]+)+@sha256:([0-9a-f]{64}|<digest>)$"
+        }
+      },
+      "required": [
+        "image"
+      ]
+    },
+    "mcp": {
+      "type": "string",
+      "maxLength": 20,
+      "description": "MCP revision of the plugin's server.",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$"
+    },
+    "placement": {
+      "enum": [
+        "host",
+        "sandbox"
+      ],
+      "description": "host: a production machine; sandbox: a separate sandbox VM (DEP-1)."
+    },
+    "network": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "egress": {
+          "type": "array",
+          "maxItems": 20,
+          "items": {
+            "$ref": "urn:botaru:schema:common:1#/$defs/name"
+          },
+          "description": "Addresses only from the tenant catalog or the deployment description (INJ-6)."
+        }
+      },
+      "required": [
+        "egress"
+      ]
+    },
+    "secrets": {
+      "type": "array",
+      "maxItems": 10,
+      "items": {
+        "$ref": "urn:botaru:schema:manifest:1#/$defs/secret_name"
+      },
+      "description": "Secret names; not visible to the model (SEC-1, SEC-2)."
+    },
+    "tools": {
+      "type": "array",
+      "maxItems": 50,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "name"
+        ],
+        "description": "Plugin tool. The description and the schema are taken from the manifest, not from the live server (INJ-2).",
+        "properties": {
+          "name": {
+            "type": "string",
+            "maxLength": 63,
+            "description": "Tool name; in rights <plugin>/<name>, for the model <plugin>_<name>.",
+            "pattern": "^[a-z][a-z0-9_]{0,62}$"
+          },
+          "description": {
+            "type": "string",
+            "maxLength": 2000,
+            "description": "Own description of the tool for the model."
+          },
+          "enabled": {
+            "type": "boolean",
+            "description": "false turns off a server tool that needs free input (INJ-1)."
+          },
+          "reason": {
+            "type": "string",
+            "maxLength": 300,
+            "description": "Why the tool is turned off."
+          },
+          "access": {
+            "enum": [
+              "read",
+              "write"
+            ],
+            "description": "write never gets into the model's catalog (APR-1)."
+          },
+          "tier": {
+            "$ref": "urn:botaru:schema:common:1#/$defs/tier"
+          },
+          "output_class": {
+            "$ref": "urn:botaru:schema:common:1#/$defs/data_mark",
+            "description": "Data class of the output (PRM-5)."
+          },
+          "untrusted_output": {
+            "type": "boolean",
+            "description": "Mandatory; false only if the output by the schema is only numbers and enum (INJ-3)."
+          },
+          "redact": {
+            "type": "array",
+            "maxItems": 3,
+            "items": {
+              "enum": [
+                "ip",
+                "email",
+                "secret"
+              ]
+            },
+            "description": "Redaction; with placement: host and untrusted_output: true not weaker than [ip, email, secret] (INJ-4).",
+            "uniqueItems": true
+          },
+          "target_from": {
+            "type": "string",
+            "maxLength": 64,
+            "description": "Parameter by whose value the core picks the machine of the call (TEN-3a).",
+            "pattern": "^[a-z][a-z0-9_]{0,63}$"
+          },
+          "target": {
+            "const": "any",
+            "description": "Any toolhost of the tenant with this plugin and placement (TEN-3a)."
+          },
+          "params": {
+            "type": "object",
+            "maxProperties": 32,
+            "propertyNames": {
+              "pattern": "^[a-z][a-z0-9_]{0,63}$"
+            },
+            "additionalProperties": {
+              "anyOf": [
+                {
+                  "$ref": "urn:botaru:schema:embedded-schema:1#/$defs/closed"
+                },
+                {
+                  "$ref": "urn:botaru:schema:embedded-schema:1#/$defs/sandbox_param"
+                }
+              ]
+            },
+            "description": "Parameters only of closed kinds; a string without a format only with placement: sandbox (INJ-1)."
+          },
+          "args_from": {
+            "type": "string",
+            "maxLength": 130,
+            "description": "Reference to the action schema: action:<name> (MAN-9).",
+            "pattern": "^action:[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*)*$"
+          },
+          "output_schema": {
+            "$ref": "urn:botaru:schema:embedded-schema:1#/$defs/result_object",
+            "description": "Schema of the output structuredContent (INJ-4)."
+          },
+          "output_limit_kb": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 1024,
+            "description": "Output truncation by the limit (INJ-4)."
+          },
+          "timeout_s": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 3600,
+            "description": "Call deadline in seconds."
+          },
+          "os_mechanism": {
+            "$ref": "urn:botaru:schema:manifest:1#/$defs/os_mechanism"
+          },
+          "commands": {
+            "type": "object",
+            "maxProperties": 50,
+            "propertyNames": {
+              "pattern": "^[a-z][a-z0-9_]{0,63}$"
+            },
+            "description": "Named commands of the program launch plugin (INJ-14).",
+            "additionalProperties": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "argv": {
+                  "type": "array",
+                  "maxItems": 32,
+                  "items": {
+                    "type": "string",
+                    "maxLength": 200
+                  },
+                  "description": "argv as an array; the path is absolute; a parameter as a whole element after --.",
+                  "minItems": 1
+                },
+                "params": {
+                  "type": "object",
+                  "maxProperties": 8,
+                  "propertyNames": {
+                    "pattern": "^[a-z][a-z0-9_]{0,63}$"
+                  },
+                  "additionalProperties": {
+                    "$ref": "urn:botaru:schema:embedded-schema:1#/$defs/closed"
+                  }
+                }
+              },
+              "required": [
+                "argv"
+              ]
+            }
+          }
+        },
+        "if": {
+          "not": {
+            "required": [
+              "enabled"
+            ],
+            "patternProperties": {
+              "^enabled$": {
+                "const": false
+              }
+            }
+          }
+        },
+        "then": {
+          "required": [
+            "access",
+            "tier",
+            "output_class",
+            "untrusted_output"
+          ]
+        },
+        "else": {
+          "required": [
+            "reason"
+          ]
+        }
+      },
+      "description": "Plugin tools.",
+      "minItems": 1
+    }
+  },
+  "if": {
+    "required": [
+      "placement"
+    ],
+    "patternProperties": {
+      "^placement$": {
+        "const": "host"
+      }
+    }
+  },
+  "then": {
+    "patternProperties": {
+      "^tools$": {
+        "items": {
+          "patternProperties": {
+            "^params$": {
+              "additionalProperties": {
+                "$ref": "urn:botaru:schema:embedded-schema:1#/$defs/closed"
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

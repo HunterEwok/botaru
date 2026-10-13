@@ -1,0 +1,21 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:botaru:schema:p1-emit-response:1",
+  "title": "P1 emit: response",
+  "description": "The event is recorded; the core sets id and source (IDM-4).",
+  "x-botaru-direction": "output",
+  "x-botaru-rules": [
+    "IDM-4"
+  ],
+  "type": "object",
+  "required": [
+    "id"
+  ],
+  "properties": {
+    "id": {
+      "type": "string",
+      "maxLength": 200,
+      "description": "CloudEvents event id."
+    }
+  }
+}

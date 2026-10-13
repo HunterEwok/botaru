@@ -1,0 +1,155 @@
+id: fx-observations-series-lint
+rules: [OBV-2, OBV-4, OBV-6, INJ-1]
+description: Apply lint of an ObservationSeries. The series is declared in the tenant's git, the value is only of a closed
+  leaf kind, the data class is not below the source class, and the series has one tenant (OBV-2). Rollups only from spec/model/rollups.yaml,
+  retention class observation (OBV-4). The outcome block of a series is needed only if the series is used as a metric or a trial
+  guard (OBV-6).
+given:
+  tenant: demo
+  tools:
+  - {name: monitor/item_history, output_class: internal, untrusted_output: false}
+cases:
+- id: obv-fx-01
+  rules: [OBV-2, OBV-4]
+  description: The series host.load.v1 from the docs/improvements.md example passes apply.
+  given:
+    file: tenants/demo/observations/host.load.v1.yaml
+    manifest:
+      kind: ObservationSeries
+      metadata: {name: host.load.v1, tenant: demo}
+      spec:
+        catalog_kind: host
+        value: {type: number, minimum: 0, maximum: 10000}
+        unit: load_x100
+        data_class: internal
+        source: {kind: tool, tool: monitor/item_history, field: cpu_load}
+        resolution: 5m
+        rollups: [hour.max, hour.mean, day.p95]
+        retention: {raw: 14d, rollup: 93d}
+        outcome: {compare: day.p95, better: down, tolerance_pct: 10, min_samples: 10}
+  expect: {result: ok, retention_class: observation}
+- id: obv-fx-02
+  rules: [OBV-2]
+  description: A series without a data class does not pass apply.
+  given:
+    file: tenants/demo/observations/host.load.v1.yaml
+    manifest:
+      kind: ObservationSeries
+      metadata: {name: host.load.v1, tenant: demo}
+      spec:
+        catalog_kind: host
+        value: {type: number, minimum: 0, maximum: 10000}
+        source: {kind: tool, tool: monitor/item_history, field: cpu_load}
+  expect: {result: rejected, stage: apply, field: spec.data_class}
+- id: obv-fx-03
+  rules: [OBV-2, INJ-1]
+  description: A series with a value of a free string kind does not pass apply; a string leaf is only an enum.
+  given:
+    file: tenants/demo/observations/host.state.v1.yaml
+    manifest:
+      kind: ObservationSeries
+      metadata: {name: host.state.v1, tenant: demo}
+      spec:
+        catalog_kind: host
+        value: {type: string, maxLength: 200}
+        data_class: internal
+        source: {kind: tool, tool: monitor/item_history, field: state}
+  expect: {result: rejected, stage: apply, field: spec.value}
+- id: obv-fx-04
+  rules: [OBV-2]
+  description: A series with an enum value passes apply.
+  given:
+    file: tenants/demo/observations/host.state.v1.yaml
+    manifest:
+      kind: ObservationSeries
+      metadata: {name: host.state.v1, tenant: demo}
+      spec:
+        catalog_kind: host
+        value:
+          enum: [up, down, maintenance]
+        data_class: internal
+        source: {kind: tool, tool: monitor/item_history, field: state}
+  expect: {result: ok}
+- id: obv-fx-05
+  rules: [OBV-2]
+  description: A series data class below the source class (tool output_class internal) does not pass apply.
+  given:
+    file: tenants/demo/observations/host.load.v1.yaml
+    manifest:
+      kind: ObservationSeries
+      metadata: {name: host.load.v1, tenant: demo}
+      spec:
+        catalog_kind: host
+        value: {type: number, minimum: 0, maximum: 10000}
+        data_class: public
+        source: {kind: tool, tool: monitor/item_history, field: cpu_load}
+  expect: {result: rejected, stage: apply, field: spec.data_class}
+- id: obv-fx-06
+  rules: [OBV-2]
+  description: 'A series has one tenant: a series in the folder tenants/demo with metadata.tenant demo2 does not pass apply; the series
+    subject is taken only from the catalog of its tenant.'
+  given:
+    file: tenants/demo/observations/host.load.v1.yaml
+    manifest:
+      kind: ObservationSeries
+      metadata: {name: host.load.v1, tenant: demo2}
+      spec:
+        catalog_kind: host
+        value: {type: number, minimum: 0, maximum: 10000}
+        data_class: internal
+        source: {kind: tool, tool: monitor/item_history, field: cpu_load}
+  expect: {result: rejected, stage: apply, field: metadata.tenant}
+- id: obv-fx-07
+  rules: [OBV-4]
+  description: A rollup not from the closed list spec/model/rollups.yaml does not pass apply.
+  given:
+    file: tenants/demo/observations/host.load.v1.yaml
+    manifest:
+      kind: ObservationSeries
+      metadata: {name: host.load.v1, tenant: demo}
+      spec:
+        catalog_kind: host
+        value: {type: number, minimum: 0, maximum: 10000}
+        data_class: internal
+        source: {kind: tool, tool: monitor/item_history, field: cpu_load}
+        rollups: [hour.max, minute.median]
+  expect: {result: rejected, stage: apply, field: spec.rollups}
+- id: obv-fx-08
+  rules: [OBV-4]
+  description: Without a retention block the series points are kept 14 days and the rollups 93 days (class observation); deletion by
+    term goes only in whole periods, without selective edits of rows (RET-2).
+  given:
+    manifest:
+      kind: ObservationSeries
+      metadata: {name: host.load.v1, tenant: demo}
+      spec:
+        catalog_kind: host
+        value: {type: number, minimum: 0, maximum: 10000}
+        data_class: internal
+        source: {kind: tool, tool: monitor/item_history, field: cpu_load}
+        rollups: [hour.max]
+  expect:
+    result: ok
+    retention: {raw: 14d, rollup: 93d}
+    retention_class: observation
+    delete: whole_periods
+- id: obv-fx-09
+  rules: [OBV-6]
+  description: 'A tenant series with an incomplete outcome block (no min_samples) passes apply, but is not fit to be a metric
+    or a trial guard: a proposal with such a metric gets rejected(metric_unknown), and an insights.extra_guards line
+    with such a series does not pass apply.'
+  given:
+    manifest:
+      kind: ObservationSeries
+      metadata: {name: host.load.v1, tenant: demo}
+      spec:
+        catalog_kind: host
+        value: {type: number, minimum: 0, maximum: 10000}
+        data_class: internal
+        source: {kind: tool, tool: monitor/item_history, field: cpu_load}
+        outcome: {compare: day.p95, better: down, tolerance_pct: 10}
+  expect:
+    result: ok
+    usable_as_metric: false
+    proposal_with_metric: {result: rejected, reason: metric_unknown}
+    extra_guards_with_series: {result: rejected, stage: apply, field: spec.insights.extra_guards}

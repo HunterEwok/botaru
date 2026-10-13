@@ -1,0 +1,33 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:botaru:schema:p1-memory-propose-response:1",
+  "title": "P1 memory.propose: response",
+  "description": "The memory proposal record in the state proposed; a repeat of the same content returns the same record.",
+  "x-botaru-direction": "output",
+  "x-botaru-rules": [
+    "MEM-3"
+  ],
+  "type": "object",
+  "required": [
+    "id",
+    "state",
+    "existing"
+  ],
+  "properties": {
+    "id": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/object_id"
+    },
+    "state": {
+      "enum": [
+        "proposed",
+        "active",
+        "discarded",
+        "superseded",
+        "forgotten"
+      ]
+    },
+    "existing": {
+      "type": "boolean"
+    }
+  }
+}

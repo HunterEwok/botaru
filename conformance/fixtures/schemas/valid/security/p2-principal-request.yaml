@@ -1,0 +1,6 @@
+schema: urn:botaru:schema:p2-principal-request:1
+rules: [IDN-4]
+description: Add alice with a Telegram identity and disable her.
+cases:
+- {op: principal.add, subject: 'human:p_01JB3Q7N0M2V8XK4DGT5RZP9WB', kind: human, identity: 'telegram:100200300', locale: ru}
+- {op: principal.off, subject: 'human:p_01JB3Q7N0M2V8XK4DGT5RZP9WB'}

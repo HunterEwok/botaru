@@ -1,0 +1,120 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:botaru:schema:manager-incident-view:1",
+  "title": "Incident view",
+  "description": "The incident/v1 view for the farm-manager decision role: only numbers, ids and codes, without tenant text (MGR-25). Code builds the target lists in allowed for the basis of the task; a target outside the list gets target_not_implicated, and a target only from a finding goes as a control card (MGR-9, MGR-26).",
+  "x-botaru-direction": "output",
+  "x-botaru-rules": [
+    "MGR-9",
+    "MGR-25",
+    "MGR-26",
+    "MGR-32"
+  ],
+  "type": "object",
+  "required": [
+    "view",
+    "incident",
+    "class",
+    "tenant",
+    "allowed"
+  ],
+  "properties": {
+    "view": {
+      "const": "incident/v1",
+      "description": "View kind."
+    },
+    "incident": {
+      "description": "Incident id.",
+      "$ref": "urn:botaru:schema:common:1#/$defs/object_id"
+    },
+    "class": {
+      "type": "string",
+      "maxLength": 63,
+      "pattern": "^[a-z][a-z0-9_]{0,62}$",
+      "description": "Name of the incident class (metadata.name of the IncidentClass file, MGR-7)."
+    },
+    "severity": {
+      "description": "Severity.",
+      "$ref": "urn:botaru:schema:common:1#/$defs/incident_severity"
+    },
+    "state": {
+      "enum": [
+        "open",
+        "contained",
+        "mitigating",
+        "resolved",
+        "reopened"
+      ],
+      "description": "Incident state."
+    },
+    "tenant": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/tenant_name",
+      "description": "Tenant; exactly one per attempt (MGR-24)."
+    },
+    "subject": {
+      "type": "object",
+      "required": [
+        "kind"
+      ],
+      "properties": {
+        "kind": {
+          "enum": [
+            "resource",
+            "farm",
+            "tenant",
+            "role",
+            "worker"
+          ],
+          "description": "Kind of the incident subject by the class's subject.kind."
+        },
+        "id": {
+          "type": "string",
+          "maxLength": 64,
+          "pattern": "^[a-z0-9:_.-]{1,64}$",
+          "description": "Object id from the restricted character set [a-z0-9:_.-]{1,64}: catalog name, resource, task type, worker, task."
+        }
+      },
+      "description": "Subject."
+    },
+    "alarm": {
+      "type": "object",
+      "description": "Alarm: alarmkey, values, origin, monitor_event."
+    },
+    "implicated": {
+      "type": "array",
+      "maxItems": 20,
+      "items": {
+        "type": "object"
+      },
+      "description": "Involved parties with code numbers."
+    },
+    "protected": {
+      "type": "array",
+      "maxItems": 100,
+      "items": {
+        "type": "object"
+      },
+      "description": "Protected targets (MGR-32)."
+    },
+    "allowed": {
+      "type": "object",
+      "description": "Code lists by operation, and also allowed.service_control (service: verbs) and allowed.monitor_scripts (catalog script names)."
+    },
+    "findings": {
+      "type": "array",
+      "maxItems": 10,
+      "items": {
+        "type": "object"
+      },
+      "description": "Closed fields of the findings without note."
+    },
+    "humans_took": {
+      "type": "boolean",
+      "description": "Whether a person took it on (incident.ack)."
+    },
+    "untrusted": {
+      "type": "boolean",
+      "description": "The attempt works in distrust mode (MGR-22)."
+    }
+  }
+}

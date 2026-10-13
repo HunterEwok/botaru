@@ -1,0 +1,30 @@
+# Geodata description: wrappers around gdalinfo -json -nomd and ogrinfo -json -so (flow 3).
+apiVersion: botaru/v1alpha1
+kind: ToolPlugin
+metadata: {name: geo}
+spec:
+  placement: host
+  network: {egress: []}
+  tools:
+    - name: describe
+      access: read
+      tier: 1
+      output_class: internal
+      untrusted_output: true
+      redact: [ip, email, secret]
+      target_from: dataset
+      params:
+        dataset: {enum_from: catalog.geo_datasets}
+      output_limit_kb: 16
+      timeout_s: 30
+    - name: describe_vector
+      access: read
+      tier: 1
+      output_class: internal
+      untrusted_output: true
+      redact: [ip, email, secret]
+      target_from: dataset
+      params:
+        dataset: {enum_from: catalog.geo_datasets}
+      output_limit_kb: 16
+      timeout_s: 30

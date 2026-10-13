@@ -1,0 +1,47 @@
+id: scr-fx-02
+rules: [SCR-6]
+description: The same draft as in scr-fx-01, with a confirm step, from an initiator without script.run. A confirm step requires
+  the privileged capability script.run, and the "Run" button gets rejected(no_group_cap).
+given:
+  tenant: demo
+  initiator:
+    principal: human:carol
+    groups: [researcher]
+    caps: ['task:ops.summary.v1', 'task:report.work.v1']
+    script_run: false
+  draft:
+    script: v1
+    steps:
+    - id: sum
+      kind: task
+      type: ops.summary.v1
+      goal: {assignment: true}
+      params: {resource: web1}
+    - id: ask
+      kind: confirm
+      needs: [sum]
+      who: initiator
+    - id: rep
+      kind: task
+      type: report.work.v1
+      needs: [ask]
+      goal: {assignment: true}
+steps:
+- call:
+    port: P3
+    op: tools/call
+    request:
+      name: propose_script
+      arguments: {}
+  context: {arguments: draft}
+  expect: {state: proposed}
+- call:
+    port: P1
+    op: decide
+    request: {subject_kind: script, id: $last, decision: run}
+  by: human:carol
+  chat: direct:carol
+expect:
+  press_result: {result: rejected, reason: no_group_cap}
+  needs: [script.run]
+  run_state: proposed

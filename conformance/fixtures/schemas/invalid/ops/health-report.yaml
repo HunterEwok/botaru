@@ -1,0 +1,22 @@
+schema: urn:botaru:schema:health-report:1
+rules:
+- OBS-10
+- OBS-1
+description: Error text instead of a code, state not from the list.
+cases:
+- component: plugin
+  name: logs
+  state: down
+  time: '2026-10-12T10:00:00Z'
+  error: connection refused by 192.0.2.10
+- component: plugin
+  name: logs
+  state: broken
+  time: '2026-10-12T10:00:00Z'
+- component: plugin
+  name: logs
+  state: ok
+  checks:
+  - code: Connection Refused!
+    state: down
+  time: '2026-10-12T10:00:00Z'

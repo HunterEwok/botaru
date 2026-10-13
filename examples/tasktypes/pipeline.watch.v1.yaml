@@ -1,0 +1,23 @@
+# Pipeline watcher: a job on ctd1 on schedule pipelines-watch emits run.finished.v1.
+apiVersion: botaru/v1alpha1
+kind: TaskType
+metadata: {name: pipeline.watch.v1}
+spec:
+  title: "Pipeline watcher"
+  worker_kind: job
+  purpose: work
+  tier: 1
+  data_class: internal
+  params_schema: {type: object, additionalProperties: false, properties: {}}
+  result_schema:
+    type: object
+    additionalProperties: false
+    required: [finished]
+    properties:
+      finished: {type: integer, minimum: 0, maximum: 1000, x-botaru-read-by: code}
+  events: [run.finished.v1]
+  dispatch: {priority_class: 4}
+  timeouts: {start_by: 4m, lease: 60s, heartbeat: 20s, attempt: 2m, deadline: 5m}
+  retry: {max_attempts: 1, max_runs: 1}
+  tree_budget_eur: 0
+  max_children: 0

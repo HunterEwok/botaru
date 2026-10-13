@@ -1,0 +1,64 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:botaru:schema:script-event:1",
+  "title": "Script event data",
+  "description": "Data of the events script.drafted, script.started, script.state and script.step: run id, step, kind, state, reason. Metadata only (AUD-2, DLV-2).",
+  "x-botaru-direction": "output",
+  "x-botaru-rules": [
+    "SCR-11",
+    "AUD-2"
+  ],
+  "type": "object",
+  "required": [
+    "event",
+    "run"
+  ],
+  "properties": {
+    "event": {
+      "enum": [
+        "script.drafted",
+        "script.started",
+        "script.state",
+        "script.step"
+      ]
+    },
+    "run": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/object_id"
+    },
+    "step": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/name"
+    },
+    "kind": {
+      "enum": [
+        "task",
+        "fanout",
+        "action",
+        "confirm",
+        "wait",
+        "await"
+      ],
+      "x-botaru-registry": "script-step-kinds"
+    },
+    "state": {
+      "enum": [
+        "canceled",
+        "completed",
+        "declined",
+        "failed",
+        "ok",
+        "paused",
+        "pending",
+        "proposed",
+        "rejected",
+        "released",
+        "running",
+        "skipped",
+        "unknown",
+        "waiting"
+      ]
+    },
+    "reason": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/reason"
+    }
+  }
+}

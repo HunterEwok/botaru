@@ -1,0 +1,173 @@
+id: fx-man-tool-01
+rules: [TEN-3a, INJ-4, INJ-3, INJ-14, INJ-1, MAN-9]
+description: >-
+  Plugin checks: a tool has target_from or target: any (row
+  lint:manifests/tool-target-from); on a machine untrusted output is redacted with
+  [ip, email, secret] (row lint:manifests/redact-required); untrusted_output: false
+  only for output made of numbers and enums (INJ-3); cmd commands without a shell, with an absolute path,
+  a parameter as a whole element after -- and without programs from forbidden-programs.yaml (INJ-14);
+  a string without a format for placement: host does not pass the schema (INJ-1); a write tool with
+  args_from does not declare a second schema (MAN-9).
+with_examples: true
+cases:
+  - name: read plugin with target_from and redaction
+    manifests:
+      - apiVersion: botaru/v1alpha1
+        kind: ToolPlugin
+        metadata: {name: fx-logs}
+        spec:
+          placement: host
+          network: {egress: []}
+          tools:
+            - {name: tail, access: read, tier: 1, output_class: raw_logs, untrusted_output: true, redact: [ip, email, secret],
+               target_from: source, params: {source: {enum_from: catalog.log_sources}}}
+    expect: ok
+  - name: tool without target_from and without target any
+    manifests:
+      - apiVersion: botaru/v1alpha1
+        kind: ToolPlugin
+        metadata: {name: fx-logs}
+        spec:
+          placement: host
+          network: {egress: []}
+          tools:
+            - {name: tail, access: read, tier: 1, output_class: raw_logs, untrusted_output: true, redact: [ip, email, secret],
+               params: {source: {enum_from: catalog.log_sources}}}
+    expect: {error: tool_target_missing}
+  - name: target_from is not a tool parameter
+    manifests:
+      - apiVersion: botaru/v1alpha1
+        kind: ToolPlugin
+        metadata: {name: fx-logs}
+        spec:
+          placement: host
+          network: {egress: []}
+          tools:
+            - {name: tail, access: read, tier: 1, output_class: raw_logs, untrusted_output: true, redact: [ip, email, secret],
+               target_from: host, params: {source: {enum_from: catalog.log_sources}}}
+    expect: {error: tool_target_unknown}
+  - name: untrusted output on a machine without email redaction
+    manifests:
+      - apiVersion: botaru/v1alpha1
+        kind: ToolPlugin
+        metadata: {name: fx-logs}
+        spec:
+          placement: host
+          network: {egress: []}
+          tools:
+            - {name: tail, access: read, tier: 1, output_class: raw_logs, untrusted_output: true, redact: [ip, secret],
+               target_from: source, params: {source: {enum_from: catalog.log_sources}}}
+    expect: {error: redact_required}
+  - name: untrusted_output false with free text output
+    manifests:
+      - apiVersion: botaru/v1alpha1
+        kind: ToolPlugin
+        metadata: {name: fx-logs}
+        spec:
+          placement: host
+          network: {egress: []}
+          tools:
+            - name: last
+              access: read
+              tier: 1
+              output_class: internal
+              untrusted_output: false
+              target_from: source
+              params: {source: {enum_from: catalog.log_sources}}
+              output_schema:
+                type: object
+                additionalProperties: false
+                properties: {line: {type: string, maxLength: 2000}}
+    expect: {error: untrusted_output_false_text}
+  - name: string without a format on a production machine
+    manifests:
+      - apiVersion: botaru/v1alpha1
+        kind: ToolPlugin
+        metadata: {name: fx-term}
+        spec:
+          placement: host
+          network: {egress: []}
+          tools:
+            - {name: send_keys, access: read, tier: 1, output_class: raw_logs, untrusted_output: true, redact: [ip, email, secret],
+               target: any, params: {text: {type: string, maxLength: 200}}}
+    expect: {error: schema_invalid}
+  - name: command through a shell
+    manifests:
+      - apiVersion: botaru/v1alpha1
+        kind: ToolPlugin
+        metadata: {name: cmd}
+        spec:
+          placement: host
+          network: {egress: []}
+          tools:
+            - name: run
+              access: read
+              tier: 1
+              output_class: raw_logs
+              untrusted_output: true
+              redact: [ip, email, secret]
+              target_from: host
+              params: {host: {enum_from: catalog.hosts}}
+              commands:
+                disk_usage: {argv: [/bin/sh, -c, "df -h"]}
+    expect: {error: cmd_forbidden_program}
+  - name: program path is not absolute
+    manifests:
+      - apiVersion: botaru/v1alpha1
+        kind: ToolPlugin
+        metadata: {name: cmd}
+        spec:
+          placement: host
+          network: {egress: []}
+          tools:
+            - name: run
+              access: read
+              tier: 1
+              output_class: raw_logs
+              untrusted_output: true
+              redact: [ip, email, secret]
+              target_from: host
+              params: {host: {enum_from: catalog.hosts}}
+              commands:
+                disk_usage: {argv: [df, -h]}
+    expect: {error: cmd_argv_path}
+  - name: parameter inside an element and without a separator
+    manifests:
+      - apiVersion: botaru/v1alpha1
+        kind: ToolPlugin
+        metadata: {name: cmd}
+        spec:
+          placement: host
+          network: {egress: []}
+          tools:
+            - name: run
+              access: read
+              tier: 1
+              output_class: raw_logs
+              untrusted_output: true
+              redact: [ip, email, secret]
+              target_from: host
+              params: {host: {enum_from: catalog.hosts}}
+              commands:
+                service_status:
+                  argv: [/usr/bin/systemctl, status, "--unit={service.unit}"]
+                  params: {service: {enum_from: catalog.services}}
+    expect: {error: cmd_param_position}
+  - name: write tool with args_from and its own schema
+    manifests:
+      - apiVersion: botaru/v1alpha1
+        kind: ToolPlugin
+        metadata: {name: pipeline}
+        spec:
+          placement: host
+          network: {egress: []}
+          tools:
+            - {name: start_ctd_qc, access: write, tier: 3, output_class: internal, untrusted_output: false,
+               args_from: "action:pipeline.ctd_qc", target_from: stations, params: {stations: {enum_from: catalog.stations}}}
+            - {name: resume_batch, access: write, tier: 3, output_class: internal, untrusted_output: false,
+               args_from: "action:pipeline.batch_resume", target_from: run}
+            - {name: cleanup_tmp, access: write, tier: 3, output_class: internal, untrusted_output: false,
+               args_from: "action:cleanup_pipeline_tmp", target: any}
+            - {name: start_ctd_daily, access: write, tier: 3, output_class: internal, untrusted_output: false,
+               args_from: "action:pipeline.ctd_daily", target_from: stations}
+    expect: {error: args_from_second_schema}

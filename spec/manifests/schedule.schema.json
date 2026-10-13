@@ -1,0 +1,57 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:botaru:schema:schedule:1",
+  "title": "Schedule",
+  "description": "spec of the Schedule manifest: slots by cron, a time zone, a task and an address (docs/task-language.md, \"Schedule\").",
+  "x-botaru-direction": "input",
+  "x-botaru-rules": [
+    "TIM-3",
+    "TIM-4",
+    "PRM-10",
+    "DLV-6",
+    "PRP-10"
+  ],
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "cron",
+    "task"
+  ],
+  "properties": {
+    "cron": {
+      "type": "string",
+      "maxLength": 100,
+      "description": "Five cron fields, without CRON_TZ and TZ (TIM-3, TIM-4).",
+      "pattern": "^[0-9*/,-]+( [0-9*/,-]+){4}$"
+    },
+    "timezone": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/tz",
+      "description": "Time zone; without the field Tenant.spec.timezone applies."
+    },
+    "task": {
+      "$ref": "urn:botaru:schema:manifest:1#/$defs/task_template",
+      "description": "The slot task: a type from the system-ops group."
+    },
+    "deliver_to": {
+      "type": "array",
+      "maxItems": 20,
+      "items": {
+        "$ref": "urn:botaru:schema:manifest:1#/$defs/address"
+      },
+      "description": "Delivery addresses (DLV-6, PRM-10)."
+    },
+    "skip_if_waiting": {
+      "type": "boolean",
+      "description": "true by default: the slot is skipped while the previous task waits (TIM-3)."
+    },
+    "proposable": {
+      "type": "boolean",
+      "description": "Whether a change of the schedule can be proposed; true by default (PRP-10)."
+    },
+    "locale": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/locale",
+      "description": "From v0.2: the language of code texts for the schedule's addresses (DLV-9).",
+      "x-botaru-version": "v0.2"
+    }
+  }
+}

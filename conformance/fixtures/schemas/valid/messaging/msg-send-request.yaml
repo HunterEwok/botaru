@@ -1,0 +1,31 @@
+schema: spec/model/msg-send-request.schema.json
+rules:
+- MSG-1
+- MSG-4
+- STA-1
+description: 'Sender requests that the schema accepts: a role report with a note, a reply by handle without a note, a state
+  self-report without an address.'
+cases:
+- type: report.qc_note.v1
+  to: role:reporter
+  fields:
+    resource: ctd-2026-08-p017
+    check: header_anomaly
+    points_rejected: 13
+  note: The file header has a comment line of an unusual form, points 400-412 were rejected
+  idempotency_key: null
+- type: report.work.v1
+  reply_to: hQ3vX9kLmN2pR7sT
+  fields:
+    task_type: data.qc.ctd.v1
+    outcome: completed
+  ttl: 6h
+- type: report.lead_summary.v1
+  to: group:science-pool
+  fields:
+    items_ok: 38
+  idempotency_key: lead-2026-10-06
+- type: state.worker.v1
+  fields:
+    phase: busy
+    slots_free: 1

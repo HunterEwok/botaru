@@ -1,0 +1,79 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:botaru:schema:report-params:1",
+  "title": "Reporter type parameters",
+  "description": "Closed parameters of report.digest.v1, report.ask.v1 and report.proposals.v1: window, scope and language from the chat binding. The parameters have no delivery address: it comes from origin, the route, the schedule deliver_to or insights.present_to (REP-9). A person's question in report.ask.v1 is in goal, as for any task from a person.",
+  "x-botaru-direction": "input",
+  "x-botaru-rules": [
+    "REP-3",
+    "REP-9",
+    "INJ-1"
+  ],
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "window",
+    "scope"
+  ],
+  "properties": {
+    "window": {
+      "enum": [
+        "1h",
+        "24h",
+        "since_last"
+      ],
+      "description": "Summary window."
+    },
+    "scope": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind"
+      ],
+      "properties": {
+        "kind": {
+          "enum": [
+            "tenant",
+            "campaign",
+            "root"
+          ],
+          "description": "Scope: the whole tenant, a campaign or a task tree."
+        },
+        "id": {
+          "$ref": "urn:botaru:schema:common:1#/$defs/object_id",
+          "description": "Id of the campaign or root; none for tenant."
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "patternProperties": {
+              "^kind$": {
+                "enum": [
+                  "campaign",
+                  "root"
+                ]
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "id"
+            ]
+          },
+          "else": {
+            "not": {
+              "required": [
+                "id"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    "locale": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/locale",
+      "description": "Language from the chat binding."
+    }
+  }
+}

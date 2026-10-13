@@ -1,0 +1,58 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:botaru:schema:p2-deadletter-list-response:1",
+  "title": "P2 deadletter.list: response",
+  "description": "Dead work: failed tasks and dead deliveries with reasons (DLV-4); a summary by (tenant, type, reason) since v0.2.",
+  "x-botaru-direction": "output",
+  "x-botaru-rules": [
+    "DLV-4",
+    "CAP-4"
+  ],
+  "type": "object",
+  "required": [
+    "items"
+  ],
+  "properties": {
+    "items": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "kind",
+          "id",
+          "reason"
+        ],
+        "properties": {
+          "kind": {
+            "enum": [
+              "task",
+              "delivery"
+            ]
+          },
+          "id": {
+            "$ref": "urn:botaru:schema:common:1#/$defs/object_id"
+          },
+          "tenant": {
+            "$ref": "urn:botaru:schema:common:1#/$defs/tenant_name"
+          },
+          "type": {
+            "type": "string",
+            "maxLength": 120
+          },
+          "reason": {
+            "$ref": "urn:botaru:schema:common:1#/$defs/reason"
+          },
+          "at": {
+            "$ref": "urn:botaru:schema:common:1#/$defs/datetime"
+          }
+        }
+      },
+      "maxItems": 1000
+    },
+    "next": {
+      "type": "string",
+      "maxLength": 200,
+      "description": "Cursor of the next page from the previous answer."
+    }
+  }
+}

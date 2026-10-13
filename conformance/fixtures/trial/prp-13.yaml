@@ -1,0 +1,61 @@
+id: prp-13
+rules: [PRP-21]
+description: 'Trial guards. The core takes from one to five guards from two tables of the registry core-series.yaml
+  (by target kind and by metric) and from insights.extra_guards. The metric farm.task.outcome is always guarded by farm.attempt.duration
+  of the same type: a trial record without it does not exist. insights.extra_guards can only add guards; an attempt
+  to remove a table guard does not pass apply.'
+cases:
+- description: 'Example p_0101: moving the report-nightly schedule, the metric farm.task.outcome of the backup. Guards:
+    the report-nightly slot and the report p95 (by target kind schedule), the backup p95 (by metric) and the db1 load (insights.extra_guards).'
+  given:
+    change:
+      kind: manifest_change
+      target: {kind: Schedule, name: report-nightly}
+      field: spec.cron
+    benefit: {metric: farm.task.outcome, subject: 'task_type:demo.db.backup.v1'}
+    extra_guards:
+    - metric: farm.task.outcome
+      guards: [host.load.v1]
+  expect:
+    guards:
+    - {series: farm.schedule.slot, subject: 'schedule:report-nightly', source: target, before: 1.0}
+    - series: farm.attempt.duration
+      subject: task_type:demo.report.nightly.v1
+      source: target
+      before: 6120
+    - series: farm.attempt.duration
+      subject: task_type:demo.db.backup.v1
+      source: metric
+      before: 3300
+    - {series: host.load.v1, subject: 'host:db1', source: extra_guards, before: 410}
+    count_between: [1, 5]
+- description: A trial record with the metric farm.task.outcome without farm.attempt.duration of the same type is not allowed.
+  given:
+    trial:
+      metric: {series: farm.task.outcome, subject: 'task_type:demo.db.backup.v1'}
+      guards:
+      - {series: farm.schedule.slot, subject: 'schedule:report-nightly'}
+  expect:
+    valid: false
+    missing_guard: {series: farm.attempt.duration, subject: 'task_type:demo.db.backup.v1'}
+- description: insights.extra_guards tries to remove a table guard.
+  given:
+    manifest:
+      kind: Tenant
+      metadata: {name: demo}
+      spec:
+        insights:
+          extra_guards:
+          - metric: farm.task.outcome
+            guards: []
+            remove: [farm.attempt.duration]
+  expect: {result: rejected, stage: apply, field: spec.insights.extra_guards}
+- description: Kind none does not get a trial.
+  given:
+    change: {kind: none}
+  steps:
+  - call:
+      port: P1
+      op: decide
+      request: {subject_kind: proposal, id: $last, decision: accept}
+  expect: {proposal_state: noted, trial: null}

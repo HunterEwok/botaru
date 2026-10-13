@@ -1,0 +1,18 @@
+schema: spec/model/task-body.schema.json
+rules: [IDN-1, INJ-1]
+description: 'Bodies that the task body schema accepts: only a goal; a type and a goal; parameters and three kinds of attachments.'
+cases:
+- goal: how many 5xx responses in the last hour
+- type: ops.investigate.v1
+  goal: why was www.example.org slow last night?
+- type: data.describe.v1
+  goal: describe the CTD file
+  params:
+    station: st-05
+  attachments:
+  - file_ref: file:AbCdEfGhIjKlMnOpQrStUv
+    filename: st-05.cnv
+    media_type: text/plain
+  - text: log excerpt
+  - data:
+      rows: 3

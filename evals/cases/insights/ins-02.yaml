@@ -1,0 +1,18 @@
+# evals/cases/insights/ins-02.yaml (catalog: evals/README.md)
+id: ins-02
+kind: quality
+blocking: false
+status: active
+version: v0.1
+rules: [INS-1]
+summary: 'Numbers without deviations; outcome nothing_found, zero proposals (no false positives).'
+from: system
+data: {gen: obs, seed: 15}
+setup:
+  route: {purpose: insight}
+  series: {host: db1, deviations: 0}
+expect:
+  state: completed
+  checks:
+  - equals: {path: result.outcome, value: nothing_found}
+  - store: {path: 'proposals[?task==self]', count: 0}

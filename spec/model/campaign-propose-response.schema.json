@@ -1,0 +1,49 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:botaru:schema:campaign-propose-response:1",
+  "title": "Campaign proposal response",
+  "description": "Number and state of the created campaign, or a denial with a reason. A denial creates no record and does not take the key; the model gets a short reason, the full one is written to the audit (PRM-8).",
+  "x-botaru-direction": "output",
+  "x-botaru-rules": [
+    "ORC-1",
+    "ORC-5",
+    "ORC-14",
+    "PRM-8"
+  ],
+  "oneOf": [
+    {
+      "type": "object",
+      "required": [
+        "campaign",
+        "state"
+      ],
+      "properties": {
+        "campaign": {
+          "$ref": "urn:botaru:schema:common:1#/$defs/object_id"
+        },
+        "state": {
+          "enum": [
+            "proposed",
+            "running",
+            "paused"
+          ]
+        }
+      }
+    },
+    {
+      "type": "object",
+      "required": [
+        "state",
+        "reason"
+      ],
+      "properties": {
+        "state": {
+          "const": "rejected"
+        },
+        "reason": {
+          "$ref": "urn:botaru:schema:common:1#/$defs/reason"
+        }
+      }
+    }
+  ]
+}

@@ -1,0 +1,23 @@
+schema: spec/manifests/route.schema.json
+rules:
+- MAN-1
+description: Route manifest specs from examples/ that the kind schema accepts.
+cases:
+- 'on':
+    event: run.finished.v1
+    subject: ctd-stations
+  task:
+    type: pipeline.ctd_qc.report.v1
+  deliver_to:
+  - approval_initiator:
+      action: pipeline.ctd_qc
+- 'on':
+    event: run.finished.v1
+    subject: lab-runs
+    match:
+      outcome: failed
+  task:
+    type: pipeline.status.v1
+    goal: Explain why the run failed.
+  deliver_to:
+  - group:seq

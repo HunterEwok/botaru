@@ -1,0 +1,91 @@
+# An approval is executed no more than once (APR-7) and decided once (APR-4).
+id: fx-approval-once
+rules: [APR-4, APR-7]
+description: 'Double press, a repeated decide with the same nonce, a race of two approvers and a repeated write call after
+  lease loss. Approval apr-4812: cleanup_pipeline_tmp from bob on ctd1, risk low.'
+given:
+  approval:
+    id: apr_4812
+    tenant: demo
+    action: cleanup_pipeline_tmp
+    initiator: human:bob
+    risk: low
+    approvals: 1
+    state: pending
+cases:
+- id: apr-once-01
+  rules: [APR-7]
+  given:
+    people:
+    - principal: human:carol
+      groups: [approver]
+  steps:
+  - call:
+      port: P1
+      op: decide
+      request: {subject_kind: approval, id: apr_4812, decision: approve}
+    by: human:carol
+  - call:
+      port: P1
+      op: decide
+      request: {subject_kind: approval, id: apr_4812, decision: approve}
+    by: human:carol
+  expect:
+    state: executing
+    write_calls: 1
+    action_tasks: 1
+    second: {same_response: true}
+    key: system:approval:apr_4812
+- id: apr-once-03
+  rules: [APR-4]
+  given:
+    approval_override: {initiator: 'human:alice', action: cleanup_pipeline_tmp}
+    people:
+    - principal: human:carol
+      groups: [approver]
+    - principal: human:bob
+      groups: [approver]
+  steps:
+  - call:
+      port: P1
+      op: decide
+      request: {subject_kind: approval, id: apr_4812, decision: approve}
+    by: human:carol
+  - call:
+      port: P1
+      op: decide
+      request: {subject_kind: approval, id: apr_4812, decision: reject}
+    by: human:bob
+  expect: {state: executing, second_reason: already_decided, write_calls: 1}
+- id: apr-once-04
+  rules: [APR-7]
+  given: {state: executing}
+  steps:
+  - check: {toolcall: leased, lease: expired}
+  expect: {state: exec_unknown, retry: none, card_update: true}
+- id: apr-once-05
+  rules: [APR-7]
+  given: {state: executing}
+  steps:
+  - check:
+      toolhost_receives: {approval_id: apr_4812, args_hash: other}
+  expect:
+    toolhost: rejects
+    executed: false
+    note: the toolhost checks approval_id, the tenant and the arguments hash
+- id: apr-once-06
+  rules: [APR-4]
+  given:
+    people:
+    - principal: human:carol
+      groups: [approver]
+  steps:
+  - call:
+      port: P1
+      op: decide
+      request: {subject_kind: approval, id: apr_4812, nonce: $stale, decision: approve}
+    by: human:carol
+  expect:
+    decision: {result: denied}
+    reason: forbidden
+    state: pending

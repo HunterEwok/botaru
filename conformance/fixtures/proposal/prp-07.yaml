@@ -1,0 +1,58 @@
+id: prp-07
+rules: [PRP-8]
+description: 'A proposal changes only objects of its own tenant. A commit with the line Botaru-Proposal: <id> touches
+  a file outside the proposal tenant''s folder: apply is rejected in full with reason proposal_scope, and the commit is not linked
+  to the proposal. The same commit through P2 proposal.link_commit gives the same refusal. A manifest_change target in a shared object
+  (a task type) gives rejected(forbidden_change) already at creation.'
+given:
+  tenant: demo
+  proposal:
+    id: p_01JB0000000000000000000101
+    state: realizing
+    change:
+      kind: manifest_change
+      target: {kind: Schedule, name: report-nightly}
+      field: spec.cron
+      value: 30 3 * * *
+cases:
+- description: 'A commit with a Botaru-Proposal line touches tenants/demo/schedules.yaml and tenants/demo2/schedules.yaml.'
+  given:
+    commit:
+      trailer: 'Botaru-Proposal: p_01JB0000000000000000000101'
+      files: [tenants/demo/schedules.yaml, tenants/demo2/schedules.yaml]
+  expect:
+    apply: {result: rejected, reason: proposal_scope, applied_files: 0}
+    proposal: {state: realizing, commit: null}
+- description: A commit touches a shared task type in roles/ when linked through P2 proposal.link_commit.
+  steps:
+  - call:
+      port: P2
+      op: proposal.link_commit
+      request: {proposal: p_01JB0000000000000000000101, commit: 0123456789abcdef0123456789abcdef01234567}
+    context:
+      files: [tenants/demo/schedules.yaml, tasktypes/demo.db.backup.v1.yaml]
+  expect:
+    result: rejected
+    reason: proposal_scope
+    proposal: {state: realizing}
+- description: A commit touches only the folder tenants/demo and sets the accepted value.
+  given:
+    commit:
+      trailer: 'Botaru-Proposal: p_01JB0000000000000000000101'
+      files: [tenants/demo/schedules.yaml]
+      sets: {spec.cron: 30 3 * * *}
+  expect:
+    apply: {result: ok}
+    proposal: {state: realized, link: commit_trailer}
+- description: A manifest_change proposal targeting a shared TaskType.
+  given:
+    submit:
+      change:
+        kind: manifest_change
+        manifest_change:
+          ops:
+          - op: set
+            target: {kind: TaskType, name: demo.db.backup.v1}
+            field: spec.timeouts
+            value: 1h
+  expect: {result: rejected, reason: forbidden_change}

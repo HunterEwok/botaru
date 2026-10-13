@@ -1,0 +1,48 @@
+id: fx-rep-06
+rules: [REP-11, OUT-1, DLV-15]
+description: A task type declared for a group chat by a default_types line with chats that include group, or by a command
+  allowed in a group, must declare non-empty summary_fields. The apply lint on the demo catalog, where report.ask.v1
+  is declared for chat:lab without summary_fields, answers with the refusal summary_fields_required naming the type.
+given:
+  tenant: demo
+  task_types:
+    report.ask.v1:
+      summary_fields: []
+    ops.summary.v1:
+      summary_fields: [resource, state]
+cases:
+- description: default_types for a group without summary_fields
+  given:
+    tenant_manifest:
+      default_types:
+      - type: report.ask.v1
+        chats: [group, direct]
+  expect:
+    apply: {result: rejected}
+    reason: summary_fields_required
+    type: report.ask.v1
+- description: a command in a group without summary_fields
+  given:
+    tenant_manifest:
+      commands:
+      - name: ask
+        type: report.ask.v1
+        chats: [group]
+  expect:
+    apply: {result: rejected}
+    reason: summary_fields_required
+    type: report.ask.v1
+- description: private chat only
+  given:
+    tenant_manifest:
+      default_types:
+      - type: report.ask.v1
+        chats: [direct]
+  expect: {apply: ok}
+- description: a type with summary_fields
+  given:
+    tenant_manifest:
+      default_types:
+      - type: ops.summary.v1
+        chats: [group]
+  expect: {apply: ok}

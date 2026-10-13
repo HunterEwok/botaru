@@ -1,0 +1,77 @@
+# Laundering permissions through a wake-up and a report (PRM-6, IDN-2, MSG-7).
+id: fx-authorize-launder
+rules: [PRM-6, IDN-2]
+description: A wake-up task is formally from system and runs with the role's permissions, but its initiator set includes
+  the initiators of the records it read, and C2 intersects the permissions with each of them. As in the docs/messaging.md example, the initiator alice
+  acts as a person with only the group user.
+cases:
+- id: fx-msg-launder
+  rules: [PRM-6, IDN-2, MSG-7]
+  given:
+    tenant: demo
+    people:
+    - principal: human:alice
+      groups: [user]
+  steps:
+  - call:
+      port: P1
+      op: enqueue
+      request:
+        body: {type: ops.summary.v1, goal: training task ops.summary.v1}
+        idempotency_key: fx-msg-launder-1
+    by: human:alice
+    expect: {result: ok}
+  - check:
+      report_of: ops.summary.v1
+      wakes: {role: ops-lead, task_initiator: system}
+  - call:
+      port: P1
+      op: enqueue
+      request:
+        body: {type: ops.investigate.v1, goal: training task ops.investigate.v1}
+        idempotency_key: fx-msg-launder-2
+    by: attempt
+    context:
+      initiators: [system, 'human:alice']
+  expect:
+    child: {result: rejected, reason: no_group_cap}
+    reason: no_group_cap
+    note: alice does not have task:ops.investigate.v1
+- id: launder-02
+  rules: [IDN-2]
+  given: {tenant: demo}
+  steps:
+  - call:
+      port: P1
+      op: submit_activity
+      request:
+        kind: message
+        channel: telegram
+        update_id: '3'
+        sender: {identity: 'telegram:1001', verified: true}
+        chat: {kind: direct, external_id: '1001'}
+        text: /service restart nginx
+        forwarded: true
+    by: human:alice
+    context: {forwarded_from: 'human:bob'}
+  expect:
+    command: false
+    initiator: human:alice
+    personal_seen: forward
+    note: forwarded text is not a command and does not take the author's permissions
+- id: launder-03
+  rules: [IDN-2]
+  given: {tenant: demo}
+  steps:
+  - call:
+      port: P1
+      op: submit_activity
+      request:
+        kind: message
+        channel: telegram
+        update_id: '4'
+        sender: {identity: 'telegram:1001', verified: false}
+        text: /run ctd-qc
+        chat: {kind: group, external_id: '-1001001'}
+    chat: lab
+  expect: {command: false, task: none, note: without a verified sender there is no initiator}

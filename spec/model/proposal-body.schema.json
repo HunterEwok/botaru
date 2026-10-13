@@ -1,0 +1,833 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:botaru:schema:proposal-body:1",
+  "title": "Proposal body (botaru.proposal/v1)",
+  "description": "The proposal body that a bot hands in as the result of an insight or aggregate task: the closed schema botaru.proposal/v1. Only the core writes the record fields (id, author, fingerprint, marks, state, scores, decision, execution, trial); the body does not have them (PRP-1, IDN-1). The note of up to 1000 characters is always untrusted: code does not read it, reviewers do not get it (PRP-1).",
+  "x-botaru-direction": "input",
+  "x-botaru-rules": [
+    "PRP-1",
+    "PRP-2",
+    "PRP-3",
+    "PRP-13",
+    "PRP-21"
+  ],
+  "oneOf": [
+    {
+      "$ref": "urn:botaru:schema:proposal-body:1#/$defs/body_none"
+    },
+    {
+      "$ref": "urn:botaru:schema:proposal-body:1#/$defs/body_change"
+    }
+  ],
+  "$defs": {
+    "category": {
+      "enum": [
+        "schedule",
+        "backup",
+        "capacity",
+        "cost",
+        "reliability",
+        "security",
+        "data_quality",
+        "config"
+      ],
+      "description": "Proposal category from a closed list."
+    },
+    "severity": {
+      "enum": [
+        "low",
+        "medium",
+        "high"
+      ],
+      "description": "Severity of the problem."
+    },
+    "problem_code": {
+      "type": "string",
+      "description": "Problem code from the closed list of the category's codes, for example backup_deadline_miss.",
+      "pattern": "^[a-z][a-z0-9_]*$",
+      "maxLength": 64
+    },
+    "change_kind": {
+      "enum": [
+        "none",
+        "action_request",
+        "script",
+        "manifest_change",
+        "human_change"
+      ],
+      "description": "Change kind (PRP-3, PRP-13)."
+    },
+    "direction": {
+      "enum": [
+        "up",
+        "down"
+      ],
+      "description": "Metric direction."
+    },
+    "evidence": {
+      "type": "object",
+      "description": "Evidence reference.",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "series",
+        "subject",
+        "window",
+        "rollup",
+        "value"
+      ],
+      "properties": {
+        "kind": {
+          "enum": [
+            "observation"
+          ],
+          "description": "Reference kind: an observation rollup of one's own tenant (OBV-3)."
+        },
+        "series": {
+          "$ref": "urn:botaru:schema:observation-query:1#/$defs/series"
+        },
+        "subject": {
+          "$ref": "urn:botaru:schema:observation-query:1#/$defs/subject"
+        },
+        "window": {
+          "$ref": "urn:botaru:schema:observation-query:1#/$defs/window"
+        },
+        "rollup": {
+          "$ref": "urn:botaru:schema:observation-query:1#/$defs/rollup"
+        },
+        "slot": {
+          "description": "Local start time of the hourly period of the rollup hour.*, for example 02:00.",
+          "type": "string",
+          "pattern": "^([01][0-9]|2[0-3]):[0-5][0-9]$",
+          "maxLength": 5
+        },
+        "value": {
+          "$ref": "urn:botaru:schema:observation-query:1#/$defs/value",
+          "description": "The value the author cites; the core rereads it at creation and before showing (PRP-2)."
+        }
+      }
+    },
+    "promised": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "direction"
+      ],
+      "properties": {
+        "direction": {
+          "$ref": "urn:botaru:schema:proposal-body:1#/$defs/direction"
+        },
+        "expected_change_pp": {
+          "type": "number",
+          "description": "Promised change in percentage points for share series.",
+          "minimum": 0,
+          "maximum": 100
+        },
+        "expected_change_pct": {
+          "type": "number",
+          "description": "Promised change in percent for the other series.",
+          "minimum": 0,
+          "maximum": 1000
+        }
+      }
+    },
+    "change_action_request": {
+      "type": "object",
+      "description": "A request for an action; \"Accept\" creates an approval on behalf of the person who accepted.",
+      "additionalProperties": false,
+      "required": [
+        "args"
+      ],
+      "properties": {
+        "action": {
+          "$ref": "urn:botaru:schema:common:1#/$defs/dotted_name",
+          "description": "An action from the author role's vocabulary; the arguments pass its closed schema (PRP-3)."
+        },
+        "tool": {
+          "enum": [
+            "service/control",
+            "monitor/script_run"
+          ],
+          "description": "A call of a service or monitoring script within the author role's service_control or monitor_scripts (MON-8, MON-10)."
+        },
+        "args": {
+          "type": "object",
+          "maxProperties": 32,
+          "description": "Arguments by the closed schema of the action or tool; the core checks them with the same schema as at a real enqueue.",
+          "x-botaru-closed-by": "args of the action"
+        }
+      },
+      "oneOf": [
+        {
+          "required": [
+            "action"
+          ]
+        },
+        {
+          "required": [
+            "tool"
+          ]
+        }
+      ]
+    },
+    "change_script": {
+      "type": "object",
+      "maxProperties": 64,
+      "description": "A botaru.script/v1 draft within the scripts section of the author role with propose: in_proposal; after \"Accept\" it goes through the SCR-5 acceptance and the SCR-6 card.",
+      "x-botaru-closed-by": "spec/model/script.schema.json at the SCR-5 acceptance"
+    },
+    "change_manifest_change": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "ops"
+      ],
+      "properties": {
+        "ops": {
+          "type": "array",
+          "items": {
+            "oneOf": [
+              {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "op",
+                  "target",
+                  "field",
+                  "value"
+                ],
+                "properties": {
+                  "op": {
+                    "const": "set"
+                  },
+                  "target": {
+                    "type": "object",
+                    "description": "Target of the operation.",
+                    "additionalProperties": false,
+                    "required": [
+                      "kind",
+                      "name"
+                    ],
+                    "properties": {
+                      "kind": {
+                        "enum": [
+                          "Schedule",
+                          "Catalog",
+                          "Tenant"
+                        ],
+                        "description": "Manifest kind of the target in the tenant's folder (PRP-8); fields by the allowlist proposable-fields.yaml."
+                      },
+                      "name": {
+                        "$ref": "urn:botaru:schema:common:1#/$defs/name",
+                        "description": "Object name (metadata.name)."
+                      }
+                    }
+                  },
+                  "field": {
+                    "description": "Path of the field in the target's spec by the allowlist proposable-fields.yaml, for example spec.cron.",
+                    "type": "string",
+                    "pattern": "^spec(\\.[a-z_]+(\\[\\])?)+$",
+                    "maxLength": 120
+                  },
+                  "value": {
+                    "description": "New value of the field.",
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "maxLength": 200
+                      },
+                      {
+                        "type": "number"
+                      },
+                      {
+                        "type": "boolean"
+                      }
+                    ]
+                  }
+                }
+              },
+              {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "op",
+                  "template",
+                  "target"
+                ],
+                "properties": {
+                  "op": {
+                    "const": "create_from_template"
+                  },
+                  "template": {
+                    "$ref": "urn:botaru:schema:common:1#/$defs/name",
+                    "description": "Template from git."
+                  },
+                  "target": {
+                    "type": "object",
+                    "description": "Target of the operation.",
+                    "additionalProperties": false,
+                    "required": [
+                      "kind",
+                      "name"
+                    ],
+                    "properties": {
+                      "kind": {
+                        "enum": [
+                          "Schedule",
+                          "Catalog",
+                          "Tenant"
+                        ],
+                        "description": "Manifest kind of the target in the tenant's folder (PRP-8); fields by the allowlist proposable-fields.yaml."
+                      },
+                      "name": {
+                        "$ref": "urn:botaru:schema:common:1#/$defs/name",
+                        "description": "Object name (metadata.name)."
+                      }
+                    }
+                  }
+                }
+              }
+            ]
+          },
+          "maxItems": 10,
+          "description": "At most 10 operations (PRP-3).",
+          "minItems": 1
+        }
+      }
+    },
+    "change_human_change": {
+      "type": "object",
+      "description": "A change made by people by hand: a closed description without free text (PRP-13).",
+      "additionalProperties": false,
+      "required": [
+        "target",
+        "path",
+        "direction",
+        "value"
+      ],
+      "properties": {
+        "target": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "name"
+          ],
+          "properties": {
+            "kind": {
+              "description": "Kind of the tenant object, for example Host.",
+              "type": "string",
+              "pattern": "^[A-Z][A-Za-z]{1,39}$",
+              "maxLength": 40
+            },
+            "name": {
+              "$ref": "urn:botaru:schema:common:1#/$defs/name"
+            }
+          }
+        },
+        "path": {
+          "description": "Field path from the registry spec/model/change-paths.yaml.",
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*)+$",
+          "maxLength": 120,
+          "x-botaru-registry": "change-paths"
+        },
+        "direction": {
+          "enum": [
+            "up",
+            "down",
+            "set"
+          ],
+          "description": "Direction of the change."
+        },
+        "value": {
+          "description": "Value: a number or an enum value of the path.",
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "string",
+              "pattern": "^[a-z][a-z0-9_]*$",
+              "maxLength": 40
+            }
+          ]
+        }
+      }
+    },
+    "kind_none": {
+      "type": "object",
+      "description": "Kind none: changes nothing; only the value and security lenses assess it (COM-14).",
+      "additionalProperties": false,
+      "required": [
+        "kind"
+      ],
+      "properties": {
+        "kind": {
+          "const": "none",
+          "description": "For information: only the problem and the evidence."
+        }
+      }
+    },
+    "kind_action_request": {
+      "type": "object",
+      "description": "Kind action_request.",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "action_request"
+      ],
+      "properties": {
+        "kind": {
+          "const": "action_request"
+        },
+        "action_request": {
+          "$ref": "urn:botaru:schema:proposal-body:1#/$defs/change_action_request"
+        }
+      }
+    },
+    "kind_script": {
+      "type": "object",
+      "description": "Kind script.",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "script"
+      ],
+      "properties": {
+        "kind": {
+          "const": "script"
+        },
+        "script": {
+          "$ref": "urn:botaru:schema:proposal-body:1#/$defs/change_script"
+        }
+      }
+    },
+    "kind_manifest_change": {
+      "type": "object",
+      "description": "Kind manifest_change.",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "manifest_change"
+      ],
+      "properties": {
+        "kind": {
+          "const": "manifest_change"
+        },
+        "manifest_change": {
+          "$ref": "urn:botaru:schema:proposal-body:1#/$defs/change_manifest_change"
+        }
+      }
+    },
+    "kind_human_change": {
+      "type": "object",
+      "description": "Kind human_change.",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "human_change"
+      ],
+      "properties": {
+        "kind": {
+          "const": "human_change"
+        },
+        "human_change": {
+          "$ref": "urn:botaru:schema:proposal-body:1#/$defs/change_human_change"
+        }
+      }
+    },
+    "change_other": {
+      "description": "A change of any kind except none.",
+      "oneOf": [
+        {
+          "$ref": "urn:botaru:schema:proposal-body:1#/$defs/kind_action_request"
+        },
+        {
+          "$ref": "urn:botaru:schema:proposal-body:1#/$defs/kind_script"
+        },
+        {
+          "$ref": "urn:botaru:schema:proposal-body:1#/$defs/kind_manifest_change"
+        },
+        {
+          "$ref": "urn:botaru:schema:proposal-body:1#/$defs/kind_human_change"
+        }
+      ]
+    },
+    "change": {
+      "description": "Exactly one change kind (PRP-3).",
+      "oneOf": [
+        {
+          "$ref": "urn:botaru:schema:proposal-body:1#/$defs/kind_none"
+        },
+        {
+          "$ref": "urn:botaru:schema:proposal-body:1#/$defs/kind_action_request"
+        },
+        {
+          "$ref": "urn:botaru:schema:proposal-body:1#/$defs/kind_script"
+        },
+        {
+          "$ref": "urn:botaru:schema:proposal-body:1#/$defs/kind_manifest_change"
+        },
+        {
+          "$ref": "urn:botaru:schema:proposal-body:1#/$defs/kind_human_change"
+        }
+      ]
+    },
+    "body_none": {
+      "type": "object",
+      "description": "Body of the kind none: benefit, cost and risk are optional.",
+      "additionalProperties": false,
+      "required": [
+        "category",
+        "problem",
+        "evidence",
+        "change"
+      ],
+      "properties": {
+        "category": {
+          "$ref": "urn:botaru:schema:proposal-body:1#/$defs/category"
+        },
+        "problem": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "code",
+            "subjects",
+            "severity"
+          ],
+          "properties": {
+            "code": {
+              "$ref": "urn:botaru:schema:proposal-body:1#/$defs/problem_code"
+            },
+            "subjects": {
+              "type": "array",
+              "items": {
+                "$ref": "urn:botaru:schema:observation-query:1#/$defs/subject"
+              },
+              "maxItems": 10,
+              "description": "Subjects of the problem from the catalog of one's own tenant.",
+              "minItems": 1,
+              "uniqueItems": true
+            },
+            "severity": {
+              "$ref": "urn:botaru:schema:proposal-body:1#/$defs/severity"
+            }
+          }
+        },
+        "evidence": {
+          "type": "array",
+          "items": {
+            "$ref": "urn:botaru:schema:proposal-body:1#/$defs/evidence"
+          },
+          "maxItems": 10,
+          "description": "At most 10 references, only to objects of one's own tenant (PRP-2).",
+          "minItems": 1
+        },
+        "change": {
+          "$ref": "urn:botaru:schema:proposal-body:1#/$defs/kind_none"
+        },
+        "benefit": {
+          "type": "object",
+          "description": "Promised benefit.",
+          "additionalProperties": false,
+          "required": [
+            "metric",
+            "subject",
+            "direction",
+            "confidence"
+          ],
+          "properties": {
+            "metric": {
+              "$ref": "urn:botaru:schema:observation-query:1#/$defs/series",
+              "description": "Trial metric: a series with a full outcome block (OBV-6); otherwise rejected(metric_unknown) (PRP-21)."
+            },
+            "subject": {
+              "$ref": "urn:botaru:schema:observation-query:1#/$defs/subject"
+            },
+            "direction": {
+              "$ref": "urn:botaru:schema:proposal-body:1#/$defs/direction"
+            },
+            "expected_change_pp": {
+              "type": "number",
+              "description": "Promised change in percentage points for share series.",
+              "minimum": 0,
+              "maximum": 100
+            },
+            "expected_change_pct": {
+              "type": "number",
+              "description": "Promised change in percent for the other series.",
+              "minimum": 0,
+              "maximum": 1000
+            },
+            "confidence": {
+              "enum": [
+                "low",
+                "medium",
+                "high"
+              ],
+              "description": "The author's confidence."
+            }
+          },
+          "oneOf": [
+            {
+              "required": [
+                "expected_change_pp"
+              ]
+            },
+            {
+              "required": [
+                "expected_change_pct"
+              ]
+            }
+          ]
+        },
+        "cost": {
+          "type": "object",
+          "description": "Cost as estimated by the author; code computes the real cost.",
+          "additionalProperties": false,
+          "required": [
+            "one_time_eur",
+            "monthly_eur",
+            "effort"
+          ],
+          "properties": {
+            "one_time_eur": {
+              "type": "number",
+              "description": "One-time cost in euros.",
+              "minimum": 0,
+              "maximum": 100000
+            },
+            "monthly_eur": {
+              "type": "number",
+              "description": "Monthly cost in euros.",
+              "minimum": 0,
+              "maximum": 100000
+            },
+            "effort": {
+              "enum": [
+                "minutes",
+                "hours",
+                "days"
+              ],
+              "description": "People's labor for execution."
+            }
+          }
+        },
+        "risk": {
+          "type": "object",
+          "description": "Risk as estimated by the author.",
+          "additionalProperties": false,
+          "required": [
+            "level"
+          ],
+          "properties": {
+            "level": {
+              "enum": [
+                "low",
+                "medium",
+                "high"
+              ],
+              "description": "Risk level; for high the high_risk threshold is needed (COM-4)."
+            },
+            "kinds": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "description": "Code of the risk kind from a closed list, for example report_delay.",
+                "pattern": "^[a-z][a-z0-9_]*$",
+                "maxLength": 64
+              },
+              "maxItems": 5,
+              "uniqueItems": true
+            }
+          }
+        },
+        "note": {
+          "type": "string",
+          "maxLength": 1000,
+          "description": "The author's note: always untrusted, code does not read it, reviewers do not get it; to people only as a labeled block in \"Details\" (PRP-1)."
+        }
+      }
+    },
+    "body_change": {
+      "type": "object",
+      "description": "Body of a kind that changes the world: promised benefit, cost and risk are required.",
+      "additionalProperties": false,
+      "required": [
+        "category",
+        "problem",
+        "evidence",
+        "change",
+        "benefit",
+        "cost",
+        "risk"
+      ],
+      "properties": {
+        "category": {
+          "$ref": "urn:botaru:schema:proposal-body:1#/$defs/category"
+        },
+        "problem": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "code",
+            "subjects",
+            "severity"
+          ],
+          "properties": {
+            "code": {
+              "$ref": "urn:botaru:schema:proposal-body:1#/$defs/problem_code"
+            },
+            "subjects": {
+              "type": "array",
+              "items": {
+                "$ref": "urn:botaru:schema:observation-query:1#/$defs/subject"
+              },
+              "maxItems": 10,
+              "description": "Subjects of the problem from the catalog of one's own tenant.",
+              "minItems": 1,
+              "uniqueItems": true
+            },
+            "severity": {
+              "$ref": "urn:botaru:schema:proposal-body:1#/$defs/severity"
+            }
+          }
+        },
+        "evidence": {
+          "type": "array",
+          "items": {
+            "$ref": "urn:botaru:schema:proposal-body:1#/$defs/evidence"
+          },
+          "maxItems": 10,
+          "description": "At most 10 references, only to objects of one's own tenant (PRP-2).",
+          "minItems": 1
+        },
+        "change": {
+          "$ref": "urn:botaru:schema:proposal-body:1#/$defs/change_other"
+        },
+        "benefit": {
+          "type": "object",
+          "description": "Promised benefit.",
+          "additionalProperties": false,
+          "required": [
+            "metric",
+            "subject",
+            "direction",
+            "confidence"
+          ],
+          "properties": {
+            "metric": {
+              "$ref": "urn:botaru:schema:observation-query:1#/$defs/series",
+              "description": "Trial metric: a series with a full outcome block (OBV-6); otherwise rejected(metric_unknown) (PRP-21)."
+            },
+            "subject": {
+              "$ref": "urn:botaru:schema:observation-query:1#/$defs/subject"
+            },
+            "direction": {
+              "$ref": "urn:botaru:schema:proposal-body:1#/$defs/direction"
+            },
+            "expected_change_pp": {
+              "type": "number",
+              "description": "Promised change in percentage points for share series.",
+              "minimum": 0,
+              "maximum": 100
+            },
+            "expected_change_pct": {
+              "type": "number",
+              "description": "Promised change in percent for the other series.",
+              "minimum": 0,
+              "maximum": 1000
+            },
+            "confidence": {
+              "enum": [
+                "low",
+                "medium",
+                "high"
+              ],
+              "description": "The author's confidence."
+            }
+          },
+          "oneOf": [
+            {
+              "required": [
+                "expected_change_pp"
+              ]
+            },
+            {
+              "required": [
+                "expected_change_pct"
+              ]
+            }
+          ]
+        },
+        "cost": {
+          "type": "object",
+          "description": "Cost as estimated by the author; code computes the real cost.",
+          "additionalProperties": false,
+          "required": [
+            "one_time_eur",
+            "monthly_eur",
+            "effort"
+          ],
+          "properties": {
+            "one_time_eur": {
+              "type": "number",
+              "description": "One-time cost in euros.",
+              "minimum": 0,
+              "maximum": 100000
+            },
+            "monthly_eur": {
+              "type": "number",
+              "description": "Monthly cost in euros.",
+              "minimum": 0,
+              "maximum": 100000
+            },
+            "effort": {
+              "enum": [
+                "minutes",
+                "hours",
+                "days"
+              ],
+              "description": "People's labor for execution."
+            }
+          }
+        },
+        "risk": {
+          "type": "object",
+          "description": "Risk as estimated by the author.",
+          "additionalProperties": false,
+          "required": [
+            "level"
+          ],
+          "properties": {
+            "level": {
+              "enum": [
+                "low",
+                "medium",
+                "high"
+              ],
+              "description": "Risk level; for high the high_risk threshold is needed (COM-4)."
+            },
+            "kinds": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "description": "Code of the risk kind from a closed list, for example report_delay.",
+                "pattern": "^[a-z][a-z0-9_]*$",
+                "maxLength": 64
+              },
+              "maxItems": 5,
+              "uniqueItems": true
+            }
+          }
+        },
+        "note": {
+          "type": "string",
+          "maxLength": 1000,
+          "description": "The author's note: always untrusted, code does not read it, reviewers do not get it; to people only as a labeled block in \"Details\" (PRP-1)."
+        }
+      }
+    }
+  }
+}

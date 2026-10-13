@@ -1,0 +1,20 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:botaru:schema:e4-cancel-request:1",
+  "title": "E4 cancel: request",
+  "description": "On cancel_requested from heartbeat the adapter stops the run before the next heartbeat (FEN-4).",
+  "x-botaru-direction": "input",
+  "x-botaru-rules": [
+    "FEN-4"
+  ],
+  "type": "object",
+  "required": [
+    "run_id"
+  ],
+  "properties": {
+    "run_id": {
+      "$ref": "urn:botaru:schema:run-request:1#/properties/run_id"
+    }
+  },
+  "additionalProperties": false
+}

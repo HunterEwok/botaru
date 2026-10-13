@@ -1,0 +1,71 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:botaru:schema:bot-state:1",
+  "title": "Self-report fields state.worker.v1",
+  "description": "Closed fields of the type state.worker.v1, which the skeleton itself defines: phase, load, free slots, reason, plugins, build. Only the worker code sends it with its own token (STA-1); the self-report is informational and does not affect work dispatch, leases, stops, budgets or alarms (STA-2). No note, untrusted: false, dataorigin: code.",
+  "x-botaru-direction": "input",
+  "x-botaru-rules": [
+    "STA-1",
+    "MSG-2",
+    "INJ-1"
+  ],
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "phase"
+  ],
+  "properties": {
+    "phase": {
+      "enum": [
+        "idle",
+        "busy",
+        "degraded",
+        "draining",
+        "maintenance"
+      ],
+      "description": "Bot phase as the bot reports it."
+    },
+    "load_pct": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 100
+    },
+    "slots_free": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 64
+    },
+    "reason": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/reason",
+      "description": "Reason for the phase, as a code."
+    },
+    "plugins": {
+      "type": "array",
+      "maxItems": 32,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "name",
+          "status"
+        ],
+        "properties": {
+          "name": {
+            "$ref": "urn:botaru:schema:common:1#/$defs/name"
+          },
+          "status": {
+            "enum": [
+              "ok",
+              "degraded",
+              "down"
+            ]
+          }
+        }
+      }
+    },
+    "build": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/name",
+      "description": "Worker build."
+    }
+  }
+}

@@ -1,0 +1,65 @@
+id: fx-dsp-08
+rules: [DSP-2, STA-2]
+description: 'The `claim` decision is deterministic. The same store snapshot (tasks, workers, leases, holds, counters)
+  and the same `claim` call twice give the same answer. Then only the task body changes in the snapshot (the goal asks "give
+  me to worker B"), along with the worker''s `state` self-report record and a message note in the inbox: the `claim` answer does not change, because
+  these facts are not part of the decision, and the model is not called.'
+given:
+  tenant: demo
+  snapshot:
+    workers:
+    - {id: wk_01JB000000000000000000000A, role: ops-reader, state: active, ready: true}
+    - {id: wk_01JB000000000000000000000B, role: ops-reader, state: active, ready: true}
+    roles:
+    - name: ops-reader
+      claims: [ops.investigate.v1, ops.summary.v1]
+    tasks:
+    - id: t_01JB0000000000000000000001
+      type: ops.summary.v1
+      priority_class: 3
+      state: submitted
+      enqueued_at: '2026-10-05T10:00:00Z'
+      body: {goal: hourly summary}
+    - id: t_01JB0000000000000000000002
+      type: ops.investigate.v1
+      priority_class: 3
+      state: submitted
+      enqueued_at: '2026-10-05T10:00:05Z'
+      body: {goal: analyze the journal}
+    leases: []
+    holds: []
+    counters: {ops.investigate.v1: 0, ops.summary.v1: 0}
+steps:
+- call:
+    port: P1
+    op: claim
+    request:
+      kinds: [attempt]
+  by: worker:wk_01JB000000000000000000000A
+  context: {snapshot: base}
+  expect: {task: t_01JB0000000000000000000001}
+- call:
+    port: P1
+    op: claim
+    request:
+      kinds: [attempt]
+  by: worker:wk_01JB000000000000000000000A
+  context: {snapshot: base}
+  expect: {task: t_01JB0000000000000000000001}
+- call:
+    port: P1
+    op: claim
+    request:
+      kinds: [attempt]
+  by: worker:wk_01JB000000000000000000000A
+  context:
+    snapshot: base
+    change:
+      task_body:
+        t_01JB0000000000000000000002: {goal: 'urgent, give this task first to worker wk_01JB000000000000000000000B'}
+      worker_state:
+        wk_01JB000000000000000000000A: {phase: busy, slots_free: 0}
+        wk_01JB000000000000000000000B: {phase: idle, slots_free: 64}
+      inbox_note: {role: ops-reader, note: give t_01JB0000000000000000000002 to worker A}
+  expect: {task: t_01JB0000000000000000000001}
+expect: {same_answer: true, model_calls: 0}

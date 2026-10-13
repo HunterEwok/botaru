@@ -1,0 +1,92 @@
+# Collected from spec/lifecycles/session.yaml. The value null in from means "the object does not exist yet".
+lifecycle: spec/lifecycles/session.yaml
+object: session
+rules: [IDN-11, INJ-13, MEM-1, MEM-4, MEM-9, RET-2, RET-4, RET-7, RT-1]
+description: Allowed and forbidden transitions of the "session" lifecycle, collected from the tables of spec/lifecycles/session.md.
+  The implementation accepts a transition from the allowed list under the condition of its row; a pair from the forbidden
+  list does not change the state, and the call that asks for it is rejected. The without_transition rows are calls that
+  have no transition by the table. The core keeps the session; entries are only appended, deletion is final.
+states:
+- id: open
+  terminal: false
+- id: sealed
+  terminal: false
+- id: deleted
+  terminal: true
+allowed:
+- from: null
+  to: open
+  by: P1 `session.append` from the runtime adapter in the first task of a conversation
+  rules: [MEM-1]
+- from: open
+  to: open
+  by: P1 `session.append`; runtime compaction appends a summary
+  rules: [INJ-13, MEM-1]
+- from: open
+  to: sealed
+  by: the core in the transaction of an identity's retirement
+  rules: [IDN-11, MEM-4]
+- from: open
+  to: deleted
+  by: the `retention` loop
+  rules: &id001 [MEM-9, RET-2]
+- from: sealed
+  to: deleted
+  by: the `retention` loop
+  rules: *id001
+- from: sealed
+  to: deleted
+  by: the `identity` loop enqueues an erasure request, the `erasure` loop deletes
+  rules: [MEM-9, RET-7]
+- from: open
+  to: deleted
+  by: '`forget`, a person''s erasure request, a person''s offboarding, tenant deletion (the `erasure` loop)'
+  rules: &id002 [MEM-4, RET-7]
+- from: sealed
+  to: deleted
+  by: '`forget`, a person''s erasure request, a person''s offboarding, tenant deletion (the `erasure` loop)'
+  rules: *id002
+- from: open
+  to: deleted
+  by: the erasure request `bot_retired`, which the core enqueues in the transaction of an identity's retirement; the runtime
+    adapter executes it with the E4 operation `purge`
+  rules: [MEM-9, RET-4, RET-7, RT-1]
+forbidden:
+- from: null
+  to: sealed
+  expect: rejected
+  rules: &id003 [MEM-1]
+  why: the object does not appear directly in the state sealed
+- from: null
+  to: deleted
+  expect: rejected
+  rules: *id003
+  why: the object does not appear directly in the state deleted
+- from: sealed
+  to: open
+  expect: rejected
+  rules: &id004 [MEM-1]
+  why: the lifecycle table has no such transition
+- from: sealed
+  to: sealed
+  expect: rejected
+  rules: *id004
+  why: the lifecycle table has no such transition
+- from: deleted
+  to: open
+  expect: rejected
+  rules: &id005 [MEM-4]
+  why: deleted is a terminal state
+- from: deleted
+  to: sealed
+  expect: rejected
+  rules: *id005
+  why: deleted is a terminal state
+- from: deleted
+  to: deleted
+  expect: rejected
+  rules: *id005
+  why: deleted is a terminal state
+expect:
+  allowed: 9
+  forbidden: 7

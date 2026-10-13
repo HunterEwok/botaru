@@ -1,0 +1,186 @@
+# Collected from spec/lifecycles/decision.yaml. The value null in from means "the object does not exist yet".
+lifecycle: spec/lifecycles/decision.yaml
+object: decision
+rules: [APR-11, APR-12, APR-14, APR-16, APR-19, APR-3, APR-4, APR-6, APR-9, GOV-13, HLD-3, IDN-3, PRM-3]
+description: 'Allowed and forbidden transitions of the "human decision on a card" lifecycle, collected from the tables of
+  spec/lifecycles/decision.md. The implementation accepts a transition from the allowed list under the condition of its
+  row (when); a pair from the forbidden list does not change the state, and the call that asks for it is rejected. A decision
+  is made once; the only exception is the subject attribution: "No" and "Don''t know" do not close the subject while the
+  attribution window is open, and decided -> pending happens only by incident.dismiss (v0.2, GOV-13).'
+states:
+- id: pending
+  terminal: false
+- id: decided
+  terminal: true
+- id: expired
+  terminal: true
+- id: canceled
+  terminal: true
+allowed:
+- id: sm-dec-01
+  from: null
+  to: pending
+  by: the core creates a subject that needs a person (request_action, a proposal in presented, a campaign, a script draft,
+    a confirm step, a farm manager operation with a card, a memory record, a takeover, a case outcome, an attribution candidate,
+    a person's request about their own data)
+  when: the card kind has a registry row; the recipients are found by the right from the row; the card deliveries are created
+    in the same transaction
+  rules: [APR-12, APR-3]
+- id: sm-dec-02
+  from: pending
+  to: pending
+  by: 'the "Remind approvers" button on the initiator''s copy of the card: P1 card.remind(subject_kind, id, nonce) (subject
+    approval)'
+  when: the initiator pressed it; at most once every 5 minutes; approvers without a decision get a card_update
+  rules: [APR-19]
+- id: sm-dec-03
+  from: pending
+  to: pending
+  by: 'the "Details" button: P1 card.details(subject_kind, id, nonce)'
+  when: the card's channel; the person has the right to read the record (data:<class> not below the mark); above the group
+    chat ceiling the details go to a direct chat
+  rules: [APR-11, APR-14, PRM-3]
+- id: sm-dec-04
+  from: pending
+  to: pending
+  by: 'a person''s button: P1 decide from the first of two approvers'
+  when: 'the row needs two different people (approvals: 2)'
+  rules: [APR-16]
+- id: sm-dec-05
+  from: pending
+  to: pending
+  by: the background loop approval-expiry at the deadline
+  when: 'in the registry row silence does not close the subject but gives a reminder (for example, incident attribution:
+    the candidate becomes unknown ("not decided"), no promotion trigger appears (GOV-30), a reminder once a week; a person''s
+    request about their own data: a reminder at half of the deadline, a notice to the operator at the deadline)'
+  rules: [APR-12]
+- id: sm-dec-06
+  from: pending
+  to: pending
+  by: 'a person''s button on the subject attribution: "No" or "Don''t know"'
+  when: the attribution window is open; the answer is written into the subject and as a decision event, and a person with
+    the right can change it
+  rules: [APR-4, GOV-13]
+- id: sm-dec-07
+  from: pending
+  to: decided
+  by: closing of the attribution window
+  when: 'subject attribution: the last answer "No" or "Don''t know" (or unknown after silence) becomes final'
+  rules: [APR-4, GOV-13]
+- id: sm-dec-08
+  from: decided
+  to: pending
+  by: P2 incident.dismiss with a reason code for an incident that has a "Yes" answer (v0.2)
+  when: the attribution becomes disputed; the author of "Yes" gets a dispute card and confirms (decided) or withdraws the
+    answer; 7 days of silence withdraws it; while the dispute is open there is no promotion trigger
+  rules: [APR-14, GOV-13]
+  since: v0.2
+- id: sm-dec-09
+  from: pending
+  to: decided
+  by: 'a person''s button: P1 decide(subject_kind, id, nonce, decision, reason_code)'
+  when: 'a human principal with strong identity from the card''s channel; the nonce is valid; the right to this decision
+    at the moment of pressing; in a group chat only with membership_assurance: enforced; self-approval is forbidden where
+    the row requires it; for "Lift veto", "Confirm" of a case, "Yes" and "No" of an attribution, "Details" was opened earlier;
+    for an attribution only "Yes" leads to decided'
+  rules: [APR-14, APR-4, APR-9, IDN-3]
+- id: sm-dec-10
+  from: pending
+  to: expired
+  by: the background loop approval-expiry
+  when: the deadline from the registry row or from the subject record has passed; silence closes the subject
+  rules: [APR-12]
+- id: sm-dec-11
+  from: pending
+  to: canceled
+  by: 'the core in the transaction of the cause: P2 principal.off, P2 ungrant, P2 hold.set with the effect no_action, restore
+    from backup, P2 seat.assign or seat.vacate, cancellation by an admin or the operator, closing of the subject by its
+    lifecycle (the campaign is canceled, the case is canceled, the person withdrew their request, the attribution candidate
+    is canceled together with a false incident)'
+  when: the reason is written into the subject
+  rules: [APR-6, HLD-3, PRM-3]
+forbidden:
+- id: sm-dec-x01
+  from: null
+  to: decided
+  expect: rejected
+  rules: [APR-12, APR-14, APR-3]
+  why: the object does not appear directly in the state decided
+- id: sm-dec-x02
+  from: null
+  to: expired
+  expect: rejected
+  rules: [APR-12, APR-3]
+  why: the object does not appear directly in the state expired
+- id: sm-dec-x03
+  from: null
+  to: canceled
+  expect: rejected
+  rules: [APR-12, APR-3, APR-6]
+  why: the object does not appear directly in the state canceled
+- id: sm-dec-x04
+  from: decided
+  to: decided
+  expect: rejected
+  rules: [APR-14, APR-4, APR-9]
+  why: decided is a terminal state
+- id: sm-dec-x05
+  from: decided
+  to: expired
+  expect: rejected
+  rules: [APR-12, APR-14, GOV-13]
+  why: decided is a terminal state
+- id: sm-dec-x06
+  from: decided
+  to: canceled
+  expect: rejected
+  rules: [APR-14, APR-6, GOV-13]
+  why: decided is a terminal state
+- id: sm-dec-x07
+  from: expired
+  to: pending
+  expect: rejected
+  rules: [APR-11, APR-12, APR-14]
+  why: expired is a terminal state
+- id: sm-dec-x08
+  from: expired
+  to: decided
+  expect: rejected
+  rules: [APR-14, APR-4, APR-9]
+  why: expired is a terminal state
+- id: sm-dec-x09
+  from: expired
+  to: expired
+  expect: rejected
+  rules: [APR-12]
+  why: expired is a terminal state
+- id: sm-dec-x10
+  from: expired
+  to: canceled
+  expect: rejected
+  rules: [APR-6, HLD-3, PRM-3]
+  why: expired is a terminal state
+- id: sm-dec-x11
+  from: canceled
+  to: pending
+  expect: rejected
+  rules: [APR-11, APR-12, APR-14]
+  why: canceled is a terminal state
+- id: sm-dec-x12
+  from: canceled
+  to: decided
+  expect: rejected
+  rules: [APR-14, APR-4, APR-9]
+  why: canceled is a terminal state
+- id: sm-dec-x13
+  from: canceled
+  to: expired
+  expect: rejected
+  rules: [APR-12]
+  why: canceled is a terminal state
+- id: sm-dec-x14
+  from: canceled
+  to: canceled
+  expect: rejected
+  rules: [APR-6, HLD-3, PRM-3]
+  why: canceled is a terminal state

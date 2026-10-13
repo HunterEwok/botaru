@@ -1,0 +1,46 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:botaru:schema:p2-manager-reads-response:1",
+  "title": "P2 manager.reads: response",
+  "description": "Read rows of the farm manager: time, object kind and id, metadata only (AUD-7).",
+  "x-botaru-direction": "output",
+  "x-botaru-rules": [
+    "AUD-7"
+  ],
+  "type": "object",
+  "required": [
+    "items"
+  ],
+  "properties": {
+    "items": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "at",
+          "kind"
+        ],
+        "properties": {
+          "at": {
+            "$ref": "urn:botaru:schema:common:1#/$defs/datetime"
+          },
+          "kind": {
+            "type": "string",
+            "maxLength": 64,
+            "pattern": "^[a-z][a-z0-9_]*$"
+          },
+          "object": {
+            "type": "string",
+            "maxLength": 200
+          }
+        }
+      },
+      "maxItems": 1000
+    },
+    "next": {
+      "type": "string",
+      "maxLength": 200,
+      "description": "Cursor of the next page from the previous answer."
+    }
+  }
+}

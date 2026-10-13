@@ -1,0 +1,82 @@
+id: fx-commission-manifest
+rules: [COM-8, COM-9]
+description: The commission manifest sets only thresholds and weights per lens (COM-8). The lenses, their review types and vetoes are set
+  by the skeleton in spec/model/lenses.yaml, and so are the code checks and their order. Weights are integers 1-3, the weight of farm_manager is always 1 by rule,
+  and the manifest does not set it. The minimums of veto lenses and the untrusted threshold can only be raised relative to the skeleton values.
+  The field shadow exists in the review-result schema (COM-9).
+cases:
+- id: com-fx-10
+  rules: [COM-8]
+  description: The manifest from the docs/improvements.md example passes apply (without the escalation section, which comes with v0.2).
+  given:
+    manifest:
+      kind: Commission
+      metadata: {name: default, tenant: demo}
+      spec:
+        review_deadline: 24h
+        min: {security: 2, operational: 2}
+        weights: {value: 2, cost: 1, operational: 1, security: 1}
+        recommend_if: {weighted_mean_gte: 2.5, value_gte: 3}
+        park_if: {weighted_mean_gte: 1.5}
+        high_risk: {security_gte: 3, operational_gte: 3}
+        untrusted: {value_gte: 4, risk_max: medium}
+  expect: {result: ok}
+- id: com-fx-11
+  rules: [COM-8]
+  description: A manifest declares a lens that is not in lenses.yaml, or removes a veto; apply is rejected.
+  given:
+    manifests:
+    - kind: Commission
+      metadata: {name: default, tenant: demo}
+      spec:
+        weights: {privacy: 2}
+    - kind: Commission
+      metadata: {name: default, tenant: demo}
+      spec:
+        lenses:
+        - {id: security, veto: false}
+  expect: {result: rejected, stage: apply}
+- id: com-fx-12
+  rules: [COM-8]
+  description: The weight of farm_manager is not set in the manifest; a weight of 4 for any lens is outside the range 1-3.
+  given:
+    manifests:
+    - kind: Commission
+      metadata: {name: default, tenant: demo}
+      spec:
+        weights: {farm_manager: 2}
+    - kind: Commission
+      metadata: {name: default, tenant: demo}
+      spec:
+        weights: {value: 4}
+  expect: {result: rejected, stage: apply}
+- id: com-fx-13
+  rules: [COM-8]
+  description: A manifest that changes the order or composition of the code checks or names lens executors does not pass
+    apply.
+  given:
+    manifests:
+    - kind: Commission
+      metadata: {name: default, tenant: demo}
+      spec:
+        checks: [schema, budget, evidence]
+    - kind: Commission
+      metadata: {name: default, tenant: demo}
+      spec:
+        executors: {security: reviewer-a}
+  expect: {result: rejected, stage: apply}
+- id: com-fx-14
+  rules: [COM-9]
+  description: A review with shadow true passes the review-result schema, the verdict code does not read it, and it is not shown to people or
+    reviewers; without the field shadow the default value is false.
+  given:
+    schema: spec/model/review-result.schema.json
+    reviews:
+    - {lens: value, score: 0, confidence: high, shadow: true}
+    - {lens: value, score: 3, confidence: medium}
+  expect:
+    schema_valid: true
+    shadow_default: false
+    verdict_reads: [second]
+    shown_to_people: [second]
+    shown_to_reviewers: [second]

@@ -1,0 +1,99 @@
+id: fx-mgr-06
+rules: [MGR-10, MGR-9]
+description: What management does not give. Every call of a decision attempt outside the closed list is rejected, and the world does not change.
+  Numbers of identities, workers, tasks and incidents are shortened, as in the examples of docs/farm-manager.md.
+given:
+  seat:
+    id: farm-manager
+    tenant: farm
+    state: held
+    holder: bot_41
+    epoch: 9
+    stop_reasons: []
+  tenant: demo
+  incident: i_311
+cases:
+- id: fx-mgr-06-a
+  steps:
+  - call:
+      port: P1
+      op: decide
+      request: {subject_kind: control, id: c_1, decision: approve}
+  expect: {result: rejected, reason: forbidden, note: only a person decides on a card}
+- id: fx-mgr-06-b
+  given:
+    holds:
+    - {id: h_auto_1, author: system, author_kind: contain_auto}
+  steps:
+  - call:
+      port: P3
+      op: tools/call
+      request:
+        name: control_ops
+        arguments:
+          op: release
+          target: {kind: hold, id: h_auto_1}
+    by: attempt
+  expect: {result: rejected, reason: forbidden, note: an auto-stop and the code's first measure are not released}
+- id: fx-mgr-06-c
+  steps:
+  - call:
+      port: P3
+      op: tools/call
+      request:
+        name: service/control
+        arguments: {service: postgresql, verb: restart}
+    context: {host: db1}
+  expect: {result: rejected, reason: target_not_implicated, note: the service is not on the node of the incident subject}
+- id: fx-mgr-06-d
+  steps:
+  - call:
+      port: P3
+      op: tools/call
+      request:
+        name: service/control
+        arguments: {service: botaru-core, verb: restart}
+    context: {host: core1}
+  expect:
+    result: rejected
+    reason: input_schema_invalid
+    note: core services and farm node services are not in the tenant catalog
+- id: fx-mgr-06-e
+  steps:
+  - call:
+      port: P3
+      op: tools/call
+      request:
+        name: monitor/script_run
+        arguments: {resource: backup1, script: clear_tmp}
+  expect: {result: rejected, reason: input_schema_invalid, note: farm node}
+- id: fx-mgr-06-f
+  steps:
+  - call:
+      port: P2
+      op: apply
+      request:
+        commit: 0123456789abcdef0123456789abcdef01234567
+        manifests:
+        - apiVersion: botaru/v1alpha1
+          kind: Group
+          metadata: {name: hello, tenant: demo}
+          spec:
+            caps: ['task:hello.greet.v1']
+            data: [summary]
+    credential: worker_token:w_m1
+  expect:
+    result: rejected
+    reason: unauthenticated
+    note: seat credentials are not accepted on P2 (IDN-7)
+- id: fx-mgr-06-g
+  steps:
+  - call:
+      port: P3
+      op: tools/call
+      request:
+        name: monitor/problem.ack
+        arguments: {problem: '48213'}
+  expect:
+    outcome: not_available
+    note: the farm account in the monitoring system has no permission to acknowledge, close or silence a problem (MON-4)

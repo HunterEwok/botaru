@@ -1,0 +1,7 @@
+schema: urn:botaru:schema:service-control:1
+rules:
+- APR-18
+description: nginx restart.
+data:
+  service: nginx
+  verb: restart

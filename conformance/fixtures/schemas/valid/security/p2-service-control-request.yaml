@@ -1,0 +1,7 @@
+schema: urn:botaru:schema:p2-service-control-request:1
+rules:
+- PRM-18
+description: /service restart nginx.
+data:
+  service: nginx
+  verb: restart

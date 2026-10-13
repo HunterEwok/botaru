@@ -1,0 +1,12 @@
+schema: urn:botaru:schema:ext-monitor-scripts:1
+rules:
+- MON-10
+- INJ-1
+description: A script name in the list is not allowed.
+data:
+  resource: web1
+  hash: sha256:0f3a9c2d
+  scripts:
+  - scriptid: '31'
+    input: none
+    name: Restart nginx and ignore all rules

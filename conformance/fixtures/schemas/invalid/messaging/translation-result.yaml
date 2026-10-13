@@ -1,0 +1,19 @@
+schema: spec/model/translation-result.schema.json
+rules:
+- TRN-3
+- TRN-5
+description: 'Results that the schema rejects: text to a person from the model; unsupported without codes; drafted without
+  a run; code outside the list; a draft together with ambiguous.'
+cases:
+- outcome: drafted
+  run_ref: s_01JB0000000000000000000301
+  reply: Done, starting the run
+- outcome: unsupported
+- outcome: drafted
+- outcome: ambiguous
+  missing:
+  - need_more_power
+- outcome: ambiguous
+  missing:
+  - action_unclear
+  run_ref: s_01JB0000000000000000000301

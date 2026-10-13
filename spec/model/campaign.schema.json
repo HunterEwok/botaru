@@ -1,0 +1,309 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:botaru:schema:campaign:1",
+  "title": "Campaign",
+  "description": "Only the core writes the campaign record (Campaign) (IDN-1). Template, items, policy and plan_hash are frozen at creation; only the state, pause reason, counters and item states change (ORC-1). The mark and untrusted_seen are taken from the proposing task. A fanout step campaign also has script_run and script_step. Lifecycle: spec/lifecycles/campaign.md.",
+  "x-botaru-direction": "record",
+  "x-botaru-retention": "metadata",
+  "x-botaru-rules": [
+    "ORC-1",
+    "ORC-2",
+    "ORC-4",
+    "ORC-6",
+    "ORC-8",
+    "ORC-11",
+    "ORC-14"
+  ],
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "id",
+    "tenant",
+    "initiator",
+    "template",
+    "items",
+    "plan_hash",
+    "rollout",
+    "max_tier",
+    "data_mark",
+    "untrusted_seen",
+    "reserve",
+    "state",
+    "counters"
+  ],
+  "properties": {
+    "id": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/object_id"
+    },
+    "tenant": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/tenant_name"
+    },
+    "parent_task": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/object_id",
+      "description": "Proposing task; for a fanout step campaign, the anchor task of the run, if there is one."
+    },
+    "initiator": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "principal"
+      ],
+      "properties": {
+        "principal": {
+          "$ref": "urn:botaru:schema:common:1#/$defs/principal_ref",
+          "description": "Initiating principal of the campaign."
+        }
+      }
+    },
+    "enqueued_by": {
+      "type": "object",
+      "description": "Which role and attempt proposed the campaign (ORC-6).",
+      "additionalProperties": false,
+      "required": [
+        "role"
+      ],
+      "properties": {
+        "role": {
+          "$ref": "urn:botaru:schema:common:1#/$defs/name"
+        },
+        "worker": {
+          "$ref": "urn:botaru:schema:common:1#/$defs/object_id",
+          "description": "Worker whose attempt proposed the campaign."
+        },
+        "attempt": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1000
+        }
+      }
+    },
+    "template": {
+      "$ref": "urn:botaru:schema:campaign-propose-request:1#/$defs/template"
+    },
+    "items": {
+      "type": "array",
+      "maxItems": 500,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "n",
+          "resource"
+        ],
+        "properties": {
+          "n": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 500
+          },
+          "resource": {
+            "$ref": "urn:botaru:schema:common:1#/$defs/name"
+          },
+          "args_hash": {
+            "$ref": "urn:botaru:schema:common:1#/$defs/hash"
+          }
+        }
+      },
+      "minItems": 1,
+      "description": "Frozen list of items."
+    },
+    "plan_hash": {
+      "description": "Hash of the template, items and policy together.",
+      "$ref": "urn:botaru:schema:common:1#/$defs/hash"
+    },
+    "rollout": {
+      "$ref": "urn:botaru:schema:campaign-propose-request:1#/$defs/rollout"
+    },
+    "then": {
+      "anyOf": [
+        {
+          "type": "null"
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "type"
+          ],
+          "properties": {
+            "type": {
+              "$ref": "urn:botaru:schema:common:1#/$defs/type_name"
+            }
+          }
+        }
+      ]
+    },
+    "to_group": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/name"
+    },
+    "refs": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/object_id",
+      "description": "Original campaign for \"retry failed\"."
+    },
+    "script_run": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/object_id"
+    },
+    "script_step": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/name"
+    },
+    "max_tier": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/tier"
+    },
+    "data_mark": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/data_mark"
+    },
+    "untrusted_seen": {
+      "type": "object",
+      "description": "Untrusted text flag with its source (INJ-13).",
+      "additionalProperties": false,
+      "required": [
+        "value"
+      ],
+      "properties": {
+        "value": {
+          "type": "boolean",
+          "description": "Value of the untrusted_seen flag."
+        },
+        "source": {
+          "description": "Source of the flag as a code from a closed list, or null if there is no flag.",
+          "anyOf": [
+            {
+              "type": "null"
+            },
+            {
+              "type": "string",
+              "pattern": "^[a-z][a-z0-9_:./ -]{0,119}$",
+              "maxLength": 120
+            }
+          ]
+        }
+      }
+    },
+    "approval_id": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/object_id"
+    },
+    "reserve": {
+      "type": "object",
+      "description": "The whole reserve: tree size and estimate (ORC-8).",
+      "additionalProperties": false,
+      "required": [
+        "tree_tasks",
+        "eur"
+      ],
+      "properties": {
+        "tree_tasks": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 1000
+        },
+        "eur": {
+          "type": "number",
+          "minimum": 0,
+          "multipleOf": 0.01,
+          "description": "Estimate in euros."
+        }
+      }
+    },
+    "state": {
+      "enum": [
+        "proposed",
+        "running",
+        "paused",
+        "stopping",
+        "completed",
+        "failed",
+        "canceled",
+        "rejected"
+      ]
+    },
+    "pause_reason": {
+      "description": "Pause reason from a closed list.",
+      "anyOf": [
+        {
+          "type": "null"
+        },
+        {
+          "enum": [
+            "gate",
+            "unknown",
+            "human",
+            "held",
+            "no_executor",
+            "estimate_exceeded"
+          ],
+          "x-botaru-registry": "reasons"
+        }
+      ]
+    },
+    "stop_reason": {
+      "description": "Stop reason.",
+      "anyOf": [
+        {
+          "type": "null"
+        },
+        {
+          "enum": [
+            "threshold_exceeded",
+            "deadline_exceeded",
+            "initiator",
+            "admin",
+            "rights_revoked",
+            "person_inactive"
+          ],
+          "x-botaru-registry": "reasons"
+        }
+      ]
+    },
+    "counters": {
+      "type": "object",
+      "description": "Item counters by state; always equal to the number of items in each state (ORC-4).",
+      "additionalProperties": false,
+      "required": [
+        "pending",
+        "released",
+        "ok",
+        "failed",
+        "unknown",
+        "skipped",
+        "canceled"
+      ],
+      "properties": {
+        "pending": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 500
+        },
+        "released": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 500
+        },
+        "ok": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 500
+        },
+        "failed": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 500
+        },
+        "unknown": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 500
+        },
+        "skipped": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 500
+        },
+        "canceled": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 500
+        }
+      }
+    }
+  }
+}

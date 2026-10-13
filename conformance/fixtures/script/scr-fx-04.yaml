@@ -1,0 +1,80 @@
+id: scr-fx-04
+rules: [SCR-7, SCR-9, INJ-15, APR-17]
+description: 'The run approval does not approve actions, except two cases without a card: a restart of nginx with a verb
+  from services[].no_card and an action step of class routine. The first run without untrusted text goes without separate
+  cards. In the second run these steps come after a step with logs/tail and get its untrusted_seen flag, so
+  each goes by card.'
+given:
+  tenant: demo
+  initiator:
+    principal: human:alice
+    caps: [script.run, 'service.control:nginx', 'action.request:cleanup_tmp']
+    script_run: true
+  services:
+    nginx:
+      no_card: [restart]
+  actions:
+    cleanup_tmp:
+      risk: routine
+      script: {allowed: true}
+      runs_per_hour: 2
+      runs_per_day: 6
+cases:
+- description: without untrusted text
+  given:
+    draft:
+      script: v1
+      steps:
+      - id: restart
+        kind: task
+        type: ops.service.control.v1
+        goal: {template: restart_service}
+        params: {service: nginx, verb: restart, resource: web1}
+      - id: clean
+        kind: action
+        action: cleanup_tmp
+        needs: [restart]
+        args: {resource: web1}
+  steps:
+  - call:
+      port: P1
+      op: decide
+      request: {subject_kind: script, id: $last, decision: run}
+    by: human:alice
+  expect: {approval_cards: 0, service_grant_author: 'human:alice'}
+- description: after a step with logs/tail
+  given:
+    draft:
+      script: v1
+      steps:
+      - id: tail
+        kind: task
+        type: ops.log.triage.v1
+        goal: {assignment: true}
+        params: {resource: web1}
+      - id: restart
+        kind: task
+        type: ops.service.control.v1
+        needs: [tail]
+        goal: {template: restart_service}
+        params: {service: nginx, verb: restart, resource: web1}
+        when: {ref: tail.severity, op: eq, value: high}
+      - id: clean
+        kind: action
+        action: cleanup_tmp
+        needs: [tail]
+        args: {resource: web1}
+        when: {ref: tail.severity, op: eq, value: high}
+    tail_attempt:
+      untrusted_seen: true
+      source: {kind: tool, name: logs/tail, resource: web1}
+  steps:
+  - call:
+      port: P1
+      op: decide
+      request: {subject_kind: script, id: $last, decision: run}
+    by: human:alice
+  expect:
+    approval_cards: 2
+    card_shows_source: {kind: tool, name: logs/tail}
+    run_confirm_approves_actions: false

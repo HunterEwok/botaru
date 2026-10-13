@@ -1,0 +1,65 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:botaru:schema:p2-apply-request:1",
+  "title": "P2 apply: request",
+  "description": "The operator applies through farmctl a set of manifests from a git commit atomically: the whole set or nothing (MAN-1, MAN-2). farmctl passes the commit id and the manifests of this commit; dry_run shows the plan without writing; an object that disappeared from git is deleted only by an explicit delete list.",
+  "x-botaru-direction": "input",
+  "x-botaru-rules": [
+    "MAN-1",
+    "MAN-2",
+    "MAN-6",
+    "PRM-13",
+    "PRM-14"
+  ],
+  "type": "object",
+  "required": [
+    "commit",
+    "manifests"
+  ],
+  "properties": {
+    "commit": {
+      "type": "string",
+      "maxLength": 64,
+      "pattern": "^[0-9a-f]{40}([0-9a-f]{24})?$",
+      "description": "Full commit id."
+    },
+    "manifests": {
+      "type": "array",
+      "items": {
+        "$ref": "urn:botaru:schema:manifest:1"
+      },
+      "maxItems": 5000,
+      "minItems": 1
+    },
+    "dry_run": {
+      "type": "boolean"
+    },
+    "delete": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "kind",
+          "name"
+        ],
+        "properties": {
+          "kind": {
+            "type": "string",
+            "maxLength": 64,
+            "pattern": "^[A-Z][A-Za-z]{1,63}$"
+          },
+          "tenant": {
+            "$ref": "urn:botaru:schema:common:1#/$defs/tenant_name"
+          },
+          "name": {
+            "$ref": "urn:botaru:schema:common:1#/$defs/name"
+          }
+        },
+        "additionalProperties": false
+      },
+      "maxItems": 500,
+      "description": "Explicit list of objects to delete."
+    }
+  },
+  "additionalProperties": false
+}
