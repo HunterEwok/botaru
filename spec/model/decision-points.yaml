@@ -1,5 +1,5 @@
 registry: decision-points
-version: 1
+version: 2
 description: >-
   Registry of human decisions (APR-12): one row for each kind of card and
   notice. A kind without a row does not pass the skeleton CI, and the core does not create such
@@ -366,3 +366,13 @@ entries:
     undo: none
     urgent: false
     rules: [APR-12, APR-13]
+  - id: operator_journal_read
+    since: v0.2
+    kind: notice
+    subject: null
+    recipients: admins of the tenant; a code message without content when the operator reads an attempt journal or starts a task replay and operator_access.debug_journal is notify (AUD-4, APR-8)
+    ttl: none
+    on_silence: {state: null, outcome: nothing}
+    undo: none
+    urgent: false
+    rules: [APR-12, AUD-4, APR-8]

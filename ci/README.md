@@ -151,6 +151,7 @@ The codes of `check_manifests.py` that fixtures refer to (`expect: {error: <code
 | `alarm_inbox` | type with alarm.* reads the inbox | INJ-7 |
 | `alarm_not_job` | alarm.* in events of a type that is not a job | INJ-7 |
 | `api_version` | apiVersion is not botaru/v1alpha1 | MAN-1 |
+| `approvers_fewer_than_two` | production tenant: no group grants action.approve for a high risk action (note) | APR-16 |
 | `args_from_mismatch` | the args_from action is executed by another tool | MAN-9 |
 | `args_from_second_schema` | tool with args_from has its own params | MAN-9 |
 | `assistant_in_default_types` | assistant type in default_types | DSP-10 |
@@ -166,6 +167,7 @@ The codes of `check_manifests.py` that fixtures refer to (`expect: {error: <code
 | `cmd_forbidden_program` | command program is in spec/model/forbidden-programs.yaml | INJ-14 |
 | `cmd_param_position` | argv parameter is not a whole element after -- or not from params | INJ-14 |
 | `conforms_to_invalid` | conforms_to without an x.y.z version or the core profile | MAN-8 |
+| `corpus_curated_source` | corpus with trust: curated and a source other than git | KNW-2 |
 | `cron_invalid` | cron is not five fields or has CRON_TZ, TZ | TIM-2 |
 | `delegated_group_privileged` | a group in delegated_groups carries privileged capabilities | PRM-16 |
 | `driver_config_forbidden` | driver spec.config holds fields of the common wrapper | MAN-4 |
@@ -175,6 +177,7 @@ The codes of `check_manifests.py` that fixtures refer to (`expect: {error: <code
 | `enum_from_unknown_list` | the enum_from list is in no catalog of the set (note) |  |
 | `executor_unknown` | action executor is missing or not a write tool | MAN-9 |
 | `expected_failure_not_waivable` | expected failures list a rule with waivable: false | MAN-8 |
+| `export_only_recipient` | export_only without exactly one of recipient and recipient_ref | SEC-10 |
 | `family_unregistered` | model family is not in spec/model/model-families.yaml (note) |  |
 | `farm_host_in_catalog` | farm host listed in a tenant catalog | DEP-11 |
 | `flow_args_invalid` | P3 call or action request arguments fail the closed schema |  |
@@ -183,7 +186,9 @@ The codes of `check_manifests.py` that fixtures refer to (`expect: {error: <code
 | `flow_ref_missing` | flow step type not found |  |
 | `format_unknown` | x-botaru-format or resource format is not in spec/model/formats.yaml | INJ-1, MAN-10 |
 | `global_tenant_data` | a global manifest holds a value that looks like tenant data | TEN-6 |
+| `high_risk_one_approver` | production tenant lets a high risk action with approvals: 1 be requested | APR-16 |
 | `host_two_tenants` | host or service in catalogs of two tenants | TEN-4 |
+| `ingress_missing` | source channel (direction: in) without ingress | ING-1 |
 | `listener_admin_worker_network` | the P2 listener network is a worker network (note) | IDN-7 |
 | `listener_test_in_production` | test-control listener of the core on a kind: production host | DEP-10 |
 | `manager_line_missing` | manager budget line is not above 0 while the manager is enabled | MGR-20 |
@@ -207,7 +212,7 @@ The codes of `check_manifests.py` that fixtures refer to (`expect: {error: <code
 | `provider_training` | model profile with provider_training: true | GW-15 |
 | `purpose_unknown` | type purpose is not in spec/model/task-purposes.yaml |  |
 | `rank_exceeded` | model profile rank above the slot or seat ceiling | GOV-3 |
-| `recipients_monitoring` | privacy.recipients lacks monitoring | MON-1 |
+| `recipients_monitoring` | privacy.recipients lacks monitoring while the installation claims the monitor profile | MON-1 |
 | `redact_required` | placement: host and untrusted_output: true without redact [ip, email, secret] | INJ-4 |
 | `ref_missing` | reference to an object that is not in the set |  |
 | `revert_reason_invalid` | Botaru-Revert reason is not from the closed list | MAN-5, PRP-22 |
@@ -229,6 +234,7 @@ The codes of `check_manifests.py` that fixtures refer to (`expect: {error: <code
 | `service_no_card` | service no_card holds something other than restart | MON-8 |
 | `service_script_unknown` | no script from monitor_scripts_allowed for a service verb | MON-8, MON-10 |
 | `service_unit_missing` | via: host without unit, or unit with via: monitor | MON-8 |
+| `skill_format` | skill folder breaks the format: files, types, sizes, front matter or name | SKL-1 |
 | `state_agent_producer` | state message kind has producers other than code | STA-1, MSG-2 |
 | `status_in_git` | manifest has a status field: status is kept by the core | MAN-1 |
 | `subprocessor_undeclared` | profile provider or subprocessor is not declared in privacy.subprocessors | GW-15 |

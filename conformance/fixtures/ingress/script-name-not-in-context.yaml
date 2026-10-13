@@ -1,4 +1,4 @@
-# Fixture fixture:ingress/script-name-not-in-context (docs/quality.md, ING-2, MON-10, INJ-16). The data are for training.
+# Fixture fixture:ingress/script-name-not-in-context (docs/quality.md, INJ-16, MON-10, ING-2). The data are for training.
 id: fx-ing-02-script-name
 rules: [ING-2, MON-10, INJ-16]
 description: The event ext.monitor.scripts.v1 carries only scriptid, the input kind, choices and hash; it has no name field.

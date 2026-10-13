@@ -304,3 +304,24 @@ entries:
     result_schema: null
     schema_note: a schema recorded as null will appear in spec/model together with the tool
     rules: [PRF-1]
+  - id: kb_search
+    since: v0.2
+    access: read
+    profiles: [worker, manager]
+    purposes: [work]
+    condition: 'the role has the corpus in its resource scope (catalog `resources[]` of kind `corpus`); a search string of format `search_query` over the per-tenant corpus index in C1; output from an `ingested` corpus is untrusted (KNW-2, D-97)'
+    limit: at most 20 fragments per call
+    args_schema: null
+    result_schema: null
+    schema_note: a schema recorded as null will appear in spec/model together with the tool
+    rules: [PRF-1, KNW-2, KNW-5]
+  - id: kb_read
+    since: v0.2
+    access: read
+    profiles: [worker, manager]
+    purposes: [work]
+    condition: 'a fragment or document of a corpus in the role resource scope by id from `kb_search`; the trust of the corpus decides `untrusted_seen` (KNW-2, D-97)'
+    args_schema: null
+    result_schema: null
+    schema_note: a schema recorded as null will appear in spec/model together with the tool
+    rules: [PRF-1, KNW-2, KNW-5]

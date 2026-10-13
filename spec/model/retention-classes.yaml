@@ -1,5 +1,5 @@
 registry: retention-classes
-version: 1
+version: 2
 description: >-
   Retention classes. Every kind of stored object and every store, including
   journals with content, runtime stores, sinks and the channel cache, belongs
@@ -38,7 +38,10 @@ entries:
     default:
       text: 400 days
       days: 400
-    deletion: only in whole periods (a month), without selective editing of rows
+    deletion: >-
+      only in whole periods (a month), without selective editing of rows; the one exception
+      is the retention loop that removes `subject` of a person from usage lines older than 93 days
+      and writes `subject_kind: human` (BUD-16, SEC-14)
     retention_cycle_v01: false
     rules: [RET-1, RET-2, AUD-3]
   - id: tombstone

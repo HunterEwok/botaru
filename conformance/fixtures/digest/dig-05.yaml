@@ -5,7 +5,8 @@ description: '"Lift veto" on an audit sample item with a veto. carol answered "W
   and action rights are not needed for a manifest_change. Without opening "Details" of this card the core refuses with
   details_not_opened; after P1 card.details it writes an audit record, sets veto_overridden, and creates the object of the
   ordinary path, the same as "Accept": the proposal moves to realizing with an executor, a deadline and a trial record. The
-  author gets no credit and no promotion trigger. alice, who has only proposal.decide:capacity, gets forbidden.'
+  author gets no credit and no promotion trigger. alice, who has only proposal.decide:capacity, gets forbidden.
+  "Details" opened by alice does not count for carol: only card.details by the decider opens the decision (APR-14).'
 given:
   tenant: demo
   people:
@@ -38,6 +39,14 @@ steps:
   chat: alice-dm
   card: proposal_sample_card
   expect: {result: denied, reason: forbidden}
+- call:
+    port: P1
+    op: card.details
+    request: {op: card.details, subject_kind: proposal, id: p_01JB0000000000000000000503}
+  by: human:alice
+  chat: alice-dm
+  card: proposal_sample_card
+  note: '"Details" opened by another person does not count for carol (APR-14).'
 - call:
     port: P1
     op: decide

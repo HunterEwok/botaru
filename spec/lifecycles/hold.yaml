@@ -136,8 +136,9 @@ machines:
       states:
       - active
       text: '`active`'
-    by: revocation of a secret on compromise (`rotate --compromised`)
-    when: the operator; a hold on the scope where the secret was used, the reason `compromised`
+    by: P2 `secret.revoke` (`farmctl secret revoke --compromised`)
+    when: the operator; in the same operation a hold without `until` on every scope where the deployment description uses
+      the secret, the reason `compromised`
     rules:
     - SEC-6
   - from:

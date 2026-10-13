@@ -1,0 +1,29 @@
+id: fx-man-ing-01
+rules: [ING-4, PRM-10]
+description: >-
+  Routes from external events (ING-4): a route on an ext.* event enqueues only a type that the group
+  system-ops lists explicitly (PRM-10); a route on an ext.* event to a listed type passes; a route that
+  sets an action.* type is rejected (APR-5).
+with_examples: true
+cases:
+  - name: route from an external event to a type listed in system-ops
+    manifests:
+      - apiVersion: botaru/v1alpha1
+        kind: Route
+        metadata: {name: fx-ext-pipeline-failed, tenant: demo}
+        spec: {"on": {event: ext.pipeline.run_failed.v1}, task: {type: pipeline.status.v1}}
+    expect: ok
+  - name: route from an external event to a type without a row in system-ops
+    manifests:
+      - apiVersion: botaru/v1alpha1
+        kind: Route
+        metadata: {name: fx-ext-geo, tenant: demo}
+        spec: {"on": {event: ext.pipeline.run_failed.v1}, task: {type: geo.describe.v1}}
+    expect: {error: system_ops_missing}
+  - name: route from an external event to an action type
+    manifests:
+      - apiVersion: botaru/v1alpha1
+        kind: Route
+        metadata: {name: fx-ext-cleanup, tenant: demo}
+        spec: {"on": {event: ext.pipeline.run_failed.v1}, task: {type: action.cleanup_pipeline_tmp.v1}}
+    expect: {error: action_type_grant}

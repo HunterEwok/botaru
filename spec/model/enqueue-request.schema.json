@@ -42,7 +42,7 @@
       "items": { "$ref": "urn:botaru:schema:common:1#/$defs/name" }
     },
     "mode": {
-      "description": "Since v0.2: validate checks the body and permissions without enqueuing and records nothing (PRM-11).",
+      "description": "Since v0.2: validate checks the body and permissions without enqueuing: no task, no idempotency key, no budget reserve, only an audit line with the dry_run flag (PRM-11).",
       "const": "validate",
       "x-botaru-version": "v0.2"
     }

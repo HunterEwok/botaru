@@ -1,0 +1,40 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:botaru:schema:skill:1",
+  "title": "Skill front matter",
+  "description": "The YAML front matter of skills/<name>/SKILL.md (SKL-1, docs/capabilities.md). Only the name, the description and an optional license and version; the field allowed-tools and any other field fail the schema. The name equals the folder name. The rest of the folder (only SKILL.md, references/ and assets/, text files within the size limit, no executable files) is checked by the apply lint, not by this schema.",
+  "x-botaru-direction": "input",
+  "x-botaru-version": "v0.2",
+  "x-botaru-rules": [
+    "SKL-1"
+  ],
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "name",
+    "description"
+  ],
+  "properties": {
+    "name": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/name",
+      "description": "Skill name; equals the folder name skills/<name>/."
+    },
+    "description": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 300,
+      "description": "Short description the model sees before it reads the skill; the same text as in the role skill-ref."
+    },
+    "license": {
+      "type": "string",
+      "maxLength": 80,
+      "description": "License id of the skill text, for example AGPL-3.0-only."
+    },
+    "version": {
+      "type": "string",
+      "maxLength": 20,
+      "pattern": "^[0-9]+\\.[0-9]+(\\.[0-9]+)?$",
+      "description": "Version of the skill text for people; the role pins the skill by its tree hash, not by this field."
+    }
+  }
+}

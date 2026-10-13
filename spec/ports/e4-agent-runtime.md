@@ -37,7 +37,7 @@ E4 describes the model loop inside a worker of kind `agent`. An agent has two pa
 }
 ```
 
-`run_id` of the form `<task id>:<lease_no>` (one runtime run per attempt lease, FEN-1) is the idempotency key. `skills` are references to skills from the repository with a hash by `run-request.schema.json#/$defs/skill_ref`. The limits in `limits` are `max_turns`, `run_max_input_tokens` and `deadline`, as in `docs/models-and-money.md`; the output limit of one call is the model profile's `max_output_tokens`, P4 sets it, and the money of the whole task tree is limited by the task type's `tree_budget_eur` (BUD-9).
+`run_id` of the form `<task id>:<lease_no>` (one runtime run per attempt lease, FEN-1) is the idempotency key. `skills` are references to skills from the repository with the skill tree hash (`spec/hashing.md`) by `run-request.schema.json#/$defs/skill_ref`. The limits in `limits` are `max_turns`, `run_max_input_tokens` and `deadline`, as in `docs/models-and-money.md`; the output limit of one call is the model profile's `max_output_tokens`, P4 sets it, and the money of the whole task tree is limited by the task type's `tree_budget_eur` (BUD-9).
 
 **Runtime deviations** (`describe()`). Any value except the first turns on a substitute rule, and that rule is non-waivable.
 
@@ -48,6 +48,7 @@ E4 describes the model loop inside a worker of kind `agent`. An agent has two pa
 | `model_attribution` | `per_attempt`, `per_profile` | `per_profile`: RT-3 |
 | `catalog` | `per_attempt`, `per_role` | `per_role`: RT-4 |
 | `built_in_tools` | only `[]` | no deviations (INJ-9) |
+| `skills` (from v0.2; absent means `farm`) | `farm`, `runtime_files` | `runtime_files`: SKL-2 and RT-2 (a read-only skill folder with only the role's skills whose tree hash matches) |
 
 ## Guarantees
 

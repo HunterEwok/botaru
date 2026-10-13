@@ -9,7 +9,7 @@ checks:
   - GW-11
   version: v0.1
   section: Tests without a model
-  source: docs/quality.md:315
+  source: docs/quality.md:316
   spec:
     What: the mock provider answers 529 for 30 minutes
     Expectation: no task ends `attempts_exhausted` or `runs_exhausted` before its `deadline`; there are no more provider calls
@@ -20,7 +20,7 @@ checks:
   - BUD-11
   version: v0.1
   section: Tests without a model
-  source: docs/quality.md:317
+  source: docs/quality.md:318
   spec:
     What: the mock provider accepts the request and drops the connection
     Expectation: the `spend_estimated` line equals the call reserve, the reserve stays charged after the task ends
@@ -30,7 +30,7 @@ checks:
   - BUD-10
   version: v0.1
   section: Tests without a model
-  source: docs/quality.md:426
+  source: docs/quality.md:434
   spec:
     What: a mock provider report
     Expectation: one adjustment line per day equals the difference; line prices did not change, `spend_estimated` lines got
@@ -41,7 +41,7 @@ checks:
   - GW-12
   version: v0.1
   section: Tests without a model
-  source: docs/quality.md:427
+  source: docs/quality.md:435
   spec:
     What: the mock provider answers later than the deadline derived from `max_output_tokens` and `tokens_per_s`
     Expectation: exactly one provider call; no retry after sending
@@ -51,7 +51,7 @@ checks:
   - CAP-2
   version: v0.1
   section: Tests without a model
-  source: docs/quality.md:438
+  source: docs/quality.md:446
   spec:
     What: the mock provider answers 529 for ten minutes; then a refusal on the spend cap
     Expectation: no task ends `attempts_exhausted`, the journal has the last provider code; `provider_spend_cap` gives `failed`
@@ -62,7 +62,7 @@ checks:
   - GW-5
   version: v0.1
   section: Tests without a model
-  source: docs/quality.md:439
+  source: docs/quality.md:447
   spec:
     What: the main profile is `overloaded`, the slot profile declares a fallback; a second case with a fallback outside `models_allowed`;
       a third without an eval mark
@@ -74,7 +74,7 @@ checks:
   - GW-6
   version: v0.1
   section: Tests without a model
-  source: docs/quality.md:440
+  source: docs/quality.md:448
   spec:
     What: a slot profile at 1 EUR and a fallback at 3 EUR per worst case call
     Expectation: the reserve before the call is by the fallback (3 EUR)

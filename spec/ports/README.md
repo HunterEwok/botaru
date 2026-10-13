@@ -49,6 +49,7 @@ In v0.1 the sheets P1, P2, P3, C1, E1 and E5 hold only v0.1 operations. Operatio
 | Meter, FileStore, AuditLog | Parts of C1. Only P4 reserves and charges model usage, workers only report usage (BUD-3) |
 | ToolPlugin | A plugin is an external MCP server; its contract is the plugin profile in the binding `spec/bindings/mcp/README.md` and sheet E3 |
 | Telemetry | This is a binding contract (`spec/bindings/telemetry/`) and a rule about what may be sent out (OBS-1). The organization's monitoring system is not telemetry: it has its own port E5, because alarms to people and core liveness go through it (MON-1, MON-2) |
+| ConsentAdapter | An edge process that connects a person's own account at an external service: the consent screen, the token in the deployment secret store and the P2 operations `connection.register` and `connection.revoke` on behalf of the person. The core calls nothing in it, so it adds no operation; its sheet is `consent-adapter.md` (SEC-7) |
 | Watchdog | The farm has no separate liveness check process: the monitoring system checks core liveness by polling P2 `health` (D-60, MON-2) |
 
 ## Common to all ports

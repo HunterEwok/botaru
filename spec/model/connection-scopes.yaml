@@ -1,0 +1,41 @@
+registry: connection-scopes
+version: 1
+description: >-
+  Closed list of access scopes of a person's connection to their own account at an
+  external service (SEC-7). A provider in the tenant catalog (`connection_providers`)
+  lists the scopes a person may grant; a plugin tool with `credential: per_principal`
+  names the scopes it needs, and the core gives the call only a connection that
+  carries all of them. Record fields: `meaning`, `access` (read or write; a write
+  scope is used only by a tier 3 action with an approval), `rules`.
+source: spec/lifecycles/connection.md
+entries:
+  - id: mail_read
+    since: v0.2
+    meaning: read the person's mail
+    access: read
+    rules: [SEC-7]
+  - id: mail_send
+    since: v0.2
+    meaning: send mail as the person
+    access: write
+    rules: [SEC-7]
+  - id: calendar_read
+    since: v0.2
+    meaning: read the person's calendar
+    access: read
+    rules: [SEC-7]
+  - id: calendar_write
+    since: v0.2
+    meaning: create and change events in the person's calendar
+    access: write
+    rules: [SEC-7]
+  - id: files_read
+    since: v0.2
+    meaning: read the person's files at the service
+    access: read
+    rules: [SEC-7]
+  - id: files_write
+    since: v0.2
+    meaning: create and change the person's files at the service
+    access: write
+    rules: [SEC-7]

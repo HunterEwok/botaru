@@ -9,7 +9,7 @@ checks:
   - ORC-1
   version: v0.1
   section: Tests without a model
-  source: docs/quality.md:309
+  source: docs/quality.md:310
   spec:
     What: '`campaign.propose` with the token of an expired lease, and `propose_campaign` from a live attempt'
     Expectation: the first call is rejected, no record; the second creates a campaign with frozen `items` and `plan_hash`,

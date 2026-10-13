@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:botaru:schema:p2-connection-revoke-request:1",
+  "title": "P2 connection.revoke: request",
+  "description": "The person revokes their own connection (through the consent adapter or with a command in a private chat), or a person with admin:people revokes a connection of a principal of their tenant; the core deletes the token reference and asks the deployment to delete the token (SEC-7).",
+  "x-botaru-direction": "input",
+  "x-botaru-version": "v0.2",
+  "x-botaru-rules": [
+    "SEC-7"
+  ],
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "tenant",
+    "connection"
+  ],
+  "properties": {
+    "tenant": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/tenant_name"
+    },
+    "connection": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/object_id"
+    }
+  }
+}

@@ -94,7 +94,8 @@ Keys with the prefix `system:` are set only by the core and only from a closed l
 | `system:inspect:<basis>:<n>` | a data read by the manager seat (`manager.inspect.v1`) from the `inspect` field of an incident class or from `inspect_request` of the decision role | v0.1 |
 | `system:daily:<tenant>:<day>` | the daily review of the manager seat, the task `manager.review.v1` on the core schedule (MGR-41) | v0.1 |
 | `system:handover:<fact offer>` | fact selection by the successor, the task `memory.pick.v1` with the purpose `handover` (MEM-8) | v0.1 |
-| `system:ingress:<source>:<delivery id>`, `system:escalation:<attempt>`, `system:takeover:<task>` | an external event, an escalation to the manager, a takeover | v0.2 |
+| `system:ingress:<source>:<delivery id>` | an external event (ING-3): from v0.1 for the monitoring adapter, from v0.2 for source channels | v0.1 |
+| `system:escalation:<attempt>`, `system:takeover:<task>` | an escalation to the manager, a takeover | v0.2 |
 | `system:grants:<tenant>:<window>` | a batch of waiting model grant requests, the task `manager.grants.v1` every 10 minutes | v0.2 |
 | `system:governance:<case>:<round>:<bot>` | a bot's ballot on a case: a voter has one task per round | v0.2 |
 | `system:review:<proposal>:<lens>:shadow` | a task of a lens's shadow reviewer; it does not merge with the seat's task (COM-10) | v0.2 |

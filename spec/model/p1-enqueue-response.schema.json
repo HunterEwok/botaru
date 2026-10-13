@@ -2,12 +2,13 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "urn:botaru:schema:p1-enqueue-response:1",
   "title": "P1 enqueue: response",
-  "description": "TaskRef{id, existing}: existing: true means that the key already existed for the same initiator with the same body and the existing task is returned (IDM-1). A denial is problem details with a reason from the registry; a permission denial carries needs, a ceiling denial retry_after_s. idempotency_conflict comes without an id. The branch with reason in the success body is deprecated: in the HTTP v1 binding an enqueue denial always comes as problem details with status 422 (spec/bindings/http/README.md); the branch remains until 1.0 only for form compatibility.",
+  "description": "TaskRef{id, existing}: existing: true means that the key already existed for the same initiator with the same body and the existing task is returned (IDM-1). A denial is problem details with a reason from the registry; a permission denial carries needs, a ceiling denial retry_after_s. idempotency_conflict comes without an id. The branch with reason in the success body is deprecated: in the HTTP v1 binding an enqueue denial always comes as problem details with status 422 (spec/bindings/http/README.md); the branch remains until 1.0 only for form compatibility. Since v0.2 a dry run (mode: validate) that passes answers with reason dry_run and the validate block, without an id; a dry run that is refused answers exactly as a real enqueue (PRM-11).",
   "x-botaru-direction": "output",
   "x-botaru-rules": [
     "IDM-1",
     "PRM-8",
-    "DSP-7"
+    "DSP-7",
+    "PRM-11"
   ],
   "type": "object",
   "properties": {
@@ -30,6 +31,49 @@
     },
     "retry_after_s": {
       "$ref": "urn:botaru:schema:common:1#/$defs/seconds"
+    },
+    "validate": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Since v0.2: the answer of a dry run to the calling principal, never to the model (PRM-11).",
+      "x-botaru-version": "v0.2",
+      "required": [
+        "type",
+        "decision"
+      ],
+      "properties": {
+        "type": {
+          "type": "string",
+          "maxLength": 80,
+          "pattern": "^[a-z][a-z0-9_.-]*$",
+          "description": "Task type that the body resolves to."
+        },
+        "max_tier": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 3,
+          "description": "Highest tier of the task type."
+        },
+        "data_mark": {
+          "$ref": "urn:botaru:schema:common:1#/$defs/data_mark",
+          "description": "Mark the task would get."
+        },
+        "decision": {
+          "enum": [
+            "allow",
+            "needs_approval"
+          ],
+          "description": "Decision of the checks."
+        },
+        "reason": {
+          "$ref": "urn:botaru:schema:common:1#/$defs/reason",
+          "description": "Reason when the decision is needs_approval."
+        },
+        "estimate_eur_micros": {
+          "$ref": "urn:botaru:schema:common:1#/$defs/eur_micros",
+          "description": "Budget estimate of the task."
+        }
+      }
     }
   },
   "oneOf": [

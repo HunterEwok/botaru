@@ -299,8 +299,9 @@ def parse_cap(cap):
     return None, None
 
 
-def lint(docs, today=None, farm_hosts=None, examples_mode=False):
-    """Apply checks over a set; returns Findings."""
+def lint(docs, today=None, farm_hosts=None, examples_mode=False, claimed=None, skills=None):
+    """Apply checks over a set; returns Findings. claimed: the claimed conformance profiles of the
+    installation (conforms_to.profiles), None when unknown. skills: {name: {path: text}} of the skills/ folder."""
     f = Findings()
     today = today or datetime.date.today()
     farm_hosts = farm_hosts if farm_hosts is not None else farm_hosts_default()[0]
@@ -534,8 +535,9 @@ def lint(docs, today=None, farm_hosts=None, examples_mode=False):
             if not any((line.get(k) or 0) > 0 for k in ('month_eur', 'day_eur')):
                 f.error('manager_line_missing', where, 'manager budget line is not above 0 while the manager is enabled (MGR-20)')
         priv = ts.get('privacy') or {}
-        if 'monitoring' not in priv.get('recipients', ['monitoring']):
-            f.error('recipients_monitoring', where, 'privacy.recipients has no monitoring (MON-1)')
+        # monitoring is a mandatory recipient only when the installation claims the monitor profile (D-88)
+        if 'monitor' in (claimed or []) and 'monitoring' not in priv.get('recipients', ['monitoring']):
+            f.error('recipients_monitoring', where, 'privacy.recipients has no monitoring while the monitor profile is claimed (MON-1)')
         subs = {s['provider']: s for s in priv.get('subprocessors', [])}
         for mp in ts.get('models_allowed', []):
             prof = profiles.get(mp)
@@ -888,6 +890,44 @@ def lint(docs, today=None, farm_hosts=None, examples_mode=False):
                 f.error('driver_config_forbidden', where,
                         f'{kind} {name}: spec.config has fields {bad}; they exist only in the common envelope (MAN-4)')
 
+    # 11a. v0.2 checks: two approvers (APR-16), curated corpora (KNW-2), source channels (ING-1),
+    # export sinks (SEC-10), skill folders (SKL-1).
+    for tenant, tname, where, ts in S.each('Tenant'):
+        if ts.get('kind', 'production') != 'production':
+            continue
+        for aname, a in actions.items():
+            if a.get('risk') != 'high':
+                continue
+            req_caps = [g for (t, g), gs in groups.items() if t == tname and f'action.request:{aname}' in gs.get('caps', [])]
+            if a.get('approvals', 1) == 1:
+                via_roles = [r for r, (_, rs) in roles.items() if aname in rs.get('actions_may_request', [])]
+                if req_caps or via_roles:
+                    f.error('high_risk_one_approver', where,
+                            f'production tenant {tname}: high risk action {aname} with approvals: 1 can be requested '
+                            f'(groups {req_caps}, roles {via_roles}) (APR-16)')
+            elif req_caps:
+                approvers = [g for (t, g), gs in groups.items() if t == tname and f'action.approve:{aname}' in gs.get('caps', [])]
+                if not approvers:
+                    f.note('approvers_fewer_than_two', where,
+                           f'production tenant {tname}: no group grants action.approve:{aname}; the core counts people at apply '
+                           'and doctor warns while fewer than two people other than the initiator can approve (APR-16)')
+    for tenant, cname, where, cs in S.each('Catalog'):
+        for r in cs.get('resources', []):
+            if r.get('kind') == 'corpus' and r.get('trust') == 'curated' and r.get('source', 'git') != 'git':
+                f.error('corpus_curated_source', where,
+                        f'corpus {r.get("id")}: trust: curated with source: {r.get("source")}; only a git corpus is curated (KNW-2)')
+    for tenant, name, where, cs in S.each('Channel'):
+        if cs.get('direction') == 'in' and not cs.get('ingress'):
+            f.error('ingress_missing', where, f'channel {name}: a source channel (direction: in) without ingress (ING-1)')
+    for tenant, name, where, ss in S.each('Sink'):
+        eo = ss.get('export_only')
+        if isinstance(eo, dict) and ('recipient' in eo) == ('recipient_ref' in eo):
+            f.error('export_only_recipient', where,
+                    f'sink {name}: export_only needs exactly one of recipient and recipient_ref (SEC-10)')
+    for sname, files in (skills or {}).items():
+        for _, msg in skill_problems(sname, files):
+            f.error('skill_format', f'skills/{sname}/', msg)
+
     # 12. Global manifests without tenant data (TEN-6).
     for kind, entry in KINDS.items():
         if entry.get('scope') != 'global':
@@ -899,6 +939,90 @@ def lint(docs, today=None, farm_hosts=None, examples_mode=False):
                     f.error('global_tenant_data', where, f'{kind} {name}: value {s!r} looks like tenant data (TEN-6)')
                     break
     return f
+
+
+SKILL_TYPES = ('.md', '.txt', '.yaml', '.json', '.csv')
+SKILL_TOP = {'SKILL.md', 'references', 'assets'}
+
+
+def skill_problems(name, files):
+    """SKL-1: one skill folder as {relative path: text or bytes}; returns [(code, message)].
+    A value None marks a symbolic link, a value with the key 'mode' an executable file."""
+    out = []
+    if 'SKILL.md' not in files:
+        return [('skill_format', f'skill {name}: no SKILL.md (SKL-1)')]
+    if len(files) > 50:
+        out.append(('skill_format', f'skill {name}: {len(files)} files, at most 50 (SKL-1)'))
+    total = 0
+    for path, body in sorted(files.items()):
+        top = path.split('/')[0]
+        if top not in SKILL_TOP:
+            out.append(('skill_format', f'skill {name}: {path} is outside SKILL.md, references/ and assets/ (SKL-1)'))
+        if body is None or (isinstance(body, dict) and body.get('link')):
+            out.append(('skill_format', f'skill {name}: {path} is a symbolic link (SKL-1)'))
+            continue
+        if isinstance(body, dict) and body.get('executable'):
+            out.append(('skill_format', f'skill {name}: {path} is executable (SKL-1)'))
+            body = body.get('text', '')
+        if not path.endswith(SKILL_TYPES):
+            out.append(('skill_format', f'skill {name}: {path} has a type outside {list(SKILL_TYPES)} (SKL-1)'))
+        data = body.encode('utf-8') if isinstance(body, str) else body
+        if not isinstance(data, bytes):
+            continue
+        try:
+            data.decode('utf-8')
+        except UnicodeDecodeError:
+            out.append(('skill_format', f'skill {name}: {path} is not UTF-8 text (SKL-1)'))
+        total += len(data)
+        if path == 'SKILL.md' and len(data) > 32 * 1024:
+            out.append(('skill_format', f'skill {name}: SKILL.md is over 32 KiB (SKL-1)'))
+    if total > 256 * 1024:
+        out.append(('skill_format', f'skill {name}: the tree is over 256 KiB (SKL-1)'))
+    text = files['SKILL.md'] if isinstance(files['SKILL.md'], str) else ''
+    m = re.match(r'---\n(.*?)\n---\n', text, re.S)
+    fm = None
+    if m:
+        try:
+            fm = yaml.safe_load(m.group(1))
+        except yaml.YAMLError:
+            fm = None
+    if not isinstance(fm, dict):
+        out.append(('skill_format', f'skill {name}: SKILL.md has no YAML front matter (SKL-1)'))
+        return out
+    for e in errors_of({'$ref': 'urn:botaru:schema:skill:1'}, fm):
+        out.append(('skill_format', f'skill {name}: front matter: {e} (SKL-1)'))
+    if fm.get('name') != name:
+        out.append(('skill_format', f'skill {name}: front matter name {fm.get("name")!r} differs from the folder name (SKL-1)'))
+    return out
+
+
+def read_skills(root):
+    """The skills/ folder under root as {name: {path: text | {'link': True} | {'executable': True, 'text': ...}}}."""
+    base = os.path.join(root, 'skills')
+    out = {}
+    if not os.path.isdir(base):
+        return out
+    for name in sorted(os.listdir(base)):
+        d = os.path.join(base, name)
+        if not os.path.isdir(d) or name.startswith('.'):
+            continue
+        files = {}
+        for dp, dns, fns in os.walk(d, followlinks=False):
+            for fn in dns + fns:
+                full = os.path.join(dp, fn)
+                relp = os.path.relpath(full, d).replace(os.sep, '/')
+                if os.path.islink(full):
+                    files[relp] = {'link': True}
+                elif os.path.isfile(full):
+                    with open(full, 'rb') as fh:
+                        data = fh.read()
+                    try:
+                        text = data.decode('utf-8')
+                    except UnicodeDecodeError:
+                        text = data
+                    files[relp] = {'executable': True, 'text': text} if os.access(full, os.X_OK) else text
+        out[name] = files
+    return out
 
 
 def resolve(schema, lists):
@@ -1397,7 +1521,7 @@ if own_dir:
                     rep.note(where, '[not_a_manifest] document in a kind folder is neither a manifest nor a flow: skipped')
     keys = {obj_key(d) for _, d in own}
     docs = [(w, d) for w, d in manifests if obj_key(d) not in keys] + own
-    found = lint(docs, farm_hosts=farm_hosts, examples_mode=True)
+    found = lint(docs, farm_hosts=farm_hosts, examples_mode=True, skills=read_skills(own_dir))
     lint_driver_schemas(own, own_dir, driver_schema_dirs(), found)
     found.items = [x for x in found.items if not x[2].startswith('examples/')] + \
         [x for x in found.items if x[2].startswith('examples/') and x[0] == 'error']
@@ -1415,7 +1539,9 @@ if tools_list_args():
     run_tools_list(manifests)
     rep.finish()
 
-examples_found = lint(manifests, farm_hosts=farm_hosts, examples_mode=True)
+EXAMPLE_PROFILES = ['core', 'monitor'] if 'monitoring' in (load_yaml(os.path.join(EXAMPLES, 'deploy', 'farm.yaml')) or {}) else ['core']
+examples_found = lint(manifests, farm_hosts=farm_hosts, examples_mode=True, claimed=EXAMPLE_PROFILES,
+                      skills=read_skills(EXAMPLES))
 emit(examples_found)
 deploy_f = Findings()
 for dp in ('examples/deploy/farm.yaml', 'examples/deploy/single.yaml', 'deploy/compose.example.yaml'):
@@ -1456,7 +1582,9 @@ if os.path.isdir(FIXTURES):
                     continue
                 keys = {obj_key(d) for _, d in docs if isinstance(d, dict)}
                 docs = [(w, d) for w, d in manifests if obj_key(d) not in keys] + docs
-            got = lint(docs, today=today, farm_hosts=case.get('farm_hosts', farm_hosts)) if docs else Findings()
+            claimed = (case.get('conforms_to') or fx.get('conforms_to') or {}).get('profiles')
+            got = lint(docs, today=today, farm_hosts=case.get('farm_hosts', farm_hosts), claimed=claimed,
+                       skills=case.get('skills')) if (docs or case.get('skills')) else Findings()
             if 'before' in case:
                 lint_additive([(f'{where}/before/{j}', d) for j, d in enumerate(case['before'])], docs, got)
             if 'commit' in case:

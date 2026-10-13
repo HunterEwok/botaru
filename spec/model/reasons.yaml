@@ -1358,3 +1358,17 @@ entries:
   retry: null
   outcome: rejected
   rules: [PRV-3, TRN-6]
+- id: dry_run
+  since: v0.2
+  meaning: 'P1 `enqueue` with `mode: validate` passed all checks; no task was created, the key stays free, the answer is in the `validate` block.'
+  spends_attempt: null
+  retry: null
+  outcome: response
+  rules: [PRM-11]
+- id: connection_missing
+  since: v0.2
+  meaning: 'The task initiator has no active connection with the provider and scopes that the tool needs (`credential: per_principal`); the model does not choose another account.'
+  spends_attempt: null
+  retry: null
+  outcome: error
+  rules: [SEC-7]

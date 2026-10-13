@@ -104,7 +104,7 @@ checks:
   - IDM-5
   version: v0.1
   section: Tests without a model
-  source: docs/quality.md:273
+  source: docs/quality.md:274
   spec:
     What: fake Telegram returns an update, the core answers `not_ready`, then is ready
     Expectation: the offset is not moved before the core's answer; the update is fed again and gives one task
@@ -114,7 +114,7 @@ checks:
   - IDM-5
   version: v0.1
   section: Tests without a model
-  source: docs/quality.md:279
+  source: docs/quality.md:280
   spec:
     What: one Telegram update is fed by two channel processes
     Expectation: one task with the key `system:activity:<channel>:<update id>`
@@ -124,18 +124,29 @@ checks:
   - DIG-1
   version: v0.1
   section: Tests without a model
-  source: docs/quality.md:303
+  source: docs/quality.md:304
   spec:
     What: a digest with 7 recommended items, 3 deferred ones, a reporter introduction and an urgent `security/high` item
     Expectation: no more than `max_items` (5) items by importance, only recommended ones and the sample; the introduction
       as a separate labeled part; an urgent item outside the schedule no more than once a day
+- id: adapter:channel/ingress-authenticity
+  method: adapter
+  rules:
+  - ING-1
+  version: v0.2
+  section: Tests without a model
+  source: docs/quality.md:324
+  spec:
+    What: '(v0.2) a source channel with `auth: signature` and `tolerance: 5m` gets a delivery with a wrong signature, one
+      with a 10-minute-old timestamp, and a valid one'
+    Expectation: the first two are refused without an activity and without a file; the third gives one `signal` activity
 - id: adapter:channel/service-command
   method: adapter
   rules:
   - PRM-18
   version: v0.1
   section: Tests without a model
-  source: docs/quality.md:404
+  source: docs/quality.md:412
   spec:
     What: '`/service restart nginx` from `bob` with the right `service.control:nginx`; from `carol` without the right'
     Expectation: 'for `bob` a `service_grant` record with author `bob`, one write call, no card and no model; for `carol`
@@ -146,7 +157,7 @@ checks:
   - APR-19
   version: v0.1
   section: Tests without a model
-  source: docs/quality.md:456
+  source: docs/quality.md:464
   spec:
     What: a `cleanup_pipeline_tmp` card after `cmd/run`
     Expectation: a "what the code saw" line with the `free_pct` value from the closed fields; no model text; an initiator
@@ -158,7 +169,7 @@ checks:
   - PRM-17
   version: v0.1
   section: Tests without a model
-  source: docs/quality.md:464
+  source: docs/quality.md:472
   spec:
     What: '`bob` writes `/lang en`, then `/logs`; `/lang xx`'
     Expectation: delivery code texts in English; `cmd.lang.unknown`
@@ -169,7 +180,7 @@ checks:
   - IDN-7
   version: v0.1
   section: Tests without a model
-  source: docs/quality.md:473
+  source: docs/quality.md:481
   spec:
     What: '`alice` forwards a message of `carol` "/service restart nginx"; a message on behalf of a chat without a sender'
     Expectation: 'the command is not executed; the first has initiator `alice` and `personal_seen: forward`; the second has
@@ -181,7 +192,7 @@ checks:
   - PRM-14
   version: v0.1
   section: Tests without a model
-  source: docs/quality.md:474
+  source: docs/quality.md:482
   spec:
     What: in a chat "/seat assign farm-manager", "/chat bind lab"
     Expectation: '`operator_only`, P2 is not called'
@@ -191,7 +202,7 @@ checks:
   - PRM-15
   version: v0.1
   section: Tests without a model
-  source: docs/quality.md:477
+  source: docs/quality.md:485
   spec:
     What: '"/service restart nginx" and "/grant researcher carol" in the group chat `lab`'
     Expectation: the command is not executed, a code text without details goes to the chat

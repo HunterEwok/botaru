@@ -158,7 +158,7 @@ A pipeline that a person with the permission starts with the command `/run` with
 
 ### 7.8. A new sink
 
-**What to add.** An E2 adapter of kind `sink` (the reference one to disk since v0.1, replaceable since v0.2): the write is idempotent by `delivery.id`, the address is built from the base in the manifest, the tenant and the id; the operations `match` (search for a principal's rows, the answer is ids only) and `erase` by scope and by a list of ids since v0.1. A `Sink` manifest with a class ceiling and a retention period; a sink for operator exports also with `export_only: {recipient, key_ref}` (a single recipient, encryption). An outgoing webhook (v0.2) is a kind of sink; there is no separate concept for it.
+**What to add.** An E2 adapter of kind `sink` (the reference one to disk since v0.1, replaceable since v0.2): the write is idempotent by `delivery.id`, the address is built from the base in the manifest, the tenant and the id; the operations `match` (search for a principal's rows, the answer is ids only) and `erase` by scope and by a list of ids since v0.1. A `Sink` manifest with a class ceiling and a retention period; a sink for operator exports also with `export_only: {recipient_ref, key_ref}` (a single recipient, encryption). An outgoing webhook (v0.2) is a kind of sink; there is no separate concept for it.
 
 **What the core checks.** The sink check suite; the delivery class is not above the manifest's ceiling; a sink takes only deliveries with its own name in `target` (TEN-3); the `erasure` suite: `match` finds a principal's canary, and `erase` by these ids removes it (RET-4, RET-7, v0.1).
 

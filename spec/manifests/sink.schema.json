@@ -41,15 +41,21 @@
         "recipient": {
           "type": "string",
           "maxLength": 80,
-          "description": "The only recipient: the principal or admin.",
+          "description": "The only recipient in the old form: the principal or admin. From v0.2 recipient_ref is used; exactly one of the two is set (lint export_only_recipient).",
           "pattern": "^(admin|(user|staff|service):[a-z][a-z0-9_.-]{0,62})$"
         },
         "key_ref": {
           "$ref": "urn:botaru:schema:manifest:1#/$defs/secret_name"
+        },
+        "recipient_ref": {
+          "type": "string",
+          "maxLength": 80,
+          "pattern": "^(admin|human:[A-Za-z0-9_.-]{1,64})$",
+          "description": "From v0.2: the only recipient: admin or the person as human:<id> (SEC-10).",
+          "x-botaru-version": "v0.2"
         }
       },
       "required": [
-        "recipient",
         "key_ref"
       ],
       "description": "Sink for operator exports (SEC-10)."

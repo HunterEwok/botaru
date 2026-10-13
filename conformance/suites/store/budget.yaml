@@ -10,7 +10,7 @@ checks:
   - SEC-14
   version: v0.2
   section: Tests without a model
-  source: docs/quality.md:431
+  source: docs/quality.md:439
   spec:
     What: a usage record 94 days old (v0.2)
     Expectation: it has no subject id
@@ -20,7 +20,7 @@ checks:
   - BUD-7
   version: v0.1
   section: Tests without a model
-  source: docs/quality.md:435
+  source: docs/quality.md:443
   spec:
     What: tasks with purposes `work`, `report`, `insight`, `review`, `manage`; the worker sends a different budget line
     Expectation: the core sets `line` by purpose (`work`, `work`, `insight`, `review`, `manager`); exhausting the `insight`
@@ -32,7 +32,7 @@ checks:
   - GW-6
   version: v0.1
   section: Tests without a model
-  source: docs/quality.md:437
+  source: docs/quality.md:445
   spec:
     What: a type with 20 finished tasks in 30 days; a type without history
     Expectation: the enqueue estimate is the 90th percentile of the tree price; a new type gets the worst case by the most

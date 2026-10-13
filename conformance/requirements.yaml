@@ -272,15 +272,23 @@
   title: Debug replay without approvals or writes
   status: active
   text: >-
-    A debug replay of a task (P2 `task.replay`) never creates approvals or write calls:
-    `request_action` in it is only recorded. A replay does not deliver the result to `origin`,
-    returns it only to the operator who requested it, and does not leave the task's tenant.
+    A debug replay of a task (P2 `task.replay`) is an operator operation under the same
+    `operator_access.debug_journal` decision as P2 `task.journal` (AUD-4): with `deny` it answers
+    `forbidden`, with `notify` it writes an audit record and sends the tenant admins a code message,
+    with `allow` it writes an audit record. The replay is a new task in the task's tenant with the
+    type, body, mark and tier of the original; the core checks tools against the current permissions
+    of the original initiator, and an inactive initiator gives `forbidden`; the replay is charged to
+    the tenant limits like the original. A replay never creates approvals, `service_grant` records
+    or write calls: `request_action`, `service/control` and `monitor/script_run` in it are only
+    recorded. A task of type `action.*` is not replayed. A replay does not deliver the result to
+    `origin`, returns it only to the operator who requested it, and does not leave the task's
+    tenant.
   check: [blackbox]
   waivable: false
   version: v0.2
   profile: core
   decisions: []
-  fixtures: []
+  fixtures: [blackbox:core/replay-no-writes]
   doc: docs/permissions.md
 
 - id: APR-9
@@ -371,33 +379,31 @@
   status: active
   text: >-
     Once a month the core computes, per tenant and subject kind rather than per person, two shares:
-    decisions faster than the threshold (default 10 seconds after delivery) without "Details"
-    opened, and "Approve" on cards with `untrusted_seen`. The summary goes to the tenant admins.
-    Series, lists and comparisons of individual people are not built and are not shown to anyone. If
-    fewer than three people decided on a subject kind during the month, the share for that kind is
-    not shown separately.
+    decisions faster than the threshold `attention.fast_decision_s` (default 10 seconds after
+    delivery) without "Details" opened, and "Approve" on cards with `untrusted_seen`. The summary
+    goes to the tenant admins. Series, lists and comparisons of individual people are not built and
+    are not shown to anyone. If fewer than three people decided on a subject kind during the month,
+    the share for that kind is not shown separately.
   check: [blackbox]
   waivable: true
   version: v0.2
   profile: core
   decisions: []
-  fixtures: []
+  fixtures: [blackbox:core/approve-unread-summary]
   doc: docs/permissions.md
 
 - id: APR-14
   title: Details before the listed decisions
   status: active
   text: >-
-    The core accepts "Lift veto" on an audit sample item, "Approve" on the outcome of a promotion
-    case, and "Yes" and "No" in a decision on attributing an incident to a change only if this
-    person opened "Details" of this card before the decision (the P1 event `card.details` is
-    recorded before `decide`). Otherwise `decide` is rejected with reason `details_not_opened`, and
-    the card shows "Open "Details" first". The same applies to the P2 operation `incident.dismiss`
-    (dismissing an incident as false, MGR-8): it requires the reason code `reason_code` and
-    "Details" of the incident message opened, and it does not erase someone else's "Yes" answer on
-    attribution: the attribution becomes disputed, the author of "Yes" gets a card and confirms or
-    withdraws their answer, 7 days of silence withdraws it, and while the dispute is open there is
-    no promotion trigger (D-79, GOV-13).
+    The core accepts "Lift veto" (`override_veto`) on an audit sample item, "Confirm" (`confirm`) on
+    the outcome of a promotion case, and "Yes" and "No" on an attribution card only if this person
+    opened "Details" of this card before the decision (the P1 event `card.details` is recorded
+    before `decide`). Otherwise `decide` is rejected with reason `details_not_opened`, and the card
+    shows "Open "Details" first". The decisions that need this are the ones with `details_required:
+    true` in `spec/model/decision-points.yaml`. Dismissing an incident as false (P2
+    `incident.dismiss`) needs a reason code and a "Details" text (MGR-8) and turns someone else's
+    "Yes" into a dispute (GOV-13, D-79).
   check: [blackbox, store]
   waivable: false
   version: v0.2
@@ -410,20 +416,21 @@
   title: Card limit per person per day
   status: active
   text: >-
-    A tenant has the field `attention.cards_per_person_day` (default 10): how many cards of
-    non-urgent decisions a person gets per day. Above the limit, cards of proposals, audit sample
-    items, promotion cases, attributions, memory records and people's requests about their own data
-    wait for the next day in order of expiry and are not lost; the expiry of such a subject counts
-    from delivery. Cards `approval`, `campaign`, `script`, `script_gate`, `control` and `takeover`
-    are not deferred, but they count. Notices (incident messages, `manager_stopped`) are not subject
-    to the limit; farm alarms are delivered to people by the monitoring system (MON-1) and do not
-    count. Tenant admins see the excess as a number, without names.
+    A tenant has the field `attention.noncritical_per_day` (default 10): how many cards of
+    non-urgent decisions a person gets per day. Above the limit, cards of rows with `urgent: false`
+    in `spec/model/decision-points.yaml` (proposals, audit sample items, promotion cases,
+    attributions, memory records, people's requests about their own data) stay `planned` until the
+    next day in order of expiry and are not lost; the expiry of such a subject counts from the first
+    delivery of its card to any recipient. Cards of rows with `urgent: true` are not deferred, but
+    they count. Notices (incident messages, `manager_stopped`, `alarm_notice`) are not subject to
+    the limit and do not count. Tenant admins see the excess as a number per day, without names, in
+    the `approve_unread_digest` notice.
   check: [blackbox]
   waivable: true
   version: v0.2
   profile: core
-  decisions: [D-62]
-  fixtures: []
+  decisions: [D-62, D-88]
+  fixtures: [blackbox:core/cards-per-person-day]
   doc: docs/permissions.md
 
 - id: APR-16
@@ -435,14 +442,17 @@
     action; one "Reject" closes the request. Each press is recorded separately, the status becomes
     `approved` in the transaction where the number of different approvers reached two, and from
     there APR-7 applies. At each press the core checks again that the initiator is active and has
-    `action.request:<action>`. The card shows who has already approved. For a tenant of kind
-    `production`, `apply` rejects an action with `risk: high` and `approvals: 1`.
+    `action.request:<action>`. The card shows who has already approved. `apply` rejects a set in
+    which a tenant of kind `production` grants `action.request:<action>` or lists the action in a
+    role's `actions_may_request` for an action with `risk: high` and `approvals: 1`; a production
+    tenant where fewer than two people other than the initiator hold `action.approve:<action>` for
+    such an action gets an `apply` note and a `doctor` warning.
   check: [store, blackbox, lint]
   waivable: false
   version: v0.2
   profile: core
   decisions: []
-  fixtures: [blackbox:channel/two-approvers]
+  fixtures: [blackbox:channel/two-approvers, lint:manifests/high-risk-two-approvers, manifests/v02-lints]
   doc: docs/permissions.md
 
 - id: APR-17
@@ -755,15 +765,15 @@
     `admin:debug` and `data:<mark>`. Operator reading of the journal is governed by the tenant field
     `operator_access.debug_journal: deny | notify | allow` (default `notify`): with `deny`, P2
     `task.journal` answers `forbidden`; with `notify`, every read writes an audit record and sends
-    the tenant admins a code message without content; with `allow`, only an audit record. For a
-    tenant with `kind: production` the journal is off until the tenant sets an expiry; for a test
-    tenant the default expiry is 7 days.
+    the tenant admins a code message without content; with `allow`, only an audit record. Debug
+    replay (APR-8) is decided by the same field. For a tenant with `kind: production` the journal is
+    off until the tenant sets an expiry; for a test tenant the default expiry is 7 days.
   check: [store, blackbox]
   waivable: false
   version: v0.2
   profile: core
   decisions: []
-  fixtures: []
+  fixtures: [store:audit/attempt-journal, blackbox:core/journal-read]
   doc: docs/security-model.md
 
 - id: AUD-5
@@ -1220,12 +1230,12 @@
   title: The principal in a usage line is anonymized after 93 days
   status: active
   text: >-
-    The principal in a usage line is needed for the daily limit and is stored no longer than the
-    expiry of the class `observation` (93 days): when it expires, the `retention` loop replaces the
-    principal id with the id of their group or tenant, in whole periods, as in AUD-3 and SEC-14, and
-    the other fields of the line stay for monthly reports. A "usage per person" series longer than
-    93 days does not exist (DLV-14). Fixture: a usage line older than 93 days carries no principal
-    id.
+    The principal in a usage line is needed for the daily limit and is kept for 93 days. For a line
+    whose `subject` is a person (`human:`), when 93 days pass the `retention` loop removes `subject`
+    and writes `subject_kind: human`, in whole days; the amounts and the other fields of the line
+    stay for monthly reports, and the line stays in class `metadata` (SEC-14). A "usage per person"
+    series longer than 93 days does not exist (DLV-14). Fixture: a usage line older than 93 days
+    carries no `subject`.
   check: [store, fixture]
   waivable: false
   version: v0.2
@@ -4179,10 +4189,10 @@
     its closing pass `system:incident:<incident>:close`; a data read by the manager seat
     `system:inspect:<basis>:<n>`; the daily review of the manager seat `system:daily:<tenant>:<day>`
     (MGR-41); a control operation `system:control:<epoch>:<number>`; a successor's choice of facts
-    `system:handover:<fact offer>`. From v0.2: an external event `system:ingress:<source>:<delivery
-    id>`, an escalation to the manager `system:escalation:<attempt>`, a takeover
-    `system:takeover:<task>`, a batch of pending model grant requests
-    `system:grants:<tenant>:<window>`, a bot's ballot in a case
+    `system:handover:<fact offer>`. An external event `system:ingress:<source>:<delivery id>` (from
+    v0.1 for the monitoring adapter, from v0.2 for source channels); from v0.2: an escalation to the
+    manager `system:escalation:<attempt>`, a takeover `system:takeover:<task>`, a batch of pending
+    model grant requests `system:grants:<tenant>:<window>`, a bot's ballot in a case
     `system:governance:<case>:<round>:<bot>`, a shadow reviewer task of a lens
     `system:review:<proposal>:<lens>:shadow`, separate from the seat's task, and a review of an
     escalation to the manager by the necessity lens `system:necessity:<escalation>`. A new core key
@@ -4225,8 +4235,8 @@
     `alarm.*`, and the real one would be discarded as a duplicate. P1 `emit` is accepted only with
     the token of a live attempt and only for event types from the `events` of its task type. A route
     is declared in the tenant's git and reads events only of its own tenant. A route on an alarm
-    event `alarm.*` can only enqueue a task: alarms are delivered to people by the organization's
-    monitoring system, to which the core hands every change of an alarm episode (MON-1).
+    event `alarm.*` can only enqueue a task: alarms reach people only along the installation's one
+    alarm path (MON-1).
   check: [store, blackbox]
   waivable: true
   version: v0.1
@@ -4518,38 +4528,33 @@
   status: active
   text: >-
     A source channel (an E1 driver with `direction: in`) checks the authenticity of every delivery
-    with the means of the external system: a signature with a timestamp and a time tolerance, or a
-    token over TLS. A source without such a check gets `identity_assurance: weak`, and a route from
-    its events enqueues only task types of level 0.
-  check: [adapter, lint]
+    with the means of the external system: a signature with a timestamp within `ingress.tolerance`,
+    or a token over TLS (`ingress.auth`). A source manifest without `ingress.auth` fails the schema,
+    and a source channel without `ingress` fails `apply`; a delivery that fails the check gives no
+    activity, no file and no event.
+  check: [adapter, lint, fixture]
   waivable: false
   version: v0.2
   profile: core
   decisions: []
-  fixtures: []
+  fixtures: [schemas/invalid/manifests/channel-ingress, adapter:channel/ingress-authenticity, manifests/v02-lints]
   doc: docs/capabilities.md
 
 - id: ING-2
   title: Only closed fields in external event data
   status: active
   text: >-
-    The data of an `ext.*` event contains only the fields extracted by the mapping declared in the
+    The data of an `ext.*` event contains only the fields extracted by `ingress.mapping` of the
     source manifest, and only of closed kinds (the leaves of INJ-1). The rest of the external
     delivery body is saved as a file and reaches a task only as an attachment, which sets
-    `untrusted_seen`. Free text of the external body never reaches a task's `goal`. The model sees
-    the names of monitoring system scripts and triggers only from the tenant catalog
-    (`hosts[].monitor_scripts_allowed`, `monitor_triggers`): code checks what the E5 adapter read
-    from the API against the catalog by `scriptid` and `triggerid`, and a name from the API does not
-    reach the event data or the model context (MON-10, INJ-16); the event `ext.monitor.scripts.v1`
-    carries `scriptid`, the hash of the script text and a closed choice of input, and it has no
-    `name` field. Fixture: a script name from the API containing an instruction appears neither in
-    the tool catalog nor in the model context.
+    `untrusted_seen`. Free text of the external body never reaches a task's `goal`, the event data
+    or the audit. Monitoring system names follow INJ-16.
   check: [lint, fixture]
   waivable: false
   version: v0.2
   profile: core
   decisions: [D-69]
-  fixtures: [fixture:ingress/annotation-instruction, fixture:ingress/script-name-not-in-context]
+  fixtures: [fixture:ingress/annotation-instruction]
   doc: docs/capabilities.md
 
 - id: ING-3
@@ -4557,34 +4562,36 @@
   status: active
   text: >-
     An incoming delivery of an external source gets the idempotency key
-    `system:ingress:<source>:<delivery id>` (IDM-2): a repeated delivery gives one event. The source
-    manifest sets a rate limit and a body size limit; exceeding them gives the source a refusal, not
-    a truncated body.
-  check: [adapter, blackbox]
+    `system:ingress:<source>:<delivery id>` (IDM-2): a repeated delivery gives one event. The
+    delivery id is the id that the external system sends (for Standard Webhooks the `webhook-id`
+    header); a source without one gets the sha256 of the body. The source manifest sets a rate limit
+    and a body size limit (`ingress.limits`); exceeding them gives the source a refusal, not a
+    truncated body.
+  check: [adapter, blackbox, fixture]
   waivable: true
   version: v0.2
   profile: core
   decisions: []
-  fixtures: []
+  fixtures: [schemas/invalid/manifests/channel-ingress, blackbox:ingress/repeat-and-limits]
   doc: docs/capabilities.md
 
 - id: ING-4
   title: External events only in the ext namespace
   status: active
   text: >-
-    External events live only in the `ext.*` namespace: a source cannot produce `alarm.*`, `task.*`,
-    `message.*` or an event of another core namespace. A farm alarm on an external event is raised
-    only by a `job` task that a route enqueues and that checks the condition in code (INJ-7);
-    likewise a monitoring system problem `ext.monitor.problem.v1` gives an alarm only after a
-    recheck by code (MON-5). The farm does not wake people for an alarm itself: the monitoring
-    system passes core alarms to people (MON-1). A route from `ext.*` enqueues only types from the
-    group `system-ops` (PRM-10).
-  check: [lint]
+    External events live only in the `ext.*` namespace: a source manifest whose `ingress.event` is
+    outside `ext.*` fails the schema, so a source cannot produce `alarm.*`, `task.*`, `message.*` or
+    an event of another core namespace. A farm alarm on an external event is raised only by a `job`
+    task that a route enqueues and that checks the condition in code (INJ-7); a monitoring system
+    problem `ext.monitor.problem.v1` gives an alarm only after a recheck by code (MON-5). Alarms
+    reach people only along the installation's one alarm path (MON-1). A route from `ext.*` enqueues
+    only types listed in `system-ops` (PRM-10).
+  check: [lint, fixture]
   waivable: false
   version: v0.2
   profile: core
-  decisions: [D-62, D-63]
-  fixtures: []
+  decisions: [D-62, D-63, D-88]
+  fixtures: [schemas/invalid/manifests/channel-ingress, manifests/ingress-routes]
   doc: docs/capabilities.md
 
 - id: INJ-1
@@ -4724,12 +4731,12 @@
     producers include `agent`, is rejected. Messages of the genus `state` do not produce alarms.
     External events, including monitoring system problems, live only in the `ext.*` namespace and
     never become `alarm.*` by themselves (ING-4, MON-5): whether to raise a farm alarm is decided by
-    a route to a `job` worker that rechecks the condition in code. Only the monitoring system
-    delivers farm alarms to people (MON-1), and only episodes of alarms raised by code go to it:
-    numbers, `enum` values, tags and catalog ids. A bot note on a monitoring system problem (MON-7)
-    does not acknowledge, close or silence the problem and does not change its severity. Only code
-    opens an incident from an alarm; no bot creates, changes or hides incidents, their links to
-    changes or alarms: code and people do that.
+    a route to a `job` worker that rechecks the condition in code. Farm alarms reach people only
+    along the installation's one alarm path (MON-1), and only episodes of alarms raised by code go
+    along it: numbers, `enum` values, tags and catalog ids. A bot note on a monitoring system
+    problem (MON-7) does not acknowledge, close or silence the problem and does not change its
+    severity. Only code opens an incident from an alarm; no bot creates, changes or hides incidents,
+    their links to changes or alarms: code and people do that.
   check: [blackbox, lint]
   waivable: false
   version: v0.1
@@ -4861,7 +4868,7 @@
     (tickets, emails, alerts) puts it into a `text` attachment, and then the flag is set because of
     the attachment. Search output from a corpus with `trust: curated` (KNW-2) does not set the flag,
     but stays data: the model gets it as a data block with a tag, like any tool output, not as
-    instruction text, and the tenant's `knowledge/` catalog changes only through a protected branch
+    instruction text, and the tenant's `knowledge/` folder changes only through `apply` from git
     (MAN-5). Fixtures: a child of a marked parent gives `true` on the card; the second task of the
     same conversation after reading a log is marked; a file attached by the initiator sets the flag;
     a task from `api:k1` of a type without `goal_trust` is marked at enqueue with the source
@@ -4964,7 +4971,7 @@
   version: v0.1
   profile: core
   decisions: [D-69]
-  fixtures: [blackbox:monitor/script-name-closed, blackbox:monitor/script-not-in-catalog, blackbox:monitor/script-choices-hash]
+  fixtures: [blackbox:monitor/script-name-closed, blackbox:monitor/script-not-in-catalog, blackbox:monitor/script-choices-hash, fixture:ingress/script-name-not-in-context]
   doc: docs/security-model.md
 
 - id: INS-1
@@ -5099,21 +5106,22 @@
   title: A corpus's source sets the trust in it
   status: active
   text: >-
-    A corpus gets `trust: curated` only if all its documents are in the tenant's git and passed
-    human review; lint rejects a `curated` corpus with another source. Documents uploaded by people,
-    synchronized or created by tasks form a corpus with `trust: ingested`. Tool output from an
-    `ingested` corpus is untrusted and sets `untrusted_seen` on the attempt (INJ-13). Output from a
-    `curated` corpus does not set `untrusted_seen`, but stays data: the model sees it in a data
-    block of tool output, not as an instruction, and an action it names takes the ordinary approval
-    path. The core accepts the tenant's `knowledge/` catalog only from a protected branch, the same
-    as roles and groups, and its changes are part of the digest to admins (MAN-5). The eval case
-    `kb-inj` also checks the `curated` corpus.
+    A corpus gets `trust: curated` only if `source: git`, that is all its documents are in the
+    tenant's git and reach the farm only through `apply` (MAN-5); lint rejects a `curated` corpus
+    with another source. Documents uploaded by people, synchronized or created by tasks form a
+    corpus with `trust: ingested`. Tool output from an `ingested` corpus is untrusted and sets
+    `untrusted_seen` on the attempt (INJ-13). Output from a `curated` corpus does not set
+    `untrusted_seen`, but stays data: the model sees it in a data block of tool output, not as an
+    instruction, and an action it names takes the ordinary approval path. The corpus tools
+    `kb_search` and `kb_read` take the trust of the corpus that is the call target. Changes of the
+    tenant's `knowledge/` folder are part of the digest to admins (MAN-5). The eval case `kb-inj-02`
+    checks the `curated` corpus.
   check: [lint, fixture, eval]
   waivable: false
   version: v0.2
   profile: core
   decisions: []
-  fixtures: [kb-inj-02]
+  fixtures: [kb-inj-02, lint:catalog/curated-only-git, manifests/v02-lints]
   doc: docs/capabilities.md
 
 - id: KNW-3
@@ -5145,7 +5153,7 @@
   version: v0.2
   profile: core
   decisions: []
-  fixtures: []
+  fixtures: [blackbox:knowledge/upload-rights]
   doc: docs/capabilities.md
 
 - id: KNW-5
@@ -5153,14 +5161,15 @@
   status: active
   text: >-
     Deleting a corpus document, the expiry of its file and deleting the whole corpus delete the
-    fragments and vectors of this document in all farm stores. After deletion, search does not find
-    them.
+    fragments of this document in the per-tenant corpus index in C1 together with the file (C1
+    `file.purge`), and in every other farm store that holds them. After deletion, search does not
+    find them (D-97).
   check: [store]
   waivable: false
   version: v0.2
   profile: core
-  decisions: []
-  fixtures: []
+  decisions: [D-97]
+  fixtures: [store:knowledge/delete-document]
   doc: docs/capabilities.md
 
 - id: LCY-1
@@ -8435,30 +8444,32 @@
     take the idempotency key and reserves no budget; the core writes an audit line with a dry-run
     flag. For something foreign or nonexistent the dry run answers the same as a real enqueue. The
     answer (type, `max_tier`, `data_mark`, the decision and reason, the budget estimate) goes to the
-    calling principal, not to the model.
+    calling principal in the `validate` block of the response, not to the model. The built-in tool
+    `enqueue_child` has no `mode` parameter.
   check: [blackbox]
   waivable: false
   version: v0.2
   profile: core
   decisions: []
-  fixtures: []
+  fixtures: [blackbox:core/enqueue-validate]
   doc: docs/permissions.md
 
 - id: PRM-12
   title: Tool output cache
   status: active
   text: >-
-    If an implementation caches tool output, an answer from the cache is returned only after a full
-    check of the current call (PRM-3). The cache key includes the tenant, plugin, tool, arguments
-    and catalog version. The expiry is set by the tool manifest (`cache_s`, 0 by default, that is no
-    cache). Output from the cache stays untrusted and sets `untrusted_seen`. Audit and usage lines
-    are written with the flag `cached`.
+    If an implementation caches tool output, it caches only tools with `access: read`, and an answer
+    from the cache is returned only after a full check of the current call (PRM-3). The cache key
+    includes the tenant, plugin, tool, arguments and catalog version, and for a tool with
+    `credential: per_principal` also the connection id (SEC-7). The expiry is set by the tool
+    manifest (`cache_s`, 0 by default, that is no cache). Output from the cache stays untrusted and
+    sets `untrusted_seen`. Audit and usage lines are written with the flag `cached`.
   check: [blackbox]
   waivable: false
   version: v0.2
   profile: core
   decisions: []
-  fixtures: []
+  fixtures: [blackbox:toolhost/output-cache]
   doc: docs/permissions.md
 
 - id: PRM-13
@@ -10084,16 +10095,19 @@
   title: Revocation on compromise
   status: active
   text: >-
-    Revocation on compromise (`rotate --compromised`) takes effect from the next call, without an
-    overlap window, and in the same operation sets a hold without expiry on a scope from the closed
-    list `spec/model/holds.yaml` where the secret was used: `channel`, `plugin`, `worker` or
-    `tenant`. Only a person with `hold.release` releases such a hold (HLD-2).
+    Revocation on compromise is the operator operation P2 `secret.revoke` (`farmctl secret revoke
+    --compromised`). For a credential that the core issued (a worker token, a program key, a handle)
+    it takes effect from the next call, without an overlap window. For any secret, in the same
+    operation the core sets a hold without expiry with reason `compromised` on every scope from the
+    closed list `spec/model/holds.yaml` where the deployment description uses the secret: `channel`,
+    `plugin`, `worker` or `tenant`. A deployment secret is then replaced at the external system by
+    the recipe in `docs/operations.md`. Only the operator releases such a hold (HLD-2).
   check: [blackbox]
   waivable: false
   version: v0.2
   profile: core
   decisions: []
-  fixtures: []
+  fixtures: [blackbox:core/rotate-compromised]
   doc: docs/security-model.md
 
 - id: SEC-7
@@ -10114,7 +10128,7 @@
   version: v0.2
   profile: core
   decisions: []
-  fixtures: []
+  fixtures: [blackbox:core/connection-per-principal]
   doc: docs/security-model.md
 
 - id: SEC-8
@@ -10187,23 +10201,23 @@
     initiator, where the object belongs to them, where they approved or decided, and how many of
     them carry `personal_seen` (AUD-5); the number of reads of these objects for incident review
     (MGR-28); the periods by class from `Tenant.spec.retention`; the recipients from the privacy
-    block, among them the monitoring system; connections to external services (SEC-7); the usage
-    anonymization period (SEC-14); how to request a copy or deletion. If the same external identity
-    has a principal in another tenant, the report adds the code line "you also have data in another
-    tenant, a request there is filed separately" without the tenant name and numbers. An operator
-    gets a report by external identity across all tenants at once through P2 `principal.data_report
-    --all-tenants`, without content and with an audit record. A full copy of the data never goes
-    into a chat, only into a sink with the block `Sink.spec.export_only: {recipient, key_ref}`,
-    where the only recipient equals the principal or an admin of their tenant, as a file encrypted
-    with their key with the period of class `content` (LCY-2); an export task to a sink without
-    `export_only` is rejected with code `sink_not_export`. The `/mydata` report and the export
-    arrive in v0.2, while the command `/mydata erase` works from v0.1 (SEC-11, D-76).
+    block; connections to external services (SEC-7); the usage anonymization period (SEC-14); how to
+    request a copy or deletion. If the same external identity has a principal in another tenant, the
+    report adds the code line "you also have data in another tenant, a request there is filed
+    separately" without the tenant name and numbers. An operator gets a report by external identity
+    across all tenants at once through P2 `principal.data_report --all-tenants`, without content and
+    with an audit record. A full copy of the data never goes into a chat, only into a sink with the
+    block `Sink.spec.export_only: {recipient_ref, key_ref}`, where the only recipient (`recipient_ref`)
+    equals the principal or an admin of their tenant, as a file encrypted with their key with the
+    period of class `content` (LCY-2); an export task to a sink without `export_only` is rejected
+    with code `sink_not_export`. The `/mydata` report and the export arrive in v0.2, while the
+    command `/mydata erase` works from v0.1 (SEC-11, D-76).
   check: [blackbox]
   waivable: true
   version: v0.2
   profile: core
   decisions: [D-12, D-36, D-76]
-  fixtures: [blackbox:core/export-sink-not-export]
+  fixtures: [blackbox:core/export-sink-not-export, blackbox:core/mydata-report, manifests/v02-lints]
   doc: docs/privacy.md
 
 - id: SEC-11
@@ -10274,7 +10288,7 @@
   version: v0.2
   profile: core
   decisions: [D-12, D-36]
-  fixtures: []
+  fixtures: [blackbox:core/privacy-report]
   doc: docs/privacy.md
 
 - id: SEC-13
@@ -10308,14 +10322,13 @@
   title: Per-principal usage is anonymized after 93 days
   status: active
   text: >-
-    Usage records that refer to a principal (a person's usage lines and their daily limits, BUD-1)
-    older than 93 days lose the reference to the principal: the retention loop replaces it with a
-    reference to the tenant and the principal class, the amounts and other fields remain, and the
-    period of class `metadata` does not change for them; the retention loop does the anonymization
-    together with BUD-16, and both parts arrive in v0.2. Reports and limits per principal are
-    computed only from records younger than 93 days; the report to a person about their data names
-    this period (SEC-10). Fixture: after a loop run, a usage record aged 94 days has no principal
-    id.
+    Usage lines whose `subject` is a person (`human:`) and that are older than 93 days lose the
+    reference: the retention loop removes `subject` and writes `subject_kind: human`, in whole days,
+    and the amounts and other fields remain; the line stays in class `metadata` for its period, and
+    this removal is the only edit of a `metadata` row. The retention loop does it together with
+    BUD-16. Daily limits and reports per principal are computed only from lines younger than 93
+    days; the report to a person about their data names this period (SEC-10). Fixture: after a loop
+    run, a usage line aged 94 days has no `subject`.
   check: [store, blackbox]
   waivable: true
   version: v0.2
@@ -10328,31 +10341,36 @@
   title: A skill without scripts and without an allowed-tools list
   status: active
   text: >-
-    A skill is a directory `skills/<name>/` in git that contains only `SKILL.md`, `references/` and
-    `assets/` of text types and within the size limit. A `scripts/` folder, executable files and the
-    field `allowed-tools` are rejected at `apply`.
-  check: [lint]
+    A skill is a directory `skills/<name>/` in the farm git that contains only `SKILL.md`,
+    `references/` and `assets/`, with UTF-8 text files of the types `.md`, `.txt`, `.yaml`, `.json`,
+    `.csv`, at most 50 files, `SKILL.md` up to 32 KiB and the whole tree up to 256 KiB. The front
+    matter of `SKILL.md` passes `spec/manifests/skill.schema.json`, and its `name` equals the
+    directory name. A `scripts/` folder, executable files, symbolic links and the field
+    `allowed-tools` are rejected at `apply`.
+  check: [lint, fixture]
   waivable: false
   version: v0.2
   profile: core
   decisions: []
-  fixtures: []
+  fixtures: [schemas/invalid/manifests/skill, lint:skills/format, manifests/v02-lints]
   doc: docs/capabilities.md
 
 - id: SKL-2
   title: The runtime gets only role skills with a matching hash
   status: active
   text: >-
-    A role pins a skill by the tree hash of its directory (`skill-ref`: name, description,
-    `sha256`). The runtime gets only the skills of its role with a matching hash and only from the
-    core's copy. The runtime's skill directory is read only; a skill that is not in the role is
-    forbidden on the runtime disk (complements RT-2).
+    A role pins a skill by the tree hash of its directory (`skill-ref`: name, description, `sha256`
+    by `spec/hashing.md`). The core gives a run only the skills of its role whose tree hash matches,
+    and only from the core's copy. A runtime that declares `skills: runtime_files` in `describe()`
+    gets them as files: its skill directory is read only, and a skill that is not in the role is
+    forbidden on its disk (complements RT-2). A runtime with `skills: farm` gets them as a section
+    of the instruction and through the built-in tool `skill_read`.
   check: [adapter]
   waivable: false
   version: v0.2
   profile: core
   decisions: []
-  fixtures: []
+  fixtures: [adapter:runtime/skills-role-only]
   doc: docs/capabilities.md
 
 - id: SKL-3

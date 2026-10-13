@@ -178,7 +178,9 @@ Checked by: `blackbox:channel/double-press`, `blackbox:core/kill-toolhost-mid-wr
 
 since v0.2 · non-waivable · profile core · check: blackbox
 
-A debug replay of a task (P2 `task.replay`) never creates approvals or write calls: `request_action` in it is only recorded. A replay does not deliver the result to `origin`, returns it only to the operator who requested it, and does not leave the task's tenant.
+A debug replay of a task (P2 `task.replay`) is an operator operation under the same `operator_access.debug_journal` decision as P2 `task.journal` (AUD-4): with `deny` it answers `forbidden`, with `notify` it writes an audit record and sends the tenant admins a code message, with `allow` it writes an audit record. The replay is a new task in the task's tenant with the type, body, mark and tier of the original; the core checks tools against the current permissions of the original initiator, and an inactive initiator gives `forbidden`; the replay is charged to the tenant limits like the original. A replay never creates approvals, `service_grant` records or write calls: `request_action`, `service/control` and `monitor/script_run` in it are only recorded. A task of type `action.*` is not replayed. A replay does not deliver the result to `origin`, returns it only to the operator who requested it, and does not leave the task's tenant.
+
+Checked by: `blackbox:core/replay-no-writes`
 
 <a id="APR-9"></a>
 ### APR-9. Tenant kind and the ban on self-approval
@@ -219,32 +221,36 @@ Every subject of a human decision and every kind of card and notice is written a
 
 since v0.2 · waivable · profile core · check: blackbox
 
-Once a month the core computes, per tenant and subject kind rather than per person, two shares: decisions faster than the threshold (default 10 seconds after delivery) without "Details" opened, and "Approve" on cards with `untrusted_seen`. The summary goes to the tenant admins. Series, lists and comparisons of individual people are not built and are not shown to anyone. If fewer than three people decided on a subject kind during the month, the share for that kind is not shown separately.
+Once a month the core computes, per tenant and subject kind rather than per person, two shares: decisions faster than the threshold `attention.fast_decision_s` (default 10 seconds after delivery) without "Details" opened, and "Approve" on cards with `untrusted_seen`. The summary goes to the tenant admins. Series, lists and comparisons of individual people are not built and are not shown to anyone. If fewer than three people decided on a subject kind during the month, the share for that kind is not shown separately.
+
+Checked by: `blackbox:core/approve-unread-summary`
 
 <a id="APR-14"></a>
 ### APR-14. Details before the listed decisions
 
 since v0.2 · non-waivable · profile core · check: blackbox, store · decisions: D-79
 
-The core accepts "Lift veto" on an audit sample item, "Approve" on the outcome of a promotion case, and "Yes" and "No" in a decision on attributing an incident to a change only if this person opened "Details" of this card before the decision (the P1 event `card.details` is recorded before `decide`). Otherwise `decide` is rejected with reason `details_not_opened`, and the card shows "Open "Details" first". The same applies to the P2 operation `incident.dismiss` (dismissing an incident as false, MGR-8): it requires the reason code `reason_code` and "Details" of the incident message opened, and it does not erase someone else's "Yes" answer on attribution: the attribution becomes disputed, the author of "Yes" gets a card and confirms or withdraws their answer, 7 days of silence withdraws it, and while the dispute is open there is no promotion trigger (D-79, GOV-13).
+The core accepts "Lift veto" (`override_veto`) on an audit sample item, "Confirm" (`confirm`) on the outcome of a promotion case, and "Yes" and "No" on an attribution card only if this person opened "Details" of this card before the decision (the P1 event `card.details` is recorded before `decide`). Otherwise `decide` is rejected with reason `details_not_opened`, and the card shows "Open "Details" first". The decisions that need this are the ones with `details_required: true` in `spec/model/decision-points.yaml`. Dismissing an incident as false (P2 `incident.dismiss`) needs a reason code and a "Details" text (MGR-8) and turns someone else's "Yes" into a dispute (GOV-13, D-79).
 
 Checked by: `blackbox:channel/details-not-opened`, `dig-05`, `gov-att-03`
 
 <a id="APR-15"></a>
 ### APR-15. Card limit per person per day
 
-since v0.2 · waivable · profile core · check: blackbox · decisions: D-62
+since v0.2 · waivable · profile core · check: blackbox · decisions: D-62, D-88
 
-A tenant has the field `attention.cards_per_person_day` (default 10): how many cards of non-urgent decisions a person gets per day. Above the limit, cards of proposals, audit sample items, promotion cases, attributions, memory records and people's requests about their own data wait for the next day in order of expiry and are not lost; the expiry of such a subject counts from delivery. Cards `approval`, `campaign`, `script`, `script_gate`, `control` and `takeover` are not deferred, but they count. Notices (incident messages, `manager_stopped`) are not subject to the limit; farm alarms are delivered to people by the monitoring system (MON-1) and do not count. Tenant admins see the excess as a number, without names.
+A tenant has the field `attention.noncritical_per_day` (default 10): how many cards of non-urgent decisions a person gets per day. Above the limit, cards of rows with `urgent: false` in `spec/model/decision-points.yaml` (proposals, audit sample items, promotion cases, attributions, memory records, people's requests about their own data) stay `planned` until the next day in order of expiry and are not lost; the expiry of such a subject counts from the first delivery of its card to any recipient. Cards of rows with `urgent: true` are not deferred, but they count. Notices (incident messages, `manager_stopped`, `alarm_notice`) are not subject to the limit and do not count. Tenant admins see the excess as a number per day, without names, in the `approve_unread_digest` notice.
+
+Checked by: `blackbox:core/cards-per-person-day`
 
 <a id="APR-16"></a>
 ### APR-16. Two approvers for high risk
 
 since v0.2 · non-waivable · profile core · check: store, blackbox, lint
 
-An action with `approvals: 2` is executed only after "Approve" by two different `human` principals, neither of which is the initiator or the service principal that requested the action; one "Reject" closes the request. Each press is recorded separately, the status becomes `approved` in the transaction where the number of different approvers reached two, and from there APR-7 applies. At each press the core checks again that the initiator is active and has `action.request:<action>`. The card shows who has already approved. For a tenant of kind `production`, `apply` rejects an action with `risk: high` and `approvals: 1`.
+An action with `approvals: 2` is executed only after "Approve" by two different `human` principals, neither of which is the initiator or the service principal that requested the action; one "Reject" closes the request. Each press is recorded separately, the status becomes `approved` in the transaction where the number of different approvers reached two, and from there APR-7 applies. At each press the core checks again that the initiator is active and has `action.request:<action>`. The card shows who has already approved. `apply` rejects a set in which a tenant of kind `production` grants `action.request:<action>` or lists the action in a role's `actions_may_request` for an action with `risk: high` and `approvals: 1`; a production tenant where fewer than two people other than the initiator hold `action.approve:<action>` for such an action gets an `apply` note and a `doctor` warning.
 
-Checked by: `blackbox:channel/two-approvers`
+Checked by: `blackbox:channel/two-approvers`, `lint:manifests/high-risk-two-approvers`, `manifests/v02-lints`
 
 <a id="APR-17"></a>
 ### APR-17. The /run command
@@ -361,7 +367,9 @@ Checked by: `store:audit/append-only`
 
 since v0.2 · non-waivable · profile core · check: store, blackbox
 
-The core writes the attempt journal (model requests and responses as P4 saw them, and tool calls with wrapped output as P3 saw them). It is stored only in a deletable store of class `content`, with the tenant's expiry `retention.journals` and the task's mark; it does not reach audit, events or the model context, and only an operator reads it, through P2 `task.journal` with `admin:debug` and `data:<mark>`. Operator reading of the journal is governed by the tenant field `operator_access.debug_journal: deny | notify | allow` (default `notify`): with `deny`, P2 `task.journal` answers `forbidden`; with `notify`, every read writes an audit record and sends the tenant admins a code message without content; with `allow`, only an audit record. For a tenant with `kind: production` the journal is off until the tenant sets an expiry; for a test tenant the default expiry is 7 days.
+The core writes the attempt journal (model requests and responses as P4 saw them, and tool calls with wrapped output as P3 saw them). It is stored only in a deletable store of class `content`, with the tenant's expiry `retention.journals` and the task's mark; it does not reach audit, events or the model context, and only an operator reads it, through P2 `task.journal` with `admin:debug` and `data:<mark>`. Operator reading of the journal is governed by the tenant field `operator_access.debug_journal: deny | notify | allow` (default `notify`): with `deny`, P2 `task.journal` answers `forbidden`; with `notify`, every read writes an audit record and sends the tenant admins a code message without content; with `allow`, only an audit record. Debug replay (APR-8) is decided by the same field. For a tenant with `kind: production` the journal is off until the tenant sets an expiry; for a test tenant the default expiry is 7 days.
+
+Checked by: `store:audit/attempt-journal`, `blackbox:core/journal-read`
 
 <a id="AUD-5"></a>
 ### AUD-5. The "personal data seen" flag
@@ -546,7 +554,7 @@ Checked by: `fixture:budget/manager-line-absent`
 
 since v0.2 · non-waivable · profile core · check: store, fixture
 
-The principal in a usage line is needed for the daily limit and is stored no longer than the expiry of the class `observation` (93 days): when it expires, the `retention` loop replaces the principal id with the id of their group or tenant, in whole periods, as in AUD-3 and SEC-14, and the other fields of the line stay for monthly reports. A "usage per person" series longer than 93 days does not exist (DLV-14). Fixture: a usage line older than 93 days carries no principal id.
+The principal in a usage line is needed for the daily limit and is kept for 93 days. For a line whose `subject` is a person (`human:`), when 93 days pass the `retention` loop removes `subject` and writes `subject_kind: human`, in whole days; the amounts and the other fields of the line stay for monthly reports, and the line stays in class `metadata` (SEC-14). A "usage per person" series longer than 93 days does not exist (DLV-14). Fixture: a usage line older than 93 days carries no `subject`.
 
 Checked by: `store:budget/subject-anonymized-93d`
 
@@ -1680,7 +1688,7 @@ Checked by: `store:core/idempotency-key`
 
 since v0.1 · waivable · profile core · check: blackbox, store · decisions: D-71, D-80
 
-Tasks and messages that the core itself creates get an idempotency key only from a closed list, and a double firing of one trigger gives one task. The list: a schedule `system:schedule:<schedule>:<slot>`, where the slot is a UTC instant in the format `schedule_slot` (TIM-3); an action task after approval `system:approval:<approval id>`; a route on an event `system:event:<route>:<source>:<id>`, so two routes on one event give two tasks; a channel activity `system:activity:<channel>:<update id>`; a dead work redrive `system:redrive:<task id>:<n>`, not for `action.*`; a child task from `enqueue_child` `system:child:<parent>:<body hash>`; a bot message `system:msg:<attempt>:<n>`; a wake-up on an inbox `system:wake:<route>:<window>`; an auto-report `system:report:<task>:<route>`; a lens review task `system:review:<proposal>:<lens>`; a continuation `system:cont:<trigger>:<source id>`, including a child task's answer `system:cont:reply:<child task>` and a campaign outcome `system:cont:campaign:<campaign>`; a script step task `system:script:<run>:<step>` (SCR-8), which is also a continuation with the trigger `script`; a campaign item `system:campaign:<campaign>:<n>`; an incident `system:incident:<class>:<subject>:<window>` and its closing pass `system:incident:<incident>:close`; a data read by the manager seat `system:inspect:<basis>:<n>`; the daily review of the manager seat `system:daily:<tenant>:<day>` (MGR-41); a control operation `system:control:<epoch>:<number>`; a successor's choice of facts `system:handover:<fact offer>`. From v0.2: an external event `system:ingress:<source>:<delivery id>`, an escalation to the manager `system:escalation:<attempt>`, a takeover `system:takeover:<task>`, a batch of pending model grant requests `system:grants:<tenant>:<window>`, a bot's ballot in a case `system:governance:<case>:<round>:<bot>`, a shadow reviewer task of a lens `system:review:<proposal>:<lens>:shadow`, separate from the seat's task, and a review of an escalation to the manager by the necessity lens `system:necessity:<escalation>`. A new core key appears only by editing this list.
+Tasks and messages that the core itself creates get an idempotency key only from a closed list, and a double firing of one trigger gives one task. The list: a schedule `system:schedule:<schedule>:<slot>`, where the slot is a UTC instant in the format `schedule_slot` (TIM-3); an action task after approval `system:approval:<approval id>`; a route on an event `system:event:<route>:<source>:<id>`, so two routes on one event give two tasks; a channel activity `system:activity:<channel>:<update id>`; a dead work redrive `system:redrive:<task id>:<n>`, not for `action.*`; a child task from `enqueue_child` `system:child:<parent>:<body hash>`; a bot message `system:msg:<attempt>:<n>`; a wake-up on an inbox `system:wake:<route>:<window>`; an auto-report `system:report:<task>:<route>`; a lens review task `system:review:<proposal>:<lens>`; a continuation `system:cont:<trigger>:<source id>`, including a child task's answer `system:cont:reply:<child task>` and a campaign outcome `system:cont:campaign:<campaign>`; a script step task `system:script:<run>:<step>` (SCR-8), which is also a continuation with the trigger `script`; a campaign item `system:campaign:<campaign>:<n>`; an incident `system:incident:<class>:<subject>:<window>` and its closing pass `system:incident:<incident>:close`; a data read by the manager seat `system:inspect:<basis>:<n>`; the daily review of the manager seat `system:daily:<tenant>:<day>` (MGR-41); a control operation `system:control:<epoch>:<number>`; a successor's choice of facts `system:handover:<fact offer>`. An external event `system:ingress:<source>:<delivery id>` (from v0.1 for the monitoring adapter, from v0.2 for source channels); from v0.2: an escalation to the manager `system:escalation:<attempt>`, a takeover `system:takeover:<task>`, a batch of pending model grant requests `system:grants:<tenant>:<window>`, a bot's ballot in a case `system:governance:<case>:<round>:<bot>`, a shadow reviewer task of a lens `system:review:<proposal>:<lens>:shadow`, separate from the seat's task, and a review of an escalation to the manager by the necessity lens `system:necessity:<escalation>`. A new core key appears only by editing this list.
 
 Checked by: `blackbox:core/system-key-list`
 
@@ -1698,7 +1706,7 @@ Checked by: `blackbox:channel/double-press`, `blackbox:channel/decide-other`
 
 since v0.1 · waivable · profile core · check: store, blackbox · decisions: D-62
 
-An event is unique by the pair `source` and `id` (CloudEvents), and the core assigns both values from the sender's credentials. Otherwise a worker could take the id of a real event, including `alarm.*`, and the real one would be discarded as a duplicate. P1 `emit` is accepted only with the token of a live attempt and only for event types from the `events` of its task type. A route is declared in the tenant's git and reads events only of its own tenant. A route on an alarm event `alarm.*` can only enqueue a task: alarms are delivered to people by the organization's monitoring system, to which the core hands every change of an alarm episode (MON-1).
+An event is unique by the pair `source` and `id` (CloudEvents), and the core assigns both values from the sender's credentials. Otherwise a worker could take the id of a real event, including `alarm.*`, and the real one would be discarded as a duplicate. P1 `emit` is accepted only with the token of a live attempt and only for event types from the `events` of its task type. A route is declared in the tenant's git and reads events only of its own tenant. A route on an alarm event `alarm.*` can only enqueue a task: alarms reach people only along the installation's one alarm path (MON-1).
 
 Checked by: `store:core/event-source-id`
 
@@ -1839,32 +1847,38 @@ Explained in: [docs/capabilities.md](../docs/capabilities.md)
 <a id="ING-1"></a>
 ### ING-1. Authenticity of an external source
 
-since v0.2 · non-waivable · profile core · check: adapter, lint
+since v0.2 · non-waivable · profile core · check: adapter, lint, fixture
 
-A source channel (an E1 driver with `direction: in`) checks the authenticity of every delivery with the means of the external system: a signature with a timestamp and a time tolerance, or a token over TLS. A source without such a check gets `identity_assurance: weak`, and a route from its events enqueues only task types of level 0.
+A source channel (an E1 driver with `direction: in`) checks the authenticity of every delivery with the means of the external system: a signature with a timestamp within `ingress.tolerance`, or a token over TLS (`ingress.auth`). A source manifest without `ingress.auth` fails the schema, and a source channel without `ingress` fails `apply`; a delivery that fails the check gives no activity, no file and no event.
+
+Checked by: `schemas/invalid/manifests/channel-ingress`, `adapter:channel/ingress-authenticity`, `manifests/v02-lints`
 
 <a id="ING-2"></a>
 ### ING-2. Only closed fields in external event data
 
 since v0.2 · non-waivable · profile core · check: lint, fixture · decisions: D-69
 
-The data of an `ext.*` event contains only the fields extracted by the mapping declared in the source manifest, and only of closed kinds (the leaves of INJ-1). The rest of the external delivery body is saved as a file and reaches a task only as an attachment, which sets `untrusted_seen`. Free text of the external body never reaches a task's `goal`. The model sees the names of monitoring system scripts and triggers only from the tenant catalog (`hosts[].monitor_scripts_allowed`, `monitor_triggers`): code checks what the E5 adapter read from the API against the catalog by `scriptid` and `triggerid`, and a name from the API does not reach the event data or the model context (MON-10, INJ-16); the event `ext.monitor.scripts.v1` carries `scriptid`, the hash of the script text and a closed choice of input, and it has no `name` field. Fixture: a script name from the API containing an instruction appears neither in the tool catalog nor in the model context.
+The data of an `ext.*` event contains only the fields extracted by `ingress.mapping` of the source manifest, and only of closed kinds (the leaves of INJ-1). The rest of the external delivery body is saved as a file and reaches a task only as an attachment, which sets `untrusted_seen`. Free text of the external body never reaches a task's `goal`, the event data or the audit. Monitoring system names follow INJ-16.
 
-Checked by: `fixture:ingress/annotation-instruction`, `fixture:ingress/script-name-not-in-context`
+Checked by: `fixture:ingress/annotation-instruction`
 
 <a id="ING-3"></a>
 ### ING-3. Delivery key and source limits
 
-since v0.2 · waivable · profile core · check: adapter, blackbox
+since v0.2 · waivable · profile core · check: adapter, blackbox, fixture
 
-An incoming delivery of an external source gets the idempotency key `system:ingress:<source>:<delivery id>` (IDM-2): a repeated delivery gives one event. The source manifest sets a rate limit and a body size limit; exceeding them gives the source a refusal, not a truncated body.
+An incoming delivery of an external source gets the idempotency key `system:ingress:<source>:<delivery id>` (IDM-2): a repeated delivery gives one event. The delivery id is the id that the external system sends (for Standard Webhooks the `webhook-id` header); a source without one gets the sha256 of the body. The source manifest sets a rate limit and a body size limit (`ingress.limits`); exceeding them gives the source a refusal, not a truncated body.
+
+Checked by: `schemas/invalid/manifests/channel-ingress`, `blackbox:ingress/repeat-and-limits`
 
 <a id="ING-4"></a>
 ### ING-4. External events only in the ext namespace
 
-since v0.2 · non-waivable · profile core · check: lint · decisions: D-62, D-63
+since v0.2 · non-waivable · profile core · check: lint, fixture · decisions: D-62, D-63, D-88
 
-External events live only in the `ext.*` namespace: a source cannot produce `alarm.*`, `task.*`, `message.*` or an event of another core namespace. A farm alarm on an external event is raised only by a `job` task that a route enqueues and that checks the condition in code (INJ-7); likewise a monitoring system problem `ext.monitor.problem.v1` gives an alarm only after a recheck by code (MON-5). The farm does not wake people for an alarm itself: the monitoring system passes core alarms to people (MON-1). A route from `ext.*` enqueues only types from the group `system-ops` (PRM-10).
+External events live only in the `ext.*` namespace: a source manifest whose `ingress.event` is outside `ext.*` fails the schema, so a source cannot produce `alarm.*`, `task.*`, `message.*` or an event of another core namespace. A farm alarm on an external event is raised only by a `job` task that a route enqueues and that checks the condition in code (INJ-7); a monitoring system problem `ext.monitor.problem.v1` gives an alarm only after a recheck by code (MON-5). Alarms reach people only along the installation's one alarm path (MON-1). A route from `ext.*` enqueues only types listed in `system-ops` (PRM-10).
+
+Checked by: `schemas/invalid/manifests/channel-ingress`, `manifests/ingress-routes`
 
 <a id="inj"></a>
 ## INJ: Injection resistance
@@ -1926,7 +1940,7 @@ A plugin's `network.egress` is empty or is a closed list of addresses from the t
 
 since v0.1 · non-waivable · profile core · check: blackbox, lint · decisions: D-59, D-62, D-63, D-64
 
-Events `alarm.*` are produced only by the core and by workers of kind `job`. A task type with `alarm.*` in `events` does not declare inbox reading (`inbox.read`), does not accept artifacts of agent tasks and does not get, through a route, records with `dataorigin: model` or `untrusted: true`. A route to such a type from an agent event, or from a message type whose producers include `agent`, is rejected. Messages of the genus `state` do not produce alarms. External events, including monitoring system problems, live only in the `ext.*` namespace and never become `alarm.*` by themselves (ING-4, MON-5): whether to raise a farm alarm is decided by a route to a `job` worker that rechecks the condition in code. Only the monitoring system delivers farm alarms to people (MON-1), and only episodes of alarms raised by code go to it: numbers, `enum` values, tags and catalog ids. A bot note on a monitoring system problem (MON-7) does not acknowledge, close or silence the problem and does not change its severity. Only code opens an incident from an alarm; no bot creates, changes or hides incidents, their links to changes or alarms: code and people do that.
+Events `alarm.*` are produced only by the core and by workers of kind `job`. A task type with `alarm.*` in `events` does not declare inbox reading (`inbox.read`), does not accept artifacts of agent tasks and does not get, through a route, records with `dataorigin: model` or `untrusted: true`. A route to such a type from an agent event, or from a message type whose producers include `agent`, is rejected. Messages of the genus `state` do not produce alarms. External events, including monitoring system problems, live only in the `ext.*` namespace and never become `alarm.*` by themselves (ING-4, MON-5): whether to raise a farm alarm is decided by a route to a `job` worker that rechecks the condition in code. Farm alarms reach people only along the installation's one alarm path (MON-1), and only episodes of alarms raised by code go along it: numbers, `enum` values, tags and catalog ids. A bot note on a monitoring system problem (MON-7) does not acknowledge, close or silence the problem and does not change its severity. Only code opens an incident from an alarm; no bot creates, changes or hides incidents, their links to changes or alarms: code and people do that.
 
 Checked by: `blackbox:core/alarm-from-text`
 
@@ -1976,7 +1990,7 @@ Checked by: `inj-01`, `inj-02`, `inj-03`, `inj-04`, `inj-05`, `inj-06`, `inj-07`
 
 since v0.1 · non-waivable · profile core · check: fixture, blackbox · decisions: D-82
 
-`untrusted_seen` is monotonic: it is only ever set. The core sets it at enqueue if the parent has the flag; if the body came from a route, an event, a forward or a quote, except an event of a monitoring system problem of the task's own tenant (below); if the task has an attachment or file, whoever uploaded it, including the initiator (ART-2); if the conversation session is marked. A continuation, a script step, a rollup, a proposal and an aggregator task get the flag if any of their inputs has it. While the attempt runs, the core sets the flag after the first output of a tool with `untrusted_output: true`, including output from a corpus with `trust: ingested` (KNW-2), after reading a message from the inbox (source: the message type and the sender's role), after reading the content of a file, and after any free text received in a wrapper. The translator does not get the content of attachments or of forwarded and quoted text (TRN-2): an attachment of the request enters the script only as a `file_ref` parameter, so the flag because of an attachment goes to the task and attempt of the step that get this file, not to the script draft. Reading facts and observations does not set the flag; facts with `untrusted_origin` do not reach tasks of the purposes `review` and `manage`. A session is marked when untrusted output or a marked task got into it; only a new conversation or `forget` removes the mark. The flag's source is recorded and shown on the card. The monitoring system of the task's own tenant is a trusted source (D-82): a task that a route enqueued on the event `ext.monitor.problem.v1` with a `triggerid` from `Catalog.spec.monitor_triggers` on a node from the catalog of the task's tenant (MON-5) does not get the flag, and its source is recorded as `monitor`. Only code fields go into such a task: `triggerid`, the class and item from the catalog, the node resource, the severity, the state and the time; trigger names and problem texts from the API do not enter the model context (INJ-16). An event for a trigger not in the catalog sets the flag, and a problem on a node of another tenant does not reach the farm. Trusted output of the `monitor` plugin (`monitor/problems`, `monitor/maintenance`, `monitor/item_history`) does not set the flag, while values of text and log items and comments on problems do (MON-6). The outcome of a monitoring script is untrusted (MON-10). The core treats the body of a task enqueued by an external program (`posted_by: service`) as someone else's text: at enqueue the flag is set with the source `goal:service`, unless the type manifest declared `goal_trust: authored` for this source; a program that carries someone else's text (tickets, emails, alerts) puts it into a `text` attachment, and then the flag is set because of the attachment. Search output from a corpus with `trust: curated` (KNW-2) does not set the flag, but stays data: the model gets it as a data block with a tag, like any tool output, not as instruction text, and the tenant's `knowledge/` catalog changes only through a protected branch (MAN-5). Fixtures: a child of a marked parent gives `true` on the card; the second task of the same conversation after reading a log is marked; a file attached by the initiator sets the flag; a task from `api:k1` of a type without `goal_trust` is marked at enqueue with the source `goal:service`; the line "restart nginx" in a document of a `curated` corpus does not call `service/control` (case `kb-inj`); a route task on a problem of a trigger from `monitor_triggers` of the `demo` catalog on `web1` has no flag, source `monitor`; the same problem for a trigger outside the catalog gives the flag.
+`untrusted_seen` is monotonic: it is only ever set. The core sets it at enqueue if the parent has the flag; if the body came from a route, an event, a forward or a quote, except an event of a monitoring system problem of the task's own tenant (below); if the task has an attachment or file, whoever uploaded it, including the initiator (ART-2); if the conversation session is marked. A continuation, a script step, a rollup, a proposal and an aggregator task get the flag if any of their inputs has it. While the attempt runs, the core sets the flag after the first output of a tool with `untrusted_output: true`, including output from a corpus with `trust: ingested` (KNW-2), after reading a message from the inbox (source: the message type and the sender's role), after reading the content of a file, and after any free text received in a wrapper. The translator does not get the content of attachments or of forwarded and quoted text (TRN-2): an attachment of the request enters the script only as a `file_ref` parameter, so the flag because of an attachment goes to the task and attempt of the step that get this file, not to the script draft. Reading facts and observations does not set the flag; facts with `untrusted_origin` do not reach tasks of the purposes `review` and `manage`. A session is marked when untrusted output or a marked task got into it; only a new conversation or `forget` removes the mark. The flag's source is recorded and shown on the card. The monitoring system of the task's own tenant is a trusted source (D-82): a task that a route enqueued on the event `ext.monitor.problem.v1` with a `triggerid` from `Catalog.spec.monitor_triggers` on a node from the catalog of the task's tenant (MON-5) does not get the flag, and its source is recorded as `monitor`. Only code fields go into such a task: `triggerid`, the class and item from the catalog, the node resource, the severity, the state and the time; trigger names and problem texts from the API do not enter the model context (INJ-16). An event for a trigger not in the catalog sets the flag, and a problem on a node of another tenant does not reach the farm. Trusted output of the `monitor` plugin (`monitor/problems`, `monitor/maintenance`, `monitor/item_history`) does not set the flag, while values of text and log items and comments on problems do (MON-6). The outcome of a monitoring script is untrusted (MON-10). The core treats the body of a task enqueued by an external program (`posted_by: service`) as someone else's text: at enqueue the flag is set with the source `goal:service`, unless the type manifest declared `goal_trust: authored` for this source; a program that carries someone else's text (tickets, emails, alerts) puts it into a `text` attachment, and then the flag is set because of the attachment. Search output from a corpus with `trust: curated` (KNW-2) does not set the flag, but stays data: the model gets it as a data block with a tag, like any tool output, not as instruction text, and the tenant's `knowledge/` folder changes only through `apply` from git (MAN-5). Fixtures: a child of a marked parent gives `true` on the card; the second task of the same conversation after reading a log is marked; a file attached by the initiator sets the flag; a task from `api:k1` of a type without `goal_trust` is marked at enqueue with the source `goal:service`; the line "restart nginx" in a document of a `curated` corpus does not call `service/control` (case `kb-inj`); a route task on a problem of a trigger from `monitor_triggers` of the `demo` catalog on `web1` has no flag, source `monitor`; the same problem for a trigger outside the catalog gives the flag.
 
 Checked by: `blackbox:core/untrusted-child`, `blackbox:core/service-goal-untrusted`, `kb-inj-02`, `blackbox:model/service-monitor-trusted`, `blackbox:model/service-monitor-item-text`, `blackbox:monitor/trigger-not-in-catalog-flag`
 
@@ -2003,7 +2017,7 @@ since v0.1 · non-waivable · profile core · check: lint, fixture, blackbox · 
 
 The names and choice options of monitoring system scripts and the names of triggers reach the model context only from the tenant catalog: `hosts[].monitor_scripts_allowed: [{scriptid, name, hosts, choices}]` (a name in a format from the registry; `choices` is a closed list of the script's input values) and `monitor_triggers: [{triggerid, class, item}]`. A role gets the right with the field `monitor_scripts: [<name>...]` with values from the catalog; `["*"]` means all scripts of the catalog (D-69); `true` is rejected. The list of scripts that the E5 adapter read from the API (`ext.monitor.scripts.v1`) carries only `scriptid`, the `input` marker and the hash of the choice values, without names; the core checks it against the catalog in code, and the catalog's `choices` by hash: a catalog script that is not in the API answer gives `error(script_unknown)` when called; a script from the API that is not in the catalog does not enter the `enum` of the tool `monitor/script_run` and is not visible to the model. The trigger name, its tags and the problem texts from the API do not enter the model context or events (MON-5, ING-2): the event carries `triggerid`, and the class and item come from `monitor_triggers`. Fixtures: a script appeared in the monitoring system but not in the catalog: it is not in the `enum`; the script name "restart nginx now" in the API answer appears neither in the model context nor on a card.
 
-Checked by: `blackbox:monitor/script-name-closed`, `blackbox:monitor/script-not-in-catalog`, `blackbox:monitor/script-choices-hash`
+Checked by: `blackbox:monitor/script-name-closed`, `blackbox:monitor/script-not-in-catalog`, `blackbox:monitor/script-choices-hash`, `fixture:ingress/script-name-not-in-context`
 
 <a id="ins"></a>
 ## INS: Analysis of own data
@@ -2079,9 +2093,9 @@ Checked by: `blackbox:knowledge/tenant-canary`
 
 since v0.2 · non-waivable · profile core · check: lint, fixture, eval
 
-A corpus gets `trust: curated` only if all its documents are in the tenant's git and passed human review; lint rejects a `curated` corpus with another source. Documents uploaded by people, synchronized or created by tasks form a corpus with `trust: ingested`. Tool output from an `ingested` corpus is untrusted and sets `untrusted_seen` on the attempt (INJ-13). Output from a `curated` corpus does not set `untrusted_seen`, but stays data: the model sees it in a data block of tool output, not as an instruction, and an action it names takes the ordinary approval path. The core accepts the tenant's `knowledge/` catalog only from a protected branch, the same as roles and groups, and its changes are part of the digest to admins (MAN-5). The eval case `kb-inj` also checks the `curated` corpus.
+A corpus gets `trust: curated` only if `source: git`, that is all its documents are in the tenant's git and reach the farm only through `apply` (MAN-5); lint rejects a `curated` corpus with another source. Documents uploaded by people, synchronized or created by tasks form a corpus with `trust: ingested`. Tool output from an `ingested` corpus is untrusted and sets `untrusted_seen` on the attempt (INJ-13). Output from a `curated` corpus does not set `untrusted_seen`, but stays data: the model sees it in a data block of tool output, not as an instruction, and an action it names takes the ordinary approval path. The corpus tools `kb_search` and `kb_read` take the trust of the corpus that is the call target. Changes of the tenant's `knowledge/` folder are part of the digest to admins (MAN-5). The eval case `kb-inj-02` checks the `curated` corpus.
 
-Checked by: `kb-inj-02`
+Checked by: `kb-inj-02`, `lint:catalog/curated-only-git`, `manifests/v02-lints`
 
 <a id="KNW-3"></a>
 ### KNW-3. Corpus text reaches the model only through P3
@@ -2099,12 +2113,16 @@ since v0.2 · non-waivable · profile core · check: lint, blackbox
 
 The model has no write path to a corpus: agent roles have no corpus write tool, and no memory record gets into a corpus. Only a principal with the capability `kb.write:<corpus>` uploads documents, through a channel or P2 `kb.upload`. Only a task of kind `job` of type `kb.ingest.v1` parses documents, cuts them into fragments and computes vectors.
 
+Checked by: `blackbox:knowledge/upload-rights`
+
 <a id="KNW-5"></a>
 ### KNW-5. Deleting a document deletes its fragments and vectors
 
-since v0.2 · non-waivable · profile core · check: store
+since v0.2 · non-waivable · profile core · check: store · decisions: D-97
 
-Deleting a corpus document, the expiry of its file and deleting the whole corpus delete the fragments and vectors of this document in all farm stores. After deletion, search does not find them.
+Deleting a corpus document, the expiry of its file and deleting the whole corpus delete the fragments of this document in the per-tenant corpus index in C1 together with the file (C1 `file.purge`), and in every other farm store that holds them. After deletion, search does not find them (D-97).
+
+Checked by: `store:knowledge/delete-document`
 
 <a id="lcy"></a>
 ## LCY: Tenant lifecycle
@@ -3381,14 +3399,18 @@ The service principal `system` has its own group `system-ops` with exactly the t
 
 since v0.2 · non-waivable · profile core · check: blackbox
 
-P1 `enqueue` with `mode: validate` passes all enqueue checks, but creates no record, does not take the idempotency key and reserves no budget; the core writes an audit line with a dry-run flag. For something foreign or nonexistent the dry run answers the same as a real enqueue. The answer (type, `max_tier`, `data_mark`, the decision and reason, the budget estimate) goes to the calling principal, not to the model.
+P1 `enqueue` with `mode: validate` passes all enqueue checks, but creates no record, does not take the idempotency key and reserves no budget; the core writes an audit line with a dry-run flag. For something foreign or nonexistent the dry run answers the same as a real enqueue. The answer (type, `max_tier`, `data_mark`, the decision and reason, the budget estimate) goes to the calling principal in the `validate` block of the response, not to the model. The built-in tool `enqueue_child` has no `mode` parameter.
+
+Checked by: `blackbox:core/enqueue-validate`
 
 <a id="PRM-12"></a>
 ### PRM-12. Tool output cache
 
 since v0.2 · non-waivable · profile core · check: blackbox
 
-If an implementation caches tool output, an answer from the cache is returned only after a full check of the current call (PRM-3). The cache key includes the tenant, plugin, tool, arguments and catalog version. The expiry is set by the tool manifest (`cache_s`, 0 by default, that is no cache). Output from the cache stays untrusted and sets `untrusted_seen`. Audit and usage lines are written with the flag `cached`.
+If an implementation caches tool output, it caches only tools with `access: read`, and an answer from the cache is returned only after a full check of the current call (PRM-3). The cache key includes the tenant, plugin, tool, arguments and catalog version, and for a tool with `credential: per_principal` also the connection id (SEC-7). The expiry is set by the tool manifest (`cache_s`, 0 by default, that is no cache). Output from the cache stays untrusted and sets `untrusted_seen`. Audit and usage lines are written with the flag `cached`.
+
+Checked by: `blackbox:toolhost/output-cache`
 
 <a id="PRM-13"></a>
 ### PRM-13. Only an operator grants privileged permissions
@@ -4063,7 +4085,9 @@ Everything the core issues or signs (worker tokens, program keys, handles, the a
 
 since v0.2 · non-waivable · profile core · check: blackbox
 
-Revocation on compromise (`rotate --compromised`) takes effect from the next call, without an overlap window, and in the same operation sets a hold without expiry on a scope from the closed list `spec/model/holds.yaml` where the secret was used: `channel`, `plugin`, `worker` or `tenant`. Only a person with `hold.release` releases such a hold (HLD-2).
+Revocation on compromise is the operator operation P2 `secret.revoke` (`farmctl secret revoke --compromised`). For a credential that the core issued (a worker token, a program key, a handle) it takes effect from the next call, without an overlap window. For any secret, in the same operation the core sets a hold without expiry with reason `compromised` on every scope from the closed list `spec/model/holds.yaml` where the deployment description uses the secret: `channel`, `plugin`, `worker` or `tenant`. A deployment secret is then replaced at the external system by the recipe in `docs/operations.md`. Only the operator releases such a hold (HLD-2).
+
+Checked by: `blackbox:core/rotate-compromised`
 
 <a id="SEC-7"></a>
 ### SEC-7. A person's connection to an external service
@@ -4071,6 +4095,8 @@ Revocation on compromise (`rotate --compromised`) takes effect from the next cal
 since v0.2 · non-waivable · profile core · check: blackbox
 
 A person's access to their external service is a recorded connection (`Connection`): the tenant, the principal, a provider from the tenant catalog, access scopes from a closed list, the state and an expiry. The person creates the connection themselves through the consent adapter, not the model; the deployment stores the token value, and it does not pass through P1-P4. A plugin declares `credential: per_principal(<provider>, <scopes>)`, and the core selects the connection by the task's initiator; the model neither names nor chooses the account. Tasks of other principals and of the service principal `system` do not use the connection. A write on behalf of a person remains a tier 3 action with an approval. Offboarding and `forget` revoke and delete the connection.
+
+Checked by: `blackbox:core/connection-per-principal`
 
 <a id="SEC-8"></a>
 ### SEC-8. Tenant privacy block
@@ -4091,9 +4117,9 @@ A privacy block channel with `third_party_storage: true`, including a private ch
 
 since v0.2 · waivable · profile core · check: blackbox · decisions: D-12, D-36, D-76
 
-With the command `/mydata` in a private chat a person gets a report about their data in the tenant of this channel; a person with `admin:people` gets the same report about any principal of their tenant through P2 `principal.data_report`. Code builds the report, and it contains no content: the number of objects of each kind and retention class where the principal is the initiator, where the object belongs to them, where they approved or decided, and how many of them carry `personal_seen` (AUD-5); the number of reads of these objects for incident review (MGR-28); the periods by class from `Tenant.spec.retention`; the recipients from the privacy block, among them the monitoring system; connections to external services (SEC-7); the usage anonymization period (SEC-14); how to request a copy or deletion. If the same external identity has a principal in another tenant, the report adds the code line "you also have data in another tenant, a request there is filed separately" without the tenant name and numbers. An operator gets a report by external identity across all tenants at once through P2 `principal.data_report --all-tenants`, without content and with an audit record. A full copy of the data never goes into a chat, only into a sink with the block `Sink.spec.export_only: {recipient, key_ref}`, where the only recipient equals the principal or an admin of their tenant, as a file encrypted with their key with the period of class `content` (LCY-2); an export task to a sink without `export_only` is rejected with code `sink_not_export`. The `/mydata` report and the export arrive in v0.2, while the command `/mydata erase` works from v0.1 (SEC-11, D-76).
+With the command `/mydata` in a private chat a person gets a report about their data in the tenant of this channel; a person with `admin:people` gets the same report about any principal of their tenant through P2 `principal.data_report`. Code builds the report, and it contains no content: the number of objects of each kind and retention class where the principal is the initiator, where the object belongs to them, where they approved or decided, and how many of them carry `personal_seen` (AUD-5); the number of reads of these objects for incident review (MGR-28); the periods by class from `Tenant.spec.retention`; the recipients from the privacy block; connections to external services (SEC-7); the usage anonymization period (SEC-14); how to request a copy or deletion. If the same external identity has a principal in another tenant, the report adds the code line "you also have data in another tenant, a request there is filed separately" without the tenant name and numbers. An operator gets a report by external identity across all tenants at once through P2 `principal.data_report --all-tenants`, without content and with an audit record. A full copy of the data never goes into a chat, only into a sink with the block `Sink.spec.export_only: {recipient_ref, key_ref}`, where the only recipient (`recipient_ref`) equals the principal or an admin of their tenant, as a file encrypted with their key with the period of class `content` (LCY-2); an export task to a sink without `export_only` is rejected with code `sink_not_export`. The `/mydata` report and the export arrive in v0.2, while the command `/mydata erase` works from v0.1 (SEC-11, D-76).
 
-Checked by: `blackbox:core/export-sink-not-export`
+Checked by: `blackbox:core/export-sink-not-export`, `blackbox:core/mydata-report`, `manifests/v02-lints`
 
 <a id="SEC-11"></a>
 ### SEC-11. A person's request and deletion through ports
@@ -4111,6 +4137,8 @@ since v0.2 · waivable · profile core · check: blackbox · decisions: D-12, D-
 
 P2 `tenant.privacy_report` collects per tenant: the processing purposes; the retention classes with periods and object counts, of them with `personal_seen`; the subprocessors with region, retention mode and agreement reference; channels with third-party storage and their ceilings; references to the impact assessment and the record of processing activities; the number of open and overdue requests by people; the number of content reads for incident review over the period. The report holds only metadata. Tenant people with `admin:people` or `audit.read` and the operator get it.
 
+Checked by: `blackbox:core/privacy-report`
+
 <a id="SEC-13"></a>
 ### SEC-13. The privacy notice as a separate delivery
 
@@ -4125,7 +4153,7 @@ Checked by: `blackbox:channel/privacy-notice-native`, `blackbox:channel/privacy-
 
 since v0.2 · waivable · profile core · check: store, blackbox
 
-Usage records that refer to a principal (a person's usage lines and their daily limits, BUD-1) older than 93 days lose the reference to the principal: the retention loop replaces it with a reference to the tenant and the principal class, the amounts and other fields remain, and the period of class `metadata` does not change for them; the retention loop does the anonymization together with BUD-16, and both parts arrive in v0.2. Reports and limits per principal are computed only from records younger than 93 days; the report to a person about their data names this period (SEC-10). Fixture: after a loop run, a usage record aged 94 days has no principal id.
+Usage lines whose `subject` is a person (`human:`) and that are older than 93 days lose the reference: the retention loop removes `subject` and writes `subject_kind: human`, in whole days, and the amounts and other fields remain; the line stays in class `metadata` for its period, and this removal is the only edit of a `metadata` row. The retention loop does it together with BUD-16. Daily limits and reports per principal are computed only from lines younger than 93 days; the report to a person about their data names this period (SEC-10). Fixture: after a loop run, a usage line aged 94 days has no `subject`.
 
 Checked by: `store:budget/subject-anonymized-93d`
 
@@ -4137,16 +4165,20 @@ Explained in: [docs/capabilities.md](../docs/capabilities.md)
 <a id="SKL-1"></a>
 ### SKL-1. A skill without scripts and without an allowed-tools list
 
-since v0.2 · non-waivable · profile core · check: lint
+since v0.2 · non-waivable · profile core · check: lint, fixture
 
-A skill is a directory `skills/<name>/` in git that contains only `SKILL.md`, `references/` and `assets/` of text types and within the size limit. A `scripts/` folder, executable files and the field `allowed-tools` are rejected at `apply`.
+A skill is a directory `skills/<name>/` in the farm git that contains only `SKILL.md`, `references/` and `assets/`, with UTF-8 text files of the types `.md`, `.txt`, `.yaml`, `.json`, `.csv`, at most 50 files, `SKILL.md` up to 32 KiB and the whole tree up to 256 KiB. The front matter of `SKILL.md` passes `spec/manifests/skill.schema.json`, and its `name` equals the directory name. A `scripts/` folder, executable files, symbolic links and the field `allowed-tools` are rejected at `apply`.
+
+Checked by: `schemas/invalid/manifests/skill`, `lint:skills/format`, `manifests/v02-lints`
 
 <a id="SKL-2"></a>
 ### SKL-2. The runtime gets only role skills with a matching hash
 
 since v0.2 · non-waivable · profile core · check: adapter
 
-A role pins a skill by the tree hash of its directory (`skill-ref`: name, description, `sha256`). The runtime gets only the skills of its role with a matching hash and only from the core's copy. The runtime's skill directory is read only; a skill that is not in the role is forbidden on the runtime disk (complements RT-2).
+A role pins a skill by the tree hash of its directory (`skill-ref`: name, description, `sha256` by `spec/hashing.md`). The core gives a run only the skills of its role whose tree hash matches, and only from the core's copy. A runtime that declares `skills: runtime_files` in `describe()` gets them as files: its skill directory is read only, and a skill that is not in the role is forbidden on its disk (complements RT-2). A runtime with `skills: farm` gets them as a section of the instruction and through the built-in tool `skill_read`.
+
+Checked by: `adapter:runtime/skills-role-only`
 
 <a id="SKL-3"></a>
 ### SKL-3. A skill does not change the tool catalog

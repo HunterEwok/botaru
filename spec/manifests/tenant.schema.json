@@ -489,7 +489,7 @@
               "monitoring"
             ]
           },
-          "description": "Data recipients; monitoring is mandatory (MON-1).",
+          "description": "Data recipients; monitoring is mandatory only when the installation claims the monitor profile (MON-1, D-88).",
           "uniqueItems": true
         },
         "notice_ref": {
@@ -588,7 +588,7 @@
             "notify",
             "allow"
           ],
-          "description": "Reading the tenant's logs by the operator; notify by default."
+          "description": "Operator reading of attempt journals and task replays (AUD-4, APR-8); notify by default."
         }
       }
     },
@@ -1060,7 +1060,14 @@
           "type": "integer",
           "minimum": 0,
           "maximum": 1000,
-          "description": "From v0.2: non-urgent cards to a person per day (APR-15).",
+          "description": "From v0.2: non-urgent cards to a person per day; 10 by default (APR-15).",
+          "x-botaru-version": "v0.2"
+        },
+        "fast_decision_s": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 600,
+          "description": "From v0.2: a decision faster than this many seconds after delivery, without \"Details\" opened, counts as fast in the monthly summary; 10 by default (APR-13).",
           "x-botaru-version": "v0.2"
         }
       }

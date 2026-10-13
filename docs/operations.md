@@ -413,7 +413,7 @@ spec:
   kind: production              # production tenant (APR-9)
   timezone: Europe/Berlin       # IANA name (TIM-2)
   attention:
-    cards_per_person_day: 10    # non-urgent decision cards per person per day (APR-15, v0.2)
+    noncritical_per_day: 10     # non-urgent decision cards per person per day (APR-15, v0.2)
     cards_per_tenant_hour: 20   # action cards after untrusted text per tenant per hour (APR-2)
   delegated_groups: [researcher] # groups that the tenant admin grants by themselves (PRM-16)
   farm_manager:                 # the farm manager for this tenant (D-77)

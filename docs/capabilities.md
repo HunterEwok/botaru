@@ -15,7 +15,7 @@ A bot is given three kinds of text, and they are easy to confuse. Knowledge is r
 | Trust | a `curated` corpus does not set `untrusted_seen`, an `ingested` corpus does (KNW-2); both are data, not instructions | per the memory rules (`docs/bots.md`) | trusted: part of the instruction |
 | Path into the context | only the output of a P3 tool (KNW-3) | through the core per the memory rules | into the attempt's instruction or through the built-in tool `skill_read` |
 | Data class | a corpus has its own `data_class`; the output is not above the task's mark | per the memory rules | open text |
-| Permissions | the tool `kb/search` or `kb/read` in the role, the catalog resource and the data class for the initiator | memory permissions | grants no permissions |
+| Permissions | the corpus in the role's resource scope (the built-in tools `kb_search` and `kb_read`, D-97) and the data class for the initiator | memory permissions | grants no permissions |
 
 A procedure that the model must follow as an instruction is written as a skill, not as a corpus document. A corpus document is reference material, not an order: even curated text reaches the model as tool output in a data block (KNW-2, KNW-3), and an action it names goes through the ordinary approval path. An employee with commit rights to `knowledge/` does not get the right to command bots.
 
@@ -31,20 +31,20 @@ A knowledge corpus (`Corpus`) is a resource of the tenant catalog of kind `corpu
 | `data_class` | a data class of the tenant | the highest class of text in the corpus; the class of tool output from the corpus is not above it |
 | `source` | `git`, `upload`, `sync` | where the documents come from: the tenant's git (the folder `knowledge/` is accepted only from the protected branch, the same one as roles and groups, and its changes go into the summary for admins, MAN-5), upload by people, or sync by a `job` task from external storage |
 
-Every corpus document has a farm file record with a mark and an expiry (section [Files and artifacts](#files-and-artifacts)). A corpus belongs to one tenant. Its index, chunks and vectors are stored separately for each tenant; there is no farm-wide index (KNW-1, TEN-5).
+Every corpus document has a farm file record with a mark and an expiry (section [Files and artifacts](#files-and-artifacts)). A corpus belongs to one tenant. Its fragments live in a word index in C1 that is separate for each tenant; there is no farm-wide index (KNW-1, TEN-5, D-97).
 
 ### Search and reading
 
-Search is an ordinary plugin `kb` on the tenant's toolhost. The core has no port for knowledge: the core itself searches nothing, and the model needs a tool. The plugin has two read tools. In permissions and in the role they are written with a slash; the model sees them with an underscore.
+Search and reading are two built-in P3 tools of the core, `kb_search` and `kb_read`, over the per-tenant corpus index in C1 (D-97). They are not a plugin and need no toolhost: the core keeps the index together with the files, so deleting a document reaches every copy in one store (KNW-5), and the core knows the trust of the corpus at every call (KNW-2). Like any built-in tool, they are in the catalog only for the profiles `worker` and `manager` (`spec/model/builtin-tools.yaml`, PRF-1), and only when the role has a corpus in its resource scope.
 
-| Tool | Shown to the model as | Parameters |
-|---|---|---|
-| `kb/search` | `kb_search` | `corpus` from `enum_from: catalog.corpora`; `query` in the format `search_query` (up to 256 characters, no control characters) |
-| `kb/read` | `kb_read` | `doc` (the id of a corpus document in id format); `part` (the part number, a bounded integer) |
+| Tool | Parameters |
+|---|---|
+| `kb_search` | `corpus` from `enum_from: catalog.corpora`; `query` in the format `search_query` (up to 256 characters, no control characters); at most 20 fragments per call |
+| `kb_read` | `doc` (the id of a corpus document in id format); `part` (the fragment number, a bounded integer) |
 
-The parameters are closed like those of any tool (INJ-1). The corpus is chosen from a list that the core builds from the tenant catalog, filtered by the task's mark. The query is a string of a set format with a length limit. The search scope is computed by the core from the catalog resource of the task's tenant, like the `target` of a tool call (TEN-3a), not as a filter in the query (KNW-1). Even if the model writes the name of another tenant's corpus into the query, the plugin gets only the scope of its own tenant.
+The parameters are closed like those of any tool (INJ-1). The corpus is chosen from a list that the core builds from the tenant catalog, filtered by the task's mark. The query is a string of a set format with a length limit. The search scope is computed by the core from the catalog resource of the task's tenant (TEN-3a), not as a filter in the query (KNW-1). Even if the model writes the name of another tenant's corpus into the query, the search sees only the index of its own tenant.
 
-The output of tools on an `ingested` corpus is untrusted: the model sees it in the untrusted text wrapper, and the attempt gets `untrusted_seen` (KNW-2, INJ-13). Output from a `curated` corpus does not set `untrusted_seen` but stays data: the model sees it in the data block of the tool output, not as an instruction. Review in git protects against text substitution but does not turn reference material into an order: an action named by a runbook goes through the same approval path as any other. The eval case `kb-inj` checks injection in a `curated` corpus too. The output class is checked against the task's mark, as for any read tool. Search only reads, so a corpus does not open a new way out into the world for the model.
+The output of `kb_search` and `kb_read` on an `ingested` corpus is untrusted: the model sees it in the untrusted text wrapper, and the attempt gets `untrusted_seen` (KNW-2, INJ-13). Output from a `curated` corpus does not set `untrusted_seen` but stays data: the model sees it in the data block of the tool output, not as an instruction. Review in git protects against text substitution but does not turn reference material into an order: an action named by a runbook goes through the same approval path as any other. The eval case `kb-inj` checks injection in a `curated` corpus too. The output class is checked against the task's mark, as for any read tool. Search only reads, so a corpus does not open a new way out into the world for the model.
 
 Corpus text enters the model context only as the output of a P3 tool (KNW-3). Neither the core nor the runtime adapter inserts found documents into the attempt's instruction. The runtime's built-in search, including search over documents and over old sessions, is off (INJ-9).
 
@@ -52,31 +52,35 @@ Corpus text enters the model context only as the output of a P3 tool (KNW-3). Ne
 
 The model has no path for writing to a corpus (KNW-4). Agent roles have no tool for writing to a corpus, and no memory entry gets into a corpus. A document is uploaded only by a principal with the capability `kb.write:<corpus>`: a person through a channel (an attachment with a command) or through P2 `kb.upload`. An uploaded document first becomes a file with `origin: upload`, and then the core enqueues a parsing task.
 
-Parsing is the task type `kb.ingest.v1` for a `job` worker: deterministic code without a model parses the document, cuts it into chunks and, if the corpus searches by meaning, computes vectors. The call to the embedding model goes through P4 with the tenant's key and in its workspace and writes a usage line, like any model call (GW-3, BUD-3). The embedding model has its own `ModelProfile`, and its provider passes the same checks of region, retention period and terms as the provider of the attempt's model (GW-14, GW-15): the whole corpus goes to the embedding provider, so it must be listed in the tenant's `privacy.subprocessors`. The embedding provider needs its own binding sheet in `spec/bindings/model-providers/`. A corpus with `source: git` is built by the same task from the tenant's folder in git, for example `tenants/demo/knowledge/`.
+Parsing is the task type `kb.ingest.v1` for a `job` worker: deterministic code without a model parses the document, cuts it into fragments and writes them into the corpus index with P1 `kb.index_put`; a repeat for the same file replaces its fragments (D-97). The v0.2 index is a word index. If a later version adds search by meaning, the call to the embedding model goes through P4 with the tenant's key and in its workspace and writes a usage line, like any model call (GW-3, BUD-3). The embedding model has its own `ModelProfile`, and its provider passes the same checks of region, retention period and terms as the provider of the attempt's model (GW-14, GW-15): the whole corpus goes to the embedding provider, so it must be listed in the tenant's `privacy.subprocessors`. The embedding provider needs its own binding sheet in `spec/bindings/model-providers/`. A corpus with `source: git` is built by the same task from the tenant's folder in git, for example `tenants/demo/knowledge/`.
 
 ### Erasure
 
-The corpus index is a copy of the documents' content, so its retention class is `content` (RET-1). Deleting a document, the expiry of its file and deleting the whole corpus delete the document's chunks and vectors in all farm stores, and after that search does not find them (KNW-5). Early deletion goes through an erasure request (RET-7), and deletion by expiry is done by the core's `retention` loop (RET-2).
+The corpus index is a copy of the documents' content, so its retention class is `content` (RET-1). Deleting a document, the expiry of its file and deleting the whole corpus delete the document's fragments in the index together with the file (C1 `file.purge`) and in every other farm store that holds them, and after that search does not find them (KNW-5). Early deletion goes through an erasure request (RET-7), and deletion by expiry is done by the core's `retention` loop (RET-2).
 
 ### Example on `demo`
 
 ```yaml
 # catalog of the tenant demo (fragment): two corpora
-corpora:
+resources:
   - id: demo-runbooks
+    kind: corpus
+    list: corpora             # enum_from: catalog.corpora
     title: On-call runbooks
     trust: curated            # only from git with review
     source: git               # tenants/demo/knowledge/*.md
     data_class: internal
   - id: vendor-manuals
+    kind: corpus
+    list: corpora
     title: Vendor manuals (PDF)
     trust: ingested           # uploaded by people: the output is untrusted
     source: upload
     data_class: internal
 ```
 
-1. `bob` asks `@demo_bot` in a personal chat: "how do we clean up the pipeline's temporary files on `ctd1`?". The task goes to the role `ops-reader`, which has `kb/search` and `kb/read` in its `tools`.
-2. The model calls `kb_search` with `corpus: demo-runbooks` and a short query. The core checks the permissions and the mark, computes the scope (the corpus `demo-runbooks` of the tenant `demo`) and creates the call. The plugin returns three chunks. There is no `untrusted_seen` flag: the corpus is curated. But the text arrives in a data block: if the runbook says "on error 502 restart nginx", this is not a command but reference material, and a restart goes through a card or by a person's permission (MON-8).
+1. `bob` asks `@demo_bot` in a personal chat: "how do we clean up the pipeline's temporary files on `ctd1`?". The task goes to the role `ops-reader`, whose resource scope holds both corpora, so the built-in tools `kb_search` and `kb_read` are in its catalog.
+2. The model calls `kb_search` with `corpus: demo-runbooks` and a short query. The core checks the permissions and the mark, computes the scope (the corpus `demo-runbooks` of the tenant `demo`) and searches the index of `demo`. The search returns three fragments. There is no `untrusted_seen` flag: the corpus is curated. But the text arrives in a data block: if the runbook says "on error 502 restart nginx", this is not a command but reference material, and a restart goes through a card or by a person's permission (MON-8).
 3. The model looks up the instrument model in `vendor-manuals`. This output arrives in the untrusted text wrapper, and the attempt gets `untrusted_seen`; from then on the restrictions for untrusted output apply to it (`docs/security-model.md`).
 4. A canary written into a corpus document of the tenant `demo2` is not found by any search from `demo` tasks (KNW-1).
 
@@ -85,7 +89,7 @@ corpora:
 The extension point "New knowledge corpus":
 
 1. A catalog entry of kind `corpus` with `trust`, `source` and `data_class`.
-2. The tools `kb/search` and `kb/read` in the `tools` of the roles that need search.
+2. The corpus in the resource scope of the roles that need search; the built-in tools `kb_search` and `kb_read` then appear in their catalog (D-97).
 3. For `source: upload` and `source: sync`: the type `kb.ingest.v1` for the `job` worker's role and the capability `kb.write:<corpus>` for those who upload.
 4. An eval case with an injection in a corpus document (`docs/quality.md`), for `ingested` and for `curated`.
 
@@ -101,11 +105,11 @@ A skill is a folder `skills/<name>/` in git in the format of the open Agent Skil
 - `references/`: reference texts that the model reads on demand;
 - `assets/`: templates and other text files.
 
-Only text types are allowed, and only within a size limit. A `scripts/` folder, executable files and the field `allowed-tools` are rejected at `apply`: the model has no shell (INJ-1), and only the role gives tools. Ready-made code for the sandbox lives in the sandbox image, pinned by digest, not in a skill.
+Only text types are allowed (`.md`, `.txt`, `.yaml`, `.json`, `.csv`, UTF-8), at most 50 files, `SKILL.md` up to 32 KiB and the whole tree up to 256 KiB. The front matter of `SKILL.md` passes `spec/manifests/skill.schema.json` (only `name`, `description` and an optional `license` and `version`), and `name` equals the folder name. A `scripts/` folder, executable files and the field `allowed-tools` are rejected at `apply`: the model has no shell (INJ-1), and only the role gives tools. Ready-made code for the sandbox lives in the sandbox image, pinned by digest, not in a skill.
 
 ### How a skill reaches the runtime
 
-A role pins a skill by the hash of its folder tree. In `RunRequest.skills` the core passes references per the schema `skill-ref`: `{name, description, sha256}`. The E4 adapter gives the runtime the content only of the skills of this role with a matching hash, and only from the core's copy (SKL-2): as files if the runtime supports skills, or as a section of the instruction if it does not. The runtime's skill folder is read-only, and a skill that is not in the role is forbidden on the runtime's disk. A skill proposed by the model enters work only by a commit to git after human review (RT-2).
+A role pins a skill by the hash of its folder tree (the skill tree hash in `spec/hashing.md`). In `RunRequest.skills` the core passes references per the schema `skill-ref`: `{name, description, sha256}`. The E4 adapter gives the runtime the content only of the skills of this role with a matching hash, and only from the core's copy (SKL-2): as files if the runtime declares `skills: runtime_files` in `describe()`, or as a section of the instruction and through `skill_read` if it declares `skills: farm` (`spec/model/runtime-deviations.yaml`). The runtime's skill folder is read-only, and a skill that is not in the role is forbidden on the runtime's disk. A skill proposed by the model enters work only by a commit to git after human review (RT-2).
 
 Skills are disclosed gradually. First the model sees the name and description of each skill of the role (about 100 tokens per skill), then the body of a skill when it is used, and the other files on demand. For a runtime without skills of its own, the core provides the built-in tool `skill_read` in the P3 catalog for this: the parameter `name` from an `enum` of the role's skills, the parameter `file` from an `enum` of the skill's files. `skill_read` (since v0.2) is available only to the profiles `worker` and `manager` (PRF-1): `handover` tasks have no built-in tools at all (MEM-8), and `insight` tasks have only `observations_query` among the built-in ones (INS-1, OBV-3). A role of another profile with such a runtime gets the skills of its role only as a section of the instruction. The output of `skill_read` is trusted, because it is text from git with review.
 

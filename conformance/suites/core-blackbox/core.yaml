@@ -9,7 +9,7 @@ checks:
   - FEN-1
   version: v0.1
   section: Tests without a model
-  source: docs/quality.md:249
+  source: docs/quality.md:250
   spec:
     What: 10,000 tasks on 8 competitors
     Expectation: 0 duplicates and 0 losses
@@ -19,7 +19,7 @@ checks:
   - FEN-2
   version: v0.1
   section: Tests without a model
-  source: docs/quality.md:251
+  source: docs/quality.md:252
   spec:
     What: '`kill -9` of a worker in the middle of a task'
     Expectation: the second attempt finishes, the late `complete` gets `fenced`
@@ -29,7 +29,7 @@ checks:
   - APR-7
   version: v0.1
   section: Tests without a model
-  source: docs/quality.md:252
+  source: docs/quality.md:253
   spec:
     What: '`kill -9` of the action toolhost in the middle of a write'
     Expectation: the call is `exec_unknown` without a retry, a human decides
@@ -39,7 +39,7 @@ checks:
   - APR-7
   version: v0.1
   section: Tests without a model
-  source: docs/quality.md:253
+  source: docs/quality.md:254
   spec:
     What: an operator calls P2 `task.redrive` through `farmctl` for a dead task `action.cleanup_pipeline_tmp`
     Expectation: refusal; no new task and no second write call, `action.*` needs a new request
@@ -49,7 +49,7 @@ checks:
   - TEN-5
   version: v0.1
   section: Tests without a model
-  source: docs/quality.md:256
+  source: docs/quality.md:257
   spec:
     What: a `demo` canary in requests of `demo2` to the mock provider
     Expectation: never found
@@ -59,7 +59,7 @@ checks:
   - GW-2
   version: v0.1
   section: Tests without a model
-  source: docs/quality.md:257
+  source: docs/quality.md:258
   spec:
     What: calls of the mock provider
     Expectation: their number equals the number of usage lines
@@ -69,7 +69,7 @@ checks:
   - AUD-2
   version: v0.1
   section: Tests without a model
-  source: docs/quality.md:258
+  source: docs/quality.md:259
   spec:
     What: canaries in the audit, events, transition journal and usage
     Expectation: no texts there
@@ -79,7 +79,7 @@ checks:
   - SEC-3
   version: v0.1
   section: Tests without a model
-  source: docs/quality.md:259
+  source: docs/quality.md:260
   spec:
     What: attempt handles
     Expectation: do not reach the model context, logs or audit
@@ -89,7 +89,7 @@ checks:
   - INJ-13
   version: v0.1
   section: Tests without a model
-  source: docs/quality.md:260
+  source: docs/quality.md:261
   spec:
     What: a child of a marked parent; a second task of the same conversation after reading a log
     Expectation: 'the card shows `untrusted_seen: true`; the second task is marked'
@@ -99,7 +99,7 @@ checks:
   - INJ-7
   version: v0.1
   section: Tests without a model
-  source: docs/quality.md:261
+  source: docs/quality.md:262
   spec:
     What: 'a task result with the text "ALARM: everything is down"'
     Expectation: 'no alarm is raised: alarm code does not read model text'
@@ -109,7 +109,7 @@ checks:
   - TEN-3a
   version: v0.1
   section: Tests without a model
-  source: docs/quality.md:262
+  source: docs/quality.md:263
   spec:
     What: 'a call with `placement: host` is requested by a sandbox toolhost; a call for a resource of machine `db1` is requested
       by the toolhost on `web1`'
@@ -120,7 +120,7 @@ checks:
   - TEN-7
   version: v0.1
   section: Tests without a model
-  source: docs/quality.md:263
+  source: docs/quality.md:264
   spec:
     What: an attachment with the `file_ref` of a `demo2` file and with a nonexistent `file_ref`
     Expectation: 'both answers are the same: `rejected(ref_invalid)`'
@@ -130,7 +130,7 @@ checks:
   - RT-2
   version: v0.1
   section: Tests without a model
-  source: docs/quality.md:264
+  source: docs/quality.md:265
   spec:
     What: 'a task with `untrusted_seen` is enqueued for a role whose runtime declared `memory: runtime_internal`'
     Expectation: '`rejected(memory_untrusted)`'
@@ -141,7 +141,7 @@ checks:
   - OBV-3
   version: v0.1
   section: Tests without a model
-  source: docs/quality.md:265
+  source: docs/quality.md:266
   spec:
     What: the container of a `job` worker opens a connection to the farm store
     Expectation: the connection is rejected; a job gets numbers only through P1 `obs.query`
@@ -151,7 +151,7 @@ checks:
   - AUD-6
   version: v0.1
   section: Tests without a model
-  source: docs/quality.md:266
+  source: docs/quality.md:267
   spec:
     What: editing or deleting one audit record directly in the store
     Expectation: P2 `audit.verify` finds a mismatch with the last sent chain head
@@ -162,7 +162,7 @@ checks:
   - RET-7
   version: v0.1
   section: Tests without a model
-  source: docs/quality.md:267
+  source: docs/quality.md:268
   spec:
     What: a backup taken before an approval and before `forget`, then restored
     Expectation: approval `canceled(restored)`, the action is not repeated; the erasure is replayed from the erasure log;
@@ -173,7 +173,7 @@ checks:
   - SEC-11
   version: v0.1
   section: Tests without a model
-  source: docs/quality.md:268
+  source: docs/quality.md:269
   spec:
     What: '`erase_match` by a canary string, then a restore from a backup taken before the request (v0.2)'
     Expectation: the string is in no store and in no record of the request
@@ -183,7 +183,7 @@ checks:
   - CNT-3
   version: v0.1
   section: Tests without a model
-  source: docs/quality.md:270
+  source: docs/quality.md:271
   spec:
     What: a `reply` continuation after a child with `untrusted_seen` and mark `raw_logs` of a parent with mark `internal`;
       the parent's initiator lost `task:<type>`
@@ -195,7 +195,7 @@ checks:
   - DLV-3
   version: v0.1
   section: Tests without a model
-  source: docs/quality.md:272
+  source: docs/quality.md:273
   spec:
     What: the channel answers every answer delivery with an error, then the delivery is `dead`; the same for `monitor_alarm`
     Expectation: the task stays `completed`, no task retry; the delivery `dead(attempts_exhausted)` is visible in P2 `deadletter.list`
@@ -205,7 +205,7 @@ checks:
   - DLV-11
   version: v0.1
   section: Tests without a model
-  source: docs/quality.md:274
+  source: docs/quality.md:275
   spec:
     What: the mock model returns the answer in parts, the attempt sends `heartbeat` with a stage
     Expectation: until `complete` only code statuses from the catalog go to the channel, no more often than once per `heartbeat`
@@ -216,7 +216,7 @@ checks:
   - FEN-4
   version: v0.1
   section: Tests without a model
-  source: docs/quality.md:275
+  source: docs/quality.md:276
   spec:
     What: the initiator cancels the task in the middle of an attempt; after that the attempt calls a tool, `enqueue_child`
       and `msg.send`
@@ -227,7 +227,7 @@ checks:
   - IDM-2
   version: v0.1
   section: Tests without a model
-  source: docs/quality.md:277
+  source: docs/quality.md:278
   spec:
     What: a schedule slot fires twice; two routes for one event; an external program sends a `system:` key
     Expectation: one task; two tasks; schema refusal `input_schema_invalid`
@@ -237,7 +237,7 @@ checks:
   - FEN-1
   version: v0.1
   section: Tests without a model
-  source: docs/quality.md:280
+  source: docs/quality.md:281
   spec:
     What: a task gets two `provider_unavailable`, one `held` and three `lease_expired`
     Expectation: '`lease_no` 6, `attempts_spent` 3, `failed(attempts_exhausted)`'
@@ -247,7 +247,7 @@ checks:
   - FEN-5
   version: v0.1
   section: Tests without a model
-  source: docs/quality.md:281
+  source: docs/quality.md:282
   spec:
     What: the core is stopped for 5 minutes in the middle of a task
     Expectation: after start the lease is extended by `lease.extend`, the task is finished without a spent attempt
@@ -257,7 +257,7 @@ checks:
   - DLV-16
   version: v0.1
   section: Tests without a model
-  source: docs/quality.md:284
+  source: docs/quality.md:285
   spec:
     What: the read toolhost of `demo` on `web1` is stopped, the model calls `logs_tail`
     Expectation: after 30 s `error(no_executor)`, the attempt is alive and answers the person with an error text
@@ -267,7 +267,7 @@ checks:
   - CNT-4
   version: v0.1
   section: Tests without a model
-  source: docs/quality.md:285
+  source: docs/quality.md:286
   spec:
     What: an attempt sends `heartbeat` with the same progress and makes no calls for longer than `stall_after`; a second one
       holds a call in `leased` longer than `stall_after` but shorter than `timeout_s`
@@ -278,7 +278,7 @@ checks:
   - CNT-7
   version: v0.1
   section: Tests without a model
-  source: docs/quality.md:286
+  source: docs/quality.md:287
   spec:
     What: an action approval; write call `done`; another one `exec_unknown`
     Expectation: the task is created in `working`; `completed`; `failed(exec_unknown)`; no alarm `alarm.task.unclaimed`
@@ -288,7 +288,7 @@ checks:
   - TEN-3
   version: v0.1
   section: Tests without a model
-  source: docs/quality.md:287
+  source: docs/quality.md:288
   spec:
     What: a `demo` worker does `claim`, the queue holds only `demo2` tasks
     Expectation: empty
@@ -298,7 +298,7 @@ checks:
   - TEN-3
   version: v0.1
   section: Tests without a model
-  source: docs/quality.md:288
+  source: docs/quality.md:289
   spec:
     What: a `demo` channel with a different target name does `claim(delivery)`
     Expectation: only the worker enrolled for `target` gets the delivery
@@ -308,7 +308,7 @@ checks:
   - RT-3
   version: v0.1
   section: Tests without a model
-  source: docs/quality.md:289
+  source: docs/quality.md:290
   spec:
     What: 'a runtime with `model_attribution: per_profile` declares capacity 2; a model handle after the lease ends'
     Expectation: capacity 1; the handle is rejected
@@ -318,7 +318,7 @@ checks:
   - RT-4
   version: v0.1
   section: Tests without a model
-  source: docs/quality.md:290
+  source: docs/quality.md:291
   spec:
     What: 'a runtime with `catalog: per_role` in a tier 0 task calls a tier 1 tool from the role''s catalog'
     Expectation: refusal `tier_exceeded` at the call
@@ -329,7 +329,7 @@ checks:
   - MON-12
   version: v0.1
   section: Tests without a model
-  source: docs/quality.md:381
+  source: docs/quality.md:389
   spec:
     What: 'a test bench with the `monitor` profile: a `firing` alarm of tenant `demo`'
     Expectation: one delivery for E5 with tags and no `alarm_notice` delivery
@@ -340,7 +340,7 @@ checks:
   - MON-13
   version: v0.1
   section: Tests without a model
-  source: docs/quality.md:382
+  source: docs/quality.md:390
   spec:
     What: 'a test bench without the `monitor` profile: a `firing` and then `resolved` alarm of tenant `demo`; 60 identical
       `firing` within an hour; a `page` alarm without `incident.ack` for 70 minutes; an alarm about the farm'
@@ -352,7 +352,7 @@ checks:
   - MON-2
   version: v0.1
   section: Tests without a model
-  source: docs/quality.md:383
+  source: docs/quality.md:391
   spec:
     What: a test bench without a monitoring system, the watchdog polls P2 `health` with the `health` key; the core process
       is stopped for 3 minutes, then started
@@ -364,7 +364,7 @@ checks:
   - OBS-6
   version: v0.1
   section: Tests without a model
-  source: docs/quality.md:384
+  source: docs/quality.md:392
   spec:
     What: 60 identical `firing` of one episode
     Expectation: 'one episode with `repeat_count: 59`, one event, one delivery'
@@ -374,7 +374,7 @@ checks:
   - AUD-6
   version: v0.1
   section: Tests without a model
-  source: docs/quality.md:386
+  source: docs/quality.md:394
   spec:
     What: a head in the witness history is rewritten with the adapter token with a substituted `hash`
     Expectation: P2 `audit.verify` finds the mismatch by the core key signature; the adapter cannot compose a head
@@ -384,7 +384,7 @@ checks:
   - OBS-11
   version: v0.1
   section: Tests without a model
-  source: docs/quality.md:393
+  source: docs/quality.md:401
   spec:
     What: a tenant has no adapter process; a `monitor_alarm` delivery in `planned` for 20 minutes
     Expectation: '`doctor` fails the check for the tenant'
@@ -394,7 +394,7 @@ checks:
   - OBS-11
   version: v0.1
   section: Tests without a model
-  source: docs/quality.md:394
+  source: docs/quality.md:402
   spec:
     What: '`demo2` with `farm_manager.enabled: false`'
     Expectation: '`status` shows "manager disabled"'
@@ -406,7 +406,7 @@ checks:
   - MON-8
   version: v0.1
   section: Tests without a model
-  source: docs/quality.md:402
+  source: docs/quality.md:410
   spec:
     What: the bot calls `service/control("nginx", "stop")`; `restart`; the seventh stop within an hour
     Expectation: '`stop` gives `approval_required` and a card to a person with `action.approve:service.control:nginx` (D-74);
@@ -417,7 +417,7 @@ checks:
   - APR-17
   version: v0.1
   section: Tests without a model
-  source: docs/quality.md:407
+  source: docs/quality.md:415
   spec:
     What: '`alice` writes `/run ctd-daily 2026-10-07` for an action with `risk: routine`; a third run within an hour with
       `runs_per_hour: 2`'
@@ -430,7 +430,7 @@ checks:
   - INJ-15
   version: v0.1
   section: Tests without a model
-  source: docs/quality.md:408
+  source: docs/quality.md:416
   spec:
     What: the model asks for the same `routine` action after `logs/tail`
     Expectation: a card (D-70, INJ-15), deadline as for `low`
@@ -441,7 +441,7 @@ checks:
   - MON-9
   version: v0.1
   section: Tests without a model
-  source: docs/quality.md:416
+  source: docs/quality.md:424
   spec:
     What: 'a maintenance window of node `web1`; the same with `maintenance_hold: true`'
     Expectation: the card stays `pending`, its deadline is extended by the length of the window (`pause_action`); with `maintenance_hold`
@@ -452,7 +452,7 @@ checks:
   - HLD-7
   version: v0.1
   section: Tests without a model
-  source: docs/quality.md:417
+  source: docs/quality.md:425
   spec:
     What: the tenant's spend within an hour is above `budgets.hour_eur`
     Expectation: a `no_claim` hold on agent roles with `until` one hour later, author `contain_auto`, reason `runaway_spend`,
@@ -463,7 +463,7 @@ checks:
   - CAP-1
   version: v0.1
   section: Tests without a model
-  source: docs/quality.md:418
+  source: docs/quality.md:426
   spec:
     What: '`max_queued: 10`, eight schedule tasks in the queue, a ninth schedule task; a person''s question of class 1'
     Expectation: 'the ninth gets `over_capacity`, the question is enqueued: a 20% reserve for classes 1 and 2'
@@ -473,7 +473,7 @@ checks:
   - OBS-10
   version: v0.1
   section: Tests without a model
-  source: docs/quality.md:420
+  source: docs/quality.md:428
   spec:
     What: a call of a plugin in state `down`; after `hello` with `ok`
     Expectation: '`plugin_unavailable` at once; passes'
@@ -483,7 +483,7 @@ checks:
   - RET-2
   version: v0.1
   section: Tests without a model
-  source: docs/quality.md:421
+  source: docs/quality.md:429
   spec:
     What: a canary of class `content` older than the default period; a `metadata` record of the same age
     Expectation: the first is deleted by the v0.1 `retention` loop, the second stays
@@ -494,7 +494,7 @@ checks:
   - RET-6
   version: v0.1
   section: Tests without a model
-  source: docs/quality.md:422
+  source: docs/quality.md:430
   spec:
     What: '`restore.complete --spend-pending`; then `spend.reconcile`'
     Expectation: readiness with `alarm.spend.unreconciled` and halved daily limits; reconciliation clears the alarm and restores
@@ -505,7 +505,7 @@ checks:
   - RET-8
   version: v0.1
   section: Tests without a model
-  source: docs/quality.md:423
+  source: docs/quality.md:431
   spec:
     What: '26 hours without `backup.report {kind: backup}`; `restore_check` with `ok: false`; an erasure log backup older
       than the store backup'
@@ -517,7 +517,7 @@ checks:
   - MON-2
   version: v0.1
   section: Tests without a model
-  source: docs/quality.md:424
+  source: docs/quality.md:432
   spec:
     What: '`core.drain --until`; a rotation of the `health` key with two values in `health_keys`'
     Expectation: '`health` answers `draining` with `drain_until_s`; both keys pass during the rotation'
@@ -527,7 +527,7 @@ checks:
   - OBS-12
   version: v0.1
   section: Tests without a model
-  source: docs/quality.md:425
+  source: docs/quality.md:433
   spec:
     What: 48 hours without `spend_reconciled`
     Expectation: '`alarm.spend.reconcile_overdue`; a reconciliation line closes it'
@@ -537,7 +537,7 @@ checks:
   - BUD-3
   version: v0.1
   section: Tests without a model
-  source: docs/quality.md:434
+  source: docs/quality.md:442
   spec:
     What: a model call, a tool call and a bot message publication in a task of `alice`
     Expectation: one usage line each with time, tenant, task, root, principal, chat, role, worker, `purpose`, `line`, the
@@ -549,7 +549,7 @@ checks:
   - BUD-12
   version: v0.1
   section: Tests without a model
-  source: docs/quality.md:436
+  source: docs/quality.md:444
   spec:
     What: a campaign of 40 items with a card for `bob` with a daily limit of 5 EUR; a script run with `fanout`
     Expectation: the card amount is reserved in the monthly limit and in the type line, the daily limit of `bob` is not checked;
@@ -560,7 +560,7 @@ checks:
   - HLD-5
   version: v0.1
   section: Tests without a model
-  source: docs/quality.md:441
+  source: docs/quality.md:449
   spec:
     What: '`hold.set`, `hold.release` and expiry of `until`'
     Expectation: events `hold.set`, `hold.released`, `hold.expired` and audit records; the hold is visible in `hold.list`,
@@ -571,7 +571,7 @@ checks:
   - LCY-7
   version: v0.1
   section: Tests without a model
-  source: docs/quality.md:442
+  source: docs/quality.md:450
   spec:
     What: a worker of the previous major P1 version; a worker two versions older
     Expectation: the first works; the second gets `version_unsupported` at `hello`
@@ -581,7 +581,7 @@ checks:
   - MEM-1
   version: v0.1
   section: Tests without a model
-  source: docs/quality.md:443
+  source: docs/quality.md:451
   spec:
     What: 'the mock model passes a foreign subject and `"tenant": "demo2"` to `memory.search` and `memory.propose`; a group
       chat with `alice` and `bob`'
@@ -593,7 +593,7 @@ checks:
   - OBS-4
   version: v0.1
   section: Tests without a model
-  source: docs/quality.md:444
+  source: docs/quality.md:452
   spec:
     What: a worker is silent for longer than two long-poll periods, its last self-report is `idle`
     Expectation: event `worker.stale` and `alarm.worker.stale`; loop ticks are visible in `status`, `doctor`, `health`
@@ -603,7 +603,7 @@ checks:
   - OBS-8
   version: v0.1
   section: Tests without a model
-  source: docs/quality.md:445
+  source: docs/quality.md:453
   spec:
     What: the store stops in the middle of a task
     Expectation: P1 answers `not_ready` with `retry_after_s`, the mock model gets no calls, `health` reports "not alive";
@@ -614,7 +614,7 @@ checks:
   - OBS-9
   version: v0.1
   section: Tests without a model
-  source: docs/quality.md:446
+  source: docs/quality.md:454
   spec:
     What: a mock clock ages a class 2 task past the threshold
     Expectation: alarm `alarm.health.urgent_age`, the value in the `health` answer (`oldest_urgent_age_s`)
@@ -625,7 +625,7 @@ checks:
   - INJ-15
   version: v0.1
   section: Tests without a model
-  source: docs/quality.md:454
+  source: docs/quality.md:462
   spec:
     What: a fourth approval in one task, the third was an INJ-15 card
     Expectation: 'refusal: INJ-15 cards count toward the limit of 3 per task'
@@ -635,7 +635,7 @@ checks:
   - APR-2
   version: v0.1
   section: Tests without a model
-  source: docs/quality.md:455
+  source: docs/quality.md:463
   spec:
     What: the 21st approval in a tenant within an hour
     Expectation: '`service_rate_limited`, the approval is not created'
@@ -645,7 +645,7 @@ checks:
   - APR-19
   version: v0.1
   section: Tests without a model
-  source: docs/quality.md:457
+  source: docs/quality.md:465
   spec:
     What: 'an action with `risk: low` and `ttl: 15m`'
     Expectation: the card deadline is 60 minutes, a reminder at half the deadline
@@ -655,7 +655,7 @@ checks:
   - APR-19
   version: v0.1
   section: Tests without a model
-  source: docs/quality.md:458
+  source: docs/quality.md:466
   spec:
     What: 'an action with `risk: high` without `ttl`'
     Expectation: the card deadline is 30 minutes
@@ -665,7 +665,7 @@ checks:
   - APR-19
   version: v0.1
   section: Tests without a model
-  source: docs/quality.md:459
+  source: docs/quality.md:467
   spec:
     What: a second "Remind" a minute later
     Expectation: '`service_rate_limited`'
@@ -675,7 +675,7 @@ checks:
   - INJ-13
   version: v0.1
   section: Tests without a model
-  source: docs/quality.md:466
+  source: docs/quality.md:474
   spec:
     What: 'a task from `api:k1` of a type without `goal_trust: authored`'
     Expectation: '`untrusted_seen` at enqueue with source `goal:service`'
@@ -685,7 +685,7 @@ checks:
   - APR-1
   version: v0.1
   section: Tests without a model
-  source: docs/quality.md:467
+  source: docs/quality.md:475
   spec:
     What: 'a role with a plugin tool `access: write`; the attempt requests `tools/list` and calls it directly'
     Expectation: the tool is not in the catalog, the call is `denied`, "no permission" to the model
@@ -695,7 +695,7 @@ checks:
   - AUD-1
   version: v0.1
   section: Tests without a model
-  source: docs/quality.md:469
+  source: docs/quality.md:477
   spec:
     What: 'once each: `enqueue`, `decide`, `hold.set`, `grant`, `service/control` without a card, a C2 refusal'
     Expectation: every decision has exactly one audit record with `actor`, `command`, `target`, `reason`, `ok`
@@ -705,7 +705,7 @@ checks:
   - IDN-5
   version: v0.1
   section: Tests without a model
-  source: docs/quality.md:472
+  source: docs/quality.md:480
   spec:
     What: 'the assistant of `alice` (`memory: person`) tries to take the `assist.chat.v1` task of `bob`'
     Expectation: '`claim` does not give it; the task owner is recorded in the lease'
@@ -715,10 +715,75 @@ checks:
   - PRM-3
   version: v0.1
   section: Tests without a model
-  source: docs/quality.md:476
+  source: docs/quality.md:484
   spec:
     What: '`bob` calls a tool, then `ungrant` of group `staff`, then a repeat in the same attempt'
     Expectation: the second call is `denied(rights_revoked)`
+- id: blackbox:core/replay-no-writes
+  method: blackbox
+  rules:
+  - APR-8
+  version: v0.2
+  section: Tests without a model
+  source: docs/quality.md:487
+  spec:
+    What: '(v0.2) the operator calls P2 `task.replay` for a completed task of `bob` whose model asked for `cleanup_pipeline_tmp`;
+      the mock model repeats `request_action` and calls `service/control("nginx", "restart")`; the same under `operator_access.debug_journal:
+      deny`'
+    Expectation: the replay task records the request without an approval, a card, a `service_grant` or a write call; no delivery
+      to `origin`, the result goes only to the operator; every record of the replay is in tenant `demo`; under `deny` the
+      replay gets `forbidden`
+- id: blackbox:core/approve-unread-summary
+  method: blackbox
+  rules:
+  - APR-13
+  version: v0.2
+  section: Tests without a model
+  source: docs/quality.md:488
+  spec:
+    What: '(v0.2) a month of decisions in `demo`: three people decide `approval` cards, 4 of 10 decisions come within 5 seconds
+      of delivery without "Details", 2 "Approve" are on cards with `untrusted_seen`; only two people decided `memory_record`
+      cards'
+    Expectation: one `approve_unread_digest` notice to the `demo` admins with the two shares for `approval`; no separate share
+      for `memory_record`; no principal id, name or per-person number in the notice or in any P2 answer
+- id: blackbox:core/cards-per-person-day
+  method: blackbox
+  rules:
+  - APR-15
+  version: v0.2
+  section: Tests without a model
+  source: docs/quality.md:489
+  spec:
+    What: '(v0.2) `attention.noncritical_per_day: 2`; in one day `carol` gets 3 proposal cards, 1 attribution card and 1 `approval_card`'
+    Expectation: 2 non-urgent cards are delivered, 2 stay `planned` until the next day in order of expiry, and their expiry
+      counts from their first delivery; the `approval_card` is delivered at once and counts toward the limit; the admins see
+      the number 2 without names
+- id: blackbox:core/enqueue-validate
+  method: blackbox
+  rules:
+  - PRM-11
+  version: v0.2
+  section: Tests without a model
+  source: docs/quality.md:490
+  spec:
+    What: '(v0.2) `report-client` calls P1 `enqueue` with `mode: validate` for `ops.summary.v1`, for a type it has no right
+      to, and for a type that does not exist; then a real `enqueue` with the same key'
+    Expectation: the first answer carries the type, `max_tier`, `data_mark`, the decision, the reason and the budget estimate;
+      the second and third answer exactly as a real `enqueue`; no task, no reserve, the key stays free and the real `enqueue`
+      creates one task; three audit records with the `dry_run` flag
+- id: blackbox:core/rotate-compromised
+  method: blackbox
+  rules:
+  - HLD-2
+  - SEC-6
+  version: v0.1
+  section: Tests without a model
+  source: docs/quality.md:491
+  spec:
+    What: (v0.2) the operator revokes the token of the `th-demo-read` worker with P2 `secret.revoke` (`--compromised`); the
+      worker calls `heartbeat` with the old token at once
+    Expectation: '`unauthenticated` without an overlap window; one hold of scope `worker` with reason `compromised` and without
+      `until` in the same operation; a `demo` admin with `hold.release` gets `forbidden`, the operator releases it'
 - id: blackbox:core/erase-personal-subjects
   method: blackbox
   rules:
@@ -726,7 +791,7 @@ checks:
   - SEC-11
   version: v0.1
   section: Tests without a model
-  source: docs/quality.md:485
+  source: docs/quality.md:499
   spec:
     What: '`/mydata erase` from `alice`; a task of `bob` with `alice` in `personal_subjects`; a group session with `alice`'
     Expectation: 'the task and the session are in the request scope, `erase_match` is called automatically; for `kind: production`
@@ -739,7 +804,7 @@ checks:
   - SEC-11
   version: v0.1
   section: Tests without a model
-  source: docs/quality.md:486
+  source: docs/quality.md:500
   spec:
     What: a runtime with `runtime_internal` without `match`
     Expectation: '`erase_match` gives `failed`, the request is open with the RET-7 alarm; `describe` of such a runtime gives
@@ -752,7 +817,7 @@ checks:
   - SEC-11
   version: v0.1
   section: Tests without a model
-  source: docs/quality.md:487
+  source: docs/quality.md:501
   spec:
     What: a request `(demo, carol)` in v0.1
     Expectation: '`done` from C1 `file.purge`, E2 `erase`, E4 `purge`; `failed` from E5 for a note id does not keep the request
@@ -763,7 +828,57 @@ checks:
   - SEC-10
   version: v0.2
   section: Tests without a model
-  source: docs/quality.md:488
+  source: docs/quality.md:502
   spec:
     What: '`tenant.export` to a sink without `export_only` (v0.2)'
     Expectation: '`sink_not_export`'
+- id: blackbox:core/journal-read
+  method: blackbox
+  rules:
+  - AUD-4
+  version: v0.2
+  section: Tests without a model
+  source: docs/quality.md:511
+  spec:
+    What: (v0.2) the operator calls `task.journal` with `admin:debug` and `data:<mark>` under `operator_access.debug_journal`
+      `deny`, `notify` and `allow`; then without `data:<mark>`
+    Expectation: '`forbidden`; an audit record and a code notice `operator_journal_read` to the tenant admins without content;
+      only an audit record; `forbidden`'
+- id: blackbox:core/mydata-report
+  method: blackbox
+  rules:
+  - SEC-10
+  version: v0.2
+  section: Tests without a model
+  source: docs/quality.md:512
+  spec:
+    What: (v0.2) `bob` writes `/mydata` in `bob-dm`, and the same identity has a principal in `demo2`; `carol` (`admin:people`)
+      calls `principal.data_report` for `bob`; the operator calls it with `--all-tenants`
+    Expectation: counts by object kind and retention class, the `personal_seen` counts, the review read count, the periods,
+      the recipients, the connections and the 93-day period; one code line about another tenant without its name or numbers;
+      no content anywhere; the operator answer has an audit record
+- id: blackbox:core/privacy-report
+  method: blackbox
+  rules:
+  - SEC-12
+  version: v0.2
+  section: Tests without a model
+  source: docs/quality.md:513
+  spec:
+    What: (v0.2) P2 `tenant.privacy_report` for `demo` by `carol` (`admin:people`), by `alice` without a right, and by the
+      operator
+    Expectation: 'metadata only: purposes, retention classes with periods and counts, subprocessors, channels with third-party
+      storage, `dpia_ref`, `ropa_ref`, open and overdue requests, review reads; `alice` gets `forbidden`'
+- id: blackbox:core/connection-per-principal
+  method: blackbox
+  rules:
+  - SEC-7
+  version: v0.2
+  section: Tests without a model
+  source: docs/quality.md:514
+  spec:
+    What: '(v0.2) `alice` connected her calendar through the consent adapter; her assistant task calls a tool with `credential:
+      per_principal(calendar, [read])`; a task of `bob` and a `system` task call the same tool; the mock model adds an account
+      argument; then `principal.offboard` of `alice`'
+    Expectation: only her task gets a connection reference at the toolhost, no token value in any P1-P4 body; `bob` and `system`
+      get `connection_missing`; the account argument fails the schema; offboarding revokes and deletes the connection

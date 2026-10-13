@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "urn:botaru:schema:spend:1",
   "title": "Usage line",
-  "description": "A usage line for each model and tool call and for each publication of a bot message (BUD-3). The core sets the budget line line by the type purpose (BUD-7). The principal is kept for 93 days, the period of the class observation; since v0.2 the retention cycle replaces its id with the group or tenant id in whole periods (BUD-16). Model numbers come only from the provider answer through P4.",
+  "description": "A usage line for each model and tool call and for each publication of a bot message (BUD-3). The core sets the budget line line by the type purpose (BUD-7). The principal is kept for 93 days, the period of the class observation; since v0.2 the retention cycle removes subject of a person after 93 days and writes subject_kind: human, in whole days; this is the only edit of the line (BUD-16, SEC-14). Model numbers come only from the provider answer through P4.",
   "x-botaru-direction": "record",
   "x-botaru-retention": "metadata",
   "x-botaru-rules": [
@@ -11,7 +11,10 @@
     "BUD-9",
     "BUD-10",
     "BUD-11",
-    "GW-5"
+    "GW-5",
+    "BUD-16",
+    "SEC-14",
+    "PRM-12"
   ],
   "type": "object",
   "required": [
@@ -186,6 +189,18 @@
     "spend_reconciled": {
       "description": "The row entered the daily reconciliation: the daily sum of workspace rows is compared with the daily provider sum with a tolerance from the deployment settings, the difference is written as one correction row, and the row price is not edited (BUD-10, D-87 (1)).",
       "type": "boolean"
+    },
+    "subject_kind": {
+      "enum": [
+        "human"
+      ],
+      "description": "From v0.2: the kind of the removed subject; written by the retention cycle together with the removal of subject (BUD-16, SEC-14).",
+      "x-botaru-version": "v0.2"
+    },
+    "cached": {
+      "type": "boolean",
+      "description": "From v0.2: the tool output came from the cache (PRM-12).",
+      "x-botaru-version": "v0.2"
     }
   }
 }

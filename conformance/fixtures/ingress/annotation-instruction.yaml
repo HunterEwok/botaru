@@ -7,14 +7,17 @@ description: An external event whose annotation contains an instruction for the 
   into the task only as an attachment with untrusted_seen; the goal has no free text from the external body.
 given:
   tenant: demo
-  channel_mapping:
-    event: ext.pipeline.run_failed.v1
-    fields:
-      run_id: {from: $.run.id, format: id}
-      status:
-        from: $.run.status
-        enum: [failed, cancelled]
-      host: {from: $.run.host, enum_from: catalog.hosts}
+  channel:
+    direction: in
+    ingress:
+      event: ext.pipeline.run_failed.v1
+      auth: signature
+      tolerance: 5m
+      limits: {per_minute: 60, max_body_bytes: 262144}
+      mapping:
+        run_id: {from: /run/id, schema: {type: string, x-botaru-format: id}}
+        status: {from: /run/status, schema: {enum: [failed, cancelled]}}
+        host: {from: /run/host, schema: {enum_from: catalog.hosts}}
   delivery:
     headers: {Content-Type: application/json}
     body:

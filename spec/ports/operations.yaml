@@ -95,6 +95,15 @@ entries:
     response: p1-task-get-response
     rules: [PRM-9]
     profiles: [core]
+  - id: P1.kb.index_put
+    port: P1
+    op: kb.index_put
+    since: v0.2
+    request: p1-kb-index-put-request
+    response: done-response
+    rules: [KNW-5, KNW-4]
+    profiles: [core]
+    lease: true
   - id: P1.file.put
     port: P1
     op: file.put
@@ -1131,6 +1140,31 @@ entries:
     rules: [SEC-12]
     profiles: [core]
     note: 'v0.2: the schemas will appear with v0.2'
+  - id: P2.secret.revoke
+    port: P2
+    op: secret.revoke
+    since: v0.2
+    request: p2-secret-revoke-request
+    response: done-response
+    rules: [SEC-6, HLD-2]
+    profiles: [core]
+  - id: P2.connection.register
+    port: P2
+    op: connection.register
+    since: v0.2
+    request: p2-connection-register-request
+    response: done-response
+    rules: [SEC-7]
+    profiles: [core]
+    on_behalf: true
+  - id: P2.connection.revoke
+    port: P2
+    op: connection.revoke
+    since: v0.2
+    request: p2-connection-revoke-request
+    response: done-response
+    rules: [SEC-7]
+    profiles: [core]
   - id: P2.kb.upload
     port: P2
     op: kb.upload
