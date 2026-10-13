@@ -1,0 +1,302 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+
+// Command farmctl is the operator's tool for P2: it applies manifests, adds people and
+// memberships, enrolls workers and checks the core. Every command goes over P2 with the
+// operator credential of one tenant.
+package main
+
+import (
+	"bytes"
+	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
+	"errors"
+	"flag"
+	"fmt"
+	"io"
+	"net/http"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"strings"
+	"time"
+
+	"github.com/HunterEwok/botaru/impl/internal/config"
+	"github.com/HunterEwok/botaru/impl/internal/ids"
+	"github.com/HunterEwok/botaru/impl/internal/manifest"
+	"github.com/HunterEwok/botaru/impl/internal/version"
+)
+
+const usage = `farmctl: the operator's tool for the P2 admin API
+
+usage: farmctl [-p2 URL] [-token-file FILE] <command> [arguments]
+
+commands:
+  apply [-commit SHA] [-dry-run] [-as-test] PATH...
+                                             apply the manifests of files and folders as one set
+  principal add [-id ID] [-identity ID] [-locale L]
+  principal off|on ID
+  principal set-identity ID IDENTITY         for example telegram:123456
+  grant ID GROUP [-until TIME]
+  ungrant ID GROUP
+  worker enroll -tenant T -role R -kind K [-target NAME] -token-out FILE
+  audit verify TENANT
+  health
+  new-secret                                 print a random secret (for tokens and keys)
+  hash-token                                 print the SHA-256 of a token read from stdin
+  version
+`
+
+func main() {
+	fs := flag.NewFlagSet("farmctl", flag.ExitOnError)
+	fs.Usage = func() { fmt.Fprint(os.Stderr, usage) }
+	p2 := fs.String("p2", envOr("BOTARU_P2", "http://127.0.0.1:8402"), "the P2 address of the core")
+	tokenFile := fs.String("token-file", os.Getenv("BOTARU_TOKEN_FILE"), "the file with the operator credential")
+	_ = fs.Parse(os.Args[1:])
+	args := fs.Args()
+	if len(args) == 0 {
+		fs.Usage()
+		os.Exit(2)
+	}
+	c := &client{url: strings.TrimRight(*p2, "/"), tokenFile: *tokenFile}
+	if err := run(c, args); err != nil {
+		fmt.Fprintln(os.Stderr, "farmctl:", err)
+		os.Exit(1)
+	}
+}
+
+func envOr(k, def string) string {
+	if v := os.Getenv(k); v != "" {
+		return v
+	}
+	return def
+}
+
+func run(c *client, args []string) error {
+	switch args[0] {
+	case "version":
+		fmt.Println(version.String("farmctl"))
+		return nil
+	case "new-secret":
+		fmt.Println(ids.Secret(32))
+		return nil
+	case "hash-token":
+		b, err := io.ReadAll(os.Stdin)
+		if err != nil {
+			return err
+		}
+		h := sha256.Sum256([]byte(strings.TrimRight(string(b), "\r\n")))
+		fmt.Println(hex.EncodeToString(h[:]))
+		return nil
+	case "health":
+		return c.print("health", map[string]any{})
+	case "apply":
+		return apply(c, args[1:])
+	case "principal":
+		return principal(c, args[1:])
+	case "grant", "ungrant":
+		fs := flag.NewFlagSet(args[0], flag.ExitOnError)
+		until := fs.String("until", "", "membership end, RFC 3339")
+		_ = fs.Parse(reorder(args[1:]))
+		if fs.NArg() != 2 {
+			return errors.New(args[0] + " needs ID GROUP")
+		}
+		req := map[string]any{"op": args[0], "subject": fs.Arg(0), "group": fs.Arg(1)}
+		if *until != "" {
+			req["until"] = *until
+		}
+		return c.print(args[0], req)
+	case "worker":
+		if len(args) < 2 || args[1] != "enroll" {
+			return errors.New("worker needs enroll")
+		}
+		return enroll(c, args[2:])
+	case "audit":
+		if len(args) != 3 || args[1] != "verify" {
+			return errors.New("audit verify TENANT")
+		}
+		return c.print("audit.verify", map[string]any{"tenant": args[2]})
+	}
+	return fmt.Errorf("unknown command %q; run farmctl without arguments for help", args[0])
+}
+
+// reorder puts flags before positional arguments, so that both orders work.
+func reorder(args []string) []string {
+	var flags, pos []string
+	for i := 0; i < len(args); i++ {
+		if strings.HasPrefix(args[i], "-") {
+			flags = append(flags, args[i])
+			if !strings.Contains(args[i], "=") && i+1 < len(args) && args[i] != "-dry-run" && args[i] != "-as-test" {
+				flags = append(flags, args[i+1])
+				i++
+			}
+			continue
+		}
+		pos = append(pos, args[i])
+	}
+	return append(flags, pos...)
+}
+
+func apply(c *client, args []string) error {
+	fs := flag.NewFlagSet("apply", flag.ExitOnError)
+	commit := fs.String("commit", "", "the git commit of the manifests (default: HEAD of the first path)")
+	dry := fs.Bool("dry-run", false, "plan only")
+	asTest := fs.Bool("as-test", false, "apply every Tenant with kind: test, as the runner does on a test bench")
+	_ = fs.Parse(reorder(args))
+	if fs.NArg() == 0 {
+		return errors.New("apply needs at least one path")
+	}
+	if *commit == "" {
+		dir := fs.Arg(0)
+		if st, err := os.Stat(dir); err == nil && !st.IsDir() {
+			dir = filepath.Dir(dir)
+		}
+		out, err := exec.Command("git", "-C", dir, "rev-parse", "HEAD").Output()
+		if err != nil {
+			return errors.New("apply: no -commit and the path is not in a git checkout")
+		}
+		*commit = strings.TrimSpace(string(out))
+	}
+	docs, err := manifest.ReadFiles(fs.Args())
+	if err != nil {
+		return err
+	}
+	ms := make([]map[string]any, len(docs))
+	for i, d := range docs {
+		if spec, ok := d.Value["spec"].(map[string]any); ok && *asTest && d.Kind == "Tenant" {
+			spec["kind"] = "test"
+		}
+		ms[i] = d.Value
+	}
+	return c.print("apply", map[string]any{"commit": *commit, "manifests": ms, "dry_run": *dry})
+}
+
+func principal(c *client, args []string) error {
+	if len(args) == 0 {
+		return errors.New("principal needs add, off, on or set-identity")
+	}
+	switch args[0] {
+	case "add":
+		fs := flag.NewFlagSet("principal add", flag.ExitOnError)
+		id := fs.String("id", "", "the principal id (default: a new human:p_<ULID>)")
+		identity := fs.String("identity", "", "an identity, for example telegram:123456")
+		locale := fs.String("locale", "", "the person's locale, for example ru")
+		_ = fs.Parse(reorder(args[1:]))
+		if *id == "" {
+			*id = ids.PrincipalID()
+		}
+		req := map[string]any{"op": "principal.add", "subject": *id}
+		if *identity != "" {
+			req["identity"] = *identity
+		}
+		if *locale != "" {
+			req["locale"] = *locale
+		}
+		fmt.Println("principal:", *id)
+		return c.print("principal.add", req)
+	case "off", "on":
+		if len(args) != 2 {
+			return errors.New("principal " + args[0] + " ID")
+		}
+		return c.print("principal."+args[0], map[string]any{"op": "principal." + args[0], "subject": args[1]})
+	case "set-identity":
+		if len(args) != 3 {
+			return errors.New("principal set-identity ID IDENTITY")
+		}
+		return c.print("principal.set_identity", map[string]any{"op": "principal.set_identity", "subject": args[1], "identity": args[2]})
+	}
+	return fmt.Errorf("unknown principal command %q", args[0])
+}
+
+func enroll(c *client, args []string) error {
+	fs := flag.NewFlagSet("worker enroll", flag.ExitOnError)
+	tenant := fs.String("tenant", "", "the tenant")
+	role := fs.String("role", "", "the role (for a channel: any name, for example the channel name)")
+	kind := fs.String("kind", "", "agent, job, channel, sink, monitor or toolhost")
+	target := fs.String("target", "", "the channel, sink or adapter name")
+	tokenOut := fs.String("token-out", "", "write the worker token to this file (mode 0600)")
+	p2Out := fs.String("p2-token-out", "", "write the driver's P2 secret, if issued, to this file (default: the token file with .p2 added)")
+	_ = fs.Parse(reorder(args))
+	if *tenant == "" || *role == "" || *kind == "" || *tokenOut == "" {
+		return errors.New("worker enroll needs -tenant, -role, -kind and -token-out")
+	}
+	req := map[string]any{"tenant": *tenant, "role": *role, "kind": *kind}
+	if *target != "" {
+		req["target"] = *target
+	}
+	var out struct {
+		Worker  map[string]any `json:"worker"`
+		Token   string         `json:"token"`
+		P2Token string         `json:"p2_token"`
+	}
+	if err := c.call("worker.enroll", req, &out); err != nil {
+		return err
+	}
+	if err := os.WriteFile(*tokenOut, []byte(out.Token+"\n"), 0o600); err != nil {
+		return err
+	}
+	fmt.Println("worker:", out.Worker["id"], "token written to", *tokenOut)
+	if out.P2Token != "" {
+		if *p2Out == "" {
+			*p2Out = *tokenOut + ".p2"
+		}
+		if err := os.WriteFile(*p2Out, []byte(out.P2Token+"\n"), 0o600); err != nil {
+			return err
+		}
+		fmt.Println("driver P2 secret written to", *p2Out)
+	}
+	return nil
+}
+
+type client struct {
+	url, tokenFile string
+}
+
+func (c *client) call(op string, req, out any) error {
+	token := ""
+	if c.tokenFile != "" {
+		t, err := config.Secret(c.tokenFile)
+		if err != nil {
+			return err
+		}
+		token = t
+	}
+	body, err := json.Marshal(req)
+	if err != nil {
+		return err
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	defer cancel()
+	hr, err := http.NewRequestWithContext(ctx, http.MethodPost, c.url+"/v1/p2/"+op, bytes.NewReader(body))
+	if err != nil {
+		return err
+	}
+	hr.Header.Set("Content-Type", "application/json")
+	if token != "" {
+		hr.Header.Set("Authorization", "Bearer "+token)
+	}
+	resp, err := http.DefaultClient.Do(hr)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	b, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return err
+	}
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("%s: %s", resp.Status, strings.TrimSpace(string(b)))
+	}
+	return json.Unmarshal(b, out)
+}
+
+func (c *client) print(op string, req any) error {
+	var out any
+	if err := c.call(op, req, &out); err != nil {
+		return err
+	}
+	b, _ := json.MarshalIndent(out, "", "  ")
+	fmt.Println(string(b))
+	return nil
+}

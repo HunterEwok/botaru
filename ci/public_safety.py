@@ -49,7 +49,9 @@ OK_DOMAINS = {
     'www.rfc-editor.org', 'yaml.org', 'datatracker.ietf.org', 'core.telegram.org', 'www.zabbix.com', 'spec.openapis.org',
     'docs.anthropic.com', 'api.anthropic.com', 'pypi.org',
     # Go module hosts of impl/go.mod and impl/go.sum (D-92): a new module host is added here on purpose
-    'go.dev', 'pkg.go.dev', 'golang.org', 'proxy.golang.org', 'honnef.co',
+    'go.dev', 'pkg.go.dev', 'golang.org', 'proxy.golang.org', 'honnef.co', 'go.yaml.in', 'gopkg.in',
+    # the official Telegram Bot API server of spec/bindings/channels/telegram.md
+    'api.telegram.org',
 }
 # Zones without a country: all generic zones that do not collide with field and
 # method names, and all two-letter country zones (ISO 3166). Zones that collide with
@@ -256,7 +258,13 @@ PATTERN_MARK = '# ps: pattern'  # a line with a pattern of the check itself: pla
 
 
 def scan(rp, text, lines=True):
-    """All patterns over the file text at once; the error place is file:line."""
+    """All patterns over the file text at once; the error place is file:line.
+
+    In Go source a selector of a package and a name (the function Is of the package errors) looks
+    like a domain of a country zone, so bare domains are not searched in impl/**/*.go; addresses after http(s):// are, and the module hosts
+    of the imports are checked in impl/go.mod and impl/go.sum.
+    """
+    bare_domains = not (rp.startswith('impl/') and rp.endswith('.go'))
     starts = [0] + [m.end() for m in re.finditer('\n', text)] if lines else [0]
     marked = {n for n, ln in enumerate(text.split('\n'), 1) if ln.rstrip().endswith(PATTERN_MARK)} if lines else set()
     seen = set()
@@ -296,7 +304,7 @@ def scan(rp, text, lines=True):
     for m in URL_HOST.finditer(text):
         if not ok_domain(m.group(1)):
             err(m.start(), 'domain_not_example', f'address {m.group(1)} in a link is outside example.org and the standards list')
-    wo_urls = URL_HOST.sub(lambda m: ' ' * len(m.group(0)), text)
+    wo_urls = URL_HOST.sub(lambda m: ' ' * len(m.group(0)), text) if bare_domains else ''
     for m in DOMAIN.finditer(wo_urls):
         d = m.group(1) or m.group(2)
         if not ok_domain(d):

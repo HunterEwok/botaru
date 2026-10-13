@@ -1,5 +1,5 @@
 # Go implementation checks (D-91, D-92): formatting, go vet, staticcheck, tests with the race
-# detector, a build for linux/amd64 and linux/arm64 (a Raspberry Pi test machine) and govulncheck.
+# detector (with a PostgreSQL store), a build for linux/amd64 and linux/arm64 (a Raspberry Pi test machine) and govulncheck.
 # The code lives in impl/. No secrets, read-only token. The Go toolchain is not installed by an
 # action: the go command of the runner image downloads the version named in impl/go.mod
 # (GOTOOLCHAIN=auto) from the Go module proxy and verifies it against the checksum database.
@@ -49,6 +49,10 @@ jobs:
       - name: staticcheck
         run: go tool staticcheck ./...
       - name: test
+        # The store tests start a private PostgreSQL server with initdb of the runner image
+        # (PostgreSQL 16 on ubuntu-24.04); without it they would be skipped, so here they must run.
+        env:
+          BOTARU_TEST_PG_REQUIRED: "1"
         run: CGO_ENABLED=1 go test -race ./...
       - name: build
         run: |
