@@ -1,0 +1,76 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+
+// Package config reads the deployment settings of the core process. The file lives in the
+// installation, never in this repository; secrets are referenced by file path and are read at
+// start, so the settings file itself holds no secret.
+package config
+
+import (
+	"errors"
+	"fmt"
+	"os"
+	"strings"
+
+	"github.com/HunterEwok/botaru/impl/internal/api"
+	"github.com/HunterEwok/botaru/impl/internal/yamlx"
+)
+
+// Core is the settings file of botaru-core.
+type Core struct {
+	// SpecRoot is the skeleton checkout the core reads its schemas and registries from.
+	SpecRoot string `yaml:"spec_root"`
+	// StoreDSNFile holds the PostgreSQL connection string.
+	StoreDSNFile string `yaml:"store_dsn_file"`
+	// TokenKeyFile holds at least 32 random bytes: the key of token hashes and lease signatures.
+	TokenKeyFile string `yaml:"token_key_file"`
+	TestBench    bool   `yaml:"test_bench"`
+	P1Listen     string `yaml:"p1_listen"`
+	P2Listen     string `yaml:"p2_listen"`
+	// TextsDir holds extra locales of the code text catalog (<locale>.yaml).
+	TextsDir         string             `yaml:"texts_dir"`
+	Operators        []api.OperatorCred `yaml:"operators"`
+	HealthKeysSHA256 []string           `yaml:"health_keys_sha256"`
+	Providers        map[string]struct {
+		Binding string `yaml:"binding"`
+		BaseURL string `yaml:"base_url"`
+		// KeyFiles maps a tenant to the file with the key of its provider workspace.
+		KeyFiles map[string]string `yaml:"key_files"`
+	} `yaml:"providers"`
+	LeaseS              int `yaml:"lease_s"`
+	HeartbeatS          int `yaml:"heartbeat_s"`
+	DeliveryMaxAttempts int `yaml:"delivery_max_attempts"`
+}
+
+// Load reads and checks a settings file.
+func Load(path string) (*Core, error) {
+	b, err := os.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+	var c Core
+	if err := yamlx.Unmarshal(b, &c); err != nil {
+		return nil, fmt.Errorf("%s: %w", path, err)
+	}
+	if c.P1Listen == "" {
+		c.P1Listen = "127.0.0.1:8401"
+	}
+	if c.P2Listen == "" {
+		c.P2Listen = "127.0.0.1:8402"
+	}
+	if c.StoreDSNFile == "" || c.TokenKeyFile == "" {
+		return nil, errors.New("config: store_dsn_file and token_key_file are required")
+	}
+	if c.P1Listen == c.P2Listen {
+		return nil, errors.New("config: P2 listens separately from P1 (IDN-7)")
+	}
+	return &c, nil
+}
+
+// Secret reads a secret file and trims the trailing newline.
+func Secret(path string) (string, error) {
+	b, err := os.ReadFile(path)
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimRight(string(b), "\r\n"), nil
+}
