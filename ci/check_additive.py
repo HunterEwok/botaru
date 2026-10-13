@@ -23,7 +23,9 @@ spec/model/*.yaml with their state at the branch point from the base branch
 - not, if, contains, minContains, maxContains, uniqueItems: true, anyOf or
   oneOf appeared; minContains increased, maxContains decreased; if or not
   changed (a changed negated schema is not compared, it is an error), or a
-  definition that not or if reaches through $ref (in any file, by $id) changed;
+  definition that not or if reaches through $ref (in any file, by $id) changed,
+  or one that a oneOf branch reaches changed and the branches (with $ref
+  followed) were provably disjoint before but are not now;
 - allOf got a new item (a new constraint), prefixItems got an item narrower
   than the old items (or unevaluatedItems) at its position (absent accepts
   anything, false accepted nothing) or lost an item wider than what now
@@ -397,23 +399,75 @@ def negated(s, path=''):
 
 
 olds_by_id, news_by_id = by_id(olds), by_id(news)
-for rp, old in olds.items():
-    seen, todo = set(), [(rp, ref, where) for where, sub in negated(old) for ref in refs(sub)]
+
+
+def reached(rp, sub):
+    """(file, fragment, old, new) of every definition a subschema reaches through $ref, transitively."""
+    seen, todo = set(), [(rp, ref) for ref in refs(sub)]
     while todo:
-        frm, ref, where = todo.pop()
+        frm, ref = todo.pop()
         base, _, frag = ref.partition('#')
-        target = olds_by_id.get(base, None) if base else frm
+        target = olds_by_id.get(base) if base else frm
         if target is None or (target, frag) in seen:
             continue
         seen.add((target, frag))
         a = pointer(olds.get(target), frag)
-        b = pointer(news.get(news_by_id.get(base, target) if base else target), frag)
         if a is None:
             continue
-        if b is None or not same(bare(a), bare(b)):
-            rep.error(f'{target}#{frag}', f'[keyword_changed] the definition changed, and {rp}#{where} reaches it '
-                      'through $ref under not or if: any change there can narrow the outer schema')
-        todo.extend((target, r, where) for r in refs(a))
+        yield target, frag, a, pointer(news.get(news_by_id.get(base, target) if base else target), frag)
+        todo.extend((target, r) for r in refs(a))
+
+
+def deref(s, frm, docs, ids):
+    """The schema behind a chain of bare $ref, or s itself."""
+    for _ in range(16):
+        if not isinstance(s, dict) or not isinstance(s.get('$ref'), str) or set(s) - {'$ref'} - ANNOTATIONS:
+            return s
+        base, _, frag = s['$ref'].partition('#')
+        frm = ids.get(base) if base else frm
+        s = pointer(docs.get(frm), frag)
+    return s
+
+
+def separated(branches, rp, docs, ids):
+    resolved = [deref(b, rp, docs, ids) for b in branches]
+    return all(disjoint(b, c) for i, b in enumerate(resolved) for j, c in enumerate(resolved) if j != i)
+
+
+def changed(a, b):
+    return b is None or not same(bare(a), bare(b))
+
+
+def oneofs(s, path=''):
+    """(path, branches) of every oneOf in a schema."""
+    if isinstance(s, dict):
+        for k, v in s.items():
+            if k in LITERALS:
+                continue
+            if k == 'oneOf' and isinstance(v, list):
+                yield f'{path}/oneOf', v
+            yield from oneofs(v, f'{path}/{k}')
+    elif isinstance(s, list):
+        for i, x in enumerate(s):
+            yield from oneofs(x, f'{path}/{i}')
+
+
+for rp, old in olds.items():
+    # not and if reverse polarity: a definition they reach may not change at all
+    for where, sub in negated(old):
+        for target, frag, a, b in reached(rp, sub):
+            if changed(a, b):
+                rep.error(f'{target}#{frag}', f'[keyword_changed] the definition changed, and {rp}#{where} reaches it '
+                          'through $ref under not or if: any change there can narrow the outer schema')
+    # a widened definition behind a oneOf branch can make an old value match two branches; branches that the
+    # disjointness proof (with $ref followed) separated before must stay separated
+    for where, branches in oneofs(old):
+        nb = pointer(news[rp], where)
+        if not isinstance(nb, list) or not any(changed(a, b) for br in branches for _, _, a, b in reached(rp, br)):
+            continue
+        if separated(branches, rp, olds, olds_by_id) and not separated(nb, rp, news, news_by_id):
+            rep.error(f'{rp}#{where}', '[oneof_overlap] a definition behind oneOf changed, and its branches are no '
+                      'longer provably disjoint: values matching two branches would stop passing')
 
 for p in old_regs:
     rp = p[len(prefix):]
