@@ -1,0 +1,25 @@
+# Code text catalog of the reference implementation, locale en (DLV-9, D-90).
+# The skeleton names spec/bindings/channels/messages/<locale>.yaml as the place of the catalog,
+# but the file does not exist yet; until it does, the implementation ships this one. An
+# installation adds other locales as <locale>.yaml files in its own text directory.
+# Parameters are written as {name}; a parameter the caller does not pass is left as it is.
+locale: en
+texts:
+  ai_notice: >-
+    You are talking to an AI bot of the farm. Answers are written by a language model and can be
+    wrong; check important facts.
+  privacy_notice: >-
+    Your messages to this bot are processed to answer them. Privacy notice version
+    {notice_version}: {notice_ref}
+  provenance.model: "[AI answer]"
+  task.rejected: "The request was not accepted: {reason}."
+  task.rejected.no_group_cap: "You have no permission for this request. Ask an admin for the group that allows it."
+  task.rejected.no_data_class: "You have no permission for the data this request needs."
+  task.rejected.budget_exhausted: "The money limit is used up; try again later."
+  task.rejected.over_capacity: "The farm is busy; try again in a few minutes."
+  task.rejected.held: "Requests of this kind are paused right now."
+  task.rejected.person_inactive: "Your access is turned off."
+  task.failed: "The request could not be completed ({reason})."
+  activity.not_command: "Send a command, for example /hello."
+  activity.unknown_command: "Unknown command."
+  activity.not_verified: "The sender of this message is not known, so it is not executed."
