@@ -33,6 +33,16 @@ func TestMigrateAndInit(t *testing.T) {
 	if _, err := s.Init(ctx, true); !errors.Is(err, ErrTestBenchMismatch) {
 		t.Fatalf("want mismatch, got %v", err)
 	}
+	// And a test bench store never runs a core without the test bench key.
+	if _, err := s.Pool.Exec(ctx, `UPDATE farm_meta SET test_bench = true`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.Init(ctx, false); !errors.Is(err, ErrTestBenchMismatch) {
+		t.Fatalf("want mismatch on a test bench store, got %v", err)
+	}
+	if _, err := s.Pool.Exec(ctx, `UPDATE farm_meta SET test_bench = false`); err != nil {
+		t.Fatal(err)
+	}
 	// The audit is append-only (AUD-3).
 	if _, err := s.Pool.Exec(ctx, `INSERT INTO audit (tenant, epoch, seq, at, record, hash) VALUES ('demo', 1, 1, now(), '{}', 'x')`); err != nil {
 		t.Fatal(err)

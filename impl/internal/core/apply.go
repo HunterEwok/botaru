@@ -255,6 +255,13 @@ func (c *Core) Apply(ctx context.Context, op Operator, req ApplyRequest) (*Apply
 			req.Commit, setHash+":"+fmtTime(now), now); err != nil {
 			return err
 		}
+		// A new configuration may be the fix that tasks waiting on_fix wait for.
+		if _, err := tx.Exec(ctx, `UPDATE tasks SET run_at = $1, reason = NULL, updated_at = $1 WHERE state = 'submitted' AND reason = 'waiting_on_fix'`, now); err != nil {
+			return err
+		}
+		if err := notifyWork(ctx, tx); err != nil {
+			return err
+		}
 		_, err = c.appendAudit(ctx, tx, now, Audit{
 			Tenant: "farm", Kind: "command", Actor: Actor{Principal: op.Principal, Via: "farmctl"},
 			Command: "apply", GitRev: req.Commit, OK: true,

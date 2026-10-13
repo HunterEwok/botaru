@@ -14,6 +14,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/dlclark/regexp2"
 	"github.com/santhosh-tekuri/jsonschema/v6"
@@ -93,7 +94,9 @@ func Load(root string) (*Spec, error) {
 		if err != nil {
 			return nil, err
 		}
-		re.MatchTimeout = 0
+		// A bound against a runaway match, not a tight one: a zero timeout makes the deadline
+		// pass at once, and a match then fails at random depending on the clock.
+		re.MatchTimeout = time.Second
 		return ecmaRegexp{re}, nil
 	})
 	dirs := []string{"spec/model", "spec/model/event-data", "spec/manifests", "spec/manifests/drivers"}

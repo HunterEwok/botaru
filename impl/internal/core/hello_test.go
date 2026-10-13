@@ -5,6 +5,9 @@ package core
 import (
 	"context"
 	"testing"
+	"time"
+
+	"github.com/jackc/pgx/v5"
 
 	"github.com/HunterEwok/botaru/impl/internal/ids"
 	"github.com/HunterEwok/botaru/impl/internal/pgtest"
@@ -268,6 +271,84 @@ func TestEnqueueReservesEstimate(t *testing.T) {
 	}
 	if res.Result != "reply" || res.Task != "" || res.Text != b.c.texts.Render("en", "task.rejected.budget_exhausted", nil) {
 		t.Fatalf("submit_activity near the limit: %+v", res)
+	}
+}
+
+// TestOnFixWaitsForApply: a provider_config failure is not retried on a timer; the next apply
+// wakes the task.
+func TestOnFixWaitsForApply(t *testing.T) {
+	ctx := context.Background()
+	b := newBench(t)
+	a := Activity{Kind: "message", Channel: "telegram", UpdateID: "11", Chat: Chat{Kind: "direct", ExternalID: "1001"}, Text: "/hello"}
+	a.Sender.Identity, a.Sender.Verified = "telegram:1001", true
+	res, err := b.c.SubmitActivity(ctx, b.channel, a)
+	if err != nil {
+		t.Fatal(err)
+	}
+	att := b.claim(t, b.agent, "attempt")
+	if att == nil || att.WorkID != res.Task {
+		t.Fatalf("attempt: %+v", att)
+	}
+	r, err := b.c.Fail(ctx, b.agent, header(t, att), FailRequest{Reason: "provider_config", Retryable: true})
+	if err != nil || r.Final || r.RetryAt != "" {
+		t.Fatalf("fail: %+v %v", r, err)
+	}
+	if _, err := b.c.st.Pool.Exec(ctx, `UPDATE tasks SET run_at = 'infinity' WHERE id = $1 AND reason = 'waiting_on_fix'`, res.Task); err != nil {
+		t.Fatal(err)
+	}
+	if w := b.claim(t, b.agent, "attempt"); w != nil {
+		t.Fatalf("an on_fix task was claimed before a fix: %v", w.WorkID)
+	}
+	root, err := spec.FindRoot("")
+	if err != nil {
+		t.Fatal(err)
+	}
+	ms, err := testbench.HelloBotManifests(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res, err := b.c.Apply(ctx, b.op, ApplyRequest{Commit: "1111111111111111111111111111111111111111", Manifests: ms}); err != nil || !res.Applied {
+		t.Fatalf("apply: %+v %v", res, err)
+	}
+	if w := b.claim(t, b.agent, "attempt"); w == nil || w.WorkID != res.Task {
+		t.Fatalf("the task did not wake after apply: %+v", w)
+	}
+}
+
+// TestEnrollWorkerKind: an agent role does not take a job worker.
+func TestEnrollWorkerKind(t *testing.T) {
+	b := newBench(t)
+	if _, err := b.c.Enroll(context.Background(), b.op, EnrollRequest{Tenant: "demo", Role: "hello", Kind: "job"}); err == nil {
+		t.Fatal("a job worker was enrolled under an agent role")
+	}
+}
+
+// TestTaskReserveDrawDown: the calls of a running tree draw on its task reserve, so another
+// task sees the larger of the two, not their sum.
+func TestTaskReserveDrawDown(t *testing.T) {
+	ctx := context.Background()
+	b := newBench(t)
+	_, err := b.c.st.Pool.Exec(ctx, `INSERT INTO spend (id, tenant, task, root, subject, line, unit, state, eur_micros, time) VALUES
+		('spd_t', 'demo', 'tsk_a', 'tsk_a', 'x', 'work', 'task', 'reserved', 80, botaru_now()),
+		('spd_c', 'demo', 'tsk_a', 'tsk_a', 'x', 'work', 'tokens', 'committed', 30, botaru_now()),
+		('spd_o', 'demo', 'tsk_b', 'tsk_b', 'x', 'work', 'tokens', 'committed', 100, botaru_now())`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = b.c.tx(ctx, func(tx pgx.Tx, now time.Time) error {
+		for root, want := range map[string]int64{"": 180, "tsk_a": 130} {
+			got, err := windowUsed(ctx, tx, "demo", "", now.Add(-time.Hour), root)
+			if err != nil {
+				return err
+			}
+			if got != want {
+				t.Errorf("own root %q: used %d, want %d", root, got, want)
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
 	}
 }
 

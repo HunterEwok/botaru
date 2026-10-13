@@ -200,12 +200,30 @@ func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	cost, tokens := Cost(grant.Profile.Price, *parsed.Usage)
-	if err := g.c.Charge(context.WithoutCancel(ctx), spendID, cost, tokens, requestID, false); err != nil {
-		g.log.Error("charging a model call failed", "err", err)
+	// The answer goes out only once its usage is recorded (BUD-3). If the store stays away, the
+	// reserve stays in place, so the limit still counts the worst case of the call (BUD-2).
+	if err := g.charge(context.WithoutCancel(ctx), spendID, cost, tokens, requestID); err != nil {
+		g.log.Error("charging a model call failed", "err", err, "spend", spendID)
+		problem(w, "store_unavailable", "the usage of the call could not be recorded", 5)
+		return
 	}
 	// The request-id stays in the usage line, not in the answer to the runtime.
 	w.Header().Set("Content-Type", "application/json")
 	_, _ = w.Write(respBody)
+}
+
+// charge records the usage of a call, retrying while the store is briefly away.
+func (g *Gateway) charge(ctx context.Context, spendID string, cost int64, tokens *core.Tokens, requestID string) error {
+	var err error
+	for i, pause := range []time.Duration{0, 200 * time.Millisecond, time.Second, 3 * time.Second} {
+		if i > 0 {
+			time.Sleep(pause)
+		}
+		if err = g.c.Charge(ctx, spendID, cost, tokens, requestID, false); err == nil {
+			return nil
+		}
+	}
+	return err
 }
 
 // providerBody builds the body of the provider call from a checked request: metadata dropped,

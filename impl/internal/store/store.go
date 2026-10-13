@@ -126,6 +126,9 @@ func (s *Store) Init(ctx context.Context, testBench bool) (Meta, error) {
 	if testBench && !m.TestBench {
 		return m, fmt.Errorf("%w: the core has a test bench key, but the store was not created as a test bench store", ErrTestBenchMismatch)
 	}
+	if !testBench && m.TestBench {
+		return m, fmt.Errorf("%w: the store was created as a test bench store, but the core has no test bench key", ErrTestBenchMismatch)
+	}
 	if testBench {
 		var n int
 		if err := s.Pool.QueryRow(ctx, `SELECT count(*) FROM tenants WHERE kind <> 'test'`).Scan(&n); err != nil {

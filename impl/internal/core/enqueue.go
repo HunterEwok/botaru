@@ -340,6 +340,19 @@ func taskEstimate(ctx context.Context, tx pgx.Tx, now time.Time, tenant, typ str
 	return 0, nil
 }
 
+// windowUsed sums the spend of a window, of one subject when subject is set: usage lines and
+// call reserves in full, and of each task reserve only the part its tree has not spent yet,
+// because the calls of a tree draw on its task reserve. The task reserve of ownRoot is left
+// out: the caller's call is that draw.
+func windowUsed(ctx context.Context, tx pgx.Tx, tenant, subject string, from time.Time, ownRoot string) (int64, error) {
+	var used int64
+	err := tx.QueryRow(ctx, `WITH w AS (SELECT * FROM spend WHERE tenant = $1 AND time >= $2 AND ($3 = '' OR subject = $3))
+		SELECT coalesce((SELECT sum(eur_micros) FROM w WHERE unit <> 'task'), 0)
+			+ coalesce((SELECT sum(greatest(r.eur_micros - coalesce((SELECT sum(s.eur_micros) FROM spend s WHERE s.root = r.root AND s.unit <> 'task'), 0), 0))
+				FROM w r WHERE r.unit = 'task' AND r.root <> $4), 0)`, tenant, from, subject, ownRoot).Scan(&used)
+	return used, err
+}
+
 // checkBudget compares the money windows with the limits: the tenant's month, day and hour
 // and the person's day limit from their groups (BUD-1). Reserves count until they are released.
 // With a reserve of extra micro-euros it refuses when the reserve would pass a limit (BUD-2).
@@ -383,8 +396,8 @@ func (c *Core) checkBudget(ctx context.Context, tx pgx.Tx, now time.Time, tv *Te
 		if w.limit == nil {
 			continue
 		}
-		var used int64
-		if err := tx.QueryRow(ctx, `SELECT coalesce(sum(eur_micros), 0) FROM spend WHERE tenant = $1 AND time >= $2 AND NOT (unit = 'task' AND root = $3)`, tv.Name, w.from, ownRoot).Scan(&used); err != nil {
+		used, err := windowUsed(ctx, tx, tv.Name, "", w.from, ownRoot)
+		if err != nil {
 			return refuse("not_ready", "store")
 		}
 		if over(used, *w.limit) {
@@ -398,8 +411,8 @@ func (c *Core) checkBudget(ctx context.Context, tx pgx.Tx, now time.Time, tv *Te
 		}
 	}
 	if personal != nil && subject != "system" {
-		var used int64
-		if err := tx.QueryRow(ctx, `SELECT coalesce(sum(eur_micros), 0) FROM spend WHERE tenant = $1 AND subject = $2 AND time >= $3 AND NOT (unit = 'task' AND root = $4)`, tv.Name, subject, day, ownRoot).Scan(&used); err != nil {
+		used, err := windowUsed(ctx, tx, tv.Name, subject, day, ownRoot)
+		if err != nil {
 			return refuse("not_ready", "store")
 		}
 		if over(used, *personal) {

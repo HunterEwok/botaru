@@ -58,8 +58,12 @@ func (c *Core) Enroll(ctx context.Context, op Operator, req EnrollRequest) (*Enr
 	driver := ""
 	switch req.Kind {
 	case "agent", "job":
-		if _, ok := cat.Roles[req.Role]; !ok {
+		role, ok := cat.Roles[req.Role]
+		if !ok {
 			return nil, refuse("not_found", "no such role")
+		}
+		if role.WorkerKind != req.Kind {
+			return nil, refuse("input_schema_invalid", "the role is for worker kind %s", role.WorkerKind)
 		}
 	case "channel":
 		ch, ok := tv.Channels[req.Target]

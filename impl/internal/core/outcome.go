@@ -277,7 +277,7 @@ func (c *Core) Fail(ctx context.Context, w *Worker, header string, req FailReque
 				spends = true
 			}
 			retry, _ := entry["retry"].(string)
-			res, err = c.endAttempt(ctx, tx, now, w.Tenant, l, req.Reason, spends, req.Retryable && retry != "none", req.RetryAfterS)
+			res, err = c.endAttempt(ctx, tx, now, w.Tenant, l, req.Reason, spends, req.Retryable && retry != "none", req.RetryAfterS, retry)
 		case "delivery":
 			res, err = c.endDelivery(ctx, tx, now, w.Tenant, l, req.Reason, req.Retryable, req.RetryAfterS)
 		default:
@@ -318,7 +318,9 @@ func (c *Core) requeue(ctx context.Context, tx pgx.Tx, now time.Time, l *leaseRo
 
 // endAttempt decides between a retry and the end of the task after an attempt ended without a
 // result: by the spent attempts, the type retry policy and the task deadline (FEN-3).
-func (c *Core) endAttempt(ctx context.Context, tx pgx.Tx, now time.Time, tenant string, l *leaseRow, reason string, spends, retryable bool, retryAfterS int) (*FailResult, error) {
+// A reason with retry mode on_fix is not retried on a timer: the task waits without a run time
+// until the next apply wakes it, or until its deadline (spec/model/reasons.yaml).
+func (c *Core) endAttempt(ctx context.Context, tx pgx.Tx, now time.Time, tenant string, l *leaseRow, reason string, spends, retryable bool, retryAfterS int, mode string) (*FailResult, error) {
 	cat, err := c.Catalog(ctx)
 	if err != nil {
 		return nil, err
@@ -350,6 +352,12 @@ func (c *Core) endAttempt(ctx context.Context, tx pgx.Tx, now time.Time, tenant 
 	finalReason := reason
 	if retryable && spent >= maxAttempts {
 		retryable, finalReason = false, "attempts_exhausted"
+	}
+	if retryable && mode == "on_fix" {
+		if _, err := tx.Exec(ctx, `UPDATE tasks SET state = 'submitted', run_at = 'infinity', reason = 'waiting_on_fix', updated_at = $2 WHERE id = $1 AND state = 'working'`, l.WorkID, now); err != nil {
+			return nil, err
+		}
+		return &FailResult{Final: false}, nil
 	}
 	if retryable {
 		runAt := now.Add(backoff(tt.Retry.Backoff, spent))
@@ -448,8 +456,13 @@ func backoff(b manifest.Backoff, n int) time.Duration {
 	return d
 }
 
-// releaseTaskReserve drops the enqueue reserve of a task that became terminal (BUD-1).
+// releaseTaskReserve drops the enqueue reserve of a task that became terminal (BUD-1). A call
+// reserve that was never charged stays counted at its full amount, marked estimated, like a
+// call without an answer (BUD-11), so it no longer waits for a charge that will not come.
 func releaseTaskReserve(ctx context.Context, tx pgx.Tx, task string) error {
-	_, err := tx.Exec(ctx, `DELETE FROM spend WHERE root = $1 AND task = $1 AND unit = 'task' AND state = 'reserved'`, task)
+	if _, err := tx.Exec(ctx, `DELETE FROM spend WHERE root = (SELECT coalesce(record->>'root', id) FROM tasks WHERE id = $1) AND task = $1 AND unit = 'task' AND state = 'reserved'`, task); err != nil {
+		return err
+	}
+	_, err := tx.Exec(ctx, `UPDATE spend SET state = 'estimated' WHERE root = (SELECT coalesce(record->>'root', id) FROM tasks WHERE id = $1) AND task = $1 AND unit <> 'task' AND state = 'reserved'`, task)
 	return err
 }

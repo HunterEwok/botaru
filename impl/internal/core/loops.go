@@ -79,7 +79,7 @@ func (c *Core) reapWith(ctx context.Context, reason string, spends bool) error {
 			}
 			switch l.Kind {
 			case "attempt":
-				_, err = c.endAttempt(ctx, tx, now, l.Tenant, &l, reason, spends, true, 0)
+				_, err = c.endAttempt(ctx, tx, now, l.Tenant, &l, reason, spends, true, 0, "")
 			case "delivery":
 				_, err = c.endDelivery(ctx, tx, now, l.Tenant, &l, reason, true, 0)
 			}

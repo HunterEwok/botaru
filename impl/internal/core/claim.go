@@ -137,7 +137,17 @@ func (c *Core) newLease(ctx context.Context, tx pgx.Tx, now time.Time, w *Worker
 // claims (DSP-2) and writes the lease and the transition to working in one transaction.
 func (c *Core) claimAttempt(ctx context.Context, tx pgx.Tx, now time.Time, cat *Catalog, w *Worker) (*WorkItem, error) {
 	role, ok := cat.Roles[w.Role]
-	if !ok || len(role.Claims) == 0 {
+	if !ok || role.WorkerKind != w.Kind {
+		return nil, nil
+	}
+	// Only the claimed types that this worker kind runs.
+	var claims []string
+	for _, t := range role.Claims {
+		if tt, ok := cat.TaskTypes[t]; ok && tt.WorkerKind == w.Kind {
+			claims = append(claims, t)
+		}
+	}
+	if len(claims) == 0 {
 		return nil, nil
 	}
 	var (
@@ -148,7 +158,7 @@ func (c *Core) claimAttempt(ctx context.Context, tx pgx.Tx, now time.Time, cat *
 	)
 	err := tx.QueryRow(ctx, `SELECT id, type, body, record, lease_no, initiator FROM tasks
 		WHERE tenant = $1 AND state = 'submitted' AND type = ANY($2) AND (run_at IS NULL OR run_at <= $3) AND (deadline_at IS NULL OR deadline_at > $3)
-		ORDER BY priority_class, created_at, id LIMIT 1 FOR UPDATE SKIP LOCKED`, w.Tenant, role.Claims, now).
+		ORDER BY priority_class, created_at, id LIMIT 1 FOR UPDATE SKIP LOCKED`, w.Tenant, claims, now).
 		Scan(&id, &typ, &body, &rec, &leaseNo, &initiator)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, nil
