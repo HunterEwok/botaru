@@ -261,7 +261,7 @@ func (p *parser) hex4() (rune, error) {
 	if p.pos+4 > len(p.data) {
 		return 0, p.errf("short unicode escape")
 	}
-	v, err := strconv.ParseUint(string(p.data[p.pos:p.pos+4]), 16, 32)
+	v, err := strconv.ParseUint(string(p.data[p.pos:p.pos+4]), 16, 16)
 	if err != nil {
 		return 0, p.errf("invalid unicode escape")
 	}
