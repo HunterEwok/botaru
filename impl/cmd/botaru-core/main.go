@@ -10,6 +10,7 @@ import (
 	"flag"
 	"fmt"
 	"log/slog"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
@@ -48,6 +49,20 @@ func run(path string, log *slog.Logger) error {
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
+
+	// Bind both listeners before touching the store: a second core started by mistake on
+	// the same addresses must stop here, before its start-up ends the leases of the core
+	// that is already running.
+	l1, err := net.Listen("tcp", cfg.P1Listen)
+	if err != nil {
+		return err
+	}
+	defer l1.Close()
+	l2, err := net.Listen("tcp", cfg.P2Listen)
+	if err != nil {
+		return err
+	}
+	defer l2.Close()
 
 	dsn, err := config.Secret(cfg.StoreDSNFile)
 	if err != nil {
@@ -109,9 +124,9 @@ func run(path string, log *slog.Logger) error {
 	p1 := &http.Server{Addr: cfg.P1Listen, Handler: srv.P1Handler(), ReadHeaderTimeout: 10 * time.Second}
 	p2 := &http.Server{Addr: cfg.P2Listen, Handler: srv.P2Handler(), ReadHeaderTimeout: 10 * time.Second}
 	errc := make(chan error, 2)
-	for _, s := range []*http.Server{p1, p2} {
+	for s, l := range map[*http.Server]net.Listener{p1: l1, p2: l2} {
 		go func() {
-			if err := s.ListenAndServe(); !errors.Is(err, http.ErrServerClosed) {
+			if err := s.Serve(l); !errors.Is(err, http.ErrServerClosed) {
 				errc <- err
 			}
 		}()
