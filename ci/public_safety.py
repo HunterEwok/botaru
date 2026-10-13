@@ -365,7 +365,8 @@ def history(stems, words):
                 continue
             text = git('cat-file', '-p', blob).decode('utf-8', 'replace')
             allowed = copyright_spans(rp, text) + owner_spans(rp, text)
-            hit = sorted({text.count('\n', 0, w.start()) + 1 for w in WORD.finditer(text)
+            starts = [0] + [i + 1 for i, ch in enumerate(text) if ch == '\n']
+            hit = sorted({bisect.bisect_right(starts, w.start()) for w in WORD.finditer(text)
                           if not any(lo <= w.start() < hi for lo, hi in allowed)
                           and is_forbidden(w.group(0).lower(), stems, words)})
             if hit:
@@ -381,7 +382,8 @@ if '--history' in sys.argv[1:]:
     if not forb:
         rep.error('BOTARU_FORBIDDEN', '[forbidden_missing] --history needs the forbidden word list')
         rep.finish()
-    history(*forb)
+    else:
+        history(*forb)
 tokens = {}  # word -> places (at most 20)
 n_files = 0
 n_cyrillic = 0

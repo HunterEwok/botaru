@@ -558,7 +558,8 @@ for rp, old in olds.items():
         nh = pointer(news[rp], where.rsplit('/', 1)[0])
         if not separated(nb, rp, news, news_by_id, nh):
             rep.error(f'{rp}#{where}', '[oneof_overlap] a definition behind oneOf changed, and its branches are not '
-                      'provably disjoint: values matching two branches would stop passing; make the branches '
+                      'provably disjoint: a widened branch may make values match two branches, and they would '
+                      'stop passing; every change behind oneOf needs provable disjointness; make the branches '
                       'provably disjoint (const, enum, type or a required property with const) or make the '
                       'change in a new .v(N+1) file')
 

@@ -1,8 +1,9 @@
 # Skeleton checks: registry, generated files, text and links, schemas, fixtures,
 # manifest lint, eval, additive-only changes, public-safety, version readiness.
-# Events: pull_request (the token can only read) and push to main: this also
-# checks the state of main after merging two PRs that were green separately.
-# merge_group stays for a merge queue, which a personal repository does not have.
+# Events: pull_request (the token can only read), push to main (this also
+# checks the state of main after merging two PRs that were green separately) and
+# merge_group, which never fires here: a personal repository has no merge queue,
+# the trigger stays in case the repository moves to an organization.
 # The only secret: the forbidden word list BOTARU_FORBIDDEN (D-13). It is never
 # given to pull_request runs, which execute unreviewed PR code; it is given to
 # merge_group and push to main, which run code that already passed review. Actions are pinned to a full commit SHA,
