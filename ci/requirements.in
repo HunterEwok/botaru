@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 # Direct dependencies of the ci/ checks; pinned versions with hashes of all packages are in requirements.txt.
-PyYAML==6.0.2
-jsonschema==4.23.0
-referencing==0.35.1
+PyYAML==6.0.3
+jsonschema==4.26.0
+referencing==0.37.0
