@@ -145,6 +145,9 @@ def compare(old, new, where):
     for key in ('items', 'additionalProperties', 'then', 'else', 'contains', 'propertyNames', 'unevaluatedProperties'):
         if isinstance(old.get(key), dict) and isinstance(new.get(key), (dict, bool)):
             compare(old[key], new[key], f'{where}/{key}')
+        elif old.get(key, True) is True and isinstance(new.get(key), dict) and new[key]:
+            # an absent subschema (or true) accepts everything: any non-empty schema in its place narrows
+            rep.error(where, f'[keyword_added] {key} became a schema: the set of values is narrowed')
     for k in NEW_NARROWING:
         if k in new and k not in old:
             rep.error(where, f'[keyword_added] {k} appeared: the set of values is narrowed')

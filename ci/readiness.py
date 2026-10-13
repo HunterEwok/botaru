@@ -152,7 +152,7 @@ if os.path.exists(ev):
 
 def covered(name):
     """What covers a name: (kind or None, rule numbers named by the covering check, or None)."""
-    if name in declared:
+    if name in declared and name not in later:
         return declared[name], cites[name]
     m = re.match(r'^([a-z]+):(.+)$', name)
     path = m.group(2) if m and m.group(1) == 'fixture' else (None if m else name)
