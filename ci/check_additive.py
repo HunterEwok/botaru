@@ -166,7 +166,7 @@ def disjoint(a, b):
 
 # Keywords that do not change which values pass
 ANNOTATIONS = {'title', 'description', '$comment', 'examples', 'default', 'deprecated', 'readOnly', 'writeOnly',
-               '$id', '$schema', '$anchor'}
+               '$id', '$schema', '$anchor', 'contentEncoding', 'contentMediaType', 'contentSchema'}
 # Keywords that assert nothing by themselves: annotations and definitions used only through $ref
 NON_ASSERTING = ANNOTATIONS | {'$defs', 'definitions'}
 
