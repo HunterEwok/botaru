@@ -127,6 +127,9 @@ func TestHelloSequence(t *testing.T) {
 	if res.Result != "task" || res.Task == "" {
 		t.Fatalf("submit_activity: %+v", res)
 	}
+	if got := taskReserve(t, b, res.Task); got != 50000 {
+		t.Fatalf("enqueue reserve %d, want the tree budget 50000", got)
+	}
 	again, err := b.c.SubmitActivity(ctx, b.channel, a)
 	if err != nil || again.Task != res.Task || !again.Existing {
 		t.Fatalf("repeat: %+v %v", again, err)
@@ -191,6 +194,9 @@ func TestHelloSequence(t *testing.T) {
 	if _, err := b.c.Complete(ctx, b.agent, h, done); err != nil {
 		t.Fatal(err)
 	}
+	if got := taskReserve(t, b, res.Task); got != 0 {
+		t.Fatalf("enqueue reserve %d after completion", got)
+	}
 	if r, err := b.c.Complete(ctx, b.agent, h, done); err != nil || r.LeaseState != "closed" {
 		t.Fatalf("repeat of complete: %+v %v", r, err)
 	}
@@ -232,6 +238,36 @@ func TestHelloSequence(t *testing.T) {
 	}
 	if n, broken, err := b.c.VerifyAudit(ctx, "demo"); err != nil || broken != 0 || n == 0 {
 		t.Fatalf("audit chain: %d %d %v", n, broken, err)
+	}
+}
+
+func taskReserve(t *testing.T, b *bench, task string) int64 {
+	t.Helper()
+	var n int64
+	if err := b.c.st.Pool.QueryRow(context.Background(), `SELECT coalesce(sum(eur_micros), 0) FROM spend WHERE task = $1 AND unit = 'task'`, task).Scan(&n); err != nil {
+		t.Fatal(err)
+	}
+	return n
+}
+
+// TestEnqueueReservesEstimate: a task whose estimate does not fit the hour limit is refused at
+// enqueue, not accepted and failed later (BUD-1).
+func TestEnqueueReservesEstimate(t *testing.T) {
+	ctx := context.Background()
+	b := newBench(t)
+	// 2.98 of the 3 EUR hour limit is used; the estimate of hello.greet.v1 is 0.05 EUR.
+	if _, err := b.c.st.Pool.Exec(ctx, `INSERT INTO spend (id, tenant, line, unit, state, eur_micros, time)
+		VALUES ('spd_test', 'demo', 'work', 'tokens', 'committed', 2980000, botaru_now())`); err != nil {
+		t.Fatal(err)
+	}
+	a := Activity{Kind: "message", Channel: "telegram", UpdateID: "9", Chat: Chat{Kind: "direct", ExternalID: "1001"}, Text: "/hello"}
+	a.Sender.Identity, a.Sender.Verified = "telegram:1001", true
+	res, err := b.c.SubmitActivity(ctx, b.channel, a)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Result != "reply" || res.Task != "" || res.Text != b.c.texts.Render("en", "task.rejected.budget_exhausted", nil) {
+		t.Fatalf("submit_activity near the limit: %+v", res)
 	}
 }
 

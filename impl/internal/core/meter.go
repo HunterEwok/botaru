@@ -96,7 +96,7 @@ func (c *Core) ResolveModelHandle(ctx context.Context, handle string) (*ModelGra
 	if tv == nil {
 		return nil, refuse("not_ready", "tenant is not applied")
 	}
-	p, ok := cat.Profiles[g.ProfileName]
+	p, ok := cat.Profile(g.Tenant, g.ProfileName)
 	if !ok {
 		return nil, refuse("provider_config", "the model profile of the slot is not applied")
 	}
@@ -145,12 +145,12 @@ func (c *Core) Reserve(ctx context.Context, g *ModelGrant, micros int64) (string
 		if p, err := loadPrincipal(ctx, tx, now, g.Tenant, g.Initiator); err == nil {
 			groups = groupClosure(tv, p.Groups)
 		}
-		if p := c.checkBudget(ctx, tx, now, tv, g.Initiator, groups, micros); p != nil {
+		if p := c.checkBudget(ctx, tx, now, tv, g.Initiator, groups, micros, g.Root); p != nil {
 			return p
 		}
 		if g.TreeBudget > 0 {
 			var used int64
-			if err := tx.QueryRow(ctx, `SELECT coalesce(sum(eur_micros), 0) FROM spend WHERE root = $1`, g.Root).Scan(&used); err != nil {
+			if err := tx.QueryRow(ctx, `SELECT coalesce(sum(eur_micros), 0) FROM spend WHERE root = $1 AND unit <> 'task'`, g.Root).Scan(&used); err != nil {
 				return err
 			}
 			if used+micros > g.TreeBudget {

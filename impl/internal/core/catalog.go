@@ -18,11 +18,12 @@ import (
 // Catalog is the applied manifest set as typed views. It is rebuilt from the manifests table
 // after every apply and is read-only afterwards.
 type Catalog struct {
-	SetHash    string
-	Tenants    map[string]*TenantView
-	Roles      map[string]manifest.Role
-	TaskTypes  map[string]manifest.TaskType
-	Profiles   map[string]manifest.ModelProfile
+	SetHash   string
+	Tenants   map[string]*TenantView
+	Roles     map[string]manifest.Role
+	TaskTypes map[string]manifest.TaskType
+	// Profiles are keyed by tenant and name; a farm-wide profile has the tenant "".
+	Profiles   map[[2]string]manifest.ModelProfile
 	RawGlobals map[manifest.Key]map[string]any
 }
 
@@ -34,12 +35,22 @@ type TenantView struct {
 	Channels map[string]manifest.Channel
 }
 
+// Profile resolves a model profile for a tenant: the tenant's own profile of that name, else
+// the farm-wide one (ModelProfile has scope either).
+func (c *Catalog) Profile(tenant, name string) (manifest.ModelProfile, bool) {
+	if p, ok := c.Profiles[[2]string{tenant, name}]; ok {
+		return p, true
+	}
+	p, ok := c.Profiles[[2]string{"", name}]
+	return p, ok
+}
+
 func newCatalog() *Catalog {
 	return &Catalog{
 		Tenants:    map[string]*TenantView{},
 		Roles:      map[string]manifest.Role{},
 		TaskTypes:  map[string]manifest.TaskType{},
-		Profiles:   map[string]manifest.ModelProfile{},
+		Profiles:   map[[2]string]manifest.ModelProfile{},
 		RawGlobals: map[manifest.Key]map[string]any{},
 	}
 }
@@ -87,7 +98,7 @@ func buildCatalog(docs []manifest.Doc) (*Catalog, error) {
 		case "ModelProfile":
 			var p manifest.ModelProfile
 			if p, err = manifest.Decode[manifest.ModelProfile](d); err == nil {
-				c.Profiles[d.Name] = p
+				c.Profiles[[2]string{d.Tenant, d.Name}] = p
 			}
 		default:
 			c.RawGlobals[d.Key()] = d.Value

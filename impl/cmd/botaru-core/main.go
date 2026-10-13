@@ -16,6 +16,7 @@ import (
 	"os/signal"
 	"syscall"
 	"time"
+	_ "time/tzdata" // tenant time zones on hosts without a zone database
 
 	"github.com/HunterEwok/botaru/impl/internal/api"
 	"github.com/HunterEwok/botaru/impl/internal/config"

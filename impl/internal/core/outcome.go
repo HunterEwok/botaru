@@ -192,6 +192,9 @@ func (c *Core) completeAttempt(ctx context.Context, tx pgx.Tx, now time.Time, w 
 	if _, err := tx.Exec(ctx, `UPDATE tasks SET state = 'completed', result = $2, updated_at = $3 WHERE id = $1`, l.WorkID, raw, now); err != nil {
 		return err
 	}
+	if err := releaseTaskReserve(ctx, tx, l.WorkID); err != nil {
+		return err
+	}
 	if err := c.appendEvent(ctx, tx, now, w.Tenant, Event{Type: "task.completed", Subject: l.WorkID, Data: map[string]any{"task": l.WorkID}}); err != nil {
 		return err
 	}
@@ -372,6 +375,9 @@ func (c *Core) failTask(ctx context.Context, tx pgx.Tx, now time.Time, tenant, i
 	if _, err := tx.Exec(ctx, `UPDATE tasks SET state = 'failed', reason = $2, updated_at = $3 WHERE id = $1`, id, reason, now); err != nil {
 		return err
 	}
+	if err := releaseTaskReserve(ctx, tx, id); err != nil {
+		return err
+	}
 	if err := c.appendEvent(ctx, tx, now, tenant, Event{Type: "task.failed", Subject: id, Data: map[string]any{"task": id, "reason": reason}}); err != nil {
 		return err
 	}
@@ -440,4 +446,10 @@ func backoff(b manifest.Backoff, n int) time.Duration {
 		d = maxD
 	}
 	return d
+}
+
+// releaseTaskReserve drops the enqueue reserve of a task that became terminal (BUD-1).
+func releaseTaskReserve(ctx context.Context, tx pgx.Tx, task string) error {
+	_, err := tx.Exec(ctx, `DELETE FROM spend WHERE root = $1 AND task = $1 AND unit = 'task' AND state = 'reserved'`, task)
+	return err
 }

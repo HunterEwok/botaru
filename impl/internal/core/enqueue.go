@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"math"
 	"slices"
 	"sort"
 	"strings"
@@ -211,8 +212,13 @@ func (c *Core) enqueue(ctx context.Context, tx pgx.Tx, now time.Time, cat *Catal
 		pr.Needs = []string{"data:" + tt.DataClass}
 		return reject(pr)
 	}
-	// Money: the tenant windows and the person's day limit, by usage and open reserves (BUD-1).
-	if p := c.checkBudget(ctx, tx, now, tv, in.Initiator, groups, 0); p != nil {
+	// Money: the estimate of the task is reserved in the tenant windows and the person's day
+	// limit, next to usage and open reserves (BUD-1). The reserve is written with the task below.
+	estimate, err := taskEstimate(ctx, tx, now, in.Tenant, in.Type, tt)
+	if err != nil {
+		return nil, err
+	}
+	if p := c.checkBudget(ctx, tx, now, tv, in.Initiator, groups, estimate, ""); p != nil {
 		return reject(p)
 	}
 	// The queue ceiling (CAP-1).
@@ -267,6 +273,12 @@ func (c *Core) enqueue(ctx context.Context, tx pgx.Tx, now time.Time, cat *Catal
 		id, in.Tenant, in.Type, in.Initiator, prio, in.IdempotencyKey, bodyHash, body, rec, deadline, now); err != nil {
 		return nil, err
 	}
+	if estimate > 0 {
+		if _, err := tx.Exec(ctx, `INSERT INTO spend (id, tenant, task, root, subject, line, unit, state, eur_micros, time)
+			VALUES ($1, $2, $3, $3, $4, 'work', 'task', 'reserved', $5, $6)`, ids.New(ids.Spend), in.Tenant, id, in.Initiator, estimate, now); err != nil {
+			return nil, err
+		}
+	}
 	if err := c.appendEvent(ctx, tx, now, in.Tenant, Event{Type: "task.submitted", Subject: id, Data: map[string]any{"task": id, "type": in.Type}}); err != nil {
 		return nil, err
 	}
@@ -305,10 +317,39 @@ func (c *Core) validateParams(tt manifest.TaskType, body map[string]any) error {
 	return c.rs.validate(tt.ParamsSchema, params)
 }
 
+// taskEstimate is the enqueue estimate of a task (BUD-14): the 90th percentile of the price of
+// the whole tree of the finished tasks of the type in the tenant over the last 30 days, and
+// without such tasks the worst case, the type's tree budget (GW-6). A type without a tree
+// budget and without history has no estimate; P4 still reserves every call (BUD-2).
+func taskEstimate(ctx context.Context, tx pgx.Tx, now time.Time, tenant, typ string, tt manifest.TaskType) (int64, error) {
+	var n int
+	var p90 float64
+	err := tx.QueryRow(ctx, `SELECT count(*), coalesce(percentile_cont(0.9) WITHIN GROUP (ORDER BY cost), 0) FROM (
+		SELECT (SELECT coalesce(sum(s.eur_micros), 0) FROM spend s WHERE s.root = t.id AND s.unit <> 'task') AS cost
+		FROM tasks t WHERE t.tenant = $1 AND t.type = $2 AND t.state IN ('completed', 'failed') AND t.updated_at >= $3) x`,
+		tenant, typ, now.Add(-30*24*time.Hour)).Scan(&n, &p90)
+	if err != nil {
+		return 0, err
+	}
+	if n > 0 {
+		return int64(math.Ceil(p90)), nil
+	}
+	if tt.TreeBudgetEUR > 0 {
+		return money.FromEUR(tt.TreeBudgetEUR), nil
+	}
+	return 0, nil
+}
+
 // checkBudget compares the money windows with the limits: the tenant's month, day and hour
 // and the person's day limit from their groups (BUD-1). Reserves count until they are released.
 // With a reserve of extra micro-euros it refuses when the reserve would pass a limit (BUD-2).
-func (c *Core) checkBudget(ctx context.Context, tx pgx.Tx, now time.Time, tv *TenantView, subject string, groups []string, extra int64) *Problem {
+// The task reserve of the tree ownRoot is left out: a model call of that tree draws on it.
+// The tenant's budget lock is held until the transaction ends, so two reserves of one tenant
+// never both pass on the same old sum.
+func (c *Core) checkBudget(ctx context.Context, tx pgx.Tx, now time.Time, tv *TenantView, subject string, groups []string, extra int64, ownRoot string) *Problem {
+	if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock(7300102, hashtext($1))`, tv.Name); err != nil {
+		return refuse("not_ready", "store")
+	}
 	over := func(used int64, limit float64) bool {
 		if extra > 0 {
 			return used+extra > money.FromEUR(limit)
@@ -320,8 +361,14 @@ func (c *Core) checkBudget(ctx context.Context, tx pgx.Tx, now time.Time, tv *Te
 		limit *float64
 		from  time.Time
 	}
-	month := time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, time.UTC)
-	day := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.UTC)
+	// Days and months are the tenant's calendar ones.
+	loc := time.UTC
+	if l, err := time.LoadLocation(tv.Spec.Timezone); err == nil && tv.Spec.Timezone != "" {
+		loc = l
+	}
+	local := now.In(loc)
+	month := time.Date(local.Year(), local.Month(), 1, 0, 0, 0, 0, loc)
+	day := time.Date(local.Year(), local.Month(), local.Day(), 0, 0, 0, 0, loc)
 	dayLimit := b.DayEUR
 	if dayLimit == nil && b.MonthEUR != nil {
 		v := *b.MonthEUR / 20
@@ -337,7 +384,7 @@ func (c *Core) checkBudget(ctx context.Context, tx pgx.Tx, now time.Time, tv *Te
 			continue
 		}
 		var used int64
-		if err := tx.QueryRow(ctx, `SELECT coalesce(sum(eur_micros), 0) FROM spend WHERE tenant = $1 AND time >= $2`, tv.Name, w.from).Scan(&used); err != nil {
+		if err := tx.QueryRow(ctx, `SELECT coalesce(sum(eur_micros), 0) FROM spend WHERE tenant = $1 AND time >= $2 AND NOT (unit = 'task' AND root = $3)`, tv.Name, w.from, ownRoot).Scan(&used); err != nil {
 			return refuse("not_ready", "store")
 		}
 		if over(used, *w.limit) {
@@ -352,7 +399,7 @@ func (c *Core) checkBudget(ctx context.Context, tx pgx.Tx, now time.Time, tv *Te
 	}
 	if personal != nil && subject != "system" {
 		var used int64
-		if err := tx.QueryRow(ctx, `SELECT coalesce(sum(eur_micros), 0) FROM spend WHERE tenant = $1 AND subject = $2 AND time >= $3`, tv.Name, subject, day).Scan(&used); err != nil {
+		if err := tx.QueryRow(ctx, `SELECT coalesce(sum(eur_micros), 0) FROM spend WHERE tenant = $1 AND subject = $2 AND time >= $3 AND NOT (unit = 'task' AND root = $4)`, tv.Name, subject, day, ownRoot).Scan(&used); err != nil {
 			return refuse("not_ready", "store")
 		}
 		if over(used, *personal) {
