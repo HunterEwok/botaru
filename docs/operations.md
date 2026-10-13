@@ -18,7 +18,7 @@ A task that a person enqueued can produce child tasks, tool calls, model calls, 
 | trace spans | attempt, model call in P4, tool call, delivery, decision on an approval | the core and the edges |
 | context propagation | `WorkItem.trace` for the toolhost, channel and sink; `_meta.traceparent` in a plugin call | toolhost |
 
-The core writes the `correlationid` value (the root id) already in v0.1: the tree limits are counted by it (MSG-11, ORC-8). The `trace` field, `causationid` and spans are added in v0.2. The agent runtime does not need the trace context: the core knows the attempt by its P3 and P4 handle and assigns the span parent itself.
+The core writes the `correlationid` value (the root id) already in v0.1: the tree limits are counted by it (MSG-11, ORC-8). The `trace` field, `causationid` and spans are written from v0.1 too (OBS-2, D-94). The agent runtime does not need the trace context: the core knows the attempt by its P3 and P4 handle and assigns the span parent itself.
 
 Tracing context that arrives from outside (from an external program, a runtime, a plugin) decides nothing (OBS-3). The tenant, principal, task and rights are not taken from it. `baggage` and `tracestate` from outside are dropped at the core boundary, because W3C Baggage carries arbitrary key-value pairs, and a plugin or a log collector would record them. A foreign `traceparent` is kept only as a link to the foreign trace.
 

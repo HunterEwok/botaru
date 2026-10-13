@@ -9,7 +9,7 @@ checks:
   - GW-15
   version: v0.1
   section: Tests without a model
-  source: docs/quality.md:425
+  source: docs/quality.md:426
   spec:
     What: 'a profile with `provider_training: true`; with `provider_human_review: yes` while `terms.human_review: abuse_only`;
       with a subprocessor outside `privacy.subprocessors`'
@@ -20,7 +20,7 @@ checks:
   - GW-17
   version: v0.1
   section: Tests without a model
-  source: docs/quality.md:426
+  source: docs/quality.md:427
   spec:
     What: '`price.checked` 70 days ago; 130 days ago'
     Expectation: a warning; an `apply` refusal

@@ -9,7 +9,7 @@ checks:
   - TEN-4
   version: v0.1
   section: Tests without a model
-  source: docs/quality.md:292
+  source: docs/quality.md:293
   spec:
     What: '`doctor` through the monitoring system API from the user of the `demo` adapter'
     Expectation: nodes of `demo2` and of the farm are not visible
@@ -19,7 +19,7 @@ checks:
   - MON-3
   version: v0.1
   section: Tests without a model
-  source: docs/quality.md:378
+  source: docs/quality.md:379
   spec:
     What: a head `seq hash sig key_id` with a correct hash and a foreign signature; `seq` 12 after 15; a witness history of
       30 days
@@ -30,7 +30,7 @@ checks:
   - MON-4
   version: v0.1
   section: Tests without a model
-  source: docs/quality.md:380
+  source: docs/quality.md:381
   spec:
     What: the account of the `demo` adapter sees a `demo2` node; it has the scripts right on `core1`
     Expectation: '`doctor` fails the check in both cases'

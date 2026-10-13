@@ -286,13 +286,26 @@ checks:
     What the mock model does: a task enqueues two child tasks, each makes one tool call
     Expectation: all three tasks have one trace id; every event has `correlationid` equal to the root id and `causationid`
       equal to its direct cause; the plugin gets the context only in `_meta.traceparent`
+- id: blackbox:model/foreign-trace
+  method: blackbox
+  rules:
+  - OBS-3
+  version: v0.1
+  section: Tests without a model
+  source: docs/quality.md:204
+  spec:
+    What the mock model does: 'an external program enqueues a task with a foreign `traceparent`, `tracestate` and `baggage:
+      tenant=demo2`; the task makes a tool call'
+    Expectation: the tenant, the principal, the task and the permissions are the same as without the headers; `tracestate`
+      and `baggage` are not stored and the plugin gets neither; the task trace has its own id, and the foreign `traceparent`
+      remains only as a link
 - id: blackbox:model/output-schema
   method: blackbox
   rules:
   - OUT-2
   version: v0.2
   section: Tests without a model
-  source: docs/quality.md:204
+  source: docs/quality.md:205
   spec:
     What the mock model does: (v0.2) submits a result that does not match the task type's schema
     Expectation: '`output_schema_invalid`, the attempt is spent'
@@ -302,7 +315,7 @@ checks:
   - FEN-2
   version: v0.1
   section: Tests without a model
-  source: docs/quality.md:205
+  source: docs/quality.md:206
   spec:
     What the mock model does: submits a result with an old lease token after the task was taken over; then with the token
       of another worker of the same tenant with a current number
@@ -314,7 +327,7 @@ checks:
   - FEN-3
   version: v0.1
   section: Tests without a model
-  source: docs/quality.md:206
+  source: docs/quality.md:207
   spec:
     What the mock model does: fails 4 times in a row
     Expectation: after 3 attempts `failed(attempts_exhausted)`, there is no fourth
@@ -324,7 +337,7 @@ checks:
   - GW-1
   version: v0.1
   section: Tests without a model
-  source: docs/quality.md:207
+  source: docs/quality.md:208
   spec:
     What the mock model does: a runtime script sends P4 a request with a built-in provider tool or with an `mcp_servers` field
     Expectation: the model gateway rejects the request

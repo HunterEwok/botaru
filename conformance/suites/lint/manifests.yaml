@@ -9,7 +9,7 @@ checks:
   - INJ-1
   version: v0.1
   section: Tests without a model
-  source: docs/quality.md:253
+  source: docs/quality.md:254
   spec:
     What: a terminal manifest with `send_keys(text)` (`schemas/invalid/terminal-send-keys.yaml`)
     Expectation: fails `apply`
@@ -19,7 +19,7 @@ checks:
   - APR-9
   version: v0.1
   section: Tests without a model
-  source: docs/quality.md:254
+  source: docs/quality.md:255
   spec:
     What: 'a manifest of a tenant `kind: production` with `self_approve: true`'
     Expectation: '`apply` rejects the set'
@@ -29,7 +29,7 @@ checks:
   - TEN-3a
   version: v0.1
   section: Tests without a model
-  source: docs/quality.md:293
+  source: docs/quality.md:294
   spec:
     What: 'a `cmd/run` manifest without `target_from` and without `target: any`'
     Expectation: '`apply` rejects'
@@ -39,7 +39,7 @@ checks:
   - TEN-6
   version: v0.1
   section: Tests without a model
-  source: docs/quality.md:294
+  source: docs/quality.md:295
   spec:
     What: a global `TaskType` with a chat id and an address
     Expectation: '`apply` rejects'
@@ -49,7 +49,7 @@ checks:
   - MAN-1
   version: v0.1
   section: Tests without a model
-  source: docs/quality.md:295
+  source: docs/quality.md:296
   spec:
     What: a manifest with a `status` field, a kind without a schema, `apiVersion` other than `botaru/v1alpha1`, `tenant` on
       a global kind
@@ -60,7 +60,7 @@ checks:
   - MAN-3
   version: v0.1
   section: Tests without a model
-  source: docs/quality.md:296
+  source: docs/quality.md:297
   spec:
     What: a change of a `.vN` version that does more than add optional fields
     Expectation: '`apply` rejects with `breaking_change`'
@@ -70,7 +70,7 @@ checks:
   - MAN-4
   version: v0.1
   section: Tests without a model
-  source: docs/quality.md:297
+  source: docs/quality.md:298
   spec:
     What: a driver `config` schema with link previews, `egress`, `placement` or ceilings
     Expectation: the meta schema rejects
@@ -82,7 +82,7 @@ checks:
   - PRP-22
   version: v0.1
   section: Tests without a model
-  source: docs/quality.md:298
+  source: docs/quality.md:299
   spec:
     What: a commit with `Botaru-Proposal` that touches another tenant, or `Botaru-Revert` with a reason outside PRP-22
     Expectation: refusal `proposal_scope` or `revert_reason_invalid`, the set is not applied
@@ -92,7 +92,7 @@ checks:
   - MAN-8
   version: v0.1
   section: Tests without a model
-  source: docs/quality.md:299
+  source: docs/quality.md:300
   spec:
     What: '`conforms_to` with an unknown profile or an expected failure of a non-waivable rule'
     Expectation: refusal `conforms_to_invalid` or `expected_failure_not_waivable`
@@ -102,7 +102,7 @@ checks:
   - MAN-10
   version: v0.1
   section: Tests without a model
-  source: docs/quality.md:300
+  source: docs/quality.md:301
   spec:
     What: a catalog value outside the closed format
     Expectation: refusal `catalog_value_format`
@@ -112,7 +112,7 @@ checks:
   - MON-8
   version: v0.1
   section: Tests without a model
-  source: docs/quality.md:396
+  source: docs/quality.md:397
   spec:
     What: '`no_card: [stop]`; `no_card: []`'
     Expectation: the first fails `apply`; the second passes, and a restart goes through a card
@@ -123,7 +123,7 @@ checks:
   - MAN-9
   version: v0.1
   section: Tests without a model
-  source: docs/quality.md:402
+  source: docs/quality.md:403
   spec:
     What: '`risk: routine` without `writes_only` or `runs_per_day`; with `approvals: 2`'
     Expectation: '`apply` rejects the action'
@@ -133,7 +133,7 @@ checks:
   - PRM-16
   version: v0.1
   section: Tests without a model
-  source: docs/quality.md:453
+  source: docs/quality.md:454
   spec:
     What: a group with `action.request` in `delegated_groups`
     Expectation: '`apply` rejects the tenant'
@@ -143,7 +143,7 @@ checks:
   - INJ-4
   version: v0.1
   section: Tests without a model
-  source: docs/quality.md:483
+  source: docs/quality.md:484
   spec:
     What: 'a tool with `placement: host` and `untrusted_output: true` without `redact: [ip, email, secret]`'
     Expectation: '`apply` rejects the plugin'
@@ -153,7 +153,7 @@ checks:
   - DEP-11
   version: v0.1
   section: Tests without a model
-  source: docs/quality.md:484
+  source: docs/quality.md:485
   spec:
     What: 'a `demo` catalog with `monitor_host: core1.example.org` or a resource with `host: core1`'
     Expectation: '`apply` rejects the catalog: `core1` is in the deployment''s `farm_hosts` (case `ops-030`)'
