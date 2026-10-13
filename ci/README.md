@@ -1,6 +1,6 @@
 # Skeleton checks
 
-This folder holds the only executable code of the skeleton: the checks that run on every PR, on every push to `main` and in the merge queue (workflow `.github/workflows/skeleton.yml`). They need Python 3.11 or newer (CI runs 3.11 and 3.13) and the packages from `requirements.txt`, which pins every package, transitive ones included, together with the hashes of their files.
+This folder holds the only executable code of the skeleton: the checks that run on every PR and on every push to `main` (workflow `.github/workflows/skeleton.yml`). They need Python 3.11 or newer (CI runs 3.11 and 3.13) and the packages from `requirements.txt`, which pins every package, transitive ones included, together with the hashes of their files.
 
 ```sh
 python3 -I -m pip install --require-hashes -r ci/requirements.txt
@@ -96,15 +96,21 @@ The owner sets the list as follows:
 - in GitHub: Settings > Secrets and variables > Actions > New repository secret, name `BOTARU_FORBIDDEN`, value the text of the list; the workflow passes it to the check step;
 - locally: `BOTARU_FORBIDDEN_FILE=/path/outside/the/repository/forbidden-words.txt python3 -I ci/run_all.py`.
 
-Without a list, a local run gives a note. In CI on push to `main` and in the merge queue it is the error `[forbidden_missing]`. A pull request never gets the secret, from a fork or from a branch of this repository, because its run executes PR code nobody has reviewed yet and that code could print the list; there the missing list is a note. This is why the merge queue is required (section "Protecting the main branch"): without it, the words of a PR are checked only after the merge, that is, already in the public `main`.
+Without a list, a local run gives a note. In CI on push to `main` (and on `merge_group`, if a merge queue is ever enabled) it is the error `[forbidden_missing]`. A pull request never gets the secret, from a fork or from a branch of this repository, because its run executes PR code nobody has reviewed yet and that code could print the list; there the missing list is a note. A merge queue exists only for repositories of an organization, and this repository belongs to a personal account, so the owner checks the words of every PR locally before merging it: on the PR head, `BOTARU_FORBIDDEN_FILE=/path/outside/the/repository/forbidden-words.txt python3 -I ci/public_safety.py`. Without that run, the words of a PR are checked only after the merge, that is, already in the public `main`.
+
+`python3 -I ci/public_safety.py --history` (with the list) checks the forbidden words in every file of every commit reachable from any branch or tag, not only the current files. Every commit of a public repository is public: a word found in an old commit is not removed by a new commit, and the owner decides what to do about it.
 
 ## Protecting the main branch
 
-The owner enables, in Settings > Rules (or Settings > Branches) for the `main` branch:
+The repository belongs to a personal account, so GitHub offers no merge queue. The owner sets a ruleset for the `main` branch in Settings > Rules > Rulesets:
 
-- the required checks `skeleton` (workflow `.github/workflows/skeleton.yml`) and `go` (workflow `.github/workflows/go.yml`, the Go implementation in `impl/`);
-- required code owner review: `.github/CODEOWNERS` requires owner review on `LICENSE`, `SECURITY.md`, `spec/`, `conformance/requirements.yaml`, `conformance/rules.md`, `docs/decisions.md`, `ci/` and `.github/`;
-- the required merge queue. The workflow runs on the `merge_group` event, and there the `BOTARU_FORBIDDEN` secret is present: forbidden words, the checks and additive-only changes are checked on the final commit before it reaches `main`. Without the queue a PR is merged on a green check in which forbidden words were not checked.
+- restrict deletions and block force pushes;
+- require linear history (only squash merges are allowed in the repository settings);
+- require a pull request before merging, with 0 required approvals: the owner opens PRs under their own name and cannot approve them; `.github/CODEOWNERS` still marks the owner as the code owner of `LICENSE`, `SECURITY.md`, `spec/`, `conformance/requirements.yaml`, `conformance/rules.md`, `docs/decisions.md`, `ci/` and `.github/`;
+- require the status checks `check (3.11)` and `check (3.13)` (workflow `.github/workflows/skeleton.yml`) and `go` (workflow `.github/workflows/go.yml`, the Go implementation in `impl/`), with branches up to date before merging;
+- once the CLA bot has run on a PR, also require its check `license/cla`.
+
+Before merging a PR the owner checks its forbidden words locally (section "Forbidden words").
 
 ## Owner settings in GitHub
 
@@ -112,9 +118,9 @@ The repository is public (D-13). These settings only the owner can make in GitHu
 
 1. Enable Private Vulnerability Reporting (Settings > Code security > Private vulnerability reporting): `SECURITY.md` refers to it.
 2. Set the `BOTARU_FORBIDDEN` secret with the forbidden word list (section "Forbidden words").
-3. Protect `main` with the required checks `skeleton` and `go`, code owner review and the merge queue (section "Protecting the main branch"); without the merge queue, the forbidden words of a PR are checked only in the public `main`.
-4. Connect a CLA bot (for example CLA Assistant) to the repository with the text of `CLA.md` and make its check required for `main`: an external PR is merged only after the contribution agreement is signed (D-89). Before that, a lawyer reviews the text of `CLA.md`.
-5. Keep in mind that every commit is public: a secret that reached any commit is rotated, removing it from the history is not enough (`docs/quality.md`).
+3. Protect `main` with the ruleset (section "Protecting the main branch").
+4. Connect a CLA bot (for example CLA Assistant, with the text of `CLA.md` in a public gist) to the repository and make its check `license/cla` required for `main`: an external PR is merged only after the contribution agreement is signed (D-89). Before the first external contribution, a lawyer reviews the text of `CLA.md`.
+5. Review the whole commit history, not only the latest state, before the first release and after any suspected leak: secrets with a scanner over all commits (for example `gitleaks git --log-opts=--all`), forbidden words with `python3 -I ci/public_safety.py --history`. Every commit is public: a secret found in any commit is rotated, removing it from the history is not enough (`docs/quality.md`).
 
 The code owner in `.github/CODEOWNERS` is already set; the owner name is allowed only by the narrow `public_safety.py` exception (section "Forbidden words").
 
