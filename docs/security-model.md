@@ -623,17 +623,17 @@ The lint will reject such a description if the monitoring system address turns o
 
 ## Publicity of the repository
 
-The skeleton repository may become public, so it has no secrets and no ties to an organization (D-13).
+The repository is public, so it has no secrets and no ties to an organization (D-13).
 
 | What | Rule |
 |---|---|
 | Transfer from drafts | everything is anonymized: tenant `demo`, bot `@demo_bot`, people `alice`, `bob`, `carol`, invented chat ids, domains under `example.org`, IP addresses only from the documentation ranges 192.0.2.0/24, 198.51.100.0/24 and 203.0.113.0/24 |
 | CI check `public-safety` | secret search; the organization's list of forbidden words is kept outside the repository or as hashes; in `examples/` and `conformance/` only `demo` and `example.org` |
 | Canaries in fixtures | visibly fake, for example `CANARY-NOT-A-SECRET-...`: an external secret search does not take them for keys, and our own search finds them |
-| History | before opening, the whole commit history is reviewed, not only the latest state |
+| History | every commit is public: a secret that reached any commit is rotated, not only removed from the history |
 | Workflows | the events `pull_request`, `push` to `main` and `merge_group`; the CI token gets read-only permissions (`permissions: contents: read`); `pull_request_target` with a checkout of the PR code is not used; the only secret, the forbidden word list, is given only to `merge_group` and `push`, never to a `pull_request` run |
-| Executable code | only in `ci/`: linters of schemas, of references to rule numbers, of manifest rules and `public-safety` |
-| Implementation | is started as a new private repository, not a fork: when the skeleton repository is opened, the commits of private forks become visible to everyone |
+| Executable code | in `ci/`: linters of schemas, of references to rule numbers, of manifest rules and `public-safety`; in `impl/`: the reference implementation in Go with its own workflow `go.yml`, without secrets (D-92) |
+| Implementation | the reference implementation lives in this repository under `impl/` and does not change skeleton files (D-92); installation files (tenants, keys, machines, people) stay outside the repository |
 
 ## Example: a line in a log on `web1`
 

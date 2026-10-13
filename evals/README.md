@@ -11,7 +11,7 @@ Eval (bot evaluation) gives the farm reference cases with a real model on a sepa
 | `evals/case.schema.json` | the case schema (section "Case fields") | skeleton |
 | `evals/thresholds.yaml` | default thresholds | skeleton |
 | `evals/cases/<role>/<id>.yaml` | the texts of the cases that the skeleton rules name, and the reference set of the first bot `ops-reader` | skeleton |
-| data generators, the test bench seed, the run script | code and data of the test bench; the language is chosen together with the language of the implementation | implementation repository |
+| data generators, the test bench seed, the run script | code and data of the test bench; Go, like the reference implementation (D-91) | `impl/` |
 | cases of installation roles | sets of own roles and plugins, next to their manifests | installation repository |
 | `evals/reports/index.yaml` (v0.2) | report index: static fingerprint, date, number of security failures, metadata only (v0.2, PRV-3) | installation repository |
 

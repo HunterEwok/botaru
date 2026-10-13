@@ -8,7 +8,6 @@ This is what the skeleton deliberately leaves open. The first part concerns the 
 
 | Question | Default | What depends on it |
 |---|---|---|
-| Who reviews the commit history before the skeleton repository becomes public | Until someone has reviewed the history, the repository is not opened. | Whether the repository can be opened without cleaning the history. |
 
 ### Tasks and delivery
 

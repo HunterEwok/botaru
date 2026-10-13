@@ -130,7 +130,7 @@ What the model cannot do on this path: choose the task type, the reply address, 
 | 1. Model | Concepts and relations; lifecycles (states, transitions, who calls); rules that must not be broken | format, transport, storage, language | `docs/`, `docs/model/`, `spec/lifecycles/`, `conformance/requirements.yaml` | through a decision D-NN; an ADR if a port or contract changes |
 | 2. Ports | The meaning of the operations of each boundary: who calls, input, output, refusals, idempotency, which rules it keeps | HTTP paths, SQL, column names | `spec/ports/` | a new operation is a minor version of the sheet |
 | 3. Contracts and checks | JSON Schema of data and manifests, bindings (HTTP P1, MCP profiles, the event catalog, the provider field allowlist), fixtures, check suites | how it is implemented | `spec/model/`, `spec/manifests/`, `spec/bindings/`, `conformance/` | only additions inside a version |
-| 4. Implementations | Code of the core and `farmctl`, the SQL binding of the reference, channel adapters, runtimes, images | | outside the skeleton | constantly |
+| 4. Implementations | Code of the core and `farmctl`, the SQL binding of the reference, channel adapters, runtimes, images | | the reference implementation in Go in `impl/` (D-92), others anywhere | constantly |
 
 Every fact has one source: the data form only in the schema, a rule only as a registry row, a lifecycle only in its own file, an operation only as a port sheet row, a refusal reason only in `reasons.yaml`. Everything else refers by identifiers, and the skeleton CI checks these references. Every concept takes part in at least one rule, and every rule has a number and a check method.
 
@@ -138,8 +138,6 @@ Every fact has one source: the data form only in the schema, a rule only as a re
 
 | Not decided | Why | How the skeleton stays neutral |
 |---|---|---|
-| Implementation language | postponed | there is no code except `ci/`; there is no core, `farmctl` or runner in the skeleton; contracts are in JSON Schema and OpenAPI; the runner is a black box by the core address and the test-control port |
-| Agent runtime | chosen after checks of a candidate runtime from the list in `spec/ports/e4-agent-runtime.md` | the E4 port, a closed list of deviations with RT rules, a check suite; the decision is "proposed", and its ADR will appear with the implementation |
 | Where the model gateway lives | the boundary is decided: P4 is in the core (D-45) | in the core process or as a separate process next to it; the deployment decides |
 | Model provider | in v0.1 one reference, the Anthropic Messages API (D-85) | what any binding describes is stated in `spec/bindings/model-providers/README.md`; the field allowlist, errors and token accounting of the reference are in `spec/bindings/model-providers/anthropic.md` |
 | Monitoring system | every organization has its own, or none at all | the E5 port and the conformance profile `monitor`; the reference binding is in the E5 sheet, and rules say "monitoring system" (D-66). Without it the farm also works on a single server: the core delivers alarms to people, a watchdog checks core liveness, and backups go encrypted to external storage (D-88) |

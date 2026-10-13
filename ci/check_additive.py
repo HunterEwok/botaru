@@ -23,9 +23,10 @@ spec/model/*.yaml with their state at the branch point from the base branch
   oneOf appeared; minContains increased, maxContains decreased; if changed;
   a not schema widened (it is compared with reversed polarity);
 - allOf got a new item (a new constraint), anyOf or oneOf lost branches,
-  oneOf got a branch that is not provably disjoint from every other branch
-  (different const or enum values, disjoint types, or a property required in
-  both with disjoint const or enum values), dependentSchemas got a new name;
+  oneOf got a new or changed branch that is not provably disjoint from every
+  other branch (different const or enum values, disjoint types, or a property
+  required in both with disjoint const or enum values), dependentSchemas got
+  a new name;
 - an entry (id) left a registry, or entries changed while the registry version did not.
 A breaking schema change is made as a new file .v(N+1) next to .vN;
 a retired registry value stays an entry marked retired.
@@ -199,9 +200,13 @@ def compare(old, new, where):
             rep.error(where, f'[keyword_added] {key} appeared: the set of values is narrowed')
     ob, nb = old.get('oneOf'), new.get('oneOf')
     if isinstance(ob, list) and isinstance(nb, list):
-        for i in range(len(ob), len(nb)):
+        # a new branch, or a changed one (even widened), can make an old value match two branches
+        for i in range(len(nb)):
+            if i < len(ob) and nb[i] == ob[i]:
+                continue
             if not all(disjoint(nb[i], b) for j, b in enumerate(nb) if j != i):
-                rep.error(where, f'[oneof_overlap] new oneOf branch {i} is not provably disjoint from the others: '
+                what = 'new' if i >= len(ob) else 'changed'
+                rep.error(where, f'[oneof_overlap] {what} oneOf branch {i} is not provably disjoint from the others: '
                           'values matching two branches would stop passing')
     od, nd = old.get('dependentSchemas') or {}, new.get('dependentSchemas') or {}
     if isinstance(od, dict) and isinstance(nd, dict):

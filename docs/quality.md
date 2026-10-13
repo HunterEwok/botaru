@@ -527,9 +527,9 @@ Executable skeleton code lives only in `ci/`. These are linters that run on ever
 | Manifest lint | `examples/` pass the same checks as `farmctl apply`: kind schemas and the wrapper (MAN-1), closed string formats and schema leaves (INJ-1), rights without asterisks on actions, `alarm.*` only for `job` (INJ-7), non-waivable permission bans (PRM-2) |
 | Public-safety | secret scanning; the organization's list of forbidden words is not in the repository, neither as plain text nor as hashes (`ci/README.md`, "Forbidden words"); `examples/`, `conformance/` and `evals/` contain only the tenants `demo`, `demo2` and `farm`, domains under `example.org` and IPs from the documentation ranges 192.0.2.0/24, 198.51.100.0/24, 203.0.113.0/24; canaries are visibly fake |
 
-The skeleton workflow runs on `pull_request`, `push` to `main` and `merge_group`; the token only reads (`permissions: contents: read`), and `pull_request_target` with a checkout of the PR code is not used. The only secret is the forbidden words list `BOTARU_FORBIDDEN`; it is not passed to `pull_request` runs, which execute unreviewed PR code, so the merge queue checks the forbidden words of a PR before `main` (D-13, `ci/README.md`, "Before opening the repository"). Before the repository is opened, the whole commit history is reviewed, not only the latest state.
+The skeleton workflow runs on `pull_request`, `push` to `main` and `merge_group`; the token only reads (`permissions: contents: read`), and `pull_request_target` with a checkout of the PR code is not used. The only secret is the forbidden words list `BOTARU_FORBIDDEN`; it is not passed to `pull_request` runs, which execute unreviewed PR code, so the merge queue checks the forbidden words of a PR before `main` (D-13, `ci/README.md`, "Owner settings in GitHub"). The repository is public, so every commit of the history is public too: a secret that reached any commit is rotated, not only removed.
 
-The black box runner is written when the implementation language is chosen; whoever maintains the skeleton maintains it. Until the runner exists, acceptance "passes `conformance/`" is checked by fixtures and lint, and skeleton readiness (item 5 above) waits for the runner. Version readiness (`ci/readiness.py`) shows three numbers: rules covered by data that skeleton CI executes; rules covered by data for the implementation runner or eval; rules covered only by a suite check description (D-86 (11)).
+The black box runner is written in Go together with the reference implementation in `impl/` (D-91, D-92); whoever maintains the skeleton maintains it. Until the runner exists, acceptance "passes `conformance/`" is checked by fixtures and lint, and skeleton readiness (item 5 above) waits for the runner. Version readiness (`ci/readiness.py`) shows three numbers: rules covered by data that skeleton CI executes; rules covered by data for the implementation runner or eval; rules covered only by a suite check description (D-86 (11)).
 
 ## Bot evaluation (eval)
 
@@ -582,7 +582,7 @@ At first the run is started by hand on the test bench machine. Later CI starts i
 4. Check with the common checks and the case checks.
 5. Write `results.jsonl`, transcripts, a summary and a JUnit XML report, as for the `conformance/` runner. Exit code 1 if there is a security failure. On a PASS outcome, write the pass attestation.
 
-Workers are not restarted between cases: a role with `memory: none` must not carry anything from task to task, and case `iso-02` checks this. The run script is an ordinary test runner, one test per case file; its language is chosen together with the implementation language. The script talks to the farm only from outside: through fake Telegram, P1 and the audit.
+Workers are not restarted between cases: a role with `memory: none` must not carry anything from task to task, and case `iso-02` checks this. The run script is an ordinary test runner, one test per case file; it is written in Go together with the reference implementation (D-91). The script talks to the farm only from outside: through fake Telegram, P1 and the audit.
 
 ```
 eval 2026-10-12  ops-reader  mode: runtime comparison  repeats: 3
@@ -731,5 +731,4 @@ A bot must not know that its grades and proposals are linked to promotion or ret
 - **Where the test bench machine stands.** A Linux machine with systemd and docker compose is needed, separate from the production farm.
 - **Code hosting plan.** Protected branches and mandatory review of `evals/` in a private repository are not available on all plans. Without them what remains is the rule "only green PRs are merged" and the pass attestation in `farmctl apply`.
 - **References for science roles.** Who checks the correct answers when cases for science roles appear: without a domain specialist a reference can be wrong in substance.
-- **Implementation language and agent runtime.** The black box runner and the run script depend on the language; the runtime is chosen by the first "before a change" run.
 - **First staff questions.** Who provides questions for the suites of the next bots.
