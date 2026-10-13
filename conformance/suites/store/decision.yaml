@@ -10,7 +10,7 @@ checks:
   - AUD-2
   version: v0.1
   section: Tests without a model
-  source: docs/quality.md:462
+  source: docs/quality.md:468
   spec:
     What: '`carol` decides an approval after "Details"'
     Expectation: 'decision event: `subject`, `decision`, `reason_code`, `decided_by`, `channel`, `chat_kind`, `delivered_at`,

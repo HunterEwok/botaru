@@ -146,6 +146,8 @@ The codes of `check_manifests.py` that fixtures refer to (`expect: {error: <code
 | Code | Meaning | Rules |
 |---|---|---|
 | `action_type_grant` | grant, command, route or type named action.* | APR-5 |
+| `aggregator_source_aggregator` | an aggregator names an aggregator role among its sources, directly or through a bot group | AGG-3 |
+| `aggregator_sources_over_max` | an aggregator lists more source entries than max_sources | AGG-3 |
 | `alarm_inbox` | type with alarm.* reads the inbox | INJ-7 |
 | `alarm_not_job` | alarm.* in events of a type that is not a job | INJ-7 |
 | `api_version` | apiVersion is not botaru/v1alpha1 | MAN-1 |
@@ -191,6 +193,8 @@ The codes of `check_manifests.py` that fixtures refer to (`expect: {error: <code
 | `memory_person` | memory: person with disallowed types or tools | MEM-2 |
 | `message_fields` | message type lacks a field its kind requires | MSG-2 |
 | `message_name` | message type name does not start with its kind | MSG-2 |
+| `model_exposure_agent_read` | a resource with model_exposure: none is read by a tool of an agent role | PRV-4 |
+| `model_exposure_not_aggregate` | a resource with model_exposure: aggregates is read by an agent tool whose output is not only numbers and enum values | PRV-4 |
 | `not_in_version` | field or value appears in a later skeleton version | APR-10, APR-16 |
 | `observes_not_job` | observes on a type that is not a job | OBV-3 |
 | `params_invalid` | route or schedule params fail the closed type schema |  |

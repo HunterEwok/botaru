@@ -239,6 +239,9 @@ def unmatched(old_list, new_list):
     return left, fresh
 
 
+DEFERRED = []  # (where, branch, what, holder): new oneOf branches to prove with $ref followed
+
+
 def compare(old, new, where):
     # true accepts everything, like an empty schema
     old = {} if old is True else old
@@ -355,9 +358,8 @@ def compare(old, new, where):
         left, fresh = unmatched(ob, nb)
         for i, _ in fresh:
             if not all(disjoint(nb[i], b) for j, b in enumerate(nb) if j != i):
-                what = 'changed' if left else 'new'
-                rep.error(where, f'[oneof_overlap] {what} oneOf branch {i} is not provably disjoint from the others: '
-                          'values matching two branches would stop passing')
+                # the proof is retried with $ref followed once all schemas are read (DEFERRED below)
+                DEFERRED.append((where, i, 'changed' if left else 'new', new))
     od, nd = old.get('dependentSchemas') or {}, new.get('dependentSchemas') or {}
     if isinstance(od, dict) and isinstance(nd, dict):
         for name in sorted(set(nd) - set(od)):
@@ -535,6 +537,17 @@ def oneofs(s, path=''):
         for i, x in enumerate(s):
             yield from oneofs(x, f'{path}/{i}')
 
+
+for where, i, what, holder in DEFERRED:
+    # a branch behind $ref is proved disjoint by following the reference inside the repository
+    rp = where.split('#', 1)[0]
+    branches = holder.get('oneOf') or []
+    others = [b for j, b in enumerate(branches) if j != i]
+    def res(s, frm, rp=rp):
+        return deref(s, frm, news, news_by_id)
+    if not all(disjoint(branches[i], b, res, rp, rp) for b in others):
+        rep.error(where, f'[oneof_overlap] {what} oneOf branch {i} is not provably disjoint from the others: '
+                  'values matching two branches would stop passing')
 
 for rp, old in olds.items():
     # not and if reverse polarity: a definition they reach may not change at all

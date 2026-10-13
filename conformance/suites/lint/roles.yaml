@@ -9,7 +9,18 @@ checks:
   - PRF-1
   version: v0.1
   section: Tests without a model
-  source: docs/quality.md:331
+  source: docs/quality.md:332
   spec:
     What: a role declares what its profile forbids (`fx-rep-01` for `reporter`, the same fixtures for the other profiles)
     Expectation: '`apply` rejects the role; no built-in tools outside the profile in `tools/list`'
+- id: lint:roles/aggregator-sources
+  method: lint
+  rules:
+  - AGG-3
+  version: v0.2
+  section: Tests without a model
+  source: docs/quality.md:339
+  spec:
+    What: (v0.2) an aggregator names a role of profile `aggregator` in `aggregate.sources.roles`, directly or through a bot
+      group in `sources.bot_groups`, or lists more source entries than `max_sources` (`manifests/agg-02.yaml`)
+    Expectation: '`apply` rejects the role with `aggregator_source_aggregator` or `aggregator_sources_over_max`'

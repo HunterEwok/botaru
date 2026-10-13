@@ -360,6 +360,20 @@
       "$ref": "urn:botaru:schema:common:1#/$defs/name",
       "description": "From v0.2: the set of inputs for checking the type history (MGR-40).",
       "x-botaru-version": "v0.2"
+    },
+    "grant": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "input_tokens_min": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 10000000,
+          "description": "The sign \"input above the threshold\": initial input tokens at enqueue (MGR-40)."
+        }
+      },
+      "description": "From v0.2: grant thresholds of the type (MGR-17, MGR-40).",
+      "x-botaru-version": "v0.2"
     }
   }
 }

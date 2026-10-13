@@ -1,0 +1,37 @@
+id: prp-15
+rules: [PRP-17]
+version: v0.2
+description: 'Related proposals. The core links a new proposal with proposals of another author that people decided on in the
+  last 90 days, with the same change kind and an overlapping target or field (related_to). A late related proposal earns its author
+  no credit and no promotion trigger, but goes the whole path. A proposal of the farm manager daily review (origin.level 2, role of
+  profile farm-manager) is never in related_to of a functionary or aggregator proposal, and gets no related_to itself.'
+given:
+  tenant: demo
+cases:
+- id: prp-15-a
+  description: a decided proposal of another bot makes the later one related
+  given:
+    proposals:
+    - {id: p_01JB0000000000000000001501, state: declined, decided_at: '2026-10-01T09:00:00Z', origin: {level: 0, acting_bot: bot_21}, change: {kind: manifest_change, field: spec.cron, target: {kind: Schedule, name: report-nightly}}}
+  steps:
+  - occur: {proposal_submitted: {acting_bot: bot_17, level: 0, kind: manifest_change, field: spec.cron, target: {kind: Schedule, name: report-nightly}}}
+    at: '2026-11-01T09:00:00Z'
+    expect: {state: screened, related_to: [p_01JB0000000000000000001501], credit_to_author: false, card_mark: related_to, review_input: {related_to: true}}
+- id: prp-15-b
+  description: a farm manager proposal for the same target is not in related_to
+  given:
+    proposals:
+    - {id: p_01JB0000000000000000001502, state: realized, decided_at: '2026-10-20T09:00:00Z', origin: {level: 2, role: farm-manager}, change: {kind: manifest_change, field: spec.cron, target: {kind: Schedule, name: report-nightly}}}
+  steps:
+  - occur: {proposal_submitted: {acting_bot: bot_17, level: 0, kind: manifest_change, field: spec.cron, target: {kind: Schedule, name: report-nightly}}}
+    at: '2026-11-01T09:00:00Z'
+    expect: {state: screened, related_to: [], credit_to_author: true}
+- id: prp-15-c
+  description: a decision older than 90 days does not link
+  given:
+    proposals:
+    - {id: p_01JB0000000000000000001503, state: declined, decided_at: '2026-07-01T09:00:00Z', origin: {level: 1, role: ops-aggregator}, change: {kind: manifest_change, field: spec.cron, target: {kind: Schedule, name: report-nightly}}}
+  steps:
+  - occur: {proposal_submitted: {acting_bot: bot_17, level: 0, kind: manifest_change, field: spec.cron, target: {kind: Schedule, name: report-nightly}}}
+    at: '2026-11-01T09:00:00Z'
+    expect: {state: screened, related_to: []}

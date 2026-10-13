@@ -34,10 +34,8 @@ This is what the skeleton deliberately leaves open. The first part concerns the 
 | Question | Default | What depends on it |
 |---|---|---|
 | Campaign queue limit `queue_max` without a value | An item waits in `pending` while the tenant queue is below `max_queued`, and gets no refusal (ORC-4). | The behavior of large campaigns under load. |
-| Checking the numbers of the reporter's paragraph against the table | A SHOULD-level rule since v0.2; the checking algorithm is chosen before v0.2 (REP-4). | How strictly the numbers in summaries are checked. |
 | Decision deadline for a script `confirm` step | 30 minutes and no longer than the run deadline; silence gives `declined` (SCR-6). | How long a script waits for a person. |
 | How code learns that an action is named in the text of an assignment | A match of the action name or its `title` after simple normalization; there are no synonyms in the manifest. | How precisely the translator needs to name an action. |
-| Whether to merge `propose_campaign` and `propose_script` | No; the `fanout` format is compatible, and the question is decided in v0.2. | One or two paths to propose mass work. |
 | Starting a script from git on a schedule | Since v0.2, only without steps with an action and below the tenant's thresholds. | Whether regular scripts can be automated. |
 | An assignment to the translator from an external program (principal `service`) | A script draft is possible, but nobody can start it, because only a person confirms a run. | Whether programs can order scripts. |
 

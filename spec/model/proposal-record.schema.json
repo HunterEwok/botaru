@@ -527,6 +527,53 @@
           "type": "null"
         }
       ]
+    },
+    "sample": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "month",
+        "stratum",
+        "inclusion_prob",
+        "seed_ref"
+      ],
+      "properties": {
+        "month": {
+          "type": "string",
+          "pattern": "^[0-9]{4}-[0-9]{2}$",
+          "maxLength": 7
+        },
+        "stratum": {
+          "enum": [
+            "veto",
+            "weighted_mean",
+            "parked_score"
+          ]
+        },
+        "lens": {
+          "type": "string",
+          "maxLength": 64,
+          "x-botaru-registry": "lenses",
+          "description": "The veto lens of stratum veto."
+        },
+        "inclusion_prob": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "maximum": 1
+        },
+        "seed_ref": {
+          "$ref": "urn:botaru:schema:common:1#/$defs/object_id",
+          "description": "The seed record of the month choice."
+        },
+        "answer": {
+          "enum": [
+            "would_accept",
+            "would_not_accept"
+          ]
+        }
+      },
+      "description": "From v0.2: the audit sample item of this proposal (DIG-5, DIG-6).",
+      "x-botaru-version": "v0.2"
     }
   }
 }

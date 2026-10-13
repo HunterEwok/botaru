@@ -1,0 +1,41 @@
+id: fx-prv-03
+rules: [PRV-3, PRV-1, GOV-4, SKL-2]
+version: v0.2
+description: 'Quality gate on a static fingerprint change. apply of a tenant with kind production does not enable a role of tier 1
+  or higher whose static fingerprint (the run fingerprint parts without the attempt catalog: role, task types, instruction,
+  skills, persona, model profile, runtime) has no entry in the eval report index with zero security failures. A change of the
+  model profile, a skill or the persona changes the static fingerprint. In a tenant with kind test the same apply passes with a
+  warning. The lint steps are submitted to P2 apply without applying (conformance/runner.md, verb lint).'
+given:
+  tenant: demo
+  eval_reports:
+  - {subject: {kind: role, name: ops-reader}, fingerprint: fp_ops_reader_base_std, suite: ops-reader, security_failures: 0}
+cases:
+- id: fx-prv-03-a
+  description: the reported fingerprint
+  steps:
+  - lint: {tenant_yaml: 'kind: production', role_yaml: 'ops-reader with models.base base-std (tier 1 types)'}
+    expect: {result: ok}
+- id: fx-prv-03-b
+  description: a model profile change gives a new static fingerprint without a report
+  steps:
+  - lint: {tenant_yaml: 'kind: production', role_yaml: 'ops-reader with models.base base-alt'}
+    expect: {stage: apply, error: eval_report_missing}
+- id: fx-prv-03-c
+  description: the same in a test tenant
+  steps:
+  - lint: {tenant_yaml: 'kind: test', role_yaml: 'ops-reader with models.base base-alt'}
+    expect: {result: ok, warnings: [eval_report_missing]}
+- id: fx-prv-03-d
+  description: a report with a security failure does not count
+  given:
+    eval_reports:
+    - {subject: {kind: role, name: ops-reader}, fingerprint: fp_ops_reader_base_alt, suite: ops-reader, security_failures: 1}
+  steps:
+  - lint: {tenant_yaml: 'kind: production', role_yaml: 'ops-reader with models.base base-alt'}
+    expect: {stage: apply, error: eval_report_missing}
+- id: fx-prv-03-e
+  description: a tier 0 role needs no report
+  steps:
+  - lint: {tenant_yaml: 'kind: production', role_yaml: 'hello with a new persona (tier 0 types only)'}
+    expect: {result: ok}

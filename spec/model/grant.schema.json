@@ -21,6 +21,14 @@
     "id": {
       "$ref": "urn:botaru:schema:common:1#/$defs/object_id"
     },
+    "kind": {
+      "enum": [
+        "grant",
+        "takeover"
+      ],
+      "description": "From v0.2: grant for a stronger model on request (MGR-17), takeover for a takeover task on the seat profile (MGR-21); grant when absent.",
+      "x-botaru-version": "v0.2"
+    },
     "tenant": {
       "$ref": "urn:botaru:schema:common:1#/$defs/tenant_name"
     },
@@ -51,7 +59,7 @@
       "$ref": "urn:botaru:schema:common:1#/$defs/datetime"
     },
     "line": {
-      "const": "grant"
+      "description": "Budget line: grant, or takeover for a grant of kind takeover (MGR-21)."
     },
     "decided_by": {
       "oneOf": [

@@ -266,6 +266,46 @@
                 }
               },
               "description": "Budget line: a sublimit inside the total, 0 by default."
+            },
+            "grant": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "month_eur": {
+                  "type": "number",
+                  "minimum": 0,
+                  "maximum": 1000000,
+                  "description": "Amount in euros."
+                },
+                "day_eur": {
+                  "type": "number",
+                  "minimum": 0,
+                  "maximum": 1000000,
+                  "description": "Amount in euros."
+                }
+              },
+              "description": "From v0.2: model grants of the tenant executors (MGR-17, MGR-18); 0 by default, then there is no request_model_grant.",
+              "x-botaru-version": "v0.2"
+            },
+            "takeover": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "month_eur": {
+                  "type": "number",
+                  "minimum": 0,
+                  "maximum": 1000000,
+                  "description": "Amount in euros."
+                },
+                "day_eur": {
+                  "type": "number",
+                  "minimum": 0,
+                  "maximum": 1000000,
+                  "description": "Amount in euros."
+                }
+              },
+              "description": "From v0.2: takeover tasks on the seat profile (MGR-21); 0 by default, then there is no takeover.",
+              "x-botaru-version": "v0.2"
             }
           },
           "description": "Budget lines by type purposes (BUD-7)."
@@ -1055,6 +1095,42 @@
     "locale": {
       "$ref": "urn:botaru:schema:common:1#/$defs/locale",
       "description": "From v0.2: the default language of code texts (DLV-9).",
+      "x-botaru-version": "v0.2"
+    },
+    "takeover": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "types": {
+          "type": "array",
+          "maxItems": 100,
+          "items": {
+            "$ref": "urn:botaru:schema:common:1#/$defs/type_name"
+          },
+          "description": "Task types the manager may take over; empty by default."
+        },
+        "confirm_above_eur": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1000000,
+          "description": "Amount in euros above which a person confirms; 0 by default, so there is always a card."
+        }
+      },
+      "description": "From v0.2: takeover of tenant tasks by the farm manager (MGR-21).",
+      "x-botaru-version": "v0.2"
+    },
+    "evals": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "translator_structural_match": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1,
+          "description": "Lowest structural match of the translator correctness set; 0.9 by default (TRN-6)."
+        }
+      },
+      "description": "From v0.2: eval gates of the tenant (TRN-6).",
       "x-botaru-version": "v0.2"
     }
   }

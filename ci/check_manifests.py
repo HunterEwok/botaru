@@ -728,6 +728,43 @@ def lint(docs, today=None, farm_hosts=None, examples_mode=False):
             if bad:
                 f.error('memory_person', where, f'role {rname}: memory: person with {bad} (MEM-2)')
 
+    # 9a. One level of aggregators (AGG-3): no aggregator among the sources, no more than max_sources.
+    for rname, (where, rs) in roles.items():
+        if rs.get('profile') != 'aggregator':
+            continue
+        agg = rs.get('aggregate') or {}
+        src = agg.get('sources') or {}
+        count = sum(len(src.get(k) or []) for k in ('roles', 'bot_groups', 'series', 'message_kinds'))
+        if agg.get('max_sources') is not None and count > agg['max_sources']:
+            f.error('aggregator_sources_over_max', where,
+                    f'role {rname}: {count} source entries, more than max_sources {agg["max_sources"]} (AGG-3)')
+        named = [(r, f'sources.roles {r}') for r in src.get('roles') or []]
+        for bg in src.get('bot_groups') or []:
+            g = S.get('BotGroup', bg) or {}
+            named += [(r, f'bot group {bg}') for r in (g.get('select') or {}).get('roles') or []]
+        for r, via in named:
+            if r in roles and roles[r][1].get('profile') == 'aggregator':
+                f.error('aggregator_source_aggregator', where,
+                        f'role {rname}: {via} is aggregator role {r}; one level of aggregators (AGG-3)')
+
+    # 9b. Exposure of datasets to the model (PRV-4). A dataset without model_exposure counts as aggregates.
+    agent_tools = {t for _, rs in roles.values() if rs.get('worker_kind') == 'agent' for t in rs.get('tools', [])}
+    for tenant, cname, where, cs in S.each('Catalog'):
+        for r in cs.get('resources', []):
+            exp = r.get('model_exposure') or ('aggregates' if r.get('kind') == 'dataset' else None)
+            for tref in r.get('read_by', []):
+                if exp is None or tref not in agent_tools:
+                    continue
+                t = (tools.get(tref) or (None, None, {}))[2]
+                if exp == 'none':
+                    f.error('model_exposure_agent_read', where,
+                            f'resource {r["id"]}: model_exposure none, but agent tool {tref} reads it (PRV-4)')
+                elif exp == 'aggregates' and (t.get('untrusted_output') is not False
+                                              or free_text(t.get('output_schema') or {})):
+                    f.error('model_exposure_not_aggregate', where,
+                            f'resource {r["id"]}: model_exposure aggregates, but agent tool {tref} has output '
+                            'that is not only numbers and enum values (PRV-4)')
+
     # 10. Routes and schedules.
     def check_address(where, tenant, addr):
         if isinstance(addr, dict):

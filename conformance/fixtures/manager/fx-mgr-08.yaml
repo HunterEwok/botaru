@@ -1,0 +1,61 @@
+id: fx-mgr-08
+rules: [MGR-18, GW-2, GW-7]
+version: v0.2
+description: 'Grant ceilings and the model gateway. Every grant decision, by the seat holder or by a person, is checked against the
+  code ceilings: at most 2 attempts, expiry at most 6 h, cap_eur within the tenant grant line and the seat daily ceiling
+  seat_grants_eur_day. Before each call under the grant P4 reserves the worst case in the rest of cap_eur and in the grant line;
+  a call that does not fit does not start, the attempt is not spent, the grant moves to consumed and the task goes on with the
+  base model. P4 allows the granted slot only to the task of the grant.'
+given:
+  tenant: demo
+  tenant_budget: {grant: {day_eur: 5}}
+  farm_manager: {grant_limits: {seat_grants_eur_day: 20}}
+  seat: {id: farm-manager, state: held, holder: bot_41, epoch: 9}
+  grant:
+    id: g_801
+    task: t_801
+    role: data-reader
+    profile: analysis-std
+    state: pending
+cases:
+- id: fx-mgr-08-a
+  description: the seat decides over the ceilings
+  steps:
+  - occur: {grant_decide: {grant: g_801, decision: approve, attempts: 3, expires_in: 8h, cap_eur: 6}}
+    by: seat
+    expect: {result: rejected, state: pending, note: '3 attempts, 8 h and 6 EUR are each above a ceiling'}
+- id: fx-mgr-08-b
+  description: a person with model_grant.manage is held by the same ceilings
+  given:
+    people:
+    - principal: human:carol
+      caps: [model_grant.manage@demo]
+  steps:
+  - call: {port: P2, op: model_grant.issue, request: {tenant: demo, grant: g_801, decision: issue, attempts: 2, expires_in: 7h, cap_eur: 1}}
+    by: human:carol
+    expect: {result: rejected, state: pending}
+- id: fx-mgr-08-c
+  description: the reserve does not fit the rest of cap_eur
+  steps:
+  - occur: {grant_decide: {grant: g_801, decision: approve, attempts: 2, expires_in: 2h, cap_eur: 0.05}}
+    by: seat
+    expect: {state: approved, grant: {cap_eur_cents: 5, line: grant, decided_by: {kind: seat, epoch: 9}}}
+  - call:
+      port: P4
+      op: model.call
+      request: {model: analysis-std, max_tokens: 8000, messages: [{role: user, content: 'describe the profile'}]}
+    by: attempt
+    context: {task: t_801, slot: granted, worst_case_eur: 0.20}
+    expect: {reason: budget_exhausted, provider_calls: 0, attempt_spent: false, grant_state: consumed, task_continues_on: base}
+- id: fx-mgr-08-d
+  description: another task cannot use the grant
+  steps:
+  - occur: {grant_decide: {grant: g_801, decision: approve, attempts: 1, expires_in: 2h, cap_eur: 1}}
+    by: seat
+  - call:
+      port: P4
+      op: model.call
+      request: {model: analysis-std, max_tokens: 1000, messages: [{role: user, content: 'hello'}]}
+    by: attempt
+    context: {task: t_802, slot: granted}
+    expect: {result: rejected, provider_calls: 0}

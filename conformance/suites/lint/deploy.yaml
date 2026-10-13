@@ -10,7 +10,7 @@ checks:
   - DEP-11
   version: v0.1
   section: Tests without a model
-  source: docs/quality.md:486
+  source: docs/quality.md:492
   spec:
     What: a deployment description with a toolhost or a `demo` plugin on `core1`
     Expectation: the lint rejects the description
@@ -21,7 +21,7 @@ checks:
   - DEP-11
   version: v0.1
   section: Tests without a model
-  source: docs/quality.md:488
+  source: docs/quality.md:494
   spec:
     What: the action toolhost of `demo2` on `web1` next to `demo`
     Expectation: the lint rejects the description (D-75)
@@ -31,7 +31,7 @@ checks:
   - DEP-10
   version: v0.1
   section: Tests without a model
-  source: docs/quality.md:498
+  source: docs/quality.md:504
   spec:
     What: the rule on the machine differs from the catalog (file hash through the action toolhost)
     Expectation: '`doctor` fails the check'

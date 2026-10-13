@@ -146,6 +146,9 @@
     },
     {
       "$ref": "#/$defs/kind_governance"
+    },
+    {
+      "$ref": "#/$defs/kind_eval_reports"
     }
   ],
   "$defs": {
@@ -1289,6 +1292,57 @@
         "spec"
       ],
       "description": "Manifest of kind Governance."
+    },
+    "kind_eval_reports": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "apiVersion": {
+          "const": "botaru/v1alpha1",
+          "description": "Wrapper version."
+        },
+        "kind": {
+          "const": "EvalReports",
+          "description": "Manifest kind."
+        },
+        "metadata": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "name": {
+              "$ref": "urn:botaru:schema:common:1#/$defs/name"
+            },
+            "labels": {
+              "$ref": "#/$defs/labels"
+            },
+            "deprecated": {
+              "type": "boolean",
+              "description": "From v0.2: the object is deprecated; apply warns about references to it (MAN-7).",
+              "x-botaru-version": "v0.2"
+            },
+            "sunset": {
+              "$ref": "#/$defs/date",
+              "description": "From v0.2: the date after which the object is removed (MAN-7).",
+              "x-botaru-version": "v0.2"
+            }
+          },
+          "required": [
+            "name"
+          ],
+          "description": "Name and labels of the object; the kind is global and has no tenant."
+        },
+        "spec": {
+          "$ref": "urn:botaru:schema:eval-reports:1"
+        }
+      },
+      "required": [
+        "apiVersion",
+        "kind",
+        "metadata",
+        "spec"
+      ],
+      "description": "Manifest of kind EvalReports (from v0.2).",
+      "x-botaru-version": "v0.2"
     }
   }
 }

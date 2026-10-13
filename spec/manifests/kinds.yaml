@@ -1,5 +1,5 @@
 registry: manifest-kinds
-version: 1
+version: 2
 description: >-
   Manifest kinds of the farm. A manifest in git lies in the wrapper apiVersion, kind,
   metadata and spec and passes the wrapper schema spec/manifests/manifest.schema.json
@@ -140,3 +140,10 @@ entries:
     path: farm git
     name_format: name
     rules: [MAN-1]
+  - id: EvalReports
+    since: v0.2
+    schema: urn:botaru:schema:eval-reports:1
+    scope: global
+    path: evals/reports/index.yaml
+    name_format: name
+    rules: [MAN-1, PRV-3, TRN-6, MGR-23, MGR-40]

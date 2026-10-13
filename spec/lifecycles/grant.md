@@ -4,7 +4,7 @@
 
 A model grant (`ModelGrant`) is a record by which the model gateway P4 gives one task of a worker a stronger model profile for one or two attempts (D-18, D-21). The worker itself makes the request in a closed form; code checks the right to ask and all ceilings; the seat holder with the current epoch or a person decides. A grant lives in the task's tenant, is paid from its `grant` line and ends together with the task. The whole cycle comes in v0.2; before that the `granted` slot is reserved and P4 does not allow it.
 
-Record fields: `id`, `tenant`, `task`, `role`, `profile`, `attempts_left` (1 or 2), `cap_eur` (the amount in euros for the whole grant, stored in euro cents, BUD-9), `expires_at` (no later than 6 h after the decision), `line: grant`, `decided_by` (`{kind: seat, epoch}` or `{kind: human, principal}`), `untrusted`, the refusal `reason`, `state`.
+Record fields: `id`, `tenant`, `task`, `role`, `profile`, `attempts_left` (1 or 2), `cap_eur` (the amount in euros for the whole grant, stored in euro cents, BUD-9), `expires_at` (no later than 6 h after the decision), `kind` (`grant`, or `takeover` for a takeover, from v0.2), `line` (`grant`, or `takeover` for kind `takeover`), `decided_by` (`{kind: seat, epoch}` or `{kind: human, principal}`), `untrusted`, the refusal `reason`, `state`.
 
 ## States
 
@@ -41,7 +41,7 @@ Record fields: `id`, `tenant`, `task`, `role`, `profile`, `attempts_left` (1 or 
 
 - A grant belongs to one task of one tenant; other tasks, the role and the worker's identity do not get it, and it does not get into the bot's track record.
 - The right to ask never depends on signals that the worker's own attempts produce: the type history is computed only by a run of `grant_eval_set` on the base model, or is set by a person's mark `grant_eligible: true` in the type manifest (MGR-40). The failure share of working attempts is only shown to the holder.
-- The seat profile is never given to a worker by this record; the one and only path of a tenant task to the seat profile is a takeover by a person's card (MGR-21).
+- A record of kind `grant` never gives the seat profile to a worker. The one and only path of a tenant task to the seat profile is a takeover by a person's card: a record of kind `takeover` for 1 attempt on the new task `system:takeover:<task>`, paid from the `takeover` line (MGR-21).
 - A grant does not change the tools, the tier, the rights and other budget lines. The code ceilings apply to any decision of the model or a person.
 - Before every call under a grant P4 reserves the worst case in the rest of `cap_eur` and in the `grant` line (GW-2). The output limit is set by `max_output_tokens` of the model profile (BUD-9).
 - The request's `note` is untrusted; the seat holder does not see it.

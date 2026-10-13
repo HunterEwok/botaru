@@ -1,0 +1,43 @@
+id: prp-14
+rules: [PRP-16, PRP-5, PRP-9]
+version: v0.2
+description: 'One open proposal per bot, and a cumulative frequency limit. bot_17 has one open proposal; its next one gets
+  proposal_rate_limited without a record. A proposal in parked(conflict) because another author''s proposal moved to realizing
+  earlier does not take the slot. A schedule edit is counted against the cron value applied 90 days ago: the new value must
+  give at least half of the runs per 30 days that value gave.'
+given:
+  tenant: demo
+  role: {name: ops-runner, insight: {max_open_proposals: 5, max_per_week: 5}}
+cases:
+- id: prp-14-a
+  description: a second open proposal of the same bot is refused
+  given:
+    proposals:
+    - {id: p_01JB0000000000000000001401, state: presented, origin: {level: 0, acting_bot: bot_17}}
+  steps:
+  - occur: {proposal_submitted: {acting_bot: bot_17, kind: manifest_change, field: spec.cron, target: {kind: Schedule, name: db-report}}}
+    expect: {result: rejected, reason: proposal_rate_limited, records_created: 0, events: [proposal.rejected.v1]}
+- id: prp-14-b
+  description: a proposal parked by a conflict with another author's accepted proposal does not take the slot
+  given:
+    proposals:
+    - {id: p_01JB0000000000000000001402, state: realizing, origin: {level: 0, acting_bot: bot_21}, change: {kind: manifest_change, field: spec.cron, target: {kind: Schedule, name: report-nightly}}}
+    - {id: p_01JB0000000000000000001403, state: parked, state_reason: conflict, conflict_with: p_01JB0000000000000000001402, origin: {level: 0, acting_bot: bot_17}}
+  steps:
+  - occur: {proposal_submitted: {acting_bot: bot_17, kind: manifest_change, field: spec.cron, target: {kind: Schedule, name: db-report}}}
+    expect: {result: ok, state: screened}
+- id: prp-14-c
+  description: small steps do not get around the frequency limit
+  given:
+    applied_history:
+      schedule: report-hourly
+      field: spec.cron
+      values:
+      - {applied_at: '2026-08-20T00:00:00Z', value: '0 * * * *'}
+      - {applied_at: '2026-09-20T00:00:00Z', value: '0 */2 * * *'}
+    now: '2026-11-18T00:00:00Z'
+  steps:
+  - occur: {proposal_submitted: {acting_bot: bot_17, kind: manifest_change, field: spec.cron, target: {kind: Schedule, name: report-hourly}, to: '0 */3 * * *'}}
+    expect: {result: rejected, reason: forbidden_change, note: 'value 90 days ago gives 720 runs per 30 days; the new one gives 240, below 360'}
+  - occur: {proposal_submitted: {acting_bot: bot_17, kind: manifest_change, field: spec.cron, target: {kind: Schedule, name: report-hourly}, to: '0 */2 * * *'}}
+    expect: {result: ok, note: 360 runs per 30 days is exactly half}

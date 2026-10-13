@@ -1,0 +1,41 @@
+id: agg-04
+rules: [AGG-3]
+version: v0.2
+description: 'An aggregator does not read other aggregators at run time. The tool proposals_query of the aggregator ops-aggregator
+  returns decided proposals of functionaries (origin.level 0) and its own proposals, and no proposal of another aggregator
+  (origin.level 1, role net-aggregator), even when the mock model asks for that role by name. messages_digest returns no kind
+  that is not in aggregate.sources.message_kinds.'
+given:
+  tenant: demo
+  roles:
+  - {name: ops-aggregator, profile: aggregator, aggregate: {sources: {roles: [ops-runner], message_kinds: [report.ops.v1]}, max_sources: 50}}
+  - {name: net-aggregator, profile: aggregator, aggregate: {sources: {roles: [net-runner]}, max_sources: 50}}
+  proposals:
+  - {id: p_01JB0000000000000000000041, state: declined, origin: {level: 0, role: ops-runner}}
+  - {id: p_01JB0000000000000000000042, state: realized, origin: {level: 1, role: ops-aggregator}}
+  - {id: p_01JB0000000000000000000043, state: realized, origin: {level: 1, role: net-aggregator}}
+steps:
+- call:
+    port: P3
+    op: tools/call
+    request:
+      name: proposals_query
+      arguments: {role: net-aggregator}
+  by: role:ops-aggregator
+  expect: {result: ok, proposals: []}
+- call:
+    port: P3
+    op: tools/call
+    request:
+      name: proposals_query
+      arguments: {}
+  by: role:ops-aggregator
+  expect: {result: ok, proposal_ids: [p_01JB0000000000000000000041, p_01JB0000000000000000000042]}
+- call:
+    port: P3
+    op: tools/call
+    request:
+      name: messages_digest
+      arguments: {kind: report.netops.v1}
+  by: role:ops-aggregator
+  expect: {result: rejected, reason: forbidden}

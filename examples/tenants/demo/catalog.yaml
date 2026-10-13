@@ -77,6 +77,8 @@ spec:
       format: id
       values: [bathy-50m, map-areas]
       data_class: internal
+      # From v0.2 (PRV-4): the person responsible for the data agreed to show it to the model.
+      model_exposure: full
     - id: data-raw
       title: "Raw data directory on db1"
       host: db1

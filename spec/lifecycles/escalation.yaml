@@ -57,7 +57,9 @@ machines:
       - dismissed
       text: '`dismissed`'
     by: same
-    when: the schema, the subject, the rate or the evidence failed; the chain depth is greater than 5 (`chain_too_deep`, PRM-6)
+    when: 'the schema, the subject or the evidence failed; a rate is exceeded (`escalation_rate_limited`); the chain depth
+      is greater than 5 (`chain_too_deep`, PRM-6). A duplicate within 1 hour creates no record: `dup_count` of the first one
+      grows'
     rules:
     - MGR-5
     - MGR-6
@@ -146,7 +148,7 @@ machines:
       text: '`dismissed`'
     by: the core
     when: the score is below the threshold; the lens reason is from the list (`evidence_below_threshold`, `covered_by_alarm`,
-      `out_of_scope`)
+      `out_of_scope`); or 30 escalations were already forwarded today across the farm (`escalation_rate_limited`)
     rules:
     - MGR-6
   - from:

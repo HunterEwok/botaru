@@ -1,0 +1,71 @@
+id: dig-05
+rules: [DIG-6, APR-14, PRP-4]
+version: v0.2
+description: '"Lift veto" on an audit sample item with a veto. carol answered "Would accept", has proposal.override_veto:capacity
+  and action rights are not needed for a manifest_change. Without opening "Details" of this card the core refuses with
+  details_not_opened; after P1 card.details it writes an audit record, sets veto_overridden, and creates the object of the
+  ordinary path, the same as "Accept": the proposal moves to realizing with an executor, a deadline and a trial record. The
+  author gets no credit and no promotion trigger. alice, who has only proposal.decide:capacity, gets forbidden.'
+given:
+  tenant: demo
+  people:
+  - principal: human:carol
+    caps: ['proposal.decide:capacity', 'proposal.override_veto:capacity']
+  - principal: human:alice
+    caps: ['proposal.decide:capacity']
+  proposal:
+    id: p_01JB0000000000000000000503
+    state: sample_judged
+    category: capacity
+    origin: {level: 0, acting_bot: bot_17}
+    verdict: {outcome: dismissed, reason: veto, veto_lenses: [operational]}
+    change: {kind: manifest_change, field: max_running, target: {kind: DispatchRule, name: report-nightly}, from: 2, to: 3}
+    sample: {month: '2026-11', stratum: veto_operational, inclusion_prob: 0.5, answer: would_accept}
+steps:
+- call:
+    port: P1
+    op: decide
+    request: {subject_kind: proposal, id: p_01JB0000000000000000000503, decision: accept}
+  by: human:carol
+  chat: carol-dm
+  card: proposal_sample_card
+  expect: {result: rejected, note: an item with a veto has no Accept button}
+- call:
+    port: P1
+    op: decide
+    request: {subject_kind: proposal, id: p_01JB0000000000000000000503, decision: override_veto}
+  by: human:alice
+  chat: alice-dm
+  card: proposal_sample_card
+  expect: {result: denied, reason: forbidden}
+- call:
+    port: P1
+    op: decide
+    request: {subject_kind: proposal, id: p_01JB0000000000000000000503, decision: override_veto}
+  by: human:carol
+  chat: carol-dm
+  card: proposal_sample_card
+  expect: {result: rejected, reason: details_not_opened, state: sample_judged}
+- call:
+    port: P1
+    op: card.details
+    request: {op: card.details, subject_kind: proposal, id: p_01JB0000000000000000000503}
+  by: human:carol
+  chat: carol-dm
+  card: proposal_sample_card
+  expect: {result: ok}
+- call:
+    port: P1
+    op: decide
+    request: {subject_kind: proposal, id: p_01JB0000000000000000000503, decision: override_veto}
+  by: human:carol
+  chat: carol-dm
+  card: proposal_sample_card
+  expect:
+    state: realizing
+    veto_overridden: true
+    audit: {action: proposal.override_veto, actor: 'human:carol'}
+    trial: {state: pending}
+    realization: {realizer_assigned: true}
+    credit_to_author: false
+    promotion_trigger: false

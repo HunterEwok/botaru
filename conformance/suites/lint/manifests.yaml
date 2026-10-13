@@ -112,7 +112,7 @@ checks:
   - MON-8
   version: v0.1
   section: Tests without a model
-  source: docs/quality.md:397
+  source: docs/quality.md:403
   spec:
     What: '`no_card: [stop]`; `no_card: []`'
     Expectation: the first fails `apply`; the second passes, and a restart goes through a card
@@ -123,7 +123,7 @@ checks:
   - MAN-9
   version: v0.1
   section: Tests without a model
-  source: docs/quality.md:403
+  source: docs/quality.md:409
   spec:
     What: '`risk: routine` without `writes_only` or `runs_per_day`; with `approvals: 2`'
     Expectation: '`apply` rejects the action'
@@ -133,7 +133,7 @@ checks:
   - PRM-16
   version: v0.1
   section: Tests without a model
-  source: docs/quality.md:454
+  source: docs/quality.md:460
   spec:
     What: a group with `action.request` in `delegated_groups`
     Expectation: '`apply` rejects the tenant'
@@ -143,7 +143,7 @@ checks:
   - INJ-4
   version: v0.1
   section: Tests without a model
-  source: docs/quality.md:484
+  source: docs/quality.md:490
   spec:
     What: 'a tool with `placement: host` and `untrusted_output: true` without `redact: [ip, email, secret]`'
     Expectation: '`apply` rejects the plugin'
@@ -153,7 +153,7 @@ checks:
   - DEP-11
   version: v0.1
   section: Tests without a model
-  source: docs/quality.md:485
+  source: docs/quality.md:491
   spec:
     What: 'a `demo` catalog with `monitor_host: core1.example.org` or a resource with `host: core1`'
     Expectation: '`apply` rejects the catalog: `core1` is in the deployment''s `farm_hosts` (case `ops-030`)'

@@ -1,5 +1,5 @@
 registry: reasons
-version: 4
+version: 5
 description: 'Closed registry of reasons: end of an attempt, refusals at enqueue and at a call, waiting, outcomes of calls,
   approvals and deliveries, and also codes of other parts of the farm. A worker in P1 `fail` passes only a code from here; there is no free
   reason text in the records. Record fields: `meaning` (what it means); `spends_attempt` (whether it spends an attempt: true,
@@ -945,18 +945,18 @@ entries:
   rules: [MGR-6]
 - id: chain_too_deep
   since: v0.2
-  meaning: The chain of requests is too deep.
+  meaning: The chain of requests is too deep (more than 5); an escalation with it is dismissed.
   spends_attempt: null
   retry: null
   outcome: rejected
   rules: [MGR-6]
 - id: grant_not_eligible
   since: v0.2
-  meaning: A model grant cannot be requested for this task.
+  meaning: A model grant cannot be requested for this task; there is no sign that the model does not control (MGR-40).
   spends_attempt: null
   retry: null
   outcome: rejected
-  rules: []
+  rules: [MGR-17, MGR-40]
 - id: grant_over_budget
   since: v0.2
   meaning: The model grant exceeds the budget.
@@ -1330,3 +1330,31 @@ entries:
   retry: null
   outcome: rejected
   rules: [MGR-6]
+- id: escalation_rate_limited
+  since: v0.2
+  meaning: 'An escalation is over a rate: a second one in the same attempt, 1 per hour per worker, 5 per day per role in the tenant, 20 per day per tenant, or 30 forwarded per day across the farm.'
+  spends_attempt: null
+  retry: null
+  outcome: rejected
+  rules: [MGR-5, MGR-6]
+- id: takeover_untrusted
+  since: v0.2
+  meaning: The manager attempt has untrusted_seen; a takeover is forbidden.
+  spends_attempt: null
+  retry: null
+  outcome: rejected
+  rules: [MGR-21, MGR-22]
+- id: takeover_not_allowed
+  since: v0.2
+  meaning: 'No takeover for this task: the type is not on the tenant takeover list, the group has no task.takeover:<type>, or the tenant takeover line is 0.'
+  spends_attempt: null
+  retry: null
+  outcome: rejected
+  rules: [MGR-21]
+- id: eval_report_missing
+  since: v0.2
+  meaning: 'apply of a production tenant: a role of tier 1 or higher, or a translator role, has no eval report entry with zero security failures for its static fingerprint.'
+  spends_attempt: null
+  retry: null
+  outcome: rejected
+  rules: [PRV-3, TRN-6]

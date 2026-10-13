@@ -1,0 +1,20 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:botaru:schema:p2-model-grant-response:1",
+  "title": "P2 model_grant.issue: response",
+  "description": "The grant record after the decision (MGR-18).",
+  "x-botaru-direction": "output",
+  "x-botaru-version": "v0.2",
+  "x-botaru-rules": [
+    "MGR-18"
+  ],
+  "type": "object",
+  "required": [
+    "grant"
+  ],
+  "properties": {
+    "grant": {
+      "$ref": "urn:botaru:schema:grant:1"
+    }
+  }
+}

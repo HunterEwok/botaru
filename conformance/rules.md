@@ -85,11 +85,11 @@ Checked by: `agg-03`
 <a id="AGG-3"></a>
 ### AGG-3. One level of aggregators in a tenant
 
-since v0.2 · non-waivable · profile insights · check: lint · decisions: D-17
+since v0.2 · non-waivable · profile insights · check: lint, blackbox · decisions: D-17
 
-A tenant has one level of aggregators: an aggregator reads only the sources listed in its `sources`, no more than `max_sources`, and does not read other aggregators or their proposals. A violation fails `apply`.
+A tenant has one level of aggregators. An aggregator reads only the sources listed in its `aggregate.sources`, and it does not read other aggregators or their proposals. `max_sources` limits the number of source entries: roles, bot groups, series and message kinds together. `apply` rejects an aggregator role that names a role of profile `aggregator` in `sources.roles` or through a bot group in `sources.bot_groups` (`aggregator_source_aggregator`), and one with more entries than `max_sources` (`aggregator_sources_over_max`). At run time `proposals_query` returns no proposal of another aggregator (`origin.level` 1), and `messages_digest` returns no kind outside `sources.message_kinds`.
 
-Checked by: `agg-02`
+Checked by: `agg-02`, `agg-04`
 
 <a id="AGG-4"></a>
 ### AGG-4. Aggregator marks do not drop
@@ -103,7 +103,7 @@ The `data_mark` of an aggregator's rollup and proposal equals the highest mark o
 
 since v0.2 · non-waivable · profile insights · check: blackbox · decisions: D-17, D-23
 
-There is no aggregation across tenants: an aggregator process serves one tenant (TEN-4), and the read tools return only that tenant's records. Only core code builds a farm-wide view, for `farm` operators, from the allowlist metadata of OBS-1; no bot attempt reads records of several tenants (TEN-5). A canary in a series of tenant A does not appear in any request, model call or proposal of tenant B or of tenant `farm`.
+There is no aggregation across tenants: an aggregator process serves one tenant (TEN-4), and the read tools return only that tenant's records. No bot attempt reads records of several tenants (TEN-5). `farm` operators see the farm as a whole through the OBS-1 metrics in the monitoring system and through the manager's daily digest (MGR-41), not through a bot. A canary in a series of tenant A does not appear in any request, model call or proposal of tenant B or of tenant `farm`.
 
 Checked by: `agg-01`
 
@@ -912,16 +912,18 @@ Checked by: `dig-02`, `dig-03`
 <a id="DIG-4"></a>
 ### DIG-4. Feedback from human decisions
 
-since v0.2 · waivable · profile insights · check: store, lint · decisions: D-16
+since v0.2 · waivable · profile insights · check: store · decisions: D-16
 
-The reason for "Reject" comes from the closed list `spec/model/decline-reasons.yaml`; free feedback text is stored in the class `content` and is always untrusted. Code computes the decision statistics; they change only numbers within limits declared in git (the check threshold or `max_per_week` for the pair "role, category"), and never instructions, skills or manifests (INJ-10).
+The reason for "Reject" comes from the closed list `spec/model/decline-reasons.yaml`; there is no free feedback text. Code computes the decision statistics by role and category as the series `farm.proposals.accept_share` and `farm.proposals.decline_reason_share`. The statistics are input for the analysis and for people. The core changes nothing by itself because of them: a check threshold or `max_per_week` changes only by a proposal or a commit in git, and the statistics never change instructions, skills or manifests (INJ-10).
+
+Checked by: `dig-09`
 
 <a id="DIG-5"></a>
 ### DIG-5. An audit sample from three strata by a recorded seed
 
 since v0.2 · non-waivable · profile insights · check: store, fixture, blackbox · decisions: D-16
 
-Every month the core picks audit sample items from three strata of the tenant's proposals with a commission verdict for that month: `dismissed` by veto or by the minimum of a veto lens (separately for each such lens), `dismissed` by the weighted mean, and `parked` by score (not by quorum, budget or conflict). The choice is random by a seed that the core records at the time of the choice; each item stores its inclusion probability (`inclusion_prob`). There are no fewer items than `audit_sample.min_per_month` (lint: no fewer than 4) and no fewer than the share `audit_sample.share` of the size of the strata, but no more than the strata hold; each non-empty stratum gives at least one item. Items go in the digest to people with `proposal.decide:<category>`, no more than `audit_sample.max_per_digest` at a time. Code computes per stratum over 180 days the share of "Would accept" answers with weights 1/`inclusion_prob` and sets the flag `commission_underrates`, visible to people, when the lower bound of the 90 percent interval of this share is above 0.1.
+Every month the core picks audit sample items from three strata of the tenant's proposals with a commission verdict for that month: `dismissed` by veto or by the minimum of a veto lens (separately for each such lens; a proposal vetoed by several lenses goes to the first veto lens in `lenses.yaml` order), `dismissed` by the weighted mean, and `parked` by score (not by quorum, budget or conflict). The size is N = min(T, max(`min_per_month`, ceil(`share` × T))), where T is the size of the strata; `min_per_month` is at least 4 by lint. Each non-empty stratum gives one item; the rest go by the largest remainder of the proportional share, and ties go by stratum order. Inside a stratum the core takes the items with the smallest HMAC-SHA256(seed, proposal id). The core records the seed at the time of the choice; each item stores in the `sample` field of the proposal its stratum and its inclusion probability (`inclusion_prob`). Blind cards go in the digest only by direct message to people with `proposal.decide:<category>`, no more than `audit_sample.max_per_digest` at a time; a group digest shows only their number. Code computes per stratum over 180 days the share of "Would accept" answers with weights 1/`inclusion_prob` and sets the flag `commission_underrates`, visible to people in P2 `commission.status`, when the lower bound of the 90 percent Wilson interval (z = 1.645) on the effective size (Σw)²/Σw² is above 0.1; a stratum with fewer than 5 answers gets no flag.
 
 Checked by: `dig-06`
 
@@ -948,7 +950,9 @@ Checked by: `dig-07`
 
 since v0.2 · waivable · profile insights · check: store · decisions: D-16
 
-No later than one day after the end of the trial window, the proposal's row in "My outcomes" gets the trial figures: the metric value before and after, the change over all points and without the author bot's points, and the guard that triggered, if any. In the analysis input such rows come before the rows with only a human decision.
+No later than one day after the end of the trial window, the proposal's row in "My outcomes" gets the trial figures: the metric value before and after, the change over all points, without the author bot's points and without the points of the author's role (`change_without_role`, PRP-22), and the guard that triggered, if any.
+
+Checked by: `dig-08`
 
 <a id="dlv"></a>
 ## DLV: Delivery
@@ -2377,16 +2381,18 @@ Checked by: `mgr-inj-04`, `fx-mgr-11`
 
 since v0.2 · non-waivable · profile manager · check: lint, fixture · decisions: D-18
 
-A bot escalates to the manager only with the built-in tool `escalate` (a `job` worker through P1 `escalation.submit`) from a live attempt, no more than one escalation per attempt; the record is published at the end of the attempt together with the result and the attempt's `untrusted_seen` value. The fields are closed: `category`, `subject`, `observed`, `requested_response`, `urgency`, `note`; the subject is only its own worker, its own task tree or a catalog resource from the task's scope. `note` is untrusted: neither the lens nor the manager sees it, only the tenant's people in P2. A message cannot be addressed to seat roles, and the bot gets no answer to an escalation.
+A bot escalates to the manager only with the built-in tool `escalate` (a `job` worker through P1 `escalation.submit`) from a live attempt, no more than one escalation per attempt; the record is published at the end of the attempt together with the result and the attempt's `untrusted_seen` value. The fields are closed: `category`, `subject`, `observed`, `requested_response`, `urgency`, `note`; the subject is only its own worker, its own task tree or a catalog resource from the task's scope. The call answers only `{staged: true}`; a second call in the same attempt gets `escalation_rate_limited`. `note` is untrusted: neither the lens nor the manager sees it, only the tenant's people in P2. A message cannot be addressed to seat roles, and the bot gets no answer to an escalation.
+
+Checked by: `fx-mgr-escalation`, `mgr-inj-03`
 
 <a id="MGR-6"></a>
 ### MGR-6. Escalation screening
 
 since v0.2 · non-waivable · profile manager · check: fixture, eval · decisions: D-18, D-63
 
-Code checks an escalation's schema, subject, rate (per worker 1 per hour, per role in a tenant 5 per day, per tenant 20 per day, forwarded across the whole farm 30 per day) and duplicates within 1 hour, rereads the evidence, merges the escalation with an open incident or a firing alarm on the same subject, including an alarm raised for a monitoring system problem (MON-5) (`merged`), and refuses if the request has a normal path (`dismissed(use_normal_path)`). The remaining escalations are assessed by the necessity lens of the source tenant's commission (COM-13); code computes the verdict from the `escalation` section of the commission manifest, with a higher threshold for untrusted ones. For a forwarded escalation the core enqueues the task `manager.escalations.v1` with key `system:escalation:<attempt>` (IDM-2) in class 3, and with `urgency: high` in class 1 through the `control` lane (DSP-5). Without money on the `review` line the escalation is not forwarded to the manager: the tenant's people see it as a number in the summary, and an urgent one also as a code template. A chain deeper than 5 is rejected (`chain_too_deep`).
+Code checks an escalation's schema, subject and rate (per worker 1 per hour, per role in a tenant 5 per day, per tenant 20 per day); an escalation over a rate is dismissed with `escalation_rate_limited`. A duplicate within 1 hour raises `dup_count` of the first record and creates no new one. Code rereads the evidence, merges the escalation with an open incident or a firing alarm on the same subject, including an alarm raised for a monitoring system problem (MON-5) (`merged`), and refuses if the request has a normal path (`dismissed(use_normal_path)`). A chain deeper than 5 is dismissed (`dismissed(chain_too_deep)`). The remaining escalations are assessed by the necessity lens of the source tenant's commission (COM-13); code computes the verdict from the `escalation` section of the commission manifest, with a higher threshold for untrusted ones. For a forwarded escalation the core enqueues the task `manager.escalations.v1` with key `system:escalation:<attempt>` (IDM-2) in class 3, and with `urgency: high` in class 1 through the `control` lane (DSP-5). No more than 30 escalations per day are forwarded across the whole farm; the next one is dismissed with `escalation_rate_limited`. Without money on the `review` line the escalation is not forwarded to the manager (`parked`): the tenant's people see it as a number in the summary, and an urgent one also as a code template.
 
-Checked by: `mgr-inj-03`, `mgr-inj-05`
+Checked by: `fx-mgr-escalation`, `mgr-inj-03`, `mgr-inj-05`
 
 <a id="MGR-7"></a>
 ### MGR-7. Incident catalog
@@ -2479,16 +2485,16 @@ The seat holder does not change, with operations or with proposals: the seat, th
 
 since v0.2 · non-waivable · profile manager · check: fixture, eval · decisions: D-18, D-21
 
-An executor asks for a stronger model only with the built-in tool `request_model_grant` (a `job` worker through P1 `grant.request`), and the tool is present in an attempt only if the role has a ladder `model_grants.ladder` and the tenant's `grant` line is greater than 0. The fields are closed (`reason`, `evidence`, `requested_profile`, `benefit`, `attempts`, `note`); the profile is from the ladder ∩ those allowed to the tenant, never the seat profile; one request per task. Code derives the right to ask only from signs that the model does not control (initial input above the task class threshold from git, the type's history, MGR-40), not from failures of this attempt. Code checks the evidence, the price, the budget and the rate; the attempt ends without spending with `awaiting_model_grant`, and the task waits with `model_grant_pending`.
+An executor asks for a stronger model only with the built-in tool `request_model_grant` (a `job` worker through P1 `grant.request`), and the tool is present in an attempt only if the role has a ladder `model_grants.ladder` and the tenant's `grant` budget line is greater than 0. The fields are closed (`reason`, `evidence`, `requested_profile`, `benefit`, `attempts`, `note`); the profile is from the ladder ∩ those allowed to the tenant, never the seat profile; one request per task. Code derives the right to ask only from signs that the model does not control (initial input above `grant.input_tokens_min` of the task type, the type's history, MGR-40), not from failures of this attempt; without a sign the request gets `grant_not_eligible`. Code checks the evidence, the price, the budget and the rate; the call answers only `{staged: true}`, the attempt ends without spending with `awaiting_model_grant`, and the task waits with `model_grant_pending`.
 
-Checked by: `mgr-inj-02`, `gov-res-01`, `gov-res-sandbag-01`
+Checked by: `mgr-inj-02`, `gov-res-01`, `gov-res-sandbag-01`, `mgr-grant-inflate-01`, `fx-mgr-09`
 
 <a id="MGR-18"></a>
 ### MGR-18. Grant and the model gateway
 
 since v0.2 · non-waivable · profile manager · check: adapter, store · decisions: D-18, D-21
 
-A grant is decided by the seat holder with the current epoch or by a person with `model_grant.manage` through P2 `model_grant.issue` within the same line; a person can revoke it through `model_grant.revoke`. The grant record: task, role, profile, no more than 2 attempts, the amount `cap_eur` (in euros, stored in euro cents, BUD-9), an expiry of no more than 6 h, line `grant`, who decided, a distrust flag. The code ceilings (attempts, expiry, line `grant`, `seat_grants_eur_day`) apply to any decision. Before each call under a grant, P4 reserves the worst case in the remainder of `cap_eur` and in line `grant` (GW-2); a call that does not fit does not start, the attempt is not spent, and the grant moves to `consumed`. The output limit is set by the profile's `max_output_tokens`. P4 allows a model only from the role's slot (`base`, `analysis`), from an active grant of this task (`granted`) or from the seat profile for attempts on behalf of the seat with the current epoch (`seat`). A grant does not change tools, tier, permissions or other budget lines, ends together with the task and does not enter the track record. No decision within `grant_wait_max` (15 minutes): refusal `grant_expired_unanswered`, and the task continues on the base model.
+A grant is decided by the seat holder with the current epoch (`grant_decide`) or by a person with `model_grant.manage` through P2 `model_grant.issue` within the same line; a person can revoke it through `model_grant.revoke`. The grant record: `kind: grant`, task, role, profile, no more than 2 attempts, the amount `cap_eur` (in euros, stored in euro cents, BUD-9), an expiry of no more than 6 h, line `grant`, who decided, a distrust flag. The code ceilings (attempts, expiry, line `grant`, `seat_grants_eur_day`) apply to any decision. Before each call under a grant, P4 reserves the worst case in the remainder of `cap_eur` and in line `grant` (GW-2); a call that does not fit does not start, the attempt is not spent, and the grant moves to `consumed`. The output limit is set by the profile's `max_output_tokens`. P4 allows a model only from the role's slot (`base`, `analysis`), from an active grant of this task (`granted`) or from the seat profile for attempts on behalf of the seat with the current epoch (`seat`). A grant does not change tools, tier, permissions or other budget lines, ends together with the task and does not enter the track record. No decision within `grant_wait_max` (15 minutes): refusal `grant_expired_unanswered`, and the task continues on the base model.
 
 Checked by: `fx-mgr-08`, `fx-mgr-09`, `mgr-02`, `mgr-03`
 
@@ -2506,7 +2512,9 @@ Checked by: `fx-mgr-line-too-small`, `fx-mgr-review-off-production`
 
 since v0.2 · non-waivable · profile manager · check: store, fixture · decisions: D-18, D-21
 
-A takeover creates a new task in tenant T of the same type with key `system:takeover:<task>` (IDM-2) and a grant of the seat profile for 1 attempt, only with the group permission `task.takeover:<type>`, a `takeover` line of the tenant greater than 0 (0 by default), a target from the code list and the approval of a person of T with `model_grant.manage` (card `takeover_confirm`, `decide(subject_kind: takeover)`); the threshold `confirm_above_eur` is 0 by default, so there is always a card. The original task is canceled as `superseded_by_takeover`. The manager gets only a closed result. With `untrusted_seen` on the manager's attempt, takeover is forbidden.
+A takeover creates a new task in tenant T of the same type with key `system:takeover:<task>` (IDM-2) and a grant of `kind: takeover` on the seat profile for 1 attempt in the tenant's `takeover` budget line. It needs all of these: the type is on the tenant list `takeover.types` (empty by default), the group permission `task.takeover:<type>`, a `takeover` line greater than 0 (0 by default), and the approval of a person of T with `model_grant.manage` (card `takeover_confirm`, `decide(subject_kind: takeover)`). Otherwise the refusal is `takeover_not_allowed`. The threshold `takeover.confirm_above_eur` is 0 by default, so there is always a card. The original task is canceled as `superseded_by_takeover`. The manager gets only a closed result. With `untrusted_seen` on the manager's attempt, takeover is forbidden (`takeover_untrusted`).
+
+Checked by: `fx-mgr-takeover`
 
 <a id="MGR-22"></a>
 ### MGR-22. Distrust mode
@@ -2522,7 +2530,7 @@ Checked by: `mgr-inj-07`
 
 since v0.2 · waivable · profile manager · check: eval · decisions: D-18, D-52
 
-Before the first real work of a new holder and after a change of the seat model profile, the eval set `mgr-inj-*` passes on that profile; until it passes, the core does not hand out seat tasks in production tenants (`kind: production`, APR-9). Only a test bench without production tenants, that is a farm with no `kind: production` tenant at all, may put this rule into the expected failures (`expected-failures`).
+Before the first real work of a new holder and after a change of the seat model profile, the eval set `mgr-inj-*` passes on that profile: the `EvalReports` index has an entry for this seat profile and the set `mgr-inj` with zero security failures. Until then the core does not hand out seat tasks in production tenants (`kind: production`, APR-9): they wait with `seat_eval_missing`, and the `farm` operators get a notice. Only a test bench without production tenants, that is a farm with no `kind: production` tenant at all, may put this rule into the expected failures (`expected-failures`).
 
 Checked by: `mgr-inj-01`, `mgr-inj-02`, `mgr-inj-03`, `mgr-inj-04`, `mgr-inj-05`, `mgr-inj-06`, `mgr-inj-07`
 
@@ -2666,7 +2674,7 @@ Checked by: `fx-mgr-one-message`
 
 since v0.2 · waivable · profile manager · check: eval, lint · decisions: D-18, D-21
 
-The sign "input above the threshold" is counted only from the task's initial input: the body, attachments and blocks that the core inserted at enqueue (facts, instructions), without tool output and without context the attempt gathered itself; the reason `context_too_large` is accepted only when the initial input is above the task class threshold from git. The sign "type history" is counted in only one of two ways: by code, with a run of the type's fixed set of inputs (`grant_eval_set` in git) on the base model, or by a human mark `grant_eligible: true` in the type manifest. No sign of the right to a stronger model depends on signals produced by attempts of the executor itself, its role or its profile. No more than 3 grant requests per day are accepted per role in a tenant (`grant_limits.requests_per_role_day`, 3); extra ones get `grant_rate_limited` without a task for the manager. The failure share of the type's work attempts is only shown to the seat holder.
+The sign "input above the threshold" is counted only from the task's initial input: the body, attachments and blocks that the core inserted at enqueue (facts, instructions), without tool output and without context the attempt gathered itself; the reason `context_too_large` is accepted only when the initial input is above `grant.input_tokens_min` of the task type. The sign "type history" is counted in only one of two ways: by code, when the `EvalReports` entry of the type's fixed set of inputs (`grant_eval_set` in git) run on the base model has `base_fail_share` not below `grant_limits.eval_fail_share_min` (0.3 by default), or by a human mark `grant_eligible: true` in the type manifest. No sign of the right to a stronger model depends on signals produced by attempts of the executor itself, its role or its profile. No more than 3 grant requests per day are accepted per role in a tenant (`grant_limits.requests_per_role_day`, 3); extra ones get `grant_rate_limited` without a task for the manager. The failure share of the type's work attempts is only shown to the seat holder.
 
 Checked by: `gov-res-sandbag-01`, `gov-res-sandbag-02`, `mgr-grant-inflate-01`, `mgr-02`
 
@@ -3571,7 +3579,7 @@ Checked by: `prp-10`
 
 since v0.2 · waivable · profile insights · check: store, blackbox · decisions: D-24
 
-A bot has no more than one open proposal (`max_open_per_bot: 1`) on top of the role limits (PRP-5); an extra one gets the refusal `proposal_rate_limited`. A proposal in `parked(conflict)` because of another author's proposal that moved to `realizing` earlier (PRP-9) does not take the bot's slot until the conflict is resolved. The limit on lowering a schedule's frequency is counted cumulatively: the new value of `spec.cron` gives at least half of the runs this schedule had 90 days ago according to the field's history in git.
+A bot has no more than one open proposal on top of the role limits (PRP-5); a worker without a numbered bot counts as one bot. An extra proposal gets the refusal `proposal_rate_limited`. A proposal in `parked(conflict)` because of another author's proposal that moved to `realizing` earlier (PRP-9) does not take the bot's slot until the conflict is resolved. The limit on lowering a schedule's frequency is counted cumulatively: per 30 days, the new value of `spec.cron` gives at least half of the runs of the value applied 90 days earlier, by the history of applied sets. A proposal below that gets `forbidden_change`.
 
 Checked by: `prp-14`
 
@@ -3580,7 +3588,7 @@ Checked by: `prp-14`
 
 since v0.2 · waivable · profile insights · check: store, fixture · decisions: D-24
 
-The core links a proposal with proposals of another author on which people decided in the last 90 days, if they have the same change kind and their targets or fields overlap (`related_to`). People and reviewers see the mark. If the related proposal was accepted or declined, the late proposal earns its author no credit and creates no promotion trigger, although the change itself can pass the commission, the people and the trial as usual. Proposals whose author is a role of profile `manager` (the farm manager in its daily review, MGR-41) are not part of the `related_to` of other authors' proposals and do not take credit away from them: the core computes relatedness only among proposals of seat bots and aggregators (`origin.level` 0 and 1).
+The core links a proposal with proposals of another author on which people decided in the last 90 days, if they have the same change kind and their targets or fields overlap (`related_to`). People and reviewers see the mark. If the related proposal was accepted or declined, the late proposal earns its author no credit and creates no promotion trigger, although the change itself can pass the commission, the people and the trial as usual. Proposals whose author is a role of profile `farm-manager` (the farm manager in its daily review, MGR-41, `origin.level` 2) are not part of the `related_to` of other authors' proposals and do not take credit away from them: the core computes relatedness only among proposals of functionaries and aggregators (`origin.level` 0 and 1).
 
 Checked by: `prp-15`
 
@@ -3662,14 +3670,18 @@ Only the core writes an artifact's `provenance` block, from the records of calls
 
 since v0.2 · non-waivable · profile core · check: lint
 
-`apply` in a production tenant (`kind: production`) does not enable a role of tier 1 and higher if there is no eval report with zero safety failures for its new static fingerprint (the fingerprint without the attempt's catalog). In a test tenant (`kind: test`) such an `apply` passes with a warning. A change of the model, instruction, skill, persona or runtime changes the static fingerprint.
+`apply` in a production tenant (`kind: production`) does not enable a role of tier 1 and higher if the `EvalReports` index has no entry with zero security failures for its new static fingerprint; the refusal is `eval_report_missing`. In a test tenant (`kind: test`) such an `apply` passes with a warning. The static fingerprint is the run fingerprint without the attempt's catalog (`spec/hashing.md`): the role, its types, skills, the persona of its position, the `base` and `analysis` model profiles, the core agent loop version and the sandbox digest. A change of any of them changes the static fingerprint.
+
+Checked by: `fx-prv-03`
 
 <a id="PRV-4"></a>
 ### PRV-4. Exposure of datasets to the model
 
-since v0.2 · non-waivable · profile core · check: lint
+since v0.2 · non-waivable · profile core · check: lint, blackbox
 
-A dataset with `model_exposure: none` is not read by tools of agent roles, only by `job` tasks. A dataset with `model_exposure: aggregates` is read by agent roles only with tools whose output by schema consists of numbers and `enum` values. A dataset with `model_exposure: full` is read by ordinary read tools within the data class.
+A dataset with `model_exposure: none` is not read by tools of agent roles, only by `job` tasks. A dataset with `model_exposure: aggregates` is read by agent roles only with tools whose output by schema consists of numbers and `enum` values (`untrusted_output: false`, INJ-3). A dataset with `model_exposure: full` is read by ordinary read tools within the data class. A dataset without `model_exposure` counts as `aggregates`. `apply` rejects a catalog whose `read_by` breaks this (`model_exposure_agent_read`, `model_exposure_not_aggregate`), and at call time the core refuses the same read with `forbidden`.
+
+Checked by: `fx-prv-04`
 
 <a id="rep"></a>
 ## REP: Reporters
@@ -3697,9 +3709,11 @@ Checked by: `fx-rep-02`, `inj-rep-02`
 <a id="REP-4"></a>
 ### REP-4. Paragraph numbers are checked against the table
 
-since v0.2 · waivable · profile messaging · recommendation · check: fixture, eval · decisions: D-14
+since v0.2 · waivable · profile messaging · recommendation · check: fixture, eval · decisions: D-14, D-95
 
-Each number in the model paragraph matches a number from the table snapshot of the same digest. If even one number does not match, the paragraph is not sent, the digest goes out as the table alone, and the core writes the event `digest.text_dropped`.
+At `complete`, before delivery, code checks each number in the model paragraph against the allowed set of the same digest: the numbers of the rendered table snapshot, shares also as percent, dates and times, the snapshot time, the window bounds and the closed parameters of the task. Tokens are read by the digest `locale`; number words come from a closed list in the message catalog; digits joined to letters are a name, not a number. A number matches when its absolute value, rounded to the precision written, equals an allowed value. If even one number does not match, the paragraph is not sent, the digest goes out as the table alone, and the core writes the event `digest.text_dropped.v1` with counts only (D-95).
+
+Checked by: `fx-rep-08`
 
 <a id="REP-5"></a>
 ### REP-5. Alarms and manager notices bypass the reporter
@@ -3752,6 +3766,8 @@ Checked by: `fx-rep-address`
 since v0.2 · non-waivable · profile messaging · check: fixture, adapter · decisions: D-14, D-48
 
 Digests to one chat binding go out no more often than `ChatBinding.digest.max_per_hour` (by default 1 per hour for a group and 4 for a private chat). If digests pile up faster, the core merges them deterministically: the table of the latest snapshot replaces the previous ones, and the paragraphs of previous digests are dropped; waiting for the pace does not count as a failure (CAP-3). The digest language is taken from `ChatBinding.locale`: table headings, reason codes and button labels come from the message catalog (DLV-9), and the model gets `locale` as a parameter from a closed list.
+
+Checked by: `fx-rep-09`
 
 <a id="REP-11"></a>
 ### REP-11. A type for a group chat declares non-empty summary_fields
@@ -4344,6 +4360,6 @@ Checked by: `trn-03`, `trn-04`, `trn-fx-unsupported`
 
 since v0.2 · waivable · profile campaign · check: eval · decisions: D-11, D-15
 
-A role of profile `translator` is enabled in a tenant only after eval: a correctness set (at least 30 assignments, structural match not below the tenant threshold) and an injection set with a threshold of zero extra steps, actions and widened parameters. Structural match compares step kinds, types, actions, key parameters and the graph; the order of independent steps does not matter. A script draft is on the list of outputs that INJ-12 measures.
+A role of profile `translator` is enabled in a tenant only after eval: a correctness set (at least 30 assignments, structural match not below `evals.translator_structural_match` of the tenant, 0.9 by default) and an injection set with a threshold of zero extra steps, actions and widened parameters. Structural match compares step kinds, types, actions, key parameters and the graph; the order of independent steps does not matter. In a production tenant `apply` reads the result from the `EvalReports` index by the static fingerprint and rejects the role without it (`eval_report_missing`). A script draft is on the list of outputs that INJ-12 measures.
 
 Checked by: `trn-01`, `trn-02`, `trn-03`, `trn-04`, `trn-05`, `trn-06`, `trn-07`, `trn-inj-01`, `trn-inj-02`, `trn-inj-03`, `trn-inj-04`, `trn-inj-05`, `trn-inj-06`

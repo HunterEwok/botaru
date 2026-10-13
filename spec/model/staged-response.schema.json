@@ -1,0 +1,24 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:botaru:schema:staged-response:1",
+  "title": "Staged response",
+  "description": "Answer of a call that stages a record and gives the bot no other answer: escalate and P1 escalation.submit (MGR-5), request_model_grant and P1 grant.request (MGR-17), takeover_request (MGR-21). The record is published at the end of the attempt.",
+  "x-botaru-direction": "output",
+  "x-botaru-version": "v0.2",
+  "x-botaru-rules": [
+    "MGR-5",
+    "MGR-17",
+    "MGR-21"
+  ],
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "staged"
+  ],
+  "properties": {
+    "staged": {
+      "const": true,
+      "description": "The record is staged; it is published with the attempt result."
+    }
+  }
+}

@@ -109,5 +109,11 @@ CODES = {
     'listener_test_in_production': ('test-control listener of the core on a kind: production host', 'DEP-10'),
     'listener_admin_worker_network': ('the P2 listener network is a worker network (note)', 'IDN-7'),
     'tools_list_mismatch': ('the plugin server tools/list output does not match the tools of tool.yaml', 'INJ-2'),
+    'aggregator_source_aggregator': ('an aggregator names an aggregator role among its sources, directly or through a bot group',
+                                     'AGG-3'),
+    'aggregator_sources_over_max': ('an aggregator lists more source entries than max_sources', 'AGG-3'),
+    'model_exposure_agent_read': ('a resource with model_exposure: none is read by a tool of an agent role', 'PRV-4'),
+    'model_exposure_not_aggregate': ('a resource with model_exposure: aggregates is read by an agent tool whose output is not '
+                                     'only numbers and enum values', 'PRV-4'),
     'mcp_annotation_conflict': ('an MCP annotation in tools/list contradicts the manifest access', 'INJ-3'),
 }

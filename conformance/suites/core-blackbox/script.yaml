@@ -9,7 +9,7 @@ checks:
   - SCR-11
   version: v0.1
   section: Tests without a model
-  source: docs/quality.md:327
+  source: docs/quality.md:328
   spec:
     What: run and step transitions by the table of `spec/lifecycles/script.md`, including `on_failure` and run cancelation
     Expectation: allowed transitions pass, the others are rejected
@@ -19,7 +19,7 @@ checks:
   - SCR-7
   version: v0.1
   section: Tests without a model
-  source: docs/quality.md:329
+  source: docs/quality.md:330
   spec:
     What: a `fanout` item outside the list frozen at run approval
     Expectation: not released
@@ -29,7 +29,7 @@ checks:
   - SCR-9
   version: v0.1
   section: Tests without a model
-  source: docs/quality.md:330
+  source: docs/quality.md:331
   spec:
     What: a step takes a field of an agent step with `untrusted_seen` through `items.from`, the condition stands before an
       action

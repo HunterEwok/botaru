@@ -1,5 +1,5 @@
 registry: builtin-tools
-version: 2
+version: 3
 description: >-
   Built-in P3 tools. The core adds them to the tools/list of an attempt at step 7
   of catalog assembly, if the tool allows the role profile (role-profiles.yaml) and
@@ -42,10 +42,9 @@ entries:
     profiles: [worker, manager, reporter]
     purposes: [work, report]
     condition: the type declared the view status.workers
-    args_schema: null
-    result_schema: null
-    schema_note: a schema recorded as null will appear in spec/model together with the tool
-    rules: [PRF-1]
+    args_schema: empty-request.schema.json
+    result_schema: status-workers-result.schema.json
+    rules: [PRF-1, STA-3]
   - id: status.proposals
     since: v0.1
     access: read
@@ -247,10 +246,9 @@ entries:
     access: read
     profiles: [worker, manager]
     purposes: [work]
-    args_schema: null
-    result_schema: null
-    schema_note: a schema recorded as null will appear in spec/model together with the tool
-    rules: [PRF-1]
+    args_schema: escalation-submit-request.schema.json
+    result_schema: staged-response.schema.json
+    rules: [PRF-1, MGR-5]
   - id: request_model_grant
     since: v0.2
     access: read
@@ -258,8 +256,7 @@ entries:
     purposes: [work]
     condition: the role has a model_grants.ladder, the tenant's grant line is greater than 0; one request per task
     args_schema: p1-grant-request.schema.json
-    result_schema: null
-    schema_note: the result schema will appear in spec/model together with the tool in v0.2
+    result_schema: staged-response.schema.json
     rules: [PRF-1, MGR-17]
   - id: grant_decide
     since: v0.2
@@ -267,9 +264,8 @@ entries:
     profiles: [farm-manager]
     purposes: [manage]
     condition: the task manager.grants.v1 as a batch once every 10 minutes; the epoch is current
-    args_schema: null
-    result_schema: null
-    schema_note: a schema recorded as null will appear in spec/model together with the tool
+    args_schema: grant-decide-request.schema.json
+    result_schema: grant-decide-response.schema.json
     rules: [PRF-1, MGR-18]
   - id: escalations_take
     since: v0.2
@@ -295,10 +291,9 @@ entries:
     profiles: [farm-manager]
     purposes: [manage]
     condition: the tenant's consent group has task.takeover:<type>
-    args_schema: null
-    result_schema: null
-    schema_note: a schema recorded as null will appear in spec/model together with the tool
-    rules: [PRF-1]
+    args_schema: takeover-request.schema.json
+    result_schema: staged-response.schema.json
+    rules: [PRF-1, MGR-21]
   - id: skill_read
     since: v0.2
     access: read

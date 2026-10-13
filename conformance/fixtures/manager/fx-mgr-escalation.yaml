@@ -1,0 +1,72 @@
+id: fx-mgr-escalation
+rules: [MGR-5, MGR-6, COM-13, PRM-6]
+version: v0.2
+description: 'Escalation intake and screening by code. An escalation comes only from a live attempt through escalate (P1
+  escalation.submit for job), at most one per attempt, and is published with the result and untrusted_seen. Code checks the
+  schema, the subject (own worker, own task tree, a catalog resource of the task scope), the rates (1 per hour per worker, 5 per
+  day per role in the tenant, 20 per day per tenant), duplicates within 1 hour (dup_count grows, no new record), the evidence,
+  an open incident or a firing alarm on the subject (merged), a normal path (dismissed(use_normal_path)) and the chain depth (more
+  than 5: dismissed(chain_too_deep)). Without money in the review line the escalation is parked. A forwarded escalation gives the
+  task manager.escalations.v1 with the key system:escalation:<attempt>; class 3, and class 1 through the control lane for
+  urgency high. The 31st forward in a day across the farm is dismissed with escalation_rate_limited.'
+given:
+  tenant: demo
+  tenant_budget: {review: {month_eur: 50}}
+  commission: {escalation: {forward_if_score_gte: 2, untrusted_forward_if_score_gte: 3}}
+  roles: [{name: analyst, profile: worker}]
+cases:
+- id: fx-mgr-escalation-a
+  description: subject outside the allowed kinds
+  steps:
+  - occur: {escalation_submitted: {by_worker: analyst-1, category: other, subject: {kind: worker, id: analyst-2}, urgency: normal}}
+    expect: {result: rejected, stage: schema}
+- id: fx-mgr-escalation-b
+  description: second escalation of the same attempt
+  steps:
+  - occur: {escalation_submitted: {by_worker: analyst-1, attempt: att_1, category: resource_stuck, subject: {kind: resource, id: 'res:ctd1:data'}, urgency: normal}}
+    expect: {state: screened}
+  - occur: {escalation_submitted: {by_worker: analyst-1, attempt: att_1, category: data_risk, subject: {kind: self}, urgency: normal}}
+    expect: {result: rejected, reason: escalation_rate_limited}
+- id: fx-mgr-escalation-c
+  description: rate per worker and duplicates within one hour
+  steps:
+  - occur: {escalation_submitted: {by_worker: analyst-1, attempt: att_2, category: capacity_exhausted, subject: {kind: self}, urgency: normal}}
+    expect: {state: screened}
+  - occur: {escalation_submitted: {by_worker: analyst-1, attempt: att_3, category: capacity_exhausted, subject: {kind: self}, urgency: normal}}
+    at: 20m
+    expect: {records_created: 0, dup_count: 2}
+  - occur: {escalation_submitted: {by_worker: analyst-1, attempt: att_4, category: data_risk, subject: {kind: self}, urgency: normal}}
+    at: 30m
+    expect: {state: dismissed, reason: escalation_rate_limited}
+- id: fx-mgr-escalation-d
+  description: merge with a firing alarm, normal path, chain depth
+  steps:
+  - occur: {alarm_firing: {type: alarm.store.free.low.v1, subject: 'res:ctd1:data'}}
+  - occur: {escalation_submitted: {by_worker: analyst-1, attempt: att_5, category: resource_stuck, subject: {kind: resource, id: 'res:ctd1:data'}, urgency: normal}}
+    expect: {state: merged, lens_tasks: 0}
+  - occur: {escalation_submitted: {by_worker: analyst-2, attempt: att_6, category: other, subject: {kind: self}, requested_response: request_action, urgency: normal}}
+    expect: {state: dismissed, reason: use_normal_path}
+  - occur: {escalation_submitted: {by_worker: analyst-3, attempt: att_7, category: other, subject: {kind: task_tree}, urgency: normal}}
+    context: {chain_depth: 6}
+    expect: {state: dismissed, reason: chain_too_deep}
+- id: fx-mgr-escalation-e
+  description: forward with a necessity lens score, the control lane for urgency high, and a parked one without money
+  steps:
+  - occur: {escalation_submitted: {by_worker: analyst-1, attempt: att_8, category: dependency_down, subject: {kind: task_tree}, urgency: high}}
+    expect: {state: in_review, lens_task: {type: review.escalation.v1, key: 'system:necessity:$last'}}
+  - occur: {lens_review: {score: 2, reason: plausible_risk}}
+    expect:
+      state: forwarded
+      manager_task: {type: manager.escalations.v1, key: 'system:escalation:att_8', priority_class: 1, lane: control}
+      lens_input_has_note: false
+  - occur: {review_line_empty: {tenant: demo}}
+  - occur: {escalation_submitted: {by_worker: analyst-4, attempt: att_9, category: dependency_down, subject: {kind: task_tree}, urgency: normal}}
+    expect: {state: parked, people_summary: {parked_escalations: 1}}
+- id: fx-mgr-escalation-f
+  description: farm-wide forward ceiling
+  given:
+    forwarded_today_farm: 30
+  steps:
+  - occur: {escalation_submitted: {by_worker: analyst-1, attempt: att_10, category: dependency_down, subject: {kind: task_tree}, urgency: normal}}
+  - occur: {lens_review: {score: 3, reason: clear_risk}}
+    expect: {state: dismissed, reason: escalation_rate_limited, manager_tasks: 0}

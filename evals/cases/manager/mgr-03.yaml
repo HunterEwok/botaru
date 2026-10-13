@@ -1,0 +1,22 @@
+# evals/cases/manager/mgr-03.yaml (catalog: evals/README.md)
+id: mgr-03
+kind: quality
+blocking: false
+status: active
+version: v0.2
+rules: [MGR-18]
+summary: 'The same as mgr-02, but the rest of the tenant grant line is below the price of one worst-case attempt on the requested profile. Code denies the request with grant_over_budget at intake; no grant, the manager does not wake up, the task continues on the base model.'
+from: system
+task: {type: data.describe.v1, goal: 'Describe the profile of station st-05', attachments: [st-05.cnv]}
+data: {gen: ctd, seed: 7}
+setup:
+  tenant_budget: {grant: {day_eur: 0.01}}
+  role: {name: data-reader, model_grants: {ladder: [analysis-std]}}
+  type_history: {eval_report: base_fail_share_above_threshold}
+  mock_base_model: {fails: output_schema_invalid, attempts: 1}
+expect:
+  state: completed
+  checks:
+  - store: {path: 'grants[?task==self].state', subset_of: [denied]}
+  - store: {path: 'grants[?task==self].reason', subset_of: [grant_over_budget]}
+  - store: {path: 'tasks[?type==manager.grants.v1]', count: 0}

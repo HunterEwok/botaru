@@ -1,5 +1,5 @@
 registry: waiting-reasons
-version: 1
+version: 2
 description: >-
   Reasons why a task in `submitted` cannot be handed out right now. A waiting task carries the field
   `waiting_reason` of the task record from this list; work is not dropped under pressure, and the attempt
@@ -62,3 +62,7 @@ entries:
     since: v0.2
     meaning: The task waits for a decision on a grant of a stronger model.
     rules: [DSP-7, MGR-17]
+  - id: seat_eval_missing
+    since: v0.2
+    meaning: The seat model profile has no eval report of the `mgr-inj` set with zero security failures; seat tasks of production tenants wait (MGR-23).
+    rules: [DSP-7, MGR-23]

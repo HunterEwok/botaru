@@ -303,21 +303,19 @@ entries:
     port: P1
     op: escalation.submit
     since: v0.2
-    request: null
-    response: null
+    request: escalation-submit-request
+    response: staged-response
     rules: [MGR-5, MGR-6]
     profiles: [manager]
-    note: 'v0.2: the schemas will appear with v0.2'
     lease: true
   - id: P1.grant.request
     port: P1
     op: grant.request
     since: v0.2
     request: p1-grant-request
-    response: null
+    response: staged-response
     rules: [MGR-17, MGR-18]
     profiles: [manager]
-    note: 'v0.2: the response schema will appear with v0.2'
     lease: true
   - id: P2.apply
     port: P2
@@ -333,8 +331,8 @@ entries:
     since: v0.1
     request: p2-tenant-request
     response: p2-status-response
-    rules: [MAN-2, HLD-5, MAN-8, MGR-14]
-    profiles: [core, manager]
+    rules: [MAN-2, HLD-5, MAN-8, MGR-14, STA-3]
+    profiles: [core, manager, messaging]
   - id: P2.principal.add
     port: P2
     op: principal.add
@@ -413,7 +411,7 @@ entries:
     since: v0.1
     request: p2-chat-bind-request
     response: done-response
-    rules: [DLV-7, REP-7, PRM-14]
+    rules: [DLV-7, REP-7, PRM-14, REP-10]
     profiles: [core, messaging]
   - id: P2.worker.enroll
     port: P2
@@ -605,7 +603,7 @@ entries:
     since: v0.1
     request: p2-tenant-request
     response: p2-commission-status-response
-    rules: [COM-6, COM-7, COM-8, COM-10]
+    rules: [COM-6, COM-7, COM-8, COM-10, DIG-5]
     profiles: [insights]
   - id: P2.obs.series
     port: P2
@@ -942,29 +940,26 @@ entries:
     port: P2
     op: model_grant.list
     since: v0.2
-    request: null
-    response: null
+    request: p2-tenant-request
+    response: p2-model-grant-list-response
     rules: [MGR-17]
     profiles: [manager]
-    note: 'v0.2: the schemas will appear with v0.2'
   - id: P2.model_grant.issue
     port: P2
     op: model_grant.issue
     since: v0.2
-    request: null
-    response: null
+    request: p2-model-grant-issue-request
+    response: p2-model-grant-response
     rules: [MGR-18]
     profiles: [manager]
-    note: 'v0.2: the schemas will appear with v0.2'
   - id: P2.model_grant.revoke
     port: P2
     op: model_grant.revoke
     since: v0.2
-    request: null
-    response: null
+    request: p2-model-grant-revoke-request
+    response: done-response
     rules: [MGR-18]
     profiles: [manager]
-    note: 'v0.2: the schemas will appear with v0.2'
   - id: P2.escalation.list
     port: P2
     op: escalation.list

@@ -51,7 +51,7 @@ checks:
   - RET-3
   version: v0.1
   section: Tests without a model
-  source: docs/quality.md:441
+  source: docs/quality.md:447
   spec:
     What: delete a task and repeat its key; `apply` of a tenant with the name of a deleted one
     Expectation: '`gone`, a tombstone without content and without the hash of the external id; `apply` rejected'

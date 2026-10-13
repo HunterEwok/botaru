@@ -1,0 +1,55 @@
+id: fx-prv-04
+rules: [PRV-4]
+check: lint:catalog/model-exposure
+description: >-
+  Exposure of datasets to the model. A catalog resource with model_exposure none is read only by tools of job roles: a tool in
+  its read_by that a role with worker_kind agent has fails apply. With aggregates every tool in read_by that an agent role has
+  must have untrusted_output false, which INJ-3 allows only for an output schema of numbers and enum values. With full the
+  ordinary read tools within the data class read it. A dataset without model_exposure counts as aggregates. The example role geo-reader (agent) has geo/describe, whose output is
+  untrusted.
+with_examples: true
+cases:
+  - name: full exposure for an agent read tool
+    manifests:
+      - apiVersion: botaru/v1alpha1
+        kind: Catalog
+        metadata: {name: demo2, tenant: demo2}
+        spec:
+          resources:
+            - {id: geo-data2, title: "Layers", host: app2, read_by: [geo/describe], list: geo_datasets, format: id, values: [bathy-10m], data_class: internal, model_exposure: full}
+          hosts:
+            - {id: app2}
+    expect: ok
+  - name: no exposure, read by an agent tool
+    manifests:
+      - apiVersion: botaru/v1alpha1
+        kind: Catalog
+        metadata: {name: demo2, tenant: demo2}
+        spec:
+          resources:
+            - {id: geo-data2, title: "Layers", host: app2, read_by: [geo/describe], list: geo_datasets, format: id, values: [bathy-10m], data_class: internal, model_exposure: none}
+          hosts:
+            - {id: app2}
+    expect: {error: model_exposure_agent_read}
+  - name: aggregates only, read by a tool with untrusted output
+    manifests:
+      - apiVersion: botaru/v1alpha1
+        kind: Catalog
+        metadata: {name: demo2, tenant: demo2}
+        spec:
+          resources:
+            - {id: geo-data2, title: "Layers", host: app2, read_by: [geo/describe], list: geo_datasets, format: id, values: [bathy-10m], data_class: internal, model_exposure: aggregates}
+          hosts:
+            - {id: app2}
+    expect: {error: model_exposure_not_aggregate}
+  - name: a dataset without model_exposure counts as aggregates
+    manifests:
+      - apiVersion: botaru/v1alpha1
+        kind: Catalog
+        metadata: {name: demo2, tenant: demo2}
+        spec:
+          resources:
+            - {id: geo-data2, kind: dataset, title: "Layers", host: app2, read_by: [geo/describe], list: geo_datasets, format: id, values: [bathy-10m], data_class: internal}
+          hosts:
+            - {id: app2}
+    expect: {error: model_exposure_not_aggregate}

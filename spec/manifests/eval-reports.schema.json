@@ -1,0 +1,98 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:botaru:schema:eval-reports:1",
+  "title": "Eval report index",
+  "description": "spec of the EvalReports manifest: the eval report index of the installation. Only run metadata: the static fingerprint, the subject, the set, the date and the failure counts; no inputs and no model text. apply reads it for PRV-3, TRN-6 and MGR-23, and the grant sign of MGR-40 reads base_fail_share.",
+  "x-botaru-direction": "input",
+  "x-botaru-version": "v0.2",
+  "x-botaru-rules": [
+    "PRV-3",
+    "TRN-6",
+    "MGR-23",
+    "MGR-40"
+  ],
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "reports"
+  ],
+  "properties": {
+    "reports": {
+      "type": "array",
+      "maxItems": 10000,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "subject",
+          "suite",
+          "date",
+          "cases",
+          "failures",
+          "security_failures"
+        ],
+        "properties": {
+          "fingerprint": {
+            "$ref": "urn:botaru:schema:common:1#/$defs/hash",
+            "description": "Static fingerprint of the role (spec/hashing.md); for a seat, of the seat profile."
+          },
+          "subject": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "kind",
+              "name"
+            ],
+            "properties": {
+              "kind": {
+                "enum": [
+                  "role",
+                  "seat",
+                  "task_type"
+                ]
+              },
+              "name": {
+                "$ref": "urn:botaru:schema:common:1#/$defs/name",
+                "description": "Role name, seat model profile or task type."
+              }
+            }
+          },
+          "suite": {
+            "$ref": "urn:botaru:schema:common:1#/$defs/name",
+            "description": "Eval set: a case id prefix such as mgr-inj, trn, trn-inj, or a grant_eval_set."
+          },
+          "date": {
+            "$ref": "urn:botaru:schema:manifest:1#/$defs/date"
+          },
+          "cases": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 100000
+          },
+          "failures": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 100000
+          },
+          "security_failures": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 100000
+          },
+          "structural_match": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1,
+            "description": "Share of structural match of a translator set (TRN-6)."
+          },
+          "base_fail_share": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1,
+            "description": "Failure share of a grant_eval_set run on the base model (MGR-40)."
+          }
+        }
+      }
+    }
+  }
+}

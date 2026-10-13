@@ -147,7 +147,7 @@ A fallback profile is used only for a reason from the closed list `fallback_on` 
 - it is in the tenant's `models_allowed`, and its provider is in `providers_allowed` and in `privacy.subprocessors` (SEC-8);
 - its rank is not above the ceiling: at `apply` the ceiling of the role profile, at each call the position ceiling of the acting identity (GOV-3);
 - its region and retention are acceptable (GW-14, GW-15);
-- the role has an eval report on it without safety failures (an entry in `evals/reports/index.yaml` (planned in the installation repository)).
+- the role has an eval report on it without security failures (an entry of the `EvalReports` index, `evals/reports/index.yaml` (planned in the installation repository)).
 
 Every call on a fallback model writes the actual model and a fallback flag into the usage line and into the event `model.fallback.v1`. By default the `fallback` list is empty: provider overload means waiting (section "Provider outages"), not a silent model change. A silent model change breaks three things at once: the eval (the answer came from a different model than the one that passed the check), the budget (a reserve at a different price) and data processing (a different provider is a different data processor).
 

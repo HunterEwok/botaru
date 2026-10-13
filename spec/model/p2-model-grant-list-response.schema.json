@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:botaru:schema:p2-model-grant-list-response:1",
+  "title": "P2 model_grant.list: response",
+  "description": "Grant records of the tenant, newest first (MGR-17, MGR-18).",
+  "x-botaru-direction": "output",
+  "x-botaru-version": "v0.2",
+  "x-botaru-rules": [
+    "MGR-17",
+    "MGR-18"
+  ],
+  "type": "object",
+  "required": [
+    "grants"
+  ],
+  "properties": {
+    "grants": {
+      "type": "array",
+      "maxItems": 1000,
+      "items": {
+        "$ref": "urn:botaru:schema:grant:1"
+      }
+    }
+  }
+}

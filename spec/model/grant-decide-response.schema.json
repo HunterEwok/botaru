@@ -1,0 +1,45 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:botaru:schema:grant-decide-response:1",
+  "title": "grant_decide: response",
+  "description": "Result per decision: the new grant state, or a refusal by the code ceilings (MGR-18).",
+  "x-botaru-direction": "output",
+  "x-botaru-version": "v0.2",
+  "x-botaru-rules": [
+    "MGR-18"
+  ],
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "results"
+  ],
+  "properties": {
+    "results": {
+      "type": "array",
+      "maxItems": 50,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "grant",
+          "state"
+        ],
+        "properties": {
+          "grant": {
+            "$ref": "urn:botaru:schema:common:1#/$defs/object_id"
+          },
+          "state": {
+            "enum": [
+              "active",
+              "denied",
+              "pending"
+            ]
+          },
+          "reason": {
+            "$ref": "urn:botaru:schema:common:1#/$defs/reason"
+          }
+        }
+      }
+    }
+  }
+}

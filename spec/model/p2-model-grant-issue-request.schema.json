@@ -1,0 +1,49 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:botaru:schema:p2-model-grant-issue-request:1",
+  "title": "P2 model_grant.issue: request",
+  "description": "A person with model_grant.manage decides a pending grant request in the same line as the seat (MGR-18). The code ceilings apply: at most 2 attempts, an expiry of at most 6 h, the grant line.",
+  "x-botaru-direction": "input",
+  "x-botaru-version": "v0.2",
+  "x-botaru-rules": [
+    "MGR-18"
+  ],
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "tenant",
+    "grant",
+    "decision"
+  ],
+  "properties": {
+    "tenant": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/tenant_name"
+    },
+    "grant": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/object_id"
+    },
+    "decision": {
+      "enum": [
+        "issue",
+        "deny"
+      ]
+    },
+    "profile": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/name"
+    },
+    "attempts": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 2
+    },
+    "cap_eur": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1000,
+      "description": "Amount in euros; stored in euro cents (BUD-9)."
+    },
+    "expires_in": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/duration"
+    }
+  }
+}

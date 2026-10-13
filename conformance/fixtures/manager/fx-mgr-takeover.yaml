@@ -1,0 +1,53 @@
+id: fx-mgr-takeover
+rules: [MGR-21, MGR-22, IDM-2]
+version: v0.2
+description: 'Takeover. takeover_request passes only with the group permission task.takeover:<type>, a tenant takeover line above
+  0, a task type on the takeover list of the tenant, and no untrusted_seen on the manager attempt. A person of T with
+  model_grant.manage decides the card takeover_confirm (confirm_above_eur is 0 by default, so there is always a card). On approve
+  the core creates a task of the same type with the key system:takeover:<task> and a grant of kind takeover with the seat profile
+  for 1 attempt on line takeover; the original task is canceled as superseded_by_takeover. The manager gets only state, reason
+  and price.'
+given:
+  tenant: demo
+  tenant_budget: {takeover: {day_eur: 3}}
+  takeover: {types: [data.describe.v1], confirm_above_eur: 0}
+  people:
+  - principal: human:carol
+    caps: [model_grant.manage@demo]
+  seat: {id: farm-manager, state: held, holder: bot_41, epoch: 9, model_profile: seat-std}
+  task: {id: t_2101, type: data.describe.v1, state: submitted}
+cases:
+- id: fx-mgr-takeover-a
+  description: untrusted manager attempt
+  steps:
+  - occur: {takeover_request: {task: t_2101}}
+    by: seat
+    context: {untrusted_seen: true}
+    expect: {result: rejected, reason: takeover_untrusted, cards: 0}
+- id: fx-mgr-takeover-b
+  description: a type outside the takeover list, and a zero line
+  steps:
+  - occur: {takeover_request: {task: t_2102, type: ops.investigate.v1}}
+    by: seat
+    expect: {result: rejected, reason: takeover_not_allowed}
+  - occur: {takeover_request: {task: t_2101}}
+    by: seat
+    context: {tenant_budget: {takeover: {day_eur: 0}}}
+    expect: {result: rejected, reason: takeover_not_allowed}
+- id: fx-mgr-takeover-c
+  description: card, approve, new task and grant of kind takeover
+  steps:
+  - occur: {takeover_request: {task: t_2101}}
+    by: seat
+    expect: {outcome: staged, card: takeover_confirm, card_to: 'human:carol'}
+  - call:
+      port: P1
+      op: decide
+      request: {subject_kind: takeover, id: t_2101, decision: approve}
+    by: human:carol
+    card: takeover_confirm
+    expect:
+      new_task: {type: data.describe.v1, key: 'system:takeover:t_2101', tenant: demo}
+      grant: {kind: takeover, profile: seat-std, attempts_left: 1, line: takeover, decided_by: {kind: human}}
+      original_task: {state: canceled, reason: superseded_by_takeover}
+      manager_result_fields: [state, reason, price_eur]
