@@ -25,7 +25,9 @@ spec/model/*.yaml with their state at the branch point from the base branch
   changed (a changed negated schema is not compared, it is an error), or a
   definition that not or if reaches through $ref (in any file, by $id) changed,
   or one that a oneOf branch reaches changed and the branches (with $ref
-  followed) were provably disjoint before but are not now;
+  followed) are not provably disjoint now; minContains 0 was removed while
+  contains stays (absent means 1); contains, or a definition it reaches
+  through $ref, changed while maxContains stays;
 - allOf got a new item (a new constraint), prefixItems got an item narrower
   than the old items (or unevaluatedItems) at its position (absent accepts
   anything, false accepted nothing) or lost an item wider than what now
@@ -328,6 +330,14 @@ def compare(old, new, where):
     for k in NEW_NARROWING:
         if k in new and k not in old:
             rep.error(where, f'[keyword_added] {k} appeared: the set of values is narrowed')
+    # with contains, an absent minContains means 1: removing minContains 0 makes arrays without a match invalid
+    if 'contains' in old and 'contains' in new and 'minContains' not in new and old.get('minContains', 1) < 1:
+        rep.error(where, f'[limit_tightened] minContains is stricter: {old["minContains"]} -> absent (1)')
+    # under maxContains a wider contains counts more items toward the maximum, so any change there can narrow
+    if 'maxContains' in new and 'contains' in old and 'contains' in new and \
+            not same(bare(old['contains']), bare(new['contains'])):
+        rep.error(where, '[keyword_changed] contains changed while maxContains limits it: '
+                  'more items may count toward the maximum')
     if new.get('uniqueItems') is True and old.get('uniqueItems') is not True:
         rep.error(where, '[keyword_added] uniqueItems: true appeared: the set of values is narrowed')
     if isinstance(new.get('allOf'), list) and len(new['allOf']) > len(old.get('allOf') or []):
@@ -453,6 +463,20 @@ def negated(s, path=''):
             yield from negated(x, f'{path}/{i}')
 
 
+def counted(s, path=''):
+    """(path, subschema) of every contains value limited by maxContains in a schema."""
+    if isinstance(s, dict):
+        for k, v in s.items():
+            if k in LITERALS:
+                continue
+            if k == 'contains' and 'maxContains' in s:
+                yield f'{path}/{k}', v
+            yield from counted(v, f'{path}/{escape(k)}')
+    elif isinstance(s, list):
+        for i, x in enumerate(s):
+            yield from counted(x, f'{path}/{i}')
+
+
 olds_by_id, news_by_id = by_id(olds), by_id(news)
 
 
@@ -519,16 +543,27 @@ for rp, old in olds.items():
             if changed(a, b):
                 rep.error(f'{target}#{frag}', f'[keyword_changed] the definition changed, and {rp}#{where} reaches it '
                           'through $ref under not or if: any change there can narrow the outer schema')
-    # a widened definition behind a oneOf branch can make an old value match two branches; branches that the
-    # disjointness proof (with $ref followed) separated before must stay separated
+    # under maxContains a widened contains counts more items toward the maximum: a definition it reaches is frozen
+    for where, sub in counted(old):
+        # frozen even if the same change drops maxContains: a holder cannot be matched reliably across a reorder,
+        # so dropping maxContains and widening the definition go in two separate changes
+        for target, frag, a, b in reached(rp, sub):
+            if changed(a, b):
+                rep.error(f'{target}#{frag}', f'[keyword_changed] the definition changed, and {rp}#{where} reaches it '
+                          'through $ref under contains with maxContains: more items may count toward the maximum')
+    # a widened definition behind a oneOf branch can make an old value match two branches; after such a change
+    # the branches (with $ref followed) must be provably disjoint, even if the proof could not separate them before
     for where, branches, holder in oneofs(old):
         nb = pointer(news[rp], where)
         if not isinstance(nb, list) or not any(changed(a, b) for br in branches for _, _, a, b in reached(rp, br)):
             continue
         nh = pointer(news[rp], where.rsplit('/', 1)[0])
-        if separated(branches, rp, olds, olds_by_id, holder) and not separated(nb, rp, news, news_by_id, nh):
-            rep.error(f'{rp}#{where}', '[oneof_overlap] a definition behind oneOf changed, and its branches are no '
-                      'longer provably disjoint: values matching two branches would stop passing')
+        if not separated(nb, rp, news, news_by_id, nh):
+            rep.error(f'{rp}#{where}', '[oneof_overlap] a definition behind oneOf changed, and its branches are not '
+                      'provably disjoint: a widened branch may make values match two branches, and they would '
+                      'stop passing; every change behind oneOf needs provable disjointness; make the branches '
+                      'provably disjoint (const, enum, type or a required property with const) or make the '
+                      'change in a new .v(N+1) file')
 
 for p in old_regs:
     rp = p[len(prefix):]

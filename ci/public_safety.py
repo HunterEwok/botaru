@@ -20,6 +20,9 @@ and new ones not in .gitignore; without git: all files except SKIP_DIRS), and th
   lines `p <stem>` (start of a word) and `w <word>` (whole word), # comment;
 - tenants only demo, demo2 and farm in all folders;
 - no Cyrillic character in any public file or path ([cyrillic]): the project is English only.
+
+  python3 -I ci/public_safety.py             the files that will enter the repository
+  python3 -I ci/public_safety.py --history   forbidden words in every file of every commit (all refs)
 """
 import bisect
 import hashlib
@@ -167,7 +170,7 @@ def forbidden_missing():
         rep.note('BOTARU_FORBIDDEN', msg)
         return
     if os.environ.get('GITHUB_EVENT_NAME', '').startswith('pull_request'):
-        rep.note('BOTARU_FORBIDDEN', msg + ' (pull request: the merge queue checks the words)')
+        rep.note('BOTARU_FORBIDDEN', msg + ' (pull request: the owner checks the words locally before merging)')
     else:
         rep.error('BOTARU_FORBIDDEN', msg)
 
@@ -340,7 +343,46 @@ def scan(rp, text, lines=True):
     return starts
 
 
+def history(stems, words):
+    """--history: forbidden words in every file of every commit reachable from any ref. Every commit of a
+    public repository is public; a word found there cannot be removed by a new commit, so the owner decides."""
+    def git(*args):
+        return subprocess.run(['git', '-C', ROOT, *args], capture_output=True, check=True).stdout
+    seen, commits = set(), git('rev-list', '--all').decode().split()
+    for c in commits:
+        for line in git('ls-tree', '-r', '-z', c).decode('utf-8', 'replace').split('\0'):
+            if not line:
+                continue
+            meta, rp = line.split('\t', 1)
+            blob = meta.split()[2]
+            if (blob, rp) in seen:
+                continue
+            seen.add((blob, rp))
+            # paths of deleted or renamed files stay public in the history too
+            if any(is_forbidden(w.group(0).lower(), stems, words) for w in WORD.finditer(rp)):
+                rep.error(f'{c[:12]}:{rp}', '[forbidden_word] a word from the forbidden list (BOTARU_FORBIDDEN) in the path')
+            # unlike the normal scan, LICENSE is read too: only its copyright line start is allowed
+            text = git('cat-file', '-p', blob).decode('utf-8', 'replace')
+            allowed = copyright_spans(rp, text) + owner_spans(rp, text)
+            starts = [0] + [i + 1 for i, ch in enumerate(text) if ch == '\n']
+            hit = sorted({bisect.bisect_right(starts, w.start()) for w in WORD.finditer(text)
+                          if not any(lo <= w.start() < hi for lo, hi in allowed)
+                          and is_forbidden(w.group(0).lower(), stems, words)})
+            if hit:
+                rep.error(f'{c[:12]}:{rp}', f'[forbidden_word] a word from the forbidden list (BOTARU_FORBIDDEN) '
+                          f'on lines {hit[:20]}')
+    rep.info(f'history: commits {len(commits)}, files {len(seen)}, forbidden list stems {len(stems)} '
+             f'and words {len(words)}')
+    rep.finish(limit=4000)
+
+
 forb = load_forbidden()
+if '--history' in sys.argv[1:]:
+    if not forb:
+        rep.error('BOTARU_FORBIDDEN', '[forbidden_missing] --history needs the forbidden word list')
+        rep.finish()
+    else:
+        history(*forb)
 tokens = {}  # word -> places (at most 20)
 n_files = 0
 n_cyrillic = 0
