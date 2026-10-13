@@ -129,16 +129,27 @@ def copyright_spans(rp, text):
 
 
 # A narrow exception for the owner account (D-89, lead order 2026-10-12): the project owner name
-# as a separate word is allowed only in .github/CODEOWNERS (only as @<name>) and in CLA.md
-# (the parties of the agreement). The name is stored as a SHA-256 hash and the length of the lowercase
+# as a separate word is allowed only in .github/CODEOWNERS (only as @<name>), in CLA.md
+# (the parties of the agreement) and in the Go module path (OWNER_MODULE below). The name is stored as a SHA-256 hash and the length of the lowercase
 # word; any other word of these files and this word in any other file are checked as usual.
 OWNER_WORD = (10, '288927853ffd3e6c2933cf5706e1999d5109178f5ebac01b1c29476d1dbe2348')
 OWNER_FILES = {'.github/CODEOWNERS': re.compile(r'(?<![\w@])@([^\W\d_]+)'), 'CLA.md': re.compile(r'([^\W\d_]+)')}
 
 
+# The Go module path of impl/ holds the owner account (D-92): in impl/go.mod and impl/**/*.go the name is
+# allowed only as github.com/<name>/botaru, followed by / or the end of the path.
+OWNER_MODULE = re.compile(r'(?<![\w.])github\.com/([^\W\d_]+)/botaru(?![\w.-])')
+
+
+def owner_rx(rp):
+    if rp == 'impl/go.mod' or (rp.startswith('impl/') and rp.endswith('.go')):
+        return OWNER_MODULE
+    return OWNER_FILES.get(rp)
+
+
 def owner_spans(rp, text):
     """Spans [start, end) of the text where the owner name stands in the allowed form."""
-    rx = OWNER_FILES.get(rp)
+    rx = owner_rx(rp)
     if rx is None:
         return []
     n, digest = OWNER_WORD
