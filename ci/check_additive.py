@@ -11,16 +11,21 @@ spec/model/*.yaml with their state at the branch point from the base branch
 - a type was narrowed (a type left the type list; integer is part of number) or
   type appeared where there was none;
 - a value left enum, enum or const appeared, const changed;
-- additionalProperties or items became false where it was not;
+- additionalProperties, items, unevaluatedProperties or unevaluatedItems
+  became false where it was not; a subschema that was absent or true became
+  a non-empty schema (true is compared as an empty schema);
 - a limit became stricter: maxLength, maxItems, maxProperties, maximum,
   exclusiveMaximum decreased, minLength, minItems, minProperties,
   minimum, exclusiveMinimum increased or appeared;
 - pattern, format, x-botaru-format, propertyNames, $ref, multipleOf changed
   or appeared;
 - not, if, contains, minContains, maxContains, uniqueItems: true, anyOf or
-  oneOf appeared; minContains increased, maxContains decreased;
+  oneOf appeared; minContains increased, maxContains decreased; if changed;
+  a not schema widened (it is compared with reversed polarity);
 - allOf got a new item (a new constraint), anyOf or oneOf lost branches,
-  dependentSchemas got a new name;
+  oneOf got a branch that is not provably disjoint from every other branch
+  (different const or enum values, disjoint types, or a property required in
+  both with disjoint const or enum values), dependentSchemas got a new name;
 - an entry (id) left a registry, or entries changed while the registry version did not.
 A breaking schema change is made as a new file .v(N+1) next to .vN;
 a retired registry value stays an entry marked retired.
@@ -87,7 +92,7 @@ LT, GT = (lambda a, b: a < b), (lambda a, b: a > b)
 TIGHTER = {'maxLength': LT, 'maxItems': LT, 'maxProperties': LT, 'maximum': LT, 'exclusiveMaximum': LT,
            'minLength': GT, 'minItems': GT, 'minProperties': GT, 'minimum': GT, 'exclusiveMinimum': GT,
            'minContains': GT, 'maxContains': LT}
-CHANGED = ('pattern', 'const', 'format', 'x-botaru-format', 'propertyNames', '$ref', 'multipleOf')
+CHANGED = ('pattern', 'const', 'format', 'x-botaru-format', 'propertyNames', '$ref', 'multipleOf', 'if')
 # Keywords whose appearance narrows the schema
 NEW_NARROWING = ('not', 'if', 'contains')  # minContains, maxContains, multipleOf are caught by TIGHTER and CHANGED
 
@@ -98,7 +103,35 @@ def types(s):
     return ts | {'integer'} if ts and 'number' in ts else ts
 
 
+def values(s):
+    if not isinstance(s, dict):
+        return None
+    if 'const' in s:
+        return [s['const']]
+    return list(s['enum']) if isinstance(s.get('enum'), list) else None
+
+
+def disjoint(a, b):
+    """True only when no value can match both schemas; unknown is not disjoint."""
+    if not isinstance(a, dict) or not isinstance(b, dict):
+        return a is False or b is False
+    va, vb = values(a), values(b)
+    if va is not None and vb is not None and not any(v in vb for v in va):
+        return True
+    ta, tb = types(a), types(b)
+    if ta is not None and tb is not None and not ta & tb:
+        return True
+    pa, pb = a.get('properties') or {}, b.get('properties') or {}
+    both = set(a.get('required') or []) & set(b.get('required') or [])
+    return any(isinstance(pa, dict) and isinstance(pb, dict) and k in pa and k in pb
+               and values(pa[k]) is not None and values(pb[k]) is not None
+               and not any(v in values(pb[k]) for v in values(pa[k])) for k in both)
+
+
 def compare(old, new, where):
+    # true accepts everything, like an empty schema
+    old = {} if old is True else old
+    new = {} if new is True else new
     if not isinstance(old, dict) or not isinstance(new, dict):
         if old is not False and new is False:
             rep.error(where, '[schema_narrowed] the schema became false: no values are left')
@@ -127,7 +160,7 @@ def compare(old, new, where):
         more = set(deps) - set((old.get('dependentRequired') or {}).get(prop, []))
         if more:
             rep.error(where, f'[required_added] dependentRequired.{prop}: new {sorted(more)}')
-    for k in ('additionalProperties', 'items', 'unevaluatedProperties'):
+    for k in ('additionalProperties', 'items', 'unevaluatedProperties', 'unevaluatedItems'):
         if old.get(k, True) is not False and new.get(k, True) is False:
             rep.error(where, f'[closed_now] {k} became false')
     if len(new.get('prefixItems', [])) > len(old.get('prefixItems', [])) and 'prefixItems' in old:
@@ -141,8 +174,11 @@ def compare(old, new, where):
                 rep.error(where, f'[field_removed] {key}.{name} removed')
             else:
                 compare(sub, np[name], f'{where}/{key}/{name}')
-    # not and if are not compared: narrowing inside them widens the outer schema, and the other way round
-    for key in ('items', 'additionalProperties', 'then', 'else', 'contains', 'propertyNames', 'unevaluatedProperties'):
+    # not is compared with reversed polarity: the new negated schema must not accept more than the old one
+    if 'not' in old and 'not' in new:
+        compare(new['not'], old['not'], f'{where}/not(reversed)')
+    for key in ('items', 'additionalProperties', 'then', 'else', 'contains', 'propertyNames',
+                'unevaluatedProperties', 'unevaluatedItems'):
         if isinstance(old.get(key), dict) and isinstance(new.get(key), (dict, bool)):
             compare(old[key], new[key], f'{where}/{key}')
         elif old.get(key, True) is True and isinstance(new.get(key), dict) and new[key]:
@@ -161,6 +197,12 @@ def compare(old, new, where):
             rep.error(where, f'[keyword_added] fewer branches in {key} ({len(old[key])} -> {len(new.get(key) or [])})')
         if key not in old and key in new:
             rep.error(where, f'[keyword_added] {key} appeared: the set of values is narrowed')
+    ob, nb = old.get('oneOf'), new.get('oneOf')
+    if isinstance(ob, list) and isinstance(nb, list):
+        for i in range(len(ob), len(nb)):
+            if not all(disjoint(nb[i], b) for j, b in enumerate(nb) if j != i):
+                rep.error(where, f'[oneof_overlap] new oneOf branch {i} is not provably disjoint from the others: '
+                          'values matching two branches would stop passing')
     od, nd = old.get('dependentSchemas') or {}, new.get('dependentSchemas') or {}
     if isinstance(od, dict) and isinstance(nd, dict):
         for name in sorted(set(nd) - set(od)):

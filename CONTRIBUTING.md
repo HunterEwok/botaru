@@ -2,7 +2,7 @@
 
 The skeleton rests on the rule registry, the port sheets, the lifecycles and the machine files in `spec/` (JSON Schema files and closed registries). The documents in `docs/` explain them. Every change starts with what changes in the rule registry, a port, a lifecycle, a schema or a value registry, and only then in the explaining text.
 
-There is no farm code here: the core, `farmctl` and the black-box runner are written by a separate implementation (D-13). In the skeleton you therefore describe an extension as files, and the `ci/` checks verify their shape and consistency. The behaviour of a bot, MCP calls and delivery are checked by the runner and the evals of an implementation.
+There is no working farm code yet: the core, `farmctl` and the black-box runner will be written in Go in `impl/` (D-91, D-92). In the skeleton you therefore describe an extension as files, and the `ci/` checks verify their shape and consistency. The behaviour of a bot, MCP calls and delivery are checked by the runner and the evals of an implementation.
 
 ## Contribution terms
 

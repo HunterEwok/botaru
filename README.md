@@ -6,19 +6,21 @@ Everything in the repository is written in English. Field names, codes and file 
 
 ## What is here
 
-Three of the four layers; the fourth, the implementations, lives outside this repository:
+Four layers; the fourth, the reference implementation in Go, is only started:
 
 1. **Model**: concepts, relations, lifecycles and the rule registry (`docs/`, `docs/model/`, `spec/lifecycles/`, `conformance/requirements.yaml`).
 2. **Ports**: what each operation on each of the thirteen boundaries means (`spec/ports/`).
 3. **Contracts and checks**, the machine layer of v0.1: JSON Schema for data and manifests, closed registries, assembled lifecycles, port bindings, fixtures, conformance suites, eval cases and the `ci/` checks (`spec/`, `conformance/`, `evals/`, `ci/`).
 
+4. **Implementation**: the reference implementation in Go (`impl/`, decisions D-91 to D-93 in `docs/decisions.md`). Today it is a module skeleton with its CI checks; the work on the core has not started.
+
 There are also examples on the training tenants `demo` and `demo2` (`examples/`).
 
 ## What is not here
 
-There is no farm code in this repository. The core, the `farmctl` command line tool and the black-box conformance runner are written by a separate implementation (decision D-13 in `docs/decisions.md`). The implementation does not edit the skeleton files and passes the skeleton's conformance suite. You therefore cannot start a bot from this repository. What you can do today is describe an extension as files and check their shape with `ci/`. The behaviour of a bot, MCP calls and delivery are checked by the runner and the evals of an implementation.
+There is no working farm code yet. The core, the `farmctl` command line tool and the black-box conformance runner will be written in `impl/` (D-92). The implementation does not edit the skeleton files and passes the skeleton's conformance suite. You therefore cannot start a bot from this repository yet. What you can do today is describe an extension as files and check their shape with `ci/`. The behaviour of a bot, MCP calls and delivery are checked by the runner and the evals of an implementation.
 
-The only executable code is in `ci/`: the checks that run on every pull request.
+The executable code today is the `ci/` checks that run on every pull request and the Go module skeleton in `impl/` with its own checks (`.github/workflows/go.yml`).
 
 ## Where to start
 
@@ -70,7 +72,8 @@ What is checked today: manifest and wrapper schemas, closed parameters, group pe
 | `conformance/fixtures/`, `conformance/suites/` | fixtures (data only) and descriptions of checks against a live implementation |
 | `evals/` | eval case format, cases and thresholds for checking bots with a real model |
 | `examples/` | worked examples on the training tenants `demo` and `demo2` |
-| `ci/` | the only executable code: checks for every pull request |
+| `ci/` | the skeleton checks for every pull request |
+| `impl/` | the reference implementation in Go (D-92): today a module skeleton, see `impl/README.md` |
 | `deploy/` | a sample deployment topology; it is not runnable |
 | `CONTRIBUTING.md` | how to make changes, what to run, contribution terms |
 | `CLA.md` | the Contributor License Agreement signed before an external pull request (draft) |

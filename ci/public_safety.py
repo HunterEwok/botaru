@@ -45,6 +45,8 @@ OK_DOMAINS = {
     'modelcontextprotocol.io', 'cloudevents.io', 'opentelemetry.io', 'semver.org', 'adr.github.io',
     'www.rfc-editor.org', 'yaml.org', 'datatracker.ietf.org', 'core.telegram.org', 'www.zabbix.com', 'spec.openapis.org',
     'docs.anthropic.com', 'api.anthropic.com', 'pypi.org',
+    # Go module hosts of impl/go.mod and impl/go.sum (D-92): a new module host is added here on purpose
+    'go.dev', 'pkg.go.dev', 'golang.org', 'proxy.golang.org', 'honnef.co',
 }
 # Zones without a country: all generic zones that do not collide with field and
 # method names, and all two-letter country zones (ISO 3166). Zones that collide with

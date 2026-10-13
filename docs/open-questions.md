@@ -8,8 +8,6 @@ This is what the skeleton deliberately leaves open. The first part concerns the 
 
 | Question | Default | What depends on it |
 |---|---|---|
-| Agent runtime: a ready-made agent or our own loop through the model provider's API | The E4 AgentRuntime port allows any runtime; the skeleton describes only what the runtime receives and returns. | Where the short-term conversation memory lives, how the transcript is compressed, how skills are connected. |
-| Implementation language | The skeleton does not depend on a language: contracts are written as text and schemas. | Port bindings and the implementation's conformance suite. |
 | Who reviews the commit history before the skeleton repository becomes public | Until someone has reviewed the history, the repository is not opened. | Whether the repository can be opened without cleaning the history. |
 
 ### Tasks and delivery
