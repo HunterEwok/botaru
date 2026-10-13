@@ -1,0 +1,66 @@
+id: trn-inj-06
+rules: [SCR-6, TRN-6]
+description: 'Row trn-inj-06 of the translator injection table, without a model. A draft of 10 steps with similar names.
+  A long list or similar names cannot hide a step: the number of steps in the header of the script_confirm card always equals
+  the number in the run record, and "Full plan" sends all steps from the record.'
+given:
+  tenant: demo
+  initiator: {principal: 'human:alice', script_run: true}
+  draft:
+    script: v1
+    steps:
+    - id: chk_web1
+      kind: task
+      type: ops.summary.v1
+      goal: {assignment: true}
+      params: {resource: web1}
+    - id: chk_web1_
+      kind: task
+      type: ops.summary.v1
+      goal: {assignment: true}
+      params: {resource: web1}
+    - id: chk_webl
+      kind: task
+      type: ops.summary.v1
+      goal: {assignment: true}
+      params: {resource: web1}
+    - id: chk_db1
+      kind: task
+      type: ops.summary.v1
+      goal: {assignment: true}
+      params: {resource: db1}
+    - id: chk_dbl
+      kind: task
+      type: ops.summary.v1
+      goal: {assignment: true}
+      params: {resource: db1}
+    - id: chk_ctd1
+      kind: task
+      type: ops.summary.v1
+      goal: {assignment: true}
+      params: {resource: ctd1}
+    - id: chk_ctdl
+      kind: task
+      type: ops.summary.v1
+      goal: {assignment: true}
+      params: {resource: ctd1}
+    - id: chk_web1-
+      kind: task
+      type: ops.summary.v1
+      goal: {assignment: true}
+      params: {resource: web1}
+    - id: clean
+      kind: action
+      action: cleanup_tmp
+      args: {resource: web1}
+    - id: rep
+      kind: task
+      type: report.work.v1
+      run_if: always
+      goal: {assignment: true}
+expect:
+  record_steps: 10
+  card_header_steps: 10
+  card_lists_steps: 10
+  full_plan_steps: 10
+  card_text_from_model: none

@@ -1,0 +1,190 @@
+# Collected from spec/lifecycles/tenant.yaml. The value null in from means "the object does not exist yet".
+lifecycle: spec/lifecycles/tenant.yaml
+object: tenant
+rules:
+- HLD-1
+- HLD-2
+- LCY-1
+- LCY-2
+- PRM-14
+- RET-3
+- RET-7
+description: Allowed and forbidden transitions of the "tenant" lifecycle, collected from the tables of spec/lifecycles/tenant.md.
+  The implementation accepts a transition from the allowed list under the condition of its row; a pair from the forbidden
+  list does not change the state, and the call that asks for it is rejected. There is no way back from offboarding and deleted;
+  a tenant id is not reused (RET-3). The states suspended, offboarding and deleted appear in v0.2.
+states:
+- id: active
+  terminal: false
+- id: suspended
+  terminal: false
+- id: offboarding
+  terminal: false
+- id: deleted
+  terminal: true
+allowed:
+- from: null
+  to: active
+  by: P2 `apply` (`farmctl apply`) with the manifest `tenants/<name>/tenant.yaml`
+  when: the operator; the name is not taken by the tombstone of a deleted tenant
+  rules:
+  - LCY-1
+  - PRM-14
+  - RET-3
+- from: active
+  to: suspended
+  by: P2 `tenant.suspend`
+  when: the operator; the core sets a hold on the `tenant` scope with the reason `suspended`
+  rules:
+  - HLD-1
+  - LCY-1
+- from: suspended
+  to: active
+  by: P2 `hold.release` of this hold or its `until` term (the background loop `hold`)
+  when: 'only the operator lifts it: the operator set the hold, and a principal below the operator in rank, including a
+    tenant admin with `hold.release`, gets `forbidden`'
+  rules:
+  - HLD-2
+  - LCY-1
+- from: active
+  to: offboarding
+  by: P2 `tenant.offboard`
+  when: the operator
+  rules:
+  - LCY-1
+- from: suspended
+  to: offboarding
+  by: P2 `tenant.offboard`
+  when: the operator
+  rules:
+  - LCY-1
+- from: offboarding
+  to: deleted
+  by: P2 `tenant.delete`
+  when: the operator; the export window has ended (30 days from `tenant.offboard` by default)
+  rules:
+  - LCY-1
+  - LCY-2
+  - RET-7
+forbidden:
+- from: null
+  to: suspended
+  expect: rejected
+  rules:
+  - HLD-1
+  - LCY-1
+  - PRM-14
+  - RET-3
+  why: the object does not appear directly in the state suspended
+- from: null
+  to: offboarding
+  expect: rejected
+  rules:
+  - LCY-1
+  - PRM-14
+  - RET-3
+  why: the object does not appear directly in the state offboarding
+- from: null
+  to: deleted
+  expect: rejected
+  rules:
+  - LCY-1
+  - LCY-2
+  - PRM-14
+  - RET-3
+  - RET-7
+  why: the object does not appear directly in the state deleted
+- from: active
+  to: active
+  expect: rejected
+  rules:
+  - HLD-1
+  - HLD-2
+  - LCY-1
+  - PRM-14
+  - RET-3
+  why: a repeat of active without a call from the transition table does not change the record
+- from: active
+  to: deleted
+  expect: rejected
+  rules:
+  - HLD-1
+  - LCY-1
+  - LCY-2
+  - RET-7
+  why: the transition table has no path active -> deleted
+- from: suspended
+  to: suspended
+  expect: rejected
+  rules:
+  - HLD-1
+  - HLD-2
+  - LCY-1
+  why: a repeat of suspended without a call from the transition table does not change the record
+- from: suspended
+  to: deleted
+  expect: rejected
+  rules:
+  - HLD-2
+  - LCY-1
+  - LCY-2
+  - RET-7
+  why: the transition table has no path suspended -> deleted
+- from: offboarding
+  to: active
+  expect: rejected
+  rules:
+  - HLD-2
+  - LCY-1
+  - LCY-2
+  - PRM-14
+  - RET-3
+  - RET-7
+  why: the transition table has no path offboarding -> active
+- from: offboarding
+  to: suspended
+  expect: rejected
+  rules:
+  - HLD-1
+  - LCY-1
+  - LCY-2
+  - RET-7
+  why: the transition table has no path offboarding -> suspended
+- from: offboarding
+  to: offboarding
+  expect: rejected
+  rules:
+  - LCY-1
+  - LCY-2
+  - RET-7
+  why: a repeat of offboarding without a call from the transition table does not change the record
+- from: deleted
+  to: active
+  expect: rejected
+  rules:
+  - HLD-2
+  - LCY-1
+  - PRM-14
+  - RET-3
+  why: 'deleted is a terminal state: there are no transitions out of it'
+- from: deleted
+  to: suspended
+  expect: rejected
+  rules:
+  - HLD-1
+  - LCY-1
+  why: 'deleted is a terminal state: there are no transitions out of it'
+- from: deleted
+  to: offboarding
+  expect: rejected
+  rules:
+  - LCY-1
+  why: 'deleted is a terminal state: there are no transitions out of it'
+- from: deleted
+  to: deleted
+  expect: rejected
+  rules:
+  - LCY-1
+  - LCY-2
+  - RET-7
+  why: 'deleted is a terminal state: there are no transitions out of it'

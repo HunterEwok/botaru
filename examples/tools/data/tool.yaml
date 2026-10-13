@@ -1,0 +1,35 @@
+# Data file description plugin (D-72): the plugin code computes the numbers, the file header is untrusted.
+apiVersion: botaru/v1alpha1
+kind: ToolPlugin
+metadata: {name: data}
+spec:
+  placement: host
+  network: {egress: []}
+  tools:
+    - name: describe
+      description: "Counts the records and computes the depth, temperature and salinity ranges of an attached file."
+      access: read
+      tier: 1
+      output_class: internal
+      untrusted_output: true
+      redact: [ip, email, secret]
+      target: any
+      params:
+        file: {enum_from: task.attachments}
+      output_schema:
+        type: object
+        additionalProperties: false
+        required: [stats, header]
+        properties:
+          stats:
+            type: object
+            additionalProperties: false
+            required: [records, depth_max_m, flagged_records]
+            x-botaru-read-by: code
+            properties:
+              records: {type: integer, minimum: 0, maximum: 10000000}
+              depth_max_m: {type: number, minimum: 0, maximum: 12000}
+              flagged_records: {type: integer, minimum: 0, maximum: 10000000}
+          header: {type: string, maxLength: 4000}
+      output_limit_kb: 16
+      timeout_s: 60

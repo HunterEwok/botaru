@@ -1,0 +1,13 @@
+schema: spec/model/p2-control-apply-request.schema.json
+rules: [MGR-9, MGR-3, MGR-10, TEN-2]
+description: 'Operations that the schema rejects: tenant field of the target (the core derives the tenant from the object), operation
+  outside control-ops.yaml (shell, removing other parties'' holds, manifest edit), an effect that does not narrow, a target
+  of kind principal, worker field of pinning.'
+cases:
+  - {op: quarantine, target: {kind: worker, id: w_7}, tenant: demo2}
+  - {op: shell, target: {kind: worker, id: w_7}}
+  - {op: release_human_hold, target: {kind: worker, id: w_7}}
+  - {op: manifest_edit, target: {kind: role, id: pipeline-runner}}
+  - {op: hold, target: {kind: worker, id: w_7}, effects: [allow_all]}
+  - {op: hold, target: {kind: principal, id: alice}}
+  - {op: pin_task, target: {kind: worker, id: w_7}, tasktype: ops.selfcheck.v1, worker: w_7}

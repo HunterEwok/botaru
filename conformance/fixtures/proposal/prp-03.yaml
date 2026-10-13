@@ -1,0 +1,33 @@
+id: prp-03
+rules: [PRP-5]
+description: 'Repeat of a declined fingerprint. A person declined a proposal; 3 days later a body arrives with the same fingerprint
+  and the same evidence: refusal rejected(recently_declined) until redecide_after (30 days by default). After
+  31 days, or with evidence that changed by more than the declared share, the body is accepted. The role and tenant limits
+  give the refusal proposal_rate_limited with an event and without a record.'
+given:
+  tenant: demo
+  insights: {redecide_after: 30d, max_in_review: 10}
+  declined:
+    fingerprint: sha256:1111111111111111111111111111111111111111111111111111111111111111
+    at: '2026-10-01T09:30:00Z'
+cases:
+- description: The same fingerprint after 3 days.
+  given:
+    submit_at: '2026-10-04T06:00:00Z'
+    fingerprint: sha256:1111111111111111111111111111111111111111111111111111111111111111
+  expect: {result: rejected, reason: recently_declined, records_created: 0}
+- description: The same fingerprint after 31 days.
+  given:
+    submit_at: '2026-11-01T06:00:00Z'
+    fingerprint: sha256:1111111111111111111111111111111111111111111111111111111111111111
+  expect: {result: ok, state: screened}
+- description: The role's fourth proposal in a week with insight.max_per_week 3.
+  given:
+    role:
+      name: ops-runner
+      insight: {max_per_week: 3}
+    created_this_week: 3
+  expect: {result: rejected, reason: proposal_rate_limited, records_created: 0, event: proposal.rejected.v1}
+- description: The eleventh proposal in in_review of the tenant with insights.max_in_review 10.
+  given: {in_review: 10}
+  expect: {result: rejected, reason: proposal_rate_limited, records_created: 0}

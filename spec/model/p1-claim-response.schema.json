@@ -1,0 +1,28 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:botaru:schema:p1-claim-response:1",
+  "title": "P1 claim: response",
+  "description": "A work item or nothing. Each dispatch is a new lease with a lease_no 1 greater than the previous one of this work item (FEN-1). Denials: draining, not_ready, blocked.",
+  "x-botaru-direction": "output",
+  "x-botaru-rules": [
+    "FEN-1",
+    "DSP-2"
+  ],
+  "type": "object",
+  "required": [
+    "work"
+  ],
+  "properties": {
+    "work": {
+      "description": "Work item; null if no work was found during the waiting time.",
+      "anyOf": [
+        {
+          "$ref": "urn:botaru:schema:work-item:1"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    }
+  }
+}

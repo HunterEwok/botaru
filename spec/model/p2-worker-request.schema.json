@@ -1,0 +1,31 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:botaru:schema:p2-worker-request:1",
+  "title": "P2 worker.drain, revoke, rotate, unblock: request",
+  "description": "The operator changes the worker state. The op field matches the operation of the path (spec/bindings/http/README.md).",
+  "x-botaru-direction": "input",
+  "x-botaru-rules": [
+    "HLD-2",
+    "IDN-4",
+    "DEP-2"
+  ],
+  "type": "object",
+  "required": [
+    "op",
+    "worker"
+  ],
+  "properties": {
+    "op": {
+      "enum": [
+        "worker.drain",
+        "worker.revoke",
+        "worker.rotate",
+        "worker.unblock"
+      ]
+    },
+    "worker": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/object_id"
+    }
+  },
+  "additionalProperties": false
+}

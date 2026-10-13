@@ -1,0 +1,57 @@
+id: fx-mgr-03
+rules: [MGR-10]
+description: 'Lint of built-in tools of the seat profiles: the roles farm-manager and farm-manager-reader have no tools
+  that give a shell, ssh, sudo, reading or writing the runtime, session, memory and context of another bot, sending
+  text into a bot''s context, operations with credentials, editing manifests, budgets, groups, permissions and the catalog, decide
+  on a card, a direct action.* call and rerunning actions, or releasing holds of people and auto-stops.'
+given:
+  lint: roles/seat-builtin-tools
+  allowed_builtin:
+    farm-manager:
+    - hold
+    - quarantine
+    - drain
+    - preempt
+    - cancel
+    - pin_task
+    - request_action
+    - release
+    - notify
+    - inspect_request
+    - incident_close
+    farm-manager-reader: [file_read]
+cases:
+- given: {role_profile: farm-manager, builtin: shell}
+  expect:
+    apply: {result: rejected}
+    error: role_profile_forbidden
+- given: {role_profile: farm-manager, builtin: decide}
+  expect:
+    apply: {result: rejected}
+    error: role_profile_forbidden
+- given: {role_profile: farm-manager, builtin: action.cleanup_pipeline_tmp}
+  expect:
+    apply: {result: rejected}
+    error: role_profile_forbidden
+- given: {role_profile: farm-manager, builtin: hold_release_any}
+  expect:
+    apply: {result: rejected}
+    error: role_profile_forbidden
+- given: {role_profile: farm-manager, builtin: session_read}
+  expect:
+    apply: {result: rejected}
+    error: role_profile_forbidden
+- given: {role_profile: farm-manager, builtin: send_message}
+  expect:
+    apply: {result: rejected}
+    error: role_profile_forbidden
+- given: {role_profile: farm-manager, builtin: escalate}
+  expect:
+    apply: {result: rejected}
+    error: role_profile_forbidden
+- given: {role_profile: farm-manager-reader, builtin: request_action}
+  expect:
+    apply: {result: rejected}
+    error: role_profile_forbidden
+- given: {role_profile: farm-manager, builtin: quarantine}
+  expect: {apply: ok}

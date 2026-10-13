@@ -1,0 +1,62 @@
+id: fx-time-lint
+rules: [TIM-2, TIM-4]
+description: 'Time lint: all times in contracts are UTC in datetime format, a time zone is an IANA name only in Tenant.spec.timezone
+  and Schedule.spec.timezone (TIM-2); an unknown time zone name and a time zone inside a cron expression do not pass apply (TIM-4);
+  the default schedule time zone is taken from the tenant.'
+cases:
+- id: tim-fx-12
+  rules: [TIM-4]
+  description: An unknown time zone name does not pass apply.
+  given:
+    manifest:
+      kind: Schedule
+      metadata: {name: daily-report}
+      spec: {cron: 30 3 * * *, timezone: Mars/Olympus}
+  expect: {result: rejected, stage: apply, field: timezone}
+- id: tim-fx-13
+  rules: [TIM-4]
+  description: A time zone inside cron (CRON_TZ) does not pass apply.
+  given:
+    manifest:
+      kind: Schedule
+      metadata: {name: daily-report}
+      spec: {cron: CRON_TZ=Europe/Berlin 30 3 * * *}
+  expect: {result: rejected, stage: apply, field: cron}
+- id: tim-fx-14
+  rules: [TIM-4]
+  description: A time zone inside cron (TZ) does not pass apply.
+  given:
+    manifest:
+      kind: Schedule
+      metadata: {name: daily-report}
+      spec: {cron: TZ=UTC 30 3 * * *}
+  expect: {result: rejected, stage: apply, field: cron}
+- id: tim-fx-15
+  rules: [TIM-4]
+  description: Without Schedule.spec.timezone, Tenant.spec.timezone applies.
+  given:
+    tenant_timezone: Europe/Berlin
+    manifest:
+      kind: Schedule
+      metadata: {name: daily-report}
+      spec: {cron: 30 2 * * *}
+  expect:
+    result: ok
+    effective_timezone: Europe/Berlin
+    next_slot_after: {at: '2026-10-12T12:00:00Z', slot: '2026-10-13T00:30Z'}
+- id: tim-fx-16
+  rules: [TIM-2]
+  description: A time with an offset instead of Z in a contract does not pass the schema.
+  given:
+    body: {until: '2026-10-07T21:00:00+02:00'}
+    schema: urn:botaru:schema:p2-hold-set-request:1
+  expect: {result: rejected, stage: schema, field: until}
+- id: tim-fx-17
+  rules: [TIM-2]
+  description: A time zone field outside Tenant.spec.timezone and Schedule.spec.timezone does not pass the lint.
+  given:
+    manifest:
+      kind: TaskType
+      metadata: {name: report.daily.v1}
+      spec: {timezone: Europe/Berlin}
+  expect: {result: rejected, stage: apply, field: timezone}

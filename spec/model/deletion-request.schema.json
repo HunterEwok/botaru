@@ -1,0 +1,308 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:botaru:schema:deletion-request:1",
+  "title": "Erasure request",
+  "description": "Erasure request (ErasureRequest): scope, reason, author, time and outcome for each store; no content (RET-7). The erasure log belongs to the tombstone class and is backed up separately from the store backups (RET-5).",
+  "x-botaru-direction": "record",
+  "x-botaru-retention": "tombstone",
+  "x-botaru-rules": [
+    "RET-7",
+    "RET-4",
+    "RET-6"
+  ],
+  "type": "object",
+  "required": [
+    "id",
+    "scope",
+    "reason",
+    "author",
+    "created_at",
+    "state"
+  ],
+  "properties": {
+    "id": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/object_id",
+      "description": "Request id."
+    },
+    "scope": {
+      "type": "object",
+      "description": "Request scope from a closed list: (tenant), (tenant, subject), a bot identity id (only bot_retired), a worker id (only worker_revoke) or a list of object ids.",
+      "additionalProperties": false,
+      "required": [
+        "tenant"
+      ],
+      "properties": {
+        "tenant": {
+          "$ref": "urn:botaru:schema:common:1#/$defs/tenant_name",
+          "description": "Tenant."
+        },
+        "subject": {
+          "$ref": "urn:botaru:schema:common:1#/$defs/principal_ref",
+          "description": "Principal of the scope (tenant, subject): a principal_ref reference with an opaque id, for example human:p_01JB00000000000000000000A1."
+        },
+        "bot": {
+          "$ref": "urn:botaru:schema:common:1#/$defs/object_id",
+          "description": "Bot identity id."
+        },
+        "worker": {
+          "$ref": "urn:botaru:schema:common:1#/$defs/object_id",
+          "description": "Worker id."
+        },
+        "ids": {
+          "description": "List of object ids.",
+          "type": "array",
+          "items": {
+            "description": "Object id.",
+            "type": "string",
+            "maxLength": 64,
+            "pattern": "^[a-z][a-z0-9]{0,7}_[A-Za-z0-9]{1,26}$"
+          },
+          "maxItems": 1000,
+          "minItems": 1
+        }
+      },
+      "oneOf": [
+        {
+          "required": [
+            "tenant"
+          ],
+          "not": {
+            "anyOf": [
+              {
+                "required": [
+                  "subject"
+                ]
+              },
+              {
+                "required": [
+                  "bot"
+                ]
+              },
+              {
+                "required": [
+                  "worker"
+                ]
+              },
+              {
+                "required": [
+                  "ids"
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "required": [
+            "subject"
+          ],
+          "not": {
+            "anyOf": [
+              {
+                "required": [
+                  "bot"
+                ]
+              },
+              {
+                "required": [
+                  "worker"
+                ]
+              },
+              {
+                "required": [
+                  "ids"
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "required": [
+            "bot"
+          ],
+          "not": {
+            "anyOf": [
+              {
+                "required": [
+                  "subject"
+                ]
+              },
+              {
+                "required": [
+                  "worker"
+                ]
+              },
+              {
+                "required": [
+                  "ids"
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "required": [
+            "worker"
+          ],
+          "not": {
+            "anyOf": [
+              {
+                "required": [
+                  "subject"
+                ]
+              },
+              {
+                "required": [
+                  "bot"
+                ]
+              },
+              {
+                "required": [
+                  "ids"
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "required": [
+            "ids"
+          ],
+          "not": {
+            "anyOf": [
+              {
+                "required": [
+                  "subject"
+                ]
+              },
+              {
+                "required": [
+                  "bot"
+                ]
+              },
+              {
+                "required": [
+                  "worker"
+                ]
+              }
+            ]
+          }
+        }
+      ]
+    },
+    "reason": {
+      "$ref": "#/$defs/reason"
+    },
+    "author": {
+      "type": "object",
+      "description": "Author of the request.",
+      "required": [
+        "kind"
+      ],
+      "properties": {
+        "kind": {
+          "description": "Author kind.",
+          "enum": [
+            "principal",
+            "system"
+          ]
+        },
+        "id": {
+          "$ref": "urn:botaru:schema:common:1#/$defs/principal_ref",
+          "description": "Author principal for the kind principal."
+        }
+      }
+    },
+    "created_at": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/datetime",
+      "description": "Time of the entry in the erasure log."
+    },
+    "state": {
+      "description": "State of the request lifecycle.",
+      "enum": [
+        "requested",
+        "running",
+        "done",
+        "failed"
+      ]
+    },
+    "results": {
+      "description": "Outcome for each store.",
+      "type": "object",
+      "maxProperties": 32,
+      "propertyNames": {
+        "pattern": "^[a-z][a-z0-9_]*$",
+        "maxLength": 32
+      },
+      "additionalProperties": {
+        "$ref": "#/$defs/store_result"
+      }
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "required": [
+          "scope"
+        ],
+        "properties": {
+          "scope": {
+            "required": [
+              "bot"
+            ]
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "reason": {
+            "const": "bot_retired"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "required": [
+          "scope"
+        ],
+        "properties": {
+          "scope": {
+            "required": [
+              "worker"
+            ]
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "reason": {
+            "const": "worker_revoke"
+          }
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "reason": {
+      "description": "Reason from a closed list.",
+      "enum": [
+        "forget",
+        "offboarding",
+        "bot_retired",
+        "tenant_delete",
+        "worker_revoke",
+        "subject_request",
+        "manual"
+      ],
+      "x-botaru-registry": "reasons"
+    },
+    "store_result": {
+      "description": "Store outcome.",
+      "enum": [
+        "done",
+        "failed",
+        "not_applicable"
+      ]
+    }
+  }
+}

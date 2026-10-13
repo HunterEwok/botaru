@@ -1,0 +1,66 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:botaru:schema:p2-worker-enroll-request:1",
+  "title": "P2 worker.enroll: request",
+  "description": "The operator enrolls a worker: tenant, role, kind, labels; for a toolhost the plugins, placement and machine; for a channel, sink and monitoring adapter the name of the delivery target. There is no owner parameter (DSP-10, IDN-5); with the bot parameter an unbound identity of the same tenant and role is bound (IDN-8).",
+  "x-botaru-direction": "input",
+  "x-botaru-rules": [
+    "TEN-4",
+    "DEP-2",
+    "IDN-4",
+    "IDN-5",
+    "IDN-8",
+    "DSP-10"
+  ],
+  "type": "object",
+  "required": [
+    "tenant",
+    "role",
+    "kind"
+  ],
+  "properties": {
+    "tenant": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/tenant_name"
+    },
+    "role": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/name"
+    },
+    "kind": {
+      "$ref": "urn:botaru:schema:p1-hello-request:1#/properties/kind"
+    },
+    "labels": {
+      "$ref": "urn:botaru:schema:p1-hello-request:1#/properties/labels"
+    },
+    "plugins": {
+      "type": "array",
+      "items": {
+        "$ref": "urn:botaru:schema:common:1#/$defs/name"
+      },
+      "maxItems": 64,
+      "uniqueItems": true
+    },
+    "placement": {
+      "enum": [
+        "host",
+        "sandbox"
+      ]
+    },
+    "host": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/name",
+      "description": "Catalog machine resource."
+    },
+    "target": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/name",
+      "description": "Name of the channel, sink or monitoring adapter."
+    },
+    "bot": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/object_id",
+      "description": "Unbound identity to bind."
+    },
+    "rotate_p2": {
+      "type": "boolean",
+      "description": "Only for a channel process: issue a new P2 secret of the driver; the previous one is valid until the end of the rotation window (docs/operations.md, \"Secret rotation\"; D-87 (3))."
+    }
+  },
+  "additionalProperties": false
+}

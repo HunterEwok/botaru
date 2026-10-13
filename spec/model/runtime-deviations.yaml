@@ -1,0 +1,47 @@
+registry: runtime-deviations
+version: 1
+description: >-
+  Agent runtime deviations that the E4 adapter declares in the `describe()` answer. Each record is
+  a field of the `describe()` answer; `values` is the closed list of its values, and the first value is the farm
+  model without deviation. Any value other than the first turns on its own replacement rules
+  (`rules` of the value), and they cannot be waived: the adapter cannot record them as expected failures. Record
+  fields: `meaning` (which mechanism), `values` (list of `{value, meaning, rules}`), `rules`.
+source: spec/ports/e4-agent-runtime.md
+entries:
+  - id: session
+    since: v0.1
+    meaning: Where the conversation transcript lives.
+    values:
+      - {value: farm, meaning: session in farm storage by the P1 session handle `session.*`, rules: []}
+      - {value: runtime_internal, meaning: 'session inside the runtime: a profile per (tenant, role, principal) or per bound group chat, `purge` and `match` are required', rules: [RT-1, RT-5]}
+      - {value: none, meaning: no session, rules: []}
+    rules: [RT-1, RT-5]
+  - id: memory
+    since: v0.1
+    meaning: Where memory lives.
+    values:
+      - {value: farm, meaning: memory in farm storage by the P1 memory handle `memory.*`, rules: []}
+      - {value: bridge, meaning: "bridge to farm memory; the rules are the same as for `farm`", rules: []}
+      - {value: runtime_internal, meaning: 'memory inside the runtime only in the `person` scope: record approval is on, self-learning is off, `purge` and `match` are required', rules: [RT-2, RT-5]}
+      - {value: none, meaning: no memory, rules: []}
+    rules: [RT-2, RT-5]
+  - id: model_attribution
+    since: v0.1
+    meaning: What the model handle is issued for.
+    values:
+      - {value: per_attempt, meaning: a model handle for each attempt, rules: []}
+      - {value: per_profile, meaning: 'a handle per profile: worker capacity 1, the handle is valid only while there is a lease, and spending is attributed to it', rules: [RT-3]}
+    rules: [RT-3]
+  - id: catalog
+    since: v0.1
+    meaning: How the runtime tool catalog is built.
+    values:
+      - {value: per_attempt, meaning: a catalog for each attempt, rules: []}
+      - {value: per_role, meaning: 'the catalog equals the role read tools and the profile built-in tools; everything that depends on the task the core checks at each call', rules: [RT-4]}
+    rules: [RT-4]
+  - id: built_in_tools
+    since: v0.1
+    meaning: 'Runtime built-in tools: only an empty list is allowed, there are no deviations.'
+    values:
+      - {value: '[]', meaning: no built-in tools, rules: [INJ-9]}
+    rules: [INJ-9]

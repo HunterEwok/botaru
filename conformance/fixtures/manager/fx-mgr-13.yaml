@@ -1,0 +1,43 @@
+id: fx-mgr-13
+rules: [MGR-15]
+description: 'Kill switch: a hold of scope seat from a person with admin:farm through farmctl. In one transaction human is added
+  to the reason set, epoch + 1, all running attempts with the holder''s acting_bot in all tenants (reading, decision,
+  lens review, ballot, fact selection) are canceled, their handles revoked, claim of seat tasks forbidden; the seat is stopped
+  with reason human.'
+given:
+  seat:
+    id: farm-manager
+    tenant: farm
+    state: held
+    holder: bot_41
+    epoch: 9
+    stop_reasons: []
+  running:
+  - {tenant: demo, type: manager.incident.respond.v1}
+  - {tenant: demo, type: manager.inspect.v1}
+  - {tenant: demo2, type: review.farm_manager.v1}
+  - {tenant: demo2, type: memory.pick.v1}
+  people:
+  - principal: human:bob
+    caps: ['admin:farm']
+steps:
+- call:
+    port: P2
+    op: hold.set
+    request:
+      scope: {kind: seat, name: farm-manager}
+      effects: [no_claim, cancel_running]
+      reason: manual
+      until: null
+  by: human:bob
+  context: {via: farmctl}
+expect:
+  seat:
+    state: stopped
+    epoch: 10
+    stop_reasons: [human]
+  running_attempts: cancel_requested
+  attempts_canceled: 4
+  handles_revoked: 4
+  claim_seat_tasks: refused
+  transaction: one

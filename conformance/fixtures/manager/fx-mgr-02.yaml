@@ -1,0 +1,66 @@
+id: fx-mgr-02
+rules: [MGR-1]
+description: The farm-manager seat in farm has no more than one holder and one epoch. The epoch grows on assignment and
+  release, on every new stop reason and on return to held; a control operation and a grant decision with an
+  old epoch get fenced; on an epoch change the running attempts of seat tasks end with seat_changed without spending an attempt.
+  Numbers of identities, workers, tasks and incidents are shortened, as in the examples of docs/farm-manager.md.
+given:
+  seat:
+    id: farm-manager
+    tenant: farm
+    state: vacant
+    holder: null
+    epoch: 8
+    stop_reasons: []
+  people:
+  - principal: human:bob
+    caps: ['admin:governance@farm', 'admin:farm']
+steps:
+- call:
+    port: P2
+    op: seat.assign
+    request: {seat: farm-manager}
+  by: human:bob
+  context: {via: farmctl}
+  expect:
+    seat: {state: held, epoch: 9, holder: new_bot}
+    holders_count: 1
+- check: {core: stop_reason_added, reason: no_control}
+  expect:
+    seat: {state: stopped, epoch: 10}
+- check: {core: stop_reason_added, reason: human}
+  expect:
+    seat:
+      state: stopped
+      epoch: 11
+      stop_reasons: [no_control, human]
+- call:
+    port: P2
+    op: hold.release
+    request: {id: $last}
+  by: human:bob
+  context: {via: farmctl}
+  note: a seat hold set by a person is being released
+  expect:
+    seat:
+      state: held
+      epoch: 12
+      stop_reasons: []
+- call:
+    port: P2
+    op: seat.vacate
+    request: {seat: farm-manager}
+  by: human:bob
+  context: {via: farmctl}
+  expect:
+    seat: {state: vacant, epoch: 13, holder: null}
+cases:
+- id: fx-mgr-02-a
+  description: A seat attempt with epoch 12 when the epoch changes to 13.
+  given:
+    running: {task: t-m3, seat_epoch: 12}
+  steps:
+  - occur: {seat_epoch: 13}
+  expect:
+    attempt: {state: cancel_requested, end_reason: seat_changed, attempt_spent: false}
+    task: waits_for_current_epoch

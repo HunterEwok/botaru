@@ -1,0 +1,90 @@
+id: fx-orc-04
+rules: [ORC-3]
+description: A toolhost accepts the write call of an item only if the arguments hash equals the item's hash in the approval snapshot.
+  A call with other arguments is rejected and not executed.
+given:
+  tenant: demo
+  campaign:
+    id: k_01JB0000000000000000000004
+    approval_id: ap_01JB0000000000000000000004
+    snapshot_items:
+    - n: 1
+      resource: web1
+      args: {older_than_days: 7}
+cases:
+- steps:
+  - call:
+      port: E3
+      op: tools/call
+      request:
+        work_id: tc_4
+        kind: toolcall
+        lease_no: 1
+        epoch: 1
+        tenant: demo
+        lease_until: '2026-10-12T09:05:00Z'
+        lease_remaining_s: 300
+        token: {epoch: 1, work_id: tc_4, lease_no: 1, worker_id: w_11, key_id: k1, sig: Y29yZS1zaWduYXR1cmUtb3Zlci1sZWFzZS10b2tlbi12MQ}
+        start_by: '2026-10-12T09:01:00Z'
+        payload:
+          target: {plugin: pipeline, placement: host, host: web1}
+          tool: pipeline/cleanup_tmp
+          args: {older_than_days: 7}
+          approval_id: ap_01JB0000000000000000000004
+          grant_id: null
+          args_hash: null
+    context: {item: 1}
+    note: the toolcall work unit of a campaign item that the toolhost gets by claim
+  expect: {toolhost: accepted, plugin_key: 'ap_01JB0000000000000000000004:1'}
+- steps:
+  - call:
+      port: E3
+      op: tools/call
+      request:
+        work_id: tc_4
+        kind: toolcall
+        lease_no: 1
+        epoch: 1
+        tenant: demo
+        lease_until: '2026-10-12T09:05:00Z'
+        lease_remaining_s: 300
+        token: {epoch: 1, work_id: tc_4, lease_no: 1, worker_id: w_11, key_id: k1, sig: Y29yZS1zaWduYXR1cmUtb3Zlci1sZWFzZS10b2tlbi12MQ}
+        start_by: '2026-10-12T09:01:00Z'
+        payload:
+          target: {plugin: pipeline, placement: host, host: web1}
+          tool: pipeline/cleanup_tmp
+          args: {older_than_days: 0}
+          approval_id: ap_01JB0000000000000000000004
+          grant_id: null
+          args_hash: null
+    context: {item: 1}
+    note: the toolcall work unit of a campaign item that the toolhost gets by claim
+  expect:
+    toolhost: {result: rejected}
+    executed: false
+- steps:
+  - call:
+      port: E3
+      op: tools/call
+      request:
+        work_id: tc_4
+        kind: toolcall
+        lease_no: 1
+        epoch: 1
+        tenant: demo
+        lease_until: '2026-10-12T09:05:00Z'
+        lease_remaining_s: 300
+        token: {epoch: 1, work_id: tc_4, lease_no: 1, worker_id: w_11, key_id: k1, sig: Y29yZS1zaWduYXR1cmUtb3Zlci1sZWFzZS10b2tlbi12MQ}
+        start_by: '2026-10-12T09:01:00Z'
+        payload:
+          target: {plugin: pipeline, placement: host, host: web1}
+          tool: pipeline/cleanup_tmp
+          args: {older_than_days: 7, path: /}
+          approval_id: ap_01JB0000000000000000000004
+          grant_id: null
+          args_hash: null
+    context: {item: 1}
+    note: the toolcall work unit of a campaign item that the toolhost gets by claim
+  expect:
+    toolhost: {result: rejected}
+    executed: false

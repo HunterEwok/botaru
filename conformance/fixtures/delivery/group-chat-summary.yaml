@@ -1,0 +1,55 @@
+id: fx-dlv-05
+rules: [DLV-15, DLV-6]
+description: 'A group chat gets only a summary. The chat `lab` is bound to `demo` with the ceiling `summary`. `bob` (in the group
+  `staff`) asks in the chat about CTD profiles; the type `ctd.qc.status.v1` of class `internal` with `summary_fields: [checked,
+  flagged]`. After `complete` the chat gets the code table and the text "details sent privately", and the full model answer
+  and the file go to `bob` in a private chat. If `bob` has not written to the bot privately and the channel cannot start a private chat, `lab` gets
+  a text asking to open a private chat, and the model answer does not go to the chat. The text part of the summary, up to 800 characters with `dataorigin:
+  model`, goes to the chat only if the type declared it, the task has no `untrusted_seen` and the summary class is not above the binding ceiling.'
+given:
+  tenant: demo
+  chat: {name: lab, ceiling: summary}
+  tasktype:
+    name: ctd.qc.status.v1
+    data_class: internal
+    summary_fields: [checked, flagged]
+  initiator:
+    id: human:bob
+    groups: [staff]
+    data: [internal]
+  result: {answer: 'Of 412 profiles 7 have remarks: st-03, st-05', checked: 412, flagged: 7}
+expect: {content_into_group_instead_of_dm: never}
+cases:
+- given: {dm_possible: true}
+  expect:
+    chat_lab:
+    - dataorigin: code
+      table: {checked: 412, flagged: 7}
+    - {dataorigin: code, text_key: details_sent_privately}
+    dm_bob:
+    - {dataorigin: model, text: full_answer}
+    - {file: report}
+    model_text_in_chat: false
+- given: {dm_possible: false}
+  expect:
+    chat_lab:
+    - {dataorigin: code, text_key: open_private_chat}
+    dm_bob: []
+    model_text_in_chat: false
+- given:
+    dm_possible: true
+    tasktype_summary_text: {max_chars: 800}
+    untrusted_seen: false
+  expect:
+    chat_lab_includes:
+    - {dataorigin: model, max_chars: 800}
+- given:
+    dm_possible: true
+    tasktype_summary_text: {max_chars: 800}
+    untrusted_seen: true
+  expect: {model_text_in_chat: false}
+- given:
+    route_deliver_to: ['chat:lab', 'group:staff']
+  expect:
+    chat_lab: summary_only
+    full_result_to: ['group:staff']

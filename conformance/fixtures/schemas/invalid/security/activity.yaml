@@ -1,0 +1,34 @@
+schema: urn:botaru:schema:activity:1
+rules:
+- IDN-7
+- IDN-1
+description: The schema rejects an activity without a verified sender, with a task type chosen by text and with an identity
+  of an unknown kind.
+cases:
+- kind: message
+  channel: telegram
+  update_id: '880003'
+  chat:
+    kind: group
+    external_id: '-100500'
+  text: hello
+- kind: message
+  channel: telegram
+  update_id: '880004'
+  sender:
+    identity: telegram:100200300
+    verified: true
+  chat:
+    kind: direct
+    external_id: '100200300'
+  text: do it
+  task_type: ops.investigate.v1
+- kind: message
+  channel: telegram
+  update_id: '880005'
+  sender:
+    identity: phone:+10000000000
+    verified: true
+  chat:
+    kind: direct
+    external_id: '1'

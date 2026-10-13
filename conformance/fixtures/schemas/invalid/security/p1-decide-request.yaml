@@ -1,0 +1,25 @@
+schema: urn:botaru:schema:p1-decide-request:1
+rules:
+- APR-4
+- APR-3
+description: 'A button carries nothing except the subject, id, nonce and code: a body with action arguments, with an identity
+  in the body, without nonce and with another party''s subject is rejected.'
+cases:
+- subject_kind: approval
+  id: apr_01J9Z3M2Q8YB6V4N7T5K0C2D2F
+  nonce: n7Qx2LkP9vRt4WsZ
+  decision: approve
+  args:
+    older_than_days: 1
+- subject_kind: approval
+  id: apr_01J9Z3M2Q8YB6V4N7T5K0C2D2F
+  nonce: n7Qx2LkP9vRt4WsZ
+  decision: approve
+  by: telegram:100200300
+- subject_kind: approval
+  id: apr_01J9Z3M2Q8YB6V4N7T5K0C2D2F
+  decision: approve
+- subject_kind: hold
+  id: apr_01J9Z3M2Q8YB6V4N7T5K0C2D2F
+  nonce: n7Qx2LkP9vRt4WsZ
+  decision: approve

@@ -1,0 +1,6 @@
+schema: spec/model/p2-manager-direct-request.schema.json
+rules: [MGR-4]
+description: Directives to the farm manager that the schema accepts.
+cases:
+  - {scope: {kind: incident, id: i-311}, op: drain, text: Drain worker w_7 until morning.}
+  - {scope: {kind: role, id: pipeline-runner}}

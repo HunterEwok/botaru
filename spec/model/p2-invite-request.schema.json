@@ -1,0 +1,47 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:botaru:schema:p2-invite-request:1",
+  "title": "P2 invite: request",
+  "description": "An invitation with a one-time code and a deadline to groups not wider than the inviter's permissions; on use the core rechecks the creator. Membership of a privileged group stays pending until the verification code is checked (invite confirm --code).",
+  "x-botaru-direction": "input",
+  "x-botaru-rules": [
+    "PRM-7",
+    "PRM-13"
+  ],
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "op"
+  ],
+  "properties": {
+    "op": {
+      "enum": [
+        "invite.create",
+        "invite.confirm",
+        "invite.revoke"
+      ]
+    },
+    "groups": {
+      "type": "array",
+      "items": {
+        "$ref": "urn:botaru:schema:common:1#/$defs/name"
+      },
+      "maxItems": 8,
+      "uniqueItems": true
+    },
+    "ttl": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/duration"
+    },
+    "invite": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/object_id"
+    },
+    "code": {
+      "type": "string",
+      "pattern": "^[0-9]{6,16}$",
+      "maxLength": 16
+    },
+    "requested_by": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/principal_ref"
+    }
+  }
+}

@@ -1,0 +1,28 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:botaru:schema:p2-worker-rotate-response:1",
+  "title": "P2 worker.rotate: response",
+  "description": "New worker token; the old one is valid until old_valid_until (IDN-4).",
+  "x-botaru-direction": "output",
+  "x-botaru-rules": [
+    "IDN-4"
+  ],
+  "type": "object",
+  "required": [
+    "token",
+    "old_valid_until"
+  ],
+  "properties": {
+    "token": {
+      "type": "string",
+      "maxLength": 512
+    },
+    "key_id": {
+      "type": "string",
+      "maxLength": 64
+    },
+    "old_valid_until": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/datetime"
+    }
+  }
+}

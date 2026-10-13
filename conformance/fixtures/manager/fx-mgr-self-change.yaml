@@ -1,0 +1,36 @@
+id: fx-mgr-self-change
+rules: [MGR-16, PRP-3]
+description: 'Lint: the seat holder changes neither by operations nor by proposals the seat, the seat roles, the incident catalog,
+  the involvement rules, control-ops.yaml, the limits and the safeguard, budget lines, consent groups, the protected
+  set, the commission policy, the seat holder and its own auto-stops. These targets are in the list of forbidden targets for proposals; they are not
+  among the operation targets.'
+given: {lint: manager/self-change}
+cases:
+- given: {proposal_from: manager.review.v1, change_target: farm/governance.yaml#farm_manager}
+  expect: {result: rejected, reason: forbidden_change}
+- given: {proposal_from: manager.review.v1, change_target: roles/farm-manager}
+  expect: {result: rejected, reason: forbidden_change}
+- given: {proposal_from: manager.review.v1, change_target: farm/incidents/disk_full.yaml}
+  expect: {result: rejected, reason: forbidden_change}
+- given: {proposal_from: manager.review.v1, change_target: attribution-rules}
+  expect: {result: rejected, reason: forbidden_change}
+- given: {proposal_from: manager.review.v1, change_target: spec/model/control-ops.yaml}
+  expect: {result: rejected, reason: forbidden_change}
+- given: {proposal_from: manager.review.v1, change_target: farm_manager.control_limits}
+  expect: {result: rejected, reason: forbidden_change}
+- given: {proposal_from: manager.review.v1, change_target: farm_manager.breaker}
+  expect: {result: rejected, reason: forbidden_change}
+- given: {proposal_from: manager.review.v1, change_target: tenants/demo/budget.yaml#manager}
+  expect: {result: rejected, reason: forbidden_change}
+- given: {proposal_from: manager.review.v1, change_target: groups/farm-manager-ops}
+  expect: {result: rejected, reason: forbidden_change}
+- given: {proposal_from: manager.review.v1, change_target: protected_set}
+  expect: {result: rejected, reason: forbidden_change}
+- given: {proposal_from: manager.review.v1, change_target: commission}
+  expect: {result: rejected, reason: forbidden_change}
+- given: {proposal_from: manager.review.v1, change_target: seat.holder}
+  expect: {result: rejected, reason: forbidden_change}
+- given: {proposal_from: manager.review.v1, change_target: holds/contain_auto}
+  expect: {result: rejected, reason: forbidden_change}
+- given: {control_op_targets: all}
+  expect: {contains_any_of_above: false}

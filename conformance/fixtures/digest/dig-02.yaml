@@ -1,0 +1,36 @@
+id: dig-02
+rules: [DIG-3, APR-4]
+description: 'The permission to decide on a proposal. A principal without proposal.decide:schedule presses "Accept" on a proposal card
+  of category schedule: refusal forbidden, no execution, the state does not change. A bot, an external program and system do not
+  decide at all.'
+given:
+  tenant: demo
+  proposal:
+    id: p_01JB0000000000000000000101
+    state: presented
+    category: schedule
+    change_kind: manifest_change
+  humans:
+  - name: alice
+    caps: ['proposal.decide:capacity']
+  - name: carol
+    caps: ['proposal.decide:schedule']
+steps:
+- call:
+    port: P1
+    op: decide
+    request: {subject_kind: proposal, id: p_01JB0000000000000000000101, decision: accept}
+  by: human:alice
+  expect: {result: rejected, reason: forbidden, state: presented, objects_created: 0}
+- call:
+    port: P1
+    op: decide
+    request: {subject_kind: proposal, id: p_01JB0000000000000000000101, decision: accept}
+  by: service:ci-exporter
+  expect: {result: rejected, state: presented}
+- call:
+    port: P1
+    op: decide
+    request: {subject_kind: proposal, id: p_01JB0000000000000000000101, decision: accept}
+  by: human:carol
+  expect: {result: ok, state: realizing, objects_created: 1, trial_created: true}

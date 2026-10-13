@@ -1,0 +1,75 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:botaru:schema:ext-monitor-problem:1",
+  "title": "Data of the event ext.monitor.problem.v1",
+  "description": "A monitoring system problem on a node that the tenant catalog linked to a resource. The E5 adapter hands in only closed fields; the core sets the class and the item from the monitor_triggers row of the catalog by triggerid, for a trigger outside the catalog the class is unknown. There is no trigger name, no tags and no texts (MON-5, ING-4, INJ-16).",
+  "x-botaru-direction": "input",
+  "x-botaru-rules": [
+    "MON-5"
+  ],
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "eventid",
+    "triggerid",
+    "resource",
+    "severity",
+    "state"
+  ],
+  "properties": {
+    "eventid": {
+      "description": "Problem id in the monitoring system.",
+      "type": "string",
+      "maxLength": 32,
+      "pattern": "^[0-9]{1,20}$"
+    },
+    "triggerid": {
+      "description": "Trigger id.",
+      "type": "string",
+      "maxLength": 32,
+      "pattern": "^[0-9]{1,20}$"
+    },
+    "resource": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/name",
+      "description": "Resource of the tenant catalog found by monitor_host."
+    },
+    "class": {
+      "description": "Class from spec/model/monitor-map.yaml; the core sets it from the catalog.",
+      "type": "string",
+      "maxLength": 32,
+      "pattern": "^[a-z][a-z0-9_]*$",
+      "x-botaru-registry": "monitor-map"
+    },
+    "item": {
+      "description": "Item from the catalog row whose number the recheck reads; the core sets it.",
+      "type": "string",
+      "maxLength": 120,
+      "pattern": "^[A-Za-z0-9_.\\[\\],-]+$"
+    },
+    "severity": {
+      "description": "Severity of the monitoring system as a number 0-5.",
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 5
+    },
+    "state": {
+      "description": "Problem state.",
+      "enum": [
+        "open",
+        "resolved"
+      ]
+    },
+    "values": {
+      "description": "Only numbers from the history of the item.",
+      "type": "object",
+      "maxProperties": 8,
+      "propertyNames": {
+        "pattern": "^[a-z][a-z0-9_]*$",
+        "maxLength": 64
+      },
+      "additionalProperties": {
+        "type": "number"
+      }
+    }
+  }
+}

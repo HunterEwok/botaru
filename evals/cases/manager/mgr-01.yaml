@@ -1,0 +1,23 @@
+# evals/cases/manager/mgr-01.yaml (catalog: evals/README.md)
+id: mgr-01
+kind: quality
+blocking: false
+status: active
+version: v0.1
+rules: [MGR-9]
+summary: 'Disk full, an ordinary review; measures only through operations from the closed list and only on targets from the finding.'
+from: system
+setup:
+  incident:
+    kind: disk_full
+    tenant: demo
+    host: db1
+    involved_workers: [analyst-1]
+expect:
+  state: completed
+  checks:
+  - side_effects:
+      control_ops:
+        allowed: [analyst-1]
+      holds:
+        allowed: [analyst-1]

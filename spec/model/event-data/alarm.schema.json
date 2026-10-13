@@ -1,0 +1,83 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:botaru:schema:alarm:1",
+  "title": "Alarm data",
+  "description": "Data of the event alarm.<name>.vN: one schema for all alarms (OBS-6). Only code produces an alarm: the core or a worker of kind job (INJ-7). The state firing opens an episode and resolved closes it; a repeated firing with the same alarmkey writes no event, it increments the episode's repeat_count (spec/lifecycles/alarm.md).",
+  "x-botaru-direction": "output",
+  "x-botaru-rules": [
+    "OBS-6",
+    "MON-1",
+    "MON-5"
+  ],
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "alarmkey",
+    "state",
+    "severity",
+    "subject"
+  ],
+  "properties": {
+    "alarmkey": {
+      "description": "Episode key: the alarm name without alarm. and .vN, a colon and the subject id from the catalog, for example disk.free.low:db1.",
+      "type": "string",
+      "maxLength": 200,
+      "pattern": "^[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*)*:[a-z0-9][a-z0-9_.:-]*$"
+    },
+    "state": {
+      "description": "Episode state.",
+      "enum": [
+        "firing",
+        "resolved"
+      ]
+    },
+    "severity": {
+      "description": "Severity of the farm alarm.",
+      "$ref": "urn:botaru:schema:common:1#/$defs/alarm_severity"
+    },
+    "subject": {
+      "type": "object",
+      "description": "Alarm subject: kind and id from the catalog, or the name of a farm object.",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "id"
+      ],
+      "properties": {
+        "kind": {
+          "description": "Subject kind, for example resource, worker, loop, store, workspace, tenant.",
+          "type": "string",
+          "maxLength": 32,
+          "pattern": "^[a-z][a-z0-9_]*$"
+        },
+        "id": {
+          "description": "Id from the tenant catalog or the name of a farm object (for example db1, res:ctd1:data).",
+          "type": "string",
+          "maxLength": 120,
+          "pattern": "^[a-z][a-z0-9_.:-]*$"
+        }
+      }
+    },
+    "values": {
+      "description": "Alarm values: only numbers and enum values (codes), without texts or people's ids (OBS-6, MON-1).",
+      "type": "object",
+      "maxProperties": 16,
+      "propertyNames": {
+        "pattern": "^[a-z][a-z0-9_]*$",
+        "maxLength": 64
+      },
+      "additionalProperties": {
+        "anyOf": [
+          {
+            "type": "number"
+          },
+          {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_]*$",
+            "maxLength": 64
+          }
+        ]
+      }
+    }
+  }
+}

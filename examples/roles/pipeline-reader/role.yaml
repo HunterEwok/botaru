@@ -1,0 +1,12 @@
+# Reads pipeline runs and requests pipeline actions (flow 6, action-pipeline-ctd-qc.md).
+apiVersion: botaru/v1alpha1
+kind: Role
+metadata: {name: pipeline-reader}
+spec:
+  profile: worker
+  worker_kind: agent
+  claims: [pipeline.status.v1]
+  tools: [batch/runs, batch/trace, batch/trace_summary]
+  actions_may_request: [pipeline.batch_resume, pipeline.ctd_qc]
+  models: {base: base-std}
+  memory: none

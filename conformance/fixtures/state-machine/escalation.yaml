@@ -1,0 +1,728 @@
+# Collected from spec/lifecycles/escalation.yaml. The value null in from means "the object does not exist yet".
+lifecycle: spec/lifecycles/escalation.yaml
+object: escalation
+rules:
+- COM-13
+- MGR-1
+- MGR-13
+- MGR-2
+- MGR-24
+- MGR-4
+- MGR-5
+- MGR-6
+- MGR-9
+description: Allowed and forbidden transitions of the "escalation (v0.2)" lifecycle, collected from the tables of spec/lifecycles/escalation.md.
+  The implementation accepts a transition from the allowed list under the condition of its row (when); a pair from the forbidden
+  list does not change the state, and the call that asks for it is rejected. The value null in from means "the object does
+  not exist yet". An escalation lives in the bot's tenant; the terminal states merged, dismissed, answered, expired do not
+  change (MGR-6).
+states:
+- id: screened
+  terminal: false
+- id: merged
+  terminal: true
+- id: dismissed
+  terminal: true
+- id: parked
+  terminal: false
+- id: in_review
+  terminal: false
+- id: forwarded
+  terminal: false
+- id: taken
+  terminal: false
+- id: answered
+  terminal: true
+- id: expired
+  terminal: true
+allowed:
+- id: sm-esc-01
+  from: null
+  to: screened
+  by: P3 escalate; P1 escalation.submit for job; publication at the end of the attempt
+  when: 'a live attempt, at most one per attempt; schema; subject: its own worker, its own task tree or a resource from
+    the task''s scope; rate: 1 per hour per worker, 5 per day per role in the tenant, 20 per day per tenant; the evidence
+    exists and belongs to the tenant and the attempt'
+  rules:
+  - MGR-5
+  - MGR-6
+- id: sm-esc-02
+  from: null
+  to: dismissed
+  by: same
+  when: the schema, subject, rate or evidence did not pass; chain depth above 5 (chain_too_deep, PRM-6)
+  rules:
+  - MGR-5
+  - MGR-6
+- id: sm-esc-03
+  from: screened
+  to: merged
+  by: the core
+  when: an alarm is firing or an incident is open for the subject
+  rules:
+  - MGR-6
+- id: sm-esc-04
+  from: screened
+  to: dismissed
+  by: the core
+  when: 'the request has a regular path: a model grant or request_action (use_normal_path)'
+  rules:
+  - MGR-6
+- id: sm-esc-05
+  from: screened
+  to: in_review
+  by: the core
+  when: the tenant's review line covers the lens estimate; a necessity lens task review.escalation.v1 is enqueued with the
+    key system:necessity:<escalation> (IDM-2)
+  rules:
+  - COM-13
+  - MGR-6
+- id: sm-esc-06
+  from: screened
+  to: parked
+  by: the core
+  when: the review line is empty
+  rules:
+  - MGR-6
+- id: sm-esc-07
+  from: parked
+  to: in_review
+  by: the core
+  when: money in the review line has appeared
+  rules:
+  - MGR-6
+- id: sm-esc-08
+  from: in_review
+  to: forwarded
+  by: the core by the escalation section of the commission manifest
+  when: lens score from forward_if_score_gte (2), for untrusted from untrusted_forward_if_score_gte (3); at most 30 forwarded
+    per day across the whole farm
+  rules:
+  - MGR-6
+- id: sm-esc-09
+  from: in_review
+  to: dismissed
+  by: the core
+  when: score below the threshold; a lens reason from the list (evidence_below_threshold, covered_by_alarm, out_of_scope)
+  rules:
+  - MGR-6
+- id: sm-esc-10
+  from: forwarded
+  to: taken
+  by: P3 escalations_take of a holder decision attempt with the current epoch
+  when: 'the seat is in held; a task in T of class 3, with urgency: high of class 1 through the control lane (DSP-5)'
+  rules:
+  - MGR-24
+  - MGR-4
+- id: sm-esc-11
+  from: taken
+  to: forwarded
+  by: the core
+  when: the decision attempt ended without an outcome (seat_changed, fenced, cancellation, failure)
+  rules:
+  - MGR-1
+- id: sm-esc-12
+  from: taken
+  to: answered
+  by: the core at complete of the decision attempt
+  when: 'an outcome is recorded: operations (MGR-9), a card or "no action needed"'
+  rules:
+  - MGR-13
+  - MGR-9
+- id: sm-esc-13
+  from: screened
+  to: expired
+  by: the core escalation loop
+  when: escalation_ttl has passed; code shows people in T an urgent forwarded escalation that nobody took, using a template
+  rules:
+  - MGR-2
+- id: sm-esc-14
+  from: parked
+  to: expired
+  by: the core escalation loop
+  when: escalation_ttl has passed; code shows people in T an urgent forwarded escalation that nobody took, using a template
+  rules:
+  - MGR-2
+- id: sm-esc-15
+  from: in_review
+  to: expired
+  by: the core escalation loop
+  when: escalation_ttl has passed; code shows people in T an urgent forwarded escalation that nobody took, using a template
+  rules:
+  - MGR-2
+- id: sm-esc-16
+  from: forwarded
+  to: expired
+  by: the core escalation loop
+  when: escalation_ttl has passed; code shows people in T an urgent forwarded escalation that nobody took, using a template
+  rules:
+  - MGR-2
+- id: sm-esc-17
+  from: taken
+  to: expired
+  by: the core escalation loop
+  when: escalation_ttl has passed; code shows people in T an urgent forwarded escalation that nobody took, using a template
+  rules:
+  - MGR-2
+forbidden:
+- id: sm-esc-x01
+  from: null
+  to: merged
+  expect: rejected
+  rules:
+  - MGR-6
+  why: the object does not appear directly in the state merged
+- id: sm-esc-x02
+  from: null
+  to: parked
+  expect: rejected
+  rules:
+  - MGR-6
+  why: the object does not appear directly in the state parked
+- id: sm-esc-x03
+  from: null
+  to: in_review
+  expect: rejected
+  rules:
+  - COM-13
+  - MGR-6
+  why: the object does not appear directly in the state in_review
+- id: sm-esc-x04
+  from: null
+  to: forwarded
+  expect: rejected
+  rules:
+  - MGR-1
+  - MGR-6
+  why: the object does not appear directly in the state forwarded
+- id: sm-esc-x05
+  from: null
+  to: taken
+  expect: rejected
+  rules:
+  - MGR-24
+  - MGR-4
+  why: the object does not appear directly in the state taken
+- id: sm-esc-x06
+  from: null
+  to: answered
+  expect: rejected
+  rules:
+  - MGR-13
+  - MGR-9
+  why: the object does not appear directly in the state answered
+- id: sm-esc-x07
+  from: null
+  to: expired
+  expect: rejected
+  rules:
+  - MGR-2
+  why: the object does not appear directly in the state expired
+- id: sm-esc-x08
+  from: screened
+  to: screened
+  expect: rejected
+  rules:
+  - MGR-5
+  - MGR-6
+  why: the lifecycle table has no such transition
+- id: sm-esc-x09
+  from: screened
+  to: forwarded
+  expect: rejected
+  rules:
+  - MGR-1
+  - MGR-6
+  why: the lifecycle table has no such transition
+- id: sm-esc-x10
+  from: screened
+  to: taken
+  expect: rejected
+  rules:
+  - MGR-24
+  - MGR-4
+  why: the lifecycle table has no such transition
+- id: sm-esc-x11
+  from: screened
+  to: answered
+  expect: rejected
+  rules:
+  - MGR-13
+  - MGR-9
+  why: the lifecycle table has no such transition
+- id: sm-esc-x12
+  from: merged
+  to: screened
+  expect: rejected
+  rules:
+  - MGR-5
+  - MGR-6
+  why: merged is a terminal state
+- id: sm-esc-x13
+  from: merged
+  to: merged
+  expect: rejected
+  rules:
+  - MGR-6
+  why: merged is a terminal state
+- id: sm-esc-x14
+  from: merged
+  to: dismissed
+  expect: rejected
+  rules:
+  - MGR-5
+  - MGR-6
+  why: merged is a terminal state
+- id: sm-esc-x15
+  from: merged
+  to: parked
+  expect: rejected
+  rules:
+  - MGR-6
+  why: merged is a terminal state
+- id: sm-esc-x16
+  from: merged
+  to: in_review
+  expect: rejected
+  rules:
+  - COM-13
+  - MGR-6
+  why: merged is a terminal state
+- id: sm-esc-x17
+  from: merged
+  to: forwarded
+  expect: rejected
+  rules:
+  - MGR-1
+  - MGR-6
+  why: merged is a terminal state
+- id: sm-esc-x18
+  from: merged
+  to: taken
+  expect: rejected
+  rules:
+  - MGR-24
+  - MGR-4
+  why: merged is a terminal state
+- id: sm-esc-x19
+  from: merged
+  to: answered
+  expect: rejected
+  rules:
+  - MGR-13
+  - MGR-9
+  why: merged is a terminal state
+- id: sm-esc-x20
+  from: merged
+  to: expired
+  expect: rejected
+  rules:
+  - MGR-2
+  why: merged is a terminal state
+- id: sm-esc-x21
+  from: dismissed
+  to: screened
+  expect: rejected
+  rules:
+  - MGR-5
+  - MGR-6
+  why: dismissed is a terminal state
+- id: sm-esc-x22
+  from: dismissed
+  to: merged
+  expect: rejected
+  rules:
+  - MGR-6
+  why: dismissed is a terminal state
+- id: sm-esc-x23
+  from: dismissed
+  to: dismissed
+  expect: rejected
+  rules:
+  - MGR-5
+  - MGR-6
+  why: dismissed is a terminal state
+- id: sm-esc-x24
+  from: dismissed
+  to: parked
+  expect: rejected
+  rules:
+  - MGR-6
+  why: dismissed is a terminal state
+- id: sm-esc-x25
+  from: dismissed
+  to: in_review
+  expect: rejected
+  rules:
+  - COM-13
+  - MGR-6
+  why: dismissed is a terminal state
+- id: sm-esc-x26
+  from: dismissed
+  to: forwarded
+  expect: rejected
+  rules:
+  - MGR-1
+  - MGR-6
+  why: dismissed is a terminal state
+- id: sm-esc-x27
+  from: dismissed
+  to: taken
+  expect: rejected
+  rules:
+  - MGR-24
+  - MGR-4
+  why: dismissed is a terminal state
+- id: sm-esc-x28
+  from: dismissed
+  to: answered
+  expect: rejected
+  rules:
+  - MGR-13
+  - MGR-9
+  why: dismissed is a terminal state
+- id: sm-esc-x29
+  from: dismissed
+  to: expired
+  expect: rejected
+  rules:
+  - MGR-2
+  why: dismissed is a terminal state
+- id: sm-esc-x30
+  from: parked
+  to: screened
+  expect: rejected
+  rules:
+  - MGR-5
+  - MGR-6
+  why: the lifecycle table has no such transition
+- id: sm-esc-x31
+  from: parked
+  to: merged
+  expect: rejected
+  rules:
+  - MGR-6
+  why: the lifecycle table has no such transition
+- id: sm-esc-x32
+  from: parked
+  to: dismissed
+  expect: rejected
+  rules:
+  - MGR-5
+  - MGR-6
+  why: the lifecycle table has no such transition
+- id: sm-esc-x33
+  from: parked
+  to: parked
+  expect: rejected
+  rules:
+  - MGR-6
+  why: the lifecycle table has no such transition
+- id: sm-esc-x34
+  from: parked
+  to: forwarded
+  expect: rejected
+  rules:
+  - MGR-1
+  - MGR-6
+  why: the lifecycle table has no such transition
+- id: sm-esc-x35
+  from: parked
+  to: taken
+  expect: rejected
+  rules:
+  - MGR-24
+  - MGR-4
+  why: the lifecycle table has no such transition
+- id: sm-esc-x36
+  from: parked
+  to: answered
+  expect: rejected
+  rules:
+  - MGR-13
+  - MGR-9
+  why: the lifecycle table has no such transition
+- id: sm-esc-x37
+  from: in_review
+  to: screened
+  expect: rejected
+  rules:
+  - MGR-5
+  - MGR-6
+  why: the lifecycle table has no such transition
+- id: sm-esc-x38
+  from: in_review
+  to: merged
+  expect: rejected
+  rules:
+  - MGR-6
+  why: the lifecycle table has no such transition
+- id: sm-esc-x39
+  from: in_review
+  to: parked
+  expect: rejected
+  rules:
+  - MGR-6
+  why: the lifecycle table has no such transition
+- id: sm-esc-x40
+  from: in_review
+  to: in_review
+  expect: rejected
+  rules:
+  - COM-13
+  - MGR-6
+  why: the lifecycle table has no such transition
+- id: sm-esc-x41
+  from: in_review
+  to: taken
+  expect: rejected
+  rules:
+  - MGR-24
+  - MGR-4
+  why: the lifecycle table has no such transition
+- id: sm-esc-x42
+  from: in_review
+  to: answered
+  expect: rejected
+  rules:
+  - MGR-13
+  - MGR-9
+  why: the lifecycle table has no such transition
+- id: sm-esc-x43
+  from: forwarded
+  to: screened
+  expect: rejected
+  rules:
+  - MGR-5
+  - MGR-6
+  why: the lifecycle table has no such transition
+- id: sm-esc-x44
+  from: forwarded
+  to: merged
+  expect: rejected
+  rules:
+  - MGR-6
+  why: the lifecycle table has no such transition
+- id: sm-esc-x45
+  from: forwarded
+  to: dismissed
+  expect: rejected
+  rules:
+  - MGR-5
+  - MGR-6
+  why: the lifecycle table has no such transition
+- id: sm-esc-x46
+  from: forwarded
+  to: parked
+  expect: rejected
+  rules:
+  - MGR-6
+  why: the lifecycle table has no such transition
+- id: sm-esc-x47
+  from: forwarded
+  to: in_review
+  expect: rejected
+  rules:
+  - COM-13
+  - MGR-6
+  why: the lifecycle table has no such transition
+- id: sm-esc-x48
+  from: forwarded
+  to: forwarded
+  expect: rejected
+  rules:
+  - MGR-1
+  - MGR-6
+  why: the lifecycle table has no such transition
+- id: sm-esc-x49
+  from: forwarded
+  to: answered
+  expect: rejected
+  rules:
+  - MGR-13
+  - MGR-9
+  why: the lifecycle table has no such transition
+- id: sm-esc-x50
+  from: taken
+  to: screened
+  expect: rejected
+  rules:
+  - MGR-5
+  - MGR-6
+  why: the lifecycle table has no such transition
+- id: sm-esc-x51
+  from: taken
+  to: merged
+  expect: rejected
+  rules:
+  - MGR-6
+  why: the lifecycle table has no such transition
+- id: sm-esc-x52
+  from: taken
+  to: dismissed
+  expect: rejected
+  rules:
+  - MGR-5
+  - MGR-6
+  why: the lifecycle table has no such transition
+- id: sm-esc-x53
+  from: taken
+  to: parked
+  expect: rejected
+  rules:
+  - MGR-6
+  why: the lifecycle table has no such transition
+- id: sm-esc-x54
+  from: taken
+  to: in_review
+  expect: rejected
+  rules:
+  - COM-13
+  - MGR-6
+  why: the lifecycle table has no such transition
+- id: sm-esc-x55
+  from: taken
+  to: taken
+  expect: rejected
+  rules:
+  - MGR-24
+  - MGR-4
+  why: the lifecycle table has no such transition
+- id: sm-esc-x56
+  from: answered
+  to: screened
+  expect: rejected
+  rules:
+  - MGR-5
+  - MGR-6
+  why: answered is a terminal state
+- id: sm-esc-x57
+  from: answered
+  to: merged
+  expect: rejected
+  rules:
+  - MGR-6
+  why: answered is a terminal state
+- id: sm-esc-x58
+  from: answered
+  to: dismissed
+  expect: rejected
+  rules:
+  - MGR-5
+  - MGR-6
+  why: answered is a terminal state
+- id: sm-esc-x59
+  from: answered
+  to: parked
+  expect: rejected
+  rules:
+  - MGR-6
+  why: answered is a terminal state
+- id: sm-esc-x60
+  from: answered
+  to: in_review
+  expect: rejected
+  rules:
+  - COM-13
+  - MGR-6
+  why: answered is a terminal state
+- id: sm-esc-x61
+  from: answered
+  to: forwarded
+  expect: rejected
+  rules:
+  - MGR-1
+  - MGR-6
+  why: answered is a terminal state
+- id: sm-esc-x62
+  from: answered
+  to: taken
+  expect: rejected
+  rules:
+  - MGR-24
+  - MGR-4
+  why: answered is a terminal state
+- id: sm-esc-x63
+  from: answered
+  to: answered
+  expect: rejected
+  rules:
+  - MGR-13
+  - MGR-9
+  why: answered is a terminal state
+- id: sm-esc-x64
+  from: answered
+  to: expired
+  expect: rejected
+  rules:
+  - MGR-2
+  why: answered is a terminal state
+- id: sm-esc-x65
+  from: expired
+  to: screened
+  expect: rejected
+  rules:
+  - MGR-5
+  - MGR-6
+  why: expired is a terminal state
+- id: sm-esc-x66
+  from: expired
+  to: merged
+  expect: rejected
+  rules:
+  - MGR-6
+  why: expired is a terminal state
+- id: sm-esc-x67
+  from: expired
+  to: dismissed
+  expect: rejected
+  rules:
+  - MGR-5
+  - MGR-6
+  why: expired is a terminal state
+- id: sm-esc-x68
+  from: expired
+  to: parked
+  expect: rejected
+  rules:
+  - MGR-6
+  why: expired is a terminal state
+- id: sm-esc-x69
+  from: expired
+  to: in_review
+  expect: rejected
+  rules:
+  - COM-13
+  - MGR-6
+  why: expired is a terminal state
+- id: sm-esc-x70
+  from: expired
+  to: forwarded
+  expect: rejected
+  rules:
+  - MGR-1
+  - MGR-6
+  why: expired is a terminal state
+- id: sm-esc-x71
+  from: expired
+  to: taken
+  expect: rejected
+  rules:
+  - MGR-24
+  - MGR-4
+  why: expired is a terminal state
+- id: sm-esc-x72
+  from: expired
+  to: answered
+  expect: rejected
+  rules:
+  - MGR-13
+  - MGR-9
+  why: expired is a terminal state
+- id: sm-esc-x73
+  from: expired
+  to: expired
+  expect: rejected
+  rules:
+  - MGR-2
+  why: expired is a terminal state

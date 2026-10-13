@@ -1,0 +1,34 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:botaru:schema:p2-manager-reads-request:1",
+  "title": "P2 manager.reads: request",
+  "description": "Log of what the farm manager read in the tenant and when (AUD-7).",
+  "x-botaru-direction": "input",
+  "x-botaru-rules": [
+    "AUD-7"
+  ],
+  "type": "object",
+  "properties": {
+    "tenant": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/tenant_name",
+      "description": "Only the operator from farm: the tenant the operation is about; for other callers the tenant is taken from the credentials, and another tenant gives forbidden (TEN-2)."
+    },
+    "from": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/datetime"
+    },
+    "to": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/datetime"
+    },
+    "limit": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 1000
+    },
+    "after": {
+      "type": "string",
+      "maxLength": 200,
+      "description": "Cursor of the next page from the previous answer."
+    }
+  },
+  "additionalProperties": false
+}

@@ -1,0 +1,13 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:botaru:schema:empty-request:1",
+  "title": "Empty request",
+  "description": "Body of an operation without parameters: an empty object. This is how requests are built for which the core takes everything it needs from the credentials and the operation path (spec/bindings/http/README.md).",
+  "x-botaru-direction": "input",
+  "x-botaru-rules": [
+    "TEN-2"
+  ],
+  "type": "object",
+  "properties": {},
+  "additionalProperties": false
+}

@@ -1,0 +1,30 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:botaru:schema:p1-msg-ack-request:1",
+  "title": "P1 msg.ack and msg.nack: request",
+  "description": "A read mark or a return of an entry by its handle. msg.ack only marks the entry for acknowledgement: the acknowledgement happens in the complete transaction of the attempt. msg.nack at once returns the entry to the inbox with the dispatch count one greater; after the third dispatch the entry becomes dead(delivery_exhausted) (MSG-9).",
+  "x-botaru-direction": "input",
+  "x-botaru-rules": [
+    "MSG-9"
+  ],
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "handles"
+  ],
+  "properties": {
+    "handles": {
+      "type": "array",
+      "maxItems": 20,
+      "items": {
+        "type": "string",
+        "pattern": "^[A-Za-z0-9_-]{8,64}$",
+        "maxLength": 64,
+        "description": "Handle of the inbox entry that the core gave to this attempt: an opaque string, used to reply (reply_to) and to return the entry. The ids of the entry, the worker and the tenant are not visible in it."
+      },
+      "minItems": 1,
+      "uniqueItems": true,
+      "description": "Handles of the entries given to this attempt."
+    }
+  }
+}

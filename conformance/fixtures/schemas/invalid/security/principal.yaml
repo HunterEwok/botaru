@@ -1,0 +1,10 @@
+schema: urn:botaru:schema:principal:1
+rules: [IDN-4]
+description: A verification code in plain text and a principal with membership in two tenants are rejected.
+cases:
+- {id: 'human:p_01JB3Q7N0M2V8XK4DGT5RZP9WA', tenant: demo, kind: human, state: active, verification_code: '481516'}
+- id: human:p_01JB3Q7N0M2V8XK4DGT5RZP9WA
+  tenant: demo
+  kind: human
+  state: active
+  tenants: [demo, demo2]

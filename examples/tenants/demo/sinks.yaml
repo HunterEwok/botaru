@@ -1,0 +1,18 @@
+# Sinks of tenant demo (E2): the address is built from the base, the tenant and the delivery id (DLV-6).
+apiVersion: botaru/v1alpha1
+kind: Sink
+metadata: {name: archive, tenant: demo}
+spec:
+  driver: disk
+  base: "/srv/botaru/archive"
+  ceiling: internal
+  retention: 365d
+---
+apiVersion: botaru/v1alpha1
+kind: Sink
+metadata: {name: checks, tenant: demo}
+spec:
+  driver: disk
+  base: "/srv/botaru/checks"
+  ceiling: summary
+  retention: 30d

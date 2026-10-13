@@ -1,0 +1,24 @@
+# Monitoring system data for the farm adapter process (reference Zabbix,
+# spec/bindings/monitor/zabbix.md, the table in spec/ports/e5-monitor.md).
+# The farm user writes only hosts and templates in the farm group (MON-4).
+tenant: farm
+host_group: botaru-farm                    # farm host group
+template_group: botaru-farm-templates
+hosts:
+  - {name: botaru-core, machine: core1}    # host for the export of alarms and core liveness
+  - {name: botaru-backup, machine: backup1}
+template:
+  items:
+    - {key: "botaru.alarm[info]", type: trapper, value: text}
+    - {key: "botaru.alarm[warn]", type: trapper, value: text}
+    - {key: "botaru.alarm[page]", type: trapper, value: text}
+    - {key: "botaru.audit.head[farm]", type: trapper, value: text}
+    - {key: "botaru.adapter.alive[farm]", type: trapper, value: numeric}
+    - {key: botaru.health, type: http_agent, interval: 1m}
+  severity_map: {info: Information, warn: Warning, page: High}
+  macros: ["{$BOTARU.HEALTH.KEY}", "{$BOTARU.HEALTH.KEY.NEXT}", "{$BOTARU.HEALTH.WINDOW}", "{$BOTARU.ADAPTER.WINDOW}"]
+user:
+  user_group: botaru-mon-farm
+  type: Admin
+  read_write: [botaru-farm, botaru-farm-templates]
+  forbidden: [acknowledge, close, change_severity, suppress, maintenance_edit, script_on_farm_hosts]

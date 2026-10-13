@@ -1,0 +1,11 @@
+schema: spec/model/worker.schema.json
+rules: [DSP-10, TEN-4]
+description: A worker record of the assistant role without an owner.
+cases:
+- id: wk_01JB000000000000000000000A
+  tenant: demo
+  role: assistant
+  kind: agent
+  state: active
+  labels:
+    zone: lab

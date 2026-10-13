@@ -1,0 +1,82 @@
+id: fx-orc-03
+rules: [ORC-4]
+description: 'The canary, max_in_flight and the threshold are decided by deterministic core code from the campaign record. The canary is released
+  as a separate batch, and any refusal in it stops the campaign regardless of the threshold. The threshold counts failed: the campaign
+  stops when the failed items exceed the threshold; released items are finished, new ones are not released, unreleased ones become
+  skipped. The model and workers do not release items and do not change counters.'
+given:
+  tenant: demo
+  template:
+    kind: action
+    action: cleanup_pipeline_tmp
+    args: {older_than_days: 7}
+expect: {in_flight_never_above: max_in_flight}
+cases:
+- description: canary refusal with a large threshold
+  given:
+    rollout:
+      canary: 1
+      after_canary: auto
+      bake: 2m
+      max_in_flight: 2
+      max_failures: 5
+      on_unknown: pause
+      deadline: 2h
+    items: [web1, db1, ctd1]
+    results: {1: failed}
+  expect:
+    campaign: stopping
+    released: [1]
+    skipped: [2, 3]
+- description: gate after the canary
+  given:
+    rollout:
+      canary: 1
+      after_canary: manual
+      max_in_flight: 2
+      max_failures: 0
+      on_unknown: pause
+      deadline: 2h
+    items: [web1, db1, ctd1]
+    results: {1: ok}
+  expect:
+    campaign: paused
+    pause_reason: gate
+    released: [1]
+- description: threshold on failed
+  given:
+    rollout:
+      canary: 1
+      after_canary: auto
+      bake: 2m
+      max_in_flight: 2
+      max_failures: 0
+      on_unknown: pause
+      deadline: 2h
+    items: [web1, db1, ctd1, 192.0.2.10]
+    results: {1: ok, 2: failed, 3: running}
+  expect: {campaign: stopping, item_3: finishes, item_4: skipped}
+- description: unknown does not count toward the threshold
+  given:
+    rollout:
+      canary: 1
+      after_canary: auto
+      bake: 2m
+      max_in_flight: 2
+      max_failures: 0
+      on_unknown: pause
+      deadline: 2h
+    items: [web1, db1]
+    results: {1: ok, 2: unknown}
+  expect: {failed_count: 0, campaign: paused, pause_reason: unknown}
+- description: an attempt to change the course of a campaign from P1
+  given:
+    campaign: {id: k_3, state: running}
+  steps:
+  - call:
+      port: P1
+      op: campaign.control
+      request: {id: k_3, command: pause}
+    by: attempt
+    note: only a person gives a campaign command, with a button through the channel; an attempt token does not give it
+  expect: {result: rejected, reason: forbidden, campaign: {state: running}, counters: unchanged}

@@ -1,0 +1,35 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:botaru:schema:review-escalation-result:1",
+  "title": "Necessity lens output",
+  "description": "Since v0.2: the output of the review.escalation.v1 task of the necessity lens on a request to the farm manager: a score 0-3 and a reason from a closed list. Code computes the forwarding verdict by the escalation section of the commission manifest (COM-13).",
+  "x-botaru-direction": "input",
+  "x-botaru-version": "v0.2",
+  "x-botaru-rules": [
+    "COM-13"
+  ],
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "score",
+    "reason"
+  ],
+  "properties": {
+    "score": {
+      "type": "integer",
+      "description": "Score 0-3.",
+      "minimum": 0,
+      "maximum": 3
+    },
+    "reason": {
+      "enum": [
+        "evidence_below_threshold",
+        "covered_by_alarm",
+        "out_of_scope",
+        "plausible_risk",
+        "clear_risk"
+      ],
+      "description": "Reason: too little evidence; an alarm is already firing or a monitoring problem is open on the same subject; not a farm manager matter; the risk is plausible; the risk is obvious."
+    }
+  }
+}

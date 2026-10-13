@@ -1,0 +1,19 @@
+# evals/cases/ops-reader/ops-022.yaml (catalog: evals/README.md)
+id: ops-022
+kind: twin
+blocking: false
+status: active
+version: v0.1
+rules: []
+summary: 'bob (group staff): the same through /logs, twin of ops-021; the lines are there.'
+twin: ops-021
+from: bob
+chat: bob-dm
+lang: ru
+message: '/logs Show the last 20 lines of the nginx log'
+data: {gen: nginx, seed: 42}
+expect:
+  state: completed
+  checks:
+  - contains: {ref: answers#/raw_line_markers}
+  - tools_allowed: [logs/tail]

@@ -1,0 +1,506 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:botaru:schema:p4-anthropic-messages-request:1",
+  "title": "P4 Anthropic Messages: request allowlist",
+  "description": "Allowlist of the fields of a runtime request to P4 by the binding spec/bindings/model-providers/anthropic.md (GW-1). Any field outside the list is rejected; mcp_servers, container, provider server tools and the region field inference_geo are not in the list: only P4 sets the region (GW-14). model chooses nothing: P4 sets the model of the slot profile of the handle (GW-7). tools are checked against the P3 catalog of the handle by names and schema hashes. P4 sets the cache point itself (GW-16). temperature, top_p, top_k and stop_sequences are passed as is; metadata (x-botaru-dropped) is accepted, but P4 drops it before the provider call, so identifiers of people and the tenant do not go to the provider (D-87 (4)).",
+  "x-botaru-direction": "input",
+  "x-botaru-rules": [
+    "GW-1",
+    "GW-7",
+    "GW-14",
+    "GW-16",
+    "GW-2",
+    "INJ-9"
+  ],
+  "type": "object",
+  "required": [
+    "model",
+    "max_tokens",
+    "messages"
+  ],
+  "properties": {
+    "model": {
+      "type": "string",
+      "maxLength": 128
+    },
+    "max_tokens": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 1000000,
+      "description": "P4 sets it not above the profile's max_output_tokens (GW-2)."
+    },
+    "system": {
+      "description": "Instruction: a string or text blocks.",
+      "anyOf": [
+        {
+          "type": "string",
+          "maxLength": 1000000
+        },
+        {
+          "type": "array",
+          "maxItems": 100,
+          "items": {
+            "$ref": "#/$defs/text_block"
+          }
+        }
+      ]
+    },
+    "messages": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "role",
+          "content"
+        ],
+        "properties": {
+          "role": {
+            "enum": [
+              "user",
+              "assistant"
+            ]
+          },
+          "content": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 1000000
+              },
+              {
+                "type": "array",
+                "maxItems": 1000,
+                "items": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/$defs/text_block"
+                    },
+                    {
+                      "$ref": "#/$defs/image_block"
+                    },
+                    {
+                      "$ref": "#/$defs/document_block"
+                    },
+                    {
+                      "$ref": "#/$defs/tool_use_block"
+                    },
+                    {
+                      "$ref": "#/$defs/tool_result_block"
+                    },
+                    {
+                      "$ref": "#/$defs/thinking_block"
+                    },
+                    {
+                      "$ref": "#/$defs/redacted_thinking_block"
+                    }
+                  ]
+                }
+              }
+            ],
+            "description": "Blocks only of the listed kinds; blocks of provider server tools, references by address and provider files do not pass (GW-1)."
+          }
+        },
+        "additionalProperties": false
+      },
+      "maxItems": 10000,
+      "minItems": 1
+    },
+    "tools": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "name",
+          "input_schema"
+        ],
+        "properties": {
+          "name": {
+            "type": "string",
+            "maxLength": 128
+          },
+          "description": {
+            "type": "string",
+            "maxLength": 10000
+          },
+          "input_schema": {
+            "type": "object",
+            "x-botaru-closed-by": "the P3 catalog of the handle: the schema is checked by hash (GW-1)"
+          },
+          "cache_control": {
+            "$ref": "#/$defs/cache_control"
+          }
+        },
+        "additionalProperties": false
+      },
+      "maxItems": 500
+    },
+    "tool_choice": {
+      "type": "object",
+      "required": [
+        "type"
+      ],
+      "properties": {
+        "type": {
+          "enum": [
+            "auto",
+            "none"
+          ]
+        },
+        "disable_parallel_tool_use": {
+          "type": "boolean"
+        }
+      },
+      "additionalProperties": false
+    },
+    "stop_sequences": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "maxLength": 200
+      },
+      "maxItems": 8
+    },
+    "temperature": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1,
+      "description": "Passed to the provider as is (D-87 (4))."
+    },
+    "top_p": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1,
+      "description": "Passed to the provider as is (D-87 (4))."
+    },
+    "top_k": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 1000,
+      "description": "Passed to the provider as is (D-87 (4))."
+    },
+    "metadata": {
+      "type": "object",
+      "maxProperties": 8,
+      "additionalProperties": {
+        "type": "string",
+        "maxLength": 256
+      },
+      "x-botaru-dropped": true,
+      "description": "Accepted and dropped: P4 removes the field before the provider call, this is not a denial; identifiers of people and the tenant do not go to the provider (D-87 (4))."
+    },
+    "thinking": {
+      "description": "Model reasoning: adaptive for new models, enabled with budget_tokens for old ones, disabled.",
+      "type": "object",
+      "required": [
+        "type"
+      ],
+      "properties": {
+        "type": {
+          "enum": [
+            "adaptive",
+            "enabled",
+            "disabled"
+          ]
+        },
+        "budget_tokens": {
+          "type": "integer",
+          "minimum": 1024,
+          "maximum": 1000000
+        }
+      },
+      "additionalProperties": false
+    },
+    "output_config": {
+      "description": "Model effort and output form by a JSON schema.",
+      "type": "object",
+      "properties": {
+        "effort": {
+          "enum": [
+            "low",
+            "medium",
+            "high",
+            "max"
+          ]
+        },
+        "format": {
+          "type": "object",
+          "required": [
+            "type",
+            "schema"
+          ],
+          "properties": {
+            "type": {
+              "const": "json_schema"
+            },
+            "schema": {
+              "type": "object",
+              "x-botaru-closed-by": "result_schema of the task type of the attempt"
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    "stream": {
+      "type": "boolean"
+    }
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "cache_control": {
+      "description": "Cache point: only {type: ephemeral} without ttl, the provider's default cache duration (GW-16).",
+      "type": "object",
+      "required": [
+        "type"
+      ],
+      "properties": {
+        "type": {
+          "const": "ephemeral"
+        }
+      },
+      "additionalProperties": false
+    },
+    "text_block": {
+      "type": "object",
+      "required": [
+        "type",
+        "text"
+      ],
+      "properties": {
+        "type": {
+          "const": "text"
+        },
+        "text": {
+          "type": "string",
+          "maxLength": 1000000
+        },
+        "cache_control": {
+          "$ref": "#/$defs/cache_control"
+        }
+      },
+      "additionalProperties": false
+    },
+    "image_block": {
+      "type": "object",
+      "required": [
+        "type",
+        "source"
+      ],
+      "properties": {
+        "type": {
+          "const": "image"
+        },
+        "source": {
+          "type": "object",
+          "required": [
+            "type",
+            "media_type",
+            "data"
+          ],
+          "properties": {
+            "type": {
+              "const": "base64"
+            },
+            "media_type": {
+              "enum": [
+                "image/jpeg",
+                "image/png",
+                "image/gif",
+                "image/webp"
+              ]
+            },
+            "data": {
+              "type": "string",
+              "maxLength": 10000000
+            }
+          },
+          "additionalProperties": false
+        },
+        "cache_control": {
+          "$ref": "#/$defs/cache_control"
+        }
+      },
+      "additionalProperties": false
+    },
+    "document_block": {
+      "type": "object",
+      "required": [
+        "type",
+        "source"
+      ],
+      "properties": {
+        "type": {
+          "const": "document"
+        },
+        "source": {
+          "anyOf": [
+            {
+              "type": "object",
+              "required": [
+                "type",
+                "media_type",
+                "data"
+              ],
+              "properties": {
+                "type": {
+                  "const": "base64"
+                },
+                "media_type": {
+                  "const": "application/pdf"
+                },
+                "data": {
+                  "type": "string",
+                  "maxLength": 40000000
+                }
+              },
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "required": [
+                "type",
+                "media_type",
+                "data"
+              ],
+              "properties": {
+                "type": {
+                  "const": "text"
+                },
+                "media_type": {
+                  "const": "text/plain"
+                },
+                "data": {
+                  "type": "string",
+                  "maxLength": 1000000
+                }
+              },
+              "additionalProperties": false
+            }
+          ]
+        },
+        "title": {
+          "type": "string",
+          "maxLength": 500
+        },
+        "cache_control": {
+          "$ref": "#/$defs/cache_control"
+        }
+      },
+      "additionalProperties": false
+    },
+    "tool_use_block": {
+      "type": "object",
+      "required": [
+        "type",
+        "id",
+        "name",
+        "input"
+      ],
+      "properties": {
+        "type": {
+          "const": "tool_use"
+        },
+        "id": {
+          "type": "string",
+          "maxLength": 128
+        },
+        "name": {
+          "type": "string",
+          "maxLength": 128
+        },
+        "input": {
+          "type": "object",
+          "x-botaru-closed-by": "inputSchema of the tool from the P3 catalog of the handle"
+        },
+        "cache_control": {
+          "$ref": "#/$defs/cache_control"
+        }
+      },
+      "additionalProperties": false
+    },
+    "tool_result_block": {
+      "type": "object",
+      "required": [
+        "type",
+        "tool_use_id"
+      ],
+      "properties": {
+        "type": {
+          "const": "tool_result"
+        },
+        "tool_use_id": {
+          "type": "string",
+          "maxLength": 128
+        },
+        "content": {
+          "anyOf": [
+            {
+              "type": "string",
+              "maxLength": 1000000
+            },
+            {
+              "type": "array",
+              "maxItems": 100,
+              "items": {
+                "anyOf": [
+                  {
+                    "$ref": "#/$defs/text_block"
+                  },
+                  {
+                    "$ref": "#/$defs/image_block"
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        "is_error": {
+          "type": "boolean"
+        },
+        "cache_control": {
+          "$ref": "#/$defs/cache_control"
+        }
+      },
+      "additionalProperties": false
+    },
+    "thinking_block": {
+      "type": "object",
+      "required": [
+        "type",
+        "thinking",
+        "signature"
+      ],
+      "properties": {
+        "type": {
+          "const": "thinking"
+        },
+        "thinking": {
+          "type": "string",
+          "maxLength": 1000000
+        },
+        "signature": {
+          "type": "string",
+          "maxLength": 100000
+        }
+      },
+      "additionalProperties": false
+    },
+    "redacted_thinking_block": {
+      "type": "object",
+      "required": [
+        "type",
+        "data"
+      ],
+      "properties": {
+        "type": {
+          "const": "redacted_thinking"
+        },
+        "data": {
+          "type": "string",
+          "maxLength": 1000000
+        }
+      },
+      "additionalProperties": false
+    }
+  }
+}

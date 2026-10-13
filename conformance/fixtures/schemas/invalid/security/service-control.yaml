@@ -1,0 +1,13 @@
+schema: urn:botaru:schema:service-control:1
+rules:
+- APR-18
+- INJ-1
+description: A verb outside the closed list, unit instead of a catalog service name and an extra argument are rejected.
+cases:
+- service: nginx
+  verb: reload
+- service: nginx.service
+  verb: restart
+- service: nginx
+  verb: restart
+  unit: postgresql.service

@@ -1,0 +1,55 @@
+registry: grant-request-reasons
+version: 1
+description: >-
+  Closed fields of a model grant request (MGR-17, P1 grant.request and the built-in
+  tool request_model_grant). The kind field of an entry says which list
+  it belongs to: reason (why the attempt asks for a stronger model; code checks the reasons
+  of its own attempts from evidence against it) or benefit (what the grant will give).
+  Entry fields: kind, since, meaning, rules.
+source: docs/farm-manager.md
+entries:
+  - id: output_schema_invalid_repeated
+    kind: reason
+    since: v0.2
+    meaning: the result of the attempts of this task failed the schema several times
+    rules: [MGR-17]
+  - id: context_too_large
+    kind: reason
+    since: v0.2
+    meaning: the initial input of the task is larger than the threshold of its class; tool output is not part of the initial input
+    rules: [MGR-17, MGR-40]
+  - id: quality_gate_failed
+    kind: reason
+    since: v0.2
+    meaning: the result failed the quality check
+    rules: [MGR-17]
+  - id: tool_plan_failed
+    kind: reason
+    since: v0.2
+    meaning: the attempt did not complete the plan of tool calls
+    rules: [MGR-17]
+  - id: low_confidence_declared
+    kind: reason
+    since: v0.2
+    meaning: the attempt declared low confidence in the result
+    rules: [MGR-17]
+  - id: pass_schema
+    kind: benefit
+    since: v0.2
+    meaning: the result will pass the schema
+    rules: [MGR-17]
+  - id: fit_context
+    kind: benefit
+    since: v0.2
+    meaning: the input will fit into the context
+    rules: [MGR-17]
+  - id: pass_quality_gate
+    kind: benefit
+    since: v0.2
+    meaning: the result will pass the quality check
+    rules: [MGR-17]
+  - id: complete_tool_plan
+    kind: benefit
+    since: v0.2
+    meaning: the plan of tool calls will be completed
+    rules: [MGR-17]

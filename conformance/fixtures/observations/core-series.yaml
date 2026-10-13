@@ -1,0 +1,63 @@
+id: fx-observations-core-series
+rules: [OBV-5, OBV-6]
+description: 'Core series. The deterministic observe loop computes the series of source core only from records of the same tenant:
+  attempts, tasks, usage lines, schedule slots and end-of-work events outside the farm; identical records give identical
+  points (OBV-5). The registry spec/model/core-series.yaml sets the series and their outcome block; only a series with a full outcome block
+  can be a metric or a trial guard, and a registry series without a full block does not pass the lint (OBV-6).'
+cases:
+- id: obv-fx-20
+  rules: [OBV-5]
+  description: Two weeks of tasks of the backup demo.db.backup.v1 (10 done, 4 deadline_exceeded) give a done share of 0.71 in farm.task.outcome
+    over 14 days; a second observe run over the same records gives the same points.
+  given:
+    tenant: demo
+    tasks:
+      type: demo.db.backup.v1
+      window: 14d
+      outcomes: {done: 10, deadline_exceeded: 4}
+    runs: 2
+  expect:
+    series: farm.task.outcome
+    subject: task_type:demo.db.backup.v1
+    rollup: {window.share: 0.71}
+    samples: 14
+    runs_equal: true
+- id: obv-fx-21
+  rules: [OBV-5, TEN-4]
+  description: Records of tenant demo2 of the same task type do not go into the demo series; a point of the demo series is not visible in any
+    demo2 request.
+  given:
+    tasks:
+    - {tenant: demo, type: demo.db.backup.v1, outcome: done, count: 10}
+    - {tenant: demo2, type: demo.db.backup.v1, outcome: failed, count: 10}
+  expect:
+    demo:
+      series: farm.task.outcome
+      samples: 10
+      rollup: {window.share: 1.0}
+    demo2_query_sees_demo_points: false
+- id: obv-fx-22
+  rules: [OBV-6]
+  description: 'Each record of the registry core-series.yaml carries a full outcome block: unit, compare from rollups.yaml,
+    better, tolerance tolerance_pct or tolerance_pp, min_samples, and share series also good.'
+  given: {registry: spec/model/core-series.yaml}
+  expect:
+    every_entry_has: [unit, compare, better, tolerance, min_samples]
+    share_rows_have: [good]
+    result: ok
+- id: obv-fx-23
+  rules: [OBV-6]
+  description: A record of the core series registry without min_samples does not pass the lint.
+  given:
+    registry_entry:
+      id: farm.task.outcome
+      catalog_kind: task_type
+      outcome: {unit: share, compare: window.share, good: done, better: up, tolerance_pp: 5}
+  expect: {result: rejected, stage: lint, field: outcome.min_samples}
+- id: obv-fx-24
+  rules: [OBV-6, PRP-21]
+  description: 'Registry defaults: farm.task.outcome is compared by the done share with a tolerance of 5 p.p. over 14
+    tasks; farm.backup.age by the maximum per day with a tolerance of 10% over 10 days.'
+  expect:
+    farm.task.outcome: {compare: window.share, good: done, better: up, tolerance_pp: 5, min_samples: 14}
+    farm.backup.age: {compare: day.max, better: down, tolerance_pct: 10, min_samples: 10}

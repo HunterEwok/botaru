@@ -1,0 +1,42 @@
+# Canaries of append-only stores (AUD-2): audit, events, the transition journal, usage.
+id: fx-canaries-append-only
+rules: [AUD-2]
+description: A canary is put into the task goal, a message text, a tool output and a sandbox argv; it must not be in the
+  append-only stores, which hold only ids, sizes, hashes, times and codes.
+cases:
+- id: can-aud-01
+  rules: [AUD-2]
+  given:
+    canary:
+      value: CANARY-NOT-A-SECRET-goal-text
+      planted_in: {task_body: goal}
+    may_appear: [task_body, task_journal]
+  expect:
+    not_in: [audit, events, transitions, spend]
+- id: can-aud-02
+  rules: [AUD-2]
+  given:
+    canary:
+      value: CANARY-NOT-A-SECRET-sandbox-argv
+      planted_in: {sandbox_run: argv}
+  expect:
+    audit: {argv_hash: present, argv_len: present}
+    not_in: [audit, events]
+- id: can-aud-03
+  rules: [AUD-2]
+  given:
+    canary:
+      value: CANARY-NOT-A-SECRET-bot-note
+      planted_in: {bot_message: note}
+    may_appear: [content]
+  expect:
+    not_in: [audit, events]
+- id: can-aud-04
+  rules: [AUD-2]
+  given:
+    canary:
+      value: telegram:100200300
+      planted_in: {activity: sender.identity}
+    note: external ids in the audit are replaced with the internal principal id
+  expect:
+    not_in: [audit, events]

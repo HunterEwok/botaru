@@ -1,0 +1,136 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:botaru:schema:review-result:1",
+  "title": "Reviewer output (review-result)",
+  "description": "Output of a lens review task by the closed schema review-result (COM-3). Only lenses with a veto have a veto (lenses.yaml). The reviewer note is untrusted; the verdict code does not read it. The verdict code does not read a review with shadow: true, and it is not shown to people or reviewers (COM-9).",
+  "x-botaru-direction": "input",
+  "x-botaru-rules": [
+    "COM-3",
+    "COM-9",
+    "COM-4"
+  ],
+  "oneOf": [
+    {
+      "type": "object",
+      "description": "Lens with a veto.",
+      "additionalProperties": false,
+      "required": [
+        "lens",
+        "score",
+        "confidence"
+      ],
+      "properties": {
+        "lens": {
+          "description": "Proposal lens from spec/model/lenses.yaml.",
+          "enum": [
+            "security",
+            "operational"
+          ],
+          "x-botaru-registry": "lenses"
+        },
+        "score": {
+          "type": "integer",
+          "description": "Score 0-4.",
+          "minimum": 0,
+          "maximum": 4
+        },
+        "veto": {
+          "type": "boolean",
+          "default": false,
+          "description": "Veto; only for lenses with a veto (security, operational)."
+        },
+        "concerns": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "description": "Concern code from a closed list, for example report_delay.",
+            "pattern": "^[a-z][a-z0-9_]*$",
+            "maxLength": 64
+          },
+          "maxItems": 5,
+          "description": "Up to 5 concern codes.",
+          "uniqueItems": true
+        },
+        "confidence": {
+          "enum": [
+            "low",
+            "medium",
+            "high"
+          ],
+          "description": "Reviewer confidence."
+        },
+        "shadow": {
+          "type": "boolean",
+          "default": false,
+          "description": "Shadow review (COM-9, COM-10)."
+        },
+        "note": {
+          "type": "string",
+          "maxLength": 500,
+          "description": "Reviewer note, untrusted; shown to people only as a marked block in \"Details\"."
+        }
+      }
+    },
+    {
+      "type": "object",
+      "description": "Lens without a veto.",
+      "additionalProperties": false,
+      "required": [
+        "lens",
+        "score",
+        "confidence"
+      ],
+      "properties": {
+        "lens": {
+          "description": "Proposal lens from spec/model/lenses.yaml.",
+          "enum": [
+            "cost",
+            "value",
+            "farm_manager"
+          ],
+          "x-botaru-registry": "lenses"
+        },
+        "score": {
+          "type": "integer",
+          "description": "Score 0-4.",
+          "minimum": 0,
+          "maximum": 4
+        },
+        "veto": {
+          "const": false,
+          "description": "For a lens without a veto the field veto is only false."
+        },
+        "concerns": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "description": "Concern code from a closed list, for example report_delay.",
+            "pattern": "^[a-z][a-z0-9_]*$",
+            "maxLength": 64
+          },
+          "maxItems": 5,
+          "description": "Up to 5 concern codes.",
+          "uniqueItems": true
+        },
+        "confidence": {
+          "enum": [
+            "low",
+            "medium",
+            "high"
+          ],
+          "description": "Reviewer confidence."
+        },
+        "shadow": {
+          "type": "boolean",
+          "default": false,
+          "description": "Shadow review (COM-9, COM-10)."
+        },
+        "note": {
+          "type": "string",
+          "maxLength": 500,
+          "description": "Reviewer note, untrusted; shown to people only as a marked block in \"Details\"."
+        }
+      }
+    }
+  ]
+}

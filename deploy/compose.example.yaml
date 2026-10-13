@@ -1,0 +1,42 @@
+# The farm's deployment description as data (DEP-10) by the schema
+# spec/model/deploy-topology.schema.json. The file is not run: the deployment
+# lint uses it to check the placement rules before rollout and together with
+# farmctl doctor (DEP-1, DEP-3..DEP-9, DEP-11, SEC-2, SEC-5, MON-2, RET-5).
+# The farm nodes core1 and backup1 are never resources of a tenant catalog; web1,
+# db1 and ctd1 are machines of the tenant demo only (D-75).
+monitoring: {url: "https://monitor.example.org", address: 192.0.2.40}   # not on the core machine (MON-2)
+farm_hosts: [core1, backup1]                                             # farm nodes (DEP-11)
+health_keys: [health-key]                  # names of the P2 health key values; two names during a rotation
+hosts:
+  core1:
+    kind: production
+    processes:
+      - {name: farmd, kind: core, user: botaru-core, networks: [core, store, provider-out],
+         secrets: [store-core, provider-key-demo],
+         listeners: {p1: {networks: [core]}, p2: {networks: [admin, monitoring]}}}   # no test-control port in production (D-86 (4))
+      - {name: store, kind: store, user: botaru-store, networks: [store], secrets: [store-server]}
+      - {name: channel-demo, kind: channel, tenant: demo, user: botaru-chan-demo,
+         networks: [core, messenger-out], secrets: [bot-token-demo]}
+      - {name: monitor, kind: monitor, user: botaru-mon, networks: [core, monitor-out],
+         secrets: [worker-token-monitor, monitor-api-token]}
+  backup1:
+    kind: production                       # backups of the store and the erasure log are not on the core machine (RET-5)
+    processes:
+      - {name: backup, kind: backup, user: botaru-backup, networks: [backup], secrets: [backup-key]}
+  web1:
+    kind: production
+    processes:
+      - {name: th-demo-read, kind: toolhost, tenant: demo, placement: host, user: botaru-th-demo,
+         networks: [core, plug-metrics-demo], secrets: [worker-token-th-demo-read]}
+      - {name: logs, kind: plugin, parent: th-demo-read, mode: stdio, secrets: [], egress: []}
+      - {name: metrics, kind: plugin, parent: th-demo-read, mode: container, user: botaru-metrics-demo,
+         networks: [plug-metrics-demo], secrets: [metrics-token-demo], egress: [metrics.example.org]}
+      - {name: th-demo-act, kind: toolhost, tenant: demo, placement: host, tools: write,
+         user: botaru-act-demo, networks: [core], secrets: [worker-token-th-demo-act]}
+  ctd1:
+    kind: production
+    processes:
+      - {name: th-demo-act, kind: toolhost, tenant: demo, placement: host, tools: write,
+         user: botaru-act-demo, networks: [core], secrets: [worker-token-th-demo-act]}
+      - {name: pipeline, kind: plugin, parent: th-demo-act, mode: stdio, secrets: [], egress: []}
+    os_users: {ctd-qc-run: {demo: botaru-ctd-demo}}

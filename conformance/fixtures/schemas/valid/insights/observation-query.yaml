@@ -1,0 +1,8 @@
+schema: spec/model/observation-query.schema.json
+rules: [OBV-3, AGG-2]
+description: >-
+  observations_query arguments that the schema accepts: a query by a seat bot about one subject and an aggregator
+  query with group_by over many subjects.
+cases:
+  - {series: farm.task.outcome, subject: 'task_type:demo.db.backup.v1', window: 14d, rollup: window.share}
+  - {series: host.load.v1, window: 7d, rollup: hour.max, group_by: host}

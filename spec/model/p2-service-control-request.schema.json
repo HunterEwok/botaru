@@ -1,0 +1,26 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:botaru:schema:p2-service-control-request:1",
+  "title": "P2 service.control: request",
+  "description": "The command /service <verb> <service> in a direct chat from a person with their own capability service.control:<service> (PRM-18). Without a card only restart from services[].no_card; start and stop create an approval and a card. An audit record service_grant with a human author.",
+  "x-botaru-direction": "input",
+  "x-botaru-rules": [
+    "PRM-18",
+    "APR-18",
+    "PRM-15"
+  ],
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "service",
+    "verb"
+  ],
+  "properties": {
+    "service": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/name"
+    },
+    "verb": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/service_verb"
+    }
+  }
+}

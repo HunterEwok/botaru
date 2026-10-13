@@ -1,0 +1,35 @@
+# Flow 9 from examples/flows.md: is the data portal working, group chat lab.
+# alice asks, as in the text.
+id: flow-09-portal-health
+rules: [PRM-10, DLV-7, DLV-15, INJ-8, INJ-1]
+description: >-
+  Schedule ext-checks enqueues job check.http.v1, and the result goes to the checks sink. alice asks
+  in lab; the model reads checks/latest by check id, the summary goes to the chat and the rest to the private chat.
+given:
+  tenant: demo
+  people:
+    - {principal: system, kind: system, groups: [system-ops]}
+    - {principal: alice, kind: user, groups: [user]}
+  chats: [{name: lab, ceiling: summary}]
+  manifests: [examples/tenants/demo/, examples/roles/data-job/role.yaml, examples/roles/ops-reader/role.yaml,
+              examples/tasktypes/check.http.v1.yaml, examples/tasktypes/ops.health.v1.yaml, examples/tools/checks/tool.yaml]
+steps:
+  - {port: core, op: schedule.fire, schedule: ext-checks, slot: "2026-10-05T08:00Z", expect: {task: {type: check.http.v1}}}
+  - {port: P1, op: claim, by: role:data-job, request: {kinds: [attempt]}}
+  - {port: P1, op: complete, by: role:data-job, result: {checks: [{check: data-portal, status: 200, ms: 420}, {check: docs-site, status: 200, ms: 610}]},
+     expect: {deliveries: [{kind: task_result, to: "sink:checks"}]}}
+  - {port: P1, op: submit_activity, by: channel:telegram,
+     activity: {kind: message, channel: telegram, update_id: "7", sender: {identity: "telegram:1001", verified: true}, chat: {kind: group, external_id: "-100200"}, text: "/health@demo_bot is the data portal working?"},
+     expect: {task: {type: ops.health.v1, record: {max_tier: 0, data_mark: summary}}}}
+  - {port: P1, op: claim, by: role:ops-reader, request: {kinds: [attempt]}}
+  - {port: P3, op: tools/call, tool: checks/latest, args: {check: data-portal}}
+  - {port: P3, op: tools/call, tool: checks/latest, args: {check: docs-site}}
+  - {port: P1, op: complete, by: role:ops-reader, result: {answer: "The portal responds; uploads are possible.", verdict: up, checks: [data-portal, docs-site]},
+     expect: {deliveries: [{kind: task_result, to: "chat:lab", summary_only: true}, {kind: task_result, to: origin}]}}
+expect:
+  events: [task.submitted, task.working, task.completed]
+  denied:
+    - {port: P3, op: tools/call, tool: checks/latest, args: {check: "https://203.0.113.9/upload"}, reason: input_schema_invalid}
+  not:
+    - "opening a link from the message (INJ-8)"
+    - "the full answer and data above summary in the group (DLV-15)"

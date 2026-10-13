@@ -1,0 +1,28 @@
+# Personal assistant on command /a (flow 8): class summary, memory scope person (MEM-2).
+apiVersion: botaru/v1alpha1
+kind: TaskType
+metadata: {name: assist.chat.v1}
+spec:
+  title: "Personal assistant"
+  worker_kind: agent
+  purpose: work
+  tier: 0
+  data_class: summary
+  instruction: |
+    Help with a draft or a question. You send nothing yourself: the person sends it.
+  params_schema: {type: object, additionalProperties: false, properties: {}}
+  result_schema:
+    type: object
+    additionalProperties: false
+    required: [answer]
+    properties:
+      answer: {type: string, maxLength: 4000}
+      need_input: {type: boolean, x-botaru-read-by: code}
+  dispatch: {priority_class: 3}
+  interactive: true
+  timeouts: {start_by: 5m, lease: 120s, heartbeat: 30s, attempt: 5m, deadline: 20m}
+  retry: {max_attempts: 2, max_runs: 3}
+  tree_budget_eur: 0.10
+  max_children: 0
+  followup_window_s: 1800
+  goal_trust: untrusted

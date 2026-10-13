@@ -1,0 +1,58 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:botaru:schema:p1-enqueue-response:1",
+  "title": "P1 enqueue: response",
+  "description": "TaskRef{id, existing}: existing: true means that the key already existed for the same initiator with the same body and the existing task is returned (IDM-1). A denial is problem details with a reason from the registry; a permission denial carries needs, a ceiling denial retry_after_s. idempotency_conflict comes without an id. The branch with reason in the success body is deprecated: in the HTTP v1 binding an enqueue denial always comes as problem details with status 422 (spec/bindings/http/README.md); the branch remains until 1.0 only for form compatibility.",
+  "x-botaru-direction": "output",
+  "x-botaru-rules": [
+    "IDM-1",
+    "PRM-8",
+    "DSP-7"
+  ],
+  "type": "object",
+  "properties": {
+    "id": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/object_id"
+    },
+    "existing": {
+      "type": "boolean"
+    },
+    "reason": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/reason"
+    },
+    "needs": {
+      "description": "Permissions that were missing; code fills it.",
+      "type": "array",
+      "items": {
+        "type": "string",
+        "maxLength": 200
+      }
+    },
+    "retry_after_s": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/seconds"
+    }
+  },
+  "oneOf": [
+    {
+      "required": [
+        "id",
+        "existing"
+      ],
+      "not": {
+        "required": [
+          "reason"
+        ]
+      }
+    },
+    {
+      "required": [
+        "reason"
+      ],
+      "not": {
+        "required": [
+          "id"
+        ]
+      }
+    }
+  ]
+}

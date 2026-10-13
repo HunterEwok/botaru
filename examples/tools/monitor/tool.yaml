@@ -1,0 +1,68 @@
+# Read plugin for the organization's monitoring system (MON-6): nodes only from the catalog of its own tenant.
+apiVersion: botaru/v1alpha1
+kind: ToolPlugin
+metadata: {name: monitor}
+spec:
+  source: {image: "registry.example.org/botaru-monitor-read@sha256:<digest>"}
+  placement: host
+  network: {egress: [monitor-api]}
+  secrets: [MONITOR_READ_TOKEN]
+  tools:
+    - name: problems
+      access: read
+      tier: 1
+      output_class: internal
+      untrusted_output: false
+      redact: [ip, email, secret]
+      target: any
+      params:
+        host: {enum_from: catalog.hosts}
+        since: {type: string, x-botaru-format: datetime}
+      output_limit_kb: 16
+    - name: item_history
+      access: read
+      tier: 1
+      output_class: internal
+      untrusted_output: false
+      redact: [ip, email, secret]
+      target: any
+      params:
+        host: {enum_from: catalog.hosts}
+        item: {enum: [cpu_load, mem_used, disk_used, net_in, net_out]}
+        start: {type: string, x-botaru-format: datetime}
+        end: {type: string, x-botaru-format: datetime}
+        step: {enum: ["1m", "5m", "1h"]}
+      output_limit_kb: 32
+    - name: maintenance
+      access: read
+      tier: 1
+      output_class: internal
+      untrusted_output: false
+      redact: [ip, email, secret]
+      target: any
+      params:
+        host: {enum_from: catalog.hosts}
+      output_limit_kb: 8
+    - name: item_text
+      access: read
+      tier: 1
+      output_class: internal
+      untrusted_output: true
+      redact: [ip, email, secret]
+      target: any
+      params:
+        host: {enum_from: catalog.hosts}
+        trigger: {enum_from: catalog.monitor_triggers}
+        since: {type: string, x-botaru-format: datetime}
+      output_limit_kb: 16
+    - name: problem_comments
+      access: read
+      tier: 1
+      output_class: internal
+      untrusted_output: true
+      redact: [ip, email, secret]
+      target: any
+      params:
+        host: {enum_from: catalog.hosts}
+      output_limit_kb: 8
+    - {name: execute_api, enabled: false, reason: "free-form API request"}

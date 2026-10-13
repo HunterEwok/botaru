@@ -1,0 +1,7 @@
+schema: urn:botaru:schema:p2-restore-complete-request:1
+rules:
+- RET-6
+description: With the --spend-pending flag and without it.
+cases:
+- spend_pending: true
+- {}

@@ -1,0 +1,26 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:botaru:schema:p2-erasure-match-request:1",
+  "title": "P2 erasure.match: request",
+  "description": "Erasure by string match at stores that the core does not read: a person with admin:people creates it, another person with the same permission confirms it; the strings go into the match work of the stores (SEC-11, RET-7).",
+  "x-botaru-direction": "input",
+  "x-botaru-rules": [
+    "SEC-11",
+    "RET-7",
+    "RET-4"
+  ],
+  "type": "object",
+  "required": [
+    "subject",
+    "needles"
+  ],
+  "properties": {
+    "subject": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/principal_ref"
+    },
+    "needles": {
+      "$ref": "urn:botaru:schema:erasure-work:1#/properties/needles"
+    }
+  },
+  "additionalProperties": false
+}

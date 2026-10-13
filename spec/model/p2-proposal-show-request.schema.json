@@ -1,0 +1,21 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:botaru:schema:p2-proposal-show-request:1",
+  "title": "P2 proposal.show: request",
+  "description": "Showing one proposal record with the change trial and the reverse edit of the executed change (PRP-20). Denial: forbidden.",
+  "x-botaru-direction": "input",
+  "x-botaru-rules": [
+    "PRP-20",
+    "DIG-1"
+  ],
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "proposal"
+  ],
+  "properties": {
+    "proposal": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/object_id"
+    }
+  }
+}

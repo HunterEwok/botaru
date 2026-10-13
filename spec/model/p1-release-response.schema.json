@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:botaru:schema:p1-release-response:1",
+  "title": "P1 release: response",
+  "description": "The lease is closed as released. Denial: fenced.",
+  "x-botaru-direction": "output",
+  "x-botaru-rules": [
+    "FEN-2"
+  ],
+  "type": "object",
+  "required": [
+    "lease_state"
+  ],
+  "properties": {
+    "lease_state": {
+      "const": "released"
+    }
+  }
+}

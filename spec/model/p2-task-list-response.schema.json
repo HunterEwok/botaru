@@ -1,0 +1,55 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:botaru:schema:p2-task-list-response:1",
+  "title": "P2 task.list, team.tasks, about: response",
+  "description": "Rows of the code table; for about, a code text from the text catalog (what this bot is, who the tenant is, where /mydata is).",
+  "x-botaru-direction": "output",
+  "x-botaru-rules": [
+    "PRM-15"
+  ],
+  "type": "object",
+  "properties": {
+    "items": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "id",
+          "type",
+          "state"
+        ],
+        "properties": {
+          "id": {
+            "$ref": "urn:botaru:schema:common:1#/$defs/object_id"
+          },
+          "type": {
+            "$ref": "urn:botaru:schema:common:1#/$defs/type_name"
+          },
+          "title": {
+            "type": "string",
+            "maxLength": 200,
+            "description": "Type title (title), not the name."
+          },
+          "state": {
+            "type": "string",
+            "maxLength": 64,
+            "pattern": "^[a-z][a-z0-9_]*$"
+          },
+          "created_at": {
+            "$ref": "urn:botaru:schema:common:1#/$defs/datetime"
+          }
+        }
+      },
+      "maxItems": 1000
+    },
+    "text": {
+      "type": "string",
+      "maxLength": 4096
+    },
+    "next": {
+      "type": "string",
+      "maxLength": 200,
+      "description": "Cursor of the next page from the previous answer."
+    }
+  }
+}

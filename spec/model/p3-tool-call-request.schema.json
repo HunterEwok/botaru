@@ -1,0 +1,45 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:botaru:schema:p3-tool-call-request:1",
+  "title": "P3 tools/call: request",
+  "description": "A tool call by the runtime through P3 by the MCP profile without sessions (spec/bindings/mcp/README.md). The tool name comes from the tools/list of this handle; the arguments are checked by the closed schema of the manifest or of the built-in tool (INJ-1), so here they are only an object. The trace context in _meta does not affect decisions; the handle is not in the body, it is in the header and does not get into model context (SEC-3).",
+  "x-botaru-direction": "input",
+  "x-botaru-rules": [
+    "INJ-1",
+    "INJ-9",
+    "PRM-3",
+    "SEC-3"
+  ],
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "name",
+    "arguments"
+  ],
+  "properties": {
+    "name": {
+      "description": "Tool name: <plugin>/<tool> or a built-in one from builtin-tools.yaml.",
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_.]*(/[a-z][a-z0-9_.]*)?$",
+      "maxLength": 120
+    },
+    "arguments": {
+      "description": "Arguments; the core takes the closed schema from the manifest.",
+      "type": "object",
+      "maxProperties": 32,
+      "x-botaru-closed-by": "inputSchema of the tool from the P3 catalog of the handle (APR-18)"
+    },
+    "_meta": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "traceparent": {
+          "description": "W3C trace context.",
+          "type": "string",
+          "pattern": "^[0-9a-f]{2}-[0-9a-f]{32}-[0-9a-f]{16}-[0-9a-f]{2}$",
+          "maxLength": 55
+        }
+      }
+    }
+  }
+}

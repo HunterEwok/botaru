@@ -1,0 +1,461 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:botaru:schema:work-item:1",
+  "title": "Work item from P1 claim",
+  "description": "A work item that P1 claim hands out: a task attempt (attempt), a tool call (toolcall), a delivery (delivery) or an erasure and search step for an edge store (erasure). Each kind has its own minimum of fields: an attempt has no origin, address signature or external ids; a call for a toolhost has no goal, initiator or origin (SEC-4). Output schema: the worker tolerates unknown fields (MAN-3), and the fields that by SEC-4 must not be in the item are forbidden explicitly.",
+  "x-botaru-direction": "output",
+  "x-botaru-rules": [
+    "FEN-1",
+    "SEC-4",
+    "TEN-3",
+    "TEN-3a",
+    "DSP-1"
+  ],
+  "type": "object",
+  "required": [
+    "work_id",
+    "kind",
+    "lease_no",
+    "epoch",
+    "tenant",
+    "lease_until",
+    "lease_remaining_s",
+    "payload",
+    "token"
+  ],
+  "properties": {
+    "work_id": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/object_id"
+    },
+    "kind": {
+      "enum": [
+        "attempt",
+        "toolcall",
+        "delivery",
+        "erasure"
+      ]
+    },
+    "lease_no": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "epoch": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "tenant": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/tenant_name"
+    },
+    "lease_until": {
+      "description": "Lease deadline; the absolute time is for reference (TIM-1).",
+      "$ref": "urn:botaru:schema:common:1#/$defs/datetime"
+    },
+    "lease_remaining_s": {
+      "description": "Remaining lease seconds by the store clock; from them the holder counts the deadline with its own monotonic clock (FEN-6, TIM-1).",
+      "$ref": "urn:botaru:schema:common:1#/$defs/seconds"
+    },
+    "token": {
+      "$ref": "urn:botaru:schema:lease:1#/$defs/token",
+      "description": "Token of this lease; the holder returns it in the Botaru-Lease header in every call under the lease (spec/bindings/http/README.md)."
+    },
+    "trace": {
+      "description": "Trace context.",
+      "type": "object"
+    },
+    "payload": {
+      "type": "object"
+    }
+  },
+  "oneOf": [
+    {
+      "properties": {
+        "kind": {
+          "const": "attempt"
+        },
+        "payload": {
+          "type": "object",
+          "required": [
+            "task",
+            "instruction",
+            "handles"
+          ],
+          "properties": {
+            "task": {
+              "type": "object",
+              "required": [
+                "id",
+                "type",
+                "body",
+                "record"
+              ],
+              "properties": {
+                "id": {
+                  "$ref": "urn:botaru:schema:common:1#/$defs/object_id"
+                },
+                "type": {
+                  "$ref": "urn:botaru:schema:common:1#/$defs/type_name"
+                },
+                "body": {
+                  "$ref": "urn:botaru:schema:task-body:1"
+                },
+                "record": {
+                  "description": "The minimum of task record fields that the attempt needs.",
+                  "type": "object",
+                  "properties": {
+                    "max_tier": {
+                      "$ref": "urn:botaru:schema:common:1#/$defs/tier"
+                    },
+                    "data_mark": {
+                      "$ref": "urn:botaru:schema:common:1#/$defs/data_mark"
+                    },
+                    "untrusted_seen": {
+                      "type": "boolean"
+                    },
+                    "origin": false
+                  }
+                },
+                "origin": false
+              }
+            },
+            "instruction": {
+              "description": "Trusted text of the role and task type from git.",
+              "type": "string"
+            },
+            "handles": {
+              "description": "Attempt handles: bearer credentials that expire together with the lease and do not get into the model context (SEC-3).",
+              "type": "object",
+              "properties": {
+                "tools": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "model": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "session": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "memory": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                }
+              }
+            },
+            "origin": false
+          }
+        }
+      }
+    },
+    {
+      "required": [
+        "start_by"
+      ],
+      "properties": {
+        "kind": {
+          "const": "toolcall"
+        },
+        "start_by": {
+          "description": "Handout deadline of the call: 30 seconds from the record, or less by the type timeouts.tool_start_by (DLV-16).",
+          "$ref": "urn:botaru:schema:common:1#/$defs/datetime"
+        },
+        "payload": {
+          "type": "object",
+          "required": [
+            "target",
+            "tool",
+            "args"
+          ],
+          "properties": {
+            "target": {
+              "$ref": "urn:botaru:schema:toolcall:1#/$defs/target"
+            },
+            "tool": {
+              "type": "string",
+              "maxLength": 120
+            },
+            "args": {
+              "description": "Arguments checked by the core against the closed tool schema.",
+              "type": "object"
+            },
+            "approval_id": {
+              "description": "For a write call of an action, the approval number (FEN-7).",
+              "anyOf": [
+                {
+                  "$ref": "urn:botaru:schema:common:1#/$defs/object_id"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "grant_id": {
+              "description": "For a write call of service/control and a monitor_script delivery, the id of the service_grant record (FEN-7).",
+              "anyOf": [
+                {
+                  "$ref": "urn:botaru:schema:common:1#/$defs/object_id"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "args_hash": {
+              "description": "Hash of the checked arguments by spec/hashing.md; null for a read call.",
+              "anyOf": [
+                {
+                  "$ref": "urn:botaru:schema:common:1#/$defs/hash"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "goal": false,
+            "initiator": false,
+            "origin": false
+          }
+        }
+      }
+    },
+    {
+      "properties": {
+        "kind": {
+          "const": "delivery"
+        },
+        "payload": {
+          "type": "object",
+          "required": [
+            "target",
+            "delivery"
+          ],
+          "properties": {
+            "target": {
+              "description": "Worker target: kind channel, sink or monitor and the name from the enroll record; claim(delivery) hands the delivery only to a process with that name (TEN-3).",
+              "type": "object",
+              "required": [
+                "kind",
+                "name"
+              ],
+              "properties": {
+                "kind": {
+                  "enum": [
+                    "channel",
+                    "sink",
+                    "monitor"
+                  ]
+                },
+                "name": {
+                  "$ref": "urn:botaru:schema:common:1#/$defs/name"
+                }
+              }
+            },
+            "delivery": {
+              "type": "object",
+              "required": [
+                "id",
+                "kind"
+              ],
+              "properties": {
+                "id": {
+                  "description": "Delivery id; the sink writes idempotently by it (FEN-7).",
+                  "$ref": "urn:botaru:schema:common:1#/$defs/object_id"
+                },
+                "kind": {
+                  "type": "string",
+                  "maxLength": 64
+                },
+                "to": {
+                  "type": "string",
+                  "maxLength": 200,
+                  "description": "Delivery address as the core recorded it (for reference); recipient says where to draw."
+                },
+                "body": {
+                  "description": "Delivery body by the form form: result (the task answer: text that core code assembled from result by summary_fields, and the fields), card (a card by the card schema), text_code (code text by a text catalog key and parameters), data (delivery data for a sink or monitoring adapter by the schema of its kind).",
+                  "oneOf": [
+                    {
+                      "type": "object",
+                      "required": [
+                        "form",
+                        "text"
+                      ],
+                      "properties": {
+                        "form": {
+                          "const": "result"
+                        },
+                        "text": {
+                          "type": "string",
+                          "maxLength": 65536
+                        },
+                        "fields": {
+                          "type": "object",
+                          "maxProperties": 32,
+                          "additionalProperties": {
+                            "type": "string",
+                            "maxLength": 2000
+                          }
+                        }
+                      },
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "object",
+                      "required": [
+                        "form",
+                        "card"
+                      ],
+                      "properties": {
+                        "form": {
+                          "const": "card"
+                        },
+                        "card": {
+                          "$ref": "urn:botaru:schema:card:1"
+                        }
+                      },
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "object",
+                      "required": [
+                        "form",
+                        "text_key"
+                      ],
+                      "properties": {
+                        "form": {
+                          "const": "text_code"
+                        },
+                        "text_key": {
+                          "$ref": "urn:botaru:schema:common:1#/$defs/name"
+                        },
+                        "params": {
+                          "type": "object",
+                          "maxProperties": 16,
+                          "additionalProperties": {
+                            "anyOf": [
+                              {
+                                "type": "string",
+                                "maxLength": 500
+                              },
+                              {
+                                "type": "integer"
+                              }
+                            ]
+                          }
+                        }
+                      },
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "object",
+                      "required": [
+                        "form",
+                        "data"
+                      ],
+                      "properties": {
+                        "form": {
+                          "const": "data"
+                        },
+                        "data": {
+                          "type": "object",
+                          "x-botaru-closed-by": "the data schema of the delivery kind (monitor-audit-head and the other monitor-* kinds, the sink artifact)"
+                        }
+                      },
+                      "additionalProperties": false
+                    }
+                  ]
+                },
+                "recipient": {
+                  "description": "Where to draw: for a delivery to a channel, the recipient chat from delivery.target, the chat kind and the external chat id in the channel (for example direct and 1001). The channel takes chat_id only from here.",
+                  "type": "object",
+                  "required": [
+                    "chat"
+                  ],
+                  "properties": {
+                    "chat": {
+                      "$ref": "urn:botaru:schema:activity:1#/properties/chat"
+                    }
+                  },
+                  "additionalProperties": false
+                },
+                "replaces_external_id": {
+                  "description": "For card_update and a script progress card: the external_id of the previous delivery of this card to this chat; the channel edits that message instead of sending a new one (FEN-7).",
+                  "type": "string",
+                  "maxLength": 128
+                }
+              }
+            }
+          },
+          "allOf": [
+            {
+              "if": {
+                "properties": {
+                  "target": {
+                    "properties": {
+                      "kind": {
+                        "const": "channel"
+                      }
+                    }
+                  }
+                }
+              },
+              "then": {
+                "properties": {
+                  "delivery": {
+                    "required": [
+                      "recipient",
+                      "body"
+                    ]
+                  }
+                }
+              }
+            },
+            {
+              "if": {
+                "properties": {
+                  "delivery": {
+                    "properties": {
+                      "kind": {
+                        "const": "card_update"
+                      }
+                    },
+                    "required": [
+                      "kind"
+                    ]
+                  }
+                }
+              },
+              "then": {
+                "properties": {
+                  "delivery": {
+                    "required": [
+                      "replaces_external_id"
+                    ]
+                  }
+                }
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "properties": {
+        "kind": {
+          "const": "erasure"
+        },
+        "payload": {
+          "$ref": "urn:botaru:schema:erasure-work:1"
+        }
+      }
+    }
+  ]
+}

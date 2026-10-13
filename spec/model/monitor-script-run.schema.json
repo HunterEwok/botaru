@@ -1,0 +1,29 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:botaru:schema:monitor-script-run:1",
+  "title": "P3 monitor/script_run: arguments",
+  "description": "The built-in write tool monitor/script_run {resource, script}. A resource from the catalog with monitor_host, a script name from hosts[].monitor_scripts_allowed of the catalog whose scriptid is in the latest adapter list; names from the monitoring system API do not get into the enum (INJ-16). Every initiator has monitor.script_run (D-73).",
+  "x-botaru-direction": "input",
+  "x-botaru-rules": [
+    "APR-18",
+    "INJ-15",
+    "INJ-16",
+    "INJ-1"
+  ],
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "resource",
+    "script"
+  ],
+  "properties": {
+    "resource": {
+      "description": "Machine in the tenant catalog.",
+      "$ref": "urn:botaru:schema:common:1#/$defs/name"
+    },
+    "script": {
+      "description": "Script name from monitor_scripts_allowed of the catalog.",
+      "$ref": "urn:botaru:schema:common:1#/$defs/name"
+    }
+  }
+}

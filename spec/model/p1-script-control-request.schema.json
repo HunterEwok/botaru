@@ -1,0 +1,36 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:botaru:schema:p1-script-control-request:1",
+  "title": "P1 script.control: request",
+  "description": "A button of the run card from the channel on behalf of the person who pressed it: pause, resume, cancel with the card nonce. Confirmation of the run and decisions on steps go through decide with the subjects script and script_gate (SCR-6, SCR-11). Who pressed and from which chat, the channel passes in the headers Botaru-On-Behalf and Botaru-Chat by the on-behalf schema (spec/bindings/http/README.md); the body has no such fields.",
+  "x-botaru-direction": "input",
+  "x-botaru-rules": [
+    "SCR-6",
+    "SCR-11",
+    "APR-4"
+  ],
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "id",
+    "command",
+    "nonce"
+  ],
+  "properties": {
+    "id": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/object_id"
+    },
+    "command": {
+      "enum": [
+        "pause",
+        "resume",
+        "cancel"
+      ]
+    },
+    "nonce": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_-]{16,64}$",
+      "maxLength": 64
+    }
+  }
+}

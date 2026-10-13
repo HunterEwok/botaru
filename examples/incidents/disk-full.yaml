@@ -1,0 +1,36 @@
+# Incident class from docs/farm-manager.md (farm git, human review). The action rotate_logs and
+# the task type ops.selfcheck.v1 from that text are not declared in the examples, so they are absent here.
+apiVersion: botaru/v1alpha1
+kind: IncidentClass
+metadata: {name: disk_full}
+spec:
+  title: "Disk full"
+  severity: sev1
+  change_sensitive: true
+  stops_manager: true
+  inspect: true
+  detect:
+    alarm: alarm.disk.free.low.v1
+    when:
+      - {atom: lt, field: values.free_pct, value: 5}
+    for: 5m
+  subject: {kind: resource}
+  implicate:
+    - {fn: lease_holders_on, args: {resource: $subject}}
+    - {fn: recent_targets, args: {resource: $subject, window: 15m, min_calls: 10}}
+  contain_auto:
+    - {op: hold, scope: {resource: $subject}, effects: [no_claim], ttl: 1h}
+  responses:
+    ops: [quarantine, drain, preempt, cancel, notify, release]
+    actions: [cleanup_pipeline_tmp]
+    services: [restart]
+    monitor_scripts: true
+  takeover: false
+  humans:
+    notify_on_open: true
+    page_if_unhandled_after: 10m
+  resolve:
+    alarm_state: resolved
+    for: 10m
+  limits:
+    ops_max: 10

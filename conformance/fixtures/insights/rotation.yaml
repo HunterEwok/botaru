@@ -1,0 +1,48 @@
+id: ins-fx-10
+rules: [INS-5, PRP-14, DIG-7]
+description: Analysis goes to the bots of a role in rotation (dispatcher condition D16). The run goes to the bot of the role with a ready worker
+  that has gone longest without an analysis of this role; on a tie, the bot with the smaller id. Besides the role's series, the analysis input
+  contains the series of the bot's own attempts (by acting_bot) and the last 20 lines of its "My outcomes". The proposal author
+  recorded is the bot whose attempt submitted the result.
+given:
+  tenant: demo
+  role: ops-runner
+  bots:
+  - {id: bot_01JB0000000000000000000017, worker_ready: true, last_insight_at: '2026-09-21T06:00:00Z'}
+  - {id: bot_01JB0000000000000000000018, worker_ready: true, last_insight_at: '2026-09-28T06:00:00Z'}
+  - {id: bot_01JB0000000000000000000019, worker_ready: false, last_insight_at: null}
+  - {id: bot_01JB0000000000000000000020, worker_ready: true, last_insight_at: '2026-09-21T06:00:00Z'}
+steps:
+- call:
+    port: P1
+    op: enqueue
+    request:
+      body: {type: ops.insight.v1, goal: training task ops.insight.v1}
+      idempotency_key: ins-fx-10-1
+  context: {initiator: system, schedule_slot: '2026-10-05T06:00Z'}
+  expect:
+    acting_bot: bot_01JB0000000000000000000017
+    why: longest without analysis; the tie with bot_..20 is decided by the smaller id
+- call:
+    port: P1
+    op: enqueue
+    request:
+      body: {type: ops.insight.v1, goal: training task ops.insight.v1}
+      idempotency_key: ins-fx-10-2
+  context: {initiator: system, schedule_slot: '2026-10-08T06:00Z'}
+  expect: {acting_bot: bot_01JB0000000000000000000020}
+- call:
+    port: P1
+    op: enqueue
+    request:
+      body: {type: ops.insight.v1, goal: training task ops.insight.v1}
+      idempotency_key: ins-fx-10-3
+  context: {initiator: system, schedule_slot: '2026-10-12T06:00Z'}
+  expect: {acting_bot: bot_01JB0000000000000000000018}
+expect:
+  never_assigned: [bot_01JB0000000000000000000019]
+  input_contains:
+  - role series from insight.observes
+  - attempt series of acting_bot
+  - last 20 lines of "My outcomes" of acting_bot
+  proposal_origin_acting_bot: the bot whose attempt submitted the result

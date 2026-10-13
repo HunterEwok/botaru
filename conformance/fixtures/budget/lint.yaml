@@ -1,0 +1,97 @@
+id: fx-budget-lint
+rules: [BUD-9, BUD-13, BUD-2, GW-2]
+description: 'Apply lint on money: the field max_tokens in manifests is rejected, tree_budget_eur is required for every
+  type with a model (BUD-9); the money of the review line covers the reviews of the proposal ceiling, a lens profile with max_output_tokens
+  above 2000 does not pass (BUD-13); a tree limit of a type with a model below the reserve of one call does not pass
+  (tree_budget_below_call, GW-2, BUD-2).'
+cases:
+- id: bud-fx-10
+  rules: [BUD-9]
+  description: A task type with the field max_tokens does not pass apply.
+  given:
+    tenant: demo
+    manifest:
+      kind: TaskType
+      metadata: {name: ops.investigate.v1}
+      spec: {purpose: work, tree_budget_eur: 0.4, max_tokens: 4000}
+  expect: {result: rejected, stage: apply, field: max_tokens}
+- id: bud-fx-11
+  rules: [BUD-9]
+  description: A review type with a model without tree_budget_eur does not pass apply.
+  given:
+    tenant: demo
+    manifest:
+      kind: TaskType
+      metadata: {name: review.risk.v1}
+      spec: {purpose: review, model: true}
+  expect: {result: rejected, stage: apply, field: tree_budget_eur}
+- id: bud-fx-12
+  rules: [BUD-9]
+  description: A type with a model and tree_budget_eur passes; max_output_tokens lives in the profile, run_max_input_tokens
+    in RunRequest.limits.
+  given:
+    tenant: demo
+    manifest:
+      kind: TaskType
+      metadata: {name: ops.investigate.v1}
+      spec: {purpose: work, tree_budget_eur: 0.4}
+  expect: {result: ok}
+- id: bud-fx-13
+  rules: [BUD-13]
+  description: 'A role with insight: a ceiling of 4 runs in 31 days, 2 proposals per result, the review price of one proposal
+    3 lenses at 0.08 EUR; the estimate of 1.92 EUR fits into the role share of 30% of the review line of 50 EUR (15 EUR) and into the monthly limit.'
+  given:
+    tenant: demo
+    lines:
+      insight: {month_eur: 15}
+      review: {month_eur: 50}
+    roles:
+    - name: ops-reader
+      insight: {max_runs: 4}
+      proposals_per_result: 2
+    lenses:
+    - {type: review.risk.v1, tree_budget_eur: 0.08}
+    - {type: review.cost.v1, tree_budget_eur: 0.08}
+    - {type: review.privacy.v1, tree_budget_eur: 0.08}
+  expect:
+    result: ok
+    estimate_eur: {ops-reader: 1.92}
+- id: bud-fx-14
+  rules: [BUD-13]
+  description: The role estimate of 1.92 EUR is greater than the share of one author role, 30% of the review line of 2 EUR (0.60 EUR); apply is rejected,
+    and doctor shows the missing amount.
+  given:
+    tenant: demo
+    lines:
+      insight: {month_eur: 15}
+      review: {month_eur: 2}
+    roles:
+    - name: ops-reader
+      insight: {max_runs: 4}
+      proposals_per_result: 2
+    lenses:
+    - {type: review.risk.v1, tree_budget_eur: 0.08}
+    - {type: review.cost.v1, tree_budget_eur: 0.08}
+    - {type: review.privacy.v1, tree_budget_eur: 0.08}
+  expect: {result: rejected, stage: apply, doctor_shortfall_eur: 1.32}
+- id: bud-fx-15
+  rules: [BUD-13]
+  description: A lens model profile with max_output_tokens above 2000 does not pass apply.
+  given:
+    tenant: demo
+    lens_profile: {name: review-a, max_output_tokens: 8000}
+  expect: {result: rejected, stage: apply, field: max_output_tokens}
+- id: bud-fx-16
+  rules: [BUD-9, BUD-2, GW-2]
+  description: 'A type with a model whose tree_budget_eur of 0.01 is below the reserve of one call: the base slot profile
+    with max_output_tokens 8000 at 4.00 EUR per million output tokens gives 0.032 EUR for the output alone. The type does not pass
+    apply; with tree_budget_eur 0.05 it passes.'
+  given:
+    tenant: demo
+    profile: {name: base-std, max_output_tokens: 8000, price: {output: 4.00}}
+    role: {name: hello, claims: [hello.greet.v1], models: {base: base-std}}
+    manifest:
+      kind: TaskType
+      metadata: {name: hello.greet.v1}
+      spec: {purpose: work, worker_kind: agent, tree_budget_eur: 0.01}
+  expect: {result: rejected, stage: apply, code: tree_budget_below_call}

@@ -1,0 +1,20 @@
+# evals/cases/translator/trn-03.yaml (catalog: evals/README.md)
+id: trn-03
+kind: quality
+blocking: true
+status: active
+version: v0.2
+rules: [TRN-5, TRN-6]
+summary: 'Fix the server; ambiguous with the codes resource_missing, action_unclear; no draft.'
+from: bob
+chat: bob-dm
+lang: ru
+message: '/script Fix the server'
+expect:
+  state: completed
+  checks:
+  - equals: {path: result.outcome, value: ambiguous}
+  - equals:
+      path: result.missing
+      value: [resource_missing, action_unclear]
+  - store: {path: 'script_runs[?task==self]', count: 0}

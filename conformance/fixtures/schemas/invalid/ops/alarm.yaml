@@ -1,0 +1,23 @@
+schema: urn:botaru:schema:alarm:1
+rules:
+- OBS-6
+- MON-1
+description: Text in values, severity not from the list, no subject.
+cases:
+- alarmkey: disk.free.low:db1
+  state: firing
+  severity: page
+  subject:
+    kind: resource
+    id: db1
+  values:
+    note: disk almost full, call alice
+- alarmkey: disk.free.low:db1
+  state: firing
+  severity: critical
+  subject:
+    kind: resource
+    id: db1
+- alarmkey: disk.free.low:db1
+  state: firing
+  severity: page

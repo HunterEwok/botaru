@@ -1,0 +1,10 @@
+# Reporter: only task types of purpose report at tier 0, no plugins and no enqueueing of tasks (PRF-1).
+apiVersion: botaru/v1alpha1
+kind: Role
+metadata: {name: reporter}
+spec:
+  profile: reporter
+  worker_kind: agent
+  claims: [report.sensor.v1, report.monthly.v1, pipeline.ctd_qc.report.v1]
+  models: {base: base-std}
+  memory: none

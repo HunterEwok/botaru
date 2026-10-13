@@ -1,0 +1,139 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:botaru:schema:delivery:1",
+  "title": "Delivery",
+  "description": "Delivery record: send this content to this recipient. The core creates it in the transaction of the transition that produces it (DLV-2), and the channel, sink or monitoring adapter that takes it through P1 claim sends it. The address comes only from a closed list (DLV-6); the core computes the target from the address, and the addressee's worker does not compute it. A delivery has its own leases, retries and final outcome; its failure does not touch the task (DLV-3). Delivery lifecycle: spec/lifecycles/delivery.md.",
+  "x-botaru-direction": "record",
+  "x-botaru-rules": [
+    "DLV-1",
+    "DLV-2",
+    "DLV-3",
+    "DLV-6",
+    "DLV-12",
+    "DLV-13",
+    "TEN-1"
+  ],
+  "type": "object",
+  "required": [
+    "id",
+    "tenant",
+    "kind",
+    "state",
+    "target"
+  ],
+  "properties": {
+    "id": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/object_id"
+    },
+    "tenant": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/tenant_name"
+    },
+    "kind": {
+      "description": "Delivery kind: a value from the registry delivery-kinds.yaml (task_result, card_update, ai_notice, privacy_notice, script_summary, monitor_alarm, monitor_audit_head, monitor_script, monitor_note) or, for a decision card and a notice to people, the id of a row in decision-points.yaml (for example script_confirm). The core code and the recipient worker branch on the kind.",
+      "anyOf": [
+        {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_]*$",
+          "maxLength": 64,
+          "x-botaru-registry": "delivery-kinds"
+        },
+        {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_.]*$",
+          "maxLength": 64,
+          "x-botaru-registry": "decision-points"
+        }
+      ]
+    },
+    "state": {
+      "enum": [
+        "planned",
+        "sending",
+        "delivered",
+        "withheld",
+        "dead"
+      ]
+    },
+    "to": {
+      "description": "Address from a closed list (DLV-6): origin, group:<group>, chat:<binding>, sink:<sink>, approval_initiator, monitor (the E5 monitoring adapter, only alarms, scripts and notes) or insights.present_to. There are no addresses in the task body, result, bot messages or event data.",
+      "type": "string",
+      "maxLength": 200,
+      "oneOf": [
+        {
+          "enum": [
+            "origin",
+            "approval_initiator",
+            "monitor",
+            "insights.present_to"
+          ]
+        },
+        {
+          "pattern": "^group:[a-z][a-z0-9-]{0,62}$"
+        },
+        {
+          "pattern": "^chat:[a-z][a-z0-9-]{0,62}$"
+        },
+        {
+          "pattern": "^sink:[a-z][a-z0-9-]{0,62}$"
+        }
+      ]
+    },
+    "target": {
+      "description": "The recipient that the core computes from the address: a channel chat, a recipient principal, a sink or the tenant's monitoring adapter (DLV-6). The delivery executor process calls it work-item payload.target, and the chat for the channel work-item delivery.recipient. For kind: chat the id field has the form <direct|group>:<external chat id>.",
+      "type": "object",
+      "required": [
+        "kind",
+        "id"
+      ],
+      "properties": {
+        "kind": {
+          "enum": [
+            "chat",
+            "subject",
+            "sink",
+            "monitor"
+          ]
+        },
+        "id": {
+          "type": "string",
+          "maxLength": 200
+        }
+      }
+    },
+    "task": {
+      "description": "The task whose transition produced the delivery.",
+      "$ref": "urn:botaru:schema:common:1#/$defs/object_id"
+    },
+    "data_mark": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/data_mark"
+    },
+    "dataorigin": {
+      "description": "Data origin mark: model if the model wrote the text, otherwise code; only the core sets it (DLV-13).",
+      "enum": [
+        "model",
+        "code"
+      ]
+    },
+    "notice_version": {
+      "description": "Only privacy_notice: the notice version from the tenant's privacy block.",
+      "type": [
+        "string",
+        "integer"
+      ]
+    },
+    "external_id": {
+      "description": "External id of the sent message; for a card, card_update uses it to edit the message instead of sending a new one (FEN-7).",
+      "type": "string",
+      "maxLength": 200
+    },
+    "attempts": {
+      "description": "Spent delivery attempts; the ceiling is set by the channel binding within the farm ceiling.",
+      "type": "integer",
+      "minimum": 0
+    },
+    "reason": {
+      "description": "Reason for withheld or dead from the reason registry, for example channel_ceiling, unknown_member, recipient_inactive, no_data_class, held, ai_notice_dead, secret_in_outbound, attempts_exhausted, exec_unknown.",
+      "$ref": "urn:botaru:schema:common:1#/$defs/reason"
+    }
+  }
+}

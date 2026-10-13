@@ -1,0 +1,7 @@
+schema: spec/model/p1-cancel-request.schema.json
+rules: [PRM-9, TEN-2]
+description: 'cancel requests that the schema rejects: id of the wrong kind; tenant in the request.'
+cases:
+- task: task-1
+- task: t_01JB0000000000000000000001
+  tenant: demo2

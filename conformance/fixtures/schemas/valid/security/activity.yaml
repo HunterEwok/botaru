@@ -1,0 +1,27 @@
+schema: urn:botaru:schema:activity:1
+rules:
+- IDN-7
+description: A message from alice to the bot @demo_bot in a private chat and a forwarded message with the forwarded mark.
+cases:
+- kind: message
+  channel: telegram
+  update_id: '880001'
+  sender:
+    identity: telegram:100200300
+    verified: true
+  chat:
+    kind: direct
+    external_id: '100200300'
+  text: /tasks
+  received_at: '2026-03-02T09:00:00Z'
+- kind: message
+  channel: telegram
+  update_id: '880002'
+  sender:
+    identity: telegram:100200300
+    verified: true
+  chat:
+    kind: direct
+    external_id: '100200300'
+  text: /service restart nginx
+  forwarded: true

@@ -1,0 +1,27 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:botaru:schema:p1-session-append-response:1",
+  "title": "P1 session.append: response",
+  "description": "How many entries were appended and how many already existed (idempotency by entry.uuid, MEM-1).",
+  "x-botaru-direction": "output",
+  "x-botaru-rules": [
+    "MEM-1"
+  ],
+  "type": "object",
+  "required": [
+    "appended",
+    "existing"
+  ],
+  "properties": {
+    "appended": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 100
+    },
+    "existing": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 100
+    }
+  }
+}

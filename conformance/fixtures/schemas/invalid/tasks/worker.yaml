@@ -1,0 +1,12 @@
+schema: spec/model/worker.schema.json
+rules: [DSP-10]
+description: 'A worker record with an owner field: a worker does not belong to a person.'
+cases:
+- id: wk_01JB000000000000000000000A
+  tenant: demo
+  role: assistant
+  kind: agent
+  state: active
+  labels:
+    zone: lab
+  owner: human:alice

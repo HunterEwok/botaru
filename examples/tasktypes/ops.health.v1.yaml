@@ -1,0 +1,31 @@
+# Site availability summary from check results: flow 9, group chat lab.
+apiVersion: botaru/v1alpha1
+kind: TaskType
+metadata: {name: ops.health.v1}
+spec:
+  title: "Availability of sites and services"
+  worker_kind: agent
+  purpose: work
+  tier: 0
+  data_class: summary
+  instruction: |
+    Answer whether the sites and services in the question are working, using only the results of checks_latest.
+    The code takes the numbers for the table from the result fields.
+  params_schema: {type: object, additionalProperties: false, properties: {}}
+  result_schema:
+    type: object
+    additionalProperties: false
+    required: [answer, verdict]
+    properties:
+      answer: {type: string, maxLength: 1000}
+      verdict: {enum: [up, degraded, down, unknown], x-botaru-read-by: code}
+      checks: {type: array, maxItems: 10, items: {enum_from: catalog.checks}, x-botaru-read-by: code}
+  summary_fields: [verdict, checks]
+  stages: [reading_checks, writing_answer]
+  dispatch: {priority_class: 3}
+  interactive: true
+  timeouts: {start_by: 5m, lease: 60s, heartbeat: 20s, attempt: 2m, deadline: 10m, tool_start_by: 30s}
+  retry: {max_attempts: 2, max_runs: 3}
+  tree_budget_eur: 0.05
+  max_children: 0
+  goal_trust: untrusted

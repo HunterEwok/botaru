@@ -1,0 +1,24 @@
+# Sensor watchdog: a job on a schedule every half hour emits the alarm alarm.sensor.silent.v1 (INJ-7).
+apiVersion: botaru/v1alpha1
+kind: TaskType
+metadata: {name: data.sensor_watch.v1}
+spec:
+  title: "Sensor watchdog"
+  worker_kind: job
+  purpose: work
+  tier: 1
+  data_class: internal
+  params_schema: {type: object, additionalProperties: false, properties: {}}
+  result_schema:
+    type: object
+    additionalProperties: false
+    required: [silent]
+    properties:
+      silent: {type: integer, minimum: 0, maximum: 100, x-botaru-read-by: code}
+  events: [alarm.sensor.silent.v1]
+  dispatch: {priority_class: 4}
+  timeouts: {start_by: 20m, lease: 60s, heartbeat: 20s, attempt: 5m, deadline: 25m}
+  retry: {max_attempts: 1, max_runs: 1}
+  tree_budget_eur: 0
+  max_children: 0
+  proposable: false                  # purpose is not work, or an alarm in events (PRP-10)

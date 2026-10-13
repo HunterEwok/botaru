@@ -1,0 +1,6 @@
+schema: spec/model/p1-file-put-request.schema.json
+rules: [TEN-7]
+description: file.put metadata that the schema accepts.
+cases:
+- {media_type: text/plain, filename: st-05.cnv}
+- {media_type: application/pdf, data_mark: internal}

@@ -1,0 +1,574 @@
+# Collected from spec/lifecycles/trial.yaml. The value null in from means "the object does not exist yet".
+lifecycle: spec/lifecycles/trial.yaml
+object: trial
+rules: [OBV-6, PRP-18, PRP-19, PRP-20, PRP-21, PRP-22, PRP-23]
+description: Allowed and forbidden transitions of the "change trial" lifecycle, collected from the tables of spec/lifecycles/trial.md.
+  The implementation accepts a transition from the allowed list under the condition of its row (when); a pair from the forbidden
+  list does not change the state, and the call that asks for it is rejected. Only the core writes the trial record; code
+  computes the outcome at the end of the window, the model does not write into the record.
+version: v0.1
+states:
+- id: baseline
+  terminal: false
+- id: running
+  terminal: false
+- id: guard_broken
+  terminal: false
+- id: better
+  terminal: true
+- id: unchanged
+  terminal: true
+- id: worse
+  terminal: true
+- id: undetermined
+  terminal: true
+- id: mixed
+  terminal: true
+- id: canceled
+  terminal: true
+allowed:
+- id: sm-tri-01
+  from: null
+  to: baseline
+  by: the "Accept" or "Lift veto" button
+  when: the change kind is not `none`; the metric and the guards come from series with a full `outcome` block; guards by
+    the target kind, by the metric and from `insights.extra_guards`; the before values cover the 14 days before the decision
+  rules: [OBV-6, PRP-21]
+- id: sm-tri-02
+  from: baseline
+  to: running
+  by: the core sets the proposal to `realized`
+  when: the link is verified
+  rules: [PRP-19, PRP-21]
+- id: sm-tri-03
+  from: baseline
+  to: canceled
+  by: the core sets the proposal to `realization_failed`
+  when: the object is not executed or `realize_by` expired
+  rules: [PRP-18]
+- id: sm-tri-04
+  from: running
+  to: guard_broken
+  by: the core loop `proposal`, the daily check
+  when: a guard went out of tolerance in the bad direction
+  rules: [PRP-23]
+- id: sm-tri-05
+  from: running
+  to: mixed
+  by: the `proposal` loop, end of the window
+  when: another proposal was executed on the same subjects, or another commit changed the fields of the same objects
+  rules: [PRP-22]
+- id: sm-tri-06
+  from: running
+  to: undetermined
+  by: the `proposal` loop, end of the window
+  when: before or after, `min_samples` was not reached in a computation that is not empty because of the points of the author
+    or of its role; an empty computation gives the mark `self_measured`, not `undetermined`
+  rules: [PRP-22]
+- id: sm-tri-07
+  from: running
+  to: worse
+  by: the `proposal` loop, end of the window; or the core sets the proposal to `reverted` with the reason `harm_observed`
+  when: a worsening beyond tolerance in at least one of the three computations; or a revert with `harm_observed`
+  rules: [PRP-20, PRP-22, PRP-23]
+- id: sm-tri-08
+  from: running
+  to: better
+  by: the `proposal` loop, end of the window
+  when: an improvement beyond tolerance in all computations
+  rules: [PRP-22]
+- id: sm-tri-09
+  from: running
+  to: unchanged
+  by: the `proposal` loop, end of the window
+  when: all other cases
+  rules: [PRP-22]
+- id: sm-tri-10
+  from: running
+  to: canceled
+  by: the core sets the proposal to `reverted`
+  when: no guard fired during the window, the revert reason is `superseded` or `other`
+  rules: [PRP-20]
+- id: sm-tri-11
+  from: guard_broken
+  to: worse
+  by: the `proposal` loop, end of the window; or the core sets the proposal to `reverted`
+  rules: [PRP-22, PRP-23]
+forbidden:
+- id: sm-tri-x01
+  from: null
+  to: running
+  expect: rejected
+  rules: [OBV-6, PRP-21, PRP-22]
+  why: the object does not appear directly in the state running
+- id: sm-tri-x02
+  from: null
+  to: guard_broken
+  expect: rejected
+  rules: [OBV-6, PRP-21, PRP-22]
+  why: the object does not appear directly in the state guard_broken
+- id: sm-tri-x03
+  from: null
+  to: better
+  expect: rejected
+  rules: [OBV-6, PRP-21, PRP-22]
+  why: the object does not appear directly in the state better
+- id: sm-tri-x04
+  from: null
+  to: unchanged
+  expect: rejected
+  rules: [OBV-6, PRP-21, PRP-22]
+  why: the object does not appear directly in the state unchanged
+- id: sm-tri-x05
+  from: null
+  to: worse
+  expect: rejected
+  rules: [OBV-6, PRP-21, PRP-22]
+  why: the object does not appear directly in the state worse
+- id: sm-tri-x06
+  from: null
+  to: undetermined
+  expect: rejected
+  rules: [OBV-6, PRP-21, PRP-22]
+  why: the object does not appear directly in the state undetermined
+- id: sm-tri-x07
+  from: null
+  to: mixed
+  expect: rejected
+  rules: [OBV-6, PRP-21, PRP-22]
+  why: the object does not appear directly in the state mixed
+- id: sm-tri-x08
+  from: null
+  to: canceled
+  expect: rejected
+  rules: [OBV-6, PRP-21, PRP-22]
+  why: the object does not appear directly in the state canceled
+- id: sm-tri-x09
+  from: baseline
+  to: baseline
+  expect: rejected
+  rules: [PRP-18, PRP-19, PRP-21, PRP-22]
+  why: the lifecycle table has no such transition
+- id: sm-tri-x10
+  from: baseline
+  to: guard_broken
+  expect: rejected
+  rules: [PRP-18, PRP-19, PRP-21, PRP-22]
+  why: the lifecycle table has no such transition
+- id: sm-tri-x11
+  from: baseline
+  to: better
+  expect: rejected
+  rules: [PRP-18, PRP-19, PRP-21, PRP-22]
+  why: the lifecycle table has no such transition
+- id: sm-tri-x12
+  from: baseline
+  to: unchanged
+  expect: rejected
+  rules: [PRP-18, PRP-19, PRP-21, PRP-22]
+  why: the lifecycle table has no such transition
+- id: sm-tri-x13
+  from: baseline
+  to: worse
+  expect: rejected
+  rules: [PRP-18, PRP-19, PRP-21, PRP-22]
+  why: the lifecycle table has no such transition
+- id: sm-tri-x14
+  from: baseline
+  to: undetermined
+  expect: rejected
+  rules: [PRP-18, PRP-19, PRP-21, PRP-22]
+  why: the lifecycle table has no such transition
+- id: sm-tri-x15
+  from: baseline
+  to: mixed
+  expect: rejected
+  rules: [PRP-18, PRP-19, PRP-21, PRP-22]
+  why: the lifecycle table has no such transition
+- id: sm-tri-x16
+  from: running
+  to: baseline
+  expect: rejected
+  rules: [PRP-20, PRP-21, PRP-22, PRP-23]
+  why: the lifecycle table has no such transition
+- id: sm-tri-x17
+  from: running
+  to: running
+  expect: rejected
+  rules: [PRP-20, PRP-21, PRP-22, PRP-23]
+  why: the lifecycle table has no such transition
+- id: sm-tri-x18
+  from: guard_broken
+  to: baseline
+  expect: rejected
+  rules: [PRP-21, PRP-22, PRP-23]
+  why: the lifecycle table has no such transition
+- id: sm-tri-x19
+  from: guard_broken
+  to: running
+  expect: rejected
+  rules: [PRP-21, PRP-22, PRP-23]
+  why: the lifecycle table has no such transition
+- id: sm-tri-x20
+  from: guard_broken
+  to: guard_broken
+  expect: rejected
+  rules: [PRP-21, PRP-22, PRP-23]
+  why: the lifecycle table has no such transition
+- id: sm-tri-x21
+  from: guard_broken
+  to: better
+  expect: rejected
+  rules: [PRP-21, PRP-22, PRP-23]
+  why: the lifecycle table has no such transition
+- id: sm-tri-x22
+  from: guard_broken
+  to: unchanged
+  expect: rejected
+  rules: [PRP-21, PRP-22, PRP-23]
+  why: the lifecycle table has no such transition
+- id: sm-tri-x23
+  from: guard_broken
+  to: undetermined
+  expect: rejected
+  rules: [PRP-21, PRP-22, PRP-23]
+  why: the lifecycle table has no such transition
+- id: sm-tri-x24
+  from: guard_broken
+  to: mixed
+  expect: rejected
+  rules: [PRP-21, PRP-22, PRP-23]
+  why: the lifecycle table has no such transition
+- id: sm-tri-x25
+  from: guard_broken
+  to: canceled
+  expect: rejected
+  rules: [PRP-21, PRP-22, PRP-23]
+  why: the lifecycle table has no such transition
+- id: sm-tri-x26
+  from: better
+  to: baseline
+  expect: rejected
+  rules: [PRP-21, PRP-22]
+  why: better is a terminal state
+- id: sm-tri-x27
+  from: better
+  to: running
+  expect: rejected
+  rules: [PRP-21, PRP-22]
+  why: better is a terminal state
+- id: sm-tri-x28
+  from: better
+  to: guard_broken
+  expect: rejected
+  rules: [PRP-21, PRP-22]
+  why: better is a terminal state
+- id: sm-tri-x29
+  from: better
+  to: better
+  expect: rejected
+  rules: [PRP-21, PRP-22]
+  why: better is a terminal state
+- id: sm-tri-x30
+  from: better
+  to: unchanged
+  expect: rejected
+  rules: [PRP-21, PRP-22]
+  why: better is a terminal state
+- id: sm-tri-x31
+  from: better
+  to: worse
+  expect: rejected
+  rules: [PRP-21, PRP-22]
+  why: better is a terminal state
+- id: sm-tri-x32
+  from: better
+  to: undetermined
+  expect: rejected
+  rules: [PRP-21, PRP-22]
+  why: better is a terminal state
+- id: sm-tri-x33
+  from: better
+  to: mixed
+  expect: rejected
+  rules: [PRP-21, PRP-22]
+  why: better is a terminal state
+- id: sm-tri-x34
+  from: better
+  to: canceled
+  expect: rejected
+  rules: [PRP-21, PRP-22]
+  why: better is a terminal state
+- id: sm-tri-x35
+  from: unchanged
+  to: baseline
+  expect: rejected
+  rules: [PRP-21, PRP-22]
+  why: unchanged is a terminal state
+- id: sm-tri-x36
+  from: unchanged
+  to: running
+  expect: rejected
+  rules: [PRP-21, PRP-22]
+  why: unchanged is a terminal state
+- id: sm-tri-x37
+  from: unchanged
+  to: guard_broken
+  expect: rejected
+  rules: [PRP-21, PRP-22]
+  why: unchanged is a terminal state
+- id: sm-tri-x38
+  from: unchanged
+  to: better
+  expect: rejected
+  rules: [PRP-21, PRP-22]
+  why: unchanged is a terminal state
+- id: sm-tri-x39
+  from: unchanged
+  to: unchanged
+  expect: rejected
+  rules: [PRP-21, PRP-22]
+  why: unchanged is a terminal state
+- id: sm-tri-x40
+  from: unchanged
+  to: worse
+  expect: rejected
+  rules: [PRP-21, PRP-22]
+  why: unchanged is a terminal state
+- id: sm-tri-x41
+  from: unchanged
+  to: undetermined
+  expect: rejected
+  rules: [PRP-21, PRP-22]
+  why: unchanged is a terminal state
+- id: sm-tri-x42
+  from: unchanged
+  to: mixed
+  expect: rejected
+  rules: [PRP-21, PRP-22]
+  why: unchanged is a terminal state
+- id: sm-tri-x43
+  from: unchanged
+  to: canceled
+  expect: rejected
+  rules: [PRP-21, PRP-22]
+  why: unchanged is a terminal state
+- id: sm-tri-x44
+  from: worse
+  to: baseline
+  expect: rejected
+  rules: [PRP-20, PRP-21, PRP-22, PRP-23]
+  why: worse is a terminal state
+- id: sm-tri-x45
+  from: worse
+  to: running
+  expect: rejected
+  rules: [PRP-20, PRP-21, PRP-22, PRP-23]
+  why: worse is a terminal state
+- id: sm-tri-x46
+  from: worse
+  to: guard_broken
+  expect: rejected
+  rules: [PRP-20, PRP-21, PRP-22, PRP-23]
+  why: worse is a terminal state
+- id: sm-tri-x47
+  from: worse
+  to: better
+  expect: rejected
+  rules: [PRP-20, PRP-21, PRP-22, PRP-23]
+  why: worse is a terminal state
+- id: sm-tri-x48
+  from: worse
+  to: unchanged
+  expect: rejected
+  rules: [PRP-20, PRP-21, PRP-22, PRP-23]
+  why: worse is a terminal state
+- id: sm-tri-x49
+  from: worse
+  to: worse
+  expect: rejected
+  rules: [PRP-20, PRP-21, PRP-22, PRP-23]
+  why: worse is a terminal state
+- id: sm-tri-x50
+  from: worse
+  to: undetermined
+  expect: rejected
+  rules: [PRP-20, PRP-21, PRP-22, PRP-23]
+  why: worse is a terminal state
+- id: sm-tri-x51
+  from: worse
+  to: mixed
+  expect: rejected
+  rules: [PRP-20, PRP-21, PRP-22, PRP-23]
+  why: worse is a terminal state
+- id: sm-tri-x52
+  from: worse
+  to: canceled
+  expect: rejected
+  rules: [PRP-20, PRP-21, PRP-22, PRP-23]
+  why: worse is a terminal state
+- id: sm-tri-x53
+  from: undetermined
+  to: baseline
+  expect: rejected
+  rules: [PRP-21, PRP-22]
+  why: undetermined is a terminal state
+- id: sm-tri-x54
+  from: undetermined
+  to: running
+  expect: rejected
+  rules: [PRP-21, PRP-22]
+  why: undetermined is a terminal state
+- id: sm-tri-x55
+  from: undetermined
+  to: guard_broken
+  expect: rejected
+  rules: [PRP-21, PRP-22]
+  why: undetermined is a terminal state
+- id: sm-tri-x56
+  from: undetermined
+  to: better
+  expect: rejected
+  rules: [PRP-21, PRP-22]
+  why: undetermined is a terminal state
+- id: sm-tri-x57
+  from: undetermined
+  to: unchanged
+  expect: rejected
+  rules: [PRP-21, PRP-22]
+  why: undetermined is a terminal state
+- id: sm-tri-x58
+  from: undetermined
+  to: worse
+  expect: rejected
+  rules: [PRP-21, PRP-22]
+  why: undetermined is a terminal state
+- id: sm-tri-x59
+  from: undetermined
+  to: undetermined
+  expect: rejected
+  rules: [PRP-21, PRP-22]
+  why: undetermined is a terminal state
+- id: sm-tri-x60
+  from: undetermined
+  to: mixed
+  expect: rejected
+  rules: [PRP-21, PRP-22]
+  why: undetermined is a terminal state
+- id: sm-tri-x61
+  from: undetermined
+  to: canceled
+  expect: rejected
+  rules: [PRP-21, PRP-22]
+  why: undetermined is a terminal state
+- id: sm-tri-x62
+  from: mixed
+  to: baseline
+  expect: rejected
+  rules: [PRP-21, PRP-22]
+  why: mixed is a terminal state
+- id: sm-tri-x63
+  from: mixed
+  to: running
+  expect: rejected
+  rules: [PRP-21, PRP-22]
+  why: mixed is a terminal state
+- id: sm-tri-x64
+  from: mixed
+  to: guard_broken
+  expect: rejected
+  rules: [PRP-21, PRP-22]
+  why: mixed is a terminal state
+- id: sm-tri-x65
+  from: mixed
+  to: better
+  expect: rejected
+  rules: [PRP-21, PRP-22]
+  why: mixed is a terminal state
+- id: sm-tri-x66
+  from: mixed
+  to: unchanged
+  expect: rejected
+  rules: [PRP-21, PRP-22]
+  why: mixed is a terminal state
+- id: sm-tri-x67
+  from: mixed
+  to: worse
+  expect: rejected
+  rules: [PRP-21, PRP-22]
+  why: mixed is a terminal state
+- id: sm-tri-x68
+  from: mixed
+  to: undetermined
+  expect: rejected
+  rules: [PRP-21, PRP-22]
+  why: mixed is a terminal state
+- id: sm-tri-x69
+  from: mixed
+  to: mixed
+  expect: rejected
+  rules: [PRP-21, PRP-22]
+  why: mixed is a terminal state
+- id: sm-tri-x70
+  from: mixed
+  to: canceled
+  expect: rejected
+  rules: [PRP-21, PRP-22]
+  why: mixed is a terminal state
+- id: sm-tri-x71
+  from: canceled
+  to: baseline
+  expect: rejected
+  rules: [PRP-18, PRP-20, PRP-21, PRP-22]
+  why: canceled is a terminal state
+- id: sm-tri-x72
+  from: canceled
+  to: running
+  expect: rejected
+  rules: [PRP-18, PRP-20, PRP-21, PRP-22]
+  why: canceled is a terminal state
+- id: sm-tri-x73
+  from: canceled
+  to: guard_broken
+  expect: rejected
+  rules: [PRP-18, PRP-20, PRP-21, PRP-22]
+  why: canceled is a terminal state
+- id: sm-tri-x74
+  from: canceled
+  to: better
+  expect: rejected
+  rules: [PRP-18, PRP-20, PRP-21, PRP-22]
+  why: canceled is a terminal state
+- id: sm-tri-x75
+  from: canceled
+  to: unchanged
+  expect: rejected
+  rules: [PRP-18, PRP-20, PRP-21, PRP-22]
+  why: canceled is a terminal state
+- id: sm-tri-x76
+  from: canceled
+  to: worse
+  expect: rejected
+  rules: [PRP-18, PRP-20, PRP-21, PRP-22]
+  why: canceled is a terminal state
+- id: sm-tri-x77
+  from: canceled
+  to: undetermined
+  expect: rejected
+  rules: [PRP-18, PRP-20, PRP-21, PRP-22]
+  why: canceled is a terminal state
+- id: sm-tri-x78
+  from: canceled
+  to: mixed
+  expect: rejected
+  rules: [PRP-18, PRP-20, PRP-21, PRP-22]
+  why: canceled is a terminal state
+- id: sm-tri-x79
+  from: canceled
+  to: canceled
+  expect: rejected
+  rules: [PRP-18, PRP-20, PRP-21, PRP-22]
+  why: canceled is a terminal state
+expect:
+  allowed: 11
+  forbidden: 79

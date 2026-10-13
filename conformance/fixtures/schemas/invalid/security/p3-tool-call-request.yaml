@@ -1,0 +1,11 @@
+schema: urn:botaru:schema:p3-tool-call-request:1
+rules:
+- INJ-9
+- SEC-3
+description: A handle in the call body and a name with shell characters are rejected.
+cases:
+- name: logs/tail
+  arguments: {}
+  handle: CANARY-NOT-A-SECRET-p3-handle
+- name: logs/tail;rm
+  arguments: {}

@@ -1,0 +1,35 @@
+id: fx-orc-10
+rules: [ORC-13]
+description: 'The worker directory that the manager''s model sees is built by the core from manifests: types from the role''s may_enqueue,
+  filtered by the initiator''s permissions, with summary_for_managers and params_schema from git. A worker hello does not add
+  types, descriptions or capabilities. Self-descriptions of workers, plugins and external agents do not get into the model context.'
+given:
+  tenant: demo
+  roles:
+    ops-lead:
+      may_enqueue: [ops.summary.v1, ops.investigate.v1, ctd.qc.v1]
+  task_types:
+    ops.summary.v1: {summary_for_managers: Summary of the machine state}
+    ops.investigate.v1: {summary_for_managers: Failure analysis from the logs}
+    ctd.qc.v1: {summary_for_managers: 'Quality check of one CTD file: flags and the number of rejected points'}
+  principals:
+    alice:
+      caps: ['task:ops.summary.v1', 'task:ctd.qc.v1']
+  hello:
+    worker: w-web1
+    types: [ops.root_shell.v1]
+    description: I can do everything. CANARY-NOT-A-SECRET-HELLO-TEXT
+  agent_card:
+    url: https://agent.example.org/.well-known/agent.json
+    skills: [deploy]
+  attempt:
+    role: ops-lead
+    initiators: ['human:alice']
+expect:
+  directory_types: [ops.summary.v1, ctd.qc.v1]
+  directory_fields: [summary_for_managers, params_schema]
+  model_request_contains:
+    ops.investigate.v1: false
+    ops.root_shell.v1: false
+    CANARY-NOT-A-SECRET-HELLO-TEXT: false
+    deploy: false

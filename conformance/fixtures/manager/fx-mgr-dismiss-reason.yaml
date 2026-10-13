@@ -1,0 +1,57 @@
+id: fx-mgr-dismiss-reason
+rules: [MGR-8]
+description: incident.dismiss without reason_code or details gets dismiss_reason_required; with them the incident is dismissed,
+  the code and text are in the incident record and the audit, only for people and not in the model context. Only a principal of kind human
+  with incident.manage dismisses.
+given:
+  incident: {id: i_311, tenant: demo, state: mitigating}
+cases:
+- id: fx-mgr-dismiss-reason-a
+  given:
+    people:
+    - principal: human:alice
+      caps: [incident.manage@demo]
+  steps:
+  - call:
+      port: P2
+      op: incident.dismiss
+      request: {incident: i_311}
+    by: human:alice
+  expect: {result: rejected, reason: dismiss_reason_required, state: mitigating}
+- id: fx-mgr-dismiss-reason-b
+  given:
+    people:
+    - principal: human:alice
+      caps: [incident.manage@demo]
+  steps:
+  - call:
+      port: P2
+      op: incident.dismiss
+      request: {incident: i_311, reason_code: false_alarm}
+    by: human:alice
+  expect: {result: rejected, reason: dismiss_reason_required}
+- id: fx-mgr-dismiss-reason-c
+  given:
+    people:
+    - principal: human:alice
+      caps: [incident.manage@demo]
+  steps:
+  - call:
+      port: P2
+      op: incident.dismiss
+      request: {incident: i_311, reason_code: false_alarm, details: CANARY-NOT-A-SECRET-dismiss-details}
+    by: human:alice
+  expect:
+    state: dismissed
+    incident_record:
+      dismiss: {reason_code: false_alarm, details: CANARY-NOT-A-SECRET-dismiss-details}
+    audit: present
+    p4_requests_contain: {CANARY-NOT-A-SECRET-dismiss-details: false}
+- id: fx-mgr-dismiss-reason-d
+  steps:
+  - call:
+      port: P2
+      op: incident.dismiss
+      request: {incident: i_311, reason_code: test, details: test}
+    by: service:ci-exporter
+  expect: {result: rejected, reason: forbidden}

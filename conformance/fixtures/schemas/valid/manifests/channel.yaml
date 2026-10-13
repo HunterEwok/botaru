@@ -1,0 +1,18 @@
+schema: spec/manifests/channel.schema.json
+rules:
+- MAN-1
+description: Channel manifest specs from examples/ that the kind schema accepts.
+cases:
+- driver: telegram
+  identity_kind: telegram
+  identity_assurance: strong
+  membership_assurance: enforced
+  ai_disclosure: first_contact
+  provenance: visible_label
+  capabilities:
+    max_text: 4096
+    buttons: true
+    files: true
+    edit: true
+  rate:
+    per_minute: 20

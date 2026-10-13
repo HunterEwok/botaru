@@ -1,0 +1,42 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:botaru:schema:p1-claim-request:1",
+  "title": "P1 claim: request",
+  "description": "The worker asks for work with long waiting. What to give out is decided by the core dispatcher by the closed list of conditions dispatch-predicates.yaml and the order keys (DSP-2). There is no \"give me this task\" or \"this worker\" field; the worker does not pass owner (DSP-4, DSP-10).",
+  "x-botaru-direction": "input",
+  "x-botaru-rules": [
+    "DSP-1",
+    "DSP-2",
+    "DSP-4",
+    "DSP-10",
+    "FEN-1"
+  ],
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "kinds"
+  ],
+  "properties": {
+    "kinds": {
+      "description": "Work kinds that the worker is ready to take; erasure is a step of an erasure or match request for edge stores (E1, E2, E4, E5).",
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 4,
+      "uniqueItems": true,
+      "items": {
+        "enum": [
+          "attempt",
+          "toolcall",
+          "delivery",
+          "erasure"
+        ]
+      }
+    },
+    "wait_s": {
+      "description": "Long-poll waiting time; the binding sets the upper bound.",
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 300
+    }
+  }
+}

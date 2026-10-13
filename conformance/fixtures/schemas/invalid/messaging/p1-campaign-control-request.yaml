@@ -1,0 +1,19 @@
+schema: spec/model/p1-campaign-control-request.schema.json
+rules:
+- ORC-1
+- APR-4
+description: 'Buttons that the schema rejects: without nonce; skip without a number; adding an item; policy change.'
+cases:
+- id: k_01JB0000000000000000000201
+  command: pause
+- id: k_01JB0000000000000000000201
+  command: skip
+  nonce: nX7kQ2pL9vR4tY8wZ1aB
+- id: k_01JB0000000000000000000201
+  command: add_item
+  nonce: nX7kQ2pL9vR4tY8wZ1aB
+- id: k_01JB0000000000000000000201
+  command: resume
+  nonce: nX7kQ2pL9vR4tY8wZ1aB
+  rollout:
+    max_in_flight: 50

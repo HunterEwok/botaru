@@ -1,0 +1,36 @@
+id: fx-msg-journal-metadata
+rules: [MSG-3, MSG-13, AUD-1, AUD-2]
+description: 'In the audit, the event journal and tracing a message has only metadata: id, kind, genus, address, roles,
+  sizes, hashes, reasons, subject and fields, if all their leaves are enum, id or numbers. The note is stored only in the deletable
+  class content until the end of the record''s term. Every core decision about a message (send, give out, ack, return,
+  refusal, dead, expired) writes an audit record. The lint compares the message event schemas spec/model/message-event.schema.json:
+  they have no text fields.'
+given:
+  tenant: demo
+  message:
+    type: report.qc_note.v1
+    fields: {resource: ctd-2026-08-p017, check: header_anomaly, points_rejected: 13}
+    note: CANARY-NOT-A-SECRET-MSG-NOTE-0003 line from the header
+  messagetype_fields_leaves: {resource: enum_from, check: enum, points_rejected: integer}
+steps:
+- check: {decision: send}
+  expect:
+    audit: {action: message.staged}
+- check: {decision: publish}
+  expect:
+    audit: {action: message.published}
+- check: {decision: lease}
+  expect:
+    audit: {action: message.leased}
+- check: {decision: nack}
+  expect:
+    audit: {action: message.returned}
+- check: {decision: ack}
+  expect:
+    audit: {action: message.acked}
+expect:
+  audit_fields_allowed: [id, type, kind, to, from_role, size_bytes, hash, reason, subject, fields]
+  canary_in: {audit: false, events: false, traces: false, content_store: true}
+  note_retention: content
+  after_expiry: {content_store: false}
+  fields_with_free_string_leaf: {logged: false}

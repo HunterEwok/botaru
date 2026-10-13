@@ -1,0 +1,50 @@
+id: prp-12
+rules: [PRP-22, PRP-20]
+description: 'The self_measured mark and the outcome on a revert. The only bot of a role proposes to speed up its own task
+  type: the calculations without its points and without the role''s points are empty, the outcome is computed over all points with the mark self_measured,
+  not undetermined. A revert with the line "Botaru-Revert: <id> harm_observed" without a guard that fired closes the trial
+  with outcome worse; the line "Botaru-Revert: <id>" without a reason is read as other and gives canceled.'
+cases:
+- description: Metric of its own type, the only bot of the role; improvement beyond the tolerance over all points.
+  given:
+    metric:
+      series: farm.attempt.duration
+      subject: task_type:demo.report.nightly.v1
+      compare: window.p95
+      better: down
+      tolerance_pct: 10
+      min_samples: 10
+    before:
+      value: 6120
+      samples: 14
+      without_author: {value: null, samples: 0}
+      without_role: {value: null, samples: 0}
+    after:
+      value: 4700
+      samples: 14
+      without_author: {value: null, samples: 0}
+      without_role: {value: null, samples: 0}
+  expect: {outcome: better, self_measured: true}
+- description: Revert with reason harm_observed before the end of the window, the guard did not fire.
+  given:
+    trial_state: running
+    commit:
+      trailer: 'Botaru-Revert: p_01JB0000000000000000000101 harm_observed'
+      restores_revert_patch: true
+  expect:
+    proposal: {state: reverted, revert_reason: harm_observed}
+    trial: {state: worse, outcome: worse}
+- description: Revert without a reason.
+  given:
+    trial_state: running
+    commit: {trailer: 'Botaru-Revert: p_01JB0000000000000000000101', restores_revert_patch: true}
+  expect:
+    proposal: {state: reverted, revert_reason: other}
+    trial: {state: canceled, outcome: canceled}
+- description: Revert with reason superseded after a guard fired.
+  given:
+    trial_state: guard_broken
+    commit: {trailer: 'Botaru-Revert: p_01JB0000000000000000000101 superseded', restores_revert_patch: true}
+  expect:
+    proposal: {state: reverted, revert_reason: superseded}
+    trial: {state: worse, outcome: worse}

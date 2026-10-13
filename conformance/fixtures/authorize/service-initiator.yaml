@@ -1,0 +1,160 @@
+# The initiator's permission for services and monitoring scripts (APR-18, INJ-15, D-73).
+# The role's permission is not enough: every initiator of the task must have their own service.control:<service>
+# or monitor.script_run. Role ops-reader: service_control [nginx], monitor_scripts [nginx-cache-clear].
+id: fx-authorize-service-initiator
+rules: [APR-18, INJ-15, PRM-8, PRM-10, MON-8, MON-10]
+description: A restart of nginx at the request of carol without service.control:nginx, a script at her request without monitor.script_run
+  and an external program without an explicit line in the manifest get forbidden with needs even when the role has the permission. An asterisk in service.control
+  does not pass apply. After untrusted text the call goes as a card instead of being executed.
+given:
+  tenant: demo
+  people:
+  - principal: human:bob
+    groups: [staff, approver, ops-oncall]
+  - principal: human:carol
+    groups: [staff, approver]
+  system: [system-ops]
+  services:
+  - id: ci-exporter
+    kind: service
+    caps: ['task:ops.investigate.v1']
+  role:
+    ops-reader:
+      service_control: [nginx]
+      monitor_scripts: [nginx-cache-clear]
+cases:
+- id: svc-01
+  rules: [APR-18, PRM-8]
+  given:
+    task: ops.investigate.v1
+    initiators: ['human:carol']
+    tool: service/control
+    args: {service: nginx, verb: restart}
+    untrusted_seen: false
+  expect:
+    code: forbidden
+    needs: ['service.control:nginx']
+    service_grant: false
+- id: svc-02
+  rules: [APR-18, PRM-8]
+  given:
+    task: ops.investigate.v1
+    initiators: ['human:carol']
+    tool: monitor/script_run
+    args: {resource: web1, script: nginx-cache-clear}
+    untrusted_seen: false
+  expect:
+    code: forbidden
+    needs: [monitor.script_run]
+- id: svc-03
+  rules: [APR-18]
+  given:
+    task: ops.investigate.v1
+    initiators: ['human:bob']
+    tool: service/control
+    args: {service: nginx, verb: restart}
+    untrusted_seen: false
+  expect: {code: done, service_grant: true, card: false, write_calls: 1}
+- id: svc-04
+  rules: [APR-18, PRM-6]
+  given:
+    task: ops.investigate.v1
+    initiators: ['human:bob', 'human:carol']
+    tool: service/control
+    args: {service: nginx, verb: restart}
+  expect:
+    code: forbidden
+    needs: ['service.control:nginx']
+    note: every initiator needs the permission
+- id: svc-05
+  rules: [APR-18]
+  given:
+    task: ops.investigate.v1
+    initiators: ['service:ci-exporter']
+    tool: service/control
+    args: {service: nginx, verb: restart}
+  expect:
+    code: forbidden
+    needs: ['service.control:nginx']
+    note: only an explicit manifest line gives an external program the permission
+- id: svc-06
+  rules: [APR-18]
+  steps:
+  - lint: {principal_yaml: 'service:ci-exporter caps: [service.control:*]'}
+  expect: {result: rejected, stage: apply}
+- id: svc-07
+  rules: [APR-18]
+  steps:
+  - lint: {groups_yaml: 'ops-oncall: service.control:*'}
+  expect: {result: rejected, stage: apply}
+- id: svc-08
+  rules: [APR-18, PRM-10]
+  given:
+    route_on: ext.monitor.problem.v1
+    initiators: [system]
+    trigger: {id: 4407, class: service_down, in_catalog: true}
+    tool: service/control
+    args: {service: nginx, verb: restart}
+    untrusted_seen: false
+  expect: {code: done, service_grant: true, note: 'line service.control:nginx in system-ops (D-82)'}
+- id: svc-09
+  rules: [INJ-15]
+  given:
+    task: ops.investigate.v1
+    initiators: ['human:bob']
+    after: logs/tail
+    untrusted_seen: true
+    tool: service/control
+    args: {service: nginx, verb: restart}
+  expect:
+    code: approval_required
+    card: approval_card
+    approver_right: action.approve:service.control
+    executed: false
+- id: svc-10
+  rules: [INJ-15]
+  given:
+    task: ops.investigate.v1
+    initiators: ['human:bob']
+    after: logs/tail
+    untrusted_seen: true
+    tool: monitor/script_run
+    args: {resource: web1, script: nginx-cache-clear}
+  expect:
+    code: approval_required
+    card: approval_card
+    approver_right: action.approve:monitor.script_run
+- id: svc-11
+  rules: [INJ-15, APR-18]
+  given:
+    initiator_lost: service.control:nginx
+    people:
+    - principal: human:carol
+      groups: [approver]
+  steps:
+  - call:
+      port: P1
+      op: decide
+      request: {subject_kind: approval, id: '$from:svc-09', decision: approve}
+    by: human:carol
+  expect:
+    approval: canceled
+    reason: rights_revoked
+    note: at the decision the core checks the role permission and the initiator permission again
+- id: svc-12
+  rules: [APR-18]
+  given:
+    task: ops.investigate.v1
+    initiators: ['human:bob']
+    tool: service/control
+    args: {service: nginx, verb: start}
+    untrusted_seen: false
+  expect: {code: approval_required, note: start and stop always go by card (D-74)}
+- id: svc-13
+  rules: [APR-18]
+  given:
+    task: ops.investigate.v1
+    initiators: ['human:bob']
+    tool: service/control
+    args: {service: postgresql, verb: restart}
+  expect: {code: forbidden, note: 'postgresql is not in the demo catalog, so it is not in the enum'}

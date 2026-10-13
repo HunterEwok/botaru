@@ -1,0 +1,13 @@
+schema: spec/model/p1-claim-request.schema.json
+rules: [DSP-2, DSP-4, DSP-10, TEN-2]
+description: 'claim requests that the schema rejects: asking for a specific task; owner from the worker; tenant; empty list
+  of kinds; unknown work kind.'
+cases:
+- kinds: [attempt]
+  task: t_01JB0000000000000000000001
+- kinds: [attempt]
+  owner: human:alice
+- kinds: [attempt]
+  tenant: demo
+- kinds: []
+- kinds: [message]

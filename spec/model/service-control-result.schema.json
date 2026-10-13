@@ -1,0 +1,59 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:botaru:schema:service-control-result:1",
+  "title": "P3 service/control and monitor/script_run: result",
+  "description": "The result of the two built-in write tools returns to the model only as closed fields: the result code, the service state after reconciliation, the service_grant number or approval_id. The core stores the script output separately as a task journal file marked as untrusted text. The model sees a permission refusal and a stop as the same short forbidden; the needs field names the initiator permission (PRM-8).",
+  "x-botaru-direction": "output",
+  "x-botaru-rules": [
+    "APR-18",
+    "PRM-8",
+    "INJ-15"
+  ],
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "code"
+  ],
+  "properties": {
+    "code": {
+      "enum": [
+        "done",
+        "failed",
+        "exec_unknown",
+        "forbidden",
+        "service_rate_limited",
+        "script_unknown",
+        "resource_busy",
+        "approval_required"
+      ]
+    },
+    "state": {
+      "description": "Service state after reconciliation.",
+      "enum": [
+        "active",
+        "inactive",
+        "failed",
+        "unknown"
+      ]
+    },
+    "grant_id": {
+      "description": "Id of the service_grant record.",
+      "$ref": "urn:botaru:schema:common:1#/$defs/object_id"
+    },
+    "approval_id": {
+      "description": "Approval number, if the call went through a card.",
+      "$ref": "urn:botaru:schema:common:1#/$defs/object_id"
+    },
+    "needs": {
+      "type": "array",
+      "items": {
+        "description": "Group capability: a string of the form <form>:<name> from capabilities.yaml, without an asterisk, for example task:ops.investigate.v1, service.control:nginx, admin:people.",
+        "type": "string",
+        "pattern": "^[a-z][a-z_]*(\\.[a-z_]+)*(:[a-z0-9][a-z0-9_.:-]{0,159})?$",
+        "maxLength": 200
+      },
+      "maxItems": 4,
+      "uniqueItems": true
+    }
+  }
+}

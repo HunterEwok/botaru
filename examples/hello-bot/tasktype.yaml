@@ -1,0 +1,32 @@
+# Task type of the first bot: tier 0, class summary, the core delivers the answer to the person by origin.
+# Only the fields the task type cannot work without are here; the rest are optional and listed below.
+apiVersion: botaru/v1alpha1
+kind: TaskType
+metadata: {name: hello.greet.v1}
+spec:
+  title: "Greeting"
+  worker_kind: agent
+  purpose: work
+  tier: 0
+  data_class: summary
+  instruction: |
+    Greet the person in one sentence and say that you are a farm bot.
+  params_schema: {type: object, additionalProperties: false, properties: {}}
+  result_schema:
+    type: object
+    additionalProperties: false
+    required: [answer]
+    properties:
+      answer: {type: string, maxLength: 500}
+  # The tree budget covers the reserve of one P4 call on profile base-std: input about 0.0005 EUR
+  # plus max_output_tokens 8000 at 4 EUR per million, that is about 0.033 EUR (GW-2, BUD-2).
+  tree_budget_eur: 0.05
+  # Optional (spec/manifests/task-type.schema.json, docs/extending.md, 7.1):
+  # summary_for_managers: "Short answer to a greeting; no tools"   # line for the manager (ORC-13)
+  # stages: [writing_answer]                          # stages for heartbeat
+  # dispatch: {priority_class: 3}                     # dispatcher priority class
+  # interactive: true                                 # the person waits for an answer in the chat
+  # timeouts: {start_by: 5m, lease: 60s, heartbeat: 20s, attempt: 1m, deadline: 5m}
+  # retry: {max_attempts: 2, max_runs: 2}
+  # max_children: 0                                   # no child tasks
+  # goal_trust: untrusted                             # goal text from a person is untrusted

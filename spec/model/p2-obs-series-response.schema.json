@@ -1,0 +1,12 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:botaru:schema:p2-obs-series-response:1",
+  "title": "P2 obs.series: response",
+  "description": "Only numbers and enum values by the schema observation-query-result.",
+  "x-botaru-direction": "output",
+  "x-botaru-rules": [
+    "OBV-3",
+    "OBV-4"
+  ],
+  "$ref": "urn:botaru:schema:observation-query-result:1"
+}

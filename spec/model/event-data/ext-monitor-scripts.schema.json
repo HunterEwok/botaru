@@ -1,0 +1,69 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:botaru:schema:ext-monitor-scripts:1",
+  "title": "Data of the event ext.monitor.scripts.v1",
+  "description": "List of a node's scripts from the E5 adapter, only when the hash changes. There is no script name: the model sees the name only from monitor_scripts_allowed of the catalog (MON-10, INJ-1).",
+  "x-botaru-direction": "input",
+  "x-botaru-rules": [
+    "MON-10"
+  ],
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "resource",
+    "hash",
+    "scripts"
+  ],
+  "properties": {
+    "resource": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/name",
+      "description": "Catalog resource."
+    },
+    "hash": {
+      "description": "Hash of the script list.",
+      "type": "string",
+      "maxLength": 128,
+      "pattern": "^[A-Za-z0-9:_-]{8,128}$"
+    },
+    "scripts": {
+      "description": "Scripts of the node.",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "description": "Script.",
+        "additionalProperties": false,
+        "required": [
+          "scriptid",
+          "input"
+        ],
+        "properties": {
+          "scriptid": {
+            "description": "Script id.",
+            "type": "string",
+            "maxLength": 32,
+            "pattern": "^[0-9]{1,20}$"
+          },
+          "input": {
+            "description": "Script input: none or a choice from a list.",
+            "enum": [
+              "none",
+              "list"
+            ]
+          },
+          "choices": {
+            "description": "Input values for input list.",
+            "type": "array",
+            "items": {
+              "description": "Value.",
+              "type": "string",
+              "maxLength": 64,
+              "pattern": "^[A-Za-z0-9_.:-]+$"
+            },
+            "maxItems": 32
+          }
+        }
+      },
+      "maxItems": 64
+    }
+  }
+}

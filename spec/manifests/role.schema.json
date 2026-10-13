@@ -1,0 +1,475 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:botaru:schema:role:1",
+  "title": "Worker role",
+  "description": "spec of the Role manifest: the profile, task types, tools, enqueueing, actions, messages, model slots and rights on services (docs/extending.md 7.1, PRF-1).",
+  "x-botaru-direction": "input",
+  "x-botaru-rules": [
+    "PRF-1",
+    "APR-5",
+    "MEM-2",
+    "GOV-3",
+    "MSG-5",
+    "TEN-6",
+    "APR-18"
+  ],
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "claims",
+    "worker_kind"
+  ],
+  "if": {
+    "required": [
+      "worker_kind"
+    ],
+    "patternProperties": {
+      "^worker_kind$": {
+        "const": "agent"
+      }
+    }
+  },
+  "then": {
+    "required": [
+      "models"
+    ]
+  },
+  "properties": {
+    "profile": {
+      "type": "string",
+      "maxLength": 40,
+      "description": "Role profile from spec/model/role-profiles.yaml; worker without the field (PRF-1).",
+      "pattern": "^[a-z][a-z-]*$",
+      "x-botaru-registry": "role-profiles"
+    },
+    "worker_kind": {
+      "enum": [
+        "agent",
+        "job"
+      ],
+      "description": "agent: a model through a runtime; job: code without a model."
+    },
+    "claims": {
+      "type": "array",
+      "maxItems": 100,
+      "items": {
+        "$ref": "urn:botaru:schema:common:1#/$defs/type_name"
+      },
+      "description": "Task types that the role takes.",
+      "minItems": 1,
+      "uniqueItems": true
+    },
+    "tools": {
+      "type": "array",
+      "maxItems": 100,
+      "items": {
+        "$ref": "urn:botaru:schema:manifest:1#/$defs/tool_ref"
+      },
+      "description": "Read-only plugin tools (APR-1).",
+      "uniqueItems": true
+    },
+    "may_enqueue": {
+      "type": "array",
+      "maxItems": 50,
+      "items": {
+        "$ref": "urn:botaru:schema:common:1#/$defs/type_name"
+      },
+      "description": "Child task types; without action.* (APR-5).",
+      "uniqueItems": true
+    },
+    "may_target_groups": {
+      "type": "array",
+      "maxItems": 50,
+      "items": {
+        "$ref": "urn:botaru:schema:common:1#/$defs/name"
+      },
+      "description": "Bot groups to which the role can address tasks.",
+      "uniqueItems": true
+    },
+    "actions_may_request": {
+      "type": "array",
+      "maxItems": 50,
+      "items": {
+        "$ref": "urn:botaru:schema:common:1#/$defs/dotted_name"
+      },
+      "description": "Actions that the model can ask for through request_action.",
+      "uniqueItems": true
+    },
+    "campaigns": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "propose": {
+          "enum": [
+            "none",
+            "read",
+            "action"
+          ],
+          "description": "Which campaigns the role can propose (ORC-5)."
+        },
+        "then": {
+          "type": "array",
+          "maxItems": 10,
+          "items": {
+            "$ref": "urn:botaru:schema:common:1#/$defs/type_name"
+          },
+          "description": "Campaign continuation types."
+        }
+      }
+    },
+    "messages": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "send": {
+          "type": "array",
+          "maxItems": 50,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "type": {
+                "$ref": "urn:botaru:schema:common:1#/$defs/type_name"
+              },
+              "to": {
+                "type": "array",
+                "maxItems": 20,
+                "items": {
+                  "$ref": "urn:botaru:schema:manifest:1#/$defs/role_address"
+                }
+              }
+            },
+            "required": [
+              "type",
+              "to"
+            ]
+          },
+          "description": "Send kinds and addresses (MSG-5)."
+        },
+        "receive": {
+          "type": "array",
+          "maxItems": 50,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "type": {
+                "$ref": "urn:botaru:schema:common:1#/$defs/type_name"
+              }
+            },
+            "required": [
+              "type"
+            ]
+          },
+          "description": "Kinds that the role receives."
+        }
+      }
+    },
+    "instance_inbox": {
+      "type": "boolean",
+      "description": "Whether every worker of the role has its own inbox."
+    },
+    "views": {
+      "type": "array",
+      "maxItems": 10,
+      "items": {
+        "type": "string",
+        "maxLength": 40,
+        "pattern": "^status\\.[a-z_]+$"
+      },
+      "description": "status.* views.",
+      "uniqueItems": true
+    },
+    "insight": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "types": {
+          "type": "array",
+          "maxItems": 10,
+          "items": {
+            "$ref": "urn:botaru:schema:common:1#/$defs/type_name"
+          }
+        },
+        "observes": {
+          "type": "array",
+          "maxItems": 50,
+          "items": {
+            "$ref": "urn:botaru:schema:common:1#/$defs/dotted_name"
+          }
+        },
+        "tools": {
+          "type": "array",
+          "maxItems": 20,
+          "items": {
+            "$ref": "urn:botaru:schema:manifest:1#/$defs/tool_ref"
+          }
+        },
+        "max_data": {
+          "$ref": "urn:botaru:schema:common:1#/$defs/data_mark"
+        },
+        "max_runs": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "per": {
+              "enum": [
+                "day",
+                "week"
+              ]
+            },
+            "count": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 100,
+              "description": "Runs per window."
+            }
+          },
+          "required": [
+            "per",
+            "count"
+          ]
+        },
+        "max_event_runs": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "per": {
+              "enum": [
+                "day",
+                "week"
+              ]
+            },
+            "count": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 100,
+              "description": "Runs per window."
+            }
+          },
+          "required": [
+            "per",
+            "count"
+          ]
+        },
+        "merge_window": {
+          "$ref": "urn:botaru:schema:common:1#/$defs/duration"
+        },
+        "max_open_proposals": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 100,
+          "description": "Open proposals of the role."
+        },
+        "max_per_week": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 100,
+          "description": "Proposals per week."
+        }
+      },
+      "description": "Seat analysis (INS-1); only for worker and manager."
+    },
+    "aggregate": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "sources": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "roles": {
+              "type": "array",
+              "maxItems": 50,
+              "items": {
+                "$ref": "urn:botaru:schema:common:1#/$defs/name"
+              }
+            },
+            "bot_groups": {
+              "type": "array",
+              "maxItems": 50,
+              "items": {
+                "$ref": "urn:botaru:schema:common:1#/$defs/name"
+              }
+            },
+            "series": {
+              "type": "array",
+              "maxItems": 50,
+              "items": {
+                "$ref": "urn:botaru:schema:common:1#/$defs/dotted_name"
+              }
+            },
+            "message_kinds": {
+              "type": "array",
+              "maxItems": 50,
+              "items": {
+                "$ref": "urn:botaru:schema:common:1#/$defs/type_name"
+              }
+            }
+          }
+        },
+        "max_sources": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1000,
+          "description": "Ceiling of sources (AGG-3)."
+        }
+      },
+      "description": "Aggregator sources (AGG-2, AGG-3)."
+    },
+    "models": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "base": {
+          "$ref": "urn:botaru:schema:common:1#/$defs/name",
+          "description": "Model profile of the base slot."
+        },
+        "analysis": {
+          "$ref": "urn:botaru:schema:common:1#/$defs/name",
+          "description": "Model profile of the analysis slot."
+        }
+      },
+      "required": [
+        "base"
+      ],
+      "description": "Model slots of the role (GW-7)."
+    },
+    "memory": {
+      "description": "Role memory: none (the default), person, bot or {read: bot} for reviewer (PRF-1, MEM-2).",
+      "anyOf": [
+        {
+          "enum": [
+            "none",
+            "person",
+            "bot"
+          ]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "read": {
+              "const": "bot"
+            }
+          },
+          "required": [
+            "read"
+          ]
+        }
+      ]
+    },
+    "runtime": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "driver": {
+          "$ref": "urn:botaru:schema:common:1#/$defs/name",
+          "description": "Agent runtime driver."
+        }
+      },
+      "required": [
+        "driver"
+      ],
+      "description": "Agent runtime (E4)."
+    },
+    "skills": {
+      "type": "array",
+      "maxItems": 20,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "name": {
+            "$ref": "urn:botaru:schema:common:1#/$defs/name"
+          },
+          "description": {
+            "type": "string",
+            "maxLength": 300,
+            "description": "Short description of the skill."
+          },
+          "sha256": {
+            "type": "string",
+            "maxLength": 64,
+            "description": "Hash of the skill's directory tree.",
+            "pattern": "^[0-9a-f]{64}$"
+          }
+        },
+        "required": [
+          "name",
+          "description",
+          "sha256"
+        ],
+        "description": "Reference to a skill, skill-ref (SKL-2)."
+      },
+      "description": "Role skills by hash; in v0.1 the list is empty."
+    },
+    "service_control": {
+      "type": "array",
+      "maxItems": 50,
+      "items": {
+        "type": "string",
+        "maxLength": 63,
+        "pattern": "^([a-z][a-z0-9-]{0,62}|\\*)$"
+      },
+      "description": "Catalog services the role can control; [\"*\"] means all (APR-18, MON-8).",
+      "uniqueItems": true
+    },
+    "monitor_scripts": {
+      "type": "array",
+      "maxItems": 50,
+      "items": {
+        "type": "string",
+        "maxLength": 63,
+        "pattern": "^([a-z][a-z0-9-]{0,62}|\\*)$"
+      },
+      "description": "Names from the catalog's monitor_scripts_allowed; [\"*\"] means all (MON-10).",
+      "uniqueItems": true
+    },
+    "outputs": {
+      "type": "array",
+      "maxItems": 4,
+      "items": {
+        "enum": [
+          "monitor_note"
+        ]
+      },
+      "description": "From v0.2: what the role can return in the result for code (MON-7).",
+      "x-botaru-version": "v0.2"
+    },
+    "scripts": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "propose": {
+          "enum": [
+            "none",
+            "draft",
+            "in_proposal"
+          ]
+        },
+        "step_types": {
+          "type": "array",
+          "maxItems": 50,
+          "items": {
+            "$ref": "urn:botaru:schema:common:1#/$defs/type_name"
+          }
+        },
+        "actions": {
+          "type": "array",
+          "maxItems": 50,
+          "items": {
+            "$ref": "urn:botaru:schema:common:1#/$defs/dotted_name"
+          }
+        },
+        "max_steps": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 20,
+          "description": "Ceiling of the steps of a draft of the role."
+        }
+      },
+      "description": "Vocabulary of the script author (SCR-5)."
+    }
+  }
+}

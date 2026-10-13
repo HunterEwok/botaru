@@ -1,0 +1,39 @@
+schema: spec/manifests/role.schema.json
+rules:
+- MAN-1
+description: Role manifest specs from examples/ that the kind schema accepts.
+cases:
+- profile: worker
+  worker_kind: agent
+  claims:
+  - hello.greet.v1
+  models:
+    base: base-std
+  memory: none
+- profile: worker
+  worker_kind: agent
+  claims:
+  - assist.chat.v1
+  models:
+    base: base-std
+  memory: person
+- profile: worker
+  worker_kind: job
+  claims:
+  - data.sensor_check.v1
+  - data.sensor_watch.v1
+  - check.http.v1
+  - pipeline.watch.v1
+  - report.monthly.numbers.v1
+  may_enqueue:
+  - report.sensor.v1
+  - report.monthly.v1
+- profile: worker
+  worker_kind: agent
+  claims:
+  - data.describe.v1
+  tools:
+  - data/describe
+  models:
+    base: base-std
+  memory: none

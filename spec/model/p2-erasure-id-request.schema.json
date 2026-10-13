@@ -1,0 +1,27 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:botaru:schema:p2-erasure-id-request:1",
+  "title": "P2 erasure.status and erasure.retry: request",
+  "description": "Show an erasure request or retry the stores without the outcome done or not_applicable (RET-7).",
+  "x-botaru-direction": "input",
+  "x-botaru-rules": [
+    "RET-7"
+  ],
+  "type": "object",
+  "required": [
+    "op",
+    "id"
+  ],
+  "properties": {
+    "op": {
+      "enum": [
+        "erasure.status",
+        "erasure.retry"
+      ]
+    },
+    "id": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/object_id"
+    }
+  },
+  "additionalProperties": false
+}

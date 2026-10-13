@@ -1,0 +1,30 @@
+id: fx-orc-09
+rules: [ORC-12]
+description: 'An action with exclusive: resource has no more than one released write call per tenant resource,
+  counting campaign items and single approvals. An item on a busy resource waits with reason resource_busy
+  instead of failing; a single approval on a busy resource is executed after the resource is freed.'
+given:
+  tenant: demo
+  action: {name: cleanup_pipeline_tmp, exclusive: resource}
+steps:
+- check:
+    approve_single: {action: cleanup_pipeline_tmp, resource: web1}
+    state: executing
+- check:
+    campaign:
+      id: k_01JB0000000000000000000009
+      state: running
+      items: [web1, db1]
+- stand: {op: loop.tick, loop: campaign}
+- check:
+    approve_single: {action: cleanup_pipeline_tmp, resource: db1}
+- check: {finish_single: web1}
+- stand: {op: loop.tick, loop: campaign}
+expect:
+  after_step_3:
+    item_web1: {state: pending, waiting_reason: resource_busy}
+    item_db1: released
+  after_step_4: {single_db1: waiting, executes_after: item_db1_done}
+  after_step_6: {item_web1: released}
+  write_calls_per_resource_at_once_max: 1
+  item_failed_by_busy: false

@@ -1,0 +1,22 @@
+schema: spec/model/p1-hello-request.schema.json
+rules: [TEN-4, DLV-12]
+description: 'hello requests that the schema accepts: an agent with labels; a toolhost with plugins and a fingerprint; a
+  channel with driver capabilities.'
+cases:
+- kind: agent
+  implementation: agent-adapter 0.1.0
+  labels:
+    zone: lab
+  capacity: 2
+  protocol_versions: [v1]
+- kind: toolhost
+  protocol_versions: [v1]
+  plugins: [logs, cmd]
+  placement: host
+  tools_fingerprint: sha256:6f1ed002ab5595859014ebf0951522d9d3ee6bd7d76a2b0bfd7e4e5fa9c3a6b2
+- kind: channel
+  protocol_versions: [v1]
+  driver:
+    ai_disclosure: first_contact
+    provenance: metadata
+    membership_assurance: enforced

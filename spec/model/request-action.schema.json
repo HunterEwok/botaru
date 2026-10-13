@@ -1,0 +1,30 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:botaru:schema:request-action:1",
+  "title": "P3 request_action: arguments",
+  "description": "Built-in tool request_action: a request for an action from the role actions_may_request. The action arguments are checked by the closed schema of the action manifest after defaults are filled in; the core takes the machine and resources from the catalog, not from a model argument (APR-2). At most 3 requests per task; an identical waiting request returns the existing number.",
+  "x-botaru-direction": "input",
+  "x-botaru-rules": [
+    "APR-1",
+    "APR-2",
+    "INJ-1"
+  ],
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "action",
+    "args"
+  ],
+  "properties": {
+    "action": {
+      "description": "Name of an action in the tenant catalog.",
+      "$ref": "urn:botaru:schema:common:1#/$defs/dotted_name"
+    },
+    "args": {
+      "description": "Action arguments.",
+      "type": "object",
+      "maxProperties": 32,
+      "x-botaru-closed-by": "args of the action"
+    }
+  }
+}

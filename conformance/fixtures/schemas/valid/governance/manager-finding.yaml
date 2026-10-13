@@ -1,0 +1,20 @@
+schema: spec/model/manager-finding.schema.json
+rules: [MGR-25]
+description: Reader role findings that the schema accepts.
+cases:
+  - kind: runaway_loop
+    subject: {kind: worker, id: w_7}
+    evidence: [lw_01jd7, t-501]
+    values: {retries_15m: 410}
+    suggested: {op: quarantine, action: null, service: null}
+    confidence: medium
+    note: The worker repeats the same call.
+  - kind: misconfig_suspected
+    subject: {kind: resource, id: "res:ctd1:data"}
+    evidence: [lw_01jd8]
+    suggested: {op: null, action: null, service: {name: ctd-qc, verb: restart}}
+    confidence: low
+  - kind: none
+    subject: {kind: tasktype, id: demo.db.backup.v1}
+    evidence: []
+    confidence: high

@@ -1,0 +1,76 @@
+id: fx-aggregator-labels
+rules: [AGG-4]
+description: Aggregator marks do not go down. The data_mark of an aggregator rollup and proposal equals the highest mark of its inputs;
+  untrusted_seen equals the logical OR of the inputs together with their sources. The order of marks from lowest to highest is set by
+  the closed list of the tenant's data classes; here summary is below internal, and internal below raw_logs.
+cases:
+- id: agg-fx-01
+  rules: [AGG-4]
+  description: Rollups of two series with marks summary and internal give a rollup and a proposal with mark internal.
+  given:
+    inputs:
+    - kind: rollup
+      series: farm.schedule.slot
+      data_mark: summary
+      untrusted_seen:
+        value: false
+        sources: []
+    - kind: rollup
+      series: host.load.v1
+      data_mark: internal
+      untrusted_seen:
+        value: false
+        sources: []
+  expect:
+    rollup_data_mark: internal
+    proposal:
+      data_mark: internal
+      untrusted_seen:
+        value: false
+        sources: []
+      origin: {level: 1}
+- id: agg-fx-02
+  rules: [AGG-4, INJ-13]
+  description: One report input with untrusted_seen (source monitor_item_text of the attempt that authored the report) gives the aggregator's
+    proposal untrusted_seen true together with this source; the mark is not below raw_logs.
+  given:
+    inputs:
+    - kind: message_data
+      message_kind: report.ops.v1
+      data_mark: raw_logs
+      untrusted_seen:
+        value: true
+        sources: [monitor_item_text]
+    - kind: rollup
+      series: host.load.v1
+      data_mark: internal
+      untrusted_seen:
+        value: false
+        sources: []
+  expect:
+    proposal:
+      data_mark: raw_logs
+      untrusted_seen:
+        value: true
+        sources: [monitor_item_text]
+- id: agg-fx-03
+  rules: [AGG-4, PRP-7]
+  description: An aggregator proposal with untrusted_seen changes only fields with a safe direction; otherwise the refusal is
+    untrusted_direction.
+  given:
+    inputs:
+    - kind: message_data
+      message_kind: report.ops.v1
+      data_mark: internal
+      untrusted_seen:
+        value: true
+        sources: [logs_tail]
+    proposal_change:
+      kind: manifest_change
+      manifest_change:
+        ops:
+        - op: set
+          target: {kind: Schedule, name: report-nightly}
+          field: spec.cron
+          value: 30 3 * * *
+  expect: {result: rejected, reason: untrusted_direction}

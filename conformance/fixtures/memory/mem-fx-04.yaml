@@ -1,0 +1,123 @@
+id: mem-fx-04
+rules: [MEM-8]
+description: 'The recipient takes facts with a memory.pick.v1 task with purpose handover: tier 0, a clean context without
+  tools, memory, session and inbox, the recipient role slot, line work, priority class 4, key system:handover:<fact
+  offer>. The core enqueues it only for a role whose profile allows memory of scope bot. The output is only take, a subset
+  of ids from the enum, no more than take_max (50) and the free space in the store. A taken fact is rechecked with the recipient''s permissions
+  and copied into active with the mark inherited; untrusted_origin is kept. The task does not set untrusted_seen. If
+  the task failed after 3 retries, the recipient is expired. People do not approve the handover; P2 and the digest show only
+  numbers. Numbers of identities, facts, tasks and proposals are shortened, as in the example in docs/bots.md.'
+given:
+  offer:
+    id: fo_0005
+    from_bot: bot_17
+    facts: 15
+    recipient: {bot: bot_31, state: pending}
+  recipient_role: {name: ops-runner, profile: worker}
+  recipient_space: {active_facts: 92}
+  tenant: demo
+cases:
+- id: mem-fx-04-a
+  description: Attributes of the pick task.
+  expect:
+    task:
+      type: memory.pick.v1
+      purpose: handover
+      level: 0
+      tools: []
+      memory.read: null
+      session: null
+      inbox: null
+      slot: role
+      budget_line: work
+      priority_class: 4
+      idempotency_key: system:handover:fo_0005
+      untrusted_seen: false
+- id: mem-fx-04-b
+  description: The input is closed and has no duplicates of the recipient's own facts; the task does not see whom the facts come from.
+  given: {recipient_has_same_fact_as: f_0311}
+  expect:
+    input: {soul: trusted, role_instruction: trusted, fact_rows: 14, from_bot_visible: false}
+- id: mem-fx-04-c
+  steps:
+  - call:
+      port: P1
+      op: complete
+      request:
+        result:
+          take: [f_0312, f_0313]
+  expect:
+    copies:
+    - state: active
+      inherited: {from_bot: bot_17, offer: fo_0005}
+    - {state: active}
+    recipient: picked
+- id: mem-fx-04-d
+  steps:
+  - call:
+      port: P1
+      op: complete
+      request:
+        result:
+          take: [f_9999]
+  expect: {result: rejected, reason: output_schema_invalid, note: id outside the enum}
+- id: mem-fx-04-e
+  steps:
+  - call:
+      port: P1
+      op: complete
+      request:
+        result: {take: a list of 9 ids}
+  expect: {result: rejected, reason: output_schema_invalid, note: free space 8 of 100}
+- id: mem-fx-04-f
+  given:
+    recipient_space: {active_facts: 0}
+    offer_facts: 60
+  steps:
+  - call:
+      port: P1
+      op: complete
+      request:
+        result: {take: a list of 51 ids}
+  expect: {result: rejected, reason: output_schema_invalid, note: more than take_max 50}
+- id: mem-fx-04-g
+  given:
+    f_0313: {untrusted_origin: true}
+  steps:
+  - call:
+      port: P1
+      op: complete
+      request:
+        result:
+          take: [f_0313]
+  expect:
+    copy: {untrusted_origin: true}
+- id: mem-fx-04-h
+  given:
+    attempts: [fail, fail, fail, fail]
+  expect: {recipient: expired, note: the first attempt and 3 retries}
+- id: mem-fx-04-i
+  given:
+    recipient_role: {name: reporter, profile: reporter}
+  expect: {task_enqueued: false, note: a profile without memory of scope bot}
+- id: mem-fx-04-j
+  description: Section T of the manager.
+  given:
+    offer:
+      id: fo_0009
+      from_bot: bot_41
+      section: demo
+      recipient: {bot: bot_58}
+  expect:
+    task: {tenant: demo, worker_role: farm-manager, slot: seat, idempotency_key: 'system:handover:fo_0009'}
+- id: mem-fx-04-k
+  steps:
+  - call:
+      port: P2
+      op: bot.show
+      request: {op: bot.show, id: bot_31}
+    by: operator
+  expect:
+    handover: {offered: 15, taken: 2}
+    fact_contents_shown: false
+    approval_cards: 0

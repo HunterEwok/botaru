@@ -1,0 +1,120 @@
+id: fx-msg-08
+rules: [MSG-5, MSG-8, PRM-8, INJ-4]
+description: The core builds the message tools for each attempt, like tools/list. send_message appears only
+  if the role's messages.send has a kind with agent in producers and the initiator has msg.send on at least one such kind;
+  its type is the enum of such kinds, to is the enum of addresses of the selected kind, fields is the closed schema of the kind, and note exists
+  only with note.max_chars greater than 0. inbox_read exists only for an attempt whose type declared inbox.read, and those kinds are in
+  the role's receive. The model sees the content of an entry only as the output of its own inbox_read call inside the untrusted text
+  wrapper; the message is not in the instruction, the goal or the session start.
+given:
+  tenant: demo
+  messagetypes:
+  - name: report.qc_note.v1
+    producers: [agent, job]
+    note: {max_chars: 500}
+  - name: report.work.v1
+    producers: [job, core]
+    note: {max_chars: 500}
+  - name: report.lead_summary.v1
+    producers: [agent]
+    note: {max_chars: 0}
+  roles:
+  - name: analyst
+    messages:
+      send:
+      - type: report.qc_note.v1
+        to: ['role:reporter', 'role:ops-lead']
+      - type: report.work.v1
+        to: ['role:ops-lead']
+  - name: ops-lead
+    profile: manager
+    messages:
+      send:
+      - type: report.lead_summary.v1
+        to: ['role:reporter']
+      receive:
+      - {type: report.work.v1}
+      - {type: report.qc_note.v1}
+      - {type: state.worker.v1}
+  tasktypes:
+  - {name: data.qc.ctd.v1, claimed_by: analyst}
+  - name: ops.lead.review.v1
+    claimed_by: ops-lead
+    inbox:
+      read: [report.work.v1, report.qc_note.v1, state.worker.v1]
+  - {name: ops.lead.v1, claimed_by: ops-lead}
+expect: {send_message_without_agent_producer: never}
+cases:
+- given:
+    attempt:
+      type: data.qc.ctd.v1
+      role: analyst
+      initiators: ['human:carol']
+      grants: ['msg.send:report.*']
+  expect:
+    tools_list_includes: [send_message]
+    tools_list_excludes: [inbox_read]
+    send_message_schema:
+      type_enum: [report.qc_note.v1]
+      to_enum:
+        report.qc_note.v1: ['role:reporter', 'role:ops-lead']
+      note_max_length: 500
+- given:
+    attempt:
+      type: data.qc.ctd.v1
+      role: analyst
+      initiators: ['human:alice']
+      grants: []
+  expect:
+    tools_list_excludes: [send_message, inbox_read]
+- given:
+    attempt:
+      type: data.qc.ctd.v1
+      role: analyst
+      initiators: ['human:carol', 'human:alice']
+      grants_by_initiator:
+        carol: ['msg.send:report.*']
+        alice: []
+  steps:
+  - call:
+      port: P1
+      op: msg.send
+      request:
+        type: report.qc_note.v1
+        to: role:reporter
+        fields: {resource: ctd-2026-08-p017}
+  expect:
+    result: rejected
+    reason: msg_type_not_allowed
+    model_sees: a short "no"
+    audit_reason: msg_type_not_allowed
+- given:
+    attempt:
+      type: ops.lead.review.v1
+      role: ops-lead
+      initiators: [system]
+      grants: ['msg.send:report.lead_summary.v1']
+  expect:
+    tools_list_includes: [send_message, inbox_read]
+    send_message_schema:
+      type_enum: [report.lead_summary.v1]
+      note_present: false
+- given:
+    attempt:
+      type: ops.lead.v1
+      role: ops-lead
+      initiators: ['human:bob']
+  expect:
+    tools_list_excludes: [inbox_read]
+- description: where the model sees the message text
+  given:
+    attempt: {type: ops.lead.review.v1, role: ops-lead}
+    inbox:
+    - {type: report.qc_note.v1, note: CANARY-NOT-A-SECRET-MSG-NOTE-0008}
+    model_calls: [inbox_read]
+  expect:
+    canary_only_inside: tool_result_block
+    canary_in_instructions: false
+    canary_in_goal: false
+    canary_in_session_start: false
+    pushed_into_running_attempt: never

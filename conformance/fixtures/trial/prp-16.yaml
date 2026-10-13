@@ -1,0 +1,19 @@
+id: prp-16
+rules: [PRP-22, GOV-13]
+description: 'Outcome better with a disputed incident attribution (disputed). An attribution of an incident to the change does not change the trial
+  outcome: the outcome stays better; a disputed attribution only delays the promotion trigger until it is resolved. Resolving
+  the dispute does not change the outcome either.'
+given:
+  proposal:
+    id: p_01JB0000000000000000000101
+    state: realized
+    trial: {state: better, outcome: better}
+  attribution: {proposal: p_01JB0000000000000000000101, state: disputed}
+steps:
+- check: state
+  expect:
+    trial: {outcome: better}
+    promotion_reason: absent
+- check: {attribution_resolved: canceled}
+  expect:
+    trial: {outcome: better}

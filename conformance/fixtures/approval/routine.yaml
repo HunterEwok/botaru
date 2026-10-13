@@ -1,0 +1,118 @@
+# /run and a routine pipeline (APR-17): without a card only run.approval none for a read pipeline
+# or an action with risk routine; otherwise an approval with a card.
+id: fx-approval-routine
+rules: [APR-17]
+description: Channel code parses the /run arguments by a closed schema; the tenant's run field chooses the type or action.
+  A routine pipeline is executed under a service_grant record with the initiator as author.
+cases:
+- id: apr-run-01
+  rules: [APR-17]
+  given:
+    run: {action: pipeline.ctd_qc, risk: low}
+    people:
+    - principal: human:alice
+      groups: [ctd]
+  steps:
+  - call:
+      port: P1
+      op: submit_activity
+      request:
+        kind: message
+        channel: telegram
+        update_id: '1'
+        sender: {identity: 'telegram:1001', verified: true}
+        chat: {kind: direct, external_id: '1001'}
+        text: /run ctd-qc --station st-05
+    by: human:alice
+  expect: {approval: pending, card: approval_card, approver_right: 'action.approve:pipeline.ctd_qc'}
+- id: apr-run-02
+  rules: [APR-17]
+  given:
+    people:
+    - principal: human:alice
+      groups: [ctd]
+  steps:
+  - call:
+      port: P1
+      op: submit_activity
+      request:
+        kind: message
+        channel: telegram
+        update_id: '1'
+        sender: {identity: 'telegram:1001', verified: true}
+        chat: {kind: direct, external_id: '1001'}
+        text: /run ctd-qc --station st-03
+    by: human:alice
+  expect: {reason: input_schema_invalid, note: the station is not in the closed list}
+- id: apr-run-03
+  rules: [APR-17]
+  given:
+    people:
+    - principal: human:alice
+      groups: [ctd]
+  steps:
+  - call:
+      port: P1
+      op: submit_activity
+      request:
+        kind: message
+        channel: telegram
+        update_id: '2'
+        sender: {identity: 'telegram:1001', verified: true}
+        chat: {kind: direct, external_id: '1001'}
+        text: /run ctd-qc --station st-05; rm -rf /
+    by: human:alice
+  expect: {reason: input_schema_invalid}
+- id: apr-run-04
+  rules: [APR-17]
+  given:
+    run: {action: pipeline.ctd_daily, risk: routine}
+    people:
+    - principal: human:alice
+      groups: [ctd]
+  steps:
+  - call:
+      port: P1
+      op: submit_activity
+      request:
+        kind: message
+        channel: telegram
+        update_id: '2'
+        sender: {identity: 'telegram:1001', verified: true}
+        chat: {kind: direct, external_id: '1001'}
+        text: /run ctd-daily
+    by: human:alice
+  expect:
+    approval: none
+    audit: service_grant
+    author: human:alice
+    task: action.pipeline.ctd_daily
+    grant_id: present
+    write_calls: 1
+- id: apr-run-05
+  rules: [APR-17]
+  steps:
+  - lint: {type_yaml: 'run.approval: none, tier: 3'}
+  expect: {result: rejected, stage: apply, note: a pipeline without a card does not change working machines}
+- id: apr-run-06
+  rules: [APR-17]
+  given:
+    people:
+    - principal: human:carol
+      groups: [staff]
+  steps:
+  - call:
+      port: P1
+      op: submit_activity
+      request:
+        kind: message
+        channel: telegram
+        update_id: '3'
+        sender: {identity: 'telegram:1003', verified: true}
+        chat: {kind: direct, external_id: '1003'}
+        text: /run ctd-qc --station st-05
+    by: human:carol
+  expect:
+    decision: {result: denied}
+    reason: no_group_cap
+    needs: ['action.request:pipeline.ctd_qc']

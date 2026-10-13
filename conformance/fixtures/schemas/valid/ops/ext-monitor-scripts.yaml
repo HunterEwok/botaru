@@ -1,0 +1,15 @@
+schema: urn:botaru:schema:ext-monitor-scripts:1
+rules:
+- MON-10
+description: A node's list of scripts without names.
+data:
+  resource: web1
+  hash: sha256:0f3a9c2d
+  scripts:
+  - scriptid: '31'
+    input: none
+  - scriptid: '32'
+    input: list
+    choices:
+    - nginx
+    - php-fpm

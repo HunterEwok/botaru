@@ -1,0 +1,34 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:botaru:schema:on-behalf:1",
+  "title": "Channel action on behalf of a person",
+  "description": "Who pressed the button or gave the command and from which chat. This is not an operation body: the channel passes these values in the headers Botaru-On-Behalf and Botaru-Chat (spec/bindings/http/README.md). The core accepts them only from the process of the channel through whose driver the person came: the identity kind matches the channel driver, the identity belongs to an active human principal of the channel's tenant with strong identity, for a card the chat is the one where this channel delivered it, and for a P2 command the chat is this person's direct chat with this channel (APR-4, IDN-3, IDN-7, PRM-15). The schema sets the form of the header values.",
+  "x-botaru-direction": "input",
+  "x-botaru-rules": [
+    "APR-4",
+    "IDN-3",
+    "IDN-7",
+    "TEN-4",
+    "PRM-15"
+  ],
+  "type": "object",
+  "required": [
+    "identity",
+    "chat"
+  ],
+  "properties": {
+    "identity": {
+      "$ref": "urn:botaru:schema:activity:1#/properties/sender/properties/identity"
+    },
+    "chat": {
+      "$ref": "urn:botaru:schema:activity:1#/properties/chat"
+    },
+    "message": {
+      "description": "Header Botaru-Message: the external id of the card message on which the button was pressed; the core checks it against the external_id of the card delivery to this chat. A text command has no such field.",
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_.:-]{1,128}$",
+      "maxLength": 128
+    }
+  },
+  "additionalProperties": false
+}

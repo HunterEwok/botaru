@@ -1,0 +1,513 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:botaru:schema:governance:1",
+  "title": "Charter",
+  "description": "spec of the Governance manifest: the tenant charter (commission seats, positions, path deadlines, memory limits) or the farm charter farm (the farm manager seat). Every numeric field changes only in one direction from the default (GOV-33).",
+  "x-botaru-direction": "input",
+  "x-botaru-rules": [
+    "GOV-33",
+    "GOV-3",
+    "GOV-4",
+    "GOV-14",
+    "MGR-14"
+  ],
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "positions": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "functional": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "max_rank": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 4,
+              "description": "Only lowers the profile ceiling."
+            },
+            "analysis_max_rank": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 4,
+              "description": "Only lowers the ceiling."
+            },
+            "persona": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "ref": {
+                  "type": "string",
+                  "maxLength": 200,
+                  "description": "Path of the persona file personas/<name>.md.",
+                  "pattern": "^personas/[a-z][a-z0-9-]*\\.md$"
+                },
+                "sha256": {
+                  "type": "string",
+                  "maxLength": 64,
+                  "description": "Hash of the persona file.",
+                  "pattern": "^([0-9a-f]{64}|\\.\\.\\.)$"
+                }
+              },
+              "required": [
+                "ref",
+                "sha256"
+              ],
+              "description": "Persona by hash (GOV-4)."
+            }
+          }
+        },
+        "assistant": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "max_rank": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 4,
+              "description": "Only lowers the profile ceiling."
+            },
+            "analysis_max_rank": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 4,
+              "description": "Only lowers the ceiling."
+            },
+            "persona": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "ref": {
+                  "type": "string",
+                  "maxLength": 200,
+                  "description": "Path of the persona file personas/<name>.md.",
+                  "pattern": "^personas/[a-z][a-z0-9-]*\\.md$"
+                },
+                "sha256": {
+                  "type": "string",
+                  "maxLength": 64,
+                  "description": "Hash of the persona file.",
+                  "pattern": "^([0-9a-f]{64}|\\.\\.\\.)$"
+                }
+              },
+              "required": [
+                "ref",
+                "sha256"
+              ],
+              "description": "Persona by hash (GOV-4)."
+            }
+          }
+        },
+        "translator": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "max_rank": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 4,
+              "description": "Only lowers the profile ceiling."
+            },
+            "analysis_max_rank": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 4,
+              "description": "Only lowers the ceiling."
+            },
+            "persona": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "ref": {
+                  "type": "string",
+                  "maxLength": 200,
+                  "description": "Path of the persona file personas/<name>.md.",
+                  "pattern": "^personas/[a-z][a-z0-9-]*\\.md$"
+                },
+                "sha256": {
+                  "type": "string",
+                  "maxLength": 64,
+                  "description": "Hash of the persona file.",
+                  "pattern": "^([0-9a-f]{64}|\\.\\.\\.)$"
+                }
+              },
+              "required": [
+                "ref",
+                "sha256"
+              ],
+              "description": "Persona by hash (GOV-4)."
+            }
+          }
+        },
+        "commission": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "max_rank": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 4,
+              "description": "Only lowers the profile ceiling."
+            },
+            "analysis_max_rank": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 4,
+              "description": "Only lowers the ceiling."
+            },
+            "persona": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "ref": {
+                  "type": "string",
+                  "maxLength": 200,
+                  "description": "Path of the persona file personas/<name>.md.",
+                  "pattern": "^personas/[a-z][a-z0-9-]*\\.md$"
+                },
+                "sha256": {
+                  "type": "string",
+                  "maxLength": 64,
+                  "description": "Hash of the persona file.",
+                  "pattern": "^([0-9a-f]{64}|\\.\\.\\.)$"
+                }
+              },
+              "required": [
+                "ref",
+                "sha256"
+              ],
+              "description": "Persona by hash (GOV-4)."
+            }
+          }
+        }
+      },
+      "description": "Positions and their personas (GOV-4)."
+    },
+    "commission": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "seat_role": {
+          "$ref": "urn:botaru:schema:common:1#/$defs/name",
+          "description": "Role of the reviewer profile."
+        },
+        "model_profile": {
+          "$ref": "urn:botaru:schema:common:1#/$defs/name",
+          "description": "Profile of the seat slot."
+        },
+        "seats": {
+          "type": "array",
+          "maxItems": 20,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "id": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 50,
+                "description": "Seat number."
+              },
+              "lens": {
+                "type": "string",
+                "maxLength": 40,
+                "description": "Lens from lenses.yaml.",
+                "pattern": "^[a-z][a-z_]*$"
+              },
+              "fallback_role": {
+                "$ref": "urn:botaru:schema:common:1#/$defs/name"
+              },
+              "model_profile": {
+                "$ref": "urn:botaru:schema:common:1#/$defs/name"
+              }
+            },
+            "required": [
+              "id",
+              "lens"
+            ]
+          }
+        },
+        "audit_sample": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "min_per_month": {
+              "type": "integer",
+              "minimum": 4,
+              "maximum": 1000,
+              "description": "At least 4 (DIG-5)."
+            },
+            "share": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1,
+              "description": "Share."
+            },
+            "max_per_digest": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 100,
+              "description": "Items in the digest."
+            }
+          }
+        }
+      },
+      "description": "Commission seats (GOV-33)."
+    },
+    "promotion": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "probation": {
+          "$ref": "urn:botaru:schema:common:1#/$defs/duration"
+        },
+        "exclude_change_kinds": {
+          "type": "array",
+          "maxItems": 20,
+          "items": {
+            "type": "string",
+            "maxLength": 40,
+            "description": "Change kind.",
+            "pattern": "^[a-z_]+$"
+          }
+        },
+        "min_tenure": {
+          "$ref": "urn:botaru:schema:common:1#/$defs/duration"
+        },
+        "swap_cooldown": {
+          "$ref": "urn:botaru:schema:common:1#/$defs/duration"
+        }
+      }
+    },
+    "removal": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "protect_new": {
+          "$ref": "urn:botaru:schema:common:1#/$defs/duration"
+        }
+      }
+    },
+    "ballots": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "reissue_max": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 100,
+          "description": "Only raised."
+        },
+        "stuck_after": {
+          "$ref": "urn:botaru:schema:common:1#/$defs/duration"
+        }
+      }
+    },
+    "confirmation": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "ttl": {
+          "$ref": "urn:botaru:schema:common:1#/$defs/duration"
+        }
+      }
+    },
+    "attribution": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "window": {
+          "$ref": "urn:botaru:schema:common:1#/$defs/duration"
+        }
+      }
+    },
+    "identity": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "unbound_ttl": {
+          "$ref": "urn:botaru:schema:common:1#/$defs/duration"
+        }
+      }
+    },
+    "memory": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "seal_ttl": {
+          "$ref": "urn:botaru:schema:common:1#/$defs/duration"
+        },
+        "facts": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "max_active": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 100,
+              "description": "Only reduce."
+            },
+            "per_attempt": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 3,
+              "description": "Only reduce."
+            }
+          }
+        },
+        "offer": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "max": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 100,
+              "description": "Only reduce."
+            },
+            "take_max": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 50,
+              "description": "Only reduce."
+            }
+          }
+        }
+      }
+    },
+    "farm_manager": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "max_rank": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 4,
+          "description": "Rank ceiling of the seat."
+        },
+        "model_profile": {
+          "$ref": "urn:botaru:schema:common:1#/$defs/name"
+        },
+        "persona": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "ref": {
+              "type": "string",
+              "maxLength": 200,
+              "description": "Path of the persona file personas/<name>.md.",
+              "pattern": "^personas/[a-z][a-z0-9-]*\\.md$"
+            },
+            "sha256": {
+              "type": "string",
+              "maxLength": 64,
+              "description": "Hash of the persona file.",
+              "pattern": "^([0-9a-f]{64}|\\.\\.\\.)$"
+            }
+          },
+          "required": [
+            "ref",
+            "sha256"
+          ],
+          "description": "Persona by hash (GOV-4)."
+        },
+        "incident_stop": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "decide_within": {
+              "$ref": "urn:botaru:schema:common:1#/$defs/duration",
+              "description": "At most 7d."
+            }
+          }
+        },
+        "control_limits": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "ops_per_hour": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 1000,
+              "description": "Limit per hour."
+            },
+            "quarantines_per_hour": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 100,
+              "description": "Limit per hour."
+            },
+            "cancels_per_hour": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 1000,
+              "description": "Limit per hour."
+            },
+            "pins_per_worker_hour": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 100,
+              "description": "Limit per hour."
+            },
+            "max_share_held": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1,
+              "description": "Share of a role under holds."
+            },
+            "hold_ttl_max": {
+              "$ref": "urn:botaru:schema:common:1#/$defs/duration"
+            },
+            "daily_review_max_eur": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1000000,
+              "description": "Amount in euros."
+            }
+          },
+          "description": "Seat limits (MGR-14, MGR-41)."
+        },
+        "grant_limits": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "seat_grants_eur_day": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1000000,
+              "description": "Amount in euros."
+            },
+            "decide_debounce": {
+              "$ref": "urn:botaru:schema:common:1#/$defs/duration"
+            },
+            "grant_wait_max": {
+              "$ref": "urn:botaru:schema:common:1#/$defs/duration"
+            },
+            "requests_per_role_day": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 100,
+              "description": "Grant requests per role per day (MGR-40)."
+            }
+          },
+          "x-botaru-version": "v0.2"
+        },
+        "breaker": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "consecutive_denials": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 10,
+              "description": "Refusals in a row before the safeguard."
+            }
+          }
+        }
+      },
+      "description": "The farm manager seat; only in the charter of the tenant farm."
+    }
+  }
+}

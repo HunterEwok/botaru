@@ -1,0 +1,10 @@
+# Personal assistant (flow 8): memory scope person only with task types of class summary and without untrusted output (MEM-2).
+apiVersion: botaru/v1alpha1
+kind: Role
+metadata: {name: assistant}
+spec:
+  profile: worker
+  worker_kind: agent
+  claims: [assist.chat.v1]
+  models: {base: base-std}
+  memory: person

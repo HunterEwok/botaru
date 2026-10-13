@@ -1,0 +1,66 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:botaru:schema:message-view:1",
+  "title": "Message as the recipient sees it",
+  "description": "The minimum that the recipient's model sees (and code through msg.receive): a handle for replying, type, genus, sender role, time, subject, fields and the note in the untrusted text wrapper (INJ-4), the untrusted flag. The recipient does not see the tenant, the worker id, the initiators, tracing or correlation (MSG-8). The state genus also has the stale mark (MSG-12).",
+  "x-botaru-direction": "output",
+  "x-botaru-rules": [
+    "MSG-6",
+    "MSG-8",
+    "MSG-12",
+    "MSG-13"
+  ],
+  "type": "object",
+  "required": [
+    "handle",
+    "type",
+    "kind",
+    "from_role",
+    "sent_at",
+    "fields",
+    "untrusted"
+  ],
+  "properties": {
+    "handle": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_-]{8,64}$",
+      "maxLength": 64,
+      "description": "Handle of the inbox entry that the core gave to this attempt: an opaque string, used to reply (reply_to) and to return the entry. The ids of the entry, the worker and the tenant are not visible in it."
+    },
+    "type": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/type_name"
+    },
+    "kind": {
+      "enum": [
+        "report",
+        "state"
+      ],
+      "x-botaru-registry": "message-kinds"
+    },
+    "from_role": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/name"
+    },
+    "sent_at": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/datetime"
+    },
+    "subject": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/name"
+    },
+    "fields": {
+      "type": "object",
+      "description": "Fields by the closed schema of the type."
+    },
+    "note": {
+      "type": "string",
+      "maxLength": 700,
+      "description": "Note inside the untrusted text wrapper (INJ-4)."
+    },
+    "untrusted": {
+      "type": "boolean"
+    },
+    "stale": {
+      "type": "boolean",
+      "description": "Only for the state genus: the value is older than the type's stale_after."
+    }
+  }
+}

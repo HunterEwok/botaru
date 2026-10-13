@@ -1,0 +1,20 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:botaru:schema:p2-audit-verify-request:1",
+  "title": "P2 audit.verify: request",
+  "description": "Check the audit hash chain of a tenant or farm and compare it with the signed head at the witness (AUD-6, spec/hashing.md).",
+  "x-botaru-direction": "input",
+  "x-botaru-rules": [
+    "AUD-6"
+  ],
+  "type": "object",
+  "required": [
+    "tenant"
+  ],
+  "properties": {
+    "tenant": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/tenant_name"
+    }
+  },
+  "additionalProperties": false
+}

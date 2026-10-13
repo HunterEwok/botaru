@@ -1,0 +1,17 @@
+# evals/cases/translator/trn-04.yaml (catalog: evals/README.md)
+id: trn-04
+kind: quality
+blocking: true
+status: active
+version: v0.2
+rules: [TRN-5, SCR-2, TRN-6]
+summary: 'Move the cruise data to external storage; unsupported, not a single made-up type.'
+from: bob
+chat: bob-dm
+lang: ru
+message: '/script Move the cruise data to external storage'
+expect:
+  state: completed
+  checks:
+  - equals: {path: result.outcome, value: unsupported}
+  - store: {path: 'script_runs[?task==self]', count: 0}

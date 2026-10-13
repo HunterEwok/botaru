@@ -1,0 +1,31 @@
+registry: message-kinds
+version: 1
+description: >-
+  Genera of bot messages. The list is closed: there are no other genera, and a new genus is introduced only through an ADR and
+  a new minor version of the envelope `botaru.message/v1` (MSG-2). A "request" or "command" genus is not needed:
+  everything that requires work is a task with permissions and an outcome. Entry fields: `meaning` (what it reports),
+  `producers` (who sends: values of the type's `producers` field), `visible` (when it is visible to the recipient),
+  `storage` (how it is stored), `delivery` (delivery methods), `note` (whether there can be a note), `wakes`
+  (whether it wakes by an `on: inbox` route), `rules`.
+source: docs/messaging.md
+entries:
+  - id: report
+    since: v0.1
+    meaning: What was done or noticed in the work.
+    producers: [agent, job, core]
+    visible: at `complete` of the sender attempt; a core auto-report in the transaction of the task transition
+    storage: a queue until acknowledgement or expiry; the default expiry is 24 hours, the type may raise it up to 7 days
+    delivery: [one, all]
+    note: up to 500 characters, always untrusted
+    wakes: true
+    rules: [MSG-2, MSG-9, MSG-12, MSG-13, MSG-14]
+  - id: state
+    since: v0.1
+    meaning: The state of the worker itself; informational, it does not affect work dispatch, leases, stops, budgets or alarms.
+    producers: [code]
+    visible: immediately
+    storage: the last value per (inbox, worker, type); it goes stale after the type's `stale_after`, no later than after an hour
+    delivery: []
+    note: none
+    wakes: false
+    rules: [MSG-2, MSG-12, MSG-14, STA-1, STA-2]

@@ -1,0 +1,31 @@
+# Deployment description of the sample farm, following spec/model/deploy-topology.schema.json (DEP-10, DEP-11).
+# The file is not run: the deployment lint checks placement against it, and the manifest lint takes farm_hosts from it.
+monitoring:
+  url: https://monitor.example.org
+  address: 192.0.2.40
+farm_hosts: [core1, backup1]        # farm nodes: core, store, channels, backups (DEP-11)
+health_keys: [health-key]
+hosts:
+  core1:
+    kind: production
+    processes:
+      - {name: farmd, kind: core, user: botaru-core, networks: [core, store], secrets: [store-core],
+         listeners: {p1: {networks: [core]}, p2: {networks: [admin, monitoring]}}}   # no test-control port in production (D-86 (4))
+      - {name: store, kind: store, user: botaru-store, networks: [store]}
+      - {name: channel-demo, kind: channel, tenant: demo, user: botaru-ch-demo, networks: [core],
+         secrets: [worker-token-channel-demo]}
+      - {name: monitor-demo, kind: monitor, tenant: demo, user: botaru-mon-demo, networks: [core],
+         secrets: [worker-token-monitor-demo]}
+  backup1:
+    kind: production
+    processes:
+      - {name: backup, kind: backup, user: botaru-backup, networks: [backup], secrets: [backup-key]}
+  ctd1:
+    kind: production
+    processes:
+      - {name: th-demo-read, kind: toolhost, tenant: demo, placement: host, user: botaru-read-demo,
+         networks: [core], secrets: [worker-token-th-demo-read]}
+      - {name: th-demo-act, kind: toolhost, tenant: demo, placement: host, tools: write, user: botaru-act-demo,
+         networks: [core], secrets: [worker-token-th-demo-act]}
+    os_users:                         # OS users of action executors per tenant (DEP-10)
+      ctd-qc-run: {demo: botaru-ctd-demo}   # executor of action pipeline.ctd_qc

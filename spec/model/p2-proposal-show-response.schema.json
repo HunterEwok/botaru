@@ -1,0 +1,11 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:botaru:schema:p2-proposal-show-response:1",
+  "title": "P2 proposal.show: response",
+  "description": "Proposal record by the schema proposal-record.",
+  "x-botaru-direction": "output",
+  "x-botaru-rules": [
+    "PRP-20"
+  ],
+  "$ref": "urn:botaru:schema:proposal-record:1"
+}

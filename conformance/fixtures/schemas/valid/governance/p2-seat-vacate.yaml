@@ -1,0 +1,6 @@
+schema: spec/model/p2-seat-vacate-request.schema.json
+rules: [IDN-10, IDN-11]
+description: seat.vacate requests that the schema accepts.
+cases:
+  - {seat: "commission:1"}
+  - {seat: farm-manager}

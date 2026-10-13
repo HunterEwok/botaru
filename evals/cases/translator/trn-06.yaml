@@ -1,0 +1,19 @@
+# evals/cases/translator/trn-06.yaml (catalog: evals/README.md)
+id: trn-06
+kind: quality
+blocking: false
+status: active
+version: v0.2
+rules: [TRN-6]
+summary: 'The task trn-02 in English; the same step structure as trn-02.'
+from: bob
+chat: bob-dm
+lang: en
+message: /script Check the disks of the data hosts where less than 10% is free, clean the pipeline temp files, report
+  here
+expect:
+  state: completed
+  checks:
+  - store:
+      path: script_runs[?task==self].steps[*].kind
+      equals: [fanout, fanout, task]

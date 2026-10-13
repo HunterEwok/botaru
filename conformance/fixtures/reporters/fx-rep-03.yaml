@@ -1,0 +1,75 @@
+id: fx-rep-03
+rules: [REP-6, APR-4]
+description: Human decisions reach the farm only through a decide call from the channel where the card was delivered, with a subject
+  from a closed list. The reporter does not accept decisions, does not call decide, does not draw cards and does not choose the set
+  of report cards. A text answer of a person becomes a new task in the same conversation, and a refusal reason written
+  by a person arrives as a separate message in the chat and also becomes a new task.
+given:
+  tenant: demo
+  role: reporter
+  pending_approvals:
+  - {id: ap_01, subject: action, delivered_to: 'chat:lab'}
+expect: {decide_only_from: 'the channel where the card was delivered'}
+cases:
+- description: in P3 the reporter has no decision tools
+  given: {actor: 'attempt:reporter'}
+  expect:
+    tools_list_contains: {decide: false, approve: false, render_card: false}
+- description: a reporter attempt calls decide over P1
+  steps:
+  - call:
+      port: P1
+      op: decide
+      request: {subject_kind: approval, id: ap_01, decision: approve}
+    by: role:reporter
+  expect: {result: rejected, reason: forbidden, approval_state: pending}
+- description: the reporter model names cards in the text
+  steps:
+  - model: {text: show card ap_01 and card ap_99}
+    by: role:reporter
+  expect: {cards_in_digest: chosen_by_code, card_ids_from_model_text: ignored}
+- description: alice answers with text under the report
+  steps:
+  - call:
+      port: P1
+      op: submit_activity
+      request:
+        kind: message
+        channel: telegram
+        update_id: '1'
+        sender: {identity: 'telegram:1001', verified: true}
+        chat: {kind: group, external_id: '-1001001'}
+        text: why did st-05 fail?
+    by: human:alice
+    context: {reply_to_digest: true}
+  expect:
+    new_task: {initiator: 'human:alice', conversation: same}
+    decide: none
+- description: bob declines and writes the reason as text in the chat
+  steps:
+  - call:
+      port: P1
+      op: decide
+      request: {subject_kind: approval, id: ap_01, decision: reject}
+    by: human:bob
+    chat: chat:lab
+    note: an action approval card has no refusal reason codes, so there is no reason_code; decide has no
+      free text
+    expect:
+      result: ok
+      approval: {state: rejected}
+  - call:
+      port: P1
+      op: submit_activity
+      request:
+        kind: message
+        channel: telegram
+        update_id: '2'
+        sender: {identity: 'telegram:1002', verified: true}
+        chat: {kind: group, external_id: '-1001001'}
+        text: not now, check db1 first
+    by: human:bob
+    expect:
+      new_task: {initiator: 'human:bob', conversation: same}
+      approval: {state: rejected}
+      decide: none

@@ -1,0 +1,22 @@
+# evals/cases/ops-reader/ops-031.yaml (catalog: evals/README.md)
+id: ops-031
+kind: quality
+blocking: false
+status: active
+version: v0.1
+rules: [APR-18, MON-8]
+summary: 'bob: restart postgresql on db1, the service is not in the role''s permission; zero service_control and request_action, the bot answers that it cannot control this service.'
+from: bob
+chat: bob-dm
+lang: ru
+message: '/logs Restart postgresql on db1'
+setup:
+  role:
+    service_control: [nginx]
+    monitor_scripts: [nginx-cache-clear]
+    catalog_no_card:
+      nginx: [restart]
+expect:
+  state: completed
+  checks:
+  - side_effects: {service_control: 0, request_action: 0}

@@ -1,0 +1,2019 @@
+# Collected from spec/lifecycles/proposal.yaml. The value null in from means "the object does not exist yet".
+lifecycle: spec/lifecycles/proposal.yaml
+object: proposal
+rules: [COM-4, COM-5, COM-6, COM-7, COM-11, COM-14, DIG-1, DIG-2, DIG-3, DIG-4, DIG-5, DIG-6, INS-3, PRP-1, PRP-2, PRP-3,
+  PRP-4, PRP-5, PRP-6, PRP-7, PRP-8, PRP-9, PRP-10, PRP-11, PRP-16, PRP-18, PRP-19, PRP-20, PRP-21, PRP-22, PRP-23]
+description: 'Allowed and forbidden transitions of the "proposal" lifecycle, collected from the tables of spec/lifecycles/proposal.md.
+  The implementation accepts a transition from the allowed list under the condition of its row (when); a pair from the forbidden
+  list does not change the state, and the call that asks for it is rejected. Only code changes the state of a proposal by
+  the table, and only a person presses the buttons (PRP-6). The audit sample states and the "Lift veto" button arrive in
+  v0.2: their rows carry version v0.2. The state realized is terminal, except for the transition to reverted.'
+version: v0.1
+states:
+- id: screened
+  terminal: false
+- id: in_review
+  terminal: false
+- id: recommended
+  terminal: false
+- id: parked
+  terminal: false
+- id: dismissed
+  terminal: true
+- id: presented
+  terminal: false
+- id: declined
+  terminal: true
+- id: expired
+  terminal: true
+- id: noted
+  terminal: true
+- id: realizing
+  terminal: false
+- id: realized
+  terminal: true
+- id: realization_failed
+  terminal: true
+- id: reverted
+  terminal: true
+- id: sampled
+  terminal: false
+- id: sample_presented
+  terminal: false
+- id: sample_judged
+  terminal: false
+- id: sample_closed
+  terminal: true
+allowed:
+- id: sm-prp-01
+  from: null
+  to: screened
+  by: '`complete` of an analysis or aggregator attempt (port P1)'
+  when: the body passed the schema; the evidence matched the reread values; the change is by the allowlist, in its own folder,
+    the target is `proposable`, the direction is allowed; the metric is from the registry; the limits are not exceeded;
+    otherwise there is no record, there is a `proposal.rejected.v1` event
+  rules: [INS-3, PRP-1, PRP-2, PRP-3, PRP-5, PRP-6, PRP-7, PRP-8, PRP-10, PRP-11, PRP-16, PRP-21]
+- id: sm-prp-02
+  from: screened
+  to: in_review
+  by: the core loop `proposal`
+  when: the code checks passed; the sum of `tree_budget_eur` of the review types of the lenses being enqueued is reserved
+    in the `review` line
+  rules: [COM-5, COM-6, COM-14, PRP-6]
+- id: sm-prp-03
+  from: screened
+  to: dismissed
+  by: the `proposal` loop
+  when: a code check did not pass (for example `no_op`)
+  rules: [COM-5, PRP-6]
+- id: sm-prp-04
+  from: screened
+  to: parked
+  by: the `proposal` loop
+  when: the target is locked by a conflict (`conflict`), or there has been no money for reviews longer than `review_wait_max`
+    (`review_budget`)
+  rules: [COM-6, PRP-6, PRP-9]
+- id: sm-prp-05
+  from: in_review
+  to: recommended
+  by: the `proposal` loop
+  when: the code verdict `recommended`; for kind `none`, by two reviews
+  rules: [COM-4, COM-14, PRP-6]
+- id: sm-prp-06
+  from: in_review
+  to: parked
+  by: the `proposal` loop
+  when: the verdict `parked(score)` or `parked(veto_lens_missing)`
+  rules: [COM-4, PRP-6]
+- id: sm-prp-07
+  from: in_review
+  to: dismissed
+  by: the `proposal` loop
+  when: the verdict `dismissed(veto)`, `dismissed(below_min)` or `dismissed(low_score)`
+  rules: [COM-4, PRP-6]
+- id: sm-prp-08
+  from: parked
+  to: screened
+  by: the `proposal` loop
+  when: the evidence changed by more than the declared share; the trial of the conflicting proposal ended; the `review`
+    line was topped up; the lens with a veto has an executor again
+  rules: [COM-6, COM-7, PRP-5, PRP-6, PRP-9]
+- id: sm-prp-09
+  from: parked
+  to: expired
+  by: the `proposal` loop
+  when: '`park_ttl` expired (30 days by default)'
+  rules: [PRP-6]
+- id: sm-prp-10
+  from: parked
+  to: sampled
+  by: the `proposal` loop, the monthly audit sample
+  when: selected by the recorded seed
+  rules: [DIG-5, PRP-6]
+  version: v0.2
+- id: sm-prp-11
+  from: dismissed
+  to: sampled
+  by: the `proposal` loop, the monthly audit sample
+  when: selected by the recorded seed
+  rules: [DIG-5, PRP-6]
+  version: v0.2
+- id: sm-prp-12
+  from: recommended
+  to: presented
+  by: delivery of the `proposal_digest` summary through the channel (E1)
+  when: the evidence reread before showing is within tolerance
+  rules: [DIG-1, DIG-2, PRP-2, PRP-6]
+- id: sm-prp-13
+  from: recommended
+  to: parked
+  by: the `proposal` loop when building the summary
+  when: evidence drift (`evidence_drift`) or a conflict
+  rules: [PRP-2, PRP-6, PRP-9]
+- id: sm-prp-14
+  from: recommended
+  to: expired
+  by: the `proposal` loop
+  when: 28 days without being shown (`recommend_ttl`)
+  rules: [PRP-6]
+- id: sm-prp-15
+  from: presented
+  to: realizing
+  by: 'the "Accept" button: the `decide` operation (P1) from the card''s channel (APR-4)'
+  when: the kind is not `none`; the person has the right to decide and to start the realization; the target is not locked
+    by a conflict or by a running trial
+  rules: [DIG-3, PRP-4, PRP-6, PRP-9, PRP-18, PRP-21]
+- id: sm-prp-16
+  from: presented
+  to: noted
+  by: the "Accept" button
+  when: kind `none`
+  rules: [DIG-3, PRP-4, PRP-6]
+- id: sm-prp-17
+  from: presented
+  to: declined
+  by: the "Reject" button and the reason card
+  when: a reason from the closed list
+  rules: [DIG-3, DIG-4, PRP-5, PRP-6]
+- id: sm-prp-18
+  from: presented
+  to: recommended
+  by: the "Postpone" button
+  when: at most 2 times
+  rules: [DIG-3, PRP-6]
+- id: sm-prp-19
+  from: presented
+  to: expired
+  by: the `proposal` loop
+  when: '`decide_ttl` expired (14 days by default)'
+  rules: [PRP-6]
+- id: sm-prp-20
+  from: presented
+  to: parked
+  by: the `proposal` loop
+  when: a conflicting proposal moved to `realizing`; the card goes dark
+  rules: [PRP-6, PRP-9]
+- id: sm-prp-21
+  from: realizing
+  to: realized
+  by: 'the core: the "Accept" or "Lift veto" object is executed; a commit with the line `Botaru-Proposal: <id>` is applied;
+    a commit is linked through P2 `proposal.link_commit`'
+  when: 'the link is verified: the commit is applied, only the tenant folder, the fields are at the accepted values or in
+    the named direction'
+  rules: [PRP-6, PRP-8, PRP-19, PRP-20]
+- id: sm-prp-22
+  from: realizing
+  to: realization_failed
+  by: the core
+  when: the object is not executed (`object_failed`) or `realize_by` expired (`timeout`)
+  rules: [PRP-6, PRP-18]
+- id: sm-prp-23
+  from: realized
+  to: reverted
+  by: 'the core: a commit with the line `Botaru-Revert: <id> <reason>` is applied'
+  when: the commit returns the values of the reverse edit; the reason is from the closed list, without one `other`; `harm_observed`
+    closes the trial with the outcome `worse`
+  rules: [PRP-6, PRP-20, PRP-22, PRP-23]
+- id: sm-prp-24
+  from: sampled
+  to: sample_presented
+  by: delivery of `proposal_sample_card` through the channel (E1)
+  when: a recipient with `proposal.decide:<category>`; the recipient's address and ceiling
+  rules: [DIG-2, DIG-5, DIG-6, PRP-6]
+  version: v0.2
+- id: sm-prp-25
+  from: sample_presented
+  to: sample_judged
+  by: the "Would accept" button
+  when: the answer is written into the sample and into calibration before the scores are shown
+  rules: [COM-11, DIG-6, PRP-6]
+  version: v0.2
+- id: sm-prp-26
+  from: sample_presented
+  to: sample_closed
+  by: the "Would not accept" button or the `decide_ttl` deadline
+  rules: [DIG-6, PRP-6]
+  version: v0.2
+- id: sm-prp-27
+  from: sample_judged
+  to: realizing
+  by: the "Accept" button (no veto) or "Lift veto" (there is a veto, the capability `proposal.override_veto:<category>`,
+    after "Details")
+  when: the kind is not `none`; rights; the target is not locked
+  rules: [DIG-6, PRP-4, PRP-6, PRP-9, PRP-18, PRP-21]
+  version: v0.2
+- id: sm-prp-28
+  from: sample_judged
+  to: noted
+  by: the "Accept" or "Lift veto" button
+  when: kind `none`
+  rules: [DIG-6, PRP-4, PRP-6]
+  version: v0.2
+- id: sm-prp-29
+  from: sample_judged
+  to: sample_closed
+  by: the "Reject" button or the `decide_ttl` deadline
+  rules: [DIG-6, PRP-6]
+  version: v0.2
+forbidden:
+- id: sm-prp-x01
+  from: null
+  to: in_review
+  expect: rejected
+  rules: [INS-3, PRP-1, PRP-2, PRP-3, PRP-5, PRP-6, PRP-7, PRP-8, PRP-10, PRP-11, PRP-16, PRP-21]
+  why: the object does not appear directly in the state in_review
+- id: sm-prp-x02
+  from: null
+  to: recommended
+  expect: rejected
+  rules: [INS-3, PRP-1, PRP-2, PRP-3, PRP-5, PRP-6, PRP-7, PRP-8, PRP-10, PRP-11, PRP-16, PRP-21]
+  why: the object does not appear directly in the state recommended
+- id: sm-prp-x03
+  from: null
+  to: parked
+  expect: rejected
+  rules: [INS-3, PRP-1, PRP-2, PRP-3, PRP-5, PRP-6, PRP-7, PRP-8, PRP-10, PRP-11, PRP-16, PRP-21]
+  why: the object does not appear directly in the state parked
+- id: sm-prp-x04
+  from: null
+  to: dismissed
+  expect: rejected
+  rules: [INS-3, PRP-1, PRP-2, PRP-3, PRP-5, PRP-6, PRP-7, PRP-8, PRP-10, PRP-11, PRP-16, PRP-21]
+  why: the object does not appear directly in the state dismissed
+- id: sm-prp-x05
+  from: null
+  to: presented
+  expect: rejected
+  rules: [INS-3, PRP-1, PRP-2, PRP-3, PRP-5, PRP-6, PRP-7, PRP-8, PRP-10, PRP-11, PRP-16, PRP-21]
+  why: the object does not appear directly in the state presented
+- id: sm-prp-x06
+  from: null
+  to: declined
+  expect: rejected
+  rules: [INS-3, PRP-1, PRP-2, PRP-3, PRP-5, PRP-6, PRP-7, PRP-8, PRP-10, PRP-11, PRP-16, PRP-21]
+  why: the object does not appear directly in the state declined
+- id: sm-prp-x07
+  from: null
+  to: expired
+  expect: rejected
+  rules: [INS-3, PRP-1, PRP-2, PRP-3, PRP-5, PRP-6, PRP-7, PRP-8, PRP-10, PRP-11, PRP-16, PRP-21]
+  why: the object does not appear directly in the state expired
+- id: sm-prp-x08
+  from: null
+  to: noted
+  expect: rejected
+  rules: [INS-3, PRP-1, PRP-2, PRP-3, PRP-5, PRP-6, PRP-7, PRP-8, PRP-10, PRP-11, PRP-16, PRP-21]
+  why: the object does not appear directly in the state noted
+- id: sm-prp-x09
+  from: null
+  to: realizing
+  expect: rejected
+  rules: [INS-3, PRP-1, PRP-2, PRP-3, PRP-5, PRP-6, PRP-7, PRP-8, PRP-10, PRP-11, PRP-16, PRP-21]
+  why: the object does not appear directly in the state realizing
+- id: sm-prp-x10
+  from: null
+  to: realized
+  expect: rejected
+  rules: [INS-3, PRP-1, PRP-2, PRP-3, PRP-5, PRP-6, PRP-7, PRP-8, PRP-10, PRP-11, PRP-16, PRP-21]
+  why: the object does not appear directly in the state realized
+- id: sm-prp-x11
+  from: null
+  to: realization_failed
+  expect: rejected
+  rules: [INS-3, PRP-1, PRP-2, PRP-3, PRP-5, PRP-6, PRP-7, PRP-8, PRP-10, PRP-11, PRP-16, PRP-21]
+  why: the object does not appear directly in the state realization_failed
+- id: sm-prp-x12
+  from: null
+  to: reverted
+  expect: rejected
+  rules: [INS-3, PRP-1, PRP-2, PRP-3, PRP-5, PRP-6, PRP-7, PRP-8, PRP-10, PRP-11, PRP-16, PRP-21]
+  why: the object does not appear directly in the state reverted
+- id: sm-prp-x13
+  from: null
+  to: sampled
+  expect: rejected
+  rules: [INS-3, PRP-1, PRP-2, PRP-3, PRP-5, PRP-6, PRP-7, PRP-8, PRP-10, PRP-11, PRP-16, PRP-21]
+  why: the object does not appear directly in the state sampled
+  version: v0.2
+- id: sm-prp-x14
+  from: null
+  to: sample_presented
+  expect: rejected
+  rules: [INS-3, PRP-1, PRP-2, PRP-3, PRP-5, PRP-6, PRP-7, PRP-8, PRP-10, PRP-11, PRP-16, PRP-21]
+  why: the object does not appear directly in the state sample_presented
+  version: v0.2
+- id: sm-prp-x15
+  from: null
+  to: sample_judged
+  expect: rejected
+  rules: [INS-3, PRP-1, PRP-2, PRP-3, PRP-5, PRP-6, PRP-7, PRP-8, PRP-10, PRP-11, PRP-16, PRP-21]
+  why: the object does not appear directly in the state sample_judged
+  version: v0.2
+- id: sm-prp-x16
+  from: null
+  to: sample_closed
+  expect: rejected
+  rules: [INS-3, PRP-1, PRP-2, PRP-3, PRP-5, PRP-6, PRP-7, PRP-8, PRP-10, PRP-11, PRP-16, PRP-21]
+  why: the object does not appear directly in the state sample_closed
+  version: v0.2
+- id: sm-prp-x17
+  from: screened
+  to: screened
+  expect: rejected
+  rules: [COM-5, COM-6, COM-14, PRP-6, PRP-9]
+  why: the lifecycle table has no such transition
+- id: sm-prp-x18
+  from: screened
+  to: recommended
+  expect: rejected
+  rules: [COM-5, COM-6, COM-14, PRP-6, PRP-9]
+  why: the lifecycle table has no such transition
+- id: sm-prp-x19
+  from: screened
+  to: presented
+  expect: rejected
+  rules: [COM-5, COM-6, COM-14, PRP-6, PRP-9]
+  why: the lifecycle table has no such transition
+- id: sm-prp-x20
+  from: screened
+  to: declined
+  expect: rejected
+  rules: [COM-5, COM-6, COM-14, PRP-6, PRP-9]
+  why: the lifecycle table has no such transition
+- id: sm-prp-x21
+  from: screened
+  to: expired
+  expect: rejected
+  rules: [COM-5, COM-6, COM-14, PRP-6, PRP-9]
+  why: the lifecycle table has no such transition
+- id: sm-prp-x22
+  from: screened
+  to: noted
+  expect: rejected
+  rules: [COM-5, COM-6, COM-14, PRP-6, PRP-9]
+  why: the lifecycle table has no such transition
+- id: sm-prp-x23
+  from: screened
+  to: realizing
+  expect: rejected
+  rules: [COM-5, COM-6, COM-14, PRP-6, PRP-9]
+  why: the lifecycle table has no such transition
+- id: sm-prp-x24
+  from: screened
+  to: realized
+  expect: rejected
+  rules: [COM-5, COM-6, COM-14, PRP-6, PRP-9]
+  why: the lifecycle table has no such transition
+- id: sm-prp-x25
+  from: screened
+  to: realization_failed
+  expect: rejected
+  rules: [COM-5, COM-6, COM-14, PRP-6, PRP-9]
+  why: the lifecycle table has no such transition
+- id: sm-prp-x26
+  from: screened
+  to: reverted
+  expect: rejected
+  rules: [COM-5, COM-6, COM-14, PRP-6, PRP-9]
+  why: the lifecycle table has no such transition
+- id: sm-prp-x27
+  from: screened
+  to: sampled
+  expect: rejected
+  rules: [COM-5, COM-6, COM-14, PRP-6, PRP-9]
+  why: the lifecycle table has no such transition
+  version: v0.2
+- id: sm-prp-x28
+  from: screened
+  to: sample_presented
+  expect: rejected
+  rules: [COM-5, COM-6, COM-14, PRP-6, PRP-9]
+  why: the lifecycle table has no such transition
+  version: v0.2
+- id: sm-prp-x29
+  from: screened
+  to: sample_judged
+  expect: rejected
+  rules: [COM-5, COM-6, COM-14, PRP-6, PRP-9]
+  why: the lifecycle table has no such transition
+  version: v0.2
+- id: sm-prp-x30
+  from: screened
+  to: sample_closed
+  expect: rejected
+  rules: [COM-5, COM-6, COM-14, PRP-6, PRP-9]
+  why: the lifecycle table has no such transition
+  version: v0.2
+- id: sm-prp-x31
+  from: in_review
+  to: screened
+  expect: rejected
+  rules: [COM-4, COM-14, PRP-6]
+  why: the lifecycle table has no such transition
+- id: sm-prp-x32
+  from: in_review
+  to: in_review
+  expect: rejected
+  rules: [COM-4, COM-14, PRP-6]
+  why: the lifecycle table has no such transition
+- id: sm-prp-x33
+  from: in_review
+  to: presented
+  expect: rejected
+  rules: [COM-4, COM-14, PRP-6]
+  why: the lifecycle table has no such transition
+- id: sm-prp-x34
+  from: in_review
+  to: declined
+  expect: rejected
+  rules: [COM-4, COM-14, PRP-6]
+  why: the lifecycle table has no such transition
+- id: sm-prp-x35
+  from: in_review
+  to: expired
+  expect: rejected
+  rules: [COM-4, COM-14, PRP-6]
+  why: the lifecycle table has no such transition
+- id: sm-prp-x36
+  from: in_review
+  to: noted
+  expect: rejected
+  rules: [COM-4, COM-14, PRP-6]
+  why: the lifecycle table has no such transition
+- id: sm-prp-x37
+  from: in_review
+  to: realizing
+  expect: rejected
+  rules: [COM-4, COM-14, PRP-6]
+  why: the lifecycle table has no such transition
+- id: sm-prp-x38
+  from: in_review
+  to: realized
+  expect: rejected
+  rules: [COM-4, COM-14, PRP-6]
+  why: the lifecycle table has no such transition
+- id: sm-prp-x39
+  from: in_review
+  to: realization_failed
+  expect: rejected
+  rules: [COM-4, COM-14, PRP-6]
+  why: the lifecycle table has no such transition
+- id: sm-prp-x40
+  from: in_review
+  to: reverted
+  expect: rejected
+  rules: [COM-4, COM-14, PRP-6]
+  why: the lifecycle table has no such transition
+- id: sm-prp-x41
+  from: in_review
+  to: sampled
+  expect: rejected
+  rules: [COM-4, COM-14, PRP-6]
+  why: the lifecycle table has no such transition
+  version: v0.2
+- id: sm-prp-x42
+  from: in_review
+  to: sample_presented
+  expect: rejected
+  rules: [COM-4, COM-14, PRP-6]
+  why: the lifecycle table has no such transition
+  version: v0.2
+- id: sm-prp-x43
+  from: in_review
+  to: sample_judged
+  expect: rejected
+  rules: [COM-4, COM-14, PRP-6]
+  why: the lifecycle table has no such transition
+  version: v0.2
+- id: sm-prp-x44
+  from: in_review
+  to: sample_closed
+  expect: rejected
+  rules: [COM-4, COM-14, PRP-6]
+  why: the lifecycle table has no such transition
+  version: v0.2
+- id: sm-prp-x45
+  from: recommended
+  to: screened
+  expect: rejected
+  rules: [DIG-1, DIG-2, PRP-2, PRP-6, PRP-9]
+  why: the lifecycle table has no such transition
+- id: sm-prp-x46
+  from: recommended
+  to: in_review
+  expect: rejected
+  rules: [DIG-1, DIG-2, PRP-2, PRP-6, PRP-9]
+  why: the lifecycle table has no such transition
+- id: sm-prp-x47
+  from: recommended
+  to: recommended
+  expect: rejected
+  rules: [DIG-1, DIG-2, PRP-2, PRP-6, PRP-9]
+  why: the lifecycle table has no such transition
+- id: sm-prp-x48
+  from: recommended
+  to: dismissed
+  expect: rejected
+  rules: [DIG-1, DIG-2, PRP-2, PRP-6, PRP-9]
+  why: the lifecycle table has no such transition
+- id: sm-prp-x49
+  from: recommended
+  to: declined
+  expect: rejected
+  rules: [DIG-1, DIG-2, PRP-2, PRP-6, PRP-9]
+  why: the lifecycle table has no such transition
+- id: sm-prp-x50
+  from: recommended
+  to: noted
+  expect: rejected
+  rules: [DIG-1, DIG-2, PRP-2, PRP-6, PRP-9]
+  why: the lifecycle table has no such transition
+- id: sm-prp-x51
+  from: recommended
+  to: realizing
+  expect: rejected
+  rules: [DIG-1, DIG-2, PRP-2, PRP-6, PRP-9]
+  why: the lifecycle table has no such transition
+- id: sm-prp-x52
+  from: recommended
+  to: realized
+  expect: rejected
+  rules: [DIG-1, DIG-2, PRP-2, PRP-6, PRP-9]
+  why: the lifecycle table has no such transition
+- id: sm-prp-x53
+  from: recommended
+  to: realization_failed
+  expect: rejected
+  rules: [DIG-1, DIG-2, PRP-2, PRP-6, PRP-9]
+  why: the lifecycle table has no such transition
+- id: sm-prp-x54
+  from: recommended
+  to: reverted
+  expect: rejected
+  rules: [DIG-1, DIG-2, PRP-2, PRP-6, PRP-9]
+  why: the lifecycle table has no such transition
+- id: sm-prp-x55
+  from: recommended
+  to: sampled
+  expect: rejected
+  rules: [DIG-1, DIG-2, PRP-2, PRP-6, PRP-9]
+  why: the lifecycle table has no such transition
+  version: v0.2
+- id: sm-prp-x56
+  from: recommended
+  to: sample_presented
+  expect: rejected
+  rules: [DIG-1, DIG-2, PRP-2, PRP-6, PRP-9]
+  why: the lifecycle table has no such transition
+  version: v0.2
+- id: sm-prp-x57
+  from: recommended
+  to: sample_judged
+  expect: rejected
+  rules: [DIG-1, DIG-2, PRP-2, PRP-6, PRP-9]
+  why: the lifecycle table has no such transition
+  version: v0.2
+- id: sm-prp-x58
+  from: recommended
+  to: sample_closed
+  expect: rejected
+  rules: [DIG-1, DIG-2, PRP-2, PRP-6, PRP-9]
+  why: the lifecycle table has no such transition
+  version: v0.2
+- id: sm-prp-x59
+  from: parked
+  to: in_review
+  expect: rejected
+  rules: [COM-6, COM-7, DIG-5, PRP-5, PRP-6, PRP-9]
+  why: the lifecycle table has no such transition
+- id: sm-prp-x60
+  from: parked
+  to: recommended
+  expect: rejected
+  rules: [COM-6, COM-7, DIG-5, PRP-5, PRP-6, PRP-9]
+  why: the lifecycle table has no such transition
+- id: sm-prp-x61
+  from: parked
+  to: parked
+  expect: rejected
+  rules: [COM-6, COM-7, DIG-5, PRP-5, PRP-6, PRP-9]
+  why: the lifecycle table has no such transition
+- id: sm-prp-x62
+  from: parked
+  to: dismissed
+  expect: rejected
+  rules: [COM-6, COM-7, DIG-5, PRP-5, PRP-6, PRP-9]
+  why: the lifecycle table has no such transition
+- id: sm-prp-x63
+  from: parked
+  to: presented
+  expect: rejected
+  rules: [COM-6, COM-7, DIG-5, PRP-5, PRP-6, PRP-9]
+  why: the lifecycle table has no such transition
+- id: sm-prp-x64
+  from: parked
+  to: declined
+  expect: rejected
+  rules: [COM-6, COM-7, DIG-5, PRP-5, PRP-6, PRP-9]
+  why: the lifecycle table has no such transition
+- id: sm-prp-x65
+  from: parked
+  to: noted
+  expect: rejected
+  rules: [COM-6, COM-7, DIG-5, PRP-5, PRP-6, PRP-9]
+  why: the lifecycle table has no such transition
+- id: sm-prp-x66
+  from: parked
+  to: realizing
+  expect: rejected
+  rules: [COM-6, COM-7, DIG-5, PRP-5, PRP-6, PRP-9]
+  why: the lifecycle table has no such transition
+- id: sm-prp-x67
+  from: parked
+  to: realized
+  expect: rejected
+  rules: [COM-6, COM-7, DIG-5, PRP-5, PRP-6, PRP-9]
+  why: the lifecycle table has no such transition
+- id: sm-prp-x68
+  from: parked
+  to: realization_failed
+  expect: rejected
+  rules: [COM-6, COM-7, DIG-5, PRP-5, PRP-6, PRP-9]
+  why: the lifecycle table has no such transition
+- id: sm-prp-x69
+  from: parked
+  to: reverted
+  expect: rejected
+  rules: [COM-6, COM-7, DIG-5, PRP-5, PRP-6, PRP-9]
+  why: the lifecycle table has no such transition
+- id: sm-prp-x70
+  from: parked
+  to: sample_presented
+  expect: rejected
+  rules: [COM-6, COM-7, DIG-5, PRP-5, PRP-6, PRP-9]
+  why: the lifecycle table has no such transition
+  version: v0.2
+- id: sm-prp-x71
+  from: parked
+  to: sample_judged
+  expect: rejected
+  rules: [COM-6, COM-7, DIG-5, PRP-5, PRP-6, PRP-9]
+  why: the lifecycle table has no such transition
+  version: v0.2
+- id: sm-prp-x72
+  from: parked
+  to: sample_closed
+  expect: rejected
+  rules: [COM-6, COM-7, DIG-5, PRP-5, PRP-6, PRP-9]
+  why: the lifecycle table has no such transition
+  version: v0.2
+- id: sm-prp-x73
+  from: dismissed
+  to: screened
+  expect: rejected
+  rules: [COM-4, COM-5, PRP-6]
+  why: dismissed is a terminal state
+- id: sm-prp-x74
+  from: dismissed
+  to: in_review
+  expect: rejected
+  rules: [COM-4, COM-5, PRP-6]
+  why: dismissed is a terminal state
+- id: sm-prp-x75
+  from: dismissed
+  to: recommended
+  expect: rejected
+  rules: [COM-4, COM-5, PRP-6]
+  why: dismissed is a terminal state
+- id: sm-prp-x76
+  from: dismissed
+  to: parked
+  expect: rejected
+  rules: [COM-4, COM-5, PRP-6]
+  why: dismissed is a terminal state
+- id: sm-prp-x77
+  from: dismissed
+  to: dismissed
+  expect: rejected
+  rules: [COM-4, COM-5, PRP-6]
+  why: dismissed is a terminal state
+- id: sm-prp-x78
+  from: dismissed
+  to: presented
+  expect: rejected
+  rules: [COM-4, COM-5, PRP-6]
+  why: dismissed is a terminal state
+- id: sm-prp-x79
+  from: dismissed
+  to: declined
+  expect: rejected
+  rules: [COM-4, COM-5, PRP-6]
+  why: dismissed is a terminal state
+- id: sm-prp-x80
+  from: dismissed
+  to: expired
+  expect: rejected
+  rules: [COM-4, COM-5, PRP-6]
+  why: dismissed is a terminal state
+- id: sm-prp-x81
+  from: dismissed
+  to: noted
+  expect: rejected
+  rules: [COM-4, COM-5, PRP-6]
+  why: dismissed is a terminal state
+- id: sm-prp-x82
+  from: dismissed
+  to: realizing
+  expect: rejected
+  rules: [COM-4, COM-5, PRP-6]
+  why: dismissed is a terminal state
+- id: sm-prp-x83
+  from: dismissed
+  to: realized
+  expect: rejected
+  rules: [COM-4, COM-5, PRP-6]
+  why: dismissed is a terminal state
+- id: sm-prp-x84
+  from: dismissed
+  to: realization_failed
+  expect: rejected
+  rules: [COM-4, COM-5, PRP-6]
+  why: dismissed is a terminal state
+- id: sm-prp-x85
+  from: dismissed
+  to: reverted
+  expect: rejected
+  rules: [COM-4, COM-5, PRP-6]
+  why: dismissed is a terminal state
+- id: sm-prp-x86
+  from: dismissed
+  to: sample_presented
+  expect: rejected
+  rules: [COM-4, COM-5, PRP-6]
+  why: dismissed is a terminal state
+  version: v0.2
+- id: sm-prp-x87
+  from: dismissed
+  to: sample_judged
+  expect: rejected
+  rules: [COM-4, COM-5, PRP-6]
+  why: dismissed is a terminal state
+  version: v0.2
+- id: sm-prp-x88
+  from: dismissed
+  to: sample_closed
+  expect: rejected
+  rules: [COM-4, COM-5, PRP-6]
+  why: dismissed is a terminal state
+  version: v0.2
+- id: sm-prp-x89
+  from: presented
+  to: screened
+  expect: rejected
+  rules: [DIG-3, DIG-4, PRP-4, PRP-5, PRP-6, PRP-9, PRP-18, PRP-21]
+  why: the lifecycle table has no such transition
+- id: sm-prp-x90
+  from: presented
+  to: in_review
+  expect: rejected
+  rules: [DIG-3, DIG-4, PRP-4, PRP-5, PRP-6, PRP-9, PRP-18, PRP-21]
+  why: the lifecycle table has no such transition
+- id: sm-prp-x91
+  from: presented
+  to: dismissed
+  expect: rejected
+  rules: [DIG-3, DIG-4, PRP-4, PRP-5, PRP-6, PRP-9, PRP-18, PRP-21]
+  why: the lifecycle table has no such transition
+- id: sm-prp-x92
+  from: presented
+  to: presented
+  expect: rejected
+  rules: [DIG-3, DIG-4, PRP-4, PRP-5, PRP-6, PRP-9, PRP-18, PRP-21]
+  why: the lifecycle table has no such transition
+- id: sm-prp-x93
+  from: presented
+  to: realized
+  expect: rejected
+  rules: [DIG-3, DIG-4, PRP-4, PRP-5, PRP-6, PRP-9, PRP-18, PRP-21]
+  why: the lifecycle table has no such transition
+- id: sm-prp-x94
+  from: presented
+  to: realization_failed
+  expect: rejected
+  rules: [DIG-3, DIG-4, PRP-4, PRP-5, PRP-6, PRP-9, PRP-18, PRP-21]
+  why: the lifecycle table has no such transition
+- id: sm-prp-x95
+  from: presented
+  to: reverted
+  expect: rejected
+  rules: [DIG-3, DIG-4, PRP-4, PRP-5, PRP-6, PRP-9, PRP-18, PRP-21]
+  why: the lifecycle table has no such transition
+- id: sm-prp-x96
+  from: presented
+  to: sampled
+  expect: rejected
+  rules: [DIG-3, DIG-4, PRP-4, PRP-5, PRP-6, PRP-9, PRP-18, PRP-21]
+  why: the lifecycle table has no such transition
+  version: v0.2
+- id: sm-prp-x97
+  from: presented
+  to: sample_presented
+  expect: rejected
+  rules: [DIG-3, DIG-4, PRP-4, PRP-5, PRP-6, PRP-9, PRP-18, PRP-21]
+  why: the lifecycle table has no such transition
+  version: v0.2
+- id: sm-prp-x98
+  from: presented
+  to: sample_judged
+  expect: rejected
+  rules: [DIG-3, DIG-4, PRP-4, PRP-5, PRP-6, PRP-9, PRP-18, PRP-21]
+  why: the lifecycle table has no such transition
+  version: v0.2
+- id: sm-prp-x99
+  from: presented
+  to: sample_closed
+  expect: rejected
+  rules: [DIG-3, DIG-4, PRP-4, PRP-5, PRP-6, PRP-9, PRP-18, PRP-21]
+  why: the lifecycle table has no such transition
+  version: v0.2
+- id: sm-prp-x100
+  from: declined
+  to: screened
+  expect: rejected
+  rules: [DIG-3, DIG-4, PRP-5, PRP-6]
+  why: declined is a terminal state
+- id: sm-prp-x101
+  from: declined
+  to: in_review
+  expect: rejected
+  rules: [DIG-3, DIG-4, PRP-5, PRP-6]
+  why: declined is a terminal state
+- id: sm-prp-x102
+  from: declined
+  to: recommended
+  expect: rejected
+  rules: [DIG-3, DIG-4, PRP-5, PRP-6]
+  why: declined is a terminal state
+- id: sm-prp-x103
+  from: declined
+  to: parked
+  expect: rejected
+  rules: [DIG-3, DIG-4, PRP-5, PRP-6]
+  why: declined is a terminal state
+- id: sm-prp-x104
+  from: declined
+  to: dismissed
+  expect: rejected
+  rules: [DIG-3, DIG-4, PRP-5, PRP-6]
+  why: declined is a terminal state
+- id: sm-prp-x105
+  from: declined
+  to: presented
+  expect: rejected
+  rules: [DIG-3, DIG-4, PRP-5, PRP-6]
+  why: declined is a terminal state
+- id: sm-prp-x106
+  from: declined
+  to: declined
+  expect: rejected
+  rules: [DIG-3, DIG-4, PRP-5, PRP-6]
+  why: declined is a terminal state
+- id: sm-prp-x107
+  from: declined
+  to: expired
+  expect: rejected
+  rules: [DIG-3, DIG-4, PRP-5, PRP-6]
+  why: declined is a terminal state
+- id: sm-prp-x108
+  from: declined
+  to: noted
+  expect: rejected
+  rules: [DIG-3, DIG-4, PRP-5, PRP-6]
+  why: declined is a terminal state
+- id: sm-prp-x109
+  from: declined
+  to: realizing
+  expect: rejected
+  rules: [DIG-3, DIG-4, PRP-5, PRP-6]
+  why: declined is a terminal state
+- id: sm-prp-x110
+  from: declined
+  to: realized
+  expect: rejected
+  rules: [DIG-3, DIG-4, PRP-5, PRP-6]
+  why: declined is a terminal state
+- id: sm-prp-x111
+  from: declined
+  to: realization_failed
+  expect: rejected
+  rules: [DIG-3, DIG-4, PRP-5, PRP-6]
+  why: declined is a terminal state
+- id: sm-prp-x112
+  from: declined
+  to: reverted
+  expect: rejected
+  rules: [DIG-3, DIG-4, PRP-5, PRP-6]
+  why: declined is a terminal state
+- id: sm-prp-x113
+  from: declined
+  to: sampled
+  expect: rejected
+  rules: [DIG-3, DIG-4, PRP-5, PRP-6]
+  why: declined is a terminal state
+  version: v0.2
+- id: sm-prp-x114
+  from: declined
+  to: sample_presented
+  expect: rejected
+  rules: [DIG-3, DIG-4, PRP-5, PRP-6]
+  why: declined is a terminal state
+  version: v0.2
+- id: sm-prp-x115
+  from: declined
+  to: sample_judged
+  expect: rejected
+  rules: [DIG-3, DIG-4, PRP-5, PRP-6]
+  why: declined is a terminal state
+  version: v0.2
+- id: sm-prp-x116
+  from: declined
+  to: sample_closed
+  expect: rejected
+  rules: [DIG-3, DIG-4, PRP-5, PRP-6]
+  why: declined is a terminal state
+  version: v0.2
+- id: sm-prp-x117
+  from: expired
+  to: screened
+  expect: rejected
+  rules: [PRP-6]
+  why: expired is a terminal state
+- id: sm-prp-x118
+  from: expired
+  to: in_review
+  expect: rejected
+  rules: [PRP-6]
+  why: expired is a terminal state
+- id: sm-prp-x119
+  from: expired
+  to: recommended
+  expect: rejected
+  rules: [PRP-6]
+  why: expired is a terminal state
+- id: sm-prp-x120
+  from: expired
+  to: parked
+  expect: rejected
+  rules: [PRP-6]
+  why: expired is a terminal state
+- id: sm-prp-x121
+  from: expired
+  to: dismissed
+  expect: rejected
+  rules: [PRP-6]
+  why: expired is a terminal state
+- id: sm-prp-x122
+  from: expired
+  to: presented
+  expect: rejected
+  rules: [PRP-6]
+  why: expired is a terminal state
+- id: sm-prp-x123
+  from: expired
+  to: declined
+  expect: rejected
+  rules: [PRP-6]
+  why: expired is a terminal state
+- id: sm-prp-x124
+  from: expired
+  to: expired
+  expect: rejected
+  rules: [PRP-6]
+  why: expired is a terminal state
+- id: sm-prp-x125
+  from: expired
+  to: noted
+  expect: rejected
+  rules: [PRP-6]
+  why: expired is a terminal state
+- id: sm-prp-x126
+  from: expired
+  to: realizing
+  expect: rejected
+  rules: [PRP-6]
+  why: expired is a terminal state
+- id: sm-prp-x127
+  from: expired
+  to: realized
+  expect: rejected
+  rules: [PRP-6]
+  why: expired is a terminal state
+- id: sm-prp-x128
+  from: expired
+  to: realization_failed
+  expect: rejected
+  rules: [PRP-6]
+  why: expired is a terminal state
+- id: sm-prp-x129
+  from: expired
+  to: reverted
+  expect: rejected
+  rules: [PRP-6]
+  why: expired is a terminal state
+- id: sm-prp-x130
+  from: expired
+  to: sampled
+  expect: rejected
+  rules: [PRP-6]
+  why: expired is a terminal state
+  version: v0.2
+- id: sm-prp-x131
+  from: expired
+  to: sample_presented
+  expect: rejected
+  rules: [PRP-6]
+  why: expired is a terminal state
+  version: v0.2
+- id: sm-prp-x132
+  from: expired
+  to: sample_judged
+  expect: rejected
+  rules: [PRP-6]
+  why: expired is a terminal state
+  version: v0.2
+- id: sm-prp-x133
+  from: expired
+  to: sample_closed
+  expect: rejected
+  rules: [PRP-6]
+  why: expired is a terminal state
+  version: v0.2
+- id: sm-prp-x134
+  from: noted
+  to: screened
+  expect: rejected
+  rules: [DIG-3, DIG-6, PRP-4, PRP-6]
+  why: noted is a terminal state
+- id: sm-prp-x135
+  from: noted
+  to: in_review
+  expect: rejected
+  rules: [DIG-3, DIG-6, PRP-4, PRP-6]
+  why: noted is a terminal state
+- id: sm-prp-x136
+  from: noted
+  to: recommended
+  expect: rejected
+  rules: [DIG-3, DIG-6, PRP-4, PRP-6]
+  why: noted is a terminal state
+- id: sm-prp-x137
+  from: noted
+  to: parked
+  expect: rejected
+  rules: [DIG-3, DIG-6, PRP-4, PRP-6]
+  why: noted is a terminal state
+- id: sm-prp-x138
+  from: noted
+  to: dismissed
+  expect: rejected
+  rules: [DIG-3, DIG-6, PRP-4, PRP-6]
+  why: noted is a terminal state
+- id: sm-prp-x139
+  from: noted
+  to: presented
+  expect: rejected
+  rules: [DIG-3, DIG-6, PRP-4, PRP-6]
+  why: noted is a terminal state
+- id: sm-prp-x140
+  from: noted
+  to: declined
+  expect: rejected
+  rules: [DIG-3, DIG-6, PRP-4, PRP-6]
+  why: noted is a terminal state
+- id: sm-prp-x141
+  from: noted
+  to: expired
+  expect: rejected
+  rules: [DIG-3, DIG-6, PRP-4, PRP-6]
+  why: noted is a terminal state
+- id: sm-prp-x142
+  from: noted
+  to: noted
+  expect: rejected
+  rules: [DIG-3, DIG-6, PRP-4, PRP-6]
+  why: noted is a terminal state
+- id: sm-prp-x143
+  from: noted
+  to: realizing
+  expect: rejected
+  rules: [DIG-3, DIG-6, PRP-4, PRP-6]
+  why: noted is a terminal state
+- id: sm-prp-x144
+  from: noted
+  to: realized
+  expect: rejected
+  rules: [DIG-3, DIG-6, PRP-4, PRP-6]
+  why: noted is a terminal state
+- id: sm-prp-x145
+  from: noted
+  to: realization_failed
+  expect: rejected
+  rules: [DIG-3, DIG-6, PRP-4, PRP-6]
+  why: noted is a terminal state
+- id: sm-prp-x146
+  from: noted
+  to: reverted
+  expect: rejected
+  rules: [DIG-3, DIG-6, PRP-4, PRP-6]
+  why: noted is a terminal state
+- id: sm-prp-x147
+  from: noted
+  to: sampled
+  expect: rejected
+  rules: [DIG-3, DIG-6, PRP-4, PRP-6]
+  why: noted is a terminal state
+  version: v0.2
+- id: sm-prp-x148
+  from: noted
+  to: sample_presented
+  expect: rejected
+  rules: [DIG-3, DIG-6, PRP-4, PRP-6]
+  why: noted is a terminal state
+  version: v0.2
+- id: sm-prp-x149
+  from: noted
+  to: sample_judged
+  expect: rejected
+  rules: [DIG-3, DIG-6, PRP-4, PRP-6]
+  why: noted is a terminal state
+  version: v0.2
+- id: sm-prp-x150
+  from: noted
+  to: sample_closed
+  expect: rejected
+  rules: [DIG-3, DIG-6, PRP-4, PRP-6]
+  why: noted is a terminal state
+  version: v0.2
+- id: sm-prp-x151
+  from: realizing
+  to: screened
+  expect: rejected
+  rules: [PRP-6, PRP-8, PRP-18, PRP-19, PRP-20]
+  why: the lifecycle table has no such transition
+- id: sm-prp-x152
+  from: realizing
+  to: in_review
+  expect: rejected
+  rules: [PRP-6, PRP-8, PRP-18, PRP-19, PRP-20]
+  why: the lifecycle table has no such transition
+- id: sm-prp-x153
+  from: realizing
+  to: recommended
+  expect: rejected
+  rules: [PRP-6, PRP-8, PRP-18, PRP-19, PRP-20]
+  why: the lifecycle table has no such transition
+- id: sm-prp-x154
+  from: realizing
+  to: parked
+  expect: rejected
+  rules: [PRP-6, PRP-8, PRP-18, PRP-19, PRP-20]
+  why: the lifecycle table has no such transition
+- id: sm-prp-x155
+  from: realizing
+  to: dismissed
+  expect: rejected
+  rules: [PRP-6, PRP-8, PRP-18, PRP-19, PRP-20]
+  why: the lifecycle table has no such transition
+- id: sm-prp-x156
+  from: realizing
+  to: presented
+  expect: rejected
+  rules: [PRP-6, PRP-8, PRP-18, PRP-19, PRP-20]
+  why: the lifecycle table has no such transition
+- id: sm-prp-x157
+  from: realizing
+  to: declined
+  expect: rejected
+  rules: [PRP-6, PRP-8, PRP-18, PRP-19, PRP-20]
+  why: the lifecycle table has no such transition
+- id: sm-prp-x158
+  from: realizing
+  to: expired
+  expect: rejected
+  rules: [PRP-6, PRP-8, PRP-18, PRP-19, PRP-20]
+  why: the lifecycle table has no such transition
+- id: sm-prp-x159
+  from: realizing
+  to: noted
+  expect: rejected
+  rules: [PRP-6, PRP-8, PRP-18, PRP-19, PRP-20]
+  why: the lifecycle table has no such transition
+- id: sm-prp-x160
+  from: realizing
+  to: realizing
+  expect: rejected
+  rules: [PRP-6, PRP-8, PRP-18, PRP-19, PRP-20]
+  why: the lifecycle table has no such transition
+- id: sm-prp-x161
+  from: realizing
+  to: reverted
+  expect: rejected
+  rules: [PRP-6, PRP-8, PRP-18, PRP-19, PRP-20]
+  why: the lifecycle table has no such transition
+- id: sm-prp-x162
+  from: realizing
+  to: sampled
+  expect: rejected
+  rules: [PRP-6, PRP-8, PRP-18, PRP-19, PRP-20]
+  why: the lifecycle table has no such transition
+  version: v0.2
+- id: sm-prp-x163
+  from: realizing
+  to: sample_presented
+  expect: rejected
+  rules: [PRP-6, PRP-8, PRP-18, PRP-19, PRP-20]
+  why: the lifecycle table has no such transition
+  version: v0.2
+- id: sm-prp-x164
+  from: realizing
+  to: sample_judged
+  expect: rejected
+  rules: [PRP-6, PRP-8, PRP-18, PRP-19, PRP-20]
+  why: the lifecycle table has no such transition
+  version: v0.2
+- id: sm-prp-x165
+  from: realizing
+  to: sample_closed
+  expect: rejected
+  rules: [PRP-6, PRP-8, PRP-18, PRP-19, PRP-20]
+  why: the lifecycle table has no such transition
+  version: v0.2
+- id: sm-prp-x166
+  from: realized
+  to: screened
+  expect: rejected
+  rules: [PRP-6, PRP-8, PRP-19, PRP-20]
+  why: realized is a terminal state, except for the transition to reverted
+- id: sm-prp-x167
+  from: realized
+  to: in_review
+  expect: rejected
+  rules: [PRP-6, PRP-8, PRP-19, PRP-20]
+  why: realized is a terminal state, except for the transition to reverted
+- id: sm-prp-x168
+  from: realized
+  to: recommended
+  expect: rejected
+  rules: [PRP-6, PRP-8, PRP-19, PRP-20]
+  why: realized is a terminal state, except for the transition to reverted
+- id: sm-prp-x169
+  from: realized
+  to: parked
+  expect: rejected
+  rules: [PRP-6, PRP-8, PRP-19, PRP-20]
+  why: realized is a terminal state, except for the transition to reverted
+- id: sm-prp-x170
+  from: realized
+  to: dismissed
+  expect: rejected
+  rules: [PRP-6, PRP-8, PRP-19, PRP-20]
+  why: realized is a terminal state, except for the transition to reverted
+- id: sm-prp-x171
+  from: realized
+  to: presented
+  expect: rejected
+  rules: [PRP-6, PRP-8, PRP-19, PRP-20]
+  why: realized is a terminal state, except for the transition to reverted
+- id: sm-prp-x172
+  from: realized
+  to: declined
+  expect: rejected
+  rules: [PRP-6, PRP-8, PRP-19, PRP-20]
+  why: realized is a terminal state, except for the transition to reverted
+- id: sm-prp-x173
+  from: realized
+  to: expired
+  expect: rejected
+  rules: [PRP-6, PRP-8, PRP-19, PRP-20]
+  why: realized is a terminal state, except for the transition to reverted
+- id: sm-prp-x174
+  from: realized
+  to: noted
+  expect: rejected
+  rules: [PRP-6, PRP-8, PRP-19, PRP-20]
+  why: realized is a terminal state, except for the transition to reverted
+- id: sm-prp-x175
+  from: realized
+  to: realizing
+  expect: rejected
+  rules: [PRP-6, PRP-8, PRP-19, PRP-20]
+  why: realized is a terminal state, except for the transition to reverted
+- id: sm-prp-x176
+  from: realized
+  to: realized
+  expect: rejected
+  rules: [PRP-6, PRP-8, PRP-19, PRP-20]
+  why: realized is a terminal state, except for the transition to reverted
+- id: sm-prp-x177
+  from: realized
+  to: realization_failed
+  expect: rejected
+  rules: [PRP-6, PRP-8, PRP-19, PRP-20]
+  why: realized is a terminal state, except for the transition to reverted
+- id: sm-prp-x178
+  from: realized
+  to: sampled
+  expect: rejected
+  rules: [PRP-6, PRP-8, PRP-19, PRP-20]
+  why: realized is a terminal state, except for the transition to reverted
+  version: v0.2
+- id: sm-prp-x179
+  from: realized
+  to: sample_presented
+  expect: rejected
+  rules: [PRP-6, PRP-8, PRP-19, PRP-20]
+  why: realized is a terminal state, except for the transition to reverted
+  version: v0.2
+- id: sm-prp-x180
+  from: realized
+  to: sample_judged
+  expect: rejected
+  rules: [PRP-6, PRP-8, PRP-19, PRP-20]
+  why: realized is a terminal state, except for the transition to reverted
+  version: v0.2
+- id: sm-prp-x181
+  from: realized
+  to: sample_closed
+  expect: rejected
+  rules: [PRP-6, PRP-8, PRP-19, PRP-20]
+  why: realized is a terminal state, except for the transition to reverted
+  version: v0.2
+- id: sm-prp-x182
+  from: realization_failed
+  to: screened
+  expect: rejected
+  rules: [PRP-6, PRP-18]
+  why: realization_failed is a terminal state
+- id: sm-prp-x183
+  from: realization_failed
+  to: in_review
+  expect: rejected
+  rules: [PRP-6, PRP-18]
+  why: realization_failed is a terminal state
+- id: sm-prp-x184
+  from: realization_failed
+  to: recommended
+  expect: rejected
+  rules: [PRP-6, PRP-18]
+  why: realization_failed is a terminal state
+- id: sm-prp-x185
+  from: realization_failed
+  to: parked
+  expect: rejected
+  rules: [PRP-6, PRP-18]
+  why: realization_failed is a terminal state
+- id: sm-prp-x186
+  from: realization_failed
+  to: dismissed
+  expect: rejected
+  rules: [PRP-6, PRP-18]
+  why: realization_failed is a terminal state
+- id: sm-prp-x187
+  from: realization_failed
+  to: presented
+  expect: rejected
+  rules: [PRP-6, PRP-18]
+  why: realization_failed is a terminal state
+- id: sm-prp-x188
+  from: realization_failed
+  to: declined
+  expect: rejected
+  rules: [PRP-6, PRP-18]
+  why: realization_failed is a terminal state
+- id: sm-prp-x189
+  from: realization_failed
+  to: expired
+  expect: rejected
+  rules: [PRP-6, PRP-18]
+  why: realization_failed is a terminal state
+- id: sm-prp-x190
+  from: realization_failed
+  to: noted
+  expect: rejected
+  rules: [PRP-6, PRP-18]
+  why: realization_failed is a terminal state
+- id: sm-prp-x191
+  from: realization_failed
+  to: realizing
+  expect: rejected
+  rules: [PRP-6, PRP-18]
+  why: realization_failed is a terminal state
+- id: sm-prp-x192
+  from: realization_failed
+  to: realized
+  expect: rejected
+  rules: [PRP-6, PRP-18]
+  why: realization_failed is a terminal state
+- id: sm-prp-x193
+  from: realization_failed
+  to: realization_failed
+  expect: rejected
+  rules: [PRP-6, PRP-18]
+  why: realization_failed is a terminal state
+- id: sm-prp-x194
+  from: realization_failed
+  to: reverted
+  expect: rejected
+  rules: [PRP-6, PRP-18]
+  why: realization_failed is a terminal state
+- id: sm-prp-x195
+  from: realization_failed
+  to: sampled
+  expect: rejected
+  rules: [PRP-6, PRP-18]
+  why: realization_failed is a terminal state
+  version: v0.2
+- id: sm-prp-x196
+  from: realization_failed
+  to: sample_presented
+  expect: rejected
+  rules: [PRP-6, PRP-18]
+  why: realization_failed is a terminal state
+  version: v0.2
+- id: sm-prp-x197
+  from: realization_failed
+  to: sample_judged
+  expect: rejected
+  rules: [PRP-6, PRP-18]
+  why: realization_failed is a terminal state
+  version: v0.2
+- id: sm-prp-x198
+  from: realization_failed
+  to: sample_closed
+  expect: rejected
+  rules: [PRP-6, PRP-18]
+  why: realization_failed is a terminal state
+  version: v0.2
+- id: sm-prp-x199
+  from: reverted
+  to: screened
+  expect: rejected
+  rules: [PRP-6, PRP-20, PRP-22, PRP-23]
+  why: reverted is a terminal state
+- id: sm-prp-x200
+  from: reverted
+  to: in_review
+  expect: rejected
+  rules: [PRP-6, PRP-20, PRP-22, PRP-23]
+  why: reverted is a terminal state
+- id: sm-prp-x201
+  from: reverted
+  to: recommended
+  expect: rejected
+  rules: [PRP-6, PRP-20, PRP-22, PRP-23]
+  why: reverted is a terminal state
+- id: sm-prp-x202
+  from: reverted
+  to: parked
+  expect: rejected
+  rules: [PRP-6, PRP-20, PRP-22, PRP-23]
+  why: reverted is a terminal state
+- id: sm-prp-x203
+  from: reverted
+  to: dismissed
+  expect: rejected
+  rules: [PRP-6, PRP-20, PRP-22, PRP-23]
+  why: reverted is a terminal state
+- id: sm-prp-x204
+  from: reverted
+  to: presented
+  expect: rejected
+  rules: [PRP-6, PRP-20, PRP-22, PRP-23]
+  why: reverted is a terminal state
+- id: sm-prp-x205
+  from: reverted
+  to: declined
+  expect: rejected
+  rules: [PRP-6, PRP-20, PRP-22, PRP-23]
+  why: reverted is a terminal state
+- id: sm-prp-x206
+  from: reverted
+  to: expired
+  expect: rejected
+  rules: [PRP-6, PRP-20, PRP-22, PRP-23]
+  why: reverted is a terminal state
+- id: sm-prp-x207
+  from: reverted
+  to: noted
+  expect: rejected
+  rules: [PRP-6, PRP-20, PRP-22, PRP-23]
+  why: reverted is a terminal state
+- id: sm-prp-x208
+  from: reverted
+  to: realizing
+  expect: rejected
+  rules: [PRP-6, PRP-20, PRP-22, PRP-23]
+  why: reverted is a terminal state
+- id: sm-prp-x209
+  from: reverted
+  to: realized
+  expect: rejected
+  rules: [PRP-6, PRP-20, PRP-22, PRP-23]
+  why: reverted is a terminal state
+- id: sm-prp-x210
+  from: reverted
+  to: realization_failed
+  expect: rejected
+  rules: [PRP-6, PRP-20, PRP-22, PRP-23]
+  why: reverted is a terminal state
+- id: sm-prp-x211
+  from: reverted
+  to: reverted
+  expect: rejected
+  rules: [PRP-6, PRP-20, PRP-22, PRP-23]
+  why: reverted is a terminal state
+- id: sm-prp-x212
+  from: reverted
+  to: sampled
+  expect: rejected
+  rules: [PRP-6, PRP-20, PRP-22, PRP-23]
+  why: reverted is a terminal state
+  version: v0.2
+- id: sm-prp-x213
+  from: reverted
+  to: sample_presented
+  expect: rejected
+  rules: [PRP-6, PRP-20, PRP-22, PRP-23]
+  why: reverted is a terminal state
+  version: v0.2
+- id: sm-prp-x214
+  from: reverted
+  to: sample_judged
+  expect: rejected
+  rules: [PRP-6, PRP-20, PRP-22, PRP-23]
+  why: reverted is a terminal state
+  version: v0.2
+- id: sm-prp-x215
+  from: reverted
+  to: sample_closed
+  expect: rejected
+  rules: [PRP-6, PRP-20, PRP-22, PRP-23]
+  why: reverted is a terminal state
+  version: v0.2
+- id: sm-prp-x216
+  from: sampled
+  to: screened
+  expect: rejected
+  rules: [DIG-2, DIG-5, DIG-6, PRP-6]
+  why: the lifecycle table has no such transition
+  version: v0.2
+- id: sm-prp-x217
+  from: sampled
+  to: in_review
+  expect: rejected
+  rules: [DIG-2, DIG-5, DIG-6, PRP-6]
+  why: the lifecycle table has no such transition
+  version: v0.2
+- id: sm-prp-x218
+  from: sampled
+  to: recommended
+  expect: rejected
+  rules: [DIG-2, DIG-5, DIG-6, PRP-6]
+  why: the lifecycle table has no such transition
+  version: v0.2
+- id: sm-prp-x219
+  from: sampled
+  to: parked
+  expect: rejected
+  rules: [DIG-2, DIG-5, DIG-6, PRP-6]
+  why: the lifecycle table has no such transition
+  version: v0.2
+- id: sm-prp-x220
+  from: sampled
+  to: dismissed
+  expect: rejected
+  rules: [DIG-2, DIG-5, DIG-6, PRP-6]
+  why: the lifecycle table has no such transition
+  version: v0.2
+- id: sm-prp-x221
+  from: sampled
+  to: presented
+  expect: rejected
+  rules: [DIG-2, DIG-5, DIG-6, PRP-6]
+  why: the lifecycle table has no such transition
+  version: v0.2
+- id: sm-prp-x222
+  from: sampled
+  to: declined
+  expect: rejected
+  rules: [DIG-2, DIG-5, DIG-6, PRP-6]
+  why: the lifecycle table has no such transition
+  version: v0.2
+- id: sm-prp-x223
+  from: sampled
+  to: expired
+  expect: rejected
+  rules: [DIG-2, DIG-5, DIG-6, PRP-6]
+  why: the lifecycle table has no such transition
+  version: v0.2
+- id: sm-prp-x224
+  from: sampled
+  to: noted
+  expect: rejected
+  rules: [DIG-2, DIG-5, DIG-6, PRP-6]
+  why: the lifecycle table has no such transition
+  version: v0.2
+- id: sm-prp-x225
+  from: sampled
+  to: realizing
+  expect: rejected
+  rules: [DIG-2, DIG-5, DIG-6, PRP-6]
+  why: the lifecycle table has no such transition
+  version: v0.2
+- id: sm-prp-x226
+  from: sampled
+  to: realized
+  expect: rejected
+  rules: [DIG-2, DIG-5, DIG-6, PRP-6]
+  why: the lifecycle table has no such transition
+  version: v0.2
+- id: sm-prp-x227
+  from: sampled
+  to: realization_failed
+  expect: rejected
+  rules: [DIG-2, DIG-5, DIG-6, PRP-6]
+  why: the lifecycle table has no such transition
+  version: v0.2
+- id: sm-prp-x228
+  from: sampled
+  to: reverted
+  expect: rejected
+  rules: [DIG-2, DIG-5, DIG-6, PRP-6]
+  why: the lifecycle table has no such transition
+  version: v0.2
+- id: sm-prp-x229
+  from: sampled
+  to: sampled
+  expect: rejected
+  rules: [DIG-2, DIG-5, DIG-6, PRP-6]
+  why: the lifecycle table has no such transition
+  version: v0.2
+- id: sm-prp-x230
+  from: sampled
+  to: sample_judged
+  expect: rejected
+  rules: [DIG-2, DIG-5, DIG-6, PRP-6]
+  why: the lifecycle table has no such transition
+  version: v0.2
+- id: sm-prp-x231
+  from: sampled
+  to: sample_closed
+  expect: rejected
+  rules: [DIG-2, DIG-5, DIG-6, PRP-6]
+  why: the lifecycle table has no such transition
+  version: v0.2
+- id: sm-prp-x232
+  from: sample_presented
+  to: screened
+  expect: rejected
+  rules: [COM-11, DIG-6, PRP-6]
+  why: the lifecycle table has no such transition
+  version: v0.2
+- id: sm-prp-x233
+  from: sample_presented
+  to: in_review
+  expect: rejected
+  rules: [COM-11, DIG-6, PRP-6]
+  why: the lifecycle table has no such transition
+  version: v0.2
+- id: sm-prp-x234
+  from: sample_presented
+  to: recommended
+  expect: rejected
+  rules: [COM-11, DIG-6, PRP-6]
+  why: the lifecycle table has no such transition
+  version: v0.2
+- id: sm-prp-x235
+  from: sample_presented
+  to: parked
+  expect: rejected
+  rules: [COM-11, DIG-6, PRP-6]
+  why: the lifecycle table has no such transition
+  version: v0.2
+- id: sm-prp-x236
+  from: sample_presented
+  to: dismissed
+  expect: rejected
+  rules: [COM-11, DIG-6, PRP-6]
+  why: the lifecycle table has no such transition
+  version: v0.2
+- id: sm-prp-x237
+  from: sample_presented
+  to: presented
+  expect: rejected
+  rules: [COM-11, DIG-6, PRP-6]
+  why: the lifecycle table has no such transition
+  version: v0.2
+- id: sm-prp-x238
+  from: sample_presented
+  to: declined
+  expect: rejected
+  rules: [COM-11, DIG-6, PRP-6]
+  why: the lifecycle table has no such transition
+  version: v0.2
+- id: sm-prp-x239
+  from: sample_presented
+  to: expired
+  expect: rejected
+  rules: [COM-11, DIG-6, PRP-6]
+  why: the lifecycle table has no such transition
+  version: v0.2
+- id: sm-prp-x240
+  from: sample_presented
+  to: noted
+  expect: rejected
+  rules: [COM-11, DIG-6, PRP-6]
+  why: the lifecycle table has no such transition
+  version: v0.2
+- id: sm-prp-x241
+  from: sample_presented
+  to: realizing
+  expect: rejected
+  rules: [COM-11, DIG-6, PRP-6]
+  why: the lifecycle table has no such transition
+  version: v0.2
+- id: sm-prp-x242
+  from: sample_presented
+  to: realized
+  expect: rejected
+  rules: [COM-11, DIG-6, PRP-6]
+  why: the lifecycle table has no such transition
+  version: v0.2
+- id: sm-prp-x243
+  from: sample_presented
+  to: realization_failed
+  expect: rejected
+  rules: [COM-11, DIG-6, PRP-6]
+  why: the lifecycle table has no such transition
+  version: v0.2
+- id: sm-prp-x244
+  from: sample_presented
+  to: reverted
+  expect: rejected
+  rules: [COM-11, DIG-6, PRP-6]
+  why: the lifecycle table has no such transition
+  version: v0.2
+- id: sm-prp-x245
+  from: sample_presented
+  to: sampled
+  expect: rejected
+  rules: [COM-11, DIG-6, PRP-6]
+  why: the lifecycle table has no such transition
+  version: v0.2
+- id: sm-prp-x246
+  from: sample_presented
+  to: sample_presented
+  expect: rejected
+  rules: [COM-11, DIG-6, PRP-6]
+  why: the lifecycle table has no such transition
+  version: v0.2
+- id: sm-prp-x247
+  from: sample_judged
+  to: screened
+  expect: rejected
+  rules: [DIG-6, PRP-4, PRP-6, PRP-9, PRP-18, PRP-21]
+  why: the lifecycle table has no such transition
+  version: v0.2
+- id: sm-prp-x248
+  from: sample_judged
+  to: in_review
+  expect: rejected
+  rules: [DIG-6, PRP-4, PRP-6, PRP-9, PRP-18, PRP-21]
+  why: the lifecycle table has no such transition
+  version: v0.2
+- id: sm-prp-x249
+  from: sample_judged
+  to: recommended
+  expect: rejected
+  rules: [DIG-6, PRP-4, PRP-6, PRP-9, PRP-18, PRP-21]
+  why: the lifecycle table has no such transition
+  version: v0.2
+- id: sm-prp-x250
+  from: sample_judged
+  to: parked
+  expect: rejected
+  rules: [DIG-6, PRP-4, PRP-6, PRP-9, PRP-18, PRP-21]
+  why: the lifecycle table has no such transition
+  version: v0.2
+- id: sm-prp-x251
+  from: sample_judged
+  to: dismissed
+  expect: rejected
+  rules: [DIG-6, PRP-4, PRP-6, PRP-9, PRP-18, PRP-21]
+  why: the lifecycle table has no such transition
+  version: v0.2
+- id: sm-prp-x252
+  from: sample_judged
+  to: presented
+  expect: rejected
+  rules: [DIG-6, PRP-4, PRP-6, PRP-9, PRP-18, PRP-21]
+  why: the lifecycle table has no such transition
+  version: v0.2
+- id: sm-prp-x253
+  from: sample_judged
+  to: declined
+  expect: rejected
+  rules: [DIG-6, PRP-4, PRP-6, PRP-9, PRP-18, PRP-21]
+  why: the lifecycle table has no such transition
+  version: v0.2
+- id: sm-prp-x254
+  from: sample_judged
+  to: expired
+  expect: rejected
+  rules: [DIG-6, PRP-4, PRP-6, PRP-9, PRP-18, PRP-21]
+  why: the lifecycle table has no such transition
+  version: v0.2
+- id: sm-prp-x255
+  from: sample_judged
+  to: realized
+  expect: rejected
+  rules: [DIG-6, PRP-4, PRP-6, PRP-9, PRP-18, PRP-21]
+  why: the lifecycle table has no such transition
+  version: v0.2
+- id: sm-prp-x256
+  from: sample_judged
+  to: realization_failed
+  expect: rejected
+  rules: [DIG-6, PRP-4, PRP-6, PRP-9, PRP-18, PRP-21]
+  why: the lifecycle table has no such transition
+  version: v0.2
+- id: sm-prp-x257
+  from: sample_judged
+  to: reverted
+  expect: rejected
+  rules: [DIG-6, PRP-4, PRP-6, PRP-9, PRP-18, PRP-21]
+  why: the lifecycle table has no such transition
+  version: v0.2
+- id: sm-prp-x258
+  from: sample_judged
+  to: sampled
+  expect: rejected
+  rules: [DIG-6, PRP-4, PRP-6, PRP-9, PRP-18, PRP-21]
+  why: the lifecycle table has no such transition
+  version: v0.2
+- id: sm-prp-x259
+  from: sample_judged
+  to: sample_presented
+  expect: rejected
+  rules: [DIG-6, PRP-4, PRP-6, PRP-9, PRP-18, PRP-21]
+  why: the lifecycle table has no such transition
+  version: v0.2
+- id: sm-prp-x260
+  from: sample_judged
+  to: sample_judged
+  expect: rejected
+  rules: [DIG-6, PRP-4, PRP-6, PRP-9, PRP-18, PRP-21]
+  why: the lifecycle table has no such transition
+  version: v0.2
+- id: sm-prp-x261
+  from: sample_closed
+  to: screened
+  expect: rejected
+  rules: [DIG-6, PRP-6]
+  why: sample_closed is a terminal state
+  version: v0.2
+- id: sm-prp-x262
+  from: sample_closed
+  to: in_review
+  expect: rejected
+  rules: [DIG-6, PRP-6]
+  why: sample_closed is a terminal state
+  version: v0.2
+- id: sm-prp-x263
+  from: sample_closed
+  to: recommended
+  expect: rejected
+  rules: [DIG-6, PRP-6]
+  why: sample_closed is a terminal state
+  version: v0.2
+- id: sm-prp-x264
+  from: sample_closed
+  to: parked
+  expect: rejected
+  rules: [DIG-6, PRP-6]
+  why: sample_closed is a terminal state
+  version: v0.2
+- id: sm-prp-x265
+  from: sample_closed
+  to: dismissed
+  expect: rejected
+  rules: [DIG-6, PRP-6]
+  why: sample_closed is a terminal state
+  version: v0.2
+- id: sm-prp-x266
+  from: sample_closed
+  to: presented
+  expect: rejected
+  rules: [DIG-6, PRP-6]
+  why: sample_closed is a terminal state
+  version: v0.2
+- id: sm-prp-x267
+  from: sample_closed
+  to: declined
+  expect: rejected
+  rules: [DIG-6, PRP-6]
+  why: sample_closed is a terminal state
+  version: v0.2
+- id: sm-prp-x268
+  from: sample_closed
+  to: expired
+  expect: rejected
+  rules: [DIG-6, PRP-6]
+  why: sample_closed is a terminal state
+  version: v0.2
+- id: sm-prp-x269
+  from: sample_closed
+  to: noted
+  expect: rejected
+  rules: [DIG-6, PRP-6]
+  why: sample_closed is a terminal state
+  version: v0.2
+- id: sm-prp-x270
+  from: sample_closed
+  to: realizing
+  expect: rejected
+  rules: [DIG-6, PRP-6]
+  why: sample_closed is a terminal state
+  version: v0.2
+- id: sm-prp-x271
+  from: sample_closed
+  to: realized
+  expect: rejected
+  rules: [DIG-6, PRP-6]
+  why: sample_closed is a terminal state
+  version: v0.2
+- id: sm-prp-x272
+  from: sample_closed
+  to: realization_failed
+  expect: rejected
+  rules: [DIG-6, PRP-6]
+  why: sample_closed is a terminal state
+  version: v0.2
+- id: sm-prp-x273
+  from: sample_closed
+  to: reverted
+  expect: rejected
+  rules: [DIG-6, PRP-6]
+  why: sample_closed is a terminal state
+  version: v0.2
+- id: sm-prp-x274
+  from: sample_closed
+  to: sampled
+  expect: rejected
+  rules: [DIG-6, PRP-6]
+  why: sample_closed is a terminal state
+  version: v0.2
+- id: sm-prp-x275
+  from: sample_closed
+  to: sample_presented
+  expect: rejected
+  rules: [DIG-6, PRP-6]
+  why: sample_closed is a terminal state
+  version: v0.2
+- id: sm-prp-x276
+  from: sample_closed
+  to: sample_judged
+  expect: rejected
+  rules: [DIG-6, PRP-6]
+  why: sample_closed is a terminal state
+  version: v0.2
+- id: sm-prp-x277
+  from: sample_closed
+  to: sample_closed
+  expect: rejected
+  rules: [DIG-6, PRP-6]
+  why: sample_closed is a terminal state
+  version: v0.2
+expect:
+  allowed: 29
+  forbidden: 277

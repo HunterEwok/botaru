@@ -1,0 +1,20 @@
+registry: fact-kinds
+version: 1
+description: >-
+  Kinds of bot memory facts (MEM-6). The model proposes only the kind, the predicate and
+  the subject; a new kind is introduced only through an ADR. There is no advice ("what helped") among
+  the kinds. The meaning field says what the facts of the kind are about.
+source: docs/bots.md
+entries:
+  - id: where
+    since: v0.1
+    meaning: where a tenant object lies or what it touches
+    rules: [MEM-6]
+  - id: how_long
+    since: v0.1
+    meaning: how long work takes or when space runs out
+    rules: [MEM-6]
+  - id: what_broke
+    since: v0.1
+    meaning: what broke for the subject within the window
+    rules: [MEM-6]

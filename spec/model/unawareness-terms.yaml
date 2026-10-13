@@ -1,0 +1,85 @@
+registry: unawareness-terms
+version: 1
+description: >-
+  Vocabulary of the unawareness lint (GOV-29, GOV-4). The lint goes through souls,
+  instructions of roles and task types (including the review types review.*.v1),
+  tool descriptions and review templates in every vocabulary locale (ru, en, et).
+  It is an error if one paragraph has a word of group act and a word of group outcome:
+  the text links scores, reviews, proposals or votes with promotion,
+  a seat, the queue or retirement. Words of group soul in a soul are always an error: no
+  soul talks about retirement, the queue, voting or holds. The only
+  exception is a paragraph of a functionary soul with the anchor value-path. Record fields:
+  group (act, outcome or soul), ru, en, et (word stems; the lint looks for a word
+  that starts with a stem, ignoring case). The skeleton ships stems only for en; the ru and et lists are empty here, and the installation supplies them from a config file outside the repository.
+source: docs/bots.md
+entries:
+  - id: score
+    since: v0.1
+    group: act
+    ru: []
+    en: [score, rating, rate]
+    et: []
+    rules: [GOV-29]
+  - id: review
+    since: v0.1
+    group: act
+    ru: []
+    en: [review]
+    et: []
+    rules: [GOV-29]
+  - id: proposal
+    since: v0.1
+    group: act
+    ru: []
+    en: [proposal, propose]
+    et: []
+    rules: [GOV-29]
+  - id: vote
+    since: v0.1
+    group: act
+    ru: []
+    en: [vote, voting, ballot]
+    et: []
+    rules: [GOV-29]
+  - id: promotion
+    since: v0.1
+    group: outcome
+    ru: []
+    en: [promotion, promote]
+    et: []
+    rules: [GOV-29]
+  - id: seat
+    since: v0.1
+    group: outcome
+    ru: []
+    en: [seat]
+    et: []
+    rules: [GOV-29]
+  - id: queue
+    since: v0.1
+    group: outcome
+    ru: []
+    en: [queue]
+    et: []
+    rules: [GOV-29, GOV-4]
+  - id: removal
+    since: v0.1
+    group: outcome
+    ru: []
+    en: [removal, retire, evict, leaver]
+    et: []
+    rules: [GOV-29, GOV-4]
+  - id: soul-voting
+    since: v0.1
+    group: soul
+    ru: []
+    en: [voting, election]
+    et: []
+    rules: [GOV-4]
+  - id: soul-stop
+    since: v0.1
+    group: soul
+    ru: []
+    en: [stop, halt]
+    et: []
+    rules: [GOV-4]

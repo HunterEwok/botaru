@@ -1,0 +1,65 @@
+id: fx-time-schedule-skipped
+rules: [TIM-3]
+description: A skipped slot is one schedule.skipped event with a reason from a closed list (dst_gap, waiting, held,
+  over_capacity); a skipped slot is not caught up. With skip_if_waiting true (the default) the schedule skips
+  the slot while the task of the previous slot is still in submitted; with skip_if_waiting false it enqueues the task. A schedule with a type
+  without deadline does not pass apply.
+given:
+  tenant: demo
+  schedule:
+    name: daily-report
+    cron: 30 2 * * *
+    timezone: Europe/Berlin
+    task: {type: report.daily.v1}
+cases:
+- id: tim-fx-05
+  rules: [TIM-3]
+  description: The task of the previous slot is in submitted, skip_if_waiting true; the slot is skipped with reason waiting.
+  given:
+    previous_slot: 2026-10-11T00:30Z
+    previous_task_state: submitted
+    skip_if_waiting: true
+    slot: 2026-10-12T00:30Z
+  expect:
+    outcome: skipped
+    events:
+    - type: schedule.skipped
+      data: {schedule: daily-report, slot: '2026-10-12T00:30Z', reason: waiting}
+    tasks_enqueued: 0
+- id: tim-fx-06
+  rules: [TIM-3]
+  description: The same with skip_if_waiting false; the slot task is enqueued.
+  given:
+    previous_slot: 2026-10-11T00:30Z
+    previous_task_state: submitted
+    skip_if_waiting: false
+    slot: 2026-10-12T00:30Z
+  expect:
+    outcome: enqueued
+    key: system:schedule:daily-report:2026-10-12T00:30Z
+    events: []
+- id: tim-fx-07
+  rules: [TIM-3]
+  description: The provider circuit of the needed model slot is open; the slot is skipped with reason waiting.
+  given: {provider_breaker: open, skip_if_waiting: true, slot: '2026-10-12T00:30Z'}
+  expect:
+    outcome: skipped
+    events:
+    - type: schedule.skipped
+      data: {reason: waiting}
+- id: tim-fx-08
+  rules: [TIM-3, CAP-1]
+  description: Enqueuing the slot hits max_queued; the slot is skipped with reason over_capacity and is not caught up.
+  given: {queue_full: true, slot: '2026-10-12T00:30Z'}
+  expect:
+    outcome: skipped
+    events:
+    - type: schedule.skipped
+      data: {reason: over_capacity}
+    catch_up: false
+- id: tim-fx-09
+  rules: [TIM-3]
+  description: A schedule with a task type without deadline does not pass apply.
+  given:
+    task_type: {name: report.daily.v1, deadline: null}
+  expect: {result: rejected, stage: apply, field: deadline}

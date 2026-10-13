@@ -1,0 +1,6 @@
+schema: spec/model/p2-obs-series-request.schema.json
+rules: [OBV-3, TEN-2]
+description: P2 obs.series requests that the schema rejects; tenant field in the body; points query without a rollup.
+cases:
+  - {series: farm.schedule.slot, subject: 'schedule:report-nightly', window: 14d, rollup: window.share, tenant: demo2}
+  - {series: farm.schedule.slot, subject: 'schedule:report-nightly', window: 14d}

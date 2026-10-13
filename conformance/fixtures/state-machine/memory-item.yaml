@@ -1,0 +1,251 @@
+# Collected from spec/lifecycles/memory-item.yaml. The value null in from means "the object does not exist yet".
+lifecycle: spec/lifecycles/memory-item.yaml
+object: memory-item
+rules:
+- APR-12
+- APR-4
+- MEM-2
+- MEM-3
+- MEM-4
+- RET-7
+description: Allowed and forbidden transitions of the "person memory record" lifecycle, collected from the tables of spec/lifecycles/memory-item.md.
+  The implementation accepts a transition from the allowed list under the condition of its row; a pair from the forbidden
+  list does not change the state, and the call that asks for it is rejected. Only a decision by the person whose memory
+  it is makes a record active (MEM-3); the model does not activate or delete a record.
+states:
+- id: proposed
+  terminal: false
+- id: active
+  terminal: false
+- id: discarded
+  terminal: true
+- id: superseded
+  terminal: true
+- id: forgotten
+  terminal: true
+allowed:
+- from: null
+  to: proposed
+  by: P1 `memory.propose`
+  when: a role with `person` memory; the attempt has no `untrusted_seen`, otherwise the refusal `memory_untrusted`
+  rules:
+  - MEM-2
+  - MEM-3
+- from: proposed
+  to: active
+  by: 'P1 `decide` with the subject `memory_record`: a button on a card in the person''s direct chat'
+  when: only the person whose memory it is decides
+  rules:
+  - APR-4
+  - MEM-3
+- from: proposed
+  to: discarded
+  by: P1 `decide` with a refusal, or the `approval-expiry` loop at the card's deadline
+  when: the default deadline is 7 days, the outcome on silence from the decision registry row (APR-12)
+  rules:
+  - APR-12
+  - MEM-3
+- from: active
+  to: superseded
+  by: approval of a new record with the same key
+  rules:
+  - MEM-3
+- from: proposed
+  to: forgotten
+  by: a person's `/forget`, an erasure request (including on a person's offboarding and on tenant deletion), from v0.2 the
+    retention class period (the `erasure` and `retention` loops)
+  when: deletion in all stores, including runtime stores
+  rules:
+  - MEM-4
+  - RET-7
+- from: active
+  to: forgotten
+  by: a person's `/forget`, an erasure request (including on a person's offboarding and on tenant deletion), from v0.2 the
+    retention class period (the `erasure` and `retention` loops)
+  when: deletion in all stores, including runtime stores
+  rules:
+  - MEM-4
+  - RET-7
+forbidden:
+- from: null
+  to: active
+  expect: rejected
+  rules:
+  - APR-4
+  - MEM-2
+  - MEM-3
+  why: the object does not appear directly in the state active
+- from: null
+  to: discarded
+  expect: rejected
+  rules:
+  - APR-12
+  - MEM-2
+  - MEM-3
+  why: the object does not appear directly in the state discarded
+- from: null
+  to: superseded
+  expect: rejected
+  rules:
+  - MEM-2
+  - MEM-3
+  why: the object does not appear directly in the state superseded
+- from: null
+  to: forgotten
+  expect: rejected
+  rules:
+  - MEM-2
+  - MEM-3
+  - MEM-4
+  - RET-7
+  why: the object does not appear directly in the state forgotten
+- from: proposed
+  to: proposed
+  expect: rejected
+  rules:
+  - APR-12
+  - APR-4
+  - MEM-2
+  - MEM-3
+  - MEM-4
+  - RET-7
+  why: a repeat of proposed without a call from the transition table does not change the record
+- from: proposed
+  to: superseded
+  expect: rejected
+  rules:
+  - APR-12
+  - APR-4
+  - MEM-3
+  - MEM-4
+  - RET-7
+  why: the transition table has no path proposed -> superseded
+- from: active
+  to: proposed
+  expect: rejected
+  rules:
+  - MEM-2
+  - MEM-3
+  - MEM-4
+  - RET-7
+  why: the transition table has no path active -> proposed
+- from: active
+  to: active
+  expect: rejected
+  rules:
+  - APR-4
+  - MEM-3
+  - MEM-4
+  - RET-7
+  why: a repeat of active without a call from the transition table does not change the record
+- from: active
+  to: discarded
+  expect: rejected
+  rules:
+  - APR-12
+  - MEM-3
+  - MEM-4
+  - RET-7
+  why: the transition table has no path active -> discarded
+- from: discarded
+  to: proposed
+  expect: rejected
+  rules:
+  - MEM-2
+  - MEM-3
+  why: 'discarded is a terminal state: there are no transitions out of it'
+- from: discarded
+  to: active
+  expect: rejected
+  rules:
+  - APR-4
+  - MEM-3
+  why: 'discarded is a terminal state: there are no transitions out of it'
+- from: discarded
+  to: discarded
+  expect: rejected
+  rules:
+  - APR-12
+  - MEM-3
+  why: 'discarded is a terminal state: there are no transitions out of it'
+- from: discarded
+  to: superseded
+  expect: rejected
+  rules:
+  - MEM-3
+  why: 'discarded is a terminal state: there are no transitions out of it'
+- from: discarded
+  to: forgotten
+  expect: rejected
+  rules:
+  - MEM-4
+  - RET-7
+  why: 'discarded is a terminal state: there are no transitions out of it'
+- from: superseded
+  to: proposed
+  expect: rejected
+  rules:
+  - MEM-2
+  - MEM-3
+  why: 'superseded is a terminal state: there are no transitions out of it'
+- from: superseded
+  to: active
+  expect: rejected
+  rules:
+  - APR-4
+  - MEM-3
+  why: 'superseded is a terminal state: there are no transitions out of it'
+- from: superseded
+  to: discarded
+  expect: rejected
+  rules:
+  - APR-12
+  - MEM-3
+  why: 'superseded is a terminal state: there are no transitions out of it'
+- from: superseded
+  to: superseded
+  expect: rejected
+  rules:
+  - MEM-3
+  why: 'superseded is a terminal state: there are no transitions out of it'
+- from: superseded
+  to: forgotten
+  expect: rejected
+  rules:
+  - MEM-4
+  - RET-7
+  why: 'superseded is a terminal state: there are no transitions out of it'
+- from: forgotten
+  to: proposed
+  expect: rejected
+  rules:
+  - MEM-2
+  - MEM-3
+  why: 'forgotten is a terminal state: there are no transitions out of it'
+- from: forgotten
+  to: active
+  expect: rejected
+  rules:
+  - APR-4
+  - MEM-3
+  why: 'forgotten is a terminal state: there are no transitions out of it'
+- from: forgotten
+  to: discarded
+  expect: rejected
+  rules:
+  - APR-12
+  - MEM-3
+  why: 'forgotten is a terminal state: there are no transitions out of it'
+- from: forgotten
+  to: superseded
+  expect: rejected
+  rules:
+  - MEM-3
+  why: 'forgotten is a terminal state: there are no transitions out of it'
+- from: forgotten
+  to: forgotten
+  expect: rejected
+  rules:
+  - MEM-4
+  - RET-7
+  why: 'forgotten is a terminal state: there are no transitions out of it'

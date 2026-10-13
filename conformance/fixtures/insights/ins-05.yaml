@@ -1,0 +1,56 @@
+id: ins-05
+rules: [INS-4]
+description: 'Analysis frequency and merge window. The insight.merge_window is not shorter than 1 hour: 30m does not pass apply.
+  A route from obs.* and alarm.* events starts an analysis only after the window (debounce): two events within an hour give one
+  run. Event runs are limited by insight.max_event_runs (1 per day by default) and do not spend a schedule slot;
+  when the limit is exceeded the route is skipped with an event, and the model is not called.'
+cases:
+- description: A role with insight.merge_window 30m does not pass apply.
+  given:
+    manifest:
+      kind: Role
+      metadata: {name: ops-runner}
+      spec:
+        profile: worker
+        insight:
+          types: [ops.insight.v1]
+          merge_window: 30m
+          max_event_runs: {per: day, count: 1}
+  expect: {result: rejected, stage: apply, field: spec.insight.merge_window}
+- description: The default window is 1h; two alarm.* events within an hour give one analysis run.
+  given:
+    role:
+      name: ops-runner
+      insight:
+        merge_window: 1h
+        max_event_runs: {per: day, count: 1}
+        max_runs: {per: week, count: 2}
+    events:
+    - {type: alarm.host.load.v1, at: '2026-10-05T01:05:00Z'}
+    - {type: alarm.host.load.v1, at: '2026-10-05T01:40:00Z'}
+  expect: {insight_runs: 1}
+- description: A second event run on the same day is skipped with an event; the model is not called, and the schedule slot
+    is not spent.
+  given:
+    role:
+      name: ops-runner
+      insight:
+        merge_window: 1h
+        max_event_runs: {per: day, count: 1}
+        max_runs: {per: week, count: 2}
+    events:
+    - {type: alarm.host.load.v1, at: '2026-10-05T01:05:00Z'}
+    - {type: obs.threshold.v1, at: '2026-10-05T09:00:00Z'}
+  expect:
+    insight_runs: 1
+    skipped_with_event: 1
+    model_calls_for_skipped: 0
+    schedule_runs_left_this_week: 2
+- description: The role's open proposals are already at the max_open_proposals limit; the schedule slot is skipped with an event.
+  given:
+    role:
+      name: ops-runner
+      insight: {max_open_proposals: 3}
+    open_proposals: {screened: 1, in_review: 1, parked: 1}
+    schedule_slot: 2026-10-05T06:00Z
+  expect: {insight_runs: 0, skipped_with_event: 1, model_calls: 0}

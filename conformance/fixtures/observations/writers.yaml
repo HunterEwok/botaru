@@ -1,0 +1,64 @@
+id: fx-observations-writers
+rules: [OBV-1]
+description: 'Only code writes observation points: the core loop observe (source core), a job attempt through P1 obs.append
+  from v0.2 and only into series from the observes of its task type (source job), and the core when it extracts a closed tool output field
+  per the mapping in the tool manifest (source tool). An agent attempt has no operation for writing observations,
+  and the model never writes a point.'
+given:
+  tenant: demo
+  series: [host.load.v1, backup.verify.v1]
+  tasktypes:
+  - name: demo.backup.verify.v1
+    worker_kind: job
+    observes: [backup.verify.v1]
+  - {name: ops.insight.v1, worker_kind: agent, purpose: insight}
+cases:
+- id: obv-fx-10
+  rules: [OBV-1]
+  description: An agent attempt calls P1 obs.append; an agent attempt has no such operation, and the point is not written.
+  steps:
+  - call:
+      port: P1
+      op: obs.append
+      request: {series: host.load.v1, subject: 'host:db1', value: 100}
+    context: {attempt_of: ops.insight.v1}
+  expect: {result: rejected, points_written: 0}
+- id: obv-fx-11
+  rules: [OBV-1]
+  version: v0.2
+  description: A job attempt writes a point into a series from the observes of its type; the producer is job, and the core sets the time.
+  steps:
+  - call:
+      port: P1
+      op: obs.append
+      request: {series: backup.verify.v1, subject: 'dataset:ctd-2026', value: 1}
+    context: {attempt_of: demo.backup.verify.v1}
+  expect:
+    result: ok
+    point:
+      series: backup.verify.v1
+      producer: {source: job}
+- id: obv-fx-12
+  rules: [OBV-1]
+  version: v0.2
+  description: A job attempt writes into a series not from the observes of its type; refusal type_not_allowed.
+  steps:
+  - call:
+      port: P1
+      op: obs.append
+      request: {series: host.load.v1, subject: 'host:db1', value: 100}
+    context: {attempt_of: demo.backup.verify.v1}
+  expect: {result: rejected, reason: type_not_allowed, points_written: 0}
+- id: obv-fx-13
+  rules: [OBV-1, MON-6]
+  description: The output of monitor/item_history carries the closed field cpu_load and a text line; the core writes the point only
+    from the field per the mapping source.field of the series host.load.v1, producer tool.
+  given:
+    tool_output: {cpu_load: 910, comment: CANARY-NOT-A-SECRET-OBV-TOOL-TEXT}
+  expect:
+    point:
+      series: host.load.v1
+      subject: host:db1
+      value: 910
+      producer: {source: tool}
+    canary_in_points: false

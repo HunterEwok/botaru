@@ -1,0 +1,6 @@
+schema: spec/model/p1-file-get-request.schema.json
+rules: [TEN-7, FEN-2]
+description: 'file.get requests that the schema rejects: a path instead of file_ref. The lease goes in the Botaru-Lease
+  header, not in the body.'
+cases:
+- {file_ref: /var/log/demo2/access.log}

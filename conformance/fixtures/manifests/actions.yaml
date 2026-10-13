@@ -1,0 +1,138 @@
+id: fx-man-act-01
+rules: [MAN-9, APR-10, APR-16]
+description: >-
+  Action manifest (row lint:manifests/action-routine-fields): an action with risk: routine
+  declares writes_only, idempotent: true, runs_per_hour and runs_per_day; without any of
+  them apply rejects the manifest; routine with approvals: 2 is rejected, and approvals: 2 for
+  another risk in v0.1 is rejected with code not_in_version (APR-10, APR-16); routine fields
+  never appear with another risk; the executor is a write tool of a plugin from the set; for
+  the oneshot mechanism wait: false.
+with_examples: true
+cases:
+  - name: routine pipeline with all fields
+    manifests:
+      - &daily
+        apiVersion: botaru/v1alpha1
+        kind: Action
+        metadata: {name: pipeline.ctd_daily}
+        spec:
+          title: "Daily CTD control"
+          description: "Enqueues the daily quality control of CTD profiles."
+          risk: routine
+          writes_only: ["res:ctd1:data"]
+          idempotent: true
+          runs_per_hour: 2
+          runs_per_day: 6
+          args:
+            type: object
+            additionalProperties: false
+            required: [stations]
+            properties:
+              stations: {type: array, minItems: 1, maxItems: 50, items: {enum_from: catalog.stations}}
+          executor:
+            plugin: pipeline
+            tool: start_ctd_daily
+            os_mechanism: {oneshot: {unit: "ctd-daily-queue-{tenant}.service", started_by: "ctd-daily-queue-{tenant}.path", wait: false}}
+    expect: ok
+  - name: routine without writes_only
+    manifests:
+      - apiVersion: botaru/v1alpha1
+        kind: Action
+        metadata: {name: pipeline.ctd_daily}
+        spec:
+          title: "Daily CTD control"
+          description: "Enqueues the daily quality control of CTD profiles."
+          risk: routine
+          idempotent: true
+          runs_per_hour: 2
+          runs_per_day: 6
+          args: {type: object, additionalProperties: false, required: [stations], properties: {stations: {type: array, maxItems: 50, items: {enum_from: catalog.stations}}}}
+          executor: {plugin: pipeline, tool: start_ctd_daily, os_mechanism: {oneshot: {unit: "ctd-daily-queue-{tenant}.service", started_by: "ctd-daily-queue-{tenant}.path", wait: false}}}
+    expect: {error: routine_fields}
+  - name: routine without runs_per_day
+    manifests:
+      - apiVersion: botaru/v1alpha1
+        kind: Action
+        metadata: {name: pipeline.ctd_daily}
+        spec:
+          title: "Daily CTD control"
+          description: "Enqueues the daily quality control of CTD profiles."
+          risk: routine
+          writes_only: ["res:ctd1:data"]
+          idempotent: true
+          runs_per_hour: 2
+          args: {type: object, additionalProperties: false, required: [stations], properties: {stations: {type: array, maxItems: 50, items: {enum_from: catalog.stations}}}}
+          executor: {plugin: pipeline, tool: start_ctd_daily, os_mechanism: {oneshot: {unit: "ctd-daily-queue-{tenant}.service", started_by: "ctd-daily-queue-{tenant}.path", wait: false}}}
+    expect: {error: routine_fields}
+  - name: routine with two approvers
+    manifests:
+      - apiVersion: botaru/v1alpha1
+        kind: Action
+        metadata: {name: pipeline.ctd_daily}
+        spec:
+          title: "Daily CTD control"
+          description: "Enqueues the daily quality control of CTD profiles."
+          risk: routine
+          approvals: 2
+          writes_only: ["res:ctd1:data"]
+          idempotent: true
+          runs_per_hour: 2
+          runs_per_day: 6
+          args: {type: object, additionalProperties: false, required: [stations], properties: {stations: {type: array, maxItems: 50, items: {enum_from: catalog.stations}}}}
+          executor: {plugin: pipeline, tool: start_ctd_daily, os_mechanism: {oneshot: {unit: "ctd-daily-queue-{tenant}.service", started_by: "ctd-daily-queue-{tenant}.path", wait: false}}}
+    expect: {error: routine_fields}
+  - name: oneshot waiting for the end
+    manifests:
+      - apiVersion: botaru/v1alpha1
+        kind: Action
+        metadata: {name: pipeline.ctd_daily}
+        spec:
+          title: "Daily CTD control"
+          description: "Enqueues the daily quality control of CTD profiles."
+          risk: routine
+          writes_only: ["res:ctd1:data"]
+          idempotent: true
+          runs_per_hour: 2
+          runs_per_day: 6
+          args: {type: object, additionalProperties: false, required: [stations], properties: {stations: {type: array, maxItems: 50, items: {enum_from: catalog.stations}}}}
+          executor: {plugin: pipeline, tool: start_ctd_daily, os_mechanism: {oneshot: {unit: "ctd-daily-queue-{tenant}.service", started_by: "ctd-daily-queue-{tenant}.path", wait: true}}}
+    expect: {error: schema_invalid, also: [ref_missing, tool_target_unknown]}
+  - name: action arguments with their own pattern
+    manifests:
+      - apiVersion: botaru/v1alpha1
+        kind: Action
+        metadata: {name: cleanup_pipeline_tmp}
+        spec:
+          title: "Cleanup of the pipeline temporary directory"
+          description: "Deletes old temporary files."
+          risk: low
+          args:
+            type: object
+            additionalProperties: false
+            required: [path]
+            properties:
+              path: {type: string, pattern: "^/data/.*$"}
+          executor: {plugin: pipeline, tool: cleanup_tmp, os_mechanism: {oneshot: {unit: "pipeline-tmp-clean-{tenant}.service", started_by: "pipeline-tmp-clean-{tenant}.path", wait: false}}}
+    expect: {error: schema_invalid, also: [cap_unknown_action, ref_missing]}
+  - name: approvals 2 in v0.1
+    rules: [APR-10, APR-16]
+    manifests:
+      - apiVersion: botaru/v1alpha1
+        kind: Action
+        metadata: {name: pipeline.ctd_qc}
+        spec:
+          title: "Monthly CTD quality control"
+          description: "Enqueues the quality control pipeline of CTD profiles for one month at the selected stations."
+          risk: low
+          approvals: 2
+          args:
+            type: object
+            additionalProperties: false
+            required: [month, stations]
+            properties:
+              month: {type: string, x-botaru-format: year_month}
+              stations: {type: array, minItems: 1, maxItems: 50, uniqueItems: true, items: {enum_from: catalog.stations}}
+          ttl: 60m
+          idempotent: true
+          executor: {plugin: pipeline, tool: start_ctd_qc, os_mechanism: {oneshot: {unit: "ctd-qc-queue-{tenant}.service", started_by: "ctd-qc-queue-{tenant}.path", wait: false}}}
+    expect: {error: not_in_version}

@@ -1,0 +1,47 @@
+schema: spec/model/msg-send-request.schema.json
+rules:
+- MSG-1
+- MSG-4
+- MSG-13
+- STA-1
+- IDM-2
+description: 'Requests that the schema rejects: core fields tenant and msgto; address worker:; both addresses at once; report
+  without an address; note longer than 500 characters; key system:; address on the state genus; note on state.'
+cases:
+- type: report.work.v1
+  to: role:ops-lead
+  fields: {}
+  tenant: demo2
+- type: report.work.v1
+  to: role:ops-lead
+  fields: {}
+  msgto: role:ops-lead
+- type: report.work.v1
+  to: worker:w_01JB000000000000000000000A
+  fields: {}
+- type: report.work.v1
+  to: role:ops-lead
+  reply_to: hQ3vX9kLmN2pR7sT
+  fields: {}
+- type: report.work.v1
+  fields: {}
+- type: report.qc_note.v1
+  to: role:reporter
+  fields: {}
+  note: xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+- type: report.work.v1
+  to: role:ops-lead
+  fields: {}
+  idempotency_key: system:msg:t_01JB0000000000000000000002:1
+- type: state.worker.v1
+  to: role:ops-lead
+  fields:
+    phase: idle
+- type: state.worker.v1
+  fields:
+    phase: idle
+  note: free
+- type: report.work.v1
+  to: role:ops-lead
+  fields: {}
+  hops: 1

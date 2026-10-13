@@ -1,0 +1,11 @@
+schema: spec/model/insight-result.schema.json
+rules: [INS-1]
+description: An analysis result that the schema accepts. One proposal of kind none, or the code nothing_found without proposals.
+cases:
+  - code: nothing_found
+  - proposals:
+      - category: schedule
+        problem: {code: report_overlap, subjects: ['schedule:report-nightly'], severity: low}
+        evidence:
+          - {kind: observation, series: farm.schedule.slot, subject: 'schedule:report-nightly', window: 14d, rollup: window.share, value: 0.86}
+        change: {kind: none}

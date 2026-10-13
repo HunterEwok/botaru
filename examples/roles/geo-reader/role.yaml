@@ -1,0 +1,11 @@
+# Describes geodata on db1 (flow 3).
+apiVersion: botaru/v1alpha1
+kind: Role
+metadata: {name: geo-reader}
+spec:
+  profile: worker
+  worker_kind: agent
+  claims: [geo.describe.v1]
+  tools: [geo/describe, geo/describe_vector]
+  models: {base: base-std}
+  memory: none

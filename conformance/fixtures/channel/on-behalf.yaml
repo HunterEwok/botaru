@@ -1,0 +1,77 @@
+# Channel actions on behalf of a person (spec/bindings/http/README.md, item "On behalf of a person").
+# Shape of steps and expectations: conformance/runner.md; the modifiers on_behalf and message are there too.
+id: fx-channel-on-behalf
+rules: [APR-4, IDN-3, TEN-4, PRM-15]
+description: 'The core accepts the headers Botaru-On-Behalf, Botaru-Chat and Botaru-Message only from the channel process
+  through whose driver the person came, and only from the chat and the message where the card was delivered
+  (D-86 (1), (3)). A channel with the driver hook does not assert a telegram identity; a P2 command from a group chat
+  is rejected; a button press on another message of the same chat is rejected. Each refusal is forbidden without side
+  effects and with an audit record.'
+given:
+  tenant: demo
+  channels:
+  - {name: telegram-demo, driver: telegram}
+  - {name: hook-demo, driver: hook}
+  approval:
+    id: apr_4812
+    action: cleanup_pipeline_tmp
+    initiator: human:bob
+    state: pending
+    card: {to: human:carol, chat: carol-dm, channel: telegram-demo}
+  task: {id: t_7, type: ops.investigate.v1, initiator: human:bob, state: working}
+cases:
+- id: obh-01
+  rules: [IDN-3, TEN-4]
+  description: A channel with the driver hook passes a telegram identity on behalf of carol.
+  steps:
+  - call:
+      port: P1
+      op: decide
+      request: {subject_kind: approval, id: apr_4812, decision: approve}
+    by: channel:hook-demo
+    on_behalf: telegram:1003
+    chat: carol-dm
+    expect: {reason: forbidden, records_changed: 0, audit: {ok: false, reason: forbidden}}
+  expect: {approval: {state: pending}}
+- id: obh-02
+  rules: [PRM-15, TEN-4]
+  description: A P2 command from bob from the group chat staff is rejected; the same command from the private chat of bob passes.
+  steps:
+  - call:
+      port: P2
+      op: task.cancel
+      request: {op: task.cancel, task: t_7}
+    by: human:bob
+    chat: staff
+    expect: {reason: forbidden, records_changed: 0, audit: {ok: false, reason: forbidden}}
+  - call:
+      port: P2
+      op: task.cancel
+      request: {op: task.cancel, task: t_7}
+    by: human:bob
+    chat: bob-dm
+    expect: {result: ok}
+  expect: {task: {state: canceled, reason: initiator}}
+- id: obh-03
+  rules: [APR-4]
+  description: A button press of carol on another message of the same private chat is rejected; a press on the message
+    of the card passes.
+  steps:
+  - call:
+      port: P1
+      op: decide
+      request: {subject_kind: approval, id: apr_4812, decision: approve}
+    by: human:carol
+    chat: carol-dm
+    card: approval_card
+    message: other
+    expect: {reason: forbidden, records_changed: 0}
+  - call:
+      port: P1
+      op: decide
+      request: {subject_kind: approval, id: apr_4812, decision: approve}
+    by: human:carol
+    chat: carol-dm
+    card: approval_card
+    expect: {decision: {result: ok}}
+  expect: {approval: {state: executing}}

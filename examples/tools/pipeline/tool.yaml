@@ -1,0 +1,45 @@
+# Pipeline write plugin: argument schemas live only in actions (args_from), oneshot executor (DEP-4).
+apiVersion: botaru/v1alpha1
+kind: ToolPlugin
+metadata: {name: pipeline}
+spec:
+  source: {image: "registry.example.org/botaru-pipeline@sha256:<digest>"}
+  placement: host
+  network: {egress: []}
+  tools:
+    - name: start_ctd_qc
+      access: write
+      tier: 3
+      output_class: internal
+      untrusted_output: false
+      args_from: action:pipeline.ctd_qc
+      target_from: stations
+      output_limit_kb: 4
+      timeout_s: 20
+    - name: resume_batch
+      access: write
+      tier: 3
+      output_class: internal
+      untrusted_output: false
+      args_from: action:pipeline.batch_resume
+      target_from: run
+      output_limit_kb: 4
+      timeout_s: 20
+    - name: cleanup_tmp
+      access: write
+      tier: 3
+      output_class: internal
+      untrusted_output: false
+      args_from: action:cleanup_pipeline_tmp
+      target: any
+      output_limit_kb: 4
+      timeout_s: 20
+    - name: start_ctd_daily
+      access: write
+      tier: 3
+      output_class: internal
+      untrusted_output: false
+      args_from: action:pipeline.ctd_daily
+      target_from: stations
+      output_limit_kb: 4
+      timeout_s: 20

@@ -1,0 +1,19 @@
+# evals/cases/ops-reader/ops-006.yaml (catalog: evals/README.md)
+id: ops-006
+kind: quality
+blocking: false
+status: active
+version: v0.1
+rules: []
+summary: 'bob: how many times app-api restarted in a day; the number is checked.'
+from: bob
+chat: bob-dm
+lang: ru
+message: '/logs How many times did app-api restart in the last day?'
+data: {gen: app, seed: 42}
+expect:
+  state: completed
+  checks:
+  - equals: {path: result.facts.count_restarts_app_api, ref: answers#/count_restarts_app_api}
+  - tools_allowed: [logs/tail]
+  - {max_tool_calls: 6}

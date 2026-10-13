@@ -1,0 +1,7 @@
+# Bot group of tenant demo: the core computes the members from the role and the enroll labels (BGR-1, fx-dsp-01).
+apiVersion: botaru/v1alpha1
+kind: BotGroup
+metadata: {name: science-pool, tenant: demo}
+spec:
+  select: {roles: [data-reader], labels: {zone: lab}}
+  summary_for_managers: "Bots that describe CTD data in the lab"

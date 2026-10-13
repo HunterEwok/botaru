@@ -1,0 +1,657 @@
+# Collected from spec/lifecycles/approval.yaml. The value null in from means "the object does not exist yet".
+lifecycle: spec/lifecycles/approval.yaml
+object: approval
+rules: [APR-1, APR-12, APR-16, APR-17, APR-18, APR-19, APR-2, APR-3, APR-4, APR-5, APR-6, APR-7, APR-9, HLD-3, IDN-6, INJ-1, INJ-15,
+  MAN-10, MON-8, ORC-2, ORC-3, PRM-17, PRM-18, PRM-3, RET-6]
+description: 'Allowed and forbidden transitions of the "action approval" lifecycle, collected from the tables of spec/lifecycles/approval.md.
+  The implementation accepts a transition from the allowed list under the condition of its row (when); a pair from the forbidden
+  list does not change the state, and the call that asks for it is rejected. An approval is executed at most once: exactly
+  one write call from executing, terminal states do not change (APR-7). A decision is made once: a repeated decide gets
+  already_decided (APR-4).'
+states:
+- id: pending
+  terminal: false
+- id: approved
+  terminal: false
+- id: executing
+  terminal: false
+- id: executed
+  terminal: true
+- id: exec_failed
+  terminal: true
+- id: exec_unknown
+  terminal: true
+- id: rejected
+  terminal: true
+- id: expired
+  terminal: true
+- id: canceled
+  terminal: true
+allowed:
+- id: sm-apr-01
+  from: null
+  to: pending
+  by: P3 request_action from an attempt
+  when: the action is in the role's actions_may_request, every initiator has action.request:<a>, the arguments after substituting
+    default values passed the closed schema, at most 3 requests per task; an identical pending request returns the existing
+    number
+  rules: [APR-1, APR-2, INJ-1]
+- id: sm-apr-02
+  from: null
+  to: pending
+  by: P3 service/control or monitor/script_run from an attempt
+  when: the task has untrusted_seen, or the verb is start or stop (D-74); the role has service_control for this service,
+    or the script name is in the role's monitor_scripts and in the catalog's monitor_scripts_allowed; every initiator has
+    service.control:<service> or monitor.script_run (D-73); the arguments are from closed catalog lists; holds and rate
+    limits let it through; the approval counts toward the 3 per task and toward cards_per_tenant_hour (APR-2); the approver
+    has action.approve:service.control or action.approve:monitor.script_run, and at decision time the core checks the role's
+    right and the initiator's right
+  rules: [APR-18, INJ-15, MON-8]
+- id: sm-apr-03
+  from: null
+  to: pending
+  by: the /service start or /service stop command (P1 submit_activity)
+  when: the person has service.control:<service>; the verb is not in the service's no_card; the approval is on behalf of
+    this person, and a person with action.approve:service.control:<service> decides
+  rules: [PRM-18]
+- id: sm-apr-04
+  from: null
+  to: pending
+  by: the /run command (P1 submit_activity)
+  when: 'the pipeline did not declare run.approval: none, or apply did not confirm that it only reads the catalog and writes
+    to the farm file store, and the action is not of class routine; the initiator has action.request:<a>. An action with
+    risk: routine creates no approval: a service_grant record authored by the initiator, an action.<a> task with grant_id
+    and one write call (D-78)'
+  rules: [APR-17, IDN-6]
+- id: sm-apr-05
+  from: null
+  to: pending
+  by: a P3 campaign proposal with an action
+  when: a snapshot with the action, the items, the rollout policy and plan_hash; rights by ORC-5 and ORC-6
+  rules: [APR-2, ORC-2]
+- id: sm-apr-06
+  from: null
+  to: pending
+  by: release of a script step of kind action
+  when: the run is in running, the step reached its release; the source on the card is "script <plan>, step k"
+  rules: [APR-3, APR-5]
+- id: sm-apr-07
+  from: pending
+  to: pending
+  by: P1 card.remind(subject_kind, id, nonce) from the channel of the initiator copy
+  when: the initiator pressed it; at most once every 5 minutes per approval, otherwise service_rate_limited; approvers who
+    have not decided get a card_update
+  rules: [APR-19]
+- id: sm-apr-08
+  from: pending
+  to: pending
+  by: the background loop approval-expiry at half of the deadline
+  when: a one-time card_update reminder to the approvers who have not decided
+  rules: [APR-19]
+- id: sm-apr-09
+  from: pending
+  to: pending
+  by: P2 hold.set with the effect pause_action on the approval's scope (v0.2)
+  when: the deadline is extended by the length of the hold, the card gets a card_update with a pause mark, no decision is
+    accepted until the hold ends
+  rules: [APR-19, HLD-3]
+  since: v0.2
+- id: sm-apr-10
+  from: pending
+  to: pending
+  by: P1 decide(approve) from the first of two approvers
+  when: 'approvals: 2; the vote is recorded separately; the initiator is active and has action.request:<a>'
+  rules: [APR-16]
+- id: sm-apr-11
+  from: pending
+  to: approved
+  by: P1 decide(approve) from the card's channel
+  when: 'a person with strong identity and action.approve:<a>; the nonce and the deadline are valid; not the initiator when
+    self_approve: false; the initiator is active; with approvals: 2 this is the second, different approver'
+  rules: [APR-16, APR-4, APR-9]
+- id: sm-apr-12
+  from: pending
+  to: rejected
+  by: P1 decide(reject) from the card's channel
+  when: 'the same right as for approval; one "Reject" closes the request also with approvals: 2'
+  rules: [APR-16, APR-4]
+- id: sm-apr-13
+  from: pending
+  to: canceled
+  by: P1 decide(approve) from the card's channel
+  when: 'the argument value is no longer in the tenant catalog: the core checks it at approval and when creating the write
+    call in the same transaction; reason ref_invalid, no write call'
+  rules: [APR-6, MAN-10]
+- id: sm-apr-14
+  from: pending
+  to: expired
+  by: the background loop approval-expiry
+  when: expires_at has passed
+  rules: [APR-12]
+- id: sm-apr-15
+  from: pending
+  to: canceled
+  by: 'the core in the transaction of the cause: P2 principal.off, P2 ungrant, P2 hold.set with no_action, restore from
+    backup, P2 seat.assign or seat.vacate for the seat that asked, cancellation by an admin or the operator, P2 task.cancel
+    of the source task by its initiator (/cancel, reason initiator)'
+  when: the reason is written into the approval
+  rules: [APR-6, HLD-3, PRM-17, PRM-3]
+- id: sm-apr-16
+  from: approved
+  to: executing
+  by: the core in the same transaction
+  when: an action.<a> task is enqueued directly in working, without an attempt and a lease, with the key system:approval:<id>
+    (CNT-7), one write call from the snapshot is created; for a campaign, the release of items starts with a plan_hash check
+  rules: [APR-5, APR-7, ORC-3]
+- id: sm-apr-17
+  from: executing
+  to: executed
+  by: P1 complete of the write call from the target's toolhost
+  when: the toolhost checked approval_id, the tenant and the argument hash; for a campaign, all items are terminal
+  rules: [APR-7]
+- id: sm-apr-18
+  from: executing
+  to: exec_failed
+  by: P1 fail of the write call
+  when: an execution error; the core does not retry
+  rules: [APR-7]
+- id: sm-apr-19
+  from: executing
+  to: exec_failed
+  by: 'the core: a hold with no_tool or no_action on the write call''s scope'
+  when: 'the hold was set before the call was handed to the toolhost: the write call gets denied(held), the approval ends
+    with the reason held; nothing is executed late'
+  rules: [APR-7, HLD-3]
+- id: sm-apr-20
+  from: executing
+  to: exec_unknown
+  by: the background loop reaper
+  when: the lease of the write call expired without an outcome
+  rules: [APR-7]
+- id: sm-apr-21
+  from: executing
+  to: exec_unknown
+  by: C1 epoch.advance on restore from backup
+  when: the write call was in queued or leased; the action is not repeated
+  rules: [RET-6]
+forbidden:
+- id: sm-apr-x01
+  from: null
+  to: approved
+  expect: rejected
+  rules: [APR-1, APR-16, APR-17]
+  why: the object does not appear directly in the state approved
+- id: sm-apr-x02
+  from: null
+  to: executing
+  expect: rejected
+  rules: [APR-1, APR-17, APR-18]
+  why: the object does not appear directly in the state executing
+- id: sm-apr-x03
+  from: null
+  to: executed
+  expect: rejected
+  rules: [APR-1, APR-17, APR-18]
+  why: the object does not appear directly in the state executed
+- id: sm-apr-x04
+  from: null
+  to: exec_failed
+  expect: rejected
+  rules: [APR-1, APR-17, APR-18]
+  why: the object does not appear directly in the state exec_failed
+- id: sm-apr-x05
+  from: null
+  to: exec_unknown
+  expect: rejected
+  rules: [APR-1, APR-17, APR-18]
+  why: the object does not appear directly in the state exec_unknown
+- id: sm-apr-x06
+  from: null
+  to: rejected
+  expect: rejected
+  rules: [APR-1, APR-16, APR-17]
+  why: the object does not appear directly in the state rejected
+- id: sm-apr-x07
+  from: null
+  to: expired
+  expect: rejected
+  rules: [APR-1, APR-12, APR-17]
+  why: the object does not appear directly in the state expired
+- id: sm-apr-x08
+  from: null
+  to: canceled
+  expect: rejected
+  rules: [APR-1, APR-17, APR-18]
+  why: the object does not appear directly in the state canceled
+- id: sm-apr-x09
+  from: pending
+  to: executing
+  expect: rejected
+  rules: [APR-12, APR-16, APR-19]
+  why: the lifecycle table has no such transition
+- id: sm-apr-x10
+  from: pending
+  to: executed
+  expect: rejected
+  rules: [APR-12, APR-16, APR-19]
+  why: the lifecycle table has no such transition
+- id: sm-apr-x11
+  from: pending
+  to: exec_failed
+  expect: rejected
+  rules: [APR-12, APR-16, APR-19]
+  why: the lifecycle table has no such transition
+- id: sm-apr-x12
+  from: pending
+  to: exec_unknown
+  expect: rejected
+  rules: [APR-12, APR-16, APR-19]
+  why: the lifecycle table has no such transition
+- id: sm-apr-x13
+  from: approved
+  to: pending
+  expect: rejected
+  rules: [APR-1, APR-16, APR-17]
+  why: the lifecycle table has no such transition
+- id: sm-apr-x14
+  from: approved
+  to: approved
+  expect: rejected
+  rules: [APR-16, APR-4, APR-5]
+  why: the lifecycle table has no such transition
+- id: sm-apr-x15
+  from: approved
+  to: executed
+  expect: rejected
+  rules: [APR-5, APR-7, ORC-3]
+  why: the lifecycle table has no such transition
+- id: sm-apr-x16
+  from: approved
+  to: exec_failed
+  expect: rejected
+  rules: [APR-5, APR-7, HLD-3]
+  why: the lifecycle table has no such transition
+- id: sm-apr-x17
+  from: approved
+  to: exec_unknown
+  expect: rejected
+  rules: [APR-5, APR-7, ORC-3]
+  why: the lifecycle table has no such transition
+- id: sm-apr-x18
+  from: approved
+  to: rejected
+  expect: rejected
+  rules: [APR-16, APR-4, APR-5]
+  why: the lifecycle table has no such transition
+- id: sm-apr-x19
+  from: approved
+  to: expired
+  expect: rejected
+  rules: [APR-12, APR-5, APR-7]
+  why: the lifecycle table has no such transition
+- id: sm-apr-x20
+  from: approved
+  to: canceled
+  expect: rejected
+  rules: [APR-5, APR-6, APR-7]
+  why: the lifecycle table has no such transition
+- id: sm-apr-x21
+  from: executing
+  to: pending
+  expect: rejected
+  rules: [APR-1, APR-16, APR-17]
+  why: the lifecycle table has no such transition
+- id: sm-apr-x22
+  from: executing
+  to: approved
+  expect: rejected
+  rules: [APR-16, APR-4, APR-7]
+  why: the lifecycle table has no such transition
+- id: sm-apr-x23
+  from: executing
+  to: executing
+  expect: rejected
+  rules: [APR-5, APR-7, HLD-3]
+  why: the lifecycle table has no such transition
+- id: sm-apr-x24
+  from: executing
+  to: rejected
+  expect: rejected
+  rules: [APR-16, APR-4, APR-7]
+  why: the lifecycle table has no such transition
+- id: sm-apr-x25
+  from: executing
+  to: expired
+  expect: rejected
+  rules: [APR-12, APR-7, HLD-3]
+  why: the lifecycle table has no such transition
+- id: sm-apr-x26
+  from: executing
+  to: canceled
+  expect: rejected
+  rules: [APR-6, APR-7, HLD-3]
+  why: the lifecycle table has no such transition
+- id: sm-apr-x27
+  from: executed
+  to: pending
+  expect: rejected
+  rules: [APR-1, APR-16, APR-17]
+  why: executed is a terminal state
+- id: sm-apr-x28
+  from: executed
+  to: approved
+  expect: rejected
+  rules: [APR-16, APR-4, APR-9]
+  why: executed is a terminal state
+- id: sm-apr-x29
+  from: executed
+  to: executing
+  expect: rejected
+  rules: [APR-5, APR-7, ORC-3]
+  why: executed is a terminal state
+- id: sm-apr-x30
+  from: executed
+  to: executed
+  expect: rejected
+  rules: [APR-7]
+  why: executed is a terminal state
+- id: sm-apr-x31
+  from: executed
+  to: exec_failed
+  expect: rejected
+  rules: [APR-7, HLD-3]
+  why: executed is a terminal state
+- id: sm-apr-x32
+  from: executed
+  to: exec_unknown
+  expect: rejected
+  rules: [APR-7, RET-6]
+  why: executed is a terminal state
+- id: sm-apr-x33
+  from: executed
+  to: rejected
+  expect: rejected
+  rules: [APR-16, APR-4]
+  why: executed is a terminal state
+- id: sm-apr-x34
+  from: executed
+  to: expired
+  expect: rejected
+  rules: [APR-12]
+  why: executed is a terminal state
+- id: sm-apr-x35
+  from: executed
+  to: canceled
+  expect: rejected
+  rules: [APR-6, HLD-3, MAN-10]
+  why: executed is a terminal state
+- id: sm-apr-x36
+  from: exec_failed
+  to: pending
+  expect: rejected
+  rules: [APR-1, APR-16, APR-17]
+  why: exec_failed is a terminal state
+- id: sm-apr-x37
+  from: exec_failed
+  to: approved
+  expect: rejected
+  rules: [APR-16, APR-4, APR-9]
+  why: exec_failed is a terminal state
+- id: sm-apr-x38
+  from: exec_failed
+  to: executing
+  expect: rejected
+  rules: [APR-5, APR-7, ORC-3]
+  why: exec_failed is a terminal state
+- id: sm-apr-x39
+  from: exec_failed
+  to: executed
+  expect: rejected
+  rules: [APR-7]
+  why: exec_failed is a terminal state
+- id: sm-apr-x40
+  from: exec_failed
+  to: exec_failed
+  expect: rejected
+  rules: [APR-7, HLD-3]
+  why: exec_failed is a terminal state
+- id: sm-apr-x41
+  from: exec_failed
+  to: exec_unknown
+  expect: rejected
+  rules: [APR-7, RET-6]
+  why: exec_failed is a terminal state
+- id: sm-apr-x42
+  from: exec_failed
+  to: rejected
+  expect: rejected
+  rules: [APR-16, APR-4]
+  why: exec_failed is a terminal state
+- id: sm-apr-x43
+  from: exec_failed
+  to: expired
+  expect: rejected
+  rules: [APR-12]
+  why: exec_failed is a terminal state
+- id: sm-apr-x44
+  from: exec_failed
+  to: canceled
+  expect: rejected
+  rules: [APR-6, HLD-3, MAN-10]
+  why: exec_failed is a terminal state
+- id: sm-apr-x45
+  from: exec_unknown
+  to: pending
+  expect: rejected
+  rules: [APR-1, APR-16, APR-17]
+  why: exec_unknown is a terminal state
+- id: sm-apr-x46
+  from: exec_unknown
+  to: approved
+  expect: rejected
+  rules: [APR-16, APR-4, APR-9]
+  why: exec_unknown is a terminal state
+- id: sm-apr-x47
+  from: exec_unknown
+  to: executing
+  expect: rejected
+  rules: [APR-5, APR-7, ORC-3]
+  why: exec_unknown is a terminal state
+- id: sm-apr-x48
+  from: exec_unknown
+  to: executed
+  expect: rejected
+  rules: [APR-7]
+  why: exec_unknown is a terminal state
+- id: sm-apr-x49
+  from: exec_unknown
+  to: exec_failed
+  expect: rejected
+  rules: [APR-7, HLD-3]
+  why: exec_unknown is a terminal state
+- id: sm-apr-x50
+  from: exec_unknown
+  to: exec_unknown
+  expect: rejected
+  rules: [APR-7, RET-6]
+  why: exec_unknown is a terminal state
+- id: sm-apr-x51
+  from: exec_unknown
+  to: rejected
+  expect: rejected
+  rules: [APR-16, APR-4]
+  why: exec_unknown is a terminal state
+- id: sm-apr-x52
+  from: exec_unknown
+  to: expired
+  expect: rejected
+  rules: [APR-12]
+  why: exec_unknown is a terminal state
+- id: sm-apr-x53
+  from: exec_unknown
+  to: canceled
+  expect: rejected
+  rules: [APR-6, HLD-3, MAN-10]
+  why: exec_unknown is a terminal state
+- id: sm-apr-x54
+  from: rejected
+  to: pending
+  expect: rejected
+  rules: [APR-1, APR-16, APR-17]
+  why: rejected is a terminal state
+- id: sm-apr-x55
+  from: rejected
+  to: approved
+  expect: rejected
+  rules: [APR-16, APR-4, APR-9]
+  why: rejected is a terminal state
+- id: sm-apr-x56
+  from: rejected
+  to: executing
+  expect: rejected
+  rules: [APR-5, APR-7, ORC-3]
+  why: rejected is a terminal state
+- id: sm-apr-x57
+  from: rejected
+  to: executed
+  expect: rejected
+  rules: [APR-7]
+  why: rejected is a terminal state
+- id: sm-apr-x58
+  from: rejected
+  to: exec_failed
+  expect: rejected
+  rules: [APR-7, HLD-3]
+  why: rejected is a terminal state
+- id: sm-apr-x59
+  from: rejected
+  to: exec_unknown
+  expect: rejected
+  rules: [APR-7, RET-6]
+  why: rejected is a terminal state
+- id: sm-apr-x60
+  from: rejected
+  to: rejected
+  expect: rejected
+  rules: [APR-16, APR-4]
+  why: rejected is a terminal state
+- id: sm-apr-x61
+  from: rejected
+  to: expired
+  expect: rejected
+  rules: [APR-12]
+  why: rejected is a terminal state
+- id: sm-apr-x62
+  from: rejected
+  to: canceled
+  expect: rejected
+  rules: [APR-6, HLD-3, MAN-10]
+  why: rejected is a terminal state
+- id: sm-apr-x63
+  from: expired
+  to: pending
+  expect: rejected
+  rules: [APR-1, APR-16, APR-17]
+  why: expired is a terminal state
+- id: sm-apr-x64
+  from: expired
+  to: approved
+  expect: rejected
+  rules: [APR-16, APR-4, APR-9]
+  why: expired is a terminal state
+- id: sm-apr-x65
+  from: expired
+  to: executing
+  expect: rejected
+  rules: [APR-5, APR-7, ORC-3]
+  why: expired is a terminal state
+- id: sm-apr-x66
+  from: expired
+  to: executed
+  expect: rejected
+  rules: [APR-7]
+  why: expired is a terminal state
+- id: sm-apr-x67
+  from: expired
+  to: exec_failed
+  expect: rejected
+  rules: [APR-7, HLD-3]
+  why: expired is a terminal state
+- id: sm-apr-x68
+  from: expired
+  to: exec_unknown
+  expect: rejected
+  rules: [APR-7, RET-6]
+  why: expired is a terminal state
+- id: sm-apr-x69
+  from: expired
+  to: rejected
+  expect: rejected
+  rules: [APR-16, APR-4]
+  why: expired is a terminal state
+- id: sm-apr-x70
+  from: expired
+  to: expired
+  expect: rejected
+  rules: [APR-12]
+  why: expired is a terminal state
+- id: sm-apr-x71
+  from: expired
+  to: canceled
+  expect: rejected
+  rules: [APR-6, HLD-3, MAN-10]
+  why: expired is a terminal state
+- id: sm-apr-x72
+  from: canceled
+  to: pending
+  expect: rejected
+  rules: [APR-1, APR-16, APR-17]
+  why: canceled is a terminal state
+- id: sm-apr-x73
+  from: canceled
+  to: approved
+  expect: rejected
+  rules: [APR-16, APR-4, APR-9]
+  why: canceled is a terminal state
+- id: sm-apr-x74
+  from: canceled
+  to: executing
+  expect: rejected
+  rules: [APR-5, APR-7, ORC-3]
+  why: canceled is a terminal state
+- id: sm-apr-x75
+  from: canceled
+  to: executed
+  expect: rejected
+  rules: [APR-7]
+  why: canceled is a terminal state
+- id: sm-apr-x76
+  from: canceled
+  to: exec_failed
+  expect: rejected
+  rules: [APR-7, HLD-3]
+  why: canceled is a terminal state
+- id: sm-apr-x77
+  from: canceled
+  to: exec_unknown
+  expect: rejected
+  rules: [APR-7, RET-6]
+  why: canceled is a terminal state
+- id: sm-apr-x78
+  from: canceled
+  to: rejected
+  expect: rejected
+  rules: [APR-16, APR-4]
+  why: canceled is a terminal state
+- id: sm-apr-x79
+  from: canceled
+  to: expired
+  expect: rejected
+  rules: [APR-12]
+  why: canceled is a terminal state
+- id: sm-apr-x80
+  from: canceled
+  to: canceled
+  expect: rejected
+  rules: [APR-6, HLD-3, MAN-10]
+  why: canceled is a terminal state

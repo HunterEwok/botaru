@@ -1,0 +1,67 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:botaru:schema:script-propose-response:1",
+  "title": "P3 propose_script: answer",
+  "description": "Draft acceptance answer: {run_ref, state: proposed} or {state: rejected, problems: [{step, reason}]}. The model gets short reasons with step numbers (PRM-8); a refusal creates no record and does not take the key (SCR-5).",
+  "x-botaru-direction": "output",
+  "x-botaru-rules": [
+    "SCR-5",
+    "PRM-8"
+  ],
+  "oneOf": [
+    {
+      "type": "object",
+      "required": [
+        "run_ref",
+        "state"
+      ],
+      "properties": {
+        "run_ref": {
+          "$ref": "urn:botaru:schema:common:1#/$defs/object_id"
+        },
+        "state": {
+          "const": "proposed"
+        }
+      }
+    },
+    {
+      "type": "object",
+      "required": [
+        "state",
+        "problems"
+      ],
+      "properties": {
+        "state": {
+          "const": "rejected"
+        },
+        "problems": {
+          "type": "array",
+          "maxItems": 20,
+          "items": {
+            "type": "object",
+            "required": [
+              "reason"
+            ],
+            "properties": {
+              "step": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 20,
+                "description": "Step number, if the refusal concerns a step."
+              },
+              "reason": {
+                "$ref": "urn:botaru:schema:common:1#/$defs/reason"
+              },
+              "path": {
+                "type": "string",
+                "maxLength": 200,
+                "description": "Path in the document for script_invalid."
+              }
+            }
+          },
+          "minItems": 1
+        }
+      }
+    }
+  ]
+}

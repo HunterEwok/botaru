@@ -1,0 +1,2182 @@
+# Operation map of the ports. Edited together with the port sheets spec/ports/*.md.
+registry: operations
+version: 1
+description: 'Operation map of the ports: one row per sheet operation. id is <port>.<operation>; port is P1-P4, C1-C4, E1-E5 or
+  T (the test-control port spec/ports/test-control.md); since is the skeleton version; request and response are the name of the schema spec/model/<name>.schema.json
+  (null if there is no schema, and then note says why); rules are rule numbers. For edge operations request is what the edge receives
+  (the body of the work or delivery), and response is what it hands in. Optional fields: lease (true if the call goes under a lease
+  and carries the Botaru-Lease header, or a string if only for some callers), on_behalf (the channel acts on behalf of a person:
+  the headers Botaru-On-Behalf and Botaru-Chat), credential (which handle is in Authorization instead of the worker token), idempotent_by
+  (the idempotency key), body (a special body shape in the binding), binding (a binding other than HTTP), transport (how an edge operation goes
+  through P1 or inside a process), wire (false for operations inside the core). profiles are the conformance profiles that need the operation: the union of the profiles of its rules, core for a row without rules. The HTTP path of a P1 and P2 operation is derived from the id by spec/bindings/http/README.md.'
+source: spec/ports/README.md
+entries:
+  - id: P1.hello
+    port: P1
+    op: hello
+    since: v0.1
+    request: p1-hello-request
+    response: p1-hello-response
+    rules: [TEN-4, DEP-2, INJ-2, LCY-7]
+    profiles: [core]
+  - id: P1.claim
+    port: P1
+    op: claim
+    since: v0.1
+    request: p1-claim-request
+    response: p1-claim-response
+    rules: [TEN-3, TEN-3a, FEN-1, DSP-1, DSP-2, DSP-4, DSP-10, HLD-1, IDN-8, MGR-1]
+    profiles: [core, manager, governance]
+    idempotent_by: 'none: each dispatch is a new lease'
+  - id: P1.heartbeat
+    port: P1
+    op: heartbeat
+    since: v0.1
+    request: p1-heartbeat-request
+    response: p1-heartbeat-response
+    rules: [FEN-2, FEN-4, DLV-11]
+    profiles: [core]
+    idempotent_by: arguments (IDM-3)
+    lease: true
+  - id: P1.complete
+    port: P1
+    op: complete
+    since: v0.1
+    request: p1-complete-request
+    response: p1-complete-response
+    rules: [FEN-2, DLV-2, DLV-6, MSG-9, OUT-1]
+    profiles: [core, messaging]
+    idempotent_by: arguments (IDM-3)
+    lease: true
+  - id: P1.fail
+    port: P1
+    op: fail
+    since: v0.1
+    request: p1-fail-request
+    response: p1-fail-response
+    rules: [FEN-2, FEN-3, CAP-2]
+    profiles: [core]
+    idempotent_by: arguments (IDM-3)
+    lease: true
+  - id: P1.release
+    port: P1
+    op: release
+    since: v0.1
+    request: p1-release-request
+    response: p1-release-response
+    rules: [FEN-2]
+    profiles: [core]
+    idempotent_by: arguments (IDM-3)
+    lease: true
+  - id: P1.enqueue
+    port: P1
+    op: enqueue
+    since: v0.1
+    request: enqueue-request
+    response: p1-enqueue-response
+    rules: [IDM-1, TEN-2, TEN-7, PRM-6, APR-5, BUD-1, DSP-7, RET-3, RT-2]
+    profiles: [core]
+    idempotent_by: idempotency_key, initiator and body hash (IDM-1)
+    lease: a job or agent attempt; an external program without a lease
+  - id: P1.cancel
+    port: P1
+    op: cancel
+    since: v0.1
+    request: p1-cancel-request
+    response: p1-cancel-response
+    rules: [PRM-9, IDM-3, APR-6]
+    profiles: [core]
+    idempotent_by: arguments (IDM-3)
+  - id: P1.task.get
+    port: P1
+    op: task.get
+    since: v0.1
+    request: p1-task-get-request
+    response: p1-task-get-response
+    rules: [PRM-9]
+    profiles: [core]
+  - id: P1.file.put
+    port: P1
+    op: file.put
+    since: v0.1
+    request: p1-file-put-request
+    response: p1-file-put-response
+    rules: [ART-1, ART-3, TEN-7]
+    profiles: [core]
+    body: 'multipart: a meta part by the request schema and a content part with the bytes'
+    lease: for job and the sandbox toolhost; a channel without a lease
+  - id: P1.file.get
+    port: P1
+    op: file.get
+    since: v0.1
+    request: p1-file-get-request
+    response: p1-file-get-response
+    rules: [ART-3, PRM-9, TEN-7]
+    profiles: [core]
+    body: the answer is the bytes, metadata in headers
+    lease: true
+  - id: P1.submit_activity
+    port: P1
+    op: submit_activity
+    since: v0.1
+    request: activity
+    response: p1-submit-activity-response
+    rules: [IDN-3, IDN-6, IDN-7, IDM-5, CNT-5]
+    profiles: [core]
+    idempotent_by: (channel, update_id) (IDM-5)
+  - id: P1.decide
+    port: P1
+    op: decide
+    since: v0.1
+    request: p1-decide-request
+    response: p1-decide-response
+    rules: [APR-4, APR-9, APR-11, IDN-3, REP-6, IDM-3, HLD-1]
+    profiles: [core, messaging]
+    idempotent_by: subject, (subject_kind, id, nonce) and decision (IDM-3)
+    on_behalf: true
+  - id: P1.card.details
+    port: P1
+    op: card.details
+    since: v0.1
+    request: p1-card-request
+    response: p1-card-details-response
+    rules: [APR-11, APR-14]
+    profiles: [core]
+    on_behalf: true
+  - id: P1.card.remind
+    port: P1
+    op: card.remind
+    since: v0.1
+    request: p1-card-request
+    response: p1-card-remind-response
+    rules: [APR-19, APR-4]
+    profiles: [core]
+    on_behalf: true
+  - id: P1.emit
+    port: P1
+    op: emit
+    since: v0.1
+    request: p1-emit-request
+    response: p1-emit-response
+    rules: [IDM-4, INJ-7]
+    profiles: [core]
+    lease: true
+  - id: P1.session.load
+    port: P1
+    op: session.load
+    since: v0.1
+    request: p1-session-load-request
+    response: p1-session-load-response
+    rules: [MEM-1, INJ-13]
+    profiles: [core]
+    credential: session handle
+  - id: P1.session.append
+    port: P1
+    op: session.append
+    since: v0.1
+    request: p1-session-append-request
+    response: p1-session-append-response
+    rules: [MEM-1, INJ-13]
+    profiles: [core]
+    credential: session handle
+    idempotent_by: entry.uuid
+  - id: P1.memory.search
+    port: P1
+    op: memory.search
+    since: v0.1
+    request: p1-memory-search-request
+    response: p1-memory-search-response
+    rules: [MEM-1, TEN-5]
+    profiles: [core]
+    credential: memory handle
+  - id: P1.memory.propose
+    port: P1
+    op: memory.propose
+    since: v0.1
+    request: p1-memory-propose-request
+    response: p1-memory-propose-response
+    rules: [MEM-1, MEM-3, TEN-5]
+    profiles: [core]
+    credential: memory handle
+    idempotent_by: hash of {key, content} (spec/hashing.md)
+  - id: P1.msg.send
+    port: P1
+    op: msg.send
+    since: v0.1
+    request: msg-send-request
+    response: msg-send-response
+    rules: [MSG-1, MSG-4, MSG-5, MSG-10, MSG-11, STA-1, HLD-3]
+    profiles: [core, messaging]
+    idempotent_by: idempotency_key
+    lease: a job attempt; worker code with its own token only genus state
+  - id: P1.msg.receive
+    port: P1
+    op: msg.receive
+    since: v0.1
+    request: p1-msg-receive-request
+    response: p1-msg-receive-response
+    rules: [MSG-4, MSG-6, MSG-7, MSG-8, TEN-3]
+    profiles: [core, messaging]
+    lease: an attempt; worker code with its own token only genus state
+  - id: P1.obs.query
+    port: P1
+    op: obs.query
+    since: v0.1
+    request: p1-obs-query-request
+    response: p1-obs-query-response
+    rules: [OBV-3, DEP-8, TEN-5]
+    profiles: [core, insights]
+    lease: true
+  - id: P1.msg.ack
+    port: P1
+    op: msg.ack
+    since: v0.1
+    request: p1-msg-ack-request
+    response: p1-msg-ack-response
+    rules: [MSG-9]
+    profiles: [messaging]
+    lease: true
+  - id: P1.msg.nack
+    port: P1
+    op: msg.nack
+    since: v0.1
+    request: p1-msg-ack-request
+    response: p1-msg-ack-response
+    rules: [MSG-9]
+    profiles: [messaging]
+    lease: true
+  - id: P1.campaign.propose
+    port: P1
+    op: campaign.propose
+    since: v0.1
+    request: campaign-propose-request
+    response: campaign-propose-response
+    rules: [ORC-1, ORC-5, ORC-6, ORC-8, ORC-14]
+    profiles: [campaign]
+    idempotent_by: idempotency_key
+    lease: true
+  - id: P1.campaign.get
+    port: P1
+    op: campaign.get
+    since: v0.1
+    request: p1-campaign-get-request
+    response: campaign
+    rules: [PRM-9]
+    profiles: [core]
+  - id: P1.campaign.control
+    port: P1
+    op: campaign.control
+    since: v0.1
+    request: p1-campaign-control-request
+    response: p1-campaign-control-response
+    rules: [APR-4, ORC-1]
+    profiles: [core, campaign]
+    on_behalf: true
+  - id: P1.script.get
+    port: P1
+    op: script.get
+    since: v0.1
+    request: p1-script-get-request
+    response: script-run
+    rules: [PRM-9]
+    profiles: [core]
+  - id: P1.script.control
+    port: P1
+    op: script.control
+    since: v0.1
+    request: p1-script-control-request
+    response: p1-script-control-response
+    rules: [SCR-6, SCR-7, SCR-10, SCR-11]
+    profiles: [campaign]
+    on_behalf: true
+  - id: P1.obs.append
+    port: P1
+    op: obs.append
+    since: v0.2
+    request: p1-obs-append-request
+    response: null
+    rules: [OBV-1, OBV-2]
+    profiles: [insights]
+    note: 'v0.2: there is no response schema until v0.2'
+    lease: true
+  - id: P1.escalation.submit
+    port: P1
+    op: escalation.submit
+    since: v0.2
+    request: null
+    response: null
+    rules: [MGR-5, MGR-6]
+    profiles: [manager]
+    note: 'v0.2: the schemas will appear with v0.2'
+    lease: true
+  - id: P1.grant.request
+    port: P1
+    op: grant.request
+    since: v0.2
+    request: p1-grant-request
+    response: null
+    rules: [MGR-17, MGR-18]
+    profiles: [manager]
+    note: 'v0.2: the response schema will appear with v0.2'
+    lease: true
+  - id: P2.apply
+    port: P2
+    op: apply
+    since: v0.1
+    request: p2-apply-request
+    response: p2-apply-response
+    rules: [MAN-1, MAN-2, MAN-6, AUD-1, PRM-13, PRM-14, CAP-6]
+    profiles: [core]
+  - id: P2.status
+    port: P2
+    op: status
+    since: v0.1
+    request: p2-tenant-request
+    response: p2-status-response
+    rules: [MAN-2, HLD-5, MAN-8, MGR-14]
+    profiles: [core, manager]
+  - id: P2.principal.add
+    port: P2
+    op: principal.add
+    since: v0.1
+    request: p2-principal-request
+    response: done-response
+    rules: [IDN-4, PRM-7, PRM-13, PRM-14]
+    profiles: [core]
+  - id: P2.principal.off
+    port: P2
+    op: principal.off
+    since: v0.1
+    request: p2-principal-request
+    response: done-response
+    rules: [IDN-4, APR-6]
+    profiles: [core]
+  - id: P2.principal.on
+    port: P2
+    op: principal.on
+    since: v0.1
+    request: p2-principal-request
+    response: done-response
+    rules: [IDN-4]
+    profiles: [core]
+  - id: P2.principal.set_identity
+    port: P2
+    op: principal.set_identity
+    since: v0.1
+    request: p2-principal-request
+    response: done-response
+    rules: [IDN-4]
+    profiles: [core]
+  - id: P2.invite.create
+    port: P2
+    op: invite.create
+    since: v0.1
+    request: p2-invite-request
+    response: p2-invite-response
+    rules: [PRM-7, PRM-13]
+    profiles: [core]
+  - id: P2.invite.confirm
+    port: P2
+    op: invite.confirm
+    since: v0.1
+    request: p2-invite-request
+    response: p2-invite-response
+    rules: [PRM-13]
+    profiles: [core]
+  - id: P2.invite.revoke
+    port: P2
+    op: invite.revoke
+    since: v0.1
+    request: p2-invite-request
+    response: p2-invite-response
+    rules: [PRM-7]
+    profiles: [core]
+  - id: P2.grant
+    port: P2
+    op: grant
+    since: v0.1
+    request: p2-grant-request
+    response: done-response
+    rules: [PRM-7, PRM-13, APR-6]
+    profiles: [core]
+  - id: P2.ungrant
+    port: P2
+    op: ungrant
+    since: v0.1
+    request: p2-grant-request
+    response: done-response
+    rules: [PRM-7, APR-6]
+    profiles: [core]
+  - id: P2.chat.bind
+    port: P2
+    op: chat.bind
+    since: v0.1
+    request: p2-chat-bind-request
+    response: done-response
+    rules: [DLV-7, REP-7, PRM-14]
+    profiles: [core, messaging]
+  - id: P2.worker.enroll
+    port: P2
+    op: worker.enroll
+    since: v0.1
+    request: p2-worker-enroll-request
+    response: p2-worker-enroll-response
+    rules: [TEN-4, DEP-2, IDN-4, IDN-5, IDN-8, DSP-10]
+    profiles: [core, governance]
+  - id: P2.worker.drain
+    port: P2
+    op: worker.drain
+    since: v0.1
+    request: p2-worker-request
+    response: done-response
+    rules: [HLD-2, HLD-3]
+    profiles: [core]
+  - id: P2.worker.revoke
+    port: P2
+    op: worker.revoke
+    since: v0.1
+    request: p2-worker-request
+    response: done-response
+    rules: [IDN-4, IDN-8]
+    profiles: [core, governance]
+  - id: P2.worker.rotate
+    port: P2
+    op: worker.rotate
+    since: v0.1
+    request: p2-worker-request
+    response: p2-worker-rotate-response
+    rules: [IDN-4]
+    profiles: [core]
+  - id: P2.worker.unblock
+    port: P2
+    op: worker.unblock
+    since: v0.1
+    request: p2-worker-request
+    response: done-response
+    rules: [DEP-2, INJ-2]
+    profiles: [core]
+  - id: P2.budget.set
+    port: P2
+    op: budget.set
+    since: v0.1
+    request: p2-budget-set-request
+    response: done-response
+    rules: [MAN-5, PRM-14]
+    profiles: [core]
+  - id: P2.task.show
+    port: P2
+    op: task.show
+    since: v0.1
+    request: p2-task-request
+    response: p2-task-show-response
+    rules: [PRM-9, PRM-15]
+    profiles: [core]
+  - id: P2.task.cancel
+    port: P2
+    op: task.cancel
+    since: v0.1
+    request: p2-task-request
+    response: done-response
+    rules: [PRM-9, PRM-15, APR-6]
+    profiles: [core]
+  - id: P2.task.list
+    port: P2
+    op: task.list
+    since: v0.1
+    request: p2-task-list-request
+    response: p2-task-list-response
+    rules: [PRM-15]
+    profiles: [core]
+  - id: P2.team.tasks
+    port: P2
+    op: team.tasks
+    since: v0.1
+    request: p2-task-list-request
+    response: p2-task-list-response
+    rules: [PRM-15]
+    profiles: [core]
+  - id: P2.about
+    port: P2
+    op: about
+    since: v0.1
+    request: p2-task-list-request
+    response: p2-task-list-response
+    rules: [PRM-15]
+    profiles: [core]
+  - id: P2.task.redrive
+    port: P2
+    op: task.redrive
+    since: v0.1
+    request: p2-redrive-request
+    response: done-response
+    rules: [DLV-4, APR-7, PRM-14]
+    profiles: [core]
+  - id: P2.delivery.redrive
+    port: P2
+    op: delivery.redrive
+    since: v0.1
+    request: p2-redrive-request
+    response: done-response
+    rules: [DLV-4, PRM-14]
+    profiles: [core]
+  - id: P2.deadletter.list
+    port: P2
+    op: deadletter.list
+    since: v0.1
+    request: p2-tenant-request
+    response: p2-deadletter-list-response
+    rules: [DLV-4, CAP-4]
+    profiles: [core]
+  - id: P2.audit.verify
+    port: P2
+    op: audit.verify
+    since: v0.1
+    request: p2-audit-verify-request
+    response: p2-audit-verify-response
+    rules: [AUD-6]
+    profiles: [core]
+  - id: P2.doctor
+    port: P2
+    op: doctor
+    since: v0.1
+    request: p2-tenant-request
+    response: p2-doctor-response
+    rules: [OBS-4, MON-2, MON-4, MON-11, HLD-5, CAP-5, RET-7, GW-9, RET-8, DEP-11]
+    profiles: [core, monitor]
+  - id: P2.health
+    port: P2
+    op: health
+    since: v0.1
+    request: empty-request
+    response: p2-health-response
+    rules: [MON-2, MON-11, CAP-5, OBS-4, OBS-9, TEN-2, LCY-6]
+    profiles: [core, monitor]
+  - id: P2.hold.set
+    port: P2
+    op: hold.set
+    since: v0.1
+    request: p2-hold-set-request
+    response: done-response
+    rules: [HLD-1, HLD-2, HLD-3, HLD-5, PRM-14, TEN-1]
+    profiles: [core]
+  - id: P2.hold.release
+    port: P2
+    op: hold.release
+    since: v0.1
+    request: p2-hold-release-request
+    response: done-response
+    rules: [HLD-2, HLD-5]
+    profiles: [core]
+  - id: P2.hold.list
+    port: P2
+    op: hold.list
+    since: v0.1
+    request: p2-tenant-request
+    response: p2-hold-list-response
+    rules: [HLD-5]
+    profiles: [core]
+  - id: P2.proposal.list
+    port: P2
+    op: proposal.list
+    since: v0.1
+    request: p2-proposal-list-request
+    response: p2-proposal-list-response
+    rules: [PRP-4, DIG-1]
+    profiles: [insights]
+  - id: P2.proposal.show
+    port: P2
+    op: proposal.show
+    since: v0.1
+    request: p2-proposal-show-request
+    response: p2-proposal-show-response
+    rules: [PRP-4, PRP-20]
+    profiles: [insights]
+  - id: P2.proposal.link_commit
+    port: P2
+    op: proposal.link_commit
+    since: v0.1
+    request: p2-proposal-link-commit-request
+    response: done-response
+    rules: [PRP-19, PRP-8]
+    profiles: [insights]
+  - id: P2.commission.status
+    port: P2
+    op: commission.status
+    since: v0.1
+    request: p2-tenant-request
+    response: p2-commission-status-response
+    rules: [COM-6, COM-7, COM-8, COM-10]
+    profiles: [insights]
+  - id: P2.obs.series
+    port: P2
+    op: obs.series
+    since: v0.1
+    request: p2-obs-series-request
+    response: p2-obs-series-response
+    rules: [OBV-3, OBV-4]
+    profiles: [insights]
+  - id: P2.erasure.request
+    port: P2
+    op: erasure.request
+    since: v0.1
+    request: p2-erasure-request
+    response: done-response
+    rules: [RET-7, RET-5, RET-6]
+    profiles: [core]
+  - id: P2.erasure.status
+    port: P2
+    op: erasure.status
+    since: v0.1
+    request: p2-erasure-id-request
+    response: deletion-request
+    rules: [RET-7]
+    profiles: [core]
+  - id: P2.erasure.list
+    port: P2
+    op: erasure.list
+    since: v0.1
+    request: p2-tenant-request
+    response: p2-erasure-list-response
+    rules: [RET-7]
+    profiles: [core]
+  - id: P2.erasure.retry
+    port: P2
+    op: erasure.retry
+    since: v0.1
+    request: p2-erasure-id-request
+    response: done-response
+    rules: [RET-7]
+    profiles: [core]
+  - id: P2.principal.data_request
+    port: P2
+    op: principal.data_request
+    since: v0.1
+    request: p2-data-request-request
+    response: done-response
+    rules: [SEC-11, RET-7, RET-4]
+    profiles: [core]
+  - id: P2.erasure.match
+    port: P2
+    op: erasure.match
+    since: v0.1
+    request: p2-erasure-match-request
+    response: done-response
+    rules: [SEC-11, RET-7, RET-4]
+    profiles: [core]
+  - id: P2.principal.offboard
+    port: P2
+    op: principal.offboard
+    since: v0.1
+    request: p2-principal-offboard-request
+    response: done-response
+    rules: [RET-7, MEM-4, LCY-3, PRM-14, IDN-13]
+    profiles: [core, governance]
+    note: 'v0.1 by the rules MEM-4, RET-7, IDN-13 and PRM-14: disabling, an erasure request (tenant, subject), the principal_left notice. Parts of rule LCY-3 (version v0.2): the offboarded state, the principal.offboarded event and deletion of the Identity'
+  - id: P2.restore.complete
+    port: P2
+    op: restore.complete
+    since: v0.1
+    request: p2-restore-complete-request
+    response: done-response
+    rules: [RET-6]
+    profiles: [core]
+  - id: P2.backup.report
+    port: P2
+    op: backup.report
+    since: v0.1
+    request: p2-backup-report-request
+    response: done-response
+    rules: [RET-5, RET-8]
+    profiles: [core]
+  - id: P2.campaign.list
+    port: P2
+    op: campaign.list
+    since: v0.1
+    request: p2-tenant-request
+    response: p2-list-response
+    rules: [ORC-1]
+    profiles: [campaign]
+  - id: P2.campaign.show
+    port: P2
+    op: campaign.show
+    since: v0.1
+    request: p2-object-request
+    response: campaign
+    rules: [ORC-1]
+    profiles: [campaign]
+  - id: P2.campaign.control
+    port: P2
+    op: campaign.control
+    since: v0.1
+    request: p2-campaign-control-request
+    response: p1-campaign-control-response
+    rules: [ORC-1]
+    profiles: [campaign]
+  - id: P2.campaign.retry_failed
+    port: P2
+    op: campaign.retry_failed
+    since: v0.1
+    request: p2-object-request
+    response: done-response
+    rules: [ORC-1]
+    profiles: [campaign]
+  - id: P2.script.list
+    port: P2
+    op: script.list
+    since: v0.1
+    request: p2-tenant-request
+    response: p2-list-response
+    rules: [SCR-5]
+    profiles: [campaign]
+  - id: P2.script.show
+    port: P2
+    op: script.show
+    since: v0.1
+    request: p2-object-request
+    response: script-run
+    rules: [SCR-5]
+    profiles: [campaign]
+  - id: P2.script.cancel
+    port: P2
+    op: script.cancel
+    since: v0.1
+    request: p2-object-request
+    response: done-response
+    rules: [SCR-11]
+    profiles: [campaign]
+  - id: P2.seat.assign
+    port: P2
+    op: seat.assign
+    since: v0.1
+    request: p2-seat-assign-request
+    response: done-response
+    rules: [IDN-10, MGR-1, PRM-14]
+    profiles: [core, manager, governance]
+  - id: P2.seat.vacate
+    port: P2
+    op: seat.vacate
+    since: v0.1
+    request: p2-seat-vacate-request
+    response: done-response
+    rules: [IDN-10, MGR-1, PRM-14]
+    profiles: [core, manager, governance]
+  - id: P2.seat.resume
+    port: P2
+    op: seat.resume
+    since: v0.1
+    request: p2-seat-resume-request
+    response: done-response
+    rules: [GOV-22, IDN-10, PRM-14]
+    profiles: [core, governance]
+  - id: P2.control.revert
+    port: P2
+    op: control.revert
+    since: v0.1
+    request: p2-control-revert-request
+    response: done-response
+    rules: [MGR-15, MGR-39, PRM-14, PRM-15]
+    profiles: [core, manager]
+  - id: P2.control.list
+    port: P2
+    op: control.list
+    since: v0.1
+    request: p2-tenant-request
+    response: p2-list-response
+    rules: [MGR-9]
+    profiles: [manager]
+  - id: P2.control.apply
+    port: P2
+    op: control.apply
+    since: v0.1
+    request: p2-control-apply-request
+    response: done-response
+    rules: [MGR-9, MGR-13, PRM-14]
+    profiles: [core, manager]
+  - id: P2.incident.list
+    port: P2
+    op: incident.list
+    since: v0.1
+    request: p2-tenant-request
+    response: p2-list-response
+    rules: [MGR-8]
+    profiles: [manager]
+  - id: P2.incident.show
+    port: P2
+    op: incident.show
+    since: v0.1
+    request: p2-object-request
+    response: incident
+    rules: [MGR-8]
+    profiles: [manager]
+  - id: P2.incident.ack
+    port: P2
+    op: incident.ack
+    since: v0.1
+    request: p2-object-request
+    response: done-response
+    rules: [MGR-8]
+    profiles: [manager]
+  - id: P2.incident.close
+    port: P2
+    op: incident.close
+    since: v0.1
+    request: p2-object-request
+    response: done-response
+    rules: [MGR-8]
+    profiles: [manager]
+  - id: P2.incident.dismiss
+    port: P2
+    op: incident.dismiss
+    since: v0.1
+    request: p2-incident-dismiss-request
+    response: done-response
+    rules: [MGR-8, GOV-13]
+    profiles: [manager, governance]
+  - id: P2.manager.direct
+    port: P2
+    op: manager.direct
+    since: v0.1
+    request: p2-manager-direct-request
+    response: done-response
+    rules: [MGR-4]
+    profiles: [manager]
+  - id: P2.manager.resume
+    port: P2
+    op: manager.resume
+    since: v0.1
+    request: p2-manager-resume-request
+    response: done-response
+    rules: [MGR-14]
+    profiles: [manager]
+  - id: P2.manager.cost
+    port: P2
+    op: manager.cost
+    since: v0.1
+    request: p2-tenant-request
+    response: p2-manager-cost-response
+    rules: [MGR-28]
+    profiles: [manager]
+  - id: P2.manager.reads
+    port: P2
+    op: manager.reads
+    since: v0.1
+    request: p2-manager-reads-request
+    response: p2-manager-reads-response
+    rules: [AUD-7]
+    profiles: [core]
+  - id: P2.bot.list
+    port: P2
+    op: bot.list
+    since: v0.1
+    request: p2-tenant-request
+    response: p2-list-response
+    rules: [IDN-8, IDN-9]
+    profiles: [governance]
+  - id: P2.bot.show
+    port: P2
+    op: bot.show
+    since: v0.1
+    request: p2-object-request
+    response: bot
+    rules: [IDN-8, IDN-9, PRM-14]
+    profiles: [core, governance]
+  - id: P2.bot.retire
+    port: P2
+    op: bot.retire
+    since: v0.1
+    request: p2-bot-retire-request
+    response: done-response
+    rules: [IDN-11, PRM-14]
+    profiles: [core, governance]
+  - id: P2.audit.query
+    port: P2
+    op: audit.query
+    since: v0.1
+    request: p2-audit-query-request
+    response: p2-audit-query-response
+    rules: [AUD-7, AUD-1, AUD-2]
+    profiles: [core]
+  - id: P2.spend.reconcile
+    port: P2
+    op: spend.reconcile
+    since: v0.1
+    request: p2-spend-reconcile-request
+    response: done-response
+    rules: [BUD-10, PRM-14]
+    profiles: [core]
+  - id: P2.core.drain
+    port: P2
+    op: core.drain
+    since: v0.1
+    request: p2-core-drain-request
+    response: done-response
+    rules: [LCY-6, PRM-14, MON-11]
+    profiles: [core, monitor]
+  - id: P2.service.control
+    port: P2
+    op: service.control
+    since: v0.1
+    request: p2-service-control-request
+    response: service-control-result
+    rules: [MON-8, APR-18, PRM-15, PRM-18]
+    profiles: [core]
+  - id: P2.dispatch.explain
+    port: P2
+    op: dispatch.explain
+    since: v0.2
+    request: null
+    response: null
+    rules: [DSP-9]
+    profiles: [core]
+    note: 'v0.2: the schemas will appear with v0.2'
+  - id: P2.dispatch.queue
+    port: P2
+    op: dispatch.queue
+    since: v0.2
+    request: null
+    response: null
+    rules: [DSP-9]
+    profiles: [core]
+    note: 'v0.2: the schemas will appear with v0.2'
+  - id: P2.model_grant.list
+    port: P2
+    op: model_grant.list
+    since: v0.2
+    request: null
+    response: null
+    rules: [MGR-17]
+    profiles: [manager]
+    note: 'v0.2: the schemas will appear with v0.2'
+  - id: P2.model_grant.issue
+    port: P2
+    op: model_grant.issue
+    since: v0.2
+    request: null
+    response: null
+    rules: [MGR-18]
+    profiles: [manager]
+    note: 'v0.2: the schemas will appear with v0.2'
+  - id: P2.model_grant.revoke
+    port: P2
+    op: model_grant.revoke
+    since: v0.2
+    request: null
+    response: null
+    rules: [MGR-18]
+    profiles: [manager]
+    note: 'v0.2: the schemas will appear with v0.2'
+  - id: P2.escalation.list
+    port: P2
+    op: escalation.list
+    since: v0.2
+    request: null
+    response: null
+    rules: [MGR-5]
+    profiles: [manager]
+    note: 'v0.2: the schemas will appear with v0.2'
+  - id: P2.escalation.show
+    port: P2
+    op: escalation.show
+    since: v0.2
+    request: null
+    response: null
+    rules: [MGR-5]
+    profiles: [manager]
+    note: 'v0.2: the schemas will appear with v0.2'
+  - id: P2.governance.list
+    port: P2
+    op: governance.list
+    since: v0.2
+    request: null
+    response: null
+    rules: [GOV-12]
+    profiles: [governance]
+    note: 'v0.2: the schemas will appear with v0.2'
+  - id: P2.governance.show
+    port: P2
+    op: governance.show
+    since: v0.2
+    request: null
+    response: null
+    rules: [GOV-12]
+    profiles: [governance]
+    note: 'v0.2: the schemas will appear with v0.2'
+  - id: P2.governance.cancel
+    port: P2
+    op: governance.cancel
+    since: v0.2
+    request: null
+    response: null
+    rules: [GOV-12, GOV-23]
+    profiles: [governance]
+    note: 'v0.2: the schemas will appear with v0.2'
+  - id: P2.attribution.list
+    port: P2
+    op: attribution.list
+    since: v0.2
+    request: null
+    response: null
+    rules: [GOV-13]
+    profiles: [governance]
+    note: 'v0.2: the schemas will appear with v0.2'
+  - id: P2.attribution.create
+    port: P2
+    op: attribution.create
+    since: v0.2
+    request: null
+    response: null
+    rules: [GOV-13]
+    profiles: [governance]
+    note: 'v0.2: the schemas will appear with v0.2'
+  - id: P2.tenant.suspend
+    port: P2
+    op: tenant.suspend
+    since: v0.2
+    request: null
+    response: null
+    rules: [LCY-1]
+    profiles: [core]
+    note: 'v0.2: the schemas will appear with v0.2'
+  - id: P2.tenant.offboard
+    port: P2
+    op: tenant.offboard
+    since: v0.2
+    request: null
+    response: null
+    rules: [LCY-1]
+    profiles: [core]
+    note: 'v0.2: the schemas will appear with v0.2'
+  - id: P2.tenant.delete
+    port: P2
+    op: tenant.delete
+    since: v0.2
+    request: null
+    response: null
+    rules: [LCY-1, RET-3]
+    profiles: [core]
+    note: 'v0.2: the schemas will appear with v0.2'
+  - id: P2.tenant.export
+    port: P2
+    op: tenant.export
+    since: v0.2
+    request: null
+    response: null
+    rules: [LCY-2, SEC-10]
+    profiles: [core]
+    note: 'v0.2: the schemas will appear with v0.2'
+  - id: P2.principal.export
+    port: P2
+    op: principal.export
+    since: v0.2
+    request: null
+    response: null
+    rules: [LCY-2, SEC-10]
+    profiles: [core]
+    note: 'v0.2: the schemas will appear with v0.2'
+  - id: P2.msg.list
+    port: P2
+    op: msg.list
+    since: v0.2
+    request: null
+    response: null
+    rules: [MSG-3]
+    profiles: [messaging]
+    note: 'v0.2: the schemas will appear with v0.2'
+  - id: P2.msg.show
+    port: P2
+    op: msg.show
+    since: v0.2
+    request: null
+    response: null
+    rules: [MSG-3]
+    profiles: [messaging]
+    note: 'v0.2: the schemas will appear with v0.2'
+  - id: P2.inbox.status
+    port: P2
+    op: inbox.status
+    since: v0.2
+    request: null
+    response: null
+    rules: [MSG-3]
+    profiles: [messaging]
+    note: 'v0.2: the schemas will appear with v0.2'
+  - id: P2.task.journal
+    port: P2
+    op: task.journal
+    since: v0.2
+    request: null
+    response: null
+    rules: [AUD-4]
+    profiles: [core]
+    note: 'v0.2: the schemas will appear with v0.2'
+  - id: P2.task.replay
+    port: P2
+    op: task.replay
+    since: v0.2
+    request: null
+    response: null
+    rules: [APR-8, AUD-4]
+    profiles: [core]
+    note: 'v0.2: the schemas will appear with v0.2'
+  - id: P2.principal.data_report
+    port: P2
+    op: principal.data_report
+    since: v0.2
+    request: null
+    response: null
+    rules: [SEC-10, SEC-11]
+    profiles: [core]
+    note: 'v0.2: the schemas will appear with v0.2'
+  - id: P2.tenant.privacy_report
+    port: P2
+    op: tenant.privacy_report
+    since: v0.2
+    request: null
+    response: null
+    rules: [SEC-12]
+    profiles: [core]
+    note: 'v0.2: the schemas will appear with v0.2'
+  - id: P2.kb.upload
+    port: P2
+    op: kb.upload
+    since: v0.2
+    request: null
+    response: null
+    rules: [KNW-4, ART-4]
+    profiles: [core]
+    note: 'v0.2: the schemas will appear with v0.2'
+  - id: P3.server/discover
+    port: P3
+    op: server/discover
+    since: v0.1
+    request: empty-request
+    response: p3-server-discover-response
+    rules: [SEC-3]
+    profiles: [core]
+    credential: tool handle
+    binding: spec/bindings/mcp/README.md
+  - id: P3.tools/list
+    port: P3
+    op: tools/list
+    since: v0.1
+    request: empty-request
+    response: p3-tools-list-response
+    rules: [PRM-4, APR-1, INJ-2, RT-4]
+    profiles: [core]
+    credential: tool handle
+    binding: spec/bindings/mcp/README.md
+  - id: P3.tools/call
+    port: P3
+    op: tools/call
+    since: v0.1
+    request: p3-tool-call-request
+    response: p3-tool-call-response
+    rules: [PRM-3, PRM-4, PRM-5, INJ-1, INJ-4, INJ-13, TEN-3a, HLD-1, CNT-4]
+    profiles: [core]
+    credential: tool handle
+    binding: spec/bindings/mcp/README.md
+    note: the arguments and results of built-in tools are named by spec/model/builtin-tools.yaml (args_schema, result_schema)
+  - id: P4.model.call
+    port: P4
+    op: model.call
+    since: v0.1
+    request: p4-anthropic-messages-request
+    response: p4-anthropic-messages-response
+    rules: [GW-1, GW-2, GW-3, GW-7, GW-11, GW-12, GW-14, GW-16, BUD-2, BUD-3, BUD-11]
+    profiles: [core]
+    credential: model handle
+    binding: spec/bindings/model-providers/anthropic.md
+    note: 'there is no named operation: the provider format; the schemas are the allowlist of the reference binding, another binding has its own'
+  - id: C2.authorize
+    port: C2
+    op: authorize
+    since: v0.1
+    request: authz-request
+    response: authz-decision
+    rules: [PRM-1, PRM-2, TEN-2, APR-4, HLD-1]
+    profiles: [core]
+    wire: false
+  - id: C2.catalog
+    port: C2
+    op: catalog
+    since: v0.1
+    request: null
+    response: null
+    rules: [PRM-4, PRM-5]
+    profiles: [core]
+    wire: false
+    note: 'inside the core: the shape is the signature of the implementation function'
+  - id: C2.explain
+    port: C2
+    op: explain
+    since: v0.1
+    request: null
+    response: null
+    rules: [PRM-8]
+    profiles: [core]
+    wire: false
+    note: 'inside the core: the shape is the signature of the implementation function'
+  - id: C1.enqueue
+    port: C1
+    op: enqueue
+    since: v0.1
+    request: null
+    response: null
+    rules: []
+    profiles: [core]
+    wire: false
+    note: 'inside the core: the implementation sets the shape, the skeleton has no store binding, the operation is not on the wire'
+  - id: C1.claim
+    port: C1
+    op: claim
+    since: v0.1
+    request: null
+    response: null
+    rules: []
+    profiles: [core]
+    wire: false
+    note: 'inside the core: the implementation sets the shape, the skeleton has no store binding, the operation is not on the wire'
+  - id: C1.heartbeat
+    port: C1
+    op: heartbeat
+    since: v0.1
+    request: null
+    response: null
+    rules: []
+    profiles: [core]
+    wire: false
+    note: 'inside the core: the implementation sets the shape, the skeleton has no store binding, the operation is not on the wire'
+  - id: C1.complete
+    port: C1
+    op: complete
+    since: v0.1
+    request: null
+    response: null
+    rules: []
+    profiles: [core]
+    wire: false
+    note: 'inside the core: the implementation sets the shape, the skeleton has no store binding, the operation is not on the wire'
+  - id: C1.fail
+    port: C1
+    op: fail
+    since: v0.1
+    request: null
+    response: null
+    rules: []
+    profiles: [core]
+    wire: false
+    note: 'inside the core: the implementation sets the shape, the skeleton has no store binding, the operation is not on the wire'
+  - id: C1.release
+    port: C1
+    op: release
+    since: v0.1
+    request: null
+    response: null
+    rules: []
+    profiles: [core]
+    wire: false
+    note: 'inside the core: the implementation sets the shape, the skeleton has no store binding, the operation is not on the wire'
+  - id: C1.cancel
+    port: C1
+    op: cancel
+    since: v0.1
+    request: null
+    response: null
+    rules: []
+    profiles: [core]
+    wire: false
+    note: 'inside the core: the implementation sets the shape, the skeleton has no store binding, the operation is not on the wire'
+  - id: C1.lease.extend
+    port: C1
+    op: lease.extend
+    since: v0.1
+    request: null
+    response: null
+    rules: []
+    profiles: [core]
+    wire: false
+    note: 'inside the core: the implementation sets the shape, the skeleton has no store binding, the operation is not on the wire'
+  - id: C1.reap
+    port: C1
+    op: reap
+    since: v0.1
+    request: null
+    response: null
+    rules: []
+    profiles: [core]
+    wire: false
+    note: 'inside the core: the implementation sets the shape, the skeleton has no store binding, the operation is not on the wire'
+  - id: C1.approval.create
+    port: C1
+    op: approval.create
+    since: v0.1
+    request: null
+    response: null
+    rules: []
+    profiles: [core]
+    wire: false
+    note: 'inside the core: the implementation sets the shape, the skeleton has no store binding, the operation is not on the wire'
+  - id: C1.approval.decide
+    port: C1
+    op: approval.decide
+    since: v0.1
+    request: null
+    response: null
+    rules: []
+    profiles: [core]
+    wire: false
+    note: 'inside the core: the implementation sets the shape, the skeleton has no store binding, the operation is not on the wire'
+  - id: C1.service_grant
+    port: C1
+    op: service_grant
+    since: v0.1
+    request: null
+    response: null
+    rules: []
+    profiles: [core]
+    wire: false
+    note: 'inside the core: the implementation sets the shape, the skeleton has no store binding, the operation is not on the wire'
+  - id: C1.meter.reserve
+    port: C1
+    op: meter.reserve
+    since: v0.1
+    request: null
+    response: null
+    rules: []
+    profiles: [core]
+    wire: false
+    note: 'inside the core: the implementation sets the shape, the skeleton has no store binding, the operation is not on the wire'
+  - id: C1.meter.commit
+    port: C1
+    op: meter.commit
+    since: v0.1
+    request: null
+    response: null
+    rules: []
+    profiles: [core]
+    wire: false
+    note: 'inside the core: the implementation sets the shape, the skeleton has no store binding, the operation is not on the wire'
+  - id: C1.meter.release
+    port: C1
+    op: meter.release
+    since: v0.1
+    request: null
+    response: null
+    rules: []
+    profiles: [core]
+    wire: false
+    note: 'inside the core: the implementation sets the shape, the skeleton has no store binding, the operation is not on the wire'
+  - id: C1.event.append
+    port: C1
+    op: event.append
+    since: v0.1
+    request: null
+    response: null
+    rules: []
+    profiles: [core]
+    wire: false
+    note: 'inside the core: the implementation sets the shape, the skeleton has no store binding, the operation is not on the wire'
+  - id: C1.event.read
+    port: C1
+    op: event.read
+    since: v0.1
+    request: null
+    response: null
+    rules: []
+    profiles: [core]
+    wire: false
+    note: 'inside the core: the implementation sets the shape, the skeleton has no store binding, the operation is not on the wire'
+  - id: C1.audit.append
+    port: C1
+    op: audit.append
+    since: v0.1
+    request: null
+    response: null
+    rules: []
+    profiles: [core]
+    wire: false
+    note: 'inside the core: the implementation sets the shape, the skeleton has no store binding, the operation is not on the wire'
+  - id: C1.msg.stage
+    port: C1
+    op: msg.stage
+    since: v0.1
+    request: null
+    response: null
+    rules: []
+    profiles: [core]
+    wire: false
+    note: 'inside the core: the implementation sets the shape, the skeleton has no store binding, the operation is not on the wire'
+  - id: C1.msg.publish
+    port: C1
+    op: msg.publish
+    since: v0.1
+    request: null
+    response: null
+    rules: []
+    profiles: [core]
+    wire: false
+    note: 'inside the core: the implementation sets the shape, the skeleton has no store binding, the operation is not on the wire'
+  - id: C1.msg.lease
+    port: C1
+    op: msg.lease
+    since: v0.1
+    request: null
+    response: null
+    rules: []
+    profiles: [core]
+    wire: false
+    note: 'inside the core: the implementation sets the shape, the skeleton has no store binding, the operation is not on the wire'
+  - id: C1.msg.ack
+    port: C1
+    op: msg.ack
+    since: v0.1
+    request: null
+    response: null
+    rules: []
+    profiles: [core]
+    wire: false
+    note: 'inside the core: the implementation sets the shape, the skeleton has no store binding, the operation is not on the wire'
+  - id: C1.msg.nack
+    port: C1
+    op: msg.nack
+    since: v0.1
+    request: null
+    response: null
+    rules: []
+    profiles: [core]
+    wire: false
+    note: 'inside the core: the implementation sets the shape, the skeleton has no store binding, the operation is not on the wire'
+  - id: C1.msg.expire
+    port: C1
+    op: msg.expire
+    since: v0.1
+    request: null
+    response: null
+    rules: []
+    profiles: [core]
+    wire: false
+    note: 'inside the core: the implementation sets the shape, the skeleton has no store binding, the operation is not on the wire'
+  - id: C1.state.put
+    port: C1
+    op: state.put
+    since: v0.1
+    request: null
+    response: null
+    rules: []
+    profiles: [core]
+    wire: false
+    note: 'inside the core: the implementation sets the shape, the skeleton has no store binding, the operation is not on the wire'
+  - id: C1.hold.set
+    port: C1
+    op: hold.set
+    since: v0.1
+    request: null
+    response: null
+    rules: []
+    profiles: [core]
+    wire: false
+    note: 'inside the core: the implementation sets the shape, the skeleton has no store binding, the operation is not on the wire'
+  - id: C1.hold.release
+    port: C1
+    op: hold.release
+    since: v0.1
+    request: null
+    response: null
+    rules: []
+    profiles: [core]
+    wire: false
+    note: 'inside the core: the implementation sets the shape, the skeleton has no store binding, the operation is not on the wire'
+  - id: C1.file.put
+    port: C1
+    op: file.put
+    since: v0.1
+    request: null
+    response: null
+    rules: []
+    profiles: [core]
+    wire: false
+    note: 'inside the core: the implementation sets the shape, the skeleton has no store binding, the operation is not on the wire'
+  - id: C1.file.get
+    port: C1
+    op: file.get
+    since: v0.1
+    request: null
+    response: null
+    rules: []
+    profiles: [core]
+    wire: false
+    note: 'inside the core: the implementation sets the shape, the skeleton has no store binding, the operation is not on the wire'
+  - id: C1.file.stat
+    port: C1
+    op: file.stat
+    since: v0.1
+    request: null
+    response: null
+    rules: []
+    profiles: [core]
+    wire: false
+    note: 'inside the core: the implementation sets the shape, the skeleton has no store binding, the operation is not on the wire'
+  - id: C1.file.purge
+    port: C1
+    op: file.purge
+    since: v0.1
+    request: null
+    response: null
+    rules: []
+    profiles: [core]
+    wire: false
+    note: 'inside the core: the implementation sets the shape, the skeleton has no store binding, the operation is not on the wire'
+  - id: C1.erasure.*
+    port: C1
+    op: erasure.*
+    since: v0.1
+    request: null
+    response: null
+    rules: []
+    profiles: [core]
+    wire: false
+    note: 'inside the core: the implementation sets the shape, the skeleton has no store binding, the operation is not on the wire'
+  - id: C1.task.purge
+    port: C1
+    op: task.purge
+    since: v0.1
+    request: null
+    response: null
+    rules: [RET-3, RET-4, RET-7, SEC-11]
+    profiles: [core]
+    wire: false
+    note: 'inside the core: the implementation sets the shape, the skeleton has no store binding, the operation is not on the wire'
+  - id: C1.epoch.advance
+    port: C1
+    op: epoch.advance
+    since: v0.1
+    request: null
+    response: null
+    rules: []
+    profiles: [core]
+    wire: false
+    note: 'inside the core: the implementation sets the shape, the skeleton has no store binding, the operation is not on the wire'
+  - id: C1.campaign.create
+    port: C1
+    op: campaign.create
+    since: v0.1
+    request: null
+    response: null
+    rules: []
+    profiles: [core]
+    wire: false
+    note: 'inside the core: the implementation sets the shape, the skeleton has no store binding, the operation is not on the wire'
+  - id: C1.campaign.release
+    port: C1
+    op: campaign.release
+    since: v0.1
+    request: null
+    response: null
+    rules: []
+    profiles: [core]
+    wire: false
+    note: 'inside the core: the implementation sets the shape, the skeleton has no store binding, the operation is not on the wire'
+  - id: C1.campaign.item_close
+    port: C1
+    op: campaign.item_close
+    since: v0.1
+    request: null
+    response: null
+    rules: []
+    profiles: [core]
+    wire: false
+    note: 'inside the core: the implementation sets the shape, the skeleton has no store binding, the operation is not on the wire'
+  - id: C1.campaign.control
+    port: C1
+    op: campaign.control
+    since: v0.1
+    request: null
+    response: null
+    rules: []
+    profiles: [core]
+    wire: false
+    note: 'inside the core: the implementation sets the shape, the skeleton has no store binding, the operation is not on the wire'
+  - id: C1.script.create
+    port: C1
+    op: script.create
+    since: v0.1
+    request: null
+    response: null
+    rules: []
+    profiles: [core]
+    wire: false
+    note: 'inside the core: the implementation sets the shape, the skeleton has no store binding, the operation is not on the wire'
+  - id: C1.script.release_step
+    port: C1
+    op: script.release_step
+    since: v0.1
+    request: null
+    response: null
+    rules: []
+    profiles: [core]
+    wire: false
+    note: 'inside the core: the implementation sets the shape, the skeleton has no store binding, the operation is not on the wire'
+  - id: C1.script.step_close
+    port: C1
+    op: script.step_close
+    since: v0.1
+    request: null
+    response: null
+    rules: []
+    profiles: [core]
+    wire: false
+    note: 'inside the core: the implementation sets the shape, the skeleton has no store binding, the operation is not on the wire'
+  - id: C1.script.control
+    port: C1
+    op: script.control
+    since: v0.1
+    request: null
+    response: null
+    rules: []
+    profiles: [core]
+    wire: false
+    note: 'inside the core: the implementation sets the shape, the skeleton has no store binding, the operation is not on the wire'
+  - id: C1.seat.assign
+    port: C1
+    op: seat.assign
+    since: v0.1
+    request: null
+    response: null
+    rules: []
+    profiles: [core]
+    wire: false
+    note: 'inside the core: the implementation sets the shape, the skeleton has no store binding, the operation is not on the wire'
+  - id: C1.seat.vacate
+    port: C1
+    op: seat.vacate
+    since: v0.1
+    request: null
+    response: null
+    rules: []
+    profiles: [core]
+    wire: false
+    note: 'inside the core: the implementation sets the shape, the skeleton has no store binding, the operation is not on the wire'
+  - id: C1.seat.resume
+    port: C1
+    op: seat.resume
+    since: v0.1
+    request: null
+    response: null
+    rules: []
+    profiles: [core]
+    wire: false
+    note: 'inside the core: the implementation sets the shape, the skeleton has no store binding, the operation is not on the wire'
+  - id: C1.control.apply
+    port: C1
+    op: control.apply
+    since: v0.1
+    request: null
+    response: null
+    rules: []
+    profiles: [core]
+    wire: false
+    note: 'inside the core: the implementation sets the shape, the skeleton has no store binding, the operation is not on the wire'
+  - id: C1.incident.*
+    port: C1
+    op: incident.*
+    since: v0.1
+    request: null
+    response: null
+    rules: []
+    profiles: [core]
+    wire: false
+    note: 'inside the core: the implementation sets the shape, the skeleton has no store binding, the operation is not on the wire'
+  - id: C1.bot.create
+    port: C1
+    op: bot.create
+    since: v0.1
+    request: null
+    response: null
+    rules: []
+    profiles: [core]
+    wire: false
+    note: 'inside the core: the implementation sets the shape, the skeleton has no store binding, the operation is not on the wire'
+  - id: C1.bot.bind
+    port: C1
+    op: bot.bind
+    since: v0.1
+    request: null
+    response: null
+    rules: []
+    profiles: [core]
+    wire: false
+    note: 'inside the core: the implementation sets the shape, the skeleton has no store binding, the operation is not on the wire'
+  - id: C1.bot.retire
+    port: C1
+    op: bot.retire
+    since: v0.1
+    request: null
+    response: null
+    rules: []
+    profiles: [core]
+    wire: false
+    note: 'inside the core: the implementation sets the shape, the skeleton has no store binding, the operation is not on the wire'
+  - id: C3.append
+    port: C3
+    op: append
+    since: v0.1
+    request: null
+    response: null
+    rules: []
+    profiles: [core]
+    wire: false
+    note: 'inside the core: the implementation sets the shape, the skeleton has no store binding, the operation is not on the wire'
+  - id: C3.load
+    port: C3
+    op: load
+    since: v0.1
+    request: null
+    response: null
+    rules: []
+    profiles: [core]
+    wire: false
+    note: 'inside the core: the implementation sets the shape, the skeleton has no store binding, the operation is not on the wire'
+  - id: C3.list
+    port: C3
+    op: list
+    since: v0.1
+    request: null
+    response: null
+    rules: []
+    profiles: [core]
+    wire: false
+    note: 'inside the core: the implementation sets the shape, the skeleton has no store binding, the operation is not on the wire'
+  - id: C3.delete
+    port: C3
+    op: delete
+    since: v0.1
+    request: null
+    response: null
+    rules: []
+    profiles: [core]
+    wire: false
+    note: 'inside the core: the implementation sets the shape, the skeleton has no store binding, the operation is not on the wire'
+  - id: C3.purge
+    port: C3
+    op: purge
+    since: v0.1
+    request: null
+    response: null
+    rules: []
+    profiles: [core]
+    wire: false
+    note: 'inside the core: the implementation sets the shape, the skeleton has no store binding, the operation is not on the wire'
+  - id: C4.search
+    port: C4
+    op: search
+    since: v0.1
+    request: null
+    response: null
+    rules: []
+    profiles: [core]
+    wire: false
+    note: 'inside the core: the implementation sets the shape, the skeleton has no store binding, the operation is not on the wire'
+  - id: C4.list
+    port: C4
+    op: list
+    since: v0.1
+    request: null
+    response: null
+    rules: []
+    profiles: [core]
+    wire: false
+    note: 'inside the core: the implementation sets the shape, the skeleton has no store binding, the operation is not on the wire'
+  - id: C4.propose
+    port: C4
+    op: propose
+    since: v0.1
+    request: null
+    response: null
+    rules: []
+    profiles: [core]
+    wire: false
+    note: 'inside the core: the implementation sets the shape, the skeleton has no store binding, the operation is not on the wire'
+  - id: C4.commit
+    port: C4
+    op: commit
+    since: v0.1
+    request: null
+    response: null
+    rules: []
+    profiles: [core]
+    wire: false
+    note: 'inside the core: the implementation sets the shape, the skeleton has no store binding, the operation is not on the wire'
+  - id: C4.discard
+    port: C4
+    op: discard
+    since: v0.1
+    request: null
+    response: null
+    rules: []
+    profiles: [core]
+    wire: false
+    note: 'inside the core: the implementation sets the shape, the skeleton has no store binding, the operation is not on the wire'
+  - id: C4.erase
+    port: C4
+    op: erase
+    since: v0.1
+    request: null
+    response: null
+    rules: []
+    profiles: [core]
+    wire: false
+    note: 'inside the core: the implementation sets the shape, the skeleton has no store binding, the operation is not on the wire'
+  - id: C4.fact.verify
+    port: C4
+    op: fact.verify
+    since: v0.1
+    request: null
+    response: null
+    rules: []
+    profiles: [core]
+    wire: false
+    note: 'inside the core: the implementation sets the shape, the skeleton has no store binding, the operation is not on the wire'
+  - id: C4.offer
+    port: C4
+    op: offer
+    since: v0.1
+    request: null
+    response: null
+    rules: []
+    profiles: [core]
+    wire: false
+    note: 'inside the core: the implementation sets the shape, the skeleton has no store binding, the operation is not on the wire'
+  - id: C4.take
+    port: C4
+    op: take
+    since: v0.1
+    request: null
+    response: null
+    rules: []
+    profiles: [core]
+    wire: false
+    note: 'inside the core: the implementation sets the shape, the skeleton has no store binding, the operation is not on the wire'
+  - id: C4.seal
+    port: C4
+    op: seal
+    since: v0.1
+    request: null
+    response: null
+    rules: []
+    profiles: [core]
+    wire: false
+    note: 'inside the core: the implementation sets the shape, the skeleton has no store binding, the operation is not on the wire'
+  - id: C1.case.open
+    port: C1
+    op: case.open
+    since: v0.2
+    request: null
+    response: null
+    rules: []
+    profiles: [core]
+    wire: false
+    note: 'inside the core: the implementation sets the shape, the skeleton has no store binding, the operation is not on the wire'
+  - id: C1.case.advance
+    port: C1
+    op: case.advance
+    since: v0.2
+    request: null
+    response: null
+    rules: []
+    profiles: [core]
+    wire: false
+    note: 'inside the core: the implementation sets the shape, the skeleton has no store binding, the operation is not on the wire'
+  - id: C1.case.close
+    port: C1
+    op: case.close
+    since: v0.2
+    request: null
+    response: null
+    rules: []
+    profiles: [core]
+    wire: false
+    note: 'inside the core: the implementation sets the shape, the skeleton has no store binding, the operation is not on the wire'
+  - id: C1.attribution.create
+    port: C1
+    op: attribution.create
+    since: v0.2
+    request: null
+    response: null
+    rules: []
+    profiles: [core]
+    wire: false
+    note: 'inside the core: the implementation sets the shape, the skeleton has no store binding, the operation is not on the wire'
+  - id: C1.attribution.decide
+    port: C1
+    op: attribution.decide
+    since: v0.2
+    request: null
+    response: null
+    rules: []
+    profiles: [core]
+    wire: false
+    note: 'inside the core: the implementation sets the shape, the skeleton has no store binding, the operation is not on the wire'
+  - id: C3.prune
+    port: C3
+    op: prune
+    since: v0.2
+    request: null
+    response: null
+    rules: [RET-1, RET-2]
+    profiles: [core]
+    wire: false
+    note: 'inside the core: the implementation sets the shape, the skeleton has no store binding, the operation is not on the wire'
+  - id: E1.match
+    port: E1
+    op: match
+    since: v0.2
+    request: erasure-work
+    response: erasure-outcome
+    rules: [RET-4, RET-7, SEC-11]
+    profiles: [core]
+    transport: 'P1 claim(erasure) with op: match, result by P1 complete in the erasure field'
+  - id: E1.erase
+    port: E1
+    op: erase
+    since: v0.2
+    request: erasure-work
+    response: erasure-outcome
+    rules: [RET-4, RET-7]
+    profiles: [core]
+    transport: 'P1 claim(erasure) with op: erase, result by P1 complete in the erasure field; until v0.2 the channel answers not_applicable or failed'
+  - id: E2.write
+    port: E2
+    op: write
+    since: v0.1
+    request: work-item
+    response: p1-complete-request
+    rules: [DLV-3, DLV-6, DLV-13, FEN-7]
+    profiles: [core]
+    transport: P1 claim(delivery), result by P1 complete with receipt.location
+  - id: E2.match
+    port: E2
+    op: match
+    since: v0.1
+    request: erasure-work
+    response: erasure-outcome
+    rules: [RET-4, RET-7, SEC-11]
+    profiles: [core]
+    transport: 'P1 claim(erasure) with op: match'
+  - id: E2.erase
+    port: E2
+    op: erase
+    since: v0.1
+    request: erasure-work
+    response: erasure-outcome
+    rules: [RET-4, RET-7]
+    profiles: [core]
+    transport: 'P1 claim(erasure) with op: erase'
+  - id: E2.webhook
+    port: E2
+    op: webhook
+    since: v0.2
+    request: null
+    response: null
+    rules: [DLV-3, FEN-7]
+    profiles: [core]
+    note: 'v0.2: the schemas will appear with v0.2'
+  - id: E3.tools/call
+    port: E3
+    op: tools/call
+    since: v0.1
+    request: work-item
+    response: p1-complete-request
+    rules: [INJ-5, INJ-4, DEP-9, APR-7]
+    profiles: [core]
+    transport: P1 claim(toolcall), MCP tools/call to the plugin (spec/bindings/mcp/README.md), result by P1 complete with output
+  - id: E4.describe
+    port: E4
+    op: describe
+    since: v0.1
+    request: null
+    response: e4-describe-response
+    rules: [RT-1, RT-2, RT-3, RT-4, INJ-9]
+    profiles: [core]
+    note: describe has no input, the adapter asks the runtime without arguments
+    transport: 'inside the agent process: the adapter asks the runtime at start'
+  - id: E4.run
+    port: E4
+    op: run
+    since: v0.1
+    request: run-request
+    response: run-outcome
+    rules: [FEN-4, BUD-3]
+    profiles: [core]
+    transport: inside the agent process after P1 claim(attempt); the adapter hands in the result with P1 complete or fail
+  - id: E4.cancel
+    port: E4
+    op: cancel
+    since: v0.1
+    request: e4-cancel-request
+    response: null
+    rules: [FEN-4]
+    profiles: [core]
+    note: cancel has no answer, the runtime only stops the work before the next heartbeat
+    transport: inside the agent process on cancel_requested from P1 heartbeat
+  - id: E4.purge
+    port: E4
+    op: purge
+    since: v0.1
+    request: erasure-work
+    response: erasure-outcome
+    rules: [RT-1, RT-2, MEM-4, RET-7, RET-4]
+    profiles: [core]
+    transport: 'P1 claim(erasure) with op: erase at the adapter, then to the runtime'
+  - id: E4.match
+    port: E4
+    op: match
+    since: v0.1
+    request: erasure-work
+    response: erasure-outcome
+    rules: [RT-5, RET-7, SEC-11]
+    profiles: [core]
+    transport: 'P1 claim(erasure) with op: match at the adapter, then to the runtime'
+  - id: E5.monitor_alarm
+    port: E5
+    op: monitor_alarm
+    since: v0.1
+    request: monitor-alarm
+    response: p1-complete-request
+    rules: [MON-1, MON-11, OBS-6]
+    profiles: [core, monitor]
+    transport: P1 claim(delivery) of kind monitor_alarm
+  - id: E5.monitor_audit_head
+    port: E5
+    op: monitor_audit_head
+    since: v0.1
+    request: monitor-audit-head
+    response: p1-complete-request
+    rules: [AUD-6, MON-3]
+    profiles: [core, monitor]
+    transport: P1 claim(delivery) of kind monitor_audit_head
+  - id: E5.monitor_script
+    port: E5
+    op: monitor_script
+    since: v0.1
+    request: monitor-script-run
+    response: p1-complete-request
+    rules: [MON-8, MON-10]
+    profiles: [core, monitor]
+    transport: P1 claim(delivery) of kind monitor_script, result receipt
+  - id: E5.monitor_note
+    port: E5
+    op: monitor_note
+    since: v0.1
+    request: monitor-note
+    response: p1-complete-request
+    rules: [MON-7]
+    profiles: [monitor]
+    transport: P1 claim(delivery) of kind monitor_note
+  - id: E5.problem
+    port: E5
+    op: problem
+    since: v0.1
+    request: activity
+    response: p1-submit-activity-response
+    rules: [MON-5]
+    profiles: [monitor]
+    transport: P1 submit_activity of kind signal with the identity hook:monitor, event ext.monitor.problem.v1
+  - id: E5.match
+    port: E5
+    op: match
+    since: v0.1
+    request: erasure-work
+    response: erasure-outcome
+    rules: [RET-4, RET-7, SEC-11]
+    profiles: [core]
+    transport: 'P1 claim(erasure) with op: match'
+  - id: E5.erase
+    port: E5
+    op: erase
+    since: v0.1
+    request: erasure-work
+    response: erasure-outcome
+    rules: [RET-4, RET-7]
+    profiles: [core]
+    transport: 'P1 claim(erasure) with op: erase'
+  - id: T.clock.set
+    port: T
+    op: clock.set
+    since: v0.1
+    request: test-clock-request
+    response: test-control-response
+    rules: [APR-9]
+    profiles: [core]
+    note: 'test-control port spec/ports/test-control.md; only on a test bench store that never had a tenant other than kind: test'
+  - id: T.clock.advance
+    port: T
+    op: clock.advance
+    since: v0.1
+    request: test-clock-request
+    response: test-control-response
+    rules: [APR-9]
+    profiles: [core]
+    note: 'test-control port spec/ports/test-control.md; only on a test bench store that never had a tenant other than kind: test'
+  - id: T.loop.tick
+    port: T
+    op: loop.tick
+    since: v0.1
+    request: test-loop-tick-request
+    response: test-control-response
+    rules: [APR-9]
+    profiles: [core]
+    note: 'test-control port spec/ports/test-control.md; only on a test bench store that never had a tenant other than kind: test'
+  - id: T.process.stop
+    port: T
+    op: process.stop
+    since: v0.1
+    request: test-process-stop-request
+    response: test-control-response
+    rules: [APR-9]
+    profiles: [core]
+    note: 'test-control port spec/ports/test-control.md; only on a test bench store that never had a tenant other than kind: test'
+  - id: T.store.fault
+    port: T
+    op: store.fault
+    since: v0.1
+    request: test-store-fault-request
+    response: test-control-response
+    rules: [APR-9]
+    profiles: [core]
+    note: 'test-control port spec/ports/test-control.md; only on a test bench store that never had a tenant other than kind: test'
+  - id: T.store.snapshot
+    port: T
+    op: store.snapshot
+    since: v0.1
+    request: test-store-snapshot-request
+    response: test-control-response
+    rules: [APR-9, RET-5, RET-6]
+    profiles: [core]
+    note: 'test-control port spec/ports/test-control.md; only on a test bench store that never had a tenant other than kind: test'
+  - id: T.store.restore
+    port: T
+    op: store.restore
+    since: v0.1
+    request: test-store-restore-request
+    response: test-control-response
+    rules: [APR-9, RET-6, AUD-6]
+    profiles: [core]
+    note: 'test-control port spec/ports/test-control.md; only on a test bench store that never had a tenant other than kind: test'
+  - id: T.authorize.eval
+    port: T
+    op: authorize.eval
+    since: v0.1
+    request: test-authorize-eval-request
+    response: authz-decision
+    rules: [APR-9, PRM-2]
+    profiles: [core]
+    note: 'test-control port spec/ports/test-control.md; only on a test bench store that never had a tenant other than kind: test'
+  - id: T.event.inject
+    port: T
+    op: event.inject
+    since: v0.1
+    request: test-event-inject-request
+    response: test-control-response
+    rules: [APR-9]
+    profiles: [core]
+    note: 'test-control port spec/ports/test-control.md; only on a test bench store that never had a tenant other than kind: test'

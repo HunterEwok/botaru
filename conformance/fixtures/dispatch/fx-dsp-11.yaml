@@ -1,0 +1,61 @@
+id: fx-dsp-11
+rules: [DSP-8, DSP-7]
+description: 'An empty group waits, an unclaimed task gives an alarm. The group `science-pool` is empty: a task with `to_group:
+  science-pool` waits in `submitted` with `waiting_reason: no_member`, and a free worker of the same role outside the group does not
+  get it (no spillover). When the type''s `start_by` (10 minutes) passes, the task stays in `submitted`, and the `deadline` loop
+  raises one alarm `alarm.task.unclaimed` by code; the monitoring system passes it to people. When a member appears in the group
+  but is not ready, the waiting reason is `no_member_ready`.'
+given:
+  tenant: demo
+  botgroups:
+  - name: science-pool
+    select:
+      roles: [analyst]
+      labels: {zone: lab}
+  roles:
+  - name: analyst
+    claims: [data.qc.ctd.v1]
+  workers:
+  - id: wk_01JB000000000000000000000B
+    role: analyst
+    labels: {zone: cloud}
+    state: active
+    ready: true
+  tasks:
+  - id: t_01JB0000000000000000000001
+    type: data.qc.ctd.v1
+    priority_class: 4
+    to_group: science-pool
+    state: submitted
+    enqueued_at: '2026-10-05T10:00:00Z'
+    timeouts: {start_by: 10m}
+steps:
+- call:
+    port: P1
+    op: claim
+    request:
+      kinds: [attempt]
+  by: worker:wk_01JB000000000000000000000B
+  expect: {task: null}
+- check:
+    observe: {task: t_01JB0000000000000000000001, at: '2026-10-05T10:05:00Z'}
+  expect: {state: submitted, waiting_reason: no_member}
+- check:
+    observe: {task: t_01JB0000000000000000000001, at: '2026-10-05T10:11:00Z'}
+  expect:
+    state: submitted
+    alarms:
+    - {name: alarm.task.unclaimed, raised_by: deadline, count: 1}
+- call:
+    port: P2
+    op: worker.enroll
+    request:
+      tenant: demo
+      role: analyst
+      kind: agent
+      labels: {zone: lab}
+  context: {worker: wk_01JB000000000000000000000A, ready: false}
+- check:
+    observe: {task: t_01JB0000000000000000000001, at: '2026-10-05T10:12:00Z'}
+  expect: {state: submitted, waiting_reason: no_member_ready}
+expect: {spill_outside_group: false, alarm_task_unclaimed: 1}

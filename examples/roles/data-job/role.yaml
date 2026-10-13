@@ -1,0 +1,9 @@
+# Job worker of demo without a model: sensor checks, site checks, the pipeline watcher and the numbers of the monthly report.
+apiVersion: botaru/v1alpha1
+kind: Role
+metadata: {name: data-job}
+spec:
+  profile: worker
+  worker_kind: job
+  claims: [data.sensor_check.v1, data.sensor_watch.v1, check.http.v1, pipeline.watch.v1, report.monthly.numbers.v1]
+  may_enqueue: [report.sensor.v1, report.monthly.v1]

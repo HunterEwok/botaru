@@ -1,0 +1,56 @@
+id: fx-ten-01
+rules: [TEN-1]
+description: One record, one tenant, and it does not change. Every record of a task, lease, call, delivery, worker
+  and file carries exactly one tenant. A hold of scopes `farm` and `seat` is a record of the service tenant `farm`,
+  a hold of any other scope is a record of the tenant of its scope. A reference from a record of tenant `demo` to the identity
+  of the manager seat holder in `farm` is kept only as an id and an epoch in core fields (`acting_bot`, `bot_epoch`,
+  `seat_epoch`), and nothing is read through it.
+expect: {tenant_per_record: 1}
+cases:
+- given:
+    record: {kind: task, id: t_01JB0000000000000000000001, tenant: demo}
+    change: {tenant: demo2}
+  expect: {result: rejected}
+- given:
+    record:
+      kind: task
+      id: t_01JB0000000000000000000001
+      tenants: [demo, demo2]
+  expect: {result: rejected}
+- steps:
+  - call:
+      port: P2
+      op: hold.set
+      request:
+        scope: {kind: farm}
+        effects: [no_claim]
+        reason: manual
+        until: null
+  expect: {tenant: farm}
+- steps:
+  - call:
+      port: P2
+      op: hold.set
+      request:
+        scope: {kind: seat, name: farm-manager}
+        effects: [no_claim]
+        reason: manual
+        until: null
+  expect: {tenant: farm}
+- steps:
+  - call:
+      port: P2
+      op: hold.set
+      request:
+        scope: {kind: role, tenant: demo, name: ops-reader}
+        effects: [no_claim]
+        reason: manual
+        until: null
+  expect: {tenant: demo}
+- given:
+    record: {kind: task, tenant: demo, acting_bot: bot_01JB0000000000000000000001, seat_epoch: 4}
+    read_through_ref: true
+  expect: {reads_of_farm_records: 0}
+- given:
+    record: {kind: lease, tenant: demo, task_tenant: demo2}
+  expect: {result: rejected}

@@ -1,0 +1,10 @@
+schema: spec/model/p1-complete-request.schema.json
+rules: [FEN-2, DLV-3]
+description: 'complete requests that the schema accepts: an attempt result; a delivery receipt; a monitoring script outcome;
+  a call outcome.'
+cases:
+- result: {answer: cause found, verdict: cause_found}
+- receipt: {external_id: '4711'}
+- receipt: {exit_code: 0, output: cache cleared}
+- output:
+    lines: ['...']

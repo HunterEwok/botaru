@@ -1,0 +1,4 @@
+#!/bin/sh
+# SPDX-License-Identifier: AGPL-3.0-only
+# Short name of the additive-only check, as the skeleton documents call it.
+exec python3 -I "$(dirname "$0")/check_additive.py" "$@"

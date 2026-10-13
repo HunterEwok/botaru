@@ -1,0 +1,382 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:botaru:schema:fixture:1",
+  "title": "Behavior fixture envelope",
+  "description": "Shape of a behavior fixture conformance/fixtures/** (except schemas/, manifests/ and state-machine/, which have their own shape). The meaning of the fields, the closed list of step verbs, the actor grammar and the execution order are written in conformance/runner.md. A fixture is data: the implementation's runner builds port calls from it and compares the expectations.",
+  "type": "object",
+  "allOf": [
+    {
+      "$ref": "#/$defs/case"
+    }
+  ],
+  "required": [
+    "description"
+  ],
+  "$defs": {
+    "case": {
+      "description": "A fixture or one of its cases. A case inherits the parent's given and adds its own; a case without steps checks the result of seeding given.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[A-Za-z][A-Za-z0-9_.-]{0,80}$"
+        },
+        "rules": {
+          "type": "array",
+          "maxItems": 40,
+          "items": {
+            "$ref": "urn:botaru:schema:common:1#/$defs/rule_id"
+          }
+        },
+        "version": {
+          "description": "Skeleton version from which the case applies.",
+          "type": "string",
+          "pattern": "^v[0-9]+\\.[0-9]+$"
+        },
+        "title": {
+          "type": "string",
+          "maxLength": 200
+        },
+        "description": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4000
+        },
+        "given": {
+          "$ref": "#/$defs/given"
+        },
+        "steps": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 100,
+          "items": {
+            "$ref": "#/$defs/step"
+          }
+        },
+        "expect": {
+          "$ref": "#/$defs/expect"
+        },
+        "cases": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 400,
+          "items": {
+            "$ref": "#/$defs/case"
+          }
+        }
+      }
+    },
+    "given": {
+      "description": "Initial state of the test bench: tenant, people with groups and permissions, manifests, records. Keys other than tenant and people are seed data; the runner seeds them through the normal paths (P2 apply and P1, P2 calls), not through the test-control port.",
+      "type": "object",
+      "properties": {
+        "tenant": {
+          "description": "Tenant on whose behalf the steps run: a name, or a record with a name and fields of the tenant manifest (kind and others).",
+          "anyOf": [
+            {
+              "$ref": "urn:botaru:schema:common:1#/$defs/tenant_name"
+            },
+            {
+              "type": "object",
+              "properties": {
+                "name": {
+                  "$ref": "urn:botaru:schema:common:1#/$defs/tenant_name"
+                }
+              }
+            }
+          ]
+        },
+        "people": {
+          "type": "array",
+          "maxItems": 40,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "principal"
+            ],
+            "properties": {
+              "principal": {
+                "$ref": "#/$defs/actor"
+              },
+              "groups": {
+                "type": "array",
+                "maxItems": 40,
+                "items": {
+                  "type": "string",
+                  "maxLength": 64
+                }
+              },
+              "caps": {
+                "type": "array",
+                "maxItems": 40,
+                "items": {
+                  "type": "string",
+                  "maxLength": 120
+                }
+              },
+              "state": {
+                "type": "string",
+                "maxLength": 32
+              },
+              "tenant": {
+                "$ref": "urn:botaru:schema:common:1#/$defs/tenant_name"
+              }
+            }
+          }
+        }
+      }
+    },
+    "step": {
+      "description": "Step: exactly one verb from the closed list (call, stand, model, lint, occur, check) plus modifiers.",
+      "type": "object",
+      "additionalProperties": false,
+      "oneOf": [
+        {
+          "required": [
+            "call"
+          ]
+        },
+        {
+          "required": [
+            "stand"
+          ]
+        },
+        {
+          "required": [
+            "model"
+          ]
+        },
+        {
+          "required": [
+            "lint"
+          ]
+        },
+        {
+          "required": [
+            "occur"
+          ]
+        },
+        {
+          "required": [
+            "check"
+          ]
+        }
+      ],
+      "properties": {
+        "call": {
+          "$ref": "#/$defs/call"
+        },
+        "stand": {
+          "$ref": "#/$defs/stand"
+        },
+        "model": {
+          "description": "What the mock model returns behind P4 in this step (spec/bindings/model-providers/mock.md): the answer text, tool calls or other answer data.",
+          "type": "object",
+          "minProperties": 1
+        },
+        "lint": {
+          "description": "Manifest fragments that the runner submits to P2 apply without applying them, or to the implementation's lint; the expectation is usually stage: lint or apply.",
+          "type": "object",
+          "minProperties": 1
+        },
+        "occur": {
+          "description": "A core event that the fixture states as an outcome rather than a call (for example, a child task closed). The runner brings it about with normal P1, P2 and test-control port calls; the runner chooses the path.",
+          "type": "object",
+          "minProperties": 1
+        },
+        "check": {
+          "description": "Observation point without an action: what the runner reads (a record, a delivery, a state) before comparing the step's expect.",
+          "type": [
+            "string",
+            "object",
+            "array"
+          ]
+        },
+        "by": {
+          "$ref": "#/$defs/actor"
+        },
+        "chat": {
+          "description": "Chat from which the person acts (the channel's Botaru-Chat header).",
+          "type": "string",
+          "maxLength": 120
+        },
+        "card": {
+          "description": "Card kind from spec/model/decision-points.yaml whose button made the step.",
+          "type": "string",
+          "maxLength": 64
+        },
+        "on_behalf": {
+          "description": "Identity for the Botaru-On-Behalf header instead of the identity of the person in by (conformance/runner.md).",
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_-]*:[^\\s]{1,100}$",
+          "maxLength": 120
+        },
+        "message": {
+          "description": "Channel message for the Botaru-Message header of a button press: an external id or other (another message of the same chat). Without the field the runner takes the external_id of the card's delivery.",
+          "type": "string",
+          "maxLength": 128
+        },
+        "credential": {
+          "description": "Call credentials instead of the actor's usual ones, for example someone else's token.",
+          "type": "string",
+          "maxLength": 120
+        },
+        "lease": {
+          "description": "Lease token for the Botaru-Lease header: a token object (epoch, work_id, lease_no, worker_id) or a handle, current (the actor's current lease) or stale (an earlier lease of the same work). Without the field the runner takes the actor's current lease. The signature (key_id, sig) is optional and the runner does not compute it: with signed tokens the object selects a core-issued token with these fields, and without such a token the fields go with the signature of the current lease (conformance/runner.md).",
+          "anyOf": [
+            {
+              "enum": [
+                "current",
+                "stale"
+              ]
+            },
+            {
+              "type": "object",
+              "maxProperties": 8
+            }
+          ]
+        },
+        "context": {
+          "description": "Step conditions that are not in the request body: fields of the attempt, task, actor or record (initiator, task type, untrusted text in the context, data mark, call path). The keys name fields of the spec/model schemas; the runner establishes them before the step through seeding and earlier steps, like the keys of given (conformance/runner.md, section \"Steps\").",
+          "type": "object",
+          "minProperties": 1
+        },
+        "at": {
+          "description": "When the step is made: a UTC instant or an offset from the start of the fixture. The runner turns it into T clock.set or clock.advance before the step.",
+          "anyOf": [
+            {
+              "$ref": "urn:botaru:schema:common:1#/$defs/datetime"
+            },
+            {
+              "$ref": "urn:botaru:schema:common:1#/$defs/schedule_slot"
+            },
+            {
+              "type": "string",
+              "pattern": "^[0-9]{1,6}(s|m|h|d)$"
+            }
+          ]
+        },
+        "note": {
+          "type": "string",
+          "maxLength": 1000
+        },
+        "expect": {
+          "$ref": "#/$defs/expect"
+        }
+      }
+    },
+    "call": {
+      "description": "Call of a port operation from the map spec/ports/operations.yaml. request is the body per the operation's request schema; the runner expands short ids and people handles per conformance/runner.md.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "port",
+        "op"
+      ],
+      "properties": {
+        "port": {
+          "enum": [
+            "P1",
+            "P2",
+            "P3",
+            "P4",
+            "C1",
+            "C2",
+            "C3",
+            "C4",
+            "E1",
+            "E2",
+            "E3",
+            "E4",
+            "E5"
+          ]
+        },
+        "op": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_./*]{0,62}$"
+        },
+        "request": {}
+      }
+    },
+    "stand": {
+      "description": "Test bench action through port T (spec/ports/test-control.md). The other keys are the operation's arguments.",
+      "type": "object",
+      "required": [
+        "op"
+      ],
+      "properties": {
+        "op": {
+          "enum": [
+            "clock.set",
+            "clock.advance",
+            "loop.tick",
+            "process.stop",
+            "store.fault",
+            "store.snapshot",
+            "store.restore",
+            "authorize.eval",
+            "event.inject"
+          ]
+        }
+      }
+    },
+    "expect": {
+      "description": "Expectation as data. Closed fields: result, reason, stage, outcome, state, note. The other keys are observable facts: a record or field name and the expected value; a fact the runner cannot check is marked unchecked, not passed.",
+      "type": "object",
+      "properties": {
+        "result": {
+          "description": "Outcome of the call: ok, a rule refusal (rejected) or a C2 permission refusal (denied).",
+          "enum": [
+            "ok",
+            "rejected",
+            "denied"
+          ]
+        },
+        "reason": {
+          "description": "Reason code of the refusal or outcome from spec/model/reasons.yaml.",
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_]*$",
+          "maxLength": 64,
+          "x-botaru-registry": "reasons"
+        },
+        "stage": {
+          "description": "Stage of the refusal: schema (body or manifest schema), lint (manifest lint), apply (applying the set), hold (holds in the C2 decision order), ban (unconditional prohibition in the C2 decision order).",
+          "enum": [
+            "schema",
+            "lint",
+            "apply",
+            "hold",
+            "ban"
+          ]
+        },
+        "outcome": {
+          "description": "An outcome that is neither ok nor a refusal, for example staged, enqueued, skipped.",
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_]*$",
+          "maxLength": 64
+        },
+        "state": {
+          "description": "State of the subject after the step per its lifecycle in spec/lifecycles/."
+        },
+        "error": {
+          "description": "Stable lint or apply error code for a refusal with stage lint or apply; the skeleton's manifest lint codes are listed in ci/lint_codes.py (table in ci/README.md).",
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_]*$",
+          "maxLength": 64
+        },
+        "note": {
+          "type": "string",
+          "maxLength": 1000
+        }
+      }
+    },
+    "actor": {
+      "description": "Step actor or a subject in given per the grammar of conformance/runner.md.",
+      "type": "string",
+      "maxLength": 120,
+      "pattern": "^(system|operator|seat|schedule|route|model|attempt|attempt:[0-9]+|attempt:[a-z][a-z0-9_]*(\\.[a-z0-9_]+)*\\.v[0-9]+|human:[a-z][a-z0-9-]*|human:p_[0-9A-HJKMNP-TV-Z]{26}|(service|bot|worker|role|channel):[A-Za-z0-9_.-]+)$"
+    }
+  }
+}

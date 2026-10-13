@@ -1,0 +1,745 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:botaru:schema:script:1",
+  "title": "Script botaru.script/v1",
+  "description": "A script draft: a strict plan of steps by a closed schema; there is no expression language, code, loops or nested scripts (SCR-1). A step refers only to applied manifests of its own tenant (SCR-2); conditions only from the atoms of condition-ops.yaml, nesting at most 2 (SCR-3, the lint checks that there are at most 8 atoms); the agent goal only by a template or the assignment text (SCR-4). The schema rejects the fields that the core computes (max_tier, data_mark, untrusted_seen, the action list, the estimate, plan_hash, expanded fanout lists) and the field then inside fanout (SCR-5). At most 20 steps for the farm; draft acceptance checks the tenant ceiling (default 10) and the role ceiling.",
+  "x-botaru-direction": "input",
+  "x-botaru-rules": [
+    "SCR-1",
+    "SCR-2",
+    "SCR-3",
+    "SCR-4",
+    "SCR-5"
+  ],
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "script",
+    "steps"
+  ],
+  "properties": {
+    "script": {
+      "const": "v1",
+      "description": "Format version botaru.script/v1."
+    },
+    "steps": {
+      "type": "array",
+      "maxItems": 20,
+      "items": {
+        "$ref": "#/$defs/step"
+      },
+      "minItems": 1,
+      "description": "Script steps in order; the order of writing is the order of the graph."
+    }
+  },
+  "$defs": {
+    "atom": {
+      "description": "A condition atom from the closed table (SCR-3).",
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "ref",
+            "op"
+          ],
+          "properties": {
+            "ref": {
+              "type": "string",
+              "pattern": "^[a-z][a-z0-9-]{0,62}\\.[a-z][a-z0-9_]{0,63}$",
+              "maxLength": 128,
+              "description": "A reference <step>.<field> to a closed result field with x-botaru-read-by: code (SCR-3)."
+            },
+            "op": {
+              "enum": [
+                "eq",
+                "ne",
+                "lt",
+                "le",
+                "gt",
+                "ge",
+                "in",
+                "not_in",
+                "exists"
+              ],
+              "x-botaru-registry": "condition-ops"
+            },
+            "value": {
+              "description": "Literal: a number, a string of a closed form, a boolean or a list of these.",
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "string",
+                  "maxLength": 120
+                },
+                {
+                  "type": "array",
+                  "maxItems": 32,
+                  "items": {
+                    "anyOf": [
+                      {
+                        "type": "number"
+                      },
+                      {
+                        "type": "string",
+                        "maxLength": 120
+                      }
+                    ]
+                  }
+                }
+              ]
+            }
+          },
+          "not": {
+            "patternProperties": {
+              "^ref$": {
+                "pattern": "\\.(count|sum|min|max|state)\\.|\\.state$"
+              }
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "ref",
+            "op",
+            "value"
+          ],
+          "properties": {
+            "ref": {
+              "type": "string",
+              "pattern": "^[a-z][a-z0-9-]{0,62}\\.(count|sum|min|max)\\.[a-z][a-z0-9_]{0,63}$",
+              "maxLength": 140,
+              "description": "Rollup of a summary_fields field of the fanout step items."
+            },
+            "op": {
+              "enum": [
+                "eq",
+                "ne",
+                "lt",
+                "le",
+                "gt",
+                "ge"
+              ],
+              "x-botaru-registry": "condition-ops"
+            },
+            "value": {
+              "type": "number"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "ref",
+            "op",
+            "value"
+          ],
+          "properties": {
+            "ref": {
+              "type": "string",
+              "pattern": "^[a-z][a-z0-9-]{0,62}\\.state$",
+              "maxLength": 70,
+              "description": "Step state."
+            },
+            "op": {
+              "enum": [
+                "eq",
+                "in"
+              ],
+              "x-botaru-registry": "condition-ops"
+            },
+            "value": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "ok",
+                    "failed",
+                    "unknown",
+                    "declined",
+                    "skipped",
+                    "canceled"
+                  ]
+                },
+                {
+                  "type": "array",
+                  "maxItems": 6,
+                  "items": {
+                    "enum": [
+                      "ok",
+                      "failed",
+                      "unknown",
+                      "declined",
+                      "skipped",
+                      "canceled"
+                    ]
+                  },
+                  "minItems": 1
+                }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    "when1": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/atom"
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "all"
+          ],
+          "properties": {
+            "all": {
+              "type": "array",
+              "maxItems": 8,
+              "items": {
+                "$ref": "#/$defs/atom"
+              },
+              "minItems": 1
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "any"
+          ],
+          "properties": {
+            "any": {
+              "type": "array",
+              "maxItems": 8,
+              "items": {
+                "$ref": "#/$defs/atom"
+              },
+              "minItems": 1
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "not"
+          ],
+          "properties": {
+            "not": {
+              "$ref": "#/$defs/atom"
+            }
+          }
+        }
+      ]
+    },
+    "when": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/atom"
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "all"
+          ],
+          "properties": {
+            "all": {
+              "type": "array",
+              "maxItems": 8,
+              "items": {
+                "$ref": "#/$defs/when1"
+              },
+              "minItems": 1
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "any"
+          ],
+          "properties": {
+            "any": {
+              "type": "array",
+              "maxItems": 8,
+              "items": {
+                "$ref": "#/$defs/when1"
+              },
+              "minItems": 1
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "not"
+          ],
+          "properties": {
+            "not": {
+              "$ref": "#/$defs/when1"
+            }
+          }
+        }
+      ]
+    },
+    "step": {
+      "type": "object",
+      "description": "Script step (ScriptStep).",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "kind"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "urn:botaru:schema:common:1#/$defs/name",
+          "description": "Step id in the id format, unique within the script."
+        },
+        "kind": {
+          "enum": [
+            "task",
+            "fanout",
+            "action",
+            "confirm",
+            "wait",
+            "await"
+          ],
+          "x-botaru-registry": "script-step-kinds",
+          "description": "Step kind from script-step-kinds.yaml (SCR-1)."
+        },
+        "needs": {
+          "type": "array",
+          "maxItems": 19,
+          "items": {
+            "$ref": "urn:botaru:schema:common:1#/$defs/name"
+          },
+          "uniqueItems": true,
+          "description": "Ids of earlier steps only (lint)."
+        },
+        "when": {
+          "$ref": "#/$defs/when"
+        },
+        "run_if": {
+          "enum": [
+            "succeeded",
+            "failed",
+            "always"
+          ],
+          "description": "Default succeeded (SCR-11)."
+        },
+        "on_failure": {
+          "enum": [
+            "stop",
+            "continue"
+          ],
+          "description": "Default stop (SCR-11)."
+        },
+        "type": {
+          "$ref": "urn:botaru:schema:common:1#/$defs/type_name",
+          "description": "Task type from the vocabulary of the author role (scripts.step_types)."
+        },
+        "action": {
+          "$ref": "urn:botaru:schema:common:1#/$defs/dotted_name",
+          "description": "An action with script.allowed: true from the vocabulary of the author role (scripts.actions)."
+        },
+        "goal": {
+          "description": "Step goal for the agent: only a type template or the verbatim assignment text; there is no free goal (SCR-4).",
+          "oneOf": [
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "template"
+              ],
+              "properties": {
+                "template": {
+                  "type": "string",
+                  "pattern": "^[a-z][a-z0-9_-]{0,62}$",
+                  "maxLength": 63,
+                  "description": "Id from the type goal_templates."
+                }
+              }
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "assignment"
+              ],
+              "properties": {
+                "assignment": {
+                  "const": true
+                }
+              }
+            }
+          ]
+        },
+        "params": {
+          "type": "object",
+          "description": "Literals by the type params_schema or the action argument schema, or references {ref: <step>.<field>} (SCR-3).",
+          "maxProperties": 32,
+          "additionalProperties": {
+            "anyOf": [
+              {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "ref"
+                ],
+                "properties": {
+                  "ref": {
+                    "type": "string",
+                    "pattern": "^[a-z][a-z0-9-]{0,62}\\.[a-z][a-z0-9_]{0,63}$",
+                    "maxLength": 128,
+                    "description": "A reference <step>.<field> to a closed result field with x-botaru-read-by: code (SCR-3)."
+                  }
+                }
+              },
+              {
+                "not": {
+                  "type": "object"
+                }
+              }
+            ]
+          }
+        },
+        "args": {
+          "type": "object",
+          "description": "Literals by the type params_schema or the action argument schema, or references {ref: <step>.<field>} (SCR-3).",
+          "maxProperties": 32,
+          "additionalProperties": {
+            "anyOf": [
+              {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "ref"
+                ],
+                "properties": {
+                  "ref": {
+                    "type": "string",
+                    "pattern": "^[a-z][a-z0-9-]{0,62}\\.[a-z][a-z0-9_]{0,63}$",
+                    "maxLength": 128,
+                    "description": "A reference <step>.<field> to a closed result field with x-botaru-read-by: code (SCR-3)."
+                  }
+                }
+              },
+              {
+                "not": {
+                  "type": "object"
+                }
+              }
+            ]
+          }
+        },
+        "items": {
+          "description": "Fanout items: a selector, an explicit list or a subset of the items of an earlier fanout step.",
+          "oneOf": [
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "selector"
+              ],
+              "properties": {
+                "selector": {
+                  "$ref": "urn:botaru:schema:common:1#/$defs/name"
+                }
+              }
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "resources"
+              ],
+              "properties": {
+                "resources": {
+                  "type": "array",
+                  "maxItems": 500,
+                  "items": {
+                    "$ref": "urn:botaru:schema:common:1#/$defs/name"
+                  },
+                  "minItems": 1,
+                  "uniqueItems": true
+                }
+              }
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "from",
+                "where"
+              ],
+              "properties": {
+                "from": {
+                  "$ref": "urn:botaru:schema:common:1#/$defs/name",
+                  "description": "An earlier fanout step."
+                },
+                "where": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "field",
+                    "op"
+                  ],
+                  "properties": {
+                    "field": {
+                      "type": "string",
+                      "pattern": "^[a-z][a-z0-9_]{0,63}$",
+                      "maxLength": 64,
+                      "description": "A field from the type summary_fields."
+                    },
+                    "op": {
+                      "enum": [
+                        "eq",
+                        "ne",
+                        "lt",
+                        "le",
+                        "gt",
+                        "ge",
+                        "in",
+                        "not_in",
+                        "exists"
+                      ],
+                      "x-botaru-registry": "condition-ops"
+                    },
+                    "value": {
+                      "description": "Literal: a number, a string of a closed form, a boolean or a list of these.",
+                      "anyOf": [
+                        {
+                          "type": "number"
+                        },
+                        {
+                          "type": "boolean"
+                        },
+                        {
+                          "type": "string",
+                          "maxLength": 120
+                        },
+                        {
+                          "type": "array",
+                          "maxItems": 32,
+                          "items": {
+                            "anyOf": [
+                              {
+                                "type": "number"
+                              },
+                              {
+                                "type": "string",
+                                "maxLength": 120
+                              }
+                            ]
+                          }
+                        }
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          ]
+        },
+        "rollout": {
+          "$ref": "urn:botaru:schema:campaign-propose-request:1#/$defs/rollout",
+          "description": "Campaign rollout policy of the fanout step, not wider than the ceilings (ORC-5)."
+        },
+        "who": {
+          "description": "Who decides a confirm step: initiator (default) or people with action.approve:<a>.",
+          "oneOf": [
+            {
+              "const": "initiator"
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "approvers_of"
+              ],
+              "properties": {
+                "approvers_of": {
+                  "$ref": "urn:botaru:schema:common:1#/$defs/dotted_name"
+                }
+              }
+            }
+          ]
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "patternProperties": {
+              "^kind$": {
+                "const": "task"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "type",
+              "goal"
+            ],
+            "not": {
+              "anyOf": [
+                {
+                  "required": [
+                    "action"
+                  ]
+                },
+                {
+                  "required": [
+                    "items"
+                  ]
+                },
+                {
+                  "required": [
+                    "rollout"
+                  ]
+                },
+                {
+                  "required": [
+                    "who"
+                  ]
+                },
+                {
+                  "required": [
+                    "args"
+                  ]
+                }
+              ]
+            }
+          }
+        },
+        {
+          "if": {
+            "patternProperties": {
+              "^kind$": {
+                "const": "fanout"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "items"
+            ],
+            "oneOf": [
+              {
+                "required": [
+                  "type"
+                ]
+              },
+              {
+                "required": [
+                  "action"
+                ]
+              }
+            ],
+            "not": {
+              "required": [
+                "who"
+              ]
+            }
+          }
+        },
+        {
+          "if": {
+            "patternProperties": {
+              "^kind$": {
+                "const": "action"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "action",
+              "args"
+            ],
+            "not": {
+              "anyOf": [
+                {
+                  "required": [
+                    "type"
+                  ]
+                },
+                {
+                  "required": [
+                    "items"
+                  ]
+                },
+                {
+                  "required": [
+                    "goal"
+                  ]
+                },
+                {
+                  "required": [
+                    "who"
+                  ]
+                }
+              ]
+            }
+          }
+        },
+        {
+          "if": {
+            "patternProperties": {
+              "^kind$": {
+                "const": "confirm"
+              }
+            }
+          },
+          "then": {
+            "not": {
+              "anyOf": [
+                {
+                  "required": [
+                    "type"
+                  ]
+                },
+                {
+                  "required": [
+                    "action"
+                  ]
+                },
+                {
+                  "required": [
+                    "items"
+                  ]
+                },
+                {
+                  "required": [
+                    "params"
+                  ]
+                },
+                {
+                  "required": [
+                    "args"
+                  ]
+                },
+                {
+                  "required": [
+                    "goal"
+                  ]
+                }
+              ]
+            }
+          }
+        }
+      ]
+    }
+  }
+}

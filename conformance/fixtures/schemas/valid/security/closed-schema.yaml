@@ -1,0 +1,43 @@
+schema: urn:botaru:schema:closed-schema:1
+rules:
+- INJ-1
+description: 'Closed tool parameters: a machine from the catalog, a line count with bounds, a verb from the list, a time
+  with a format, a closed object.'
+cases:
+- host:
+    type: string
+    enum_from: catalog.hosts
+  lines:
+    type: integer
+    minimum: 1
+    maximum: 2000
+    default: 200
+  since:
+    type: string
+    x-botaru-format: datetime
+- type: object
+  additionalProperties: false
+  required:
+  - older_than_days
+  properties:
+    older_than_days:
+      type: integer
+      minimum: 1
+      maximum: 30
+- verb:
+    type: string
+    enum:
+    - start
+    - stop
+    - restart
+  stations:
+    type: array
+    maxItems: 5
+    items:
+      type: string
+      enum:
+      - st-01
+      - st-02
+      - st-05
+      - st-07
+      - st-09

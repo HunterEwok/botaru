@@ -1,0 +1,6 @@
+schema: spec/model/p2-proposal-show-request.schema.json
+rules: [PRP-20]
+description: P2 proposal.show requests that the schema rejects; short id; extra field.
+cases:
+  - {proposal: p_0101}
+  - {proposal: p_01JB0000000000000000000101, tenant: demo2}

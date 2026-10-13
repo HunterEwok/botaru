@@ -1,0 +1,195 @@
+id: fx-model-profiles-lint
+rules: [GW-3, GW-7, GW-8, GW-9, GW-14]
+description: Model profiles, role slots and the provider workspace at apply and in the daily check. A model is chosen
+  only as a role slot profile from the tenant's models_allowed; a profile with an alias without a version and a type whose purpose
+  needs a slot the role lacks do not pass apply (GW-7); a role without a base or analysis profile in models_allowed
+  does not pass apply and does not get enroll (GW-8); tenant limits are below the share of the workspace ceiling (GW-9); only P4
+  sets the call region (GW-14); each tenant has its own provider key (GW-3).
+given:
+  tenant: demo
+  tenant_spec:
+    models_allowed: [base-std, analysis-std, review-a, review-b, seat-std, manager-std, translate-std]
+    providers_allowed: [provider-a]
+    privacy:
+      subprocessors:
+      - {name: provider-a, region: eu}
+cases:
+- id: gw-fx-01
+  rules: [GW-7]
+  description: A profile with a model alias without an exact version does not pass apply.
+  given:
+    profile: {name: base-std, provider: provider-a, model: model-a-latest, family: family-a}
+  expect: {result: rejected, stage: apply, field: model}
+- id: gw-fx-02
+  rules: [GW-7]
+  description: A type with purpose insight on a role without an analysis slot does not pass apply.
+  given:
+    role:
+      name: ops-reader
+      models: {base: base-std}
+    task_type: {name: ops.insight.v1, purpose: insight}
+  expect: {result: rejected, stage: apply, field: purpose}
+- id: gw-fx-03
+  rules: [GW-7]
+  description: A model name in the request body does not choose; a request with a model other than the allowed one is rejected.
+  given:
+    handle: {slot: base, profile: base-std}
+  steps:
+  - call:
+      port: P4
+      op: model.call
+      request:
+        model: analysis-std
+        max_tokens: 1000
+        messages:
+        - {role: user, content: Overnight summary}
+  expect: {result: rejected}
+- id: gw-fx-04
+  rules: [GW-7]
+  description: The core determines the slot by purpose; insight and aggregate get analysis, review of the reviewer role gets
+    base, the others base.
+  given:
+    role:
+      name: ops-reader
+      models: {base: base-std, analysis: analysis-std}
+  expect:
+    slot_by_purpose: {work: base, report: base, translate: base, insight: analysis, aggregate: analysis, review: base}
+- id: gw-fx-05
+  rules: [GW-8]
+  description: A role whose base slot profile is not in models_allowed does not pass apply and does not get enroll.
+  given:
+    role:
+      name: ops-reader
+      models: {base: base-big}
+  expect:
+    result: rejected
+    stage: apply
+    enroll: {result: denied}
+- id: gw-fx-06
+  rules: [GW-8]
+  description: The same for the analysis slot.
+  given:
+    role:
+      name: ops-reader
+      models: {base: base-std, analysis: analysis-big}
+  expect:
+    result: rejected
+    stage: apply
+    enroll: {result: denied}
+- id: gw-fx-07
+  rules: [GW-9]
+  description: A tenant month_eur greater than its workspace ceiling multiplied by the share 0.9 does not pass apply.
+  given:
+    workspace: {tenant: demo, provider_spend_cap_eur: 300, share: 0.9}
+    budgets: {month_eur: 300}
+  expect: {result: rejected, stage: apply, alarm: true, doctor_row: true}
+- id: gw-fx-08
+  rules: [GW-9]
+  description: A sum of month_eur over all tenants greater than the share 0.9 of the organization ceiling at the provider does not pass apply.
+  given:
+    organization: {provider_spend_cap_eur: 1000, share: 0.9}
+    tenants:
+    - {tenant: demo, month_eur: 500}
+    - {tenant: demo2, month_eur: 450}
+  expect: {result: rejected, stage: apply}
+- id: gw-fx-09
+  rules: [GW-9, GW-13]
+  description: A failed daily probe on a pair (workspace, profile) gives a code alarm, a doctor line and the reason provider_config
+    for the pair.
+  given:
+    probe: {workspace: demo, profile: seat-std, result: auth_failed}
+  expect: {alarm: true, doctor_row: true, pair_reason: provider_config}
+- id: gw-fx-10
+  rules: [GW-14]
+  description: A region field in the runtime request is rejected; P4 sets the region from privacy.subprocessors[].region.
+  steps:
+  - call:
+      port: P4
+      op: model.call
+      request:
+        model: base-std
+        max_tokens: 1000
+        messages:
+        - {role: user, content: Overnight summary}
+        region: us
+    expect: {result: rejected, stage: schema, sent_region: eu}
+- id: gw-fx-11
+  rules: [GW-14]
+  description: A profile whose provider does not support the tenant's region does not pass apply for that tenant.
+  given:
+    profile:
+      name: base-std
+      provider: provider-a
+      regions: [us]
+  expect: {result: rejected, stage: apply}
+- id: gw-fx-12
+  rules: [GW-14]
+  description: A provider outside the tenant's privacy.subprocessors is not called on either the main or the fallback model,
+    including by the embedding model of kb.ingest.v1.
+  given:
+    profile: {name: embed-b, provider: provider-b}
+  steps:
+  - call:
+      port: P4
+      op: model.call
+      request:
+        model: base-std
+        max_tokens: 1000
+        messages:
+        - {role: user, content: Overnight summary}
+    context: {purpose: work, slot: base, fallback: embed-b}
+  - call:
+      port: P4
+      op: model.call
+      request:
+        model: base-std
+        max_tokens: 1000
+        messages:
+        - {role: user, content: Overnight summary}
+    context: {task_type: kb.ingest.v1, profile: embed-b}
+  expect: {provider_b_calls: 0}
+- id: gw-fx-13
+  rules: [GW-3]
+  description: A call for a tenant's task goes only with that tenant's key and in its workspace; the demo canary does not appear
+    in demo2 requests.
+  steps:
+  - call:
+      port: P4
+      op: model.call
+      request:
+        model: base-std
+        max_tokens: 1000
+        messages:
+        - {role: user, content: CANARY-NOT-A-SECRET-gw3-demo}
+    context: {tenant: demo}
+  - call:
+      port: P4
+      op: model.call
+      request:
+        model: base-std
+        max_tokens: 1000
+        messages:
+        - {role: user, content: Overnight summary}
+    context: {tenant: demo2}
+  expect:
+    key_used: {demo: provider-key-demo, demo2: provider-key-demo2}
+    canary_in_requests_of: {demo2: false}
+- id: gw-fx-14
+  rules: [GW-3]
+  description: A model handle after the end of the attempt's lease is rejected.
+  given:
+    handle: {lease: expired}
+  expect: {result: rejected, reason: handle_invalid}
+- id: gw-fx-15
+  rules: [GW-3]
+  description: Only P4 has the provider key; the deployment lint fails a description where the key is given to another process.
+  given:
+    deploy:
+      hosts:
+        core1:
+          kind: production
+          processes:
+          - name: channel-demo
+            kind: channel
+            secrets: [provider-key-demo]
+  expect: {result: rejected, stage: lint}

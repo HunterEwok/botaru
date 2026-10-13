@@ -1,0 +1,131 @@
+schema: spec/manifests/action.schema.json
+rules:
+- MAN-1
+description: Action manifest specs from examples/ that the kind schema accepts.
+cases:
+- title: Clean the pipeline temporary directory
+  description: Deletes files older than the given number of days from the tenant's pipeline temporary directory on the machine.
+    Propose it when the pipeline volume runs out of space and the code's numbers confirm it.
+  risk: low
+  args:
+    type: object
+    additionalProperties: false
+    required:
+    - older_than_days
+    properties:
+      older_than_days:
+        type: integer
+        minimum: 3
+        maximum: 30
+  ttl: 60m
+  idempotent: true
+  exclusive: resource
+  campaign:
+    allowed: true
+    max_items: 20
+    max_in_flight: 2
+    canary_min: 1
+    after_canary: manual
+    max_failures_max: 0
+  executor:
+    plugin: pipeline
+    tool: cleanup_tmp
+    os_mechanism:
+      oneshot:
+        unit: pipeline-tmp-clean-{tenant}.service
+        started_by: pipeline-tmp-clean-{tenant}.path
+        wait: false
+- title: Monthly CTD quality control
+  description: Queues the CTD profile quality control pipeline for one month for the selected stations. Does not change
+    the source data.
+  risk: low
+  approvals: 1
+  args:
+    type: object
+    additionalProperties: false
+    required:
+    - month
+    - stations
+    properties:
+      month:
+        type: string
+        x-botaru-format: year_month
+      stations:
+        type: array
+        minItems: 1
+        maxItems: 50
+        uniqueItems: true
+        items:
+          enum_from: catalog.stations
+      level:
+        enum:
+        - basic
+        - full
+        default: basic
+  ttl: 60m
+  idempotent: true
+  executor:
+    plugin: pipeline
+    tool: start_ctd_qc
+    os_mechanism:
+      oneshot:
+        unit: ctd-qc-queue-{tenant}.service
+        started_by: ctd-qc-queue-{tenant}.path
+        wait: false
+- title: Resume a lab run
+  description: Resumes a stopped lab run of this tenant with the selected resource profile. Propose it when the trace shows
+    a crashed process and the run is not finished.
+  risk: low
+  args:
+    type: object
+    additionalProperties: false
+    required:
+    - run
+    - profile
+    properties:
+      run:
+        enum_from: catalog.lab_runs
+      profile:
+        enum:
+        - standard
+        - highmem
+  idempotent: false
+  ttl: 60m
+  executor:
+    plugin: pipeline
+    tool: resume_batch
+    os_mechanism:
+      oneshot:
+        unit: batch-resume-{tenant}.service
+        started_by: batch-resume-{tenant}.path
+        wait: false
+- title: Daily CTD control
+  description: Queues the daily quality control of CTD profiles for the selected stations. Writes only to its own volume
+    on ctd1 and is idempotent.
+  risk: routine
+  writes_only:
+  - res:ctd1:data
+  idempotent: true
+  runs_per_hour: 2
+  runs_per_day: 6
+  args:
+    type: object
+    additionalProperties: false
+    required:
+    - stations
+    properties:
+      stations:
+        type: array
+        minItems: 1
+        maxItems: 50
+        uniqueItems: true
+        items:
+          enum_from: catalog.stations
+  executor:
+    plugin: pipeline
+    tool: start_ctd_daily
+    os_mechanism:
+      oneshot:
+        unit: ctd-daily-queue-{tenant}.service
+        started_by: ctd-daily-queue-{tenant}.path
+        wait: false

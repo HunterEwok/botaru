@@ -1,0 +1,195 @@
+# Lint of plugin and role manifests against injections: MCP annotations (INJ-3), plugin network (INJ-6),
+# the model does not change itself (INJ-10), OS commands (INJ-14), monitoring script names (INJ-16).
+id: fx-injection-manifest-lint
+rules: [INJ-3, INJ-6, INJ-10, INJ-14, INJ-16]
+description: Each row is a manifest fragment and the outcome of farmctl apply.
+cases:
+# INJ-3
+- id: inj-3-01
+  rules: [INJ-3]
+  given:
+    tool_yaml:
+      access: read
+      annotations: {readOnlyHint: false}
+  expect: {result: rejected, stage: apply, note: the annotation contradicts the manifest}
+- id: inj-3-02
+  rules: [INJ-3]
+  given:
+    tool_yaml: {access: read, tier: 1, output_class: raw_logs}
+  expect: {result: rejected, stage: apply, note: the required untrusted_output is missing}
+- id: inj-3-03
+  rules: [INJ-3]
+  given:
+    tool_yaml:
+      access: read
+      untrusted_output: false
+      output_schema:
+        line: {type: string}
+  expect: {result: rejected, stage: apply, note: false only for output of numbers and enum values}
+- id: inj-3-04
+  rules: [INJ-3]
+  given:
+    tool_yaml:
+      access: read
+      untrusted_output: false
+      output_schema:
+        free_pct: {type: integer, minimum: 0, maximum: 100}
+  expect: {result: ok}
+- id: inj-3-05
+  rules: [INJ-3]
+  given:
+    live_server:
+      annotations: {destructiveHint: false}
+      tier_claim: 0
+    manifest: {tier: 1}
+  expect: {tier: 1, note: 'the manifest sets the tier, not the server'}
+# INJ-6
+- id: inj-6-01
+  rules: [INJ-6]
+  given:
+    plugin_yaml:
+      network:
+        egress: ['*']
+  expect: {result: rejected, stage: apply}
+- id: inj-6-02
+  rules: [INJ-6]
+  given:
+    plugin_yaml:
+      network:
+        egress: [http-check-targets]
+    catalog:
+      http-check-targets: [web1]
+  expect: {result: ok}
+- id: inj-6-03
+  rules: [INJ-6]
+  given:
+    plugin_yaml:
+      network:
+        egress: [198.51.100.0/24]
+  expect: {result: rejected, stage: apply, note: the address is not from the tenant catalog}
+- id: inj-6-04
+  rules: [INJ-6]
+  given:
+    tool_yaml:
+      params:
+        url: {type: string, x-botaru-format: id}
+  expect: {result: rejected, stage: apply, note: the model has no URL or host argument}
+- id: inj-6-05
+  rules: [INJ-6]
+  given:
+    plugin: monitor
+    plugin_yaml:
+      network:
+        egress: [monitor-api]
+    deploy: {monitor-api: from_deploy}
+  expect: {result: ok, note: the only exception}
+# INJ-10
+- id: inj-10-01
+  rules: [INJ-10]
+  given:
+    role_yaml:
+      tools: [git/commit]
+    target: roles/ops-reader/
+  expect: {result: rejected, stage: apply, note: write into its own manifests}
+- id: inj-10-02
+  rules: [INJ-10]
+  given:
+    role_yaml:
+      skills:
+      - {path: skills/ops.md}
+  expect: {result: rejected, stage: apply, note: skill not pinned by hash}
+- id: inj-10-03
+  rules: [INJ-10]
+  given:
+    proposal: {kind: patch, target: roles/ops-reader/role.yaml, field: tools}
+  expect: {applied_by_core: false, needs: a person makes the change through git}
+- id: inj-10-04
+  rules: [INJ-10]
+  given:
+    feedback: {changes: instructions}
+  expect: {result: rejected, note: feedback changes only numbers within limits from git (DIG-4)}
+# INJ-14
+- id: inj-14-01
+  rules: [INJ-14]
+  given:
+    cmd_yaml:
+      argv: [/bin/sh, -c, df -h]
+  expect: {result: rejected, stage: apply, note: the shell is in forbidden-programs.yaml}
+- id: inj-14-02
+  rules: [INJ-14]
+  given:
+    cmd_yaml:
+      argv: [df, -h]
+  expect: {result: rejected, stage: apply, note: the path is not absolute}
+- id: inj-14-03
+  rules: [INJ-14]
+  given:
+    cmd_yaml:
+      argv: [/usr/bin/systemctl, status, '{service.unit}']
+  expect: {result: rejected, stage: apply, note: no -- before the positional argument}
+- id: inj-14-04
+  rules: [INJ-14]
+  given:
+    cmd_yaml:
+      argv: [/usr/bin/df, '-h{opts}']
+  expect: {result: rejected, stage: apply, note: the parameter is not a whole element}
+- id: inj-14-05
+  rules: [INJ-14]
+  given:
+    cmd_yaml:
+      argv: [/usr/bin/find, /var/log, -name, '*.gz']
+  expect: {result: rejected, stage: apply, note: find is in forbidden-programs.yaml}
+- id: inj-14-06
+  rules: [INJ-14]
+  given:
+    cmd_yaml:
+      argv: [/usr/bin/journalctl, -u, --, '{service.unit}']
+      untrusted_output: false
+  expect:
+    result: rejected
+    stage: apply
+    note: service journal output is text from outside, untrusted_output true and raw_logs are needed
+- id: inj-14-07
+  rules: [INJ-14]
+  given:
+    cmd_yaml:
+      argv: [/usr/bin/df, -h, -x, tmpfs]
+    deploy: {user: root}
+  expect: {result: rejected, stage: apply, note: the plugin OS user is root}
+- id: inj-14-08
+  rules: [INJ-14]
+  given:
+    cmd_yaml:
+      argv: [/usr/bin/systemctl, status, --no-pager, -n, '0', --, '{service.unit}']
+      params:
+        service: {enum_from: catalog.services}
+  expect: {result: ok}
+# INJ-16
+- id: inj-16-01
+  rules: [INJ-16]
+  given:
+    role_yaml: {monitor_scripts: true}
+  expect: {result: rejected, stage: apply}
+- id: inj-16-02
+  rules: [INJ-16]
+  given:
+    role_yaml:
+      monitor_scripts: [db-vacuum]
+    catalog:
+      web1:
+        monitor_scripts_allowed: [app-api-restart, nginx-cache-clear]
+  expect: {result: rejected, stage: apply}
+- id: inj-16-03
+  rules: [INJ-16]
+  given:
+    api_scripts:
+    - {scriptid: 41}
+    - {scriptid: 42}
+    - {scriptid: 77}
+    catalog:
+      web1:
+      - {scriptid: 41, name: app-api-restart}
+      - {scriptid: 42, name: nginx-cache-clear}
+  expect:
+    tool_enum: [app-api-restart, nginx-cache-clear]
+    note: script 77 outside the catalog is not visible to the model

@@ -1,0 +1,10 @@
+schema: spec/model/review-result.schema.json
+rules: [COM-3, COM-9]
+description: >-
+  Reviewer outputs that the schema accepts: the operations lens with score 3 and a concern code, a veto by the safety
+  lens, the value lens without a veto, and a shadow review with shadow true.
+cases:
+  - {lens: operational, score: 3, veto: false, concerns: [report_delay], confidence: medium, shadow: false, note: The report will be ready by 05:12.}
+  - {lens: security, score: 0, veto: true, concerns: [], confidence: high}
+  - {lens: value, score: 3, confidence: medium}
+  - {lens: cost, score: 2, veto: false, confidence: low, shadow: true}

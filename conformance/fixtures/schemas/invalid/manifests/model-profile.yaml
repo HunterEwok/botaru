@@ -1,0 +1,145 @@
+schema: spec/manifests/model-profile.schema.json
+rules:
+- MAN-1
+description: 'ModelProfile manifest specs that the kind schema rejects: extra field, missing required field, value outside
+  the closed list or format.'
+cases:
+- provider: provider-a
+  model: model-a-medium-2026-09
+  family: family-a
+  rank: 2
+  pool: family-a
+  fallback: []
+  fallback_on:
+  - overloaded
+  - unavailable
+  - retired
+  max_output_tokens: 8000
+  tokens_per_s: 60
+  price:
+    input: 2.0
+    output: 8.0
+    checked: '2026-10-01'
+  provider_retention_days:
+    value: 30
+    checked: '2026-10-01'
+  requires_retention: false
+  provider_training:
+    value: false
+    checked: '2026-10-01'
+  provider_human_review:
+    value: abuse_only
+    checked: '2026-10-01'
+  subprocessors: []
+  retires_at: null
+  unexpected_field: true
+- model: model-a-medium-2026-09
+  family: family-a
+  rank: 2
+  pool: family-a
+  fallback: []
+  fallback_on:
+  - overloaded
+  - unavailable
+  - retired
+  max_output_tokens: 8000
+  tokens_per_s: 60
+  price:
+    input: 2.0
+    output: 8.0
+    checked: '2026-10-01'
+  provider_retention_days:
+    value: 30
+    checked: '2026-10-01'
+  requires_retention: false
+  provider_training:
+    value: false
+    checked: '2026-10-01'
+  provider_human_review:
+    value: abuse_only
+    checked: '2026-10-01'
+  subprocessors: []
+  retires_at: null
+- provider: provider-a
+  family: family-a
+  rank: 2
+  pool: family-a
+  fallback: []
+  fallback_on:
+  - overloaded
+  - unavailable
+  - retired
+  max_output_tokens: 8000
+  tokens_per_s: 60
+  price:
+    input: 2.0
+    output: 8.0
+    checked: '2026-10-01'
+  provider_retention_days:
+    value: 30
+    checked: '2026-10-01'
+  requires_retention: false
+  provider_training:
+    value: false
+    checked: '2026-10-01'
+  provider_human_review:
+    value: abuse_only
+    checked: '2026-10-01'
+  subprocessors: []
+  retires_at: null
+- provider: provider-a
+  model: model-a-medium-2026-09
+  family: family-a
+  rank: 7
+  pool: family-a
+  fallback: []
+  fallback_on:
+  - overloaded
+  - unavailable
+  - retired
+  max_output_tokens: 8000
+  tokens_per_s: 60
+  price:
+    input: 2.0
+    output: 8.0
+    checked: '2026-10-01'
+  provider_retention_days:
+    value: 30
+    checked: '2026-10-01'
+  requires_retention: false
+  provider_training:
+    value: false
+    checked: '2026-10-01'
+  provider_human_review:
+    value: abuse_only
+    checked: '2026-10-01'
+  subprocessors: []
+  retires_at: null
+- provider: provider-a
+  model: model-a-medium-2026-09
+  family: family-a
+  rank: 2
+  pool: family-a
+  fallback: []
+  fallback_on:
+  - overloaded
+  - unavailable
+  - retired
+  max_output_tokens: 8000
+  tokens_per_s: 60
+  price:
+    input: 2.0
+    output: 8.0
+    checked: '2026-10-01'
+  provider_retention_days:
+    value: 30
+    checked: '2026-10-01'
+  requires_retention: false
+  provider_training:
+    value: false
+    checked: '2026-10-01'
+  provider_human_review:
+    value: sometimes
+    checked: '2026-10-01'
+  subprocessors: []
+  retires_at: null

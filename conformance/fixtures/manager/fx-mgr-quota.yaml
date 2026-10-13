@@ -1,0 +1,23 @@
+id: fx-mgr-quota
+rules: [MGR-33, GOV-22]
+description: 'A disk_full incident on a disk where one of the writers has no volume quota: the incident stays critical,
+  with a first measure by code and a call to people, but it does not stop the seat; the incident record keeps the reason code in stops_manager_effect.
+  The skeleton text does not fix the name of the code.'
+given:
+  seat: {state: held, holder: bot_41, epoch: 9}
+  volume:
+    id: res:ctd1:data
+    writers:
+    - {tenant: demo, quota_bytes: 400000000000}
+    - {sink: ctd-ingest, quota_bytes: null}
+  mgr_34_conditions: met
+steps:
+- occur:
+    incident_open: {tenant: demo, class: disk_full, subject: 'res:ctd1:data'}
+expect:
+  incident: {severity: sev1, contain_auto: applied, stops_manager_effect: present}
+  seat:
+    state: held
+    epoch: 9
+    stop_reasons: []
+  alarm.incident.unhandled: by humans.page_if_unhandled_after

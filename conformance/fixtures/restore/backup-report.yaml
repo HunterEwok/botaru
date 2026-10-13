@@ -1,0 +1,91 @@
+id: fx-restore-backup-report
+rules: [RET-8, RET-5]
+description: 'Reports of the backup process P2 backup.report from backup1 with its own report key. The health loop counts by the latest
+  reports: no backup with ok true per storage location for longer than 26 hours gives alarm.backup.overdue (warn); no restore_check
+  with ok true for longer than 8 days gives alarm.backup.restore_check_overdue (warn); a report with ok false gives the same alarm at once;
+  doctor fails the check if the erasure log backup is older than the store backup.'
+given: {tenant: farm}
+cases:
+- id: rst-fx-07
+  rules: [RET-8]
+  description: A mock clock with no backup report for 26 hours gives alarm.backup.overdue.
+  given:
+    reports:
+    - kind: backup
+      started_at: '2026-10-11T02:00:00Z'
+      finished_at: '2026-10-11T02:20:00Z'
+      ok: true
+      size: 52428800
+      location_id: store-daily
+    now: '2026-10-12T04:21:00Z'
+  expect:
+    alarms:
+    - {type: alarm.backup.overdue.v1, state: firing, severity: warn, location_id: store-daily}
+- id: rst-fx-08
+  rules: [RET-8]
+  description: A restore_check report with ok false gives alarm.backup.restore_check_overdue at once.
+  given:
+    reports:
+    - kind: restore_check
+      started_at: '2026-10-12T03:00:00Z'
+      finished_at: '2026-10-12T03:40:00Z'
+      ok: false
+      location_id: store-daily
+    now: '2026-10-12T03:41:00Z'
+  expect:
+    alarms:
+    - {type: alarm.backup.restore_check_overdue.v1, state: firing, severity: warn}
+- id: rst-fx-09
+  rules: [RET-8, RET-5]
+  description: A backup report with a fresh store backup and an old erasure log backup fails doctor.
+  given:
+    reports:
+    - kind: backup
+      started_at: '2026-10-12T02:00:00Z'
+      finished_at: '2026-10-12T02:20:00Z'
+      ok: true
+      size: 52428800
+      location_id: store-daily
+    - kind: backup
+      started_at: '2026-10-10T02:00:00Z'
+      finished_at: '2026-10-10T02:01:00Z'
+      ok: true
+      size: 65536
+      location_id: erasure-journal
+  expect:
+    doctor: {result: fail, check: erasure_journal_older_than_store}
+- id: rst-fx-10
+  rules: [RET-8]
+  description: No restore_check with ok true for longer than 8 days; doctor marks a backup without a successful check as unverified.
+  given:
+    reports:
+    - kind: backup
+      started_at: '2026-10-12T02:00:00Z'
+      finished_at: '2026-10-12T02:20:00Z'
+      ok: true
+      location_id: store-daily
+    - kind: restore_check
+      started_at: '2026-10-03T03:00:00Z'
+      finished_at: '2026-10-03T03:40:00Z'
+      ok: true
+      location_id: store-daily
+    now: '2026-10-12T04:00:00Z'
+  expect:
+    alarms:
+    - {type: alarm.backup.restore_check_overdue.v1, state: firing, severity: warn}
+    doctor: {unverified_backup: true}
+- id: rst-fx-11
+  rules: [RET-8]
+  description: backup.report without the narrow report key is rejected.
+  steps:
+  - call:
+      port: P2
+      op: backup.report
+      request:
+        kind: backup
+        started_at: '2026-10-12T02:00:00Z'
+        finished_at: '2026-10-12T02:20:00Z'
+        ok: true
+        location_id: backup1
+    by: human:bob
+  expect: {result: denied, reason: forbidden}

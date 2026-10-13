@@ -1,0 +1,153 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:botaru:schema:digest:1",
+  "title": "Proposal digest",
+  "description": "Weekly proposal digest (delivery kind proposal_digest) that code assembles from a template out of the records. Items are only recommended ones (at most insights.digest.max_items, by default 5) and audit sample items with a mark (at most audit_sample.max_per_digest, since v0.2). The reporter model's text goes only as a separate labeled part (DIG-1). Delivery only to the address insights.present_to; the item mark is checked against the recipient's ceiling (DIG-2). When the loop is disabled the digest arrives without items, with a code line and the reasons (INS-6).",
+  "x-botaru-direction": "output",
+  "x-botaru-rules": [
+    "DIG-1",
+    "DIG-2",
+    "INS-6",
+    "PRP-9"
+  ],
+  "type": "object",
+  "required": [
+    "tenant",
+    "address",
+    "items"
+  ],
+  "properties": {
+    "tenant": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/tenant_name"
+    },
+    "address": {
+      "type": "string",
+      "maxLength": 120,
+      "description": "The tenant's insights.present_to address."
+    },
+    "period": {
+      "type": "string",
+      "maxLength": 20,
+      "description": "Week of the digest."
+    },
+    "items": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "proposal",
+          "kind",
+          "data_mark",
+          "show"
+        ],
+        "properties": {
+          "proposal": {
+            "$ref": "urn:botaru:schema:common:1#/$defs/object_id"
+          },
+          "kind": {
+            "enum": [
+              "recommended",
+              "audit_sample"
+            ],
+            "description": "A recommended item or an audit sample item."
+          },
+          "data_mark": {
+            "$ref": "urn:botaru:schema:common:1#/$defs/data_mark"
+          },
+          "show": {
+            "enum": [
+              "full",
+              "title_only"
+            ],
+            "description": "Above the recipient's ceiling, only the code title in the group; details in a direct chat to those who have data:<class> (DIG-2)."
+          },
+          "block": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "description": "Block number of conflicting recommended items (PRP-9).",
+                "minimum": 1
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "untrusted_seen": {
+            "type": "boolean"
+          },
+          "self_evidence": {
+            "type": "boolean"
+          }
+        }
+      },
+      "maxItems": 30
+    },
+    "loop_off": {
+      "anyOf": [
+        {
+          "type": "object",
+          "description": "The \"improvement loop disabled\" signal with reasons from the closed list INS-6.",
+          "required": [
+            "reasons"
+          ],
+          "properties": {
+            "reasons": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "required": [
+                  "reason"
+                ],
+                "properties": {
+                  "role": {
+                    "anyOf": [
+                      {
+                        "$ref": "urn:botaru:schema:common:1#/$defs/name"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "reason": {
+                    "type": "string",
+                    "maxLength": 64
+                  }
+                }
+              },
+              "maxItems": 20
+            }
+          }
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "intro": {
+      "anyOf": [
+        {
+          "type": "object",
+          "description": "Optional introduction by the reporter: a separate labeled part, never instead of items.",
+          "required": [
+            "text",
+            "source"
+          ],
+          "properties": {
+            "text": {
+              "type": "string",
+              "maxLength": 2000
+            },
+            "source": {
+              "const": "model"
+            }
+          }
+        },
+        {
+          "type": "null"
+        }
+      ]
+    }
+  }
+}

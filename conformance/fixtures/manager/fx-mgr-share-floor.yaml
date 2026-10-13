@@ -1,0 +1,82 @@
+id: fx-mgr-share-floor
+rules: [MGR-37]
+description: 'A second seat hold in a role of 4 workers is not applied at once: the core creates a control card for the people of T, limit
+  floor(0.25 × 4) = 1. A hold of scope role counts as a hold of all its workers, a hold of scope bot as a hold of the worker of its binding;
+  with a limit of 0 any hold goes as a card. Conversion into a card is not a refusal for the safeguard, and the card counts toward
+  ops_per_hour.'
+given:
+  tenant: demo
+  max_share_held: 0.25
+  roles:
+    pipeline-runner:
+      workers: [w_7, w_8, w_10, w_11]
+    ctd-solo:
+      workers: [w_20]
+  implicated: [w_7, w_8, w_20]
+cases:
+- id: fx-mgr-share-floor-a
+  steps:
+  - call:
+      port: P3
+      op: tools/call
+      request:
+        name: control_ops
+        arguments:
+          op: quarantine
+          target: {kind: worker, id: w_7}
+    by: attempt
+    expect: {result: ok}
+  - call:
+      port: P3
+      op: tools/call
+      request:
+        name: control_ops
+        arguments:
+          op: drain
+          target: {kind: worker, id: w_8}
+    by: attempt
+    expect: {outcome: card, limit: 1, breaker_denials_added: 0, ops_per_hour_used: '+1'}
+- id: fx-mgr-share-floor-b
+  steps:
+  - call:
+      port: P3
+      op: tools/call
+      request:
+        name: control_ops
+        arguments:
+          op: hold
+          target: {kind: worker, id: w_20}
+          effects: [no_claim]
+          ttl: 1h
+    by: attempt
+  expect: {outcome: card, limit: 0}
+- id: fx-mgr-share-floor-c
+  steps:
+  - call:
+      port: P3
+      op: tools/call
+      request:
+        name: control_ops
+        arguments:
+          op: hold
+          target: {kind: role, id: pipeline-runner}
+          effects: [no_claim]
+          ttl: 1h
+    by: attempt
+  expect: {outcome: card, counted_workers: 4}
+- id: fx-mgr-share-floor-d
+  given:
+    held_by_seat: [w_7]
+  steps:
+  - call:
+      port: P3
+      op: tools/call
+      request:
+        name: control_ops
+        arguments:
+          op: hold
+          target: {kind: bot, id: bot_of_w_8}
+          effects: [no_claim]
+          ttl: 1h
+    by: attempt
+  expect: {outcome: card, counted_workers: 1}

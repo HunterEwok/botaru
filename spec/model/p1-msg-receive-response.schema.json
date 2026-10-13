@@ -1,0 +1,30 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:botaru:schema:p1-msg-receive-response:1",
+  "title": "P1 msg.receive: response",
+  "description": "Entries to read and the number of hidden ones (hidden). Each entry has a handle for reply, ack and nack.",
+  "x-botaru-direction": "output",
+  "x-botaru-rules": [
+    "MSG-6",
+    "MSG-9"
+  ],
+  "type": "object",
+  "required": [
+    "records",
+    "hidden"
+  ],
+  "properties": {
+    "records": {
+      "type": "array",
+      "maxItems": 20,
+      "items": {
+        "$ref": "urn:botaru:schema:message-view:1"
+      }
+    },
+    "hidden": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 100000
+    }
+  }
+}

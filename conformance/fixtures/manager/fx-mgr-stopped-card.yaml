@@ -1,0 +1,38 @@
+id: fx-mgr-stopped-card
+rules: [MGR-35, GOV-22]
+description: 'The seat is stopped by an incident: a manager_stopped card to the farm operators with admin:governance in farm
+  without buttons, with the incident class and number, the tenant, the stop time, the incidents opened during the stop,
+  the decide_within deadline and ready farmctl commands from code. The channel does not accept seat.* operations or the release of a seat hold
+  from any principal.'
+given:
+  seat:
+    state: stopped
+    stop_reasons:
+    - {reason: incident, incident: i_318, at: '2026-11-24T05:10:00Z'}
+    decide_until: '2026-12-01T05:10:00Z'
+  incident: {id: i_318, tenant: demo, class: disk_full}
+cases:
+- id: fx-mgr-stopped-card-a
+  expect:
+    card:
+      code: manager_stopped
+      to: operators(admin:governance@farm)
+      buttons: []
+      fields: [class, incident, tenant, stopped_at, incidents_during_stop, decide_within]
+      commands:
+      - farmctl seat resume farm-manager --incident i_318
+      - farmctl seat assign farm-manager
+      - farmctl seat vacate farm-manager
+- id: fx-mgr-stopped-card-b
+  steps:
+  - occur:
+      incident_open: {tenant: demo2, class: disk_full, id: i_319}
+  expect:
+    seat:
+      stop_reasons: [incident]
+      epoch: unchanged
+    card_appended: [i_319]
+- id: fx-mgr-stopped-card-c
+  given:
+    channel: {from: 'human:bob', chat: bob-dm, text: /seat resume farm-manager --incident i_318}
+  expect: {result: rejected, reason: operator_only}

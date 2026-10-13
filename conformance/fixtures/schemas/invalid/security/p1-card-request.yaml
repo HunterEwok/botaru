@@ -1,0 +1,14 @@
+schema: urn:botaru:schema:p1-card-request:1
+rules:
+- APR-19
+description: Unknown card operation and an extra field.
+cases:
+- op: card.approve
+  subject_kind: approval
+  id: apr_01J9Z3M2Q8YB6V4N7T5K0C2D2F
+  nonce: n7Qx2LkP9vRt4WsZ
+- op: card.remind
+  subject_kind: approval
+  id: apr_01J9Z3M2Q8YB6V4N7T5K0C2D2F
+  nonce: n7Qx2LkP9vRt4WsZ
+  to: human:carol

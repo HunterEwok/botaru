@@ -1,0 +1,86 @@
+# A separate permission to read the audit (AUD-7). audit.read is privileged, only the operator grants it;
+# the answer is metadata only; each read writes an audit record.
+id: fx-audit-audit-read
+rules: [AUD-7]
+description: P2 audit.query and manager.reads in one's own tenant; the membership lint of a production tenant warns about
+  combining it with decision permissions.
+cases:
+- id: aud-read-01
+  rules: [AUD-7]
+  given:
+    people:
+    - principal: human:alice
+      groups: [admin]
+  steps:
+  - call: {port: P2, op: audit.query}
+    by: human:alice
+  expect:
+    decision: {result: denied}
+    reason: no_group_cap
+    note: admin does not have audit.read
+- id: aud-read-02
+  rules: [AUD-7]
+  given:
+    people:
+    - principal: human:carol
+      caps: ['auditor: audit.read']
+  steps:
+  - call: {port: P2, op: audit.query}
+    by: human:carol
+  expect:
+    decision: {result: ok}
+    records: metadata_only
+    audit_of_read: true
+- id: aud-read-03
+  rules: [AUD-7]
+  given:
+    tenant_of_records: demo2
+    people:
+    - principal: human:carol
+      caps: ['auditor: audit.read']
+  steps:
+  - call: {port: P2, op: audit.query}
+    by: human:carol
+  expect:
+    decision: {result: denied}
+    reason: tenant_mismatch
+- id: aud-read-04
+  rules: [AUD-7]
+  given:
+    people:
+    - principal: human:carol
+      caps: ['auditor: audit.read']
+  steps:
+  - call: {port: P2, op: manager.reads}
+    by: human:carol
+  expect:
+    decision: {result: ok}
+- id: aud-read-05
+  rules: [AUD-7]
+  given: {via: farmctl, tenant_of_records: demo}
+  steps:
+  - call: {port: P2, op: audit.query}
+    by: operator
+  expect:
+    decision: {result: ok}
+    audit_record: {via: farmctl}
+    note: emergency access
+- id: aud-read-06
+  rules: [AUD-7, PRM-13]
+  given:
+    grant_in_chat: {group: auditor, by: 'human:alice'}
+    people:
+    - principal: human:alice
+      groups: [admin]
+  steps:
+  - lint: {groups_yaml: 'auditor: audit.read'}
+  expect: {result: denied, reason: privileged_group}
+- id: aud-read-07
+  rules: [AUD-7]
+  given:
+    memberships:
+      carol: [auditor, approver]
+  steps:
+  - lint:
+      tenant_yaml: {kind: production}
+  expect: {lint: warning, why: audit.read together with action.approve for one principal}

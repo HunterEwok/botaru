@@ -1,0 +1,21 @@
+schema: urn:botaru:schema:card:1
+rules: [APR-3, APR-12]
+description: A cleanup_pipeline_tmp approval card for carol.
+data:
+  card: approval_card
+  subject_kind: approval
+  id: apr_01J9Z3M2Q8YB6V4N7T5K0C2D2F
+  nonce: n7Qx2LkP9vRt4WsZ
+  title: Clean up the pipeline temporary files on ctd1
+  args: {older_than_days: 7}
+  requested_by: {initiator: 'human:p_01JB3Q7N0M2V8XK4DGT5RZP9WA', source: bot, role: ops-reader, task: t_01J9Z3M2Q8YB6V4N7T5K0C2D1E}
+  context: {verdict: cause_found, free_pct: 0}
+  untrusted_seen: true
+  untrusted_source: logs/tail
+  risk: low
+  expires_at: '2026-03-02T10:00:00Z'
+  buttons:
+  - {code: approve, subject_kind: approval, id: apr_01J9Z3M2Q8YB6V4N7T5K0C2D2F, nonce: n7Qx2LkP9vRt4WsZ}
+  - {code: reject, subject_kind: approval, id: apr_01J9Z3M2Q8YB6V4N7T5K0C2D2F, nonce: n7Qx2LkP9vRt4WsZ}
+  - {code: details, subject_kind: approval, id: apr_01J9Z3M2Q8YB6V4N7T5K0C2D2F, nonce: n7Qx2LkP9vRt4WsZ}
+  footer: {why_you: you have the right to approve cleanup_pipeline_tmp, until: '2026-03-02T10:00:00Z', on_silence: 'the request will expire, the action will not run'}

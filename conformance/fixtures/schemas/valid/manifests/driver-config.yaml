@@ -1,0 +1,23 @@
+schema: urn:botaru:schema:driver-config:1
+rules:
+- MAN-4
+description: 'Driver spec.config schemas that the meta-schema accepts: closed and without rule fields.'
+cases:
+- $id: urn:botaru:schema:driver.telegram:1
+  type: object
+  additionalProperties: false
+  properties:
+    poll_timeout_s:
+      type: integer
+- $id: urn:botaru:schema:driver.disk:1
+  type: object
+  additionalProperties: false
+  properties:
+    fsync:
+      type: boolean
+    layout:
+      type: object
+      additionalProperties: false
+      properties:
+        by_day:
+          type: boolean

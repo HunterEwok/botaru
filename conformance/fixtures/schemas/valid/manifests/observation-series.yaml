@@ -1,0 +1,19 @@
+schema: spec/manifests/observation-series.schema.json
+rules:
+- MAN-1
+description: ObservationSeries manifest specs from examples/ that the kind schema accepts.
+cases:
+- catalog_kind: resource
+  value:
+    type: integer
+    minimum: 0
+    maximum: 604800
+  unit: s
+  data_class: internal
+  source:
+    kind: job
+    field: duration_s
+  resolution: 1h
+  retention:
+    raw: 90d
+    rollup: 365d

@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:botaru:schema:p1-task-get-response:1",
+  "title": "P1 task.get: response",
+  "description": "The task record without the address signature, the state and the artifacts. The not_found denial is the same for another tenant's and a nonexistent task.",
+  "x-botaru-direction": "output",
+  "x-botaru-rules": [
+    "PRM-9"
+  ],
+  "type": "object",
+  "required": [
+    "task"
+  ],
+  "properties": {
+    "task": {
+      "$ref": "urn:botaru:schema:task-record:1"
+    },
+    "artifacts": {
+      "type": "array",
+      "items": {
+        "$ref": "urn:botaru:schema:common:1#/$defs/file_ref"
+      }
+    }
+  }
+}

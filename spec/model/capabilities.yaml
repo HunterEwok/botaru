@@ -1,0 +1,327 @@
+registry: capabilities
+version: 1
+description: >-
+  Capabilities (permission strings in groups), the order of data classes and task tiers.
+  The kind field says what the entry describes: capability (a capability form),
+  data_class (a data class) or tier (a tier). For a capability, form is the shape
+  of the string in a group, with a name in angle brackets, privileged says whether
+  the capability makes a group privileged (always, never or a condition in words),
+  holders are the principal kinds that may hold it (human, service, system,
+  farm-manager-ops for the tenant's consent group for farm manager operations,
+  operator for the farm operator in farm), wildcard says where an asterisk
+  is allowed. For a data class, order is the position in the order: a class with a larger order
+  is more sensitive, output says whether it can be a tool output class,
+  reserved means that apply does not accept it. For a tier, name is a short
+  name. No row allowing an action means it is not allowed (PRM-1).
+source: docs/permissions.md
+entries:
+  # Data classes: summary < internal < raw_logs (PRM-5)
+  - id: summary
+    kind: data_class
+    since: v0.1
+    order: 0
+    output: true
+    meaning: ready summaries and numbers, without raw text
+    rules: [PRM-5]
+  - id: internal
+    kind: data_class
+    since: v0.1
+    order: 1
+    output: true
+    meaning: internal tenant data; the default ceiling of a channel with third-party storage
+    rules: [PRM-5, SEC-9]
+  - id: raw_logs
+    kind: data_class
+    since: v0.1
+    order: 2
+    output: true
+    meaning: raw logs after redaction; a class above internal makes the group privileged
+    rules: [PRM-5, PRM-13]
+  - id: secret
+    kind: data_class
+    since: v0.1
+    output: false
+    meaning: a secret never leaves the machine and is never an output class
+    rules: [PRM-5, SEC-1]
+  - id: pii
+    kind: data_class
+    since: v0.1
+    output: false
+    reserved: true
+    meaning: reserved; apply rejects it in types, tools and the catalog
+    rules: [PRM-5]
+  # Tiers are set by the task type (PRM-4)
+  - id: 'tier:0'
+    kind: tier
+    since: v0.1
+    name: summary
+    meaning: ready summaries and numbers, without plugin tools
+    rules: [PRM-4]
+  - id: 'tier:1'
+    kind: tier
+    since: v0.1
+    name: read
+    meaning: read-only tools with closed parameters, raw data after redaction
+    rules: [PRM-4, INJ-1]
+  - id: 'tier:2'
+    kind: tier
+    since: v0.2
+    name: sandbox
+    meaning: code in a one-time container without network on a copy of the data
+    rules: [PRM-4, DEP-1]
+  - id: 'tier:3'
+    kind: tier
+    since: v0.1
+    name: action
+    meaning: changing the world only through a request and a person's button; without a button only APR-18 and the routine pipeline by /run
+    rules: [PRM-4, APR-1, APR-17, APR-18]
+  # Capability forms
+  - id: task
+    kind: capability
+    since: v0.1
+    form: 'task:<type>'
+    privileged: if the type's tier is 1 or higher
+    holders: [human, service, system]
+    wildcard: 'only at the end, task:<prefix>.*, by prefix after a dot; not for system; never covers action.*'
+    meaning: enqueue a task of this type; the type is the full name with .vN
+    rules: [PRM-7, PRM-10, PRM-13, APR-5]
+  - id: task.read
+    kind: capability
+    since: v0.1
+    form: 'task.read:<type>'
+    privileged: never
+    holders: [human, service]
+    meaning: read other people's tasks of this type and their results; the data class is checked separately
+    rules: [PRM-9]
+  - id: team.view
+    kind: capability
+    since: v0.1
+    form: 'team.view:<group>'
+    privileged: never
+    holders: [human]
+    meaning: the /team command, a code table of the tasks of the group's people without rows for individual people
+    rules: [PRM-17]
+  - id: data
+    kind: capability
+    since: v0.1
+    form: 'data:<class>'
+    privileged: if the class is above internal
+    holders: [human, service, system]
+    wildcard: not allowed
+    meaning: receive data of this class
+    rules: [PRM-5, PRM-7, PRM-13]
+  - id: action.request
+    kind: capability
+    since: v0.1
+    form: 'action.request:<a>'
+    privileged: always
+    holders: [human, service, system, farm-manager-ops]
+    wildcard: not allowed
+    meaning: lets a bot or the /run command create an action approval on behalf of the principal; for system only by an explicit row
+    rules: [APR-2, APR-17, PRM-7, PRM-10, PRM-13]
+  - id: action.approve
+    kind: capability
+    since: v0.1
+    form: 'action.approve:<a>'
+    privileged: always
+    holders: [human]
+    wildcard: not allowed
+    meaning: >-
+      approve or reject an action; continue a campaign with this action
+      or exclude its items; action.approve:service.control and
+      action.approve:monitor.script_run decide INJ-15 cards and start and
+      stop cards; action.approve:service.control:<service> narrows the permission to one service
+    rules: [APR-4, APR-18, PRM-7, PRM-13]
+  - id: service.control
+    kind: capability
+    since: v0.1
+    form: 'service.control:<service>'
+    privileged: always
+    holders: [human, service, system, farm-manager-ops]
+    wildcard: not allowed; every service by a separate row, for service and system only by an explicit row
+    meaning: >-
+      lets a bot in a task on behalf of the principal restart a catalog service without
+      a card, and start and stop it with a card; every initiator needs it;
+      for a person also the /service command
+    rules: [APR-18, PRM-18, INJ-15]
+  - id: monitor.script_run
+    kind: capability
+    since: v0.1
+    form: monitor.script_run
+    privileged: always
+    holders: [human, service, system, farm-manager-ops]
+    wildcard: not allowed
+    meaning: lets a bot in a task on behalf of the principal run monitoring scripts on the tenant's nodes
+    rules: [APR-18, INJ-15]
+  - id: msg.send
+    kind: capability
+    since: v0.1
+    form: 'msg.send:<type>'
+    privileged: never
+    holders: [human, service, system]
+    meaning: allows bots working on behalf of the principal to send messages of this type
+    rules: [PRM-10]
+  - id: proposal.decide
+    kind: capability
+    since: v0.1
+    form: 'proposal.decide:<category>'
+    privileged: always
+    holders: [human]
+    wildcard: not allowed
+    meaning: accept, reject or defer a proposal of this category
+    rules: [PRM-13]
+  - id: hold.set
+    kind: capability
+    since: v0.1
+    form: 'hold.set:<scope>'
+    privileged: always
+    holders: [human]
+    meaning: set a stop of a scope in one's own tenant, except farm, seat and governance
+    rules: [PRM-13, HLD-2]
+  - id: hold.release
+    kind: capability
+    since: v0.1
+    form: hold.release
+    privileged: always
+    holders: [human]
+    meaning: release a stop in one's own tenant not above one's own rank, except the governance scope; revert of farm manager operations for one incident
+    rules: [PRM-13, HLD-2]
+  - id: 'admin:people'
+    kind: capability
+    since: v0.1
+    form: 'admin:people'
+    privileged: always
+    holders: [human]
+    meaning: >-
+      invite people and grant ordinary groups and groups from delegated_groups;
+      add, disable, restore, change the identity of and offboard people without
+      privileged groups; decide people's requests to delete their own data
+    rules: [PRM-7, PRM-13, PRM-16]
+  - id: control.apply
+    kind: capability
+    since: v0.1
+    form: 'control.apply:<operation>'
+    privileged: always
+    holders: [human, farm-manager-ops]
+    meaning: a control operation from the closed list control-ops.yaml in one's own tenant; pin_task and preempt from people only by the operator
+    rules: [PRM-13, PRM-14]
+  - id: control.approve
+    kind: capability
+    since: v0.1
+    form: control.approve
+    privileged: always
+    holders: [human]
+    meaning: decide a control card of the farm manager
+    rules: [PRM-13]
+  - id: script.run
+    kind: capability
+    since: v0.1
+    form: script.run
+    privileged: always
+    holders: [human]
+    meaning: run one's own script draft with actions, confirm or service control
+    rules: [PRM-13]
+  - id: incident.manage
+    kind: capability
+    since: v0.1
+    form: incident.manage
+    privileged: always
+    holders: [human]
+    meaning: take on an incident of one's own tenant, close it, mark it as false
+    rules: [PRM-13]
+  - id: 'admin:governance'
+    kind: capability
+    since: v0.1
+    form: 'admin:governance'
+    privileged: always
+    holders: [human, operator]
+    meaning: tenant seats through farmctl; since v0.2 tenant cases and the buttons of the governance_stuck card
+    rules: [PRM-13, PRM-14]
+  - id: 'admin:workers'
+    kind: capability
+    since: v0.1
+    form: 'admin:workers'
+    privileged: always
+    holders: [operator]
+    meaning: worker operations and bot.retire; operator operations only
+    rules: [PRM-14]
+  - id: 'admin:farm'
+    kind: capability
+    since: v0.1
+    form: 'admin:farm'
+    privileged: always
+    holders: [operator]
+    meaning: a stop of the seat scope and its release, control.revert for a period; only the operator in farm
+    rules: [PRM-14]
+  - id: manager.direct
+    kind: capability
+    since: v0.1
+    form: manager.direct
+    privileged: always
+    holders: [human]
+    meaning: give a directive to the farm manager in one's own tenant
+    rules: [PRM-13]
+  - id: audit.read
+    kind: capability
+    since: v0.1
+    form: audit.read
+    privileged: always
+    holders: [human]
+    meaning: read audit metadata of one's own tenant and the farm manager's read log
+    rules: [AUD-7, PRM-13]
+  - id: proposal.override_veto
+    kind: capability
+    since: v0.2
+    form: 'proposal.override_veto:<category>'
+    privileged: always
+    holders: [human]
+    meaning: lift a veto on an item of the audit sample
+    rules: [PRM-13]
+  - id: model_grant.manage
+    kind: capability
+    since: v0.2
+    form: model_grant.manage
+    privileged: always
+    holders: [human]
+    meaning: grant and revoke a strong model for a task; decide a task takeover card
+    rules: [PRM-13]
+  - id: kb.write
+    kind: capability
+    since: v0.2
+    form: 'kb.write:<corpus>'
+    privileged: never
+    holders: [human, service]
+    meaning: upload documents to a knowledge corpus of the tenant; the corpus class is checked through data:<class>
+    rules: [PRM-13]
+  - id: governance.confirm
+    kind: capability
+    since: v0.2
+    form: 'governance.confirm:commission'
+    privileged: always
+    holders: [human]
+    meaning: confirm or reject the outcome of a promotion case
+    rules: [PRM-13]
+  - id: governance.attribute
+    kind: capability
+    since: v0.2
+    form: governance.attribute
+    privileged: always
+    holders: [human]
+    meaning: decide whether an incident is linked to a change
+    rules: [PRM-13]
+  - id: task.takeover
+    kind: capability
+    since: v0.2
+    form: 'task.takeover:<type>'
+    privileged: always
+    holders: [farm-manager-ops]
+    meaning: request a takeover of a task of this type
+    rules: [PRM-13]
+  - id: 'admin:debug'
+    kind: capability
+    since: v0.2
+    form: 'admin:debug'
+    privileged: always
+    holders: [operator]
+    meaning: attempt journal and task replay for debugging; operator operations only
+    rules: [PRM-14]

@@ -1,0 +1,44 @@
+id: scr-fx-03
+rules: [SCR-6]
+description: 'A draft with a task step of a type whose bot can call service/control or monitor/script_run. The card
+  script_confirm marks this step in code words: may restart a service or run a monitoring script without
+  a separate card, and will ask with a card to start or stop a service. Without script.run the run is rejected.'
+given:
+  tenant: demo
+  initiator:
+    principal: human:carol
+    caps: ['task:ops.log.triage.v1', 'service.control:nginx']
+    script_run: false
+  task_types:
+    ops.log.triage.v1:
+      bot_tools: [logs/read, service/control]
+  draft:
+    script: v1
+    steps:
+    - id: check
+      kind: task
+      type: ops.log.triage.v1
+      goal: {assignment: true}
+      params: {resource: web1}
+steps:
+- call:
+    port: P3
+    op: tools/call
+    request:
+      name: propose_script
+      arguments: {}
+  context: {arguments: draft}
+  expect: {state: proposed}
+- check: {deliver: script_confirm, to: 'direct:carol'}
+- call:
+    port: P1
+    op: decide
+    request: {subject_kind: script, id: $last, decision: run}
+  by: human:carol
+  chat: direct:carol
+expect:
+  card_marks:
+    may_control_services: [check]
+  card_text_from: code text catalog
+  press_result: {result: rejected, reason: no_group_cap}
+  needs: [script.run]

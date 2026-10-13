@@ -1,0 +1,32 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:botaru:schema:p2-incident-dismiss-request:1",
+  "title": "P2 incident.dismiss: request",
+  "description": "Body of P2 incident.dismiss: only a principal of kind human with incident.manage in the tenant of the incident can declare an incident false, only with a reason code from a closed list and with a \"Details\" text that the person typed; without them the denial dismiss_reason_required (MGR-8). The core writes the code and the text into the incident record and the audit and does not pass them into model context.",
+  "x-botaru-direction": "input",
+  "x-botaru-rules": [
+    "MGR-8",
+    "GOV-13"
+  ],
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "incident"
+  ],
+  "properties": {
+    "incident": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/object_id",
+      "description": "Incident."
+    },
+    "reason_code": {
+      "$ref": "urn:botaru:schema:incident:1#/$defs/dismiss_reason",
+      "description": "Reason code. The core checks that the code and the text are present, answering dismiss_reason_required."
+    },
+    "details": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 500,
+      "description": "The \"Details\" text, up to 500 characters."
+    }
+  }
+}

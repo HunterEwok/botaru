@@ -1,0 +1,71 @@
+id: fx-memory-person-memory-lint
+rules: [MEM-2]
+description: 'Person memory lint: it exists only for roles whose task types are all of class summary, without tools
+  with untrusted_output true and without inbox.read. A role that reads untrusted text does not pass apply with person memory.
+  Records and verified facts of scope bot are allowed for such roles too. The profiles reporter, translator, aggregator and
+  farm-manager-reader have no memory.'
+cases:
+- id: mem-prs-01
+  rules: [MEM-2]
+  description: A role with person memory and only summary types without untrusted input passes.
+  given:
+    role:
+      name: assistant-alice
+      memory: [person]
+      task_types:
+      - {name: assist.answer.v1, class: summary}
+      tools: []
+      inbox_read: false
+  expect: {result: ok}
+- id: mem-prs-02
+  rules: [MEM-2]
+  description: A role with person memory and a tool with untrusted_output true does not pass apply.
+  given:
+    role:
+      name: ops-reader
+      memory: [person]
+      task_types:
+      - {name: ops.investigate.v1, class: summary}
+      tools:
+      - {name: logs.search, untrusted_output: true}
+  expect: {result: rejected, stage: apply, field: memory}
+- id: mem-prs-03
+  rules: [MEM-2]
+  description: A role with person memory and inbox.read does not pass apply.
+  given:
+    role:
+      name: assistant-alice
+      memory: [person]
+      task_types:
+      - {name: assist.answer.v1, class: summary}
+      inbox_read: true
+  expect: {result: rejected, stage: apply, field: memory}
+- id: mem-prs-04
+  rules: [MEM-2]
+  description: A role with a task type not of class summary does not hold person memory.
+  given:
+    role:
+      name: ops-reader
+      memory: [person]
+      task_types:
+      - {name: ops.investigate.v1, class: raw_logs}
+  expect: {result: rejected, stage: apply, field: memory}
+- id: mem-prs-05
+  rules: [MEM-2]
+  description: A role that reads untrusted text, with bot memory (records and facts), passes.
+  given:
+    role:
+      name: ops-reader
+      memory: [bot]
+      tools:
+      - {name: logs.search, untrusted_output: true}
+  expect: {result: ok}
+- id: mem-prs-06
+  rules: [MEM-2]
+  description: A reporter profile with any memory does not pass apply.
+  given:
+    role:
+      name: reporter
+      profile: reporter
+      memory: [bot]
+  expect: {result: rejected, stage: apply, field: memory}

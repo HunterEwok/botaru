@@ -1,0 +1,39 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:botaru:schema:p1-hello-response:1",
+  "title": "P1 hello: response",
+  "description": "Answer to hello: the worker id, the tenant and role from the enroll record, lease durations. Denials: unauthenticated, version_unsupported, blocked, not_ready.",
+  "x-botaru-direction": "output",
+  "x-botaru-rules": [
+    "TEN-4",
+    "FEN-3"
+  ],
+  "type": "object",
+  "required": [
+    "worker_id",
+    "tenant"
+  ],
+  "properties": {
+    "worker_id": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/object_id"
+    },
+    "tenant": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/tenant_name"
+    },
+    "role": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/name"
+    },
+    "lease_s": {
+      "description": "Lease duration, at most 120 s (FEN-3).",
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 120
+    },
+    "heartbeat_s": {
+      "description": "Heartbeat interval, at most 30 s (FEN-3).",
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 30
+    }
+  }
+}

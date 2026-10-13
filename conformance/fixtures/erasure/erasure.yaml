@@ -1,0 +1,108 @@
+# Steps of an erasure request at edge stores (spec/bindings/http/README.md, "Erasure and search work for edge stores";
+# spec/lifecycles/deletion-request.md). Shape of steps and expectations: conformance/runner.md.
+id: fx-erasure-edge
+rules: [RET-4, RET-7, SEC-11]
+description: 'An erase work with scope (tenant, subject) carries the needles of the principal; an outcome not_applicable without basis
+  is rejected by the schema; a channel that declared driver.stores_content: none in hello gets no erasure work, and the core
+  writes its step with the outcome not_applicable with basis declared_none; erase_match in a tenant with only one person with
+  admin:people is confirmed by a farm admin (D-86 (8)).'
+given:
+  tenant: demo
+  channels:
+  - {name: telegram-demo, driver: telegram, stores_content: none}
+  sinks: [archive]
+  monitor: {adapter: zbx-demo}
+cases:
+- id: era-01
+  rules: [RET-4, RET-7]
+  description: A confirmed /mydata erase of carol gives the sink an erase work with needles; the channel gets no work,
+    its step is closed by the declaration; the request closes when all steps are submitted.
+  steps:
+  - call:
+      port: P2
+      op: erasure.request
+      request:
+        scope: {tenant: demo, subject: 'human:p_01JB3Q7N0M2V8XK4DGT5RZP9WC'}
+        reason: subject_request
+    by: operator
+  - call:
+      port: P1
+      op: claim
+      request: {kinds: [erasure]}
+    by: worker:sink-archive
+    expect:
+      work:
+        kind: erasure
+        payload:
+          op: erase
+          target: {kind: sink, name: archive}
+          scope: {tenant: demo, subject: 'human:p_01JB3Q7N0M2V8XK4DGT5RZP9WC'}
+          needles_include: ['telegram:1003']
+  - call:
+      port: P1
+      op: claim
+      request: {kinds: [erasure]}
+    by: channel:telegram-demo
+    expect: {work: null}
+  - call:
+      port: P1
+      op: complete
+      request:
+        erasure: {outcome: done}
+    by: worker:sink-archive
+  expect:
+    request:
+      state: done
+      steps:
+        e1_channel: {outcome: not_applicable, basis: declared_none, written_by: core}
+        e2_sink: {outcome: done}
+    needles_kept_after_done: false
+- id: era-02
+  rules: [RET-4, RET-7]
+  description: An outcome not_applicable without basis is rejected by the schema, and the step stays open.
+  steps:
+  - call:
+      port: P1
+      op: complete
+      request:
+        erasure: {outcome: not_applicable}
+    by: worker:sink-archive
+    expect: {stage: schema, reason: input_schema_invalid, records_changed: 0}
+  - call:
+      port: P1
+      op: complete
+      request:
+        erasure: {outcome: not_applicable, basis: no_match}
+    by: worker:sink-archive
+    expect: {result: ok}
+- id: era-03
+  rules: [SEC-11]
+  description: 'In demo there is one person with admin:people, alice. She is the author of erase_match on the string bob and does not
+    confirm it herself; the card goes to a farm admin, and their confirmation counts as the second person.'
+  given:
+    tenant: demo
+    admin_people: [human:alice]
+  steps:
+  - call:
+      port: P2
+      op: erasure.match
+      request:
+        subject: 'human:p_01JB3Q7N0M2V8XK4DGT5RZP9WA'
+        needles: [bob@example.org]
+    by: human:alice
+    expect: {card: subject_request_erase, recipients: [operator]}
+  - call:
+      port: P1
+      op: decide
+      request: {subject_kind: subject_request, id: $last, decision: approve}
+    by: human:alice
+    expect: {reason: forbidden, why: not_author}
+  - call:
+      port: P1
+      op: decide
+      request: {subject_kind: subject_request, id: $last, decision: approve}
+    by: operator
+    expect: {decision: {result: ok}}
+  expect:
+    request: {state: requested, reason: subject_request, scope: ids}
+    second_person: operator

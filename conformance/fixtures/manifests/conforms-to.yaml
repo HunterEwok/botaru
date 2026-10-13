@@ -1,0 +1,24 @@
+id: fx-man-08
+rules: [MAN-8]
+description: >-
+  An implementation declares the skeleton version and profiles in the field conforms_to: {skeleton, profiles}
+  in P2 status and in the runner report; profile core is required. A rule with waivable: false
+  in the expected failures file fails the run.
+cases:
+  - name: core and messages
+    conforms_to: {skeleton: 0.1.0, profiles: [core, messaging]}
+    expected_failures: []
+    expect: ok
+  - name: without profile core
+    conforms_to: {skeleton: 0.1.0, profiles: [messaging]}
+    expect: {error: conforms_to_invalid}
+  - name: profile outside the list
+    conforms_to: {skeleton: 0.1.0, profiles: [core, everything]}
+    expect: {error: conforms_to_invalid}
+  - name: version is not a skeleton version
+    conforms_to: {skeleton: latest, profiles: [core]}
+    expect: {error: conforms_to_invalid}
+  - name: non-waivable rule in expected failures
+    conforms_to: {skeleton: 0.1.0, profiles: [core]}
+    expected_failures: [MAN-6]
+    expect: {error: expected_failure_not_waivable}

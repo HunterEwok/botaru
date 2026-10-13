@@ -1,0 +1,50 @@
+schema: spec/model/escalation.schema.json
+rules:
+- MGR-5
+description: 'Records that the schema rejects: subject is another worker; urgency critical; six pieces of evidence.'
+cases:
+- id: e_01JB0000000000000000000501
+  tenant: demo
+  source_attempt: "t_01J9Z3M2Q8YB6V4N7T5K0C2D1E:1"
+  category: resource_stuck
+  subject:
+    kind: worker
+    id: analyst-2
+  observed: &id001
+  - att_01J9X
+  - alarm:disk.free.low:res:ctd1:data
+  requested_response: hold_resource
+  urgency: normal
+  untrusted: false
+  state: screened
+  depth: 2
+- id: e_01JB0000000000000000000501
+  tenant: demo
+  source_attempt: "t_01J9Z3M2Q8YB6V4N7T5K0C2D1E:1"
+  category: resource_stuck
+  subject: &id002
+    kind: resource
+    id: res:ctd1:data
+  observed: *id001
+  requested_response: hold_resource
+  urgency: critical
+  untrusted: false
+  state: screened
+  depth: 2
+- id: e_01JB0000000000000000000501
+  tenant: demo
+  source_attempt: "t_01J9Z3M2Q8YB6V4N7T5K0C2D1E:1"
+  category: resource_stuck
+  subject: *id002
+  observed:
+  - att_0
+  - att_1
+  - att_2
+  - att_3
+  - att_4
+  - att_5
+  requested_response: hold_resource
+  urgency: normal
+  untrusted: false
+  state: screened
+  depth: 2

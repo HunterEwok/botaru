@@ -1,0 +1,88 @@
+registry: task-purposes
+version: 1
+description: >-
+  Purposes of task types (TaskType.spec.purpose). By purpose, core code
+  chooses the model slot and the budget line, and lints check who may enqueue
+  such tasks. Record fields: slot (model slot: base, analysis, seat or role,
+  if the slot is taken from the recipient role), seat_slot (the slot if a seat
+  executes the task), budget_line (tenant budget line), priority_class_fixed (the priority
+  class that the purpose always sets, since which version), proposable
+  (whether a type of this purpose can be the target of a proposal, PRP-10),
+  not_in (where a type of this purpose does not appear).
+source: docs/task-language.md
+entries:
+  - id: work
+    since: v0.1
+    meaning: bot work at a person's request or on a schedule; the only purpose of the core profile
+    slot: base
+    budget_line: work
+    proposable: true
+    rules: [BUD-7, PRP-10]
+  - id: report
+    since: v0.1
+    meaning: a report by the reporter
+    slot: base
+    budget_line: work
+    proposable: false
+    rules: [BUD-7, PRF-1, PRP-10]
+  - id: insight
+    since: v0.1
+    meaning: analysis of one's own results and an improvement proposal
+    slot: analysis
+    budget_line: insight
+    priority_class_fixed: {value: 5, since: v0.2}
+    proposable: false
+    rules: [BUD-7, BUD-8, INS-1, PRP-10]
+  - id: aggregate
+    since: v0.1
+    meaning: rollup of results by the aggregator
+    slot: analysis
+    budget_line: aggregate
+    priority_class_fixed: {value: 5, since: v0.2}
+    proposable: false
+    rules: [BUD-7, BUD-8, PRP-10]
+  - id: review
+    since: v0.1
+    meaning: review by a commission lens
+    slot: base
+    seat_slot: seat
+    budget_line: review
+    priority_class_fixed: {value: 5, since: v0.2}
+    proposable: false
+    rules: [BUD-7, BUD-8, COM-6, PRP-10]
+  - id: translate
+    since: v0.1
+    meaning: a script draft by the translator
+    slot: base
+    budget_line: work
+    proposable: false
+    rules: [BUD-7, PRF-1, PRP-10]
+  - id: manage
+    since: v0.1
+    meaning: a farm manager decision in a tenant
+    slot: seat
+    budget_line: manager
+    proposable: false
+    not_in: [may_enqueue, script_step, continuation]
+    rules: [BUD-7, MGR-4, PRP-10]
+  - id: inspect
+    since: v0.1
+    meaning: reading tenant data for the farm manager
+    slot: seat
+    budget_line: manager
+    proposable: false
+    rules: [BUD-7, MGR-20, PRP-10]
+  - id: handover
+    since: v0.1
+    meaning: choice of facts by a successor when a seat's cases are handed over
+    slot: role
+    budget_line: work
+    proposable: false
+    rules: [BUD-7, MEM-8, PRP-10]
+  - id: governance
+    since: v0.2
+    meaning: tasks of identity and charter cases, the seat ballot
+    slot: seat
+    budget_line: governance
+    proposable: false
+    rules: [BUD-7, GOV-7, PRP-10]

@@ -1,0 +1,87 @@
+registry: control-ops
+version: 1
+description: >-
+  Control operations: a closed list by which the holder of the farm manager seat
+  changes the world through C1 control.apply; people call the same operations through P2
+  control.* by the same code path (MGR-9). Entry fields: meaning (what the
+  operation does), limits (restrictions and default seat limits from the
+  control_limits block of the farm charter, MGR-14), stop (the operation sets a stop and counts
+  in the role quarter, MGR-37), human_via (how people call the operation: p2 or
+  farmctl, an operator operation PRM-14), default_consent (the default permission of the
+  farm-manager-ops group; release and notify have no row in the consent
+  table).
+source: docs/farm-manager.md
+entries:
+  - id: hold
+    since: v0.1
+    meaning: >-
+      a stop in the tenant with the scope worker, bot, bot_group, role, tasktype or
+      resource and effects from no_enqueue, no_claim, no_tool, no_action,
+      no_delivery, cancel_running
+    limits: duration at most hold_ttl_max (2 h)
+    stop: true
+    human_via: p2
+    default_consent: true
+    rules: [MGR-9, HLD-2]
+  - id: quarantine
+    since: v0.1
+    meaning: a ready set of stops on a worker with the effects no_claim, cancel_running, no_tool, no_action and revocation of the runtime handles (DEP-5)
+    limits: duration at most 2 h; quarantines_per_hour (3); in distrust mode at most 1 per incident
+    stop: true
+    human_via: p2
+    default_consent: true
+    rules: [MGR-9, MGR-14, MGR-22]
+  - id: drain
+    since: v0.1
+    meaning: a ready set of stops on a worker with the effect no_claim; current work is finished
+    limits: duration at most 2 h
+    stop: true
+    human_via: p2
+    default_consent: true
+    rules: [MGR-9]
+  - id: preempt
+    since: v0.1
+    meaning: the attempt goes to preempted, is not spent, the task returns to the queue
+    limits: at most 2 preemptions per task, the next one gives canceled(preempt_limit)
+    stop: false
+    human_via: farmctl
+    default_consent: true
+    rules: [MGR-9, MGR-11]
+  - id: cancel
+    since: v0.1
+    meaning: the task goes to canceled(by_manager)
+    limits: cancels_per_hour (50); only involved tasks; in distrust mode only by a control card
+    stop: false
+    human_via: p2
+    default_consent: true
+    rules: [MGR-9, MGR-14, MGR-22]
+  - id: pin_task
+    since: v0.1
+    meaning: a class 1 task through the control lane in the tenant to the specified worker
+    limits: a type from the class's responses.pin_types ∩ group permissions ∩ claims of the worker's role; tier not above 1; pins_per_worker_hour (3); key system:control:<epoch>:<number>
+    stop: false
+    human_via: farmctl
+    default_consent: false
+    rules: [MGR-9, MGR-12]
+  - id: request_action
+    since: v0.1
+    meaning: an approval record in the tenant; the channel draws the card from the record, a person of the tenant decides
+    limits: an action from the class ∩ group permissions (action.request:<a>)
+    stop: false
+    human_via: p2
+    default_consent: false
+    rules: [MGR-9]
+  - id: release
+    since: v0.1
+    meaning: release one's own stop
+    limits: only stops set by the seat with the current epoch
+    stop: false
+    human_via: p2
+    rules: [MGR-9, HLD-2]
+  - id: notify
+    since: v0.1
+    meaning: a notice to the tenant's people from a code template
+    limits: only templates from the list, parameters only ids and codes
+    stop: false
+    human_via: p2
+    rules: [MGR-9]

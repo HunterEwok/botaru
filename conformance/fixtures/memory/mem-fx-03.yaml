@@ -1,0 +1,158 @@
+id: mem-fx-03
+rules: [MEM-4, IDN-11, MEM-7]
+description: 'forget deletes person memory for real: through an erasure request (RET-7) in all stores, including
+  the runtime stores, with an outcome per store. A person leaving (P2 principal.offboard) deletes their memory and
+  sessions the same way. The record canary is not found in any store after the deletion. The rows of this fixture about
+  a bot identity retiring (IDN-11, MEM-7) are added by the identities section.'
+given: {tenant: demo}
+cases:
+- id: mem-fx-03-a
+  rules: [MEM-4, RET-7]
+  description: /forget by a person about their own record.
+  given:
+    command: {by: 'human:alice', text: /forget}
+    records:
+    - store: c4
+      id: m_01JB8M0000000000000000000A
+      scope: person
+      subject: human:alice
+      content: CANARY-NOT-A-SECRET-mem4-forget
+    - {store: runtime, runtime_memory: runtime_internal, content: CANARY-NOT-A-SECRET-mem4-forget}
+  expect:
+    erasure_request:
+      reason: forget
+      scope: {tenant: demo, subject: 'human:alice'}
+      results: {c4_memory: done, e4_runtime: done}
+    memory_item_state: forgotten
+    found_in_any_store: {CANARY-NOT-A-SECRET-mem4-forget: false}
+- id: mem-fx-03-b
+  rules: [MEM-4, RET-7]
+  description: A person leaving deletes their memory and sessions in all stores.
+  given:
+    records:
+    - {store: c4, scope: person, subject: 'human:carol', content: CANARY-NOT-A-SECRET-mem4-offboard}
+    - store: c3
+      kind: session_entry
+      subject: human:carol
+      content: CANARY-NOT-A-SECRET-mem4-offboard
+  steps:
+  - call:
+      port: P2
+      op: principal.offboard
+      request: {subject: 'human:p_01JB3Q7N0M2V8XK4DGT5RZP9WC'}
+  expect:
+    erasure_request:
+      reason: offboarding
+      scope: {tenant: demo, subject: 'human:carol'}
+      results: {c3_sessions: done, c4_memory: done}
+    found_in_any_store: {CANARY-NOT-A-SECRET-mem4-offboard: false}
+- id: mem-fx-03-c
+  rules: [MEM-4]
+  description: After a run there is no transcript on the runtime's disk, except the declared session runtime_internal.
+  given:
+    runtime: {session: none}
+    after_run: {disk_contains_transcript: false}
+  expect: {result: ok}
+- id: mem-fx-03-d
+  rules: [IDN-11, MEM-7, MEM-4]
+  description: 'Retirement of an identity with a live worker (P2 bot.retire, trigger human_retire): in one transaction the identity
+    is retired, its facts, records, track record and sessions are sealed, a fact offer to the successor is opened, and the live
+    worker got a new identity of the same role.'
+  given:
+    bot:
+      id: bot_17
+      role: ops-runner
+      binding: {mode: worker, worker: w_0042, epoch: 2}
+    running_attempt: {task: t_0101, acting_bot: bot_17}
+    store:
+    - {store: c4, scope: bot, subject: bot_17, kind: fact, id: f_0311, state: active}
+    - {store: c3, kind: session_entry, written_by: bot_17, content: CANARY-NOT-A-SECRET-idn11-seal}
+    people:
+    - principal: human:bob
+      caps: ['admin:workers@demo']
+  steps:
+  - call:
+      port: P2
+      op: bot.retire
+      request: {bot: bot_17}
+    by: human:bob
+    context: {via: farmctl}
+  expect:
+    transaction: one
+    bot_17: {state: retired, reason: human_retire}
+    sealed:
+      facts: [f_0311]
+      core_records: true
+      service_record: true
+      sessions: true
+    fact_offer:
+      from_bot: bot_17
+      recipient: {bot: new identity of w_0042, state: pending}
+    w_0042:
+      new_identity: {role: ops-runner, tenant: demo, state: active}
+    t_0101: {attempt: cancel_requested}
+    bot_read_of_sealed: false
+    audit:
+      entries_for: [transition, seal, fact_offer]
+      content: metadata_only
+- id: mem-fx-03-e
+  rules: [IDN-11]
+  description: After retirement nothing is accepted from the identity; late records get fenced.
+  given: {after: mem-fx-03-d}
+  steps:
+  - call:
+      port: P1
+      op: complete
+      request:
+        result: {}
+    lease: {acting_bot: bot_17}
+    context: {task: t_0101}
+    expect: {result: rejected, reason: fenced, facts_written: 0}
+  - call:
+      port: P1
+      op: claim
+      request:
+        kinds: [attempt]
+    context: {acting_bot: bot_17}
+    expect: {leased: false}
+- id: mem-fx-03-f
+  rules: [IDN-11, MEM-4]
+  description: The core cannot seal a session runtime_internal, so in the retirement transaction it puts
+    an erasure request with reason bot_retired on it, and the runtime adapter deletes it with the E4 operation purge.
+  given:
+    bot: {id: bot_31, role: ops-runner}
+    runtime: {session: runtime_internal, content: CANARY-NOT-A-SECRET-idn11-runtime}
+  steps:
+  - stand: {op: loop.tick, loop: identity, reason: worker_gone}
+  expect:
+    erasure_request:
+      reason: bot_retired
+      scope: {tenant: demo, bot: bot_31}
+      results: {e4_runtime: done}
+    e4_call: purge
+    found_in_any_store: {CANARY-NOT-A-SECRET-idn11-runtime: false}
+- id: mem-fx-03-g
+  rules: [IDN-11, MEM-7, MEM-4]
+  description: 'End of the seal: at seal_ttl (30 days) the identity loop sets an erasure request with reason bot_retired,
+    the identity becomes erased, and the fact offer closed. A tombstone without content remains.'
+  given:
+    bot: {id: bot_31, state: retired, reason: worker_gone, retired_at: '2026-10-01T09:00:00Z'}
+    sealed: {store: c4, scope: bot, subject: bot_31, content: CANARY-NOT-A-SECRET-idn11-erase}
+    fact_offer:
+      from_bot: bot_31
+      recipient: {bot: bot_44, state: picked}
+    clock: '2026-10-31T09:00:00Z'
+  expect:
+    erasure_request:
+      reason: bot_retired
+      scope: {tenant: demo, bot: bot_31}
+    bot_31: {state: erased}
+    tombstone:
+      id: bot_31
+      tenant: demo
+      role: ops-runner
+      at: '2026-10-01T09:00:00Z'
+      reason: worker_gone
+      successor: bot_44
+    fact_offer: {state: closed}
+    found_in_any_store: {CANARY-NOT-A-SECRET-idn11-erase: false}

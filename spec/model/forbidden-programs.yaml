@@ -1,0 +1,77 @@
+registry: forbidden-programs
+version: 1
+description: >-
+  Executables that can run other programs or read and
+  execute arbitrary input. A cmd plugin command with such a program in argv[0]
+  does not pass apply (INJ-14). The base name is compared after resolving
+  the absolute path and symbolic links, so /usr/bin/bash and /bin/bash
+  are the same. The category field is the program kind: shell (a shell), interpreter
+  (a language interpreter), exec_capable (can run a command from its
+  arguments, for example find with -exec), launcher (runs a passed command with
+  other permissions, environment or time limit), pager (from which one can escape to
+  a shell), editor (with a shell escape). The list is closed: a program outside
+  the list is not allowed by itself, it still goes through the other INJ-14 rules
+  (absolute path, a parameter as a whole element from an enum, the -- separator, a clean
+  environment, an OS user that is not root). The list is given in the words "shells,
+  interpreters, find, awk, xargs, env, less and similar"; the specific names
+  beyond those named in docs are chosen by this criterion.
+source: docs/task-language.md
+entries:
+  # Shells
+  - {id: sh, since: v0.1, category: shell, rules: [INJ-14]}
+  - {id: bash, since: v0.1, category: shell, rules: [INJ-14]}
+  - {id: dash, since: v0.1, category: shell, rules: [INJ-14]}
+  - {id: zsh, since: v0.1, category: shell, rules: [INJ-14]}
+  - {id: ksh, since: v0.1, category: shell, rules: [INJ-14]}
+  - {id: csh, since: v0.1, category: shell, rules: [INJ-14]}
+  - {id: tcsh, since: v0.1, category: shell, rules: [INJ-14]}
+  - {id: fish, since: v0.1, category: shell, rules: [INJ-14]}
+  - {id: busybox, since: v0.1, category: shell, rules: [INJ-14]}
+  # Interpreters
+  - {id: python, since: v0.1, category: interpreter, rules: [INJ-14]}
+  - {id: python3, since: v0.1, category: interpreter, rules: [INJ-14]}
+  - {id: perl, since: v0.1, category: interpreter, rules: [INJ-14]}
+  - {id: ruby, since: v0.1, category: interpreter, rules: [INJ-14]}
+  - {id: node, since: v0.1, category: interpreter, rules: [INJ-14]}
+  - {id: php, since: v0.1, category: interpreter, rules: [INJ-14]}
+  - {id: lua, since: v0.1, category: interpreter, rules: [INJ-14]}
+  - {id: tclsh, since: v0.1, category: interpreter, rules: [INJ-14]}
+  # Can run a command from arguments or execute a program in their own language
+  - {id: find, since: v0.1, category: exec_capable, rules: [INJ-14]}
+  - {id: awk, since: v0.1, category: exec_capable, rules: [INJ-14]}
+  - {id: gawk, since: v0.1, category: exec_capable, rules: [INJ-14]}
+  - {id: mawk, since: v0.1, category: exec_capable, rules: [INJ-14]}
+  - {id: nawk, since: v0.1, category: exec_capable, rules: [INJ-14]}
+  - {id: sed, since: v0.1, category: exec_capable, rules: [INJ-14]}
+  - {id: xargs, since: v0.1, category: exec_capable, rules: [INJ-14]}
+  - {id: parallel, since: v0.1, category: exec_capable, rules: [INJ-14]}
+  - {id: watch, since: v0.1, category: exec_capable, rules: [INJ-14]}
+  - {id: make, since: v0.1, category: exec_capable, rules: [INJ-14]}
+  - {id: tar, since: v0.1, category: exec_capable, rules: [INJ-14]}
+  - {id: rsync, since: v0.1, category: exec_capable, rules: [INJ-14]}
+  - {id: ssh, since: v0.1, category: exec_capable, rules: [INJ-14]}
+  # Run a passed command
+  - {id: env, since: v0.1, category: launcher, rules: [INJ-14]}
+  - {id: sudo, since: v0.1, category: launcher, rules: [INJ-14, DEP-3]}
+  - {id: su, since: v0.1, category: launcher, rules: [INJ-14, DEP-3]}
+  - {id: doas, since: v0.1, category: launcher, rules: [INJ-14, DEP-3]}
+  - {id: runuser, since: v0.1, category: launcher, rules: [INJ-14, DEP-3]}
+  - {id: setsid, since: v0.1, category: launcher, rules: [INJ-14]}
+  - {id: nohup, since: v0.1, category: launcher, rules: [INJ-14]}
+  - {id: nice, since: v0.1, category: launcher, rules: [INJ-14]}
+  - {id: ionice, since: v0.1, category: launcher, rules: [INJ-14]}
+  - {id: timeout, since: v0.1, category: launcher, rules: [INJ-14]}
+  - {id: stdbuf, since: v0.1, category: launcher, rules: [INJ-14]}
+  - {id: chroot, since: v0.1, category: launcher, rules: [INJ-14]}
+  - {id: nsenter, since: v0.1, category: launcher, rules: [INJ-14]}
+  - {id: unshare, since: v0.1, category: launcher, rules: [INJ-14]}
+  - {id: systemd-run, since: v0.1, category: launcher, rules: [INJ-14]}
+  - {id: script, since: v0.1, category: launcher, rules: [INJ-14]}
+  - {id: expect, since: v0.1, category: launcher, rules: [INJ-14]}
+  # Pagers and editors with a shell escape
+  - {id: less, since: v0.1, category: pager, rules: [INJ-14]}
+  - {id: more, since: v0.1, category: pager, rules: [INJ-14]}
+  - {id: man, since: v0.1, category: pager, rules: [INJ-14]}
+  - {id: vi, since: v0.1, category: editor, rules: [INJ-14]}
+  - {id: vim, since: v0.1, category: editor, rules: [INJ-14]}
+  - {id: ed, since: v0.1, category: editor, rules: [INJ-14]}

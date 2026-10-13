@@ -1,0 +1,7 @@
+# Permission to enqueue the greeting in tenant demo; the command /hello is declared in tenants/demo/tenant.yaml.
+apiVersion: botaru/v1alpha1
+kind: Group
+metadata: {name: hello, tenant: demo}
+spec:
+  caps: ["task:hello.greet.v1"]
+  data: [summary]

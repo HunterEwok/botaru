@@ -1,0 +1,13 @@
+schema: urn:botaru:schema:monitor-note:1
+rules:
+- MON-8
+description: A code note by the service_control_done template.
+data:
+  eventid: '8812345'
+  bot_id: bot_01JB8M0000000000000000000B
+  template: service_control_done
+  fields:
+    service: nginx
+    verb: restart
+    result: success
+    grant_id: g_01JB8M0000000000000000000G

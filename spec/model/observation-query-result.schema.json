@@ -1,0 +1,76 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:botaru:schema:observation-query-result:1",
+  "title": "Closed observation query result",
+  "description": "Answer of observations_query, P1 obs.query and P2 obs.series: only numbers and enum values, the size is limited; reading does not set untrusted_seen (OBV-3). The data mark of a rollup is not lower than the series class (OBV-4).",
+  "x-botaru-direction": "output",
+  "x-botaru-rules": [
+    "OBV-3",
+    "OBV-4"
+  ],
+  "type": "object",
+  "required": [
+    "series",
+    "window",
+    "rollup",
+    "groups"
+  ],
+  "properties": {
+    "series": {
+      "$ref": "urn:botaru:schema:observation-query:1#/$defs/series"
+    },
+    "window": {
+      "$ref": "urn:botaru:schema:observation-query:1#/$defs/window"
+    },
+    "rollup": {
+      "$ref": "urn:botaru:schema:observation-query:1#/$defs/rollup"
+    },
+    "data_mark": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/data_mark",
+      "description": "Data mark of the rollup; for an aggregator, the highest mark of the inputs (AGG-4)."
+    },
+    "groups": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "subject",
+          "points"
+        ],
+        "properties": {
+          "subject": {
+            "$ref": "urn:botaru:schema:observation-query:1#/$defs/subject"
+          },
+          "points": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "at",
+                "value"
+              ],
+              "properties": {
+                "at": {
+                  "$ref": "urn:botaru:schema:common:1#/$defs/datetime",
+                  "description": "Start of the rollup period."
+                },
+                "value": {
+                  "$ref": "urn:botaru:schema:observation-query:1#/$defs/value"
+                },
+                "samples": {
+                  "type": "integer",
+                  "description": "Number of points in the period.",
+                  "minimum": 0
+                }
+              }
+            },
+            "maxItems": 2232,
+            "description": "Rollup values by window periods."
+          }
+        }
+      },
+      "maxItems": 50,
+      "description": "Rollups by subject; more than one group only for an aggregator with group_by."
+    }
+  }
+}

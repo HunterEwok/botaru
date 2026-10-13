@@ -1,0 +1,39 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:botaru:schema:model-run:1",
+  "title": "Run in P4",
+  "description": "P4 mark in the run record: whether the run got at least one model answer. Only a run with an answer counts toward the max_runs ceiling; a run that ended before the first answer with a provider reason or core_unavailable is not counted (GW-13, FEN-3).",
+  "x-botaru-direction": "record",
+  "x-botaru-retention": "metadata",
+  "x-botaru-rules": [
+    "GW-13"
+  ],
+  "type": "object",
+  "required": [
+    "run",
+    "task",
+    "answered"
+  ],
+  "properties": {
+    "run": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/object_id",
+      "description": "Run."
+    },
+    "task": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/object_id",
+      "description": "Task."
+    },
+    "answered": {
+      "description": "Whether there was at least one model answer.",
+      "type": "boolean"
+    },
+    "reason": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/reason",
+      "description": "Reason for the end of the run."
+    },
+    "counts_to_max_runs": {
+      "description": "Whether the run counts toward max_runs; equals answered.",
+      "type": "boolean"
+    }
+  }
+}

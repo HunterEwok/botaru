@@ -1,0 +1,28 @@
+registry: metrics
+version: 1
+description: >-
+  Catalog of farm metrics (v0.2): a contract for dashboards and alarms that
+  survives a change of implementation. It covers the four monitoring signals:
+  latency, traffic, errors and saturation. The group field is the metric group
+  from docs/operations.md. The labels of any metric come only from the closed
+  label_sets below: ids of people, chats and external systems are not labels (OBS-1). Where
+  a core observation series matches a catalog metric, they share one name (OBV-5).
+  The check "every catalog metric is present in the output" is a black-box check.
+source: docs/operations.md
+since: v0.2
+label_sets: [tenant, task_type, role, plugin, tool, reason, state]
+entries:
+  - {id: botaru.queue.depth, since: v0.2, group: queue, rules: [OBS-1]}
+  - {id: botaru.queue.oldest_age_s, since: v0.2, group: queue, rules: [OBS-1]}
+  - {id: botaru.claim.wait_s, since: v0.2, group: queue, rules: [OBS-1]}
+  - {id: botaru.task.outcome, since: v0.2, group: outcome_duration, rules: [OBS-1, OBV-5]}
+  - {id: botaru.attempt.duration_s, since: v0.2, group: outcome_duration, rules: [OBS-1, OBV-5]}
+  - {id: gen_ai.client.operation.duration, since: v0.2, group: model_tools, rules: [OBS-1]}
+  - {id: gen_ai.execute_tool.duration, since: v0.2, group: model_tools, rules: [OBS-1]}
+  - {id: botaru.model.tokens, since: v0.2, group: model_tools, rules: [OBS-1]}
+  - {id: botaru.budget.used_ratio, since: v0.2, group: budget_approvals, rules: [OBS-1]}
+  - {id: botaru.approval.count, since: v0.2, group: budget_approvals, rules: [OBS-1]}
+  - {id: botaru.delivery.outcome, since: v0.2, group: delivery, rules: [OBS-1]}
+  - {id: botaru.worker.last_seen_age_s, since: v0.2, group: liveness, rules: [OBS-1, OBS-4]}
+  - {id: botaru.loop.last_tick_age_s, since: v0.2, group: liveness, rules: [OBS-1, OBS-4]}
+  - {id: botaru.hold.active, since: v0.2, group: holds, rules: [OBS-1, HLD-5]}

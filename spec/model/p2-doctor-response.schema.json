@@ -1,0 +1,65 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:botaru:schema:p2-doctor-response:1",
+  "title": "P2 doctor: response",
+  "description": "Farm checks as a list: check id, outcome and number, without tenant data beyond the caller's part (spec/ports/p2-admin-api.md, row doctor).",
+  "x-botaru-direction": "output",
+  "x-botaru-rules": [
+    "OBS-4",
+    "MON-2",
+    "MON-4",
+    "CAP-5",
+    "RET-7",
+    "RET-8"
+  ],
+  "type": "object",
+  "required": [
+    "ok",
+    "checks"
+  ],
+  "properties": {
+    "ok": {
+      "type": "boolean"
+    },
+    "checks": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "id",
+          "ok",
+          "severity"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "maxLength": 64,
+            "pattern": "^[a-z][a-z0-9_.]*$"
+          },
+          "ok": {
+            "type": "boolean"
+          },
+          "severity": {
+            "enum": [
+              "info",
+              "warn",
+              "fail"
+            ]
+          },
+          "value": {
+            "type": [
+              "number",
+              "string",
+              "boolean",
+              "null"
+            ]
+          },
+          "tenant": {
+            "$ref": "urn:botaru:schema:common:1#/$defs/tenant_name"
+          }
+        }
+      },
+      "maxItems": 500
+    }
+  }
+}

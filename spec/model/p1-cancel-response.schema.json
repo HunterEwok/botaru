@@ -1,0 +1,26 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:botaru:schema:p1-cancel-response:1",
+  "title": "P1 cancel: response",
+  "description": "The task is canceled; pending approvals of this task are closed. The not_found denial is the same for another tenant's and a nonexistent task.",
+  "x-botaru-direction": "output",
+  "x-botaru-rules": [
+    "PRM-9"
+  ],
+  "type": "object",
+  "required": [
+    "task",
+    "state"
+  ],
+  "properties": {
+    "task": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/object_id"
+    },
+    "state": {
+      "const": "canceled"
+    },
+    "reason": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/reason"
+    }
+  }
+}

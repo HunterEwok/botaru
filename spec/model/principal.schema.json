@@ -1,0 +1,164 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:botaru:schema:principal:1",
+  "title": "Principal",
+  "description": "A tenant principal (a person, an external program or system) with identities and group memberships. A principal lives in one tenant; the verification code and keys are stored only as hashes (IDN-4). Only the core writes the records, on P2 operations (IDN-1).",
+  "x-botaru-direction": "record",
+  "x-botaru-retention": "metadata",
+  "x-botaru-rules": [
+    "IDN-1",
+    "IDN-4",
+    "PRM-13",
+    "PRM-16",
+    "LCY-3"
+  ],
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "id",
+    "tenant",
+    "kind",
+    "state"
+  ],
+  "$defs": {
+    "identity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "subject",
+        "external",
+        "strength"
+      ],
+      "properties": {
+        "subject": {
+          "$ref": "urn:botaru:schema:common:1#/$defs/principal_ref"
+        },
+        "channel": {
+          "$ref": "urn:botaru:schema:common:1#/$defs/name"
+        },
+        "external": {
+          "description": "Identity in the channel: telegram:<id>, api:<key_id>, hook:<source> or email:<address> (IDN-1).",
+          "type": "string",
+          "pattern": "^(telegram:[0-9]{1,20}|api:[a-z0-9][a-z0-9_-]{0,62}|hook:[a-z][a-z0-9_-]{0,62}|email:[A-Za-z0-9._%+-]{1,64}@[a-z0-9.-]{1,190})$",
+          "maxLength": 260
+        },
+        "key_id": {
+          "description": "Key id of an external program; the key itself is stored only as a hash.",
+          "type": "string",
+          "pattern": "^[a-z0-9][a-z0-9_-]{0,63}$",
+          "maxLength": 64
+        },
+        "strength": {
+          "description": "Identity assurance: decisions on cards only from a strong one (APR-4).",
+          "enum": [
+            "strong",
+            "weak"
+          ]
+        },
+        "disabled": {
+          "type": "boolean"
+        }
+      }
+    },
+    "membership": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "subject",
+        "group",
+        "state"
+      ],
+      "properties": {
+        "subject": {
+          "$ref": "urn:botaru:schema:common:1#/$defs/principal_ref"
+        },
+        "group": {
+          "$ref": "urn:botaru:schema:common:1#/$defs/name"
+        },
+        "state": {
+          "description": "Membership of a privileged group is pending until the verification code is checked (PRM-13).",
+          "enum": [
+            "pending",
+            "active"
+          ]
+        },
+        "until": {
+          "$ref": "urn:botaru:schema:common:1#/$defs/datetime"
+        },
+        "granted_by": {
+          "$ref": "urn:botaru:schema:common:1#/$defs/principal_ref"
+        },
+        "requested_by": {
+          "description": "Admin of the production tenant who requested the grant in writing (--requested-by).",
+          "$ref": "urn:botaru:schema:common:1#/$defs/principal_ref"
+        },
+        "delegated": {
+          "description": "A group from the tenant's delegated_groups, granted by an admin (PRM-16).",
+          "type": "boolean"
+        }
+      }
+    }
+  },
+  "properties": {
+    "id": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/principal_ref",
+      "description": "Opaque principal id: for a person human:p_<ULID>. The id does not change and contains no name; after the person leaves, the core records and the audit keep the same id."
+    },
+    "name": {
+      "description": "The person's name for cards and messages. References to a principal in core records contain no name; on transition to offboarded the field is deleted together with the identities (LCY-3).",
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 80
+    },
+    "tenant": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/tenant_name"
+    },
+    "kind": {
+      "description": "Principal kind: a person, an external program or the service principal system (IDN-1).",
+      "enum": [
+        "human",
+        "service",
+        "system"
+      ]
+    },
+    "state": {
+      "description": "Principal state by the LCY-3 lifecycle: active works, off is disabled by the /off command (reversible), offboarded has left for good through P2 principal.offboard (value since v0.2).",
+      "enum": [
+        "active",
+        "off",
+        "offboarded"
+      ],
+      "x-botaru-rules": [
+        "LCY-3"
+      ]
+    },
+    "verification_code_hash": {
+      "description": "SHA-256 hash of the form sha256:<64 hex digits>.",
+      "$ref": "urn:botaru:schema:common:1#/$defs/hash"
+    },
+    "uploads_personal": {
+      "description": "Files of this principal get personal_seen with the source declared (AUD-5).",
+      "type": "boolean"
+    },
+    "created_by": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/principal_ref"
+    },
+    "locale": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/locale"
+    },
+    "identities": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/identity"
+      },
+      "maxItems": 8
+    },
+    "memberships": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/membership"
+      },
+      "maxItems": 64
+    }
+  }
+}

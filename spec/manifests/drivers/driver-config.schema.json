@@ -1,0 +1,101 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:botaru:schema:driver-config:1",
+  "title": "Driver configuration meta-schema",
+  "description": "The spec.config schema that a port implementation brings (a channel, sink, runtime or store driver) passes this meta-schema (MAN-4). It is closed and cannot declare fields on which rules depend: link previews, markup, receiving messages \"on behalf of the chat\", egress, placement, ceilings and fallback providers. Such fields exist only in the common wrapper under the core's check. The names of the forbidden fields are collected in $defs/forbidden.",
+  "x-botaru-rules": [
+    "MAN-4"
+  ],
+  "$defs": {
+    "forbidden": {
+      "enum": [
+        "link_preview",
+        "link_previews",
+        "markup",
+        "parse_mode",
+        "sender_chat",
+        "as_chat",
+        "egress",
+        "network",
+        "placement",
+        "ceiling",
+        "ceilings",
+        "limits",
+        "fallback",
+        "fallback_on",
+        "fallback_providers"
+      ],
+      "description": "Field names forbidden in a driver configuration at any level."
+    },
+    "node": {
+      "type": "object",
+      "description": "Node of a driver configuration schema.",
+      "properties": {
+        "properties": {
+          "type": "object",
+          "propertyNames": {
+            "not": {
+              "$ref": "#/$defs/forbidden"
+            }
+          },
+          "additionalProperties": {
+            "$ref": "#/$defs/node"
+          }
+        },
+        "items": {
+          "$ref": "#/$defs/node"
+        },
+        "patternProperties": false,
+        "additionalProperties": {
+          "anyOf": [
+            {
+              "const": false
+            },
+            {
+              "$ref": "#/$defs/node"
+            }
+          ]
+        }
+      },
+      "if": {
+        "required": [
+          "properties"
+        ]
+      },
+      "then": {
+        "required": [
+          "additionalProperties"
+        ],
+        "properties": {
+          "additionalProperties": {
+            "const": false
+          }
+        }
+      }
+    }
+  },
+  "type": "object",
+  "required": [
+    "$id",
+    "type",
+    "additionalProperties"
+  ],
+  "allOf": [
+    {
+      "$ref": "#/$defs/node"
+    }
+  ],
+  "properties": {
+    "$id": {
+      "type": "string",
+      "pattern": "^urn:botaru:schema:driver\\.[a-z][a-z0-9-]*:[1-9][0-9]*$",
+      "description": "Driver schema name."
+    },
+    "type": {
+      "const": "object"
+    },
+    "additionalProperties": {
+      "const": false
+    }
+  }
+}

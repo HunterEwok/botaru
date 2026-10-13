@@ -1,0 +1,35 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:botaru:schema:p2-worker-enroll-response:1",
+  "title": "P2 worker.enroll: response",
+  "description": "The worker and its token: the token is shown once and is stored only as a hash; the recorded tenant, role, kind, labels, plugins, placement and machine are what the core checks hello against (DEP-2); for the first channel process of a driver also the driver's P2 secret p2_token (D-87 (3)).",
+  "x-botaru-direction": "output",
+  "x-botaru-rules": [
+    "DEP-2",
+    "IDN-4"
+  ],
+  "type": "object",
+  "required": [
+    "worker",
+    "token"
+  ],
+  "properties": {
+    "worker": {
+      "$ref": "urn:botaru:schema:worker:1"
+    },
+    "token": {
+      "type": "string",
+      "maxLength": 512,
+      "description": "P1 worker token; passed in Authorization."
+    },
+    "key_id": {
+      "type": "string",
+      "maxLength": 64
+    },
+    "p2_token": {
+      "type": "string",
+      "maxLength": 512,
+      "description": "Only for a channel process (kind channel): the P2 secret of the channel driver in the tenant, one per driver; issued at the first enroll of a process of this driver and at rotate_p2 (the previous one is valid until the end of the rotation window), shown once, only the hash is stored. By it the core finds the driver for checking Botaru-On-Behalf (D-87 (3))."
+    }
+  }
+}

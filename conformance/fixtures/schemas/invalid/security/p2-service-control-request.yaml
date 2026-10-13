@@ -1,0 +1,10 @@
+schema: urn:botaru:schema:p2-service-control-request:1
+rules:
+- PRM-18
+description: A service with an asterisk and a machine in the command are rejected.
+cases:
+- service: '*'
+  verb: restart
+- service: nginx
+  verb: restart
+  host: db1

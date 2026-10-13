@@ -1,0 +1,177 @@
+# Collected from spec/lifecycles/fact.yaml. The value null in from means "the object does not exist yet".
+lifecycle: spec/lifecycles/fact.yaml
+object: fact
+rules: [MEM-3, MEM-4, MEM-6, MEM-8, MEM-9, RET-2, RET-7]
+description: Allowed and forbidden transitions of the "bot memory fact" lifecycle, collected from the tables of spec/lifecycles/fact.md.
+  The implementation accepts a transition from the allowed list under the condition of its row (when); a pair from the forbidden
+  list does not change the state, and the call that asks for it is rejected. The value null in from means "the object does
+  not exist yet". The "any" row is expanded over the non-terminal states. A rejection at creation (fact_insufficient, a
+  schema error, a subject not from this tenant) creates no record.
+states:
+- id: active
+  terminal: false
+- id: stale
+  terminal: false
+- id: sealed
+  terminal: false
+- id: erased
+  terminal: true
+allowed:
+- id: sm-fact-01
+  from: null
+  to: active
+  by: 'P1 complete of an attempt whose type declared memory.facts: propose'
+  when: 'schema, a subject of this tenant, at least min_samples pieces of evidence; at most 3 facts from an attempt; the
+    attempt did not fail, was not canceled and is not fenced; with untrusted_seen of the attempt the fact gets untrusted_origin:
+    true'
+  rules: [MEM-3, MEM-6]
+- id: sm-fact-02
+  from: null
+  to: active
+  to_note: active, a copy with inherited
+  by: the core by the outcome of the memory.pick.v1 task
+  when: the recheck against the recipient's rights passed; untrusted_origin is kept
+  rules: [MEM-8]
+- id: sm-fact-03
+  from: active
+  to: stale
+  by: the core at a recheck (offer creation, take)
+  when: the evidence is erased
+  rules: [MEM-6]
+- id: sm-fact-04
+  from: active
+  to: stale
+  by: the core at a recheck
+  when: the recomputed value differs from the record (fact_mismatch); no copy is made
+  rules: [MEM-6]
+- id: sm-fact-05
+  from: active
+  to: erased
+  by: the core when writing a new fact
+  when: the space has more than 100 active facts; the fact with the oldest last_used_at is evicted
+  rules: [MEM-6]
+- id: sm-fact-06
+  from: active
+  to: sealed
+  by: the core in the transaction of an identity's retirement
+  when: IDN-11
+  rules: [MEM-4]
+- id: sm-fact-07
+  from: stale
+  to: sealed
+  by: the core in the transaction of an identity's retirement
+  when: IDN-11
+  rules: [MEM-4]
+- id: sm-fact-08
+  from: stale
+  to: erased
+  by: the retention loop
+  when: the retention class period
+  rules: [MEM-9, RET-2]
+- id: sm-fact-09
+  from: sealed
+  to: erased
+  by: the identity loop enqueues an erasure request bot_retired, the erasure loop erases
+  when: seal_ttl has passed; from v0.2 earlier, if the retention class period ended earlier (the retention loop, RET-2)
+  rules: [MEM-9, RET-7]
+  version: v0.2
+- id: sm-fact-10
+  from: active
+  to: erased
+  from_note: any
+  by: the erasure loop
+  when: tenant deletion (P2 tenant.delete, reason tenant_delete) or an erasure request on its scope
+  rules: [MEM-4, RET-7]
+- id: sm-fact-11
+  from: stale
+  to: erased
+  from_note: any
+  by: the erasure loop
+  when: tenant deletion (P2 tenant.delete, reason tenant_delete) or an erasure request on its scope
+  rules: [MEM-4, RET-7]
+- id: sm-fact-12
+  from: sealed
+  to: erased
+  from_note: any
+  by: the erasure loop
+  when: tenant deletion (P2 tenant.delete, reason tenant_delete) or an erasure request on its scope
+  rules: [MEM-4, RET-7]
+forbidden:
+- id: sm-fact-x01
+  from: null
+  to: stale
+  expect: rejected
+  rules: [MEM-3, MEM-6, MEM-8]
+  why: the object does not appear directly in the state stale
+- id: sm-fact-x02
+  from: null
+  to: sealed
+  expect: rejected
+  rules: [MEM-3, MEM-6, MEM-8]
+  why: the object does not appear directly in the state sealed
+- id: sm-fact-x03
+  from: null
+  to: erased
+  expect: rejected
+  rules: [MEM-3, MEM-6, MEM-8]
+  why: the object does not appear directly in the state erased
+- id: sm-fact-x04
+  from: active
+  to: active
+  expect: rejected
+  rules: [MEM-3, MEM-4, MEM-6, MEM-8]
+  why: the lifecycle table has no such transition
+- id: sm-fact-x05
+  from: stale
+  to: active
+  expect: rejected
+  rules: [MEM-3, MEM-4, MEM-6, MEM-8]
+  why: the lifecycle table has no such transition
+- id: sm-fact-x06
+  from: stale
+  to: stale
+  expect: rejected
+  rules: [MEM-4, MEM-6, MEM-9, RET-2]
+  why: the lifecycle table has no such transition
+- id: sm-fact-x07
+  from: sealed
+  to: active
+  expect: rejected
+  rules: [MEM-3, MEM-4, MEM-6, MEM-8]
+  why: the lifecycle table has no such transition
+- id: sm-fact-x08
+  from: sealed
+  to: stale
+  expect: rejected
+  rules: [MEM-4, MEM-6, MEM-9, RET-7]
+  why: the lifecycle table has no such transition
+- id: sm-fact-x09
+  from: sealed
+  to: sealed
+  expect: rejected
+  rules: [MEM-4, MEM-9, RET-7]
+  why: the lifecycle table has no such transition
+- id: sm-fact-x10
+  from: erased
+  to: active
+  expect: rejected
+  rules: [MEM-4, MEM-6, MEM-9, RET-2]
+  why: 'erased is a terminal state: there are no transitions out of it'
+- id: sm-fact-x11
+  from: erased
+  to: stale
+  expect: rejected
+  rules: [MEM-4, MEM-6, MEM-9, RET-2]
+  why: 'erased is a terminal state: there are no transitions out of it'
+- id: sm-fact-x12
+  from: erased
+  to: sealed
+  expect: rejected
+  rules: [MEM-4, MEM-6, MEM-9, RET-2]
+  why: 'erased is a terminal state: there are no transitions out of it'
+- id: sm-fact-x13
+  from: erased
+  to: erased
+  expect: rejected
+  rules: [MEM-4, MEM-6, MEM-9, RET-2]
+  why: 'erased is a terminal state: there are no transitions out of it'

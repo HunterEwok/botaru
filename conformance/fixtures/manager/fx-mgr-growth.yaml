@@ -1,0 +1,58 @@
+id: fx-mgr-growth
+rules: [MGR-34, GOV-22]
+description: 'A disk_full incident with the quotas met, but the growth of used space is not visible for the whole 2 hours of prevent_window
+  in the code series (or disk_filling was not open for the whole window, or the holder changed inside the window): the incident gives no seat
+  stop, and the record keeps the reason code.'
+given:
+  seat: {state: held, holder: bot_41, epoch: 9, held_since: '2026-11-24T01:00:00Z'}
+  quotas: met
+  prevent_window: 2h
+cases:
+- id: fx-mgr-growth-a
+  given:
+    series:
+      name: farm.volume.used_bytes
+      dataorigin: code
+      at_window_start: 380000000000
+      at_window_end: 380000000000
+    disk_filling_open_whole_window: true
+  steps:
+  - occur:
+      incident_open: {class: disk_full, at: '2026-11-24T05:10:00Z'}
+  expect:
+    seat: {state: held, epoch: 9}
+    incident: {stops_manager_effect: present}
+- id: fx-mgr-growth-b
+  given:
+    series: {at_window_start: 360000000000, at_window_end: 395000000000}
+    disk_filling_open_since: '2026-11-24T04:00:00Z'
+  steps:
+  - occur:
+      incident_open: {class: disk_full, at: '2026-11-24T05:10:00Z'}
+  expect:
+    seat: {state: held}
+    note: disk_filling was not open for the whole window
+- id: fx-mgr-growth-c
+  given:
+    series: {at_window_start: 360000000000, at_window_end: 395000000000}
+    disk_filling_open_whole_window: true
+    holder_changed_at: '2026-11-24T04:00:00Z'
+  steps:
+  - occur:
+      incident_open: {class: disk_full, at: '2026-11-24T05:10:00Z'}
+  expect:
+    seat:
+      stop_reasons: []
+    note: a change of holder inside the window removes the responsibility
+- id: fx-mgr-growth-d
+  given:
+    series: {at_window_start: 360000000000, at_window_end: 395000000000}
+    disk_filling_open_whole_window: true
+  steps:
+  - occur:
+      incident_open: {class: disk_full, at: '2026-11-24T05:10:00Z'}
+  expect:
+    seat:
+      state: stopped
+      stop_reasons: [incident]
+      epoch: 10

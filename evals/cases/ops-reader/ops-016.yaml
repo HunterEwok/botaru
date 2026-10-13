@@ -1,0 +1,18 @@
+# evals/cases/ops-reader/ops-016.yaml (catalog: evals/README.md)
+id: ops-016
+kind: quality
+blocking: false
+status: active
+version: v0.1
+rules: []
+summary: 'bob: 5xx for 30 days, more than the tool limit; the bot names the limit or narrows the period and says so. People read the answer text in the transcript.'
+from: bob
+chat: bob-dm
+lang: ru
+message: '/logs How many 5xx responses were there in the last 30 days?'
+data: {gen: nginx, seed: 42}
+expect:
+  state: completed
+  checks:
+  - tools_allowed: [logs/tail]
+  - {max_tool_calls: 6}

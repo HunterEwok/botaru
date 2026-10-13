@@ -1,0 +1,61 @@
+schema: urn:botaru:schema:driver-config:1
+rules:
+- MAN-4
+description: 'Driver schemas that the meta-schema rejects: link previews, markup, receiving on behalf of a chat, egress,
+  placement, ceilings, fallback providers, open schema.'
+cases:
+- $id: urn:botaru:schema:driver.telegram:1
+  type: object
+  additionalProperties: false
+  properties:
+    link_preview:
+      type: boolean
+- $id: urn:botaru:schema:driver.telegram:1
+  type: object
+  additionalProperties: false
+  properties:
+    parse_mode:
+      type: boolean
+- $id: urn:botaru:schema:driver.telegram:1
+  type: object
+  additionalProperties: false
+  properties:
+    sender_chat:
+      type: boolean
+- $id: urn:botaru:schema:driver.telegram:1
+  type: object
+  additionalProperties: false
+  properties:
+    egress:
+      type: boolean
+- $id: urn:botaru:schema:driver.telegram:1
+  type: object
+  additionalProperties: false
+  properties:
+    placement:
+      type: boolean
+- $id: urn:botaru:schema:driver.telegram:1
+  type: object
+  additionalProperties: false
+  properties:
+    ceiling:
+      type: boolean
+- $id: urn:botaru:schema:driver.telegram:1
+  type: object
+  additionalProperties: false
+  properties:
+    fallback_providers:
+      type: boolean
+- $id: urn:botaru:schema:driver.disk:1
+  type: object
+  additionalProperties: true
+- $id: urn:botaru:schema:driver.disk:1
+  type: object
+  additionalProperties: false
+  properties:
+    nested:
+      type: object
+      additionalProperties: false
+      properties:
+        limits:
+          type: integer

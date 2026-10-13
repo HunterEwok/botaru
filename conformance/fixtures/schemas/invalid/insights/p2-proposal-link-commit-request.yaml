@@ -1,0 +1,6 @@
+schema: spec/model/p2-proposal-link-commit-request.schema.json
+rules: [PRP-19]
+description: P2 proposal.link_commit requests that the schema rejects; branch name instead of a commit id; no commit.
+cases:
+  - {proposal: p_01JB0000000000000000000101, commit: main}
+  - {proposal: p_01JB0000000000000000000101}

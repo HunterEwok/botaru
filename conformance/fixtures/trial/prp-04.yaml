@@ -1,0 +1,81 @@
+id: prp-04
+rules: [PRP-22]
+description: 'Code computes the trial outcome from a closed list in a fixed order: a guard that fired, then
+  another change of the same subjects, then three calculations with the series tolerance (over all points, without the author bot''s points, without
+  the points of all bots of its role) and min_samples in each. The metric farm.task.outcome of the backup demo.db.backup.v1: better up,
+  tolerance 5 p.p., min_samples 14; before 0.71. Identical inputs give an identical outcome. The core writes the outcome and the numbers of all calculations
+  into trial.'
+given:
+  metric:
+    series: farm.task.outcome
+    subject: task_type:demo.db.backup.v1
+    compare: window.share
+    better: up
+    tolerance_pp: 5
+    min_samples: 14
+  before:
+    value: 0.71
+    samples: 14
+    without_author: {value: 0.71, samples: 14}
+    without_role: {value: 0.71, samples: 14}
+expect:
+  trial_record_has:
+  - before
+  - after
+  - before.without_author
+  - before.without_role
+  - after.without_author
+  - after.without_role
+  - outcome
+  deterministic: true
+cases:
+- description: the guard farm.schedule.slot fired during the window
+  given:
+    guard_broken: true
+    after:
+      value: 1.0
+      samples: 14
+      without_author: {value: 1.0, samples: 14}
+      without_role: {value: 1.0, samples: 14}
+  expect: {outcome: worse}
+- description: during the window another proposal on the same subjects was realized
+  given:
+    other_change_same_subjects: true
+    after:
+      value: 1.0
+      samples: 14
+      without_author: {value: 1.0, samples: 14}
+      without_role: {value: 1.0, samples: 14}
+  expect: {outcome: mixed}
+- description: after, min_samples was not reached (9 tasks of 14)
+  given:
+    after:
+      value: 1.0
+      samples: 9
+      without_author: {value: 1.0, samples: 9}
+      without_role: {value: 1.0, samples: 9}
+  expect: {outcome: undetermined}
+- description: deterioration beyond the tolerance only in the calculation without the author's points
+  given:
+    after:
+      value: 0.79
+      samples: 14
+      without_author: {value: 0.64, samples: 14}
+      without_role: {value: 0.79, samples: 14}
+  expect: {outcome: worse}
+- description: improvement beyond the tolerance in all three calculations
+  given:
+    after:
+      value: 1.0
+      samples: 14
+      without_author: {value: 1.0, samples: 14}
+      without_role: {value: 1.0, samples: 14}
+  expect: {outcome: better}
+- description: change within the tolerance (plus 3 p.p.)
+  given:
+    after:
+      value: 0.74
+      samples: 14
+      without_author: {value: 0.74, samples: 14}
+      without_role: {value: 0.74, samples: 14}
+  expect: {outcome: unchanged}

@@ -1,0 +1,384 @@
+# Collected from spec/lifecycles/incident.yaml. The value null in from means "the object does not exist yet".
+lifecycle: spec/lifecycles/incident.yaml
+object: incident
+rules: [GOV-13, INJ-7, MGR-7, MGR-8, MGR-9, MGR-13, MON-5]
+description: Allowed and forbidden transitions of the "incident" lifecycle, collected from the tables of spec/lifecycles/incident.md.
+  The implementation accepts a transition from the allowed list under the condition of its row (when); a pair from the forbidden
+  list does not change the state, and the call that asks for it is rejected. The value null in from means "the object does
+  not exist yet". Only the core writes the incident record; bots do not create, change or hide it (GOV-13).
+states:
+- id: open
+  terminal: false
+- id: contained
+  terminal: false
+- id: mitigating
+  terminal: false
+- id: resolved
+  terminal: false
+- id: reopened
+  terminal: false
+- id: closed
+  terminal: true
+- id: dismissed
+  terminal: true
+allowed:
+- id: sm-inc-01
+  from: null
+  to: open
+  by: the core incident loop
+  when: a code alarm (alarm.*, OBS-6), including one raised by a monitoring system problem (MON-5), in firing, the class's
+    detect.when conditions hold for; there is no open incident of the same class and subject in the window of the key system:incident:<class>:<subject>:<window>
+    (IDM-2)
+  rules: [INJ-7, MGR-7, MGR-8, MON-5]
+- id: sm-inc-02
+  from: open
+  to: contained
+  by: the incident loop
+  when: the first contain_auto measure is applied by code
+  rules: [MGR-8]
+- id: sm-inc-03
+  from: reopened
+  to: contained
+  by: the incident loop
+  when: the first contain_auto measure is applied by code
+  rules: [MGR-8]
+- id: sm-inc-04
+  from: open
+  to: mitigating
+  by: C1 control.apply
+  when: the first operation of the farm manager or a person with the basis "this incident"
+  rules: [MGR-8, MGR-9, MGR-13]
+- id: sm-inc-05
+  from: contained
+  to: mitigating
+  by: C1 control.apply
+  when: the first operation of the farm manager or a person with the basis "this incident"
+  rules: [MGR-8, MGR-9, MGR-13]
+- id: sm-inc-06
+  from: reopened
+  to: mitigating
+  by: C1 control.apply
+  when: the first operation of the farm manager or a person with the basis "this incident"
+  rules: [MGR-8, MGR-9, MGR-13]
+- id: sm-inc-07
+  from: open
+  to: resolved
+  by: the incident loop
+  when: the alarm is in resolved longer than resolve.for
+  rules: [MGR-8]
+- id: sm-inc-08
+  from: contained
+  to: resolved
+  by: the incident loop
+  when: the alarm is in resolved longer than resolve.for
+  rules: [MGR-8]
+- id: sm-inc-09
+  from: mitigating
+  to: resolved
+  by: the incident loop
+  when: the alarm is in resolved longer than resolve.for
+  rules: [MGR-8]
+- id: sm-inc-10
+  from: reopened
+  to: resolved
+  by: the incident loop
+  when: the alarm is in resolved longer than resolve.for
+  rules: [MGR-8]
+- id: sm-inc-11
+  from: resolved
+  to: reopened
+  by: the incident loop
+  when: an alarm of the same key is in firing again no later than 1 h after resolved
+  rules: [MGR-8]
+- id: sm-inc-12
+  from: resolved
+  to: closed
+  by: P2 incident.close (a person of T with incident.manage); the built-in tool incident_close in the closing pass (the
+    seat holder)
+  when: only after resolved; a holder with the current epoch
+  rules: [MGR-8]
+- id: sm-inc-13
+  from: open
+  to: dismissed
+  by: P2 incident.dismiss {reason_code, details} or a channel command of a person of T with incident.manage
+  when: a false alarm; only a principal of kind human; a reason code from the closed list (false_alarm, threshold_misconfigured,
+    maintenance, duplicate, test, other) and the "Details" text of up to 500 characters are required, otherwise dismiss_reason_required;
+    from v0.2 in the same transaction attribution candidates without a "Yes" answer are canceled, and an attribution with
+    a "Yes" answer becomes disputed with a card to the author of the answer (GOV-13, D-79)
+  rules: [GOV-13, MGR-8]
+  version: v0.2
+- id: sm-inc-14
+  from: contained
+  to: dismissed
+  by: P2 incident.dismiss {reason_code, details} or a channel command of a person of T with incident.manage
+  when: a false alarm; only a principal of kind human; a reason code from the closed list (false_alarm, threshold_misconfigured,
+    maintenance, duplicate, test, other) and the "Details" text of up to 500 characters are required, otherwise dismiss_reason_required;
+    from v0.2 in the same transaction attribution candidates without a "Yes" answer are canceled, and an attribution with
+    a "Yes" answer becomes disputed with a card to the author of the answer (GOV-13, D-79)
+  rules: [GOV-13, MGR-8]
+  version: v0.2
+- id: sm-inc-15
+  from: mitigating
+  to: dismissed
+  by: P2 incident.dismiss {reason_code, details} or a channel command of a person of T with incident.manage
+  when: a false alarm; only a principal of kind human; a reason code from the closed list (false_alarm, threshold_misconfigured,
+    maintenance, duplicate, test, other) and the "Details" text of up to 500 characters are required, otherwise dismiss_reason_required;
+    from v0.2 in the same transaction attribution candidates without a "Yes" answer are canceled, and an attribution with
+    a "Yes" answer becomes disputed with a card to the author of the answer (GOV-13, D-79)
+  rules: [GOV-13, MGR-8]
+  version: v0.2
+- id: sm-inc-16
+  from: resolved
+  to: dismissed
+  by: P2 incident.dismiss {reason_code, details} or a channel command of a person of T with incident.manage
+  when: a false alarm; only a principal of kind human; a reason code from the closed list (false_alarm, threshold_misconfigured,
+    maintenance, duplicate, test, other) and the "Details" text of up to 500 characters are required, otherwise dismiss_reason_required;
+    from v0.2 in the same transaction attribution candidates without a "Yes" answer are canceled, and an attribution with
+    a "Yes" answer becomes disputed with a card to the author of the answer (GOV-13, D-79)
+  rules: [GOV-13, MGR-8]
+  version: v0.2
+- id: sm-inc-17
+  from: reopened
+  to: dismissed
+  by: P2 incident.dismiss {reason_code, details} or a channel command of a person of T with incident.manage
+  when: a false alarm; only a principal of kind human; a reason code from the closed list (false_alarm, threshold_misconfigured,
+    maintenance, duplicate, test, other) and the "Details" text of up to 500 characters are required, otherwise dismiss_reason_required;
+    from v0.2 in the same transaction attribution candidates without a "Yes" answer are canceled, and an attribution with
+    a "Yes" answer becomes disputed with a card to the author of the answer (GOV-13, D-79)
+  rules: [GOV-13, MGR-8]
+  version: v0.2
+forbidden:
+- id: sm-inc-x01
+  from: null
+  to: contained
+  expect: rejected
+  rules: [INJ-7, MGR-7, MGR-8, MON-5]
+  why: the object does not appear directly in the state contained
+- id: sm-inc-x02
+  from: null
+  to: mitigating
+  expect: rejected
+  rules: [INJ-7, MGR-7, MGR-8, MON-5]
+  why: the object does not appear directly in the state mitigating
+- id: sm-inc-x03
+  from: null
+  to: resolved
+  expect: rejected
+  rules: [INJ-7, MGR-7, MGR-8, MON-5]
+  why: the object does not appear directly in the state resolved
+- id: sm-inc-x04
+  from: null
+  to: reopened
+  expect: rejected
+  rules: [INJ-7, MGR-7, MGR-8, MON-5]
+  why: the object does not appear directly in the state reopened
+- id: sm-inc-x05
+  from: null
+  to: closed
+  expect: rejected
+  rules: [INJ-7, MGR-7, MGR-8, MON-5]
+  why: the object does not appear directly in the state closed
+- id: sm-inc-x06
+  from: null
+  to: dismissed
+  expect: rejected
+  rules: [INJ-7, MGR-7, MGR-8, MON-5]
+  why: the object does not appear directly in the state dismissed
+- id: sm-inc-x07
+  from: open
+  to: open
+  expect: rejected
+  rules: [GOV-13, INJ-7, MGR-7, MGR-8]
+  why: the lifecycle table has no such transition
+- id: sm-inc-x08
+  from: open
+  to: reopened
+  expect: rejected
+  rules: [GOV-13, MGR-8, MGR-9, MGR-13]
+  why: the lifecycle table has no such transition
+- id: sm-inc-x09
+  from: open
+  to: closed
+  expect: rejected
+  rules: [GOV-13, MGR-8, MGR-9, MGR-13]
+  why: the lifecycle table has no such transition
+- id: sm-inc-x10
+  from: contained
+  to: open
+  expect: rejected
+  rules: [GOV-13, INJ-7, MGR-7, MGR-8]
+  why: the lifecycle table has no such transition
+- id: sm-inc-x11
+  from: contained
+  to: contained
+  expect: rejected
+  rules: [GOV-13, MGR-8, MGR-9, MGR-13]
+  why: the lifecycle table has no such transition
+- id: sm-inc-x12
+  from: contained
+  to: reopened
+  expect: rejected
+  rules: [GOV-13, MGR-8, MGR-9, MGR-13]
+  why: the lifecycle table has no such transition
+- id: sm-inc-x13
+  from: contained
+  to: closed
+  expect: rejected
+  rules: [GOV-13, MGR-8, MGR-9, MGR-13]
+  why: the lifecycle table has no such transition
+- id: sm-inc-x14
+  from: mitigating
+  to: open
+  expect: rejected
+  rules: [GOV-13, INJ-7, MGR-7, MGR-8]
+  why: the lifecycle table has no such transition
+- id: sm-inc-x15
+  from: mitigating
+  to: contained
+  expect: rejected
+  rules: [GOV-13, MGR-8]
+  why: the lifecycle table has no such transition
+- id: sm-inc-x16
+  from: mitigating
+  to: mitigating
+  expect: rejected
+  rules: [GOV-13, MGR-8, MGR-9, MGR-13]
+  why: the lifecycle table has no such transition
+- id: sm-inc-x17
+  from: mitigating
+  to: reopened
+  expect: rejected
+  rules: [GOV-13, MGR-8]
+  why: the lifecycle table has no such transition
+- id: sm-inc-x18
+  from: mitigating
+  to: closed
+  expect: rejected
+  rules: [GOV-13, MGR-8]
+  why: the lifecycle table has no such transition
+- id: sm-inc-x19
+  from: resolved
+  to: open
+  expect: rejected
+  rules: [GOV-13, INJ-7, MGR-7, MGR-8]
+  why: the lifecycle table has no such transition
+- id: sm-inc-x20
+  from: resolved
+  to: contained
+  expect: rejected
+  rules: [GOV-13, MGR-8]
+  why: the lifecycle table has no such transition
+- id: sm-inc-x21
+  from: resolved
+  to: mitigating
+  expect: rejected
+  rules: [GOV-13, MGR-8, MGR-9, MGR-13]
+  why: the lifecycle table has no such transition
+- id: sm-inc-x22
+  from: resolved
+  to: resolved
+  expect: rejected
+  rules: [GOV-13, MGR-8]
+  why: the lifecycle table has no such transition
+- id: sm-inc-x23
+  from: reopened
+  to: open
+  expect: rejected
+  rules: [GOV-13, INJ-7, MGR-7, MGR-8]
+  why: the lifecycle table has no such transition
+- id: sm-inc-x24
+  from: reopened
+  to: reopened
+  expect: rejected
+  rules: [GOV-13, MGR-8, MGR-9, MGR-13]
+  why: the lifecycle table has no such transition
+- id: sm-inc-x25
+  from: reopened
+  to: closed
+  expect: rejected
+  rules: [GOV-13, MGR-8, MGR-9, MGR-13]
+  why: the lifecycle table has no such transition
+- id: sm-inc-x26
+  from: closed
+  to: open
+  expect: rejected
+  rules: [MGR-8]
+  why: 'closed is a terminal state: there are no transitions out of it'
+- id: sm-inc-x27
+  from: closed
+  to: contained
+  expect: rejected
+  rules: [MGR-8]
+  why: 'closed is a terminal state: there are no transitions out of it'
+- id: sm-inc-x28
+  from: closed
+  to: mitigating
+  expect: rejected
+  rules: [MGR-8]
+  why: 'closed is a terminal state: there are no transitions out of it'
+- id: sm-inc-x29
+  from: closed
+  to: resolved
+  expect: rejected
+  rules: [MGR-8]
+  why: 'closed is a terminal state: there are no transitions out of it'
+- id: sm-inc-x30
+  from: closed
+  to: reopened
+  expect: rejected
+  rules: [MGR-8]
+  why: 'closed is a terminal state: there are no transitions out of it'
+- id: sm-inc-x31
+  from: closed
+  to: closed
+  expect: rejected
+  rules: [MGR-8]
+  why: 'closed is a terminal state: there are no transitions out of it'
+- id: sm-inc-x32
+  from: closed
+  to: dismissed
+  expect: rejected
+  rules: [MGR-8]
+  why: 'closed is a terminal state: there are no transitions out of it'
+- id: sm-inc-x33
+  from: dismissed
+  to: open
+  expect: rejected
+  rules: [GOV-13, MGR-8]
+  why: 'dismissed is a terminal state: there are no transitions out of it'
+- id: sm-inc-x34
+  from: dismissed
+  to: contained
+  expect: rejected
+  rules: [GOV-13, MGR-8]
+  why: 'dismissed is a terminal state: there are no transitions out of it'
+- id: sm-inc-x35
+  from: dismissed
+  to: mitigating
+  expect: rejected
+  rules: [GOV-13, MGR-8]
+  why: 'dismissed is a terminal state: there are no transitions out of it'
+- id: sm-inc-x36
+  from: dismissed
+  to: resolved
+  expect: rejected
+  rules: [GOV-13, MGR-8]
+  why: 'dismissed is a terminal state: there are no transitions out of it'
+- id: sm-inc-x37
+  from: dismissed
+  to: reopened
+  expect: rejected
+  rules: [GOV-13, MGR-8]
+  why: 'dismissed is a terminal state: there are no transitions out of it'
+- id: sm-inc-x38
+  from: dismissed
+  to: closed
+  expect: rejected
+  rules: [GOV-13, MGR-8]
+  why: 'dismissed is a terminal state: there are no transitions out of it'
+- id: sm-inc-x39
+  from: dismissed
+  to: dismissed
+  expect: rejected
+  rules: [GOV-13, MGR-8]
+  why: 'dismissed is a terminal state: there are no transitions out of it'

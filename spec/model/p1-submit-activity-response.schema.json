@@ -1,0 +1,43 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:botaru:schema:p1-submit-activity-response:1",
+  "title": "P1 submit_activity: response",
+  "description": "Outcome of an activity: a task (new, or the same one on a repeat of the same update, IDM-5), ignored (the activity did not become a task, for example it came from a non-principal or is not a command) or a ready code answer that the channel shows itself. Code chose the task type (IDN-6). Denials: identity_unknown, not_ready.",
+  "x-botaru-direction": "output",
+  "x-botaru-rules": [
+    "IDN-3",
+    "IDN-6",
+    "IDM-5",
+    "CNT-5"
+  ],
+  "type": "object",
+  "required": [
+    "result"
+  ],
+  "properties": {
+    "result": {
+      "enum": [
+        "task",
+        "ignored",
+        "reply"
+      ]
+    },
+    "task": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/object_id",
+      "description": "Only task: the task."
+    },
+    "existing": {
+      "type": "boolean",
+      "description": "Only task: the same update has already produced this task."
+    },
+    "reason": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/reason",
+      "description": "Only ignored: why, for example not_subject."
+    },
+    "text": {
+      "type": "string",
+      "maxLength": 4096,
+      "description": "Only reply: a ready code text from the text catalog."
+    }
+  }
+}

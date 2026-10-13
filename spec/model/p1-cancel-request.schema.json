@@ -1,0 +1,21 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:botaru:schema:p1-cancel-request:1",
+  "title": "P1 cancel: request",
+  "description": "The initiator or an external program cancels its task and its children. A repeat gives the same answer (IDM-3).",
+  "x-botaru-direction": "input",
+  "x-botaru-rules": [
+    "PRM-9",
+    "IDM-3"
+  ],
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "task"
+  ],
+  "properties": {
+    "task": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/object_id"
+    }
+  }
+}

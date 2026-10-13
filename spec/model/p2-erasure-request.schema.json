@@ -1,0 +1,62 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:botaru:schema:p2-erasure-request:1",
+  "title": "P2 erasure.request: request",
+  "description": "Early erasure by the operator through farmctl: reason manual or subject_request, scope (tenant), (tenant, subject) or a list of object ids (RET-7, spec/lifecycles/deletion-request.md).",
+  "x-botaru-direction": "input",
+  "x-botaru-rules": [
+    "RET-7"
+  ],
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "scope",
+    "reason"
+  ],
+  "properties": {
+    "scope": {
+      "type": "object",
+      "description": "Request scope.",
+      "additionalProperties": false,
+      "required": [
+        "tenant"
+      ],
+      "properties": {
+        "tenant": {
+          "$ref": "urn:botaru:schema:common:1#/$defs/tenant_name",
+          "description": "Tenant."
+        },
+        "subject": {
+          "$ref": "urn:botaru:schema:common:1#/$defs/principal_ref",
+          "description": "Erasure principal: an opaque id human:p_<ULID> (D-85 (1))."
+        },
+        "ids": {
+          "description": "List of object ids.",
+          "type": "array",
+          "items": {
+            "description": "Object id.",
+            "type": "string",
+            "maxLength": 64,
+            "pattern": "^[a-z][a-z0-9]{0,7}_[A-Za-z0-9]{1,26}$"
+          },
+          "maxItems": 1000,
+          "minItems": 1
+        }
+      },
+      "not": {
+        "required": [
+          "subject",
+          "ids"
+        ]
+      }
+    },
+    "reason": {
+      "description": "Reason.",
+      "enum": [
+        "manual",
+        "subject_request"
+      ],
+      "x-botaru-registry": "reasons"
+    }
+  }
+}

@@ -1,0 +1,109 @@
+registry: core-series
+version: 1
+description: >-
+  Core series: the deterministic observe loop computes them only from records of the
+  same tenant (attempts, tasks, usage lines, schedule slots, run finished
+  events of work outside the farm, OBV-5), for every task type, schedule and
+  dataset of the tenant (OBV-6). The catalog_kind field is the kind of the catalog subject of the series, values
+  are the closed values of the series, if the text names them. The outcome block: unit
+  (unit), compare (rollup for comparison), good (which event is good, for
+  share series), better (up or down), tolerance_pp or tolerance_pct (tolerance
+  within which there is no change) and min_samples (the smallest number of events per
+  window). A series without a full outcome block is not fit as a metric or a guard of
+  a trial and does not pass the lint. The tolerance numbers and min_samples are the skeleton's
+  default values. The guards_by_metric field holds the guards of the series when it is
+  the trial metric (the second table of docs/improvements.md); guards by the
+  kind of the change target are recorded in the target_guards list below the series entries.
+source: docs/improvements.md
+entries:
+  - id: farm.attempt.duration
+    since: v0.1
+    meaning: attempt duration (p50 is the median, p95 is the 95th percentile)
+    catalog_kind: task_type
+    outcome: {unit: s, compare: window.p95, better: down, tolerance_pct: 10, min_samples: 10}
+    guards_by_metric: [farm.task.outcome]
+    rules: [OBV-6]
+  - id: farm.task.outcome
+    since: v0.1
+    meaning: task outcome by reason
+    catalog_kind: task_type
+    values: [done, failed, deadline_exceeded, canceled]
+    outcome: {unit: share, compare: window.share, good: done, better: up, tolerance_pp: 5, min_samples: 14}
+    guards_by_metric: [farm.attempt.duration]
+    rules: [OBV-6]
+  - id: farm.task.attempts
+    since: v0.1
+    meaning: number of attempts per task
+    catalog_kind: task_type
+    outcome: {unit: count, compare: window.mean, better: down, tolerance_pct: 10, min_samples: 14}
+    guards_by_metric: [farm.attempt.duration, farm.task.cost]
+    rules: [OBV-6]
+  - id: farm.queue.wait
+    since: v0.1
+    meaning: waiting in the queue until the first dispatch
+    catalog_kind: task_type
+    outcome: {unit: s, compare: window.p95, better: down, tolerance_pct: 15, min_samples: 20}
+    guards_by_metric: [farm.task.cost]
+    rules: [OBV-6]
+  - id: farm.task.cost
+    since: v0.1
+    meaning: task cost by usage lines (BUD-3)
+    catalog_kind: task_type
+    outcome: {unit: eur_cents, compare: window.mean, better: down, tolerance_pct: 10, min_samples: 14}
+    guards_by_metric: [farm.task.outcome, farm.attempt.duration]
+    rules: [OBV-6, BUD-3]
+  - id: farm.schedule.slot
+    since: v0.1
+    meaning: schedule slot (on time, late, skipped)
+    catalog_kind: schedule
+    values: [on_time, late, skipped]
+    outcome: {unit: share, compare: window.share, good: on_time, better: up, tolerance_pp: 5, min_samples: 10}
+    guards_by_metric: [farm.attempt.duration]
+    rules: [OBV-6, TIM-3]
+  - id: farm.backup.age
+    since: v0.1
+    meaning: age of the last successful backup
+    catalog_kind: dataset
+    outcome: {unit: h, compare: day.max, better: down, tolerance_pct: 10, min_samples: 10}
+    guards_by_metric: [farm.schedule.slot]
+    rules: [OBV-6]
+  - id: farm.external.duration
+    since: v0.1
+    meaning: duration of work outside the farm
+    catalog_kind: task_type
+    outcome: {unit: s, compare: window.p95, better: down, tolerance_pct: 10, min_samples: 10}
+    guards_by_metric: [farm.external.retries, farm.external.outcome]
+    rules: [OBV-6]
+  - id: farm.external.retries
+    since: v0.1
+    meaning: retries of work outside the farm
+    catalog_kind: task_type
+    outcome: {unit: count, compare: window.mean, better: down, tolerance_pct: 10, min_samples: 10}
+    guards_by_metric: [farm.external.duration, farm.external.outcome]
+    rules: [OBV-6]
+  - id: farm.external.outcome
+    since: v0.1
+    meaning: outcome of work outside the farm
+    catalog_kind: task_type
+    values: [done, failed, timeout, canceled]
+    outcome: {unit: share, compare: window.share, good: done, better: up, tolerance_pp: 5, min_samples: 10}
+    guards_by_metric: [farm.external.duration, farm.external.retries]
+    rules: [OBV-6]
+target_guards:
+  - target: schedule
+    guards: [farm.schedule.slot, farm.attempt.duration]
+  - target: backup_schedule_window
+    guards: [farm.backup.age, farm.schedule.slot]
+    required: [farm.backup.age]
+  - target: dispatch_rule
+    guards: [farm.task.outcome, farm.queue.wait, farm.task.cost]
+  - target: tenant_limits
+    guards: [farm.queue.wait, farm.task.outcome]
+  - target: catalog_dataset_backup_ref
+    guards: [farm.backup.age]
+  - target: action_request
+    guards: [farm.task.outcome]
+  - target: script
+    guards: [farm.task.outcome]
+  - target: human_change
+    guards: [farm.task.outcome]

@@ -1,0 +1,29 @@
+id: dig-01
+rules: [DIG-2, DLV-7]
+description: 'Digest address and the recipient ceiling. A proposal with mark raw_logs with a group chat ceiling of summary:
+  in the group at the address insights.present_to only the code header is visible, and the details go to a private chat to those who have
+  data:raw_logs. The digest has no address other than insights.present_to.'
+given:
+  tenant: demo
+  insights: {present_to: 'chat:demo-ops'}
+  chats:
+  - name: demo-ops
+    kind: group
+    ceiling: summary
+    members: [alice, bob, carol]
+  humans:
+  - name: alice
+    caps: ['proposal.decide:*']
+  - name: bob
+    caps: ['proposal.decide:*', 'data:raw_logs']
+  - name: carol
+    caps: ['proposal.decide:*', 'data:raw_logs']
+  proposals:
+  - {id: p_01JB0000000000000000000201, state: recommended, category: reliability, data_mark: raw_logs}
+expect:
+  deliveries:
+  - {kind: proposal_digest, to: 'chat:demo-ops', item: p_01JB0000000000000000000201, show: title_only}
+  - {kind: proposal_card, to: 'dm:bob', item: p_01JB0000000000000000000201, show: full}
+  - {kind: proposal_card, to: 'dm:carol', item: p_01JB0000000000000000000201, show: full}
+  not_delivered_to: ['dm:alice']
+  other_addresses: 0

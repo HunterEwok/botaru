@@ -1,0 +1,241 @@
+schema: spec/manifests/task-type.schema.json
+rules:
+- MAN-1
+description: 'TaskType manifest specs that the kind schema rejects: extra field, missing required field, value outside the
+  closed list or format.'
+cases:
+- title: Greeting
+  summary_for_managers: A short reply to a greeting; no tools
+  worker_kind: agent
+  purpose: work
+  tier: 0
+  data_class: summary
+  instruction: 'Greet the person in one sentence and say that you are a farm bot.
+
+    '
+  params_schema:
+    type: object
+    additionalProperties: false
+    properties: {}
+  result_schema:
+    type: object
+    additionalProperties: false
+    required:
+    - answer
+    properties:
+      answer:
+        type: string
+        maxLength: 500
+  stages:
+  - writing_answer
+  dispatch:
+    priority_class: 3
+  interactive: true
+  timeouts:
+    start_by: 5m
+    lease: 60s
+    heartbeat: 20s
+    attempt: 1m
+    deadline: 5m
+  retry:
+    max_attempts: 2
+    max_runs: 2
+  tree_budget_eur: 0.01
+  max_children: 0
+  goal_trust: untrusted
+  unexpected_field: true
+- summary_for_managers: A short reply to a greeting; no tools
+  worker_kind: agent
+  purpose: work
+  tier: 0
+  data_class: summary
+  instruction: 'Greet the person in one sentence and say that you are a farm bot.
+
+    '
+  params_schema:
+    type: object
+    additionalProperties: false
+    properties: {}
+  result_schema:
+    type: object
+    additionalProperties: false
+    required:
+    - answer
+    properties:
+      answer:
+        type: string
+        maxLength: 500
+  stages:
+  - writing_answer
+  dispatch:
+    priority_class: 3
+  interactive: true
+  timeouts:
+    start_by: 5m
+    lease: 60s
+    heartbeat: 20s
+    attempt: 1m
+    deadline: 5m
+  retry:
+    max_attempts: 2
+    max_runs: 2
+  tree_budget_eur: 0.01
+  max_children: 0
+  goal_trust: untrusted
+- title: Greeting
+  summary_for_managers: A short reply to a greeting; no tools
+  purpose: work
+  tier: 0
+  data_class: summary
+  instruction: 'Greet the person in one sentence and say that you are a farm bot.
+
+    '
+  params_schema:
+    type: object
+    additionalProperties: false
+    properties: {}
+  result_schema:
+    type: object
+    additionalProperties: false
+    required:
+    - answer
+    properties:
+      answer:
+        type: string
+        maxLength: 500
+  stages:
+  - writing_answer
+  dispatch:
+    priority_class: 3
+  interactive: true
+  timeouts:
+    start_by: 5m
+    lease: 60s
+    heartbeat: 20s
+    attempt: 1m
+    deadline: 5m
+  retry:
+    max_attempts: 2
+    max_runs: 2
+  tree_budget_eur: 0.01
+  max_children: 0
+  goal_trust: untrusted
+- title: Greeting
+  summary_for_managers: A short reply to a greeting; no tools
+  worker_kind: agent
+  purpose: work
+  tier: 0
+  data_class: summary
+  instruction: 'Greet the person in one sentence and say that you are a farm bot.
+
+    '
+  params_schema:
+    type: object
+    additionalProperties: false
+    properties: {}
+  result_schema:
+    type: object
+    additionalProperties: false
+    required:
+    - answer
+    properties:
+      answer:
+        type: string
+        maxLength: 500
+  stages:
+  - writing_answer
+  dispatch:
+    priority_class: 3
+  interactive: true
+  timeouts:
+    start_by: 5m
+    lease: 60s
+    heartbeat: 20s
+    attempt: 1m
+    deadline: 5m
+  retry:
+    max_attempts: 4
+  tree_budget_eur: 0.01
+  max_children: 0
+  goal_trust: untrusted
+- title: Greeting
+  summary_for_managers: A short reply to a greeting; no tools
+  worker_kind: agent
+  purpose: work
+  tier: 5
+  data_class: summary
+  instruction: 'Greet the person in one sentence and say that you are a farm bot.
+
+    '
+  params_schema:
+    type: object
+    additionalProperties: false
+    properties: {}
+  result_schema:
+    type: object
+    additionalProperties: false
+    required:
+    - answer
+    properties:
+      answer:
+        type: string
+        maxLength: 500
+  stages:
+  - writing_answer
+  dispatch:
+    priority_class: 3
+  interactive: true
+  timeouts:
+    start_by: 5m
+    lease: 60s
+    heartbeat: 20s
+    attempt: 1m
+    deadline: 5m
+  retry:
+    max_attempts: 2
+    max_runs: 2
+  tree_budget_eur: 0.01
+  max_children: 0
+  goal_trust: untrusted
+- title: Greeting
+  summary_for_managers: A short reply to a greeting; no tools
+  worker_kind: agent
+  purpose: work
+  tier: 0
+  data_class: summary
+  instruction: 'Greet the person in one sentence and say that you are a farm bot.
+
+    '
+  params_schema:
+    type: object
+    additionalProperties: false
+    properties:
+      path:
+        type: string
+        maxLength: 200
+  result_schema:
+    type: object
+    additionalProperties: false
+    required:
+    - answer
+    properties:
+      answer:
+        type: string
+        maxLength: 500
+  stages:
+  - writing_answer
+  dispatch:
+    priority_class: 3
+  interactive: true
+  timeouts:
+    start_by: 5m
+    lease: 60s
+    heartbeat: 20s
+    attempt: 1m
+    deadline: 5m
+  retry:
+    max_attempts: 2
+    max_runs: 2
+  tree_budget_eur: 0.01
+  max_children: 0
+  goal_trust: untrusted

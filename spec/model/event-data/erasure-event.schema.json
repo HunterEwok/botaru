@@ -1,0 +1,48 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:botaru:schema:erasure-event:1",
+  "title": "Erasure request event data",
+  "description": "Data of the events erasure.requested, erasure.done and erasure.failed (spec/lifecycles/deletion-request.md). Metadata only: request id, scope kind, reason and outcomes per store; the erase_match search strings are not there, not even as a hash (SEC-11).",
+  "x-botaru-direction": "output",
+  "x-botaru-rules": [
+    "RET-7"
+  ],
+  "type": "object",
+  "required": [
+    "request",
+    "scope_kind",
+    "reason"
+  ],
+  "properties": {
+    "request": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/object_id",
+      "description": "Erasure request id."
+    },
+    "scope_kind": {
+      "description": "Kind of the request scope.",
+      "enum": [
+        "tenant",
+        "tenant_subject",
+        "bot",
+        "worker",
+        "ids"
+      ]
+    },
+    "reason": {
+      "description": "Request reason from the closed list RET-7.",
+      "$ref": "urn:botaru:schema:deletion-request:1#/$defs/reason"
+    },
+    "results": {
+      "description": "Outcome for each store.",
+      "type": "object",
+      "maxProperties": 32,
+      "propertyNames": {
+        "pattern": "^[a-z][a-z0-9_]*$",
+        "maxLength": 32
+      },
+      "additionalProperties": {
+        "$ref": "urn:botaru:schema:deletion-request:1#/$defs/store_result"
+      }
+    }
+  }
+}

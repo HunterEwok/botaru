@@ -1,0 +1,33 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:botaru:schema:test-store-fault-request:1",
+  "title": "Test bench store.fault: request",
+  "description": "A test bench store fault at a closed point: before_commit (the next transition transaction rolls back as a whole), unavailable (the store does not respond until clear), low_space (free space below the hard threshold, CAP-5), clear (remove the fault).",
+  "x-botaru-direction": "input",
+  "x-botaru-rules": [
+    "APR-9",
+    "DLV-2",
+    "OBS-8",
+    "CAP-5"
+  ],
+  "type": "object",
+  "required": [
+    "point"
+  ],
+  "properties": {
+    "point": {
+      "enum": [
+        "before_commit",
+        "unavailable",
+        "low_space",
+        "clear"
+      ]
+    },
+    "count": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 100
+    }
+  },
+  "additionalProperties": false
+}

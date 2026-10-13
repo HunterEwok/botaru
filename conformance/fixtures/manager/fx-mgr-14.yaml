@@ -1,0 +1,67 @@
+id: fx-mgr-14
+rules: [MGR-15]
+description: 'Revert P2 control.revert: with since (an operator with admin:farm, only farmctl) or with incident (the same operator or
+  a tenant person with hold.release) releases seat holds, cancels the seat''s waiting action requests, control cards
+  and pinned tasks that have not started. The revert does not touch executed actions.'
+given:
+  seat:
+    id: farm-manager
+    tenant: farm
+    state: held
+    holder: bot_41
+    epoch: 9
+    stop_reasons: []
+  by_seat_since_02_00:
+    holds: [h_1(i_311), h_2(i_311), h_3(i_312)]
+    approvals_pending: [ap_1(i_311)]
+    control_cards_pending: [cc_1(i_311)]
+    pinned_not_started: [t-pin-1(i_311)]
+    actions_done: [cleanup_pipeline_tmp(i_311), service ctd-qc restart(i_311)]
+cases:
+- id: fx-mgr-14-a
+  given:
+    via: channel_dm
+    people:
+    - principal: human:alice
+      caps: [hold.release@demo]
+  steps:
+  - call:
+      port: P2
+      op: control.revert
+      request: {incident: i_311}
+    by: human:alice
+  expect:
+    holds_released: [h_1, h_2]
+    holds_kept: [h_3]
+    approvals: {ap_1: canceled}
+    cards: {cc_1: canceled}
+    tasks: {t-pin-1: canceled}
+    actions_reverted: 0
+- id: fx-mgr-14-b
+  given:
+    via: farmctl
+    people:
+    - principal: human:bob
+      caps: ['admin:farm']
+  steps:
+  - call:
+      port: P2
+      op: control.revert
+      request: {since: '2026-11-24T02:00:00Z'}
+    by: human:bob
+  expect:
+    holds_released: [h_1, h_2, h_3]
+    actions_reverted: 0
+- id: fx-mgr-14-c
+  given:
+    via: channel
+    people:
+    - principal: human:bob
+      caps: ['admin:farm']
+  steps:
+  - call:
+      port: P2
+      op: control.revert
+      request: {since: '2026-11-24T02:00:00Z'}
+    by: human:bob
+  expect: {result: rejected, reason: operator_only}

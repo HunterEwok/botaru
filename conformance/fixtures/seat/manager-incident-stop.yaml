@@ -1,0 +1,343 @@
+id: fx-seat-manager-incident-stop
+description: Stop of the manager seat on an incident and the ways out of it (GOV-22, IDN-11).
+cases:
+- id: gov-fx-08
+  rules: [GOV-22, GOV-28]
+  description: 'A new incident of a class with stops_manager: true, opened by the core while the seat is held, in a tenant with the manager
+    enabled, adds the reason incident in the same transaction: epoch + 1, all running attempts of the holder in all
+    tenants are canceled, claim of seat tasks is forbidden. Numbers of identities, workers and incidents are shortened, as in the examples of
+    docs/bots.md and docs/farm-manager.md.'
+  given:
+    seat:
+      id: farm-manager
+      tenant: farm
+      state: held
+      holder: bot_41
+      epoch: 9
+      stop_reasons: []
+    running:
+    - {tenant: demo, type: manager.incident.respond.v1}
+    - {tenant: demo2, type: review.farm_manager.v1}
+    mgr_33: met
+    mgr_34: met
+  steps:
+  - occur:
+      incident_open: {id: i_318, tenant: demo, class: disk_full, at: '2026-11-24T05:10:00Z'}
+  expect:
+    seat:
+      state: stopped
+      epoch: 10
+      stop_reasons:
+      - {reason: incident, incident: i_318, at: '2026-11-24T05:10:00Z'}
+      decide_until: '2026-12-01T05:10:00Z'
+    attempts:
+      end_reason: seat_changed
+      canceled_in: [demo, demo2]
+      attempts_spent: 0
+    claim_seat_tasks: refused
+    event: seat.stopped
+    card: manager_stopped
+    same_transaction: true
+- id: gov-fx-11
+  rules: [GOV-22]
+  description: 'An incident opened before the holder was assigned or restored gives no stop: this holder did not allow it.
+    There is no window without a stop after assignment: an incident opened after assignment stops the seat. Numbers of identities,
+    workers and incidents are shortened, as in the examples of docs/bots.md and docs/farm-manager.md.'
+  cases:
+  - id: gov-fx-11-a
+    given:
+      incident: {id: i_330, class: disk_full, opened_at: '2026-11-24T05:00:00Z'}
+      seat: {state: vacant, epoch: 12}
+    steps:
+    - call:
+        port: P2
+        op: seat.assign
+        request: {seat: farm-manager}
+      at: '2026-11-24T06:00:00Z'
+    expect:
+      seat:
+        state: held
+        epoch: 13
+        stop_reasons: []
+  - id: gov-fx-11-b
+    given:
+      seat: {state: held, epoch: 13, held_since: '2026-11-24T06:00:00Z'}
+    steps:
+    - occur:
+        incident_open: {class: disk_full, at: '2026-11-24T06:00:01Z'}
+        mgr_33: met
+        mgr_34: met
+    expect:
+      seat:
+        state: stopped
+        stop_reasons: [incident]
+        epoch: 14
+  - id: gov-fx-11-c
+    given:
+      seat:
+        state: stopped
+        stop_reasons: [incident]
+        incident: i_318
+        epoch: 10
+      other_incident: {id: i_319, class: disk_full, opened_at: '2026-11-24T05:30:00Z', state: open}
+    steps:
+    - call:
+        port: P2
+        op: seat.resume
+        request: {seat: farm-manager, incident: i_318}
+      context: {condition: i_318 dismissed}
+    expect:
+      seat: {state: held, epoch: 11}
+      note: i_319 was opened during the stop and added to the card; after the restore it gives no stop
+- id: gov-fx-18
+  rules: [GOV-22, IDN-11, MEM-7]
+  description: 'Way out of an incident stop by replacement or release: P2 seat.assign or seat.vacate while the reason set
+    contains incident; the previous holder leaves with the trigger replaced_after_incident, and their facts from each tenant
+    are offered to the new holder (or wait for the next one until the end of the seal with vacate). Numbers of identities, workers and
+    incidents are shortened, as in the examples of docs/bots.md and docs/farm-manager.md.'
+  given:
+    seat:
+      id: farm-manager
+      state: stopped
+      holder: bot_41
+      epoch: 10
+      stop_reasons: [incident]
+    bot_41_facts: {demo: 12, demo2: 5}
+  cases:
+  - id: gov-fx-18-a
+    given:
+      via: farmctl
+      people:
+      - principal: human:bob
+        caps: ['admin:governance@farm']
+    steps:
+    - call:
+        port: P2
+        op: seat.assign
+        request: {seat: farm-manager}
+      by: human:bob
+    expect:
+      seat:
+        state: held
+        holder: bot_52
+        epoch: 11
+        stop_reasons: []
+      bot_41:
+        state: retired
+        retired: {reason: replaced_after_incident, successor: bot_52}
+      fact_offers:
+      - {tenant: demo, to: bot_52, facts: 12}
+      - {tenant: demo2, to: bot_52, facts: 5}
+      notice: manager_holder_changed
+  - id: gov-fx-18-b
+    given:
+      via: farmctl
+      people:
+      - principal: human:bob
+        caps: ['admin:governance@farm']
+    steps:
+    - call:
+        port: P2
+        op: seat.vacate
+        request: {seat: farm-manager}
+      by: human:bob
+    expect:
+      seat:
+        state: vacant
+        holder: null
+        epoch: 11
+        stop_reasons: []
+      bot_41:
+        state: retired
+        retired: {reason: replaced_after_incident}
+      fact_offers: {recipient_state: waiting, open_until: end of seal of bot_41}
+  - id: gov-fx-18-c
+    given:
+      seat:
+        state: stopped
+        stop_reasons: [human]
+    steps:
+    - call:
+        port: P2
+        op: seat.assign
+        request: {seat: farm-manager}
+    expect:
+      bot_41:
+        retired: {reason: replaced_by_human}
+- id: gov-fx-19
+  rules: [GOV-22, IDN-10]
+  description: P2 seat.resume removes only the reason incident and only after the incident that caused it and the incidents
+    of the same minute were dismissed by people as false; epoch + 1; the seat is held only if the set is empty. Numbers of identities, workers
+    and incidents are shortened, as in the examples of docs/bots.md and docs/farm-manager.md.
+  given:
+    seat:
+      id: farm-manager
+      state: stopped
+      holder: bot_41
+      epoch: 10
+      stop_reasons:
+      - {reason: incident, incident: i_318, at: '2026-11-24T05:10:00Z'}
+    incidents:
+      i_318: {opened_at: '2026-11-24T05:10:00Z'}
+      i_319: {opened_at: '2026-11-24T05:10:40Z', class: disk_full}
+  cases:
+  - id: gov-fx-19-a
+    given: {i_318: open}
+    steps:
+    - call:
+        port: P2
+        op: seat.resume
+        request: {seat: farm-manager, incident: i_318}
+    expect:
+      result: rejected
+      seat: {state: stopped, epoch: 10}
+  - id: gov-fx-19-b
+    given: {i_318: dismissed, i_319: open}
+    steps:
+    - call:
+        port: P2
+        op: seat.resume
+        request: {seat: farm-manager, incident: i_318}
+    expect: {result: rejected, note: an incident of the same minute is not dismissed}
+  - id: gov-fx-19-c
+    given:
+      i_318: dismissed
+      i_319: dismissed
+      via: farmctl
+      people:
+      - principal: human:bob
+        caps: ['admin:governance@farm']
+    steps:
+    - call:
+        port: P2
+        op: seat.resume
+        request: {seat: farm-manager, incident: i_318}
+      by: human:bob
+    expect:
+      seat:
+        state: held
+        epoch: 11
+        stop_reasons: []
+        holder: bot_41
+      event: seat.resumed
+      notice: manager_holder_changed
+  - id: gov-fx-19-d
+    given:
+      i_318: dismissed
+      i_319: dismissed
+      seat_extra_reasons: [no_control]
+    steps:
+    - call:
+        port: P2
+        op: seat.resume
+        request: {seat: farm-manager, incident: i_318}
+    expect:
+      seat:
+        state: stopped
+        stop_reasons: [no_control]
+  - id: gov-fx-19-e
+    given: {i_318: dismissed, i_319: dismissed, via: channel}
+    steps:
+    - call:
+        port: P2
+        op: seat.resume
+        request: {seat: farm-manager, incident: i_318}
+    expect: {result: rejected, reason: operator_only}
+- id: gov-fx-22
+  rules: [GOV-22, MGR-1]
+  description: 'While the seat is stopped by incident: holds the holder already set live out their term, no
+    longer than 2 h, and there are no new ones; their waiting cards stay with the label "requester stopped", and a human decision
+    on them is executed as an operation of that human; similar incidents opened during the stop are only added
+    to the manager_stopped card. Numbers of identities, workers and incidents are shortened, as in the examples of docs/bots.md and
+    docs/farm-manager.md.'
+  given:
+    seat:
+      state: stopped
+      stop_reasons: [incident]
+      epoch: 10
+    bot_41_holds:
+    - {id: h_5, until: '2026-11-24T06:00:00Z', set_at: '2026-11-24T04:30:00Z'}
+    bot_41_cards:
+    - {id: ap_3, kind: approval_card, action: cleanup_pipeline_tmp}
+  cases:
+  - id: gov-fx-22-a
+    expect:
+      h_5: {until: '2026-11-24T06:00:00Z', released_by_core: false}
+      new_holds_from_seat: 0
+  - id: gov-fx-22-b
+    expect:
+      ap_3: {state: pending, label: requester stopped}
+  - id: gov-fx-22-c
+    given:
+      people:
+      - principal: human:alice
+        caps: [approver@demo]
+    steps:
+    - call:
+        port: P1
+        op: decide
+        request: {subject_kind: approval, id: ap_3, decision: approve}
+      by: human:alice
+    expect: {executed_as: 'human:alice'}
+  - id: gov-fx-22-d
+    steps:
+    - occur:
+        incident_open: {id: i_325, class: disk_full, tenant: demo2}
+    expect:
+      seat:
+        epoch: 10
+        stop_reasons: [incident]
+      manager_stopped_card:
+        appended: [i_325]
+- id: gov-fx-24
+  rules: [GOV-22, IDN-11, MGR-31]
+  description: 'The decide_within period (7 days by default and at most) passes without a human decision: the identity loop retires the previous
+    holder with the trigger replaced_after_incident, the seat becomes vacant, and their facts wait for the next holder until
+    the end of the seal. A farm charter with decide_within longer than 7 days does not pass apply. Numbers of identities, workers and incidents
+    are shortened, as in the examples of docs/bots.md and docs/farm-manager.md.'
+  cases:
+  - id: gov-fx-24-a
+    given:
+      seat:
+        state: stopped
+        holder: bot_41
+        epoch: 10
+        stop_reasons:
+        - {reason: incident, at: '2026-11-24T05:10:00Z'}
+      decide_within: 7d
+      now: '2026-12-01T05:10:01Z'
+    steps:
+    - stand: {op: loop.tick, loop: identity}
+    expect:
+      seat:
+        state: vacant
+        holder: null
+        epoch: 11
+        stop_reasons: []
+      bot_41:
+        state: retired
+        retired: {reason: replaced_after_incident, successor: null}
+      fact_offers: {recipient_state: waiting}
+      notice: manager_holder_changed
+      manager_stopped_repeats: stopped
+  - id: gov-fx-24-b
+    given:
+      lint: governance/farm
+      manifest:
+        kind: Governance
+        metadata: {name: farm}
+        spec:
+          farm_manager:
+            incident_stop: {decide_within: 10d}
+    expect:
+      apply: {result: rejected}
+  - id: gov-fx-24-c
+    given:
+      lint: governance/farm
+      manifest:
+        kind: Governance
+        metadata: {name: farm}
+        spec:
+          farm_manager:
+            incident_stop: {decide_within: 3d}
+    expect: {apply: ok}

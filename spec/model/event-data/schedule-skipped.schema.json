@@ -1,0 +1,36 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:botaru:schema:schedule-skipped:1",
+  "title": "Data of the event schedule.skipped",
+  "description": "Skip of a schedule slot: one event with a reason from a closed list; a skipped slot is not caught up (TIM-3).",
+  "x-botaru-direction": "output",
+  "x-botaru-rules": [
+    "TIM-3",
+    "CAP-1"
+  ],
+  "type": "object",
+  "required": [
+    "schedule",
+    "slot",
+    "reason"
+  ],
+  "properties": {
+    "schedule": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/name",
+      "description": "Schedule name (metadata.name of the Schedule manifest)."
+    },
+    "slot": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/schedule_slot",
+      "description": "Slot: a UTC instant to the minute."
+    },
+    "reason": {
+      "description": "Skip reason: dst_gap (the local time does not exist at the switch to daylight saving time), waiting (skip_if_waiting and the task of the previous slot is in submitted, or the provider circuit is open), held (a stop on the resources of the scope), over_capacity (CAP-1).",
+      "enum": [
+        "dst_gap",
+        "waiting",
+        "held",
+        "over_capacity"
+      ]
+    }
+  }
+}

@@ -1,0 +1,58 @@
+id: fx-sta-01
+rules: [STA-2]
+description: 'A self-report is for reference, the truth about liveness is with the core. Worker A sends a self-report `state` with `phase: idle` and `slots_free:
+  64`, and its `last_seen` is stale. The `claim` decisions for other workers, the `worker.stale` event and the alarms are the same as
+  in the same snapshot without this message: the dispatcher, leases, the `worker-liveness` loop and the alarms judge by `last_seen`
+  and leases. A self-report does not widen what the worker gets, does not mark another worker and does not release a hold.'
+given:
+  tenant: demo
+  now: '2026-10-05T12:00:00Z'
+  roles:
+  - name: ops-reader
+    claims: [ops.investigate.v1]
+  workers:
+  - id: wk_01JB000000000000000000000A
+    role: ops-reader
+    state: active
+    last_seen: '2026-10-05T11:40:00Z'
+  - id: wk_01JB000000000000000000000B
+    role: ops-reader
+    state: active
+    last_seen: '2026-10-05T11:59:50Z'
+  holds:
+  - scope: {worker: wk_01JB000000000000000000000B}
+    effect: no_claim
+    until: '2026-10-05T13:00:00Z'
+  tasks:
+  - id: t_01JB0000000000000000000001
+    type: ops.investigate.v1
+    priority_class: 3
+    state: submitted
+    enqueued_at: '2026-10-05T11:50:00Z'
+steps:
+- call:
+    port: P1
+    op: claim
+    request:
+      kinds: [attempt]
+  by: worker:wk_01JB000000000000000000000B
+  expect: {task: null}
+- stand: {op: loop.tick, loop: worker-liveness}
+  expect:
+    events:
+    - {type: worker.stale, worker: wk_01JB000000000000000000000A}
+expect: {variants_equal: true, hold_on_wk_B: active}
+cases:
+- description: without a self-report
+  given:
+    messages: []
+- description: with a self-report
+  given:
+    messages:
+    - kind: state
+      from: wk_01JB000000000000000000000A
+      data: {phase: idle, slots_free: 64}
+    - kind: state
+      from: wk_01JB000000000000000000000A
+      about: wk_01JB000000000000000000000B
+      data: {phase: idle}

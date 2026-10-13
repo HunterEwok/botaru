@@ -1,0 +1,62 @@
+registry: meters
+version: 1
+description: >-
+  Consumable units and non-consumable budget limits. The kind field says whether this is
+  a consumable unit (consumable: reserved before use and
+  charged by actual use, like money, BUD-5) or a non-consumable limit (cap:
+  exceeding it is not a denial, the task waits in submitted with a visible waiting reason,
+  BUD-6). The scopes field lists the scopes a limit is set on:
+  tenant, principal, task tree, chat. The default field is the default
+  value, if the text names it. A usage line carries the unit (BUD-3).
+source: docs/models-and-money.md
+entries:
+  - id: eur_cents
+    kind: consumable
+    since: v0.1
+    meaning: money at the prices from ModelProfile; limits in euro cents (window sum rounded up), usage lines and the call reserve in micro-euros eur_micros
+    scopes: [tenant, subject, tree, chat]
+    rules: [BUD-1, BUD-2, BUD-9]
+  - id: tokens
+    kind: consumable
+    since: v0.1
+    meaning: model tokens by kind (input, output, cache write, cache read, reasoning, compaction iterations)
+    scopes: [tenant, subject, tree, chat]
+    rules: [BUD-5, BUD-3]
+  - id: tool_calls
+    kind: consumable
+    since: v0.2
+    meaning: tool calls
+    scopes: [tenant, subject, tree, chat]
+    rules: [BUD-5]
+  - id: sandbox_seconds
+    kind: consumable
+    since: v0.2
+    meaning: sandbox seconds
+    scopes: [tenant, subject, tree, chat]
+    default: {per: subject, period: day, value: 3600, text: 60 minutes of sandbox per day per person}
+    rules: [BUD-5]
+  - id: storage_bytes
+    kind: consumable
+    since: v0.2
+    meaning: store bytes
+    scopes: [tenant, subject, tree, chat]
+    rules: [BUD-5]
+  - id: approvals_requested
+    kind: consumable
+    since: v0.2
+    meaning: requested approvals
+    scopes: [tenant, subject, tree, chat]
+    rules: [BUD-5]
+  - id: message
+    kind: consumable
+    since: v0.1
+    meaning: publication of a bot message; the usage line carries the size and type of the message and goes to the sender's tree
+    scopes: [tenant, tree]
+    rules: [BUD-3, MSG-11]
+  - id: tasks_in_flight
+    kind: cap
+    since: v0.2
+    meaning: number of a principal's tasks in progress; exceeding it is not a denial, the task waits in submitted, the order of the principal's tasks is kept
+    scopes: [subject]
+    default: {per: subject, value: 3, text: 3 tasks in progress per person}
+    rules: [BUD-6]

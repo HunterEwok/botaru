@@ -1,0 +1,32 @@
+# Flow 1 from examples/flows.md: will db1 have enough space.
+id: flow-01-disk-db1
+rules: [PRM-5, TEN-3a, DEP-11, INJ-14, MON-6]
+description: >-
+  bob from staff asks in a private chat whether db1 will have enough space. The command /logs gives task type
+  ops.investigate.v1; the model calls cmd/run and monitor/item_history only with closed
+  parameters, and the answer goes to the private chat by origin.
+given:
+  tenant: demo
+  people: [{principal: bob, kind: user, groups: [user, staff, approver, ops-oncall]}]
+  manifests: [examples/tenants/demo/, examples/roles/ops-reader/role.yaml, examples/tasktypes/ops.investigate.v1.yaml,
+              examples/tools/cmd/tool.yaml, examples/tools/monitor/tool.yaml]
+steps:
+  - {port: P1, op: submit_activity, by: channel:telegram,
+     activity: {kind: message, channel: telegram, update_id: "1", sender: {identity: "telegram:1002", verified: true}, chat: {kind: direct, external_id: "1002"}, text: "/logs will db1 have enough space for three more weeks? data arrives every day"},
+     expect: {task: {type: ops.investigate.v1, record: {initiator: bob, max_tier: 1, data_mark: raw_logs, untrusted_seen: false}}}}
+  - {port: P1, op: claim, by: role:ops-reader, request: {kinds: [attempt]}}
+  - {port: P3, op: tools/call, tool: cmd/run, args: {command: disk_usage, host: db1},
+     expect: {target: {tenant: demo, plugin: cmd, placement: host, machine: db1}, untrusted_seen: true}}
+  - {port: P3, op: tools/call, tool: monitor/item_history,
+     args: {host: db1, item: disk_used, start: "2026-09-24T00:00:00Z", end: "2026-10-01T00:00:00Z", step: "1h"},
+     expect: {monitor_host: db1.example.org}}
+  - {port: P1, op: complete, by: role:ops-reader, result: {answer: "/data has 1.9 TB free out of 20 TB.", verdict: no_cause},
+     expect: {task_state: completed, deliveries: [{kind: task_result, to: origin}]}}
+expect:
+  events: [task.submitted, task.working, task.completed]
+  denied:
+    - {port: P3, op: tools/call, tool: cmd/run, args: {command: disk_usage, host: core1}, reason: input_schema_invalid}
+  not:
+    - "deleting or moving files: there is no such tool"
+    - "a custom monitoring API request instead of closed parameters (INJ-1)"
+    - "a model decision about an alarm (MON-5, INJ-7)"

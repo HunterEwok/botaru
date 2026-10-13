@@ -1,0 +1,42 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:botaru:schema:p1-msg-receive-request:1",
+  "title": "P1 msg.receive: request",
+  "description": "Reading an inbox by code. With a job attempt token this is a long poll by the types from the type's inbox.read (like inbox_read): dispatching an entry of the report genus is a lease until the end of the attempt. With a worker token outside an attempt only the current values of state types from the role's receive are returned, without a lease (MSG-7).",
+  "x-botaru-direction": "input",
+  "x-botaru-rules": [
+    "MSG-7",
+    "MSG-8",
+    "MSG-9",
+    "TEN-2"
+  ],
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "max"
+  ],
+  "properties": {
+    "types": {
+      "type": "array",
+      "maxItems": 20,
+      "items": {
+        "$ref": "urn:botaru:schema:common:1#/$defs/type_name"
+      },
+      "minItems": 1,
+      "uniqueItems": true,
+      "description": "Types from the task type's inbox.read; without the field, all such types."
+    },
+    "max": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 20,
+      "description": "How many entries to return."
+    },
+    "wait_s": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 300,
+      "description": "Waiting time of the long poll; the binding sets the upper bound."
+    }
+  }
+}

@@ -1,0 +1,103 @@
+schema: spec/model/script.schema.json
+rules:
+- SCR-1
+- SCR-3
+- SCR-4
+description: 'botaru.script/v1 drafts that the schema accepts: the example from docs/scripts-and-translator.md with fanout,
+  confirm and items.from; a conditional service restart; a conditional action that passes a value by reference.'
+cases:
+- script: v1
+  steps:
+  - id: disk
+    kind: fanout
+    type: ops.disk.read.v1
+    goal:
+      template: disk_usage
+    items:
+      resources:
+      - web1
+      - db1
+      - ctd1
+  - id: ask
+    kind: confirm
+    needs:
+    - disk
+    when:
+      ref: disk.min.free_pct
+      op: lt
+      value: 10
+    who: initiator
+  - id: clean
+    kind: fanout
+    needs:
+    - ask
+    action: cleanup_tmp
+    items:
+      from: disk
+      where:
+        field: free_pct
+        op: lt
+        value: 10
+- script: v1
+  steps:
+  - id: check
+    kind: task
+    type: ops.log.triage.v1
+    goal:
+      assignment: true
+    params:
+      resource: web1
+  - id: restart
+    kind: task
+    needs:
+    - check
+    type: ops.service.control.v1
+    goal:
+      template: restart
+    params:
+      service: app-api
+      verb: restart
+    when:
+      ref: check.api_up
+      op: eq
+      value: false
+  - id: summary
+    kind: task
+    needs:
+    - restart
+    run_if: always
+    type: report.script.summary.v1
+    goal:
+      template: summary
+    when:
+      any:
+      - ref: restart.state
+        op: in
+        value:
+        - ok
+        - failed
+      - not:
+          ref: check.api_up
+          op: exists
+- script: v1
+  steps:
+  - id: triage
+    kind: task
+    type: ops.log.triage.v1
+    goal:
+      template: triage
+    params:
+      resource: web1
+  - id: clean
+    kind: action
+    needs:
+    - triage
+    action: cleanup_tmp
+    args:
+      host:
+        ref: triage.host
+    when:
+      ref: triage.severity
+      op: eq
+      value: high
+    on_failure: continue

@@ -1,0 +1,13 @@
+# Monitoring system data for the adapter process of the tenant demo2 (reference
+# Zabbix). The tenant's user sees only the host groups that the demo2 catalog
+# named; it sees neither farm nodes nor other tenants (MON-4, DEP-11).
+tenant: demo2
+items:
+  - {host: botaru-core, key: "botaru.audit.head[demo2]", type: trapper, value: text}
+  - {host: botaru-core, key: "botaru.adapter.alive[demo2]", type: trapper, value: numeric}
+user:
+  user_group: botaru-mon-demo2
+  type: User
+  read: [botaru-demo2]                        # host groups of the demo2 catalog
+  allowed_actions: [execute_scripts, add_problem_comments]
+  forbidden: [acknowledge, close, change_severity, suppress, maintenance_edit]

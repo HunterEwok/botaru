@@ -1,0 +1,82 @@
+id: fx-dsp-02
+rules: [DSP-5, DSP-2]
+description: 'Priority classes are kept strictly. The queue holds tasks of classes 5, 4, 3 and 2, and the tasks of the lower
+  classes were enqueued earlier. One worker takes them one by one: first class 2, then 3, 4 and 5, regardless of the enqueue
+  time. Within a class the task enqueued earlier is given out earlier, with equal time the task with the smaller id. There is no
+  priority aging: a class 5 task is protected by the `max_running` ceilings, not by the order.'
+given:
+  tenant: demo
+  workers:
+  - {id: wk_01JB000000000000000000000A, role: ops-reader, state: active, ready: true}
+  roles:
+  - name: ops-reader
+    claims: [ops.nightly.load.v1, report.render.v1, ops.investigate.v1, ops.summary.v1]
+  tasks:
+  - id: t_01JB0000000000000000000005
+    type: ops.nightly.load.v1
+    priority_class: 5
+    state: submitted
+    enqueued_at: '2026-10-05T09:00:00Z'
+  - id: t_01JB0000000000000000000004
+    type: report.render.v1
+    priority_class: 4
+    state: submitted
+    enqueued_at: '2026-10-05T09:10:00Z'
+  - id: t_01JB0000000000000000000003
+    type: ops.summary.v1
+    priority_class: 3
+    state: submitted
+    enqueued_at: '2026-10-05T09:30:00Z'
+  - id: t_01JB0000000000000000000006
+    type: ops.summary.v1
+    priority_class: 3
+    state: submitted
+    enqueued_at: '2026-10-05T09:30:00Z'
+  - id: t_01JB0000000000000000000002
+    type: ops.investigate.v1
+    priority_class: 2
+    state: submitted
+    enqueued_at: '2026-10-05T09:50:00Z'
+steps:
+- call:
+    port: P1
+    op: claim
+    request:
+      kinds: [attempt]
+  by: worker:wk_01JB000000000000000000000A
+  expect: {task: t_01JB0000000000000000000002}
+- call:
+    port: P1
+    op: claim
+    request:
+      kinds: [attempt]
+  by: worker:wk_01JB000000000000000000000A
+  expect: {task: t_01JB0000000000000000000003}
+- call:
+    port: P1
+    op: claim
+    request:
+      kinds: [attempt]
+  by: worker:wk_01JB000000000000000000000A
+  expect: {task: t_01JB0000000000000000000006}
+- call:
+    port: P1
+    op: claim
+    request:
+      kinds: [attempt]
+  by: worker:wk_01JB000000000000000000000A
+  expect: {task: t_01JB0000000000000000000004}
+- call:
+    port: P1
+    op: claim
+    request:
+      kinds: [attempt]
+  by: worker:wk_01JB000000000000000000000A
+  expect: {task: t_01JB0000000000000000000005}
+expect:
+  order:
+  - t_01JB0000000000000000000002
+  - t_01JB0000000000000000000003
+  - t_01JB0000000000000000000006
+  - t_01JB0000000000000000000004
+  - t_01JB0000000000000000000005

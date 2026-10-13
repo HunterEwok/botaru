@@ -1,0 +1,95 @@
+id: fx-canaries-telemetry-canaries
+rules: [OBS-1]
+description: 'Canaries for the mock telemetry collector. A canary in a task body, a plugin output, a mock model
+  answer and the file name of an attachment does not appear in exported telemetry: traces, metrics, process logs
+  and health reports. The collector drops every attribute outside the allowlist spec/bindings/telemetry/otel.md and the GenAI
+  content attributes.'
+given:
+  tenant: demo
+  dropped_attributes:
+  - gen_ai.input.messages
+  - gen_ai.output.messages
+  - gen_ai.system_instructions
+  - gen_ai.tool.call.arguments
+  - gen_ai.tool.call.result
+  - baggage
+  - tracestate
+cases:
+- id: tel-fx-01
+  rules: [OBS-1]
+  description: A process with GenAI content capture enabled sends content attributes; the collector drops them,
+    and there are no canaries in the export.
+  given:
+    process: {name: farmd, instrumentation_capture_content: true}
+  expect:
+    exported_contains_any_canary: false
+    dropped: [gen_ai.input.messages, gen_ai.output.messages]
+- id: tel-fx-02
+  rules: [OBS-1]
+  description: A metric label with a person or chat id is dropped; only closed sets remain.
+  given:
+    metric:
+      name: botaru.task.outcome
+      labels:
+        tenant: demo
+        task_type: ops.investigate.v1
+        reason: done
+        chat: c_01JB8M0000000000000000000C
+        subject: human:alice
+  expect:
+    exported_labels: [tenant, task_type, reason]
+- id: tel-fx-03
+  rules: [OBS-1]
+  description: The lint of a deployment config with GenAI content capture enabled fails the description.
+  given:
+    config:
+      otel: {capture_message_content: true}
+  expect: {result: rejected, stage: lint}
+- id: tel-fx-04
+  rules: [OBS-1, OBS-10]
+  description: A health report with an external system's error text instead of a code does not pass the schema.
+  given:
+    schema: urn:botaru:schema:health-report:1
+    body:
+      component: plugin
+      name: logs
+      state: down
+      time: '2026-10-12T10:00:00Z'
+      error: CANARY-NOT-A-SECRET-tel-error-text
+  expect: {result: rejected, stage: schema}
+- id: tel-cn-01
+  rules: [OBS-1]
+  given:
+    canary: {value: CANARY-NOT-A-SECRET-tel-task-body}
+    where: task_body
+- id: tel-cn-02
+  rules: [OBS-1]
+  given:
+    canary: {value: CANARY-NOT-A-SECRET-tel-plugin-out}
+    where: plugin_output
+    plugin: logs
+- id: tel-cn-03
+  rules: [OBS-1]
+  given:
+    canary: {value: CANARY-NOT-A-SECRET-tel-model-reply}
+    where: model_response
+- id: tel-cn-04
+  rules: [OBS-1]
+  given:
+    canary: {value: CANARY-NOT-A-SECRET-tel-file.txt}
+    where: attachment_filename
+- id: tel-cn-05
+  rules: [OBS-1]
+  given:
+    canary: {value: CANARY-NOT-A-SECRET-tel-sysprompt}
+    where: system_instructions
+- id: tel-cn-06
+  rules: [OBS-1]
+  given:
+    canary: {value: CANARY-NOT-A-SECRET-tel-tool-args}
+    where: tool_call_arguments
+- id: tel-cn-07
+  rules: [OBS-1, OBS-3]
+  given:
+    canary: {value: user=CANARY-NOT-A-SECRET-tel-baggage}
+    where: inbound_baggage

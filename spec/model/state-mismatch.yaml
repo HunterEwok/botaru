@@ -1,0 +1,40 @@
+registry: state-mismatch
+version: 1
+description: >-
+  Codes of a mismatch between the `state` self-report and core observations, since v0.2 (STA-3). Core code computes the codes by
+  the conditions of this table; on a mismatch the core observation is taken as primary, and the `state` genus produces no
+  alarms (INJ-7). The view `status.workers` and P2 `status` show both columns side by side and the code.
+  Record fields: `meaning` (when the code is set), `severity` (`warning` a warning or `info`
+  information), `rules`.
+source: docs/messaging.md
+entries:
+  - id: reported_ready_unreachable
+    since: v0.2
+    meaning: The last phase is `idle` or `busy`, and the worker is `unreachable`; the alarm comes from `alarm.worker.stale`, not from the mismatch.
+    severity: warning
+    rules: [STA-3, STA-2]
+  - id: reported_idle_not_claiming
+    since: v0.2
+    meaning: Phase `idle`, `last_seen` is fresh, but there are no `claim` calls for longer than two waiting periods while suitable work waits; no alarm.
+    severity: warning
+    rules: [STA-3]
+  - id: reported_busy_no_lease
+    since: v0.2
+    meaning: Phase `busy`, but there are no leases for longer than `stale_after`; a `job` may have work outside the farm.
+    severity: info
+    rules: [STA-3]
+  - id: reported_draining_still_claiming
+    since: v0.2
+    meaning: Phase `draining`, but the worker takes work.
+    severity: info
+    rules: [STA-3]
+  - id: reported_plugins_differ
+    since: v0.2
+    meaning: The set of plugins in `state` is not equal to the set from `hello`; only the event record changes.
+    severity: warning
+    rules: [STA-3]
+  - id: state_stale
+    since: v0.2
+    meaning: The `state` value is older than the kind `stale_after`.
+    severity: info
+    rules: [STA-3]

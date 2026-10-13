@@ -1,0 +1,27 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:botaru:schema:p1-session-load-response:1",
+  "title": "P1 session.load: response",
+  "description": "Entries of the conversation session by the session handle. Denials: handle_invalid, fenced.",
+  "x-botaru-direction": "output",
+  "x-botaru-rules": [
+    "MEM-1",
+    "TEN-5"
+  ],
+  "type": "object",
+  "required": [
+    "entries"
+  ],
+  "properties": {
+    "entries": {
+      "type": "array",
+      "items": {
+        "$ref": "urn:botaru:schema:session-entry:1"
+      }
+    },
+    "untrusted_seen": {
+      "description": "Session mark that the core keeps (INJ-13).",
+      "type": "boolean"
+    }
+  }
+}

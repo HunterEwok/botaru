@@ -1,0 +1,52 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:botaru:schema:p2-audit-query-request:1",
+  "title": "P2 audit.query: request",
+  "description": "Audit records of one's own tenant by a filter; metadata only (AUD-2). A separate capability audit.read is needed (AUD-7); the tenant is taken from the credentials, the body does not have it (TEN-2).",
+  "x-botaru-direction": "input",
+  "x-botaru-rules": [
+    "AUD-7",
+    "AUD-2"
+  ],
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "from": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/datetime"
+    },
+    "to": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/datetime"
+    },
+    "kind": {
+      "enum": [
+        "command",
+        "decision",
+        "authorize",
+        "service_grant",
+        "read",
+        "period_deleted"
+      ]
+    },
+    "actor": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/principal_ref"
+    },
+    "command": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_./-]{0,79}$",
+      "maxLength": 80
+    },
+    "target_kind": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/dotted_name"
+    },
+    "limit": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 1000
+    },
+    "after_seq": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9007199254740991
+    }
+  }
+}

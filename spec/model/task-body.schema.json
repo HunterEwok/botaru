@@ -1,0 +1,90 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:botaru:schema:task-body:1",
+  "title": "Task body",
+  "description": "The task body that the sender sends: type, goal, parameters and attachments. The body permits nothing: everything that permissions and delivery depend on (tenant, initiator, origin, conversation, tier, data class, untrusted_seen, budget, address) the core writes into the task record, and the schema rejects any extra field (IDN-1, TEN-2). The params field is open here: the task type params_schema closes it (INJ-1). The body is stored as content of the class content (RET-1).",
+  "x-botaru-direction": "input",
+  "x-botaru-retention": "content",
+  "x-botaru-rules": [
+    "IDN-1",
+    "TEN-2",
+    "INJ-1",
+    "TEN-7",
+    "RET-1"
+  ],
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "goal"
+  ],
+  "properties": {
+    "type": {
+      "description": "Task type with the version .vN, for example ops.investigate.v1; the core carries it into the task record. It is set by channel code, a schedule, a route or an external program, not by the model (IDN-6).",
+      "$ref": "urn:botaru:schema:common:1#/$defs/type_name"
+    },
+    "goal": {
+      "description": "Goal in plain language. The only free field; it permits nothing.",
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 4000
+    },
+    "params": {
+      "description": "Parameters by the closed schema params_schema of the task type; the core fills in defaults and checks them at enqueue (INJ-1). At most 32 fields, as for the arguments of request_action and P3 tools/call.",
+      "type": "object",
+      "maxProperties": 32,
+      "x-botaru-closed-by": "params_schema of the task type"
+    },
+    "attachments": {
+      "description": "Up to 10 attachments: file_ref, text or data. Attachments have no url links (INJ-8). An attachment sets untrusted_seen on the task (INJ-13).",
+      "type": "array",
+      "maxItems": 10,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "filename": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          },
+          "media_type": {
+            "description": "Content type named by the sender, for reference; the core determines the file type from the bytes (the same pattern as in P1 file.put).",
+            "type": "string",
+            "pattern": "^[a-z0-9.+-]+/[a-z0-9.+-]+$",
+            "maxLength": 100
+          },
+          "text": {
+            "type": "string",
+            "maxLength": 100000
+          },
+          "file_ref": {
+            "$ref": "urn:botaru:schema:common:1#/$defs/file_ref"
+          },
+          "data": {
+            "description": "JSON data as an object of at most 64 fields; for the model this is untrusted data.",
+            "type": "object",
+            "maxProperties": 64,
+            "x-botaru-closed-by": "result_schema of the source task or the schema of the plugin that produced the data"
+          }
+        },
+        "oneOf": [
+          {
+            "required": [
+              "text"
+            ]
+          },
+          {
+            "required": [
+              "file_ref"
+            ]
+          },
+          {
+            "required": [
+              "data"
+            ]
+          }
+        ]
+      }
+    }
+  }
+}

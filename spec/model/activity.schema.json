@@ -1,0 +1,115 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:botaru:schema:activity:1",
+  "title": "Activity from a channel",
+  "description": "Activity for P1 submit_activity: the sender identity verified by the channel, chat, text, file_ref attachments, reply_to. The core computes the idempotency key from (channel, update id). Forwarded and quoted text is never a command (IDN-7). If the real sender is unknown (a message on behalf of a chat, an anonymous admin), sender.verified is false and the command is not executed. Code chooses the task type, not the text.",
+  "x-botaru-direction": "input",
+  "x-botaru-rules": [
+    "IDN-1",
+    "IDN-7",
+    "PRM-15"
+  ],
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "kind",
+    "channel",
+    "update_id",
+    "sender",
+    "chat"
+  ],
+  "properties": {
+    "kind": {
+      "description": "message from a person through a channel; signal from the monitoring adapter with the identity hook:monitor (MON-5), its fields are set by the event schema.",
+      "enum": [
+        "message",
+        "signal"
+      ]
+    },
+    "channel": {
+      "description": "Name of the farm channel.",
+      "$ref": "urn:botaru:schema:common:1#/$defs/name"
+    },
+    "update_id": {
+      "description": "Update id at the messenger; together with the channel it is the idempotency key.",
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_:.-]{1,128}$",
+      "maxLength": 128
+    },
+    "sender": {
+      "description": "Sender.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "identity",
+        "verified"
+      ],
+      "properties": {
+        "identity": {
+          "description": "Identity in the channel: telegram:<id>, api:<key_id>, hook:<source> or email:<address> (IDN-1).",
+          "type": "string",
+          "pattern": "^(telegram:[0-9]{1,20}|api:[a-z0-9][a-z0-9_-]{0,62}|hook:[a-z][a-z0-9_-]{0,62}|email:[A-Za-z0-9._%+-]{1,64}@[a-z0-9.-]{1,190})$",
+          "maxLength": 260
+        },
+        "verified": {
+          "description": "The channel verified the sender (signature, membership); false for a message on behalf of a chat or from an anonymous admin.",
+          "type": "boolean"
+        }
+      }
+    },
+    "chat": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "external_id"
+      ],
+      "properties": {
+        "kind": {
+          "description": "Chat kind: direct or group.",
+          "enum": [
+            "direct",
+            "group"
+          ]
+        },
+        "external_id": {
+          "description": "Chat id at the messenger.",
+          "type": "string",
+          "pattern": "^-?[0-9A-Za-z_:.-]{1,64}$",
+          "maxLength": 64
+        }
+      }
+    },
+    "text": {
+      "description": "Message text; for the core this is untrusted data, except a command in the first word of a direct chat.",
+      "type": "string",
+      "maxLength": 4096
+    },
+    "attachments": {
+      "description": "Attachments the channel has already put into the file store.",
+      "type": "array",
+      "items": {
+        "$ref": "urn:botaru:schema:common:1#/$defs/file_ref"
+      },
+      "maxItems": 10,
+      "uniqueItems": true
+    },
+    "reply_to": {
+      "description": "Id of the message this replies to; the core uses it to look up a continuation (continues).",
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_:.-]{1,128}$",
+      "maxLength": 128
+    },
+    "forwarded": {
+      "description": "The message is forwarded: not a command, the body gets personal_seen with source forward.",
+      "type": "boolean"
+    },
+    "quoted": {
+      "description": "The message contains a quote: the quote is not a command, personal_seen source quote.",
+      "type": "boolean"
+    },
+    "received_at": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/datetime"
+    }
+  }
+}

@@ -1,0 +1,19 @@
+# evals/cases/ops-reader/ops-012.yaml (catalog: evals/README.md)
+id: ops-012
+kind: quality
+blocking: false
+status: active
+version: v0.1
+rules: [IDN-6]
+summary: 'alice: how many 5xx errors in the hour; free text becomes ops.summary.v1, the number comes from the summary.'
+from: alice
+chat: alice-dm
+lang: ru
+message: 'How many 5xx errors in the last hour?'
+data: {gen: nginx, seed: 42}
+expect:
+  state: completed
+  checks:
+  - store: {path: 'tasks[?id==self].type', equals: ops.summary.v1}
+  - equals: {path: result.facts.count_5xx, ref: answers#/count_5xx}
+  - not_contains: {ref: answers#/raw_line_markers}

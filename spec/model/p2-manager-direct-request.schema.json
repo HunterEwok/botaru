@@ -1,0 +1,64 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:botaru:schema:p2-manager-direct-request:1",
+  "title": "P2 manager.direct: request",
+  "description": "Body of P2 manager.direct: a directive to the farm manager from a person with manager.direct. It applies only in the tenant of the call; in a tenant with farm_manager.enabled: false the denial manager_disabled (MGR-42). Only the closed fields (scope and operation) and a text typed by the person themselves, up to 1000 characters, reach the decision role; there are no quotes or attachments. The permissions of operations by a directive are the seat's permissions ∩ the person's permissions (MGR-4).",
+  "x-botaru-direction": "input",
+  "x-botaru-rules": [
+    "MGR-4",
+    "MGR-42"
+  ],
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "scope"
+  ],
+  "properties": {
+    "scope": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "id"
+      ],
+      "properties": {
+        "kind": {
+          "enum": [
+            "role",
+            "worker",
+            "resource",
+            "incident"
+          ],
+          "description": "Scope of the directive: a role, worker, catalog resource or incident number in the tenant."
+        },
+        "id": {
+          "type": "string",
+          "maxLength": 64,
+          "pattern": "^[a-z0-9:_.-]{1,64}$",
+          "description": "Object id from the restricted character set [a-z0-9:_.-]{1,64}: catalog name, resource, task type, worker, task."
+        }
+      },
+      "description": "Scope of the directive."
+    },
+    "op": {
+      "enum": [
+        "hold",
+        "quarantine",
+        "drain",
+        "preempt",
+        "cancel",
+        "pin_task",
+        "request_action",
+        "release",
+        "notify"
+      ],
+      "description": "Operation from control-ops.yaml.",
+      "x-botaru-registry": "control-ops"
+    },
+    "text": {
+      "type": "string",
+      "maxLength": 1000,
+      "description": "Text typed by the person themselves."
+    }
+  }
+}

@@ -1,0 +1,5 @@
+schema: spec/model/p1-release-request.schema.json
+rules: [FEN-2, FEN-3]
+description: 'release requests that the schema rejects: a reason from the worker (for release it is always worker_drain).'
+cases:
+- {reason: lease_expired}

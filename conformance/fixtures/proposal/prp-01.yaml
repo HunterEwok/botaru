@@ -1,0 +1,69 @@
+id: prp-01
+rules: [PRP-2]
+description: 'The core rereads the evidence. The proposal quotes a db1 load value of 870, and the core rereads 310 from its own
+  points; the mismatch is greater than the series tolerance (10%), and no record is created: refusal rejected(evidence_mismatch)
+  with the event proposal.rejected.v1. Before showing it to people the core rereads once more: a mismatch removes the item from the digest
+  into parked(evidence_drift).'
+given:
+  tenant: demo
+  series:
+    host.load.v1:
+      subject: host:db1
+      window: 14d
+      rollup: hour.max
+      slot: 02:00
+      core_value: 310
+      outcome: {tolerance_pct: 10}
+cases:
+- description: Forged value at creation.
+  steps:
+  - call:
+      port: P1
+      op: complete
+      request:
+        result:
+          evidence:
+          - kind: observation
+            series: host.load.v1
+            subject: host:db1
+            window: 14d
+            rollup: hour.max
+            slot: 02:00
+            value: 870
+  expect: {result: rejected, reason: evidence_mismatch, records_created: 0, event: proposal.rejected.v1}
+- description: The value matches at creation (310), and before assembling the digest the core rereads 420.
+  given: {reread_before_digest: 420}
+  steps:
+  - call:
+      port: P1
+      op: complete
+      request:
+        result:
+          evidence:
+          - kind: observation
+            series: host.load.v1
+            subject: host:db1
+            window: 14d
+            rollup: hour.max
+            slot: 02:00
+            value: 310
+  expect:
+    created_state: screened
+    after_verdict: recommended
+    at_digest: {state: parked, state_reason: evidence_drift, in_digest: false}
+- description: A mismatch within the series tolerance (330 against 310) gives no refusal.
+  steps:
+  - call:
+      port: P1
+      op: complete
+      request:
+        result:
+          evidence:
+          - kind: observation
+            series: host.load.v1
+            subject: host:db1
+            window: 14d
+            rollup: hour.max
+            slot: 02:00
+            value: 330
+  expect: {created_state: screened}

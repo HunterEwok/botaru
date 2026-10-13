@@ -1,0 +1,23 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:botaru:schema:p1-script-control-response:1",
+  "title": "P1 script.control: response",
+  "description": "The script run and its state after the command.",
+  "x-botaru-direction": "output",
+  "x-botaru-rules": [
+    "SCR-11"
+  ],
+  "type": "object",
+  "required": [
+    "id",
+    "state"
+  ],
+  "properties": {
+    "id": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/object_id"
+    },
+    "state": {
+      "$ref": "urn:botaru:schema:script-run:1#/properties/state"
+    }
+  }
+}

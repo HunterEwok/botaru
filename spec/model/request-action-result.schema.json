@@ -1,0 +1,41 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:botaru:schema:request-action-result:1",
+  "title": "P3 request_action: result",
+  "description": "Result of request_action: the approval number and state, or a refusal with a code. The attempt ends after the request; the initiator gets the request number and a copy of the card.",
+  "x-botaru-direction": "output",
+  "x-botaru-rules": [
+    "APR-2",
+    "PRM-8"
+  ],
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "code"
+  ],
+  "properties": {
+    "code": {
+      "enum": [
+        "pending",
+        "forbidden",
+        "service_rate_limited",
+        "input_schema_invalid",
+        "ref_invalid"
+      ]
+    },
+    "approval_id": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/object_id"
+    },
+    "needs": {
+      "type": "array",
+      "items": {
+        "description": "Group capability: a string of the form <form>:<name> from capabilities.yaml, without an asterisk, for example task:ops.investigate.v1, service.control:nginx, admin:people.",
+        "type": "string",
+        "pattern": "^[a-z][a-z_]*(\\.[a-z_]+)*(:[a-z0-9][a-z0-9_.:-]{0,159})?$",
+        "maxLength": 200
+      },
+      "maxItems": 4,
+      "uniqueItems": true
+    }
+  }
+}

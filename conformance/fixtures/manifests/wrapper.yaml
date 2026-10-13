@@ -1,0 +1,95 @@
+id: fx-man-01
+rules: [MAN-1, TEN-6]
+description: >-
+  Manifest wrapper and kind schema (MAN-1). A manifest sits in the wrapper
+  {apiVersion, kind, metadata, spec} and passes the schema of its kind; a kind without
+  a registered schema, a status field, a foreign apiVersion, metadata.tenant on
+  a global kind and its absence on a tenant kind are rejected. References between
+  declared objects are checked at apply. Cases with with_examples
+  are added to the examples/ manifests and replace the object with the same kind and name.
+with_examples: true
+cases:
+  - name: role in a wrapper passes
+    manifests:
+      - apiVersion: botaru/v1alpha1
+        kind: Role
+        metadata: {name: fx-reader}
+        spec: {worker_kind: agent, claims: [ops.summary.v1], models: {base: base-std}}
+    expect: ok
+  - name: kind without a schema
+    manifests:
+      - {apiVersion: botaru/v1alpha1, kind: Script, metadata: {name: fx-script}, spec: {}}
+    expect: {error: unknown_kind}
+  - name: status field in git
+    manifests:
+      - apiVersion: botaru/v1alpha1
+        kind: Role
+        metadata: {name: fx-reader}
+        spec: {worker_kind: agent, claims: [ops.summary.v1], models: {base: base-std}}
+        status: {applied_commit: abc123}
+    expect: {error: status_in_git, also: [schema_invalid]}
+  - name: apiVersion after release 1.0.0 ahead of time
+    manifests:
+      - apiVersion: botaru/v1
+        kind: Role
+        metadata: {name: fx-reader}
+        spec: {worker_kind: agent, claims: [ops.summary.v1], models: {base: base-std}}
+    expect: {error: api_version}
+  - name: global role with a tenant
+    manifests:
+      - apiVersion: botaru/v1alpha1
+        kind: Role
+        metadata: {name: fx-reader, tenant: demo}
+        spec: {worker_kind: agent, claims: [ops.summary.v1], models: {base: base-std}}
+    expect: {error: tenant_on_global}
+  - name: group without a tenant
+    manifests:
+      - {apiVersion: botaru/v1alpha1, kind: Group, metadata: {name: fx-group}, spec: {caps: ["task:ops.summary.v1"]}}
+    expect: {error: tenant_missing}
+  - name: task type without tree_budget_eur does not pass the kind schema
+    manifests:
+      - apiVersion: botaru/v1alpha1
+        kind: TaskType
+        metadata: {name: fx.nobudget.v1}
+        spec:
+          title: "No tree limit"
+          worker_kind: agent
+          purpose: work
+          tier: 0
+          data_class: summary
+          params_schema: {type: object, additionalProperties: false, properties: {}}
+    expect: {error: schema_invalid}
+  - name: extra field in spec
+    manifests:
+      - apiVersion: botaru/v1alpha1
+        kind: Sink
+        metadata: {name: fx-sink, tenant: demo}
+        spec: {driver: disk, ceiling: summary, path_from_model: true}
+    expect: {error: schema_invalid}
+  - name: two objects with one name
+    manifests:
+      - {apiVersion: botaru/v1alpha1, kind: Group, metadata: {name: fx-twice, tenant: demo}, spec: {caps: ["task:ops.summary.v1"]}}
+      - {apiVersion: botaru/v1alpha1, kind: Group, metadata: {name: fx-twice, tenant: demo}, spec: {caps: ["task:ops.health.v1"]}}
+    expect: {error: duplicate_object}
+  - name: route refers to an undeclared type
+    manifests:
+      - apiVersion: botaru/v1alpha1
+        kind: Route
+        metadata: {name: fx-route, tenant: demo}
+        spec: {"on": {event: run.finished.v1}, task: {type: fx.missing.v1}}
+    expect: {error: ref_missing}
+  - name: global task type with a tenant chat address
+    manifests:
+      - apiVersion: botaru/v1alpha1
+        kind: TaskType
+        metadata: {name: fx.chatty.v1}
+        spec:
+          title: "Reply to the chat"
+          worker_kind: agent
+          purpose: work
+          tier: 0
+          data_class: summary
+          instruction: "Write to chat:lab"
+          params_schema: {type: object, additionalProperties: false, properties: {}}
+          tree_budget_eur: 0.01
+    expect: {error: global_tenant_data}

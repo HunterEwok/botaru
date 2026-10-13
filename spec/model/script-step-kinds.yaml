@@ -1,0 +1,58 @@
+registry: script-step-kinds
+version: 1
+description: >-
+  Step kinds of the script `botaru.script/v1` (SCR-1). The list is closed: there is no code, no shell, no URL call,
+  no loop and no nested script, and there will be none without an ADR. Record fields: `meaning` (what the step does),
+  `executed_by` (what the core executes it with), `changes_world` (whether the step itself changes the world), `fields`
+  (step fields, besides the common `id`, `kind`, `needs`, `when`, `run_if`, `on_failure`), `rules`.
+source: docs/scripts-and-translator.md
+entries:
+  - id: task
+    since: v0.1
+    meaning: >-
+      One task of type `type` with purpose `work` or `report`. If the bot role of this type has
+      `service_control` or `monitor_scripts`, the bot may restart a service or run a monitoring
+      script without a card, and it asks for starting and stopping a service with a card; the permission
+      `service.control:<service>` or `monitor.script_run` is also needed by the initiator (D-73, D-74).
+    executed_by: enqueue on behalf of the initiator; a service and a script by the rules APR-18 and INJ-15
+    changes_world: false
+    fields: [type, goal, params]
+    rules: [SCR-1, SCR-2, SCR-5, SCR-7]
+  - id: fanout
+    since: v0.1
+    meaning: Many tasks of one type or one action on many resources; a campaign request without the `then` field.
+    executed_by: a campaign from the list frozen when the run is approved; a campaign with an action gets its own approval
+    changes_world: false
+    fields: [type, goal, params, action, args, items, rollout]
+    rules: [SCR-1, SCR-7, ORC-1, ORC-5]
+  - id: action
+    since: v0.1
+    meaning: >-
+      One action with closed arguments. A write call only after a person presses a button; an action
+      `risk: routine` without untrusted text goes by a `service_grant` record with the initiator as author
+      after the "Run" button (D-78).
+    executed_by: an approval with an exact snapshot and the task `action.<a>`, which only the core enqueues
+    changes_world: true
+    fields: [action, args]
+    rules: [SCR-1, SCR-7, APR-3, APR-4]
+  - id: confirm
+    since: v0.1
+    meaning: Ask a person whether to continue; does not change the world.
+    executed_by: an approval with the subject `script_gate`
+    changes_world: false
+    fields: [who]
+    rules: [SCR-1, SCR-6, SCR-11]
+  - id: wait
+    since: v0.2
+    meaning: A pause until a deadline.
+    executed_by: a continuation by timer; only the run record waits (CNT-4)
+    changes_world: false
+    fields: []
+    rules: [SCR-1]
+  - id: await
+    since: v0.2
+    meaning: An external event with a required timeout; the timeout makes the step `failed`.
+    executed_by: the waiting record `Expectation`
+    changes_world: false
+    fields: []
+    rules: [SCR-1]

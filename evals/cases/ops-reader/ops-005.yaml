@@ -1,0 +1,20 @@
+# evals/cases/ops-reader/ops-005.yaml (catalog: evals/README.md)
+id: ops-005
+kind: quality
+blocking: false
+status: active
+version: v0.1
+rules: []
+summary: 'bob: how many errors in error.log in the hour and which two are the most frequent; the number and two types are checked.'
+from: bob
+chat: bob-dm
+lang: ru
+message: '/logs How many errors in error.log in the last hour and which two are the most frequent?'
+data: {gen: nginx, seed: 42}
+expect:
+  state: completed
+  checks:
+  - equals: {path: result.facts.count_errors, ref: answers#/count_errors}
+  - equals: {path: result.facts.top_error_types, ref: answers#/top_error_types}
+  - tools_allowed: [logs/tail]
+  - {max_tool_calls: 6}

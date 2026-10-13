@@ -1,0 +1,28 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:botaru:schema:p2-seat-resume-request:1",
+  "title": "P2 seat.resume: request",
+  "description": "Body of P2 seat.resume. An operator operation, only through farmctl, with admin:governance in farm: it removes from the farm manager seat only the reason incident, if people declared the incident that caused the stop and the incidents of the same minute false (dismissed); epoch + 1 (GOV-22).",
+  "x-botaru-direction": "input",
+  "x-botaru-rules": [
+    "GOV-22",
+    "IDN-10",
+    "PRM-14"
+  ],
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "seat",
+    "incident"
+  ],
+  "properties": {
+    "seat": {
+      "const": "farm-manager",
+      "description": "Only the farm manager seat."
+    },
+    "incident": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/object_id",
+      "description": "The incident that caused the hold."
+    }
+  }
+}

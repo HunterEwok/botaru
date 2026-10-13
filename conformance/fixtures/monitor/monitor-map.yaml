@@ -1,0 +1,67 @@
+id: fx-monitor-monitor-map
+rules: [MON-5]
+description: 'The class table spec/model/monitor-map.yaml: a problem gets its class from a monitor_triggers row of the catalog
+  by triggerid, and the severity of the farm alarm is set by the table, not by the problem severity in the monitoring system. A trigger outside
+  the catalog gives the class unknown and only alarm.monitor.problem without an incident.'
+given:
+  tenant: demo
+  catalog:
+    hosts:
+    - {name: db1, monitor_host: db1.example.org}
+    monitor_triggers:
+    - {triggerid: '17021', class: disk_free, item: vfs.fs.size.free_pct}
+    - {triggerid: '17022', class: disk_fill, item: vfs.fs.size.fill_rate}
+cases:
+- id: mon-fx-01
+  rules: [MON-5]
+  description: A problem from the trigger disk_free gives alarm.disk.free.low with severity page, although in the monitoring system
+    the severity is Warning.
+  steps:
+  - occur:
+      event:
+        type: ext.monitor.problem.v1
+        data:
+          eventid: '8812345'
+          triggerid: '17021'
+          resource: db1
+          severity: 2
+          state: open
+          values: {free_pct: 6.5}
+  expect:
+    enriched: {class: disk_free, item: vfs.fs.size.free_pct}
+    alarm: {type: alarm.disk.free.low.v1, severity: page, origin: monitor, alarmkey: 'disk.free.low:db1'}
+- id: mon-fx-02
+  rules: [MON-5]
+  description: A problem from the trigger disk_fill gives alarm.disk.fill.rate with severity warn.
+  steps:
+  - occur:
+      event:
+        type: ext.monitor.problem.v1
+        data: {eventid: '8812346', triggerid: '17022', resource: db1, severity: 4, state: open}
+  expect:
+    alarm: {type: alarm.disk.fill.rate.v1, severity: warn}
+- id: mon-fx-03
+  rules: [MON-5]
+  description: A trigger outside the catalog gives the class unknown, only alarm.monitor.problem, without an incident or a hold, and the flag
+    untrusted_seen for the route task.
+  steps:
+  - occur:
+      event:
+        type: ext.monitor.problem.v1
+        data: {eventid: '8812347', triggerid: '99999', resource: db1, severity: 5, state: open}
+  expect:
+    enriched: {class: unknown}
+    alarm: {type: alarm.monitor.problem.v1, severity: warn}
+    incident: none
+    hold: none
+    route_task_untrusted_seen: true
+- id: mon-fx-04
+  rules: [MON-5]
+  description: Closing a problem after a recheck by a job task closes the farm alarm.
+  steps:
+  - occur:
+      event:
+        type: ext.monitor.problem.v1
+        data: {eventid: '8812345', triggerid: '17021', resource: db1, severity: 2, state: resolved}
+  expect:
+    alarm: {type: alarm.disk.free.low.v1, state: resolved, seq: 2}

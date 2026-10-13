@@ -1,0 +1,125 @@
+id: fx-msg-04
+rules: [MSG-9, FEN-5]
+description: Entries read are leased by the reading attempt and acknowledged in the transaction of its complete. On fail,
+  lease loss and msg.nack the entry returns to the inbox with the delivery count one higher; after the third delivery it becomes
+  dead(delivery_exhausted) with the event message.dead. Cancellation and preemption of the reading attempt and a lease that expired
+  while the core was not running (FEN-5) return the entry without counting a delivery. An entry whose ttl ran out while it was leased
+  becomes expired on return.
+given:
+  tenant: demo
+  entry:
+    message: m_01JB0000000000000000000101
+    inbox: {kind: role, name: ops-lead}
+    kind: report
+    type: report.work.v1
+    state: queued
+    deliveries: 0
+    expires_at: '2026-10-07T02:41:07Z'
+  reader_type:
+    name: ops.lead.review.v1
+    inbox:
+      read: [report.work.v1]
+steps:
+- call:
+    port: P3
+    op: tools/call
+    request:
+      name: inbox_read
+      arguments: {max: 20}
+  by: attempt:1
+  expect: {state: leased, deliveries: 0}
+- check:
+    end: {attempt: 1, result: fail(tool_error)}
+  expect: {state: queued, deliveries: 1}
+- call:
+    port: P1
+    op: msg.receive
+    request: {max: 20}
+  by: attempt:2
+  expect: {state: leased}
+- call:
+    port: P1
+    op: msg.nack
+    request:
+      handles: [$last]
+  by: attempt:2
+  expect: {state: queued, deliveries: 2}
+- call:
+    port: P1
+    op: msg.receive
+    request: {max: 20}
+  by: attempt:3
+  expect: {state: leased}
+- check:
+    end: {attempt: 3, result: canceled}
+  expect: {state: queued, deliveries: 2}
+- call:
+    port: P1
+    op: msg.receive
+    request: {max: 20}
+  by: attempt:4
+  expect: {state: leased}
+- check:
+    end: {attempt: 4, result: lease_expired_while_core_down}
+  expect: {state: queued, deliveries: 2}
+- call:
+    port: P1
+    op: msg.receive
+    request: {max: 20}
+  by: attempt:5
+  expect: {state: leased}
+- check:
+    end: {attempt: 5, result: lease_expired}
+  expect: {state: dead, reason: delivery_exhausted, event: message.dead}
+expect: {max_counted_returns: 3, delivered_after_terminal: never}
+cases:
+- description: acknowledgement at complete
+  given:
+    entry: {state: queued, deliveries: 0}
+  steps:
+  - call:
+      port: P1
+      op: msg.receive
+      request: {max: 20}
+    by: attempt:1
+  - call:
+      port: P1
+      op: msg.ack
+      request:
+        handles: [$last]
+    by: attempt:1
+    expect: {state: leased, note: msg.ack only marks}
+  - check:
+      end: {attempt: 1, result: complete}
+    expect: {state: acked, same_transaction_as: complete}
+- description: ttl ran out under a lease
+  given:
+    entry: {state: queued, deliveries: 0, expires_at: '2026-10-06T03:00:00Z'}
+  steps:
+  - call:
+      port: P1
+      op: msg.receive
+      request: {max: 20}
+    by: attempt:1
+    at: '2026-10-06T02:50:00Z'
+  - check:
+      end: {attempt: 1, result: fail(tool_error), at: '2026-10-06T03:05:00Z'}
+    expect: {state: expired}
+- description: one entry to one reader
+  given:
+    entry: {state: queued, delivery: one}
+  steps:
+  - call:
+      port: P1
+      op: msg.receive
+      request: {max: 20}
+    by: attempt:1
+    context: {worker: w_01JB000000000000000000000A}
+    expect: {records: 1}
+  - call:
+      port: P1
+      op: msg.receive
+      request: {max: 20}
+    by: attempt:1
+    context: {worker: w_01JB000000000000000000000B}
+    expect: {records: 0}

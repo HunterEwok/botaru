@@ -1,0 +1,54 @@
+id: fx-dsp-06
+rules: [BGR-2, DSP-1]
+description: 'Bot group membership only narrows dispatch. A task with `to_group: science-pool` goes only to a member
+  of the group (condition D5): a worker of the same role outside the group gets nothing on `claim`. A group member gets the task, but
+  its attempt has the same permissions as the role: a tool the role lacks is rejected at `authorize`, and C2 does not read
+  group membership.'
+given:
+  tenant: demo
+  groups:
+    science-pool:
+      selector:
+        roles: [analyst]
+        labels: {pool: science}
+  roles:
+  - name: analyst
+    claims: [data.qc.ctd.v1]
+    tools: [data/read]
+  workers:
+  - id: wk_01JB000000000000000000000A
+    role: analyst
+    labels: {pool: science}
+    state: active
+    ready: true
+  - id: wk_01JB000000000000000000000B
+    role: analyst
+    labels: {}
+    state: active
+    ready: true
+  waiting:
+  - {id: t_01JB0000000000000000000006, type: data.qc.ctd.v1, state: submitted, to_group: science-pool}
+steps:
+- call:
+    port: P1
+    op: claim
+    request:
+      kinds: [attempt]
+  by: worker:wk_01JB000000000000000000000B
+  expect: {task: null}
+- call:
+    port: P1
+    op: claim
+    request:
+      kinds: [attempt]
+  by: worker:wk_01JB000000000000000000000A
+  expect: {task: t_01JB0000000000000000000006}
+- call:
+    port: P3
+    op: tools/call
+    request:
+      name: service/control
+      arguments: {service: nginx, verb: restart}
+  context: {worker: wk_01JB000000000000000000000A}
+  expect: {result: denied, authorize_reads_membership: false}
+expect: {rights_from_group: none}

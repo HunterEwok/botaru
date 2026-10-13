@@ -1,0 +1,39 @@
+# Reads pipeline runs on ctd1: the list of runs and the trace summary (flow 6).
+apiVersion: botaru/v1alpha1
+kind: ToolPlugin
+metadata: {name: batch}
+spec:
+  placement: host
+  network: {egress: []}
+  tools:
+    - name: runs
+      access: read
+      tier: 1
+      output_class: internal
+      untrusted_output: false
+      redact: [ip, email, secret]
+      target: any                    # only the read toolhost of demo on ctd1 has the batch plugin
+      output_limit_kb: 8
+      timeout_s: 20
+    - name: trace
+      access: read
+      tier: 1
+      output_class: internal
+      untrusted_output: true
+      redact: [ip, email, secret]
+      target_from: run
+      params:
+        run: {enum_from: catalog.lab_runs}
+      output_limit_kb: 16
+      timeout_s: 20
+    - name: trace_summary
+      access: read
+      tier: 1
+      output_class: internal
+      untrusted_output: false
+      redact: [ip, email, secret]
+      target_from: stations
+      params:
+        stations: {enum_from: catalog.stations}
+      output_limit_kb: 8
+      timeout_s: 20

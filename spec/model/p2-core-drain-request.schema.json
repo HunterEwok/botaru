@@ -1,0 +1,18 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:botaru:schema:p2-core-drain-request:1",
+  "title": "P2 core.drain: request",
+  "description": "Core drain before a rollout: the core stops giving out new work, health answers draining with drain_until_s (LCY-6).",
+  "x-botaru-direction": "input",
+  "x-botaru-rules": [
+    "LCY-6"
+  ],
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "until": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/duration",
+      "description": "Drain deadline, by default 30m."
+    }
+  }
+}

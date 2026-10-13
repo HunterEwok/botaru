@@ -1,0 +1,38 @@
+schema: spec/model/script-propose-request.schema.json
+rules:
+- TRN-3
+description: propose_script arguments.
+cases:
+- script:
+    script: v1
+    steps:
+    - id: disk
+      kind: fanout
+      type: ops.disk.read.v1
+      goal:
+        template: disk_usage
+      items:
+        resources:
+        - web1
+        - db1
+        - ctd1
+    - id: ask
+      kind: confirm
+      needs:
+      - disk
+      when:
+        ref: disk.min.free_pct
+        op: lt
+        value: 10
+      who: initiator
+    - id: clean
+      kind: fanout
+      needs:
+      - ask
+      action: cleanup_tmp
+      items:
+        from: disk
+        where:
+          field: free_pct
+          op: lt
+          value: 10

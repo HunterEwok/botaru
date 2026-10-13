@@ -1,0 +1,14 @@
+schema: urn:botaru:schema:p1-card-request:1
+rules:
+- APR-14
+- APR-19
+description: '"Details" and "Remind approvers".'
+cases:
+- op: card.details
+  subject_kind: approval
+  id: apr_01J9Z3M2Q8YB6V4N7T5K0C2D2F
+  nonce: n7Qx2LkP9vRt4WsZ
+- op: card.remind
+  subject_kind: approval
+  id: apr_01J9Z3M2Q8YB6V4N7T5K0C2D2F
+  nonce: n7Qx2LkP9vRt4WsZ

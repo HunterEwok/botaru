@@ -1,0 +1,71 @@
+id: fx-rep-01
+rules: [PRF-1]
+check: lint:roles/profile-limits
+description: >-
+  A reporter (profile reporter) declares what its profile forbids: a plugin,
+  enqueuing tasks, an action request, sending messages, person memory and a type whose purpose
+  is not report. apply rejects the role; built-in tools outside the profile are not in
+  tools/list (the black-box runner checks this against builtin-tools.yaml).
+with_examples: true
+cases:
+  - name: reporter within its profile
+    manifests:
+      - apiVersion: botaru/v1alpha1
+        kind: Role
+        metadata: {name: reporter}
+        spec: {profile: reporter, worker_kind: agent, claims: [report.sensor.v1, report.monthly.v1], models: {base: base-std}}
+    expect: ok
+  - name: reporter with a plugin
+    manifests:
+      - apiVersion: botaru/v1alpha1
+        kind: Role
+        metadata: {name: reporter}
+        spec: {profile: reporter, worker_kind: agent, claims: [report.sensor.v1], tools: [logs/tail], models: {base: base-std}}
+    expect: {error: role_profile_forbidden}
+  - name: reporter enqueues tasks
+    manifests:
+      - apiVersion: botaru/v1alpha1
+        kind: Role
+        metadata: {name: reporter}
+        spec: {profile: reporter, worker_kind: agent, claims: [report.sensor.v1], may_enqueue: [ops.summary.v1], models: {base: base-std}}
+    expect: {error: role_profile_forbidden}
+  - name: reporter requests an action
+    manifests:
+      - apiVersion: botaru/v1alpha1
+        kind: Role
+        metadata: {name: reporter}
+        spec: {profile: reporter, worker_kind: agent, claims: [report.sensor.v1], actions_may_request: [cleanup_pipeline_tmp], models: {base: base-std}}
+    expect: {error: role_profile_forbidden}
+  - name: reporter sends messages
+    manifests:
+      - apiVersion: botaru/v1alpha1
+        kind: Role
+        metadata: {name: reporter}
+        spec:
+          profile: reporter
+          worker_kind: agent
+          claims: [report.sensor.v1]
+          messages: {send: [{type: report.sensor_note.v1, to: ["role:ops-reader"]}]}
+          models: {base: base-std}
+    expect: {error: role_profile_forbidden}
+  - name: reporter takes a work type
+    manifests:
+      - apiVersion: botaru/v1alpha1
+        kind: Role
+        metadata: {name: reporter}
+        spec: {profile: reporter, worker_kind: agent, claims: [report.sensor.v1, ops.summary.v1], models: {base: base-std}}
+    expect: {error: role_profile_purpose}
+  - name: reporter with person memory
+    manifests:
+      - apiVersion: botaru/v1alpha1
+        kind: Role
+        metadata: {name: reporter}
+        spec: {profile: reporter, worker_kind: agent, claims: [report.sensor.v1], memory: person, models: {base: base-std}}
+    expect: {error: role_profile_memory}
+  - name: reporter with an analysis slot
+    manifests:
+      - apiVersion: botaru/v1alpha1
+        kind: Role
+        metadata: {name: reporter}
+        spec: {profile: reporter, worker_kind: agent, claims: [report.sensor.v1], models: {base: base-std, analysis: analysis-std}}
+    expect: {error: role_profile_slot}

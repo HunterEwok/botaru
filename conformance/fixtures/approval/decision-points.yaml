@@ -1,0 +1,71 @@
+# Lint of the decision registry (APR-12): every card and notification kind that the core delivers
+# is a row of spec/model/decision-points.yaml; a decision row has a subject, decisions with a permission,
+# a deadline and an outcome on silence.
+id: fx-approval-decision-points
+rules: [APR-12]
+description: A kind without a row does not pass the skeleton CI, and the core does not create such a delivery.
+given: {registry: spec/model/decision-points.yaml}
+cases:
+- id: apr-dp-01
+  rules: [APR-12]
+  given:
+    delivery: {card: approval_card}
+  expect: {result: ok}
+- id: apr-dp-02
+  rules: [APR-12]
+  given:
+    delivery: {card: approval_reminder_fancy}
+  expect:
+    lint: {result: rejected, stage: lint}
+    core: no_delivery
+- id: apr-dp-03
+  rules: [APR-12]
+  given:
+    row:
+      id: x_card
+      kind: decision
+      subject: approval
+      decisions:
+        approve: {}
+  expect:
+    lint: {result: rejected, stage: lint}
+    why: the decision has no permission
+- id: apr-dp-04
+  rules: [APR-12]
+  given:
+    row:
+      id: x_card
+      kind: decision
+      subject: approval
+      decisions:
+        approve: {right: 'action.approve:<a>'}
+  expect:
+    lint: {result: rejected, stage: lint}
+    why: no ttl and on_silence
+- id: apr-dp-05
+  rules: [APR-12]
+  given:
+    row: {id: x_notice, kind: notice, subject: approval}
+  expect:
+    lint: {result: rejected, stage: lint}
+    why: the notification has no decide subject
+- id: apr-dp-06
+  rules: [APR-12, APR-3]
+  given:
+    card: approval_card
+    record: {action: cleanup_pipeline_tmp, expires_at: '2026-03-02T10:00:00Z'}
+  expect:
+    footer: 'To you, because you have the permission to approve cleanup_pipeline_tmp. Deadline: until 10:00. If you do not answer: the request
+      will expire, and the action will not run.'
+- id: apr-dp-07
+  rules: [APR-12]
+  given:
+    since: v0.2
+    delivery: {card: attribution_dispute}
+  expect: {result: ok}
+- id: apr-dp-08
+  rules: [APR-12]
+  given:
+    since: v0.2
+    delivery: {card: self_measured_card}
+  expect: {result: ok}

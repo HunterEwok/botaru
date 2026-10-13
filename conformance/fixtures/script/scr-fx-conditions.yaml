@@ -1,0 +1,36 @@
+id: scr-fx-conditions
+rules: [SCR-3]
+description: 'A when condition is built only from atoms of the closed table spec/model/condition-ops.yaml over result fields
+  with x-botaru-read-by: code and over the rollups count, sum, min, max. Nesting no deeper than 2, no more than 8 atoms. There is no arithmetic,
+  no string functions, no regular expressions and no access to time.'
+given:
+  tenant: demo
+  result_fields:
+    ops.log.triage.v1:
+      severity: {read_by: code}
+      summary_text: {read_by: model}
+    ops.disk.read.v1:
+      free_pct: {read_by: code, summary_field: true}
+cases:
+- given:
+    when: {ref: tail.severity, op: eq, value: high}
+  expect: {result: ok}
+- given:
+    when: {ref: disk.min.free_pct, op: lt, value: 10}
+  expect: {result: ok}
+- given:
+    when: {ref: tail.summary_text, op: eq, value: ok}
+  expect: {result: rejected, reason: script_invalid, note: the model reads the field}
+- given:
+    when: {ref: tail.severity, op: matches, value: h.*}
+  expect: {result: rejected, note: the operator is not in condition-ops.yaml}
+- given:
+    when:
+      ref: tail.severity
+      op: in
+      value: [low, high, mid]
+  expect: {result: rejected, reason: script_invalid, note: literal outside the field schema}
+- given: {when_depth: 3}
+  expect: {result: rejected, reason: script_too_large}
+- given: {when_atoms: 9}
+  expect: {result: rejected, reason: script_too_large}

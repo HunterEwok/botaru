@@ -1,0 +1,42 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:botaru:schema:p2-task-list-request:1",
+  "title": "P2 task.list, team.tasks, about: request",
+  "description": "Code tables without model text: the initiator's own tasks, the group's tasks for a person with team.view, information about the bot (PRM-15).",
+  "x-botaru-direction": "input",
+  "x-botaru-rules": [
+    "PRM-15"
+  ],
+  "type": "object",
+  "required": [
+    "op"
+  ],
+  "properties": {
+    "op": {
+      "enum": [
+        "task.list",
+        "team.tasks",
+        "about"
+      ]
+    },
+    "group": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/name"
+    },
+    "state": {
+      "type": "string",
+      "maxLength": 64,
+      "pattern": "^[a-z][a-z0-9_]*$"
+    },
+    "limit": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 1000
+    },
+    "after": {
+      "type": "string",
+      "maxLength": 200,
+      "description": "Cursor of the next page from the previous answer."
+    }
+  },
+  "additionalProperties": false
+}

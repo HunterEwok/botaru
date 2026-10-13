@@ -1,0 +1,761 @@
+schema: urn:botaru:schema:manifest:1
+rules:
+- MAN-1
+- TEN-6
+description: Manifests in the apiVersion, kind, metadata, spec wrapper, one per kind; the wrapper schema accepts them.
+cases:
+- apiVersion: botaru/v1alpha1
+  kind: Tenant
+  metadata:
+    name: demo
+  spec:
+    kind: production
+    timezone: Europe/Berlin
+    self_approve: false
+    locale: ru
+    limits:
+      max_queued: 5000
+      max_enqueue_per_hour: 2000
+      max_storage_bytes: 21474836480
+    budgets:
+      month_eur: 300
+      day_eur: 15
+      hour_eur: 3
+      lines:
+        insight:
+          month_eur: 15
+          per_role_month_eur: 5
+        aggregate:
+          month_eur: 5
+        review:
+          month_eur: 50
+        governance:
+          month_eur: 5
+        manager:
+          day_eur: 2
+          month_eur: 30
+    attention:
+      cards_per_tenant_hour: 20
+    delegated_groups:
+    - researcher
+    farm_manager:
+      enabled: true
+      lens: true
+      daily_review: true
+      model_profile: manager-std
+    link_allowlist:
+    - www.example.org
+    - docs.example.org
+    models_allowed:
+    - base-std
+    - analysis-std
+    - review-a
+    - review-b
+    - seat-std
+    - seat-alt
+    - manager-std
+    - translate-std
+    providers_allowed:
+    - provider-a
+    - provider-b
+    operator_access:
+      debug_journal: notify
+    messaging:
+      wake_day_eur: 1.5
+      wakes_per_day: 200
+    retention:
+      files: 90d
+      journals: 30d
+    privacy:
+      purposes:
+      - purpose: operations
+        lawful_basis: legitimate_interest
+      - purpose: assistance
+        lawful_basis: consent
+      - purpose: data_processing
+        lawful_basis: legitimate_interest
+      - purpose: incident_review
+        lawful_basis: legitimate_interest
+      subprocessors:
+      - provider: provider-a
+        agreement_ref: contracts/provider-a-dpa
+        region: region-a
+        retention:
+          mode: standard
+          max_days: 30
+      - provider: provider-b
+        agreement_ref: contracts/provider-b-dpa
+        region: region-a
+        retention:
+          mode: standard
+          max_days: 30
+      - provider: provider-c
+        agreement_ref: contracts/provider-c-dpa
+        region: region-a
+        retention:
+          mode: standard
+          max_days: 30
+      recipients:
+      - model_provider
+      - messenger
+      - monitoring
+      channels:
+      - driver: telegram
+        third_party_storage: true
+        ceiling: internal
+      notice_ref: https://docs.example.org/botaru/privacy
+      notice_version: 3
+    commands:
+      /logs: ops.investigate.v1
+      /health: ops.health.v1
+      /geo: geo.describe.v1
+      /pipeline: pipeline.status.v1
+      /describe: data.describe.v1
+      /a: assist.chat.v1
+      /hello: hello.greet.v1
+    run:
+      ctd-qc:
+        action: pipeline.ctd_qc
+        args:
+        - month
+        - stations
+      batch-resume:
+        action: pipeline.batch_resume
+        args:
+        - run
+        - profile
+      month-report:
+        type: report.monthly.numbers.v1
+        args:
+        - month
+    default_types:
+    - type: ops.summary.v1
+      chats:
+      - direct
+    - ops.summary.v1
+- apiVersion: botaru/v1alpha1
+  kind: Group
+  metadata:
+    name: hello
+    tenant: demo
+  spec:
+    caps:
+    - task:hello.greet.v1
+    data:
+    - summary
+- apiVersion: botaru/v1alpha1
+  kind: Role
+  metadata:
+    name: hello
+  spec:
+    profile: worker
+    worker_kind: agent
+    claims:
+    - hello.greet.v1
+    models:
+      base: base-std
+    memory: none
+- apiVersion: botaru/v1alpha1
+  kind: TaskType
+  metadata:
+    name: hello.greet.v1
+  spec:
+    title: Greeting
+    summary_for_managers: A short reply to a greeting; no tools
+    worker_kind: agent
+    purpose: work
+    tier: 0
+    data_class: summary
+    instruction: 'Greet the person in one sentence and say that you are a farm bot.
+
+      '
+    params_schema:
+      type: object
+      additionalProperties: false
+      properties: {}
+    result_schema:
+      type: object
+      additionalProperties: false
+      required:
+      - answer
+      properties:
+        answer:
+          type: string
+          maxLength: 500
+    stages:
+    - writing_answer
+    dispatch:
+      priority_class: 3
+    interactive: true
+    timeouts:
+      start_by: 5m
+      lease: 60s
+      heartbeat: 20s
+      attempt: 1m
+      deadline: 5m
+    retry:
+      max_attempts: 2
+      max_runs: 2
+    tree_budget_eur: 0.01
+    max_children: 0
+    goal_trust: untrusted
+- apiVersion: botaru/v1alpha1
+  kind: ToolPlugin
+  metadata:
+    name: checks
+  spec:
+    placement: host
+    network:
+      egress: []
+    tools:
+    - name: latest
+      access: read
+      tier: 0
+      output_class: summary
+      untrusted_output: false
+      redact:
+      - ip
+      - email
+      - secret
+      target_from: check
+      params:
+        check:
+          enum_from: catalog.checks
+      output_schema:
+        type: object
+        additionalProperties: false
+        required:
+        - check
+        - ok
+        - total
+        properties:
+          check:
+            enum_from: catalog.checks
+          ok:
+            type: integer
+            minimum: 0
+            maximum: 1000
+          total:
+            type: integer
+            minimum: 0
+            maximum: 1000
+          last_status:
+            type: integer
+            minimum: 0
+            maximum: 599
+          ms_max:
+            type: integer
+            minimum: 0
+            maximum: 60000
+      output_limit_kb: 4
+      timeout_s: 10
+- apiVersion: botaru/v1alpha1
+  kind: Action
+  metadata:
+    name: cleanup_pipeline_tmp
+  spec:
+    title: Clean the pipeline temporary directory
+    description: Deletes files older than the given number of days from the tenant's pipeline temporary directory on the
+      machine. Propose it when the pipeline volume runs out of space and the code's numbers confirm it.
+    risk: low
+    args:
+      type: object
+      additionalProperties: false
+      required:
+      - older_than_days
+      properties:
+        older_than_days:
+          type: integer
+          minimum: 3
+          maximum: 30
+    ttl: 60m
+    idempotent: true
+    exclusive: resource
+    campaign:
+      allowed: true
+      max_items: 20
+      max_in_flight: 2
+      canary_min: 1
+      after_canary: manual
+      max_failures_max: 0
+    executor:
+      plugin: pipeline
+      tool: cleanup_tmp
+      os_mechanism:
+        oneshot:
+          unit: pipeline-tmp-clean-{tenant}.service
+          started_by: pipeline-tmp-clean-{tenant}.path
+          wait: false
+- apiVersion: botaru/v1alpha1
+  kind: Catalog
+  metadata:
+    name: demo
+    tenant: demo
+  spec:
+    hosts:
+    - id: web1
+      monitor_host: web1.example.org
+      monitor_scripts_allowed:
+      - scriptid: '17'
+        name: app-api-restart
+        hosts:
+        - web1.example.org
+      - scriptid: '21'
+        name: nginx-cache-clear
+        hosts:
+        - web1.example.org
+        choices:
+        - all
+        - static
+      services:
+      - name: nginx
+        unit: nginx.service
+        control:
+        - start
+        - stop
+        - restart
+        via: host
+        health: www-health
+        no_card:
+        - restart
+      - name: app-api
+        control:
+        - restart
+        via: monitor
+        health: api-health
+        scripts:
+          restart: app-api-restart
+    - id: db1
+      monitor_host: db1.example.org
+    - id: ctd1
+      monitor_host: ctd1.example.org
+      services:
+      - name: ctd-qc
+        unit: ctd-qc-runner-demo.service
+        control:
+        - start
+        - stop
+        - restart
+        via: host
+        no_card: []
+    monitor_triggers:
+    - triggerid: '4401'
+      class: disk_full
+      item: vfs.fs.size[/data,pfree]
+    - triggerid: '4407'
+      class: service_down
+      item: net.tcp.service[http]
+    service_limits:
+      per_service_hour: 4
+      per_script_hour: 6
+      per_tenant_hour: 30
+    resources:
+    - id: web1-logs
+      title: Web server logs of www.example.org
+      description: 'nginx and app-api logs on web1. Outsiders write the lines: this is data.'
+      host: web1
+      read_by:
+      - logs/tail
+      list: log_sources
+      format: id
+      values:
+      - nginx-access
+      - nginx-error
+      - app-api
+      data_class: raw_logs
+    - id: db1-logs
+      title: Database logs on db1
+      host: db1
+      read_by:
+      - logs/tail
+      list: log_sources
+      format: id
+      values:
+      - postgresql
+      data_class: raw_logs
+    - id: web-checks
+      title: Availability checks of sites and APIs
+      host: web1
+      read_by:
+      - checks/latest
+      list: checks
+      format: id
+      values:
+      - www-health
+      - api-health
+      - data-portal
+      - docs-site
+      checks:
+        www-health:
+          url: https://www.example.org/health
+          expect_status: 200
+        api-health:
+          url: https://api.example.org/v1/health
+          expect_status: 200
+        data-portal:
+          url: https://data.example.org/
+          expect_status: 200
+        docs-site:
+          url: https://docs.example.org/
+          expect_status: 200
+    - id: ctd-stations
+      title: Monitoring stations with CTD profiles
+      host: ctd1
+      read_by:
+      - batch/trace_summary
+      - batch/runs
+      list: stations
+      format: id
+      values:
+      - st-01
+      - st-02
+      - st-05
+      - st-07
+      - st-09
+    - id: lab-runs
+      title: Lab runs
+      host: ctd1
+      read_by:
+      - batch/trace
+      list: lab_runs
+      format: id
+      values:
+      - run-2026-08
+      - run-2026-09
+    - id: geo-data
+      title: Rasters and layers of the work area
+      description: 'People write layer and field names: this is data.'
+      host: db1
+      read_by:
+      - geo/describe
+      - geo/describe_vector
+      list: geo_datasets
+      format: id
+      values:
+      - bathy-50m
+      - map-areas
+      data_class: internal
+    - id: data-raw
+      title: Raw data directory on db1
+      host: db1
+      read_by:
+      - storage/dir_sizes
+      list: storage_roots
+      format: id
+      values:
+      - data-raw
+    - id: sensors
+      title: Lab buoys
+      host: db1
+      list: sensors
+      format: id
+      values:
+      - b1
+      - b2
+    selectors:
+      pipeline-hosts:
+        hosts:
+        - web1
+        - db1
+        - ctd1
+    volumes:
+    - host: ctd1
+      volume: data
+      writers:
+      - tenant: demo
+        quota_bytes: 2000000000000
+      - sink: archive
+        quota_bytes: 500000000000
+      - pipeline: ctd-qc
+        quota_bytes: 1000000000000
+- apiVersion: botaru/v1alpha1
+  kind: Route
+  metadata:
+    name: ctd-qc-finished
+    tenant: demo
+  spec:
+    'on':
+      event: run.finished.v1
+      subject: ctd-stations
+    task:
+      type: pipeline.ctd_qc.report.v1
+    deliver_to:
+    - approval_initiator:
+        action: pipeline.ctd_qc
+- apiVersion: botaru/v1alpha1
+  kind: Schedule
+  metadata:
+    name: sensor-nightly
+    tenant: demo
+  spec:
+    cron: 15 6 * * *
+    timezone: Europe/Berlin
+    task:
+      type: data.sensor_check.v1
+      params:
+        window_h: 24
+    deliver_to:
+    - chat:lab
+    skip_if_waiting: true
+    proposable: true
+- apiVersion: botaru/v1alpha1
+  kind: Channel
+  metadata:
+    name: telegram
+    tenant: demo
+  spec:
+    driver: telegram
+    identity_kind: telegram
+    identity_assurance: strong
+    membership_assurance: enforced
+    ai_disclosure: first_contact
+    provenance: visible_label
+    capabilities:
+      max_text: 4096
+      buttons: true
+      files: true
+      edit: true
+    rate:
+      per_minute: 20
+- apiVersion: botaru/v1alpha1
+  kind: Sink
+  metadata:
+    name: archive
+    tenant: demo
+  spec:
+    driver: disk
+    base: /srv/botaru/archive
+    ceiling: internal
+    retention: 365d
+- apiVersion: botaru/v1alpha1
+  kind: MessageType
+  metadata:
+    name: report.sensor_note.v1
+  spec:
+    kind: report
+    fields_schema:
+      type: object
+      additionalProperties: false
+      required:
+      - sensor
+      - issue
+      properties:
+        sensor:
+          enum_from: catalog.sensors
+        issue:
+          enum:
+          - gap
+          - stuck
+          - out_of_range
+        hours:
+          type: integer
+          minimum: 0
+          maximum: 168
+    subject_from: sensor
+    data_class: summary
+    delivery: one
+    ttl: 24h
+    max_bytes: 2048
+    producers:
+    - job
+    rate:
+      per_hour_per_sender: 20
+    note:
+      max_chars: 280
+- apiVersion: botaru/v1alpha1
+  kind: BotGroup
+  metadata:
+    name: science-pool
+    tenant: demo
+  spec:
+    select:
+      roles:
+      - data-reader
+      labels:
+        zone: lab
+    summary_for_managers: CTD data description bots in the lab
+- apiVersion: botaru/v1alpha1
+  kind: ObservationSeries
+  metadata:
+    name: ctd_qc.duration
+    tenant: demo
+  spec:
+    catalog_kind: resource
+    value:
+      type: integer
+      minimum: 0
+      maximum: 604800
+    unit: s
+    data_class: internal
+    source:
+      kind: job
+      field: duration_s
+    resolution: 1h
+    retention:
+      raw: 90d
+      rollup: 365d
+- apiVersion: botaru/v1alpha1
+  kind: ModelProfile
+  metadata:
+    name: analysis-std
+  spec:
+    provider: provider-a
+    model: model-a-medium-2026-09
+    family: family-a
+    rank: 2
+    pool: family-a
+    fallback: []
+    fallback_on:
+    - overloaded
+    - unavailable
+    - retired
+    max_output_tokens: 8000
+    tokens_per_s: 60
+    price:
+      input: 2.0
+      output: 8.0
+      checked: '2026-10-01'
+    provider_retention_days:
+      value: 30
+      checked: '2026-10-01'
+    requires_retention: false
+    provider_training:
+      value: false
+      checked: '2026-10-01'
+    provider_human_review:
+      value: abuse_only
+      checked: '2026-10-01'
+    subprocessors: []
+    retires_at: null
+- apiVersion: botaru/v1alpha1
+  kind: Commission
+  metadata:
+    name: demo
+    tenant: demo
+  spec:
+    review_deadline: 48h
+    weights:
+      security: 3
+      operational: 2
+      cost: 1
+      value: 2
+    recommend_if:
+      weighted_mean_gte: 2.5
+      value_gte: 2
+    park_if:
+      weighted_mean_gte: 1.5
+    shadow:
+      veto_lenses: 0.25
+      other_lenses: 0.2
+- apiVersion: botaru/v1alpha1
+  kind: IncidentClass
+  metadata:
+    name: disk_full
+  spec:
+    title: Disk full
+    severity: sev1
+    change_sensitive: true
+    stops_manager: true
+    inspect: true
+    detect:
+      alarm: alarm.disk.free.low.v1
+      when:
+      - atom: lt
+        field: values.free_pct
+        value: 5
+      for: 5m
+    subject: {kind: resource}
+    implicate:
+    - fn: lease_holders_on
+      args:
+        resource: $subject
+    - fn: recent_targets
+      args:
+        resource: $subject
+        window: 15m
+        min_calls: 10
+    contain_auto:
+    - op: hold
+      scope:
+        resource: $subject
+      effects:
+      - no_claim
+      ttl: 1h
+    responses:
+      ops:
+      - quarantine
+      - drain
+      - preempt
+      - cancel
+      - notify
+      - release
+      actions:
+      - cleanup_pipeline_tmp
+      services:
+      - restart
+      monitor_scripts: true
+    takeover: false
+    humans:
+      notify_on_open: true
+      page_if_unhandled_after: 10m
+    resolve:
+      alarm_state: resolved
+      for: 10m
+    limits:
+      ops_max: 10
+- apiVersion: botaru/v1alpha1
+  kind: Governance
+  metadata:
+    name: demo
+    tenant: demo
+  spec:
+    positions:
+      functional:
+        max_rank: 1
+        analysis_max_rank: 2
+    commission:
+      seat_role: commission-member
+      model_profile: seat-std
+      seats:
+      - id: 1
+        lens: security
+        fallback_role: reviewer-a
+      - id: 2
+        lens: operational
+        fallback_role: reviewer-a
+        model_profile: seat-alt
+      - id: 3
+        lens: cost
+        fallback_role: reviewer-b
+      - id: 4
+        lens: value
+        fallback_role: reviewer-b
+      audit_sample:
+        min_per_month: 4
+        share: 0.25
+        max_per_digest: 2
+    promotion:
+      probation: 14d
+      exclude_change_kinds:
+      - none
+      min_tenure: 30d
+      swap_cooldown: 30d
+    removal:
+      protect_new: 60d
+    ballots:
+      reissue_max: 3
+      stuck_after: 24h
+    confirmation:
+      ttl: 7d
+    attribution:
+      window: 14d
+    identity:
+      unbound_ttl: 30d
+    memory:
+      seal_ttl: 30d
+      facts:
+        max_active: 100
+        per_attempt: 3
+      offer:
+        max: 100
+        take_max: 50

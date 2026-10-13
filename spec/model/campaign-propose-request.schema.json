@@ -1,0 +1,276 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:botaru:schema:campaign-propose-request:1",
+  "title": "Campaign proposal",
+  "description": "Arguments of P3 propose_campaign and the body of P1 campaign.propose: template, items, rollout policy, continuation and bot group. The request has no record fields (initiator, enqueued_by, plan_hash, mark, untrusted_seen, reserve, worker fields) (IDN-1, DSP-4). The core builds the schema for each role: action and type are the role's enum, resources is enum_from the catalog, selector is an enum of selectors, arrays have maxItems equal to the ceiling. Only P1 carries the idempotency_key (IDM-1).",
+  "x-botaru-direction": "input",
+  "x-botaru-rules": [
+    "ORC-1",
+    "ORC-5",
+    "ORC-14",
+    "DSP-4",
+    "IDN-1"
+  ],
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "template",
+    "items"
+  ],
+  "properties": {
+    "template": {
+      "$ref": "#/$defs/template"
+    },
+    "items": {
+      "$ref": "#/$defs/items"
+    },
+    "rollout": {
+      "$ref": "#/$defs/rollout"
+    },
+    "then": {
+      "description": "Continuation: a type from the role's campaigns.then, or null.",
+      "anyOf": [
+        {
+          "type": "null"
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "type"
+          ],
+          "properties": {
+            "type": {
+              "$ref": "urn:botaru:schema:common:1#/$defs/type_name"
+            }
+          }
+        }
+      ]
+    },
+    "to": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "group"
+      ],
+      "properties": {
+        "group": {
+          "$ref": "urn:botaru:schema:common:1#/$defs/name",
+          "description": "Bot group from the role's may_target_groups enum (DSP-4)."
+        }
+      }
+    },
+    "refs": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/object_id",
+      "description": "Reference to a previous campaign."
+    },
+    "idempotency_key": {
+      "description": "Key of the proposer, only for P1 campaign.propose.",
+      "anyOf": [
+        {
+          "type": "null"
+        },
+        {
+          "type": "string",
+          "pattern": "^(?!system:)[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$",
+          "maxLength": 128,
+          "description": "Idempotency key of the code; the core adds the sender prefix to it. Keys of the form system: are written only by the core (IDM-2)."
+        }
+      ]
+    }
+  },
+  "$defs": {
+    "template": {
+      "description": "Template: a task of a type from may_enqueue or an action from actions_may_request.",
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "type"
+          ],
+          "properties": {
+            "kind": {
+              "const": "task"
+            },
+            "type": {
+              "$ref": "urn:botaru:schema:common:1#/$defs/type_name"
+            },
+            "goal": {
+              "type": "string",
+              "maxLength": 2000,
+              "description": "Common goal of the items."
+            },
+            "params": {
+              "type": "object",
+              "description": "Common params under the closed schema of the type.",
+              "maxProperties": 32,
+              "x-botaru-closed-by": "params_schema of the task type"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "action",
+            "args"
+          ],
+          "properties": {
+            "kind": {
+              "const": "action"
+            },
+            "action": {
+              "$ref": "urn:botaru:schema:common:1#/$defs/dotted_name"
+            },
+            "args": {
+              "type": "object",
+              "description": "Common arguments under the closed schema of the action.",
+              "maxProperties": 32,
+              "x-botaru-closed-by": "args of the action"
+            }
+          }
+        }
+      ]
+    },
+    "items": {
+      "description": "Items: an explicit list of catalog resources with their own params or arguments, or a single selector that the core expands at proposal time.",
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "selector"
+          ],
+          "properties": {
+            "selector": {
+              "$ref": "urn:botaru:schema:common:1#/$defs/name",
+              "description": "Selector Catalog.spec.selectors."
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "resources"
+          ],
+          "properties": {
+            "resources": {
+              "type": "array",
+              "maxItems": 500,
+              "items": {
+                "$ref": "urn:botaru:schema:common:1#/$defs/name"
+              },
+              "minItems": 1,
+              "uniqueItems": true,
+              "description": "Resources of the catalog filtered by mark and scope."
+            },
+            "params": {
+              "type": "array",
+              "maxItems": 500,
+              "items": {
+                "type": "object",
+                "maxProperties": 32,
+                "x-botaru-closed-by": "params_schema of the task type"
+              },
+              "description": "Own params of the items, in order."
+            },
+            "args": {
+              "type": "array",
+              "maxItems": 500,
+              "items": {
+                "type": "object",
+                "maxProperties": 32,
+                "x-botaru-closed-by": "args of the action"
+              },
+              "description": "Own arguments of the items, in order."
+            }
+          },
+          "not": {
+            "required": [
+              "params",
+              "args"
+            ]
+          }
+        }
+      ]
+    },
+    "rollout": {
+      "type": "object",
+      "description": "Rollout policy RolloutPolicy; values not wider than the ceilings of the action, role and tenant (ORC-5).",
+      "additionalProperties": false,
+      "properties": {
+        "canary": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 500,
+          "description": "The first items as a separate batch; not less than the action's canary_min."
+        },
+        "after_canary": {
+          "enum": [
+            "manual",
+            "auto"
+          ],
+          "description": "manual: a gate pause and the \"Continue\" button; auto only if the action allows it."
+        },
+        "bake": {
+          "$ref": "urn:botaru:schema:common:1#/$defs/duration",
+          "description": "Pause after the canary for auto."
+        },
+        "max_in_flight": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 500,
+          "description": "Released and not finished at the same time; not above the ceilings."
+        },
+        "max_failures": {
+          "description": "Threshold on failed: a number or a share; stop when more have failed.",
+          "oneOf": [
+            {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 500
+            },
+            {
+              "type": "string",
+              "pattern": "^(100|[1-9]?[0-9])%$",
+              "maxLength": 4
+            }
+          ]
+        },
+        "on_unknown": {
+          "enum": [
+            "pause"
+          ],
+          "description": "What to do with an unknown item: pause, a person decides."
+        },
+        "deadline": {
+          "$ref": "urn:botaru:schema:common:1#/$defs/duration",
+          "description": "Deadline of the whole campaign."
+        },
+        "waves": {
+          "type": "array",
+          "maxItems": 10,
+          "items": {
+            "type": "string",
+            "pattern": "^(100|[1-9]?[0-9])%$",
+            "maxLength": 4
+          },
+          "minItems": 1,
+          "description": "Since v0.2: cumulative release shares after the canary.",
+          "x-botaru-version": "v0.2"
+        },
+        "rate_per_min": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 10000,
+          "description": "Since v0.2: not more often than.",
+          "x-botaru-version": "v0.2"
+        }
+      }
+    }
+  }
+}

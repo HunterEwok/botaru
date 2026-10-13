@@ -1,0 +1,14 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:botaru:schema:p1-release-request:1",
+  "title": "P1 release: request",
+  "description": "The holder returns the work to the queue on shutdown; the reason is worker_drain, the attempt is not spent. The lease token is not passed in the body: the holder sends it in the Botaru-Lease header (spec/bindings/http/README.md), one way for all operations under a lease (FEN-2).",
+  "x-botaru-direction": "input",
+  "x-botaru-rules": [
+    "FEN-2",
+    "IDM-3"
+  ],
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {}
+}

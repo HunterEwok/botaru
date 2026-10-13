@@ -1,0 +1,476 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:botaru:schema:catalog:1",
+  "title": "Tenant catalog",
+  "description": "spec of the Catalog manifest: the tenant's machines, services, monitoring triggers, resources, selectors and volumes (docs/task-language.md, \"Tenant catalog\").",
+  "x-botaru-direction": "input",
+  "x-botaru-rules": [
+    "MAN-10",
+    "TEN-3a",
+    "TEN-4",
+    "DEP-11",
+    "MON-8",
+    "MON-10",
+    "INJ-16"
+  ],
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "hosts": {
+      "type": "array",
+      "maxItems": 200,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "$ref": "urn:botaru:schema:common:1#/$defs/name",
+            "description": "Machine id; the host of resources and selectors refer to it."
+          },
+          "monitor_host": {
+            "$ref": "urn:botaru:schema:manifest:1#/$defs/hostname",
+            "description": "Node name of the machine in the monitoring system (MON-5)."
+          },
+          "monitor_scripts_allowed": {
+            "type": "array",
+            "maxItems": 50,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "scriptid": {
+                  "type": "string",
+                  "maxLength": 20,
+                  "description": "Script id in the monitoring system.",
+                  "pattern": "^[0-9]{1,20}$"
+                },
+                "name": {
+                  "$ref": "urn:botaru:schema:common:1#/$defs/name",
+                  "description": "Closed name for the role and the model."
+                },
+                "hosts": {
+                  "type": "array",
+                  "maxItems": 20,
+                  "items": {
+                    "$ref": "urn:botaru:schema:manifest:1#/$defs/hostname"
+                  },
+                  "minItems": 1
+                },
+                "choices": {
+                  "type": "array",
+                  "maxItems": 20,
+                  "items": {
+                    "$ref": "urn:botaru:schema:common:1#/$defs/name"
+                  },
+                  "description": "Closed choice of the script input (INJ-16)."
+                }
+              },
+              "required": [
+                "scriptid",
+                "name",
+                "hosts"
+              ]
+            },
+            "description": "Allowed monitoring scripts (MON-10, INJ-16)."
+          },
+          "services": {
+            "type": "array",
+            "maxItems": 50,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "name": {
+                  "$ref": "urn:botaru:schema:common:1#/$defs/name",
+                  "description": "Closed service name; unique in the tenant catalog."
+                },
+                "unit": {
+                  "type": "string",
+                  "maxLength": 120,
+                  "description": "Exact name of a systemd unit with .service, without @ and masks; only with via: host.",
+                  "pattern": "^[a-z0-9][a-z0-9_.-]*\\.service$"
+                },
+                "control": {
+                  "type": "array",
+                  "maxItems": 3,
+                  "items": {
+                    "$ref": "urn:botaru:schema:common:1#/$defs/service_verb"
+                  },
+                  "description": "Allowed verbs.",
+                  "minItems": 1,
+                  "uniqueItems": true
+                },
+                "via": {
+                  "enum": [
+                    "host",
+                    "monitor"
+                  ],
+                  "description": "host: the OS mechanism unit through the action toolhost; monitor: a monitoring script through E5."
+                },
+                "scripts": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "start": {
+                      "$ref": "urn:botaru:schema:common:1#/$defs/name"
+                    },
+                    "stop": {
+                      "$ref": "urn:botaru:schema:common:1#/$defs/name"
+                    },
+                    "restart": {
+                      "$ref": "urn:botaru:schema:common:1#/$defs/name"
+                    }
+                  },
+                  "description": "Only with via: monitor: a script name from monitor_scripts_allowed for each verb."
+                },
+                "no_card": {
+                  "type": "array",
+                  "maxItems": 1,
+                  "items": {
+                    "const": "restart"
+                  },
+                  "description": "Verbs without a card: [restart] by default, or [] (D-74, MON-8)."
+                },
+                "health": {
+                  "$ref": "urn:botaru:schema:common:1#/$defs/name",
+                  "description": "Check id from the catalog's checks list."
+                }
+              },
+              "required": [
+                "name",
+                "control",
+                "via"
+              ],
+              "description": "Managed service (MON-8)."
+            },
+            "description": "Managed services."
+          },
+          "maintenance_hold": {
+            "type": "boolean",
+            "description": "From v0.2: a maintenance window of the node gives a farm hold on the machine (MON-9).",
+            "x-botaru-version": "v0.2"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "description": "Tenant machine; farm nodes are not included here (DEP-11)."
+      },
+      "description": "Tenant machines."
+    },
+    "monitor_triggers": {
+      "type": "array",
+      "maxItems": 200,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "triggerid": {
+            "type": "string",
+            "maxLength": 20,
+            "description": "Trigger id.",
+            "pattern": "^[0-9]{1,20}$"
+          },
+          "class": {
+            "type": "string",
+            "maxLength": 40,
+            "description": "Problem class from the closed table monitor-map.yaml.",
+            "pattern": "^[a-z][a-z0-9_]*$"
+          },
+          "item": {
+            "type": "string",
+            "maxLength": 128,
+            "description": "Item whose number job takes by history.get.",
+            "pattern": "^[A-Za-z0-9_.,/\\[\\]-]{1,128}$"
+          }
+        },
+        "required": [
+          "triggerid",
+          "class",
+          "item"
+        ]
+      },
+      "description": "Triggers whose events the farm accepts (MON-5)."
+    },
+    "service_limits": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "per_service_hour": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 6,
+          "description": "Actions per service per hour; only stricter than 6."
+        },
+        "per_script_hour": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 6,
+          "description": "Only stricter than 6."
+        },
+        "per_tenant_hour": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 30,
+          "description": "Only stricter than 30."
+        }
+      },
+      "description": "Limiters of services and scripts; they only tighten the defaults."
+    },
+    "resources": {
+      "type": "array",
+      "maxItems": 1000,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "$ref": "urn:botaru:schema:common:1#/$defs/name"
+          },
+          "kind": {
+            "enum": [
+              "resource",
+              "corpus",
+              "dataset"
+            ],
+            "description": "Resource kind; corpus and dataset from v0.2."
+          },
+          "title": {
+            "type": "string",
+            "maxLength": 200,
+            "description": "Name for the model."
+          },
+          "description": {
+            "type": "string",
+            "maxLength": 2000,
+            "description": "Text for the model about what is in the resource and how to read it."
+          },
+          "host": {
+            "$ref": "urn:botaru:schema:common:1#/$defs/name",
+            "description": "Resource machine from hosts (TEN-3a)."
+          },
+          "read_by": {
+            "type": "array",
+            "maxItems": 20,
+            "items": {
+              "$ref": "urn:botaru:schema:manifest:1#/$defs/tool_ref"
+            },
+            "description": "Tools that read the resource."
+          },
+          "list": {
+            "type": "string",
+            "maxLength": 64,
+            "description": "List name for enum_from: catalog.<list>.",
+            "pattern": "^[a-z][a-z0-9_]{0,63}$"
+          },
+          "format": {
+            "type": "string",
+            "maxLength": 40,
+            "description": "Value format from formats.yaml; id by default (MAN-10).",
+            "pattern": "^[a-z][a-z0-9_]*$"
+          },
+          "values": {
+            "type": "array",
+            "maxItems": 1000,
+            "items": {
+              "type": "string",
+              "maxLength": 256
+            },
+            "description": "List values; at apply they pass the format (MAN-10)."
+          },
+          "data_class": {
+            "$ref": "urn:botaru:schema:common:1#/$defs/data_mark",
+            "description": "Data class of the resource, if higher than the tool's output class (PRM-5)."
+          },
+          "personal": {
+            "type": "boolean",
+            "description": "The resource contains people's data (ART-6, SEC-11)."
+          },
+          "checks": {
+            "type": "object",
+            "maxProperties": 50,
+            "propertyNames": {
+              "pattern": "^[a-z][a-z0-9-]{0,62}$"
+            },
+            "additionalProperties": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "url": {
+                  "type": "string",
+                  "maxLength": 500,
+                  "description": "Check address; the model does not see it.",
+                  "pattern": "^https://"
+                },
+                "expect_status": {
+                  "type": "integer",
+                  "minimum": 100,
+                  "maximum": 599,
+                  "description": "Expected response code."
+                }
+              },
+              "required": [
+                "url"
+              ]
+            },
+            "description": "Checks by id; the model sees only the id."
+          },
+          "trust": {
+            "enum": [
+              "curated",
+              "ingested"
+            ],
+            "description": "From v0.2: trust in the corpus (KNW-2).",
+            "x-botaru-version": "v0.2"
+          },
+          "source": {
+            "enum": [
+              "git",
+              "upload",
+              "sync"
+            ],
+            "description": "From v0.2: where the corpus documents come from.",
+            "x-botaru-version": "v0.2"
+          },
+          "owner": {
+            "type": "string",
+            "maxLength": 80,
+            "description": "From v0.2: the person responsible for the dataset.",
+            "x-botaru-version": "v0.2"
+          },
+          "terms": {
+            "type": "string",
+            "maxLength": 80,
+            "description": "From v0.2: an opaque id of the terms of use.",
+            "x-botaru-version": "v0.2"
+          },
+          "model_exposure": {
+            "enum": [
+              "full",
+              "aggregates",
+              "none"
+            ],
+            "description": "From v0.2: what from the dataset may be shown to the model (PRV-4).",
+            "x-botaru-version": "v0.2"
+          }
+        },
+        "required": [
+          "id",
+          "title"
+        ],
+        "description": "Catalog entry."
+      },
+      "description": "Tenant resources."
+    },
+    "selectors": {
+      "type": "object",
+      "maxProperties": 50,
+      "propertyNames": {
+        "pattern": "^[a-z][a-z0-9-]{0,62}$"
+      },
+      "additionalProperties": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "hosts": {
+            "type": "array",
+            "maxItems": 200,
+            "items": {
+              "$ref": "urn:botaru:schema:common:1#/$defs/name"
+            }
+          },
+          "labels": {
+            "$ref": "urn:botaru:schema:manifest:1#/$defs/labels"
+          }
+        }
+      },
+      "description": "Named selectors for campaigns (ORC-7)."
+    },
+    "volumes": {
+      "type": "array",
+      "maxItems": 100,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "host": {
+            "$ref": "urn:botaru:schema:common:1#/$defs/name"
+          },
+          "volume": {
+            "$ref": "urn:botaru:schema:common:1#/$defs/name"
+          },
+          "writers": {
+            "type": "array",
+            "maxItems": 20,
+            "items": {
+              "oneOf": [
+                {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "tenant": {
+                      "$ref": "urn:botaru:schema:common:1#/$defs/tenant_name"
+                    },
+                    "quota_bytes": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 1000000000000000,
+                      "description": "Quota."
+                    }
+                  },
+                  "required": [
+                    "tenant",
+                    "quota_bytes"
+                  ]
+                },
+                {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "sink": {
+                      "$ref": "urn:botaru:schema:common:1#/$defs/name"
+                    },
+                    "quota_bytes": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 1000000000000000,
+                      "description": "Quota."
+                    }
+                  },
+                  "required": [
+                    "sink",
+                    "quota_bytes"
+                  ]
+                },
+                {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "pipeline": {
+                      "$ref": "urn:botaru:schema:common:1#/$defs/name"
+                    },
+                    "quota_bytes": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 1000000000000000,
+                      "description": "Quota."
+                    }
+                  },
+                  "required": [
+                    "pipeline",
+                    "quota_bytes"
+                  ]
+                }
+              ]
+            }
+          }
+        },
+        "required": [
+          "host",
+          "volume"
+        ]
+      },
+      "description": "Volumes res:<machine>:<volume> with writer quotas (CAP-6)."
+    }
+  }
+}

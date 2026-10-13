@@ -1,0 +1,57 @@
+schema: spec/manifests/channel.schema.json
+rules:
+- MAN-1
+description: 'Channel manifest specs that the kind schema rejects: extra field, missing required field, value outside the
+  closed list or format.'
+cases:
+- driver: telegram
+  identity_kind: telegram
+  identity_assurance: strong
+  membership_assurance: enforced
+  ai_disclosure: first_contact
+  provenance: visible_label
+  capabilities:
+    max_text: 4096
+    buttons: true
+    files: true
+    edit: true
+  rate:
+    per_minute: 20
+  unexpected_field: true
+- identity_kind: telegram
+  identity_assurance: strong
+  membership_assurance: enforced
+  ai_disclosure: first_contact
+  provenance: visible_label
+  capabilities:
+    max_text: 4096
+    buttons: true
+    files: true
+    edit: true
+  rate:
+    per_minute: 20
+- driver: telegram
+  identity_kind: telegram
+  membership_assurance: enforced
+  ai_disclosure: first_contact
+  provenance: visible_label
+  capabilities:
+    max_text: 4096
+    buttons: true
+    files: true
+    edit: true
+  rate:
+    per_minute: 20
+- driver: telegram
+  identity_kind: telegram
+  identity_assurance: strong
+  membership_assurance: enforced
+  ai_disclosure: never
+  provenance: visible_label
+  capabilities:
+    max_text: 4096
+    buttons: true
+    files: true
+    edit: true
+  rate:
+    per_minute: 20

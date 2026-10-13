@@ -1,0 +1,86 @@
+id: mem-fx-06
+rules: [MEM-6]
+description: 'One attempt yields no more than 3 facts (memory.facts.per_attempt); the core writes them at complete in the same
+  transaction, and a failed, canceled or fenced attempt leaves no facts. A store holds no more than 100 active
+  facts (memory.facts.max_active); on overflow the fact with the oldest last_used_at is evicted. When offering
+  a handover and when taking, the core rechecks evidence and value: an erased piece of evidence moves the fact to stale,
+  a mismatch gives fact_mismatch. Numbers of identities, facts, tasks and proposals are shortened, as in the example in docs/bots.md.'
+given: {tenant: demo}
+cases:
+- id: mem-fx-06-a
+  steps:
+  - call:
+      port: P1
+      op: complete
+      request:
+        result:
+          facts:
+          - kind: how_long
+            predicate: task.duration.p95_min
+            subject: {type: tasktype, id: demo.db.backup.v1, 'on': db1}
+          - kind: how_long
+            predicate: task.duration.p95_min
+            subject: {type: tasktype, id: demo.db.backup.v1, 'on': db1}
+          - kind: how_long
+            predicate: task.duration.p95_min
+            subject: {type: tasktype, id: demo.db.backup.v1, 'on': db1}
+          - kind: how_long
+            predicate: task.duration.p95_min
+            subject: {type: tasktype, id: demo.db.backup.v1, 'on': db1}
+  expect:
+    result: rejected
+    reason: output_schema_invalid
+    facts_written: 0
+    note: maxItems 3 in $defs/proposals
+- id: mem-fx-06-b
+  given:
+    attempt_end: fail
+    result_facts:
+    - kind: how_long
+      predicate: task.duration.p95_min
+      subject: {type: tasktype, id: demo.db.backup.v1, 'on': db1}
+  expect: {facts_written: 0}
+- id: mem-fx-06-c
+  given:
+    attempt_end: canceled
+    result_facts:
+    - kind: how_long
+      predicate: task.duration.p95_min
+      subject: {type: tasktype, id: demo.db.backup.v1, 'on': db1}
+  expect: {facts_written: 0}
+- id: mem-fx-06-d
+  given:
+    attempt_end: complete
+    token: stale
+    result_facts:
+    - kind: how_long
+      predicate: task.duration.p95_min
+      subject: {type: tasktype, id: demo.db.backup.v1, 'on': db1}
+  expect: {result: rejected, reason: fenced, facts_written: 0}
+- id: mem-fx-06-e
+  given:
+    active_facts: 100
+    oldest_last_used_at: {id: f_0007, last_used_at: '2026-09-01T03:00:00Z'}
+  steps:
+  - call:
+      port: P1
+      op: complete
+      request:
+        result:
+          facts:
+          - kind: how_long
+            predicate: task.duration.p95_min
+            subject: {type: tasktype, id: demo.db.backup.v1, 'on': db1}
+  expect: {active_facts: 100, evicted: f_0007, new_fact: active}
+- id: mem-fx-06-f
+  given:
+    fact: {id: f_0311, state: active, value: 58}
+    recheck_at: offer_create
+    evidence: erased
+  expect: {f_0311: stale, offered: false}
+- id: mem-fx-06-g
+  given:
+    fact: {id: f_0311, state: active, value: 58}
+    recheck_at: pick
+    recomputed_value: 71
+  expect: {reason: fact_mismatch, copied: false}

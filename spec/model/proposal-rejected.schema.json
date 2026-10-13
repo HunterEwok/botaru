@@ -1,0 +1,83 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:botaru:schema:proposal-rejected:1",
+  "title": "Data of the event proposal.rejected.v1",
+  "description": "A refusal when creating a proposal creates no record: the core writes the event proposal.rejected.v1 with a reason from a closed list, like a task enqueue refusal. The author sees their refusals in \"My results\" (DIG-7).",
+  "x-botaru-direction": "output",
+  "x-botaru-rules": [
+    "PRP-1",
+    "PRP-2",
+    "PRP-3",
+    "PRP-5",
+    "PRP-11",
+    "PRP-21"
+  ],
+  "type": "object",
+  "required": [
+    "reason",
+    "task",
+    "role"
+  ],
+  "properties": {
+    "reason": {
+      "enum": [
+        "schema_invalid",
+        "evidence_mismatch",
+        "forbidden_change",
+        "untrusted_direction",
+        "metric_unknown",
+        "recently_declined",
+        "proposal_rate_limited"
+      ],
+      "description": "Refusal reason.",
+      "x-botaru-registry": "reasons"
+    },
+    "task": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/object_id",
+      "description": "The analysis or aggregator task whose attempt handed in the body."
+    },
+    "role": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/name"
+    },
+    "acting_bot": {
+      "anyOf": [
+        {
+          "$ref": "urn:botaru:schema:common:1#/$defs/object_id"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "category": {
+      "anyOf": [
+        {
+          "$ref": "urn:botaru:schema:proposal-body:1#/$defs/category"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "problem_code": {
+      "anyOf": [
+        {
+          "$ref": "urn:botaru:schema:proposal-body:1#/$defs/problem_code"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "fingerprint": {
+      "anyOf": [
+        {
+          "$ref": "urn:botaru:schema:common:1#/$defs/hash"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    }
+  }
+}

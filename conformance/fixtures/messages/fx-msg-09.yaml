@@ -1,0 +1,175 @@
+id: fx-msg-09
+rules: [MSG-2, MSG-5, STA-1, PRF-1]
+description: 'Apply lint for message kinds and roles. A kind is a MessageType manifest with the name <genus>.<name>.vN, the genus
+  from the closed list spec/model/message-kinds.yaml; for genus state producers is only code (STA-1). Fields must not use
+  the formats of a capability, an approval, a system: key, a URL, an address, file_ref, a task id or a worker id. apply rejects
+  a pair (kind, address) without a receiving role, a kind with delivery all to a role without instance_inbox: true, an address to a role of profile
+  reviewer, aggregator, farm-manager, farm-manager-reader or translator, a non-empty messages.send for reporter, inbox.read
+  of a type outside the role''s receive, and a sender kind that is not in producers. A reference to a role without workers in the tenant is not counted
+  as an apply error: at send it gives address_invalid.'
+given:
+  tenant: demo
+  base_roles:
+  - name: reporter
+    profile: reporter
+    messages:
+      send: []
+      receive:
+      - {type: report.qc_note.v1}
+  - name: commission
+    profile: reviewer
+    messages:
+      send: []
+      receive: []
+  - name: translator
+    profile: translator
+    messages:
+      send: []
+      receive: []
+  - name: toolhost-web
+    instance_inbox: true
+    messages:
+      receive:
+      - {type: report.maintenance.v1}
+  - name: ops-lead
+    profile: manager
+    instance_inbox: false
+    messages:
+      receive:
+      - {type: report.work.v1}
+expect: {apply_rejects_on_first_error: true}
+cases:
+- given:
+    manifest:
+      kind: MessageType
+      name: report.qc_note.v1
+      spec:
+        kind: report
+        producers: [agent, job]
+    role:
+      name: analyst
+      messages:
+        send:
+        - type: report.qc_note.v1
+          to: ['role:reporter']
+  expect: {result: ok}
+- given:
+    manifest: {kind: MessageType, name: report.work.v1}
+    role:
+      name: analyst
+      messages:
+        send:
+        - type: report.work.v1
+          to: ['role:reporter']
+  expect: {result: rejected, stage: apply, error: no_receiver, note: reporter does not receive report.work.v1}
+- given:
+    manifest:
+      kind: MessageType
+      name: report.maintenance.v1
+      spec: {delivery: all}
+    role:
+      name: ops-coordinator
+      messages:
+        send:
+        - type: report.maintenance.v1
+          to: ['role:ops-lead']
+  expect: {result: rejected, stage: apply, error: delivery_all_without_instance_inbox}
+- given:
+    role:
+      name: analyst
+      messages:
+        send:
+        - type: report.qc_note.v1
+          to: ['role:commission']
+  expect: {result: rejected, stage: apply, error: forbidden_address}
+- given:
+    role:
+      name: analyst
+      messages:
+        send:
+        - type: report.qc_note.v1
+          to: ['role:translator']
+  expect: {result: rejected, stage: apply, error: forbidden_address}
+- given:
+    role:
+      name: reporter
+      profile: reporter
+      messages:
+        send:
+        - type: report.qc_note.v1
+          to: ['role:ops-lead']
+  expect: {result: rejected, stage: apply, error: reporter_send}
+- given:
+    tasktype:
+      name: ops.lead.review.v1
+      inbox:
+        read: [report.qc_note.v1]
+      claimed_by: ops-lead
+  expect: {result: rejected, stage: apply, error: inbox_read_not_in_receive}
+- given:
+    manifest:
+      kind: MessageType
+      name: state.worker.v1
+      spec:
+        kind: state
+        producers: [agent, code]
+  expect: {result: rejected, stage: apply, error: state_agent_producer}
+- given:
+    manifest:
+      kind: MessageType
+      name: report.work.v1
+      spec:
+        producers: [job]
+    role:
+      name: analyst
+      worker_kind: agent
+      messages:
+        send:
+        - type: report.work.v1
+          to: ['role:ops-lead']
+  expect: {result: rejected, stage: apply, error: producer_mismatch}
+- given:
+    manifest:
+      kind: MessageType
+      name: report.link.v1
+      spec:
+        fields_schema:
+          type: object
+          additionalProperties: false
+          properties:
+            url: {type: string, format: uri}
+  expect: {result: rejected, stage: apply, error: message_fields}
+- given:
+    manifest:
+      kind: MessageType
+      name: report.grant.v1
+      spec:
+        fields_schema:
+          type: object
+          additionalProperties: false
+          properties:
+            task: {x-botaru-format: id}
+            approval: {type: string}
+  expect: {result: rejected, stage: apply, error: message_fields}
+- given:
+    manifest:
+      kind: MessageType
+      name: request.restart.v1
+      spec: {kind: request}
+  expect: {result: rejected, stage: apply, error: message_name}
+- given:
+    role:
+      name: analyst
+      messages:
+        send:
+        - type: report.qc_note.v1
+          to: ['role:ops-lead-night']
+    roles_without_workers: [ops-lead-night]
+    extra_receive:
+      ops-lead-night: [report.qc_note.v1]
+    at_send: rejected(address_invalid)
+  expect: {result: ok}
+- description: state only by worker code
+  given:
+    tools_list: {role: ops-lead, attempt: any}
+  expect: {state_tool_for_model: none, state_via: P1 msg.send with the worker token}

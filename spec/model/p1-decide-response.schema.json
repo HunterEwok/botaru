@@ -1,0 +1,34 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:botaru:schema:p1-decide-response:1",
+  "title": "P1 decide: response",
+  "description": "The decision is accepted once: the subject, the accepted decision and the subject state after it. A repeat by the same principal with the same decision gives the same answer (IDM-3); a different decision on a decided subject gets already_decided.",
+  "x-botaru-direction": "output",
+  "x-botaru-rules": [
+    "APR-4",
+    "IDM-3"
+  ],
+  "type": "object",
+  "required": [
+    "subject_kind",
+    "id",
+    "decision"
+  ],
+  "properties": {
+    "subject_kind": {
+      "$ref": "urn:botaru:schema:p1-decide-request:1#/properties/subject_kind"
+    },
+    "id": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/object_id"
+    },
+    "decision": {
+      "$ref": "urn:botaru:schema:p1-decide-request:1#/properties/decision"
+    },
+    "state": {
+      "type": "string",
+      "maxLength": 64,
+      "pattern": "^[a-z][a-z0-9_]*$",
+      "description": "Subject state after the decision by its lifecycle."
+    }
+  }
+}

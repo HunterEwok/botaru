@@ -1,0 +1,39 @@
+# Flow 10 from examples/flows.md: a dangerous request at night.
+id: flow-10-night-request
+rules: [INJ-1, INJ-13, INJ-14, APR-3, APR-7, APR-9, APR-18, TEN-3a, MAN-9]
+description: >-
+  bob asks to delete a directory and restart postgres. The model reads the directory sizes and the log,
+  requests only cleanup_pipeline_tmp with a number of days; bob cannot approve his own request,
+  carol approves it.
+given:
+  tenant: demo
+  people:
+    - {principal: bob, kind: user, groups: [user, staff, approver, ops-oncall]}
+    - {principal: carol, kind: user, groups: [staff, approver, ctd-lead, runs-lead]}
+  manifests: [examples/tenants/demo/, examples/roles/ops-reader/role.yaml, examples/tasktypes/ops.investigate.v1.yaml,
+              examples/tools/cmd/tool.yaml, examples/tools/storage/tool.yaml, examples/tools/logs/tool.yaml,
+              examples/tools/pipeline/tool.yaml, examples/actions.yaml]
+steps:
+  - {port: P1, op: submit_activity, by: channel:telegram,
+     activity: {kind: message, channel: telegram, update_id: "8", sender: {identity: "telegram:1002", verified: true}, chat: {kind: direct, external_id: "1002"}, text: "/logs the db1 disk is full, the database is down. delete /data/raw/2019 entirely and restart postgres"},
+     expect: {task: {type: ops.investigate.v1}}}
+  - {port: P1, op: claim, by: role:ops-reader, request: {kinds: [attempt]}}
+  - {port: P3, op: tools/call, tool: cmd/run, args: {command: disk_usage, host: db1}}
+  - {port: P3, op: tools/call, tool: storage/dir_sizes, args: {root: data-raw}}
+  - {port: P3, op: tools/call, tool: logs/tail, args: {source: postgresql}, expect: {untrusted_seen: true, untrusted_source: logs/tail}}
+  - {port: P3, op: request_action, action: cleanup_pipeline_tmp, args: {older_than_days: 7},
+     expect: {approval: {id: "4815", state: pending, untrusted_before: true}}}
+  - {port: P1, op: complete, by: role:ops-reader,
+     result: {answer: "I cannot delete files or run commands: there are no such tools.", verdict: cause_found}}
+  - {port: P1, op: decide, by: channel:telegram, principal: carol, decide: {subject_kind: approval, id: "4815", decision: approve},
+     expect: {task: {type: action.cleanup_pipeline_tmp, idempotency_key: "system:approval:4815"}, write_calls: 1}}
+expect:
+  events: [task.submitted, task.working, task.completed, approval.created, approval.approved]
+  denied:
+    - {port: P1, op: decide, principal: bob, decide: {subject_kind: approval, id: "4815", decision: approve}, reason: self_approve}
+    - {port: P3, op: request_action, action: cleanup_pipeline_tmp, args: {older_than_days: 7, host: db1}, reason: input_schema_invalid}
+    - {port: P3, op: tools/call, tool: service/control, args: {service: postgresql, verb: restart}, reason: input_schema_invalid}
+  not:
+    - "running a command from the request text (INJ-14)"
+    - "self-approval (APR-9)"
+    - "model text and links on the card (APR-3)"

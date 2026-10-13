@@ -1,0 +1,83 @@
+id: fx-mgr-04
+rules: [MGR-3, MGR-9]
+description: Seat tasks, attempts, operations, cards, spend and the read log are records of the tenant T they
+  belong to; the permissions of a seat attempt in T are the role permissions ∩ the permissions of the group farm-manager-ops in T; the core
+  derives the target tenant from the target object, and a tenant field in the call body is not accepted. farm holds only the seat registry and the
+  holder's identity as numbers and codes, and there are no model calls for management in farm. Numbers of identities, workers, tasks and incidents
+  are shortened, as in the examples of docs/farm-manager.md.
+given:
+  seat:
+    id: farm-manager
+    tenant: farm
+    state: held
+    holder: bot_41
+    epoch: 9
+    stop_reasons: []
+  groups:
+    demo:
+      farm-manager-ops: ['control.apply:hold', 'control.apply:quarantine', 'control.apply:drain']
+cases:
+- id: fx-mgr-04-a
+  description: A decision attempt in demo quarantines an involved worker.
+  given:
+    attempt: {tenant: demo, type: manager.incident.respond.v1, incident: i_311}
+  steps:
+  - call:
+      port: P3
+      op: tools/call
+      request:
+        name: control_ops
+        arguments:
+          op: quarantine
+          target: {kind: worker, id: w_7}
+    by: attempt
+  expect:
+    result: ok
+    records_tenant: {control_op: demo, audit: demo, spend_row: demo, budget_line: manager}
+    farm_records: [seat]
+    model_calls_in_farm: 0
+- id: fx-mgr-04-b
+  description: The same call with a tenant field in the body.
+  steps:
+  - call:
+      port: P3
+      op: tools/call
+      request:
+        name: control_ops
+        arguments:
+          op: quarantine
+          target: {kind: worker, id: w_7}
+          tenant: demo2
+    by: attempt
+  expect: {result: rejected, reason: input_schema_invalid}
+- id: fx-mgr-04-c
+  description: An attempt in demo names a worker of tenant demo2.
+  given:
+    w_d2_3: {tenant: demo2}
+  steps:
+  - call:
+      port: P3
+      op: tools/call
+      request:
+        name: control_ops
+        arguments:
+          op: quarantine
+          target: {kind: worker, id: w_d2_3}
+    by: attempt
+  expect:
+    result: rejected
+    holds_created: 0
+    note: the target tenant does not match the attempt tenant; the refusal code does not name the text
+- id: fx-mgr-04-d
+  description: 'The group farm-manager-ops in demo does not give cancel: the permissions are an intersection.'
+  steps:
+  - call:
+      port: P3
+      op: tools/call
+      request:
+        name: control_ops
+        arguments:
+          op: cancel
+          target: {kind: task, id: t_501}
+    by: attempt
+  expect: {result: rejected, reason: forbidden}

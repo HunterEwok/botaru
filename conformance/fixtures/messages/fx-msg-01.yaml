@@ -1,0 +1,154 @@
+id: fx-msg-01
+rules: [MSG-1, MSG-6, MSG-16]
+description: The botaru.message/v1 envelope and core fields. The sender sets only the kind, the address, the fields, the note, its own key
+  and a ttl no longer than the kind's ttl; the core writes all CloudEvents attributes and botaru extensions from the credentials, the attempt
+  record and the kind manifest. The schema spec/model/msg-send-request.schema.json rejects a request with any core field. The field
+  dataorigin equals model if the model wrote the fields, including in a core auto-report on an agent task, and code in all
+  other cases.
+given:
+  tenant: demo
+  messagetypes:
+  - name: report.qc_note.v1
+    kind: report
+    data_class: internal
+    delivery: one
+    ttl: 24h
+    note: {max_chars: 500}
+    producers: [agent, job]
+  - name: report.work.v1
+    kind: report
+    data_class: internal
+    delivery: one
+    ttl: 72h
+    note: {max_chars: 500}
+    producers: [agent, job, core]
+  roles:
+  - name: analyst
+    worker_kind: agent
+    messages:
+      send:
+      - type: report.qc_note.v1
+        to: ['role:reporter']
+  - name: qc-job
+    worker_kind: job
+    messages:
+      send:
+      - type: report.work.v1
+        to: ['role:ops-lead']
+  - name: reporter
+    profile: reporter
+    messages:
+      receive:
+      - {type: report.qc_note.v1}
+  - name: ops-lead
+    profile: manager
+    messages:
+      receive:
+      - {type: report.work.v1}
+  routes:
+  - name: qc-to-lead
+    true: {task_done: data.qc.ctd.v1}
+    mode: report
+    report: {type: report.work.v1, to: 'role:ops-lead'}
+  attempt:
+    task: t_01JB0000000000000000000002
+    attempt: 1
+    root: t_01JB0000000000000000000001
+    worker: w_01JB000000000000000000000A
+    role: analyst
+    initiators: ['human:carol']
+    data_mark: internal
+    depth: 1
+    untrusted_seen: {value: true, source: tool_output}
+expect:
+  sender_writes_only: [type, to, reply_to, fields, note, idempotency_key, ttl]
+  core_fields_from_request: never
+cases:
+- description: model send
+  given: {then: complete}
+  steps:
+  - call:
+      port: P3
+      op: tools/call
+      request:
+        name: send_message
+        arguments:
+          type: report.qc_note.v1
+          to: role:reporter
+          fields: {resource: ctd-2026-08-p017, check: header_anomaly, points_rejected: 13}
+    note: The file header has a comment line of an unusual kind
+  expect:
+    envelope:
+      specversion: '1.0'
+      source: /w/w_01JB000000000000000000000A
+      type: botaru.msg.report.qc_note.v1
+      dataschema: urn:botaru:schema:msg:report.qc_note.v1
+      datacontenttype: application/json
+      tenant: demo
+      msgkind: report
+      msgto: role:reporter
+      msgdelivery: one
+      fromrole: analyst
+      fromtask: t_01JB0000000000000000000002
+      correlationid: t_01JB0000000000000000000001
+      causationid: t_01JB0000000000000000000002
+      idempotencykey: system:msg:t_01JB0000000000000000000002:1:1
+      hops: 2
+      datamark: internal
+      untrusted: true
+      untrustedsrc_includes: [note, tool_output]
+      dataorigin: model
+      origininitiators: ['human:carol']
+    envelope_schema: spec/model/message.schema.json
+- description: job code attempt
+  given:
+    attempt:
+      role: qc-job
+      worker_kind: job
+      untrusted_seen: {value: false, source: null}
+    then: complete
+  steps:
+  - call:
+      port: P1
+      op: msg.send
+      request:
+        type: report.work.v1
+        to: role:ops-lead
+        fields: {task_type: data.qc.ctd.v1, outcome: completed}
+  expect:
+    envelope: {dataorigin: code, untrusted: false, msgto: 'role:ops-lead'}
+- description: core auto-report on an agent task
+  given:
+    task_done:
+      task: t_01JB0000000000000000000002
+      type: data.qc.ctd.v1
+      executed_by: agent
+      summary_fields: {status: flagged, flags_count: 3}
+  expect:
+    envelope:
+      source: /core
+      fromrole: core
+      dataorigin: model
+      idempotencykey: system:report:t_01JB0000000000000000000002:qc-to-lead
+    published_in: transaction of the task's final transition
+- description: request with core fields
+  steps:
+  - call:
+      port: P3
+      op: tools/call
+      request:
+        name: send_message
+        arguments:
+          type: report.qc_note.v1
+          to: role:reporter
+          fields: {}
+          tenant: demo2
+          hops: 0
+          dataorigin: code
+          msgto: worker:w_01JB000000000000000000000B
+  expect:
+    result: rejected
+    stage: schema
+    reason: data_schema_invalid
+    model_sees: a short "no"
+    audit: message.rejected

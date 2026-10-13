@@ -1,0 +1,8 @@
+schema: spec/model/p2-seat-vacate-request.schema.json
+rules: [IDN-10, IDN-11]
+description: 'seat.vacate requests that the schema rejects: departure trigger in the body (only the core sets the trigger), no seat,
+  tenant field.'
+cases:
+  - {seat: "commission:1", reason: worker_gone}
+  - {}
+  - {seat: farm-manager, tenant: farm}

@@ -1,0 +1,27 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:botaru:schema:test-event-inject-request:1",
+  "title": "Test bench event.inject: request",
+  "description": "Give the core an external event the way an adapter would: an incoming Activity from a channel or monitoring adapter by the name of a test bench process. The core handles it by the same path as P1 submit_activity of that process.",
+  "x-botaru-direction": "input",
+  "x-botaru-rules": [
+    "APR-9",
+    "IDN-3",
+    "MON-5"
+  ],
+  "type": "object",
+  "required": [
+    "via",
+    "activity"
+  ],
+  "properties": {
+    "via": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/name",
+      "description": "Name of a test bench channel or monitoring adapter."
+    },
+    "activity": {
+      "$ref": "urn:botaru:schema:activity:1"
+    }
+  },
+  "additionalProperties": false
+}

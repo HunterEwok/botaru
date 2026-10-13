@@ -1,0 +1,127 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:botaru:schema:verdict:1",
+  "title": "Commission verdict",
+  "description": "Deterministic code computes the verdict by the commission manifest: the same inputs give the same verdict, and the model does not change it; the code does not read shadow reviews (COM-4, COM-9). The result comes only from a closed list. For the kind none only the lenses value and security count (COM-14).",
+  "x-botaru-direction": "record",
+  "x-botaru-rules": [
+    "COM-4",
+    "COM-14",
+    "PRP-12"
+  ],
+  "type": "object",
+  "required": [
+    "outcome",
+    "computed_at"
+  ],
+  "properties": {
+    "outcome": {
+      "enum": [
+        "recommended",
+        "parked(score)",
+        "parked(veto_lens_missing)",
+        "dismissed(veto)",
+        "dismissed(below_min)",
+        "dismissed(low_score)"
+      ],
+      "description": "Verdict result from a closed list (COM-4)."
+    },
+    "weighted_mean": {
+      "anyOf": [
+        {
+          "type": "number",
+          "description": "Weighted mean over the lenses with reviews.",
+          "minimum": 0,
+          "maximum": 4
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "value_score": {
+      "anyOf": [
+        {
+          "type": "integer",
+          "description": "Score of the lens value.",
+          "minimum": 0,
+          "maximum": 4
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "lenses": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "lens",
+          "score",
+          "veto",
+          "weight"
+        ],
+        "properties": {
+          "lens": {
+            "enum": [
+              "security",
+              "operational",
+              "cost",
+              "value",
+              "farm_manager"
+            ],
+            "x-botaru-registry": "lenses"
+          },
+          "score": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 4
+          },
+          "veto": {
+            "type": "boolean"
+          },
+          "weight": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 3
+          }
+        }
+      },
+      "maxItems": 5,
+      "description": "Reviews that the code read (without shadow)."
+    },
+    "missing_lenses": {
+      "type": "array",
+      "items": {
+        "enum": [
+          "security",
+          "operational",
+          "cost",
+          "value",
+          "farm_manager"
+        ]
+      },
+      "maxItems": 5,
+      "description": "Lenses without a review; for a lens without a veto this is a mark on the card."
+    },
+    "no_manager_vote": {
+      "type": "boolean",
+      "description": "The mark \"without the farm manager vote\" (since v0.2)."
+    },
+    "strict": {
+      "type": "array",
+      "items": {
+        "enum": [
+          "high_risk",
+          "untrusted"
+        ]
+      },
+      "maxItems": 2,
+      "description": "Strict thresholds that the code applied."
+    },
+    "computed_at": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/datetime"
+    }
+  }
+}

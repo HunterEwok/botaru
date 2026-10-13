@@ -1,0 +1,30 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:botaru:schema:p1-fail-request:1",
+  "title": "P1 fail: request",
+  "description": "The holder reports the end of work without an outcome: a reason code from reasons.yaml, retryable and retry_after_s. There is no free text reason; whether the reason spends an attempt is decided by the reason registry (FEN-3). The lease token is not passed in the body: the holder sends it in the Botaru-Lease header (spec/bindings/http/README.md), one way for all operations under a lease (FEN-2).",
+  "x-botaru-direction": "input",
+  "x-botaru-rules": [
+    "FEN-2",
+    "FEN-3",
+    "CAP-2",
+    "IDM-3"
+  ],
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "reason",
+    "retryable"
+  ],
+  "properties": {
+    "reason": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/reason"
+    },
+    "retryable": {
+      "type": "boolean"
+    },
+    "retry_after_s": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/seconds"
+    }
+  }
+}

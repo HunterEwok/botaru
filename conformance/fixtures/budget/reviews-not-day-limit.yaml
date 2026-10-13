@@ -1,0 +1,75 @@
+id: fx-budget-reviews-not-day-limit
+rules: [BUD-1]
+description: The daily limit of a principal applies only to tasks of the line work. A hundred reviews a day (line review)
+  do not use up the daily limit of the principal system and do not block enqueuing a schedule task from system; a hung reserve
+  does not eat the limit, because the reserve is freed when the task becomes terminal.
+cases:
+- id: bud-fx-01
+  rules: [BUD-1]
+  description: 100 reviews a day do not block a schedule task from system.
+  given:
+    done_today:
+    - type: review.risk.v1
+      purpose: review
+      line: review
+      subject: system
+      count: 100
+      spend_eur_each: 0.08
+    tenant: demo
+    budgets:
+      month_eur: 300
+      day_eur: 15
+      lines:
+        review: {month_eur: 50}
+    subject_day_eur: {system: 3}
+  steps:
+  - call:
+      port: P1
+      op: enqueue
+      request:
+        body: {type: report.daily.v1, goal: training task report.daily.v1}
+        idempotency_key: bud-fx-01-1
+    context: {purpose: report, line: work, subject: system, estimate_eur: 0.4}
+  expect:
+    outcome: accepted
+    reserved_in: [tenant.month, tenant.day, 'subject.day:system', tree, 'line:work']
+    subject_day_used_eur: {system: 0}
+- id: bud-fx-02
+  rules: [BUD-1]
+  description: The reserve of a task that became terminal is freed and does not eat the principal's daily limit.
+  given:
+    tasks:
+    - id: t_01JB8M0000000000000000000A
+      subject: human:alice
+      line: work
+      reserve_eur: 0.9
+      state: failed
+    tenant: demo
+    subject_day_eur: {'human:alice': 1}
+  steps:
+  - call:
+      port: P1
+      op: enqueue
+      request:
+        body: {type: ops.investigate.v1, goal: training task ops.investigate.v1}
+        idempotency_key: bud-fx-02-2
+    context: {purpose: work, line: work, subject: 'human:alice', estimate_eur: 0.4}
+  expect:
+    outcome: accepted
+    subject_day_reserved_eur: {'human:alice': 0.4}
+- id: bud-fx-03
+  rules: [BUD-1]
+  description: If at least one applicable limit is exhausted, the task gets rejected(budget_exhausted).
+  given:
+    subject_day_used_eur: {'human:alice': 0.8}
+    tenant: demo
+    subject_day_eur: {'human:alice': 1}
+  steps:
+  - call:
+      port: P1
+      op: enqueue
+      request:
+        body: {type: ops.investigate.v1, goal: training task ops.investigate.v1}
+        idempotency_key: bud-fx-03-3
+    context: {purpose: work, line: work, subject: 'human:alice', estimate_eur: 0.4}
+  expect: {result: rejected, reason: budget_exhausted}

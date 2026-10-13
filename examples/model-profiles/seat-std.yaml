@@ -1,0 +1,21 @@
+# Model profile seat-std: commission seats, family family-a. Prices and ranks are illustrative (docs/models-and-money.md).
+apiVersion: botaru/v1alpha1
+kind: ModelProfile
+metadata: {name: seat-std}
+spec:
+  provider: provider-a
+  model: model-a-large-2026-09
+  family: family-a
+  rank: 3
+  pool: family-a
+  fallback: []
+  fallback_on: [overloaded, unavailable, retired]
+  max_output_tokens: 8000
+  tokens_per_s: 60
+  price: {input: 3.00, output: 12.00, checked: 2026-10-01}
+  provider_retention_days: {value: 30, checked: 2026-10-01}
+  requires_retention: false
+  provider_training: {value: false, checked: 2026-10-01}
+  provider_human_review: {value: abuse_only, checked: 2026-10-01}
+  subprocessors: []
+  retires_at: null

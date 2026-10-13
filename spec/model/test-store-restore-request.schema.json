@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:botaru:schema:test-store-restore-request:1",
+  "title": "Test bench store.restore: request",
+  "description": "Restore the test bench store from the backup label by the real restore path: the store epoch grows, a restore record is written to the farm chain, and until ready the core answers not_ready (RET-6). Test bench port only.",
+  "x-botaru-direction": "input",
+  "x-botaru-rules": [
+    "APR-9",
+    "RET-6",
+    "AUD-6"
+  ],
+  "type": "object",
+  "required": [
+    "label"
+  ],
+  "properties": {
+    "label": {
+      "description": "Label of a test bench backup.",
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9_.-]{0,63}$",
+      "maxLength": 64
+    }
+  },
+  "additionalProperties": false
+}

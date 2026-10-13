@@ -1,0 +1,8 @@
+schema: spec/model/p1-claim-request.schema.json
+rules: [DSP-1, DSP-2]
+description: claim requests that the schema accepts.
+cases:
+- kinds: [attempt]
+  wait_s: 30
+- kinds: [toolcall]
+- kinds: [delivery, attempt]

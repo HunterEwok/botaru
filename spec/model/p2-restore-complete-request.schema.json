@@ -1,0 +1,18 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:botaru:schema:p2-restore-complete-request:1",
+  "title": "P2 restore.complete: request",
+  "description": "Completion of a restore from backup. With spend_pending, readiness without a provider report: the alarm alarm.spend.unreconciled and the daily limits of all tenants halved until spend.reconcile (RET-6).",
+  "x-botaru-direction": "input",
+  "x-botaru-rules": [
+    "RET-6"
+  ],
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "spend_pending": {
+      "description": "The --spend-pending flag.",
+      "type": "boolean"
+    }
+  }
+}

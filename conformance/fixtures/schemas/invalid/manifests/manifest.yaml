@@ -1,0 +1,83 @@
+schema: urn:botaru:schema:manifest:1
+rules:
+- MAN-1
+- TEN-6
+description: 'The wrapper rejects: a status field in git, metadata.tenant on a global role, a group without a tenant, apiVersion
+  botaru/v1 before release 1.0.0, a kind without a schema (Script v0.2), a name not in id format, a manifest without spec.'
+cases:
+- apiVersion: botaru/v1alpha1
+  kind: Role
+  metadata:
+    name: hello
+  spec:
+    profile: worker
+    worker_kind: agent
+    claims:
+    - hello.greet.v1
+    models:
+      base: base-std
+    memory: none
+  status:
+    applied_commit: abc123
+- apiVersion: botaru/v1alpha1
+  kind: Role
+  metadata:
+    name: hello
+    tenant: demo
+  spec:
+    profile: worker
+    worker_kind: agent
+    claims:
+    - hello.greet.v1
+    models:
+      base: base-std
+    memory: none
+- apiVersion: botaru/v1alpha1
+  kind: Group
+  metadata:
+    name: hello
+  spec:
+    caps:
+    - task:hello.greet.v1
+    data:
+    - summary
+- apiVersion: botaru/v1
+  kind: Role
+  metadata:
+    name: hello
+  spec:
+    profile: worker
+    worker_kind: agent
+    claims:
+    - hello.greet.v1
+    models:
+      base: base-std
+    memory: none
+- apiVersion: botaru/v1alpha1
+  kind: Script
+  metadata:
+    name: hello
+  spec:
+    profile: worker
+    worker_kind: agent
+    claims:
+    - hello.greet.v1
+    models:
+      base: base-std
+    memory: none
+- apiVersion: botaru/v1alpha1
+  kind: Role
+  metadata:
+    name: Ops_Reader
+  spec:
+    profile: worker
+    worker_kind: agent
+    claims:
+    - hello.greet.v1
+    models:
+      base: base-std
+    memory: none
+- apiVersion: botaru/v1alpha1
+  kind: Role
+  metadata:
+    name: hello

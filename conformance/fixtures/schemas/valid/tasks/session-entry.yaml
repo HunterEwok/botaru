@@ -1,0 +1,11 @@
+schema: spec/model/session-entry.schema.json
+rules: [MEM-1]
+description: 'Session entries that the schema accepts: a regular entry and a compaction summary entry.'
+cases:
+- uuid: 0f8a3c2e-5b1d-4c7a-9e2f-1a2b3c4d5e6f
+  content:
+    role: assistant
+    text: 'Which service: nginx or app-api?'
+- uuid: 0f8a3c2e-5b1d-4c7a-9e2f-1a2b3c4d5e6f
+  summary: true
+  content: conversation summary

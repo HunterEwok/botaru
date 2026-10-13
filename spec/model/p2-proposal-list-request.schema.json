@@ -1,0 +1,56 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:botaru:schema:p2-proposal-list-request:1",
+  "title": "P2 proposal.list: request",
+  "description": "Showing the proposals of one's own tenant to a person with proposal.decide:<category>; the tenant comes from the credentials (TEN-2). There are no decisions in P2: buttons go through P1 decide (APR-4). Denial: forbidden.",
+  "x-botaru-direction": "input",
+  "x-botaru-rules": [
+    "DIG-1",
+    "PRP-4"
+  ],
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "state": {
+      "type": "array",
+      "items": {
+        "enum": [
+          "screened",
+          "in_review",
+          "recommended",
+          "parked",
+          "dismissed",
+          "presented",
+          "declined",
+          "expired",
+          "noted",
+          "realizing",
+          "realized",
+          "realization_failed",
+          "reverted",
+          "sampled",
+          "sample_presented",
+          "sample_judged",
+          "sample_closed"
+        ]
+      },
+      "maxItems": 17,
+      "description": "Filter by state.",
+      "uniqueItems": true
+    },
+    "category": {
+      "type": "array",
+      "items": {
+        "$ref": "urn:botaru:schema:proposal-body:1#/$defs/category"
+      },
+      "maxItems": 8,
+      "description": "Filter by category.",
+      "uniqueItems": true
+    },
+    "limit": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 1000
+    }
+  }
+}

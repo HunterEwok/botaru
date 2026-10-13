@@ -1,0 +1,26 @@
+schema: urn:botaru:schema:card:1
+rules:
+- APR-3
+description: A button with action arguments and a card without a bottom line are rejected.
+cases:
+- card: approval_card
+  subject_kind: approval
+  id: apr_01J9Z3M2Q8YB6V4N7T5K0C2D2F
+  nonce: n7Qx2LkP9vRt4WsZ
+  title: x
+  buttons:
+  - code: approve
+    subject_kind: approval
+    id: apr_01J9Z3M2Q8YB6V4N7T5K0C2D2F
+    nonce: n7Qx2LkP9vRt4WsZ
+    args:
+      older_than_days: 1
+  footer:
+    why_you: x
+    on_silence: x
+- card: approval_card
+  subject_kind: approval
+  id: apr_01J9Z3M2Q8YB6V4N7T5K0C2D2F
+  nonce: n7Qx2LkP9vRt4WsZ
+  title: x
+  buttons: []

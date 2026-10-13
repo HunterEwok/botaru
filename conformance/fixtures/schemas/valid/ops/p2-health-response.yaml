@@ -1,0 +1,22 @@
+schema: urn:botaru:schema:p2-health-response:1
+rules:
+- MON-2
+- LCY-6
+description: A response from the example in docs/monitoring.md and a response during a drain.
+cases:
+- alive: true
+  store_free_bytes: 88046829568
+  store_free_ratio: 0.41
+  oldest_urgent_age_s: 12
+  delivered_10m_ratio: 0.99
+  loop_tick_age_s:
+    reaper: 8
+    delivery: 3
+    alarm: 11
+    hold: 9
+  monitor_export_age_s:
+    demo: 40
+    farm: 12
+- alive: false
+  reason: draining
+  drain_until_s: 540

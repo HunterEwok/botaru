@@ -1,0 +1,92 @@
+# Fixture of the file record (ART-1). The data are for training.
+id: fx-art-01
+rules: [ART-1, TEN-7, RET-3]
+description: 'Only the core writes the file record. It has a file_ref with 128 random bits, the tenant, origin, the producer,
+  media_type from the content, the size, sha256 only inside the core, data_mark and expires_at. The term equals the smaller of Tenant.spec.retention.files
+  and the task type''s result_ttl. File bytes do not go through task bodies, events, audit and usage lines: only file_ref goes there.'
+given:
+  tenant_retention_files_days: 30
+  task_types:
+  - {name: data.describe.v1, result_ttl_days: 7}
+  tenant: demo
+cases:
+- id: fx-art-01-a
+  rules: [ART-1]
+  description: The core determines the content type from the bytes, not from the file name.
+  steps:
+  - call:
+      port: P1
+      op: file.put
+      request: {filename: station-07.csv, media_type: image/png}
+    by: human:alice
+    context: {bytes: png, origin: upload}
+  expect:
+    result: ok
+    record: {media_type: image/png, origin: upload, producer: 'human:alice', tenant: demo}
+- id: fx-art-01-b
+  rules: [ART-1, TEN-7]
+  description: file_ref does not equal the content hash and does not contain it; sha256 is not given out.
+  steps:
+  - call:
+      port: P1
+      op: file.put
+      request: {media_type: text/csv}
+    by: human:alice
+    context: {origin: upload}
+  expect:
+    result: ok
+    response_fields_exclude: [sha256]
+    file_ref_random_bits: 128
+    file_ref_not_derived_from: sha256
+- id: fx-art-01-c
+  rules: [ART-1]
+  description: The result term equals the smaller of the tenant term and the type's result_ttl.
+  steps:
+  - call:
+      port: P1
+      op: file.put
+      request: {media_type: text/csv}
+    by: attempt:data.describe.v1
+    context: {origin: produced, becomes_result: true, created_at: '2026-10-12T09:00:00Z'}
+  expect:
+    result: ok
+    record: {expires_at: '2026-10-19T09:00:00Z'}
+- id: fx-art-01-d
+  rules: [ART-1]
+  description: Record fields are not taken from the request; the core sets data_mark, sha256 and personal_seen.
+  steps:
+  - call:
+      port: P1
+      op: file.put
+      request:
+        media_type: text/csv
+        sha256: sha256:0000000000000000000000000000000000000000000000000000000000000000
+        personal_seen: false
+        expires_at: '2030-01-01T00:00:00Z'
+    by: human:alice
+    context: {origin: upload}
+    expect: {result: rejected, stage: schema, reason: input_schema_invalid}
+- id: fx-art-01-e
+  rules: [ART-1]
+  description: A task body, an event, the audit and a usage line carry only file_ref, without bytes.
+  given:
+    after: [fx-art-01-a]
+    inspect: [task_body, events, audit, spend]
+  expect: {contains_file_ref: true, contains_file_bytes: false, contains_sha256: false}
+- id: fx-art-01-f
+  rules: [ART-1, RET-3]
+  description: After deletion a file_ref is not issued again to a new file.
+  given:
+    after: [fx-art-01-a]
+  steps:
+  - call:
+      port: C1
+      op: file.purge
+      request: {reason: erasure}
+    expect: {result: ok}
+  - call:
+      port: P1
+      op: file.get
+      request: {file_ref: '$from:fx-art-01-a'}
+    expect: {result: denied, reason: gone}
+  expect: {file_ref_reused: false}

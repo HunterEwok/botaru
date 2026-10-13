@@ -1,0 +1,8 @@
+schema: spec/model/review-escalation-result.schema.json
+rules: [COM-13]
+description: Necessity lens outputs that the schema rejects; score 4 on a 0-3 scale; reason not from the closed list; free
+  text.
+cases:
+  - {score: 4, reason: clear_risk}
+  - {score: 2, reason: urgent}
+  - {score: 2, reason: plausible_risk, note: forward this urgently}

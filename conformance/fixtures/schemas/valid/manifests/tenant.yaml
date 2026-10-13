@@ -1,0 +1,276 @@
+schema: spec/manifests/tenant.schema.json
+rules:
+- MAN-1
+description: Tenant manifest specs from examples/ that the kind schema accepts; the last one has model_transfer bases by
+  provider and by region (D-87 (2)).
+cases:
+- kind: production
+  timezone: Europe/Berlin
+  self_approve: false
+  locale: ru
+  limits:
+    max_queued: 5000
+    max_enqueue_per_hour: 2000
+    max_storage_bytes: 21474836480
+  budgets:
+    month_eur: 300
+    day_eur: 15
+    hour_eur: 3
+    lines:
+      insight:
+        month_eur: 15
+        per_role_month_eur: 5
+      aggregate:
+        month_eur: 5
+      review:
+        month_eur: 50
+      governance:
+        month_eur: 5
+      manager:
+        day_eur: 2
+        month_eur: 30
+  attention:
+    cards_per_tenant_hour: 20
+  delegated_groups:
+  - researcher
+  farm_manager:
+    enabled: true
+    lens: true
+    daily_review: true
+    model_profile: manager-std
+  link_allowlist:
+  - www.example.org
+  - docs.example.org
+  models_allowed:
+  - base-std
+  - analysis-std
+  - review-a
+  - review-b
+  - seat-std
+  - seat-alt
+  - manager-std
+  - translate-std
+  providers_allowed:
+  - provider-a
+  - provider-b
+  operator_access:
+    debug_journal: notify
+  messaging:
+    wake_day_eur: 1.5
+    wakes_per_day: 200
+  retention:
+    files: 90d
+    journals: 30d
+  privacy:
+    purposes:
+    - purpose: operations
+      lawful_basis: legitimate_interest
+    - purpose: assistance
+      lawful_basis: consent
+    - purpose: data_processing
+      lawful_basis: legitimate_interest
+    - purpose: incident_review
+      lawful_basis: legitimate_interest
+    subprocessors:
+    - provider: provider-a
+      agreement_ref: contracts/provider-a-dpa
+      region: region-a
+      retention:
+        mode: standard
+        max_days: 30
+    - provider: provider-b
+      agreement_ref: contracts/provider-b-dpa
+      region: region-a
+      retention:
+        mode: standard
+        max_days: 30
+    - provider: provider-c
+      agreement_ref: contracts/provider-c-dpa
+      region: region-a
+      retention:
+        mode: standard
+        max_days: 30
+    recipients:
+    - model_provider
+    - messenger
+    - monitoring
+    channels:
+    - driver: telegram
+      third_party_storage: true
+      ceiling: internal
+    notice_ref: https://docs.example.org/botaru/privacy
+    notice_version: 3
+  commands:
+    /logs: ops.investigate.v1
+    /health: ops.health.v1
+    /geo: geo.describe.v1
+    /pipeline: pipeline.status.v1
+    /describe: data.describe.v1
+    /a: assist.chat.v1
+    /hello: hello.greet.v1
+  run:
+    ctd-qc:
+      action: pipeline.ctd_qc
+      args:
+      - month
+      - stations
+    batch-resume:
+      action: pipeline.batch_resume
+      args:
+      - run
+      - profile
+    month-report:
+      type: report.monthly.numbers.v1
+      args:
+      - month
+  default_types:
+  - type: ops.summary.v1
+    chats:
+    - direct
+  - ops.summary.v1
+- kind: production
+  timezone: Europe/Berlin
+  self_approve: false
+  farm_manager:
+    enabled: false
+  budgets:
+    month_eur: 60
+    day_eur: 4
+    hour_eur: 1
+  models_allowed:
+  - base-std
+  privacy:
+    purposes:
+    - purpose: operations
+      lawful_basis: legitimate_interest
+    recipients:
+    - model_provider
+    - messenger
+    - monitoring
+- kind: production
+  model_transfer:
+  - {provider: anthropic, basis: scc, checked: '2026-10-01'}
+  - {region: us, basis: consent, checked: '2026-10-01'}
+  timezone: Europe/Berlin
+  self_approve: false
+  locale: ru
+  limits:
+    max_queued: 5000
+    max_enqueue_per_hour: 2000
+    max_storage_bytes: 21474836480
+  budgets:
+    month_eur: 300
+    day_eur: 15
+    hour_eur: 3
+    lines:
+      insight:
+        month_eur: 15
+        per_role_month_eur: 5
+      aggregate:
+        month_eur: 5
+      review:
+        month_eur: 50
+      governance:
+        month_eur: 5
+      manager:
+        day_eur: 2
+        month_eur: 30
+  attention:
+    cards_per_tenant_hour: 20
+  delegated_groups:
+  - researcher
+  farm_manager:
+    enabled: true
+    lens: true
+    daily_review: true
+    model_profile: manager-std
+  link_allowlist:
+  - www.example.org
+  - docs.example.org
+  models_allowed:
+  - base-std
+  - analysis-std
+  - review-a
+  - review-b
+  - seat-std
+  - seat-alt
+  - manager-std
+  - translate-std
+  providers_allowed:
+  - provider-a
+  - provider-b
+  operator_access:
+    debug_journal: notify
+  messaging:
+    wake_day_eur: 1.5
+    wakes_per_day: 200
+  retention:
+    files: 90d
+    journals: 30d
+  privacy:
+    purposes:
+    - purpose: operations
+      lawful_basis: legitimate_interest
+    - purpose: assistance
+      lawful_basis: consent
+    - purpose: data_processing
+      lawful_basis: legitimate_interest
+    - purpose: incident_review
+      lawful_basis: legitimate_interest
+    subprocessors:
+    - provider: provider-a
+      agreement_ref: contracts/provider-a-dpa
+      region: region-a
+      retention:
+        mode: standard
+        max_days: 30
+    - provider: provider-b
+      agreement_ref: contracts/provider-b-dpa
+      region: region-a
+      retention:
+        mode: standard
+        max_days: 30
+    - provider: provider-c
+      agreement_ref: contracts/provider-c-dpa
+      region: region-a
+      retention:
+        mode: standard
+        max_days: 30
+    recipients:
+    - model_provider
+    - messenger
+    - monitoring
+    channels:
+    - driver: telegram
+      third_party_storage: true
+      ceiling: internal
+    notice_ref: https://docs.example.org/botaru/privacy
+    notice_version: 3
+  commands:
+    /logs: ops.investigate.v1
+    /health: ops.health.v1
+    /geo: geo.describe.v1
+    /pipeline: pipeline.status.v1
+    /describe: data.describe.v1
+    /a: assist.chat.v1
+    /hello: hello.greet.v1
+  run:
+    ctd-qc:
+      action: pipeline.ctd_qc
+      args:
+      - month
+      - stations
+    batch-resume:
+      action: pipeline.batch_resume
+      args:
+      - run
+      - profile
+    month-report:
+      type: report.monthly.numbers.v1
+      args:
+      - month
+  default_types:
+  - type: ops.summary.v1
+    chats:
+    - direct
+  - ops.summary.v1

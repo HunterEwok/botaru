@@ -1,0 +1,21 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:botaru:schema:script-propose-request:1",
+  "title": "P3 propose_script: arguments",
+  "description": "A built-in tool of the translator profile only, at most 3 calls per attempt (TRN-3). There is one argument: a botaru.script/v1 draft.",
+  "x-botaru-direction": "input",
+  "x-botaru-rules": [
+    "TRN-3",
+    "SCR-5"
+  ],
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "script"
+  ],
+  "properties": {
+    "script": {
+      "$ref": "urn:botaru:schema:script:1"
+    }
+  }
+}

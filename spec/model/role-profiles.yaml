@@ -1,0 +1,120 @@
+registry: role-profiles
+version: 1
+description: >-
+  Role profiles (Role.spec.profile). A profile grants no permissions and is not part of the C2
+  permission formula: it only narrows what a role may declare and carries the model rank
+  ceilings. Record fields: purposes (purposes of types from task-purposes.yaml that
+  a role of this profile may take in claims), max_task_tier (the highest tier
+  of such a type; null means no profile ceiling), must_be_empty (role fields
+  that are empty or forbidden for the profile), slots (model slots that the role
+  may declare), memory (what may be declared in memory), may_declare (role fields
+  and sections that the profile may declare beyond the common ones: service_control,
+  monitor_scripts, insight, scripts_in_proposal), max_rank (the rank ceiling of the
+  model profile for the slots base and seat), analysis_max_rank (the ceiling for the slot
+  analysis, null if there is no such slot). The ceiling numbers are taken from the example in docs/bots.md
+  (D-19, the model lineup is notional); the tenant charter may only lower them
+  (GOV-3). Which P3 built-in tools are available to a profile is set by
+  builtin-tools.yaml. A new profile is added only through an ADR and a minor
+  version of the role schema.
+source: docs/scripts-and-translator.md
+entries:
+  - id: worker
+    since: v0.1
+    meaning: functionary, a working bot; the default profile for a role without the profile field
+    purposes: [work, insight, handover]
+    max_task_tier: null
+    must_be_empty: []
+    slots: [base, analysis]
+    memory: [none, person, bot]
+    may_declare: [service_control, monitor_scripts, insight, scripts_in_proposal]
+    max_rank: 1
+    analysis_max_rank: 2
+    rules: [PRF-1, MEM-2, GOV-3]
+  - id: manager
+    since: v0.1
+    meaning: functionary manager; it releases and assigns nothing itself
+    purposes: [work, insight, handover]
+    max_task_tier: null
+    must_be_empty: []
+    slots: [base, analysis]
+    memory: [none, person, bot]
+    may_declare: [service_control, monitor_scripts, insight, scripts_in_proposal]
+    max_rank: 1
+    analysis_max_rank: 2
+    rules: [PRF-1, GOV-3]
+  - id: reporter
+    since: v0.1
+    meaning: reporter; takes only types of purpose report of tier 0 that declare only the views status.* and inbox.read
+    purposes: [report]
+    max_task_tier: 0
+    must_be_empty: [tools, may_enqueue, campaigns, actions_may_request, scripts, messages.send]
+    receive_kinds: [report]
+    slots: [base]
+    memory: [none]
+    may_declare: []
+    max_rank: 1
+    analysis_max_rank: null
+    rules: [PRF-1, MEM-2]
+  - id: translator
+    since: v0.1
+    meaning: translator; takes only types of purpose translate of tier 0 and hands in a script draft
+    purposes: [translate]
+    max_task_tier: 0
+    must_be_empty: [tools, may_enqueue, actions_may_request, messages.send, messages.receive]
+    campaigns_propose: [none]
+    scripts_propose: [draft]
+    slots: [base]
+    memory: [none]
+    may_declare: []
+    max_rank: 2
+    analysis_max_rank: null
+    rules: [PRF-1, MEM-2, TRN-3]
+  - id: reviewer
+    since: v0.1
+    meaning: commission member; no session, every task starts from a clean slate; the model does not write to memory
+    purposes: [review, governance, handover]
+    max_task_tier: 1
+    must_be_empty: [tools, may_enqueue, campaigns, actions_may_request, scripts, messages]
+    slots: [base]
+    memory: [none, read_bot]
+    may_declare: []
+    max_rank: 3
+    analysis_max_rank: null
+    rules: [PRF-1, MEM-2, COM-2]
+  - id: aggregator
+    since: v0.1
+    meaning: functionary aggregator; model of the analysis slot, budget line aggregate, output only proposals in the task result
+    purposes: [aggregate]
+    max_task_tier: 1
+    must_be_empty: [tools, may_enqueue, campaigns, actions_may_request, scripts, messages]
+    slots: [base, analysis]
+    memory: [none]
+    may_declare: []
+    max_rank: 1
+    analysis_max_rank: 2
+    rules: [PRF-1, MEM-2, INS-3]
+  - id: farm-manager
+    since: v0.1
+    meaning: farm manager, decision role; farm manager tools exist only in this profile
+    purposes: [manage, handover]
+    max_task_tier: null
+    must_be_empty: [may_enqueue, campaigns, scripts, messages]
+    slots: [base, seat]
+    memory: [none, bot]
+    may_declare: [service_control, monitor_scripts]
+    max_rank: 4
+    analysis_max_rank: null
+    rules: [PRF-1, MGR-25, GOV-3]
+  - id: farm-manager-reader
+    since: v0.1
+    meaning: farm manager, read role; only read tools and the built-in file_read, output only manager-finding/v1 findings
+    purposes: [inspect]
+    max_task_tier: null
+    must_be_empty: [actions_may_request, may_enqueue, campaigns, scripts, messages]
+    tools_access: [read]
+    slots: [base, seat]
+    memory: [none]
+    may_declare: []
+    max_rank: 4
+    analysis_max_rank: null
+    rules: [PRF-1, MGR-25, MEM-2]

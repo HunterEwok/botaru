@@ -1,0 +1,11 @@
+schema: spec/manifests/bot-group.schema.json
+rules:
+- MAN-1
+description: BotGroup manifest specs from examples/ that the kind schema accepts.
+cases:
+- select:
+    roles:
+    - data-reader
+    labels:
+      zone: lab
+  summary_for_managers: CTD data description bots in the lab

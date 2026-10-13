@@ -1,0 +1,103 @@
+# People groups of tenant demo (docs/permissions.md). Action permissions without wildcards (PRM-7).
+apiVersion: botaru/v1alpha1
+kind: Group
+metadata: {name: user, tenant: demo}
+spec:
+  caps: ["task:ops.summary.v1", "task:ops.health.v1"]
+  data: [summary, internal]
+  day_eur: 1.0
+---
+apiVersion: botaru/v1alpha1
+kind: Group
+metadata: {name: lead, tenant: demo}
+spec:
+  title: "Reports that show money"
+  caps: ["task:report.monthly.v1", "task:report.monthly.numbers.v1"]
+  data: [summary, internal]
+---
+apiVersion: botaru/v1alpha1
+kind: Group
+metadata: {name: assist, tenant: demo}
+spec:
+  caps: ["task:assist.chat.v1"]
+  data: [summary]
+---
+apiVersion: botaru/v1alpha1
+kind: Group
+metadata: {name: staff, tenant: demo}
+spec:
+  inherits: [user]
+  caps: ["task:ops.investigate.v1", "task:data.describe.v1", "action.request:cleanup_pipeline_tmp"]
+  data: [raw_logs]
+  day_eur: 5.0
+---
+apiVersion: botaru/v1alpha1
+kind: Group
+metadata: {name: ops-oncall, tenant: demo}
+spec:
+  caps: ["service.control:nginx", "monitor.script_run"]
+  data: [summary]
+---
+apiVersion: botaru/v1alpha1
+kind: Group
+metadata: {name: approver, tenant: demo}
+spec:
+  caps: ["action.approve:cleanup_pipeline_tmp", "control.approve",
+         "action.approve:service.control", "action.approve:monitor.script_run"]
+  data: [summary]
+---
+apiVersion: botaru/v1alpha1
+kind: Group
+metadata: {name: admin, tenant: demo}
+spec:
+  caps: ["admin:people", "hold.set:tenant", "hold.release", "proposal.decide:schedule", "control.approve",
+         "task:report.monthly.v1", "task:report.monthly.numbers.v1"]
+  data: [summary]
+---
+apiVersion: botaru/v1alpha1
+kind: Group
+metadata: {name: ctd, tenant: demo}
+spec:
+  caps: ["task:pipeline.status.v1", "action.request:pipeline.ctd_qc"]
+  data: [summary, internal]
+---
+apiVersion: botaru/v1alpha1
+kind: Group
+metadata: {name: ctd-lead, tenant: demo}
+spec:
+  caps: ["action.approve:pipeline.ctd_qc"]
+  data: [summary, internal]
+---
+apiVersion: botaru/v1alpha1
+kind: Group
+metadata: {name: runs, tenant: demo}
+spec:
+  caps: ["task:pipeline.status.v1", "action.request:pipeline.batch_resume"]
+  data: [summary, internal]
+---
+apiVersion: botaru/v1alpha1
+kind: Group
+metadata: {name: runs-lead, tenant: demo}
+spec:
+  caps: ["action.approve:pipeline.batch_resume"]
+  data: [summary, internal]
+---
+# In the tenant's delegated_groups: no actions and no decisions, task types of tier 1-2 and class at most internal (PRM-16).
+apiVersion: botaru/v1alpha1
+kind: Group
+metadata: {name: researcher, tenant: demo}
+spec:
+  caps: ["task:geo.describe.v1", "task:data.describe.v1"]
+  data: [summary, internal]
+---
+# Only for the principal system: exactly the task types of schedules and routes (PRM-10).
+apiVersion: botaru/v1alpha1
+kind: Group
+metadata: {name: system-ops, tenant: demo}
+spec:
+  caps: ["task:data.sensor_check.v1", "task:data.sensor_watch.v1", "task:report.sensor.v1", "task:check.http.v1",
+         "task:pipeline.watch.v1", "task:pipeline.status.v1", "task:pipeline.ctd_qc.report.v1",
+         "task:report.monthly.numbers.v1", "task:report.monthly.v1",
+         "service.control:nginx"]
+  data: [summary, internal]
+  day_eur: 3.0

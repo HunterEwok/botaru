@@ -1,0 +1,218 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:botaru:schema:insight-my-results:1",
+  "title": "\"My outcomes\"",
+  "description": "Closed table of the proposal outcomes of one author bot; only code assembles it (DIG-7). Rows: its proposals and its denials at creation. There are no reason codes of people's decisions and denials, no free text, no people's names, no lens scores, no case data and no queue (GOV-29). Order: rows with a measured trial outcome, then rows with only a people's decision, then the rest; the core puts the last 20 rows into the input of this bot's analysis tasks (INS-5). The form is closed at every level.",
+  "x-botaru-direction": "output",
+  "x-botaru-rules": [
+    "DIG-7",
+    "DIG-8",
+    "INS-5",
+    "PRP-20",
+    "PRP-22"
+  ],
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "bot",
+    "rows"
+  ],
+  "properties": {
+    "bot": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/object_id"
+    },
+    "rows": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "rejected",
+          "category",
+          "problem_code",
+          "state",
+          "human_outcome",
+          "trial_outcome"
+        ],
+        "properties": {
+          "id": {
+            "anyOf": [
+              {
+                "$ref": "urn:botaru:schema:common:1#/$defs/object_id",
+                "description": "Proposal id; null for a row of a denial at creation."
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "rejected": {
+            "type": "boolean",
+            "description": "Row of a denial at creation (proposal.rejected.v1)."
+          },
+          "category": {
+            "$ref": "urn:botaru:schema:proposal-body:1#/$defs/category"
+          },
+          "problem_code": {
+            "$ref": "urn:botaru:schema:proposal-body:1#/$defs/problem_code"
+          },
+          "state": {
+            "anyOf": [
+              {
+                "enum": [
+                  "screened",
+                  "in_review",
+                  "recommended",
+                  "parked",
+                  "dismissed",
+                  "presented",
+                  "declined",
+                  "expired",
+                  "noted",
+                  "realizing",
+                  "realized",
+                  "realization_failed",
+                  "reverted",
+                  "sampled",
+                  "sample_presented",
+                  "sample_judged",
+                  "sample_closed"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "human_outcome": {
+            "anyOf": [
+              {
+                "enum": [
+                  "accepted",
+                  "declined",
+                  "parked"
+                ],
+                "description": "Outcome class of the people's decision."
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "promised": {
+            "anyOf": [
+              {
+                "$ref": "urn:botaru:schema:proposal-body:1#/$defs/promised"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "trial_outcome": {
+            "anyOf": [
+              {
+                "enum": [
+                  "better",
+                  "unchanged",
+                  "worse",
+                  "undetermined",
+                  "mixed",
+                  "canceled"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "self_measured": {
+            "type": "boolean"
+          },
+          "revert_reason": {
+            "anyOf": [
+              {
+                "enum": [
+                  "harm_observed",
+                  "superseded",
+                  "other"
+                ],
+                "description": "Revert reason (PRP-20).",
+                "x-botaru-registry": "reasons"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "trial_numbers": {
+            "anyOf": [
+              {
+                "type": "object",
+                "description": "Since v0.2: trial numbers (DIG-8).",
+                "additionalProperties": false,
+                "properties": {
+                  "before": {
+                    "anyOf": [
+                      {
+                        "type": "number"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "after": {
+                    "anyOf": [
+                      {
+                        "type": "number"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "change_all": {
+                    "anyOf": [
+                      {
+                        "type": "number"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "change_without_author": {
+                    "anyOf": [
+                      {
+                        "type": "number"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "guard_broken": {
+                    "anyOf": [
+                      {
+                        "$ref": "urn:botaru:schema:observation-query:1#/$defs/series"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                }
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        }
+      },
+      "maxItems": 200
+    }
+  }
+}

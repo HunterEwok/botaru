@@ -1,0 +1,1061 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:botaru:schema:tenant:1",
+  "title": "Tenant",
+  "description": "spec of the Tenant manifest: the kind, the limits, the time zone, privacy, channel commands, /run, default_types and the blocks of farm parts (docs/task-language.md, \"Tenant fields\").",
+  "x-botaru-direction": "input",
+  "x-botaru-rules": [
+    "MAN-1",
+    "APR-9",
+    "CAP-1",
+    "TIM-2",
+    "BUD-1",
+    "SEC-8",
+    "PRM-16",
+    "IDN-6",
+    "APR-17",
+    "DSP-10"
+  ],
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "kind": {
+      "enum": [
+        "test",
+        "production"
+      ],
+      "description": "Tenant kind; production without the field (APR-9)."
+    },
+    "self_approve": {
+      "type": "boolean",
+      "description": "Whether one's own request can be approved; true on a production tenant does not pass apply (APR-9)."
+    },
+    "limits": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "max_queued": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 10000000,
+          "description": "Ceiling of tasks in the tenant's queue (CAP-1)."
+        },
+        "max_enqueue_per_hour": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 10000000,
+          "description": "Ceiling of enqueues per hour (CAP-1)."
+        },
+        "max_storage_bytes": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 1000000000000000,
+          "description": "Ceiling of the space of the tenant's files and artifacts in bytes (CAP-1)."
+        },
+        "max_file_bytes": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 10000000000000,
+          "description": "From v0.2: the limit of one file (ART-4).",
+          "x-botaru-version": "v0.2"
+        },
+        "max_task_files_bytes": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 10000000000000,
+          "description": "From v0.2: the limit of all files of one task (ART-4).",
+          "x-botaru-version": "v0.2"
+        }
+      },
+      "description": "Tenant limits; exceeding them gives over_capacity (CAP-1)."
+    },
+    "timezone": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/tz",
+      "description": "Time zone of schedules and budget windows (TIM-2)."
+    },
+    "models_allowed": {
+      "type": "array",
+      "maxItems": 50,
+      "items": {
+        "$ref": "urn:botaru:schema:common:1#/$defs/name"
+      },
+      "description": "Allowed model profiles (GW-7, GW-8).",
+      "uniqueItems": true
+    },
+    "providers_allowed": {
+      "type": "array",
+      "maxItems": 20,
+      "items": {
+        "$ref": "urn:botaru:schema:common:1#/$defs/name"
+      },
+      "description": "Allowed providers (SEC-8).",
+      "uniqueItems": true
+    },
+    "budgets": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "month_eur": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1000000,
+          "description": "Monthly limit of the tenant in euros (BUD-1)."
+        },
+        "day_eur": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1000000,
+          "description": "Daily limit; month_eur/20 by default."
+        },
+        "hour_eur": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1000000,
+          "description": "Hourly limit; month_eur/100 by default, exceeding it gives the runaway_spend hold for an hour (HLD-7)."
+        },
+        "lines": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "work": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "month_eur": {
+                  "type": "number",
+                  "minimum": 0,
+                  "maximum": 1000000,
+                  "description": "Amount in euros."
+                },
+                "day_eur": {
+                  "type": "number",
+                  "minimum": 0,
+                  "maximum": 1000000,
+                  "description": "Amount in euros."
+                },
+                "per_role_month_eur": {
+                  "type": "number",
+                  "minimum": 0,
+                  "maximum": 1000000,
+                  "description": "Amount in euros."
+                }
+              },
+              "description": "Budget line: a sublimit inside the total, 0 by default."
+            },
+            "insight": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "month_eur": {
+                  "type": "number",
+                  "minimum": 0,
+                  "maximum": 1000000,
+                  "description": "Amount in euros."
+                },
+                "day_eur": {
+                  "type": "number",
+                  "minimum": 0,
+                  "maximum": 1000000,
+                  "description": "Amount in euros."
+                },
+                "per_role_month_eur": {
+                  "type": "number",
+                  "minimum": 0,
+                  "maximum": 1000000,
+                  "description": "Amount in euros."
+                }
+              },
+              "description": "Budget line: a sublimit inside the total, 0 by default."
+            },
+            "aggregate": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "month_eur": {
+                  "type": "number",
+                  "minimum": 0,
+                  "maximum": 1000000,
+                  "description": "Amount in euros."
+                },
+                "day_eur": {
+                  "type": "number",
+                  "minimum": 0,
+                  "maximum": 1000000,
+                  "description": "Amount in euros."
+                },
+                "per_role_month_eur": {
+                  "type": "number",
+                  "minimum": 0,
+                  "maximum": 1000000,
+                  "description": "Amount in euros."
+                }
+              },
+              "description": "Budget line: a sublimit inside the total, 0 by default."
+            },
+            "review": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "month_eur": {
+                  "type": "number",
+                  "minimum": 0,
+                  "maximum": 1000000,
+                  "description": "Amount in euros."
+                },
+                "day_eur": {
+                  "type": "number",
+                  "minimum": 0,
+                  "maximum": 1000000,
+                  "description": "Amount in euros."
+                },
+                "per_role_month_eur": {
+                  "type": "number",
+                  "minimum": 0,
+                  "maximum": 1000000,
+                  "description": "Amount in euros."
+                }
+              },
+              "description": "Budget line: a sublimit inside the total, 0 by default."
+            },
+            "governance": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "month_eur": {
+                  "type": "number",
+                  "minimum": 0,
+                  "maximum": 1000000,
+                  "description": "Amount in euros."
+                },
+                "day_eur": {
+                  "type": "number",
+                  "minimum": 0,
+                  "maximum": 1000000,
+                  "description": "Amount in euros."
+                },
+                "per_role_month_eur": {
+                  "type": "number",
+                  "minimum": 0,
+                  "maximum": 1000000,
+                  "description": "Amount in euros."
+                }
+              },
+              "description": "Budget line: a sublimit inside the total, 0 by default."
+            },
+            "manager": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "month_eur": {
+                  "type": "number",
+                  "minimum": 0,
+                  "maximum": 1000000,
+                  "description": "Amount in euros."
+                },
+                "day_eur": {
+                  "type": "number",
+                  "minimum": 0,
+                  "maximum": 1000000,
+                  "description": "Amount in euros."
+                },
+                "per_role_month_eur": {
+                  "type": "number",
+                  "minimum": 0,
+                  "maximum": 1000000,
+                  "description": "Amount in euros."
+                }
+              },
+              "description": "Budget line: a sublimit inside the total, 0 by default."
+            }
+          },
+          "description": "Budget lines by type purposes (BUD-7)."
+        }
+      },
+      "required": [
+        "month_eur"
+      ],
+      "description": "Spending limits of the tenant (BUD-1)."
+    },
+    "privacy": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "purposes": {
+          "type": "array",
+          "maxItems": 20,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "purpose": {
+                "type": "string",
+                "maxLength": 40,
+                "description": "Purpose from spec/model/processing-purposes.yaml.",
+                "pattern": "^[a-z][a-z0-9_]*$",
+                "x-botaru-registry": "processing-purposes"
+              },
+              "lawful_basis": {
+                "enum": [
+                  "public_task",
+                  "legitimate_interest",
+                  "contract",
+                  "consent",
+                  "legal_obligation"
+                ],
+                "description": "Lawful basis; public_task by default, consent only with a consent record."
+              }
+            },
+            "required": [
+              "purpose"
+            ]
+          },
+          "description": "Processing purposes (SEC-8)."
+        },
+        "controller": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "name": {
+              "type": "string",
+              "maxLength": 200,
+              "description": "Controller name."
+            },
+            "contact": {
+              "type": "string",
+              "maxLength": 200,
+              "description": "Controller contact."
+            },
+            "agreement_ref": {
+              "type": "string",
+              "maxLength": 200,
+              "description": "Link to the data processing agreement."
+            }
+          }
+        },
+        "subprocessors": {
+          "type": "array",
+          "maxItems": 20,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "provider": {
+                "$ref": "urn:botaru:schema:common:1#/$defs/name",
+                "description": "Name of the provider binding."
+              },
+              "agreement_ref": {
+                "type": "string",
+                "maxLength": 200,
+                "description": "Link to the agreement."
+              },
+              "region": {
+                "$ref": "urn:botaru:schema:common:1#/$defs/name",
+                "description": "Region from the list of the provider binding."
+              },
+              "retention": {
+                "description": "Retention at the provider (GW-15).",
+                "oneOf": [
+                  {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                      "mode": {
+                        "const": "standard"
+                      },
+                      "max_days": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 3650,
+                        "description": "Longest retention period at the provider."
+                      }
+                    },
+                    "required": [
+                      "mode",
+                      "max_days"
+                    ]
+                  },
+                  {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                      "mode": {
+                        "const": "zero"
+                      }
+                    },
+                    "required": [
+                      "mode"
+                    ]
+                  }
+                ]
+              },
+              "terms": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "training": {
+                    "const": false,
+                    "description": "The provider does not train models on requests."
+                  },
+                  "human_review": {
+                    "enum": [
+                      "none",
+                      "abuse_only"
+                    ],
+                    "description": "Allowed review of requests by the provider's people."
+                  }
+                },
+                "description": "Agreement terms (GW-15)."
+              }
+            },
+            "required": [
+              "provider"
+            ]
+          },
+          "description": "Subprocessors (SEC-8, GW-14, GW-15)."
+        },
+        "channels": {
+          "type": "array",
+          "maxItems": 20,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "driver": {
+                "$ref": "urn:botaru:schema:common:1#/$defs/name",
+                "description": "Channel driver."
+              },
+              "third_party_storage": {
+                "type": "boolean",
+                "description": "Whether a third party stores the conversation."
+              },
+              "ceiling": {
+                "$ref": "urn:botaru:schema:common:1#/$defs/data_mark",
+                "description": "Ceiling of the channel's data class (SEC-9)."
+              }
+            },
+            "required": [
+              "driver"
+            ]
+          },
+          "description": "Channels and their ceilings."
+        },
+        "recipients": {
+          "type": "array",
+          "maxItems": 10,
+          "items": {
+            "enum": [
+              "model_provider",
+              "messenger",
+              "monitoring"
+            ]
+          },
+          "description": "Data recipients; monitoring is mandatory (MON-1).",
+          "uniqueItems": true
+        },
+        "notice_ref": {
+          "type": "string",
+          "maxLength": 300,
+          "description": "Link to the full text of the privacy notice."
+        },
+        "notice_version": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 100000,
+          "description": "Notice version for the privacy_notice delivery (SEC-13)."
+        },
+        "dpia_ref": {
+          "type": "string",
+          "maxLength": 200,
+          "description": "Link to the impact assessment, or an explicit none."
+        },
+        "ropa_ref": {
+          "type": "string",
+          "maxLength": 200,
+          "description": "Link to the record of processing activities."
+        },
+        "subject_request_days": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 90,
+          "description": "Deadline for answering a person's request, 30 days by default."
+        }
+      },
+      "description": "Privacy block of the tenant (SEC-8); the fields are described in docs/privacy.md."
+    },
+    "model_transfer": {
+      "type": "array",
+      "maxItems": 20,
+      "description": "Basis for transferring data to a model provider with a region outside the EU, separate for every controller tenant (GW-14, D-87 (2)). An entry covers a provider (all its regions or one region) or a region without a provider. A production tenant (kind: production) that has in privacy.subprocessors the provider of a profile from models_allowed with a region outside the EU (the list is in the note of the provider binding) passes apply only if such an entry exists (code transfer_basis_missing).",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "provider": {
+            "$ref": "urn:botaru:schema:common:1#/$defs/name",
+            "description": "Provider from privacy.subprocessors."
+          },
+          "region": {
+            "$ref": "urn:botaru:schema:common:1#/$defs/name",
+            "description": "Region from the list of the provider binding; without the field the entry covers all regions of the provider."
+          },
+          "basis": {
+            "enum": [
+              "scc",
+              "adequacy",
+              "consent"
+            ],
+            "description": "Basis: standard contractual clauses (scc), an adequacy decision (adequacy) or the consent of the tenant's people (consent)."
+          },
+          "checked": {
+            "$ref": "urn:botaru:schema:manifest:1#/$defs/date",
+            "description": "Date of the basis check."
+          }
+        },
+        "required": [
+          "basis",
+          "checked"
+        ],
+        "anyOf": [
+          {
+            "required": [
+              "provider"
+            ]
+          },
+          {
+            "required": [
+              "region"
+            ]
+          }
+        ]
+      }
+    },
+    "delegated_groups": {
+      "type": "array",
+      "maxItems": 50,
+      "items": {
+        "$ref": "urn:botaru:schema:common:1#/$defs/name"
+      },
+      "description": "Groups that the tenant admin grants without the operator (PRM-16).",
+      "uniqueItems": true
+    },
+    "operator_access": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "debug_journal": {
+          "enum": [
+            "deny",
+            "notify",
+            "allow"
+          ],
+          "description": "Reading the tenant's logs by the operator; notify by default."
+        }
+      }
+    },
+    "messaging": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "wake_day_eur": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1000000,
+          "description": "Daily ceiling of wake-ups by inbox; day_eur/10 by default (MSG-11)."
+        },
+        "wakes_per_day": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 100000,
+          "description": "Wake-ups per day per tenant; 200 by default."
+        }
+      }
+    },
+    "link_allowlist": {
+      "type": "array",
+      "maxItems": 100,
+      "items": {
+        "$ref": "urn:botaru:schema:manifest:1#/$defs/hostname"
+      },
+      "description": "Link domains that stay in outbound (INJ-11).",
+      "uniqueItems": true
+    },
+    "dispatch": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "fairness": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "weights": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "interactive": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 100,
+                  "description": "Fairness key weight."
+                },
+                "campaign": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 100,
+                  "description": "Fairness key weight."
+                },
+                "root": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 100,
+                  "description": "Fairness key weight."
+                },
+                "route": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 100,
+                  "description": "Fairness key weight."
+                },
+                "schedule": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 100,
+                  "description": "Fairness key weight."
+                }
+              }
+            }
+          },
+          "x-botaru-version": "v0.2"
+        },
+        "rules": {
+          "type": "array",
+          "maxItems": 100,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "match": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "type": {
+                    "$ref": "urn:botaru:schema:common:1#/$defs/type_name"
+                  },
+                  "type_prefix": {
+                    "type": "string",
+                    "maxLength": 120,
+                    "description": "Type name prefix with a dot at the end.",
+                    "pattern": "^[a-z][a-z0-9_]*(\\.[a-z0-9_]+)*\\.$"
+                  },
+                  "source": {
+                    "enum": [
+                      "interactive",
+                      "campaign",
+                      "root",
+                      "route",
+                      "schedule"
+                    ],
+                    "description": "Kind of the task source."
+                  }
+                },
+                "description": "Matching only by the type name or name prefix and the source kind (DSP-3)."
+              },
+              "group": {
+                "$ref": "urn:botaru:schema:common:1#/$defs/name",
+                "description": "Default bot group."
+              },
+              "group_fixed": {
+                "type": "boolean",
+                "description": "A request cannot set another group."
+              },
+              "priority_class": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 5,
+                "description": "Priority class; a rule can only lower it."
+              },
+              "max_running": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 100000,
+                "description": "At most this many tasks of the type at the same time in the tenant."
+              },
+              "max_share": {
+                "type": "string",
+                "maxLength": 4,
+                "description": "From v0.2: the share of concurrent slots of a bot group, for example 20%.",
+                "pattern": "^[1-9][0-9]?%$|^100%$",
+                "x-botaru-version": "v0.2"
+              },
+              "timeouts": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "attempt": {
+                    "$ref": "urn:botaru:schema:common:1#/$defs/duration"
+                  }
+                },
+                "description": "Attempt deadline: at most two deadlines of the type and no later than deadline."
+              },
+              "retry": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "max_attempts": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 3,
+                    "description": "Only less than for the type, and at least 1."
+                  }
+                }
+              }
+            },
+            "required": [
+              "match"
+            ],
+            "description": "Dispatcher rule; only narrows the hand-out (DSP-3)."
+          },
+          "description": "Rules in order: the first match."
+        },
+        "unclaimed_alarm_after": {
+          "$ref": "urn:botaru:schema:common:1#/$defs/duration",
+          "description": "When a task that nobody took gives an alarm; the type's start_by by default."
+        }
+      },
+      "description": "Dispatcher rules of the tenant (DSP-3)."
+    },
+    "commands": {
+      "type": "object",
+      "maxProperties": 50,
+      "description": "Channel command -> the full type name with .vN; built-in commands cannot be taken (PRM-17).",
+      "propertyNames": {
+        "pattern": "^/[a-z][a-z0-9_-]{0,30}$"
+      },
+      "additionalProperties": {
+        "$ref": "urn:botaru:schema:common:1#/$defs/type_name"
+      }
+    },
+    "run": {
+      "type": "object",
+      "maxProperties": 50,
+      "description": "Pipelines of the command /run <name>: exactly one of {type, args} or {action, args} (APR-17).",
+      "propertyNames": {
+        "pattern": "^[a-z][a-z0-9-]{0,62}$"
+      },
+      "additionalProperties": {
+        "oneOf": [
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "type": {
+                "$ref": "urn:botaru:schema:common:1#/$defs/type_name"
+              },
+              "args": {
+                "type": "array",
+                "maxItems": 16,
+                "items": {
+                  "type": "string",
+                  "pattern": "^[a-z][a-z0-9_]{0,63}$",
+                  "maxLength": 64
+                }
+              }
+            },
+            "required": [
+              "type",
+              "args"
+            ]
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "action": {
+                "$ref": "urn:botaru:schema:common:1#/$defs/dotted_name"
+              },
+              "args": {
+                "type": "array",
+                "maxItems": 16,
+                "items": {
+                  "type": "string",
+                  "pattern": "^[a-z][a-z0-9_]{0,63}$",
+                  "maxLength": 64
+                }
+              }
+            },
+            "required": [
+              "action",
+              "args"
+            ]
+          }
+        ]
+      }
+    },
+    "default_types": {
+      "type": "array",
+      "maxItems": 20,
+      "items": {
+        "anyOf": [
+          {
+            "$ref": "urn:botaru:schema:common:1#/$defs/type_name"
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "type": {
+                "$ref": "urn:botaru:schema:common:1#/$defs/type_name"
+              },
+              "chats": {
+                "type": "array",
+                "maxItems": 20,
+                "items": {
+                  "type": "string",
+                  "maxLength": 70,
+                  "pattern": "^(direct|group|chat:[a-z][a-z0-9-]{0,62})$"
+                },
+                "minItems": 1
+              }
+            },
+            "required": [
+              "type"
+            ]
+          }
+        ]
+      },
+      "description": "Types for free text in order; an assistant type does not pass apply (DSP-10)."
+    },
+    "insights": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "present_to": {
+          "$ref": "urn:botaru:schema:manifest:1#/$defs/address"
+        },
+        "digest": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "schedule": {
+              "type": "string",
+              "maxLength": 100,
+              "description": "Cron of the digest, five fields."
+            },
+            "max_items": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 50,
+              "description": "Digest size."
+            }
+          }
+        },
+        "realizers": {
+          "type": "array",
+          "maxItems": 20,
+          "items": {
+            "$ref": "urn:botaru:schema:common:1#/$defs/name"
+          },
+          "description": "Executors of accepted changes."
+        },
+        "realize_by": {
+          "$ref": "urn:botaru:schema:common:1#/$defs/duration"
+        },
+        "decide_ttl": {
+          "$ref": "urn:botaru:schema:common:1#/$defs/duration"
+        },
+        "recommend_ttl": {
+          "$ref": "urn:botaru:schema:common:1#/$defs/duration"
+        },
+        "park_ttl": {
+          "$ref": "urn:botaru:schema:common:1#/$defs/duration"
+        },
+        "review_wait_max": {
+          "$ref": "urn:botaru:schema:common:1#/$defs/duration"
+        },
+        "redecide_after": {
+          "$ref": "urn:botaru:schema:common:1#/$defs/duration"
+        },
+        "max_in_review": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 1000,
+          "description": "Limit of proposals in review."
+        },
+        "extra_guards": {
+          "type": "array",
+          "maxItems": 50,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "metric": {
+                "$ref": "urn:botaru:schema:common:1#/$defs/dotted_name"
+              },
+              "guards": {
+                "type": "array",
+                "maxItems": 20,
+                "items": {
+                  "$ref": "urn:botaru:schema:common:1#/$defs/dotted_name"
+                }
+              }
+            },
+            "required": [
+              "metric",
+              "guards"
+            ]
+          },
+          "description": "Guards that are only added to the tables of the trial registry."
+        }
+      },
+      "description": "The tenant's improvement cycle (DIG-1, DIG-2, PRP-5)."
+    },
+    "farm_manager": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "description": "Whether the farm manager works with the tenant; true by default (D-77)."
+        },
+        "lens": {
+          "type": "boolean",
+          "description": "Whether the farm manager lens is in the tenant's commission."
+        },
+        "daily_review": {
+          "type": "boolean",
+          "description": "Whether the farm manager runs a daily review."
+        },
+        "model_profile": {
+          "$ref": "urn:botaru:schema:common:1#/$defs/name",
+          "description": "Model profile of the seat (the seat slot)."
+        }
+      },
+      "description": "Relation to the farm manager (MGR, BUD-15)."
+    },
+    "campaigns": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "max_items": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 500,
+          "description": "Campaign items; the farm ceiling is 500."
+        },
+        "max_tree_tasks": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1000,
+          "description": "Tasks from one root; the farm ceiling is 1000 (ORC-8)."
+        },
+        "max_items_untrusted": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 500,
+          "description": "Campaign items under distrust."
+        },
+        "confirm_read_over": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "items": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 500,
+              "description": "Item threshold."
+            },
+            "eur": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1000000,
+              "description": "Amount in euros."
+            }
+          }
+        },
+        "queue_max": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 100000,
+          "description": "An item waits while the queue of its type is longer."
+        },
+        "escalate_paused_after": {
+          "$ref": "urn:botaru:schema:common:1#/$defs/duration"
+        }
+      },
+      "description": "Campaign ceilings of the tenant (ORC-5)."
+    },
+    "scripts": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "max_steps": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 20,
+          "description": "Steps in a script; 10 by default, the farm ceiling is 20."
+        },
+        "max_action_steps": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 3,
+          "description": "Steps with an action, at most 3."
+        },
+        "run_deadline": {
+          "$ref": "urn:botaru:schema:common:1#/$defs/duration",
+          "description": "Script run deadline, at most 6 hours."
+        }
+      },
+      "description": "Script ceilings; the tenant can only decrease them (SCR-5)."
+    },
+    "attention": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "cards_per_tenant_hour": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 10000,
+          "description": "Cards per hour per tenant; 20 by default (APR-2)."
+        },
+        "noncritical_per_day": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 1000,
+          "description": "From v0.2: non-urgent cards to a person per day (APR-15).",
+          "x-botaru-version": "v0.2"
+        }
+      }
+    },
+    "retention": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "files": {
+          "$ref": "urn:botaru:schema:common:1#/$defs/duration",
+          "description": "File period; by it the core sets expires_at (ART-1)."
+        },
+        "journals": {
+          "$ref": "urn:botaru:schema:common:1#/$defs/duration",
+          "description": "Period of attempt journals (AUD-4)."
+        },
+        "classes": {
+          "type": "object",
+          "maxProperties": 20,
+          "propertyNames": {
+            "pattern": "^[a-z][a-z0-9_]*$"
+          },
+          "additionalProperties": {
+            "$ref": "urn:botaru:schema:common:1#/$defs/duration"
+          },
+          "description": "Periods by retention classes from retention-classes.yaml (RET-2)."
+        }
+      },
+      "description": "From v0.2: retention periods (RET-2).",
+      "x-botaru-version": "v0.2"
+    },
+    "locale": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/locale",
+      "description": "From v0.2: the default language of code texts (DLV-9).",
+      "x-botaru-version": "v0.2"
+    }
+  }
+}

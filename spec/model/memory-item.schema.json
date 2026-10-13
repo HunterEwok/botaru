@@ -1,0 +1,84 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:botaru:schema:memory-item:1",
+  "title": "Person memory item",
+  "description": "Memory item of the person scope (MemoryItem). The model only proposes an item; the person's own decision through P1 decide with the subject memory_record makes it active, on silence until the card deadline (7 days) the item is discarded (MEM-3). The core computes the space (tenant, person, subject) (MEM-1). The core sets the personal_seen flag (AUD-5). Deletion only by an erasure request (MEM-4, RET-7).",
+  "x-botaru-direction": "record",
+  "x-botaru-retention": "memory",
+  "x-botaru-rules": [
+    "MEM-1",
+    "MEM-3",
+    "MEM-4"
+  ],
+  "type": "object",
+  "required": [
+    "id",
+    "tenant",
+    "scope",
+    "subject",
+    "role",
+    "key",
+    "state",
+    "personal_seen",
+    "created_at"
+  ],
+  "properties": {
+    "id": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/object_id",
+      "description": "Item id."
+    },
+    "tenant": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/tenant_name",
+      "description": "Tenant."
+    },
+    "scope": {
+      "description": "Memory scope: only person.",
+      "const": "person"
+    },
+    "subject": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/principal_ref",
+      "description": "The person whose memory this is."
+    },
+    "role": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/name",
+      "description": "The role whose tasks read the item."
+    },
+    "key": {
+      "description": "Item key: approving a new item with the same key moves the previous one to superseded.",
+      "type": "string",
+      "maxLength": 120,
+      "pattern": "^[a-z][a-z0-9_.-]*$"
+    },
+    "content": {
+      "description": "Text of the item that the model proposed.",
+      "type": "string",
+      "maxLength": 2000
+    },
+    "state": {
+      "description": "State of the item lifecycle.",
+      "enum": [
+        "proposed",
+        "active",
+        "discarded",
+        "superseded",
+        "forgotten"
+      ]
+    },
+    "personal_seen": {
+      "description": "The personal_seen flag; the model neither sees nor clears it.",
+      "type": "boolean"
+    },
+    "created_at": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/datetime",
+      "description": "Proposal time."
+    },
+    "decide_by": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/datetime",
+      "description": "Deadline of the decision card."
+    },
+    "decided_at": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/datetime",
+      "description": "Time of the person's decision."
+    }
+  }
+}

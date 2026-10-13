@@ -1,0 +1,237 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:botaru:schema:approval:1",
+  "title": "Action approval",
+  "description": "Approval record (Approval): source task, initiator, action, argument snapshot and hash, nonce, risk, untrusted_seen and its source, the context line from closed code fields, deadline, time of the last reminder, state, votes for approvals 2, who decided and when. Only the core writes it (IDN-1). Lifecycle: spec/lifecycles/approval.md. The card is drawn only from this record (APR-3); it is executed at most once (APR-7).",
+  "x-botaru-direction": "record",
+  "x-botaru-retention": "metadata",
+  "x-botaru-rules": [
+    "APR-2",
+    "APR-3",
+    "APR-4",
+    "APR-6",
+    "APR-7",
+    "APR-16",
+    "APR-19"
+  ],
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "id",
+    "tenant",
+    "initiator",
+    "requested_by",
+    "action",
+    "args",
+    "args_hash",
+    "nonce",
+    "risk",
+    "approvals",
+    "untrusted_seen",
+    "expires_at",
+    "state"
+  ],
+  "properties": {
+    "id": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/object_id"
+    },
+    "tenant": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/tenant_name"
+    },
+    "source_task": {
+      "description": "Source task (the attempt that called request_action, service/control or monitor/script_run).",
+      "$ref": "urn:botaru:schema:common:1#/$defs/object_id"
+    },
+    "initiator": {
+      "description": "On whose behalf the approval is requested.",
+      "$ref": "urn:botaru:schema:common:1#/$defs/principal_ref"
+    },
+    "requested_by": {
+      "description": "Source for the card line \"who asks and from where\".",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind"
+      ],
+      "properties": {
+        "kind": {
+          "description": "Where the request comes from: a role bot in a task, a person's command (/run, /service), a bot message, a script step, an accepted proposal, a campaign item, the farm manager on an incident.",
+          "enum": [
+            "bot",
+            "human",
+            "message",
+            "script_step",
+            "proposal",
+            "campaign_item",
+            "farm_manager"
+          ]
+        },
+        "role": {
+          "$ref": "urn:botaru:schema:common:1#/$defs/name"
+        },
+        "task": {
+          "$ref": "urn:botaru:schema:common:1#/$defs/object_id"
+        },
+        "ref": {
+          "description": "Number of the step, proposal, incident or campaign item.",
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,79}$",
+          "maxLength": 80
+        }
+      }
+    },
+    "action": {
+      "description": "Name of a catalog action, or service.control, monitor.script_run.",
+      "$ref": "urn:botaru:schema:common:1#/$defs/dotted_name"
+    },
+    "args": {
+      "description": "Argument snapshot after default values are filled in; it passed the closed schema of the action.",
+      "type": "object",
+      "maxProperties": 32
+    },
+    "args_hash": {
+      "description": "SHA-256 hash of the form sha256:<64 hex digits>.",
+      "$ref": "urn:botaru:schema:common:1#/$defs/hash"
+    },
+    "nonce": {
+      "description": "One-time value of the card: the button carries it together with the subject and id (APR-3).",
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_-]{16,64}$",
+      "maxLength": 64
+    },
+    "risk": {
+      "description": "Action risk from the manifest (APR-10, APR-17).",
+      "enum": [
+        "low",
+        "high",
+        "routine"
+      ]
+    },
+    "approvals": {
+      "description": "How many different approvers are needed (APR-16).",
+      "enum": [
+        1,
+        2
+      ]
+    },
+    "untrusted_seen": {
+      "description": "The source attempt saw untrusted text.",
+      "type": "boolean"
+    },
+    "untrusted_source": {
+      "description": "Source of the distrust flag, for example logs/tail.",
+      "type": "string",
+      "maxLength": 120
+    },
+    "context": {
+      "description": "The \"what the code saw\" line: closed result fields of the source attempt with x-botaru-read-by: code, without model text (APR-19).",
+      "type": "object",
+      "maxProperties": 16,
+      "additionalProperties": {
+        "anyOf": [
+          {
+            "type": "string",
+            "maxLength": 120
+          },
+          {
+            "type": "number"
+          },
+          {
+            "type": "boolean"
+          }
+        ]
+      }
+    },
+    "expires_at": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/datetime"
+    },
+    "reminded_at": {
+      "description": "Time of the last reminder to approvers.",
+      "$ref": "urn:botaru:schema:common:1#/$defs/datetime"
+    },
+    "paused_until": {
+      "description": "End of the pause by a stop with the pause_action effect (v0.2).",
+      "$ref": "urn:botaru:schema:common:1#/$defs/datetime"
+    },
+    "state": {
+      "enum": [
+        "pending",
+        "approved",
+        "executing",
+        "executed",
+        "exec_failed",
+        "exec_unknown",
+        "rejected",
+        "expired",
+        "canceled"
+      ]
+    },
+    "votes": {
+      "description": "Votes for approvals 2.",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "by",
+          "decision",
+          "at"
+        ],
+        "properties": {
+          "by": {
+            "$ref": "urn:botaru:schema:common:1#/$defs/principal_ref"
+          },
+          "decision": {
+            "enum": [
+              "approve",
+              "reject"
+            ]
+          },
+          "at": {
+            "$ref": "urn:botaru:schema:common:1#/$defs/datetime"
+          }
+        }
+      },
+      "maxItems": 2
+    },
+    "decided_by": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/principal_ref"
+    },
+    "decided_at": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/datetime"
+    },
+    "cancel_reason": {
+      "description": "Why the approval was canceled (APR-6).",
+      "enum": [
+        "person_inactive",
+        "rights_revoked",
+        "held",
+        "restored",
+        "seat_changed",
+        "admin",
+        "initiator",
+        "ref_invalid"
+      ],
+      "x-botaru-registry": "reasons"
+    },
+    "reason": {
+      "description": "Reason for the outcome exec_failed, exec_unknown or expired.",
+      "$ref": "urn:botaru:schema:common:1#/$defs/reason"
+    },
+    "action_task": {
+      "description": "The action.<a> task created on approval (APR-5).",
+      "$ref": "urn:botaru:schema:common:1#/$defs/object_id"
+    },
+    "toolcall": {
+      "description": "The single write call (APR-7).",
+      "$ref": "urn:botaru:schema:common:1#/$defs/object_id"
+    },
+    "plan_hash": {
+      "description": "SHA-256 hash of the form sha256:<64 hex digits>.",
+      "$ref": "urn:botaru:schema:common:1#/$defs/hash"
+    },
+    "campaign": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/object_id"
+    }
+  }
+}

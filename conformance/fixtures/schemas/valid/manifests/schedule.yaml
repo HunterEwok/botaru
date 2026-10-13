@@ -1,0 +1,27 @@
+schema: spec/manifests/schedule.schema.json
+rules:
+- MAN-1
+description: Schedule manifest specs from examples/ that the kind schema accepts.
+cases:
+- cron: 15 6 * * *
+  timezone: Europe/Berlin
+  task:
+    type: data.sensor_check.v1
+    params:
+      window_h: 24
+  deliver_to:
+  - chat:lab
+  skip_if_waiting: true
+  proposable: true
+- cron: '*/30 * * * *'
+  task:
+    type: data.sensor_watch.v1
+  proposable: false
+- cron: '*/5 * * * *'
+  task:
+    type: pipeline.watch.v1
+- cron: '*/15 * * * *'
+  task:
+    type: check.http.v1
+  deliver_to:
+  - sink:checks

@@ -1,0 +1,90 @@
+id: fx-man-ten-01
+rules: [APR-9, APR-17, DSP-10, PRM-17, MGR-20, CAP-1]
+description: >-
+  Tenant manifest checks: for a production tenant self_approve: true does not pass
+  (APR-9, row lint:manifests/self-approve-production); a /run type without
+  run.approval: none and a /run argument outside the closed schema are rejected (APR-17); an
+  assistant type in default_types is rejected (DSP-10); built-in commands cannot be taken
+  (PRM-17); the manager seat profile is in models_allowed, and the manager line is greater than 0
+  (MGR-20).
+with_examples: true
+cases:
+  - name: test tenant approves its own request
+    manifests:
+      - {apiVersion: botaru/v1alpha1, kind: Tenant, metadata: {name: demo2}, spec: {kind: test, self_approve: true, farm_manager: {enabled: false}, budgets: {month_eur: 60}}}
+    expect: ok
+  - name: production tenant with self_approve
+    manifests:
+      - {apiVersion: botaru/v1alpha1, kind: Tenant, metadata: {name: demo2}, spec: {kind: production, self_approve: true, farm_manager: {enabled: false}, budgets: {month_eur: 60}}}
+    expect: {error: self_approve_production}
+  - name: tenant without a kind field counts as production
+    manifests:
+      - {apiVersion: botaru/v1alpha1, kind: Tenant, metadata: {name: demo2}, spec: {self_approve: true, farm_manager: {enabled: false}, budgets: {month_eur: 60}}}
+    expect: {error: self_approve_production}
+  - name: /run on a type without run.approval none
+    manifests:
+      - apiVersion: botaru/v1alpha1
+        kind: Tenant
+        metadata: {name: demo2}
+        spec:
+          farm_manager: {enabled: false}
+          budgets: {month_eur: 60}
+          run: {sensors: {type: data.sensor_check.v1, args: [window_h]}}
+    expect: {error: run_needs_approval_none}
+  - name: /run argument outside the action schema
+    manifests:
+      - apiVersion: botaru/v1alpha1
+        kind: Tenant
+        metadata: {name: demo2}
+        spec:
+          farm_manager: {enabled: false}
+          budgets: {month_eur: 60}
+          run: {ctd-qc: {action: pipeline.ctd_qc, args: [month, outdir]}}
+    expect: {error: run_arg_unknown}
+  - name: assistant in default_types
+    manifests:
+      - apiVersion: botaru/v1alpha1
+        kind: Tenant
+        metadata: {name: demo2}
+        spec:
+          farm_manager: {enabled: false}
+          budgets: {month_eur: 60}
+          default_types: [assist.chat.v1]
+    expect: {error: assistant_in_default_types}
+  - name: command takes the built-in /status
+    manifests:
+      - apiVersion: botaru/v1alpha1
+        kind: Tenant
+        metadata: {name: demo2}
+        spec:
+          farm_manager: {enabled: false}
+          budgets: {month_eur: 60}
+          commands: {"/status": ops.summary.v1}
+    expect: {error: builtin_command}
+  - name: manager enabled without the seat profile in models_allowed
+    manifests:
+      - apiVersion: botaru/v1alpha1
+        kind: Tenant
+        metadata: {name: demo2}
+        spec:
+          farm_manager: {enabled: true, model_profile: manager-std}
+          budgets: {month_eur: 60, lines: {manager: {month_eur: 10}}}
+          models_allowed: [base-std]
+    expect: {error: manager_profile_not_allowed}
+  - name: manager enabled without a manager line
+    manifests:
+      - apiVersion: botaru/v1alpha1
+        kind: Tenant
+        metadata: {name: demo2}
+        spec:
+          farm_manager: {enabled: true, model_profile: manager-std}
+          budgets: {month_eur: 60}
+          models_allowed: [base-std, manager-std]
+    expect: {error: manager_line_missing}
+  - name: storage ceiling as a string with a unit does not pass the schema
+    manifests:
+      - apiVersion: botaru/v1alpha1
+        kind: Tenant
+        metadata: {name: demo2}
+        spec: {farm_manager: {enabled: false}, budgets: {month_eur: 60}, limits: {max_storage_bytes: 20GiB}}
+    expect: {error: schema_invalid}

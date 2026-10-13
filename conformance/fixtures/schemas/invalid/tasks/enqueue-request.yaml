@@ -1,0 +1,44 @@
+schema: spec/model/enqueue-request.schema.json
+rules: [IDM-1, IDM-2, IDN-1, DSP-4, DSP-5, TEN-2]
+description: 'P1 enqueue requests that the schema rejects: key system: from a party other than the core; a field for a specific
+  worker; a worker inside the to address; class 1 and class 2 from the request; record fields tenant, initiator, origin,
+  approval_id and to_group; no key; a body without a goal.'
+cases:
+- body: &id001
+    type: ops.investigate.v1
+    goal: why was www.example.org slow last night?
+  idempotency_key: system:schedule:nightly:2026-10-05T00:30Z
+- body: *id001
+  idempotency_key: k1
+  worker: wk_01JB000000000000000000000A
+- body: *id001
+  idempotency_key: k1
+  to:
+    group: science-pool
+    worker: wk_01JB000000000000000000000A
+- body: *id001
+  idempotency_key: k1
+  priority: 1
+- body: *id001
+  idempotency_key: k1
+  priority: 2
+- body: *id001
+  idempotency_key: k1
+  tenant: demo2
+- body: *id001
+  idempotency_key: k1
+  initiator: human:carol
+- body: *id001
+  idempotency_key: k1
+  origin:
+    chat: lab
+- body: *id001
+  idempotency_key: k1
+  approval_id: ap-1
+- body: *id001
+  idempotency_key: k1
+  to_group: science-pool
+- body: *id001
+- body:
+    type: ops.investigate.v1
+  idempotency_key: k1

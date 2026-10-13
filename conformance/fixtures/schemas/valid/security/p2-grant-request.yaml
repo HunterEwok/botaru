@@ -1,0 +1,8 @@
+schema: urn:botaru:schema:p2-grant-request:1
+rules: [PRM-13, PRM-16]
+description: The operator grants bob the ops-oncall group on the production demo at carol's request with a verification
+  code; an admin grants researcher from delegated_groups.
+cases:
+- {op: grant, subject: 'human:p_01JB3Q7N0M2V8XK4DGT5RZP9WA', group: ops-oncall, code: '481516', requested_by: 'human:p_01JB3Q7N0M2V8XK4DGT5RZP9WC',
+  until: '2026-06-30T00:00:00Z'}
+- {op: grant, subject: 'human:p_01JB3Q7N0M2V8XK4DGT5RZP9WB', group: researcher}

@@ -1,0 +1,50 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:botaru:schema:enqueue-request:1",
+  "title": "P1 enqueue request",
+  "description": "P1 enqueue request: the task body and the request fields the sender may pass. The request has no task record fields (tenant, initiator, origin, max_tier, data_mark, untrusted_seen, approval_id and others) and no \"this worker\" field: the schema rejects a request with such a field (IDN-1, DSP-4, TEN-2). Only the core sets a key with the prefix system:, so the schema rejects a sender request with such a key (IDM-1, IDM-2). The type action.* is not accepted in enqueue (APR-5): this is a core check by type name. A denial at enqueue does not take the key.",
+  "x-botaru-direction": "input",
+  "x-botaru-rules": ["IDM-1", "IDM-2", "IDN-1", "DSP-4", "DSP-5", "TEN-2", "TEN-7"],
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["body", "idempotency_key"],
+  "properties": {
+    "body": { "$ref": "urn:botaru:schema:task-body:1" },
+    "idempotency_key": {
+      "description": "Retry key, unique in the pair (tenant, idempotency_key). A repeat with the same key, the same initiator and the same body returns the existing task; otherwise idempotency_conflict. The prefix system: is only for the core.",
+      "type": "string", "minLength": 1, "maxLength": 200,
+      "not": { "pattern": "^system:" },
+      "x-botaru-rules": ["IDM-1", "IDM-2"]
+    },
+    "refs": {
+      "description": "References to past tasks, files and campaigns; only objects of one's own tenant that the initiator created or that came from the origin chat, otherwise rejected(ref_invalid) (TEN-7).",
+      "type": "array", "maxItems": 20, "uniqueItems": true,
+      "items": {
+        "anyOf": [
+          { "$ref": "urn:botaru:schema:common:1#/$defs/object_id" },
+          { "$ref": "urn:botaru:schema:common:1#/$defs/file_ref" }
+        ]
+      }
+    },
+    "priority": {
+      "description": "Priority class; a request can only lower the type's class (dispatch.priority_class, 3-5). Classes 1 and 2 are set only by the core (DSP-5).",
+      "type": "integer", "minimum": 3, "maximum": 5,
+      "x-botaru-rules": ["DSP-5"]
+    },
+    "to": {
+      "description": "Bot group address. It only narrows dispatch: only a member of the group gets the task (D5). Another tenant's, a nonexistent and a disallowed group all get the same rejected(group_invalid) (DSP-4).",
+      "type": "object", "additionalProperties": false, "required": ["group"],
+      "properties": { "group": { "$ref": "urn:botaru:schema:common:1#/$defs/name" } }
+    },
+    "scope": {
+      "description": "Narrowing of the resource scope for a child: ids of resources in the tenant catalog; only a narrowing of the parent's scope.",
+      "type": "array", "maxItems": 50, "uniqueItems": true,
+      "items": { "$ref": "urn:botaru:schema:common:1#/$defs/name" }
+    },
+    "mode": {
+      "description": "Since v0.2: validate checks the body and permissions without enqueuing and records nothing (PRM-11).",
+      "const": "validate",
+      "x-botaru-version": "v0.2"
+    }
+  }
+}

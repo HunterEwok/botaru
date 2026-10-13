@@ -1,0 +1,233 @@
+# Collected from spec/lifecycles/identity.yaml. The value null in from means "the object does not exist yet".
+lifecycle: spec/lifecycles/identity.yaml
+object: identity
+rules: [GOV-9, HLD-1, HLD-2, HLD-5, IDN-8, IDN-9, IDN-10, IDN-11, MEM-9, MGR-1, RET-7]
+description: Allowed and forbidden transitions of the "bot identity" lifecycle, collected from the tables of spec/lifecycles/identity.md.
+  The implementation accepts a transition from the allowed list under the condition of its row (when); a pair from the forbidden
+  list does not change the state, and the call that asks for it is rejected. The value null in from means "the object does
+  not exist yet". Only the core creates, binds and retires an identity; retired and erased are terminal (IDN-8, IDN-11).
+states:
+- id: active
+  terminal: false
+- id: suspended
+  terminal: false
+- id: unbound
+  terminal: false
+- id: retired
+  terminal: true
+- id: erased
+  terminal: true
+allowed:
+- id: sm-idn-01
+  from: null
+  to: active
+  by: P2 worker.enroll without the bot parameter
+  when: 'a worker role with a model slot; the core creates an identity with the binding mode: worker and epoch 1'
+  rules: [IDN-8]
+- id: sm-idn-02
+  from: null
+  to: active
+  by: the core in the transaction of a promotion, of seating on a commission seat or of an identity's retirement
+  when: 'the previous identity has a live worker: it immediately gets a new identity of the same role, the work does not
+    stop'
+  rules: [IDN-10, IDN-11]
+- id: sm-idn-03
+  from: null
+  to: active
+  by: P2 seat.assign of the farm manager seat (farmctl, admin:governance in farm)
+  when: 'the core creates a new identity in farm with the binding mode: seat'
+  rules: [IDN-10, MGR-1]
+- id: sm-idn-04
+  from: active
+  to: active
+  to_note: 'active, a new binding mode: seat, epoch + 1'
+  by: a governance case effective, or P2 seat.assign of a commission seat
+  when: the functionary identity of its own tenant moves to the seat; its worker gets a new identity in the same transaction
+  rules: [GOV-9, IDN-10]
+- id: sm-idn-05
+  from: active
+  to: suspended
+  by: P2 hold.set on the bot scope
+  when: the hold is set by a person with the right to this scope
+  rules: [HLD-1, IDN-9]
+- id: sm-idn-06
+  from: suspended
+  to: active
+  by: P2 hold.release or the background loop hold by until
+  when: the last people's hold on the bot scope was lifted or expired, a binding exists
+  rules: [HLD-2, HLD-5]
+- id: sm-idn-07
+  from: active
+  to: unbound
+  by: P2 worker.revoke
+  when: 'binding mode: worker, no new binding'
+  rules: [IDN-8]
+- id: sm-idn-08
+  from: suspended
+  to: unbound
+  by: P2 worker.revoke
+  when: same; the hold on the identity stays
+  rules: [IDN-8]
+- id: sm-idn-09
+  from: unbound
+  to: active
+  by: P2 worker.enroll with the bot parameter (admin:workers)
+  when: the same tenant and role; no hold on the bot scope; binding epoch + 1
+  rules: [IDN-8]
+- id: sm-idn-10
+  from: unbound
+  to: suspended
+  by: P2 worker.enroll with the bot parameter
+  when: the identity has a hold on the bot scope; binding epoch + 1
+  rules: [IDN-8]
+- id: sm-idn-11
+  from: active
+  to: retired
+  by: 'the core by a trigger from bot-retire-reasons.yaml: a case effective (removed_by_vote); P2 seat.assign or seat.vacate
+    (replaced_by_human, for the farm manager seat with the reason incident replaced_after_incident); the identity loop at
+    the decide_within deadline (replaced_after_incident) or unbound_ttl (worker_gone); apply without the role (role_removed);
+    P2 bot.retire (human_retire); from v0.2 tenant offboarding (tenant_offboarded)'
+  when: a trigger from the closed list; in the same transaction the seal (MEM-4), the fact offer (MEM-7) and a new identity
+    for the live worker
+  rules: [IDN-11]
+  version: v0.2
+- id: sm-idn-12
+  from: suspended
+  to: retired
+  by: 'the core by a trigger from bot-retire-reasons.yaml: a case effective (removed_by_vote); P2 seat.assign or seat.vacate
+    (replaced_by_human, for the farm manager seat with the reason incident replaced_after_incident); the identity loop at
+    the decide_within deadline (replaced_after_incident) or unbound_ttl (worker_gone); apply without the role (role_removed);
+    P2 bot.retire (human_retire); from v0.2 tenant offboarding (tenant_offboarded)'
+  when: a trigger from the closed list; in the same transaction the seal (MEM-4), the fact offer (MEM-7) and a new identity
+    for the live worker
+  rules: [IDN-11]
+  version: v0.2
+- id: sm-idn-13
+  from: unbound
+  to: retired
+  by: 'the core by a trigger from bot-retire-reasons.yaml: a case effective (removed_by_vote); P2 seat.assign or seat.vacate
+    (replaced_by_human, for the farm manager seat with the reason incident replaced_after_incident); the identity loop at
+    the decide_within deadline (replaced_after_incident) or unbound_ttl (worker_gone); apply without the role (role_removed);
+    P2 bot.retire (human_retire); from v0.2 tenant offboarding (tenant_offboarded)'
+  when: a trigger from the closed list; in the same transaction the seal (MEM-4), the fact offer (MEM-7) and a new identity
+    for the live worker
+  rules: [IDN-11]
+  version: v0.2
+- id: sm-idn-14
+  from: retired
+  to: erased
+  by: at the end of seal_ttl (30 days) the identity loop enqueues an erasure request with the reason bot_retired and the
+    scope of the identity id, the erasure loop executes it in all stores
+  when: the request is executed; from v0.2 records whose retention class period ended earlier are already erased by the
+    retention loop (RET-2); on tenant deletion its tenant_delete request erases everything
+  rules: [IDN-11, MEM-9, RET-7]
+  version: v0.2
+forbidden:
+- id: sm-idn-x01
+  from: null
+  to: suspended
+  expect: rejected
+  rules: [IDN-8, IDN-10, IDN-11, MGR-1]
+  why: the object does not appear directly in the state suspended
+- id: sm-idn-x02
+  from: null
+  to: unbound
+  expect: rejected
+  rules: [IDN-8, IDN-10, IDN-11, MGR-1]
+  why: the object does not appear directly in the state unbound
+- id: sm-idn-x03
+  from: null
+  to: retired
+  expect: rejected
+  rules: [IDN-8, IDN-10, IDN-11, MGR-1]
+  why: the object does not appear directly in the state retired
+- id: sm-idn-x04
+  from: null
+  to: erased
+  expect: rejected
+  rules: [IDN-8, IDN-10, IDN-11, MGR-1]
+  why: the object does not appear directly in the state erased
+- id: sm-idn-x05
+  from: active
+  to: erased
+  expect: rejected
+  rules: [GOV-9, HLD-1, IDN-8, IDN-9]
+  why: the lifecycle table has no such transition
+- id: sm-idn-x06
+  from: suspended
+  to: suspended
+  expect: rejected
+  rules: [HLD-1, HLD-2, HLD-5, IDN-8]
+  why: the lifecycle table has no such transition
+- id: sm-idn-x07
+  from: suspended
+  to: erased
+  expect: rejected
+  rules: [HLD-2, HLD-5, IDN-8, IDN-11]
+  why: the lifecycle table has no such transition
+- id: sm-idn-x08
+  from: unbound
+  to: unbound
+  expect: rejected
+  rules: [IDN-8, IDN-11]
+  why: the lifecycle table has no such transition
+- id: sm-idn-x09
+  from: unbound
+  to: erased
+  expect: rejected
+  rules: [IDN-8, IDN-11, MEM-9, RET-7]
+  why: the lifecycle table has no such transition
+- id: sm-idn-x10
+  from: retired
+  to: active
+  expect: rejected
+  rules: [IDN-11]
+  why: 'retired is a terminal state: there are no transitions out of it'
+- id: sm-idn-x11
+  from: retired
+  to: suspended
+  expect: rejected
+  rules: [IDN-11]
+  why: 'retired is a terminal state: there are no transitions out of it'
+- id: sm-idn-x12
+  from: retired
+  to: unbound
+  expect: rejected
+  rules: [IDN-11]
+  why: 'retired is a terminal state: there are no transitions out of it'
+- id: sm-idn-x13
+  from: retired
+  to: retired
+  expect: rejected
+  rules: [IDN-11]
+  why: 'retired is a terminal state: there are no transitions out of it'
+- id: sm-idn-x14
+  from: erased
+  to: active
+  expect: rejected
+  rules: [IDN-11, MEM-9, RET-7]
+  why: 'erased is a terminal state: there are no transitions out of it'
+- id: sm-idn-x15
+  from: erased
+  to: suspended
+  expect: rejected
+  rules: [IDN-11, MEM-9, RET-7]
+  why: 'erased is a terminal state: there are no transitions out of it'
+- id: sm-idn-x16
+  from: erased
+  to: unbound
+  expect: rejected
+  rules: [IDN-11, MEM-9, RET-7]
+  why: 'erased is a terminal state: there are no transitions out of it'
+- id: sm-idn-x17
+  from: erased
+  to: retired
+  expect: rejected
+  rules: [IDN-11, MEM-9, RET-7]
+  why: 'erased is a terminal state: there are no transitions out of it'
+- id: sm-idn-x18
+  from: erased
+  to: erased
+  expect: rejected
+  rules: [IDN-11, MEM-9, RET-7]
+  why: 'erased is a terminal state: there are no transitions out of it'

@@ -1,0 +1,46 @@
+id: ins-03
+rules: [INS-1, INS-3, PRP-7]
+description: 'Analysis by code. A job type with purpose insight checks the rule "a dataset in the catalog has no backup link,
+  and the series farm.backup.age is empty" and submits a proposal without a model. The dataset ctd-2026 has no backup link, and the backup
+  age series is empty: the result carries one proposal of category backup, the attempt has no model calls, and the proposal has no
+  untrusted text flag. The core creates the proposal on a successful complete of the attempt.'
+given:
+  tenant: demo
+  role: {name: ops-runner, profile: worker}
+  tasktype: {name: demo.backup.insight.v1, purpose: insight, worker_kind: job, tier: 1}
+  catalog:
+    resources:
+    - {id: ctd-2026, kind: dataset, data_class: internal}
+  series:
+    farm.backup.age:
+      subject: dataset:ctd-2026
+      points: []
+  attempt:
+    complete:
+      result:
+        proposals:
+        - category: backup
+          problem:
+            code: backup_deadline_miss
+            subjects: ['dataset:ctd-2026']
+            severity: medium
+          evidence:
+          - kind: observation
+            series: farm.backup.age
+            subject: dataset:ctd-2026
+            window: 14d
+            rollup: day.max
+            value: 0
+          change: {kind: none}
+expect:
+  model_calls: 0
+  proposals_created: 1
+  proposal:
+    state: screened
+    body:
+      category: backup
+      change: {kind: none}
+    untrusted_seen:
+      value: false
+      sources: []
+    origin: {role: ops-runner, level: 0}

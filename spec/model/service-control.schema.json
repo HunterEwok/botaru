@@ -1,0 +1,27 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:botaru:schema:service-control:1",
+  "title": "P3 service/control: arguments",
+  "description": "Built-in write tool service/control {service, verb}. In the attempt tools/list the service and verb come as an enum from the tenant catalog and the role service_control. Without a card, only a verb from services[].no_card (default restart) in a task without untrusted_seen; start and stop go through a card (APR-18, INJ-15). Each initiator needs their own service.control:<service> (D-73).",
+  "x-botaru-direction": "input",
+  "x-botaru-rules": [
+    "APR-18",
+    "INJ-15",
+    "INJ-1"
+  ],
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "service",
+    "verb"
+  ],
+  "properties": {
+    "service": {
+      "description": "Service from the tenant catalog.",
+      "$ref": "urn:botaru:schema:common:1#/$defs/name"
+    },
+    "verb": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/service_verb"
+    }
+  }
+}

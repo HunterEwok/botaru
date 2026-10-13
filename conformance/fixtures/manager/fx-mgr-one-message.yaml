@@ -1,0 +1,49 @@
+id: fx-mgr-one-message
+rules: [MGR-39, MGR-13]
+description: 'An incident with three operations and a card decision: the core keeps one manager_notice message for the tenant''s people
+  and a separate one for the farm operators; the message is created at opening, and each operation and decision edits it through edit;
+  the operators get only the number, class, codes and numbers; decision cards go as separate messages; the message has one revert
+  command. A driver without edit sends new lines in a batch no more often than once per 15 minutes.'
+given:
+  incident: {id: i_311, tenant: demo, class: disk_filling, subject: 'res:ctd1:data'}
+  driver: {edit: true}
+steps:
+- occur:
+    event: {type: incident_open}
+- call:
+    port: P3
+    op: tools/call
+    request:
+      name: control_ops
+      arguments:
+        op: quarantine
+        target: {kind: worker, id: w_7}
+  by: attempt
+- call:
+    port: P3
+    op: tools/call
+    request:
+      name: control_ops
+      arguments:
+        op: preempt
+        target: {kind: task, id: t_501}
+  by: attempt
+- call:
+    port: P3
+    op: tools/call
+    request:
+      name: control_ops
+      arguments: {op: request_action, action: cleanup_pipeline_tmp}
+  by: attempt
+- call:
+    port: P1
+    op: decide
+    request: {subject_kind: control, id: $last, decision: approve}
+  by: human:alice
+expect:
+  messages_to_demo: {manager_notice: 1, edits: 4, revert_command: /control revert i_311, cards_separate: 1}
+  messages_to_farm_operators:
+    manager_notice: 1
+    contains_only: [i_311, disk_filling, quarantine, preempt, request_action, numbers]
+    not_contains: ['res:ctd1:data', w_7, t_501]
+  driver_without_edit: {batch_interval_min: 15m}

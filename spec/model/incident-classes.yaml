@@ -1,0 +1,114 @@
+registry: incident-classes
+version: 2
+description: >-
+  Initial catalog of farm incident classes. Classes are set by IncidentClass
+  files in the farm git with human review (MGR-7); this registry names
+  the initial catalog that people approve: the class store_low is required in the catalog
+  (MGR-38), the other rows are an example. The stops_manager field exists in the
+  initial catalog only for disk_full (GOV-28); for the other classes
+  on approval people see the mark "moves the model" or "the farm manager does not
+  prevent it". Entry fields: severity, alarm (the code alarm event type from the
+  catalog spec/bindings/events/catalog.yaml in full, with the suffix .vN), subject_kinds (subject), contain_auto (the first measure by code),
+  manager (what the farm manager is allowed to do), required (the class is required),
+  stops_manager (the class stops the seat under the conditions of MGR-33 and MGR-34).
+  Classes with the subject farm have no seat tasks: code and people handle them.
+source: docs/farm-manager.md
+entries:
+  - id: disk_full
+    since: v0.1
+    severity: sev1
+    alarm: alarm.disk.free.low.v1
+    detect: from a monitoring problem of class disk_free, less than 5% free for 5 minutes (MON-5)
+    subject_kinds: [resource]
+    contain_auto: a no_claim stop on the resource for 1 h
+    manager: quarantine and drain of the involved, preemption, cancellation, a cleanup action, restart of services on the subject node, monitoring scripts of this node
+    stops_manager: true
+    change_sensitive: true
+    rules: [MGR-7, GOV-28, MGR-33, MGR-34]
+  - id: disk_filling
+    since: v0.1
+    severity: sev2
+    alarm: alarm.disk.free.low.v1
+    detect: from a monitoring problem of class disk_free, less than 15% free
+    subject_kinds: [resource]
+    contain_auto: none
+    manager: drain of the involved, a cleanup action, restart of services on the subject node
+    rules: [MGR-7, MGR-34]
+  - id: store_low
+    since: v0.1
+    severity: sev1
+    alarm: alarm.store.free.low.v1
+    detect: free space of the core store volume below the soft threshold (CAP-5); the incident is opened while the store still accepts writes
+    subject_kinds: [farm]
+    contain_auto: an over_capacity denial for enqueues of priority classes 3-5 (CAP-5)
+    manager: people only
+    required: true
+    rules: [MGR-7, MGR-38]
+  - id: runaway_spend
+    since: v0.1
+    severity: sev1
+    alarm: alarm.budget.burn.rate.v1
+    detect: usage per hour greater than three averages or 80% of the day
+    subject_kinds: [tenant, role]
+    contain_auto: none
+    manager: a role stop through a card (MGR-37), task cancellation
+    rules: [MGR-7]
+  - id: secret_in_outbound
+    since: v0.1
+    severity: sev1
+    alarm: alarm.outbound.secret.detected.v1
+    subject_kinds: [worker]
+    contain_auto: a no_delivery stop on the worker
+    manager: quarantine, notice
+    rules: [MGR-7]
+  - id: tenant_mismatch_storm
+    since: v0.1
+    severity: sev1
+    alarm: alarm.auth.tenant_mismatch.count.v1
+    detect: above the threshold
+    subject_kinds: [worker]
+    contain_auto: quarantine by code
+    manager: notice
+    rules: [MGR-7]
+  - id: crash_loop
+    since: v0.1
+    severity: sev2
+    alarm: alarm.worker.crash.rate.v1
+    subject_kinds: [worker, role]
+    contain_auto: none
+    manager: drain, a role stop through a card, notice
+    rules: [MGR-7]
+  - id: exec_unknown_action
+    since: v0.1
+    severity: sev1
+    alarm: alarm.action.unknown.attempt.v1
+    subject_kinds: [worker]
+    contain_auto: quarantine by code
+    manager: notice
+    rules: [MGR-7]
+  - id: provider_down
+    since: v0.1
+    severity: sev2
+    alarm: alarm.model.provider.errors.v1
+    subject_kinds: [farm]
+    contain_auto: the model gateway circuit breaker
+    manager: people only
+    rules: [MGR-7]
+  - id: queue_starvation
+    since: v0.1
+    severity: sev2
+    alarm: alarm.queue.age.p95.v1
+    detect: above the limit
+    subject_kinds: [tenant]
+    contain_auto: none
+    manager: pinning, preemption, drain of stuck ones
+    rules: [MGR-7]
+  - id: core_loop_stalled
+    since: v0.1
+    severity: sev1
+    alarm: alarm.health.loop_tick.v1
+    detect: the background loop tick is older than the threshold (OBS-9)
+    subject_kinds: [farm]
+    contain_auto: none
+    manager: people only
+    rules: [MGR-7]

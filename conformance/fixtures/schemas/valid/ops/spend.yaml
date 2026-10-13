@@ -1,0 +1,17 @@
+schema: urn:botaru:schema:spend:1
+rules: [BUD-3]
+description: A usage line of a model call.
+data:
+  time: '2026-10-12T10:00:00Z'
+  tenant: demo
+  task: t_01JB8M0000000000000000000A
+  root: t_01JB8M0000000000000000000A
+  subject: human:p_01JB3Q7N0M2V8XK4DGT5RZP9WB
+  role: ops-reader
+  purpose: work
+  line: work
+  model: {profile: base-std, fallback: false}
+  unit: tokens
+  tokens: {input: 12000, output: 800, cache_read: 4000, reasoning: 300}
+  eur_micros: 15600
+  spend_estimated: false

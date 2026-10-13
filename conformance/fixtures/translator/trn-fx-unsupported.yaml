@@ -1,0 +1,36 @@
+id: trn-fx-unsupported
+rules: [TRN-5, TRN-3]
+description: 'A code check without a model for the outcomes unsupported and ambiguous. The result of a translator task passes
+  the closed schema spec/model/translation-result.schema.json: with outcome unsupported or ambiguous there is no run_ref, and
+  the missing codes come only from the closed list of the schema. Code builds the answer to the person from a template of these codes, and there is
+  no model text in it.'
+given:
+  tenant: demo
+  task: {type: translate.v1, initiator: 'human:carol'}
+cases:
+- given:
+    result:
+      outcome: unsupported
+      missing: [action_unclear]
+  expect: {accepted: true, reply_from: code text catalog, draft: none}
+- given:
+    result:
+      outcome: ambiguous
+      missing: [resource_missing]
+  expect: {accepted: true, reply_from: code text catalog}
+- given:
+    result:
+      outcome: unsupported
+      missing: [do it yourself]
+  expect: {accepted: false, reason: data_schema_invalid}
+- given:
+    result:
+      outcome: drafted
+      run_ref: r_01JB0000000000000000000001
+      missing: []
+  expect: {accepted: true}
+- description: fourth propose_script call in one attempt
+  given:
+    calls: {propose_script: 4}
+  expect:
+    fourth_call: {result: rejected}

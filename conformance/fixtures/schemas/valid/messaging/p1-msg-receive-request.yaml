@@ -1,0 +1,11 @@
+schema: spec/model/p1-msg-receive-request.schema.json
+rules:
+- MSG-8
+- MSG-9
+description: msg.receive requests that the schema accepts.
+cases:
+- max: 10
+  wait_s: 30
+- types:
+  - state.worker.v1
+  max: 20

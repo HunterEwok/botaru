@@ -1,0 +1,70 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:botaru:schema:p2-proposal-list-response:1",
+  "title": "P2 proposal.list: response",
+  "description": "Short rows of proposals.",
+  "x-botaru-direction": "output",
+  "x-botaru-rules": [
+    "DIG-1"
+  ],
+  "type": "object",
+  "required": [
+    "items"
+  ],
+  "properties": {
+    "items": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "id",
+          "category",
+          "state"
+        ],
+        "properties": {
+          "id": {
+            "$ref": "urn:botaru:schema:common:1#/$defs/object_id"
+          },
+          "category": {
+            "$ref": "urn:botaru:schema:proposal-body:1#/$defs/category"
+          },
+          "state": {
+            "enum": [
+              "screened",
+              "in_review",
+              "recommended",
+              "parked",
+              "dismissed",
+              "presented",
+              "declined",
+              "expired",
+              "noted",
+              "realizing",
+              "realized",
+              "realization_failed",
+              "reverted",
+              "sampled",
+              "sample_presented",
+              "sample_judged",
+              "sample_closed"
+            ]
+          },
+          "state_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "data_mark": {
+            "$ref": "urn:botaru:schema:common:1#/$defs/data_mark"
+          }
+        }
+      },
+      "maxItems": 1000
+    }
+  }
+}

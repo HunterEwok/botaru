@@ -1,0 +1,152 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:botaru:schema:lease:1",
+  "title": "Work item lease",
+  "description": "Lease record that the core writes on every P1 claim: of a task attempt, a tool call or a delivery. The lease_no is 1 greater than the previous one of this work item; exactly one holder holds a work item (FEN-1). Every changing call of the holder carries the token, and a call with an outdated token, with a previous store or seat epoch gets fenced without writes (FEN-2). Lease lifecycle: spec/lifecycles/lease.md.",
+  "x-botaru-direction": "record",
+  "x-botaru-rules": [
+    "FEN-1",
+    "FEN-2",
+    "FEN-5",
+    "DSP-10",
+    "TEN-1"
+  ],
+  "type": "object",
+  "required": [
+    "work_id",
+    "kind",
+    "tenant",
+    "lease_no",
+    "epoch",
+    "worker_id",
+    "state",
+    "lease_until"
+  ],
+  "properties": {
+    "work_id": {
+      "description": "Work item id, common to all its leases; the external system gets the same id (FEN-7).",
+      "$ref": "urn:botaru:schema:common:1#/$defs/object_id"
+    },
+    "kind": {
+      "description": "Work kind; erasure is a step of an erasure or match request at an edge store (schema erasure-work).",
+      "enum": [
+        "attempt",
+        "toolcall",
+        "delivery",
+        "erasure"
+      ]
+    },
+    "tenant": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/tenant_name"
+    },
+    "lease_no": {
+      "description": "Lease number; it grows on every claim, including after outcomes that do not spend an attempt.",
+      "type": "integer",
+      "minimum": 1
+    },
+    "epoch": {
+      "description": "Store epoch (RET-6).",
+      "type": "integer",
+      "minimum": 0
+    },
+    "worker_id": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/object_id"
+    },
+    "state": {
+      "description": "Lease state from spec/lifecycles/lease.md; preempted only for an attempt.",
+      "enum": [
+        "active",
+        "closed",
+        "released",
+        "expired",
+        "revoked",
+        "preempted"
+      ]
+    },
+    "lease_until": {
+      "description": "Lease deadline by the store clock (TIM-1).",
+      "$ref": "urn:botaru:schema:common:1#/$defs/datetime"
+    },
+    "reason": {
+      "description": "Reason for the end of the lease from the reason registry.",
+      "$ref": "urn:botaru:schema:common:1#/$defs/reason"
+    },
+    "run_id": {
+      "description": "Only an attempt: the runtime run id for E4 of the form <task id>:<lease_no>; one run per attempt lease.",
+      "$ref": "urn:botaru:schema:common:1#/$defs/attempt_ref"
+    },
+    "owner": {
+      "description": "Only a personal assistant task: the initiating principal from the direct chat, whom the core writes into the lease at claim; the memory space and the session are chosen by it. The worker record has no such field (DSP-10).",
+      "$ref": "urn:botaru:schema:common:1#/$defs/principal_ref",
+      "x-botaru-rules": [
+        "DSP-10"
+      ]
+    },
+    "acting_bot": {
+      "description": "The bot identity on whose behalf the attempt runs (IDN-8).",
+      "$ref": "urn:botaru:schema:common:1#/$defs/object_id"
+    },
+    "bot_epoch": {
+      "description": "Binding epoch of the identity.",
+      "type": "integer",
+      "minimum": 0
+    },
+    "seat_epoch": {
+      "description": "Only seat tasks: the seat epoch; an attempt with an old epoch gets fenced (MGR-1).",
+      "type": "integer",
+      "minimum": 0
+    }
+  },
+  "$defs": {
+    "token": {
+      "description": "Lease token (epoch, work_id, lease_no, worker_id). In the attempt token the core also writes acting_bot and bot_epoch, and for seat tasks seat_epoch. The holder passes the token in every changing P1 call (FEN-2) in the Botaru-Lease header as base64url without padding of the RFC 8785 form (spec/bindings/http/README.md); request bodies have no token field. The core accepts the call by matching the token against the active lease record and the worker_id against the worker from Authorization, otherwise lease_mismatch or fenced. The core may sign the token (key_id, sig are optional); then a wrong signature also gives lease_mismatch (spec/bindings/http/README.md, D-87 (5)).",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "epoch",
+        "work_id",
+        "lease_no",
+        "worker_id"
+      ],
+      "properties": {
+        "epoch": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "work_id": {
+          "$ref": "urn:botaru:schema:common:1#/$defs/object_id"
+        },
+        "lease_no": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "worker_id": {
+          "$ref": "urn:botaru:schema:common:1#/$defs/object_id"
+        },
+        "acting_bot": {
+          "$ref": "urn:botaru:schema:common:1#/$defs/object_id"
+        },
+        "bot_epoch": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "seat_epoch": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "key_id": {
+          "description": "Optional: id of the core key, if the core signs the token.",
+          "type": "string",
+          "pattern": "^[a-z0-9][a-z0-9_.-]{0,31}$",
+          "maxLength": 32
+        },
+        "sig": {
+          "description": "Optional: the core's signature over the token without sig per spec/hashing.md, if the core signs the token; the holder does not parse the token.",
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_-]{16,128}$",
+          "maxLength": 128
+        }
+      }
+    }
+  }
+}

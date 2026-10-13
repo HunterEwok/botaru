@@ -1,0 +1,9 @@
+schema: spec/model/campaign-results-request.schema.json
+rules:
+- ORC-9
+description: 'Arguments that the schema rejects: page 0; filter by text.'
+cases:
+- campaign: k_01JB0000000000000000000201
+  page: 0
+- campaign: k_01JB0000000000000000000201
+  grep: ok

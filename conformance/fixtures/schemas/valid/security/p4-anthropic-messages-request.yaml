@@ -1,0 +1,20 @@
+schema: urn:botaru:schema:p4-anthropic-messages-request:1
+rules:
+- GW-1
+description: A runtime request to P4 within the allowlist; temperature, top_p, top_k and stop_sequences pass as they are,
+  metadata is accepted and dropped before the provider call (D-87 (4)).
+cases:
+- model: base-std
+  max_tokens: 400
+  messages:
+  - {role: user, content: Hello}
+- model: base-std
+  max_tokens: 400
+  temperature: 0.2
+  top_p: 0.9
+  top_k: 40
+  stop_sequences: ["\n\nHuman:"]
+  metadata: {user_id: rt-session-01}
+  tool_choice: {type: auto}
+  messages:
+  - {role: user, content: Daily summary}

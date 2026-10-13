@@ -1,0 +1,297 @@
+# Collected from spec/lifecycles/task.yaml. The value null in from means "the object does not exist yet".
+lifecycle: spec/lifecycles/task.yaml
+object: task
+rules: [APR-5, APR-7, BUD-1, BUD-2, CAP-1, CAP-2, CNT-1, CNT-2, CNT-3, CNT-4, CNT-5, CNT-7, DLV-1, DLV-2, DLV-4,
+  DSP-1, DSP-3, DSP-4, DSP-7, FEN-1, FEN-2, FEN-3, FEN-4, FEN-5, GW-12, GW-13, HLD-1, HLD-3, IDM-1, IDM-2, IDM-3,
+  IDN-10, IDN-5, MGR-1, MGR-11, MGR-17, MGR-18, MGR-21, MGR-4, MGR-9, MSG-9, ORC-3, OUT-1, PRM-3, PRM-6, PRM-8,
+  PRM-9, RET-3, SCR-8, TEN-7]
+description: 'Allowed and forbidden transitions of the "task" lifecycle, collected from the tables of spec/lifecycles/task.md.
+  The implementation accepts a transition from the allowed list under the condition of its row; a pair from the forbidden
+  list does not change the state, and the call that asks for it is rejected. The without_transition rows are calls that
+  have no transition by the table. A terminal state is final: a retry after the end is a new task (DLV-4).'
+states:
+- id: submitted
+  terminal: false
+- id: working
+  terminal: false
+- id: completed
+  terminal: true
+- id: failed
+  terminal: true
+- id: canceled
+  terminal: true
+- id: rejected
+  terminal: true
+allowed:
+- from: null
+  to: submitted
+  by: 'P1 `enqueue` (a worker with an attempt token, an external program with its own key); P1 `submit_activity` (a channel);
+    P3 `enqueue_child`; the `schedule` loop; a tenant route (an event, `on: inbox`, `on: task_done`)'
+  rules: [BUD-1, CAP-1, HLD-3, IDM-1, IDM-2, PRM-3, PRM-6, TEN-7]
+- from: null
+  to: working
+  by: the core in the transaction of an approval being approved
+  rules: [APR-5, APR-7, CNT-7, IDM-2]
+- from: null
+  to: submitted
+  by: 'the core in the transaction of the trigger: a continuation (`reply`, `campaign`, `script`), a campaign item (the
+    `campaign` loop), a script step task (the `script` loop), a seat task (the `incident` loop, a human directive)'
+  rules: [CNT-1, CNT-2, CNT-3, MGR-4, ORC-3, SCR-8]
+- from: null
+  to: submitted
+  by: P2 `task.redrive`
+  rules: [DLV-4]
+- from: null
+  to: rejected
+  by: any enqueue source above
+  rules: [DSP-4, DSP-7, IDM-1, PRM-8]
+- from: submitted
+  to: working
+  by: P1 `claim`
+  rules: [CNT-7, DSP-1, DSP-3, DSP-4, FEN-1, HLD-1, IDN-5, MGR-1, PRM-3]
+- from: submitted
+  to: canceled
+  by: P1 `claim` (recheck at handout)
+  rules: [PRM-3]
+- from: working
+  to: completed
+  by: P1 `complete` with the current token
+  rules: [CNT-5, DLV-2, FEN-2, MSG-9, OUT-1]
+- from: working
+  to: completed
+  by: the outcome `done` of the write call (P1 `complete` from the toolhost)
+  rules: [APR-7, CNT-7]
+- from: working
+  to: failed
+  by: the outcome `error`, `denied(held)` or `exec_unknown` of the write call
+  rules: [APR-7, CNT-7, DLV-4]
+- from: working
+  to: submitted
+  by: P1 `fail` with a retryable reason; the `reaper` loop; the `deadline` loop
+  rules: [CNT-4, FEN-1, FEN-3]
+- from: working
+  to: submitted
+  by: P1 `release`; P1 `fail`; the `reaper` loop
+  rules: [CAP-2, FEN-1, FEN-5, GW-12, GW-13]
+- from: working
+  to: submitted
+  by: 'a hold with the effect `cancel_running` (P2 `hold.set`): the holder gets `cancel_requested` in the `heartbeat` response'
+  rules: [FEN-4, HLD-3]
+- from: working
+  to: submitted
+  by: the control operation `preempt`
+  rules: [MGR-11]
+- from: working
+  to: submitted
+  by: P2 `seat.assign`, P2 `seat.vacate`, a seat hold by incident
+  rules: [FEN-2, IDN-10, MGR-1]
+- from: working
+  to: submitted
+  by: P1 `grant.request`; P2 `model_grant.revoke`
+  rules: [MGR-17, MGR-18]
+- from: working
+  to: failed
+  by: P1 `fail` with a non-retryable reason; the `reaper` loop; the `deadline` loop; the core
+  rules: [BUD-2, CAP-2, DLV-4, FEN-3]
+- from: submitted
+  to: failed
+  by: the `deadline` loop
+  rules: [CNT-7, DLV-4]
+- from: submitted
+  to: canceled
+  by: P1 `cancel` (the initiator, an external program for its own tasks); P2 `task.cancel` (the initiator with the `/cancel`
+    command, the tenant admin, the operator); cascading cancellation of the parent
+  rules: &id001 [FEN-4, IDM-3, PRM-9]
+- from: working
+  to: canceled
+  by: P1 `cancel` (the initiator, an external program for its own tasks); P2 `task.cancel` (the initiator with the `/cancel`
+    command, the tenant admin, the operator); cascading cancellation of the parent
+  rules: *id001
+- from: submitted
+  to: canceled
+  by: 'the core in the transaction of the cause: P2 `principal.off`, P2 `ungrant`, a group change through `apply`'
+  rules: &id002 [PRM-3]
+- from: working
+  to: canceled
+  by: 'the core in the transaction of the cause: P2 `principal.off`, P2 `ungrant`, a group change through `apply`'
+  rules: *id002
+- from: submitted
+  to: canceled
+  by: the control operation `cancel`; the third preemption; from v0.2 a takeover
+  rules: &id003 [MGR-11, MGR-21, MGR-9]
+- from: working
+  to: canceled
+  by: the control operation `cancel`; the third preemption; from v0.2 a takeover
+  rules: *id003
+forbidden:
+- from: null
+  to: completed
+  expect: rejected
+  rules: &id004 [IDM-1, DSP-1]
+  why: the object does not appear directly in the state completed
+- from: null
+  to: failed
+  expect: rejected
+  rules: *id004
+  why: the object does not appear directly in the state failed
+- from: null
+  to: canceled
+  expect: rejected
+  rules: *id004
+  why: the object does not appear directly in the state canceled
+- from: submitted
+  to: submitted
+  expect: rejected
+  rules: &id005 [FEN-1, FEN-2, CNT-4]
+  why: the lifecycle table has no such transition
+- from: submitted
+  to: completed
+  expect: rejected
+  rules: *id005
+  why: the lifecycle table has no such transition
+- from: submitted
+  to: rejected
+  expect: rejected
+  rules: *id005
+  why: the lifecycle table has no such transition
+- from: working
+  to: working
+  expect: rejected
+  rules: *id005
+  why: the lifecycle table has no such transition
+- from: working
+  to: rejected
+  expect: rejected
+  rules: *id005
+  why: the lifecycle table has no such transition
+- from: completed
+  to: submitted
+  expect: rejected
+  rules: &id006 [DLV-4, DLV-1]
+  why: completed is a terminal state
+- from: completed
+  to: working
+  expect: rejected
+  rules: *id006
+  why: completed is a terminal state
+- from: completed
+  to: completed
+  expect: rejected
+  rules: *id006
+  why: completed is a terminal state
+- from: completed
+  to: failed
+  expect: rejected
+  rules: *id006
+  why: completed is a terminal state
+- from: completed
+  to: canceled
+  expect: rejected
+  rules: *id006
+  why: completed is a terminal state
+- from: completed
+  to: rejected
+  expect: rejected
+  rules: *id006
+  why: completed is a terminal state
+- from: failed
+  to: submitted
+  expect: rejected
+  rules: *id006
+  why: failed is a terminal state
+- from: failed
+  to: working
+  expect: rejected
+  rules: *id006
+  why: failed is a terminal state
+- from: failed
+  to: completed
+  expect: rejected
+  rules: *id006
+  why: failed is a terminal state
+- from: failed
+  to: failed
+  expect: rejected
+  rules: *id006
+  why: failed is a terminal state
+- from: failed
+  to: canceled
+  expect: rejected
+  rules: *id006
+  why: failed is a terminal state
+- from: failed
+  to: rejected
+  expect: rejected
+  rules: *id006
+  why: failed is a terminal state
+- from: canceled
+  to: submitted
+  expect: rejected
+  rules: *id006
+  why: canceled is a terminal state
+- from: canceled
+  to: working
+  expect: rejected
+  rules: *id006
+  why: canceled is a terminal state
+- from: canceled
+  to: completed
+  expect: rejected
+  rules: *id006
+  why: canceled is a terminal state
+- from: canceled
+  to: failed
+  expect: rejected
+  rules: *id006
+  why: canceled is a terminal state
+- from: canceled
+  to: canceled
+  expect: rejected
+  rules: *id006
+  why: canceled is a terminal state
+- from: canceled
+  to: rejected
+  expect: rejected
+  rules: *id006
+  why: canceled is a terminal state
+- from: rejected
+  to: submitted
+  expect: rejected
+  rules: *id006
+  why: rejected is a terminal state
+- from: rejected
+  to: working
+  expect: rejected
+  rules: *id006
+  why: rejected is a terminal state
+- from: rejected
+  to: completed
+  expect: rejected
+  rules: *id006
+  why: rejected is a terminal state
+- from: rejected
+  to: failed
+  expect: rejected
+  rules: *id006
+  why: rejected is a terminal state
+- from: rejected
+  to: canceled
+  expect: rejected
+  rules: *id006
+  why: rejected is a terminal state
+- from: rejected
+  to: rejected
+  expect: rejected
+  rules: *id006
+  why: rejected is a terminal state
+without_transition:
+- from: null
+  to: null
+  by: P1 `enqueue` with a key that the tenant already has
+  when: 'the same initiator and the same body: the answer `TaskRef{id, existing: true}`; otherwise `idempotency_conflict`
+    without an id; the key of a deleted task gives `gone`'
+  expect: no_transition
+  rules: [IDM-1, RET-3]
+expect:
+  allowed: 24
+  forbidden: 32

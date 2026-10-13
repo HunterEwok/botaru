@@ -1,0 +1,64 @@
+registry: waiting-reasons
+version: 1
+description: >-
+  Reasons why a task in `submitted` cannot be handed out right now. A waiting task carries the field
+  `waiting_reason` of the task record from this list; work is not dropped under pressure, and the attempt
+  is not spent (DSP-7). Bots and managers see only this field (the view `status.tasks`); they
+  know nothing about workers. Record fields: `meaning` (what it means), `predicate` (the dispatcher
+  condition from `dispatch-predicates.yaml` that is not met), `rules`.
+source: docs/coordination.md
+entries:
+  - id: no_member
+    since: v0.1
+    meaning: The task bot group is empty; there is no overflow to workers outside the group.
+    predicate: D5
+    rules: [DSP-7, DSP-8]
+  - id: no_member_ready
+    since: v0.1
+    meaning: The bot group has members, but none is ready.
+    predicate: D8
+    rules: [DSP-7, DSP-8]
+  - id: type_quota
+    since: v0.1
+    meaning: The `max_running` for the pair (tenant, type) is exhausted.
+    predicate: D10
+    rules: [DSP-7]
+  - id: held
+    since: v0.1
+    meaning: A stop with the effect `no_claim` or `cancel_running` covers the task.
+    predicate: D9
+    rules: [DSP-7, HLD-1, HLD-3]
+  - id: run_at
+    since: v0.1
+    meaning: The time `run_at` has not come yet, that is, the retry pause has not ended.
+    predicate: D7
+    rules: [DSP-7]
+  - id: provider_unavailable
+    since: v0.1
+    meaning: The circuit of the needed pair (workspace, model pool) is open, including because of a provider configuration error.
+    predicate: D18
+    rules: [DSP-7, GW-11, GW-13]
+  - id: resource_busy
+    since: v0.1
+    meaning: 'The resource is taken by another issued write call; the action declared `exclusive: resource`.'
+    predicate: D11
+    rules: [DSP-7, ORC-12]
+  - id: not_released
+    since: v0.1
+    meaning: The campaign item has not been released yet.
+    predicate: D7
+    rules: [DSP-7, ORC-3]
+  - id: provider_quota
+    since: v0.1
+    meaning: The tenant has no free share of the needed model pool.
+    predicate: D19
+    rules: [DSP-7, GW-10]
+  - id: group_quota
+    since: v0.2
+    meaning: The `max_running` of the bot group or the `max_share` of the tenant rule is exhausted.
+    predicate: D10
+    rules: [DSP-7]
+  - id: model_grant_pending
+    since: v0.2
+    meaning: The task waits for a decision on a grant of a stronger model.
+    rules: [DSP-7, MGR-17]

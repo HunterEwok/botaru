@@ -1,0 +1,21 @@
+schema: urn:botaru:schema:hold:1
+rules:
+- HLD-1
+- HLD-6
+description: Auto-stop HLD-6.
+data:
+  id: h_01JB8M0000000000000000000A
+  tenant: demo
+  scope:
+    kind: role
+    tenant: demo
+    name: ops-reader
+  effects:
+  - no_delivery
+  reason: secret_in_outbound
+  until: null
+  author: system
+  author_kind: contain_auto
+  source: secret_in_outbound_twice
+  state: active
+  created_at: '2026-10-12T14:40:00Z'

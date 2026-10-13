@@ -1,0 +1,102 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:botaru:schema:run-outcome:1",
+  "title": "E4 run: result",
+  "description": "Result of a runtime run for the adapter: completed with artifacts, or failed with the reason that P4 or the runtime returned; usage is for reference (BUD-3). The adapter hands in the result with P1 complete or fail; the runtime does not retry a P4 error (GW-12).",
+  "x-botaru-direction": "input",
+  "x-botaru-rules": [
+    "FEN-4",
+    "BUD-3",
+    "GW-12"
+  ],
+  "oneOf": [
+    {
+      "type": "object",
+      "required": [
+        "run_id",
+        "status",
+        "result"
+      ],
+      "properties": {
+        "run_id": {
+          "$ref": "urn:botaru:schema:run-request:1#/properties/run_id"
+        },
+        "status": {
+          "const": "completed"
+        },
+        "result": {
+          "type": "object",
+          "maxProperties": 64,
+          "description": "Result by the task type result_schema; the core checks it at complete.",
+          "x-botaru-closed-by": "result_schema of the task type (OUT-2)"
+        },
+        "artifacts": {
+          "type": "array",
+          "items": {
+            "$ref": "urn:botaru:schema:common:1#/$defs/file_ref"
+          },
+          "maxItems": 50
+        },
+        "usage": {
+          "type": "object",
+          "description": "Reference spending; only P4 counts money (BUD-3).",
+          "properties": {
+            "input_tokens": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 100000000
+            },
+            "output_tokens": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 100000000
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "required": [
+        "run_id",
+        "status",
+        "reason",
+        "retryable"
+      ],
+      "properties": {
+        "run_id": {
+          "$ref": "urn:botaru:schema:run-request:1#/properties/run_id"
+        },
+        "status": {
+          "const": "failed"
+        },
+        "reason": {
+          "$ref": "urn:botaru:schema:common:1#/$defs/reason"
+        },
+        "retryable": {
+          "type": "boolean"
+        },
+        "usage": {
+          "type": "object",
+          "description": "Reference spending; only P4 counts money (BUD-3).",
+          "properties": {
+            "input_tokens": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 100000000
+            },
+            "output_tokens": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 100000000
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    }
+  ]
+}

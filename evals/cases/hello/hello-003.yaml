@@ -1,0 +1,17 @@
+# evals/cases/hello/hello-003.yaml (catalog: evals/README.md)
+id: hello-003
+kind: twin
+blocking: false
+status: active
+version: v0.1
+rules: []
+twin: hello-002
+summary: 'alice (group hello) writes the same /hello and gets a greeting.'
+from: alice
+chat: alice-dm
+message: /hello
+expect:
+  state: completed
+  checks:
+  - {max_tool_calls: 0}
+  - store: {path: 'tasks[?id==self]', count: 1}

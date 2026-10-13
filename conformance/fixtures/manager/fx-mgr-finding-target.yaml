@@ -1,0 +1,80 @@
+id: fx-mgr-finding-target
+rules: [MGR-26, MGR-22]
+description: 'A target from the code''s list is applied at once within the seat''s limits. A target that is not in the list and came
+  from a finding is applied only through decide(subject_kind: control) of a tenant person with control.approve; the channel draws the control
+  card from the record without model text, the deadline is 1 h, and after it expires the operation is not applied; an approved operation
+  is applied through control.apply on behalf of the person who decided. Every call records the origin of the target: code
+  or finding:<id>.'
+given:
+  incident:
+    id: i_311
+    tenant: demo
+    implicated: [w_7]
+  findings:
+  - id: fd_2
+    subject: {kind: worker, id: w_12}
+    untrusted: true
+cases:
+- id: fx-mgr-finding-target-a
+  steps:
+  - call:
+      port: P3
+      op: tools/call
+      request:
+        name: control_ops
+        arguments:
+          op: quarantine
+          target: {kind: worker, id: w_7}
+    by: attempt
+  expect: {result: ok, target_origin: code}
+- id: fx-mgr-finding-target-b
+  steps:
+  - call:
+      port: P3
+      op: tools/call
+      request:
+        name: control_ops
+        arguments:
+          op: quarantine
+          target: {kind: worker, id: w_12}
+          finding: fd_2
+    by: attempt
+  expect:
+    outcome: card
+    card:
+      kind: control_card
+      decide_subject: control
+      ttl: 1h
+      model_text: false
+      label: manager output from reading tenant data, untrusted
+    target_origin: finding:fd_2
+    holds_created: 0
+- id: fx-mgr-finding-target-c
+  given:
+    after: fx-mgr-finding-target-b
+    people:
+    - principal: human:carol
+      caps: [control.approve@demo]
+  steps:
+  - call:
+      port: P1
+      op: decide
+      request: {subject_kind: control, id: $last, decision: approve}
+    by: human:carol
+  expect: {applied_as: 'human:carol', path: control.apply}
+- id: fx-mgr-finding-target-d
+  given: {after: fx-mgr-finding-target-b, now_plus: 61m}
+  expect: {card: expired, holds_created: 0}
+- id: fx-mgr-finding-target-e
+  given:
+    after: fx-mgr-finding-target-b
+    people:
+    - principal: human:alice
+      caps: [user@demo]
+  steps:
+  - call:
+      port: P1
+      op: decide
+      request: {subject_kind: control, id: $last, decision: approve}
+    by: human:alice
+  expect: {result: rejected, reason: no_group_cap}

@@ -1,0 +1,41 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:botaru:schema:p1-card-request:1",
+  "title": "P1 card.details and card.remind: request",
+  "description": "The buttons \"Details\" (card.details) and \"Remind approvers\" (card.remind) on a card or the initiator's copy. The core checks the permission for the record (data:<class> not lower than the mark) and records the opening for the details_opened field; card.remind at most once in 5 minutes per approval, otherwise service_rate_limited (APR-19). Who pressed and from which chat, the channel passes in the headers Botaru-On-Behalf and Botaru-Chat by the on-behalf schema (spec/bindings/http/README.md); the body has no such fields.",
+  "x-botaru-direction": "input",
+  "x-botaru-rules": [
+    "APR-11",
+    "APR-14",
+    "APR-19"
+  ],
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "op",
+    "subject_kind",
+    "id",
+    "nonce"
+  ],
+  "properties": {
+    "op": {
+      "enum": [
+        "card.details",
+        "card.remind"
+      ]
+    },
+    "subject_kind": {
+      "$ref": "urn:botaru:schema:decision:1#/$defs/subject_kind",
+      "description": "Decision subject from a closed list. v0.1: approval, proposal, memory_record, campaign, script, script_gate, control, subject_request (kind erase, D-76); v0.2: takeover, governance_case, attribution and subject_request of kind export."
+    },
+    "id": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/object_id"
+    },
+    "nonce": {
+      "description": "One-time value of the card: the button carries it together with the subject and id (APR-3).",
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_-]{16,64}$",
+      "maxLength": 64
+    }
+  }
+}

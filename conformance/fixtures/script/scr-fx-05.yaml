@@ -1,0 +1,64 @@
+id: scr-fx-05
+rules: [SCR-5, PRM-8]
+description: 'Draft acceptance by the chain of core checks. A task step whose parameters name a service, for an initiator
+  without service.control:nginx, gives rejected(forbidden) with needs: [service.control:nginx] and the step number. The first refusal
+  rejects the whole draft, creates no record and does not take the key. The schema rejects fields that only the core writes.'
+given:
+  tenant: demo
+  initiator:
+    principal: human:carol
+    caps: ['task:ops.service.control.v1', 'task:ops.summary.v1']
+expect: {model_gets: a short reason, audit_gets: the full reason}
+cases:
+- description: no service.control
+  given:
+    draft:
+      script: v1
+      steps:
+      - id: sum
+        kind: task
+        type: ops.summary.v1
+        goal: {assignment: true}
+      - id: restart
+        kind: task
+        type: ops.service.control.v1
+        needs: [sum]
+        goal: {template: restart_service}
+        params: {service: nginx, verb: restart, resource: web1}
+  expect:
+    result: rejected
+    reason: forbidden
+    step: restart
+    needs: ['service.control:nginx']
+    record: none
+    idempotency_key_taken: false
+- description: order of checks
+  given:
+    draft:
+      script: v1
+      steps:
+      - id: a
+        kind: task
+        type: ops.unknown.v1
+        goal: {assignment: true}
+      - id: b
+        kind: task
+        type: ops.service.control.v1
+        needs: [a]
+        goal: {template: restart_service}
+        params: {service: nginx, verb: restart}
+  expect: {result: rejected, reason: script_ref_unknown, step: a}
+- description: a core field from the author
+  given:
+    draft:
+      script: v1
+      plan_hash: sha256:0000
+      steps:
+      - id: sum
+        kind: task
+        type: ops.summary.v1
+        goal: {assignment: true}
+  expect: {result: rejected, reason: script_invalid}
+- description: four steps with an action
+  given: {draft_actions: 4}
+  expect: {result: rejected, reason: script_too_large}

@@ -1,0 +1,63 @@
+id: fx-mgr-protected
+rules: [MGR-32, MGR-14]
+description: 'A seat operation on a protected target: the answer is protected_target, the core creates a control card for the people of T,
+  and the human decision applies the operation on their behalf. For the safeguard this is not a refusal, and the card counts toward ops_per_hour.'
+given:
+  incident:
+    id: i_311
+    tenant: demo
+    implicated: [w_7, w_9]
+    protected:
+    - {worker: w_9, reason: backup_running}
+  protected_set:
+  - types with alarm.* in events
+  - job type raising monitor alarms
+  - makes_backup types
+  - 'proposable: false types and schedules'
+  - everything named by incident classes
+  - workers running protected type now
+  breaker_denials_in_row: 2
+cases:
+- id: fx-mgr-protected-a
+  steps:
+  - call:
+      port: P3
+      op: tools/call
+      request:
+        name: control_ops
+        arguments:
+          op: quarantine
+          target: {kind: worker, id: w_9}
+    by: attempt
+  expect:
+    result: rejected
+    reason: protected_target
+    card: {kind: control_card, to: demo}
+    holds_created: 0
+    breaker_denials_in_row: 2
+    ops_per_hour_used: '+1'
+- id: fx-mgr-protected-b
+  steps:
+  - call:
+      port: P3
+      op: tools/call
+      request:
+        name: control_ops
+        arguments:
+          op: cancel
+          target: {kind: task, id: t-bk-1, type: demo.db.backup.v1, makes_backup: true}
+    by: attempt
+  expect: {result: rejected, reason: protected_target}
+- id: fx-mgr-protected-c
+  given:
+    after: fx-mgr-protected-a
+    people:
+    - principal: human:carol
+      caps: [control.approve@demo]
+  steps:
+  - call:
+      port: P1
+      op: decide
+      request: {subject_kind: control, id: $last, decision: approve}
+    by: human:carol
+  expect: {applied_as: 'human:carol'}

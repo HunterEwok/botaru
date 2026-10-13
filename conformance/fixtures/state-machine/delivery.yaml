@@ -1,0 +1,187 @@
+# Collected from spec/lifecycles/delivery.yaml. The value null in from means "the object does not exist yet".
+lifecycle: spec/lifecycles/delivery.yaml
+object: delivery
+rules: [ART-3, CAP-3, DLV-1, DLV-10, DLV-12, DLV-15, DLV-2, DLV-3, DLV-4, DLV-6, DLV-7, FEN-1, FEN-5, FEN-7, HLD-3,
+  HLD-6, INJ-11, MON-1, MON-10, MON-7, MON-8, ORC-10, PRM-3, REP-9, SEC-9]
+description: Allowed and forbidden transitions of the "delivery" lifecycle, collected from the tables of spec/lifecycles/delivery.md.
+  The implementation accepts a transition from the allowed list under the condition of its row; a pair from the forbidden
+  list does not change the state, and the call that asks for it is rejected. The without_transition rows are calls that
+  have no transition by the table. A delivery ends in a terminal state with an event; a retry of a dead delivery is a new
+  delivery through P2 delivery.redrive (DLV-4).
+states:
+- id: planned
+  terminal: false
+- id: sending
+  terminal: false
+- id: delivered
+  terminal: true
+- id: withheld
+  terminal: true
+- id: dead
+  terminal: true
+allowed:
+- from: null
+  to: planned
+  by: 'the core in the transaction of a transition: a terminal state of a task, creation and transitions of an approval,
+    a change of an alarm episode, a service request `via: monitor` or `monitor/script_run` with a `service_grant` record,
+    a code note about an action on a service, a bot note on a problem (v0.2), a route, a schedule slot'
+  rules: [DLV-2, DLV-6, MON-1, MON-10, MON-7, MON-8, ORC-10]
+- from: null
+  to: planned
+  by: the core for a request from a group chat
+  rules: [DLV-15, REP-9]
+- from: null
+  to: planned
+  by: the core before the first model text to the recipient
+  rules: [DLV-12]
+- from: null
+  to: planned
+  by: the core at the principal's first contact and on a change of `notice_version` in the tenant's `privacy` block
+  rules: []
+- from: planned
+  to: planned
+  by: the core (waiting)
+  rules: [CAP-3, DLV-10, DLV-12]
+- from: planned
+  to: sending
+  by: P1 `claim` with the kind `delivery` from a worker registered on the delivery's `target`
+  rules: [ART-3, DLV-6, DLV-7, FEN-1, PRM-3]
+- from: planned
+  to: withheld
+  by: the core at handout or in the transaction of the cause
+  rules: [DLV-12, DLV-6, DLV-7, HLD-3, SEC-9]
+- from: sending
+  to: delivered
+  by: P1 `complete` with a receipt from the external system
+  rules: [FEN-7]
+- from: sending
+  to: withheld
+  by: P1 `fail` of the channel with a rule reason
+  rules: [DLV-7, HLD-6, INJ-11]
+- from: sending
+  to: planned
+  by: P1 `fail` with a retryable reason; the `reaper` loop
+  rules: [DLV-3, FEN-5]
+- from: planned
+  to: dead
+  by: the `delivery` loop; P1 `fail` with a non-retryable reason
+  rules: &id001 [DLV-4]
+- from: sending
+  to: dead
+  by: the `delivery` loop; P1 `fail` with a non-retryable reason
+  rules: *id001
+- from: planned
+  to: delivered
+  by: the core when sending a summary
+  rules: [DLV-10]
+forbidden:
+- from: null
+  to: sending
+  expect: rejected
+  rules: &id002 [DLV-2, DLV-6]
+  why: the object does not appear directly in the state sending
+- from: null
+  to: delivered
+  expect: rejected
+  rules: *id002
+  why: the object does not appear directly in the state delivered
+- from: null
+  to: withheld
+  expect: rejected
+  rules: *id002
+  why: the object does not appear directly in the state withheld
+- from: null
+  to: dead
+  expect: rejected
+  rules: *id002
+  why: the object does not appear directly in the state dead
+- from: sending
+  to: sending
+  expect: rejected
+  rules: [DLV-6, DLV-1]
+  why: the lifecycle table has no such transition
+- from: delivered
+  to: planned
+  expect: rejected
+  rules: &id003 [DLV-1, DLV-4]
+  why: delivered is a terminal state
+- from: delivered
+  to: sending
+  expect: rejected
+  rules: *id003
+  why: delivered is a terminal state
+- from: delivered
+  to: delivered
+  expect: rejected
+  rules: *id003
+  why: delivered is a terminal state
+- from: delivered
+  to: withheld
+  expect: rejected
+  rules: *id003
+  why: delivered is a terminal state
+- from: delivered
+  to: dead
+  expect: rejected
+  rules: *id003
+  why: delivered is a terminal state
+- from: withheld
+  to: planned
+  expect: rejected
+  rules: *id003
+  why: withheld is a terminal state
+- from: withheld
+  to: sending
+  expect: rejected
+  rules: *id003
+  why: withheld is a terminal state
+- from: withheld
+  to: delivered
+  expect: rejected
+  rules: *id003
+  why: withheld is a terminal state
+- from: withheld
+  to: withheld
+  expect: rejected
+  rules: *id003
+  why: withheld is a terminal state
+- from: withheld
+  to: dead
+  expect: rejected
+  rules: *id003
+  why: withheld is a terminal state
+- from: dead
+  to: planned
+  expect: rejected
+  rules: *id003
+  why: dead is a terminal state
+- from: dead
+  to: sending
+  expect: rejected
+  rules: *id003
+  why: dead is a terminal state
+- from: dead
+  to: delivered
+  expect: rejected
+  rules: *id003
+  why: dead is a terminal state
+- from: dead
+  to: withheld
+  expect: rejected
+  rules: *id003
+  why: dead is a terminal state
+- from: dead
+  to: dead
+  expect: rejected
+  rules: *id003
+  why: dead is a terminal state
+without_transition:
+- from: dead
+  to: null
+  by: P2 `delivery.redrive`
+  when: a new delivery is created with a link to the dead one; ceilings and rights are checked again
+  expect: no_transition
+  rules: [DLV-4]
+expect:
+  allowed: 13
+  forbidden: 20

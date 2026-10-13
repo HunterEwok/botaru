@@ -1,0 +1,71 @@
+id: fx-man-sch-01
+rules: [TIM-2, PRM-10, APR-5, PRP-10, DLV-6]
+description: >-
+  Schedule and route checks: cron of five fields without CRON_TZ and TZ (TIM-2); a schedule
+  type has timeouts.deadline; schedule and route types are in system-ops
+  (PRM-10); neither a schedule nor a route sets an action.* type (APR-5); a schedule of a type with
+  proposable: false is not proposed by itself (PRP-10); a group: and sink: address refers to
+  a declared group and sink (DLV-6).
+with_examples: true
+cases:
+  - name: cron with a time zone inside
+    manifests:
+      - apiVersion: botaru/v1alpha1
+        kind: Schedule
+        metadata: {name: sensor-nightly, tenant: demo}
+        spec: {cron: "CRON_TZ=Europe/Berlin 15 6 * * *", task: {type: data.sensor_check.v1, params: {window_h: 24}}}
+    expect: {error: schema_invalid}            # the cron format is closed by the Schedule schema
+  - name: cron of six fields
+    manifests:
+      - apiVersion: botaru/v1alpha1
+        kind: Schedule
+        metadata: {name: sensor-nightly, tenant: demo}
+        spec: {cron: "0 15 6 * * *", task: {type: data.sensor_check.v1, params: {window_h: 24}}}
+    expect: {error: schema_invalid}
+  - name: schedule type without a deadline
+    manifests:
+      - apiVersion: botaru/v1alpha1
+        kind: TaskType
+        metadata: {name: fx.nodeadline.v1}
+        spec: {title: "No deadline", worker_kind: job, purpose: work, tier: 0, data_class: summary,
+               params_schema: {type: object, additionalProperties: false, properties: {}}, tree_budget_eur: 0}
+      - apiVersion: botaru/v1alpha1
+        kind: Schedule
+        metadata: {name: fx-nodeadline, tenant: demo}
+        spec: {cron: "0 8 * * *", task: {type: fx.nodeadline.v1}}
+    expect: {error: schedule_deadline, also: [system_ops_missing]}
+  - name: schedule sets an action
+    manifests:
+      - apiVersion: botaru/v1alpha1
+        kind: Schedule
+        metadata: {name: fx-cleanup, tenant: demo}
+        spec: {cron: "0 3 * * *", task: {type: action.cleanup_pipeline_tmp.v1}}
+    expect: {error: action_type_grant}
+  - name: type with an alarm and a schedule that can be proposed
+    manifests:
+      - apiVersion: botaru/v1alpha1
+        kind: Schedule
+        metadata: {name: sensor-watch, tenant: demo}
+        spec: {cron: "*/30 * * * *", task: {type: data.sensor_watch.v1}}
+    expect: {error: proposable_required_false}
+  - name: schedule params outside the type schema
+    manifests:
+      - apiVersion: botaru/v1alpha1
+        kind: Schedule
+        metadata: {name: sensor-nightly, tenant: demo}
+        spec: {cron: "15 6 * * *", task: {type: data.sensor_check.v1, params: {window_h: 240}}}
+    expect: {error: params_invalid}
+  - name: route to a type without a row in system-ops
+    manifests:
+      - apiVersion: botaru/v1alpha1
+        kind: Route
+        metadata: {name: fx-geo, tenant: demo}
+        spec: {"on": {event: run.finished.v1}, task: {type: geo.describe.v1}}
+    expect: {error: system_ops_missing}
+  - name: delivery to an undeclared sink
+    manifests:
+      - apiVersion: botaru/v1alpha1
+        kind: Route
+        metadata: {name: ctd-qc-finished, tenant: demo}
+        spec: {"on": {event: run.finished.v1, subject: ctd-stations}, task: {type: pipeline.ctd_qc.report.v1}, deliver_to: ["sink:ftp-out"]}
+    expect: {error: ref_missing}

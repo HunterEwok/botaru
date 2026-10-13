@@ -1,0 +1,8 @@
+schema: urn:botaru:schema:request-action:1
+rules:
+- APR-2
+description: A request for the action cleanup_pipeline_tmp with an argument from the action's closed schema.
+data:
+  action: cleanup_pipeline_tmp
+  args:
+    older_than_days: 7

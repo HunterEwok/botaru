@@ -1,0 +1,57 @@
+# A card only from the subject record (APR-3, check fixture): the input record and the expected card fields
+# per the schema spec/model/card.schema.json.
+id: fx-approval-card
+rules: [APR-3, APR-19]
+description: There is no model text on the card; a button carries only (subject_kind, id, nonce) and the button code.
+cases:
+- id: apr-card-01
+  rules: [APR-3, APR-19]
+  given:
+    record:
+      approval: apr_4812
+      action: cleanup_pipeline_tmp
+      title: Clean up the pipeline temporary files
+      args: {older_than_days: 7}
+      initiator: human:bob
+      requested_by: {kind: bot, role: ops-reader, task: t_1}
+      untrusted_seen: true
+      untrusted_source: logs/tail
+      risk: low
+      context: {verdict: cause_found, free_pct: 0}
+      model_text: CANARY-NOT-A-SECRET-card-model-text
+  expect:
+    card:
+      title: Clean up the pipeline temporary files
+      args: {older_than_days: 7}
+      requested_by: bot of role ops-reader in task t-1, initiator bob
+      untrusted: 'saw untrusted text: logs/tail'
+      context: {verdict: cause_found, free_pct: 0}
+    card_contains_canary: false
+    details_contains_canary: true
+    details_wrapped_untrusted: true
+    button_fields: [subject_kind, id, nonce, code]
+- id: apr-card-02
+  rules: [APR-3]
+  given:
+    record:
+      campaign: cmp-7
+      action: cleanup_pipeline_tmp
+      items: 12
+      rollout: 1 canary, then 5 at a time
+      threshold: 2
+      plan_hash: sha256:...
+  expect:
+    card: {count: 12, first: 5, full_list_button: true, plan_hash_shown: true}
+- id: apr-card-03
+  rules: [APR-3]
+  given:
+    callback:
+      subject_kind: approval
+      id: apr_4812
+      nonce: valid
+      code: approve
+      extra: {older_than_days: 1}
+  expect:
+    decision: {result: denied}
+    reason: forbidden
+    note: the channel does not accept a button with fields beyond (subject_kind, id, nonce, code)

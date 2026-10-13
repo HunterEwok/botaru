@@ -1,0 +1,8 @@
+schema: spec/model/p1-script-get-request.schema.json
+rules:
+- PRM-9
+- TEN-2
+description: A request with a tenant.
+cases:
+- id: s_01JB0000000000000000000301
+  tenant: demo2

@@ -1,0 +1,26 @@
+# Handle canaries (SEC-3): runtime handles do not get into the model context, logs, telemetry and the audit.
+id: fx-canaries-handles
+rules: [SEC-3]
+description: A handle is issued in the authorization header and expires with the lease; the handle canary is searched for in all
+  stores.
+cases:
+- id: can-hdl-01
+  rules: [SEC-3]
+  given:
+    canary:
+      value: CANARY-NOT-A-SECRET-tools-handle
+      planted_in: {run_request: handles.tools}
+  expect:
+    not_in: [model_context, task_journal, telemetry, audit, events, results]
+- id: can-hdl-02
+  rules: [SEC-3]
+  given:
+    canary: {value: CANARY-NOT-A-SECRET-tools-handle}
+    after: {lease: expired}
+  expect: {p3_call: handle_invalid}
+- id: can-hdl-03
+  rules: [SEC-3]
+  given:
+    canary: {}
+    after: {restore: new_epoch}
+  expect: {p3_call: handle_invalid, note: handles of the previous epoch are invalid}

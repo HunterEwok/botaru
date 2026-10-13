@@ -1,0 +1,28 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:botaru:schema:p1-fail-response:1",
+  "title": "P1 fail: response",
+  "description": "Retry time or end of work. Denial: fenced.",
+  "x-botaru-direction": "output",
+  "x-botaru-rules": [
+    "FEN-3"
+  ],
+  "type": "object",
+  "required": [
+    "final"
+  ],
+  "properties": {
+    "retry_at": {
+      "description": "Time before which the work is not given out again.",
+      "$ref": "urn:botaru:schema:common:1#/$defs/datetime"
+    },
+    "final": {
+      "description": "true if the work ended in a final state.",
+      "type": "boolean"
+    },
+    "reason": {
+      "description": "Reason for the end, for example attempts_exhausted.",
+      "$ref": "urn:botaru:schema:common:1#/$defs/reason"
+    }
+  }
+}

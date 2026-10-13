@@ -1,0 +1,137 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:botaru:schema:msg-send-request:1",
+  "title": "Message sender request",
+  "description": "Body of P1 msg.send and arguments of P3 send_message. The sender sets only the type, the address (to or reply_to), fields, the note, its own idempotency key and an expiry not longer than the type's; the request has no core fields (CloudEvents attributes and botaru extensions), and the schema rejects a request with them (MSG-1). The report genus needs exactly one of to and reply_to; the state genus has no address: the value goes into the inboxes of the roles that accept the type (MSG-14, STA-1). For an agent attempt the core builds the tool schema the same way as tools/list: type and to are enums from the role's messages.send, fields is the closed schema of the type (MSG-5).",
+  "x-botaru-direction": "input",
+  "x-botaru-rules": [
+    "MSG-1",
+    "MSG-4",
+    "MSG-5",
+    "MSG-13",
+    "MSG-15",
+    "STA-1"
+  ],
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "type",
+    "fields"
+  ],
+  "maxProperties": 6,
+  "properties": {
+    "type": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/type_name",
+      "description": "Message type <genus>.<name>.vN from the role's messages.send."
+    },
+    "to": {
+      "type": "string",
+      "pattern": "^(role|group):[a-z][a-z0-9-]{0,62}$",
+      "maxLength": 70,
+      "description": "Address: role:<name> or group:<name> from the enum that the core builds from the role's messages.send (MSG-4). The request has no worker:<id> address: only the core writes it."
+    },
+    "reply_to": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_-]{8,64}$",
+      "maxLength": 64,
+      "description": "Handle of the inbox entry that the core gave to this attempt: an opaque string, used to reply (reply_to) and to return the entry. The ids of the entry, the worker and the tenant are not visible in it."
+    },
+    "fields": {
+      "type": "object",
+      "description": "Fields by the closed schema of the type; at most the type's max_bytes, ceiling 4 KiB (MSG-15).",
+      "maxProperties": 64,
+      "x-botaru-closed-by": "fields_schema of the message type"
+    },
+    "note": {
+      "type": "string",
+      "maxLength": 500,
+      "description": "Note: a short text up to the type's note.max_chars, ceiling 500 characters; present only for report genus types that allow it; always untrusted (MSG-13)."
+    },
+    "idempotency_key": {
+      "description": "The sender's own idempotency key, or null.",
+      "anyOf": [
+        {
+          "type": "null"
+        },
+        {
+          "type": "string",
+          "pattern": "^(?!system:)[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$",
+          "maxLength": 128,
+          "description": "Idempotency key of the code; the core adds the sender prefix to it. Keys of the form system: are written only by the core (IDM-2)."
+        }
+      ]
+    },
+    "ttl": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/duration",
+      "description": "Expiry of the entry; only shorter than the type's expiry (MSG-12)."
+    }
+  },
+  "allOf": [
+    {
+      "not": {
+        "required": [
+          "to",
+          "reply_to"
+        ]
+      }
+    },
+    {
+      "if": {
+        "patternProperties": {
+          "^type$": {
+            "pattern": "^report\\."
+          }
+        }
+      },
+      "then": {
+        "oneOf": [
+          {
+            "required": [
+              "to"
+            ]
+          },
+          {
+            "required": [
+              "reply_to"
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "if": {
+        "patternProperties": {
+          "^type$": {
+            "pattern": "^state\\."
+          }
+        }
+      },
+      "then": {
+        "not": {
+          "anyOf": [
+            {
+              "required": [
+                "to"
+              ]
+            },
+            {
+              "required": [
+                "reply_to"
+              ]
+            },
+            {
+              "required": [
+                "note"
+              ]
+            },
+            {
+              "required": [
+                "ttl"
+              ]
+            }
+          ]
+        }
+      }
+    }
+  ]
+}

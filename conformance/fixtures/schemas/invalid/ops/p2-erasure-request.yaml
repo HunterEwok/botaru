@@ -1,0 +1,20 @@
+schema: urn:botaru:schema:p2-erasure-request:1
+rules:
+- RET-7
+- SEC-11
+description: Reason not from the operator, subject and ids together, a search string in the request.
+cases:
+- scope:
+    tenant: demo
+    subject: 'human:p_01JB3Q7N0M2V8XK4DGT5RZP9WC'
+  reason: bot_retired
+- scope:
+    tenant: demo
+    subject: 'human:p_01JB3Q7N0M2V8XK4DGT5RZP9WC'
+    ids:
+    - t_01JB8M0000000000000000000A
+  reason: manual
+- scope:
+    tenant: demo
+  reason: manual
+  match: alice@example.org

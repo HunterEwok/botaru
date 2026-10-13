@@ -1,0 +1,69 @@
+schema: spec/model/work-item.schema.json
+rules: [FEN-1, SEC-4, TEN-3a]
+description: Work units of three kinds from the sketch of the P1 sheet.
+cases:
+- work_id: w_01JB0000000000000000000001
+  kind: attempt
+  lease_no: 2
+  epoch: 7
+  tenant: demo
+  lease_until: '2026-10-05T16:20:00Z'
+  lease_remaining_s: 118
+  token: {epoch: 7, work_id: w_01JB0000000000000000000001, lease_no: 2, worker_id: wk_01JB000000000000000000000A, key_id: k1, sig: Y29yZS1zaWduYXR1cmUtb3Zlci1sZWFzZS10b2tlbi12MQ}
+  payload:
+    task:
+      id: t_01JB0000000000000000000001
+      type: ops.investigate.v1
+      body:
+        type: ops.investigate.v1
+        goal: why was www.example.org slow last night?
+      record:
+        max_tier: 1
+        data_mark: raw_logs
+        untrusted_seen: false
+    instruction: role text and task type text
+    handles:
+      tools: h1
+      model: h2
+      session: null
+      memory: null
+- work_id: c_01JB0000000000000000000001
+  kind: toolcall
+  lease_no: 1
+  epoch: 7
+  tenant: demo
+  lease_until: '2026-10-05T16:07:00Z'
+  lease_remaining_s: 120
+  start_by: '2026-10-05T16:05:30Z'
+  token: {epoch: 7, work_id: c_01JB0000000000000000000001, lease_no: 1, worker_id: wk_01JB000000000000000000000A, key_id: k1, sig: Y29yZS1zaWduYXR1cmUtb3Zlci1sZWFzZS10b2tlbi12MQ}
+  payload:
+    target:
+      plugin: logs
+      placement: host
+      host: web1
+    tool: tail
+    args:
+      source: nginx-access
+      lines: 200
+    approval_id: null
+    grant_id: null
+    args_hash: null
+- work_id: d_01JB0000000000000000000001
+  kind: delivery
+  lease_no: 1
+  epoch: 7
+  tenant: demo
+  lease_until: '2026-10-05T16:07:00Z'
+  lease_remaining_s: 120
+  token: {epoch: 7, work_id: d_01JB0000000000000000000001, lease_no: 1, worker_id: wk_01JB000000000000000000000A, key_id: k1, sig: Y29yZS1zaWduYXR1cmUtb3Zlci1sZWFzZS10b2tlbi12MQ}
+  payload:
+    target:
+      kind: channel
+      name: telegram-demo
+    delivery:
+      id: d_01JB0000000000000000000001
+      kind: task_result
+      to: origin
+      body: {form: result, text: 'Done: the summary is in the task.'}
+      recipient:
+        chat: {kind: direct, external_id: '1001'}

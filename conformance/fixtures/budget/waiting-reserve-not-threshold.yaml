@@ -1,0 +1,75 @@
+id: fx-budget-waiting-reserve-not-threshold
+rules: [BUD-4]
+description: The 80% threshold and the 100% refusal are counted from the actual spend and the reserves of running attempts. The reserve of tasks that
+  wait for a provider (waiting_reason provider_unavailable or provider_quota) does not count toward the threshold, although the reserve itself is kept.
+  72 schedule tasks wait for a provider with reserves totaling more than the daily limit, and a direct request of a person does not
+  get budget_exhausted.
+cases:
+- id: bud-fx-04
+  rules: [BUD-4]
+  description: 72 waiting schedule tasks do not give budget_exhausted to a direct request of a person.
+  given:
+    tenant_day_spent_eur: 2.0
+    waiting_tasks:
+      count: 72
+      subject: system
+      line: work
+      waiting_reason: provider_unavailable
+      reserve_eur_each: 0.4
+    tenant: demo
+    budgets: {month_eur: 300, day_eur: 15}
+    subject_day_eur: {'human:alice': 1, system: 3}
+  steps:
+  - call:
+      port: P1
+      op: enqueue
+      request:
+        body: {type: ops.investigate.v1, goal: training task ops.investigate.v1}
+        idempotency_key: bud-fx-04-1
+    context: {purpose: work, line: work, subject: 'human:alice', estimate_eur: 0.4}
+  expect:
+    outcome: accepted
+    threshold_base_eur: 2.0
+    waiting_reserves_kept_eur: 28.8
+    events: []
+- id: bud-fx-05
+  rules: [BUD-4]
+  description: The 80% threshold of the tenant daily limit gives one event per period; a second crossing on the same day
+    gives no event.
+  given:
+    tenant_day_spent_eur: 12.1
+    threshold_events_today: 1
+    tenant: demo
+    budgets: {month_eur: 300, day_eur: 15}
+  steps:
+  - call:
+      port: P1
+      op: enqueue
+      request:
+        body: {type: ops.investigate.v1, goal: training task ops.investigate.v1}
+        idempotency_key: bud-fx-05-2
+    context: {purpose: work, line: work, subject: 'human:bob', estimate_eur: 0.4}
+  expect: {outcome: accepted, new_threshold_events: 0}
+- id: bud-fx-06
+  rules: [BUD-4, TIM-2]
+  description: At 100% the refusal carries the limit refresh time, which is one UTC instant of the day boundary in the tenant's time zone.
+  given:
+    tenant_day_spent_eur: 14.9
+    tenant: demo
+    tenant_timezone: Europe/Berlin
+    now: '2026-10-12T15:00:00Z'
+    budgets: {month_eur: 300, day_eur: 15}
+  steps:
+  - call:
+      port: P1
+      op: enqueue
+      request:
+        body: {type: ops.investigate.v1, goal: training task ops.investigate.v1}
+        idempotency_key: bud-fx-06-3
+    context: {purpose: work, line: work, subject: 'human:bob', estimate_eur: 0.4}
+  expect:
+    result: rejected
+    reason: budget_exhausted
+    spends_attempt: false
+    retry: none
+    resets_at: '2026-10-12T22:00:00Z'

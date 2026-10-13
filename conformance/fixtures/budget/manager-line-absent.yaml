@@ -1,0 +1,44 @@
+id: fx-budget-manager-line-absent
+rules: [BUD-15]
+description: Code computes the table of fixed costs from ModelProfile and the tenant's manifests. For a tenant with farm_manager.enabled
+  false the table has no manager lines, with farm_manager.lens false there is no lens line, with farm_manager.daily_review
+  false there is no review line; the daily review is a separate line.
+cases:
+- id: bud-fx-07
+  rules: [BUD-15]
+  description: The manager is disabled, and the table has no manager lines.
+  given:
+    tenant: demo2
+    farm_manager: {enabled: false}
+    budgets:
+      month_eur: 100
+      lines:
+        review: {month_eur: 20}
+  expect:
+    apply: ok
+    rows_present: [commission_reviews]
+    rows_absent: [manager_lens, manager_daily_review, manager_incident_reads]
+- id: bud-fx-08
+  rules: [BUD-15]
+  description: The manager lens is disabled, there is no lens line, and the review and reads are there.
+  given:
+    tenant: demo
+    farm_manager: {enabled: true, lens: false, daily_review: true}
+  expect:
+    rows_present: [commission_reviews, manager_daily_review, manager_incident_reads]
+    rows_absent: [manager_lens]
+- id: bud-fx-09
+  rules: [BUD-15]
+  description: 'The manager''s incident reads are counted as three reads of one worst-case incident: input of
+    60 thousand tokens together and three answers at the seat profile''s max_output_tokens; the example profile prices are in euro per million
+    tokens.'
+  given:
+    tenant: demo
+    farm_manager: {enabled: true, lens: true, daily_review: true}
+    seat_profile:
+      name: seat-std
+      max_output_tokens: 8000
+      price: {input: 1.72, output: 8.6, checked: '2026-10-05'}
+  expect:
+    manager_incident_reads: {input_tokens: 60000, output_tokens: 24000, eur: 0.31}
+    price_date_shown: '2026-10-05'

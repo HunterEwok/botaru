@@ -1,0 +1,19 @@
+schema: urn:botaru:schema:monitor-note:1
+rules:
+- MON-8
+description: Template and text together, an extra field in the closed template fields.
+cases:
+- eventid: '8812345'
+  bot_id: bot_01JB8M0000000000000000000B
+  template: service_control_done
+  fields:
+    verb: restart
+    result: success
+  text: restarted it
+- eventid: '8812345'
+  bot_id: bot_01JB8M0000000000000000000B
+  template: service_control_done
+  fields:
+    verb: restart
+    result: success
+    comment: see the log

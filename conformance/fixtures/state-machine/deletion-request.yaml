@@ -1,0 +1,257 @@
+# Collected from spec/lifecycles/deletion-request.yaml. The value null in from means "the object does not exist yet".
+lifecycle: spec/lifecycles/deletion-request.yaml
+object: deletion-request
+rules:
+- LCY-1
+- LCY-3
+- LCY-4
+- MEM-4
+- MEM-9
+- PRM-14
+- RET-4
+- RET-6
+- RET-7
+- SEC-11
+description: 'Allowed and forbidden transitions of the "erasure request" lifecycle, collected from the tables of spec/lifecycles/deletion-request.md.
+  The implementation accepts a transition from the allowed list under the condition of its row; a pair from the forbidden
+  list does not change the state, and the call that asks for it is rejected. The state failed is not terminal: the erasure
+  loop or P2 erasure.retry returns the request to running; done and failed return to running on restore from backup.'
+states:
+- id: requested
+  terminal: false
+- id: running
+  terminal: false
+- id: done
+  terminal: true
+- id: failed
+  terminal: false
+allowed:
+- from: null
+  to: requested
+  by: P2 `erasure.request` (the `farmctl` command)
+  when: the operator; reason `manual` or `subject_request`; scope `(tenant)`, `(tenant, subject)` or a list of object ids
+  rules:
+  - RET-7
+- from: null
+  to: requested
+  by: approval of a person's request (`SubjectRequest`) through P1 `decide`
+  when: from v0.1 (D-76); a person with `admin:people`, for `erase_match` a person other than the author; reason `subject_request`;
+    scope `(tenant, subject)` for `/mydata erase` or a list of the object ids that `erase_match` found
+  rules:
+  - RET-7
+  - SEC-11
+- from: null
+  to: requested
+  by: a person's `/forget` (MEM-4); C4 `erase` executes it
+  when: a person about their own `person` memory, or a person with the right to this memory; reason `forget`; scope a record
+    id or `(tenant, subject)`
+  rules:
+  - MEM-4
+  - RET-7
+- from: null
+  to: requested
+  by: P2 `principal.offboard`
+  when: an admin with `admin:people` for people without privileged groups, the operator through `farmctl` for people with
+    privileged groups (PRM-14); reason `offboarding`, scope `(tenant, subject)`
+  rules:
+  - LCY-3
+  - PRM-14
+  - RET-7
+- from: null
+  to: requested
+  by: P2 `tenant.delete`
+  when: the operator; the export window has ended; reason `tenant_delete`, scope `(tenant)`
+  rules:
+  - LCY-1
+  - RET-7
+- from: null
+  to: requested
+  by: the core in the transaction of a bot identity's retirement
+  when: the identity's sessions inside the runtime (`runtime_internal`), which the core cannot seal; reason `bot_retired`,
+    scope the list of ids of these sessions; the runtime adapter executes it with the E4 operation `purge`
+  rules:
+  - MEM-9
+  - RET-4
+  - RET-7
+- from: null
+  to: requested
+  by: the background loop `identity` at the end of the seal of a retired bot
+  when: '`seal_ttl` has passed; reason `bot_retired`, scope the bot identity id; everything sealed is erased'
+  rules:
+  - MEM-9
+  - RET-7
+- from: null
+  to: requested
+  by: P2 `worker.revoke` of a worker whose runtime keeps sessions or memory on its side
+  when: the operator; reason `worker_revoke`, scope the worker id (the store of its runtime)
+  rules:
+  - LCY-4
+  - RET-7
+- from: requested
+  to: running
+  by: the background loop `erasure`
+  when: the request is in the erasure log
+  rules:
+  - RET-7
+- from: running
+  to: done
+  by: the background loop `erasure`
+  when: all stores answered `done` or `not_applicable`
+  rules:
+  - RET-4
+  - RET-7
+- from: running
+  to: failed
+  by: the background loop `erasure`
+  when: a store answered `failed` after retries, or the deadline passed; an alarm from code
+  rules:
+  - RET-7
+- from: failed
+  to: running
+  by: the background loop `erasure` after a pause, or P2 `erasure.retry`
+  when: only the stores without `done` and `not_applicable` are retried
+  rules:
+  - RET-7
+- from: done
+  to: running
+  by: restore of a store from backup
+  when: the core replays the erasure log from its separate backup until it is ready
+  rules:
+  - RET-6
+  - RET-7
+- from: failed
+  to: running
+  by: restore of a store from backup
+  when: same
+  rules:
+  - RET-6
+  - RET-7
+forbidden:
+- from: null
+  to: running
+  expect: rejected
+  rules:
+  - LCY-1
+  - LCY-3
+  - LCY-4
+  - MEM-4
+  - MEM-9
+  - PRM-14
+  why: the object does not appear directly in the state running
+- from: null
+  to: done
+  expect: rejected
+  rules:
+  - LCY-1
+  - LCY-3
+  - LCY-4
+  - MEM-4
+  - MEM-9
+  - PRM-14
+  why: the object does not appear directly in the state done
+- from: null
+  to: failed
+  expect: rejected
+  rules:
+  - LCY-1
+  - LCY-3
+  - LCY-4
+  - MEM-4
+  - MEM-9
+  - PRM-14
+  why: the object does not appear directly in the state failed
+- from: requested
+  to: requested
+  expect: rejected
+  rules:
+  - LCY-1
+  - LCY-3
+  - LCY-4
+  - MEM-4
+  - MEM-9
+  - PRM-14
+  why: a repeat of requested without a call from the transition table does not change the record
+- from: requested
+  to: done
+  expect: rejected
+  rules:
+  - RET-4
+  - RET-7
+  why: the transition table has no path requested -> done
+- from: requested
+  to: failed
+  expect: rejected
+  rules:
+  - RET-7
+  why: the transition table has no path requested -> failed
+- from: running
+  to: requested
+  expect: rejected
+  rules:
+  - LCY-1
+  - LCY-3
+  - LCY-4
+  - MEM-4
+  - MEM-9
+  - PRM-14
+  why: the transition table has no path running -> requested
+- from: running
+  to: running
+  expect: rejected
+  rules:
+  - RET-4
+  - RET-6
+  - RET-7
+  why: a repeat of running without a call from the transition table does not change the record
+- from: done
+  to: requested
+  expect: rejected
+  rules:
+  - LCY-1
+  - LCY-3
+  - LCY-4
+  - MEM-4
+  - MEM-9
+  - PRM-14
+  why: 'done is a terminal state: there are no transitions out of it'
+- from: done
+  to: done
+  expect: rejected
+  rules:
+  - RET-4
+  - RET-6
+  - RET-7
+  why: 'done is a terminal state: there are no transitions out of it'
+- from: done
+  to: failed
+  expect: rejected
+  rules:
+  - RET-6
+  - RET-7
+  why: 'done is a terminal state: there are no transitions out of it'
+- from: failed
+  to: requested
+  expect: rejected
+  rules:
+  - LCY-1
+  - LCY-3
+  - LCY-4
+  - MEM-4
+  - MEM-9
+  - PRM-14
+  why: the transition table has no path failed -> requested
+- from: failed
+  to: done
+  expect: rejected
+  rules:
+  - RET-4
+  - RET-6
+  - RET-7
+  why: the transition table has no path failed -> done
+- from: failed
+  to: failed
+  expect: rejected
+  rules:
+  - RET-6
+  - RET-7
+  why: a repeat of failed without a call from the transition table does not change the record

@@ -1,0 +1,40 @@
+# Flow 5 from examples/flows.md: the nightly scheduled sensor check.
+id: flow-05-sensor-nightly
+rules: [IDM-2, TIM-3, PRM-10, OUT-1, IDN-2, DLV-15, INJ-7]
+description: >-
+  The schedule loop enqueues job data.sensor_check.v1 as system with a slot in UTC. The job computes the numbers,
+  enqueues child task report.sensor.v1 with the numbers in params and submits closed fields. The reporter
+  writes the explanation; the code draws the table in chat lab.
+given:
+  tenant: demo
+  people: [{principal: system, kind: system, groups: [system-ops]}]
+  manifests: [examples/tenants/demo/, examples/roles/data-job/role.yaml, examples/roles/reporter/role.yaml,
+              examples/tasktypes/data.sensor_check.v1.yaml, examples/tasktypes/report.sensor.v1.yaml]
+steps:
+  - {port: core, op: schedule.fire, schedule: sensor-nightly, slot: "2026-10-06T04:15Z",
+     expect: {task: {type: data.sensor_check.v1, idempotency_key: "system:schedule:sensor-nightly:2026-10-06T04:15Z",
+                     record: {initiator: system}}}}
+  - {port: P1, op: claim, by: role:data-job, request: {kinds: [attempt]}}
+  - port: P1
+    op: enqueue
+    by: role:data-job
+    body:
+      type: report.sensor.v1
+      goal: "Morning sensor summary for the lab chat. 2-3 sentences. Numbers only from params."
+      params:
+        sensors:
+          - {id: sn-01, completeness_pct: 99.6, gaps: 0, out_of_range: 0, stuck_channel: none}
+          - {id: sn-02, completeness_pct: 71.2, gaps: 2, out_of_range: 0, stuck_channel: humidity}
+    expect: {task: {type: report.sensor.v1, record: {initiator: system, max_tier: 0, data_mark: summary, untrusted_seen: false}}}
+  - {port: P1, op: complete, by: role:data-job, result: {sensors_checked: 2, sensors_with_issues: 1}}
+  - {port: P1, op: claim, by: role:reporter, request: {kinds: [attempt]}}
+  - {port: P1, op: complete, by: role:reporter,
+     result: {text: "sn-01 is fine. sn-02 has two night gaps, and the humidity channel shows a single value."},
+     expect: {deliveries: [{kind: task_result, to: "chat:lab", dataorigin: model}]}}
+expect:
+  events: [task.submitted, task.working, task.completed]
+  repeat_fire: {same_slot: true, tasks_created: 1}
+  not:
+    - "the model changes numbers: the code draws the table"
+    - "the model decides about an alarm: job data.sensor_watch.v1 emits the alarm alarm.sensor.silent.v1 (INJ-7)"
+    - "writes to the sensor database"

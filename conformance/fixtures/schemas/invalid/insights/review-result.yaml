@@ -1,0 +1,12 @@
+schema: spec/model/review-result.schema.json
+rules: [COM-3, COM-9]
+description: >-
+  Reviewer outputs that the schema rejects: veto from a lens without veto (value); score 5; six concern codes; note
+  longer than 500 characters; the necessity lens in a proposal review; a field with the author's identity.
+cases:
+  - {lens: value, score: 0, veto: true, confidence: high}
+  - {lens: operational, score: 5, confidence: high}
+  - {lens: cost, score: 2, concerns: [a, b, c, d, e, f], confidence: low}
+  - {lens: security, score: 3, confidence: medium, note: "CANARY-NOT-A-SECRET-REVIEW-NOTE-501 ................................................................................................................................................................................................................................................................................................................................................................................................................................................................................."}
+  - {lens: necessity, score: 2, confidence: medium}
+  - {lens: security, score: 3, confidence: medium, author: bot_01JB0000000000000000000017}

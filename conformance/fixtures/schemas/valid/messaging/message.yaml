@@ -1,0 +1,63 @@
+schema: spec/model/message.schema.json
+rules:
+- MSG-1
+- MSG-6
+- MSG-13
+description: 'botaru.message/v1 envelopes that the schema accepts: a report with a note from the example in docs/messaging.md
+  and a state self-report from code.'
+cases:
+- specversion: '1.0'
+  id: m_01JB0000000000000000000101
+  source: /w/w_01JB000000000000000000000A
+  type: botaru.msg.report.qc_note.v1
+  time: '2026-10-06T02:41:07Z'
+  datacontenttype: application/json
+  dataschema: urn:botaru:schema:msg:report.qc_note.v1
+  subject: ctd-2026-08-p017
+  tenant: demo
+  msgkind: report
+  msgto: role:reporter
+  msgdelivery: one
+  fromrole: analyst
+  fromworker: w_01JB000000000000000000000A
+  fromtask: t_01JB0000000000000000000002
+  correlationid: t_01JB0000000000000000000001
+  causationid: t_01JB0000000000000000000002
+  idempotencykey: system:msg:t_01JB0000000000000000000002:1:1
+  hops: 2
+  datamark: internal
+  untrusted: true
+  untrustedsrc: note,tool_output
+  dataorigin: model
+  origininitiators: p_carol
+  expiresat: '2026-10-07T02:41:07Z'
+  data:
+    fields:
+      resource: ctd-2026-08-p017
+      check: header_anomaly
+      points_rejected: 13
+    note: The file header has a comment line of an unusual form, points 400-412 were rejected
+- specversion: '1.0'
+  id: m_01JB0000000000000000000102
+  source: /w/w_01JB000000000000000000000A
+  type: botaru.msg.state.worker.v1
+  time: '2026-10-06T02:41:07Z'
+  datacontenttype: application/json
+  dataschema: urn:botaru:schema:msg:state.worker.v1
+  tenant: demo
+  msgkind: state
+  msgto: role:ops-lead
+  fromrole: analyst
+  fromworker: w_01JB000000000000000000000A
+  correlationid: t_01JB0000000000000000000001
+  idempotencykey: w_01JB000000000000000000000A:state-1
+  hops: 1
+  datamark: internal
+  untrusted: false
+  dataorigin: code
+  origininitiators: p_carol
+  expiresat: '2026-10-07T02:41:07Z'
+  data:
+    fields:
+      phase: busy
+      slots_free: 1

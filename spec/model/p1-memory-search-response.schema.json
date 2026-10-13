@@ -1,0 +1,30 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:botaru:schema:p1-memory-search-response:1",
+  "title": "P1 memory.search: response",
+  "description": "Memory items of the space in the state active; items above the task mark are not given out, their number is in hidden (the denial data_class_exceeded only for a direct request for such an item).",
+  "x-botaru-direction": "output",
+  "x-botaru-rules": [
+    "MEM-1",
+    "TEN-5"
+  ],
+  "type": "object",
+  "required": [
+    "items",
+    "hidden"
+  ],
+  "properties": {
+    "items": {
+      "type": "array",
+      "items": {
+        "$ref": "urn:botaru:schema:memory-item:1"
+      },
+      "maxItems": 50
+    },
+    "hidden": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 100000
+    }
+  }
+}

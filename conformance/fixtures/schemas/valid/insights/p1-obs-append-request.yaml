@@ -1,0 +1,7 @@
+schema: spec/model/p1-obs-append-request.schema.json
+rules: [OBV-1]
+description: A P1 obs.append request (v0.2) that the schema accepts. The core sets the time, the tenant and the producer.
+data:
+  series: backup.verify.v1
+  subject: 'dataset:ctd-2026'
+  value: 1

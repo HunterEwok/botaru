@@ -1,0 +1,34 @@
+id: fx-man-flow-01
+rules: [INJ-1, TEN-3a, MAN-9]
+description: >-
+  Flow steps over the examples/ manifests: the arguments of a P3 call and of an action request pass
+  the closed schema of the tool or action with values from the tenant's catalog; a call
+  from the denied section with reason input_schema_invalid does not pass that schema.
+with_examples: true
+cases:
+  - name: cmd/run call with a catalog machine
+    flow:
+      given: {tenant: demo}
+      steps:
+        - {port: P3, op: tools/call, tool: cmd/run, args: {command: disk_usage, host: db1}}
+    expect: ok
+  - name: cmd/run call with a farm node
+    flow:
+      given: {tenant: demo}
+      steps:
+        - {port: P3, op: tools/call, tool: cmd/run, args: {command: disk_usage, host: core1}}
+    expect: {error: flow_args_invalid}
+  - name: action request with a machine in the arguments
+    flow:
+      given: {tenant: demo}
+      steps:
+        - {port: P3, op: request_action, action: cleanup_pipeline_tmp, args: {older_than_days: 7, host: db1}}
+    expect: {error: flow_args_invalid}
+  - name: denied section with a call that passes the schema
+    flow:
+      given: {tenant: demo}
+      steps: []
+      expect:
+        denied:
+          - {port: P3, op: tools/call, tool: logs/tail, args: {source: nginx-error}, reason: input_schema_invalid}
+    expect: {error: flow_denied_passes}

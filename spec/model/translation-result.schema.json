@@ -1,0 +1,78 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:botaru:schema:translation-result:1",
+  "title": "Translator task result",
+  "description": "Result of script.translate.v1 by a closed schema: outcome drafted, unsupported or ambiguous, a link to the run and codes of what is missing (TRN-3, TRN-5). If the vocabulary does not cover the assignment, there is no draft, and code builds the answer to the person from a template of codes and vocabulary names.",
+  "x-botaru-direction": "input",
+  "x-botaru-rules": [
+    "TRN-3",
+    "TRN-5",
+    "OUT-1"
+  ],
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "outcome"
+  ],
+  "properties": {
+    "outcome": {
+      "enum": [
+        "drafted",
+        "unsupported",
+        "ambiguous"
+      ],
+      "x-botaru-read-by": "code"
+    },
+    "run_ref": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/object_id"
+    },
+    "missing": {
+      "type": "array",
+      "maxItems": 8,
+      "items": {
+        "enum": [
+          "resource_missing",
+          "action_unclear"
+        ],
+        "x-botaru-read-by": "code"
+      },
+      "uniqueItems": true
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "patternProperties": {
+          "^outcome$": {
+            "const": "drafted"
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "run_ref"
+        ],
+        "not": {
+          "required": [
+            "missing"
+          ]
+        }
+      },
+      "else": {
+        "required": [
+          "missing"
+        ],
+        "not": {
+          "required": [
+            "run_ref"
+          ]
+        },
+        "patternProperties": {
+          "^missing$": {
+            "minItems": 1
+          }
+        }
+      }
+    }
+  ]
+}

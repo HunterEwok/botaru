@@ -1,0 +1,111 @@
+id: fx-lease-stale-complete
+rules: [FEN-2, FEN-4, RET-6]
+description: 'A late holder. The worker of the first attempt "fell asleep" longer than the lease term, the `reaper` loop ended it with reason
+  `lease_expired`, and a second worker took the task with lease 2. Then the first worker woke up and submits `complete`, `heartbeat`,
+  a tool call and a child task with its old token. Each such call gets `fenced`, and not a single store record
+  changes: neither the task, nor the lease, nor events, nor deliveries, nor spend. A token that the core did not issue
+  (the number of the second worker''s active lease with its own worker_id), and the token of the second worker''s active lease
+  presented by the first worker, get `lease_mismatch` without side effects by comparison with the lease record (D-86 (2),
+  D-87 (5)); a real token of a previous store epoch is checked by
+  restore/restore.yaml. The second attempt finishes the work with its own token.'
+given:
+  tenant: demo
+  task:
+    id: t_01JB0000000000000000000001
+    type: ops.investigate.v1
+    initiator: human:bob
+    state: working
+    lease_no: 2
+    attempts_spent: 1
+    runs_counted: 1
+  leases:
+  - work_id: w_01JB0000000000000000000001
+    kind: attempt
+    lease_no: 1
+    epoch: 7
+    worker_id: wk_01JB000000000000000000000A
+    state: expired
+    reason: lease_expired
+  - work_id: w_01JB0000000000000000000001
+    kind: attempt
+    lease_no: 2
+    epoch: 7
+    worker_id: wk_01JB000000000000000000000B
+    state: active
+  store_epoch: 7
+steps:
+- call:
+    port: P1
+    op: complete
+    request:
+      result: {answer: answer of the first attempt, verdict: cause_found}
+  lease:
+    epoch: 7
+    work_id: w_01JB0000000000000000000001
+    lease_no: 1
+    worker_id: wk_01JB000000000000000000000A
+  expect: {reason: fenced, records_changed: 0}
+- call: {port: P1, op: heartbeat}
+  lease:
+    epoch: 7
+    work_id: w_01JB0000000000000000000001
+    lease_no: 1
+    worker_id: wk_01JB000000000000000000000A
+  expect: {reason: fenced, records_changed: 0}
+- call:
+    port: P3
+    op: tools/call
+    request:
+      name: logs/tail
+      arguments: {}
+  context: {handle_of_lease_no: 1}
+  expect: {reason: fenced, records_changed: 0, toolcall_created: false}
+- call:
+    port: P3
+    op: tools/call
+    request:
+      name: enqueue_child
+      arguments: {}
+  context: {handle_of_lease_no: 1}
+  expect: {reason: fenced, records_changed: 0, task_created: false}
+- call:
+    port: P1
+    op: complete
+    request:
+      result: {answer: answer with a forged lease number, verdict: cause_found}
+  lease:
+    epoch: 7
+    work_id: w_01JB0000000000000000000001
+    lease_no: 2
+    worker_id: wk_01JB000000000000000000000A
+  note: the first worker puts the number of the active lease into its token; the holder of the lease 2 record is another worker, no signature is needed
+  expect: {reason: lease_mismatch, records_changed: 0, audit: {ok: false, reason: lease_mismatch}}
+- call:
+    port: P1
+    op: complete
+    request:
+      result: {answer: answer with someone else's token, verdict: cause_found}
+  by: worker:wk_01JB000000000000000000000A
+  lease:
+    epoch: 7
+    work_id: w_01JB0000000000000000000001
+    lease_no: 2
+    worker_id: wk_01JB000000000000000000000B
+  note: the first worker presents the real token of lease 2 of the second worker; the worker_id of the token does not equal the worker from Authorization
+  expect: {reason: lease_mismatch, records_changed: 0}
+- call:
+    port: P1
+    op: complete
+    request:
+      result: {answer: answer of the second attempt, verdict: cause_found}
+  lease:
+    epoch: 7
+    work_id: w_01JB0000000000000000000001
+    lease_no: 2
+    worker_id: wk_01JB000000000000000000000B
+  expect: {lease_state: closed}
+expect:
+  task: {state: completed, lease_no: 2, attempts_spent: 1, result_from_lease_no: 2}
+  events_from_lease_no_1: 0
+  deliveries:
+  - {to: origin, from_lease_no: 2}

@@ -1,0 +1,16 @@
+schema: urn:botaru:schema:p3-tool-call-request:1
+rules:
+- INJ-9
+description: A call of a plugin tool and of the built-in service/control.
+cases:
+- name: logs/tail
+  arguments:
+    host: web1
+    unit: nginx
+    lines: 200
+- name: service/control
+  arguments:
+    service: nginx
+    verb: restart
+  _meta:
+    traceparent: 00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01

@@ -1,0 +1,35 @@
+id: prp-02
+rules: [PRP-5, PRP-14]
+description: 'Fingerprint and duplicates. Ten identical proposals in a week (the same category, problem code, subjects,
+  kind and change targets) give one record: an open duplicate does not create a second proposal, seen_count grows and evidence
+  is added. The author does not change when duplicates merge.'
+given:
+  tenant: demo
+  role:
+    name: ops-runner
+    insight: {max_open_proposals: 3, max_per_week: 3}
+  submissions:
+    count: 10
+    within: 7d
+    first_by: bot_01JB0000000000000000000017
+    later_by: [bot_01JB0000000000000000000018]
+    body:
+      category: schedule
+      problem:
+        code: backup_deadline_miss
+        subjects: ['task_type:demo.db.backup.v1', 'schedule:report-nightly']
+      change:
+        kind: manifest_change
+        manifest_change:
+          ops:
+          - op: set
+            target: {kind: Schedule, name: report-nightly}
+            field: spec.cron
+            value: 30 3 * * *
+expect:
+  records: 1
+  record:
+    seen_count: 10
+    origin: {acting_bot: bot_01JB0000000000000000000017}
+  proposal_rate_limited: 0
+  fingerprint_inputs: [category, problem.code, problem.subjects, change.kind, change targets]

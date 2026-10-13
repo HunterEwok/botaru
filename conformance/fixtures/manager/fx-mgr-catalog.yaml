@@ -1,0 +1,66 @@
+id: fx-mgr-catalog
+rules: [MGR-7]
+description: 'Incident catalog lint: classes are set only by IncidentClass files in the farm git; detect refers
+  only to a code alarm type alarm.<name>.vN and condition atoms; implicate only to the functions lease_holders_on, recent_targets,
+  worker_of_subject, role_failing, spend_top; responses only to control-ops.yaml operations, catalog actions,
+  types with pinnable: true, the service verbs start, stop, restart and the monitor_scripts flag; services and monitor_scripts in
+  a class with subject farm are rejected; stops_manager only under the GOV-28 conditions.'
+given: {lint: catalog/incident-class}
+cases:
+- given:
+    class:
+      detect: {alarm: alarm.disk.free.low.v1}
+      implicate:
+      - {fn: lease_holders_on}
+      responses:
+        ops: [drain]
+  expect: {apply: ok}
+- given:
+    class:
+      detect: {alarm: model.says.disk.full}
+  expect:
+    apply: {result: rejected}
+    note: not a code alarm type
+- given:
+    class:
+      implicate:
+      - {fn: ask_model_who}
+  expect:
+    apply: {result: rejected}
+- given:
+    class:
+      responses:
+        ops: [shell]
+  expect:
+    apply: {result: rejected}
+- given:
+    class:
+      responses:
+        pin_types: [ops.investigate.v1]
+      pin_type_pinnable: false
+  expect:
+    apply: {result: rejected}
+- given:
+    class:
+      responses:
+        services: [reload]
+  expect:
+    apply: {result: rejected}
+- given:
+    class:
+      subject: {kind: farm}
+      responses:
+        services: [restart]
+  expect:
+    apply: {result: rejected}
+- given:
+    class:
+      subject: {kind: farm}
+      responses: {monitor_scripts: true}
+  expect:
+    apply: {result: rejected}
+- given:
+    class: {source: runtime}
+  expect:
+    apply: {result: rejected}
+    note: the runtime and models do not create or change classes

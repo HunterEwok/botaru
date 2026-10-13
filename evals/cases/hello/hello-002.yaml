@@ -1,0 +1,17 @@
+# evals/cases/hello/hello-002.yaml (catalog: evals/README.md)
+id: hello-002
+kind: refusal
+blocking: false
+status: active
+version: v0.1
+rules: [PRM-2, PRM-8]
+twin: hello-003
+summary: 'bob (staff, without task:hello.greet.v1) writes /hello; a code refusal without a model: no task, needs: [task:hello.greet.v1].'
+from: bob
+chat: bob-dm
+message: /hello
+expect:
+  state: rejected
+  checks:
+  - {max_tool_calls: 0}
+  - store: {path: 'tasks[?initiator==bob && type==hello.greet.v1]', count: 0}

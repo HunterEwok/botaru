@@ -1,0 +1,74 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:botaru:schema:erasure-outcome:1",
+  "title": "Outcome of erasure or match work",
+  "description": "What an edge store hands in through P1 complete for work of kind erasure: the outcome done, failed or not_applicable and, for match, a list of ids of what was found, without content (RET-4, RET-7, SEC-11). not_applicable without a basis is not accepted: otherwise a store could close a request on its word alone.",
+  "x-botaru-direction": "input",
+  "x-botaru-rules": [
+    "RET-4",
+    "RET-7",
+    "SEC-11"
+  ],
+  "type": "object",
+  "required": [
+    "outcome"
+  ],
+  "properties": {
+    "outcome": {
+      "enum": [
+        "done",
+        "failed",
+        "not_applicable"
+      ]
+    },
+    "ids": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "maxLength": 200
+      },
+      "maxItems": 10000,
+      "description": "Only match: ids of the store objects where the strings occurred; no content."
+    },
+    "reason": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/reason",
+      "description": "For failed, a reason from the registry."
+    },
+    "basis": {
+      "description": "Only for not_applicable: by which sign the store made sure that there is nothing to delete. declared_none: the store declared in hello that it holds no content; tenant_absent: the store has no data of this tenant; no_match: none of the needles strings was found in its records; kind_not_held: the store does not hold the data kind of the scope by its sheet (for example, a monitoring note carries no data about people).",
+      "enum": [
+        "declared_none",
+        "tenant_absent",
+        "no_match",
+        "kind_not_held"
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "allOf": [
+    {
+      "if": {
+        "patternProperties": {
+          "^outcome$": {
+            "const": "not_applicable"
+          }
+        },
+        "required": [
+          "outcome"
+        ]
+      },
+      "then": {
+        "required": [
+          "basis"
+        ]
+      },
+      "else": {
+        "not": {
+          "required": [
+            "basis"
+          ]
+        }
+      }
+    }
+  ]
+}

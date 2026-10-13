@@ -1,0 +1,64 @@
+id: gov-fx-07
+rules: [IDN-12]
+description: 'A task of an identity in a clean context (a ballot, a memory.pick.v1 fact selection) can be executed by a worker that is not
+  its own: acting_bot stays this identity, and the executing worker is written into the attempt and the audit. It is executed by a worker of the identity''s
+  role in its tenant on the role slot; for the manager seat in tenant T the farm_manager lens review and the ballot
+  are executed by a worker of the reviewer role of T on the seat slot, and the fact selection of section T by a worker of the role farm-manager in T. A task
+  with memory, a session, an inbox or tools goes only to the worker of the identity binding with the current binding epoch
+  (D20). Numbers of identities, workers and tasks are shortened, as in the examples of docs/bots.md.'
+given:
+  bots:
+    bot_31:
+      role: ops-runner
+      binding: {mode: worker, worker: w_0042, epoch: 1}
+    bot_41:
+      tenant: farm
+      binding: {mode: seat, seat: farm-manager, epoch: 9}
+  workers:
+    w_0042: {role: ops-runner, tenant: demo, busy: true}
+    w_0043: {role: ops-runner, tenant: demo}
+    w_0050:
+      role: commission-member
+      tenant: demo
+      slots: [seat]
+    w_0060:
+      role: farm-manager
+      tenant: demo
+      slots: [seat]
+    w_0070: {role: ops-runner, tenant: demo2}
+  tenant: demo
+cases:
+- id: gov-fx-07-a
+  given:
+    task: {type: memory.pick.v1, for_bot: bot_31}
+    claim_by: w_0043
+  expect:
+    leased: true
+    attempt: {acting_bot: bot_31, bot_epoch: 1, executed_by_worker: w_0043}
+    audit: {acting_bot: bot_31, worker: w_0043}
+- id: gov-fx-07-b
+  given:
+    task: {type: memory.pick.v1, for_bot: bot_31}
+    claim_by: w_0070
+  expect: {leased: false, note: a worker of another tenant}
+- id: gov-fx-07-c
+  given:
+    task: {type: ops.backup.watch.v1, for_bot: bot_31, memory.read: bot}
+    claim_by: w_0043
+  expect: {leased: false, note: a task with memory goes only to the binding worker with the current epoch (D20)}
+- id: gov-fx-07-d
+  given:
+    task: {type: review.operational.v1, lens: farm_manager, for_bot: bot_41, tenant: demo}
+    claim_by: w_0050
+  expect:
+    leased: true
+    slot: seat
+    attempt: {acting_bot: bot_41, executed_by_worker: w_0050}
+- id: gov-fx-07-e
+  given:
+    task: {type: memory.pick.v1, for_bot: bot_41, section: demo}
+    claim_by: w_0060
+  expect:
+    leased: true
+    slot: seat
+    attempt: {acting_bot: bot_41, executed_by_worker: w_0060}

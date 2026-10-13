@@ -1,0 +1,18 @@
+schema: spec/model/p1-hello-request.schema.json
+rules: [TEN-2, TEN-4, DSP-10, DLV-12]
+description: 'hello requests that the schema rejects: tenant in the request; owner on the worker; kind outside the list;
+  a driver with unknown ai_disclosure; no protocol versions.'
+cases:
+- kind: agent
+  protocol_versions: [v1]
+  tenant: demo2
+- kind: agent
+  protocol_versions: [v1]
+  owner: human:alice
+- kind: manager
+  protocol_versions: [v1]
+- kind: channel
+  protocol_versions: [v1]
+  driver:
+    ai_disclosure: never
+- kind: job

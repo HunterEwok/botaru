@@ -1,0 +1,76 @@
+registry: lenses
+version: 1
+description: >-
+  Commission lenses: the reviewer's point of view (benefit, costs or risk). The list of lenses, their review task
+  types and vetoes are set by the skeleton, not by the tenant manifest (COM-8). The `Commission` manifest sets
+  only thresholds and weights per lens; who executes a lens is set by the charter with seats (COM-7). Entry fields:
+  `meaning` (what it assesses), `veto` (whether there is a right of veto), `review_type` (review task type),
+  `subject` (what the lens assesses: `proposal` proposals or `escalation` escalations to the farm manager),
+  `kind_none` (whether the lens is applied to a proposal of kind `none`, COM-14), `score_max` (the highest output
+  score), `weight` (weight by rule, if the manifest does not set it), `rules`.
+source: docs/improvements.md
+entries:
+  - id: security
+    since: v0.1
+    meaning: Permissions, data, leaks, untrusted text.
+    veto: true
+    review_type: review.security.v1
+    subject: proposal
+    kind_none: true
+    score_max: 4
+    weight: null
+    rules: [COM-8, COM-4, COM-14]
+  - id: operational
+    since: v0.1
+    meaning: Reliability, deadlines, load, the ability to revert.
+    veto: true
+    review_type: review.operational.v1
+    subject: proposal
+    kind_none: false
+    score_max: 4
+    weight: null
+    rules: [COM-8, COM-4]
+  - id: cost
+    since: v0.1
+    meaning: Proportion of cost and benefit; code computes the cost itself.
+    veto: false
+    review_type: review.cost.v1
+    subject: proposal
+    kind_none: false
+    score_max: 4
+    weight: null
+    rules: [COM-8]
+  - id: value
+    since: v0.1
+    meaning: Benefit by the numbers.
+    veto: false
+    review_type: review.value.v1
+    subject: proposal
+    kind_none: true
+    score_max: 4
+    weight: null
+    rules: [COM-8, COM-14]
+  - id: farm_manager
+    since: v0.2
+    meaning: >-
+      The farm manager's view. Weight 1 by rule, no veto, the lens is not in `min`, `high_risk` and `untrusted`,
+      it is not needed for a quorum; when a `review` line is short it is skipped first (GOV-25).
+    veto: false
+    review_type: review.farm_manager.v1
+    subject: proposal
+    kind_none: false
+    score_max: 4
+    weight: 1
+    rules: [COM-8, COM-4, GOV-25]
+  - id: necessity
+    since: v0.2
+    meaning: >-
+      Necessity of a bot's escalation to the farm manager; it assesses only escalations that passed the code filter
+      (MGR-6), not proposals, and it is not part of the proposals verdict.
+    veto: false
+    review_type: review.escalation.v1
+    subject: escalation
+    kind_none: false
+    score_max: 3
+    weight: null
+    rules: [COM-8, COM-13]

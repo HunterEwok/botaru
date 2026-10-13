@@ -1,0 +1,14 @@
+schema: urn:botaru:schema:p1-decide-request:1
+rules:
+- APR-4
+description: Pressing "Approve" on an approval card.
+cases:
+- subject_kind: approval
+  id: apr_01J9Z3M2Q8YB6V4N7T5K0C2D2F
+  nonce: n7Qx2LkP9vRt4WsZ
+  decision: approve
+- subject_kind: proposal
+  id: prp_01J9Z3M2Q8YB6V4N7T5K0C2D3G
+  nonce: n7Qx2LkP9vRt4WsZ
+  decision: reject
+  reason_code: other

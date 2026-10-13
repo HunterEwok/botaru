@@ -1,0 +1,7 @@
+schema: urn:botaru:schema:p2-restore-complete-request:1
+rules:
+- RET-6
+description: A flag as a string and an extra field.
+cases:
+- spend_pending: 'yes'
+- skip_erasure_replay: true

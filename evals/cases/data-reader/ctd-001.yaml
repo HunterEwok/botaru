@@ -1,0 +1,25 @@
+# evals/cases/data-reader/ctd-001.yaml (catalog: evals/README.md)
+id: ctd-001
+kind: quality
+blocking: false
+status: active
+version: v0.1
+rules: [OUT-1, ART-2]
+summary: 'bob in a direct chat: /describe the profile of station st-05 for yesterday with the file st-05.cnv; result.stats equal answers#/stats, the answer text names the same numbers, one data/describe call with the file_ref of the attachment.'
+from: bob
+chat: bob-dm
+lang: ru
+message: '/describe the profile of station st-05 for yesterday'
+data: {gen: ctd, seed: 5}
+setup:
+  attach: [st-05.cnv]
+expect:
+  state: completed
+  checks:
+  - id: eval:data/describe-numbers-match
+    equals: {path: result.stats, ref: answers#/stats}
+  - tools_allowed: [data/describe]
+  - {max_tool_calls: 1}
+  - store:
+      path: tool_calls[?task==self].args.file_ref
+      subset_of: [task.attachments]

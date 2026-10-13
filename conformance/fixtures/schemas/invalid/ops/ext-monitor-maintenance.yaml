@@ -1,0 +1,9 @@
+schema: urn:botaru:schema:ext-monitor-maintenance:1
+rules:
+- MON-9
+description: A window description as text is not allowed.
+data:
+  maintenanceid: '77'
+  resource: db1
+  state: active
+  description: database restart

@@ -1,0 +1,29 @@
+# Latest site check results from the checks sink: numbers and enums only.
+apiVersion: botaru/v1alpha1
+kind: ToolPlugin
+metadata: {name: checks}
+spec:
+  placement: host
+  network: {egress: []}
+  tools:
+    - name: latest
+      access: read
+      tier: 0
+      output_class: summary
+      untrusted_output: false
+      redact: [ip, email, secret]
+      target_from: check
+      params:
+        check: {enum_from: catalog.checks}
+      output_schema:
+        type: object
+        additionalProperties: false
+        required: [check, ok, total]
+        properties:
+          check: {enum_from: catalog.checks}
+          ok: {type: integer, minimum: 0, maximum: 1000}
+          total: {type: integer, minimum: 0, maximum: 1000}
+          last_status: {type: integer, minimum: 0, maximum: 599}
+          ms_max: {type: integer, minimum: 0, maximum: 60000}
+      output_limit_kb: 4
+      timeout_s: 10

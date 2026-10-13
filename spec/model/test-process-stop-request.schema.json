@@ -1,0 +1,42 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:botaru:schema:test-process-stop-request:1",
+  "title": "Test bench process.stop: request",
+  "description": "Stop a test bench process: a worker by id or the core; kill without shutdown, graceful as in a drain.",
+  "x-botaru-direction": "input",
+  "x-botaru-rules": [
+    "APR-9"
+  ],
+  "type": "object",
+  "required": [
+    "process",
+    "mode"
+  ],
+  "properties": {
+    "process": {
+      "type": "object",
+      "required": [
+        "kind"
+      ],
+      "properties": {
+        "kind": {
+          "enum": [
+            "worker",
+            "core"
+          ]
+        },
+        "worker_id": {
+          "$ref": "urn:botaru:schema:common:1#/$defs/object_id"
+        }
+      },
+      "additionalProperties": false
+    },
+    "mode": {
+      "enum": [
+        "kill",
+        "graceful"
+      ]
+    }
+  },
+  "additionalProperties": false
+}

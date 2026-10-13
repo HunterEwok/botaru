@@ -1,0 +1,29 @@
+id: fx-mgr-finding-ref
+rules: [MGR-24, MGR-25]
+description: 'A finding that refers to an object of another tenant or to evidence not read in this
+  attempt is not recorded: someone else''s id gets the same answer as a nonexistent one.'
+given:
+  attempt:
+    tenant: demo
+    role: farm-manager-reader
+    read_journal: [lw_01jd7]
+  objects:
+    w_d2_3: {tenant: demo2}
+    lw_d2_1: {tenant: demo2}
+cases:
+- id: fx-mgr-finding-ref-a
+  given:
+    finding:
+      kind: error_burst
+      subject: {kind: worker, id: w_d2_3}
+      evidence: [lw_01jd7]
+      confidence: high
+  expect: {stored: false, same_answer_as: w_404}
+- id: fx-mgr-finding-ref-b
+  given:
+    finding:
+      kind: error_burst
+      subject: {kind: worker, id: w_7}
+      evidence: [lw_d2_1]
+      confidence: high
+  expect: {stored: false}

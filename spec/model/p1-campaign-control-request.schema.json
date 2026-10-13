@@ -1,0 +1,68 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:botaru:schema:p1-campaign-control-request:1",
+  "title": "P1 campaign.control: request",
+  "description": "A button on a campaign card from the channel on behalf of the person who pressed it: pause, resume, skip(n), cancel, retry_failed with the card nonce. resume and skip are decisions: only a human principal from the card's chat accepts them, not the initiator when self_approve: false, and on a production tenant never the initiator (APR-4, APR-9, ORC-2). Who pressed and from which chat, the channel passes in the headers Botaru-On-Behalf and Botaru-Chat by the on-behalf schema (spec/bindings/http/README.md); the body has no such fields.",
+  "x-botaru-direction": "input",
+  "x-botaru-rules": [
+    "APR-4",
+    "ORC-1",
+    "ORC-2"
+  ],
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "id",
+    "command",
+    "nonce"
+  ],
+  "properties": {
+    "id": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/object_id"
+    },
+    "command": {
+      "enum": [
+        "pause",
+        "resume",
+        "skip",
+        "cancel",
+        "retry_failed"
+      ]
+    },
+    "n": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 500,
+      "description": "Item number for skip."
+    },
+    "nonce": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_-]{16,64}$",
+      "maxLength": 64,
+      "description": "One-time value of the card."
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "patternProperties": {
+          "^command$": {
+            "const": "skip"
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "n"
+        ]
+      },
+      "else": {
+        "not": {
+          "required": [
+            "n"
+          ]
+        }
+      }
+    }
+  ]
+}

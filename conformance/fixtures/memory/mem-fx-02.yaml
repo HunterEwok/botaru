@@ -1,0 +1,71 @@
+id: mem-fx-02
+rules: [MEM-6]
+description: The subject of a fact is only a catalog resource, a task type, a dataset or a schedule of this tenant; an identity,
+  a seat, a principal and a proposal cannot be a subject. Evidence is objects of the same tenant that are not erased
+  and are accessible to the role owning the store; if there are fewer than min_samples, the fact is not created, and only the event
+  fact.rejected with reason fact_insufficient remains. Numbers of identities, facts, tasks and proposals are shortened, as in the example in
+  docs/bots.md.
+given:
+  tenant: demo
+  attempt: {bot: bot_17, type: ops.backup.watch.v1, memory.facts: propose}
+cases:
+- id: mem-fx-02-a
+  given:
+    proposal:
+      kind: how_long
+      predicate: task.duration.p95_min
+      subject: {type: tasktype, id: demo.db.backup.v1, 'on': db1}
+    evidence_found: {obs_rollup_days: 14}
+  expect:
+    fact: {state: active, value: 58, unit: min}
+- id: mem-fx-02-b
+  given:
+    proposal:
+      kind: what_broke
+      predicate: task.fails_with
+      subject: {type: tasktype, id: demo.db.backup.v1}
+    evidence_found: {attempts_in_window: 3}
+    min_samples: more than 3
+  expect:
+    fact: null
+    event: {type: fact.rejected, reason: fact_insufficient}
+- id: mem-fx-02-c
+  given:
+    proposal:
+      kind: what_broke
+      predicate: incident.happened
+      subject: {type: bot, id: bot_09}
+  expect: {fact: null, result: rejected, stage: schema, note: an identity is never a subject}
+- id: mem-fx-02-d
+  given:
+    proposal:
+      kind: what_broke
+      predicate: incident.happened
+      subject: {type: seat, id: farm-manager}
+  expect: {fact: null, result: rejected, stage: schema, note: a seat is never a subject}
+- id: mem-fx-02-e
+  given:
+    proposal:
+      kind: what_broke
+      predicate: incident.happened
+      subject: {type: subject, id: 'human:alice'}
+  expect: {fact: null, result: rejected, stage: schema, note: a principal is never a subject}
+- id: mem-fx-02-f
+  given:
+    proposal:
+      kind: where
+      predicate: dataset.stored_on
+      subject: {type: dataset, id: demo2.ctd.raw}
+    note_given: dataset of tenant demo2
+  expect: {fact: null, note: the subject is not of this tenant; the reason code does not name the text}
+- id: mem-fx-02-g
+  given:
+    proposal:
+      kind: how_long
+      predicate: task.duration.p95_min
+      subject: {type: tasktype, id: demo.db.backup.v1, 'on': db1}
+    evidence_found: {obs_rollup_days: 14, erased: 14}
+  expect:
+    fact: null
+    event: {type: fact.rejected, reason: fact_insufficient}
+    note: erased evidence does not count

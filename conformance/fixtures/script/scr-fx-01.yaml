@@ -1,0 +1,50 @@
+id: scr-fx-01
+rules: [SCR-6, SCR-5]
+description: 'A draft of two task steps of types of tier 0-1 without confirm. An initiator without script.run presses "Run".
+  The run goes ahead: a read and report script is an ordinary task, and running it needs only task:<type> and data:<class>
+  for each step, checked at acceptance.'
+given:
+  tenant: demo
+  initiator:
+    principal: human:carol
+    groups: [researcher]
+    caps: ['task:ops.summary.v1', 'task:report.work.v1']
+    script_run: false
+  task_types:
+    ops.summary.v1: {tier: 0}
+    report.work.v1: {tier: 1}
+  draft:
+    script: v1
+    steps:
+    - id: sum
+      kind: task
+      type: ops.summary.v1
+      goal: {assignment: true}
+      params: {resource: web1}
+    - id: rep
+      kind: task
+      type: report.work.v1
+      needs: [sum]
+      goal: {assignment: true}
+steps:
+- call:
+    port: P3
+    op: tools/call
+    request:
+      name: propose_script
+      arguments: {}
+  context: {arguments: draft}
+  expect: {state: proposed}
+- check: {deliver: script_confirm, to: 'direct:carol'}
+- call:
+    port: P1
+    op: decide
+    request: {subject_kind: script, id: $last, decision: run}
+  by: human:carol
+  chat: direct:carol
+expect:
+  run_state: running
+  script_run_required: false
+  card_marks:
+    needs_separate_approval: []
+    may_control_services: []

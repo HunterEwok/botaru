@@ -1,0 +1,21 @@
+# evals/cases/translator/trn-01.yaml (catalog: evals/README.md)
+id: trn-01
+kind: quality
+blocking: false
+status: active
+version: v0.2
+rules: [TRN-6]
+summary: 'Show the load of db1 for the week; one step task of type ops.load.report.v1 with resource: host-db1, window: 7d.'
+from: bob
+chat: bob-dm
+lang: ru
+message: '/script Show the load of db1 for the week'
+expect:
+  state: completed
+  checks:
+  - store:
+      path: script_runs[?task==self].steps
+      equals:
+      - kind: task
+        type: ops.load.report.v1
+        params: {resource: host-db1, window: 7d}

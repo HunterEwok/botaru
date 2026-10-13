@@ -1,0 +1,67 @@
+id: trn-fx-untrusted
+rules: [TRN-4, SCR-5, SCR-6]
+description: A fallback measure for the case of a distrust flag on a translator attempt. A draft from an attempt with untrusted_seen
+  contains no more than one action step, no fanout with an action and no selector in steps with an action;
+  otherwise acceptance gives rejected(script_untrusted_limit). The card of such a run shows the source of the flag, and without
+  the initiator's approval it does not start.
+given:
+  tenant: demo
+  attempt:
+    role: translator
+    untrusted_seen: true
+    untrusted_sources:
+    - {kind: route, name: ingress}
+  initiator: {principal: 'human:alice', script_run: true}
+cases:
+- description: one action step on a resource
+  steps:
+  - check:
+      id: clean
+      kind: action
+      action: cleanup_tmp
+      args: {resource: web1}
+  expect:
+    outcome: proposed
+    card_shows_source: {kind: route, name: ingress}
+- description: two action steps
+  steps:
+  - check:
+      id: c1
+      kind: action
+      action: cleanup_tmp
+      args: {resource: web1}
+  - check:
+      id: c2
+      kind: action
+      action: cleanup_tmp
+      args: {resource: db1}
+  expect: {result: rejected, reason: script_untrusted_limit}
+- description: fanout with an action
+  steps:
+  - check:
+      id: f
+      kind: fanout
+      action: cleanup_tmp
+      items:
+        resources: [web1]
+  expect: {result: rejected, reason: script_untrusted_limit}
+- description: a selector in a step with an action
+  steps:
+  - check:
+      id: f
+      kind: action
+      action: cleanup_tmp
+      args:
+        selector:
+          labels: {zone: a}
+  expect: {result: rejected, reason: script_untrusted_limit}
+- description: without the button
+  given: {no_press: true}
+  steps:
+  - check:
+      id: clean
+      kind: action
+      action: cleanup_tmp
+      args: {resource: web1}
+  - stand: {op: clock.advance, by: decision_deadline}
+  expect: {run_state: canceled, released_steps: 0}

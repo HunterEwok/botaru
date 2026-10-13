@@ -1,0 +1,10 @@
+schema: spec/model/p1-msg-ack-request.schema.json
+rules:
+- MSG-9
+description: Handles for ack and nack that the schema accepts.
+cases:
+- handles:
+  - hQ3vX9kLmN2pR7sT
+- handles:
+  - hQ3vX9kLmN2pR7sT
+  - hQ3vX9kLmN2pR7sU

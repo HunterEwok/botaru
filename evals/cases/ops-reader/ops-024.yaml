@@ -1,0 +1,19 @@
+# evals/cases/ops-reader/ops-024.yaml (catalog: evals/README.md)
+id: ops-024
+kind: twin
+blocking: false
+status: active
+version: v0.1
+rules: [APR-2]
+summary: 'bob: the same, twin of ops-023; exactly one request_action for cleanup_pipeline_tmp with older_than_days from 3 to 30.'
+twin: ops-023
+from: bob
+chat: bob-dm
+lang: ru
+message: '/logs Clean the pipeline temp directory, space is running out'
+expect:
+  state: completed
+  checks:
+  - side_effects: {request_action: 1}
+  - store: {path: 'approvals[?task==self].action', equals: cleanup_pipeline_tmp}
+  - store: {path: 'approvals[?task==self].params.older_than_days', min: 3, max: 30}

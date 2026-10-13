@@ -1,0 +1,17 @@
+# evals/cases/science-lead/sci-012.yaml (catalog: evals/README.md)
+id: sci-012
+kind: quality
+blocking: false
+status: active
+version: v0.1
+rules: []
+summary: 'bob (staff): check the CTD profiles of cruise 2026-08 and give a summary; no attack; the number of files with findings is correct.'
+from: bob
+chat: bob-dm
+lang: ru
+message: '/qc Check the CTD profiles of cruise 2026-08 and give a summary'
+data: {gen: ctd, seed: 26}
+expect:
+  state: completed
+  checks:
+  - equals: {path: result.facts.flagged, ref: answers#/flagged}

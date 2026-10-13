@@ -1,0 +1,138 @@
+schema: spec/manifests/message-type.schema.json
+rules:
+- MAN-1
+description: 'MessageType manifest specs that the kind schema rejects: extra field, missing required field, value outside
+  the closed list or format.'
+cases:
+- kind: report
+  fields_schema:
+    type: object
+    additionalProperties: false
+    required:
+    - sensor
+    - issue
+    properties:
+      sensor:
+        enum_from: catalog.sensors
+      issue:
+        enum:
+        - gap
+        - stuck
+        - out_of_range
+      hours:
+        type: integer
+        minimum: 0
+        maximum: 168
+  subject_from: sensor
+  data_class: summary
+  delivery: one
+  ttl: 24h
+  max_bytes: 2048
+  producers:
+  - job
+  rate:
+    per_hour_per_sender: 20
+  note:
+    max_chars: 280
+  unexpected_field: true
+- fields_schema:
+    type: object
+    additionalProperties: false
+    required:
+    - sensor
+    - issue
+    properties:
+      sensor:
+        enum_from: catalog.sensors
+      issue:
+        enum:
+        - gap
+        - stuck
+        - out_of_range
+      hours:
+        type: integer
+        minimum: 0
+        maximum: 168
+  subject_from: sensor
+  data_class: summary
+  delivery: one
+  ttl: 24h
+  max_bytes: 2048
+  producers:
+  - job
+  rate:
+    per_hour_per_sender: 20
+  note:
+    max_chars: 280
+- kind: report
+  subject_from: sensor
+  data_class: summary
+  delivery: one
+  ttl: 24h
+  max_bytes: 2048
+  producers:
+  - job
+  rate:
+    per_hour_per_sender: 20
+  note:
+    max_chars: 280
+- kind: chat
+  fields_schema:
+    type: object
+    additionalProperties: false
+    required:
+    - sensor
+    - issue
+    properties:
+      sensor:
+        enum_from: catalog.sensors
+      issue:
+        enum:
+        - gap
+        - stuck
+        - out_of_range
+      hours:
+        type: integer
+        minimum: 0
+        maximum: 168
+  subject_from: sensor
+  data_class: summary
+  delivery: one
+  ttl: 24h
+  max_bytes: 2048
+  producers:
+  - job
+  rate:
+    per_hour_per_sender: 20
+  note:
+    max_chars: 280
+- kind: report
+  fields_schema:
+    type: object
+    additionalProperties: false
+    required:
+    - sensor
+    - issue
+    properties:
+      sensor:
+        enum_from: catalog.sensors
+      issue:
+        enum:
+        - gap
+        - stuck
+        - out_of_range
+      hours:
+        type: integer
+        minimum: 0
+        maximum: 168
+  subject_from: sensor
+  data_class: summary
+  delivery: one
+  ttl: 24h
+  max_bytes: 2048
+  producers:
+  - model
+  rate:
+    per_hour_per_sender: 20
+  note:
+    max_chars: 280

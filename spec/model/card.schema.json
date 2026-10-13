@@ -1,0 +1,240 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:botaru:schema:card:1",
+  "title": "Card",
+  "description": "A card that the channel draws only from the record of its subject (APR-3): title, arguments, who asks and from where, untrusted_seen and its source, risk, deadline, who has already approved, the bottom line from the decision registry. Buttons carry only (subject_kind, id, nonce) and the button code; there is no model text on the card, except the block behind \"Details\" in the untrusted text wrapper.",
+  "x-botaru-direction": "output",
+  "x-botaru-rules": [
+    "APR-3",
+    "APR-12",
+    "APR-16",
+    "APR-19"
+  ],
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "card",
+    "subject_kind",
+    "id",
+    "nonce",
+    "title",
+    "buttons",
+    "footer"
+  ],
+  "properties": {
+    "card": {
+      "description": "Card kind.",
+      "type": "string",
+      "maxLength": 64,
+      "x-botaru-registry": "decision-points"
+    },
+    "subject_kind": {
+      "description": "Decision subject from a closed list. v0.1: approval, proposal, memory_record, campaign, script, script_gate, control, subject_request (kind erase, D-76); v0.2: takeover, governance_case, attribution and subject_request of kind export.",
+      "$ref": "urn:botaru:schema:decision:1#/$defs/subject_kind"
+    },
+    "id": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/object_id"
+    },
+    "nonce": {
+      "description": "One-time value of the card: the button carries it together with the subject and id (APR-3).",
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_-]{16,64}$",
+      "maxLength": 64
+    },
+    "title": {
+      "description": "Title from the code text catalog.",
+      "type": "string",
+      "maxLength": 200
+    },
+    "args": {
+      "description": "Arguments from the record snapshot.",
+      "type": "object",
+      "maxProperties": 32
+    },
+    "requested_by": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "initiator",
+        "source"
+      ],
+      "properties": {
+        "initiator": {
+          "$ref": "urn:botaru:schema:common:1#/$defs/principal_ref"
+        },
+        "source": {
+          "enum": [
+            "bot",
+            "human",
+            "message",
+            "script_step",
+            "proposal",
+            "campaign_item",
+            "farm_manager"
+          ]
+        },
+        "role": {
+          "$ref": "urn:botaru:schema:common:1#/$defs/name"
+        },
+        "task": {
+          "$ref": "urn:botaru:schema:common:1#/$defs/object_id"
+        },
+        "ref": {
+          "type": "string",
+          "maxLength": 80
+        }
+      }
+    },
+    "initiator_display": {
+      "description": "Initiator name for showing \"who asked\" (APR-3): the core fills it from principal.name when creating the delivery, for a person who has left it writes the code text \"former employee\". The channel does not compute the name; the records keep only requested_by.initiator (D-85).",
+      "type": "string",
+      "maxLength": 80
+    },
+    "context": {
+      "type": "object",
+      "maxProperties": 16
+    },
+    "untrusted_seen": {
+      "type": "boolean"
+    },
+    "untrusted_source": {
+      "type": "string",
+      "maxLength": 120
+    },
+    "risk": {
+      "description": "Action risk from the manifest (APR-10, APR-17).",
+      "enum": [
+        "low",
+        "high",
+        "routine"
+      ]
+    },
+    "expires_at": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/datetime"
+    },
+    "approved_by": {
+      "type": "array",
+      "items": {
+        "$ref": "urn:botaru:schema:common:1#/$defs/principal_ref"
+      },
+      "maxItems": 2,
+      "uniqueItems": true
+    },
+    "campaign": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "count",
+        "plan_hash"
+      ],
+      "properties": {
+        "count": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 100000
+        },
+        "first": {
+          "description": "The first five items.",
+          "type": "array",
+          "items": {
+            "type": "string",
+            "maxLength": 200
+          },
+          "maxItems": 5,
+          "uniqueItems": true
+        },
+        "rollout": {
+          "description": "Rollout order as a code.",
+          "type": "string",
+          "maxLength": 200
+        },
+        "threshold": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 100000
+        },
+        "plan_hash": {
+          "description": "SHA-256 hash of the form sha256:<64 hex digits>.",
+          "$ref": "urn:botaru:schema:common:1#/$defs/hash"
+        }
+      }
+    },
+    "buttons": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "code",
+          "subject_kind",
+          "id",
+          "nonce"
+        ],
+        "properties": {
+          "code": {
+            "enum": [
+              "approve",
+              "reject",
+              "defer",
+              "exclude",
+              "details",
+              "remind",
+              "accept",
+              "yes",
+              "no",
+              "unknown",
+              "withdraw",
+              "override_veto",
+              "would_accept",
+              "would_not_accept",
+              "confirm",
+              "count",
+              "full_list",
+              "pause",
+              "cancel"
+            ]
+          },
+          "subject_kind": {
+            "description": "Decision subject from a closed list. v0.1: approval, proposal, memory_record, campaign, script, script_gate, control, subject_request (kind erase, D-76); v0.2: takeover, governance_case, attribution and subject_request of kind export.",
+            "$ref": "urn:botaru:schema:decision:1#/$defs/subject_kind"
+          },
+          "id": {
+            "$ref": "urn:botaru:schema:common:1#/$defs/object_id"
+          },
+          "nonce": {
+            "description": "One-time value of the card: the button carries it together with the subject and id (APR-3).",
+            "type": "string",
+            "pattern": "^[A-Za-z0-9_-]{16,64}$",
+            "maxLength": 64
+          }
+        }
+      },
+      "maxItems": 8,
+      "uniqueItems": true
+    },
+    "footer": {
+      "description": "Bottom line \"why you, by what deadline, what happens if you stay silent\" (APR-12).",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "why_you",
+        "on_silence"
+      ],
+      "properties": {
+        "why_you": {
+          "description": "Why you: the permission from the registry row.",
+          "type": "string",
+          "maxLength": 200
+        },
+        "until": {
+          "$ref": "urn:botaru:schema:common:1#/$defs/datetime"
+        },
+        "on_silence": {
+          "description": "What happens on silence, from the registry row.",
+          "type": "string",
+          "maxLength": 200
+        }
+      }
+    }
+  }
+}

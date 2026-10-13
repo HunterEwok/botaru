@@ -1,0 +1,14 @@
+schema: spec/model/report-params.schema.json
+rules:
+- REP-3
+- REP-9
+description: Reporter type parameters that the schema accepts.
+cases:
+- window: 24h
+  scope:
+    kind: tenant
+  locale: ru
+- window: since_last
+  scope:
+    kind: campaign
+    id: k_01JB0000000000000000000201

@@ -1,0 +1,71 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:botaru:schema:p1-grant-request:1",
+  "title": "P1 grant.request: request",
+  "description": "An attempt's request for a grant of a stronger model (the built-in tool request_model_grant, a job worker through P1 grant.request) with a closed justification; one request per task. After the request the attempt ends without being spent with awaiting_model_grant (MGR-17, docs/farm-manager.md). The lease token goes in the Botaru-Lease header.",
+  "x-botaru-direction": "input",
+  "x-botaru-version": "v0.2",
+  "x-botaru-rules": [
+    "MGR-17",
+    "MGR-18"
+  ],
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "reason",
+    "evidence",
+    "requested_profile",
+    "benefit",
+    "attempts"
+  ],
+  "properties": {
+    "reason": {
+      "description": "Why the attempt asks for a stronger model; code checks the reasons of its own attempts from evidence against it.",
+      "enum": [
+        "output_schema_invalid_repeated",
+        "context_too_large",
+        "quality_gate_failed",
+        "tool_plan_failed",
+        "low_confidence_declared"
+      ],
+      "x-botaru-registry": "grant-request-reasons",
+      "x-botaru-registry-kind": "reason"
+    },
+    "evidence": {
+      "description": "Its own attempts of this task.",
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 2,
+      "uniqueItems": true,
+      "items": {
+        "$ref": "urn:botaru:schema:common:1#/$defs/attempt_ref"
+      }
+    },
+    "requested_profile": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/name",
+      "description": "Model profile from the role's ladder ∩ profiles allowed to the tenant; never a seat profile."
+    },
+    "benefit": {
+      "description": "What the grant will give.",
+      "enum": [
+        "pass_schema",
+        "fit_context",
+        "pass_quality_gate",
+        "complete_tool_plan"
+      ],
+      "x-botaru-registry": "grant-request-reasons",
+      "x-botaru-registry-kind": "benefit"
+    },
+    "attempts": {
+      "description": "How many attempts on the strong model the executor asks for.",
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 2
+    },
+    "note": {
+      "description": "Untrusted note; the farm manager does not see it.",
+      "type": "string",
+      "maxLength": 500
+    }
+  }
+}

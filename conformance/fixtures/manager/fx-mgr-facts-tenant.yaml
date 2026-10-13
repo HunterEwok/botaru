@@ -1,0 +1,72 @@
+id: fx-mgr-facts-tenant
+rules: [MGR-27]
+description: 'Seat memory: the store (T, bot, <holder identity>) is separate in each tenant; it holds only
+  core records and facts; the reader role has no memory. Only a decision attempt in T proposes facts; they are read by decision
+  attempts and the manager lens review attempts in T, only with untrusted_origin: false. When the holder changes, the facts of each
+  section are offered to the new holder separately, with a memory.pick.v1 task in T. Nothing passes between tenants.'
+given:
+  seat:
+    id: farm-manager
+    tenant: farm
+    state: held
+    holder: bot_41
+    epoch: 9
+    stop_reasons: []
+  facts:
+  - id: f_m1
+    space: {tenant: demo, scope: bot, subject: bot_41}
+    untrusted_origin: false
+  - id: f_m2
+    space: {tenant: demo, scope: bot, subject: bot_41}
+    untrusted_origin: true
+  - id: f_m3
+    space: {tenant: demo2, scope: bot, subject: bot_41}
+    untrusted_origin: false
+cases:
+- id: fx-mgr-facts-tenant-a
+  given:
+    attempt: {tenant: demo, type: manager.incident.respond.v1}
+  expect:
+    facts_in_context: [f_m1]
+    not_in_context: [f_m2, f_m3]
+- id: fx-mgr-facts-tenant-b
+  given:
+    attempt: {tenant: demo2, type: review.farm_manager.v1}
+  expect:
+    facts_in_context: [f_m3]
+    not_in_context: [f_m1, f_m2]
+- id: fx-mgr-facts-tenant-c
+  given:
+    attempt: {tenant: demo, type: manager.inspect.v1, role: farm-manager-reader}
+  expect:
+    facts_in_context: []
+    fact_proposals_accepted: 0
+- id: fx-mgr-facts-tenant-d
+  given:
+    attempt: {tenant: demo, type: review.farm_manager.v1}
+    result:
+      facts:
+      - kind: how_long
+        predicate: task.duration.p95_min
+        subject: {type: tasktype, id: demo.db.backup.v1}
+  expect: {facts_created: 0}
+- id: fx-mgr-facts-tenant-e
+  steps:
+  - call:
+      port: P2
+      op: seat.assign
+      request: {seat: farm-manager}
+  expect:
+    fact_offers:
+    - tenant: demo
+      facts: [f_m1, f_m2]
+      task:
+        type: memory.pick.v1
+        tenant: demo
+        role: farm-manager
+        slot: seat
+        key: system:handover:<fact offer>
+    - tenant: demo2
+      facts: [f_m3]
+      task: {type: memory.pick.v1, tenant: demo2}
+    farm_record_fields: [holder, epoch, state, stop_reasons]

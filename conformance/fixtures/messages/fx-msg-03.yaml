@@ -1,0 +1,147 @@
+id: fx-msg-03
+rules: [MSG-9, FEN-4, HLD-3, DLV-2]
+description: Messages of an attempt sit in staged and are published only in the transaction of its complete. A failed, canceled,
+  preempted attempt or one that lost its lease publishes nothing; retrying the task with a new attempt does not duplicate messages,
+  because the core key system:msg:<attempt>:<n> is unique to each attempt. With a hold with effect no_message the entry at
+  complete becomes discarded(held).
+given:
+  tenant: demo
+  task: {id: t_01JB0000000000000000000002, type: data.qc.ctd.v1, role: analyst}
+  sends_per_attempt:
+  - type: report.qc_note.v1
+    to: role:reporter
+    fields: {resource: ctd-2026-08-p017, check: header_anomaly, points_rejected: 13}
+expect: {published_only_with: complete}
+cases:
+- description: successful end
+  given:
+    attempt: 1
+    before_complete: {inbox_reporter_visible: 0, entry_state: staged}
+  steps:
+  - call:
+      port: P1
+      op: msg.send
+      request:
+        type: report.qc_note.v1
+        to: role:reporter
+        fields: {resource: ctd-2026-08-p017, check: header_anomaly, points_rejected: 13}
+  - call:
+      port: P1
+      op: complete
+      request:
+        result: {}
+  expect:
+    entry_state: queued
+    inbox_reporter_visible: 1
+    same_transaction_as: complete
+    idempotencykey: system:msg:t_01JB0000000000000000000002:1:1
+- description: the attempt failed, the retry succeeded
+  steps:
+  - call:
+      port: P1
+      op: msg.send
+      request:
+        type: report.qc_note.v1
+        to: role:reporter
+        fields: {resource: ctd-2026-08-p017, check: header_anomaly, points_rejected: 13}
+    by: attempt:1
+  - call:
+      port: P1
+      op: fail
+      request: {reason: tool_error, retryable: true}
+    by: attempt:1
+    expect: {entry_state: discarded, published: 0}
+  - call:
+      port: P1
+      op: msg.send
+      request:
+        type: report.qc_note.v1
+        to: role:reporter
+        fields: {resource: ctd-2026-08-p017, check: header_anomaly, points_rejected: 13}
+    by: attempt:2
+  - call:
+      port: P1
+      op: complete
+      request:
+        result: {}
+    by: attempt:2
+    expect: {published: 1, idempotencykey: 'system:msg:t_01JB0000000000000000000002:2:1'}
+  expect: {inbox_reporter_total: 1}
+- description: lease loss
+  given:
+    attempt: 1
+    then: {late_complete_with_old_token: true}
+  steps:
+  - call:
+      port: P1
+      op: msg.send
+      request:
+        type: report.qc_note.v1
+        to: role:reporter
+        fields: {resource: ctd-2026-08-p017, check: header_anomaly, points_rejected: 13}
+  - stand: {op: clock.advance, by: lease_ttl}
+  expect: {late_complete: fenced, entry_state: discarded, published: 0}
+- description: cancellation and preemption
+  given: {attempt: 1}
+  steps:
+  - call:
+      port: P1
+      op: msg.send
+      request:
+        type: report.qc_note.v1
+        to: role:reporter
+        fields: {resource: ctd-2026-08-p017, check: header_anomaly, points_rejected: 13}
+  - call:
+      port: P1
+      op: cancel
+      request: {task: t_01JB0000000000000000000002}
+  - call:
+      port: C1
+      op: control.apply
+      request: {op: preempt}
+  expect: {entry_state: discarded, published: 0}
+- description: no_message hold at complete
+  given: {attempt: 1}
+  steps:
+  - call:
+      port: P1
+      op: msg.send
+      request:
+        type: report.qc_note.v1
+        to: role:reporter
+        fields: {resource: ctd-2026-08-p017, check: header_anomaly, points_rejected: 13}
+  - call:
+      port: P2
+      op: hold.set
+      request:
+        scope: {kind: role, name: analyst}
+        effects: [no_message]
+        reason: manual
+        until: null
+  - call:
+      port: P1
+      op: complete
+      request:
+        result: {}
+  expect: {task_state: completed, entry_state: discarded, entry_reason: held, published: 0}
+- description: repeated complete of the same attempt
+  given: {attempt: 1}
+  steps:
+  - call:
+      port: P1
+      op: msg.send
+      request:
+        type: report.qc_note.v1
+        to: role:reporter
+        fields: {resource: ctd-2026-08-p017, check: header_anomaly, points_rejected: 13}
+  - call:
+      port: P1
+      op: complete
+      request:
+        result: {}
+  - call:
+      port: P1
+      op: complete
+      request:
+        result: {}
+  expect: {published: 1}

@@ -1,0 +1,208 @@
+# Collected from spec/lifecycles/manifest.yaml. The value null in from means "the object does not exist yet".
+lifecycle: spec/lifecycles/manifest.yaml
+object: manifest
+rules:
+- MAN-1
+- MAN-2
+- MAN-3
+- MAN-5
+- MAN-6
+- MAN-7
+- PRP-8
+description: 'Allowed and forbidden transitions of the "declared object (manifest)" lifecycle, collected from the tables
+  of spec/lifecycles/manifest.md. The implementation accepts a transition from the allowed list under the condition of its
+  row; a pair from the forbidden list does not change the state, and the call that asks for it is rejected. The without_transition
+  rows are calls that have no transition by the table: the apply --dry-run plan, a rejected set and the proposal_scope refusal
+  change no object. Rows with since v0.2 belong to the state deprecated and do not take part in the v0.1 check. The pair
+  removed -> applied is forbidden as a transition: an apply of the same name after removal creates a new object from (none).'
+states:
+- id: applied
+  terminal: false
+- id: deprecated
+  terminal: false
+- id: unused
+  terminal: false
+- id: removed
+  terminal: true
+allowed:
+- from: null
+  to: applied
+  by: P2 `apply`
+  when: 'the whole set passed the kind schema and `apiVersion`, the check of references between declared objects, the rule
+    lint (every tool has `target_from` or `target: any`, TEN-3a; `redact` on a tool with untrusted output on a machine;
+    farm machines outside the catalog, DEP-11; service script names from `monitor_scripts_allowed`; `deadline` on a schedule
+    type) and the ban on privilege escalation; the set is written in one transaction'
+  rules:
+  - MAN-1
+  - MAN-6
+- from: applied
+  to: applied
+  by: P2 `apply` with a changed manifest
+  when: within version `.vN` only additions of optional fields, a breaking change is a new object `.v(N+1)`; a repeat of
+    the same set changes nothing
+  rules:
+  - MAN-2
+  - MAN-3
+- from: applied
+  to: unused
+  by: the core, when a written object that a declared object refers to (a principal, a chat binding, a worker) has disappeared
+  when: the reference is checked at every use; the error is written into the object's status
+  rules:
+  - MAN-1
+- from: applied
+  to: unused
+  by: P2 `apply` of a set in which the object is missing
+  when: '`apply` shows the object together with its dependents (non-terminal tasks, schedules, routes, people in a group)
+    and does not delete it'
+  rules: &id001
+  - MAN-2
+- from: deprecated
+  to: unused
+  by: P2 `apply` of a set in which the object is missing
+  when: '`apply` shows the object together with its dependents (non-terminal tasks, schedules, routes, people in a group)
+    and does not delete it'
+  rules: *id001
+  since: v0.2
+- from: unused
+  to: applied
+  by: P2 `apply` in which the object is present again; return of the missing written object
+  when: the references pass the check again
+  rules:
+  - MAN-1
+  - MAN-2
+- from: applied
+  to: deprecated
+  by: 'P2 `apply` of a manifest with `deprecated: true` and `sunset`'
+  when: v0.2; references to the object give an `apply` warning
+  rules:
+  - MAN-7
+  since: v0.2
+- from: deprecated
+  to: applied
+  by: P2 `apply` without the `deprecated` mark
+  when: v0.2
+  rules:
+  - MAN-7
+  since: v0.2
+- from: unused
+  to: removed
+  by: P2 `apply` with an explicit list of objects to remove
+  when: 'the object is not in git; there are no dependents: a task type `.vN` has no non-terminal tasks, schedules and routes
+    pointing to it, a group has no people; otherwise a refusal with the list of dependents in the status'
+  rules: &id002
+  - MAN-2
+  - MAN-7
+  since: v0.2
+- from: deprecated
+  to: removed
+  by: P2 `apply` with an explicit list of objects to remove
+  when: 'the object is not in git; there are no dependents: a task type `.vN` has no non-terminal tasks, schedules and routes
+    pointing to it, a group has no people; otherwise a refusal with the list of dependents in the status'
+  rules: *id002
+  since: v0.2
+without_transition:
+- from:
+  - null
+  - applied
+  - deprecated
+  - unused
+  by: P2 `apply --dry-run`
+  when: 'a plan of changes without writing: what will be added, what will change, what disappeared from git and what depends
+    on it'
+  rules:
+  - MAN-2
+- from:
+  - null
+  - applied
+  - deprecated
+  - unused
+  by: P2 `apply` with an error in any object of the set, or a core failure in the middle of `apply`
+  when: no object of the set changes; the status shows the errors of the rejected set per object
+  rules:
+  - MAN-6
+- from:
+  - null
+  - applied
+  - deprecated
+  - unused
+  by: 'P2 `apply` of a commit with the line `Botaru-Proposal: <id>`, or of a commit linked to a proposal through P2 `proposal.link_commit`'
+  when: 'the commit touches files outside the tenant folder of this proposal: the whole set is rejected with the reason
+    `proposal_scope`, the commit is not linked to the proposal'
+  rules:
+  - MAN-5
+  - PRP-8
+forbidden:
+- from: null
+  to: deprecated
+  expect: rejected
+  rules:
+  - MAN-1
+  - MAN-6
+  why: the object does not appear directly in the state deprecated
+- from: null
+  to: unused
+  expect: rejected
+  rules:
+  - MAN-1
+  - MAN-6
+  why: the object does not appear directly in the state unused
+- from: null
+  to: removed
+  expect: rejected
+  rules:
+  - MAN-1
+  - MAN-6
+  why: the object does not appear directly in the state removed
+- from: applied
+  to: removed
+  expect: rejected
+  rules:
+  - MAN-2
+  why: the transition table has no path applied -> removed
+- from: deprecated
+  to: deprecated
+  expect: rejected
+  rules:
+  - MAN-1
+  - MAN-2
+  why: the transition table has no path deprecated -> deprecated
+- from: unused
+  to: deprecated
+  expect: rejected
+  rules:
+  - MAN-2
+  why: the transition table has no path unused -> deprecated
+- from: unused
+  to: unused
+  expect: rejected
+  rules:
+  - MAN-2
+  why: the transition table has no path unused -> unused
+- from: removed
+  to: applied
+  expect: rejected
+  rules:
+  - MAN-2
+  why: 'removed is a terminal state: there are no transitions out of it, the name creates a new object again through apply'
+- from: removed
+  to: deprecated
+  expect: rejected
+  rules:
+  - MAN-2
+  why: 'removed is a terminal state: there are no transitions out of it, the name creates a new object again through apply'
+- from: removed
+  to: unused
+  expect: rejected
+  rules:
+  - MAN-2
+  why: 'removed is a terminal state: there are no transitions out of it, the name creates a new object again through apply'
+- from: removed
+  to: removed
+  expect: rejected
+  rules:
+  - MAN-2
+  why: 'removed is a terminal state: there are no transitions out of it, the name creates a new object again through apply'
+expect:
+  allowed: 10
+  forbidden: 11
+  without_transition: 3

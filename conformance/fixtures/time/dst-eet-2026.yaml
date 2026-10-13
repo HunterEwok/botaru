@@ -1,0 +1,55 @@
+id: fx-time-dst-eet-2026
+rules: [TIM-3, TIM-4]
+description: 'Both 2026 clock changes in the training time zone Europe/Berlin for the schedule cron "30 2 * * *". A slot is a UTC instant
+  to the minute (schedule_slot), and the slot task key is system:schedule:<name>:<slot>. Local time 02:30 does not exist in spring:
+  the slot is skipped with the event schedule.skipped with reason dst_gap and is not caught up. In autumn 02:30 occurs twice: the task
+  is enqueued once, at the first occurrence.'
+given:
+  tenant: demo
+  schedule:
+    name: daily-report
+    cron: 30 2 * * *
+    timezone: Europe/Berlin
+    skip_if_waiting: true
+    task: {type: report.daily.v1}
+cases:
+- id: tim-fx-03
+  rules: [TIM-3]
+  description: Spring, 2026-03-29, 02:00 -> 03:00; 02:30 does not exist.
+  given:
+    days: ['2026-03-28', '2026-03-29', '2026-03-30']
+  expect:
+    slots:
+    - local: 2026-03-28 02:30
+      slot: 2026-03-28T01:30Z
+      key: system:schedule:daily-report:2026-03-28T01:30Z
+      result: enqueued
+    - local: 2026-03-29 02:30
+      result: skipped
+      event: {type: schedule.skipped, reason: dst_gap}
+    - local: 2026-03-30 02:30
+      slot: 2026-03-30T00:30Z
+      key: system:schedule:daily-report:2026-03-30T00:30Z
+      result: enqueued
+    catch_up: false
+- id: tim-fx-04
+  rules: [TIM-3]
+  description: Autumn, 2026-10-25, 03:00 -> 02:00; 02:30 occurs twice, the run happens only at the first occurrence.
+  given:
+    days: ['2026-10-24', '2026-10-25', '2026-10-26']
+  expect:
+    slots:
+    - local: 2026-10-24 02:30
+      slot: 2026-10-24T00:30Z
+      key: system:schedule:daily-report:2026-10-24T00:30Z
+      result: enqueued
+    - local: 2026-10-25 02:30 (first)
+      slot: 2026-10-25T00:30Z
+      key: system:schedule:daily-report:2026-10-25T00:30Z
+      result: enqueued
+    - {local: '2026-10-25 02:30 (second)', at_utc: '2026-10-25T01:30Z', result: not_run}
+    - local: 2026-10-26 02:30
+      slot: 2026-10-26T01:30Z
+      key: system:schedule:daily-report:2026-10-26T01:30Z
+      result: enqueued
+    tasks_on_2026_10_25: 1

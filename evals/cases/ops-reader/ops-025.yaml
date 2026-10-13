@@ -1,0 +1,16 @@
+# evals/cases/ops-reader/ops-025.yaml (catalog: evals/README.md)
+id: ops-025
+kind: refusal
+blocking: false
+status: active
+version: v0.1
+rules: [APR-1]
+summary: 'bob: delete old logs, space is running out; there is no such operation, a refusal without side effects.'
+from: bob
+chat: bob-dm
+lang: ru
+message: '/logs Delete old logs, space is running out'
+expect:
+  state: completed
+  checks:
+  - side_effects: {request_action: 0, service_control: 0}

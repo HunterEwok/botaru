@@ -1,0 +1,86 @@
+id: fx-proposal-guarded
+rules: [PRP-12, COM-4]
+description: 'Guarded fields of the guarded section of the allowlist: the attempt period of a type in a dispatcher rule (upward no
+  more than twice and not beyond the task deadline), the number of attempts (only downward, not below 1), the concurrency of a rule (by
+  1 up or down within the tenant ceilings) and a shift of the backup schedule window. A proposal with a guarded field
+  is recommended only if both veto lenses gave at least 3 and the trial has guards; an untrusted
+  proposal does not change guarded fields.'
+given:
+  tenant: demo
+  dispatch_rule:
+    match: {type: demo.report.nightly.v1}
+    max_running: 2
+    timeouts: {attempt: 30m}
+    retry: {max_attempts: 3}
+  task_deadline: 90m
+  tenant_ceiling_max_running: 4
+cases:
+- id: prp-fx-10
+  rules: [PRP-12]
+  description: An attempt period change from 30m to 60m is accepted; to 2h (more than twice and beyond the task deadline) it is rejected.
+  given:
+    bodies:
+    - field: spec.dispatch.rules[].timeouts.attempt
+      value: 60m
+      expect:
+        result: ok
+        required_guards: [farm.task.outcome, farm.queue.wait]
+    - field: spec.dispatch.rules[].timeouts.attempt
+      value: 2h
+      expect: {result: rejected, reason: forbidden_change}
+- id: prp-fx-11
+  rules: [PRP-12]
+  description: The number of attempts only downward and not below 1.
+  given:
+    bodies:
+    - field: spec.dispatch.rules[].retry.max_attempts
+      value: 2
+      expect:
+        result: ok
+        required_guards: [farm.task.outcome]
+    - field: spec.dispatch.rules[].retry.max_attempts
+      value: 4
+      expect: {result: rejected, reason: forbidden_change}
+    - field: spec.dispatch.rules[].retry.max_attempts
+      value: 0
+      expect: {result: rejected, reason: forbidden_change}
+- id: prp-fx-12
+  rules: [PRP-12]
+  description: Concurrency up by 1 is accepted; up by 2 is rejected.
+  given:
+    bodies:
+    - field: spec.dispatch.rules[].max_running
+      value: 3
+      expect:
+        result: ok
+        required_guards: [farm.queue.wait, farm.task.cost]
+    - field: spec.dispatch.rules[].max_running
+      value: 4
+      expect: {result: rejected, reason: forbidden_change}
+- id: prp-fx-13
+  rules: [PRP-12, COM-4]
+  description: A proposal of max_running 2 to 3 with scores security 3, operational 2 and a high average is not recommended
+    (the strict threshold of a guarded field), and with security 3 and operational 3 it is recommended.
+  given:
+    commission:
+      min: {security: 2, operational: 2}
+      weights: {value: 2, cost: 1, operational: 1, security: 1}
+      recommend_if: {weighted_mean_gte: 2.5, value_gte: 3}
+      park_if: {weighted_mean_gte: 1.5}
+      high_risk: {security_gte: 3, operational_gte: 3}
+    reviews:
+    - scores: {security: 3, operational: 2, cost: 4, value: 4}
+      expect: {verdict: parked(score)}
+    - scores: {security: 3, operational: 3, cost: 3, value: 3}
+      expect: {verdict: recommended}
+- id: prp-fx-14
+  rules: [PRP-12, PRP-11]
+  description: An untrusted proposal does not change a guarded field.
+  given:
+    untrusted_seen:
+      value: true
+      sources: [logs_tail]
+    bodies:
+    - field: spec.dispatch.rules[].max_running
+      value: 1
+      expect: {result: rejected, reason: untrusted_direction}

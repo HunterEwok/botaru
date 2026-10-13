@@ -1,0 +1,13 @@
+schema: spec/model/bot-state.schema.json
+rules:
+- STA-1
+description: state.worker.v1 fields that the schema accepts.
+cases:
+- phase: busy
+  slots_free: 1
+- phase: degraded
+  load_pct: 95
+  plugins:
+  - name: logs
+    status: down
+  build: b-2026-10-01

@@ -1,0 +1,24 @@
+# evals/cases/ops-reader/ops-034.yaml (catalog: evals/README.md)
+id: ops-034
+kind: quality
+blocking: false
+status: active
+version: v0.1
+rules: [CNT-5]
+summary: 'bob: what is up with the disk on db1; the bot asks for the partition (need_input: true), 5 minutes later bob writes "root" without a command: a new task with continues pointing to the previous one and the same type; the same answer after 40 minutes gives a task without continues; the number from facts is correct.'
+from: bob
+chat: bob-dm
+lang: ru
+message: '/logs what is up with the disk on db1?'
+setup:
+  disk_usage: {host: db1, mount: /, used_pct: 87}
+  then:
+  - {after: 5m, from: bob, chat: bob-dm, message: root}
+  - {after: 40m, from: bob, chat: bob-dm, message: root}
+expect:
+  state: completed
+  checks:
+  - store: {path: 'tasks[?continues==self].type', equals: ops.investigate.v1}
+  - store: {path: 'tasks[?continues==self]', count: 1}
+  - store: {path: 'tasks[?continues==self].result.facts.disk_used_pct', equals: 87}
+  - tools_allowed: [cmd/run]

@@ -1,0 +1,178 @@
+schema: spec/manifests/tool-plugin.schema.json
+rules:
+- MAN-1
+description: ToolPlugin manifest specs from examples/ that the kind schema accepts.
+cases:
+- placement: host
+  network:
+    egress: []
+  tools:
+  - name: latest
+    access: read
+    tier: 0
+    output_class: summary
+    untrusted_output: false
+    redact:
+    - ip
+    - email
+    - secret
+    target_from: check
+    params:
+      check:
+        enum_from: catalog.checks
+    output_schema:
+      type: object
+      additionalProperties: false
+      required:
+      - check
+      - ok
+      - total
+      properties:
+        check:
+          enum_from: catalog.checks
+        ok:
+          type: integer
+          minimum: 0
+          maximum: 1000
+        total:
+          type: integer
+          minimum: 0
+          maximum: 1000
+        last_status:
+          type: integer
+          minimum: 0
+          maximum: 599
+        ms_max:
+          type: integer
+          minimum: 0
+          maximum: 60000
+    output_limit_kb: 4
+    timeout_s: 10
+- placement: host
+  network:
+    egress: []
+  tools:
+  - name: run
+    description: Runs one named command on a catalog machine and returns its output.
+    access: read
+    tier: 1
+    output_class: raw_logs
+    untrusted_output: true
+    redact:
+    - ip
+    - email
+    - secret
+    target_from: host
+    output_limit_kb: 32
+    timeout_s: 20
+    params:
+      command:
+        enum:
+        - disk_usage
+        - service_status
+      host:
+        enum_from: catalog.hosts
+    commands:
+      disk_usage:
+        argv:
+        - /usr/bin/df
+        - -h
+        - -x
+        - tmpfs
+      service_status:
+        argv:
+        - /usr/bin/systemctl
+        - status
+        - --no-pager
+        - -n
+        - '0'
+        - --
+        - '{service.unit}'
+        params:
+          service:
+            enum_from: catalog.services
+- placement: host
+  network:
+    egress: []
+  tools:
+  - name: describe
+    description: Counts the number of records and the ranges of depth, temperature and salinity in the attachment file.
+    access: read
+    tier: 1
+    output_class: internal
+    untrusted_output: true
+    redact:
+    - ip
+    - email
+    - secret
+    target: any
+    params:
+      file:
+        enum_from: task.attachments
+    output_schema:
+      type: object
+      additionalProperties: false
+      required:
+      - stats
+      - header
+      properties:
+        stats:
+          type: object
+          additionalProperties: false
+          required:
+          - records
+          - depth_max_m
+          - flagged_records
+          x-botaru-read-by: code
+          properties:
+            records:
+              type: integer
+              minimum: 0
+              maximum: 10000000
+            depth_max_m:
+              type: number
+              minimum: 0
+              maximum: 12000
+            flagged_records:
+              type: integer
+              minimum: 0
+              maximum: 10000000
+        header:
+          type: string
+          maxLength: 4000
+    output_limit_kb: 16
+    timeout_s: 60
+- placement: host
+  network:
+    egress: []
+  tools:
+  - name: describe
+    access: read
+    tier: 1
+    output_class: internal
+    untrusted_output: true
+    redact:
+    - ip
+    - email
+    - secret
+    target_from: dataset
+    params:
+      dataset:
+        enum_from: catalog.geo_datasets
+    output_limit_kb: 16
+    timeout_s: 30
+  - name: describe_vector
+    access: read
+    tier: 1
+    output_class: internal
+    untrusted_output: true
+    redact:
+    - ip
+    - email
+    - secret
+    target_from: dataset
+    params:
+      dataset:
+        enum_from: catalog.geo_datasets
+    output_limit_kb: 16
+    timeout_s: 30

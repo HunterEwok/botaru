@@ -1,0 +1,57 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:botaru:schema:group:1",
+  "title": "Principal group",
+  "description": "spec of the Group manifest: the group's capabilities, data classes and daily limit. The privileged flag is computed by apply and is not written by hand (PRM-13).",
+  "x-botaru-direction": "input",
+  "x-botaru-rules": [
+    "PRM-7",
+    "PRM-13",
+    "PRM-2"
+  ],
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "caps"
+  ],
+  "properties": {
+    "caps": {
+      "type": "array",
+      "maxItems": 200,
+      "items": {
+        "$ref": "urn:botaru:schema:manifest:1#/$defs/cap"
+      },
+      "description": "Group capabilities; an asterisk only at the end of task:<prefix>.* (PRM-7).",
+      "uniqueItems": true
+    },
+    "data": {
+      "type": "array",
+      "maxItems": 10,
+      "items": {
+        "$ref": "urn:botaru:schema:common:1#/$defs/data_mark"
+      },
+      "description": "Data classes that the group can see (data:<class>).",
+      "uniqueItems": true
+    },
+    "inherits": {
+      "type": "array",
+      "maxItems": 10,
+      "items": {
+        "$ref": "urn:botaru:schema:common:1#/$defs/name"
+      },
+      "description": "Groups whose capabilities are included in this one.",
+      "uniqueItems": true
+    },
+    "day_eur": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1000000,
+      "description": "Daily limit of a group principal in euros; counts only the work line (BUD-1)."
+    },
+    "title": {
+      "type": "string",
+      "maxLength": 120,
+      "description": "Group name for people."
+    }
+  }
+}

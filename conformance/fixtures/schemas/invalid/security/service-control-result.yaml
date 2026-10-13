@@ -1,0 +1,8 @@
+schema: urn:botaru:schema:service-control-result:1
+rules:
+- APR-18
+- INJ-15
+description: 'An outcome with the output of a model script is rejected: the output is kept as a task log file.'
+cases:
+- code: done
+  output: cache cleared, 120 files

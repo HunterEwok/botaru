@@ -1,0 +1,52 @@
+id: fx-dlv-03
+rules: [DLV-13]
+description: 'Machine-readable data origin mark. Every part of a result, a message and a delivery carries `dataorigin`:
+  `model` if the model wrote the text, otherwise `code`; only the core sets it, and the core does not accept the mark
+  from a model result. A channel with `provenance: metadata` passes the mark in the message metadata, with `visible_label` as a visible
+  label. A sink writes `ai_generated: true` into the metadata of a file with model text, and the delivery record keeps the mark.'
+expect: {dataorigin_set_by: core}
+cases:
+- given:
+    delivery:
+      kind: task_result
+      parts:
+      - {text: code table, from: code}
+      - {text: model answer, from: model}
+  expect:
+    parts:
+    - {dataorigin: code}
+    - {dataorigin: model}
+    record_dataorigin: [code, model]
+- given:
+    result: {answer: model answer, dataorigin: code}
+  expect: {reason: output_schema_invalid}
+- given:
+    delivery:
+      kind: card_update
+      parts:
+      - {text: card from a code template, from: code}
+  expect:
+    parts:
+    - {dataorigin: code}
+- given:
+    channel: {provenance: metadata}
+    delivery:
+      parts:
+      - {from: model}
+  expect:
+    message_metadata: {dataorigin: model}
+    visible_label: false
+- given:
+    channel: {provenance: visible_label}
+    delivery:
+      parts:
+      - {from: model}
+  expect: {visible_label: true}
+- given:
+    sink: {name: reports-disk}
+    delivery:
+      parts:
+      - {from: model}
+      file: st-05-report.md
+  expect:
+    file_metadata: {ai_generated: true}

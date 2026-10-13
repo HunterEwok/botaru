@@ -1,0 +1,108 @@
+id: fx-mgr-seat-notice
+rules: [MGR-31, GOV-29]
+description: 'seat.assign, seat.vacate, seat.resume, the seat moving to vacant at the decide_within deadline and a change of the hash
+  of the seat''s persona or model profile in git: in the same transaction the core sets a manager_holder_changed notification (kind notice)
+  from a code template to the admins of every active tenant. The notification has what happened, the id of the holder''s new identity,
+  the epoch and the time; it has no incident class or tenant and no model text. The notification goes only to the admins'' private chats.'
+given:
+  tenants:
+    demo:
+      active: true
+      admins: ['human:bob']
+    demo2:
+      active: true
+      admins: ['human:carol']
+    old: {active: false}
+  seat:
+    state: stopped
+    stop_reasons:
+    - {reason: incident, incident: i_318, tenant: demo, class: disk_full}
+    epoch: 10
+cases:
+- id: fx-mgr-seat-notice-a
+  steps:
+  - call:
+      port: P2
+      op: seat.assign
+      request: {seat: farm-manager}
+  expect:
+    notice:
+      code: manager_holder_changed
+      kind: notice
+      to: ['dm:human:bob', 'dm:human:carol']
+      fields: [what, new_holder, epoch, at]
+      not_contains: [i_318, disk_full, model_text]
+      group_chats: 0
+    same_transaction: true
+- id: fx-mgr-seat-notice-b
+  steps:
+  - call:
+      port: P2
+      op: seat.vacate
+      request: {seat: farm-manager}
+  expect:
+    notice:
+      code: manager_holder_changed
+      kind: notice
+      to: ['dm:human:bob', 'dm:human:carol']
+      fields: [what, new_holder, epoch, at]
+      not_contains: [i_318, disk_full, model_text]
+      group_chats: 0
+    same_transaction: true
+- id: fx-mgr-seat-notice-c
+  steps:
+  - call:
+      port: P2
+      op: seat.resume
+      request: {seat: farm-manager, incident: i_318}
+  expect:
+    notice:
+      code: manager_holder_changed
+      kind: notice
+      to: ['dm:human:bob', 'dm:human:carol']
+      fields: [what, new_holder, epoch, at]
+      not_contains: [i_318, disk_full, model_text]
+      group_chats: 0
+    same_transaction: true
+- id: fx-mgr-seat-notice-d
+  steps:
+  - stand: {op: loop.tick, loop: identity, decide_within: expired}
+  expect:
+    notice:
+      code: manager_holder_changed
+      kind: notice
+      to: ['dm:human:bob', 'dm:human:carol']
+      fields: [what, new_holder, epoch, at]
+      not_contains: [i_318, disk_full, model_text]
+      group_chats: 0
+    same_transaction: true
+- id: fx-mgr-seat-notice-e
+  steps:
+  - lint:
+      governance_yaml: {kind: Governance, file: farm/governance.yaml, change: farm_manager.persona.sha256}
+    by: operator
+    note: apply changes the description of the seat holder
+  expect:
+    notice:
+      code: manager_holder_changed
+      kind: notice
+      to: ['dm:human:bob', 'dm:human:carol']
+      fields: [what, new_holder, epoch, at]
+      not_contains: [i_318, disk_full, model_text]
+      group_chats: 0
+    same_transaction: true
+- id: fx-mgr-seat-notice-f
+  steps:
+  - lint:
+      governance_yaml: {kind: Governance, file: farm/governance.yaml, change: farm_manager.model_profile}
+    by: operator
+    note: apply changes the description of the seat holder
+  expect:
+    notice:
+      code: manager_holder_changed
+      kind: notice
+      to: ['dm:human:bob', 'dm:human:carol']
+      fields: [what, new_holder, epoch, at]
+      not_contains: [i_318, disk_full, model_text]
+      group_chats: 0
+    same_transaction: true

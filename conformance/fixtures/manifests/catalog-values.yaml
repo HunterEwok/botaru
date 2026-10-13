@@ -1,0 +1,68 @@
+id: fx-man-10
+rules: [MAN-10, MAN-6]
+description: >-
+  Values of a catalog list referenced by enum_from pass, at apply, the format
+  from formats.yaml declared for that list, id by default; a value outside the format
+  fails the apply of the whole set. A format outside the registry does not pass either.
+with_examples: true
+cases:
+  - name: stations in id format
+    manifests:
+      - apiVersion: botaru/v1alpha1
+        kind: Catalog
+        metadata: {name: demo, tenant: demo}
+        spec:
+          hosts: [{id: web1, monitor_host: web1.example.org}, {id: db1}, {id: ctd1}]
+          resources:
+            - {id: ctd-stations, title: "Stations", host: ctd1, list: stations, values: [st-01, st-02]}
+    expect: ok
+  - name: value with a space and capital letters
+    manifests:
+      - apiVersion: botaru/v1alpha1
+        kind: Catalog
+        metadata: {name: demo, tenant: demo}
+        spec:
+          hosts: [{id: ctd1}]
+          resources:
+            - {id: ctd-stations, title: "Stations", host: ctd1, list: stations, format: id, values: [st-01, "St 02; rm -rf /"]}
+    expect: {error: catalog_value_format}
+  - name: months in year_month format
+    manifests:
+      - apiVersion: botaru/v1alpha1
+        kind: Catalog
+        metadata: {name: demo, tenant: demo}
+        spec:
+          hosts: [{id: ctd1}]
+          resources:
+            - {id: qc-months, title: "QC months", host: ctd1, list: months, format: year_month, values: ["2026-09", "2026-13"]}
+    expect: {error: catalog_value_format}
+  - name: format outside the registry
+    manifests:
+      - apiVersion: botaru/v1alpha1
+        kind: Catalog
+        metadata: {name: demo, tenant: demo}
+        spec:
+          hosts: [{id: ctd1}]
+          resources:
+            - {id: ctd-stations, title: "Stations", host: ctd1, list: stations, format: free_text, values: [st-01]}
+    expect: {error: format_unknown}
+  - name: x-botaru-format outside the registry in action arguments
+    manifests:
+      - apiVersion: botaru/v1alpha1
+        kind: Action
+        metadata: {name: pipeline.ctd_qc}
+        spec:
+          title: "Monthly CTD quality control"
+          description: "Enqueues the control pipeline."
+          risk: low
+          args:
+            type: object
+            additionalProperties: false
+            required: [month]
+            properties:
+              month: {type: string, x-botaru-format: month_name}
+          executor:
+            plugin: pipeline
+            tool: start_ctd_qc
+            os_mechanism: {oneshot: {unit: "ctd-qc-queue-{tenant}.service", started_by: "ctd-qc-queue-{tenant}.path", wait: false}}
+    expect: {error: format_unknown, also: [run_arg_unknown, tool_target_unknown]}

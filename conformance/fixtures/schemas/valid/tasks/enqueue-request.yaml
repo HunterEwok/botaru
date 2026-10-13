@@ -1,0 +1,18 @@
+schema: spec/model/enqueue-request.schema.json
+rules: [IDM-1, DSP-4, DSP-5]
+description: 'P1 enqueue requests that the schema accepts: an external program key; class lowering, a bot group, links and
+  a child scope.'
+cases:
+- body:
+    type: report.nightly.v1
+    goal: nightly report
+  idempotency_key: nightly-2026-10-05
+- body:
+    type: ops.investigate.v1
+    goal: why was www.example.org slow last night?
+  idempotency_key: child-1
+  priority: 4
+  to:
+    group: science-pool
+  refs: [t_01JB0000000000000000000001, 'file:AbCdEfGhIjKlMnOpQrStUv']
+  scope: [web1]

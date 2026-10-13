@@ -1,0 +1,51 @@
+registry: decline-reasons
+version: 1
+description: >-
+  Closed list of reasons for the "Reject" button on a proposal card. The person chooses the reason on
+  the `proposal_reason` card, the continuation of the "Reject" button of the `proposal_card` card; the decision
+  "Reject" is recorded only when a reason is chosen, and without a reason the proposal waits until the card
+  deadline. The free feedback text is stored separately with the class `content` and is always untrusted (DIG-4).
+  The reason code does not get into the author's "My outcomes" (DIG-7). Entry fields: `meaning`, `calibration`
+  (whether the reason counts as an outcome in the calibration of lenses with a veto, COM-11), `rules`.
+source: docs/improvements.md
+entries:
+  - id: useful_done
+    since: v0.1
+    meaning: Useful, but already done.
+    calibration: false
+    rules: [DIG-3]
+  - id: not_now
+    since: v0.1
+    meaning: Not now.
+    calibration: false
+    rules: [DIG-3]
+  - id: wrong_data
+    since: v0.1
+    meaning: Wrong data.
+    calibration: false
+    rules: [DIG-3]
+  - id: too_costly
+    since: v0.1
+    meaning: Too expensive.
+    calibration: false
+    rules: [DIG-3]
+  - id: too_risky
+    since: v0.1
+    meaning: Too risky; since v0.2 counts as an outcome in the calibration of the security and operations lenses.
+    calibration: true
+    rules: [DIG-3, COM-11]
+  - id: duplicate
+    since: v0.1
+    meaning: Duplicate of another proposal.
+    calibration: false
+    rules: [DIG-3]
+  - id: not_relevant
+    since: v0.1
+    meaning: Not relevant.
+    calibration: false
+    rules: [DIG-3]
+  - id: other
+    since: v0.1
+    meaning: Other reason.
+    calibration: false
+    rules: [DIG-3]

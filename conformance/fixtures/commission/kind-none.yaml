@@ -1,0 +1,44 @@
+id: com-06
+rules: [COM-14, COM-6]
+description: A proposal of kind none is scored by two lenses. The core enqueues for it only tasks of the lenses value and security; the lenses
+  operational, cost and farm_manager are not enqueued, and there are no reviews or money for them. Only the security review is required; the weighted
+  average uses the weights of these two lenses; the thresholds high_risk and untrusted read only the security score. The review line reserve
+  at in_review equals the sum of tree_budget_eur of the two review types.
+given:
+  tenant: demo
+  lens_types:
+  - {type: review.security.v1, tree_budget_eur: 0.08}
+  - {type: review.operational.v1, tree_budget_eur: 0.08}
+  - {type: review.cost.v1, tree_budget_eur: 0.08}
+  - {type: review.value.v1, tree_budget_eur: 0.08}
+  commission:
+    min: {security: 2, operational: 2}
+    weights: {value: 2, cost: 1, operational: 1, security: 1}
+    recommend_if: {weighted_mean_gte: 2.5, value_gte: 3}
+    park_if: {weighted_mean_gte: 1.5}
+  proposal:
+    change: {kind: none}
+cases:
+- description: The move to in_review enqueues two tasks and reserves 0.16 EUR.
+  expect:
+    review_tasks: [review.security.v1, review.value.v1]
+    reserved_eur: 0.16
+    not_created: [review.operational.v1, review.cost.v1, review.farm_manager.v1]
+- description: Without an operational review (it was not even enqueued) there is a verdict.
+  given:
+    reviews: {security: 3, value: 3}
+  expect: {verdict: recommended, weighted_mean: 3.0}
+- description: Without a security review the proposal waits.
+  given:
+    reviews: {value: 4}
+  expect:
+    verdict: {state: parked, reason: veto_lens_missing}
+- description: After "Accept" the proposal is noted; there is no trial and no credit.
+  given:
+    reviews: {security: 3, value: 3}
+  steps:
+  - call:
+      port: P1
+      op: decide
+      request: {subject_kind: proposal, id: $last, decision: accept}
+  expect: {state: noted, trial: null}

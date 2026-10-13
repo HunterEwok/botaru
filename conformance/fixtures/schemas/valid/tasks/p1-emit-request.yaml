@@ -1,0 +1,6 @@
+schema: spec/model/p1-emit-request.schema.json
+rules: [IDM-4]
+description: An event of the job worker.
+cases:
+- type: run.finished.v1
+  data: {rows: 412}

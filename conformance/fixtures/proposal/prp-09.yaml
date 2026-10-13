@@ -1,0 +1,69 @@
+id: prp-09
+rules: [PRP-21, PRP-11]
+description: 'A metric not from the registry and the direction of an untrusted proposal. A proposal with a metric not from the series
+  with a full outcome block gets rejected(metric_unknown) at creation. A proposal with untrusted_seen raises
+  a tenant limit whose safe direction is down: rejected(untrusted_direction). The same proposal that
+  lowers the limit passes.'
+given: {tenant: demo}
+cases:
+- description: The metric farm.task.latency is not in the registry, and there is no tenant series with an outcome block.
+  given:
+    body:
+      change:
+        kind: manifest_change
+        manifest_change:
+          ops:
+          - op: set
+            target: {kind: Schedule, name: report-nightly}
+            field: spec.cron
+            value: 30 3 * * *
+      benefit:
+        metric: farm.task.latency
+        subject: task_type:demo.db.backup.v1
+        direction: down
+        expected_change_pct: 10
+        confidence: low
+  expect: {result: rejected, reason: metric_unknown}
+- description: An untrusted proposal raises spec.limits.max_queued from 4000 to 5000.
+  given:
+    untrusted_seen:
+      value: true
+      sources: [logs_tail]
+    body:
+      change:
+        kind: manifest_change
+        manifest_change:
+          ops:
+          - op: set
+            target: {kind: Tenant, name: demo}
+            field: spec.limits.max_queued
+            value: 5000
+    current: {spec.limits.max_queued: 4000}
+  expect: {result: rejected, reason: untrusted_direction}
+- description: An untrusted proposal lowers spec.limits.max_queued from 5000 to 4000.
+  given:
+    untrusted_seen:
+      value: true
+      sources: [logs_tail]
+    body:
+      change:
+        kind: manifest_change
+        manifest_change:
+          ops:
+          - op: set
+            target: {kind: Tenant, name: demo}
+            field: spec.limits.max_queued
+            value: 4000
+      benefit:
+        metric: farm.queue.wait
+        subject: task_type:demo.db.backup.v1
+        direction: down
+        expected_change_pct: 5
+        confidence: low
+    current: {spec.limits.max_queued: 5000}
+  expect:
+    result: ok
+    state: screened
+    untrusted_seen:
+      value: true
+      sources: [logs_tail]

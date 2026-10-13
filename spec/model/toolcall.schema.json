@@ -1,0 +1,140 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:botaru:schema:toolcall:1",
+  "title": "Tool call",
+  "description": "A tool call record that the core writes: a model call through P3 tools/call, the single write call of an approved approval, a campaign item call or a call of the built-in service/control. The core computes the target (TEN-3a); a call that no toolhost of the target took within start_by ends with error(no_executor), and for a target without a live toolhost at once with error(plugin_unavailable) (DLV-16). A call is not handed out again (DLV-1). Call lifecycle: spec/lifecycles/toolcall.md.",
+  "x-botaru-direction": "record",
+  "x-botaru-rules": [
+    "TEN-3a",
+    "DLV-16",
+    "DLV-1",
+    "FEN-7",
+    "CNT-7",
+    "TEN-1"
+  ],
+  "type": "object",
+  "required": [
+    "id",
+    "tenant",
+    "task",
+    "state",
+    "tool",
+    "access",
+    "target"
+  ],
+  "properties": {
+    "id": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/object_id"
+    },
+    "tenant": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/tenant_name"
+    },
+    "task": {
+      "description": "The task the call belongs to.",
+      "$ref": "urn:botaru:schema:common:1#/$defs/object_id"
+    },
+    "lease_no": {
+      "description": "Lease number of the attempt that made the read call.",
+      "type": "integer",
+      "minimum": 1
+    },
+    "state": {
+      "description": "State from spec/lifecycles/toolcall.md.",
+      "enum": [
+        "requested",
+        "denied",
+        "queued",
+        "leased",
+        "done",
+        "error",
+        "exec_unknown",
+        "abandoned"
+      ]
+    },
+    "tool": {
+      "description": "Tool name, for example logs/tail or service/control.",
+      "type": "string",
+      "maxLength": 120
+    },
+    "access": {
+      "description": "read for a read call, write for a write call.",
+      "enum": [
+        "read",
+        "write"
+      ]
+    },
+    "args": {
+      "description": "Checked arguments; for a write call, the snapshot of the approval arguments.",
+      "type": "object"
+    },
+    "args_hash": {
+      "description": "Hash of the call arguments.",
+      "anyOf": [
+        {
+          "$ref": "urn:botaru:schema:common:1#/$defs/hash"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "approval_id": {
+      "description": "Approval number for a write call of an action; for a campaign item, the work id <approval_id>:<n> (FEN-7).",
+      "anyOf": [
+        {
+          "$ref": "urn:botaru:schema:common:1#/$defs/object_id"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "grant_id": {
+      "description": "Number of the service_grant audit record for a write call of service/control and of a routine pipeline (FEN-7).",
+      "anyOf": [
+        {
+          "$ref": "urn:botaru:schema:common:1#/$defs/object_id"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "target": {
+      "$ref": "#/$defs/target"
+    },
+    "start_by": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/datetime"
+    },
+    "reason": {
+      "description": "Reason for the outcome denied, error or exec_unknown from the reason registry, for example no_executor, plugin_unavailable, lease_expired, core_unavailable, held.",
+      "$ref": "urn:botaru:schema:common:1#/$defs/reason"
+    },
+    "untrusted_output": {
+      "description": "Tool output is untrusted: the attempt gets untrusted_seen (INJ-13).",
+      "type": "boolean"
+    }
+  },
+  "$defs": {
+    "target": {
+      "description": "Call target: plugin, placement and machine from the catalog resource. The core takes the machine from the argument that the tool manifest named in target_from; a tool with target: any gets a target without host. claim(toolcall) hands the call only to a toolhost whose tenant, plugins, placement and machine recorded at enroll matched the target (TEN-3a).",
+      "type": "object",
+      "required": [
+        "plugin",
+        "placement"
+      ],
+      "properties": {
+        "plugin": {
+          "$ref": "urn:botaru:schema:common:1#/$defs/name"
+        },
+        "placement": {
+          "type": "string",
+          "maxLength": 32
+        },
+        "host": {
+          "$ref": "urn:botaru:schema:common:1#/$defs/name"
+        }
+      }
+    }
+  }
+}

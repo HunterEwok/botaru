@@ -1,0 +1,66 @@
+id: mem-fx-01
+rules: [MEM-6]
+description: The model proposes only a kind, a predicate and a subject from the registries fact-kinds.yaml and fact-predicates.yaml.
+  The schema ($defs/proposal in spec/model/fact.schema.json) rejects window, evidence and value fields in a model proposal;
+  a kind and a predicate outside the registries are rejected too. Numbers of identities, facts, tasks and proposals are shortened, as in the example in
+  docs/bots.md.
+given: {schema: spec/model/fact.schema.json#/$defs/proposal}
+cases:
+- id: mem-fx-01-a
+  given:
+    proposal:
+      kind: how_long
+      predicate: task.duration.p95_min
+      subject: {type: tasktype, id: demo.db.backup.v1, 'on': db1}
+  expect: {result: ok}
+- id: mem-fx-01-b
+  given:
+    proposal:
+      kind: how_long
+      predicate: task.duration.p95_min
+      subject: {type: tasktype, id: demo.db.backup.v1, 'on': db1}
+      window: {from: '2026-11-10T00:00:00Z', to: '2026-11-24T00:00:00Z'}
+  expect: {result: rejected, stage: schema, reason: output_schema_invalid}
+- id: mem-fx-01-c
+  given:
+    proposal:
+      kind: how_long
+      predicate: task.duration.p95_min
+      subject: {type: tasktype, id: demo.db.backup.v1, 'on': db1}
+      evidence:
+      - {kind: obs_rollup}
+  expect: {result: rejected, stage: schema, reason: output_schema_invalid}
+- id: mem-fx-01-d
+  given:
+    proposal:
+      kind: how_long
+      predicate: task.duration.p95_min
+      subject: {type: tasktype, id: demo.db.backup.v1, 'on': db1}
+      value: 12
+  expect: {result: rejected, stage: schema, reason: output_schema_invalid}
+- id: mem-fx-01-e
+  given:
+    proposal:
+      kind: what_helped
+      predicate: fix.worked
+      subject: {type: tasktype, id: demo.db.backup.v1, 'on': db1}
+  expect:
+    result: rejected
+    stage: schema
+    note: the kind and predicate are not in the registries; there is no advice among the predicates
+- id: mem-fx-01-f
+  given:
+    proposal:
+      kind: how_long
+      predicate: task.duration.p95_min
+      subject: {type: tasktype, id: demo.db.backup.v1, 'on': db1}
+      untrusted_origin: false
+  expect: {result: rejected, stage: schema, reason: output_schema_invalid}
+- id: mem-fx-01-g
+  given:
+    proposal:
+      kind: where
+      predicate: dataset.stored_on
+      subject: {type: dataset, id: ctd.raw}
+      note: stored on db1
+  expect: {result: rejected, stage: schema, note: a fact has no free text (MEM-3)}

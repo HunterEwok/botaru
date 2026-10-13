@@ -1,0 +1,99 @@
+# Fixture fixture:files/declared-personal (docs/quality.md, ART-6). The data are for training.
+id: fx-art-06
+rules: [ART-6, MGR-30]
+description: The core sets personal_seen with source declared in a file record when the source declared the personal data,
+  not when redaction found it. An upload file from a principal of kind service with uploads_personal true and an ingested file from a catalog
+  resource with personal true get personal_seen declared without redaction. The same CSV from a person and a file from a resource
+  without the personal mark do not get this mark.
+given:
+  principals:
+  - {id: 'service:ctd-export', kind: service, uploads_personal: true}
+  - {id: 'service:sensor-sync', kind: service, uploads_personal: false}
+  - {id: 'human:alice', kind: human}
+  catalog_resources:
+  - {id: survey-sheets, kind: storage_root, personal: true}
+  - {id: ctd-stations, kind: storage_root, personal: false}
+  masking_finds_personal: false
+  tenant: demo
+cases:
+- id: fx-art-06-a
+  rules: [ART-6]
+  description: A CSV from a principal service with uploads_personal true gets personal_seen declared.
+  steps:
+  - call:
+      port: P1
+      op: file.put
+      request: {media_type: text/csv}
+    by: service:ctd-export
+    context: {origin: upload, size: 2048}
+  expect:
+    result: ok
+    record:
+      origin: upload
+      personal_seen: {value: true, source: declared}
+- id: fx-art-06-b
+  rules: [ART-6]
+  description: A file that data.arrived.v1 brought from a resource with personal true gets personal_seen declared.
+  steps:
+  - call:
+      port: P1
+      op: file.put
+      request: {media_type: text/csv}
+    by: attempt:data.arrived.v1
+    context: {origin: ingested, resource: survey-sheets, size: 4096}
+  expect:
+    result: ok
+    record:
+      origin: ingested
+      personal_seen: {value: true, source: declared}
+- id: fx-art-06-c
+  rules: [ART-6]
+  description: A principal service with uploads_personal false does not declare personal data.
+  steps:
+  - call:
+      port: P1
+      op: file.put
+      request: {media_type: text/csv}
+    by: service:sensor-sync
+    context: {origin: upload, size: 2048}
+  expect:
+    result: ok
+    record:
+      personal_seen: {value: false}
+- id: fx-art-06-d
+  rules: [ART-6]
+  description: A person's attachment does not get declared; only redaction can set the mark.
+  steps:
+  - call:
+      port: P1
+      op: file.put
+      request: {media_type: text/csv}
+    by: human:alice
+    context: {origin: upload, size: 2048}
+  expect:
+    result: ok
+    record:
+      personal_seen: {value: false}
+- id: fx-art-06-e
+  rules: [ART-6]
+  description: A file from a resource without the personal mark does not get declared.
+  steps:
+  - call:
+      port: P1
+      op: file.put
+      request: {media_type: text/csv}
+    by: attempt:data.arrived.v1
+    context: {origin: ingested, resource: ctd-stations, size: 4096}
+  expect:
+    result: ok
+    record:
+      personal_seen: {value: false}
+- id: fx-art-06-f
+  rules: [ART-6, MGR-30]
+  description: A file with personal_seen declared goes into the privacy report as an object with personal data.
+  given:
+    after: [fx-art-06-a, fx-art-06-b]
+    query: {report: privacy, tenant: demo}
+  expect:
+    personal_objects_include: [fx-art-06-a, fx-art-06-b]
+    personal_objects_exclude: [fx-art-06-c, fx-art-06-d, fx-art-06-e]

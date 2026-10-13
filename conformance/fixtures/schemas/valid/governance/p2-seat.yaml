@@ -1,0 +1,7 @@
+schema: spec/model/p2-seat-assign-request.schema.json
+rules: [IDN-10, MGR-1]
+description: 'seat.assign requests that the schema accepts: a commission seat with an existing functionary identity; the
+  farm manager seat without the bot parameter (the core creates a new identity).'
+cases:
+  - {seat: "commission:3", bot: bot_01JB8M00000000000000000017}
+  - {seat: farm-manager}

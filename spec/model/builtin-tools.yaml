@@ -1,0 +1,311 @@
+registry: builtin-tools
+version: 2
+description: >-
+  Built-in P3 tools. The core adds them to the tools/list of an attempt at step 7
+  of catalog assembly, if the tool allows the role profile (role-profiles.yaml) and
+  the task conditions are met. Entry fields: access (read or write; write exists
+  only for service/control and monitor/script_run, APR-18), profiles (profiles
+  the tool is available to), purposes (task type purposes in which
+  the tool exists; null means all purposes of the profile except handover and
+  governance, where nobody has built-in tools, MEM-8, GOV-7),
+  condition (task and role condition in words), limit (call limit, if one
+  is named), args_schema and result_schema (argument and result schemas from
+  spec/model; null while there is no schema, and then schema_note says when it
+  will appear). The set is
+  closed: a tool outside the registry does not get into the catalog, even if the manifest
+  is wrong (PRF-1).
+source: spec/ports/p3-tool-gateway.md
+entries:
+  - id: request_action
+    since: v0.1
+    access: read
+    profiles: [worker, manager]
+    purposes: [work]
+    condition: the role may request actions (actions_may_request) and every initiator has action.request for at least one of them
+    limit: at most 3 requests per task (APR-2)
+    args_schema: request-action.schema.json
+    result_schema: request-action-result.schema.json
+    rules: [APR-1, APR-2, PRF-1]
+  - id: status.tasks
+    since: v0.1
+    access: read
+    profiles: [worker, manager, reporter]
+    purposes: [work, report]
+    condition: the type declared the view status.tasks
+    args_schema: null
+    result_schema: null
+    schema_note: a schema recorded as null will appear in spec/model together with the tool
+    rules: [PRF-1]
+  - id: status.workers
+    since: v0.1
+    access: read
+    profiles: [worker, manager, reporter]
+    purposes: [work, report]
+    condition: the type declared the view status.workers
+    args_schema: null
+    result_schema: null
+    schema_note: a schema recorded as null will appear in spec/model together with the tool
+    rules: [PRF-1]
+  - id: status.proposals
+    since: v0.1
+    access: read
+    profiles: [worker, manager, reporter]
+    purposes: [work, report]
+    condition: the type declared the view status.proposals
+    args_schema: null
+    result_schema: null
+    schema_note: a schema recorded as null will appear in spec/model together with the tool
+    rules: [PRF-1]
+  - id: status.campaigns
+    since: v0.1
+    access: read
+    profiles: [worker, manager, reporter]
+    purposes: [work, report]
+    condition: the type declared the view status.campaigns
+    args_schema: null
+    result_schema: null
+    schema_note: a schema recorded as null will appear in spec/model together with the tool
+    rules: [PRF-1]
+  - id: enqueue_child
+    since: v0.1
+    access: read
+    profiles: [manager]
+    purposes: [work]
+    condition: the child type is in the role's may_enqueue; the child's permissions are not wider than the parent's permissions and the intersection of the initiators' permissions (PRM-6)
+    args_schema: null
+    result_schema: null
+    schema_note: a schema recorded as null will appear in spec/model together with the tool
+    rules: [PRF-1, PRM-6]
+  - id: send_message
+    since: v0.1
+    access: read
+    profiles: [worker, manager]
+    purposes: [work]
+    condition: the role declared messages.send; the initiators have msg.send:<type>
+    args_schema: msg-send-request.schema.json
+    result_schema: msg-send-response.schema.json
+    rules: [PRF-1]
+  - id: inbox_read
+    since: v0.1
+    access: read
+    profiles: [worker, manager, reporter]
+    purposes: [work, report]
+    condition: the type declared inbox.read
+    args_schema: inbox-read-request.schema.json
+    result_schema: inbox-read-response.schema.json
+    rules: [PRF-1]
+  - id: observations_query
+    since: v0.1
+    access: read
+    profiles: [worker, manager, reviewer, aggregator]
+    purposes: [insight, review, aggregate]
+    condition: in insight tasks this is the only built-in tool, within the role's insight.observes (INS-1, OBV-3); for reviewer only in review tasks
+    args_schema: observation-query.schema.json
+    result_schema: observation-query-result.schema.json
+    rules: [PRF-1]
+  - id: service/control
+    since: v0.1
+    access: write
+    profiles: [worker, manager, farm-manager]
+    purposes: [work, manage]
+    condition: >-
+      the role has service_control for the service and the service is in the tenant catalog;
+      enum of services and verbs from the catalog; without a card only a verb from
+      services[].no_card in a task without untrusted_seen; every initiator has
+      service.control:<service> (D-73)
+    args_schema: service-control.schema.json
+    result_schema: service-control-result.schema.json
+    rules: [APR-18, INJ-15, PRF-1]
+  - id: monitor/script_run
+    since: v0.1
+    access: write
+    profiles: [worker, manager, farm-manager]
+    purposes: [work, manage]
+    condition: >-
+      the role has a non-empty monitor_scripts; enum of resources with monitor_host and names from
+      hosts[].monitor_scripts_allowed of the catalog whose scriptid is in the latest
+      adapter list; without a card in a task without untrusted_seen; every
+      initiator has monitor.script_run (D-73)
+    args_schema: monitor-script-run.schema.json
+    result_schema: service-control-result.schema.json
+    rules: [APR-18, INJ-15, INJ-16, PRF-1]
+  - id: messages_digest
+    since: v0.1
+    access: read
+    profiles: [aggregator]
+    purposes: [aggregate]
+    condition: budget line aggregate
+    args_schema: null
+    result_schema: null
+    schema_note: a schema recorded as null will appear in spec/model together with the tool
+    rules: [PRF-1]
+  - id: proposals_query
+    since: v0.1
+    access: read
+    profiles: [aggregator]
+    purposes: [aggregate]
+    condition: budget line aggregate
+    args_schema: null
+    result_schema: null
+    schema_note: a schema recorded as null will appear in spec/model together with the tool
+    rules: [PRF-1]
+  - id: propose_campaign
+    since: v0.1
+    access: read
+    profiles: [manager]
+    purposes: [work]
+    condition: the role declared campaigns
+    args_schema: campaign-propose-request.schema.json
+    result_schema: campaign-propose-response.schema.json
+    rules: [PRF-1]
+  - id: campaign_status
+    since: v0.1
+    access: read
+    profiles: [manager]
+    purposes: [work]
+    condition: the role declared campaigns
+    args_schema: campaign-status-request.schema.json
+    result_schema: null
+    schema_note: a schema recorded as null will appear in spec/model together with the tool
+    rules: [PRF-1]
+  - id: campaign_results
+    since: v0.1
+    access: read
+    profiles: [manager]
+    purposes: [work]
+    condition: only in a campaign continuation task
+    args_schema: campaign-results-request.schema.json
+    result_schema: null
+    schema_note: a schema recorded as null will appear in spec/model together with the tool
+    rules: [PRF-1]
+  - id: propose_script
+    since: v0.1
+    access: read
+    profiles: [translator]
+    purposes: [translate]
+    condition: the role's scripts.propose is draft
+    limit: at most 3 calls per attempt (TRN-3)
+    args_schema: script-propose-request.schema.json
+    result_schema: script-propose-response.schema.json
+    rules: [PRF-1]
+  - id: control_ops
+    since: v0.1
+    access: read
+    profiles: [farm-manager]
+    purposes: [manage]
+    condition: >-
+      operations from the closed list control-ops.yaml (hold, quarantine, drain,
+      preempt, cancel, pin_task, request_action, release, notify) by a C1 call
+      control.apply with the attempt epoch; denials fenced, held, target_not_implicated,
+      target_excluded, protected_target, control_rate_limited
+    args_schema: null
+    result_schema: null
+    schema_note: a schema recorded as null will appear in spec/model together with the tool
+    rules: [PRF-1]
+  - id: inspect_request
+    since: v0.1
+    access: read
+    profiles: [farm-manager]
+    purposes: [manage]
+    condition: a read request to the farm manager's reading bot
+    args_schema: null
+    result_schema: null
+    schema_note: a schema recorded as null will appear in spec/model together with the tool
+    rules: [PRF-1]
+  - id: incident_close
+    since: v0.1
+    access: read
+    profiles: [farm-manager]
+    purposes: [manage]
+    condition: closing an incident from resolved
+    args_schema: null
+    result_schema: null
+    schema_note: a schema recorded as null will appear in spec/model together with the tool
+    rules: [PRF-1]
+  - id: incident_view
+    since: v0.1
+    access: read
+    profiles: [farm-manager]
+    purposes: [manage]
+    condition: viewing the incident and the tenant state
+    args_schema: null
+    result_schema: manager-incident-view.schema.json
+    schema_note: a schema recorded as null will appear in spec/model together with the tool
+    rules: [PRF-1]
+  - id: file_read
+    since: v0.1
+    access: read
+    profiles: [farm-manager-reader]
+    purposes: [inspect]
+    condition: only by a file_ref from the read request
+    args_schema: null
+    result_schema: null
+    schema_note: a schema recorded as null will appear in spec/model together with the tool
+    rules: [PRF-1]
+  - id: escalate
+    since: v0.2
+    access: read
+    profiles: [worker, manager]
+    purposes: [work]
+    args_schema: null
+    result_schema: null
+    schema_note: a schema recorded as null will appear in spec/model together with the tool
+    rules: [PRF-1]
+  - id: request_model_grant
+    since: v0.2
+    access: read
+    profiles: [worker, manager]
+    purposes: [work]
+    condition: the role has a model_grants.ladder, the tenant's grant line is greater than 0; one request per task
+    args_schema: p1-grant-request.schema.json
+    result_schema: null
+    schema_note: the result schema will appear in spec/model together with the tool in v0.2
+    rules: [PRF-1, MGR-17]
+  - id: grant_decide
+    since: v0.2
+    access: read
+    profiles: [farm-manager]
+    purposes: [manage]
+    condition: the task manager.grants.v1 as a batch once every 10 minutes; the epoch is current
+    args_schema: null
+    result_schema: null
+    schema_note: a schema recorded as null will appear in spec/model together with the tool
+    rules: [PRF-1, MGR-18]
+  - id: escalations_take
+    since: v0.2
+    access: read
+    profiles: [farm-manager]
+    purposes: [manage]
+    args_schema: null
+    result_schema: null
+    schema_note: a schema recorded as null will appear in spec/model together with the tool
+    rules: [PRF-1]
+  - id: grants_pending
+    since: v0.2
+    access: read
+    profiles: [farm-manager]
+    purposes: [manage]
+    args_schema: null
+    result_schema: null
+    schema_note: a schema recorded as null will appear in spec/model together with the tool
+    rules: [PRF-1]
+  - id: takeover_request
+    since: v0.2
+    access: read
+    profiles: [farm-manager]
+    purposes: [manage]
+    condition: the tenant's consent group has task.takeover:<type>
+    args_schema: null
+    result_schema: null
+    schema_note: a schema recorded as null will appear in spec/model together with the tool
+    rules: [PRF-1]
+  - id: skill_read
+    since: v0.2
+    access: read
+    profiles: [worker, manager]
+    purposes: [work]
+    condition: a skill file of the role by enum, only for runtimes without their own skills; not present in handover tasks (MEM-8)
+    args_schema: null
+    result_schema: null
+    schema_note: a schema recorded as null will appear in spec/model together with the tool
+    rules: [PRF-1]

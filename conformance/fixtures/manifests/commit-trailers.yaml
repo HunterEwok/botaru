@@ -1,0 +1,47 @@
+id: fx-man-05
+rules: [MAN-5, PRP-8]
+description: >-
+  Declared objects change only through apply from git. At apply the core reads the lines
+  Botaru-Proposal: <id> and Botaru-Revert: <id> <reason> of the commit message; the revert
+  reason is only one of harm_observed, superseded, other, otherwise the apply of the set fails.
+  A proposal commit, or a commit linked through P2 proposal.link_commit, that
+  touches files outside the proposal tenant's folder is rejected in full with reason
+  proposal_scope.
+cases:
+  - name: proposal commit in its own tenant's folder
+    commit:
+      message: "Move the nightly report to 07:00\n\nBotaru-Proposal: p_0101"
+      files: [tenants/demo/schedules.yaml]
+      proposal_tenant: demo
+    expect: ok
+  - name: revert with a reason from the list
+    commit:
+      message: "Restore the schedule\n\nBotaru-Revert: p_0101 harm_observed"
+      files: [tenants/demo/schedules.yaml]
+      proposal_tenant: demo
+    expect: ok
+  - name: revert without a reason
+    commit:
+      message: "Restore the schedule\n\nBotaru-Revert: p_0101"
+      files: [tenants/demo/schedules.yaml]
+      proposal_tenant: demo
+    expect: {error: revert_reason_invalid}
+  - name: revert with a reason outside the list
+    commit:
+      message: "Restore the schedule\n\nBotaru-Revert: p_0101 dislike"
+      files: [tenants/demo/schedules.yaml]
+      proposal_tenant: demo
+    expect: {error: revert_reason_invalid}
+  - name: proposal commit touches a global role
+    commit:
+      message: "Move the nightly report\n\nBotaru-Proposal: p_0101"
+      files: [tenants/demo/schedules.yaml, roles/reporter/role.yaml]
+      proposal_tenant: demo
+    expect: {error: proposal_scope}
+  - name: commit linked through proposal.link_commit touches another tenant
+    commit:
+      message: "Schedule edit"
+      link_commit: true
+      files: [tenants/demo2/schedules.yaml]
+      proposal_tenant: demo
+    expect: {error: proposal_scope}

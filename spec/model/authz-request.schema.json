@@ -1,0 +1,182 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:botaru:schema:authz-request:1",
+  "title": "C2 authorize: request",
+  "description": "One request to the C2 authorizer at a decision point: who (principal), what (capability), where (resource) and in which task and chat context. Decision order: stops, then unconditional prohibitions, then the intersection of the permissions of all initiators (PRM-2, PRM-6). Decisions are not cached, the request is made at every point (PRM-3). No row allowing the action means it is not allowed (PRM-1).",
+  "x-botaru-direction": "input",
+  "x-botaru-rules": [
+    "PRM-1",
+    "PRM-2",
+    "PRM-3",
+    "PRM-5",
+    "PRM-6",
+    "IDN-2"
+  ],
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "principal",
+    "action",
+    "resource"
+  ],
+  "properties": {
+    "principal": {
+      "description": "The principal whose permission is checked.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "id",
+        "tenant"
+      ],
+      "properties": {
+        "kind": {
+          "description": "Principal kind: a person, an external program or the service principal system (IDN-1).",
+          "enum": [
+            "human",
+            "service",
+            "system"
+          ]
+        },
+        "id": {
+          "$ref": "urn:botaru:schema:common:1#/$defs/principal_ref",
+          "description": "Principal: human:p_<ULID>, service:<name> or system; the kind matches the kind field."
+        },
+        "tenant": {
+          "$ref": "urn:botaru:schema:common:1#/$defs/tenant_name"
+        }
+      }
+    },
+    "action": {
+      "description": "Group capability: a string of the form <form>:<name> from capabilities.yaml, without an asterisk, for example task:ops.investigate.v1, service.control:nginx, admin:people.",
+      "type": "string",
+      "pattern": "^[a-z][a-z_]*(\\.[a-z_]+)*(:[a-z0-9][a-z0-9_.:-]{0,159})?$",
+      "maxLength": 200
+    },
+    "resource": {
+      "description": "The resource the capability refers to.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "tenant",
+        "kind"
+      ],
+      "properties": {
+        "tenant": {
+          "description": "Tenant of the resource; if it does not match the tenant of the principal or the task: tenant_mismatch (TEN-1).",
+          "$ref": "urn:botaru:schema:common:1#/$defs/tenant_name"
+        },
+        "kind": {
+          "description": "Resource kind.",
+          "enum": [
+            "task",
+            "task_type",
+            "result",
+            "file",
+            "approval",
+            "proposal",
+            "campaign",
+            "script",
+            "hold",
+            "group",
+            "principal",
+            "chat",
+            "service",
+            "monitor_script",
+            "action",
+            "tool",
+            "audit",
+            "incident",
+            "control_op",
+            "message_type",
+            "corpus",
+            "grant",
+            "governance_case",
+            "attribution",
+            "subject_request"
+          ]
+        },
+        "id": {
+          "description": "Id or name of the resource in the tenant.",
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,199}$",
+          "maxLength": 200
+        }
+      }
+    },
+    "context": {
+      "description": "Check context.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "task": {
+          "description": "The task in which the check runs.",
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "type": {
+              "$ref": "urn:botaru:schema:common:1#/$defs/type_name"
+            },
+            "tier": {
+              "$ref": "urn:botaru:schema:common:1#/$defs/tier"
+            },
+            "data_mark": {
+              "$ref": "urn:botaru:schema:common:1#/$defs/data_mark"
+            },
+            "depth": {
+              "description": "Depth of the task in the tree.",
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 16
+            },
+            "parent": {
+              "$ref": "urn:botaru:schema:common:1#/$defs/object_id"
+            },
+            "untrusted_seen": {
+              "description": "The attempt has already seen untrusted text (INJ-13).",
+              "type": "boolean"
+            },
+            "initiators": {
+              "description": "Initiator set of the task: permissions are intersected with all of them (PRM-6).",
+              "type": "array",
+              "items": {
+                "$ref": "urn:botaru:schema:common:1#/$defs/principal_ref"
+              },
+              "maxItems": 64,
+              "uniqueItems": true
+            }
+          }
+        },
+        "chat": {
+          "description": "The chat the request came from or where the delivery goes.",
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "description": "Chat kind: direct or group.",
+              "enum": [
+                "direct",
+                "group"
+              ]
+            },
+            "ceiling": {
+              "description": "Data class ceiling of the chat.",
+              "$ref": "urn:botaru:schema:common:1#/$defs/data_mark"
+            }
+          }
+        },
+        "budget": {
+          "description": "Budget state for this check.",
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "exhausted": {
+              "description": "The budget line is exhausted: budget_exhausted.",
+              "type": "boolean"
+            }
+          }
+        }
+      }
+    }
+  }
+}

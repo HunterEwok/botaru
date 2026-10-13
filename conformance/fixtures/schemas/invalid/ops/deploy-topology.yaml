@@ -1,0 +1,198 @@
+schema: urn:botaru:schema:deploy-topology:1
+rules:
+- DEP-10
+- DEP-11
+description: root in os_users and on a process, no farm_hosts, process kind not from the list, listeners on a process other
+  than core.
+cases:
+- monitoring:
+    url: https://monitor.example.org
+    address: 192.0.2.40
+  farm_hosts:
+  - core1
+  - backup1
+  health_keys:
+  - health-key
+  hosts:
+    core1:
+      kind: production
+      processes:
+      - name: farmd
+        kind: core
+        user: botaru-core
+        networks:
+        - core
+        - store
+        secrets:
+        - store-core
+    backup1:
+      kind: production
+      processes:
+      - name: backup
+        kind: backup
+        user: botaru-backup
+        networks:
+        - backup
+        secrets:
+        - backup-key
+    ctd1:
+      kind: production
+      processes:
+      - name: th-demo-act
+        kind: toolhost
+        tenant: demo
+        placement: host
+        tools: write
+        user: botaru-act-demo
+        networks:
+        - core
+        secrets:
+        - worker-token-th-demo-act
+      os_users:
+        ctd-qc-run:
+          demo: root
+- monitoring:
+    url: https://monitor.example.org
+    address: 192.0.2.40
+  farm_hosts:
+  - core1
+  - backup1
+  health_keys:
+  - health-key
+  hosts:
+    core1:
+      kind: production
+      processes:
+      - name: farmd
+        kind: core
+        user: root
+        networks:
+        - core
+        - store
+        secrets:
+        - store-core
+    backup1:
+      kind: production
+      processes:
+      - name: backup
+        kind: backup
+        user: botaru-backup
+        networks:
+        - backup
+        secrets:
+        - backup-key
+    ctd1:
+      kind: production
+      processes:
+      - name: th-demo-act
+        kind: toolhost
+        tenant: demo
+        placement: host
+        tools: write
+        user: botaru-act-demo
+        networks:
+        - core
+        secrets:
+        - worker-token-th-demo-act
+      os_users:
+        ctd-qc-run:
+          demo: botaru-ctd-demo
+- monitoring:
+    url: https://monitor.example.org
+    address: 192.0.2.40
+  health_keys:
+  - health-key
+  hosts:
+    core1:
+      kind: production
+      processes:
+      - name: farmd
+        kind: core
+        user: botaru-core
+        networks:
+        - core
+        - store
+        secrets:
+        - store-core
+    backup1:
+      kind: production
+      processes:
+      - name: backup
+        kind: backup
+        user: botaru-backup
+        networks:
+        - backup
+        secrets:
+        - backup-key
+    ctd1:
+      kind: production
+      processes:
+      - name: th-demo-act
+        kind: toolhost
+        tenant: demo
+        placement: host
+        tools: write
+        user: botaru-act-demo
+        networks:
+        - core
+        secrets:
+        - worker-token-th-demo-act
+      os_users:
+        ctd-qc-run:
+          demo: botaru-ctd-demo
+- monitoring:
+    url: https://monitor.example.org
+    address: 192.0.2.40
+  farm_hosts:
+  - core1
+  - backup1
+  health_keys:
+  - health-key
+  hosts:
+    core1:
+      kind: production
+      processes:
+      - name: farmd
+        kind: database
+        user: botaru-core
+        networks:
+        - core
+        - store
+        secrets:
+        - store-core
+    backup1:
+      kind: production
+      processes:
+      - name: backup
+        kind: backup
+        user: botaru-backup
+        networks:
+        - backup
+        secrets:
+        - backup-key
+    ctd1:
+      kind: production
+      processes:
+      - name: th-demo-act
+        kind: toolhost
+        tenant: demo
+        placement: host
+        tools: write
+        user: botaru-act-demo
+        networks:
+        - core
+        secrets:
+        - worker-token-th-demo-act
+      os_users:
+        ctd-qc-run:
+          demo: botaru-ctd-demo
+- farm_hosts: [core1]
+  hosts:
+    core1:
+      kind: production
+      processes:
+      - name: telegram-demo
+        kind: channel
+        user: botaru-channel
+        listeners:
+          p1: {networks: [core]}
