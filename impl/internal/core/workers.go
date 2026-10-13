@@ -202,6 +202,18 @@ func (c *Core) Hello(ctx context.Context, w *Worker, req HelloRequest) (*HelloRe
 			mismatch = true
 		}
 	}
+	// A channel whose manifest relies on the messenger's own bot marking skips ai_notice, so its
+	// driver must report that marking (DLV-12).
+	if w.Kind == "channel" {
+		cat, err := c.Catalog(ctx)
+		if err != nil {
+			return nil, err
+		}
+		if tv := cat.Tenants[w.Tenant]; tv != nil && tv.Channels[w.Target].AIDisclosure == "native" &&
+			(req.Driver == nil || req.Driver.AIDisclosure != "native") {
+			mismatch = true
+		}
+	}
 	state := "active"
 	if mismatch {
 		state = "blocked"

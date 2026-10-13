@@ -241,7 +241,7 @@ func enroll(c *client, args []string) error {
 	if err := c.call("worker.enroll", req, &out); err != nil {
 		return err
 	}
-	if err := os.WriteFile(*tokenOut, []byte(out.Token+"\n"), 0o600); err != nil {
+	if err := writeSecret(*tokenOut, out.Token); err != nil {
 		return err
 	}
 	fmt.Println("worker:", out.Worker["id"], "token written to", *tokenOut)
@@ -249,12 +249,34 @@ func enroll(c *client, args []string) error {
 		if *p2Out == "" {
 			*p2Out = *tokenOut + ".p2"
 		}
-		if err := os.WriteFile(*p2Out, []byte(out.P2Token+"\n"), 0o600); err != nil {
+		if err := writeSecret(*p2Out, out.P2Token); err != nil {
 			return err
 		}
 		fmt.Println("driver P2 secret written to", *p2Out)
 	}
 	return nil
+}
+
+// writeSecret writes a token to a new file of mode 0600 and renames it into place, so an
+// existing file with wider permissions never holds the token.
+func writeSecret(path, secret string) error {
+	f, err := os.CreateTemp(filepath.Dir(path), "."+filepath.Base(path)+".*")
+	if err != nil {
+		return err
+	}
+	defer os.Remove(f.Name())
+	if err := f.Chmod(0o600); err != nil {
+		f.Close()
+		return err
+	}
+	if _, err := f.WriteString(secret + "\n"); err != nil {
+		f.Close()
+		return err
+	}
+	if err := f.Close(); err != nil {
+		return err
+	}
+	return os.Rename(f.Name(), path)
 }
 
 type client struct {

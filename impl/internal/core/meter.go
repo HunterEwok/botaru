@@ -96,6 +96,13 @@ func (c *Core) ResolveModelHandle(ctx context.Context, handle string) (*ModelGra
 	if tv == nil {
 		return nil, refuse("not_ready", "tenant is not applied")
 	}
+	// The initiator's rights are checked again at every call: a membership that expired or a
+	// right removed by apply after the claim stops the task data from reaching the model (PRM-8).
+	if reason, err := c.accessLost(ctx, c.st.Pool, now, tv, g.Initiator, "task:"+typ, tt.DataClass); err != nil {
+		return nil, err
+	} else if reason != "" {
+		return nil, refuse(reason, "the initiator no longer has access to this task")
+	}
 	p, ok := cat.Profile(g.Tenant, g.ProfileName)
 	if !ok {
 		return nil, refuse("provider_config", "the model profile of the slot is not applied")

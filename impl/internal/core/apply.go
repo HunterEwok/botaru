@@ -246,6 +246,15 @@ func (c *Core) Apply(ctx context.Context, op Operator, req ApplyRequest) (*Apply
 			if k.Kind == "Tenant" {
 				return refuse("forbidden", "a tenant is retired, not deleted")
 			}
+			if k.Kind == "TaskType" {
+				var open bool
+				if err := tx.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM tasks WHERE type = $1 AND state IN ('submitted', 'working'))`, k.Name).Scan(&open); err != nil {
+					return err
+				}
+				if open {
+					return refuse("forbidden", "task type %s still has tasks that are not finished", k.Name)
+				}
+			}
 			if _, err := tx.Exec(ctx, `DELETE FROM manifests WHERE kind = $1 AND tenant = $2 AND name = $3`, k.Kind, k.Tenant, k.Name); err != nil {
 				return err
 			}

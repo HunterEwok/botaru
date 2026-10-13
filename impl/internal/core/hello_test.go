@@ -618,3 +618,55 @@ func TestAINoticeDeadWithholds(t *testing.T) {
 		t.Fatalf("model text: %q %v", reason, err)
 	}
 }
+
+// TestModelHandleRechecksAccess: a membership that expires after the claim stops the model call.
+func TestModelHandleRechecksAccess(t *testing.T) {
+	ctx := context.Background()
+	b := newBench(t)
+	a := Activity{Kind: "message", Channel: "telegram", UpdateID: "51", Chat: Chat{Kind: "direct", ExternalID: "1001"}, Text: "/hello"}
+	a.Sender.Identity, a.Sender.Verified = "telegram:1001", true
+	if _, err := b.c.SubmitActivity(ctx, b.channel, a); err != nil {
+		t.Fatal(err)
+	}
+	att := b.claim(t, b.agent, "attempt")
+	if att == nil {
+		t.Fatal("no attempt")
+	}
+	handle, _ := att.Payload["handles"].(map[string]any)["model"].(string)
+	if _, err := b.c.ResolveModelHandle(ctx, handle); err != nil {
+		t.Fatalf("live handle: %v", err)
+	}
+	if _, err := b.c.st.Pool.Exec(ctx, `UPDATE memberships SET until = botaru_now() - interval '1 second'`); err != nil {
+		t.Fatal(err)
+	}
+	_, err := b.c.ResolveModelHandle(ctx, handle)
+	var p *Problem
+	if !errors.As(err, &p) || p.Reason != "no_group_cap" {
+		t.Fatalf("expired membership: %v", err)
+	}
+}
+
+// TestDeleteTaskTypeWithOpenTasks: a task type is not deleted while tasks of it are open.
+func TestDeleteTaskTypeWithOpenTasks(t *testing.T) {
+	ctx := context.Background()
+	b := newBench(t)
+	a := Activity{Kind: "message", Channel: "telegram", UpdateID: "61", Chat: Chat{Kind: "direct", ExternalID: "1001"}, Text: "/hello"}
+	a.Sender.Identity, a.Sender.Verified = "telegram:1001", true
+	res, err := b.c.SubmitActivity(ctx, b.channel, a)
+	if err != nil || res.Task == "" {
+		t.Fatalf("submit: %+v %v", res, err)
+	}
+	var typ string
+	if err := b.c.st.Pool.QueryRow(ctx, `SELECT type FROM tasks WHERE id = $1`, res.Task).Scan(&typ); err != nil {
+		t.Fatal(err)
+	}
+	// Without members the group may lose the type (an unknown type counts as privileged).
+	if _, err := b.c.Grant(ctx, b.op, GrantRequest{Op: "ungrant", Subject: b.alice, Group: "hello"}); err != nil {
+		t.Fatal(err)
+	}
+	_, err = b.c.Apply(ctx, b.op, ApplyRequest{Commit: "3333333333333333333333333333333333333333", Delete: []ApplyDelete{{Kind: "TaskType", Name: typ}}})
+	var p *Problem
+	if !errors.As(err, &p) || p.Reason != "forbidden" {
+		t.Fatalf("delete: %v", err)
+	}
+}

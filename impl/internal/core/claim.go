@@ -15,6 +15,7 @@ import (
 
 	"github.com/HunterEwok/botaru/impl/internal/ids"
 	"github.com/HunterEwok/botaru/impl/internal/manifest"
+	"github.com/HunterEwok/botaru/impl/internal/store"
 )
 
 // ClaimRequest is p1-claim-request.
@@ -137,7 +138,7 @@ func (c *Core) newLease(ctx context.Context, tx pgx.Tx, now time.Time, w *Worker
 // claims (DSP-2) and writes the lease and the transition to working in one transaction.
 // accessLost rechecks a principal: active, with the capability cap (none when empty) and the
 // data class mark. It returns the refusal reason, or "" when the access still holds.
-func (c *Core) accessLost(ctx context.Context, tx pgx.Tx, now time.Time, tv *TenantView, principal, cap, mark string) (string, error) {
+func (c *Core) accessLost(ctx context.Context, tx store.Querier, now time.Time, tv *TenantView, principal, cap, mark string) (string, error) {
 	if principal == "system" || tv == nil {
 		return "", nil
 	}
@@ -226,10 +227,15 @@ func (c *Core) claimAttempt(ctx context.Context, tx pgx.Tx, now time.Time, cat *
 	if !ok || role.WorkerKind != w.Kind {
 		return nil, nil
 	}
-	// Only the claimed types that this worker kind runs.
+	// Only the claimed types that this worker kind runs, by the labels the running process
+	// reported at hello (it may narrow the enrolled set).
+	labels := w.Labels
+	if w.Hello != nil {
+		labels = w.Hello.Labels
+	}
 	var claims []string
 	for _, t := range role.Claims {
-		if tt, ok := cat.TaskTypes[t]; ok && tt.WorkerKind == w.Kind && hasLabels(w.Labels, tt.Requires) {
+		if tt, ok := cat.TaskTypes[t]; ok && tt.WorkerKind == w.Kind && hasLabels(labels, tt.Requires) {
 			claims = append(claims, t)
 		}
 	}
