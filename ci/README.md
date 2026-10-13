@@ -96,7 +96,17 @@ The owner sets the list as follows:
 - in GitHub: Settings > Secrets and variables > Actions > New repository secret, name `BOTARU_FORBIDDEN`, value the text of the list; the workflow passes it to the check step;
 - locally: `BOTARU_FORBIDDEN_FILE=/path/outside/the/repository/forbidden-words.txt python3 -I ci/run_all.py`.
 
-Without a list, a local run gives a note. In CI on push to `main` (and on `merge_group`, if a merge queue is ever enabled) it is the error `[forbidden_missing]`. A pull request never gets the secret, from a fork or from a branch of this repository, because its run executes PR code nobody has reviewed yet and that code could print the list; there the missing list is a note. A merge queue exists only for repositories of an organization, and this repository belongs to a personal account, so the owner checks the words of every PR locally before merging it: on the PR head, `BOTARU_FORBIDDEN_FILE=/path/outside/the/repository/forbidden-words.txt python3 -I ci/public_safety.py`. Without that run, the words of a PR are checked only after the merge, that is, already in the public `main`.
+Without a list, a local run gives a note. In CI on push to `main` (and on `merge_group`, if a merge queue is ever enabled) it is the error `[forbidden_missing]`. A pull request never gets the secret, from a fork or from a branch of this repository, because its run executes PR code nobody has reviewed yet and that code could print the list; there the missing list is a note. A merge queue exists only for repositories of an organization, and this repository belongs to a personal account, so the owner checks the words of every PR locally before merging it. The check runs the checker from `main`, never the PR's own copy, because PR code given the list could print or send it; the PR tree is only read, through `BOTARU_ROOT`:
+
+```sh
+git fetch origin main pull/<n>/head:pr-<n>
+git worktree add ../pr-<n> pr-<n>
+# in a checkout of an up-to-date main
+BOTARU_ROOT=../pr-<n> BOTARU_FORBIDDEN_FILE=/path/outside/the/repository/forbidden-words.txt python3 -I ci/public_safety.py
+git worktree remove ../pr-<n>
+```
+
+Without that run, the words of a PR are checked only after the merge, that is, already in the public `main`.
 
 `python3 -I ci/public_safety.py --history` (with the list) checks the forbidden words in every file of every commit reachable from any branch or tag, not only the current files. Every commit of a public repository is public: a word found in an old commit is not removed by a new commit, and the owner decides what to do about it.
 
