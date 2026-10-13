@@ -35,7 +35,8 @@ spec/model/*.yaml with their state at the branch point from the base branch
   other branch (different const or enum values, disjoint types, or a property
   required in both with disjoint const or enum values), dependentSchemas got
   a new name, patternProperties got a new pattern with an asserting schema
-  (unless the object allowed no names before);
+  (unless the object allowed no names before), a new property is narrower
+  than the old patternProperties or additionalProperties schema for its name;
 - values are compared as JSON compares them: true is not 1, 1 equals 1.0;
 - an entry (id) left a registry, or entries changed while the registry version did not.
 A breaking schema change is made as a new file .v(N+1) next to .vN;
@@ -149,10 +150,22 @@ def values(s):
     return list(s['enum']) if isinstance(s.get('enum'), list) else None
 
 
-def disjoint(a, b):
-    """True only when no value can match both schemas; unknown is not disjoint."""
+def disjoint(a, b, res=None, fa=None, fb=None, depth=0):
+    """True only when no value can match both schemas; unknown is not disjoint.
+    res(schema, file) -> (schema, file) follows $ref, when given; fa and fb are the files of a and b."""
+    if res is not None:
+        (a, fa), (b, fb) = res(a, fa), res(b, fb)
     if not isinstance(a, dict) or not isinstance(b, dict):
         return a is False or b is False
+    if depth > 8:
+        return False
+    for x, fx, y, fy in ((a, fa, b, fb), (b, fb, a, fa)):
+        # a value of x has to match a branch of y, or every member of x
+        for key in ('anyOf', 'oneOf'):
+            if isinstance(x.get(key), list) and all(disjoint(br, y, res, fx, fy, depth + 1) for br in x[key]):
+                return True
+        if isinstance(x.get('allOf'), list) and any(disjoint(m, y, res, fx, fy, depth + 1) for m in x['allOf']):
+            return True
     va, vb = values(a), values(b)
     if va is not None and vb is not None and not any(among(v, vb) for v in va):
         return True
@@ -164,9 +177,9 @@ def disjoint(a, b):
         return False
     pa, pb = a.get('properties') or {}, b.get('properties') or {}
     both = set(a.get('required') or []) & set(b.get('required') or [])
-    return any(isinstance(pa, dict) and isinstance(pb, dict) and k in pa and k in pb
-               and values(pa[k]) is not None and values(pb[k]) is not None
-               and not any(among(v, values(pb[k])) for v in values(pa[k])) for k in both)
+    # a property required in both whose schemas are disjoint, followed into nested objects
+    return isinstance(pa, dict) and isinstance(pb, dict) and any(
+        k in pa and k in pb and disjoint(pa[k], pb[k], res, fa, fb, depth + 1) for k in sorted(both))
 
 
 # Keywords that do not change which values pass
@@ -200,6 +213,14 @@ def bare(s, names=False):
     if names:
         return {k: bare(v) for k, v in s.items()}
     return {k: (v if k in LITERALS else bare(v, k in NAME_MAPS)) for k, v in s.items() if not annotation(k) or k in IDENTIFIERS}
+
+
+def matches(pattern, name):
+    # an unreadable pattern is assumed to match, the stricter case
+    try:
+        return re.search(pattern, name) is not None
+    except re.error:
+        return True
 
 
 def unmatched(old_list, new_list):
@@ -279,6 +300,17 @@ def compare(old, new, where):
                 rep.error(where, f'[field_removed] {key}.{name} removed')
             else:
                 compare(sub, np[name], f'{where}/{key}/{name}')
+    # a new property takes a name that old patternProperties or a schema in additionalProperties governed;
+    # under an absent or true additionalProperties a new optional property is the usual addition
+    op, np = old.get('properties') or {}, new.get('properties') or {}
+    pats, ap = old.get('patternProperties') or {}, old.get('additionalProperties', True)
+    if isinstance(op, dict) and isinstance(np, dict) and isinstance(pats, dict):
+        for name in sorted(set(np) - set(op)):
+            governing = [sub for pat, sub in pats.items() if matches(pat, name)]
+            if not governing and isinstance(ap, dict):
+                governing = [ap]
+            for sub in governing:
+                compare(sub, np[name], f'{where}/properties/{name}')
     # a new pattern constrains names that other keywords governed before; it widens only where
     # no name was allowed at all, otherwise it is compared with true, conservatively
     op, np = old.get('patternProperties') or {}, new.get('patternProperties') or {}
@@ -436,19 +468,24 @@ def reached(rp, sub):
 
 
 def deref(s, frm, docs, ids):
-    """The schema behind a chain of bare $ref, or s itself."""
+    """(schema, file) behind a chain of bare $ref, or s itself."""
     for _ in range(16):
         if not isinstance(s, dict) or not isinstance(s.get('$ref'), str) or set(s) - {'$ref'} - ANNOTATIONS:
-            return s
+            return s, frm
         base, _, frag = s['$ref'].partition('#')
         frm = ids.get(base) if base else frm
         s = pointer(docs.get(frm), frag)
-    return s
+    return s, frm
 
 
-def separated(branches, rp, docs, ids):
-    resolved = [deref(b, rp, docs, ids) for b in branches]
-    return all(disjoint(b, c) for i, b in enumerate(resolved) for j, c in enumerate(resolved) if j != i)
+def separated(branches, rp, docs, ids, parent):
+    def res(s, frm):
+        return deref(s, frm, docs, ids)
+    # a branch without its own type is constrained by the type of the schema that holds the oneOf
+    if isinstance(parent, dict) and 'type' in parent:
+        branches = [dict(b, type=parent['type']) if isinstance(b, dict) and 'type' not in b and '$ref' not in b
+                    else b for b in branches]
+    return all(disjoint(b, c, res, rp, rp) for i, b in enumerate(branches) for j, c in enumerate(branches) if j != i)
 
 
 def changed(a, b):
@@ -456,13 +493,13 @@ def changed(a, b):
 
 
 def oneofs(s, path=''):
-    """(path, branches) of every oneOf in a schema."""
+    """(path, branches, holder) of every oneOf in a schema."""
     if isinstance(s, dict):
         for k, v in s.items():
             if k in LITERALS:
                 continue
             if k == 'oneOf' and isinstance(v, list):
-                yield f'{path}/oneOf', v
+                yield f'{path}/oneOf', v, s
             yield from oneofs(v, f'{path}/{k}')
     elif isinstance(s, list):
         for i, x in enumerate(s):
@@ -478,11 +515,12 @@ for rp, old in olds.items():
                           'through $ref under not or if: any change there can narrow the outer schema')
     # a widened definition behind a oneOf branch can make an old value match two branches; branches that the
     # disjointness proof (with $ref followed) separated before must stay separated
-    for where, branches in oneofs(old):
+    for where, branches, holder in oneofs(old):
         nb = pointer(news[rp], where)
         if not isinstance(nb, list) or not any(changed(a, b) for br in branches for _, _, a, b in reached(rp, br)):
             continue
-        if separated(branches, rp, olds, olds_by_id) and not separated(nb, rp, news, news_by_id):
+        nh = pointer(news[rp], where.rsplit('/', 1)[0])
+        if separated(branches, rp, olds, olds_by_id, holder) and not separated(nb, rp, news, news_by_id, nh):
             rep.error(f'{rp}#{where}', '[oneof_overlap] a definition behind oneOf changed, and its branches are no '
                       'longer provably disjoint: values matching two branches would stop passing')
 
