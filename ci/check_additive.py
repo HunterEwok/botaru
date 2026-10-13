@@ -170,6 +170,9 @@ ANNOTATIONS = {'title', 'description', '$comment', 'examples', 'default', 'depre
                '$id', '$schema', '$anchor', 'contentEncoding', 'contentMediaType', 'contentSchema'}
 # Keywords that assert nothing by themselves: annotations and definitions used only through $ref
 NON_ASSERTING = ANNOTATIONS | {'$defs', 'definitions'}
+# Annotations that set the base URI or dialect: a change of them can change what a $ref resolves to,
+# so they stay when two schemas are compared for sameness
+IDENTIFIERS = {'$id', '$schema', '$anchor'}
 
 
 def annotation(k):
@@ -185,14 +188,14 @@ LITERALS = {'const', 'enum', 'required', 'dependentRequired'}
 
 
 def bare(s, names=False):
-    """The schema without annotations, for telling whether two schemas accept the same values."""
+    """The schema without descriptive annotations, for telling whether two schemas accept the same values."""
     if isinstance(s, list):
         return [bare(x) for x in s]
     if not isinstance(s, dict):
         return s
     if names:
         return {k: bare(v) for k, v in s.items()}
-    return {k: (v if k in LITERALS else bare(v, k in NAME_MAPS)) for k, v in s.items() if not annotation(k)}
+    return {k: (v if k in LITERALS else bare(v, k in NAME_MAPS)) for k, v in s.items() if not annotation(k) or k in IDENTIFIERS}
 
 
 def unmatched(old_list, new_list):
