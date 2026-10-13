@@ -69,7 +69,7 @@ Every implementation must (MUST):
 
 - `spec/model/run-request.schema.json`, `run-outcome.schema.json`, `runtime-deviations.yaml`, `e4-describe-response.schema.json`, `e4-cancel-request.schema.json`; the map `spec/ports/operations.yaml` (rows `E4.*`).
 - The `conformance/suites/runtime` suite with a mock model behind P4 and the `erasure` suite for runtimes with `runtime_internal` (`match` finds the subject's canary, `purge` by id removes it); then a full eval next to the current runtime. The adapter's expected failures may hold only rules with `waivable: true`.
-- The runtime ADR (status "proposed") with checks of the candidate runtime: does the runtime work with a read-only config; does approval of memory records work; can a model handle be passed for each attempt; does the runtime read `tools/list` on each attempt; how can the adapter learn the list of the runtime's enabled tools.
+- The reference runtime is our own loop in Go over P4 (D-93). Any other runtime gets an ADR with checks of the candidate: does the runtime work with a read-only config; does approval of memory records work; can a model handle be passed for each attempt; does the runtime read `tools/list` on each attempt; how can the adapter learn the list of the runtime's enabled tools.
 
 ## What the port does not do
 

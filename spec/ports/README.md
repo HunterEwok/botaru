@@ -31,7 +31,7 @@ A "thin" port: one page, one reference adapter, a minimal set of checks. A thin 
 | E1 Channel | `e1-channel.md` | edge | v0.1 | no | Telegram | IDN-3, IDN-7, APR-3, APR-4, APR-12, DLV-5..7, INJ-11, TEN-4 |
 | E2 Sink | `e2-sink.md` | edge | v0.2 (`match` and `erase` of the reference from v0.1) | yes | disk (JSON and Markdown) | DLV-3, DLV-6, RET-4, RET-7 |
 | E3 ToolHost | `e3-tool-host.md` | edge | v0.1 | no | toolhost with MCP plugins | TEN-3a, INJ-1..6, INJ-14, DEP-1..10, APR-7, APR-18, MON-8 |
-| E4 AgentRuntime | `e4-agent-runtime.md` | edge | v0.1 | no | not chosen | INJ-9, RT-1..5, FEN-4, MEM-4, DEP-5 |
+| E4 AgentRuntime | `e4-agent-runtime.md` | edge | v0.1 | no | own loop in Go (D-93) | INJ-9, RT-1..5, FEN-4, MEM-4, DEP-5 |
 | E5 Monitor | `e5-monitor.md` | edge | v0.1 (`match` and `erase` of notes from v0.1, D-76) | no | the organization's monitoring system, for example Zabbix | MON-1..11, AUD-6, TEN-4, DEP-11 |
 
 The test-control port `test-control.md` is not one of the thirteen ports: it is the input of the check runner, which exists only with a test bench key in the settings and a store created as a test bench store that never had a tenant other than `kind: test` (APR-9); a production farm does not have it, and the core of a production farm with a test bench key does not start.
