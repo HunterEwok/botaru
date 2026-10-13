@@ -9,7 +9,7 @@ checks:
   - ORC-10
   version: v0.1
   section: Tests without a model
-  source: docs/quality.md:301
+  source: docs/quality.md:305
   spec:
     What: a campaign of 3 read items with `origin` in `chat:lab`, all items end `ok`
     Expectation: in `origin` exactly one progress card (`card_update` updates no more often than the channel ceiling, by default

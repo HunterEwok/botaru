@@ -331,7 +331,7 @@ The channel driver declares `ai_disclosure`: `native` if the external system its
 
 ### Origin mark
 
-Every part of a result, message and delivery carries the mark `dataorigin`: `model` if the model wrote the text, otherwise `code`; only the core sets it. The channel passes the mark the way the driver declared: `provenance: metadata` (in the message metadata) or `visible_label` (as a visible label). A sink writes `ai_generated: true` into the metadata of a file with model text, and the delivery record keeps the mark. From v0.2 the same mark is part of the artifact provenance block (DLV-13, PRV-2).
+Every part of a result, message and delivery carries the mark `dataorigin`: `model` if the model wrote the text, otherwise `code`; only the core sets it. The channel passes the mark the way the driver declared: `provenance: metadata` (in the message metadata) or `visible_label` (as a visible label). A sink writes `ai_generated: true` into the metadata of a file with model text, and the delivery record keeps the mark. The same mark is part of the artifact provenance block (DLV-13, PRV-2).
 
 ### Records do not rate people
 

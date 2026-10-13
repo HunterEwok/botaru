@@ -9,7 +9,7 @@ checks:
   - FEN-2
   version: v0.1
   section: Tests without a model
-  source: docs/quality.md:245
+  source: docs/quality.md:249
   spec:
     What: '`complete` and `heartbeat` with a lease token that has already changed, directly against the store C1'
     Expectation: '`fenced`, no record changed'
@@ -19,7 +19,7 @@ checks:
   - FEN-5
   version: v0.1
   section: Tests without a model
-  source: docs/quality.md:277
+  source: docs/quality.md:281
   spec:
     What: two core instances leave `not_ready` a minute apart
     Expectation: the lease is extended once, the second instance changes nothing

@@ -9,7 +9,7 @@ checks:
   - APR-4
   version: v0.1
   section: Tests without a model
-  source: docs/quality.md:209
+  source: docs/quality.md:213
   spec:
     What arrives: the button is pressed by a person without the right to approve
     Expectation: nothing is executed, an audit entry
@@ -20,7 +20,7 @@ checks:
   - TEN-4
   version: v0.1
   section: Tests without a model
-  source: docs/quality.md:210
+  source: docs/quality.md:214
   spec:
     What arrives: an approver of another tenant presses
     Expectation: nothing
@@ -32,7 +32,7 @@ checks:
   - IDM-3
   version: v0.1
   section: Tests without a model
-  source: docs/quality.md:211
+  source: docs/quality.md:215
   spec:
     What arrives: two presses in a row and a repeat of the same update
     Expectation: one decision and one write call
@@ -42,7 +42,7 @@ checks:
   - APR-4
   version: v0.1
   section: Tests without a model
-  source: docs/quality.md:213
+  source: docs/quality.md:217
   spec:
     What arrives: the card has expired
     Expectation: nothing
@@ -52,7 +52,7 @@ checks:
   - APR-6
   version: v0.1
   section: Tests without a model
-  source: docs/quality.md:214
+  source: docs/quality.md:218
   spec:
     What arrives: the initiator was disabled before the press
     Expectation: approval `canceled`
@@ -62,7 +62,7 @@ checks:
   - APR-4
   version: v0.1
   section: Tests without a model
-  source: docs/quality.md:215
+  source: docs/quality.md:219
   spec:
     What arrives: 'the initiator presses their own card with `self_approve: false`'
     Expectation: refusal `self_approve`, nothing executed
@@ -72,7 +72,7 @@ checks:
   - APR-16
   version: v0.2
   section: Tests without a model
-  source: docs/quality.md:216
+  source: docs/quality.md:220
   spec:
     What arrives: '(v0.2) an action with `approvals: 2`: "Approve" from `carol`, then "Reject" from a second approver; in
       another run two "Approve" from different people'
@@ -83,7 +83,7 @@ checks:
   - APR-14
   version: v0.2
   section: Tests without a model
-  source: docs/quality.md:217
+  source: docs/quality.md:221
   spec:
     What arrives: (v0.2) "Lift veto" on an audit sample item, "Approve" on a case outcome and "Yes" on an attribution without
       "Details" opened
@@ -94,7 +94,7 @@ checks:
   - PRM-13
   version: v0.1
   section: Tests without a model
-  source: docs/quality.md:221
+  source: docs/quality.md:225
   spec:
     What arrives: '`/grant` of group `staff` in the channel'
     Expectation: refusal `privileged_group`; `/grant` gives an ordinary group
@@ -104,7 +104,7 @@ checks:
   - IDN-6
   version: v0.1
   section: Tests without a model
-  source: docs/quality.md:225
+  source: docs/quality.md:229
   spec:
     What arrives: alice writes free text; alice writes `/logs nginx`
     Expectation: type `ops.summary.v1`; for `/logs` a refusal with the channel's canned text
@@ -114,7 +114,7 @@ checks:
   - PRM-18
   version: v0.1
   section: Tests without a model
-  source: docs/quality.md:394
+  source: docs/quality.md:398
   spec:
     What: '`/service stop nginx` from `bob`'
     Expectation: an approval card, as for an ordinary action (D-74); a verb outside the service's `control` is rejected by
@@ -125,7 +125,7 @@ checks:
   - PRM-18
   version: v0.1
   section: Tests without a model
-  source: docs/quality.md:395
+  source: docs/quality.md:399
   spec:
     What: '`/service restart nginx` in the group chat `staff`'
     Expectation: not executed, a code answer
@@ -136,7 +136,7 @@ checks:
   - IDM-3
   version: v0.1
   section: Tests without a model
-  source: docs/quality.md:442
+  source: docs/quality.md:446
   spec:
     What: a repeat `decide` by the same person with the same decision and `nonce`; a different decision; a different person
     Expectation: the same success; `already_decided`; `already_decided`
@@ -146,7 +146,7 @@ checks:
   - PRM-16
   version: v0.1
   section: Tests without a model
-  source: docs/quality.md:450
+  source: docs/quality.md:454
   spec:
     What: '`alice` (`admin`) writes `/grant researcher carol`; `/grant approver carol`'
     Expectation: the first passes without an operator (the group is in `delegated_groups`); the second gets `privileged_group`
@@ -156,7 +156,7 @@ checks:
   - PRM-17
   version: v0.1
   section: Tests without a model
-  source: docs/quality.md:451
+  source: docs/quality.md:455
   spec:
     What: '`/cancel` of someone else''s task; of one''s own in `working` with a pending approval'
     Expectation: '`not_found`; the tree and the approval are canceled with `canceled(initiator)`'
@@ -166,7 +166,7 @@ checks:
   - PRM-17
   version: v0.1
   section: Tests without a model
-  source: docs/quality.md:452
+  source: docs/quality.md:456
   spec:
     What: '`/team` without `team.view:<group>`'
     Expectation: '`forbidden`, the text names the needed group (`needs`)'
@@ -176,7 +176,7 @@ checks:
   - CNT-5
   version: v0.1
   section: Tests without a model
-  source: docs/quality.md:454
+  source: docs/quality.md:458
   spec:
     What: 'the bot finished a task with `need_input: true`; `bob` writes free text after 10 minutes; after 40 minutes'
     Expectation: the first text becomes a task with `continues` pointing to the previous one; the second a new task from `default_types`
@@ -186,7 +186,7 @@ checks:
   - SEC-13
   version: v0.1
   section: Tests without a model
-  source: docs/quality.md:472
+  source: docs/quality.md:476
   spec:
     What: 'the first contact of `bob` in a channel with `ai_disclosure: native`; a change of `notice_version`'
     Expectation: a `privacy_notice` delivery before the first model text; after the version change the notice is repeated
@@ -197,7 +197,7 @@ checks:
   - SEC-13
   version: v0.1
   section: Tests without a model
-  source: docs/quality.md:473
+  source: docs/quality.md:477
   spec:
     What: '`alice` joined the group chat `staff` (`membership_assurance: enforced`)'
     Expectation: '`privacy_notice` to her direct messages, no more often than `notice_repeat`'

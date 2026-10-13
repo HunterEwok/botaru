@@ -9,7 +9,7 @@ checks:
   - TRN-3
   version: v0.1
   section: Tests without a model
-  source: docs/quality.md:332
+  source: docs/quality.md:336
   spec:
     What: a `translator` attempt calls `propose_script` 4 times and submits the result
     Expectation: the fourth call is rejected; the result passes the `translation-result` schema; `tools/list` has no run or
