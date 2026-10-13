@@ -103,7 +103,7 @@ func (c *Core) claimOnce(ctx context.Context, w *Worker, kinds []string) (*WorkI
 			var err error
 			switch {
 			case k == "delivery" && (w.Kind == "channel" || w.Kind == "sink" || w.Kind == "monitor"):
-				item, err = c.claimDelivery(ctx, tx, now, w)
+				item, err = c.claimDelivery(ctx, tx, now, cat, w)
 			case k == "attempt" && (w.Kind == "agent" || w.Kind == "job"):
 				item, err = c.claimAttempt(ctx, tx, now, cat, w)
 			}
@@ -135,6 +135,32 @@ func (c *Core) newLease(ctx context.Context, tx pgx.Tx, now time.Time, w *Worker
 
 // claimAttempt takes the oldest task of the highest priority class among the types the role
 // claims (DSP-2) and writes the lease and the transition to working in one transaction.
+// accessLost rechecks a principal: active, with the capability cap (none when empty) and the
+// data class mark. It returns the refusal reason, or "" when the access still holds.
+func (c *Core) accessLost(ctx context.Context, tx pgx.Tx, now time.Time, tv *TenantView, principal, cap, mark string) (string, error) {
+	if principal == "system" || tv == nil {
+		return "", nil
+	}
+	p, err := loadPrincipal(ctx, tx, now, tv.Name, principal)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return "person_inactive", nil
+	}
+	if err != nil {
+		return "", err
+	}
+	if p.State != "active" {
+		return "person_inactive", nil
+	}
+	groups := groupClosure(tv, p.Groups)
+	if cap != "" && !hasCap(tv, groups, cap) {
+		return "no_group_cap", nil
+	}
+	if mark != "" && !hasData(tv, groups, mark) {
+		return "no_data_class", nil
+	}
+	return "", nil
+}
+
 // hasLabels says whether a worker has every label a task type requires.
 func hasLabels(labels, requires map[string]string) bool {
 	for k, v := range requires {
@@ -166,15 +192,29 @@ func (c *Core) claimAttempt(ctx context.Context, tx pgx.Tx, now time.Time, cat *
 		leaseNo   int
 		initiator string
 	)
-	err := tx.QueryRow(ctx, `SELECT id, type, body, record, lease_no, initiator FROM tasks
-		WHERE tenant = $1 AND state = 'submitted' AND type = ANY($2) AND (run_at IS NULL OR run_at <= $3) AND (deadline_at IS NULL OR deadline_at > $3)
-		ORDER BY priority_class, created_at, id LIMIT 1 FOR UPDATE SKIP LOCKED`, w.Tenant, claims, now).
-		Scan(&id, &typ, &body, &rec, &leaseNo, &initiator)
-	if errors.Is(err, pgx.ErrNoRows) {
-		return nil, nil
-	}
-	if err != nil {
-		return nil, err
+	tv := cat.Tenants[w.Tenant]
+	for picked := false; !picked; {
+		err := tx.QueryRow(ctx, `SELECT id, type, body, record, lease_no, initiator FROM tasks
+			WHERE tenant = $1 AND state = 'submitted' AND type = ANY($2) AND (run_at IS NULL OR run_at <= $3) AND (deadline_at IS NULL OR deadline_at > $3)
+			ORDER BY priority_class, created_at, id LIMIT 1 FOR UPDATE SKIP LOCKED`, w.Tenant, claims, now).
+			Scan(&id, &typ, &body, &rec, &leaseNo, &initiator)
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, nil
+		}
+		if err != nil {
+			return nil, err
+		}
+		// The initiator's rights are checked again under the task lock: a person disabled or
+		// ungranted after enqueue gets no work done in their name (PRM-8).
+		if reason, err := c.accessLost(ctx, tx, now, tv, initiator, "task:"+typ, cat.TaskTypes[typ].DataClass); err != nil {
+			return nil, err
+		} else if reason != "" {
+			if err := c.failTask(ctx, tx, now, w.Tenant, id, initiator, rec, reason); err != nil {
+				return nil, err
+			}
+			continue
+		}
+		picked = true
 	}
 	tt := cat.TaskTypes[typ]
 	leaseS := c.cfg.LeaseS
@@ -259,14 +299,20 @@ func mainSlot(role manifest.Role) (string, string) {
 // claimDelivery takes the oldest planned delivery for this channel, sink or adapter by its
 // enroll name (TEN-3). Model text for a recipient waits until their ai_notice in this channel
 // is delivered (DLV-13), and until a privacy_notice was delivered and none is pending (DLV-12).
-func (c *Core) claimDelivery(ctx context.Context, tx pgx.Tx, now time.Time, w *Worker) (*WorkItem, error) {
+func (c *Core) claimDelivery(ctx context.Context, tx pgx.Tx, now time.Time, cat *Catalog, w *Worker) (*WorkItem, error) {
 	var (
 		id, kind, addr, targetKind, targetID string
 		recipient, dataMark                  *string
 		body                                 []byte
 		leaseNo                              int
 	)
-	err := tx.QueryRow(ctx, `SELECT d.id, d.kind, d.addr, d.target_kind, d.target_id, d.recipient, d.data_mark, d.body, d.lease_no FROM deliveries d
+	tv := cat.Tenants[w.Tenant]
+	version := ""
+	if tv != nil {
+		version = tv.Spec.Privacy.NoticeVersionString()
+	}
+	for picked := false; !picked; {
+		err := tx.QueryRow(ctx, `SELECT d.id, d.kind, d.addr, d.target_kind, d.target_id, d.recipient, d.data_mark, d.body, d.lease_no FROM deliveries d
 		WHERE d.tenant = $1 AND d.exec_kind = $2 AND d.exec_name = $3 AND d.state = 'planned' AND (d.run_at IS NULL OR d.run_at <= $4)
 		AND NOT (d.dataorigin = 'model' AND EXISTS (SELECT 1 FROM contacts ct WHERE ct.tenant = d.tenant AND ct.channel = d.exec_name
 			AND ct.principal = d.recipient AND ct.ai_notice_delivery IS NOT NULL AND ct.ai_notice_at IS NULL))
@@ -274,14 +320,33 @@ func (c *Core) claimDelivery(ctx context.Context, tx pgx.Tx, now time.Time, w *W
 			EXISTS (SELECT 1 FROM deliveries p WHERE p.tenant = d.tenant AND p.exec_name = d.exec_name AND p.recipient = d.recipient
 				AND p.kind = 'privacy_notice' AND p.state IN ('planned', 'sending'))
 			OR NOT EXISTS (SELECT 1 FROM deliveries p WHERE p.tenant = d.tenant AND p.exec_name = d.exec_name AND p.recipient = d.recipient
-				AND p.kind = 'privacy_notice' AND p.state = 'delivered')))
-		ORDER BY d.seq LIMIT 1 FOR UPDATE SKIP LOCKED`, w.Tenant, w.Kind, w.Target, now).
-		Scan(&id, &kind, &addr, &targetKind, &targetID, &recipient, &dataMark, &body, &leaseNo)
-	if errors.Is(err, pgx.ErrNoRows) {
-		return nil, nil
-	}
-	if err != nil {
-		return nil, err
+				AND p.kind = 'privacy_notice' AND p.state = 'delivered' AND p.notice_version IS NOT DISTINCT FROM nullif($5, ''))))
+		ORDER BY d.seq LIMIT 1 FOR UPDATE SKIP LOCKED`, w.Tenant, w.Kind, w.Target, now, version).
+			Scan(&id, &kind, &addr, &targetKind, &targetID, &recipient, &dataMark, &body, &leaseNo)
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, nil
+		}
+		if err != nil {
+			return nil, err
+		}
+		// The recipient's access is checked again at handoff: a person disabled or ungranted after
+		// the task ended does not get its content (DLV-6).
+		if recipient != nil && dataMark != nil && tv != nil {
+			reason, err := c.accessLost(ctx, tx, now, tv, *recipient, "", *dataMark)
+			if err != nil {
+				return nil, err
+			}
+			if reason != "" {
+				if _, err := tx.Exec(ctx, `UPDATE deliveries SET state = 'withheld', reason = $2, updated_at = $3 WHERE id = $1`, id, reason, now); err != nil {
+					return nil, err
+				}
+				if err := c.appendEvent(ctx, tx, now, w.Tenant, Event{Type: "delivery.withheld", Subject: id, Data: map[string]any{"delivery": id, "kind": kind, "reason": reason}}); err != nil {
+					return nil, err
+				}
+				continue
+			}
+		}
+		picked = true
 	}
 	leaseNo++
 	item, err := c.newLease(ctx, tx, now, w, "delivery", id, leaseNo, c.cfg.LeaseS, "")

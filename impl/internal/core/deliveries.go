@@ -61,12 +61,31 @@ func (c *Core) firstContact(ctx context.Context, tx pgx.Tx, now time.Time, tv *T
 		return err
 	}
 	if tag.RowsAffected() == 0 {
+		// An ai_notice that never arrived is planned again; model text waits for it meanwhile.
+		var dead bool
+		if err := tx.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM contacts ct JOIN deliveries d ON d.id = ct.ai_notice_delivery
+			WHERE ct.tenant = $1 AND ct.channel = $2 AND ct.principal = $3 AND ct.ai_notice_at IS NULL AND d.state = 'dead')`,
+			tv.Name, channel, principal).Scan(&dead); err != nil {
+			return err
+		}
+		if dead {
+			if err := c.planAINotice(ctx, tx, now, tv, channel, principal, chat); err != nil {
+				return err
+			}
+		}
 		return c.privacyVersionChange(ctx, tx, now, tv, channel, principal, chat)
 	}
 	if tv.Channels[channel].AIDisclosure == "native" {
 		// The messenger itself shows that the account is a bot (DLV-12).
 		return c.planPrivacyNotice(ctx, tx, now, tv, channel, principal, chat)
 	}
+	if err := c.planAINotice(ctx, tx, now, tv, channel, principal, chat); err != nil {
+		return err
+	}
+	return c.planPrivacyNotice(ctx, tx, now, tv, channel, principal, chat)
+}
+
+func (c *Core) planAINotice(ctx context.Context, tx pgx.Tx, now time.Time, tv *TenantView, channel, principal string, chat Chat) error {
 	aiID, err := c.planDelivery(ctx, tx, now, plannedDelivery{
 		Tenant: tv.Name, Kind: "ai_notice", Addr: "origin", TargetKind: "chat", TargetID: chat.ID(),
 		ExecKind: "channel", ExecName: channel, Recipient: principal, DataOrigin: "code",
@@ -75,11 +94,9 @@ func (c *Core) firstContact(ctx context.Context, tx pgx.Tx, now time.Time, tv *T
 	if err != nil {
 		return err
 	}
-	if _, err := tx.Exec(ctx, `UPDATE contacts SET ai_notice_delivery = $4 WHERE tenant = $1 AND channel = $2 AND principal = $3`,
-		tv.Name, channel, principal, aiID); err != nil {
-		return err
-	}
-	return c.planPrivacyNotice(ctx, tx, now, tv, channel, principal, chat)
+	_, err = tx.Exec(ctx, `UPDATE contacts SET ai_notice_delivery = $4 WHERE tenant = $1 AND channel = $2 AND principal = $3`,
+		tv.Name, channel, principal, aiID)
+	return err
 }
 
 func (c *Core) planPrivacyNotice(ctx context.Context, tx pgx.Tx, now time.Time, tv *TenantView, channel, principal string, chat Chat) error {
@@ -113,7 +130,7 @@ func (c *Core) privacyVersionChange(ctx context.Context, tx pgx.Tx, now time.Tim
 		tv.Name, channel, principal).Scan(&seen); err != nil {
 		return err
 	}
-	if v := tv.Spec.Privacy.NoticeVersionString(); v != "" && (seen == nil || *seen != v) {
+	if v := tv.Spec.Privacy.NoticeVersionString(); seen == nil || v != "" && *seen != v {
 		return c.planPrivacyNotice(ctx, tx, now, tv, channel, principal, chat)
 	}
 	return nil

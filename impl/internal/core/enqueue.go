@@ -88,11 +88,24 @@ func groupClosure(tv *TenantView, groups []string) []string {
 // in action capabilities (PRM-7); a task capability matches exactly.
 func hasCap(tv *TenantView, groups []string, cap string) bool {
 	for _, g := range groups {
-		if slices.Contains(tv.Groups[g].Caps, cap) {
-			return true
+		for _, have := range tv.Groups[g].Caps {
+			if capCovers(have, cap) {
+				return true
+			}
 		}
 	}
 	return false
+}
+
+// capCovers says whether a granted capability covers the wanted one: the same string, or a
+// task capability with a trailing wildcard on a dot boundary (task:report.* covers
+// task:report.daily.v1).
+func capCovers(have, want string) bool {
+	if have == want {
+		return true
+	}
+	prefix, ok := strings.CutSuffix(have, "*")
+	return ok && strings.HasPrefix(have, "task:") && strings.HasSuffix(prefix, ".") && strings.HasPrefix(want, prefix)
 }
 
 func hasData(tv *TenantView, groups []string, mark string) bool {

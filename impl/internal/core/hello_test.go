@@ -391,6 +391,63 @@ func TestModelTextWaitsForAINotice(t *testing.T) {
 	}
 }
 
+// TestAccessRecheckedAtClaim: an ungrant after enqueue fails the queued task, and disabling
+// the recipient after completion withholds the model text.
+func TestAccessRecheckedAtClaim(t *testing.T) {
+	ctx := context.Background()
+	b := newBench(t)
+	a := Activity{Kind: "message", Channel: "telegram", UpdateID: "21", Chat: Chat{Kind: "direct", ExternalID: "1001"}, Text: "/hello"}
+	a.Sender.Identity, a.Sender.Verified = "telegram:1001", true
+	res, err := b.c.SubmitActivity(ctx, b.channel, a)
+	if err != nil || res.Task == "" {
+		t.Fatalf("submit: %+v %v", res, err)
+	}
+	if _, err := b.c.Grant(ctx, b.op, GrantRequest{Op: "ungrant", Subject: b.alice, Group: "hello"}); err != nil {
+		t.Fatal(err)
+	}
+	if w := b.claim(t, b.agent, "attempt"); w != nil {
+		t.Fatalf("a task of an ungranted initiator was leased: %v", w.WorkID)
+	}
+	var state, reason string
+	if err := b.c.st.Pool.QueryRow(ctx, `SELECT state, coalesce(reason, '') FROM tasks WHERE id = $1`, res.Task).Scan(&state, &reason); err != nil || state != "failed" || reason != "no_group_cap" {
+		t.Fatalf("task %s %s %v", state, reason, err)
+	}
+
+	if _, err := b.c.Grant(ctx, b.op, GrantRequest{Op: "grant", Subject: b.alice, Group: "hello"}); err != nil {
+		t.Fatal(err)
+	}
+	a.UpdateID = "22"
+	if res, err = b.c.SubmitActivity(ctx, b.channel, a); err != nil || res.Task == "" {
+		t.Fatalf("submit: %+v %v", res, err)
+	}
+	att := b.claim(t, b.agent, "attempt")
+	if att == nil {
+		t.Fatal("no attempt")
+	}
+	if _, err := b.c.Complete(ctx, b.agent, header(t, att), CompleteRequest{Result: map[string]any{"answer": "hi"}}); err != nil {
+		t.Fatal(err)
+	}
+	for {
+		w := b.claim(t, b.channel, "delivery")
+		if w == nil {
+			break
+		}
+		if d := w.Payload["delivery"].(map[string]any); d["kind"] == "task_result" && d["body"].(map[string]any)["form"] != "text_code" {
+			t.Fatalf("model text reached the channel: %v", d)
+		}
+		if _, err := b.c.Complete(ctx, b.channel, header(t, w), CompleteRequest{Receipt: &Receipt{ExternalID: "x"}}); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := b.c.Principal(ctx, b.op, PrincipalRequest{Op: "principal.off", Subject: b.alice}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	var withheld int
+	if err := b.c.st.Pool.QueryRow(ctx, `SELECT count(*) FROM deliveries WHERE kind = 'task_result' AND dataorigin = 'model' AND state = 'withheld'`).Scan(&withheld); err != nil || withheld != 1 {
+		t.Fatalf("withheld %d %v", withheld, err)
+	}
+}
+
 // TestGroupChatIgnored: without chat.bind a group message starts nothing.
 func TestGroupChatIgnored(t *testing.T) {
 	b := newBench(t)

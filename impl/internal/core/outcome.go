@@ -135,7 +135,7 @@ func (c *Core) Heartbeat(ctx context.Context, w *Worker, header string, req Hear
 			leaseS = min(leaseS, maxLeaseS)
 		}
 		until := now.Add(time.Duration(leaseS) * time.Second)
-		if _, err := tx.Exec(ctx, `UPDATE leases SET lease_until = $3 WHERE work_id = $1 AND lease_no = $2`, l.WorkID, l.LeaseNo, until); err != nil {
+		if _, err := tx.Exec(ctx, `UPDATE leases SET lease_until = $3, reason = NULL WHERE work_id = $1 AND lease_no = $2`, l.WorkID, l.LeaseNo, until); err != nil {
 			return nil, err
 		}
 		return &HeartbeatResult{LeaseUntil: fmtTime(until), LeaseRemainingS: leaseS, CancelRequested: cancel}, nil
@@ -352,6 +352,22 @@ func (c *Core) endAttempt(ctx context.Context, tx pgx.Tx, now time.Time, tenant 
 	finalReason := reason
 	if retryable && spent >= maxAttempts {
 		retryable, finalReason = false, "attempts_exhausted"
+	}
+	// A run counts when the model answered during this attempt; retry.max_runs caps them.
+	var answered bool
+	if err := tx.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM spend s JOIN leases l ON l.work_id = s.task
+		WHERE s.task = $1 AND l.lease_no = $2 AND s.unit = 'tokens' AND s.state = 'committed' AND s.time >= l.created_at)`,
+		l.WorkID, l.LeaseNo).Scan(&answered); err != nil {
+		return nil, err
+	}
+	if answered {
+		var runs int
+		if err := tx.QueryRow(ctx, `UPDATE tasks SET runs_counted = runs_counted + 1 WHERE id = $1 RETURNING runs_counted`, l.WorkID).Scan(&runs); err != nil {
+			return nil, err
+		}
+		if retryable && tt.Retry.MaxRuns > 0 && runs >= tt.Retry.MaxRuns {
+			retryable, finalReason = false, "runs_exhausted"
+		}
 	}
 	if retryable && mode == "on_fix" {
 		if _, err := tx.Exec(ctx, `UPDATE tasks SET state = 'submitted', run_at = 'infinity', reason = 'waiting_on_fix', updated_at = $2 WHERE id = $1 AND state = 'working'`, l.WorkID, now); err != nil {

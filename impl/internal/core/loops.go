@@ -43,10 +43,16 @@ func (c *Core) Tick(ctx context.Context) error {
 	return nil
 }
 
-// endLeasesOfDowntime ends the leases that expired while the core was not running with
-// core_unavailable, which does not spend the attempt (FEN-5).
+// endLeasesOfDowntime extends, from readiness, the leases that expired while the core was not
+// running, so a holder that is still alive keeps its work. The mark core_unavailable stays on
+// the lease until the holder renews it; one that is not renewed ends with core_unavailable,
+// which does not spend the attempt (FEN-5).
 func (c *Core) endLeasesOfDowntime(ctx context.Context) error {
-	return c.reapWith(ctx, "core_unavailable", false)
+	return c.tx(ctx, func(tx pgx.Tx, now time.Time) error {
+		_, err := tx.Exec(ctx, `UPDATE leases SET lease_until = $1, reason = 'core_unavailable' WHERE state = 'active' AND lease_until <= $2`,
+			now.Add(time.Duration(c.cfg.LeaseS)*time.Second), now)
+		return err
+	})
 }
 
 // reap ends expired leases: an attempt gets lease_expired and spends the attempt (FEN-1, FEN-3);
@@ -60,9 +66,10 @@ func (c *Core) reapWith(ctx context.Context, reason string, spends bool) error {
 		done := true
 		err := c.tx(ctx, func(tx pgx.Tx, now time.Time) error {
 			var l leaseRow
-			err := tx.QueryRow(ctx, `SELECT work_id, lease_no, kind, tenant, worker_id, epoch, state, lease_until FROM leases
+			var mark *string
+			err := tx.QueryRow(ctx, `SELECT work_id, lease_no, kind, tenant, worker_id, epoch, state, lease_until, reason FROM leases
 				WHERE state = 'active' AND lease_until <= $1 ORDER BY lease_until LIMIT 1 FOR UPDATE SKIP LOCKED`, now).
-				Scan(&l.WorkID, &l.LeaseNo, &l.Kind, &l.Tenant, &l.WorkerID, &l.Epoch, &l.State, &l.Until)
+				Scan(&l.WorkID, &l.LeaseNo, &l.Kind, &l.Tenant, &l.WorkerID, &l.Epoch, &l.State, &l.Until, &mark)
 			if err == pgx.ErrNoRows {
 				return nil
 			}
@@ -70,6 +77,10 @@ func (c *Core) reapWith(ctx context.Context, reason string, spends bool) error {
 				return err
 			}
 			done = false
+			reason, spends := reason, spends
+			if mark != nil && *mark == "core_unavailable" {
+				reason, spends = "core_unavailable", false
+			}
 			if _, err := tx.Exec(ctx, `UPDATE leases SET state = 'expired', reason = $3, closed_at = $4 WHERE work_id = $1 AND lease_no = $2`,
 				l.WorkID, l.LeaseNo, reason, now); err != nil {
 				return err

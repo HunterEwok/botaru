@@ -214,9 +214,15 @@ func (c *Core) Grant(ctx context.Context, op Operator, req GrantRequest) (*Done,
 	return &out, nil
 }
 
-// unprivilegedCaps are the capabilities that never make a group privileged
-// (spec/model/capabilities.yaml); task:<type> is privileged from tier 1.
+// unprivilegedCaps are the capability forms that never make a group privileged
+// (spec/model/capabilities.yaml), bare or with their parameter; task:<type> is privileged from
+// tier 1.
 var unprivilegedCaps = map[string]bool{"task.read": true, "team.view": true, "msg.send": true}
+
+func unprivilegedCap(cp string) bool {
+	form, _, _ := strings.Cut(cp, ":")
+	return unprivilegedCaps[form]
+}
 
 // privilegedGroup applies the PRM-13 rule to a group and the groups it inherits: a
 // capability marked privileged, a task type of tier 1 or higher, or a data class above
@@ -231,7 +237,7 @@ func privilegedGroup(tv *TenantView, cat *Catalog, name string, seen map[string]
 		return true
 	}
 	for _, cp := range g.Caps {
-		if unprivilegedCaps[cp] {
+		if unprivilegedCap(cp) {
 			continue
 		}
 		typ, isTask := strings.CutPrefix(cp, "task:")
