@@ -76,6 +76,9 @@ old_paths = [p for p in git('ls-tree', '-r', '--name-only', '--full-tree', base_
 old_files = [p for p in old_paths if p.endswith('.schema.json')]
 old_regs = [p for p in old_paths if re.fullmatch(re.escape(prefix) + r'spec/model/[^/]+\.yaml', p)]
 now_files = walk(('.schema.json',))
+if not any(p.startswith(prefix + 'spec/') for p in old_paths):
+    rep.info(f'base {base} ({base_commit[:12]}) has no spec/ yet: the skeleton is new, nothing to compare')
+    rep.finish()
 if not old_files and now_files:
     rep.error(base, f'[base_empty] {base} ({base_commit[:12]}) holds no schema under {prefix or "the root"}: '
               'comparison not done')

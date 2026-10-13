@@ -183,7 +183,8 @@ def load_forbidden():
         return None
     stems, words = set(), set()
     for n, line in enumerate(text.splitlines(), 1):
-        parts = line.split()
+        # a pasted secret can start with a byte order mark or an invisible space
+        parts = line.lstrip('\ufeff\u200b\u2060\u00a0').split()
         if not parts or parts[0].startswith('#'):
             continue
         if len(parts) == 2 and parts[0] == 'p':
