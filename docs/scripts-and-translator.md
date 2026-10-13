@@ -395,7 +395,7 @@ Each profile carries model rank ceilings in `role-profiles.yaml`: `max_rank` for
 | Version | What appears |
 |---|---|
 | v0.1 | in the order of work after the core and the first bot (D-71, D-80); the first bot needs only the profile `worker`, which a role without the `profile` field gets; the role profile `Role.spec.profile`, the closed list `role-profiles.yaml` of eight profiles with the ceilings `max_rank` and `analysis_max_rank`, the profile lint and the assembly of `tools/list` per `builtin-tools.yaml` (PRF-1); the texts of the eval cases `trn-inj-01` and `trn-inj-02`; the script `botaru.script/v1`: `Script`, `ScriptRun`, the steps `task`, `fanout`, `action`, `confirm`, conditions, passing values, limits (SCR-1..SCR-9, SCR-11); acceptance by the core, the card `script_confirm`, the capability `script.run` for scripts with actions, `confirm` or service control (a read-only script runs with the steps' `task:<type>`), the loop `script`, script events and reasons; the change `script` in a proposal; the translator only with a script proposal (the translator writes the draft, a person runs it): the type `script.translate.v1`, `propose_script`, input and output (TRN-2..TRN-5), the model-free check `trn-inj-06`; all eight profiles in operation; the purpose `handover` (a successor choosing facts) for the profiles `worker`, `manager`, `reviewer`, `farm-manager` |
-| v0.2 | the steps `wait` and `await`, a run deadline of up to 7 days; a hold pauses the run (SCR-10); scripts in git (`kind: Script`) with parameters and a free goal after review; running such a script on a schedule without approval, only if it has no steps with an action and is below the tenant's thresholds; the translator eval cases `trn-01..07` and `trn-inj-03..05`, the translator eval gate (TRN-6); the probe `mode: validate` |
+| v0.2 | the steps `wait` and `await`, a run deadline of up to 7 days; a hold pauses the run (SCR-10); scripts in git (`kind: Script`) with parameters and a free goal after review; running such a script on a schedule (`Schedule.spec.script`) without a person's button, only if it needs no `script.run` and keeps within `Tenant.spec.scripts` (SCR-12, D-99); the translator eval cases `trn-01..07` and `trn-inj-03..05`, the translator eval gate (TRN-6); the probe `mode: validate` |
 
 ## Why it works this way
 
@@ -409,6 +409,7 @@ Each profile carries model rank ceilings in `role-profiles.yaml`: `max_rank` for
 ## Decided questions
 
 - `propose_campaign` and `propose_script` are not merged in v0.2 (D-96). They stay two separate tools with separate profile fields, gates and counters. The format of the `fanout` step already matches the campaign request, so a later merge is possible as an addition.
+- A script from the tenant's git may run on a schedule without a person (D-99, SCR-12). The condition is the same one that makes a run need no `script.run` (SCR-6): no `action` step, no `fanout` with an action, no `confirm` step and no step whose role has `service_control` or `monitor_scripts`. The run has initiator `system` and fairness key `script:<run>`; its estimate is reserved at each slot, and a slot that does not fit is skipped with `budget_exhausted`. A schedule hold stops it (CAP-4), and a hold on the run pauses it (SCR-10). The whole feature is this one rule, so it can be dropped without touching others.
 
 <!-- generated: rules -->
 ## Rules of this section
@@ -429,6 +430,7 @@ Generated from the registry `conformance/requirements.yaml`; the full text of ev
 | [SCR-9](../conformance/rules.md#SCR-9) | The distrust flag passes between steps | v0.1 | yes |
 | [SCR-10](../conformance/rules.md#SCR-10) | A hold pauses a run | v0.2 | no |
 | [SCR-11](../conformance/rules.md#SCR-11) | Run transitions only by the table, cancellation cascades | v0.1 | yes |
+| [SCR-12](../conformance/rules.md#SCR-12) | A script from git on a schedule | v0.2 | no |
 | [TRN-2](../conformance/rules.md#TRN-2) | What the translator sees | v0.1 | yes |
 | [TRN-3](../conformance/rules.md#TRN-3) | The translator outputs only a draft | v0.1 | yes |
 | [TRN-4](../conformance/rules.md#TRN-4) | Draft limits under untrusted text | v0.1 | yes |

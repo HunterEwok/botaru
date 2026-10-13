@@ -62,20 +62,22 @@ Among the tasks that passed the filter for the asking worker, `claim` returns on
 
 The control lane (`control`) is the core path for operations from the closed list `control-ops.yaml`: people call them through P2 `control.apply` (pinning and preemption by people only by the operator through `farmctl`, PRM-14), the farm manager seat holder through C1 `control.apply`, and both share one code path and one audit (MGR-9). The type sets the class with the field `dispatch.priority_class`. A request can only lower the class with the field `priority`; a child, a continuation and a campaign item get a class no higher than the parent. Class 1 never comes from a request, a route or a type, and the core sets class 2 itself and only for a direct request from a person (DSP-5).
 
-The strict order could leave class 5 without work. What protects against this is not priority aging but ceilings: `max_running` per type and, from v0.2, `max_share` in the rules of classes 2-4. The health indicator "age of the oldest urgent task" is computed over classes 1 and 2 (OBS-9). From v0.2 tasks with the purposes `insight`, `aggregate` and `review` always go with class 5, it cannot be raised, and together they take no more than `max_share` (20% by default) of the bot group's concurrent slots (BUD-8).
+The strict order could leave class 5 without work. What protects against this is not priority aging but ceilings: `max_running` per type and, from v0.2, `max_share` in the rules of classes 2-4. The health indicator "age of the oldest urgent task" is computed over classes 1 and 2 (OBS-9). From v0.2 tasks with the purposes `insight`, `aggregate` and `review` always go with class 5, it cannot be raised, and in a bot group that also does other work they together take no more than `Tenant.spec.dispatch.background_share` (20% by default) of the group's capacity; a task above the share waits with `group_quota`. Tasks of `review.escalation.v1` (the `necessity` lens) are the exception: they go in class 3 and are outside the share, because an escalation waits for them (BUD-8, D-100).
 
 ### Fairness within a class
 
-From v0.2, within one class, tasks with different fairness keys are dispatched round robin with weights from `Tenant.spec.dispatch.fairness.weights` (DSP-6). The core writes the key (IDN-1), the sender does not set it:
+The core writes the fairness key on every task from v0.1 (DSP-2, D-98); the sender does not set it. The key is `<kind>:<id>`, and a continuation keeps the key of its source:
 
 | Where the task comes from | Fairness key |
 |---|---|
-| campaign item | campaign id |
-| manager child | tree root id |
-| wake-up task from an inbox | route name |
-| schedule task | schedule name |
-| direct request from a person | initiator principal |
-| script step | script run id |
+| campaign item | `campaign:<campaign>` |
+| any child (of a manager or another task) | `root:<root task>` |
+| route or wake-up task from an inbox | `route:<route>` |
+| schedule task | `schedule:<schedule>` |
+| direct request from a person or program | `interactive:<principal>` |
+| script step | `script:<run>` |
+
+From v0.2, within one class, `claim` hands out the next task from the key with the smallest number of running attempts divided by the weight of its kind in `Tenant.spec.dispatch.fairness.weights` (a kind without a weight has 1; a key of weight 0 gets work only when no key with a higher weight waits in the class). A tie goes to the key whose oldest waiting task was enqueued first, then to the smaller task id, so the order stays deterministic (DSP-2, DSP-6).
 
 This way a campaign of 400 items does not take all analysts away from a person's question of the same class, and two managers share a group equally. The keys are coarse (campaign, root, route) rather than individual tasks, because the accuracy of a fair round robin drops as the number of keys grows. In v0.1 the key is already recorded, and the order within a class is set by enqueue time.
 
@@ -90,7 +92,7 @@ spec:
     max_queued: 5000                  # tenant queue ceiling (CAP-1)
   dispatch:
     fairness:                         # from v0.2 (DSP-6)
-      weights: {interactive: 2, campaign: 1, root: 1, route: 1, schedule: 1}
+      weights: {interactive: 2, campaign: 1, root: 1, route: 1, schedule: 1, script: 1}
     rules:                            # first match; only by type name and source kind
       - match: {type: data.qc.ctd.v1}
         group: science-pool           # default group
@@ -673,7 +675,7 @@ The order of work within v0.1 is set by D-71: first the task pool and the dispat
 | Version | What appears |
 |---|---|
 | v0.1 | the pool is the C1 queue, `claim` is the only path for work; conditions D1-D4, D6-D10, D13, D14, D18 (in D9 the core hold scopes: farm, tenant, role, type, worker); classes 1-5 with strict order; the fairness key is recorded, the order within a class is by enqueue time; tenant rules `dispatch.rules` with group, class, `max_running` per type, deadline and number of attempts (DSP-3); `max_queued`; the field `to.group` in schemas and the refusal `group_invalid` (DSP-4); `waiting_reason` (`type_quota`, `held`, `run_at`, `provider_unavailable`); `enqueue_child` and the permission intersection formula, the fields `enqueued_by`, `scope`; `status.tasks`; the alarm `alarm.task.unclaimed` for a task that nobody took (DSP-8); the personal assistant as a worker pool with `owner` in the lease, `/a` and `ChatBinding.assistant` (DSP-10); rules DSP-1..10 and STA-2 in the `core` profile; bot groups `BotGroup`, condition D5, `may_target_groups`, the field `to_group` in the record, waiting on an empty group and the `waiting_reason` values `no_member`, `no_member_ready` (BGR-1, BGR-2, DSP-8); the `manager` profile and three kinds of managers; campaign and item; rollout policy (`canary`, `after_canary` with `bake`, `max_in_flight`, `max_failures`, `on_unknown`, `deadline`); approval with the subject `campaign` and payment by the amount on the card; `propose_campaign`, `campaign_status`, `campaign_results`, `status.campaigns`; P1 and P2 `campaign.*`; the `campaign` loop; `exclusive: resource` (D11); pinning `pin_task` through the `control` lane (D12); `manage` tasks to a worker of the seat role while the seat is in `held` (D15); round robin analysis (D16); model pool share (D19); bot identity tasks to its worker (D20); narrowing of the `scope`; the worker directory with `summary_for_managers`; holds with scope `bot_group` and campaign pause on hold; in D9 the hold scopes bot group, bot, seat, machine and resource; inboxes and the wake-up budget as a source of pressure (MSG-10, MSG-11); `waiting_reason` `resource_busy`, `not_released` and `provider_quota` |
-| v0.2 | fairness by weighted keys (DSP-6); the group's `max_running` and `max_share` (D10); class 5 and the share for analysis and reviews (BUD-8); task order in a conversation (D17); `waiting_reason` `group_quota` and `model_grant_pending`; P2 `dispatch.explain` and `dispatch.queue` (DSP-9); `waves` and the pace `rate_per_min`; progress card update on a wave change |
+| v0.2 | fairness by weighted keys (DSP-6); the group's `max_running` and `max_share` (D10); class 5 and the share `background_share` for analysis and reviews (BUD-8); task order in a conversation (D17); the in-flight limit of direct requests (D21, BUD-6); `waiting_reason` `group_quota`, `model_grant_pending`, `conversation_busy` and `in_flight_cap`; P2 `dispatch.explain` and `dispatch.queue` (DSP-9); `waves` and the pace `rate_per_min`; progress card update on a wave change |
 
 ## Why it works this way
 

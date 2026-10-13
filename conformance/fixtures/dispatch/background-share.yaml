@@ -1,0 +1,121 @@
+id: fx-dsp-background-share
+rules: [BUD-8, DSP-5, DSP-7]
+version: v0.2
+description: 'Tasks of the purposes `insight`, `aggregate` and `review` always go in priority class 5, whatever the type
+  declares in `dispatch.priority_class`, and a request cannot raise it. In a bot group whose roles also claim types of
+  other purposes, these tasks together hold no more than `Tenant.spec.dispatch.background_share` (default 20%) of the
+  group''s running attempts, rounded down but at least one; the capacity of a group is its `max_running`, or the
+  number of its active workers when it has none. A task above the share waits in `submitted` with
+  `waiting_reason: group_quota`. A group whose roles claim only such types is not limited by the share. Tasks of
+  `review.escalation.v1` (the `necessity` lens) go in class 3 and are outside the share.'
+given:
+  tenant: demo
+  tasktypes:
+  - {name: ops.insight.load.v1, purpose: insight, dispatch: {priority_class: 3}}
+  - {name: ops.summary.v1, purpose: work, dispatch: {priority_class: 3}}
+  roles:
+  - name: ops-reader
+    claims: [ops.insight.load.v1, ops.summary.v1]
+  botgroups:
+  - name: ops-pool
+    select:
+      roles: [ops-reader]
+  workers:
+  - {id: wk_01JB000000000000000000002A, role: ops-reader, state: active, ready: true}
+  - {id: wk_01JB000000000000000000002B, role: ops-reader, state: active, ready: true}
+  - {id: wk_01JB000000000000000000002C, role: ops-reader, state: active, ready: true}
+  - {id: wk_01JB000000000000000000002D, role: ops-reader, state: active, ready: true}
+  - {id: wk_01JB000000000000000000002E, role: ops-reader, state: active, ready: true}
+cases:
+- id: bud-fx-08a
+  rules: [BUD-8]
+  description: The core writes class 5 for an insight type that declares class 3.
+  given:
+    tasks:
+    - {id: t_01JB0000000000000000000N01, type: ops.insight.load.v1, state: submitted, enqueued_at: '2026-10-05T09:00:00Z'}
+  expect:
+    priority_class:
+      t_01JB0000000000000000000N01: 5
+- id: bud-fx-08b
+  rules: [BUD-8, DSP-7]
+  description: 'Five workers, share 20%: at most one insight attempt runs. Work tasks go first by class, one insight task
+    gets a worker, the fifth worker gets nothing, and the other insight tasks wait with group_quota.'
+  given:
+    tasks:
+    - {id: t_01JB0000000000000000000N01, type: ops.insight.load.v1, state: submitted, enqueued_at: '2026-10-05T09:00:00Z'}
+    - {id: t_01JB0000000000000000000N02, type: ops.insight.load.v1, state: submitted, enqueued_at: '2026-10-05T09:00:01Z'}
+    - {id: t_01JB0000000000000000000N03, type: ops.insight.load.v1, state: submitted, enqueued_at: '2026-10-05T09:00:02Z'}
+    - {id: t_01JB0000000000000000000W01, type: ops.summary.v1, state: submitted, enqueued_at: '2026-10-05T09:10:00Z'}
+    - {id: t_01JB0000000000000000000W02, type: ops.summary.v1, state: submitted, enqueued_at: '2026-10-05T09:10:01Z'}
+  steps:
+  - call: {port: P1, op: claim, request: {kinds: [attempt]}}
+    by: worker:wk_01JB000000000000000000002A
+    expect: {task: t_01JB0000000000000000000W01}
+  - call: {port: P1, op: claim, request: {kinds: [attempt]}}
+    by: worker:wk_01JB000000000000000000002B
+    expect: {task: t_01JB0000000000000000000W02}
+  - call: {port: P1, op: claim, request: {kinds: [attempt]}}
+    by: worker:wk_01JB000000000000000000002C
+    expect: {task: t_01JB0000000000000000000N01}
+  - call: {port: P1, op: claim, request: {kinds: [attempt]}}
+    by: worker:wk_01JB000000000000000000002D
+    expect: {task: null}
+  expect:
+    waiting_reason:
+      t_01JB0000000000000000000N02: group_quota
+      t_01JB0000000000000000000N03: group_quota
+- id: bud-fx-08c
+  rules: [BUD-8]
+  description: A request with priority 3 for an insight type does not raise the class; the task is class 5.
+  steps:
+  - call:
+      port: P1
+      op: enqueue
+      request:
+        body: {type: ops.insight.load.v1, goal: weekly load analysis}
+        idempotency_key: k-bud-08c
+        priority: 3
+    by: role:ops-reader
+    expect: {result: ok, task: {priority_class: 5}}
+- id: bud-fx-08d
+  rules: [BUD-8]
+  description: A group whose roles claim only review types is not limited by the share; three reviews run on three workers.
+  given:
+    tasktypes:
+    - {name: review.risk.v1, purpose: review}
+    roles:
+    - name: lens-risk
+      claims: [review.risk.v1]
+    botgroups:
+    - name: lens-pool
+      select:
+        roles: [lens-risk]
+    workers:
+    - {id: wk_01JB000000000000000000003A, role: lens-risk, state: active, ready: true}
+    - {id: wk_01JB000000000000000000003B, role: lens-risk, state: active, ready: true}
+    - {id: wk_01JB000000000000000000003C, role: lens-risk, state: active, ready: true}
+    tasks:
+    - {id: t_01JB0000000000000000000V01, type: review.risk.v1, state: submitted, enqueued_at: '2026-10-05T09:00:00Z'}
+    - {id: t_01JB0000000000000000000V02, type: review.risk.v1, state: submitted, enqueued_at: '2026-10-05T09:00:01Z'}
+    - {id: t_01JB0000000000000000000V03, type: review.risk.v1, state: submitted, enqueued_at: '2026-10-05T09:00:02Z'}
+  steps:
+  - call: {port: P1, op: claim, request: {kinds: [attempt]}}
+    by: worker:wk_01JB000000000000000000003A
+    expect: {task: t_01JB0000000000000000000V01}
+  - call: {port: P1, op: claim, request: {kinds: [attempt]}}
+    by: worker:wk_01JB000000000000000000003B
+    expect: {task: t_01JB0000000000000000000V02}
+  - call: {port: P1, op: claim, request: {kinds: [attempt]}}
+    by: worker:wk_01JB000000000000000000003C
+    expect: {task: t_01JB0000000000000000000V03}
+- id: bud-fx-08e
+  rules: [BUD-8]
+  description: 'A task of review.escalation.v1 (the necessity lens) gets class 3, not 5: an escalation waits for it.'
+  given:
+    tasktypes:
+    - {name: review.escalation.v1, purpose: review}
+    tasks:
+    - {id: t_01JB0000000000000000000E01, type: review.escalation.v1, state: submitted, enqueued_at: '2026-10-05T09:00:00Z'}
+  expect:
+    priority_class:
+      t_01JB0000000000000000000E01: 3

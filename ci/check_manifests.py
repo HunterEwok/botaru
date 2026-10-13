@@ -808,6 +808,11 @@ def lint(docs, today=None, farm_hosts=None, examples_mode=False, claimed=None, s
         cron = ss['cron']
         if len(cron.split()) != 5 or re.search(r'(CRON_)?TZ\s*=', cron):
             f.error('cron_invalid', where, f'schedule {sname}: cron of five fields without CRON_TZ and TZ (TIM-2)')
+        if ('task' in ss) == ('script' in ss):
+            f.error('schedule_target', where, f'schedule {sname}: exactly one of task and script (SCR-12)')
+            continue
+        if 'script' in ss:
+            continue  # v0.2: the SCR-12 checks of a scheduled script come with the Script kind
         tt = ss['task']['type']
         if tt.startswith('action.'):
             f.error('action_type_grant', where, f'schedule {sname}: action.* type (APR-5)')

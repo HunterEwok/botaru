@@ -1,11 +1,13 @@
 registry: delivery-kinds
-version: 2
+version: 3
 description: >-
   Delivery kinds (the kind field of the Delivery record) on which the core code and the recipient
   worker branch. A decision card and a notice to people are delivered with
   the kind equal to the id of their row in decision-points.yaml (for example script_confirm,
   proposal_card); the other kinds are listed here. Entry fields: since,
-  meaning, target (the kind of the target that the core computes from the address), rules.
+  meaning, target (the kind of the target that the core computes from the address), deferrable
+  (from v0.2: true if a person's quiet hours or digest preference may defer the delivery, DLV-10;
+  absent means false), rules.
 source: spec/lifecycles/delivery.md
 entries:
   - id: task_result
@@ -72,12 +74,14 @@ entries:
     since: v0.1
     meaning: a reporter's digest to people; the code builds the table, numbers and cards from a snapshot, the model paragraph is a separate labeled part
     target: [chat, subject]
-    rules: [REP-2]
+    deferrable: true
+    rules: [REP-2, DLV-10]
   - id: proposal_digest
     since: v0.1
     meaning: proposal digest to the address insights.present_to; the code assembles items and cards
     target: [chat, subject]
-    rules: [DIG-2, REP-2]
+    deferrable: true
+    rules: [DIG-2, REP-2, DLV-10]
   - id: proposal_reason
     since: v0.1
     meaning: continuation of the "Reject" button of the proposal_card card (the same subject proposal) with a reason from decline-reasons.yaml; the decision is recorded when a reason is chosen
@@ -87,12 +91,14 @@ entries:
     since: v0.1
     meaning: campaign summary from its record; the mark of the summary equals the mark of the campaign
     target: [chat, subject]
-    rules: [ORC-10]
+    deferrable: true
+    rules: [ORC-10, DLV-10]
   - id: campaign_list
     since: v0.1
     meaning: the full list of campaign items from its record as a separate delivery
     target: [chat, subject]
-    rules: [ORC-10]
+    deferrable: true
+    rules: [ORC-10, DLV-10]
   - id: commission_review
     since: v0.2
     meaning: a card without buttons to the tenant admins about a locked commission, with review commands

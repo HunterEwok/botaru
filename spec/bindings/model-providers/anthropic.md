@@ -43,6 +43,10 @@ The request's `tools` are compared with the P3 catalog of this handle: the same 
 
 P4 sets `max_tokens` to the smaller of the request value and the profile's `max_output_tokens` (GW-2). If `thinking.budget_tokens` is in the request, it must be smaller than the resulting `max_tokens`, otherwise `input_schema_invalid`.
 
+## Structured output
+
+The allowlist lets `output_config.format` through: a JSON schema closed by the `result_schema` of the attempt's task type. The reference loop (D-93) does not send it. The list of JSON Schema keywords that the binding removes from this projection is filled from v0.2, when a runtime uses it (OUT-2). In every case the core checks the result against the type's full `result_schema` at `complete` (`output_schema_invalid`, OUT-1, OUT-2).
+
 ## Region
 
 The binding's list of regions from which `privacy.subprocessors[].region` of the `anthropic` provider record is taken:

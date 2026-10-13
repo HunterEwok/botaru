@@ -308,7 +308,7 @@ Who pays from which line:
 
 ### Priority class
 
-From v0.2 tasks with the purposes `insight`, `aggregate` and `review` run in the lowest priority class (5, `background`), and it cannot be raised (BUD-8). Together they take no more than `max_share` (20% by default) of the bot group's concurrent slots in the dispatcher policy. This way analysis and reviews do not take workers away from the main work, even when their lines have money.
+From v0.2 tasks with the purposes `insight`, `aggregate` and `review` run in the lowest priority class (5, `background`), and it cannot be raised (BUD-8). In a bot group that also does other work they together take no more than `Tenant.spec.dispatch.background_share` (20% by default) of the group's capacity: its `max_running`, or the number of its active workers, rounded down but at least one; a task above the share waits with `group_quota`. Tasks of `review.escalation.v1` (the `necessity` lens) go in class 3 and are outside the share, because an escalation waits for them (D-100). This way analysis and reviews do not take workers away from the main work, even when their lines have money.
 
 ### Thresholds and refusal
 
@@ -328,7 +328,7 @@ Usage does not go beyond the shown amount. An item that does not fit into the re
 
 Money is not the only expense. The registry `spec/model/meters.yaml` lists the consumable units: `eur_cents`, `tokens`, `tool_calls`, `sandbox_seconds`, `storage_bytes`, `approvals_requested`. Each unit is reserved before use and charged by actual use, just like money (BUD-5). A limit is set per unit and scope: tenant, principal, task tree, chat. The usage line carries the unit.
 
-The non-consumable limit `tasks_in_flight` caps the number of a principal's tasks in progress. Exceeding it is not a refusal: the task waits in `submitted` with a visible waiting reason, and the order of the principal's tasks is preserved (BUD-6). Defaults: 60 sandbox minutes a day and 3 tasks in progress per person.
+The non-consumable limit `Tenant.spec.budgets.tasks_in_flight` caps the direct requests of one person or program with a running attempt. Exceeding it is not a refusal: the request waits in `submitted` with `waiting_reason: in_flight_cap` (condition D21), and the person's waiting requests go out in enqueue order; tasks of `system`, campaign items, children and continuations do not count (BUD-6). Defaults: 60 sandbox minutes a day and 3 tasks in progress per person.
 
 ### Reconciliation with the provider
 

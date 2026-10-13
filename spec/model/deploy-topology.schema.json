@@ -352,6 +352,46 @@
           }
         }
       }
+    },
+    "ceilings": {
+      "type": "object",
+      "additionalProperties": false,
+      "x-botaru-version": "v0.2",
+      "description": "From v0.2: farm ceilings that tenant settings can only lower (ART-4, CAP-1, CAP-3, CNT-6, LCY-1). An absent field keeps the skeleton default.",
+      "properties": {
+        "max_file_bytes": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1099511627776,
+          "description": "Bytes of one file."
+        },
+        "max_task_files_bytes": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1099511627776,
+          "description": "Bytes of all files of one task."
+        },
+        "max_storage_bytes": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1099511627776,
+          "description": "Bytes of the files and artifacts of one tenant."
+        },
+        "delivery_per_minute": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 100000,
+          "description": "Deliveries per minute of a channel driver that declares no maxima (CAP-3)."
+        },
+        "await_timeout_max": {
+          "$ref": "urn:botaru:schema:common:1#/$defs/duration",
+          "description": "Longest await timeout of a task type, 7d by default (CNT-6)."
+        },
+        "export_window_max": {
+          "$ref": "urn:botaru:schema:common:1#/$defs/duration",
+          "description": "Longest export window of tenant.offboard, 30d by default (LCY-1)."
+        }
+      }
     }
   },
   "$defs": {

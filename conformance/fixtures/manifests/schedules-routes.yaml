@@ -34,6 +34,13 @@ cases:
         metadata: {name: fx-nodeadline, tenant: demo}
         spec: {cron: "0 8 * * *", task: {type: fx.nodeadline.v1}}
     expect: {error: schedule_deadline, also: [system_ops_missing]}
+  - name: schedule without a task and without a script
+    manifests:
+      - apiVersion: botaru/v1alpha1
+        kind: Schedule
+        metadata: {name: fx-empty, tenant: demo}
+        spec: {cron: "0 8 * * *"}
+    expect: {error: schedule_target}
   - name: schedule sets an action
     manifests:
       - apiVersion: botaru/v1alpha1

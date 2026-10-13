@@ -346,3 +346,28 @@ checks:
   spec:
     What the mock model does: a runtime script sends P4 a request with a built-in provider tool or with an `mcp_servers` field
     Expectation: the model gateway rejects the request
+- id: blackbox:model/conversation-serial
+  method: blackbox
+  rules:
+  - MEM-5
+  version: v0.2
+  section: Tests without a model
+  source: docs/quality.md:209
+  spec:
+    What the mock model does: (v0.2) `alice` sends two messages within one second in one conversation to an agent type without
+      `conversation_concurrency`; the same with a type declaring `parallel`
+    Expectation: 'the second task waits in `submitted` with `waiting_reason: conversation_busy` until the first attempt ends,
+      then runs, in enqueue order; with `parallel` both run at once'
+- id: blackbox:model/await-match
+  method: blackbox
+  rules:
+  - CNT-6
+  version: v0.2
+  section: Tests without a model
+  source: docs/quality.md:210
+  spec:
+    What the mock model does: (v0.2) a task of a type with `await` completes; an `ext.monitor.problem.v1` event on the matching
+      resource arrives; a second task of the type gets no event until its timeout; a `demo2` event with the same resource
+      name
+    Expectation: one `then` continuation with the key `system:cont:await:<task>`; one `on_timeout` continuation with the key
+      `system:cont:timer:<task>`; the `demo2` event matches nothing; no attempt waits

@@ -1,0 +1,78 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:botaru:schema:p2-dispatch-explain-response:1",
+  "title": "P2 dispatch.explain: response",
+  "description": "For each condition of dispatch-predicates.yaml the number of workers that pass it, and the place of the task in the dispatch order. Metadata only: no task body, goal or principal id (DSP-9).",
+  "x-botaru-direction": "output",
+  "x-botaru-version": "v0.2",
+  "x-botaru-rules": [
+    "DSP-9",
+    "DSP-7"
+  ],
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "task",
+    "conditions",
+    "place"
+  ],
+  "properties": {
+    "task": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/object_id"
+    },
+    "conditions": {
+      "type": "array",
+      "maxItems": 100,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "workers_pass"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "maxLength": 4,
+            "pattern": "^D[0-9]{1,3}$",
+            "description": "Condition id from dispatch-predicates.yaml."
+          },
+          "workers_pass": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 100000000
+          }
+        }
+      }
+    },
+    "place": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "class",
+        "ahead"
+      ],
+      "properties": {
+        "class": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 5,
+          "description": "Priority class (DSP-5)."
+        },
+        "ahead": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 100000000,
+          "description": "Waiting tasks of the tenant that go before it."
+        }
+      }
+    },
+    "waiting_reason": {
+      "type": "string",
+      "maxLength": 64,
+      "pattern": "^[a-z][a-z0-9_]*$",
+      "x-botaru-registry": "waiting-reasons",
+      "description": "Waiting reason from waiting-reasons.yaml, if the task waits."
+    }
+  }
+}

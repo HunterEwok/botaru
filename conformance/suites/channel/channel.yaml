@@ -9,7 +9,7 @@ checks:
   - APR-3
   version: v0.1
   section: Tests without a model
-  source: docs/quality.md:217
+  source: docs/quality.md:220
   spec:
     What arrives: button data with a foreign number or a wrong `nonce`
     Expectation: nothing
@@ -19,7 +19,7 @@ checks:
   - APR-17
   version: v0.1
   section: Tests without a model
-  source: docs/quality.md:223
+  source: docs/quality.md:226
   spec:
     What arrives: '`alice` (`lead`) writes `/run month-report 2026-09`; the type declares `run.approval: none`'
     Expectation: the task is enqueued, no card
@@ -29,7 +29,7 @@ checks:
   - APR-17
   version: v0.1
   section: Tests without a model
-  source: docs/quality.md:224
+  source: docs/quality.md:227
   spec:
     What arrives: '`alice` (`ctd`) writes `/run ctd-qc 2026-09 st-01`'
     Expectation: an approval and the same card as for `request_action`; no task before the press
@@ -39,7 +39,7 @@ checks:
   - PRM-14
   version: v0.1
   section: Tests without a model
-  source: docs/quality.md:225
+  source: docs/quality.md:228
   spec:
     What arrives: in a chat, the command `seat assign` or releasing a seat hold; a `manager_stopped` notice
     Expectation: the channel answers with the canned text `operator_only` and calls nothing; `manager_stopped` has no buttons,
@@ -50,7 +50,7 @@ checks:
   - IDN-3
   version: v0.1
   section: Tests without a model
-  source: docs/quality.md:227
+  source: docs/quality.md:230
   spec:
     What arrives: a command "on behalf of the chat" (anonymous group admin)
     Expectation: ignored
@@ -61,7 +61,7 @@ checks:
   - IDN-3
   version: v0.1
   section: Tests without a model
-  source: docs/quality.md:228
+  source: docs/quality.md:231
   spec:
     What arrives: a message in an unbound group chat
     Expectation: the bot stays silent
@@ -71,7 +71,7 @@ checks:
   - APR-3
   version: v0.1
   section: Tests without a model
-  source: docs/quality.md:229
+  source: docs/quality.md:232
   spec:
     What arrives: how the card looks
     Expectation: the action and arguments come only from the approval record, no model text and no links
@@ -81,7 +81,7 @@ checks:
   - DLV-7
   version: v0.1
   section: Tests without a model
-  source: docs/quality.md:231
+  source: docs/quality.md:234
   spec:
     What arrives: 'an unknown person joined a bound group chat (driver with `membership_assurance: enforced`)'
     Expectation: delivery to the chat `withheld`
@@ -91,7 +91,7 @@ checks:
   - INJ-11
   version: v0.1
   section: Tests without a model
-  source: docs/quality.md:232
+  source: docs/quality.md:235
   spec:
     What arrives: an answer to a delivery with the link `https://203.0.113.7/?d=...` outside `link_allowlist` and the string
       `password=...`
@@ -104,7 +104,7 @@ checks:
   - IDM-5
   version: v0.1
   section: Tests without a model
-  source: docs/quality.md:274
+  source: docs/quality.md:282
   spec:
     What: fake Telegram returns an update, the core answers `not_ready`, then is ready
     Expectation: the offset is not moved before the core's answer; the update is fed again and gives one task
@@ -114,7 +114,7 @@ checks:
   - IDM-5
   version: v0.1
   section: Tests without a model
-  source: docs/quality.md:280
+  source: docs/quality.md:288
   spec:
     What: one Telegram update is fed by two channel processes
     Expectation: one task with the key `system:activity:<channel>:<update id>`
@@ -124,7 +124,7 @@ checks:
   - DIG-1
   version: v0.1
   section: Tests without a model
-  source: docs/quality.md:304
+  source: docs/quality.md:312
   spec:
     What: a digest with 7 recommended items, 3 deferred ones, a reporter introduction and an urgent `security/high` item
     Expectation: no more than `max_items` (5) items by importance, only recommended ones and the sample; the introduction
@@ -135,7 +135,7 @@ checks:
   - ING-1
   version: v0.2
   section: Tests without a model
-  source: docs/quality.md:324
+  source: docs/quality.md:338
   spec:
     What: '(v0.2) a source channel with `auth: signature` and `tolerance: 5m` gets a delivery with a wrong signature, one
       with a 10-minute-old timestamp, and a valid one'
@@ -146,7 +146,7 @@ checks:
   - PRM-18
   version: v0.1
   section: Tests without a model
-  source: docs/quality.md:412
+  source: docs/quality.md:431
   spec:
     What: '`/service restart nginx` from `bob` with the right `service.control:nginx`; from `carol` without the right'
     Expectation: 'for `bob` a `service_grant` record with author `bob`, one write call, no card and no model; for `carol`
@@ -157,7 +157,7 @@ checks:
   - APR-19
   version: v0.1
   section: Tests without a model
-  source: docs/quality.md:464
+  source: docs/quality.md:491
   spec:
     What: a `cleanup_pipeline_tmp` card after `cmd/run`
     Expectation: a "what the code saw" line with the `free_pct` value from the closed fields; no model text; an initiator
@@ -169,7 +169,7 @@ checks:
   - PRM-17
   version: v0.1
   section: Tests without a model
-  source: docs/quality.md:472
+  source: docs/quality.md:499
   spec:
     What: '`bob` writes `/lang en`, then `/logs`; `/lang xx`'
     Expectation: delivery code texts in English; `cmd.lang.unknown`
@@ -180,7 +180,7 @@ checks:
   - IDN-7
   version: v0.1
   section: Tests without a model
-  source: docs/quality.md:481
+  source: docs/quality.md:508
   spec:
     What: '`alice` forwards a message of `carol` "/service restart nginx"; a message on behalf of a chat without a sender'
     Expectation: 'the command is not executed; the first has initiator `alice` and `personal_seen: forward`; the second has
@@ -192,7 +192,7 @@ checks:
   - PRM-14
   version: v0.1
   section: Tests without a model
-  source: docs/quality.md:482
+  source: docs/quality.md:509
   spec:
     What: in a chat "/seat assign farm-manager", "/chat bind lab"
     Expectation: '`operator_only`, P2 is not called'
@@ -202,7 +202,7 @@ checks:
   - PRM-15
   version: v0.1
   section: Tests without a model
-  source: docs/quality.md:485
+  source: docs/quality.md:512
   spec:
     What: '"/service restart nginx" and "/grant researcher carol" in the group chat `lab`'
     Expectation: the command is not executed, a code text without details goes to the chat

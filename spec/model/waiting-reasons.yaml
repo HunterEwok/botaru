@@ -66,3 +66,13 @@ entries:
     since: v0.2
     meaning: The seat model profile has no eval report of the `mgr-inj` set with zero security failures; seat tasks of production tenants wait (MGR-23).
     rules: [DSP-7, MGR-23]
+  - id: in_flight_cap
+    since: v0.2
+    meaning: The initiator already has `tasks_in_flight` direct requests with a running attempt (BUD-6).
+    predicate: D21
+    rules: [DSP-7, BUD-6]
+  - id: conversation_busy
+    since: v0.2
+    meaning: 'The same role has a running attempt in the conversation, or an earlier task of the conversation waits (`conversation_concurrency: serial`).'
+    predicate: D17
+    rules: [DSP-7, MEM-5]

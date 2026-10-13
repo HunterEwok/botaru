@@ -1,0 +1,66 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:botaru:schema:p2-dispatch-queue-response:1",
+  "title": "P2 dispatch.queue: response",
+  "description": "Counters by priority class and fairness key. Direct requests of people are one row of kind interactive without a key; no principal id, body or goal (DSP-9).",
+  "x-botaru-direction": "output",
+  "x-botaru-version": "v0.2",
+  "x-botaru-rules": [
+    "DSP-9"
+  ],
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "rows"
+  ],
+  "properties": {
+    "rows": {
+      "type": "array",
+      "maxItems": 1000,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "class",
+          "key_kind",
+          "waiting",
+          "running"
+        ],
+        "properties": {
+          "class": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 5,
+            "description": "Priority class (DSP-5)."
+          },
+          "key_kind": {
+            "enum": [
+              "interactive",
+              "campaign",
+              "root",
+              "route",
+              "schedule",
+              "script"
+            ],
+            "description": "Kind of the fairness key (DSP-2)."
+          },
+          "key": {
+            "type": "string",
+            "maxLength": 200,
+            "description": "The fairness key; absent for interactive."
+          },
+          "waiting": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 100000000
+          },
+          "running": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 100000000
+          }
+        }
+      }
+    }
+  }
+}

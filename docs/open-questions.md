@@ -36,7 +36,6 @@ This is what the skeleton deliberately leaves open. The first part concerns the 
 | Campaign queue limit `queue_max` without a value | An item waits in `pending` while the tenant queue is below `max_queued`, and gets no refusal (ORC-4). | The behavior of large campaigns under load. |
 | Decision deadline for a script `confirm` step | 30 minutes and no longer than the run deadline; silence gives `declined` (SCR-6). | How long a script waits for a person. |
 | How code learns that an action is named in the text of an assignment | A match of the action name or its `title` after simple normalization; there are no synonyms in the manifest. | How precisely the translator needs to name an action. |
-| Starting a script from git on a schedule | Since v0.2, only without steps with an action and below the tenant's thresholds. | Whether regular scripts can be automated. |
 | An assignment to the translator from an external program (principal `service`) | A script draft is possible, but nobody can start it, because only a person confirms a run. | Whether programs can order scripts. |
 
 ### Bots, commission and farm manager
@@ -61,9 +60,6 @@ This is what the skeleton deliberately leaves open. The first part concerns the 
 |---|---|---|
 | Which provider answers mean the workspace spend ceiling | The provider binding decides; the rules contain no response codes. | How the core tells an exhausted limit from provider overload. |
 | The provider's usage report after a restore from backup is not ready yet | The core waits for the report and does not become ready (RET-6). | How long the farm stands still after a restore. |
-| A return window after a person leaves | None: turning off with `/off` is already reversible, and leaving is final. | Whether a person's data can be returned after they leave. |
-| A separate retention class for usage summaries without people | No, usage is stored as `metadata`. | How long the usage history is kept. |
-| How many consecutive schedule slots must be lost before the schedule is paused | 3 slots (CAP-4). | How quickly the farm stops a broken schedule. |
 | How the monitoring system tells a planned core deployment from a failure | For the deployment a person sets a maintenance window on the farm nodes in the monitoring system (MON-2). | Whether there will be false alarms during a deployment. |
 | The period after which an unclosed erasure request gives an alarm | Set by the deployment binding. | How quickly people learn about a stuck erasure. |
 

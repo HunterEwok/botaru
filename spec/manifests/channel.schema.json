@@ -101,10 +101,22 @@
           "type": "integer",
           "minimum": 1,
           "maximum": 10000,
-          "description": "Deliveries per minute."
+          "description": "Deliveries per minute for the bot as a whole."
+        },
+        "per_chat_per_minute": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 10000,
+          "description": "Deliveries per minute to one direct chat."
+        },
+        "per_group_per_minute": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 10000,
+          "description": "Deliveries per minute to one group chat."
         }
       },
-      "description": "From v0.2: the delivery pace to the channel.",
+      "description": "From v0.2: the delivery pace to the channel; it can only lower the maxima of the driver sheet, and a driver without them gets the farm ceiling (CAP-3).",
       "x-botaru-version": "v0.2"
     },
     "ingress": {

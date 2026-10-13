@@ -229,6 +229,7 @@ The codes of `check_manifests.py` that fixtures refer to (`expect: {error: <code
 | `run_needs_approval_none` | run starts a type without run.approval: none | APR-17 |
 | `run_not_readonly` | type with run.approval: none is claimed by a role with actions or write tools | APR-17 |
 | `schedule_deadline` | schedule type has no timeouts.deadline |  |
+| `schedule_target` | schedule has neither or both of task and script | SCR-12, TIM-3 |
 | `schema_invalid` | manifest does not pass the schema of its kind | MAN-1 |
 | `self_approve_production` | production tenant with self_approve: true | APR-9 |
 | `service_no_card` | service no_card holds something other than restart | MON-8 |

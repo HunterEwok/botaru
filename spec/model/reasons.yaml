@@ -670,7 +670,8 @@ entries:
   rules: [HLD-7, MGR-7]
 - id: pause_action
   since: v0.1
-  meaning: 'Effect and stop reason of a maintenance window without `maintenance_hold`: waiting approvals are paused.'
+  meaning: 'Hold effect: new `request_action` calls are rejected, waiting approvals wait, and their expiry is extended by the length
+    of the hold. A maintenance window sets it with the reason `maintenance` (MON-9).'
   spends_attempt: null
   retry: null
   outcome: value
@@ -1372,3 +1373,41 @@ entries:
   retry: null
   outcome: error
   rules: [SEC-7]
+- id: file_too_large
+  since: v0.2
+  meaning: P1 `file.put` or P2 `kb.upload` above `max_file_bytes` or `max_task_files_bytes` of the tenant; no file record is written
+    and nothing is truncated.
+  spends_attempt: null
+  retry: null
+  outcome: rejected
+  rules: [ART-4]
+- id: media_type_not_allowed
+  since: v0.2
+  meaning: A result file whose content type, determined from the content, is not in the type's `result_media_types` or is an active
+    format; the file is not handed out, and the task outcome does not change.
+  spends_attempt: null
+  retry: null
+  outcome: mark
+  rules: [ART-5]
+- id: schedule_failing
+  since: v0.2
+  meaning: 'Stop reason of the auto-stop of a schedule: its last `K` slots in a row ended with `attempts_exhausted` or `runs_exhausted`
+    (`spec/model/holds.yaml`).'
+  spends_attempt: null
+  retry: null
+  outcome: value
+  rules: [CAP-4, HLD-2]
+- id: maintenance
+  since: v0.1
+  meaning: Stop reason of a hold set by a monitoring system maintenance window on a catalog host (MON-9).
+  spends_attempt: null
+  retry: null
+  outcome: value
+  rules: [MON-9, HLD-3]
+- id: export_window_open
+  since: v0.2
+  meaning: P2 `tenant.delete` before the end of the export window of `tenant.offboard`.
+  spends_attempt: null
+  retry: null
+  outcome: rejected
+  rules: [LCY-1]

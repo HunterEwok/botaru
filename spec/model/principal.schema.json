@@ -122,7 +122,7 @@
       ]
     },
     "state": {
-      "description": "Principal state by the LCY-3 lifecycle: active works, off is disabled by the /off command (reversible), offboarded has left for good through P2 principal.offboard (value since v0.2).",
+      "description": "Principal state by the LCY-3 lifecycle: active works, off is disabled by the /off command (reversible), offboarded has left for good through P2 principal.offboard (the core writes it from v0.1, D-98; it cannot be left).",
       "enum": [
         "active",
         "off",
@@ -159,6 +159,44 @@
         "$ref": "#/$defs/membership"
       },
       "maxItems": 64
+    },
+    "prefs": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "From v0.2: notification preferences of a person (DLV-10). They only defer deliveries of kinds marked deferrable in delivery-kinds.yaml or collect them into a digest. Set by the person with /prefs or by an admin with admin:people; the language is the field locale.",
+      "x-botaru-version": "v0.2",
+      "properties": {
+        "quiet_hours": {
+          "type": "object",
+          "additionalProperties": false,
+          "description": "Local time interval of the person's tenant time zone; from may be later than to (over midnight).",
+          "properties": {
+            "from": {
+              "type": "string",
+              "maxLength": 5,
+              "pattern": "^([01][0-9]|2[0-3]):[0-5][0-9]$",
+              "description": "Start, HH:MM."
+            },
+            "to": {
+              "type": "string",
+              "maxLength": 5,
+              "pattern": "^([01][0-9]|2[0-3]):[0-5][0-9]$",
+              "description": "End, HH:MM."
+            }
+          },
+          "required": [
+            "from",
+            "to"
+          ]
+        },
+        "digest": {
+          "enum": [
+            "off",
+            "daily"
+          ],
+          "description": "daily collects deferrable deliveries into one message a day."
+        }
+      }
     }
   }
 }

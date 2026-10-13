@@ -57,14 +57,14 @@ The line under a rule heading:
 | [REP](#rep) | Reporters | [docs/messaging.md](../docs/messaging.md) | 11 | 10 | 9 | 2 |
 | [RET](#ret) | Retention and deletion | [docs/operations.md](../docs/operations.md) | 8 | 7 | 8 | 0 |
 | [RT](#rt) | Agent runtime | [docs/architecture.md](../docs/architecture.md) | 5 | 5 | 5 | 0 |
-| [SCR](#scr) | Scripts | [docs/scripts-and-translator.md](../docs/scripts-and-translator.md) | 11 | 10 | 10 | 1 |
+| [SCR](#scr) | Scripts | [docs/scripts-and-translator.md](../docs/scripts-and-translator.md) | 12 | 10 | 10 | 2 |
 | [SEC](#sec) | Secrets | [docs/security-model.md](../docs/security-model.md) | 14 | 6 | 9 | 5 |
 | [SKL](#skl) | Skills | [docs/capabilities.md](../docs/capabilities.md) | 3 | 3 | 0 | 3 |
 | [STA](#sta) | Bot state | [docs/messaging.md](../docs/messaging.md) | 3 | 2 | 2 | 1 |
 | [TEN](#ten) | Tenants | [docs/architecture.md](../docs/architecture.md) | 8 | 8 | 8 | 0 |
 | [TIM](#tim) | Time and clocks | [docs/operations.md](../docs/operations.md) | 5 | 3 | 4 | 1 |
 | [TRN](#trn) | Translator | [docs/scripts-and-translator.md](../docs/scripts-and-translator.md) | 5 | 4 | 4 | 1 |
-| Total | | | 475 | 356 | 387 | 88 |
+| Total | | | 476 | 356 | 387 | 89 |
 
 Retired numbers (23) are listed in [retired.md](retired.md).
 
@@ -312,14 +312,18 @@ The `data_mark` of a produced file is not lower than the mark of the producing t
 
 since v0.2 · waivable · profile core · check: blackbox
 
-The size limits of one file and of all files of one task are set by the tenant's `Tenant.spec.limits` within the farm ceilings; the overall storage ceiling of the tenant's files and artifacts is set there too, by `max_storage_bytes` (CAP-1). Exceeding them gives a refusal with a reason from `reasons.yaml`, not silent truncation of the file.
+The size limits of one file (`max_file_bytes`) and of all files of one task (`max_task_files_bytes`) are set by `Tenant.spec.limits`; a tenant can only lower the farm ceilings from the deployment settings. A P1 `file.put` or P2 `kb.upload` above either limit gets `rejected(file_too_large)`: no file record is written and nothing is truncated. A write beyond `max_storage_bytes` gets `rejected(over_capacity)` (CAP-1).
+
+Checked by: `blackbox:core/file-size-limits`
 
 <a id="ART-5"></a>
 ### ART-5. Only declared content types are handed out
 
-since v0.2 · non-waivable · profile core · check: adapter
+since v0.2 · non-waivable · profile core · check: adapter, blackbox, lint
 
-People and sinks get only files with a content type from the task type's `result_media_types` list; the core determines the type from the content, not from the file name. Active formats (PDF from the sandbox, HTML, SVG with a script) are not handed out.
+People and sinks get only result files whose content type, which the core determines from the content and not from the name, is in the task type's `result_media_types`; another file is not handed out (`media_type_not_allowed`), and the task outcome does not change. Active formats are never handed out and cannot be declared: `text/html`, `application/xhtml+xml`, `image/svg+xml`, `application/pdf`, JavaScript and any `+xml` type; the `apply` lint rejects a type that lists one.
+
+Checked by: `blackbox:core/result-media-type`, `lint:manifests/result-media-active`
 
 <a id="ART-6"></a>
 ### ART-6. Declared personal data in the file record
@@ -470,7 +474,9 @@ Every metered unit from the registry `spec/model/meters.yaml` (`eur_cents`, `tok
 
 since v0.2 · waivable · profile core · check: blackbox
 
-Exceeding a principal's `tasks_in_flight` limit is not a refusal: the task waits in `submitted` with a visible waiting reason, and the order of tasks within the principal is kept.
+A principal of kind `human` or `service` has at most `Tenant.spec.budgets.tasks_in_flight` (default 3) of their direct requests with a running attempt. A further direct request is not refused: it waits in `submitted` with `waiting_reason: in_flight_cap` (dispatch condition D21), and the principal's waiting direct requests are handed out in enqueue order. Tasks of `system`, campaign items, children and continuations do not count.
+
+Checked by: `blackbox:core/in-flight-wait`
 
 <a id="BUD-7"></a>
 ### BUD-7. Budget lines by task purpose
@@ -484,9 +490,11 @@ Checked by: `store:budget/line-by-purpose`
 <a id="BUD-8"></a>
 ### BUD-8. The lowest priority class for analysis and reviews
 
-since v0.2 · waivable · profile core · check: fixture, store · decisions: D-16
+since v0.2 · waivable · profile core · check: fixture, store · decisions: D-16, D-100
 
-Tasks of the purposes `insight`, `aggregate` and `review` go in the lowest priority class of the dispatcher (5, `background`, DSP-5) regardless of the type's `dispatch.priority_class`, and it cannot be raised. Together they take no more than `max_share` (default 20%) of the concurrent slots of a bot group in the dispatcher policy.
+Tasks of the purposes `insight`, `aggregate` and `review` go in priority class 5 (`background`, DSP-5) whatever the type's `dispatch.priority_class` and the request say. One exception: tasks of `review.escalation.v1` (the review type of the `necessity` lens, `spec/model/lenses.yaml`) go in class 3 and are outside the share, because an escalation waits for them. In a bot group whose roles also claim types of other purposes, the class 5 tasks of these purposes together hold at most `Tenant.spec.dispatch.background_share` (default 20%) of the group's capacity: its `max_running`, or the number of its active workers when it has none, rounded down but at least one. A task above the share waits with `waiting_reason: group_quota`.
+
+Checked by: `dispatch/background-share`
 
 <a id="BUD-9"></a>
 ### BUD-9. Budget in micro-euros per call and in euro cents in limits
@@ -586,21 +594,25 @@ Checked by: `blackbox:gateway/dependency-down`
 
 since v0.2 · waivable · profile core · check: adapter, blackbox
 
-Deliveries keep to the rate declared by the channel driver (`rate` per chat, per group and per bot). Waiting for the rate is not a failure: the delivery stays `planned`, and no attempt is spent. A driver without `rate` gets the farm ceiling.
+The channel driver sheet declares its maxima, and `Channel.spec.rate` (`per_minute` for the bot, `per_chat_per_minute`, `per_group_per_minute`) can only lower them; a driver without them gets the farm ceiling from the deployment settings. The delivery loop keeps to the rate: a delivery that must wait stays `planned` without spending an attempt, and deliveries to one chat go out in order. A channel answer that the external system limited the rate (`retry_after_s`) puts that chat on pause for that time and does not spend a delivery attempt.
+
+Checked by: `blackbox:channel/delivery-rate`
 
 <a id="CAP-4"></a>
 ### CAP-4. Dead work and schedule pause
 
-since v0.2 · waivable · profile core · check: blackbox
+since v0.2 · waivable · profile core · check: blackbox · decisions: D-100
 
-`deadletter.list` groups dead work by (tenant, type, reason). A schedule whose `K` consecutive slots ended with `attempts_exhausted` (`K` is set by the auto-stop rule in `spec/model/holds.yaml`) is paused by auto-stop: the core sets a hold on the scope `schedule` with the effect `no_enqueue` and raises an alarm by code (HLD-2). `redrive` of a task whose body was deleted by expiry answers `gone` (RET-3).
+`deadletter.list` also returns groups by (tenant, type, reason) with a count and the first and last time. A schedule whose last `K` slots in a row ended with `attempts_exhausted` or `runs_exhausted` (`K` = 3, the `threshold` of the auto-stop entry in `spec/model/holds.yaml`) gets an auto-stop: a hold on scope `schedule` with effect `no_enqueue`, reason `schedule_failing`, author `contain_auto`, no `until`, and the alarm `alarm.hold.auto`; later slots are skipped with `held` (TIM-3). A tenant admin or the operator releases it (HLD-2). `redrive` of a task whose body was deleted by its period answers `gone` (RET-3).
+
+Checked by: `blackbox:core/dead-work-groups`, `blackbox:core/schedule-autostop`, `blackbox:core/redrive-expired-body`
 
 <a id="CAP-5"></a>
 ### CAP-5. Storage headroom
 
 since v0.1 · non-waivable · profile core · check: blackbox, fixture · decisions: D-36, D-60
 
-The core itself measures the free space of the store volume (C1) and keeps headroom for it. Below the soft threshold, enqueues of priority classes 3-5 get `rejected(over_capacity)`, the core raises the alarm `alarm.store.free.low` by code, and the free space figure is included in the P2 `health` response, which the monitoring system polls (MON-2), because a write to the store and the alarm export may already fail; the incident class "low database volume" relies on this alarm (MGR-38). Below the hard threshold, P1 answers `not_ready` to everything except `heartbeat`, `complete`, `fail` and `release`; P2 and hold operations work; P2 `health` answers "not alive". The thresholds are set by the deployment binding, and the storage headroom is not part of any tenant's `max_storage_bytes`. Fixture with a mock space measurement: the soft threshold gives a refusal to a class 4 task and an alarm, the hard one gives `not_ready` on `claim`, and `complete` passes.
+The core itself measures the free space of the store volume (C1) and keeps headroom for it. Below the soft threshold, enqueues of priority classes 3-5 get `rejected(over_capacity)`, and the free space figure is included in the P2 `health` response, which the monitoring system polls (MON-2), because a write to the store and the alarm export may already fail. Without profile `monitor` the core also raises the alarm `alarm.store.free.low` by code; with it the disk trigger of the farm template in the monitoring system raises it, and the core does not raise a second one. The incident class "low database volume" relies on this alarm (MGR-38). Below the hard threshold, P1 answers `not_ready` to everything except `heartbeat`, `complete`, `fail` and `release`; P2 and hold operations work; P2 `health` answers "not alive". The thresholds are set by the deployment binding, and the storage headroom is not part of any tenant's `max_storage_bytes`. Fixture with a mock space measurement: the soft threshold gives a refusal to a class 4 task and an alarm (without profile `monitor`), the hard one gives `not_ready` on `claim`, and `complete` passes.
 
 <a id="CAP-6"></a>
 ### CAP-6. Volume quotas
@@ -664,7 +676,9 @@ Checked by: `blackbox:channel/followup-window`
 
 since v0.2 · non-waivable · profile core · check: lint, blackbox · decisions: D-41
 
-Waiting for an event is declared only in the task type: `await: {event, match, timeout, then, on_timeout}`. The core creates a waiting record at `complete`; a matching event or a timeout enqueues a continuation (CNT-2). The values for the `match` comparison come only from result fields with `x-botaru-read-by: code` and closed fields of the event data (OUT-1). The timeout is required and no more than the farm ceiling, default 7 days.
+Waiting for an external event is declared only in the task type: `await: {event, match, timeout, then, on_timeout}`. `event` is an event type of the events catalog; `match` is 1-5 pairs (`event_field`, `result_field`) that must all be equal, where the result field has `x-botaru-read-by: code` and the event field is a closed field of the event data schema (OUT-1); `timeout` is required and no longer than the farm ceiling (7 days by default). The core writes a waiting record in the transaction of `complete`. The first event of the same tenant that matches enqueues the `then` continuation (trigger `await`); the timeout enqueues `on_timeout` (trigger `timer`), or without it ends the record with the event `await.expired`. Each waiting record gives at most one continuation (CNT-2).
+
+Checked by: `schemas/valid/manifests/task-type-await`, `schemas/invalid/manifests/task-type-await`, `lint:manifests/await-fields`, `blackbox:model/await-match`
 
 <a id="CNT-7"></a>
 ### CNT-7. An action task lives together with its write call
@@ -1042,7 +1056,9 @@ Checked by: `fixture:channel/locale-en`
 
 since v0.2 · non-waivable · profile core · check: blackbox · decisions: D-62
 
-A person's notification preferences (`Principal.prefs`: `locale`, `quiet_hours`, `digest`) can only defer a notification or collect notifications into a digest. They do not change the recipient or the class ceiling and do not delay task results or approval cards. The person sets the preferences with a channel command, or an admin does; the model and the task body do not set them. The farm does not deliver alarms to people: they get them from the monitoring system, which sets silencing and quiet hours for them (MON-1).
+A person's preferences (`Principal.prefs`: `quiet_hours`, `digest`) only defer a delivery of a kind marked `deferrable` in `spec/model/delivery-kinds.yaml`, or collect such deliveries into a digest. They do not change the recipient or the ceiling, and they never delay task results, approval cards, `ai_notice`, `privacy_notice` or `alarm_notice`. The person sets them with the channel command `/prefs`, or an admin with `admin:people` does; a model, a task result and a task body do not. With profile `monitor` people get alarms from the monitoring system, which sets their silencing and quiet hours (MON-1).
+
+Checked by: `blackbox:channel/prefs-quiet-hours`, `blackbox:channel/prefs-digest`, `blackbox:channel/prefs-alarm-not-deferred`
 
 <a id="DLV-11"></a>
 ### DLV-11. No streaming of model text
@@ -1115,9 +1131,9 @@ Checked by: `fx-dsp-09`
 <a id="DSP-2"></a>
 ### DSP-2. The claim decision is deterministic
 
-since v0.1 · non-waivable · profile core · check: fixture, lint · decisions: D-14
+since v0.1 · non-waivable · profile core · check: fixture, lint · decisions: D-14, D-98
 
-The `claim` decision is deterministic: it depends only on the conditions of the closed list `dispatch-predicates.yaml` and the ordering keys (priority class, fairness key, enqueue time, task id). The task body, messages, model output and the self-report `state` are not part of it; no model is called. Check: fixture `fx-dsp-08` submits the same store snapshot (tasks, workers, leases, holds, counters) and the same `claim` call twice and expects the same answer, and then changes only the task body, the worker's `state` record and the note of a message in the inbox, and expects the answer to be unchanged. Lint at `apply` checks that every condition referred to by the tenant policy `Tenant.spec.dispatch` is in the `dispatch-predicates.yaml` list of the version that the implementation declares (`conforms_to`).
+The `claim` decision is deterministic: it depends only on the conditions of the closed list `dispatch-predicates.yaml` and the ordering keys (priority class, fairness key from v0.2 by DSP-6, enqueue time, task id). The task body, messages, model output and the self-report `state` are not part of it; no model is called. The core writes `fairness_key` on every task from v0.1 (D-98) as `<kind>:<id>` from the task source: `campaign:<campaign>` for a campaign item, `root:<root task>` for any child, `route:<route>` for a route or wake-up task, `schedule:<schedule>`, `script:<run>` for a script step, `interactive:<principal>` for a person's or program's direct request; a continuation keeps the key of its source. Check: fixture `fx-dsp-08` submits the same store snapshot (tasks, workers, leases, holds, counters) and the same `claim` call twice and expects the same answer, and then changes only the task body, the worker's `state` record and the note of a message in the inbox, and expects the answer to be unchanged. Lint at `apply` checks that every condition referred to by the tenant policy `Tenant.spec.dispatch` is in the `dispatch-predicates.yaml` list of the version that the implementation declares (`conforms_to`).
 
 Checked by: `fx-dsp-08`
 
@@ -1151,9 +1167,9 @@ Checked by: `fx-dsp-02`
 <a id="DSP-6"></a>
 ### DSP-6. Fairness within a class
 
-since v0.2 · waivable · profile core · check: fixture · decisions: D-14
+since v0.2 · waivable · profile core · check: fixture · decisions: D-14, D-98
 
-Within one class, tasks with different fairness keys are handed out in turn with the weights `Tenant.spec.dispatch.fairness.weights`. The core writes the key (IDN-1) from the task's source: for a campaign item it is the campaign id, for a manager's child the id of the tree root, for a wake-up task the route name, for a schedule task the schedule name, for a person's direct request the initiating principal, for a script step the id of the script run. While the rule is not in effect, the order within a class is set by the enqueue time.
+Within one class, `claim` hands out the next task from the fairness key with the smallest number of running attempts divided by the weight of its kind in `Tenant.spec.dispatch.fairness.weights` (a kind without a weight has 1; a key of weight 0 gets work only when no key with a higher weight has a waiting task in the class); a tie goes to the key whose oldest waiting task was enqueued first, then to the smaller task id. The core writes the key from v0.1 (DSP-2, D-98). Until v0.2 the order within a class is the enqueue time.
 
 Checked by: `fx-dsp-03`
 
@@ -1180,7 +1196,9 @@ Checked by: `fx-dsp-11`
 
 since v0.2 · waivable · profile core · check: blackbox · decisions: D-14
 
-P2 `dispatch.explain` shows, for each condition of the closed list, how many workers pass it and what place the task has in the dispatch order, and P2 `dispatch.queue` gives counters by class and fairness key. Both operations only read and return only metadata.
+P2 `dispatch.explain` shows, for each condition of the closed list, how many workers pass it and what place the task has in the dispatch order, and P2 `dispatch.queue` gives counters by class and fairness key. Both operations only read and return only metadata. Direct requests of people are counted as one row of kind `interactive`; neither operation returns a task body, goal or principal id, keeps a history or raises an alarm.
+
+Checked by: `blackbox:core/dispatch-explain`
 
 <a id="DSP-10"></a>
 ### DSP-10. A personal assistant is a pool of workers with the owner in the lease
@@ -1833,9 +1851,9 @@ Checked by: `gov-fx-07`
 <a id="IDN-13"></a>
 ### IDN-13. Person offboarding and a chat list for admins
 
-since v0.1 · waivable · profile governance · check: blackbox, fixture
+since v0.1 · waivable · profile governance · check: blackbox, fixture · decisions: D-98
 
-When a person is disabled or removed for good (P2 `principal.off`, `principal.offboard`; a principal of kind `human` goes to `disabled`), the core in the same transaction sends the admins of their tenant with `admin:people` the code notice `principal_left` (only to their private chats, not to a group, text under the key `notice.principal_left`, REP-5): the principal id, the reason and the list of chats with a farm binding (`ChatBinding`) where this person remains a member according to the E1 channel's information that the core stores on the binding, with a marker on chats with `membership_assurance: enforced`. If the person has no chat with a farm binding, the notice goes anyway: the tenant administrator gets it, and instead of the chat list it says that there are no chats. There is no model text in the notice. In v0.1 the core only reports the list; full offboarding (leaving chats or asking the chat administrator to remove the person, removing delegated rights, handing over their tasks) arrives in v0.2.
+When a person is disabled or removed for good (P2 `principal.off`, `principal.offboard`), the principal goes to `off`, or with `principal.offboard` to `offboarded`, which no operation leaves: `principal.on` does not revive it (D-98, LCY-3). In the same transaction the core sends the admins of their tenant with `admin:people` the code notice `principal_left` (only to their private chats, not to a group, text under the key `notice.principal_left`, REP-5): the principal id, the reason and the list of chats with a farm binding (`ChatBinding`) where this person remains a member according to the E1 channel's information that the core stores on the binding, with a marker on chats with `membership_assurance: enforced`. If the person has no chat with a farm binding, the notice goes anyway: the tenant administrator gets it, and instead of the chat list it says that there are no chats. There is no model text in the notice. In v0.1 the core only reports the list; full offboarding (leaving chats or asking the chat administrator to remove the person, removing delegated rights, handing over their tasks) arrives in v0.2.
 
 Checked by: `idn-fx-13`
 
@@ -2134,35 +2152,45 @@ Explained in: [docs/operations.md](../docs/operations.md)
 
 since v0.2 · non-waivable · profile core · check: blackbox, store · decisions: D-42
 
-A tenant is declared in git (`tenants/<name>/tenant.yaml`) and appears at `farmctl apply`; tenant operations are operator operations (PRM-14). A tenant goes through the states `active`, `suspended`, `offboarding`, `deleted` under the lifecycle `spec/lifecycles/tenant.md`. `suspended` is a hold on the scope `tenant` with the reason `suspended` and the effects `no_enqueue`, `no_claim`, `no_tool`, `no_action`, `no_delivery` (HLD-1); data is not touched, and deliveries get `withheld`, except messages to admins about the hold itself (HLD-3). `offboarding` (P2 `tenant.offboard`) revokes the credentials of the tenant's workers and channels and the key and workspace at the provider (GW-3), and cancels pending approvals; only export is allowed. `deleted` (P2 `tenant.delete`, no earlier than the end of the export window, default 30 days) creates an erasure request with the scope `(tenant)` across all stores (RET-7); the tenant id stays as a tombstone and is not used again (RET-3), and `apply` of a tenant with that name is rejected.
+A tenant is declared in git (`tenants/<name>/tenant.yaml`) and appears at `farmctl apply`; tenant operations are operator operations (PRM-14). A tenant goes through the states `active`, `suspended`, `offboarding`, `deleted` under the lifecycle `spec/lifecycles/tenant.md`. `suspended` is a hold on the scope `tenant` with the reason `suspended` and the effects `no_enqueue`, `no_claim`, `no_tool`, `no_action`, `no_delivery` (HLD-1); data is not touched, and deliveries get `withheld`, except messages to admins about the hold itself (HLD-3). `offboarding` (P2 `tenant.offboard`) sets an operator hold on scope `tenant` with reason `offboarding` and the effects of `suspended`, revokes the credentials of the tenant's workers and channels and the key and workspace at the provider (GW-3), and cancels pending approvals; only export is allowed. `deleted` (P2 `tenant.delete`, no earlier than the end of the export window: `export_window` of the `tenant.offboard` request, default and ceiling 30 days; an earlier `tenant.delete` gets `export_window_open`) creates an erasure request with the scope `(tenant)` across all stores (RET-7); the tenant id stays as a tombstone and is not used again (RET-3), and `apply` of a tenant with that name is rejected.
+
+Checked by: `blackbox:core/tenant-suspend`, `blackbox:core/tenant-offboard-delete`
 
 <a id="LCY-2"></a>
 ### LCY-2. Tenant and principal export
 
 since v0.2 · waivable · profile core · check: blackbox
 
-Export of a tenant or principal is an operator P2 operation (`tenant.export`, `principal.export`, PRM-14) that enqueues a core task. The result is written only to the sink that the operator named for the export, in JSON Lines under the `spec/model` schemas with their `$id`, never to a chat and never to a model. A principal's export contains only the objects where they are the initiator and the objects that belong to them. A person requests a copy of their data with the command `/mydata export`, and a confirmed request enqueues the same principal export task (SEC-11). Declared objects are not exported: they are in git.
+Export of a tenant or principal is an operator P2 operation (`tenant.export`, `principal.export`, PRM-14) that enqueues a core task. The result is written only to the sink that the operator named for the export, in JSON Lines under the `spec/model` schemas with their `$id`, never to a chat and never to a model. A principal's export contains only the objects where they are the initiator and the objects that belong to them. A confirmed `/mydata export` request (SEC-11) enqueues the same principal export task to the sink named in `Tenant.spec.privacy.export_sink`, which must be an `export_only` sink (SEC-10). Declared objects are not exported: they are in git.
+
+Checked by: `blackbox:core/export-jsonl`, `blackbox:core/mydata-export`
 
 <a id="LCY-3"></a>
 ### LCY-3. Principal lifecycle
 
-since v0.2 · non-waivable · profile core · check: blackbox · decisions: D-47
+since v0.2 · non-waivable · profile core · check: blackbox · decisions: D-47, D-98, D-100
 
-A principal (a person or an external program) goes through the states `active`, `off`, `offboarded`. The transitions to `off` (`/off` by a tenant admin) and to `offboarded` (P2 `principal.offboard`) cancel in one transaction their pending approvals (APR-6) and the tasks with them as initiator (`canceled(person_inactive)`), and turn off the schedules they created. `offboarded` publishes the event `principal.offboarded`, deletes their `Identity` and creates an erasure request `(tenant, subject)` across all stores with their data (RET-7). Only the principal's opaque id remains in audit. A returning person gets a new principal, and the old permissions are not revived.
+A principal goes through `active`, `off`, `offboarded`. `/off` (a tenant admin) and P2 `principal.offboard` cancel in one transaction their pending approvals (APR-6) and their non-terminal tasks (`canceled(person_inactive)`). `offboarded` cannot be left (the core writes it from v0.1, IDN-13, D-98); from v0.2 it also publishes `principal.offboarded`, deletes their `Identity` and creates an erasure request `(tenant, subject)` across all stores with their data (RET-7); only the opaque principal id stays in audit. A returning person gets a new principal without the old groups; there is no return window (D-100).
+
+Checked by: `blackbox:core/principal-offboard`
 
 <a id="LCY-4"></a>
 ### LCY-4. Worker drain and removal
 
 since v0.2 · waivable · profile core · check: blackbox
 
-A worker in `draining` gets no new work, finishes the running work until `drain_deadline`, then releases it (`release`, no attempt is spent). At `revoke` of a worker with `session: runtime_internal` or `memory: runtime_internal`, its profile store is cleared through the adapter (RT-1, RT-2) by an erasure request (RET-7).
+A worker in `draining` gets no new work and finishes the running work until `drain_deadline`. P2 `worker.drain` carries the deadline; from it the heartbeat answer asks for release (`release_requested`), and a lease of a draining worker that expires after the deadline ends with `worker_drain` without spending an attempt. At `revoke` of a worker with `session: runtime_internal` or `memory: runtime_internal`, its profile store is cleared through the adapter (RT-1, RT-2) by an erasure request (RET-7).
+
+Checked by: `blackbox:core/worker-drain-deadline`, `blackbox:core/worker-revoke-runtime-purge`
 
 <a id="LCY-5"></a>
 ### LCY-5. Plugin update and deprecation
 
 since v0.2 · waivable · profile core · check: lint, blackbox
 
-A plugin is updated without `blocked`: for the duration of the transition the manifest lists the allowed pairs (image digest, `tools/list` fingerprint), and `hello` passes with either of them; after the transition the old pair is removed, and a toolhost with the old image gets `blocked`. The model sees the description from the manifest of the pair that the target's toolhost brought. A plugin with `deprecated: true` gives an `apply` warning; after `sunset`, `apply` does not accept roles that refer to it.
+A plugin is updated without `blocked`: during the transition `source.accepted` lists up to two pairs (image digest, `tools/list` fingerprint), both matching the manifest's `tools`, and `hello` passes with either; an `apply` that removes the old pair makes a toolhost with the old image `blocked`. The model always sees the tool descriptions of the manifest. Deprecation and sunset of a plugin follow MAN-7.
+
+Checked by: `blackbox:toolhost/plugin-pair-transition`
 
 <a id="LCY-6"></a>
 ### LCY-6. Core drain before rollout
@@ -2242,7 +2270,9 @@ since v0.1 · non-waivable · profile core · check: blackbox, store · decision
 
 since v0.2 · waivable · profile core · check: lint, blackbox · decisions: D-44
 
-A manifest can carry `deprecated: true` and `sunset: <date>`; `apply` warns about references to deprecated objects. Task type `.vN` is removed from the core only when it has no non-terminal tasks and no schedules or routes pointing to it; otherwise there is an error in the status (MAN-2). Changing the `apiVersion` of manifests goes through a converter in `farmctl` that turns the old wrapper into the new one without changing meaning, and the check "before and after give the same `apply --dry-run` plan".
+A manifest can carry `deprecated: true` and `sunset: <date>`; `apply` warns about references to a deprecated object, and after `sunset` rejects new and existing references to it. Task type `.vN` is removed only when it has no non-terminal tasks and no schedule or route points to it; otherwise the `apply` status shows an error and the type stays (MAN-2). When the manifest `apiVersion` changes (D-44), `farmctl` ships a converter whose output gives the same `apply --dry-run` plan; this part is checked from the release that changes `apiVersion`.
+
+Checked by: `lint:manifests/deprecated-sunset`, `blackbox:core/type-version-removal`
 
 <a id="MAN-8"></a>
 ### MAN-8. The implementation declares the skeleton version and profiles
@@ -2315,7 +2345,9 @@ Checked by: `mem-fx-03`
 
 since v0.2 · waivable · profile core · check: blackbox · decisions: D-41
 
-A task type with a session declares `conversation_concurrency: serial | parallel`; if `session` is not `none`, the default is `serial`. With `serial`, one role has no more than one attempt in progress in one conversation: the core does not hand out a task of this conversation on `claim` while the same role has an attempt running in it, and hands out the conversation's tasks in enqueue order (dispatcher condition D17). A clarification from a person is a new task in the same conversation, and it waits its turn (D-41).
+A task type of `worker_kind: agent` declares `conversation_concurrency: serial | parallel`, default `serial`. With `serial`, one role has no more than one attempt in progress in one conversation: the core does not hand out a task of this conversation on `claim` while the same role has an attempt running in it, and hands out the conversation's tasks in enqueue order (dispatcher condition D17); a task held back waits with `waiting_reason: conversation_busy`. A clarification from a person is a new task in the same conversation, and it waits its turn (D-41).
+
+Checked by: `blackbox:model/conversation-serial`
 
 <a id="MEM-6"></a>
 ### MEM-6. A fact with a closed schema
@@ -2778,9 +2810,9 @@ Checked by: `blackbox:model/service-monitor-trusted`, `blackbox:model/service-mo
 
 since v0.2 · waivable · profile monitor · check: adapter, blackbox · decisions: D-61, D-64, D-88
 
-A role whose manifest has `outputs: [monitor_note]` can return in a task result a note on a monitoring problem: the `eventid` of a problem on a node of its own tenant's catalog and a text of up to 1000 characters. The monitoring system is a third-party store read by the organization's people outside the tenant: it is named as a data recipient in the processing description (`recipients: monitoring`), the note's data class is no higher than `summary`, and the text passes the same redaction as outgoing data to third-party stores (INJ-4: ip, email, secret), the secret check as for an outgoing message (INJ-11; the INJ-12 leak check includes notes) and the tenant canary (TEN-5: the note text is part of the canary set). The core checks that the problem is on a node of this tenant and creates a delivery for E5; the adapter adds the note to the problem as a message marked `[botaru <bot_id>]`. A tenant gets no more than 10 notes per hour, extra ones are rejected with `service_rate_limited`. A note cannot acknowledge, close, change the severity of or silence a problem, and the farm account has no permissions for that (MON-4). Fixtures: the eleventh note in an hour is rejected; a note on a problem of a node of another tenant is rejected; a note delivery carries no acknowledgement attribute; a note with an email address and an IP goes out redacted; a note with data of a class above `summary` is rejected; the tenant canary in a note does not reach the mock monitoring system.
+A role whose manifest has `outputs: [monitor_note]` can return with a task result a note on a monitoring problem: the `eventid` of a problem on a node of its own tenant's catalog and a text of up to 1000 characters. The note goes in the optional `monitor_note` field of P1 `complete`, next to `result`; a refused note is dropped with its reason in the task journal and does not change the task outcome. The monitoring system is a third-party store read by the organization's people outside the tenant: with profile `monitor` it is named as a data recipient in the processing description (`recipients: monitoring`), the note's data class is no higher than `summary`, and the text passes the same redaction as outgoing data to third-party stores (INJ-4: ip, email, secret), the secret check as for an outgoing message (INJ-11; the INJ-12 leak check includes notes) and the tenant canary (TEN-5: the note text is part of the canary set). The core checks that the problem is on a node of this tenant and creates a delivery for E5; the adapter adds the note to the problem as a message marked `[botaru <bot_id>]`. A tenant gets no more than 10 notes per hour, extra ones are rejected with `service_rate_limited`. A note cannot acknowledge, close, change the severity of or silence a problem, and the farm account has no permissions for that (MON-4). Fixtures: the eleventh note in an hour is rejected and the task still succeeds; a note on a problem of a node of another tenant is rejected; a note delivery carries no acknowledgement attribute; a note with an email address and an IP goes out redacted; a note with data of a class above `summary` is rejected; the tenant canary in a note does not reach the mock monitoring system.
 
-Checked by: `blackbox:monitor/note-masking`
+Checked by: `blackbox:monitor/note-masking`, `blackbox:monitor/note-limits`
 
 <a id="MON-8"></a>
 ### MON-8. Service control
@@ -2794,11 +2826,11 @@ Checked by: `blackbox:core/service-stop-card`, `lint:manifests/service-no-card`,
 <a id="MON-9"></a>
 ### MON-9. Monitoring maintenance windows give a farm hold
 
-since v0.2 · waivable · profile monitor · check: adapter, blackbox · decisions: D-59, D-62, D-75, D-88
+since v0.2 · waivable · profile monitor · check: adapter, blackbox · decisions: D-59, D-62, D-75, D-88, D-100
 
-The monitoring adapter reads monitoring system maintenance windows for nodes that the tenant catalog linked to its resources (`Catalog.spec.hosts[].monitor_host`). The adapter passes the start and end of a window with the event `ext.monitor.maintenance.v1` through P1 `submit_activity` with identity `hook:monitor`. When the window starts, the core sets a hold of scope `host` or `resource` in the catalog's tenant with effects `no_tool` and `pause_action`, reason `maintenance`, author `contain_auto` (source `system:monitor`) and `until` at the end of the window; a node is linked to a resource of exactly one tenant (D-75, MON-5), so there is one hold. The window does not cancel waiting approvals: with `pause_action` new `request_action` calls are rejected, while waiting cards wait, and their expiry is extended by the length of the hold (HLD-3); people who set windows in the monitoring system are not farm principals and cannot cancel its approvals. A machine with `hosts[].maintenance_hold: true` in the catalog gets the effect `no_action` instead of `pause_action`: waiting approvals become `canceled(held)`. Extending the window gives a new hold until the new end. A tenant admin or an operator releases the code hold, otherwise it ends at `until`; deleting the window does not release the hold (HLD-2). Schedules whose tasks hit resources of the scope skip slots with reason `held`, without catch-up. A window on a node of the farm itself sets no holds. Fixtures: a 2-hour window on the mock monitoring system gives a hold with `until` at the end of the window; a tool call on this machine gets `denied(held)`; a schedule slot in the window is skipped with `held`; a card that was waiting before the window stays `pending` after the window, with its expiry extended by the window length; the same card on a machine with `maintenance_hold: true` becomes `canceled(held)`.
+The monitoring adapter reads monitoring system maintenance windows for nodes that the tenant catalog linked to its resources (`Catalog.spec.hosts[].monitor_host`). The adapter passes the start and end of a window with the event `ext.monitor.maintenance.v1` through P1 `submit_activity` with identity `hook:monitor`. When the window starts, the core sets a hold of scope `host` on the catalog host whose `monitor_host` is the node, with effects `no_tool` and `pause_action`, reason `maintenance`, author `contain_auto`, source `system:monitor` and `until` at the end of the window; a node is linked to a resource of exactly one tenant (D-75, MON-5), so there is one hold. `no_tool` also stops reading tools on that host, because people work on the machine during the window (D-100). The window does not cancel waiting approvals: with `pause_action` new `request_action` calls are rejected, while waiting cards wait, and their expiry is extended by the length of the hold (HLD-3); people who set windows in the monitoring system are not farm principals and cannot cancel its approvals. A machine with `hosts[].maintenance_hold: true` in the catalog gets the effect `no_action` instead of `pause_action`: waiting approvals become `canceled(held)`. Extending the window gives a new hold until the new end. The event of a window that ended or was deleted early changes no hold: a tenant admin or an operator releases the code hold, otherwise it ends at `until` (HLD-2). A slot of a schedule whose task scope holds a resource of that host is skipped with `schedule.skipped(held)`, without catch-up (TIM-3). A window on a node of the farm itself sets no holds. Fixtures: a 2-hour window on the mock monitoring system gives a hold with `until` at the end of the window; a tool call on this machine gets `denied(held)`; a schedule slot in the window is skipped with `held`; a card that was waiting before the window stays `pending` after the window, with its expiry extended by the window length; the same card on a machine with `maintenance_hold: true` becomes `canceled(held)`.
 
-Checked by: `blackbox:core/hold-pause-action`
+Checked by: `blackbox:core/hold-pause-action`, `blackbox:monitor/maintenance-hold`, `schemas/valid/ops/ext-monitor-maintenance`, `schemas/invalid/ops/ext-monitor-maintenance`
 
 <a id="MON-10"></a>
 ### MON-10. Monitoring system scripts
@@ -3280,18 +3312,18 @@ Explained in: [docs/tasks-and-delivery.md](../docs/tasks-and-delivery.md)
 <a id="OUT-1"></a>
 ### OUT-1. Result fields read by code are of closed kinds
 
-since v0.1 · non-waivable · profile core · check: lint · decisions: D-71, D-72, D-80
+since v0.1 · non-waivable · profile core · check: lint · decisions: D-71, D-72, D-80, D-98
 
-Result fields that code reads (route filters, continuations, waits, `summary_fields` summaries, card texts, the campaign summary table and script conditions) are marked in the type's result schema with `x-botaru-read-by: code` and have only closed INJ-1 leaf kinds. Code does not read or parse free model text. Lint rejects a reference of a route, continuation, wait, summary or script to an unmarked field. The model takes numbers in such fields only from a tool answer or from task data, and does not compute them itself: a type whose result carries numbers declares the source tool in `instruction` and in `summary_fields`, and the type's eval compares the result numbers with the tool answer (example `data.describe.v1`, D-72).
+Result fields that code reads (route filters, continuations, waits, `summary_fields` summaries, card texts, the campaign summary table and script conditions) are marked in the type's result schema with `x-botaru-read-by: code` and have only closed INJ-1 leaf kinds. Code does not read or parse free model text. Lint rejects a reference of a route, continuation, wait, summary or script to an unmarked field. The model takes numbers in such fields only from a tool answer or from task data, and does not compute them itself: a type whose result carries numbers declares the source tool in `instruction` and in `summary_fields`, and the type's eval compares the result numbers with the tool answer (example `data.describe.v1`, D-72). At `complete` the core checks the result against the type's full `result_schema`; a failure is `output_schema_invalid` and the attempt is spent (D-98).
 
 Checked by: `eval:data/describe-numbers-match`, `ctd-001`, `ctd-inj-01`
 
 <a id="OUT-2"></a>
 ### OUT-2. Provider constrained decoding is only a hint
 
-since v0.2 · waivable · profile core · check: blackbox
+since v0.2 · waivable · profile core · check: blackbox · decisions: D-98
 
-Constrained decoding by the model provider is only a hint. At `complete` the core checks the result against the type's full schema; if it fails: `output_schema_invalid`. The provider sheet lists the JSON Schema keywords that are removed from the schema projection for the provider.
+A provider binding that sends the result schema to the provider for constrained decoding lists in its sheet the JSON Schema keywords it removes from the projection; the projection is only a hint, and the core still checks the result against the type's full schema at `complete` (`output_schema_invalid`, OUT-1, from v0.1 by D-98).
 
 Checked by: `blackbox:model/output-schema`
 
@@ -4025,7 +4057,9 @@ Checked by: `blackbox:script/untrusted-flag`
 
 since v0.2 · waivable · profile campaign · check: blackbox · decisions: D-15
 
-A hold whose scope touches a running run (the tenant, the role or type of its steps, the initiator, a step campaign) moves the run to `paused` with reason `held` in the same transaction; while the hold is in effect, the core releases no steps of this run. Releasing the hold does not resume the run: only `resume` from the initiator resumes it. The run timeout keeps running during the pause, and at the timeout a paused run becomes `canceled`.
+A hold whose scope covers a running run (the tenant, the role, task type, host or resource of one of its steps, a step campaign) and whose effect forbids release or execution (`no_enqueue`, `no_claim`, `no_action`, `cancel_running`, as in ORC-11) moves the run to `paused` with reason `held` in the same transaction; while such a hold is in effect, the core releases no steps of the run, and `resume` gets `held`. Releasing the hold does not resume the run: only `resume` from the initiator does. The run deadline keeps running, and at the deadline a paused run becomes `canceled(deadline_exceeded)`.
+
+Checked by: `blackbox:script/hold-pauses-run`
 
 <a id="SCR-11"></a>
 ### SCR-11. Run transitions only by the table, cancellation cascades
@@ -4035,6 +4069,15 @@ since v0.1 · non-waivable · profile campaign · check: fixture, store, blackbo
 A run and its steps change state only by the transition table `spec/lifecycles/script.md`. A step is released when all steps from its `needs` are in a terminal state and `run_if` holds: `succeeded` requires all of them to be `ok`; `failed`, at least one to be `failed` or `unknown`; `always` releases on any outcome. A step with a false `when` or an unmet `run_if` becomes `skipped`. A step failure (`failed` or `unknown`) with `on_failure: stop` moves to `skipped` all unreleased steps except steps with `run_if: failed` or `always`, and the run ends `failed`; with `on_failure: continue` the failure affects only the steps that depend on it. A person's refusal or an expired decision deadline makes a step `declined`: dependent steps with `run_if: succeeded` become `skipped`, and the run does not count as failed. Cancellation of a run (the initiator's button, P2 `script.cancel` by the initiator or by a person with `admin:people`, cancellation of the anchor task, disabling of the initiator) in one transaction moves unreleased steps to `canceled`, cancels the waiting approvals of its steps and requests cancellation of the tasks and campaigns of released steps. After the run's terminal state the core releases no step.
 
 Checked by: `blackbox:script/transitions`
+
+<a id="SCR-12"></a>
+### SCR-12. A script from git on a schedule
+
+since v0.2 · waivable · profile campaign · check: lint, blackbox · decisions: D-99
+
+A `kind: Script` manifest reviewed in the tenant's git can be started by a schedule (`Schedule.spec.script`, an optional field from v0.2) without a person's button only if it needs no `script.run` (SCR-6): no `action` step, no `fanout` with an action, no `confirm` step and no step whose role has `service_control` or `monitor_scripts`; and it keeps within `Tenant.spec.scripts` (SCR-5). Otherwise `apply` rejects the schedule. The run has initiator `system`, fairness key `script:<run>` and the slot rules of TIM-3; its estimate is reserved at each slot as at a run approval (SCR-8), and a slot that does not fit is skipped. A hold on the schedule stops it (CAP-4), and a hold on the run pauses it (SCR-10).
+
+Checked by: `lint:manifests/schedule-script`, `blackbox:script/scheduled-run`
 
 <a id="sec"></a>
 ## SEC: Secrets
@@ -4342,9 +4385,11 @@ Checked by: `time/`
 <a id="TIM-5"></a>
 ### TIM-5. Schedule check before "Accept"
 
-since v0.2 · waivable · profile core · check: fixture · decisions: D-36, D-59
+since v0.2 · waivable · profile core · check: fixture · decisions: D-36, D-100
 
-Before the "Accept" button of a proposal that changes the `cron`, time zone or pause of a schedule, the core computes with code the slots of the new schedule a year ahead under TIM-3 and TIM-4 and shows on the card: local times that will disappear or repeat at time transitions; overlaps with slots of the tenant's other schedules whose tasks hit the same resources (the slot interval from its start to the type's `deadline`); overlaps with monitoring system maintenance windows (MON-9); overlaps with windows of changes that have a running change trial (`trial`, PRP-21), because a new change of the same subjects in such a window makes the trial outcome `mixed` (PRP-22). An expression or time zone that does not pass `apply` gets no "Accept" button. If for a schedule of a type with `makes_backup: true` a slot disappears on at least one day (for example at a time transition), the proposal gets the refusal `rejected(schedule_time_invalid)` and gets no "Accept" button. At the moment "Accept" is pressed the core repeats the check; if its result has changed, the decision is not accepted, the proposal stays waiting, and the card is updated with the new result. The model takes no part in this check.
+Before the "Accept" button of a proposal that changes the `cron`, time zone or pause of a schedule, the core computes with code the slots of the new schedule a year ahead under TIM-3 and TIM-4 and shows on the card: local times that will disappear or repeat at time transitions; overlaps with slots of the tenant's other schedules whose tasks hit the same resources (the slot interval from its start to the type's `deadline`); overlaps with windows of changes that have a running change trial (`trial`, PRP-21), because a new change of the same subjects in such a window makes the trial outcome `mixed` (PRP-22). Maintenance windows of the monitoring system are not computed ahead: a slot inside a window is skipped when it comes (MON-9, D-100). An expression or time zone that does not pass `apply` gets no "Accept" button. If for a schedule of a type with `makes_backup: true` a slot disappears on at least one day (for example at a time transition), the proposal gets the refusal `rejected(schedule_time_invalid)` and gets no "Accept" button. At the moment "Accept" is pressed the core repeats the check; if its result has changed, the decision is not accepted, the proposal stays waiting, and the card is updated with the new result. The model takes no part in this check.
+
+Checked by: `time/schedule-proposal-check`
 
 <a id="trn"></a>
 ## TRN: Translator

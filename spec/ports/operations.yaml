@@ -678,7 +678,7 @@ entries:
     response: done-response
     rules: [RET-7, MEM-4, LCY-3, PRM-14, IDN-13]
     profiles: [core, governance]
-    note: 'v0.1 by the rules MEM-4, RET-7, IDN-13 and PRM-14: disabling, an erasure request (tenant, subject), the principal_left notice. Parts of rule LCY-3 (version v0.2): the offboarded state, the principal.offboarded event and deletion of the Identity'
+    note: 'v0.1 by the rules MEM-4, RET-7, IDN-13 and PRM-14: the offboarded state (D-98), an erasure request (tenant, subject), the principal_left notice. Parts of rule LCY-3 (version v0.2): the principal.offboarded event and deletion of the Identity'
   - id: P2.restore.complete
     port: P2
     op: restore.complete
@@ -931,20 +931,18 @@ entries:
     port: P2
     op: dispatch.explain
     since: v0.2
-    request: null
-    response: null
+    request: p2-dispatch-explain-request
+    response: p2-dispatch-explain-response
     rules: [DSP-9]
     profiles: [core]
-    note: 'v0.2: the schemas will appear with v0.2'
   - id: P2.dispatch.queue
     port: P2
     op: dispatch.queue
     since: v0.2
-    request: null
-    response: null
+    request: p2-dispatch-queue-request
+    response: p2-dispatch-queue-response
     rules: [DSP-9]
     profiles: [core]
-    note: 'v0.2: the schemas will appear with v0.2'
   - id: P2.model_grant.list
     port: P2
     op: model_grant.list
@@ -1036,47 +1034,42 @@ entries:
     port: P2
     op: tenant.suspend
     since: v0.2
-    request: null
-    response: null
+    request: p2-tenant-lifecycle-request
+    response: done-response
     rules: [LCY-1]
     profiles: [core]
-    note: 'v0.2: the schemas will appear with v0.2'
   - id: P2.tenant.offboard
     port: P2
     op: tenant.offboard
     since: v0.2
-    request: null
-    response: null
+    request: p2-tenant-lifecycle-request
+    response: done-response
     rules: [LCY-1]
     profiles: [core]
-    note: 'v0.2: the schemas will appear with v0.2'
   - id: P2.tenant.delete
     port: P2
     op: tenant.delete
     since: v0.2
-    request: null
-    response: null
+    request: p2-tenant-lifecycle-request
+    response: done-response
     rules: [LCY-1, RET-3]
     profiles: [core]
-    note: 'v0.2: the schemas will appear with v0.2'
   - id: P2.tenant.export
     port: P2
     op: tenant.export
     since: v0.2
-    request: null
-    response: null
+    request: p2-export-request
+    response: done-response
     rules: [LCY-2, SEC-10]
     profiles: [core]
-    note: 'v0.2: the schemas will appear with v0.2'
   - id: P2.principal.export
     port: P2
     op: principal.export
     since: v0.2
-    request: null
-    response: null
+    request: p2-export-request
+    response: done-response
     rules: [LCY-2, SEC-10]
     profiles: [core]
-    note: 'v0.2: the schemas will appear with v0.2'
   - id: P2.msg.list
     port: P2
     op: msg.list

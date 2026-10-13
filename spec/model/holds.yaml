@@ -1,5 +1,5 @@
 registry: holds
-version: 2
+version: 3
 description: >-
   Closed lists of the stop (Hold): scopes, effects, auto-stop rules and ranks
   of authors. The kind field of an entry says which list it belongs to: scope
@@ -9,7 +9,8 @@ description: >-
   the service tenant farm, own is the tenant of its own scope, TEN-1). For an effect
   the checked_at field lists the check points. For an auto-stop the fields scope, effects,
   reason, author, until and alarm repeat the auto-stop table of docs/operations.md;
-  until null means without a deadline. For a rank the order field is the position from top to bottom (1 is the
+  until null means without a deadline; threshold, where present, is the count that triggers it.
+  In set_by, monitor_window is the code hold of a monitoring maintenance window (MON-9). For a rank the order field is the position from top to bottom (1 is the
   highest). A new auto-stop rule is added only by an architecture decision of the
   skeleton (ADR).
 source: docs/operations.md
@@ -75,7 +76,7 @@ entries:
     kind: scope
     since: v0.1
     meaning: a machine from the catalog
-    set_by: [operator, tenant_human]
+    set_by: [operator, tenant_human, monitor_window]
     record_tenant: own
     rules: [HLD-1, HLD-2]
   - id: resource
@@ -201,10 +202,13 @@ entries:
   - id: schedule_attempts_exhausted
     kind: autostop
     since: v0.2
-    meaning: the schedule produced K slots in a row with attempts_exhausted
+    meaning: the last K slots of the schedule in a row ended with attempts_exhausted or runs_exhausted (K = 3)
     scope: schedule
     effects: [no_enqueue]
+    reason: schedule_failing
     author: contain_auto
+    until: null
+    threshold: {slots: 3, outcomes: [attempts_exhausted, runs_exhausted]}
     alarm: alarm.hold.auto.v1
     rules: [CAP-4]
   # Ranks of authors at release, from top to bottom

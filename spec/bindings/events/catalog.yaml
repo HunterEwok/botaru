@@ -333,3 +333,13 @@ entries:
     data_schema: spec/model/proposal-rejected.schema.json
     producer: [core]
     rules: [PRP-1, PRP-2, PRP-3, PRP-5, PRP-11, PRP-21]
+  - id: await.expired.v1
+    since: v0.2
+    data_schema: spec/model/event-data/await-expired.schema.json
+    producer: [core]
+    rules: [CNT-6]
+  - id: principal.offboarded.v1
+    since: v0.2
+    data_schema: spec/model/event-data/principal-offboarded.schema.json
+    producer: [core]
+    rules: [LCY-3]

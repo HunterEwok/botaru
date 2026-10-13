@@ -54,6 +54,29 @@
     "erasure": {
       "description": "Outcome of work of kind erasure: a step of an erasure or match request at an edge store (RET-4, RET-7).",
       "$ref": "urn:botaru:schema:erasure-outcome:1"
+    },
+    "monitor_note": {
+      "description": "From v0.2: a bot note on a monitoring problem next to result (MON-7). The core checks it; a refused note is dropped with its reason in the task journal and does not change the task outcome.",
+      "x-botaru-version": "v0.2",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "eventid": {
+          "type": "string",
+          "maxLength": 20,
+          "pattern": "^[0-9]{1,20}$",
+          "description": "Id of the problem event in the monitoring system."
+        },
+        "text": {
+          "type": "string",
+          "maxLength": 1000,
+          "description": "Note text; untrusted, redacted before delivery (INJ-4, INJ-11)."
+        }
+      },
+      "required": [
+        "eventid",
+        "text"
+      ]
     }
   },
   "oneOf": [

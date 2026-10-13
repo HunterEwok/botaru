@@ -1,0 +1,34 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:botaru:schema:p2-tenant-lifecycle-request:1",
+  "title": "P2 tenant.suspend, offboard, delete: request",
+  "description": "The operator moves a tenant through its lifecycle (LCY-1, PRM-14). The op field matches the operation of the path.",
+  "x-botaru-direction": "input",
+  "x-botaru-version": "v0.2",
+  "x-botaru-rules": [
+    "LCY-1",
+    "PRM-14"
+  ],
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "op",
+    "tenant"
+  ],
+  "properties": {
+    "op": {
+      "enum": [
+        "tenant.suspend",
+        "tenant.offboard",
+        "tenant.delete"
+      ]
+    },
+    "tenant": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/tenant_name"
+    },
+    "export_window": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/duration",
+      "description": "Only with tenant.offboard: the export window, 30 days by default and at most; tenant.delete before its end gets export_window_open."
+    }
+  }
+}

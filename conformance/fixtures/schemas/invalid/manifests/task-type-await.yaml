@@ -1,0 +1,59 @@
+schema: spec/manifests/task-type.schema.json
+rules:
+- CNT-6
+description: 'TaskType specs whose `await` the schema rejects (v0.2): a timeout without a unit, a match pair without the
+  result field, a continuation without a type, more than five match pairs.'
+cases:
+- worker_kind: agent
+  purpose: work
+  tier: 0
+  data_class: summary
+  params_schema: {type: object, additionalProperties: false, properties: {}}
+  tree_budget_eur: 0.01
+  await:
+    event: ext.monitor.problem.v1
+    match:
+    - {event_field: eventid, result_field: problem_eventid}
+    timeout: 7 days
+    then: {type: ops.problem.recheck.v1}
+- worker_kind: agent
+  purpose: work
+  tier: 0
+  data_class: summary
+  params_schema: {type: object, additionalProperties: false, properties: {}}
+  tree_budget_eur: 0.01
+  await:
+    event: ext.monitor.problem.v1
+    match:
+    - {event_field: eventid}
+    timeout: 2h
+    then: {type: ops.problem.recheck.v1}
+- worker_kind: agent
+  purpose: work
+  tier: 0
+  data_class: summary
+  params_schema: {type: object, additionalProperties: false, properties: {}}
+  tree_budget_eur: 0.01
+  await:
+    event: ext.monitor.problem.v1
+    match:
+    - {event_field: eventid, result_field: problem_eventid}
+    timeout: 2h
+    then: {goal: Check the problem.}
+- worker_kind: agent
+  purpose: work
+  tier: 0
+  data_class: summary
+  params_schema: {type: object, additionalProperties: false, properties: {}}
+  tree_budget_eur: 0.01
+  await:
+    event: ext.monitor.problem.v1
+    match:
+    - {event_field: a, result_field: a}
+    - {event_field: b, result_field: b}
+    - {event_field: c, result_field: c}
+    - {event_field: d, result_field: d}
+    - {event_field: e, result_field: e}
+    - {event_field: f, result_field: f}
+    timeout: 2h
+    then: {type: ops.problem.recheck.v1}

@@ -185,7 +185,7 @@ Scopes and effects are closed lists in `spec/model/holds.yaml`. The scopes `sche
 | `worker` | one worker (quarantine) | the operator; a tenant person with `hold.set:<scope>`; the holder of the farm manager seat | v0.1 |
 | `plugin`, `action` | a plugin or an action in a tenant | the operator; a tenant person with `hold.set:<scope>` | v0.1 |
 | `channel` | a tenant channel | the operator; a tenant person with `hold.set:<scope>` | v0.1 |
-| `host` | a machine from the catalog | the operator; a tenant person with `hold.set:<scope>` | v0.1 |
+| `host` | a machine from the catalog | the operator; a tenant person with `hold.set:<scope>`; from v0.2 a monitoring maintenance window (MON-9) | v0.1 |
 | `resource` | a catalog resource | the operator; a tenant person with `hold.set:<scope>`; the holder of the farm manager seat | v0.1 |
 | `bot_group`, `bot` | a bot group or one bot | the operator; a tenant person with `hold.set:<scope>`; the holder of the farm manager seat | v0.1 |
 | `seat` | the farm manager seat | only an operator with `admin:farm` (kill switch, MGR-15); the seat safeguard by code (MGR-14) | v0.1 |
@@ -248,7 +248,7 @@ An auto-stop is a hold that code sets by a rule from a closed list. A new auto-s
 | the channel refused twice within an hour to send a message of one role because it found a secret in it (INJ-11) | a `role` hold in the tenant with `no_delivery`, without a deadline | HLD-6 | v0.1 |
 | the operation limits of the farm manager seat are exceeded | a `seat` hold with `no_control`, without a deadline | MGR-14 | v0.1 |
 | the tenant's spend within a sliding hour is above its hourly limit `Tenant.spec.budgets.hour_eur` (default `month_eur`/100, BUD-1) | a `role` hold with `no_claim` on every agent role of the tenant, reason `runaway_spend`, author `contain_auto`, deadline one hour; `job` tasks without a model run | HLD-7 | v0.1 |
-| a schedule gave `K` slots in a row with `attempts_exhausted` | a `schedule` hold with `no_enqueue` | CAP-4 | v0.2 |
+| the last `K` = 3 slots of a schedule in a row ended with `attempts_exhausted` or `runs_exhausted` (D-100) | a `schedule` hold with `no_enqueue`, reason `schedule_failing`, author `contain_auto`, without a deadline; later slots are skipped with `held` | CAP-4 | v0.2 |
 
 Every auto-stop raises the alarm `alarm.hold.auto`. An injection in text can trigger an auto-stop but cannot bypass it: this is a deliberate fail-safe refusal.
 
@@ -538,7 +538,7 @@ Daily tasks are better scheduled at a time outside the night window of clock cha
 
 ### Schedule check before "Accept"
 
-A bot can propose to change the `cron`, the time zone or the pause of a schedule. From v0.2, before the "Accept" button of such a proposal, the core computes with code the slots of the new schedule for a year ahead and shows on the card (TIM-5): local times that will disappear or repeat at clock changes; overlaps with slots of the tenant's other schedules whose tasks depend on the same resources; overlaps with maintenance windows of the monitoring system (MON-9); overlaps with the change windows of changes that have a running change trial (PRP-21), because a new change of the same subjects in such a window makes the trial outcome `mixed` (PRP-22). An expression or time zone that would fail `apply` gets no "Accept" button. If a slot of a backup schedule (a type with `makes_backup: true`) disappears on at least one day, for example at a clock change, the proposal gets the refusal `rejected(schedule_time_invalid)`. At the press of "Accept" itself the core repeats the check: if another schedule changed in the meantime and the outcome became different, the decision is not accepted, and the card is updated with the new outcome. The model takes no part in this check. How a proposal reaches the card and how its outcome is measured is described in `docs/improvements.md`.
+A bot can propose to change the `cron`, the time zone or the pause of a schedule. From v0.2, before the "Accept" button of such a proposal, the core computes with code the slots of the new schedule for a year ahead and shows on the card (TIM-5): local times that will disappear or repeat at clock changes; overlaps with slots of the tenant's other schedules whose tasks depend on the same resources; overlaps with the change windows of changes that have a running change trial (PRP-21), because a new change of the same subjects in such a window makes the trial outcome `mixed` (PRP-22). An expression or time zone that would fail `apply` gets no "Accept" button. If a slot of a backup schedule (a type with `makes_backup: true`) disappears on at least one day, for example at a clock change, the proposal gets the refusal `rejected(schedule_time_invalid)`. At the press of "Accept" itself the core repeats the check: if another schedule changed in the meantime and the outcome became different, the decision is not accepted, and the card is updated with the new outcome. The model takes no part in this check. Maintenance windows of the monitoring system are not computed a year ahead: that would rebuild the monitoring system's own window scheduler, and a slot inside a window is skipped when it comes (MON-9, D-100). How a proposal reaches the card and how its outcome is measured is described in `docs/improvements.md`.
 
 ## Tenant lifecycle
 
@@ -552,13 +552,13 @@ Export of a tenant or a person (P2 `tenant.export`, `principal.export`, v0.2) is
 
 ### A person leaving
 
-A principal (a person or an external program, D-47) goes through the states `active`, `off`, `offboarded` (LCY-3). An admin's `/off` deletes nothing and is reversible: in one transaction the person's pending approvals (APR-6) and tasks (`canceled(person_inactive)`) are canceled, and the schedules they created are disabled. Leaving for good (P2 `principal.offboard`: an admin with `admin:people` for people without privileged groups, an operator through `farmctl` for people with them, PRM-14) does the same and additionally deletes the person's memory and sessions through an erasure request (MEM-4, RET-7). From v0.2 leaving publishes the event `principal.offboarded` and deletes the person's `Identity`, after which only an opaque id remains in the audit. In core records (task, audit, usage, grants, campaign, erasure) the person is recorded by this principal id `human:p_<ULID>` even before leaving, so the records are not rewritten after leaving: the audit keeps the same id, and the name is deleted from the principal record (D-85). A person who returns gets a new principal, and the old rights do not come back.
+A principal (a person or an external program, D-47) goes through the states `active`, `off`, `offboarded` (LCY-3). An admin's `/off` deletes nothing and is reversible: in one transaction the person's pending approvals (APR-6) and tasks (`canceled(person_inactive)`) are canceled. Schedules have no creator in their record, so they stay; the tenant admins decide on them. Leaving for good (P2 `principal.offboard`: an admin with `admin:people` for people without privileged groups, an operator through `farmctl` for people with them, PRM-14) does the same, writes the state `offboarded`, which no operation leaves (D-98), and additionally deletes the person's memory and sessions through an erasure request (MEM-4, RET-7). From v0.2 leaving publishes the event `principal.offboarded` and deletes the person's `Identity`, after which only an opaque id remains in the audit. In core records (task, audit, usage, grants, campaign, erasure) the person is recorded by this principal id `human:p_<ULID>` even before leaving, so the records are not rewritten after leaving: the audit keeps the same id, and the name is deleted from the principal record (D-85). A person who returns gets a new principal, and the old rights do not come back; there is no return window (D-100).
 
 ## Workers and plugins
 
 ### Worker drain and revocation
 
-A worker in `draining` (P2 `worker.drain`) gets no new work, finishes the running work until `drain_deadline`, then lets it go through `release`, and the attempt is not spent (LCY-4). The work version is pinned at the task type level (`.vN`), not at the worker: attempts are short, a retry can go to a new image, so the image must understand all `.vN` from the `claims` of its role. At the revocation (P2 `worker.revoke`) of a worker whose runtime keeps sessions or memory itself, the store of its profile is cleaned through the adapter by an erasure request with reason `worker_revoke` and the scope of the worker id (RET-7).
+A worker in `draining` (P2 `worker.drain` with a `deadline`) gets no new work and finishes the running work until `drain_deadline`. From the deadline the heartbeat answer asks for release (`release_requested`), the worker lets the work go through `release`, and the attempt is not spent; a lease of a draining worker that expires after the deadline ends with `worker_drain` without spending an attempt either (LCY-4). The work version is pinned at the task type level (`.vN`), not at the worker: attempts are short, a retry can go to a new image, so the image must understand all `.vN` from the `claims` of its role. At the revocation (P2 `worker.revoke`) of a worker whose runtime keeps sessions or memory itself, the store of its profile is cleaned through the adapter by an erasure request with reason `worker_revoke` and the scope of the worker id (RET-7).
 
 ### Worker port version window
 
@@ -566,14 +566,15 @@ The core accepts the current and the previous major version of P1 (LCY-7). A wor
 
 ### Plugin update
 
-From v0.2 a plugin is updated without the toolhost moving to `blocked` (LCY-5). During the transition the plugin manifest lists the allowed pairs (image digest, `tools/list` fingerprint), and `hello` passes with any of them; after the transition the old pair is removed, and a toolhost with the old image gets `blocked`. The model sees the description from the manifest of the pair that the target's toolhost brought. A plugin with `deprecated: true` gives an `apply` warning, and after the `sunset` date `apply` does not accept roles that refer to it.
+From v0.2 a plugin is updated without the toolhost moving to `blocked` (LCY-5). During the transition `source.accepted` in the plugin manifest lists up to two pairs (image digest, `tools/list` fingerprint), both matching the manifest's `tools`, and `hello` passes with either; an `apply` that removes the old pair makes a toolhost with the old image `blocked`. The model always sees the tool descriptions of the manifest. Deprecation and sunset of a plugin follow the general manifest rule (MAN-7).
 
 ```yaml
 # tools/logs/tool.yaml (fragment)
-image:
+source:
+  image: registry.example/tools/logs@sha256:<digest>
   accepted:
-    - {digest: "sha256:aaa...", tools_fingerprint: "sha256:111..."}   # current pair
-    - {digest: "sha256:bbb...", tools_fingerprint: "sha256:222..."}   # new one, for the transition
+    - {image: "registry.example/tools/logs@sha256:<digest>", tools_fingerprint: "sha256:<digest>"}   # current pair
+    - {image: "registry.example/tools/logs@sha256:<digest>", tools_fingerprint: "sha256:<digest>"}   # new one, for the transition
 ```
 
 ## Rolling out a new core version
@@ -701,8 +702,6 @@ The improvement cycle, the farm manager, messages between bots, reporters, campa
 ## What is not decided
 
 - The default retention periods (`content` 30 days, `metadata` 400 days, memory until `forget`) apply until the organization decides on personal data (D-12); the skeleton needs only the fields and checks.
-- The return window after a person leaves: by default there is none; `/off` is already reversible and deletes nothing.
-- Whether a separate retention class is needed for spend aggregates without people over years: by default no, spend lives as `metadata`; the decision comes together with the payment model.
 
 <!-- generated: rules -->
 ## Rules of this section

@@ -1,0 +1,49 @@
+schema: spec/manifests/task-type.schema.json
+rules:
+- CNT-6
+description: 'A TaskType spec with `await` (v0.2): after a restart the type waits up to 2 hours for a monitoring problem
+  event on the same catalog resource, then a continuation checks the problem; on the timeout another continuation reports.'
+cases:
+- title: Restart and wait for the problem to close
+  worker_kind: agent
+  purpose: work
+  tier: 1
+  data_class: summary
+  instruction: 'Restart the service named in the task if the problem allows it, and return the catalog resource.
+
+    '
+  params_schema:
+    type: object
+    additionalProperties: false
+    properties: {}
+  result_schema:
+    type: object
+    additionalProperties: false
+    required:
+    - resource
+    properties:
+      resource:
+        type: string
+        x-botaru-format: id
+        x-botaru-read-by: code
+  dispatch:
+    priority_class: 3
+  timeouts:
+    start_by: 5m
+    lease: 60s
+    heartbeat: 20s
+    attempt: 5m
+    deadline: 30m
+  retry:
+    max_attempts: 1
+    max_runs: 2
+  tree_budget_eur: 0.05
+  max_children: 0
+  goal_trust: untrusted
+  await:
+    event: ext.monitor.problem.v1
+    match:
+    - {event_field: resource, result_field: resource}
+    timeout: 2h
+    then: {type: ops.problem.recheck.v1, goal: Check whether the problem closed after the restart.}
+    on_timeout: {type: ops.problem.report.v1, goal: The problem did not change within 2 hours; report to the initiator.}

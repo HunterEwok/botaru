@@ -9,7 +9,7 @@ checks:
   - CNT-2
   version: v0.1
   section: Tests without a model
-  source: docs/quality.md:270
+  source: docs/quality.md:278
   spec:
     What: a child `enqueue_child` ends `completed`, the trigger is fed twice; then the same with a canceled tree
     Expectation: one continuation task with the key `system:cont:reply:<child>` in the same transaction as the child's transition;
@@ -20,7 +20,7 @@ checks:
   - DLV-2
   version: v0.1
   section: Tests without a model
-  source: docs/quality.md:272
+  source: docs/quality.md:280
   spec:
     What: a store failure between the `completed` write and the delivery write
     Expectation: after recovery there is either everything (transition, event, delivery, usage, continuation) or nothing
@@ -30,7 +30,7 @@ checks:
   - IDM-1
   version: v0.1
   section: Tests without a model
-  source: docs/quality.md:277
+  source: docs/quality.md:285
   spec:
     What: 'a repeat `enqueue` with the same key: the same body and initiator; a different body; the key of a deleted task;
       a key after `rejected(over_capacity)`'
@@ -41,7 +41,7 @@ checks:
   - IDM-4
   version: v0.1
   section: Tests without a model
-  source: docs/quality.md:279
+  source: docs/quality.md:287
   spec:
     What: a `job` worker sends `emit` with the `source` and `id` fields of a real alarm; `emit` of a type outside `events`
     Expectation: schema refusal; `type_not_allowed`; the real alarm is not dropped as a duplicate
@@ -51,7 +51,7 @@ checks:
   - RET-3
   version: v0.1
   section: Tests without a model
-  source: docs/quality.md:455
+  source: docs/quality.md:474
   spec:
     What: delete a task and repeat its key; `apply` of a tenant with the name of a deleted one
     Expectation: '`gone`, a tombstone without content and without the hash of the external id; `apply` rejected'

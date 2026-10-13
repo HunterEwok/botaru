@@ -9,7 +9,7 @@ checks:
   - MGR-13
   version: v0.1
   section: Tests without a model
-  source: docs/quality.md:380
+  source: docs/quality.md:397
   spec:
     What: '`control.apply` with a failure while writing the message to people'
     Expectation: 'no operation, no audit, no `control.applied`: everything in one transaction'

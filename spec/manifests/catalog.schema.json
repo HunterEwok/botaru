@@ -147,7 +147,7 @@
           },
           "maintenance_hold": {
             "type": "boolean",
-            "description": "From v0.2: a maintenance window of the node gives a farm hold on the machine (MON-9).",
+            "description": "From v0.2: every maintenance window of the node gives a farm hold on the machine with no_tool and pause_action (MON-9); true switches pause_action to no_action, so pending approvals become canceled(held).",
             "x-botaru-version": "v0.2"
           }
         },

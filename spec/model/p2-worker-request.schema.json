@@ -7,7 +7,8 @@
   "x-botaru-rules": [
     "HLD-2",
     "IDN-4",
-    "DEP-2"
+    "DEP-2",
+    "LCY-4"
   ],
   "type": "object",
   "required": [
@@ -25,6 +26,11 @@
     },
     "worker": {
       "$ref": "urn:botaru:schema:common:1#/$defs/object_id"
+    },
+    "deadline": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/datetime",
+      "description": "From v0.2, only with worker.drain: the drain deadline; from it the heartbeat answer asks for release (LCY-4).",
+      "x-botaru-version": "v0.2"
     }
   },
   "additionalProperties": false

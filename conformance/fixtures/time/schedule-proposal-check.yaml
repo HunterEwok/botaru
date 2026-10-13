@@ -1,0 +1,119 @@
+id: fx-time-schedule-proposal-check
+rules: [TIM-5, TIM-3, TIM-4]
+version: v0.2
+description: 'Before the "Accept" button of a proposal that changes the `cron`, the time zone or the pause of a schedule,
+  code computes the slots of the new schedule for one year from the card time (TIM-3, TIM-4) and the card shows: local
+  times that disappear or repeat at clock changes; overlaps with slots of the tenant''s other schedules whose tasks hit
+  the same resources (a slot lasts from its start to the type''s `deadline`); overlaps with the windows of running change
+  trials on the same subjects. An expression or time zone that fails `apply` gives no "Accept" button. A schedule of a
+  type with `makes_backup: true` that loses a slot on at least one day gets `rejected(schedule_time_invalid)` and no
+  button. At the press code repeats the check; a changed result does not accept the decision, the proposal stays
+  waiting and the card is updated. The model takes no part.'
+given:
+  tenant: demo
+  at: '2026-10-13T09:00:00Z'
+  schedules:
+  - name: sensor-nightly
+    cron: 15 6 * * *
+    timezone: Europe/Berlin
+    task: {type: data.sensor_check.v1}
+cases:
+- id: tim-fx-20
+  rules: [TIM-5, TIM-3]
+  description: 'The cron changes to 30 2 * * * in Europe/Berlin. 02:30 repeats on 2026-10-25 (it runs once, at the first
+    occurrence) and does not exist on 2027-03-28. The card shows both dates and has the "Accept" button.'
+  given:
+    proposal:
+      target: {kind: Schedule, name: sensor-nightly}
+      change: {cron: 30 2 * * *}
+  expect:
+    card:
+      times_disappear: ['2027-03-28 02:30 Europe/Berlin']
+      times_repeat: ['2026-10-25 02:30 Europe/Berlin']
+      accept_button: true
+    model_calls: 0
+- id: tim-fx-21
+  rules: [TIM-5]
+  description: The same change for a schedule of a type with makes_backup true is refused; the card has no "Accept" button.
+  given:
+    tasktypes:
+    - {name: data.sensor_check.v1, makes_backup: true}
+    proposal:
+      target: {kind: Schedule, name: sensor-nightly}
+      change: {cron: 30 2 * * *}
+  expect:
+    result: rejected
+    reason: schedule_time_invalid
+    card:
+      accept_button: false
+- id: tim-fx-22
+  rules: [TIM-5]
+  description: 'The new slot overlaps a slot of the schedule db-backup whose task hits the same resource db1: db-backup
+    starts at 02:00 and its type has a deadline of 1h, the new slot at 02:30 hits db1. The card lists the overlap.'
+  given:
+    schedules_add:
+    - name: db-backup
+      cron: 0 2 * * *
+      timezone: Europe/Berlin
+      task: {type: ops.backup.db.v1, params: {resource: db1}}
+    tasktypes:
+    - {name: ops.backup.db.v1, timeouts: {deadline: 1h}}
+    proposal:
+      target: {kind: Schedule, name: sensor-nightly}
+      change: {cron: 30 2 * * *, task: {type: data.sensor_check.v1, params: {resource: db1}}}
+  expect:
+    card:
+      overlaps_schedules: [{schedule: db-backup, resource: db1}]
+      accept_button: true
+- id: tim-fx-23
+  rules: [TIM-5]
+  description: 'A change trial runs for the schedule sensor-nightly (an accepted proposal 5 days ago, window 14 days). The
+    card warns that a new change of the same subject inside the window makes the trial outcome mixed.'
+  given:
+    trials:
+    - {subjects: [schedule/sensor-nightly], state: running, window_ends: '2026-10-22T09:00:00Z'}
+    proposal:
+      target: {kind: Schedule, name: sensor-nightly}
+      change: {cron: 45 6 * * *}
+  expect:
+    card:
+      overlaps_trials: [{subject: schedule/sensor-nightly, window_ends: '2026-10-22T09:00:00Z'}]
+      accept_button: true
+- id: tim-fx-24
+  rules: [TIM-5, TIM-4]
+  description: A time zone outside the IANA database and a cron with CRON_TZ give a card without the "Accept" button.
+  cases:
+  - given:
+      proposal:
+        target: {kind: Schedule, name: sensor-nightly}
+        change: {timezone: Mars/Olympus}
+    expect:
+      card: {accept_button: false}
+  - given:
+      proposal:
+        target: {kind: Schedule, name: sensor-nightly}
+        change: {cron: CRON_TZ=UTC 30 2 * * *}
+    expect:
+      card: {accept_button: false}
+- id: tim-fx-25
+  rules: [TIM-5]
+  description: 'Between the card and the press, apply adds the schedule db-backup that overlaps the new slot. At the press
+    code repeats the check: the decision is not accepted, the proposal stays waiting, and the card is updated with the
+    overlap.'
+  given:
+    proposal:
+      target: {kind: Schedule, name: sensor-nightly}
+      change: {cron: 30 2 * * *, task: {type: data.sensor_check.v1, params: {resource: db1}}}
+    applied_after_card:
+      schedules_add:
+      - name: db-backup
+        cron: 0 2 * * *
+        timezone: Europe/Berlin
+        task: {type: ops.backup.db.v1, params: {resource: db1}}
+    press: accept
+  expect:
+    outcome: not_accepted
+    proposal: {state: presented}
+    deliveries: [{kind: card_update}]
+    card:
+      overlaps_schedules: [{schedule: db-backup, resource: db1}]

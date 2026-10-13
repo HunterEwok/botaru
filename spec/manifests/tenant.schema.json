@@ -309,6 +309,13 @@
             }
           },
           "description": "Budget lines by type purposes (BUD-7)."
+        },
+        "tasks_in_flight": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 100,
+          "description": "From v0.2: direct requests of one human or service principal with a running attempt at the same time; 3 by default. A further request waits with in_flight_cap (BUD-6).",
+          "x-botaru-version": "v0.2"
         }
       },
       "required": [
@@ -518,6 +525,11 @@
           "minimum": 1,
           "maximum": 90,
           "description": "Deadline for answering a person's request, 30 days by default."
+        },
+        "export_sink": {
+          "$ref": "urn:botaru:schema:common:1#/$defs/name",
+          "description": "From v0.2: the sink of a confirmed /mydata export; it must be an export_only sink (SEC-10, LCY-2).",
+          "x-botaru-version": "v0.2"
         }
       },
       "description": "Privacy block of the tenant (SEC-8); the fields are described in docs/privacy.md."
@@ -660,10 +672,23 @@
                   "minimum": 0,
                   "maximum": 100,
                   "description": "Fairness key weight."
+                },
+                "script": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 100,
+                  "description": "Fairness key weight."
                 }
               }
             }
           },
+          "x-botaru-version": "v0.2"
+        },
+        "background_share": {
+          "type": "string",
+          "maxLength": 4,
+          "pattern": "^[1-9][0-9]?%$|^100%$",
+          "description": "From v0.2: the share of a bot group's capacity that class 5 tasks of the purposes insight, aggregate and review hold together, 20% by default (BUD-8).",
           "x-botaru-version": "v0.2"
         },
         "rules": {
@@ -692,7 +717,8 @@
                       "campaign",
                       "root",
                       "route",
-                      "schedule"
+                      "schedule",
+                      "script"
                     ],
                     "description": "Kind of the task source."
                   }

@@ -9,7 +9,7 @@ checks:
   - SCR-11
   version: v0.1
   section: Tests without a model
-  source: docs/quality.md:336
+  source: docs/quality.md:350
   spec:
     What: run and step transitions by the table of `spec/lifecycles/script.md`, including `on_failure` and run cancelation
     Expectation: allowed transitions pass, the others are rejected
@@ -19,7 +19,7 @@ checks:
   - SCR-7
   version: v0.1
   section: Tests without a model
-  source: docs/quality.md:338
+  source: docs/quality.md:352
   spec:
     What: a `fanout` item outside the list frozen at run approval
     Expectation: not released
@@ -29,8 +29,34 @@ checks:
   - SCR-9
   version: v0.1
   section: Tests without a model
-  source: docs/quality.md:339
+  source: docs/quality.md:353
   spec:
     What: a step takes a field of an agent step with `untrusted_seen` through `items.from`, the condition stands before an
       action
     Expectation: the flag is on the step, the flag source is on the approval card
+- id: blackbox:script/hold-pauses-run
+  method: blackbox
+  rules:
+  - SCR-10
+  version: v0.2
+  section: Tests without a model
+  source: docs/quality.md:362
+  spec:
+    What: (v0.2) a `tasktype` hold with `no_enqueue` on the type of step 3 while step 2 runs; release of the hold; `resume`
+      by the initiator under another active hold; the run deadline passes during the pause
+    Expectation: the run is `paused` with `held` in the same transaction and step 3 is not released; the release does not
+      resume the run; `resume` under a hold gets `held`; at the deadline the run is `canceled`
+- id: blackbox:script/scheduled-run
+  method: blackbox
+  rules:
+  - CAP-4
+  - SCR-12
+  - TIM-3
+  version: v0.1
+  section: Tests without a model
+  source: docs/quality.md:364
+  spec:
+    What: (v0.2) the accepted script schedule reaches two slots; a hold of scope `schedule` before the second slot; a slot
+      whose estimate does not fit the tenant budget
+    Expectation: each slot starts a run with initiator `system` and fairness key `script:<run>` without a card; the held slot
+      is skipped with `held`; the slot that does not fit is skipped and no run starts
