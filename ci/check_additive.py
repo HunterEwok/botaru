@@ -26,7 +26,8 @@ spec/model/*.yaml with their state at the branch point from the base branch
   definition that not or if reaches through $ref (in any file, by $id) changed,
   or one that a oneOf branch reaches changed and the branches (with $ref
   followed) are not provably disjoint now; minContains 0 was removed while
-  contains stays (absent means 1); contains changed while maxContains stays;
+  contains stays (absent means 1); contains, or a definition it reaches
+  through $ref, changed while maxContains stays;
 - allOf got a new item (a new constraint), prefixItems got an item narrower
   than the old items (or unevaluatedItems) at its position (absent accepts
   anything, false accepted nothing) or lost an item wider than what now
@@ -462,6 +463,20 @@ def negated(s, path=''):
             yield from negated(x, f'{path}/{i}')
 
 
+def counted(s, path=''):
+    """(path, subschema) of every contains value limited by maxContains in a schema."""
+    if isinstance(s, dict):
+        for k, v in s.items():
+            if k in LITERALS:
+                continue
+            if k == 'contains' and 'maxContains' in s:
+                yield f'{path}/{k}', v
+            yield from counted(v, f'{path}/{escape(k)}')
+    elif isinstance(s, list):
+        for i, x in enumerate(s):
+            yield from counted(x, f'{path}/{i}')
+
+
 olds_by_id, news_by_id = by_id(olds), by_id(news)
 
 
@@ -528,6 +543,12 @@ for rp, old in olds.items():
             if changed(a, b):
                 rep.error(f'{target}#{frag}', f'[keyword_changed] the definition changed, and {rp}#{where} reaches it '
                           'through $ref under not or if: any change there can narrow the outer schema')
+    # under maxContains a widened contains counts more items toward the maximum: a definition it reaches is frozen
+    for where, sub in counted(old):
+        for target, frag, a, b in reached(rp, sub):
+            if changed(a, b):
+                rep.error(f'{target}#{frag}', f'[keyword_changed] the definition changed, and {rp}#{where} reaches it '
+                          'through $ref under contains with maxContains: more items may count toward the maximum')
     # a widened definition behind a oneOf branch can make an old value match two branches; after such a change
     # the branches (with $ref followed) must be provably disjoint, even if the proof could not separate them before
     for where, branches, holder in oneofs(old):
