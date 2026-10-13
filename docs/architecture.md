@@ -53,7 +53,7 @@ Work is pulled: a worker makes a long-polling `claim` itself, a toolhost contact
 | E1 Channel | Input from people and deliveries to them | edge | v0.1 (v0.1 operations only) | no | Telegram |
 | E2 Sink | Writing artifacts to external storage; `match` and `erase` for erasure | edge | v0.2 (the reference with `match` and `erase` since v0.1) | yes | disk |
 | E3 ToolHost | Running MCP plugins on a machine or in a sandbox; starting, stopping and restarting catalog services with the OS mechanism `unit` | edge | v0.1 | no | toolhost |
-| E4 AgentRuntime | The model loop inside an agent | edge | v0.1 | no | not chosen |
+| E4 AgentRuntime | The model loop inside an agent | edge | v0.1 | no | own loop in Go (D-93) |
 | E5 Monitor | Export of farm alarms and the signed audit head to the external monitoring system, the farm nodes and template in it; input of its problems and running its scripts on catalog nodes through the catalog's closed vocabulary | edge | v0.1 (v0.1 operations only) | no | the organization's monitoring system (reference binding in the E5 sheet); a user of its own per adapter process |
 
 The sheets P4, E3, E4 and E5 are part of v0.1 because v0.1 rules rest on them: the circuit breaker and the single retry layer of the model gateway, plugin placement by secrets and network, the RT replacement rules of the runtime, alarms to people only through the monitoring system, and the external check that the core is alive (MON-1, MON-2). The sheets for people and channels (P2, E1) are also in v0.1, but only with the operations of their version; operations of later versions enter a sheet as a minor version of the sheet. A "thin" port (C3, C4, E2) is one page, one reference adapter and a minimal set of checks; a thin port without a second implementation by the release after v0.2 is folded into the prose of the core sheet (D-46, D-80).
@@ -192,7 +192,7 @@ The threat model, plugin placement, deployment rules and people's data are descr
 
 ## Repository layout
 
-The `botaru` repository is licensed under the GNU AGPL version 3 (AGPL-3.0-only, D-83). It contains executable code only in `ci/`: linters for schemas, links, "additive only", manifest rules and public safety. There is no code of the core, `farmctl` or the black-box runner in the skeleton: an implementation writes them. An implementation is started as a new private repository, not as a copy through a fork.
+The `botaru` repository is licensed under the GNU AGPL version 3 (AGPL-3.0-only, D-83). Its executable code is in `ci/` (linters for schemas, links, "additive only", manifest rules and public safety) and in `impl/`, where the reference implementation in Go writes the core, `farmctl` and the black-box runner (D-91, D-92); it does not change skeleton files.
 
 ```
 botaru/
@@ -260,7 +260,8 @@ botaru/
 ├── evals/                         eval case format, cases, test bench data, thresholds
 ├── deploy/compose.example.yaml    topology: what runs on which machine, not runnable
 ├── deploy/monitor/                farm nodes and template and the account role for the monitoring system
-└── ci/                            the only executable code
+├── ci/                            the skeleton checks
+└── impl/                          the reference implementation in Go (D-92)
 ```
 
 This document and the other texts of the skeleton are written in words and tables. The machine forms (JSON Schema in `spec/model/` and `spec/manifests/`, the closed registries `spec/model/*.yaml`, the bindings in `spec/bindings/`, the lifecycle YAML next to the files `spec/lifecycles/<object>.md`, the registry `conformance/requirements.yaml`, the fixtures and suites in `conformance/`) live next to the text and are maintained as the single source of their facts.
@@ -300,8 +301,8 @@ The table below is the list of future ADRs: none of them is written as a file in
 | Script and translator | accepted | a closed plan of existing types and actions, run only by the initiator's button | D-15 |
 | A farm manager across tenants | accepted | `farm` holds only the seat registry and the holder's identity; the records and work of the seat are in the tenants; one attempt sees one tenant; references only by id and epoch (TEN-1, MGR-3, MGR-24) | D-30, D-33 |
 | Bot identity and governance | accepted | an identity grants no permissions; a human assigns a seat; votes in v0.2 | D-19, D-21, D-33 |
-| Agent runtime | proposed | which runtime is the reference; decided after the checks of a candidate runtime from the list in `spec/ports/e4-agent-runtime.md` | in the skeleton text, without a separate entry |
-| Implementation language | proposed | the language of the reference implementation and the runner | in the skeleton text, without a separate entry |
+| Agent runtime | accepted | the reference implementation runs its own loop over P4 without a ready-made agent; the E4 port stays open to other runtimes | D-93 |
+| Implementation language | accepted | the reference implementation and the runner are written in Go in `impl/`; ports keep other components free to use any language | D-91, D-92 |
 
 An ADR is needed for a decision that changes a port or a contract: an operation or a guarantee of a port sheet, a wire schema, a lifecycle state, a closed list that permissions depend on (D-86 (13)). An ordinary new rule that changes no port and no contract is recorded as a registry row that refers to a decision D-NN. In addition, these need an ADR: a new auto-stop rule, a new message genus, a new dispatcher condition, a new kind or predicate of a fact, a new role profile, a new manifest kind that affects permissions (MAN-4). If an extension requires changing the core, the skeleton lacks a port: that is also a reason for an ADR, not for a workaround.
 
@@ -324,9 +325,7 @@ An ADR is needed for a decision that changes a port or a contract: an operation 
 
 ## What is not decided
 
-- **Agent runtime.** No reference is chosen; port E4 with the closed list of deviations and the RT rules absorbs the choice. The "proposed" decision waits for the checks of a candidate runtime from the list in `spec/ports/e4-agent-runtime.md`.
-- **Implementation language.** There is no code in the skeleton except `ci/`; the contracts are written in JSON Schema and OpenAPI, and the runner is a black box at the core's address.
-- **Organization decisions** (hosting, the OS of the production server, who reviews the repository history before it is opened) are not part of the skeleton; the skeleton leaves bindings and `deploy/compose.example.yaml` for them.
+- **Organization decisions** (hosting, the OS of the production server) are not part of the skeleton; the skeleton leaves bindings and `deploy/compose.example.yaml` for them.
 
 <!-- generated: rules -->
 ## Rules of this section

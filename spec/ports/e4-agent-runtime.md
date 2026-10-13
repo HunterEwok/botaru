@@ -4,7 +4,7 @@ Sheet version: 0.1.0.
 
 ## In short
 
-E4 describes the model loop inside a worker of kind `agent`. An agent has two parts. The E4 adapter holds the worker token, does `claim` and `heartbeat` and gives the runtime only the task body, the trusted instruction and the handles. The runtime runs the model loop: it takes tools only from P3, goes to the model only through P4 and has neither the worker token nor the provider key. No runtime is chosen for the reference; any candidate connects through this port. Where the runtime differs from the farm model (where the session is, where the memory is, what the model handle is issued for, how the catalog is built), it declares from a closed list, and each deviation turns on its own non-waivable substitute RT rule.
+E4 describes the model loop inside a worker of kind `agent`. An agent has two parts. The E4 adapter holds the worker token, does `claim` and `heartbeat` and gives the runtime only the task body, the trusted instruction and the handles. The runtime runs the model loop: it takes tools only from P3, goes to the model only through P4 and has neither the worker token nor the provider key. The reference runtime is our own loop in Go over P4 (D-93); any other runtime connects through this same port. Where the runtime differs from the farm model (where the session is, where the memory is, what the model handle is issued for, how the catalog is built), it declares from a closed list, and each deviation turns on its own non-waivable substitute RT rule.
 
 ## Who calls and who implements
 
@@ -69,7 +69,7 @@ Every implementation must (MUST):
 
 - `spec/model/run-request.schema.json`, `run-outcome.schema.json`, `runtime-deviations.yaml`, `e4-describe-response.schema.json`, `e4-cancel-request.schema.json`; the map `spec/ports/operations.yaml` (rows `E4.*`).
 - The `conformance/suites/runtime` suite with a mock model behind P4 and the `erasure` suite for runtimes with `runtime_internal` (`match` finds the subject's canary, `purge` by id removes it); then a full eval next to the current runtime. The adapter's expected failures may hold only rules with `waivable: true`.
-- The runtime ADR (status "proposed") with checks of the candidate runtime: does the runtime work with a read-only config; does approval of memory records work; can a model handle be passed for each attempt; does the runtime read `tools/list` on each attempt; how can the adapter learn the list of the runtime's enabled tools.
+- The reference runtime is our own loop in Go over P4 (D-93). Any other runtime gets an ADR with checks of the candidate: does the runtime work with a read-only config; does approval of memory records work; can a model handle be passed for each attempt; does the runtime read `tools/list` on each attempt; how can the adapter learn the list of the runtime's enabled tools.
 
 ## What the port does not do
 

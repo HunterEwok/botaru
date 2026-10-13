@@ -1,7 +1,7 @@
 # Code owners: a PR that changes the checks, the workflow, the license, the vulnerability
 # reporting address, the normative specification, the rule registry or the decisions requires
-# owner review. Works together with the main branch protection: the required check
-# skeleton, required code owner review and the required merge queue
+# owner review. Works together with the main branch protection: the required checks
+# skeleton and go, required code owner review and the required merge queue
 # (merge queue), see ci/README.md, section "Protecting the main branch".
 # The code owner on every line is the account of the skeleton owner.
 /LICENSE                          @HunterEwok

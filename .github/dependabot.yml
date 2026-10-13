@@ -3,9 +3,10 @@
 #
 # Enabled: GitHub Actions (actions are pinned to a commit SHA, Dependabot
 # updates the SHA and the version comment) and pip for the skeleton checks in ci/
-# (requirements.txt with hashes). The skeleton has no container images:
-# deploy/compose.example.yaml is an example, not a launch file.
-# The skeleton does not choose an implementation language. The schedule time zone is UTC.
+# (requirements.txt with hashes), and gomod for the Go implementation in impl/ (D-91, D-92;
+# its tools staticcheck and govulncheck are tool dependencies there). The skeleton has no
+# container images: deploy/compose.example.yaml is an example, not a launch file.
+# The schedule time zone is UTC.
 version: 2
 
 updates:
@@ -27,4 +28,14 @@ updates:
       timezone: "UTC"
     groups:
       ci-python:
+        patterns: ["*"]
+
+  - package-ecosystem: "gomod"
+    directory: "/impl"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      timezone: "UTC"
+    groups:
+      go:
         patterns: ["*"]
