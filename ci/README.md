@@ -96,7 +96,7 @@ The owner sets the list as follows:
 - in GitHub: Settings > Secrets and variables > Actions > New repository secret, name `BOTARU_FORBIDDEN`, value the text of the list; the workflow passes it to the check step;
 - locally: `BOTARU_FORBIDDEN_FILE=/path/outside/the/repository/forbidden-words.txt python3 -I ci/run_all.py`.
 
-Without a list, a local run gives a note. In CI on push to `main` and in the merge queue it is the error `[forbidden_missing]`; a PR from a fork gets no secrets, so there it is a note. This is why the merge queue is required (section "Protecting the main branch"): without it, words from a fork PR are checked only after the merge, that is, already in the public `main`.
+Without a list, a local run gives a note. In CI on push to `main` and in the merge queue it is the error `[forbidden_missing]`. A pull request never gets the secret, from a fork or from a branch of this repository, because its run executes PR code nobody has reviewed yet and that code could print the list; there the missing list is a note. This is why the merge queue is required (section "Protecting the main branch"): without it, the words of a PR are checked only after the merge, that is, already in the public `main`.
 
 ## Protecting the main branch
 
@@ -104,7 +104,7 @@ The owner enables, in Settings > Rules (or Settings > Branches) for the `main` b
 
 - the required check `skeleton` (workflow `.github/workflows/skeleton.yml`);
 - required code owner review: `.github/CODEOWNERS` requires owner review on `LICENSE`, `SECURITY.md`, `spec/`, `conformance/requirements.yaml`, `conformance/rules.md`, `docs/decisions.md`, `ci/` and `.github/`;
-- the required merge queue. The workflow runs on the `merge_group` event, and there the `BOTARU_FORBIDDEN` secret is present: forbidden words, the checks and additive-only changes are checked on the final commit before it reaches `main`. Without the queue a fork PR is merged on a green check in which forbidden words were not checked.
+- the required merge queue. The workflow runs on the `merge_group` event, and there the `BOTARU_FORBIDDEN` secret is present: forbidden words, the checks and additive-only changes are checked on the final commit before it reaches `main`. Without the queue a PR is merged on a green check in which forbidden words were not checked.
 
 ## Before opening the repository
 
@@ -112,7 +112,7 @@ The owner's to-do list in GitHub; only the owner can do these, and all of it bef
 
 1. Enable Private Vulnerability Reporting (Settings > Code security > Private vulnerability reporting): `SECURITY.md` refers to it.
 2. Set the `BOTARU_FORBIDDEN` secret with the forbidden word list (section "Forbidden words").
-3. Protect `main` with the required check `skeleton`, code owner review and the merge queue (section "Protecting the main branch"); without the merge queue, forbidden words from a fork PR are checked only in the public `main`.
+3. Protect `main` with the required check `skeleton`, code owner review and the merge queue (section "Protecting the main branch"); without the merge queue, the forbidden words of a PR are checked only in the public `main`.
 4. Connect a CLA bot (for example CLA Assistant) to the repository with the text of `CLA.md` and make its check required for `main`: an external PR is merged only after the contribution agreement is signed (D-89). Before that, a lawyer reviews the text of `CLA.md`.
 5. Review the whole commit history, not only the latest state (`docs/quality.md`).
 

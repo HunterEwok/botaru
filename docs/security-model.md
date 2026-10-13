@@ -631,7 +631,7 @@ The skeleton repository may become public, so it has no secrets and no ties to a
 | CI check `public-safety` | secret search; the organization's list of forbidden words is kept outside the repository or as hashes; in `examples/` and `conformance/` only `demo` and `example.org` |
 | Canaries in fixtures | visibly fake, for example `CANARY-NOT-A-SECRET-...`: an external secret search does not take them for keys, and our own search finds them |
 | History | before opening, the whole commit history is reviewed, not only the latest state |
-| Workflows | only the `pull_request` event: secrets are not passed to forks, and the CI token gets read-only permissions; `pull_request_target` with a checkout of the PR code is not used; `permissions: contents: read`; the skeleton CI has no secrets |
+| Workflows | the events `pull_request`, `push` to `main` and `merge_group`; the CI token gets read-only permissions (`permissions: contents: read`); `pull_request_target` with a checkout of the PR code is not used; the only secret, the forbidden word list, is given only to `merge_group` and `push`, never to a `pull_request` run |
 | Executable code | only in `ci/`: linters of schemas, of references to rule numbers, of manifest rules and `public-safety` |
 | Implementation | is started as a new private repository, not a fork: when the skeleton repository is opened, the commits of private forks become visible to everyone |
 

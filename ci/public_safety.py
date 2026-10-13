@@ -146,21 +146,15 @@ def owner_spans(rp, text):
 
 # ---------------------------------------------------------------- forbidden words
 def forbidden_missing():
-    """No list: a note locally and in a PR from a fork (no secrets there), otherwise an error in CI."""
+    """No list: a note locally and in a pull request (the workflow does not give the secret to PR code), otherwise
+    an error in CI."""
     msg = ('[forbidden_missing] no forbidden word list: set BOTARU_FORBIDDEN_FILE (path to a file) '
            'or BOTARU_FORBIDDEN (text, a GitHub secret); words were not checked')
     if not os.environ.get('GITHUB_ACTIONS'):
         rep.note('BOTARU_FORBIDDEN', msg)
         return
-    event, fork = os.environ.get('GITHUB_EVENT_NAME', ''), False
-    try:
-        with open(os.environ.get('GITHUB_EVENT_PATH', ''), encoding='utf-8') as fh:
-            ev = json.load(fh)
-        fork = bool((((ev.get('pull_request') or {}).get('head') or {}).get('repo') or {}).get('fork'))
-    except (OSError, ValueError):
-        pass
-    if event.startswith('pull_request') and fork:
-        rep.note('BOTARU_FORBIDDEN', msg + ' (PR from a fork)')
+    if os.environ.get('GITHUB_EVENT_NAME', '').startswith('pull_request'):
+        rep.note('BOTARU_FORBIDDEN', msg + ' (pull request: the merge queue checks the words)')
     else:
         rep.error('BOTARU_FORBIDDEN', msg)
 
@@ -230,7 +224,7 @@ def tenant_values(node):
 
 # Any Cyrillic letter (U+0400..U+052F, U+1C80..U+1C8F, U+2DE0..U+2DFF, U+A640..U+A69F): the project is
 # English only. The forbidden word list is outside the repository and is not scanned.
-CYRILLIC = re.compile('[\u0400-\u052f\u1c80-\u1c8f\u2de0-\u2dff\ua640-\ua69f]')
+CYRILLIC = re.compile('[\u0400-\u052f\u1c80-\u1c8f\u2de0-\u2dff\ua640-\ua69f\U0001e030-\U0001e08f]')
 
 
 def cyrillic(rp, text):
