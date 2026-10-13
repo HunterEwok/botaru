@@ -7146,8 +7146,8 @@
     idempotency key and an expiry (`ttl`) no longer than the type's expiry. All CloudEvents
     attributes and all extensions (`tenant`, `msgkind`, `msgto`, `msgdelivery`, `replyto`,
     `fromrole`, `fromworker`, `fromtask`, `correlationid`, `causationid`, `idempotencykey`, `hops`,
-    `datamark`, `untrusted`, `untrustedsrc`, `dataorigin`, `origininitiators`, `expiresat`, from
-    v0.2 also `traceparent`) are written only by the core from the credentials, the attempt record
+    `datamark`, `untrusted`, `untrustedsrc`, `dataorigin`, `origininitiators`, `expiresat`,
+    `traceparent`) are written only by the core from the credentials, the attempt record
     and the type manifest; the schema rejects a request that carries any of them. `dataorigin`
     equals `model` if the model wrote the fields, including in the core's auto-report on an agent
     task, and `code` in all other cases.
