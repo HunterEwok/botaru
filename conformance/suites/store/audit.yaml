@@ -9,7 +9,7 @@ checks:
   - AUD-3
   version: v0.1
   section: Tests without a model
-  source: docs/quality.md:459
+  source: docs/quality.md:464
   spec:
     What: UPDATE and DELETE of an audit record through C1 bypassing the core
     Expectation: the operation is rejected; `audit.verify` sees a gap if the record was touched from outside

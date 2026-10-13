@@ -1,5 +1,5 @@
 registry: meters
-version: 1
+version: 2
 description: >-
   Consumable units and non-consumable budget limits. The kind field says whether this is
   a consumable unit (consumable: reserved before use and
@@ -24,26 +24,26 @@ entries:
     rules: [BUD-5, BUD-3]
   - id: tool_calls
     kind: consumable
-    since: v0.2
+    since: v0.1
     meaning: tool calls
     scopes: [tenant, subject, tree, chat]
     rules: [BUD-5]
   - id: sandbox_seconds
     kind: consumable
-    since: v0.2
+    since: v0.1
     meaning: sandbox seconds
     scopes: [tenant, subject, tree, chat]
     default: {per: subject, period: day, value: 3600, text: 60 minutes of sandbox per day per person}
     rules: [BUD-5]
   - id: storage_bytes
     kind: consumable
-    since: v0.2
+    since: v0.1
     meaning: store bytes
     scopes: [tenant, subject, tree, chat]
     rules: [BUD-5]
   - id: approvals_requested
     kind: consumable
-    since: v0.2
+    since: v0.1
     meaning: requested approvals
     scopes: [tenant, subject, tree, chat]
     rules: [BUD-5]

@@ -252,7 +252,7 @@
       "$ref": "urn:botaru:schema:common:1#/$defs/object_id"
     },
     "trace": {
-      "x-botaru-version": "v0.2",
+      "x-botaru-version": "v0.1",
       "type": "string",
       "maxLength": 200
     }

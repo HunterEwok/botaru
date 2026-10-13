@@ -9,7 +9,7 @@ checks:
   - INJ-5
   version: v0.1
   section: Tests without a model
-  source: docs/quality.md:494
+  source: docs/quality.md:499
   spec:
     What: a plugin declared `sampling` and asks for input
     Expectation: the capability is not passed, the input request ends with a call error
@@ -19,7 +19,7 @@ checks:
   - FEN-6
   version: v0.1
   section: Tests without a model
-  source: docs/quality.md:495
+  source: docs/quality.md:500
   spec:
     What: the call lease expired by the toolhost clock
     Expectation: the plugin process is ended, nothing is written

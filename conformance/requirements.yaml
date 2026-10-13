@@ -973,9 +973,9 @@
     scope (tenant, principal, task tree, chat). The usage line carries the unit.
   check: [blackbox]
   waivable: false
-  version: v0.2
+  version: v0.1
   profile: core
-  decisions: []
+  decisions: [D-94]
   fixtures: []
   doc: docs/models-and-money.md
 
@@ -2442,7 +2442,7 @@
     the model wrote the text, otherwise `code`; only the core sets it. A channel passes the mark the
     way the driver declared (`provenance: metadata` or `visible_label`); a sink writes
     `ai_generated: true` into the metadata of a file that contains model text; the delivery record
-    stores the mark. From v0.2 the same mark is part of the artifact's provenance block (PRV-2).
+    stores the mark. The same mark is part of the artifact's provenance block (PRV-2).
   check: [fixture, adapter, blackbox]
   waivable: false
   version: v0.1
@@ -7146,8 +7146,8 @@
     idempotency key and an expiry (`ttl`) no longer than the type's expiry. All CloudEvents
     attributes and all extensions (`tenant`, `msgkind`, `msgto`, `msgdelivery`, `replyto`,
     `fromrole`, `fromworker`, `fromtask`, `correlationid`, `causationid`, `idempotencykey`, `hops`,
-    `datamark`, `untrusted`, `untrustedsrc`, `dataorigin`, `origininitiators`, `expiresat`, from
-    v0.2 also `traceparent`) are written only by the core from the credentials, the attempt record
+    `datamark`, `untrusted`, `untrustedsrc`, `dataorigin`, `origininitiators`, `expiresat`,
+    `traceparent`) are written only by the core from the credentials, the attempt record
     and the type manifest; the schema rejects a request that carries any of them. `dataorigin`
     equals `model` if the model wrote the fields, including in the core's auto-report on an agent
     task, and `code` in all other cases.
@@ -7541,9 +7541,9 @@
     gives one trace id, and all events have `correlationid` equal to the root id.
   check: [blackbox]
   waivable: true
-  version: v0.2
+  version: v0.1
   profile: core
-  decisions: []
+  decisions: [D-94]
   fixtures: []
   doc: docs/operations.md
 
@@ -7559,9 +7559,9 @@
     changes nothing, and the plugin does not get `baggage`.
   check: [blackbox]
   waivable: false
-  version: v0.2
+  version: v0.1
   profile: core
-  decisions: []
+  decisions: [D-94]
   fixtures: []
   doc: docs/operations.md
 
@@ -9110,9 +9110,9 @@
     `task.completed` event. The runtime and the worker do not set the fingerprint.
   check: [blackbox]
   waivable: false
-  version: v0.2
+  version: v0.1
   profile: core
-  decisions: []
+  decisions: [D-94]
   fixtures: []
   doc: docs/capabilities.md
 
@@ -9126,9 +9126,9 @@
     schema rejects a `provenance` field in the result body.
   check: [fixture, blackbox]
   waivable: false
-  version: v0.2
+  version: v0.1
   profile: core
-  decisions: []
+  decisions: [D-94]
   fixtures: []
   doc: docs/capabilities.md
 

@@ -65,5 +65,5 @@ Messages between bots are part of v0.1 and in the order of work come after the c
 
 | Version | What appears |
 |---|---|
-| v0.1 | all states and transitions above; P1 `msg.send`, `msg.receive`, `msg.ack`, `msg.nack`; P3 `send_message`, `inbox_read`; C1 `msg.stage`, `msg.publish`, `msg.lease`, `msg.ack`, `msg.nack`, `msg.expire`, `state.put`; the background loop `inbox`; the sender's bot identity in the store record; viewing inboxes by the farm manager's reading bot; a hold of the `bot_group` scope with the effect `no_message` for the group's inboxes |
-| v0.2 | `traceparent` in the envelope; P2 `msg.list`, `msg.show`, `inbox.status` (read only, they create no transitions) |
+| v0.1 | all states and transitions above; P1 `msg.send`, `msg.receive`, `msg.ack`, `msg.nack`; P3 `send_message`, `inbox_read`; C1 `msg.stage`, `msg.publish`, `msg.lease`, `msg.ack`, `msg.nack`, `msg.expire`, `state.put`; the background loop `inbox`; the sender's bot identity in the store record; viewing inboxes by the farm manager's reading bot; a hold of the `bot_group` scope with the effect `no_message` for the group's inboxes; `traceparent` in the envelope (OBS-2, D-94) |
+| v0.2 | P2 `msg.list`, `msg.show`, `inbox.status` (read only, they create no transitions) |

@@ -9,7 +9,7 @@ checks:
   - FEN-6
   version: v0.1
   section: Tests without a model
-  source: docs/quality.md:278
+  source: docs/quality.md:283
   spec:
     What: a `job` worker under SIGSTOP for 3 minutes, then SIGCONT; a toolhost in the same case
     Expectation: no changing calls with its token except `fail` or `release`; the external system stub has no writes; the

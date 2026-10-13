@@ -185,8 +185,8 @@
       "type": "string",
       "pattern": "^[0-9a-f]{2}-[0-9a-f]{32}-[0-9a-f]{16}-[0-9a-f]{2}$",
       "maxLength": 55,
-      "description": "W3C trace context without content (v0.2).",
-      "x-botaru-version": "v0.2"
+      "description": "W3C trace context without content (OBS-2).",
+      "x-botaru-version": "v0.1"
     },
     "data": {
       "type": "object",

@@ -22,7 +22,7 @@ The line under a rule heading:
 | [ART](#art) | Files and artifacts | [docs/capabilities.md](../docs/capabilities.md) | 6 | 5 | 4 | 2 |
 | [AUD](#aud) | Audit | [docs/security-model.md](../docs/security-model.md) | 7 | 4 | 6 | 1 |
 | [BGR](#bgr) | Bot groups | [docs/coordination.md](../docs/coordination.md) | 2 | 2 | 2 | 0 |
-| [BUD](#bud) | Budgets | [docs/models-and-money.md](../docs/models-and-money.md) | 16 | 9 | 12 | 4 |
+| [BUD](#bud) | Budgets | [docs/models-and-money.md](../docs/models-and-money.md) | 16 | 9 | 13 | 3 |
 | [CAP](#cap) | Dependency admission and refusal | [docs/operations.md](../docs/operations.md) | 6 | 1 | 4 | 2 |
 | [CNT](#cnt) | Continuations | [docs/tasks-and-delivery.md](../docs/tasks-and-delivery.md) | 7 | 7 | 6 | 1 |
 | [COM](#com) | Commission | [docs/improvements.md](../docs/improvements.md) | 13 | 5 | 9 | 4 |
@@ -46,14 +46,14 @@ The line under a rule heading:
 | [MGR](#mgr) | Farm manager | [docs/farm-manager.md](../docs/farm-manager.md) | 40 | 32 | 33 | 7 |
 | [MON](#mon) | External monitoring | [docs/monitoring.md](../docs/monitoring.md) | 13 | 10 | 11 | 2 |
 | [MSG](#msg) | Messages between bots | [docs/messaging.md](../docs/messaging.md) | 17 | 17 | 17 | 0 |
-| [OBS](#obs) | Observability | [docs/operations.md](../docs/operations.md) | 10 | 4 | 8 | 2 |
+| [OBS](#obs) | Observability | [docs/operations.md](../docs/operations.md) | 10 | 4 | 10 | 0 |
 | [OBV](#obv) | Observations | [docs/improvements.md](../docs/improvements.md) | 7 | 4 | 7 | 0 |
 | [ORC](#orc) | Campaigns | [docs/coordination.md](../docs/coordination.md) | 14 | 13 | 14 | 0 |
 | [OUT](#out) | Structured results | [docs/tasks-and-delivery.md](../docs/tasks-and-delivery.md) | 2 | 1 | 1 | 1 |
 | [PRF](#prf) | Role profiles | [docs/scripts-and-translator.md](../docs/scripts-and-translator.md) | 1 | 1 | 1 | 0 |
 | [PRM](#prm) | Permissions | [docs/permissions.md](../docs/permissions.md) | 18 | 18 | 16 | 2 |
 | [PRP](#prp) | Improvement proposals | [docs/improvements.md](../docs/improvements.md) | 23 | 14 | 21 | 2 |
-| [PRV](#prv) | Instruction versions and execution fingerprint | [docs/capabilities.md](../docs/capabilities.md) | 4 | 4 | 0 | 4 |
+| [PRV](#prv) | Instruction versions and execution fingerprint | [docs/capabilities.md](../docs/capabilities.md) | 4 | 4 | 2 | 2 |
 | [REP](#rep) | Reporters | [docs/messaging.md](../docs/messaging.md) | 11 | 10 | 9 | 2 |
 | [RET](#ret) | Retention and deletion | [docs/operations.md](../docs/operations.md) | 8 | 7 | 8 | 0 |
 | [RT](#rt) | Agent runtime | [docs/architecture.md](../docs/architecture.md) | 5 | 5 | 5 | 0 |
@@ -64,7 +64,7 @@ The line under a rule heading:
 | [TEN](#ten) | Tenants | [docs/architecture.md](../docs/architecture.md) | 8 | 8 | 8 | 0 |
 | [TIM](#tim) | Time and clocks | [docs/operations.md](../docs/operations.md) | 5 | 3 | 4 | 1 |
 | [TRN](#trn) | Translator | [docs/scripts-and-translator.md](../docs/scripts-and-translator.md) | 5 | 4 | 4 | 1 |
-| Total | | | 475 | 356 | 382 | 93 |
+| Total | | | 475 | 356 | 387 | 88 |
 
 Retired numbers (23) are listed in [retired.md](retired.md).
 
@@ -453,7 +453,7 @@ Checked by: `blackbox:model/budget-loop`, `fixture:budget/waiting-reserve-not-th
 <a id="BUD-5"></a>
 ### BUD-5. A reserve for every metered unit
 
-since v0.2 · non-waivable · profile core · check: blackbox
+since v0.1 · non-waivable · profile core · check: blackbox · decisions: D-94
 
 Every metered unit from the registry `spec/model/meters.yaml` (`eur_cents`, `tokens`, `tool_calls`, `sandbox_seconds`, `storage_bytes`, `approvals_requested`) is reserved before use and charged by the actual amount, the same way as money (BUD-2). A limit is set per unit and scope (tenant, principal, task tree, chat). The usage line carries the unit.
 
@@ -1055,7 +1055,7 @@ Checked by: `fx-dlv-02`
 
 since v0.1 · non-waivable · profile core · check: fixture, adapter, blackbox · decisions: D-36
 
-Every part of a result, message and delivery carries the origin mark `dataorigin`: `model` if the model wrote the text, otherwise `code`; only the core sets it. A channel passes the mark the way the driver declared (`provenance: metadata` or `visible_label`); a sink writes `ai_generated: true` into the metadata of a file that contains model text; the delivery record stores the mark. From v0.2 the same mark is part of the artifact's provenance block (PRV-2).
+Every part of a result, message and delivery carries the origin mark `dataorigin`: `model` if the model wrote the text, otherwise `code`; only the core sets it. A channel passes the mark the way the driver declared (`provenance: metadata` or `visible_label`); a sink writes `ai_generated: true` into the metadata of a file that contains model text; the delivery record stores the mark. The same mark is part of the artifact's provenance block (PRV-2).
 
 Checked by: `fx-dlv-03`
 
@@ -2820,7 +2820,7 @@ Explained in: [docs/messaging.md](../docs/messaging.md)
 
 since v0.1 · non-waivable · profile messaging · check: fixture, blackbox · decisions: D-14, D-71
 
-A message is stored and transmitted in the envelope `botaru.message/v1`, which is a CloudEvents 1.0 event in structured JSON. The sender sets only the type (`type`), the address (`to` or `reply_to`), the fields (`fields`), the note (`note`, if the type allows it), its own idempotency key and an expiry (`ttl`) no longer than the type's expiry. All CloudEvents attributes and all extensions (`tenant`, `msgkind`, `msgto`, `msgdelivery`, `replyto`, `fromrole`, `fromworker`, `fromtask`, `correlationid`, `causationid`, `idempotencykey`, `hops`, `datamark`, `untrusted`, `untrustedsrc`, `dataorigin`, `origininitiators`, `expiresat`, from v0.2 also `traceparent`) are written only by the core from the credentials, the attempt record and the type manifest; the schema rejects a request that carries any of them. `dataorigin` equals `model` if the model wrote the fields, including in the core's auto-report on an agent task, and `code` in all other cases.
+A message is stored and transmitted in the envelope `botaru.message/v1`, which is a CloudEvents 1.0 event in structured JSON. The sender sets only the type (`type`), the address (`to` or `reply_to`), the fields (`fields`), the note (`note`, if the type allows it), its own idempotency key and an expiry (`ttl`) no longer than the type's expiry. All CloudEvents attributes and all extensions (`tenant`, `msgkind`, `msgto`, `msgdelivery`, `replyto`, `fromrole`, `fromworker`, `fromtask`, `correlationid`, `causationid`, `idempotencykey`, `hops`, `datamark`, `untrusted`, `untrustedsrc`, `dataorigin`, `origininitiators`, `expiresat`, `traceparent`) are written only by the core from the credentials, the attempt record and the type manifest; the schema rejects a request that carries any of them. `dataorigin` equals `model` if the model wrote the fields, including in the core's auto-report on an agent task, and `code` in all other cases.
 
 Checked by: `fx-msg-01`
 
@@ -2985,14 +2985,14 @@ Checked by: `canaries/telemetry/`
 <a id="OBS-2"></a>
 ### OBS-2. One trace per task tree
 
-since v0.2 · waivable · profile core · check: blackbox
+since v0.1 · waivable · profile core · check: blackbox · decisions: D-94
 
 The core writes the field `trace` into a task (the W3C `traceparent` of the root), and all tasks of one tree have one trace id. Into each event the core writes `correlationid`, equal to the id of the tree root, and `causationid`, equal to the id of the direct cause: the parent task, the approval (for `action.*`), the event (for a route task), the incoming message (for a channel task) or the schedule slot. An attempt, a model call in P4, a tool call, a delivery and an approval decision are spans of one trace; the core assigns the span parent. The toolhost passes context to a plugin only in `_meta.traceparent`. Fixture: a tree of three tasks with tool calls gives one trace id, and all events have `correlationid` equal to the root id.
 
 <a id="OBS-3"></a>
 ### OBS-3. External trace context decides nothing
 
-since v0.2 · non-waivable · profile core · check: blackbox
+since v0.1 · non-waivable · profile core · check: blackbox · decisions: D-94
 
 Trace context that came from outside (from an external program, a runtime, a plugin or a future A2A entry) does not affect any core decision: the tenant, the principal, the task and permissions are never taken from it. External `baggage` and `tracestate` are dropped at the core boundary and are not passed into a plugin call. An external `traceparent` is kept only as a link to a foreign trace. Fixture: `enqueue` with a foreign `traceparent` and `baggage: tenant=demo2` changes nothing, and the plugin does not get `baggage`.
 
@@ -3646,14 +3646,14 @@ Explained in: [docs/capabilities.md](../docs/capabilities.md)
 <a id="PRV-1"></a>
 ### PRV-1. The core writes the run fingerprint
 
-since v0.2 · non-waivable · profile core · check: blackbox
+since v0.1 · non-waivable · profile core · check: blackbox · decisions: D-94
 
 The core computes the run fingerprint at `claim`: a hash of an ordered set of parts, namely the role manifest, the task type with instruction and schemas, the role's skills, the bot identity's persona, the P3 catalog of this handle, the model profile that P4 allowed, the runtime driver and version with the `describe()` values, and the sandbox image digest. The core writes the fingerprint and the hashes of its parts into the attempt, the usage lines and the data of the `task.completed` event. The runtime and the worker do not set the fingerprint.
 
 <a id="PRV-2"></a>
 ### PRV-2. The core writes artifact provenance
 
-since v0.2 · non-waivable · profile core · check: fixture, blackbox
+since v0.1 · non-waivable · profile core · check: fixture, blackbox · decisions: D-94
 
 Only the core writes an artifact's `provenance` block, from the records of calls, attachments and the fingerprint: the task, the run fingerprint, the inputs `[{kind: dataset|file|task, id, version}]`, the tool call ids and the time. The model cannot add or remove an input; the type schema rejects a `provenance` field in the result body.
 
