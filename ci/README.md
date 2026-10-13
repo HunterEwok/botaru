@@ -102,7 +102,7 @@ Without a list, a local run gives a note. In CI on push to `main` and in the mer
 
 The owner enables, in Settings > Rules (or Settings > Branches) for the `main` branch:
 
-- the required check `skeleton` (workflow `.github/workflows/skeleton.yml`);
+- the required checks `skeleton` (workflow `.github/workflows/skeleton.yml`) and `go` (workflow `.github/workflows/go.yml`, the Go implementation in `impl/`);
 - required code owner review: `.github/CODEOWNERS` requires owner review on `LICENSE`, `SECURITY.md`, `spec/`, `conformance/requirements.yaml`, `conformance/rules.md`, `docs/decisions.md`, `ci/` and `.github/`;
 - the required merge queue. The workflow runs on the `merge_group` event, and there the `BOTARU_FORBIDDEN` secret is present: forbidden words, the checks and additive-only changes are checked on the final commit before it reaches `main`. Without the queue a PR is merged on a green check in which forbidden words were not checked.
 
@@ -112,7 +112,7 @@ The repository is public (D-13). These settings only the owner can make in GitHu
 
 1. Enable Private Vulnerability Reporting (Settings > Code security > Private vulnerability reporting): `SECURITY.md` refers to it.
 2. Set the `BOTARU_FORBIDDEN` secret with the forbidden word list (section "Forbidden words").
-3. Protect `main` with the required check `skeleton`, code owner review and the merge queue (section "Protecting the main branch"); without the merge queue, the forbidden words of a PR are checked only in the public `main`.
+3. Protect `main` with the required checks `skeleton` and `go`, code owner review and the merge queue (section "Protecting the main branch"); without the merge queue, the forbidden words of a PR are checked only in the public `main`.
 4. Connect a CLA bot (for example CLA Assistant) to the repository with the text of `CLA.md` and make its check required for `main`: an external PR is merged only after the contribution agreement is signed (D-89). Before that, a lawyer reviews the text of `CLA.md`.
 5. Keep in mind that every commit is public: a secret that reached any commit is rotated, removing it from the history is not enough (`docs/quality.md`).
 

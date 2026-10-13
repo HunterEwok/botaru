@@ -124,6 +124,9 @@ def disjoint(a, b):
     ta, tb = types(a), types(b)
     if ta is not None and tb is not None and not ta & tb:
         return True
+    # required and properties constrain only objects: the discriminator proof needs both branches to be objects
+    if ta != {'object'} or tb != {'object'}:
+        return False
     pa, pb = a.get('properties') or {}, b.get('properties') or {}
     both = set(a.get('required') or []) & set(b.get('required') or [])
     return any(isinstance(pa, dict) and isinstance(pb, dict) and k in pa and k in pb

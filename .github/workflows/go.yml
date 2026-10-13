@@ -21,7 +21,7 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
-  check:
+  go:
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     defaults:
