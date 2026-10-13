@@ -122,14 +122,21 @@ func (c *Core) appendAudit(ctx context.Context, tx pgx.Tx, now time.Time, a Audi
 // It returns the number of records and the seq of the first broken record, or 0. The seq
 // numbers must run from 1 without gaps, and the last record must be the one the audit head
 // names, so a deleted tail is found too.
+// The head and the rows are read in one snapshot, so a record appended meanwhile is in both
+// or in neither.
 func (c *Core) VerifyAudit(ctx context.Context, tenant string) (count int64, brokenAt int64, err error) {
+	tx, err := c.st.Pool.BeginTx(ctx, pgx.TxOptions{IsoLevel: pgx.RepeatableRead, AccessMode: pgx.ReadOnly})
+	if err != nil {
+		return 0, 0, err
+	}
+	defer func() { _ = tx.Rollback(context.WithoutCancel(ctx)) }()
 	var headSeq int64
 	headHash := jcs.ZeroHash
-	err = c.st.Pool.QueryRow(ctx, `SELECT seq, hash FROM audit_heads WHERE tenant = $1 AND epoch = $2`, tenant, c.epoch).Scan(&headSeq, &headHash)
+	err = tx.QueryRow(ctx, `SELECT seq, hash FROM audit_heads WHERE tenant = $1 AND epoch = $2`, tenant, c.epoch).Scan(&headSeq, &headHash)
 	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
 		return 0, 0, err
 	}
-	count, brokenAt, prev, err := c.verifyRows(ctx, tenant)
+	count, brokenAt, prev, err := c.verifyRows(ctx, tx, tenant)
 	if err != nil || brokenAt != 0 {
 		return count, brokenAt, err
 	}
@@ -139,8 +146,8 @@ func (c *Core) VerifyAudit(ctx context.Context, tenant string) (count int64, bro
 	return count, 0, nil
 }
 
-func (c *Core) verifyRows(ctx context.Context, tenant string) (count int64, brokenAt int64, prev string, err error) {
-	rows, err := c.st.Pool.Query(ctx, `SELECT seq, record, hash FROM audit WHERE tenant = $1 AND epoch = $2 ORDER BY seq`, tenant, c.epoch)
+func (c *Core) verifyRows(ctx context.Context, tx pgx.Tx, tenant string) (count int64, brokenAt int64, prev string, err error) {
+	rows, err := tx.Query(ctx, `SELECT seq, record, hash FROM audit WHERE tenant = $1 AND epoch = $2 ORDER BY seq`, tenant, c.epoch)
 	if err != nil {
 		return 0, 0, "", err
 	}

@@ -253,11 +253,12 @@ type TaskType struct {
 	Dispatch      struct {
 		PriorityClass int `json:"priority_class"`
 	} `json:"dispatch"`
-	Interactive   bool     `json:"interactive"`
-	Timeouts      Timeouts `json:"timeouts"`
-	Retry         Retry    `json:"retry"`
-	TreeBudgetEUR float64  `json:"tree_budget_eur"`
-	GoalTrust     string   `json:"goal_trust"`
+	Interactive   bool              `json:"interactive"`
+	Requires      map[string]string `json:"requires"`
+	Timeouts      Timeouts          `json:"timeouts"`
+	Retry         Retry             `json:"retry"`
+	TreeBudgetEUR float64           `json:"tree_budget_eur"`
+	GoalTrust     string            `json:"goal_trust"`
 }
 
 // Timeouts are the type deadlines as durations (15m, 60s).

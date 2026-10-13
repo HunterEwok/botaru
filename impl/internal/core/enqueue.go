@@ -221,6 +221,18 @@ func (c *Core) enqueue(ctx context.Context, tx pgx.Tx, now time.Time, cat *Catal
 	if p := c.checkBudget(ctx, tx, now, tv, in.Initiator, groups, estimate, ""); p != nil {
 		return reject(p)
 	}
+	// The enqueue ceiling of the sliding hour, under the tenant's budget lock (CAP-1).
+	if max := tv.Spec.Limits.MaxEnqueuePerHour; max > 0 {
+		var n int
+		if err := tx.QueryRow(ctx, `SELECT count(*) FROM tasks WHERE tenant = $1 AND created_at > $2`, in.Tenant, now.Add(-time.Hour)).Scan(&n); err != nil {
+			return nil, err
+		}
+		if n >= max {
+			pr := refuse("over_capacity", "the tenant enqueue limit of the hour is reached")
+			pr.RetryAfterS = 60
+			return reject(pr)
+		}
+	}
 	// The queue ceiling (CAP-1).
 	if max := tv.Spec.Limits.MaxQueued; max > 0 {
 		var n int

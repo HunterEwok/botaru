@@ -379,8 +379,26 @@ func TestModelTextWaitsForAINotice(t *testing.T) {
 	if _, err := b.c.Complete(ctx, b.channel, header(t, notice), CompleteRequest{Receipt: &Receipt{ExternalID: "1"}}); err != nil {
 		t.Fatal(err)
 	}
+	// privacy_notice is still being sent: model text waits for it too (DLV-12).
+	if w := b.claim(t, b.channel, "delivery"); w != nil {
+		t.Fatalf("model text before privacy_notice: %v", w.Payload)
+	}
+	if _, err := b.c.Complete(ctx, b.channel, header(t, privacy), CompleteRequest{Receipt: &Receipt{ExternalID: "2"}}); err != nil {
+		t.Fatal(err)
+	}
 	if w := b.claim(t, b.channel, "delivery"); w == nil || w.Payload["delivery"].(map[string]any)["kind"] != "task_result" {
-		t.Fatalf("task_result after ai_notice: %v", w)
+		t.Fatalf("task_result after the notices: %v", w)
+	}
+}
+
+// TestGroupChatIgnored: without chat.bind a group message starts nothing.
+func TestGroupChatIgnored(t *testing.T) {
+	b := newBench(t)
+	a := Activity{Kind: "message", Channel: "telegram", UpdateID: "12", Chat: Chat{Kind: "group", ExternalID: "-100"}, Text: "/hello"}
+	a.Sender.Identity, a.Sender.Verified = "telegram:1001", true
+	res, err := b.c.SubmitActivity(context.Background(), b.channel, a)
+	if err != nil || res.Result != "ignored" || res.Task != "" {
+		t.Fatalf("group activity: %+v %v", res, err)
 	}
 }
 

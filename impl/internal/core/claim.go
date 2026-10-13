@@ -135,6 +135,16 @@ func (c *Core) newLease(ctx context.Context, tx pgx.Tx, now time.Time, w *Worker
 
 // claimAttempt takes the oldest task of the highest priority class among the types the role
 // claims (DSP-2) and writes the lease and the transition to working in one transaction.
+// hasLabels says whether a worker has every label a task type requires.
+func hasLabels(labels, requires map[string]string) bool {
+	for k, v := range requires {
+		if labels[k] != v {
+			return false
+		}
+	}
+	return true
+}
+
 func (c *Core) claimAttempt(ctx context.Context, tx pgx.Tx, now time.Time, cat *Catalog, w *Worker) (*WorkItem, error) {
 	role, ok := cat.Roles[w.Role]
 	if !ok || role.WorkerKind != w.Kind {
@@ -143,7 +153,7 @@ func (c *Core) claimAttempt(ctx context.Context, tx pgx.Tx, now time.Time, cat *
 	// Only the claimed types that this worker kind runs.
 	var claims []string
 	for _, t := range role.Claims {
-		if tt, ok := cat.TaskTypes[t]; ok && tt.WorkerKind == w.Kind {
+		if tt, ok := cat.TaskTypes[t]; ok && tt.WorkerKind == w.Kind && hasLabels(w.Labels, tt.Requires) {
 			claims = append(claims, t)
 		}
 	}
@@ -248,7 +258,7 @@ func mainSlot(role manifest.Role) (string, string) {
 
 // claimDelivery takes the oldest planned delivery for this channel, sink or adapter by its
 // enroll name (TEN-3). Model text for a recipient waits until their ai_notice in this channel
-// is delivered (DLV-13).
+// is delivered (DLV-13), and until a privacy_notice was delivered and none is pending (DLV-12).
 func (c *Core) claimDelivery(ctx context.Context, tx pgx.Tx, now time.Time, w *Worker) (*WorkItem, error) {
 	var (
 		id, kind, addr, targetKind, targetID string
@@ -260,6 +270,11 @@ func (c *Core) claimDelivery(ctx context.Context, tx pgx.Tx, now time.Time, w *W
 		WHERE d.tenant = $1 AND d.exec_kind = $2 AND d.exec_name = $3 AND d.state = 'planned' AND (d.run_at IS NULL OR d.run_at <= $4)
 		AND NOT (d.dataorigin = 'model' AND EXISTS (SELECT 1 FROM contacts ct WHERE ct.tenant = d.tenant AND ct.channel = d.exec_name
 			AND ct.principal = d.recipient AND ct.ai_notice_delivery IS NOT NULL AND ct.ai_notice_at IS NULL))
+		AND NOT (d.dataorigin = 'model' AND d.recipient IS NOT NULL AND (
+			EXISTS (SELECT 1 FROM deliveries p WHERE p.tenant = d.tenant AND p.exec_name = d.exec_name AND p.recipient = d.recipient
+				AND p.kind = 'privacy_notice' AND p.state IN ('planned', 'sending'))
+			OR NOT EXISTS (SELECT 1 FROM deliveries p WHERE p.tenant = d.tenant AND p.exec_name = d.exec_name AND p.recipient = d.recipient
+				AND p.kind = 'privacy_notice' AND p.state = 'delivered')))
 		ORDER BY d.seq LIMIT 1 FOR UPDATE SKIP LOCKED`, w.Tenant, w.Kind, w.Target, now).
 		Scan(&id, &kind, &addr, &targetKind, &targetID, &recipient, &dataMark, &body, &leaseNo)
 	if errors.Is(err, pgx.ErrNoRows) {

@@ -431,6 +431,14 @@ func (c *Core) endDelivery(ctx context.Context, tx pgx.Tx, now time.Time, tenant
 	if _, err := tx.Exec(ctx, `UPDATE deliveries SET state = 'dead', reason = $2, updated_at = $3 WHERE id = $1`, l.WorkID, final, now); err != nil {
 		return nil, err
 	}
+	// A privacy notice that never arrived is planned again at the next contact; model text for
+	// the recipient waits until then (DLV-12).
+	if kind == "privacy_notice" {
+		if _, err := tx.Exec(ctx, `UPDATE contacts ct SET privacy_version = NULL FROM deliveries d
+			WHERE d.id = $1 AND ct.tenant = d.tenant AND ct.channel = d.exec_name AND ct.principal = d.recipient`, l.WorkID); err != nil {
+			return nil, err
+		}
+	}
 	if err := c.appendEvent(ctx, tx, now, tenant, Event{Type: "delivery.dead", Subject: l.WorkID, Data: map[string]any{"delivery": l.WorkID, "kind": kind, "reason": final}}); err != nil {
 		return nil, err
 	}

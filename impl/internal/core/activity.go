@@ -57,6 +57,11 @@ func (c *Core) SubmitActivity(ctx context.Context, w *Worker, a Activity) (*Acti
 	if kind := ch.IdentityKind; kind != "" && !strings.HasPrefix(a.Sender.Identity, kind+":") {
 		return nil, refuse("forbidden", "the identity kind does not match the channel driver")
 	}
+	// A group chat is served only after chat.bind and its membership check, which this version
+	// does not have: an answer there would reach members nobody admitted.
+	if a.Chat.Kind != "direct" {
+		return &ActivityResult{Result: "ignored", Reason: "not_subject"}, nil
+	}
 	key := "system:activity:" + a.Channel + ":" + a.UpdateID
 
 	var out ActivityResult
