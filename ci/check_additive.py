@@ -545,12 +545,8 @@ for rp, old in olds.items():
                           'through $ref under not or if: any change there can narrow the outer schema')
     # under maxContains a widened contains counts more items toward the maximum: a definition it reaches is frozen
     for where, sub in counted(old):
-        # without maxContains in the new holder, a wider contains only widens; the holder found at the old
-        # pointer counts only if it holds the same contains (a reordered applicator may put another schema there)
-        holder = pointer(news[rp], where.rsplit('/', 1)[0])
-        if isinstance(holder, dict) and 'maxContains' not in holder and 'contains' in holder \
-                and same(bare(holder['contains']), bare(sub)):
-            continue
+        # frozen even if the same change drops maxContains: a holder cannot be matched reliably across a reorder,
+        # so dropping maxContains and widening the definition go in two separate changes
         for target, frag, a, b in reached(rp, sub):
             if changed(a, b):
                 rep.error(f'{target}#{frag}', f'[keyword_changed] the definition changed, and {rp}#{where} reaches it '
