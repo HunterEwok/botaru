@@ -91,15 +91,16 @@ func (c *Core) reapWith(ctx context.Context, reason string, spends bool) error {
 	}
 }
 
-// deadlines moves tasks past their deadline to failed (DLV-1).
+// deadlines moves tasks past their deadline to failed (DLV-1). A task that is being worked
+// on loses its lease and handles too, so the worker is fenced at its next call (FEN-4).
 func (c *Core) deadlines(ctx context.Context) error {
 	for {
 		done := true
 		err := c.tx(ctx, func(tx pgx.Tx, now time.Time) error {
-			var id, tenant, initiator string
+			var id, tenant, initiator, state string
 			var rec []byte
-			err := tx.QueryRow(ctx, `SELECT id, tenant, initiator, record FROM tasks WHERE state = 'submitted' AND deadline_at <= $1
-				ORDER BY deadline_at LIMIT 1 FOR UPDATE SKIP LOCKED`, now).Scan(&id, &tenant, &initiator, &rec)
+			err := tx.QueryRow(ctx, `SELECT id, tenant, initiator, state, record FROM tasks WHERE state IN ('submitted', 'working') AND deadline_at <= $1
+				ORDER BY deadline_at LIMIT 1 FOR UPDATE SKIP LOCKED`, now).Scan(&id, &tenant, &initiator, &state, &rec)
 			if err == pgx.ErrNoRows {
 				return nil
 			}
@@ -107,6 +108,15 @@ func (c *Core) deadlines(ctx context.Context) error {
 				return err
 			}
 			done = false
+			if state == "working" {
+				if _, err := tx.Exec(ctx, `DELETE FROM handles WHERE work_id = $1`, id); err != nil {
+					return err
+				}
+				if _, err := tx.Exec(ctx, `UPDATE leases SET state = 'revoked', reason = 'deadline_exceeded', closed_at = $2
+					WHERE work_id = $1 AND state = 'active'`, id, now); err != nil {
+					return err
+				}
+			}
 			return c.failTask(ctx, tx, now, tenant, id, initiator, rec, "deadline_exceeded")
 		})
 		if err != nil || done {

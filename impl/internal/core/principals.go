@@ -5,6 +5,7 @@ package core
 import (
 	"context"
 	"errors"
+	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -157,12 +158,18 @@ type GrantRequest struct {
 
 // Grant runs grant and ungrant: a membership of a principal in a group of the tenant.
 func (c *Core) Grant(ctx context.Context, op Operator, req GrantRequest) (*Done, error) {
-	tv, _, err := c.requireTenant(ctx, op.Tenant)
+	tv, cat, err := c.requireTenant(ctx, op.Tenant)
 	if err != nil {
 		return nil, err
 	}
 	if _, ok := tv.Groups[req.Group]; !ok {
 		return nil, refuse("not_found", "no such group in the tenant")
+	}
+	// A privileged group needs the verification code and, on a production tenant, the
+	// written request of another person (PRM-13). That flow is not in this version, so
+	// such a grant is refused rather than made active.
+	if req.Op == "grant" && privilegedGroup(tv, cat, req.Group, map[string]bool{}) {
+		return nil, refuse("privileged_group", "a privileged group needs the verification code flow, which this version does not have")
 	}
 	var out Done
 	err = c.tx(ctx, func(tx pgx.Tx, now time.Time) error {
@@ -205,6 +212,48 @@ func (c *Core) Grant(ctx context.Context, op Operator, req GrantRequest) (*Done,
 		return nil, err
 	}
 	return &out, nil
+}
+
+// unprivilegedCaps are the capabilities that never make a group privileged
+// (spec/model/capabilities.yaml); task:<type> is privileged from tier 1.
+var unprivilegedCaps = map[string]bool{"task.read": true, "team.view": true, "msg.send": true}
+
+// privilegedGroup applies the PRM-13 rule to a group and the groups it inherits: a
+// capability marked privileged, a task type of tier 1 or higher, or a data class above
+// internal. Anything unknown counts as privileged.
+func privilegedGroup(tv *TenantView, cat *Catalog, name string, seen map[string]bool) bool {
+	if seen[name] {
+		return false
+	}
+	seen[name] = true
+	g, ok := tv.Groups[name]
+	if !ok {
+		return true
+	}
+	for _, cp := range g.Caps {
+		if unprivilegedCaps[cp] {
+			continue
+		}
+		typ, isTask := strings.CutPrefix(cp, "task:")
+		if !isTask {
+			return true
+		}
+		tt, ok := cat.TaskTypes[typ]
+		if !ok || tt.Tier >= 1 {
+			return true
+		}
+	}
+	for _, d := range g.Data {
+		if d != "summary" && d != "internal" {
+			return true
+		}
+	}
+	for _, in := range g.Inherits {
+		if privilegedGroup(tv, cat, in, seen) {
+			return true
+		}
+	}
+	return false
 }
 
 // principalInfo is what the permission check reads about a principal.

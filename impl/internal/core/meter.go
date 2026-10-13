@@ -145,7 +145,7 @@ func (c *Core) Reserve(ctx context.Context, g *ModelGrant, micros int64) (string
 		if p, err := loadPrincipal(ctx, tx, now, g.Tenant, g.Initiator); err == nil {
 			groups = groupClosure(tv, p.Groups)
 		}
-		if p := c.checkBudget(ctx, tx, now, tv, g.Initiator, groups); p != nil {
+		if p := c.checkBudget(ctx, tx, now, tv, g.Initiator, groups, micros); p != nil {
 			return p
 		}
 		if g.TreeBudget > 0 {

@@ -89,11 +89,11 @@ func (c *Core) decodeToken(header string) (LeaseToken, error) {
 	if t.WorkID == "" || t.WorkerID == "" || t.LeaseNo < 1 {
 		return t, mismatch
 	}
-	if t.Sig != "" || t.KeyID != "" {
-		b, err := jcs.Canonical(t.fields())
-		if err != nil || t.KeyID != c.cfg.KeyID || !hmac.Equal([]byte(c.sign(b)), []byte(t.Sig)) {
-			return t, mismatch
-		}
+	// This core signs every token it issues, so a token without the signature is not one of
+	// its tokens (FEN-2, D-87 (5)).
+	b, err := jcs.Canonical(t.fields())
+	if err != nil || t.Sig == "" || t.KeyID != c.cfg.KeyID || !hmac.Equal([]byte(c.sign(b)), []byte(t.Sig)) {
+		return t, mismatch
 	}
 	return t, nil
 }

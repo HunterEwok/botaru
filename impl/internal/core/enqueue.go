@@ -212,7 +212,7 @@ func (c *Core) enqueue(ctx context.Context, tx pgx.Tx, now time.Time, cat *Catal
 		return reject(pr)
 	}
 	// Money: the tenant windows and the person's day limit, by usage and open reserves (BUD-1).
-	if p := c.checkBudget(ctx, tx, now, tv, in.Initiator, groups); p != nil {
+	if p := c.checkBudget(ctx, tx, now, tv, in.Initiator, groups, 0); p != nil {
 		return reject(p)
 	}
 	// The queue ceiling (CAP-1).
@@ -307,7 +307,14 @@ func (c *Core) validateParams(tt manifest.TaskType, body map[string]any) error {
 
 // checkBudget compares the money windows with the limits: the tenant's month, day and hour
 // and the person's day limit from their groups (BUD-1). Reserves count until they are released.
-func (c *Core) checkBudget(ctx context.Context, tx pgx.Tx, now time.Time, tv *TenantView, subject string, groups []string) *Problem {
+// With a reserve of extra micro-euros it refuses when the reserve would pass a limit (BUD-2).
+func (c *Core) checkBudget(ctx context.Context, tx pgx.Tx, now time.Time, tv *TenantView, subject string, groups []string, extra int64) *Problem {
+	over := func(used int64, limit float64) bool {
+		if extra > 0 {
+			return used+extra > money.FromEUR(limit)
+		}
+		return used >= money.FromEUR(limit)
+	}
 	b := tv.Spec.Budgets
 	type window struct {
 		limit *float64
@@ -333,7 +340,7 @@ func (c *Core) checkBudget(ctx context.Context, tx pgx.Tx, now time.Time, tv *Te
 		if err := tx.QueryRow(ctx, `SELECT coalesce(sum(eur_micros), 0) FROM spend WHERE tenant = $1 AND time >= $2`, tv.Name, w.from).Scan(&used); err != nil {
 			return refuse("not_ready", "store")
 		}
-		if used >= money.FromEUR(*w.limit) {
+		if over(used, *w.limit) {
 			return refuse("budget_exhausted", "the tenant limit is used up")
 		}
 	}
@@ -348,7 +355,7 @@ func (c *Core) checkBudget(ctx context.Context, tx pgx.Tx, now time.Time, tv *Te
 		if err := tx.QueryRow(ctx, `SELECT coalesce(sum(eur_micros), 0) FROM spend WHERE tenant = $1 AND subject = $2 AND time >= $3`, tv.Name, subject, day).Scan(&used); err != nil {
 			return refuse("not_ready", "store")
 		}
-		if used >= money.FromEUR(*personal) {
+		if over(used, *personal) {
 			return refuse("budget_exhausted", "the personal day limit is used up")
 		}
 	}

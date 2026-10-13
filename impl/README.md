@@ -50,7 +50,7 @@ These are decisions of this implementation where the skeleton leaves a choice; n
 
 ## Not in this version
 
-v0.1 of the implementation stops at the first working bot; the following parts of the v0.1 rules are not built yet: P3 and tools, sessions and memory, approvals, cards and buttons, holds, messages between bots, routes and schedules, the monitoring adapter, erasure, the test-control port, streaming on P4, the circuit breaker and the pool limiter of P4, files and group chat membership in the channel. The P2 operations outside `apply`, `principal.*`, `grant`, `ungrant`, `worker.enroll`, `health` and `audit.verify` answer `404 not_found`.
+v0.1 of the implementation stops at the first working bot; the following parts of the v0.1 rules are not built yet: P3 and tools, sessions and memory, approvals, cards and buttons, holds, messages between bots, routes and schedules, the monitoring adapter, erasure, the test-control port, streaming on P4, the circuit breaker and the pool limiter of P4, files and group chat membership in the channel, and the verification code for privileged groups (PRM-13): `grant` of a privileged group answers `privileged_group`. The P2 operations outside `apply`, `principal.*`, `grant`, `ungrant`, `worker.enroll`, `health` and `audit.verify` answer `404 not_found`.
 
 ## Checks
 

@@ -6,6 +6,8 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
@@ -117,36 +119,58 @@ func (c *Core) appendAudit(ctx context.Context, tx pgx.Tx, now time.Time, a Audi
 }
 
 // VerifyAudit recomputes the chain of a tenant in the current epoch (P2 audit.verify, AUD-6).
-// It returns the number of records and the seq of the first broken record, or 0.
+// It returns the number of records and the seq of the first broken record, or 0. The seq
+// numbers must run from 1 without gaps, and the last record must be the one the audit head
+// names, so a deleted tail is found too.
 func (c *Core) VerifyAudit(ctx context.Context, tenant string) (count int64, brokenAt int64, err error) {
-	rows, err := c.st.Pool.Query(ctx, `SELECT seq, record, hash FROM audit WHERE tenant = $1 AND epoch = $2 ORDER BY seq`, tenant, c.epoch)
-	if err != nil {
+	var headSeq int64
+	headHash := jcs.ZeroHash
+	err = c.st.Pool.QueryRow(ctx, `SELECT seq, hash FROM audit_heads WHERE tenant = $1 AND epoch = $2`, tenant, c.epoch).Scan(&headSeq, &headHash)
+	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
 		return 0, 0, err
 	}
+	count, brokenAt, prev, err := c.verifyRows(ctx, tenant)
+	if err != nil || brokenAt != 0 {
+		return count, brokenAt, err
+	}
+	if count != headSeq || prev != headHash {
+		return count, count + 1, nil
+	}
+	return count, 0, nil
+}
+
+func (c *Core) verifyRows(ctx context.Context, tenant string) (count int64, brokenAt int64, prev string, err error) {
+	rows, err := c.st.Pool.Query(ctx, `SELECT seq, record, hash FROM audit WHERE tenant = $1 AND epoch = $2 ORDER BY seq`, tenant, c.epoch)
+	if err != nil {
+		return 0, 0, "", err
+	}
 	defer rows.Close()
-	prev := jcs.ZeroHash
+	prev = jcs.ZeroHash
 	for rows.Next() {
 		var seq int64
 		var raw []byte
 		var stored string
 		if err := rows.Scan(&seq, &raw, &stored); err != nil {
-			return 0, 0, err
+			return 0, 0, "", err
 		}
 		count++
+		if seq != count {
+			return count, count, prev, nil
+		}
 		var rec map[string]any
 		dec := json.NewDecoder(strings.NewReader(string(raw)))
 		dec.UseNumber()
 		if err := dec.Decode(&rec); err != nil {
-			return count, seq, nil
+			return count, seq, prev, nil
 		}
 		delete(rec, "hash")
 		h, err := jcs.Hash(rec)
-		if err != nil || h != stored || rec["prev_hash"] != prev {
-			return count, seq, nil
+		if err != nil || h != stored || rec["prev_hash"] != prev || fmt.Sprint(rec["seq"]) != strconv.FormatInt(seq, 10) {
+			return count, seq, prev, nil
 		}
 		prev = stored
 	}
-	return count, 0, rows.Err()
+	return count, 0, prev, rows.Err()
 }
 
 // Event is a CloudEvents record of the event log; data is metadata only (AUD-2).
