@@ -46,6 +46,9 @@ func (c *Core) SubmitActivity(ctx context.Context, w *Worker, a Activity) (*Acti
 	if a.Channel != w.Target {
 		return nil, refuse("forbidden", "the activity is for another channel")
 	}
+	if w.State != "active" && w.State != "draining" {
+		return nil, refuse("blocked", "the channel has no accepted hello")
+	}
 	tv, cat, err := c.requireTenant(ctx, w.Tenant)
 	if err != nil {
 		return nil, err
@@ -53,6 +56,11 @@ func (c *Core) SubmitActivity(ctx context.Context, w *Worker, a Activity) (*Acti
 	ch, ok := tv.Channels[a.Channel]
 	if !ok {
 		return nil, refuse("not_found", "no such channel in the tenant")
+	}
+	// The manifest may have changed to native disclosure after hello: the driver must have
+	// reported it, or no ai_notice would be sent (DLV-12).
+	if ch.AIDisclosure == "native" && (w.Hello == nil || w.Hello.Driver == nil || w.Hello.Driver.AIDisclosure != "native") {
+		return nil, refuse("blocked", "the channel driver did not report native AI disclosure")
 	}
 	if kind := ch.IdentityKind; kind != "" && !strings.HasPrefix(a.Sender.Identity, kind+":") {
 		return nil, refuse("forbidden", "the identity kind does not match the channel driver")

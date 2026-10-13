@@ -670,3 +670,16 @@ func TestDeleteTaskTypeWithOpenTasks(t *testing.T) {
 		t.Fatalf("delete: %v", err)
 	}
 }
+
+// TestActivityNeedsActiveChannel: a channel without an accepted hello submits nothing.
+func TestActivityNeedsActiveChannel(t *testing.T) {
+	b := newBench(t)
+	a := Activity{Kind: "message", Channel: "telegram", UpdateID: "71", Chat: Chat{Kind: "direct", ExternalID: "1001"}, Text: "/hello"}
+	a.Sender.Identity, a.Sender.Verified = "telegram:1001", true
+	b.channel.State = "blocked"
+	_, err := b.c.SubmitActivity(context.Background(), b.channel, a)
+	var p *Problem
+	if !errors.As(err, &p) || p.Reason != "blocked" {
+		t.Fatalf("blocked channel: %v", err)
+	}
+}

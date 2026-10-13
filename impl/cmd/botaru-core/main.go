@@ -120,6 +120,9 @@ func run(path string, log *slog.Logger) error {
 	if err != nil {
 		return err
 	}
+	if err := c.RecoverLeases(ctx); err != nil {
+		return err
+	}
 	go c.Run(ctx)
 
 	p1 := &http.Server{Addr: cfg.P1Listen, Handler: srv.P1Handler(), ReadHeaderTimeout: 10 * time.Second}

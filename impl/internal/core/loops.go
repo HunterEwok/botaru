@@ -9,12 +9,27 @@ import (
 	"github.com/jackc/pgx/v5"
 )
 
-// Run starts the background loops of the core (spec/ports/background-loops.md) and blocks
-// until ctx ends: the work listener, reaper and deadline.
-func (c *Core) Run(ctx context.Context) {
-	if err := c.endLeasesOfDowntime(ctx); err != nil {
-		c.log.Error("ending the leases of the downtime failed", "err", err)
+// RecoverLeases extends the leases of the downtime (see endLeasesOfDowntime). It runs before
+// the ports serve, so no holder is fenced before its lease is extended, and it retries until it
+// succeeds or ctx ends.
+func (c *Core) RecoverLeases(ctx context.Context) error {
+	for pause := time.Second; ; pause = min(2*pause, 30*time.Second) {
+		err := c.endLeasesOfDowntime(ctx)
+		if err == nil {
+			return nil
+		}
+		c.log.Warn("extending the leases of the downtime failed, retrying", "err", err)
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(pause):
+		}
 	}
+}
+
+// Run starts the background loops of the core (spec/ports/background-loops.md) and blocks
+// until ctx ends: the work listener, reaper and deadline. RecoverLeases runs before it.
+func (c *Core) Run(ctx context.Context) {
 	go c.listen(ctx)
 	t := time.NewTicker(time.Second)
 	defer t.Stop()
@@ -45,12 +60,14 @@ func (c *Core) Tick(ctx context.Context) error {
 
 // endLeasesOfDowntime gives every active lease a full lease period from readiness, so a holder
 // that is still alive keeps its work: a lease granted before the downtime ends before readiness
-// plus one period, so this covers every lease that overlaps the downtime. The mark core_unavailable stays on
+// plus one period, so this covers every lease that overlaps the downtime. A lease that still
+// carries the mark from an earlier start is not extended again, so another core copy starting
+// later does not keep an abandoned lease alive; a renewal clears the mark. The mark core_unavailable stays on
 // the lease until the holder renews it; one that is not renewed ends with core_unavailable,
 // which does not spend the attempt (FEN-5).
 func (c *Core) endLeasesOfDowntime(ctx context.Context) error {
 	return c.tx(ctx, func(tx pgx.Tx, now time.Time) error {
-		_, err := tx.Exec(ctx, `UPDATE leases SET lease_until = $1, reason = 'core_unavailable' WHERE state = 'active' AND lease_until < $1`,
+		_, err := tx.Exec(ctx, `UPDATE leases SET lease_until = $1, reason = 'core_unavailable' WHERE state = 'active' AND lease_until < $1 AND reason IS DISTINCT FROM 'core_unavailable'`,
 			now.Add(time.Duration(c.cfg.LeaseS)*time.Second))
 		return err
 	})
