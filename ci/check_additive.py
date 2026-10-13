@@ -22,7 +22,8 @@ spec/model/*.yaml with their state at the branch point from the base branch
   or appeared;
 - not, if, contains, minContains, maxContains, uniqueItems: true, anyOf or
   oneOf appeared; minContains increased, maxContains decreased; if or not
-  changed (a changed negated schema is not compared, it is an error);
+  changed (a changed negated schema is not compared, it is an error), or a
+  definition that not or if reaches through $ref (in any file, by $id) changed;
 - allOf got a new item (a new constraint), prefixItems got an item narrower
   than the old items (or unevaluatedItems) at its position (absent accepts
   anything, false accepted nothing) or lost an item wider than what now
@@ -335,6 +336,7 @@ def show(p):
     return out.stdout if out.returncode == 0 else None
 
 
+olds, news = {}, {}
 for p in old_files:
     rp = p[len(prefix):]
     full = os.path.join(ROOT, rp)
@@ -348,6 +350,70 @@ for p in old_files:
         rep.error(rp, f'[json_invalid] the schema cannot be read: {e}')
         continue
     compare(old, new, f'{rp}#')
+    olds[rp], news[rp] = old, new
+
+
+# not and if reverse polarity: a definition they reach through $ref may not change at all,
+# since widening it narrows the outer schema; the references are followed across files by $id
+def by_id(docs):
+    return {d['$id']: rp for rp, d in docs.items() if isinstance(d, dict) and isinstance(d.get('$id'), str)}
+
+
+def pointer(doc, ptr):
+    for part in [p.replace('~1', '/').replace('~0', '~') for p in ptr.split('/')[1:]]:
+        if isinstance(doc, dict) and part in doc:
+            doc = doc[part]
+        elif isinstance(doc, list) and part.isdigit() and int(part) < len(doc):
+            doc = doc[int(part)]
+        else:
+            return None
+    return doc
+
+
+def refs(s):
+    if isinstance(s, dict):
+        if isinstance(s.get('$ref'), str):
+            yield s['$ref']
+        for k, v in s.items():
+            if k not in LITERALS:
+                yield from refs(v)
+    elif isinstance(s, list):
+        for x in s:
+            yield from refs(x)
+
+
+def negated(s, path=''):
+    """(path, subschema) of every not and if value in a schema."""
+    if isinstance(s, dict):
+        for k, v in s.items():
+            if k in LITERALS:
+                continue
+            if k in ('not', 'if'):
+                yield f'{path}/{k}', v
+            yield from negated(v, f'{path}/{k}')
+    elif isinstance(s, list):
+        for i, x in enumerate(s):
+            yield from negated(x, f'{path}/{i}')
+
+
+olds_by_id, news_by_id = by_id(olds), by_id(news)
+for rp, old in olds.items():
+    seen, todo = set(), [(rp, ref, where) for where, sub in negated(old) for ref in refs(sub)]
+    while todo:
+        frm, ref, where = todo.pop()
+        base, _, frag = ref.partition('#')
+        target = olds_by_id.get(base, None) if base else frm
+        if target is None or (target, frag) in seen:
+            continue
+        seen.add((target, frag))
+        a = pointer(olds.get(target), frag)
+        b = pointer(news.get(news_by_id.get(base, target) if base else target), frag)
+        if a is None:
+            continue
+        if b is None or not same(bare(a), bare(b)):
+            rep.error(f'{target}#{frag}', f'[keyword_changed] the definition changed, and {rp}#{where} reaches it '
+                      'through $ref under not or if: any change there can narrow the outer schema')
+        todo.extend((target, r, where) for r in refs(a))
 
 for p in old_regs:
     rp = p[len(prefix):]
