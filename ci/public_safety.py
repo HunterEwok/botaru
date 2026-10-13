@@ -91,7 +91,7 @@ OK_OFFSETS = {'+00:00', '-00:00', '+0000', '+01:00', '+0100', '+02:00', '+0200'}
 EPSG = re.compile(r'\bEPSG:(\d+)')
 OK_EPSG = {'4326', '3857'}
 UTM = re.compile(r'(?i)\bUTM[ \t]*(?:zone[ \t]*)?\d{1,2}[ \t]*[NS]?\b')
-COORD_PAIR = re.compile(r'(?<![\w.])(-?\d{1,2}\.\d{3,})[ \t]*[,;][ \t]*(-?\d{1,3}\.\d{3,})(?![\w.])')
+COORD_PAIR = re.compile(r'(?<![\w.])(-?\d{1,3}\.\d{3,})[ \t]*[,;][ \t]*(-?\d{1,3}\.\d{3,})(?![\w.])')
 COORD_KEY = re.compile(r'(?i)\b(?:lat|latitude|lon|lng|longitude)["\']?[ \t]*[:=][ \t]*-?\d{1,3}\.\d{2,}')
 # The tenant key counts only in key position (line start, list item, after { , quote or backtick) and with a lone
 # value before the line end, a comma, a brace or a comment, so English prose after the word is not read as a tenant
@@ -313,7 +313,9 @@ def scan(rp, text, lines=True):
         if not place_ok(m.start()):
             err(m.start(), 'coordinates_place', 'a UTM zone points to a place: examples use EPSG:3857')
     for m in COORD_PAIR.finditer(text):
-        if abs(float(m.group(1))) <= 90 and abs(float(m.group(2))) <= 180:
+        a, b = abs(float(m.group(1))), abs(float(m.group(2)))
+        # latitude first or longitude first (GeoJSON order)
+        if (a <= 90 and b <= 180) or (a <= 180 and b <= 90):
             err(m.start(), 'coordinates_place', f'coordinate pair {m.group(0)}: points to a place')
     for m in COORD_KEY.finditer(text):
         if not place_ok(m.start()):

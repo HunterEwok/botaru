@@ -213,7 +213,7 @@ spec:
       data_class: raw_logs
     - id: web-checks
       title: "Availability checks of the site and the API"
-      read_by: [http/check]
+      read_by: [checks/latest]
       list: checks
       format: id
       values: [www-health, api-health]
