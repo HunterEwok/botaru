@@ -9,10 +9,11 @@ import (
 	"github.com/HunterEwok/botaru/impl/internal/core"
 )
 
-// P1Handler serves /v1/p1/<operation> and, if configured, /v1/p4/.
+// P1Handler serves /v1/p1/<operation>, /v1/p3/mcp and, if configured, /v1/p4/.
 func (s *Server) P1Handler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/v1/p1/", s.p1)
+	mux.HandleFunc("/v1/p3/", s.p3)
 	if s.p4 != nil {
 		mux.Handle("/v1/p4/", s.p4)
 	}

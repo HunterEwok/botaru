@@ -92,6 +92,13 @@ type Server struct {
 // New returns a server for a scenario.
 func New(sc *Scenario) *Server { return &Server{sc: sc} }
 
+// Reset replaces the scenario and forgets the calls.
+func (s *Server) Reset(sc *Scenario) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.sc, s.next, s.calls = sc, 0, nil
+}
+
 // Calls returns the recorded calls.
 func (s *Server) Calls() []Call {
 	s.mu.Lock()

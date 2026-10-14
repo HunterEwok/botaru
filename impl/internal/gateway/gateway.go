@@ -23,6 +23,7 @@ import (
 
 	"github.com/HunterEwok/botaru/impl/internal/core"
 	"github.com/HunterEwok/botaru/impl/internal/ijson"
+	"github.com/HunterEwok/botaru/impl/internal/jcs"
 	"github.com/HunterEwok/botaru/impl/internal/manifest"
 )
 
@@ -147,6 +148,10 @@ func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		problem(w, "input_schema_invalid", "the request is outside the allowlist", 0)
 		return
 	}
+	if err := g.checkTools(ctx, body, grant); err != nil {
+		g.refuse(w, err)
+		return
+	}
 	out, maxTokens, err := g.providerBody(body, grant)
 	if err != nil {
 		g.refuse(w, err)
@@ -212,6 +217,37 @@ func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	_, _ = w.Write(respBody)
 }
 
+// checkTools compares the tools of a request with the P3 catalog of the handle's attempt by
+// name and by the P4 tool hash of spec/hashing.md (GW-1): the request carries exactly the
+// catalog in its order, so a tool the catalog does not have, one with another description or
+// schema, a missing one and another order are refused before the provider.
+func (g *Gateway) checkTools(ctx context.Context, body map[string]any, grant *core.ModelGrant) error {
+	tools, _ := body["tools"].([]any)
+	want, err := g.c.CatalogHashes(ctx, grant)
+	if err != nil {
+		return err
+	}
+	differ := &core.Problem{Reason: "input_schema_invalid", Detail: "tools differ from the P3 catalog of the handle"}
+	if len(tools) != len(want) {
+		return differ
+	}
+	for i, x := range tools {
+		t, _ := x.(map[string]any)
+		name, _ := t["name"].(string)
+		m := map[string]any{}
+		for _, k := range []string{"name", "description", "input_schema"} {
+			if v, ok := t[k]; ok {
+				m[k] = v
+			}
+		}
+		h, err := jcs.Hash(m)
+		if err != nil || name != want[i].Name || h != want[i].Hash {
+			return differ
+		}
+	}
+	return nil
+}
+
 // charge records the usage of a call, retrying while the store is briefly away.
 func (g *Gateway) charge(ctx context.Context, spendID string, cost int64, tokens *core.Tokens, requestID string) error {
 	var err error
@@ -241,11 +277,9 @@ func (g *Gateway) providerBody(req map[string]any, grant *core.ModelGrant) (map[
 		return nil, 0, &core.Problem{Reason: "input_schema_invalid", Detail: "streaming is not served by this build"}
 	}
 	delete(out, "stream")
-	// Tools must equal the P3 catalog of the handle; v0.1 attempts of this build have none.
-	if tools, ok := out["tools"].([]any); ok && len(tools) > 0 {
-		return nil, 0, &core.Problem{Reason: "input_schema_invalid", Detail: "tools differ from the P3 catalog of the handle"}
+	if tools, ok := out["tools"].([]any); !ok || len(tools) == 0 {
+		delete(out, "tools")
 	}
-	delete(out, "tools")
 	out["model"] = p.Model
 	maxTokens := int(toInt(req["max_tokens"]))
 	if p.MaxOutputTokens > 0 && maxTokens > p.MaxOutputTokens {

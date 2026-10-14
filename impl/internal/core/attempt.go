@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 
@@ -33,11 +34,12 @@ type attemptRecord struct {
 
 // runFingerprint computes the run fingerprint by the row "run fingerprint" of spec/hashing.md:
 // an object of part hashes, an absent part null, and the hash of that object. This version has
-// no skills (an empty array), no bot identity persona, no P3 catalog handle and no sandbox. The
+// no skills (an empty array), no bot identity persona and no sandbox; the catalog part is the P3
+// catalog of the attempt, null for a role without tools. The
 // model part is the profile configured for the slot at claim. The runtime part takes the
 // role's runtime driver, or the implementation name the worker reported at hello, and the
 // version it reported; P1 hello carries no describe() values, so describe is null.
-func runFingerprint(cat *Catalog, w *Worker, roleName, typ, slot, profile string) (string, map[string]any, error) {
+func runFingerprint(cat *Catalog, w *Worker, roleName, typ, slot, profile string, tools []catalogTool) (string, map[string]any, error) {
 	hashOf := func(v any) (any, error) {
 		h, err := jcs.Hash(v)
 		if err != nil {
@@ -55,6 +57,13 @@ func runFingerprint(cat *Catalog, w *Worker, roleName, typ, slot, profile string
 	}
 	if parts["skills"], err = hashOf([]any{}); err != nil {
 		return "", nil, err
+	}
+	if len(tools) > 0 {
+		h, err := catalogPart(tools)
+		if err != nil {
+			return "", nil, err
+		}
+		parts["catalog"] = h
 	}
 	if slot != "" {
 		if parts["model"], err = hashOf(map[string]any{"slot": slot, "profile": profile}); err != nil {
@@ -134,6 +143,12 @@ func (c *Core) markOrder(mark string) (int, bool) {
 // task.attachments is empty, because this version has no files; reasons.<name> gives the ids
 // of spec/model/<name>-reasons.yaml. An unknown list resolves to no values, so no value fits.
 func (c *Core) resolveEnumFrom(cat *Catalog, tenant, mark string, names map[string]bool) map[string][]any {
+	return c.resolveEnumFor(cat, tenant, mark, "", names)
+}
+
+// resolveEnumFor is resolveEnumFrom for a tool: with right set, a resource list gives only the
+// values of the resources whose read_by holds that tool (TEN-3a).
+func (c *Core) resolveEnumFor(cat *Catalog, tenant, mark, right string, names map[string]bool) map[string][]any {
 	out := map[string][]any{}
 	spec, _ := tenantCatalog(cat, tenant)
 	maxOrder, markOK := c.markOrder(mark)
@@ -163,7 +178,7 @@ func (c *Core) resolveEnumFrom(cat *Catalog, tenant, mark string, names map[stri
 				res, _ := spec["resources"].([]any)
 				for _, r := range res {
 					rm, _ := r.(map[string]any)
-					if rm["list"] != list {
+					if rm["list"] != list || right != "" && !readBy(rm, right) {
 						continue
 					}
 					if dc, ok := rm["data_class"].(string); ok {
@@ -173,7 +188,11 @@ func (c *Core) resolveEnumFrom(cat *Catalog, tenant, mark string, names map[stri
 						}
 					}
 					if vs, ok := rm["values"].([]any); ok {
-						vals = append(vals, vs...)
+						for _, v := range vs {
+							if !slices.Contains(vals, v) { // an enum lists a value once
+								vals = append(vals, v)
+							}
+						}
 					}
 				}
 			}
@@ -189,6 +208,17 @@ func (c *Core) resolveEnumFrom(cat *Catalog, tenant, mark string, names map[stri
 		out[name] = vals
 	}
 	return out
+}
+
+// readBy says whether a catalog resource lists the tool right in its read_by.
+func readBy(resource map[string]any, right string) bool {
+	rb, _ := resource["read_by"].([]any)
+	for _, x := range rb {
+		if x == right {
+			return true
+		}
+	}
+	return false
 }
 
 // fullSchema turns a result schema into the schema the core checks at complete (OUT-1): an
@@ -249,8 +279,8 @@ func asList(v any) []any {
 }
 
 // prepareAttempt computes the attempt record at claim.
-func (c *Core) prepareAttempt(cat *Catalog, w *Worker, tenant, typ, mark, slot, profile string) (*attemptRecord, error) {
-	fp, parts, err := runFingerprint(cat, w, w.Role, typ, slot, profile)
+func (c *Core) prepareAttempt(cat *Catalog, w *Worker, tenant, typ, mark, slot, profile string, tools []catalogTool) (*attemptRecord, error) {
+	fp, parts, err := runFingerprint(cat, w, w.Role, typ, slot, profile, tools)
 	if err != nil {
 		return nil, err
 	}

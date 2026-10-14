@@ -23,17 +23,24 @@ type Worker struct {
 	Target string            `json:"target,omitempty"`
 	State  string            `json:"state"`
 	Labels map[string]string `json:"labels,omitempty"`
-	Hello  *HelloRequest     `json:"-"`
+	// Plugins, Placement and Host are the enroll record of a toolhost (DEP-2, TEN-3a).
+	Plugins   []string      `json:"plugins,omitempty"`
+	Placement string        `json:"placement,omitempty"`
+	Host      string        `json:"host,omitempty"`
+	Hello     *HelloRequest `json:"-"`
 }
 
 // EnrollRequest is p2-worker-enroll-request.
 type EnrollRequest struct {
-	Tenant   string            `json:"tenant"`
-	Role     string            `json:"role"`
-	Kind     string            `json:"kind"`
-	Labels   map[string]string `json:"labels"`
-	Target   string            `json:"target"`
-	RotateP2 bool              `json:"rotate_p2"`
+	Tenant    string            `json:"tenant"`
+	Role      string            `json:"role"`
+	Kind      string            `json:"kind"`
+	Labels    map[string]string `json:"labels"`
+	Target    string            `json:"target"`
+	RotateP2  bool              `json:"rotate_p2"`
+	Plugins   []string          `json:"plugins"`
+	Placement string            `json:"placement"`
+	Host      string            `json:"host"`
 }
 
 // EnrollResult is p2-worker-enroll-response.
@@ -71,10 +78,17 @@ func (c *Core) Enroll(ctx context.Context, op Operator, req EnrollRequest) (*Enr
 			return nil, refuse("not_found", "no such channel in the tenant")
 		}
 		driver = ch.Driver
-	case "sink", "monitor", "toolhost":
-		if req.Kind != "toolhost" && req.Target == "" {
+	case "sink", "monitor":
+		if req.Target == "" {
 			return nil, refuse("input_schema_invalid", "target is required")
 		}
+	case "toolhost":
+		if err := c.checkToolhostEnroll(cat, req); err != nil {
+			return nil, err
+		}
+	}
+	if req.Kind != "toolhost" && (len(req.Plugins) > 0 || req.Placement != "" || req.Host != "") {
+		return nil, refuse("input_schema_invalid", "plugins, placement and host are only for a toolhost")
 	}
 	if req.Kind != "channel" && req.Kind != "sink" && req.Kind != "monitor" && req.Target != "" {
 		return nil, refuse("input_schema_invalid", "target is only for a channel, a sink or a monitoring adapter")
@@ -85,11 +99,16 @@ func (c *Core) Enroll(ctx context.Context, op Operator, req EnrollRequest) (*Enr
 	if labels == nil {
 		labels = map[string]string{}
 	}
-	w := Worker{ID: ids.New(ids.Worker), Tenant: req.Tenant, Role: req.Role, Kind: req.Kind, Target: req.Target, State: "enrolled", Labels: labels}
+	plugins := slices.Clone(req.Plugins)
+	slices.Sort(plugins)
+	w := Worker{ID: ids.New(ids.Worker), Tenant: req.Tenant, Role: req.Role, Kind: req.Kind, Target: req.Target, State: "enrolled", Labels: labels,
+		Plugins: plugins, Placement: req.Placement, Host: req.Host}
 	err = c.tx(ctx, func(tx pgx.Tx, now time.Time) error {
 		lb, _ := json.Marshal(labels)
-		if _, err := tx.Exec(ctx, `INSERT INTO workers (id, tenant, role, kind, labels, target, state, token_hash, created_at) VALUES ($1, $2, $3, $4, $5, $6, 'enrolled', $7, $8)`,
-			w.ID, w.Tenant, w.Role, w.Kind, lb, nullable(w.Target), c.hashSecret(token), now); err != nil {
+		pb, _ := json.Marshal(nonNil(plugins))
+		if _, err := tx.Exec(ctx, `INSERT INTO workers (id, tenant, role, kind, labels, target, plugins, placement, host, state, token_hash, created_at)
+			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'enrolled', $10, $11)`,
+			w.ID, w.Tenant, w.Role, w.Kind, lb, nullable(w.Target), pb, nullable(w.Placement), nullable(w.Host), c.hashSecret(token), now); err != nil {
 			return err
 		}
 		if driver != "" {
@@ -116,7 +135,7 @@ func (c *Core) Enroll(ctx context.Context, op Operator, req EnrollRequest) (*Enr
 		_, err := c.appendAudit(ctx, tx, now, Audit{
 			Tenant: req.Tenant, Kind: "command", Actor: Actor{Principal: op.Principal, Via: "farmctl"},
 			Command: "worker.enroll", Target: &Target{Kind: "worker", ID: w.ID}, OK: true,
-			After: map[string]any{"kind": w.Kind, "role": w.Role},
+			After: enrollAfter(w),
 		})
 		return err
 	})
@@ -133,11 +152,11 @@ func (c *Core) AuthenticateWorker(ctx context.Context, token string) (*Worker, e
 		return nil, refuse("unauthenticated", "no worker token")
 	}
 	var w Worker
-	var labels, hello []byte
-	var target *string
+	var labels, hello, plugins []byte
+	var target, placement, host *string
 	err := c.st.Pool.QueryRow(ctx, `UPDATE workers SET last_seen = botaru_now() WHERE token_hash = $1
-		RETURNING id, tenant, role, kind, target, state, labels, hello`, c.hashSecret(token)).
-		Scan(&w.ID, &w.Tenant, &w.Role, &w.Kind, &target, &w.State, &labels, &hello)
+		RETURNING id, tenant, role, kind, target, state, labels, hello, plugins, placement, host`, c.hashSecret(token)).
+		Scan(&w.ID, &w.Tenant, &w.Role, &w.Kind, &target, &w.State, &labels, &hello, &plugins, &placement, &host)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, refuse("unauthenticated", "unknown worker token")
 	}
@@ -148,6 +167,13 @@ func (c *Core) AuthenticateWorker(ctx context.Context, token string) (*Worker, e
 		w.Target = *target
 	}
 	_ = json.Unmarshal(labels, &w.Labels)
+	_ = json.Unmarshal(plugins, &w.Plugins)
+	if placement != nil {
+		w.Placement = *placement
+	}
+	if host != nil {
+		w.Host = *host
+	}
 	if len(hello) > 0 {
 		var h HelloRequest
 		if json.Unmarshal(hello, &h) == nil {
@@ -169,6 +195,9 @@ type HelloRequest struct {
 	ProtocolVersions []string          `json:"protocol_versions"`
 	Driver           *DriverCaps       `json:"driver,omitempty"`
 	Runtime          *RuntimeDecl      `json:"runtime,omitempty"`
+	Plugins          []string          `json:"plugins,omitempty"`
+	Placement        string            `json:"placement,omitempty"`
+	ToolsFingerprint string            `json:"tools_fingerprint,omitempty"`
 }
 
 // RuntimeDecl is how an agent's runtime performs the farm mechanisms (RT-1, RT-2, RT-5).
@@ -239,6 +268,17 @@ func (c *Core) Hello(ctx context.Context, w *Worker, req HelloRequest) (*HelloRe
 	for k, v := range req.Labels {
 		if w.Labels[k] != v {
 			mismatch = true
+		}
+	}
+	// A toolhost reports the plugins and the placement of its enroll record and the fingerprint
+	// of the live tools/list of its plugins, which must match the manifests (DEP-2, INJ-2).
+	if w.Kind == "toolhost" && !mismatch {
+		cat, err := c.Catalog(ctx)
+		if err != nil {
+			return nil, err
+		}
+		if r := toolhostMismatch(cat, w, req); r != "" {
+			mismatch, why = true, r
 		}
 	}
 	// A channel whose manifest relies on the messenger's own bot marking skips ai_notice, so its

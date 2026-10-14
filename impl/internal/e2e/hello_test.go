@@ -13,6 +13,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -34,7 +35,13 @@ import (
 	"github.com/HunterEwok/botaru/impl/internal/texts"
 )
 
-func TestMain(m *testing.M) { pgtest.Main(m) }
+func TestMain(m *testing.M) {
+	// The test binary is also the plugin process the toolhost starts (tools_test.go).
+	if mode := os.Getenv("BOTARU_E2E_PLUGIN"); mode != "" {
+		os.Exit(fakePlugin(mode))
+	}
+	pgtest.Main(m)
+}
 
 // fakeBotAPI is a fake Telegram Bot API server: it hands out queued updates once and records
 // the messages sent.

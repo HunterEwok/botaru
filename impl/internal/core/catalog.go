@@ -14,6 +14,7 @@ import (
 	"github.com/HunterEwok/botaru/impl/internal/jcs"
 	"github.com/HunterEwok/botaru/impl/internal/manifest"
 	"github.com/HunterEwok/botaru/impl/internal/store"
+	"github.com/HunterEwok/botaru/impl/internal/toolspec"
 )
 
 // Catalog is the applied manifest set as typed views. It is rebuilt from the manifests table
@@ -24,7 +25,9 @@ type Catalog struct {
 	Roles     map[string]manifest.Role
 	TaskTypes map[string]manifest.TaskType
 	// Profiles are keyed by tenant and name; a farm-wide profile has the tenant "".
-	Profiles   map[[2]string]manifest.ModelProfile
+	Profiles map[[2]string]manifest.ModelProfile
+	// Plugins are the ToolPlugin manifests by name (global, D-92).
+	Plugins    map[string]toolspec.Plugin
 	RawGlobals map[manifest.Key]map[string]any
 	// Hashes are the hashes of the applied manifests (spec/hashing.md), for the parts of the
 	// run fingerprint (PRV-1) and the catalog version of an attempt (OUT-1).
@@ -55,6 +58,7 @@ func newCatalog() *Catalog {
 		Roles:      map[string]manifest.Role{},
 		TaskTypes:  map[string]manifest.TaskType{},
 		Profiles:   map[[2]string]manifest.ModelProfile{},
+		Plugins:    map[string]toolspec.Plugin{},
 		RawGlobals: map[manifest.Key]map[string]any{},
 		Hashes:     map[manifest.Key]string{},
 	}
@@ -109,6 +113,13 @@ func buildCatalog(docs []manifest.Doc) (*Catalog, error) {
 			if p, err = manifest.Decode[manifest.ModelProfile](d); err == nil {
 				c.Profiles[[2]string{d.Tenant, d.Name}] = p
 			}
+		case "ToolPlugin":
+			spec, _ := d.Value["spec"].(map[string]any)
+			var p toolspec.Plugin
+			if p, err = toolspec.Decode(d.Name, spec); err == nil {
+				c.Plugins[d.Name] = p
+			}
+			c.RawGlobals[d.Key()] = d.Value
 		default:
 			c.RawGlobals[d.Key()] = d.Value
 		}

@@ -43,6 +43,7 @@ commands:
   grant ID GROUP [-until TIME]
   ungrant ID GROUP
   worker enroll -tenant T -role R -kind K [-target NAME] -token-out FILE
+                [-plugins P[,P] -placement host|sandbox [-host MACHINE]]   (toolhost)
   audit verify TENANT
   hold set KIND [TENANT [NAME]] -effects E[,E] -reason R [-until TIME]
   hold release ID
@@ -296,9 +297,12 @@ func principal(c *client, args []string) error {
 func enroll(c *client, args []string) error {
 	fs := flag.NewFlagSet("worker enroll", flag.ExitOnError)
 	tenant := fs.String("tenant", "", "the tenant")
-	role := fs.String("role", "", "the role (for a channel: any name, for example the channel name)")
+	role := fs.String("role", "", "the role (for a channel or a toolhost: any name, for example the channel name)")
 	kind := fs.String("kind", "", "agent, job, channel, sink, monitor or toolhost")
 	target := fs.String("target", "", "the channel, sink or adapter name")
+	plugins := fs.String("plugins", "", "toolhost: the plugins, comma separated, for example cmd,logs")
+	placement := fs.String("placement", "", "toolhost: host or sandbox")
+	host := fs.String("host", "", "toolhost of placement host: the catalog machine")
 	tokenOut := fs.String("token-out", "", "write the worker token to this file (mode 0600)")
 	p2Out := fs.String("p2-token-out", "", "write the driver's P2 secret, if issued, to this file (default: the token file with .p2 added)")
 	_ = fs.Parse(reorder(args))
@@ -308,6 +312,15 @@ func enroll(c *client, args []string) error {
 	req := map[string]any{"tenant": *tenant, "role": *role, "kind": *kind}
 	if *target != "" {
 		req["target"] = *target
+	}
+	if *plugins != "" {
+		req["plugins"] = strings.Split(*plugins, ",")
+	}
+	if *placement != "" {
+		req["placement"] = *placement
+	}
+	if *host != "" {
+		req["host"] = *host
 	}
 	var out struct {
 		Worker  map[string]any `json:"worker"`

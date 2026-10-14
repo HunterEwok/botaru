@@ -33,6 +33,7 @@ type WorkItem struct {
 	Tenant          string         `json:"tenant"`
 	LeaseUntil      string         `json:"lease_until"`
 	LeaseRemainingS int            `json:"lease_remaining_s"`
+	StartBy         string         `json:"start_by,omitempty"`
 	Token           LeaseToken     `json:"token"`
 	Payload         map[string]any `json:"payload"`
 }
@@ -107,6 +108,8 @@ func (c *Core) claimOnce(ctx context.Context, w *Worker, kinds []string) (*WorkI
 				item, err = c.claimDelivery(ctx, tx, now, cat, w)
 			case k == "attempt" && (w.Kind == "agent" || w.Kind == "job"):
 				item, err = c.claimAttempt(ctx, tx, now, cat, w)
+			case k == "toolcall" && w.Kind == "toolhost":
+				item, err = c.claimToolcall(ctx, tx, now, cat, w)
 			}
 			if err != nil || item != nil {
 				return err
@@ -312,7 +315,12 @@ func (c *Core) claimAttempt(ctx context.Context, tx pgx.Tx, now time.Time, cat *
 	// written into the attempt (PRV-1, OUT-1); the worker does not set them.
 	slot, profile := mainSlot(role)
 	mark, _ := record["data_mark"].(string)
-	att, err := c.prepareAttempt(cat, w, w.Tenant, typ, mark, slot, profile)
+	maxTier, _ := record["max_tier"].(float64)
+	tools, err := c.toolCatalog(cat, &toolsGrant{Tenant: w.Tenant, Task: id, Type: typ, Role: w.Role, Worker: w.ID, MaxTier: int(maxTier), Mark: mark})
+	if err != nil {
+		return nil, err
+	}
+	att, err := c.prepareAttempt(cat, w, w.Tenant, typ, mark, slot, profile, tools)
 	if err != nil {
 		return nil, err
 	}
@@ -323,8 +331,18 @@ func (c *Core) claimAttempt(ctx context.Context, tx pgx.Tx, now time.Time, cat *
 	if _, err := tx.Exec(ctx, `UPDATE leases SET fingerprint = $3, attempt = $4 WHERE work_id = $1 AND lease_no = $2`, id, leaseNo, att.Fingerprint, attRaw); err != nil {
 		return nil, err
 	}
-	// The model handle of the role's main slot (SEC-3): bound to this lease and epoch.
+	// The model handle of the role's main slot and the tools handle of a role with tools (SEC-3):
+	// bound to this lease and epoch.
 	handles := map[string]any{"tools": nil, "model": nil, "session": nil, "memory": nil}
+	if len(roleTools(cat, role)) > 0 {
+		h := "bh_" + ids.Secret(32)
+		if _, err := tx.Exec(ctx, `INSERT INTO handles (hash, kind, tenant, work_id, lease_no, epoch, worker_id, created_at)
+			VALUES ($1, 'tools', $2, $3, $4, $5, $6, $7)`,
+			c.hashSecret(h), w.Tenant, id, leaseNo, c.epoch, w.ID, now); err != nil {
+			return nil, err
+		}
+		handles["tools"] = h
+	}
 	if slot != "" {
 		h := "bh_" + ids.Secret(32)
 		if _, err := tx.Exec(ctx, `INSERT INTO handles (hash, kind, tenant, work_id, lease_no, epoch, worker_id, slot, profile, created_at)

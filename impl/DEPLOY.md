@@ -152,6 +152,61 @@ Write `/hello hi` to your bot in a private chat. Three messages come back in ord
 
 Then `farmctl audit verify demo` answers `"ok": true`. A message from someone who is not added gets no answer; `/health` answers "Unknown command." because that type is not applied.
 
+## Tools: a toolhost on a machine
+
+A bot reads a machine through a toolhost on that machine (E3): `botaru-toolhost` takes the tool calls of one tenant over P1 and runs each in a new process of its plugin. This version has three own plugins: `cmd` (named commands such as `disk_usage` and `service_status`), `logs` (the tail of a log file) and `checks` (the latest site check results). Only read tools are called, and only by a role that lists them.
+
+1. **Manifests.** Apply `examples/tools/cmd/tool.yaml`, `examples/tools/logs/tool.yaml` and `examples/tools/checks/tool.yaml`, a `Catalog` of your tenant with the machine and its resources, and a role whose `tools` lists what it may call, for example `[checks/latest, logs/tail, cmd/run]`. The example catalog `examples/tenants/demo/catalog.yaml` carries fields of later versions that cannot be left out; write your own with only `hosts` (with `services` and their `unit`) and `resources` (`list: log_sources` for logs, `list: checks` for checks, each with its `host`). A tool reaches the model only when the task type's `tier` and `data_class` allow it: `logs/tail` and `cmd/run` are tier 1 with output `raw_logs`.
+2. **A user per tenant.** The toolhost never runs as root and refuses to. Create one user per tenant on the machine, for example `useradd -r -s /usr/sbin/nologin botaru-tools-demo`, and give it read access only to the log files it serves (for example the `adm` group).
+3. **Enroll** it for the machine of the catalog; the record fixes the plugins, the placement and the machine:
+
+   ```sh
+   $F worker enroll -tenant demo -role toolhost -kind toolhost -plugins cmd,logs,checks -placement host -host web1 \
+     -token-out /etc/botaru/secrets/toolhost-demo
+   chown botaru-tools-demo: /etc/botaru/secrets/toolhost-demo
+   ```
+
+4. **Settings** `/etc/botaru/toolhost-demo.yaml`: how each plugin starts. Which file a log source is on this machine is set here, never by a call:
+
+   ```yaml
+   placement: host
+   kill_after: 10s
+   plugins:
+     - name: cmd
+       command: [/opt/botaru/bin/botaru-plugin, cmd, -manifest, /opt/botaru/src/examples/tools/cmd/tool.yaml, -spec-root, /opt/botaru/src, -host, web1]
+     - name: logs
+       command: [/opt/botaru/bin/botaru-plugin, logs, -manifest, /opt/botaru/src/examples/tools/logs/tool.yaml,
+                 -source, nginx-error=/var/log/nginx/error.log, -source, nginx-access=/var/log/nginx/access.log]
+     - name: checks
+       command: [/opt/botaru/bin/botaru-plugin, checks, -manifest, /opt/botaru/src/examples/tools/checks/tool.yaml, -results, /var/lib/botaru-checks/results.json]
+   ```
+
+   The `checks` plugin only reads the results file; a checker of your own writes it, for example `{"www-health": {"ok": 3, "total": 3, "last_status": 200, "ms_max": 180}}`, whole numbers only.
+5. **Unit** `/etc/systemd/system/botaru-toolhost-demo.service`:
+
+   ```ini
+   [Unit]
+   Description=botaru toolhost of tenant demo
+   After=network-online.target
+
+   [Service]
+   User=botaru-tools-demo
+   ExecStart=/opt/botaru/bin/botaru-toolhost -core http://core1.example.org:8401 -token-file /etc/botaru/secrets/toolhost-demo -config /etc/botaru/toolhost-demo.yaml
+   Restart=on-failure
+   NoNewPrivileges=yes
+   CapabilityBoundingSet=
+   ProtectSystem=strict
+   ProtectHome=yes
+   PrivateTmp=yes
+   PrivateDevices=yes
+   RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+
+   [Install]
+   WantedBy=multi-user.target
+   ```
+
+At start the toolhost asks every plugin for its `tools/list` and reports the fingerprint in `hello`. If the manifests in the checkout on the machine differ from those applied to the core, the core moves the toolhost to `blocked`: update the checkout or apply again, then enroll a new toolhost. After an `apply` that changes a plugin manifest, restart the toolhosts of that plugin once their checkout carries the same manifest: until they say hello again they take no calls. A call that no toolhost of the machine takes within 30 seconds ends with `no_executor`, and the model is told so; to stop all tool calls of a tenant at once, set a hold with the effect `no_tool`.
+
 ## Stopping work with a hold
 
 A hold stops part of the work at once, without a restart (HLD-3). For example, to stop the greeting type in `demo`, end its running attempts and later lift the hold:
@@ -191,4 +246,6 @@ A farm built from the first version of this guide keeps its store, settings and 
 - `botaru-telegram` stops with `skeleton root with spec/VERSION not found`: pass `-spec-root` with the checkout, or set `BOTARU_SPEC_ROOT` (see "Upgrading from the first version").
 - `apply` answers `version_unsupported` with a path: the manifest has a kind or a field of a later version, or of a profile this core does not claim (MAN-11); remove it, or add `-drop-unsupported` to leave such fields out.
 - The agent logs `provider_config`: the provider of the profile has no entry in `providers`, no key for the tenant, or the tenant's `privacy.subprocessors` does not list that provider.
+- The toolhost stops with `blocked`: its plugins, placement or live `tools/list` differ from the enroll record or the applied manifests (section "Tools").
+- The model gets `error: plugin_unavailable`: no toolhost of that plugin and machine has called the core in the last two minutes.
 - Nothing arrives in Telegram: check the channel log; a `403` from the Bot API means the bot was blocked in that chat.

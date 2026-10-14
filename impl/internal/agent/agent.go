@@ -116,8 +116,9 @@ func (a *Agent) Once(ctx context.Context, waitS int) (bool, error) {
 	result, reason, err := a.run(runCtx, p)
 	if err != nil {
 		a.log.Warn("run failed", "task", p.Task.ID, "reason", reason, "err", err)
-		if ctx.Err() != nil {
-			// Shutting down: return the work without spending the attempt.
+		if ctx.Err() != nil || reason == "fenced" {
+			// Shutting down, or the core no longer serves this attempt as it began (its lease
+			// or its tool catalog changed): return the work without spending the attempt.
 			rctx, rcancel := context.WithTimeout(context.Background(), 5*time.Second)
 			defer rcancel()
 			return true, a.cfg.Core.Call(rctx, "release", lease, nil, nil)
@@ -155,8 +156,12 @@ func (a *Agent) heartbeats(ctx context.Context, cancel context.CancelFunc, lease
 	}
 }
 
-// run is the runtime loop of one attempt: one model call in v0.1, since the attempt has no
-// tools. It returns the result object, or a reason code from reasons.yaml.
+// maxTurns bounds the model calls of one attempt.
+const maxTurns = 10
+
+// run is the runtime loop of one attempt: model calls through P4, and between them the tool
+// calls the model asks for, through P3 with the attempt's tools handle. It returns the result
+// object, or a reason code from reasons.yaml.
 func (a *Agent) run(ctx context.Context, p attemptPayload) (map[string]any, string, error) {
 	handle, _ := p.Handles["model"].(string)
 	if handle == "" {
@@ -172,6 +177,13 @@ func (a *Agent) run(ctx context.Context, p attemptPayload) (map[string]any, stri
 	if hc == nil {
 		hc = &http.Client{Timeout: 10 * time.Minute}
 	}
+	var p3 *toolsClient
+	if th, _ := p.Handles["tools"].(string); th != "" {
+		// A tool call may run for the tool's timeout_s, up to an hour; the core bounds the wait
+		// by start_by, the tool deadline and the lease, so P3 has no client timeout of its own.
+		p3hc := &http.Client{Transport: hc.Transport, CheckRedirect: hc.CheckRedirect, Jar: hc.Jar}
+		p3 = &toolsClient{url: strings.TrimRight(a.cfg.Core.BaseURL, "/") + "/v1/p3/mcp", handle: th, http: p3hc}
+	}
 	client := anthropic.NewClient(
 		option.WithoutEnvironmentDefaults(),
 		option.WithBaseURL(strings.TrimRight(a.cfg.Core.BaseURL, "/")+"/v1/p4/anthropic/"),
@@ -179,42 +191,82 @@ func (a *Agent) run(ctx context.Context, p attemptPayload) (map[string]any, stri
 		option.WithMaxRetries(0), // only P4 retries (GW-12)
 		option.WithHTTPClient(hc),
 	)
-	msg, err := client.Messages.New(ctx, anthropic.MessageNewParams{
-		Model:     anthropic.Model("base"), // P4 sets the model of the slot (GW-7)
-		MaxTokens: a.cfg.MaxTokens,
-		System:    []anthropic.TextBlockParam{{Text: system}},
-		Messages:  []anthropic.MessageParam{anthropic.NewUserMessage(anthropic.NewTextBlock(goal))},
-	})
-	if err != nil {
-		var apiErr *anthropic.Error
-		if errors.As(err, &apiErr) {
-			var prob struct {
-				Reason string `json:"reason"`
+	messages := []anthropic.MessageParam{anthropic.NewUserMessage(anthropic.NewTextBlock(goal))}
+	for turn := 0; turn < maxTurns; turn++ {
+		// The catalog is read before every model call: P4 requires the current one, and an
+		// apply between turns may change it (GW-1).
+		var tools []anthropic.ToolUnionParam
+		if p3 != nil {
+			list, err := p3.list(ctx)
+			if p3Reason(err) == "fenced" {
+				return nil, "fenced", err
 			}
-			if json.Unmarshal([]byte(apiErr.RawJSON()), &prob) == nil && prob.Reason != "" {
-				return nil, failReason(prob.Reason), err
+			if err != nil {
+				return nil, "runtime_error", err
 			}
+			tools = list
 		}
-		return nil, "model_error", err
-	}
-	var text strings.Builder
-	for _, b := range msg.Content {
-		if b.Type == "text" {
-			text.WriteString(b.Text)
+		msg, err := client.Messages.New(ctx, anthropic.MessageNewParams{
+			Model:     anthropic.Model("base"), // P4 sets the model of the slot (GW-7)
+			MaxTokens: a.cfg.MaxTokens,
+			System:    []anthropic.TextBlockParam{{Text: system}},
+			Messages:  messages,
+			Tools:     tools,
+		})
+		if err != nil {
+			var apiErr *anthropic.Error
+			if errors.As(err, &apiErr) {
+				var prob struct {
+					Reason string `json:"reason"`
+				}
+				if json.Unmarshal([]byte(apiErr.RawJSON()), &prob) == nil && prob.Reason != "" {
+					return nil, failReason(prob.Reason), err
+				}
+			}
+			return nil, "model_error", err
 		}
+		if msg.StopReason != anthropic.StopReasonToolUse || p3 == nil {
+			var text strings.Builder
+			for _, b := range msg.Content {
+				if b.Type == "text" {
+					text.WriteString(b.Text)
+				}
+			}
+			res, err := parseResult(text.String(), p.ResultSchema)
+			if err != nil {
+				return nil, "output_schema_invalid", err
+			}
+			return res, "", nil
+		}
+		// The tool results go back as tool_result blocks; the output text of a tool is data
+		// for the model, never an instruction (INJ-4).
+		messages = append(messages, msg.ToParam())
+		var results []anthropic.ContentBlockParamUnion
+		for _, b := range msg.Content {
+			if b.Type != "tool_use" {
+				continue
+			}
+			var input map[string]any
+			_ = json.Unmarshal(b.Input, &input)
+			text, isErr, err := p3.call(ctx, b.Name, input)
+			if p3Reason(err) == "fenced" {
+				return nil, "fenced", err
+			}
+			if err != nil {
+				return nil, "runtime_error", err
+			}
+			results = append(results, anthropic.NewToolResultBlock(b.ID, text, isErr))
+		}
+		messages = append(messages, anthropic.NewUserMessage(results...))
 	}
-	res, err := parseResult(text.String(), p.ResultSchema)
-	if err != nil {
-		return nil, "output_schema_invalid", err
-	}
-	return res, "", nil
+	return nil, "runtime_error", errors.New("the model did not answer within the turn limit")
 }
 
 // failReason maps a P4 refusal to the reason of fail: the provider codes do not spend the
 // attempt, the others end the run.
 func failReason(r string) string {
 	switch r {
-	case "provider_unavailable", "provider_rate_limited", "provider_config", "provider_spend_cap", "budget_exhausted":
+	case "provider_unavailable", "provider_rate_limited", "provider_config", "provider_spend_cap", "budget_exhausted", "fenced":
 		return r
 	}
 	return "model_error"

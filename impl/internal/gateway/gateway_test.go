@@ -59,7 +59,6 @@ func TestProviderBody(t *testing.T) {
 		t.Fatal("a profile without cache prices got a cache point")
 	}
 	for name, bad := range map[string]map[string]any{
-		"tools":  {"model": "b", "max_tokens": 10, "tools": []any{map[string]any{"name": "x"}}},
 		"stream": {"model": "b", "max_tokens": 10, "stream": true},
 		"cache":  {"model": "b", "max_tokens": 10, "system": []any{map[string]any{"type": "text", "text": "s", "cache_control": map[string]any{"type": "ephemeral"}}}},
 	} {

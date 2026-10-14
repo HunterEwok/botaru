@@ -252,11 +252,17 @@ def enum_from_lists(node):
     return {n['enum_from'] for _, n in walk_nodes(node) if isinstance(n.get('enum_from'), str)}
 
 
+# Formats of spec/model/formats.yaml whose values are prose, not a closed shape: a string of
+# such a format is free text (INJ-3).
+PROSE_FORMATS = {'search_query'}
+
+
 def free_text(node):
-    """Whether the output schema has a string without enum, const and format (INJ-3)."""
+    """Whether the output schema has a string without enum, const and a non-prose format (INJ-3)."""
     for _, n in walk_nodes(node):
         if n.get('type') == 'string' and 'maxLength' in n and not any(
-                k in n for k in ('enum', 'enum_from', 'const', 'x-botaru-format')):
+                k in n for k in ('enum', 'enum_from', 'const')) and (
+                'x-botaru-format' not in n or n['x-botaru-format'] in PROSE_FORMATS):
             return True
     return False
 
@@ -635,8 +641,10 @@ def lint(docs, today=None, farm_hosts=None, examples_mode=False, claimed=None, s
                 params.update(c.get('params') or {})
             if bool(t.get('target_from')) == bool(t.get('target')):
                 f.error('tool_target_missing', where, f'{tid}: exactly one of target_from and target: any is required (TEN-3a)')
-            elif t.get('target_from') and t['target_from'] not in params:
-                f.error('tool_target_unknown', where, f'{tid}: target_from {t["target_from"]} is not a tool parameter (TEN-3a)')
+            elif t.get('target_from') and (t['target_from'] not in params or not t.get('args_from') and not str(
+                    (params[t['target_from']] or {}).get('enum_from', '')).startswith('catalog.')):
+                f.error('tool_target_unknown', where,
+                        f'{tid}: target_from {t["target_from"]} is not a tool parameter with a catalog list (TEN-3a)')
             if ps['placement'] == 'host' and t.get('untrusted_output') is True \
                     and not {'ip', 'email', 'secret'} <= set(t.get('redact', [])):
                 f.error('redact_required', where, f'{tid}: placement: host and untrusted_output: true without redact [ip, email, secret] (INJ-4)')
@@ -645,6 +653,15 @@ def lint(docs, today=None, farm_hosts=None, examples_mode=False, claimed=None, s
                         'output of a person\'s connection is never cached (PRM-12, SEC-7)')
             if t.get('untrusted_output') is False and t.get('output_schema') and free_text(t['output_schema']):
                 f.error('untrusted_output_false_text', where, f'{tid}: untrusted_output: false with free text in the output (INJ-3)')
+            # The model sees one schema per parameter name, so the tool and all its commands
+            # must agree on it; otherwise a value allowed for one command reaches another.
+            seen_params = dict(t.get('params') or {})
+            for cname, c in sorted((t.get('commands') or {}).items()):
+                for k, v in (c.get('params') or {}).items():
+                    if k in seen_params and seen_params[k] != v:
+                        f.error('cmd_param_conflict', where,
+                                f'{tid} {cname}: parameter {k} has another schema elsewhere in the tool (INJ-14)')
+                    seen_params.setdefault(k, v)
             for cname, c in (t.get('commands') or {}).items():
                 argv = c['argv']
                 if not argv[0].startswith('/'):

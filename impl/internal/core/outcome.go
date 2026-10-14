@@ -166,6 +166,13 @@ func (c *Core) Heartbeat(ctx context.Context, w *Worker, header string, req Hear
 			}
 			leaseS = min(leaseS, maxLeaseS)
 		}
+		if l.Kind == "toolcall" {
+			// The call was abandoned or ended: the toolhost cancels the plugin (FEN-6).
+			var err error
+			if cancel, err = toolcallCanceled(ctx, tx, l.WorkID); err != nil {
+				return nil, err
+			}
+		}
 		until := now.Add(time.Duration(leaseS) * time.Second)
 		if _, err := tx.Exec(ctx, `UPDATE leases SET lease_until = $3, reason = NULL WHERE work_id = $1 AND lease_no = $2`, l.WorkID, l.LeaseNo, until); err != nil {
 			return nil, err
@@ -217,6 +224,13 @@ func (c *Core) Complete(ctx context.Context, w *Worker, header string, req Compl
 				return nil, refuse("input_schema_invalid", "a delivery completes with receipt")
 			}
 			if err := c.completeDelivery(ctx, tx, now, w, l, *req.Receipt); err != nil {
+				return nil, err
+			}
+		case "toolcall":
+			if req.Output == nil {
+				return nil, refuse("input_schema_invalid", "a tool call completes with output")
+			}
+			if err := c.completeToolcall(ctx, tx, now, l, req.Output); err != nil {
 				return nil, err
 			}
 		default:
@@ -415,6 +429,8 @@ func (c *Core) Fail(ctx context.Context, w *Worker, header string, req FailReque
 			res, err = c.endAttempt(ctx, tx, now, w.Tenant, l, req.Reason, spends, req.Retryable && retry != "none", req.RetryAfterS, retry)
 		case "delivery":
 			res, err = c.endDelivery(ctx, tx, now, w.Tenant, l, req.Reason, req.Retryable, req.RetryAfterS)
+		case "toolcall":
+			res, err = &FailResult{Final: true, Reason: req.Reason}, failToolcall(ctx, tx, now, l, req.Reason)
 		default:
 			return nil, refuse("input_schema_invalid", "this work kind is not served in v0.1")
 		}
@@ -444,6 +460,9 @@ func (c *Core) requeue(ctx context.Context, tx pgx.Tx, now time.Time, l *leaseRo
 		_, err = tx.Exec(ctx, `UPDATE tasks SET state = 'submitted', run_at = $2, updated_at = $3 WHERE id = $1 AND state = 'working'`, l.WorkID, runAt, now)
 	case "delivery":
 		_, err = tx.Exec(ctx, `UPDATE deliveries SET state = 'planned', run_at = $2, updated_at = $3 WHERE id = $1 AND state = 'sending'`, l.WorkID, runAt, now)
+	case "toolcall":
+		// A call is not handed out again (DLV-1): a released call ends, and the model decides.
+		_, err = tx.Exec(ctx, `UPDATE toolcalls SET state = 'error', reason = 'worker_drain', updated_at = $2, ended_at = $2 WHERE id = $1 AND state = 'leased'`, l.WorkID, now)
 	}
 	if err != nil {
 		return err

@@ -158,6 +158,14 @@ func (c *Core) Apply(ctx context.Context, op Operator, req ApplyRequest) (*Apply
 			continue
 		}
 		seen[d.Key()] = true
+		if d.Kind == "ToolPlugin" {
+			if errs, err := c.checkPlugin(d, i); err != nil {
+				return nil, err
+			} else if len(errs) > 0 {
+				res.Errors = append(res.Errors, errs...)
+				continue
+			}
+		}
 		docs = append(docs, d)
 	}
 	if len(res.Errors) == 0 {

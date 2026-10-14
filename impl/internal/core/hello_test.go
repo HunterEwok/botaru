@@ -30,7 +30,10 @@ type bench struct {
 	channel *Worker
 }
 
-func newBench(t *testing.T) *bench {
+func newBench(t *testing.T) *bench { t.Helper(); return newBenchWith(t, nil) }
+
+// newBenchWith is newBench with the manifest set changed by edit before apply.
+func newBenchWith(t *testing.T, edit func(root string, ms []map[string]any) []map[string]any) *bench {
 	t.Helper()
 	ctx := context.Background()
 	st, err := store.Open(ctx, pgtest.DSN(t))
@@ -60,6 +63,9 @@ func newBench(t *testing.T) *bench {
 	ms, err := testbench.HelloBotManifests(root)
 	if err != nil {
 		t.Fatal(err)
+	}
+	if edit != nil {
+		ms = edit(root, ms)
 	}
 	op := Operator{Principal: ids.PrincipalID(), Tenant: "demo"}
 	res, err := c.Apply(ctx, op, ApplyRequest{Commit: "0000000000000000000000000000000000000000", Manifests: ms})

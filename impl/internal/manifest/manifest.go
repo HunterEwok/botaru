@@ -287,6 +287,8 @@ type Timeouts struct {
 	Attempt    string `json:"attempt"`
 	StallAfter string `json:"stall_after"`
 	Deadline   string `json:"deadline"`
+	// ToolStartBy is the handout deadline of a tool call, at most 30 s (DLV-16).
+	ToolStartBy string `json:"tool_start_by"`
 }
 
 // Retry is the type retry policy.
