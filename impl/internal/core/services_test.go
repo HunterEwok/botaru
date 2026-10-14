@@ -69,6 +69,10 @@ func newServiceBench(t *testing.T) *serviceBench {
 				"spec": map[string]any{"caps": []any{"service.control:nginx", "action.request:clean_tmp"}, "data": []any{"summary"}},
 			},
 			map[string]any{
+				"apiVersion": "botaru/v1alpha1", "kind": "Group", "metadata": map[string]any{"name": "leads", "tenant": "demo"},
+				"spec": map[string]any{"caps": []any{"team.view:requesters", "task.read:hello.greet.v1"}, "data": []any{"summary"}},
+			},
+			map[string]any{
 				"apiVersion": "botaru/v1alpha1", "kind": "Group", "metadata": map[string]any{"name": "svc-approvers", "tenant": "demo"},
 				"spec": map[string]any{"caps": []any{"action.approve:service.control"}, "data": []any{"summary"}},
 			},

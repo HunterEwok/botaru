@@ -4,6 +4,8 @@ Skeleton versions: v0.1, v0.2, v0.3, v0.4. A skeleton version states which rules
 
 ## Unreleased
 
+- The code text catalog gets `cmd.cancel.finished` and the `cmd.profile.*` lines, and `cmd.cancel.confirm` names the confirmation word `{nonce}`.
+- impl: the initiator commands `/tasks`, `/status`, `/cancel` (with confirmation, the tree and its waiting approvals canceled with the reason `initiator`), `/help`, `/me`, `/lang`, `/team` and `/about`, answered by code (PRM-17, REP-12).
 - impl: service control without a card for a restart from the catalog's `no_card` under a `service_grant`, by card for start, stop and after untrusted text, with the initiator's own right, holds, the hourly limits with `alarm.service.control.rate` and one operation per service at a time (MON-8, APR-18, INJ-15); the commands `/service` and `/run` with routine pipelines (PRM-18, APR-17); the plugins `service` (systemctl) and `queue` (the oneshot queue) and `botaru-plugin polkit`, which prints the polkit rule of a machine from the catalog (DEP-4).
 - The card schema gets the optional fields `state` (the state of the subject when the card was drawn, for an update in place) and `reminder` (a reminder card); the code text catalog gets the `card.*` texts of an action approval card, its buttons, its answers and its "Details" view.
 - impl: actions by manifest with approval cards: the built-in tool `request_action`, approvals, cards drawn from the record, P1 `decide`, `card.details` and `card.remind`, the action task with its write call executed at most once, reminders, expiry and cancellation by holds, offboarding and revoked rights (APR-1 to APR-5, APR-7, APR-10, APR-11, APR-19, CNT-7, MAN-9); Telegram cards with inline buttons and edits in place.

@@ -115,17 +115,21 @@ func (c *Core) SubmitActivity(ctx context.Context, w *Worker, a Activity) (*Acti
 			return nil
 		}
 		// The commands the core runs by code, without a model and without a task type.
-		if word, rest, ok := commandWord(a); ok && (word == "/service" || word == "/run") {
+		if word, rest, ok := commandWord(a); ok && (word == "/service" || word == "/run" || codeCommands[word]) {
 			if err := c.firstContact(ctx, tx, now, tv, a.Channel, principal, a.Chat); err != nil {
 				return err
 			}
 			pc := personCommand{tv: tv, cat: cat, person: principal, groups: groupClosure(tv, p.Groups), locale: locale,
 				channel: a.Channel, chat: a.Chat, key: key}
-			run := c.serviceCommand
-			if word == "/run" {
-				run = c.runCommand
+			var r *ActivityResult
+			switch word {
+			case "/service":
+				r, err = c.serviceCommand(ctx, tx, now, pc, rest)
+			case "/run":
+				r, err = c.runCommand(ctx, tx, now, pc, rest)
+			default:
+				r, err = c.codeCommand(ctx, tx, now, pc, word, rest)
 			}
-			r, err := run(ctx, tx, now, pc, rest)
 			if err != nil {
 				return err
 			}

@@ -25,7 +25,8 @@ texts:
   cmd.tasks.empty: You have no tasks today.
   cmd.status.row: "Task {n} \"{title}\": {state}, attempt {attempt}{waiting}, deadline {deadline}."
   cmd.status.not_found: There is no task {n} of yours.
-  cmd.cancel.confirm: 'Cancel task {n} "{title}"? Its child tasks will stop too.'
+  cmd.cancel.confirm: 'Cancel task {n} "{title}"? Its child tasks will stop too. To confirm, send /cancel {n} {nonce}.'
+  cmd.cancel.finished: "Task {n} has already finished ({state})."
   cmd.cancel.done: Task {n} is canceled.
   cmd.cancel.forbidden: You cannot cancel task {n}.
   cmd.help.header: "Commands you can use here:"
@@ -39,6 +40,10 @@ texts:
     This is the bot of tenant {tenant}. Your messages are processed by an external provider's
     model; you can request your data with the /mydata command.
   cmd.lang.done: The language is now {locale}.
+  cmd.profile.groups: "Your groups: {groups}."
+  cmd.profile.types: "You can ask for: {titles}."
+  cmd.profile.actions: "Actions you can request: {titles}."
+  cmd.profile.data: "Your data classes: {classes}."
   cmd.lang.unknown: "Unknown language. Available: {locales}."
   cmd.forbidden.needs: This needs the group {group}; contact the tenant administrator.
   cmd.followup.hint: You can simply reply with a message within {minutes} minutes.

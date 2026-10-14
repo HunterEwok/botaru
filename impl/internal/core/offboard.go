@@ -112,24 +112,7 @@ func (c *Core) cancelTasksOf(ctx context.Context, tx pgx.Tx, now time.Time, tena
 	if err := rows.Err(); err != nil {
 		return err
 	}
-	for _, id := range tasks {
-		if _, err := tx.Exec(ctx, `DELETE FROM handles WHERE work_id = $1`, id); err != nil {
-			return err
-		}
-		if _, err := tx.Exec(ctx, `UPDATE leases SET state = 'revoked', reason = $3, closed_at = $2 WHERE work_id = $1 AND state = 'active'`, id, now, reason); err != nil {
-			return err
-		}
-		if _, err := tx.Exec(ctx, `UPDATE tasks SET state = 'canceled', reason = $2, run_at = NULL, updated_at = $3 WHERE id = $1`, id, reason, now); err != nil {
-			return err
-		}
-		if err := releaseTaskReserve(ctx, tx, id); err != nil {
-			return err
-		}
-		if err := c.appendEvent(ctx, tx, now, tenant, Event{Type: "task.canceled", Subject: id, Data: map[string]any{"task": id, "reason": reason}}); err != nil {
-			return err
-		}
-	}
-	return nil
+	return c.cancelTaskIDs(ctx, tx, now, tenant, tasks, reason)
 }
 
 // planPrincipalLeft sends the code notice principal_left to the direct chats of the active
