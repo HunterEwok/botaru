@@ -17,6 +17,7 @@ texts:
   notice.not_registered: You are not registered with this bot; the administrator of tenant {tenant} grants access.
   notice.principal_left: "{subject} has been deactivated ({reason}). Still a member of the chats: {chats}."
   notice.principal_left.no_chats: none
+  notice.erasure_done: "Your data is erased (request {request}). Result per store:\n{results}"
   # An alarm without a monitoring system (MON-13)
   notice.alarm: "Alarm {alarm} ({severity}) is {state}: {subject}, change {seq} at {at}."
   # Channel commands (REP-12, PRM-15, DLV-9)
@@ -47,6 +48,12 @@ texts:
   cmd.lang.unknown: "Unknown language. Available: {locales}."
   cmd.forbidden.needs: This needs the group {group}; contact the tenant administrator.
   cmd.followup.hint: You can simply reply with a message within {minutes} minutes.
+  # A person's data and memory (MEM-4, SEC-11)
+  cmd.mydata.summary: "The farm keeps {records} memory records about you and {sessions} conversations. /forget erases them; /mydata erase asks to erase all your data."
+  cmd.mydata.usage: "Usage: /mydata, /mydata erase or /forget."
+  cmd.mydata.erase: "Your request {request} to erase your data is recorded; a person with admin:people decides it within {days} days, and the result comes here."
+  cmd.mydata.export: The copy of your data arrives in a later version.
+  cmd.forget.done: "Your memory records and conversations are being erased for real (request {request})."
   # Service control and pipelines by command, without a model (PRM-18, APR-17)
   cmd.service.usage: "Usage: /service <verb> <service>, for example /service restart nginx."
   cmd.service.unknown: There is no such service or verb in the catalog of this tenant.

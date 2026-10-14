@@ -243,6 +243,8 @@ type Privacy struct {
 	Channels      []PrivacyChannel `json:"channels"`
 	NoticeRef     string           `json:"notice_ref"`
 	NoticeVersion json.RawMessage  `json:"notice_version"`
+	// SubjectRequestDays is the deadline of a person's request and of an erasure (SEC-11).
+	SubjectRequestDays int `json:"subject_request_days"`
 }
 
 // PrivacyChannel is one channel driver of the privacy block (SEC-9).

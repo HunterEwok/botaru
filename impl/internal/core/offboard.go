@@ -10,8 +10,6 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
-
-	"github.com/HunterEwok/botaru/impl/internal/ids"
 )
 
 // offboard ends a principal for good in the caller's transaction (LCY-8): the state
@@ -25,6 +23,12 @@ func (c *Core) offboard(ctx context.Context, tx pgx.Tx, now time.Time, tv *Tenan
 	if _, err := tx.Exec(ctx, `UPDATE principals SET state = 'offboarded' WHERE tenant = $1 AND id = $2`, tv.Name, subject); err != nil {
 		return "", 0, err
 	}
+	// The external identities go into the erasure request before their links are deleted, so
+	// the edge stores can match by them (RET-4).
+	needles, err := needlesOf(ctx, tx, tv.Name, subject)
+	if err != nil {
+		return "", 0, err
+	}
 	if _, err := tx.Exec(ctx, `DELETE FROM identities WHERE tenant = $1 AND principal = $2`, tv.Name, subject); err != nil {
 		return "", 0, err
 	}
@@ -36,14 +40,10 @@ func (c *Core) offboard(ctx context.Context, tx pgx.Tx, now time.Time, tv *Tenan
 	if err := c.withholdDeliveriesTo(ctx, tx, now, tv.Name, subject, "person_inactive"); err != nil {
 		return "", 0, err
 	}
-	// The request waits for the erasure work, which this version does not run yet.
-	erasure := ids.New(ids.Erasure)
-	authorRec := map[string]any{"kind": "system"}
-	if author != "" {
-		authorRec = map[string]any{"kind": "principal", "id": author}
-	}
-	if _, err := tx.Exec(ctx, `INSERT INTO erasure_requests (id, tenant, subject, reason, author, state, created_at)
-		VALUES ($1, $2, $3, 'offboarding', $4, 'requested', $5)`, erasure, tv.Name, subject, authorRec, now); err != nil {
+	erasure, err := c.requestErasure(ctx, tx, now, tv, erasureSpec{
+		Scope: ErasureScope{Tenant: tv.Name, Subject: subject}, Reason: "offboarding", Author: author, Needles: needles,
+	})
+	if err != nil {
 		return "", 0, err
 	}
 	n, err := c.planPrincipalLeft(ctx, tx, now, tv, subject, "offboarding")

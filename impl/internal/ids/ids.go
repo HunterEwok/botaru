@@ -28,6 +28,10 @@ const (
 	Hold      = "h"
 	Erasure   = "er"
 	Grant     = "sg"
+	Session   = "s"
+	Memory    = "m"
+	Subject   = "sr"
+	Step      = "es"
 )
 
 var (

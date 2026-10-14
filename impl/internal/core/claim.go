@@ -110,6 +110,8 @@ func (c *Core) claimOnce(ctx context.Context, w *Worker, kinds []string) (*WorkI
 				item, err = c.claimAttempt(ctx, tx, now, cat, w)
 			case k == "toolcall" && w.Kind == "toolhost":
 				item, err = c.claimToolcall(ctx, tx, now, cat, w)
+			case k == "erasure" && (w.Kind == "sink" || w.Kind == "monitor"):
+				item, err = c.claimErasure(ctx, tx, now, w)
 			}
 			if err != nil || item != nil {
 				return err
@@ -289,7 +291,7 @@ func (c *Core) claimAttempt(ctx context.Context, tx pgx.Tx, now time.Time, cat *
 	skip := []string{}
 	for picked := false; !picked; {
 		err := tx.QueryRow(ctx, `SELECT id, type, body, record, lease_no, initiator FROM tasks
-			WHERE tenant = $1 AND state = 'submitted' AND type = ANY($2) AND (run_at IS NULL OR run_at <= $3) AND (deadline_at IS NULL OR deadline_at > $3)
+			WHERE tenant = $1 AND state = 'submitted' AND body IS NOT NULL AND type = ANY($2) AND (run_at IS NULL OR run_at <= $3) AND (deadline_at IS NULL OR deadline_at > $3)
 			AND NOT id = ANY($4)
 			ORDER BY priority_class, created_at, id LIMIT 1 FOR UPDATE SKIP LOCKED`, w.Tenant, claims, now, skip).
 			Scan(&id, &typ, &body, &rec, &leaseNo, &initiator)
@@ -389,6 +391,9 @@ func (c *Core) claimAttempt(ctx context.Context, tx pgx.Tx, now time.Time, cat *
 			return nil, err
 		}
 		handles["model"] = h
+	}
+	if err := c.leaseHandles(ctx, tx, now, w, role, id, leaseNo, g.Initiator, record, handles); err != nil {
+		return nil, err
 	}
 	var taskBody map[string]any
 	if err := json.Unmarshal(body, &taskBody); err != nil {
@@ -576,6 +581,24 @@ func (c *Core) claimDelivery(ctx context.Context, tx pgx.Tx, now time.Time, cat 
 				continue
 			}
 			cardBody, replacesID = drawn, replaces
+		} else if sk := deref(subjectKind); sk == "memory_record" || sk == "subject_request" {
+			// The card of a memory record or a person's request is drawn now too; one whose
+			// record was erased is not sent.
+			var b map[string]any
+			if err := json.Unmarshal(body, &b); err != nil {
+				return nil, err
+			}
+			drawn, err := c.subjectCardBody(ctx, tx, w.Tenant, sk, deref(subjectID), b)
+			if err != nil {
+				return nil, err
+			}
+			if drawn == nil {
+				if _, err := tx.Exec(ctx, `UPDATE deliveries SET state = 'withheld', reason = 'ref_invalid', updated_at = $2 WHERE id = $1`, id, now); err != nil {
+					return nil, err
+				}
+				continue
+			}
+			cardBody = map[string]any{"form": "card", "card": drawn}
 		}
 		picked = true
 	}
