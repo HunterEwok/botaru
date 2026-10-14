@@ -305,6 +305,10 @@ func (x *exec) run(ctx context.Context) Result {
 	}
 	var last *outcome
 	if ms := x.givenManifests(); len(ms) > 0 {
+		// Fields and kinds of a later version than the claim go before apply (MAN-11).
+		if _, err := testbench.DropUnsupported(x.r.spec, ms); err != nil {
+			return res(Unchecked, "given manifests: %v", err)
+		}
 		o, err := x.apply(ctx, ms, false)
 		if err != nil {
 			return res(Failed, "given manifests: %v", err)
@@ -639,7 +643,11 @@ func (x *exec) stand(ctx context.Context, s map[string]any) (*outcome, error) {
 func (x *exec) at(ctx context.Context, at string) error {
 	if d, err := parseDuration(at); err == nil {
 		if x.start.IsZero() {
-			return fmt.Errorf("at %s before the case clock is known", at)
+			// The case starts at the store clock of the first timed step: a shift by zero
+			// reads it.
+			if _, err := x.test(ctx, "clock.advance", map[string]any{"op": "clock.advance", "by_s": 0}); err != nil {
+				return err
+			}
 		}
 		target := x.start.Add(d)
 		if !target.After(x.now) {

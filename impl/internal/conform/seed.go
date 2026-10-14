@@ -62,7 +62,12 @@ func (s *seedData) groupManifests(owner string) []map[string]any {
 	var out []map[string]any
 	for _, n := range names {
 		g := s.groups[n]
-		spec := map[string]any{"caps": toAny(strs(g["caps"])), "data": []any{"summary"}}
+		// The seed writes the highest data class a group sees as data_up_to; a group without it
+		// sees no data class.
+		spec := map[string]any{"caps": toAny(strs(g["caps"]))}
+		if d := str(g["data_up_to"]); d != "" {
+			spec["data"] = []any{d}
+		}
 		if inh := strs(g["inherits"]); len(inh) > 0 {
 			spec["inherits"] = toAny(inh)
 		}

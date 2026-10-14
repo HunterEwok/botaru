@@ -7,6 +7,8 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
+
+	"github.com/HunterEwok/botaru/impl/internal/store"
 )
 
 // The operations of the test-control port T (spec/ports/test-control.md). They exist only on a
@@ -59,9 +61,14 @@ func (c *Core) testClock(ctx context.Context, command string, shift func(now tim
 		return nil, err
 	}
 	var out TestClock
-	err := c.tx(ctx, func(tx pgx.Tx, now time.Time) error {
-		// One shift at a time, so two concurrent calls cannot both start from the same clock.
+	err := c.st.Tx(ctx, func(tx pgx.Tx) error {
+		// One shift at a time: the lock comes before the clock is read, so two concurrent
+		// calls cannot both start from the same clock.
 		if _, err := tx.Exec(ctx, `SELECT 1 FROM farm_meta WHERE id = 1 FOR UPDATE`); err != nil {
+			return err
+		}
+		now, err := store.Now(ctx, tx)
+		if err != nil {
 			return err
 		}
 		d, err := shift(now)
