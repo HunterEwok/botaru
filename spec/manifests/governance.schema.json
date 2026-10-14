@@ -241,10 +241,19 @@
                 "description": "Seat number."
               },
               "lens": {
-                "type": "string",
-                "maxLength": 40,
-                "description": "Lens from lenses.yaml or a tenant lens x_<name> from commission.lenses (COM-19).",
-                "pattern": "^[a-z][a-z_]*$"
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "maxLength": 40,
+                    "pattern": "^[a-z][a-z_]*$"
+                  },
+                  {
+                    "type": "string",
+                    "maxLength": 32,
+                    "pattern": "^x_[a-z][a-z0-9_]{0,30}$"
+                  }
+                ],
+                "description": "Lens from lenses.yaml or a tenant lens x_<name> from commission.lenses (COM-19)."
               },
               "fallback_role": {
                 "$ref": "urn:botaru:schema:common:1#/$defs/name"

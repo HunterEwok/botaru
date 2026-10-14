@@ -19,7 +19,7 @@
       "type": "object",
       "maxProperties": 16,
       "propertyNames": {
-        "pattern": "^[a-z][a-z_]*$"
+        "pattern": "^[a-z][a-z0-9_]*$"
       },
       "additionalProperties": {
         "type": "number",
@@ -32,7 +32,7 @@
       "type": "object",
       "maxProperties": 16,
       "propertyNames": {
-        "pattern": "^[a-z][a-z_]*$"
+        "pattern": "^[a-z][a-z0-9_]*$"
       },
       "additionalProperties": {
         "type": "number",
