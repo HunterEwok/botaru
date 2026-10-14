@@ -5,6 +5,7 @@ package core
 import (
 	"encoding/json"
 	"fmt"
+	"maps"
 	"regexp"
 	"slices"
 	"sort"
@@ -95,6 +96,10 @@ func (f *lintFindings) add(o lintObj, code, path string) {
 	}
 	f.seen[k] = true
 	e := ApplyError{Kind: o.kind, Name: o.name, Code: code, Path: fmt.Sprintf("/manifests/%d/spec%s", o.i, path)}
+	if o.i < 0 {
+		// An object the store keeps from an earlier apply: the set does not hold it.
+		e.Path = "/store/spec" + path
+	}
 	if o.kind != "Tenant" {
 		e.Tenant = o.tenant
 	}
@@ -353,13 +358,56 @@ func (c *Core) lintManifests(docs []manifest.Doc, index []int) ([]ApplyError, er
 			}
 		}
 	}
+	// A role names a tool as <plugin>/<tool> or a whole plugin as <plugin>: the bare form
+	// grants every enabled tool of the plugin and is checked tool by tool.
+	expand := func(ref string) []string {
+		if strings.Contains(ref, "/") {
+			return []string{ref}
+		}
+		var out []string
+		for _, k := range slices.Sorted(maps.Keys(tools)) {
+			if strings.HasPrefix(k, ref+"/") && tools[k].t["enabled"] != false {
+				out = append(out, k)
+			}
+		}
+		return out
+	}
+	plugins := map[string]bool{}
+	for _, o := range S.each("ToolPlugin") {
+		plugins[o.name] = true
+	}
 	actions := map[string]map[string]any{}
 	for _, o := range S.each("Action") {
 		actions[o.name] = o.spec
 	}
-	profiles := map[string]map[string]any{}
+	// A model profile of either scope resolves as the runtime catalog does: the profile of
+	// the tenant first, then the global one of the same name.
+	profiles := map[[2]string]map[string]any{}
 	for _, o := range S.each("ModelProfile") {
-		profiles[o.name] = o.spec
+		profiles[[2]string{o.tenant, o.name}] = o.spec
+	}
+	profile := func(tenant, name string) map[string]any {
+		if p, ok := profiles[[2]string{tenant, name}]; ok {
+			return p
+		}
+		return profiles[[2]string{"", name}]
+	}
+	// A global object (a role, a task type) runs in every tenant, so it is checked against
+	// the global profile and against every tenant profile of the same name.
+	variants := func(tenant, name string) []map[string]any {
+		if tenant != "" {
+			if p := profile(tenant, name); p != nil {
+				return []map[string]any{p}
+			}
+			return nil
+		}
+		var out []map[string]any
+		for _, k := range slices.SortedFunc(maps.Keys(profiles), func(a, b [2]string) int { return strings.Compare(a[0]+"\x00"+a[1], b[0]+"\x00"+b[1]) }) {
+			if k[1] == name {
+				out = append(out, profiles[k])
+			}
+		}
+		return out
 	}
 	roles := map[string]lintObj{}
 	for _, o := range S.each("Role") {
@@ -690,7 +738,7 @@ func (c *Core) lintManifests(docs []manifest.Doc, index []int) ([]ApplyError, er
 		}
 		for j, mp := range mstrs(ts, "models_allowed") {
 			path := fmt.Sprintf("/models_allowed/%d", j)
-			prof := profiles[mp]
+			prof := profile(o.tenant, mp)
 			if prof == nil {
 				if len(profiles) > 0 {
 					c.lintWarn(o, "ref_missing", path)
@@ -770,7 +818,7 @@ func (c *Core) lintManifests(docs []manifest.Doc, index []int) ([]ApplyError, er
 					continue
 				}
 				writes := false
-				for _, t := range mstrs(rs, "tools") {
+				for _, t := range slices.Concat(mapSlice(mstrs(rs, "tools"), expand)...) {
 					if tr, ok := tools[t]; ok && mstr(tr.t, "access") == "write" {
 						writes = true
 					}
@@ -916,9 +964,12 @@ func (c *Core) lintManifests(docs []manifest.Doc, index []int) ([]ApplyError, er
 				continue
 			}
 			mp := mstr(mmap(rs, "models"), sc.slot)
-			chain := append([]string{mp}, mstrs(profiles[mp], "fallback")...)
+			chain := []string{mp}
+			for _, pr := range variants(o.tenant, mp) {
+				chain = append(chain, mstrs(pr, "fallback")...)
+			}
 			for _, p := range chain {
-				if pr := profiles[p]; pr != nil {
+				for _, pr := range variants(o.tenant, p) {
 					if rank, _ := mnum(pr, "rank"); rank > ceil {
 						f.add(o, "rank_exceeded", "/models/"+sc.slot)
 					}
@@ -931,19 +982,23 @@ func (c *Core) lintManifests(docs []manifest.Doc, index []int) ([]ApplyError, er
 		if sp := mstrs(prof, "scripts_propose"); len(sp) > 0 && truthy(rs["scripts"]) && !slices.Contains(sp, mstr(mmap(rs, "scripts"), "propose")) {
 			f.add(o, "role_profile_forbidden", "/scripts")
 		}
-		for j, tref := range mstrs(rs, "tools") {
-			if !strings.Contains(tref, "/") {
-				continue
-			}
+		for j, ref := range mstrs(rs, "tools") {
 			path := fmt.Sprintf("/tools/%d", j)
-			tr, ok := tools[tref]
-			switch {
-			case !ok:
-				if len(tools) > 0 {
+			if !strings.Contains(ref, "/") {
+				if !plugins[ref] && len(plugins) > 0 {
 					f.add(o, "ref_missing", path)
 				}
-			case mstr(tr.t, "access") != "read":
-				f.add(o, "role_write_tool", path)
+			}
+			for _, tref := range expand(ref) {
+				tr, ok := tools[tref]
+				switch {
+				case !ok:
+					if len(tools) > 0 {
+						f.add(o, "ref_missing", path)
+					}
+				case mstr(tr.t, "access") != "read":
+					f.add(o, "role_write_tool", path)
+				}
 			}
 		}
 		for j, tn := range mstrs(rs, "may_enqueue") {
@@ -1151,12 +1206,18 @@ func (c *Core) lintManifests(docs []manifest.Doc, index []int) ([]ApplyError, er
 			if mp == "" {
 				continue
 			}
-			for _, p := range append([]string{mp}, mstrs(profiles[mp], "fallback")...) {
-				ps := profiles[p]
-				out, ok1 := mnum(ps, "max_output_tokens")
-				price, ok2 := mnum(mmap(ps, "price"), "output")
-				if ok1 && ok2 && out*price/1e6 > worst {
-					worst = out * price / 1e6
+			rt := roles[rn].tenant
+			chain := []string{mp}
+			for _, pr := range variants(rt, mp) {
+				chain = append(chain, mstrs(pr, "fallback")...)
+			}
+			for _, p := range chain {
+				for _, ps := range variants(rt, p) {
+					out, ok1 := mnum(ps, "max_output_tokens")
+					price, ok2 := mnum(mmap(ps, "price"), "output")
+					if ok1 && ok2 && out*price/1e6 > worst {
+						worst = out * price / 1e6
+					}
 				}
 			}
 		}
@@ -1175,7 +1236,7 @@ func (c *Core) lintManifests(docs []manifest.Doc, index []int) ([]ApplyError, er
 				ps = append(ps, mstr(sm, "model_profile"))
 			}
 			for _, p := range ps {
-				if pr := profiles[p]; pr != nil {
+				if pr := profile(o.tenant, p); pr != nil {
 					if rank, _ := mnum(pr, "rank"); rank > ceil {
 						f.add(o, "rank_exceeded", "/commission")
 					}
@@ -1452,4 +1513,13 @@ func (c *Core) lintDispatch(f *lintFindings, o lintObj, types map[string]map[str
 			}
 		}
 	}
+}
+
+// mapSlice applies fn to every element of in.
+func mapSlice[T, U any](in []T, fn func(T) U) []U {
+	out := make([]U, 0, len(in))
+	for _, v := range in {
+		out = append(out, fn(v))
+	}
+	return out
 }

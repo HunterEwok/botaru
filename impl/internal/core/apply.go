@@ -169,15 +169,39 @@ func (c *Core) Apply(ctx context.Context, op Operator, req ApplyRequest) (*Apply
 		docs = append(docs, d)
 		index = append(index, i)
 	}
+	// The lint and the catalog check see the store as it will be after this apply: the
+	// objects of the store that stay (orphaned ones included) overlaid with this set and its
+	// deletions, so that a check across objects does not miss an object of an earlier apply.
+	var after []manifest.Doc
 	if len(res.Errors) == 0 {
-		errs, err := c.lintManifests(docs, index)
+		stored, _, err := loadManifests(ctx, c.st.Pool)
+		if err != nil {
+			return nil, err
+		}
+		gone := map[manifest.Key]bool{}
+		for _, del := range req.Delete {
+			gone[manifest.Key{Kind: del.Kind, Tenant: del.Tenant, Name: del.Name}] = true
+		}
+		after = append(after, docs...)
+		lintIndex := append([]int(nil), index...)
+		for _, d := range stored {
+			if ki := kinds[d.Kind]; ki.scope == "global" {
+				d.Tenant = ""
+			}
+			if k := d.Key(); seen[k] || gone[k] {
+				continue
+			}
+			after = append(after, d)
+			lintIndex = append(lintIndex, -1)
+		}
+		errs, err := c.lintManifests(after, lintIndex)
 		if err != nil {
 			return nil, err
 		}
 		res.Errors = append(res.Errors, errs...)
 	}
 	if len(res.Errors) == 0 {
-		if _, err := buildCatalog(docs); err != nil {
+		if _, err := buildCatalog(after); err != nil {
 			res.Errors = append(res.Errors, ApplyError{Code: "decode_failed"})
 		}
 	}

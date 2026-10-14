@@ -180,3 +180,66 @@ spec:
 		}
 	}
 }
+
+// A model profile of a tenant is checked as the runtime catalog resolves it: the tenant's own
+// profile first, not one of another tenant with the same name.
+func TestLintProfileOfTenant(t *testing.T) {
+	c := lintCore(t)
+	prof := func(tenant, training string) string {
+		return `apiVersion: botaru/v1alpha1
+kind: ModelProfile
+metadata: {name: base, tenant: ` + tenant + `}
+spec:
+  provider: provider-a
+  provider_training: {value: ` + training + `}
+---
+`
+	}
+	ten := `apiVersion: botaru/v1alpha1
+kind: Tenant
+metadata: {name: demo}
+spec:
+  models_allowed: [base]
+`
+	if got := lintCodes(t, c, prof("demo", "true")+prof("demo2", "false")+ten); !slices.Contains(got, "provider_training") {
+		t.Fatalf("the training profile of the tenant itself: %v", got)
+	}
+	if got := lintCodes(t, c, prof("demo2", "true")+prof("demo", "false")+ten); slices.Contains(got, "provider_training") {
+		t.Fatalf("a training profile of another tenant: %v", got)
+	}
+}
+
+// A role that names a whole plugin gets each of its tools checked: a write tool among them is
+// refused as when it is named alone.
+func TestLintWholePlugin(t *testing.T) {
+	c := lintCore(t)
+	set := func(access, ref string) string {
+		return `apiVersion: botaru/v1alpha1
+kind: ToolPlugin
+metadata: {name: web}
+spec:
+  tools: [{name: restart, access: ` + access + `}]
+---
+apiVersion: botaru/v1alpha1
+kind: Role
+metadata: {name: r}
+spec:
+  tools: [` + ref + `]
+`
+	}
+	for _, tc := range []struct {
+		access, ref string
+		want        bool
+	}{
+		{"write", "web", true},
+		{"write", "web/restart", true},
+		{"read", "web", false},
+	} {
+		if got := lintCodes(t, c, set(tc.access, tc.ref)); slices.Contains(got, "role_write_tool") != tc.want {
+			t.Errorf("%s tool by %s: %v", tc.access, tc.ref, got)
+		}
+	}
+	if got := lintCodes(t, c, set("read", "nope")); !slices.Contains(got, "ref_missing") {
+		t.Errorf("an unknown plugin: %v", got)
+	}
+}

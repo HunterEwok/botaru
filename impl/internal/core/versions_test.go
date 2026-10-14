@@ -4,10 +4,12 @@ package core
 
 import (
 	"context"
+	"path/filepath"
 	"slices"
 	"strconv"
 	"testing"
 
+	"github.com/HunterEwok/botaru/impl/internal/manifest"
 	"github.com/HunterEwok/botaru/impl/internal/spec"
 	"github.com/HunterEwok/botaru/impl/internal/testbench"
 )
@@ -108,3 +110,42 @@ func TestApplyLaterVersion(t *testing.T) {
 }
 
 func itoa(i int) string { return strconv.Itoa(i) }
+
+// The set lint sees the store as it will be after the apply: an object of an earlier apply
+// that stays counts in the checks across objects.
+func TestApplyLintsStore(t *testing.T) {
+	ctx := context.Background()
+	b := newBench(t)
+	cat := map[string]any{"apiVersion": "botaru/v1alpha1", "kind": "Catalog", "metadata": map[string]any{"name": "demo", "tenant": "demo"},
+		"spec": map[string]any{"hosts": []any{map[string]any{"id": "web1"}}}}
+	if res, err := b.c.Apply(ctx, b.op, ApplyRequest{Commit: "6666666666666666666666666666666666666666", Manifests: []map[string]any{cat}}); err != nil || !res.Applied {
+		t.Fatalf("catalog: %+v %v", res, err)
+	}
+	root, err := spec.FindRoot("")
+	if err != nil {
+		t.Fatal(err)
+	}
+	plugin := func(egress string) map[string]any {
+		ds, err := manifest.ReadFiles([]string{filepath.Join(root, "examples/tools/checks/tool.yaml")})
+		if err != nil {
+			t.Fatal(err)
+		}
+		v := ds[0].Value
+		v["spec"].(map[string]any)["network"] = map[string]any{"egress": []any{egress}}
+		return v
+	}
+	// The catalog of the store is visible: a machine of it is a known egress.
+	if res, err := b.c.Apply(ctx, b.op, ApplyRequest{Commit: "7777777777777777777777777777777777777777", Manifests: []map[string]any{plugin("web1")}}); err != nil || !res.Applied {
+		t.Fatalf("a plugin to a machine of the stored catalog: %+v %v", res, err)
+	}
+	res, err := b.c.Apply(ctx, b.op, ApplyRequest{Commit: "7777777777777777777777777777777777777777", Manifests: []map[string]any{plugin("db9")}})
+	if err != nil || res.Applied || len(res.Errors) != 1 || res.Errors[0].Code != "egress_unknown" {
+		t.Fatalf("a plugin to an unknown machine: %+v %v", res, err)
+	}
+	// Deleting the catalog in the same apply removes its machines from the check.
+	res, err = b.c.Apply(ctx, b.op, ApplyRequest{Commit: "7777777777777777777777777777777777777777", Manifests: []map[string]any{plugin("web1")},
+		Delete: []ApplyDelete{{Kind: "Catalog", Tenant: "demo", Name: "demo"}}})
+	if err != nil || res.Applied || len(res.Errors) != 1 || res.Errors[0].Code != "egress_unknown" {
+		t.Fatalf("a plugin to a machine of a deleted catalog: %+v %v", res, err)
+	}
+}
