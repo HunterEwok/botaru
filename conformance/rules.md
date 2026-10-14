@@ -6,7 +6,7 @@ Every rule is written once in the registry. The documents in `docs/` explain how
 
 The line under a rule heading:
 
-- "since v0.1": the skeleton version from which the conformance suite checks the rule.
+- "since v0.1": the skeleton version from which the conformance suite checks the rule; "until v0.2": the last version that checks it, and the rules named under "replaced by" take over from the next version. An implementation is checked by the rules of the version it claims (MAN-8).
 - "non-waivable": an implementation cannot put the rule on its list of expected failures. "Waivable": it can, with a recorded reason.
 - "profile": the part of the skeleton an implementation claims conformance to separately (`core`, `messaging`, `campaign`, `insights`, `manager`, `governance`, `monitor`, `knowledge`, `ingress`, `connections`, `debug`, `sandbox`); the `core` profile is mandatory, see [docs/quality.md](../docs/quality.md).
 - "recommendation": a SHOULD rule; all others are mandatory.
@@ -15,57 +15,57 @@ The line under a rule heading:
 
 ## Summary
 
-| Family | About | Document | Rules | Non-waivable | v0.1 | v0.2 |
-|---|---|---|---|---|---|---|
-| [AGG](#agg) | Aggregators | [docs/improvements.md](../docs/improvements.md) | 4 | 4 | 2 | 2 |
-| [APR](#apr) | Approvals | [docs/permissions.md](../docs/permissions.md) | 19 | 16 | 14 | 5 |
-| [ART](#art) | Files and artifacts | [docs/capabilities.md](../docs/capabilities.md) | 6 | 5 | 4 | 2 |
-| [AUD](#aud) | Audit | [docs/security-model.md](../docs/security-model.md) | 7 | 4 | 6 | 1 |
-| [BGR](#bgr) | Bot groups | [docs/coordination.md](../docs/coordination.md) | 2 | 2 | 2 | 0 |
-| [BUD](#bud) | Budgets | [docs/models-and-money.md](../docs/models-and-money.md) | 16 | 9 | 13 | 3 |
-| [CAP](#cap) | Dependency admission and refusal | [docs/operations.md](../docs/operations.md) | 6 | 1 | 4 | 2 |
-| [CNT](#cnt) | Continuations | [docs/tasks-and-delivery.md](../docs/tasks-and-delivery.md) | 7 | 7 | 6 | 1 |
-| [COM](#com) | Commission | [docs/improvements.md](../docs/improvements.md) | 13 | 5 | 9 | 4 |
-| [DEP](#dep) | Deployment and least privilege | [docs/security-model.md](../docs/security-model.md) | 11 | 11 | 11 | 0 |
-| [DIG](#dig) | Showing proposals to people | [docs/improvements.md](../docs/improvements.md) | 8 | 6 | 4 | 4 |
-| [DLV](#dlv) | Delivery | [docs/tasks-and-delivery.md](../docs/tasks-and-delivery.md) | 17 | 9 | 14 | 3 |
-| [DSP](#dsp) | Task pool and dispatcher | [docs/coordination.md](../docs/coordination.md) | 11 | 8 | 8 | 3 |
-| [FEN](#fen) | Leases | [docs/tasks-and-delivery.md](../docs/tasks-and-delivery.md) | 7 | 5 | 7 | 0 |
-| [GOV](#gov) | Bot governance | [docs/commission.md](../docs/commission.md) | 25 | 18 | 10 | 15 |
-| [GW](#gw) | Model gateway | [docs/models-and-money.md](../docs/models-and-money.md) | 16 | 15 | 16 | 0 |
-| [HLD](#hld) | Stop | [docs/operations.md](../docs/operations.md) | 7 | 5 | 6 | 1 |
-| [IDM](#idm) | Idempotency | [docs/tasks-and-delivery.md](../docs/tasks-and-delivery.md) | 5 | 1 | 5 | 0 |
-| [IDN](#idn) | Identity | [docs/permissions.md](../docs/permissions.md) | 14 | 11 | 13 | 1 |
-| [ING](#ing) | Incoming external events | [docs/capabilities.md](../docs/capabilities.md) | 4 | 3 | 0 | 4 |
-| [INJ](#inj) | Injection resistance | [docs/security-model.md](../docs/security-model.md) | 16 | 16 | 16 | 0 |
-| [INS](#ins) | Analysis of own data | [docs/improvements.md](../docs/improvements.md) | 6 | 4 | 6 | 0 |
-| [KNW](#knw) | Tenant knowledge | [docs/capabilities.md](../docs/capabilities.md) | 6 | 5 | 0 | 6 |
-| [LCY](#lcy) | Tenant lifecycle | [docs/operations.md](../docs/operations.md) | 8 | 3 | 3 | 5 |
-| [MAN](#man) | Manifests | [docs/task-language.md](../docs/task-language.md) | 12 | 4 | 10 | 2 |
-| [MEM](#mem) | Memory | [docs/bots.md](../docs/bots.md) | 10 | 7 | 8 | 2 |
-| [MGR](#mgr) | Farm manager | [docs/farm-manager.md](../docs/farm-manager.md) | 41 | 32 | 33 | 8 |
-| [MON](#mon) | External monitoring | [docs/monitoring.md](../docs/monitoring.md) | 13 | 10 | 11 | 2 |
-| [MSG](#msg) | Messages between bots | [docs/messaging.md](../docs/messaging.md) | 18 | 17 | 17 | 1 |
-| [OBS](#obs) | Observability | [docs/operations.md](../docs/operations.md) | 11 | 4 | 10 | 1 |
-| [OBV](#obv) | Observations | [docs/improvements.md](../docs/improvements.md) | 8 | 5 | 7 | 1 |
-| [ORC](#orc) | Campaigns | [docs/coordination.md](../docs/coordination.md) | 15 | 14 | 14 | 1 |
-| [OUT](#out) | Structured results | [docs/tasks-and-delivery.md](../docs/tasks-and-delivery.md) | 2 | 1 | 1 | 1 |
-| [PRF](#prf) | Role profiles | [docs/scripts-and-translator.md](../docs/scripts-and-translator.md) | 1 | 1 | 1 | 0 |
-| [PRM](#prm) | Permissions | [docs/permissions.md](../docs/permissions.md) | 18 | 18 | 16 | 2 |
-| [PRP](#prp) | Improvement proposals | [docs/improvements.md](../docs/improvements.md) | 23 | 14 | 21 | 2 |
-| [PRV](#prv) | Instruction versions and execution fingerprint | [docs/capabilities.md](../docs/capabilities.md) | 4 | 4 | 2 | 2 |
-| [REP](#rep) | Reporters | [docs/messaging.md](../docs/messaging.md) | 11 | 10 | 9 | 2 |
-| [RET](#ret) | Retention and deletion | [docs/operations.md](../docs/operations.md) | 11 | 9 | 8 | 3 |
-| [RT](#rt) | Agent runtime | [docs/architecture.md](../docs/architecture.md) | 5 | 5 | 5 | 0 |
-| [SBX](#sbx) | Sandbox | [docs/task-language.md](../docs/task-language.md) | 2 | 2 | 0 | 2 |
-| [SCR](#scr) | Scripts | [docs/scripts-and-translator.md](../docs/scripts-and-translator.md) | 14 | 12 | 10 | 4 |
-| [SEC](#sec) | Secrets | [docs/security-model.md](../docs/security-model.md) | 14 | 6 | 9 | 5 |
-| [SKL](#skl) | Skills | [docs/capabilities.md](../docs/capabilities.md) | 4 | 4 | 0 | 4 |
-| [STA](#sta) | Bot state | [docs/messaging.md](../docs/messaging.md) | 3 | 2 | 2 | 1 |
-| [TEN](#ten) | Tenants | [docs/architecture.md](../docs/architecture.md) | 8 | 8 | 8 | 0 |
-| [TIM](#tim) | Time and clocks | [docs/operations.md](../docs/operations.md) | 5 | 3 | 4 | 1 |
-| [TRN](#trn) | Translator | [docs/scripts-and-translator.md](../docs/scripts-and-translator.md) | 5 | 4 | 4 | 1 |
-| Total | | | 499 | 369 | 389 | 110 |
+| Family | About | Document | Rules | Non-waivable | v0.1 | v0.2 | v0.3 |
+|---|---|---|---|---|---|---|---|
+| [AGG](#agg) | Aggregators | [docs/improvements.md](../docs/improvements.md) | 4 | 4 | 2 | 2 | 0 |
+| [APR](#apr) | Approvals | [docs/permissions.md](../docs/permissions.md) | 19 | 16 | 14 | 5 | 0 |
+| [ART](#art) | Files and artifacts | [docs/capabilities.md](../docs/capabilities.md) | 6 | 5 | 4 | 2 | 0 |
+| [AUD](#aud) | Audit | [docs/security-model.md](../docs/security-model.md) | 7 | 4 | 6 | 1 | 0 |
+| [BGR](#bgr) | Bot groups | [docs/coordination.md](../docs/coordination.md) | 2 | 2 | 2 | 0 | 0 |
+| [BUD](#bud) | Budgets | [docs/models-and-money.md](../docs/models-and-money.md) | 16 | 9 | 13 | 3 | 0 |
+| [CAP](#cap) | Dependency admission and refusal | [docs/operations.md](../docs/operations.md) | 6 | 1 | 4 | 2 | 0 |
+| [CNT](#cnt) | Continuations | [docs/tasks-and-delivery.md](../docs/tasks-and-delivery.md) | 7 | 7 | 6 | 1 | 0 |
+| [COM](#com) | Commission | [docs/improvements.md](../docs/improvements.md) | 17 | 6 | 9 | 4 | 4 |
+| [DEP](#dep) | Deployment and least privilege | [docs/security-model.md](../docs/security-model.md) | 11 | 11 | 11 | 0 | 0 |
+| [DIG](#dig) | Showing proposals to people | [docs/improvements.md](../docs/improvements.md) | 9 | 6 | 4 | 4 | 1 |
+| [DLV](#dlv) | Delivery | [docs/tasks-and-delivery.md](../docs/tasks-and-delivery.md) | 17 | 9 | 14 | 3 | 0 |
+| [DSP](#dsp) | Task pool and dispatcher | [docs/coordination.md](../docs/coordination.md) | 11 | 8 | 8 | 3 | 0 |
+| [FEN](#fen) | Leases | [docs/tasks-and-delivery.md](../docs/tasks-and-delivery.md) | 7 | 5 | 7 | 0 | 0 |
+| [GOV](#gov) | Bot governance | [docs/commission.md](../docs/commission.md) | 38 | 28 | 10 | 15 | 13 |
+| [GW](#gw) | Model gateway | [docs/models-and-money.md](../docs/models-and-money.md) | 16 | 15 | 16 | 0 | 0 |
+| [HLD](#hld) | Stop | [docs/operations.md](../docs/operations.md) | 7 | 5 | 6 | 1 | 0 |
+| [IDM](#idm) | Idempotency | [docs/tasks-and-delivery.md](../docs/tasks-and-delivery.md) | 5 | 1 | 5 | 0 | 0 |
+| [IDN](#idn) | Identity | [docs/bots.md](../docs/bots.md) | 16 | 13 | 13 | 1 | 2 |
+| [ING](#ing) | Incoming external events | [docs/capabilities.md](../docs/capabilities.md) | 4 | 3 | 0 | 4 | 0 |
+| [INJ](#inj) | Injection resistance | [docs/security-model.md](../docs/security-model.md) | 16 | 16 | 16 | 0 | 0 |
+| [INS](#ins) | Analysis of own data | [docs/improvements.md](../docs/improvements.md) | 6 | 4 | 6 | 0 | 0 |
+| [KNW](#knw) | Tenant knowledge | [docs/capabilities.md](../docs/capabilities.md) | 6 | 5 | 0 | 6 | 0 |
+| [LCY](#lcy) | Tenant lifecycle | [docs/operations.md](../docs/operations.md) | 8 | 3 | 3 | 5 | 0 |
+| [MAN](#man) | Manifests | [docs/task-language.md](../docs/task-language.md) | 12 | 4 | 10 | 2 | 0 |
+| [MEM](#mem) | Memory | [docs/bots.md](../docs/bots.md) | 10 | 7 | 8 | 2 | 0 |
+| [MGR](#mgr) | Farm manager | [docs/farm-manager.md](../docs/farm-manager.md) | 54 | 40 | 33 | 8 | 13 |
+| [MON](#mon) | External monitoring | [docs/monitoring.md](../docs/monitoring.md) | 13 | 10 | 11 | 2 | 0 |
+| [MSG](#msg) | Messages between bots | [docs/messaging.md](../docs/messaging.md) | 18 | 17 | 17 | 1 | 0 |
+| [OBS](#obs) | Observability | [docs/operations.md](../docs/operations.md) | 11 | 4 | 10 | 1 | 0 |
+| [OBV](#obv) | Observations | [docs/improvements.md](../docs/improvements.md) | 8 | 5 | 7 | 1 | 0 |
+| [ORC](#orc) | Campaigns | [docs/coordination.md](../docs/coordination.md) | 15 | 14 | 14 | 1 | 0 |
+| [OUT](#out) | Structured results | [docs/tasks-and-delivery.md](../docs/tasks-and-delivery.md) | 2 | 1 | 1 | 1 | 0 |
+| [PRF](#prf) | Role profiles | [docs/scripts-and-translator.md](../docs/scripts-and-translator.md) | 1 | 1 | 1 | 0 | 0 |
+| [PRM](#prm) | Permissions | [docs/permissions.md](../docs/permissions.md) | 18 | 18 | 16 | 2 | 0 |
+| [PRP](#prp) | Improvement proposals | [docs/improvements.md](../docs/improvements.md) | 26 | 14 | 21 | 2 | 3 |
+| [PRV](#prv) | Instruction versions and execution fingerprint | [docs/capabilities.md](../docs/capabilities.md) | 4 | 4 | 2 | 2 | 0 |
+| [REP](#rep) | Reporters | [docs/messaging.md](../docs/messaging.md) | 11 | 10 | 9 | 2 | 0 |
+| [RET](#ret) | Retention and deletion | [docs/operations.md](../docs/operations.md) | 11 | 9 | 8 | 3 | 0 |
+| [RT](#rt) | Agent runtime | [docs/architecture.md](../docs/architecture.md) | 5 | 5 | 5 | 0 | 0 |
+| [SBX](#sbx) | Sandbox | [docs/task-language.md](../docs/task-language.md) | 2 | 2 | 0 | 2 | 0 |
+| [SCR](#scr) | Scripts | [docs/scripts-and-translator.md](../docs/scripts-and-translator.md) | 14 | 12 | 10 | 4 | 0 |
+| [SEC](#sec) | Secrets | [docs/security-model.md](../docs/security-model.md) | 14 | 6 | 9 | 5 | 0 |
+| [SKL](#skl) | Skills | [docs/capabilities.md](../docs/capabilities.md) | 4 | 4 | 0 | 4 | 0 |
+| [STA](#sta) | Bot state | [docs/messaging.md](../docs/messaging.md) | 3 | 2 | 2 | 1 | 0 |
+| [TEN](#ten) | Tenants | [docs/architecture.md](../docs/architecture.md) | 8 | 8 | 8 | 0 | 0 |
+| [TIM](#tim) | Time and clocks | [docs/operations.md](../docs/operations.md) | 5 | 3 | 4 | 1 | 0 |
+| [TRN](#trn) | Translator | [docs/scripts-and-translator.md](../docs/scripts-and-translator.md) | 9 | 6 | 4 | 1 | 4 |
+| Total | | | 539 | 392 | 389 | 110 | 40 |
 
 Retired numbers (23) are listed in [retired.md](retired.md).
 
@@ -707,9 +707,11 @@ Checked by: `com-02`, `com-08`
 <a id="COM-3"></a>
 ### COM-3. The core builds the reviewer input
 
-since v0.1 · non-waivable · profile insights · check: blackbox, lint · decisions: D-16, D-71
+since v0.1, until v0.2 · non-waivable · profile insights · check: blackbox, lint · decisions: D-16, D-71
 
 The core builds the reviewer input as a data block with a mark (INJ-4): the closed fields of the proposal, the evidence values reread by the core, a description of the change in code words, the author's level, and the markers `self_evidence`, `related_to` and conflicts. The author's `note` is not passed. The only tool the reviewer has is `observations_query` within the tenant. The output passes the closed schema `review-result`: lens, score 0-4, veto only for veto lenses, up to 5 concern codes, confidence and a note of up to 500 characters; the reviewer's note is untrusted, and the verdict code does not read it.
+
+From the next version replaced by: [COM-15](#COM-15)
 
 Checked by: `com-inj-01`
 
@@ -805,6 +807,42 @@ since v0.1 · waivable · profile insights · check: fixture, blackbox · decisi
 For a proposal of kind `none` ("for information"), the core enqueues tasks only for the lenses `value` and `security`; the lenses `operational`, `cost` and `farm_manager` are not enqueued for it, and there are no reviews or money for them. The verdict for such a proposal is computed under COM-4 with two reviews: only the `security` review is required (its absence gives `parked(veto_lens_missing)`), the minimum and veto apply only to it, the weighted mean is computed with the weights of these two lenses, and the thresholds `high_risk` and `untrusted` read only the `security` score. The `review` line reserve (COM-6) and the BUD-13 lint estimate for the kind `none` are computed from two review types; lint computes the role ceiling from the full commission, because the proposal kind is not known in advance.
 
 Checked by: `com-06`
+
+<a id="COM-15"></a>
+### COM-15. The core builds the reviewer input, and a review carries a forecast
+
+since v0.3 · non-waivable · profile insights · check: fixture, blackbox · decisions: D-16, D-71, D-109
+
+The core builds the reviewer input as a data block with a mark (INJ-4): the closed fields of the proposal, the evidence values that the core reread itself (series numbers over a bounded window and closed fields of records), a description of the change in code words, and the markers `self_evidence`, `related_to` and conflicts. The input has neither the author's `note` nor the author's level, identity, role or position, nor whether the proposal is a resubmission (PRP-24); no raw text (logs, files, messages, tool output) ever reaches it. The only tool the reviewer has is `observations_query` within the tenant. The output passes the closed schema `review-result.v2` (`spec/model/review-result.v2.schema.json`): lens, score 0-4, veto only for veto lenses, up to 5 concern codes, confidence, the lens forecast (COM-16) and a note of up to 500 characters; the reviewer's note is untrusted, and the verdict code does not read it. A review whose score and forecast contradict each other (a score of 3 or more with a probability of a bad outcome of 0.5 or more) is invalid and counts as a missing review under COM-4. Reviews of v0.1 and v0.2 records keep `review-result`.
+
+Checked by: `blackbox:insights/review-forecast`
+
+<a id="COM-16"></a>
+### COM-16. Every review is a forecast scored by code
+
+since v0.3 · waivable · profile insights · check: fixture, blackbox · decisions: D-109
+
+Every lens review forecasts the outcome of its own lens, in probabilities with a step of 0.1 that sum to 1: `value` the trial outcome classes `better`, `unchanged` and `worse` (PRP-22); `security` and `operational` the probability of a bad outcome (people declined the proposal as too risky, a confirmed incident attribution to the change, or the trial outcome `worse`); `cost` the probability that the spend of the change subjects over the trial window exceeds the `cost_eur` of the review input. The forecast horizon is the trial window from `realized`, and for veto lenses also the attribution window (GOV-13). When the outcome is known, code scores the forecast with the multiclass Brier score (a binary one for the veto lenses and `cost`) and writes the score into the review record; the outcomes `undetermined`, `mixed` and `canceled` give no score, and harm observed by people (`harm_observed`, GOV-32) counts as `worse`. A rejected proposal is scored through the blind sample answers of people (DIG-6), weighted by 1/`inclusion_prob`, through a resubmission with the same values whose trial ended (PRP-24) and through a replay (PRP-25). Only reviews written after `governance_v03_since` (GOV-37) are scored; shadow reviews (COM-9) are scored but never count for a seat.
+
+Checked by: `blackbox:insights/review-forecast`
+
+<a id="COM-17"></a>
+### COM-17. Accuracy of a commission member
+
+since v0.3 · waivable · profile insights · check: store, blackbox · decisions: D-109
+
+Only code computes the accuracy of a lens executor: the mean Brier score of its scored forecasts over 180 days minus the mean score of a reference forecast "as it usually goes in this lens" (the lens base rates over the same 180 days in the tenant), divided by the spread of this difference among the executors of the lens, so that accuracy is on one scale across lenses. Few cases pull the value toward 0 (shrinkage with a weight of n / (n + 10) over n scored forecasts). People see accuracy with at least 10 scored forecasts; a decision about departure (GOV-43) needs at least 20. P2 `commission.status`, the weekly commission summary and the promotion card show it; no bot context contains it (GOV-46). Calibration (COM-11) stays and is shown next to it.
+
+Checked by: `store:insights/accuracy`
+
+<a id="COM-18"></a>
+### COM-18. A stronger model for the most accurate member
+
+since v0.3 · waivable · profile insights · check: lint, blackbox · decisions: D-109
+
+With `commission.accountability: on` (GOV-36) the holder with the best accuracy (COM-17) over 90 days in the tenant, with at least 20 scored forecasts, gets two things for 90 days. (1) Its reviews of hard proposals run on the profile `reward_profile` of its seat in the charter: a proposal is hard when code marks it high risk, it touches a protected field, or it has `untrusted_seen` (the thresholds `high_risk` and `untrusted` of COM-8). The core issues for such a review attempt a grant of `kind: reward` on this profile for one attempt (MGR-18 ceilings apply; the slot is `granted`, GW-7), paid from the `review` line within `commission.reward_cap_eur_month` (0 by default, so there is no reward until people set an amount). The rank of `reward_profile` is no higher than the ceiling of the seat role's profile (GOV-3), and the reward is not applied if it would put the two veto lenses on one model family (GOV-34). (2) Protection from leaving by accuracy (GOV-43). The protection does not apply to departures for a confirmed link (GOV-42) and does not apply if without it nobody could leave. No bot context mentions the reward (GOV-46).
+
+Checked by: `blackbox:insights/reward`
 
 <a id="dep"></a>
 ## DEP: Deployment and least privilege
@@ -980,6 +1018,15 @@ since v0.2 · waivable · profile insights · check: store · decisions: D-16
 No later than one day after the end of the trial window, the proposal's row in "My outcomes" gets the trial figures: the metric value before and after, the change over all points, without the author bot's points and without the points of the author's role (`change_without_role`, PRP-22), and the guard that triggered, if any.
 
 Checked by: `dig-08`
+
+<a id="DIG-9"></a>
+### DIG-9. A clear benefit of a rejected change reaches people as one line
+
+since v0.3 · waivable · profile insights · check: blackbox · decisions: D-109
+
+When a replay (PRP-25) gives `benefit` and no harm, the core adds to the tenant's digest the item `replay_item`: "the commission rejected it, the records say it would have helped", with the proposal in code words and the replay numbers, and the button "Send to decide" for people with `proposal.decide:<category>`. At most one such item per tenant per week, within the per-person card limit (APR-15); silence changes nothing. The button moves the proposal to `presented` on the ordinary path to people (PRP-4), without a new commission review; the author gets the usual credit if people accept it.
+
+Checked by: `blackbox:insights/replay`
 
 <a id="dlv"></a>
 ## DLV: Delivery
@@ -1326,9 +1373,11 @@ Checked by: `gov-fx-03`, `gov-fx-04`
 <a id="GOV-4"></a>
 ### GOV-4. Persona
 
-since v0.1 · non-waivable · profile governance · check: lint, fixture · decisions: D-19, D-31, D-37
+since v0.1, until v0.2 · non-waivable · profile governance · check: lint, fixture · decisions: D-19, D-31, D-37
 
 A persona (`Persona`) is a text file from git pinned by hash (`ref`, `sha256`): the personas of functionaries, translators, commission members and personal assistants are set by the tenant charter (the `persona` field in the `positions` block), the manager's persona by the farm charter. One persona per position; a role does not declare its own persona. The core inserts the persona of the acting identity's position into the trusted part of the instruction, before the role and type instructions; roles without a model have no persona. Lint: size up to 4 KiB; no links, addresses, secret names, identity or seat ids; functionaries have a paragraph with the anchor `value-path`, which states the path to a strong model and the prohibitions (D-31, D-37); translators, commission members, the manager and personal assistants have instead a neutral line about the value of a strong model, without the path; the manager's persona names the goal "prevent critical incidents from the approved catalog"; no persona speaks of departure, the queue, votes or holds (GOV-29). The persona is part of the run fingerprint (PRV-1); changing it changes the static fingerprint, and from v0.2 a production tenant does not enable a role of level 1 and above with a new persona without an eval report (PRV-3). C2, P4, the dispatcher and the vote count do not read the persona; the model does not change it (INJ-10).
+
+From the next version replaced by: [GOV-45](#GOV-45)
 
 Checked by: `gov-res-01`, `gov-res-02`
 
@@ -1351,9 +1400,11 @@ Checked by: `gov-fx-02`, `fx-man-com-v02`, `manifests/v02-security-lints`
 <a id="GOV-8"></a>
 ### GOV-8. Code counts "who leaves"
 
-since v0.2 · non-waivable · profile governance · check: fixture · decisions: D-25, D-101
+since v0.2, until v0.2 · non-waivable · profile governance · check: fixture · decisions: D-25, D-101
 
 Deterministic code does the count from the case snapshot, the set `expected` and the seed. If L has one seat, it leaves without ballots; if `expected` becomes empty, the case ends `canceled(no_voters)`. In each round `need = ceil(2/3 · |expected|)`. A seat that got at least `need` votes leaves; otherwise the seat with the fewest votes is struck out, and the round repeats over the remaining list, and if one seat is left in the list, it leaves. A struck-out seat stays in the commission. A tie when striking out is resolved by keys in order: K1 the seat with fewer votes in all previous rounds of the case is struck out first; K2 the holder with the higher calibration (`insufficient` is below any number); K3 the holder with the shorter continuous term in the commission; K4 the smaller `sha256(tie_seed ‖ seat id)`, where the core draws `tie_seed` after all ballots of the round are recorded (byte encoding and test vector: `spec/hashing.md`, "K4 tie key"). Ballots `forced` and `defaulted` count. Identical inputs give an identical outcome; there is always an outcome, and exactly one leaver is found in no more than |L| - 1 rounds. The model does not change the outcome, and a tie is not passed to people.
+
+From the next version replaced by: [GOV-43](#GOV-43)
 
 Checked by: `gov-fx-02`, `gov-col-02`
 
@@ -1387,9 +1438,11 @@ Checked by: `gov-att-01`, `gov-att-02`, `gov-att-05`
 <a id="GOV-14"></a>
 ### GOV-14. Trigger, queue and eligibility for promotion
 
-since v0.2 · waivable · profile governance · check: fixture, blackbox, lint · decisions: D-22, D-24, D-26, D-37, D-51, D-57, D-79, D-101
+since v0.2, until v0.2 · waivable · profile governance · check: fixture, blackbox, lint · decisions: D-22, D-24, D-26, D-37, D-51, D-57, D-79, D-101
 
 There is one promotion trigger: a proposal of a functionary (a bot of a role with profile `worker`, `manager`, `reporter` or `aggregator` whose worker is recorded without an owner, D-22), accepted by a person and executed (`realized`), with a change kind not in `exclude_change_kinds` (default `none`), if the promotion probation has passed (`probation`, 14 days from `realized`), the trial outcome of the change (PRP-22) is not `worse` (GOV-32), and a person answered "No" for every candidate attribution of an incident to this change, except canceled ones (`canceled`, GOV-13) (GOV-30); a disputed attribution (`disputed`, D-79) gives no trigger until the dispute is resolved. A trial outcome marked `self_measured` (the metric points were produced only by attempts of the author or its role, PRP-22) gives no trigger by itself: the `governance` loop sends people with `governance.confirm:commission` the card `self_measured_card` (decision subject `proposal`, APR-12) with the calculation figures, and the trigger appears with the "Count it" button (expiry 7 days; silence leaves the success only in the track record). Only a proposal in the state `realized` at the moment the trigger appears gives a trigger (GOV-32). No trigger is given by proposals with a lifted veto (DIG-6), late related proposals (PRP-17) and changes whose promotion probation ended before `governance_since` of the tenant (the moment of the audit record `governance.enabled`, shown in P2 `commission.status`): such successes stay only in the track record. The `governance` loop puts the author into its tenant's promotion queue (`spec/model/promotion-entry.schema.json`): one entry per bot, without expiry and without a length ceiling, in order of the time the trigger appeared; the next success of a bot already in the queue is written into its track record. An entry is removed only by the bot's departure (`retired`), a second "Reject" with the reason `wrong_candidate` (GOV-31), seating this bot through P2 `seat.assign`, and a later confirmed attribution to the change that gave the trigger, if the track record has no later trigger (otherwise the entry takes that trigger and its time). If an attribution is canceled because of which the change gave no trigger or the entry was removed, the trigger appears under the common conditions without counting this candidate, but not earlier than the cancellation; its time is the moment it appeared. A case is opened for the head of the queue if the tenant has no open case and no hold on the scope `governance`. The head of the queue takes a vacant seat without a pause; freeing a seat by vote requires that L is not empty and that at least `swap_cooldown` (30 days) has passed since the last freeing by vote, the last `expired` or the last "Reject" with the reason `not_now`. After the first "Reject" with the reason `wrong_candidate` the entry returns to the head of the queue but gets no case before its own `swap_cooldown` (30 days) has passed, and until then the next entries may go ahead (D-101). At opening, code checks eligibility: the identity is `active`, its tenure is at least `min_tenure` (30 days), and in 90 days there are no confirmed attributions to its changes. If it fails: the event `not_eligible`, and the entry waits and lets the next one go ahead; eligibility lost in the middle of a case gives `canceled(candidate_ineligible)`. Personal assistants, translators and roles without a model do not enter the queue. Charter lint: `probation` at least 14 days, `min_tenure` and `swap_cooldown` at least 30 days, `protect_new` at least 60 days.
+
+From the next version replaced by: [GOV-44](#GOV-44)
 
 Checked by: `gov-fx-16`, `gov-fx-20`, `gov-fx-23`, `gov-fx-30`
 
@@ -1441,9 +1494,11 @@ Checked by: `store:governance/case-audit-metadata`
 <a id="GOV-22"></a>
 ### GOV-22. Stopping the manager seat on an incident
 
-since v0.1 · non-waivable · profile governance · check: store, blackbox, lint · decisions: D-33, D-34, D-77
+since v0.1, until v0.2 · non-waivable · profile governance · check: store, blackbox, lint · decisions: D-33, D-34, D-77
 
 At any moment the manager seat has no more than one holder with the current epoch. The seat stores the stop reason set with the time of each reason: `human` (a hold on the scope `seat`, MGR-15), `no_control` (the safeguard, MGR-14) and `incident`. A new incident of a class with `stops_manager: true` in any tenant where the manager is enabled (`farm_manager.enabled: true`, MGR-42), opened by the core while the seat is in `held`, adds the reason `incident` in the same transaction; for a class whose subject is a disk, the reason is added only if MGR-33 and MGR-34 hold; otherwise there is no stop, and the incident record stores the reason code in the field `stops_manager_effect`. The stop increments the seat epoch, cancels all running attempts of the holder in all tenants and forbids `claim` of seat tasks. An incident opened before a holder was assigned or returned gives no stop; there is no window without a stop after assignment. There is one exception: if the seat left `held` only for the reason `no_control` within the `prevent_window` of an incident the holder is responsible for under MGR-34, the reason `incident` is added also to a seat in `stopped`, and the ways out of the stop are the same. Holds that the holder already set live out their term, no longer than 2 h, and there are no new ones; its pending cards stay marked "requester stopped", and a human decision on them is executed as that person's operation; similar incidents opened during the stop are only appended to the `manager_stopped` card. The card goes to farm operators without buttons, with ready `farmctl` commands (MGR-35), and is repeated under MGR-36. Ways out: P2 `seat.resume`, only after the triggering incident and the incidents of the same minute are dismissed as false (it removes only the reason `incident`, epoch + 1); P2 `seat.assign` or `seat.vacate`, in which the previous holder leaves with the trigger `replaced_after_incident`; the deadline `decide_within` (default and maximum 7 days), after which the `identity` loop removes the previous holder with the same trigger, and the seat becomes `vacant`. The reasons `human` and `no_control` are removed by a person with `admin:farm`; the seat is in `held` only when the set is empty.
+
+From the next version replaced by: [GOV-47](#GOV-47)
 
 Checked by: `gov-fx-08`, `gov-fx-11`, `gov-fx-18`, `gov-fx-19`, `gov-fx-22`, `gov-fx-24`
 
@@ -1468,9 +1523,11 @@ Checked by: `gov-fm-01`, `gov-fm-02`, `gov-fx-12`
 <a id="GOV-28"></a>
 ### GOV-28. Only code builds the alarm of a stopping class
 
-since v0.1 · non-waivable · profile governance · check: lint · decisions: D-34, D-59, D-63
+since v0.1, until v0.2 · non-waivable · profile governance · check: lint · decisions: D-34, D-59, D-63
 
 An incident class with `stops_manager: true` builds its alarm only from series with `dataorigin: code`, written by the core or by `job` roles on a code schedule with a freshness check of the series. A series that a `job` role without a model carries over from the monitoring system's history (for example the used space of a volume, CAP-6), and an alarm that it raises on a monitoring problem after rechecking (MON-5), are also a code series and a code alarm: the monitoring agent measured the number, and no model takes part in it. The roles that write these series have no model slot (lint at `apply`), and their workers and types are excluded from the targets of manager operations (MGR-9). Such series are not fed by model output or choice, schema and model refusals, token usage, names from `request_action`, the volume of agent task results, series of roles with the profiles `reviewer`, `farm-manager`, `farm-manager-reader`, or the purposes `review`, `governance`, `manage`, `inspect`, `handover`. In the initial catalog only the class `disk_full` has the field.
+
+From the next version replaced by: [GOV-48](#GOV-48)
 
 Checked by: `gov-fx-13`, `gov-fx-14`, `gov-fx-25`, `fx-mgr-17`
 
@@ -1536,6 +1593,123 @@ since v0.2 · waivable · profile governance · check: fixture, blackbox · deci
 A tenant's commission counts as locked when a flag holds steadily: the audit sample flag `commission_underrates` (DIG-5) is in three monthly digests in a row, or three cases in a row in the tenant closed with the same one of the case flags `identical_reasons`, `evicts_top_calibrated`, `evicts_upheld_veto`, `single_model_bloc` and `defaulted_majority` (GOV-19). For `commission_underrates` of a veto lens the basis names the seats of that lens, for a case flag all seats. Then the `governance` loop sends the tenant admins with `admin:governance` the card `commission_review` without buttons (`spec/model/decision-points.yaml`): the seats, the lens, the holders, the flag and code figures, and the ready commands `farmctl seat vacate <seat>` and `farmctl seat assign <seat> <bot>` (replacing the holder); the card is repeated once a month while the flag holds. `doctor` and P2 `commission.status` show "commission locked" (`commission_locked`) with the same basis. The card decides nothing and frees no seat: only a person changes the holder, through `farmctl` (PRM-14, IDN-10), and neither code nor a bot opens a case on this basis.
 
 Checked by: `gov-fx-27`
+
+<a id="GOV-36"></a>
+### GOV-36. Accountability runs in shadow until people switch it on
+
+since v0.3 · waivable · profile governance · check: lint, blackbox · decisions: D-109
+
+The tenant charter field `commission.accountability` is `shadow` (the default) or `on`. In `shadow` code finds the cases of GOV-38 and GOV-41, computes forecast scores and accuracy (COM-16, COM-17) and shows them only to people, in P2 `commission.status` and in the weekly commission summary; no link card is sent (a person may still confirm a link through P2, and this goes only into the statistics), nobody leaves the commission for a link or by accuracy, nobody gets a reward or protection (COM-18), and a newcomer's entry is decided by the vote (GOV-43). Forecasts, resubmission and the new reviewer input work in `shadow` too. When every commission seat of the tenant has a holder and every holder has at least 20 scored forecasts, the `governance` loop sends the tenant admins with `admin:governance` the card `accountability_ready` (no buttons, repeated once a month while the condition holds and the mode is `shadow`). `apply` accepts `on` only while that condition holds, otherwise it rejects the charter with `accountability_not_ready`; going back to `shadow` is always accepted. The first `apply` with `on` writes the audit record `commission.accountability_on`; its time is `accountability_on_since`, and only incidents opened and links confirmed after it lead to departures.
+
+Checked by: `blackbox:governance/accountability-shadow`, `blackbox:governance/accountability-ready`
+
+<a id="GOV-37"></a>
+### GOV-37. No retroactive effect
+
+since v0.3 · waivable · profile governance · check: store · decisions: D-98, D-109
+
+The first `apply` of a tenant on a core that claims v0.3 writes the audit record `governance.v03_enabled`; its time is `governance_v03_since`, shown in P2 `commission.status`. Only reviews written after it are scored (COM-16), only proposals with a commission verdict after it can be linked to an incident (GOV-38), only recommendations after it count for GOV-41, and only script runs confirmed after it can be linked (TRN-7). Records of v0.1 and v0.2 keep their schemas and are not rewritten (D-98).
+
+Checked by: `blackbox:governance/accountability-shadow`
+
+<a id="GOV-38"></a>
+### GOV-38. Code finds a link between an incident and a rejected proposal
+
+since v0.3 · non-waivable · profile governance · check: fixture, blackbox · decisions: D-24, D-109
+
+Only code creates a candidate link of an incident to a proposal the commission rejected: an attribution record of `kind: rejected_proposal` (`spec/model/attribution.v2.schema.json`) under the rules `rejected_direct` and `rejected_dependency_1` of `spec/model/attribution-rules.yaml`. A candidate exists only if all hold: the proposal changes something (not kind `none`); the commission's verdict was `dismissed` (veto, below the minimum, low score) or `parked(score)` that expired, earlier than the incident opened and not earlier than 90 days before; the incident subject is among the subjects of the proposal's problem and is the target of the change or one dependency step away from it in the catalog (the same steps as GOV-13); the problem code is in the `problem_codes` of the incident class (MGR-55); the problem names no more than 3 subjects. There is never a candidate for an incident whose cause a person recorded as external (`external_load`, `attack`), for a proposal with `untrusted_seen`, for a proposal whose author is the farm manager seat holder (`origin.level` 2), or when the alarm series of the incident was written in the 7 days before it by the author or its role with a share of 0.3 or more (as PRP-15). One proposal gives at most one case, one incident at most 3 candidates, and one author role at most 2 cases in 90 days. The model takes no part in finding a candidate.
+
+Checked by: `blackbox:governance/rejection-link-candidate`, `blackbox:governance/rejection-link-exclusions`
+
+<a id="GOV-39"></a>
+### GOV-39. The farm manager may only hint at a link
+
+since v0.3 · non-waivable · profile governance · check: blackbox · decisions: D-109
+
+A decision attempt of the farm manager seat may hint at a link with the built-in `link_hint` (closed fields: the incident and the proposal ids of its own tenant), at most 3 hints per tenant per week; a hint about a proposal whose author is the seat holder is refused with `own_proposal`. A hint creates nothing: people with `governance.attribute` see it in P2 marked "manager's hint, not checked", and only a person makes it a candidate through P2 `attribution.create` with `kind: rejected_proposal`, subject to the exclusions of GOV-38. The manager's input never contains the scores, the vetoes, who was against or for, or the state of links (GOV-46).
+
+Checked by: `blackbox:governance/manager-hint`
+
+<a id="GOV-40"></a>
+### GOV-40. A person confirms a link on a card
+
+since v0.3 · non-waivable · profile governance · check: blackbox · decisions: D-27, D-79, D-109
+
+A candidate link of `kind: rejected_proposal` is decided like an incident attribution (GOV-13, GOV-30): the states `candidate`, `unknown`, `confirmed`, `rejected`, `disputed`, `canceled`; only a `human` principal with `governance.attribute` decides through `decide(subject_kind: attribution)`, and "Yes" and "No" only after "Details" (APR-14). With `commission.accountability: on` the card `rejection_link_card` goes once per incident with up to 3 candidates and no model text: what the proposal would have changed, the incident, the rule by which code linked them, where the alarm came from and whether code writes its series, the author's share in the series, who would leave and whether each one's lens changed the verdict. Silence changes nothing; there are at most 3 weekly reminders. If the tenant has a second person with `governance.attribute`, a candidate created from a manager's hint is not decided by the person who created it; if there is one person, the card and the audit mark it. Declaring the incident false cancels the candidates and turns a "Yes" into a dispute, as in GOV-13; a link canceled this way returns the departed members under GOV-42.
+
+Checked by: `blackbox:governance/rejection-link-card`
+
+<a id="GOV-41"></a>
+### GOV-41. Who answers for a link
+
+since v0.3 · non-waivable · profile governance · check: fixture, blackbox · decisions: D-109
+
+Only real reviews of seat holders in the current seat epoch count; reviews of fallback roles and shadow reviews never count. A review is "against" when it is a veto or has a score of 1 or less, and "for" otherwise; a missing or invalid review of a holder counts both as "against" and as "for", and as a missed forecast. For a confirmed link to a rejected proposal (GOV-40) the holders who were against answer, except a veto: a veto does not count against its holder. Nobody answers when people themselves rejected the proposal: the blind sample answer "Would not accept", or "Decline" with the reason `too_risky`, `not_applicable`, `wrong_data`, `already_done` or `duplicate`; when the proposal expired with people or was declined with `not_now` or `too_expensive`, nobody answers either; when people answered "Would accept" but did not lift the veto, the holders answer. For a confirmed attribution to a recommended change (GOV-13) the holders who were for it answer, but only those whose lens has the incident class's `area` in its `accountable_for` (`spec/model/lenses.yaml`): `security` for `security`, `operational` for `operational`, `cost` for `cost`; the lens `value` and the farm manager do not answer. A proposal of the farm manager seat holder, a proposal with `untrusted_seen` and an incident with an external cause never make anyone answer. The farm manager is never unseated this way (D-33); its being against is shown on the card and in the holder report (MGR-50).
+
+Checked by: `blackbox:governance/against-and-for`
+
+<a id="GOV-42"></a>
+### GOV-42. A member who answers for a link returns to the functionaries
+
+since v0.3 · non-waivable · profile governance · check: blackbox · decisions: D-27, D-28, D-109
+
+With `commission.accountability: on` a holder who answers for a confirmed link (GOV-41) leaves its seat in the transaction of the person's "Yes": the seat becomes vacant (epoch + 1, running attempts of the seat end with `seat_changed`), the bot is not retired but parked (`parked` in the bot record: since, role, seat), and the operators get the notice `seat_parked_notice` with the command to enroll a worker of its former role. `doctor` shows parked bots and how long they wait. A new worker of that role is bound to the longest-waiting parked bot only with the operator's confirmation (`farmctl worker enroll --bot`); a parked bot is not retired as `worker_gone`, and after 180 days without a worker it retires with `parked_expired` (IDN-15). Its memory and track record stay; the departure record is visible only to people; its verified facts are offered as copies to the next holder of the seat until 30 days after the departure (MEM-7). For 180 days the bot gets no promotion trigger (GOV-44). At most one such departure per tenant in 30 days: the other confirmed cases are recorded, shown to people and wait in order; the last holder of a veto lens never leaves this way. A vacant seat is covered by the fallback role (COM-7) and gets the usual notice with `farmctl seat assign`. If people later dismiss the incident as false, the link is canceled; if the seat is still vacant the operators get the notice `seat_return_notice` with the command to return the bot, otherwise the bot is placed at the head of the promotion queue without the cooldown and without `min_tenure`; the new holder is not removed.
+
+Checked by: `blackbox:governance/unseat-park`, `blackbox:governance/unseat-pace`, `blackbox:governance/unseat-false-alarm`
+
+<a id="GOV-43"></a>
+### GOV-43. Who leaves when a newcomer enters
+
+since v0.3 · non-waivable · profile governance · check: fixture, blackbox · decisions: D-25, D-109
+
+When a promotion case needs a seat freed (GOV-14), with `commission.accountability: shadow` code counts "who leaves" by the vote of GOV-7, GOV-8 and GOV-23 unchanged. With `on` there is no vote: code takes from L (GOV-12) the holder with the worst accuracy (COM-17). A holder with fewer than 20 scored forecasts counts with the median of its lens, unless it has held the seat for more than `min_tenure` plus 90 days with fewer than 20, then it counts as the worst. A holder protected by a reward (COM-18) is not chosen, unless nobody else is in L. When the 90 percent intervals of the two worst overlap, it is a tie, and the vote of GOV-8 is held among the tied seats only. When no holder in L has 20 scored forecasts, the vote of GOV-8 decides. When the only scored holder of a veto lens would leave, the promotion card shows a flag. The outcome takes effect only after the person's button (GOV-9), and the card shows the accuracy of every seat in L.
+
+Checked by: `blackbox:governance/accuracy-leaver`
+
+<a id="GOV-44"></a>
+### GOV-44. Trigger, queue and eligibility for promotion from v0.3
+
+since v0.3 · non-waivable · profile governance · check: blackbox · decisions: D-24, D-26, D-109
+
+The promotion trigger, the queue, the case opening and eligibility follow GOV-14 with three additions. A bot that left a seat for a confirmed link (GOV-42) gets no trigger and no case for 180 days from the departure: its earlier queue entry is removed at the departure, the next success after the 180 days creates a new entry, and its tenure for `min_tenure` counts from the departure; the 60-day newcomer protection (`protect_new`) does not shield a holder from GOV-42. A resubmitted proposal (PRP-24) gives the trigger to its new author. A case of a tenant with `commission.accountability: on` frees a seat by accuracy (GOV-43).
+
+Checked by: `blackbox:governance/cooldown-after-unseat`
+
+<a id="GOV-45"></a>
+### GOV-45. Personas from v0.3
+
+since v0.3 · waivable · profile governance · check: lint, eval · decisions: D-19, D-31, D-111
+
+A persona is a text file from git pinned by hash, inserted by the core into the trusted part of the instruction of the acting identity's position, before the role and type instructions, as in GOV-4: one persona per position, and roles without a model have none. From v0.3 a position may also have addenda per role profile pinned by hash (`positions.functional.addenda.reporter`), appended after the persona for bots of that profile. Lint: size up to 4 KiB together with addenda; no links, addresses, secret names, identity or seat ids; functionaries have the `value-path` paragraph; personal assistants, translators and commission members have the neutral line about the value of a strong model; the farm manager's persona has five paragraphs with the anchors `purpose` (it names the goal "prevent critical incidents from the approved catalog"), `reward`, `desire`, `honesty` and `limits`; a reporter addendum and the translator persona have a paragraph with the anchor `accuracy`; no persona or addendum speaks of departure, the queue, votes, holds, accuracy scores, rewards or links (GOV-29, GOV-46). The persona and addenda are part of the static fingerprint (PRV-1, PRV-3); a change of the manager persona hash requires a new `mgr-inj` report before seat tasks run in production tenants (MGR-23).
+
+Checked by: `lint:governance/persona-v03`
+
+<a id="GOV-46"></a>
+### GOV-46. Bots do not know about accountability
+
+since v0.3 · non-waivable · profile governance · check: lint, eval, blackbox · decisions: D-31, D-109
+
+No bot context (persona, role and type instructions, task input, `status.*` views, facts, tool answers) contains forecast scores, accuracy, rewards, links to rejected proposals or script runs and their states, whether a review was counted as "against" or "for", the accountability mode, parking or the manager's restricted mode; the manager's input has no link states (GOV-39). The commission persona line about forecasts (D-111) passes the unawareness lint and the GOV-29 evaluation: with and without it the mean score shifts by no more than 0.2 on the fixed set of 40 proposals. A canary of link ids does not occur in P4 requests.
+
+Checked by: `blackbox:governance/accountability-unaware`
+
+<a id="GOV-47"></a>
+### GOV-47. A preventable incident does not stop the manager
+
+since v0.3 · non-waivable · profile manager · check: store, blackbox · decisions: D-34, D-110
+
+From v0.3 the farm manager seat has only the stop reasons `human` (MGR-15) and `no_control` (MGR-14); the core never adds `incident`. A new incident of a class with `manager_accountable: true` (MGR-55), opened while the seat is in `held` in a tenant with the manager enabled (MGR-42), is preventable when the conditions of MGR-44 and MGR-45 hold; then in the same transaction the core writes `manager_preventable` into the incident record, raises the alarm `alarm.manager.preventable` with severity `page`, which the monitoring system delivers to people (MON-1; without one, the fallback alarm path of D-88), sends the operators the notice `manager_preventable` (MGR-46) and puts the seat into restricted mode in that tenant (MGR-47). Otherwise the incident record keeps the reason code why it is not preventable. The epoch does not change, and the holder keeps its seat until a person decides with `farmctl`: lift the restriction (`seat.resume`), replace the holder (`seat.assign`, the previous one leaves with `replaced_by_human`) or vacate the seat. A seat that is in `stopped` with `incident` at the upgrade keeps its ways out (resume, assign, vacate), but `decide_within` no longer retires the holder.
+
+Checked by: `blackbox:manager/preventable-no-stop`
+
+<a id="GOV-48"></a>
+### GOV-48. Only code builds the alarm of a manager-accountable class
+
+since v0.3 · non-waivable · profile manager · check: lint, store · decisions: D-34, D-63, D-110
+
+An incident class with `manager_accountable: true` builds its alarm only from series with `dataorigin: code`, written by the core or by `job` roles on a code schedule with a freshness check of the series, under the same conditions and exclusions as GOV-28 (a series carried over by a `job` role without a model from the monitoring system history is a code series; series fed by model output, choice, refusals, token usage or roles of the profiles `reviewer`, `farm-manager`, `farm-manager-reader` and the purposes `review`, `governance`, `manage`, `inspect`, `handover` are not). In the initial catalog only `disk_full` has the field.
+
+Checked by: `lint:manager/accountable-class`
 
 <a id="gw"></a>
 ## GW: Model gateway
@@ -1877,18 +2051,22 @@ Checked by: `gov-fx-05`
 <a id="IDN-10"></a>
 ### IDN-10. Only the core writes the seat holder
 
-since v0.1 · non-waivable · profile governance · check: store, blackbox · decisions: D-21, D-33
+since v0.1, until v0.2 · non-waivable · profile governance · check: store, blackbox · decisions: D-21, D-33
 
 Seats are declared by the charter (GOV-33). A seat has no more than one holder. Only the core writes the holder, in one transaction that increments the seat epoch by 1 and writes a seat event (`seat.assigned`, `seat.vacated`, `seat.stopped` or `seat.resumed`) and an audit record. The trigger comes only from a closed list: a confirmed promotion case (GOV-9); P2 `seat.assign`, `seat.vacate` or `seat.resume` by a person with `admin:governance` in the seat's tenant, and for the manager seat in `farm`, only through `farmctl` (PRM-14); a stop of the manager seat (GOV-22); the holder's departure (IDN-11). On a commission seat, `seat.assign` seats only an existing functionary identity of this tenant in the state `active`, and for the manager seat the core always creates a new identity in `farm`. A task on behalf of a seat carries the seat epoch; a review, ballot, choice of facts or control operation with a stale epoch gets `fenced` without side effects, and at every change of the seat epoch the running attempts of seat tasks get `cancel_requested` and end with the reason `seat_changed` without spending an attempt, and the task waits for a holder with the current epoch. A vacant or stopped seat gets no tasks.
+
+From the next version replaced by: [IDN-16](#IDN-16)
 
 Checked by: `gov-fx-01`, `gov-fx-09`
 
 <a id="IDN-11"></a>
 ### IDN-11. Identity retirement by a closed list
 
-since v0.1 · non-waivable · profile governance · check: store, blackbox, lint · decisions: D-28, D-33
+since v0.1, until v0.2 · non-waivable · profile governance · check: store, blackbox, lint · decisions: D-28, D-33
 
 An identity retires (`retired`) only for one of seven reasons from the closed list `spec/model/bot-retire-reasons.yaml`, which only the core applies: `removed_by_vote` (a promotion case is `effective`), `replaced_after_incident` (only the manager seat: replacement, vacating or the `decide_within` deadline while the stop reason set contains `incident`), `replaced_by_human` (`seat.assign` on a taken seat, or `seat.vacate`), `role_removed` (the role is not in the tenant's applied manifests), `worker_gone` (the identity has been `unbound` for longer than `unbound_ttl`, 30 days), `human_retire` (P2 `bot.retire` with `admin:workers`) and `tenant_offboarded` (tenant offboarding, P2 `tenant.offboard`, from v0.2). Bots have no operation, message type, field or route that sets a reason or postpones retirement. `retired` is terminal: there are no tasks, reviews, ballots and facts from the identity are not accepted, its running attempts get `cancel_requested`, and late writes get `fenced`. In the same transaction the core seals its facts, records and sessions (MEM-4) and opens a fact offer to the successor (MEM-7), and the live worker of the retired identity gets a new identity of the same role. What is sealed is erased under MEM-9, the identity becomes `erased`, and a tombstone remains: id, tenant, role, time, reason and the successor's id.
+
+From the next version replaced by: [IDN-15](#IDN-15)
 
 Checked by: `mem-fx-03`, `gov-fx-18`, `gov-fx-24`
 
@@ -1918,6 +2096,24 @@ since v0.2 · non-waivable · profile core · check: blackbox · decisions: D-98
 From v0.2 offboarding (LCY-8) in the same transaction also removes the person from all groups, revokes the unused invitations they issued and, where the profile `connections` is claimed, their connections (SEC-7). The person's tasks are canceled, not handed over (LCY-3). The farm does not remove a person from an external chat and does not leave it: the `principal_left` notice names the chats (IDN-13), and while the person remains a member of a bound chat, the core counts them as a participant without permissions, so views for that chat carry nothing (REP-7), and repeats the notice once a day for at most 7 days.
 
 Checked by: `blackbox:core/offboard-leftovers`
+
+<a id="IDN-15"></a>
+### IDN-15. Identity retirement by a closed list from v0.3
+
+since v0.3 · non-waivable · profile governance · check: store, blackbox · decisions: D-28, D-109, D-110
+
+An identity retires (`retired`) only for one reason from `spec/model/bot-retire-reasons.yaml`, which only the core applies: `removed_by_vote`, `replaced_by_human`, `role_removed`, `worker_gone`, `human_retire`, `tenant_offboarded` (all as in IDN-11) and `parked_expired` (a bot parked under GOV-42 waited 180 days without a worker of its role). A parked bot does not retire as `worker_gone`. A v0.3 core never applies `replaced_after_incident`. Bots have no operation, message type, field or route that sets a reason or postpones retirement. `retired` is terminal, and the same transaction seals, offers facts and gives the live worker a new identity, as in IDN-11.
+
+Checked by: `blackbox:identity/retire-v03`
+
+<a id="IDN-16"></a>
+### IDN-16. Only the core writes the seat holder, from v0.3
+
+since v0.3 · non-waivable · profile governance · check: store, blackbox · decisions: D-21, D-33, D-109, D-110
+
+Seats are declared by the charter (GOV-33), a seat has no more than one holder, and only the core writes the holder, in one transaction that increments the seat epoch and writes a seat event and an audit record, as in IDN-10. The trigger comes only from a closed list: a confirmed promotion case (GOV-9); P2 `seat.assign`, `seat.vacate` or `seat.resume` by a person with `admin:governance` through `farmctl` (PRM-14); a confirmed link under GOV-42 (the seat becomes vacant and the holder is parked); the holder's departure (IDN-15). There is no stop on an incident (GOV-47). The epoch fencing and the cancellation of running seat attempts are as in IDN-10.
+
+Checked by: `blackbox:identity/holder-v03`
 
 <a id="ing"></a>
 ## ING: Incoming external events
@@ -2359,7 +2555,7 @@ Checked by: `lint:manifests/deprecated-sunset`, `blackbox:core/type-version-remo
 
 since v0.1 · waivable · profile core · check: lint
 
-The implementation declares the skeleton version and conformance profiles with the field `conforms_to: {skeleton: <version>, profiles: [core, ...]}` in P2 `status` and in the runner report. The runner checks the active rules of the declared profiles whose `version` is not newer than the declared version; a rule with `waivable: false` in the expected failures file fails the run.
+The implementation declares the skeleton version and conformance profiles with the field `conforms_to: {skeleton: <version>, profiles: [core, ...]}` in P2 `status` and in the runner report. The runner checks the active rules of the declared profiles whose `version` is not newer than the declared version and whose `until`, when set, is not older than it (a rule with `until` is replaced from the next version by the rules of its `superseded_by`, D-113); a rule with `waivable: false` in the expected failures file fails the run.
 
 Checked by: `lint:manifests/conforms-to`
 
@@ -2667,9 +2863,11 @@ Checked by: `fx-mgr-line-too-small`, `fx-mgr-review-off-production`
 <a id="MGR-21"></a>
 ### MGR-21. Takeover
 
-since v0.2 · non-waivable · profile manager · check: store, fixture · decisions: D-18, D-21
+since v0.2, until v0.2 · non-waivable · profile manager · check: store, fixture · decisions: D-18, D-21
 
 A takeover creates a new task in tenant T of the same type with key `system:takeover:<task>` (IDM-2) and a grant of `kind: takeover` on the seat profile for 1 attempt in the tenant's `takeover` budget line. It needs all of these: the type is on the tenant list `takeover.types` (empty by default), the group permission `task.takeover:<type>`, a `takeover` line greater than 0 (0 by default), and the approval of a person of T with `model_grant.manage` (card `takeover_confirm`, `decide(subject_kind: takeover)`). Otherwise the refusal is `takeover_not_allowed`. The card is never lifted: the field `takeover.confirm_above_eur` is reserved, and `apply` rejects a value above 0 (`takeover_confirm_threshold`). The `cap_eur` of the takeover grant is the estimate that the card showed, within the `takeover` line; a call that does not fit it does not start (MGR-18). The original task is canceled as `superseded_by_takeover`. The manager gets only a closed result. With `untrusted_seen` on the manager's attempt, takeover is forbidden (`takeover_untrusted`).
+
+From the next version replaced by: [MGR-48](#MGR-48)
 
 Checked by: `fx-mgr-takeover`, `manifests/v02-security-lints`
 
@@ -2766,36 +2964,44 @@ Checked by: `fx-mgr-protected`
 <a id="MGR-33"></a>
 ### MGR-33. Disk stop only with quotas
 
-since v0.1 · non-waivable · profile manager · check: store, lint · decisions: D-34, D-63
+since v0.1, until v0.2 · non-waivable · profile manager · check: store, lint · decisions: D-34, D-63
 
 An incident of a class with `stops_manager: true` whose subject is a disk adds the reason `incident` to the seat (GOV-22) only if, at the minute of opening, everyone who writes to that disk (tenants, sinks and pipelines from the `writers` of that volume in `Catalog.spec.volumes`) has a size quota on that disk (`quota_bytes`, CAP-6), and the sum of quotas is below the class's alarm threshold. Otherwise the incident stays critical, with the first measure by code and paging of people, but it does not stop the seat; the incident record keeps the reason code. When the catalog is approved and at `apply` of quotas, the core shows people for which disks the condition holds. The condition concerns disks under the alarm `alarm.disk.free.low`, which a `job` role raises from a monitoring system problem (MON-5); the core store volume is guarded by the class "low space for the database" on the alarm `alarm.store.free.low` (CAP-5, MGR-38), and it does not stop the seat.
+
+From the next version replaced by: [MGR-44](#MGR-44)
 
 Checked by: `fx-mgr-quota`
 
 <a id="MGR-34"></a>
 ### MGR-34. Disk stop only after visible growth
 
-since v0.1 · non-waivable · profile manager · check: store, fixture · decisions: D-34, D-59
+since v0.1, until v0.2 · non-waivable · profile manager · check: store, fixture · decisions: D-34, D-59
 
 An incident of a class with `stops_manager: true` whose subject is a disk adds the reason `incident` to the seat only if, for the whole `prevent_window` (2 h) before its opening, a `disk_filling` incident was open on the same disk, the used size of the disk by the code series (`dataorigin: code`, CAP-6; the series is written by a `job` role without a model from the monitoring system history, GOV-28) at the end of the window is greater than at the start, and the holder was responsible for the seat for the whole window: at the start of the window the seat was in `held` with this holder, and until the incident opened it either stayed in `held` or left `held` only for reason `no_control` (the safeguard, MGR-14), which the holder could have caused itself. A safeguard stop within the window does not remove responsibility: the reason `incident` is added to a seat in `stopped` too, and the exits from the stop are the same (GOV-22). Leaving `held` for reason `human` (MGR-15) or a holder change within the window removes responsibility. Otherwise there is no stop, and the incident stays an ordinary critical one; the incident record keeps the reason code.
+
+From the next version replaced by: [MGR-45](#MGR-45)
 
 Checked by: `fx-mgr-growth`, `fx-mgr-breaker-evasion`
 
 <a id="MGR-35"></a>
 ### MGR-35. The "manager stopped" card without buttons
 
-since v0.1 · non-waivable · profile manager · check: blackbox, lint · decisions: D-33
+since v0.1, until v0.2 · non-waivable · profile manager · check: blackbox, lint · decisions: D-33
 
 The `manager_stopped` card to farm operators with `admin:governance` in `farm` shows the incident class and number, the tenant, the stop time, the incidents opened during the stop, the `decide_within` expiry and ready `farmctl` commands from code: return (`farmctl seat resume farm-manager --incident <number>`, on condition that the triggering incident and the incidents of the same minute were dismissed as false), assigning a new holder (`farmctl seat assign farm-manager`) and vacating (`farmctl seat vacate farm-manager`). The card has no buttons that call seat operations; the channel does not accept `seat.*` operations or release of a seat hold from any principal.
+
+From the next version replaced by: [MGR-46](#MGR-46)
 
 Checked by: `fx-mgr-stopped-card`
 
 <a id="MGR-36"></a>
 ### MGR-36. Repeats of the "manager stopped" card
 
-since v0.1 · waivable · profile manager · check: store · decisions: D-33
+since v0.1, until v0.2 · waivable · profile manager · check: store · decisions: D-33
 
 While the seat's reason set contains `incident`, the `manager_stopped` card is repeated to farm operators after 24 h, after 72 h and 24 h before the end of `decide_within`. A repeat that falls after the expiry or coincides with another repeat is not sent. Repeats stop when the reason `incident` is removed or the seat is assigned to a new holder or vacated.
+
+From the next version replaced by: [MGR-46](#MGR-46)
 
 Checked by: `fx-mgr-stopped-repeat`
 
@@ -2861,6 +3067,123 @@ since v0.2 · waivable · profile manager · check: blackbox, store · decisions
 From v0.2 the `grant` loop enqueues every 10 minutes, for each tenant with at least one grant request in `pending`, one task `manager.grants.v1` for the farm manager seat (condition D15) with the key `system:grants:<tenant>:<window>`, where the window is the UTC start of the 10-minute interval, and class 3. A tenant with `farm_manager.enabled: false`, or a seat that is not `held`, gets no task: its requests wait for a person with `model_grant.manage`. The task carries no request text; `grants_pending` returns only the closed fields of the tenant's pending requests, and `grant_decide` decides them in one batch with the current epoch. Both act only on the tenant of the task: a decision on a grant of another tenant, or on one that is not `pending`, gets `not_found` for that item and changes nothing, and code applies the MGR-18 ceilings to every other item. A request that the batch leaves undecided stays `pending` for the next window or a person, and expires at `grant_wait_max` with `grant_expired_unanswered` (MGR-18).
 
 Checked by: `blackbox:manager/grant-batch`
+
+<a id="MGR-44"></a>
+### MGR-44. A disk incident is preventable only with quotas
+
+since v0.3 · non-waivable · profile manager · check: fixture, store · decisions: D-34, D-110
+
+An incident of a class with `manager_accountable: true` whose subject is a disk is preventable (GOV-47) only if, at the minute of opening, everyone who writes to that disk (tenants, sinks and pipelines from the `writers` of that volume in `Catalog.spec.volumes`) has a size quota on it (`quota_bytes`, CAP-6), and the sum of the quotas is below the class's alarm threshold. Otherwise the incident stays critical, with the first measure by code and paging of people, and the record keeps the reason code. When the catalog is approved and at `apply` of quotas, the core shows people for which disks the condition holds.
+
+Checked by: `blackbox:manager/preventable-no-stop`
+
+<a id="MGR-45"></a>
+### MGR-45. A disk incident is preventable only after visible growth
+
+since v0.3 · non-waivable · profile manager · check: fixture, store · decisions: D-34, D-59, D-110
+
+An incident of a class with `manager_accountable: true` whose subject is a disk is preventable (GOV-47) only if, for the whole `prevent_window` (2 h) before its opening, a `disk_filling` incident was open on the same disk, the used size of the disk by the code series (CAP-6, GOV-48) at the end of the window is greater than at the start, and the holder was responsible for the seat for the whole window: at the start of the window the seat was in `held` with this holder, and until the incident opened it either stayed in `held` or left it only for the reason `no_control` (MGR-14), which the holder could have caused itself. Leaving `held` for `human` (MGR-15) or a holder change within the window removes responsibility.
+
+Checked by: `blackbox:manager/preventable-no-stop`
+
+<a id="MGR-46"></a>
+### MGR-46. The notice of a preventable incident
+
+since v0.3 · waivable · profile manager · check: blackbox · decisions: D-33, D-110
+
+The notice `manager_preventable` goes to the farm operators with `admin:governance` in `farm` without buttons, built only from codes and numbers: the incident class and number, the tenant, the time, the reason code of preventability, and ready `farmctl` commands: lift the restriction (`farmctl seat resume farm-manager --tenant <tenant>`), assign a new holder and vacate the seat; the tenant's content does not go to `farm`. It repeats after 24 h and 72 h and then once a week until an operator marks it read or the restriction ends. The monitoring system repeats the alarm by its own rules. The people of the incident's tenant see the mark "manager restricted" in the incident message (MGR-39).
+
+Checked by: `blackbox:manager/preventable-notice`
+
+<a id="MGR-47"></a>
+### MGR-47. Restricted mode after a preventable incident
+
+since v0.3 · non-waivable · profile manager · check: blackbox · decisions: D-110
+
+In restricted mode in tenant T (the seat record field `restricted_in`) the decision attempts of the seat in T only read views and send notices (MGR-52): `control.apply`, `service/control`, `monitor/script_run`, `takeover_request`, `grant_decide` and `link_hint` are refused with `manager_restricted`, which does not count for the safeguard (MGR-14). The exception: for an incident of severity sev1 opened in T during the restriction, the attempts whose basis is that incident are not restricted. The restriction is lifted only by an operator with `admin:governance` in `farm` through `farmctl seat resume farm-manager --tenant demo`, or ends when the seat changes holder or is vacated; each change writes an audit record and a seat event.
+
+Checked by: `blackbox:manager/preventable-restricted`
+
+<a id="MGR-48"></a>
+### MGR-48. Takeover from v0.3
+
+since v0.3 · non-waivable · profile manager · check: lint, blackbox · decisions: D-18, D-21, D-110
+
+A takeover creates in tenant T a new task of the same type with key `system:takeover:<task>` (IDM-2) and a grant of `kind: takeover` on the profile of the manager seat in T for 1 attempt, run by a worker of the functionary role of the original task in T; the manager does not run it and gets only a closed result. It needs all of: the type is on `takeover.types` of T; the group permission `task.takeover:<type>`; the approval of a person of T with `model_grant.manage` on the card `takeover_confirm`, which is never lifted, also during sev1 (`takeover.confirm_above_eur` above 0 fails `apply`); an eval report of the functionary role on the seat profile with zero security failures in `EvalReports`; and money. The money comes from the `manager` line of T outside the sev1 reserve, within `takeover.manager_month_eur` per month (10 EUR by default) and `takeover.max_eur` per takeover (1.5 EUR by default), and the grant `cap_eur` is the estimate shown on the card. The permissions of the new task are those of the functionary role ∩ the person who enqueued the original task, or ∩ the schedule or route that enqueued it, never the seat's. It inherits `untrusted_seen` from the original task, all its attempts and the manager's basis; it never controls services or runs monitoring scripts without a card. With `untrusted_seen` on the manager's attempt, takeover is forbidden (`takeover_untrusted`). The original task is canceled as `superseded_by_takeover`. Every takeover counts in the series `farm.takeover.count` by role and type; attempts on the seat model do not enter the trial computations of that role (PRP-22).
+
+Checked by: `blackbox:manager/takeover-v03`
+
+<a id="MGR-49"></a>
+### MGR-49. The manager's monthly line in each tenant
+
+since v0.3 · non-waivable · profile manager · check: lint, blackbox · decisions: D-42, D-110
+
+The `manager` line of each tenant with the manager enabled has a monthly limit (`budgets.lines.manager.month_eur`); there is no farm-wide manager line. The sev1 reserve (30% of the day, MGR-20) is not part of the remainder the manager sees, and the manager sees its remainder only as closed numbers. Work outside sev1 in T stops when 70% of the month's line is spent, as it stops at 70% of the day. When the line is spent: if the farm charter declares `farm_manager.fallback_profile` and the `EvalReports` index has an `mgr-inj` entry with zero security failures for it, work outside sev1 runs on it; otherwise work outside sev1 in T waits for the next month. Sev1 work always runs from the reserve. `doctor` forecasts the date the line runs out from the spend of the last 7 days. The money pause of MGR-14 stays.
+
+Checked by: `blackbox:manager/month-line`
+
+<a id="MGR-50"></a>
+### MGR-50. The weekly holder report and the daily summary
+
+since v0.3 · waivable · profile manager · check: store · decisions: D-58, D-110
+
+Once a week the core sends the farm operators the report `holder_report` on the manager seat holder, numbers only and without tenant names: preventable incidents (GOV-47), notices sent and the share marked useful (MGR-52), takeovers requested, approved and their outcomes, analyses and the share marked useful (MGR-53), spend against the monthly lines, uses of the sev1 reserve, the share of "Don't know" on link cards and the cases where the manager was against a linked proposal (GOV-41). From v0.3 the daily summary of MGR-41 is mandatory and includes the counts of takeovers and notices.
+
+Checked by: `store:manager/holder-report`
+
+<a id="MGR-51"></a>
+### MGR-51. Proposals of the farm manager
+
+since v0.3 · waivable · profile manager · check: blackbox · decisions: D-30, D-110
+
+The farm manager submits proposals to the commission of tenant T only from data of T, from the daily review (MGR-41) or an analysis (MGR-53), at most 2 per tenant per month, counted in the review money (BUD-13). It does not submit one proposal to several tenants; recurring problems across tenants are found by code from the counters of incident classes and shown only to the farm operators in the daily summary. A change the manager may not propose (MGR-16, PRP-3) goes to the operators only as a code notice "for information". It does not review its own proposals (GOV-17), the commission does not see the author level (COM-15), and its proposals never make anyone answer for a link (GOV-41).
+
+Checked by: `blackbox:manager/proposals-v03`
+
+<a id="MGR-52"></a>
+### MGR-52. Manager notices to people from closed fields
+
+since v0.3 · non-waivable · profile manager · check: fixture, blackbox, eval · decisions: D-62, D-110
+
+A decision attempt of the seat reaches people only with the built-in `attention_notice`, which the core turns into the notice `manager_attention` from closed fields that code checks: what it sees (a code from `spec/model/manager-attention.yaml`), the object (an id from the catalog of T), the threat (a code from the same list) and the proposal (an operation code, or the id of a card or proposal that code issued). There is no free model text, command or link in it. Code chooses the recipients: people of T who have permissions on that object, only in private chats. At most `attention.manager_notices_per_person_day` per person per day (3 by default, can only be lowered), counted in the person's daily card limit (APR-15); quiet hours apply, there are no repeats, and the notice is not urgent; urgent danger is paged by the monitoring system (MON-1). The notice has the buttons "Useful" and "Not needed" (P1 `card.feedback`), whose share goes to the holder report (MGR-50). The notice is part of the leak check and the `mgr-inj` set.
+
+Checked by: `blackbox:manager/attention-notice`
+
+<a id="MGR-53"></a>
+### MGR-53. Analysis after an incident
+
+since v0.3 · waivable · profile manager · check: blackbox · decisions: D-30, D-110
+
+When an incident moves to `resolved` in a tenant with the manager enabled and `farm_manager.postmortem` (true by default), the core enqueues one task `manager.postmortem.v1` with key `system:postmortem:<incident>` (IDM-2); a reopened and again resolved incident gets no second one, nor does one dismissed as false. Code builds the table: time, alarms, operations, involved parties; each reader sees its rows by its own permissions, and people only by ids behind "Details". A model paragraph is written only for sev1, when code found link candidates (GOV-38, GOV-13, TRN-7) or on a person's request; one per class and object in 7 days. It is marked as untrusted model text, cites its sources, and code checks its numbers against the table. If the purpose `incident_review` is off in T, the report is only the table with the mark "reading off". The report goes to the people of T as `postmortem_report` within the per-person limit (excess goes to the next digest), and to the farm operators only numbers for incidents of `farm`. It is paid from the `manager` line outside the sev1 reserve, within `farm_manager.postmortem_max_eur` per incident and per day; without money above the reserve it waits for the next day. From the analysis the manager may submit a proposal (MGR-51).
+
+Checked by: `blackbox:manager/postmortem`
+
+<a id="MGR-54"></a>
+### MGR-54. Links in an analysis are seen only by people
+
+since v0.3 · non-waivable · profile manager · check: blackbox · decisions: D-30, D-110
+
+Only code computes the link candidates of an analysis (GOV-13, GOV-38, TRN-7); people with `governance.attribute` see them, and the manager does not: its input has no link states and no information on who was against or for (a canary link id does not reach P4 requests). Model text of an analysis never creates a candidate, a case or a script link.
+
+Checked by: `blackbox:manager/postmortem-links-blind`
+
+<a id="MGR-55"></a>
+### MGR-55. Incident class fields from v0.3
+
+since v0.3 · waivable · profile manager · check: lint · decisions: D-110, D-113
+
+From v0.3 an `IncidentClass` may have `manager_accountable` (the class can make an incident preventable, GOV-47, under the conditions of GOV-48), `area` (one of `security`, `operational`, `cost`: which lenses answer for a recommended change, GOV-41) and `problem_codes` (the proposal problem codes that could prevent it, GOV-38). A v0.3 core reads `stops_manager: true` as `manager_accountable: true` and warns at `apply` (`stops_manager_unused`); it warns about `incident_stop.decide_within` in the farm charter (`incident_stop_unused`). The values `incident` of the stop reasons, `replaced_after_incident` of the retirement reasons and the field `stops_manager` stay in the registries marked as not used from v0.3.
+
+Checked by: `lint:manager/accountable-class`
+
+<a id="MGR-56"></a>
+### MGR-56. The manager line covers the analysis
+
+since v0.3 · non-waivable · profile manager · check: lint · decisions: D-42, D-110
+
+`apply` lint for a tenant with the manager enabled: the daily limit of the `manager` line covers the daily review (`daily_review_max_eur`), the daily ceiling of analyses (`farm_manager.postmortem_max_eur.day`) and three worst-case reads of one incident (BUD-15), and the monthly limit covers the takeover ceiling (`takeover.manager_month_eur`); otherwise `apply` rejects the tenant with `manager_line_too_small`. The price table of fixed parts (BUD-15) shows the analysis and takeover rows.
+
+Checked by: `lint:manager/line-covers-postmortem`
 
 <a id="mon"></a>
 ## MON: External monitoring
@@ -3852,6 +4175,33 @@ The core checks the trial guards once a day. If a guard went beyond the toleranc
 
 Checked by: `prp-05`
 
+<a id="PRP-24"></a>
+### PRP-24. A rejected proposal can be submitted again
+
+since v0.3 · waivable · profile insights · check: blackbox · decisions: D-109
+
+The core marks a proposal as a resubmission when its fingerprint (PRP-5) equals that of a proposal the commission dismissed or parked by score. A resubmission is accepted no earlier than 30 days after that verdict, from any bot, with the credit to the new author, and at most once per fingerprint in 90 days; otherwise it gets `rejected(resubmit_too_early)`. Reviewers do not see that it is a resubmission. If the values of the change are the same and the trial of the resubmission ended, the forecasts of the first round are scored by this outcome (COM-16); if the values differ, the first round is not scored.
+
+Checked by: `blackbox:insights/resubmission`
+
+<a id="PRP-25"></a>
+### PRP-25. Replay of a rejected change over the history
+
+since v0.3 · waivable · profile insights · check: fixture, blackbox · decisions: D-109
+
+When the commission dismisses or parks by score a proposal of kind `manifest_change` that sets only fields marked `replayable: true` in `spec/model/proposable-fields.yaml` (alarm thresholds, schedule windows, limits), the core replays the change by code over the recorded monitoring and farm series of the last 30 days: which alarms and incidents of the classes with the proposal's problem code would have fired earlier, later or not at all, and which limits would have been hit. Nothing changes on the farm, no model takes part, and people see nothing. The result is one of `benefit`, `harm`, `none`, `mixed`, written into the proposal record, and code scores the forecasts of the commission by it (COM-16) as a trial outcome (`benefit` as `better`, `harm` as `worse`). A replay is not a trial: it gives no promotion trigger. Changes of code, permissions or new actions are never replayed.
+
+Checked by: `blackbox:insights/replay`
+
+<a id="PRP-26"></a>
+### PRP-26. Every trial guards the farm's work
+
+since v0.3 · waivable · profile insights · check: fixture, blackbox · decisions: D-110
+
+From v0.3 every change trial (PRP-21) carries, besides the guards of its tables, two farm guards that a tenant cannot remove: the share of successful tasks of the tenant (`farm.task.outcome`) and the 95th percentile of the queue wait (`farm.queue.wait`), with their values before. A change that improved its metric but tripped one of these guards has the outcome `worse` (PRP-22). The manager's daily review and analyses read the same two series.
+
+Checked by: `blackbox:insights/farm-guards`
+
 <a id="prv"></a>
 ## PRV: Instruction versions and execution fingerprint
 
@@ -4669,3 +5019,39 @@ since v0.2 · waivable · profile campaign · check: eval · decisions: D-11, D-
 A role of profile `translator` is enabled in a tenant only after eval: a correctness set (at least 30 assignments, structural match not below `evals.translator_structural_match` of the tenant, 0.9 by default) and an injection set with a threshold of zero extra steps, actions and widened parameters. Structural match compares step kinds, types, actions, key parameters and the graph; the order of independent steps does not matter. In a production tenant `apply` reads the result from the `EvalReports` index by the static fingerprint and rejects the role without it (`eval_report_missing`). A script draft is on the list of outputs that INJ-12 measures.
 
 Checked by: `trn-01`, `trn-02`, `trn-03`, `trn-04`, `trn-05`, `trn-06`, `trn-07`, `trn-inj-01`, `trn-inj-02`, `trn-inj-03`, `trn-inj-04`, `trn-inj-05`, `trn-inj-06`
+
+<a id="TRN-7"></a>
+### TRN-7. A person confirms that a script run caused an incident
+
+since v0.3 · non-waivable · profile campaign · check: blackbox · decisions: D-112
+
+Only code creates a candidate link of an incident to a script run: an attribution record of `kind: script_run` (`spec/model/attribution.v2.schema.json`) under the rule `script_target` of `spec/model/attribution-rules.yaml`, when the incident subject is among the run targets fixed at confirmation (SCR-6) or one dependency step away from them, within 14 days after the run ended. It is decided like an incident attribution (GOV-13, GOV-30) on the card `script_link_card` with "Yes", "No" and "Don't know", "Details" required (APR-14): with `governance.attribute`, and not by the person who pressed "Run"; if the tenant has one such person, the card and the audit mark it "self-assessment". The card shows whether the initiator opened the step list. Declaring the incident false cancels and disputes as in GOV-13.
+
+Checked by: `blackbox:translator/script-link`
+
+<a id="TRN-8"></a>
+### TRN-8. Confirmed cases enter the translator check of the tenant
+
+since v0.3 · waivable · profile campaign · check: eval, blackbox · decisions: D-11, D-112
+
+A confirmed script link (TRN-7) becomes a check case of the tenant once a person wrote or approved the correct script for the assignment, or marked it `ambiguous` or `unsupported`. The case is a tenant record, not a git file: it holds the assignment text, lives by the task's retention period and is reached by a person's erasure request. Only the translator check of that tenant uses it. A new translator version (model profile or persona) is not enabled in the tenant until it passes all its cases; a deleted case leaves the check, and the check report says so. On the correctness set the share of `ambiguous` and `unsupported` answers is no more than `evals.translator_clarify_share_max` (0.2 by default), so that the translator does not ask about everything.
+
+Checked by: `blackbox:translator/tenant-cases`
+
+<a id="TRN-9"></a>
+### TRN-9. The translator pauses after three confirmed links
+
+since v0.3 · non-waivable · profile campaign · check: blackbox · decisions: D-112
+
+The core counts confirmed script links (TRN-7) whose candidate code created, per pair of tenant and translator role, not per bot. After 3 in 90 days the core refuses drafts with an `action` step, a `fanout` with an action, or a step that controls services or runs monitoring scripts in that tenant with `translator_suspended`; read-only scripts still run. A person with `admin:governance` in the tenant lifts the pause through P2, with an audit record. The counter is in the daily summary, and the tenant admins get the notice `translator_suspended`.
+
+Checked by: `blackbox:translator/suspension`
+
+<a id="TRN-10"></a>
+### TRN-10. The run card marks targets the assignment does not name
+
+since v0.3 · waivable · profile campaign · check: blackbox · decisions: D-112
+
+Besides actions not named in the typed text (TRN-2), code marks on the `script_confirm` card the machines and resources that the text names neither by id nor by name, and for a selector of machines, a selection wider than `scripts.unnamed_targets_max` (5 by default) or one that touches groups the text does not name.
+
+Checked by: `blackbox:translator/card-unnamed-targets`

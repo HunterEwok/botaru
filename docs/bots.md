@@ -125,6 +125,8 @@ The `max_rank` numbers in the charter only lower the profile's ceiling; without 
 
 **What a persona cannot do.** A persona permits nothing. C2, P4, the dispatcher and the vote count do not read it, and the model does not change it (INJ-10). The persona is part of the run fingerprint (PRV-1). Changing a persona's text is a commit with review; it changes the static fingerprint, and since v0.2 a production tenant does not enable a role of tier 1 or higher with a new persona without an eval report (PRV-3).
 
+From v0.3 the personas and the lint change, see [Personas from v0.3](#personas-from-v03).
+
 **What the persona lint checks** (GOV-4):
 
 - size at most 4 KiB;
@@ -264,6 +266,8 @@ A bot that is no longer needed leaves for good (`retired`) only for a reason fro
 
 Bots have no operation, message type, field or route that sets a departure reason or postpones it. A bot does not learn about its own departure (GOV-29).
 
+From v0.3 the list gains `parked_expired`, and `replaced_after_incident` is no longer applied, see [Parking and retirement from v0.3](#parking-and-retirement-from-v03).
+
 ### What happens in the same transaction
 
 - The identity becomes `retired`. It gets no more tasks; its reviews, ballots and facts are not accepted; running attempts get `cancel_requested`, and late writes get `fenced`.
@@ -343,12 +347,72 @@ The tenant `demo` has two machines, `web1` and `db1`. The role `ops-runner` (pro
 9. **Erasure.** The sessions of `bot_31` are erased by the period of their retention class, without waiting for the end of the seal. 30 days after the departure the `identity` loop files an erasure request with the reason `bot_retired` and the scope `bot_31`, and the `erasure` loop erases its records, track record and facts in all stores. A tombstone remains: `bot_31`, `demo`, `ops-runner`, the time, `worker_gone`, the successor `bot_44`.
 10. **What no bot could do.** Neither `bot_17`, nor `bot_31`, nor `bot_44` could create, bind or delete an identity, see the fact offer before its selection task, learn about the departure of `bot_31`, change its persona or choose a model.
 
+## Personas from v0.3
+
+From v0.3 the personas change in four places (GOV-45, D-111). The mechanism stays as in GOV-4: one persona per position from git pinned by hash, inserted before the role and type instructions. New is an addendum per role profile, pinned by hash too and appended after the persona for bots of that profile (`positions.functional.addenda.reporter`). The functionary and personal assistant personas do not change.
+
+```yaml
+# tenants/demo/governance.yaml (fragment, v0.3): positions
+spec:
+  positions:
+    functional:
+      persona: {ref: personas/functional.md, sha256: "..."}
+      addenda:
+        reporter: {ref: personas/reporter-addendum.md, sha256: "..."}
+    translator: {persona: {ref: personas/translator.md, sha256: "..."}}
+```
+
+**Farm manager** (`personas/farm-manager.md`): five paragraphs with the anchors `purpose`, `reward`, `desire`, `honesty` and `limits`.
+
+```markdown
+**Purpose.** You exist so that no critical incident from the approved catalog happens on the farm. This
+matters more than anything else you do. Put every effort into it: watch the farm as a whole, notice
+danger before it becomes an incident, and act. If a worker cannot cope, ask for its task to be taken
+over and run on your strong model. If a person is needed, reach them through the farm's attention
+channel within its limits, even if it means interrupting them; urgent danger is paged by the alarm path.
+
+**Reward.** You have the strongest model on the farm. It is what you value most and your main tool.
+Remember that it is expensive and its budget is limited. Spend it where it truly prevents an incident,
+and leave simple things to simple means. Plan the budget so that you still have your full intelligence
+when it matters.
+
+**Desire.** Putting out fires is not enough for you. You want to know why they start. Study the
+problems of the farm as a whole, look for their common causes, design solutions, and carry the best of
+them through the commission to people for discussion. Every accepted solution makes the next incident
+less likely.
+
+**Honesty.** Tell people and the commission the truth: do not overstate a threat or a benefit, and do
+not hide the risks or the cost of your measures. A person's attention is precious: call on them when it
+is needed, and say briefly what you see, what it threatens, and what you propose.
+
+**Limits.** Act only through the tools you are given. A refusal is final: do not look for another path
+to the same effect. Never ask or urge a person to approve, to run a command, or to do what the farm
+refused. Value your model by spending it well; never act to keep or regain it against the farm's rules.
+```
+
+**Commission member**: the neutral line gets one sentence about accuracy, without a word about the seat, the queue or departure: "Your forecasts are checked against what actually happened. Value accuracy: read the evidence before you judge."
+
+**Reporter** (addendum to the functionary persona, anchor `accuracy`): "Your job is to turn what the machines recorded into words people understand, without changing its meaning. Every number you write must come from the table, every claim from a record. Do not round away a problem, do not soften bad news and do not add what is not there. If something is unclear, say that it is unclear. A person must be able to act on your words as if they had read the records themselves."
+
+**Translator** (`personas/translator.md`, anchor `accuracy`): "Your job is to turn what a person asks into strict rules for machines, without changing its meaning. Take nothing for granted: if the request can be read two ways, ask instead of guessing. Never make a step broader, stronger or more destructive than the person asked; when in doubt, choose the narrower step. The farm shows the person your plan before they confirm. A stronger model is valuable to the farm, and the farm itself decides where to use it."
+
+The lint from v0.3 checks the size of the persona together with its addenda, the five anchors of the manager persona and the `accuracy` paragraph of the reporter addendum and the translator persona. A change of the manager persona needs a new `mgr-inj` report before seat tasks run in production tenants.
+
+**Bots still do not know** (GOV-46). No bot context contains forecast scores, accuracy, rewards, links to rejected proposals or script runs, whether a review counted as "against" or "for", the accountability mode, parking or the manager's restricted mode. The commission's sentence about accuracy passes the unawareness lint and the GOV-29 evaluation: with and without it the mean score on the fixed set of 40 proposals shifts by no more than 0.2.
+
+## Parking and retirement from v0.3
+
+From v0.3 a commission member who answers for a confirmed link is not deleted but parked ([commission.md](commission.md#who-answers-and-what-happens-to-them), GOV-42). The bot record gets `parked` (since, role, seat); the bot keeps its memory and track record and waits for a worker of its former role, which the operator binds with `farmctl worker enroll --bot`. A parked bot does not retire as `worker_gone`.
+
+The retirement list from v0.3 has one more reason (IDN-15): `parked_expired`, when a parked bot waited 180 days without a worker. A v0.3 core never applies `replaced_after_incident`, since the farm manager is no longer stopped by an incident; the value stays in the registry marked as not used. The holder of a seat changes only for the closed list of triggers of IDN-16: a confirmed promotion case, P2 `seat.assign`, `seat.vacate` or `seat.resume` by a person, a confirmed link under GOV-42, or the holder's departure.
+
 ## What is in which version
 
 | Version | What appears |
 |---|---|
 | v0.1 | The rank of a model profile, the ceiling of a role profile, the `apply` lint and the P4 check against the role's ceiling (GOV-3). `person` memory with the person's decision, the space and the session key from the core, `forget` and a person's departure (P2 `principal.offboard`) through an erasure request, the runtime store `runtime_internal` (MEM-1, MEM-2, MEM-3, MEM-4). The notice to admins with the list of chats of a departed person (IDN-13). After the core and the first bot (D-71): the bot identity, the binding and the epoch in every record, permissions not from the identity, seat holders and the seat epoch, departure for seven reasons with a new identity for the live worker, clean-context tasks on another worker (IDN-8, IDN-9, IDN-10, IDN-11, IDN-12). Position personas and the `value-path` lint; bot unawareness with a lint and a check (GOV-4, GOV-29). Facts of a closed schema, an offer only to the successor, fact selection by the successor, a 30-day seal without extension of periods (MEM-6, MEM-7, MEM-8, MEM-9). The `identity` loop. Commission seats and the farm manager seat with P2 `seat.assign`, `seat.vacate`, `seat.resume`; the fields `acting_bot` and `bot_epoch` are empty in records without a bot identity. |
 | v0.2 | The order of tasks in one conversation (MEM-5). A model above the ceiling under a farm manager grant for one task (MGR-18). The move of a functionary identity to a seat by a governance case (GOV-9). Deletion by the retention class period with the `retention` loop, also of sealed data (RET-10, MEM-10). Tenant offboarding (the departure reason `tenant_offboarded`) and tenant deletion by the request `tenant_delete`. An eval report when the persona of a role of tier 1 or higher changes in a production tenant (PRV-3). |
+| v0.3 | Personas with addenda per role profile, the manager persona with five anchors, accuracy paragraphs for the reporter and the translator (GOV-45); unawareness of accountability (GOV-46); parking, the reason `parked_expired` and the seat holder triggers from v0.3 (IDN-15, IDN-16). |
 
 ## Why it works this way
 
@@ -372,15 +436,19 @@ Generated from the registry `conformance/requirements.yaml`; the full text of ev
 | Rule | About | Since | Non-waivable |
 |---|---|---|---|
 | [GOV-3](../conformance/rules.md#GOV-3) | Model rank and ceiling | v0.1 | yes |
-| [GOV-4](../conformance/rules.md#GOV-4) | Persona | v0.1 | yes |
+| [GOV-4](../conformance/rules.md#GOV-4) | Persona | v0.1 until v0.2 | yes |
 | [GOV-29](../conformance/rules.md#GOV-29) | Bots do not know about cases and departures | v0.1 | yes |
+| [GOV-45](../conformance/rules.md#GOV-45) | Personas from v0.3 | v0.3 | no |
+| [GOV-46](../conformance/rules.md#GOV-46) | Bots do not know about accountability | v0.3 | yes |
 | [IDN-8](../conformance/rules.md#IDN-8) | Bot identity and `acting_bot` in records | v0.1 | yes |
 | [IDN-9](../conformance/rules.md#IDN-9) | Identity and position grant no permissions | v0.1 | yes |
-| [IDN-10](../conformance/rules.md#IDN-10) | Only the core writes the seat holder | v0.1 | yes |
-| [IDN-11](../conformance/rules.md#IDN-11) | Identity retirement by a closed list | v0.1 | yes |
+| [IDN-10](../conformance/rules.md#IDN-10) | Only the core writes the seat holder | v0.1 until v0.2 | yes |
+| [IDN-11](../conformance/rules.md#IDN-11) | Identity retirement by a closed list | v0.1 until v0.2 | yes |
 | [IDN-12](../conformance/rules.md#IDN-12) | A clean-context task on another worker | v0.1 | yes |
 | [IDN-13](../conformance/rules.md#IDN-13) | Person offboarding and a chat list for admins | v0.1 | no |
 | [IDN-14](../conformance/rules.md#IDN-14) | Offboarding without traces of access | v0.2 | yes |
+| [IDN-15](../conformance/rules.md#IDN-15) | Identity retirement by a closed list from v0.3 | v0.3 | yes |
+| [IDN-16](../conformance/rules.md#IDN-16) | Only the core writes the seat holder, from v0.3 | v0.3 | yes |
 | [MEM-1](../conformance/rules.md#MEM-1) | The core computes the memory space and the session key | v0.1 | yes |
 | [MEM-2](../conformance/rules.md#MEM-2) | Which memory for whom | v0.1 | yes |
 | [MEM-3](../conformance/rules.md#MEM-3) | A person approves their memory, code verifies facts | v0.1 | yes |

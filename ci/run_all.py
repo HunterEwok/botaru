@@ -38,6 +38,7 @@ STEPS = [
     ['public_safety.py'],
     ['readiness.py', 'v0.1', '--strict'],
     ['readiness.py', 'v0.2', '--strict'],
+    ['readiness.py', 'v0.3', '--strict'],
 ]
 failed = []
 gh = bool(os.environ.get('GITHUB_ACTIONS'))

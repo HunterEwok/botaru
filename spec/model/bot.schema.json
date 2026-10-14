@@ -237,6 +237,37 @@
           "type": "null"
         }
       ]
+    },
+    "parked": {
+      "x-botaru-version": "v0.3",
+      "description": "From v0.3: the bot left a commission seat for a confirmed link and waits for a worker of its former role (GOV-42); visible only to people.",
+      "anyOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "since",
+            "role",
+            "seat"
+          ],
+          "properties": {
+            "since": {
+              "$ref": "urn:botaru:schema:common:1#/$defs/datetime"
+            },
+            "role": {
+              "$ref": "urn:botaru:schema:common:1#/$defs/name"
+            },
+            "seat": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 50
+            }
+          }
+        },
+        {
+          "type": "null"
+        }
+      ]
     }
   }
 }

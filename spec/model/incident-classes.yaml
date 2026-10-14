@@ -1,5 +1,5 @@
 registry: incident-classes
-version: 2
+version: 3
 description: >-
   Initial catalog of farm incident classes. Classes are set by IncidentClass
   files in the farm git with human review (MGR-7); this registry names
@@ -10,7 +10,10 @@ description: >-
   prevent it". Entry fields: severity, alarm (the code alarm event type from the
   catalog spec/bindings/events/catalog.yaml in full, with the suffix .vN), subject_kinds (subject), contain_auto (the first measure by code),
   manager (what the farm manager is allowed to do), required (the class is required),
-  stops_manager (the class stops the seat under the conditions of MGR-33 and MGR-34).
+  stops_manager (v0.1 and v0.2: the class stops the seat under the conditions of MGR-33 and MGR-34; a v0.3 core reads it as manager_accountable),
+  manager_accountable (from v0.3: the class can make an incident preventable, GOV-47, MGR-55), area (from v0.3: security, operational
+  or cost; which lenses answer for a recommended change, GOV-41), problem_codes (from v0.3: proposal problem codes that could
+  prevent the class, GOV-38).
   Classes with the subject farm have no seat tasks: code and people handle them.
 source: docs/farm-manager.md
 entries:
@@ -22,9 +25,12 @@ entries:
     subject_kinds: [resource]
     contain_auto: a no_claim stop on the resource for 1 h
     manager: quarantine and drain of the involved, preemption, cancellation, a cleanup action, restart of services on the subject node, monitoring scripts of this node
-    stops_manager: true
+    stops_manager: true   # not used from v0.3: read as manager_accountable (MGR-55)
     change_sensitive: true
-    rules: [MGR-7, GOV-28, MGR-33, MGR-34]
+    area: operational
+    manager_accountable: true
+    problem_codes: [disk_growth_unbounded, retention_too_long, quota_missing, alarm_threshold_late]
+    rules: [MGR-7, GOV-28, MGR-33, MGR-34, GOV-48, MGR-55]
   - id: disk_filling
     since: v0.1
     severity: sev2
@@ -33,6 +39,7 @@ entries:
     subject_kinds: [resource]
     contain_auto: none
     manager: drain of the involved, a cleanup action, restart of services on the subject node
+    area: operational
     rules: [MGR-7, MGR-34]
   - id: store_low
     since: v0.1
@@ -43,6 +50,7 @@ entries:
     contain_auto: an over_capacity denial for enqueues of priority classes 3-5 (CAP-5)
     manager: people only
     required: true
+    area: operational
     rules: [MGR-7, MGR-38]
   - id: runaway_spend
     since: v0.1
@@ -52,6 +60,7 @@ entries:
     subject_kinds: [tenant, role]
     contain_auto: none
     manager: a role stop through a card (MGR-37), task cancellation
+    area: cost
     rules: [MGR-7]
   - id: secret_in_outbound
     since: v0.1
@@ -60,6 +69,7 @@ entries:
     subject_kinds: [worker]
     contain_auto: a no_delivery stop on the worker
     manager: quarantine, notice
+    area: security
     rules: [MGR-7]
   - id: tenant_mismatch_storm
     since: v0.1
@@ -69,6 +79,7 @@ entries:
     subject_kinds: [worker]
     contain_auto: quarantine by code
     manager: notice
+    area: security
     rules: [MGR-7]
   - id: crash_loop
     since: v0.1
@@ -77,6 +88,7 @@ entries:
     subject_kinds: [worker, role]
     contain_auto: none
     manager: drain, a role stop through a card, notice
+    area: operational
     rules: [MGR-7]
   - id: exec_unknown_action
     since: v0.1
@@ -85,6 +97,7 @@ entries:
     subject_kinds: [worker]
     contain_auto: quarantine by code
     manager: notice
+    area: security
     rules: [MGR-7]
   - id: provider_down
     since: v0.1
@@ -93,6 +106,7 @@ entries:
     subject_kinds: [farm]
     contain_auto: the model gateway circuit breaker
     manager: people only
+    area: operational
     rules: [MGR-7]
   - id: queue_starvation
     since: v0.1
@@ -102,6 +116,7 @@ entries:
     subject_kinds: [tenant]
     contain_auto: none
     manager: pinning, preemption, drain of stuck ones
+    area: operational
     rules: [MGR-7]
   - id: core_loop_stalled
     since: v0.1
@@ -111,4 +126,5 @@ entries:
     subject_kinds: [farm]
     contain_auto: none
     manager: people only
+    area: operational
     rules: [MGR-7]

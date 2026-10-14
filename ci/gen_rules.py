@@ -47,7 +47,8 @@ def link(frm, to):
 
 
 def meta(r):
-    bits = [f"since {r['version']}", 'non-waivable' if r.get('waivable') is False else 'waivable', f"profile {r.get('profile')}"]
+    since = f"since {r['version']}" + (f", until {r['until']}" if r.get('until') else '')
+    bits = [since, 'non-waivable' if r.get('waivable') is False else 'waivable', f"profile {r.get('profile')}"]
     if r.get('level') == 'SHOULD':
         bits.append('recommendation')
     bits.append('check: ' + ', '.join(r.get('check') or []))
@@ -60,15 +61,15 @@ L = ['# Skeleton rules', '',
      'This file is generated from the registry `conformance/requirements.yaml`. Edit the registry, then rebuild this file.', '',
      'Every rule is written once in the registry. The documents in `docs/` explain how a part of the farm works and refer to rules by number; the normative text of a rule is here.', '',
      'The line under a rule heading:', '',
-     '- "since v0.1": the skeleton version from which the conformance suite checks the rule.',
+     '- "since v0.1": the skeleton version from which the conformance suite checks the rule; "until v0.2": the last version that checks it, and the rules named under "replaced by" take over from the next version. An implementation is checked by the rules of the version it claims (MAN-8).',
      '- "non-waivable": an implementation cannot put the rule on its list of expected failures. "Waivable": it can, with a recorded reason.',
      '- "profile": the part of the skeleton an implementation claims conformance to separately (`core`, `messaging`, `campaign`, `insights`, `manager`, `governance`, `monitor`, `knowledge`, `ingress`, `connections`, `debug`, `sandbox`); the `core` profile is mandatory, see [docs/quality.md](../docs/quality.md).',
      '- "recommendation": a SHOULD rule; all others are mandatory.',
      '- "check": how compliance is shown. `fixture`: a ready data sample that must pass or fail a check. `store`: a storage check. `blackbox`: a test through the ports without knowledge of the implementation internals. `adapter`: a test of a port adapter. `eval`: a check of model work quality on a set of cases. `lint`: a check of files and manifests.',
      '- "decisions": decision numbers from [docs/decisions.md](../docs/decisions.md).', '',
      '## Summary', '',
-     '| Family | About | Document | Rules | Non-waivable | v0.1 | v0.2 |',
-     '|---|---|---|---|---|---|---|']
+     '| Family | About | Document | Rules | Non-waivable | v0.1 | v0.2 | v0.3 |',
+     '|---|---|---|---|---|---|---|---|']
 tot = collections.Counter()
 for fam in sorted(byfam):
     rs = byfam[fam]
@@ -76,8 +77,8 @@ for fam in sorted(byfam):
     c = collections.Counter(r['version'] for r in rs)
     nw = sum(1 for r in rs if r.get('waivable') is False)
     tot.update(c); tot['all'] += len(rs); tot['nw'] += nw
-    L.append(f"| [{fam}](#{fam.lower()}) | {FAM_NAMES.get(fam, fam)} | [{docs}]({link('conformance/rules.md', docs)}) | {len(rs)} | {nw} | {c['v0.1']} | {c['v0.2']} |")
-L.append(f"| Total | | | {tot['all']} | {tot['nw']} | {tot['v0.1']} | {tot['v0.2']} |")
+    L.append(f"| [{fam}](#{fam.lower()}) | {FAM_NAMES.get(fam, fam)} | [{docs}]({link('conformance/rules.md', docs)}) | {len(rs)} | {nw} | {c['v0.1']} | {c['v0.2']} | {c['v0.3']} |")
+L.append(f"| Total | | | {tot['all']} | {tot['nw']} | {tot['v0.1']} | {tot['v0.2']} | {tot['v0.3']} |")
 L += ['', f'Retired numbers ({len(ret)}) are listed in [retired.md](retired.md).', '']
 for fam in sorted(byfam):
     rs = sorted(byfam[fam], key=lambda r: id_key(r['id']))
@@ -86,6 +87,8 @@ for fam in sorted(byfam):
           'Explained in: ' + ', '.join(f'[{d}]({link("conformance/rules.md", d)})' for d in docs), '']
     for r in rs:
         L += [f'<a id="{r["id"]}"></a>', f"### {r['id']}. {r['title']}", '', meta(r), '', ' '.join(str(r['text']).split()), '']
+        if r.get('superseded_by'):
+            L += [f"From the next version replaced by: " + ', '.join(f'[{x}](#{x})' for x in r['superseded_by']), '']
         if r.get('fixtures'):
             L += ['Checked by: ' + ', '.join(f'`{x}`' for x in r['fixtures']), '']
 OUTPUT['conformance/rules.md'] = '\n'.join(L).rstrip() + '\n'
@@ -118,7 +121,8 @@ for d, rs in sorted(bydoc.items()):
          f'Generated from the registry `conformance/requirements.yaml`; the full text of every rule is in [conformance/rules.md]({to_rules}).', '',
          '| Rule | About | Since | Non-waivable |', '|---|---|---|---|']
     for r in sorted(rs, key=lambda r: id_key(r['id'])):
-        S.append(f"| [{r['id']}]({to_rules}#{r['id']}) | {r['title']} | {r['version']} | {'yes' if r.get('waivable') is False else 'no'} |")
+        since = r['version'] + (f" until {r['until']}" if r.get('until') else '')
+        S.append(f"| [{r['id']}]({to_rules}#{r['id']}) | {r['title']} | {since} | {'yes' if r.get('waivable') is False else 'no'} |")
     OUTPUT[d] = t.rstrip() + '\n\n' + '\n'.join(S) + '\n'
 
 # a document without active rules loses its "Rules of this section" section

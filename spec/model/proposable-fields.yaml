@@ -1,5 +1,5 @@
 registry: proposable-fields
-version: 1
+version: 2
 description: >-
   Allowlist of the fields that a proposal of kind `manifest_change` may change (PRP-3). The skeleton sets the list,
   a tenant can only narrow it. The target of a change is only an object from the tenant's folder in
@@ -12,7 +12,8 @@ description: >-
   `safe_direction` (the safe direction: `down`, `more_frequent`; null if there is none; a proposal
   with `untrusted_seen` changes only fields with a safe direction and only in that direction, PRP-11),
   `limits` (value limits in code words), `guarded`, `required_guards` (required trial guards
-  of a guarded field), `meaning`, `rules`. The lists `none_only` and `never` below the entries
+  of a guarded field), `replayable` (from v0.3: a rejected change of only such fields is replayed by code over the
+  recorded series, PRP-25), `meaning`, `rules`. The lists `none_only` and `never` below the entries
   repeat the table "What can be changed" of docs/improvements.md: objects for which only the kind
   `none` is possible, and objects and fields that never change (`rejected(forbidden_change)`).
 source: docs/improvements.md
@@ -27,6 +28,7 @@ entries:
     guarded: false
     required_guards: []
     meaning: Schedule expression of the tenant; the card and the patch show the frequency before and after and the affected alarms.
+    replayable: true
     rules: [PRP-3]
   - id: schedule.timezone
     since: v0.1
@@ -82,6 +84,7 @@ entries:
     guarded: false
     required_guards: []
     meaning: Tenant limits, for example `spec.limits.max_queued`.
+    replayable: true
     rules: [PRP-3, PRP-11]
   - id: tenant.campaigns
     since: v0.1
@@ -115,6 +118,7 @@ entries:
     guarded: true
     required_guards: [farm.task.outcome, farm.queue.wait]
     meaning: Attempt deadline of a type in a dispatcher rule of the tenant.
+    replayable: true
     rules: [PRP-12]
   - id: dispatch.retry.max_attempts
     since: v0.1
@@ -137,6 +141,7 @@ entries:
     guarded: true
     required_guards: [farm.queue.wait, farm.task.cost]
     meaning: Concurrency of a dispatcher rule of the tenant.
+    replayable: true
     rules: [PRP-12]
   - id: backup_schedule.window
     since: v0.1
@@ -148,6 +153,7 @@ entries:
     guarded: true
     required_guards: [farm.backup.age]
     meaning: "Window of a backup schedule (a type with `makes_backup: true`)."
+    replayable: true
     rules: [PRP-12, PRP-10, PRP-11]
 none_only: [TaskType, Role, ToolPlugin, Action]
 never:

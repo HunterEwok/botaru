@@ -1092,6 +1092,13 @@
           "$ref": "urn:botaru:schema:common:1#/$defs/duration",
           "x-botaru-version": "v0.2",
           "description": "From v0.2: the deadline of a run whose script has a wait or await step, 7d by default and at most (SCR-13); the lint checks the ceiling."
+        },
+        "unnamed_targets_max": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 100,
+          "description": "From v0.3: a machine selector wider than this is marked on the script_confirm card; 5 by default (TRN-10).",
+          "x-botaru-version": "v0.3"
         }
       },
       "description": "Script ceilings; the tenant can only decrease them (SCR-5)."
@@ -1119,6 +1126,13 @@
           "maximum": 600,
           "description": "From v0.2: a decision faster than this many seconds after delivery, without \"Details\" opened, counts as fast in the monthly summary; 10 by default (APR-13).",
           "x-botaru-version": "v0.2"
+        },
+        "manager_notices_per_person_day": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 3,
+          "description": "From v0.3: farm manager notices to a person per day, counted in the person's card limit; 3 by default and can only be lowered (MGR-52).",
+          "x-botaru-version": "v0.3"
         }
       }
     },
@@ -1171,6 +1185,20 @@
           "minimum": 0,
           "maximum": 1000000,
           "description": "Reserved: a takeover always needs the takeover_confirm card of a person; apply rejects a value above 0 (takeover_confirm_threshold, MGR-21)."
+        },
+        "manager_month_eur": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 100000,
+          "description": "From v0.3: takeovers a month from the manager line, outside the sev1 reserve; 10 EUR by default (MGR-48).",
+          "x-botaru-version": "v0.3"
+        },
+        "max_eur": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 10000,
+          "description": "From v0.3: the ceiling of one takeover; 1.5 EUR by default (MGR-48).",
+          "x-botaru-version": "v0.3"
         }
       },
       "description": "From v0.2: takeover of tenant tasks by the farm manager (MGR-21).",
@@ -1185,6 +1213,13 @@
           "minimum": 0,
           "maximum": 1,
           "description": "Lowest structural match of the translator correctness set; 0.9 by default (TRN-6)."
+        },
+        "translator_clarify_share_max": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1,
+          "description": "From v0.3: the highest share of ambiguous and unsupported answers on the translator correctness set; 0.2 by default (TRN-8).",
+          "x-botaru-version": "v0.3"
         }
       },
       "description": "From v0.2: eval gates of the tenant (TRN-6).",

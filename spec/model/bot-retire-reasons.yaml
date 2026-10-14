@@ -1,11 +1,11 @@
 registry: bot-retire-reasons
-version: 1
+version: 2
 description: >-
   Triggers for a bot identity's retirement (retired). The list is closed: only the
   core sets the trigger; bots have no operation, message type, field or route that sets
   a trigger or postpones retirement (IDN-11). Entry fields: meaning (when the trigger
   applies), caller (who calls the transition), seat_only (the trigger exists only for the
-  farm manager seat).
+  farm manager seat), not_used_from (the first version whose core no longer applies the trigger).
 source: docs/bots.md
 entries:
   - id: removed_by_vote
@@ -21,7 +21,8 @@ entries:
       contains incident
     caller: the core on P2, or the identity loop
     seat_only: farm-manager
-    rules: [IDN-11, GOV-22]
+    not_used_from: v0.3   # a v0.3 core never applies it: the farm manager is not stopped by an incident (GOV-47, IDN-15)
+    rules: [IDN-11, GOV-22, IDN-15]
   - id: replaced_by_human
     since: v0.1
     meaning: P2 seat.assign on an occupied seat, or P2 seat.vacate
@@ -47,3 +48,8 @@ entries:
     meaning: tenant offboarding, P2 tenant.offboard
     caller: the core
     rules: [IDN-11]
+  - id: parked_expired
+    since: v0.3
+    meaning: a bot parked after leaving a commission seat for a confirmed link (GOV-42) waited 180 days without a worker of its role
+    caller: the identity loop
+    rules: [IDN-15, GOV-42]

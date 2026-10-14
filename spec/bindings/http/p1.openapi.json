@@ -744,6 +744,56 @@
         }
       }
     },
+    "/v1/p1/card.feedback": {
+      "post": {
+        "operationId": "P1.card.feedback",
+        "summary": "P1 card.feedback",
+        "x-botaru-since": "v0.3",
+        "x-botaru-rules": [
+          "MGR-52",
+          "MGR-50"
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/BotaruOnBehalf"
+          },
+          {
+            "$ref": "#/components/parameters/BotaruChat"
+          },
+          {
+            "$ref": "#/components/parameters/BotaruMessage"
+          },
+          {
+            "$ref": "#/components/parameters/traceparent"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "../../model/p1-card-feedback-request.schema.json"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "../../model/done-response.schema.json"
+                }
+              }
+            }
+          },
+          "default": {
+            "$ref": "#/components/responses/Problem"
+          }
+        }
+      }
+    },
     "/v1/p1/card.remind": {
       "post": {
         "operationId": "P1.card.remind",

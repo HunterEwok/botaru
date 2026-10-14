@@ -1,5 +1,5 @@
 registry: governance-events
-version: 1
+version: 2
 description: >-
   Command names of the audit records of governance (GOV-21, AUD-1). Every case
   transition, ballot, round count, flag, people's decision and queue change writes
@@ -68,3 +68,27 @@ entries:
     since: v0.2
     meaning: the monthly shadow selection seed of a tenant was drawn (COM-10)
     rules: [COM-10, GOV-21]
+  - id: governance.v03_enabled
+    since: v0.3
+    meaning: the first apply of the tenant on a core that claims v0.3; its time is governance_v03_since (GOV-37)
+    rules: [GOV-37, GOV-21]
+  - id: commission.accountability_on
+    since: v0.3
+    meaning: the first apply with commission.accountability on; its time is accountability_on_since (GOV-36)
+    rules: [GOV-36, GOV-21]
+  - id: governance.link.confirmed
+    since: v0.3
+    meaning: a person confirmed a link of kind rejected_proposal or a recommended change, with the seats that answer (GOV-40, GOV-41)
+    rules: [GOV-40, GOV-41, GOV-21]
+  - id: governance.seat.parked
+    since: v0.3
+    meaning: a holder left its seat for a confirmed link and was parked, or its departure waits for the 30-day pace (GOV-42)
+    rules: [GOV-42, GOV-21]
+  - id: governance.seat.returned
+    since: v0.3
+    meaning: a link was canceled after the incident was declared false, and the parked bot returned to its seat or the queue head (GOV-42)
+    rules: [GOV-42, GOV-21]
+  - id: governance.reward
+    since: v0.3
+    meaning: the most accurate holder got or lost the reward and its protection (COM-18)
+    rules: [COM-18, GOV-21]

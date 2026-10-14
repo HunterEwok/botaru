@@ -487,6 +487,8 @@ The lens input is built by the core as a data block (INJ-4): the closed fields o
 
 ### Reviewer input and output
 
+From v0.3 the input and output change, see [Forecasts and accuracy from v0.3](#forecasts-and-accuracy-from-v03).
+
 The reviewer input is built by the core as a data block with a marker (INJ-4): the closed fields of the proposal, the evidence values reread by the core, the change description in code words, the author level (a bot from its seat or an aggregator) and the marks `self_evidence`, `related_to` and conflicts (COM-3). The author's `note` is never passed. Of the tools, the reviewer has only `observations_query` within the tenant.
 
 The reviewer output passes the closed schema `review-result`:
@@ -714,12 +716,48 @@ Tenant `demo` has two machines: `web1` and `db1`. The role `ops-runner` (profile
 11. **Audit sample, with veto.** The proposal `p_0103` to raise `max_running` of the dispatcher rule for the report type from 2 to 3 (a guarded field) got a veto from the operational lens because of the load on `db1` and the outcome `dismissed(veto)`. The sample takes it from the stratum "operational veto". `carol` answers "Would not accept", and the item is closed. If she had answered "Would accept", only the "Lift veto" button would have been available to her, and only with the capability `proposal.override_veto:capacity`, and the author would have got no credit.
 12. **If things had gone otherwise.** If after the move the report had started to be late for its slot, the guard `farm.schedule.slot` would have gone beyond the tolerance, `bob` would have got a "Roll back" card with the reverse edit, the trial outcome would have been `worse`, and no promotion trigger would have appeared. If the role's `insight` line had been 0, the `doctor` check and the weekly digest would have shown "Improvement cycle disabled: role ops-runner has an insight line of 0 EUR". If the aggregator `ops-aggregator` had proposed to spread out all nightly schedules, including `report-nightly`, while `p_0101` was open, its proposal would have conflicted with `p_0101` on the field `spec.cron`: after "Accept" on `p_0101` it would have gone to `parked(conflict)` until the end of the trial, and one submitted after the decision on `p_0101` would have got `related_to` and given no credit.
 
+## Forecasts and accuracy from v0.3
+
+From v0.3 the reviewer input loses the author level: the core builds it from the closed fields of the proposal, the evidence values it reread itself and the change in code words, and the reviewer sees neither the author nor whether the proposal is a resubmission (COM-15). Raw text never reaches the reviewer. The output passes the closed schema `review-result.v2`, which adds a forecast of the lens's own outcome:
+
+```yaml
+lens: operational
+score: 1
+veto: false
+concerns: [report_delay]
+confidence: medium
+forecast: {bad: 0.7, ok: 0.3}             # security and operational: the probability of a bad outcome
+# value:  forecast: {better: 0.5, unchanged: 0.4, worse: 0.1}
+# cost:   forecast: {over: 0.2, within: 0.8}  # spend over the trial window above cost_eur
+shadow: false
+note: "..."
+```
+
+A score of 3 or more with a probability of a bad outcome of 0.5 or more is a contradiction, and such a review counts as missing (COM-4). Reviews of v0.1 and v0.2 records keep `review-result`.
+
+**Scoring.** When the outcome is known, code scores the forecast with the Brier score and writes it into the review record (COM-16). The outcome is the trial outcome (PRP-22) for `value`; for the veto lenses a bad outcome is a decline by people as too risky, a confirmed incident attribution or the trial outcome `worse`; for `cost` the spend of the change subjects over the trial window. A rejected proposal is scored through the blind audit sample (DIG-6, weighted by the inclusion probability), through a resubmission with the same values (PRP-24) and through a replay (PRP-25). Outcomes `undetermined`, `mixed` and `canceled` give no score. Shadow reviews are scored but never count for a seat.
+
+**Accuracy.** Only code computes accuracy (COM-17): the mean score of a lens executor over 180 days compared with a reference forecast from the lens base rates, divided by the spread among the executors of the lens, so that one scale fits all lenses. Few cases pull the value toward zero (weight n / (n + 10)). People see accuracy from 10 scored forecasts, and a departure decision needs 20. P2 `commission.status`, the weekly commission summary and the promotion card show it next to calibration (COM-11); no bot context contains it.
+
+**Reward.** With `commission.accountability: on` ([commission.md](commission.md#accountability-from-v03)) the holder with the best accuracy over 90 days and at least 20 scored forecasts gets, for 90 days, reviews of hard proposals on the `reward_profile` of its seat and protection from leaving by accuracy (COM-18). A hard proposal is one that code marks high risk, that touches a protected field or that has `untrusted_seen`. The core issues for such a review a grant of `kind: reward` for one attempt, paid from the `review` line within `commission.reward_cap_eur_month`, which is 0 by default, so there is no reward until people set an amount. The reward never lifts the rank above the seat role's ceiling and never puts the two veto lenses on one model family.
+
+## Resubmission, replay and farm guards from v0.3
+
+**Resubmission.** A proposal whose fingerprint equals that of a proposal the commission dismissed or parked by score is a resubmission (PRP-24). It is accepted from any bot no earlier than 30 days after the verdict and at most once per fingerprint in 90 days, otherwise `rejected(resubmit_too_early)`. The credit goes to the new author, and reviewers do not see that it is a resubmission. If the values are the same and its trial ends, that outcome scores the forecasts of the first round.
+
+**Replay.** When the commission rejects a `manifest_change` that sets only fields marked `replayable: true` in `spec/model/proposable-fields.yaml` (alarm thresholds, schedule windows, limits), the core replays the change by code over the recorded series of the last 30 days: which alarms and incidents would have fired earlier, later or not at all, and which limits would have been hit (PRP-25). Nothing changes on the farm and no model takes part. The result `benefit`, `harm`, `none` or `mixed` goes into the proposal record and scores the commission's forecasts. A replay gives no promotion trigger.
+
+**A clear benefit reaches people.** When a replay gives `benefit` and no harm, the tenant digest gets one line `replay_item`: "the commission rejected it, the records say it would have helped", with the numbers and the button "Send to decide" (DIG-9). At most one such item per tenant per week; silence changes nothing. The button moves the proposal to people on the ordinary path without a new review.
+
+**Farm guards.** Every change trial carries two guards that a tenant cannot remove: the share of successful tasks of the tenant (`farm.task.outcome`) and the 95th percentile of the queue wait (`farm.queue.wait`) (PRP-26). A change that improved its metric but tripped one of them has the outcome `worse`.
+
 ## What goes into which version
 
 | Version | What appears |
 |---|---|
 | v0.1 | The improvement cycle comes in the work order right after the core of the `core` profile and the first bot `examples/hello-bot/` (D-71, D-80). Observation series, points only from code, closed reading, rollups and retention (OBV-1, OBV-2, OBV-3, OBV-4); core series and the registry with the `outcome` block (OBV-5, OBV-6); the event `run.finished.v1` (OBV-7). `insight` analysis: type, permissions, creation of proposals, rate and merge window (INS-1, INS-2, INS-3, INS-4); the "loop disabled" signal (INS-6). A proposal with the kinds `none`, `action_request`, `manifest_change`, `human_change`: record and schema, rereading of evidence, allowlist, "runs nothing", duplicates and limits, transition table, untrusted text (PRP-1, PRP-2, PRP-3, PRP-4, PRP-5, PRP-6, PRP-7); own folder, `proposable`, safe directions (PRP-8, PRP-10, PRP-11); change by people's hands, author bot, self influence (PRP-13, PRP-14, PRP-15); executor and deadline, verified link, reverse edit, trial record (PRP-18, PRP-19, PRP-20, PRP-21). Commission on roles of the `reviewer` profile: independence, input and output, verdict by code, checks, money by `tree_budget_eur`, manifest with thresholds and weights, the shadow field, two lenses for kind `none` (COM-2, COM-3, COM-4, COM-5, COM-6, COM-8, COM-9, COM-14). Digest, address and people's decision (DIG-1, DIG-2, DIG-3). The change kind `script`. Analysis to the role's bots in turn (INS-5). Aggregators: aggregated inputs and marks (AGG-2, AGG-4). Conflicts (PRP-9); guarded fields (PRP-12); computation of the trial outcome and the "Roll back" card (PRP-22, PRP-23). "My outcomes" (DIG-7). Lenses on seats with a fallback role (COM-7). |
 | v0.2 | One level of aggregators with a strict lint; no bot builds a view of the whole farm (AGG-3, AGG-5). Feedback as numbers (DIG-4); audit sample, blind card and "Lift veto" (DIG-5, DIG-6); trial numbers in "My outcomes" (DIG-8). One open proposal per bot and a cumulative frequency limit (PRP-16); related proposals without credit (PRP-17). Shadow reviewer, calibration within a lens, the single-model flag (COM-10, COM-11, COM-12). The `farm_manager` lens (GOV-25); the necessity lens for escalations to the manager and the `escalation` section of the commission manifest (COM-13); a promotion trigger only for successes with a promotion probation under the v0.2 rules; schedule check before "Accept" (TIM-5); writing of points by a job worker through P1 `obs.append`. |
+| v0.3 | The reviewer input without the author level and the review with a forecast `review-result.v2` (COM-15); forecast scores, accuracy and the reward (COM-16, COM-17, COM-18); resubmission, replay and the replay digest item (PRP-24, PRP-25, DIG-9); farm guards in every trial (PRP-26). |
 
 ## Why this way
 
@@ -742,7 +780,7 @@ Generated from the registry `conformance/requirements.yaml`; the full text of ev
 | [AGG-4](../conformance/rules.md#AGG-4) | Aggregator marks do not drop | v0.1 | yes |
 | [AGG-5](../conformance/rules.md#AGG-5) | No aggregation across tenants | v0.2 | yes |
 | [COM-2](../conformance/rules.md#COM-2) | Independence of reviews | v0.1 | yes |
-| [COM-3](../conformance/rules.md#COM-3) | The core builds the reviewer input | v0.1 | yes |
+| [COM-3](../conformance/rules.md#COM-3) | The core builds the reviewer input | v0.1 until v0.2 | yes |
 | [COM-4](../conformance/rules.md#COM-4) | Code computes the verdict, without a veto lens the proposal waits | v0.1 | yes |
 | [COM-5](../conformance/rules.md#COM-5) | Code checks run before reviews | v0.1 | no |
 | [COM-6](../conformance/rules.md#COM-6) | Money for reviews | v0.1 | no |
@@ -754,6 +792,10 @@ Generated from the registry `conformance/requirements.yaml`; the full text of ev
 | [COM-12](../conformance/rules.md#COM-12) | The flag "all votes from one model for one seat" | v0.2 | no |
 | [COM-13](../conformance/rules.md#COM-13) | The necessity lens and the `escalation` section of the commission manifest | v0.2 | yes |
 | [COM-14](../conformance/rules.md#COM-14) | A proposal of kind `none` is assessed by two lenses | v0.1 | no |
+| [COM-15](../conformance/rules.md#COM-15) | The core builds the reviewer input, and a review carries a forecast | v0.3 | yes |
+| [COM-16](../conformance/rules.md#COM-16) | Every review is a forecast scored by code | v0.3 | no |
+| [COM-17](../conformance/rules.md#COM-17) | Accuracy of a commission member | v0.3 | no |
+| [COM-18](../conformance/rules.md#COM-18) | A stronger model for the most accurate member | v0.3 | no |
 | [DIG-1](../conformance/rules.md#DIG-1) | People are shown only recommended proposals and the audit sample | v0.1 | yes |
 | [DIG-2](../conformance/rules.md#DIG-2) | Digest address and recipient ceiling | v0.1 | yes |
 | [DIG-3](../conformance/rules.md#DIG-3) | The right to decide on a proposal | v0.1 | yes |
@@ -762,6 +804,7 @@ Generated from the registry `conformance/requirements.yaml`; the full text of ev
 | [DIG-6](../conformance/rules.md#DIG-6) | The blind sample card and a separate "Lift veto" button | v0.2 | yes |
 | [DIG-7](../conformance/rules.md#DIG-7) | The closed form of "My outcomes" | v0.1 | yes |
 | [DIG-8](../conformance/rules.md#DIG-8) | Trial figures in "My outcomes" | v0.2 | no |
+| [DIG-9](../conformance/rules.md#DIG-9) | A clear benefit of a rejected change reaches people as one line | v0.3 | no |
 | [INS-1](../conformance/rules.md#INS-1) | Task type of the purpose `insight` | v0.1 | yes |
 | [INS-2](../conformance/rules.md#INS-2) | Analysis permissions are no wider than the role's main work | v0.1 | yes |
 | [INS-3](../conformance/rules.md#INS-3) | Proposals are created only when an attempt finishes successfully | v0.1 | yes |
@@ -799,3 +842,6 @@ Generated from the registry `conformance/requirements.yaml`; the full text of ev
 | [PRP-21](../conformance/rules.md#PRP-21) | Change trial record on "Accept" | v0.1 | yes |
 | [PRP-22](../conformance/rules.md#PRP-22) | Code computes the trial outcome | v0.1 | no |
 | [PRP-23](../conformance/rules.md#PRP-23) | The "Revert" card for the executor | v0.1 | no |
+| [PRP-24](../conformance/rules.md#PRP-24) | A rejected proposal can be submitted again | v0.3 | no |
+| [PRP-25](../conformance/rules.md#PRP-25) | Replay of a rejected change over the history | v0.3 | no |
+| [PRP-26](../conformance/rules.md#PRP-26) | Every trial guards the farm's work | v0.3 | no |

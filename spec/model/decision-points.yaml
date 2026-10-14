@@ -1,5 +1,5 @@
 registry: decision-points
-version: 2
+version: 3
 description: >-
   Registry of human decisions (APR-12): one row for each kind of card and
   notice. A kind without a row does not pass the skeleton CI, and the core does not create such
@@ -409,3 +409,125 @@ entries:
     undo: none
     urgent: false
     rules: [APR-12, MGR-23]
+  # v0.3
+  - id: accountability_ready
+    since: v0.3
+    kind: notice
+    subject: null
+    recipients: tenant admins with admin:governance; every commission seat has a holder with at least 20 scored forecasts, with the accuracy of every seat and the charter field to change; no buttons
+    ttl: repeated once a month while the condition holds and the mode is shadow
+    on_silence: {state: null, outcome: "accountability stays in shadow", remind: 30d}
+    undo: none
+    urgent: false
+    rules: [APR-12, GOV-36]
+  - id: rejection_link_card
+    since: v0.3
+    kind: decision
+    subject: attribution
+    decisions:
+      'yes': {right: governance.attribute, details_required: true}
+      'no': {right: governance.attribute, details_required: true}
+      unknown: {right: governance.attribute}
+    recipients: people with governance.attribute, with commission.accountability on; one card per incident with up to 3 candidates of kind rejected_proposal, no model text; not the person who created a candidate from a manager's hint when the tenant has a second such person (GOV-40)
+    ttl: 7d
+    on_silence: {state: unknown, outcome: nothing changes; nobody leaves (GOV-40), remind: 7d, remind_max: 3}
+    undo: as attribution_card; declaring the incident false cancels the candidates and returns the departed members (GOV-42)
+    urgent: false
+    rules: [APR-12, APR-14, GOV-40]
+  - id: script_link_card
+    since: v0.3
+    kind: decision
+    subject: attribution
+    decisions:
+      'yes': {right: governance.attribute, details_required: true}
+      'no': {right: governance.attribute, details_required: true}
+      unknown: {right: governance.attribute}
+    recipients: people with governance.attribute, not the person who pressed "Run"; with one such person the card and the audit are marked self-assessment (TRN-7)
+    ttl: 7d
+    on_silence: {state: unknown, outcome: nothing changes; no check case and no count toward the translator pause, remind: 7d, remind_max: 3}
+    undo: as attribution_card
+    urgent: false
+    rules: [APR-12, APR-14, TRN-7]
+  - id: seat_parked_notice
+    since: v0.3
+    kind: notice
+    subject: null
+    recipients: operators with admin:governance in the tenant; the seat, the former role and the command farmctl worker enroll --bot to bind a worker to the parked bot (GOV-42)
+    ttl: none
+    on_silence: {state: null, outcome: "the bot stays parked; after 180 days without a worker it retires with parked_expired (IDN-15)"}
+    undo: none
+    urgent: false
+    rules: [APR-12, GOV-42]
+  - id: seat_return_notice
+    since: v0.3
+    kind: notice
+    subject: null
+    recipients: operators with admin:governance in the tenant; the incident was declared false, the link canceled, and the seat is still vacant; the command to return the parked bot (GOV-42)
+    ttl: none
+    on_silence: {state: null, outcome: "the seat stays vacant and covered by the fallback role"}
+    undo: none
+    urgent: false
+    rules: [APR-12, GOV-42]
+  - id: manager_preventable
+    since: v0.3
+    kind: notice
+    subject: null
+    recipients: operators with admin:governance in farm; the class, number, tenant, time and reason code of a preventable incident, and the commands farmctl seat resume farm-manager --tenant, farmctl seat assign, farmctl seat vacate; no buttons and no tenant content (MGR-46)
+    ttl: none
+    on_silence: {state: null, outcome: "the seat stays restricted in the tenant", remind: "after 24 h, after 72 h, then weekly until marked read or the restriction ends"}
+    undo: none
+    urgent: false
+    attention_limit: false
+    rules: [APR-12, MGR-46, PRM-14]
+  - id: manager_attention
+    since: v0.3
+    kind: notice
+    subject: null
+    recipients: people of the tenant with permissions on the object, in private chats, chosen by code; closed fields from spec/model/manager-attention.yaml; the buttons "Useful" and "Not needed" through P1 card.feedback (MGR-52)
+    ttl: none
+    on_silence: {state: null, outcome: nothing}
+    undo: none
+    urgent: false
+    rules: [APR-12, APR-15, MGR-52]
+  - id: postmortem_report
+    since: v0.3
+    kind: notice
+    subject: null
+    recipients: people of the tenant of a resolved incident, rows by the reader's permissions; the farm operators get numbers only for incidents of farm; excess over the per-person limit goes to the next digest; the buttons "Useful" and "Not needed" through P1 card.feedback (MGR-53, MGR-50)
+    ttl: none
+    on_silence: {state: null, outcome: nothing}
+    undo: none
+    urgent: false
+    rules: [APR-12, MGR-53]
+  - id: holder_report
+    since: v0.3
+    kind: notice
+    subject: null
+    recipients: operators with admin:governance in farm, once a week; numbers about the farm manager seat holder without tenant names (MGR-50)
+    ttl: none
+    on_silence: {state: null, outcome: nothing}
+    undo: none
+    urgent: false
+    rules: [APR-12, MGR-50]
+  - id: replay_item
+    since: v0.3
+    kind: decision
+    subject: proposal
+    decisions:
+      send_to_decide: {right: 'proposal.decide:<category>'}
+    recipients: people with proposal.decide:<category> in the digest; at most one item per tenant per week (DIG-9)
+    ttl: until the next digest
+    on_silence: {state: null, outcome: nothing changes; the proposal stays rejected}
+    undo: none
+    urgent: false
+    rules: [APR-12, DIG-9]
+  - id: translator_suspended
+    since: v0.3
+    kind: notice
+    subject: null
+    recipients: tenant admins with admin:governance; three confirmed script links in 90 days paused drafts with actions for the translator role; lifting goes through P2 (TRN-9)
+    ttl: none
+    on_silence: {state: null, outcome: "the pause stays; read-only scripts still run"}
+    undo: P2 by a person with admin:governance
+    urgent: false
+    rules: [APR-12, TRN-9]

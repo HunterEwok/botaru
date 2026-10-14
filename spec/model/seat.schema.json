@@ -132,6 +132,33 @@
     "decide_until": {
       "$ref": "urn:botaru:schema:common:1#/$defs/datetime",
       "description": "With the reason incident: the end of the incident_stop.decide_within period (default and at most 7 days), after which the identity lifecycle retires the holder with the trigger replaced_after_incident."
+    },
+    "restricted_in": {
+      "type": "array",
+      "maxItems": 1000,
+      "x-botaru-version": "v0.3",
+      "description": "From v0.3: tenants where the farm manager seat is in restricted mode after a preventable incident (MGR-47): decision attempts there only read and send notices. Lifted by P2 seat.resume with the tenant, or when the holder changes or the seat is vacated.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "tenant",
+          "incident",
+          "since"
+        ],
+        "properties": {
+          "tenant": {
+            "$ref": "urn:botaru:schema:common:1#/$defs/tenant_name"
+          },
+          "incident": {
+            "$ref": "urn:botaru:schema:common:1#/$defs/object_id",
+            "description": "The preventable incident."
+          },
+          "since": {
+            "$ref": "urn:botaru:schema:common:1#/$defs/datetime"
+          }
+        }
+      }
     }
   }
 }

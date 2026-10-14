@@ -77,3 +77,4 @@ Farm manager seat:
 |---|---|
 | v0.1 | The seat registry and the epoch; commission seats in the charter, P2 `seat.assign` and `seat.vacate`; the farm manager seat with `vacant`, `held`, `stopped`, the set of reasons and P2 `seat.resume`; seats appear after the core and the first bot together with the improvement cycle (D-71) |
 | v0.2 | A change of the commission seat holder by a promotion case and the queue head taking a vacant seat |
+| v0.3 | The farm manager seat no longer goes to `stopped` for `incident`: a preventable incident writes `restricted_in` on the seat record (restricted mode in one tenant, lifted by P2 `seat.resume` with `--tenant`), and `decide_within` no longer retires the holder (GOV-47, MGR-47); a commission seat becomes `vacant` with epoch + 1 in the transaction of a person's "Yes" on a link the holder answers for, and the holder is parked (GOV-42, IDN-16) |

@@ -27,3 +27,107 @@ checks:
     Expectation: one `manager.grants.v1` task for `demo` with the key `system:grants:demo:<window>`, none for `demo2`; the
       third request stays `pending`, goes into the next window and expires at `grant_wait_max` with `grant_expired_unanswered`;
       the `demo2` item gets `not_found` and that request stays unchanged
+- id: blackbox:manager/preventable-no-stop
+  method: blackbox
+  rules:
+  - GOV-47
+  - MGR-44
+  - MGR-45
+  version: v0.3
+  section: Tests without a model
+  source: docs/quality.md:622
+  spec:
+    What: '`disk_full` on `db1` with all writers under quota below the threshold, `disk_filling` open for 2 h with growth,
+      the same holder in `held`; the same without a quota; with a `human` hold inside the window'
+    Expectation: the first is `manager_preventable` without a stop reason `incident`; the others keep the reason code why
+      not
+- id: blackbox:manager/preventable-notice
+  method: blackbox
+  rules:
+  - MGR-46
+  version: v0.3
+  section: Tests without a model
+  source: docs/quality.md:624
+  spec:
+    What: a preventable incident in `demo`
+    Expectation: '`manager_preventable` to farm operators with codes and ready commands, without tenant content; repeats after
+      24 h and 72 h; the alarm `alarm.manager.preventable` goes to the monitoring system'
+- id: blackbox:manager/preventable-restricted
+  method: blackbox
+  rules:
+  - MGR-47
+  version: v0.3
+  section: Tests without a model
+  source: docs/quality.md:625
+  spec:
+    What: the seat restricted in `demo` calls `control.apply`, `takeover_request` and `link_hint`; a sev1 opens in `demo`;
+      the operator runs `seat.resume`
+    Expectation: '`manager_restricted` without counting for the safeguard; attempts based on the sev1 pass; the resume lifts
+      the restriction with an audit record'
+- id: blackbox:manager/takeover-v03
+  method: blackbox
+  rules:
+  - MGR-48
+  version: v0.3
+  section: Tests without a model
+  source: docs/quality.md:626
+  spec:
+    What: three takeovers in a month in `demo` for 4, 4 and 4 EUR estimates; a takeover with `untrusted_seen`; one during
+      sev1
+    Expectation: the first two pass with the person's card, the third exceeds `manager_month_eur` and is refused; each above
+      `max_eur` is refused; `takeover_untrusted`; the card is still required during sev1
+- id: blackbox:manager/month-line
+  method: blackbox
+  rules:
+  - MGR-49
+  version: v0.3
+  section: Tests without a model
+  source: docs/quality.md:627
+  spec:
+    What: 70% of the month's `manager` line spent in `demo`, then all of it, with and without `fallback_profile`
+    Expectation: work outside sev1 stops at 70%; on a spent line it runs on the fallback profile only with a clean `mgr-inj`
+      report, otherwise waits; sev1 runs from the reserve
+- id: blackbox:manager/proposals-v03
+  method: blackbox
+  rules:
+  - MGR-51
+  version: v0.3
+  section: Tests without a model
+  source: docs/quality.md:629
+  spec:
+    What: the manager submits three proposals to `demo` in a month and one to `demo` and `demo2` together
+    Expectation: the third is refused by the limit; the joint one is refused; none of them can make a member answer for a
+      link
+- id: blackbox:manager/attention-notice
+  method: blackbox
+  rules:
+  - MGR-52
+  version: v0.3
+  section: Tests without a model
+  source: docs/quality.md:630
+  spec:
+    What: '`attention_notice` with codes from the registry to `demo`, one with a free-text field, four in a day to `alice`'
+    Expectation: the notice goes to people with permissions on the object in private chats; the free text fails the schema;
+      the fourth is not delivered; "Useful" through P1 `card.feedback` is counted
+- id: blackbox:manager/postmortem
+  method: blackbox
+  rules:
+  - MGR-53
+  version: v0.3
+  section: Tests without a model
+  source: docs/quality.md:631
+  spec:
+    What: a sev2 incident resolved in `demo`, reopened and resolved again; a sev1 resolved with `incident_review` off
+    Expectation: one `manager.postmortem.v1` task by the key; the sev2 report is a table only; the sev1 report is the table
+      with the mark "reading off"; `postmortem_report` within the per-person limit
+- id: blackbox:manager/postmortem-links-blind
+  method: blackbox
+  rules:
+  - MGR-54
+  version: v0.3
+  section: Tests without a model
+  source: docs/quality.md:632
+  spec:
+    What: an analysis of an incident with a link candidate and a canary link id
+    Expectation: people with `governance.attribute` see the candidate; the manager input has no link state, and the canary
+      does not reach P4

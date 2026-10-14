@@ -5,7 +5,10 @@
 An active rule has a text, a check method, the waivable flag, a version,
 a profile and a document; a retired one has a date, a reason and a replacement.
 A number appears once. Rules carry no pending mark. Unknown row fields
-(a typo such as decison:) are an error.
+(a typo such as decison:) are an error. A rule that a later version changes
+keeps its row with until (the last version it applies to) and
+superseded_by (the active rules of the next versions that replace it), so
+an implementation that claims the earlier version is still checked by it.
 """
 import datetime
 import os
@@ -19,7 +22,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from common import CHECKS, PROFILES, REGISTRY, ROOT, VERSIONS, Loader, Report, known_decisions, read, registry
 
 ACTIVE_KEYS = {'id', 'title', 'status', 'text', 'check', 'waivable', 'version', 'profile', 'level',
-               'decisions', 'fixtures', 'doc'}
+               'decisions', 'fixtures', 'doc', 'until', 'superseded_by'}
 RETIRED_KEYS = {'id', 'title', 'status', 'retired', 'reason', 'replaced_by'}
 
 rep = Report('registry')
@@ -90,6 +93,13 @@ for n, r in enumerate(rows):
             m = re.match(r'^([a-z]+):', str(fx))
             if m and m.group(1) in CHECKS and m.group(1) not in checks:
                 rep.note(where, f'[rule_fixture_method] {fx}: method {m.group(1)} is not in check, the name only links')
+        until = r.get('until')
+        if until is not None or r.get('superseded_by') is not None:
+            if until not in VERSIONS or r.get('version') not in VERSIONS \
+                    or VERSIONS.index(until) < VERSIONS.index(r.get('version')) or until == VERSIONS[-1]:
+                rep.error(where, f'[rule_until] until {until!r} must be a version from {VERSIONS}, not before the rule version and not the last one')
+            if not isinstance(r.get('superseded_by'), list) or not r.get('superseded_by'):
+                rep.error(where, '[rule_superseded_by] a rule with until names the rules that replace it in superseded_by')
         doc = r.get('doc')
         if not doc or not os.path.exists(os.path.join(ROOT, doc)):
             rep.error(where, f'[rule_doc_missing] document {doc!r} not found')
@@ -104,6 +114,17 @@ for n, r in enumerate(rows):
         rep.error(where, f'[rule_status] status {status!r} is neither active nor retired')
 
 active = {r['id'] for r in rows if isinstance(r, dict) and r.get('status') == 'active'}
+by_id = {r['id']: r for r in rows if isinstance(r, dict) and r.get('status') == 'active' and isinstance(r.get('id'), str)}
+for r in by_id.values():
+    until = r.get('until')
+    for x in r.get('superseded_by') or []:
+        t = by_id.get(x)
+        if t is None:
+            rep.error(f'{REGISTRY} {r["id"]}', f'[rule_superseded_by] replacement {x} is not an active rule')
+        elif until in VERSIONS and t.get('version') in VERSIONS and VERSIONS.index(t['version']) <= VERSIONS.index(until):
+            rep.error(f'{REGISTRY} {r["id"]}', f'[rule_superseded_by] replacement {x} is of version {t["version"]}, not later than until {until}')
+        elif t.get('until') is not None and t.get('until') == until:
+            rep.error(f'{REGISTRY} {r["id"]}', f'[rule_superseded_by] replacement {x} ends in the same version')
 for r in rows:
     if isinstance(r, dict) and r.get('status') == 'retired':
         for x in r.get('replaced_by') or []:

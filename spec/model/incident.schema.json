@@ -243,6 +243,18 @@
     "closed_by": {
       "description": "Who closed the incident after resolved: a person or the seat holder with an epoch.",
       "$ref": "#/$defs/actor"
+    },
+    "manager_preventable": {
+      "x-botaru-version": "v0.3",
+      "description": "From v0.3, for a class with manager_accountable: true written in the transaction of opening: true when the incident is preventable by the seat holder (GOV-47, MGR-44, MGR-45), otherwise the reason code why not.",
+      "anyOf": [
+        {
+          "const": true
+        },
+        {
+          "$ref": "urn:botaru:schema:common:1#/$defs/reason"
+        }
+      ]
     }
   },
   "$defs": {

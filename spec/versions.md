@@ -2,7 +2,7 @@
 
 ## In short
 
-The skeleton has several numbers, and each has its own meaning. `spec/VERSION` is the release number of the repository. The skeleton versions v0.1 and v0.2 are content slices: from which release a rule, an operation or a concept is part of the skeleton and is checked. The major numbers of contracts (the `/v1` path of the HTTP binding, the `.vN` suffix of types and events, `:N` in the `$id` of schemas, the major P1 version in `hello`) are a compatibility promise. Port sheets carry their own SemVer version. This page collects the map of all numbers and the one promise the skeleton keeps.
+The skeleton has several numbers, and each has its own meaning. `spec/VERSION` is the release number of the repository. The skeleton versions v0.1, v0.2 and v0.3 are content slices: from which release a rule, an operation or a concept is part of the skeleton and is checked. The major numbers of contracts (the `/v1` path of the HTTP binding, the `.vN` suffix of types and events, `:N` in the `$id` of schemas, the major P1 version in `hello`) are a compatibility promise. Port sheets carry their own SemVer version. This page collects the map of all numbers and the one promise the skeleton keeps.
 
 ## Compatibility promise
 
@@ -27,7 +27,7 @@ The promise applies from the first published release 0.1.0. Before that tag (the
 | Number | Where it is written | Meaning | How it grows |
 |---|---|---|---|
 | release version | `spec/VERSION`, a git tag | the SemVer of the repository 0.y.z | the minor digit when the next skeleton version comes out, the patch for fixes |
-| skeleton version | the `version` field of a rule, `since` of a registry entry, `x-botaru-version` of a schema, the "Version" column of a sheet | from which release a rule or an operation is checked: v0.1 means the releases 0.1.z, v0.2 means 0.2.z | a new content slice |
+| skeleton version | the `version` field of a rule, `since` of a registry entry, `x-botaru-version` of a schema, the "Version" column of a sheet | from which release a rule or an operation is checked: v0.1 means the releases 0.1.z, v0.2 means 0.2.z, v0.3 means 0.3.z; a rule with `until` is checked up to and including that version and replaced from the next one by the rules of its `superseded_by` (D-113) | a new content slice |
 | port sheet version | the line "Sheet version" at the start of every sheet `spec/ports/*.md` | the SemVer of the sheet | minor for a new operation, patch for a clarification of the text, major only together with a new major version of the binding |
 | major P1 version | the `/v1` path of the binding `spec/bindings/http/`, the value `v1` in `protocol_versions` of the `hello` request | the worker protocol | a new major only for a breaking change; a window of the current and the previous one (LCY-7) |
 | major schema version | an `$id` of the form `urn:botaru:schema:<name>:<major>`, the file `<name>.v<major>.schema.json` from the second one on | the shape of data | only for a breaking change (MAN-3) |
