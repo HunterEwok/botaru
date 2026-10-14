@@ -34,6 +34,10 @@ func (s *Server) p1(w http.ResponseWriter, r *http.Request) {
 		Problem(w, &core.Problem{Reason: "not_found", Detail: "operations are POST"})
 		return
 	}
+	if err := s.c.P1Ready(op); err != nil {
+		s.fail(w, err)
+		return
+	}
 	ctx := r.Context()
 	wk, err := s.c.AuthenticateWorker(ctx, bearer(r))
 	if err != nil {

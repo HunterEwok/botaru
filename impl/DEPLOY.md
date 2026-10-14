@@ -64,6 +64,10 @@ p2_listen: 127.0.0.1:8402        # farmctl only; a separate listener (IDN-7)
 texts_dir: /etc/botaru/texts     # optional: ru.yaml and other locales of the code texts
 operator: "Example operator"     # the operator named in the AI notice (notice.ai)
 farm_hosts: [core1]              # the farm nodes (DEP-11): apply refuses a catalog that names them
+health:                          # optional thresholds of P2 health and its alarms (OBS-9, CAP-5)
+  store_volume: /var/lib/postgresql   # the store volume, when the store runs on this machine
+  # urgent_age_s: 600, delivery_window_s: 3600, delivery_share_min: 0.9, loop_tick_s: 30,
+  # store_free_soft: 0.15, store_free_hard: 0.05
 operators:
   - token_sha256: <the SHA-256 from step 4>
     principal: human:p_01JB00000000000000000000A1   # your id as the operator

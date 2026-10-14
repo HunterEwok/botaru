@@ -4,6 +4,7 @@ Skeleton versions: v0.1, v0.2, v0.3, v0.4. A skeleton version states which rules
 
 ## Unreleased
 
+- impl: P2 `health` reports the tick age of each background loop from the store, the age of the oldest urgent task, the share of deliveries delivered within 10 minutes and the free space of the store volume; the new `health` loop raises their alarms, the soft threshold of the store volume refuses enqueues of classes 3-5 and the hard one answers `not_ready` on P1, and P1 answers `not_ready` while the store is unavailable (OBS-4, OBS-8, OBS-9, CAP-5).
 - The activity schema gets the optional fields `forwarded_from` and `quoted_from`: the identity of the author of forwarded or quoted text when the messenger shows a person, so the core can record that person in `personal_subjects` (AUD-5). The Telegram binding fills them from `forward_origin`, the replied message of a `quote` and `external_reply`.
 - The code text catalog gets `delivery.withheld.channel_ceiling`, the text a person gets in place of an answer above the ceiling of the channel (SEC-9).
 - The code text catalog gets `notice.alarm`, the text of the `alarm_notice` delivery to admins in an installation without the monitoring system (MON-13).

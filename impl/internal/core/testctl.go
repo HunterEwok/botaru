@@ -30,11 +30,12 @@ var testLoops = map[string]func(c *Core, ctx context.Context) error{
 	"hold":            (*Core).holdLoop,
 	"worker-liveness": (*Core).liveness,
 	"alarm":           (*Core).alarmLoop,
+	"health":          (*Core).healthLoop,
 }
 
 // loopOrder is the order of one Tick: leases and deadlines first, then holds, then the loops
-// that raise and repeat alarms about what the others left.
-var loopOrder = []string{"reaper", "deadline", "hold", "worker-liveness", "alarm"}
+// that raise and repeat alarms about what the others left, and the health indicators last.
+var loopOrder = []string{"reaper", "deadline", "hold", "worker-liveness", "alarm", "health"}
 
 func (c *Core) requireTestBench() error {
 	if !c.cfg.TestBench {
@@ -105,8 +106,7 @@ func (c *Core) TestLoopTick(ctx context.Context, loop string, copies int) (*Test
 	if err := c.requireTestBench(); err != nil {
 		return nil, err
 	}
-	tick, ok := testLoops[loop]
-	if !ok {
+	if _, ok := testLoops[loop]; !ok {
 		return nil, refuse("not_found", "this build has no loop %s", loop)
 	}
 	if copies < 1 {
@@ -118,7 +118,7 @@ func (c *Core) TestLoopTick(ctx context.Context, loop string, copies int) (*Test
 	}
 	errs := make(chan error, copies)
 	for range copies {
-		go func() { errs <- tick(c, ctx) }()
+		go func() { errs <- c.tickLoop(ctx, loop) }()
 	}
 	var first error
 	for range copies {

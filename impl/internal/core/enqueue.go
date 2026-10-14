@@ -327,6 +327,12 @@ func (c *Core) enqueue(ctx context.Context, tx pgx.Tx, now time.Time, cat *Catal
 			prio = 2
 		}
 	}
+	// Below the soft threshold of the store volume only classes 1 and 2 enter (CAP-5).
+	if prio >= 3 && c.capacity.Load() != capacityOK {
+		pr := refuse("over_capacity", "the store volume is below its soft threshold")
+		pr.RetryAfterS = 60
+		return reject(pr)
+	}
 	id := ids.New(ids.Task)
 	trace, err := newTraceparent()
 	if err != nil {

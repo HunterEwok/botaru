@@ -4,6 +4,7 @@ package core
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -40,8 +41,18 @@ func (c *Core) Run(ctx context.Context) {
 			return
 		case <-t.C:
 		}
-		if err := c.Tick(ctx); err != nil && ctx.Err() == nil {
+		err := c.Tick(ctx)
+		switch {
+		case err == nil:
+			if c.storeDown.Swap(false) {
+				c.log.Info("the store answers and every loop ticked again: ready")
+			}
+		case ctx.Err() != nil:
+		default:
 			c.log.Warn("background loop failed", "err", err)
+			if c.st.Ping(ctx) != nil && !c.storeDown.Swap(true) {
+				c.log.Warn("the store is unavailable: P1 answers not_ready until every loop ticks again")
+			}
 		}
 	}
 }
@@ -50,17 +61,31 @@ func (c *Core) Run(ctx context.Context) {
 // the loops tick only by loop.tick, so a fixture decides the order of every tick. P2 health
 // then reports the loop tick as old, which is expected on such a bench.
 func (c *Core) RunManual(ctx context.Context) {
+	c.manual.Store(true)
 	c.listen(ctx)
 }
 
-// Tick runs one pass of every background loop of this build, in loopOrder.
+// Tick runs one pass of every background loop of this build, in loopOrder. Each loop that
+// finished its pass marks its tick in the store (OBS-4); a loop that failed does not, and the
+// loops after it still run.
 func (c *Core) Tick(ctx context.Context) error {
+	var errs []error
 	for _, loop := range loopOrder {
-		if err := testLoops[loop](c, ctx); err != nil {
-			return fmt.Errorf("loop %s: %w", loop, err)
+		if err := c.tickLoop(ctx, loop); err != nil {
+			errs = append(errs, err)
 		}
 	}
-	markTick()
+	return errors.Join(errs...)
+}
+
+// tickLoop runs one pass of a loop and marks its tick.
+func (c *Core) tickLoop(ctx context.Context, loop string) error {
+	if err := testLoops[loop](c, ctx); err != nil {
+		return fmt.Errorf("loop %s: %w", loop, err)
+	}
+	if err := c.markTick(ctx, loop); err != nil {
+		return fmt.Errorf("loop %s: marking the tick: %w", loop, err)
+	}
 	return nil
 }
 

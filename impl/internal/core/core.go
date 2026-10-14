@@ -14,6 +14,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"sync/atomic"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -46,6 +47,12 @@ type Config struct {
 	// core, the store, farmctl, the channels, the watchdog and the backups. A tenant catalog
 	// never names them.
 	FarmHosts []string
+	// Health holds the thresholds of the health indicators and the store headroom (OBS-9,
+	// CAP-5).
+	Health HealthConfig
+	// FreeSpace, when set, measures the store volume instead of Health.StoreVolume: free and
+	// total bytes. A test sets a mock measurement here.
+	FreeSpace func() (free, total uint64, err error)
 }
 
 func (c *Config) defaults() {
@@ -64,6 +71,7 @@ func (c *Config) defaults() {
 	if c.Logger == nil {
 		c.Logger = slog.Default()
 	}
+	c.Health.defaults()
 }
 
 // Core holds the store, the specification and the caches.
@@ -77,6 +85,13 @@ type Core struct {
 	epoch int64
 	log   *slog.Logger
 	rs    *resultSchemas
+	// capacity is the state of the store volume by the last measurement (CAP-5).
+	capacity atomic.Int32
+	// storeDown is set when the store stopped answering and cleared when every loop ticked
+	// again after it returned (OBS-8).
+	storeDown atomic.Bool
+	// manual is set when the loops tick only by loop.tick on a test bench.
+	manual atomic.Bool
 }
 
 // New opens the core over a migrated store.
