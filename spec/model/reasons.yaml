@@ -1030,6 +1030,29 @@ entries:
   retry: null
   outcome: rejected
   rules: []
+- id: script_free_goal
+  since: v0.2
+  meaning: 'A draft from the model or an improvement proposal carries `goals`, `params` or a `{param}` reference, which only a
+    `kind: Script` manifest from git may have.'
+  spends_attempt: null
+  retry: null
+  outcome: rejected
+  rules: [SCR-4, SCR-14]
+- id: script_param_invalid
+  since: v0.2
+  meaning: 'A value given to a script from git does not pass its declared parameter, or a parameter without a default is missing;
+    at `apply`, an undeclared, free or unused-by-name parameter.'
+  spends_attempt: null
+  retry: null
+  outcome: rejected
+  rules: [SCR-14]
+- id: await_timeout
+  since: v0.2
+  meaning: 'The timeout of an `await` script step passed without a matching event: the step is `failed(await_timeout)`.'
+  spends_attempt: null
+  retry: null
+  outcome: failed
+  rules: [SCR-13]
 - id: proposal_scope
   since: v0.1
   meaning: 'The commit changes files outside the proposal scope: `apply` is rejected as a whole.'
@@ -1132,6 +1155,13 @@ entries:
   retry: null
   outcome: rejected
   rules: [ORC-1]
+- id: campaign_waves_invalid
+  since: v0.2
+  meaning: '`rollout.waves` is not strictly increasing or does not end with `100%`: the proposal is rejected and creates no record.'
+  spends_attempt: null
+  retry: null
+  outcome: rejected
+  rules: [ORC-15]
 - id: campaign_policy_exceeded
   since: v0.1
   meaning: The policy or size in the campaign proposal is wider than the ceilings of the action, role or tenant.

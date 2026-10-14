@@ -1,0 +1,57 @@
+id: fx-dsp-group-quota
+rules: [DSP-11, DSP-7]
+version: v0.2
+description: 'The bot group max_running caps running attempts on its members, and a rule max_share caps the tasks the rule
+  matches at the share of the group capacity, rounded down but at least one (DSP-11). A task held by a cap waits in
+  submitted with waiting_reason group_quota and spends no attempt.'
+given:
+  tenant: demo
+  tasktypes:
+  - {name: ops.summary.v1, purpose: work, dispatch: {priority_class: 3}}
+  - {name: pipeline.status.v1, purpose: work, dispatch: {priority_class: 3}}
+  roles:
+  - name: ops-reader
+    claims: [ops.summary.v1, pipeline.status.v1]
+  botgroups:
+  - name: ops-pool
+    max_running: 3
+    select:
+      roles: [ops-reader]
+  dispatch:
+    rules:
+    - {match: {type: pipeline.status.v1}, group: ops-pool, max_share: '40%'}
+  workers:
+  - {id: wk_01JB000000000000000000004A, role: ops-reader, state: active, ready: true}
+  - {id: wk_01JB000000000000000000004B, role: ops-reader, state: active, ready: true}
+  - {id: wk_01JB000000000000000000004C, role: ops-reader, state: active, ready: true}
+  - {id: wk_01JB000000000000000000004D, role: ops-reader, state: active, ready: true}
+cases:
+- id: dsp-fx-11a
+  rules: [DSP-11, DSP-7]
+  description: 'Group cap 3 on four workers, share 40% of 3 = 1 for pipeline.status.v1: one status task runs, two summaries
+    run, the fourth worker gets nothing; the waiting tasks have group_quota.'
+  given:
+    tasks:
+    - {id: t_01JB0000000000000000000P01, type: pipeline.status.v1, state: submitted, enqueued_at: '2026-10-05T09:00:00Z'}
+    - {id: t_01JB0000000000000000000P02, type: pipeline.status.v1, state: submitted, enqueued_at: '2026-10-05T09:00:01Z'}
+    - {id: t_01JB0000000000000000000S01, type: ops.summary.v1, state: submitted, enqueued_at: '2026-10-05T09:00:02Z'}
+    - {id: t_01JB0000000000000000000S02, type: ops.summary.v1, state: submitted, enqueued_at: '2026-10-05T09:00:03Z'}
+    - {id: t_01JB0000000000000000000S03, type: ops.summary.v1, state: submitted, enqueued_at: '2026-10-05T09:00:04Z'}
+  steps:
+  - call: {port: P1, op: claim, request: {kinds: [attempt]}}
+    by: worker:wk_01JB000000000000000000004A
+    expect: {task: t_01JB0000000000000000000P01}
+  - call: {port: P1, op: claim, request: {kinds: [attempt]}}
+    by: worker:wk_01JB000000000000000000004B
+    expect: {task: t_01JB0000000000000000000S01}
+  - call: {port: P1, op: claim, request: {kinds: [attempt]}}
+    by: worker:wk_01JB000000000000000000004C
+    expect: {task: t_01JB0000000000000000000S02}
+  - call: {port: P1, op: claim, request: {kinds: [attempt]}}
+    by: worker:wk_01JB000000000000000000004D
+    expect: {task: null}
+  expect:
+    waiting_reason:
+      t_01JB0000000000000000000P02: group_quota
+      t_01JB0000000000000000000S03: group_quota
+    attempts_spent: 3

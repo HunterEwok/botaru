@@ -9,7 +9,7 @@ checks:
   - MGR-12
   version: v0.1
   section: Tests without a model
-  source: docs/quality.md:400
+  source: docs/quality.md:404
   spec:
     What: '`pin_task` on worker T: a type outside `responses.pin_types` ∩ the rights of `farm-manager-ops` ∩ `claims`; tier
       2; a fourth pinning within an hour; a quarantined worker and a type without `pinnable: true`; a worker field in an ordinary
@@ -22,7 +22,7 @@ checks:
   - MGR-28
   version: v0.1
   section: Tests without a model
-  source: docs/quality.md:401
+  source: docs/quality.md:405
   spec:
     What: a seat read of two objects with a finding that has a `note`
     Expectation: the audit of T has the attempt, `acting_bot`, epoch, basis, and per object the kind, id, size, hash, mark,
@@ -34,7 +34,7 @@ checks:
   - MGR-41
   version: v0.1
   section: Tests without a model
-  source: docs/quality.md:402
+  source: docs/quality.md:406
   spec:
     What: 'a day of work with incidents, operations, reverts, reads and grants in two tenants; `manager.review.v1` with `daily_review:
       true` and `false`'

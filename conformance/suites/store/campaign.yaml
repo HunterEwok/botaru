@@ -9,8 +9,20 @@ checks:
   - ORC-1
   version: v0.1
   section: Tests without a model
-  source: docs/quality.md:323
+  source: docs/quality.md:324
   spec:
     What: '`campaign.propose` with the token of an expired lease, and `propose_campaign` from a live attempt'
     Expectation: the first call is rejected, no record; the second creates a campaign with frozen `items` and `plan_hash`,
       the plan does not change afterwards
+- id: store:campaign/pace-window
+  method: store
+  rules:
+  - ORC-15
+  version: v0.2
+  section: Tests without a model
+  source: docs/quality.md:325
+  spec:
+    What: '(v0.2) a campaign with `rate_per_min: 2` and five free items after the canary; two copies of the `campaign` loop
+      tick at the same time, then again 30 and 61 seconds later'
+    Expectation: at most two releases in any 60 seconds across both copies; the held items stay `pending` without an outcome;
+      a release past a closed wave never happens

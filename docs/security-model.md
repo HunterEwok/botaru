@@ -115,13 +115,13 @@ A production machine is any host where the core, the store, the channel or a too
 
 On a production machine the model has no shell, eval, SQL as a string, free paths, URLs, hosts, commands or regular expressions (INJ-1). This is not a role setting but a property of the machine: the lint rejects any tool with `placement: host` that has free input.
 
-**The sandbox** (`placement: sandbox`, tier 2) is needed for analysis that cannot be described in advance: the model writes and runs code on a copy of the data. It lives only on a separate VM, where there is no core, store, channel, and no tenant data or secrets (DEP-1). This VM has only the sandbox toolhost with its worker token and a network path to P1. The sandbox toolhost manages containers, and that equals root on its machine, so it does not share a machine with production data (DEP-3). One sandbox toolhost serves one tenant, one container one task.
+**The sandbox** (`placement: sandbox`, tier 2, from v0.2 in the optional `sandbox` profile, SBX-1, D-104) is needed for analysis that cannot be described in advance: the model writes and runs code on a copy of the data. It lives only on a separate VM, where there is no core, store, channel, and no tenant data or secrets (DEP-1). This VM has only the sandbox toolhost with its worker token and a network path to P1. The sandbox toolhost manages containers, and that equals root on its machine, so it does not share a machine with production data (DEP-3). One sandbox toolhost serves one tenant, one container one task.
 
 The task container starts without network, with a read-only root, without privileges (`--cap-drop ALL`, `no-new-privileges`), with limits on memory, CPU, number of processes and file size, as an unprivileged user, and on a production farm also under gVisor. The input directory `/in` is mounted read-only, the output `/out` is a separate volume with a limit. The result is collected like this:
 
 1. The container is stopped, and only then is `/out` read. Otherwise a background process would swap a file between the check and the collection.
 2. Files are opened without following links (`openat2` with `RESOLVE_BENEATH | RESOLVE_NO_SYMLINKS`), only regular files are taken. Links, pipes and devices are skipped and written to the audit.
-3. The type is checked by the first bytes, not by the extension. Only CSV, JSON, GeoJSON and PNG are returned. PDF is not returned: a file made by code under the influence of foreign data can carry scripts and links.
+3. The type is checked by the first bytes, not by the extension. Only CSV, JSON, GeoJSON and PNG are returned, and the model's script as plain text (item 4), each within the type's `result_media_types` and through P1 `file.put` with a mark not lower than the task's (SBX-2). PDF is not returned: a file made by code under the influence of foreign data can carry scripts and links.
 4. A script that the model wrote is returned with the mark "the script was written by the model, the data could have influenced it; do not run it outside the sandbox without review".
 
 **Fixing the placement.** `placement`, the plugin list and the toolhost's machine are fixed by `enroll` in its credentials. At `hello` a worker can only narrow its labels; a toolhost recorded as `host` that brings a sandbox plugin gets `blocked`, and vice versa (DEP-2).
@@ -711,6 +711,7 @@ Generated from the registry `conformance/requirements.yaml`; the full text of ev
 | [INJ-14](../conformance/rules.md#INJ-14) | OS commands only named, without a shell | v0.1 | yes |
 | [INJ-15](../conformance/rules.md#INJ-15) | After untrusted text a service action goes as a card | v0.1 | yes |
 | [INJ-16](../conformance/rules.md#INJ-16) | Monitoring script and trigger names only from the catalog | v0.1 | yes |
+| [SBX-2](../conformance/rules.md#SBX-2) | One disposable container per task | v0.2 | yes |
 | [SEC-1](../conformance/rules.md#SEC-1) | Secrets do not go through ports | v0.1 | yes |
 | [SEC-2](../conformance/rules.md#SEC-2) | Each process gets only its own secrets | v0.1 | yes |
 | [SEC-3](../conformance/rules.md#SEC-3) | Handles | v0.1 | yes |

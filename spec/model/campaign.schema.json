@@ -304,6 +304,13 @@
           "maximum": 500
         }
       }
+    },
+    "wave": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 10,
+      "x-botaru-version": "v0.2",
+      "description": "From v0.2: the number of the open wave, 0 for the canary; only the core writes it, in the transaction that opens the wave (ORC-15)."
     }
   }
 }

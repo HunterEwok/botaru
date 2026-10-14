@@ -60,10 +60,11 @@
               "knowledge",
               "ingress",
               "connections",
-              "debug"
+              "debug",
+              "sandbox"
             ]
           },
-          "maxItems": 11,
+          "maxItems": 12,
           "uniqueItems": true
         }
       }

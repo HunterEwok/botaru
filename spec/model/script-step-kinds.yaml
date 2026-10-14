@@ -1,5 +1,5 @@
 registry: script-step-kinds
-version: 1
+version: 2
 description: >-
   Step kinds of the script `botaru.script/v1` (SCR-1). The list is closed: there is no code, no shell, no URL call,
   no loop and no nested script, and there will be none without an ADR. Record fields: `meaning` (what the step does),
@@ -44,15 +44,15 @@ entries:
     rules: [SCR-1, SCR-6, SCR-11]
   - id: wait
     since: v0.2
-    meaning: A pause until a deadline.
-    executed_by: a continuation by timer; only the run record waits (CNT-4)
+    meaning: A pause for the duration `for`, at most the run deadline.
+    executed_by: a waiting record of the run with a timer; no task and no continuation, the end of the step releases the next steps (trigger `script`); only the run record waits (CNT-4)
     changes_world: false
-    fields: []
-    rules: [SCR-1]
+    fields: [for]
+    rules: [SCR-1, SCR-13]
   - id: await
     since: v0.2
-    meaning: An external event with a required timeout; the timeout makes the step `failed`.
-    executed_by: the waiting record `Expectation`
+    meaning: An external event with a required timeout; the timeout makes the step `failed(await_timeout)`.
+    executed_by: a waiting record of the run (`Expectation`) for a matching event of the same tenant; no task and no continuation, the end of the step releases the next steps (trigger `script`)
     changes_world: false
-    fields: []
-    rules: [SCR-1]
+    fields: [event, match, timeout]
+    rules: [SCR-1, SCR-13]

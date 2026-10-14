@@ -29,7 +29,7 @@ The list of conditions is closed and lives in `spec/model/dispatch-predicates.ya
 | D7 | `run_at` has come; for a campaign item, the release is recorded in the campaign | task and campaign records | v0.1 |
 | D8 | the worker is `active` (not `draining` and not `blocked`) and `ready` according to core observation (OBS-4) | core observation | v0.1 |
 | D9 | there is no active hold with the effect `no_claim` or `cancel_running` whose scope covers the farm, tenant, role, type, bot group, bot, seat, worker, machine or resource of the task (HLD-3, MGR-15) | hold records | v0.1 |
-| D10 | counters are not exceeded: `max_running` per (tenant, type), from v0.2 also the bot group's `max_running` and the rule's `max_share` | lease counters | v0.1; group and share from v0.2 |
+| D10 | counters are not exceeded: `max_running` per (tenant, type), from v0.2 also the bot group's `max_running` and the rule's `max_share` (DSP-11) and the class 5 share (BUD-8) | lease counters | v0.1; group and share from v0.2 |
 | D11 | the resource is free if the action declared `exclusive: resource` (ORC-12) | campaign and approval records | v0.1 |
 | D12 | if the task has a `pin`, this is that very worker; only the `control` lane writes a pin | task record | v0.1 |
 | D13 | the initiator is active and has the permissions (PRM-3 at the point of `claim`) | C2 | v0.1 |
@@ -105,8 +105,9 @@ spec:
         timeouts: {attempt: 8m}       # attempt deadline: at most twice the type's deadline and not past deadline
         retry: {max_attempts: 2}      # only fewer than the type has, and at least 1
       - match: {type_prefix: "ops.nightly."}
-        priority_class: 5
-        max_share: 20%                # from v0.2: share of the bot group's concurrent slots (D10, BUD-8)
+        group: science-pool
+        priority_class: 4
+        max_share: 20%                # from v0.2: share of the capacity of the rule's group, needs group (D10, DSP-11)
       - match: {type_prefix: "report."}
         group: reporters
         group_fixed: true             # a request cannot set another group
@@ -158,7 +159,7 @@ A waiting task carries the field `waiting_reason` from a closed list. A manager 
 | `resource_busy` | the resource is taken by another released write call (ORC-12) | v0.1 |
 | `not_released` | the campaign item has not been released yet | v0.1 |
 | `provider_quota` | the tenant has no free share of the needed model pool (D19, GW-10) | v0.1 |
-| `group_quota` | the bot group's `max_running` or the rule's `max_share` is exhausted | v0.2 |
+| `group_quota` | the bot group's `max_running` or the rule's `max_share` is exhausted (DSP-11), or the class 5 share `background_share` (BUD-8) | v0.2 |
 | `model_grant_pending` | the task waits for a decision on a grant of a stronger model (MGR-17) | v0.2 |
 
 ### Dispatch explanation
@@ -180,7 +181,7 @@ spec:
   select:
     roles: [analyst]
     labels: {zone: lab}            # match against the labels recorded at enroll
-  max_running: 6                   # from v0.2: group quota (D10)
+  max_running: 6                   # from v0.2: group quota (D10, DSP-11)
   summary_for_managers: "Analysts in the lab"   # only from git, visible to managers
 ```
 
@@ -389,12 +390,12 @@ An item goes through `pending`, then `released`, then one of the results `ok`, `
 
 Release is held by deterministic core code according to the campaign record (ORC-4):
 
-1. An item is released only if the campaign is `running`, there is no hold in its scope (ORC-11), fewer than `max_in_flight` are released and unfinished, the resource is free (ORC-12), the tenant's queue for the item type is no longer than `queue_max`, and every initiator still has the permissions (ORC-6). From v0.2 also: the pace `rate_per_min` is not exceeded and the current wave is open.
+1. An item is released only if the campaign is `running`, there is no hold in its scope (ORC-11), fewer than `max_in_flight` are released and unfinished, the resource is free (ORC-12), the tenant's queue for the item type is no longer than `queue_max`, and every initiator still has the permissions (ORC-6). From v0.2 also: the pace `rate_per_min` is not exceeded and the current wave is open (ORC-15).
 2. The canary (the first `canary` items) is released as a separate portion. Any failure in it stops the campaign regardless of the threshold. After a successful canary with `after_canary: manual` the campaign pauses on `gate` until a person presses a button; with `after_canary: auto` (only if the action allows it) the core waits for `bake` and continues by itself.
 3. The threshold is counted on `failed`: the campaign stops when failures are above the threshold; equality does not exceed it. Released items are finished, new ones are not released, and unreleased ones become `skipped`.
 4. `unknown` does not count toward the threshold. With `on_unknown: pause` the campaign pauses and a person decides: the machine state is unknown.
 5. Release happens in the transaction in which the previous item closed (DLV-2), and in the core background loop `campaign` for timers (`bake`, `deadline`, `no_executor`, pause escalation). The loop is deterministic, does not call the model, is idempotent and safe with two running copies.
-6. From v0.2 the next wave opens when all items of the previous one are final and the `bake` pause has passed.
+6. From v0.2 `waves` split the items after the canary by cumulative shares, strictly increasing and ending with `100%`; otherwise the proposal is rejected with `campaign_waves_invalid`. Wave k releases, in item order, up to its share of those items rounded up. Wave 1 opens with the canary gate, or at once without a canary; the next wave opens when all items of the previous one are final, the threshold is not crossed and the `bake` pause has passed. The pace `rate_per_min` caps the releases in any 60 seconds. An item held back by a closed wave or the pace stays `pending`; that is not a failure. The record field `wave` shows the open wave, and the progress card is updated when it changes (ORC-15, D-104).
 
 The model and workers do not release items and do not change counters; only the core produces campaign alarms (ORC-4). Each item is executed at most once (ORC-3): the release of an item with an action, in one transaction, moves the item to `released`, creates an `action.<a>` task with `approval_id`, `campaign_item` and the key `system:campaign:<campaign>:<n>`, and exactly one write call with the item's arguments from the snapshot. The toolhost accepts the call only if the arguments hash equals the item's hash in the snapshot, and the plugin gets `<approval_id>:<n>` as the idempotency key.
 
@@ -413,8 +414,8 @@ rollout:
   on_unknown: pause     # write call without a result: pause, a person decides
   deadline: 2h          # deadline of the whole campaign
   # from v0.2:
-  # waves: [25%, 100%]  # cumulative release shares after the canary
-  # rate_per_min: 10    # no more often
+  # waves: [25%, 100%]  # cumulative release shares after the canary, the last 100% (ORC-15)
+  # rate_per_min: 10    # at most 10 releases in any 60 seconds
 ```
 
 ```yaml
@@ -713,6 +714,7 @@ Generated from the registry `conformance/requirements.yaml`; the full text of ev
 | [DSP-8](../conformance/rules.md#DSP-8) | An empty group waits, an unclaimed task raises an alarm | v0.1 | yes |
 | [DSP-9](../conformance/rules.md#DSP-9) | Dispatch can be explained | v0.2 | no |
 | [DSP-10](../conformance/rules.md#DSP-10) | A personal assistant is a pool of workers with the owner in the lease | v0.1 | yes |
+| [DSP-11](../conformance/rules.md#DSP-11) | Bot group quota and a rule's share | v0.2 | no |
 | [ORC-1](../conformance/rules.md#ORC-1) | Only a live attempt proposes a campaign, the plan is frozen | v0.1 | yes |
 | [ORC-2](../conformance/rules.md#ORC-2) | A campaign with an action starts after one plan approval | v0.1 | yes |
 | [ORC-3](../conformance/rules.md#ORC-3) | Each item runs no more than once | v0.1 | yes |
@@ -727,3 +729,4 @@ Generated from the registry `conformance/requirements.yaml`; the full text of ev
 | [ORC-12](../conformance/rules.md#ORC-12) | One released write call per resource | v0.1 | yes |
 | [ORC-13](../conformance/rules.md#ORC-13) | The core builds the worker directory from manifests | v0.1 | yes |
 | [ORC-14](../conformance/rules.md#ORC-14) | Campaign ceiling with distrust or initiator system | v0.1 | yes |
+| [ORC-15](../conformance/rules.md#ORC-15) | Waves and pace of a campaign | v0.2 | yes |

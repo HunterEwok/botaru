@@ -9,7 +9,7 @@ checks:
   - SCR-11
   version: v0.1
   section: Tests without a model
-  source: docs/quality.md:357
+  source: docs/quality.md:359
   spec:
     What: run and step transitions by the table of `spec/lifecycles/script.md`, including `on_failure` and run cancelation
     Expectation: allowed transitions pass, the others are rejected
@@ -19,7 +19,7 @@ checks:
   - SCR-7
   version: v0.1
   section: Tests without a model
-  source: docs/quality.md:359
+  source: docs/quality.md:361
   spec:
     What: a `fanout` item outside the list frozen at run approval
     Expectation: not released
@@ -29,7 +29,7 @@ checks:
   - SCR-9
   version: v0.1
   section: Tests without a model
-  source: docs/quality.md:360
+  source: docs/quality.md:362
   spec:
     What: a step takes a field of an agent step with `untrusted_seen` through `items.from`, the condition stands before an
       action
@@ -40,7 +40,7 @@ checks:
   - SCR-10
   version: v0.2
   section: Tests without a model
-  source: docs/quality.md:369
+  source: docs/quality.md:371
   spec:
     What: (v0.2) a `tasktype` hold with `no_enqueue` on the type of step 3 while step 2 runs; release of the hold; `resume`
       by the initiator under another active hold; the run deadline passes during the pause
@@ -54,7 +54,7 @@ checks:
   - TIM-3
   version: v0.1
   section: Tests without a model
-  source: docs/quality.md:371
+  source: docs/quality.md:373
   spec:
     What: (v0.2) the accepted script schedule reaches two slots; a hold of scope `schedule` before the second slot; a slot
       whose estimate does not fit the tenant budget; a slot that comes while the run of the previous slot waits in a `wait`
@@ -62,3 +62,34 @@ checks:
     Expectation: each slot starts a run with initiator `system` and fairness key `script:<run>` without a card; the held slot
       is skipped with `held`; the slot that does not fit is skipped and no run starts; the slot during a live run is skipped
       with `run_live`; the slot after the group removal is refused at the run's `deliver_to` check
+- id: blackbox:script/wait-await
+  method: blackbox
+  rules:
+  - CNT-4
+  - SCR-13
+  version: v0.1
+  section: Tests without a model
+  source: docs/quality.md:374
+  spec:
+    What: '(v0.2) a script from git with a `task` step, a `wait` step of `1h` and an `await` step for `ext.fxsrc.run_failed.v1`
+      with `match` on a result field and `timeout: 2h`; a matching event of another tenant, then a matching event of the same
+      tenant; a second run whose event never comes; a third run paused by a hold while it waits'
+    Expectation: no attempt or lease exists while a step waits; the `wait` step ends `ok` after `1h`; the other tenant's event
+      changes nothing; the matching event ends the `await` step `ok` and the next step reads its closed fields; the second
+      run's step ends `failed(await_timeout)` and the run follows `on_failure`; the paused run releases nothing until the
+      resume; the run deadline is `wait_run_deadline`
+- id: blackbox:script/git-command
+  method: blackbox
+  rules:
+  - SCR-6
+  - SCR-14
+  version: v0.1
+  section: Tests without a model
+  source: docs/quality.md:375
+  spec:
+    What: (v0.2) `Tenant.spec.script_commands` maps `/monthcheck` to a script from git with the parameters `month` (format
+      `year_month`, default) and `days` (1-30) and its own `goals`; `alice` sends `/monthcheck month=2026-09 days=40`, then
+      `/monthcheck days=7`; a model draft through `propose_script` with `goals`
+    Expectation: the first command is refused with `script_param_invalid` and no run; the second creates a run in `proposed`
+      with initiator `alice`, the default month, the manifest name and commit, a `script_confirm` card and a `plan_hash` over
+      the values; nothing runs before her button; the model draft is rejected with `script_free_goal`

@@ -237,6 +237,7 @@ An attempt never waits for a person, another task, a timer or an external event.
 | the end of a campaign | the campaign | a `campaign` continuation | v0.1 |
 | a script step button, the end of a step | the script run | the `script` loop, a `script` continuation | v0.1 |
 | an external event, a timer | a waiting record from the type's `await` | a continuation on a match or a timeout (CNT-6) | v0.2 |
+| a pause or an external event inside a script | a waiting record of the run from the step `wait` or `await` | the end of the step releases the next steps (a `script` continuation); an `await` timeout fails the step (SCR-13) | v0.2 |
 | a grant of a stronger model | the grant request | the task is back in the queue with the grant (MGR-17) | v0.2 |
 
 The same rule applies to the script steps `confirm`, `action`, `wait` and `await`: a step waits in the run record, not in an attempt.

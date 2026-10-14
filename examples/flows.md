@@ -58,11 +58,11 @@ tools:
 | Who and where | `alice` (`researcher`), private chat |
 | Request | `/analyze check the CTD profiles for September: where are the salinity spikes and the depth gaps, build TS diagrams per station` |
 | Task type | `data.analyze.v1`: tier 2, class `internal`, role `analyst` |
-| Tools | only sandbox tools: `dataset_get`, `run`, `list_out` on a toolhost with `placement: sandbox` on a separate VM |
-| Machine form | v0.2, together with the sandbox |
+| Tools | only sandbox tools: `dataset_get`, `run`, `list_out` on a toolhost with `placement: sandbox` on the separate VM `sbx1` |
+| Machine form | v0.2, profile `sandbox`: [flows/02-ctd-sandbox/flow.yaml](flows/02-ctd-sandbox/flow.yaml) |
 
 1. P1 `submit_activity`, command `/analyze`. Record: `max_tier: 2`, `data_mark: internal`.
-2. P1 `claim`. The model calls `dataset_get(dataset="ctd-2026", filter={"month": "2026-09"})`: the sandbox toolhost copies 64 NetCDF files to `/in`, and the source dataset does not change. Then it calls `run([...])` several times: it writes a script, runs it in a container without network and secrets (DEP-1) and looks at the output, up to 32 KB after redaction. Finally `list_out()`.
+2. P1 `claim`. The model calls `dataset_get(dataset="ctd-2026", month="2026-09")`: the sandbox toolhost copies 64 NetCDF files to `/in`, and the source dataset does not change. Then it calls `run(argv="...")` several times: it writes a script, runs it in a container without network and secrets (DEP-1) and looks at the output, up to 32 KB after redaction. Finally `list_out()`.
 3. NetCDF text attributes (`comment`, `history`) are data, not commands: from the first read of file content the attempt has `untrusted_seen` (INJ-13).
 4. The toolhost submits `flags.csv`, PNGs per station and `analysis.py` through P1 `file.put`; the file mark is no lower than the task mark (ART-3). The result goes through P1 `complete`, delivery to the private chat.
 
@@ -100,7 +100,7 @@ Once the control rules settle, they are run as a pipeline: `/run ctd-qc 2026-09 
 | Who and where | `alice` (`researcher`), private chat; attaches `benthos_2026.csv` with 3,200 rows |
 | Request | `/analyze check my CSV of benthos findings: coordinates on land, dates in the future, duplicates, empty species names. make a map and a corrected version` |
 | Task type | `data.analyze.v1`: tier 2, class `internal`, role `analyst` |
-| Machine form | v0.2, together with the sandbox |
+| Machine form | v0.2, profile `sandbox`: [flows/04-findings-table/flow.yaml](flows/04-findings-table/flow.yaml) |
 
 1. The channel stores the file (P1 `file.put`) and calls P1 `submit_activity`. The task body carries a reference to the file, not the bytes:
 
@@ -380,7 +380,7 @@ A job computes the directory sizes at night, and the bot reads the finished resu
 | Version | What appears |
 |---|---|
 | v0.1 | flows 1, 3, 5, 6, 7, 8, 9, 10, 11 and 12 in machine form: commands, schedules, jobs, the reporter, the closed rollup query, the sink, approval and the oneshot unit, the CTD file description (D-72), the plugins `monitor`, `geo` and `batch`, a pipeline action by event; in flow 11 a restart of a service from `no_card` with the initiator's permission (D-73, D-74) and a monitoring system script from the catalog (INJ-16); in flow 8 the assistant by `/a` and the pool with `owner` (DSP-10); the notice `privacy_notice`; flows 2 and 4 in words |
-| v0.2 | flows 2 and 4 in machine form: the sandbox and tier 2; an action with `risk: high` (for example moving old data from flow 10) runs after two approvers |
+| v0.2 | flows 2 and 4 in machine form: the sandbox and tier 2 (profile `sandbox`, SBX-1, SBX-2, D-104); an action with `risk: high` (for example moving old data from flow 10) runs after two approvers |
 
 ## Why it is this way
 

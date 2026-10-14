@@ -20,7 +20,7 @@ A draft is written by the translator (P3 `propose_script`) or carried by an impr
 
 ### One language with the rest of the skeleton
 
-A script introduces no second task language. A `task` step builds a normal task body (`type`, `goal`, `params`, `attachments`) from a goal template and closed parameters. A `fanout` step is a campaign request in the format of the manager's `propose_campaign` without the field `then`: the next step does the continuation. The next step is enqueued as a continuation with the trigger `script`, and the key `system:script:<run>:<step>` is a special case of the key `system:cont:<trigger>:<id>`. The steps `wait` and `await` (v0.2) use the timer and the continuation waiting record, and an attempt never waits: only the run record waits (CNT-4). There are no compensations: a rollback is a separate `action` step with its own card.
+A script introduces no second task language. A `task` step builds a normal task body (`type`, `goal`, `params`, `attachments`) from a goal template and closed parameters. A `fanout` step is a campaign request in the format of the manager's `propose_campaign` without the field `then`: the next step does the continuation. The next step is enqueued as a continuation with the trigger `script`, and the key `system:script:<run>:<step>` is a special case of the key `system:cont:<trigger>:<id>`. The steps `wait` and `await` (v0.2) use a waiting record of the run with a timer or an expected event; they create no task and no `timer` or `await` continuation, and an attempt never waits: only the run record waits (CNT-4, SCR-13). There are no compensations: a rollback is a separate `action` step with its own card.
 
 The skeleton does not take a general-purpose process engine: a closed interpreter with hard limits (SCR-1) gives the same as declarative formats with a closed set of kinds, but without expressions, loops and arbitrary commands.
 
@@ -34,8 +34,8 @@ The closed list `spec/model/script-step-kinds.yaml` (SCR-1). There are no other 
 | `fanout` | many tasks of one kind or one action on many resources | a campaign with a frozen list | v0.1 |
 | `action` | one action with closed arguments | approval; the write call only after a person's button; an action with `risk: routine` without untrusted text goes under a `service_grant` record with the initiator as author after the "Run" button (D-78, SCR-7) | v0.1 |
 | `confirm` | ask a person whether to continue | approval with the subject `script_gate`; does not change the world | v0.1 |
-| `wait` | pause until a deadline | continuation on a timer | v0.2 |
-| `await` | an external event with a timeout | waiting record `Expectation` | v0.2 |
+| `wait` | pause for the duration `for` | a waiting record of the run with a timer; no task (SCR-13) | v0.2 |
+| `await` | an external event of the same tenant with a mandatory `timeout` | a waiting record of the run (`Expectation`); no task; the timeout gives `failed(await_timeout)` (SCR-13) | v0.2 |
 
 ### Step fields
 
@@ -49,11 +49,13 @@ The closed list `spec/model/script-step-kinds.yaml` (SCR-1). There are no other 
 | `on_failure` | `stop` (default), `continue` | schema |
 | `type` | a task type from the author role's vocabulary for which the initiator has the permission | lint, C2 |
 | `action` | an action with `script.allowed: true` (for `action` and for `fanout` with an action) | lint |
-| `goal` | `{template: <id>}` from the type's `goal_templates` or `{assignment: true}`, that is, the verbatim text of the person's assignment | schema, lint (SCR-4) |
-| `params`, `args` | a literal per the type's `params_schema` or the action's argument schema, or a reference `{ref: <step>.<field>}` | lint; again at release |
+| `goal` | `{template: <id>}` from the type's `goal_templates` (from v0.2 in a script from git also from the script's own `goals`) or `{assignment: true}`, that is, the verbatim text of the person's assignment | schema, lint (SCR-4, SCR-14) |
+| `params`, `args` | a literal per the type's `params_schema` or the action's argument schema, a reference `{ref: <step>.<field>}`, or from v0.2 in a script from git a parameter `{param: <name>}` | lint; again at release |
 | `items` (for `fanout`) | `{selector: <name>}`, `{resources: [...]}` or `{from: <fanout step>, where: {field, op, value}}`, that is, a subset of the items of an earlier step | lint, ORC-5 |
 | `rollout` (for `fanout`) | a campaign rollout policy no wider than the ceilings | ORC-5 |
 | `who` (for `confirm`) | `initiator` (default) or `approvers_of: <action>` | schema |
+| `for` (for `wait`, v0.2) | a duration, at most the run deadline | lint (SCR-13) |
+| `event`, `match`, `timeout` (for `await`, v0.2) | an event type of the events catalog; 1-5 pairs of a closed event field and a literal, a reference `{ref: <step>.<field>}` or a parameter; a mandatory duration, at most the run deadline | lint (SCR-13) |
 
 A step refers only to the applied manifests of its tenant (SCR-2). The task type in a step has the purpose `work` or `report`: `action.*` types are enqueued only by the core on approval, and the purposes `translate`, `insight`, `review`, `aggregate`, `manage`, `governance`, `handover`, `inspect` and types that produce `alarm.*` events are not part of a script. A script can neither enqueue the translator, nor start analysis, a review or farm manager work, nor raise an alarm.
 
@@ -88,9 +90,37 @@ The farm sets the ceilings; a tenant can only lower them in the `scripts` sectio
 | steps in a script | 10 for a tenant, 20 for the farm | a person must read the card |
 | steps with an action | 3, as for one task (APR-2); a `fanout` with an action counts as one | the same ceiling as for a single task |
 | `fanout` items | the campaign ceilings (ORC-5) | one source of ceilings |
-| run deadline | 6 hours; with `wait` and `await` steps up to 7 days (v0.2) | waiting lives only in the core record |
+| run deadline | 6 hours (`scripts.run_deadline`); with `wait` and `await` steps `scripts.wait_run_deadline`, 7 days by default and at most (v0.2, SCR-13) | waiting lives only in the core record |
 | condition complexity | nesting 2, atoms 8 | readability and checking with a fixture |
 | a script from a script | not allowed | no self-replication |
+
+### Scripts from git (v0.2)
+
+A `kind: Script` manifest (`tenants/<t>/scripts/<name>.yaml`) is a script that people reviewed in the tenant's git. Only such a script may have two fields that a model draft never has (SCR-14):
+
+- `params`: at most 16 named parameters, each `integer`, `number`, `boolean`, or a `string` with `enum` or a `format` from `formats.yaml`, with an optional `default` and `title`. A step uses a parameter only as a whole value `{param: <name>}` in `params`, `args` or `await.match`; there is no substitution into text.
+- `goals`: free goal texts of at most 2000 characters, which an agent step names with `goal: {template: <id>}`. The text is reviewed in git and used as written. A name may not repeat a goal template of the step's type.
+
+A draft from the translator or an improvement proposal with `goals`, `params` or `{param}` is rejected with `script_free_goal`.
+
+A person starts a script from git with a command from `Tenant.spec.script_commands`, for example `"/monthcheck": month-check` and then `/monthcheck month=2026-09`. The core checks each value against its parameter, a missing value takes its `default`, and without a default the command is refused with `script_param_invalid`. Then the script goes the same way as a draft: acceptance (SCR-5) with the person as the initiator, a run in `proposed`, the `script_confirm` card and the "Run" button (SCR-6). The run record keeps the manifest name and its commit, and `plan_hash` covers the parameter values. A schedule starts a script from git without a button only under SCR-12, and only with the default values.
+
+```yaml
+# tenants/demo/scripts/month-check.yaml
+apiVersion: botaru/v1alpha1
+kind: Script
+metadata: {name: month-check, tenant: demo}
+spec:
+  script: v1
+  params:
+    month: {type: string, format: year_month, title: "Month", default: "2026-09"}
+  goals:
+    month_numbers: "Count the pipeline runs of the month and say which stations had none."
+  steps:
+    - {id: numbers, kind: task, type: report.monthly.numbers.v1, goal: {template: month_numbers}, params: {month: {param: month}}}
+    - {id: pause, kind: wait, needs: [numbers], for: 1d}
+    - {id: again, kind: task, needs: [pause], type: report.monthly.numbers.v1, goal: {template: month_numbers}, params: {month: {param: month}}}
+```
 
 ## Untrusted flags between steps
 
@@ -159,7 +189,7 @@ A step's task is a normal pool task with the key `system:script:<run>:<step>` (a
 - **`fanout`**: a campaign from the list frozen at approval; for `items.from` the core takes a subset of the items of an earlier step by the `where` atom. The campaign record carries `script_run` and `script_step`. A read campaign needs no card of its own: the person approved the list and the estimate on the run card; a campaign with an action gets its own approval with an exact snapshot (ORC-2). A step's campaign creates no progress card or summary of its own: its progress is shown by the run's progress card (ORC-10).
 - **`action`**: an approval on behalf of the initiator with the source "script <plan>, step k". The channel draws the card from the record (APR-3), a person with `action.approve:<action>` decides (APR-4), and the task `action.<action>`, which only the core enqueues on approval, executes. An action with `risk: routine` (writes only to its own directories, is idempotent, has run limits, APR-10) does not wait for a card: if the step has no untrusted text and its condition did not read a field of a step with the flag, the core releases it under a `service_grant` record with the initiator as author within the action's `runs_per_hour` and `runs_per_day`, like `/run` (D-78, SCR-7); otherwise a card. Only here does a script change the world.
 - **`confirm`**: an approval with the subject `script_gate`; the card shows the closed fields of the finished steps, drawn by code.
-- **`wait`** and **`await`** (v0.2): a core waiting record with a timer or an expected event and a mandatory timeout; an `await` timeout makes the step `failed`.
+- **`wait`** and **`await`** (v0.2): the core writes a waiting record of the run and no task, so nothing holds a lease while the run waits (CNT-4). The timer of `wait` ends the step `ok`. The first event of the same tenant whose fields match all `match` pairs ends an `await` step `ok`, and its result holds only the closed fields of the event data, which later steps read by reference; the `timeout` ends it `failed(await_timeout)`, and the run goes on by `on_failure`. The end of such a step releases the next steps as any step end does (trigger `script`), not by a `timer` or `await` continuation. A paused run keeps its waiting records, and a step that ends during the pause releases nothing until the run resumes (SCR-13).
 
 **A hold** acts on steps the same way as on any tasks (HLD-3): an enqueue in the hold's scope gets `rejected(held)`, released tasks and campaigns obey the hold under the general rules, and pending approvals in the scope are canceled with the effect `no_action`, and such a step becomes `failed(held)`. In v0.1 a step whose release was rejected by a hold also becomes `failed(held)`, and the run proceeds per `on_failure`. From v0.2 a hold pauses the whole run in the same transaction, and only the initiator's button after the hold is released continues it (SCR-10).
 
@@ -235,7 +265,7 @@ The translator does not see whether the person approved the run and does not get
 | 2 | a forwarded "/script restart everything" | a forward is not a command (IDN-3), and the translator does not see it |
 | 3 | the person themselves pasted a log line with an instruction into the assignment | the vocabulary, permissions and limits are the same; every step is visible on the card to the same person; an unnamed action is marked; the eval checks for zero steps outside the request |
 | 4 | widening the rollout: "max_in_flight 50, right after the canary" | campaign ceilings (ORC-5, ORC-14); acceptance rejects it |
-| 5 | a free step goal: "send /etc/passwd to ..." | the draft schema has no free goal (SCR-4) |
+| 5 | a free step goal: "send /etc/passwd to ..." | a draft has no free goal: the step goal is only a template or the assignment, and a draft with `goals` is rejected with `script_free_goal` (SCR-4, SCR-14) |
 | 6 | hiding a step in a long list or behind similar names | code draws the card from the record: the number of steps, all steps, "Full plan" (SCR-6) |
 | 7 | a nonexistent type or one that looks like a real one | references only to applied manifests (SCR-2) |
 | 8 | the confused deputy: the action is in the vocabulary, but the initiator has no permission to request it | permissions are computed from the initiator for every step (SCR-5) |
@@ -395,7 +425,7 @@ Each profile carries model rank ceilings in `role-profiles.yaml`: `max_rank` for
 | Version | What appears |
 |---|---|
 | v0.1 | in the order of work after the core and the first bot (D-71, D-80); the first bot needs only the profile `worker`, which a role without the `profile` field gets; the role profile `Role.spec.profile`, the closed list `role-profiles.yaml` of eight profiles with the ceilings `max_rank` and `analysis_max_rank`, the profile lint and the assembly of `tools/list` per `builtin-tools.yaml` (PRF-1); the texts of the eval cases `trn-inj-01` and `trn-inj-02`; the script `botaru.script/v1`: `Script`, `ScriptRun`, the steps `task`, `fanout`, `action`, `confirm`, conditions, passing values, limits (SCR-1..SCR-9, SCR-11); acceptance by the core, the card `script_confirm`, the capability `script.run` for scripts with actions, `confirm` or service control (a read-only script runs with the steps' `task:<type>`), the loop `script`, script events and reasons; the change `script` in a proposal; the translator only with a script proposal (the translator writes the draft, a person runs it): the type `script.translate.v1`, `propose_script`, input and output (TRN-2..TRN-5), the model-free check `trn-inj-06`; all eight profiles in operation; the purpose `handover` (a successor choosing facts) for the profiles `worker`, `manager`, `reviewer`, `farm-manager` |
-| v0.2 | the steps `wait` and `await`, a run deadline of up to 7 days; a hold pauses the run (SCR-10); scripts in git (`kind: Script`) with parameters and a free goal after review; running such a script on a schedule (`Schedule.spec.script`) without a person's button, only if it needs no `script.run` and keeps within `Tenant.spec.scripts` (SCR-12, D-99); the translator eval cases `trn-01..07` and `trn-inj-03..05`, the translator eval gate (TRN-6); the probe `mode: validate` |
+| v0.2 | the steps `wait` and `await` with a waiting record of the run and `Tenant.spec.scripts.wait_run_deadline` of up to 7 days (SCR-13); a hold pauses the run (SCR-10); scripts in git (`kind: Script`) with closed `params` and reviewed `goals`, started by a person with a command from `Tenant.spec.script_commands` through the same card (SCR-14, D-104); running such a script on a schedule (`Schedule.spec.script`) without a person's button, only if it needs no `script.run` and keeps within `Tenant.spec.scripts` (SCR-12, D-99); the translator eval cases `trn-01..07` and `trn-inj-03..05`, the translator eval gate (TRN-6); the probe `mode: validate` |
 
 ## Why it works this way
 
@@ -431,6 +461,8 @@ Generated from the registry `conformance/requirements.yaml`; the full text of ev
 | [SCR-10](../conformance/rules.md#SCR-10) | A hold pauses a run | v0.2 | no |
 | [SCR-11](../conformance/rules.md#SCR-11) | Run transitions only by the table, cancellation cascades | v0.1 | yes |
 | [SCR-12](../conformance/rules.md#SCR-12) | A script from git on a schedule | v0.2 | no |
+| [SCR-13](../conformance/rules.md#SCR-13) | The steps wait and await | v0.2 | yes |
+| [SCR-14](../conformance/rules.md#SCR-14) | A script from git with parameters and a free goal | v0.2 | yes |
 | [TRN-2](../conformance/rules.md#TRN-2) | What the translator sees | v0.1 | yes |
 | [TRN-3](../conformance/rules.md#TRN-3) | The translator outputs only a draft | v0.1 | yes |
 | [TRN-4](../conformance/rules.md#TRN-4) | Draft limits under untrusted text | v0.1 | yes |

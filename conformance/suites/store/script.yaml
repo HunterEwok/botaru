@@ -9,7 +9,7 @@ checks:
   - SCR-8
   version: v0.1
   section: Tests without a model
-  source: docs/quality.md:358
+  source: docs/quality.md:360
   spec:
     What: the `script` loop and the step end transaction release one step twice
     Expectation: one step task with the key `system:script:<run>:<step>`

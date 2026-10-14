@@ -87,7 +87,7 @@ apiVersion: botaru/v1alpha1
 kind: Group
 metadata: {name: researcher, tenant: demo}
 spec:
-  caps: ["task:geo.describe.v1", "task:data.describe.v1"]
+  caps: ["task:geo.describe.v1", "task:data.describe.v1", "task:data.analyze.v1"]
   data: [summary, internal]
 ---
 # Only for the principal system: exactly the task types of schedules and routes (PRM-10).

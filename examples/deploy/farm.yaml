@@ -29,3 +29,8 @@ hosts:
          networks: [core], secrets: [worker-token-th-demo-act]}
     os_users:                         # OS users of action executors per tenant (DEP-10)
       ctd-qc-run: {demo: botaru-ctd-demo}   # executor of action pipeline.ctd_qc
+  sbx1:
+    kind: sandbox                     # sandbox VM of tier 2 (v0.2, profile sandbox): no core, store, channel, tenant data or secrets (DEP-1)
+    processes:
+      - {name: th-demo-sandbox, kind: toolhost, tenant: demo, placement: sandbox, user: botaru-sbx-demo,
+         networks: [core], secrets: [worker-token-th-demo-sandbox]}

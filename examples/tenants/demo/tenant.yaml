@@ -51,6 +51,7 @@ spec:
     "/geo": geo.describe.v1
     "/pipeline": pipeline.status.v1
     "/describe": data.describe.v1
+    "/analyze": data.analyze.v1    # from v0.2, profile sandbox (flows 2 and 4)
     "/a": assist.chat.v1
     "/hello": hello.greet.v1       # the first bot, examples/hello-bot/
   run:

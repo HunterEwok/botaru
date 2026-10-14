@@ -1044,7 +1044,117 @@ def lint(docs, today=None, farm_hosts=None, examples_mode=False, claimed=None, s
                         or re.search(r'[\w.+-]+@[\w-]+\.[\w.]+', s):
                     f.error('global_tenant_data', where, f'{kind} {name}: value {s!r} looks like tenant data (TEN-6)')
                     break
+    lint_v02_features(S, f, types, tools, roles, claimed)
     return f
+
+
+WAIT_CEILING_S = 7 * 86400  # farm ceiling of a run with wait or await steps (SCR-13)
+STEP_WAIT_FIELDS = {'wait': {'for'}, 'await': {'event', 'match', 'timeout'}}
+
+
+def lint_v02_features(S, f, types, tools, roles, claimed):
+    """v0.2 features: the sandbox (SBX-1, MAN-11), script steps wait and await (SCR-13), scripts from git with
+    parameters, goals and commands (SCR-14), a scheduled script with parameters (SCR-12), the rule share (DSP-11)."""
+    no_sandbox = claimed is not None and 'sandbox' not in claimed
+    # SBX-1: tier 2 only in a sandbox plugin, a sandbox plugin holds only tier 2 read tools with target: any.
+    for _, pname, where, ps in S.each('ToolPlugin'):
+        sandbox = ps.get('placement') == 'sandbox'
+        if sandbox and no_sandbox:
+            f.error('sandbox_not_claimed', where, f'plugin {pname}: placement: sandbox while the sandbox profile is not claimed (MAN-11, SBX-1)')
+        for t in ps.get('tools', []):
+            tid = f'{pname}/{t["name"]}'
+            if t.get('tier') == 2 and not sandbox:
+                f.error('sandbox_placement', where, f'{tid}: a tier 2 tool outside a plugin with placement: sandbox (SBX-1)')
+            elif sandbox and (t.get('tier') != 2 or t.get('access') != 'read' or t.get('target') != 'any'):
+                f.error('sandbox_placement', where, f'{tid}: a sandbox plugin holds only tier 2 read tools with target: any (SBX-1)')
+    for _, tname, twhere, ts in S.each('TaskType'):
+        if ts.get('tier') == 2 and no_sandbox:
+            f.error('sandbox_not_claimed', twhere, f'type {tname}: tier 2 while the sandbox profile is not claimed (MAN-11, SBX-1)')
+    for rname, (where, rs) in roles.items():
+        if not any((types.get(tt) or {}).get('tier') == 2 for tt in rs.get('claims', [])):
+            continue
+        for ref in rs.get('tools', []):
+            plugin = ref.split('/', 1)[0]
+            ps = next((x for _, n, _, x in S.each('ToolPlugin') if n == plugin), None)
+            if ps is not None and ps.get('placement') == 'host':
+                f.error('sandbox_live_tools', where, f'role {rname}: claims a tier 2 type and has the host tool {ref} (SBX-1)')
+    # SCR-13, SCR-14: scripts from git.
+    for tenant, sname, where, sc in S.each('Script'):
+        tspec = S.get('Tenant', tenant) or {}
+        ceil = seconds((tspec.get('scripts') or {}).get('wait_run_deadline')) or WAIT_CEILING_S
+        declared = sc.get('params') or {}
+        goals = sc.get('goals') or {}
+        for pn, pd in declared.items():
+            if pd.get('type') == 'string' and not pd.get('enum') and not pd.get('format'):
+                f.error('script_param_invalid', where, f'script {sname}: parameter {pn} is a free string; give enum or format (SCR-14, INJ-1)')
+            if pd.get('format') and pd['format'] not in FORMATS:
+                f.error('format_unknown', where, f'script {sname}: parameter {pn}: format {pd["format"]!r} is not in formats.yaml')
+            if 'default' in pd and errors_of(param_schema(pd), pd['default']):
+                f.error('script_param_invalid', where, f'script {sname}: parameter {pn}: default does not pass the declaration (SCR-14)')
+        for st in sc.get('steps') or []:
+            sid, kind = st.get('id'), st.get('kind')
+            for pn in param_refs(st):
+                if pn not in declared:
+                    f.error('script_param_invalid', where, f'script {sname}: step {sid} names the undeclared parameter {pn} (SCR-14)')
+            if kind in STEP_WAIT_FIELDS:
+                need = STEP_WAIT_FIELDS[kind]
+                other = set().union(*STEP_WAIT_FIELDS.values()) - need
+                extra = [k for k in st if k in other or k in ('type', 'action', 'goal', 'params', 'args', 'items', 'rollout', 'who')]
+                missing = sorted(k for k in need if k not in st)
+                if missing or extra:
+                    f.error('script_wait_fields', where, f'script {sname}: step {sid} ({kind}) misses {missing} or has {extra} (SCR-13)')
+                dur = seconds(st.get('for') or st.get('timeout'))
+                if dur and dur > ceil:
+                    f.error('script_wait_fields', where, f'script {sname}: step {sid} waits longer than the run deadline (SCR-13)')
+            elif any(k in st for k in ('for', 'event', 'match', 'timeout')):
+                f.error('script_wait_fields', where, f'script {sname}: step {sid} ({kind}) has a field of wait or await (SCR-13)')
+            tpl = (st.get('goal') or {}).get('template')
+            if tpl:
+                own = tpl in goals
+                typed = tpl in ((types.get(st.get('type')) or {}).get('goal_templates') or {})
+                if own and typed:
+                    f.error('script_param_invalid', where, f'script {sname}: step {sid}: goal {tpl} is in both goals and the type goal_templates (SCR-14)')
+                elif not own and types and st.get('type') in types and not typed:
+                    f.error('ref_missing', where, f'script {sname}: step {sid}: goal template {tpl} is in neither goals nor the type (SCR-4, SCR-14)')
+    for tenant, tname, where, ts in S.each('Tenant'):
+        dl = (ts.get('scripts') or {}).get('wait_run_deadline')
+        if dl and (seconds(dl) or 0) > WAIT_CEILING_S:
+            f.error('script_wait_fields', where, f'tenant {tname}: scripts.wait_run_deadline {dl} is above the farm ceiling of 7d (SCR-13)')
+        for cmd, script in (ts.get('script_commands') or {}).items():
+            if cmd in BUILTIN_COMMANDS or cmd in (ts.get('commands') or {}):
+                f.error('builtin_command', where, f'script command {cmd} takes a built-in or a tenant command (PRM-17, SCR-14)')
+            if S.get('Script', script, tname) is None:
+                f.error('ref_missing', where, f'script command {cmd}: script {script} is not a kind: Script of tenant {tname}')
+        for i, rule in enumerate((ts.get('dispatch') or {}).get('rules') or []):
+            if rule.get('max_share') and not rule.get('group'):
+                f.error('max_share_without_group', where, f'tenant {tname}: dispatch.rules[{i}] has max_share without group (DSP-11)')
+    for tenant, sname, where, ss in S.each('Schedule'):
+        sc = S.get('Script', ss.get('script'), tenant) if ss.get('script') else None
+        for pn, pd in ((sc or {}).get('params') or {}).items():
+            if 'default' not in pd:
+                f.error('script_param_invalid', where, f'schedule {sname}: parameter {pn} of script {ss["script"]} has no default (SCR-12, SCR-14)')
+
+
+def param_schema(pd):
+    """JSON schema of one declared script parameter (SCR-14)."""
+    out = {'type': pd['type']}
+    for k in ('enum', 'minimum', 'maximum'):
+        if k in pd:
+            out[k] = pd[k]
+    if pd.get('format') in FORMATS:
+        out['pattern'] = FORMATS[pd['format']].pattern
+    return out
+
+
+def param_refs(node):
+    """Names in {param: <name>} references inside a script step."""
+    if isinstance(node, dict):
+        if set(node) == {'param'} and isinstance(node['param'], str):
+            return [node['param']]
+        return [x for v in node.values() for x in param_refs(v)]
+    if isinstance(node, list):
+        return [x for v in node for x in param_refs(v)]
+    return []
 
 
 SKILL_TYPES = ('.md', '.txt', '.yaml', '.json', '.csv')
@@ -1645,7 +1755,9 @@ if tools_list_args():
     run_tools_list(manifests)
     rep.finish()
 
-EXAMPLE_PROFILES = ['core', 'monitor'] if 'monitoring' in (load_yaml(os.path.join(EXAMPLES, 'deploy', 'farm.yaml')) or {}) else ['core']
+_FARM = load_yaml(os.path.join(EXAMPLES, 'deploy', 'farm.yaml')) or {}
+EXAMPLE_PROFILES = ['core'] + (['monitor'] if 'monitoring' in _FARM else []) + \
+    (['sandbox'] if any((h or {}).get('kind') == 'sandbox' for h in (_FARM.get('hosts') or {}).values()) else [])
 examples_found = lint(manifests, farm_hosts=farm_hosts, examples_mode=True, claimed=EXAMPLE_PROFILES,
                       skills=read_skills(EXAMPLES))
 emit(examples_found)

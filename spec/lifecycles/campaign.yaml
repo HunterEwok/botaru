@@ -394,11 +394,12 @@ machines:
     when: 'the campaign is `running`; there is no hold in its scope; fewer than `max_in_flight` are released and not finished;
       the resource is free with `exclusive: resource`; the tenant''s queue of the item type is not longer than `queue_max`;
       every initiator has the rights; the item fits into the remaining reserve; from v0.2 the `rate_per_min` pace is not exceeded
-      and the wave is open. In the same transaction the item''s task with the key `system:campaign:<campaign>:<n>`, and for
-      an action also one write call from the snapshot'
+      and the wave is open (ORC-15). In the same transaction the item''s task with the key `system:campaign:<campaign>:<n>`,
+      and for an action also one write call from the snapshot'
     rules:
     - ORC-11
     - ORC-12
+    - ORC-15
     - ORC-3
     - ORC-4
     - ORC-6

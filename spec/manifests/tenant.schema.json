@@ -755,7 +755,7 @@
               "max_share": {
                 "type": "string",
                 "maxLength": 4,
-                "description": "From v0.2: the share of concurrent slots of a bot group, for example 20%.",
+                "description": "From v0.2: the share of the capacity of the rule's group that the tasks of this rule hold, for example 20%, rounded down but at least one; the rule needs group (DSP-11, lint max_share_without_group).",
                 "pattern": "^[1-9][0-9]?%$|^100%$",
                 "x-botaru-version": "v0.2"
               },
@@ -805,6 +805,18 @@
       },
       "additionalProperties": {
         "$ref": "urn:botaru:schema:common:1#/$defs/type_name"
+      }
+    },
+    "script_commands": {
+      "type": "object",
+      "maxProperties": 20,
+      "x-botaru-version": "v0.2",
+      "description": "From v0.2: channel command -> the name of a kind: Script manifest of the tenant; the command starts the script with key=value parameters through the script_confirm card (SCR-14). Built-in commands and commands of commands cannot be taken (PRM-17).",
+      "propertyNames": {
+        "pattern": "^/[a-z][a-z0-9_-]{0,30}$"
+      },
+      "additionalProperties": {
+        "$ref": "urn:botaru:schema:common:1#/$defs/name"
       }
     },
     "run": {
@@ -1074,7 +1086,12 @@
         },
         "run_deadline": {
           "$ref": "urn:botaru:schema:common:1#/$defs/duration",
-          "description": "Script run deadline, at most 6 hours."
+          "description": "Script run deadline, at most 6 hours; a run with wait or await steps uses wait_run_deadline (SCR-13)."
+        },
+        "wait_run_deadline": {
+          "$ref": "urn:botaru:schema:common:1#/$defs/duration",
+          "x-botaru-version": "v0.2",
+          "description": "From v0.2: the deadline of a run whose script has a wait or await step, 7d by default and at most (SCR-13); the lint checks the ceiling."
         }
       },
       "description": "Script ceilings; the tenant can only decrease them (SCR-5)."

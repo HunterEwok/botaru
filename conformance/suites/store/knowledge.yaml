@@ -9,7 +9,7 @@ checks:
   - KNW-5
   version: v0.2
   section: Tests without a model
-  source: docs/quality.md:348
+  source: docs/quality.md:350
   spec:
     What: (v0.2) a corpus document with a canary is deleted; a second document passes its `expires_at`; a whole corpus is
       deleted

@@ -199,6 +199,7 @@ The codes of `check_manifests.py` that fixtures refer to (`expect: {error: <code
 | `listener_test_in_production` | test-control listener of the core on a kind: production host | DEP-10 |
 | `manager_line_missing` | manager budget line is not above 0 while the manager is enabled | MGR-20 |
 | `manager_profile_not_allowed` | manager seat profile is not in models_allowed | MGR-20 |
+| `max_share_without_group` | dispatch rule with max_share and without group | DSP-11 |
 | `max_tokens_field` | manifest has a max_tokens field | BUD-9 |
 | `mcp_annotation_conflict` | an MCP annotation in tools/list contradicts the manifest access | INJ-3 |
 | `memory_person` | memory: person with disallowed types or tools | MEM-2 |
@@ -234,12 +235,17 @@ The codes of `check_manifests.py` that fixtures refer to (`expect: {error: <code
 | `run_arg_unknown` | run argument is not in the closed schema of the type or action | APR-17 |
 | `run_needs_approval_none` | run starts a type without run.approval: none | APR-17 |
 | `run_not_readonly` | type with run.approval: none is claimed by a role with actions or write tools | APR-17 |
+| `sandbox_live_tools` | role that claims a tier 2 type has a tool with placement: host | SBX-1 |
+| `sandbox_not_claimed` | tier 2 type or tool, or a sandbox plugin, while the sandbox profile is not claimed | MAN-11, SBX-1 |
+| `sandbox_placement` | tier 2 tool outside a sandbox plugin, or a sandbox plugin tool that is not a tier 2 read tool with target: any | SBX-1 |
 | `schedule_deadline` | schedule type has no timeouts.deadline |  |
 | `schedule_script_await` | scheduled script has an await step | SCR-12 |
 | `schedule_script_needs_run` | scheduled script has a step that needs script.run | SCR-12, SCR-6 |
 | `schedule_script_over_ceiling` | scheduled script is above Tenant.spec.scripts | SCR-12, SCR-5 |
 | `schedule_target` | schedule has neither or both of task and script | SCR-12, TIM-3 |
 | `schema_invalid` | manifest does not pass the schema of its kind | MAN-1 |
+| `script_param_invalid` | script parameter is free, undeclared, without a default where a schedule needs one, or a goal name clashes | SCR-14, SCR-12 |
+| `script_wait_fields` | wait or await step with missing or foreign fields, or a wait above the run deadline | SCR-13 |
 | `self_approve_production` | production tenant with self_approve: true | APR-9 |
 | `service_no_card` | service no_card holds something other than restart | MON-8 |
 | `service_script_unknown` | no script from monitor_scripts_allowed for a service verb | MON-8, MON-10 |

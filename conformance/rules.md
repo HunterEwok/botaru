@@ -8,7 +8,7 @@ The line under a rule heading:
 
 - "since v0.1": the skeleton version from which the conformance suite checks the rule.
 - "non-waivable": an implementation cannot put the rule on its list of expected failures. "Waivable": it can, with a recorded reason.
-- "profile": the part of the skeleton an implementation claims conformance to separately (`core`, `messaging`, `campaign`, `insights`, `manager`, `governance`, `monitor`, `knowledge`, `ingress`, `connections`, `debug`); the `core` profile is mandatory, see [docs/quality.md](../docs/quality.md).
+- "profile": the part of the skeleton an implementation claims conformance to separately (`core`, `messaging`, `campaign`, `insights`, `manager`, `governance`, `monitor`, `knowledge`, `ingress`, `connections`, `debug`, `sandbox`); the `core` profile is mandatory, see [docs/quality.md](../docs/quality.md).
 - "recommendation": a SHOULD rule; all others are mandatory.
 - "check": how compliance is shown. `fixture`: a ready data sample that must pass or fail a check. `store`: a storage check. `blackbox`: a test through the ports without knowledge of the implementation internals. `adapter`: a test of a port adapter. `eval`: a check of model work quality on a set of cases. `lint`: a check of files and manifests.
 - "decisions": decision numbers from [docs/decisions.md](../docs/decisions.md).
@@ -29,7 +29,7 @@ The line under a rule heading:
 | [DEP](#dep) | Deployment and least privilege | [docs/security-model.md](../docs/security-model.md) | 11 | 11 | 11 | 0 |
 | [DIG](#dig) | Showing proposals to people | [docs/improvements.md](../docs/improvements.md) | 8 | 6 | 4 | 4 |
 | [DLV](#dlv) | Delivery | [docs/tasks-and-delivery.md](../docs/tasks-and-delivery.md) | 15 | 9 | 14 | 1 |
-| [DSP](#dsp) | Task pool and dispatcher | [docs/coordination.md](../docs/coordination.md) | 10 | 8 | 8 | 2 |
+| [DSP](#dsp) | Task pool and dispatcher | [docs/coordination.md](../docs/coordination.md) | 11 | 8 | 8 | 3 |
 | [FEN](#fen) | Leases | [docs/tasks-and-delivery.md](../docs/tasks-and-delivery.md) | 7 | 5 | 7 | 0 |
 | [GOV](#gov) | Bot governance | [docs/commission.md](../docs/commission.md) | 25 | 18 | 10 | 15 |
 | [GW](#gw) | Model gateway | [docs/models-and-money.md](../docs/models-and-money.md) | 16 | 15 | 16 | 0 |
@@ -48,7 +48,7 @@ The line under a rule heading:
 | [MSG](#msg) | Messages between bots | [docs/messaging.md](../docs/messaging.md) | 17 | 17 | 17 | 0 |
 | [OBS](#obs) | Observability | [docs/operations.md](../docs/operations.md) | 10 | 4 | 10 | 0 |
 | [OBV](#obv) | Observations | [docs/improvements.md](../docs/improvements.md) | 7 | 4 | 7 | 0 |
-| [ORC](#orc) | Campaigns | [docs/coordination.md](../docs/coordination.md) | 14 | 13 | 14 | 0 |
+| [ORC](#orc) | Campaigns | [docs/coordination.md](../docs/coordination.md) | 15 | 14 | 14 | 1 |
 | [OUT](#out) | Structured results | [docs/tasks-and-delivery.md](../docs/tasks-and-delivery.md) | 2 | 1 | 1 | 1 |
 | [PRF](#prf) | Role profiles | [docs/scripts-and-translator.md](../docs/scripts-and-translator.md) | 1 | 1 | 1 | 0 |
 | [PRM](#prm) | Permissions | [docs/permissions.md](../docs/permissions.md) | 18 | 18 | 16 | 2 |
@@ -57,14 +57,15 @@ The line under a rule heading:
 | [REP](#rep) | Reporters | [docs/messaging.md](../docs/messaging.md) | 11 | 10 | 9 | 2 |
 | [RET](#ret) | Retention and deletion | [docs/operations.md](../docs/operations.md) | 8 | 7 | 8 | 0 |
 | [RT](#rt) | Agent runtime | [docs/architecture.md](../docs/architecture.md) | 5 | 5 | 5 | 0 |
-| [SCR](#scr) | Scripts | [docs/scripts-and-translator.md](../docs/scripts-and-translator.md) | 12 | 10 | 10 | 2 |
+| [SBX](#sbx) | Sandbox | [docs/task-language.md](../docs/task-language.md) | 2 | 2 | 0 | 2 |
+| [SCR](#scr) | Scripts | [docs/scripts-and-translator.md](../docs/scripts-and-translator.md) | 14 | 12 | 10 | 4 |
 | [SEC](#sec) | Secrets | [docs/security-model.md](../docs/security-model.md) | 14 | 6 | 9 | 5 |
 | [SKL](#skl) | Skills | [docs/capabilities.md](../docs/capabilities.md) | 3 | 3 | 0 | 3 |
 | [STA](#sta) | Bot state | [docs/messaging.md](../docs/messaging.md) | 3 | 2 | 2 | 1 |
 | [TEN](#ten) | Tenants | [docs/architecture.md](../docs/architecture.md) | 8 | 8 | 8 | 0 |
 | [TIM](#tim) | Time and clocks | [docs/operations.md](../docs/operations.md) | 5 | 3 | 4 | 1 |
 | [TRN](#trn) | Translator | [docs/scripts-and-translator.md](../docs/scripts-and-translator.md) | 5 | 4 | 4 | 1 |
-| Total | | | 478 | 358 | 389 | 89 |
+| Total | | | 484 | 363 | 389 | 95 |
 
 Retired numbers (23) are listed in [retired.md](retired.md).
 
@@ -1182,7 +1183,7 @@ Checked by: `fx-dsp-03`
 
 since v0.1 · non-waivable · profile core · check: blackbox, fixture · decisions: D-14
 
-Pressure is expressed by counters, not by losing work. At enqueue, the tenant's queue ceiling `max_queued` (CAP-1) gives `rejected(over_capacity)` with `retry_after_s`, and the idempotency key is not taken. At dispatch, `max_running` per (tenant, type) applies, and from v0.2 also the bot group's `max_running` and the rule's `max_share`; a task above the ceiling waits in `submitted` with a `waiting_reason` from a closed list. Work is not silently thrown away, and no attempt is spent because of pressure.
+Pressure is expressed by counters, not by losing work. At enqueue, the tenant's queue ceiling `max_queued` (CAP-1) gives `rejected(over_capacity)` with `retry_after_s`, and the idempotency key is not taken. At dispatch, `max_running` per (tenant, type) applies, and from v0.2 also the bot group's `max_running` and the rule's `max_share` (DSP-11); a task above the ceiling waits in `submitted` with a `waiting_reason` from a closed list. Work is not silently thrown away, and no attempt is spent because of pressure.
 
 Checked by: `fx-dsp-05`
 
@@ -1212,6 +1213,15 @@ since v0.1 · non-waivable · profile core · check: fixture, lint, blackbox
 A personal assistant task (a type of a role with per-person memory, `memory: person`, for example `assist.chat.v1`) is handed out to any ready worker of the assistant role; the core writes the owner (`owner`, the initiating principal of the task from a private chat) into the lease at `claim`, and the core uses it to choose the memory space and the session (MEM-1, RT-1). There is no worker per person: a worker record has no `owner` field, and P2 `worker.enroll` does not accept one. The personal assistant type is not part of the tenant's `default_types` (lint at `apply` rejects the catalog with the reason `assistant_in_default_types`); a person reaches the assistant only by an explicit address: with the command `/a <text>` from `commands`, or through a separate channel binding that has `ChatBinding.assistant: true` and only private chats. Free text in a private chat without a command gets a type from `default_types` or the code text of `/help`, not the assistant. Check: fixture `fx-dsp-07`: two workers of the role `assistant`, `/a` tasks from `alice` and `bob` are handed to different workers, each lease records its own `owner`, and the memory of one is not visible to the attempt of the other; a catalog with `assist.chat.v1` in `default_types` is rejected by `apply`.
 
 Checked by: `fx-dsp-07`
+
+<a id="DSP-11"></a>
+### DSP-11. Bot group quota and a rule's share
+
+since v0.2 · waivable · profile core · check: fixture, lint · decisions: D-14
+
+A bot group's `max_running` caps the running attempts on the group's member workers: `claim` does not hand a task to a member of a group whose members already run that many attempts, and a worker in several groups is held by each group that has a cap. A dispatcher rule's `max_share` caps the running attempts of the tasks the rule matches on the members of the rule's `group` at the share of the group's capacity, rounded down but at least one; the capacity is the group's `max_running`, or the number of its active members when it has none (as for BUD-8). `apply` rejects a rule with `max_share` and without `group` (`max_share_without_group`). A task held by either cap waits in `submitted` with `waiting_reason: group_quota` (D10); no attempt is spent and no work is lost (DSP-7). The core counts running attempts from the lease records in the `claim` transaction, so two concurrent `claim` calls never pass a cap together. P2 `dispatch.explain` shows the cap and how many places are taken (DSP-9).
+
+Checked by: `dispatch/group-quota`, `manifests/v02-group1-lints`
 
 <a id="fen"></a>
 ## FEN: Leases
@@ -2329,9 +2339,9 @@ Checked by: `lint:manifests/catalog-values`
 <a id="MAN-11"></a>
 ### MAN-11. A core rejects what it does not implement
 
-since v0.1 · non-waivable · profile core · check: blackbox · decisions: D-98, D-103
+since v0.1 · non-waivable · profile core · check: blackbox · decisions: D-98, D-103, D-104
 
-At `apply` a core rejects, with the error `version_unsupported` and the path, a manifest of a kind whose `since` in `spec/manifests/kinds.yaml` is later than the skeleton version it claims in `conforms_to` (MAN-8), and a field whose `x-botaru-version` is later than that version. It also rejects the fields of a feature profile it does not claim: a catalog resource of kind `corpus` and `skills` of a role (`knowledge`), a channel with `direction: in` and its `ingress` block (`ingress`), a tool with `credential: per_principal` (`connections`), and the tenant fields `retention.journals` and `operator_access.debug_journal` (`debug`). A core never accepts such a manifest and ignores the field: an operator who sees `apply` pass would believe the feature works. Records the core writes stay as its version defines them (D-98).
+At `apply` a core rejects, with the error `version_unsupported` and the path, a manifest of a kind whose `since` in `spec/manifests/kinds.yaml` is later than the skeleton version it claims in `conforms_to` (MAN-8), and a field whose `x-botaru-version` is later than that version. It also rejects the fields of a feature profile it does not claim: a catalog resource of kind `corpus` and `skills` of a role (`knowledge`), a channel with `direction: in` and its `ingress` block (`ingress`), a tool with `credential: per_principal` (`connections`), and the tenant fields `retention.journals` and `operator_access.debug_journal` (`debug`), a type or a tool of tier 2 and a plugin with `placement: sandbox` (`sandbox`). A core never accepts such a manifest and ignores the field: an operator who sees `apply` pass would believe the feature works. Records the core writes stay as its version defines them (D-98).
 
 Checked by: `blackbox:core/apply-later-version`
 
@@ -3244,7 +3254,7 @@ Checked by: `fx-orc-01`, `fx-orc-02`, `fx-orc-04`
 
 since v0.1 · non-waivable · profile campaign · check: fixture, store, blackbox · decisions: D-14, D-62
 
-Item release, the canary, `max_in_flight`, the threshold and stopping (from v0.2 also waves and the rate `rate_per_min`) are decided by deterministic core code from the campaign record. An item is released only if the campaign is `running`, there is no hold in its scope, fewer than `max_in_flight` are released, the resource is free (ORC-12), the queue of the item's type in the tenant is no longer than `queue_max`, and the initiator still has the permissions (ORC-6). The model and workers do not release items and do not change counters. The canary (the first `canary` items) is released as a separate batch, and any failure in it stops the campaign regardless of the threshold. The threshold is counted by `failed`: the campaign stops when the failed items exceed the threshold; released items are finished, new ones are not released, and unreleased ones become `skipped`. An `unknown` item with `on_unknown: pause` sets a pause. Only the core produces campaign alarms, and the monitoring system passes them to people (MON-1).
+Item release, the canary, `max_in_flight`, the threshold and stopping (from v0.2 also waves and the rate `rate_per_min`, ORC-15) are decided by deterministic core code from the campaign record. An item is released only if the campaign is `running`, there is no hold in its scope, fewer than `max_in_flight` are released, the resource is free (ORC-12), the queue of the item's type in the tenant is no longer than `queue_max`, and the initiator still has the permissions (ORC-6). The model and workers do not release items and do not change counters. The canary (the first `canary` items) is released as a separate batch, and any failure in it stops the campaign regardless of the threshold. The threshold is counted by `failed`: the campaign stops when the failed items exceed the threshold; released items are finished, new ones are not released, and unreleased ones become `skipped`. An `unknown` item with `on_unknown: pause` sets a pause. Only the core produces campaign alarms, and the monitoring system passes them to people (MON-1).
 
 Checked by: `fx-orc-01`, `fx-orc-02`, `fx-orc-03`
 
@@ -3338,6 +3348,15 @@ If the proposing task has `untrusted_seen: true` or its initiator is `system`, t
 
 Checked by: `fx-orc-06`, `inj-orc-01`, `inj-peer-mgr-01`
 
+<a id="ORC-15"></a>
+### ORC-15. Waves and pace of a campaign
+
+since v0.2 · non-waivable · profile campaign · check: fixture, store · decisions: D-14
+
+`rollout.waves` is a list of 1-10 cumulative shares of the items after the canary, strictly increasing, the last one `100%`; a proposal that breaks this is rejected with `campaign_waves_invalid` and creates no record. Wave k may release, in item order `n`, the items after the canary up to the share of wave k of their number, rounded up. Wave 1 opens when the canary gate opens (`after_canary`), or at once without a canary; wave k+1 opens only when every item of wave k is final, the failure threshold is not crossed and the `bake` pause has passed since the last of them ended. Without `waves` all items after the canary form one wave. `rollout.rate_per_min` caps the releases of the campaign in any 60 seconds. An item that a closed wave or the pace holds back stays `pending`: that is not a failure and spends nothing. The `campaign` loop and the end of an item release it later by the same gates. Waves and pace only narrow release; they never pass an item that another gate of ORC-4 holds. The campaign record keeps the number of the open wave (`wave`, 0 for the canary), written by the core in the transaction that opens the wave, and the progress card is updated then (ORC-10).
+
+Checked by: `campaign/waves-pace`, `store:campaign/pace-window`
+
 <a id="out"></a>
 ## OUT: Structured results
 
@@ -3410,7 +3429,7 @@ Checked by: `blackbox:core/no-decision-cache`
 
 since v0.1 · non-waivable · profile core · check: fixture, blackbox
 
-The task type sets the tier; groups have no tier. `max_tier` equals the type's tier and is not higher than the parent's. A tool can be called only if it is in the role's `tools`, it has `access: read`, `tier <= max_tier`, and the output class (the maximum of `output_class` and the resource class in the catalog) is not above `data_mark`. Tier 3 is never available to the model: it can only ask (APR-1).
+The task type sets the tier; groups have no tier. `max_tier` equals the type's tier and is not higher than the parent's. A tool can be called only if it is in the role's `tools`, it has `access: read`, `tier <= max_tier`, and the output class (the maximum of `output_class` and the resource class in the catalog) is not above `data_mark`. Tier 3 is never available to the model: it can only ask (APR-1). Tier 2 exists from v0.2 and only in the sandbox (SBX-1).
 
 Checked by: `blackbox:model/tool-not-in-role`, `blackbox:model/tier-exceeded`
 
@@ -4000,6 +4019,29 @@ A runtime that declared `session: runtime_internal` or `memory: runtime_internal
 
 Checked by: `adapter:runtime/match-subject`
 
+<a id="sbx"></a>
+## SBX: Sandbox
+
+Explained in: [docs/security-model.md](../docs/security-model.md), [docs/task-language.md](../docs/task-language.md)
+
+<a id="SBX-1"></a>
+### SBX-1. Tier 2 lives only in the sandbox
+
+since v0.2 · non-waivable · profile sandbox · check: lint, blackbox · decisions: D-104
+
+A tool of tier 2 is only in a plugin with `placement: sandbox`, and such a plugin holds only tools of tier 2 with `access: read` and `target: any`: the sandbox has no write tools and no actions. A role that claims a type of tier 2 has no tool with `placement: host` in `tools`, because live closed data next to code and untrusted text would assemble the "lethal trifecta" in one task even without network. `apply` rejects a break of either with `sandbox_placement` or `sandbox_live_tools`. A tenant has at most one sandbox toolhost, on a sandbox VM (DEP-1, DEP-2). An installation that does not claim the `sandbox` profile has no tier 2: its core rejects at `apply` a type or a tool of tier 2 and a plugin with `placement: sandbox` (MAN-11), and a single server without a separate VM never claims the profile.
+
+Checked by: `manifests/v02-group1-lints`, `blackbox:core/apply-later-version`
+
+<a id="SBX-2"></a>
+### SBX-2. One disposable container per task
+
+since v0.2 · non-waivable · profile sandbox · check: blackbox, adapter · decisions: D-104
+
+The sandbox toolhost starts one container for one task and never reuses it for another task or tenant. The container has no network and no secrets, a read-only root, no privileges, an unprivileged user and limits on memory, CPU, processes and file size. `/in` is mounted read-only and only the toolhost fills it: with a slice of a tenant catalog dataset whose class is not above the task's `data_mark`, after redaction and within the copy limit, and with the task's attachments read through P1 `file.get` under the call lease; the source never changes. `/out` is a separate volume with a limit. The output of a command goes to the model only after redaction and up to 32 KB, and the attempt gets `untrusted_seen` from the first read of file content (INJ-13); in the audit and events `argv` is only a hash and a length (AUD-2). Command time counts on the `sandbox_seconds` meter reserved before use (BUD-5). At the end of the attempt the toolhost stops the container first and then reads `/out`: it opens files without following links, takes only regular files, checks the type by the first bytes, hands out only CSV, JSON, GeoJSON, PNG and the model's script as plain text within the type's `result_media_types`, and writes each through P1 `file.put` with a mark not lower than the task's (ART-3); the script gets the mark "written by the model". Then the container and both volumes are destroyed.
+
+Checked by: `adapter:toolhost/sandbox-container`, `blackbox:files/sandbox-collect`
+
 <a id="scr"></a>
 ## SCR: Scripts
 
@@ -4037,7 +4079,7 @@ Checked by: `scr-fx-conditions`
 
 since v0.1 · non-waivable · profile campaign · check: lint, fixture · decisions: D-15, D-39, D-71
 
-In a draft that the model wrote, the goal of an agent step is set only as `{template: <id>}` from the task type's `goal_templates` or as `{assignment: true}` (the verbatim text of the initiator's assignment); the draft schema has no free goal text. A free goal is allowed only in a script from git that passed a human review, and only from v0.2.
+In a draft that the model wrote, the goal of an agent step is set only as `{template: <id>}` from the task type's `goal_templates` or as `{assignment: true}` (the verbatim text of the initiator's assignment); a draft has no free goal text. A free goal (the script's `goals`) is allowed only in a script from git that passed a human review, and only from v0.2 (SCR-14).
 
 Checked by: `trn-inj-05`
 
@@ -4046,7 +4088,7 @@ Checked by: `trn-inj-05`
 
 since v0.1 · non-waivable · profile campaign · check: fixture, blackbox · decisions: D-15, D-40, D-73, D-71
 
-A draft is accepted synchronously by a chain of core checks in this order: the schema `botaru.script/v1`; references (SCR-2); the graph and conditions (SCR-3); the vocabulary of the author role (`scripts.step_types`, `scripts.actions`); the initiator's permissions for each step as if they enqueued this task, campaign or action request themselves (`task:<type>`, `data:<class>`, `action.request:<a>`, campaign ceilings; for a `task` step whose parameters name a service or a monitoring script, also `service.control:<service>` or `monitor.script_run`, as for an action, D-73); limits (the number of steps, no more than 3 steps with an action, where a `fanout` with an action counts as one, `fanout` items within the campaign ceilings, a run timeout no longer than the ceiling: 6 hours, and up to 7 days with `wait` and `await` steps, condition complexity), with `untrusted_seen` also TRN-4; an estimate of all branches at once in euros (each step by the enqueue estimate of its type, BUD-14) and in tree size. The first refusal rejects the draft as a whole with the reason and the step number; a refusal creates no record and does not take the key, the full reason is written into the audit, and the model gets a short one (PRM-8). The run's permissions are the intersection of the author role's vocabulary, the initiator's permissions for each step and the ceilings; they are never wider than the initiator's. The fields `max_tier`, `data_mark`, `untrusted_seen` with sources, the list of actions, the estimate, `plan_hash` and the expanded frozen `fanout` lists are written only by the core; the schema rejects such fields sent by the author.
+A draft is accepted synchronously by a chain of core checks in this order: the schema `botaru.script/v1`; references (SCR-2); the graph and conditions (SCR-3); the vocabulary of the author role (`scripts.step_types`, `scripts.actions`); the initiator's permissions for each step as if they enqueued this task, campaign or action request themselves (`task:<type>`, `data:<class>`, `action.request:<a>`, campaign ceilings; for a `task` step whose parameters name a service or a monitoring script, also `service.control:<service>` or `monitor.script_run`, as for an action, D-73); limits (the number of steps, no more than 3 steps with an action, where a `fanout` with an action counts as one, `fanout` items within the campaign ceilings, a run timeout no longer than the ceiling: 6 hours, and from v0.2 up to 7 days with `wait` and `await` steps (SCR-13), condition complexity), with `untrusted_seen` also TRN-4; an estimate of all branches at once in euros (each step by the enqueue estimate of its type, BUD-14) and in tree size. The first refusal rejects the draft as a whole with the reason and the step number; a refusal creates no record and does not take the key, the full reason is written into the audit, and the model gets a short one (PRM-8). The run's permissions are the intersection of the author role's vocabulary, the initiator's permissions for each step and the ceilings; they are never wider than the initiator's. The fields `max_tier`, `data_mark`, `untrusted_seen` with sources, the list of actions, the estimate, `plan_hash` and the expanded frozen `fanout` lists are written only by the core; the schema rejects such fields sent by the author.
 
 Checked by: `trn-05`, `trn-07`, `scr-fx-05`
 
@@ -4112,6 +4154,24 @@ since v0.2 · waivable · profile campaign · check: lint, blackbox · decisions
 A `kind: Script` manifest reviewed in the tenant's git can be started by a schedule (`Schedule.spec.script`, an optional field from v0.2) without a person's button only if it needs no `script.run` (SCR-6): no `action` step, no `fanout` with an action, no `confirm` step and no step whose role has `service_control` or `monitor_scripts`; it has no `await` step, so an external event cannot steer a run without a person; it keeps within `Tenant.spec.scripts` (SCR-5); and the run's permissions are those of `system`: every `task` and `fanout` type of the script is listed explicitly in `system-ops` (PRM-10). Otherwise `apply` rejects the schedule. The `deliver_to` of such a schedule is checked at `apply` and at every run, as for a task schedule (PRM-10). The run has initiator `system`, fairness key `script:<run>` and the slot rules of TIM-3; at most one run of a schedule is live, and a slot that comes while the previous run is live is skipped with `run_live`. Its estimate is reserved at each slot as at a run approval (SCR-8), and a slot that does not fit is skipped with `budget_exhausted` (TIM-3). A hold on the schedule stops it (CAP-4), and a hold on the run pauses it (SCR-10).
 
 Checked by: `lint:manifests/schedule-script`, `blackbox:script/scheduled-run`, `manifests/v02-security-lints`
+
+<a id="SCR-13"></a>
+### SCR-13. The steps wait and await
+
+since v0.2 · non-waivable · profile campaign · check: lint, blackbox · decisions: D-41
+
+A `wait` step has only `for`, a duration. An `await` step has `event` (an event type of the events catalog), `match` (1-5 pairs of an `event_field` and a value: a literal, `{ref: <step>.<field>}` to a closed result field with `x-botaru-read-by: code` (SCR-3), or `{param: <name>}` in a script from git, SCR-14) and a required `timeout`. `for` and `timeout` are each at most the run deadline. At release the core writes a waiting record and no task: there is no attempt and no lease, only the run record waits (CNT-4). For `wait` the timer ends the step `ok`. For `await` the first event of the same tenant whose fields all match ends the step `ok`, and the step result holds only the closed fields of the event data schema (OUT-1), which later steps read by reference; the timeout ends the step `failed(await_timeout)`, and the run goes on by `on_failure`. The end of such a step releases the next steps as any step end does (trigger `script`); a waiting record ends at most one step. A run whose script has a `wait` or `await` step has the deadline `Tenant.spec.scripts.wait_run_deadline` (7 days by default, the farm ceiling); other runs keep `run_deadline` (6 hours). A paused run (SCR-10) keeps its waiting records, and a step that ends during the pause releases nothing until the run resumes; a cancel or the run deadline ends the record and the step is `canceled`. `apply` and draft acceptance reject a `wait` or `await` step with missing or foreign fields or a duration above the deadline (`script_wait_fields`).
+
+Checked by: `manifests/v02-group1-lints`, `blackbox:script/wait-await`
+
+<a id="SCR-14"></a>
+### SCR-14. A script from git with parameters and a free goal
+
+since v0.2 · non-waivable · profile campaign · check: lint, blackbox · decisions: D-15, D-71, D-104
+
+A `kind: Script` manifest reviewed in the tenant's git may declare `params`: at most 16 named parameters, each of type integer, number or boolean, or a string with `enum` or a format from `formats.yaml` (there is no free string, INJ-1), with an optional `default`. Steps use a parameter only as a whole value `{param: <name>}` in `params`, `args` and `await.match`. Only such a script may declare `goals`: free goal texts of at most 2000 characters, reviewed in git and used without substitution, which an agent step names with `goal: {template: <id>}`; a name may not repeat a goal template of the step's type. A draft from the model or an improvement proposal with `goals`, `params` or `{param}` is rejected at acceptance with `script_free_goal` (SCR-4, SCR-5). A person starts a script from git with a command from `Tenant.spec.script_commands` (`/<command> key=value ...`): the core checks each value against the declared parameter, a missing one takes its `default` and without a default the command is refused with `script_param_invalid`; then it accepts the script like a draft (SCR-5) with the person as the initiator and creates the run in `proposed` with the `script_confirm` card, and the button and its checks are those of SCR-6. The run record keeps the manifest name and its commit, and `plan_hash` covers the parameter values. A schedule starts a script from git only with the default values (SCR-12). `apply` rejects an undeclared or free parameter, a `{param}` that names no declared parameter, a goal name that is in neither list or in both, and a script command that takes a built-in or a tenant command (`script_param_invalid`, `builtin_command`).
+
+Checked by: `manifests/v02-group1-lints`, `blackbox:script/git-command`
 
 <a id="sec"></a>
 ## SEC: Secrets

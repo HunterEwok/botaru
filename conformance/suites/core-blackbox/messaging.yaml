@@ -9,7 +9,7 @@ checks:
   - REP-5
   version: v0.1
   section: Tests without a model
-  source: docs/quality.md:321
+  source: docs/quality.md:322
   spec:
     What: a core alarm, a farm manager notice and an immediate report of a control operation while the `reporter` role is
       alive

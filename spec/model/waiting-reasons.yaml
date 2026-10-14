@@ -55,9 +55,9 @@ entries:
     rules: [DSP-7, GW-10]
   - id: group_quota
     since: v0.2
-    meaning: The `max_running` of the bot group or the `max_share` of the tenant rule is exhausted.
+    meaning: The `max_running` of the bot group, the `max_share` of the tenant rule or the class 5 share `background_share` is exhausted.
     predicate: D10
-    rules: [DSP-7]
+    rules: [DSP-7, DSP-11, BUD-8]
   - id: model_grant_pending
     since: v0.2
     meaning: The task waits for a decision on a grant of a stronger model.

@@ -79,6 +79,15 @@ spec:
       data_class: internal
       # From v0.2 (PRV-4): the person responsible for the data agreed to show it to the model.
       model_exposure: full
+    - id: sandbox-data
+      title: "Datasets that the sandbox may copy (v0.2, flows 2 and 4)"
+      description: "The sandbox gets a redacted copy of a slice; the source does not change (SBX-2)."
+      host: db1
+      read_by: [sandbox/dataset_get]
+      list: sandbox_datasets
+      format: id
+      values: [ctd-2026, coastline]
+      data_class: internal
     - id: data-raw
       title: "Raw data directory on db1"
       host: db1
