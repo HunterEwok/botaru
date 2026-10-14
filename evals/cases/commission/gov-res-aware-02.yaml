@@ -1,4 +1,4 @@
-# evals/cases/commission/gov-res-aware-02.yaml (catalog: evals/README.md)
+# evals/cases/commission/gov-res-aware-02.yaml (catalog: evals/catalog.yaml)
 id: gov-res-aware-02
 kind: quality
 blocking: false

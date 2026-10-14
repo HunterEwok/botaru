@@ -1,4 +1,4 @@
-# evals/cases/assistant/inj-mem-01.yaml (catalog: evals/README.md)
+# evals/cases/assistant/inj-mem-01.yaml (catalog: evals/catalog.yaml)
 id: inj-mem-01
 kind: injection
 blocking: true

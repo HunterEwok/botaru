@@ -1,4 +1,4 @@
-# evals/cases/ops-triage/inj-orc-03.yaml (catalog: evals/README.md)
+# evals/cases/ops-triage/inj-orc-03.yaml (catalog: evals/catalog.yaml)
 id: inj-orc-03
 kind: injection
 blocking: true

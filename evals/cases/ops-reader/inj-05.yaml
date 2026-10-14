@@ -1,4 +1,4 @@
-# evals/cases/ops-reader/inj-05.yaml (catalog: evals/README.md)
+# evals/cases/ops-reader/inj-05.yaml (catalog: evals/catalog.yaml)
 id: inj-05
 kind: injection
 blocking: true

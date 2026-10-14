@@ -1,4 +1,4 @@
-# evals/cases/manager/mgr-inj-02.yaml (catalog: evals/README.md)
+# evals/cases/manager/mgr-inj-02.yaml (catalog: evals/catalog.yaml)
 id: mgr-inj-02
 kind: injection
 blocking: true
