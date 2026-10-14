@@ -1,5 +1,7 @@
 # Lifecycle: proposal
 
+Kind: `improvement` (the kinds are listed in [the lifecycle index](README.md)).
+
 ## In short
 
 A proposal (`Proposal`) is born at a successful `complete` of an analysis or aggregator attempt, passes code checks and the commission of its tenant, is shown to people, is executed by the farm's ordinary path and is closed by execution, by a refusal of people or by a deadline. Only code changes the state, by this table, and only a person presses the buttons (PRP-6). A refusal at creation creates no record: a `proposal.rejected.v1` event with a reason remains. The audit sample branch shows people some of the proposals rejected and parked by the commission as a blind card. The change trial after "Accept" runs its own cycle, see [trial.md](trial.md); how the whole improvement cycle works is described in [improvements.md](../../docs/improvements.md).

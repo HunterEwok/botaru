@@ -178,3 +178,93 @@ entries:
     reason: >-
       A tool with billing: external must name price_eur, so that the core can reserve and charge its price (BUD-5).
     decisions: [D-114]
+  - schema: spec/model/e4-describe-response.schema.json
+    change: removed
+    removed: 2026-10-14
+    reason: >-
+      The agent runtime E4 describes how the core is built, not a boundary with foreign code (C10, D-114); no fixture, CI check or Go code checks this schema. The agent worker declares the same values in the runtime field of P1 hello (p1-hello-request).
+    decisions: [D-114]
+  - schema: spec/model/run-request.schema.json
+    change: removed
+    removed: 2026-10-14
+    reason: >-
+      The agent runtime E4 describes how the core is built, not a boundary with foreign code (C10, D-114); no fixture, CI check or Go code checks this schema. What the runtime needs crosses the P1 boundary in the attempt work item of P1 claim (work-item), now with reply_locale and skills.
+    decisions: [D-114]
+  - schema: spec/model/run-outcome.schema.json
+    change: removed
+    removed: 2026-10-14
+    reason: >-
+      The agent runtime E4 describes how the core is built, not a boundary with foreign code (C10, D-114); no fixture, CI check or Go code checks this schema. The result goes back with P1 complete or fail.
+    decisions: [D-114]
+  - schema: spec/model/e4-cancel-request.schema.json
+    change: removed
+    removed: 2026-10-14
+    reason: >-
+      The agent runtime E4 describes how the core is built, not a boundary with foreign code (C10, D-114); no fixture, CI check or Go code checks this schema. The signal is cancel_requested in the P1 heartbeat answer.
+    decisions: [D-114]
+  - schema: spec/model/test-control-response.schema.json
+    change: removed
+    removed: 2026-10-14
+    reason: >-
+      The test-control port describes how the core is built, not a boundary with foreign code (C10, D-114); no fixture, CI check or Go code checks this schema.
+    decisions: [D-114]
+  - schema: spec/model/test-function-eval-response.schema.json
+    change: removed
+    removed: 2026-10-14
+    reason: >-
+      The test-control port describes how the core is built, not a boundary with foreign code (C10, D-114); no fixture, CI check or Go code checks this schema.
+    decisions: [D-114]
+  - schema: spec/model/test-store-fault-request.schema.json
+    change: removed
+    removed: 2026-10-14
+    reason: >-
+      The test-control port describes how the core is built, not a boundary with foreign code (C10, D-114); no fixture, CI check or Go code checks this schema.
+    decisions: [D-114]
+  - schema: spec/model/test-authorize-eval-request.schema.json
+    change: removed
+    removed: 2026-10-14
+    reason: >-
+      The test-control port describes how the core is built, not a boundary with foreign code (C10, D-114); no fixture, CI check or Go code checks this schema. The permission table rows keep their authz-request and authz-decision schemas.
+    decisions: [D-114]
+  - schema: spec/model/test-event-inject-request.schema.json
+    change: removed
+    removed: 2026-10-14
+    reason: >-
+      The test-control port describes how the core is built, not a boundary with foreign code (C10, D-114); no fixture, CI check or Go code checks this schema.
+    decisions: [D-114]
+  - schema: spec/model/campaign-item.schema.json
+    change: removed
+    removed: 2026-10-14
+    reason: >-
+      A record of the task store C1, which describes how the core is built, not a boundary with foreign code (C10, D-114); only the C1 sheet named it, and no fixture, CI check or Go code checks it.
+    decisions: [D-114]
+  - schema: spec/model/inbox-entry.schema.json
+    change: removed
+    removed: 2026-10-14
+    reason: >-
+      A record of the task store C1, which describes how the core is built, not a boundary with foreign code (C10, D-114); only the C1 sheet named it, and no fixture, CI check or Go code checks it.
+    decisions: [D-114]
+  - schema: spec/model/observation-point.schema.json
+    change: removed
+    removed: 2026-10-14
+    reason: >-
+      A record of the task store C1, which describes how the core is built, not a boundary with foreign code (C10, D-114); only the C1 sheet named it, and no fixture, CI check or Go code checks it.
+    decisions: [D-114]
+  - schema: spec/model/report-digest.schema.json
+    change: removed
+    removed: 2026-10-14
+    reason: >-
+      A record of the task store C1, which describes how the core is built, not a boundary with foreign code (C10, D-114); only the C1 sheet named it, and no fixture, CI check or Go code checks it.
+    decisions: [D-114]
+  - schema: spec/model/review-input.schema.json
+    change: removed
+    removed: 2026-10-14
+    reason: >-
+      A record of the task store C1, which describes how the core is built, not a boundary with foreign code (C10, D-114); only the C1 sheet named it, and no fixture, CI check or Go code checks it.
+    decisions: [D-114]
+  - schema: spec/model/work-item.schema.json
+    change: breaking
+    removed: 2026-10-14
+    reason: >-
+      The attempt work item of P1 claim carries reply_locale (DLV-18) and skills (SKL-2), which the removed E4 run request carried; the P1 boundary now holds what crosses it (C10, D-114).
+    decisions: [D-114]

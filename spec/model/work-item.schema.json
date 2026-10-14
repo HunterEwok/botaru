@@ -151,7 +151,66 @@
                 }
               }
             },
-            "origin": false
+            "origin": false,
+            "skills": {
+              "x-botaru-version": "v0.2",
+              "description": "The skills of the role whose tree hash matches the core copy, as references: name, description and the hash of the skill directory tree (SKL-2, spec/hashing.md).",
+              "type": "array",
+              "maxItems": 20,
+              "items": {
+                "type": "object",
+                "required": [
+                  "name",
+                  "description",
+                  "sha256"
+                ],
+                "properties": {
+                  "name": {
+                    "$ref": "urn:botaru:schema:common:1#/$defs/name"
+                  },
+                  "description": {
+                    "type": "string",
+                    "maxLength": 300
+                  },
+                  "sha256": {
+                    "type": "string",
+                    "pattern": "^[0-9a-f]{64}$",
+                    "maxLength": 64
+                  }
+                }
+              }
+            },
+            "reply_locale": {
+              "x-botaru-version": "v0.2",
+              "description": "Language of the model answer chosen by the core by the locale order; the model does not choose it (DLV-18).",
+              "$ref": "urn:botaru:schema:common:1#/$defs/locale"
+            },
+            "limits": {
+              "description": "Limits of the runtime run of this attempt, set by the core; the runtime stops at the first one it reaches (BUD-9). Without them the agent process applies its own configured limits. Money does not depend on them: P4 reserves and charges every call within the tenant's limits whatever the runtime does (BUD-2, BUD-3)..",
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "max_turns",
+                "run_max_input_tokens",
+                "deadline"
+              ],
+              "properties": {
+                "max_turns": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "description": "Model turns of the run."
+                },
+                "run_max_input_tokens": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "description": "Input tokens of the whole run (BUD-9); for a manager read, the remainder of its per-read limit."
+                },
+                "deadline": {
+                  "$ref": "urn:botaru:schema:common:1#/$defs/datetime",
+                  "description": "When the run must end, not later than the lease deadline."
+                }
+              }
+            }
           }
         }
       }

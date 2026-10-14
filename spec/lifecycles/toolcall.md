@@ -1,5 +1,7 @@
 # Lifecycle: tool call
 
+Kind: `toolcall` (the kinds are listed in [the lifecycle index](README.md)).
+
 ## In short
 
 A tool call (`ToolCall`) is a core record of one call to a plugin tool. A read call is created by P3 `tools/call` from a live agent attempt; a write call is created only by the core: in the transaction of an approval, from the argument snapshot (APR-7), or on a call of the built-in tool P3 `service/control` for a service with `via: host`, together with the audit record `service_grant` (APR-18). The core checks the call, computes its target `target` (the tenant, the plugin, the placement, the machine from the `target_from` argument of the tool manifest, or any toolhost with `target: any`) and queues it; the toolhost of this target executes it, picking the call up through P1 `claim` as work of kind `toolcall` (TEN-3a). A call does not wait for an executor longer than `start_by` (30 s): without a toolhost it ends with `error(no_executor)` (DLV-16). The core never retries a call: the model sees a read error and decides itself, and a write call is executed at most once (DLV-1, APR-7). The model does not see write tools at all (APR-1).

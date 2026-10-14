@@ -1,6 +1,6 @@
 # Operation map of the ports. Edited together with the port sheets spec/ports/*.md.
 registry: operations
-version: 1
+version: 2
 description: 'Operation map of the ports: one row per sheet operation. id is <port>.<operation>; port is P1-P4, C1-C4, E1-E5 or
   T (the test-control port spec/ports/test-control.md); since is the skeleton version; request and response are the name of the schema spec/model/<name>.schema.json
   (null if there is no schema, and then note says why); rules are rule numbers. For edge operations request is what the edge receives
@@ -8,7 +8,7 @@ description: 'Operation map of the ports: one row per sheet operation. id is <po
   and carries the Botaru-Lease header, or a string if only for some callers), on_behalf (the channel acts on behalf of a person:
   the headers Botaru-On-Behalf and Botaru-Chat), credential (which handle is in Authorization instead of the worker token), idempotent_by
   (the idempotency key), body (a special body shape in the binding), binding (a binding other than HTTP), transport (how an edge operation goes
-  through P1 or inside a process), wire (false for operations inside the core). profiles are the conformance profiles that need the operation: the union of the profiles of its rules, core for a row without rules. The HTTP path of a P1 and P2 operation is derived from the id by spec/bindings/http/README.md.'
+  through P1 or inside a process), wire (false for operations inside the core). profiles are the conformance profiles that need the operation: the union of the profiles of its rules, core for a row without rules. The HTTP path of a P1 and P2 operation is derived from the id by spec/bindings/http/README.md. contract: false marks a row of a port that describes how the core is built, not a boundary with foreign code (P2, C1-C4, E2, E4 and T; C10, D-114): its schemas are implementation schemas of the core and farmctl or core test schemas, not port contracts; a row without the field is a contract boundary (P1, P3, P4, E1, E3, E5). operator_only (P2 only) marks the closed list of operator operations of PRM-14: true when the whole operation is the operator''s through farmctl, or a string that names the case in which it is.'
 source: spec/ports/README.md
 entries:
   - id: P1.hello
@@ -342,6 +342,8 @@ entries:
     response: p2-apply-response
     rules: [MAN-1, MAN-2, MAN-6, AUD-1, PRM-13, PRM-14, CAP-6]
     profiles: [core]
+    contract: false
+    operator_only: true
   - id: P2.status
     port: P2
     op: status
@@ -350,6 +352,7 @@ entries:
     response: p2-status-response
     rules: [MAN-2, HLD-1, MAN-8, MGR-42, STA-3]
     profiles: [core, manager, messaging]
+    contract: false
   - id: P2.principal.add
     port: P2
     op: principal.add
@@ -358,6 +361,8 @@ entries:
     response: done-response
     rules: [IDN-4, PRM-7, PRM-13, PRM-14]
     profiles: [core]
+    contract: false
+    operator_only: 'for a person with a privileged group, an external program (api:<key_id>) and system'
   - id: P2.principal.off
     port: P2
     op: principal.off
@@ -366,6 +371,8 @@ entries:
     response: done-response
     rules: [IDN-4, APR-6, LCY-8]
     profiles: [core]
+    contract: false
+    operator_only: 'for a person with a privileged group, an external program (api:<key_id>) and system'
   - id: P2.principal.on
     port: P2
     op: principal.on
@@ -374,6 +381,8 @@ entries:
     response: done-response
     rules: [IDN-4, LCY-8]
     profiles: [core]
+    contract: false
+    operator_only: 'for a person with a privileged group, an external program (api:<key_id>) and system'
   - id: P2.principal.set_identity
     port: P2
     op: principal.set_identity
@@ -382,6 +391,8 @@ entries:
     response: done-response
     rules: [IDN-4, LCY-8]
     profiles: [core]
+    contract: false
+    operator_only: 'for a person with a privileged group, an external program (api:<key_id>) and system'
   - id: P2.invite.create
     port: P2
     op: invite.create
@@ -390,6 +401,8 @@ entries:
     response: p2-invite-response
     rules: [PRM-7, PRM-13]
     profiles: [core]
+    contract: false
+    operator_only: 'into a privileged group'
   - id: P2.invite.confirm
     port: P2
     op: invite.confirm
@@ -398,6 +411,8 @@ entries:
     response: p2-invite-response
     rules: [PRM-13]
     profiles: [core]
+    contract: false
+    operator_only: 'into a privileged group'
   - id: P2.invite.revoke
     port: P2
     op: invite.revoke
@@ -406,6 +421,8 @@ entries:
     response: p2-invite-response
     rules: [PRM-7]
     profiles: [core]
+    contract: false
+    operator_only: 'into a privileged group'
   - id: P2.grant
     port: P2
     op: grant
@@ -414,6 +431,8 @@ entries:
     response: done-response
     rules: [PRM-7, PRM-13, APR-6, LCY-8]
     profiles: [core]
+    contract: false
+    operator_only: 'for a privileged group'
   - id: P2.ungrant
     port: P2
     op: ungrant
@@ -422,6 +441,8 @@ entries:
     response: done-response
     rules: [PRM-7, APR-6]
     profiles: [core]
+    contract: false
+    operator_only: 'for a privileged group'
   - id: P2.chat.bind
     port: P2
     op: chat.bind
@@ -430,6 +451,8 @@ entries:
     response: done-response
     rules: [DLV-7, REP-7, PRM-14, REP-10]
     profiles: [core, messaging]
+    contract: false
+    operator_only: true
   - id: P2.worker.enroll
     port: P2
     op: worker.enroll
@@ -438,6 +461,8 @@ entries:
     response: p2-worker-enroll-response
     rules: [TEN-4, DEP-2, IDN-4, IDN-5, IDN-8, DSP-10]
     profiles: [core, governance]
+    contract: false
+    operator_only: true
   - id: P2.worker.drain
     port: P2
     op: worker.drain
@@ -446,6 +471,8 @@ entries:
     response: done-response
     rules: [HLD-2, HLD-3]
     profiles: [core]
+    contract: false
+    operator_only: true
   - id: P2.worker.revoke
     port: P2
     op: worker.revoke
@@ -454,6 +481,8 @@ entries:
     response: done-response
     rules: [IDN-4, IDN-8]
     profiles: [core, governance]
+    contract: false
+    operator_only: true
   - id: P2.worker.rotate
     port: P2
     op: worker.rotate
@@ -462,6 +491,8 @@ entries:
     response: p2-worker-rotate-response
     rules: [IDN-4]
     profiles: [core]
+    contract: false
+    operator_only: true
   - id: P2.worker.unblock
     port: P2
     op: worker.unblock
@@ -470,6 +501,8 @@ entries:
     response: done-response
     rules: [DEP-2, INJ-2]
     profiles: [core]
+    contract: false
+    operator_only: true
   - id: P2.budget.set
     port: P2
     op: budget.set
@@ -478,6 +511,8 @@ entries:
     response: done-response
     rules: [MAN-5, PRM-14]
     profiles: [core]
+    contract: false
+    operator_only: true
   - id: P2.task.show
     port: P2
     op: task.show
@@ -486,6 +521,7 @@ entries:
     response: p2-task-show-response
     rules: [PRM-9, PRM-15]
     profiles: [core]
+    contract: false
   - id: P2.task.cancel
     port: P2
     op: task.cancel
@@ -494,6 +530,7 @@ entries:
     response: done-response
     rules: [PRM-9, PRM-15, APR-6]
     profiles: [core]
+    contract: false
   - id: P2.task.list
     port: P2
     op: task.list
@@ -502,6 +539,7 @@ entries:
     response: p2-task-list-response
     rules: [PRM-15]
     profiles: [core]
+    contract: false
   - id: P2.team.tasks
     port: P2
     op: team.tasks
@@ -510,6 +548,7 @@ entries:
     response: p2-task-list-response
     rules: [PRM-15]
     profiles: [core]
+    contract: false
   - id: P2.about
     port: P2
     op: about
@@ -518,6 +557,7 @@ entries:
     response: p2-task-list-response
     rules: [PRM-15]
     profiles: [core]
+    contract: false
   - id: P2.task.redrive
     port: P2
     op: task.redrive
@@ -526,6 +566,8 @@ entries:
     response: done-response
     rules: [DLV-4, APR-7, PRM-14]
     profiles: [core]
+    contract: false
+    operator_only: true
   - id: P2.delivery.redrive
     port: P2
     op: delivery.redrive
@@ -534,6 +576,8 @@ entries:
     response: done-response
     rules: [DLV-4, PRM-14]
     profiles: [core]
+    contract: false
+    operator_only: true
   - id: P2.deadletter.list
     port: P2
     op: deadletter.list
@@ -542,6 +586,7 @@ entries:
     response: p2-deadletter-list-response
     rules: [DLV-4, CAP-4]
     profiles: [core]
+    contract: false
   - id: P2.audit.verify
     port: P2
     op: audit.verify
@@ -550,6 +595,8 @@ entries:
     response: p2-audit-verify-response
     rules: [AUD-6]
     profiles: [core]
+    contract: false
+    operator_only: true
   - id: P2.doctor
     port: P2
     op: doctor
@@ -558,6 +605,7 @@ entries:
     response: p2-doctor-response
     rules: [OBS-4, MON-2, MON-4, MON-11, HLD-1, CAP-5, RET-7, GW-9, RET-8, DEP-11]
     profiles: [core, monitor]
+    contract: false
   - id: P2.health
     port: P2
     op: health
@@ -566,6 +614,7 @@ entries:
     response: p2-health-response
     rules: [MON-2, MON-11, CAP-5, OBS-4, OBS-9, TEN-2, LCY-6]
     profiles: [core, monitor]
+    contract: false
   - id: P2.hold.set
     port: P2
     op: hold.set
@@ -574,6 +623,8 @@ entries:
     response: done-response
     rules: [HLD-1, HLD-2, HLD-3, PRM-14, TEN-1]
     profiles: [core]
+    contract: false
+    operator_only: 'a hold of scope farm or seat'
   - id: P2.hold.release
     port: P2
     op: hold.release
@@ -582,6 +633,8 @@ entries:
     response: done-response
     rules: [HLD-2, HLD-1]
     profiles: [core]
+    contract: false
+    operator_only: 'a hold of scope farm or seat'
   - id: P2.hold.list
     port: P2
     op: hold.list
@@ -590,6 +643,7 @@ entries:
     response: p2-hold-list-response
     rules: [HLD-1]
     profiles: [core]
+    contract: false
   - id: P2.proposal.list
     port: P2
     op: proposal.list
@@ -598,6 +652,7 @@ entries:
     response: p2-proposal-list-response
     rules: [PRP-4, DIG-1]
     profiles: [insights]
+    contract: false
   - id: P2.proposal.show
     port: P2
     op: proposal.show
@@ -606,6 +661,7 @@ entries:
     response: p2-proposal-show-response
     rules: [PRP-4, PRP-20]
     profiles: [insights]
+    contract: false
   - id: P2.proposal.link_commit
     port: P2
     op: proposal.link_commit
@@ -614,6 +670,7 @@ entries:
     response: done-response
     rules: [PRP-19, PRP-8]
     profiles: [insights]
+    contract: false
   - id: P2.commission.status
     port: P2
     op: commission.status
@@ -622,6 +679,7 @@ entries:
     response: p2-commission-status-response
     rules: [COM-6, COM-7, COM-8, COM-10, DIG-5]
     profiles: [insights]
+    contract: false
   - id: P2.obs.series
     port: P2
     op: obs.series
@@ -630,6 +688,7 @@ entries:
     response: p2-obs-series-response
     rules: [OBV-3, OBV-4]
     profiles: [insights]
+    contract: false
   - id: P2.erasure.request
     port: P2
     op: erasure.request
@@ -638,6 +697,7 @@ entries:
     response: done-response
     rules: [RET-7, RET-5, RET-6]
     profiles: [core]
+    contract: false
   - id: P2.erasure.status
     port: P2
     op: erasure.status
@@ -646,6 +706,7 @@ entries:
     response: deletion-request
     rules: [RET-7]
     profiles: [core]
+    contract: false
   - id: P2.erasure.list
     port: P2
     op: erasure.list
@@ -654,6 +715,7 @@ entries:
     response: p2-erasure-list-response
     rules: [RET-7]
     profiles: [core]
+    contract: false
   - id: P2.erasure.retry
     port: P2
     op: erasure.retry
@@ -662,6 +724,7 @@ entries:
     response: done-response
     rules: [RET-7]
     profiles: [core]
+    contract: false
   - id: P2.principal.data_request
     port: P2
     op: principal.data_request
@@ -670,6 +733,7 @@ entries:
     response: done-response
     rules: [SEC-11, RET-7, RET-4]
     profiles: [core]
+    contract: false
   - id: P2.erasure.match
     port: P2
     op: erasure.match
@@ -678,6 +742,7 @@ entries:
     response: done-response
     rules: [SEC-11, RET-7, RET-4]
     profiles: [core]
+    contract: false
   - id: P2.principal.offboard
     port: P2
     op: principal.offboard
@@ -687,6 +752,8 @@ entries:
     rules: [RET-7, MEM-4, LCY-3, LCY-8, PRM-14, IDN-13]
     profiles: [core, governance]
     note: 'v0.1 by the rules LCY-8, MEM-4, RET-7, IDN-13 and PRM-14: the offboarded state, deletion of the identity links (D-98), an erasure request (tenant, subject), the principal_left notice. Part of rule LCY-3 (version v0.2): the principal.offboarded event'
+    contract: false
+    operator_only: 'for a person with a privileged group'
   - id: P2.restore.complete
     port: P2
     op: restore.complete
@@ -695,6 +762,8 @@ entries:
     response: done-response
     rules: [RET-6]
     profiles: [core]
+    contract: false
+    operator_only: true
   - id: P2.backup.report
     port: P2
     op: backup.report
@@ -703,6 +772,7 @@ entries:
     response: done-response
     rules: [RET-5, RET-8]
     profiles: [core]
+    contract: false
   - id: P2.campaign.list
     port: P2
     op: campaign.list
@@ -711,6 +781,7 @@ entries:
     response: p2-list-response
     rules: [ORC-1]
     profiles: [campaign]
+    contract: false
   - id: P2.campaign.show
     port: P2
     op: campaign.show
@@ -719,6 +790,7 @@ entries:
     response: campaign
     rules: [ORC-1]
     profiles: [campaign]
+    contract: false
   - id: P2.campaign.control
     port: P2
     op: campaign.control
@@ -727,6 +799,7 @@ entries:
     response: p1-campaign-control-response
     rules: [ORC-1]
     profiles: [campaign]
+    contract: false
   - id: P2.campaign.retry_failed
     port: P2
     op: campaign.retry_failed
@@ -735,6 +808,7 @@ entries:
     response: done-response
     rules: [ORC-1]
     profiles: [campaign]
+    contract: false
   - id: P2.script.list
     port: P2
     op: script.list
@@ -743,6 +817,7 @@ entries:
     response: p2-list-response
     rules: [SCR-5]
     profiles: [campaign]
+    contract: false
   - id: P2.script.show
     port: P2
     op: script.show
@@ -751,6 +826,7 @@ entries:
     response: script-run
     rules: [SCR-5]
     profiles: [campaign]
+    contract: false
   - id: P2.script.cancel
     port: P2
     op: script.cancel
@@ -759,6 +835,7 @@ entries:
     response: done-response
     rules: [SCR-11]
     profiles: [campaign]
+    contract: false
   - id: P2.seat.assign
     port: P2
     op: seat.assign
@@ -767,6 +844,8 @@ entries:
     response: done-response
     rules: [IDN-10, MGR-1, PRM-14]
     profiles: [core, manager, governance]
+    contract: false
+    operator_only: true
   - id: P2.seat.vacate
     port: P2
     op: seat.vacate
@@ -775,6 +854,8 @@ entries:
     response: done-response
     rules: [IDN-10, MGR-1, PRM-14]
     profiles: [core, manager, governance]
+    contract: false
+    operator_only: true
   - id: P2.seat.resume
     port: P2
     op: seat.resume
@@ -783,6 +864,8 @@ entries:
     response: done-response
     rules: [GOV-22, IDN-10, PRM-14]
     profiles: [core, governance]
+    contract: false
+    operator_only: true
   - id: P2.control.revert
     port: P2
     op: control.revert
@@ -791,6 +874,8 @@ entries:
     response: done-response
     rules: [MGR-15, MGR-39, PRM-14, PRM-15]
     profiles: [core, manager]
+    contract: false
+    operator_only: 'a revert for a period (since)'
   - id: P2.control.list
     port: P2
     op: control.list
@@ -799,6 +884,7 @@ entries:
     response: p2-list-response
     rules: [MGR-9]
     profiles: [manager]
+    contract: false
   - id: P2.control.apply
     port: P2
     op: control.apply
@@ -807,6 +893,8 @@ entries:
     response: done-response
     rules: [MGR-9, MGR-13, PRM-14]
     profiles: [core, manager]
+    contract: false
+    operator_only: 'pin_task and preempt from people'
   - id: P2.incident.list
     port: P2
     op: incident.list
@@ -815,6 +903,7 @@ entries:
     response: p2-list-response
     rules: [MGR-8]
     profiles: [manager]
+    contract: false
   - id: P2.incident.show
     port: P2
     op: incident.show
@@ -823,6 +912,7 @@ entries:
     response: incident
     rules: [MGR-8]
     profiles: [manager]
+    contract: false
   - id: P2.incident.ack
     port: P2
     op: incident.ack
@@ -831,6 +921,7 @@ entries:
     response: done-response
     rules: [MGR-8]
     profiles: [manager]
+    contract: false
   - id: P2.incident.close
     port: P2
     op: incident.close
@@ -839,6 +930,7 @@ entries:
     response: done-response
     rules: [MGR-8]
     profiles: [manager]
+    contract: false
   - id: P2.incident.dismiss
     port: P2
     op: incident.dismiss
@@ -847,6 +939,7 @@ entries:
     response: done-response
     rules: [MGR-8, GOV-13]
     profiles: [manager, governance]
+    contract: false
   - id: P2.manager.direct
     port: P2
     op: manager.direct
@@ -855,6 +948,7 @@ entries:
     response: done-response
     rules: [MGR-4]
     profiles: [manager]
+    contract: false
   - id: P2.manager.cost
     port: P2
     op: manager.cost
@@ -863,6 +957,7 @@ entries:
     response: p2-manager-cost-response
     rules: [MGR-28]
     profiles: [manager]
+    contract: false
   - id: P2.manager.reads
     port: P2
     op: manager.reads
@@ -871,6 +966,7 @@ entries:
     response: p2-manager-reads-response
     rules: [AUD-7]
     profiles: [core]
+    contract: false
   - id: P2.bot.list
     port: P2
     op: bot.list
@@ -879,6 +975,7 @@ entries:
     response: p2-list-response
     rules: [IDN-8, IDN-9]
     profiles: [governance]
+    contract: false
   - id: P2.bot.show
     port: P2
     op: bot.show
@@ -887,6 +984,8 @@ entries:
     response: bot
     rules: [IDN-8, IDN-9, PRM-14]
     profiles: [core, governance]
+    contract: false
+    operator_only: 'with --sealed'
   - id: P2.bot.retire
     port: P2
     op: bot.retire
@@ -895,6 +994,8 @@ entries:
     response: done-response
     rules: [IDN-11, PRM-14]
     profiles: [core, governance]
+    contract: false
+    operator_only: true
   - id: P2.audit.query
     port: P2
     op: audit.query
@@ -903,6 +1004,7 @@ entries:
     response: p2-audit-query-response
     rules: [AUD-7, AUD-1, AUD-2]
     profiles: [core]
+    contract: false
   - id: P2.spend.reconcile
     port: P2
     op: spend.reconcile
@@ -911,6 +1013,8 @@ entries:
     response: done-response
     rules: [BUD-10, PRM-14]
     profiles: [core]
+    contract: false
+    operator_only: true
   - id: P2.core.drain
     port: P2
     op: core.drain
@@ -919,6 +1023,8 @@ entries:
     response: done-response
     rules: [LCY-6, PRM-14, MON-11]
     profiles: [core, monitor]
+    contract: false
+    operator_only: true
   - id: P2.service.control
     port: P2
     op: service.control
@@ -927,6 +1033,7 @@ entries:
     response: service-control-result
     rules: [MON-8, APR-18, PRM-15, PRM-18]
     profiles: [core]
+    contract: false
   - id: P2.dispatch.explain
     port: P2
     op: dispatch.explain
@@ -935,6 +1042,7 @@ entries:
     response: p2-dispatch-explain-response
     rules: [DSP-9]
     profiles: [core]
+    contract: false
   - id: P2.dispatch.queue
     port: P2
     op: dispatch.queue
@@ -943,6 +1051,7 @@ entries:
     response: p2-dispatch-queue-response
     rules: [DSP-9]
     profiles: [core]
+    contract: false
   - id: P2.model_grant.list
     port: P2
     op: model_grant.list
@@ -951,6 +1060,7 @@ entries:
     response: p2-model-grant-list-response
     rules: [MGR-17]
     profiles: [manager]
+    contract: false
   - id: P2.model_grant.issue
     port: P2
     op: model_grant.issue
@@ -959,6 +1069,7 @@ entries:
     response: p2-model-grant-response
     rules: [MGR-18]
     profiles: [manager]
+    contract: false
   - id: P2.model_grant.revoke
     port: P2
     op: model_grant.revoke
@@ -967,6 +1078,7 @@ entries:
     response: done-response
     rules: [MGR-18]
     profiles: [manager]
+    contract: false
   - id: P2.escalation.list
     port: P2
     op: escalation.list
@@ -976,6 +1088,7 @@ entries:
     rules: [MGR-5]
     profiles: [manager]
     note: 'v0.2: the schemas will appear with v0.2'
+    contract: false
   - id: P2.escalation.show
     port: P2
     op: escalation.show
@@ -985,6 +1098,7 @@ entries:
     rules: [MGR-5]
     profiles: [manager]
     note: 'v0.2: the schemas will appear with v0.2'
+    contract: false
   - id: P2.governance.list
     port: P2
     op: governance.list
@@ -993,6 +1107,7 @@ entries:
     response: p2-list-response
     rules: [GOV-12, GOV-21]
     profiles: [governance]
+    contract: false
   - id: P2.governance.show
     port: P2
     op: governance.show
@@ -1001,6 +1116,7 @@ entries:
     response: governance-case
     rules: [GOV-12, GOV-21]
     profiles: [governance]
+    contract: false
   - id: P2.governance.cancel
     port: P2
     op: governance.cancel
@@ -1009,6 +1125,7 @@ entries:
     response: done-response
     rules: [GOV-12, GOV-14]
     profiles: [governance]
+    contract: false
   - id: P2.attribution.list
     port: P2
     op: attribution.list
@@ -1018,6 +1135,7 @@ entries:
     rules: [GOV-13]
     profiles: [governance]
     note: 'v0.2: the schemas will appear with v0.2'
+    contract: false
   - id: P2.attribution.create
     port: P2
     op: attribution.create
@@ -1027,6 +1145,7 @@ entries:
     rules: [GOV-13]
     profiles: [governance]
     note: 'v0.2: the schemas will appear with v0.2'
+    contract: false
   - id: P2.tenant.suspend
     port: P2
     op: tenant.suspend
@@ -1035,6 +1154,8 @@ entries:
     response: done-response
     rules: [LCY-1]
     profiles: [core]
+    contract: false
+    operator_only: true
   - id: P2.tenant.offboard
     port: P2
     op: tenant.offboard
@@ -1043,6 +1164,8 @@ entries:
     response: done-response
     rules: [LCY-1]
     profiles: [core]
+    contract: false
+    operator_only: true
   - id: P2.tenant.delete
     port: P2
     op: tenant.delete
@@ -1051,6 +1174,8 @@ entries:
     response: done-response
     rules: [LCY-1, RET-3]
     profiles: [core]
+    contract: false
+    operator_only: true
   - id: P2.tenant.export
     port: P2
     op: tenant.export
@@ -1059,6 +1184,8 @@ entries:
     response: done-response
     rules: [LCY-2, SEC-10]
     profiles: [core]
+    contract: false
+    operator_only: true
   - id: P2.principal.export
     port: P2
     op: principal.export
@@ -1067,6 +1194,8 @@ entries:
     response: done-response
     rules: [LCY-2, SEC-10]
     profiles: [core]
+    contract: false
+    operator_only: true
   - id: P2.msg.list
     port: P2
     op: msg.list
@@ -1075,6 +1204,7 @@ entries:
     response: p2-msg-list-response
     rules: [MSG-18, MSG-3]
     profiles: [messaging]
+    contract: false
   - id: P2.msg.show
     port: P2
     op: msg.show
@@ -1083,6 +1213,7 @@ entries:
     response: p2-msg-show-response
     rules: [MSG-18, MSG-3]
     profiles: [messaging]
+    contract: false
   - id: P2.inbox.status
     port: P2
     op: inbox.status
@@ -1091,6 +1222,7 @@ entries:
     response: p2-inbox-status-response
     rules: [MSG-18, MSG-3]
     profiles: [messaging]
+    contract: false
   - id: P2.task.journal
     port: P2
     op: task.journal
@@ -1100,6 +1232,8 @@ entries:
     rules: [AUD-4]
     profiles: [debug]
     note: 'v0.2: the schemas will appear with v0.2'
+    contract: false
+    operator_only: true
   - id: P2.task.replay
     port: P2
     op: task.replay
@@ -1109,6 +1243,8 @@ entries:
     rules: [APR-8, AUD-4]
     profiles: [debug]
     note: 'v0.2: the schemas will appear with v0.2'
+    contract: false
+    operator_only: true
   - id: P2.tenant.privacy_report
     port: P2
     op: tenant.privacy_report
@@ -1118,6 +1254,7 @@ entries:
     rules: [SEC-12]
     profiles: [core]
     note: 'v0.2: the schemas will appear with v0.2'
+    contract: false
   - id: P2.secret.revoke
     port: P2
     op: secret.revoke
@@ -1126,6 +1263,8 @@ entries:
     response: done-response
     rules: [SEC-6, HLD-2, SEC-7]
     profiles: [core, connections]
+    contract: false
+    operator_only: true
   - id: P2.connection.register
     port: P2
     op: connection.register
@@ -1135,6 +1274,7 @@ entries:
     rules: [SEC-7]
     profiles: [connections]
     on_behalf: true
+    contract: false
   - id: P2.connection.revoke
     port: P2
     op: connection.revoke
@@ -1143,6 +1283,7 @@ entries:
     response: done-response
     rules: [SEC-7]
     profiles: [connections]
+    contract: false
   - id: P2.kb.upload
     port: P2
     op: kb.upload
@@ -1152,6 +1293,7 @@ entries:
     rules: [KNW-4, ART-4]
     profiles: [core, knowledge]
     note: 'v0.2: the schemas will appear with v0.2'
+    contract: false
   - id: P3.server/discover
     port: P3
     op: server/discover
@@ -1203,6 +1345,7 @@ entries:
     rules: [PRM-1, PRM-2, TEN-2, APR-4, HLD-1]
     profiles: [core]
     wire: false
+    contract: false
   - id: C2.catalog
     port: C2
     op: catalog
@@ -1213,6 +1356,7 @@ entries:
     profiles: [core]
     wire: false
     note: 'inside the core: the shape is the signature of the implementation function'
+    contract: false
   - id: C2.explain
     port: C2
     op: explain
@@ -1223,6 +1367,7 @@ entries:
     profiles: [core]
     wire: false
     note: 'inside the core: the shape is the signature of the implementation function'
+    contract: false
   - id: C1.enqueue
     port: C1
     op: enqueue
@@ -1233,6 +1378,7 @@ entries:
     profiles: [core]
     wire: false
     note: 'inside the core: the implementation sets the shape, the skeleton has no store binding, the operation is not on the wire'
+    contract: false
   - id: C1.claim
     port: C1
     op: claim
@@ -1243,6 +1389,7 @@ entries:
     profiles: [core]
     wire: false
     note: 'inside the core: the implementation sets the shape, the skeleton has no store binding, the operation is not on the wire'
+    contract: false
   - id: C1.heartbeat
     port: C1
     op: heartbeat
@@ -1253,6 +1400,7 @@ entries:
     profiles: [core]
     wire: false
     note: 'inside the core: the implementation sets the shape, the skeleton has no store binding, the operation is not on the wire'
+    contract: false
   - id: C1.complete
     port: C1
     op: complete
@@ -1263,6 +1411,7 @@ entries:
     profiles: [core]
     wire: false
     note: 'inside the core: the implementation sets the shape, the skeleton has no store binding, the operation is not on the wire'
+    contract: false
   - id: C1.fail
     port: C1
     op: fail
@@ -1273,6 +1422,7 @@ entries:
     profiles: [core]
     wire: false
     note: 'inside the core: the implementation sets the shape, the skeleton has no store binding, the operation is not on the wire'
+    contract: false
   - id: C1.release
     port: C1
     op: release
@@ -1283,6 +1433,7 @@ entries:
     profiles: [core]
     wire: false
     note: 'inside the core: the implementation sets the shape, the skeleton has no store binding, the operation is not on the wire'
+    contract: false
   - id: C1.cancel
     port: C1
     op: cancel
@@ -1293,6 +1444,7 @@ entries:
     profiles: [core]
     wire: false
     note: 'inside the core: the implementation sets the shape, the skeleton has no store binding, the operation is not on the wire'
+    contract: false
   - id: C1.lease.extend
     port: C1
     op: lease.extend
@@ -1303,6 +1455,7 @@ entries:
     profiles: [core]
     wire: false
     note: 'inside the core: the implementation sets the shape, the skeleton has no store binding, the operation is not on the wire'
+    contract: false
   - id: C1.reap
     port: C1
     op: reap
@@ -1313,6 +1466,7 @@ entries:
     profiles: [core]
     wire: false
     note: 'inside the core: the implementation sets the shape, the skeleton has no store binding, the operation is not on the wire'
+    contract: false
   - id: C1.approval.create
     port: C1
     op: approval.create
@@ -1323,6 +1477,7 @@ entries:
     profiles: [core]
     wire: false
     note: 'inside the core: the implementation sets the shape, the skeleton has no store binding, the operation is not on the wire'
+    contract: false
   - id: C1.approval.decide
     port: C1
     op: approval.decide
@@ -1333,6 +1488,7 @@ entries:
     profiles: [core]
     wire: false
     note: 'inside the core: the implementation sets the shape, the skeleton has no store binding, the operation is not on the wire'
+    contract: false
   - id: C1.service_grant
     port: C1
     op: service_grant
@@ -1343,6 +1499,7 @@ entries:
     profiles: [core]
     wire: false
     note: 'inside the core: the implementation sets the shape, the skeleton has no store binding, the operation is not on the wire'
+    contract: false
   - id: C1.meter.reserve
     port: C1
     op: meter.reserve
@@ -1353,6 +1510,7 @@ entries:
     profiles: [core]
     wire: false
     note: 'inside the core: the implementation sets the shape, the skeleton has no store binding, the operation is not on the wire'
+    contract: false
   - id: C1.meter.commit
     port: C1
     op: meter.commit
@@ -1363,6 +1521,7 @@ entries:
     profiles: [core]
     wire: false
     note: 'inside the core: the implementation sets the shape, the skeleton has no store binding, the operation is not on the wire'
+    contract: false
   - id: C1.meter.release
     port: C1
     op: meter.release
@@ -1373,6 +1532,7 @@ entries:
     profiles: [core]
     wire: false
     note: 'inside the core: the implementation sets the shape, the skeleton has no store binding, the operation is not on the wire'
+    contract: false
   - id: C1.event.append
     port: C1
     op: event.append
@@ -1383,6 +1543,7 @@ entries:
     profiles: [core]
     wire: false
     note: 'inside the core: the implementation sets the shape, the skeleton has no store binding, the operation is not on the wire'
+    contract: false
   - id: C1.event.read
     port: C1
     op: event.read
@@ -1393,6 +1554,7 @@ entries:
     profiles: [core]
     wire: false
     note: 'inside the core: the implementation sets the shape, the skeleton has no store binding, the operation is not on the wire'
+    contract: false
   - id: C1.audit.append
     port: C1
     op: audit.append
@@ -1403,6 +1565,7 @@ entries:
     profiles: [core]
     wire: false
     note: 'inside the core: the implementation sets the shape, the skeleton has no store binding, the operation is not on the wire'
+    contract: false
   - id: C1.msg.stage
     port: C1
     op: msg.stage
@@ -1413,6 +1576,7 @@ entries:
     profiles: [core]
     wire: false
     note: 'inside the core: the implementation sets the shape, the skeleton has no store binding, the operation is not on the wire'
+    contract: false
   - id: C1.msg.publish
     port: C1
     op: msg.publish
@@ -1423,6 +1587,7 @@ entries:
     profiles: [core]
     wire: false
     note: 'inside the core: the implementation sets the shape, the skeleton has no store binding, the operation is not on the wire'
+    contract: false
   - id: C1.msg.lease
     port: C1
     op: msg.lease
@@ -1433,6 +1598,7 @@ entries:
     profiles: [core]
     wire: false
     note: 'inside the core: the implementation sets the shape, the skeleton has no store binding, the operation is not on the wire'
+    contract: false
   - id: C1.msg.ack
     port: C1
     op: msg.ack
@@ -1443,6 +1609,7 @@ entries:
     profiles: [core]
     wire: false
     note: 'inside the core: the implementation sets the shape, the skeleton has no store binding, the operation is not on the wire'
+    contract: false
   - id: C1.msg.nack
     port: C1
     op: msg.nack
@@ -1453,6 +1620,7 @@ entries:
     profiles: [core]
     wire: false
     note: 'inside the core: the implementation sets the shape, the skeleton has no store binding, the operation is not on the wire'
+    contract: false
   - id: C1.msg.expire
     port: C1
     op: msg.expire
@@ -1463,6 +1631,7 @@ entries:
     profiles: [core]
     wire: false
     note: 'inside the core: the implementation sets the shape, the skeleton has no store binding, the operation is not on the wire'
+    contract: false
   - id: C1.state.put
     port: C1
     op: state.put
@@ -1473,6 +1642,7 @@ entries:
     profiles: [core]
     wire: false
     note: 'inside the core: the implementation sets the shape, the skeleton has no store binding, the operation is not on the wire'
+    contract: false
   - id: C1.hold.set
     port: C1
     op: hold.set
@@ -1483,6 +1653,7 @@ entries:
     profiles: [core]
     wire: false
     note: 'inside the core: the implementation sets the shape, the skeleton has no store binding, the operation is not on the wire'
+    contract: false
   - id: C1.hold.release
     port: C1
     op: hold.release
@@ -1493,6 +1664,7 @@ entries:
     profiles: [core]
     wire: false
     note: 'inside the core: the implementation sets the shape, the skeleton has no store binding, the operation is not on the wire'
+    contract: false
   - id: C1.file.put
     port: C1
     op: file.put
@@ -1503,6 +1675,7 @@ entries:
     profiles: [core]
     wire: false
     note: 'inside the core: the implementation sets the shape, the skeleton has no store binding, the operation is not on the wire'
+    contract: false
   - id: C1.file.get
     port: C1
     op: file.get
@@ -1513,6 +1686,7 @@ entries:
     profiles: [core]
     wire: false
     note: 'inside the core: the implementation sets the shape, the skeleton has no store binding, the operation is not on the wire'
+    contract: false
   - id: C1.file.stat
     port: C1
     op: file.stat
@@ -1523,6 +1697,7 @@ entries:
     profiles: [core]
     wire: false
     note: 'inside the core: the implementation sets the shape, the skeleton has no store binding, the operation is not on the wire'
+    contract: false
   - id: C1.file.purge
     port: C1
     op: file.purge
@@ -1533,6 +1708,7 @@ entries:
     profiles: [core]
     wire: false
     note: 'inside the core: the implementation sets the shape, the skeleton has no store binding, the operation is not on the wire'
+    contract: false
   - id: C1.erasure.*
     port: C1
     op: erasure.*
@@ -1543,6 +1719,7 @@ entries:
     profiles: [core]
     wire: false
     note: 'inside the core: the implementation sets the shape, the skeleton has no store binding, the operation is not on the wire'
+    contract: false
   - id: C1.task.purge
     port: C1
     op: task.purge
@@ -1553,6 +1730,7 @@ entries:
     profiles: [core]
     wire: false
     note: 'inside the core: the implementation sets the shape, the skeleton has no store binding, the operation is not on the wire'
+    contract: false
   - id: C1.epoch.advance
     port: C1
     op: epoch.advance
@@ -1563,6 +1741,7 @@ entries:
     profiles: [core]
     wire: false
     note: 'inside the core: the implementation sets the shape, the skeleton has no store binding, the operation is not on the wire'
+    contract: false
   - id: C1.campaign.create
     port: C1
     op: campaign.create
@@ -1573,6 +1752,7 @@ entries:
     profiles: [core]
     wire: false
     note: 'inside the core: the implementation sets the shape, the skeleton has no store binding, the operation is not on the wire'
+    contract: false
   - id: C1.campaign.release
     port: C1
     op: campaign.release
@@ -1583,6 +1763,7 @@ entries:
     profiles: [core]
     wire: false
     note: 'inside the core: the implementation sets the shape, the skeleton has no store binding, the operation is not on the wire'
+    contract: false
   - id: C1.campaign.item_close
     port: C1
     op: campaign.item_close
@@ -1593,6 +1774,7 @@ entries:
     profiles: [core]
     wire: false
     note: 'inside the core: the implementation sets the shape, the skeleton has no store binding, the operation is not on the wire'
+    contract: false
   - id: C1.campaign.control
     port: C1
     op: campaign.control
@@ -1603,6 +1785,7 @@ entries:
     profiles: [core]
     wire: false
     note: 'inside the core: the implementation sets the shape, the skeleton has no store binding, the operation is not on the wire'
+    contract: false
   - id: C1.script.create
     port: C1
     op: script.create
@@ -1613,6 +1796,7 @@ entries:
     profiles: [core]
     wire: false
     note: 'inside the core: the implementation sets the shape, the skeleton has no store binding, the operation is not on the wire'
+    contract: false
   - id: C1.script.release_step
     port: C1
     op: script.release_step
@@ -1623,6 +1807,7 @@ entries:
     profiles: [core]
     wire: false
     note: 'inside the core: the implementation sets the shape, the skeleton has no store binding, the operation is not on the wire'
+    contract: false
   - id: C1.script.step_close
     port: C1
     op: script.step_close
@@ -1633,6 +1818,7 @@ entries:
     profiles: [core]
     wire: false
     note: 'inside the core: the implementation sets the shape, the skeleton has no store binding, the operation is not on the wire'
+    contract: false
   - id: C1.script.control
     port: C1
     op: script.control
@@ -1643,6 +1829,7 @@ entries:
     profiles: [core]
     wire: false
     note: 'inside the core: the implementation sets the shape, the skeleton has no store binding, the operation is not on the wire'
+    contract: false
   - id: C1.seat.assign
     port: C1
     op: seat.assign
@@ -1653,6 +1840,7 @@ entries:
     profiles: [core]
     wire: false
     note: 'inside the core: the implementation sets the shape, the skeleton has no store binding, the operation is not on the wire'
+    contract: false
   - id: C1.seat.vacate
     port: C1
     op: seat.vacate
@@ -1663,6 +1851,7 @@ entries:
     profiles: [core]
     wire: false
     note: 'inside the core: the implementation sets the shape, the skeleton has no store binding, the operation is not on the wire'
+    contract: false
   - id: C1.seat.resume
     port: C1
     op: seat.resume
@@ -1673,6 +1862,7 @@ entries:
     profiles: [core]
     wire: false
     note: 'inside the core: the implementation sets the shape, the skeleton has no store binding, the operation is not on the wire'
+    contract: false
   - id: C1.control.apply
     port: C1
     op: control.apply
@@ -1683,6 +1873,7 @@ entries:
     profiles: [core]
     wire: false
     note: 'inside the core: the implementation sets the shape, the skeleton has no store binding, the operation is not on the wire'
+    contract: false
   - id: C1.incident.*
     port: C1
     op: incident.*
@@ -1693,6 +1884,7 @@ entries:
     profiles: [core]
     wire: false
     note: 'inside the core: the implementation sets the shape, the skeleton has no store binding, the operation is not on the wire'
+    contract: false
   - id: C1.bot.create
     port: C1
     op: bot.create
@@ -1703,6 +1895,7 @@ entries:
     profiles: [core]
     wire: false
     note: 'inside the core: the implementation sets the shape, the skeleton has no store binding, the operation is not on the wire'
+    contract: false
   - id: C1.bot.bind
     port: C1
     op: bot.bind
@@ -1713,6 +1906,7 @@ entries:
     profiles: [core]
     wire: false
     note: 'inside the core: the implementation sets the shape, the skeleton has no store binding, the operation is not on the wire'
+    contract: false
   - id: C1.bot.retire
     port: C1
     op: bot.retire
@@ -1723,6 +1917,7 @@ entries:
     profiles: [core]
     wire: false
     note: 'inside the core: the implementation sets the shape, the skeleton has no store binding, the operation is not on the wire'
+    contract: false
   - id: C3.append
     port: C3
     op: append
@@ -1733,6 +1928,7 @@ entries:
     profiles: [core]
     wire: false
     note: 'inside the core: the implementation sets the shape, the skeleton has no store binding, the operation is not on the wire'
+    contract: false
   - id: C3.load
     port: C3
     op: load
@@ -1743,6 +1939,7 @@ entries:
     profiles: [core]
     wire: false
     note: 'inside the core: the implementation sets the shape, the skeleton has no store binding, the operation is not on the wire'
+    contract: false
   - id: C3.list
     port: C3
     op: list
@@ -1753,6 +1950,7 @@ entries:
     profiles: [core]
     wire: false
     note: 'inside the core: the implementation sets the shape, the skeleton has no store binding, the operation is not on the wire'
+    contract: false
   - id: C3.delete
     port: C3
     op: delete
@@ -1763,6 +1961,7 @@ entries:
     profiles: [core]
     wire: false
     note: 'inside the core: the implementation sets the shape, the skeleton has no store binding, the operation is not on the wire'
+    contract: false
   - id: C3.purge
     port: C3
     op: purge
@@ -1773,6 +1972,7 @@ entries:
     profiles: [core]
     wire: false
     note: 'inside the core: the implementation sets the shape, the skeleton has no store binding, the operation is not on the wire'
+    contract: false
   - id: C4.search
     port: C4
     op: search
@@ -1783,6 +1983,7 @@ entries:
     profiles: [core]
     wire: false
     note: 'inside the core: the implementation sets the shape, the skeleton has no store binding, the operation is not on the wire'
+    contract: false
   - id: C4.list
     port: C4
     op: list
@@ -1793,6 +1994,7 @@ entries:
     profiles: [core]
     wire: false
     note: 'inside the core: the implementation sets the shape, the skeleton has no store binding, the operation is not on the wire'
+    contract: false
   - id: C4.propose
     port: C4
     op: propose
@@ -1803,6 +2005,7 @@ entries:
     profiles: [core]
     wire: false
     note: 'inside the core: the implementation sets the shape, the skeleton has no store binding, the operation is not on the wire'
+    contract: false
   - id: C4.commit
     port: C4
     op: commit
@@ -1813,6 +2016,7 @@ entries:
     profiles: [core]
     wire: false
     note: 'inside the core: the implementation sets the shape, the skeleton has no store binding, the operation is not on the wire'
+    contract: false
   - id: C4.discard
     port: C4
     op: discard
@@ -1823,6 +2027,7 @@ entries:
     profiles: [core]
     wire: false
     note: 'inside the core: the implementation sets the shape, the skeleton has no store binding, the operation is not on the wire'
+    contract: false
   - id: C4.erase
     port: C4
     op: erase
@@ -1833,6 +2038,7 @@ entries:
     profiles: [core]
     wire: false
     note: 'inside the core: the implementation sets the shape, the skeleton has no store binding, the operation is not on the wire'
+    contract: false
   - id: C4.fact.verify
     port: C4
     op: fact.verify
@@ -1843,6 +2049,7 @@ entries:
     profiles: [core]
     wire: false
     note: 'inside the core: the implementation sets the shape, the skeleton has no store binding, the operation is not on the wire'
+    contract: false
   - id: C4.offer
     port: C4
     op: offer
@@ -1853,6 +2060,7 @@ entries:
     profiles: [core]
     wire: false
     note: 'inside the core: the implementation sets the shape, the skeleton has no store binding, the operation is not on the wire'
+    contract: false
   - id: C4.take
     port: C4
     op: take
@@ -1863,6 +2071,7 @@ entries:
     profiles: [core]
     wire: false
     note: 'inside the core: the implementation sets the shape, the skeleton has no store binding, the operation is not on the wire'
+    contract: false
   - id: C4.seal
     port: C4
     op: seal
@@ -1873,6 +2082,7 @@ entries:
     profiles: [core]
     wire: false
     note: 'inside the core: the implementation sets the shape, the skeleton has no store binding, the operation is not on the wire'
+    contract: false
   - id: C1.case.open
     port: C1
     op: case.open
@@ -1883,6 +2093,7 @@ entries:
     profiles: [core]
     wire: false
     note: 'inside the core: the implementation sets the shape, the skeleton has no store binding, the operation is not on the wire'
+    contract: false
   - id: C1.case.advance
     port: C1
     op: case.advance
@@ -1893,6 +2104,7 @@ entries:
     profiles: [core]
     wire: false
     note: 'inside the core: the implementation sets the shape, the skeleton has no store binding, the operation is not on the wire'
+    contract: false
   - id: C1.case.close
     port: C1
     op: case.close
@@ -1903,6 +2115,7 @@ entries:
     profiles: [core]
     wire: false
     note: 'inside the core: the implementation sets the shape, the skeleton has no store binding, the operation is not on the wire'
+    contract: false
   - id: C1.attribution.create
     port: C1
     op: attribution.create
@@ -1913,6 +2126,7 @@ entries:
     profiles: [core]
     wire: false
     note: 'inside the core: the implementation sets the shape, the skeleton has no store binding, the operation is not on the wire'
+    contract: false
   - id: C1.attribution.decide
     port: C1
     op: attribution.decide
@@ -1923,6 +2137,7 @@ entries:
     profiles: [core]
     wire: false
     note: 'inside the core: the implementation sets the shape, the skeleton has no store binding, the operation is not on the wire'
+    contract: false
   - id: C3.prune
     port: C3
     op: prune
@@ -1933,6 +2148,7 @@ entries:
     profiles: [core]
     wire: false
     note: 'inside the core: the implementation sets the shape, the skeleton has no store binding, the operation is not on the wire'
+    contract: false
   - id: E1.match
     port: E1
     op: match
@@ -1960,6 +2176,7 @@ entries:
     rules: [DLV-3, DLV-6, DLV-13, FEN-7]
     profiles: [core]
     transport: P1 claim(delivery), result by P1 complete with receipt.location
+    contract: false
   - id: E2.match
     port: E2
     op: match
@@ -1969,6 +2186,7 @@ entries:
     rules: [RET-4, RET-7, SEC-11]
     profiles: [core]
     transport: 'P1 claim(erasure) with op: match'
+    contract: false
   - id: E2.erase
     port: E2
     op: erase
@@ -1978,6 +2196,7 @@ entries:
     rules: [RET-4, RET-7]
     profiles: [core]
     transport: 'P1 claim(erasure) with op: erase'
+    contract: false
   - id: E2.webhook
     port: E2
     op: webhook
@@ -1987,6 +2206,7 @@ entries:
     rules: [DLV-17, DLV-3, FEN-7]
     profiles: [core]
     note: 'the send is an HTTP POST to the receiver by the binding in spec/ports/e2-sink.md; the body is the delivery, not a farm schema'
+    contract: false
   - id: E3.tools/call
     port: E3
     op: tools/call
@@ -2001,30 +2221,34 @@ entries:
     op: describe
     since: v0.1
     request: null
-    response: e4-describe-response
+    response: p1-hello-request
     rules: [RT-1, RT-2, RT-3, RT-4, INJ-9]
     profiles: [core]
-    note: describe has no input, the adapter asks the runtime without arguments
+    note: 'describe has no input, the adapter asks the runtime without arguments; the agent worker declares the answer in the runtime field of P1 hello'
     transport: 'inside the agent process: the adapter asks the runtime at start'
+    contract: false
   - id: E4.run
     port: E4
     op: run
     since: v0.1
-    request: run-request
-    response: run-outcome
+    request: work-item
+    response: null
     rules: [FEN-4, BUD-3]
     profiles: [core]
     transport: inside the agent process after P1 claim(attempt); the adapter hands in the result with P1 complete or fail
+    note: 'the runtime gets the attempt work item of P1 claim; the result goes back with P1 complete or fail'
+    contract: false
   - id: E4.cancel
     port: E4
     op: cancel
     since: v0.1
-    request: e4-cancel-request
+    request: null
     response: null
     rules: [FEN-4]
     profiles: [core]
-    note: cancel has no answer, the runtime only stops the work before the next heartbeat
+    note: 'cancel has no answer, the runtime only stops the work before the next heartbeat; the signal is cancel_requested in the P1 heartbeat answer'
     transport: inside the agent process on cancel_requested from P1 heartbeat
+    contract: false
   - id: E4.purge
     port: E4
     op: purge
@@ -2034,6 +2258,7 @@ entries:
     rules: [RT-1, RT-2, MEM-4, RET-7, RET-4, RET-11]
     profiles: [core]
     transport: 'P1 claim(erasure) with op: erase at the adapter, then to the runtime'
+    contract: false
   - id: E4.match
     port: E4
     op: match
@@ -2043,6 +2268,7 @@ entries:
     rules: [RT-5, RET-7, SEC-11]
     profiles: [core]
     transport: 'P1 claim(erasure) with op: match at the adapter, then to the runtime'
+    contract: false
   - id: E5.monitor_alarm
     port: E5
     op: monitor_alarm
@@ -2111,88 +2337,98 @@ entries:
     op: clock.set
     since: v0.1
     request: test-clock-request
-    response: test-control-response
+    response: null
     rules: [APR-9]
     profiles: [core]
-    note: 'test-control port spec/ports/test-control.md; only on a test bench store that never had a tenant other than kind: test'
+    note: 'test-control port spec/ports/test-control.md; only on a test bench store that never had a tenant other than kind: test; the answer carries the store clock after the action; no response schema, nothing checks it (D-114)'
+    contract: false
   - id: T.clock.advance
     port: T
     op: clock.advance
     since: v0.1
     request: test-clock-request
-    response: test-control-response
+    response: null
     rules: [APR-9]
     profiles: [core]
-    note: 'test-control port spec/ports/test-control.md; only on a test bench store that never had a tenant other than kind: test'
+    note: 'test-control port spec/ports/test-control.md; only on a test bench store that never had a tenant other than kind: test; the answer carries the store clock after the action; no response schema, nothing checks it (D-114)'
+    contract: false
   - id: T.loop.tick
     port: T
     op: loop.tick
     since: v0.1
     request: test-loop-tick-request
-    response: test-control-response
+    response: null
     rules: [APR-9]
     profiles: [core]
-    note: 'test-control port spec/ports/test-control.md; only on a test bench store that never had a tenant other than kind: test'
+    note: 'test-control port spec/ports/test-control.md; only on a test bench store that never had a tenant other than kind: test; the answer carries the store clock after the action; no response schema, nothing checks it (D-114)'
+    contract: false
   - id: T.process.stop
     port: T
     op: process.stop
     since: v0.1
     request: test-process-stop-request
-    response: test-control-response
+    response: null
     rules: [APR-9]
     profiles: [core]
-    note: 'test-control port spec/ports/test-control.md; only on a test bench store that never had a tenant other than kind: test'
+    note: 'test-control port spec/ports/test-control.md; only on a test bench store that never had a tenant other than kind: test; the answer carries the store clock after the action; no response schema, nothing checks it (D-114)'
+    contract: false
   - id: T.store.fault
     port: T
     op: store.fault
     since: v0.1
-    request: test-store-fault-request
-    response: test-control-response
+    request: null
+    response: null
     rules: [APR-9]
     profiles: [core]
-    note: 'test-control port spec/ports/test-control.md; only on a test bench store that never had a tenant other than kind: test'
+    note: 'test-control port spec/ports/test-control.md; only on a test bench store that never had a tenant other than kind: test; no request schema: no fixture uses the operation (D-114); the answer carries the store clock after the action; no response schema, nothing checks it (D-114)'
+    contract: false
   - id: T.store.snapshot
     port: T
     op: store.snapshot
     since: v0.1
     request: test-store-snapshot-request
-    response: test-control-response
+    response: null
     rules: [APR-9, RET-5, RET-6]
     profiles: [core]
-    note: 'test-control port spec/ports/test-control.md; only on a test bench store that never had a tenant other than kind: test'
+    note: 'test-control port spec/ports/test-control.md; only on a test bench store that never had a tenant other than kind: test; the answer carries the store clock after the action; no response schema, nothing checks it (D-114)'
+    contract: false
   - id: T.store.restore
     port: T
     op: store.restore
     since: v0.1
     request: test-store-restore-request
-    response: test-control-response
+    response: null
     rules: [APR-9, RET-6, AUD-6]
     profiles: [core]
-    note: 'test-control port spec/ports/test-control.md; only on a test bench store that never had a tenant other than kind: test'
+    note: 'test-control port spec/ports/test-control.md; only on a test bench store that never had a tenant other than kind: test; the answer carries the store clock after the action; no response schema, nothing checks it (D-114)'
+    contract: false
   - id: T.authorize.eval
     port: T
     op: authorize.eval
     since: v0.1
-    request: test-authorize-eval-request
+    request: null
     response: authz-decision
     rules: [APR-9, PRM-2]
     profiles: [core]
-    note: 'test-control port spec/ports/test-control.md; only on a test bench store that never had a tenant other than kind: test'
+    note: 'test-control port spec/ports/test-control.md; only on a test bench store that never had a tenant other than kind: test; the runner sends the authz-request of a permission table row with the tenant kind of the row; no request schema of its own (D-114)'
+    contract: false
   - id: T.function.eval
     port: T
     op: function.eval
     since: v0.2
     request: test-function-eval-request
-    response: test-function-eval-response
+    response: null
     rules: [APR-9, COM-17, DIG-5, REP-4, TIM-5]
     profiles: [core, insights, messaging]
-    note: 'test-control port spec/ports/test-control.md; only on a test bench store that never had a tenant other than kind: test'
+    note: 'test-control port spec/ports/test-control.md; only on a test bench store that never had a tenant other than kind: test; the answer carries the store clock after the action; no response schema, nothing checks it (D-114)'
+    contract: false
   - id: T.event.inject
     port: T
     op: event.inject
     since: v0.1
-    request: test-event-inject-request
-    response: test-control-response
+    request: null
+    response: null
     rules: [APR-9]
     profiles: [core]
-    note: 'test-control port spec/ports/test-control.md; only on a test bench store that never had a tenant other than kind: test'
+    note: 'test-control port spec/ports/test-control.md; only on a test bench store that never had a tenant other than kind: test; no request schema: no fixture uses the operation (D-114); the answer carries the store clock after the action; no response schema, nothing checks it (D-114)'
+    contract: false

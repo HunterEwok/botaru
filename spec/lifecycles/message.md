@@ -1,5 +1,7 @@
 # Lifecycle: message (inbox entry)
 
+Kind: `message` (the kinds are listed in [the lifecycle index](README.md)).
+
 ## In short
 
 A bot message lives in an inbox inside the core as an inbox entry: one message in one inbox of one tenant, and with the `all` delivery a separate copy in the inbox of every recipient worker, with its own cycle (MSG-14). An entry of the `report` genus (a work report) goes this way: `staged` (sent from an attempt, waits for its end), `queued` (published), `leased` (handed to a reading attempt under its lease) and `acked` (the reading attempt wrote `complete`); the terminal outcomes without processing are `discarded`, `dead` and `expired`. An entry of the `state` genus (worker state) has its own short cycle: the latest value `current`, an outdated `stale`, a replaced `replaced` and a removed `removed`; it has no lease and no acknowledgement. A refusal at sending creates no record: it is an answer to the sender with a reason, not a stored state. Only the core makes all transitions, each in one transaction of the C1 store with an event made of metadata only and an audit record (MSG-3, DLV-2). Publishing an attempt's messages and acknowledging what it read happen in the transaction of this attempt's `complete` (MSG-9).

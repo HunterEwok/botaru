@@ -1,5 +1,7 @@
 # Lifecycle: task
 
+Kind: `task` (the kinds are listed in [the lifecycle index](README.md)).
+
 ## In short
 
 A task (`Task`) is a unit of the farm's work: a body that the sender sent, and a task record that only the core writes (IDN-1). The states are named as in the A2A protocol: `submitted`, `working`, `completed`, `failed`, `canceled`, `rejected`. A task in a terminal state is not restarted: a repeat after the end is a new task with a `refs` link to the previous one, and a person's clarification is a new task in the same conversation (CNT-5). There are no waiting states: an attempt never waits for a person, another task, a timer or an external event, waiting lives only in core records (CNT-4). Every hand-out of a task to a worker is a new attempt under a lease with a fencing token (`spec/lifecycles/lease.md`). The task transition, its event, the deliveries, the continuations, the attempt's messages and the usage lines are written in one store transaction (DLV-2).

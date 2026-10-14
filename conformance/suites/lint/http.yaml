@@ -9,7 +9,7 @@ checks:
   - MAN-12
   version: v0.2
   section: Tests without a model
-  source: docs/quality.md:338
+  source: docs/quality.md:333
   spec:
     What: (v0.2) a P1 row is added to `spec/ports/operations.yaml` without regenerating `spec/bindings/http/p1.openapi.json`
     Expectation: '`gen_openapi.py --check` fails; after the rebuild every body reference resolves to a `spec/model` file'

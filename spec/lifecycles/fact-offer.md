@@ -1,5 +1,7 @@
 # Lifecycle: fact offer
 
+Kind: `memory` (the kinds are listed in [the lifecycle index](README.md)).
+
 ## In short
 
 A fact offer (`FactOffer`) is created by the core when an identity retires or changes its binding: it contains the active verified facts of this identity and exactly one recipient, its successor: the new identity of the same worker, else the first identity enrolled in the same role, and for a seat holder the next holder of the seat. When the successor exists, code rechecks each fact with the successor's permissions and copies those that pass (MEM-7). Neither a person nor a model chooses the facts, and the retiring identity takes no part. The farm manager gets a separate offer for the section of each tenant. Schema: `spec/model/fact-offer.schema.json`; only the core writes the record.

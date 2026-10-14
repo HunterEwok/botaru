@@ -1,5 +1,7 @@
 # Lifecycle: seat
 
+Kind: `seat` (the kinds are listed in [the lifecycle index](README.md)).
+
 ## In short
 
 A seat (`Seat`) is a chair in a tenant's commission or the farm manager's chair; the seat holder is the bot identity on it. Commission seats are declared by the tenant charter `tenants/<t>/governance.yaml`, the farm manager seat by the farm charter `farm/governance.yaml` (GOV-33). Only the core writes the holder, in one transaction that increments the seat epoch by 1 (IDN-10). A commission seat has the states `vacant`, `held` and the terminal `removed`; the farm manager seat has `vacant`, `held` and `stopped` with a set of stop reasons (GOV-22). A task on behalf of a seat carries the seat epoch, and with an outdated epoch its write gets `fenced`.

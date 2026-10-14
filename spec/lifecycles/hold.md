@@ -1,5 +1,7 @@
 # Lifecycle: hold
 
+Kind: `hold` (the kinds are listed in [the lifecycle index](README.md)).
+
 ## In short
 
 A hold (`Hold`) is a recorded object that forbids part of the farm's work: a scope (for example, a task type in the tenant `demo`), effects from a closed list (for example, `no_claim`), a reason, an `until` deadline or "until released", an author. A hold only narrows: it grants no rights, deletes no data and changes no manifests. While a hold is `active`, C2 checks it at every check point before the rights formula (HLD-1). A hold of the scopes `farm` and `seat` is a record of the service tenant `farm`, a hold of any other scope is a record of the tenant of its scope (TEN-1). A hold ends in two ways: it expires by its deadline, or someone who is allowed releases it, that is, a principal with `hold.release` on the scope and not below the hold's author in rank (HLD-2). Terminal holds remain as records of the `metadata` class for audit and analysis.

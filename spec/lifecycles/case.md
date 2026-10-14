@@ -1,5 +1,7 @@
 # Lifecycle: governance case
 
+Kind: `promotion` (the kinds are listed in [the lifecycle index](README.md)).
+
 ## In short
 
 A case (`GovernanceCase`) is one promotion of a functionary into the commission of its tenant. There is one case kind, `promotion`, with the mode `removal` (one holder from the list L leaves) or `vacancy` (the candidate takes a free seat). Only the core's `governance` loop opens a case, for the head of the promotion queue (GOV-6, GOV-14). In the `removal` mode the core writes the list L with the figures of every seat (GOV-12); code proposes the leaver by accuracy when it can (GOV-43), and otherwise a person chooses it on the card. The outcome takes effect only after a person's button (GOV-9). There are no ballots. A case lives only in the commission's tenant, it has no free text, and no bot sees it (GOV-29). Only the core writes the case record; its schema is `spec/model/governance-case.schema.json`.

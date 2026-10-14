@@ -1,5 +1,7 @@
 # Lifecycle: delivery
 
+Kind: `delivery` (the kinds are listed in [the lifecycle index](README.md)).
+
 ## In short
 
 A delivery (`Delivery`) is a core record "send this content to this recipient": a task answer, an approval card, a card update, a summary for a group chat, the `ai_notice` and `privacy_notice` texts (with `notice_version`, on first contact and on a version change, independently of `ai_disclosure`), a write to a sink, and deliveries for the monitoring adapter E5: `monitor_alarm` (a change of an alarm episode), `monitor_audit_head` (the head of the audit chain), `monitor_script` (a monitoring system script on a tenant node) and `monitor_note` (the code note `service_control_done`), from v0.2 also `monitor_note` with a bot's note on a problem. The core creates a delivery in the transaction of the transition that produces it (DLV-2), computes its target `target: {kind: chat | subject | sink | monitor, id}` from the address, and the delivery is sent by the channel worker (E1), the sink worker (E2) or the monitoring adapter (E5) registered for this target at `enroll`, which picks up the delivery through P1 `claim` as work of kind `delivery`; the worker does not compute the addressee itself (DLV-6). The address is taken only from a closed list (DLV-6), a group chat gets only a summary (DLV-15), and model text goes out only as a whole after `complete` (DLV-11). A delivery is handed out at least once (a `monitor_script` delivery at most once) and always ends in a terminal state; its failure does not touch the task (DLV-1, DLV-3).

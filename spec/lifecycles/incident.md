@@ -1,5 +1,7 @@
 # Lifecycle: incident
 
+Kind: `incident` (the kinds are listed in [the lifecycle index](README.md)).
+
 ## In short
 
 An incident (`Incident`) is a record that only the core opens, on a code alarm and a catalog class `IncidentClass`. Alarms about machines and resource disks are raised by the `job` role without a model, from monitoring system problems after a recheck through its API (MON-5, D-63). An incident belongs to exactly one tenant or to the farm (the subject "farm"). Only code moves the state up to `resolved`, a person or the seat holder closes the incident after `resolved`, and only a person declares it false. Only a person sets the link to a cause (`attribution`); it lives separately from the state and is described in the incident attribution cycle. Every transition writes an event in the same transaction and edits the one incident message to people (MGR-39). Calling people for an unhandled incident is the alarm `alarm.incident.unhandled`, which the monitoring system delivers to people (MON-1, D-62).

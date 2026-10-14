@@ -28,7 +28,7 @@ cases:
 - id: bud-fx-12
   rules: [BUD-9]
   description: A type with a model and tree_budget_eur passes; max_output_tokens lives in the profile, run_max_input_tokens
-    in RunRequest.limits.
+    among the run limits of the agent runtime.
   given:
     tenant: demo
     manifest:

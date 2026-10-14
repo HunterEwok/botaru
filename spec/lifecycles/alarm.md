@@ -1,5 +1,7 @@
 # Lifecycle: alarm
 
+Kind: `record` (the kinds are listed in [the lifecycle index](README.md)).
+
 ## In short
 
 An alarm is not an object from git but a core record of one trouble episode with the key `alarmkey` (the alarm name and the subject id from the catalog, for example `disk.free.low:db1`). The episode is opened by an `alarm.<name>.vN` event with `state: firing` produced by code: the core or a worker of type `job` (INJ-7). The episode is closed again by code, with an event with `state: resolved` (OBS-6). The episode has a change sequence number `seq` (1 on opening, 2 on closing) and a repeat counter `repeat_count`. The background loop `alarm` maintains the episodes and puts every change of an episode into a delivery for the monitoring adapter E5, and the adapter passes it to the organization's monitoring system (MON-1). This delivery does not die after a number of attempts: it is retried while the episode is open or its closing has not been exported, it goes in `seq` order, and after a connection failure the core re-exports all open episodes (MON-11). Only the monitoring system delivers an alarm to people: notification, "Acknowledged", escalation, on-call rotations and silencing live there (D-62). A farm alarm has no recipients, no acknowledgement and no silencing.

@@ -9,7 +9,7 @@ checks:
   - TRN-3
   version: v0.1
   section: Tests without a model
-  source: docs/quality.md:381
+  source: docs/quality.md:376
   spec:
     What: a `translator` attempt calls `propose_script` 4 times and submits the result
     Expectation: the fourth call is rejected; the result passes the `translation-result` schema; `tools/list` has no run or
@@ -20,7 +20,7 @@ checks:
   - TRN-7
   version: v0.3
   section: Tests without a model
-  source: docs/quality.md:639
+  source: docs/quality.md:633
   spec:
     What: a `disk_full` incident on a target of a script run that ended 3 days earlier; the person who pressed "Run" answers
     Expectation: 'a candidate of `kind: script_run` under `script_target`; that person''s answer is refused while a second
@@ -31,7 +31,7 @@ checks:
   - TRN-8
   version: v0.3
   section: Tests without a model
-  source: docs/quality.md:640
+  source: docs/quality.md:634
   spec:
     What: a confirmed script link, then a person approves the correct script; a new translator profile fails the case; the
       share of `ambiguous` answers on the correctness set is 0.3
@@ -43,7 +43,7 @@ checks:
   - TRN-10
   version: v0.3
   section: Tests without a model
-  source: docs/quality.md:641
+  source: docs/quality.md:635
   spec:
     What: '"restart nginx on web1" translated into a script that also targets `db2` and a selector of 7 machines'
     Expectation: '`script_confirm` marks `db2` and the selector as not named in the text'

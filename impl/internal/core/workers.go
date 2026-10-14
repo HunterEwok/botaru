@@ -168,6 +168,41 @@ type HelloRequest struct {
 	Capacity         int               `json:"capacity,omitempty"`
 	ProtocolVersions []string          `json:"protocol_versions"`
 	Driver           *DriverCaps       `json:"driver,omitempty"`
+	Runtime          *RuntimeDecl      `json:"runtime,omitempty"`
+}
+
+// RuntimeDecl is how an agent's runtime performs the farm mechanisms (RT-1, RT-2, RT-5).
+type RuntimeDecl struct {
+	Session          string   `json:"session,omitempty"`
+	Memory           string   `json:"memory,omitempty"`
+	ModelAttribution string   `json:"model_attribution,omitempty"`
+	Catalog          string   `json:"catalog,omitempty"`
+	BuiltInTools     []string `json:"built_in_tools,omitempty"`
+	Skills           string   `json:"skills,omitempty"`
+	Erasure          []string `json:"erasure,omitempty"`
+}
+
+// runtimeRefusal says why a runtime declaration blocks the worker, or "" if it does not.
+// A runtime that keeps sessions or memory in its own store must answer erase and match
+// (RT-5); this version of the core sends no erasure work to runtimes yet, so it cannot
+// reach such a store and blocks every runtime_internal declaration.
+func runtimeRefusal(kind string, r *RuntimeDecl) string {
+	if r == nil {
+		return ""
+	}
+	if kind != "agent" {
+		return "only an agent declares a runtime"
+	}
+	if len(r.BuiltInTools) > 0 {
+		return "a runtime with built-in tools (INJ-9)"
+	}
+	if r.Session == "runtime_internal" || r.Memory == "runtime_internal" {
+		if !slices.Contains(r.Erasure, "erase") || !slices.Contains(r.Erasure, "match") {
+			return "runtime_internal without erase and match (RT-5)"
+		}
+		return "runtime_internal: this core does not yet send erasure work to a runtime (RT-5)"
+	}
+	return ""
 }
 
 // DriverCaps are the capabilities a channel declares at hello.
@@ -197,6 +232,10 @@ func (c *Core) Hello(ctx context.Context, w *Worker, req HelloRequest) (*HelloRe
 		return nil, refuse("blocked", "the worker is blocked")
 	}
 	mismatch := req.Kind != w.Kind
+	why := "hello does not match the enroll record"
+	if r := runtimeRefusal(w.Kind, req.Runtime); r != "" {
+		mismatch, why = true, r
+	}
 	for k, v := range req.Labels {
 		if w.Labels[k] != v {
 			mismatch = true
@@ -237,7 +276,7 @@ func (c *Core) Hello(ctx context.Context, w *Worker, req HelloRequest) (*HelloRe
 		return nil, err
 	}
 	if mismatch {
-		return nil, refuse("blocked", "hello does not match the enroll record")
+		return nil, refuse("blocked", "%s", why)
 	}
 	return &HelloResult{WorkerID: w.ID, Tenant: w.Tenant, Role: w.Role, LeaseS: c.cfg.LeaseS, HeartbeatS: c.cfg.HeartbeatS}, nil
 }

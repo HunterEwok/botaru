@@ -9,7 +9,7 @@ checks:
   - REP-5
   version: v0.1
   section: Tests without a model
-  source: docs/quality.md:326
+  source: docs/quality.md:321
   spec:
     What: a core alarm, a farm manager notice and an immediate report of a control operation while the `reporter` role is
       alive
@@ -21,7 +21,7 @@ checks:
   - MSG-18
   version: v0.2
   section: Tests without a model
-  source: docs/quality.md:327
+  source: docs/quality.md:322
   spec:
     What: (v0.2) a `report.qc_note.v1` message with a note in `demo`; `carol` (`admin:people`) calls `msg.list`, `msg.show`
       and `inbox.status`; `dave` with `admin:people`, `audit.read` and `data:internal` calls `msg.show` on that `internal`
@@ -31,3 +31,13 @@ checks:
       an audit record of the read appears; `erin` and the operator get the message without the note; both foreign and unknown
       ids give the same `not_found`; `inbox.status` gives counts by state, the oldest age, the capacity and the wake-up budget;
       a `msg.list` page has at most 200 rows'
+- id: blackbox:messaging/ttl-expired
+  method: blackbox
+  rules:
+  - MSG-12
+  version: v0.1
+  section: Tests without a model
+  source: docs/quality.md:323
+  spec:
+    What: an inbox entry with `ttl` 1 minute, time shifted by 2 minutes
+    Expectation: the entry is `expired`, it is not in `inbox_read`, the event `msg.expired` has metadata only

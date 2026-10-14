@@ -1,5 +1,7 @@
 # Lifecycle: campaign and campaign item
 
+Kind: `run` (the kinds are listed in [the lifecycle index](README.md)).
+
 ## In short
 
 A campaign (`Campaign`) is a frozen plan of mass work of one tenant: a task or action template, a list of items, a rollout policy (`canary`, `after_canary`, `max_in_flight`, `max_failures`, `on_unknown`, `deadline`) and an optional continuation. The core creates the whole campaign record in one C1 `campaign.create` transaction; after that only the campaign state, the pause reason, the counters and the item states change, while the template, the items, the policy and `plan_hash` never change (ORC-1). A campaign item (`CampaignItem`) is a line of the plan; on release the core creates an ordinary task for it with the fields `campaign` and `campaign_item`, and this task follows its own cycle (`spec/lifecycles/task.md`). Only deterministic core code releases items, each at most once (ORC-3, ORC-4). A campaign with an action is started by one human approval for the whole plan (ORC-2); the approval follows its own cycle (`spec/lifecycles/approval.md`): it is `executing` while the campaign runs, and `executed` when the campaign is terminal.

@@ -494,6 +494,9 @@ func TestActivityRefusals(t *testing.T) {
 	}
 }
 
+// TestFailRetriesThenExhausts: a retryable fail spends the attempt with backoff; the next attempt
+// has lease_no 2, a call with the token of the first lease gets fenced and changes nothing, and a
+// token of another worker gets lease_mismatch (FEN-2); the second fail exhausts the attempts.
 func TestFailRetriesThenExhausts(t *testing.T) {
 	ctx := context.Background()
 	b := newBench(t)
@@ -520,6 +523,17 @@ func TestFailRetriesThenExhausts(t *testing.T) {
 	// The old token is fenced.
 	if _, err := b.c.Heartbeat(ctx, b.agent, header(t, att), HeartbeatRequest{}); err == nil {
 		t.Fatal("old token passed")
+	} else if p, _ := AsProblem(err); p == nil || p.Reason != "fenced" {
+		t.Fatalf("old token: %v", err)
+	}
+	if _, err := b.c.Complete(ctx, b.agent, header(t, att), CompleteRequest{Result: map[string]any{"answer": "late"}}); err == nil {
+		t.Fatal("late complete with the old token passed")
+	} else if p, _ := AsProblem(err); p == nil || p.Reason != "fenced" {
+		t.Fatalf("late complete: %v", err)
+	}
+	var state string
+	if err := b.c.st.Pool.QueryRow(ctx, `SELECT state FROM tasks WHERE id = $1`, att2.WorkID).Scan(&state); err != nil || state != "working" {
+		t.Fatalf("the fenced calls changed the task: %q %v", state, err)
 	}
 	// A token of another worker is a mismatch.
 	if _, err := b.c.Heartbeat(ctx, b.channel, header(t, att2), HeartbeatRequest{}); err == nil {
@@ -682,5 +696,99 @@ func TestActivityNeedsActiveChannel(t *testing.T) {
 	var p *Problem
 	if !errors.As(err, &p) || p.Reason != "blocked" {
 		t.Fatalf("blocked channel: %v", err)
+	}
+}
+
+// TestHelloRuntimeDeclaration: the runtime declaration of an agent is kept, and a runtime that
+// keeps its own store, or one with built-in tools, blocks the worker (RT-1, RT-2, RT-5, INJ-9).
+func TestHelloRuntimeDeclaration(t *testing.T) {
+	ctx := context.Background()
+	b := newBench(t)
+	hello := func(rt *RuntimeDecl) error {
+		r, err := b.c.Enroll(ctx, b.op, EnrollRequest{Tenant: "demo", Role: "hello", Kind: "agent"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		w, err := b.c.AuthenticateWorker(ctx, r.Token)
+		if err != nil {
+			t.Fatal(err)
+		}
+		_, err = b.c.Hello(ctx, w, HelloRequest{Kind: "agent", ProtocolVersions: []string{"v1"}, Runtime: rt})
+		if err == nil {
+			again, aerr := b.c.AuthenticateWorker(ctx, r.Token)
+			if aerr != nil {
+				t.Fatal(aerr)
+			}
+			if again.Hello == nil || again.Hello.Runtime == nil || again.Hello.Runtime.Memory != rt.Memory {
+				t.Fatalf("the runtime declaration was not kept: %+v", again.Hello)
+			}
+		}
+		return err
+	}
+	if err := hello(&RuntimeDecl{Session: "farm", Memory: "farm"}); err != nil {
+		t.Fatalf("farm runtime: %v", err)
+	}
+	for _, rt := range []*RuntimeDecl{
+		{Memory: "runtime_internal"},
+		{Session: "runtime_internal", Erasure: []string{"erase", "match"}},
+		{Memory: "farm", BuiltInTools: []string{"web_search"}},
+	} {
+		var r *Problem
+		if err := hello(rt); !errors.As(err, &r) || r.Reason != "blocked" {
+			t.Fatalf("runtime %+v: want blocked, got %v", rt, err)
+		}
+	}
+}
+
+// TestSecretsStoredAsHashes: no table of the store holds a worker token, a channel P2 secret or
+// a model handle in the clear (IDN-4, SEC-3).
+func TestSecretsStoredAsHashes(t *testing.T) {
+	ctx := context.Background()
+	b := newBench(t)
+	r, err := b.c.Enroll(ctx, b.op, EnrollRequest{Tenant: "demo", Kind: "channel", Target: "telegram", RotateP2: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	secrets := []string{r.Token, r.P2Token}
+	a := Activity{Kind: "message", Channel: "telegram", UpdateID: "s1", Chat: Chat{Kind: "direct", ExternalID: "1001"}, Text: "/hello hi"}
+	a.Sender.Identity, a.Sender.Verified = "telegram:1001", true
+	if _, err := b.c.SubmitActivity(ctx, b.channel, a); err != nil {
+		t.Fatal(err)
+	}
+	if w := b.claim(t, b.agent, "attempt"); w != nil {
+		if h, ok := w.Payload["handles"].(map[string]any)["model"].(string); ok {
+			secrets = append(secrets, h)
+		}
+	}
+	rows, err := b.c.st.Pool.Query(ctx, `SELECT tablename FROM pg_tables WHERE schemaname = 'public'`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var tables []string
+	for rows.Next() {
+		var n string
+		if err := rows.Scan(&n); err != nil {
+			t.Fatal(err)
+		}
+		tables = append(tables, n)
+	}
+	rows.Close()
+	if len(secrets) < 3 {
+		t.Fatalf("the bench produced only %d secrets", len(secrets))
+	}
+	for _, s := range secrets {
+		if s == "" {
+			t.Fatal("an empty secret")
+		}
+		for _, tb := range tables {
+			var n int
+			q := `SELECT count(*) FROM "` + tb + `" x WHERE x::text LIKE '%' || $1 || '%'`
+			if err := b.c.st.Pool.QueryRow(ctx, q, s).Scan(&n); err != nil {
+				t.Fatal(err)
+			}
+			if n > 0 {
+				t.Fatalf("table %s holds a secret in the clear", tb)
+			}
+		}
 	}
 }

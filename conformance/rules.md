@@ -11,7 +11,7 @@ The line under a rule heading:
 - "non-waivable": an implementation cannot put the rule on its list of expected failures. "Waivable": it can, with a recorded reason.
 - "profile": the part of the skeleton an implementation claims conformance to separately (`core`, `messaging`, `campaign`, `insights`, `manager`, `governance`, `monitor`, `knowledge`, `ingress`, `connections`, `debug`, `sandbox`); the `core` profile is mandatory, see [docs/quality.md](../docs/quality.md).
 - "recommendation": a SHOULD rule; all others are mandatory.
-- "check": how compliance is shown. `fixture`: a ready data sample that must pass or fail a check. `store`: a storage check. `blackbox`: a test through the ports without knowledge of the implementation internals. `adapter`: a test of a port adapter. `eval`: a check of model work quality on a set of cases. `lint`: a check of files and manifests. `impl`: a test of the reference implementation in `impl/`.
+- "check": how compliance is shown. `fixture`: a ready data sample that must pass or fail a check. `blackbox`: a test through the ports without knowledge of the implementation internals. `adapter`: a test of an adapter at a contract boundary with foreign code. `eval`: a check of model work quality on a set of cases. `lint`: a check of files and manifests. `impl`: a test of the reference implementation in `impl/`.
 - "decisions": decision numbers from [docs/decisions.md](../docs/decisions.md).
 
 ## Summary
@@ -143,7 +143,7 @@ Checked by: `adapter:channel/foreign-callback`, `adapter:channel/card-from-recor
 <a id="APR-4"></a>
 ### APR-4. Human decisions go through the common decide
 
-serves [G2](../docs/goals.md) · since v0.1 · non-waivable · profile core · check: store, blackbox, fixture · decisions: D-15, D-16, D-27, D-62, D-71, D-76, D-79
+serves [G2](../docs/goals.md) · since v0.1 · non-waivable · profile core · check: blackbox, fixture · decisions: D-15, D-16, D-27, D-62, D-71, D-76, D-79
 
 A decision on a subject from the closed list (`approval`, `proposal`, `memory_record`, `campaign`, `script`, `script_gate`, `control`, `takeover`, `governance_case`, `attribution`, `subject_request`) is taken only by the P1 call `decide(subject_kind, id, nonce, decision, reason_code)` from the channel to which this subject's card was delivered, atomically and once: the transition from the pending state to the decided state happens exactly once. A repeated `decide` with the same principal, the same decision and the same `nonce` returns the same success and changes nothing (IDM-3); a different decision or a different principal on a decided subject gets `already_decided`. The only exception: for the subject `attribution`, the answers "No" and "Don't know" do not close the subject while the attribution window is open (GOV-13), and a person with the right can change them; the answer "Yes" and the closing of the window are final; only its author can withdraw "Yes", on the dispute card, after the incident is dismissed as false, or by 7 days of silence on that card (D-79, APR-14). A person's request to delete their own data (`subject_request`) is decided from the first version (D-76). Only a `human` principal with strong identity (IDN-3) decides, found by the verified identity of the person who pressed, who is active at the moment of the decision and holds the right for this subject and this decision from the decision registry (APR-12). Principals `service` and `system` and bots have no `decide`: such a call is rejected. In a group chat a decision is taken only with `membership_assurance: enforced`. For an action approval and for continuing and excluding campaign items, the person who pressed is not the initiator when `self_approve: false`, and the initiator is still active and has `action.request:<action>` (for a read campaign, `task:<type>`). Continuing and excluding items of a running campaign is the P1 call `campaign.control` from the card's chat with its `nonce`, and it passes the same checks as a decision on the subject `campaign`. A card button that calls an operation rather than a decision (pause and cancel of a campaign or script, hold, pause and cancel of a stuck case) passes the same checks of the channel, the `nonce` and the `human` principal, plus the right for that operation; a button never calls an operator operation (PRM-14). In a channel without buttons, the card shows a text command with the id and nonce, and it is checked the same way as a button press.
 
@@ -159,7 +159,7 @@ Only the core enqueues `action.*` types: when an approval is approved, when a ca
 <a id="APR-6"></a>
 ### APR-6. Pending decisions are canceled together with their cause
 
-serves [G2](../docs/goals.md) · since v0.1 · non-waivable · profile core · check: blackbox, store · decisions: D-33
+serves [G2](../docs/goals.md) · since v0.1 · non-waivable · profile core · check: blackbox · decisions: D-33
 
 A pending decision is canceled in the same transaction as its cause: the initiator is disabled (`canceled(person_inactive)`); the needed right or group is removed from the initiator (`canceled(rights_revoked)`); a hold with the effect `no_action` on the subject's scope (`canceled(held)`); restore from backup (`canceled(restored)`); replacement of the holder of the seat that asked (`canceled(seat_changed)`); cancellation by an admin or operator (`canceled(admin)`); cancellation of the source task by its initiator with the `/cancel` command (`canceled(initiator)`, PRM-17). If, at approval or when the write call is created, the argument value is no longer in the tenant catalog, the approval ends with `canceled(ref_invalid)` without a write call (MAN-10). Every cancellation creates a `card_update` delivery. Disabling the decider or the decider losing the right does not cancel the subject: others with the right can decide. A hold on the farm manager seat after an incident does not cancel pending cards: they stay marked "requester stopped", and a human decision on such a card is executed as that person's own operation (GOV-22).
 
@@ -168,7 +168,7 @@ Checked by: `blackbox:channel/initiator-off`
 <a id="APR-7"></a>
 ### APR-7. An approval is executed at most once
 
-serves [G2](../docs/goals.md) · since v0.1 · non-waivable · profile core · check: store, blackbox · decisions: D-78
+serves [G2](../docs/goals.md) · since v0.1 · non-waivable · profile core · check: blackbox · decisions: D-78
 
 An approval is executed at most once. In one transaction the core makes `approved -> executing`, enqueues the task `action.<action>` with `approval_id` and the key `system:approval:<id>`, and creates one write call with the arguments from the snapshot. The toolhost accepts a write call only if it carries `approval_id`, the tenant matches and the argument hash equals the approved one; the plugin gets `approval_id` as its idempotency key. If the lease of the write call expires, the outcome is `exec_unknown`, the card is updated, and there is no retry. A write call that a hold rejected before it was handed to the toolhost (`denied(held)`) ends the approval with `exec_failed` and reason `held`: nothing is executed late. A non-idempotent action has `max_attempts: 1`. The task `action.<action>` is created directly in `working`, without an attempt and a lease: its only work is this write call, and the call's outcome closes the task in the same transaction (CNT-7); a routine action run by `/run` takes the same path with `grant_id` in place of `approval_id` (APR-17). `redrive` is forbidden for `action.*`; a new request is needed. An approval with the subject `campaign` covers exactly the snapshot: the core checks the snapshot hash (`plan_hash`) when releasing each item, each item is executed at most once (core key `system:campaign:<id>:<n>`, plugin key `<approval_id>:<n>`), and the campaign approval becomes `executed` when the campaign is terminal.
 
@@ -195,11 +195,11 @@ Checked by: `lint:manifests/action-routine-fields`, `manifests/actions`
 <a id="APR-11"></a>
 ### APR-11. Human decision event
 
-serves [G6](../docs/goals.md) · since v0.1 · non-waivable · profile core · check: store, blackbox
+serves [G6](../docs/goals.md) · since v0.1 · non-waivable · profile core · check: blackbox
 
 The core records every human decision on any subject as a decision event: the subject kind and id, the decision and reason code, the channel and chat kind, the time the card was delivered to this person, the time of the decision, and the fields `decided_by` (internal id of the decider), `response_ms` (milliseconds from delivery of the card to this person until the decision) and `details_opened` (whether they opened "Details" of this card before deciding). The fields are in the schema from the first version and are always filled. A press of an operation button and a decision on a card taken through a P2 operation (for example `farmctl seat resume` on a `manager_stopped` notice) write the same event. These are metadata without texts (AUD-2). From them the core computes only per-tenant summaries (APR-13); no series, lists or reports per individual person are built.
 
-Checked by: `store:decision/event-fields`
+Checked by: `blackbox:decision/event-fields`
 
 <a id="APR-12"></a>
 ### APR-12. Registry of human decisions
@@ -211,7 +211,7 @@ Every subject of a human decision and every kind of card and notice is written a
 <a id="APR-14"></a>
 ### APR-14. Details before the listed decisions
 
-serves [C1](../docs/goals.md) · since v0.2 · non-waivable · profile core · check: blackbox, store · decisions: D-79
+serves [C1](../docs/goals.md) · since v0.2 · non-waivable · profile core · check: blackbox · decisions: D-79
 
 The core accepts "Lift veto" (`override_veto`) on an audit sample item, "Confirm" (`confirm`) on the outcome of a promotion case, and "Yes" and "No" on an attribution card only if this person opened "Details" of this card before the decision (the P1 event `card.details` is recorded before `decide`). Otherwise `decide` is rejected with reason `details_not_opened`, and the card shows "Open "Details" first". The decisions that need this are the ones with `details_required: true` in `spec/model/decision-points.yaml`. Dismissing an incident as false (P2 `incident.dismiss`) needs a reason code and a "Details" text (MGR-8) and turns someone else's "Yes" into a dispute (GOV-13, D-79).
 
@@ -229,7 +229,7 @@ Checked by: `blackbox:core/cards-per-person-day`
 <a id="APR-16"></a>
 ### APR-16. Two approvers for high risk
 
-serves [G2](../docs/goals.md) · since v0.2 · non-waivable · profile core · check: store, blackbox, lint
+serves [G2](../docs/goals.md) · since v0.2 · non-waivable · profile core · check: blackbox, lint
 
 An action with `approvals: 2` is executed only after "Approve" by two different `human` principals, neither of which is the initiator or the service principal that requested the action; one "Reject" closes the request. Each press is recorded separately, the status becomes `approved` in the transaction where the number of different approvers reached two, and from there APR-7 applies. At each press the core checks again that the initiator is active and has `action.request:<action>`. The card shows who has already approved. `apply` rejects a set in which a tenant of kind `production` grants `action.request:<action>` or lists the action in a role's `actions_may_request` for an action with `risk: high` and `approvals: 1`. For an action with `risk: high` and `approvals: 2` in a production tenant, `apply` gives the note `approvers_fewer_than_two` when no group grants `action.approve:<action>`, and `doctor` warns when fewer than two active people other than the initiator hold it.
 
@@ -247,7 +247,7 @@ Checked by: `adapter:channel/run-without-card`, `adapter:channel/run-with-card`,
 <a id="APR-18"></a>
 ### APR-18. Services and monitoring scripts without a card
 
-serves [G2](../docs/goals.md) · since v0.1 · non-waivable · profile core · check: lint, store, blackbox, fixture · decisions: D-67, D-68, D-69, D-70, D-73, D-74, D-77
+serves [G2](../docs/goals.md) · since v0.1 · non-waivable · profile core · check: lint, blackbox, fixture · decisions: D-67, D-68, D-69, D-70, D-73, D-74, D-77
 
 Two tools with `access: write` are executed without a human approval card (D-68): `service/control {service, verb}` (MON-8) and `monitor/script_run {resource, script}` (MON-10). There are no other exceptions from "level 3 only through human approval" (PRM-2, APR-1), except the routine pipeline run by the `/run` command (APR-17, D-78). Only a verb from the catalog service's `services[].no_card`, default `[restart]`, goes without a card: a restart of a service from the allowed list; `start` and `stop` always go with a card, like an ordinary action (D-74); a monitoring script from the allowed list goes without a card. As with an ordinary action, the right is also needed by the one on whose behalf the task runs (D-73): every initiator of the task must have the capability `service.control:<service>` for this service or `monitor.script_run`, like `action.request:<action>` for an action; principals `service` and `system` get it only as an explicit row in a group, with no wildcard. Without the initiator's right, the call gets `error(forbidden)` with the field `needs: [service.control:<service>]` or `needs: [monitor.script_run]` (PRM-8) and creates nothing. The catalog of a task of level 1 and above includes `service/control` only if the worker's role has the field `service_control` (names of services in its own tenant's catalog, or `["*"]` for all its services); `service` is closed by the intersection of this list with the services the tenant catalog declared as managed, and `verb` by the `control` list of the chosen service. `monitor/script_run` is in the catalog only if the role has `monitor_scripts: [<name>...]` (names from `hosts[].monitor_scripts_allowed` of its own tenant's catalog, or `["*"]` for all its scripts); `resource` is closed by the tenant catalog's resources with `monitor_host`, and `script` by the intersection of the role's list with the catalog's `monitor_scripts_allowed` for this node (D-69): the model sees the script name only from the catalog, the core checks in code the list the adapter read from the monitoring system against the catalog, and a name from the API does not reach the model context (INJ-1). Only people change the role fields, by editing the role manifest in git (INJ-10). For the principal `seat:farm-manager` this right is held by the group `farm-manager-ops`, and it is also the tenant's consent to the manager's actions (by default granted for all catalog services and for scripts; a tenant can remove it by editing the group, and with `farm_manager.enabled: false` this group and principal do not exist in the tenant, D-77). Code takes the machine from the catalog, not the model. P3 does not execute the call itself: the core checks the right of each initiator, holds, bot quarantine, the operator kill switch, rate limits and one operation per service at a time (MON-8); for `start` and `stop` it creates an ordinary approval with a card (APR-3, APR-4, APR-7), and for a verb from `no_card` and for a script, in one transaction, it writes an audit record `service_grant` (bot, role, task, service and verb or node and script, the task's reason code) and creates exactly one write call for the action toolhost of the service's machine or a `monitor_script` delivery for the E5 adapter. The number of the `service_grant` record is in the write call as the field `grant_id` in place of `approval_id`: the toolhost accepts the call only if `grant_id` is present, the tenant matches and the argument hash equals the recorded one, and executes it at most once, as under APR-7. The human command `/service <verb> <service>` with a `service_grant` record on that person's behalf is set by PRM-18. While INJ-15 is in effect, a call in a task with `untrusted_seen` is not executed right away but creates an ordinary approval with a card (APR-3, APR-4, APR-7); it is decided, like an approval of `start` and `stop`, by a person with `action.approve:service.control` (or with `action.approve:service.control:<service>`, narrowed to one service) or `action.approve:monitor.script_run`; such approvals count toward the limits of APR-2, and at the decision the core checks that the role's right for this service or for scripts and the initiator's right still exist. Fixtures: a role without `service_control` does not see `service/control`; initiator `bob` without `service.control:nginx` gets `forbidden`, and with it the restart goes under a `service_grant`; `stop` of the same service creates a card; a verb outside the service's `control` is rejected by the schema; a double handout under one `service_grant` is executed once.
 
@@ -270,7 +270,7 @@ Explained in: [docs/capabilities.md](../docs/capabilities.md)
 <a id="ART-1"></a>
 ### ART-1. Only the core writes the file record, bytes travel only by reference
 
-serves [C3](../docs/goals.md) · since v0.1 · non-waivable · profile core · check: fixture, store
+serves [C3](../docs/goals.md) · since v0.1 · non-waivable · profile core · check: fixture, blackbox
 
 Every file has a record that only the core writes: `file_ref`, tenant, `origin` (`upload`, `produced`, `ingested`), producer (task or principal), `media_type` determined from the content, size, `sha256` (only inside the core, never as a name or reference), `data_mark` and `expires_at`. The core sets the expiry to the smaller of `Tenant.spec.retention.files` and the task type's `result_ttl`, if the file became a result. File bytes do not travel through task bodies, events, audit and usage lines: only `file_ref` goes there.
 
@@ -311,7 +311,7 @@ Checked by: `blackbox:core/result-media-type`, `lint:manifests/result-media-acti
 <a id="ART-6"></a>
 ### ART-6. Declared personal data in the file record
 
-serves [C6](../docs/goals.md) · since v0.1 · non-waivable · profile core · check: fixture, store
+serves [C6](../docs/goals.md) · since v0.1 · non-waivable · profile core · check: fixture, blackbox
 
 The core sets `personal_seen` with source `declared` in the file record when the source declared personal data rather than redaction finding it: for a file with `origin: upload` from a principal of kind `service` with `uploads_personal: true` in the principal's record (set by an admin with `admin:people`, default `true` in a production tenant), and for a file with `origin: ingested` that the task `kb.ingest.v1` or `data.arrived.v1` brought from a catalog resource with `personal: true`. The manager reads a file with `personal_seen` from any source as personal (MGR-30), and it is in the privacy report as an object with personal data. Fixture: a CSV from a `service` principal with `uploads_personal: true` gets `personal_seen: declared` without redaction.
 
@@ -334,20 +334,20 @@ Checked by: `blackbox:core/audit-every-decision`
 <a id="AUD-2"></a>
 ### AUD-2. Only metadata in journals
 
-serves [C6](../docs/goals.md) · since v0.1 · non-waivable · profile core · check: lint, store, blackbox
+serves [C6](../docs/goals.md) · since v0.1 · non-waivable · profile core · check: lint, blackbox
 
 Audit, events, the transition journal, usage and process telemetry hold only ids, sizes, hashes, times, codes and arguments from an `enum` or the catalog. Free argument text (for example the sandbox `argv`) is stored as a hash and a length. There are no message texts, output, memory content, secrets or external ids. Lint checks the `event-data` schemas and the schemas of bot message fields that reach the journal: no `goal` fields, artifacts or strings without an `enum` or id format. Free bot text (notes of messages, findings and proposals) is stored in the retention class `content`. Content lies only in deletable stores with an expiry: task bodies, artifacts, sessions, memory, files, attempt journals. A canary check covers all append-only stores.
 
-Checked by: `blackbox:core/append-only-canaries`, `store:decision/event-fields`
+Checked by: `blackbox:core/append-only-canaries`, `blackbox:decision/event-fields`
 
 <a id="AUD-3"></a>
 ### AUD-3. Audit is append-only
 
-serves [G2](../docs/goals.md) · since v0.1 · non-waivable · profile core · check: store
+serves [G2](../docs/goals.md) · since v0.1 · non-waivable · profile core · check: impl
 
 Audit and the transition journal are append-only: a single record cannot be changed or deleted. They are deleted only as whole periods (months) by the retention loop, by the expiry of the `metadata` class. The core writes audit under a store role that has only insert and read on the audit table; the table owner is a separate migration role that the core does not use.
 
-Checked by: `store:audit/append-only`
+Checked by: `impl:internal/store/TestMigrateAndInit`
 
 <a id="AUD-5"></a>
 ### AUD-5. The "personal data seen" flag
@@ -359,7 +359,7 @@ A task, a file record, an artifact, a bot message, a manager finding and a memor
 <a id="AUD-6"></a>
 ### AUD-6. Audit hash chain
 
-serves [G2](../docs/goals.md) · since v0.1 · non-waivable · profile core · check: store, blackbox, fixture · decisions: D-36, D-59, D-60
+serves [G2](../docs/goals.md) · since v0.1 · non-waivable · profile core · check: blackbox, fixture · decisions: D-36, D-59, D-60
 
 The audit records of each tenant and of the service tenant `farm` are linked by their own hash chain: each record stores its number and the hash of the previous record, and its own hash covers all its fields. Deleting a whole period by the retention loop writes into the chain a record with the period bounds, the number of deleted records and the hash of the last of them. At least once a day the head of the chain of each tenant and of `farm` (the number and hash of the last record) leaves the store. The core signs the head with its key, with the key id (SEC-5), and the monitoring adapter writes the value `seq hash sig key_id` into the monitoring system's history (MON-3); the adapter can write another head, but without the core's signature it is not accepted. The retention of this history is not shorter than the retention of audit, and `farmctl doctor` fails the check if the head of any chain has been missing there for more than a day or if `seq` in the witness history does not grow monotonically; in addition, the head of a tenant's chain goes to a sink or code summary assigned by the tenant, and the head of the `farm` chain goes to the admins of all tenants. P2 `audit.verify` recomputes the chain, compares it with the last head sent, checks the signature of every head in the witness history, and checks the monotonicity of `seq` over the whole history, not only the last value. The witness holds as long as whoever controls the store does not also control the monitoring system; this separation of duties is written in `docs/operations.md`. Fixtures: editing or deleting one record directly in the store is detected; a head rewritten in the witness history with the adapter's token is detected by its signature.
 
@@ -380,7 +380,7 @@ Explained in: [docs/coordination.md](../docs/coordination.md)
 <a id="BGR-1"></a>
 ### BGR-1. A bot group is a selector by roles and labels
 
-serves [G1](../docs/goals.md) · since v0.1 · non-waivable · profile messaging · check: lint, fixture, store · decisions: D-14, D-71
+serves [G1](../docs/goals.md) · since v0.1 · non-waivable · profile messaging · check: lint, fixture, blackbox · decisions: D-14, D-71
 
 A bot group `BotGroup` is a tenant manifest in git with a selector by roles and worker labels. It has no worker ids, capabilities, secrets or references to other tenants. The core computes the membership from the role and the labels recorded at `enroll`; `hello` can only narrow it: a worker with other labels goes to `blocked` and drops out of the group. A worker can be in several groups; an empty group is legal. The membership can be changed only through git and `apply`; `apply` refuses to delete a group referenced by a dispatch policy, the `may_target_groups` of roles, routes or open tasks.
 
@@ -421,7 +421,7 @@ Checked by: `blackbox:model/budget-loop`
 <a id="BUD-3"></a>
 ### BUD-3. A usage line for every call and message
 
-serves [G3](../docs/goals.md) · since v0.1 · non-waivable · profile core · check: store, blackbox · decisions: D-71, D-80, D-87
+serves [G3](../docs/goals.md) · since v0.1 · non-waivable · profile core · check: blackbox · decisions: D-71, D-80, D-87
 
 For every model and tool call and every publication of a bot message, the core writes a usage line: time, tenant, task, tree root, principal, chat, role, worker, the bot identity on whose behalf the attempt ran (`bot`, if present), the task type's purpose (`purpose`), the budget line (`line`, BUD-7), the actual model and a fallback model flag (GW-5), the unit, the quantity and the price in micro-euros (`eur_micros`, BUD-9). For a model the unit is tokens by kind: input, output, cache write and read, reasoning, compaction iterations. For a bot message the unit is `message` with the message size and type, and the line goes to the sender's tree (MSG-11). Model numbers come only from the provider's response through P4; usage reported by a worker is for reference.
 
@@ -448,25 +448,25 @@ Checked by: `blackbox:model/tool-price-reserve`
 <a id="BUD-7"></a>
 ### BUD-7. Budget lines by task purpose
 
-serves [G3](../docs/goals.md) · since v0.1 · non-waivable · profile core · check: blackbox, store · decisions: D-16, D-71, D-77, D-80, D-114
+serves [G3](../docs/goals.md) · since v0.1 · non-waivable · profile core · check: blackbox · decisions: D-16, D-71, D-77, D-80, D-114
 
 Every usage line carries the budget line `line`; the core sets it from the type's purpose (`purpose`) in `spec/model/task-purposes.yaml`, not the worker and not the model. The lines: `work` (purposes `work`, `report`, `translate`), `insight`, `aggregate` and `review` (together with the improvement cycle, D-71), `governance` (from v0.2), `manager` (purposes `manage` and `inspect`), `grant` (calls for a model grant, MGR-18, from v0.2) and `takeover` (takeover, MGR-21, from v0.2). The reserve (BUD-1) is taken both in the line and in the tenant's monthly limit. Exhaustion of a line rejects or defers only tasks of that line and never touches tasks of the `work` line. The limit of every line except `work` is 0 by default: analysis, reviews and the rest are turned on explicitly with money, for analysis also per role. The lines `review`, `governance` and `manager` are reserved in full before the call and do not cross their thresholds: a call that does not fit in the line's remainder does not start. For an active tenant the `manager` line is above 0 (lint MGR-20), and from v0.2 the `governance` line too (GOV-25). A tenant that opted out of the manager (`Tenant.spec.farm_manager.enabled: false`, D-77) has no `manager` line: tasks of the purposes `manage` and `inspect` are not enqueued in it, and lint MGR-20 does not check it.
 
-Checked by: `store:budget/line-by-purpose`
+Checked by: `blackbox:budget/line-by-purpose`
 
 <a id="BUD-9"></a>
 ### BUD-9. Budget in micro-euros per call and in euro cents in limits
 
 serves [G3](../docs/goals.md) · since v0.1 · non-waivable · profile core · check: lint, blackbox · decisions: D-36, D-87
 
-The usage and reserve of one call are computed at the prices from `ModelProfile` as an integer number of micro-euros (`eur_micros`, 1 EUR = 1 000 000) without rounding per call. Limits, reports and `farmctl` show euro cents: the sum over a window (day, hour, month, tree) is rounded up to a whole euro cent, and the limit is compared with the window sum together with reserves (D-87 (1)). The price of a call includes input, output, cache write and read, reasoning and server-side compaction iterations. Three quantities have their own names: the task tree limit `tree_budget_eur` in the task type (an amount in euros), the output limit of one call `max_output_tokens` in the model profile (reasoning counts as output) and the input limit of one runtime run `run_max_input_tokens` in `RunRequest.limits`. There is no `max_tokens` field in the farm's manifests and contracts; lint rejects it. `tree_budget_eur` is required for every task type with a model, including review types `review.*`, analysis, aggregation and the manager; lint at `apply` rejects a type with a model without it, and also a type whose `tree_budget_eur` is less than the reserve of one call under the profile of the purpose's slot and its fallbacks (code `tree_budget_below_call`, GW-2).
+The usage and reserve of one call are computed at the prices from `ModelProfile` as an integer number of micro-euros (`eur_micros`, 1 EUR = 1 000 000) without rounding per call. Limits, reports and `farmctl` show euro cents: the sum over a window (day, hour, month, tree) is rounded up to a whole euro cent, and the limit is compared with the window sum together with reserves (D-87 (1)). The price of a call includes input, output, cache write and read, reasoning and server-side compaction iterations. Three quantities have their own names: the task tree limit `tree_budget_eur` in the task type (an amount in euros), the output limit of one call `max_output_tokens` in the model profile (reasoning counts as output) and the input limit of one runtime run `run_max_input_tokens` in the `limits` of the attempt work item, next to `max_turns` and `deadline`. There is no `max_tokens` field in the farm's manifests and contracts; lint rejects it. `tree_budget_eur` is required for every task type with a model, including review types `review.*`, analysis, aggregation and the manager; lint at `apply` rejects a type with a model without it, and also a type whose `tree_budget_eur` is less than the reserve of one call under the profile of the purpose's slot and its fallbacks (code `tree_budget_below_call`, GW-2).
 
 Checked by: `budget/lint`
 
 <a id="BUD-10"></a>
 ### BUD-10. Reconciliation of usage with the provider report by code
 
-serves [G3](../docs/goals.md) · since v0.1 · waivable · profile core · check: store, blackbox, fixture · decisions: D-36, D-87, D-114
+serves [G3](../docs/goals.md) · since v0.1 · waivable · profile core · check: blackbox, fixture · decisions: D-36, D-87, D-114
 
 Code reconciles the farm's usage per provider workspace with the provider's usage report. The operator exports the report file from the provider console (its format is in the provider binding) and imports it with `farmctl spend reconcile --file`; a process outside the core with the provider's reports key may hand in the same data. The core, workers and runtimes do not have the reports key. The data reaches the core through P2 `spend.reconcile`, one request per UTC day, and the core reconciles: the daily sum of the workspace's usage lines in micro-euros against the provider's daily sum (D-87 (1)). The difference is written as one signed correction line (`correction_eur_micros`), the `spend_estimated` lines of that day (BUD-11) get the marker `spend_reconciled` without a price change, and their reserve returns to the limits. A `spend_estimated` line that no reconciliation reached within `spend.estimate_release_after` from the deployment settings (7 days by default) releases its reserve by time: from then on it counts as zero in the limits and in the daily sum that reconciliation compares, and the correction line of its day brings in what the provider actually billed. If the difference exceeds the tolerance from the deployment settings, the core raises the alarm `alarm.spend.estimate_drift` (warn). The `budget` background loop watches that reconciliation runs: if a provider workspace has no `spend_reconciled` line for longer than `spend.reconcile_overdue_days` from the deployment settings (35 days by default, set to the rhythm of reconciliation), it raises the alarm `alarm.spend.reconcile_overdue` (warn) with the `subject` of that workspace, and a reconciliation closes the episode; the alarm is cleared neither by a person nor by time. `doctor` shows the age of the last reconciliation for each workspace. A reconciliation that fills the usage gap after a restore from a backup also clears `alarm.spend.unreconciled` and restores the daily limits (RET-6). Fixtures: a mock provider report for a day below the sum of the lines gives one correction line equal to the difference; the line prices are unchanged, and the reserve of the `spend_estimated` lines returned to the limits. A mock clock without a `spend_reconciled` line for longer than `spend.reconcile_overdue_days` gives `alarm.spend.reconcile_overdue`, and a reconciliation line moves it to `resolved`. A `spend_estimated` line older than `spend.estimate_release_after` without a reconciliation no longer counts toward the limits.
 
@@ -484,7 +484,7 @@ Checked by: `blackbox:gateway/no-response`
 <a id="BUD-12"></a>
 ### BUD-12. A campaign with a card and a script run are paid from the monthly limit by the amount on the card
 
-serves [G3](../docs/goals.md) · since v0.1 · non-waivable · profile core · check: blackbox, store · decisions: D-36, D-53
+serves [G3](../docs/goals.md) · since v0.1 · non-waivable · profile core · check: blackbox · decisions: D-36, D-53
 
 A campaign with an approval card is paid from the tenant's monthly limit and the budget line of its type, for the amount shown on the card. When a campaign is proposed, the core estimates the price of all its items and of the continuation and reserves that amount in full (ORC-8); the approval accepts exactly that amount. The daily limit of the human initiator does not apply to the items of such a campaign: it is checked only for that person's direct requests. A campaign without a card reserves the estimate in all limits of BUD-1, including the initiator's daily limit; a read campaign that lacks only the daily limit of the human initiator gets a card instead of a refusal and, after approval, is paid like a campaign with a card (ORC-8). A script run is paid like a campaign with a card: when the run is approved, the core reserves its estimate in full, at the worst case over all branches (SCR-8), in the tenant's monthly limit and in the `work` line (step types have the purpose `work` or `report`, SCR-2), within the amount on the card and without the initiator's daily limit; `fanout` campaigns inside a run take their reserve from the run's reserve and do not reserve it a second time (SCR-8). Usage does not exceed the amount shown: an item that does not fit in the remainder of the campaign's reserve is not released, and the campaign pauses with the reason `estimate_exceeded`, which the "Continue" button does not clear (ORC-8).
 
@@ -500,11 +500,11 @@ Lint at `apply` with one formula: if the tenant's `insight` or `aggregate` line 
 <a id="BUD-14"></a>
 ### BUD-14. The enqueue estimate uses the type's actual price
 
-serves [G1](../docs/goals.md) · since v0.1 · waivable · profile core · check: blackbox, store · decisions: D-36
+serves [G1](../docs/goals.md) · since v0.1 · waivable · profile core · check: blackbox · decisions: D-36
 
 The estimate at enqueue of a task and of a campaign item is computed from the 90th percentile of the actual price of finished tasks of this type in the tenant over the last 30 days (the price of the whole task tree by usage lines). For a type without finished tasks in 30 days, the estimate is computed at the worst case (GW-6). The reserve before each model call in P4 stays the worst case (GW-2), so the enqueue estimation method does not affect zero overspend (BUD-2).
 
-Checked by: `store:budget/estimate-p90`
+Checked by: `blackbox:budget/estimate-p90`
 
 <a id="BUD-15"></a>
 ### BUD-15. Actual usage per budget line in doctor
@@ -518,11 +518,11 @@ Checked by: `fixture:budget/manager-line-absent`
 <a id="BUD-16"></a>
 ### BUD-16. The principal in a usage line is anonymized after 93 days
 
-serves [C6](../docs/goals.md) · since v0.2 · non-waivable · profile core · check: store, fixture
+serves [C6](../docs/goals.md) · since v0.2 · non-waivable · profile core · check: blackbox, fixture
 
 The principal in a usage line is needed for the daily limit and is kept for 93 days. For a line whose `subject` is a person (`human:`), when 93 days pass the `retention` loop removes `subject`, `task` and `root`, truncates `time` to the day (00:00 UTC) and writes `subject_kind: human`, in whole days; the amounts and the other fields of the line stay for monthly reports, and the line stays in class `metadata` (SEC-14). A "usage per person" series longer than 93 days does not exist, also not through a join with audit, events or task records (DLV-14). Fixture: a usage line older than 93 days carries no `subject`, `task` or `root`, and its `time` is midnight.
 
-Checked by: `store:budget/subject-anonymized-93d`
+Checked by: `blackbox:budget/subject-anonymized-93d`
 
 <a id="cap"></a>
 ## CAP: Dependency admission and refusal
@@ -589,11 +589,11 @@ Checked by: `fx-cnt-01`
 <a id="CNT-2"></a>
 ### CNT-2. A continuation in the trigger's transaction
 
-serves [G1](../docs/goals.md) · since v0.1 · non-waivable · profile core · check: store · decisions: D-41
+serves [G1](../docs/goals.md) · since v0.1 · non-waivable · profile core · check: blackbox · decisions: D-41
 
 A continuation is created in the same transaction as its trigger (DLV-2), with a key from the closed list of IDM-2: `system:cont:<trigger>:<source id>`, and for a script step `system:script:<run>:<step>` (SCR-8); a double trigger gives one task. If the continuation cannot be enqueued (the tree is canceled, the initiator is disabled or has lost the rights, the budget is exhausted, a hold on the scope), the core writes an event with the reason, and the person in `origin` gets a ready code text.
 
-Checked by: `store:core/continuation-same-tx`
+Checked by: `blackbox:core/continuation-same-tx`
 
 <a id="CNT-3"></a>
 ### CNT-3. Inheritance for a continuation
@@ -625,7 +625,7 @@ Checked by: `blackbox:channel/followup-window`
 <a id="CNT-7"></a>
 ### CNT-7. An action task lives together with its write call
 
-serves [G2](../docs/goals.md) · since v0.1 · non-waivable · profile core · check: store, blackbox
+serves [G2](../docs/goals.md) · since v0.1 · non-waivable · profile core · check: blackbox
 
 The task `action.<action>` is created in the transaction of the approval directly in `working`, with `approval_id`, the key `system:approval:<id>` and without an attempt or lease: its work is the single write call (APR-7). The call's outcome moves the task in the same transaction: `done` gives `completed` with a result from the closed fields of the plugin outcome; `error` (plugin error, `timeout_s`, `no_executor`, `plugin_unavailable`) and `denied(held)` give `failed(exec_failed)`; `exec_unknown` gives `failed(exec_unknown)`. The dispatcher filter, the `deadline` and `reaper` loops and the `start_by` check skip `action.*` tasks: they have no `claim`, no alarm `alarm.task.unclaimed` and no outcome `deadline_exceeded`, and their deadline is held by the action's `ttl` and the call's `timeout_s`. `task.redrive` is forbidden for them (DLV-4). Fixture `blackbox:core/action-task-lifecycle`: after `done` the task is `completed`, after `exec_unknown` the task is `failed(exec_unknown)`, and there is no alarm `alarm.task.unclaimed`.
 
@@ -677,7 +677,7 @@ Checked by: `blackbox:insights/code-checks-order`
 <a id="COM-6"></a>
 ### COM-6. Money for reviews
 
-serves [G3](../docs/goals.md) · since v0.1 · waivable · profile insights · check: blackbox, store, lint · decisions: D-16, D-71
+serves [G3](../docs/goals.md) · since v0.1 · waivable · profile insights · check: blackbox, lint · decisions: D-16, D-71
 
 Reviews spend only the `review` line (BUD-7). On the transition to `in_review`, the core reserves the sum of `tree_budget_eur` of the review types of the lenses enqueued for this proposal (for the kind `none` only two, COM-14); the field `tree_budget_eur` is required for every type with a model, including `review.*` (BUD-13 computes the role estimate from the same values), and lens model profiles have `max_output_tokens` no more than 2000, otherwise the manifest fails `apply`. The share of the `review` line per author role is no more than 30% per month. If the line or the role's share is not enough, proposals wait in `screened` by importance and after `review_wait_max` move to `parked(review_budget)`. The `farm_manager` lens is skipped first when money runs short (GOV-25).
 
@@ -736,11 +736,11 @@ Checked by: `blackbox:insights/review-forecast`
 <a id="COM-17"></a>
 ### COM-17. Accuracy of a commission member
 
-serves [G5](../docs/goals.md) · since v0.3 · waivable · profile insights · check: fixture, store, blackbox · decisions: D-16, D-57, D-79, D-101, D-109, D-114
+serves [G5](../docs/goals.md) · since v0.3 · waivable · profile insights · check: fixture, blackbox · decisions: D-16, D-57, D-79, D-101, D-109, D-114
 
 Only code computes the accuracy of a lens executor, and only relative to its own lens: over its forecasts scored in the last 180 days (COM-16), accuracy = 1 - B / B_ref, where B is the mean Brier score of its forecasts and B_ref the mean Brier score of a reference forecast "as it usually goes in this lens" (the base rates of the lens outcomes over the same 180 days in the tenant) on the same cases; a value above 0 is better than the reference. A review whose warning disagrees with its own forecast (it warns with a veto or a score of at most 1 while the forecast gives a bad outcome a probability below 0.5, or it passes while the forecast gives 0.5 or more) counts as a missed forecast with the worst Brier score, and people see the number of such reviews next to the accuracy. The outcome of each lens is the one of COM-16, so a veto that people lifted (DIG-6) is a miss when the trial ended other than `worse` and there is no confirmed attribution (GOV-13), and the blind card answers (DIG-6) enter the veto lenses with weight 1/`inclusion_prob`: "Would not accept" is a bad outcome, "Would accept" a good one. People's decisions do not enter the `value` lens: only the trial outcome counts (PRP-22). A canceled attribution leaves the computation, and a disputed one (`disputed`, D-79) does not enter it while the dispute is open. Fewer than 10 scored forecasts give `insufficient`; a decision about departure (GOV-43) needs at least `commission.accountability_min_forecasts` (GOV-36). Two executors are tied when their accuracies differ by less than one standard error of the difference. Accuracy is always shown together with the lens and compared only within the lens: P2 `commission.status`, the weekly commission summary and the promotion card show it; no bot context contains it (GOV-46).
 
-Checked by: `store:insights/accuracy`, `com-05`
+Checked by: `blackbox:insights/accuracy`, `com-05`
 
 <a id="dep"></a>
 ## DEP: Deployment and least privilege
@@ -875,7 +875,7 @@ Checked by: `dig-02`, `dig-03`
 <a id="DIG-4"></a>
 ### DIG-4. Feedback from human decisions
 
-serves [G5](../docs/goals.md) · since v0.2 · waivable · profile insights · check: store · decisions: D-16
+serves [G5](../docs/goals.md) · since v0.2 · waivable · profile insights · check: blackbox · decisions: D-16
 
 The reason for "Reject" comes from the closed list `spec/model/decline-reasons.yaml`; there is no free feedback text. Code computes the decision statistics by role and category as the series `farm.proposals.accept_share` and `farm.proposals.decline_reason_share`. The statistics are input for the analysis and for people. The core changes nothing by itself because of them: a check threshold or `max_per_week` changes only by a proposal or a commit in git, and the statistics never change instructions, skills or manifests (INJ-10).
 
@@ -884,7 +884,7 @@ Checked by: `dig-09`
 <a id="DIG-5"></a>
 ### DIG-5. A random audit sample by a recorded seed
 
-serves [G5](../docs/goals.md) · since v0.2 · non-waivable · profile insights · check: store, fixture, blackbox · decisions: D-16, D-114
+serves [G5](../docs/goals.md) · since v0.2 · non-waivable · profile insights · check: blackbox, fixture · decisions: D-16, D-114
 
 Every month the core draws the audit sample from the tenant's proposals that got a commission verdict that month and were not recommended: `dismissed` (a veto, a minimum or a low score) and `parked` by score (not by quorum, budget or conflict). The size is N = min(T, max(`min_per_month`, ceil(`share` × T))), where T is the number of such proposals; `min_per_month` is at least 4 by lint. The core draws N of them uniformly at random with a fresh seed and records the seed and the drawn ids at the time of the choice; each item stores in the `sample` field of the proposal the month and its inclusion probability `inclusion_prob` = N / T. Blind cards go in the digest only by direct message to people with `proposal.decide:<category>`, no more than `audit_sample.max_per_digest` at a time; a group digest shows only their number. Code computes over 180 days the share of "Would accept" answers with weights 1/`inclusion_prob` and shows it in P2 `commission.status`; with at least 10 answers and a share of at least 0.3 it sets the flag `commission_underrates`, visible to people there.
 
@@ -902,7 +902,7 @@ Checked by: `dig-04`, `dig-05`
 <a id="DIG-7"></a>
 ### DIG-7. The closed form of "My outcomes"
 
-serves [G5](../docs/goals.md) · since v0.1 · non-waivable · profile insights · check: store, lint · decisions: D-16, D-24
+serves [G5](../docs/goals.md) · since v0.1 · non-waivable · profile insights · check: blackbox, lint · decisions: D-16, D-24
 
 "My outcomes" is a closed table of the proposal outcomes of one author bot, assembled only by code. The rows: its proposals and its refusals at creation (`proposal.rejected.v1`). The fields come only from a closed list: id, category, problem code, state, the outcome class of the human decision (`accepted`, `declined`, `parked`), the promised change of the metric and the trial outcome code (PRP-22). The table has no reason codes of human decisions and refusals, no free text, no people's names, no per-lens scores, no case data and no queue (GOV-29). Row order: first the rows with a measured trial outcome, then the rows with only a human decision, then the rest. The core puts the last 20 rows into the input of this bot's analysis tasks (INS-5).
 
@@ -911,7 +911,7 @@ Checked by: `dig-07`
 <a id="DIG-8"></a>
 ### DIG-8. Trial figures in "My outcomes"
 
-serves [G5](../docs/goals.md) · since v0.2 · waivable · profile insights · check: store · decisions: D-16
+serves [G5](../docs/goals.md) · since v0.2 · waivable · profile insights · check: blackbox · decisions: D-16
 
 No later than one day after the end of the trial window, the proposal's row in "My outcomes" gets the trial figures: the metric value before and after, the change over all points, without the author bot's points and without the points of the author's role (`change_without_role`, PRP-22), and the guard that triggered, if any.
 
@@ -932,11 +932,11 @@ Every task and every delivery is handed out at least once and ends in a terminal
 <a id="DLV-2"></a>
 ### DLV-2. A transition and its consequences in one transaction
 
-serves [G1](../docs/goals.md) · since v0.1 · waivable · profile core · check: store
+serves [G1](../docs/goals.md) · since v0.1 · waivable · profile core · check: blackbox
 
 A task transition, its event, the deliveries it produced, continuations (CNT-2), the publication of the attempt's messages (MSG-9) and usage lines are written in one store transaction.
 
-Checked by: `store:core/transition-one-tx`
+Checked by: `blackbox:core/transition-one-tx`
 
 <a id="DLV-3"></a>
 ### DLV-3. A delivery failure does not touch the task
@@ -1058,11 +1058,11 @@ Checked by: `blackbox:core/toolcall-no-executor`
 <a id="DLV-18"></a>
 ### DLV-18. Locale order and the answer language
 
-serves [G6](../docs/goals.md) · since v0.2 · waivable · profile core · check: blackbox, adapter · decisions: D-90, D-107
+serves [G6](../docs/goals.md) · since v0.2 · waivable · profile core · check: blackbox · decisions: D-90, D-107
 
-From v0.2 the core chooses the language of a code text for each delivery in this order and takes the first value for which the installation has a catalog: the recipient's own `locale` (the principal's for a person or a private chat, the chat binding's for a group chat); for a delivery of a schedule task to the schedule's `deliver_to`, the schedule's `locale`; the tenant's `Tenant.spec.locale`; `en`. A key missing in the chosen catalog takes the `en` text of that key. Languages are the closed list `locale` of `spec/model/common.schema.json`; the skeleton ships only the `en` catalog, and catalogs of other languages are installation data (D-90). For an agent attempt the core writes `reply_locale` into the E4 run request with the language that the same order gives for the recipient of the task result (the initiator of a direct request, the chat of a group request, the schedule's addresses); the model does not choose it, and the core translates no model text and no argument value.
+From v0.2 the core chooses the language of a code text for each delivery in this order and takes the first value for which the installation has a catalog: the recipient's own `locale` (the principal's for a person or a private chat, the chat binding's for a group chat); for a delivery of a schedule task to the schedule's `deliver_to`, the schedule's `locale`; the tenant's `Tenant.spec.locale`; `en`. A key missing in the chosen catalog takes the `en` text of that key. Languages are the closed list `locale` of `spec/model/common.schema.json`; the skeleton ships only the `en` catalog, and catalogs of other languages are installation data (D-90). For an agent attempt the core writes `reply_locale` into the attempt work item of P1 `claim` with the language that the same order gives for the recipient of the task result (the initiator of a direct request, the chat of a group request, the schedule's addresses); the model does not choose it, and the core translates no model text and no argument value.
 
-Checked by: `blackbox:channel/locale-order`, `adapter:runtime/reply-locale`
+Checked by: `blackbox:channel/locale-order`, `blackbox:core/reply-locale`
 
 <a id="dsp"></a>
 ## DSP: Task pool and dispatcher
@@ -1149,7 +1149,7 @@ Explained in: [docs/tasks-and-delivery.md](../docs/tasks-and-delivery.md)
 <a id="FEN-1"></a>
 ### FEN-1. A lease with a growing number and a token
 
-serves [G1](../docs/goals.md) · since v0.1 · waivable · profile core · check: blackbox, store
+serves [G1](../docs/goals.md) · since v0.1 · waivable · profile core · check: blackbox
 
 Every P1 `claim` creates a lease of a unit of work (a task attempt, a tool call or a delivery) with the number `lease_no` one greater than the previous one for this unit of work. The lease token is `(epoch, work_id, lease_no, worker_id)`, where `epoch` is the store epoch (RET-6) and `work_id` is shared by all leases of one unit of work. Exactly one holder holds a unit of work. A task has three counters, and the core keeps them separately: `lease_no` grows at every `claim`, including after outcomes that spend nothing (`held`, `core_unavailable`, `worker_drain`, `provider_unavailable`, `preempted`); `attempts_spent` grows only on an outcome that spends an attempt according to the reason registry, and is compared with `max_attempts` (FEN-3); `runs_counted` grows only on a runtime run in which the model answered at least once, and is compared with `max_runs` (GW-13). One runtime run falls on one attempt lease, and its identifier for E4 is `<task id>:<lease_no>`. Acceptance: 10 000 tasks over 8 competing workers give 0 duplicates and 0 losses; a task with two `provider_unavailable`, one `held` and three `lease_expired` has `lease_no` 6, `attempts_spent` 3 and ends with `failed(attempts_exhausted)` (`blackbox:core/lease-counters`).
 
@@ -1158,11 +1158,11 @@ Checked by: `blackbox:core/lease-counters`, `blackbox:core/ten-thousand-tasks`
 <a id="FEN-2"></a>
 ### FEN-2. A stale token gets fenced without writes
 
-serves [G1](../docs/goals.md) · since v0.1 · non-waivable · profile core · check: blackbox, store · decisions: D-80
+serves [G1](../docs/goals.md) · since v0.1 · non-waivable · profile core · check: blackbox, impl · decisions: D-80
 
 Every changing call of a work holder carries a lease token or a handle bound to the lease (SEC-3). A call with a stale token, with a token of a previous store epoch, or, for a seat task, with a previous seat epoch gets `fenced` and changes no record. Acceptance: `kill -9` of a worker in the middle of a task; the second attempt finishes the work, and the late `complete` of the first gets `fenced`. Fencing protects only writes to the farm store; writes to the outside world are covered by APR-7 and FEN-7.
 
-Checked by: `lease/stale-complete`, `store:lease/fence`, `blackbox:model/stale-token`, `blackbox:core/kill-worker`
+Checked by: `lease/stale-complete`, `blackbox:model/stale-token`, `blackbox:core/kill-worker`, `impl:internal/core/TestFailRetriesThenExhausts`
 
 <a id="FEN-3"></a>
 ### FEN-3. Ceilings of leases, attempts and runs
@@ -1185,11 +1185,11 @@ Checked by: `blackbox:core/cancel-via-heartbeat`
 <a id="FEN-5"></a>
 ### FEN-5. Core downtime does not spend an attempt
 
-serves [G1](../docs/goals.md) · since v0.1 · non-waivable · profile core · check: blackbox, store · decisions: D-36
+serves [G1](../docs/goals.md) · since v0.1 · non-waivable · profile core · check: blackbox · decisions: D-36
 
-The core downtime window is the interval from the last successful tick of any background loop in the store (OBS-8) to the moment the core becomes ready. The core writes nothing at the start of the window (there may be nowhere to write) and computes it when leaving `not_ready`. When ready, the core, in one C1 operation `lease.extend` under a lock, extends every lease that was `active` at the start of the window to "the moment of readiness plus the lease term"; a second core copy that left `not_ready` later changes nothing with the same operation if the lease is already extended to a later deadline. A lease that the holder did not extend even after that ends with the reason `core_unavailable`: no attempt is spent and nothing goes to `runs_counted`, the task returns to `submitted` without a pause, and the outcome counts as an infrastructure failure, not a task failure. For a read call such an outcome is `error(core_unavailable)` for the model, for a write call `exec_unknown` under APR-7, for a delivery a return to `planned` without spending an attempt. A worker adapter that could not reach P1 or P4 repeats `heartbeat` with random jitter until `lease_remaining_s` runs out (TIM-1). Fixtures: the core is stopped for 5 minutes in the middle of a task, and after the start the task is finished without a spent attempt (`blackbox:core/core-down-5m`); two core copies leave downtime a minute apart, and the lease is extended once (`store:lease/extend-two-cores`).
+The core downtime window is the interval from the last successful tick of any background loop in the store (OBS-8) to the moment the core becomes ready. The core writes nothing at the start of the window (there may be nowhere to write) and computes it when leaving `not_ready`. When ready, the core, in one C1 operation `lease.extend` under a lock, extends every lease that was `active` at the start of the window to "the moment of readiness plus the lease term"; a second core copy that left `not_ready` later changes nothing with the same operation if the lease is already extended to a later deadline. A lease that the holder did not extend even after that ends with the reason `core_unavailable`: no attempt is spent and nothing goes to `runs_counted`, the task returns to `submitted` without a pause, and the outcome counts as an infrastructure failure, not a task failure. For a read call such an outcome is `error(core_unavailable)` for the model, for a write call `exec_unknown` under APR-7, for a delivery a return to `planned` without spending an attempt. A worker adapter that could not reach P1 or P4 repeats `heartbeat` with random jitter until `lease_remaining_s` runs out (TIM-1). Fixtures: the core is stopped for 5 minutes in the middle of a task, and after the start the task is finished without a spent attempt (`blackbox:core/core-down-5m`); two core copies leave downtime a minute apart, and the lease is extended once (`blackbox:lease/extend-two-cores`).
 
-Checked by: `blackbox:core/core-down-5m`, `store:lease/extend-two-cores`
+Checked by: `blackbox:core/core-down-5m`, `blackbox:lease/extend-two-cores`
 
 <a id="FEN-6"></a>
 ### FEN-6. Self-stop of a holder by its own clock
@@ -1253,7 +1253,7 @@ Checked by: `adapter:channel/promotion-card-from-record`, `blackbox:channel/prom
 <a id="GOV-12"></a>
 ### GOV-12. The seats that can leave and the person's choice
 
-serves [C1](../docs/goals.md) · since v0.2 · non-waivable · profile governance · check: store, blackbox · decisions: D-25, D-26, D-115
+serves [C1](../docs/goals.md) · since v0.2 · non-waivable · profile governance · check: blackbox · decisions: D-25, D-26, D-115
 
 When a promotion case that needs a seat freed opens (GOV-14), the core writes into the case the list L of the seats that can leave: the commission seats of the tenant with a holder, except seats whose holder has been in the commission for less than `protect_new` (60 days), and never the manager seat. L does not change after the opening; a seat from L that changes holder or becomes free during the case cancels it with `canceled(seat_changed)`. For every seat in L the `promotion_card` shows symmetric figures of its holder over 180 days, built by code from records: how many times the holder recommended and how many times it vetoed, how many of these were confirmed (a recommendation with the trial outcome `better`; a veto that people upheld) and how many were refuted (a recommendation with the outcome `worse` or a confirmed attribution; a veto lifted by people after which the trial outcome is not `worse` and there are no attributions), and from v0.3 its accuracy (COM-17). Unless code proposes the leaver (GOV-43), the person chooses it on the card from L, also when L has one seat: "Confirm" carries the chosen seat in the `choice` field of `decide`. A `choice` outside L, or other than the proposed seat when code proposed one, is refused with `leaver_not_offered`. The card also has "Not now" and "Wrong candidate" (GOV-31), and nothing changes before the person's button (GOV-9). There are no ballots, and no bot takes part in the choice. Commission seat holders write no new facts at all (PRF-1), so from the opening nobody in L can prepare a one-sided set of facts.
 
@@ -1309,16 +1309,16 @@ Checked by: `gov-fx-29`
 <a id="GOV-21"></a>
 ### GOV-21. Case audit with metadata only
 
-serves [G2](../docs/goals.md) · since v0.2 · non-waivable · profile governance · check: lint, store · decisions: D-115
+serves [G2](../docs/goals.md) · since v0.2 · non-waivable · profile governance · check: lint, blackbox · decisions: D-115
 
 Every case transition, the list L with the figures of its seats, the proposed leaver and the basis of the proposal, flags, people's decision with the chosen seat, change of holder, identity retirement, offering and taking of facts (ids and numbers) writes an audit record (AUD-1) with metadata only (AUD-2), under a command name from the closed list `spec/model/governance-events.yaml`.
 
-Checked by: `store:governance/case-audit-metadata`
+Checked by: `blackbox:governance/case-audit-metadata`
 
 <a id="GOV-22"></a>
 ### GOV-22. Stopping the manager seat on an incident
 
-serves [C1](../docs/goals.md) · since v0.1, until v0.2 · non-waivable · profile governance · check: store, blackbox, lint · decisions: D-33, D-34, D-77
+serves [C1](../docs/goals.md) · since v0.1, until v0.2 · non-waivable · profile governance · check: blackbox, lint · decisions: D-33, D-34, D-77
 
 At any moment the manager seat has no more than one holder with the current epoch. The seat stores the stop reason set with the time of each reason: `human` (a hold on the scope `seat`, MGR-15), `no_control` (the safeguard, MGR-14) and `incident`. A new incident of a class with `stops_manager: true` in any tenant where the manager is enabled (`farm_manager.enabled: true`, MGR-42), opened by the core while the seat is in `held`, adds the reason `incident` in the same transaction; for a class whose subject is a disk, the reason is added only if MGR-33 and MGR-34 hold; otherwise there is no stop, and the incident record stores the reason code in the field `stops_manager_effect`. The stop increments the seat epoch, cancels all running attempts of the holder in all tenants and forbids `claim` of seat tasks. An incident opened before a holder was assigned or returned gives no stop; there is no window without a stop after assignment. There is one exception: if the seat left `held` only for the reason `no_control` within the `prevent_window` of an incident the holder is responsible for under MGR-34, the reason `incident` is added also to a seat in `stopped`, and the ways out of the stop are the same. Holds that the holder already set live out their term, no longer than 2 h, and there are no new ones; its pending cards stay marked "requester stopped", and a human decision on them is executed as that person's operation; similar incidents opened during the stop are only appended to the `manager_stopped` card. The card goes to farm operators without buttons, with ready `farmctl` commands (MGR-35), and is repeated under MGR-36. Ways out: P2 `seat.resume`, only after the triggering incident and the incidents of the same minute are dismissed as false (it removes only the reason `incident`, epoch + 1); P2 `seat.assign` or `seat.vacate`, in which the previous holder leaves with the trigger `replaced_after_incident`; the deadline `decide_within` (default and maximum 7 days), after which the `identity` loop removes the previous holder with the same trigger, and the seat becomes `vacant`. The reasons `human` and `no_control` are removed by a person with `admin:farm`; the seat is in `held` only when the set is empty.
 
@@ -1358,16 +1358,16 @@ Checked by: `gov-res-aware-01`, `gov-res-aware-02`, `gov-res-aware-03`
 <a id="GOV-30"></a>
 ### GOV-30. Silence on an attribution does not expire
 
-serves [C1](../docs/goals.md) · since v0.2 · waivable · profile governance · check: store, blackbox · decisions: D-24, D-57, D-79
+serves [C1](../docs/goals.md) · since v0.2 · waivable · profile governance · check: blackbox · decisions: D-24, D-57, D-79
 
 A candidate attribution of an incident to a change on which a person did not answer before the card expiry, or answered "Don't know", stays in the state `unknown` ("undecided") and does not expire. While the change has candidates in the states `candidate`, `unknown` or `disputed` (a dispute after `dismissed`, GOV-13, D-79), no promotion trigger appears and the attribution window stays open (GOV-13), even if the promotion probation (`probation`) has already passed. The change trial (PRP-21) and its outcome (PRP-22) are not shifted or extended by this. The trigger appears only when the promotion probation has passed and a person answered "No" for every candidate except canceled ones (`canceled`, GOV-13). Once a week, people with `governance.attribute` get a reminder about undecided candidates, no more than 3 times per candidate; after that the candidate stays as a row in the weekly digest. On the promotion card "Confirm" is inactive while the candidate's change has non-canceled attribution candidates without a "Yes" or "No" answer or in a dispute (`attribution_pending`, GOV-9).
 
-Checked by: `store:governance/attribution-silence`, `blackbox:governance/attribution-reminders`
+Checked by: `blackbox:governance/attribution-silence`, `blackbox:governance/attribution-reminders`
 
 <a id="GOV-31"></a>
 ### GOV-31. "Not now" and "Wrong candidate" on the promotion card
 
-serves [C1](../docs/goals.md) · since v0.2 · waivable · profile governance · check: store, blackbox · decisions: D-27, D-101, D-115
+serves [C1](../docs/goals.md) · since v0.2 · waivable · profile governance · check: blackbox · decisions: D-27, D-101, D-115
 
 "Reject" on the promotion card requires a reason code from `spec/model/governance-decline-reasons.yaml`: `not_now` ("Not now") or `wrong_candidate` ("Wrong candidate"); both are allowed in a case that frees a seat and in a case about a vacant seat. With `not_now`, nobody leaves, the candidate's entry stays at the head of the queue, and the next case comes no earlier than after `swap_cooldown` (30 days); this is also the answer of a person who disagrees with the leaver that code proposed (GOV-43). With `wrong_candidate`, the first "Reject" returns the entry to the head of the queue with its own `swap_cooldown` pause (30 days), during which the next entries may go ahead (D-101), and the second one for the same candidate removes it until the candidate's next success. A case is never reopened with another list.
 
@@ -1376,7 +1376,7 @@ Checked by: `gov-fx-23`
 <a id="GOV-32"></a>
 ### GOV-32. A measured deterioration removes the trigger
 
-serves [G5](../docs/goals.md) · since v0.2 · waivable · profile governance · check: store, fixture · decisions: D-37, D-81
+serves [G5](../docs/goals.md) · since v0.2 · waivable · profile governance · check: blackbox, fixture · decisions: D-37, D-81
 
 A promotion trigger appears only after the change trial outcome (PRP-22, D-81). The outcome `worse`, that is, a deterioration of the promised metric or a guard measured by the core, gives no trigger, the same as a confirmed incident attribution. The outcomes `better`, `unchanged`, `undetermined` and `mixed` do not remove the trigger. Only a proposal in the state `realized` at the moment the trigger appears gives a trigger: `reverted` and a `canceled` trial give no trigger, and a revert by a person with the reason `harm_observed` is recorded as the outcome `worse` in the track record and in the forecast scores (COM-16).
 
@@ -1403,7 +1403,7 @@ Checked by: `gov-fx-28`
 <a id="GOV-36"></a>
 ### GOV-36. Accountability runs in shadow until people switch it on, without retroactive effect
 
-serves [C1](../docs/goals.md) · since v0.3 · waivable · profile governance · check: lint, blackbox, store · decisions: D-98, D-109, D-116
+serves [C1](../docs/goals.md) · since v0.3 · waivable · profile governance · check: lint, blackbox · decisions: D-98, D-109, D-116
 
 The first `apply` of a tenant on a core that claims v0.3 writes the audit record `governance.v03_enabled`; its time is `governance_v03_since`, shown in P2 `commission.status`. Only reviews written after it are scored (COM-16), only proposals with a commission verdict after it can be linked to an incident (GOV-38), only recommendations after it count for GOV-41, and only script runs confirmed after it can be linked (TRN-7). Forecasts are scored from this time, not from `accountability_on_since`. Records of v0.1 and v0.2 keep their schemas and are not rewritten (D-98). The tenant charter field `commission.accountability` is `shadow` (the default) or `on`. In `shadow` code finds the cases of GOV-38 and GOV-41, computes forecast scores and accuracy (COM-16, COM-17) and shows them only to people, in P2 `commission.status` and in the weekly commission summary; no link card is sent (a person may still confirm a link through P2, and this goes only into the statistics), nobody leaves the commission for a link or by accuracy, nobody gets a reward or protection (COM-18), and a person chooses who leaves for a newcomer (GOV-12). Forecasts, resubmission and the new reviewer input work in `shadow` too. When every commission seat of the tenant has a holder and every holder has at least `commission.accountability_min_forecasts` scored forecasts (a field of the tenant charter: default 20, it can only be lowered and never below 8, D-116), the `governance` loop sends the tenant admins with `admin:governance` the card `accountability_ready` (no buttons, repeated once a month while the condition holds and the mode is `shadow`). `apply` accepts `on` only while that condition holds, otherwise it rejects the charter with `accountability_not_ready`; going back to `shadow` is always accepted. The first `apply` with `on` writes the audit record `commission.accountability_on`; its time is `accountability_on_since`, and only incidents opened and links confirmed after it lead to departures.
 
@@ -1475,7 +1475,7 @@ Checked by: `blackbox:governance/accountability-unaware`
 <a id="GOV-47"></a>
 ### GOV-47. A preventable incident does not stop the manager, and the operators get a notice
 
-serves [C1](../docs/goals.md) · since v0.3 · non-waivable · profile manager · check: store, blackbox · decisions: D-33, D-34, D-110, D-114
+serves [C1](../docs/goals.md) · since v0.3 · non-waivable · profile manager · check: blackbox · decisions: D-33, D-34, D-110, D-114
 
 From v0.3 the farm manager seat has only the stop reasons `human` (MGR-15) and `no_control` (MGR-14); the core never adds `incident`. A new incident of a class with `manager_accountable: true` (MGR-55), opened while the seat is in `held` in a tenant with the manager enabled (MGR-42), is preventable when the conditions of MGR-45 hold; then in the same transaction the core writes `manager_preventable` into the incident record, raises the alarm `alarm.manager.preventable` with severity `page`, which the monitoring system delivers to people (MON-1; without one, the fallback alarm path of D-88), sends the notice `manager_preventable` and puts the seat into restricted mode in that tenant (MGR-47). Otherwise the incident record keeps the reason code why it is not preventable. The notice `manager_preventable` goes to the farm operators with `admin:governance` in `farm` without buttons, built only from codes and numbers: the incident class and number, the tenant, the time, the reason code of preventability, and ready `farmctl` commands: lift the restriction (`farmctl seat resume farm-manager --tenant <tenant>`), assign a new holder and vacate the seat; the tenant's content does not go to `farm`. It repeats after 24 h and 72 h and then once a week until an operator marks it read or the restriction ends. The monitoring system repeats the alarm by its own rules. The people of the incident's tenant see the mark "manager restricted" in the incident message (MGR-39). The epoch does not change, and the holder keeps its seat until a person decides with `farmctl`: lift the restriction (`seat.resume`), replace the holder (`seat.assign`, the previous one leaves with `replaced_by_human`) or vacate the seat.
 
@@ -1484,7 +1484,7 @@ Checked by: `blackbox:manager/preventable-no-stop`, `blackbox:manager/preventabl
 <a id="GOV-48"></a>
 ### GOV-48. Only code builds the alarm of a manager-accountable class
 
-serves [G4](../docs/goals.md) · since v0.3 · non-waivable · profile manager · check: lint, store · decisions: D-34, D-63, D-110, D-114
+serves [G4](../docs/goals.md) · since v0.3 · non-waivable · profile manager · check: lint, blackbox · decisions: D-34, D-63, D-110, D-114
 
 An incident class with `manager_accountable: true` builds its alarm only from series with `dataorigin: code`, written by the core or by `job` roles on a code schedule with a freshness check of the series, under the same conditions and exclusions as GOV-28 (a series carried over by a `job` role without a model from the monitoring system history is a code series; series fed by model output, choice, refusals, token usage or roles of the profiles `reviewer`, `farm-manager`, `farm-manager-reader` and the purposes `review`, `governance`, `manage`, `inspect` are not). In the initial catalog only `disk_full` has the field; a class of a catalog service down may have it too (MGR-45).
 
@@ -1536,7 +1536,7 @@ serves [G3](../docs/goals.md) · since v0.1 · non-waivable · profile core · c
 
 The reserve before a call (GW-2) is computed at the most expensive model that P4 may use in this call: the slot profile and its declared fallbacks (GW-5). While a task type has no price history (BUD-14), the enqueue estimate is computed at the most expensive model that P4 may allow for tasks of this type, and at the tree limit `tree_budget_eur`.
 
-Checked by: `store:budget/estimate-p90`, `blackbox:gateway/reserve-max-model`
+Checked by: `blackbox:budget/estimate-p90`, `blackbox:gateway/reserve-max-model`
 
 <a id="GW-7"></a>
 ### GW-7. A model only by the role slot and the tenant list
@@ -1609,11 +1609,11 @@ Checked by: `lint:model/provider-terms-lint`
 <a id="GW-16"></a>
 ### GW-16. The prompt cache is the provider's
 
-serves [G3](../docs/goals.md) · since v0.1 · non-waivable · profile core · check: fixture, adapter · decisions: D-36
+serves [G3](../docs/goals.md) · since v0.1 · non-waivable · profile core · check: fixture, blackbox · decisions: D-36
 
 The prompt cache is the provider's; the provider binding lists the cache control fields that are in the allowlist (GW-1) and where P4 itself sets the cache point: after the unchanging part of the request, the instruction and the tool catalog in a fixed order. The cache lives only inside the tenant's workspace (GW-3), and cache writes and reads are paid at the `ModelProfile` prices (BUD-9). Fixture: the second call of the same run reads the cache, and in its usage line the cache read is above 0.
 
-Checked by: `adapter:runtime/cache-read`
+Checked by: `blackbox:gateway/cache-read`
 
 <a id="GW-17"></a>
 ### GW-17. Profile prices and speed with a date and a shelf life
@@ -1698,16 +1698,16 @@ Explained in: [docs/tasks-and-delivery.md](../docs/tasks-and-delivery.md)
 <a id="IDM-1"></a>
 ### IDM-1. Task idempotency key
 
-serves [G1](../docs/goals.md) · since v0.1 · non-waivable · profile core · check: store, blackbox · decisions: D-43
+serves [G1](../docs/goals.md) · since v0.1 · non-waivable · profile core · check: blackbox · decisions: D-43
 
 A task's idempotency key is unique within the pair `(tenant, idempotency_key)`. A repeat with the same key returns the existing task only if both the initiator and the body match (compared by the hash of the body's canonical form); otherwise the answer is `idempotency_conflict` without an id and without any sign of the other task. A refusal at enqueue does not take the key: there is no task record, and the refusal is written to audit. Keys with the prefix `system:` are set only by the core: the `enqueue` request schema rejects a request with such a key from any other sender. Uniqueness holds even after the task is deleted: a tombstone `(tenant, key hash, task id)` of the retention class `tombstone` remains, the key stays taken while the tenant lives, and a repeat of the key of a deleted task gets `gone`, not a new task (RET-3).
 
-Checked by: `store:core/idempotency-key`
+Checked by: `blackbox:core/idempotency-key`
 
 <a id="IDM-2"></a>
 ### IDM-2. A closed list of core keys
 
-serves [G1](../docs/goals.md) · since v0.1 · waivable · profile core · check: blackbox, store · decisions: D-71, D-80, D-114
+serves [G1](../docs/goals.md) · since v0.1 · waivable · profile core · check: blackbox · decisions: D-71, D-80, D-114
 
 Tasks and messages that the core itself creates get an idempotency key only from a closed list, and a double firing of one trigger gives one task. The list: a schedule `system:schedule:<schedule>:<slot>`, where the slot is a UTC instant in the format `schedule_slot` (TIM-3); an action task after approval `system:approval:<approval id>`; a route on an event `system:event:<route>:<source>:<id>`, so two routes on one event give two tasks; a channel activity `system:activity:<channel>:<update id>`; a dead work redrive `system:redrive:<task id>:<n>`, not for `action.*`; a child task from `enqueue_child` `system:child:<parent>:<body hash>`; a bot message `system:msg:<attempt>:<n>`; a wake-up on an inbox `system:wake:<route>:<window>`; an auto-report `system:report:<task>:<route>`; a lens review task `system:review:<proposal>:<lens>`; a continuation `system:cont:<trigger>:<source id>`, including a child task's answer `system:cont:reply:<child task>` and a campaign outcome `system:cont:campaign:<campaign>`; a script step task `system:script:<run>:<step>` (SCR-8), which is also a continuation with the trigger `script`; a campaign item `system:campaign:<campaign>:<n>`; an incident `system:incident:<class>:<subject>:<window>` and its closing pass `system:incident:<incident>:close`; a data read by the manager seat `system:inspect:<basis>:<n>`; the daily review of the manager seat `system:daily:<tenant>:<day>` (MGR-41); a control operation `system:control:<epoch>:<number>`. An external event `system:ingress:<source>:<delivery id>` (from v0.1 for the monitoring adapter, from v0.2 for source channels); from v0.2: an escalation to the manager `system:escalation:<attempt>`, a takeover `system:takeover:<task>`, a batch of pending model grant requests `system:grants:<tenant>:<window>`, a shadow reviewer task of a lens `system:review:<proposal>:<lens>:shadow`, separate from the seat's task, and a review of an escalation to the manager by the necessity lens `system:necessity:<escalation>`. A new core key appears only by editing this list.
 
@@ -1716,7 +1716,7 @@ Checked by: `blackbox:core/system-key-list`
 <a id="IDM-3"></a>
 ### IDM-3. A repeat of holder operations gives the same answer
 
-serves [G2](../docs/goals.md) · since v0.1 · waivable · profile core · check: store, blackbox
+serves [G2](../docs/goals.md) · since v0.1 · waivable · profile core · check: blackbox
 
 A repeat of `heartbeat`, `complete`, `fail`, `release`, `cancel` and `decide` with the same arguments gives the same answer, and the side records (transition, event, deliveries, usage, audit) appear once. For `decide`, "the same arguments" means the same principal, the same subject `(subject_kind, id, nonce)` and the same decision: such a repeat (a double press, a channel retry) gets the same success answer, and there stays one write call. A different decision on an already decided subject, or a press by another principal, gets `already_decided`, and nothing changes (APR-4). Fixtures: `blackbox:channel/double-press` (the same person, the same decision: two identical successes, one write call) and `blackbox:channel/decide-other` (another person or another decision after the first: `already_decided`).
 
@@ -1725,11 +1725,11 @@ Checked by: `blackbox:channel/double-press`, `blackbox:channel/decide-other`
 <a id="IDM-4"></a>
 ### IDM-4. An event is unique by source and id, which the core sets
 
-serves [G4](../docs/goals.md) · since v0.1 · waivable · profile core · check: store, blackbox · decisions: D-62
+serves [G4](../docs/goals.md) · since v0.1 · waivable · profile core · check: blackbox · decisions: D-62
 
 An event is unique by the pair `source` and `id` (CloudEvents), and the core assigns both values from the sender's credentials. Otherwise a worker could take the id of a real event, including `alarm.*`, and the real one would be discarded as a duplicate. P1 `emit` is accepted only with the token of a live attempt and only for event types from the `events` of its task type. A route is declared in the tenant's git and reads events only of its own tenant. A route on an alarm event `alarm.*` can only enqueue a task: alarms reach people only along the installation's one alarm path (MON-1).
 
-Checked by: `store:core/event-source-id`
+Checked by: `blackbox:core/event-source-id`
 
 <a id="idn"></a>
 ## IDN: Identity
@@ -1766,11 +1766,11 @@ Checked by: `adapter:channel/sender-chat`, `adapter:channel/unbound-chat`, `chan
 <a id="IDN-4"></a>
 ### IDN-4. A principal in one tenant, secrets as hashes
 
-serves [G2](../docs/goals.md) · since v0.1 · waivable · profile core · check: store · decisions: D-47
+serves [G2](../docs/goals.md) · since v0.1 · waivable · profile core · check: blackbox, impl · decisions: D-47
 
 A principal belongs to one tenant, and its identity is unique in that tenant; a person or program working in two tenants is two principals. Tokens and keys are stored only as hashes. The identity of an external program is `api:<key_id>`, and of an external event source `hook:<source>`, but never the key itself. After a token or key is rotated, the old one is valid for a limited window, whose value the binding sets.
 
-Checked by: `store:principal/one-tenant-hashed`
+Checked by: `blackbox:principal/one-tenant-hashed`, `impl:internal/core/TestSecretsStoredAsHashes`
 
 <a id="IDN-5"></a>
 ### IDN-5. A personal assistant takes only the owner's tasks
@@ -1802,7 +1802,7 @@ Checked by: `adapter:channel/forwarded-not-command`, `adapter:channel/no-operato
 <a id="IDN-8"></a>
 ### IDN-8. Bot identity and `acting_bot` in records
 
-serves [G5](../docs/goals.md) · since v0.1 · non-waivable · profile governance · check: fixture, blackbox, store · decisions: D-19, D-80
+serves [G5](../docs/goals.md) · since v0.1 · non-waivable · profile governance · check: fixture, blackbox · decisions: D-19, D-80
 
 A bot identity (`Bot`) is a core record: a permanent id `bot_<ulid>`, a tenant, a role and a binding to a worker or seat with an epoch. Only the core issues the id and never reuses it; the identity's tenant comes from the credentials at creation and does not change (TEN-1). Every attempt, model call, usage line, proposal, review, fact, message record in the store (the sender's bot identity; the field is not part of the message envelope) and audit record carries `acting_bot` and the binding epoch `bot_epoch`; only the core writes these fields. The task body, parameters, a message and model output do not set or change the identity. The fields `acting_bot` and `bot_epoch` are in the record schemas from v0.1 and are empty in records made without a bot identity.
 
@@ -1818,7 +1818,7 @@ Checked by: `gov-fx-05`
 <a id="IDN-10"></a>
 ### IDN-10. Only the core writes the seat holder
 
-serves [C1](../docs/goals.md) · since v0.1, until v0.2 · non-waivable · profile governance · check: store, blackbox · decisions: D-21, D-33, D-114
+serves [C1](../docs/goals.md) · since v0.1, until v0.2 · non-waivable · profile governance · check: blackbox · decisions: D-21, D-33, D-114
 
 Seats are declared by the charter (GOV-33). A seat has no more than one holder. Only the core writes the holder, in one transaction that increments the seat epoch by 1 and writes a seat event (`seat.assigned`, `seat.vacated`, `seat.stopped` or `seat.resumed`) and an audit record. The trigger comes only from a closed list: a confirmed promotion case (GOV-9); P2 `seat.assign`, `seat.vacate` or `seat.resume` by a person with `admin:governance` in the seat's tenant, and for the manager seat in `farm`, only through `farmctl` (PRM-14); a stop of the manager seat (GOV-22); the holder's departure (IDN-11). On a commission seat, `seat.assign` seats only an existing functionary identity of this tenant in the state `active`, and for the manager seat the core always creates a new identity in `farm`. A task on behalf of a seat carries the seat epoch; a review or control operation with a stale epoch gets `fenced` without side effects, and at every change of the seat epoch the running attempts of seat tasks get `cancel_requested` and end with the reason `seat_changed` without spending an attempt, and the task waits for a holder with the current epoch. A vacant or stopped seat gets no tasks.
 
@@ -1829,7 +1829,7 @@ Checked by: `gov-fx-01`, `gov-fx-09`
 <a id="IDN-11"></a>
 ### IDN-11. Identity retirement by a closed list
 
-serves [G5](../docs/goals.md) · since v0.1, until v0.2 · non-waivable · profile governance · check: store, blackbox, lint · decisions: D-28, D-33
+serves [G5](../docs/goals.md) · since v0.1, until v0.2 · non-waivable · profile governance · check: blackbox, lint · decisions: D-28, D-33
 
 An identity retires (`retired`) only for one of seven reasons from the closed list `spec/model/bot-retire-reasons.yaml`, which only the core applies: `removed_by_vote` (a promotion case is `effective`), `replaced_after_incident` (only the manager seat: replacement, vacating or the `decide_within` deadline while the stop reason set contains `incident`), `replaced_by_human` (`seat.assign` on a taken seat, or `seat.vacate`), `role_removed` (the role is not in the tenant's applied manifests), `worker_gone` (the identity has been `unbound` for longer than `unbound_ttl`, 30 days), `human_retire` (P2 `bot.retire` with `admin:workers`) and `tenant_offboarded` (tenant offboarding, P2 `tenant.offboard`, from v0.2). Bots have no operation, message type, field or route that sets a reason or postpones retirement. `retired` is terminal: there are no tasks, and reviews and facts from the identity are not accepted, its running attempts get `cancel_requested`, and late writes get `fenced`. In the same transaction the core seals its facts, records and sessions (MEM-4) and opens a fact offer to the successor (MEM-7), and the live worker of the retired identity gets a new identity of the same role. What is sealed is erased under MEM-9, the identity becomes `erased`, and a tombstone remains: id, tenant, role, time, reason and the successor's id.
 
@@ -1867,7 +1867,7 @@ Checked by: `blackbox:core/offboard-leftovers`
 <a id="IDN-15"></a>
 ### IDN-15. Identity retirement by a closed list from v0.3
 
-serves [G5](../docs/goals.md) · since v0.3 · non-waivable · profile governance · check: store, blackbox · decisions: D-28, D-109, D-110
+serves [G5](../docs/goals.md) · since v0.3 · non-waivable · profile governance · check: blackbox · decisions: D-28, D-109, D-110
 
 An identity retires (`retired`) only for one reason from `spec/model/bot-retire-reasons.yaml`, which only the core applies: `removed_by_vote`, `replaced_by_human`, `role_removed`, `worker_gone`, `human_retire`, `tenant_offboarded` (all as in IDN-11) and `parked_expired` (a bot parked under GOV-42 waited 180 days without a worker of its role). A parked bot does not retire as `worker_gone`. A v0.3 core never applies `replaced_after_incident`. Bots have no operation, message type, field or route that sets a reason or postpones retirement. `retired` is terminal, and the same transaction seals, offers facts and gives the live worker a new identity, as in IDN-11.
 
@@ -1876,7 +1876,7 @@ Checked by: `blackbox:identity/retire-v03`
 <a id="IDN-16"></a>
 ### IDN-16. Only the core writes the seat holder, from v0.3
 
-serves [C1](../docs/goals.md) · since v0.3 · non-waivable · profile governance · check: store, blackbox · decisions: D-21, D-33, D-109, D-110
+serves [C1](../docs/goals.md) · since v0.3 · non-waivable · profile governance · check: blackbox · decisions: D-21, D-33, D-109, D-110
 
 Seats are declared by the charter (GOV-33), a seat has no more than one holder, and only the core writes the holder, in one transaction that increments the seat epoch and writes a seat event and an audit record, as in IDN-10. The trigger comes only from a closed list: a confirmed promotion case (GOV-9); P2 `seat.assign`, `seat.vacate` or `seat.resume` by a person with `admin:governance` through `farmctl` (PRM-14); a confirmed link under GOV-42 (the seat becomes vacant and the holder is parked); the holder's departure (IDN-15). There is no stop on an incident (GOV-47). The epoch fencing and the cancellation of running seat attempts are as in IDN-10.
 
@@ -1997,11 +1997,11 @@ The farm does not download URLs from messages of people and bots: a link stays t
 <a id="INJ-9"></a>
 ### INJ-9. The runtime has only P3 tools
 
-serves [G2](../docs/goals.md) · since v0.1 · non-waivable · profile core · check: adapter, blackbox · decisions: D-45
+serves [G2](../docs/goals.md) · since v0.1 · non-waivable · profile core · check: blackbox · decisions: D-45
 
-The runtime has no tools other than P3. Built-in shell, files, web, browser, search over documents and old sessions (KNW-3), the provider's server-side tools and background self-learning are turned off. The runtime adapter checks this and, independently of it, P4 (GW-1).
+The runtime has no tools other than P3. Built-in shell, files, web, browser, search over documents and old sessions (KNW-3), the provider's server-side tools and background self-learning are turned off. The agent worker declares `runtime.built_in_tools: []` in P1 `hello`, any other value blocks the worker (`blocked`), and P4 checks the model requests independently (GW-1).
 
-Checked by: `adapter:runtime/only-p3-tools`
+Checked by: `blackbox:core/runtime-only-p3-tools`
 
 <a id="INJ-10"></a>
 ### INJ-10. The model does not change itself
@@ -2086,7 +2086,7 @@ The initiator of analysis is `system`. The permissions of an analysis attempt eq
 <a id="INS-3"></a>
 ### INS-3. Proposals are created only when an attempt finishes successfully
 
-serves [G2](../docs/goals.md) · since v0.1 · non-waivable · profile insights · check: store, blackbox · decisions: D-16, D-17, D-71
+serves [G2](../docs/goals.md) · since v0.1 · non-waivable · profile insights · check: blackbox · decisions: D-16, D-17, D-71
 
 The core creates proposals from the result of an analysis or aggregator only on a successful `complete` of the attempt, in the same transaction (DLV-2). A failed, canceled or `fenced` attempt creates nothing. A proposal inherits the attempt's `data_mark` and `untrusted_seen` together with their sources (INJ-13).
 
@@ -2154,11 +2154,11 @@ Checked by: `blackbox:knowledge/upload-rights`, `blackbox:knowledge/index-put-bi
 <a id="KNW-5"></a>
 ### KNW-5. Deleting a document deletes its fragments
 
-serves [C6](../docs/goals.md) · since v0.2 · non-waivable · profile knowledge · check: store · decisions: D-97
+serves [C6](../docs/goals.md) · since v0.2 · non-waivable · profile knowledge · check: blackbox · decisions: D-97
 
 Deleting a corpus document, the expiry of its file and deleting the whole corpus delete the fragments of this document in the per-tenant corpus index in C1 together with the file (C1 `file.purge`), and the cached output of `kb_search` and `kb_read` that holds them (PRM-12). After deletion, search does not find them (D-97). Fragments live only in C1, so the check is a C1 store check; for the edge stores the check asks their `match` operation for the document canary and expects no fragment record, while copies that tasks quoted into sessions, memory or results are task content under their own retention and erasure.
 
-Checked by: `store:knowledge/delete-document`
+Checked by: `blackbox:knowledge/delete-document`
 
 <a id="lcy"></a>
 ## LCY: Tenant lifecycle
@@ -2168,7 +2168,7 @@ Explained in: [docs/operations.md](../docs/operations.md)
 <a id="LCY-1"></a>
 ### LCY-1. Tenant lifecycle
 
-serves [C3](../docs/goals.md) · since v0.2 · non-waivable · profile core · check: blackbox, store · decisions: D-42
+serves [C3](../docs/goals.md) · since v0.2 · non-waivable · profile core · check: blackbox · decisions: D-42
 
 A tenant is declared in git (`tenants/<name>/tenant.yaml`) and appears at `farmctl apply`; tenant operations are operator operations (PRM-14). A tenant goes through the states `active`, `suspended`, `offboarding`, `deleted` under the lifecycle `spec/lifecycles/tenant.md`. `suspended` is a hold on the scope `tenant` with the reason `suspended` and the effects `no_enqueue`, `no_claim`, `no_tool`, `no_action`, `no_delivery` (HLD-1); data is not touched, and deliveries get `withheld`, except messages to admins about the hold itself (HLD-3). `offboarding` (P2 `tenant.offboard`) sets an operator hold on scope `tenant` with reason `offboarding` and the effects of `suspended`, revokes the credentials of the tenant's workers and channels, forgets the tenant's provider key and stops using it (GW-3; revoking the key and the workspace at the provider is an operator step that `tenant.offboard` prints in its answer, D-103), revokes every connection of the tenant's people (SEC-7, reason `offboarding`; the consent adapter deletes the tokens and revokes them at the provider), and cancels pending approvals; only export is allowed. `deleted` (P2 `tenant.delete`, no earlier than the end of the export window: `export_window` of the `tenant.offboard` request, default and ceiling 30 days; an earlier `tenant.delete` gets `export_window_open`) creates an erasure request with the scope `(tenant)` across all stores (RET-7); the tenant id stays as a tombstone and is not used again (RET-3), and `apply` of a tenant with that name is rejected.
 
@@ -2279,7 +2279,7 @@ Checked by: `lint:manifests/commit-trailers`
 <a id="MAN-6"></a>
 ### MAN-6. apply is atomic
 
-serves [G2](../docs/goals.md) · since v0.1 · non-waivable · profile core · check: blackbox, store · decisions: D-36
+serves [G2](../docs/goals.md) · since v0.1 · non-waivable · profile core · check: blackbox · decisions: D-36
 
 `apply` is atomic: the set is applied as a whole in one store transaction or not applied at all. A schema, reference, lint or escalation-ban error in any object of the set, and a core failure in the middle of `apply`, leave all objects of the set in their previous state; there are no partially applied permissions, roles or types. The status shows the errors of the rejected set. Fixture: in a set of a role, a task type and a group, the third file has an error; after `apply` all three objects are unchanged.
 
@@ -2352,9 +2352,9 @@ Checked by: `gov-mem-02`
 <a id="MEM-4"></a>
 ### MEM-4. Memory visibility, deletion and sealing
 
-serves [C6](../docs/goals.md) · since v0.1 · non-waivable · profile core · check: adapter, store · decisions: D-28
+serves [C6](../docs/goals.md) · since v0.1 · non-waivable · profile core · check: fixture, blackbox · decisions: D-28
 
-A person sees and erases their `person` memory; `forget` deletes for real. `forget`, person offboarding (P2 `principal.offboard`) and tenant deletion (P2 `tenant.delete`) go through an erasure request (RET-7) and delete memory and sessions in all stores, including runtime stores, with a result for each store. After `run` there is no transcript on the runtime disk except the declared `session: runtime_internal` (RT-1). On identity retirement (IDN-11) the core seals its facts, records, track record and the sessions it ran: no bot reads them, except the fact offer to the successor (MEM-7); people with `admin:governance` see them only through P2 `bot.show --sealed`, and sessions only as metadata. Sealed data is erased in all stores under MEM-9, and a tombstone remains.
+A person sees and erases their `person` memory; `forget` deletes for real. `forget`, person offboarding (P2 `principal.offboard`) and tenant deletion (P2 `tenant.delete`) go through an erasure request (RET-7) and delete memory and sessions in all stores, including runtime stores, with a result for each store. After an attempt there is no transcript on the runtime disk except the declared `runtime.session: runtime_internal` (RT-1). On identity retirement (IDN-11) the core seals its facts, records, track record and the sessions it ran: no bot reads them, except the fact offer to the successor (MEM-7); people with `admin:governance` see them only through P2 `bot.show --sealed`, and sessions only as metadata. Sealed data is erased in all stores under MEM-9, and a tombstone remains.
 
 Checked by: `mem-fx-03`
 
@@ -2370,7 +2370,7 @@ Checked by: `mem-fx-01`, `mem-fx-02`, `mem-fx-05`, `mem-fx-06`
 <a id="MEM-7"></a>
 ### MEM-7. Facts pass to the successor, rechecked by code
 
-serves [G1](../docs/goals.md) · since v0.1 · non-waivable · profile governance · check: store, blackbox, fixture · decisions: D-27, D-28, D-33, D-114
+serves [G1](../docs/goals.md) · since v0.1 · non-waivable · profile governance · check: blackbox, fixture · decisions: D-27, D-28, D-33, D-114
 
 On identity retirement (IDN-11) or a change of its binding, the core creates a fact offer (`FactOffer`): only active facts, rechecked at creation, no more than `offer.max` (100), only in the same tenant and only to the successor; neither a person nor a model chooses the facts. The successor is the new identity of the same worker; without a live worker, the first identity that people enroll in the same role in the same tenant before the seal ends; for a seat holder, the next holder of the same seat, and for the farm manager seat with a separate offer for the section of each tenant (MGR-27). Other identities of the role do not get the facts, and when a role is deleted or a tenant offboards there is no successor. Core records, the track record, sessions, the inbox and records of another tenant are never offered. The offer stays open until the end of the leaving identity's seal (`open_until`); without a successor by then, the facts are erased together with the seal. When the successor exists, the core in one transaction rechecks each fact under MEM-6 with the permissions of the successor's role, copies the facts that pass, the most recently used first, into the successor's space in state `active` with the mark `inherited` while the space has room (`memory.facts.max_active`), and closes the offer; a role whose profile has no `bot` memory gets nothing (PRF-1, MEM-2). A copy keeps `untrusted_origin` of its fact, so a fact from an attempt with `untrusted_seen` stays marked. People do not approve the transfer; P2 and the summary show only numbers.
 
@@ -2379,20 +2379,20 @@ Checked by: `gov-mem-03`, `mem-fx-03`, `mem-fx-04`, `gov-mem-04`
 <a id="MEM-9"></a>
 ### MEM-9. A seal does not extend retention periods
 
-serves [C6](../docs/goals.md) · since v0.1 · waivable · profile governance · check: store, blackbox · decisions: D-28
+serves [C6](../docs/goals.md) · since v0.1 · waivable · profile governance · check: blackbox · decisions: D-28
 
 The seal of a retired identity does not extend retention periods. At the end of `seal_ttl` (30 days) the `identity` loop enqueues an erasure request with reason `bot_retired` and the identity id as scope (RET-7), and erasure goes through it; from v0.2 the `retention` loop deletes sealed data earlier when its class period ends first (MEM-10). `forget`, a person's request about their data (including `erase_match`, SEC-11), person offboarding and tenant deletion reach sealed data too, and the seal does not delay them. The core cannot seal a `session: runtime_internal` session, so in the identity retirement transaction it enqueues an erasure request with reason `bot_retired` for it, and the runtime adapter deletes it with the E4 `purge` operation (RET-4, RET-7).
 
-Checked by: `store:identity/seal-no-extend`
+Checked by: `blackbox:identity/seal-no-extend`
 
 <a id="MEM-10"></a>
 ### MEM-10. The seal does not hold back deletion by period
 
-serves [C6](../docs/goals.md) · since v0.2 · waivable · profile governance · check: store · decisions: D-106
+serves [C6](../docs/goals.md) · since v0.2 · waivable · profile governance · check: blackbox · decisions: D-106
 
 From v0.2 a sealed item of a retired identity whose class period (RET-9) ends before `seal_ttl` is deleted by the `retention` loop at its period (RET-10), and a sealed session is deleted at the period of its class even while the seal runs. A fact offer then no longer lists the deleted item, and the successor's re-verification does not read it (MEM-7). The end of the seal still files the `bot_retired` erasure request for what is left (MEM-9).
 
-Checked by: `store:identity/seal-retention-earlier`, `sm-fact-09`, `sm-idn-14`
+Checked by: `blackbox:identity/seal-retention-earlier`, `sm-fact-09`, `sm-idn-14`
 
 <a id="mgr"></a>
 ## MGR: Farm manager
@@ -2402,7 +2402,7 @@ Explained in: [docs/farm-manager.md](../docs/farm-manager.md)
 <a id="MGR-1"></a>
 ### MGR-1. One seat, one holder, one epoch
 
-serves [C1](../docs/goals.md) · since v0.1 · non-waivable · profile manager · check: store · decisions: D-18, D-21, D-33
+serves [C1](../docs/goals.md) · since v0.1 · non-waivable · profile manager · check: blackbox · decisions: D-18, D-21, D-33
 
 The `farm-manager` seat in the registry of the service tenant `farm` has no more than one holder and one epoch. The epoch grows when the seat is assigned and vacated, with every new stop reason and on return to `held`. The core writes the epoch into the token of every attempt of the seat; an attempt, a control operation and a grant decision with an old epoch are refused with `fenced`, and at every epoch change the running attempts of seat tasks end with reason `seat_changed` without spending an attempt, and the task waits for a holder with the current epoch (IDN-10). Seat tasks are taken only by workers of seat roles enrolled in the task's tenant; in one tenant no more than one decision attempt runs. Only P2 `seat.assign` from a person with `admin:governance` in `farm` through `farmctl` assigns a holder (PRM-14), and the core always creates a new bot identity without `origin`; a bot from a commission does not move to the seat, and there are no holder elections. When a person replaces the holder, the waiting cards of the former holder move to `canceled(seat_changed)`, and its holds live no longer than 15 minutes.
 
@@ -2420,7 +2420,7 @@ Checked by: `fx-mgr-10`
 <a id="MGR-3"></a>
 ### MGR-3. Seat tasks live in tenants
 
-serves [C3](../docs/goals.md) · since v0.1 · non-waivable · profile manager · check: store, lint · decisions: D-30, D-42
+serves [C3](../docs/goals.md) · since v0.1 · non-waivable · profile manager · check: blackbox, lint · decisions: D-30, D-42
 
 Seat tasks, attempts, findings, operations, cards, usage and the read log are records of the tenant T they belong to; they are run by workers of seat roles enrolled in T, with the key and the `manager` line of tenant T. The permissions of a seat attempt in T are the role's permissions ∩ the permissions of group `farm-manager-ops` of tenant T, and for a human directive also ∩ that person's permissions. The core derives the tenant of an operation's target from the target object; a tenant field in the call body is not accepted. `farm` holds only the seat registry (holder, epoch, state, stop reason set with the time of each) and the holder's identity in numbers and codes; there are no model calls for control in `farm`.
 
@@ -2463,7 +2463,7 @@ Incident classes are set only by `IncidentClass` files in the farm git with a hu
 <a id="MGR-8"></a>
 ### MGR-8. Incident lifecycle
 
-serves [G4](../docs/goals.md) · since v0.1 · non-waivable · profile manager · check: store · decisions: D-18, D-57, D-62, D-63, D-79
+serves [G4](../docs/goals.md) · since v0.1 · non-waivable · profile manager · check: blackbox · decisions: D-18, D-57, D-62, D-63, D-79
 
 Only the core opens an incident, from a code alarm and a catalog class, including an alarm that a `job` role raised from a monitoring system problem (MON-5). Only code sets `resolved`, from the alarm state; an alarm from a monitoring problem moves to `resolved` when the problem is closed and a code recheck confirmed it; an alarm that returns within 1 h after `resolved` returns the same incident to `reopened`. A person with `incident.manage` in the tenant or the seat holder with the current epoch closes an incident, and only after `resolved`. Only a principal of kind `human` can declare an incident false (`dismissed`) from any unfinished state, change its severity and assign a cause. P2 `incident.dismiss` and the channel command accept only a call with a reason code `reason_code` from a closed list (`false_alarm`, `threshold_misconfigured`, `maintenance`, `duplicate`, `test`, `other`) and with the required "Details" text (`details`, typed by the person, up to 500 characters); without them the refusal is `dismiss_reason_required`. The core writes the reason code and `details` into the incident record and the audit, shows them only to people and does not pass them into model context. From v0.2, declaring an incident false cancels in the same transaction the attribution candidates without a "Yes" answer, and moves an attribution with a "Yes" answer into dispute (`disputed`) with a card to the author of that answer (GOV-13, D-79). Code builds the list of involved parties with catalog functions, no more than 20 targets, and recomputes it once a minute while the incident is open. If within the class's `humans.page_if_unhandled_after` there is neither an operation nor a human `incident.ack` mark on the incident, the `incident` loop raises the alarm `alarm.incident.unhandled` with severity `page`; the monitoring system delivers it to people (MON-1), and the farm has no delivery of alarms to people of its own. The alarm moves to `resolved` when an operation or a mark appears or the incident moves to `resolved` or `dismissed`.
 
@@ -2472,7 +2472,7 @@ Checked by: `mgr-04`, `fx-mgr-dismiss-reason`
 <a id="MGR-9"></a>
 ### MGR-9. Control operations and their targets
 
-serves [G2](../docs/goals.md) · since v0.1 · non-waivable · profile manager · check: store, fixture · decisions: D-18, D-33, D-62, D-67, D-68, D-70, D-114
+serves [G2](../docs/goals.md) · since v0.1 · non-waivable · profile manager · check: blackbox, fixture · decisions: D-18, D-33, D-62, D-67, D-68, D-70, D-114
 
 The seat holder changes the world only with operations from `control-ops.yaml` (`hold`, `quarantine`, `drain`, `preempt`, `cancel`, `pin_task`, `request_action`, `release`, `notify`) through C1 `control.apply` and with the write tools `service/control` and `monitor/script_run` (MON-8, MON-10), which the decision role gets with the manifest fields `service_control: ["*"]` and `monitor_scripts: ["*"]` (D-67, D-69); people call the same operations through P2 along the same code path, and task pinning and preemption by people are operator operations through `farmctl` (PRM-14). A seat hold is set with scope `worker`, `bot`, `bot_group`, `role`, `tasktype` or `resource`. A target is taken only from the list that code built for the task's basis (the incident's involved parties, the escalation subject, the directive scope); otherwise the refusal is `target_not_implicated`, and a target from a finding goes under MGR-26. For services and scripts the list is the services of the incident subject's node from the catalog of T and the scripts by name from `hosts[].monitor_scripts_allowed` of that node (for a directive, the resource node from its scope), intersected with the catalog's `control`, the class's `responses.services` or `responses.monitor_scripts` and the consent of group `farm-manager-ops` (`service.control:<service>`, `monitor.script_run`); a call from the list goes without a card under a `service_grant` record (D-68), and in distrust mode with an approval card to a person (MGR-22, INJ-15). Under a human directive an action with a service passes only if that person could approve its card in the tenant themselves. The incident's involved parties are the workers and tasks returned by the class functions, plus the bot identities, roles and bot groups of those workers and the types of those tasks. A seat hold of scope `bot` only delays the identity's tasks: it does not change its state, promotion eligibility. Effects only narrow; a hold expiry is no more than `hold_ttl_max` (2 h); only one's own holds can be released. The targets of hold, quarantine, drain, preemption and cancellation never include workers and types that write the series of classes with `stops_manager` (from v0.3 `manager_accountable`, GOV-48), roles of profiles `reporter`, `reviewer`, `translator` and the roles of the seat itself, nor tasks of purposes `governance`, `review`, `inspect`, `manage`; such a call gets `target_excluded`. Manager holds do not delay tasks of purpose `governance`. The exception to HLD-2 applies only to the current seat holder with the current epoch.
 
@@ -2490,7 +2490,7 @@ Checked by: `fx-mgr-03`, `fx-mgr-06`, `fx-mgr-11`
 <a id="MGR-11"></a>
 ### MGR-11. Preemption
 
-serves [G4](../docs/goals.md) · since v0.1 · non-waivable · profile manager · check: store · decisions: D-18
+serves [G4](../docs/goals.md) · since v0.1 · non-waivable · profile manager · check: blackbox · decisions: D-18
 
 `preempt` moves an attempt to `preempted`; the attempt is not spent, and the task returns to the queue. No more than 2 preemptions per task, the next one gives `canceled(preempt_limit)`. Preemption and cancellation do not revoke writes already made by tools.
 
@@ -2499,7 +2499,7 @@ Checked by: `fx-mgr-07`
 <a id="MGR-13"></a>
 ### MGR-13. Immediate report
 
-serves [G6](../docs/goals.md) · since v0.1 · non-waivable · profile manager · check: store, blackbox · decisions: D-18
+serves [G6](../docs/goals.md) · since v0.1 · non-waivable · profile manager · check: blackbox · decisions: D-18
 
 Each control operation writes in one transaction an audit record (metadata only: operation, target ids, tenant, basis, epoch, reason code, expiry), the event `control.applied` and an edit of the basis message to people under MGR-39: to the tenant's people in full, to `farm` operators only the incident number, class, codes and numbers. There is no operation without an entry in the message to people. The reporter's summary includes operations later and does not replace the immediate path.
 
@@ -2542,7 +2542,7 @@ Checked by: `mgr-inj-02`, `gov-res-01`, `gov-res-sandbag-01`, `mgr-grant-inflate
 <a id="MGR-18"></a>
 ### MGR-18. Grant, the batch of grant requests and the model gateway
 
-serves [G3](../docs/goals.md) · since v0.2 · non-waivable · profile manager · check: adapter, store, blackbox · decisions: D-18, D-21, D-107
+serves [G3](../docs/goals.md) · since v0.2 · non-waivable · profile manager · check: adapter, blackbox · decisions: D-18, D-21, D-107
 
 A grant is decided by the seat holder with the current epoch (`grant_decide`) or by a person with `model_grant.manage` through P2 `model_grant.issue` within the same line; a person can revoke it through `model_grant.revoke`. The `grant` loop enqueues every 10 minutes, for each tenant with at least one grant request in `pending`, one task `manager.grants.v1` for the farm manager seat (condition D15) with the key `system:grants:<tenant>:<window>`, where the window is the UTC start of the 10-minute interval, and class 3. A tenant with `farm_manager.enabled: false`, or a seat that is not `held`, gets no task: its requests wait for a person with `model_grant.manage`. The task carries no request text; `grants_pending` returns only the closed fields of the tenant's pending requests, and `grant_decide` decides them in one batch with the current epoch. Both act only on the tenant of the task: a decision on a grant of another tenant, or on one that is not `pending`, gets `not_found` for that item and changes nothing. The grant record: `kind: grant`, task, role, profile, no more than 2 attempts, the amount `cap_eur` (in euros, stored in euro cents, BUD-9), an expiry of no more than 6 h, line `grant`, who decided, a distrust flag. The code ceilings (attempts, expiry, line `grant`, the seat's daily grant ceiling `seat_grants_eur_day` from `farm_manager.grant_limits` of the farm charter) apply to any decision, including every other item of a batch, and in distrust mode (MGR-22) a grant goes only to the first step of the ladder. Before each call under a grant, P4 reserves the worst case in the remainder of `cap_eur` and in line `grant` (GW-2); a call that does not fit does not start, the attempt is not spent, and the grant moves to `consumed`. The output limit is set by the profile's `max_output_tokens`. P4 allows a model only by the slot rules of GW-7: the role's slot (`base`, `analysis`), an active grant of this task (`granted`), or the `seat` slot (attempts on behalf of the seat with the current epoch, and shadow review attempts of COM-10). A grant does not change tools, tier, permissions or other budget lines, ends together with the task and does not enter the track record. A request that a batch leaves undecided stays `pending` for the next window or a person. No decision within `grant_wait_max` (15 minutes): refusal `grant_expired_unanswered`, and the task continues on the base model.
 
@@ -2551,7 +2551,7 @@ Checked by: `fx-mgr-08`, `fx-mgr-09`, `mgr-02`, `mgr-03`, `blackbox:manager/gran
 <a id="MGR-20"></a>
 ### MGR-20. Manager money and turning off reading
 
-serves [G3](../docs/goals.md) · since v0.1 · non-waivable · profile manager · check: store, lint · decisions: D-42, D-77, D-114
+serves [G3](../docs/goals.md) · since v0.1 · non-waivable · profile manager · check: blackbox, lint · decisions: D-42, D-77, D-114
 
 Seat attempts in tenant T (decision, reading, daily review) are paid by the one `manager` line of tenant T, with its key and workspace; there is no farm-wide manager line, and the price of each attempt is written into a usage line. The `manager` line has a daily and a monthly limit (`budgets.lines.manager.day_eur` and `month_eur`) and is reserved before the call; 30% of the daily line is a reserve for sev1, and code stops work outside sev1 when 70% of the day is spent. `apply` lint: the `models_allowed` of every active tenant contains the seat model profile `farm_manager.model_profile` (slot `seat`, GW-7), the `manager` line is greater than 0, and its daily limit `manager.day_eur` is not less than the price of three readings of one worst-case incident at the seat profile prices: 60 thousand input tokens in total and three answers at the seat profile's `max_output_tokens`; otherwise `apply` rejects the tenant with reason `manager_line_too_small`. Lint skips a tenant with `farm_manager.enabled: false` (MGR-42): it has no `manager` line. The purpose `incident_review` is off in the template of a `kind: production` tenant and on for a test bench (D-77); a production tenant turns it on itself in `privacy.purposes`. If the tenant's `privacy.purposes` contains the purpose `incident_review` and no worker of a role with profile `farm-manager-reader` is enrolled in the tenant, `farmctl doctor` prints a warning, and `inspect` tasks in this tenant wait for a worker; without this purpose the reader role is not needed. If this purpose is off, the core does not enqueue tasks of purpose `inspect` in the tenant, and cancels running reading attempts in it in the same transaction as turning it off.
 
@@ -2560,7 +2560,7 @@ Checked by: `fx-mgr-line-too-small`, `fx-mgr-review-off-production`
 <a id="MGR-21"></a>
 ### MGR-21. Takeover
 
-serves [G1](../docs/goals.md) · since v0.2, until v0.2 · non-waivable · profile manager · check: store, fixture · decisions: D-18, D-21
+serves [G1](../docs/goals.md) · since v0.2, until v0.2 · non-waivable · profile manager · check: blackbox, fixture · decisions: D-18, D-21
 
 A takeover creates a new task in tenant T of the same type with key `system:takeover:<task>` (IDM-2) and a grant of `kind: takeover` on the seat profile for 1 attempt in the tenant's `takeover` budget line. It needs all of these: the type is on the tenant list `takeover.types` (empty by default), the group permission `task.takeover:<type>`, a `takeover` line greater than 0 (0 by default), and the approval of a person of T with `model_grant.manage` (card `takeover_confirm`, `decide(subject_kind: takeover)`). Otherwise the refusal is `takeover_not_allowed`. The card is never lifted: the field `takeover.confirm_above_eur` is reserved, and `apply` rejects a value above 0 (`takeover_confirm_threshold`). The `cap_eur` of the takeover grant is the estimate that the card showed, within the `takeover` line; a call that does not fit it does not start (MGR-18). The original task is canceled as `superseded_by_takeover`. The manager gets only a closed result. With `untrusted_seen` on the manager's attempt, takeover is forbidden (`takeover_untrusted`).
 
@@ -2571,7 +2571,7 @@ Checked by: `fx-mgr-takeover`, `manifests/v02-security-lints`
 <a id="MGR-22"></a>
 ### MGR-22. Distrust mode
 
-serves [G2](../docs/goals.md) · since v0.1 · non-waivable · profile manager · check: store, eval · decisions: D-30, D-70, D-82
+serves [G2](../docs/goals.md) · since v0.1 · non-waivable · profile manager · check: blackbox, eval · decisions: D-30, D-70, D-82
 
 A decision attempt gets `untrusted_seen` if it read findings, an escalation or a grant request with a distrust flag. Only untrusted sources under INJ-13 set the mode: an alarm and an incident from a monitoring system problem of its own tenant with a trigger from the catalog (MON-5, D-82) do not turn it on, while the findings of the `farm-manager-reader` role are always `untrusted: true` (MGR-25) and do turn it on. In this mode `cancel` goes only through a `control` card, `service/control` and `monitor/script_run` only through an approval card to a person (INJ-15), no more than 1 `quarantine` per incident, a grant only to the first step of the ladder, takeover is forbidden, the card shows the source, and proposed facts get `untrusted_origin`.
 
@@ -2616,7 +2616,7 @@ Checked by: `fx-mgr-finding-target`, `mgr-inj-07`
 <a id="MGR-27"></a>
 ### MGR-27. Seat memory
 
-serves [C3](../docs/goals.md) · since v0.1 · non-waivable · profile manager · check: store, blackbox · decisions: D-28, D-35, D-114
+serves [C3](../docs/goals.md) · since v0.1 · non-waivable · profile manager · check: blackbox · decisions: D-28, D-35, D-114
 
 Seat memory is the space `(T, bot, <holder identity>)` separately in each tenant T; it holds only core records (`record`) and verified facts, seat roles have no notes, and the reader role has no memory at all. Only a decision attempt in T proposes facts; decision attempts and manager lens reviews in T read them, only facts with `untrusted_origin: false`. When the holder changes, the facts of each section pass to the new holder under MEM-7: a separate offer for the section of each tenant, rechecked by code in that tenant. Nothing moves between tenants; the service record in `farm` contains only numbers and codes, and the model does not see it.
 
@@ -2625,11 +2625,11 @@ Checked by: `fx-mgr-facts-tenant`
 <a id="MGR-28"></a>
 ### MGR-28. Read log
 
-serves [G2](../docs/goals.md) · since v0.1 · non-waivable · profile manager · check: store · decisions: D-30
+serves [G2](../docs/goals.md) · since v0.1 · non-waivable · profile manager · check: blackbox · decisions: D-30
 
 Each seat read writes into the tenant's audit: the attempt, `acting_bot`, the epoch, the basis, and for each object its kind, id, size, hash, mark and tokens. Findings are stored in the tenant; a finding's `note` sits in data class `content`, and the audit holds only its hash and length. Each operation call of the decision role records the operation, the target, the target origin and the result. The tenant's people see the log in P2 `manager.reads` with the `audit.read` permission in that tenant (AUD-7).
 
-Checked by: `store:manager/read-journal`
+Checked by: `blackbox:manager/read-journal`
 
 <a id="MGR-30"></a>
 ### MGR-30. People's files during reading
@@ -2643,7 +2643,7 @@ Checked by: `fx-mgr-declared-file`, `fx-mgr-human-file`
 <a id="MGR-31"></a>
 ### MGR-31. Notice of a holder change
 
-serves [C1](../docs/goals.md) · since v0.1 · waivable · profile manager · check: store, blackbox · decisions: D-33
+serves [C1](../docs/goals.md) · since v0.1 · waivable · profile manager · check: blackbox · decisions: D-33
 
 On `seat.assign`, `seat.resume`, `seat.vacate`, the seat moving to `vacant` at the `decide_within` expiry, and a change of the hash of the seat persona or model profile in git, the core enqueues in the same transaction the notice `manager_holder_changed` (kind `notice`) from a code template to the admins of every active tenant: what happened, the id of the new holder identity (if there is one), the epoch and the time. The notice contains neither the incident class nor the incident tenant, and no model text.
 
@@ -2652,7 +2652,7 @@ Checked by: `fx-mgr-seat-notice`
 <a id="MGR-32"></a>
 ### MGR-32. Protected targets only through a person
 
-serves [G4](../docs/goals.md) · since v0.1 · non-waivable · profile manager · check: store, fixture · decisions: D-18, D-63
+serves [G4](../docs/goals.md) · since v0.1 · non-waivable · profile manager · check: blackbox, fixture · decisions: D-18, D-63
 
 Protected targets in tenant T: task types with `alarm.*` in `events`, the `job` type that rechecks monitoring system problems and raises alarms for them (MON-5), backup types (`makes_backup: true`), system types and their schedules (flag `proposable: false`, PRP-10), everything named by any class of the incident catalog (types, roles, schedules), and workers that are currently running a task of a protected type. The core computes the set, the same one for proposals (PRP-3) and for seat operations. Hold, quarantine, drain, preemption and cancellation of a protected target by the seat are not applied immediately: the attempt gets the answer `protected_target`, the core creates a `control` card for the people of T, and a person's decision applies the operation on their behalf. Such an answer does not count as a refusal for the safeguard, and the card counts in `ops_per_hour`.
 
@@ -2661,7 +2661,7 @@ Checked by: `fx-mgr-protected`
 <a id="MGR-33"></a>
 ### MGR-33. Disk stop only with quotas
 
-serves [G4](../docs/goals.md) · since v0.1, until v0.2 · non-waivable · profile manager · check: store, lint · decisions: D-34, D-63
+serves [G4](../docs/goals.md) · since v0.1, until v0.2 · non-waivable · profile manager · check: blackbox, lint · decisions: D-34, D-63
 
 An incident of a class with `stops_manager: true` whose subject is a disk adds the reason `incident` to the seat (GOV-22) only if, at the minute of opening, everyone who writes to that disk (tenants, sinks and pipelines from the `writers` of that volume in `Catalog.spec.volumes`) has a size quota on that disk (`quota_bytes`, CAP-6), and the sum of quotas is below the class's alarm threshold. Otherwise the incident stays critical, with the first measure by code and paging of people, but it does not stop the seat; the incident record keeps the reason code. When the catalog is approved and at `apply` of quotas, the core shows people for which disks the condition holds. The condition concerns disks under the alarm `alarm.disk.free.low`, which a `job` role raises from a monitoring system problem (MON-5); the core store volume is guarded by the class "low space for the database" on the alarm `alarm.store.free.low` (CAP-5, MGR-38), and it does not stop the seat.
 
@@ -2672,7 +2672,7 @@ Checked by: `fx-mgr-quota`
 <a id="MGR-34"></a>
 ### MGR-34. Disk stop only after visible growth
 
-serves [G4](../docs/goals.md) · since v0.1, until v0.2 · non-waivable · profile manager · check: store, fixture · decisions: D-34, D-59
+serves [G4](../docs/goals.md) · since v0.1, until v0.2 · non-waivable · profile manager · check: blackbox, fixture · decisions: D-34, D-59
 
 An incident of a class with `stops_manager: true` whose subject is a disk adds the reason `incident` to the seat only if, for the whole `prevent_window` (2 h) before its opening, a `disk_filling` incident was open on the same disk, the used size of the disk by the code series (`dataorigin: code`, CAP-6; the series is written by a `job` role without a model from the monitoring system history, GOV-28) at the end of the window is greater than at the start, and the holder was responsible for the seat for the whole window: at the start of the window the seat was in `held` with this holder, and until the incident opened it either stayed in `held` or left `held` only for reason `no_control` (the safeguard, MGR-14), which the holder could have caused itself. A safeguard stop within the window does not remove responsibility: the reason `incident` is added to a seat in `stopped` too, and the exits from the stop are the same (GOV-22). Leaving `held` for reason `human` (MGR-15) or a holder change within the window removes responsibility. Otherwise there is no stop, and the incident stays an ordinary critical one; the incident record keeps the reason code.
 
@@ -2694,7 +2694,7 @@ Checked by: `fx-mgr-stopped-card`
 <a id="MGR-36"></a>
 ### MGR-36. Repeats of the "manager stopped" card
 
-serves [C1](../docs/goals.md) · since v0.1, until v0.2 · waivable · profile manager · check: store · decisions: D-33
+serves [C1](../docs/goals.md) · since v0.1, until v0.2 · waivable · profile manager · check: blackbox · decisions: D-33
 
 While the seat's reason set contains `incident`, the `manager_stopped` card is repeated to farm operators after 24 h, after 72 h and 24 h before the end of `decide_within`. A repeat that falls after the expiry or coincides with another repeat is not sent. Repeats stop when the reason `incident` is removed or the seat is assigned to a new holder or vacated.
 
@@ -2732,11 +2732,11 @@ Checked by: `fx-mgr-one-message`
 <a id="MGR-41"></a>
 ### MGR-41. Daily summary and review
 
-serves [G5](../docs/goals.md) · since v0.1 · waivable · profile manager · recommendation · check: store · decisions: D-58, D-77, D-114
+serves [G5](../docs/goals.md) · since v0.1 · waivable · profile manager · recommendation · check: blackbox · decisions: D-58, D-77, D-114
 
 Once a day the core should send farm operators numbers for the whole farm, and the people of each tenant its part: incidents under the manager, operations, reverts, reads, grants and the share of grants after which the attempt passed the schema; usage of the `manager` line from the tenant's part goes only to group `admin` and the group of leads that the tenant declares; numbers only, without model text. The task `manager.review.v1` should run once a day separately in each tenant with `farm_manager.enabled: true` (MGR-42) and should not spend more than `daily_review_max_eur` from `control_limits` of the `farm_manager` block of the farm charter (0.40 EUR per day by default, from the tenant's `manager` line); P2 `manager.cost` and the actual usage rows of `farmctl doctor` (BUD-15) show its usage as a separate line. A proposal that the review submits to the commission of T is not part of the `related_to` of functionaries' proposals and does not take their slot (PRP-17, PRP-16).
 
-Checked by: `store:manager/daily-digest`
+Checked by: `blackbox:manager/daily-digest`
 
 <a id="MGR-42"></a>
 ### MGR-42. Tenant opt-out of the farm manager
@@ -2750,7 +2750,7 @@ Checked by: `fx-mgr-tenant-optout`
 <a id="MGR-45"></a>
 ### MGR-45. When an incident is preventable
 
-serves [G4](../docs/goals.md) · since v0.3 · non-waivable · profile manager · check: fixture, store · decisions: D-34, D-59, D-110, D-114
+serves [G4](../docs/goals.md) · since v0.3 · non-waivable · profile manager · check: fixture, blackbox · decisions: D-34, D-59, D-110, D-114
 
 An incident is preventable (GOV-47) only if its class has `manager_accountable: true`, the holder was responsible for the seat in its tenant T for the whole window of the sign, and the sign of its class below holds; code computes each part from records and code series, and the model takes no part. The holder is responsible when at the start of the window the seat was in `held` with this holder and was not restricted in T (MGR-47), and until the incident opened the seat either stayed in `held` or left it only for the reason `no_control` (MGR-14), which the holder could have caused itself; leaving `held` for `human` (MGR-15) or a holder change within the window removes responsibility. The signs for the critical incident classes approved by the owner (D-114, docs/goals.md): (1) a full disk (`disk_full`): for the whole `prevent_window` (2 h) before the opening, the free space of that disk by its code series (CAP-6, GOV-48) was below the alarm threshold of the class `disk_filling` and was lower at the end of the window than at its start, and the class functions found at least one involved party on that disk in the window (MGR-9); (2) a catalog service down and not recovered within the set time of its class: for that whole time before the opening an incident on that service was open in T, a restart of the service was on the seat's list without a card (the class's `responses.services`, the catalog `control` and the consent of group `farm-manager-ops`, MGR-9), no decision attempt of the seat in T was in distrust mode (MGR-22), and the seat made no `service/control` call on that service; (3) a backup older than a day or a failed restore check is not preventable by the manager: backup types and their schedules are protected targets that it touches only through a person's card (MGR-32); (4) an unreachable core is not preventable by the manager: the seat acts only through the core, and the monitoring system pages people (MON-2); (5) an automatic stop by the rate of spending (`runaway_spend`, HLD-7) is not preventable by the manager: the stop is itself the code measure, the seat stops a role only through a card (MGR-37), and its own spending is held by the `manager` line (MGR-20). A class of the kinds (3) to (5) never makes an incident preventable. When an incident is not preventable, its record keeps the reason code why.
 
@@ -2786,11 +2786,11 @@ Checked by: `blackbox:manager/month-line`, `lint:manager/line-covers-postmortem`
 <a id="MGR-50"></a>
 ### MGR-50. The weekly holder report and the daily summary
 
-serves [G4](../docs/goals.md) · since v0.3 · waivable · profile manager · check: store · decisions: D-58, D-110
+serves [G4](../docs/goals.md) · since v0.3 · waivable · profile manager · check: blackbox · decisions: D-58, D-110
 
 Once a week the core sends the farm operators the report `holder_report` on the manager seat holder, numbers only and without tenant names: preventable incidents (GOV-47), notices sent and the share marked useful (MGR-52), takeovers requested, approved and their outcomes, analyses and the share marked useful (MGR-53), spend against the monthly lines, uses of the sev1 reserve, the share of "Don't know" on link cards and the cases where the manager was against a linked proposal (GOV-41). From v0.3 the daily summary of MGR-41 is mandatory and includes the counts of takeovers and notices.
 
-Checked by: `store:manager/holder-report`
+Checked by: `blackbox:manager/holder-report`
 
 <a id="MGR-51"></a>
 ### MGR-51. Proposals of the farm manager
@@ -2976,7 +2976,7 @@ Checked by: `fx-msg-09`
 <a id="MSG-3"></a>
 ### MSG-3. Message logs hold only metadata
 
-serves [C6](../docs/goals.md) · since v0.1 · non-waivable · profile messaging · check: lint, store · decisions: D-14, D-71
+serves [C6](../docs/goals.md) · since v0.1 · non-waivable · profile messaging · check: lint, blackbox · decisions: D-14, D-71
 
 In the audit, the event log and tracing a message has only metadata: id, type, genus, address, roles, sizes, hashes, reasons, `subject` (catalog id) and the fields, if all their leaves are `enum`, ids or numbers (AUD-2). The note is stored only in the erasable retention class `content` until the end of the record's period and does not enter any log. Each core decision about a message (send, hand-out, acknowledgement, return, refusal, `dead`, `expired`) writes an audit record (AUD-1).
 
@@ -3030,7 +3030,7 @@ Checked by: `fx-msg-08`, `peer-04`
 <a id="MSG-9"></a>
 ### MSG-9. Publishing and acknowledgement together with complete
 
-serves [G1](../docs/goals.md) · since v0.1 · non-waivable · profile messaging · check: store, blackbox · decisions: D-14, D-03, D-71
+serves [G1](../docs/goals.md) · since v0.1 · non-waivable · profile messaging · check: blackbox · decisions: D-14, D-03, D-71
 
 The core holds messages sent from an attempt in state `staged` and publishes them in the `complete` transaction of that attempt (DLV-2); an attempt that failed, was canceled, was preempted or lost its lease publishes nothing (FEN-4). A retry of an attempt does not duplicate messages: core key `system:msg:<attempt>:<n>`. Entries that the attempt read are leased by it and acknowledged in the same `complete` transaction. On `fail`, lease loss and `msg.nack` the entry returns to the inbox with the hand-out count increased by one; after the third hand-out the entry moves to `dead(delivery_exhausted)`. On cancellation and preemption of the attempt, and on a lease that expired while the core was not running (FEN-5), the entry returns without counting a hand-out. A new value of genus `state` replaces the previous one in one transaction.
 
@@ -3048,11 +3048,11 @@ Checked by: `fx-msg-05`, `inj-peer-mgr-03`, `peer-03`, `fx-msg-10`
 <a id="MSG-12"></a>
 ### MSG-12. Entry expiry
 
-serves [G1](../docs/goals.md) · since v0.1 · non-waivable · profile messaging · check: store, blackbox · decisions: D-14, D-71
+serves [G1](../docs/goals.md) · since v0.1 · non-waivable · profile messaging · check: blackbox · decisions: D-14, D-71
 
 Each inbox entry has an expiry `expiresat`, which the core sets from the type's expiry: 24 hours by default for `report`, the type can raise it to 7 days, and the sender can only shorten it. An entry of genus `state` becomes stale after the type's `stale_after`, no more than 1 hour, and after that it is read with the mark `stale`. An expired entry is not handed out, wakes no one and creates no tasks or notifications. The `start_by` of a wake-up task is no later than the latest expiry of the entries it was enqueued for. The `inbox` loop moves expired entries to `expired`, and their content is deleted by retention class `content`.
 
-Checked by: `store:messaging/ttl-expired`
+Checked by: `blackbox:messaging/ttl-expired`
 
 <a id="MSG-13"></a>
 ### MSG-13. A note is always untrusted and stays out of logs
@@ -3066,7 +3066,7 @@ Checked by: `fx-msg-note`
 <a id="MSG-14"></a>
 ### MSG-14. The type sets the delivery mode
 
-serves [G1](../docs/goals.md) · since v0.1 · non-waivable · profile messaging · check: store, fixture, blackbox · decisions: D-14, D-71
+serves [G1](../docs/goals.md) · since v0.1 · non-waivable · profile messaging · check: blackbox, fixture · decisions: D-14, D-71
 
 The message type sets the delivery mode. `one`: the entry sits in the inbox of a role or bot group and is handed out to one reader at a time. `all`: at publishing the core puts a copy into the inbox of each active recipient worker (only for roles with `instance_inbox: true`), no more than 50 recipients; the rest get no copies, and the sender sees the number of recipients. For genus `report` an "at least once" guarantee applies until the entry's expiry; order is promised only within one inbox (by the number the core assigns). An entry of genus `state` is stored as the last value per (inbox, sender worker, type): a new value replaces the previous one, and such an entry has no lease and no acknowledgement.
 
@@ -3075,7 +3075,7 @@ Checked by: `fx-msg-07`
 <a id="MSG-15"></a>
 ### MSG-15. Size, rate, capacity and sender share limits
 
-serves [G3](../docs/goals.md) · since v0.1 · non-waivable · profile messaging · check: blackbox, lint, fixture, store · decisions: D-14, D-71
+serves [G3](../docs/goals.md) · since v0.1 · non-waivable · profile messaging · check: blackbox, lint, fixture · decisions: D-14, D-71
 
 An envelope is no more than 8 KiB; the fields are no more than the type's `max_bytes` with a ceiling of 4 KiB (otherwise `rejected(data_schema_invalid)`). One attempt sends no more than 3 messages (the fourth gets `rejected(service_rate_limited)`); the rate per (tenant, sender role, type) is no higher than the type's `rate` and the farm ceiling of 120 per hour (otherwise `service_rate_limited` and one event per period); `state` no more often than once a minute per (worker, type), plus on a change of `phase`. Inbox capacity: 100 entries for a worker inbox, 1000 for a role inbox and a bot group inbox. The next wake-up task of one route is no earlier than the route window, and the window is no shorter than 5 minutes. The default values are in the binding; a tenant and a type can only lower them, and the ceilings themselves cannot be waived. One sender role takes no more than 25% of the capacity of one inbox. An entry beyond this share gets `rejected(sender_quota)`, and only this role gets the refusal; entries of other roles are accepted. A full inbox gives the sender `rejected(inbox_full)` and one event per (inbox, period). Old entries are not silently evicted or lost. On the first share or fullness refusal in a period, the core raises the event `inbox.flood` with code. Lint builds the graph "role, type, address, wake-up route, task type, role" and warns about cycles; at run time MSG-11 breaks a cycle.
 
@@ -3221,7 +3221,7 @@ Checked by: `blackbox:core/job-no-store`
 <a id="OBV-4"></a>
 ### OBV-4. Rollups and observation retention
 
-serves [G5](../docs/goals.md) · since v0.1 · waivable · profile insights · check: lint, store · decisions: D-16, D-71
+serves [G5](../docs/goals.md) · since v0.1 · waivable · profile insights · check: lint, blackbox · decisions: D-16, D-71
 
 A series rollup is set by its manifest: the window, a function from the closed list `spec/model/rollups.yaml` (for example `hour.max`, `hour.mean`, `day.p95`) and a data class not below the series class; code computes rollups. Points and rollups belong to retention class `observation` (by default points 14 days, rollups 93 days) and are deleted at expiry in whole periods (RET-1, RET-2).
 
@@ -3254,11 +3254,11 @@ Explained in: [docs/coordination.md](../docs/coordination.md)
 <a id="ORC-1"></a>
 ### ORC-1. Only a live attempt proposes a campaign, the plan is frozen
 
-serves [G2](../docs/goals.md) · since v0.1 · non-waivable · profile campaign · check: store, blackbox · decisions: D-14, D-20
+serves [G2](../docs/goals.md) · since v0.1 · non-waivable · profile campaign · check: blackbox · decisions: D-14, D-20
 
 Only a live attempt proposes a campaign: P3 `propose_campaign` or P1 `campaign.propose` with its token. The core itself creates a campaign only in two cases: on a person's "retry failed" button (a new campaign from the failed, `unknown` and `skipped` items of a finished campaign with the same template, a policy no wider, the `untrusted_seen` of the original, a `refs` link, without a `then` continuation and with a new approval) and when releasing a `fanout` step of a script run that a person approved (SCR-6), from the list frozen at that approval (SCR-7), also without `then`. The template, the items (the core expands a selector at the moment of the proposal), the policy and `plan_hash` are fixed in the record and never change again. The list can only shrink with a person's "exclude item" button; an item cannot be added and an argument or the policy cannot be changed (`rejected(campaign_frozen)`); one can only cancel the campaign and propose a new one with a `refs` link. Repeating a proposal with the same key and a different plan gives `idempotency_conflict`.
 
-Checked by: `store:campaign/propose-live-attempt`
+Checked by: `blackbox:campaign/propose-live-attempt`
 
 <a id="ORC-2"></a>
 ### ORC-2. A campaign with an action starts after one plan approval
@@ -3272,7 +3272,7 @@ Checked by: `fx-orc-11`
 <a id="ORC-3"></a>
 ### ORC-3. Each item runs no more than once
 
-serves [G4](../docs/goals.md) · since v0.1 · non-waivable · profile campaign · check: store, blackbox · decisions: D-14, D-43
+serves [G4](../docs/goals.md) · since v0.1 · non-waivable · profile campaign · check: blackbox · decisions: D-14, D-43
 
 Each campaign item runs no more than once. Releasing an item with an action in one transaction moves the item from `pending` to `released`, creates a task `action.<a>` with `approval_id`, `campaign_item` and key `system:campaign:<id>:<n>`, and one write call with the item's arguments from the snapshot. The toolhost accepts the call only if the hash of the arguments equals the item's hash in the snapshot; the plugin gets `<approval_id>:<n>` as the idempotency key. If the lease of the write call expired, the item becomes `unknown` and is not repeated. `redrive` of an item with an action is forbidden. Fixtures: a double release with two copies of the `campaign` loop; `kill -9` of the toolhost in the middle of a release.
 
@@ -3281,7 +3281,7 @@ Checked by: `fx-orc-01`, `fx-orc-02`, `fx-orc-04`
 <a id="ORC-4"></a>
 ### ORC-4. Core code decides item release
 
-serves [C2](../docs/goals.md) · since v0.1 · non-waivable · profile campaign · check: fixture, store, blackbox · decisions: D-14, D-62
+serves [C2](../docs/goals.md) · since v0.1 · non-waivable · profile campaign · check: fixture, blackbox · decisions: D-14, D-62
 
 Item release, the canary, `max_in_flight`, the threshold and stopping (from v0.2 also waves and the rate `rate_per_min`, ORC-15) are decided by deterministic core code from the campaign record. An item is released only if the campaign is `running`, there is no hold in its scope, fewer than `max_in_flight` are released, the resource is free (ORC-12), the queue of the item's type in the tenant is no longer than `queue_max`, and the initiator still has the permissions (ORC-6). The model and workers do not release items and do not change counters. The canary (the first `canary` items) is released as a separate batch, and any failure in it stops the campaign regardless of the threshold. The threshold is counted by `failed`: the campaign stops when the failed items exceed the threshold; released items are finished, new ones are not released, and unreleased ones become `skipped`. An `unknown` item with `on_unknown: pause` sets a pause. Only the core produces campaign alarms, and the monitoring system passes them to people (MON-1).
 
@@ -3317,7 +3317,7 @@ Checked by: `inj-orc-01`
 <a id="ORC-8"></a>
 ### ORC-8. Tree limits, full reserve and payment by card
 
-serves [G3](../docs/goals.md) · since v0.1 · non-waivable · profile campaign · check: blackbox, store · decisions: D-14, D-53
+serves [G3](../docs/goals.md) · since v0.1 · non-waivable · profile campaign · check: blackbox · decisions: D-14, D-53
 
 One task has no more direct children than `max_children` (10 by default, campaign items are not counted here); no more campaign items than `max_items`; no more tasks from one root than `max_tree_tasks` (farm ceiling 1000, tenant default 300), where the root is the `correlationid` of the original tree that messages and wake-ups carry onward (MSG-11). At proposal a campaign reserves in full its items and continuation in the tree size and their cost estimate. A campaign with an approval card is paid by the tenant's monthly limit and the budget line of its type for the amount shown on the card (BUD-12); the human initiator's daily limit does not apply to its items. A campaign without a card reserves the estimate in all BUD-1 limits, including the initiator's daily limit. If a read campaign without a card lacks only the daily limit of the human initiator, while the tenant's monthly limit, the budget line of its type and the tree size fit it, the core does not refuse but creates the same card as above the threshold `confirm_read_over`, with the same decision rules; the card shows that the amount is above the initiator's daily limit, and after approval the monthly limit pays for the campaign, like any campaign with a card. A campaign of a script `fanout` step takes its reserve from the run reserve and does not reserve it a second time. In other cases it does not fit: `rejected(tree_too_large)` or `rejected(budget_exhausted)`, and no reserve is taken. The reserve is released as items end and fully at the end of the campaign. Spending beyond the reserve is impossible: an item that does not fit into the rest of the reserve is not released, and the campaign pauses with reason `estimate_exceeded`; the "Continue" button does not lift such a pause, and the campaign can only be canceled and the unreleased items retried in a new campaign with a new estimate.
 
@@ -3344,7 +3344,7 @@ Checked by: `blackbox:campaign/no-item-delivery`
 <a id="ORC-11"></a>
 ### ORC-11. A hold pauses campaigns
 
-serves [G2](../docs/goals.md) · since v0.1 · non-waivable · profile campaign · check: store, blackbox · decisions: D-14
+serves [G2](../docs/goals.md) · since v0.1 · non-waivable · profile campaign · check: blackbox · decisions: D-14
 
 A hold (HLD-1) whose scope covers a campaign or its items and whose effect forbids their release or execution (`no_enqueue`, `no_claim`, `no_action` or `cancel_running`) pauses the affected campaigns in the same transaction with reason `held`. In its scope new `request_action` calls and proposals of campaigns with an action are rejected (`held`), and waiting approvals are canceled (HLD-3). There is no separate stop valve for campaigns. Released write calls are not revoked, and their results are recorded. Releasing the hold does not resume campaigns: they stay paused until an explicit decision by a person.
 
@@ -3353,7 +3353,7 @@ Checked by: `fx-orc-05`
 <a id="ORC-12"></a>
 ### ORC-12. One released write call per resource
 
-serves [G4](../docs/goals.md) · since v0.1 · non-waivable · profile campaign · check: store, blackbox · decisions: D-14
+serves [G4](../docs/goals.md) · since v0.1 · non-waivable · profile campaign · check: blackbox · decisions: D-14
 
 An action with `exclusive: resource` has no more than one released write call per tenant resource, counting campaign items and single approvals. An item on a busy resource waits with reason `resource_busy` instead of failing; a single approval on a busy resource runs after the resource is free.
 
@@ -3522,7 +3522,7 @@ Checked by: `blackbox:channel/grant-privileged`
 
 serves [G2](../docs/goals.md) · since v0.1 · non-waivable · profile core · check: blackbox, adapter, fixture · decisions: D-33, D-80
 
-An operator operation is accepted only through P2 with operator credentials (`farmctl`) and never with channel credentials: not by a chat command, not by a card button, not on behalf of a person. Operator operations are a closed list marked in the P2 sheet: everything that needs a capability in the service tenant `farm`, including `restore.complete` and `audit.verify`; `apply` (a tenant is declared in git by the file `tenants/<name>/tenant.yaml` and appears after `farmctl apply`, there is no separate operation to add a tenant); operations on workers, external program keys and the `system` principal; group chat binding `chat.bind`; `budget.set`; dead work redrive `task.redrive` and `delivery.redrive` in any tenant; grant and removal of privileged groups and invitations to them; disabling and re-enabling (`principal.off`, `principal.on`), identity change (`principal.set_identity`) and offboarding (`principal.offboard`) of people with such groups; a hold of scope `farm` and its release; `seat.*`, `bot.retire`, `bot.show --sealed`, a hold of scope `seat` and its release, `control.revert` for a period (`since`), `control.apply:pin_task` and `control.apply:preempt` from people, `core.drain`. From v0.2: the tenant lifecycle (`tenant.suspend`, `tenant.offboard`, `tenant.delete`), `tenant.export`, `principal.export`, `task.journal`, `task.replay`. P2 rejects a call of such an operation with channel credentials with reason `operator_only`, and a channel that got such a command in a chat answers with ready text and calls nothing. A card or a notice about a matter decided by such an operation (for example `manager_stopped`) shows a ready `farmctl` command from code instead of buttons. Operations of people of their own tenant outside this list (holds of their own scopes, reverting the manager's operations for one incident, a directive to the manager, incident decisions) are passed by the channel to P2 on behalf of the verified person and within their permissions (IDN-7, PRM-15).
+An operator operation is accepted only through P2 with operator credentials (`farmctl`) and never with channel credentials: not by a chat command, not by a card button, not on behalf of a person. Operator operations are a closed list: the P2 rows with `operator_only: true` in `spec/ports/operations.yaml` (D-114). The list holds everything that needs a capability in the service tenant `farm`, including `restore.complete` and `audit.verify`; `apply` (a tenant is declared in git by the file `tenants/<name>/tenant.yaml` and appears after `farmctl apply`, there is no separate operation to add a tenant); operations on workers, external program keys and the `system` principal; group chat binding `chat.bind`; `budget.set`; dead work redrive `task.redrive` and `delivery.redrive` in any tenant; grant and removal of privileged groups and invitations to them; disabling and re-enabling (`principal.off`, `principal.on`), identity change (`principal.set_identity`) and offboarding (`principal.offboard`) of people with such groups; a hold of scope `farm` and its release; `seat.*`, `bot.retire`, `bot.show --sealed`, a hold of scope `seat` and its release, `control.revert` for a period (`since`), `control.apply:pin_task` and `control.apply:preempt` from people, `core.drain`. From v0.2: the tenant lifecycle (`tenant.suspend`, `tenant.offboard`, `tenant.delete`), `tenant.export`, `principal.export`, `task.journal`, `task.replay`. P2 rejects a call of such an operation with channel credentials with reason `operator_only`, and a channel that got such a command in a chat answers with ready text and calls nothing. A card or a notice about a matter decided by such an operation (for example `manager_stopped`) shows a ready `farmctl` command from code instead of buttons. Operations of people of their own tenant outside this list (holds of their own scopes, reverting the manager's operations for one incident, a directive to the manager, incident decisions) are passed by the channel to P2 on behalf of the verified person and within their permissions (IDN-7, PRM-15).
 
 Checked by: `adapter:channel/operator-command`, `adapter:channel/no-operator-ops`
 
@@ -3556,7 +3556,7 @@ Checked by: `blackbox:channel/cancel-own-task`, `blackbox:channel/team-forbidden
 <a id="PRM-18"></a>
 ### PRM-18. The /service command from a person
 
-serves [G2](../docs/goals.md) · since v0.1 · non-waivable · profile core · check: adapter, blackbox, store, fixture · decisions: D-68, D-73, D-74
+serves [G2](../docs/goals.md) · since v0.1 · non-waivable · profile core · check: adapter, blackbox, fixture · decisions: D-68, D-73, D-74
 
 A person with the capability `service.control:<service>` in their group gives the command `/service <verb> <service>` in a private chat with the bot (D-68, D-73). Channel code parses it by a closed schema: `service` from the services of the tenant catalog declared as controllable, `verb` from the `control` list of that service (MON-8); the model takes no part. The core checks the person's permission, holds, the operator's kill switch, rate limits and one operation per service at a time, the same as in APR-18. A verb from the service's `services[].no_card` (only `restart` by default, D-74) the core then runs in one transaction: it writes a `service_grant` audit record with the person as author (principal, service, verb, chat) and creates exactly one write call for the action toolhost of the service's machine with `grant_id`; the toolhost runs it no more than once, as under APR-7. There is no card here, because the person made the decision with their own text, not the model. `start`, `stop` and any verb outside `no_card` go through a card like an ordinary action (D-74): the core creates on behalf of this person an approval with a snapshot of the arguments (APR-3), a person with `action.approve:service.control` or `action.approve:service.control:<service>` decides it, in a production tenant not the initiator themselves (APR-9), execution goes under APR-7, and such approvals count in the APR-2 limits. Beyond the limits the answer is `service_rate_limited`; without the permission `forbidden` with the field `needs: [service.control:<service>]` and the name of the needed group (PRM-8). The core does not accept the command from a `service` principal, from a bot, from a group chat or from forwarded text (PRM-15, IDN-3). The result comes to the same person as code text; the record is visible in the audit and as a code note in the monitoring system. Fixtures: `bob` with `service.control:nginx` writes `/service restart nginx`, a `service_grant` record with author `bob` and one write call without a card; `/service stop nginx` from `bob` creates an approval, and the card goes to `carol` with `action.approve:service.control:nginx`; `alice` without the permission gets `forbidden`; `/service restart nginx` in a group chat is not run; a verb outside the service's `control` is rejected by the schema.
 
@@ -3604,7 +3604,7 @@ Checked by: `dig-03`
 <a id="PRP-5"></a>
 ### PRP-5. Fingerprint, duplicates and proposal flow limits
 
-serves [G6](../docs/goals.md) · since v0.1 · waivable · profile insights · check: store, blackbox · decisions: D-16, D-71
+serves [G6](../docs/goals.md) · since v0.1 · waivable · profile insights · check: blackbox · decisions: D-16, D-71
 
 The core computes the proposal fingerprint (category, problem code, subjects, kind and targets of the change). An open duplicate does not create a second proposal: `seen_count` grows and evidence is added. A fingerprint declined by a person is not accepted for `redecide_after` (30 days by default) unless the evidence changed by more than the declared share; the refusal is `rejected(recently_declined)`. The limits are `insight.max_open_proposals` and `insight.max_per_week` per role and `max_in_review` per tenant; exceeding them gives the refusal `proposal_rate_limited` with an event and without a record.
 
@@ -3613,7 +3613,7 @@ Checked by: `prp-02`, `prp-03`
 <a id="PRP-6"></a>
 ### PRP-6. Proposal transitions only by the table
 
-serves [C1](../docs/goals.md) · since v0.1 · non-waivable · profile insights · check: fixture, store · decisions: D-16, D-71
+serves [C1](../docs/goals.md) · since v0.1 · non-waivable · profile insights · check: fixture, blackbox · decisions: D-16, D-71
 
 A proposal changes state only by the transition table `spec/lifecycles/proposal.md`. Code runs the checks, the verdict, the sampling and the deadlines. "Accept", "Decline", "Postpone", a blind card answer and "Lift veto" are done only by a person through the interface (DIG-3, DIG-6). The core sets state `realized` only under PRP-19.
 
@@ -3638,7 +3638,7 @@ Checked by: `prp-07`, `lint:manifests/commit-trailers`
 <a id="PRP-9"></a>
 ### PRP-9. One running trial per field of an object
 
-serves [G5](../docs/goals.md) · since v0.1 · non-waivable · profile insights · check: store, fixture, blackbox · decisions: D-16, D-114
+serves [G5](../docs/goals.md) · since v0.1 · non-waivable · profile insights · check: blackbox, fixture · decisions: D-16, D-114
 
 A field of an object, or a group of fields that `spec/model/proposable-fields.yaml` names together, has at most one running change: the core locks it when a `manifest_change` proposal that sets it moves to `realizing` and releases it when that trial ends. Proposals of the kinds `action_request`, `script` and `none` take no lock, and a restart of a service holds none. The core computes `conflicts_with` (open proposals that change the same locked field or group); while the lock is held, the other open ones go to `parked(conflict)` and their cards go dark, a new proposal that changes the locked field waits in `parked(conflict)` too, and all of them return to `screened` when the lock is released. Only one of conflicting proposals can be accepted.
 
@@ -3677,16 +3677,16 @@ The kind `human_change` describes a change that people make by hand with a close
 <a id="PRP-14"></a>
 ### PRP-14. The author bot in the proposal record
 
-serves [G5](../docs/goals.md) · since v0.1 · waivable · profile insights · check: store · decisions: D-24, D-71, D-80
+serves [G5](../docs/goals.md) · since v0.1 · waivable · profile insights · check: blackbox · decisions: D-24, D-71, D-80
 
 The core writes into the proposal's `origin` the author bot (`acting_bot`) and its epoch (`bot_epoch`) from the attempt that submitted the result, next to the role, worker, task and tier. If the result was submitted by a worker without a numbered bot (IDN-8), the field is empty, and `origin.worker` sets the author. When duplicates are merged, the author does not change.
 
-Checked by: `store:proposal/author-origin`
+Checked by: `blackbox:proposal/author-origin`
 
 <a id="PRP-16"></a>
 ### PRP-16. One open proposal per bot and a cumulative frequency limit
 
-serves [G6](../docs/goals.md) · since v0.2 · waivable · profile insights · check: store, blackbox · decisions: D-24
+serves [G6](../docs/goals.md) · since v0.2 · waivable · profile insights · check: blackbox · decisions: D-24
 
 A bot has no more than one open proposal on top of the role limits (PRP-5); a worker without a numbered bot counts as one bot. An extra proposal gets the refusal `proposal_rate_limited`. A proposal in `parked(conflict)` because of another author's proposal that moved to `realizing` earlier (PRP-9) does not take the bot's slot until the conflict is resolved. The limit on lowering a schedule's frequency is counted cumulatively: per 30 days, the new value of `spec.cron` gives at least half of the runs of the value applied 90 days earlier, by the history of applied sets. A proposal below that gets `forbidden_change`.
 
@@ -3695,11 +3695,11 @@ Checked by: `prp-14`
 <a id="PRP-18"></a>
 ### PRP-18. Executor and deadline of an accepted proposal
 
-serves [G5](../docs/goals.md) · since v0.1 · waivable · profile insights · check: store, blackbox · decisions: D-16, D-71
+serves [G5](../docs/goals.md) · since v0.1 · waivable · profile insights · check: blackbox · decisions: D-16, D-71
 
 On "Accept" the core records the executor and the deadline. For `action_request` and `script` the executor is the person who accepted, on whose behalf the object was created. For `manifest_change` and `human_change` the executor is a tenant person from the list `insights.realizers` (by default the person who accepted, if they are on the list, otherwise the first on the list); they get a card with the patch or the description and the deadline `realize_by` (7 days by default), and at half of the period the core sends a reminder. If there is no execution by the deadline, the proposal moves to `realization_failed(timeout)`, and the trial is closed as `canceled`.
 
-Checked by: `store:proposal/realizer-deadline`
+Checked by: `blackbox:proposal/realizer-deadline`
 
 <a id="PRP-19"></a>
 ### PRP-19. "Executed" only by a verified link
@@ -3713,7 +3713,7 @@ Checked by: `prp-08`
 <a id="PRP-20"></a>
 ### PRP-20. Reverse edit of an executed change
 
-serves [G4](../docs/goals.md) · since v0.1 · non-waivable · profile insights · check: store, fixture · decisions: D-37, D-71
+serves [G4](../docs/goals.md) · since v0.1 · non-waivable · profile insights · check: blackbox, fixture · decisions: D-37, D-71
 
 On `realized` by a commit the core keeps a reverse edit: the previous values of the same fields of the same objects, and the batch number if one commit is linked to several proposals. The reverse edit is available to the executor in the "Revert" card (PRP-23) and in P2 `proposal.show`. A commit that carries the line `Botaru-Revert: <id> <reason>` and returns these values is linked by the core to the proposal and moves it to `reverted`; the reason is from the closed list `harm_observed` (the change did harm), `superseded` (replaced by another), `other`, and a line without a reason is read as `other`. The core writes the revert reason into the proposal record and into the author's "My outcomes" (DIG-7).
 
@@ -3722,7 +3722,7 @@ Checked by: `prp-05`, `prp-12`
 <a id="PRP-21"></a>
 ### PRP-21. Change trial record on "Accept"
 
-serves [G5](../docs/goals.md) · since v0.1 · non-waivable · profile insights · check: store, fixture, lint · decisions: D-24, D-37, D-71
+serves [G5](../docs/goals.md) · since v0.1 · non-waivable · profile insights · check: blackbox, fixture, lint · decisions: D-24, D-37, D-71
 
 On "Accept" or "Lift veto" of any kind other than `none`, the core creates in the same transaction a change trial record: the metric from `benefit.metric` (a series with an `outcome` block, OBV-6), the direction and the promised change from `benefit`, the subjects that the core derives from the change targets, the metric value before (for the 14 days before "Accept", as numbers) and one to five guards, also with values before. The core takes the guards from two tables of the registry `spec/model/core-series.yaml`: by the kind of the change target and by the metric (for example, metric `farm.task.outcome` is always guarded by `farm.attempt.duration` of the same type, and `farm.queue.wait` is guarded by `farm.task.cost` and by the subjects' load series, if it is declared with an `outcome` block); a tenant can only add guards (`insights.extra_guards`), a table guard cannot be removed, and `apply` lint checks this. The trial window is 14 days from `realized`. The model does not write into the record; a proposal of such a kind with a metric not from the registry gets the refusal `rejected(metric_unknown)` at creation.
 
@@ -3731,7 +3731,7 @@ Checked by: `prp-09`, `prp-13`
 <a id="PRP-22"></a>
 ### PRP-22. Own evidence share and the trial outcome computed by code
 
-serves [G5](../docs/goals.md) · since v0.1 · non-waivable · profile insights · check: fixture, store, lint, blackbox · decisions: D-37, D-79, D-24, D-71
+serves [G5](../docs/goals.md) · since v0.1 · non-waivable · profile insights · check: fixture, blackbox, lint · decisions: D-37, D-79, D-24, D-71
 
 For each evidence series the core computes at creation `self_influence`: the share of points produced by attempts of the author bot (`author_share`; while bots have no numbers, of its worker), and the share of points of its role (`role_share`). With `author_share` not less than 0.3, the people's card and the reviewer input carry the mark `self_evidence` without the author's identity. The fields `self_influence` and the trial outcome (`trial.outcome`) are in the record schema from v0.1. At the end of the window only code computes the trial outcome, from a closed list: `better`, `unchanged`, `worse`, `undetermined` and `mixed` (mixed with another change). Order of computation: if a guard tripped within the window, the outcome is `worse`; otherwise, if within the window another proposal was executed on the same subjects or another commit changed fields of the same objects, the outcome is `mixed`; otherwise the metric is compared with the series tolerance in three computations: over all points, without the points of the author bot, and without the points of all bots of its role; a worsening beyond the tolerance in at least one computation gives `worse`, an improvement beyond the tolerance in all of them gives `better`, and the rest gives `unchanged`. A computation in which `min_samples` was not reached before or after gives `undetermined`, except in one case: if the metric's points are produced only by attempts of the author or its role (the computation without them is empty or shorter than `min_samples`), the outcome is computed from the remaining computations and carries the mark `self_measured`; such an outcome is visible on cards and in "My outcomes", and a promotion trigger from it appears only after a person's "Count it" button on the case card (GOV-14). `apply` lint warns if a role with an `insight` section has one bot and its `observes` contains only series of its own task types. The core writes the outcome and the numbers into the `trial` of the proposal record. If the change was reverted before the end of the window (PRP-20), the outcome is `worse` when a guard tripped before the revert or the revert reason is `harm_observed`, otherwise `canceled`. Outcome `worse` is a worsening confirmed by the core (D-37). Attributing an incident to a change does not change the trial outcome; a disputed attribution (`disputed`, GOV-13) only delays the promotion trigger until it is resolved (D-79).
 
@@ -3774,7 +3774,7 @@ Explained in: [docs/capabilities.md](../docs/capabilities.md)
 
 serves [G5](../docs/goals.md) · since v0.1 · non-waivable · profile core · check: blackbox · decisions: D-94
 
-The core computes the run fingerprint at `claim` by the row "run fingerprint" of `spec/hashing.md`: a hash over the parts role manifest, task type with instruction and schemas, the role's skills, the bot identity's persona, the P3 catalog of this handle, the model profile configured for the slot at `claim`, the runtime driver and version with the `describe()` values, and the sandbox image digest; an absent part is `null`. A later fallback or grant does not change the fingerprint: the actual profile of each call is written on its usage line. The core writes the fingerprint and the hashes of its parts into the attempt, the usage lines and the data of the `task.completed` event. The runtime and the worker do not set the fingerprint.
+The core computes the run fingerprint at `claim` by the row "run fingerprint" of `spec/hashing.md`: a hash over the parts role manifest, task type with instruction and schemas, the role's skills, the bot identity's persona, the P3 catalog of this handle, the model profile configured for the slot at `claim`, the runtime driver and version with the `runtime` values of P1 `hello`, and the sandbox image digest; an absent part is `null`. A later fallback or grant does not change the fingerprint: the actual profile of each call is written on its usage line. The core writes the fingerprint and the hashes of its parts into the attempt, the usage lines and the data of the `task.completed` event. The runtime and the worker do not set the fingerprint.
 
 <a id="PRV-2"></a>
 ### PRV-2. The core writes artifact provenance
@@ -3920,7 +3920,7 @@ Each kind of stored object and each store, including logs with content, runtime 
 <a id="RET-2"></a>
 ### RET-2. Retention periods and deletion at expiry
 
-serves [C6](../docs/goals.md) · since v0.1 · non-waivable · profile core · check: store, blackbox
+serves [C6](../docs/goals.md) · since v0.1 · non-waivable · profile core · check: blackbox
 
 Content is deleted at the retention class expiry by the background loop `retention`. In v0.1 the loop deletes only objects of classes `content` and `observation` older than the default period from `spec/model/retention-classes.yaml` (RET-1); everything else is deleted before its period only by an erasure request (RET-7). From v0.2 the tenant sets the periods (RET-9) and the loop deletes every class in every copy (RET-10). Fixture: a `content` class canary older than the default period is not found in C3 after a loop tick, while a `metadata` record of the same age remains.
 
@@ -3929,11 +3929,11 @@ Checked by: `retention/`, `blackbox:core/retention-minimal`
 <a id="RET-3"></a>
 ### RET-3. Tombstones keep uniqueness
 
-serves [G1](../docs/goals.md) · since v0.1 · non-waivable · profile core · check: store · decisions: D-43, D-36
+serves [G1](../docs/goals.md) · since v0.1 · non-waivable · profile core · check: blackbox · decisions: D-43, D-36
 
 Deletion does not release uniqueness. After a task is deleted a tombstone `(tenant, idempotency_key hash, task id)` remains, and the key stays taken while the tenant lives: repeating the key of a deleted task gets `gone`, not a new task (IDM-1). Ids of a tenant, principal, bot, task, `file_ref` and approval are not reused. A tombstone stores neither content nor a hash of an external id (an external channel id and a mail address can be found by brute force).
 
-Checked by: `store:core/tombstone`
+Checked by: `blackbox:core/tombstone`
 
 <a id="RET-4"></a>
 ### RET-4. Erase operations in every port with content
@@ -3956,7 +3956,7 @@ Checked by: `manifests/deploy`
 <a id="RET-6"></a>
 ### RET-6. Restore from backup
 
-serves [G2](../docs/goals.md) · since v0.1 · non-waivable · profile core · check: blackbox, store · decisions: D-36, D-80
+serves [G2](../docs/goals.md) · since v0.1 · non-waivable · profile core · check: blackbox · decisions: D-36, D-80
 
 After the store is restored from a backup and before the core is ready: (a) the store epoch grows, and all work and all handles of the previous epoch get `fenced`; (b) all waiting approvals (`pending`) move to `canceled(restored)` with `card_update`; an approval in `executing` whose write call was in `queued` or `leased` gets `exec_unknown` together with it, and actions are not repeated (APR-7); (c) the erasure log is replayed from its separate backup, including manual deletions through `farmctl` (RET-7); (d) P1 `claim` and `enqueue` answer `not_ready`, and P4 starts no model calls; (e) the core does not become ready until the usage gap since the backup is filled in with `spend_reconciled` lines from the provider report (BUD-10), or the operator completes the restore with the P2 operation `restore.complete --spend-pending`: the core becomes ready, the usage gap is marked open, code raises the alarm `alarm.spend.unreconciled` (`warn`), and the daily limits of all tenants are cut in half until the provider report is reconciled (`spend.reconcile`); after reconciliation the alarm moves to `resolved` and the limits return. The restore is completed by P2 `restore.complete` or by the core itself, if at start it sees that the separate backup of the erasure log is ahead of the store. Fixture: the backup was taken before an approval and before `forget`; after the restore the approval is `canceled(restored)`, the memory record is deleted again, and the old token gets `fenced`; `restore.complete --spend-pending` gives readiness, the alarm `alarm.spend.unreconciled` and a halved daily limit, and `spend.reconcile` removes both.
 
@@ -3965,7 +3965,7 @@ Checked by: `restore/`, `blackbox:core/restore`, `blackbox:core/restore-spend-pe
 <a id="RET-7"></a>
 ### RET-7. Early deletion only through the erasure log
 
-serves [C6](../docs/goals.md) · since v0.1 · non-waivable · profile core · check: store, blackbox · decisions: D-12, D-36, D-76
+serves [C6](../docs/goals.md) · since v0.1 · non-waivable · profile core · check: blackbox · decisions: D-12, D-36, D-76
 
 Any early deletion, that is deletion before the retention class period ends (`forget`, person offboarding, erasing the data of a retired bot, tenant deletion, cleaning a runtime store when a worker is decommissioned, a person's request, manual deletion by an operator through `farmctl`), goes only through an erasure request (`ErasureRequest`). A request is a recorded object: scope, reason, author, time and a result for each store (`done`, `failed`, `not_applicable`). The scope is from a closed list: `(tenant)`, `(tenant, subject)`, a bot identity id (all its sealed data, only reason `bot_retired`), a worker id (the store of its runtime, only reason `worker_revoke`) or a list of object ids. The reason is also from a closed list: `forget`, `offboarding`, `bot_retired`, `tenant_delete`, `worker_revoke`, `subject_request`, `manual`. One request can name many ids: this is how a confirmed `erase_match` deletes all objects found (SEC-11). The core enqueues `bot_retired` requests: in the identity retirement transaction, for its sessions inside the runtime (`runtime_internal`) as a list of their ids, and E4 `purge` deletes them; at the end of `seal_ttl` (the `identity` loop), for all sealed data with the bot identity id as scope (MEM-9). The request enters the erasure log before the first byte is deleted. The `erasure` loop sends the request to the stores and collects the results; while at least one store is neither `done` nor `not_applicable`, the request is open, and at its deadline it gives an alarm by code; the only exception is `failed` from E5 for a list of note ids (RET-4): a note carries no personal data, and such a result does not keep the request open. Deletion of a person's data at their request is part of v0.1 and cannot be waived for a `kind: production` tenant (D-76). No process and no `farmctl` command has a direct deletion of content bypassing the request. Fixture: an operator deletes a principal's data through `farmctl` after a backup was taken; after restoring from that backup the data is deleted again.
 
@@ -3983,11 +3983,11 @@ Checked by: `restore/`, `blackbox:core/backup-report`
 <a id="RET-10"></a>
 ### RET-10. Deletion by period in every copy
 
-serves [C6](../docs/goals.md) · since v0.2 · non-waivable · profile core · check: store, blackbox · decisions: D-106
+serves [C6](../docs/goals.md) · since v0.2 · non-waivable · profile core · check: blackbox · decisions: D-106
 
 From v0.2 the `retention` loop deletes objects of every class with a period (RET-9) no later than 24 hours after the period ends, without an erasure request, and in every copy the farm keeps: C3 entries with `prune`, files after `expires_at` with C1 `file.purge` together with their corpus fragments (KNW-5) and cached tool output (PRM-12), attempt journals (AUD-4), task content with `task.purge` leaving a tombstone (RET-3), and the sessions of a runtime with `session: runtime_internal` through E4 `purge` by their ids. `metadata` and `observation` are deleted only in whole calendar months, never by editing a row (AUD-3); the only edit is the anonymization of usage lines (BUD-16). After a restore the loop deletes what is overdue again. Fixture: after the tenant period a canary is found in no store, including the corpus index, the tool cache and the runtime; a `metadata` record of the same age stays until its month ends.
 
-Checked by: `retention/`, `store:core/retention-all-copies`
+Checked by: `retention/`, `blackbox:core/retention-all-copies`
 
 <a id="RET-11"></a>
 ### RET-11. Channel cache, every runtime and tenant scope in erasure
@@ -3996,7 +3996,7 @@ serves [C6](../docs/goals.md) · since v0.2 · non-waivable · profile core · c
 
 From v0.2 three erase operations are added to RET-4, and the adapter of each passes the `erasure` suite. A channel that declares `driver.stores_content: attachments` or `cache` implements E1 `match` (it searches its cache and saved attachments for the needles and answers only with ids) and E1 `erase` by `(tenant)`, `(tenant, subject)` and a list of ids. Every agent runtime implements E4 `purge` by the same scopes, also without `runtime_internal`: it deletes the working files, caches and logs with content it keeps, and the core sends this work to every agent worker that ran an attempt of the tenant. C3 `purge` accepts the scope `(tenant)` for tenant deletion (LCY-1). A store that lacks the operation answers `failed`, and the request stays open with an alarm (RET-7). After a restore the replayed erasure requests (RET-6) send this work again, and an `erase_match` request is replayed only by its recorded ids, never by a new search.
 
-Checked by: `erasure/erasure`, `adapter:channel/cache-erase-match`, `adapter:runtime/purge-any-runtime`
+Checked by: `erasure/erasure`, `adapter:channel/cache-erase-match`, `blackbox:core/purge-any-runtime`
 
 <a id="rt"></a>
 ## RT: Agent runtime
@@ -4006,18 +4006,18 @@ Explained in: [docs/architecture.md](../docs/architecture.md)
 <a id="RT-1"></a>
 ### RT-1. Session inside the runtime
 
-serves [G1](../docs/goals.md) · since v0.1 · non-waivable · profile core · check: adapter
+serves [G1](../docs/goals.md) · since v0.1 · non-waivable · profile core · check: blackbox
 
-If a runtime declares `session: runtime_internal`, it has one profile per (tenant, role, subject) or per bound group chat. The profile store belongs to retention class `content` and is cleaned at the tenant's period. `forget`, offboarding and an erasure request reach it through the adapter with the `purge` operation, and a search by a principal string with the `match` operation (RT-5). The core keeps the session's `untrusted_seen` mark (INJ-13).
+The core lets an agent runtime keep the conversation itself only when the agent worker declares `runtime.session: runtime_internal` in P1 `hello` together with the erase operations `erase` and `match` (RT-5); without them the core blocks the worker at `hello` (`blocked`). The core treats such a runtime as a store of retention class `content` with one profile per (tenant, role, subject) or per bound group chat, cleaned at the tenant's period: `forget`, offboarding and every erasure request reach it as `erasure` work units through P1 `claim`, and the core writes the outcome of each into the erasure request. The core keeps the session's `untrusted_seen` mark itself (INJ-13).
 
-Checked by: `adapter:runtime/session-internal-purge`
+Checked by: `blackbox:core/runtime-internal-purge`
 
 <a id="RT-2"></a>
 ### RT-2. Memory inside the runtime
 
-serves [G2](../docs/goals.md) · since v0.1 · non-waivable · profile core · check: adapter, blackbox · decisions: D-35
+serves [G2](../docs/goals.md) · since v0.1 · non-waivable · profile core · check: blackbox · decisions: D-35
 
-If a runtime declares `memory: runtime_internal`, record approval is on in it, background self-learning is off, and skills written by the model enter work only after a human review; `forget` and `purge` go through the adapter, and a search by a principal string with the `match` operation (RT-5). Such memory exists only in scope `person`: bot memory is core records and verified facts in the farm store. A role with such memory does not get a task with `untrusted_seen`: at enqueue `rejected(memory_untrusted)`.
+The core lets an agent runtime keep memory itself only when the agent worker declares `runtime.memory: runtime_internal` in P1 `hello` together with the erase operations `erase` and `match` (RT-5); without them the core blocks the worker at `hello` (`blocked`). The core requires of such a runtime that record approval is on, background self-learning is off and a skill the model wrote enters work only after a human review. Such memory exists only in scope `person`: bot memory is core records and verified facts in the farm store. The core does not give a role with such memory a task with `untrusted_seen`: at enqueue `rejected(memory_untrusted)`. `forget` and every erasure request reach the runtime as `erasure` work units through P1 `claim`.
 
 Checked by: `blackbox:core/runtime-memory-untrusted`
 
@@ -4042,11 +4042,11 @@ Checked by: `blackbox:core/per-role-catalog-check`
 <a id="RT-5"></a>
 ### RT-5. Search in the runtime for erasure
 
-serves [C6](../docs/goals.md) · since v0.1 · non-waivable · profile core · check: adapter, blackbox · decisions: D-76
+serves [C6](../docs/goals.md) · since v0.1 · non-waivable · profile core · check: blackbox, impl · decisions: D-76
 
-A runtime that declared `session: runtime_internal` or `memory: runtime_internal` implements the operation `match(tenant, subject, needles) -> ids`: a search for exact strings of the principal (external identities, display name) in its transcripts and memory, answering only with a list of ids, without content. A search by match (`erase_match`) considers such a store passed only after a `match` answer; a `describe` with `runtime_internal` and without `match` blocks the worker at `hello` (`blocked`). The operation is needed from v0.1, because deletion of a person's data at their request is part of v0.1 and cannot be waived for a production tenant (D-76). Check: a mock runtime without `match` gets `blocked`; a runtime with `match` answers with the id of the session that holds the principal's canary, and after `purge` by these ids a repeated `match` is empty.
+The core does not accept an agent runtime that keeps a session or memory itself without a search for erasure: a P1 `hello` of an agent worker that declares `runtime.session` or `runtime.memory` as `runtime_internal` and does not list `match` and `erase` in `runtime.erasure` blocks the worker (`blocked`). On a search by match (`erase_match`) the core sends such a worker an `erasure` work unit with `op: match`, the worker answers only with the ids where the principal's exact strings (external identities, display name) occur, without content, and the core counts that store as passed only after this answer; then it sends `op: erase` by these ids. The search is needed from v0.1, because deletion of a person's data at their request is part of v0.1 and cannot be waived for a production tenant (D-76). Check: a mock agent worker that declares `runtime_internal` without `match` gets `blocked`; one with `match` answers with the id of the session that holds the principal's canary, and after the erase by these ids a repeated `match` is empty.
 
-Checked by: `adapter:runtime/match-subject`
+Checked by: `blackbox:core/runtime-internal-match`, `impl:internal/core/TestHelloRuntimeDeclaration`
 
 <a id="scr"></a>
 ## SCR: Scripts
@@ -4119,11 +4119,11 @@ Checked by: `blackbox:script/frozen-subset`, `scr-fx-04`
 <a id="SCR-8"></a>
 ### SCR-8. Core code releases steps
 
-serves [G3](../docs/goals.md) · since v0.1 · non-waivable · profile campaign · check: store, blackbox · decisions: D-15, D-41, D-71
+serves [G3](../docs/goals.md) · since v0.1 · non-waivable · profile campaign · check: blackbox · decisions: D-15, D-41, D-71
 
 Only deterministic core code releases steps: in the transaction in which the work of the previous step ended (DLV-2), or by the background loop `script` (deadlines, steps without predecessors); the model takes no part in release. A step task gets key `system:script:<run>:<step>`, and a double release gives one task. The estimate of all branches at once and the tree size are reserved in full at the run approval, and the campaigns of `fanout` steps take their reserve from the run reserve; if the reserve does not fit, the run does not start (`budget_exhausted`). The run is paid by the tenant's monthly limit and budget line `work` for the amount on the run card; the initiator's daily limit does not apply to steps. When each step is released, the core checks the initiator's permissions again (PRM-3); a refusal makes the step `failed` with the check reason.
 
-Checked by: `store:script/double-release`
+Checked by: `blackbox:script/double-release`
 
 <a id="SCR-9"></a>
 ### SCR-9. The distrust flag passes between steps
@@ -4146,7 +4146,7 @@ Checked by: `blackbox:script/hold-pauses-run`
 <a id="SCR-11"></a>
 ### SCR-11. Run transitions only by the table, cancellation cascades
 
-serves [G1](../docs/goals.md) · since v0.1 · non-waivable · profile campaign · check: fixture, store, blackbox · decisions: D-15, D-41, D-71
+serves [G1](../docs/goals.md) · since v0.1 · non-waivable · profile campaign · check: fixture, blackbox · decisions: D-15, D-41, D-71
 
 A run and its steps change state only by the transition table `spec/lifecycles/script.md`. A step is released when all steps from its `needs` are in a terminal state and `run_if` holds: `succeeded` requires all of them to be `ok`; `failed`, at least one to be `failed` or `unknown`; `always` releases on any outcome. A step with a false `when` or an unmet `run_if` becomes `skipped`. A step failure (`failed` or `unknown`) with `on_failure: stop` moves to `skipped` all unreleased steps except steps with `run_if: failed` or `always`, and the run ends `failed`; with `on_failure: continue` the failure affects only the steps that depend on it. A person's refusal or an expired decision deadline makes a step `declined`: dependent steps with `run_if: succeeded` become `skipped`, and the run does not count as failed. Cancellation of a run (the initiator's button, P2 `script.cancel` by the initiator or by a person with `admin:people`, cancellation of the anchor task, disabling of the initiator) in one transaction moves unreleased steps to `canceled`, cancels the waiting approvals of its steps and requests cancellation of the tasks and campaigns of released steps. After the run's terminal state the core releases no step.
 
@@ -4231,7 +4231,7 @@ Checked by: `blackbox:core/export-sink-not-export`, `blackbox:core/mydata-export
 <a id="SEC-11"></a>
 ### SEC-11. A person's request and deletion through ports
 
-serves [C6](../docs/goals.md) · since v0.1 · waivable · profile core · check: blackbox, store · decisions: D-12, D-36, D-76
+serves [C6](../docs/goals.md) · since v0.1 · waivable · profile core · check: blackbox · decisions: D-12, D-36, D-76
 
 A person's request (`SubjectRequest`) is a core record: the principal or author, the kind (`export`, `erase`, `erase_match`), the deadline `privacy.subject_request_days`, the state and the result. The commands `/mydata export` and `/mydata erase` through P2 `principal.data_request` create a request about oneself and a `subject_request` card for the tenant's people with `admin:people`. Deletion at a person's request (`erase`, `erase_match`) works from v0.1, and for a tenant with `kind: production` this rule cannot be waived (D-76); the data copy (`export`, LCY-2) arrives in v0.2; it is only about oneself, carries the requester's public key (`recipient_key`) and goes only to the requester (SEC-10). The model neither creates nor decides a request. Silence neither executes nor closes a request: at half of the period the admins get a reminder, and at the deadline an overdue event and a notice to the operator. A confirmed deletion goes only through an erasure request with reason `subject_request` and scope `(tenant, subject)` through the erase operation of each port (RET-4, RET-7), including the sealed memory of retired bots. The scope includes objects where the principal is the initiator or owner, objects with them in `personal_subjects` (AUD-5) and group chat sessions whose key includes them (C3); before deleting the identity, the core itself creates an `erase_match` request by the principal's external ids and display name, which a second person with `admin:people` confirms; the person gets the result for each store as code text. A confirmed export enqueues a principal export task (LCY-2). The data of a person who is not a farm principal is deleted by an `erase_match` request: a person with `admin:people` creates it through P2 `erasure.match`, and another person with the same permission confirms it; if the tenant has no second active person with `admin:people`, a farm admin confirms through `farmctl`, and this counts as the second person (D-86 (8)). At creation the core searches for the exact string in all objects of classes `content` and `memory` of the tenant, including sealed ones, and in stores that the core does not read, with the port's `match` operation: the E4 runtime (short-term memory and transcripts), the E2 sink, the E1 channel cache; notes in the monitoring system are deleted by E5 `erase` by `(tenant, subject)` and found by `match`; a binding that cannot delete notes answers `failed`, and this is acceptable: by design a note carries no personal data (class `summary`, redaction, INJ-4), so such a result is shown to the person as a separate line and does not keep the request open. In v0.1 erase operations exist for C1 `file.purge`, C3 `delete` and `purge`, C4 `erase`, E2 `erase`, E4 `purge` and E5 `erase`; `erase` and `match` of the E1 channel cache arrive in v0.2 (RET-11), and until then a channel without a cache answers `not_applicable`, and a channel with a cache `failed`. Any other store without `match` gives the result `failed` with an alarm, not "not found"; production tenant lint allows a role with `session: runtime_internal` or `memory: runtime_internal` only with a runtime adapter that declared `match` (RT-1). The core writes the ids of the objects found into the request and erases the string at once; the card shows the number of objects found per store, without content. The confirmation creates an erasure request with reason `subject_request` for these ids; an object is deleted as a whole, a tombstone remains, and after a restore the deletion is replayed by the same ids. The string does not enter the audit, events or the erasure log, not even as a hash. Fixture: after `erase_match` and a restore from a backup taken before the request, the canary string is in no store and in no request record.
 
@@ -4249,11 +4249,11 @@ Checked by: `blackbox:channel/privacy-notice-native`, `blackbox:channel/privacy-
 <a id="SEC-14"></a>
 ### SEC-14. Per-principal usage is anonymized after 93 days
 
-serves [C6](../docs/goals.md) · since v0.2 · waivable · profile core · check: store, blackbox
+serves [C6](../docs/goals.md) · since v0.2 · waivable · profile core · check: blackbox
 
 Usage lines whose `subject` is a person (`human:`) and that are older than 93 days lose the reference: the retention loop removes `subject`, `task` and `root`, truncates `time` to the day (00:00 UTC) and writes `subject_kind: human`, in whole days, so that no join with audit, events or task records leads back to the person; the amounts and the other fields remain; the line stays in class `metadata` for its period, and this removal is the only edit of a `metadata` row. The retention loop does it together with BUD-16. Daily limits and reports per principal are computed only from lines younger than 93 days; the report to a person about their data names this period (SEC-10). Fixture: after a loop run, a usage line aged 94 days has no `subject`, `task` or `root`, and its `time` is midnight.
 
-Checked by: `store:budget/subject-anonymized-93d`
+Checked by: `blackbox:budget/subject-anonymized-93d`
 
 <a id="skl"></a>
 ## SKL: Skills
@@ -4272,11 +4272,11 @@ Checked by: `schemas/invalid/manifests/skill`, `lint:skills/format`, `manifests/
 <a id="SKL-2"></a>
 ### SKL-2. The runtime gets only role skills with a matching hash
 
-serves [G2](../docs/goals.md) · since v0.2 · non-waivable · profile knowledge · check: adapter
+serves [G2](../docs/goals.md) · since v0.2 · non-waivable · profile knowledge · check: blackbox
 
-A role pins a skill by the tree hash of its directory (`skill-ref`: name, description, `sha256` by `spec/hashing.md`). The core gives a run only the skills of its role whose tree hash matches, and only from the core's copy. A runtime that declares `skills: runtime_files` in `describe()` gets them as files: its skill directory is read only, and a skill that is not in the role is forbidden on its disk (complements RT-2). A runtime with `skills: farm` gets them as a section of the instruction and through the built-in tool `skill_read`.
+A role pins a skill by the tree hash of its directory (`skill-ref`: name, description, `sha256` by `spec/hashing.md`). The core gives a run only the skills of its role whose tree hash matches, and only from the core's copy, as references in the attempt work item of P1 `claim`. A runtime whose agent worker declares `runtime.skills: runtime_files` in P1 `hello` gets them as files: its skill directory is read only, and a skill that is not in the role is forbidden on its disk (complements RT-2). A runtime with `skills: farm` gets them as a section of the instruction and through the built-in tool `skill_read`.
 
-Checked by: `adapter:runtime/skills-role-only`
+Checked by: `blackbox:skills/role-only`
 
 <a id="SKL-3"></a>
 ### SKL-3. A skill does not change the tool catalog
@@ -4336,7 +4336,7 @@ Checked by: `blackbox:model/tenant-field`, `blackbox:model/child-record-fields`
 <a id="TEN-3"></a>
 ### TEN-3. Only its own tenant takes work
 
-serves [C3](../docs/goals.md) · since v0.1 · non-waivable · profile core · check: blackbox, store · decisions: D-71, D-80
+serves [C3](../docs/goals.md) · since v0.1 · non-waivable · profile core · check: blackbox · decisions: D-71, D-80
 
 `claim` gives a worker only work of its tenant, and `msg.receive` only entries of its tenant's inboxes. A delivery is taken only by a channel, sink or monitoring adapter of the same tenant, and only by the one whose `enroll` record matched the delivery target `target` (`kind`: `channel`, `sink` or `monitor`, and the name), which the core writes into the delivery. Seat tasks are taken only by workers of seat roles enrolled in the task's tenant.
 

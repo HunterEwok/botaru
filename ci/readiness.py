@@ -7,7 +7,7 @@ names is covered if its number is in the rules of at least one check with an id.
 A name from the fixtures field of a rule is covered if:
 - the fixture path (lease/stale-complete, authorize/holds/, fixture:files/x)
   exists in conformance/fixtures/ as a .yaml or .json file or a folder;
-- the suite check (blackbox:core/x, store:lease/y, adapter:channel/z, lint:roles/w)
+- the suite check (blackbox:core/x, adapter:channel/z, lint:roles/w)
   or the fixture or case number (fx-msg-01, ctd-001) is written as an id
   in YAML inside conformance/ or evals/.
 

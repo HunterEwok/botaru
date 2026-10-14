@@ -9,18 +9,28 @@ checks:
   - GW-11
   version: v0.1
   section: Tests without a model
-  source: docs/quality.md:346
+  source: docs/quality.md:341
   spec:
     What: the mock provider answers 529 for 30 minutes
     Expectation: no task ends `attempts_exhausted` or `runs_exhausted` before its `deadline`; there are no more provider calls
       during the outage than probes
+- id: blackbox:gateway/cache-read
+  method: blackbox
+  rules:
+  - GW-16
+  version: v0.1
+  section: Tests without a model
+  source: docs/quality.md:342
+  spec:
+    What: two model calls of the same attempt through P4 with a mock provider that reports cache reads
+    Expectation: its usage line shows a cache read greater than 0
 - id: blackbox:gateway/no-response
   method: blackbox
   rules:
   - BUD-11
   version: v0.1
   section: Tests without a model
-  source: docs/quality.md:348
+  source: docs/quality.md:343
   spec:
     What: the mock provider accepts the request and drops the connection
     Expectation: the `spend_estimated` line equals the call reserve, the reserve stays charged after the task ends
@@ -30,7 +40,7 @@ checks:
   - BUD-10
   version: v0.1
   section: Tests without a model
-  source: docs/quality.md:481
+  source: docs/quality.md:476
   spec:
     What: a provider report file imported with `farmctl spend reconcile --file`; a `spend_estimated` line older than `spend.estimate_release_after`
       without a report
@@ -43,7 +53,7 @@ checks:
   - GW-12
   version: v0.1
   section: Tests without a model
-  source: docs/quality.md:482
+  source: docs/quality.md:477
   spec:
     What: the mock provider answers later than the deadline derived from `max_output_tokens` and `tokens_per_s`
     Expectation: exactly one provider call; no retry after sending
@@ -53,7 +63,7 @@ checks:
   - CAP-2
   version: v0.1
   section: Tests without a model
-  source: docs/quality.md:493
+  source: docs/quality.md:488
   spec:
     What: the mock provider answers 529 for ten minutes; then a refusal on the spend cap
     Expectation: no task ends `attempts_exhausted`, the journal has the last provider code; `provider_spend_cap` gives `failed`
@@ -64,7 +74,7 @@ checks:
   - GW-5
   version: v0.1
   section: Tests without a model
-  source: docs/quality.md:494
+  source: docs/quality.md:489
   spec:
     What: the main profile is `overloaded`, the slot profile declares a fallback; a second case with a fallback outside `models_allowed`;
       a third without an eval mark
@@ -76,7 +86,7 @@ checks:
   - GW-6
   version: v0.1
   section: Tests without a model
-  source: docs/quality.md:495
+  source: docs/quality.md:490
   spec:
     What: a slot profile at 1 EUR and a fallback at 3 EUR per worst case call
     Expectation: the reserve before the call is by the fallback (3 EUR)

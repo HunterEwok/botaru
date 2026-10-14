@@ -1,5 +1,7 @@
 # Lifecycle: connection
 
+Kind: `human-decision` (the kinds are listed in [the lifecycle index](README.md)).
+
 ## In short
 
 A connection (`Connection`) is a recorded access of one person to their own account at an external service, for example their mail or calendar (SEC-7). The person creates it themselves through the consent adapter: `/mydata connect` makes the core issue a link nonce bound to the tenant and the principal, the adapter shows the provider's consent screen, receives the token, registers the connection with P2 `connection.register` and the nonce, and stores the token under the `token_ref` that the core generated. The connection is `pending` until the person confirms the `connection_confirm` card, which shows the external account, in their private chat. The model never creates, names or chooses a connection, and the token value never passes through P1-P4. A plugin tool with `credential: per_principal(<provider>, <scopes>)` gets only the active connection of the task's initiator that carries all the scopes; tasks of other principals and of the service principal `system` get none and the call ends with `error(connection_missing)`. A write on behalf of the person stays a tier 3 action with an approval. A connection lives in the tenant of the person; the record is of class `content` and is deleted by an erasure request (RET-7).

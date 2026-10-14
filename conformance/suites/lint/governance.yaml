@@ -9,7 +9,7 @@ checks:
   - GOV-45
   version: v0.3
   section: Tests without a model
-  source: docs/quality.md:620
+  source: docs/quality.md:614
   spec:
     What: a manager persona without the anchor `purpose`; a commission persona with a sentence about accuracy scores and departure;
       persona with addenda over 4 KiB; a reporter addendum without an `accuracy` anchor

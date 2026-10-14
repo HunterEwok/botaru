@@ -9,7 +9,7 @@ checks:
   - PRF-1
   version: v0.1
   section: Tests without a model
-  source: docs/quality.md:375
+  source: docs/quality.md:370
   spec:
     What: a role declares what its profile forbids (`fx-rep-01` for `reporter`, the same fixtures for the other profiles)
     Expectation: '`apply` rejects the role; no built-in tools outside the profile in `tools/list`'
@@ -19,7 +19,7 @@ checks:
   - AGG-3
   version: v0.2
   section: Tests without a model
-  source: docs/quality.md:382
+  source: docs/quality.md:377
   spec:
     What: (v0.2) an aggregator names a role of profile `aggregator` in `aggregate.sources.roles`, directly or through a bot
       group in `sources.bot_groups`, or lists more source entries than `max_sources` (`manifests/agg-02.yaml`)

@@ -1,5 +1,7 @@
 # Lifecycle: fact
 
+Kind: `memory` (the kinds are listed in [the lifecycle index](README.md)).
+
 ## In short
 
 A fact (`Fact`) is a verified record about the farm in a bot's memory of the `bot` scope, for example "the task type `pipeline.qc.v1` on `web1` runs 130 minutes at the 95th percentile". The model only proposes what to remember: the kind, the predicate and the subject from closed registries; the core chooses and computes the window, the evidence and the value (MEM-6). A fact has no free strings, so an instruction cannot be put into it. A fact is the only thing that passes from a retired bot to its successor (MEM-7). A person does not approve facts.

@@ -9,10 +9,23 @@ checks:
   - SKL-3
   version: v0.2
   section: Tests without a model
-  source: docs/quality.md:352
+  source: docs/quality.md:347
   spec:
     What: a role skill names a tool outside the role (v0.2)
     Expectation: the tool is not in `tools/list`, the tier and the task class stay the same
+- id: blackbox:skills/role-only
+  method: blackbox
+  rules:
+  - SKL-2
+  version: v0.2
+  section: Tests without a model
+  source: docs/quality.md:357
+  spec:
+    What: '(v0.2) an agent worker that declares `runtime.skills: runtime_files`; the role pins `disk-triage` by hash; the
+      core copy differs by one byte'
+    Expectation: the attempt work item of `claim` holds only `disk-triage` with the hash of the core copy; with a tree of
+      another hash the skill is not given and the attempt fails; a skill of another role on the agent's disk makes the worker
+      `blocked`; the skill directory is read only
 - id: blackbox:skills/skill-read
   method: blackbox
   rules:
@@ -20,7 +33,7 @@ checks:
   - SKL-4
   version: v0.2
   section: Tests without a model
-  source: docs/quality.md:364
+  source: docs/quality.md:359
   spec:
     What: '(v0.2) a runtime with `skills: farm`; the model calls `skill_read` for a role skill file, for a file of another
       skill, for a 40 KiB file, and in an `insight` task'

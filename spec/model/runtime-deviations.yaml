@@ -1,10 +1,10 @@
 registry: runtime-deviations
 version: 2
 description: >-
-  Agent runtime deviations that the E4 adapter declares in the `describe()` answer. Each record is
-  a field of the `describe()` answer; `values` is the closed list of its values, and the first value is the farm
+  Agent runtime deviations that the agent worker declares in the `runtime` field of P1 `hello`. Each record is
+  a field of that object; `values` is the closed list of its values, and the first value is the farm
   model without deviation. Any value other than the first turns on its own replacement rules
-  (`rules` of the value), and they cannot be waived: the adapter cannot record them as expected failures. Record
+  (`rules` of the value), and they cannot be waived: an implementation cannot record them as expected failures. Record
   fields: `meaning` (which mechanism), `values` (list of `{value, meaning, rules}`), `rules`.
 source: spec/ports/e4-agent-runtime.md
 entries:
