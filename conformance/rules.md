@@ -459,7 +459,7 @@ Checked by: `blackbox:budget/line-by-purpose`
 
 serves [G3](../docs/goals.md) · since v0.1 · non-waivable · profile core · check: lint, blackbox · decisions: D-36, D-87
 
-The usage and reserve of one call are computed at the prices from `ModelProfile` as an integer number of micro-euros (`eur_micros`, 1 EUR = 1 000 000) without rounding per call. Limits, reports and `farmctl` show euro cents: the sum over a window (day, hour, month, tree) is rounded up to a whole euro cent, and the limit is compared with the window sum together with reserves (D-87 (1)). The price of a call includes input, output, cache write and read, reasoning and server-side compaction iterations. Three quantities have their own names: the task tree limit `tree_budget_eur` in the task type (an amount in euros), the output limit of one call `max_output_tokens` in the model profile (reasoning counts as output) and the input limit of one runtime run `run_max_input_tokens` among the limits the agent runtime gets for an attempt. There is no `max_tokens` field in the farm's manifests and contracts; lint rejects it. `tree_budget_eur` is required for every task type with a model, including review types `review.*`, analysis, aggregation and the manager; lint at `apply` rejects a type with a model without it, and also a type whose `tree_budget_eur` is less than the reserve of one call under the profile of the purpose's slot and its fallbacks (code `tree_budget_below_call`, GW-2).
+The usage and reserve of one call are computed at the prices from `ModelProfile` as an integer number of micro-euros (`eur_micros`, 1 EUR = 1 000 000) without rounding per call. Limits, reports and `farmctl` show euro cents: the sum over a window (day, hour, month, tree) is rounded up to a whole euro cent, and the limit is compared with the window sum together with reserves (D-87 (1)). The price of a call includes input, output, cache write and read, reasoning and server-side compaction iterations. Three quantities have their own names: the task tree limit `tree_budget_eur` in the task type (an amount in euros), the output limit of one call `max_output_tokens` in the model profile (reasoning counts as output) and the input limit of one runtime run `run_max_input_tokens` in the `limits` of the attempt work item, next to `max_turns` and `deadline`. There is no `max_tokens` field in the farm's manifests and contracts; lint rejects it. `tree_budget_eur` is required for every task type with a model, including review types `review.*`, analysis, aggregation and the manager; lint at `apply` rejects a type with a model without it, and also a type whose `tree_budget_eur` is less than the reserve of one call under the profile of the purpose's slot and its fallbacks (code `tree_budget_below_call`, GW-2).
 
 Checked by: `budget/lint`
 
@@ -4042,11 +4042,11 @@ Checked by: `blackbox:core/per-role-catalog-check`
 <a id="RT-5"></a>
 ### RT-5. Search in the runtime for erasure
 
-serves [C6](../docs/goals.md) · since v0.1 · non-waivable · profile core · check: blackbox · decisions: D-76
+serves [C6](../docs/goals.md) · since v0.1 · non-waivable · profile core · check: blackbox, impl · decisions: D-76
 
 The core does not accept an agent runtime that keeps a session or memory itself without a search for erasure: a P1 `hello` of an agent worker that declares `runtime.session` or `runtime.memory` as `runtime_internal` and does not list `match` and `erase` in `runtime.erasure` blocks the worker (`blocked`). On a search by match (`erase_match`) the core sends such a worker an `erasure` work unit with `op: match`, the worker answers only with the ids where the principal's exact strings (external identities, display name) occur, without content, and the core counts that store as passed only after this answer; then it sends `op: erase` by these ids. The search is needed from v0.1, because deletion of a person's data at their request is part of v0.1 and cannot be waived for a production tenant (D-76). Check: a mock agent worker that declares `runtime_internal` without `match` gets `blocked`; one with `match` answers with the id of the session that holds the principal's canary, and after the erase by these ids a repeated `match` is empty.
 
-Checked by: `blackbox:core/runtime-internal-match`
+Checked by: `blackbox:core/runtime-internal-match`, `impl:internal/core/TestHelloRuntimeDeclaration`
 
 <a id="scr"></a>
 ## SCR: Scripts

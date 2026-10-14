@@ -184,6 +184,32 @@
               "x-botaru-version": "v0.2",
               "description": "Language of the model answer chosen by the core by the locale order; the model does not choose it (DLV-18).",
               "$ref": "urn:botaru:schema:common:1#/$defs/locale"
+            },
+            "limits": {
+              "description": "Limits of the runtime run of this attempt, set by the core from the task type and the manager's remainder; the runtime stops at the first one it reaches (BUD-9)..",
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "max_turns",
+                "run_max_input_tokens",
+                "deadline"
+              ],
+              "properties": {
+                "max_turns": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "description": "Model turns of the run."
+                },
+                "run_max_input_tokens": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "description": "Input tokens of the whole run (BUD-9); for a manager read, the remainder of its per-read limit."
+                },
+                "deadline": {
+                  "$ref": "urn:botaru:schema:common:1#/$defs/datetime",
+                  "description": "When the run must end, not later than the lease deadline."
+                }
+              }
             }
           }
         }

@@ -698,3 +698,44 @@ func TestActivityNeedsActiveChannel(t *testing.T) {
 		t.Fatalf("blocked channel: %v", err)
 	}
 }
+
+// TestHelloRuntimeDeclaration: the runtime declaration of an agent is kept, and a runtime that
+// keeps its own store, or one with built-in tools, blocks the worker (RT-1, RT-2, RT-5, INJ-9).
+func TestHelloRuntimeDeclaration(t *testing.T) {
+	ctx := context.Background()
+	b := newBench(t)
+	hello := func(rt *RuntimeDecl) error {
+		r, err := b.c.Enroll(ctx, b.op, EnrollRequest{Tenant: "demo", Role: "hello", Kind: "agent"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		w, err := b.c.AuthenticateWorker(ctx, r.Token)
+		if err != nil {
+			t.Fatal(err)
+		}
+		_, err = b.c.Hello(ctx, w, HelloRequest{Kind: "agent", ProtocolVersions: []string{"v1"}, Runtime: rt})
+		if err == nil {
+			again, aerr := b.c.AuthenticateWorker(ctx, r.Token)
+			if aerr != nil {
+				t.Fatal(aerr)
+			}
+			if again.Hello == nil || again.Hello.Runtime == nil || again.Hello.Runtime.Memory != rt.Memory {
+				t.Fatalf("the runtime declaration was not kept: %+v", again.Hello)
+			}
+		}
+		return err
+	}
+	if err := hello(&RuntimeDecl{Session: "farm", Memory: "farm"}); err != nil {
+		t.Fatalf("farm runtime: %v", err)
+	}
+	for _, rt := range []*RuntimeDecl{
+		{Memory: "runtime_internal"},
+		{Session: "runtime_internal", Erasure: []string{"erase", "match"}},
+		{Memory: "farm", BuiltInTools: []string{"web_search"}},
+	} {
+		var r *Problem
+		if err := hello(rt); !errors.As(err, &r) || r.Reason != "blocked" {
+			t.Fatalf("runtime %+v: want blocked, got %v", rt, err)
+		}
+	}
+}

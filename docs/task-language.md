@@ -303,7 +303,7 @@ A task type (`TaskType`) is a declaration in `tasktypes/<type>.yaml`: who runs i
 | `requires` | worker labels the task needs | |
 | `timeouts` | `start_by`, `lease`, `heartbeat`, `attempt`, `stall_after`, `deadline`, `tool_start_by` (deadline for a toolhost to take a tool call, not more than 30 s); the lease term and the `heartbeat` interval are not higher than the farm ceilings; `deadline` is required for a type that a schedule refers to | FEN-3, CNT-4, DLV-16 |
 | `retry` | `max_attempts` (not more than 3, compared with `attempts_spent`), `max_runs` (not more than 6, compared with `runs_counted`), `backoff` with a pause ceiling and jitter, `non_retryable` | FEN-1, FEN-3, GW-12 |
-| `tree_budget_eur` | required: spending limit for the whole task tree in euros; without it the type does not pass `apply`. The answer size is set by the model profile's `max_output_tokens`, the input of one run by `run_max_input_tokens` in `RunRequest.limits`; the lint rejects the `max_tokens` field | BUD-9 |
+| `tree_budget_eur` | required: spending limit for the whole task tree in euros; without it the type does not pass `apply`. The answer size is set by the model profile's `max_output_tokens`, the input of one run by `run_max_input_tokens` in the `limits` of the attempt work item; the lint rejects the `max_tokens` field | BUD-9 |
 | `max_children` | limit of direct children through `enqueue_child`, 10 by default | PRM-6 |
 | `events` | event types that a `job` worker of this type may submit through P1 `emit`, for example `run.finished.v1` | IDM-4, INJ-7, OBV-7 |
 | `observes` | only for `job`: series, subjects, windows and rollups of its own tenant's observations that the worker reads through P1 `obs.query`; a query outside this list is rejected | OBV-3 |

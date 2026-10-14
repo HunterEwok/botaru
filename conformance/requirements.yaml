@@ -1161,7 +1161,7 @@
     server-side compaction iterations. Three quantities have their own names: the task tree limit
     `tree_budget_eur` in the task type (an amount in euros), the output limit of one call
     `max_output_tokens` in the model profile (reasoning counts as output) and the input limit of one
-    runtime run `run_max_input_tokens` among the limits the agent runtime gets for an attempt. There is no `max_tokens` field in the
+    runtime run `run_max_input_tokens` in the `limits` of the attempt work item, next to `max_turns` and `deadline`. There is no `max_tokens` field in the
     farm's manifests and contracts; lint rejects it. `tree_budget_eur` is required for every task
     type with a model, including review types `review.*`, analysis, aggregation and the manager;
     lint at `apply` rejects a type with a model without it, and also a type whose `tree_budget_eur`
@@ -11615,12 +11615,12 @@
     `match` answers with the id of the session that holds the principal's canary, and after the
     erase by these ids a repeated `match` is empty.
   goal: C6
-  check: [blackbox]
+  check: [blackbox, impl]
   waivable: false
   version: v0.1
   profile: core
   decisions: [D-76]
-  fixtures: [blackbox:core/runtime-internal-match]
+  fixtures: [blackbox:core/runtime-internal-match, impl:internal/core/TestHelloRuntimeDeclaration]
   doc: docs/architecture.md
 
 - id: SBX-1

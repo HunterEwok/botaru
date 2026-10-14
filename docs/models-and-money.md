@@ -220,7 +220,7 @@ The usage and reserve of one call are computed from the prices in the model prof
 |---|---|---|
 | `tree_budget_eur` | task type | money limit of the whole task tree in euros: the root and all child tasks spend from it |
 | `max_output_tokens` | model profile | output limit of one call; reasoning is part of the output |
-| `run_max_input_tokens` | `RunRequest.limits` | how many input tokens the runtime may send to the model in one run, summed over all calls of the run |
+| `run_max_input_tokens` | `limits` of the attempt work item (P1) | how many input tokens the runtime may send to the model in one run, summed over all calls of the run |
 
 There is no `max_tokens` field in the farm's manifests and contracts; the lint rejects it (BUD-9). `tree_budget_eur` is mandatory for every type with a model, including the review types `review.*`, analysis, generalization, ballots and the farm manager: a type with a model without it does not pass `apply`.
 
