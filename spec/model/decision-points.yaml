@@ -493,7 +493,7 @@ entries:
     since: v0.3
     kind: notice
     subject: null
-    recipients: people of the tenant of a resolved incident, rows by the reader's permissions; the farm operators get numbers only for incidents of farm; excess over the per-person limit goes to the next digest (MGR-53)
+    recipients: people of the tenant of a resolved incident, rows by the reader's permissions; the farm operators get numbers only for incidents of farm; excess over the per-person limit goes to the next digest; the buttons "Useful" and "Not needed" through P1 card.feedback (MGR-53, MGR-50)
     ttl: none
     on_silence: {state: null, outcome: nothing}
     undo: none

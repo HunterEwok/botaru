@@ -13,7 +13,8 @@
   "required": [
     "sees",
     "object",
-    "threat"
+    "threat",
+    "proposal"
   ],
   "properties": {
     "sees": {
@@ -59,7 +60,8 @@
           "description": "A card or proposal id."
         }
       },
-      "maxProperties": 1
+      "maxProperties": 1,
+      "minProperties": 1
     }
   }
 }
