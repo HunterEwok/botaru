@@ -242,4 +242,23 @@ spec:
 	if got := lintCodes(t, c, set("read", "nope")); !slices.Contains(got, "ref_missing") {
 		t.Errorf("an unknown plugin: %v", got)
 	}
+	// A person-memory role may not hold a tool with untrusted output, by name or by plugin.
+	for _, ref := range []string{"web", "web/fetch"} {
+		got := lintCodes(t, c, `apiVersion: botaru/v1alpha1
+kind: ToolPlugin
+metadata: {name: web}
+spec:
+  tools: [{name: fetch, access: read, untrusted_output: true}]
+---
+apiVersion: botaru/v1alpha1
+kind: Role
+metadata: {name: r}
+spec:
+  memory: person
+  tools: [`+ref+`]
+`)
+		if !slices.Contains(got, "memory_person") {
+			t.Errorf("person memory with %s: %v", ref, got)
+		}
+	}
 }

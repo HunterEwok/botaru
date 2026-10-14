@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"sort"
 	"time"
 
@@ -15,6 +16,7 @@ import (
 	"github.com/HunterEwok/botaru/impl/internal/jcs"
 	"github.com/HunterEwok/botaru/impl/internal/manifest"
 	"github.com/HunterEwok/botaru/impl/internal/spec"
+	"github.com/HunterEwok/botaru/impl/internal/store"
 )
 
 // ApplyRequest is the body of P2 apply (p2-apply-request).
@@ -80,6 +82,43 @@ func (c *Core) manifestKinds() (map[string]kindInfo, error) {
 // Objects of the store that are not in the set stay and are reported as orphaned; they are
 // deleted only by the explicit delete list (MAN-6).
 func (c *Core) Apply(ctx context.Context, op Operator, req ApplyRequest) (*ApplyResult, error) {
+	// The lint reads the store before the transaction; an apply that lands in between makes
+	// this one start again, so that two applies never pass the lint on each other's old state.
+	for try := 0; ; try++ {
+		res, err := c.applyOnce(ctx, op, req)
+		if !errors.Is(err, errStoreChanged) || try == 4 {
+			return res, err
+		}
+	}
+}
+
+// errStoreChanged: another apply changed the store after this one read it for the lint.
+var errStoreChanged = errors.New("store changed during apply")
+
+// storeHashes are the hashes of the stored manifests by key.
+func storeHashes(ctx context.Context, q store.Querier) (map[manifest.Key]string, error) {
+	out := map[manifest.Key]string{}
+	rows, err := q.Query(ctx, `SELECT kind, tenant, name, hash FROM manifests`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var k manifest.Key
+		var h string
+		if err := rows.Scan(&k.Kind, &k.Tenant, &k.Name, &h); err != nil {
+			return nil, err
+		}
+		out[k] = h
+	}
+	return out, rows.Err()
+}
+
+func (c *Core) applyOnce(ctx context.Context, op Operator, req ApplyRequest) (*ApplyResult, error) {
+	read, err := storeHashes(ctx, c.st.Pool)
+	if err != nil {
+		return nil, err
+	}
 	res := &ApplyResult{Commit: req.Commit, Changes: []ApplyChange{}, Errors: []ApplyError{}}
 	kinds, err := c.manifestKinds()
 	if err != nil {
@@ -230,23 +269,15 @@ func (c *Core) Apply(ctx context.Context, op Operator, req ApplyRequest) (*Apply
 	res.SetHash = setHash
 
 	err = c.tx(ctx, func(tx pgx.Tx, now time.Time) error {
-		existing := map[manifest.Key]string{}
-		rows, err := tx.Query(ctx, `SELECT kind, tenant, name, hash FROM manifests`)
+		if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock(7300111)`); err != nil {
+			return err
+		}
+		existing, err := storeHashes(ctx, tx)
 		if err != nil {
 			return err
 		}
-		for rows.Next() {
-			var k manifest.Key
-			var h string
-			if err := rows.Scan(&k.Kind, &k.Tenant, &k.Name, &h); err != nil {
-				rows.Close()
-				return err
-			}
-			existing[k] = h
-		}
-		rows.Close()
-		if err := rows.Err(); err != nil {
-			return err
+		if !maps.Equal(existing, read) {
+			return errStoreChanged
 		}
 		if p, err := c.privilegeRaised(ctx, tx, now, docs, req.Delete); err != nil || p != nil {
 			if err != nil {

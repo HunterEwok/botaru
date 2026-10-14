@@ -88,6 +88,9 @@ type lintFindings struct {
 
 func (f *lintFindings) add(o lintObj, code, path string) {
 	k := fmt.Sprintf("%d/%s/%s", o.i, code, path)
+	if o.i < 0 {
+		k = fmt.Sprintf("store/%s/%s/%s/%s/%s", o.kind, o.tenant, o.name, code, path)
+	}
 	if f.seen == nil {
 		f.seen = map[string]bool{}
 	}
@@ -1018,7 +1021,7 @@ func (c *Core) lintManifests(docs []manifest.Doc, index []int) ([]ApplyError, er
 					bad = true
 				}
 			}
-			for _, t := range mstrs(rs, "tools") {
+			for _, t := range slices.Concat(mapSlice(mstrs(rs, "tools"), expand)...) {
 				if tr, ok := tools[t]; ok && truthy(tr.t["untrusted_output"]) {
 					bad = true
 				}
