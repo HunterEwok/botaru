@@ -147,9 +147,23 @@ func (c *Core) claimToolcall(ctx context.Context, tx pgx.Tx, now time.Time, cat 
 				return nil, err
 			}
 			effects = append(effects, "no_action")
+			action := strings.TrimPrefix(typ, "action.")
+			if tool == serviceRight {
+				action = serviceAction
+			}
 			scopes = append(tenantScopes(w.Tenant), scopeRef{kind: "tasktype", tenant: w.Tenant, name: typ},
-				scopeRef{kind: "action", tenant: w.Tenant, name: strings.TrimPrefix(typ, "action.")},
+				scopeRef{kind: "action", tenant: w.Tenant, name: action},
 				scopeRef{kind: "plugin", tenant: w.Tenant, name: plugin}, scopeRef{kind: "worker", tenant: w.Tenant, name: strings.ToLower(w.ID)})
+			// A service call of a bot runs in the bot's own task: the holds of its role and its
+			// agent count too.
+			var role, agent *string
+			if err := tx.QueryRow(ctx, `SELECT wk.role, wk.id FROM leases l JOIN workers wk ON wk.id = l.worker_id
+				WHERE l.work_id = $1 AND l.kind = 'attempt' ORDER BY l.lease_no DESC LIMIT 1`, task).Scan(&role, &agent); err != nil && !errors.Is(err, pgx.ErrNoRows) {
+				return nil, err
+			}
+			if deref(role) != "" {
+				scopes = append(scopes, scopeRef{kind: "role", tenant: w.Tenant, name: *role}, scopeRef{kind: "worker", tenant: w.Tenant, name: strings.ToLower(*agent)})
+			}
 		} else {
 			var role, agent string
 			if err := tx.QueryRow(ctx, `SELECT t.type, w.role, w.id FROM tasks t, leases l JOIN workers w ON w.id = l.worker_id

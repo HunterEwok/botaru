@@ -291,7 +291,8 @@ func (c *Core) enqueue(ctx context.Context, tx pgx.Tx, now time.Time, cat *Catal
 		return nil, err
 	}
 	line := c.budgetLine(tt.Purpose)
-	if p := c.checkBudget(ctx, tx, now, tv, budgetAsk{subject: in.Initiator, groups: groups, extra: estimate, line: line}); p != nil {
+	var crossed []crossing
+	if p := c.checkBudget(ctx, tx, now, tv, budgetAsk{subject: in.Initiator, groups: groups, extra: estimate, line: line, crossed: &crossed}); p != nil {
 		return reject(p)
 	}
 	// The enqueue ceiling of the sliding hour, under the tenant's budget lock (CAP-1).
@@ -422,6 +423,10 @@ func (c *Core) enqueue(ctx context.Context, tx pgx.Tx, now time.Time, cat *Catal
 		Command: "task.enqueue", Target: &Target{Kind: "task", ID: id}, OK: true,
 		After: map[string]any{"type": in.Type, "decision": "allow"},
 	}); err != nil {
+		return nil, err
+	}
+	// The thresholds the accepted task reaches (BUD-4).
+	if err := c.emitCrossed(ctx, tx, now, in.Tenant, crossed); err != nil {
 		return nil, err
 	}
 	if err := notifyWork(ctx, tx); err != nil {

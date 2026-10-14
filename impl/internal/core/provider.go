@@ -95,6 +95,18 @@ func (c *Core) ProviderGate(ctx context.Context, g *ModelGrant) error {
 	})
 }
 
+// ProviderProbeAbandoned reopens the circuit of a pair whose probe ended before the provider
+// was called (a refused reserve, a tools mismatch): the next call probes at once instead of
+// waiting out the probe lease, since the provider was never tried (GW-11).
+func (c *Core) ProviderProbeAbandoned(ctx context.Context, g *ModelGrant) error {
+	pool := pairPool(g.ProfileName, g.Profile)
+	return c.tx(ctx, func(tx pgx.Tx, now time.Time) error {
+		_, err := tx.Exec(ctx, `UPDATE provider_pairs SET state = 'open', until = $3, updated_at = $3 WHERE tenant = $1 AND pool = $2 AND state = 'probing'`,
+			g.Tenant, pool, now)
+		return err
+	})
+}
+
 // ProviderOutcome records the outcome of a provider call: "" is a success and closes the
 // circuit; provider_unavailable counts toward the series that opens it, and a failed probe
 // opens it again with a doubled pause; provider_rate_limited makes the pair wait; a
@@ -128,10 +140,18 @@ func (c *Core) ProviderOutcome(ctx context.Context, g *ModelGrant, reason string
 				if _, err := tx.Exec(ctx, `DELETE FROM provider_pairs WHERE tenant = $1 AND pool = $2`, g.Tenant, pool); err != nil {
 					return err
 				}
+				// The tasks that waited for the provider no longer do; the dispatcher marks
+				// again those whose pair still waits (BUD-4).
+				if _, err := tx.Exec(ctx, `UPDATE tasks SET reason = NULL, updated_at = $2 WHERE tenant = $1 AND state = 'submitted' AND reason IN ('provider_unavailable', 'provider_quota')`,
+					g.Tenant, now); err != nil {
+					return err
+				}
 			}
 			return c.resolveOpen(ctx, tx, now, Alarm{Tenant: g.Tenant, Name: "provider.config", Subject: subject})
 		case "provider_unavailable":
-			if state == "config" {
+			// A call that started before the circuit opened and fails late does not shorten
+			// the pause of the open circuit (GW-11).
+			if state == "config" || state == "open" {
 				return nil
 			}
 			failures++

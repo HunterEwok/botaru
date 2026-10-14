@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -55,6 +56,9 @@ type approvalRow struct {
 	RemindedAt, RemindAt, CardsAt, DecidedAt                          *time.Time
 	DecidedBy, Decision, Reason, ActionTask, Toolcall                 string
 	CreatedAt                                                         time.Time
+	// Mark is the data mark the arguments were checked with at the request; execution checks
+	// them again with the same mark (MAN-10).
+	Mark string
 }
 
 // approvalRecordJSON is the immutable part of the approval record kept in approvals.record.
@@ -65,6 +69,7 @@ type approvalRecordJSON struct {
 	UntrustedSeen   bool           `json:"untrusted_seen"`
 	UntrustedSource string         `json:"untrusted_source,omitempty"`
 	Context         map[string]any `json:"context,omitempty"`
+	DataMark        string         `json:"data_mark,omitempty"`
 }
 
 const approvalColumns = `id, tenant, coalesce(source_task, ''), initiator, action, args_hash, state, nonce, record, expires_at,
@@ -83,6 +88,7 @@ func scanApproval(row pgx.Row) (*approvalRow, error) {
 		return nil, err
 	}
 	a.Args, a.Risk, a.RequestedBy, a.UntrustedSeen, a.UntrustedSource, a.Context = r.Args, r.Risk, r.RequestedBy, r.UntrustedSeen, r.UntrustedSource, r.Context
+	a.Mark = r.DataMark
 	return &a, nil
 }
 
@@ -311,7 +317,7 @@ func (c *Core) requestAction(ctx context.Context, tx pgx.Tx, now time.Time, cat 
 	id, code, err := c.openApproval(ctx, tx, now, tv, approvalRow{
 		Tenant: g.Tenant, SourceTask: g.Task, Initiator: g.Initiator, Action: name, ArgsHash: argsHash, Args: actArgs, Risk: a.Risk,
 		RequestedBy:   map[string]any{"kind": "bot", "role": g.Role, "task": g.Task},
-		UntrustedSeen: tr.UntrustedSeen, UntrustedSource: tr.UntrustedSource, ExpiresAt: now.Add(actionTTL(a)),
+		UntrustedSeen: tr.UntrustedSeen, UntrustedSource: tr.UntrustedSource, ExpiresAt: now.Add(actionTTL(a)), Mark: g.Mark,
 	})
 	if err != nil {
 		return requestActionResult{}, err
@@ -325,7 +331,8 @@ func (c *Core) requestAction(ctx context.Context, tx pgx.Tx, now time.Time, cat 
 	return requestActionResult{Code: "pending", ApprovalID: id}, nil
 }
 
-// openApproval writes a pending approval, or returns the identical pending one (APR-2). The
+// openApproval writes a pending approval, or returns the identical pending one of the same
+// initiator and source (APR-2); another person's request is their own approval. The
 // approvals of the tenant are counted under its lock, so two requests at once do not both pass
 // a limit: at most 3 per source task and the tenant's cards per hour; above them the code is
 // service_rate_limited.
@@ -334,7 +341,8 @@ func (c *Core) openApproval(ctx context.Context, tx pgx.Tx, now time.Time, tv *T
 		return "", "", err
 	}
 	var existing string
-	err := tx.QueryRow(ctx, `SELECT id FROM approvals WHERE tenant = $1 AND action = $2 AND args_hash = $3 AND state = 'pending'`, a.Tenant, a.Action, a.ArgsHash).Scan(&existing)
+	err := tx.QueryRow(ctx, `SELECT id FROM approvals WHERE tenant = $1 AND action = $2 AND args_hash = $3 AND state = 'pending'
+		AND initiator = $4 AND coalesce(source_task, '') = $5`, a.Tenant, a.Action, a.ArgsHash, a.Initiator, a.SourceTask).Scan(&existing)
 	if err == nil {
 		return existing, "pending", nil
 	}
@@ -376,6 +384,7 @@ func (c *Core) insertApproval(ctx context.Context, tx pgx.Tx, now time.Time, a a
 	a.ID, a.Nonce, a.State = ids.New(ids.Approval), ids.Secret(16), "pending"
 	rec, err := json.Marshal(approvalRecordJSON{
 		RequestedBy: a.RequestedBy, Args: a.Args, Risk: a.Risk, UntrustedSeen: a.UntrustedSeen, UntrustedSource: a.UntrustedSource, Context: a.Context,
+		DataMark: a.Mark,
 	})
 	if err != nil {
 		return "", err
@@ -513,17 +522,18 @@ func (c *Core) planCard(ctx context.Context, tx pgx.Tx, now time.Time, tv *Tenan
 // planCardUpdates plans a card_update for every delivered card of the approval, so each
 // recipient sees its new state (spec/lifecycles/approval.md).
 func (c *Core) planCardUpdates(ctx context.Context, tx pgx.Tx, now time.Time, a *approvalRow) error {
-	rows, err := tx.Query(ctx, `SELECT DISTINCT ON (exec_name, target_id, recipient) kind, exec_name, target_id, recipient FROM deliveries
+	// Every card message gets its update: the first card, a reminder, the initiator copy.
+	rows, err := tx.Query(ctx, `SELECT id, kind, exec_name, target_id, coalesce(recipient, '') FROM deliveries
 		WHERE subject_kind = 'approval' AND subject_id = $1 AND kind IN ('approval_card', 'approval_initiator_copy') AND state IN ('planned', 'sending', 'delivered')
-		ORDER BY exec_name, target_id, recipient, seq`, a.ID)
+		ORDER BY seq`, a.ID)
 	if err != nil {
 		return err
 	}
-	type target struct{ kind, channel, chat, recipient string }
+	type target struct{ id, kind, channel, chat, recipient string }
 	var ts []target
 	for rows.Next() {
 		var t target
-		if err := rows.Scan(&t.kind, &t.channel, &t.chat, &t.recipient); err != nil {
+		if err := rows.Scan(&t.id, &t.kind, &t.channel, &t.chat, &t.recipient); err != nil {
 			rows.Close()
 			return err
 		}
@@ -536,7 +546,7 @@ func (c *Core) planCardUpdates(ctx context.Context, tx pgx.Tx, now time.Time, a 
 	for _, t := range ts {
 		if _, err := c.planDelivery(ctx, tx, now, plannedDelivery{
 			Tenant: a.Tenant, Task: a.SourceTask, Kind: cardUpdate, Addr: "approval_initiator", TargetKind: "chat", TargetID: t.chat,
-			ExecKind: "channel", ExecName: t.channel, Recipient: t.recipient, Body: map[string]any{"form": "card", "card": t.kind},
+			ExecKind: "channel", ExecName: t.channel, Recipient: t.recipient, Body: map[string]any{"form": "card", "card": t.kind, "of": t.id},
 			DataOrigin: "code", SubjectKind: "approval", SubjectID: a.ID,
 		}); err != nil {
 			return err
@@ -1102,16 +1112,39 @@ func (c *Core) executeApproval(ctx context.Context, tx pgx.Tx, now time.Time, ca
 			return c.closeApproval(ctx, tx, now, a, "canceled", "rights_revoked")
 		}
 	}
-	// A service action from a bot needs the role's permission at the decision too (APR-18).
+	// A service action from a bot needs the role's permission at the decision too (APR-18),
+	// and every service action passes the guards of MON-8 again: the verb is still allowed,
+	// one operation per service, the rate limits and the holds.
 	if a.Action == serviceAction {
 		role, _ := a.RequestedBy["role"].(string)
-		svc, _ := a.Args["service"].(string)
-		if role != "" && !roleControls(cat, role, svc) {
+		name, _ := a.Args["service"].(string)
+		verb, _ := a.Args["verb"].(string)
+		if role != "" && !roleControls(cat, role, name) {
 			return c.closeApproval(ctx, tx, now, a, "canceled", "rights_revoked")
 		}
+		svc, ok := findControllable(cat, a.Tenant, name)
+		if !ok || !slices.Contains(svc.Control, verb) {
+			return c.closeApproval(ctx, tx, now, a, "canceled", "ref_invalid")
+		}
+		task, _ := a.RequestedBy["task"].(string)
+		var typ string
+		if task != "" {
+			_ = tx.QueryRow(ctx, `SELECT type FROM tasks WHERE id = $1`, task).Scan(&typ)
+		}
+		code, err := c.serviceGuards(ctx, tx, now, serviceCall{Tenant: a.Tenant, Service: svc, Verb: verb, Initiator: a.Initiator, Role: role, Task: task, Type: typ})
+		if err != nil {
+			return err
+		}
+		switch code {
+		case "":
+		case "held":
+			return c.closeApproval(ctx, tx, now, a, "canceled", "held")
+		default:
+			return c.closeApproval(ctx, tx, now, a, "exec_failed", code)
+		}
 	}
-	mark := ""
-	if a.SourceTask != "" {
+	mark := a.Mark
+	if mark == "" && a.SourceTask != "" {
 		var rec []byte
 		if err := tx.QueryRow(ctx, `SELECT record FROM tasks WHERE id = $1`, a.SourceTask).Scan(&rec); err == nil {
 			var r struct {
@@ -1594,10 +1627,12 @@ func (c *Core) approvalCardBody(ctx context.Context, tx pgx.Tx, cat *Catalog, te
 	}
 	replaces := ""
 	if kind == cardUpdate {
+		// The update edits the message of the card delivery it names.
+		of, _ := body["of"].(string)
 		var ext *string
-		err := tx.QueryRow(ctx, `SELECT external_id FROM deliveries WHERE subject_kind = 'approval' AND subject_id = $1 AND kind = $2
-			AND exec_name = $3 AND target_id = $4 AND recipient IS NOT DISTINCT FROM $5 AND state = 'delivered' AND external_id IS NOT NULL ORDER BY seq LIMIT 1`,
-			id, cardKind, channel, target, nullable(recipient)).Scan(&ext)
+		err := tx.QueryRow(ctx, `SELECT external_id FROM deliveries WHERE id = $6 AND subject_kind = 'approval' AND subject_id = $1 AND kind = $2
+			AND exec_name = $3 AND target_id = $4 AND recipient IS NOT DISTINCT FROM $5 AND state = 'delivered' AND external_id IS NOT NULL`,
+			id, cardKind, channel, target, nullable(recipient), of).Scan(&ext)
 		if err != nil && !errors.Is(err, pgx.ErrNoRows) {
 			return nil, "", err
 		}

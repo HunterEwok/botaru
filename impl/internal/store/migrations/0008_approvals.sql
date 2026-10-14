@@ -29,8 +29,9 @@ CREATE TABLE approvals (
 CREATE INDEX approvals_pending ON approvals (tenant, expires_at) WHERE state = 'pending';
 CREATE INDEX approvals_source ON approvals (source_task) WHERE source_task IS NOT NULL;
 CREATE INDEX approvals_created ON approvals (tenant, created_at);
--- An identical pending request returns the existing approval (APR-2).
-CREATE UNIQUE INDEX approvals_same ON approvals (tenant, action, args_hash) WHERE state = 'pending';
+-- An identical pending request of the same initiator and source returns the existing approval
+-- (APR-2).
+CREATE UNIQUE INDEX approvals_same ON approvals (tenant, action, args_hash, initiator, coalesce(source_task, '')) WHERE state = 'pending';
 
 -- Openings of "Details" of a card by a person, for details_opened of the decision event (APR-11).
 CREATE TABLE card_views (

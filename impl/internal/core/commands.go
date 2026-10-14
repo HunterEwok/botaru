@@ -134,8 +134,16 @@ func (c *Core) statusCommand(ctx context.Context, tx pgx.Tx, now time.Time, pc p
 		return pc.reply(c, "cmd.status.row", map[string]any{"n": n, "title": t.title, "state": t.state, "attempt": t.attempts,
 			"waiting": t.waitingText(), "deadline": deadline}), nil
 	}
+	// A finished tree can still have an approval waiting for a decision: /cancel withdraws it.
 	if t.state != "submitted" && t.state != "working" {
-		return pc.reply(c, "cmd.cancel.finished", map[string]any{"n": n, "state": t.state}), nil
+		var waiting bool
+		if err := tx.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM approvals WHERE tenant = $1 AND state = 'pending' AND source_task IN
+			(SELECT id FROM tasks WHERE tenant = $1 AND (id = $2 OR record->>'root' = $2)))`, pc.tv.Name, t.id).Scan(&waiting); err != nil {
+			return nil, err
+		}
+		if !waiting {
+			return pc.reply(c, "cmd.cancel.finished", map[string]any{"n": n, "state": t.state}), nil
+		}
 	}
 	nonce := cancelNonce(t.id, pc.person)
 	if len(f) < 2 || !strings.EqualFold(f[1], nonce) {
@@ -174,7 +182,10 @@ func (c *Core) cancelTree(ctx context.Context, tx pgx.Tx, now time.Time, tenant,
 	if err := rows.Err(); err != nil {
 		return err
 	}
-	aps, err := tx.Query(ctx, `SELECT `+approvalColumns+` FROM approvals WHERE tenant = $1 AND state = 'pending' AND source_task = ANY($2) ORDER BY id FOR UPDATE`, tenant, tasks)
+	// The approvals asked for by any task of the tree, finished or not: cards go out after the
+	// asking attempt ends, so its task is usually finished by then.
+	aps, err := tx.Query(ctx, `SELECT `+approvalColumns+` FROM approvals WHERE tenant = $1 AND state = 'pending' AND source_task IN
+		(SELECT id FROM tasks WHERE tenant = $1 AND (id = $2 OR record->>'root' = $2)) ORDER BY id FOR UPDATE`, tenant, root)
 	if err != nil {
 		return err
 	}

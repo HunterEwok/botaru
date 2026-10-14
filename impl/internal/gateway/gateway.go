@@ -130,6 +130,15 @@ func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		g.refuse(w, err)
 		return
 	}
+	// A probe that ends before the provider is called gives the probe back (GW-11).
+	sentToProvider := false
+	defer func() {
+		if !sentToProvider {
+			if err := g.c.ProviderProbeAbandoned(context.WithoutCancel(ctx), grant); err != nil {
+				g.log.Warn("giving back the probe failed", "err", err)
+			}
+		}
+	}()
 	prov, ok := g.cfg.Providers[grant.Profile.Provider]
 	if !ok || prov.Binding != "anthropic" {
 		g.outcome(ctx, grant, "provider_config", 0)
@@ -181,6 +190,7 @@ func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	callCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), deadline(grant.Profile))
 	defer cancel()
 	resp, sent, err := g.send(callCtx, prov, key, payload)
+	sentToProvider = sent
 	if err != nil {
 		if !sent {
 			_ = g.c.DropReserve(context.WithoutCancel(ctx), spendID)

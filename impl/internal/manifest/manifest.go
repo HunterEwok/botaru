@@ -307,7 +307,7 @@ type Role struct {
 	ActionsMayRequest []string `json:"actions_may_request"`
 	// ServiceControl names the catalog services the role may control, or ["*"] (APR-18).
 	ServiceControl []string `json:"service_control"`
-	Runtime           struct {
+	Runtime        struct {
 		Driver string `json:"driver"`
 	} `json:"runtime"`
 }

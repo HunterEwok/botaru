@@ -50,8 +50,14 @@ func (c *Core) Run(ctx context.Context) {
 		case ctx.Err() != nil:
 		default:
 			c.log.Warn("background loop failed", "err", err)
-			if c.st.Ping(ctx) != nil && !c.storeDown.Swap(true) {
-				c.log.Warn("the store is unavailable: P1 answers not_ready until every loop ticks again")
+			// A loop that fails while the store answers is that loop's fault: its tick grows
+			// old and health reports it, but P1 stays ready (OBS-8).
+			if c.st.Ping(ctx) != nil {
+				if !c.storeDown.Swap(true) {
+					c.log.Warn("the store is unavailable: P1 answers not_ready until every loop ticks again")
+				}
+			} else if c.storeDown.Swap(false) {
+				c.log.Info("the store answers again: ready")
 			}
 		}
 	}

@@ -562,8 +562,7 @@ func (c *Core) claimDelivery(ctx context.Context, tx pgx.Tx, now time.Time, cat 
 			}
 			if kind == cardUpdate && replaces == "" {
 				var sending bool
-				if err := tx.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM deliveries WHERE subject_kind = 'approval' AND subject_id = $1 AND kind = $2
-					AND exec_name = $3 AND target_id = $4 AND state IN ('planned', 'sending'))`, deref(subjectID), b["card"], w.Target, targetID).Scan(&sending); err != nil {
+				if err := tx.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM deliveries WHERE id = $1 AND state IN ('planned', 'sending'))`, b["of"]).Scan(&sending); err != nil {
 					return nil, err
 				}
 				if sending {

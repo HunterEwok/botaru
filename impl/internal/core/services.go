@@ -376,7 +376,7 @@ func (c *Core) serviceControl(ctx context.Context, tx pgx.Tx, now time.Time, cat
 		id, code, err := c.openApproval(ctx, tx, now, tv, approvalRow{
 			Tenant: g.Tenant, SourceTask: g.Task, Initiator: g.Initiator, Action: serviceAction, ArgsHash: argsHash, Args: s.args(), Risk: "low",
 			RequestedBy:   map[string]any{"kind": "bot", "role": g.Role, "task": g.Task},
-			UntrustedSeen: s.UntrustedSeen, UntrustedSource: s.UntrustedSource, ExpiresAt: now.Add(time.Hour),
+			UntrustedSeen: s.UntrustedSeen, UntrustedSource: s.UntrustedSource, ExpiresAt: now.Add(time.Hour), Mark: g.Mark,
 		})
 		if err != nil {
 			return nil, "", "", err
@@ -554,6 +554,8 @@ func (c *Core) serviceCommand(ctx context.Context, tx pgx.Tx, now time.Time, pc 
 // commandApproval opens an approval on behalf of a person and plans its cards at once, since
 // no attempt is running.
 func (c *Core) commandApproval(ctx context.Context, tx pgx.Tx, now time.Time, pc personCommand, a approvalRow) (*ActivityResult, error) {
+	// The arguments were checked with the person's highest mark; execution uses the same.
+	a.Mark = c.personMark(pc.tv, pc.groups)
 	id, code, err := c.openApproval(ctx, tx, now, pc.tv, a)
 	if err != nil {
 		return nil, err

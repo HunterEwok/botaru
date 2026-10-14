@@ -361,3 +361,45 @@ func TestRunCommand(t *testing.T) {
 		t.Fatalf("without the right %+v", res)
 	}
 }
+
+// A /run argument from a marked catalog resource is checked at execution with the mark it was
+// requested with, not dropped as outside the catalog (MAN-10).
+func TestRunMarkedHost(t *testing.T) {
+	ctx := context.Background()
+	b := newActionBench(t, func(ms []map[string]any) []map[string]any {
+		for _, m := range ms {
+			s := m["spec"].(map[string]any)
+			switch m["kind"] {
+			case "Catalog":
+				s["resources"] = append(asList(s["resources"]), map[string]any{"id": "sites", "title": "Sites", "host": "web1", "list": "sites", "values": []any{"web1"}, "data_class": "internal"})
+			case "Action":
+				s["args"].(map[string]any)["properties"].(map[string]any)["host"] = map[string]any{"enum_from": "catalog.sites"}
+			case "Tenant":
+				s["run"] = map[string]any{"fix": map[string]any{"action": "fix_web", "args": []any{"host"}}}
+			case "Group":
+				if m["metadata"].(map[string]any)["name"] == "requesters" {
+					s["data"] = []any{"summary", "internal"}
+				}
+			}
+		}
+		return ms
+	})
+	sb := &serviceBench{actionBench: b}
+	if res := sb.say(t, "1001", "50", "/run fix web1"); !strings.Contains(res.Text, "awaits") {
+		t.Fatalf("fix %+v", res)
+	}
+	s := b.drain(t)
+	card := cardOf(t, s, approvalCard, "direct:1002")
+	var id string
+	if err := b.c.st.Pool.QueryRow(ctx, `SELECT id FROM approvals WHERE state = 'pending'`).Scan(&id); err != nil {
+		t.Fatal(err)
+	}
+	a := b.approval(t, id)
+	if _, err := b.c.Decide(ctx, b.channel, press("telegram:1002", "direct:1002", card.external),
+		DecideRequest{SubjectKind: "approval", ID: a.ID, Nonce: a.Nonce, Decision: "approve"}); err != nil {
+		t.Fatal(err)
+	}
+	if a = b.approval(t, id); a.State != "executing" {
+		t.Fatalf("approval %s %s", a.State, a.Reason)
+	}
+}
