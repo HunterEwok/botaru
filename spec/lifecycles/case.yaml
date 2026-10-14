@@ -8,19 +8,11 @@ machines:
   states:
   - id: opened
     terminal: false
-    meaning: 'The snapshot is taken (GOV-12): the voters V, the list L, the ordering seed'
-  - id: parked
-    terminal: false
-    meaning: There is no money in the `governance` line to evaluate the case (`parked(governance_budget)`)
-  - id: balloting
-    terminal: false
-    meaning: 'Round n is running: the core collects exactly one ballot from each of `expected`'
-  - id: counted
-    terminal: false
-    meaning: Round n is counted by code
+    meaning: The list L and the figures of its seats are written (GOV-12)
   - id: confirming
     terminal: false
-    meaning: There is an outcome; the `promotion_card` card waits for a human decision for up to 7 days
+    meaning: 'The `promotion_card` card waits for a human decision for up to 7 days: the proposed leaver, or the choice from
+      L'
   - id: effective
     terminal: true
     meaning: A person confirmed; the change is done in one transaction
@@ -32,7 +24,7 @@ machines:
     meaning: 7 days without a decision; nobody leaves
   - id: canceled
     terminal: true
-    meaning: 'The case is canceled with a reason: `human`, `candidate_ineligible`, `seat_changed` or `no_voters`'
+    meaning: 'The case is canceled with a reason: `human`, `candidate_ineligible` or `seat_changed`'
   transitions:
   - from:
       none: true
@@ -53,86 +45,15 @@ machines:
       text: '`opened`'
     to:
       states:
-      - parked
-      text: '`parked`'
-    by: the `governance` loop
-    when: the `governance` line lacks the money to evaluate the case, starting with the farm manager's ballot
-    rules:
-    - GOV-15
-  - from:
-      states:
-      - parked
-      text: '`parked`'
-    to:
-      states:
-      - opened
-      text: '`opened`'
-    by: the `governance` loop
-    when: the money appeared
-    rules:
-    - GOV-15
-  - from:
-      states:
-      - opened
-      text: '`opened`'
-    to:
-      states:
       - confirming
       text: '`confirming`'
     by: the `governance` loop
-    when: 'the `vacancy` mode, or L has one seat: its holder leaves without ballots'
+    when: 'the card is sent: in the `vacancy` mode with the free seat, in the `removal` mode with L, the figures of its seats
+      and the leaver code proposed, if any'
     rules:
+    - GOV-12
     - GOV-14
-    - GOV-8
-  - from:
-      states:
-      - opened
-      text: '`opened`'
-    to:
-      states:
-      - balloting
-      text: '`balloting(1)`'
-    by: the `governance` loop
-    when: the money is reserved, the ballot tasks are enqueued
-    rules:
-    - GOV-15
-    - GOV-7
-  - from:
-      states:
-      - balloting
-      text: '`balloting(n)`'
-    to:
-      states:
-      - counted
-      text: '`counted(n)`'
-    by: the `governance` loop
-    when: exactly one ballot of the round is recorded for each of `expected`
-    rules:
-    - GOV-23
-  - from:
-      states:
-      - counted
-      text: '`counted(n)`'
-    to:
-      states:
-      - balloting
-      text: '`balloting(n+1)`'
-    by: the `governance` loop
-    when: 'there is no outcome: the seat with the fewest votes is struck out'
-    rules:
-    - GOV-8
-  - from:
-      states:
-      - counted
-      text: '`counted(n)`'
-    to:
-      states:
-      - confirming
-      text: '`confirming`'
-    by: the `governance` loop
-    when: 'there is an outcome: a seat with at least `need` votes, or the only one left'
-    rules:
-    - GOV-8
+    - GOV-43
   - from:
       any: true
       except:
@@ -145,27 +66,10 @@ machines:
       states: []
       same: true
       text: same, flag `hold`
-    by: P2 `hold.set` on the `governance` scope or the "Pause" button on the `governance_stuck` card
+    by: P2 `hold.set` on the `governance` scope
     when: a hold by people; lifting the hold continues the case from the same place
     rules:
-    - GOV-23
-  - from:
-      any: true
-      except:
-      - effective
-      - rejected
-      - expired
-      - canceled
-      text: any open
-    to:
-      states: []
-      same: true
-      text: same, flag `stuck`
-    by: the `governance` loop
-    when: a round waits for votes longer than `stuck_after` (24 h) for an infrastructure reason; the flag is removed when
-      the round is closed
-    rules:
-    - GOV-23
+    - GOV-14
   - from:
       states:
       - confirming
@@ -175,8 +79,10 @@ machines:
       - effective
       text: '`effective`'
     by: the "Confirm" button (`governance.confirm:commission`)
-    when: '"Details" was opened; the candidate''s change has no unanswered attribution candidates; the deadline has not passed'
+    when: '"Details" was opened; the candidate''s change has no unanswered attribution candidates; the deadline has not passed;
+      in the `removal` mode the button names the proposed seat or the seat the person chose from L'
     rules:
+    - GOV-12
     - GOV-30
     - GOV-9
   - from:
@@ -187,7 +93,7 @@ machines:
       states:
       - rejected
       text: '`rejected`'
-    by: the "Reject" button with a reason code
+    by: the "Not now" or "Wrong candidate" button (a "Reject" reason code)
     when: '`governance.confirm:commission`'
     rules:
     - GOV-31
@@ -216,10 +122,10 @@ machines:
       states:
       - canceled
       text: '`canceled(human)`'
-    by: P2 `governance.cancel` or the "Cancel" button on the `governance_stuck` card
+    by: P2 `governance.cancel`
     when: a person with `admin:governance` in the case's tenant
     rules:
-    - GOV-23
+    - GOV-14
   - from:
       any: true
       except:
@@ -253,19 +159,3 @@ machines:
     rules:
     - GOV-12
     - IDN-10
-  - from:
-      any: true
-      except:
-      - effective
-      - rejected
-      - expired
-      - canceled
-      text: any open
-    to:
-      states:
-      - canceled
-      text: '`canceled(no_voters)`'
-    by: the `governance` loop
-    when: '`expected` became empty (GOV-23 removals), so no round can be counted'
-    rules:
-    - GOV-8

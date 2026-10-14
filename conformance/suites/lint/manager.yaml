@@ -12,13 +12,13 @@ checks:
   section: Tests without a model
   source: docs/quality.md:623
   spec:
-    What: 'a class with `manager_accountable: true` whose alarm reads a series fed by model output; a class with `stops_manager:
-      true`; a charter with `incident_stop`'
-    Expectation: the first is rejected; the others pass with `stops_manager_unused` and `incident_stop_unused`
+    What: 'a class with `manager_accountable: true` whose alarm reads a series fed by model output; a class with `manager_accountable:
+      true` whose alarm is built from code series only'
+    Expectation: the first is rejected; the second passes
 - id: lint:manager/line-covers-postmortem
   method: lint
   rules:
-  - MGR-56
+  - MGR-49
   version: v0.3
   section: Tests without a model
   source: docs/quality.md:633

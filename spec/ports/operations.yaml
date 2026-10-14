@@ -348,7 +348,7 @@ entries:
     since: v0.1
     request: p2-tenant-request
     response: p2-status-response
-    rules: [MAN-2, HLD-1, MAN-8, MGR-14, STA-3]
+    rules: [MAN-2, HLD-1, MAN-8, MGR-42, STA-3]
     profiles: [core, manager, messaging]
   - id: P2.principal.add
     port: P2
@@ -855,14 +855,6 @@ entries:
     response: done-response
     rules: [MGR-4]
     profiles: [manager]
-  - id: P2.manager.resume
-    port: P2
-    op: manager.resume
-    since: v0.1
-    request: p2-manager-resume-request
-    response: done-response
-    rules: [MGR-14]
-    profiles: [manager]
   - id: P2.manager.cost
     port: P2
     op: manager.cost
@@ -1015,7 +1007,7 @@ entries:
     since: v0.2
     request: p2-object-request
     response: done-response
-    rules: [GOV-12, GOV-23]
+    rules: [GOV-12, GOV-14]
     profiles: [governance]
   - id: P2.attribution.list
     port: P2
@@ -1116,15 +1108,6 @@ entries:
     response: null
     rules: [APR-8, AUD-4]
     profiles: [debug]
-    note: 'v0.2: the schemas will appear with v0.2'
-  - id: P2.principal.data_report
-    port: P2
-    op: principal.data_report
-    since: v0.2
-    request: null
-    response: null
-    rules: [SEC-10, SEC-11]
-    profiles: [core]
     note: 'v0.2: the schemas will appear with v0.2'
   - id: P2.tenant.privacy_report
     port: P2
@@ -2201,8 +2184,8 @@ entries:
     since: v0.2
     request: test-function-eval-request
     response: test-function-eval-response
-    rules: [APR-9, GOV-8, COM-11, DIG-5, REP-4, TIM-5]
-    profiles: [core, governance, insights, messaging]
+    rules: [APR-9, COM-17, DIG-5, REP-4, TIM-5]
+    profiles: [core, insights, messaging]
     note: 'test-control port spec/ports/test-control.md; only on a test bench store that never had a tenant other than kind: test'
   - id: T.event.inject
     port: T

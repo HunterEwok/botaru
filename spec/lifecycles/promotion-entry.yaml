@@ -107,19 +107,6 @@ machines:
       text: '`in_case`'
     to:
       states:
-      - in_case
-      text: '`in_case`'
-    by: the case is `rejected` with the reason `wrong_leaver`
-    when: 'only once per entry: the `governance` loop immediately opens a new case without the rejected seat with the flag
-      `reopened_after_wrong_leaver`; if L is empty, the entry becomes `queued` first'
-    rules:
-    - GOV-31
-  - from:
-      states:
-      - in_case
-      text: '`in_case`'
-    to:
-      states:
       - queued
       text: '`queued`, first'
     by: the case is `rejected` with the reason `not_now`; the case is `expired`

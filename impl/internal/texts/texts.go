@@ -85,7 +85,7 @@ func (c *Catalog) add(b []byte, src string) error {
 		c.byLocale[f.Locale] = m
 	}
 	for k, v := range f.Texts {
-		// Lists (number words and units of the number check, REP-4) are not texts.
+		// Lists (the number words of REP-4) are not texts.
 		if s, ok := v.(string); ok {
 			m[k] = strings.TrimSpace(s)
 		}

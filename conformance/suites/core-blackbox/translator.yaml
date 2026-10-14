@@ -37,24 +37,13 @@ checks:
       share of `ambiguous` answers on the correctness set is 0.3
     Expectation: the case is a tenant record erased with the task; the new version is not enabled; the share above `translator_clarify_share_max`
       fails the gate
-- id: blackbox:translator/suspension
-  method: blackbox
-  rules:
-  - TRN-9
-  version: v0.3
-  section: Tests without a model
-  source: docs/quality.md:641
-  spec:
-    What: three confirmed script links of the translator role in `demo` in 90 days
-    Expectation: drafts with an action are refused with `translator_suspended`, read-only drafts pass; the notice goes to
-      the admins; P2 lifts the pause with an audit record
 - id: blackbox:translator/card-unnamed-targets
   method: blackbox
   rules:
   - TRN-10
   version: v0.3
   section: Tests without a model
-  source: docs/quality.md:642
+  source: docs/quality.md:641
   spec:
     What: '"restart nginx on web1" translated into a script that also targets `db2` and a selector of 7 machines'
     Expectation: '`script_confirm` marks `db2` and the selector as not named in the text'

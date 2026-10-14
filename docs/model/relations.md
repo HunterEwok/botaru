@@ -57,7 +57,7 @@ This document collects the objects of the skeleton and the relations between the
 | script run and script step | core | tenant | v0.1 | [scripts-and-translator.md](../scripts-and-translator.md) |
 | incident, control operation, finding | core | tenant; a farm incident in `farm` | v0.1 | [farm-manager.md](../farm-manager.md) |
 | attribution of an incident to a change | core or human; a human decides; after the incident is dismissed as false it becomes disputed (`disputed`, D-79) | tenant | v0.2 (ban for bots since v0.1) | [commission.md](../commission.md) |
-| governance case, voting round, ballot, queue entry | core | tenant of the commission | v0.2 | [commission.md](../commission.md) |
+| governance case, queue entry | core | tenant of the commission | v0.2 | [commission.md](../commission.md) |
 | model grant (`ModelGrant`), escalation (`Escalation`) | core | tenant | v0.2 | [farm-manager.md](../farm-manager.md) |
 
 ## Diagram of the main relations
@@ -236,10 +236,9 @@ Distribution (who gets which task) is set by the dispatch rules and bot groups, 
 | farm manager seat -> stop reasons | 1 : 0..3 (`human`, `no_control`, `incident`) | the seat is in `held` only while the set is empty (GOV-22, MGR-14, MGR-15) |
 | identity -> fact space | 1 : 1 in a tenant; the farm manager seat holder has a space in every tenant | facts of a closed schema, at most 100 active per space and 3 from one attempt (MEM-6, MGR-27) |
 | departing identity -> fact offer | 1 : 0..1; the manager has an offer for each tenant | facts are offered only to the successor and only in the same tenant (MEM-7) |
-| fact offer -> successor | 1 : 0..1 | the newcomer chooses itself, at most 50 facts (MEM-7) |
+| fact offer -> successor | 1 : 0..1 | code rechecks the facts and copies those that pass to the successor (MEM-7) |
 | tenant -> open governance case | 1 : 0..1 | only the core opens a case (GOV-6), v0.2 |
-| case -> voting round | 1 : N (up to the number of seats in the list minus one) | there is always an outcome, and exactly one leaves (GOV-8) |
-| voting round -> ballot | 1 : N, exactly one per voter | (GOV-7) |
+| case -> leaver | 1 : 0..1 (in the mode `removal` exactly one seat of L after the person's button) | code proposes it or a person chooses it (GOV-12, GOV-43) |
 | identity -> queue entry | 1 : 0..1 | one entry per bot, without expiry (GOV-14) |
 | departed identity -> tombstone | 1 : 1 | the number, the role, the time, the trigger and the successor's number remain after erasure (IDN-11, MEM-4) |
 
@@ -268,7 +267,6 @@ Distribution (who gets which task) is set by the dispatch rules and bot groups, 
 | incident -> control operation | 1 : N | (MGR-9) |
 | control operation -> basis | N : 1 (incident, directive, escalation) | the operation carries the seat epoch; a stale one gets `fenced` (MGR-9, IDN-10) |
 | control operation -> hold, card | 1 : 0..1 of each | every operation reaches people at once (MGR-13) |
-| farm manager seat -> pause by tenant (`paused_in`) | 1 : 0..N tenants | a pause by the money safeguard of the tenant's `manager` line; it ends at its expiry or by P2 `manager.resume` of the tenant admin, other tenants are not affected (MGR-14), v0.1 |
 | tenant -> farm manager (`Tenant.spec.farm_manager`) | 1 : 0..1 | `enabled: true` by default; with `enabled: false` the manager does not read the tenant's data and does not run the review and the lens, and the tenant's incidents go only to its admins (D-77, TEN-5, MGR-42), v0.1 |
 | seat task -> tenant | N : 1 | one seat attempt sees exactly one tenant (MGR-24) |
 | reading attempt -> finding | 1 : 0..10 | the reading bot submits only findings of a closed schema (MGR-25) |
@@ -298,7 +296,7 @@ The tenant boundary is a wall: data of one tenant never reaches another, neither
 | farm manager seat attempt in a tenant -> holder identity in `farm` | only the id and the epoch in the fields `acting_bot`, `bot_epoch`, `seat_epoch` | (TEN-1, MGR-3) |
 | service principal `seat:farm-manager` -> group `farm-manager-ops` in every tenant | the tenant's consent: its admin narrows the group's permissions | (MGR-3) |
 | tenant opt-out of the farm manager (`farm_manager.enabled: false`) | the manager does not read records of this tenant, does not run the review and the lens for it and does not receive its incidents | (D-77, TEN-5, MGR-42) |
-| farm manager seat -> tenant commissions | the seat's vote in each commission is cast by a worker of that tenant's reviewer role on the `seat` slot | (GOV-25, IDN-12), v0.2 |
+| farm manager seat -> tenant commissions | the seat's advisory lens review in each commission is run by a worker of that tenant's reviewer role on the `seat` slot | (GOV-25, IDN-12), v0.2 |
 | alarm about a missing manager | other tenants get only the fact itself, without details | (MGR-2) |
 | the organization's monitoring system | one per farm; it sees the alarms of all tenants with the `tenant` tag, only numbers, `enum` values and catalog ids, and bot notes of class no higher than `summary` after redaction (recipient `monitoring` in the privacy block); every tenant has its own E5 adapter with its own monitoring system user, which runs scripts only on the catalog nodes of its own tenant, and the `monitor` plugin reads only the catalog nodes of its own tenant | (MON-1, MON-4, MON-6, MON-10, TEN-4, TEN-5) |
 | farm operator | a person with `admin:*` permissions in the service tenant `farm`; works with the core only through `farmctl` with their own P2 credentials | (PRM-14) |
@@ -310,7 +308,7 @@ What does not exist: a process that serves two tenants (TEN-4); a provider key o
 | Version | What appears |
 |---|---|
 | v0.1 | Relations of people, permissions, workers, tasks, attempts, calls, approvals and deliveries; holds of five scopes; erasure requests and tombstones, erasure at a person's request through port operations (D-76); the fields `acting_bot` and `bot_epoch` in the schemas, still empty; messages, inboxes and bot groups; observation series, proposals, reviews by the `reviewer` role and the trial record with the "before" numbers (D-71); the tenant opt-out of the farm manager and seat pauses by tenant (D-77, MGR-14); bot identities and their binding to workers and seats; the charter, commission seats with lenses and the farm manager seat; facts and the fact offer to a successor; campaigns and script runs; incidents, control operations and findings; managed services, the role's permission for them and `service_grant` records; the remaining hold scopes except `schedule` and `governance` |
-| v0.2 | Governance cases, voting rounds, ballots and the queue; the vote of the farm manager seat in commissions; model grants and escalations; one open proposal per bot; the hold scopes `schedule` and `governance`; attributions of incidents to changes; knowledge corpora |
+| v0.2 | Governance cases and the queue; the advisory lens of the farm manager seat in commissions; model grants and escalations; one open proposal per bot; the hold scopes `schedule` and `governance`; attributions of incidents to changes; knowledge corpora |
 
 ## Why it works this way
 

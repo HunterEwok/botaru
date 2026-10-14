@@ -15,6 +15,7 @@ The `examples/` folder shows the skeleton at work on the sample tenant `demo`: m
 | `hello-bot/` | the smallest bot of the `core` profile (D-71): a role, a task type with only the required fields, a group and the expected sequence as a fixture envelope (`submit_activity`, the `ai_notice` and `privacy_notice` deliveries on first contact, `claim` -> `heartbeat` -> `complete`); the core delivers the answer to the person by the task `origin`, and there are no messages between bots; the command `/hello` is declared in `tenants/demo/tenant.yaml`; the black-box runner will replay it against the mock model once the runner arrives with the implementation ([docs/quality.md](../docs/quality.md)); for now `ci/check_manifests.py` checks the `call` bodies of the sequence against the operation request schemas |
 | `tenants/demo/` | the tenant's manifests: `tenant.yaml`, `groups.yaml` (`Group` objects), `catalog.yaml`, `routes.yaml`, `schedules.yaml`, `sinks.yaml`. Group chat bindings are not in git: the operator creates them with the P2 command `chat.bind` (PRM-14) |
 | `tenants/demo2/` | a second tenant for isolation examples; it has `farm_manager.enabled: false` (D-77) |
+| `tenants/farm/` | the charter of the service tenant `farm` with the farm manager seat profile `farm_manager.model_profile` (GOV-33); `apply` rejects a tenant with the manager enabled when no farm charter sets it (`manager_profile_missing`) |
 | `deploy/farm.yaml` | a deployment description following the `deploy-topology` schema: `farm_hosts: [core1, backup1]`, the processes on the machines, the OS users of executors per tenant (`os_users`, DEP-10); the file is not run, and the manifest lint takes the farm nodes from it |
 | `roles/`, `tasktypes/`, `tools/`, `messagetypes/`, `actions.yaml`, `model-profiles/` | global manifests, shared by all tenants and without their data (TEN-6) |
 
@@ -60,7 +61,7 @@ spec:
   budgets: {month_eur: 300, day_eur: 15, hour_eur: 3}   # tenant ceilings (BUD-1); role lines sit inside them
   attention: {cards_per_tenant_hour: 20}                # above this, cards get service_rate_limited (APR-2)
   delegated_groups: [researcher]                        # groups the team lead grants from the channel (PRM-16): only without actions and decisions
-  farm_manager: {enabled: true, lens: true, daily_review: true, model_profile: manager-std}   # D-77
+  farm_manager: {enabled: true}   # D-77, MGR-42
   link_allowlist: [www.example.org, docs.example.org]
   models_allowed: [base-std, analysis-std, review-a, review-b, seat-std, seat-alt, manager-std, translate-std]
                                 # seat-std, seat-alt, manager-std, translate-std are needed by the commission, the manager and the translator

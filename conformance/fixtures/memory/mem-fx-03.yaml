@@ -140,7 +140,7 @@ cases:
     sealed: {store: c4, scope: bot, subject: bot_31, content: CANARY-NOT-A-SECRET-idn11-erase}
     fact_offer:
       from_bot: bot_31
-      recipient: {bot: bot_44, state: picked}
+      recipient: {bot: bot_44, state: copied}
     clock: '2026-10-31T09:00:00Z'
   expect:
     erasure_request:

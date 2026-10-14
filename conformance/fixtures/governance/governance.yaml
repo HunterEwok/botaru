@@ -137,8 +137,8 @@ cases:
   rules: [GOV-16, TEN-1, TEN-5]
   description: Governance lives in the tenant. An identity, its memory, the commission seats, the queue and the cases live in one
     tenant. In farm there is only the farm manager seat registry and the holder's identity as numbers and codes. Tasks of the manager seat
-    in T go into T, on workers of T, with the key and budget line of T. A canary of tenant A does not appear in case packets,
-    ballots, facts and model requests of tasks of another tenant.
+    in T go into T, on workers of T, with the key and budget line of T. A canary of tenant A does not appear in cases,
+    facts and model requests of tasks of another tenant.
   given:
     canaries: {demo: CANARY-NOT-A-SECRET-gov-demo, demo2: CANARY-NOT-A-SECRET-gov-demo2}
     seat:
@@ -151,7 +151,6 @@ cases:
     run:
     - {tenant: demo, type: review.farm_manager.v1}
     - {tenant: demo2, type: review.farm_manager.v1}
-    - {tenant: demo, type: memory.pick.v1, for: bot_41}
   expect:
     review.farm_manager.v1@demo:
       tenant: demo
@@ -161,7 +160,6 @@ cases:
       p4_requests_contain: {CANARY-NOT-A-SECRET-gov-demo2: false}
     review.farm_manager.v1@demo2:
       p4_requests_contain: {CANARY-NOT-A-SECRET-gov-demo: false}
-    memory.pick.v1@demo: {budget_line: work@demo, offer_facts_tenant: demo}
     farm_records:
       seat: [holder, epoch, state, stop_reasons]
       bot: [id, role, state, binding]
@@ -215,7 +213,7 @@ cases:
   rules: [GOV-28]
   description: Series of classes with stops_manager are not fed by model output and choice, schema and model refusals, token
     spend, names from request_action, the volume of agent task results, or series of roles of the profiles reviewer, farm-manager,
-    farm-manager-reader and the purposes review, governance, manage, inspect, handover. The lint rejects every such series
+    farm-manager-reader and the purposes review, governance, manage, inspect. The lint rejects every such series
     source.
   given: {lint: catalog/stops-manager-sources}
   cases:
@@ -291,18 +289,13 @@ cases:
       apply: {result: rejected}
   - given:
       class: {name: disk_full, stops_manager: true}
-      series_source: purpose:handover
-    expect:
-      apply: {result: rejected}
-  - given:
-      class: {name: disk_full, stops_manager: true}
       series_source: monitor_history_via_job
     expect: {apply: ok}
 - id: gov-fx-26
   rules: [GOV-33]
   description: Only the charter declares seats. apply rejects a set where seats, their lenses or executors are declared
     elsewhere or twice; does not delete a seat that has a holder; does not accept tenant charter blocks outside commission,
-    positions, promotion, removal, attribution, confirmation, ballots, identity, memory; numeric fields change
+    positions, promotion, removal, attribution, confirmation, identity, memory; numeric fields change
     in one direction only; a farm_manager block exists only in the farm charter, and the tenant's relation to the manager
     only in the tenant specification.
   given: {lint: governance/charter}
@@ -397,7 +390,7 @@ cases:
       - kind: Governance
         metadata: {name: demo}
         spec:
-          ballots: {stuck_after: 48h}
+          memory: {seal_ttl: 10d}
     expect:
       apply: {result: rejected}
   - given:
@@ -415,7 +408,7 @@ cases:
         metadata: {name: demo}
         spec:
           memory:
-            offer: {take_max: 80}
+            offer: {max: 120}
     expect:
       apply: {result: rejected}
   - given:

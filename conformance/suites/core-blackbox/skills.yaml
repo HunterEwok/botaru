@@ -23,7 +23,7 @@ checks:
   source: docs/quality.md:364
   spec:
     What: '(v0.2) a runtime with `skills: farm`; the model calls `skill_read` for a role skill file, for a file of another
-      skill, for a 40 KiB file, and in a `handover` task'
+      skill, for a 40 KiB file, and in an `insight` task'
     Expectation: the first returns the core copy and the tree hash; the second fails the enum check; the 40 KiB file comes
-      in two calls with `next_offset`; the `handover` task has no `skill_read`; a `file` of `references/../SKILL.md` fails
+      in two calls with `next_offset`; the `insight` task has no `skill_read`; a `file` of `references/../SKILL.md` fails
       the schema

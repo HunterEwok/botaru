@@ -5,7 +5,7 @@ rules: [GOV-32]
 version: v0.2
 description: 'A promotion trigger appears only after the trial outcome. worse gives no trigger, the same as a confirmed attribution;
   better, unchanged, undetermined and mixed do not remove it. A revert by a person with the reason harm_observed is worse in the
-  track record and in the calibration; a reverted proposal and a canceled trial give no trigger.'
+  track record and in the forecast scores; a reverted proposal and a canceled trial give no trigger.'
 given:
   tenant: demo
   bots:
@@ -45,7 +45,7 @@ cases:
     expect: {queue: [], track_record: {bot_17: {worse: 1}}}
 - id: gov-fx-21-c
   description: A revert with harm_observed after the trial ended better makes the outcome worse in the track record and in the
-    calibration of the lenses that recommended p_101; a later trigger does not appear.
+    forecast scores of the lenses that recommended p_101; a later trigger does not appear.
   given:
     trial: {proposal: p_101, outcome: better}
     reviews: {p_101: {value: {score: 4, executor: bot_12}}}
@@ -58,7 +58,7 @@ cases:
     queue: []
     proposal_state: reverted
     track_record: {bot_17: {worse: 1, better: 0}}
-    calibration_case: {executor: bot_12, lens: value, outcome: worse, match: false}
+    forecast_scored: {executor: bot_12, lens: value, outcome: worse}
 - id: gov-fx-21-d
   description: A revert with another reason gives a canceled trial and no trigger.
   steps:

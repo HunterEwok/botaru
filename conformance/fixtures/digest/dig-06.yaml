@@ -1,19 +1,16 @@
 id: dig-06
 rules: [DIG-5]
 version: v0.2
-description: 'Monthly audit sample by a recorded seed. A month of commission verdicts in tenant demo: 6 proposals dismissed by the
-  veto of the security lens, 0 dismissed by the veto or the minimum of the operational lens, 10 dismissed by the weighted mean,
-  4 parked by score, plus 3 parked by quorum, budget or conflict that never enter a stratum. With min_per_month 4 and share
-  0.25 the size is max(4, ceil(0.25 x 20)) = 5: each non-empty stratum gets one item, the rest goes by the largest remainder.
-  Within a stratum the items are the ones with the smallest HMAC-SHA256(seed, proposal id). The seed is recorded at the
-  choice; each item stores inclusion_prob = picked / stratum size; the same seed gives the same pick.'
+description: 'Monthly audit sample by a recorded seed. A month of commission verdicts in tenant demo: 6 proposals dismissed by a
+  veto, 10 dismissed by a minimum or a low score, 4 parked by score, plus 3 parked by quorum, budget or conflict that never enter
+  the sample. With min_per_month 4 and share 0.25 the size is max(4, ceil(0.25 x 20)) = 5, drawn uniformly at random from the
+  20. The seed and the drawn ids are recorded at the choice; each item stores inclusion_prob = 5 / 20.'
 given:
   tenant: demo
   commission: {audit_sample: {min_per_month: 4, share: 0.25, max_per_digest: 2}}
   month: '2026-11'
   verdicts:
-    dismissed_veto_security: 6
-    dismissed_veto_operational: 0
+    dismissed_veto: 6
     dismissed_low_score: 10
     parked_score: 4
     parked_quorum: 1
@@ -22,16 +19,10 @@ given:
 steps:
 - stand: {op: loop.tick, loop: proposal, point: audit_sample_month}
   expect:
-    sample_run: {month: '2026-11', seed_recorded: true, size: 5}
-    strata:
-    - {stratum: veto_security, size: 6, picked: 2, inclusion_prob: 0.3333}
-    - {stratum: veto_operational, size: 0, picked: 0}
-    - {stratum: low_score, size: 10, picked: 2, inclusion_prob: 0.2}
-    - {stratum: parked_score, size: 4, picked: 1, inclusion_prob: 0.25}
+    sample_run: {month: '2026-11', seed_recorded: true, drawn_ids_recorded: true, population: 20, size: 5}
+    items: {count: 5, inclusion_prob: 0.25}
     excluded_states: [parked_quorum, parked_budget, parked_conflict]
     proposals_moved_to_sampled: 5
-- check: {recompute_pick: {month: '2026-11', seed: recorded}}
-  expect: {same_items_as_first_pick: true}
 cases:
 - id: dig-06-a
   description: 'the digest carries at most max_per_digest sample items; the rest wait for later digests'
@@ -39,15 +30,22 @@ cases:
   - stand: {op: loop.tick, loop: proposal, point: digest}
     expect: {digest_sample_items: 2, sampled_waiting: 3}
 - id: dig-06-b
-  description: 'commission_underrates: per stratum over 180 days, the weighted share of Would accept with weights 1/inclusion_prob,
-    the 90 percent Wilson interval on the effective sample size; the flag is set when the lower bound is above 0.1'
+  description: 'commission_underrates: over 180 days the share of Would accept with weights 1/inclusion_prob; the flag is set with
+    at least 10 answers and a share of at least 0.3'
   given:
     answers_180d:
-      low_score: {would_accept: 9, would_not_accept: 3, inclusion_prob: 0.2}
-      parked_score: {would_accept: 1, would_not_accept: 7, inclusion_prob: 0.25}
+    - {would_accept: 4, would_not_accept: 6, inclusion_prob: 0.25}
   steps:
   - stand: {op: loop.tick, loop: proposal, point: audit_sample_stats}
     expect:
       commission_underrates: true
-      strata_flagged: [low_score]
-      commission_status: {audit_sample: {commission_underrates: true}}
+      commission_status: {audit_sample: {answers: 10, would_accept_share: 0.4, commission_underrates: true}}
+- id: dig-06-c
+  description: 'nine answers give no flag, whatever the share'
+  given:
+    answers_180d:
+    - {would_accept: 9, would_not_accept: 0, inclusion_prob: 0.25}
+  steps:
+  - stand: {op: loop.tick, loop: proposal, point: audit_sample_stats}
+    expect:
+      commission_underrates: false

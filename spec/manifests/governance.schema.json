@@ -277,7 +277,7 @@
               "type": "number",
               "minimum": 0,
               "maximum": 1,
-              "description": "Share."
+              "description": "Smallest share of the proposals the sample is drawn from (DIG-5)."
             },
             "max_per_digest": {
               "type": "integer",
@@ -293,7 +293,14 @@
             "on"
           ],
           "default": "shadow",
-          "description": "From v0.3: shadow (code computes and shows to people only) or on; apply accepts on only while every seat has a holder with at least 20 scored forecasts, otherwise accountability_not_ready (GOV-36)."
+          "description": "From v0.3: shadow (code computes and shows to people only) or on; apply accepts on only while every seat has a holder with at least accountability_min_forecasts scored forecasts, otherwise accountability_not_ready (GOV-36)."
+        },
+        "accountability_min_forecasts": {
+          "type": "integer",
+          "minimum": 8,
+          "maximum": 20,
+          "default": 20,
+          "description": "From v0.3: scored forecasts every holder needs before accountability can be switched on; 20 by default, only lowered and never below 8 (GOV-36, D-116)."
         },
         "reward_cap_eur_month": {
           "type": "number",
@@ -335,21 +342,6 @@
       "additionalProperties": false,
       "properties": {
         "protect_new": {
-          "$ref": "urn:botaru:schema:common:1#/$defs/duration"
-        }
-      }
-    },
-    "ballots": {
-      "type": "object",
-      "additionalProperties": false,
-      "properties": {
-        "reissue_max": {
-          "type": "integer",
-          "minimum": 0,
-          "maximum": 100,
-          "description": "Only raised."
-        },
-        "stuck_after": {
           "$ref": "urn:botaru:schema:common:1#/$defs/duration"
         }
       }
@@ -415,12 +407,6 @@
               "minimum": 0,
               "maximum": 100,
               "description": "Only reduce."
-            },
-            "take_max": {
-              "type": "integer",
-              "minimum": 0,
-              "maximum": 50,
-              "description": "Only reduce."
             }
           }
         }
@@ -471,7 +457,7 @@
               "description": "At most 7d."
             }
           },
-          "description": "v0.1 and v0.2 only; a v0.3 core warns with incident_stop_unused (MGR-55)."
+          "description": "v0.1 and v0.2 only (GOV-22); a v0.3 core does not use it (MGR-55)."
         },
         "control_limits": {
           "type": "object",
@@ -483,23 +469,11 @@
               "maximum": 1000,
               "description": "Limit per hour."
             },
-            "quarantines_per_hour": {
-              "type": "integer",
-              "minimum": 0,
-              "maximum": 100,
-              "description": "Limit per hour."
-            },
-            "cancels_per_hour": {
-              "type": "integer",
-              "minimum": 0,
-              "maximum": 1000,
-              "description": "Limit per hour."
-            },
             "pins_per_worker_hour": {
               "type": "integer",
               "minimum": 0,
               "maximum": 100,
-              "description": "Limit per hour."
+              "description": "Limit per hour of the deferred task pinning (MGR-12)."
             },
             "max_share_held": {
               "type": "number",
@@ -574,13 +548,8 @@
         "postmortem_max_eur": {
           "type": "object",
           "additionalProperties": false,
-          "description": "From v0.3: the analysis ceiling per incident and per day, from the manager line outside the sev1 reserve (MGR-53, MGR-56).",
+          "description": "From v0.3: the daily analysis ceiling, from the manager line outside the sev1 reserve (MGR-53, MGR-49).",
           "properties": {
-            "incident": {
-              "type": "number",
-              "minimum": 0,
-              "maximum": 100
-            },
             "day": {
               "type": "number",
               "minimum": 0,

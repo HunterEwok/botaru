@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "urn:botaru:schema:digest-text-dropped:1",
   "title": "Data of the event digest.text_dropped",
-  "description": "The model paragraph of a digest was not sent because a number in it is not in the allowed set of the table snapshot (REP-4). Only counts and ids; no text and no numbers of the paragraph (AUD-2).",
+  "description": "The model paragraph of a digest or summary was not sent because it holds a number: a token with a digit that is not an allowed name, date or time, or a number word (REP-4). numbers_checked counts the tokens with digits and the number words read, numbers_unmatched the rejected ones. Only counts and ids; no text and no numbers of the paragraph (AUD-2).",
   "x-botaru-direction": "output",
   "x-botaru-version": "v0.2",
   "x-botaru-rules": [

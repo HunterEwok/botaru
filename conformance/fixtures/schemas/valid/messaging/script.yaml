@@ -3,29 +3,29 @@ rules:
 - SCR-1
 - SCR-3
 - SCR-4
-description: 'botaru.script/v1 drafts that the schema accepts: the example from docs/scripts-and-translator.md with fanout,
-  confirm and items.from; a conditional service restart; a conditional action that passes a value by reference.'
+description: 'botaru.script/v1 drafts that the schema accepts: the example from docs/scripts-and-translator.md with a task,
+  a confirm on a closed field and an action fanout; a conditional service restart; a conditional action that passes a value
+  by reference; a condition with ne over a closed field and over a step state.'
 cases:
 - script: v1
   steps:
   - id: disk
-    kind: fanout
+    kind: task
     type: ops.disk.read.v1
     goal:
       template: disk_usage
-    items:
-      resources:
-      - web1
-      - db1
-      - ctd1
+    params:
+      resource: db1
   - id: ask
     kind: confirm
     needs:
     - disk
     when:
-      ref: disk.min.free_pct
-      op: lt
-      value: 10
+      ref: disk.free_level
+      op: in
+      value:
+      - low
+      - critical
     who: initiator
   - id: clean
     kind: fanout
@@ -33,11 +33,8 @@ cases:
     - ask
     action: cleanup_tmp
     items:
-      from: disk
-      where:
-        field: free_pct
-        op: lt
-        value: 10
+      resources:
+      - db1
 - script: v1
   steps:
   - id: check
@@ -78,7 +75,8 @@ cases:
         - failed
       - not:
           ref: check.api_up
-          op: exists
+          op: eq
+          value: true
 - script: v1
   steps:
   - id: triage
@@ -101,3 +99,28 @@ cases:
       op: eq
       value: high
     on_failure: continue
+- script: v1
+  steps:
+  - id: triage
+    kind: task
+    type: ops.log.triage.v1
+    goal:
+      template: triage
+    params:
+      resource: web1
+  - id: report
+    kind: task
+    needs:
+    - triage
+    run_if: always
+    type: report.script.summary.v1
+    goal:
+      template: summary
+    when:
+      all:
+      - ref: triage.severity
+        op: ne
+        value: low
+      - ref: triage.state
+        op: ne
+        value: canceled

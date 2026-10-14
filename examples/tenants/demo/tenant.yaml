@@ -20,7 +20,7 @@ spec:
       manager: {day_eur: 2, month_eur: 30}
   attention: {cards_per_tenant_hour: 20}
   delegated_groups: [researcher]
-  farm_manager: {enabled: true, lens: true, daily_review: true, model_profile: manager-std}
+  farm_manager: {enabled: true}
   link_allowlist: [www.example.org, docs.example.org]
   models_allowed: [base-std, analysis-std, review-a, review-b, seat-std, seat-alt, manager-std, translate-std]
   providers_allowed: [provider-a, provider-b]

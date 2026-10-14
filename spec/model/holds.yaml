@@ -1,5 +1,5 @@
 registry: holds
-version: 3
+version: 4
 description: >-
   Closed lists of the stop (Hold): scopes, effects, auto-stop rules and ranks
   of authors. The kind field of an entry says which list it belongs to: scope
@@ -113,7 +113,7 @@ entries:
     meaning: one governance case (its pause)
     set_by: [governance_admin]
     record_tenant: own
-    rules: [HLD-2, GOV-23]
+    rules: [HLD-2, GOV-14]
   - id: schedule
     kind: scope
     since: v0.2
@@ -218,6 +218,18 @@ entries:
     threshold: {slots: 3, outcomes: [attempts_exhausted, runs_exhausted]}
     alarm: alarm.hold.auto.v1
     rules: [CAP-4]
+  - id: role_incidents_three
+    kind: autostop
+    since: v0.3
+    meaning: 3 confirmed links of incidents to the work of one role of the tenant within 90 days (an attribution under GOV-13 to a change the role proposed, a script link under TRN-7 to a run the role drafted); the same for every role; draft acceptance rejects the role's drafts with actions or service control
+    scope: role
+    effects: [no_action]
+    reason: role_incidents
+    author: contain_auto
+    until: null
+    threshold: {links: 3, window: 90d}
+    alarm: alarm.hold.auto.v1
+    rules: [HLD-9]
   # Ranks of authors at release, from top to bottom
   - id: operator
     kind: rank

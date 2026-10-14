@@ -31,8 +31,8 @@ checks:
   section: Tests without a model
   source: docs/quality.md:374
   spec:
-    What: a step takes a field of an agent step with `untrusted_seen` through `items.from`, the condition stands before an
-      action
+    What: a step takes a field of an agent step with `untrusted_seen` through a `ref` reference, the condition stands before
+      an action
     Expectation: the flag is on the step, the flag source is on the approval card
 - id: blackbox:script/hold-pauses-run
   method: blackbox

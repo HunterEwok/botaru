@@ -5,7 +5,7 @@ rules: [GOV-14]
 version: v0.2
 description: 'The governance loop keeps one queue entry per bot, without expiry or length ceiling, in order of the trigger time.
   A case opens for the head if the tenant has no open case and no hold on the scope governance. A vacant seat is taken without
-  a pause; freeing a seat by vote needs a non-empty L and swap_cooldown since the last freeing by vote, the last expired and the
+  a pause; freeing a seat needs a non-empty L and swap_cooldown since the last freeing of a seat, the last expired and the
   last "Reject" with not_now. Eligibility is checked at opening: active, tenure at least min_tenure, no confirmed attribution to
   its changes in 90 days; a failure gives not_eligible and lets the next entry go ahead; eligibility lost in a case gives
   canceled(candidate_ineligible). Charter lint keeps the deadlines at or above their floors.'
@@ -20,7 +20,7 @@ given:
   bots:
     bot_17: {role: ops-runner, state: active, tenure_days: 31}
     bot_18: {role: ops-runner, state: active, tenure_days: 45}
-  last_freeing_by_vote_days_ago: 31
+  last_freeing_days_ago: 31
 cases:
 - id: gov-fx-20-a
   description: One entry per bot; the second success goes to the track record; the order is the trigger time.
@@ -57,11 +57,11 @@ cases:
     events: [{type: governance.not_eligible, bot: bot_18}]
     case: null
 - id: gov-fx-20-d
-  description: A vacant seat is taken without the swap_cooldown pause; freeing by vote waits for swap_cooldown.
+  description: A vacant seat is taken without the swap_cooldown pause; freeing a seat waits for swap_cooldown.
   cases:
   - id: gov-fx-20-d1
     given:
-      last_freeing_by_vote_days_ago: 5
+      last_freeing_days_ago: 5
       commission:
         seats:
           'commission:4': {lens: value, holder: null}
@@ -72,7 +72,7 @@ cases:
       case: {candidate: bot_17, mode: vacancy}
   - id: gov-fx-20-d2
     given:
-      last_freeing_by_vote_days_ago: 5
+      last_freeing_days_ago: 5
       queue: [{bot: bot_17}]
     steps:
     - stand: {op: loop.tick, loop: governance}
@@ -117,7 +117,7 @@ cases:
 - id: gov-fx-20-g
   description: Eligibility lost in the middle of a case cancels the case; the entry returns to its place.
   given:
-    case: {id: gc_7, candidate: bot_17, state: balloting, round: 1}
+    case: {id: gc_7, candidate: bot_17, state: confirming}
   steps:
   - occur: {attribution: confirmed, proposal_author: bot_17}
   - stand: {op: loop.tick, loop: governance}

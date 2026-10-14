@@ -3,8 +3,8 @@ rules: [REP-2, REP-4, DLV-15]
 description: 'A report consists of a table, cards, the number hidden and an optional model paragraph. Code builds the table, the numbers,
   the names and the set of cards from the snapshot snapshot_id. The model paragraph goes as a separate marked part of up to 800
   characters without links, mentions, markup and commands. With untrusted_seen the paragraph does not go to a group chat by default;
-  with ChatBinding.model_text: labeled it goes with a code line and a list of the distrust sources. If a number in the paragraph
-  does not match the table, the paragraph is dropped and digest.text_dropped is written.'
+  with ChatBinding.model_text: labeled it goes with a code line and a list of the distrust sources. From v0.2 a paragraph with a number
+  is dropped and digest.text_dropped is written (REP-4).'
 given:
   tenant: demo
   snapshot:
@@ -22,7 +22,7 @@ cases:
       untrusted_sources:
       - {kind: tool, name: logs/tail}
   steps:
-  - model: {text: Two failures on web1.}
+  - model: {text: Failures on web1 only.}
   expect:
     parts: [table, cards, hidden]
     paragraph: absent
@@ -34,7 +34,7 @@ cases:
       untrusted_sources:
       - {kind: tool, name: logs/tail}
   steps:
-  - model: {text: Two failures on web1.}
+  - model: {text: Failures on web1 only.}
   expect:
     parts: [table, cards, hidden, code_label, untrusted_sources, paragraph]
     code_label_key: bot text, check the numbers against the table
@@ -46,16 +46,16 @@ cases:
     binding: {target: 'direct:alice', kind: direct}
     attempt: {untrusted_seen: true}
   steps:
-  - model: {text: Two failures on web1.}
+  - model: {text: Failures on web1 only.}
   expect: {paragraph: present, source_mark: present}
 - description: a link, a mention and a command in the paragraph
   given:
     binding: {target: 'direct:alice', kind: direct}
   steps:
-  - model: {text: 'See https://example.org/x, @bob, /cancel 12'}
+  - model: {text: 'See https://example.org/x, @bob, /cancel'}
   expect:
     paragraph_contains: {url: false, mention: false, command: false}
-- description: the number does not match the table
+- description: a number word in the paragraph
   given:
     binding: {target: 'direct:alice', kind: direct}
   steps:

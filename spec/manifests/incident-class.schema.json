@@ -33,7 +33,7 @@
     },
     "stops_manager": {
       "type": "boolean",
-      "description": "Stops the seat; only for a class whose alarm is built from series with dataorigin: code (GOV-28). Not used from v0.3: a v0.3 core reads it as manager_accountable: true and warns at apply with stops_manager_unused (MGR-55)."
+      "description": "v0.1 and v0.2: stops the seat; only for a class whose alarm is built from series with dataorigin: code (GOV-28). A v0.3 core does not use it: from v0.3 the class has manager_accountable (MGR-55)."
     },
     "manager_accountable": {
       "type": "boolean",

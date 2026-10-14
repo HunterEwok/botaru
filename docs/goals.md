@@ -35,12 +35,14 @@ The list of critical incident classes for G4 (D-114):
 - the core is unreachable;
 - an automatic stop by the rate of spending.
 
+Which of them the farm manager could have prevented is decided by code: the rule [MGR-45](../conformance/rules.md#MGR-45) gives a code sign for a full disk and for a service down, and states that the other three are not preventable by the manager. The measure "preventable" of G4 counts only incidents with that sign.
+
 ## Constraints of the farm
 
 | Id | Constraint | From |
 |---|---|---|
 | C1 | The farm does not change itself without a person: a person appoints the farm manager, a stronger model only for an improvement people accepted, leaving the commission and a penalty take effect after a button, a person confirms the link between an incident and a proposal | D-27, D-31, D-33, D-109 |
-| C2 | Code decides, the model proposes: permissions, money, addresses, vote counting and records are done only by code | D-40 |
+| C2 | Code decides, the model proposes: permissions, money, addresses, the commission accuracy scores (formerly vote counting, D-115) and records are done only by code | D-40 |
 | C3 | A wall between tenants: the data, money and memory of one tenant are not visible to another, not even to the farm manager; a machine belongs to exactly one tenant | D-42, D-75 |
 | C4 | People are not designed: the farm shows people cards and summaries and takes buttons and commands; every role inside the farm is a bot | D-16 |
 | C5 | Where a monitoring system exists, alarms to people, escalation, on-call and the liveness watchdog go only through it; the farm complements it. Without one, the farm has a minimum of its own alarm delivery. Bots start services on nodes through the monitoring system or through the operating system's mechanism on the machine | D-62, D-67, D-88 |

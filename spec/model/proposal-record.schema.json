@@ -28,7 +28,6 @@
     "untrusted_seen",
     "self_influence",
     "conflicts_with",
-    "overlaps_with",
     "seen_count",
     "state",
     "body",
@@ -171,15 +170,7 @@
         "$ref": "urn:botaru:schema:common:1#/$defs/object_id"
       },
       "maxItems": 50,
-      "description": "Proposals that change the same field of the same object (PRP-9)."
-    },
-    "overlaps_with": {
-      "type": "array",
-      "items": {
-        "$ref": "urn:botaru:schema:common:1#/$defs/object_id"
-      },
-      "maxItems": 50,
-      "description": "Proposals with shared subjects among the change targets (PRP-9)."
+      "description": "Open proposals that change the same locked field or field group of the same object (PRP-9)."
     },
     "seen_count": {
       "type": "integer",
@@ -533,7 +524,6 @@
       "additionalProperties": false,
       "required": [
         "month",
-        "stratum",
         "inclusion_prob",
         "seed_ref"
       ],
@@ -543,23 +533,11 @@
           "pattern": "^[0-9]{4}-[0-9]{2}$",
           "maxLength": 7
         },
-        "stratum": {
-          "enum": [
-            "veto",
-            "weighted_mean",
-            "parked_score"
-          ]
-        },
-        "lens": {
-          "type": "string",
-          "maxLength": 64,
-          "x-botaru-registry": "lenses",
-          "description": "The veto lens of stratum veto."
-        },
         "inclusion_prob": {
           "type": "number",
           "exclusiveMinimum": 0,
-          "maximum": 1
+          "maximum": 1,
+          "description": "N / T of the month draw (DIG-5)."
         },
         "seed_ref": {
           "$ref": "urn:botaru:schema:common:1#/$defs/object_id",

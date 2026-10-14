@@ -1,22 +1,13 @@
 registry: governance-decline-reasons
-version: 2
+version: 3
 description: >-
   Reason codes of the "Reject" button on the promotion card promotion_card
   (GOV-31). Without a reason code "Reject" is not accepted. Entry fields: label
   (button caption), effect (what the governance loop does), modes (in which case
-  modes the code is allowed: removal, vacancy).
+  modes the code is allowed: removal, vacancy). "Not now" is also the answer of a
+  person who disagrees with the leaver that code proposed (GOV-43).
 source: docs/commission.md
 entries:
-  - id: wrong_leaver
-    since: v0.2
-    label: Wrong leaver
-    effect: >-
-      the governance loop at once opens a new case for the same candidate without
-      the rejected seat in L; the swap_cooldown pause does not start; at most
-      once per queue entry, the new case carries the flag
-      reopened_after_wrong_leaver and allows only not_now and wrong_candidate
-    modes: [removal]
-    rules: [GOV-31]
   - id: not_now
     since: v0.2
     label: Not now

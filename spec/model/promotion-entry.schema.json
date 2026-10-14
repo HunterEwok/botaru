@@ -55,10 +55,6 @@
       ],
       "description": "The entry's own swap_cooldown after its first wrong_candidate (D-101); until then the next entries may go ahead."
     },
-    "wrong_leaver_used": {
-      "type": "boolean",
-      "description": "wrong_leaver was already accepted for this entry (GOV-31)."
-    },
     "wrong_candidate_count": {
       "type": "integer",
       "minimum": 0,

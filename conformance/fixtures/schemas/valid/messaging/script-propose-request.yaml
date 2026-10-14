@@ -7,23 +7,22 @@ cases:
     script: v1
     steps:
     - id: disk
-      kind: fanout
+      kind: task
       type: ops.disk.read.v1
       goal:
         template: disk_usage
-      items:
-        resources:
-        - web1
-        - db1
-        - ctd1
+      params:
+        resource: db1
     - id: ask
       kind: confirm
       needs:
       - disk
       when:
-        ref: disk.min.free_pct
-        op: lt
-        value: 10
+        ref: disk.free_level
+        op: in
+        value:
+        - low
+        - critical
       who: initiator
     - id: clean
       kind: fanout
@@ -31,8 +30,5 @@ cases:
       - ask
       action: cleanup_tmp
       items:
-        from: disk
-        where:
-          field: free_pct
-          op: lt
-          value: 10
+        resources:
+        - db1

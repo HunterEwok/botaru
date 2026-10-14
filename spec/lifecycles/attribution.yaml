@@ -24,7 +24,7 @@ machines:
     terminal: false
     meaning: 'An incident with a "Yes" answer was judged a false alarm (`dismissed`): the attribution is disputed, the author
       of the "Yes" answer got an `attribution_dispute` card; the change has no promotion trigger, the attribution does not
-      go into calibration'
+      go into accuracy'
   - id: canceled
     terminal: true
     meaning: 'The incident was judged a false alarm (`dismissed`) and there was no "Yes" answer, or the author of the "Yes"

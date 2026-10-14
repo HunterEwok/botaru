@@ -67,13 +67,6 @@ allowed:
   by: case effective
   when: the candidate took the seat
   rules: [GOV-9]
-- id: sm-pe-09
-  from: in_case
-  to: in_case
-  by: case rejected with the reason wrong_leaver
-  when: 'only once per entry: the governance loop immediately opens a new case without the rejected seat with the flag reopened_after_wrong_leaver;
-    if L is empty, the entry becomes queued first'
-  rules: [GOV-31]
 - id: sm-pe-10
   from: in_case
   to: queued

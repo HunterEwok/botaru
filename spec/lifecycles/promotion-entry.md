@@ -23,7 +23,6 @@ A promotion queue entry (`PromotionEntry`) appears for a functionary whose propo
 | `queued` | `waiting_eligibility` | the `governance` loop when trying to open a case | eligibility failed (`not_eligible`): the entry waits and lets the next one go ahead | GOV-14 |
 | `queued`, `waiting_eligibility` | `in_case` | the `governance` loop | the entry is the first of the eligible ones whose own `cooldown_until` has passed, and the conditions for opening a case are met | GOV-6, GOV-14 |
 | `in_case` | `removed` | the case becomes `effective` | the candidate took the seat | GOV-9 |
-| `in_case` | `in_case` | the case is `rejected` with the reason `wrong_leaver` | only once per entry: the `governance` loop immediately opens a new case without the rejected seat with the flag `reopened_after_wrong_leaver`; if L is empty, the entry becomes `queued` first | GOV-31 |
 | `in_case` | `queued`, first | the case is `rejected` with the reason `not_now`; the case is `expired` | the next case no earlier than `swap_cooldown` after `not_now` and `expired` | GOV-31, GOV-14 |
 | `in_case` | `queued`, first, with `cooldown_until` | the case is `rejected` for the first time with the reason `wrong_candidate` | the entry gets no case before its own `swap_cooldown` (30 days) has passed; until then the next entries may go ahead (D-101) | GOV-31, GOV-14 |
 | `in_case` | `removed` | the second case of this entry is `rejected` with the reason `wrong_candidate` | the entry comes back only with the bot's next success | GOV-31 |
@@ -37,7 +36,7 @@ A promotion queue entry (`PromotionEntry`) appears for a functionary whose propo
 - An entry does not expire over time and is not evicted by the queue length.
 - Only a functionary has an entry: personal assistants, translators, commission members and roles without a model have no entries.
 - Eligibility (30 days of service, no confirmed attributions within 90 days, the identity is `active`) is checked when a case is opened, not when entering the queue.
-- The "Reject" counters with the reasons `wrong_candidate` and `wrong_leaver` live in the entry and are reset together with it.
+- The "Reject" counter with the reason `wrong_candidate` lives in the entry and is reset together with it.
 - A trigger is given only by a proposal that stays `realized` at the moment the trigger appears; `reverted` and a `canceled` trial give no trigger (GOV-14).
 - No bot sees the queue or its place in it (GOV-29).
 

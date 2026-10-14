@@ -58,11 +58,7 @@ machines:
   states:
   - id: waiting
     terminal: false
-  - id: pending
-    terminal: false
-  - id: picked
-    terminal: true
-  - id: declined
+  - id: copied
     terminal: true
   - id: expired
     terminal: true
@@ -72,184 +68,73 @@ machines:
     to: waiting
     to_note: recipient waiting
     by: the core
-    when: the successor by the MEM-7 table is not determined yet
+    when: 'the successor under MEM-7 does not exist yet'
     rules: [MEM-7]
   - id: sm-for-02
     from: null
-    to: pending
-    to_note: recipient pending
-    by: the core enqueues memory.pick.v1
-    when: the successor exists or appeared before open_until
+    to: copied
+    to_note: recipient copied
+    by: the core, in the transaction where the successor exists
+    when: 'the successor exists; each copied fact passed the recheck with the successor''s permissions and fits the free room of its space'
     rules: [MEM-7]
   - id: sm-for-03
     from: waiting
-    to: pending
-    to_note: recipient pending
-    by: the core enqueues memory.pick.v1
-    when: the successor exists or appeared before open_until
+    to: copied
+    to_note: recipient copied
+    by: the core, in the transaction where the successor appears
+    when: 'the successor appeared before open_until; each copied fact passed the recheck with the successor''s permissions and fits the free room of its space'
     rules: [MEM-7]
   - id: sm-for-04
-    from: pending
-    to: picked
-    to_note: recipient picked
-    by: P1 complete of the pick task
-    when: take is not empty; each taken fact is rechecked against the recipient's rights
-    rules: [MEM-7]
-  - id: sm-for-05
-    from: pending
-    to: declined
-    to_note: recipient declined
-    by: P1 complete of the pick task
-    when: take is empty
-    rules: [MEM-7]
-  - id: sm-for-06
-    from: pending
-    to: expired
-    to_note: recipient expired
-    by: the core
-    when: the task failed after 3 retries
-    rules: [MEM-7]
-  - id: sm-for-07
     from: waiting
     to: expired
     to_note: recipient expired
     by: the identity loop
-    when: open_until passed without a successor
+    when: 'open_until passed without a successor'
     rules: [MEM-7]
   forbidden:
   - id: sm-for-x01
-    from: null
-    to: picked
-    expect: rejected
-    rules: [MEM-7]
-    why: the object does not appear directly in the state picked
-  - id: sm-for-x02
-    from: null
-    to: declined
-    expect: rejected
-    rules: [MEM-7]
-    why: the object does not appear directly in the state declined
-  - id: sm-for-x03
     from: null
     to: expired
     expect: rejected
     rules: [MEM-7]
     why: the object does not appear directly in the state expired
+  - id: sm-for-x02
+    from: waiting
+    to: waiting
+    expect: rejected
+    rules: [MEM-7]
+    why: the lifecycle table has no such transition
+  - id: sm-for-x03
+    from: copied
+    to: waiting
+    expect: rejected
+    rules: [MEM-7]
+    why: 'copied is a terminal state: there are no transitions out of it'
   - id: sm-for-x04
-    from: waiting
-    to: waiting
+    from: copied
+    to: copied
     expect: rejected
     rules: [MEM-7]
-    why: the lifecycle table has no such transition
+    why: 'copied is a terminal state: there are no transitions out of it'
   - id: sm-for-x05
-    from: waiting
-    to: picked
+    from: copied
+    to: expired
     expect: rejected
     rules: [MEM-7]
-    why: the lifecycle table has no such transition
+    why: 'copied is a terminal state: there are no transitions out of it'
   - id: sm-for-x06
-    from: waiting
-    to: declined
+    from: expired
+    to: waiting
     expect: rejected
     rules: [MEM-7]
-    why: the lifecycle table has no such transition
+    why: 'expired is a terminal state: there are no transitions out of it'
   - id: sm-for-x07
-    from: pending
-    to: waiting
+    from: expired
+    to: copied
     expect: rejected
     rules: [MEM-7]
-    why: the lifecycle table has no such transition
+    why: 'expired is a terminal state: there are no transitions out of it'
   - id: sm-for-x08
-    from: pending
-    to: pending
-    expect: rejected
-    rules: [MEM-7]
-    why: the lifecycle table has no such transition
-  - id: sm-for-x09
-    from: picked
-    to: waiting
-    expect: rejected
-    rules: [MEM-7]
-    why: 'picked is a terminal state: there are no transitions out of it'
-  - id: sm-for-x10
-    from: picked
-    to: pending
-    expect: rejected
-    rules: [MEM-7]
-    why: 'picked is a terminal state: there are no transitions out of it'
-  - id: sm-for-x11
-    from: picked
-    to: picked
-    expect: rejected
-    rules: [MEM-7]
-    why: 'picked is a terminal state: there are no transitions out of it'
-  - id: sm-for-x12
-    from: picked
-    to: declined
-    expect: rejected
-    rules: [MEM-7]
-    why: 'picked is a terminal state: there are no transitions out of it'
-  - id: sm-for-x13
-    from: picked
-    to: expired
-    expect: rejected
-    rules: [MEM-7]
-    why: 'picked is a terminal state: there are no transitions out of it'
-  - id: sm-for-x14
-    from: declined
-    to: waiting
-    expect: rejected
-    rules: [MEM-7]
-    why: 'declined is a terminal state: there are no transitions out of it'
-  - id: sm-for-x15
-    from: declined
-    to: pending
-    expect: rejected
-    rules: [MEM-7]
-    why: 'declined is a terminal state: there are no transitions out of it'
-  - id: sm-for-x16
-    from: declined
-    to: picked
-    expect: rejected
-    rules: [MEM-7]
-    why: 'declined is a terminal state: there are no transitions out of it'
-  - id: sm-for-x17
-    from: declined
-    to: declined
-    expect: rejected
-    rules: [MEM-7]
-    why: 'declined is a terminal state: there are no transitions out of it'
-  - id: sm-for-x18
-    from: declined
-    to: expired
-    expect: rejected
-    rules: [MEM-7]
-    why: 'declined is a terminal state: there are no transitions out of it'
-  - id: sm-for-x19
-    from: expired
-    to: waiting
-    expect: rejected
-    rules: [MEM-7]
-    why: 'expired is a terminal state: there are no transitions out of it'
-  - id: sm-for-x20
-    from: expired
-    to: pending
-    expect: rejected
-    rules: [MEM-7]
-    why: 'expired is a terminal state: there are no transitions out of it'
-  - id: sm-for-x21
-    from: expired
-    to: picked
-    expect: rejected
-    rules: [MEM-7]
-    why: 'expired is a terminal state: there are no transitions out of it'
-  - id: sm-for-x22
-    from: expired
-    to: declined
-    expect: rejected
-    rules: [MEM-7]
-    why: 'expired is a terminal state: there are no transitions out of it'
-  - id: sm-for-x23
     from: expired
     to: expired
     expect: rejected

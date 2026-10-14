@@ -1,5 +1,5 @@
 registry: role-profiles
-version: 1
+version: 2
 description: >-
   Role profiles (Role.spec.profile). A profile grants no permissions and is not part of the C2
   permission formula: it only narrows what a role may declare and carries the model rank
@@ -21,7 +21,7 @@ entries:
   - id: worker
     since: v0.1
     meaning: functionary, a working bot; the default profile for a role without the profile field
-    purposes: [work, insight, handover]
+    purposes: [work, insight]
     max_task_tier: null
     must_be_empty: []
     slots: [base, analysis]
@@ -33,7 +33,7 @@ entries:
   - id: manager
     since: v0.1
     meaning: functionary manager; it releases and assigns nothing itself
-    purposes: [work, insight, handover]
+    purposes: [work, insight]
     max_task_tier: null
     must_be_empty: []
     slots: [base, analysis]
@@ -72,7 +72,7 @@ entries:
   - id: reviewer
     since: v0.1
     meaning: commission member; no session, every task starts from a clean slate; the model does not write to memory
-    purposes: [review, governance, handover]
+    purposes: [review, governance]
     max_task_tier: 1
     must_be_empty: [tools, may_enqueue, campaigns, actions_may_request, scripts, messages]
     slots: [base]
@@ -96,7 +96,7 @@ entries:
   - id: farm-manager
     since: v0.1
     meaning: farm manager, decision role; farm manager tools exist only in this profile
-    purposes: [manage, handover]
+    purposes: [manage]
     max_task_tier: null
     must_be_empty: [may_enqueue, campaigns, scripts, messages]
     slots: [base, seat]

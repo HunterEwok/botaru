@@ -1,6 +1,6 @@
 id: fx-model-profiles-lint
 rules: [GW-3, GW-7, GW-9, GW-14]
-description: Model profiles, role slots and the provider workspace at apply and in the daily check. A model is chosen
+description: Model profiles, role slots and the provider workspace at apply and in doctor. A model is chosen
   only as a role slot profile from the tenant's models_allowed; a profile with an alias without a version and a type whose purpose
   needs a slot the role lacks do not pass apply (GW-7); a role without a base or analysis profile in models_allowed
   does not pass apply and does not get enroll (GW-7); tenant limits are below the share of the workspace ceiling (GW-9); only P4
@@ -82,7 +82,7 @@ cases:
   given:
     workspace: {tenant: demo, provider_spend_cap_eur: 300, share: 0.9}
     budgets: {month_eur: 300}
-  expect: {result: rejected, stage: apply, alarm: true, doctor_row: true}
+  expect: {result: rejected, stage: apply}
 - id: gw-fx-08
   rules: [GW-9]
   description: A sum of month_eur over all tenants greater than the share 0.9 of the organization ceiling at the provider does not pass apply.
@@ -94,11 +94,12 @@ cases:
   expect: {result: rejected, stage: apply}
 - id: gw-fx-09
   rules: [GW-9, GW-13]
-  description: A failed daily probe on a pair (workspace, profile) gives a code alarm, a doctor line and the reason provider_config
-    for the pair.
+  description: There is no daily probe. doctor reads the workspace ceiling at the provider and shows a mismatch with the
+    description; a configuration failure on a real call gives the reason provider_config for the pair.
   given:
-    probe: {workspace: demo, profile: seat-std, result: auth_failed}
-  expect: {alarm: true, doctor_row: true, pair_reason: provider_config}
+    workspace: {tenant: demo, described_spend_cap_eur: 300, provider_spend_cap_eur: 200}
+    call: {workspace: demo, profile: seat-std, result: auth_failed}
+  expect: {doctor_row: ceiling_mismatch, daily_probe: false, pair_reason: provider_config}
 - id: gw-fx-10
   rules: [GW-14]
   description: A region field in the runtime request is rejected; P4 sets the region from privacy.subprocessors[].region.

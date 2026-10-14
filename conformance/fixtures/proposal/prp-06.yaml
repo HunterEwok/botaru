@@ -1,9 +1,10 @@
 id: prp-06
 rules: [PRP-9]
-description: Conflicts of proposals about one object. A and B change spec.cron of the same schedule report-nightly and carry
+description: One running change per field of an object. A and B change spec.cron of the same schedule report-nightly and carry
   each other in conflicts_with. When A has moved to realizing, the open B goes to parked(conflict), its card goes dark
   and it has no "Accept" button. A new proposal C about the same field, while the trial of A is running, also waits in parked(conflict).
-  When the trial of A has ended, B and C return to screened.
+  When the trial of A has ended, B and C return to screened. A restart of a service (action_request) on the same object takes no
+  lock and waits for nothing.
 given:
   tenant: demo
   proposals:
@@ -26,8 +27,6 @@ steps:
       conflicts_with: [p_01JB0000000000000000000102]
     p_01JB0000000000000000000102:
       conflicts_with: [p_01JB0000000000000000000101]
-    digest:
-      same_block: [p_01JB0000000000000000000101, p_01JB0000000000000000000102]
 - call:
     port: P1
     op: decide
@@ -54,6 +53,15 @@ steps:
         target: {kind: Schedule, name: report-nightly}
   expect:
     p_01JB0000000000000000000103: {state: parked, state_reason: conflict}
+- check:
+    submit:
+      id: p_01JB0000000000000000000104
+      change:
+        kind: action_request
+        tool: service/control
+        target: {kind: Schedule, name: report-nightly}
+  expect:
+    p_01JB0000000000000000000104: {state: screened, conflicts_with: []}
 - check:
     trial_ended: {id: p_01JB0000000000000000000101, outcome: better}
   expect:

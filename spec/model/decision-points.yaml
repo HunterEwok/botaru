@@ -1,5 +1,5 @@
 registry: decision-points
-version: 4
+version: 5
 description: >-
   Registry of human decisions (APR-12): one row for each kind of card and
   notice. A kind without a row does not pass the skeleton CI, and the core does not create such
@@ -307,16 +307,6 @@ entries:
     undo: a confirmed one is not undone
     urgent: false
     rules: [APR-12, APR-14]
-  - id: governance_stuck
-    since: v0.2
-    kind: notice
-    subject: null
-    recipients: a tenant admin with admin:governance; "Pause" (a stop of the governance scope) and "Cancel" (P2 governance.cancel) are operations
-    ttl: repeated once a day
-    on_silence: {state: null, outcome: "the case waits, the card is repeated", remind: 1d}
-    undo: a stop of the governance scope is released by a person with admin:governance in the tenant of the case (GOV-23)
-    urgent: false
-    rules: [APR-12]
   - id: attribution_card
     since: v0.2
     kind: decision
@@ -414,7 +404,7 @@ entries:
     since: v0.3
     kind: notice
     subject: null
-    recipients: tenant admins with admin:governance; every commission seat has a holder with at least 20 scored forecasts, with the accuracy of every seat and the charter field to change; no buttons
+    recipients: tenant admins with admin:governance; every commission seat has a holder with at least commission.accountability_min_forecasts scored forecasts (20 by default, GOV-36), with the accuracy of every seat and the charter field to change; no buttons
     ttl: repeated once a month while the condition holds and the mode is shadow
     on_silence: {state: null, outcome: "accountability stays in shadow", remind: 30d}
     undo: none
@@ -521,13 +511,3 @@ entries:
     undo: none
     urgent: false
     rules: [APR-12, DIG-9]
-  - id: translator_suspended
-    since: v0.3
-    kind: notice
-    subject: null
-    recipients: tenant admins with admin:governance; three confirmed script links in 90 days paused drafts with actions for the translator role; lifting goes through P2 (TRN-9)
-    ttl: none
-    on_silence: {state: null, outcome: "the pause stays; read-only scripts still run"}
-    undo: P2 by a person with admin:governance
-    urgent: false
-    rules: [APR-12, TRN-9]

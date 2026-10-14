@@ -23,7 +23,7 @@ P4 has no named operations: the runtime talks to P4 in the provider's format thr
 | Errors | the table "provider answer -> `reason`", which errors open the circuit, when one client retry is allowed | GW-11, GW-12, GW-13, CAP-2 |
 | Reconciliation report | which provider report serves reconciliation and for which period (daily total per workspace) | BUD-10 |
 | Region outside the EU | which regions of the list lie outside the EU: a production tenant with such a region needs a transfer basis `Tenant.spec.model_transfer` (D-87 (2)) | GW-14 |
-| Key and workspace | how P4 holds the tenant's key and workspace and how it checks the ceilings daily | GW-3, GW-9 |
+| Key and workspace | how P4 holds the tenant's key and workspace and how `doctor` reads the ceilings | GW-3, GW-9 |
 | Checks | what the mock provider `mock.md` must be able to do for this binding | |
 
 A binding is not a transparent proxy. A binding introduces no new reasons or record fields: a reason code comes only from `spec/model/reasons.yaml`, a usage line only follows `spec/model/spend.schema.json`.

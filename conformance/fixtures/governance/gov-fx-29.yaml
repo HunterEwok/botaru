@@ -1,63 +1,40 @@
-# Case flags and the seat calibration (GOV-19, COM-12). Each case seeds a closed round or case and reads the flags.
+# Case flags (GOV-19). Each case seeds a case with the list L, the leaver that a person chose or code proposed, and reads the flags.
 id: gov-fx-29
 rules: [GOV-19]
 version: v0.2
 description: 'Code sets case flags only from spec/model/governance-flags.yaml, each by its when condition; flags decide nothing,
-  so the same ballots with and without a flag give the same rounds and outcome. A holder''s calibration is the calibration of the
-  lens executor of its seat (COM-11); it is read only by the ballot package, key K2 and the defaulted ballot rule, and people see
-  it with the flags on the promotion card and in P2.'
+  so the same choice with and without a flag gives the same outcome. People see the flags on the promotion card next to the
+  figures of every seat of L.'
 given:
   tenant: demo
   people:
-  - {principal: human:bob, caps: ['admin:governance']}
+  - {principal: human:bob, caps: ['admin:governance', 'governance.confirm:commission']}
   case:
     id: gc_7
     snapshot:
-      voters: [bot_05, bot_07, bot_09, bot_12, bot_40]
       list: ['commission:1', 'commission:2', 'commission:3']
-  calibration: {'commission:1': 0.05, 'commission:2': -0.02, 'commission:3': 0.09}
 cases:
 - id: gov-fx-29-a
-  description: identical_reasons and evicts_top_calibrated.
+  description: evicts_upheld_veto when the chosen leaver has a veto that people upheld.
   given:
-    ballots:
-      round_1:
-        bot_05: {choice: 'commission:3', reasons: [refuted_vetoes]}
-        bot_07: {choice: 'commission:3', reasons: [refuted_vetoes]}
-        bot_09: {choice: 'commission:1', reasons: [calibration_low]}
-        bot_12: {choice: 'commission:3', reasons: [refuted_vetoes]}
-        bot_40: {choice: 'commission:3', reasons: [refuted_vetoes]}
-  expect:
-    case_outcome: {leaver: 'commission:3'}
-    flags: [identical_reasons, evicts_top_calibrated]
-- id: gov-fx-29-b
-  description: evicts_upheld_veto when the leaving holder has a veto that people upheld in the audit sample.
-  given:
-    upheld_vetoes: {bot_09: 1}
-    ballots:
-      round_1: {bot_05: 'commission:3', bot_07: 'commission:3', bot_09: 'commission:1', bot_12: 'commission:3', bot_40: 'commission:3'}
+    upheld_vetoes: {'commission:1': 1}
+    chosen_leaver: 'commission:1'
   expect:
     flags_include: [evicts_upheld_veto]
-- id: gov-fx-29-c
-  description: Flags decide nothing; the same ballots give the same rounds and outcome whatever the flags.
-  given: {replay_of: gov-fx-29-a, flags_suppressed_in_replay: true}
-  expect: {same_rounds_and_outcome: true}
-- id: gov-fx-29-d
-  description: A flag code outside the registry is never written; the reissue counter is a number, not a flag.
+- id: gov-fx-29-b
+  description: From v0.3 evicts_top_calibrated when the proposed leaver has the best accuracy of its lens.
   given:
-    ballots_reissued_round_1: 2
+    version: v0.3
+    accuracy: {'commission:1': 0.12, 'commission:2': 0.05, 'commission:3': 0.20}
+    lenses: {'commission:1': value, 'commission:2': security, 'commission:3': value}
+    chosen_leaver: 'commission:3'
+  expect:
+    flags_include: [evicts_top_calibrated]
+- id: gov-fx-29-c
+  description: Flags decide nothing; the same choice gives the same outcome whatever the flags.
+  given: {replay_of: gov-fx-29-a, flags_suppressed_in_replay: true}
+  expect: {same_outcome: true}
+- id: gov-fx-29-d
+  description: A flag code outside the registry is never written.
   expect:
     flags_subset_of_registry: governance-flags
-    rounds: [{n: 1, ballots: {reissued: 2}}]
-    card_line: 'Ballot reissues: 2'
-- id: gov-fx-29-e
-  description: The holder calibration on the card and in P2 equals the lens executor calibration of its seat.
-  steps:
-  - call:
-      port: P2
-      op: bot.show
-      request: {op: bot.show, id: bot_09}
-    by: human:bob
-  expect:
-    bot_show: {record: {calibration: 0.09}}
-    promotion_card_calibration: {'commission:3': 0.09}

@@ -153,7 +153,7 @@ A **tenant** answers the question "whose data is this and whose money". It is a 
 
 Example. The tenants `demo` and `demo2` have websites on the same machine `web1`. Then two toolhosts run on `web1`: one is recorded in `demo`, the other in `demo2`, and each has its own resource catalog. A tool call from a `demo` task on the resource `host-web1` gets the `target` (demo, `logs`, host, `web1`), and only the `demo` toolhost can take it. The `demo` model cannot name a `demo2` resource: no such value is in the closed list of its task.
 
-**A workspace per tenant.** Every tenant has its own workspace and key at the model provider, so that prompt caches and bills do not mix, and every workspace has its own spending and rate ceilings, because the organization's limits at the provider are shared (D-42). Only P4 has the provider key (GW-3). The core checks every day that the ceilings are in place. Details are in `docs/models-and-money.md`.
+**A workspace per tenant.** Every tenant has its own workspace and key at the model provider, so that prompt caches and bills do not mix, and every workspace has its own spending and rate ceilings, because the organization's limits at the provider are shared (D-42). Only P4 has the provider key (GW-3). `apply` checks the ceiling shares, and `farmctl doctor` reads the ceilings at the provider (GW-9). Details are in `docs/models-and-money.md`.
 
 **Tenant kind and limits.** A tenant has a kind: `kind: test` or `kind: production`, and there are no other kinds; for a production tenant the lint forbids the "approves itself" setting (APR-9). A tenant has limits on the queue, on enqueues per hour and on disk space; exceeding them gives the refusal `over_capacity` rather than a silent slowdown for everyone (DSP-7, CAP-1).
 
@@ -300,7 +300,7 @@ The table below is the list of future ADRs: none of them is written as a file in
 | Campaign | accepted | a mass action from a plan snapshot with one approval | D-20 |
 | Script and translator | accepted | a closed plan of existing types and actions, run only by the initiator's button | D-15 |
 | A farm manager across tenants | accepted | `farm` holds only the seat registry and the holder's identity; the records and work of the seat are in the tenants; one attempt sees one tenant; references only by id and epoch (TEN-1, MGR-3, MGR-24) | D-30, D-33 |
-| Bot identity and governance | accepted | an identity grants no permissions; a human assigns a seat; votes in v0.2 | D-19, D-21, D-33 |
+| Bot identity and governance | accepted | an identity grants no permissions; a human assigns a seat; promotion cases in v0.2 | D-19, D-21, D-33 |
 | Agent runtime | accepted | the reference implementation runs its own loop over P4 without a ready-made agent; the E4 port stays open to other runtimes | D-93 |
 | Implementation language | accepted | the reference implementation and the runner are written in Go in `impl/`; ports keep other components free to use any language | D-91, D-92 |
 

@@ -1,5 +1,5 @@
 registry: reasons
-version: 7
+version: 8
 description: 'Closed registry of reasons: end of an attempt, refusals at enqueue and at a call, waiting, outcomes of calls,
   approvals and deliveries, and also codes of other parts of the farm. A worker in P1 `fail` passes only a code from here; there is no free
   reason text in the records. Record fields: `meaning` (what it means); `spends_attempt` (whether it spends an attempt: true,
@@ -108,8 +108,8 @@ entries:
   rules: [HLD-1, HLD-3]
 - id: provider_quota
   since: v0.1
-  meaning: The tenant has no free share of the needed model pool. The attempt is not spent; this is also a waiting reason
-    of a task.
+  meaning: The pair (tenant workspace, model pool) waits for the provider rate limit. The attempt is not spent; this is also
+    a waiting reason of a task.
   spends_attempt: false
   retry: on_share
   outcome: failed(deadline_exceeded)
@@ -821,27 +821,6 @@ entries:
   retry: null
   outcome: apply_error
   rules: [GOV-34]
-- id: defaulted_majority
-  since: v0.2
-  meaning: 'Case result mark: decided by the default majority.'
-  spends_attempt: null
-  retry: null
-  outcome: mark
-  rules: [GOV-9, GOV-19, GOV-23]
-- id: reopened_after_wrong_leaver
-  since: v0.2
-  meaning: 'Case mark: reopened after a mistaken leave.'
-  spends_attempt: null
-  retry: null
-  outcome: mark
-  rules: [GOV-19, GOV-31]
-- id: manager_absent
-  since: v0.2
-  meaning: 'Case flag: the farm manager vote dropped out.'
-  spends_attempt: null
-  retry: null
-  outcome: mark
-  rules: [GOV-12, GOV-19]
 - id: not_eligible
   since: v0.2
   meaning: 'Promotion queue event: the record did not pass admission and waits.'
@@ -856,20 +835,6 @@ entries:
   retry: null
   outcome: rejected
   rules: [GOV-14]
-- id: governance_budget
-  since: v0.2
-  meaning: The case budget is exhausted.
-  spends_attempt: null
-  retry: null
-  outcome: rejected
-  rules: [GOV-15]
-- id: voters_removed
-  since: v0.2
-  meaning: 'Case flag: the set of voters shrank.'
-  spends_attempt: null
-  retry: null
-  outcome: mark
-  rules: [GOV-19, GOV-23]
 - id: commission_locked
   since: v0.2
   meaning: 'Flag: the commission is locked.'
@@ -905,6 +870,13 @@ entries:
   retry: null
   outcome: rejected
   rules: [MGR-14]
+- id: person_memory_deferred
+  since: v0.2
+  meaning: 'Lint `apply`: a role with `memory: person` while the personal assistant is deferred (DSP-10, D-114).'
+  spends_attempt: null
+  retry: null
+  outcome: apply_error
+  rules: [MEM-2]
 - id: manager_line_too_small
   since: v0.1
   meaning: 'Lint `apply`: the farm manager budget line is too small.'
@@ -912,13 +884,6 @@ entries:
   retry: null
   outcome: apply_error
   rules: [MGR-20]
-- id: manager_spend_paused
-  since: v0.1
-  meaning: 'Code notice: money pause of the farm manager seat for the tenant.'
-  spends_attempt: null
-  retry: null
-  outcome: mark
-  rules: [MGR-14]
 - id: dismiss_reason_required
   since: v0.1
   meaning: Refusal of `incident.dismiss` without a reason code.
@@ -932,7 +897,7 @@ entries:
   spends_attempt: null
   retry: null
   outcome: mark
-  rules: [COM-11, GOV-13, GOV-14, GOV-30, MGR-8, PRP-22]
+  rules: [COM-17, GOV-13, GOV-14, GOV-30, MGR-8, PRP-22]
 - id: manager_disabled
   since: v0.1
   meaning: 'The farm manager is turned off in the tenant (`farm_manager.enabled: false`): operations are refused, and `canceled(manager_disabled)`
@@ -1367,7 +1332,7 @@ entries:
   rules: [MGR-6]
 - id: escalation_rate_limited
   since: v0.2
-  meaning: 'An escalation is over a rate: a second one in the same attempt, 1 per hour per worker, 5 per day per role in the tenant, 20 per day per tenant, or 30 forwarded per day across the farm.'
+  meaning: 'An escalation is over a rate: a second one in the same attempt, 1 per hour per worker or 20 per day per tenant.'
   spends_attempt: null
   retry: null
   outcome: rejected
@@ -1484,6 +1449,14 @@ entries:
   retry: null
   outcome: value
   rules: [CAP-4, HLD-2]
+- id: role_incidents
+  since: v0.3
+  meaning: 'Stop reason of the auto-stop of a role: 3 confirmed links of incidents to the work of the role within 90 days
+    (`spec/model/holds.yaml`).'
+  spends_attempt: null
+  retry: null
+  outcome: value
+  rules: [HLD-9, HLD-2]
 - id: maintenance
   since: v0.2
   meaning: Stop reason of a hold set by a monitoring system maintenance window on a catalog host (MON-9).
@@ -1505,14 +1478,14 @@ entries:
   retry: null
   outcome: rejected
   rules: [GOV-9, GOV-31]
-- id: reason_not_allowed
+- id: leaver_not_offered
   since: v0.2
-  meaning: 'A "Reject" reason code that this case does not allow: `wrong_leaver` in a vacancy case or in a case reopened after
-    `wrong_leaver`.'
+  meaning: '"Confirm" on a promotion card names in `choice` a seat outside the list L of the case, or other than the seat code
+    proposed.'
   spends_attempt: null
   retry: null
   outcome: rejected
-  rules: [GOV-31]
+  rules: [GOV-12]
 - id: attribution_pending
   since: v0.2
   meaning: '"Confirm" on a promotion card while the candidate''s change has attribution candidates without a "Yes" or "No"
@@ -1521,17 +1494,10 @@ entries:
   retry: null
   outcome: rejected
   rules: [GOV-9, GOV-30]
-- id: no_voters
-  since: v0.2
-  meaning: 'Case cancellation reason: the set `expected` became empty, so no round can be counted.'
-  spends_attempt: null
-  retry: null
-  outcome: canceled
-  rules: [GOV-8]
 - id: accountability_not_ready
   since: v0.3
   meaning: 'Lint `apply`: the charter sets `commission.accountability: on` while a commission seat has no holder or a holder has
-    fewer than 20 scored forecasts.'
+    fewer scored forecasts than `commission.accountability_min_forecasts` (20 by default, at least 8).'
   spends_attempt: null
   retry: null
   outcome: apply_error
@@ -1559,25 +1525,3 @@ entries:
   retry: null
   outcome: rejected
   rules: [PRP-24]
-- id: translator_suspended
-  since: v0.3
-  meaning: The translator role of the tenant is paused after three confirmed script links in 90 days; drafts with actions or
-    service control are refused, read-only drafts are accepted.
-  spends_attempt: null
-  retry: null
-  outcome: rejected
-  rules: [TRN-9]
-- id: stops_manager_unused
-  since: v0.3
-  meaning: 'Warning of `apply`: an incident class sets `stops_manager`, which a v0.3 core reads as `manager_accountable: true`.'
-  spends_attempt: null
-  retry: null
-  outcome: mark
-  rules: [MGR-55]
-- id: incident_stop_unused
-  since: v0.3
-  meaning: 'Warning of `apply`: the farm charter sets `farm_manager.incident_stop`, which a v0.3 core does not use.'
-  spends_attempt: null
-  retry: null
-  outcome: mark
-  rules: [MGR-55]

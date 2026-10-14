@@ -4,7 +4,7 @@ This file is generated from the registry `conformance/requirements.yaml`.
 
 A deferred rule is not part of any skeleton version: no version checks it. While its mechanism is still in the skeleton ("Mechanism removed: no"), documents, schemas and registries may still name it; once the mechanism is removed, nothing outside this file, the decision log and the changelog may refer to it. Its row keeps the full text so that the rule can come back unchanged when the condition in "Returns when" holds; it then becomes active in the version current at that time. "Mechanism removed" says whether the code and the skeleton were cleaned of what the rule needed. An implementation does not offer the mechanism of a deferred rule even where its fields are still in the schemas: without its rule the mechanism has none of its conditions (D-114).
 
-Deferred rules: 41.
+Deferred rules: 43.
 
 | Number | Title | Deferred | Why | Returns when | Mechanism removed |
 |---|---|---|---|---|---|
@@ -21,6 +21,7 @@ Deferred rules: 41.
 | [DIG-9](#DIG-9) | A clear benefit of a rejected change reaches people as one line | 2026-10-14 | Depends on PRP-25 and returns with it. | PRP-25 returns. | no |
 | [DLV-17](#DLV-17) | Outgoing webhook sink | 2026-10-14 | The pilot delivers to people and to the monitoring system; no outgoing webhook is needed. When it returns, its SSRF protection and signature stay mandatory. | A tenant needs to push results to an external program. | no |
 | [DSP-9](#DSP-9) | Dispatch can be explained | 2026-10-14 | An operator of the pilot sees why a task waits from the queue counters and doctor; a separate explanation operation is not needed yet. | An operator asks why a task waits and the counters do not answer. | no |
+| [DSP-10](#DSP-10) | A personal assistant is a pool of workers with the owner in the lease | 2026-10-14 | The personal assistant stays among the goals but is not in the queue of the pilot, which starts with operations tasks; per-person memory returns with it, and its protections (IDN-5, MEM-1 to MEM-4) stay active. | People of the pilot tenant need a personal assistant. | no |
 | [DSP-11](#DSP-11) | Bot group quota and a rule's share | 2026-10-14 | A pilot tenant has few bot groups; the per-type max_running (DSP-7) is enough. | Several bot groups of one tenant compete for capacity. | no |
 | [GOV-35](#GOV-35) | Locked commission | 2026-10-14 | The card "the commission is stuck" works on three months of flags and does not fire before the pilot ends. | The commission has worked for three months. | no |
 | [GOV-39](#GOV-39) | The farm manager may only hint at a link | 2026-10-14 | Before the pilot links are found by code and confirmed by people; a hint of the farm manager is not needed. | Code misses links that the farm manager could point at. | no |
@@ -40,10 +41,11 @@ Deferred rules: 41.
 | [PRP-25](#PRP-25) | Replay of a rejected change over the history | 2026-10-14 | Replaying a rejected change over the history needs a replay engine of alarms and limits; too costly before the pilot. The outcome of D-109 (8) returns with it. | The farm has enough history of rejected changes to replay them. | no |
 | [RET-9](#RET-9) | Tenant retention periods | 2026-10-14 | The default retention periods (RET-2) are enough for the pilot. | A tenant needs retention periods other than the defaults. | no |
 | [SBX-1](#SBX-1) | Tier 2 lives only in the sandbox | 2026-10-14 | Tier 2 and the sandbox are not needed for operations tasks; the rule returns whole with its prohibitions, and the reserve unit of sandbox seconds returns with it. | A tenant needs data analysis by model-written code. | no |
-| [SBX-2](#SBX-2) | One disposable container per task | 2026-10-14 | Goes with SBX-1. | SBX-1 returns. | no |
+| [SBX-2](#SBX-2) | One disposable container per task | 2026-10-14 | Goes with SBX-1. | SBX-1 returns; the `sandbox_seconds` meter returns to `spec/model/meters.yaml` and BUD-5 with it. | no |
 | [SCR-12](#SCR-12) | A script from git on a schedule | 2026-10-14 | Scripts from git on a schedule are a second way to run things next to task schedules (TIM-3), which the operations pilot uses. | A tenant needs a multi-step script on a schedule. | no |
 | [SCR-13](#SCR-13) | The steps wait and await | 2026-10-14 | Steps that wait days for events are not needed for the first operations tasks. | A script needs to wait for time or an external event. | no |
 | [SCR-14](#SCR-14) | A script from git with parameters and a free goal | 2026-10-14 | Scripts from git with parameters are a second launch path next to the translator; not needed before the pilot. | A tenant needs a reviewed script with parameters. | no |
+| [SCR-15](#SCR-15) | Rollups and selections over the items of a fanout step | 2026-10-14 | Conditions over rollups of fanout items and the selection of items by a result are more than the first operations tasks need; SCR-3 keeps eq, ne and in over closed fields of a step with one result and over the step state (D-114). | An assignment of the pilot needs to act only on the items of a fanout step that a result selects. | yes |
 | [SEC-7](#SEC-7) | A person's connection to an external service | 2026-10-14 | People's connections to their own external services serve the personal assistant, not the operations pilot; the rule returns whole with its protections. | The personal assistant enters the pilot. | no |
 | [SEC-12](#SEC-12) | Privacy report | 2026-10-14 | A privacy report is a convenience for a data protection assessment; before the pilot the links of SEC-8 are enough. | The organization asks for a privacy report. | no |
 | [SKL-4](#SKL-4) | Reading a skill through the core | 2026-10-14 | Reading a skill through the core belongs to the skills feature; SKL-2 and SKL-3 keep the protection. | Roles of the pilot use skills. | no |
@@ -141,6 +143,13 @@ serves [G5](../docs/goals.md) · was v0.2 · profile core · check: blackbox
 
 P2 `dispatch.explain` shows, for each condition of the closed list, how many workers pass it and what place the task has in the dispatch order, and P2 `dispatch.queue` gives counters by class and fairness key. Both operations only read and return only metadata. Direct requests of people are counted as one row of kind `interactive`; neither operation returns a task body, goal or principal id, keeps a history or raises an alarm.
 
+<a id="DSP-10"></a>
+## DSP-10. A personal assistant is a pool of workers with the owner in the lease
+
+serves [G1](../docs/goals.md) · was v0.1 · profile core · check: fixture, lint, blackbox
+
+A personal assistant task (a type of a role with per-person memory, `memory: person`, for example `assist.chat.v1`) is handed out to any ready worker of the assistant role; the core writes the owner (`owner`, the initiating principal of the task from a private chat) into the lease at `claim`, and the core uses it to choose the memory space and the session (MEM-1, RT-1). There is no worker per person: a worker record has no `owner` field, and P2 `worker.enroll` does not accept one. The personal assistant type is not part of the tenant's `default_types` (lint at `apply` rejects the catalog with the reason `assistant_in_default_types`); a person reaches the assistant only by an explicit address: with the command `/a <text>` from `commands`, or through a separate channel binding that has `ChatBinding.assistant: true` and only private chats. Free text in a private chat without a command gets a type from `default_types` or the code text of `/help`, not the assistant. Check: fixture `fx-dsp-07`: two workers of the role `assistant`, `/a` tasks from `alice` and `bob` are handed to different workers, each lease records its own `owner`, and the memory of one is not visible to the attempt of the other; a catalog with `assist.chat.v1` in `default_types` is rejected by `apply`.
+
 <a id="DSP-11"></a>
 ## DSP-11. Bot group quota and a rule's share
 
@@ -153,7 +162,7 @@ A bot group's `max_running` caps the running attempts on the group's member work
 
 serves [G5](../docs/goals.md) · was v0.2 · profile governance · check: fixture, blackbox
 
-A tenant's commission counts as locked when a flag holds steadily: the audit sample flag `commission_underrates` (DIG-5) is in three monthly digests in a row, or three cases in a row in the tenant closed with the same one of the case flags `identical_reasons`, `evicts_top_calibrated`, `evicts_upheld_veto`, `single_model_bloc` and `defaulted_majority` (GOV-19). For `commission_underrates` of a veto lens the basis names the seats of that lens, for a case flag all seats. Then the `governance` loop sends the tenant admins with `admin:governance` the card `commission_review` without buttons (`spec/model/decision-points.yaml`): the seats, the lens, the holders, the flag and code figures, and the ready commands `farmctl seat vacate <seat>` and `farmctl seat assign <seat> <bot>` (replacing the holder); the card is repeated once a month while the flag holds. `doctor` and P2 `commission.status` show "commission locked" (`commission_locked`) with the same basis. The card decides nothing and frees no seat: only a person changes the holder, through `farmctl` (PRM-14, IDN-10), and neither code nor a bot opens a case on this basis.
+A tenant's commission counts as locked when a flag holds steadily: the audit sample flag `commission_underrates` (DIG-5) is in three monthly digests in a row, or three cases in a row in the tenant closed with the same one of the case flags `evicts_top_calibrated` and `evicts_upheld_veto` (GOV-19). The basis names all seats. Then the `governance` loop sends the tenant admins with `admin:governance` the card `commission_review` without buttons (`spec/model/decision-points.yaml`): the seats, the lens, the holders, the flag and code figures, and the ready commands `farmctl seat vacate <seat>` and `farmctl seat assign <seat> <bot>` (replacing the holder); the card is repeated once a month while the flag holds. `doctor` and P2 `commission.status` show "commission locked" (`commission_locked`) with the same basis. The card decides nothing and frees no seat: only a person changes the holder, through `farmctl` (PRM-14, IDN-10), and neither code nor a bot opens a case on this basis.
 
 <a id="GOV-39"></a>
 ## GOV-39. The farm manager may only hint at a link
@@ -302,6 +311,13 @@ serves [G1](../docs/goals.md) · was v0.2 · profile campaign · check: lint, bl
 
 A `kind: Script` manifest reviewed in the tenant's git may declare `params`: at most 16 named parameters, each of type integer, number or boolean, or a string with `enum` or a format from `formats.yaml` (there is no free string, INJ-1), with an optional `default`. Steps use a parameter only as a whole value `{param: <name>}` in `params`, `args` and `await.match`. Only such a script may declare `goals`: free goal texts of at most 2000 characters, reviewed in git and used without substitution, which an agent step names with `goal: {template: <id>}`; a name may not repeat a goal template of the step's type. A draft from the model or an improvement proposal with `goals`, `params` or `{param}` is rejected at acceptance with `script_free_goal` (SCR-4, SCR-5). A person starts a script from git with a command from `Tenant.spec.script_commands` (`/<command> key=value ...`): the core checks each value against the declared parameter, a missing one takes its `default` and without a default the command is refused with `script_param_invalid`; then it accepts the script like a draft (SCR-5) with the person as the initiator and creates the run in `proposed` with the `script_confirm` card, and the button and its checks are those of SCR-6. The run record keeps the manifest name and its commit, and `plan_hash` covers the parameter values. A schedule starts a script from git only with the default values (SCR-12). `apply` rejects an undeclared or free parameter, a `{param}` that names no declared parameter, a goal name that is in neither list or in both, and a script command that takes a built-in or a tenant command (`script_param_invalid`, `builtin_command`).
 
+<a id="SCR-15"></a>
+## SCR-15. Rollups and selections over the items of a fanout step
+
+serves [G1](../docs/goals.md) · was v0.2 · profile campaign · check: lint, blackbox
+
+Besides SCR-3, a `when` condition may use the atoms `lt`, `le`, `gt`, `ge`, `not_in` and `exists`, and may read the rollups `count`, `sum`, `min`, `max` of the `summary_fields` fields of the campaign items of a `fanout` step (`{ref: <step>.<rollup>.<field>}`, with a number literal); an `items.from` selection with a `where` atom reads only the `summary_fields` fields of the items of an earlier `fanout` step, and the core selects the items from the frozen list of that step. The limits of SCR-3 on nesting and the number of atoms hold.
+
 <a id="SEC-7"></a>
 ## SEC-7. A person's connection to an external service
 
@@ -321,7 +337,7 @@ P2 `tenant.privacy_report` collects per tenant: the processing purposes; the ret
 
 serves [G1](../docs/goals.md) · was v0.2 · profile knowledge · check: blackbox
 
-From v0.2 a run whose runtime declares `skills: farm` gets the built-in tool `skill_read` in its P3 catalog, only for profiles `worker` and `manager` and never in a `handover` task (PRF-1, MEM-7). Its arguments are closed: `name` by an enum of the role's pinned skills and `file` by an enum of that skill's files (`skill-read-request`); the answer is the file text from the core copy of the pinned tree, at most 32 KiB per call with `next_offset` for the rest (`skill-read-response`). A skill outside the role, or a tree whose hash does not match, is not readable (SKL-2). Skill text is reviewed git text and does not set `untrusted_seen`; it changes no tool, tier or data class (SKL-3).
+From v0.2 a run whose runtime declares `skills: farm` gets the built-in tool `skill_read` in its P3 catalog, only for profiles `worker` and `manager` (PRF-1). Its arguments are closed: `name` by an enum of the role's pinned skills and `file` by an enum of that skill's files (`skill-read-request`); the answer is the file text from the core copy of the pinned tree, at most 32 KiB per call with `next_offset` for the rest (`skill-read-response`). A skill outside the role, or a tree whose hash does not match, is not readable (SKL-2). Skill text is reviewed git text and does not set `untrusted_seen`; it changes no tool, tier or data class (SKL-3).
 
 <a id="STA-3"></a>
 ## STA-3. Two columns and a mismatch code

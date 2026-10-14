@@ -12,16 +12,15 @@ machines:
       or its seat'
   - id: suspended
     terminal: false
-    meaning: 'There is a hold by people of the `bot` scope on the identity: no tasks, reviews or ballots; it is not included
-      in the voters of a new case, and it drops out of a running case with the flag `voters_removed`'
+    meaning: 'There is a hold by people of the `bot` scope on the identity: no tasks or reviews'
   - id: unbound
     terminal: false
     meaning: 'The identity''s worker is revoked, there is no new binding. No tasks, the memory is intact. Happens only with
       a `mode: worker` binding'
   - id: retired
     terminal: true
-    meaning: The identity retired for a reason from a closed list. No tasks, reviews, ballots and facts from it are not accepted;
-      facts, records, the track record and sessions are sealed; the fact offer to the successor is open
+    meaning: The identity retired for a reason from a closed list. No tasks, reviews and facts from it are accepted; facts,
+      records, the track record and sessions are sealed; the fact offer to the successor is open
   - id: erased
     terminal: true
     meaning: 'The sealed data is wiped in all stores; only the tombstone remains: id, tenant, role, time, reason and the successor''s

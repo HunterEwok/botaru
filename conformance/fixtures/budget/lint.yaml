@@ -1,8 +1,8 @@
 id: fx-budget-lint
 rules: [BUD-9, BUD-13, BUD-2, GW-2]
 description: 'Apply lint on money: the field max_tokens in manifests is rejected, tree_budget_eur is required for every
-  type with a model (BUD-9); the money of the review line covers the reviews of the proposal ceiling, a lens profile with max_output_tokens
-  above 2000 does not pass (BUD-13); a tree limit of a type with a model below the reserve of one call does not pass
+  type with a model (BUD-9); the monthly review line covers max_per_week times 4.4 times the review price of one proposal for
+  every role, a lens profile with max_output_tokens above 2000 does not pass (BUD-13); a tree limit of a type with a model below the reserve of one call does not pass
   (tree_budget_below_call, GW-2, BUD-2).'
 cases:
 - id: bud-fx-10
@@ -38,8 +38,8 @@ cases:
   expect: {result: ok}
 - id: bud-fx-13
   rules: [BUD-13]
-  description: 'A role with insight: a ceiling of 4 runs in 31 days, 2 proposals per result, the review price of one proposal
-    3 lenses at 0.08 EUR; the estimate of 1.92 EUR fits into the role share of 30% of the review line of 50 EUR (15 EUR) and into the monthly limit.'
+  description: 'A role with insight.max_per_week 3, the review price of one proposal 3 lenses at 0.08 EUR; the need of
+    3 x 4.4 x 0.24 = 3.168 EUR fits into the review line of 50 EUR.'
   given:
     tenant: demo
     lines:
@@ -47,19 +47,18 @@ cases:
       review: {month_eur: 50}
     roles:
     - name: ops-reader
-      insight: {max_runs: 4}
-      proposals_per_result: 2
+      insight: {max_per_week: 3}
     lenses:
     - {type: review.risk.v1, tree_budget_eur: 0.08}
     - {type: review.cost.v1, tree_budget_eur: 0.08}
     - {type: review.privacy.v1, tree_budget_eur: 0.08}
   expect:
     result: ok
-    estimate_eur: {ops-reader: 1.92}
+    need_eur: 3.168
 - id: bud-fx-14
   rules: [BUD-13]
-  description: The role estimate of 1.92 EUR is greater than the share of one author role, 30% of the review line of 2 EUR (0.60 EUR); apply is rejected,
-    and doctor shows the missing amount.
+  description: The need of 3.168 EUR is above the review line of 2 EUR; apply is rejected, and doctor shows the missing amount
+    rounded up to a euro cent.
   given:
     tenant: demo
     lines:
@@ -67,13 +66,12 @@ cases:
       review: {month_eur: 2}
     roles:
     - name: ops-reader
-      insight: {max_runs: 4}
-      proposals_per_result: 2
+      insight: {max_per_week: 3}
     lenses:
     - {type: review.risk.v1, tree_budget_eur: 0.08}
     - {type: review.cost.v1, tree_budget_eur: 0.08}
     - {type: review.privacy.v1, tree_budget_eur: 0.08}
-  expect: {result: rejected, stage: apply, doctor_shortfall_eur: 1.32}
+  expect: {result: rejected, stage: apply, doctor_shortfall_eur: 1.17}
 - id: bud-fx-15
   rules: [BUD-13]
   description: A lens model profile with max_output_tokens above 2000 does not pass apply.

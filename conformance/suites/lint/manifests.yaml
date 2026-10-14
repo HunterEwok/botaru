@@ -184,7 +184,7 @@ checks:
   - PRM-16
   version: v0.1
   section: Tests without a model
-  source: docs/quality.md:529
+  source: docs/quality.md:530
   spec:
     What: a group with `action.request` in `delegated_groups`
     Expectation: '`apply` rejects the tenant'
@@ -194,7 +194,7 @@ checks:
   - APR-16
   version: v0.2
   section: Tests without a model
-  source: docs/quality.md:547
+  source: docs/quality.md:548
   spec:
     What: '(v0.2) a `kind: production` tenant `demo` whose group grants `action.request` for an action with `risk: high` and
       `approvals: 1`; the same action with `approvals: 2`; a `kind: test` tenant with `approvals: 1`'
@@ -205,7 +205,7 @@ checks:
   - INJ-4
   version: v0.1
   section: Tests without a model
-  source: docs/quality.md:567
+  source: docs/quality.md:568
   spec:
     What: 'a tool with `placement: host` and `untrusted_output: true` without `redact: [ip, email, secret]`'
     Expectation: '`apply` rejects the plugin'
@@ -215,7 +215,7 @@ checks:
   - DEP-11
   version: v0.1
   section: Tests without a model
-  source: docs/quality.md:568
+  source: docs/quality.md:569
   spec:
     What: 'a `demo` catalog with `monitor_host: core1.example.org` or a resource with `host: core1`'
     Expectation: '`apply` rejects the catalog: `core1` is in the deployment''s `farm_hosts` (case `ops-030`)'

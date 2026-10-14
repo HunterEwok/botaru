@@ -55,7 +55,7 @@ An aggregator proposal does not change the states of other proposals: an overlap
 | `realizing` | `realization_failed` | the core | the object was not executed (`object_failed`) or `realize_by` expired (`timeout`) | PRP-18 |
 | `realized` | `reverted` | the core: a commit with the line `Botaru-Revert: <id> <reason>` is applied | the commit returns the values of the reverse edit; the reason is from a closed list, `other` without it; `harm_observed` closes the trial with the outcome `worse` | PRP-20, PRP-22, PRP-23 |
 | `sampled` | `sample_presented` | delivery of `proposal_sample_card` through a channel (E1) | a recipient with `proposal.decide:<category>`; the recipient's address and ceiling | DIG-5, DIG-6, DIG-2 |
-| `sample_presented` | `sample_judged` | the "Would accept" button | the answer is written to the sample and the calibration before the scores are shown | DIG-6, COM-11 |
+| `sample_presented` | `sample_judged` | the "Would accept" button | the answer is written to the sample and scores the forecasts before the scores are shown | DIG-6, COM-16 |
 | `sample_presented` | `sample_closed` | the "Would not accept" button or the `decide_ttl` deadline | | DIG-6 |
 | `sample_judged` | `realizing` | the "Accept" button (no veto) or "Lift veto" (there is a veto, the capability `proposal.override_veto:<category>`, after "Details") | the kind is not `none`; the rights; the target is not locked | DIG-6, PRP-4, PRP-9, PRP-18, PRP-21 |
 | `sample_judged` | `noted` | the "Accept" or "Lift veto" button | the kind is `none` | DIG-6, PRP-4 |

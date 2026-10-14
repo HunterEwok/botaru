@@ -3,10 +3,10 @@ id: gov-fm-01
 rules: [GOV-25]
 version: v0.2
 description: 'While the manager seat is held, every proposal in in_review of a tenant that did not opt out gets a review.farm_manager.v1
-  task in that tenant: on a worker of the tenant''s seat role commission.seat_role, slot seat with the manager seat profile (or the
-  tenant''s own farm_manager.model_profile), the tenant''s key and review line; input as for seat lenses plus the holder''s facts of
+  task in that tenant: on a worker of the tenant''s seat role commission.seat_role, slot seat with the manager seat profile of the farm
+  charter, the tenant''s key and review line; input as for seat lenses plus the holder''s facts of
   the tenant section with untrusted_origin false. Weight 1, no veto, not in min, high_risk and untrusted, not needed for the quorum;
-  in the vote the manager has one vote and its enum is the whole L.'
+  the manager takes no part in choosing who leaves.'
 given:
   tenant: demo
   commission:
@@ -39,14 +39,6 @@ cases:
       CANARY-NOT-A-SECRET-fm-trusted: true
       CANARY-NOT-A-SECRET-fm-untrusted: false
       CANARY-NOT-A-SECRET-fm-demo2: false
-- id: gov-fm-01-b
-  description: The tenant's own farm_manager.model_profile replaces the farm charter profile for seat attempts in the tenant.
-  given:
-    tenant: {name: demo, farm_manager: {enabled: true, lens: true, model_profile: manager-alt}}
-  steps:
-  - stand: {op: loop.tick, loop: proposal}
-  expect:
-    task: {type: review.farm_manager.v1, model_profile: manager-alt}
 - id: gov-fm-01-c
   description: A veto in the manager review does not pass the schema; the lens weight is 1 whatever the manifest says.
   cases:
@@ -81,12 +73,3 @@ cases:
   expect:
     tasks_of_type: {review.farm_manager.v1: 0}
     verdict_mark: without_manager_vote
-- id: gov-fm-01-f
-  description: In the vote the manager's enum is the whole L.
-  given:
-    case: {id: gc_7, snapshot: {voters: [bot_05, bot_07, bot_09, bot_12, bot_41], list: ['commission:1', 'commission:2', 'commission:3']}}
-  steps:
-  - stand: {op: loop.tick, loop: governance}
-  expect:
-    enum: {bot_41: ['commission:1', 'commission:2', 'commission:3']}
-    ballot_task: {acting_bot: bot_41, tenant: demo, claimed_by_role: commission-member, slot: seat, budget_line: governance@demo}

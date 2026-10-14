@@ -1,21 +1,15 @@
 # Collected from spec/lifecycles/case.yaml. The value null in from means "the object does not exist yet".
 lifecycle: spec/lifecycles/case.yaml
 object: case
-rules: [GOV-6, GOV-7, GOV-8, GOV-9, GOV-12, GOV-14, GOV-15, GOV-23, GOV-30, GOV-31, IDN-10]
+rules: [GOV-6, GOV-9, GOV-12, GOV-14, GOV-30, GOV-31, GOV-43, IDN-10]
 description: Allowed and forbidden transitions of the "governance case" lifecycle, collected from the tables of spec/lifecycles/case.md.
   The implementation accepts a transition from the allowed list under the condition of its row (when); a pair from the forbidden
   list does not change the state, and the call that asks for it is rejected. The value null in from means "the object does
-  not exist yet". Rows with "any open" are expanded over all non-terminal states; the hold and stuck flags do not change
-  the state and are recorded as a transition to the same state with a to_note mark. The whole lifecycle arrives in v0.2.
+  not exist yet". Rows with "any open" are expanded over all non-terminal states; the hold flag does not change the state
+  and is recorded as a transition to the same state with a to_note mark. The whole lifecycle arrives in v0.2.
 version: v0.2
 states:
 - id: opened
-  terminal: false
-- id: parked
-  terminal: false
-- id: balloting
-  terminal: false
-- id: counted
   terminal: false
 - id: confirming
   terminal: false
@@ -32,693 +26,295 @@ allowed:
   from: null
   to: opened
   by: the governance loop
-  when: the head of the queue under the conditions of GOV-14; the tenant has no open case and no hold on the governance
-    scope; in removal mode L is not empty and the swap_cooldown pause has passed
+  when: the queue head under the conditions of GOV-14; the tenant has no open case and no hold on the governance scope; in
+    the removal mode L is not empty and the swap_cooldown pause has passed
   rules: [GOV-6, GOV-12, GOV-14]
 - id: sm-case-02
   from: opened
-  to: parked
+  to: confirming
   by: the governance loop
-  when: the governance line lacks money for the case estimate, starting with the farm manager's ballot
-  rules: [GOV-15]
+  when: 'the card is sent: in the vacancy mode with the free seat, in the removal mode with L, the figures of its seats and
+    the leaver code proposed, if any'
+  rules: [GOV-12, GOV-14, GOV-43]
 - id: sm-case-03
-  from: parked
+  from: opened
   to: opened
-  by: the governance loop
-  when: money has appeared
-  rules: [GOV-15]
+  to_note: same, flag hold
+  from_note: any open
+  by: P2 hold.set on the governance scope
+  when: a hold by people; lifting the hold continues the case from the same place
+  rules: [GOV-14]
 - id: sm-case-04
-  from: opened
+  from: confirming
   to: confirming
-  by: the governance loop
-  when: 'vacancy mode, or L has one seat: its holder leaves without ballots'
-  rules: [GOV-8, GOV-14]
+  to_note: same, flag hold
+  from_note: any open
+  by: P2 hold.set on the governance scope
+  when: a hold by people; lifting the hold continues the case from the same place
+  rules: [GOV-14]
 - id: sm-case-05
-  from: opened
-  to: balloting
-  to_note: balloting(1)
-  by: the governance loop
-  when: money is reserved, the ballot tasks are enqueued
-  rules: [GOV-7, GOV-15]
-- id: sm-case-06
-  from: balloting
-  to: counted
-  to_note: counted(n)
-  from_note: balloting(n)
-  by: the governance loop
-  when: every member of expected has exactly one ballot of the round recorded
-  rules: [GOV-23]
-- id: sm-case-07
-  from: counted
-  to: balloting
-  to_note: balloting(n+1)
-  from_note: counted(n)
-  by: the governance loop
-  when: 'no outcome: the seat with the fewest votes is struck out'
-  rules: [GOV-8]
-- id: sm-case-08
-  from: counted
-  to: confirming
-  from_note: counted(n)
-  by: the governance loop
-  when: 'there is an outcome: a seat with at least need votes, or the only one left'
-  rules: [GOV-8]
-- id: sm-case-09
-  from: opened
-  to: opened
-  to_note: same, flag hold
-  from_note: any open
-  by: P2 hold.set on the governance scope or the "Pause" button on the governance_stuck card
-  when: a hold by people; lifting the hold continues the case from the same point
-  rules: [GOV-23]
-- id: sm-case-10
-  from: parked
-  to: parked
-  to_note: same, flag hold
-  from_note: any open
-  by: P2 hold.set on the governance scope or the "Pause" button on the governance_stuck card
-  when: a hold by people; lifting the hold continues the case from the same point
-  rules: [GOV-23]
-- id: sm-case-11
-  from: balloting
-  to: balloting
-  to_note: same, flag hold
-  from_note: any open
-  by: P2 hold.set on the governance scope or the "Pause" button on the governance_stuck card
-  when: a hold by people; lifting the hold continues the case from the same point
-  rules: [GOV-23]
-- id: sm-case-12
-  from: counted
-  to: counted
-  to_note: same, flag hold
-  from_note: any open
-  by: P2 hold.set on the governance scope or the "Pause" button on the governance_stuck card
-  when: a hold by people; lifting the hold continues the case from the same point
-  rules: [GOV-23]
-- id: sm-case-13
-  from: confirming
-  to: confirming
-  to_note: same, flag hold
-  from_note: any open
-  by: P2 hold.set on the governance scope or the "Pause" button on the governance_stuck card
-  when: a hold by people; lifting the hold continues the case from the same point
-  rules: [GOV-23]
-- id: sm-case-14
-  from: opened
-  to: opened
-  to_note: same, flag stuck
-  from_note: any open
-  by: the governance loop
-  when: the round has waited for votes longer than stuck_after (24 h) for an infrastructure reason; the flag is cleared
-    when the round is closed
-  rules: [GOV-23]
-- id: sm-case-15
-  from: parked
-  to: parked
-  to_note: same, flag stuck
-  from_note: any open
-  by: the governance loop
-  when: the round has waited for votes longer than stuck_after (24 h) for an infrastructure reason; the flag is cleared
-    when the round is closed
-  rules: [GOV-23]
-- id: sm-case-16
-  from: balloting
-  to: balloting
-  to_note: same, flag stuck
-  from_note: any open
-  by: the governance loop
-  when: the round has waited for votes longer than stuck_after (24 h) for an infrastructure reason; the flag is cleared
-    when the round is closed
-  rules: [GOV-23]
-- id: sm-case-17
-  from: counted
-  to: counted
-  to_note: same, flag stuck
-  from_note: any open
-  by: the governance loop
-  when: the round has waited for votes longer than stuck_after (24 h) for an infrastructure reason; the flag is cleared
-    when the round is closed
-  rules: [GOV-23]
-- id: sm-case-18
-  from: confirming
-  to: confirming
-  to_note: same, flag stuck
-  from_note: any open
-  by: the governance loop
-  when: the round has waited for votes longer than stuck_after (24 h) for an infrastructure reason; the flag is cleared
-    when the round is closed
-  rules: [GOV-23]
-- id: sm-case-19
   from: confirming
   to: effective
   by: the "Confirm" button (governance.confirm:commission)
-  when: '"Details" was opened; the candidate''s change has no attribution candidates without an answer; the deadline has
-    not passed'
-  rules: [GOV-9, GOV-30]
-- id: sm-case-20
+  when: '"Details" was opened; the candidate''s change has no unanswered attribution candidates; the deadline has not passed;
+    in the removal mode the button names the proposed seat or the seat the person chose from L'
+  rules: [GOV-9, GOV-12, GOV-30]
+- id: sm-case-06
   from: confirming
   to: rejected
-  by: the "Reject" button with a reason code
+  by: the "Not now" or "Wrong candidate" button (a "Reject" reason code)
   when: governance.confirm:commission
   rules: [GOV-9, GOV-31]
-- id: sm-case-21
+- id: sm-case-07
   from: confirming
   to: expired
   by: the approval-expiry loop (the outcome on silence from the decision registry row, APR-12)
   when: 7 days without a decision
   rules: [GOV-9]
-- id: sm-case-22
+- id: sm-case-08
   from: opened
   to: canceled
   to_note: canceled(human)
   from_note: any open
-  by: P2 governance.cancel or the "Cancel" button on the governance_stuck card
+  by: P2 governance.cancel
   when: a person with admin:governance in the case's tenant
-  rules: [GOV-23]
-- id: sm-case-23
-  from: parked
-  to: canceled
-  to_note: canceled(human)
-  from_note: any open
-  by: P2 governance.cancel or the "Cancel" button on the governance_stuck card
-  when: a person with admin:governance in the case's tenant
-  rules: [GOV-23]
-- id: sm-case-24
-  from: balloting
-  to: canceled
-  to_note: canceled(human)
-  from_note: any open
-  by: P2 governance.cancel or the "Cancel" button on the governance_stuck card
-  when: a person with admin:governance in the case's tenant
-  rules: [GOV-23]
-- id: sm-case-25
-  from: counted
-  to: canceled
-  to_note: canceled(human)
-  from_note: any open
-  by: P2 governance.cancel or the "Cancel" button on the governance_stuck card
-  when: a person with admin:governance in the case's tenant
-  rules: [GOV-23]
-- id: sm-case-26
+  rules: [GOV-14]
+- id: sm-case-09
   from: confirming
   to: canceled
   to_note: canceled(human)
   from_note: any open
-  by: P2 governance.cancel or the "Cancel" button on the governance_stuck card
+  by: P2 governance.cancel
   when: a person with admin:governance in the case's tenant
-  rules: [GOV-23]
-- id: sm-case-27
+  rules: [GOV-14]
+- id: sm-case-10
   from: opened
   to: canceled
   to_note: canceled(candidate_ineligible)
   from_note: any open
   by: the governance loop
-  when: 'the candidate lost eligibility: left, is under a people''s hold of the bot scope, or got a confirmed attribution'
+  when: 'the candidate lost eligibility: left, is under a hold by people on the bot scope, or got a confirmed attribution'
   rules: [GOV-14]
-- id: sm-case-28
-  from: parked
-  to: canceled
-  to_note: canceled(candidate_ineligible)
-  from_note: any open
-  by: the governance loop
-  when: 'the candidate lost eligibility: left, is under a people''s hold of the bot scope, or got a confirmed attribution'
-  rules: [GOV-14]
-- id: sm-case-29
-  from: balloting
-  to: canceled
-  to_note: canceled(candidate_ineligible)
-  from_note: any open
-  by: the governance loop
-  when: 'the candidate lost eligibility: left, is under a people''s hold of the bot scope, or got a confirmed attribution'
-  rules: [GOV-14]
-- id: sm-case-30
-  from: counted
-  to: canceled
-  to_note: canceled(candidate_ineligible)
-  from_note: any open
-  by: the governance loop
-  when: 'the candidate lost eligibility: left, is under a people''s hold of the bot scope, or got a confirmed attribution'
-  rules: [GOV-14]
-- id: sm-case-31
+- id: sm-case-11
   from: confirming
   to: canceled
   to_note: canceled(candidate_ineligible)
   from_note: any open
   by: the governance loop
-  when: 'the candidate lost eligibility: left, is under a people''s hold of the bot scope, or got a confirmed attribution'
+  when: 'the candidate lost eligibility: left, is under a hold by people on the bot scope, or got a confirmed attribution'
   rules: [GOV-14]
-- id: sm-case-32
+- id: sm-case-12
   from: opened
   to: canceled
   to_note: canceled(seat_changed)
   from_note: any open
   by: the core on a holder change
-  when: a seat from L changed its holder or became vacant
+  when: a seat from L changed its holder or became free
   rules: [GOV-12, IDN-10]
-- id: sm-case-33
-  from: parked
-  to: canceled
-  to_note: canceled(seat_changed)
-  from_note: any open
-  by: the core on a holder change
-  when: a seat from L changed its holder or became vacant
-  rules: [GOV-12, IDN-10]
-- id: sm-case-34
-  from: balloting
-  to: canceled
-  to_note: canceled(seat_changed)
-  from_note: any open
-  by: the core on a holder change
-  when: a seat from L changed its holder or became vacant
-  rules: [GOV-12, IDN-10]
-- id: sm-case-35
-  from: counted
-  to: canceled
-  to_note: canceled(seat_changed)
-  from_note: any open
-  by: the core on a holder change
-  when: a seat from L changed its holder or became vacant
-  rules: [GOV-12, IDN-10]
-- id: sm-case-36
+- id: sm-case-13
   from: confirming
   to: canceled
   to_note: canceled(seat_changed)
   from_note: any open
   by: the core on a holder change
-  when: a seat from L changed its holder or became vacant
+  when: a seat from L changed its holder or became free
   rules: [GOV-12, IDN-10]
 forbidden:
 - id: sm-case-x01
-  from: null
-  to: parked
-  expect: rejected
-  rules: [GOV-6, GOV-12, GOV-14]
-  why: the object does not appear directly in the state parked
-- id: sm-case-x02
-  from: null
-  to: balloting
-  expect: rejected
-  rules: [GOV-6, GOV-12, GOV-14]
-  why: the object does not appear directly in the state balloting
-- id: sm-case-x03
-  from: null
-  to: counted
-  expect: rejected
-  rules: [GOV-6, GOV-12, GOV-14]
-  why: the object does not appear directly in the state counted
-- id: sm-case-x04
   from: null
   to: confirming
   expect: rejected
   rules: [GOV-6, GOV-12, GOV-14]
   why: the object does not appear directly in the state confirming
-- id: sm-case-x05
+- id: sm-case-x02
   from: null
   to: effective
   expect: rejected
   rules: [GOV-6, GOV-12, GOV-14]
   why: the object does not appear directly in the state effective
-- id: sm-case-x06
+- id: sm-case-x03
   from: null
   to: rejected
   expect: rejected
   rules: [GOV-6, GOV-12, GOV-14]
   why: the object does not appear directly in the state rejected
-- id: sm-case-x07
+- id: sm-case-x04
   from: null
   to: expired
   expect: rejected
   rules: [GOV-6, GOV-12, GOV-14]
   why: the object does not appear directly in the state expired
-- id: sm-case-x08
+- id: sm-case-x05
   from: null
   to: canceled
   expect: rejected
   rules: [GOV-6, GOV-12, GOV-14]
   why: the object does not appear directly in the state canceled
+- id: sm-case-x06
+  from: opened
+  to: effective
+  expect: rejected
+  rules: [GOV-9, GOV-12, GOV-14, GOV-30]
+  why: the lifecycle table has no such transition
+- id: sm-case-x07
+  from: opened
+  to: rejected
+  expect: rejected
+  rules: [GOV-9, GOV-12, GOV-14, GOV-31]
+  why: the lifecycle table has no such transition
+- id: sm-case-x08
+  from: opened
+  to: expired
+  expect: rejected
+  rules: [GOV-9, GOV-12, GOV-14, GOV-43]
+  why: the lifecycle table has no such transition
 - id: sm-case-x09
-  from: opened
-  to: counted
-  expect: rejected
-  rules: [GOV-7, GOV-8, GOV-12, GOV-14]
-  why: the lifecycle table has no such transition
-- id: sm-case-x10
-  from: opened
-  to: effective
-  expect: rejected
-  rules: [GOV-7, GOV-8, GOV-9, GOV-12]
-  why: the lifecycle table has no such transition
-- id: sm-case-x11
-  from: opened
-  to: rejected
-  expect: rejected
-  rules: [GOV-7, GOV-8, GOV-9, GOV-12]
-  why: the lifecycle table has no such transition
-- id: sm-case-x12
-  from: opened
-  to: expired
-  expect: rejected
-  rules: [GOV-7, GOV-8, GOV-9, GOV-12]
-  why: the lifecycle table has no such transition
-- id: sm-case-x13
-  from: parked
-  to: balloting
-  expect: rejected
-  rules: [GOV-7, GOV-8, GOV-12, GOV-14]
-  why: the lifecycle table has no such transition
-- id: sm-case-x14
-  from: parked
-  to: counted
-  expect: rejected
-  rules: [GOV-12, GOV-14, GOV-15, GOV-23]
-  why: the lifecycle table has no such transition
-- id: sm-case-x15
-  from: parked
-  to: confirming
-  expect: rejected
-  rules: [GOV-8, GOV-12, GOV-14, GOV-15]
-  why: the lifecycle table has no such transition
-- id: sm-case-x16
-  from: parked
-  to: effective
-  expect: rejected
-  rules: [GOV-9, GOV-12, GOV-14, GOV-15]
-  why: the lifecycle table has no such transition
-- id: sm-case-x17
-  from: parked
-  to: rejected
-  expect: rejected
-  rules: [GOV-9, GOV-12, GOV-14, GOV-15]
-  why: the lifecycle table has no such transition
-- id: sm-case-x18
-  from: parked
-  to: expired
-  expect: rejected
-  rules: [GOV-9, GOV-12, GOV-14, GOV-15]
-  why: the lifecycle table has no such transition
-- id: sm-case-x19
-  from: balloting
-  to: opened
-  expect: rejected
-  rules: [GOV-6, GOV-12, GOV-14, GOV-15]
-  why: the lifecycle table has no such transition
-- id: sm-case-x20
-  from: balloting
-  to: parked
-  expect: rejected
-  rules: [GOV-12, GOV-14, GOV-15, GOV-23]
-  why: the lifecycle table has no such transition
-- id: sm-case-x21
-  from: balloting
-  to: confirming
-  expect: rejected
-  rules: [GOV-8, GOV-12, GOV-14, GOV-23]
-  why: the lifecycle table has no such transition
-- id: sm-case-x22
-  from: balloting
-  to: effective
-  expect: rejected
-  rules: [GOV-9, GOV-12, GOV-14, GOV-23]
-  why: the lifecycle table has no such transition
-- id: sm-case-x23
-  from: balloting
-  to: rejected
-  expect: rejected
-  rules: [GOV-9, GOV-12, GOV-14, GOV-23]
-  why: the lifecycle table has no such transition
-- id: sm-case-x24
-  from: balloting
-  to: expired
-  expect: rejected
-  rules: [GOV-9, GOV-12, GOV-14, GOV-23]
-  why: the lifecycle table has no such transition
-- id: sm-case-x25
-  from: counted
-  to: opened
-  expect: rejected
-  rules: [GOV-6, GOV-8, GOV-12, GOV-14]
-  why: the lifecycle table has no such transition
-- id: sm-case-x26
-  from: counted
-  to: parked
-  expect: rejected
-  rules: [GOV-8, GOV-12, GOV-14, GOV-15]
-  why: the lifecycle table has no such transition
-- id: sm-case-x27
-  from: counted
-  to: effective
-  expect: rejected
-  rules: [GOV-8, GOV-9, GOV-12, GOV-14]
-  why: the lifecycle table has no such transition
-- id: sm-case-x28
-  from: counted
-  to: rejected
-  expect: rejected
-  rules: [GOV-8, GOV-9, GOV-12, GOV-14]
-  why: the lifecycle table has no such transition
-- id: sm-case-x29
-  from: counted
-  to: expired
-  expect: rejected
-  rules: [GOV-8, GOV-9, GOV-12, GOV-14]
-  why: the lifecycle table has no such transition
-- id: sm-case-x30
   from: confirming
   to: opened
   expect: rejected
   rules: [GOV-6, GOV-9, GOV-12, GOV-14]
   why: the lifecycle table has no such transition
+- id: sm-case-x10
+  from: effective
+  to: opened
+  expect: rejected
+  rules: [GOV-9, GOV-12, GOV-30]
+  why: 'effective is a terminal state: there are no transitions out of it'
+- id: sm-case-x11
+  from: effective
+  to: confirming
+  expect: rejected
+  rules: [GOV-9, GOV-12, GOV-30]
+  why: 'effective is a terminal state: there are no transitions out of it'
+- id: sm-case-x12
+  from: effective
+  to: effective
+  expect: rejected
+  rules: [GOV-9, GOV-12, GOV-30]
+  why: 'effective is a terminal state: there are no transitions out of it'
+- id: sm-case-x13
+  from: effective
+  to: rejected
+  expect: rejected
+  rules: [GOV-9, GOV-12, GOV-30]
+  why: 'effective is a terminal state: there are no transitions out of it'
+- id: sm-case-x14
+  from: effective
+  to: expired
+  expect: rejected
+  rules: [GOV-9, GOV-12, GOV-30]
+  why: 'effective is a terminal state: there are no transitions out of it'
+- id: sm-case-x15
+  from: effective
+  to: canceled
+  expect: rejected
+  rules: [GOV-9, GOV-12, GOV-30]
+  why: 'effective is a terminal state: there are no transitions out of it'
+- id: sm-case-x16
+  from: rejected
+  to: opened
+  expect: rejected
+  rules: [GOV-9, GOV-31]
+  why: 'rejected is a terminal state: there are no transitions out of it'
+- id: sm-case-x17
+  from: rejected
+  to: confirming
+  expect: rejected
+  rules: [GOV-9, GOV-31]
+  why: 'rejected is a terminal state: there are no transitions out of it'
+- id: sm-case-x18
+  from: rejected
+  to: effective
+  expect: rejected
+  rules: [GOV-9, GOV-31]
+  why: 'rejected is a terminal state: there are no transitions out of it'
+- id: sm-case-x19
+  from: rejected
+  to: rejected
+  expect: rejected
+  rules: [GOV-9, GOV-31]
+  why: 'rejected is a terminal state: there are no transitions out of it'
+- id: sm-case-x20
+  from: rejected
+  to: expired
+  expect: rejected
+  rules: [GOV-9, GOV-31]
+  why: 'rejected is a terminal state: there are no transitions out of it'
+- id: sm-case-x21
+  from: rejected
+  to: canceled
+  expect: rejected
+  rules: [GOV-9, GOV-31]
+  why: 'rejected is a terminal state: there are no transitions out of it'
+- id: sm-case-x22
+  from: expired
+  to: opened
+  expect: rejected
+  rules: [GOV-9]
+  why: 'expired is a terminal state: there are no transitions out of it'
+- id: sm-case-x23
+  from: expired
+  to: confirming
+  expect: rejected
+  rules: [GOV-9]
+  why: 'expired is a terminal state: there are no transitions out of it'
+- id: sm-case-x24
+  from: expired
+  to: effective
+  expect: rejected
+  rules: [GOV-9]
+  why: 'expired is a terminal state: there are no transitions out of it'
+- id: sm-case-x25
+  from: expired
+  to: rejected
+  expect: rejected
+  rules: [GOV-9]
+  why: 'expired is a terminal state: there are no transitions out of it'
+- id: sm-case-x26
+  from: expired
+  to: expired
+  expect: rejected
+  rules: [GOV-9]
+  why: 'expired is a terminal state: there are no transitions out of it'
+- id: sm-case-x27
+  from: expired
+  to: canceled
+  expect: rejected
+  rules: [GOV-9]
+  why: 'expired is a terminal state: there are no transitions out of it'
+- id: sm-case-x28
+  from: canceled
+  to: opened
+  expect: rejected
+  rules: [GOV-12, GOV-14, IDN-10]
+  why: 'canceled is a terminal state: there are no transitions out of it'
+- id: sm-case-x29
+  from: canceled
+  to: confirming
+  expect: rejected
+  rules: [GOV-12, GOV-14, IDN-10]
+  why: 'canceled is a terminal state: there are no transitions out of it'
+- id: sm-case-x30
+  from: canceled
+  to: effective
+  expect: rejected
+  rules: [GOV-12, GOV-14, IDN-10]
+  why: 'canceled is a terminal state: there are no transitions out of it'
 - id: sm-case-x31
-  from: confirming
-  to: parked
+  from: canceled
+  to: rejected
   expect: rejected
-  rules: [GOV-9, GOV-12, GOV-14, GOV-15]
-  why: the lifecycle table has no such transition
+  rules: [GOV-12, GOV-14, IDN-10]
+  why: 'canceled is a terminal state: there are no transitions out of it'
 - id: sm-case-x32
-  from: confirming
-  to: balloting
+  from: canceled
+  to: expired
   expect: rejected
-  rules: [GOV-7, GOV-8, GOV-9, GOV-12]
-  why: the lifecycle table has no such transition
+  rules: [GOV-12, GOV-14, IDN-10]
+  why: 'canceled is a terminal state: there are no transitions out of it'
 - id: sm-case-x33
-  from: confirming
-  to: counted
-  expect: rejected
-  rules: [GOV-9, GOV-12, GOV-14, GOV-23]
-  why: the lifecycle table has no such transition
-- id: sm-case-x34
-  from: effective
-  to: opened
-  expect: rejected
-  rules: [GOV-9, GOV-30]
-  why: 'effective is a terminal state: there are no transitions out of it'
-- id: sm-case-x35
-  from: effective
-  to: parked
-  expect: rejected
-  rules: [GOV-9, GOV-30]
-  why: 'effective is a terminal state: there are no transitions out of it'
-- id: sm-case-x36
-  from: effective
-  to: balloting
-  expect: rejected
-  rules: [GOV-9, GOV-30]
-  why: 'effective is a terminal state: there are no transitions out of it'
-- id: sm-case-x37
-  from: effective
-  to: counted
-  expect: rejected
-  rules: [GOV-9, GOV-30]
-  why: 'effective is a terminal state: there are no transitions out of it'
-- id: sm-case-x38
-  from: effective
-  to: confirming
-  expect: rejected
-  rules: [GOV-9, GOV-30]
-  why: 'effective is a terminal state: there are no transitions out of it'
-- id: sm-case-x39
-  from: effective
-  to: effective
-  expect: rejected
-  rules: [GOV-9, GOV-30]
-  why: 'effective is a terminal state: there are no transitions out of it'
-- id: sm-case-x40
-  from: effective
-  to: rejected
-  expect: rejected
-  rules: [GOV-9, GOV-30]
-  why: 'effective is a terminal state: there are no transitions out of it'
-- id: sm-case-x41
-  from: effective
-  to: expired
-  expect: rejected
-  rules: [GOV-9, GOV-30]
-  why: 'effective is a terminal state: there are no transitions out of it'
-- id: sm-case-x42
-  from: effective
-  to: canceled
-  expect: rejected
-  rules: [GOV-9, GOV-30]
-  why: 'effective is a terminal state: there are no transitions out of it'
-- id: sm-case-x43
-  from: rejected
-  to: opened
-  expect: rejected
-  rules: [GOV-9, GOV-31]
-  why: 'rejected is a terminal state: there are no transitions out of it'
-- id: sm-case-x44
-  from: rejected
-  to: parked
-  expect: rejected
-  rules: [GOV-9, GOV-31]
-  why: 'rejected is a terminal state: there are no transitions out of it'
-- id: sm-case-x45
-  from: rejected
-  to: balloting
-  expect: rejected
-  rules: [GOV-9, GOV-31]
-  why: 'rejected is a terminal state: there are no transitions out of it'
-- id: sm-case-x46
-  from: rejected
-  to: counted
-  expect: rejected
-  rules: [GOV-9, GOV-31]
-  why: 'rejected is a terminal state: there are no transitions out of it'
-- id: sm-case-x47
-  from: rejected
-  to: confirming
-  expect: rejected
-  rules: [GOV-9, GOV-31]
-  why: 'rejected is a terminal state: there are no transitions out of it'
-- id: sm-case-x48
-  from: rejected
-  to: effective
-  expect: rejected
-  rules: [GOV-9, GOV-31]
-  why: 'rejected is a terminal state: there are no transitions out of it'
-- id: sm-case-x49
-  from: rejected
-  to: rejected
-  expect: rejected
-  rules: [GOV-9, GOV-31]
-  why: 'rejected is a terminal state: there are no transitions out of it'
-- id: sm-case-x50
-  from: rejected
-  to: expired
-  expect: rejected
-  rules: [GOV-9, GOV-31]
-  why: 'rejected is a terminal state: there are no transitions out of it'
-- id: sm-case-x51
-  from: rejected
-  to: canceled
-  expect: rejected
-  rules: [GOV-9, GOV-31]
-  why: 'rejected is a terminal state: there are no transitions out of it'
-- id: sm-case-x52
-  from: expired
-  to: opened
-  expect: rejected
-  rules: [GOV-9]
-  why: 'expired is a terminal state: there are no transitions out of it'
-- id: sm-case-x53
-  from: expired
-  to: parked
-  expect: rejected
-  rules: [GOV-9]
-  why: 'expired is a terminal state: there are no transitions out of it'
-- id: sm-case-x54
-  from: expired
-  to: balloting
-  expect: rejected
-  rules: [GOV-9]
-  why: 'expired is a terminal state: there are no transitions out of it'
-- id: sm-case-x55
-  from: expired
-  to: counted
-  expect: rejected
-  rules: [GOV-9]
-  why: 'expired is a terminal state: there are no transitions out of it'
-- id: sm-case-x56
-  from: expired
-  to: confirming
-  expect: rejected
-  rules: [GOV-9]
-  why: 'expired is a terminal state: there are no transitions out of it'
-- id: sm-case-x57
-  from: expired
-  to: effective
-  expect: rejected
-  rules: [GOV-9]
-  why: 'expired is a terminal state: there are no transitions out of it'
-- id: sm-case-x58
-  from: expired
-  to: rejected
-  expect: rejected
-  rules: [GOV-9]
-  why: 'expired is a terminal state: there are no transitions out of it'
-- id: sm-case-x59
-  from: expired
-  to: expired
-  expect: rejected
-  rules: [GOV-9]
-  why: 'expired is a terminal state: there are no transitions out of it'
-- id: sm-case-x60
-  from: expired
-  to: canceled
-  expect: rejected
-  rules: [GOV-9]
-  why: 'expired is a terminal state: there are no transitions out of it'
-- id: sm-case-x61
-  from: canceled
-  to: opened
-  expect: rejected
-  rules: [GOV-12, GOV-14, GOV-23, IDN-10]
-  why: 'canceled is a terminal state: there are no transitions out of it'
-- id: sm-case-x62
-  from: canceled
-  to: parked
-  expect: rejected
-  rules: [GOV-12, GOV-14, GOV-23, IDN-10]
-  why: 'canceled is a terminal state: there are no transitions out of it'
-- id: sm-case-x63
-  from: canceled
-  to: balloting
-  expect: rejected
-  rules: [GOV-12, GOV-14, GOV-23, IDN-10]
-  why: 'canceled is a terminal state: there are no transitions out of it'
-- id: sm-case-x64
-  from: canceled
-  to: counted
-  expect: rejected
-  rules: [GOV-12, GOV-14, GOV-23, IDN-10]
-  why: 'canceled is a terminal state: there are no transitions out of it'
-- id: sm-case-x65
-  from: canceled
-  to: confirming
-  expect: rejected
-  rules: [GOV-12, GOV-14, GOV-23, IDN-10]
-  why: 'canceled is a terminal state: there are no transitions out of it'
-- id: sm-case-x66
-  from: canceled
-  to: effective
-  expect: rejected
-  rules: [GOV-12, GOV-14, GOV-23, IDN-10]
-  why: 'canceled is a terminal state: there are no transitions out of it'
-- id: sm-case-x67
-  from: canceled
-  to: rejected
-  expect: rejected
-  rules: [GOV-12, GOV-14, GOV-23, IDN-10]
-  why: 'canceled is a terminal state: there are no transitions out of it'
-- id: sm-case-x68
-  from: canceled
-  to: expired
-  expect: rejected
-  rules: [GOV-12, GOV-14, GOV-23, IDN-10]
-  why: 'canceled is a terminal state: there are no transitions out of it'
-- id: sm-case-x69
   from: canceled
   to: canceled
   expect: rejected
-  rules: [GOV-12, GOV-14, GOV-23, IDN-10]
+  rules: [GOV-12, GOV-14, IDN-10]
   why: 'canceled is a terminal state: there are no transitions out of it'

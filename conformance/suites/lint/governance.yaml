@@ -11,6 +11,6 @@ checks:
   section: Tests without a model
   source: docs/quality.md:620
   spec:
-    What: a manager persona without the anchor `honesty`; a reporter addendum without `accuracy`; a commission persona with
-      a sentence about accuracy scores and departure; persona with addenda over 4 KiB
-    Expectation: '`apply` rejects each one'
+    What: a manager persona without the anchor `purpose`; a commission persona with a sentence about accuracy scores and departure;
+      persona with addenda over 4 KiB; a reporter addendum without an `accuracy` anchor
+    Expectation: '`apply` rejects the first three; the fourth passes, since lint checks no other anchors'

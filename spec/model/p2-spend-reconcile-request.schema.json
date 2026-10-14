@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "urn:botaru:schema:p2-spend-reconcile-request:1",
   "title": "P2 spend.reconcile: request",
-  "description": "The daily reconciliation process outside the core hands in, with its own report key, the provider's daily sum per workspace. The core compares it with the sum of its own lines for the same day with a tolerance from the deployment settings, writes the difference as one signed correction line, and the spend_estimated lines of that day get the spend_reconciled flag without a price edit (BUD-10, D-87 (1)). This is a contract between programs.",
+  "description": "farmctl spend reconcile --file (from the provider report file) or a process outside the core with its own report key hands in the provider's daily sum per workspace, one request per UTC day. The core compares it with the sum of its own lines for the same day with a tolerance from the deployment settings, writes the difference as one signed correction line, and the spend_estimated lines of that day get the spend_reconciled flag without a price edit (BUD-10, D-87 (1)). This is a contract between programs.",
   "x-botaru-direction": "input",
   "x-botaru-rules": [
     "BUD-10",

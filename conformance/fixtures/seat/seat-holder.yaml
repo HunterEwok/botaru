@@ -149,8 +149,8 @@ cases:
     expect: {seat_changes: 0}
 - id: gov-fx-09
   rules: [IDN-10]
-  description: The seat epoch fences off the previous holder. A task on behalf of a seat carries the seat epoch; a review, a ballot,
-    a fact selection or a control operation with an outdated epoch gets fenced without side effects. At every epoch
+  description: The seat epoch fences off the previous holder. A task on behalf of a seat carries the seat epoch; a review or
+    a control operation with an outdated epoch gets fenced without side effects. At every epoch
     change the running attempts of seat tasks get cancel_requested and end with seat_changed without spending an attempt, and the task
     waits for a holder with the current epoch. A vacant or stopped seat gets no tasks. Numbers of identities, workers
     and incidents are shortened, as in the examples of docs/bots.md and docs/farm-manager.md.
@@ -213,5 +213,5 @@ cases:
         request:
           result: {}
       lease: {seat_epoch: 10}
-      context: {type: memory.pick.v1}
-    expect: {result: rejected, reason: fenced, facts_copied: 0}
+      context: {type: review.farm_manager.v1}
+    expect: {result: rejected, reason: fenced, review_counted: false}

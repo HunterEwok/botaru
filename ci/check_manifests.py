@@ -475,6 +475,9 @@ def lint(docs, today=None, farm_hosts=None, examples_mode=False, claimed=None, s
         return caps, data
 
     # 5. Tenants.
+    # the manager seat profile is set once, in the charter of the tenant farm (GOV-33, MGR-42)
+    seat_mp = next(((gs.get('farm_manager') or {}).get('model_profile') for t, _, _, gs in S.each('Governance')
+                    if t == 'farm' and (gs.get('farm_manager') or {}).get('model_profile')), None)
     for _, tname, where, ts in S.each('Tenant'):
         if ts.get('kind', 'production') == 'production' and ts.get('self_approve') is True:
             f.error('self_approve_production', where, 'production tenant with self_approve: true (APR-9)')
@@ -531,8 +534,11 @@ def lint(docs, today=None, farm_hosts=None, examples_mode=False, claimed=None, s
                         f'delegated_groups: group {gname} carries {sorted(bad)} (PRM-16)')
         fm = ts.get('farm_manager') or {}
         if fm.get('enabled', True):
-            mp = fm.get('model_profile')
-            if mp and mp not in ts.get('models_allowed', []):
+            mp = seat_mp
+            if not mp:
+                f.error('manager_profile_missing', where, 'the manager is enabled, but the farm charter (Governance of '
+                        'tenant farm) sets no farm_manager.model_profile for the seat (GOV-33, MGR-20)')
+            elif mp not in ts.get('models_allowed', []):
                 f.error('manager_profile_not_allowed', where,
                         f'manager seat profile {mp} is not in models_allowed (MGR-20)')
             line = ((ts.get('budgets') or {}).get('lines') or {}).get('manager') or {}
@@ -923,24 +929,6 @@ def lint(docs, today=None, farm_hosts=None, examples_mode=False, claimed=None, s
         for p in [com.get('model_profile')] + [s.get('model_profile') for s in com.get('seats', [])]:
             if p in profiles and ceil is not None and profiles[p]['rank'] > ceil:
                 f.error('rank_exceeded', where, f'charter {gname}: seat profile {p} is above the reviewer ceiling {ceil} (GOV-3)')
-        # Ballots run on the commission seat profiles with a forced output schema (GOV-7).
-        # The whole fallback chain counts (GW-5), and a profile that is not in the set fails: the check is closed.
-        seat_profiles = sorted(({com.get('model_profile')} | {s.get('model_profile') for s in com.get('seats', [])}) - {None})
-        todo, seen = list(seat_profiles), set()
-        while todo and (com.get('seats') or com.get('model_profile')):
-            p = todo.pop(0)
-            if p in seen:
-                continue
-            seen.add(p)
-            if p not in profiles:
-                if profiles:
-                    f.error('forced_schema_unsupported', where,
-                            f'charter {gname}: ballot profile {p} is not in the set, so its forced schema is unknown (GOV-7)')
-                continue
-            if profiles[p].get('forced_schema') is not True:
-                f.error('forced_schema_unsupported', where,
-                        f'charter {gname}: profile {p} (a seat profile or its fallback) has no forced_schema: true, and ballots need it (GOV-7)')
-            todo.extend(profiles[p].get('fallback') or [])
     # Shadow shares and escalation thresholds of the commission manifest (COM-10, COM-13).
     for tenant, cname, where, cs in S.each('Commission'):
         sh = cs.get('shadow')

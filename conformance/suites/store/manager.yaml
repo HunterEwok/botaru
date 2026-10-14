@@ -36,12 +36,11 @@ checks:
   section: Tests without a model
   source: docs/quality.md:418
   spec:
-    What: 'a day of work with incidents, operations, reverts, reads and grants in two tenants; `manager.review.v1` with `daily_review:
-      true` and `false`'
+    What: 'a day of work with incidents, operations, reverts, reads and grants in two tenants; `manager.review.v1` in a tenant
+      with the manager enabled and in one with `farm_manager.enabled: false`'
     Expectation: '`farm` operators get farm numbers, people of T only the part of T, spend of the `manager` line only for
-      `admin` and the team lead group; no model text; the review once a day only with `enabled` and `daily_review`, not more
-      expensive than `daily_review_max_eur`; a separate line in `manager.cost`; the review proposal is not in the `related_to`
-      of functionaries'
+      `admin` and the team lead group; no model text; the review once a day only with `enabled`, not more expensive than `daily_review_max_eur`;
+      a separate line in `manager.cost`; the review proposal is not in the `related_to` of functionaries'
 - id: store:manager/holder-report
   method: store
   rules:

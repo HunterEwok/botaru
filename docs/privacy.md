@@ -2,7 +2,7 @@
 
 ## In short
 
-The farm works with people's data: their messages, files, questions to assistants, names in journals and tables. This document describes what the farm stores about people, where and for how long, how a person learns about their data and asks for it to be erased, and what the farm must be able to do so that the tenant's organization can meet its obligations under data protection law. Legal roles, the processing region, retention periods and texts for people are decided by the organization (D-12). The skeleton gives fields and checks for these decisions: the privacy block in the tenant manifest (SEC-8), the ceiling of channels with third-party storage (SEC-9), the "personal data seen" flag and the "whose data" field (AUD-5), the privacy notice (SEC-13), reports and subject requests (SEC-10, SEC-11, SEC-12), and de-identification of per-person usage (SEC-14). Erasure of a person's data at their request is part of v0.1 and cannot be waived for a production tenant (D-76); the `/mydata` report, the data copy and the other data subject rights arrive in v0.2. Any early erasure goes through a recorded erasure request, so erased data does not come back after a restore from backup. How the data itself is protected (redaction, the untrusted flag, audit, deployment) is described in `docs/security-model.md`, and retention periods and erasure as an operation in `docs/operations.md`.
+The farm works with people's data: their messages, files, questions to assistants, names in journals and tables. This document describes what the farm stores about people, where and for how long, how a person learns about their data and asks for it to be erased, and what the farm must be able to do so that the tenant's organization can meet its obligations under data protection law. Legal roles, the processing region, retention periods and texts for people are decided by the organization (D-12). The skeleton gives fields and checks for these decisions: the privacy block in the tenant manifest (SEC-8), the ceiling of channels with third-party storage (SEC-9), the "personal data seen" flag and the "whose data" field (AUD-5), the privacy notice (SEC-13), the copy of a person's data, the privacy report and subject requests (SEC-10, SEC-11, SEC-12), and de-identification of per-person usage (SEC-14). Erasure of a person's data at their request is part of v0.1 and cannot be waived for a production tenant (D-76); the data copy and the other data subject rights arrive in v0.2. Any early erasure goes through a recorded erasure request, so erased data does not come back after a restore from backup. How the data itself is protected (redaction, the untrusted flag, audit, deployment) is described in `docs/security-model.md`, and retention periods and erasure as an operation in `docs/operations.md`.
 
 ## What the farm stores about people and where
 
@@ -76,14 +76,14 @@ To answer a person's question "where do you have my data", the farm must know in
 
 The flag is monotonic, like the untrusted flag: it is only ever set. Child tasks, continuations and everything that an attempt with the flag created inherit it: the result, artifacts, messages, findings, memory record proposals. The model does not see the flag and cannot clear it. In the audit the flag is stored as a marker with a source code from a closed list (`masking`, `human_file`, `other_person`, `forward`, `quote`, `declared`, `inherited`), without content.
 
-**Whose data.** With the source `other_person`, `forward` or `quote` the core knows whom it is about: it is a farm principal. Then the object gets the closed field `personal_subjects` with the list of ids of such principals (ids only, add only). Using it, erasure by the scope `(tenant, subject)` and the `/mydata` report find a person's data in other people's tasks, bot messages and farm manager findings (SEC-11). The farm manager reads any file with the flag, including the source `declared`, as personal (MGR-30).
+**Whose data.** With the source `other_person`, `forward` or `quote` the core knows whom it is about: it is a farm principal. Then the object gets the closed field `personal_subjects` with the list of ids of such principals (ids only, add only). Using it, erasure by the scope `(tenant, subject)` finds a person's data in other people's tasks, bot messages and farm manager findings (SEC-11). The farm manager reads any file with the flag, including the source `declared`, as personal (MGR-30).
 
 The flag is not set by:
 - text that the initiator typed in their own message: the link to them is already recorded in the initiator field;
 - reading facts and observations: their values are computed by code over catalog objects, and people are not among the subjects.
 
 Why the flag is needed:
-- the report to a person about their data and the privacy report show how many objects with personal data lie in each class and store (SEC-10, SEC-12);
+- the privacy report shows how many objects with personal data lie in each class and store (SEC-12);
 - an admin sees the flag on an object in P2 and can check the object before answering a subject request.
 
 Erasure by an exact string is not limited by the flag (SEC-11). A person may have written another person's name in their own message, and such an object does not carry the flag, so the search covers all objects of the classes `content` and `memory`.
@@ -228,27 +228,9 @@ Every port that stores content has its own erase operation: files in C1 `file.pu
 
 A person sees what their assistant remembered with the command `/memory` and erases an item for real with the command `/forget`, in all stores, including the runtime store (MEM-4). The erasure goes through an erasure request and so survives a restore from backup.
 
-### Report on own data
+### What a person learns about their data
 
-With the command `/mydata` in a private chat a person gets a report on their data in this tenant (SEC-10, from v0.2). A person with `admin:people` gets the same report about any principal of the tenant through P2 `principal.data_report`, for example when the request came by email. Code builds the report, and it contains no content.
-
-```
-Your data in tenant demo as of 2026-10-07:
-- tasks where you are the initiator: 42 (kept 30 days), of them with personal data: 5
-- files you uploaded: 3 (30 days)
-- conversation sessions: 2 (7 days)
-- your memory items: 4 (until /forget)
-- your decisions on cards: 6 (400 days, metadata only)
-- reads of your objects for incident review in 30 days: 1
-- connections to external services: calendar
-- usage attributed to you: kept with your id for 93 days, then without it
-Recipients: model provider provider-a (region region-a, keeps up to 30 days);
-messenger (it stores the conversation); monitoring system (numbers and ids only).
-You also have data in another tenant; a request there is submitted separately.
-Data copy: /mydata export. Erasure: /mydata erase. Tenant admins decide; answer within 30 days.
-```
-
-The report includes objects where the principal is the initiator, where the object belongs to them, where they approved or decided; the number of objects with the flag `personal_seen`; the number of reads of these objects for incident review from the read log (MGR-28); periods per class; recipients from the privacy block, including the monitoring system; connections to external services (SEC-7); the usage de-identification period (SEC-14). If the same external identity has a principal in another tenant, the report adds one code line about it, without the tenant name or numbers: `/mydata erase` in a `demo` private chat does nothing in `demo2`, and the person must know this. The operator gets a report by external identity across all tenants at once through P2 `principal.data_report --all-tenants`, without content and with an audit record. A full data copy never goes to a chat.
+There is no separate report about a person's data (D-114). What the farm stores, for which purposes, for how long and who receives it, the person learns from the privacy notice (SEC-13), and the data itself they get as a copy with `/mydata export`: the copy goes only to them, encrypted with their own key, and never to the operator, an admin or a chat (SEC-10).
 
 ### Request for a copy or erasure
 
@@ -326,7 +308,7 @@ The skeleton does not decide legal questions for the organization (D-12). It giv
 | retention periods | the organization within the farm ceilings | `Tenant.spec.retention` per class within the class ceilings (RET-9) |
 | impact assessment and record of processing | the organization | `dpia_ref`, `ropa_ref`; the privacy report gives the source data (SEC-12) |
 | texts for people: privacy notice, bot message | the organization | code texts in the message catalog with fields from the privacy block; `notice_ref`, `notice_version` and the `privacy_notice` delivery at the first contact and on a version change (SEC-13) |
-| whether the tenant needs the farm manager | the tenant's organization | `farm_manager: {enabled, lens, daily_review, model_profile}`, default `enabled: true`; with `false` the farm manager does not read the tenant's data (D-77) |
+| whether the tenant needs the farm manager | the tenant's organization | `farm_manager: {enabled}`, default `enabled: true`; the seat profile is set in the farm charter (GOV-33); with `false` the farm manager does not read the tenant's data (D-77) |
 | whether the tenant sees the operator's reads of its journals | the tenant's organization | `operator_access.debug_journal`, default `notify` (AUD-4) |
 | deadline for answering a subject request | the organization per the law | `subject_request_days`, the card and reminders (SEC-11) |
 | who sees the monitoring system and how long its history is kept | the organization | the farm sends there only numbers, `enum` values, tags and catalog ids (MON-1); the history of the audit chain head is kept no shorter than the audit period (MON-3) |
@@ -335,7 +317,7 @@ The skeleton does not decide legal questions for the organization (D-12). It giv
 
 1. The operator applies the `demo` manifest with `kind: production` and the privacy block above. `apply` checks that all fields are filled, every purpose has a basis, `recipients` contains `monitoring`, `providers_allowed` contains only `provider-a`, and the messenger has a line in `channels`. The `demo` admins get a notification about the block.
 2. `alice` writes to `@demo_bot` for the first time. The messenger itself shows the bot badge, but before the first model text `alice` gets `privacy_notice` version 3: controller Example Org, purposes with bases, recipients `provider-a`, the messenger and the monitoring system, retention periods and how to submit a request.
-3. `alice` writes `/mydata` and gets the report: 42 tasks, 5 of them with personal data, 3 files, 4 memory items, one read for incident review, recipients `provider-a`, the messenger and the monitoring system, a line about data in another tenant (`alice` also has a principal in `demo2`).
+3. `alice` reads the privacy notice (SEC-13): what the farm stores about her, for which purposes, for how long and who receives it (`provider-a`, the messenger and the monitoring system). There is no separate report about her data (D-114).
 4. `alice` writes `/mydata erase`. The core creates a `SubjectRequest` and a card for `carol` with `admin:people`: "Request to erase the data of alice; tasks 42, files 3, sessions 2, memory 4; answer by 2026-11-06; on silence a reminder on 2026-10-22 and a notification to the operator at the deadline; the erasure itself will not be executed".
 5. `carol` approves. The core creates an erasure request with the reason `subject_request` and the scope `(demo, p_a11ce)`: it includes two tasks of `bob` where `alice` is in `personal_subjects`, and a group chat session she took part in; the `erase_match` request for her number and name is approved by `bob`, who in this example also has `admin:people`. The core store, the file store, the session store, the memory store, the runtime and the sink answer `done`; the channel without a cache and the model provider answer `not_applicable`; the notes in the monitoring system answer `failed`, and this is acceptable, as they contain no data about people. `alice` gets the outcome as a code text: "Erased in all farm stores. Copies of requests at the model provider are deleted per its terms, within 30 days. You can delete the messenger conversation yourself".
 6. A week later the store on `core1` is restored from a backup taken before the request. Before becoming ready, the core replays the erasure log, and the objects of `alice` are erased again.
@@ -346,7 +328,7 @@ The skeleton does not decide legal questions for the organization (D-12). It giv
 | Version | What appears |
 |---|---|
 | v0.1 | a retention class in every schema (RET-1); an erasure request for any early erasure, including manual; a store without its own erase operation answers `failed`, and the request stays open with an alarm (RET-7); erasure in C3, C4 and in a runtime with a session or memory inside (RT-1, RT-2); the erasure log and its replay after a restore (RET-5, RET-6); address redaction on the toolhost (INJ-4); the flag `personal_seen` and the field `personal_subjects` (AUD-5); the privacy block with purposes and bases, controller, subprocessors with terms, recipients and channels, only listed providers, opting out of the farm manager with `farm_manager.enabled: false` (SEC-8, D-77); the privacy notice `privacy_notice` with a version (SEC-13); the subject request `/mydata erase` with the `subject_request` card, erasure by scope with `personal_subjects` and group sessions, automatic `erase_match` when a principal is erased, erasure by string through P2 `erasure.match` with `match` in the runtime and the sink, erase operations of C1, C3, C4, E2, E4 and E5, non-waivable for a production tenant (SEC-11, RET-4, D-76); P4 sets and checks the region and the retention period at the provider (GW-14, GW-15); the ceiling of channels with third-party storage (SEC-9); the "you are talking to a bot" message and the model text mark; a person's own memory `/memory`, `/forget` (MEM-4); the audit hash chain (AUD-6) with its head in the monitoring system's history (MON-3); only numbers, `enum` values, tags and catalog ids to the monitoring system (MON-1, MON-2); after the core and the first bot (D-71, D-80): reading content for incident review under the purpose `incident_review`, people's files only as the subject of an incident, the read log (MGR-20, MGR-28, MGR-30); a separate permission to read the audit (AUD-7); monitoring problems enter the farm without trigger names and texts (MON-5) |
-| v0.2 | tenant retention periods and deletion by period in every copy (RET-9, RET-10); `erase` and `match` of the channel cache E1 and E4 `purge` for every runtime (RET-11, SEC-11); the `/mydata` report to a person with the line about another tenant, P2 `principal.data_report` and `--all-tenants`, export only to a sink with `export_only` (SEC-10); the copy request `/mydata export` and the export task (SEC-11, LCY-2); de-identification of per-principal usage after 93 days (SEC-14, BUD-16); operator reads of journals per `operator_access.debug_journal` (AUD-4); the privacy report (SEC-12); the principal lifecycle with offboarding and export (LCY-2, LCY-3); the attempt journal (AUD-4); people's connections to external services (SEC-7); bot notes on monitoring problems with a secret search before delivery (MON-7) |
+| v0.2 | tenant retention periods and deletion by period in every copy (RET-9, RET-10); `erase` and `match` of the channel cache E1 and E4 `purge` for every runtime (RET-11, SEC-11); export only to a sink with `export_only` and a person's copy only to that person (SEC-10); the copy request `/mydata export` and the export task (SEC-11, LCY-2); de-identification of per-principal usage after 93 days (SEC-14, BUD-16); operator reads of journals per `operator_access.debug_journal` (AUD-4); the privacy report (SEC-12); the principal lifecycle with offboarding and export (LCY-2, LCY-3); the attempt journal (AUD-4); people's connections to external services (SEC-7); bot notes on monitoring problems with a secret search before delivery (MON-7) |
 
 ## Why it works this way
 
@@ -374,7 +356,7 @@ Generated from the registry `conformance/requirements.yaml`; the full text of ev
 | [AUD-5](../conformance/rules.md#AUD-5) | The "personal data seen" flag | v0.1 | no |
 | [SEC-8](../conformance/rules.md#SEC-8) | Tenant privacy block | v0.1 | no |
 | [SEC-9](../conformance/rules.md#SEC-9) | Raw logs to a channel only by tenant decision | v0.1 | no |
-| [SEC-10](../conformance/rules.md#SEC-10) | A report to a person about their data | v0.2 | no |
+| [SEC-10](../conformance/rules.md#SEC-10) | A copy of a person's data only to that person | v0.2 | no |
 | [SEC-11](../conformance/rules.md#SEC-11) | A person's request and deletion through ports | v0.1 | no |
 | [SEC-13](../conformance/rules.md#SEC-13) | The privacy notice as a separate delivery | v0.1 | no |
 | [SEC-14](../conformance/rules.md#SEC-14) | Per-principal usage is anonymized after 93 days | v0.2 | no |

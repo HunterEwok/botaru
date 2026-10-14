@@ -188,7 +188,6 @@ The codes of `check_manifests.py` that fixtures refer to (`expect: {error: <code
 | `flow_body_invalid` | flow step body fails the P1 schema or the type params |  |
 | `flow_denied_passes` | a call from the denied section passes the closed schema |  |
 | `flow_ref_missing` | flow step type not found |  |
-| `forced_schema_unsupported` | a commission seat profile has no forced_schema: true, which ballots need | GOV-7 |
 | `format_unknown` | x-botaru-format or resource format is not in spec/model/formats.yaml | INJ-1, MAN-10 |
 | `global_tenant_data` | a global manifest holds a value that looks like tenant data | TEN-6 |
 | `high_risk_one_approver` | production tenant lets a high risk action with approvals: 1 be requested | APR-16 |
@@ -199,6 +198,7 @@ The codes of `check_manifests.py` that fixtures refer to (`expect: {error: <code
 | `listener_admin_worker_network` | the P2 listener network is a worker network (note) | IDN-7 |
 | `listener_test_in_production` | test-control listener of the core on a kind: production host | DEP-10 |
 | `manager_line_missing` | manager budget line is not above 0 while the manager is enabled | MGR-20 |
+| `manager_profile_missing` | manager enabled without the seat profile in the farm charter | MGR-20 |
 | `manager_profile_not_allowed` | manager seat profile is not in models_allowed | MGR-20 |
 | `max_share_without_group` | dispatch rule with max_share and without group | DSP-11 |
 | `max_tokens_field` | manifest has a max_tokens field | BUD-9 |

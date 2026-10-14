@@ -1,11 +1,10 @@
 id: gov-fx-07
-rules: [IDN-12, GOV-23]
-description: 'A task of an identity in a clean context (a ballot, a memory.pick.v1 fact selection) can be executed by a worker that is not
-  its own: acting_bot stays this identity, and the executing worker is written into the attempt and the audit. It is executed by a worker of the identity''s
-  role in its tenant on the role slot; for the manager seat in tenant T the farm_manager lens review and the ballot
-  are executed by a worker of the reviewer role of T on the seat slot, and the fact selection of section T by a worker of the role farm-manager in T. A task
-  with memory, a session, an inbox or tools goes only to the worker of the identity binding with the current binding epoch
-  (D20). Numbers of identities, workers and tasks are shortened, as in the examples of docs/bots.md.'
+rules: [IDN-12]
+description: 'A task of an identity that needs no memory, session, inbox or tools can be executed by any
+  worker of the identity''s role in its tenant: acting_bot stays this identity, and the executing worker is written into the attempt
+  and the audit. A task with memory, a session, an inbox or tools goes only to the worker of the identity binding with the current
+  binding epoch (D20). For the manager seat in tenant T the farm_manager lens review runs on a worker of the reviewer role of T on
+  the seat slot (GOV-25). Numbers of identities, workers and tasks are shortened, as in the examples of docs/bots.md.'
 given:
   bots:
     bot_31:
@@ -21,16 +20,12 @@ given:
       role: commission-member
       tenant: demo
       slots: [seat]
-    w_0060:
-      role: farm-manager
-      tenant: demo
-      slots: [seat]
     w_0070: {role: ops-runner, tenant: demo2}
   tenant: demo
 cases:
 - id: gov-fx-07-a
   given:
-    task: {type: memory.pick.v1, for_bot: bot_31}
+    task: {type: ops.digest.v1, for_bot: bot_31}
     claim_by: w_0043
   expect:
     leased: true
@@ -38,7 +33,7 @@ cases:
     audit: {acting_bot: bot_31, worker: w_0043}
 - id: gov-fx-07-b
   given:
-    task: {type: memory.pick.v1, for_bot: bot_31}
+    task: {type: ops.digest.v1, for_bot: bot_31}
     claim_by: w_0070
   expect: {leased: false, note: a worker of another tenant}
 - id: gov-fx-07-c
@@ -54,11 +49,3 @@ cases:
     leased: true
     slot: seat
     attempt: {acting_bot: bot_41, executed_by_worker: w_0050}
-- id: gov-fx-07-e
-  given:
-    task: {type: memory.pick.v1, for_bot: bot_41, section: demo}
-    claim_by: w_0060
-  expect:
-    leased: true
-    slot: seat
-    attempt: {acting_bot: bot_41, executed_by_worker: w_0060}

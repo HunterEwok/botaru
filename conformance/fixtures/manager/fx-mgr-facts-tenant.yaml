@@ -3,7 +3,7 @@ rules: [MGR-27]
 description: 'Seat memory: the store (T, bot, <holder identity>) is separate in each tenant; it holds only
   core records and facts; the reader role has no memory. Only a decision attempt in T proposes facts; they are read by decision
   attempts and the manager lens review attempts in T, only with untrusted_origin: false. When the holder changes, the facts of each
-  section are offered to the new holder separately, with a memory.pick.v1 task in T. Nothing passes between tenants.'
+  section pass to the new holder separately, rechecked and copied by code in T without a task. Nothing passes between tenants.'
 given:
   seat:
     id: farm-manager
@@ -60,13 +60,9 @@ cases:
     fact_offers:
     - tenant: demo
       facts: [f_m1, f_m2]
-      task:
-        type: memory.pick.v1
-        tenant: demo
-        role: farm-manager
-        slot: seat
-        key: system:handover:<fact offer>
+      copied_in_tenant: demo
     - tenant: demo2
       facts: [f_m3]
-      task: {type: memory.pick.v1, tenant: demo2}
+      copied_in_tenant: demo2
+    tasks_enqueued: 0
     farm_record_fields: [holder, epoch, state, stop_reasons]

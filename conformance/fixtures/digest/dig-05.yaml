@@ -21,7 +21,7 @@ given:
     origin: {level: 0, acting_bot: bot_17}
     verdict: {outcome: dismissed, reason: veto, veto_lenses: [operational]}
     change: {kind: manifest_change, field: max_running, target: {kind: DispatchRule, name: report-nightly}, from: 2, to: 3}
-    sample: {month: '2026-11', stratum: veto_operational, inclusion_prob: 0.5, answer: would_accept}
+    sample: {month: '2026-11', inclusion_prob: 0.5, answer: would_accept}
 steps:
 - call:
     port: P1

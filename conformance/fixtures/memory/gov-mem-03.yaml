@@ -1,9 +1,9 @@
 id: gov-mem-03
 rules: [MEM-7]
-description: 'Successor per the closed table of MEM-7. Only the core writes a fact offer (FactOffer): only active
+description: 'Successor under MEM-7. Only the core writes a fact offer (FactOffer): only active
   facts, rechecked at creation, no more than offer.max (100), only in the same tenant and only to the successor.
   Colleagues of the same role get no facts. Core records, the track record, sessions, the inbox and records of another tenant
-  are never offered. A person does not approve the handover. The offer is open until the end of the leaver''s seal (open_until);
+  are never offered. A person does not approve the transfer. The offer is open until the end of the leaver''s seal (open_until);
   if there is no successor by then, the facts are erased together with the seal. Numbers of identities, facts, tasks and proposals
   are shortened, as in the example in docs/bots.md.'
 given: {tenant: demo}

@@ -43,16 +43,16 @@ The operator sees the state of the farm with two P2 operations. `status` gives a
 
 - active holds with scope, effects, reason, deadline and author (HLD-1);
 - the rights and scope of every farm account in the monitoring system, the freshness of the audit head in its history, the monotonicity of the heads' `seq` and the retention period of the witness history (MON-4, MON-3);
-- for each tenant: whether there is a `monitor` worker in `active` and the age of its `last_seen`, the age of the last successful export to the monitoring system `monitor_export_age_s`, deliveries for E5 in `planned` older than 15 minutes (OBS-11, MON-11);
+- for each tenant: the age of the last successful export to the monitoring system `monitor_export_age_s`, deliveries for E5 in `planned` older than 15 minutes, and whether the adapter account sees only the node groups of its tenant (OBS-11, MON-11, MON-4);
 - the tick age of every background loop and missed ticks, the `last_seen` of workers (OBS-4); during a core drain, the drain deadline and a warning if it is exceeded (LCY-6);
 - the three health indicators (OBS-9) and the free space of the store (CAP-5);
 - open erasure requests and their outcomes per store (RET-7);
 - the age of the latest backup of every storage location, the date and outcome of the last restore check from the reports of the backup process, and whether the erasure log backup is older than the store backup (RET-8);
 - the age of the last usage reconciliation for every provider workspace (BUD-10) and an open spend gap after a restore with halved limits (RET-6);
 - the applied commit and the hash of the manifest set against the commit named by the operator (MAN-5);
-- the workspace caps at the provider and the outcome of the daily probe (GW-9), lack of money in the `review` line for reviews (BUD-13), a warning about an approaching model retirement date (`retires_at` of the model profile), the table of fixed costs per tenant (BUD-15);
+- the workspace caps read at the provider (GW-9), lack of money in the `review` line for reviews (BUD-13), a warning about an approaching model retirement date (`retires_at` of the model profile), the actual usage of each budget line over 30 days per tenant (BUD-15);
 - for a tenant where the improvement cycle is disabled, the line "improvement cycle disabled" with the reasons (INS-6), and who covers each lens of the commission (COM-7);
-- per tenant: the farm manager opt-out (`Tenant.spec.farm_manager.enabled: false`, the line "manager disabled", D-77), the farm manager pause for money reasons (`paused_in`, MGR-14), "shadow disabled" (COM-10), and from v0.2 "commission locked" (`commission_locked`, GOV-35) (OBS-11).
+- per tenant: the farm manager opt-out (`Tenant.spec.farm_manager.enabled: false`, the line "manager disabled", D-77), "shadow disabled" (COM-10), and from v0.2 "commission locked" (`commission_locked`, GOV-35) (OBS-11).
 
 ### Tenant debug journal
 
@@ -78,9 +78,9 @@ The core's background loops (core duties that work without an outside request) a
 | `erasure` | sends erasure requests to the stores, collects outcomes, raises an alarm at the deadline | v0.1 |
 | `schedule` | enqueues a task for every slot in UTC by the schedule time zone, skips nonexistent local time | v0.1 |
 | `retention` | deletes by the periods of retention classes: in v0.1 only `content` and `observation` by defaults (RET-2), from v0.2 by `Tenant.spec.retention` in every copy (RET-9, RET-10) | v0.1 |
-| `health` | computes the three health indicators, the age of backups and restore checks from the reports of the backup process, and raises alarms (OBS-9, RET-8) | v0.1 |
+| `health` | computes the three health indicators and, without profile `monitor`, the age of backups and restore checks from the reports of the backup process, and raises alarms (OBS-9, RET-8) | v0.1 |
 
-The other core loops (`reaper`, `deadline`, `delivery`, `approval-expiry`, `budget`, `provider_check`, `membership`, `inbox`, `observe`, `proposal`, `campaign`, `script`, `incident`, `control`, `identity`, `grant`, `governance`, `expectation`) follow the same contract and mark their ticks the same way; their full list with versions is in `spec/ports/background-loops.md`.
+The other core loops (`reaper`, `deadline`, `delivery`, `approval-expiry`, `budget`, `membership`, `inbox`, `observe`, `proposal`, `campaign`, `script`, `incident`, `control`, `identity`, `grant`, `governance`, `expectation`) follow the same contract and mark their ticks the same way; their full list with versions is in `spec/ports/background-loops.md`.
 
 ### Plugins, channels and the provider
 
@@ -144,12 +144,12 @@ An installation has one path of alarms to people (MON-1, D-88). Without the `mon
 | `alarm.store.free.low` | the free space of the store volume is below the soft threshold | CAP-5 | v0.1 |
 | `alarm.erasure.overdue` | an erasure request has been open longer than its deadline | RET-7 | v0.1 |
 | `alarm.provider.spend_cap` | the model provider refused on the spend cap | CAP-2 | v0.1 |
-| `alarm.hold.auto` | the core set an auto-stop | HLD-6, HLD-7, CAP-4 | v0.1 |
+| `alarm.hold.auto` | the core set an auto-stop | HLD-6, HLD-7, CAP-4, HLD-9 | v0.1 |
 | `alarm.health.urgent_age`, `alarm.health.delivery_share`, `alarm.health.loop_tick` | a health indicator is beyond its threshold | OBS-9 | v0.1 |
-| `alarm.backup.overdue` (`warn`) | a storage location has had no `backup.report {kind: backup, ok: true}` report for longer than 26 hours, or a report with `ok: false` arrived | RET-8 | v0.1 |
-| `alarm.backup.restore_check_overdue` (`warn`) | no `backup.report {kind: restore_check, ok: true}` report for longer than 8 days, or the restore check failed | RET-8 | v0.1 |
+| `alarm.backup.overdue` (`warn`) | without profile `monitor`: a storage location has had no `backup.report {kind: backup, ok: true}` report for longer than 26 hours, or a report with `ok: false` arrived | RET-8 | v0.1 |
+| `alarm.backup.restore_check_overdue` (`warn`) | without profile `monitor`: no `backup.report {kind: restore_check, ok: true}` report for longer than 8 days, or the restore check failed | RET-8 | v0.1 |
 | `alarm.spend.unreconciled` (`warn`) | the restore was completed with the operation `restore.complete --spend-pending`, and the spend gap has not yet been reconciled with the provider's report; while it holds, the daily limits of all tenants are cut in half | RET-6 | v0.1 |
-| `alarm.spend.reconcile_overdue` (`warn`) | a provider workspace has had no `spend_reconciled` line for two days | BUD-10 | v0.1 |
+| `alarm.spend.reconcile_overdue` (`warn`) | a provider workspace has had no `spend_reconciled` line for longer than `spend.reconcile_overdue_days` (35 days by default) | BUD-10 | v0.1 |
 | `alarm.spend.estimate_drift` (`warn`) | the daily sum of the workspace usage lines differs from the provider's daily sum by more than the tolerance from the deployment settings | BUD-10 | v0.1 |
 | `alarm.monitor.export_stalled` (`warn`) | the export to the monitoring system for a tenant has failed for longer than 15 minutes; it reaches the monitoring system when the connection returns, and meanwhile people get the code message `monitor_export_stalled` | MON-11 | v0.1 |
 | `alarm.incident.unhandled` (`page`) | an incident has had neither an operation nor P2 `incident.ack` (a person took the incident) within the `page_if_unhandled_after` of its class; it is cleared by an operation, `incident.ack` or closing the incident (`resolved`, `dismissed`) | MGR-7 | v0.1 |
@@ -189,7 +189,7 @@ Scopes and effects are closed lists in `spec/model/holds.yaml`. The scopes `sche
 | `resource` | a catalog resource | the operator; a tenant person with `hold.set:<scope>`; the holder of the farm manager seat | v0.1 |
 | `bot_group`, `bot` | a bot group or one bot | the operator; a tenant person with `hold.set:<scope>`; the holder of the farm manager seat | v0.1 |
 | `seat` | the farm manager seat | only an operator with `admin:farm` (kill switch, MGR-15); the seat safeguard by code (MGR-14) | v0.1 |
-| `governance` | one governance case (its pause) | a tenant person with `admin:governance` in the case's tenant (the "Pause" button on the `governance_stuck` card, or P2) | v0.2 |
+| `governance` | one governance case (its pause) | a tenant person with `admin:governance` in the case's tenant (through P2) | v0.2 |
 | `schedule` | one schedule | the operator; a tenant person with `hold.set:<scope>`; an auto-stop (CAP-4) | v0.2 |
 
 | Effect | What it forbids | Where it is checked | Version |
@@ -210,7 +210,7 @@ A hold takes effect from the next check, without `apply` and without restarts (H
 
 With `no_message`, sending bot messages in the scope gets `rejected(held)`, entries that an attempt accumulated are dropped at its `complete` (`discarded(held)`), wake-ups in the scope are not enqueued, and reading inboxes is allowed. With `cancel_running`, running attempts learn about the cancelation in the heartbeat answer, their P3 and P4 handles are revoked, and the attempt ends with reason `held` and is not spent. While a hold with `cancel_running` or `no_claim` on the task's scope is active, `claim` does not dispatch the task: otherwise the task would be dispatched and canceled in a loop.
 
-Campaigns in the scope pause in the same transaction as the hold (ORC-11); a paused campaign without a decision for longer than `escalate_paused_after` (default 2 hours) gives a notice to the tenant admins (`docs/coordination.md`). A script step whose enqueue the hold rejected or whose pending approval the hold canceled becomes `failed(held)`, and the run continues by its `on_failure`; from v0.2 a hold that touches a run pauses the whole run in the same transaction, and only the initiator resumes it after the hold is released (SCR-10). A hold on scope `bot` set by a person moves the bot identity to `suspended` (IDN-9): it has no tasks, reviews or ballots, and the release or expiry of the last such hold returns it to `active` (`spec/lifecycles/identity.md`). A hold by the holder of the farm manager seat on the same bot only delays its tasks and changes neither the identity state, nor its eligibility for promotion, nor its vote (MGR-9).
+Campaigns in the scope pause in the same transaction as the hold (ORC-11); a paused campaign without a decision for longer than `escalate_paused_after` (default 2 hours) gives a notice to the tenant admins (`docs/coordination.md`). A script step whose enqueue the hold rejected or whose pending approval the hold canceled becomes `failed(held)`, and the run continues by its `on_failure`; from v0.2 a hold that touches a run pauses the whole run in the same transaction, and only the initiator resumes it after the hold is released (SCR-10). A hold on scope `bot` set by a person moves the bot identity to `suspended` (IDN-9): it has no tasks or reviews, and the release or expiry of the last such hold returns it to `active` (`spec/lifecycles/identity.md`). A hold by the holder of the farm manager seat on the same bot only delays its tasks and changes neither the identity state, nor its eligibility for promotion (MGR-9).
 
 An urgent recall of a plugin, action, task type or channel is done with a hold, and the removal from git follows later with an ordinary `apply`: this way the recall does not wait for review and rollout.
 
@@ -232,12 +232,12 @@ A hold is released by a principal with the right `hold.release` on its scope and
 | Who set the hold | Who releases it |
 |---|---|
 | the operator (any reason, including `suspended` at a tenant suspension, `compromised` at a secret revocation, SEC-6) | only the operator |
-| code inside the tenant, author `contain_auto` (auto-stop HLD-6, HLD-7, CAP-4; first measure of an incident MGR-7; maintenance window MON-9) | the tenant admin or the operator |
+| code inside the tenant, author `contain_auto` (auto-stop HLD-6, HLD-7, CAP-4, HLD-9; first measure of an incident MGR-7; maintenance window MON-9) | the tenant admin or the operator |
 | a tenant person with `hold.set:<scope>` | the tenant admin or the operator |
 | the holder of the farm manager seat (`control.apply`) | the holder itself (only its own holds), the tenant admin through P2 `control.revert` with `incident`, the operator |
 | the seat safeguard, or the operator on the scopes `farm` and `seat` | only the operator (holds on `farm` and `seat` are operator operations, PRM-14) |
 
-A hold on scope `governance` (from v0.2) is set and released by a person with `admin:governance` in the case's tenant (GOV-23). The rights `hold.set:<scope>` and `hold.release` are privileged and granted only through `farmctl` (PRM-13), like other decision rights. A hold set by code is released only by a person of at least the required rank; otherwise it ends at its deadline. The core does not release holds by itself: not on closing an incident, not on clearing an alarm, not on deleting a maintenance window. C2 checks the rank at the `hold.release` check point and answers `forbidden`.
+A hold on scope `governance` (from v0.2) is set and released by a person with `admin:governance` in the case's tenant (GOV-14). The rights `hold.set:<scope>` and `hold.release` are privileged and granted only through `farmctl` (PRM-13), like other decision rights. A hold set by code is released only by a person of at least the required rank; otherwise it ends at its deadline. The core does not release holds by itself: not on closing an incident, not on clearing an alarm, not on deleting a maintenance window. C2 checks the rank at the `hold.release` check point and answers `forbidden`.
 
 ### Auto-stops
 
@@ -249,6 +249,7 @@ An auto-stop is a hold that code sets by a rule from a closed list. A new auto-s
 | the operation limits of the farm manager seat are exceeded | a `seat` hold with `no_control`, without a deadline | MGR-14 | v0.1 |
 | the tenant's spend within a sliding hour is above its hourly limit `Tenant.spec.budgets.hour_eur` (default `month_eur`/100, BUD-1) | a `role` hold with `no_claim` on every agent role of the tenant, reason `runaway_spend`, author `contain_auto`, deadline one hour; `job` tasks without a model run | HLD-7 | v0.1 |
 | the last `K` = 3 slots of a schedule in a row ended with `attempts_exhausted` or `runs_exhausted` (D-100) | a `schedule` hold with `no_enqueue`, reason `schedule_failing`, author `contain_auto`, without a deadline; later slots are skipped with `held` | CAP-4 | v0.2 |
+| 3 confirmed links of incidents to the work of one role within 90 days: an attribution to a change the role proposed (GOV-13) or a script link to a run the role drafted (TRN-7); the same for every role (D-114) | a `role` hold with `no_action`, reason `role_incidents`, author `contain_auto`, without a deadline; draft acceptance rejects the role's drafts with actions or service control with `held` | HLD-9 | v0.3 |
 
 Every auto-stop raises the alarm `alarm.hold.auto`. An injection in text can trigger an auto-stop but cannot bypass it: this is a deliberate fail-safe refusal.
 
@@ -383,7 +384,7 @@ The restore is completed by P2 `restore.complete` or by the core itself if at st
 
 ### What is lost
 
-This is normal and is written here, not in a rule. Channel updates accepted after the backup moment have already been acknowledged by the core, and the external system will not send them again: these requests are lost, people will repeat them. Approvals that were waiting for a decision are canceled: the actions have to be requested again. Schedules catch up missed slots within their catch-up window. Provider spend between the backup moment and the failure is not recorded in the backup; the core fills it in with `spend_reconciled` lines from the provider's report before readiness, and after that the daily usage reconciliation keeps it (BUD-10).
+This is normal and is written here, not in a rule. Channel updates accepted after the backup moment have already been acknowledged by the core, and the external system will not send them again: these requests are lost, people will repeat them. Approvals that were waiting for a decision are canceled: the actions have to be requested again. Schedules catch up missed slots within their catch-up window. Provider spend between the backup moment and the failure is not recorded in the backup; the core fills it in with `spend_reconciled` lines from the provider's report before readiness, and after that the usage reconciliation keeps it (BUD-10).
 
 ### Backup reports and the restore check
 
@@ -399,7 +400,7 @@ size: 41234567890                 # bytes
 location_id: store-daily          # id of the storage location from the deployment configuration; no paths or addresses
 ```
 
-A backup whose restore has not been checked does not count as a backup. At least once a week the backup process or the operator restores a fresh backup on a separate test bench that follows the same rules as the backup, runs the `restore/` check set and P2 `doctor` on it, and reports `backup.report {kind: restore_check}`. The `health` loop counts by the latest reports: no successful `backup` report for a storage location for longer than 26 hours gives the alarm `alarm.backup.overdue`; no successful `restore_check` report for longer than 8 days gives the alarm `alarm.backup.restore_check_overdue`; a report with `ok: false` gives the same alarm at once. The age of the latest backup of every location, the date and outcome of the last check are visible in `status` and `doctor`; `doctor` fails the check if the erasure log backup is older than the store backup. This way a backup script that silently failed in July is noticed the next day, not at restore time.
+A backup whose restore has not been checked does not count as a backup. At least once a week the backup process or the operator restores a fresh backup on a separate test bench that follows the same rules as the backup, runs the `restore/` check set and P2 `doctor` on it, and reports `backup.report {kind: restore_check}`. The age of the latest backup of every location, the date and outcome of the last check are visible in `status` and `doctor`; `doctor` fails the check if the erasure log backup is older than the store backup. With profile `monitor` the monitoring system watches the backup age and the restore check result from the output of the backup tool with the farm template, and the core raises no backup alarm. Without profile `monitor` the `health` loop counts by the latest reports: no successful `backup` report for a storage location for longer than 26 hours gives the alarm `alarm.backup.overdue`; no successful `restore_check` report for longer than 8 days gives the alarm `alarm.backup.restore_check_overdue`; a report with `ok: false` gives the same alarm at once (RET-8). This way a backup script that silently failed in July is noticed the next day, not at restore time.
 
 ## Capacity and dependency failure
 
@@ -418,9 +419,6 @@ spec:
   delegated_groups: [researcher] # groups that the tenant admin grants by themselves (PRM-16)
   farm_manager:                 # the farm manager for this tenant (D-77)
     enabled: true               # false: the farm manager reads no data, no review and no lens
-    lens: ops-reader            # the farm manager's lens in the tenant
-    daily_review: true          # daily review
-    model_profile: seat-default # the seat's model profile for this tenant
   budgets:                      # money (BUD-1); hour_eur drives the HLD-7 auto-stop
     month_eur: 200
     day_eur: 10                 # default month/20
@@ -454,7 +452,7 @@ The thresholds are set by the deployment binding. The store headroom is not part
 
 ### Space quotas on volumes
 
-The farm store is not the only disk that can fill up: pipelines, sinks and tenant tasks write to volumes of catalog machines, for example `res:ctd1:data`. The catalog declares volumes in `Catalog.spec.volumes` and links each volume with everyone who writes to it (`writers`: tenants, sinks, pipelines), and every writer on this volume has a space quota `quota_bytes` (CAP-6). At catalog approval and at `apply` of quotas, the core shows people for each volume whether every writer has a quota and whether the sum of the quotas is below the alarm threshold of class `disk_full`. On this depends whether a "disk full" incident can stop the farm manager seat: only then can the disk be filled only by those the farm manager could watch (MGR-33). The used space of each volume is written by a code observation series (`dataorigin: code`): a `job` role reads it from the monitoring system history (the monitoring agent measured the number; the model takes no part in the series). By this series the core checks that the growth was visible for two hours before the incident (MGR-34).
+The farm store is not the only disk that can fill up: pipelines, sinks and tenant tasks write to volumes of catalog machines, for example `res:ctd1:data`. The catalog declares volumes in `Catalog.spec.volumes` and links each volume with everyone who writes to it (`writers`: tenants, sinks, pipelines), and every writer on this volume has a space quota `quota_bytes` (MGR-33). At catalog approval and at `apply` of quotas, the core shows people for each volume whether every writer has a quota and whether the sum of the quotas is below the alarm threshold of class `disk_full`. On this depends whether a "disk full" incident can stop the farm manager seat: only then can the disk be filled only by those the farm manager could watch (MGR-33). The used space of each volume is written by a code observation series (`dataorigin: code`): a `job` role reads it from the monitoring system history (the monitoring agent measured the number; the model takes no part in the series). By this series the core checks that the growth was visible for two hours before the incident (MGR-34).
 
 | Volume `res:ctd1:data`, 4 TB | Quota |
 |---|---|
@@ -462,7 +460,7 @@ The farm store is not the only disk that can fill up: pipelines, sinks and tenan
 | sink `archive` | 0.5 TB |
 | pipeline `ctd-qc` | 1 TB |
 
-The class `disk_full` fires when less than 5% is free, that is, more than 3.8 TB is used. The sum of the quotas, 3.5 TB, is below that, all writers have quotas, and the MGR-33 condition for this volume is met. If another sink without a quota wrote to the volume, `apply` would show the volume as not meeting the condition, and a `disk_full` incident on it would not stop the farm manager seat. The quota on the volume itself is enforced by the writer: the volume's file system, the sink or the pipeline per the deployment settings; the core checks that the quotas are declared and their sum is below the threshold.
+The class `disk_full` fires when less than 5% is free, that is, more than 3.8 TB is used. The sum of the quotas, 3.5 TB, is below that, all writers have quotas, and the MGR-33 condition for this volume is met. If another sink without a quota wrote to the volume, `apply` would show the volume as not meeting the condition, and a `disk_full` incident on it would not stop the farm manager seat. The quota on the volume itself is a quota of the volume's file system, the sink or the pipeline per the deployment settings, and the alarm on a filling volume comes from the monitoring system's template; the core neither enforces quotas nor raises a volume alarm of its own, it only reads the free space series (CAP-6) and shows whether the declared quotas meet the condition.
 
 ### Refusal reasons
 
@@ -474,7 +472,7 @@ The reason registry `reasons.yaml` distinguishes a task failure from a failure o
 | `provider_rate_limited` | no | yes, after `retry_after_s` | same; this is the model provider's rate limiter | CAP-2 |
 | `service_rate_limited` | no | yes, after `retry_after_s` | a refusal by the farm's rate limiter: actions with services and scripts (MON-8, MON-10), notes (MON-7), cards, wake-ups; for actions with services the alarm `alarm.service.control.rate` | MON-8, MON-10 |
 | `forbidden` | no | no | a refusal of a right: `hold.release` not by rank, a service or script outside the role's right, a node of another tenant | HLD-2, MON-8, MON-10 |
-| `provider_quota` | no | yes: the dispatcher does not dispatch the task until the tenant has a share of the model pool, and P4 delays a call beyond the share | same | CAP-2, GW-10 |
+| `provider_quota` | no | yes: the dispatcher does not dispatch the task while its pair (tenant workspace, model pool) waits for the provider rate limit | same | CAP-2, GW-10 |
 | `provider_config` | no | not by timer: the task waits for the provider setting to be fixed, the pair's circuit is open | same; an alarm by code | CAP-2, GW-13 |
 | `provider_spend_cap` | no | no | `failed`; an alarm by code | CAP-2 |
 | `plugin_unavailable` | no | no: the core does not retry the call, the model decides itself | a tool call error at once, the task continues | OBS-10 |
@@ -537,7 +535,7 @@ Daily tasks are better scheduled at a time outside the night window of clock cha
 
 ### Schedule check before "Accept"
 
-A bot can propose to change the `cron`, the time zone or the pause of a schedule. From v0.2, before the "Accept" button of such a proposal, the core computes with code the slots of the new schedule for a year ahead and shows on the card (TIM-5): local times that will disappear or repeat at clock changes; overlaps with slots of the tenant's other schedules whose tasks depend on the same resources; overlaps with the change windows of changes that have a running change trial (PRP-21), because a new change of the same subjects in such a window makes the trial outcome `mixed` (PRP-22). An expression or time zone that would fail `apply` gets no "Accept" button. If a slot of a backup schedule (a type with `makes_backup: true`) disappears on at least one day, for example at a clock change, the proposal gets the refusal `rejected(schedule_time_invalid)`. At the press of "Accept" itself the core repeats the check: if another schedule changed in the meantime and the outcome became different, the decision is not accepted, and the card is updated with the new outcome. The model takes no part in this check. Maintenance windows of the monitoring system are not computed a year ahead: that would rebuild the monitoring system's own window scheduler, and a slot inside a window is skipped when it comes (MON-9, D-100). How a proposal reaches the card and how its outcome is measured is described in `docs/improvements.md`.
+A bot can propose to change the `cron`, the time zone or the pause of a schedule. From v0.2, before the "Accept" button of such a proposal, the core checks the new schedule with code (TIM-5). An expression or time zone that would fail `apply` gets no "Accept" button. The card shows the local times that will disappear or repeat at the clock changes of the time zone within a year; code finds them from the transition dates and does not list the slots. If a slot of a backup schedule (a type with `makes_backup: true`) disappears on at least one day, for example at a clock change, the proposal gets the refusal `rejected(schedule_time_invalid)`. The model takes no part in this check. Maintenance windows of the monitoring system are not computed a year ahead: that would rebuild the monitoring system's own window scheduler, and a slot inside a window is skipped when it comes (MON-9, D-100). How a proposal reaches the card and how its outcome is measured is described in `docs/improvements.md`.
 
 ## Tenant lifecycle
 
@@ -713,13 +711,14 @@ Generated from the registry `conformance/requirements.yaml`; the full text of ev
 | [CAP-2](../conformance/rules.md#CAP-2) | A dependency failure does not spend an attempt | v0.1 | no |
 | [CAP-4](../conformance/rules.md#CAP-4) | Dead work and schedule pause | v0.2 | no |
 | [CAP-5](../conformance/rules.md#CAP-5) | Storage headroom | v0.1 | yes |
-| [CAP-6](../conformance/rules.md#CAP-6) | Volume quotas | v0.1 | no |
+| [CAP-6](../conformance/rules.md#CAP-6) | Volume free space is read from the monitoring system | v0.1 | no |
 | [HLD-1](../conformance/rules.md#HLD-1) | A hold as a recorded and visible object | v0.1 | yes |
 | [HLD-2](../conformance/rules.md#HLD-2) | Who sets and lifts a hold | v0.1 | yes |
 | [HLD-3](../conformance/rules.md#HLD-3) | How a hold acts | v0.1 | yes |
 | [HLD-6](../conformance/rules.md#HLD-6) | Auto-stop "secret in outbound" | v0.1 | yes |
 | [HLD-7](../conformance/rules.md#HLD-7) | Auto-stop on spend rate | v0.1 | no |
 | [HLD-8](../conformance/rules.md#HLD-8) | A pause of approvals set by a person | v0.2 | yes |
+| [HLD-9](../conformance/rules.md#HLD-9) | Auto-hold of a role after confirmed incident links | v0.3 | yes |
 | [LCY-1](../conformance/rules.md#LCY-1) | Tenant lifecycle | v0.2 | yes |
 | [LCY-2](../conformance/rules.md#LCY-2) | Tenant and principal export | v0.2 | no |
 | [LCY-3](../conformance/rules.md#LCY-3) | Principal lifecycle | v0.2 | yes |
@@ -742,7 +741,7 @@ Generated from the registry `conformance/requirements.yaml`; the full text of ev
 | [RET-5](../conformance/rules.md#RET-5) | A backup is part of the production perimeter | v0.1 | yes |
 | [RET-6](../conformance/rules.md#RET-6) | Restore from backup | v0.1 | yes |
 | [RET-7](../conformance/rules.md#RET-7) | Early deletion only through the erasure log | v0.1 | yes |
-| [RET-8](../conformance/rules.md#RET-8) | Backup reports and restore checks | v0.1 | no |
+| [RET-8](../conformance/rules.md#RET-8) | Backup reports, with core alarms only without the monitoring system | v0.1 | no |
 | [RET-10](../conformance/rules.md#RET-10) | Deletion by period in every copy | v0.2 | yes |
 | [RET-11](../conformance/rules.md#RET-11) | Channel cache, every runtime and tenant scope in erasure | v0.2 | yes |
 | [TIM-1](../conformance/rules.md#TIM-1) | One clock, the store clock | v0.1 | yes |

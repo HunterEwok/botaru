@@ -1,5 +1,5 @@
 registry: control-ops
-version: 1
+version: 2
 description: >-
   Control operations: a closed list by which the holder of the farm manager seat
   changes the world through C1 control.apply; people call the same operations through P2
@@ -26,7 +26,7 @@ entries:
   - id: quarantine
     since: v0.1
     meaning: a ready set of stops on a worker with the effects no_claim, cancel_running, no_tool, no_action and revocation of the runtime handles (DEP-5)
-    limits: duration at most 2 h; quarantines_per_hour (3); in distrust mode at most 1 per incident
+    limits: duration at most 2 h; counts in ops_per_hour; in distrust mode at most 1 per incident
     stop: true
     human_via: p2
     default_consent: true
@@ -50,7 +50,7 @@ entries:
   - id: cancel
     since: v0.1
     meaning: the task goes to canceled(by_manager)
-    limits: cancels_per_hour (50); only involved tasks; in distrust mode only by a control card
+    limits: counts in ops_per_hour; only involved tasks; in distrust mode only by a control card
     stop: false
     human_via: p2
     default_consent: true

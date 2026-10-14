@@ -6,14 +6,15 @@ checks:
 - id: blackbox:governance/attribution-reminders
   method: blackbox
   rules:
+  - COM-17
   - GOV-30
   version: v0.2
   section: Tests without a model
-  source: docs/quality.md:523
+  source: docs/quality.md:524
   spec:
     What: (v0.2) an attribution card is answered "No" after the second reminder; another one is disputed and then canceled
-    Expectation: no third reminder after the answer; a disputed attribution stays out of the calibration until resolved; a
-      canceled one leaves it
+    Expectation: no third reminder after the answer; a disputed attribution stays out of the accuracy (COM-17) until resolved;
+      a canceled one leaves it
 - id: blackbox:governance/accountability-shadow
   method: blackbox
   rules:
@@ -33,9 +34,10 @@ checks:
   section: Tests without a model
   source: docs/quality.md:609
   spec:
-    What: '`apply` of `accountability: on` with one holder at 19 scored forecasts; then all at 20'
+    What: '`apply` of `accountability: on` with the default `commission.accountability_min_forecasts` 20 and one holder at
+      19 scored forecasts; then all at 20; then a tenant with the parameter 8 and all holders at 8'
     Expectation: '`accountability_not_ready`; then the card `accountability_ready` goes once a month, `apply` accepts `on`
-      and writes `commission.accountability_on`'
+      and writes `commission.accountability_on`; the tenant with 8 accepts `on` at 8; a parameter of 7 fails `apply`'
 - id: blackbox:governance/rejection-link-candidate
   method: blackbox
   rules:
@@ -134,9 +136,9 @@ checks:
   source: docs/quality.md:618
   spec:
     What: a case needs a seat in a tenant with `on`; one holder has the worst accuracy, one has 8 scored forecasts for 30
-      days, one is protected by a reward; overlapping intervals of the two worst
-    Expectation: the worst leaves after the person's button; the 8-forecast holder counts with the lens median; the protected
-      one is not chosen; with overlap the vote runs among the tied seats only
+      days, one is protected by a reward; then the two worst differ by less than one standard error
+    Expectation: code proposes the worst and it leaves only after the person's button; the 8-forecast holder counts with the
+      lens median; the protected one is not proposed; on the tie code proposes nobody and the person chooses from L
 - id: blackbox:governance/cooldown-after-unseat
   method: blackbox
   rules:

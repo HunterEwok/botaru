@@ -9,4 +9,172 @@
 #     removed: 2026-10-14
 #     reason: why it goes
 #     decisions: [D-NN]
-entries: []
+entries:
+  - registry: spec/model/meters.yaml
+    values: [tool_calls, sandbox_seconds, storage_bytes, approvals_requested]
+    removed: 2026-10-14
+    reason: >-
+      Money is the one reserved unit (BUD-5): a paid tool is reserved by its price, store bytes
+      and approval cards have their own counters (CAP-1 max_storage_bytes, APR-2
+      cards_per_tenant_hour), and sandbox_seconds comes back with the sandbox rules when they
+      return from deferral.
+    decisions: [D-114]
+  - schema: spec/model/script.schema.json
+    change: breaking
+    removed: 2026-10-14
+    reason: >-
+      A script condition keeps only eq, ne and in over closed fields of a step with one result and over the step
+      state; the rollup atom over fanout items and the items.from selection with where go to the deferred rules (D-114).
+    decisions: [D-114]
+  - registry: spec/model/condition-ops.yaml
+    values: [lt, le, gt, ge, not_in, exists]
+    removed: 2026-10-14
+    reason: >-
+      A script condition keeps only eq, ne and in (SCR-3); size comparisons, not_in and exists go to the deferred
+      rules (D-114).
+    decisions: [D-114]
+  - registry: spec/model/decision-points.yaml
+    values: [translator_suspended, governance_stuck]
+    removed: 2026-10-14
+    reason: >-
+      The notice of the translator pause goes away with it; the auto-hold of a role raises alarm.hold.auto and is
+      visible in hold.list (HLD-9, HLD-1). A case no longer waits for votes, so the card about a stuck vote has
+      nothing to show (D-115).
+    decisions: [D-114, D-115]
+  - schema: spec/model/p2-manager-resume-request.schema.json
+    change: removed
+    removed: 2026-10-14
+    reason: >-
+      The money pause of the farm manager seat is dropped; the manager line of the tenant holds the money (MGR-14, MGR-20), so P2 manager.resume goes too.
+    decisions: [D-114]
+  - schema: spec/model/seat.schema.json
+    change: breaking
+    removed: 2026-10-14
+    reason: >-
+      The field paused_in of the money pause is dropped (MGR-14).
+    decisions: [D-114]
+  - schema: spec/model/p2-status-response.schema.json
+    change: breaking
+    removed: 2026-10-14
+    reason: >-
+      The field paused_in of the money pause is dropped (MGR-14).
+    decisions: [D-114]
+  - schema: spec/manifests/governance.schema.json
+    change: breaking
+    removed: 2026-10-14
+    reason: >-
+      Simpler manager limits and memory transfer: quarantines_per_hour and cancels_per_hour (one ops_per_hour limit, MGR-14), postmortem_max_eur.incident (only the daily ceiling, MGR-53) and memory.offer.take_max (code copies the facts, MEM-7) are dropped; the charter block ballots (reissue_max, stuck_after) existed only for the removed vote (D-115).
+    decisions: [D-114, D-115]
+  - schema: spec/manifests/tenant.schema.json
+    change: breaking
+    removed: 2026-10-14
+    reason: >-
+      The tenant opt-out of the farm manager is one flag enabled; lens, daily_review and model_profile are dropped (MGR-42).
+    decisions: [D-114]
+  - schema: spec/model/fact-offer.schema.json
+    change: breaking
+    removed: 2026-10-14
+    reason: >-
+      Code copies the rechecked facts to the successor without a choice task: the recipient states pending, picked and declined and the fields task and taken give way to copied (MEM-7).
+    decisions: [D-114]
+  - registry: spec/ports/operations.yaml
+    values: [P2.manager.resume]
+    removed: 2026-10-14
+    reason: >-
+      The money pause of the farm manager seat is dropped (MGR-14).
+    decisions: [D-114]
+  - registry: spec/model/delivery-kinds.yaml
+    values: [manager_spend_paused]
+    removed: 2026-10-14
+    reason: >-
+      The money pause of the farm manager seat is dropped (MGR-14).
+    decisions: [D-114]
+  - registry: spec/model/reasons.yaml
+    values: [manager_spend_paused, stops_manager_unused, incident_stop_unused, translator_suspended, defaulted_majority, reopened_after_wrong_leaver, manager_absent, governance_budget, voters_removed, reason_not_allowed, no_voters]
+    removed: 2026-10-14
+    reason: >-
+      The money pause of the farm manager seat is dropped (MGR-14); a v0.3 core does not warn about fields of v0.1 and v0.2 because there are no farms of earlier versions to migrate (MGR-55); the translator pause becomes the general auto-hold of a role through holds (HLD-9), with the hold reason role_incidents and the refusal held; codes of ballots, voters, the case money reserve and the reopening after wrong_leaver were removed with the vote (D-115).
+    decisions: [D-114, D-115]
+  - registry: spec/model/task-purposes.yaml
+    values: [handover]
+    removed: 2026-10-14
+    reason: >-
+      The choice of facts by a successor task is dropped; code copies the rechecked facts (MEM-7).
+    decisions: [D-114]
+  - schema: spec/model/ballot.schema.json
+    change: removed
+    removed: 2026-10-14
+    reason: >-
+      The secret mandatory vote "who leaves" was removed: code proposes the leaver by accuracy, otherwise a person chooses it on the promotion card; there are no ballots.
+    decisions: [D-114, D-115]
+  - schema: spec/model/ballot-package.schema.json
+    change: removed
+    removed: 2026-10-14
+    reason: >-
+      The secret mandatory vote "who leaves" was removed: code proposes the leaver by accuracy, otherwise a person chooses it on the promotion card; the figures of every seat moved onto the promotion card and into the case record.
+    decisions: [D-114, D-115]
+  - registry: spec/model/ballot-reasons.yaml
+    removed: 2026-10-14
+    reason: >-
+      The secret mandatory vote "who leaves" was removed: code proposes the leaver by accuracy, otherwise a person chooses it on the promotion card; ballots and their reason codes went with it.
+    decisions: [D-114, D-115]
+  - schema: spec/model/governance-case.schema.json
+    change: breaking
+    removed: 2026-10-14
+    reason: >-
+      The secret mandatory vote "who leaves" was removed: code proposes the leaver by accuracy, otherwise a person chooses it on the promotion card: the voters, the seed, expected, rounds, the budget reserve, the stuck flag and the states parked, balloting and counted went; the list L got the figures of its seats and the proposed leaver, and a removal case must carry it.
+    decisions: [D-114, D-115]
+  - schema: spec/model/promotion-entry.schema.json
+    change: breaking
+    removed: 2026-10-14
+    reason: >-
+      The field wrong_leaver_used went with the reason wrong_leaver: a case is no longer reopened with another list.
+    decisions: [D-114, D-115]
+  - registry: spec/model/governance-flags.yaml
+    values: [identical_reasons, single_model_bloc, stuck, defaulted, defaulted_majority, voters_removed, manager_absent, reopened_after_wrong_leaver]
+    removed: 2026-10-14
+    reason: >-
+      These flags described ballots, rounds and voters of the removed vote.
+    decisions: [D-114, D-115]
+  - registry: spec/model/governance-decline-reasons.yaml
+    values: [wrong_leaver]
+    removed: 2026-10-14
+    reason: >-
+      Disagreeing with the proposed leaver is answered with not_now; a case is no longer reopened with another list.
+    decisions: [D-114, D-115]
+  - registry: spec/model/governance-events.yaml
+    values: [governance.case.parked, governance.ballot.recorded, governance.round.counted, governance.voters_removed]
+    removed: 2026-10-14
+    reason: >-
+      Ballots, rounds, voters and the case money reserve went with the vote.
+    decisions: [D-114, D-115]
+  - schema: spec/model/test-function-eval-request.schema.json
+    change: breaking
+    removed: 2026-10-14
+    reason: >-
+      The function governance.count went with the vote, and commission.calibration became commission.accuracy when calibration merged into accuracy (COM-17).
+    decisions: [D-114, D-115]
+  - schema: spec/model/proposal-record.schema.json
+    change: breaking
+    removed: 2026-10-14
+    reason: >-
+      overlaps_with went with the simpler conflict rule (one running change per field, PRP-9); sample.stratum and sample.lens went with the strata of the audit sample (DIG-5).
+    decisions: [D-114]
+  - schema: spec/model/p2-commission-status-response.schema.json
+    change: breaking
+    removed: 2026-10-14
+    reason: >-
+      The audit sample is one share for the tenant without strata and without the Wilson bound (DIG-5).
+    decisions: [D-114]
+  - schema: evals/case.schema.json
+    change: removed
+    removed: 2026-10-14
+    reason: >-
+      The rate metric defaulted_ballots measured ballots by the code rule, which went with the vote.
+    decisions: [D-114, D-115]
+  - schema: spec/manifests/tool-plugin.schema.json
+    change: breaking
+    removed: 2026-10-14
+    reason: >-
+      A tool with billing: external must name price_eur, so that the core can reserve and charge its price (BUD-5).
+    decisions: [D-114]

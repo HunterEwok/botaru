@@ -6,19 +6,17 @@ checks:
 - id: store:governance/case-audit-metadata
   method: store
   rules:
-  - GOV-8
   - GOV-21
   version: v0.2
   section: Tests without a model
   source: docs/quality.md:503
   spec:
-    What: (v0.2) a governance case goes through opening, two rounds with ballots, a `not_eligible` queue event, `voters_removed`
-      and `decided`; then the audit log and the events are read through P2 `audit.query` by a person with `admin:governance`
+    What: (v0.2) a governance case goes through opening with the list L, a `not_eligible` queue event and a person's choice
+      of the leaver; then the audit log and the events are read through P2 `audit.query` by a person with `admin:governance`
       and by a person without it
-    Expectation: every step writes its command from `spec/model/governance-events.yaml` (v0.2) with `case`, `round`, `seat`,
-      the voter's `bot` and `bot_epoch` and the counted numbers; no ballot `choice` and no reason text appear in events or
-      audit before `decided`; after `decided` the secrecy of individual choices follows GOV-8; a person without `admin:governance`
-      gets `forbidden`
+    Expectation: every step writes its command from `spec/model/governance-events.yaml` (v0.2) with `case`, the list L with
+      the figures of its seats, the proposed seat, the chosen seat, the flags and the person; no free text appears in events
+      or audit; a person without `admin:governance` gets `forbidden`
 - id: store:governance/attribution-silence
   method: store
   rules:
@@ -30,6 +28,6 @@ checks:
     What: (v0.2) an attribution candidate with nobody answering for 7, 14, 21, 28 and 35 days; then an answer "Yes" on another
       one
     Expectation: 'after the 7-day card deadline the candidate is `unknown` and stays so: it does not expire, no promotion
-      trigger appears and the track record and calibration do not change; weekly reminders on day 14, 21 and 28 (no more than
+      trigger appears and the track record and accuracy do not change; weekly reminders on day 14, 21 and 28 (no more than
       3), after that only a row in the weekly digest to people with `governance.attribute`; "Yes" moves the attribution to
       `confirmed` and writes the audit line'

@@ -1,10 +1,9 @@
 id: fx-man-com-v02
-rules: [COM-10, COM-13, GOV-7]
+rules: [COM-10, COM-13]
 description: >-
   Apply lint of the v0.2 commission fields, on top of examples/. A shadow share of 0 is allowed only
   as an explicit shadow: off (COM-10); the escalation thresholds can only be raised from their
-  defaults 2 and 3 (COM-13); the commission seat profiles that ballots run on declare forced_schema:
-  true (GOV-7).
+  defaults 2 and 3 (COM-13).
 with_examples: true
 cases:
   - name: shadow off passes
@@ -31,26 +30,3 @@ cases:
     manifests:
       - {apiVersion: botaru/v1alpha1, kind: Commission, metadata: {name: demo, tenant: demo}, spec: {review_deadline: 48h, weights: {security: 3, operational: 2, cost: 1, value: 2}, recommend_if: {weighted_mean_gte: 2.5, value_gte: 2}, park_if: {weighted_mean_gte: 1.5}, escalation: {forward_if_score_gte: 2, untrusted_forward_if_score_gte: 2}}}
     expect: {error: escalation_threshold_lowered, at: untrusted_forward_if_score_gte}
-  - name: the example seat profile seat-alt without forced_schema
-    manifests:
-      - apiVersion: botaru/v1alpha1
-        kind: ModelProfile
-        metadata: {name: seat-alt}
-        spec:
-          provider: provider-b
-          model: model-b-large-2026-09
-          family: family-b
-          rank: 3
-          pool: family-b
-          fallback: []
-          fallback_on: [overloaded, unavailable, retired]
-          max_output_tokens: 8000
-          tokens_per_s: 45
-          price: {input: 3.00, output: 12.00, checked: 2026-10-01}
-          provider_retention_days: {value: 30, checked: 2026-10-01}
-          requires_retention: false
-          provider_training: {value: false, checked: 2026-10-01}
-          provider_human_review: {value: abuse_only, checked: 2026-10-01}
-          subprocessors: [{provider: provider-c, region: region-a}]
-          retires_at: null
-    expect: {error: forced_schema_unsupported, at: seat-alt}

@@ -1,5 +1,5 @@
 registry: dispatch-predicates
-version: 2
+version: 3
 description: >-
   Closed list of the dispatcher's filter conditions inside P1 `claim`. A task goes only to a worker
   for which all conditions hold; then the order: priority class strictly, since v0.2 fairness within
@@ -146,8 +146,8 @@ entries:
     rules: [GW-11]
   - id: D19
     since: v0.1
-    checks: The tenant has a free share of the model pool the task needs.
-    fact_from: P4 rate limiter
+    checks: The pair (tenant workspace, model pool) the task needs does not wait for the provider rate limit.
+    fact_from: P4, the provider's wait answer
     applies_to: [attempt]
     waiting_reason: provider_quota
     rules: [GW-10]

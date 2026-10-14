@@ -1,0 +1,7 @@
+# Charter of the service tenant farm (docs/farm-manager.md, GOV-33): the profile of the farm manager seat.
+apiVersion: botaru/v1alpha1
+kind: Governance
+metadata: {name: farm, tenant: farm}
+spec:
+  farm_manager:
+    model_profile: manager-std

@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "urn:botaru:schema:script:1",
   "title": "Script botaru.script/v1",
-  "description": "A script draft: a strict plan of steps by a closed schema; there is no expression language, code, loops or nested scripts (SCR-1). A step refers only to applied manifests of its own tenant (SCR-2); conditions only from the atoms of condition-ops.yaml, nesting at most 2 (SCR-3, the lint checks that there are at most 8 atoms); the agent goal only by a template or the assignment text, and from v0.2 a free goal text and parameters only in a kind: Script manifest from git (SCR-4, SCR-14). The schema rejects the fields that the core computes (max_tier, data_mark, untrusted_seen, the action list, the estimate, plan_hash, expanded fanout lists) and the field then inside fanout (SCR-5). At most 20 steps for the farm; draft acceptance checks the tenant ceiling (default 10) and the role ceiling.",
+  "description": "A script draft: a strict plan of steps by a closed schema; there is no expression language, code, loops or nested scripts (SCR-1). A step refers only to applied manifests of its own tenant (SCR-2); conditions only from the atoms eq, ne, in of condition-ops.yaml over closed fields of a step with one result and over the step state, nesting at most 2 (SCR-3, the lint checks that there are at most 8 atoms); the agent goal only by a template or the assignment text, and from v0.2 a free goal text and parameters only in a kind: Script manifest from git (SCR-4, SCR-14). The schema rejects the fields that the core computes (max_tier, data_mark, untrusted_seen, the action list, the estimate, plan_hash, expanded fanout lists) and the field then inside fanout (SCR-5). At most 20 steps for the farm; draft acceptance checks the tenant ceiling (default 10) and the role ceiling.",
   "x-botaru-direction": "input",
   "x-botaru-rules": [
     "SCR-1",
@@ -69,7 +69,8 @@
           "additionalProperties": false,
           "required": [
             "ref",
-            "op"
+            "op",
+            "value"
           ],
           "properties": {
             "ref": {
@@ -82,13 +83,7 @@
               "enum": [
                 "eq",
                 "ne",
-                "lt",
-                "le",
-                "gt",
-                "ge",
-                "in",
-                "not_in",
-                "exists"
+                "in"
               ],
               "x-botaru-registry": "condition-ops"
             },
@@ -126,39 +121,8 @@
           "not": {
             "patternProperties": {
               "^ref$": {
-                "pattern": "\\.(count|sum|min|max|state)\\.|\\.state$"
+                "pattern": "\\.state$"
               }
-            }
-          }
-        },
-        {
-          "type": "object",
-          "additionalProperties": false,
-          "required": [
-            "ref",
-            "op",
-            "value"
-          ],
-          "properties": {
-            "ref": {
-              "type": "string",
-              "pattern": "^[a-z][a-z0-9-]{0,62}\\.(count|sum|min|max)\\.[a-z][a-z0-9_]{0,63}$",
-              "maxLength": 140,
-              "description": "Rollup of a summary_fields field of the fanout step items."
-            },
-            "op": {
-              "enum": [
-                "eq",
-                "ne",
-                "lt",
-                "le",
-                "gt",
-                "ge"
-              ],
-              "x-botaru-registry": "condition-ops"
-            },
-            "value": {
-              "type": "number"
             }
           }
         },
@@ -180,6 +144,7 @@
             "op": {
               "enum": [
                 "eq",
+                "ne",
                 "in"
               ],
               "x-botaru-registry": "condition-ops"
@@ -504,7 +469,7 @@
           }
         },
         "items": {
-          "description": "Fanout items: a selector, an explicit list or a subset of the items of an earlier fanout step.",
+          "description": "Fanout items: a selector or an explicit list.",
           "oneOf": [
             {
               "type": "object",
@@ -533,80 +498,6 @@
                   },
                   "minItems": 1,
                   "uniqueItems": true
-                }
-              }
-            },
-            {
-              "type": "object",
-              "additionalProperties": false,
-              "required": [
-                "from",
-                "where"
-              ],
-              "properties": {
-                "from": {
-                  "$ref": "urn:botaru:schema:common:1#/$defs/name",
-                  "description": "An earlier fanout step."
-                },
-                "where": {
-                  "type": "object",
-                  "additionalProperties": false,
-                  "required": [
-                    "field",
-                    "op"
-                  ],
-                  "properties": {
-                    "field": {
-                      "type": "string",
-                      "pattern": "^[a-z][a-z0-9_]{0,63}$",
-                      "maxLength": 64,
-                      "description": "A field from the type summary_fields."
-                    },
-                    "op": {
-                      "enum": [
-                        "eq",
-                        "ne",
-                        "lt",
-                        "le",
-                        "gt",
-                        "ge",
-                        "in",
-                        "not_in",
-                        "exists"
-                      ],
-                      "x-botaru-registry": "condition-ops"
-                    },
-                    "value": {
-                      "description": "Literal: a number, a string of a closed form, a boolean or a list of these.",
-                      "anyOf": [
-                        {
-                          "type": "number"
-                        },
-                        {
-                          "type": "boolean"
-                        },
-                        {
-                          "type": "string",
-                          "maxLength": 120
-                        },
-                        {
-                          "type": "array",
-                          "maxItems": 32,
-                          "items": {
-                            "anyOf": [
-                              {
-                                "type": "number"
-                              },
-                              {
-                                "type": "string",
-                                "maxLength": 120
-                              }
-                            ]
-                          }
-                        }
-                      ]
-                    }
-                  }
                 }
               }
             }

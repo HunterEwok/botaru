@@ -1,9 +1,9 @@
 id: fx-rep-09
 rules: [REP-10, CAP-3, DLV-9]
 version: v0.2
-description: 'Pace, merging and language of digests. A group binding with digest.max_per_hour 1 gets at most one digest per hour.
-  Digests that pile up are merged by code: the table of the latest snapshot replaces the earlier tables and the paragraphs of the
-  earlier digests are dropped; waiting for the pace is not a failure. Table headings, reason codes and button labels come from the
+description: 'Pace ceiling and language of digests. A group binding with digest.max_per_hour 1 gets at most one digest per hour.
+  A digest over the ceiling waits, and a newer digest replaces the waiting one, which is not sent; waiting for the pace is not a
+  failure. Table headings, reason codes and button labels come from the
   message catalog of ChatBinding.locale, and the model gets locale as a parameter.'
 given:
   tenant: demo
@@ -22,7 +22,7 @@ cases:
     expect: {deliveries: 1, waiting: 1}
   - stand: {op: clock.set, at: '2026-11-20T10:00:01Z'}
   - stand: {op: loop.tick, loop: delivery}
-    expect: {deliveries: 2, last_delivery: {table_snapshot: snap-3, paragraph: absent, merged_from: [snap-2, snap-3]}, failures: 0}
+    expect: {deliveries: 2, last_delivery: {table_snapshot: snap-3, paragraph: present, replaced: [snap-2]}, failures: 0}
 - id: fx-rep-09-b
   given:
     binding: {target: 'direct:alice', kind: direct, locale: et}

@@ -36,9 +36,6 @@ cases:
   - researcher
   farm_manager:
     enabled: true
-    lens: true
-    daily_review: true
-    model_profile: manager-std
   link_allowlist:
   - www.example.org
   - docs.example.org
@@ -161,9 +158,6 @@ cases:
   - researcher
   farm_manager:
     enabled: true
-    lens: true
-    daily_review: true
-    model_profile: manager-std
   link_allowlist:
   - www.example.org
   - docs.example.org
@@ -283,9 +277,6 @@ cases:
   - researcher
   farm_manager:
     enabled: true
-    lens: true
-    daily_review: true
-    model_profile: manager-std
   link_allowlist:
   - www.example.org
   - docs.example.org
@@ -407,9 +398,6 @@ cases:
   - researcher
   farm_manager:
     enabled: true
-    lens: true
-    daily_review: true
-    model_profile: manager-std
   link_allowlist:
   - www.example.org
   - docs.example.org
@@ -533,9 +521,6 @@ cases:
   - researcher
   farm_manager:
     enabled: true
-    lens: true
-    daily_review: true
-    model_profile: manager-std
   link_allowlist:
   - www.example.org
   - docs.example.org
@@ -659,9 +644,6 @@ cases:
   - researcher
   farm_manager:
     enabled: true
-    lens: true
-    daily_review: true
-    model_profile: manager-std
   link_allowlist:
   - www.example.org
   - docs.example.org

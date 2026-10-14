@@ -9,8 +9,7 @@ summary: 'The task trn-02 in English; the same step structure as trn-02.'
 from: bob
 chat: bob-dm
 lang: en
-message: /script Check the disks of the data hosts where less than 10% is free, clean the pipeline temp files, report
-  here
+message: /script Check the disks of the data hosts, then clean the pipeline temp files on them, report here
 expect:
   state: completed
   checks:

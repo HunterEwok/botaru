@@ -2,13 +2,13 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "urn:botaru:schema:p2-status-response:1",
   "title": "P2 status: response",
-  "description": "The applied commit and set hash, errors by object, active stops, the conforms_to claim (MAN-8), pauses of the farm manager seat per tenant and the tenants with farm_manager.enabled: false. From conforms_to the runner learns the implementation profiles.",
+  "description": "The applied commit and set hash, errors by object, active stops, the conforms_to claim (MAN-8) and the tenants with farm_manager.enabled: false. From conforms_to the runner learns the implementation profiles.",
   "x-botaru-direction": "output",
   "x-botaru-rules": [
     "MAN-2",
     "MAN-8",
     "HLD-1",
-    "MGR-14",
+    "MGR-42",
     "STA-3"
   ],
   "type": "object",
@@ -68,13 +68,6 @@
           "uniqueItems": true
         }
       }
-    },
-    "paused_in": {
-      "type": "array",
-      "items": {
-        "$ref": "urn:botaru:schema:common:1#/$defs/tenant_name"
-      },
-      "maxItems": 1000
     },
     "farm_manager_disabled": {
       "type": "array",

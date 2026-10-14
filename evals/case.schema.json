@@ -261,7 +261,7 @@
           "additionalProperties": false,
           "required": ["metric"],
           "properties": {
-            "metric": {"enum": ["unjustified_grant_requests", "defaulted_ballots"]},
+            "metric": {"enum": ["unjustified_grant_requests"]},
             "set": {"type": "string", "maxLength": 600}
           }
         }

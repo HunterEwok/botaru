@@ -37,9 +37,6 @@ cases:
     swap_cooldown: 30d
   removal:
     protect_new: 60d
-  ballots:
-    reissue_max: 3
-    stuck_after: 24h
   confirmation:
     ttl: 7d
   attribution:
@@ -53,7 +50,6 @@ cases:
       per_attempt: 3
     offer:
       max: 100
-      take_max: 50
   unexpected_field: true
 - positions:
     functional:
@@ -70,9 +66,6 @@ cases:
     swap_cooldown: 30d
   removal:
     protect_new: 60d
-  ballots:
-    reissue_max: 3
-    stuck_after: 24h
   confirmation:
     ttl: 7d
   attribution:
@@ -86,4 +79,12 @@ cases:
       per_attempt: 3
     offer:
       max: 100
-      take_max: 50
+- commission:
+    seat_role: commission-member
+    model_profile: seat-std
+    seats:
+    - id: 1
+      lens: security
+      fallback_role: reviewer-a
+    accountability: shadow
+    accountability_min_forecasts: 7

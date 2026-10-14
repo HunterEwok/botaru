@@ -7,8 +7,7 @@
   "x-botaru-version": "v0.2",
   "x-botaru-rules": [
     "APR-9",
-    "GOV-8",
-    "COM-11",
+    "COM-17",
     "DIG-5",
     "REP-4",
     "TIM-5"
@@ -20,10 +19,9 @@
   ],
   "properties": {
     "function": {
-      "description": "governance.count: the rounds of one removal case from the snapshot and the ballots (GOV-8). commission.calibration: the calibration of a lens executor from its reviews and outcomes (COM-11). digest.sample: the monthly audit sample from the verdicts, the settings and the seed (DIG-5). reporter.number_check: the number check of a paragraph against a table snapshot and a locale (REP-4). schedule.check: the slot check of a schedule change for one year (TIM-5).",
+      "description": "commission.accuracy: from v0.3 the accuracy of a lens executor from its scored forecasts and outcomes (COM-17). digest.sample: the monthly audit sample from the verdicts, the settings and the seed (DIG-5). reporter.number_check: the check that a model paragraph holds no numbers, with the names of the table and catalog and the snapshot times as the allowed tokens (REP-4). schedule.check: the check of a schedule change: validity and the local times that disappear or repeat at the clock changes within a year (TIM-5).",
       "enum": [
-        "governance.count",
-        "commission.calibration",
+        "commission.accuracy",
         "digest.sample",
         "reporter.number_check",
         "schedule.check"

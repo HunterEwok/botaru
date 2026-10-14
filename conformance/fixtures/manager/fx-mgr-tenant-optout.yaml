@@ -1,8 +1,8 @@
 id: fx-mgr-tenant-optout
 rules: [MGR-42, GOV-25, GOV-22]
 description: 'demo2 with farm_manager.enabled: false: an incident in demo2 gives no seat task and no seat stop; control.apply
-  on a demo2 target gets manager_disabled; the demo2 commission has no manager lens; seat tasks in demo run; apply
-  with a model_profile above the seat ceiling is rejected. Changing the block to disabled cancels running seat attempts in T with reason
+  on a demo2 target gets manager_disabled; the demo2 commission has no manager lens; seat tasks in demo run; the block
+  has only the flag enabled, so apply rejects any other field of it. Changing the flag to disabled cancels running seat attempts in T with reason
   manager_disabled, the holder''s holds in T live no longer than 15 minutes, and waiting cards close with canceled(manager_disabled).'
 given:
   seat:
@@ -64,10 +64,10 @@ cases:
   given:
     apply:
       tenant: demo
-      farm_manager: {model_profile: rank-5-profile}
+      farm_manager: {enabled: true, model_profile: rank-5-profile}
   expect:
     apply: {result: rejected}
-    note: rank above the ceiling of the seat slot of the seat role or the profile is not in models_allowed
+    note: the block farm_manager has only the field enabled (MGR-42)
 - id: fx-mgr-tenant-optout-g
   given:
     tenant: demo
@@ -85,11 +85,3 @@ cases:
       h_9: {until: '2026-11-24T06:15:00Z'}
     cards: {ap_7: canceled(manager_disabled)}
     doctor_lists_tenant_without_manager: true
-- id: fx-mgr-tenant-optout-h
-  given:
-    apply:
-      tenant: demo
-      farm_manager: {enabled: true, lens: false}
-  expect:
-    review_tasks: {review.farm_manager.v1: 0}
-    seat_tasks_on_incident: created

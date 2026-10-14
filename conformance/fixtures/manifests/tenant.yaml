@@ -67,9 +67,14 @@ cases:
         kind: Tenant
         metadata: {name: demo2}
         spec:
-          farm_manager: {enabled: true, model_profile: manager-std}
+          farm_manager: {enabled: true}
           budgets: {month_eur: 60, lines: {manager: {month_eur: 10}}}
           models_allowed: [base-std]
+      - apiVersion: botaru/v1alpha1
+        kind: Governance
+        metadata: {name: farm, tenant: farm}
+        spec:
+          farm_manager: {model_profile: manager-std}
     expect: {error: manager_profile_not_allowed}
   - name: manager enabled without a manager line
     manifests:
@@ -77,7 +82,7 @@ cases:
         kind: Tenant
         metadata: {name: demo2}
         spec:
-          farm_manager: {enabled: true, model_profile: manager-std}
+          farm_manager: {enabled: true}
           budgets: {month_eur: 60}
           models_allowed: [base-std, manager-std]
     expect: {error: manager_line_missing}
