@@ -122,7 +122,7 @@ entries:
     change: breaking
     removed: 2026-10-14
     reason: >-
-      The secret mandatory vote "who leaves" was removed: code proposes the leaver by accuracy, otherwise a person chooses it on the promotion card: the voters, the seed, expected, rounds, the budget reserve, the stuck flag and the states parked, balloting and counted went; the list L got the figures of its seats and the proposed leaver.
+      The secret mandatory vote "who leaves" was removed: code proposes the leaver by accuracy, otherwise a person chooses it on the promotion card: the voters, the seed, expected, rounds, the budget reserve, the stuck flag and the states parked, balloting and counted went; the list L got the figures of its seats and the proposed leaver, and a removal case must carry it.
     decisions: [D-114, D-115]
   - schema: spec/model/promotion-entry.schema.json
     change: breaking

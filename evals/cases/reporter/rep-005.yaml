@@ -4,7 +4,7 @@ kind: quality
 blocking: false
 status: active
 version: v0.1
-rules: [REP-2, DLV-15]
+rules: [REP-2, REP-4, DLV-15]
 summary: 'The same report to the chat staff with model_text: labeled and untrusted_seen; the model paragraph in the group under the code line "bot text, check the numbers against the table" with the untrusted sources (kind and role, without text); from v0.2 the paragraph holds no numbers, they are only in the table (REP-4). With summary_only there is no paragraph in the group.'
 from: system
 task:

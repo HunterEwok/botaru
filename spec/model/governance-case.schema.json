@@ -225,5 +225,32 @@
         }
       ]
     }
-  }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "subject": {
+            "properties": {
+              "mode": {
+                "const": "removal"
+              }
+            },
+            "required": [
+              "mode"
+            ]
+          }
+        },
+        "required": [
+          "subject"
+        ]
+      },
+      "then": {
+        "required": [
+          "snapshot"
+        ]
+      },
+      "description": "A removal case carries the list L with the figures of its seats (GOV-12)."
+    }
+  ]
 }
