@@ -679,11 +679,12 @@ func backoff(b manifest.Backoff, n int) time.Duration {
 
 // releaseTaskReserve drops the enqueue reserve of a task that became terminal (BUD-1). A call
 // reserve that was never charged stays counted at its full amount, marked estimated, like a
-// call without an answer (BUD-11), so it no longer waits for a charge that will not come.
+// call without an answer (BUD-11), so it no longer waits for a charge that will not come. The
+// reserve of a tool call settles when the call ends.
 func releaseTaskReserve(ctx context.Context, tx pgx.Tx, task string) error {
 	if _, err := tx.Exec(ctx, `DELETE FROM spend WHERE root = (SELECT coalesce(record->>'root', id) FROM tasks WHERE id = $1) AND task = $1 AND unit = 'task' AND state = 'reserved'`, task); err != nil {
 		return err
 	}
-	_, err := tx.Exec(ctx, `UPDATE spend SET state = 'estimated' WHERE root = (SELECT coalesce(record->>'root', id) FROM tasks WHERE id = $1) AND task = $1 AND unit <> 'task' AND state = 'reserved'`, task)
+	_, err := tx.Exec(ctx, `UPDATE spend SET state = 'estimated' WHERE root = (SELECT coalesce(record->>'root', id) FROM tasks WHERE id = $1) AND task = $1 AND unit <> 'task' AND toolcall IS NULL AND state = 'reserved'`, task)
 	return err
 }

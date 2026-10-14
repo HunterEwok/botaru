@@ -317,6 +317,9 @@ func (c *Core) P3ToolsCall(ctx context.Context, handle string, p mcp.CallParams)
 	if err != nil {
 		return nil, err
 	}
+	if refusal != nil && refusal.reason == "budget_exhausted" {
+		return nil, refuse("budget_exhausted", "the tool call does not fit the budget")
+	}
 	if refusal != nil {
 		return toolError(refusal), nil
 	}
@@ -419,6 +422,22 @@ func (c *Core) recordToolCall(ctx context.Context, tx pgx.Tx, now time.Time, cat
 			return "", nil, err
 		}
 		return id, &toolRefusal{state: "error", reason: "plugin_unavailable"}, nil
+	}
+	// The call goes only after a reserve at its manifest price (BUD-2, BUD-5). A call that does
+	// not fit a limit ends the attempt with budget_exhausted, like a model call that does not.
+	if err := c.reserveToolCall(ctx, tx, now, cat, g, id, toolPrice(t.Billing, t.PriceEUR)); err != nil {
+		var p *Problem
+		if !errors.As(err, &p) || p.Reason != "budget_exhausted" {
+			return "", nil, err
+		}
+		row.State, row.Reason = "error", "budget_exhausted"
+		if err := c.insertToolCall(ctx, tx, now, row); err != nil {
+			return "", nil, err
+		}
+		if _, err := c.appendAudit(ctx, tx, now, toolAudit(g, id, right, true, "budget_exhausted")); err != nil {
+			return "", nil, err
+		}
+		return id, &toolRefusal{state: "error", reason: "budget_exhausted"}, nil
 	}
 	startBy := maxToolStartBy
 	if d, ok := parseDuration(cat.TaskTypes[g.Type].Timeouts.ToolStartBy); ok && d < startBy {

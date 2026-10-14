@@ -24,6 +24,12 @@ func newToolBench(t *testing.T) *bench { t.Helper(); return newToolBenchKeep(t, 
 // newToolBenchKeep is newToolBench that also returns the applied manifests in keep.
 func newToolBenchKeep(t *testing.T, keep *[]map[string]any) *bench {
 	t.Helper()
+	return newToolBenchWith(t, keep, nil)
+}
+
+// newToolBenchWith is newToolBenchKeep with the manifest set changed by edit before apply.
+func newToolBenchWith(t *testing.T, keep *[]map[string]any, edit func(ms []map[string]any) []map[string]any) *bench {
+	t.Helper()
 	return newBenchWith(t, func(root string, ms []map[string]any) []map[string]any {
 		var paths []string
 		for _, f := range []string{"examples/tools/checks/tool.yaml", "examples/tools/logs/tool.yaml", "examples/tools/cmd/tool.yaml"} {
@@ -50,6 +56,9 @@ func newToolBenchKeep(t *testing.T, keep *[]map[string]any) *bench {
 		}
 		if _, err := testbench.DropUnsupported(sp, ms); err != nil {
 			t.Fatal(err)
+		}
+		if edit != nil {
+			ms = edit(ms)
 		}
 		if keep != nil {
 			*keep = ms

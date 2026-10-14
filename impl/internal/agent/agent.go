@@ -249,8 +249,10 @@ func (a *Agent) run(ctx context.Context, p attemptPayload) (map[string]any, stri
 			var input map[string]any
 			_ = json.Unmarshal(b.Input, &input)
 			text, isErr, err := p3.call(ctx, b.Name, input)
-			if p3Reason(err) == "fenced" {
-				return nil, "fenced", err
+			if r := p3Reason(err); r == "fenced" || r == "budget_exhausted" {
+				// A call that does not fit the budget ends the run like a model call that
+				// does not (BUD-2).
+				return nil, r, err
 			}
 			if err != nil {
 				return nil, "runtime_error", err

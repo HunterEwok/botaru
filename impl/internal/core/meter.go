@@ -13,7 +13,6 @@ import (
 
 	"github.com/HunterEwok/botaru/impl/internal/ids"
 	"github.com/HunterEwok/botaru/impl/internal/manifest"
-	"github.com/HunterEwok/botaru/impl/internal/money"
 )
 
 // ModelGrant is what a live model handle opens on P4: the attempt it belongs to and the model
@@ -30,6 +29,7 @@ type ModelGrant struct {
 	Profile      manifest.ModelProfile
 	Subprocessor manifest.Subprocessor
 	Line         string
+	Purpose      string
 	// TreeBudget is the type's tree budget in micro-euros; 0 means none.
 	TreeBudget int64
 	// Fingerprint is the run fingerprint of the attempt, written on every usage line (PRV-1).
@@ -93,10 +93,8 @@ func (c *Core) ResolveModelHandle(ctx context.Context, handle string) (*ModelGra
 	}
 	g.Role = role
 	tt := cat.TaskTypes[typ]
-	if tt.TreeBudgetEUR > 0 {
-		g.TreeBudget = money.FromEUR(tt.TreeBudgetEUR)
-	}
-	g.Line = "work"
+	g.TreeBudget = taskTreeBudget(rec, tt)
+	g.Line, g.Purpose = c.taskLine(rec, tt)
 	tv := cat.Tenants[g.Tenant]
 	if tv == nil {
 		return nil, refuse("not_ready", "tenant is not applied")
@@ -144,7 +142,8 @@ func (c *Core) ResolveModelHandle(ctx context.Context, handle string) (*ModelGra
 }
 
 // Reserve writes the worst-case reserve of a call before it goes out (GW-2, BUD-2). It
-// refuses when the tenant windows, the person's day limit or the tree budget would be passed.
+// refuses when the tenant windows, the budget line, the person's day limit or the tree budget
+// would be passed (BUD-7).
 func (c *Core) Reserve(ctx context.Context, g *ModelGrant, micros int64) (string, error) {
 	cat, err := c.Catalog(ctx)
 	if err != nil {
@@ -157,22 +156,10 @@ func (c *Core) Reserve(ctx context.Context, g *ModelGrant, micros int64) (string
 		if p, err := loadPrincipal(ctx, tx, now, g.Tenant, g.Initiator); err == nil {
 			groups = groupClosure(tv, p.Groups)
 		}
-		if p := c.checkBudget(ctx, tx, now, tv, g.Initiator, groups, micros, g.Root); p != nil {
-			return p
-		}
-		if g.TreeBudget > 0 {
-			var used int64
-			if err := tx.QueryRow(ctx, `SELECT coalesce(sum(eur_micros), 0) FROM spend WHERE root = $1 AND unit <> 'task'`, g.Root).Scan(&used); err != nil {
-				return err
-			}
-			if used+micros > g.TreeBudget {
-				return refuse("budget_exhausted", "the call reserve does not fit the tree budget")
-			}
-		}
-		_, err := tx.Exec(ctx, `INSERT INTO spend (id, tenant, task, root, subject, role, worker, line, unit, profile, state, eur_micros, time, fingerprint)
-			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'tokens', $9, 'reserved', $10, $11, $12)`,
-			id, g.Tenant, g.Task, g.Root, g.Initiator, g.Role, g.Worker, g.Line, g.ProfileName, micros, now, nullable(g.Fingerprint))
-		return err
+		return c.reserveSpend(ctx, tx, now, tv, spendRow{
+			ID: id, Tenant: g.Tenant, Task: g.Task, Root: g.Root, Subject: g.Initiator, Role: g.Role, Worker: g.Worker,
+			Line: g.Line, Purpose: g.Purpose, Unit: "tokens", Profile: g.ProfileName, Fingerprint: g.Fingerprint, Micros: micros,
+		}, groups, g.TreeBudget)
 	})
 	if err != nil {
 		return "", err

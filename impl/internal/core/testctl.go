@@ -27,7 +27,7 @@ type TestClock struct {
 var testLoops = map[string]func(c *Core, ctx context.Context) error{
 	"reaper":          (*Core).reap,
 	"deadline":        (*Core).deadlines,
-	"hold":            (*Core).expireHolds,
+	"hold":            (*Core).holdLoop,
 	"worker-liveness": (*Core).liveness,
 	"alarm":           (*Core).alarmLoop,
 }
