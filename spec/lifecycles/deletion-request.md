@@ -1,5 +1,7 @@
 # Lifecycle: erasure request
 
+Kind: `erasure` (the kinds are listed in [the lifecycle index](README.md)).
+
 ## In short
 
 An erasure request (`ErasureRequest`) is a recorded object through which every early deletion goes, that is, a deletion before the end of the retention class period: `forget` of memory, a person's offboarding, wiping the data of a retired bot, deleting a tenant, cleaning a runtime's store when a worker is revoked, a person's request, a manual deletion by the operator through `farmctl` (RET-7). The request keeps the scope, the reason, the author, the time and the outcome for every store, but does not keep content. The scope is from a closed list: `(tenant)`, `(tenant, subject)`, a bot identity id (everything sealed for it, only with the reason `bot_retired`), a worker id (the store of its runtime, only with the reason `worker_revoke`), or a list of object ids. One request can name many ids: this is how a confirmed `erase_match` deletes all found objects (SEC-11). The request gets into the erasure log before the first byte is deleted; the log is backed up separately from the store backups and at least as often (RET-5). After a restore from backup the core replays the log, so deleted data does not come back (RET-6). Deletion by period is done by the background loop `retention` without a request: after a restore it deletes the expired data again anyway. In v0.1 the loop deletes only the classes `content` and `observation` by the default periods, from v0.2 all classes by `Tenant.spec.retention` (RET-2).

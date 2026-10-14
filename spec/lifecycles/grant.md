@@ -1,5 +1,7 @@
 # Lifecycle: model grant
 
+Kind: `human-decision` (the kinds are listed in [the lifecycle index](README.md)).
+
 ## In short
 
 A model grant (`ModelGrant`) is a record by which the model gateway P4 gives one task of a worker a stronger model profile for one or two attempts (D-18, D-21). The worker itself makes the request in a closed form; code checks the right to ask and all ceilings; the seat holder with the current epoch or a person decides. A grant lives in the task's tenant, is paid from its `grant` line and ends together with the task. The whole cycle comes in v0.2; before that the `granted` slot is reserved and P4 does not allow it.

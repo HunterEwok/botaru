@@ -1,5 +1,7 @@
 # Lifecycle: escalation
 
+Kind: `improvement` (the kinds are listed in [the lifecycle index](README.md)).
+
 ## In short
 
 An escalation (`Escalation`) is a closed-form record with which a bot tells the farm manager about a problem; it is not a message, and the bot gets no answer. A bot reaches the farm manager only through the necessity lens of the commission of its tenant (D-18): first code checks the record, then the lens scores it, code computes the verdict, and only then does the escalation reach a farm manager task. The record lives in the bot's tenant and never leaves it. The whole cycle comes in v0.2; before that there is no `escalate` tool, and bots cannot reach the farm manager, which is safe.

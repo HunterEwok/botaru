@@ -1,5 +1,7 @@
 # Lifecycle: script run and its steps
 
+Kind: `run` (the kinds are listed in [the lifecycle index](README.md)).
+
 ## In short
 
 A script run (`ScriptRun`) is a core record that appears when a draft passed acceptance, and lives until a terminal state. The script steps (`ScriptStep`, `step` in identifiers) are parts of the same record; each has its own state. A draft that did not pass acceptance leaves no record: the refusal is written only to the audit. The core makes all transitions: on a port call, on a person's button or by the background loop `script`, always in one transaction with an event and deliveries (DLV-2). Transitions go only by this table (SCR-11). Worker attempts never wait in the meantime: only the record waits (CNT-4).

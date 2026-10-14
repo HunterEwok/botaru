@@ -1,5 +1,7 @@
 # Lifecycle: file
 
+Kind: `record` (the kinds are listed in [the lifecycle index](README.md)).
+
 ## In short
 
 A file is bytes plus a record that only the core writes (ART-1). The file cycle is short: a file is kept until its period ends or until an erasure request deletes it. A file does not change in place: a new version is a new file with a new `file_ref`. After deletion the record remains as a tombstone without content, so that `file_ref` is not used again, and a link in an artifact gives a clear `file_gone` mark instead of a task error. The description of files and their fields is in `docs/capabilities.md`, section "Files and artifacts".

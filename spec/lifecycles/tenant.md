@@ -1,5 +1,7 @@
 # Lifecycle: tenant
 
+Kind: `tenant` (the kinds are listed in [the lifecycle index](README.md)).
+
 ## In short
 
 A tenant (`Tenant`) is a wall of data and money: whose tasks, whose memory, whose key at the model provider. It is declared in git by the file `tenants/<name>/tenant.yaml`, appears at `farmctl apply` and goes through four states: working (`active`), suspended (`suspended`), offboarding (`offboarding`), deleted (`deleted`). A suspension is a hold of the `tenant` scope with the reason `suspended`; it has no separate state field. Offboarding revokes all credentials and leaves only the export. Deletion creates an erasure request across all stores, and the tenant id remains a tombstone forever (LCY-1).

@@ -1,5 +1,7 @@
 # Lifecycle: bot identity
 
+Kind: `bot` (the kinds are listed in [the lifecycle index](README.md)).
+
 ## In short
 
 A bot identity (`Bot`) is a core record with a permanent number `bot_<ulid>`, a tenant, a role and a binding (`binding`) to a worker or to a seat. A bot's work runs on workers, while the identity carries its number, the persona of the position, the memory of the `bot` scope and the track record. Only the core creates, binds and deletes an identity; bots have no operations that change its state (IDN-11, GOV-6). A retired identity does not come back: its memory is sealed for 30 days for analysis by people, then wiped, and a tombstone remains. A binding has the form `{mode: worker | seat, worker, seat, epoch}`; the binding epoch `bot_epoch` grows with every change of the binding and gets into every record an attempt writes (IDN-8).

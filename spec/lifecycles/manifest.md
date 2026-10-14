@@ -1,5 +1,7 @@
 # Lifecycle: declared object (manifest)
 
+Kind: `manifest` (the kinds are listed in [the lifecycle index](README.md)).
+
 ## In short
 
 A declared object is an object described by a manifest in git and written to the store by the P2 `apply` operation: a tenant, a group, a role, a task type, a plugin, an action, a catalog, a route, a schedule, a channel, a sink and other kinds from a closed list. A manifest lies in the wrapper `{apiVersion, kind, metadata, spec}` and passes the schema of its kind (MAN-1). `apply` brings the store to the set from the commit atomically: the whole set in one transaction or nothing (MAN-6). Only `apply` changes declared objects; P2 has no operations that change their `spec` (MAN-5). An object that disappeared from git is not deleted silently: `apply` shows it together with its dependents, and only an explicit command deletes it (MAN-2).

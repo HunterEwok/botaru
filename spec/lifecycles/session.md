@@ -1,5 +1,7 @@
 # Lifecycle: session
 
+Kind: `record` (the kinds are listed in [the lifecycle index](README.md)).
+
 ## In short
 
 A session is the transcript of a runtime conversation under the key `(tenant, role, subject, conversation)`, which the core computes (MEM-1). Session records are only appended, and compaction appends a summary record. The core does not read the content of a session: it keeps only the key, the `untrusted_seen` mark and the periods. A session does not pass to another bot: when the identity that kept it retires, the session is sealed, and the conversation continues in a new session. A runtime that keeps the session itself declares `session: runtime_internal` and obeys RT-1.

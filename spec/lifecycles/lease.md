@@ -1,5 +1,7 @@
 # Lifecycle: lease
 
+Kind: `lease` (the kinds are listed in [the lifecycle index](README.md)).
+
 ## In short
 
 A lease (`Lease`) is the right of one holder to work on one unit of work until a deadline. One mechanism serves four kinds of work that P1 `claim` hands out: a task attempt (`attempt`), a tool call (`toolcall`), a delivery (`delivery`), and a step of an erasure or search request at an edge store (`erasure`, schema `spec/model/erasure-work.schema.json`). Every `claim` creates a new lease with a number `lease_no` one greater than the previous one and a fencing token `(epoch, work_id, lease_no, worker_id)`: the number in the token grows with every claim, and the store rejects a changing call with an old number (FEN-1, FEN-2). `lease_no` is not a counter of spent attempts: spent attempts are counted by `attempts_spent`, runtime runs with a model answer by `runs_counted` (the table in `docs/tasks-and-delivery.md`); an `action.<a>` task has no lease (CNT-7). The holder extends the lease with `heartbeat` and counts its deadline by its own monotonic clock from `lease_remaining_s` (TIM-1); if it did not extend in time, it stops the work itself and writes nothing more (FEN-6). Fencing protects only writes to the farm store; writes to the outside world are guarded by APR-7 and the work id in the external record (FEN-7).

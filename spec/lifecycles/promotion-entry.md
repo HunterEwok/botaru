@@ -1,5 +1,7 @@
 # Lifecycle: promotion queue entry
 
+Kind: `promotion` (the kinds are listed in [the lifecycle index](README.md)).
+
 ## In short
 
 A promotion queue entry (`PromotionEntry`) appears for a functionary whose proposal people accepted, the core executed, and whose promotion probation (`probation`, 14 days from `realized`) passed without a confirmed incident attribution and without a measured deterioration (GOV-14, GOV-32). A trigger is given only by a change whose promotion probation ended when the v0.2 rules were already in force in the tenant. Every tenant has its own queue, a bot has one entry in it, and there is no deadline and no length ceiling. Only the `governance` loop maintains the entry; the bot does not see it (GOV-29). The head of the queue gets a case when the conditions for it are met.

@@ -1,5 +1,7 @@
 # Lifecycle: incident attribution candidate
 
+Kind: `incident` (the kinds are listed in [the lifecycle index](README.md)).
+
 ## In short
 
 An attribution candidate (`Attribution`) is a possible link between an incident and an executed change that a functionary's proposal brought. Only code creates a candidate, by the rules of `attribution-rules.yaml`, or a person with a P2 command; only a person with `governance.attribute` decides (GOV-13). A confirmed attribution takes away the change's promotion trigger and goes into lens accuracy (COM-17). A person's silence does not expire: the promotion trigger waits until every candidate has been answered, and the attribution window stays open all that time (GOV-30). The answers "No" and "Don't know" can be changed while the window is open; a person cannot change "Yes" or the closing of the window. If people judged the incident a false alarm (with a reason code and "Details", MGR-8), candidates without a "Yes" answer are canceled, and an attribution with a "Yes" answer becomes disputed: its fate is decided by the author of the answer on a card, or by 7 days of silence (D-57, D-79).

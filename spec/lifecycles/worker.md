@@ -1,5 +1,7 @@
 # Lifecycle: worker
 
+Kind: `bot` (the kinds are listed in [the lifecycle index](README.md)).
+
 ## In short
 
 A worker is a process that takes work through P1 `claim`: an agent, a pipeline (`job`), a toolhost, a channel, a sink or a monitoring adapter (`monitor`, E5). The operator enrolls it with the P2 command `worker.enroll`: the credentials fix the tenant, the role, the kind, the labels, for a toolhost also the plugins, the placement and the machine, and for a personal assistant the owner `owner`, the person it serves (IDN-5). The first `hello` that matches the record makes the worker operational; a mismatch blocks it until fixed. A worker's liveness is not a state but the `last_seen` mark at the core. A bot (an identity with a number) is not a worker: the identity is bound to a worker and survives its replacement.

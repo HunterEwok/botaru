@@ -1,5 +1,7 @@
 # Lifecycle: change trial
 
+Kind: `trial` (the kinds are listed in [the lifecycle index](README.md)).
+
 ## In short
 
 A change trial (`trial`) is a core record of whether the indicator that the bot promised in a proposal improved. The core creates it on "Accept" or "Lift veto" of any change kind except `none`, and immediately records the values of the metric and of one to five guards before the change (a guard is a series that must not get worse; the core picks them by the target kind and by the metric, the tenant can only add more). The 14-day window runs from `realized`; the core checks the guards once a day, and only code computes the outcome at the end of the window. The outcome `worse` is a deterioration confirmed by the core, which gives no trigger for promotion in the same way as an incident (D-37). Do not confuse the change trial with the promotion probation (`probation`): that is another period, and it is a condition of the promotion trigger (GOV-14). The record lives in the `trial` field of the proposal, see [proposal.md](proposal.md) and [improvements.md](../../docs/improvements.md).

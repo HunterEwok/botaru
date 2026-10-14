@@ -1,5 +1,7 @@
 # Lifecycle: personal memory record
 
+Kind: `memory` (the kinds are listed in [the lifecycle index](README.md)).
+
 ## In short
 
 A memory record of the `person` scope (`MemoryItem`) keeps what the bot remembered about a person, for example a preference for the answer format of a personal assistant. The model only proposes a record, and the decision of the person whose memory it is makes it active (MEM-3). Such memory exists only for roles without untrusted input (MEM-2). Deletion is real: `forget` deletes the record in all stores (MEM-4). Facts of bot memory live by their own cycle (`fact.md`).
