@@ -437,6 +437,13 @@ func (x *exec) seedBase(ctx context.Context) error {
 		return err
 	}
 	ms = append(ms, x.r.seed.groupManifests("demo")...)
+	// The seed groups may request the example actions; apply refuses a permission on an action
+	// outside the set (APR-5, cap_unknown_action), so the actions come along.
+	acts, err := testbench.ExampleActions(x.r.Root)
+	if err != nil {
+		return err
+	}
+	ms = append(ms, acts...)
 	o, err := x.apply(ctx, ms, false)
 	if err != nil {
 		return err

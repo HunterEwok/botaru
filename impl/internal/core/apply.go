@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"sort"
 	"time"
 
@@ -15,6 +16,7 @@ import (
 	"github.com/HunterEwok/botaru/impl/internal/jcs"
 	"github.com/HunterEwok/botaru/impl/internal/manifest"
 	"github.com/HunterEwok/botaru/impl/internal/spec"
+	"github.com/HunterEwok/botaru/impl/internal/store"
 )
 
 // ApplyRequest is the body of P2 apply (p2-apply-request).
@@ -80,12 +82,53 @@ func (c *Core) manifestKinds() (map[string]kindInfo, error) {
 // Objects of the store that are not in the set stay and are reported as orphaned; they are
 // deleted only by the explicit delete list (MAN-6).
 func (c *Core) Apply(ctx context.Context, op Operator, req ApplyRequest) (*ApplyResult, error) {
+	// The lint reads the store before the transaction; an apply that lands in between makes
+	// this one start again, so that two applies never pass the lint on each other's old state.
+	for try := 0; ; try++ {
+		res, err := c.applyOnce(ctx, op, req)
+		if !errors.Is(err, errStoreChanged) {
+			return res, err
+		}
+		if try == 4 {
+			return nil, fmt.Errorf("%w five times in a row; apply again", err)
+		}
+	}
+}
+
+// errStoreChanged: another apply changed the store after this one read it for the lint.
+var errStoreChanged = errors.New("store changed during apply")
+
+// storeHashes are the hashes of the stored manifests by key.
+func storeHashes(ctx context.Context, q store.Querier) (map[manifest.Key]string, error) {
+	out := map[manifest.Key]string{}
+	rows, err := q.Query(ctx, `SELECT kind, tenant, name, hash FROM manifests`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var k manifest.Key
+		var h string
+		if err := rows.Scan(&k.Kind, &k.Tenant, &k.Name, &h); err != nil {
+			return nil, err
+		}
+		out[k] = h
+	}
+	return out, rows.Err()
+}
+
+func (c *Core) applyOnce(ctx context.Context, op Operator, req ApplyRequest) (*ApplyResult, error) {
+	read, err := storeHashes(ctx, c.st.Pool)
+	if err != nil {
+		return nil, err
+	}
 	res := &ApplyResult{Commit: req.Commit, Changes: []ApplyChange{}, Errors: []ApplyError{}}
 	kinds, err := c.manifestKinds()
 	if err != nil {
 		return nil, err
 	}
 	var docs []manifest.Doc
+	var index []int
 	seen := map[manifest.Key]bool{}
 	for i, v := range req.Manifests {
 		d := manifest.FromValue(v, fmt.Sprintf("manifests/%d", i))
@@ -102,6 +145,27 @@ func (c *Core) Apply(ctx context.Context, op Operator, req ApplyRequest) (*Apply
 			res.Errors = append(res.Errors, e)
 			continue
 		}
+		// The envelope first, with the codes of the skeleton lint (MAN-1, TEN-6).
+		ki, ok := kinds[d.Kind]
+		md, _ := v["metadata"].(map[string]any)
+		_, hasTenant := md["tenant"]
+		switch {
+		case v["status"] != nil:
+			// The core keeps status; git has none (MAN-1).
+			e.Code, e.Path = "status_in_git", fmt.Sprintf("/manifests/%d/status", i)
+		case !ok:
+			e.Code, e.Path = "unknown_kind", fmt.Sprintf("/manifests/%d/kind", i)
+		case v["apiVersion"] != "botaru/v1alpha1":
+			e.Code, e.Path = "api_version", fmt.Sprintf("/manifests/%d/apiVersion", i)
+		case ki.scope == "tenant" && !hasTenant:
+			e.Code, e.Path = "tenant_missing", fmt.Sprintf("/manifests/%d/metadata/tenant", i)
+		case (ki.scope == "global" || ki.scope == "self") && hasTenant:
+			e.Code, e.Path = "tenant_on_global", fmt.Sprintf("/manifests/%d/metadata/tenant", i)
+		}
+		if e.Code != "" {
+			res.Errors = append(res.Errors, e)
+			continue
+		}
 		if err := c.spec.Validate("manifest:manifest", v); err != nil {
 			var ve *spec.ValidationError
 			if errors.As(err, &ve) && len(ve.Violations) > 0 {
@@ -111,33 +175,11 @@ func (c *Core) Apply(ctx context.Context, op Operator, req ApplyRequest) (*Apply
 			res.Errors = append(res.Errors, e)
 			continue
 		}
-		ki, ok := kinds[d.Kind]
-		if !ok {
-			e.Code = "kind_unknown"
-			res.Errors = append(res.Errors, e)
-			continue
-		}
 		if len(later) > 0 {
 			for _, p := range later {
 				e.Code, e.Path = "version_unsupported", fmt.Sprintf("/manifests/%d%s", i, p)
 				res.Errors = append(res.Errors, e)
 			}
-			continue
-		}
-		md, _ := v["metadata"].(map[string]any)
-		_, hasTenant := md["tenant"]
-		switch ki.scope {
-		case "tenant":
-			if !hasTenant {
-				e.Code, e.Path = "tenant_required", fmt.Sprintf("/manifests/%d/metadata/tenant", i)
-			}
-		case "global":
-			if hasTenant {
-				e.Code, e.Path = "tenant_not_allowed", fmt.Sprintf("/manifests/%d/metadata/tenant", i)
-			}
-		}
-		if e.Code != "" {
-			res.Errors = append(res.Errors, e)
 			continue
 		}
 		if d.Kind == "Tenant" {
@@ -153,7 +195,7 @@ func (c *Core) Apply(ctx context.Context, op Operator, req ApplyRequest) (*Apply
 			d.Tenant = ""
 		}
 		if seen[d.Key()] {
-			e.Code = "duplicate"
+			e.Code = "duplicate_object"
 			res.Errors = append(res.Errors, e)
 			continue
 		}
@@ -167,9 +209,41 @@ func (c *Core) Apply(ctx context.Context, op Operator, req ApplyRequest) (*Apply
 			}
 		}
 		docs = append(docs, d)
+		index = append(index, i)
+	}
+	// The lint and the catalog check see the store as it will be after this apply: the
+	// objects of the store that stay (orphaned ones included) overlaid with this set and its
+	// deletions, so that a check across objects does not miss an object of an earlier apply.
+	var after []manifest.Doc
+	if len(res.Errors) == 0 {
+		stored, _, err := loadManifests(ctx, c.st.Pool)
+		if err != nil {
+			return nil, err
+		}
+		gone := map[manifest.Key]bool{}
+		for _, del := range req.Delete {
+			gone[manifest.Key{Kind: del.Kind, Tenant: del.Tenant, Name: del.Name}] = true
+		}
+		after = append(after, docs...)
+		lintIndex := append([]int(nil), index...)
+		for _, d := range stored {
+			if ki := kinds[d.Kind]; ki.scope == "global" {
+				d.Tenant = ""
+			}
+			if k := d.Key(); seen[k] || gone[k] {
+				continue
+			}
+			after = append(after, d)
+			lintIndex = append(lintIndex, -1)
+		}
+		errs, err := c.lintManifests(after, lintIndex)
+		if err != nil {
+			return nil, err
+		}
+		res.Errors = append(res.Errors, errs...)
 	}
 	if len(res.Errors) == 0 {
-		if _, err := buildCatalog(docs); err != nil {
+		if _, err := buildCatalog(after); err != nil {
 			res.Errors = append(res.Errors, ApplyError{Code: "decode_failed"})
 		}
 	}
@@ -198,23 +272,15 @@ func (c *Core) Apply(ctx context.Context, op Operator, req ApplyRequest) (*Apply
 	res.SetHash = setHash
 
 	err = c.tx(ctx, func(tx pgx.Tx, now time.Time) error {
-		existing := map[manifest.Key]string{}
-		rows, err := tx.Query(ctx, `SELECT kind, tenant, name, hash FROM manifests`)
+		if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock(7300111)`); err != nil {
+			return err
+		}
+		existing, err := storeHashes(ctx, tx)
 		if err != nil {
 			return err
 		}
-		for rows.Next() {
-			var k manifest.Key
-			var h string
-			if err := rows.Scan(&k.Kind, &k.Tenant, &k.Name, &h); err != nil {
-				rows.Close()
-				return err
-			}
-			existing[k] = h
-		}
-		rows.Close()
-		if err := rows.Err(); err != nil {
-			return err
+		if !maps.Equal(existing, read) {
+			return errStoreChanged
 		}
 		if p, err := c.privilegeRaised(ctx, tx, now, docs, req.Delete); err != nil || p != nil {
 			if err != nil {

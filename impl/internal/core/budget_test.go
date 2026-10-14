@@ -249,8 +249,12 @@ func TestRunawaySpend(t *testing.T) {
 	ctx := context.Background()
 	b := newBenchWith(t, func(root string, ms []map[string]any) []map[string]any {
 		return append(ms, map[string]any{
+			"apiVersion": "botaru/v1alpha1", "kind": "TaskType", "metadata": map[string]any{"name": "data.load.v1"},
+			"spec": map[string]any{"title": "Load", "worker_kind": "job", "purpose": "work", "tier": 0, "data_class": "summary", "tree_budget_eur": 0.05,
+				"params_schema": map[string]any{"type": "object", "additionalProperties": false, "properties": map[string]any{}}},
+		}, map[string]any{
 			"apiVersion": "botaru/v1alpha1", "kind": "Role", "metadata": map[string]any{"name": "loader"},
-			"spec": map[string]any{"profile": "worker", "worker_kind": "job", "claims": []any{"hello.greet.v1"}},
+			"spec": map[string]any{"profile": "worker", "worker_kind": "job", "claims": []any{"data.load.v1"}},
 		})
 	})
 	holds := func() map[string]string {

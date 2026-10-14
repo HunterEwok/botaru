@@ -63,6 +63,7 @@ p2_listen: 127.0.0.1:8402        # farmctl only; a separate listener (IDN-7)
 # test_key_sha256: <the SHA-256 of the test bench key>   # needed with test_listen; only with test_bench: true
 texts_dir: /etc/botaru/texts     # optional: ru.yaml and other locales of the code texts
 operator: "Example operator"     # the operator named in the AI notice (notice.ai)
+farm_hosts: [core1]              # the farm nodes (DEP-11): apply refuses a catalog that names them
 operators:
   - token_sha256: <the SHA-256 from step 4>
     principal: human:p_01JB00000000000000000000A1   # your id as the operator

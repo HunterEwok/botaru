@@ -28,7 +28,8 @@ func (s *seedData) setClasses(entries []map[string]any) {
 	}
 	var cs []cls
 	for _, e := range entries {
-		if str(e["kind"]) == "data_class" {
+		// A reserved class is never granted (cap_data_class), so data_up_to stops short of it.
+		if str(e["kind"]) == "data_class" && e["reserved"] != true {
 			o, _ := e["order"].(int)
 			cs = append(cs, cls{str(e["id"]), o})
 		}
