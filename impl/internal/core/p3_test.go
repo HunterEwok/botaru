@@ -69,7 +69,9 @@ func toolCatalogManifest() map[string]any {
 			}}},
 			"resources": []any{
 				map[string]any{"id": "web1-logs", "title": "Web logs", "host": "web1", "read_by": []any{"logs/tail"},
-					"list": "log_sources", "format": "id", "values": []any{"nginx-access", "nginx-error"}, "data_class": "raw_logs"},
+					"list": "log_sources", "format": "id", "values": []any{"nginx-access", "nginx-error", "shared"}, "data_class": "raw_logs"},
+				map[string]any{"id": "web1-more-logs", "title": "More logs", "host": "web1", "read_by": []any{"logs/tail"},
+					"list": "log_sources", "format": "id", "values": []any{"shared"}, "data_class": "raw_logs"},
 				// The same list, but read_by another tool: logs/tail never sees its value.
 				map[string]any{"id": "web1-audit", "title": "Audit logs", "host": "web1", "read_by": []any{"checks/latest"},
 					"list": "log_sources", "format": "id", "values": []any{"audit"}, "data_class": "raw_logs"},
@@ -231,13 +233,18 @@ func TestP3Catalog(t *testing.T) {
 			continue
 		}
 		src := m["inputSchema"].(map[string]any)["properties"].(map[string]any)["source"].(map[string]any)
-		if e := toStrings(src["enum"]); slices.Contains(e, "audit") || len(e) != 2 {
+		if e := toStrings(src["enum"]); slices.Contains(e, "audit") || len(e) != 3 {
 			t.Fatalf("source enum %v", e)
 		}
 	}
 	r, err = b.c.P3ToolsCall(ctx, h2, mcp.CallParams{Name: "logs_tail", Arguments: map[string]any{"source": "audit"}})
 	if err != nil || callText(r) != noPermission {
 		t.Fatalf("a value of a resource read_by another tool: %+v %v", r, err)
+	}
+	// A value that two resources of the list share has no single target and is refused.
+	r, err = b.c.P3ToolsCall(ctx, h2, mcp.CallParams{Name: "logs_tail", Arguments: map[string]any{"source": "shared"}})
+	if err != nil || callText(r) != noPermission {
+		t.Fatalf("a value of two resources: %+v %v", r, err)
 	}
 }
 

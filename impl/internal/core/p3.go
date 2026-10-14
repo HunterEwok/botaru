@@ -522,6 +522,7 @@ func (c *Core) callTarget(cat *Catalog, tenant, right string, t toolspec.Tool, a
 	}
 	list, _ := strings.CutPrefix(asString(params[t.TargetFrom]["enum_from"]), "catalog.")
 	res, _ := spec["resources"].([]any)
+	var found []callTargetRef
 	for _, r := range res {
 		rm, _ := r.(map[string]any)
 		if rm["list"] != list || !readBy(rm, right) {
@@ -530,14 +531,19 @@ func (c *Core) callTarget(cat *Catalog, tenant, right string, t toolspec.Tool, a
 		vals, _ := rm["values"].([]any)
 		for _, x := range vals {
 			if x == v {
-				if h, ok := rm["host"].(string); ok {
-					id, _ := rm["id"].(string)
-					return callTargetRef{host: h, resource: id}, resolved, nil
-				}
+				h, _ := rm["host"].(string)
+				id, _ := rm["id"].(string)
+				found = append(found, callTargetRef{host: h, resource: id})
+				break
 			}
 		}
 	}
-	return callTargetRef{}, nil, errors.New("the target value has no machine")
+	// A value in two resources of the list does not say which one is meant, so it has no
+	// target rather than the first one found.
+	if len(found) != 1 || found[0].host == "" {
+		return callTargetRef{}, nil, errors.New("the target value has no single machine")
+	}
+	return found[0], resolved, nil
 }
 
 func asString(v any) string {

@@ -244,7 +244,11 @@ func (h *Host) keepLease(ctx context.Context, cancel context.CancelFunc, lease s
 			CancelRequested bool `json:"cancel_requested"`
 		}
 		sent := time.Now()
-		err := h.cfg.Core.Call(ctx, "heartbeat", lease, map[string]any{}, &out)
+		// The heartbeat ends with the lease by this process's clock: a stalled request never
+		// keeps the call running past it.
+		hctx, hcancel := context.WithDeadline(ctx, until)
+		err := h.cfg.Core.Call(hctx, "heartbeat", lease, map[string]any{}, &out)
+		hcancel()
 		if r := p1client.Reason(err); r == "fenced" || r == "lease_mismatch" || out.CancelRequested {
 			close(lost)
 			cancel()

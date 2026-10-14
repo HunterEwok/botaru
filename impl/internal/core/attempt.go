@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 
@@ -187,7 +188,11 @@ func (c *Core) resolveEnumFor(cat *Catalog, tenant, mark, right string, names ma
 						}
 					}
 					if vs, ok := rm["values"].([]any); ok {
-						vals = append(vals, vs...)
+						for _, v := range vs {
+							if !slices.Contains(vals, v) { // an enum lists a value once
+								vals = append(vals, v)
+							}
+						}
 					}
 				}
 			}
