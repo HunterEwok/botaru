@@ -2555,7 +2555,7 @@ Checked by: `lint:manifests/deprecated-sunset`, `blackbox:core/type-version-remo
 
 since v0.1 · waivable · profile core · check: lint
 
-The implementation declares the skeleton version and conformance profiles with the field `conforms_to: {skeleton: <version>, profiles: [core, ...]}` in P2 `status` and in the runner report. The runner checks the active rules of the declared profiles whose `version` is not newer than the declared version; a rule with `waivable: false` in the expected failures file fails the run.
+The implementation declares the skeleton version and conformance profiles with the field `conforms_to: {skeleton: <version>, profiles: [core, ...]}` in P2 `status` and in the runner report. The runner checks the active rules of the declared profiles whose `version` is not newer than the declared version and whose `until`, when set, is not older than it (a rule with `until` is replaced from the next version by the rules of its `superseded_by`, D-113); a rule with `waivable: false` in the expected failures file fails the run.
 
 Checked by: `lint:manifests/conforms-to`
 

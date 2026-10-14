@@ -14,7 +14,7 @@ The runner is an implementation's program that checks the core as a black box: i
 | `conformance/suites/` | descriptions of checks (what is given, what is done, what is expected) | the implementation's runner; the implementation writes the check code |
 | `conformance/requirements.yaml` | rules with profile, version and the `waivable` flag | the implementation's runner, to select checks and for the report |
 
-The runner takes the rule checks of the profiles the implementation claimed in `conforms_to`, and only rules whose `version` is not newer than the claimed skeleton version (MAN-8). A fixture case whose `version` is newer than the claimed one is skipped by the runner and reported as skipped, not as passed.
+The runner takes the rule checks of the profiles the implementation claimed in `conforms_to`, and only rules whose `version` is not newer than the claimed skeleton version and whose `until`, when set, is not older than it: a rule with `until: v0.2` is checked for a v0.1 or v0.2 claim and skipped for a v0.3 claim, where the rules of its `superseded_by` take over (MAN-8, D-113). A fixture case whose `version` is newer than the claimed one is skipped by the runner and reported as skipped, not as passed.
 
 ## Behaviour fixture envelope
 

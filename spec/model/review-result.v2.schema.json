@@ -72,17 +72,35 @@
           "description": "Forecast of a veto lens: the probability of a bad outcome (people declined as too risky, a confirmed incident attribution or the trial outcome worse) and of its absence.",
           "properties": {
             "bad": {
-              "type": "number",
-              "minimum": 0,
-              "maximum": 1,
-              "multipleOf": 0.1,
+              "enum": [
+                0,
+                0.1,
+                0.2,
+                0.3,
+                0.4,
+                0.5,
+                0.6,
+                0.7,
+                0.8,
+                0.9,
+                1
+              ],
               "description": "Probability of the outcome bad, step 0.1."
             },
             "ok": {
-              "type": "number",
-              "minimum": 0,
-              "maximum": 1,
-              "multipleOf": 0.1,
+              "enum": [
+                0,
+                0.1,
+                0.2,
+                0.3,
+                0.4,
+                0.5,
+                0.6,
+                0.7,
+                0.8,
+                0.9,
+                1
+              ],
               "description": "Probability of the outcome ok, step 0.1."
             }
           }
@@ -157,17 +175,35 @@
           "description": "Forecast of the cost lens: the probability that the spend of the change subjects over the trial window exceeds the cost_eur of the review input.",
           "properties": {
             "over": {
-              "type": "number",
-              "minimum": 0,
-              "maximum": 1,
-              "multipleOf": 0.1,
+              "enum": [
+                0,
+                0.1,
+                0.2,
+                0.3,
+                0.4,
+                0.5,
+                0.6,
+                0.7,
+                0.8,
+                0.9,
+                1
+              ],
               "description": "Probability of the outcome over, step 0.1."
             },
             "within": {
-              "type": "number",
-              "minimum": 0,
-              "maximum": 1,
-              "multipleOf": 0.1,
+              "enum": [
+                0,
+                0.1,
+                0.2,
+                0.3,
+                0.4,
+                0.5,
+                0.6,
+                0.7,
+                0.8,
+                0.9,
+                1
+              ],
               "description": "Probability of the outcome within, step 0.1."
             }
           }
@@ -244,24 +280,51 @@
           "description": "Forecast of the trial outcome classes (PRP-22).",
           "properties": {
             "better": {
-              "type": "number",
-              "minimum": 0,
-              "maximum": 1,
-              "multipleOf": 0.1,
+              "enum": [
+                0,
+                0.1,
+                0.2,
+                0.3,
+                0.4,
+                0.5,
+                0.6,
+                0.7,
+                0.8,
+                0.9,
+                1
+              ],
               "description": "Probability of the outcome better, step 0.1."
             },
             "unchanged": {
-              "type": "number",
-              "minimum": 0,
-              "maximum": 1,
-              "multipleOf": 0.1,
+              "enum": [
+                0,
+                0.1,
+                0.2,
+                0.3,
+                0.4,
+                0.5,
+                0.6,
+                0.7,
+                0.8,
+                0.9,
+                1
+              ],
               "description": "Probability of the outcome unchanged, step 0.1."
             },
             "worse": {
-              "type": "number",
-              "minimum": 0,
-              "maximum": 1,
-              "multipleOf": 0.1,
+              "enum": [
+                0,
+                0.1,
+                0.2,
+                0.3,
+                0.4,
+                0.5,
+                0.6,
+                0.7,
+                0.8,
+                0.9,
+                1
+              ],
               "description": "Probability of the outcome worse, step 0.1."
             }
           }
