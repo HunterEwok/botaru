@@ -80,7 +80,7 @@ func Secrets(s string) string {
 // HasSecret says whether s still holds something Secrets would mask.
 func HasSecret(s string) bool { return Secrets(s) != s }
 
-// Value masks every string inside a JSON value.
+// Value masks every string inside a JSON value, object keys included.
 func Value(v any, kinds []string) any {
 	switch x := v.(type) {
 	case string:
@@ -92,9 +92,10 @@ func Value(v any, kinds []string) any {
 		}
 		return out
 	case map[string]any:
+		// Keys are masked too: an object key can carry a secret as well as a value.
 		out := make(map[string]any, len(x))
 		for k, e := range x {
-			out[k] = Value(e, kinds)
+			out[Text(k, kinds)] = Value(e, kinds)
 		}
 		return out
 	}

@@ -164,9 +164,12 @@ func (c *Core) attemptCatalog(ctx context.Context, q store.Querier, cat *Catalog
 	return c.toolCatalog(cat, g)
 }
 
-// CatalogHashes returns the P4 tool hashes of the P3 catalog of a model handle's attempt by
-// tool name (GW-1).
-func (c *Core) CatalogHashes(ctx context.Context, g *ModelGrant) (map[string]string, error) {
+// ToolHash is one tool of the P3 catalog with its P4 tool hash.
+type ToolHash struct{ Name, Hash string }
+
+// CatalogHashes returns the P4 tool hashes of the P3 catalog of a model handle's attempt in
+// catalog order (GW-1).
+func (c *Core) CatalogHashes(ctx context.Context, g *ModelGrant) ([]ToolHash, error) {
 	cat, err := c.Catalog(ctx)
 	if err != nil {
 		return nil, err
@@ -175,13 +178,13 @@ func (c *Core) CatalogHashes(ctx context.Context, g *ModelGrant) (map[string]str
 	if err != nil {
 		return nil, err
 	}
-	out := map[string]string{}
+	out := make([]ToolHash, 0, len(tools))
 	for _, t := range tools {
 		h, err := t.P4Hash()
 		if err != nil {
 			return nil, err
 		}
-		out[t.Name] = h
+		out = append(out, ToolHash{t.Name, h})
 	}
 	return out, nil
 }
@@ -358,7 +361,7 @@ func (c *Core) recordToolCall(ctx context.Context, tx pgx.Tx, now time.Time, cat
 		Plugin: plugin, Placement: pl.Placement, Host: host, Resource: target.resource, Resolved: resolved, Untrusted: !t.TrustedOutput(), State: "queued",
 	}
 	// A target without a live toolhost ends at once (DLV-16, OBS-10).
-	live, err := c.liveToolhost(ctx, tx, now, g.Tenant, plugin, pl.Placement, host)
+	live, err := c.liveToolhost(ctx, tx, now, cat, g.Tenant, plugin, pl.Placement, host)
 	if err != nil {
 		return "", nil, err
 	}
@@ -514,13 +517,32 @@ func findService(spec map[string]any, name string) (map[string]any, string) {
 	return nil, ""
 }
 
-// liveToolhost says whether an active toolhost of the target was seen within staleAfter.
-func (c *Core) liveToolhost(ctx context.Context, q store.Querier, now time.Time, tenant, plugin, placement, host string) (bool, error) {
-	var n int
-	err := q.QueryRow(ctx, `SELECT count(*) FROM workers WHERE tenant = $1 AND kind = 'toolhost' AND state = 'active'
+// liveToolhost says whether an active toolhost of the target was seen within staleAfter and
+// still matches the plugin manifests: a toolhost whose hello fingerprint no longer matches
+// after an apply takes no calls until it says hello again (INJ-2).
+func (c *Core) liveToolhost(ctx context.Context, q store.Querier, now time.Time, cat *Catalog, tenant, plugin, placement, host string) (bool, error) {
+	rows, err := q.Query(ctx, `SELECT plugins, hello FROM workers WHERE tenant = $1 AND kind = 'toolhost' AND state = 'active'
 		AND plugins ? $2 AND placement = $3 AND ($4 = '' OR host = $4) AND last_seen > $5`,
-		tenant, plugin, placement, host, now.Add(-staleAfter)).Scan(&n)
-	return n > 0, err
+		tenant, plugin, placement, host, now.Add(-staleAfter))
+	if err != nil {
+		return false, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var plugins, hello []byte
+		if err := rows.Scan(&plugins, &hello); err != nil {
+			return false, err
+		}
+		w := Worker{Placement: placement}
+		var h HelloRequest
+		if json.Unmarshal(plugins, &w.Plugins) != nil || json.Unmarshal(hello, &h) != nil {
+			continue
+		}
+		if toolhostMismatch(cat, &w, h) == "" {
+			return true, nil
+		}
+	}
+	return false, rows.Err()
 }
 
 func toolError(r *toolRefusal) *mcp.CallResult {

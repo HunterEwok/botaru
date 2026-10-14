@@ -219,19 +219,19 @@ func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 // checkTools compares the tools of a request with the P3 catalog of the handle's attempt by
 // name and by the P4 tool hash of spec/hashing.md (GW-1): the request carries exactly the
-// catalog, so a tool the catalog does not have, one with another description or schema, and a
-// missing one are refused before the provider.
+// catalog in its order, so a tool the catalog does not have, one with another description or
+// schema, a missing one and another order are refused before the provider.
 func (g *Gateway) checkTools(ctx context.Context, body map[string]any, grant *core.ModelGrant) error {
 	tools, _ := body["tools"].([]any)
 	want, err := g.c.CatalogHashes(ctx, grant)
 	if err != nil {
 		return err
 	}
+	differ := &core.Problem{Reason: "input_schema_invalid", Detail: "tools differ from the P3 catalog of the handle"}
 	if len(tools) != len(want) {
-		return &core.Problem{Reason: "input_schema_invalid", Detail: "tools differ from the P3 catalog of the handle"}
+		return differ
 	}
-	seen := map[string]bool{}
-	for _, x := range tools {
+	for i, x := range tools {
 		t, _ := x.(map[string]any)
 		name, _ := t["name"].(string)
 		m := map[string]any{}
@@ -241,10 +241,9 @@ func (g *Gateway) checkTools(ctx context.Context, body map[string]any, grant *co
 			}
 		}
 		h, err := jcs.Hash(m)
-		if err != nil || seen[name] || want[name] == "" || h != want[name] {
-			return &core.Problem{Reason: "input_schema_invalid", Detail: "tools differ from the P3 catalog of the handle"}
+		if err != nil || name != want[i].Name || h != want[i].Hash {
+			return differ
 		}
-		seen[name] = true
 	}
 	return nil
 }

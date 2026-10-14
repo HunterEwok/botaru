@@ -64,6 +64,11 @@ func (c *Core) claimToolcall(ctx context.Context, tx pgx.Tx, now time.Time, cat 
 	if len(w.Plugins) == 0 {
 		return nil, nil
 	}
+	// A plugin manifest applied after the toolhost's hello must match its live tools again
+	// before it takes a call (INJ-2).
+	if w.Hello == nil || toolhostMismatch(cat, w, *w.Hello) != "" {
+		return nil, nil
+	}
 	for {
 		var (
 			id, task, tool, plugin, placement string
@@ -237,7 +242,9 @@ func (c *Core) completeToolcall(ctx context.Context, tx pgx.Tx, now time.Time, l
 	if !t.TrustedOutput() {
 		// The first untrusted output sets untrusted_seen on the attempt; it never goes back
 		// (INJ-13).
-		if _, err := tx.Exec(ctx, `UPDATE tasks SET record = record || '{"untrusted_seen": true}' WHERE id = $1`, task); err != nil {
+		// The first source stays.
+		if _, err := tx.Exec(ctx, `UPDATE tasks SET record = record || jsonb_build_object('untrusted_seen', true,
+			'untrusted_source', coalesce(record->>'untrusted_source', $2::text)) WHERE id = $1`, task, tool); err != nil {
 			return err
 		}
 	}

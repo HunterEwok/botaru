@@ -19,7 +19,10 @@ import (
 
 // newToolBench is the bench with the checks, logs and cmd plugins, a part of the demo catalog
 // and the hello role holding checks/latest, logs/tail and cmd/run.
-func newToolBench(t *testing.T) *bench {
+func newToolBench(t *testing.T) *bench { t.Helper(); return newToolBenchKeep(t, nil) }
+
+// newToolBenchKeep is newToolBench that also returns the applied manifests in keep.
+func newToolBenchKeep(t *testing.T, keep *[]map[string]any) *bench {
 	t.Helper()
 	return newBenchWith(t, func(root string, ms []map[string]any) []map[string]any {
 		var paths []string
@@ -47,6 +50,9 @@ func newToolBench(t *testing.T) *bench {
 		}
 		if _, err := testbench.DropUnsupported(sp, ms); err != nil {
 			t.Fatal(err)
+		}
+		if keep != nil {
+			*keep = ms
 		}
 		return ms
 	})
@@ -95,7 +101,10 @@ func (b *bench) toolhost(t *testing.T, plugins ...string) *Worker {
 	if _, err := b.c.Hello(ctx, w, HelloRequest{Kind: "toolhost", ProtocolVersions: []string{"v1"}, Plugins: plugins, Placement: "host", ToolsFingerprint: fp}); err != nil {
 		t.Fatal(err)
 	}
-	w.State = "active"
+	// As on every P1 call, the worker is read again with its hello.
+	if w, err = b.c.AuthenticateWorker(ctx, r.Token); err != nil {
+		t.Fatal(err)
+	}
 	return w
 }
 
@@ -198,7 +207,7 @@ func TestP3Catalog(t *testing.T) {
 		t.Fatal(err)
 	}
 	hashes, err := b.c.CatalogHashes(ctx, g)
-	if err != nil || len(hashes) != 1 || hashes["checks_latest"] == "" {
+	if err != nil || len(hashes) != 1 || hashes[0].Name != "checks_latest" || hashes[0].Hash == "" {
 		t.Fatalf("hashes %v %v", hashes, err)
 	}
 	// A tool beyond the catalog is refused with the short answer.
@@ -313,8 +322,9 @@ func TestP3Untrusted(t *testing.T) {
 		t.Fatalf("a split token reached the model: %q", text)
 	}
 	var seen bool
-	if err := b.c.st.Pool.QueryRow(ctx, `SELECT coalesce((record->>'untrusted_seen')::bool, false) FROM tasks WHERE id = $1`, att.WorkID).Scan(&seen); err != nil || !seen {
-		t.Fatalf("untrusted_seen %v %v", seen, err)
+	var source string
+	if err := b.c.st.Pool.QueryRow(ctx, `SELECT coalesce((record->>'untrusted_seen')::bool, false), coalesce(record->>'untrusted_source', '') FROM tasks WHERE id = $1`, att.WorkID).Scan(&seen, &source); err != nil || !seen || source != "logs/tail" {
+		t.Fatalf("untrusted_seen %v from %q %v", seen, source, err)
 	}
 
 	// Structured output above the tool limit is refused, not passed in full.
@@ -463,5 +473,30 @@ func TestP3HostHold(t *testing.T) {
 	}
 	if res := <-done; res.err != nil || callText(res.r) != noPermission {
 		t.Fatalf("resource hold at handout: %+v %v", res.r, res.err)
+	}
+}
+
+// After an apply changes a plugin manifest, a toolhost that said hello with the old one takes
+// no calls and does not count as live until it says hello again (INJ-2).
+func TestToolhostAfterApply(t *testing.T) {
+	ctx := context.Background()
+	var ms []map[string]any
+	b := newToolBenchKeep(t, &ms)
+	_, h := b.attemptTools(t, "1", false)
+	th := b.toolhost(t, "checks")
+	for _, m := range ms {
+		if m["kind"] == "ToolPlugin" && m["metadata"].(map[string]any)["name"] == "checks" {
+			m["spec"].(map[string]any)["tools"].([]any)[0].(map[string]any)["description"] = "Changed."
+		}
+	}
+	if res, err := b.c.Apply(ctx, b.op, ApplyRequest{Commit: "7777777777777777777777777777777777777777", Manifests: ms}); err != nil || !res.Applied {
+		t.Fatalf("apply: %+v %v", res, err)
+	}
+	r, err := b.c.P3ToolsCall(ctx, h, mcp.CallParams{Name: "checks_latest", Arguments: map[string]any{"check": "www-health"}})
+	if err != nil || callText(r) != "error: plugin_unavailable" {
+		t.Fatalf("a stale toolhost counted as live: %+v %v", r, err)
+	}
+	if item := b.claim(t, th, "toolcall"); item != nil {
+		t.Fatalf("a stale toolhost got a call: %+v", item)
 	}
 }

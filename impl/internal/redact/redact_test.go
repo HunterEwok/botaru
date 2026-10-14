@@ -38,7 +38,10 @@ func TestText(t *testing.T) {
 }
 
 func TestValue(t *testing.T) {
-	v := Value(map[string]any{"a": []any{"x 198.51.100.1", 3.0}, "b": "token=zz"}, []string{IP, Secret}).(map[string]any)
+	v := Value(map[string]any{"a": []any{"x 198.51.100.1", 3.0}, "b": "token=zz", "gh" + "p_abcdefghijklmnopqrstuvwxyz": 1.0}, []string{IP, Secret}).(map[string]any)
+	if v["[secret]"] != 1.0 {
+		t.Fatalf("a key was not masked: %v", v)
+	}
 	if v["a"].([]any)[0] != "x [ip]" || v["a"].([]any)[1] != 3.0 || v["b"] != "token=[secret]" {
 		t.Fatalf("Value %v", v)
 	}
