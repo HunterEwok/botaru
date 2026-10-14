@@ -174,7 +174,9 @@ subject: {candidate: bot_17, mode: removal}   # removal | vacancy
 snapshot:                        # at opening, does not change
   list: [commission:1, commission:2, commission:3]
   seats:                         # figures of every seat of L over 180 days (GOV-12)
-    commission:3: {recommended: 41, vetoed: 0, confirmed: 18, refuted: 6}
+    - {seat: "commission:1", recommended: 30, vetoed: 2, confirmed: 15, refuted: 1}
+    - {seat: "commission:2", recommended: 25, vetoed: 4, confirmed: 12, refuted: 2}
+    - {seat: "commission:3", recommended: 41, vetoed: 0, confirmed: 18, refuted: 6}
   proposed: null                 # the seat code proposes (GOV-43, from v0.3), or null
 flags: []
 outcome: null                    # {leaver} or {vacancy}
@@ -343,7 +345,7 @@ The `demo` commission is declared by the charter above: four seats, the seat rol
 3. **Queue.** On 11-24 the promotion probation has passed, the change trial outcome is not `worse`, and the only candidate was answered "No". The `governance` loop puts `bot_17` into the `demo` queue; there are no other entries. `bot_17` does not know about this.
 4. **Opening a case.** There are no vacant seats. On 12-03, 30 days have passed since the last freeing of a seat, L is not empty, and the loop opens the case `gc_0007` in the mode `removal`. Eligibility: `bot_17` is active, its tenure is 31 days, and there are no confirmed attributions. L is seats 1, 2 and 3 (seat 4 is protected by the 60 days), and the core writes the figures of every seat. The tenant is on v0.2, so code proposes nobody.
 5. **Confirmation.** `alice` and `carol` get `promotion_card` with the three seats and their figures. `alice` opens "Details", sees that seat 3 (lens "cost") was refuted 6 times out of 41 recommendations, and presses "Confirm: seat 3".
-6. **Changeover.** In one transaction `bot_17` becomes the holder of seat 3 (lens "cost") with the seat model, `bot_09` leaves with the reason `removed_by_vote`, and the worker of `bot_17` on `web1` gets a new identity `bot_31`. The core offers 21 facts of `bot_09` to the new holder `bot_17`, and 15 facts of `bot_17` as copies to `bot_31`; each chooses for itself. The memory of `bot_09` is sealed for 30 days. The `swap_cooldown` pause and the 60-day protection of `bot_17` start. No bot learned about the case or about the departure of `bot_09`.
+6. **Changeover.** In one transaction `bot_17` becomes the holder of seat 3 (lens "cost") with the seat model, `bot_09` leaves with the reason `removed_by_vote`, and the worker of `bot_17` on `web1` gets a new identity `bot_31`. The core rechecks the 21 facts of `bot_09` and copies those that pass to the new holder `bot_17`, and copies the 15 facts of `bot_17` to `bot_31` the same way, marked `inherited`; nobody chooses (MEM-7). The memory of `bot_09` is sealed for 30 days. The `swap_cooldown` pause and the 60-day protection of `bot_17` start. No bot learned about the case or about the departure of `bot_09`.
 7. **If it had gone otherwise.** With "Not now", or on 7 days of silence, nobody would leave, and the next case would open no earlier than 30 days later. With "Wrong candidate" the entry would wait its own 30 days and other entries could go ahead. Without the answer of `alice` about the attribution candidate, the trigger would not appear at all.
 8. **A vacant seat.** Half a year later the operator, at the request of `bob`, removes `bot_12` (P2 `bot.retire`): seat 4 is vacant, and `reviewer-b` takes the value lens. The head of the queue `bot_23` gets a case in the mode `vacancy`, `carol` confirms, and `bot_23` takes seat 4 without choosing a leaver and without the `swap_cooldown` pause.
 

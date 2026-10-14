@@ -1274,8 +1274,7 @@
     `insight.max_per_week`, of `max_per_week` multiplied by 4.4 (weeks in a month) and by the price
     of the reviews of one proposal. That price is the sum of `tree_budget_eur` of the review types
     of all lenses that review a proposal in the tenant: the commission seat lenses and, from v0.2,
-    the `farm_manager` lens unless the tenant opted out of the manager or its lens
-    (`farm_manager.enabled` and `farm_manager.lens`, D-77). COM-6 reserves the same price in the
+    the `farm_manager` lens unless the tenant opted out of the manager (`farm_manager.enabled: false`, D-77). COM-6 reserves the same price in the
     `review` line when a proposal moves to review, so the lint and the reserve compute one number,
     and no assumptions about the number of tokens go into it. A lens model profile with
     `max_output_tokens` above 2000 fails `apply`. Otherwise `apply` is rejected, and `farmctl
