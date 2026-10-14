@@ -12,8 +12,8 @@
   (MAN-10);
 - group capabilities have no wildcards on actions, data and decisions (PRM-7), no
   grants on action.* types (APR-5), plus the non-waivable PRM-2 bans and the checks
-  from the lint:manifests/* and lint:roles/profile-limits rows of docs/quality.md
-  that can be checked from files;
+  from the lint:manifests/* and lint:roles/profile-limits checks of
+  conformance/suites/lint/manifests.yaml and roles.yaml that can be checked from files;
 - flows and the hello-bot example (YAML with a steps field): P1 request bodies (and the activity
   of a submit_activity step) pass the request schema of the row in spec/ports/operations.yaml,
   call: {port, op, request} step bodies pass the same check as behavior
@@ -1743,7 +1743,7 @@ if '--manifests' in sys.argv:
 
 farm_hosts, farm_src = farm_hosts_default()
 if not farm_src:
-    rep.note('examples/deploy/farm.yaml', '[farm_hosts_default] no such file: farm hosts are taken from the text of docs/quality.md (core1, backup1)')
+    rep.note('examples/deploy/farm.yaml', '[farm_hosts_default] no such file: farm hosts default to core1 and backup1, as in the suite checks (docs/quality.md)')
 manifests, flows = collect(EXAMPLES) if os.path.isdir(EXAMPLES) else ([], [])
 
 if own_dir:
