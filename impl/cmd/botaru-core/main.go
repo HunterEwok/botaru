@@ -81,7 +81,7 @@ func run(path string, log *slog.Logger) error {
 	if err != nil {
 		return err
 	}
-	tx, err := texts.Load(cfg.TextsDir)
+	tx, err := texts.Load(root, cfg.TextsDir)
 	if err != nil {
 		return err
 	}
@@ -95,7 +95,7 @@ func run(path string, log *slog.Logger) error {
 	}
 	c, err := core.New(ctx, core.Config{
 		TokenKey: []byte(key), TestBench: cfg.TestBench, LeaseS: cfg.LeaseS, HeartbeatS: cfg.HeartbeatS,
-		DeliveryMaxAttempts: cfg.DeliveryMaxAttempts, Logger: log,
+		DeliveryMaxAttempts: cfg.DeliveryMaxAttempts, Operator: cfg.Operator, Logger: log,
 	}, st, sp, tx)
 	if err != nil {
 		return err

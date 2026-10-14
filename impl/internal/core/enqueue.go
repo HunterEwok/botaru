@@ -4,6 +4,8 @@ package core
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"math"
@@ -44,7 +46,48 @@ type enqueueInput struct {
 	EnqueuedBy     string
 	Origin         *Origin
 	Priority       int
-	Source         string // interactive, schedule, route, root
+	// Source is where the task comes from: interactive (a person's or a program's direct
+	// request), campaign, route, schedule or script with SourceID, or empty for a task the core
+	// creates itself; it sets fairness_key (DSP-2).
+	Source   string
+	SourceID string
+	// FairnessKey is set for a child, a continuation, a redrive or an action task after
+	// approval: they keep the key of their source (DSP-2).
+	FairnessKey string
+	// Cause is the id of the direct cause of task.submitted: the incoming message of a channel
+	// task (OBS-2).
+	Cause string
+}
+
+// fairnessKey writes the dispatcher fairness key <kind>:<id> from the task source (DSP-2,
+// D-98). The core writes it on every task from v0.1; it orders dispatch only from v0.2 (DSP-6).
+func fairnessKey(in enqueueInput, tt manifest.TaskType) string {
+	if in.FairnessKey != "" {
+		return in.FairnessKey
+	}
+	switch in.Source {
+	case "interactive":
+		return "interactive:" + in.Initiator
+	case "campaign", "route", "schedule", "script":
+		if in.SourceID != "" {
+			return in.Source + ":" + in.SourceID
+		}
+	}
+	purpose := tt.Purpose
+	if purpose == "" {
+		purpose = "work"
+	}
+	return "system:" + purpose
+}
+
+// newTraceparent starts the W3C trace of a task tree (OBS-2): version 00, a random trace id, a
+// random parent span id, sampled.
+func newTraceparent() (string, error) {
+	var b [24]byte
+	if _, err := rand.Read(b[:]); err != nil {
+		return "", err
+	}
+	return "00-" + hex.EncodeToString(b[:16]) + "-" + hex.EncodeToString(b[16:]) + "-01", nil
 }
 
 // enqueueOutcome is a written task, an existing task with the same key, or a refusal. A refusal
@@ -270,6 +313,10 @@ func (c *Core) enqueue(ctx context.Context, tx pgx.Tx, now time.Time, cat *Catal
 		}
 	}
 	id := ids.New(ids.Task)
+	trace, err := newTraceparent()
+	if err != nil {
+		return nil, err
+	}
 	record := map[string]any{
 		"tenant":         in.Tenant,
 		"enqueued_by":    in.EnqueuedBy,
@@ -279,6 +326,8 @@ func (c *Core) enqueue(ctx context.Context, tx pgx.Tx, now time.Time, cat *Catal
 		"max_tier":       tt.Tier,
 		"data_mark":      tt.DataClass,
 		"untrusted_seen": false,
+		"fairness_key":   fairnessKey(in, tt),
+		"trace":          trace,
 	}
 	if in.Origin != nil {
 		record["origin"] = in.Origin
@@ -304,7 +353,7 @@ func (c *Core) enqueue(ctx context.Context, tx pgx.Tx, now time.Time, cat *Catal
 			return nil, err
 		}
 	}
-	if err := c.appendEvent(ctx, tx, now, in.Tenant, Event{Type: "task.submitted", Subject: id, Data: map[string]any{"task": id, "type": in.Type}}); err != nil {
+	if err := c.appendEvent(ctx, tx, now, in.Tenant, Event{Type: "task.submitted", Subject: id, Data: map[string]any{"task": id, "type": in.Type}, Causation: in.Cause}); err != nil {
 		return nil, err
 	}
 	if _, err := c.appendAudit(ctx, tx, now, Audit{

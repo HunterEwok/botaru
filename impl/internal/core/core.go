@@ -36,7 +36,9 @@ type Config struct {
 	LeaseS, HeartbeatS int
 	// DeliveryMaxAttempts is the farm ceiling of delivery attempts (DLV-3).
 	DeliveryMaxAttempts int
-	Logger              *slog.Logger
+	// Operator names the farm operator in the ai_notice text (notice.ai).
+	Operator string
+	Logger   *slog.Logger
 }
 
 func (c *Config) defaults() {
@@ -82,7 +84,12 @@ func New(ctx context.Context, cfg Config, st *store.Store, sp *spec.Spec, tx *te
 	}
 	c := &Core{cfg: cfg, st: st, spec: sp, texts: tx, epoch: meta.Epoch, log: cfg.Logger, rs: newResultSchemas()}
 	c.wake = newWaker()
-	if _, err := c.Catalog(ctx); err != nil {
+	cat, err := c.Catalog(ctx)
+	if err != nil {
+		return nil, err
+	}
+	c.warnNoticeFallbacks(cat)
+	if err := c.fillNoticeParams(ctx, cat); err != nil {
 		return nil, err
 	}
 	return c, nil

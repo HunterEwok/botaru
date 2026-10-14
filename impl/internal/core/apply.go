@@ -90,6 +90,18 @@ func (c *Core) Apply(ctx context.Context, op Operator, req ApplyRequest) (*Apply
 	for i, v := range req.Manifests {
 		d := manifest.FromValue(v, fmt.Sprintf("manifests/%d", i))
 		e := ApplyError{Kind: d.Kind, Tenant: d.Tenant, Name: d.Name}
+		// A kind or a field of a later skeleton version, or of a feature profile this core does
+		// not claim, is refused rather than accepted and ignored (MAN-11). A later kind is
+		// refused before the schema check, so its answer does not depend on the wrapper.
+		later, err := c.spec.Unsupported(v)
+		if err != nil {
+			return nil, err
+		}
+		if len(later) == 1 && later[0] == "/kind" {
+			e.Code, e.Path = "version_unsupported", fmt.Sprintf("/manifests/%d/kind", i)
+			res.Errors = append(res.Errors, e)
+			continue
+		}
 		if err := c.spec.Validate("manifest:manifest", v); err != nil {
 			var ve *spec.ValidationError
 			if errors.As(err, &ve) && len(ve.Violations) > 0 {
@@ -103,6 +115,13 @@ func (c *Core) Apply(ctx context.Context, op Operator, req ApplyRequest) (*Apply
 		if !ok {
 			e.Code = "kind_unknown"
 			res.Errors = append(res.Errors, e)
+			continue
+		}
+		if len(later) > 0 {
+			for _, p := range later {
+				e.Code, e.Path = "version_unsupported", fmt.Sprintf("/manifests/%d%s", i, p)
+				res.Errors = append(res.Errors, e)
+			}
 			continue
 		}
 		md, _ := v["metadata"].(map[string]any)
@@ -292,9 +311,11 @@ func (c *Core) Apply(ctx context.Context, op Operator, req ApplyRequest) (*Apply
 	}
 	res.Applied = !req.DryRun
 	if res.Applied {
-		if _, err := c.Catalog(ctx); err != nil {
+		cat, err := c.Catalog(ctx)
+		if err != nil {
 			return nil, err
 		}
+		c.warnNoticeFallbacks(cat)
 	}
 	return res, nil
 }

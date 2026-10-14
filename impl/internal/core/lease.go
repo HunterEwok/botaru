@@ -147,9 +147,16 @@ func (c *Core) heldLease(ctx context.Context, tx pgx.Tx, w *Worker, header, op s
 				Op       string          `json:"op"`
 				Args     string          `json:"args"`
 				Response json.RawMessage `json:"response"`
+				Problem  *struct {
+					Reason string `json:"reason"`
+					Detail string `json:"detail"`
+				} `json:"problem"`
 			}
 			h, _ := jcs.Hash(argsValue(args))
 			if json.Unmarshal(l.Outcome, &o) == nil && o.Op == op && o.Args == h {
+				if o.Problem != nil { // a stored refusal is repeated as it was (IDM-3)
+					return nil, nil, &Problem{Reason: o.Problem.Reason, Detail: o.Problem.Detail}
+				}
 				return &l, o.Response, nil
 			}
 		}

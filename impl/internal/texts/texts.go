@@ -1,25 +1,28 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
-// Package texts holds the code text catalog: the ready texts of notices, refusals and labels
-// that core and channel code show to people without a model (DLV-9).
+// Package texts holds the code text catalog: the ready texts of notices, refusals, labels and
+// command answers that core and channel code show to people without a model (DLV-9). The texts
+// come from the message catalog of the skeleton, spec/bindings/channels/messages/<locale>.yaml,
+// read at run time like the other skeleton files; an installation adds catalogs of other
+// locales in its own text folder.
 package texts
 
 import (
-	_ "embed"
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
 
 	"github.com/HunterEwok/botaru/impl/internal/yamlx"
 )
 
-//go:embed en.yaml
-var builtinEN []byte
-
-// Fallback is the locale used when the wanted one has no text.
+// Fallback is the locale whose text a key takes when the wanted locale has none (DLV-9).
 const Fallback = "en"
+
+// CatalogDir is the folder of the skeleton message catalog, relative to the skeleton root.
+const CatalogDir = "spec/bindings/channels/messages"
 
 // Catalog maps locale -> key -> text.
 type Catalog struct {
@@ -27,35 +30,45 @@ type Catalog struct {
 }
 
 type file struct {
-	Locale string            `yaml:"locale"`
-	Texts  map[string]string `yaml:"texts"`
+	Locale string         `yaml:"locale"`
+	Texts  map[string]any `yaml:"texts"`
 }
 
-// Load returns the built-in en catalog plus every <locale>.yaml file in dir (dir may be empty).
-// A file of the installation replaces the built-in texts key by key.
-func Load(dir string) (*Catalog, error) {
+// Load reads the message catalogs of the skeleton under root and then every <locale>.yaml
+// file in dir (dir may be empty). A file of the installation replaces texts key by key. The
+// skeleton must have the en catalog.
+func Load(root, dir string) (*Catalog, error) {
 	c := &Catalog{byLocale: map[string]map[string]string{}}
-	if err := c.add(builtinEN, "builtin en.yaml"); err != nil {
+	if err := c.addDir(filepath.Join(root, CatalogDir)); err != nil {
 		return nil, err
 	}
-	if dir == "" {
-		return c, nil
+	if _, ok := c.byLocale[Fallback]; !ok {
+		return nil, fmt.Errorf("texts: no %s catalog in %s", Fallback, filepath.Join(root, CatalogDir))
 	}
+	if dir != "" {
+		if err := c.addDir(dir); err != nil {
+			return nil, err
+		}
+	}
+	return c, nil
+}
+
+func (c *Catalog) addDir(dir string) error {
 	files, err := filepath.Glob(filepath.Join(dir, "*.yaml"))
 	if err != nil {
-		return nil, err
+		return err
 	}
 	sort.Strings(files)
 	for _, f := range files {
 		b, err := os.ReadFile(f)
 		if err != nil {
-			return nil, err
+			return err
 		}
 		if err := c.add(b, f); err != nil {
-			return nil, err
+			return err
 		}
 	}
-	return c, nil
+	return nil
 }
 
 func (c *Catalog) add(b []byte, src string) error {
@@ -72,7 +85,10 @@ func (c *Catalog) add(b []byte, src string) error {
 		c.byLocale[f.Locale] = m
 	}
 	for k, v := range f.Texts {
-		m[k] = strings.TrimSpace(v)
+		// Lists (number words and units of the number check, REP-4) are not texts.
+		if s, ok := v.(string); ok {
+			m[k] = strings.TrimSpace(s)
+		}
 	}
 	return nil
 }
@@ -90,8 +106,13 @@ func (c *Catalog) Locales() []string {
 	return out
 }
 
-// Render returns the text of key in locale (or the fallback) with {name} parameters filled in.
-// An unknown key renders as the key itself, so a missing text is visible but harmless.
+// placeholder is a {name} parameter of a catalog text.
+var placeholder = regexp.MustCompile(`\{[a-z][a-z0-9_]*\}`)
+
+// Render returns the text of key in locale, or the fallback text of the key, with {name}
+// parameters filled in. A parameter the caller does not pass becomes "-", so a person never
+// sees a raw placeholder. An unknown key renders as the key itself, so a missing text is
+// visible but harmless.
 func (c *Catalog) Render(locale, key string, params map[string]any) string {
 	t, ok := c.byLocale[locale][key]
 	if !ok {
@@ -100,8 +121,10 @@ func (c *Catalog) Render(locale, key string, params map[string]any) string {
 	if !ok {
 		return key
 	}
-	for k, v := range params {
-		t = strings.ReplaceAll(t, "{"+k+"}", fmt.Sprint(v))
-	}
-	return t
+	return placeholder.ReplaceAllStringFunc(t, func(m string) string {
+		if v, ok := params[m[1:len(m)-1]]; ok {
+			return fmt.Sprint(v)
+		}
+		return "-"
+	})
 }

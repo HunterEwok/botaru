@@ -287,9 +287,28 @@ func (c *Core) claimAttempt(ctx context.Context, tx pgx.Tx, now time.Time, cat *
 	if _, err := tx.Exec(ctx, `UPDATE tasks SET state = 'working', lease_no = $2, run_at = NULL, updated_at = $3 WHERE id = $1`, id, leaseNo, now); err != nil {
 		return nil, err
 	}
+	var record map[string]any
+	if err := json.Unmarshal(rec, &record); err != nil {
+		return nil, err
+	}
+	// The run fingerprint and the catalog values of the result check are fixed at claim and
+	// written into the attempt (PRV-1, OUT-1); the worker does not set them.
+	slot, profile := mainSlot(role)
+	mark, _ := record["data_mark"].(string)
+	att, err := c.prepareAttempt(cat, w, w.Tenant, typ, mark, slot, profile)
+	if err != nil {
+		return nil, err
+	}
+	attRaw, err := json.Marshal(att)
+	if err != nil {
+		return nil, err
+	}
+	if _, err := tx.Exec(ctx, `UPDATE leases SET fingerprint = $3, attempt = $4 WHERE work_id = $1 AND lease_no = $2`, id, leaseNo, att.Fingerprint, attRaw); err != nil {
+		return nil, err
+	}
 	// The model handle of the role's main slot (SEC-3): bound to this lease and epoch.
 	handles := map[string]any{"tools": nil, "model": nil, "session": nil, "memory": nil}
-	if slot, profile := mainSlot(role); slot != "" {
+	if slot != "" {
 		h := "bh_" + ids.Secret(32)
 		if _, err := tx.Exec(ctx, `INSERT INTO handles (hash, kind, tenant, work_id, lease_no, epoch, worker_id, slot, profile, created_at)
 			VALUES ($1, 'model', $2, $3, $4, $5, $6, $7, $8, $9)`,
@@ -297,10 +316,6 @@ func (c *Core) claimAttempt(ctx context.Context, tx pgx.Tx, now time.Time, cat *
 			return nil, err
 		}
 		handles["model"] = h
-	}
-	var record map[string]any
-	if err := json.Unmarshal(rec, &record); err != nil {
-		return nil, err
 	}
 	var taskBody map[string]any
 	if err := json.Unmarshal(body, &taskBody); err != nil {
@@ -320,7 +335,7 @@ func (c *Core) claimAttempt(ctx context.Context, tx pgx.Tx, now time.Time, cat *
 		payload["result_schema"] = tt.ResultSchema
 	}
 	item.Payload = payload
-	if err := c.appendEvent(ctx, tx, now, w.Tenant, Event{Type: "task.working", Subject: id, Data: map[string]any{"task": id, "lease_no": leaseNo}}); err != nil {
+	if err := c.appendEvent(ctx, tx, now, w.Tenant, Event{Type: "task.working", Subject: id, Data: map[string]any{"task": id, "lease_no": leaseNo, "fingerprint": att.Fingerprint}}); err != nil {
 		return nil, err
 	}
 	if _, err := c.appendAudit(ctx, tx, now, Audit{
@@ -426,19 +441,13 @@ func (c *Core) claimDelivery(ctx context.Context, tx pgx.Tx, now time.Time, cat 
 		"target":   map[string]any{"kind": w.Kind, "name": w.Target},
 		"delivery": d,
 	}
-	// Implementation extension (MAN-3): the recipient's locale for code texts.
+	// Implementation extension (MAN-3): the recipient's locale for code texts; without it the
+	// channel takes en (DLV-9).
 	if recipient != nil {
 		var locale *string
 		_ = tx.QueryRow(ctx, `SELECT locale FROM principals WHERE tenant = $1 AND id = $2`, w.Tenant, *recipient).Scan(&locale)
 		if locale != nil && *locale != "" {
 			payload["locale"] = *locale
-		}
-	}
-	if _, ok := payload["locale"]; !ok {
-		if cat, err := c.Catalog(ctx); err == nil {
-			if tv, ok := cat.Tenants[w.Tenant]; ok && tv.Spec.Locale != "" {
-				payload["locale"] = tv.Spec.Locale
-			}
 		}
 	}
 	item.Payload = payload

@@ -42,7 +42,8 @@
         "Commission",
         "IncidentClass",
         "Governance",
-        "Script"
+        "Script",
+        "EvalReports"
       ],
       "description": "Manifest kind from the kinds.yaml registry."
     },

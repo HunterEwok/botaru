@@ -32,6 +32,8 @@ type ModelGrant struct {
 	Line         string
 	// TreeBudget is the type's tree budget in micro-euros; 0 means none.
 	TreeBudget int64
+	// Fingerprint is the run fingerprint of the attempt, written on every usage line (PRV-1).
+	Fingerprint string
 }
 
 // ResolveModelHandle checks a model handle: it exists, its lease is alive and of the current
@@ -49,11 +51,11 @@ func (c *Core) ResolveModelHandle(ctx context.Context, handle string) (*ModelGra
 	var leaseNo int
 	var state string
 	var until, now time.Time
-	var slot, profile *string
-	err = c.st.Pool.QueryRow(ctx, `SELECT h.tenant, h.work_id, h.lease_no, h.epoch, h.worker_id, h.slot, h.profile, l.state, l.lease_until, botaru_now()
+	var slot, profile, fp *string
+	err = c.st.Pool.QueryRow(ctx, `SELECT h.tenant, h.work_id, h.lease_no, h.epoch, h.worker_id, h.slot, h.profile, l.state, l.lease_until, l.fingerprint, botaru_now()
 		FROM handles h JOIN leases l ON l.work_id = h.work_id AND l.lease_no = h.lease_no
 		WHERE h.hash = $1 AND h.kind = 'model'`, c.hashSecret(handle)).
-		Scan(&g.Tenant, &g.Task, &leaseNo, &epoch, &g.Worker, &slot, &profile, &state, &until, &now)
+		Scan(&g.Tenant, &g.Task, &leaseNo, &epoch, &g.Worker, &slot, &profile, &state, &until, &fp, &now)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, refuse("handle_invalid", "unknown model handle")
 	}
@@ -65,6 +67,9 @@ func (c *Core) ResolveModelHandle(ctx context.Context, handle string) (*ModelGra
 	}
 	if slot != nil {
 		g.Slot = *slot
+	}
+	if fp != nil {
+		g.Fingerprint = *fp
 	}
 	if profile != nil {
 		g.ProfileName = *profile
@@ -164,9 +169,9 @@ func (c *Core) Reserve(ctx context.Context, g *ModelGrant, micros int64) (string
 				return refuse("budget_exhausted", "the call reserve does not fit the tree budget")
 			}
 		}
-		_, err := tx.Exec(ctx, `INSERT INTO spend (id, tenant, task, root, subject, role, worker, line, unit, profile, state, eur_micros, time)
-			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'tokens', $9, 'reserved', $10, $11)`,
-			id, g.Tenant, g.Task, g.Root, g.Initiator, g.Role, g.Worker, g.Line, g.ProfileName, micros, now)
+		_, err := tx.Exec(ctx, `INSERT INTO spend (id, tenant, task, root, subject, role, worker, line, unit, profile, state, eur_micros, time, fingerprint)
+			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'tokens', $9, 'reserved', $10, $11, $12)`,
+			id, g.Tenant, g.Task, g.Root, g.Initiator, g.Role, g.Worker, g.Line, g.ProfileName, micros, now, nullable(g.Fingerprint))
 		return err
 	})
 	if err != nil {

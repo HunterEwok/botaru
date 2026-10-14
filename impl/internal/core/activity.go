@@ -96,10 +96,8 @@ func (c *Core) SubmitActivity(ctx context.Context, w *Worker, a Activity) (*Acti
 		if err != nil {
 			return err
 		}
+		// The recipient's locale, then en (DLV-9); the tenant's locale is a field of v0.2.
 		locale := p.Locale
-		if locale == "" {
-			locale = tv.Spec.Locale
-		}
 		reply := func(key string) {
 			out = ActivityResult{Result: "reply", Text: c.texts.Render(locale, key, nil)}
 		}
@@ -127,7 +125,7 @@ func (c *Core) SubmitActivity(ctx context.Context, w *Worker, a Activity) (*Acti
 		body := map[string]any{"type": typ, "goal": goal}
 		res, err := c.enqueue(ctx, tx, now, cat, enqueueInput{
 			Tenant: w.Tenant, Type: typ, Body: body, IdempotencyKey: key, Initiator: principal,
-			EnqueuedBy: "channel:" + a.Channel, Origin: origin, Source: "interactive",
+			EnqueuedBy: "channel:" + a.Channel, Origin: origin, Source: "interactive", Cause: key,
 		})
 		if err != nil {
 			if p, ok := AsProblem(err); ok {

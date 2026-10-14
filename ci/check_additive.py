@@ -40,6 +40,8 @@ spec/model/*.yaml with their state at the branch point from the base branch
   (unless the object allowed no names before), a new property is narrower
   than the old patternProperties or additionalProperties schema for its name;
 - values are compared as JSON compares them: true is not 1, 1 equals 1.0;
+- a schema replaced by an anyOf that holds the old schema as one of its
+  branches (annotations aside) only widens and passes;
 - an entry (id) left a registry, or entries changed while the registry version did not.
 A breaking schema change is made as a new file .v(N+1) next to .vN;
 a retired registry value stays an entry marked retired.
@@ -242,6 +244,14 @@ def unmatched(old_list, new_list):
 DEFERRED = []  # (where, branch, what, holder): new oneOf branches to prove with $ref followed
 
 
+def widened_by_anyof(old, new):
+    """The new schema is only an anyOf with the old schema as one branch: every old value still passes."""
+    branches = new.get('anyOf')
+    return ('anyOf' not in old and isinstance(branches, list)
+            and all(k == 'anyOf' or annotation(k) for k in new)
+            and any(same(bare(b), bare(old)) for b in branches))
+
+
 def compare(old, new, where):
     # true accepts everything, like an empty schema
     old = {} if old is True else old
@@ -252,6 +262,8 @@ def compare(old, new, where):
         return
     if not asserting(old) and asserting(new):
         rep.error(where, f'[schema_narrowed] a schema that accepted every value got {asserting(new)}')
+        return
+    if widened_by_anyof(old, new):
         return
     ot, nt = types(old), types(new)
     if ot is not None and nt is not None and not ot <= nt:
@@ -514,9 +526,7 @@ def deref(s, frm, docs, ids):
     return s, frm
 
 
-def separated(branches, rp, docs, ids, parent):
-    def res(s, frm):
-        return deref(s, frm, docs, ids)
+def with_holder(branches, parent):
     # a branch without its own type is constrained by the type of the schema that holds the oneOf
     if isinstance(parent, dict) and 'type' in parent:
         branches = [dict(b, type=parent['type']) if isinstance(b, dict) and 'type' not in b and '$ref' not in b
@@ -525,6 +535,13 @@ def separated(branches, rp, docs, ids, parent):
     if isinstance(parent, dict) and isinstance(parent.get('required'), list):
         branches = [dict(b, required=sorted(set(b.get('required') or []) | set(parent['required'])))
                     if isinstance(b, dict) and '$ref' not in b else b for b in branches]
+    return branches
+
+
+def separated(branches, rp, docs, ids, parent):
+    def res(s, frm):
+        return deref(s, frm, docs, ids)
+    branches = with_holder(branches, parent)
     return all(disjoint(b, c, res, rp, rp) for i, b in enumerate(branches) for j, c in enumerate(branches) if j != i)
 
 
@@ -549,7 +566,7 @@ def oneofs(s, path=''):
 for where, i, what, holder in DEFERRED:
     # a branch behind $ref is proved disjoint by following the reference inside the repository
     rp = where.split('#', 1)[0]
-    branches = holder.get('oneOf') or []
+    branches = with_holder(holder.get('oneOf') or [], holder)
     others = [b for j, b in enumerate(branches) if j != i]
     def res(s, frm, rp=rp):
         return deref(s, frm, news, news_by_id)

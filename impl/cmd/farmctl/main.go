@@ -19,12 +19,14 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
 	"github.com/HunterEwok/botaru/impl/internal/config"
 	"github.com/HunterEwok/botaru/impl/internal/ids"
 	"github.com/HunterEwok/botaru/impl/internal/manifest"
+	"github.com/HunterEwok/botaru/impl/internal/spec"
 	"github.com/HunterEwok/botaru/impl/internal/version"
 )
 
@@ -33,10 +35,10 @@ const usage = `farmctl: the operator's tool for the P2 admin API
 usage: farmctl [-p2 URL] [-token-file FILE] <command> [arguments]
 
 commands:
-  apply [-commit SHA] [-dry-run] [-as-test] PATH...
+  apply [-commit SHA] [-dry-run] [-as-test] [-drop-unsupported [-spec-root DIR]] PATH...
                                              apply the manifests of files and folders as one set
   principal add [-id ID] [-identity ID] [-locale L]
-  principal off|on ID
+  principal off|on|offboard ID
   principal set-identity ID IDENTITY         for example telegram:123456
   grant ID GROUP [-until TIME]
   ungrant ID GROUP
@@ -127,7 +129,7 @@ func reorder(args []string) []string {
 	for i := 0; i < len(args); i++ {
 		if strings.HasPrefix(args[i], "-") {
 			flags = append(flags, args[i])
-			if !strings.Contains(args[i], "=") && i+1 < len(args) && args[i] != "-dry-run" && args[i] != "-as-test" {
+			if !strings.Contains(args[i], "=") && i+1 < len(args) && args[i] != "-dry-run" && args[i] != "-as-test" && args[i] != "-drop-unsupported" {
 				flags = append(flags, args[i+1])
 				i++
 			}
@@ -143,6 +145,8 @@ func apply(c *client, args []string) error {
 	commit := fs.String("commit", "", "the git commit of the manifests (default: HEAD of the first path)")
 	dry := fs.Bool("dry-run", false, "plan only")
 	asTest := fs.Bool("as-test", false, "apply every Tenant with kind: test, as the runner does on a test bench")
+	drop := fs.Bool("drop-unsupported", false, "leave out the whole optional fields that the core refuses as of a later version or of a profile it does not claim, with a warning for each (MAN-11)")
+	specRoot := fs.String("spec-root", "", "the skeleton checkout, for -drop-unsupported (default: $"+spec.EnvRoot+", or a parent of the working directory)")
 	_ = fs.Parse(reorder(args))
 	if fs.NArg() == 0 {
 		return errors.New("apply needs at least one path")
@@ -177,7 +181,68 @@ func apply(c *client, args []string) error {
 		}
 		ms[i] = d.Value
 	}
+	if *drop {
+		root, err := spec.FindRoot(*specRoot)
+		if err != nil {
+			return fmt.Errorf("apply -drop-unsupported reads the schemas to see what can be left out: %w", err)
+		}
+		sp, err := spec.Load(root)
+		if err != nil {
+			return err
+		}
+		if err := dropUnsupported(c, sp, *commit, ms, docs); err != nil {
+			return err
+		}
+	}
 	return c.print("apply", map[string]any{"commit": *commit, "manifests": ms, "dry_run": *dry})
+}
+
+// dropUnsupported asks the core for a plan and removes every field that the plan refuses with
+// version_unsupported. The core decides what it refuses; farmctl leaves those fields out and
+// says so. Only a whole optional field is left out: a later kind, or a value that gives a field
+// its meaning (a catalog resource kind, a channel direction, a tier), stops the apply with an
+// error, because the manifest would then say something else.
+func dropUnsupported(c *client, sp *spec.Spec, commit string, ms []map[string]any, docs []manifest.Doc) error {
+	var plan struct {
+		Errors []struct {
+			Code string `json:"code"`
+			Path string `json:"path"`
+		} `json:"errors"`
+	}
+	if err := c.call("apply", map[string]any{"commit": commit, "manifests": ms, "dry_run": true}, &plan); err != nil {
+		return err
+	}
+	type drop struct {
+		i   int
+		ptr string
+	}
+	var drops []drop
+	for _, e := range plan.Errors {
+		if e.Code != "version_unsupported" {
+			continue
+		}
+		rest, ok := strings.CutPrefix(e.Path, "/manifests/")
+		if !ok {
+			continue
+		}
+		idx, ptr, _ := strings.Cut(rest, "/")
+		i, err := strconv.Atoi(idx)
+		if err != nil || i < 0 || i >= len(ms) {
+			continue
+		}
+		ptr = "/" + ptr
+		if err := sp.Droppable(ms[i], ptr); err != nil {
+			return fmt.Errorf("%s: the core does not support %s, and it is not left out: %w", docs[i].Source, ptr, err)
+		}
+		drops = append(drops, drop{i, ptr})
+	}
+	for _, d := range drops {
+		if !manifest.DropPointer(ms[d.i], d.ptr) {
+			return fmt.Errorf("%s: the core does not support %s, and it cannot be left out", docs[d.i].Source, d.ptr)
+		}
+		fmt.Fprintf(os.Stderr, "warning: %s: left out %s (not supported by this core, MAN-11)\n", docs[d.i].Source, d.ptr)
+	}
+	return nil
 }
 
 func principal(c *client, args []string) error {
@@ -203,9 +268,13 @@ func principal(c *client, args []string) error {
 		}
 		fmt.Println("principal:", *id)
 		return c.print("principal.add", req)
-	case "off", "on":
+	case "off", "on", "offboard":
 		if len(args) != 2 {
 			return errors.New("principal " + args[0] + " ID")
+		}
+		if args[0] == "offboard" {
+			// The body of principal.offboard is the subject only (p2-principal-offboard-request).
+			return c.print("principal.offboard", map[string]any{"subject": args[1]})
 		}
 		return c.print("principal."+args[0], map[string]any{"op": "principal." + args[0], "subject": args[1]})
 	case "set-identity":
