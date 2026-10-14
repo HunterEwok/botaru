@@ -158,6 +158,13 @@ type Tenant struct {
 	Commands         map[string]string `json:"commands"`
 	DefaultTypes     []DefaultType     `json:"default_types"`
 	DelegatedGroups  []string          `json:"delegated_groups"`
+	Dispatcher       TenantDispatcher  `json:"dispatcher"`
+}
+
+// TenantDispatcher holds the dispatcher settings the core reads (DSP-3, DSP-8).
+type TenantDispatcher struct {
+	// UnclaimedAlarmAfter overrides the type's start_by for alarm.task.unclaimed.
+	UnclaimedAlarmAfter string `json:"unclaimed_alarm_after"`
 }
 
 // TenantLimits are the CAP-1 ceilings.

@@ -44,7 +44,13 @@ func hold(c *client, args []string) error {
 			scope["tenant"] = fs.Arg(1)
 		}
 		if fs.NArg() > 2 {
-			scope["name"] = fs.Arg(2)
+			name := fs.Arg(2)
+			if fs.Arg(0) == "worker" {
+				// Scope names are lowercase; a worker id from worker enroll is a ULID in
+				// uppercase, and the core keeps worker scopes in lowercase.
+				name = strings.ToLower(name)
+			}
+			scope["name"] = name
 		}
 		req := map[string]any{"scope": scope, "effects": strings.Split(*effects, ","), "reason": *reason, "until": nil}
 		if *until != "" {

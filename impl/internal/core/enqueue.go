@@ -350,8 +350,14 @@ func (c *Core) enqueue(ctx context.Context, tx pgx.Tx, now time.Time, cat *Catal
 		return nil, err
 	}
 	deadline := now.Add(durationOr(tt.Timeouts.Deadline, time.Hour))
+	// A task nobody took by then raises alarm.task.unclaimed: the tenant's setting, else the
+	// type's start_by (DSP-8).
 	var startBy any
-	if d, ok := parseDuration(tt.Timeouts.StartBy); ok {
+	after := tv.Spec.Dispatcher.UnclaimedAlarmAfter
+	if after == "" {
+		after = tt.Timeouts.StartBy
+	}
+	if d, ok := parseDuration(after); ok {
 		startBy = now.Add(d)
 	}
 	if _, err := tx.Exec(ctx, `INSERT INTO tasks (id, tenant, type, state, initiator, priority_class, idempotency_key, body_hash, body, record, deadline_at, start_by_at, created_at, updated_at)
