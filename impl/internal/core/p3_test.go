@@ -70,6 +70,9 @@ func toolCatalogManifest() map[string]any {
 			"resources": []any{
 				map[string]any{"id": "web1-logs", "title": "Web logs", "host": "web1", "read_by": []any{"logs/tail"},
 					"list": "log_sources", "format": "id", "values": []any{"nginx-access", "nginx-error"}, "data_class": "raw_logs"},
+				// The same list, but read_by another tool: logs/tail never sees its value.
+				map[string]any{"id": "web1-audit", "title": "Audit logs", "host": "web1", "read_by": []any{"checks/latest"},
+					"list": "log_sources", "format": "id", "values": []any{"audit"}, "data_class": "raw_logs"},
 				map[string]any{"id": "web-checks", "title": "Checks", "host": "web1", "read_by": []any{"checks/latest"},
 					"list": "checks", "format": "id", "values": []any{"www-health", "api-health"}},
 			},
@@ -219,6 +222,22 @@ func TestP3Catalog(t *testing.T) {
 	_, h2 := b.attemptTools(t, "2", true)
 	if got := toolNames(t, b, h2); !slices.Equal(got, []string{"checks_latest", "cmd_run", "logs_tail"}) {
 		t.Fatalf("wide catalog %v", got)
+	}
+	// A resource gives its values only to the tools in its read_by (TEN-3a).
+	l, _ = b.c.P3ToolsList(ctx, h2)
+	for _, x := range l.Tools {
+		m := x.(map[string]any)
+		if m["name"] != "logs_tail" {
+			continue
+		}
+		src := m["inputSchema"].(map[string]any)["properties"].(map[string]any)["source"].(map[string]any)
+		if e := toStrings(src["enum"]); slices.Contains(e, "audit") || len(e) != 2 {
+			t.Fatalf("source enum %v", e)
+		}
+	}
+	r, err = b.c.P3ToolsCall(ctx, h2, mcp.CallParams{Name: "logs_tail", Arguments: map[string]any{"source": "audit"}})
+	if err != nil || callText(r) != noPermission {
+		t.Fatalf("a value of a resource read_by another tool: %+v %v", r, err)
 	}
 }
 

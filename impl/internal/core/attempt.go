@@ -142,6 +142,12 @@ func (c *Core) markOrder(mark string) (int, bool) {
 // task.attachments is empty, because this version has no files; reasons.<name> gives the ids
 // of spec/model/<name>-reasons.yaml. An unknown list resolves to no values, so no value fits.
 func (c *Core) resolveEnumFrom(cat *Catalog, tenant, mark string, names map[string]bool) map[string][]any {
+	return c.resolveEnumFor(cat, tenant, mark, "", names)
+}
+
+// resolveEnumFor is resolveEnumFrom for a tool: with right set, a resource list gives only the
+// values of the resources whose read_by holds that tool (TEN-3a).
+func (c *Core) resolveEnumFor(cat *Catalog, tenant, mark, right string, names map[string]bool) map[string][]any {
 	out := map[string][]any{}
 	spec, _ := tenantCatalog(cat, tenant)
 	maxOrder, markOK := c.markOrder(mark)
@@ -171,7 +177,7 @@ func (c *Core) resolveEnumFrom(cat *Catalog, tenant, mark string, names map[stri
 				res, _ := spec["resources"].([]any)
 				for _, r := range res {
 					rm, _ := r.(map[string]any)
-					if rm["list"] != list {
+					if rm["list"] != list || right != "" && !readBy(rm, right) {
 						continue
 					}
 					if dc, ok := rm["data_class"].(string); ok {
@@ -197,6 +203,17 @@ func (c *Core) resolveEnumFrom(cat *Catalog, tenant, mark string, names map[stri
 		out[name] = vals
 	}
 	return out
+}
+
+// readBy says whether a catalog resource lists the tool right in its read_by.
+func readBy(resource map[string]any, right string) bool {
+	rb, _ := resource["read_by"].([]any)
+	for _, x := range rb {
+		if x == right {
+			return true
+		}
+	}
+	return false
 }
 
 // fullSchema turns a result schema into the schema the core checks at complete (OUT-1): an

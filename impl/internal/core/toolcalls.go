@@ -249,7 +249,7 @@ func (c *Core) completeToolcall(ctx context.Context, tx pgx.Tx, now time.Time, l
 	if !ok || defHash == nil || toolDefHash(pl.Placement, t) != *defHash || untrusted != !t.TrustedOutput() {
 		return endToolCall(ctx, tx, now, l.WorkID, "error", "plugin_unavailable", nil)
 	}
-	clean, err := c.cleanOutput(ctx, tx, cat, task, t, res)
+	clean, err := c.cleanOutput(ctx, tx, cat, task, tool, t, res)
 	if err != nil {
 		var p *Problem
 		if errors.As(err, &p) {
@@ -287,7 +287,7 @@ func toolDefHash(placement string, t toolspec.Tool) string {
 }
 
 // cleanOutput is the core's second check of a tool output (INJ-4, SEC-1).
-func (c *Core) cleanOutput(ctx context.Context, tx pgx.Tx, cat *Catalog, task string, t toolspec.Tool, res mcp.CallResult) (*mcp.CallResult, error) {
+func (c *Core) cleanOutput(ctx context.Context, tx pgx.Tx, cat *Catalog, task, right string, t toolspec.Tool, res mcp.CallResult) (*mcp.CallResult, error) {
 	limit := t.OutputLimitKB * 1024
 	if limit == 0 {
 		limit = defaultOutputLimit
@@ -326,7 +326,7 @@ func (c *Core) cleanOutput(ctx context.Context, tx pgx.Tx, cat *Catalog, task st
 		_ = json.Unmarshal(rec, &r)
 		names := map[string]bool{}
 		enumFromNames(t.OutputSchema, names)
-		full, err := c.fullSchema(t.OutputSchema, c.resolveEnumFrom(cat, tenant, r.DataMark, names))
+		full, err := c.fullSchema(t.OutputSchema, c.resolveEnumFor(cat, tenant, r.DataMark, right, names))
 		if err != nil {
 			return nil, err
 		}

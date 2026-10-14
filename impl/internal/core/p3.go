@@ -135,7 +135,7 @@ func (c *Core) toolCatalog(cat *Catalog, g *toolsGrant) ([]catalogTool, error) {
 				continue
 			}
 		}
-		schema, err := c.modelSchema(cat, g, t)
+		schema, err := c.modelSchema(cat, g, right, t)
 		if err != nil {
 			return nil, err
 		}
@@ -147,11 +147,11 @@ func (c *Core) toolCatalog(cat *Catalog, g *toolsGrant) ([]catalogTool, error) {
 
 // modelSchema is the input schema of a tool for the model: enum_from becomes the catalog
 // values filtered by the task's mark, x-botaru-format an assertion (RT-4, TEN-7).
-func (c *Core) modelSchema(cat *Catalog, g *toolsGrant, t toolspec.Tool) (map[string]any, error) {
+func (c *Core) modelSchema(cat *Catalog, g *toolsGrant, right string, t toolspec.Tool) (map[string]any, error) {
 	schema := t.InputSchema()
 	names := map[string]bool{}
 	enumFromNames(schema, names)
-	return c.fullSchema(schema, c.resolveEnumFrom(cat, g.Tenant, g.Mark, names))
+	return c.fullSchema(schema, c.resolveEnumFor(cat, g.Tenant, g.Mark, right, names))
 }
 
 // attemptCatalog builds the P3 catalog of the attempt of a task held by a worker, for the P4
@@ -381,7 +381,7 @@ func (c *Core) recordToolCall(ctx context.Context, tx pgx.Tx, now time.Time, cat
 	}
 	// The arguments pass the closed schema with the catalog values of the task's mark (INJ-1,
 	// TEN-7); a default of the manifest is filled in before the check.
-	schema, err := c.modelSchema(cat, g, t)
+	schema, err := c.modelSchema(cat, g, right, t)
 	if err != nil {
 		return "", nil, err
 	}
@@ -389,7 +389,7 @@ func (c *Core) recordToolCall(ctx context.Context, tx pgx.Tx, now time.Time, cat
 	if err := c.rs.validate(schema, args); err != nil {
 		return deny("denied", "input_schema_invalid")
 	}
-	target, resolved, err := c.callTarget(cat, g.Tenant, t, args)
+	target, resolved, err := c.callTarget(cat, g.Tenant, right, t, args)
 	if err != nil {
 		return deny("denied", "input_schema_invalid")
 	}
@@ -485,8 +485,8 @@ type callTargetRef struct{ host, resource string }
 // callTarget computes the machine of a call from the argument named in target_from: a machine
 // of catalog.hosts, the machine of the service of catalog.services, or the machine of the
 // catalog resource whose list holds the value; a tool with target: any has no machine
-// (TEN-3a). It also resolves the catalog fields a plugin needs, such as the unit of a service.
-func (c *Core) callTarget(cat *Catalog, tenant string, t toolspec.Tool, args map[string]any) (callTargetRef, map[string]string, error) {
+// (TEN-3a); only a resource whose read_by holds the tool counts. It also resolves the catalog fields a plugin needs, such as the unit of a service.
+func (c *Core) callTarget(cat *Catalog, tenant, right string, t toolspec.Tool, args map[string]any) (callTargetRef, map[string]string, error) {
 	spec, _ := tenantCatalog(cat, tenant)
 	resolved := map[string]string{}
 	params := t.AllParams()
@@ -524,7 +524,7 @@ func (c *Core) callTarget(cat *Catalog, tenant string, t toolspec.Tool, args map
 	res, _ := spec["resources"].([]any)
 	for _, r := range res {
 		rm, _ := r.(map[string]any)
-		if rm["list"] != list {
+		if rm["list"] != list || !readBy(rm, right) {
 			continue
 		}
 		vals, _ := rm["values"].([]any)
