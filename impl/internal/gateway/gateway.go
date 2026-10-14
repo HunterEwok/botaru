@@ -124,13 +124,21 @@ func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		g.refuse(w, err)
 		return
 	}
+	// The pair (workspace, model pool) answers at once while its circuit is open or it waits
+	// for the provider (GW-10, GW-11, GW-13).
+	if err := g.c.ProviderGate(ctx, grant); err != nil {
+		g.refuse(w, err)
+		return
+	}
 	prov, ok := g.cfg.Providers[grant.Profile.Provider]
 	if !ok || prov.Binding != "anthropic" {
+		g.outcome(ctx, grant, "provider_config", 0)
 		problem(w, "provider_config", "the provider of the profile has no anthropic binding in this deployment", 0)
 		return
 	}
 	key := prov.Keys[grant.Tenant]
 	if key == "" {
+		g.outcome(ctx, grant, "provider_config", 0)
 		problem(w, "provider_config", "no provider key for the tenant's workspace", 0)
 		return
 	}
@@ -179,6 +187,7 @@ func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		} else {
 			_ = g.c.Charge(context.WithoutCancel(ctx), spendID, reserve, nil, "", true)
 		}
+		g.outcome(ctx, grant, "provider_unavailable", 0)
 		problem(w, "provider_unavailable", "the provider did not answer", 5)
 		return
 	}
@@ -187,12 +196,14 @@ func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	requestID := resp.Header.Get("request-id")
 	if err != nil {
 		_ = g.c.Charge(context.WithoutCancel(ctx), spendID, reserve, nil, requestID, true)
+		g.outcome(ctx, grant, "provider_unavailable", 0)
 		problem(w, "provider_unavailable", "the provider answer broke off", 5)
 		return
 	}
 	if resp.StatusCode != http.StatusOK {
 		_ = g.c.Charge(context.WithoutCancel(ctx), spendID, 0, nil, requestID, false)
 		reason, retry := mapError(resp)
+		g.outcome(ctx, grant, reason, retry)
 		problem(w, reason, "provider answered "+strconv.Itoa(resp.StatusCode), retry)
 		return
 	}
@@ -204,6 +215,7 @@ func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		problem(w, "model_error", "the provider answer has no usage", 0)
 		return
 	}
+	g.outcome(ctx, grant, "", 0)
 	cost, tokens := Cost(grant.Profile.Price, *parsed.Usage)
 	// The answer goes out only once its usage is recorded (BUD-3). If the store stays away, the
 	// reserve stays in place, so the limit still counts the worst case of the call (BUD-2).
@@ -215,6 +227,14 @@ func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// The request-id stays in the usage line, not in the answer to the runtime.
 	w.Header().Set("Content-Type", "application/json")
 	_, _ = w.Write(respBody)
+}
+
+// outcome reports the outcome of a provider call for the circuit of its pair; a failure to
+// record it is logged, since the answer to the runtime does not depend on it.
+func (g *Gateway) outcome(ctx context.Context, grant *core.ModelGrant, reason string, retryAfterS int) {
+	if err := g.c.ProviderOutcome(context.WithoutCancel(ctx), grant, reason, retryAfterS); err != nil {
+		g.log.Warn("recording the provider outcome failed", "err", err, "reason", reason)
+	}
 }
 
 // checkTools compares the tools of a request with the P3 catalog of the handle's attempt by

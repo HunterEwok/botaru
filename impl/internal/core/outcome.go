@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"math"
+	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -544,6 +545,14 @@ func (c *Core) endAttempt(ctx context.Context, tx pgx.Tx, now time.Time, tenant 
 			retryable, finalReason = false, "runs_exhausted"
 		}
 	}
+	// The task keeps the last provider reason, also into failed(deadline_exceeded) (CAP-2,
+	// GW-13).
+	if strings.HasPrefix(reason, "provider_") {
+		if _, err := tx.Exec(ctx, `UPDATE tasks SET record = record || jsonb_build_object('provider_reason', $2::text) WHERE id = $1`, l.WorkID, reason); err != nil {
+			return nil, err
+		}
+		rec, _ = jsonSet(rec, "provider_reason", reason)
+	}
 	if retryable && mode == "on_fix" {
 		if _, err := tx.Exec(ctx, `UPDATE tasks SET state = 'submitted', run_at = 'infinity', reason = 'waiting_on_fix', updated_at = $2 WHERE id = $1 AND state = 'working'`, l.WorkID, now); err != nil {
 			return nil, err
@@ -559,6 +568,13 @@ func (c *Core) endAttempt(ctx context.Context, tx pgx.Tx, now time.Time, tenant 
 			if err := c.requeue(ctx, tx, now, l, runAt); err != nil {
 				return nil, err
 			}
+			// A task that waits for the provider says so; its reserve does not count toward
+			// the 80% threshold (BUD-4, D18, D19).
+			if wait := providerWaiting(reason); wait != "" {
+				if _, err := tx.Exec(ctx, `UPDATE tasks SET reason = $2 WHERE id = $1 AND state = 'submitted'`, l.WorkID, wait); err != nil {
+					return nil, err
+				}
+			}
 			return &FailResult{RetryAt: fmtTime(runAt), Final: false}, nil
 		}
 		finalReason = "deadline_exceeded"
@@ -569,6 +585,27 @@ func (c *Core) endAttempt(ctx context.Context, tx pgx.Tx, now time.Time, tenant 
 	return &FailResult{Final: true, Reason: finalReason}, nil
 }
 
+// providerWaiting is the waiting reason of a task after a provider reason, or "".
+func providerWaiting(reason string) string {
+	switch reason {
+	case "provider_unavailable":
+		return "provider_unavailable"
+	case "provider_rate_limited", "provider_quota":
+		return "provider_quota"
+	}
+	return ""
+}
+
+// jsonSet sets one field of a JSON object.
+func jsonSet(raw []byte, key string, v any) ([]byte, error) {
+	m := map[string]any{}
+	if err := json.Unmarshal(raw, &m); err != nil {
+		return raw, err
+	}
+	m[key] = v
+	return json.Marshal(m)
+}
+
 // failTask moves a task to failed and tells the initiator by a code text at the origin.
 func (c *Core) failTask(ctx context.Context, tx pgx.Tx, now time.Time, tenant, id, initiator string, rec []byte, reason string) error {
 	if _, err := tx.Exec(ctx, `UPDATE tasks SET state = 'failed', reason = $2, updated_at = $3 WHERE id = $1`, id, reason, now); err != nil {
@@ -577,7 +614,14 @@ func (c *Core) failTask(ctx context.Context, tx pgx.Tx, now time.Time, tenant, i
 	if err := releaseTaskReserve(ctx, tx, id); err != nil {
 		return err
 	}
-	if err := c.appendEvent(ctx, tx, now, tenant, Event{Type: "task.failed", Subject: id, Data: map[string]any{"task": id, "reason": reason}}); err != nil {
+	data := map[string]any{"task": id, "reason": reason}
+	var last struct {
+		Provider string `json:"provider_reason"`
+	}
+	if json.Unmarshal(rec, &last) == nil && last.Provider != "" && reason == "deadline_exceeded" {
+		data["provider_reason"] = last.Provider
+	}
+	if err := c.appendEvent(ctx, tx, now, tenant, Event{Type: "task.failed", Subject: id, Data: data}); err != nil {
 		return err
 	}
 	var record struct {

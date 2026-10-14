@@ -269,10 +269,27 @@ func (c *Core) claimAttempt(ctx context.Context, tx pgx.Tx, now time.Time, cat *
 		initiator string
 	)
 	tv := cat.Tenants[w.Tenant]
+	// A pair (workspace, model pool) that waits for the provider gets no attempt, and the
+	// runtime is not started for it (D18, D19, GW-10, GW-11).
+	if wait, err := pairWait(ctx, tx, now, cat, w.Tenant, role); err != nil {
+		return nil, err
+	} else if wait != "" {
+		return nil, markWaiting(ctx, tx, now, w.Tenant, claims, nil, wait)
+	}
+	quotas := tv != nil && hasRunningCeiling(tv.Spec.Dispatch)
+	if quotas {
+		// One dispatcher decision at a time per tenant, so two claims never both see the last
+		// free place under a ceiling.
+		if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock(7300103, hashtext($1))`, w.Tenant); err != nil {
+			return nil, err
+		}
+	}
+	skip := []string{}
 	for picked := false; !picked; {
 		err := tx.QueryRow(ctx, `SELECT id, type, body, record, lease_no, initiator FROM tasks
 			WHERE tenant = $1 AND state = 'submitted' AND type = ANY($2) AND (run_at IS NULL OR run_at <= $3) AND (deadline_at IS NULL OR deadline_at > $3)
-			ORDER BY priority_class, created_at, id LIMIT 1 FOR UPDATE SKIP LOCKED`, w.Tenant, claims, now).
+			AND NOT id = ANY($4)
+			ORDER BY priority_class, created_at, id LIMIT 1 FOR UPDATE SKIP LOCKED`, w.Tenant, claims, now, skip).
 			Scan(&id, &typ, &body, &rec, &leaseNo, &initiator)
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, nil
@@ -289,6 +306,21 @@ func (c *Core) claimAttempt(ctx context.Context, tx pgx.Tx, now time.Time, cat *
 				return nil, err
 			}
 			continue
+		}
+		// A task above the running ceiling of its type waits without spending an attempt
+		// (DSP-7).
+		if quotas {
+			full, err := runningCeilingReached(ctx, tx, w.Tenant, tv.Spec.Dispatch, typ, rec)
+			if err != nil {
+				return nil, err
+			}
+			if full {
+				if err := markWaiting(ctx, tx, now, w.Tenant, nil, []string{id}, "type_quota"); err != nil {
+					return nil, err
+				}
+				skip = append(skip, id)
+				continue
+			}
 		}
 		picked = true
 	}

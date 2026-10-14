@@ -159,6 +159,23 @@ type Tenant struct {
 	DefaultTypes     []DefaultType     `json:"default_types"`
 	DelegatedGroups  []string          `json:"delegated_groups"`
 	Dispatcher       TenantDispatcher  `json:"dispatcher"`
+	Dispatch         TenantDispatch    `json:"dispatch"`
+}
+
+// TenantDispatch holds the dispatch rules of the tenant policy (DSP-3, DSP-7).
+type TenantDispatch struct {
+	Rules []DispatchRule `json:"rules"`
+}
+
+// DispatchRule matches tasks by type or type prefix and source kind; this build reads its
+// ceiling of running tasks (DSP-7).
+type DispatchRule struct {
+	Match struct {
+		Type       string `json:"type"`
+		TypePrefix string `json:"type_prefix"`
+		Source     string `json:"source"`
+	} `json:"match"`
+	MaxRunning int `json:"max_running"`
 }
 
 // TenantDispatcher holds the dispatcher settings the core reads (DSP-3, DSP-8).

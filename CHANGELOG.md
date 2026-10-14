@@ -4,6 +4,8 @@ Skeleton versions: v0.1, v0.2, v0.3, v0.4. A skeleton version states which rules
 
 ## Unreleased
 
+- The events catalog gets `alarm.provider.config.v1`, the alarm by code of GW-13 for a provider configuration error, which had no catalog entry.
+- impl: provider pairs with a circuit breaker, the wait for a provider rate limit and the wait for a configuration fix, seen by the dispatcher (GW-10, GW-11, GW-13, CAP-2); the running ceiling of dispatch rules (DSP-7); the 80% threshold event and the waiting reserve exception (BUD-4).
 - The P1 `hello` and `heartbeat` request schemas get the optional field `health`, a list of `health-report` records, so a toolhost can report the state of each plugin as OBS-10 requires; the rule had no field to carry the report.
 - impl: P2 `status`, `doctor`, `deadletter.list`, `task.redrive`, `delivery.redrive` and `audit.query` (DLV-4, AUD-7, MAN-8), and plugin health from toolhost reports (OBS-10).
 - impl: P2 `health` reports the tick age of each background loop from the store, the age of the oldest urgent task, the share of deliveries delivered within 10 minutes and the free space of the store volume; the new `health` loop raises their alarms, the soft threshold of the store volume refuses enqueues of classes 3-5 and the hard one answers `not_ready` on P1, and P1 answers `not_ready` while the store is unavailable (OBS-4, OBS-8, OBS-9, CAP-5).

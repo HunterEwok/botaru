@@ -36,6 +36,12 @@ entries:
     data_schema: spec/model/event-data/alarm.schema.json
     producer: [core]
     rules: [CAP-2, OBS-6]
+  - id: alarm.provider.config.v1
+    since: v0.1
+    data_schema: spec/model/event-data/alarm.schema.json
+    producer: [core]
+    severity: page
+    rules: [GW-13, OBS-6]
   - id: alarm.hold.auto.v1
     since: v0.1
     data_schema: spec/model/event-data/alarm.schema.json
