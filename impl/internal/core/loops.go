@@ -4,6 +4,7 @@ package core
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -52,14 +53,12 @@ func (c *Core) RunManual(ctx context.Context) {
 	c.listen(ctx)
 }
 
-// Tick runs one pass of the reaper and deadline loops. The test-control port calls it
-// directly (loop.tick).
+// Tick runs one pass of every background loop of this build, in loopOrder.
 func (c *Core) Tick(ctx context.Context) error {
-	if err := c.reap(ctx); err != nil {
-		return err
-	}
-	if err := c.deadlines(ctx); err != nil {
-		return err
+	for _, loop := range loopOrder {
+		if err := testLoops[loop](c, ctx); err != nil {
+			return fmt.Errorf("loop %s: %w", loop, err)
+		}
 	}
 	markTick()
 	return nil
@@ -127,7 +126,8 @@ func (c *Core) reapWith(ctx context.Context, reason string, spends bool) error {
 	}
 }
 
-// deadlines moves tasks past their deadline to failed (DLV-1). A task that is being worked
+// deadlines moves tasks past their deadline to failed (DLV-1) and raises the alarm of tasks
+// nobody took before start_by (DSP-8). A task that is being worked
 // on loses its lease and handles too, so the worker is fenced at its next call (FEN-4).
 func (c *Core) deadlines(ctx context.Context) error {
 	for {
@@ -155,8 +155,11 @@ func (c *Core) deadlines(ctx context.Context) error {
 			}
 			return c.failTask(ctx, tx, now, tenant, id, initiator, rec, "deadline_exceeded")
 		})
-		if err != nil || done {
+		if err != nil {
 			return err
+		}
+		if done {
+			return c.unclaimed(ctx)
 		}
 	}
 }

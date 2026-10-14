@@ -242,6 +242,14 @@ func (c *Core) enqueue(ctx context.Context, tx pgx.Tx, now time.Time, cat *Catal
 	if err := c.validateParams(tt, in.Body); err != nil {
 		return reject(refuse("input_schema_invalid", "params do not match params_schema"))
 	}
+	// A hold with no_enqueue on the farm, the tenant or the type is checked before the
+	// permission formula, as a ban no permission lifts (HLD-3, PRM-2).
+	if held, err := heldBy(ctx, tx, now, []string{"no_enqueue"},
+		append(tenantScopes(in.Tenant), scopeRef{kind: "tasktype", tenant: in.Tenant, name: in.Type})...); err != nil {
+		return nil, err
+	} else if held != "" {
+		return reject(refuse("held", "a hold forbids new tasks of this type"))
+	}
 	// The initiator: an active principal with task:<type> and data:<mark> (PRM-3, PRM-5).
 	var groups []string
 	if in.Initiator != "system" {
@@ -342,9 +350,13 @@ func (c *Core) enqueue(ctx context.Context, tx pgx.Tx, now time.Time, cat *Catal
 		return nil, err
 	}
 	deadline := now.Add(durationOr(tt.Timeouts.Deadline, time.Hour))
-	if _, err := tx.Exec(ctx, `INSERT INTO tasks (id, tenant, type, state, initiator, priority_class, idempotency_key, body_hash, body, record, deadline_at, created_at, updated_at)
-		VALUES ($1, $2, $3, 'submitted', $4, $5, $6, $7, $8, $9, $10, $11, $11)`,
-		id, in.Tenant, in.Type, in.Initiator, prio, in.IdempotencyKey, bodyHash, body, rec, deadline, now); err != nil {
+	var startBy any
+	if d, ok := parseDuration(tt.Timeouts.StartBy); ok {
+		startBy = now.Add(d)
+	}
+	if _, err := tx.Exec(ctx, `INSERT INTO tasks (id, tenant, type, state, initiator, priority_class, idempotency_key, body_hash, body, record, deadline_at, start_by_at, created_at, updated_at)
+		VALUES ($1, $2, $3, 'submitted', $4, $5, $6, $7, $8, $9, $10, $11, $12, $12)`,
+		id, in.Tenant, in.Type, in.Initiator, prio, in.IdempotencyKey, bodyHash, body, rec, deadline, startBy, now); err != nil {
 		return nil, err
 	}
 	if estimate > 0 {

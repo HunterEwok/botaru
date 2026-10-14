@@ -29,7 +29,10 @@ func (c *Core) Health(ctx context.Context) HealthReport {
 	r := HealthReport{Alive: true}
 	if t := lastTick.Load(); t != 0 {
 		age := int(time.Since(time.Unix(0, t)) / time.Second)
-		r.LoopTickAgeS = map[string]int{"reaper": age, "deadline": age}
+		r.LoopTickAgeS = map[string]int{}
+		for _, loop := range loopOrder {
+			r.LoopTickAgeS[loop] = age
+		}
 		if age > 30 {
 			r.Alive, r.Reason = false, "loop_stale"
 		}

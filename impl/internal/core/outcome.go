@@ -146,6 +146,19 @@ func (c *Core) Heartbeat(ctx context.Context, w *Worker, header string, req Hear
 				return nil, err
 			}
 			cancel = state == "canceled"
+			// A hold with cancel_running on the work of this attempt ends it now: the handles
+			// are revoked, the attempt ends with held without being spent, and the task waits in
+			// submitted, which claim does not hand out while the hold acts (HLD-3, FEN-4).
+			if state == "working" {
+				held, err := heldBy(ctx, tx, now, []string{"cancel_running"},
+					append(workerScopes(w), scopeRef{kind: "tasktype", tenant: w.Tenant, name: typ})...)
+				if err != nil {
+					return nil, err
+				}
+				if held != "" {
+					return c.endAttemptHeld(ctx, tx, now, w, l, held)
+				}
+			}
 			if cat, err := c.Catalog(ctx); err == nil {
 				if d, ok := parseDuration(cat.TaskTypes[typ].Timeouts.Lease); ok {
 					leaseS = int(d / time.Second)
@@ -159,6 +172,28 @@ func (c *Core) Heartbeat(ctx context.Context, w *Worker, header string, req Hear
 		}
 		return &HeartbeatResult{LeaseUntil: fmtTime(until), LeaseRemainingS: leaseS, CancelRequested: cancel}, nil
 	})
+}
+
+// endAttemptHeld ends a running attempt under a cancel_running hold without spending it.
+func (c *Core) endAttemptHeld(ctx context.Context, tx pgx.Tx, now time.Time, w *Worker, l *leaseRow, hold string) (*HeartbeatResult, error) {
+	res := &HeartbeatResult{CancelRequested: true}
+	if err := closeLease(ctx, tx, now, l, "revoked", "held", "heartbeat", nil, res); err != nil {
+		return nil, err
+	}
+	if err := c.requeue(ctx, tx, now, l, now); err != nil {
+		return nil, err
+	}
+	if _, err := tx.Exec(ctx, `UPDATE tasks SET reason = 'held' WHERE id = $1`, l.WorkID); err != nil {
+		return nil, err
+	}
+	if _, err := c.appendAudit(ctx, tx, now, Audit{
+		Tenant: w.Tenant, Kind: "command", Actor: Actor{Principal: "system", Via: "system", Task: l.WorkID},
+		Command: "attempt.cancel", Target: &Target{Kind: "task", ID: l.WorkID}, OK: true, Reason: "held",
+		After: map[string]any{"lease_no": l.LeaseNo, "hold": hold, "spent": false},
+	}); err != nil {
+		return nil, err
+	}
+	return res, nil
 }
 
 // Complete accepts the outcome of a work item. The transition, the event, the deliveries and
@@ -528,8 +563,22 @@ func (c *Core) failTask(ctx context.Context, tx pgx.Tx, now time.Time, tenant, i
 func (c *Core) endDelivery(ctx context.Context, tx pgx.Tx, now time.Time, tenant string, l *leaseRow, reason string, retryable bool, retryAfterS int) (*FailResult, error) {
 	var attempts int
 	var kind string
-	if err := tx.QueryRow(ctx, `SELECT attempts, kind FROM deliveries WHERE id = $1 FOR UPDATE`, l.WorkID).Scan(&attempts, &kind); err != nil {
+	var episodeOpen bool
+	if err := tx.QueryRow(ctx, `SELECT d.attempts, d.kind, coalesce(e.state = 'firing', false) FROM deliveries d
+		LEFT JOIN alarm_episodes e ON e.id = d.episode WHERE d.id = $1 FOR UPDATE OF d`, l.WorkID).Scan(&attempts, &kind, &episodeOpen); err != nil {
 		return nil, err
+	}
+	// An alarm notice does not die by attempt count while its episode is open; it is retried
+	// with a pause of at most 10 minutes (MON-13, like the export of MON-11).
+	if retryable && kind == "alarm_notice" && episodeOpen {
+		runAt := now.Add(min(backoff(manifest.Backoff{}, attempts), 10*time.Minute))
+		if ra := now.Add(time.Duration(retryAfterS) * time.Second); ra.After(runAt) {
+			runAt = ra
+		}
+		if err := c.requeue(ctx, tx, now, l, runAt); err != nil {
+			return nil, err
+		}
+		return &FailResult{RetryAt: fmtTime(runAt), Final: false}, nil
 	}
 	if retryable && attempts < c.cfg.DeliveryMaxAttempts {
 		runAt := now.Add(backoff(manifest.Backoff{}, attempts))

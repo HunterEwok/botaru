@@ -39,6 +39,9 @@ type Config struct {
 	// Operator names the farm operator in the ai_notice text (notice.ai).
 	Operator string
 	Logger   *slog.Logger
+	// Offline opens the core for one command of farmctl on the core machine (DEP-8): it
+	// changes nothing at start and runs no loops.
+	Offline bool
 }
 
 func (c *Config) defaults() {
@@ -87,6 +90,9 @@ func New(ctx context.Context, cfg Config, st *store.Store, sp *spec.Spec, tx *te
 	cat, err := c.Catalog(ctx)
 	if err != nil {
 		return nil, err
+	}
+	if cfg.Offline {
+		return c, nil
 	}
 	c.warnNoticeFallbacks(cat)
 	if err := c.fillNoticeParams(ctx, cat); err != nil {

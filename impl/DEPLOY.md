@@ -67,6 +67,10 @@ operators:
   - token_sha256: <the SHA-256 from step 4>
     principal: human:p_01JB00000000000000000000A1   # your id as the operator
     tenant: demo
+  # Optional: a credential of tenant farm reaches every tenant and the holds of scope farm.
+  # - token_sha256: <the SHA-256 of another token>
+  #   principal: human:p_01JB00000000000000000000A1
+  #   tenant: farm
 providers:
   # The model profile base-std of the example names provider-a. Map it to the mock provider:
   provider-a:
@@ -147,6 +151,20 @@ Write `/hello hi` to your bot in a private chat. Three messages come back in ord
 3. `[AI answer]` and the greeting: with the mock provider exactly `Hello, alice! I am the farm bot @demo_bot.`, with a real model a greeting of its own.
 
 Then `farmctl audit verify demo` answers `"ok": true`. A message from someone who is not added gets no answer; `/health` answers "Unknown command." because that type is not applied.
+
+## Stopping work with a hold
+
+A hold stops part of the work at once, without a restart (HLD-3). For example, to stop the greeting type in `demo`, end its running attempts and later lift the hold:
+
+```sh
+farmctl hold set tasktype demo hello.greet.v1 -effects no_enqueue,no_claim,cancel_running -reason manual
+farmctl hold list
+farmctl hold release h_...
+```
+
+`-until 2026-10-15T08:00:00Z` ends a hold by itself. To stop the whole farm, also when the core does not answer, run on the core machine `farmctl hold farm -config /etc/botaru/core.yaml -effects no_claim,cancel_running -reason compromised`; it writes the hold straight to the store and needs an operator of `farm` in the settings, or `-by` with your id. Only the operator credential of `farm` lifts it: `farmctl -token-file <farm token> hold release h_...`.
+
+Farm alarms (a silent worker, a task nobody took) come as messages to the private chats of the tenant's admins, people with `admin:people` or `hold.release`. This version cannot grant such a group yet (PRM-13), so the core logs a warning instead of sending.
 
 ## Upgrading from the first version
 
