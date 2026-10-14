@@ -31,7 +31,8 @@ const EnvRoot = "BOTARU_SPEC_ROOT"
 
 // FindRoot returns the skeleton root: the explicit path if it is not empty, else $BOTARU_SPEC_ROOT,
 // else the nearest parent of the working directory or of the executable that holds
-// spec/VERSION.
+// spec/VERSION, else the checkout next to the folder of the executable (<exe dir>/../src, the
+// layout of DEPLOY.md: binaries in /opt/botaru/bin, the checkout in /opt/botaru/src).
 func FindRoot(explicit string) (string, error) {
 	if explicit != "" {
 		return checkRoot(explicit)
@@ -39,11 +40,24 @@ func FindRoot(explicit string) (string, error) {
 	if env := os.Getenv(EnvRoot); env != "" {
 		return checkRoot(env)
 	}
+	wd, _ := os.Getwd()
+	exe, err := os.Executable()
+	if err == nil {
+		if r, err := filepath.EvalSymlinks(exe); err == nil {
+			exe = r
+		}
+	}
+	return findRoot(wd, exe)
+}
+
+// findRoot looks for the skeleton from the working directory wd and the executable exe; an
+// empty value is skipped.
+func findRoot(wd, exe string) (string, error) {
 	var starts []string
-	if wd, err := os.Getwd(); err == nil {
+	if wd != "" {
 		starts = append(starts, wd)
 	}
-	if exe, err := os.Executable(); err == nil {
+	if exe != "" {
 		starts = append(starts, filepath.Dir(exe))
 	}
 	for _, s := range starts {
@@ -56,7 +70,12 @@ func FindRoot(explicit string) (string, error) {
 			}
 		}
 	}
-	return "", errors.New("spec: skeleton root with spec/VERSION not found; set " + EnvRoot)
+	if exe != "" {
+		if r, err := checkRoot(filepath.Join(filepath.Dir(filepath.Dir(exe)), "src")); err == nil {
+			return r, nil
+		}
+	}
+	return "", errors.New("spec: skeleton root with spec/VERSION not found; pass -spec-root (spec_root in the core settings) or set " + EnvRoot)
 }
 
 func checkRoot(dir string) (string, error) {
@@ -74,6 +93,7 @@ type Spec struct {
 	compiler *jsonschema.Compiler
 	schemas  map[string]*jsonschema.Schema
 	ids      map[string]string // short name (p1-claim-request) -> $id
+	raw      map[string]any    // $id -> the schema document as read
 	reg      map[string]*Registry
 }
 
@@ -87,7 +107,7 @@ func (r ecmaRegexp) String() string { return r.re.String() }
 
 // Load reads every schema under spec/model and spec/manifests of the root.
 func Load(root string) (*Spec, error) {
-	s := &Spec{Root: root, schemas: map[string]*jsonschema.Schema{}, ids: map[string]string{}, reg: map[string]*Registry{}}
+	s := &Spec{Root: root, schemas: map[string]*jsonschema.Schema{}, ids: map[string]string{}, raw: map[string]any{}, reg: map[string]*Registry{}}
 	c := jsonschema.NewCompiler()
 	c.UseRegexpEngine(func(expr string) (jsonschema.Regexp, error) {
 		re, err := regexp2.Compile(expr, regexp2.ECMAScript)
@@ -122,6 +142,7 @@ func Load(root string) (*Spec, error) {
 			if id == "" {
 				return nil, fmt.Errorf("spec: %s has no $id", f)
 			}
+			s.raw[id] = doc
 			if err := c.AddResource(id, doc); err != nil {
 				return nil, fmt.Errorf("spec: %s: %w", f, err)
 			}

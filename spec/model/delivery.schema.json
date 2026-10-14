@@ -55,7 +55,7 @@
       ]
     },
     "to": {
-      "description": "Address from a closed list (DLV-6): origin, group:<group>, chat:<binding>, sink:<sink>, approval_initiator, monitor (the E5 monitoring adapter, only alarms, scripts and notes) or insights.present_to. There are no addresses in the task body, result, bot messages or event data.",
+      "description": "Address from a closed list (DLV-6): origin, group:<group>, chat:<binding>, sink:<sink>, approval_initiator, monitor (the E5 monitoring adapter, only alarms, scripts and notes), insights.present_to or admins (the direct chats of the tenant admins with the right a code notice names, set only by the core). There are no addresses in the task body, result, bot messages or event data.",
       "type": "string",
       "maxLength": 200,
       "oneOf": [
@@ -64,7 +64,8 @@
             "origin",
             "approval_initiator",
             "monitor",
-            "insights.present_to"
+            "insights.present_to",
+            "admins"
           ]
         },
         {

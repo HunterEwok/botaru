@@ -36,9 +36,11 @@ type Core struct {
 		// KeyFiles maps a tenant to the file with the key of its provider workspace.
 		KeyFiles map[string]string `yaml:"key_files"`
 	} `yaml:"providers"`
-	LeaseS              int `yaml:"lease_s"`
-	HeartbeatS          int `yaml:"heartbeat_s"`
-	DeliveryMaxAttempts int `yaml:"delivery_max_attempts"`
+	// Operator names the farm operator in the ai_notice text (notice.ai, DLV-12).
+	Operator            string `yaml:"operator"`
+	LeaseS              int    `yaml:"lease_s"`
+	HeartbeatS          int    `yaml:"heartbeat_s"`
+	DeliveryMaxAttempts int    `yaml:"delivery_max_attempts"`
 }
 
 // Load reads and checks a settings file.

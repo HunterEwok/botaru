@@ -185,6 +185,9 @@ type Event struct {
 	Type    string
 	Subject string
 	Data    map[string]any
+	// Causation is the direct cause when the core knows a better one than the default: the
+	// task of a task event, the task (or else the delivery) of a delivery event (OBS-2).
+	Causation string
 }
 
 // appendEvent writes an event; the core sets source and id (IDM-4).
@@ -197,9 +200,50 @@ func (c *Core) appendEvent(ctx context.Context, tx pgx.Tx, now time.Time, tenant
 	if err != nil {
 		return err
 	}
-	_, err = tx.Exec(ctx, `INSERT INTO events (id, tenant, type, source, subject, time, data) VALUES ($1, $2, $3, $4, $5, $6, $7)`,
-		ids.New(ids.Event), tenant, e.Type, "botaru:core/"+tenant, nullable(e.Subject), now, raw)
+	corr, cause, err := eventCause(ctx, tx, e)
+	if err != nil {
+		return err
+	}
+	_, err = tx.Exec(ctx, `INSERT INTO events (id, tenant, type, source, subject, time, data, correlationid, causationid) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+		ids.New(ids.Event), tenant, e.Type, "botaru:core/"+tenant, nullable(e.Subject), now, raw, nullable(corr), nullable(cause))
 	return err
+}
+
+// eventCause gives an event its correlationid, the id of the root of the task tree, and its
+// causationid, the id of the direct cause (OBS-2). An event outside a task tree correlates to
+// its own subject.
+func eventCause(ctx context.Context, tx pgx.Tx, e Event) (string, string, error) {
+	corr, cause := e.Subject, e.Causation
+	switch {
+	case strings.HasPrefix(e.Type, "task."):
+		var root string
+		err := tx.QueryRow(ctx, `SELECT coalesce(record->>'root', id) FROM tasks WHERE id = $1`, e.Subject).Scan(&root)
+		if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+			return "", "", err
+		}
+		if root != "" {
+			corr = root
+		}
+		if cause == "" {
+			cause = e.Subject
+		}
+	case strings.HasPrefix(e.Type, "delivery."):
+		var task, root *string
+		err := tx.QueryRow(ctx, `SELECT d.task, coalesce(t.record->>'root', t.id) FROM deliveries d LEFT JOIN tasks t ON t.id = d.task WHERE d.id = $1`, e.Subject).Scan(&task, &root)
+		if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+			return "", "", err
+		}
+		if root != nil {
+			corr = *root
+		}
+		if cause == "" {
+			cause = e.Subject
+			if task != nil {
+				cause = *task
+			}
+		}
+	}
+	return corr, cause, nil
 }
 
 func nullable(s string) any {

@@ -65,6 +65,17 @@ func (c *Core) Principal(ctx context.Context, op Operator, req PrincipalRequest)
 		if err != nil && !errors.Is(err, pgx.ErrNoRows) {
 			return err
 		}
+		// An offboarded principal is final: no operation leaves the state (LCY-8).
+		if exists && state == "offboarded" {
+			if req.Op == "principal.offboard" {
+				// A repeat gives the same state and changes nothing (IDM-3).
+				out = Done{OK: true, State: state}
+				return nil
+			}
+			return refuse("subject_closed", "the principal is offboarded")
+		}
+		prev := state
+		after := map[string]any{}
 		switch req.Op {
 		case "principal.add":
 			if exists {
@@ -97,6 +108,25 @@ func (c *Core) Principal(ctx context.Context, op Operator, req PrincipalRequest)
 			if err := c.revokeWorkOf(ctx, tx, now, tv, req.Subject); err != nil {
 				return err
 			}
+			// The notice goes when the person actually leaves, not on a repeated off (IDN-13).
+			if req.Op == "principal.off" && prev != "off" {
+				n, err := c.planPrincipalLeft(ctx, tx, now, tv, req.Subject, "person_inactive")
+				if err != nil {
+					return err
+				}
+				after["principal_left"] = c.noticeCount(tv.Name, req.Subject, n)
+			}
+		case "principal.offboard":
+			if !exists {
+				return refuse("not_found", "no such principal")
+			}
+			erasure, n, err := c.offboard(ctx, tx, now, tv, op.Principal, req.Subject)
+			if err != nil {
+				return err
+			}
+			state = "offboarded"
+			after["erasure_request"] = erasure
+			after["principal_left"] = c.noticeCount(tv.Name, req.Subject, n)
 		case "principal.set_identity":
 			if !exists {
 				return refuse("not_found", "no such principal")
@@ -110,10 +140,11 @@ func (c *Core) Principal(ctx context.Context, op Operator, req PrincipalRequest)
 		default:
 			return refuse("input_schema_invalid", "unknown op")
 		}
+		after["state"] = state
 		seq, err := c.appendAudit(ctx, tx, now, Audit{
 			Tenant: op.Tenant, Kind: "command", Actor: Actor{Principal: op.Principal, Via: "farmctl"},
 			Command: req.Op, Target: &Target{Kind: "principal", ID: req.Subject}, OK: true,
-			After: map[string]any{"state": state},
+			After: after,
 		})
 		out = Done{OK: true, AuditSeq: seq, State: state}
 		return err
@@ -122,6 +153,17 @@ func (c *Core) Principal(ctx context.Context, op Operator, req PrincipalRequest)
 		return nil, err
 	}
 	return &out, nil
+}
+
+// noticeCount is the number of planned principal_left notices for the audit record. With no
+// admin with admin:people reachable in a private chat the notice cannot go; the audit record
+// shows 0 and the core logs a warning, so the operator learns of the departure (IDN-13).
+func (c *Core) noticeCount(tenant, subject string, n int) int {
+	if n == 0 {
+		c.log.Warn("principal_left has no recipient: no active admin with admin:people has a private chat with a channel of the tenant",
+			"tenant", tenant, "subject", subject)
+	}
+	return n
 }
 
 func (c *Core) setIdentity(ctx context.Context, tx pgx.Tx, tenant, subject, identity string) error {
@@ -177,12 +219,17 @@ func (c *Core) Grant(ctx context.Context, op Operator, req GrantRequest) (*Done,
 	}
 	var out Done
 	err = c.tx(ctx, func(tx pgx.Tx, now time.Time) error {
-		var ok bool
-		if err := tx.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM principals WHERE tenant = $1 AND id = $2)`, op.Tenant, req.Subject).Scan(&ok); err != nil {
+		var state string
+		err := tx.QueryRow(ctx, `SELECT state FROM principals WHERE tenant = $1 AND id = $2 FOR UPDATE`, op.Tenant, req.Subject).Scan(&state)
+		if errors.Is(err, pgx.ErrNoRows) {
+			return refuse("not_found", "no such principal")
+		}
+		if err != nil {
 			return err
 		}
-		if !ok {
-			return refuse("not_found", "no such principal")
+		// An offboarded principal gets no group (LCY-8).
+		if state == "offboarded" && req.Op == "grant" {
+			return refuse("subject_closed", "the principal is offboarded")
 		}
 		var until any
 		if req.Until != "" {

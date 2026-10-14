@@ -5,11 +5,13 @@ package core
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"math"
 	"time"
 
 	"github.com/jackc/pgx/v5"
 
+	"github.com/HunterEwok/botaru/impl/internal/jcs"
 	"github.com/HunterEwok/botaru/impl/internal/manifest"
 )
 
@@ -70,11 +72,20 @@ type ReleaseResult struct {
 	LeaseState string `json:"lease_state"`
 }
 
+// committed is a refusal whose transaction still commits: the outcome it reports is written
+// (an attempt ended by output_schema_invalid, OUT-1).
+type committed struct{ p *Problem }
+
+func (e *committed) Error() string { return e.p.Error() }
+
 // underLease runs fn under a checked lease; a repeat of an accepted call returns the stored
-// answer without side effects (IDM-3).
+// answer without side effects (IDM-3). When fn returns a committed refusal, its writes are
+// committed and the caller gets the refusal.
 func underLease[T any](ctx context.Context, c *Core, w *Worker, header, op string, args any, fn func(tx pgx.Tx, now time.Time, l *leaseRow) (*T, error)) (*T, error) {
 	var out *T
+	var refusal *Problem
 	err := c.tx(ctx, func(tx pgx.Tx, now time.Time) error {
+		refusal = nil
 		l, replay, err := c.heldLease(ctx, tx, w, header, op, args)
 		if err != nil {
 			return err
@@ -91,8 +102,16 @@ func underLease[T any](ctx context.Context, c *Core, w *Worker, header, op strin
 			return refuse("fenced", "the lease has expired")
 		}
 		out, err = fn(tx, now, l)
+		var cm *committed
+		if errors.As(err, &cm) {
+			out, refusal = nil, cm.p
+			return nil
+		}
 		return err
 	})
+	if err == nil && refusal != nil {
+		return nil, refusal
+	}
 	if err != nil {
 		if p, ok := AsProblem(err); ok && (p.Reason == "fenced" || p.Reason == "lease_mismatch") {
 			c.auditFence(ctx, w, op, p.Reason)
@@ -153,6 +172,9 @@ func (c *Core) Complete(ctx context.Context, w *Worker, header string, req Compl
 				return nil, refuse("input_schema_invalid", "an attempt completes with result")
 			}
 			if err := c.completeAttempt(ctx, tx, now, w, l, req.Result); err != nil {
+				if p, ok := AsProblem(err); ok && p.Reason == "output_schema_invalid" {
+					return nil, c.rejectResult(ctx, tx, now, w, l, p, req)
+				}
 				return nil, err
 			}
 		case "delivery":
@@ -180,9 +202,39 @@ func (c *Core) completeAttempt(ctx context.Context, tx pgx.Tx, now time.Time, w 
 		return err
 	}
 	tt := cat.TaskTypes[typ]
-	if tt.ResultSchema != nil {
-		if err := c.rs.validate(tt.ResultSchema, result); err != nil {
-			return refuse("output_schema_invalid", "the result does not match result_schema")
+	att, err := loadAttempt(ctx, tx, l)
+	if err != nil {
+		return err
+	}
+	// The schema of the type at claim; a lease taken before the upgrade has none and uses the
+	// current type.
+	schema := att.ResultSchema
+	if schema == nil {
+		schema = tt.ResultSchema
+	}
+	// A lease taken before the upgrade has no attempt record: its enum_from values are
+	// resolved now, against the current catalog and the task's mark.
+	if names := (map[string]bool{}); att.EnumFrom == nil {
+		enumFromNames(schema, names)
+		if len(names) > 0 {
+			var mark struct {
+				DataMark string `json:"data_mark"`
+			}
+			if err := json.Unmarshal(rec, &mark); err != nil {
+				return err
+			}
+			att.EnumFrom = c.resolveEnumFrom(cat, w.Tenant, mark.DataMark, names)
+		}
+	}
+	// The full result check (OUT-1, D-98): enum_from against the catalog values fixed for this
+	// attempt and filtered by the task's mark, and x-botaru-format as an assertion.
+	if schema != nil {
+		full, err := c.fullSchema(schema, att.EnumFrom)
+		if err != nil {
+			return err
+		}
+		if err := c.rs.validate(full, result); err != nil {
+			return refuse("output_schema_invalid", "the result does not match the full result_schema")
 		}
 	}
 	raw, err := json.Marshal(result)
@@ -195,7 +247,11 @@ func (c *Core) completeAttempt(ctx context.Context, tx pgx.Tx, now time.Time, w 
 	if err := releaseTaskReserve(ctx, tx, l.WorkID); err != nil {
 		return err
 	}
-	if err := c.appendEvent(ctx, tx, now, w.Tenant, Event{Type: "task.completed", Subject: l.WorkID, Data: map[string]any{"task": l.WorkID}}); err != nil {
+	data := map[string]any{"task": l.WorkID}
+	if att.Fingerprint != "" {
+		data["fingerprint"], data["fingerprint_parts"] = att.Fingerprint, att.Parts
+	}
+	if err := c.appendEvent(ctx, tx, now, w.Tenant, Event{Type: "task.completed", Subject: l.WorkID, Data: data}); err != nil {
 		return err
 	}
 	if _, err := c.appendAudit(ctx, tx, now, Audit{
@@ -228,6 +284,50 @@ func (c *Core) completeAttempt(ctx context.Context, tx pgx.Tx, now time.Time, w 
 		DataMark: record.DataMark, DataOrigin: "model",
 	})
 	return err
+}
+
+// rejectResult ends an attempt whose result failed the full check (OUT-1, D-98): the attempt
+// is spent and the retry follows the type's backoff, as the reason registry says for
+// output_schema_invalid. The lease closes with the refusal stored as its outcome: a repeat of
+// the same complete gets the same refusal (IDM-3), and any other call under the lease is
+// fenced, so the holder cannot hand in another result. The writes are committed and the holder
+// gets the refusal.
+func (c *Core) rejectResult(ctx context.Context, tx pgx.Tx, now time.Time, w *Worker, l *leaseRow, p *Problem, args any) error {
+	reasons, err := c.spec.Registry("spec/model/reasons.yaml")
+	if err != nil {
+		return err
+	}
+	entry, _ := reasons.Entry(p.Reason)
+	spends, ok := entry["spends_attempt"].(bool)
+	if !ok {
+		spends = true
+	}
+	mode, _ := entry["retry"].(string)
+	if _, err := c.endAttempt(ctx, tx, now, w.Tenant, l, p.Reason, spends, mode != "none", 0, mode); err != nil {
+		return err
+	}
+	h, err := jcs.Hash(argsValue(args))
+	if err != nil {
+		return err
+	}
+	outcome, err := json.Marshal(map[string]any{"op": "complete", "args": h, "problem": map[string]any{"reason": p.Reason, "detail": p.Detail}})
+	if err != nil {
+		return err
+	}
+	if _, err := tx.Exec(ctx, `UPDATE leases SET state = 'closed', reason = $3, outcome = $4, closed_at = $5 WHERE work_id = $1 AND lease_no = $2`,
+		l.WorkID, l.LeaseNo, p.Reason, outcome, now); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(ctx, `DELETE FROM handles WHERE work_id = $1 AND lease_no = $2`, l.WorkID, l.LeaseNo); err != nil {
+		return err
+	}
+	if _, err := c.appendAudit(ctx, tx, now, Audit{
+		Tenant: w.Tenant, Kind: "command", Actor: Actor{Principal: workerPrincipal(w.ID), Via: "bot", Role: w.Role, Task: l.WorkID},
+		Command: "task.complete", Target: &Target{Kind: "task", ID: l.WorkID}, OK: false, Reason: p.Reason,
+	}); err != nil {
+		return err
+	}
+	return &committed{p: p}
 }
 
 func (c *Core) completeDelivery(ctx context.Context, tx pgx.Tx, now time.Time, w *Worker, l *leaseRow, r Receipt) error {

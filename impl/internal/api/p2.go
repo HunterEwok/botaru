@@ -101,6 +101,14 @@ func (s *Server) p2(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		out, err = s.c.Principal(ctx, oper, req)
+	case "principal.offboard":
+		req, derr := decode[core.PrincipalRequest](m)
+		if derr != nil {
+			s.fail(w, derr)
+			return
+		}
+		req.Op = op
+		out, err = s.c.Principal(ctx, oper, req)
 	case "grant", "ungrant":
 		req, derr := decode[core.GrantRequest](m)
 		if derr != nil {

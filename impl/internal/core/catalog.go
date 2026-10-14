@@ -11,6 +11,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 
+	"github.com/HunterEwok/botaru/impl/internal/jcs"
 	"github.com/HunterEwok/botaru/impl/internal/manifest"
 	"github.com/HunterEwok/botaru/impl/internal/store"
 )
@@ -25,6 +26,9 @@ type Catalog struct {
 	// Profiles are keyed by tenant and name; a farm-wide profile has the tenant "".
 	Profiles   map[[2]string]manifest.ModelProfile
 	RawGlobals map[manifest.Key]map[string]any
+	// Hashes are the hashes of the applied manifests (spec/hashing.md), for the parts of the
+	// run fingerprint (PRV-1) and the catalog version of an attempt (OUT-1).
+	Hashes map[manifest.Key]string
 }
 
 // TenantView holds a tenant manifest and the objects of that tenant.
@@ -52,6 +56,7 @@ func newCatalog() *Catalog {
 		TaskTypes:  map[string]manifest.TaskType{},
 		Profiles:   map[[2]string]manifest.ModelProfile{},
 		RawGlobals: map[manifest.Key]map[string]any{},
+		Hashes:     map[manifest.Key]string{},
 	}
 }
 
@@ -68,7 +73,11 @@ func (c *Catalog) tenant(name string) *TenantView {
 func buildCatalog(docs []manifest.Doc) (*Catalog, error) {
 	c := newCatalog()
 	for _, d := range docs {
-		var err error
+		h, err := jcs.Hash(d.Value)
+		if err != nil {
+			return nil, fmt.Errorf("%s: %w", d.Source, err)
+		}
+		c.Hashes[d.Key()] = h
 		switch d.Kind {
 		case "Tenant":
 			var t manifest.Tenant

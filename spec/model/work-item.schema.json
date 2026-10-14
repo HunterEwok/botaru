@@ -334,7 +334,16 @@
                           "const": "text_code"
                         },
                         "text_key": {
-                          "$ref": "urn:botaru:schema:common:1#/$defs/name"
+                          "description": "A key of the message catalog (spec/bindings/channels/messages/), such as notice.ai.",
+                          "anyOf": [
+                            {
+                              "$ref": "urn:botaru:schema:common:1#/$defs/name"
+                            },
+                            {
+                              "type": "string",
+                              "pattern": "^[a-z][a-z0-9_.-]{0,126}$"
+                            }
+                          ]
                         },
                         "params": {
                           "type": "object",

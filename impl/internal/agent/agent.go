@@ -126,7 +126,9 @@ func (a *Agent) Once(ctx context.Context, waitS int) (bool, error) {
 	}
 	err = a.cfg.Core.Call(ctx, "complete", lease, map[string]any{"result": result}, nil)
 	if p1client.Reason(err) == "output_schema_invalid" {
-		return true, a.fail(ctx, lease, "output_schema_invalid", true)
+		// The core has already ended the attempt and closed the lease (OUT-1): nothing to fail.
+		a.log.Warn("result refused", "task", p.Task.ID, "reason", "output_schema_invalid")
+		return true, nil
 	}
 	return true, err
 }

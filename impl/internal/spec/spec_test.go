@@ -4,6 +4,9 @@ package spec
 
 import (
 	"errors"
+	"os"
+	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/HunterEwok/botaru/impl/internal/ijson"
@@ -54,5 +57,25 @@ func TestRegistry(t *testing.T) {
 	}
 	if !r.Has("lease_expired") || r.Has("no_such_reason") {
 		t.Fatal("reasons registry lookup")
+	}
+}
+
+// An installation with the binaries in <base>/bin and the checkout in <base>/src finds the
+// skeleton without a flag; otherwise the error names the flag and the variable.
+func TestFindRootNextToBin(t *testing.T) {
+	base := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(base, "src", "spec"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(base, "src", "spec", "VERSION"), []byte("0.1.0\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	got, err := findRoot("/", filepath.Join(base, "bin", "botaru-telegram"))
+	if err != nil || got != filepath.Join(base, "src") {
+		t.Fatalf("got %q %v", got, err)
+	}
+	_, err = findRoot("/", filepath.Join(t.TempDir(), "bin", "x"))
+	if err == nil || !strings.Contains(err.Error(), "-spec-root") || !strings.Contains(err.Error(), EnvRoot) {
+		t.Fatalf("error %v", err)
 	}
 }

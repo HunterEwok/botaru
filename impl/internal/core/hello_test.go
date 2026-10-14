@@ -49,7 +49,7 @@ func newBench(t *testing.T) *bench {
 	if err != nil {
 		t.Fatal(err)
 	}
-	tx, err := texts.Load("")
+	tx, err := texts.Load(root, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -148,6 +148,10 @@ func TestHelloSequence(t *testing.T) {
 		if d["kind"] != kind {
 			t.Fatalf("delivery %d: %v", i, d["kind"])
 		}
+		// The code texts are keys of the skeleton message catalog (DLV-9).
+		if key := d["body"].(map[string]any)["text_key"]; key != []string{"notice.ai", "notice.privacy"}[i] {
+			t.Fatalf("delivery %d: text key %v", i, key)
+		}
 		if _, err := b.c.Complete(ctx, b.channel, header(t, w), CompleteRequest{Receipt: &Receipt{ExternalID: "47" + string(rune('0'+i))}}); err != nil {
 			t.Fatal(err)
 		}
@@ -190,9 +194,6 @@ func TestHelloSequence(t *testing.T) {
 	hb, err := b.c.Heartbeat(ctx, b.agent, h, HeartbeatRequest{})
 	if err != nil || hb.CancelRequested {
 		t.Fatalf("heartbeat %+v %v", hb, err)
-	}
-	if _, err := b.c.Complete(ctx, b.agent, h, CompleteRequest{Result: map[string]any{"answer": 5}}); err == nil {
-		t.Fatal("a result outside result_schema passed")
 	}
 	done := CompleteRequest{Result: map[string]any{"answer": "Hello, alice! I am the farm bot @demo_bot."}}
 	if _, err := b.c.Complete(ctx, b.agent, h, done); err != nil {

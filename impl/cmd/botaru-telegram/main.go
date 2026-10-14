@@ -18,6 +18,7 @@ import (
 	"github.com/HunterEwok/botaru/impl/internal/channel/telegram"
 	"github.com/HunterEwok/botaru/impl/internal/config"
 	"github.com/HunterEwok/botaru/impl/internal/p1client"
+	"github.com/HunterEwok/botaru/impl/internal/spec"
 	"github.com/HunterEwok/botaru/impl/internal/texts"
 	"github.com/HunterEwok/botaru/impl/internal/version"
 )
@@ -29,6 +30,7 @@ func main() {
 	channel := flag.String("channel", "telegram", "the farm channel name from the Channel manifest")
 	botTokenFile := flag.String("bot-token-file", "", "the file with the Telegram bot token")
 	botAPI := flag.String("bot-api", "https://api.telegram.org", "the Bot API server")
+	specRoot := flag.String("spec-root", "", "the skeleton checkout with the message catalog (default: $BOTARU_SPEC_ROOT or a parent folder with spec/VERSION)")
 	textsDir := flag.String("texts-dir", "", "a directory with extra locales of the code texts")
 	links := flag.String("link-allowlist", "", "comma-separated hosts that model text may link to (the tenant's link_allowlist)")
 	flag.Parse()
@@ -49,7 +51,11 @@ func main() {
 	if err != nil {
 		fail("reading the bot token", err)
 	}
-	cat, err := texts.Load(*textsDir)
+	root, err := spec.FindRoot(*specRoot)
+	if err != nil {
+		fail("finding the skeleton", err)
+	}
+	cat, err := texts.Load(root, *textsDir)
 	if err != nil {
 		fail("loading texts", err)
 	}

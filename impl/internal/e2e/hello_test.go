@@ -119,11 +119,11 @@ func newRig(t *testing.T) *rig {
 	if err != nil {
 		t.Fatal(err)
 	}
-	tx, err := texts.Load("")
+	tx, err := texts.Load(root, "")
 	if err != nil {
 		t.Fatal(err)
 	}
-	c, err := core.New(ctx, core.Config{TokenKey: []byte("e2e-key-e2e-key-e2e-key-e2e-key-0"), TestBench: true}, st, sp, tx)
+	c, err := core.New(ctx, core.Config{TokenKey: []byte("e2e-key-e2e-key-e2e-key-e2e-key-0"), TestBench: true, Operator: "the test bench operator"}, st, sp, tx)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -259,7 +259,7 @@ func TestHelloBotOverTheWire(t *testing.T) {
 	}}
 	agentClient := &p1client.Client{BaseURL: r.p1.URL, Token: agentEnroll.Token}
 	chanClient := &p1client.Client{BaseURL: r.p1.URL, Token: chanEnroll.Token}
-	tx, _ := texts.Load("")
+	tx, _ := texts.Load(r.root, "")
 	ch := telegram.New(telegram.Config{Core: chanClient, Channel: "telegram", BotAPI: r.botURL, BotToken: "TEST:TOKEN", Texts: tx, PollTimeoutS: 1})
 	ag := agent.New(agent.Config{Core: agentClient})
 	if err := ch.Hello(ctx); err != nil {
@@ -311,16 +311,20 @@ func TestHelloBotOverTheWire(t *testing.T) {
 	if len(sent) != 3 {
 		t.Fatalf("sent %d messages: %v", len(sent), sent)
 	}
-	wantPrefix := []string{"You are talking to an AI bot", "Your messages to this bot are processed", "[AI answer]\nHello, alice! I am the farm bot @demo_bot."}
+	wantPrefix := []string{"This is the bot of tenant demo. Answers are written by an external provider's model; the conversation is stored by operator the test bench operator", "Data is processed by", "[AI answer]\nHello, alice! I am the farm bot @demo_bot."}
 	for i, m := range sent {
 		if m["chat_id"] != 1001.0 {
 			t.Errorf("message %d went to chat %v", i, m["chat_id"])
 		}
-		if text, _ := m["text"].(string); !strings.HasPrefix(text, wantPrefix[i]) {
+		text, _ := m["text"].(string)
+		if !strings.HasPrefix(text, wantPrefix[i]) {
 			t.Errorf("message %d: %q", i, text)
 		}
+		if strings.Contains(text, "{") { // no raw placeholder reaches a person
+			t.Errorf("message %d has a raw placeholder: %q", i, text)
+		}
 	}
-	if !strings.Contains(sent[1]["text"].(string), "version 3: https://docs.example.org/botaru/privacy") {
+	if !strings.Contains(sent[1]["text"].(string), "Full text: https://docs.example.org/botaru/privacy (version 3)") {
 		t.Errorf("privacy notice without version and link: %q", sent[1]["text"])
 	}
 

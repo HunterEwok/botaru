@@ -15,6 +15,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/HunterEwok/botaru/impl/internal/ijson"
@@ -148,7 +149,6 @@ type Tenant struct {
 	Kind             string            `json:"kind"`
 	Timezone         string            `json:"timezone"`
 	SelfApprove      bool              `json:"self_approve"`
-	Locale           string            `json:"locale"`
 	Limits           TenantLimits      `json:"limits"`
 	Budgets          Budgets           `json:"budgets"`
 	ModelsAllowed    []string          `json:"models_allowed"`
@@ -176,6 +176,14 @@ type Budgets struct {
 
 // Privacy is the tenant privacy block (SEC-8).
 type Privacy struct {
+	Purposes []struct {
+		Purpose string `json:"purpose"`
+	} `json:"purposes"`
+	Controller struct {
+		Name    string `json:"name"`
+		Contact string `json:"contact"`
+	} `json:"controller"`
+	Recipients    []string        `json:"recipients"`
 	Subprocessors []Subprocessor  `json:"subprocessors"`
 	NoticeRef     string          `json:"notice_ref"`
 	NoticeVersion json.RawMessage `json:"notice_version"`
@@ -236,6 +244,9 @@ type Role struct {
 	Models     map[string]string `json:"models"`
 	Memory     any               `json:"memory"`
 	Tools      []any             `json:"tools"`
+	Runtime    struct {
+		Driver string `json:"driver"`
+	} `json:"runtime"`
 }
 
 // TaskType is the spec of a TaskType manifest.
@@ -329,4 +340,39 @@ type Price struct {
 	Output     float64  `json:"output"`
 	CacheWrite *float64 `json:"cache_write"`
 	CacheRead  *float64 `json:"cache_read"`
+}
+
+// DropPointer removes the field or the array element that a JSON pointer names from a
+// decoded manifest. It reports whether something was removed.
+func DropPointer(v map[string]any, ptr string) bool {
+	toks := strings.Split(strings.TrimPrefix(ptr, "/"), "/")
+	if ptr == "" || len(toks) == 0 {
+		return false
+	}
+	for i := range toks {
+		toks[i] = strings.ReplaceAll(strings.ReplaceAll(toks[i], "~1", "/"), "~0", "~")
+	}
+	var parent any = v
+	for _, t := range toks[:len(toks)-1] {
+		switch p := parent.(type) {
+		case map[string]any:
+			parent = p[t]
+		case []any:
+			n, err := strconv.Atoi(t)
+			if err != nil || n < 0 || n >= len(p) {
+				return false
+			}
+			parent = p[n]
+		default:
+			return false
+		}
+	}
+	last := toks[len(toks)-1]
+	if m, ok := parent.(map[string]any); ok {
+		if _, has := m[last]; has {
+			delete(m, last)
+			return true
+		}
+	}
+	return false
 }
