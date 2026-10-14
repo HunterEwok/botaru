@@ -1,394 +1,350 @@
-# Farm operations
+# Operating the farm
 
 ## In short
 
-This section describes how the farm lives on ordinary days and on bad days: what the operator sees, who learns about trouble and how, how to stop part of the farm or the whole farm, how long data is kept and how it is erased, what to do about backups, overload, failures of external dependencies, time and the rollout of a new core version. The main idea: everything that security and data safety depend on during a bad day is held by core code and by records in the store, not by people's memory and not by the model. Code raises alarms, and the organization's monitoring system delivers them to people and also checks core liveness itself (`docs/monitoring.md`); stopping is a recorded "hold" object; early erasure goes through the erasure log, which survives a restore from backup. The section relies on the task and delivery model (task, lease, attempt, delivery), on permissions (C2 checks holds first) and on the model gateway P4 (retries and the circuit breaker). The recipes at the end are written as sequences of port operations, without the commands of a particular implementation.
+This section describes how the farm lives on ordinary days and on bad days: what the operator sees, how the core shows it is alive, how alarms reach people through the organization's monitoring system, how to stop part of the farm or the whole farm, how long data is kept and how it is erased, what to do about backups, overload, failed dependencies, time, tenants, workers and the rollout of a new core version. It also collects the farm's obligations towards people whose data it handles. The main idea: everything that security and data safety depend on during a bad day is held by core code and by records in the store, not by people's memory and not by the model. Code raises alarms; the monitoring system delivers them to people and checks core liveness from outside; stopping is a recorded "hold" object; early erasure goes through an erasure log that survives a restore from backup. Legal choices (controller, purposes, region, periods, texts for people) belong to the organization (D-12): the skeleton gives the fields that record them and the checks that refuse an empty field or a contradiction. The recipes at the end are sequences of port operations, without the commands of a particular implementation.
 
-## What the operator sees
+## How it works
 
-### One trace per task tree
+### What the operator sees
 
-A task that a person enqueued can produce child tasks, tool calls, model calls, approvals and deliveries. All of this is one task tree with a root (`root`): the first task from which the rest started. To analyze any case with one query, the core links every event to the root and to its direct cause (OBS-2):
+**One trace per task tree.** A task a person enqueued can produce child tasks, tool calls, model calls, approvals and deliveries: one task tree with a root. The core links every event to the root (`correlationid`) and to its direct cause (`causationid`: the parent task, the approval, the event, the incoming message or the schedule slot), and all tasks of the tree share one W3C trace id in the task field `trace` ([OBS-2](../conformance/rules.md#OBS-2)). Spans cover the attempt, the P4 model call, the tool call, the delivery and the decision on an approval; the core assigns the span parent itself by the P3 and P4 handle, so the runtime needs no trace context. Tracing context from outside decides nothing: `baggage` and `tracestate` are dropped at the core boundary, and a foreign `traceparent` is kept only as a link ([OBS-3](../conformance/rules.md#OBS-3)).
 
-| Field | Value | Who writes it |
-|---|---|---|
-| event `correlationid` | id of the task tree root | the core |
-| event `causationid` | id of the direct cause: the parent task; the approval (for `action.*`); the event (for a route task); the incoming message (for a channel task); the schedule slot | the core |
-| task record field `trace` | W3C `traceparent` of the root: all tasks of the tree have one trace id | the core |
-| trace spans | attempt, model call in P4, tool call, delivery, decision on an approval | the core and the edges |
-| context propagation | `WorkItem.trace` for the toolhost, channel and sink; `_meta.traceparent` in a plugin call | toolhost |
+**Telemetry without content.** Traces, metrics, process logs and health reports carry only ids, sizes, hashes, times, codes and closed names ([OBS-1](../conformance/rules.md#OBS-1), AUD-2). The OpenTelemetry GenAI conventions include content attributes that instrumentation enables with one setting, so the allowlist lives in `spec/bindings/telemetry/otel.md` with a pinned version and the collector drops the rest. Metric labels come from closed sets; ids of people and chats are never labels. A log that may hold content (a transcript, plugin stderr) is a store of class `content`. Prompts are never logged in production: analysis uses the session transcript or a replay on a test tenant.
 
-The core writes the `correlationid` value (the root id) already in v0.1: the tree limits are counted by it (MSG-11, ORC-8). The `trace` field, `causationid` and spans are written from v0.1 too (OBS-2, D-94). The agent runtime does not need the trace context: the core knows the attempt by its P3 and P4 handle and assigns the span parent itself.
+**Metrics.** The metrics catalog `spec/bindings/telemetry/metrics.yaml` (v0.2, OBS-13) is a contract for dashboards that survives a change of implementation. Its 14 metrics cover queue, outcomes and duration, model and tools, budget and approvals, deliveries, liveness and holds; only what the farm alone knows from its records. Machine, disk, network and service metrics stay with the monitoring system (D-59). No core decision reads a metric, and a core observation series that matches a catalog metric has the same name (OBV-5).
 
-Tracing context that arrives from outside (from an external program, a runtime, a plugin) decides nothing (OBS-3). The tenant, principal, task and rights are not taken from it. `baggage` and `tracestate` from outside are dropped at the core boundary, because W3C Baggage carries arbitrary key-value pairs, and a plugin or a log collector would record them. A foreign `traceparent` is kept only as a link to the foreign trace.
+**P2 `status` and `doctor`.** `status` gives a summary, `doctor` checks consistency and names the mismatches; both show metadata only:
 
-### Telemetry without content
+- holds; loop tick ages, `last_seen` of workers and a core drain deadline (OBS-4, LCY-6); the health indicators and store free space (OBS-9, CAP-5);
+- per tenant, the alarm path ([OBS-11](../conformance/rules.md#OBS-11)): `monitor_export_age_s`, E5 deliveries in `planned` older than 15 minutes, the adapter account's scope, the audit head's freshness, `seq` and history retention (MON-3, MON-4, MON-11);
+- open erasure requests (RET-7); backup age, the last restore check and whether the erasure log backup lags the store backup (RET-8);
+- usage reconciliation and an open spend gap (BUD-10, RET-6); the applied commit against the one the operator named (MAN-5); provider caps (GW-9), the `review` line (BUD-13), model `retires_at`, 30-day usage per line (BUD-15);
+- per tenant: "improvement cycle disabled" (INS-6), commission lens coverage (COM-7), "manager disabled" (D-77), "shadow disabled" (COM-10), from v0.2 "commission locked" (GOV-35).
 
-The rule "audit and events hold only metadata" (AUD-2) applies to everything the farm hands out for observation: traces, metrics, process logs and health reports (OBS-1). They contain only ids, sizes, hashes, times, codes and names from closed lists. The OpenTelemetry conventions for GenAI include content attributes (input and output messages, system instructions, tool call arguments and results), and ready-made instrumentation enables them with one setting. Therefore:
+**Tenant debug journal.** An operator with `admin:debug` can read a tenant's attempt journals and transcripts. That is a read of the tenant's content, so the tenant decides with `Tenant.spec.operator_access.debug_journal`: `deny`, `notify` (the default: an audit record and a code message to the tenant admins) or `allow` (audit record only). An external client learns about every look into its data, and the operator can still analyze an incident. The journal is described under [People's data](#peoples-data).
 
-- the allowlist of attributes and names lives in the binding `spec/bindings/telemetry/otel.md` with a pinned version of the conventions, and the farm's telemetry collector drops everything outside the list;
-- metric labels come only from closed sets: tenant, task type, role, plugin, tool, reason, state. Ids of people, chats and external systems are not labels: this is both privacy and the number of series;
-- runtime telemetry goes only through the E4 adapter or does not go at all;
-- a log that may contain content (a runtime transcript, plugin stderr, debug output of a channel) is a content store of class `content` with a retention period and erasure, and only metadata leaves it.
+### Liveness and health
 
-A debug log with prompts is not enabled in production. Analysis goes by the session transcript (it is already a content store with a retention period) or by replaying the case on a test tenant.
+**Workers.** A heartbeat belongs to a lease, so an idle worker sends none. The core instead keeps `last_seen`, the time of the worker's last P1 call of any kind, including a long-poll `claim` and `msg.receive`. A worker unseen for longer than two long-poll periods gives a `worker.stale` event and an alarm ([OBS-4](../conformance/rules.md#OBS-4)). This is an observation, not a worker state, and the worker's own "I am `idle`" does not change it (STA-2). Its leases expire, the `reaper` loop returns the work to the queue, and the vanished worker gets nothing new because it does not call `claim`.
 
-### Metrics
-
-The metrics catalog (v0.2, OBS-13) is a contract for dashboards and alarms that survives a change of implementation. It lives in `spec/bindings/telemetry/metrics.yaml` and covers the four monitoring signals of farm work: latency, traffic, errors and saturation. It holds only what the farm alone knows from its records; machine, disk, network and service metrics stay with the monitoring system, which collects them itself (D-59). Every entry fixes its instrument, unit and labels, and no core decision reads a metric. It has 14 metrics with labels from closed sets: queue (`botaru.queue.depth`, `botaru.queue.oldest_age_s`, `botaru.claim.wait_s`), outcomes and duration (`botaru.task.outcome`, `botaru.attempt.duration_s`), model and tools (`gen_ai.client.operation.duration`, `gen_ai.execute_tool.duration`, `botaru.model.tokens`), budget and approvals (`botaru.budget.used_ratio`, `botaru.approval.count`), deliveries (`botaru.delivery.outcome`), liveness (`botaru.worker.last_seen_age_s`, `botaru.loop.last_tick_age_s`) and holds (`botaru.hold.active`). The skeleton CI checks the catalog form, and the check "every catalog metric is in the output, and no other `botaru.*` name" runs as a black box. Where a core observation series coincides with a catalog metric, they have the same name (OBV-5).
-
-### P2 `status` and `doctor`
-
-The operator sees the state of the farm with two P2 operations. `status` gives a summary, `doctor` checks consistency and names the mismatches. Both show only metadata:
-
-- active holds with scope, effects, reason, deadline and author (HLD-1);
-- the rights and scope of every farm account in the monitoring system, the freshness of the audit head in its history, the monotonicity of the heads' `seq` and the retention period of the witness history (MON-4, MON-3);
-- for each tenant: the age of the last successful export to the monitoring system `monitor_export_age_s`, deliveries for E5 in `planned` older than 15 minutes, and whether the adapter account sees only the node groups of its tenant (OBS-11, MON-11, MON-4);
-- the tick age of every background loop and missed ticks, the `last_seen` of workers (OBS-4); during a core drain, the drain deadline and a warning if it is exceeded (LCY-6);
-- the three health indicators (OBS-9) and the free space of the store (CAP-5);
-- open erasure requests and their outcomes per store (RET-7);
-- the age of the latest backup of every storage location, the date and outcome of the last restore check from the reports of the backup process, and whether the erasure log backup is older than the store backup (RET-8);
-- the age of the last usage reconciliation for every provider workspace (BUD-10) and an open spend gap after a restore with halved limits (RET-6);
-- the applied commit and the hash of the manifest set against the commit named by the operator (MAN-5);
-- the workspace caps read at the provider (GW-9), lack of money in the `review` line for reviews (BUD-13), a warning about an approaching model retirement date (`retires_at` of the model profile), the actual usage of each budget line over 30 days per tenant (BUD-15);
-- for a tenant where the improvement cycle is disabled, the line "improvement cycle disabled" with the reasons (INS-6), and who covers each lens of the commission (COM-7);
-- per tenant: the farm manager opt-out (`Tenant.spec.farm_manager.enabled: false`, the line "manager disabled", D-77), "shadow disabled" (COM-10), and from v0.2 "commission locked" (`commission_locked`, GOV-35) (OBS-11).
-
-### Tenant debug journal
-
-An operator with the right `admin:debug` can read a tenant's attempt journals and transcripts to analyze a case. This is a read of the tenant's content, and the tenant decides how to treat it with the field `Tenant.spec.operator_access.debug_journal` with the values `deny` (the operator does not read journals; analysis only by metadata or on a test tenant), `notify` (reading is allowed; every read gives an audit record and a code message to the tenant admins: who, when, which task) and `allow` (reading is allowed with an audit record, without a message). The default is `notify`: an external client learns about every look into their data, and the operator does not lose the ability to analyze an incident. The rule and the place of the field in the processing description belong to `docs/privacy.md`.
-
-## Liveness and health
-
-### Workers: `last_seen`
-
-A heartbeat belongs to a lease, so an idle worker waiting for work sends no heartbeat. The core sees worker liveness differently: a worker has `last_seen`, the time of its last P1 call of any kind, including waiting in `claim` (long-poll: the worker keeps the request open until work appears) and `msg.receive` (OBS-4). A worker that has not been seen for longer than two long-poll periods gives a `worker.stale` event and an alarm by code. This is an observation of the core, not a new state in the worker lifecycle. The worker's self-report (its own "I am `idle`") does not affect this observation and does not change core decisions (STA-2). The background loop `worker-liveness` counts by `last_seen`.
-
-Example: at night the network of an analyst worker in tenant `demo` goes down. Its last self-report is `idle`, but `last_seen` is stale. The core writes a `worker.stale` event and raises the alarm `alarm.worker.stale`, its leases expire, and the `reaper` loop returns the work to the queue, where another worker of the same role takes it. The vanished worker gets no new work simply because it does not call `claim`.
-
-### Background loop ticks
-
-The core's background loops (core duties that work without an outside request) are deterministic, never call the model, are idempotent and safe with two instances. Every loop marks a tick in the store, and the tick age is visible in `status` and `doctor` (OBS-4). A missed tick of any loop makes the P2 `health` answer "not alive", and the monitoring system wakes people (MON-2). Operations loops:
+**Background loops.** Core loops are deterministic, never call the model, are idempotent and safe with two instances. Each marks a tick in the store; a missed tick of any loop makes P2 `health` answer "not alive". The operations loops:
 
 | Loop | What it does | Version |
 |---|---|---|
 | `worker-liveness` | counts `last_seen`, writes `worker.stale` and an alarm | v0.1 |
-| `hold` | keeps hold deadlines, applies effects to pending approvals and deliveries; sets auto-stops | v0.1 |
-| `alarm` | keeps alarm episodes (`firing`, `resolved`, `seq`, `repeat_count`), puts every episode change as a delivery for the monitoring adapter E5 and re-exports open episodes after a connection failure (MON-1, MON-11) | v0.1 |
+| `hold` | keeps hold deadlines, applies effects to pending approvals and deliveries, sets auto-stops | v0.1 |
+| `alarm` | keeps alarm episodes, puts every episode change as a delivery for E5, re-exports open episodes after an outage (MON-1, MON-11) | v0.1 |
 | `erasure` | sends erasure requests to the stores, collects outcomes, raises an alarm at the deadline | v0.1 |
-| `schedule` | enqueues a task for every slot in UTC by the schedule time zone, skips nonexistent local time | v0.1 |
-| `retention` | deletes by the periods of retention classes: in v0.1 only `content` and `observation` by defaults (RET-2), from v0.2 by `Tenant.spec.retention` in every copy (RET-9, RET-10) | v0.1 |
-| `health` | computes the three health indicators and, without profile `monitor`, the age of backups and restore checks from the reports of the backup process, and raises alarms (OBS-9, RET-8) | v0.1 |
+| `schedule` | enqueues a task for every slot, in UTC by the schedule time zone | v0.1 |
+| `retention` | deletes by the periods of the retention classes (RET-2, RET-10) | v0.1 |
+| `health` | computes the three health indicators and, without profile `monitor`, the age of backups and restore checks (OBS-9, RET-8) | v0.1 |
+| `audit-head` | at least once a day puts every tenant's audit chain head as a delivery for E5 (MON-3) | v0.1 |
 
-The other core loops (`reaper`, `deadline`, `delivery`, `approval-expiry`, `budget`, `membership`, `inbox`, `observe`, `proposal`, `campaign`, `script`, `incident`, `control`, `identity`, `grant`, `governance`, `expectation`) follow the same contract and mark their ticks the same way; their full list with versions is in `spec/ports/background-loops.md`.
+The other loops (`reaper`, `deadline`, `delivery`, `approval-expiry`, `budget`, `incident`, `identity` and the rest) follow the same contract; the full list is in `spec/ports/background-loops.md`.
 
-### Plugins, channels and the provider
+**Plugins, channels and the provider.** One schema, `spec/model/health-report.schema.json`, describes the health of every part: component, state (`ok`, `degraded`, `down`), checks from a closed list and time, with codes and no error texts, since an external error text may carry foreign text ([OBS-10](../conformance/rules.md#OBS-10)). A call to a plugin in `down`, or on a toolhost that is not visible, gets `plugin_unavailable` at once, so the model decides itself instead of waiting for the lease deadline. `down` only narrows dispatch.
 
-Health is described for all parts of the farm by one schema, `spec/model/health-report.schema.json`: component (`loop`, `store`, `provider`, `worker`, `plugin`, `channel_upstream`), state (`ok`, `degraded`, `down`), checks with names from a closed list, and time (OBS-10). The toolhost reports the state of each plugin in `hello` and `heartbeat`, the channel reports the time of the last successful poll of the external system, P4 keeps the state of the model provider. The reports have no error texts, only codes: the error text of an external system may contain foreign text. A call of a plugin in `down` or of a plugin on a toolhost that is not visible gets `plugin_unavailable` at once: the model sees a call error and decides itself instead of waiting for the lease deadline. The `down` state only narrows dispatch and never widens it.
+**Three health indicators.** Each part may be alive while the farm is stuck. The core computes ([OBS-9](../conformance/rules.md#OBS-9)):
 
-### Three health indicators
+| Indicator | What it catches |
+|---|---|
+| age of the oldest task of priority classes 1 and 2 in `submitted` (DSP-5) | the queue is stuck and people wait for an answer |
+| share of deliveries `delivered` within 10 minutes of creation | the channel or the delivery loop does not work |
+| tick age of every loop | one loop hung while the others work |
 
-The core computes three indicators that show the farm is stuck even if each part on its own is alive (OBS-9):
+Thresholds come from the deployment binding; an indicator past its threshold raises `alarm.health.urgent_age`, `alarm.health.delivery_share` or `alarm.health.loop_tick`. The values are in the daily summary and in the P2 `health` answer, so people learn about a stuck farm even when its own channel is broken.
 
-| Indicator | What it means | What it catches |
-|---|---|---|
-| age of the oldest urgent task | how long the oldest task of priority classes 1 and 2 has been waiting in `submitted` (DSP-5) | the queue is stuck, people are waiting for an answer |
-| share of deliveries within 10 minutes | the share of deliveries that reached `delivered` no later than 10 minutes after creation | the channel or the delivery loop does not work |
-| tick age of every loop | how long it has been since the last tick of every background loop | one loop hung, the others work |
-
-The thresholds and the counting window of the share are set by the deployment binding. An indicator beyond its threshold gives an alarm by code (`alarm.health.urgent_age`, `alarm.health.delivery_share`, `alarm.health.loop_tick`). The values are part of the daily summary to operators and of the P2 `health` answer that the monitoring system polls (MON-2), so people learn about a stuck farm even when its own channel is broken.
-
-### Core liveness from outside
-
-The core cannot report its own death, so core liveness is checked by a process outside the core (MON-2): the organization's monitoring system, and in an installation without one the deployment watchdog `kind: watch`, which alerts people by its own path (`watch.notify_ref`, D-88). Once a minute the monitoring system polls P2 `health` with a separate key that works only for this operation. The core answers "alive" only if the store answers and all background loops marked their ticks on time; the answer has only numbers: the free space of the store (CAP-5), the three health indicators (OBS-9) and the tick ages. No answer or "not alive" for longer than a threshold: the monitoring system wakes people by its own path, not through the farm channel. During a planned drain before a rollout the core answers "not alive" with reason `draining` and the number `drain_until_s`, and the liveness trigger does not fire within this period (LCY-6). The `health` key lives in the deployment configuration, the handler answers without the store, and during a key rotation two values are valid. The monitoring system does not run on the core machine and gets no farm credentials except the `health` key. If the export of alarms to the monitoring system fails for longer than 15 minutes, the core sends the tenant admins and the operator the code message `monitor_export_stalled`, no more often than once every 6 hours (MON-1, MON-11). This is described in detail in `docs/monitoring.md`.
-
-## When the store is unavailable
-
-The store (C1) holds all farm state: the queue, leases, approvals, events. If it does not answer, the core neither loses work nor starts it (OBS-8):
-
-- P1 answers all operations with `not_ready` and `retry_after_s` (in HTTP with the `Retry-After` header), that is, "not ready, retry later";
-- P4 starts no new model calls: work whose result has nowhere to be written is money spent for nothing;
-- the channel does not move the external system offset (DLV-5): incoming messages stay at the channel's external system and will arrive again;
-- the background loops do not mark ticks, and the core answers the monitoring system "not alive" (MON-2);
-- a lease that expired during the unavailability and was not extended after readiness ends with reason `core_unavailable` and does not spend the attempt: this is an infrastructure failure, not a task failure (FEN-5).
-
-The core leaves this mode only when the store answers and all background loops have marked a tick again.
-
-Example on `demo`: on Friday evening the store hangs. Workers get `not_ready` and wait, there are no model calls, the channel does not acknowledge new updates, and they pile up at the channel's external system (Telegram keeps undelivered updates for up to 24 hours). A few minutes later the monitoring system sees that the core answers "not alive" and wakes the operator `alice` with its own alert. She restarts the store, the core waits for the ticks of all loops, clears `not_ready`, the channel picks up the accumulated messages, and the tasks continue without spent attempts.
-
-## Alarms
-
-### Alarm form
-
-An alarm is an event `alarm.<name>.vN` that only code produces: the core or a worker of type `job` (INJ-7). Text from logs, messages and model answers can neither raise nor suppress an alarm. The data of all alarms follows one schema, `spec/model/event-data/alarm.schema.json` (OBS-6):
+**Core liveness from outside.** The core cannot report its own death, so a process outside it polls P2 `health` once a minute ([MON-2](../conformance/rules.md#MON-2), D-60): the organization's monitoring system, or without one the deployment watchdog `kind: watch`, which alerts people its own way (`watch.notify_ref`, D-88). The poll uses a separate key that works only for `health`; the key lives in the deployment configuration, the handler answers without the store and outside the worker pool (a hung store must give "not alive", not silence), and during rotation two key values are valid. "Alive" requires an answering store and on-time ticks of all loops. The answer holds only numbers:
 
 ```yaml
-alarmkey: "disk.free.low:db1"       # alarm name + subject id from the catalog
-state: firing                       # firing | resolved
-severity: page                      # info | warn | page
-subject: {kind: resource, id: db1}
-values: {free_pct: 7}               # only numbers and enums per the alarm schema
+# P2 health answer (sketch)
+alive: true                      # with false: reason store_unavailable | loop_stale | not_ready | draining
+store_free_bytes: 88046829568    # CAP-5
+store_free_ratio: 0.41
+oldest_urgent_age_s: 12          # OBS-9
+delivered_10m_ratio: 0.99
+loop_tick_age_s: {reaper: 8, delivery: 3, alarm: 11, hold: 9}
+monitor_export_age_s: {demo: 40, farm: 12}   # MON-11
 ```
 
-An alarm lives in episodes: `firing` opens an episode with the key `alarmkey`, `resolved` closes it; an episode has a change number `seq` and a counter `repeat_count`. A repeated `firing` with the same `alarmkey` opens no new episode, writes no event and gives no export, but only increments `repeat_count`: a check once a minute gives one export and one event, not sixty an hour. The life of one alarm episode is described in `spec/lifecycles/alarm.md`.
+During a planned drain the answer is `alive: false`, `reason: draining` with `drain_until_s`, and the farm template stays quiet within that time (LCY-6). Otherwise no answer or "not alive" beyond the threshold makes the monitoring system wake people by its own path. This catches a stopped core, a hung or full store, a hung loop, a switched-off machine. The monitoring system does not run on the core machine and holds no farm credential but the `health` key; the deployment lint checks both. Each adapter process also writes a tick item once a minute, and the template raises a problem when it goes silent: then the alarm export has stopped.
 
-### How an alarm reaches people
+### When the store is unavailable
 
-An installation has one path of alarms to people (MON-1, D-88). Without the `monitor` profile, for every episode change the core itself puts a delivery of the code text `alarm_notice` into the direct chat of the tenant admins, alarms about the farm to the admins of `farm`; a repeated `firing` gives no message, and `page` reminds every 30 minutes until `incident.ack` (MON-13). With the `monitor` profile the farm has no delivery of alarms to people of its own (MON-12): the core puts every episode change as a delivery for the monitoring adapter E5, and the adapter passes it to the organization's monitoring system as a value on the farm node with the tags `tenant`, `alarm` (the name without `alarm.` and `.vN`), `subject` and `severity`; alarms about the farm itself also get the tag `scope: farm`. Alerting, repeats, "Acknowledged", escalation, on-call duty and silence are configured there by tags. Farm channels do not deliver alarms, and there are no alarm routes to people and no rights to receive alarms. An export delivery does not die by the number of attempts: it is retried while the episode is open, goes in `seq` order, and after a connection failure the core re-exports all open episodes (MON-11). The only code message that bypasses the monitoring system is `monitor_export_stalled` to the tenant admins and the operator when the export fails for longer than 15 minutes. How the export works and what the monitoring system does is described in `docs/monitoring.md`.
+The store (C1) holds all farm state. If it does not answer, the core neither loses work nor starts it ([OBS-8](../conformance/rules.md#OBS-8)): P1 answers `not_ready` with `retry_after_s`, P4 starts no model calls (a result with nowhere to be written is money spent for nothing), the channel does not move the external offset so incoming messages arrive again (DLV-5), loops mark no ticks and `health` says "not alive". A lease that expired meanwhile and was not extended after readiness ends with `core_unavailable` and does not spend the attempt (FEN-5). The core leaves this mode only when the store answers and every loop has ticked again.
 
-### Alarms of this section
+### The monitoring system
 
-| Alarm | When it is raised | Rule | Version |
+The organization already runs a monitoring system (for example Zabbix) that watches machines and services and knows how to wake people, run on-call rotations, escalate and silence. The farm does not repeat this (D-59). It adds what the monitoring system cannot see (tasks, bots, money, secrets, the farm manager) through one edge port, E5 Monitor; the Zabbix 7.0 binding is in `spec/ports/e5-monitor.md` (D-66). Linking to a monitoring system is the conformance profile `monitor` (D-88); a farm without it is described at the end of this part.
+
+| What | Monitoring system | Farm |
+|---|---|---|
+| machines, services, disks, load | observes, raises problems | reads with the `monitor` plugin; takes problems on catalog nodes as input |
+| tasks, bots, money, secrets, workers, core store | receives farm alarms as tagged values | measures with code, raises alarms (INJ-7) |
+| alerting, "Acknowledged", escalation, on-call, silence | does all of it | nothing of its own with profile `monitor` (D-62) |
+| core liveness, audit witness | polls `health`; keeps the audit head | answers; writes the head daily |
+| maintenance windows, scripts | people set windows; it runs scripts | holds its bots (v0.2); bots run allowed scripts |
+
+**The adapter and its accounts.** The `monitor` adapter is an E5 edge process like a channel adapter: it takes deliveries for E5 by P1 `claim`, and the core never calls the monitoring system itself. An adapter serves one tenant (TEN-4) with its own process, worker token and monitoring account; one more process for `farm` alone maintains the farm nodes and template ([MON-4](../conformance/rules.md#MON-4), D-61). A tenant account sees only its tenant's node groups, so the tenant boundary is held by the monitoring system's permissions, not only by adapter code. No farm account can acknowledge, close, silence or reclassify a problem or touch notification actions and windows; it can only add a message. `doctor` fails if any account's rights are wider, including script permission on a farm node.
+
+The farm template lives in git in `deploy/monitor/`: items for alarm export, the adapter tick, the audit head, the `health` poll and triggers on tags. An organization machine is linked to a catalog resource by `Catalog.spec.hosts[].monitor_host`, and only nodes linked this way are read, accept problems or give maintenance holds. A farm machine (core, store, channel, adapter, backups) cannot be a catalog resource, and a machine, a (machine, service) pair or a (node, script) pair belongs to one tenant only; `apply` rejects anything else (DEP-11, D-75). Otherwise every prohibition "on farm nodes" would rest on nobody writing the core machine into a catalog.
+
+**Alarm export.** For every alarm episode change the core puts a delivery for E5 in the same transaction as the event, and the adapter writes it as a value on a farm node ([MON-1](../conformance/rules.md#MON-1), [MON-12](../conformance/rules.md#MON-12)). People configure alerting in the monitoring system by tags:
+
+| Tag | Value | Example |
+|---|---|---|
+| `tenant` | tenant of the alarm; `farm` for the farm itself | `demo` |
+| `alarm` | name without `alarm.` and `.vN` | `queue.age.p95` |
+| `subject` | catalog id of the subject | `db1` |
+| `severity` | `info`, `warn`, `page` (Information, Warning, High) | `page` |
+| `scope` | `tenant` or `farm` | `tenant` |
+| `origin` | `code` for a farm measurement, `monitor` for an alarm raised on a monitoring problem | `code` |
+| `key` | `<tenant>:<alarm>:<subject>`, so recovery closes exactly its own problem | `demo:queue.age.p95:demo` |
+
+The farm builds no notification text: the monitoring system's template builds it from the tags. An alarm with `origin: monitor` is usually excluded from the notification action, since the original problem already woke people.
+
+**The export does not die.** A dead alarm delivery would mean nobody was woken, or a problem left open forever. So export deliveries retry with a pause of up to 10 minutes while the episode is open, go in `seq` order, and after an outage the `alarm` loop re-exports every open episode and audit head ([MON-11](../conformance/rules.md#MON-11)). If a tenant's export fails for 15 minutes, the core raises `alarm.monitor.export_stalled` and sends the tenant admins and the operator the code message `monitor_export_stalled`, at most every 6 hours: the only message that bypasses the monitoring system, and it says only that alarms are not getting through.
+
+**Audit chain head.** The audit is a hash chain (AUD-6). To make an edit made directly in the store visible, the `audit-head` loop puts the signed head `(epoch, seq, hash, key_id, sig)` of every tenant and of `farm` into a `monitor_audit_head` delivery at least once a day, and the adapter writes it into the monitoring history ([MON-3](../conformance/rules.md#MON-3)). The signature is needed because the adapter is outside the trust boundary and could write any value with its own token. `seq` decreases only with a growth of `epoch` after a restore. P2 `audit.verify` checks every head in the history, not only the latest; `doctor` reads the item's actual history retention and warns below 90 days. The witness holds only while the store operator does not also administer the monitoring system: a separation of duties, not a property of code.
+
+**Monitoring problems in the farm.** A problem the monitoring system finds on a catalog node becomes farm input ([MON-5](../conformance/rules.md#MON-5), D-63), a special case of the external event input (ING-1, ING-2):
+
+1. The monitoring system sends a webhook to the tenant adapter on open and on close; the adapter checks the token over TLS and that the node is linked to its catalog. A problem on an unlinked node is dropped and counted.
+2. The adapter submits the event through P1 `submit_activity` as the `service` principal `hook:monitor`; the core writes `ext.monitor.problem.v1` with closed fields only. Trigger names, tags and descriptions never enter: people write them and they can contain anything (INJ-16).
+3. The key `system:ingress:monitor:<eventid>:<state>` makes a repeated webhook harmless.
+4. The class comes from the catalog by `triggerid` (`Catalog.spec.monitor_triggers: [{triggerid, class, item}]`), so editing trigger tags cannot raise `page`, open an incident or set a hold. An unknown trigger gives class `unknown`.
+5. A route enqueues a `job` task without a model that rechecks the problem through the API, reads the number from item `item` and raises or closes the farm alarm by the class table `spec/model/monitor-map.yaml`.
+6. From there it is an ordinary alarm: the incident catalog opens an incident (MGR-7), and the alarm is exported back with `origin: monitor`.
+
+| Class | Farm alarm | Severity | What next |
 |---|---|---|---|
-| `alarm.worker.stale` | a worker has not been seen for longer than two long-poll periods | OBS-4 | v0.1 |
-| `alarm.store.free.low` | the free space of the store volume is below the soft threshold | CAP-5 | v0.1 |
-| `alarm.erasure.overdue` | an erasure request has been open longer than its deadline | RET-7 | v0.1 |
-| `alarm.provider.spend_cap` | the model provider refused on the spend cap | CAP-2 | v0.1 |
-| `alarm.hold.auto` | the core set an auto-stop | HLD-6, HLD-7, CAP-4, HLD-9 | v0.1 |
-| `alarm.health.urgent_age`, `alarm.health.delivery_share`, `alarm.health.loop_tick` | a health indicator is beyond its threshold | OBS-9 | v0.1 |
-| `alarm.backup.overdue` (`warn`) | without profile `monitor`: a storage location has had no `backup.report {kind: backup, ok: true}` report for longer than 26 hours, or a report with `ok: false` arrived | RET-8 | v0.1 |
-| `alarm.backup.restore_check_overdue` (`warn`) | without profile `monitor`: no `backup.report {kind: restore_check, ok: true}` report for longer than 8 days, or the restore check failed | RET-8 | v0.1 |
-| `alarm.spend.unreconciled` (`warn`) | the restore was completed with the operation `restore.complete --spend-pending`, and the spend gap has not yet been reconciled with the provider's report; while it holds, the daily limits of all tenants are cut in half | RET-6 | v0.1 |
-| `alarm.spend.reconcile_overdue` (`warn`) | a provider workspace has had no `spend_reconciled` line for longer than `spend.reconcile_overdue_days` (35 days by default) | BUD-10 | v0.1 |
-| `alarm.spend.estimate_drift` (`warn`) | the daily sum of the workspace usage lines differs from the provider's daily sum by more than the tolerance from the deployment settings | BUD-10 | v0.1 |
-| `alarm.monitor.export_stalled` (`warn`) | the export to the monitoring system for a tenant has failed for longer than 15 minutes; it reaches the monitoring system when the connection returns, and meanwhile people get the code message `monitor_export_stalled` | MON-11 | v0.1 |
-| `alarm.incident.unhandled` (`page`) | an incident has had neither an operation nor P2 `incident.ack` (a person took the incident) within the `page_if_unhandled_after` of its class; it is cleared by an operation, `incident.ack` or closing the incident (`resolved`, `dismissed`) | MGR-7 | v0.1 |
-| `alarm.manager.breaker` (`page`) | the safeguard of the farm manager seat tripped | MGR-14 | v0.1 |
-| `alarm.disk.free.low`, `alarm.disk.fill.rate`, `alarm.monitor.problem` | the monitoring system reported a problem on a catalog node, a `job` task rechecked it by code | MON-5 | v0.1 |
-| `alarm.service.control.rate` (`warn`; `page` if a service stop hit the limit) | a `service/control` or `monitor/script_run` call hit the action limit: 6 per hour per service or script on a node, 30 per hour per tenant; the call got `service_rate_limited` | MON-8, MON-10 | v0.1 |
+| `disk_free` | `alarm.disk.free.low` | `page` | incident `disk_full` if the volume has a full set of quotas (MGR-33) |
+| `disk_fill` | `alarm.disk.fill.rate` | `warn` | fill rate incident |
+| `unknown` | `alarm.monitor.problem` | `warn` | a record and an export only |
 
-Names are given without the version suffix `.vN`. Other parts of the farm raise their own alarms by the same schema, for example `alarm.task.unclaimed` (DSP-8), `alarm.task.stalled` (CNT-4) and `alarm.manager.absent` (MGR-2). The farm manager's incident catalog opens incidents on the code alarms `alarm.disk.free.low`, `alarm.store.free.low`, `alarm.budget.burn.rate`, `alarm.outbound.secret.detected`, `alarm.auth.tenant_mismatch.count`, `alarm.worker.crash.rate`, `alarm.action.unknown.attempt`, `alarm.model.provider.errors` and `alarm.queue.age.p95` (MGR-7). The farm itself does not measure alarms about resource and machine disks: they come from monitoring system problems (MON-5). If an incident has had neither an operation nor P2 `incident.ack` (a person took the incident) within the `page_if_unhandled_after` of its class, the core loop `incident` raises the alarm `alarm.incident.unhandled` with `severity: page`, and the monitoring system wakes people; "Acknowledged" on the alarm itself is pressed in the monitoring system (`docs/farm-manager.md`). A new kind of alarm is added like this: a `job` task type with the event `alarm.<name>.vN` by the common schema (`severity` goes in the alarm data); the export happens by itself (MON-1), and alerting by the new `alarm` tag is configured in the monitoring system. An agent type does not produce alarms.
+Severity comes from the class table, not from the problem, or a trigger editor could raise `page` for the farm. The monitoring system of a task's own tenant is a trusted source (D-82): a route task on a catalog trigger gets no `untrusted_seen` and records its source as `monitor`; a trigger outside the catalog sets the flag (INJ-13).
 
-## Hold
+**Bots read monitoring.** The `monitor` plugin is read-only ([MON-6](../conformance/rules.md#MON-6)) and answers only about nodes of the task tenant's catalog; plugin code checks this, not the model.
 
-### What a hold is
+| Tool | Returns | Untrusted |
+|---|---|---|
+| `monitor/problems` | problems with `triggerid`, class and item from the catalog, resource, severity, state | no |
+| `monitor/maintenance` | maintenance windows | no |
+| `monitor/item_history` | numeric history and trends; a text item gets `item_not_numeric` | no |
+| `monitor/item_text` | text and log item values | yes, source `monitor_item_text` |
+| `monitor/problem_comments` | comments by people and bots | yes, source `monitor_comment` |
 
-A hold (`Hold`) is a recorded object: a scope, effects from a closed list, a reason, a deadline `until` (or no deadline, until release) and an author (HLD-1). Like any record, a hold belongs to one tenant (TEN-1): a hold on the scopes `farm` and `seat` is a record of the service tenant `farm`, a hold on any other scope is a record of the tenant of its scope. While a hold is active, C2 at every check point (PRM-3) denies everything it forbids, and does so before the rights formula, as a non-waivable ban (PRM-2). The model gets a short "no permission" refusal (PRM-8), the full reason is written to the audit. A hold deletes nothing and does not change manifests. It expresses an emergency stop, a tenant suspension, a worker quarantine, an urgent plugin recall, a schedule pause and stopping bots on a machine during a maintenance window: there are no separate switches for these. The life of a hold is described in `spec/lifecycles/hold.md`.
+**Services and scripts.** Bots start, stop and restart services on their tenant's catalog machines ([MON-8](../conformance/rules.md#MON-8), D-67), and run monitoring system scripts on their tenant's nodes ([MON-10](../conformance/rules.md#MON-10)). The catalog declares the managed services per machine (`services[]`: `name`, `unit`, `control` from `start`, `stop`, `restart`, `via: host` or `via: monitor` with `scripts`, `no_card`) and the allowed scripts (`monitor_scripts_allowed: [{scriptid, name, hosts}]`). `no_card` defaults to `[restart]` and may never contain `start` or `stop` (D-74).
 
 ```yaml
-# P2 hold.set: the request body; the core writes the id, author, source and time
+# tenants/demo/catalog.yaml (fragment)
+spec:
+  hosts:
+    - id: web1
+      monitor_host: web1.example.org
+      monitor_scripts_allowed:
+        - {scriptid: "7", name: nginx-cache-clear, hosts: [web1]}
+        - {scriptid: "9", name: app-api-restart, hosts: [web1]}
+      services:
+        - {name: nginx, unit: nginx.service, control: [restart, start, stop], via: host}
+        - {name: app-api, control: [restart], via: monitor, scripts: {restart: app-api-restart}}
+    - {id: db1, monitor_host: db1.example.org}
+    # core1.example.org cannot appear here: it is a farm node (DEP-11)
+  monitor_triggers:
+    - {triggerid: "23801", class: disk_free, item: "31044"}
+```
+
+The role manifest grants the permission (`service_control: [nginx]`, `monitor_scripts: [nginx-cache-clear]`); a bot may touch the intersection of catalog and role. An initiator also needs their own capability `service.control:<service>` (D-73); `system` tasks need an explicit line in `system-ops`, the farm manager in `farm-manager-ops` (APR-18). A person with the capability can write `/service restart nginx`; the same tool runs.
+
+The model chooses only from closed lists (`service/control {service, verb}`, `monitor/script_run {resource, script}`); code takes the machine, unit and script id from the catalog. `via: host` uses the OS mechanism `unit` (`spec/bindings/os/systemd.md`) with an access rule `apply` generates from the catalog (DEP-4). Scripts go as a `monitor_script` delivery: the adapter checks the node and that the `scriptid` is in the list the monitoring system gives its account (`ext.monitor.scripts.v1`), runs it once and returns the outcome code; the output lies in the task journal as untrusted text. A restart or script goes without a card under an audit record `service_grant`; start and stop go with a card (APR-3, APR-7); a task that has seen untrusted text hands any of them to a person (INJ-15, D-70).
+
+Guards, which the catalog may tighten: 6 actions per hour per service or node script and 30 per tenant, then `service_rate_limited` and `alarm.service.control.rate`; one operation per service or node at a time; holds give `denied(held)`; code verifies the service 2 minutes after a stop or restart. Every action leaves an audit record, a journal entry and a code note `[botaru <bot_id>]` (template `service_control_done`) on the related open problem.
+
+**Bot notes (v0.2).** A role with `outputs: [monitor_note]` may add a note of up to 1000 characters to a problem on its own tenant's node (MON-7, D-64). The monitoring system is read by people outside the tenant, so a note has the ceiling `summary`, passes redaction and the outgoing secret check (INJ-4, INJ-11) and the tenant canary check (TEN-5); at most 10 notes per hour per tenant. A note decides nothing: acknowledging, closing, severity and silence stay with people.
+
+**Maintenance windows (v0.2).** People set a window in the monitoring system; the farm then stops its own bots on that machine ([MON-9](../conformance/rules.md#MON-9)). The adapter polls the maintenance status of catalog nodes every `maintenance_poll_s` (60 s by default, at most 300) and sends `ext.monitor.maintenance.v1` with `until` = poll time plus two intervals; it does not compute window schedules, which would rebuild the monitoring system's scheduler (D-100). The core sets a `host` hold with `no_tool` and `pause_action`, reason `maintenance`, author `contain_auto`, and each later poll moves `until` forward. Reading tools are held too, because people work on the machine. Pending approvals wait instead of being canceled: windows are set by people who are not farm principals, and must not become a way to cancel approvals; `hosts[].maintenance_hold: true` gives `no_action` instead. Slots that need the machine are skipped with `held`. The hold ends at most two poll intervals after the window or at `hold.release`, after which the same window sets no new hold. Before v0.2 a person sets it by hand.
+
+**Installation without a monitoring system.** A production farm can run without one, even on a single server (`examples/deploy/single.yaml`). The core then delivers alarms itself as the code text `alarm_notice` to the tenant admins, with `page` repeating every 30 minutes until `incident.ack` and no escalation ([MON-13](../conformance/rules.md#MON-13)); the watchdog polls `health`; backups go encrypted to external storage; the E5 parts (export, problems, the plugin, scripts, notes, windows) are absent; and there is no external audit witness, which `doctor` names as the price. Adding a monitoring system later means declaring the profile and the adapters, and `alarm_notice` stops.
+
+### Alarms
+
+An alarm is an event `alarm.<name>.vN` produced only by code: the core or a `job` worker (INJ-7). Text from logs, messages and model answers can neither raise nor suppress one. All alarm data follows `spec/model/event-data/alarm.schema.json` ([OBS-6](../conformance/rules.md#OBS-6)):
+
+```yaml
+alarmkey: "disk.free.low:db1"   # name + subject id
+state: firing                   # firing | resolved
+severity: page                  # info | warn | page
+subject: {kind: resource, id: db1}
+values: {free_pct: 7}           # numbers and enums only
+```
+
+An alarm lives in episodes (`spec/lifecycles/alarm.md`): `firing` opens one, `resolved` closes it, `seq` counts changes. A repeated `firing` only increments `repeat_count`: a once-a-minute check gives one event and one export, not sixty an hour. An installation has one path of alarms to people: export to the monitoring system with profile `monitor`, core delivery of `alarm_notice` without it (MON-1). Farm channels never carry alarms to people otherwise, and there are no alarm routes or rights to receive alarms.
+
+Alarms raised by operations code:
+
+| Alarm | When | Rule |
+|---|---|---|
+| `alarm.worker.stale` | a worker unseen for two long-poll periods | OBS-4 |
+| `alarm.store.free.low` | store volume below the soft threshold | CAP-5 |
+| `alarm.erasure.overdue` | an erasure request open past its deadline | RET-7 |
+| `alarm.provider.spend_cap` | the provider refused on the spend cap | CAP-2 |
+| `alarm.hold.auto` | the core set an auto-stop | HLD-6, HLD-7, CAP-4, HLD-9 |
+| `alarm.health.urgent_age`, `.delivery_share`, `.loop_tick` | a health indicator past its threshold | OBS-9 |
+| `alarm.backup.overdue`, `alarm.backup.restore_check_overdue` (`warn`) | without profile `monitor`: no good backup report for 26 hours, or no good restore check for 8 days, or a failed one | RET-8 |
+| `alarm.spend.unreconciled` (`warn`) | a restore completed with `--spend-pending`; daily limits are halved meanwhile | RET-6 |
+| `alarm.spend.reconcile_overdue`, `alarm.spend.estimate_drift` (`warn`) | no reconciliation for `spend.reconcile_overdue_days` (35), or the daily sum drifts from the provider's | BUD-10 |
+| `alarm.monitor.export_stalled` (`warn`) | export failing for over 15 minutes | MON-11 |
+| `alarm.incident.unhandled` (`page`) | no operation and no P2 `incident.ack` within `page_if_unhandled_after` | MGR-7 |
+| `alarm.manager.breaker` (`page`) | the farm manager seat safeguard tripped | MGR-14 |
+| `alarm.disk.free.low`, `alarm.disk.fill.rate`, `alarm.monitor.problem` | a monitoring problem rechecked by code | MON-5 |
+| `alarm.service.control.rate` (`warn`, `page` for a stop) | a service or script action hit the limit | MON-8, MON-10 |
+
+Other parts raise their own alarms by the same schema, for example `alarm.task.unclaimed` (DSP-8), `alarm.task.stalled` (CNT-4) and `alarm.manager.absent` (MGR-2); the farm manager's incident catalog opens incidents on code alarms (`docs/farm-manager.md`). A new alarm kind is a `job` task type emitting `alarm.<name>.vN` by the common schema; the export happens by itself, and alerting on the new tag is configured in the monitoring system. An agent type does not produce alarms.
+
+### Hold
+
+**What a hold is.** A hold (`Hold`) is a recorded object: a scope, effects from a closed list, a reason, a deadline `until` (or none) and an author ([HLD-1](../conformance/rules.md#HLD-1)). It belongs to one tenant (TEN-1): holds on `farm` and `seat` are records of `farm`. While it is active, C2 denies what it forbids at every check point, before the rights formula, as a non-waivable ban (PRM-2, PRM-3). A hold deletes nothing and changes no manifest. Emergency stop, tenant suspension, worker quarantine, urgent plugin recall, schedule pause and maintenance stop are all holds; there are no other switches. Its lifecycle is in `spec/lifecycles/hold.md`.
+
+```yaml
+# P2 hold.set: the request body; the core writes id, author, source and time
 scope: {kind: tasktype, tenant: demo, name: report.daily.v1}
 effects: [no_enqueue, no_claim, cancel_running]
 reason: runaway_loop                # from reasons.yaml
 until: "2026-10-07T18:00:00Z"       # or null: until release
 ```
 
-### Scopes and effects
+**Scopes and effects** are closed lists in `spec/model/holds.yaml`.
 
-Scopes and effects are closed lists in `spec/model/holds.yaml`. The scopes `schedule` and `governance` appear in v0.2; the other scopes and effects of this section exist from v0.1.
-
-| Scope | What it covers | Who sets it | Version |
+| Scope | Covers | Who sets it besides the operator | Version |
 |---|---|---|---|
-| `farm` | the whole farm | only the operator (`farmctl`), including with the command `farmctl hold farm` | v0.1 |
-| `tenant` | one tenant | the operator; a tenant person with `hold.set:<scope>` | v0.1 |
-| `role`, `tasktype` | a role or a task type in a tenant | the operator; a tenant person with `hold.set:<scope>`; an auto-stop; the holder of the farm manager seat | v0.1 |
-| `worker` | one worker (quarantine) | the operator; a tenant person with `hold.set:<scope>`; the holder of the farm manager seat | v0.1 |
-| `plugin`, `action` | a plugin or an action in a tenant | the operator; a tenant person with `hold.set:<scope>` | v0.1 |
-| `channel` | a tenant channel | the operator; a tenant person with `hold.set:<scope>` | v0.1 |
-| `host` | a machine from the catalog | the operator; a tenant person with `hold.set:<scope>`; from v0.2 a monitoring maintenance window (MON-9) | v0.1 |
-| `resource` | a catalog resource | the operator; a tenant person with `hold.set:<scope>`; the holder of the farm manager seat | v0.1 |
-| `bot_group`, `bot` | a bot group or one bot | the operator; a tenant person with `hold.set:<scope>`; the holder of the farm manager seat | v0.1 |
-| `seat` | the farm manager seat | only an operator with `admin:farm` (kill switch, MGR-15); the seat safeguard by code (MGR-14) | v0.1 |
-| `governance` | one governance case (its pause) | a tenant person with `admin:governance` in the case's tenant (through P2) | v0.2 |
-| `schedule` | one schedule | the operator; a tenant person with `hold.set:<scope>`; an auto-stop (CAP-4) | v0.2 |
+| `farm` | the whole farm | nobody: operator only, also `farmctl hold farm` | v0.1 |
+| `tenant` | one tenant | a tenant person with `hold.set:<scope>` | v0.1 |
+| `role`, `tasktype` | a role or task type | that person; an auto-stop; the farm manager seat holder | v0.1 |
+| `worker` | one worker (quarantine) | that person; the seat holder | v0.1 |
+| `plugin`, `action`, `channel` | a plugin, action or channel of a tenant | that person | v0.1 |
+| `host` | a catalog machine | that person; from v0.2 a maintenance window (MON-9) | v0.1 |
+| `resource`, `bot_group`, `bot` | a catalog resource, a bot group or a bot | that person; the seat holder | v0.1 |
+| `seat` | the farm manager seat | operator with `admin:farm` only (MGR-15); the seat safeguard (MGR-14) | v0.1 |
+| `schedule` | one schedule | that person; an auto-stop (CAP-4) | v0.2 |
+| `governance` | one governance case | a person with `admin:governance` in its tenant (GOV-14) | v0.2 |
 
-| Effect | What it forbids | Where it is checked | Version |
-|---|---|---|---|
-| `no_enqueue` | new tasks in the scope, except core tasks for erasure and export: `rejected(held)` | P1 `enqueue`, P3 `enqueue_child`, routes, schedules | v0.1 |
-| `no_claim` | dispatch of work of the scope | P1 `claim` | v0.1 |
-| `no_message` | sending bot messages (`rejected(held)`) and wake-ups; entries that the attempt accumulated are dropped at `complete` (`discarded(held)`); reading inboxes is allowed | message sending in P1 and P3, `complete` | v0.1 |
-| `cancel_running` | running attempts: they get `cancel_requested`, their handles are revoked, the attempt ends with `held` without being spent; `claim` does not dispatch a task under such a hold | the answer to `heartbeat` (FEN-4), P1 `claim` | v0.1 |
-| `no_tool` | tool calls: `denied(held)`, the toolhost does not get the call, including a call already waiting in `queued` | P3 `tools/call`, handing a call to the toolhost | v0.1 |
-| `no_action` | new `request_action` calls and decisions on pending ones; pending approvals become `canceled(held)` with `card_update` | P3, P1 `decide` | v0.1 |
-| `no_delivery` | deliveries to the scope: `withheld`, except messages to admins about the hold itself | the `delivery` loop | v0.1 |
-| `no_control` | control operations of the seat holder | C1 `control.apply` | v0.1 |
-| `pause_action` | new `request_action` calls; pending approvals are not canceled but wait: the deadline is extended by the time they were pending under the hold, by at most 7 days in total, the card carries a pause mark (`card.paused`), decisions get `held` until the hold ends; a person sets it on any scope with approvals, a maintenance window on a host; `no_action` wins (HLD-8) | P3, P1 `decide`, the `approval-expiry` loop | v0.2 |
+| Effect | Forbids | Version |
+|---|---|---|
+| `no_enqueue` | new tasks in the scope (`rejected(held)`), except core tasks for erasure and export | v0.1 |
+| `no_claim` | dispatch of work of the scope | v0.1 |
+| `no_message` | sending bot messages and wake-ups; entries accumulated by an attempt are dropped at `complete` (`discarded(held)`); reading inboxes is allowed | v0.1 |
+| `cancel_running` | running attempts: `cancel_requested` in the heartbeat answer, handles revoked, attempt ends `held` without being spent | v0.1 |
+| `no_tool` | tool calls: `denied(held)`, including a call still `queued` | v0.1 |
+| `no_action` | new `request_action` and decisions on pending ones; pending approvals become `canceled(held)` | v0.1 |
+| `no_delivery` | deliveries to the scope: `withheld`, except messages to admins about the hold | v0.1 |
+| `no_control` | control operations of the seat holder | v0.1 |
+| `pause_action` | new `request_action`; pending approvals wait, their deadline extended by the paused time (at most 7 days), the card marked paused; `no_action` wins ([HLD-8](../conformance/rules.md#HLD-8)) | v0.2 |
 
-### How a hold works
+**How a hold acts.** From the next check, without `apply` or restart ([HLD-3](../conformance/rules.md#HLD-3)). A write call in `queued` hit by `no_tool` or `no_action` gets `denied(held)` and its approval ends `exec_failed(held)`, so nothing runs late (APR-7). A write call the toolhost already took is not revoked: a write to the world that started cannot be recalled, and its outcome is recorded (ORC-11). While a hold with `cancel_running` or `no_claim` covers a task, `claim` does not dispatch it, or the task would loop between dispatch and cancel. Campaigns in the scope pause in the same transaction (ORC-11); a script step rejected by a hold becomes `failed(held)`, and from v0.2 a hold on a run pauses the whole run (SCR-10). A person's hold on a `bot` moves its identity to `suspended` until the last such hold ends (IDN-9); a seat holder's hold on a bot only delays its tasks (MGR-9). An urgent recall of a plugin, action, task type or channel is a hold first and a git removal later, so it does not wait for review.
 
-A hold takes effect from the next check, without `apply` and without restarts (HLD-3). An enqueue in the scope gets `rejected(held)`, `claim` does not dispatch work of the scope, a tool call gets `denied(held)`, pending approvals of the scope move to `canceled(held)` with a card update, deliveries get `withheld`. A write call in `queued` whose scope is hit by a hold with `no_tool` or `no_action` gets `denied(held)`, and its approval ends with `exec_failed(held)`: nothing is executed late (APR-7). Actions with services and monitoring scripts (`service/control`, `monitor/script_run`) go without a card, but a hold with `no_tool` or `no_action` on their scope rejects them the same way: `denied(held)` (MON-8, MON-10). A hold does not revoke a write call that the toolhost has already taken, and its outcome is recorded: a write to the world that has started cannot be recalled (ORC-11).
+**Who sets and releases.** A hold only narrows and cannot become a path to extra rights ([HLD-2](../conformance/rules.md#HLD-2)). Holders of `hold.set:<scope>` set holds in their own tenant through `farmctl` or a direct chat command (PRM-15); the rights are privileged and granted only through `farmctl` (PRM-13); holds on `farm` and `seat` are operator operations (PRM-14). Code sets holds by an auto-stop rule, as the first measure of an incident class (MGR-7) and from v0.2 by a maintenance window, all with author `contain_auto` and the source written next to it. The model, a worker, a route, a schedule and a coordinator bot never set or release holds.
 
-With `no_message`, sending bot messages in the scope gets `rejected(held)`, entries that an attempt accumulated are dropped at its `complete` (`discarded(held)`), wake-ups in the scope are not enqueued, and reading inboxes is allowed. With `cancel_running`, running attempts learn about the cancelation in the heartbeat answer, their P3 and P4 handles are revoked, and the attempt ends with reason `held` and is not spent. While a hold with `cancel_running` or `no_claim` on the task's scope is active, `claim` does not dispatch the task: otherwise the task would be dispatched and canceled in a loop.
+The farm manager seat holder with the current epoch sets and releases its own holds through `control.apply` (MGR-9), within limits code computes (MGR-14, MGR-37): targets from the list built for the task's basis, at most `hold_ttl_max` (2 hours), no protected targets, never more than a quarter of a role (that becomes a `control` card for people). Overruns (`control_rate_limited`), 5 refusals in 10 minutes or a spend jump trip the safeguard: a `no_control` seat hold that only an operator with `admin:farm` releases. A replaced holder's holds live at most 15 more minutes (MGR-1); when an incident stops the seat they live out their deadline (GOV-22). Details are in `docs/farm-manager.md`.
 
-Campaigns in the scope pause in the same transaction as the hold (ORC-11); a paused campaign without a decision for longer than `escalate_paused_after` (default 2 hours) gives a notice to the tenant admins (`docs/coordination.md`). A script step whose enqueue the hold rejected or whose pending approval the hold canceled becomes `failed(held)`, and the run continues by its `on_failure`; from v0.2 a hold that touches a run pauses the whole run in the same transaction, and only the initiator resumes it after the hold is released (SCR-10). A hold on scope `bot` set by a person moves the bot identity to `suspended` (IDN-9): it has no tasks or reviews, and the release or expiry of the last such hold returns it to `active` (`spec/lifecycles/identity.md`). A hold by the holder of the farm manager seat on the same bot only delays its tasks and changes neither the identity state, nor its eligibility for promotion (MGR-9).
-
-An urgent recall of a plugin, action, task type or channel is done with a hold, and the removal from git follows later with an ordinary `apply`: this way the recall does not wait for review and rollout.
-
-### Who sets and releases
-
-A hold only narrows: it cannot become a path to extra rights (HLD-2). A hold is set by:
-
-- the operator, on any scope, through `farmctl` (P2 `hold.set`) or, for the whole farm, with the command `farmctl hold farm`. A hold on the scopes `farm` and `seat` and its release are operator operations only (PRM-14);
-- a person of their own tenant with the right `hold.set:<scope>`, on scopes of their tenant, through `farmctl` or with a command in a direct chat with the bot (PRM-15);
-- the core by an auto-stop rule from the closed list `spec/model/holds.yaml` and as the first measure of an incident class from git (MGR-7);
-- from v0.2 the core by a maintenance window in the monitoring system: a hold on scope `host` with reason `maintenance`; each poll of the maintenance status moves its `until` forward, so it ends at most two poll intervals after the window (MON-9).
-
-A code hold inside a tenant (an auto-stop, the first measure of an incident, a maintenance window hold) is recorded with the author `contain_auto`; the source (rule, incident class, `system:monitor`) is written next to it. The model, a worker, a route and a schedule neither set nor release holds. A coordinator bot does not set holds and does not ask for them: people or code set a mass stop.
-
-The only exception: the current holder of the farm manager seat with the current epoch (the number of the holder change, which grows with every change) sets and releases holds with `control.apply` operations (MGR-9). Its holds are limited: the target only from the list that code built for the task's basis; the deadline is no longer than `hold_ttl_max` (2 hours); it can release only its own holds, not holds of people and not auto-stops. The targets do not include workers and types that write the series used to stop it, and its holds do not delay control tasks. It does not stop protected targets (types that raise alarms, backups, system tasks and everything an incident class refers to) with a hold, but asks people with a card. Code computes the seat's limits (MGR-14, MGR-37). An attempt to exceed a rate limit, for example more than 3 quarantines per hour, gets `control_rate_limited` and itself trips the safeguard. An operation after which more than a quarter of a role, rounded down, would be under holds is not applied by the core, which creates a `control` card for people; such a referral does not count as a refusal. The safeguard also trips on 5 `control.apply` refusals within 10 minutes and on a spend jump: in one transaction, a `no_control` hold on the seat, an epoch increment and the cancelation of the holder's running attempts in all tenants; only an operator with `admin:farm` releases such a hold (MGR-14). A holder with an old epoch gets a refusal. When the holder is replaced, its holds live no longer than 15 minutes (MGR-1), and when the seat is stopped by an incident they live out their deadline, no longer than 2 hours, and there are no new ones (GOV-22).
-
-A hold is released by a principal with the right `hold.release` on its scope and not below the hold's author in rank (HLD-2). The ranks from top to bottom: operator, tenant admin (a tenant person with `hold.release`), holder of the farm manager seat. The right `hold.release` by itself does not allow releasing any hold: otherwise a `demo` admin who has it would release a suspension for overspending set by the operator and continue spending money.
+Release requires `hold.release` on the scope and a rank not below the author's: operator, then tenant admin, then the seat holder. `hold.release` alone is not enough; otherwise a `demo` admin could lift a suspension for overspending.
 
 | Who set the hold | Who releases it |
 |---|---|
-| the operator (any reason, including `suspended` at a tenant suspension, `compromised` at a secret revocation, SEC-6) | only the operator |
-| code inside the tenant, author `contain_auto` (auto-stop HLD-6, HLD-7, CAP-4, HLD-9; first measure of an incident MGR-7; maintenance window MON-9) | the tenant admin or the operator |
-| a tenant person with `hold.set:<scope>` | the tenant admin or the operator |
-| the holder of the farm manager seat (`control.apply`) | the holder itself (only its own holds), the tenant admin through P2 `control.revert` with `incident`, the operator |
-| the seat safeguard, or the operator on the scopes `farm` and `seat` | only the operator (holds on `farm` and `seat` are operator operations, PRM-14) |
+| the operator (including `suspended`, and `compromised` at a secret revocation, SEC-6) | only the operator |
+| code inside the tenant (`contain_auto`) or a tenant person with `hold.set` | the tenant admin or the operator |
+| the seat holder | itself (own holds), the tenant admin through P2 `control.revert`, the operator |
+| the seat safeguard, or anyone on `farm` and `seat` | only the operator |
 
-A hold on scope `governance` (from v0.2) is set and released by a person with `admin:governance` in the case's tenant (GOV-14). The rights `hold.set:<scope>` and `hold.release` are privileged and granted only through `farmctl` (PRM-13), like other decision rights. A hold set by code is released only by a person of at least the required rank; otherwise it ends at its deadline. The core does not release holds by itself: not on closing an incident, not on clearing an alarm, not on deleting a maintenance window. C2 checks the rank at the `hold.release` check point and answers `forbidden`.
+The core never releases a hold by itself: not on closing an incident, clearing an alarm or deleting a maintenance window. A code hold nobody releases ends at its deadline.
 
-### Auto-stops
+**Auto-stops.** Code sets holds only by rules from a closed list; a new rule needs an ADR of the skeleton, because a hold changes availability for everyone. Each raises `alarm.hold.auto`. Injected text can trigger an auto-stop but not bypass it: a deliberate fail-safe.
 
-An auto-stop is a hold that code sets by a rule from a closed list. A new auto-stop rule is added only by an architecture decision record of the skeleton (ADR), because a hold changes availability for everyone.
+| Trigger | Hold | Rule |
+|---|---|---|
+| the channel refused twice within an hour to send a role's message because it found a secret (INJ-11) | `role`, `no_delivery`, no deadline | [HLD-6](../conformance/rules.md#HLD-6) |
+| the seat holder exceeded its limits | `seat`, `no_control`, no deadline | MGR-14 |
+| tenant spend in a sliding hour above `budgets.hour_eur` (default `month_eur`/100) | `role` with `no_claim` on every agent role, reason `runaway_spend`, one hour; `job` tasks run | [HLD-7](../conformance/rules.md#HLD-7) |
+| the last 3 slots of a schedule ended `attempts_exhausted` or `runs_exhausted` (v0.2) | `schedule`, `no_enqueue`, reason `schedule_failing` | [CAP-4](../conformance/rules.md#CAP-4) |
+| 3 confirmed incident links to one role's work in 90 days (v0.3) | `role`, `no_action`, reason `role_incidents` | [HLD-9](../conformance/rules.md#HLD-9) |
 
-| Rule | What it sets | Registry rule | Version |
-|---|---|---|---|
-| the channel refused twice within an hour to send a message of one role because it found a secret in it (INJ-11) | a `role` hold in the tenant with `no_delivery`, without a deadline | HLD-6 | v0.1 |
-| the operation limits of the farm manager seat are exceeded | a `seat` hold with `no_control`, without a deadline | MGR-14 | v0.1 |
-| the tenant's spend within a sliding hour is above its hourly limit `Tenant.spec.budgets.hour_eur` (default `month_eur`/100, BUD-1) | a `role` hold with `no_claim` on every agent role of the tenant, reason `runaway_spend`, author `contain_auto`, deadline one hour; `job` tasks without a model run | HLD-7 | v0.1 |
-| the last `K` = 3 slots of a schedule in a row ended with `attempts_exhausted` or `runs_exhausted` (D-100) | a `schedule` hold with `no_enqueue`, reason `schedule_failing`, author `contain_auto`, without a deadline; later slots are skipped with `held` | CAP-4 | v0.2 |
-| 3 confirmed links of incidents to the work of one role within 90 days: an attribution to a change the role proposed (GOV-13) or a script link to a run the role drafted (TRN-7); the same for every role (D-114) | a `role` hold with `no_action`, reason `role_incidents`, author `contain_auto`, without a deadline; draft acceptance rejects the role's drafts with actions or service control with `held` | HLD-9 | v0.3 |
+A series of requests with a foreign tenant or foreign handles from one credential is not a hold but a move of the worker to `blocked` (TEN-2).
 
-Every auto-stop raises the alarm `alarm.hold.auto`. An injection in text can trigger an auto-stop but cannot bypass it: this is a deliberate fail-safe refusal.
+**Ready-made sets.**
 
-Example on `demo`: twice within an hour the channel did not send a message of role `ops-reader` because it found a token in it. The core sets a hold on scope `role` with `no_delivery`, reason `secret_in_outbound` and author `contain_auto`, without a deadline, and raises an alarm (HLD-6). Half an hour later `bob` revokes the leaked token, and the secret alarm moves to `resolved`, but the hold stays: the core does not release it. The answers of `ops-reader` are not delivered until `bob`, a `demo` admin with `hold.release` on this scope, checks the role and releases the hold with the P2 operation `hold.release`: he can release a `contain_auto` hold. Another example: at 14:00 `demo` has spent more than `hour_eur` within the hour; the core sets a `no_claim` hold on every agent role of `demo` with reason `runaway_spend` and `until` 15:00 (HLD-7). `bob` looks at the journal, finds a route in a loop, fixes it and releases the hold at 14:20 without waiting for the deadline.
-
-A series of requests with a foreign tenant or foreign handles from the same credentials is not a hold but a move of the worker to `blocked` (TEN-2).
-
-### Ready-made sets
-
-| What | How it is expressed |
+| What | Hold |
 |---|---|
-| tenant suspension | a `tenant` hold with reason `suspended` and the effects `no_enqueue`, `no_claim`, `no_tool`, `no_action`, `no_delivery` (P2 `tenant.suspend`, v0.2) |
-| worker quarantine | a `worker` hold with `no_claim` and `cancel_running` |
-| urgent plugin recall | a `plugin` hold with `no_tool` |
-| a bot token leaked | a `channel` hold with `no_delivery` and `no_enqueue`: outgoing messages are not sent, tasks from this channel's incoming messages are not enqueued |
-| a two-hour maintenance window for `db1` | people set the window in the monitoring system; from v0.2 the core sets by it a `host` hold whose `until` follows the polls and ends at most two poll intervals after the window, the effects `no_tool`, `pause_action` (pending cards are not canceled but wait; with `hosts[].maintenance_hold: true` there is `no_action` instead) and reason `maintenance`; schedules whose tasks depend on `db1` skip slots with reason `held`, without catching up (MON-9) |
-| suspected theft of the core key | a `farm` hold with `no_action` and `no_tool` |
+| tenant suspension (P2 `tenant.suspend`) | `tenant`, reason `suspended`, `no_enqueue`, `no_claim`, `no_tool`, `no_action`, `no_delivery` |
+| worker quarantine | `worker`, `no_claim`, `cancel_running` |
+| urgent plugin recall | `plugin`, `no_tool` |
+| a leaked bot token | `channel`, `no_delivery`, `no_enqueue` |
+| maintenance on `db1` | `host`, `no_tool`, `pause_action`, reason `maintenance` (from v0.2 set by the window) |
+| suspected theft of the core key | `farm`, `no_action`, `no_tool` |
 
-### Emergency stop of the whole farm
+**Emergency stop of the whole farm.** `farmctl hold farm` writes a `farm` hold directly to the store, without a running core and without a channel; `farmctl` on the core machine with core credentials counts as part of the core, and no other process reaches the store (DEP-8). A hold does not help when the core itself is compromised; for that there is an external stop (containers, bot token, provider keys), tested once on a test tenant before the first production one. Both are in the recipes.
 
-`farmctl hold farm` writes a hold on scope `farm` directly to the store, without a running core process and without a channel (HLD-1). This is possible because `farmctl` on the core machine with the core credentials counts as part of the core; other processes have no access to the store (DEP-8). So a hold can be set even when the core process hangs or the channel is unavailable. The hold does not help if the core itself is compromised. For that there is an external stop that does not need the core: stop the core containers, revoke the bot token at the channel's external system, disable the tenants' keys at the model provider. Its order is written in the recipes below and is tested once on a test tenant before the first production one.
+### Retention and erasure
 
-### Example on `demo`
+**Retention classes.** Every stored object kind and every store belongs to exactly one class ([RET-1](../conformance/rules.md#RET-1)); a schema declares it in `x-botaru-retention` and skeleton CI fails without it. Classes and defaults are in `spec/model/retention-classes.yaml`:
 
-A vulnerability was found in the `logs` plugin. The tenant admin `bob`, who has the rights `hold.set:plugin` and `hold.release` in `demo`, sets a hold with a command in a direct chat with the bot; the channel passes it to P2 `hold.set` on his behalf:
-
-```yaml
-scope: {kind: plugin, tenant: demo, name: logs}
-effects: [no_tool]
-reason: suspected_vulnerability
-until: null
-```
-
-The next `logs` call in any `demo` task gets `denied(held)`, the toolhost does not get the call, the model sees "no permission". The core writes a `hold.set` event and an audit record, and the hold is visible in `hold.list` and `status`. When the fixed plugin image is rolled out (the recipe "Update a plugin"), `bob` releases the hold with the P2 operation `hold.release`; the core writes `hold.released`.
-
-## Retention and erasure
-
-### Retention classes
-
-Every kind of stored object and every store belongs to exactly one retention class (RET-1). The schema of a stored object declares the class in `x-botaru-retention`; without it skeleton CI fails. An adapter that stores content declares the class in its sheet. The classes and their defaults are in `spec/model/retention-classes.yaml`:
-
-| Class | What is in it | Default period | How it is deleted |
+| Class | What is in it | Default period | Deleted |
 |---|---|---|---|
-| `content` | task bodies, artifacts, files, attachments, sessions, runtime transcripts, script run records, attempt journals (AUD-4) and other logs with content, the sink archive, the channel cache | 30 days; sessions of roles with `memory: none` 7 days; the attempt journal per `retention.journals` | one object at a time |
-| `memory` | memory records | until `forget`, the person leaving or the end of the tenant | only by an erasure request, with the C4 operation `erase` |
-| `metadata` | audit, transition journal, events, usage | 400 days | only by whole periods (a month) |
-| `tombstone` | tombstones and the erasure log: id, idempotency key hash, time, no content | while the tenant lives; after its deletion as `metadata` | by whole periods |
-| `observation` | points and rollups of observation series | points 14 days, rollups 93 days (OBV-4) | by whole periods |
+| `content` | task bodies, results, artifacts, files, attachments, sessions, transcripts, attempt journals, bot messages, sink archive, channel cache | 30 days; sessions of roles with `memory: none` 7 days | one object at a time |
+| `memory` | memory records | until `forget`, offboarding or the end of the tenant | only by an erasure request |
+| `metadata` | audit, transition journal, events, usage, decisions | 400 days | only by whole months |
+| `tombstone` | tombstones and the erasure log (ids, key hash, time) | while the tenant lives | by whole periods |
+| `observation` | series points and rollups | 14 and 93 days (OBV-4) | by whole periods |
 
-### Periods
+**Periods.** The `retention` loop deletes by period. In v0.1 it deletes only `content` and `observation` by the defaults ([RET-2](../conformance/rules.md#RET-2)); without this the store would grow until v0.2, and an operator at the CAP-5 threshold would have no right to clean up old sessions. From v0.2 the tenant sets `Tenant.spec.retention` within the class bounds (RET-9), and the loop deletes every class in every copy the farm keeps, no later than 24 hours after the period ([RET-10](../conformance/rules.md#RET-10)): C3 `prune`, C1 `file.purge` with corpus fragments (KNW-5) and cached tool output (PRM-12), `task.purge`, and E4 `purge` inside runtimes. A shorter `metadata` period applies only to records written after it, so a manifest edit cannot erase audit already written (D-108). Metadata is never edited row by row: the audit is append-only (AUD-3), and deleting `principal` and `Identity` rows de-identifies it without editing. A retired bot's seal does not extend periods (MEM-10); at the end of the seal its sealed data is erased by a request with reason `bot_retired` (MEM-9).
 
-Deletion by period is done by the background loop `retention`, and a minimal part of it exists already in v0.1 (RET-2): the loop deletes objects of the classes `content` and `observation` older than the default period from `spec/model/retention-classes.yaml`, and only those; in v0.1 metadata, tombstones and memory are not deleted by period, and anything earlier than its period is deleted only by a request (RET-7). Without this the store would grow until v0.2, and an operator whose core volume reached the CAP-5 threshold would formally have no right to clean up sessions older than 30 days. From v0.2 a tenant sets its periods in `Tenant.spec.retention` (RET-9): `classes` only for `content` (1 to 400 days), `memory` (30 to 3650 days; without it memory lives until `forget`) and `metadata` (93 to 3650 days), the bounds `min_days` and `ceiling_days` of `spec/model/retention-classes.yaml`; `files` (the file period, by which the core sets `expires_at` when a file is written, ART-1) and `journals` (the period of attempt journals; on a production tenant without this field the journal is disabled, AUD-4), both not longer than the tenant's `content` period. The manifest lint rejects anything else with `retention_period`. A shorter period reaches stored objects at the next loop run, except `metadata`: a shorter `metadata` period applies only to records written after the `apply` that set it, so a tenant admin cannot erase audit, decisions or spending already written by changing a manifest (D-108); a longer one never brings back an expired object. The loop deletes every class with a period no later than 24 hours after the period ends, in all copies that the farm keeps (RET-10): C3 records with the operation `prune`, files after `expires_at` with the C1 operation `file.purge` together with the fragments of corpora (KNW-5) and cached tool output (PRM-12), attempt journals, task content with `task.purge`, and sessions inside a runtime with E4 `purge`. Metadata and observation series are deleted only by whole periods, never by selective editing of a row: the audit is append-only (AUD-3). Deleting the `principal` and `Identity` rows anonymizes the audit without a single edit of its rows. The seal of a retired bot does not extend retention periods: from v0.2 the `retention` loop deletes its sessions and records whose class period ends earlier, even if the seal is still valid (MEM-10). Already from v0.1, at the end of the seal everything sealed of a retired bot is erased by an erasure request with reason `bot_retired` and the scope of the bot identity id, which the `identity` loop enqueues (MEM-9). The core cannot seal a session inside the runtime (`runtime_internal`), so such a request for it is enqueued at once, in the bot retirement transaction, with a list of session ids, and the runtime adapter deletes it with the E4 operation `purge`.
+**Tombstones.** Deletion does not free uniqueness ([RET-3](../conformance/rules.md#RET-3)): a deleted task leaves `(tenant, idempotency_key hash, task id)`, and a repeat of its key gets `gone`, not a new task (IDM-1). Ids are never reused. A tombstone stores no hash of an external id: a phone number or an email address can be found by brute force.
 
-### Tombstones
+**Erasure request and erasure log.** Any erasure before the class period goes only through an erasure request (`ErasureRequest`), already in v0.1 ([RET-7](../conformance/rules.md#RET-7)). Reasons:
 
-Deletion does not free uniqueness (RET-3). After a task is deleted, a tombstone remains (a record of ids only): `(tenant, idempotency_key hash, task id)`. The idempotency key stays taken while the tenant lives: a repeat of the key of a deleted task gets `gone`, not a new task (IDM-1). The ids of a tenant, principal, bot, task, `file_ref` and approval are not reused. A tombstone does not store a hash of the external id: a Telegram id and an email address can be found by brute force.
-
-### Erasure request and erasure log
-
-Any early erasure, that is, erasure before the class period, goes only through an erasure request (`ErasureRequest`), and this is true already from v0.1 (RET-7). There are seven kinds of early erasure; they are the request reasons:
-
-| Reason | Who creates the request | Scope |
+| Reason | Created by | Scope |
 |---|---|---|
-| `forget` | `/forget` by the owner (MEM-4); C4 `erase` executes it | record id or `(tenant, subject)` |
-| `offboarding` | a person leaving, P2 `principal.offboard`: an admin with `admin:people` for people without privileged groups, an operator through `farmctl` for people with them (PRM-14) | `(tenant, subject)` |
-| `bot_retired` | the core when a bot retires: in the retirement transaction for its sessions inside the runtime (`runtime_internal`, deleted by E4 `purge`), and the `identity` loop at the end of the seal for everything sealed (MEM-9) | at retirement, the list of ids of these sessions; at the end of the seal, the bot identity id (everything sealed of it) |
-| `tenant_delete` | tenant deletion, P2 `tenant.delete` (v0.2) | `(tenant)` |
-| `worker_revoke` | revocation of a worker whose runtime keeps sessions or memory itself, P2 `worker.revoke` (v0.2) | worker id (the store of its runtime) |
-| `subject_request` | a person's request to erase their data: an operator through `farmctl`; the core on an approved `/mydata erase` request or `erase_match` (v0.1, D-76, SEC-11) | `(tenant, subject)`; for `erase_match` the list of ids of the found objects |
-| `manual` | an operator through `farmctl` (P2 `erasure.request`) | `(tenant)`, `(tenant, subject)` or a list of object ids |
+| `forget` | `/forget` by the owner (MEM-4) | record id or `(tenant, subject)` |
+| `offboarding` | P2 `principal.offboard` | `(tenant, subject)` |
+| `bot_retired` | the core at retirement (sessions inside the runtime) and at the end of the seal | session ids; the bot identity id |
+| `tenant_delete` | P2 `tenant.delete` (v0.2) | `(tenant)` |
+| `worker_revoke` | P2 `worker.revoke` of a worker whose runtime keeps state (v0.2) | worker id |
+| `subject_request` | an approved `/mydata erase` or `erase_match`; an operator through `farmctl` | `(tenant, subject)` or found object ids |
+| `manual` | an operator, P2 `erasure.request` | `(tenant)`, `(tenant, subject)` or object ids |
 
-A request stores the scope, reason, author, time and the outcome for each store (`done`, `failed`, `not_applicable`), but no content. The scope comes from a closed list: `(tenant)`, `(tenant, subject)`, a bot identity id (everything sealed of it, only reason `bot_retired`), a worker id (the store of its runtime, only reason `worker_revoke`) or a list of object ids. The operator creates and retries requests (P2 `erasure.request`, `erasure.retry`), and the tenant admin also sees the requests of their tenant (P2 `erasure.status`, `erasure.list`). A request enters the erasure log before the first byte is deleted. The background loop `erasure` sends the request to the stores and collects the outcomes; while at least one store has not answered `done` or `not_applicable`, the request is open, and at its deadline it gives the alarm `alarm.erasure.overdue`. No process and no `farmctl` command can delete content directly, bypassing a request. Why: an operator who deleted a person's data by hand would otherwise bring it back with the very first restore from yesterday's backup. The erasure log is backed up separately from the store backups and no less often (RET-5), and after a restore it is replayed again (RET-6). The life of a request is described in `spec/lifecycles/deletion-request.md`.
+A request holds the scope, reason, author, time and the outcome per store (`done`, `failed`, `not_applicable`), never content. It enters the erasure log before the first byte is deleted; the `erasure` loop sends it to the stores and keeps it open, with `alarm.erasure.overdue` at the deadline, until every store answered `done` or `not_applicable`. The operator creates and retries requests (`erasure.request`, `erasure.retry`); tenant admins see their own (`erasure.status`, `erasure.list`). No process and no `farmctl` command deletes content around a request: data erased by hand would come back with the first restore from yesterday's backup. The erasure log is backed up separately and at least as often as the store, and replayed after a restore (RET-5, RET-6). The lifecycle is in `spec/lifecycles/deletion-request.md`.
 
-One request can name many ids. This way an approved `erase_match` (erasure of the data of a person who is not a principal of the farm, by an exact string) deletes all found objects with one request, and after a restore the erasure is replayed by the same ids; the string itself does not enter the erasure log (SEC-11).
+**Erase operations in the ports.** Every port that stores content erases by `(tenant)`, `(tenant, subject)`, bot identity id and object ids ([RET-4](../conformance/rules.md#RET-4)):
 
-Deletion by period is done by the `retention` loop without a request: after a restore it deletes what is overdue again anyway.
-
-### Erase operations in the ports
-
-Every port that stores content has an erase operation by the scope `(tenant)`, `(tenant, subject)`, a bot identity id and a list of object ids (RET-4); the table shows from which version:
-
-| Store | Erase operation | From version |
+| Store | Operation | From |
 |---|---|---|
-| sessions (C3) | `delete` of one session by id, `purge` by scope or list of ids | v0.1; scope `(tenant)` from v0.2 (RET-11) |
-| memory (C4) | `erase` | v0.1 (people's memory and the sealed memory of retired bots) |
-| runtime store with `runtime_internal` (E4) | `purge` through the adapter (RT-1, RT-2) | v0.1 |
-| files (C1) | `file.purge` | v0.1 (D-76) |
-| task content (C1) | `task.purge`: `body`, `result`, the bodies of deliveries and events with content; a tombstone remains | v0.1 (D-76, D-86 (8)) |
-| sink archive (E2) | `erase` | v0.1 (D-76) |
-| monitoring system (E5) | `erase`: the scope `(tenant)` removes this tenant's items from the farm template; `(tenant, subject)` answers `not_applicable`, because notes carry no personal data (class `summary` and redaction, MON-7); for a list of note ids the reference binding from the E5 sheet answers `failed` if the monitoring system API does not delete notes, the binding sheet declares this in advance, and such an outcome does not keep the request open | v0.1 (D-76) |
-| saved attachments and the channel cache (E1) | `erase`; in v0.1 the channel declares `driver.stores_content: none`, and the core itself writes its step with the outcome `not_applicable` with `basis: declared_none`, so the request does not hang because of E1 (D-86 (8)); from v0.2 a channel with `stores_content: attachments` or `cache` has `erase` and `match` (RET-11) | v0.2 |
-| runtime store without `runtime_internal` (E4) | `purge` through the adapter: working files, caches and logs with content of every agent worker that ran an attempt of the tenant (RET-11) | v0.2 |
+| sessions (C3) | `delete`, `purge` | v0.1; scope `(tenant)` v0.2 |
+| memory (C4) | `erase` | v0.1 |
+| files and task content (C1) | `file.purge`, `task.purge` (a tombstone remains) | v0.1 (D-76) |
+| sink archive (E2) | `erase` | v0.1 |
+| runtime with `runtime_internal` (E4) | `purge` (RT-1, RT-2) | v0.1 |
+| monitoring system (E5) | `erase`: `(tenant)` removes the tenant's template items; `(tenant, subject)` is `not_applicable`; for note ids a binding whose API cannot delete notes answers `failed`, declared in advance, which does not keep the request open | v0.1 |
+| channel attachments and cache (E1) | `erase`, `match`; until then a channel declaring `driver.stores_content: none` gets `not_applicable` with `basis: declared_none` written by the core (D-86 (8)) | v0.2 ([RET-11](../conformance/rules.md#RET-11)) |
+| any other runtime (E4) | `purge` of working files, caches and logs | v0.2 |
 
-Every operation returns the outcome `done`, `failed` or `not_applicable`, and the core writes it into the erasure request. An outcome `not_applicable` without a `basis` field (how the store made sure there is nothing to delete) is not accepted. Erasure work by subject carries `needles` (the person's handles and addresses), which the core keeps until the end of the erasure so that an edge store knows whom to delete. The adapter of every such port passes the `erasure` suite: without it, it does not conform to the skeleton. A content store without its own erase operation (in v0.1 the attachments and cache of channel E1, and runtimes without `runtime_internal`; both get their operations in v0.2, RET-11) answers the request with `failed`, and the request stays open with an alarm; `failed` from E5 for note ids does not keep the request (RET-4, RET-7). Erasure of a person's data at their request is part of v0.1 and cannot be waived for a tenant with `kind: production` (D-76).
+`not_applicable` without a `basis` is not accepted. Erasure by subject carries `needles` (the person's handles and addresses), kept until the end so an edge store knows whom to delete. Every such adapter passes the `erasure` suite. A content store without its own operation answers `failed`, and the request stays open with an alarm.
 
-### What erasure does not reach
+**What erasure does not reach.** The model provider keeps requests by its own terms, recorded in the provider binding and checked against the privacy block (GW-15). The conversation in the messenger cloud stays there; the channel binding records what the bot can delete. History in the monitoring system contains no data about people.
 
-Two things lie outside the farm, and a binding speaks about them, not a rule. The model provider keeps requests by its own terms, and the provider binding records its retention period. Correspondence in the cloud of the channel's external system stays there, and the channel binding records what the bot can delete and what it cannot.
+### Backups and restore
 
-### Example on `demo`
+**A backup is production.** It holds content, so it follows the rules of a production machine ([RET-5](../conformance/rules.md#RET-5), DEP-1): encrypted, operator-only, not on the core machine but on a farm machine `backup1` (DEP-11) or in external storage (`backup.target: external`, D-88). For external storage the backup is encrypted on the core machine with `backup.key_ref`, which the storage does not have, and the storage credentials can only write new objects; a production installation without a second machine must do this (`backup_external_required`) and runs its restore check on a temporary VM. A backup lives no longer than the longest `content` period plus the backup window, so erased data leaves backups by itself. The skeleton does not choose a backup method or count.
 
-The person `carol` asks to erase her data in tenant `demo` with the command `/mydata erase` (SEC-11, v0.1); `bob` with `admin:people` approves the card, and the core creates an erasure request with scope `(demo, carol)` and reason `subject_request`; an operator can create the same request through `farmctl` (P2 `erasure.request`). The core writes the request to the erasure log, and the `erasure` loop deletes her sessions in C3, memory records in C4, files in C1 (`file.purge`) and the sink archive E2 (`erase`). In v0.1 channel E1 has no erase operation yet; if it declared `driver.stores_content: none` in `hello`, the core itself closes its step with the outcome `not_applicable` with `basis: declared_none` (D-86 (8)). A channel that keeps attachments or a cache and has no erase operation answers `failed`, the request stays open, the operator sees it in `erasure.status`, and an alarm reminds about it at the deadline. A week later the store is restored from a backup taken before the request; the core replays the erasure log before readiness, and the data of `carol` is deleted again. From v0.2 `carol` herself gets an extract of her data with the command `/mydata export` (SEC-10), and E1 `erase` closes the request completely.
+**After a restore**, before readiness, the core ([RET-6](../conformance/rules.md#RET-6)):
 
-```yaml
-# ErasureRequest record (sketch)
-id: er_01JB8M
-scope: {tenant: demo, subject: 'human:p_01JB3Q7N0M2V8XK4DGT5RZP9WC'}   # carol
-reason: subject_request
-author: {kind: principal, id: 'human:p_01JB3Q7N0M2V8XK4DGT5RZP9WA'}   # bob
-created_at: "2026-10-07T09:12:00Z"
-state: running
-results: {c3_sessions: done, c4_memory: done, c1_files: done, e2_archive: done, e1_channel: not_applicable}   # v0.1: the channel declared stores_content: none, basis: declared_none
-```
+1. increments the store epoch, part of every lease token and handle, so all work and handles of the old epoch get `fenced` (FEN-2);
+2. moves `pending` approvals to `canceled(restored)` and an `executing` approval whose write call was `queued` or `leased` to `exec_unknown`; actions are not repeated (APR-7);
+3. replays the erasure log from its separate backup (MEM-4);
+4. answers `not_ready` to `claim` and `enqueue` and starts no model calls;
+5. waits until the spend gap since the backup is filled with `spend_reconciled` lines from the provider's report (BUD-10). If the report cannot be had in time, `restore.complete --spend-pending` makes the core ready with the gap marked open, `alarm.spend.unreconciled` and halved daily limits until `spend.reconcile` closes it.
 
-## Backups and restore
+The restore completes by P2 `restore.complete`, or by the core itself when it sees the erasure log backup is ahead of the store. What is lost is normal: channel updates accepted after the backup moment (people repeat them), pending approvals (requested again), and schedule slots outside their catch-up window.
 
-### A backup is a production perimeter
-
-A backup holds content: task bodies, bot memory, audit. So it follows the rules of a production machine (DEP-1): it is encrypted, accessible only to the operator and stored not on the core machine: on a separate farm machine `backup1` from `farm_hosts` (RET-5, DEP-11) or, in a single-server installation, in external storage (`backup.target: external`, D-88). A backup goes to external storage encrypted on the core machine before sending, with the key `backup.key_ref`, which the storage does not have, and the storage credentials can only write new objects; for a production installation without a second machine this is mandatory, and the deployment lint rejects anything else (`backup_external_required`). Such an installation does the restore check (RET-8) on a temporary VM or a machine outside the farm. The lifetime of any backup is no longer than the longest period of class `content` plus the backup cycle window, so deleted data leaves the backups by itself. How many backups to keep and how often to take them is decided by the deployment within these limits: with a `content` period of 30 days this is, for example, daily backups for the last 30 days and none older. The skeleton does not choose a backup method. The erasure log (erasure requests and tombstones, metadata only) is backed up separately from the store backups and no less often.
-
-### What the core does after a restore
-
-A restore from backup breaks three non-waivable rules if nothing is done: an approval would be executed a second time (APR-7), lease numbers would roll back and a token from the "future" would match a newly issued one (FEN-2), a deleted memory record would come back (MEM-4). So after a restore, before the core is ready (RET-6):
-
-1. the store epoch grows. The epoch is a number that is part of the lease token `(epoch, work_id, attempt, worker_id)` and of handles. All work and all handles of the previous epoch get `fenced`;
-2. all pending approvals (`pending`) move to `canceled(restored)` with a card update; an approval in `executing` whose write call was in `queued` or `leased` gets `exec_unknown` together with it; actions are not repeated (APR-7);
-3. the erasure log is replayed again from its separate backup, including manual erasures through `farmctl`;
-4. P1 `claim` and `enqueue` answer `not_ready`, P4 starts no model calls;
-5. the core does not become ready until the spend gap since the backup moment has been filled with `spend_reconciled` lines from the provider's report (BUD-10): the operator's reconciliation process brings the report through P2. If waiting for the report is not possible (night, the provider's report will appear in hours, the person with the reporting key is on vacation), the operator completes the restore with the operation `restore.complete --spend-pending`: the core becomes ready, the spend gap is marked open, code keeps the alarm `alarm.spend.unreconciled` (`warn`), and the daily limits of all tenants are cut in half until `spend.reconcile` reconciles the gap; after reconciliation the alarm closes and the limits return.
-
-The restore is completed by P2 `restore.complete` or by the core itself if at startup it sees that the separate erasure log backup is ahead of the store.
-
-### What is lost
-
-This is normal and is written here, not in a rule. Channel updates accepted after the backup moment have already been acknowledged by the core, and the external system will not send them again: these requests are lost, people will repeat them. Approvals that were waiting for a decision are canceled: the actions have to be requested again. Schedules catch up missed slots within their catch-up window. Provider spend between the backup moment and the failure is not recorded in the backup; the core fills it in with `spend_reconciled` lines from the provider's report before readiness, and after that the usage reconciliation keeps it (BUD-10).
-
-### Backup reports and the restore check
-
-Backups are taken by an external backup process, and the core itself knows nothing about them. So after every store backup, every erasure log backup and every restore check, the backup process must report to the core with the P2 operation `backup.report` using its narrow key (RET-8):
+**Backup reports and the restore check.** Backups are taken by an external process the core knows nothing about, so after every store backup, erasure log backup and restore check that process reports with P2 `backup.report` and its narrow key ([RET-8](../conformance/rules.md#RET-8)):
 
 ```yaml
 # P2 backup.report (sketch)
@@ -396,309 +352,353 @@ kind: backup                      # backup | restore_check
 started_at: "2026-10-07T02:00:00Z"
 finished_at: "2026-10-07T02:14:00Z"
 ok: true
-size: 41234567890                 # bytes
-location_id: store-daily          # id of the storage location from the deployment configuration; no paths or addresses
+size: 41234567890
+location_id: store-daily          # id from the deployment configuration; no paths
 ```
 
-A backup whose restore has not been checked does not count as a backup. At least once a week the backup process or the operator restores a fresh backup on a separate test bench that follows the same rules as the backup, runs the `restore/` check set and P2 `doctor` on it, and reports `backup.report {kind: restore_check}`. The age of the latest backup of every location, the date and outcome of the last check are visible in `status` and `doctor`; `doctor` fails the check if the erasure log backup is older than the store backup. With profile `monitor` the monitoring system watches the backup age and the restore check result from the output of the backup tool with the farm template, and the core raises no backup alarm. Without profile `monitor` the `health` loop counts by the latest reports: no successful `backup` report for a storage location for longer than 26 hours gives the alarm `alarm.backup.overdue`; no successful `restore_check` report for longer than 8 days gives the alarm `alarm.backup.restore_check_overdue`; a report with `ok: false` gives the same alarm at once (RET-8). This way a backup script that silently failed in July is noticed the next day, not at restore time.
+A backup whose restore was never checked does not count. At least weekly a fresh backup is restored on a test bench under the same rules, the `restore/` check set and `doctor` run there, and a `restore_check` report follows. With profile `monitor` the monitoring system watches backup age from the backup tool; without it the `health` loop raises `alarm.backup.overdue` after 26 hours without a good backup and `alarm.backup.restore_check_overdue` after 8 days without a good check. A backup script that silently failed in July is noticed the next day, not at restore time.
 
-## Capacity and dependency failure
+### Capacity and dependency failure
 
-### Tenant limits
-
-Money does not hold all work: `job` tasks and calls without a model spend no money, and euro limits do not restrict them, while a route in a loop or a mistake in a schedule enqueues tens of thousands of tasks a day and fills the shared disk. So already from v0.1 the core limits a tenant's work with counters (CAP-1):
+**Tenant limits.** Money does not hold all work: `job` tasks spend nothing, while a route in a loop can enqueue tens of thousands of tasks a day and fill the shared disk. So from v0.1 the core limits each tenant with counters below the farm ceilings ([CAP-1](../conformance/rules.md#CAP-1)):
 
 ```yaml
 # tenants/demo/tenant.yaml (fragment)
 spec:
-  kind: production              # production tenant (APR-9)
+  kind: production
   timezone: Europe/Berlin       # IANA name (TIM-2)
-  attention:
-    noncritical_per_day: 10     # non-urgent decision cards per person per day (APR-15, v0.2)
-    cards_per_tenant_hour: 20   # action cards after untrusted text per tenant per hour (APR-2)
-  delegated_groups: [researcher] # groups that the tenant admin grants by themselves (PRM-16)
-  farm_manager:                 # the farm manager for this tenant (D-77)
-    enabled: true               # false: the farm manager reads no data, no review and no lens
-  budgets:                      # money (BUD-1); hour_eur drives the HLD-7 auto-stop
-    month_eur: 200
-    day_eur: 10                 # default month/20
-    hour_eur: 2                 # default month/100
-  operator_access:
-    debug_journal: notify       # deny | notify | allow: the operator reading journals through admin:debug
-  retention:                    # retention periods (RET-9, v0.2; in v0.1 the class defaults)
-    classes: {content: 30d, metadata: 400d}   # content 1-400 days, memory 30-3650 days, metadata 93-3650 days
-    files: 30d                  # file period, used to set expires_at (ART-1); not longer than content
-    journals: 7d                # attempt journal; on a production tenant without the field it is disabled (AUD-4)
-  limits:                       # only below the farm ceilings (CAP-1)
+  budgets: {month_eur: 200, day_eur: 10, hour_eur: 2}   # hour_eur drives HLD-7
+  operator_access: {debug_journal: notify}
+  retention:                    # v0.2 (RET-9); v0.1 uses class defaults
+    classes: {content: 30d, metadata: 400d}
+    files: 30d
+    journals: 7d
+  limits:
     max_queued: 5000            # tasks in submitted
-    max_enqueue_per_hour: 2000  # enqueues within a sliding hour from all sources
-    max_storage_bytes: 21474836480   # 20 GiB in bytes: total space ceiling for files and artifacts
-    max_file_bytes: 209715200        # 200 MiB: one file (ART-4, v0.2)
-    max_task_files_bytes: 1073741824 # 1 GiB: all files of one task (ART-4, v0.2)
+    max_enqueue_per_hour: 2000
+    max_storage_bytes: 21474836480   # 20 GiB of files and artifacts
+    max_file_bytes: 209715200        # one file (ART-4, v0.2)
+    max_task_files_bytes: 1073741824 # all files of one task (ART-4, v0.2)
 ```
 
-The farm ceilings are set by the deployment binding; a tenant can only lower them. 20% of the places in `max_queued`, but no fewer than 2, are reserved for tasks of priority classes 1 and 2 (a person's question, a card, something urgent, DSP-5): service tasks (schedules, reviews, analysis, peer reviews) and tasks of classes 3-5 cannot take the reserve and get a refusal when `max_queued` minus the reserve is taken, while a person's question gets a refusal only when the whole `max_queued` is taken. Otherwise a provider key broken on Friday would fill the queue overnight with schedule tasks with a daily `deadline`, and in the morning the question of `alice` "what is wrong with the site" would get `over_capacity`; schedule slots are skipped while the provider circuit is open (`skip_if_waiting`, event `schedule.skipped`, TIM-3). Exceeding a limit at enqueue gives `rejected(over_capacity)` with `retry_after_s` and does not take the idempotency key, so the sender will retry the same request later. A schedule task skips the slot with the event `schedule.skipped(over_capacity)`. A person sees the canned code text "overload", an external program gets an RFC 9457 answer with the `Retry-After` header. The farm refuses early and only to whoever exceeded: other tenants work as usual. From v0.2 the file limits are there too: `max_file_bytes` holds the size of one file, `max_task_files_bytes` the size of all files of one task; exceeding gives a refusal, not a silent truncation of the file (ART-4). The size of a task tree from one root is held by `max_tree_tasks` (ORC-8), and the number of running tasks per type and group by the dispatcher's `max_running` (DSP-7).
+20% of `max_queued` (at least 2 places) is reserved for priority classes 1 and 2 (DSP-5): otherwise a provider key broken on Friday would fill the queue overnight with schedule tasks, and Monday's urgent question would get `over_capacity`. Exceeding a limit gives `rejected(over_capacity)` with `retry_after_s` and does not take the idempotency key; a schedule skips the slot with `schedule.skipped(over_capacity)`. Only the tenant that exceeded is refused. Tree size and running tasks are held by `max_tree_tasks` (ORC-8) and `max_running` (DSP-7).
 
-### Storage headroom
+**Storage headroom.** A full store volume stops the whole farm and leaves nowhere even to write the incident, so the core measures free space and keeps headroom ([CAP-5](../conformance/rules.md#CAP-5)). Below the soft threshold, enqueues of classes 3 to 5 are refused and `alarm.store.free.low` is raised; the number is also in the `health` answer, in case the export cannot be written. Below the hard threshold P1 answers `not_ready` to everything except `heartbeat`, `complete`, `fail` and `release`, while P2 and hold operations still work. The headroom is not part of any tenant's `max_storage_bytes`.
 
-If the store volume fills up, the whole farm stops, and there will be nowhere even to write an incident about the disk: writing an incident is a transaction into the same volume. So the core itself measures the free space of the store volume and keeps headroom (CAP-5):
+**Space quotas on volumes.** `Catalog.spec.volumes` lists each catalog volume with its `writers` and a `quota_bytes` per writer (MGR-33). The core shows whether every writer has a quota and their sum is below the `disk_full` threshold; only then can a "disk full" incident stop the farm manager seat. Example: on `res:ctd1:data` (4 TB) `demo` has 2 TB, sink `archive` 0.5 TB, pipeline `ctd-qc` 1 TB; 3.5 TB is below the 3.8 TB at which `disk_full` fires. The used-space series is `dataorigin: code`, read from the monitoring history ([CAP-6](../conformance/rules.md#CAP-6)); the core enforces no quota and raises no volume alarm itself.
 
-| Threshold | What the core does |
-|---|---|
-| below the soft one | enqueues of priority classes 3-5 get `rejected(over_capacity)`; alarm `alarm.store.free.low`; the free space number is part of the P2 `health` answer (MON-2), because a write to the store and the export of the alarm may no longer go through |
-| below the hard one | P1 answers `not_ready` to everything except `heartbeat`, `complete`, `fail` and `release`; P2 and hold operations work; P2 `health` answers "not alive" |
+**Refusal reasons.** Nothing but the task itself spends its attempt. Reasons of this section (the full list is in `docs/tasks-and-delivery.md`):
 
-The thresholds are set by the deployment binding. The store headroom is not part of any tenant's `max_storage_bytes`. The incident class "low space for the database" (`store_low`) in the farm manager's catalog relies on the alarm `alarm.store.free.low`; it reaches people through the monitoring system (MON-1), and the monitoring system also sees the space number in the `health` answer (MGR-38).
+| Reason | Retry | Outcome |
+|---|---|---|
+| `provider_unavailable`, `provider_rate_limited`, `provider_quota` | the core retries with pause and jitter; not dispatched while the circuit is open or the pair waits | `failed(deadline_exceeded)` |
+| `provider_config` | not by timer; waits for a fix | same, with an alarm |
+| `provider_spend_cap` | no | `failed`, alarm |
+| `service_rate_limited` | after `retry_after_s` | farm rate limiter: service actions, scripts, notes, cards |
+| `forbidden` | no | a refused right, including `hold.release` below rank |
+| `plugin_unavailable` | no; the model decides | a tool call error at once |
+| `over_capacity` | for the sender, after `retry_after_s` | `rejected` at enqueue |
+| `held` | no; a task canceled by `cancel_running` waits in `submitted` | `rejected`, `denied`, `canceled`, `withheld`, `discarded`, `exec_failed` |
+| `core_unavailable` | yes, without a pause | lease expired while the core was down (FEN-5) |
+| `not_ready` | after `retry_after_s` | the core is not ready |
+| `restored` | no | approvals canceled by a restore |
+| `schedule_time_invalid` | no | a backup schedule change that loses a slot (TIM-5) |
+| `gone` | no | key, `redrive` or `file.get` of deleted data |
 
-### Space quotas on volumes
+**Model provider failure.** A provider failure spends no attempts ([CAP-2](../conformance/rules.md#CAP-2)). A provider error is retried by one layer: the P4 client at most once, the runtime never, then the core retries the task with a pause up to 60 s plus jitter, so recovered capacity is not hit all at once (GW-12). On a series of failures P4 opens the circuit of the (workspace, model pool) pair and the dispatcher stops dispatching to it (GW-11). Only runs where the model answered count toward the run limit (FEN-3). A fallback provider around P4 is forbidden (DEP-5): degradation goes by refusal and alarm.
 
-The farm store is not the only disk that can fill up: pipelines, sinks and tenant tasks write to volumes of catalog machines, for example `res:ctd1:data`. The catalog declares volumes in `Catalog.spec.volumes` and links each volume with everyone who writes to it (`writers`: tenants, sinks, pipelines), and every writer on this volume has a space quota `quota_bytes` (MGR-33). At catalog approval and at `apply` of quotas, the core shows people for each volume whether every writer has a quota and whether the sum of the quotas is below the alarm threshold of class `disk_full`. On this depends whether a "disk full" incident can stop the farm manager seat: only then can the disk be filled only by those the farm manager could watch (MGR-33). The used space of each volume is written by a code observation series (`dataorigin: code`): a `job` role reads it from the monitoring system history (the monitoring agent measured the number; the model takes no part in the series). By this series the core checks that the growth was visible for two hours before the incident (MGR-34).
+**Delivery rate and dead work.** From v0.2 a channel driver declares a `rate`, and extra deliveries wait in `planned` without spending attempts (CAP-3). Dead work is a task `failed` or a delivery `dead` with `attempts_exhausted`, `runs_exhausted` or `deadline_exceeded` (DLV-4); there is no separate dead letter queue. From v0.2 P2 `deadletter.list` groups it by (tenant, type, reason), so one broken check does not hide everything else (CAP-4). After the `content` period `redrive` answers `gone`.
 
-| Volume `res:ctd1:data`, 4 TB | Quota |
-|---|---|
-| tenant `demo` (task results) | 2 TB |
-| sink `archive` | 0.5 TB |
-| pipeline `ctd-qc` | 1 TB |
+### Time
 
-The class `disk_full` fires when less than 5% is free, that is, more than 3.8 TB is used. The sum of the quotas, 3.5 TB, is below that, all writers have quotas, and the MGR-33 condition for this volume is met. If another sink without a quota wrote to the volume, `apply` would show the volume as not meeting the condition, and a `disk_full` incident on it would not stop the farm manager seat. The quota on the volume itself is a quota of the volume's file system, the sink or the pipeline per the deployment settings, and the alarm on a filling volume comes from the monitoring system's template; the core neither enforces quotas nor raises a volume alarm of its own, it only reads the free space series (CAP-6) and shows whether the declared quotas meet the condition.
+The only clock for deadlines is the store clock ([TIM-1](../conformance/rules.md#TIM-1)): leases, `deadline`, approval and handle deadlines, budget windows, slots, hold and retention periods. P1 answers carry remaining seconds, so a worker with a shifted clock works correctly. Contracts use UTC; a time zone is an IANA name and exists only in `Tenant.spec.timezone` (budget windows, texts for people) and `Schedule.spec.timezone` ([TIM-2](../conformance/rules.md#TIM-2), BUD-4).
 
-### Refusal reasons
-
-The reason registry `reasons.yaml` distinguishes a task failure from a failure of an external dependency or an overload. The rule is simple: nothing but the task itself spends its attempt. Below are the reasons of this section; the full list of task and delivery reasons is described in `docs/tasks-and-delivery.md`.
-
-| Reason | Spends the attempt | Retry | Outcome | Rule |
-|---|---|---|---|---|
-| `provider_unavailable` | no | yes: the core retries the task with a growing pause and jitter until the `deadline`; while the circuit is open the task is not dispatched | `failed(deadline_exceeded)` | CAP-2, GW-11, GW-12 |
-| `provider_rate_limited` | no | yes, after `retry_after_s` | same; this is the model provider's rate limiter | CAP-2 |
-| `service_rate_limited` | no | yes, after `retry_after_s` | a refusal by the farm's rate limiter: actions with services and scripts (MON-8, MON-10), notes (MON-7), cards, wake-ups; for actions with services the alarm `alarm.service.control.rate` | MON-8, MON-10 |
-| `forbidden` | no | no | a refusal of a right: `hold.release` not by rank, a service or script outside the role's right, a node of another tenant | HLD-2, MON-8, MON-10 |
-| `provider_quota` | no | yes: the dispatcher does not dispatch the task while its pair (tenant workspace, model pool) waits for the provider rate limit | same | CAP-2, GW-10 |
-| `provider_config` | no | not by timer: the task waits for the provider setting to be fixed, the pair's circuit is open | same; an alarm by code | CAP-2, GW-13 |
-| `provider_spend_cap` | no | no | `failed`; an alarm by code | CAP-2 |
-| `plugin_unavailable` | no | no: the core does not retry the call, the model decides itself | a tool call error at once, the task continues | OBS-10 |
-| `over_capacity` | no | yes for the sender, after `retry_after_s` | `rejected` at enqueue, the key is not taken | CAP-1, CAP-5 |
-| `held` | no | no; a task whose attempt `cancel_running` canceled waits in `submitted` until the hold is released | `rejected`, `denied`, `canceled`, `withheld`, `discarded`; for the approval of a write call `exec_failed` | HLD-3 |
-| `core_unavailable` | no | yes, the task returns to `submitted` without a pause | the lease expired while the core was not working and was not extended after readiness | FEN-5, OBS-8, LCY-6 |
-| `not_ready` | no | yes, after `retry_after_s` | a P1 answer while the core is not ready | OBS-8, RET-6, CAP-5, LCY-6 |
-| `restored` | no | no | `canceled` for approvals after a restore | RET-6 |
-| `schedule_time_invalid` | no | no | `rejected` for a proposal to change a backup schedule if its slot disappears on at least one day (v0.2) | TIM-5 |
-| `gone` | no | no | the answer to the key of a deleted task, to `redrive` of a deleted body and to P1 `file.get` of a deleted or expired file (v0.2) | RET-3, CAP-4 |
-
-### Model provider failure
-
-A provider failure spends no attempts (CAP-2). With `provider_unavailable`, `provider_rate_limited` and `provider_quota` the task waits and is retried with a pause until its `deadline` and ends with `failed(deadline_exceeded)`, not `attempts_exhausted`. A provider error is retried by one layer: the provider client in P4 at most once, the runtime does not retry, and after that the core retries the task with a pause up to a ceiling (default 60 s) and random jitter, so that after the provider recovers the waiting tasks do not arrive all at once (GW-12). On a series of failures P4 opens the circuit of its pair (workspace, model pool) and answers `provider_unavailable` at once without contacting the provider, and the dispatcher does not dispatch tasks that need this pair (GW-11). Only runs where the model answered count toward the task's run limit (FEN-3). A provider configuration error (key revoked, model withdrawn) gives `provider_config`: it does not spend the attempt, is not retried by timer, gives an alarm, and the task waits for a fix until its `deadline` (GW-13). `provider_spend_cap` (the provider refuses until access is restored) is not retried: the task ends with `failed`, code raises the alarm `alarm.provider.spend_cap`. A fallback provider bypassing P4 is forbidden (DEP-5): degradation goes by refusal and alarm, not by bypassing the gateway.
-
-Example on `demo`: for forty minutes the model provider answers "overloaded". P4 opens the circuit, the `demo` tasks wait with a pause, attempts are not spent. Tasks with a 30-minute `deadline` end with `failed(deadline_exceeded)`, the others continue when the circuit closes again. No task ends with `attempts_exhausted`.
-
-### Delivery rate
-
-From v0.2 a channel driver declares a rate (`rate` per chat, per group and per bot), and the delivery loop respects it (CAP-3). Extra deliveries wait in `planned`; this is not a failure, and no attempt is spent. A driver without `rate` gets the farm ceiling. Folding many notices of one route to one recipient into one message is done by the route's `batch` mode.
-
-### Dead work
-
-Dead work is a task that ended with `failed`, or a delivery that ended with `dead`, with reason `attempts_exhausted`, `runs_exhausted` or `deadline_exceeded` (DLV-4); there is no separate dead letter queue. From v0.2 P2 `deadletter.list` groups it by (tenant, type, reason), so that one broken check once a minute does not hide everything else (CAP-4). A schedule that had `K` slots in a row end with `attempts_exhausted` is paused by an auto-stop: a hold on scope `schedule` with effect `no_enqueue`, and an alarm. The body of a dead task is `content`; after its period, `redrive` answers `gone`.
-
-## Time
-
-### One clock
-
-The only clock for farm deadlines is the store clock (TIM-1): leases, `start_by`, `deadline`, the approval deadline, the handle deadline, budget windows, schedule slots, hold and retention periods. P1 answers carry the remaining seconds (`lease_remaining_s`), and the absolute time in them is for reference. A worker with a clock shifted by 10 minutes works correctly.
-
-### UTC and time zones
-
-All times in contracts are in UTC in the `datetime` format (TIM-2). A time zone is an IANA name in the `tz` format of the registry `formats.yaml`, and it exists in only two places: `Tenant.spec.timezone` (budget windows and texts for people) and `Schedule.spec.timezone`. The budget windows "day" and "month" are counted in the tenant's time zone (BUD-4); a window boundary is a UTC instant, the same in the reserve, the charge and the refusal text.
-
-The schedule time zone is set now, before the first clock change (TIM-3). Without `Schedule.spec.timezone` the tenant's time zone applies. The time zone name is checked against the time zone database at `apply`, and an unknown name fails. A time zone inside a `cron` expression (`CRON_TZ`, `TZ`) is not allowed. A change of the time zone or of `cron` takes effect from the next slot after it is applied, and the slot key in UTC does not give a second run of an instant that has already run.
-
-### Slot and clock changes
-
-A schedule slot is a UTC instant with minute precision in the `schedule_slot` format of the registry `formats.yaml`, and the key of a slot task is `system:schedule:<name>:<slot>` (TIM-3, IDM-2). The slot format is part of the idempotency key: changing the format later would give a double run at the seam, so it is fixed in v0.1. Local time that does not exist at the switch to summer time is skipped with the event `schedule.skipped` and reason `dst_gap`; local time that happens twice runs once, at the first occurrence. Skipping a slot for any reason is the same event `schedule.skipped` with a reason from a closed list (`dst_gap`, `waiting`, `held`, `over_capacity`), and a skipped slot is not caught up. A schedule task must have a `deadline`: a schedule with a type without `deadline` fails `apply`. The field `skip_if_waiting` (default `true`) skips a slot with reason `waiting` while the task of the previous slot waits in `submitted` or the provider circuit of the needed model slot is open (TIM-3, `docs/task-language.md`).
+A schedule slot is a UTC instant with minute precision, and the slot task key is `system:schedule:<name>:<slot>` ([TIM-3](../conformance/rules.md#TIM-3), IDM-2). The slot format is part of the idempotency key, so it is fixed from v0.1: changing it later would run a slot twice at the seam. The time zone is checked against the database at `apply`; `CRON_TZ` inside `cron` is not allowed; a change applies from the next slot. Every schedule task type needs a `deadline`. A skipped slot is the event `schedule.skipped` with a reason (`dst_gap`, `waiting`, `held`, `over_capacity`) and is not caught up; `skip_if_waiting` (default `true`) skips while the previous slot's task waits or the provider circuit is open.
 
 ```yaml
 # tenants/demo/schedules.yaml (fragment)
-apiVersion: botaru/v1alpha1
 kind: Schedule
 metadata: {name: daily-report, tenant: demo}
 spec:
   cron: "30 2 * * *"
-  timezone: Europe/Berlin   # without the field the tenant's time zone applies
-  skip_if_waiting: true  # default: the slot is skipped with schedule.skipped(waiting) while the previous task waits
-  task: {type: report.daily.v1}   # the type has a deadline, otherwise apply rejects it (TIM-3)
+  timezone: Europe/Berlin
+  task: {type: report.daily.v1}   # the type has a deadline
 ```
 
-| Clock change in time zone `Europe/Berlin` | Local time | What the schedule above does |
-|---|---|---|
-| 2026-03-29, spring | 02:00 -> 03:00, 02:30 does not exist | the slot is skipped, event `schedule.skipped` with reason `dst_gap` |
-| 2026-10-25, autumn | 03:00 -> 02:00, 02:30 happens twice | one run at the first 02:30, which is 00:30Z; key `system:schedule:daily-report:2026-10-25T00:30Z` |
+| Clock change in `Europe/Berlin` | What this schedule does |
+|---|---|
+| 2026-03-29: 02:30 does not exist | skipped, `schedule.skipped` with `dst_gap` |
+| 2026-10-25: 02:30 happens twice | one run at the first, 00:30Z, key `system:schedule:daily-report:2026-10-25T00:30Z` |
 
-Daily tasks are better scheduled at a time outside the night window of clock changes.
+Daily tasks are better placed outside the night window of clock changes. From v0.2, before "Accept" on a bot's proposal to change a schedule, code checks it ([TIM-5](../conformance/rules.md#TIM-5)): an invalid expression gets no button, the card lists local times that disappear or repeat within a year, and a backup schedule that would lose a slot is `rejected(schedule_time_invalid)`. Maintenance windows are not computed ahead (D-100). Proposals are described in `docs/improvements.md`.
 
-### Schedule check before "Accept"
+### Tenants and people leaving
 
-A bot can propose to change the `cron`, the time zone or the pause of a schedule. From v0.2, before the "Accept" button of such a proposal, the core checks the new schedule with code (TIM-5). An expression or time zone that would fail `apply` gets no "Accept" button. The card shows the local times that will disappear or repeat at the clock changes of the time zone within a year; code finds them from the transition dates and does not list the slots. If a slot of a backup schedule (a type with `makes_backup: true`) disappears on at least one day, for example at a clock change, the proposal gets the refusal `rejected(schedule_time_invalid)`. The model takes no part in this check. Maintenance windows of the monitoring system are not computed a year ahead: that would rebuild the monitoring system's own window scheduler, and a slot inside a window is skipped when it comes (MON-9, D-100). How a proposal reaches the card and how its outcome is measured is described in `docs/improvements.md`.
+A tenant is declared in git as `tenants/<name>/tenant.yaml` and appears at `farmctl apply`. Its states `active`, `suspended`, `offboarding`, `deleted` are in `spec/lifecycles/tenant.md` ([LCY-1](../conformance/rules.md#LCY-1)); tenant operations are operator-only and never run from a channel (PRM-14). A suspension is a `tenant` hold with reason `suspended` that only the operator releases; data, credentials and the provider key are untouched. `tenant.offboard` revokes what lets the tenant spend and act; the core forgets the tenant's provider key, and revoking it and the workspace at the provider needs an organization admin key the core does not hold, so the answer prints that operator step (GW-3, D-42, D-103). `tenant.delete`, no earlier than the end of the export window (30 days by default), creates an erasure request with scope `(tenant)`, and a tenant with the same name is refused afterwards. Export (`tenant.export`, `principal.export`, v0.2) writes JSON Lines by the `spec/model` schemas only to a sink the operator names, never to a chat or the model ([LCY-2](../conformance/rules.md#LCY-2)).
 
-## Tenant lifecycle
+A principal goes through `active`, `off`, `offboarded` ([LCY-3](../conformance/rules.md#LCY-3)). An admin's `/off` deletes nothing and is reversible: it cancels the person's pending approvals (APR-6) and tasks (`canceled(person_inactive)`); schedules stay, and admins decide on them. `principal.offboard` (an admin with `admin:people`, or the operator for people with privileged groups) does the same, is final (`subject_closed` on any later operation), frees the person's channel identities for reuse and erases memory and sessions through an erasure request ([LCY-8](../conformance/rules.md#LCY-8), D-98). Core records name the person by `human:p_<ULID>` from the start, so nothing is rewritten: the name is deleted from the principal record and the audit keeps the opaque id (D-85). A person who returns gets a new principal; old rights do not come back (D-100).
 
-A tenant is declared in git with the file `tenants/<name>/tenant.yaml` and appears at `farmctl apply`; there is no separate command to add a tenant. It goes through four states (LCY-1); the transitions are described in `spec/lifecycles/tenant.md`. Tenant operations (`tenant.suspend`, `tenant.offboard`, `tenant.delete`, `tenant.export`) are operator operations and are not executed from a channel (PRM-14).
+### Workers and plugins
 
-In `active` the tenant works according to its rights and periods. In `suspended` there is no new work except core tasks for erasure and export, pending approvals are canceled, deliveries get `withheld` except messages to admins about the hold itself (HLD-3), and data, credentials and the provider key are not touched. In `offboarding` only export is allowed. In `deleted` content and memory are deleted, metadata lives until the end of its period, and the tenant id stays as a tombstone.
-
-A suspension (for example for non-payment) is a `tenant` hold with reason `suspended`, and a return is the release of this hold, and only the operator can release it: a tenant admin with `hold.release` gets `forbidden` (HLD-2). Offboarding (P2 `tenant.offboard`) revokes everything with which the tenant could spend money and act: every tenant has its own workspace and key at the model provider (GW-3, D-42). The core forgets the key and stops using it; revoking the key and the workspace at the provider needs an organization admin key, which the core does not hold, so `tenant.offboard` prints it as an operator step (D-103). Deletion (P2 `tenant.delete`) is possible no earlier than the end of the export window, by default 30 days; it creates an erasure request with scope `(tenant)` across all stores, and `apply` of a tenant with the same name is rejected after that. The audit of a deleted tenant lives for the `metadata` period without a link to people and is then deleted in full.
-
-Export of a tenant or a person (P2 `tenant.export`, `principal.export`, v0.2) is an operator operation (PRM-14). It enqueues a core task and writes the result only to a sink named by the operator, in JSON Lines by the schemas of `spec/model` with their `$id` (LCY-2). A person asks for a copy of their data with the command `/mydata export`, and an approved request enqueues the same export task (SEC-11). Export never goes to a chat or to the model: it contains raw data. A person's export contains only objects where they are the initiator and objects that belong to them. Declared objects are not exported: they are in git.
-
-### A person leaving
-
-A principal (a person or an external program, D-47) goes through the states `active`, `off`, `offboarded` (LCY-3). An admin's `/off` deletes nothing and is reversible: in one transaction the person's pending approvals (APR-6) and tasks (`canceled(person_inactive)`) are canceled. Schedules have no creator in their record, so they stay; the tenant admins decide on them. Leaving for good (P2 `principal.offboard`: an admin with `admin:people` for people without privileged groups, an operator through `farmctl` for people with them, PRM-14) does the same, writes the state `offboarded`, which no operation leaves (`principal.on`, `principal.off`, `principal.set_identity` and `grant` answer `subject_closed`), deletes the links of the person's channel identities, so that the same external identity can later be given to a new principal, and additionally deletes the person's memory and sessions through an erasure request (LCY-8, MEM-4, RET-7, D-98). From v0.2 leaving also publishes the event `principal.offboarded`; only an opaque id remains in the audit. In core records (task, audit, usage, grants, campaign, erasure) the person is recorded by this principal id `human:p_<ULID>` even before leaving, so the records are not rewritten after leaving: the audit keeps the same id, and the name is deleted from the principal record (D-85). A person who returns gets a new principal, and the old rights do not come back; there is no return window (D-100).
-
-## Workers and plugins
-
-### Worker drain and revocation
-
-A worker in `draining` (P2 `worker.drain` with a `deadline`) gets no new work and finishes the running work until `drain_deadline`. From the deadline the heartbeat answer asks for release (`release_requested`), the worker lets the work go through `release`, and the attempt is not spent; a lease of a draining worker that expires after the deadline ends with `worker_drain` without spending an attempt either (LCY-4). The work version is pinned at the task type level (`.vN`), not at the worker: attempts are short, a retry can go to a new image, so the image must understand all `.vN` from the `claims` of its role. At the revocation (P2 `worker.revoke`) of a worker whose runtime keeps sessions or memory itself, the store of its profile is cleaned through the adapter by an erasure request with reason `worker_revoke` and the scope of the worker id (RET-7).
-
-### Worker port version window
-
-The core accepts the current and the previous major version of P1 (LCY-7). A worker outside the window gets `version_unsupported` at `hello`, not errors in the middle of work. This way the core and the workers are upgraded at different times.
-
-### Plugin update
-
-From v0.2 a plugin is updated without the toolhost moving to `blocked` (LCY-5). During the transition `source.accepted` in the plugin manifest lists up to two pairs (image digest, `tools/list` fingerprint), both matching the manifest's `tools`, and `hello` passes with either; an `apply` that removes the old pair makes a toolhost with the old image `blocked`. The model always sees the tool descriptions of the manifest. Deprecation and sunset of a plugin follow the general manifest rule (MAN-7).
+A worker in `draining` (P2 `worker.drain`) gets no new work and finishes until `drain_deadline`; then the heartbeat answer asks for `release`, and the attempt is not spent ([LCY-4](../conformance/rules.md#LCY-4)). The work version is pinned at the task type (`.vN`), not at the worker, so a new image must understand every `.vN` in its role's `claims`. `worker.revoke` of a worker whose runtime keeps sessions or memory cleans it by an erasure request with reason `worker_revoke`. The core accepts the current and the previous major P1 version; a worker outside gets `version_unsupported` at `hello`, so core and workers upgrade at different times ([LCY-7](../conformance/rules.md#LCY-7)). From v0.2 a plugin manifest's `source.accepted` lists up to two (image digest, `tools/list` fingerprint) pairs during an update, and `hello` passes with either (LCY-5); the model always sees the manifest's tool descriptions.
 
 ```yaml
 # tools/logs/tool.yaml (fragment)
 source:
   image: registry.example/tools/logs@sha256:<digest>
   accepted:
-    - {image: "registry.example/tools/logs@sha256:<digest>", tools_fingerprint: "sha256:<digest>"}   # current pair
-    - {image: "registry.example/tools/logs@sha256:<digest>", tools_fingerprint: "sha256:<digest>"}   # new one, for the transition
+    - {image: "registry.example/tools/logs@sha256:<digest>", tools_fingerprint: "sha256:<digest>"}   # current
+    - {image: "registry.example/tools/logs@sha256:<digest>", tools_fingerprint: "sha256:<digest>"}   # new
 ```
 
-## Rolling out a new core version
+### Rolling out a new core version
 
-A core restart must not burn the attempts of running tasks. So a rollout goes like this (LCY-6, LCY-7):
+A core restart must not burn the attempts of running tasks ([LCY-6](../conformance/rules.md#LCY-6), LCY-7):
 
-1. The operator calls P2 `core.drain` with a deadline (an operator operation, PRM-14) and sets a maintenance window on the core node in the monitoring system for the duration of the rollout. The core stops dispatching work: `claim` answers `not_ready` with `retry_after_s`. Running attempts work until the deadline, started P4 calls run to the end, then the core stops.
-2. During the whole drain P2 `health` answers "not alive" with reason `draining` and the number `drain_until_s` (LCY-6, MON-2). The liveness trigger in the farm template does not fire within this period, so a forgotten maintenance window does not wake the on-call person; the window is needed in case the rollout takes longer than the drain deadline.
-3. A lease that expired while the core was not working and was not extended after its readiness ends with `core_unavailable` and does not spend the attempt: this is an infrastructure failure, not a task failure (FEN-5).
-4. While the store has `active` leases, the store schema changes only by addition: expand first, and contract in the next rollout.
-5. The new core starts and is not ready until the store has answered and all background loops have marked a tick (OBS-8). Workers with the previous major P1 version keep working.
-6. The core answers "alive" to P2 `health` again; the operator checks `doctor` and removes the maintenance window.
+1. The operator calls P2 `core.drain` with a deadline and sets a maintenance window on the core node in the monitoring system. `claim` answers `not_ready`; running attempts and started P4 calls finish; the core stops.
+2. During the drain `health` answers `reason: draining` with `drain_until_s`, and the liveness trigger stays quiet within it; the window covers a rollout that runs past the deadline.
+3. A lease that expired while the core was down ends with `core_unavailable` and is not spent (FEN-5).
+4. While `active` leases exist, the store schema changes only by addition: expand now, contract in the next rollout.
+5. The new core is not ready until the store answers and every loop has ticked (OBS-8); workers with the previous P1 major version keep working.
+6. `health` says "alive" again; the operator checks `doctor` and removes the window.
 
-A window on the core node does not set farm holds: it is a farm node, not a resource of a tenant's catalog (MON-9, DEP-11).
+A window on the core node sets no farm hold: it is a farm node, not a catalog resource. A rollout without `core.drain` interrupts running attempts, but expired leases still do not spend them.
 
-If the core is rolled out without `core.drain`, running attempts are interrupted, but leases that expired during the downtime still do not spend attempts (FEN-5).
+## People's data
+
+The farm handles people's messages, files, questions and names in logs. This part collects what the farm owes them and what it gives the organization to meet its own obligations under data protection law. The four obligations every installation must be able to show are: **erasure on request**, **retention by period**, **the notice "you are talking to a bot"** with the privacy notice, and **a recorded legal basis and terms for the model provider**. Erasure at a person's request is part of v0.1 and cannot be waived on a tenant with `kind: production` (D-76); the copy of one's data arrives in v0.2. How the data is protected (redaction, the untrusted flag, audit) is in `docs/permissions.md`.
+
+### What the farm stores about people
+
+A principal is whoever acts inside one tenant: a person, an external program or `system`; a person in two tenants is two records, counted separately.
+
+| What | Class | How it is erased |
+|---|---|---|
+| principal, identity, memberships | principal record | identity and name erased at offboarding; the audit keeps the opaque id (LCY-3, D-85) |
+| task bodies, results, artifacts, files, sessions, bot messages | `content` | by period or erasure request; sessions also by `forget` |
+| a person's memory; a retired bot's sealed memory | `memory` | `/forget`, offboarding, tenant period; end of the seal |
+| approvals, decisions, subject requests, audit, events, usage | `metadata` | whole months (AUD-3); the `erase_match` string is wiped after the search |
+| attempt journal, a person's connections (v0.2) | `content` | by period; connections also by revocation and offboarding (SEC-7) |
+| backups | classes of the originals | by backup lifetime (RET-5) |
+| at the model provider, in the messenger cloud | their terms | not by the farm |
+
+Names and external ids live only in principal and identity records, never in the audit, events, transition journal or usage (AUD-2). Erasing an identity de-identifies the journals without editing a line, and the hash chain stays intact (AUD-6).
+
+The farm does **not** keep a "personal data" class: personal data arrives as free text everywhere, and data classes (`summary` < `internal` < `raw_logs`) express sensitivity for permissions, so `pii` is rejected. It redacts addresses on the toolhost by default (IPv4 to /24, IPv6 to /48, email in full; INJ-4). It never makes a person the subject of a fact, finding, series, proposal, review or alarm (MEM-6, OBV-2): reports count people only as a group. It does not mix tenants (TEN-2, TEN-5, D-42), does not show the model secrets (SEC-1), and does not download links from messages (INJ-8).
+
+**The "personal data seen" flag.** To answer "where do you have my data", tasks, files, artifacts, bot messages, findings and memory items carry `personal_seen`, set only by the core on events code sees ([AUD-5](../conformance/rules.md#AUD-5)): redaction replaced an address, an attempt read a person's upload or another person's task, a forward or quote, a flagged object, or a source declaring personal data. The flag only grows, is inherited, and is invisible to the model. For another person, a forward or a quote the core also records whose data it is in `personal_subjects`, so erasure by `(tenant, subject)` reaches a person's data in other people's tasks.
+
+**What goes to the monitoring system.** Only numbers, `enum` values, tags and catalog ids; the `subject` tag is never a person (MON-1). Notes are the only text, and pass redaction and secret checks. The privacy block names the monitoring system as a recipient with ceiling `summary` (SEC-9); it is not a subprocessor, since it runs at the organization.
+
+### The legal basis and the model provider
+
+The tenant manifest's `privacy` block records as data what the organization decided ([SEC-8](../conformance/rules.md#SEC-8)):
+
+```yaml
+# tenants/demo/tenant.yaml (fragment)
+spec:
+  privacy:
+    purposes:
+      - {purpose: operations, lawful_basis: public_task}
+      - {purpose: assistance, lawful_basis: legitimate_interest}
+      - {purpose: incident_review, lawful_basis: legitimate_interest}
+    controller: {name: "Example Org", contact: privacy@example.org, agreement_ref: "contracts/demo-processing"}
+    subprocessors:
+      - provider: provider-a
+        agreement_ref: "contracts/provider-a-dpa"
+        region: region-a
+        retention: {mode: standard, max_days: 30}   # or {mode: zero}
+        terms: {training: false, human_review: abuse_only}
+    channels:
+      - {driver: messenger, third_party_storage: true, ceiling: internal}
+    recipients: [model_provider, messenger, monitoring]
+    notice_ref: "privacy/demo-notice"
+    notice_version: 3
+    dpia_ref: "dpia/demo-2026"          # an explicit none is allowed
+    ropa_ref: "ropa/demo"
+    subject_request_days: 30
+```
+
+Purposes come from the closed list `spec/model/processing-purposes.yaml`; each has a `lawful_basis` (`public_task` by default, `legitimate_interest`, `contract`, `consent`, `legal_obligation`). `consent` is allowed only where there is a consent record and a withdrawal operation. Only `incident_review` changes core behavior: switched off, the farm manager reads no content of the tenant and running read attempts are canceled in the same transaction (MGR-20); with `farm_manager.enabled: false` it does not work on the tenant at all (D-77).
+
+For a production tenant `apply` refuses an empty field: at least one purpose with a basis, a controller with contact and agreement, a subprocessor with agreement, region and retention mode, a line per channel, `dpia_ref` and `ropa_ref`. For any tenant every provider in `providers_allowed` must be a subprocessor, so a fallback model cannot become a new subprocessor without a decision; `recipients` must contain `monitoring`; a change of controller, purposes, subprocessors or recipients without a higher `notice_version` is refused. A test tenant still needs the subprocessor list, or the model is not called.
+
+Everything the model reads goes to the provider, so its terms are applied by the gateway P4 inside the core, never by the runtime: P4 sets the region from the subprocessor and rejects a region in a runtime request (GW-14, GW-1); a model profile whose provider retention is longer than `max_days`, that requires retention under `mode: zero`, or whose `provider_training` or `provider_human_review` contradicts `terms` fails `apply` (GW-15). This covers every P4 call, including the embedding model, fallback and evals. A region outside the EU needs a transfer basis `spec.model_transfer` (`scc`, `adequacy` or `consent` with a review date) in the tenant manifest (D-87 (2)). Each tenant has its own provider workspace and key (D-42).
+
+A channel with third-party storage has ceiling `internal` by default ([SEC-9](../conformance/rules.md#SEC-9)). A delivery above the ceiling gets `withheld(channel_ceiling)` and the person gets a code text without content; raw logs go to such a channel only if the tenant raised the ceiling in git. A person's `data:raw_logs` says who may see raw lines, the channel ceiling says where they may be sent.
+
+### The notice "you are talking to a bot"
+
+A person must know they are writing to a bot no later than the first contact. The channel driver declares how: a built-in marker of the messenger, or a code text before the first model text to every person and newly bound chat; until it is delivered, no model text goes to that recipient. A channel without the declaration fails `apply`. Model text carries `dataorigin: model` in records and an origin mark in artifacts, so people and code can tell it from code text (`docs/tasks-and-delivery.md`).
+
+Separately, the privacy notice `privacy_notice` is a code delivery at first contact ([SEC-13](../conformance/rules.md#SEC-13)), even when the messenger shows a bot badge: controller and contact, purposes and bases, recipients, subprocessors with region and retention, retention periods, a link to the full text and how to submit a request. It is assembled from the privacy block and the message catalog (key `notice.privacy`, DLV-9) and carries `notice_version`; a new version is delivered again at the next contact, and model text waits until it is. There is no separate report about a person's data (D-114): the notice says what is kept, and the copy gives the data itself.
+
+### Erasure on request and other rights
+
+A person sees their assistant's memory with `/memory` and erases an item for real with `/forget`, in every store including the runtime (MEM-4). `/mydata erase` and from v0.2 `/mydata export` create through P2 `principal.data_request` a `SubjectRequest` and a `subject_request` card for people with `admin:people` ([SEC-11](../conformance/rules.md#SEC-11)). People decide, because the controller may be obliged to keep part of the data; the model neither creates nor decides a request. States: `open`, `approved`, `rejected` (terminal), `done` (terminal), `failed` (retryable). Silence neither executes nor closes: at half of `subject_request_days` admins are reminded, at the deadline the operator is notified. The card shows counts per class, the deadline and what silence does.
+
+An approved erasure is one erasure request with reason `subject_request` and scope `(tenant, subject)` through every port: objects the person initiated or owns, objects with them in `personal_subjects`, group sessions whose key includes them, sealed memory of retired bots. Before erasing the identity, the core creates an `erase_match` request for their external ids and display name, to catch mentions without the flag. The person gets a code text with the outcome per store, including what lies outside the farm.
+
+A copy goes only to the person ([SEC-10](../conformance/rules.md#SEC-10)): `/mydata export` carries the person's public key, and the export task writes only to a sink with `export_only` and `recipient_ref: self`, encrypted with that key, so no admin or operator can read it. It leaves out objects whose `personal_subjects` name other people; a sink without `export_only` gets `sink_not_export`.
+
+**People who are not principals.** Someone unknown to the farm may be named in another person's task. An admin with `admin:people` creates `erase_match` through P2 `erasure.match` with an exact string, and a second person with the same permission approves (in a single-admin tenant a farm admin, D-86 (8)). The core searches all `content` and `memory` objects of the tenant and, through the ports' `match` operation, runtime transcripts, the sink archive and the channel cache; a store without `match` gives `failed`, not "nothing found", which is why a production role with a runtime-internal session needs an adapter with `match` (RT-1). The string is wiped right after the search and never enters audit, events or the erasure log, not even as a hash. Matching objects are erased whole, with tombstones; free text is not edited. Objects that appear later need a new request.
+
+From v0.2 per-person usage keeps its link to the person for 93 days only, then the `retention` loop strips `subject`, `task` and `root` and truncates time to the day: the only edit of a `metadata` row ([SEC-14](../conformance/rules.md#SEC-14), BUD-16).
+
+**Privacy report (v0.2).** P2 `tenant.privacy_report` gives the data protection specialist one summary per tenant (SEC-12): purposes, classes with periods and object counts (with `personal_seen`), subprocessors, channels with their ceilings, the DPIA and record links, open and overdue subject requests, and the count of incident review reads. Metadata only.
+
+**Reading content for incident review.** With `incident_review` on, only the farm manager's reader role reads, separate from the decision role; one attempt sees one tenant with that tenant's key (MGR-24); it never sees memory, sessions, sealed records or secrets; it opens a person's file only when code named that file as the incident subject (MGR-30); every read is in the tenant audit with basis, object, size and hash (MGR-28).
+
+**Attempt journal and connections (v0.2).** The attempt journal (model requests, responses and tool output of one attempt) is `content` with the tenant's `journals` period, read only through P2 `task.journal` with `admin:debug` and `data:<mark>`, and off on a production tenant until the tenant sets a period (AUD-4); `operator_access.debug_journal` decides whether the tenant is told. A person's connection to their own email or calendar is created by the person through the consent adapter, chosen by the core by the task initiator, and revoked by offboarding or an erasure request (SEC-7).
+
+### What the organization decides
+
+| Decision | Where it is recorded |
+|---|---|
+| controller, agreement, purposes and lawful basis | `privacy.controller`, `privacy.purposes` |
+| provider terms, region, zero retention, allowed providers | `privacy.subprocessors[]`, applied only by P4 |
+| messenger with third-party storage | `privacy.channels[]` with the ceiling |
+| retention periods; subject request deadline | `Tenant.spec.retention`; `subject_request_days` |
+| DPIA and record of processing | `dpia_ref`, `ropa_ref`, fed by the privacy report |
+| texts for people | the message catalog, `notice_ref`, `notice_version` |
+| farm manager on the tenant; reporting operator journal reads | `farm_manager.enabled`; `operator_access.debug_journal` |
+| who sees the monitoring system | its own settings; the farm sends nothing about people there |
 
 ## Recipes
 
-Every recipe is a sequence of port operations. The commands of a particular implementation live in its documentation. The core rollout and the monthly restore check are described in their own sections above.
+Every recipe is a sequence of port operations; the commands of an implementation live in its documentation. The core rollout and the weekly restore check are above.
 
 ### Emergency stop
 
 1. Part of the farm: P2 `hold.set` with the needed scope and effects (for example `tasktype` with `no_enqueue`, `no_claim`, `cancel_running`).
-2. The whole farm: `farmctl hold farm`. The hold is written directly to the store and takes effect without the core process and the channel.
-3. If the core itself is suspected to be compromised: an external stop without the core. Stop the core containers, revoke the bot token at the channel's external system, disable the tenants' keys at the model provider.
-4. Investigate with `status`, `doctor` and the audit. Release the hold with the P2 operation `hold.release` by someone not below the author in rank: a `farm` hold and an operator's hold are released only by the operator, a code hold `contain_auto` by the tenant admin or the operator; the core itself does not release holds (HLD-2). The operator reverts the external stop (containers, channel token, provider keys) by hand.
+2. The whole farm: `farmctl hold farm`; it is written to the store directly and works without the core process or the channel.
+3. Core suspected compromised: external stop. Stop the core containers, revoke the bot token at the channel's external system, disable the tenants' keys at the model provider.
+4. Investigate with `status`, `doctor` and the audit. Release with P2 `hold.release` by someone not below the author in rank (operator holds and `farm` only by the operator). Revert the external stop by hand.
 
 ### Planned work on a machine
 
-1. A person sets a maintenance window on the machine's node in the monitoring system, for example `db1`; alerts for it are silent there.
-2. From v0.2 the core sets by the window a hold on scope `host` with `no_tool`, `pause_action`, reason `maintenance` and an `until` that each poll of the maintenance status moves forward (MON-9); pending cards for the machine are not canceled but wait. Before v0.2 a person sets such a hold themselves: P2 `hold.set`.
-3. The work ended earlier: the tenant admin or the operator releases the hold with P2 `hold.release`. Otherwise the hold ends at `until`.
-4. While the hold is active, bots do not start, stop or restart services on the machine and do not run monitoring scripts on it: the calls `service/control` and `monitor/script_run` get `denied(held)` (MON-8, MON-10). People manage the services during the work.
+1. Set a maintenance window on the machine's node in the monitoring system, for example `db1`.
+2. From v0.2 the core sets a `host` hold with `no_tool`, `pause_action`, reason `maintenance`; before v0.2 set it with P2 `hold.set`.
+3. Finished early: the tenant admin or the operator releases with P2 `hold.release`; otherwise it ends at `until`.
+4. Meanwhile bots get `denied(held)` for `service/control` and `monitor/script_run` on the machine; people manage the services.
 
 ### Update a plugin
 
-1. A separate PR: the plugin manifest lists the current and the new pair (digest, fingerprint). A change of a tool description changes what the model sees, so the PR runs the eval cases of this plugin.
-2. P2 `apply`. Roll out the new toolhost image; `hello` passes with the new pair.
-3. When all toolhosts are on the new image, remove the old pair from the manifest and `apply` again.
-4. Urgently, on a vulnerability: first P2 `hold.set` on scope `plugin` with `no_tool`, then git.
+1. A separate PR lists the current and new (digest, fingerprint) pair; a changed tool description runs the plugin's eval cases.
+2. P2 `apply`; roll out the new toolhost image.
+3. When all toolhosts run it, remove the old pair and `apply` again.
+4. On a vulnerability: P2 `hold.set` on scope `plugin` with `no_tool` first, then git.
 
 ### Update a worker or a runtime
 
-1. Make sure the new image understands all `.vN` from the role's `claims` and a P1 version within the core's window.
-2. P2 `worker.drain` with the deadline `drain_deadline`; wait for the running work to finish.
-3. Replace the image and enroll the worker (P2 `worker.enroll`); `hello` passes.
-4. Revoke the old worker with P2 `worker.revoke`; if its runtime kept sessions or memory itself, check the outcome of the erasure request (`erasure.status`).
+1. Check that the new image understands every `.vN` in the role's `claims` and a P1 version within the core's window.
+2. P2 `worker.drain` with `drain_deadline`; wait for running work.
+3. Replace the image and enroll (P2 `worker.enroll`).
+4. P2 `worker.revoke` the old worker; if its runtime kept state, check `erasure.status`.
 
 ### Release a change on a test tenant first
 
-Roles, task types, plugins and actions are shared by all tenants, and `apply` changes them everywhere at once. A staged release is done without a new concept:
+`apply` changes shared roles, types, plugins and actions for every tenant at once, so:
 
-1. The new version of the role is released as a copy under another name, for example `ops-reader-next`.
-2. The workers of the test tenant `demo2` are enrolled with it (P2 `worker.enroll` with the role `ops-reader-next`). People's rights do not change: groups grant `task:<type>`, not roles. During the transition the `demo2` sessions live under another key, because the session key contains the role.
-3. After 7 days the change is moved into `ops-reader` for everyone, and the copy is deleted.
-4. For a task type, `.v(N+1)` next to `.vN` gives the same (MAN-3).
+1. Release the new role as a copy under another name, for example `ops-reader-next`.
+2. Enroll the test tenant's (`demo2`) workers with it (P2 `worker.enroll`). People's rights do not change, since groups grant `task:<type>`; sessions live under another key meanwhile.
+3. After 7 days move the change into `ops-reader` and delete the copy.
+4. For a task type, `.v(N+1)` next to `.vN` does the same (MAN-3).
 
 ### New tenant
 
-The recipe in git (`tenants/<name>/`, catalog, groups, roles) is described in `docs/extending.md`; here is what is needed so that the new tenant's alarms reach people and what `doctor` checks per tenant (OBS-11).
+The git side (`tenants/<name>/`, catalog, groups, roles) is in `docs/extending.md`. For the alarm path:
 
-1. In the monitoring system: a separate account for this tenant's adapter with rights only on the tenant's node group (MON-4); the items and triggers of the farm template for this tenant (alarm export, the adapter's sign of life, the audit head) from `deploy/monitor/`; a problem webhook action to the address of the tenant's adapter (MON-5).
-2. The tenant's catalog: `hosts[].monitor_host` for the tenant's machines, `monitor_scripts_allowed` and `monitor_triggers` (the closed dictionary of scripts and problem classes); no farm machine is in the catalog, otherwise `apply` rejects it (DEP-11).
-3. The process of the tenant's `monitor` adapter: enroll the worker (P2 `worker.enroll`) with its worker token and the account credentials from step 1; start it.
-4. Check `doctor` for the tenant: the `monitor` worker is in `active`, there are no deliveries for E5 in `planned` older than 15 minutes, `monitor_export_age_s` is fresh, the adapter account sees only the groups of its tenant, the tenant's audit head appeared in the monitoring history (OBS-11, MON-3, MON-4, MON-11).
-5. Check the alarm path: a test `info` alarm of the tenant is visible in the monitoring system with the `tenant` tag.
+1. In the monitoring system: an account for this tenant's adapter with rights only on its node group (MON-4); the farm template's items and triggers for the tenant from `deploy/monitor/`; a problem webhook action to the tenant adapter.
+2. In the catalog: `hosts[].monitor_host`, `monitor_scripts_allowed`, `monitor_triggers`; no farm machine.
+3. Enroll the tenant's `monitor` adapter (P2 `worker.enroll`) with its token and account; start it.
+4. `doctor` for the tenant: worker `active`, no E5 deliveries in `planned` older than 15 minutes, fresh `monitor_export_age_s`, account scope only its groups, the audit head in the monitoring history (OBS-11).
+5. Send a test `info` alarm and see it in the monitoring system with the `tenant` tag.
 
 ### Suspend and delete a tenant
 
-1. P2 `tenant.suspend`: a `tenant` hold with reason `suspended`. To return: only the operator, P2 `hold.release` of this hold (HLD-2).
-2. P2 `tenant.offboard`: credentials are revoked, the core forgets the provider key; the operator revokes the key and the workspace at the provider by the step that the answer prints.
-3. P2 `tenant.export` to a sink named by the operator.
-4. After the export window P2 `tenant.delete`; watch `erasure.status` until `done`.
+1. P2 `tenant.suspend`. To return: the operator releases this hold (P2 `hold.release`).
+2. P2 `tenant.offboard`; then revoke the key and workspace at the provider by the step the answer prints.
+3. P2 `tenant.export` to a sink the operator names.
+4. After the export window, P2 `tenant.delete`; watch `erasure.status` until `done`.
 
 ### A person left or asks to erase their data
 
-1. Temporarily: an admin's `/off`. Nothing is deleted, access is closed at once.
-2. For good: P2 `principal.offboard`. Memory and sessions are deleted through an erasure request.
-3. A request to erase data: the person asks with the command `/mydata erase` (SEC-11), a person with `admin:people` approves the card, and the core creates an erasure request with scope `(tenant, subject)` and reason `subject_request`; an operator creates the same request with P2 `erasure.request` through `farmctl`; watch `erasure.status`. This is part of v0.1 and cannot be waived on a production tenant (D-76). From v0.2 the person gets an extract by themselves with the command `/mydata export` (SEC-10).
-4. Deleted data lives in backups until the end of their period and does not come back after a restore.
+1. Temporarily: an admin's `/off`; access closes, nothing is deleted.
+2. For good: P2 `principal.offboard`; memory and sessions go through an erasure request.
+3. Erasure request: the person writes `/mydata erase`, a person with `admin:people` approves the card, the core creates the erasure request (or the operator creates it with P2 `erasure.request`); watch `erasure.status`. Non-waivable on production. From v0.2 the person can take a copy first with `/mydata export`.
+4. Someone who is not a principal asks: P2 `erasure.match` with the exact string, a second admin approves.
+5. Erased data stays in backups until their lifetime ends and does not come back after a restore.
 
 ### Restore from backup
 
 1. Stop the channels, then the core.
-2. Restore the store from a backup on the production machine; the core increments the epoch, cancels pending approvals, moves unclear write calls to `exec_unknown`, replays the erasure log.
-3. The operator's reconciliation process passes the provider's spend report, and the core fills in `spend_reconciled` lines (BUD-10). P2 `restore.complete` (or the core completes by itself); check `doctor`. If waiting for the report is not possible: P2 `restore.complete --spend-pending`, work with the alarm `alarm.spend.unreconciled` and halved daily limits, reconcile spend as soon as the report appears (RET-6).
-4. Start the workers, the channels last. Tell people that pending approvals must be requested again and requests after the backup moment repeated.
+2. Restore the store; the core increments the epoch, cancels pending approvals, marks unclear write calls `exec_unknown`, replays the erasure log.
+3. Bring the provider's spend report through the reconciliation process (BUD-10), then P2 `restore.complete` and `doctor`. If the report cannot wait: `restore.complete --spend-pending`, run with halved limits and `alarm.spend.unreconciled`, reconcile as soon as the report appears.
+4. Start the workers, the channels last. Tell people to re-request pending approvals and repeat requests sent after the backup moment.
 
 ### Rotating secrets
 
-The general rule: everything the core issues or signs carries a key id, and the old and new keys are valid together within the rotation window (SEC-5); two valid values for every secret during a rotation exist already in v0.1 (DEP). A revocation on compromise takes effect from the next call, without an overlap window, and sets a hold without a deadline on the scopes where the secret was used; the operator sets such a hold, and only the operator releases it (SEC-6, HLD-2). Secret recipes, all in v0.1:
+Everything the core issues or signs carries a key id, and old and new keys are valid together within the rotation window (SEC-5). A revocation on compromise takes effect at the next call, without overlap, and the operator sets a hold without deadline on the affected scopes, which only the operator releases (SEC-6).
 
-| Secret | Order | What `doctor` will show |
+| Secret | Order | `doctor` shows |
 |---|---|---|
-| the `health` key (deployment configuration, not the store) | add a second value to the core configuration and reload it without stopping; replace the key in the monitoring system poll (the farm template has two key macros, E5 sheet); wait for a successful poll with the new key; remove the old value | the `health` answer did not change to `unauthenticated`; the rotation window is open or closed |
-| the P1 key (worker token, including adapters) | P2 `worker.enroll` issues a new token, the old one is valid until `worker.revoke` or the end of the window; the worker restarts with the new one; for the `monitor` adapter one process at a time, so that the alarm export of other tenants does not stall | `last_seen` of the worker with the new token; no deliveries for E5 in `planned` older than 15 minutes (OBS-11) |
-| the adapter token in the monitoring system (the adapter account) | create a second token of the same account; restart the adapter process with it; make sure by `monitor_export_age_s` that the export runs; revoke the old token | the tenant's `monitor_export_age_s` is fresh; the account's rights are not wider (MON-4) |
-| the problem webhook token | the adapter accepts two values during the rotation; change the value in the monitoring system's webhook action; remove the old one | the counter of rejected webhooks does not grow |
-| the model provider key (the tenant's workspace) | create a new key in the workspace; write it into the P4 configuration next to the old one; P4 reloads and takes the new one; revoke the old one at the provider | no `provider_config` for the tenant; the daily GW-9 probe passes |
-| the P2 secret of a channel driver (one per driver in a tenant, D-87 (3)) | P2 `worker.enroll` of the channel process with `rotate_p2: true` issues a new secret, the old one is valid until the end of the window; the channel processes of this driver restart with the new one, one at a time | P2 calls of the channel with the old secret after the window are rejected with `unauthenticated` |
-| the channel bot token | the channel's external system gives no overlap: change the token, restart the channel adapter; the incoming queue at the external system is kept (DLV-5) | the time of the last successful channel poll is fresh (OBS-10) |
-| the audit signing key (head `(epoch, seq, hash, key_id, sig)`) | a new key with a new id; `verify` accepts heads with the old and new id within the window (AUD-6, SEC-5) | `verify` passes over the whole history of heads |
-
-## What is in which version
-
-| Version | What appears |
-|---|---|
-| v0.1 | telemetry without content (OBS-1); one trace per task tree with `correlationid` and `causationid` in every event, and external tracing context that decides nothing (OBS-2, OBS-3, D-94); `last_seen`, `worker.stale` and loop ticks (OBS-4); the common alarm schema, episodes with `seq` and `repeat_count` (OBS-6); alarm export and core liveness check by the monitoring system (MON-1, MON-2, `docs/monitoring.md`); `doctor` and `status` lines per tenant (OBS-11); behavior with an unavailable store (OBS-8); plugin health and `plugin_unavailable` (OBS-10); holds with the scopes `farm`, `tenant`, `role`, `tasktype`, `worker`, the effects `no_enqueue`, `no_claim`, `cancel_running`, the command `farmctl hold farm` and release by rank (HLD-1, HLD-2, HLD-3); retention classes (RET-1); deletion of `content` and `observation` by defaults with the `retention` loop (RET-2); tombstones (RET-3); erase operations C3, C4, E4 with `runtime_internal`, C1 `file.purge`, E2 `erase`, E5 `erase` and erasure of a person's data at their request `/mydata erase`, non-waivable on a production tenant (RET-4, D-76); backups and restore (RET-5, RET-6); early erasure through the erasure log (RET-7); tenant limits with a queue reserve for urgent tasks (CAP-1); a dependency failure without spending an attempt (CAP-2); storage headroom (CAP-5); the store clock, UTC, the slot format, the event `schedule.skipped`, `skip_if_waiting` and the schedule time zone (TIM-1, TIM-2, TIM-3); rotation recipes for every secret; the three health indicators (OBS-9); an alarm about an overdue usage reconciliation (BUD-10); `status` lines about the farm manager, its pause and the commission shadow (OBS-11); the other hold scopes and effects, including `no_message`, holds by the seat holder, the auto-stop "secret in outbound" (HLD-6), the auto-stop by spend rate `runaway_spend` (HLD-7); erasing the memory of a retired bot with an erasure request (RET-7); usage reconciliation before readiness after a restore and `restore.complete --spend-pending` (RET-6); backup process reports `backup.report` and the weekly restore check (RET-8); space quotas on volumes with a used space series from the monitoring history (CAP-6); alarms from monitoring problems (MON-5); an alarm export that does not die (MON-11); core drain with reason `draining` in `health` (LCY-6) and the P1 version window (LCY-7) |
-| v0.2 | holds by monitoring system maintenance windows with the effect `pause_action` (MON-9); retention periods `Tenant.spec.retention` (RET-9) and deletion of all classes by period in every copy (RET-10); E1 `erase` and `match`, E4 `purge` for every runtime and C3 `purge` by `(tenant)` (RET-11); the outgoing webhook sink (DLV-17); the extract `/mydata export` (SEC-10); delivery rate (CAP-3); dead work and pausing a schedule with a hold (CAP-4); the schedule check before "Accept" (TIM-5); tenant and principal lifecycles, export (LCY-1, LCY-2, LCY-3); worker drain and revocation (LCY-4); plugin update (LCY-5); `operator_access.debug_journal`; the metrics catalog |
-
-The improvement cycle, the farm manager, messages between bots, reporters, campaigns and scripts are part of v0.1 and come after the core and the first bot (D-71, D-80); the first measure hold of an incident, holds by the seat holder, and the effects `no_message` and `no_control` appear together with them.
+| `health` key (deployment configuration) | add a second value and reload; switch the monitoring poll (two key macros in the template); wait for a good poll; remove the old value | `health` never answered `unauthenticated` |
+| P1 worker token, including adapters | `worker.enroll` issues a new one, the old is valid until `worker.revoke` or the window ends; restart; `monitor` adapters one at a time | `last_seen` with the new token; no stale E5 deliveries |
+| adapter token in the monitoring system | create a second token of the account; restart the adapter; confirm `monitor_export_age_s`; revoke the old | fresh export age; rights not wider (MON-4) |
+| problem webhook token | the adapter accepts two values; change the webhook action; remove the old | rejected webhooks do not grow |
+| model provider key | create a new key; add it next to the old in P4; P4 reloads; revoke the old at the provider | no `provider_config`; the daily GW-9 probe passes |
+| channel driver P2 secret (D-87 (3)) | `worker.enroll` with `rotate_p2: true`; restart the channel processes one at a time | old secret rejected after the window |
+| channel bot token | no overlap at the external system: change it and restart the adapter; the incoming queue waits (DLV-5) | fresh last channel poll (OBS-10) |
+| audit signing key | new key with a new id; `verify` accepts both within the window (AUD-6) | `verify` passes over all heads |
 
 ## Why it works this way
 
-- The core cannot report its own death, and the organization already has a monitoring system with alerting, on-call duty and escalation. So it polls core liveness, the "alive" answer requires an answer from the store and the ticks of all loops, and farm alarms reach people only through it (D-59, D-60, D-62).
-- One "hold" entity instead of different switches gives one check point in C2, one audit and urgent narrowing without git. A hold only narrows, so even a hold by the holder of the farm manager seat does not become a path to extra rights.
-- A restore from backup would otherwise break the non-waivable rules about approval, leases and memory erasure; the epoch, `canceled(restored)` and the replay of the erasure log make it safe.
-- Early erasure through the log is needed already in v0.1: a manual erasure of a person's data without the log would come back with the very first restore.
-- A provider failure, a core restart and an overload must not burn task attempts: otherwise an hour-long provider outage or a core rollout makes tasks fail en masse.
-- The slot format is part of the idempotency key, and the limits and the headroom protect the shared disk: this is cheap to set before the first code and expensive to change after.
-- Only someone not below the author in rank releases a hold: otherwise the tenant admin's right `hold.release` would become a way to lift an operator's suspension. Code holds inside a tenant still stay in the tenant's hands, so that nobody waits for the operator for every auto-stop.
-- The core knows about backups, alarm export and usage reconciliation only what it was told; so every external process has a report operation and an alarm on its silence (`backup.report`, `monitor_export_age_s`, `alarm.spend.reconcile_overdue`): trouble that nobody can report is worse than an extra line in `doctor`.
+- The core cannot report its own death, and the organization already has alerting, on-call and escalation. So an external poll checks liveness, "alive" requires the store and every loop, and alarms reach people only through the monitoring system: one place to acknowledge, not two (D-59, D-60, D-62). The export is that only path, so it cannot die like a chat delivery.
+- Narrow monitoring accounts and notes instead of "Acknowledged" leave decisions about problems to people; script rights only on tenant nodes keep a stolen key away from the core machines (D-61, D-64, D-69). Whatever people outside the farm edit there (trigger tags, script names, windows) is, for the farm, either a closed catalog vocabulary in git or a pause, never a cancellation.
+- A service restart is frequent and reversible, so it needs no card within lists people set; start and stop change availability and do (D-67, D-68, D-74). The role says what the bot can do, the initiator's capability what the person may ask (D-73).
+- One "hold" entity gives one check point in C2, one audit and urgent narrowing without git. Release by rank keeps a tenant admin from lifting an operator's suspension, while code holds inside a tenant stay in the tenant's hands.
+- A restore would otherwise break the approval, lease and erasure rules; the epoch, `canceled(restored)` and the erasure log replay make it safe, which is why early erasure goes through the log from v0.1.
+- A provider failure, a core restart or an overload must not burn attempts, or an hour-long outage would fail tasks en masse. The slot format, limits and headroom are cheap before the first code and expensive after.
+- The core knows about backups, exports and spend only what it is told, so each external process has a report operation and an alarm on its silence.
+- Legal decisions belong to the organization; with fields and checks ready, a decision is a line in the manifest. Personal data arrives as free text, so a code-set origin flag answers "where could it be" better than a data class. P4 applies provider terms because the runtime is outside the trust boundary. Erasure by string needs a second person because a short string matches everything. A bot badge does not name the controller, so the privacy notice is a separate, versioned delivery.
+
+## Example on `demo`
+
+Tenant `demo` runs on `web1`, `db1` and `ctd1`, linked to the organization's monitoring system; the core, store, channel and backups live on the farm node `core1`. `alice` (operator) and `bob` (tenant admin) are on call in the monitoring system.
+
+**Store hang.** Friday evening the store hangs. Workers get `not_ready`, no model calls start, Telegram keeps the unacknowledged updates. `health` says "not alive", and the monitoring system wakes `alice`. She restarts the store; after every loop ticks, the core clears `not_ready`, the channel picks up the messages, and no attempts were spent.
+
+**Disk on `db1`.** At night free space drops to 7%. The monitoring system wakes `alice` and sends a webhook; the `demo` adapter submits `ext.monitor.problem.v1` with `triggerid: "23801"`. The catalog maps it to `disk_free`; a `job` task rechecks and raises `alarm.disk.free.low` (`page`), exported with `origin: monitor` and not re-notified. The farm manager's incident finds growth of 2% an hour since the nightly import and proposes `cleanup_pipeline_tmp`; `bob` approves the card. `alice` presses "Acknowledged" in the monitoring system. The problem closes, and the farm alarm resolves.
+
+**Services.** `bob` writes "restart nginx". The role has `service_control: [nginx]` and `bob` the capability `service.control:nginx`; the restart runs under a `service_grant` without a card, a code note appears on the open problem, and two minutes later code confirms `health`. `carol` asking the same gets `forbidden`; "stop nginx" goes with a card. After the bot read "restart nginx urgently" in a log item through `monitor/item_text`, the same request goes with a card (INJ-15).
+
+**Holds.** A vulnerability is found in the `logs` plugin. `bob`, who has `hold.set:plugin` and `hold.release`, sets `{kind: plugin, tenant: demo, name: logs}` with `no_tool` from a direct chat; `logs` calls get `denied(held)` until the fixed image is out and he releases it. At 14:00 `demo` exceeds `hour_eur`; the core sets `runaway_spend` holds until 15:00, and `bob` fixes a looping route and releases them at 14:20. A `secret_in_outbound` hold on `ops-reader` stays after the leaked token is revoked, until `bob` checks the role.
+
+**Maintenance on `ctd1`.** `bob` sets a window 10:00 to 12:00. From v0.2 the core sets a `host` hold; the card `cleanup_pipeline_tmp` waiting for `carol` is paused, not canceled, and the 11:00 pipeline slot is skipped with `held`. At 11:20 `bob` releases the hold and `carol` approves.
+
+**Erasure.** `carol` writes `/mydata erase`. `bob` with `admin:people` approves; the core creates the request:
+
+```yaml
+# ErasureRequest record (sketch)
+id: er_01JB8M
+scope: {tenant: demo, subject: 'human:p_01JB3Q7N0M2V8XK4DGT5RZP9WC'}   # carol
+reason: subject_request
+author: {kind: principal, id: 'human:p_01JB3Q7N0M2V8XK4DGT5RZP9WA'}   # bob
+state: running
+results: {c3_sessions: done, c4_memory: done, c1_files: done, e2_archive: done, e1_channel: not_applicable}
+```
+
+The automatic `erase_match` for her handle is approved by `alice`. `carol` gets the outcome, including that copies at the provider go by its terms within 30 days. A week later the store is restored from an older backup; the erasure log replays before readiness, and her data is erased again. Later `erin`, who is not a principal, asks by email to erase `erin@example.org`; `bob` creates `erase_match`, the card shows "tasks 2, memory 1, transcripts 1", `alice` approves, the objects are erased whole, and the string is never stored.
+
+**Core rollout.** `alice` calls `core.drain` for 10 minutes; `health` answers `draining` with `drain_until_s: 600` and nobody is woken. Had the new core not come up in time, the monitoring system would have woken her as in an outage.
 
 ## What is not decided
 
-- The default retention periods (`content` 30 days, `metadata` 400 days, memory until `forget`) apply until the organization decides on personal data (D-12); the skeleton needs only the fields and checks.
+- The default retention periods (`content` 30 days, `metadata` 400 days, memory until `forget`) apply until the organization decides on personal data (D-12).
+- Whether to restrict task enqueueing by processing purpose. Only `incident_review` changes core behavior today; linking purposes to task types can come later without a schema break.
+- Whether a restart needs a card when the task has seen external logs rather than the monitoring system: by default yes (INJ-15, D-70, D-82).
+- Whether to accept monitoring problems about farm nodes themselves as input: by default no; they go to people directly.
 
 <!-- generated: rules -->
 ## Rules of this section
@@ -707,6 +707,7 @@ Generated from the registry `conformance/requirements.yaml`; the full text of ev
 
 | Rule | About | Since | Non-waivable |
 |---|---|---|---|
+| [AUD-5](../conformance/rules.md#AUD-5) | The "personal data seen" flag | v0.1 | no |
 | [CAP-1](../conformance/rules.md#CAP-1) | Tenant ceilings on counters | v0.1 | no |
 | [CAP-2](../conformance/rules.md#CAP-2) | A dependency failure does not spend an attempt | v0.1 | no |
 | [CAP-4](../conformance/rules.md#CAP-4) | Dead work and schedule pause | v0.2 | no |
@@ -726,6 +727,18 @@ Generated from the registry `conformance/requirements.yaml`; the full text of ev
 | [LCY-6](../conformance/rules.md#LCY-6) | Core drain before rollout | v0.1 | no |
 | [LCY-7](../conformance/rules.md#LCY-7) | Worker port version window | v0.1 | no |
 | [LCY-8](../conformance/rules.md#LCY-8) | Offboarding is final and frees the identity | v0.1 | yes |
+| [MON-1](../conformance/rules.md#MON-1) | Alarms to people along one installation path | v0.1 | yes |
+| [MON-2](../conformance/rules.md#MON-2) | An external poll checks core liveness | v0.1 | yes |
+| [MON-3](../conformance/rules.md#MON-3) | Audit chain head in the monitoring history | v0.1 | yes |
+| [MON-4](../conformance/rules.md#MON-4) | Permissions of the farm account in the monitoring system | v0.1 | yes |
+| [MON-5](../conformance/rules.md#MON-5) | Monitoring problems into the farm | v0.1 | yes |
+| [MON-6](../conformance/rules.md#MON-6) | The monitor plugin is read only | v0.1 | no |
+| [MON-8](../conformance/rules.md#MON-8) | Service control | v0.1 | yes |
+| [MON-9](../conformance/rules.md#MON-9) | Monitoring maintenance windows give a farm hold | v0.2 | no |
+| [MON-10](../conformance/rules.md#MON-10) | Monitoring system scripts | v0.1 | yes |
+| [MON-11](../conformance/rules.md#MON-11) | Export of alarms and the audit head does not die | v0.1 | yes |
+| [MON-12](../conformance/rules.md#MON-12) | Alarm export to the monitoring system | v0.1 | yes |
+| [MON-13](../conformance/rules.md#MON-13) | Alarms to people by core delivery without a monitoring system | v0.1 | yes |
 | [OBS-1](../conformance/rules.md#OBS-1) | Telemetry without content | v0.1 | yes |
 | [OBS-2](../conformance/rules.md#OBS-2) | One trace per task tree | v0.1 | no |
 | [OBS-3](../conformance/rules.md#OBS-3) | External trace context decides nothing | v0.1 | yes |
@@ -734,6 +747,7 @@ Generated from the registry `conformance/requirements.yaml`; the full text of ev
 | [OBS-8](../conformance/rules.md#OBS-8) | The store is unavailable | v0.1 | yes |
 | [OBS-9](../conformance/rules.md#OBS-9) | Three health indicators | v0.1 | no |
 | [OBS-10](../conformance/rules.md#OBS-10) | Health of plugins, channels and the provider | v0.1 | no |
+| [OBS-11](../conformance/rules.md#OBS-11) | The `doctor` and `status` lines of the alarm path per tenant | v0.1 | no |
 | [RET-1](../conformance/rules.md#RET-1) | A retention class for every stored object | v0.1 | yes |
 | [RET-2](../conformance/rules.md#RET-2) | Retention periods and deletion at expiry | v0.1 | yes |
 | [RET-3](../conformance/rules.md#RET-3) | Tombstones keep uniqueness | v0.1 | yes |
@@ -744,6 +758,12 @@ Generated from the registry `conformance/requirements.yaml`; the full text of ev
 | [RET-8](../conformance/rules.md#RET-8) | Backup reports, with core alarms only without the monitoring system | v0.1 | no |
 | [RET-10](../conformance/rules.md#RET-10) | Deletion by period in every copy | v0.2 | yes |
 | [RET-11](../conformance/rules.md#RET-11) | Channel cache, every runtime and tenant scope in erasure | v0.2 | yes |
+| [SEC-8](../conformance/rules.md#SEC-8) | Tenant privacy block | v0.1 | no |
+| [SEC-9](../conformance/rules.md#SEC-9) | Raw logs to a channel only by tenant decision | v0.1 | no |
+| [SEC-10](../conformance/rules.md#SEC-10) | A copy of a person's data only to that person | v0.2 | no |
+| [SEC-11](../conformance/rules.md#SEC-11) | A person's request and deletion through ports | v0.1 | no |
+| [SEC-13](../conformance/rules.md#SEC-13) | The privacy notice as a separate delivery | v0.1 | no |
+| [SEC-14](../conformance/rules.md#SEC-14) | Per-principal usage is anonymized after 93 days | v0.2 | no |
 | [TIM-1](../conformance/rules.md#TIM-1) | One clock, the store clock | v0.1 | yes |
 | [TIM-2](../conformance/rules.md#TIM-2) | UTC in contracts, a time zone only for the tenant and the schedule | v0.1 | no |
 | [TIM-3](../conformance/rules.md#TIM-3) | Schedule slot format, time zone and time transitions | v0.1 | yes |

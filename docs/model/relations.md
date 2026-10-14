@@ -23,11 +23,11 @@ This document collects the objects of the skeleton and the relations between the
 | model profile (`ModelProfile`) | git | global | v0.1 | [models-and-money.md](../models-and-money.md) |
 | lens | skeleton, `spec/model/lenses.yaml` | global | v0.1 (D-71) | [improvements.md](../improvements.md) |
 | incident class (`IncidentClass`) | farm git | global | v0.1 | [farm-manager.md](../farm-manager.md) |
-| tenant (`Tenant`) with privacy block and limits | git and core record | the tenant itself; the service tenant `farm` always exists | v0.1 | [operations.md](../operations.md), [privacy.md](../privacy.md) |
+| tenant (`Tenant`) with privacy block and limits | git and core record | the tenant itself; the service tenant `farm` always exists | v0.1 | [operations.md](../operations.md) |
 | group (`Group`) | git | tenant | v0.1 | [permissions.md](../permissions.md) |
 | resource catalog, route, schedule | git | tenant | v0.1 | [task-language.md](../task-language.md) |
-| managed service (`Catalog.spec.hosts[].services[]`, with `health` for the check after an action) | git, catalog | tenant | v0.1 | [task-language.md](../task-language.md), [monitoring.md](../monitoring.md) |
-| allowed scripts and triggers of the monitoring system (`hosts[].monitor_scripts_allowed`, `monitor_triggers`), the flag `hosts[].maintenance_hold` | git, catalog | tenant | v0.1 | [task-language.md](../task-language.md), [monitoring.md](../monitoring.md) |
+| managed service (`Catalog.spec.hosts[].services[]`, with `health` for the check after an action) | git, catalog | tenant | v0.1 | [task-language.md](../task-language.md), [operations.md](../operations.md) |
+| allowed scripts and triggers of the monitoring system (`hosts[].monitor_scripts_allowed`, `monitor_triggers`), the flag `hosts[].maintenance_hold` | git, catalog | tenant | v0.1 | [task-language.md](../task-language.md), [operations.md](../operations.md) |
 | backup report (`backup.report`) | external backup process through P2 | `farm` | v0.1 | [operations.md](../operations.md) |
 | channel, sink | git | tenant | v0.1 | [tasks-and-delivery.md](../tasks-and-delivery.md) |
 | bot group (`BotGroup`), dispatch rule | git | tenant | v0.1 (D-71) | [messaging.md](../messaging.md), [coordination.md](../coordination.md) |
@@ -280,7 +280,7 @@ Distribution (who gets which task) is set by the dispatch rules and bot groups, 
 | erasure request -> scope | 1 : 1: `(tenant)`, `(tenant, subject)` or a list of object ids | early erasure only through an erasure request (RET-7) |
 | erasure request -> store outcome | 1 : N | the `erasure` loop collects the outcome of every store (`done`, `failed`, `not_applicable`); while there is a `failed`, the request stays open (RET-7, RET-4) |
 | erased task -> tombstone | 1 : 1 | the idempotency key stays taken, and a repeat gets `gone` (RET-3) |
-| principal -> subject request (erase, export) | 1 : N | an erasure request from a subject creates an erasure request ([privacy.md](../privacy.md)) |
+| principal -> subject request (erase, export) | 1 : N | an erasure request from a subject creates an erasure request ([operations.md](../operations.md#peoples-data)) |
 | runtime with `runtime_internal` -> runtime profile | 1 : N, a profile per (tenant, role, principal) or per chat | the profile is cleaned at its expiry and by an erasure request through the adapter; a principal's rows are found with the `match` operation (RT-1, RT-2, RT-5) |
 | erasure request by match -> store with `match` | 1 : N | E2, E4 and E5 since v0.1 (D-76), E1 since v0.2 (RET-11); a store without `match` is `failed`, and a channel without a cache answers `not_applicable` (RET-7, SEC-11) |
 | group chat session -> principals of the conversation | 1 : N in the key | the key includes the principals who wrote, so `(tenant, subject)` finds group sessions (MEM-1) |

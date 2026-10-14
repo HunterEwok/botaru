@@ -23,7 +23,7 @@ Who pays whom for a tenant's work, that is, the payment model, is not decided (D
 
 ### Region and retention at the provider
 
-The processing region and the allowed retention period of requests at the provider are set by the tenant's privacy block (`docs/privacy.md`, SEC-8): each provider in `privacy.subprocessors` has the fields `region` and `retention`.
+The processing region and the allowed retention period of requests at the provider are set by the tenant's privacy block (`docs/operations.md`, SEC-8): each provider in `privacy.subprocessors` has the fields `region` and `retention`.
 
 ```yaml
 # tenants/demo/tenant.yaml (spec fragment)

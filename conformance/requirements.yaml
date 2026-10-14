@@ -869,7 +869,7 @@
   profile: core
   decisions: [D-36]
   fixtures: []
-  doc: docs/privacy.md
+  doc: docs/operations.md
 
 - id: AUD-6
   title: Audit hash chain
@@ -8090,7 +8090,7 @@
   profile: core
   decisions: [D-59, D-62, D-66, D-71, D-80, D-88]
   fixtures: [blackbox:core/alarm-path-monitor, blackbox:core/alarm-notice-no-monitor, manifests/v02-security-lints]
-  doc: docs/monitoring.md
+  doc: docs/operations.md
 
 - id: MON-2
   title: An external poll checks core liveness
@@ -8130,7 +8130,7 @@
   profile: core
   decisions: [D-60, D-80, D-88]
   fixtures: [blackbox:core/health-draining, blackbox:core/health-watch, manifests/deploy]
-  doc: docs/monitoring.md
+  doc: docs/operations.md
 
 - id: MON-3
   title: Audit chain head in the monitoring history
@@ -8166,7 +8166,7 @@
   profile: monitor
   decisions: [D-60, D-88]
   fixtures: [adapter:monitor/audit-head-signed]
-  doc: docs/monitoring.md
+  doc: docs/operations.md
 
 - id: MON-4
   title: Permissions of the farm account in the monitoring system
@@ -8203,7 +8203,7 @@
   profile: monitor
   decisions: [D-61, D-69, D-80, D-88]
   fixtures: [adapter:monitor/account-scope]
-  doc: docs/monitoring.md
+  doc: docs/operations.md
 
 - id: MON-5
   title: Monitoring problems into the farm
@@ -8247,7 +8247,7 @@
   profile: monitor
   decisions: [D-63, D-75, D-82, D-88]
   fixtures: [blackbox:monitor/trigger-not-in-catalog, blackbox:model/service-monitor-trusted]
-  doc: docs/monitoring.md
+  doc: docs/operations.md
 
 - id: MON-6
   title: The monitor plugin is read only
@@ -8283,7 +8283,7 @@
   profile: monitor
   decisions: [D-59, D-64, D-69, D-82, D-88]
   fixtures: [blackbox:model/service-monitor-trusted, blackbox:model/service-monitor-item-text]
-  doc: docs/monitoring.md
+  doc: docs/operations.md
 
 - id: MON-7
   title: Bot notes on problems
@@ -8319,7 +8319,7 @@
   profile: monitor
   decisions: [D-61, D-64, D-88]
   fixtures: [blackbox:monitor/note-masking, blackbox:monitor/note-limits]
-  doc: docs/monitoring.md
+  doc: docs/operations.md
 
 - id: MON-8
   title: Service control
@@ -8401,7 +8401,7 @@
   profile: core
   decisions: [D-67, D-68, D-70, D-73, D-74, D-75, D-82]
   fixtures: [blackbox:core/service-stop-card, lint:manifests/service-no-card, fixture:authorize/service-initiator]
-  doc: docs/monitoring.md
+  doc: docs/operations.md
 
 - id: MON-9
   title: Monitoring maintenance windows give a farm hold
@@ -8446,7 +8446,7 @@
   profile: monitor
   decisions: [D-59, D-62, D-75, D-88, D-100, D-103]
   fixtures: [blackbox:core/hold-pause-action, blackbox:monitor/maintenance-hold, blackbox:monitor/maintenance-periodic, schemas/valid/ops/ext-monitor-maintenance, schemas/invalid/ops/ext-monitor-maintenance]
-  doc: docs/monitoring.md
+  doc: docs/operations.md
 
 - id: MON-10
   title: Monitoring system scripts
@@ -8508,7 +8508,7 @@
   profile: monitor
   decisions: [D-67, D-68, D-69, D-70, D-73, D-74, D-75, D-88]
   fixtures: [blackbox:monitor/script-name-closed, fixture:authorize/service-initiator]
-  doc: docs/monitoring.md
+  doc: docs/operations.md
 
 - id: MON-11
   title: Export of alarms and the audit head does not die
@@ -8541,7 +8541,7 @@
   profile: monitor
   decisions: [D-88]
   fixtures: [blackbox:monitor/export-retry, blackbox:monitor/export-order, blackbox:monitor/export-stalled]
-  doc: docs/monitoring.md
+  doc: docs/operations.md
 
 - id: MON-12
   title: Alarm export to the monitoring system
@@ -8579,7 +8579,7 @@
   profile: monitor
   decisions: [D-59, D-62, D-66, D-71, D-80, D-88]
   fixtures: [blackbox:monitor/export-stalled, blackbox:core/alarm-path-monitor]
-  doc: docs/monitoring.md
+  doc: docs/operations.md
 
 - id: MON-13
   title: Alarms to people by core delivery without a monitoring system
@@ -8609,7 +8609,7 @@
   profile: core
   decisions: [D-88]
   fixtures: [blackbox:core/alarm-notice-no-monitor]
-  doc: docs/monitoring.md
+  doc: docs/operations.md
 
 - id: MSG-1
   title: Message envelope and core fields
@@ -9239,7 +9239,7 @@
   profile: core
   decisions: [D-77, D-80, D-114]
   fixtures: [blackbox:core/doctor-tenant, blackbox:core/status-manager-off]
-  doc: docs/monitoring.md
+  doc: docs/operations.md
 
 - id: OBS-12
   title: Alarm about an overdue usage reconciliation
@@ -12253,7 +12253,7 @@
   profile: core
   decisions: [D-12, D-36, D-77]
   fixtures: []
-  doc: docs/privacy.md
+  doc: docs/operations.md
 
 - id: SEC-9
   title: Raw logs to a channel only by tenant decision
@@ -12274,7 +12274,7 @@
   profile: core
   decisions: [D-12, D-36]
   fixtures: []
-  doc: docs/privacy.md
+  doc: docs/operations.md
 
 - id: SEC-10
   title: A copy of a person's data only to that person
@@ -12302,7 +12302,7 @@
   profile: core
   decisions: [D-12, D-36, D-76, D-102, D-114]
   fixtures: [blackbox:core/export-sink-not-export, blackbox:core/mydata-export, manifests/v02-lints, manifests/v02-security-lints]
-  doc: docs/privacy.md
+  doc: docs/operations.md
 
 - id: SEC-11
   title: A person's request and deletion through ports
@@ -12356,7 +12356,7 @@
   profile: core
   decisions: [D-12, D-36, D-76]
   fixtures: [blackbox:core/erase-match-restore, blackbox:core/erase-personal-subjects, blackbox:core/erase-runtime-no-match, blackbox:core/erasure-v01-ports, erasure/erasure]
-  doc: docs/privacy.md
+  doc: docs/operations.md
 
 - id: SEC-12
   title: Privacy report
@@ -12380,7 +12380,7 @@
   profile: core
   decisions: [D-12, D-36]
   fixtures: [blackbox:core/privacy-report]
-  doc: docs/privacy.md
+  doc: docs/operations.md
 
 - id: SEC-13
   title: The privacy notice as a separate delivery
@@ -12408,7 +12408,7 @@
   profile: core
   decisions: []
   fixtures: [blackbox:channel/privacy-notice-native, blackbox:channel/privacy-notice-enforced-join]
-  doc: docs/privacy.md
+  doc: docs/operations.md
 
 - id: SEC-14
   title: Per-principal usage is anonymized after 93 days
@@ -12430,7 +12430,7 @@
   profile: core
   decisions: []
   fixtures: [blackbox:budget/subject-anonymized-93d]
-  doc: docs/privacy.md
+  doc: docs/operations.md
 
 - id: SKL-1
   title: A skill without scripts and without an allowed-tools list

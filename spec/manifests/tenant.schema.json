@@ -532,7 +532,7 @@
           "x-botaru-version": "v0.2"
         }
       },
-      "description": "Privacy block of the tenant (SEC-8); the fields are described in docs/privacy.md."
+      "description": "Privacy block of the tenant (SEC-8); the fields are described in docs/operations.md."
     },
     "model_transfer": {
       "type": "array",

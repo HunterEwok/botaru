@@ -1,7 +1,7 @@
 schema: urn:botaru:schema:ext-monitor-problem:1
 rules:
 - MON-5
-description: A problem from the example in docs/monitoring.md.
+description: A problem from the example in docs/operations.md.
 data:
   eventid: '4417203'
   triggerid: '23801'

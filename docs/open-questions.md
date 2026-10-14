@@ -75,7 +75,7 @@ This is what the skeleton deliberately leaves open. The first part concerns the 
 
 ## What every installation decides
 
-- **Personal data.** Who the data controller is, which subprocessors, in which region and for how long the model provider keeps requests. The skeleton gives the privacy block in the tenant manifest for this ([privacy.md](privacy.md)).
+- **Personal data.** Who the data controller is, which subprocessors, in which region and for how long the model provider keeps requests. The skeleton gives the privacy block in the tenant manifest for this ([operations.md](operations.md#peoples-data)).
 - **Retention periods.** Until the installation decides (D-12), the defaults apply: content 30 days (sessions without memory 7 days), metadata 400 days, memory until an erasure request ([operations.md](operations.md)).
 - **Model provider.** Who accepts the provider terms, in whose name the keys are issued, what spend ceilings each workspace has (D-42); whether an embeddings provider is needed for knowledge corpora (by default corpora are searched by words) and batch mode for non-urgent tasks (not used by default).
 - **Machines.** The core server and its OS, which machines host the tool hosts, which machines the tenant catalog links to monitoring system hosts (`monitor_host`), which services on them bots may start, stop and restart (`services[]`), and for which roles.

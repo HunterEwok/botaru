@@ -9,7 +9,7 @@ description: >-
   contract, consent, legal_obligation; by default public_task) is set by the schema
   of the Tenant manifest; consent is allowed only for a purpose with a consent record and
   a withdrawal operation (SEC-7).
-source: docs/privacy.md
+source: docs/operations.md
 entries:
   - id: operations
     since: v0.1

@@ -65,7 +65,7 @@ spec:
   link_allowlist: [www.example.org, docs.example.org]
   models_allowed: [base-std, analysis-std, review-a, review-b, seat-std, seat-alt, manager-std, translate-std]
                                 # seat-std, seat-alt, manager-std, translate-std are needed by the commission, the manager and the translator
-  privacy:                      # privacy block (SEC-8); all fields in docs/privacy.md
+  privacy:                      # privacy block (SEC-8); all fields in docs/operations.md
     purposes:
       - {purpose: operations, lawful_basis: legitimate_interest}
       - {purpose: assistance, lawful_basis: consent}
@@ -278,7 +278,7 @@ The documents of the farm parts walk through their mechanisms on the same tenant
 | [docs/improvements.md](../docs/improvements.md) | a proposal to move the nightly report: analysis, commission, a trial with the outcome `better`, audit sample items |
 | [docs/bots.md](../docs/bots.md), [docs/improvements.md](../docs/improvements.md) | the identity `bot_17` from enrollment to a commission seat, a case with voting rounds |
 | [docs/farm-manager.md](../docs/farm-manager.md) | incidents `i-311` and `i-318`: the manager seat, holds and cards to people |
-| [docs/privacy.md](../docs/privacy.md), [docs/operations.md](../docs/operations.md) | the privacy block, `/mydata`, an erasure request, a plugin hold |
+| [docs/operations.md](../docs/operations.md) | the privacy block, `/mydata`, an erasure request, a plugin hold |
 
 ## What goes into which version
 

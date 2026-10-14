@@ -9,7 +9,7 @@ description: >-
   the suffix .vN, severity is the severity of the farm alarm: this table sets it, not
   the severity of the problem in the monitoring system. The incident field says whether
   an alarm of the class can open an incident.
-source: docs/monitoring.md
+source: docs/operations.md
 entries:
   - id: disk_free
     since: v0.1
