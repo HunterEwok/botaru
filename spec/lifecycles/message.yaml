@@ -62,7 +62,6 @@ machines:
       counting `staged`, and the sending role's share is not exceeded; there is no hold with `no_message`
     rules:
     - MSG-1
-    - MSG-10
     - MSG-11
     - MSG-13
     - MSG-15
@@ -82,7 +81,6 @@ machines:
     rules:
     - FEN-4
     - HLD-3
-    - MSG-10
     - MSG-15
     - MSG-4
     - MSG-5
@@ -237,7 +235,7 @@ machines:
     by: '`apply` removed the role, the bot group or the `receive` of this kind; P2 `worker.revoke` for a worker inbox'
     when: the recipient no longer exists (reason `recipient_gone`); the core writes an event, the entry is not lost silently
     rules:
-    - MSG-10
+    - MSG-15
     - MSG-3
   - from:
       none: true

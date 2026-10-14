@@ -26,11 +26,12 @@ The executable code today is the `ci/` checks that run on every pull request and
 
 If you want to understand the farm:
 
-1. [Overview](docs/overview.md): the farm on one screen, one message from start to end, the four layers, versions.
-2. [Glossary](docs/model/glossary.md): terms with a "do not confuse with" column.
-3. [Architecture](docs/architecture.md): the core, the thirteen ports, tenants, the trust boundary.
-4. [Task language](docs/task-language.md): roles, task types, actions and schedules.
-5. [Decisions](docs/decisions.md) and [open questions](docs/open-questions.md).
+1. [Goals](docs/goals.md): what the farm is for, the critical incidents and the constraints; every rule serves one of them.
+2. [Overview](docs/overview.md): the farm on one screen, one message from start to end, the four layers, versions.
+3. [Glossary](docs/model/glossary.md): terms with a "do not confuse with" column.
+4. [Architecture](docs/architecture.md): the core, the thirteen ports, tenants, the trust boundary.
+5. [Task language](docs/task-language.md): roles, task types, actions and schedules.
+6. [Decisions](docs/decisions.md) and [open questions](docs/open-questions.md).
 
 If you want to add a plugin, a channel, a task type or a bot:
 

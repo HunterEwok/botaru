@@ -1,5 +1,5 @@
 id: fx-msg-07
-rules: [MSG-14, MSG-10, MSG-15]
+rules: [MSG-14, MSG-15]
 description: 'The kind sets the delivery method. With one, the entry sits in the inbox of a role or bot group and is given to one reader
   at a time. With all, at publication the core puts a copy into the inbox of every active worker of the recipient (only for roles with instance_inbox:
   true), no more than 50; the sender sees the number of recipients. An entry of genus state is stored as the latest value per

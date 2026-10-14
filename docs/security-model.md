@@ -681,7 +681,6 @@ Generated from the registry `conformance/requirements.yaml`; the full text of ev
 | [AUD-1](../conformance/rules.md#AUD-1) | An audit record for every decision | v0.1 | no |
 | [AUD-2](../conformance/rules.md#AUD-2) | Only metadata in journals | v0.1 | yes |
 | [AUD-3](../conformance/rules.md#AUD-3) | Audit is append-only | v0.1 | yes |
-| [AUD-4](../conformance/rules.md#AUD-4) | The attempt journal is only in a deletable store | v0.2 | yes |
 | [AUD-6](../conformance/rules.md#AUD-6) | Audit hash chain | v0.1 | yes |
 | [AUD-7](../conformance/rules.md#AUD-7) | A separate right to read audit | v0.1 | no |
 | [DEP-1](../conformance/rules.md#DEP-1) | Production machine and sandbox | v0.1 | yes |
@@ -711,11 +710,9 @@ Generated from the registry `conformance/requirements.yaml`; the full text of ev
 | [INJ-14](../conformance/rules.md#INJ-14) | OS commands only named, without a shell | v0.1 | yes |
 | [INJ-15](../conformance/rules.md#INJ-15) | After untrusted text a service action goes as a card | v0.1 | yes |
 | [INJ-16](../conformance/rules.md#INJ-16) | Monitoring script and trigger names only from the catalog | v0.1 | yes |
-| [SBX-2](../conformance/rules.md#SBX-2) | One disposable container per task | v0.2 | yes |
 | [SEC-1](../conformance/rules.md#SEC-1) | Secrets do not go through ports | v0.1 | yes |
 | [SEC-2](../conformance/rules.md#SEC-2) | Each process gets only its own secrets | v0.1 | yes |
 | [SEC-3](../conformance/rules.md#SEC-3) | Handles | v0.1 | yes |
 | [SEC-4](../conformance/rules.md#SEC-4) | Minimum fields in a work item | v0.1 | yes |
 | [SEC-5](../conformance/rules.md#SEC-5) | Secret rotation with a key id | v0.1 | no |
 | [SEC-6](../conformance/rules.md#SEC-6) | Revocation on compromise | v0.2 | yes |
-| [SEC-7](../conformance/rules.md#SEC-7) | A person's connection to an external service | v0.2 | yes |

@@ -1,5 +1,5 @@
 registry: governance-events
-version: 2
+version: 3
 description: >-
   Command names of the audit records of governance (GOV-21, AUD-1). Every case
   transition, ballot, round count, flag, people's decision and queue change writes
@@ -70,8 +70,8 @@ entries:
     rules: [COM-10, GOV-21]
   - id: governance.v03_enabled
     since: v0.3
-    meaning: the first apply of the tenant on a core that claims v0.3; its time is governance_v03_since (GOV-37)
-    rules: [GOV-37, GOV-21]
+    meaning: the first apply of the tenant on a core that claims v0.3; its time is governance_v03_since (GOV-36)
+    rules: [GOV-36, GOV-21]
   - id: commission.accountability_on
     since: v0.3
     meaning: the first apply with commission.accountability on; its time is accountability_on_since (GOV-36)

@@ -277,7 +277,7 @@ String values pass only formats from the skeleton registry `spec/model/formats.y
 | `id` | catalog id: lowercase Latin letters, digits, hyphen | `st-05` | v0.1 |
 | `year_month` | year and month | `2026-09` | v0.1 |
 | `schedule_slot` | schedule slot, a UTC instant to the minute; part of the slot task key (TIM-3) | `2026-10-25T00:30Z` | v0.1 |
-| `tz` | time zone name from the time zone database, only for a tenant and a schedule (TIM-4) | `Europe/Berlin` | v0.1 |
+| `tz` | time zone name from the time zone database, only for a tenant and a schedule (TIM-3) | `Europe/Berlin` | v0.1 |
 | `search_query` | search string over a knowledge corpus, up to 256 characters, without control characters; the core reads it only as words, without operators (KNW-6) | `sensor calibration` | v0.2 |
 
 A new format is a reviewed change to the skeleton registry, not a manifest field.
@@ -320,7 +320,7 @@ A task type (`TaskType`) is a declaration in `tasktypes/<type>.yaml`: who runs i
 | `result_ttl`, `result_media_types` | retention period of the result and allowed media types of result files | ART-5 |
 | `await` | since v0.2: waiting for an external event after `complete` | CNT-6 |
 | `conversation_concurrency` | since v0.2: `serial` or `parallel` for a type with a conversation session, `serial` by default: in one conversation one role has at most one attempt | MEM-5 |
-| `grant_eligible`, `grant_eval_set` | since v0.2: a person's mark that the type may be requested to run on a stronger model, and a fixed set of inputs on which code checks the type's history | MGR-40 |
+| `grant_eligible`, `grant_eval_set` | since v0.2: a person's mark that the type may be requested to run on a stronger model, and a fixed set of inputs on which code checks the type's history | MGR-17 |
 | `deprecated`, `sunset` | since v0.2: deprecation of the type | MAN-7 |
 
 ### Purpose
@@ -514,7 +514,7 @@ The `Tenant` manifest collects blocks of different parts of the farm. Each field
 | `kind`, `self_approve` | tenant kind `test` or `production` (production without the field) and whether one may approve one's own request; for production `self_approve: true` does not pass `apply` | APR-9 | v0.1 |
 | `limits` | ceilings `max_queued`, `max_enqueue_per_hour`, `max_storage_bytes`; since v0.2 file limits `max_file_bytes` (one file) and `max_task_files_bytes` (all files of one task) | CAP-1, ART-4 | v0.1 |
 | `timezone` | time zone in the `tz` format for schedules and budget windows | TIM-2 | v0.1 |
-| `models_allowed`, `providers_allowed` | model profiles and providers allowed for the tenant | GW-5, GW-7, GW-8, GW-15, SEC-8 | v0.1 |
+| `models_allowed`, `providers_allowed` | model profiles and providers allowed for the tenant | GW-5, GW-7, GW-15, SEC-8 | v0.1 |
 | `budgets` | monthly limit `month_eur`, daily `day_eur` (`month_eur`/20 by default), hourly `hour_eur` (`month_eur`/100 by default; exceeding it gives a `runaway_spend` hold for an hour) and budget lines `lines` | BUD-1, BUD-7, GW-9, HLD-7 | v0.1 |
 | `privacy` | privacy block: processing purposes `purposes: [{purpose, lawful_basis}]` (`lawful_basis` from `public_task`, `legitimate_interest`, `contract`, `consent`, `legal_obligation`, `public_task` by default; `consent` only with a consent record), recipients `recipients[]` (including `monitoring`), subprocessors (`subprocessors`) with region and storage mode, channels with a ceiling, notice version `notice_version` for the `privacy_notice` delivery. In the `kind: production` tenant template there is no `incident_review` purpose, a production tenant adds it itself; on the test bench it is on (MGR-20, D-77) | SEC-8, SEC, MGR-20 | v0.1 |
 | `delegated_groups` | groups that the tenant admin grants to people without an operator: only groups with types of tier 1-2 and a class not higher than `internal`; the rest still through the operator | PRM-13 | v0.1 |
@@ -571,8 +571,8 @@ spec:
 
 | Field | What it sets | Rules |
 |---|---|---|
-| `cron` | schedule slots; a time zone inside the expression (`CRON_TZ`, `TZ`) does not pass `apply` | TIM-3, TIM-4 |
-| `timezone` | time zone in the `tz` format; without the field `Tenant.spec.timezone` applies | TIM-2, TIM-4 |
+| `cron` | schedule slots; a time zone inside the expression (`CRON_TZ`, `TZ`) does not pass `apply` | TIM-3 |
+| `timezone` | time zone in the `tz` format; without the field `Tenant.spec.timezone` applies | TIM-2, TIM-3 |
 | `task` | `{type, goal, params}`: type from the `system-ops` group, goal template (without it the goal comes from the type's template), `params` by the type's closed schema | PRM-10, INJ-1 |
 | `deliver_to` | list of delivery targets (as for a route); the core checks it at `apply` and at every run | DLV-6, PRM-10 |
 | `proposable` | whether a change to the schedule can be proposed, `true` by default; a schedule of a type with `proposable: false` is not proposed either | PRP-10 |
@@ -1118,9 +1118,7 @@ Generated from the registry `conformance/requirements.yaml`; the full text of ev
 | [MAN-4](../conformance/rules.md#MAN-4) | Drivers and implementation kinds do not touch permissions | v0.1 | no |
 | [MAN-5](../conformance/rules.md#MAN-5) | Only apply changes declared objects | v0.1 | no |
 | [MAN-6](../conformance/rules.md#MAN-6) | apply is atomic | v0.1 | yes |
-| [MAN-7](../conformance/rules.md#MAN-7) | Deprecation, version removal and apiVersion change | v0.2 | no |
 | [MAN-8](../conformance/rules.md#MAN-8) | The implementation declares the skeleton version and profiles | v0.1 | no |
 | [MAN-9](../conformance/rules.md#MAN-9) | Action manifest, what is approved is what runs | v0.1 | yes |
 | [MAN-10](../conformance/rules.md#MAN-10) | Catalog values pass a format and are rechecked | v0.1 | yes |
 | [MAN-11](../conformance/rules.md#MAN-11) | A core rejects what it does not implement | v0.1 | yes |
-| [SBX-1](../conformance/rules.md#SBX-1) | Tier 2 lives only in the sandbox | v0.2 | yes |

@@ -7,7 +7,6 @@
   "x-botaru-retention": "memory",
   "x-botaru-rules": [
     "MEM-7",
-    "MEM-8",
     "IDN-11",
     "GOV-16"
   ],

@@ -2,7 +2,7 @@
 
 ## In short
 
-A fact offer (`FactOffer`) is created by the core when an identity retires or changes its binding: it contains the active verified facts of this identity and exactly one recipient, its successor (MEM-7). The successor itself chooses what to take, with a `memory.pick.v1` task in a clean context (MEM-8). A person does not approve the handover, and the retiring identity takes no part in the choice. The farm manager gets a separate offer for the section of each tenant. Schema: `spec/model/fact-offer.schema.json`; only the core writes the record.
+A fact offer (`FactOffer`) is created by the core when an identity retires or changes its binding: it contains the active verified facts of this identity and exactly one recipient, its successor. The successor itself chooses what to take, with a `memory.pick.v1` task in a clean context (MEM-7). A person does not approve the handover, and the retiring identity takes no part in the choice. The farm manager gets a separate offer for the section of each tenant. Schema: `spec/model/fact-offer.schema.json`; only the core writes the record.
 
 ## States
 
@@ -37,10 +37,10 @@ Recipient within the offer:
 | From | To | Trigger | Condition | Rules |
 |---|---|---|---|---|
 | (none) | recipient `waiting` | the core | the successor by the MEM-7 table is not determined yet | MEM-7 |
-| (none), recipient `waiting` | recipient `pending` | the core enqueues `memory.pick.v1` | the successor exists or appeared before `open_until` | MEM-8 |
-| recipient `pending` | recipient `picked` | P1 `complete` of the choice task | `take` is not empty; every taken fact is rechecked against the recipient's rights | MEM-8 |
-| recipient `pending` | recipient `declined` | P1 `complete` of the choice task | `take` is empty | MEM-8 |
-| recipient `pending` | recipient `expired` | the core | the task failed after 3 retries | MEM-8 |
+| (none), recipient `waiting` | recipient `pending` | the core enqueues `memory.pick.v1` | the successor exists or appeared before `open_until` | MEM-7 |
+| recipient `pending` | recipient `picked` | P1 `complete` of the choice task | `take` is not empty; every taken fact is rechecked against the recipient's rights | MEM-7 |
+| recipient `pending` | recipient `declined` | P1 `complete` of the choice task | `take` is empty | MEM-7 |
+| recipient `pending` | recipient `expired` | the core | the task failed after 3 retries | MEM-7 |
 | recipient `waiting` | recipient `expired` | the `identity` loop | `open_until` passed without a successor | MEM-7 |
 
 ## Invariants

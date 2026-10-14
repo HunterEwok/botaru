@@ -1,5 +1,5 @@
 id: tim-fx-10
-rules: [TIM-4]
+rules: [TIM-3]
 description: A change of the schedule time zone between two slots takes effect from the next slot after apply. The slot key
   in UTC gives no second run of an instant already run and does not lose the next slot.
 given:
@@ -48,7 +48,7 @@ steps:
 expect: {duplicate_keys: 0, lost_slots: 0}
 cases:
 - id: tim-fx-11
-  rules: [TIM-4]
+  rules: [TIM-3]
   description: A change to a time zone where the next slot coincides with an instant already run; there is no second task with the
     same key.
   steps:

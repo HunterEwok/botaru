@@ -113,7 +113,7 @@ Only text types are allowed (`.md`, `.txt`, `.yaml`, `.json`, `.csv`, UTF-8), at
 
 A role pins a skill by the hash of its folder tree (the skill tree hash in `spec/hashing.md`). In `RunRequest.skills` the core passes references per the schema `skill-ref`: `{name, description, sha256}`. The E4 adapter gives the runtime the content only of the skills of this role with a matching hash, and only from the core's copy (SKL-2): as files if the runtime declares `skills: runtime_files` in `describe()`, or as a section of the instruction and through `skill_read` if it declares `skills: farm` (`spec/model/runtime-deviations.yaml`). The runtime's skill folder is read-only, and a skill that is not in the role is forbidden on the runtime's disk. A skill proposed by the model enters work only by a commit to git after human review (RT-2).
 
-Skills are disclosed gradually. First the model sees the name and description of each skill of the role (about 100 tokens per skill), then the body of a skill when it is used, and the other files on demand. For a runtime without skills of its own, the core provides the built-in tool `skill_read` in the P3 catalog for this: the parameter `name` from an `enum` of the role's skills, the parameter `file` from an `enum` of the skill's files. `skill_read` (since v0.2) is available only to the profiles `worker` and `manager` (PRF-1): `handover` tasks have no built-in tools at all (MEM-8), and `insight` tasks have only `observations_query` among the built-in ones (INS-1, OBV-3). A role of another profile with such a runtime gets the skills of its role only as a section of the instruction. The output of `skill_read` is trusted, because it is text from git with review. The answer holds at most 32 KiB of the file and `next_offset` for the rest, and names the tree hash of the pinned skill (SKL-4).
+Skills are disclosed gradually. First the model sees the name and description of each skill of the role (about 100 tokens per skill), then the body of a skill when it is used, and the other files on demand. For a runtime without skills of its own, the core provides the built-in tool `skill_read` in the P3 catalog for this: the parameter `name` from an `enum` of the role's skills, the parameter `file` from an `enum` of the skill's files. `skill_read` (since v0.2) is available only to the profiles `worker` and `manager` (PRF-1): `handover` tasks have no built-in tools at all (MEM-7), and `insight` tasks have only `observations_query` among the built-in ones (INS-1, OBV-3). A role of another profile with such a runtime gets the skills of its role only as a section of the instruction. The output of `skill_read` is trusted, because it is text from git with review. The answer holds at most 32 KiB of the file and `next_offset` for the rest, and names the tree hash of the pinned skill (SKL-4).
 
 ### What a skill cannot do
 
@@ -438,7 +438,6 @@ Generated from the registry `conformance/requirements.yaml`; the full text of ev
 | [KNW-3](../conformance/rules.md#KNW-3) | Corpus text reaches the model only through P3 | v0.2 | yes |
 | [KNW-4](../conformance/rules.md#KNW-4) | The model has no write path to a corpus | v0.2 | yes |
 | [KNW-5](../conformance/rules.md#KNW-5) | Deleting a document deletes its fragments | v0.2 | yes |
-| [KNW-6](../conformance/rules.md#KNW-6) | Corpus search is a word search | v0.2 | no |
 | [PRV-1](../conformance/rules.md#PRV-1) | The core writes the run fingerprint | v0.1 | yes |
 | [PRV-2](../conformance/rules.md#PRV-2) | The core writes artifact provenance | v0.1 | yes |
 | [PRV-3](../conformance/rules.md#PRV-3) | Quality check on a static fingerprint change | v0.2 | yes |
@@ -446,4 +445,3 @@ Generated from the registry `conformance/requirements.yaml`; the full text of ev
 | [SKL-1](../conformance/rules.md#SKL-1) | A skill without scripts and without an allowed-tools list | v0.2 | yes |
 | [SKL-2](../conformance/rules.md#SKL-2) | The runtime gets only role skills with a matching hash | v0.2 | yes |
 | [SKL-3](../conformance/rules.md#SKL-3) | A skill does not change the tool catalog | v0.2 | yes |
-| [SKL-4](../conformance/rules.md#SKL-4) | Reading a skill through the core | v0.2 | yes |

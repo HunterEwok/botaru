@@ -9,7 +9,7 @@ Sheet E1 (`spec/ports/e1-channel.md`) says "external system", "update", "button"
 | Section | What it holds | Rules |
 |---|---|---|
 | Version | the messenger API version the binding targets, and the date it was checked | |
-| Receiving updates | how updates are received (webhook or polling), how the authenticity of an update is checked, when the offset moves or receipt is acknowledged | IDN-3, DLV-5, IDM-5 |
+| Receiving updates | how updates are received (webhook or polling), how the authenticity of an update is checked, when the offset moves or receipt is acknowledged | IDN-3, DLV-5 |
 | Input -> `Activity` | which update fields give `update_id`, `sender`, `chat`, `text`, `attachments`, `reply_to`, `forwarded`, `quoted`, `received_at`; which updates give no `Activity` | IDN-3, IDN-7, INJ-8, TEN-4 |
 | Sender | where the identity comes from (`<kind>:<id>`), when `verified: false`, which `identity_assurance` the driver declares | IDN-1, IDN-3 |
 | Chat membership | how the driver learns that members joined or left, under what conditions it may declare `membership_assurance: enforced` | DLV-7, IDN-13 |

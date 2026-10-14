@@ -1,5 +1,5 @@
 registry: builtin-tools
-version: 4
+version: 5
 description: >-
   Built-in P3 tools. The core adds them to the tools/list of an attempt at step 7
   of catalog assembly, if the tool allows the role profile (role-profiles.yaml) and
@@ -10,7 +10,7 @@ description: >-
   never cached, PRM-12, and a debug replay only records its call, APR-8), profiles (profiles
   the tool is available to), purposes (task type purposes in which
   the tool exists; null means all purposes of the profile except handover and
-  governance, where nobody has built-in tools, MEM-8, GOV-7),
+  governance, where nobody has built-in tools, MEM-7, GOV-7),
   condition (task and role condition in words), limit (call limit, if one
   is named), args_schema and result_schema (argument and result schemas from
   spec/model; null while there is no schema, and then schema_note says when it
@@ -301,7 +301,7 @@ entries:
     purposes: [manage]
     args_schema: empty-request.schema.json
     result_schema: grants-pending-response.schema.json
-    rules: [PRF-1, MGR-43]
+    rules: [PRF-1, MGR-18]
   - id: takeover_request
     since: v0.2
     access: read
@@ -317,7 +317,7 @@ entries:
     access: read
     profiles: [worker, manager]
     purposes: [work]
-    condition: 'a skill file of the role by enum, only for runtimes that declare `skills: farm`; not present in handover tasks (MEM-8, SKL-4)'
+    condition: 'a skill file of the role by enum, only for runtimes that declare `skills: farm`; not present in handover tasks (MEM-7, SKL-4)'
     limit: at most 32 KiB of text per call
     args_schema: skill-read-request.schema.json
     result_schema: skill-read-response.schema.json

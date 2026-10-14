@@ -2,12 +2,12 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "urn:botaru:schema:p1-submit-activity-response:1",
   "title": "P1 submit_activity: response",
-  "description": "Outcome of an activity: a task (new, or the same one on a repeat of the same update, IDM-5), ignored (the activity did not become a task, for example it came from a non-principal or is not a command) or a ready code answer that the channel shows itself. Code chose the task type (IDN-6). Denials: identity_unknown, not_ready.",
+  "description": "Outcome of an activity: a task (new, or the same one on a repeat of the same update, DLV-5), ignored (the activity did not become a task, for example it came from a non-principal or is not a command) or a ready code answer that the channel shows itself. Code chose the task type (IDN-6). Denials: identity_unknown, not_ready.",
   "x-botaru-direction": "output",
   "x-botaru-rules": [
     "IDN-3",
     "IDN-6",
-    "IDM-5",
+    "DLV-5",
     "CNT-5"
   ],
   "type": "object",

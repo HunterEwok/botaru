@@ -246,7 +246,7 @@
     },
     "manager_preventable": {
       "x-botaru-version": "v0.3",
-      "description": "From v0.3, for a class with manager_accountable: true written in the transaction of opening: true when the incident is preventable by the seat holder (GOV-47, MGR-44, MGR-45), otherwise the reason code why not.",
+      "description": "From v0.3, for a class with manager_accountable: true written in the transaction of opening: true when the incident is preventable by the seat holder (GOV-47, MGR-45), otherwise the reason code why not.",
       "anyOf": [
         {
           "const": true

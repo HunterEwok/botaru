@@ -1,5 +1,5 @@
 registry: grant-request-reasons
-version: 1
+version: 2
 description: >-
   Closed fields of a model grant request (MGR-17, P1 grant.request and the built-in
   tool request_model_grant). The kind field of an entry says which list
@@ -17,7 +17,7 @@ entries:
     kind: reason
     since: v0.2
     meaning: the initial input of the task is larger than the threshold of its class; tool output is not part of the initial input
-    rules: [MGR-17, MGR-40]
+    rules: [MGR-17]
   - id: quality_gate_failed
     kind: reason
     since: v0.2

@@ -12,7 +12,7 @@
     "PRP-7",
     "PRP-9",
     "PRP-14",
-    "PRP-15",
+    "PRP-22",
     "PRP-18",
     "PRP-19",
     "PRP-20",
@@ -151,11 +151,11 @@
         }
       },
       "maxItems": 10,
-      "description": "Share of the author's own points in the evidence series (PRP-15)."
+      "description": "Share of the author's own points in the evidence series (PRP-22)."
     },
     "self_evidence": {
       "type": "boolean",
-      "description": "author_share of at least one series is at least 0.3 (PRP-15)."
+      "description": "author_share of at least one series is at least 0.3 (PRP-22)."
     },
     "related_to": {
       "type": "array",

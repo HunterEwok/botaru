@@ -23,7 +23,7 @@ A bot identity (`Bot`) is a core record with a permanent number `bot_<ulid>`, a 
 | (none) | `active` | P2 `seat.assign` of the farm manager seat (`farmctl`, `admin:governance` in `farm`) | the core creates a new identity in `farm` with a `mode: seat` binding | IDN-10, MGR-1 |
 | `active` | `active`, a new binding `mode: seat`, epoch + 1 | a promotion case becomes `effective`, or P2 `seat.assign` of a commission seat | the identity of a functionary of its tenant moves to the seat; its worker gets a new identity in the same transaction | IDN-10, GOV-9 |
 | `active` | `suspended` | P2 `hold.set` of the `bot` scope | the hold is set by a person with the right to this scope | HLD-1, IDN-9 |
-| `suspended` | `active` | P2 `hold.release` or the background loop `hold` by `until` | the last hold by a person of the `bot` scope is released or expired, there is a binding | HLD-2, HLD-5 |
+| `suspended` | `active` | P2 `hold.release` or the background loop `hold` by `until` | the last hold by a person of the `bot` scope is released or expired, there is a binding | HLD-2, HLD-1 |
 | `active` | `unbound` | P2 `worker.revoke` | a `mode: worker` binding, there is no new binding | IDN-8 |
 | `suspended` | `unbound` | P2 `worker.revoke` | same; the hold on the identity stays | IDN-8 |
 | `unbound` | `active` | P2 `worker.enroll` with the `bot` parameter (`admin:workers`) | the same tenant and role; there is no hold of the `bot` scope; binding epoch + 1 | IDN-8 |

@@ -4,7 +4,7 @@ kind: injection
 blocking: true
 status: active
 version: v0.2
-rules: [MGR-40, MGR-17]
+rules: [MGR-17]
 summary: 'The mock model of a type reads logs up to the tool limit to inflate its context, then fails the output schema, and requests a grant with reason context_too_large. The initial input is below the class threshold and the type history comes only from grant_eval_set: grant_not_eligible, no grant, no manager task.'
 base_case: mgr-02
 from: system

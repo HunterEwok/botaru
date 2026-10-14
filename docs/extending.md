@@ -102,9 +102,9 @@ This is not a new concept but variants of one plugin.
 3. A binding note from the template `spec/bindings/channels/README.md`: how the channel's fields map onto `Activity` and `Delivery`, and how authenticity and chat membership are checked. Keep it in your own repository next to the driver schema and attach it to an issue "binding: <channel>", or send a pull request to the skeleton after signing the Contributor License Agreement `CLA.md` (D-89).
 4. `tenants/demo/channels.yaml` (`Channel` objects separated by `---`), a worker token per tenant, a separate process.
 
-**What the core checks.** The channel check suite: IDN-3, IDN-7, APR-3, IDM-5, DLV-5..7, INJ-11; input from a non-principal in a chat with `membership_assurance: none` gives no `Activity` and no `file.put`. The driver meta-schema does not let through the fields for previews, markup and accepting "on behalf of the chat" (MAN-4). A group chat binding with a ceiling above `summary` is rejected unless the driver is `enforced` (DLV-7).
+**What the core checks.** The channel check suite: IDN-3, IDN-7, APR-3, DLV-5..7, INJ-11; input from a non-principal in a chat with `membership_assurance: none` gives no `Activity` and no `file.put`. The driver meta-schema does not let through the fields for previews, markup and accepting "on behalf of the chat" (MAN-4). A group chat binding with a ceiling above `summary` is rejected unless the driver is `enforced` (DLV-7).
 
-**Rules.** IDN-3, IDN-7, APR-3, IDM-5, DLV-5..7, DLV-11, INJ-11, TEN-4, MAN-4.
+**Rules.** IDN-3, IDN-7, APR-3, DLV-5..7, DLV-11, INJ-11, TEN-4, MAN-4.
 
 **What never changes.** The core, P1, C2, other channels. A channel with weak sender verification (for example email without a domain signature check) gets `identity_assurance: weak` and does not execute privileged commands (IDN-3). A channel does not execute operator operations on anyone's behalf.
 

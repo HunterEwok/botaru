@@ -1,8 +1,8 @@
 id: fx-time-schedule-proposal-check
-rules: [TIM-5, TIM-3, TIM-4]
+rules: [TIM-5, TIM-3]
 version: v0.2
 description: 'Before the "Accept" button of a proposal that changes the `cron`, the time zone or the pause of a schedule,
-  code computes the slots of the new schedule for one year from the card time (TIM-3, TIM-4) and the card shows: local
+  code computes the slots of the new schedule for one year from the card time (TIM-3) and the card shows: local
   times that disappear or repeat at clock changes; overlaps with slots of the tenant''s other schedules whose tasks hit
   the same resources (a slot lasts from its start to the type''s `deadline`); overlaps with the windows of running change
   trials on the same subjects. An expression or time zone that fails `apply` gives no "Accept" button. A schedule of a
@@ -80,7 +80,7 @@ cases:
       overlaps_trials: [{subject: schedule/sensor-nightly, window_ends: '2026-10-22T09:00:00Z'}]
       accept_button: true
 - id: tim-fx-24
-  rules: [TIM-5, TIM-4]
+  rules: [TIM-5, TIM-3]
   description: A time zone outside the IANA database and a cron with CRON_TZ give a card without the "Accept" button.
   cases:
   - given:

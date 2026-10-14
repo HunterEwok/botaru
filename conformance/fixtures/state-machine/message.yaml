@@ -7,7 +7,7 @@ rules:
 - FEN-5
 - HLD-3
 - MSG-1
-- MSG-10
+- MSG-15
 - MSG-11
 - MSG-12
 - MSG-13
@@ -68,7 +68,7 @@ allowed:
     and the sender role's share is not exceeded; there is no hold with no_message
   rules:
   - MSG-1
-  - MSG-10
+  - MSG-15
   - MSG-11
   - MSG-13
   - MSG-15
@@ -85,7 +85,7 @@ allowed:
   rules:
   - FEN-4
   - HLD-3
-  - MSG-10
+  - MSG-15
   - MSG-15
   - MSG-4
   - MSG-5
@@ -186,7 +186,7 @@ allowed:
   by: apply removed the role, the bot group or the receive of this kind; P2 worker.revoke for a worker inbox
   when: the recipient no longer exists (reason recipient_gone); the core writes an event, the entry is not lost silently
   rules:
-  - MSG-10
+  - MSG-15
   - MSG-3
 - id: sm-msg-14
   from: null
@@ -261,7 +261,7 @@ forbidden:
   rules:
   - FEN-4
   - HLD-3
-  - MSG-10
+  - MSG-15
   - MSG-3
   why: the object does not appear directly in the state discarded
 - id: sm-msg-x04
@@ -307,7 +307,7 @@ forbidden:
   expect: rejected
   rules:
   - MSG-1
-  - MSG-10
+  - MSG-15
   - MSG-11
   - MSG-13
   why: the lifecycle table has no such transition
@@ -381,7 +381,7 @@ forbidden:
   rules:
   - FEN-4
   - HLD-3
-  - MSG-10
+  - MSG-15
   - MSG-15
   why: the lifecycle table has no such transition
 - id: sm-msg-x19
@@ -390,7 +390,7 @@ forbidden:
   expect: rejected
   rules:
   - MSG-1
-  - MSG-10
+  - MSG-15
   - MSG-11
   - MSG-13
   why: the lifecycle table has no such transition
@@ -457,7 +457,7 @@ forbidden:
   rules:
   - FEN-4
   - HLD-3
-  - MSG-10
+  - MSG-15
   - MSG-15
   why: the lifecycle table has no such transition
 - id: sm-msg-x28
@@ -466,7 +466,7 @@ forbidden:
   expect: rejected
   rules:
   - MSG-1
-  - MSG-10
+  - MSG-15
   - MSG-11
   - MSG-13
   why: the lifecycle table has no such transition
@@ -487,7 +487,7 @@ forbidden:
   rules:
   - FEN-4
   - HLD-3
-  - MSG-10
+  - MSG-15
   - MSG-3
   why: the lifecycle table has no such transition
 - id: sm-msg-x31
@@ -528,7 +528,7 @@ forbidden:
   rules:
   - FEN-4
   - HLD-3
-  - MSG-10
+  - MSG-15
   - MSG-15
   why: the lifecycle table has no such transition
 - id: sm-msg-x36
@@ -537,7 +537,7 @@ forbidden:
   expect: rejected
   rules:
   - MSG-1
-  - MSG-10
+  - MSG-15
   - MSG-11
   - MSG-13
   why: acked is a terminal state
@@ -576,7 +576,7 @@ forbidden:
   rules:
   - FEN-4
   - HLD-3
-  - MSG-10
+  - MSG-15
   - MSG-3
   why: acked is a terminal state
 - id: sm-msg-x41
@@ -631,7 +631,7 @@ forbidden:
   rules:
   - FEN-4
   - HLD-3
-  - MSG-10
+  - MSG-15
   - MSG-15
   why: acked is a terminal state
 - id: sm-msg-x48
@@ -640,7 +640,7 @@ forbidden:
   expect: rejected
   rules:
   - MSG-1
-  - MSG-10
+  - MSG-15
   - MSG-11
   - MSG-13
   why: discarded is a terminal state
@@ -679,7 +679,7 @@ forbidden:
   rules:
   - FEN-4
   - HLD-3
-  - MSG-10
+  - MSG-15
   - MSG-3
   why: discarded is a terminal state
 - id: sm-msg-x53
@@ -734,7 +734,7 @@ forbidden:
   rules:
   - FEN-4
   - HLD-3
-  - MSG-10
+  - MSG-15
   - MSG-15
   why: discarded is a terminal state
 - id: sm-msg-x60
@@ -743,7 +743,7 @@ forbidden:
   expect: rejected
   rules:
   - MSG-1
-  - MSG-10
+  - MSG-15
   - MSG-11
   - MSG-13
   why: dead is a terminal state
@@ -782,7 +782,7 @@ forbidden:
   rules:
   - FEN-4
   - HLD-3
-  - MSG-10
+  - MSG-15
   - MSG-3
   why: dead is a terminal state
 - id: sm-msg-x65
@@ -837,7 +837,7 @@ forbidden:
   rules:
   - FEN-4
   - HLD-3
-  - MSG-10
+  - MSG-15
   - MSG-15
   why: dead is a terminal state
 - id: sm-msg-x72
@@ -846,7 +846,7 @@ forbidden:
   expect: rejected
   rules:
   - MSG-1
-  - MSG-10
+  - MSG-15
   - MSG-11
   - MSG-13
   why: expired is a terminal state
@@ -885,7 +885,7 @@ forbidden:
   rules:
   - FEN-4
   - HLD-3
-  - MSG-10
+  - MSG-15
   - MSG-3
   why: expired is a terminal state
 - id: sm-msg-x77
@@ -940,7 +940,7 @@ forbidden:
   rules:
   - FEN-4
   - HLD-3
-  - MSG-10
+  - MSG-15
   - MSG-15
   why: expired is a terminal state
 - id: sm-msg-x84
@@ -949,7 +949,7 @@ forbidden:
   expect: rejected
   rules:
   - MSG-1
-  - MSG-10
+  - MSG-15
   - MSG-11
   - MSG-13
   why: the lifecycle table has no such transition
@@ -988,7 +988,7 @@ forbidden:
   rules:
   - FEN-4
   - HLD-3
-  - MSG-10
+  - MSG-15
   - MSG-3
   why: the lifecycle table has no such transition
 - id: sm-msg-x89
@@ -1020,7 +1020,7 @@ forbidden:
   rules:
   - FEN-4
   - HLD-3
-  - MSG-10
+  - MSG-15
   - MSG-15
   why: the lifecycle table has no such transition
 - id: sm-msg-x93
@@ -1029,7 +1029,7 @@ forbidden:
   expect: rejected
   rules:
   - MSG-1
-  - MSG-10
+  - MSG-15
   - MSG-11
   - MSG-13
   why: the lifecycle table has no such transition
@@ -1068,7 +1068,7 @@ forbidden:
   rules:
   - FEN-4
   - HLD-3
-  - MSG-10
+  - MSG-15
   - MSG-3
   why: the lifecycle table has no such transition
 - id: sm-msg-x98
@@ -1107,7 +1107,7 @@ forbidden:
   rules:
   - FEN-4
   - HLD-3
-  - MSG-10
+  - MSG-15
   - MSG-15
   why: the lifecycle table has no such transition
 - id: sm-msg-x103
@@ -1116,7 +1116,7 @@ forbidden:
   expect: rejected
   rules:
   - MSG-1
-  - MSG-10
+  - MSG-15
   - MSG-11
   - MSG-13
   why: replaced is a terminal state
@@ -1155,7 +1155,7 @@ forbidden:
   rules:
   - FEN-4
   - HLD-3
-  - MSG-10
+  - MSG-15
   - MSG-3
   why: replaced is a terminal state
 - id: sm-msg-x108
@@ -1210,7 +1210,7 @@ forbidden:
   rules:
   - FEN-4
   - HLD-3
-  - MSG-10
+  - MSG-15
   - MSG-15
   why: replaced is a terminal state
 - id: sm-msg-x115
@@ -1219,7 +1219,7 @@ forbidden:
   expect: rejected
   rules:
   - MSG-1
-  - MSG-10
+  - MSG-15
   - MSG-11
   - MSG-13
   why: removed is a terminal state
@@ -1258,7 +1258,7 @@ forbidden:
   rules:
   - FEN-4
   - HLD-3
-  - MSG-10
+  - MSG-15
   - MSG-3
   why: removed is a terminal state
 - id: sm-msg-x120
@@ -1313,7 +1313,7 @@ forbidden:
   rules:
   - FEN-4
   - HLD-3
-  - MSG-10
+  - MSG-15
   - MSG-15
   why: removed is a terminal state
 - id: sm-msg-x127
@@ -1322,7 +1322,7 @@ forbidden:
   expect: rejected
   rules:
   - MSG-1
-  - MSG-10
+  - MSG-15
   - MSG-11
   - MSG-13
   why: rejected is a terminal state
@@ -1361,7 +1361,7 @@ forbidden:
   rules:
   - FEN-4
   - HLD-3
-  - MSG-10
+  - MSG-15
   - MSG-3
   why: rejected is a terminal state
 - id: sm-msg-x132
@@ -1416,6 +1416,6 @@ forbidden:
   rules:
   - FEN-4
   - HLD-3
-  - MSG-10
+  - MSG-15
   - MSG-15
   why: rejected is a terminal state

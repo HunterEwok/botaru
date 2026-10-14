@@ -2,7 +2,7 @@
 
 ## In short
 
-A fact (`Fact`) is a verified record about the farm in a bot's memory of the `bot` scope, for example "the task type `pipeline.qc.v1` on `web1` runs 130 minutes at the 95th percentile". The model only proposes what to remember: the kind, the predicate and the subject from closed registries; the core chooses and computes the window, the evidence and the value (MEM-6). A fact has no free strings, so an instruction cannot be put into it. A fact is the only thing that passes from a retired bot to its successor (MEM-7, MEM-8). A person does not approve facts.
+A fact (`Fact`) is a verified record about the farm in a bot's memory of the `bot` scope, for example "the task type `pipeline.qc.v1` on `web1` runs 130 minutes at the 95th percentile". The model only proposes what to remember: the kind, the predicate and the subject from closed registries; the core chooses and computes the window, the evidence and the value (MEM-6). A fact has no free strings, so an instruction cannot be put into it. A fact is the only thing that passes from a retired bot to its successor (MEM-7). A person does not approve facts.
 
 ## States
 
@@ -20,7 +20,7 @@ A refusal at creation (`fact_insufficient`, a schema error, a subject not from t
 | From | To | Trigger | Condition | Rules |
 |---|---|---|---|---|
 | (none) | `active` | P1 `complete` of an attempt whose type declared `memory.facts: propose` | the schema, a subject of this tenant, at least `min_samples` pieces of evidence; at most 3 facts from an attempt; the attempt did not fail, was not canceled and is not `fenced`; with the attempt's `untrusted_seen` the fact gets `untrusted_origin: true` | MEM-6, MEM-3 |
-| (none) | `active`, a copy with `inherited` | the core on the outcome of a `memory.pick.v1` task | the recheck against the recipient's rights passed; `untrusted_origin` is kept | MEM-8 |
+| (none) | `active`, a copy with `inherited` | the core on the outcome of a `memory.pick.v1` task | the recheck against the recipient's rights passed; `untrusted_origin` is kept | MEM-7 |
 | `active` | `stale` | the core at a recheck (creating an offer, taking) | the evidence was wiped | MEM-6 |
 | `active` | `stale` | the core at a recheck | the recomputed value disagrees with the record (`fact_mismatch`); no copy is made | MEM-6 |
 | `active` | `erased` | the core when writing a new fact | the space has more than 100 active facts; the fact with the oldest `last_used_at` is evicted | MEM-6 |

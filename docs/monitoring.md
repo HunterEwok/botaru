@@ -360,7 +360,6 @@ Generated from the registry `conformance/requirements.yaml`; the full text of ev
 | [MON-4](../conformance/rules.md#MON-4) | Permissions of the farm account in the monitoring system | v0.1 | yes |
 | [MON-5](../conformance/rules.md#MON-5) | Monitoring problems into the farm | v0.1 | yes |
 | [MON-6](../conformance/rules.md#MON-6) | The monitor plugin is read only | v0.1 | no |
-| [MON-7](../conformance/rules.md#MON-7) | Bot notes on problems | v0.2 | no |
 | [MON-8](../conformance/rules.md#MON-8) | Service control | v0.1 | yes |
 | [MON-9](../conformance/rules.md#MON-9) | Monitoring maintenance windows give a farm hold | v0.2 | no |
 | [MON-10](../conformance/rules.md#MON-10) | Monitoring system scripts | v0.1 | yes |

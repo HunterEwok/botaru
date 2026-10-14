@@ -236,7 +236,7 @@ Distribution (who gets which task) is set by the dispatch rules and bot groups, 
 | farm manager seat -> stop reasons | 1 : 0..3 (`human`, `no_control`, `incident`) | the seat is in `held` only while the set is empty (GOV-22, MGR-14, MGR-15) |
 | identity -> fact space | 1 : 1 in a tenant; the farm manager seat holder has a space in every tenant | facts of a closed schema, at most 100 active per space and 3 from one attempt (MEM-6, MGR-27) |
 | departing identity -> fact offer | 1 : 0..1; the manager has an offer for each tenant | facts are offered only to the successor and only in the same tenant (MEM-7) |
-| fact offer -> successor | 1 : 0..1 | the newcomer chooses itself, at most 50 facts (MEM-8) |
+| fact offer -> successor | 1 : 0..1 | the newcomer chooses itself, at most 50 facts (MEM-7) |
 | tenant -> open governance case | 1 : 0..1 | only the core opens a case (GOV-6), v0.2 |
 | case -> voting round | 1 : N (up to the number of seats in the list minus one) | there is always an outcome, and exactly one leaves (GOV-8) |
 | voting round -> ballot | 1 : N, exactly one per voter | (GOV-7) |

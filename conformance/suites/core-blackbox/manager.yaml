@@ -17,7 +17,6 @@ checks:
   method: blackbox
   rules:
   - MGR-18
-  - MGR-43
   version: v0.2
   section: Tests without a model
   source: docs/quality.md:422
@@ -31,7 +30,6 @@ checks:
   method: blackbox
   rules:
   - GOV-47
-  - MGR-44
   - MGR-45
   version: v0.3
   section: Tests without a model
@@ -44,7 +42,7 @@ checks:
 - id: blackbox:manager/preventable-notice
   method: blackbox
   rules:
-  - MGR-46
+  - GOV-47
   version: v0.3
   section: Tests without a model
   source: docs/quality.md:624

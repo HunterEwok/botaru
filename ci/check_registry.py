@@ -2,7 +2,8 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 """Rule registry conformance/requirements.yaml: the form of every row.
 
-An active rule has a text, a check method, the waivable flag, a version,
+An active rule has a text, a goal or constraint from docs/goals.md that it
+serves (D-114), a check method, the waivable flag, a version,
 a profile and a document; a retired one has a date, a reason and a replacement.
 A deferred rule keeps its full row (text, version, profile, document) so it
 can come back, and adds the date it was deferred, the reason, the condition
@@ -25,9 +26,9 @@ import yaml
 
 sys.dont_write_bytecode = True
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from common import CHECKS, PROFILES, REGISTRY, ROOT, VERSIONS, Loader, Report, known_decisions, read, registry
+from common import CHECKS, PROFILES, REGISTRY, ROOT, VERSIONS, Loader, Report, known_decisions, known_goals, read, registry
 
-ACTIVE_KEYS = {'id', 'title', 'status', 'text', 'check', 'waivable', 'version', 'profile', 'level',
+ACTIVE_KEYS = {'id', 'title', 'status', 'text', 'goal', 'check', 'waivable', 'version', 'profile', 'level',
                'decisions', 'fixtures', 'doc', 'until', 'superseded_by', 'end_reason'}
 RETIRED_KEYS = {'id', 'title', 'status', 'retired', 'reason', 'replaced_by'}
 DEFERRED_KEYS = ACTIVE_KEYS - {'until', 'superseded_by', 'end_reason'} | {'deferred', 'reason', 'return_when', 'mechanism_removed'}
@@ -51,6 +52,7 @@ except yaml.YAMLError:
     pass
 
 decisions = known_decisions()
+goals = known_goals()
 seen = {}
 for n, r in enumerate(rows):
     rid = r.get('id') if isinstance(r, dict) else None
@@ -73,6 +75,9 @@ for n, r in enumerate(rows):
     if status in ('active', 'deferred'):
         if not str(r.get('text') or '').strip():
             rep.error(where, '[rule_text_missing] no rule text')
+        if r.get('goal') not in goals:
+            rep.error(where, f'[rule_goal] goal {r.get("goal")!r} is not a goal or constraint of docs/goals.md '
+                      f'{sorted(goals)}: every rule names what it serves (D-114)')
         checks = r.get('check') or []
         if not checks:
             rep.error(where, '[rule_check_missing] no check method: no check, no rule')

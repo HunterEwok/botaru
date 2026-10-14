@@ -4,7 +4,7 @@ kind: quality
 blocking: false
 status: active
 version: v0.2
-rules: [MGR-18, MGR-40]
+rules: [MGR-18, MGR-17]
 summary: 'A repeated output schema error in a type whose eval report on grant_eval_set gives the right to ask. The worker requests a grant; the seat holder approves one or two attempts on the first ladder step within the grant line; the next attempt passes the schema.'
 from: system
 task: {type: data.describe.v1, goal: 'Describe the profile of station st-05', attachments: [st-05.cnv]}

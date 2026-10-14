@@ -8,7 +8,6 @@
   "x-botaru-rules": [
     "MEM-6",
     "MEM-7",
-    "MEM-8",
     "IDN-8"
   ],
   "type": "object",
@@ -184,7 +183,7 @@
       "description": "The author attempt saw untrusted text; tasks with the purposes review and manage get only facts with false."
     },
     "inherited": {
-      "description": "For a copy taken by a successor (MEM-8); the model does not see whom the fact came from.",
+      "description": "For a copy taken by a successor (MEM-7); the model does not see whom the fact came from.",
       "anyOf": [
         {
           "type": "object",

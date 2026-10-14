@@ -7,7 +7,7 @@ rules:
 - GOV-23
 - HLD-1
 - HLD-2
-- HLD-5
+- HLD-1
 - HLD-6
 - HLD-7
 - LCY-1
@@ -45,7 +45,7 @@ allowed:
   - GOV-23
   - HLD-1
   - HLD-2
-  - HLD-5
+  - HLD-1
   - PRM-14
   - PRM-15
 - from: null
@@ -124,7 +124,7 @@ allowed:
   by: the background loop `hold`
   when: '`until` has come'
   rules:
-  - HLD-5
+  - HLD-1
   - TIM-1
 - from: active
   to: released
@@ -135,7 +135,7 @@ allowed:
   rules:
   - GOV-23
   - HLD-2
-  - HLD-5
+  - HLD-1
   - PRM-14
 - from: active
   to: released
@@ -184,7 +184,7 @@ forbidden:
   - GOV-23
   - HLD-1
   - HLD-2
-  - HLD-5
+  - HLD-1
   why: the object does not appear directly in the state expired
 - from: null
   to: released
@@ -195,7 +195,7 @@ forbidden:
   - GOV-23
   - HLD-1
   - HLD-2
-  - HLD-5
+  - HLD-1
   why: the object does not appear directly in the state released
 - from: expired
   to: active
@@ -206,13 +206,13 @@ forbidden:
   - GOV-23
   - HLD-1
   - HLD-2
-  - HLD-5
+  - HLD-1
   why: 'expired is a terminal state: there are no transitions out of it'
 - from: expired
   to: expired
   expect: rejected
   rules:
-  - HLD-5
+  - HLD-1
   - TIM-1
   why: 'expired is a terminal state: there are no transitions out of it'
 - from: expired
@@ -221,7 +221,7 @@ forbidden:
   rules:
   - GOV-23
   - HLD-2
-  - HLD-5
+  - HLD-1
   - MGR-15
   - MGR-9
   - PRM-14
@@ -235,13 +235,13 @@ forbidden:
   - GOV-23
   - HLD-1
   - HLD-2
-  - HLD-5
+  - HLD-1
   why: 'released is a terminal state: there are no transitions out of it'
 - from: released
   to: expired
   expect: rejected
   rules:
-  - HLD-5
+  - HLD-1
   - TIM-1
   why: 'released is a terminal state: there are no transitions out of it'
 - from: released
@@ -250,7 +250,7 @@ forbidden:
   rules:
   - GOV-23
   - HLD-2
-  - HLD-5
+  - HLD-1
   - MGR-15
   - MGR-9
   - PRM-14

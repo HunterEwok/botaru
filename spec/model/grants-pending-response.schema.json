@@ -2,11 +2,11 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "urn:botaru:schema:grants-pending-response:1",
   "title": "P3 grants_pending: result",
-  "description": "Pending grant requests of the batch tenant for the manager.grants.v1 task: closed fields only, no request note and no task text (MGR-43, MGR-17).",
+  "description": "Pending grant requests of the batch tenant for the manager.grants.v1 task: closed fields only, no request note and no task text (MGR-18, MGR-17).",
   "x-botaru-direction": "output",
   "x-botaru-version": "v0.2",
   "x-botaru-rules": [
-    "MGR-43",
+    "MGR-18",
     "MGR-17"
   ],
   "type": "object",

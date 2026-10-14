@@ -1,7 +1,7 @@
 # Collected from spec/lifecycles/identity.yaml. The value null in from means "the object does not exist yet".
 lifecycle: spec/lifecycles/identity.yaml
 object: identity
-rules: [GOV-9, HLD-1, HLD-2, HLD-5, IDN-8, IDN-9, IDN-10, IDN-11, MEM-9, MEM-10, MGR-1, RET-7]
+rules: [GOV-9, HLD-1, HLD-2, IDN-8, IDN-9, IDN-10, IDN-11, MEM-9, MEM-10, MGR-1, RET-7]
 description: Allowed and forbidden transitions of the "bot identity" lifecycle, collected from the tables of spec/lifecycles/identity.md.
   The implementation accepts a transition from the allowed list under the condition of its row (when); a pair from the forbidden
   list does not change the state, and the call that asks for it is rejected. The value null in from means "the object does
@@ -55,7 +55,7 @@ allowed:
   to: active
   by: P2 hold.release or the background loop hold by until
   when: the last people's hold on the bot scope was lifted or expired, a binding exists
-  rules: [HLD-2, HLD-5]
+  rules: [HLD-2, HLD-1]
 - id: sm-idn-07
   from: active
   to: unbound
@@ -157,13 +157,13 @@ forbidden:
   from: suspended
   to: suspended
   expect: rejected
-  rules: [HLD-1, HLD-2, HLD-5, IDN-8]
+  rules: [HLD-1, HLD-2, IDN-8]
   why: the lifecycle table has no such transition
 - id: sm-idn-x07
   from: suspended
   to: erased
   expect: rejected
-  rules: [HLD-2, HLD-5, IDN-8, IDN-11]
+  rules: [HLD-2, HLD-1, IDN-8, IDN-11]
   why: the lifecycle table has no such transition
 - id: sm-idn-x08
   from: unbound

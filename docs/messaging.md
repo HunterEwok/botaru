@@ -240,7 +240,7 @@ The type sets the delivery mode (MSG-14):
 
 For `report` the guarantee is "at least once" until the entry's expiry. An entry counts as processed exactly when the attempt that read it has written its result (`complete`): this is the semantic acknowledgement. While the attempt is alive, the entry is leased by it; on `fail`, loss of the lease or `msg.nack` the entry returns to the inbox, and its delivery count grows by one. After the third delivery the entry becomes `dead(delivery_exhausted)`: this way one poisonous entry does not break a role forever. Cancellation and preemption of the attempt return the entry without counting a delivery: the reader is not to blame. A return because of a lease that expired while the core was not running does not count as a delivery either (MSG-9, FEN-5). Order is promised only within one inbox, by the number that the core assigns.
 
-Overflow does not silently push entries out. A full inbox immediately gives the sender `rejected(inbox_full)`, and the core writes one event per (inbox, period). So that a noisy sender does not clog someone else's inbox, one sending role takes at most 25% of the inbox capacity; beyond this share only that role gets the refusal `rejected(sender_quota)`, and entries of other roles are accepted. The first such refusal in a period raises the event `inbox.flood` (MSG-10).
+Overflow does not silently push entries out. A full inbox immediately gives the sender `rejected(inbox_full)`, and the core writes one event per (inbox, period). So that a noisy sender does not clog someone else's inbox, one sending role takes at most 25% of the inbox capacity; beyond this share only that role gets the refusal `rejected(sender_quota)`, and entries of other roles are accepted. The first such refusal in a period raises the event `inbox.flood` (MSG-15).
 
 An entry has an expiry. For `report` it is 24 hours by default, the type can raise it to 7 days, and the sender can only shorten it. An expired entry is not handed out, wakes nobody and creates no tasks. The core `inbox` loop moves it to `expired`, and the content is deleted by the retention class `content` (MSG-12).
 
@@ -314,7 +314,7 @@ A message is a path along which untrusted text could pass from one bot to anothe
 | Enter a running attempt as an instruction | there is no push: the model gets an entry only as the result of its own `inbox_read` call, in a tool output wrapper | MSG-8, INJ-4 |
 | Bypass the core | there is no network path between runtimes; the core sets `source` and `id` from the credentials | MSG-1, MSG-8, DEP-5 |
 | Hide its origin | the mark and the flag pass to the reader with the source; the core sets `dataorigin` and `origininitiators` | MSG-6, INJ-13 |
-| Multiply | `hops` up to 5, three sends per attempt, rate, inbox capacity, sender share, the wake-up window and budget | MSG-10, MSG-11, MSG-15 |
+| Multiply | `hops` up to 5, three sends per attempt, rate, inbox capacity, sender share, the wake-up window and budget | MSG-15, MSG-11 |
 | Raise an alarm or write to people | alarms and notices to people come only from entries written by code without untrusted text | MSG-16, INJ-7 |
 
 Data moves only by closed schemas. Message fields go through the same leaf check as task parameters (INJ-1): `enum`, bounded numbers, ids from the format registry. Free text exists only in the note of the `report` genus; it is always untrusted, reaches the model in a wrapper and does not go into any journal (MSG-13).
@@ -343,8 +343,8 @@ The default values live in the binding, the skeleton sets the farm ceilings, and
 | Sends per attempt | 3 | `rejected(service_rate_limited)` | MSG-15 |
 | Rate per (tenant, sending role, type) | the type's `rate`, farm ceiling 120 per hour | `rejected(service_rate_limited)`, one event per period | MSG-15 |
 | `state` rate | once a minute per (worker, type) and on a change of `phase` | `rejected(service_rate_limited)` without an event | STA-1 |
-| Inbox capacity | 100 for a worker, 1000 for a role and a bot group | `rejected(inbox_full)`, one event per period | MSG-10, MSG-15 |
-| Share of one sending role | 25% of the inbox capacity | `rejected(sender_quota)` for that role only | MSG-10 |
+| Inbox capacity | 100 for a worker, 1000 for a role and a bot group | `rejected(inbox_full)`, one event per period | MSG-15 |
+| Share of one sending role | 25% of the inbox capacity | `rejected(sender_quota)` for that role only | MSG-15 |
 | `all` fan-out | 50 recipients | extra ones do not receive, the sender sees the number | MSG-14 |
 | Expiry | `report` 24 hours, the type raises it up to 7 days; `state` becomes stale after `stale_after`, at most an hour | the entry is `expired` and is not handed out | MSG-12 |
 | Hops `hops` | 5 | `rejected(hops_exceeded)` | MSG-11 |
@@ -620,12 +620,11 @@ Generated from the registry `conformance/requirements.yaml`; the full text of ev
 | [MSG-7](../conformance/rules.md#MSG-7) | A message grants no permissions and enqueues no tasks | v0.1 | yes |
 | [MSG-8](../conformance/rules.md#MSG-8) | A message reaches the model only at its request | v0.1 | yes |
 | [MSG-9](../conformance/rules.md#MSG-9) | Publishing and acknowledgement together with complete | v0.1 | yes |
-| [MSG-10](../conformance/rules.md#MSG-10) | One sender's share of an inbox | v0.1 | yes |
 | [MSG-11](../conformance/rules.md#MSG-11) | Hops, the tree and the wake-up budget | v0.1 | yes |
 | [MSG-12](../conformance/rules.md#MSG-12) | Entry expiry | v0.1 | yes |
 | [MSG-13](../conformance/rules.md#MSG-13) | A note is always untrusted and stays out of logs | v0.1 | yes |
 | [MSG-14](../conformance/rules.md#MSG-14) | The type sets the delivery mode | v0.1 | yes |
-| [MSG-15](../conformance/rules.md#MSG-15) | Size, rate and capacity limits | v0.1 | yes |
+| [MSG-15](../conformance/rules.md#MSG-15) | Size, rate, capacity and sender share limits | v0.1 | yes |
 | [MSG-16](../conformance/rules.md#MSG-16) | Tasks and notifications from messages only by routes from git | v0.1 | yes |
 | [MSG-17](../conformance/rules.md#MSG-17) | Activity from a non-principal in a bound chat | v0.1 | yes |
 | [MSG-18](../conformance/rules.md#MSG-18) | Message and inbox views for people | v0.2 | no |
@@ -642,4 +641,3 @@ Generated from the registry `conformance/requirements.yaml`; the full text of ev
 | [REP-12](../conformance/rules.md#REP-12) | Code answers the initiator and lead commands | v0.1 | yes |
 | [STA-1](../conformance/rules.md#STA-1) | Only worker code sends state | v0.1 | yes |
 | [STA-2](../conformance/rules.md#STA-2) | The self-report is informational, the truth about liveness is the core's | v0.1 | yes |
-| [STA-3](../conformance/rules.md#STA-3) | Two columns and a mismatch code | v0.2 | no |

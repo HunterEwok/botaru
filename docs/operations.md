@@ -41,14 +41,14 @@ The metrics catalog (v0.2, OBS-13) is a contract for dashboards and alarms that 
 
 The operator sees the state of the farm with two P2 operations. `status` gives a summary, `doctor` checks consistency and names the mismatches. Both show only metadata:
 
-- active holds with scope, effects, reason, deadline and author (HLD-5);
+- active holds with scope, effects, reason, deadline and author (HLD-1);
 - the rights and scope of every farm account in the monitoring system, the freshness of the audit head in its history, the monotonicity of the heads' `seq` and the retention period of the witness history (MON-4, MON-3);
 - for each tenant: whether there is a `monitor` worker in `active` and the age of its `last_seen`, the age of the last successful export to the monitoring system `monitor_export_age_s`, deliveries for E5 in `planned` older than 15 minutes (OBS-11, MON-11);
 - the tick age of every background loop and missed ticks, the `last_seen` of workers (OBS-4); during a core drain, the drain deadline and a warning if it is exceeded (LCY-6);
 - the three health indicators (OBS-9) and the free space of the store (CAP-5);
 - open erasure requests and their outcomes per store (RET-7);
 - the age of the latest backup of every storage location, the date and outcome of the last restore check from the reports of the backup process, and whether the erasure log backup is older than the store backup (RET-8);
-- the age of the last usage reconciliation for every provider workspace (OBS-12) and an open spend gap after a restore with halved limits (RET-6);
+- the age of the last usage reconciliation for every provider workspace (BUD-10) and an open spend gap after a restore with halved limits (RET-6);
 - the applied commit and the hash of the manifest set against the commit named by the operator (MAN-5);
 - the workspace caps at the provider and the outcome of the daily probe (GW-9), lack of money in the `review` line for reviews (BUD-13), a warning about an approaching model retirement date (`retires_at` of the model profile), the table of fixed costs per tenant (BUD-15);
 - for a tenant where the improvement cycle is disabled, the line "improvement cycle disabled" with the reasons (INS-6), and who covers each lens of the commission (COM-7);
@@ -149,7 +149,7 @@ An installation has one path of alarms to people (MON-1, D-88). Without the `mon
 | `alarm.backup.overdue` (`warn`) | a storage location has had no `backup.report {kind: backup, ok: true}` report for longer than 26 hours, or a report with `ok: false` arrived | RET-8 | v0.1 |
 | `alarm.backup.restore_check_overdue` (`warn`) | no `backup.report {kind: restore_check, ok: true}` report for longer than 8 days, or the restore check failed | RET-8 | v0.1 |
 | `alarm.spend.unreconciled` (`warn`) | the restore was completed with the operation `restore.complete --spend-pending`, and the spend gap has not yet been reconciled with the provider's report; while it holds, the daily limits of all tenants are cut in half | RET-6 | v0.1 |
-| `alarm.spend.reconcile_overdue` (`warn`) | a provider workspace has had no `spend_reconciled` line for two days | OBS-12 | v0.1 |
+| `alarm.spend.reconcile_overdue` (`warn`) | a provider workspace has had no `spend_reconciled` line for two days | BUD-10 | v0.1 |
 | `alarm.spend.estimate_drift` (`warn`) | the daily sum of the workspace usage lines differs from the provider's daily sum by more than the tolerance from the deployment settings | BUD-10 | v0.1 |
 | `alarm.monitor.export_stalled` (`warn`) | the export to the monitoring system for a tenant has failed for longer than 15 minutes; it reaches the monitoring system when the connection returns, and meanwhile people get the code message `monitor_export_stalled` | MON-11 | v0.1 |
 | `alarm.incident.unhandled` (`page`) | an incident has had neither an operation nor P2 `incident.ack` (a person took the incident) within the `page_if_unhandled_after` of its class; it is cleared by an operation, `incident.ack` or closing the incident (`resolved`, `dismissed`) | MGR-7 | v0.1 |
@@ -510,7 +510,7 @@ The only clock for farm deadlines is the store clock (TIM-1): leases, `start_by`
 
 All times in contracts are in UTC in the `datetime` format (TIM-2). A time zone is an IANA name in the `tz` format of the registry `formats.yaml`, and it exists in only two places: `Tenant.spec.timezone` (budget windows and texts for people) and `Schedule.spec.timezone`. The budget windows "day" and "month" are counted in the tenant's time zone (BUD-4); a window boundary is a UTC instant, the same in the reserve, the charge and the refusal text.
 
-The schedule time zone is set now, before the first clock change (TIM-4). Without `Schedule.spec.timezone` the tenant's time zone applies. The time zone name is checked against the time zone database at `apply`, and an unknown name fails. A time zone inside a `cron` expression (`CRON_TZ`, `TZ`) is not allowed. A change of the time zone or of `cron` takes effect from the next slot after it is applied, and the slot key in UTC does not give a second run of an instant that has already run.
+The schedule time zone is set now, before the first clock change (TIM-3). Without `Schedule.spec.timezone` the tenant's time zone applies. The time zone name is checked against the time zone database at `apply`, and an unknown name fails. A time zone inside a `cron` expression (`CRON_TZ`, `TZ`) is not allowed. A change of the time zone or of `cron` takes effect from the next slot after it is applied, and the slot key in UTC does not give a second run of an instant that has already run.
 
 ### Slot and clock changes
 
@@ -682,7 +682,7 @@ The general rule: everything the core issues or signs carries a key id, and the 
 
 | Version | What appears |
 |---|---|
-| v0.1 | telemetry without content (OBS-1); one trace per task tree with `correlationid` and `causationid` in every event, and external tracing context that decides nothing (OBS-2, OBS-3, D-94); `last_seen`, `worker.stale` and loop ticks (OBS-4); the common alarm schema, episodes with `seq` and `repeat_count` (OBS-6); alarm export and core liveness check by the monitoring system (MON-1, MON-2, `docs/monitoring.md`); `doctor` and `status` lines per tenant (OBS-11); behavior with an unavailable store (OBS-8); plugin health and `plugin_unavailable` (OBS-10); holds with the scopes `farm`, `tenant`, `role`, `tasktype`, `worker`, the effects `no_enqueue`, `no_claim`, `cancel_running`, the command `farmctl hold farm` and release by rank (HLD-1, HLD-2, HLD-3, HLD-5); retention classes (RET-1); deletion of `content` and `observation` by defaults with the `retention` loop (RET-2); tombstones (RET-3); erase operations C3, C4, E4 with `runtime_internal`, C1 `file.purge`, E2 `erase`, E5 `erase` and erasure of a person's data at their request `/mydata erase`, non-waivable on a production tenant (RET-4, D-76); backups and restore (RET-5, RET-6); early erasure through the erasure log (RET-7); tenant limits with a queue reserve for urgent tasks (CAP-1); a dependency failure without spending an attempt (CAP-2); storage headroom (CAP-5); the store clock, UTC, the slot format, the event `schedule.skipped`, `skip_if_waiting` and the schedule time zone (TIM-1, TIM-2, TIM-3, TIM-4); rotation recipes for every secret; the three health indicators (OBS-9); an alarm about an overdue usage reconciliation (OBS-12); `status` lines about the farm manager, its pause and the commission shadow (OBS-11); the other hold scopes and effects, including `no_message`, holds by the seat holder, the auto-stop "secret in outbound" (HLD-6), the auto-stop by spend rate `runaway_spend` (HLD-7); erasing the memory of a retired bot with an erasure request (RET-7); usage reconciliation before readiness after a restore and `restore.complete --spend-pending` (RET-6); backup process reports `backup.report` and the weekly restore check (RET-8); space quotas on volumes with a used space series from the monitoring history (CAP-6); alarms from monitoring problems (MON-5); an alarm export that does not die (MON-11); core drain with reason `draining` in `health` (LCY-6) and the P1 version window (LCY-7) |
+| v0.1 | telemetry without content (OBS-1); one trace per task tree with `correlationid` and `causationid` in every event, and external tracing context that decides nothing (OBS-2, OBS-3, D-94); `last_seen`, `worker.stale` and loop ticks (OBS-4); the common alarm schema, episodes with `seq` and `repeat_count` (OBS-6); alarm export and core liveness check by the monitoring system (MON-1, MON-2, `docs/monitoring.md`); `doctor` and `status` lines per tenant (OBS-11); behavior with an unavailable store (OBS-8); plugin health and `plugin_unavailable` (OBS-10); holds with the scopes `farm`, `tenant`, `role`, `tasktype`, `worker`, the effects `no_enqueue`, `no_claim`, `cancel_running`, the command `farmctl hold farm` and release by rank (HLD-1, HLD-2, HLD-3); retention classes (RET-1); deletion of `content` and `observation` by defaults with the `retention` loop (RET-2); tombstones (RET-3); erase operations C3, C4, E4 with `runtime_internal`, C1 `file.purge`, E2 `erase`, E5 `erase` and erasure of a person's data at their request `/mydata erase`, non-waivable on a production tenant (RET-4, D-76); backups and restore (RET-5, RET-6); early erasure through the erasure log (RET-7); tenant limits with a queue reserve for urgent tasks (CAP-1); a dependency failure without spending an attempt (CAP-2); storage headroom (CAP-5); the store clock, UTC, the slot format, the event `schedule.skipped`, `skip_if_waiting` and the schedule time zone (TIM-1, TIM-2, TIM-3); rotation recipes for every secret; the three health indicators (OBS-9); an alarm about an overdue usage reconciliation (BUD-10); `status` lines about the farm manager, its pause and the commission shadow (OBS-11); the other hold scopes and effects, including `no_message`, holds by the seat holder, the auto-stop "secret in outbound" (HLD-6), the auto-stop by spend rate `runaway_spend` (HLD-7); erasing the memory of a retired bot with an erasure request (RET-7); usage reconciliation before readiness after a restore and `restore.complete --spend-pending` (RET-6); backup process reports `backup.report` and the weekly restore check (RET-8); space quotas on volumes with a used space series from the monitoring history (CAP-6); alarms from monitoring problems (MON-5); an alarm export that does not die (MON-11); core drain with reason `draining` in `health` (LCY-6) and the P1 version window (LCY-7) |
 | v0.2 | holds by monitoring system maintenance windows with the effect `pause_action` (MON-9); retention periods `Tenant.spec.retention` (RET-9) and deletion of all classes by period in every copy (RET-10); E1 `erase` and `match`, E4 `purge` for every runtime and C3 `purge` by `(tenant)` (RET-11); the outgoing webhook sink (DLV-17); the extract `/mydata export` (SEC-10); delivery rate (CAP-3); dead work and pausing a schedule with a hold (CAP-4); the schedule check before "Accept" (TIM-5); tenant and principal lifecycles, export (LCY-1, LCY-2, LCY-3); worker drain and revocation (LCY-4); plugin update (LCY-5); `operator_access.debug_journal`; the metrics catalog |
 
 The improvement cycle, the farm manager, messages between bots, reporters, campaigns and scripts are part of v0.1 and come after the core and the first bot (D-71, D-80); the first measure hold of an incident, holds by the seat holder, and the effects `no_message` and `no_control` appear together with them.
@@ -711,14 +711,12 @@ Generated from the registry `conformance/requirements.yaml`; the full text of ev
 |---|---|---|---|
 | [CAP-1](../conformance/rules.md#CAP-1) | Tenant ceilings on counters | v0.1 | no |
 | [CAP-2](../conformance/rules.md#CAP-2) | A dependency failure does not spend an attempt | v0.1 | no |
-| [CAP-3](../conformance/rules.md#CAP-3) | Delivery rate to a channel | v0.2 | no |
 | [CAP-4](../conformance/rules.md#CAP-4) | Dead work and schedule pause | v0.2 | no |
 | [CAP-5](../conformance/rules.md#CAP-5) | Storage headroom | v0.1 | yes |
 | [CAP-6](../conformance/rules.md#CAP-6) | Volume quotas | v0.1 | no |
-| [HLD-1](../conformance/rules.md#HLD-1) | A hold as a recorded object | v0.1 | yes |
+| [HLD-1](../conformance/rules.md#HLD-1) | A hold as a recorded and visible object | v0.1 | yes |
 | [HLD-2](../conformance/rules.md#HLD-2) | Who sets and lifts a hold | v0.1 | yes |
 | [HLD-3](../conformance/rules.md#HLD-3) | How a hold acts | v0.1 | yes |
-| [HLD-5](../conformance/rules.md#HLD-5) | Holds are visible and recorded | v0.1 | no |
 | [HLD-6](../conformance/rules.md#HLD-6) | Auto-stop "secret in outbound" | v0.1 | yes |
 | [HLD-7](../conformance/rules.md#HLD-7) | Auto-stop on spend rate | v0.1 | no |
 | [HLD-8](../conformance/rules.md#HLD-8) | A pause of approvals set by a person | v0.2 | yes |
@@ -726,7 +724,6 @@ Generated from the registry `conformance/requirements.yaml`; the full text of ev
 | [LCY-2](../conformance/rules.md#LCY-2) | Tenant and principal export | v0.2 | no |
 | [LCY-3](../conformance/rules.md#LCY-3) | Principal lifecycle | v0.2 | yes |
 | [LCY-4](../conformance/rules.md#LCY-4) | Worker drain and removal | v0.2 | no |
-| [LCY-5](../conformance/rules.md#LCY-5) | Plugin update and deprecation | v0.2 | no |
 | [LCY-6](../conformance/rules.md#LCY-6) | Core drain before rollout | v0.1 | no |
 | [LCY-7](../conformance/rules.md#LCY-7) | Worker port version window | v0.1 | no |
 | [LCY-8](../conformance/rules.md#LCY-8) | Offboarding is final and frees the identity | v0.1 | yes |
@@ -738,8 +735,6 @@ Generated from the registry `conformance/requirements.yaml`; the full text of ev
 | [OBS-8](../conformance/rules.md#OBS-8) | The store is unavailable | v0.1 | yes |
 | [OBS-9](../conformance/rules.md#OBS-9) | Three health indicators | v0.1 | no |
 | [OBS-10](../conformance/rules.md#OBS-10) | Health of plugins, channels and the provider | v0.1 | no |
-| [OBS-12](../conformance/rules.md#OBS-12) | Alarm about an overdue usage reconciliation | v0.1 | no |
-| [OBS-13](../conformance/rules.md#OBS-13) | The metrics catalog | v0.2 | no |
 | [RET-1](../conformance/rules.md#RET-1) | A retention class for every stored object | v0.1 | yes |
 | [RET-2](../conformance/rules.md#RET-2) | Retention periods and deletion at expiry | v0.1 | yes |
 | [RET-3](../conformance/rules.md#RET-3) | Tombstones keep uniqueness | v0.1 | yes |
@@ -748,11 +743,9 @@ Generated from the registry `conformance/requirements.yaml`; the full text of ev
 | [RET-6](../conformance/rules.md#RET-6) | Restore from backup | v0.1 | yes |
 | [RET-7](../conformance/rules.md#RET-7) | Early deletion only through the erasure log | v0.1 | yes |
 | [RET-8](../conformance/rules.md#RET-8) | Backup reports and restore checks | v0.1 | no |
-| [RET-9](../conformance/rules.md#RET-9) | Tenant retention periods | v0.2 | no |
 | [RET-10](../conformance/rules.md#RET-10) | Deletion by period in every copy | v0.2 | yes |
 | [RET-11](../conformance/rules.md#RET-11) | Channel cache, every runtime and tenant scope in erasure | v0.2 | yes |
 | [TIM-1](../conformance/rules.md#TIM-1) | One clock, the store clock | v0.1 | yes |
 | [TIM-2](../conformance/rules.md#TIM-2) | UTC in contracts, a time zone only for the tenant and the schedule | v0.1 | no |
-| [TIM-3](../conformance/rules.md#TIM-3) | Schedule slot format and time transitions | v0.1 | yes |
-| [TIM-4](../conformance/rules.md#TIM-4) | Schedule time zone | v0.1 | yes |
+| [TIM-3](../conformance/rules.md#TIM-3) | Schedule slot format, time zone and time transitions | v0.1 | yes |
 | [TIM-5](../conformance/rules.md#TIM-5) | Schedule check before "Accept" | v0.2 | no |

@@ -1,5 +1,5 @@
 id: mem-fx-04
-rules: [MEM-8]
+rules: [MEM-7]
 description: 'The recipient takes facts with a memory.pick.v1 task with purpose handover: tier 0, a clean context without
   tools, memory, session and inbox, the recipient role slot, line work, priority class 4, key system:handover:<fact
   offer>. The core enqueues it only for a role whose profile allows memory of scope bot. The output is only take, a subset

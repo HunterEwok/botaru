@@ -1,7 +1,7 @@
 # Collected from spec/lifecycles/seat.yaml. The value null in from means "the object does not exist yet".
 lifecycle: spec/lifecycles/seat.yaml
 object: seat
-rules: [GOV-9, GOV-14, GOV-22, GOV-28, GOV-33, HLD-2, HLD-5, IDN-10, IDN-11, MEM-7, MGR-1, MGR-2, MGR-14, MGR-15, MGR-23, MGR-31, MGR-34]
+rules: [GOV-9, GOV-14, GOV-22, GOV-28, GOV-33, HLD-2, HLD-1, IDN-10, IDN-11, MEM-7, MGR-1, MGR-2, MGR-14, MGR-15, MGR-23, MGR-31, MGR-34]
 description: Allowed and forbidden transitions of the "seat" lifecycle, collected from the tables of spec/lifecycles/seat.md.
   The implementation accepts a transition from the allowed list under the condition of its row (when); a pair from the forbidden
   list does not change the state, and the call that asks for it is rejected. The value null in from means "the object does
@@ -221,7 +221,7 @@ machines:
     by: P2 hold.release on the seat scope (admin:farm) or the background loop hold by until
     when: 'a hold on the seat scope was lifted or expired: its reasons human or no_control go away; the seat is held only
       if the set is empty'
-    rules: [HLD-2, HLD-5, MGR-15]
+    rules: [HLD-2, HLD-1, MGR-15]
   - id: sm-seatm-14
     from: stopped
     to: held

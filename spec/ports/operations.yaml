@@ -130,9 +130,9 @@ entries:
     since: v0.1
     request: activity
     response: p1-submit-activity-response
-    rules: [IDN-3, IDN-6, IDN-7, IDM-5, CNT-5]
+    rules: [IDN-3, IDN-6, IDN-7, DLV-5, CNT-5]
     profiles: [core]
-    idempotent_by: (channel, update_id) (IDM-5)
+    idempotent_by: (channel, update_id) (DLV-5)
   - id: P1.decide
     port: P1
     op: decide
@@ -223,7 +223,7 @@ entries:
     since: v0.1
     request: msg-send-request
     response: msg-send-response
-    rules: [MSG-1, MSG-4, MSG-5, MSG-10, MSG-11, STA-1, HLD-3]
+    rules: [MSG-1, MSG-4, MSG-5, MSG-15, MSG-11, STA-1, HLD-3]
     profiles: [core, messaging]
     idempotent_by: idempotency_key
     lease: a job attempt; worker code with its own token only genus state
@@ -348,7 +348,7 @@ entries:
     since: v0.1
     request: p2-tenant-request
     response: p2-status-response
-    rules: [MAN-2, HLD-5, MAN-8, MGR-14, STA-3]
+    rules: [MAN-2, HLD-1, MAN-8, MGR-14, STA-3]
     profiles: [core, manager, messaging]
   - id: P2.principal.add
     port: P2
@@ -556,7 +556,7 @@ entries:
     since: v0.1
     request: p2-tenant-request
     response: p2-doctor-response
-    rules: [OBS-4, MON-2, MON-4, MON-11, HLD-5, CAP-5, RET-7, GW-9, RET-8, DEP-11]
+    rules: [OBS-4, MON-2, MON-4, MON-11, HLD-1, CAP-5, RET-7, GW-9, RET-8, DEP-11]
     profiles: [core, monitor]
   - id: P2.health
     port: P2
@@ -572,7 +572,7 @@ entries:
     since: v0.1
     request: p2-hold-set-request
     response: done-response
-    rules: [HLD-1, HLD-2, HLD-3, HLD-5, PRM-14, TEN-1]
+    rules: [HLD-1, HLD-2, HLD-3, PRM-14, TEN-1]
     profiles: [core]
   - id: P2.hold.release
     port: P2
@@ -580,7 +580,7 @@ entries:
     since: v0.1
     request: p2-hold-release-request
     response: done-response
-    rules: [HLD-2, HLD-5]
+    rules: [HLD-2, HLD-1]
     profiles: [core]
   - id: P2.hold.list
     port: P2
@@ -588,7 +588,7 @@ entries:
     since: v0.1
     request: p2-tenant-request
     response: p2-hold-list-response
-    rules: [HLD-5]
+    rules: [HLD-1]
     profiles: [core]
   - id: P2.proposal.list
     port: P2

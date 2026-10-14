@@ -625,12 +625,10 @@ Generated from the registry `conformance/requirements.yaml`; the full text of ev
 | [APR-5](../conformance/rules.md#APR-5) | Only the core enqueues action.* types | v0.1 | yes |
 | [APR-6](../conformance/rules.md#APR-6) | Pending decisions are canceled together with their cause | v0.1 | yes |
 | [APR-7](../conformance/rules.md#APR-7) | An approval is executed at most once | v0.1 | yes |
-| [APR-8](../conformance/rules.md#APR-8) | Debug replay without approvals or writes | v0.2 | yes |
 | [APR-9](../conformance/rules.md#APR-9) | Tenant kind and the ban on self-approval | v0.1 | yes |
 | [APR-10](../conformance/rules.md#APR-10) | Action risk | v0.1 | yes |
 | [APR-11](../conformance/rules.md#APR-11) | Human decision event | v0.1 | yes |
 | [APR-12](../conformance/rules.md#APR-12) | Registry of human decisions | v0.1 | no |
-| [APR-13](../conformance/rules.md#APR-13) | Summary "approved without reading" | v0.2 | no |
 | [APR-14](../conformance/rules.md#APR-14) | Details before the listed decisions | v0.2 | yes |
 | [APR-15](../conformance/rules.md#APR-15) | Card limit per person per day | v0.2 | no |
 | [APR-16](../conformance/rules.md#APR-16) | Two approvers for high risk | v0.2 | yes |
@@ -654,7 +652,6 @@ Generated from the registry `conformance/requirements.yaml`; the full text of ev
 | [PRM-8](../conformance/rules.md#PRM-8) | A short "no permission" for the model | v0.1 | yes |
 | [PRM-9](../conformance/rules.md#PRM-9) | Reading a task, a result and a file | v0.1 | yes |
 | [PRM-10](../conformance/rules.md#PRM-10) | Group of the service principal system | v0.1 | yes |
-| [PRM-11](../conformance/rules.md#PRM-11) | A dry run without side effects | v0.2 | yes |
 | [PRM-12](../conformance/rules.md#PRM-12) | Tool output cache | v0.2 | yes |
 | [PRM-13](../conformance/rules.md#PRM-13) | Only an operator grants privileged permissions | v0.1 | yes |
 | [PRM-14](../conformance/rules.md#PRM-14) | Operator operations only through farmctl | v0.1 | yes |

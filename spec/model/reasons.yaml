@@ -1,5 +1,5 @@
 registry: reasons
-version: 6
+version: 7
 description: 'Closed registry of reasons: end of an attempt, refusals at enqueue and at a call, waiting, outcomes of calls,
   approvals and deliveries, and also codes of other parts of the farm. A worker in P1 `fail` passes only a code from here; there is no free
   reason text in the records. Record fields: `meaning` (what it means); `spends_attempt` (whether it spends an attempt: true,
@@ -571,14 +571,14 @@ entries:
   spends_attempt: null
   retry: null
   outcome: rejected
-  rules: [MSG-10]
+  rules: [MSG-15]
 - id: sender_quota
   since: v0.1
   meaning: The sender share in the inbox is exhausted.
   spends_attempt: null
   retry: null
   outcome: rejected
-  rules: [MSG-10]
+  rules: [MSG-15]
 - id: hops_exceeded
   since: v0.1
   meaning: 'The reply chain between bots reached the hop limit: a refusal on the sixth hop.'
@@ -957,11 +957,11 @@ entries:
   rules: [MGR-6]
 - id: grant_not_eligible
   since: v0.2
-  meaning: A model grant cannot be requested for this task; there is no sign that the model does not control (MGR-40).
+  meaning: A model grant cannot be requested for this task; there is no sign that the model does not control (MGR-17).
   spends_attempt: null
   retry: null
   outcome: rejected
-  rules: [MGR-17, MGR-40]
+  rules: [MGR-17]
 - id: grant_over_budget
   since: v0.2
   meaning: The model grant exceeds the budget.
@@ -975,7 +975,7 @@ entries:
   spends_attempt: null
   retry: null
   outcome: rejected
-  rules: [MGR-40]
+  rules: [MGR-17]
 - id: grant_expired_unanswered
   since: v0.2
   meaning: The model grant request expired without an answer.
@@ -1210,7 +1210,7 @@ entries:
   spends_attempt: null
   retry: null
   outcome: null
-  rules: [MSG-3, MSG-10]
+  rules: [MSG-3, MSG-15]
 - id: waiting
   since: v0.1
   meaning: 'The schedule slot is skipped with the event `schedule.skipped(waiting)` while the task of the previous slot waits (`skip_if_waiting:
