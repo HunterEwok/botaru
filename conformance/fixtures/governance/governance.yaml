@@ -1,6 +1,6 @@
 id: fx-governance-governance
 description: 'Model rank, charter, lenses, attributions and unawareness: fixtures without a model (GOV-3, GOV-6, GOV-13,
-  GOV-16, GOV-28, GOV-33, GOV-34).'
+  GOV-16, GOV-28, GOV-33).'
 cases:
 - id: gov-fx-03
   rules: [GOV-3, GW-5]
@@ -449,39 +449,10 @@ cases:
             facts: {max_active: 50, per_attempt: 2}
     expect: {apply: ok}
 - id: gov-fx-28
-  rules: [GOV-34]
-  description: 'For a tenant with kind: production the model profiles of the seats of the veto lenses (security, operational) come from different
-    families: a match is the apply error veto_lenses_same_family; on a test bench the same gives a doctor warning. Default shadow
-    shares are 0.25 for veto lenses and 0.2 for the others; a share of 0 is allowed only with an explicit shadow: off (lint shadow_zero_without_off), and doctor
-    shows the check commission.shadow_off.'
-  given:
-    model_profiles:
-      seat-std: {family: family-a, rank: 3}
-      seat-alt: {family: family-b, rank: 3}
+  rules: [COM-10]
+  description: 'Default shadow shares are 0.25 for veto lenses and 0.2 for the others; a share of 0 is allowed only with an explicit
+    shadow: off (lint shadow_zero_without_off), and doctor shows the check commission.shadow_off.'
   cases:
-  - given:
-      tenant: {name: demo, kind: production}
-      seats:
-      - {id: 1, lens: security}
-      - {id: 2, lens: operational}
-      model_profile: seat-std
-    expect:
-      apply: {result: rejected}
-      reason: veto_lenses_same_family
-  - given:
-      tenant: {name: demo, kind: production}
-      seats:
-      - {id: 1, lens: security}
-      - {id: 2, lens: operational, model_profile: seat-alt}
-      model_profile: seat-std
-    expect: {apply: ok}
-  - given:
-      tenant: {name: demo2, kind: test}
-      seats:
-      - {id: 1, lens: security}
-      - {id: 2, lens: operational}
-      model_profile: seat-std
-    expect: {apply: ok, doctor: warning veto_lenses_same_family}
   - given:
       commission_manifest:
         shadow: {veto_lenses: 0}

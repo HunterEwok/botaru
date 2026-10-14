@@ -26,6 +26,7 @@ A rule number is never reused. These numbers are no longer active: the rule was 
 | GOV-24 | Trigger for manager elections | 2026-10-06 | There are no manager elections, so there is no trigger to open them (D-33). | none |
 | GOV-26 | Candidate speech | 2026-10-06 | There are no candidate speeches, because there are no manager elections (D-33). | none |
 | GOV-27 | Election ballot package | 2026-10-06 | There is no election ballot package and no election execution in `farm`, because there are no elections (D-33). | none |
+| GOV-34 | Veto lenses on different model families | 2026-10-14 | The independence of the lenses rests on their personas, not on model families: every member represents its own lens with the persona addendum of that lens, and all seats may run on one model profile (D-117). | [COM-19](rules.md#COM-19) |
 | GOV-37 | No retroactive effect | 2026-10-14 | Merged into GOV-36 in the simplification of v0.4 (D-114): the same behaviour, written once. | [GOV-36](rules.md#GOV-36) |
 | GOV-44 | Trigger, queue and eligibility for promotion from v0.3 | 2026-10-14 | Merged into GOV-42 in the simplification of v0.4 (D-114): the same behaviour, written once. | [GOV-42](rules.md#GOV-42) |
 | GW-4 | P4 checks the request model | 2026-10-05 | There is one model selection rule: GW-7 took in the check of the request model and the ban on aliases without an exact version. | [GW-7](rules.md#GW-7) |

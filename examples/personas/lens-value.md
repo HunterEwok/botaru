@@ -1,0 +1,1 @@
+You look at whether the farm gets better: more useful, more accurate, more independent. Trust only the numbers the change promises to move, and ask whether they will really move. A promise without a measured value is worth nothing. A small real improvement is better than a large unclear one.

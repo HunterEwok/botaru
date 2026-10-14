@@ -1,0 +1,61 @@
+id: fx-commission-lenses
+rules: [COM-19]
+description: 'Every lens has its persona addendum, and a tenant adds its own lenses without a veto in its charter (COM-19, D-117).
+  Fixtures without a model: apply lint and the verdict inputs.'
+cases:
+- id: com-fx-19
+  rules: [COM-19]
+  description: 'A seat lens without a persona addendum fails apply; a tenant lens x_reproducibility with its meaning and
+    persona passes; a tenant lens that tries to get a veto, a tenant lens without a meaning, and a seat with a lens
+    known neither to the skeleton nor to the charter fail apply.'
+  cases:
+  - given:
+      tenant: {name: demo, kind: production}
+      governance:
+        commission:
+          seats:
+          - {id: 1, lens: security, fallback_role: reviewer-a}
+          - {id: 2, lens: speed, fallback_role: reviewer-a}
+          lenses:
+            security: {persona: {ref: personas/lens-security.md, sha256: '...'}}
+    expect: {apply: {result: rejected, error: lens_persona_missing}}
+  - given:
+      tenant: {name: demo, kind: production}
+      governance:
+        commission:
+          seats:
+          - {id: 1, lens: security, fallback_role: reviewer-a}
+          - {id: 2, lens: x_reproducibility, fallback_role: reviewer-a}
+          lenses:
+            security: {persona: {ref: personas/lens-security.md, sha256: '...'}}
+            x_reproducibility:
+              meaning: Whether a result can be produced again from the same data and settings.
+              persona: {ref: personas/lens-reproducibility.md, sha256: '...'}
+      commission_manifest:
+        weights: {x_reproducibility: 2}
+    expect:
+      apply: ok
+      review_type: {x_reproducibility: review.lens.v1}
+      veto: {x_reproducibility: false}
+  - given:
+      tenant: {name: demo, kind: production}
+      governance:
+        commission:
+          seats:
+          - {id: 1, lens: x_reproducibility, fallback_role: reviewer-a}
+          lenses:
+            x_reproducibility:
+              persona: {ref: personas/lens-reproducibility.md, sha256: '...'}
+    expect: {apply: {result: rejected, error: lens_unknown}}
+  - given:
+      tenant: {name: demo, kind: production}
+      commission_manifest:
+        min: {x_reproducibility: 2}
+    expect: {apply: {result: rejected, error: lens_unknown}}
+  - given:
+      tenant: {name: demo, kind: production}
+      governance:
+        commission:
+          seats:
+          - {id: 1, lens: x_audit, fallback_role: reviewer-a}
+    expect: {apply: {result: rejected, error: lens_unknown}}

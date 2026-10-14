@@ -1,4 +1,4 @@
-# Model profile seat-alt: commission seats, family family-b (GOV-34). Prices and ranks are illustrative (docs/models-and-money.md).
+# Model profile seat-alt: a second profile for commission seats, family family-b with its own pool of rate limits (GW-10). Prices and ranks are illustrative (docs/models-and-money.md).
 apiVersion: botaru/v1alpha1
 kind: ModelProfile
 metadata: {name: seat-alt}

@@ -29,7 +29,7 @@ metadata: {name: base-std}
 spec:
   provider: provider-a            # binding in spec/bindings/model-providers/ (v0.1 reference: anthropic.md, D-85)
   model: model-a-small-2026-09    # exact name with version; an alias does not pass apply (GW-7)
-  family: family-a                # from model-families.yaml; veto lenses need different families (GOV-34)
+  family: family-a                # from model-families.yaml; profiles of one family share a pool of rate limits (GW-10)
   rank: 1                         # 1-4; the role's rank ceiling is checked against it (GOV-3)
   pool: family-a                  # shared rate limit pool
   fallback: []                    # declared fallbacks only (GW-5); empty by default

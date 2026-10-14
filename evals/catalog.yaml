@@ -1470,13 +1470,13 @@ areas:
   - case: com-08
     rules:
     - COM-2
-    - GOV-34
+    - COM-19
     version: v0.1
     block: without a model
     spec:
-      What happens: the production charter of `demo` with the lenses `security` and `operational` on one model family; the
-        same charter on the test bench
-      What is checked: '`apply` rejects `veto_lenses_same_family`; on the test bench it passes with a warning'
+      What happens: the production charter of `demo` with the lenses `security` and `operational` on one model profile, each
+        with its persona addendum; the same charter with the `operational` addendum removed
+      What is checked: the first passes `apply`; the second is rejected with `lens_persona_missing` (D-117)
   - case: com-10
     rules:
     - COM-13

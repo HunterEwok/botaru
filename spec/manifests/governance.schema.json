@@ -243,7 +243,7 @@
               "lens": {
                 "type": "string",
                 "maxLength": 40,
-                "description": "Lens from lenses.yaml.",
+                "description": "Lens from lenses.yaml or a tenant lens x_<name> from commission.lenses (COM-19).",
                 "pattern": "^[a-z][a-z_]*$"
               },
               "fallback_role": {
@@ -308,6 +308,51 @@
           "maximum": 10000,
           "default": 0,
           "description": "From v0.3: money a month from the review line for the reward of the most accurate member; 0 means no reward (COM-18)."
+        },
+        "lenses": {
+          "type": "object",
+          "maxProperties": 16,
+          "propertyNames": {
+            "pattern": "^(x_)?[a-z][a-z0-9_]{0,30}$"
+          },
+          "additionalProperties": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "persona"
+            ],
+            "properties": {
+              "persona": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "ref": {
+                    "type": "string",
+                    "maxLength": 200,
+                    "description": "Path of the persona file personas/<name>.md.",
+                    "pattern": "^personas/[a-z][a-z0-9-]*\\.md$"
+                  },
+                  "sha256": {
+                    "type": "string",
+                    "maxLength": 64,
+                    "description": "Hash of the persona file.",
+                    "pattern": "^([0-9a-f]{64}|\\.\\.\\.)$"
+                  }
+                },
+                "required": [
+                  "ref",
+                  "sha256"
+                ],
+                "description": "Persona addendum of the lens by hash, appended after the reviewer persona for every review of this lens (COM-19)."
+              },
+              "meaning": {
+                "type": "string",
+                "maxLength": 300,
+                "description": "Only for a tenant lens x_<name> and required for it: what the lens assesses, one or two sentences; trusted text from git inserted into the review instruction (COM-19)."
+              }
+            }
+          },
+          "description": "Lenses of the commission (COM-19): the persona addendum of every lens a seat names, and the tenant's own lenses x_<name> with their meaning. A tenant lens has no veto."
         }
       },
       "description": "Commission seats (GOV-33)."

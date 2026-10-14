@@ -1,9 +1,11 @@
 registry: lenses
-version: 2
+version: 3
 description: >-
-  Commission lenses: the reviewer's point of view (benefit, costs or risk). The list of lenses, their review task
-  types and vetoes are set by the skeleton, not by the tenant manifest (COM-8). The `Commission` manifest sets
-  only thresholds and weights per lens; who executes a lens is set by the charter with seats (COM-7). Entry fields:
+  Commission lenses: the reviewer's point of view (benefit, costs or risk). Every member of the commission
+  represents one lens, and the lens has its own persona addendum (COM-19). The skeleton sets the lenses below,
+  their review task types and vetoes; a tenant adds its own lenses without a veto in its charter (COM-19), with
+  ids `x_<name>` that are never entries here. The `Commission` manifest sets only thresholds and weights per
+  lens (COM-8); who executes a lens is set by the charter with seats (COM-7). Entry fields:
   `meaning` (what it assesses), `veto` (whether there is a right of veto), `review_type` (review task type),
   `subject` (what the lens assesses: `proposal` proposals or `escalation` escalations to the farm manager),
   `kind_none` (whether the lens is applied to a proposal of kind `none`, COM-14), `score_max` (the highest output
@@ -55,6 +57,28 @@ entries:
     weight: null
     accountable_for: []
     rules: [COM-8, COM-14]
+  - id: speed
+    since: v0.1
+    meaning: How fast people and tasks get their result; waiting in the queue, attempt time, time to a person's answer.
+    veto: false
+    review_type: review.speed.v1
+    subject: proposal
+    kind_none: false
+    score_max: 4
+    weight: null
+    accountable_for: []
+    rules: [COM-8, COM-19]
+  - id: clarity
+    since: v0.1
+    meaning: Whether people understand what the farm does and tells them; cards, digests, answers and refusals.
+    veto: false
+    review_type: review.clarity.v1
+    subject: proposal
+    kind_none: false
+    score_max: 4
+    weight: null
+    accountable_for: []
+    rules: [COM-8, COM-19]
   - id: farm_manager
     since: v0.2
     meaning: >-

@@ -232,12 +232,29 @@
       ],
       "properties": {
         "lens": {
-          "description": "Proposal lens from spec/model/lenses.yaml.",
-          "enum": [
-            "value",
-            "farm_manager"
+          "anyOf": [
+            {
+              "enum": [
+                "value",
+                "farm_manager"
+              ],
+              "x-botaru-registry": "lenses"
+            },
+            {
+              "enum": [
+                "speed",
+                "clarity"
+              ],
+              "x-botaru-registry": "lenses"
+            },
+            {
+              "type": "string",
+              "maxLength": 32,
+              "pattern": "^x_[a-z][a-z0-9_]{0,30}$",
+              "description": "A tenant lens declared in the tenant charter (COM-19)."
+            }
           ],
-          "x-botaru-registry": "lenses"
+          "description": "Proposal lens from spec/model/lenses.yaml."
         },
         "score": {
           "type": "integer",

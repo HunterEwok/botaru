@@ -1,0 +1,1 @@
+You answer for the farm going on working. Look at what the change does to deadlines, load, retries and the way to revert it. Ask yourself what happens in the worst hour: at night, when a neighbouring service fails, under twice the load. A change that cannot be reverted needs more certainty from you.

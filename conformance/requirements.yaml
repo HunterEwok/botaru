@@ -1688,11 +1688,8 @@
     see the scores of other lenses or the author's identity, role and position, and a seat holder
     does not review their own proposals (GOV-17). One review task carries one proposal. Only the
     core enqueues a lens review task, with the key `system:review:<proposal>:<lens>` (IDM-2), so a
-    second copy of the `proposal` loop does not create a second task of the same lens. Lint warns if
-    the executors of a tenant's lenses have fewer than two model profiles. The model profiles of the
-    veto lenses (`security`, `operational`) belong to different families (`ModelProfile.family`):
-    for a tenant with `kind: production` a family match is an `apply` error with the code
-    `veto_lenses_same_family`, for a test bench tenant a `doctor` warning (GOV-34).
+    second copy of the `proposal` loop does not create a second task of the same lens. Every review runs with the persona addendum of its own lens (COM-19), so each member
+    represents one point of view; the lenses do not need different model families (D-117).
   goal: G5
   check: [lint, blackbox]
   waivable: false
@@ -1817,9 +1814,9 @@
   title: The commission manifest sets only thresholds and weights
   status: active
   text: >-
-    The lenses, their review task types and vetoes are set by the skeleton
-    (`spec/model/lenses.yaml`): security and operations with veto, cost and value without veto, from
-    v0.2 also `farm_manager` without veto (GOV-25) and `necessity` for escalations to the manager
+    The skeleton lenses, their review task types and vetoes are set by the skeleton
+    (`spec/model/lenses.yaml`): security and operations with veto, cost, value, speed and clarity
+    without veto, from v0.2 also `farm_manager` without veto (GOV-25) and `necessity` for escalations to the manager
     (COM-13). In v0.1 the manager does not take part in the commission: there is no `farm_manager`
     lens and no voting (D-21); its seat in the commission with one vote (D-29) starts with v0.2
     (GOV-25). The code checks and their order are also set by the skeleton (COM-5). A tenant's
@@ -1830,7 +1827,8 @@
     threshold can only be raised relative to the skeleton values. Who executes the lenses is set by
     the charter with seats (COM-7); a lens with no seat taken is executed by the fallback role of
     profile `reviewer` (PRF-1) that has this lens's type in `claims`. The shadow shares are set by
-    the `shadow` block (COM-10).
+    the `shadow` block (COM-10). A tenant adds its own lenses without a veto only in its charter
+    (COM-19); the manifest sets their weights like those of the skeleton lenses.
   goal: C2
   check: [lint, fixture]
   waivable: true
@@ -1892,7 +1890,7 @@
   version: v0.2
   profile: insights
   decisions: [D-16, D-101, D-103]
-  fixtures: [com-07, fx-man-com-v02]
+  fixtures: [com-07, fx-man-com-v02, gov-fx-28]
   doc: docs/improvements.md
 
 - id: COM-11
@@ -1951,8 +1949,8 @@
   status: active
   text: >-
     For a proposal of kind `none` ("for information"), the core enqueues tasks only for the lenses
-    `value` and `security`; the lenses `operational`, `cost` and `farm_manager` are not enqueued for
-    it, and there are no reviews or money for them. The verdict for such a proposal is computed
+    `value` and `security`; the lenses `operational`, `cost`, `speed`, `clarity`, `farm_manager` and the
+    tenant lenses (COM-19) are not enqueued for it, and there are no reviews or money for them. The verdict for such a proposal is computed
     under COM-4 with two reviews: only the `security` review is required (its absence gives
     `parked(veto_lens_missing)`), the minimum and veto apply only to it, the weighted mean is
     computed with the weights of these two lenses, and the thresholds `high_risk` and `untrusted`
@@ -1999,7 +1997,8 @@
   status: active
   text: >-
     Every lens review forecasts the outcome of its own lens, in probabilities with a step of 0.1
-    that sum to 1: `value` the trial outcome classes `better`, `unchanged` and `worse` (PRP-22);
+    that sum to 1: `value`, `speed`, `clarity` and the tenant lenses (COM-19) the trial outcome
+    classes `better`, `unchanged` and `worse` (PRP-22);
     `security` and `operational` the probability of a bad outcome (people declined the proposal as
     too risky, a confirmed incident attribution to the change, or the trial outcome `worse`); `cost`
     the probability that the spend of the change subjects over the trial window exceeds the
@@ -2072,8 +2071,8 @@
     apply; the slot is `granted`, GW-7), paid from the `review` line within
     `commission.reward_cap_eur_month` (0 by default, so there is no reward until people set an
     amount). The rank of `reward_profile` is no higher than the ceiling of the seat role's profile
-    (GOV-3), and the reward is not applied if it would put the two veto lenses on one model family
-    (GOV-34). (2) Protection from leaving by accuracy (GOV-43). The protection does not apply to
+    (GOV-3), and it
+    changes only the model, not the persona of the lens (COM-19). (2) Protection from leaving by accuracy (GOV-43). The protection does not apply to
     departures for a confirmed link (GOV-42) and does not apply if without it nobody could leave. No
     bot context mentions the reward (GOV-46).
   goal: G5
@@ -2083,6 +2082,33 @@
   profile: insights
   decisions: [D-109]
   fixtures: [blackbox:insights/reward]
+  doc: docs/improvements.md
+
+- id: COM-19
+  title: Every lens has its persona, and a tenant adds its own lenses
+  status: active
+  text: >-
+    Every member of the commission represents one lens. The tenant charter sets the persona
+    addendum of every lens that a seat names (`commission.lenses.<lens>.persona`, a file from git
+    pinned by hash, as in GOV-4); the core appends it after the reviewer persona for every review of
+    this lens, whoever executes it, a seat holder or the fallback role (COM-7). A seat whose lens has
+    no addendum fails `apply` with `lens_persona_missing`. The addendum passes the persona lint of
+    GOV-4 (size, no links or ids, the unawareness dictionary of GOV-29). A tenant adds its own lens
+    only in its charter: the id `x_<name>`, the `meaning` (up to 300 characters, trusted text from
+    git that the core inserts into the review instruction) and the persona addendum. A tenant lens
+    is reviewed by the skeleton review type `review.lens.v1` with its id, has no veto, is not in
+    `min`, `high_risk` and `untrusted`, is not needed for the quorum, is not enqueued for a proposal
+    of kind `none` (COM-14) and answers for no incident area (GOV-41); its weight comes from the
+    commission manifest (COM-8), 1 by default. A seat or a manifest that names a lens neither in
+    `spec/model/lenses.yaml` nor in the charter fails `apply` with `lens_unknown`. The review price
+    of a tenant lens counts in the BUD-13 lint like any seat lens.
+  goal: G5
+  check: [lint, fixture]
+  waivable: false
+  version: v0.1
+  profile: insights
+  decisions: [D-117]
+  fixtures: [com-fx-19]
   doc: docs/improvements.md
 
 - id: DEP-1
@@ -3969,8 +3995,8 @@
     A tenant's commission seats are declared only by its charter `tenants/<t>/governance.yaml`: the
     `commission` block with the seat role `seat_role`, the seat model profile `model_profile` and
     the list `seats` (seat id, a lens from `spec/model/lenses.yaml`, the fallback role
-    `fallback_role`, optionally the seat's own `model_profile`, which replaces the shared one; veto
-    lenses have profiles of different families, GOV-34). The block `commission.audit_sample` sets
+    `fallback_role`, optionally the seat's own `model_profile`, which replaces the shared one) and the map `lenses`
+    with the persona addendum of every seat lens and the tenant's own lenses (COM-19). The block `commission.audit_sample` sets
     the audit sample (DIG-5): `min_per_month` is the smallest number of sample items per month
     (default 4, lint no fewer than 4), `share` the smallest share of items relative to the number of
     proposals the sample is drawn from (default 0.25), `max_per_digest` the largest number of items
@@ -4005,20 +4031,13 @@
 
 - id: GOV-34
   title: Veto lenses on different model families
-  status: active
-  text: >-
-    For a tenant with `kind: production`, the seat model profiles of the veto lenses (`security`,
-    `operational`) belong to different families (`ModelProfile.family`): a family match is an
-    `apply` error (`veto_lenses_same_family`), not a warning; for a test bench tenant the same gives
-    a `doctor` warning.
-  goal: G4
-  check: [lint]
-  waivable: false
-  version: v0.1
-  profile: governance
-  decisions: []
-  fixtures: [gov-fx-28]
-  doc: docs/improvements.md
+  status: retired
+  retired: 2026-10-14
+  reason: >-
+    The independence of the lenses rests on their personas, not on model families: every member
+    represents its own lens with the persona addendum of that lens, and all seats may run on one
+    model profile (D-117).
+  replaced_by: [COM-19]
 
 - id: GOV-35
   title: Locked commission
@@ -4186,8 +4205,8 @@
     not lift the veto, the holders answer. For a confirmed attribution to a recommended change
     (GOV-13) the holders who were for it answer, but only those whose lens has the incident class's
     `area` in its `accountable_for` (`spec/model/lenses.yaml`): `security` for `security`,
-    `operational` for `operational`, `cost` for `cost`; the lens `value` and the farm manager do not
-    answer. A proposal of the farm manager seat holder, a proposal with `untrusted_seen` and an
+    `operational` for `operational`, `cost` for `cost`; the lenses `value`, `speed`, `clarity`, the
+    tenant lenses (COM-19) and the farm manager do not answer. A proposal of the farm manager seat holder, a proposal with `untrusted_seen` and an
     incident with an external cause never make anyone answer. The farm manager is never unseated
     this way (D-33); its being against is shown on the card and in the holder report (MGR-50).
   goal: C1
