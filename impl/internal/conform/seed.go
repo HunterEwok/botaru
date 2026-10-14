@@ -16,6 +16,40 @@ import (
 type seedData struct {
 	people []seedPerson
 	groups map[string]map[string]any
+	// classes are the data classes in their order (summary < internal < raw_logs, PRM-5).
+	classes []string
+}
+
+// setClasses takes the data classes and their order from the capabilities registry.
+func (s *seedData) setClasses(entries []map[string]any) {
+	type cls struct {
+		id    string
+		order int
+	}
+	var cs []cls
+	for _, e := range entries {
+		if str(e["kind"]) == "data_class" {
+			o, _ := e["order"].(int)
+			cs = append(cs, cls{str(e["id"]), o})
+		}
+	}
+	sort.SliceStable(cs, func(i, j int) bool { return cs[i].order < cs[j].order })
+	s.classes = nil
+	for _, c := range cs {
+		s.classes = append(s.classes, c.id)
+	}
+}
+
+// upTo returns every data class up to and including top.
+func (s *seedData) upTo(top string) []any {
+	var out []any
+	for _, c := range s.classes {
+		out = append(out, c)
+		if c == top {
+			return out
+		}
+	}
+	return []any{top}
 }
 
 type seedPerson struct {
@@ -62,11 +96,11 @@ func (s *seedData) groupManifests(owner string) []map[string]any {
 	var out []map[string]any
 	for _, n := range names {
 		g := s.groups[n]
-		// The seed writes the highest data class a group sees as data_up_to; a group without it
-		// sees no data class.
+		// The seed writes the highest data class a group sees as data_up_to, which means every
+		// class up to it; a group without it sees no data class.
 		spec := map[string]any{"caps": toAny(strs(g["caps"]))}
 		if d := str(g["data_up_to"]); d != "" {
-			spec["data"] = []any{d}
+			spec["data"] = s.upTo(d)
 		}
 		if inh := strs(g["inherits"]); len(inh) > 0 {
 			spec["inherits"] = toAny(inh)

@@ -45,6 +45,13 @@ func (c *Core) Run(ctx context.Context) {
 	}
 }
 
+// RunManual starts only the work listener: on a test bench that serves the test-control port
+// the loops tick only by loop.tick, so a fixture decides the order of every tick. P2 health
+// then reports the loop tick as old, which is expected on such a bench.
+func (c *Core) RunManual(ctx context.Context) {
+	c.listen(ctx)
+}
+
 // Tick runs one pass of the reaper and deadline loops. The test-control port calls it
 // directly (loop.tick).
 func (c *Core) Tick(ctx context.Context) error {

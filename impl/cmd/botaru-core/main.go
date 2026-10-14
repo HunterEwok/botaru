@@ -130,7 +130,13 @@ func run(path string, log *slog.Logger) error {
 	if err := c.RecoverLeases(ctx); err != nil {
 		return err
 	}
-	go c.Run(ctx)
+	if lt != nil {
+		// With the test-control port the loops tick only by loop.tick (test-control.md: loops
+		// do not start by themselves).
+		go c.RunManual(ctx)
+	} else {
+		go c.Run(ctx)
+	}
 
 	p1 := &http.Server{Addr: cfg.P1Listen, Handler: srv.P1Handler(), ReadHeaderTimeout: 10 * time.Second}
 	p2 := &http.Server{Addr: cfg.P2Listen, Handler: srv.P2Handler(), ReadHeaderTimeout: 10 * time.Second}

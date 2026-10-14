@@ -81,6 +81,11 @@ func NewRunner(root string, claim Claim, bench Bench) (*Runner, error) {
 	if err != nil {
 		return nil, err
 	}
+	caps, err := sp.Registry("spec/model/capabilities.yaml")
+	if err != nil {
+		return nil, err
+	}
+	seed.setClasses(caps.Entries)
 	reg, err := sp.Registry("spec/manifests/kinds.yaml")
 	if err != nil {
 		return nil, err
