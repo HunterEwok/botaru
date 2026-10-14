@@ -568,7 +568,7 @@ What the line in the header of file 17 could not do if it held the injected text
 | P3 | `status.campaigns` | roles with `views` | the same for campaigns | v0.1 |
 | C1 | `msg.stage`, `msg.publish`, `msg.lease`, `msg.ack`, `msg.nack`, `msg.expire`, `state.put` | core | atomic transitions of an inbox entry with events (DLV-2) | v0.1 |
 | P2 | `status` | operator; tenant admin | also shows the self-report with the mismatch code | v0.2 |
-| P2 | `msg.list`, `msg.show`, `inbox.status` | operator (any tenant); a person with `admin:people` (own tenant) | metadata of messages and inboxes, closed filters, at most 200 rows per page; `msg.show` shows the note only to a caller with `audit.read`, in an untrusted wrapper and with an audit record of the read; a foreign and an unknown id give the same `not_found` (MSG-18) | v0.2 |
+| P2 | `msg.list`, `msg.show`, `inbox.status` | operator (any tenant); a person with `admin:people` (own tenant) | metadata of messages and inboxes, closed filters, at most 200 rows per page; `msg.show` shows the note only to a person with `audit.read` and `data:<mark>` for the message's mark, in an untrusted wrapper and with an audit record of the read; a foreign and an unknown id give the same `not_found` (MSG-18) | v0.2 |
 | E1 | delivery `digest` | channel | rendering of the table, cards, paragraph and `hidden` from the delivery record | v0.1 |
 | background | the `inbox` loop | core | entry expiry, stale states, wake-ups by routes, `dead` and `inbox.flood` events | v0.1 |
 

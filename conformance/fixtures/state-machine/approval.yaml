@@ -93,7 +93,8 @@ allowed:
   to: pending
   by: P2 hold.set with the effect pause_action on the approval's scope, by a person or a maintenance window (v0.2)
   when: the deadline is extended by the time the approval was pending under the hold, the card gets a card_update with a
-    pause mark, no decision is accepted until the hold ends; no_action wins
+    pause mark, no decision is accepted until the hold ends; the pauses extend one approval by at most 7 days in total,
+    then the approval-expiry loop expires it; no_action wins
   rules: [APR-19, HLD-3, HLD-8]
   since: v0.2
 - id: sm-apr-10

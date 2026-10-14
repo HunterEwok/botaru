@@ -72,6 +72,8 @@ checks:
   source: docs/quality.md:365
   spec:
     What: (v0.2) a corpus with fragments "pump calibration", "calibration of the CTD pump" and "pump"; the queries `CTD pump
-      calibration`, `pump*` and `calibration OR pump`
+      calibration`, `pump*` and `calibration OR pump`; `kb_read` of a fragment of a corpus outside the role scope and of a
+      `demo2` corpus
     Expectation: the first finds only the second fragment; `pump*` is the word `pump`; `OR` is a word that no fragment holds;
-      the order is by occurrences, then file and fragment number
+      the order is by occurrences, then file and fragment number; `kb_read` with a fragment id of another corpus, of a `demo2`
+      corpus and of a nonexistent file gives the same `not_found`

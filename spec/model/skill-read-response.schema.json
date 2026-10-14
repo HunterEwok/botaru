@@ -23,7 +23,7 @@
     "file": {
       "type": "string",
       "maxLength": 200,
-      "pattern": "^(SKILL\\.md|(references|assets)/[A-Za-z0-9._-]+(/[A-Za-z0-9._-]+)*)$"
+      "pattern": "^(SKILL\\.md|(references|assets)/[A-Za-z0-9_][A-Za-z0-9._-]*(/[A-Za-z0-9_][A-Za-z0-9._-]*)*)$"
     },
     "sha256": {
       "$ref": "urn:botaru:schema:common:1#/$defs/hash",

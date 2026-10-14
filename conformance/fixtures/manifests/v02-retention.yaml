@@ -55,3 +55,10 @@ cases:
         metadata: {name: lims-hook, tenant: demo2}
         spec: {driver: webhook, base: 'https://core1.example.org/hooks', ceiling: internal, signing_key_ref: LIMS_HOOK_KEY}
     expect: {error: webhook_sink_invalid}
+  - name: webhook sink to a loopback address
+    manifests:
+      - apiVersion: botaru/v1alpha1
+        kind: Sink
+        metadata: {name: lims-hook, tenant: demo2}
+        spec: {driver: webhook, base: 'https://[::1]/hook', ceiling: internal, signing_key_ref: LIMS_HOOK_KEY}
+    expect: {error: webhook_sink_invalid}

@@ -582,10 +582,10 @@ checks:
   source: docs/quality.md:475
   spec:
     What: '(v0.2) `apply` of `demo` with `retention: {classes: {content: 30d}, files: 30d}`; a file is written; then `files:
-      7d`; then `files: 30d` again'
+      7d`; then `files: 30d` again; then `classes: {metadata: 93d}` while audit records 200 days old exist'
     Expectation: 'the file''s `expires_at` is 30 days after the write; after the change to `7d` the next `retention` run deletes
-      a file written 10 days ago; the change back does not return it; `apply` with `classes: {content: 500d}` or `files` longer
-      than `content` is refused with `retention_period`'
+      a file written 10 days ago; the change back does not return it; a later `metadata: 93d` deletes no audit record written
+      before that `apply`; `apply` with `classes: {content: 500d}` or `files` longer than `content` is refused with `retention_period`'
 - id: blackbox:core/restore-spend-pending
   method: blackbox
   rules:
@@ -825,9 +825,11 @@ checks:
   source: docs/quality.md:514
   spec:
     What: (v0.2) `carol` sets a `role` hold with `pause_action` for 30 minutes while a card of the role is pending with 20
-      minutes left; `bob` presses "Approve" during the hold; a second hold with `no_action` on the same role
+      minutes left; `bob` presses "Approve" during the hold; a second hold with `no_action` on the same role; another card
+      under a `pause_action` hold without `until`
     Expectation: the card gets `card.paused`; the press gets `held`; after the first hold ends the card expiry moves by 30
-      minutes; with the `no_action` hold the card is `canceled(held)`
+      minutes; with the `no_action` hold the card is `canceled(held)`; a card under a hold without `until` expires after 7
+      days pending under it
 - id: blackbox:core/fourth-card-rate-limited
   method: blackbox
   rules:

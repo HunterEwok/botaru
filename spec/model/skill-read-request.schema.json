@@ -24,8 +24,8 @@
     "file": {
       "type": "string",
       "maxLength": 200,
-      "pattern": "^(SKILL\\.md|(references|assets)/[A-Za-z0-9._-]+(/[A-Za-z0-9._-]+)*)$",
-      "description": "File path inside the skill directory; tools/list closes it by an enum of the skill files.",
+      "pattern": "^(SKILL\\.md|(references|assets)/[A-Za-z0-9_][A-Za-z0-9._-]*(/[A-Za-z0-9_][A-Za-z0-9._-]*)*)$",
+      "description": "File path inside the skill directory, no segment starting with a dot (no .. and no hidden file); tools/list closes it by an enum of the skill files.",
       "x-botaru-closed-by": "enum of the skill files in tools/list"
     },
     "offset": {

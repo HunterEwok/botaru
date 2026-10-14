@@ -986,7 +986,8 @@ def lint(docs, today=None, farm_hosts=None, examples_mode=False, claimed=None, s
         m = re.match(r'^https://([^/:?#]+)', base)
         host = m.group(1).lower() if m else None
         private = host is not None and (host == 'localhost' or host.endswith('.local') or re.match(
-            r'^(10\.|127\.|192\.168\.|172\.(1[6-9]|2[0-9]|3[01])\.|\[)', host))
+            r'^(0\.|10\.|127\.|169\.254\.|192\.168\.|172\.(1[6-9]|2[0-9]|3[01])\.|100\.(6[4-9]|[7-9][0-9]|1[01][0-9]|12[0-7])\.|\[)',
+            host))
         if host is None or private or host in farm_hosts or host.split('.')[0] in farm_hosts:
             f.error('webhook_sink_invalid', where, f'sink {name}: base {base!r} is not an https:// address outside the farm (DLV-17)')
         if not ss.get('signing_key_ref'):

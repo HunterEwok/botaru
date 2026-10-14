@@ -11,9 +11,10 @@ checks:
   section: Tests without a model
   source: docs/quality.md:242
   spec:
-    What arrives: (v0.2) a `webhook` sink to a test receiver; a delivery answered `200`; one answered `503` twice and then
-      `200`; one answered `404`; one answered `302`
+    What arrives: (v0.2) a `webhook` sink to a test receiver; a delivery answered `200`; a receiver whose DNS answer changes
+      to a link-local address after `apply`; one answered `503` twice and then `200`; one answered `404`; one answered `302`
     Expectation: headers `webhook-id` = `delivery.id`, `webhook-timestamp`, `webhook-signature` that verifies with the key;
       the `503` retries keep the id and carry a new timestamp and signature; `404` gives `dead` at once; the redirect is not
-      followed; the body has file references, no file bytes; an erasure request closes the sink step as `not_applicable` with
-      `declared_none`
+      followed; a receiver host that resolves to `127.0.0.1`, a private or a link-local address at send time gets no connection
+      and the delivery is `dead`; the body has file references, no file bytes; an erasure request closes the sink step as
+      `not_applicable` with `declared_none`

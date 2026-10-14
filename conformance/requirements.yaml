@@ -2606,9 +2606,13 @@
   status: active
   text: >-
     An outgoing webhook is an E2 sink with `driver: webhook`. Its address is the manifest `base`
-    exactly: an `https://` address whose host is not a farm host, never taken from a task body or
-    model text; lint rejects a webhook sink without such a base or without `signing_key_ref` (code
-    `webhook_sink_invalid`). Each send is an HTTP POST of the delivery as JSON with the Standard
+    exactly: an `https://` address whose host is not a farm host and not a loopback, private,
+    link-local, shared or unspecified address, never taken from a task body or model text; lint
+    rejects a webhook sink without such a base or without `signing_key_ref` (code
+    `webhook_sink_invalid`). At every send the sink resolves the host itself, refuses the send as
+    `dead` when any resolved address is a farm address or in those ranges, and connects only to an
+    address it checked, so a changed DNS answer cannot turn the sink to the farm or its cloud
+    metadata service. Each send is an HTTP POST of the delivery as JSON with the Standard
     Webhooks headers: `webhook-id` equals `delivery.id` (FEN-7), `webhook-timestamp` is the send
     time in seconds, and `webhook-signature` is `v1,<base64 HMAC-SHA256>` over
     `<id>.<timestamp>.<body>` with the deployment secret named by `signing_key_ref`. A 2xx answer
@@ -2621,7 +2625,7 @@
   waivable: true
   version: v0.2
   profile: core
-  decisions: [D-106]
+  decisions: [D-106, D-108]
   fixtures: [manifests/v02-retention, adapter:sink/webhook-send]
   doc: docs/tasks-and-delivery.md
 
@@ -4338,13 +4342,16 @@
     scope gets `held` and changes nothing, and the `approval-expiry` loop does not expire it; the
     card gets a `card_update` with the text `card.paused`. When the hold ends, the expiry of each
     such approval moves forward by the time it was pending under the hold, and the card gets a
-    `card_update` with the new expiry. `no_action` on the same approval, in the same hold or
-    another, wins over `pause_action`.
+    `card_update` with the new expiry. The pauses extend one approval by at most 7 days in total
+    (a hold without `until` included): when an approval has been pending under `pause_action` for 7
+    days, the `approval-expiry` loop expires it with `expired` even while the hold lasts, so no
+    approval waits without end and no old card is decided long after its context (D-108).
+    `no_action` on the same approval, in the same hold or another, wins over `pause_action`.
   check: [blackbox, fixture]
   waivable: false
   version: v0.2
   profile: core
-  decisions: [D-107]
+  decisions: [D-107, D-108]
   fixtures: [sm-apr-09, blackbox:core/hold-pause-by-person]
   doc: docs/operations.md
 
@@ -5416,11 +5423,14 @@
     From v0.2 `kb_search` takes a corpus of the role's resource scope and a `query` in the format
     `search_query` (`kb-search-request`). The core splits the query into words by Unicode letters
     and digits, lowercases them, ignores words shorter than two characters and at most keeps the
-    first 16; there are no operators, wildcards, regular expressions or phrase marks, and the query
-    text never reaches a model or a log. A fragment matches when it holds every word; matches are
-    ordered by the number of word occurrences, then by file id and fragment number, at most `limit`
-    (20) of them (`kb-search-response`). `kb_read` returns up to 20 fragments of one document from a
-    fragment id in document order. Both answers carry the corpus trust (KNW-2).
+    first 16; there are no operators, wildcards, regular expressions or phrase marks, and the core
+    writes the query text into no answer, log or event. A fragment matches when it holds every word;
+    matches are ordered by the number of word occurrences, then by file id and fragment number, at
+    most `limit` (20) of them (`kb-search-response`). `kb_read` returns up to 20 fragments of one
+    document from a fragment id in document order, only when the fragment's file belongs to the named
+    corpus of the role's resource scope in the task's tenant; a fragment of another corpus or tenant,
+    of a deleted file and a nonexistent one give the same `not_found`. Both answers carry the corpus
+    trust (KNW-2).
   check: [blackbox]
   waivable: true
   version: v0.2
@@ -7026,7 +7036,10 @@
     10-minute interval, and class 3. A tenant with `farm_manager.enabled: false`, or a seat that is
     not `held`, gets no task: its requests wait for a person with `model_grant.manage`. The task
     carries no request text; `grants_pending` returns only the closed fields of the tenant's pending
-    requests, and `grant_decide` decides them in one batch with the current epoch. A request that
+    requests, and `grant_decide` decides them in one batch with the current epoch. Both act only on
+    the tenant of the task: a decision on a grant of another tenant, or on one that is not `pending`,
+    gets `not_found` for that item and changes nothing, and code applies the MGR-18 ceilings to
+    every other item. A request that
     the batch leaves undecided stays `pending` for the next window or a person, and expires at
     `grant_wait_max` with `grant_expired_unanswered` (MGR-18).
   check: [blackbox, store]
@@ -7940,8 +7953,9 @@
     type, genus, address, sender role, state, times, size, hand-out count, reason, and only the
     fields whose leaves are all `enum` values, ids or numbers. `msg.list` filters only by closed
     values (type, role, state, a time window) and returns at most 200 rows per page. `msg.show`
-    returns the note only to a caller with `audit.read` in the message's tenant, in an untrusted
-    text wrapper, and writes an audit record of that read; any other caller gets the message without
+    returns the note only to a person with `audit.read` in the message's tenant who also has
+    `data:<mark>` for the message's `datamark` (ART-3), in an untrusted text wrapper, and writes an
+    audit record of that read; any other caller, the operator included, gets the message without
     the note. `inbox.status` gives for each (tenant, role) inbox the counts by state, the age of the
     oldest waiting entry, the capacity and the wake-up budget left. A message or inbox of another
     tenant and a nonexistent one give the same `not_found`. No model or worker calls these
@@ -10185,13 +10199,16 @@
     `forget` or an erasure request, `tombstone` has no period, and `observation` keeps its own
     periods (OBV-4). When a file is written the core sets `expires_at` to the write time plus the
     smaller of `retention.files` and the type's `result_ttl` if the file became a result (ART-1). A
-    shorter period applied later reaches objects already stored at the next loop run; a longer
-    period never extends an object that has already expired.
+    shorter period of `content`, `memory`, `files` or `journals` applied later reaches objects
+    already stored at the next loop run; a shorter `metadata` period applies only to records written
+    after the `apply` that set it, so a manifest change never deletes audit, decisions or spending
+    already written (AUD-3, D-108); a longer period never extends an object that has already
+    expired.
   check: [lint, fixture, blackbox]
   waivable: true
   version: v0.2
   profile: core
-  decisions: [D-106]
+  decisions: [D-106, D-108]
   fixtures: [manifests/v02-retention, blackbox:core/retention-periods]
   doc: docs/operations.md
 
@@ -10660,7 +10677,8 @@
   status: active
   text: >-
     A `wait` step has only `for`, a duration. An `await` step has `event` (an event type of the
-    events catalog), `match` (1-5 pairs of an `event_field` and a value: a literal, `{ref:
+    events catalog, or an `ext.*` event of a source channel of the tenant whose data is closed by
+    `ingress.mapping`, ING-2), `match` (1-5 pairs of an `event_field` and a value: a literal, `{ref:
     <step>.<field>}` to a closed result field with `x-botaru-read-by: code` (SCR-3), or `{param:
     <name>}` in a script from git, SCR-14) and a required `timeout`. `for` and `timeout` are each
     at most the run deadline. At release the core writes a waiting record and no task: there is

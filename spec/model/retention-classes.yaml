@@ -8,7 +8,8 @@ description: >-
   numbers, deletion is the way of deletion, retention_cycle_v01 says whether
   the retention cycle already deletes objects of the class by period in v0.1 (RET-2); since v0.2 a tenant sets the periods
   of the classes that have ceiling_days in Tenant.spec.retention, at most ceiling_days (RET-9), and the cycle deletes
-  all classes by period in every copy (RET-10). min_days is the shortest period a tenant may set.
+  all classes by period in every copy (RET-10). min_days is the shortest period a tenant may set; a shorter metadata period
+  applies only to records written after it was set (RET-9, D-108).
   Before its period ends, any class is deleted only by an erasure request (RET-7).
 source: docs/operations.md
 entries:
