@@ -45,7 +45,11 @@ type Config struct {
 	Plugins   []Plugin
 	// KillAfter is how long a plugin has after a cancellation before its process is ended.
 	KillAfter time.Duration
-	Logger    *slog.Logger
+	// StopMargin is how long before the end of the lease the toolhost stops a call; the plugin
+	// is cancelled StopMargin plus KillAfter before it, so it is gone before the lease ends
+	// (FEN-6).
+	StopMargin time.Duration
+	Logger     *slog.Logger
 }
 
 // Host runs calls one at a time.
@@ -60,6 +64,9 @@ type Host struct {
 func New(cfg Config) (*Host, error) {
 	if cfg.KillAfter == 0 {
 		cfg.KillAfter = 10 * time.Second
+	}
+	if cfg.StopMargin == 0 {
+		cfg.StopMargin = 10 * time.Second
 	}
 	if cfg.Logger == nil {
 		cfg.Logger = slog.Default()
@@ -225,8 +232,10 @@ func (h *Host) fail(ctx context.Context, lease, reason string) error {
 // lease ran out by this process's clock without a renewal, it cancels the call (FEN-4, FEN-6).
 func (h *Host) keepLease(ctx context.Context, cancel context.CancelFunc, lease string, until time.Time, lost chan struct{}) {
 	every := time.Duration(h.heartbeatS) * time.Second
+	margin := h.cfg.StopMargin + h.cfg.KillAfter
 	for {
-		wait := min(every, time.Until(until))
+		cutoff := until.Add(-margin)
+		wait := min(every, time.Until(cutoff))
 		t := time.NewTimer(max(wait, 0))
 		select {
 		case <-ctx.Done():
@@ -234,7 +243,7 @@ func (h *Host) keepLease(ctx context.Context, cancel context.CancelFunc, lease s
 			return
 		case <-t.C:
 		}
-		if !time.Now().Before(until) {
+		if !time.Now().Before(cutoff) {
 			close(lost)
 			cancel()
 			return
@@ -244,9 +253,9 @@ func (h *Host) keepLease(ctx context.Context, cancel context.CancelFunc, lease s
 			CancelRequested bool `json:"cancel_requested"`
 		}
 		sent := time.Now()
-		// The heartbeat ends with the lease by this process's clock: a stalled request never
-		// keeps the call running past it.
-		hctx, hcancel := context.WithDeadline(ctx, until)
+		// The heartbeat ends at the local cutoff: a stalled request never keeps the call
+		// running past it.
+		hctx, hcancel := context.WithDeadline(ctx, cutoff)
 		err := h.cfg.Core.Call(hctx, "heartbeat", lease, map[string]any{}, &out)
 		hcancel()
 		if r := p1client.Reason(err); r == "fenced" || r == "lease_mismatch" || out.CancelRequested {

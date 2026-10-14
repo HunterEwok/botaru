@@ -7,7 +7,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io/fs"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -29,6 +31,8 @@ type Cmd struct {
 	Host string
 	// MaxOutput bounds what a command may print; the toolhost cuts further by the tool limit.
 	MaxOutput int
+	// forbidden is the forbidden program list, checked again on the resolved program path.
+	forbidden map[string]bool
 }
 
 // NewCmd checks the manifest of the plugin with the forbidden programs.
@@ -36,7 +40,29 @@ func NewCmd(p toolspec.Plugin, host string, forbidden map[string]bool) (*Cmd, er
 	if issues := toolspec.Check(p, forbidden); len(issues) > 0 {
 		return nil, fmt.Errorf("the cmd manifest does not pass the checks: %v", issues)
 	}
-	return &Cmd{Plugin: p, Host: host, MaxOutput: 1 << 20}, nil
+	for _, t := range p.Tools {
+		for _, c := range t.Commands {
+			// A program that is a symlink to a forbidden one is refused too; a program missing on
+			// this machine fails at its call.
+			if _, err := program(c.Argv[0], forbidden); err != nil && !errors.Is(err, fs.ErrNotExist) {
+				return nil, err
+			}
+		}
+	}
+	return &Cmd{Plugin: p, Host: host, MaxOutput: 1 << 20, forbidden: forbidden}, nil
+}
+
+// program resolves the symlinks of a program path and refuses a program whose real name is
+// forbidden (INJ-14).
+func program(name string, forbidden map[string]bool) (string, error) {
+	real, err := filepath.EvalSymlinks(name)
+	if err != nil {
+		return "", err
+	}
+	if forbidden[filepath.Base(real)] {
+		return "", fmt.Errorf("the program %s is %s, a forbidden program", name, real)
+	}
+	return real, nil
 }
 
 // Call runs one command.
@@ -63,7 +89,14 @@ func (c *Cmd) Call(ctx context.Context, tool string, args map[string]any, meta *
 	}
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
-	x := exec.CommandContext(ctx, argv[0], argv[1:]...)
+	// The program runs by its resolved path, checked just before, so a symlink changed after
+	// the start check cannot lead to a forbidden program.
+	real, err := program(argv[0], c.forbidden)
+	if err != nil {
+		return nil, errors.New("the command could not start")
+	}
+	x := exec.CommandContext(ctx, real, argv[1:]...)
+	x.Args[0] = argv[0]
 	x.Env = CmdEnv
 	x.Dir = "/"
 	out := &limitBuffer{max: c.MaxOutput}

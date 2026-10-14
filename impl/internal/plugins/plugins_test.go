@@ -53,6 +53,37 @@ func TestCmd(t *testing.T) {
 	if _, err := NewCmd(cmdPlugin("/bin/sh", "-c", "id"), "web1", map[string]bool{"sh": true}); err == nil {
 		t.Fatal("a forbidden program passed")
 	}
+	// A symlink to a forbidden program is refused at start and at the call.
+	shReal, err := filepath.EvalSymlinks("/bin/sh")
+	if err != nil {
+		t.Fatal(err)
+	}
+	forbidden := map[string]bool{"sh": true, filepath.Base(shReal): true}
+	link := filepath.Join(t.TempDir(), "status")
+	if err := os.Symlink("/bin/sh", link); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := NewCmd(cmdPlugin(link, "-c", "id"), "", forbidden); err == nil {
+		t.Fatal("a symlink to a forbidden program passed")
+	}
+	_ = os.Remove(link)
+	if err := os.Symlink("/bin/echo", link); err != nil {
+		t.Fatal(err)
+	}
+	l, err := NewCmd(cmdPlugin(link, "hi"), "", forbidden)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if r, err := l.Call(context.Background(), "run", map[string]any{"command": "say"}, nil); err != nil || r.Content[0].Text != "hi\n" {
+		t.Fatalf("a symlink to an allowed program: %+v %v", r, err)
+	}
+	_ = os.Remove(link)
+	if err := os.Symlink("/bin/sh", link); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := l.Call(context.Background(), "run", map[string]any{"command": "say"}, nil); err == nil {
+		t.Fatal("a symlink changed to a forbidden program ran")
+	}
 	f, err := NewCmd(cmdPlugin("/bin/false"), "", nil)
 	if err != nil {
 		t.Fatal(err)
