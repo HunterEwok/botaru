@@ -262,7 +262,11 @@ def compare(old, new, where):
         gone = [v for v in old['enum'] if not among(v, new['enum'])]
         if gone:
             rep.error(where, f'[enum_value_removed] values {gone} left enum')
-    if 'enum' not in old and 'enum' in new:
+    if 'const' in old and 'enum' in new and 'const' not in new:
+        # a const that became an enum widens only when the enum keeps the old value
+        if not among(old['const'], new['enum']):
+            rep.error(where, f'[enum_value_removed] the old const {old["const"]!r} is not in the new enum')
+    elif 'enum' not in old and 'enum' in new:
         rep.error(where, '[enum_added] enum appeared: the set of values is narrowed')
     for k, tighter in TIGHTER.items():
         if k in new and (k not in old or tighter(new[k], old[k])):

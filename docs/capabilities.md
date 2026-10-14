@@ -435,7 +435,7 @@ Generated from the registry `conformance/requirements.yaml`; the full text of ev
 | [KNW-2](../conformance/rules.md#KNW-2) | A corpus's source sets the trust in it | v0.2 | yes |
 | [KNW-3](../conformance/rules.md#KNW-3) | Corpus text reaches the model only through P3 | v0.2 | yes |
 | [KNW-4](../conformance/rules.md#KNW-4) | The model has no write path to a corpus | v0.2 | yes |
-| [KNW-5](../conformance/rules.md#KNW-5) | Deleting a document deletes its fragments and vectors | v0.2 | yes |
+| [KNW-5](../conformance/rules.md#KNW-5) | Deleting a document deletes its fragments | v0.2 | yes |
 | [PRV-1](../conformance/rules.md#PRV-1) | The core writes the run fingerprint | v0.1 | yes |
 | [PRV-2](../conformance/rules.md#PRV-2) | The core writes artifact provenance | v0.1 | yes |
 | [PRV-3](../conformance/rules.md#PRV-3) | Quality check on a static fingerprint change | v0.2 | yes |

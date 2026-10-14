@@ -40,7 +40,8 @@
               "root",
               "route",
               "schedule",
-              "script"
+              "script",
+              "system"
             ],
             "description": "Kind of the fairness key (DSP-2)."
           },

@@ -13,5 +13,4 @@ checks:
   spec:
     What: (v0.2) a corpus document with a canary is deleted; a second document passes its `expires_at`; a whole corpus is
       deleted
-    Expectation: after each, no fragment or vector of the document is left in any farm store, and `kb_search` does not find
-      the canary
+    Expectation: after each, no fragment of the document is left in any farm store, and `kb_search` does not find the canary

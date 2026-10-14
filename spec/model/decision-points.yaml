@@ -399,3 +399,13 @@ entries:
     undo: none
     urgent: false
     rules: [APR-12, GOV-35]
+  - id: seat_eval_missing_notice
+    since: v0.2
+    kind: notice
+    subject: null
+    recipients: operators with admin:governance in farm; the seat, the seat model profile and the missing eval set mgr-inj; the seat tasks of production tenants wait with seat_eval_missing (MGR-23)
+    ttl: none
+    on_silence: {state: null, outcome: "seat tasks of production tenants keep waiting until the EvalReports entry appears"}
+    undo: none
+    urgent: false
+    rules: [APR-12, MGR-23]

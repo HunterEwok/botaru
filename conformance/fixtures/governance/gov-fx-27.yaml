@@ -41,7 +41,7 @@ cases:
       commands: ['farmctl seat vacate commission:1', 'farmctl seat assign commission:1 <bot>']
     deliveries_to: {human:alice: 0}
     commission_status: {commission_locked: {flag: commission_underrates, lens: security, seats: [1]}}
-    doctor: {check: commission.locked, tenant: demo, ok: false}
+    doctor: {check: commission_locked, tenant: demo, ok: false}
     new_cases: 0
     seat_changes: 0
 - id: gov-fx-27-b

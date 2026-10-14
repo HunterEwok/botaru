@@ -36,6 +36,7 @@ This is what the skeleton deliberately leaves open. The first part concerns the 
 | Campaign queue limit `queue_max` without a value | An item waits in `pending` while the tenant queue is below `max_queued`, and gets no refusal (ORC-4). | The behavior of large campaigns under load. |
 | Decision deadline for a script `confirm` step | 30 minutes and no longer than the run deadline; silence gives `declined` (SCR-6). | How long a script waits for a person. |
 | How code learns that an action is named in the text of an assignment | A match of the action name or its `title` after simple normalization; there are no synonyms in the manifest. | How precisely the translator needs to name an action. |
+| Starting a script from git on a schedule | Proposed in D-99 and written as the single rule SCR-12 (v0.2): only scripts that need no `script.run`, within the tenant's script ceilings. Awaiting the owner's confirmation; until then the rule can be dropped without touching others. | Whether regular scripts can be automated. |
 | An assignment to the translator from an external program (principal `service`) | A script draft is possible, but nobody can start it, because only a person confirms a run. | Whether programs can order scripts. |
 
 ### Bots, commission and farm manager

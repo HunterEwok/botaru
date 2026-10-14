@@ -9,6 +9,7 @@ A promotion queue entry (`PromotionEntry`) appears for a functionary whose propo
 | State | Meaning | Terminal |
 |---|---|---|
 | `queued` | The entry waits for its turn; ordered by the time the trigger appeared | no |
+| `waiting_eligibility` | The entry failed eligibility when a case was to open (`not_eligible`); it keeps its place and lets the next entries go ahead | no |
 | `in_case` | A promotion case is open for the entry | no |
 | `removed` | The entry is removed | yes |
 
@@ -17,21 +18,22 @@ A promotion queue entry (`PromotionEntry`) appears for a functionary whose propo
 | From | To | Trigger | Condition | Rules |
 |---|---|---|---|---|
 | (none) | `queued` | the `governance` loop | a promotion trigger by GOV-14; the bot has no entry; the bot is a functionary (a role of the profile `worker`, `manager`, `reporter` or `aggregator`, the worker is enrolled without an owner) | GOV-14 |
-| `queued`, `in_case` | `queued`, placed by the time of the new trigger | the `governance` loop | a person confirmed an incident attribution to the change that gave the trigger, and the track record has a later trigger; an open case gets `canceled(candidate_ineligible)` | GOV-14, GOV-13 |
-| `queued`, `in_case` | `removed` | the `governance` loop | the same, but there is no later trigger | GOV-14, GOV-13 |
-| `queued` | `queued` | the `governance` loop when trying to open a case | eligibility failed (`not_eligible`): the entry waits and lets the next one go ahead | GOV-14 |
-| `queued` | `in_case` | the `governance` loop | the entry is the first of the eligible ones, the conditions for opening a case are met | GOV-6, GOV-14 |
+| `queued`, `waiting_eligibility`, `in_case` | `queued`, placed by the time of the new trigger | the `governance` loop | a person confirmed an incident attribution to the change that gave the trigger, and the track record has a later trigger; an open case gets `canceled(candidate_ineligible)` | GOV-14, GOV-13 |
+| `queued`, `waiting_eligibility`, `in_case` | `removed` | the `governance` loop | the same, but there is no later trigger | GOV-14, GOV-13 |
+| `queued` | `waiting_eligibility` | the `governance` loop when trying to open a case | eligibility failed (`not_eligible`): the entry waits and lets the next one go ahead | GOV-14 |
+| `queued`, `waiting_eligibility` | `in_case` | the `governance` loop | the entry is the first of the eligible ones whose own `cooldown_until` has passed, and the conditions for opening a case are met | GOV-6, GOV-14 |
 | `in_case` | `removed` | the case becomes `effective` | the candidate took the seat | GOV-9 |
 | `in_case` | `in_case` | the case is `rejected` with the reason `wrong_leaver` | only once per entry: the `governance` loop immediately opens a new case without the rejected seat with the flag `reopened_after_wrong_leaver`; if L is empty, the entry becomes `queued` first | GOV-31 |
-| `in_case` | `queued`, first | the case is `rejected` with the reason `not_now`, or for the first time with the reason `wrong_candidate`; the case is `expired` | the next case no earlier than `swap_cooldown` after `not_now` and `expired` | GOV-31, GOV-14 |
+| `in_case` | `queued`, first | the case is `rejected` with the reason `not_now`; the case is `expired` | the next case no earlier than `swap_cooldown` after `not_now` and `expired` | GOV-31, GOV-14 |
+| `in_case` | `queued`, first, with `cooldown_until` | the case is `rejected` for the first time with the reason `wrong_candidate` | the entry gets no case before its own `swap_cooldown` (30 days) has passed; until then the next entries may go ahead (D-101) | GOV-31, GOV-14 |
 | `in_case` | `removed` | the second case of this entry is `rejected` with the reason `wrong_candidate` | the entry comes back only with the bot's next success | GOV-31 |
 | `in_case` | `queued`, previous place | the case is `canceled` | the candidate did not leave | GOV-14 |
-| `queued`, `in_case` | `removed` | the core | the bot retired (`retired`) or a person seated it with P2 `seat.assign` | GOV-14, IDN-11 |
+| `queued`, `waiting_eligibility`, `in_case` | `removed` | the core | the bot retired (`retired`) or a person seated it with P2 `seat.assign` | GOV-14, IDN-11 |
 
 ## Invariants
 
 - A bot has at most one entry; the next success of a bot that is already in the queue is written to its track record (GOV-14).
-- The queue order is set by the time the entry's trigger appeared; "Reject" with the reason `not_now` or the first `wrong_candidate`, and `expired`, keep the entry first.
+- The queue order is set by the time the entry's trigger appeared; "Reject" with the reason `not_now` or the first `wrong_candidate`, and `expired`, keep the entry first; after the first `wrong_candidate` the entry has its own `cooldown_until`, and the next entries go ahead until then (D-101).
 - An entry does not expire over time and is not evicted by the queue length.
 - Only a functionary has an entry: personal assistants, translators, commission members and roles without a model have no entries.
 - Eligibility (30 days of service, no confirmed attributions within 90 days, the identity is `active`) is checked when a case is opened, not when entering the queue.

@@ -678,6 +678,12 @@
                   "minimum": 0,
                   "maximum": 100,
                   "description": "Fairness key weight."
+                },
+                "system": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 100,
+                  "description": "Fairness key weight of tasks that the core creates itself (system:<purpose>, DSP-2)."
                 }
               }
             }
@@ -718,9 +724,10 @@
                       "root",
                       "route",
                       "schedule",
-                      "script"
+                      "script",
+                      "system"
                     ],
-                    "description": "Kind of the task source."
+                    "description": "Kind of the task source; system for tasks that the core creates itself (DSP-2)."
                   }
                 },
                 "description": "Matching only by the type name or name prefix and the source kind (DSP-3)."

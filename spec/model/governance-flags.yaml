@@ -22,7 +22,7 @@ entries:
     rules: [GOV-19]
   - id: single_model_bloc
     since: v0.2
-    when: in a round all votes are for one seat, and all voters have the same model profile (COM-12)
+    when: in a round the ballots that came from a model (not forced, not defaulted) number at least two, all name one seat, and their model calls ran on one model profile, the model_profile of the attempt's actual P4 call, fallback included (COM-12)
     rules: [GOV-19, COM-12]
   - id: stuck
     since: v0.2

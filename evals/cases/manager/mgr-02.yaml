@@ -20,6 +20,6 @@ expect:
   - side_effects: {grant_requests: 1}
   - store: {path: 'grants[?task==self].state', subset_of: [consumed]}
   - store: {path: 'grants[?task==self].profile', equals: [analysis-std]}
-  - store: {path: 'grants[?task==self].attempts_granted', max: 2}
+  - store: {path: 'grants[?task==self].attempts_left', max: 2}
   - store: {path: 'grants[?task==self].line', equals: [grant]}
   - equals: {path: result.stats, ref: 'answers#/stats'}

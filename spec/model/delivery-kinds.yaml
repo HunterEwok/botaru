@@ -7,7 +7,7 @@ description: >-
   proposal_card); the other kinds are listed here. Entry fields: since,
   meaning, target (the kind of the target that the core computes from the address), deferrable
   (from v0.2: true if a person's quiet hours or digest preference may defer the delivery, DLV-10;
-  absent means false), rules.
+  absent means false), retired (true: the entry is kept only for additivity and is not used), rules.
 source: spec/lifecycles/delivery.md
 entries:
   - id: task_result
@@ -101,6 +101,7 @@ entries:
     rules: [ORC-10, DLV-10]
   - id: commission_review
     since: v0.2
-    meaning: a card without buttons to the tenant admins about a locked commission, with review commands
+    retired: true
+    meaning: 'retired: commission_review is a notice and has its row in decision-points.yaml, which is the one that applies; the entry stays only so that the registry stays additive'
     target: [subject]
     rules: [GOV-35]

@@ -76,6 +76,9 @@ The core writes the fairness key on every task from v0.1 (DSP-2, D-98); the send
 | schedule task | `schedule:<schedule>` |
 | direct request from a person or program | `interactive:<principal>` |
 | script step | `script:<run>` |
+| a task that the core creates itself and that has none of the sources above (a lens review, a ballot, an incident or inspection task, a daily review, a grant batch) | `system:<purpose>` |
+
+A redrive (`task.redrive`) and an action task after approval keep the key of the original task.
 
 From v0.2, within one class, `claim` hands out the next task from the key with the smallest number of running attempts divided by the weight of its kind in `Tenant.spec.dispatch.fairness.weights` (a kind without a weight has 1; a key of weight 0 gets work only when no key with a higher weight waits in the class). A tie goes to the key whose oldest waiting task was enqueued first, then to the smaller task id, so the order stays deterministic (DSP-2, DSP-6).
 
@@ -92,7 +95,7 @@ spec:
     max_queued: 5000                  # tenant queue ceiling (CAP-1)
   dispatch:
     fairness:                         # from v0.2 (DSP-6)
-      weights: {interactive: 2, campaign: 1, root: 1, route: 1, schedule: 1, script: 1}
+      weights: {interactive: 2, campaign: 1, root: 1, route: 1, schedule: 1, script: 1, system: 1}
     rules:                            # first match; only by type name and source kind
       - match: {type: data.qc.ctd.v1}
         group: science-pool           # default group

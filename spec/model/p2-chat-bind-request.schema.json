@@ -8,7 +8,9 @@
     "DLV-7",
     "REP-7",
     "PRM-14",
-    "REP-10"
+    "REP-10",
+    "DLV-9",
+    "DLV-15"
   ],
   "type": "object",
   "required": [
@@ -61,16 +63,14 @@
     },
     "locale": {
       "$ref": "urn:botaru:schema:common:1#/$defs/locale",
-      "description": "From v0.2: digest language of the binding (REP-10).",
-      "x-botaru-version": "v0.2"
+      "description": "Language of the binding (DLV-9, v0.1): code texts and, from v0.2, the digest language (REP-10)."
     },
     "model_text": {
       "enum": [
         "summary_only",
         "labeled"
       ],
-      "description": "From v0.2: summary_only by default; labeled lets a marked model paragraph into a group chat (DLV-15, REP-2).",
-      "x-botaru-version": "v0.2"
+      "description": "summary_only by default; labeled lets a marked model paragraph into a group chat (DLV-15, REP-2, v0.1)."
     }
   },
   "additionalProperties": false

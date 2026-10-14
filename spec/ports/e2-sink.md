@@ -8,7 +8,7 @@ E2 is the adapter that writes artifacts to external storage: a worker of kind `s
 
 ## Who calls and who implements
 
-- **Implemented by** a sink adapter with a worker token of its tenant; the tenant's `Sink` manifest sets the address base, the class ceiling, the retention period and, for an export sink, `export_only: {recipient: <subject or admin>, key_ref: <secret name>}`: the single recipient and the file encryption key.
+- **Implemented by** a sink adapter with a worker token of its tenant; the tenant's `Sink` manifest sets the address base, the class ceiling, the retention period and, for an export sink, `export_only: {recipient_ref, key_ref}` (SEC-10): the single recipient and the file encryption key.
 - **Calls** the core through P1: `claim(delivery)`, `file.get`, `complete`, `fail`.
 
 ## Operations

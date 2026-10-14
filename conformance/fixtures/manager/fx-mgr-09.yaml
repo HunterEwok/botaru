@@ -1,8 +1,8 @@
 id: fx-mgr-09
 rules: [MGR-18, MGR-17]
 version: v0.2
-description: 'Grant wait, expiry and revoke. A pending request without a decision within grant_wait_max (15 minutes) is denied
-  with grant_expired_unanswered, and the task continues on the base model. A person with model_grant.manage revokes an active
+description: 'Grant wait, expiry and revoke. A pending request without a decision within grant_wait_max (15 minutes) expires
+  with the reason grant_expired_unanswered, and the task continues on the base model. A person with model_grant.manage revokes an active
   grant with P2 model_grant.revoke: the running attempt is canceled with grant_revoked without spending, the task continues on
   the base model. A grant does not change tools, tier or other budget lines and is not written into the bot track record.'
 given:

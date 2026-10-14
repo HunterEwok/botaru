@@ -84,7 +84,7 @@ cases:
     new_case: {candidate: bot_17}
 - id: gov-fx-23-e
   description: The first wrong_candidate returns the entry to the head with its own swap_cooldown (30 days, D-101), during which
-    the next entry may go ahead; the second for the same entry removes it.
+    the next entry may go ahead; once bot_18 has left, no case opens before day 30; the second wrong_candidate for the same entry removes it.
   steps:
   - call:
       port: P1
@@ -96,7 +96,8 @@ cases:
   - stand: {op: loop.tick, loop: governance}
     at: 1d
     expect: {open_case: {candidate: bot_18}, entry: {bot: bot_17, state: queued, cooldown_until: 30d}}
-  - occur: {case_of: bot_18, to: canceled, reason: human}
+  - occur: {bot_retired: bot_18, reason: human_retire}
+    expect: {case_of_bot_18: {state: canceled, reason: candidate_ineligible}, entry: {bot: bot_18, state: removed}}
   - stand: {op: loop.tick, loop: governance}
     at: 29d
     expect: {open_case: null}
@@ -111,7 +112,7 @@ cases:
     by: human:alice
     card: promotion_card
   expect:
-    queue: [{bot: bot_18, state: queued}]
+    queue: []
     entry_returns_with: next success of bot_17
 - id: gov-fx-23-f
   description: A vacancy case refuses wrong_leaver.

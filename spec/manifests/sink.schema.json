@@ -41,7 +41,8 @@
         "recipient": {
           "type": "string",
           "maxLength": 80,
-          "description": "The only recipient in the old form: the principal or admin. From v0.2 recipient_ref is used; exactly one of the two is set (lint export_only_recipient).",
+          "description": "Deprecated form kept for schema compatibility; rules and documents name only recipient_ref. Exactly one of the two is set (lint export_only_recipient).",
+          "deprecated": true,
           "pattern": "^(admin|(user|staff|service):[a-z][a-z0-9_.-]{0,62})$"
         },
         "key_ref": {

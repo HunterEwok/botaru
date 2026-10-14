@@ -10,7 +10,7 @@ A file is bytes plus a record that only the core writes (ART-1). The file cycle 
 |---|---|---|
 | `stored` | the bytes and the record exist; the file is handed out by P1 `file.get` to those who are allowed (ART-3) | no |
 | `expired` | the `expires_at` period has ended; the file is no longer handed out, the bytes wait for deletion by the `retention` loop | no |
-| `purged` | the bytes are deleted in all farm stores, together with the fragments and vectors of knowledge corpora (KNW-5); the record remains as a tombstone without content | yes |
+| `purged` | the bytes are deleted in all farm stores, together with the fragments of knowledge corpora in the corpus index (KNW-5); the record remains as a tombstone without content | yes |
 
 ## Transitions
 
@@ -38,4 +38,4 @@ A file is bytes plus a record that only the core writes (ART-1). The file cycle 
 | Version | What appears |
 |---|---|
 | v0.1 | The states `stored` and `purged`: the file record, P1 `file.put` and `file.get` (ART-1, ART-2, ART-3); `personal_seen: declared` at the write (ART-6); C1 `file.purge` on an erasure request (RET-4, RET-7): deleting a person's data at their request exists from the first version and cannot be waived for a tenant with `kind: production` (D-76). |
-| v0.2 | The `expired` state and deletion by period by the `retention` loop (RET-2); deletion of corpus fragments and vectors together with the file (KNW-5); size limits (ART-4). |
+| v0.2 | The `expired` state and deletion by period by the `retention` loop (RET-2); deletion of corpus fragments together with the file (KNW-5); size limits (ART-4). |

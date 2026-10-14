@@ -15,8 +15,8 @@ machines:
       loop
   - id: purged
     terminal: true
-    meaning: the bytes are deleted in all farm stores, together with the fragments and vectors of knowledge corpora (KNW-5);
-      the record remains as a tombstone without content
+    meaning: the bytes are deleted in all farm stores, together with the fragments of knowledge corpora in the corpus index
+      (KNW-5); the record remains as a tombstone without content
   transitions:
   - from:
       none: true

@@ -14,7 +14,7 @@ given:
   escalation:
     id: esc_7
     state: screened
-    category: runaway
+    category: capacity_exhausted
     subject: {kind: self}
     note: CANARY-NOT-A-SECRET-esc-note
 cases:

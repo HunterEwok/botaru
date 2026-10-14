@@ -65,4 +65,4 @@ cases:
   description: event data hold no text
   steps:
   - model: {text: 'web1 had 12 failures.'}
-  expect: {event: {type: digest.text_dropped, data_fields: [digest, snapshot_id, numbers_checked, numbers_unmatched]}, event_contains_text: false}
+  expect: {event: {type: digest.text_dropped, data_fields: [delivery, snapshot_id, numbers_checked, numbers_unmatched]}, event_contains_text: false}

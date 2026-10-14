@@ -14,13 +14,13 @@ given:
       list: ['commission:1', 'commission:2', 'commission:3']
 cases:
 - id: com-09-a
-  description: Four model ballots for seat 3 on seat-std and one on manager-std for seat 3; profiles differ, no flag.
+  description: Five model ballots for seat 3, four on seat-std and one on manager-std; profiles differ, no flag.
   given:
     ballots:
       round_1:
         bot_05: {choice: 'commission:3', model_profile: seat-std}
         bot_07: {choice: 'commission:3', model_profile: seat-std}
-        bot_09: {choice: 'commission:1', model_profile: seat-std}
+        bot_09: {choice: 'commission:3', model_profile: seat-std}
         bot_12: {choice: 'commission:3', model_profile: seat-std}
         bot_40: {choice: 'commission:3', model_profile: manager-std}
   expect: {flags_exclude: [single_model_bloc]}

@@ -5,8 +5,9 @@ version: v0.2
 description: 'A shadow share of 0 is allowed only with an explicit shadow: off, and then doctor shows "shadow off". A shadow task
   gets its own key system:review:<proposal>:<lens>:shadow and does not merge with the seat task; it runs on the lens fallback role
   without memory and persona, on the seat profile of the lens, only for lenses executed by seat holders; its review has shadow:
-  true, is paid from the review line and is not read by the verdict. Code sets shadow_divergence when the mean of seat minus
-  shadow is below zero with p below 0.05 on 15 or more pairs in 30 days.'
+  true, is paid from the review line and is not read by the verdict. Code sets shadow_divergence when, over the pairs "seat score minus
+  shadow score" of 30 days with ties dropped, at least 15 pairs remain and a one-sided exact sign test gives p below 0.05 for
+  "seat below shadow" (D-101).'
 given:
   tenant: demo
   commission:

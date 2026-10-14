@@ -669,7 +669,7 @@ entries:
   outcome: value
   rules: [HLD-7, MGR-7]
 - id: pause_action
-  since: v0.1
+  since: v0.2
   meaning: 'Hold effect: new `request_action` calls are rejected, waiting approvals wait, and their expiry is extended by the length
     of the hold. A maintenance window sets it with the reason `maintenance` (MON-9).'
   spends_attempt: null
@@ -721,11 +721,11 @@ entries:
   rules: [RET-7]
 - id: offboarding
   since: v0.1
-  meaning: 'Erasure request reason: the person left.'
+  meaning: 'Erasure request reason: the person left. From v0.2 also the reason of the operator hold on the scope `tenant` that P2 `tenant.offboard` sets (LCY-1), and the reason for revoking the connections of the tenant''s people (SEC-7).'
   spends_attempt: null
   retry: null
   outcome: value
-  rules: [RET-7]
+  rules: [RET-7, LCY-1]
 - id: bot_retired
   since: v0.1
   meaning: 'Erasure request reason: retirement of a bot identity, end of the seal.'
@@ -1451,7 +1451,7 @@ entries:
   outcome: value
   rules: [CAP-4, HLD-2]
 - id: maintenance
-  since: v0.1
+  since: v0.2
   meaning: Stop reason of a hold set by a monitoring system maintenance window on a catalog host (MON-9).
   spends_attempt: null
   retry: null

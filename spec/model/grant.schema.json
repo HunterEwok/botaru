@@ -59,6 +59,10 @@
       "$ref": "urn:botaru:schema:common:1#/$defs/datetime"
     },
     "line": {
+      "enum": [
+        "grant",
+        "takeover"
+      ],
       "description": "Budget line: grant, or takeover for a grant of kind takeover (MGR-21)."
     },
     "decided_by": {

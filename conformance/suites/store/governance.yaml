@@ -12,7 +12,7 @@ checks:
   section: Tests without a model
   source: docs/quality.md:477
   spec:
-    What: (v0.2) a governance case goes through opening, two rounds with ballots, a `not_eligible` ballot, `voters_removed`
+    What: (v0.2) a governance case goes through opening, two rounds with ballots, a `not_eligible` queue event, `voters_removed`
       and `decided`; then the audit log and the events are read through P2 `audit.query` by a person with `admin:governance`
       and by a person without it
     Expectation: every step writes its command from `spec/model/governance-events.yaml` (v0.2) with `case`, `round`, `seat`,
@@ -27,8 +27,9 @@ checks:
   section: Tests without a model
   source: docs/quality.md:478
   spec:
-    What: (v0.2) an attribution card in `pending` with nobody answering for 7, 14, 21 and 28 days; then an answer "Yes" on
-      another one
-    Expectation: reminders on day 7, 14 and 21 (no more than 3), then `expired` with no attribution and no change to the track
-      record or calibration; the weekly digest to people with `governance.attribute` lists the open cards; "Yes" moves the
-      attribution to `confirmed` and writes the audit line
+    What: (v0.2) an attribution candidate with nobody answering for 7, 14, 21, 28 and 35 days; then an answer "Yes" on another
+      one
+    Expectation: 'after the 7-day card deadline the candidate is `unknown` and stays so: it does not expire, no promotion
+      trigger appears and the track record and calibration do not change; weekly reminders on day 14, 21 and 28 (no more than
+      3), after that only a row in the weekly digest to people with `governance.attribute`; "Yes" moves the attribution to
+      `confirmed` and writes the audit line'
