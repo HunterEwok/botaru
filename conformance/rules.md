@@ -32,7 +32,7 @@ The line under a rule heading:
 | [DLV](#dlv) | Delivery | [docs/tasks-and-delivery.md](../docs/tasks-and-delivery.md) | 16 | 9 | 14 | 2 | 0 | 0 |
 | [DSP](#dsp) | Task pool and dispatcher | [docs/coordination.md](../docs/coordination.md) | 8 | 7 | 7 | 1 | 0 | 0 |
 | [FEN](#fen) | Leases | [docs/tasks-and-delivery.md](../docs/tasks-and-delivery.md) | 7 | 5 | 7 | 0 | 0 | 0 |
-| [GOV](#gov) | Bot governance | [docs/commission.md](../docs/commission.md) | 30 | 23 | 10 | 10 | 10 | 0 |
+| [GOV](#gov) | Bot governance | [docs/improvements.md](../docs/improvements.md) | 30 | 23 | 10 | 10 | 10 | 0 |
 | [GW](#gw) | Model gateway | [docs/models-and-money.md](../docs/models-and-money.md) | 15 | 14 | 15 | 0 | 0 | 0 |
 | [HLD](#hld) | Stop | [docs/operations.md](../docs/operations.md) | 7 | 6 | 5 | 1 | 1 | 0 |
 | [IDM](#idm) | Idempotency | [docs/tasks-and-delivery.md](../docs/tasks-and-delivery.md) | 4 | 1 | 4 | 0 | 0 | 0 |
@@ -1212,7 +1212,7 @@ Checked by: `fx-fen-01`
 <a id="gov"></a>
 ## GOV: Bot governance
 
-Explained in: [docs/bots.md](../docs/bots.md), [docs/commission.md](../docs/commission.md), [docs/farm-manager.md](../docs/farm-manager.md)
+Explained in: [docs/bots.md](../docs/bots.md), [docs/farm-manager.md](../docs/farm-manager.md), [docs/improvements.md](../docs/improvements.md)
 
 <a id="GOV-3"></a>
 ### GOV-3. Model rank and ceiling

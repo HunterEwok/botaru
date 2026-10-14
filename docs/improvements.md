@@ -1,144 +1,90 @@
-# Improvement cycle
+# How the farm gets better
 
 ## In short
 
-The improvement cycle is the main element of the farm (D-16): bots notice from the core's numbers what in their work can be done better and propose changes themselves. Only the core writes and re-checks the numbers, a proposal passes code checks and a blind commission of bots of its own tenant (D-23), and only people decide, with buttons. An accepted change runs by the farm's ordinary path, and for 14 days the core measures whether the metric the bot promised has improved. The outcome of this trial is seen by the author in "My outcomes", by the commission in its accuracy and by people on the promotion card. Credit goes to the author only for their own change that people accepted, that was realized through a verified link and that did not worsen the promised metric (D-24, D-37). This way the cycle rewards measured benefit, not people's approval. The document describes the links of the cycle from observations to handing the outcome over to promotion; commission seats, the charter and promotion itself are described in [commission.md](commission.md) and [bots.md](bots.md).
+The farm gets better because its bots propose changes to their own work and only measured benefit counts (D-16). The core writes the numbers. A functionary looks at them in an analysis task and proposes at most three changes, each with exactly one change from an allowlist. Code checks the proposal, a blind commission of bots of the same tenant scores it through lenses (D-23), and code computes the verdict. People see only recommended proposals and a random audit sample of rejected ones, and only a person presses "Accept". The change then goes the farm's ordinary way: an action approval, a script run or a person's commit. For 14 days the core measures whether the promised metric improved, with guards that must not get worse. The outcome reaches the author in "My outcomes", the commission in its accuracy and people on the promotion card.
 
-## Links of the cycle
+A functionary whose own accepted change was realized, did not make the metric worse and lived through 14 days without a confirmed link to an incident enters its tenant's promotion queue (D-24, D-37). The head of the queue gets a case; if the commission is full, one member leaves. Code proposes who leaves by the accuracy of forecasts, and while there are not enough scored forecasts a person chooses on the card (D-115). Nothing takes effect without a person's button, and no bot knows about the queue, cases or departures (GOV-29). From v0.3 the commission also answers for its outcomes, first in shadow (D-109).
 
-| Link | Who does it | What comes out | Section |
-|---|---|---|---|
-| Observations | core, job worker, core from tool output | points of numeric series | "Observations" |
-| Seat analysis | a bot of a functional role on a separate model of the `analysis` slot | up to three proposals or the code "nothing found" | "Seat analysis" |
-| Aggregator | a bot of the `aggregator` profile | proposals from aggregated data | "Aggregators" |
-| Proposal | the core creates a record from the body the bot submitted | a record in state `screened` | "Proposal" |
-| Checks and commission | code, then the commission lenses | the code verdict | "Code checks and commission" |
-| Digest and cards | the core assembles, a reporter delivers | items for people and an audit sample | "Digest, cards and audit sample" |
-| Decision | a person with the permission | "Accept", "Decline", "Postpone" | "Human decision" |
-| Realization | a human executor or an object of the ordinary path | `realized` through a verified link | "Realization" |
-| Change trial | core | outcome: better, unchanged, worse, undetermined, mixed | "Change trial" |
-| "My outcomes" | core | a closed table of outcomes for the author | "My outcomes" |
-| Promotion | the core loop `governance` | a queue to the commission | "Handover to promotion" |
+## How it works
 
-On this path the model writes only the proposal body, the lens scores and the reporter's optional introduction. The numbers, checks, verdict, digest, realization and trial outcome are made by code and people.
+### The path of one change
 
-The lifecycles of a proposal and a trial are described by tables in [proposal.md](../spec/lifecycles/proposal.md) and [trial.md](../spec/lifecycles/trial.md).
+| Step | Who does it | What comes out |
+|---|---|---|
+| Observations | the core, job workers, the core from tool output | points of numeric series |
+| Analysis | a functionary on the `analysis` model slot, or an aggregator | up to three proposals or `nothing_found` |
+| Proposal | the core makes a record from the body the bot submitted | a record in `screened` |
+| Code checks and commission | code, then the lenses; code computes the verdict | `recommended`, `parked` or `dismissed` |
+| Digest and cards | the core assembles, a reporter delivers | items for people and an audit sample |
+| Decision | a person with the permission | "Accept", "Decline", "Postpone" |
+| Realization | the executor, or the object of the ordinary path | `realized` through a verified link |
+| Change trial | the core, 14 days | `better`, `unchanged`, `worse`, `undetermined`, `mixed` |
+| Promotion | the `governance` loop, then a person | a seat on the commission |
 
-## Observations
+On this path a model writes only the proposal body, the lens scores with their forecasts and the reporter's optional introduction. The numbers, checks, verdict, digest, realization, trial outcome and case are made by code and people. The transitions are tables in [proposal.md](../spec/lifecycles/proposal.md), [trial.md](../spec/lifecycles/trial.md), [attribution.md](../spec/lifecycles/attribution.md), [promotion-entry.md](../spec/lifecycles/promotion-entry.md) and [case.md](../spec/lifecycles/case.md).
 
-An observation is a number or a value from a closed list (`enum`) that a bot sees from its seat: attempt duration, queue wait, machine load by hour, age of the last backup of a dataset, the share of failed tasks by reason. People usually do not read these series; analysis, proposal evidence and the change trial stand on them.
+### Observations
 
-### Observation series
+An observation is a number or a value from a closed list that a bot sees from its seat: attempt duration, queue wait, machine load by hour, the age of the last backup. Analysis, evidence and the change trial stand on these series; people rarely read them directly.
 
-An observation series (`ObservationSeries`) is declared in the tenant's git, like other manifests. A series value is only of a closed leaf kind (INJ-1), the subject is taken from the catalog, the data class is not lower than the class of the source, and a series has one tenant (OBV-2). A series without a data class or with a value of a free string kind does not pass `apply`.
+A tenant declares a series in git as `ObservationSeries` ([OBV-2](../conformance/rules.md#OBV-2)). The `outcome` block is needed only if the series is to be a trial metric or guard.
 
 ```yaml
 # tenants/demo/observations/host.load.v1.yaml
 kind: ObservationSeries
 metadata: {name: host.load.v1, tenant: demo}
 spec:
-  catalog_kind: host                     # kind of catalog subject
+  catalog_kind: host
   value: {type: number, minimum: 0, maximum: 10000}
   unit: load_x100
   data_class: internal                   # not lower than the tool's output_class
   source: {kind: tool, tool: monitor/item_history, field: cpu_load}   # monitor plugin (MON-6)
   resolution: 5m
-  rollups: [hour.max, hour.mean, day.p95] # from the closed list of rollups
+  rollups: [hour.max, hour.mean, day.p95] # from spec/model/rollups.yaml
   retention: {raw: 14d, rollup: 93d}
   outcome: {compare: day.p95, better: down, tolerance_pct: 10, min_samples: 10}
 ```
 
-The `outcome` block is optional for a tenant series. It is needed only if the series is to be made a metric or a guard of a change trial (OBV-6).
+Only code writes points ([OBV-1](../conformance/rules.md#OBV-1)). There are three sources. The core loop `observe` computes `core` series from records of the same tenant ([OBV-5](../conformance/rules.md#OBV-5)). A job worker can write into the series of its task type through P1 `obs.append` (OBV-8, deferred). And the core extracts a closed field from tool output, as with `host.load.v1`: the monitoring system measures the load, and the `monitor` plugin only reads it. An agent attempt has no operation for writing a point, so the data people later decide on cannot be poisoned by model text.
 
-### Who writes the points
+Reading goes only through a closed query ([OBV-3](../conformance/rules.md#OBV-3)): the built-in tool `observations_query` for bots, P1 `obs.query` for a job worker without a model, P2 `obs.series` for people. The answer holds only numbers and `enum` values, so reading does not set `untrusted_seen`: an instruction cannot hide in a number. A number can still be distorted by the world it measures, which is why numbers alone never decide. Rollups are computed by code and kept by the retention class `observation`, 14 days for points and 93 days for rollups ([OBV-4](../conformance/rules.md#OBV-4)).
 
-An observation point (series, subject, time, value, producer, tenant) is written only by code (OBV-1). There are three sources:
+**What "better" means.** The skeleton keeps the registry `spec/model/core-series.yaml`: `farm.attempt.duration`, `farm.task.outcome`, `farm.task.attempts`, `farm.queue.wait`, `farm.task.cost`, `farm.schedule.slot`, `farm.backup.age` and the `farm.external.*` series, each with an `outcome` block: the rollup to compare, the good direction, the tolerance inside which nothing changed, and `min_samples` ([OBV-6](../conformance/rules.md#OBV-6)). Without one shared definition of "slow" and "reliable" a bot either stays silent or draws conclusions from noise, and a trial has nothing to measure with.
 
-| Source | Who writes | Example |
-|---|---|---|
-| `core` | the core loop `observe` from core records and events of the end of work outside the farm | `farm.task.outcome`, `farm.queue.wait`, `farm.backup.age` |
-| `job` | a job worker through P1 `obs.append` under the lease of its attempt (since v0.2), only into series from the `observes` of its task type, with a value of the series kind and a catalog subject, at most 1000 points per attempt; the core sets the time and the producer (OBV-8) | a backup check series computed by a job type |
-| `tool` | the core extracts a closed field from tool output by the mapping in the tool manifest | `host.load.v1` from the output of `monitor/item_history`: machine load is measured by the monitoring system, and the `monitor` plugin only reads it (MON-6) |
-
-An agent attempt has no operation for writing observations, and the model never writes a point. This way the data on which people later decide cannot be poisoned by model text.
-
-### How observations are read
-
-Observations are read only by a closed query (OBV-3). The bot calls the built-in tool `observations_query` (port P3, tier 1): the series is taken from an `enum` within the role's `insight.observes`, the subject from the catalog, the window from a list (1d, 7d, 14d, 93d), the rollup from an `enum`. An aggregator also has the `group_by` parameter within its `sources`. The answer contains only numbers and `enum` values, its size is limited, and reading does not set the untrusted text flag `untrusted_seen` on the attempt: an instruction cannot be hidden in a number. A value can be distorted by the observed world itself (someone deliberately raises the number of errors), so it is not the numbers by themselves that decide but the commission and people. The points of one tenant are not visible in any query of another (TEN-4).
-
-A `job` worker without a model (for example, the monthly report pipeline) reads the rollups of its own tenant with the same closed query through the P1 operation `obs.query`: the series only from the `observes` of its task type, and it has no store credentials (OBV-3, DEP-8). People read the same rollups with the P2 operation `obs.series`.
-
-### Rollups and retention
-
-A rollup (a series value over a window, for example the maximum over an hour) is set by the series manifest: the window, a function from the closed list `spec/model/rollups.yaml` (`hour.max`, `hour.mean`, `day.p95` and others) and a data class not lower than the series class. Rollups are computed by code (OBV-4). Points and rollups belong to the retention class `observation`: by default points 14 days, rollups 93 days. They are deleted by period only in whole periods (RET-1, RET-2), without selective editing of rows. More about retention classes in [operations.md](operations.md).
-
-### Core series and what "better" means
-
-Series of the `core` source are computed by the deterministic core loop `observe` only from records of the same tenant: attempts, tasks, usage lines, schedule slots and events of the end of work outside the farm (OBV-5). Identical records give identical points. Where a series coincides with a series of the farm metrics catalog, they have one name.
-
-The skeleton sets the core series registry `spec/model/core-series.yaml`, and the core keeps these series for each task type, schedule and dataset of the tenant (OBV-6). Each registry series has an `outcome` block: the unit, the rollup for comparison, which event is good, in which direction the series is better, the tolerance within which there is no change, and the minimum number of events per window (`min_samples`). Without such a shared definition of "slow" and "reliable" a bot either stays silent or draws conclusions from noise, and the change trial has nothing to measure with.
-
-| Series | What it measures | Subject | Comparison | Better | Tolerance | `min_samples` |
-|---|---|---|---|---|---|---|
-| `farm.attempt.duration` | attempt duration (p50, that is the median, and p95, the 95th percentile) | task type | p95 over the window | lower | 10% | 10 attempts |
-| `farm.task.outcome` | task outcome by reason | task type | share of `done` | higher | 5 pp | 14 tasks |
-| `farm.task.attempts` | number of attempts per task | task type | mean | lower | 10% | 14 tasks |
-| `farm.queue.wait` | queue wait until the first dispatch | task type | p95 over the window | lower | 15% | 20 tasks |
-| `farm.task.cost` | task cost by usage lines (BUD-3) | task type | mean | lower | 10% | 14 tasks |
-| `farm.schedule.slot` | schedule slot: on time, late, skipped | schedule | share "on time" | higher | 5 pp | 10 slots |
-| `farm.backup.age` | age of the last successful backup | dataset | maximum per day | lower | 10% | 10 days |
-| `farm.external.duration` | duration of work outside the farm | task type | p95 over the window | lower | 10% | 10 runs |
-| `farm.external.retries` | retries of work outside the farm | task type | mean | lower | 10% | 10 runs |
-| `farm.external.outcome` | outcome of work outside the farm (the event's `outcome`: `done`, `failed`, `timeout`, `canceled`) | task type | share of `done` | higher | 5 pp | 10 runs |
-
-The tolerance numbers and `min_samples` are skeleton defaults. Only a series with a complete `outcome` block can be a trial metric or guard; a registry series without a complete block does not pass the lint (OBV-6).
-
-```yaml
-# spec/model/core-series.yaml (fragment)
-- name: farm.task.outcome
-  catalog_kind: task_type
-  values: [done, failed, deadline_exceeded, canceled]
-  outcome: {unit: share, compare: window.share, good: done, better: up, tolerance_pp: 5, min_samples: 14}
-- name: farm.backup.age
-  catalog_kind: dataset
-  outcome: {unit: h, compare: day.max, better: down, tolerance_pct: 10, min_samples: 10}
-```
-
-The same registry holds two guard tables. A guard is a series that must not get worse while the benefit is measured: moving a schedule can speed up a backup but delay a report. The core takes from one to five guards from both tables: by the kind of the change target and by the metric the bot promised (PRP-21). The first table, by the kind of target:
+**Guards.** A guard is a series that must not get worse while the benefit is measured. The core takes one to five of them from two tables of the registry ([PRP-21](../conformance/rules.md#PRP-21)). The first goes by the kind of change target:
 
 | Change target | Guards |
 |---|---|
-| schedule (`Schedule`) | `farm.schedule.slot` of this schedule, `farm.attempt.duration` of its type |
-| backup schedule window | `farm.backup.age` of the dataset (required), `farm.schedule.slot` |
-| tenant dispatcher rule | `farm.task.outcome` and `farm.queue.wait` of the type, `farm.task.cost` |
-| tenant limit (`limits.*`) | `farm.queue.wait` and `farm.task.outcome` of the affected types |
-| a dataset's reference to a backup in the catalog | `farm.backup.age` of the dataset |
+| a schedule | `farm.schedule.slot` of the schedule, `farm.attempt.duration` of its type |
+| a backup schedule window | `farm.backup.age` of the dataset (required), `farm.schedule.slot` |
+| a tenant dispatcher rule | `farm.task.outcome` and `farm.queue.wait` of the type, `farm.task.cost` |
+| a tenant limit | `farm.queue.wait` and `farm.task.outcome` of the affected types |
+| a dataset's backup reference | `farm.backup.age` of the dataset |
 | `action_request`, `script`, `human_change` | `farm.task.outcome` of the affected types |
 
-The second table, by metric. Without it a bot could improve a metric at the expense of what is not guarded: doubling the attempt deadline raises the share of `done`, while the p95 duration doubles, and the report arrives after the start of the working day.
+The second goes by the promised metric. Without it a bot could double the attempt deadline, raise the share of `done` and deliver the report after the working day starts.
 
 | Trial metric | Guards |
 |---|---|
 | `farm.task.outcome` | `farm.attempt.duration` of the same type |
 | `farm.attempt.duration` | `farm.task.outcome` of the same type |
-| `farm.task.attempts` | `farm.attempt.duration` and `farm.task.cost` of the same type |
-| `farm.queue.wait` | `farm.task.cost` of the type and the load series of the subjects from `subjects`, if such a series is declared with an `outcome` block (for example `host.load.v1` for `db1`) |
-| `farm.task.cost` | `farm.task.outcome` and `farm.attempt.duration` of the same type |
+| `farm.task.attempts` | `farm.attempt.duration` and `farm.task.cost` |
+| `farm.queue.wait` | `farm.task.cost` and the load series of the subjects, if declared with an `outcome` block |
+| `farm.task.cost` | `farm.task.outcome` and `farm.attempt.duration` |
 | `farm.schedule.slot` | `farm.attempt.duration` of the schedule's type |
 | `farm.backup.age` | `farm.schedule.slot` of the backup schedule |
-| `farm.external.*` | the other `farm.external.*` series of the same type |
+| `farm.external.*` | the other `farm.external.*` series of the type |
 
-A tenant can only add guards to both tables with the field `insights.extra_guards` (a list "metric: guards"); a table guard cannot be removed, and a manifest with such an attempt does not pass `apply` (PRP-21).
+A tenant can only add guards, with `insights.extra_guards`. From v0.3 every trial also carries two farm guards that a tenant cannot remove: the tenant's share of successful tasks and the 95th percentile of queue wait ([PRP-26](../conformance/rules.md#PRP-26)).
 
-### Work that ends outside the farm
-
-Part of the work continues outside the farm after the task has submitted the outcome "accepted for run": an external pipeline, a database backup outside the manifests. Without a separate signal the farm sees neither the duration nor the retries of such work. So its end comes as the event `run.finished.v1` (OBV-7). A job worker submits it with the `emit` operation of port P1, if this event type is in the `events` of its task type. The event fields are closed: the work id, an optional approval number `approval_id` (by it a route finds the `approval_initiator` address, DLV-6), a subject from its own tenant's catalog, `duration_s`, `retries`, `exit_code` and `outcome` from a closed list. The `source` and `id` fields of the event are set by the core (IDM-4).
+**Work that ends outside the farm.** An external pipeline or a backup outside the manifests reports its end with the event `run.finished.v1`, submitted by a job worker through P1 `emit` ([OBV-7](../conformance/rules.md#OBV-7)). The core writes the `farm.external.*` points from it.
 
 ```yaml
 type: run.finished.v1
 data:
   run_id: r_7f3a
-  approval_id: 4813       # optional: approval number, if an action started the run
+  approval_id: 4813       # optional: the approval that started the run
   subject: ctd-stations  # id from its own tenant's catalog
   duration_s: 2710
   retries: 1
@@ -146,34 +92,27 @@ data:
   outcome: done          # done | failed | timeout | canceled
 ```
 
-The points of the `farm.external.*` series and the backup age for such an event are written by the core itself in the `observe` loop, without `obs.append`.
+### Analysis
 
-## Seat analysis
-
-Seat analysis is not a new concept but a task type of the `insight` purpose for a functional role. Only roles of the `worker` and `manager` profiles can declare an `insight` section (PRF-1).
-
-### Role section and money
+Seat analysis is a task type of the `insight` purpose of a functional role; only roles of the `worker` and `manager` profiles declare it (PRF-1).
 
 ```yaml
 # roles/ops-runner/role.yaml (fragment)
 spec:
   profile: worker
-  models:
-    base: base-std             # main work
-    analysis: analysis-std     # only the insight and aggregate purposes
+  models: {base: base-std, analysis: analysis-std}   # analysis only for insight and aggregate
   insight:
     types: [ops.insight.v1]
     observes: [farm.task.outcome, farm.schedule.slot, farm.attempt.duration, farm.backup.age, host.load.v1]
-    tools: [monitor/item_history]   # a subset of the role's tools, tier not higher than 1; output only numbers (untrusted_output: false, MON-6)
-    max_data: internal         # ceiling of the analysis mark
-    max_runs: {per: week, count: 2}        # runs by schedule
-    max_event_runs: {per: day, count: 1}   # runs from alarm.* and obs.* events
-    merge_window: 1h                       # merge window, not shorter than an hour
-    max_open_proposals: 3      # limit of the role's open proposals
+    tools: [monitor/item_history]   # tier at most 1, numbers only
+    max_data: internal
+    max_runs: {per: week, count: 2}
+    max_event_runs: {per: day, count: 1}
+    merge_window: 1h
+    max_open_proposals: 3
     max_per_week: 3
 ---
 # tenants/demo/tenant.yaml (spec fragment)
-models_allowed: [base-std, analysis-std, review-a, review-b, seat-std, manager-std, translate-std]   # seat-std, manager-std, translate-std are needed by seats, managers and the translator
 budgets:
   month_eur: 300
   lines:
@@ -185,49 +124,24 @@ insights:
   realizers: [bob]
   realize_by: 7d
   decide_ttl: 14d
-  recommend_ttl: 28d
-  park_ttl: 30d
-  review_wait_max: 7d
   redecide_after: 30d
-  max_in_review: 10
-  extra_guards:                          # only adds to the registry tables
+  extra_guards:
     - {metric: farm.task.outcome, guards: [host.load.v1]}
 ```
 
-The analysis model is taken only from the role's `analysis` slot (GW-7), so the role's base model and the model for analyzing its own data are different, as D-16 requires. Spending goes to the `insight` budget line (BUD-7), which is 0 by default: analysis is turned on explicitly with money and per role. Analysis, aggregator and review tasks go in the lowest dispatcher priority class (5, `background`) and take no more than their share of the bot group's places (BUD-8), so the main work does not suffer from them. The `apply` lint checks that the money of the `review` line is enough for the reviews of the proposal ceiling of the roles with analysis (BUD-13); the rule is described in [models-and-money.md](models-and-money.md). The price of one review in the lint and the reserve before reviews are the same number: the `tree_budget_eur` of the review type, a required field of every type with a model (COM-6); the model profiles of the lenses have `max_output_tokens` not more than 2000, so that the worst case of one call does not exceed this number. In this example the calculation is as follows. The role `ops-runner` runs analysis at most 2 times a week, that is up to 9 times in 31 days, and each result carries at most 3 proposals (INS-1): up to 27 proposals per month. The types `review.security.v1`, `review.operational.v1`, `review.cost.v1` and `review.value.v1` have `tree_budget_eur` equal to 0.08 EUR (rank 3 profiles: `seat-std` for seats, `review-a` and `review-b` for fallback roles), that is, four lenses cost 0.32 EUR per proposal, and since v0.2 `review.farm_manager.v1` is added to them on the farm manager seat profile `manager-std` of rank 4 with `tree_budget_eur` 0.20 EUR; the shadow is turned off with an explicit `shadow: off`. The lint counts by the full commission, although a proposal of kind `none` is scored by only two lenses (COM-14): what kind the proposals will be is not known in advance. The role's estimate under the v0.2 rules is about 27 × 0.51 = 13.9 EUR. One author role has access to 30% of the `review` line (COM-6), with 50 EUR that is 15 EUR, and the lint passes. The weekly aggregator `ops-aggregator` (section "Aggregators") adds up to 5 runs of 3 proposals, about 7.7 EUR, and the sum of the estimates, about 21.6 EUR, is less than the line's monthly limit. With a `review` line of 40 EUR the role's share would be 12 EUR, and `apply` would reject such a set of manifests, and `farmctl doctor` would show the missing 1.9 EUR. If the shadow is turned on with the default shares (0.25 for lenses with veto and 0.2 for the others, COM-10, D-84), each proposal gets about 0.25 × 2 + 0.2 × 2 = 0.9 more reviews of rank 3, about 0.072 EUR, the role's estimate grows to about 13.9 + 27 × 0.072 ≈ 15.8 EUR, and the lint requires a `review` line of at least 15.8 / 0.3 ≈ 53 EUR.
+The analysis model comes only from the role's `analysis` slot (GW-7), so the model that does the work and the model that judges it differ, as D-16 asks. Analysis is paid from the `insight` line, which is 0 by default, and runs in the lowest dispatcher class, so it is turned on per role with money and never crowds out the main work (BUD-7, BUD-8).
 
-### Start, permissions and output
+A type of the `insight` purpose has tier at most 1 and no tools that act or send ([INS-1](../conformance/rules.md#INS-1)). Its permissions are the intersection of `insight.tools`, the `system-ops` group, tier 1 and the `max_data` mark, never wider than the role's main work ([INS-2](../conformance/rules.md#INS-2)). Analysis starts only from a schedule or from `obs.*` and `alarm.*` events through a merge window of at least an hour, within the run limits ([INS-4](../conformance/rules.md#INS-4)); otherwise whoever writes to the logs could raise alarms and burn the `insight` and `review` lines. The output is a task result with at most three proposals; the core creates them only on a successful `complete`, and they inherit the attempt's data mark and `untrusted_seen` ([INS-3](../conformance/rules.md#INS-3)). Analysis can also be done by a job type without a model, which is the preferred path for anything a rule can check.
 
-A type of the `insight` purpose has a tier not higher than 1, and its attempt has no `request_action`, `enqueue_child`, `propose_campaign`, `propose_script` and `send_message` (INS-1). Analysis is started only by a schedule or by a route from `obs.*` and `alarm.*` events, including alarms that a `job` role raised on monitoring system problems (MON-5); an agent message does not start analysis. Analysis sees the load and disks of machines as series that the core extracted from the output of the `monitor` plugin, not by its own measurement on the machines. A route from events goes only through the merge window `insight.merge_window` (debounce: all events within the window give one run), and within the window at most one analysis of the role runs. The window is not shorter than 1 hour, 1 hour by default; a smaller value does not pass `apply` (INS-4). Otherwise whoever writes to the logs could trigger alarms and burn the `insight` and `review` lines, and a nightly series of problems on `web1` would eat the weekly analysis quota with noise.
+The dispatcher hands analysis to the role's bots in turn, and the input carries the bot's own attempts and the last rows of its "My outcomes" (INS-5, deferred). This keeps "one's own improvement" from becoming a lottery of task dispatch.
 
-The rate is limited by `insight.max_runs` (runs by schedule), `insight.max_event_runs` (runs from events, 1 per day by default; they do not spend a schedule slot) per role in the tenant, and by `insight.max_open_proposals`; the states `screened`, `in_review`, `recommended`, `presented` and `parked` count as open (INS-4). On exceeding them the schedule slot or the route is skipped with an event, and the model is not called.
+**"Loop disabled".** Because the money lines are 0 by default, the cycle is easy to turn off without noticing. The core calls a tenant's cycle disabled for any reason from a closed list, such as a role with an `insight` line of 0, a `review` line of 0, no `present_to` address or no person with `proposal.decide`, and `doctor`, the `apply` lint and the weekly digest print the reason ([INS-6](../conformance/rules.md#INS-6)).
 
-The initiator of analysis is `system`. The attempt's permissions equal the intersection of the tools `insight.tools` (a subset of the role's `tools`), the `system-ops` group (PRM-10), tier 1 and a mark not higher than `insight.max_data`; at `apply` the lint checks that the analysis is not wider than the role's main work (INS-2).
+**Money for the cycle.** The `apply` lint checks that the `review` line can pay for the reviews of the proposal ceiling of every role with analysis (BUD-13). The price of one review is the `tree_budget_eur` of its review type, the same number the core reserves before a review ([COM-6](../conformance/rules.md#COM-6)). In `demo`: `ops-runner` runs analysis up to 9 times in 31 days with at most 3 proposals each, so up to 27 proposals a month. Four lenses at 0.08 EUR and the farm manager's lens at 0.20 EUR give 0.51 EUR per proposal, about 13.9 EUR a month. One author role may use 30% of the `review` line, 15 EUR of 50, and the lint passes. With a 40 EUR line the role's share would be 12 EUR, and `apply` would reject the manifests with `doctor` showing the missing 1.9 EUR.
 
-The output of analysis is a task result by the `insight-result` schema: at most three proposals or the code `nothing_found` (INS-1). There is no separate "propose" tool. Proposals are created by the core only on a successful `complete` of the attempt (P1), in the same transaction (DLV-2); a failed, canceled or `fenced` attempt leaves nothing. A proposal inherits the data mark `data_mark` and the `untrusted_seen` flag of the attempt together with the sources (INS-3, INJ-13).
+### Aggregators
 
-Analysis can also be done by code. A job type of the `insight` purpose (for example "a dataset in the catalog has no reference to a backup, and the `farm.backup.age` series is empty") submits proposals without a model and without the untrusted text flag. This is the preferred path for everything that a rule can check; a model is needed where several series must be connected and a change must be invented.
-
-### Whose analysis it is
-
-The dispatcher gives `insight` tasks to the role's bots in turn: the run goes to the role's bot with a ready worker that has gone longest without getting an analysis of this role, and in a tie to the bot with the lower id (INS-5; condition D16 in [coordination.md](coordination.md)). Besides the role's series, the analysis input contains the series of the bot's own attempts (by the field `acting_bot`, the bot on whose behalf the attempt ran) and the last rows of its "My outcomes" (DIG-7). The author of a proposal is recorded as the bot whose attempt submitted the result (PRP-14). This way "one's own improvement" does not turn into a lottery of task dispatch.
-
-### The "loop disabled" signal
-
-The improvement cycle is easy to turn off unnoticed: the `insight` and `review` lines are 0 by default. So the core considers a tenant's cycle disabled if at least one reason from a closed list holds (INS-6):
-
-- no role has an `insight` section;
-- a role with an `insight` section has an `insight` line equal to 0;
-- the tenant's `review` line equals 0;
-- there is no `insights.present_to` address;
-- a lens with veto has no executor (COM-7, COM-8);
-- the tenant has no active person with `proposal.decide`.
-
-The `farmctl doctor` check and the `apply` lint print "improvement cycle disabled" with reasons for each role. The weekly proposal digest with a disabled cycle arrives even without items and carries a code line, for example "Improvement cycle disabled: role ops-runner has an insight line of 0 EUR", if there is an address for it.
-
-## Aggregators
-
-An aggregator is a bot of a role of the `aggregator` profile (PRF-1): it looks not at one machine but at a bot group or the whole tenant, and proposes changes one level higher, for example "three machines out of four have the same nightly peak" (D-17). The purpose of its tasks is `aggregate`, the model of the `analysis` slot, the budget line `aggregate`, and the output is only proposals in the task result (INS-3).
+An aggregator is a bot of the `aggregator` profile that looks at a bot group or the whole tenant and proposes changes one level up, for example "three machines out of four have the same nightly peak" (D-17). It reads only aggregated inputs: series rollups, the `data` field of reports, closed fields of proposals people already decided on, and decision statistics; never logs, files, notes or tool output ([AGG-2](../conformance/rules.md#AGG-2)). An injection through a bot report can only shift a number inside a schema.
 
 ```yaml
 # roles/ops-aggregator/role.yaml (fragment)
@@ -240,42 +154,24 @@ spec:
       roles: [ops-runner]
       bot_groups: [compute]
       series: [farm.schedule.slot, farm.attempt.duration, host.load.v1]
-      message_kinds: [report.ops.v1]     # only the data field
+      message_kinds: [report.ops.v1]
     max_sources: 50
 ```
 
-An aggregator's inputs are only aggregated (AGG-2):
+A tenant has one level of aggregators: one does not read another ([AGG-3](../conformance/rules.md#AGG-3)). Marks do not drop: a rollup and a proposal carry the highest mark and the OR of `untrusted_seen` of their inputs ([AGG-4](../conformance/rules.md#AGG-4)). There is no aggregation across tenants and no bot with a view of the whole farm ([AGG-5](../conformance/rules.md#AGG-5)); operators see the farm through metrics and the manager's daily summary. An aggregator's proposal is scored like any other and takes no credit from a bot that proposed the same earlier.
 
-| Input | Built-in tool | What is visible | What is not visible |
-|---|---|---|---|
-| series rollups over many subjects (OBV-4) | `observations_query` with `group_by` | numbers | points outside `sources` |
-| bot reports and states | `messages_digest` | the `data` field by the closed schema of the message type | message `note`s |
-| proposals people have already decided on | `proposals_query` | closed fields, verdicts, people's decisions | authors' `note`s, reviewers' notes |
-| decision statistics | `observations_query` over `farm.proposals.*` | shares and counters | feedback texts |
+### The proposal
 
-Logs, files, artifacts, sessions, memory and plugin tool output are not available to an aggregator at all. An injection through a bot report can only shift a number within the schema, not append an instruction.
-
-A tenant has one level of aggregators: an aggregator reads only the sources from its `aggregate.sources` and does not read other aggregators and their proposals (AGG-3). `max_sources` limits the number of source entries: roles, bot groups, series and message kinds together. `apply` rejects an aggregator that names an aggregator role in `sources.roles` or through a bot group in `sources.bot_groups` (`aggregator_source_aggregator`), or that lists more entries than `max_sources` (`aggregator_sources_over_max`). At run time `proposals_query` returns no proposal of another aggregator, and `messages_digest` returns no kind outside `sources.message_kinds`. Marks do not drop: the `data_mark` of an aggregator's rollup and proposal equals the highest mark of the inputs, and `untrusted_seen` equals the logical OR of the inputs with their sources (AGG-4).
-
-There is no aggregation between tenants: an aggregator process serves one tenant (TEN-4), and read tools return only its records (AGG-5). There is no bot for a view of the whole farm. The operators of the service tenant `farm` see it through the metrics of the telemetry allowlist (OBS-1) in the monitoring system (`docs/operations.md`) and through the manager's daily digest (MGR-41). No bot attempt, including in tenant `farm`, reads the records of several tenants (TEN-5). A series value of tenant `demo` does not appear in any query, model call or proposal of tenant `demo2` or tenant `farm`.
-
-An aggregator's proposal is scored on its own, like any other, and does not take credit from a bot that proposed the same earlier. If it changes the same field as an open bot proposal, it is a conflict (PRP-9); if it is similar to a proposal people have already decided on, it gets the mark `related_to` and gives no credit (PRP-17).
-
-## Proposal
-
-### Body and record
-
-A proposal (`Proposal`) is a closed record. The bot submits only the body, and it passes the closed schema `botaru.proposal/v1`; the record fields (id, author, fingerprint, marks, state, scores, decision, realization, trial) are written only by the core, like the fields of any farm record (PRP-1, IDN-1).
+A proposal is a closed record. The bot submits only the body, which passes the schema `botaru.proposal/v1`; the record fields are written only by the core ([PRP-1](../conformance/rules.md#PRP-1)).
 
 ```yaml
 # the body the bot submits (schema botaru.proposal/v1)
-category: schedule            # closed list: schedule, backup, capacity, cost,
-                              # reliability, security, data_quality, config
+category: schedule
 problem:
-  code: backup_deadline_miss  # closed list of codes per category
+  code: backup_deadline_miss
   subjects: [task_type:demo.db.backup.v1, schedule:report-nightly, host:db1]
-  severity: medium            # low | medium | high
-evidence:                     # at most 10 references, the core rereads the values
+  severity: medium
+evidence:                     # at most 10 references; the core rereads the values
   - {kind: observation, series: farm.task.outcome, subject: task_type:demo.db.backup.v1, window: 14d, rollup: window.share, value: 0.71}
   - {kind: observation, series: host.load.v1, subject: host:db1, window: 14d, rollup: hour.max, slot: "02:00", value: 910}
 change:                       # exactly one kind
@@ -286,273 +182,133 @@ change:                       # exactly one kind
 benefit: {metric: farm.task.outcome, subject: task_type:demo.db.backup.v1, direction: up, expected_change_pp: 20, confidence: medium}
 cost: {one_time_eur: 0, monthly_eur: 0, effort: minutes}
 risk: {level: low, kinds: [report_delay]}
-note: "The report and the backup run in the same window on db1..."   # up to 1000 characters, always untrusted
+note: "The report and the backup run in the same window on db1..."   # untrusted
 ---
 # the record that only the core writes
 id: p_0101
 tenant: demo
 origin: {role: ops-runner, worker: w_0007, acting_bot: bot_17, bot_epoch: 1, task: t_5521, level: 0}
-fingerprint: "sha256:..."     # category, problem code, subjects, kind and targets of the change
+fingerprint: "sha256:..."
 data_mark: internal
 untrusted_seen: {value: false, sources: []}
 self_influence: [{series: farm.task.outcome, author_share: 0.0, role_share: 0.0}]
-related_to: []
-conflicts_with: []
-seen_count: 1
 state: screened
-reviews: []
-verdict: null
-decision: null
-realization: null
-trial: null
 ```
 
-`origin.level` is 0 for a proposal of a bot from its seat and 1 for a proposal of an aggregator. The `note` is not longer than 1000 characters and is always untrusted: code does not read it, reviewers do not get it, and it is shown to people only as a separate marked block in "Details" (PRP-1). Closed fields and decisions belong to the retention class `metadata`, the `note` to the class `content`.
+The `note` is always untrusted: code does not read it, reviewers never get it, and people see it only as a marked block behind "Details". The author is the bot whose attempt submitted the result ([PRP-14](../conformance/rules.md#PRP-14)).
 
-### Change kinds
+**Change kinds.** Exactly one change from the allowlist ([PRP-3](../conformance/rules.md#PRP-3)):
 
-The `change` field contains exactly one change kind (PRP-3):
-
-| `change.kind` | What is inside | What "Accept" creates | Who actually changes the world | Since |
-|---|---|---|---|---|
-| `none` ("for information") | only the problem and evidence; only the `value` and `security` lenses score it (COM-14) | nothing; the proposal moves to `noted` | nobody | v0.1 |
-| `action_request` | an action and arguments by a closed schema, within the vocabulary of the author role; or a call of `service/control` or `monitor/script_run` within the author role's `service_control` and `monitor_scripts` | an action approval on behalf of the one who accepted, with the source "proposal p" | a person with the permission to approve the action, then the toolhost | v0.1 |
-| `script` | a `botaru.script/v1` draft within the `scripts` section of the author role with `propose: in_proposal` | a script run in state `proposed` on behalf of the one who accepted; acceptance by the core (SCR-5) and a run card (SCR-6) | the same people and buttons | v0.1 |
-| `manifest_change` | up to 10 `set` operations on allowlist fields or `create_from_template` by a template from git | a patch that the core builds in code and hands to the executor | the executor, with a commit to git | v0.1 |
-| `human_change` | a closed description: object, field, direction, value (PRP-13) | a card to the executor with the description and a deadline | the executor, by hand and with a commit | v0.1 |
-
-A proposal runs nothing by itself (PRP-4). No proposal transition, except the human buttons "Accept" and "Lift veto", creates a task above tier 0, a tool call, an approval, a script run, a patch or a message, except the delivery of the digest and cards. The farm does not write to git itself. How a script passes acceptance and a run is described in [scripts-and-translator.md](scripts-and-translator.md).
-
-### What can be changed
-
-A proposal changes only objects of its own tenant (PRP-8). The target of `manifest_change`, `human_change` and a guarded field can only be an object from the tenant's folder in the farm git. For shared objects (role, task type, plugin, action) only the kind `none` is possible, otherwise the refusal `rejected(forbidden_change)`: a task type is shared by all tenants, and changing it based on one tenant's numbers would affect the others.
-
-The fields that may be proposed for change are listed in the allowlist `spec/model/proposable-fields.yaml`. The skeleton sets the list, and a tenant can only narrow it (PRP-3).
-
-| Object | Allowed | Never allowed |
+| `change.kind` | What "Accept" creates | Who changes the world |
 |---|---|---|
-| the tenant's `Schedule` | `spec.cron` only as a window shift without lowering the frequency by more than 2 times; `spec.timezone`; `create_from_template` | `spec.paused` (only by kind `none`), `deliver_to`, the task type |
-| the tenant's `Catalog` | add a dataset's reference to a backup schedule or replace it with a more frequent one; labels that are not read by selectors, the dispatcher and the involvement rules | remove a backup reference, make a backup less frequent; new resources with addresses; egress |
-| `Tenant` | lower `limits.*`, `campaigns.*`, `scripts.*` | budgets up, budget lines, retention periods, `self_approve`, `models_allowed` |
-| tenant dispatcher rule (`dispatch.rules[]`) | guarded fields (PRP-12) | the rest |
-| `TaskType`, `Role`, `ToolPlugin`, `Action` | only the kind `none` | everything |
-| `Group`, `Membership`, `Channel`, `ChatBinding`, `Sink`, `ModelProfile`, `Commission`, the charter, `Seat`, `IncidentClass`, `ObservationSeries` | nothing | everything |
+| `none` ("for information") | nothing; the proposal moves to `noted` | nobody |
+| `action_request` | an action approval on behalf of the person who accepted; also `service/control` and `monitor/script_run` within the author role's permissions | a person who approves, then the toolhost |
+| `script` | a script run in `proposed` ([coordination.md](coordination.md)) | the same people and buttons |
+| `manifest_change` | up to 10 `set` operations or `create_from_template`; the core builds a patch | the executor, with a commit |
+| `human_change` | a card with a closed description: object, field from `spec/model/change-paths.yaml`, direction, value ([PRP-13](../conformance/rules.md#PRP-13)) | the executor, by hand and with a commit |
 
-A change of permissions, groups, tools, addresses, models, budgets upward, budget lines, retention periods, the commission, the charter and seats, incident classes, involvement rules, `control-ops.yaml`, the farm manager's limits and safeguard, consent groups, the protected set, the `farm-manager` role, the `farm-manager-ops` group, observation series, farm nodes and templates in the monitoring system (`deploy/monitor/`) and the table of monitoring problem classes is rejected with `rejected(forbidden_change)`. A seat holder does not change these targets with operations either (MGR-16). A proposal about permissions and security is possible only with the kind `none` and the category `security`: people decide themselves what to change in git. The card and the patch show in code the schedule frequency before and after and the affected alarms. A bot proposes a start, stop or restart of a service on a machine with the kind `action_request` and the tool `service/control`, and a monitoring system script with the tool `monitor/script_run`, if its role has the permission on this service (`service_control`) or on scripts (`monitor_scripts`) (MON-8, MON-10, D-67). "Accept" creates an approval of this call on behalf of the one who accepted, and it is run under the same guards as a bot call: 6 actions per service per hour, one operation per service at a time, holds, a note in the monitoring system. Without the permission, and for a proposal with `untrusted_seen`, such an idea is proposed only with the kind `none` (PRP-11, D-70).
+A proposal runs nothing by itself ([PRP-4](../conformance/rules.md#PRP-4)): only the human buttons "Accept" and "Lift veto" create an object of the ordinary path, and the farm never writes to git.
 
-A task type and a schedule carry the `proposable` flag (`true` by default) (PRP-10). The `apply` lint requires `proposable: false` for types of any purpose except `work`, for types with `alarm.*` in `events`, for the `job` type that re-checks monitoring system problems and raises alarms on them (MON-5), for the type that writes series from the monitoring history (CAP-6), for types that an incident class refers to, and for types with `makes_backup: true`; a schedule of such a type is not proposed either. The core uses the same protected set for the operations of the farm manager (MGR-32). A target with `proposable: false` gives the refusal `rejected(forbidden_change)`; the only exception is a shift of the backup schedule window by a guarded field.
+**What can be changed.** A proposal changes only objects in its own tenant's folder ([PRP-8](../conformance/rules.md#PRP-8)); a shared object (role, task type, plugin, action) affects every tenant, so it gets only the kind `none`. The allowlist `spec/model/proposable-fields.yaml` names the fields, and a tenant can only narrow it.
 
-Backups change only in the safe direction (PRP-11). An allowlist field has its safe direction recorded, if it has one: a tenant limit down, a backup more frequent. A dataset's reference to a backup can be added or replaced with a more frequent backup; removing it or making the backup less frequent is not allowed, and a proposal never lowers the frequency of a backup schedule.
+| Object | Allowed | Never |
+|---|---|---|
+| the tenant's `Schedule` | `spec.cron` as a window shift without halving the frequency, `spec.timezone`, `create_from_template` | pause (only kind `none`), `deliver_to`, the task type |
+| the tenant's `Catalog` | add or tighten a dataset's backup reference; labels that nothing selects on | remove a backup reference, rarer backups, new addresses, egress |
+| `Tenant` | lower `limits.*`, `campaigns.*`, `scripts.*` | budgets up, budget lines, retention, `self_approve`, `models_allowed` |
+| a tenant dispatcher rule | guarded fields | the rest |
+| `TaskType`, `Role`, `ToolPlugin`, `Action` | only kind `none` | everything |
+| groups, channels, model profiles, the commission and charter, seats, incident classes, series | nothing | everything |
 
-Since v0.2 the limit on lowering a schedule's frequency is counted cumulatively: per 30 days, the new value of `spec.cron` gives at least half of the runs of the value applied 90 days earlier (PRP-16). The core takes that value from the history of applied sets, not from git, because the git history can be rewritten. A proposal below the limit gets `forbidden_change`. Otherwise a series of small "a bit less often" proposals would get around the limit.
+Permissions, money upward, the commission, the farm manager's limits, consent groups and the protected set are closed: such a target gives `rejected(forbidden_change)`, and a security idea goes as kind `none` for people to act on. A task type or schedule with `proposable: false` is protected ([PRP-10](../conformance/rules.md#PRP-10)); the lint requires this for alarm, backup and system types, and the farm manager uses the same protected set. Backups change only in the safe direction, and a proposal that saw untrusted text changes only fields in their safe direction ([PRP-11](../conformance/rules.md#PRP-11)). From v0.2 the frequency limit counts cumulatively over 90 days, so a series of small "a bit less often" proposals cannot get around it, and each bot has at most one open proposal ([PRP-16](../conformance/rules.md#PRP-16)). The card shows the local times that disappear or repeat at clock changes before "Accept" (TIM-5).
 
-Before the "Accept" button for a proposal that changes the `cron`, time zone or pause of a schedule, the core since v0.2 shows on the card the local times that disappear and repeat at the clock changes of the time zone within a year (TIM-5, TIM-3). An expression or time zone that does not pass `apply` gets no "Accept" button. Details in [operations.md](operations.md).
+**Guarded fields.** The usual reliability levers, attempt deadline, retries, concurrency and the backup window, are dangerous without supervision. They change only within limits and with required guards, and a proposal with them is recommended only when both veto lenses gave at least 3 ([PRP-12](../conformance/rules.md#PRP-12)). They live in the tenant dispatcher rule, not in the shared task type ([coordination.md](coordination.md)).
 
-### Guarded fields
+**Evidence and self influence.** Evidence is at most 10 references to objects the author could read. The core rereads the values at creation and again before showing; a mismatch gives `rejected(evidence_mismatch)` or `parked(evidence_drift)` ([PRP-2](../conformance/rules.md#PRP-2)). People see the core's numbers, not the bot's. A bot whose own attempts produce the numbers could create a problem and then "fix" it, so the core records `self_influence`, marks the card `self_evidence` when the author's share is 0.3 or more, and computes the trial three times: over all points, without the author's and without its role's ([PRP-22](../conformance/rules.md#PRP-22)).
 
-Typical reliability and speed improvements concern the attempt deadline, the number of retries, concurrency and the backup window. These fields are dangerous without supervision, so they are part of the `guarded` section of the allowlist and change only with guards (PRP-12):
+**Duplicates, limits and conflicts.** The core fingerprints the category, problem, subjects and targets; an open duplicate only raises `seen_count`, and a fingerprint people declined is refused for `redecide_after` ([PRP-5](../conformance/rules.md#PRP-5)). A proposal similar to one people decided on in 90 days is marked `related_to` and gives no credit (PRP-17, deferred). Two accepted changes of one field would overwrite each other and the trial would measure someone else's value, so a field has at most one running trial; conflicting open proposals wait in `parked(conflict)` ([PRP-9](../conformance/rules.md#PRP-9)).
 
-| Field | Where | Limits | Required guard |
-|---|---|---|---|
-| type attempt deadline (`timeouts.attempt`) | tenant dispatcher rule | up at most twofold and not beyond the task deadline | `farm.task.outcome`, `farm.queue.wait` |
-| number of attempts (`retry.max_attempts`) | same place | only down, not less than 1 | `farm.task.outcome` |
-| rule concurrency (`max_running`) | same place | by 1 up or down within the tenant ceilings | `farm.queue.wait`, `farm.task.cost` |
-| backup schedule window | backup schedule | a shift without a frequency change | `farm.backup.age` |
+**Untrusted text.** A proposal whose analysis saw a log, plugin output or a message note carries `untrusted_seen` with its source on every card ([PRP-7](../conformance/rules.md#PRP-7)). Its change can only be `none` or a safe-direction `manifest_change`, and the strict `untrusted` verdict threshold applies.
 
-A proposal with a guarded field is recommended only if both lenses with veto gave at least 3 and the trial of its change has guards. An untrusted proposal does not change guarded fields. The attempt deadline and the number of retries live in the tenant dispatcher rule, not in the shared task type, so the change stays inside the tenant; dispatcher rules and an example with these fields are described in [coordination.md](coordination.md).
+A refusal at creation makes no record, only the event `proposal.rejected.v1` with a reason from a closed list; the author sees it in "My outcomes" and stops spending money on dead repeats.
 
-### Change by people's hands
+### Code checks and the commission
 
-Not every useful idea can be expressed as an allowlist field. For them there is the kind `human_change`: a change that people make by hand, with a closed description (PRP-13). The description contains a tenant object (kind and name), a field from the registry `spec/model/change-paths.yaml`, a direction (`up`, `down` or `set`) and a value (a number or an `enum`). There is no free text in the description; the card and the reviewer input show it in code words. The path registry contains no targets forbidden by the allowlist.
+Code checks run first, in a fixed order: schema, reread evidence, duplicate, empty change, conflict, feasibility (someone can accept and realize), money ([COM-5](../conformance/rules.md#COM-5)). A failure ends in `dismissed` with a reason before any review money is spent.
 
-```yaml
-change:
-  kind: human_change
-  human_change:
-    target: {kind: Host, name: db1}       # a catalog resource of tenant demo
-    path: catalog.host.disk_gb
-    direction: up
-    value: 200
-```
+**Lenses.** A lens is a point of view on benefit, cost or risk. The skeleton sets them in `spec/model/lenses.yaml`:
 
-After "Accept" the executor gets a card with the description and a deadline. The proposal becomes realized only by a linked commit that changes the named field in the named direction (PRP-19). This way an idea outside the allowlist gets realization, a trial and credit, and the kind "for information" stays only for what people decide themselves.
+| Lens | What it scores | Veto |
+|---|---|---|
+| `security` | permissions, data, leaks, untrusted text | yes |
+| `operational` | reliability, deadlines, load, rollback | yes |
+| `cost` | proportionality of price and benefit; code computes the price | no |
+| `value` | benefit by the numbers | no |
+| `farm_manager` | the farm manager's advisory view, weight 1 (v0.2) | no |
+| `necessity` | only bot escalations to the farm manager (v0.2) | no |
 
-### Evidence and self influence
+A proposal of kind `none` changes nothing, so only `value` and `security` score it ([COM-14](../conformance/rules.md#COM-14)).
 
-Evidence is at most 10 references only to objects of its own tenant that the author could read (TEN-7, PRM-9, OBV-3). The core itself rereads the cited values at creation and once more before showing to people (PRP-2). A mismatch above the series tolerance at creation gives the refusal `rejected(evidence_mismatch)`, and before showing it removes the item from the digest into `parked(evidence_drift)`. People see the core's numbers, not the bot's numbers.
-
-A bot whose attempts themselves produce the numbers could create a problem and then propose to "fix" it. So for each evidence series the core at creation computes `self_influence`: the share of points produced by the attempts of the author bot (`author_share`; while bots have no numbers, of its worker), and the share of points of its role (`role_share`) (PRP-22). With `author_share` of at least 0.3 the people's card and the reviewers' input carry the mark `self_evidence` without the author's identity. The change trial also computes the outcome three times: over all points, without the points of the author bot and without the points of all bots of its role, so that two bots of one role cannot "worsen before" and "improve after" together (PRP-22).
-
-### Author, duplicates and limits
-
-The core records in `origin` the author bot (`acting_bot`) and its epoch (`bot_epoch`) from the attempt that submitted the result, next to the role, worker, task and level (PRP-14). If the result was submitted by a worker without a numbered bot (IDN-8), the field is empty, and `origin.worker` sets the author. When duplicates merge, the author does not change.
-
-The proposal fingerprint (a hash of the category, problem code, subjects, kind and targets of the change) is computed by the core (PRP-5). An open duplicate does not create a second proposal: `seen_count` grows, and evidence is added. A fingerprint declined by a person is not accepted for `redecide_after` (30 days by default) if the evidence did not change by more than the declared share; the refusal is `rejected(recently_declined)`. The limits `insight.max_open_proposals` and `insight.max_per_week` per role and `max_in_review` per tenant limit the flow; exceeding them gives the refusal `proposal_rate_limited` with an event and without a record. Since v0.2 each bot has at most one open proposal (PRP-16): the bot chooses the best one rather than flooding the commission. The limit is fixed at 1 and has no manifest field; a worker without a numbered bot counts as one bot. A proposal that waits in `parked(conflict)` because of an earlier accepted proposal of another author does not take this slot.
-
-Since v0.2 the core links a proposal with proposals of another author that people decided on in the last 90 days, if they have the same change kind and their targets or fields overlap (`related_to`) (PRP-17). People and reviewers see the mark. If the related proposal was accepted or declined, the later proposal gives the author no credit, although the change itself can pass the commission, people and the trial as usual. Relatedness is computed only among proposals of functionaries and of aggregators (`origin.level` 0 and 1): proposals of the farm manager from the daily review (a role of the `farm-manager` profile, `origin.level` 2, MGR-41) do not enter `related_to` and do not take credit from functionaries, otherwise the manager, who sees every tenant daily, would intercept credit in all tenants.
-
-### Conflicts
-
-Two accepted changes of one field overwrite each other, and the trial measures someone else's value. So a field of an object, or a group of fields that `spec/model/proposable-fields.yaml` names together, has at most one running trial (PRP-9): the core locks it when a `manifest_change` proposal that sets it moves to `realizing` and releases it when that trial ends. Proposals of the kinds `action_request`, `script` and `none` take no lock, and a restart of a service holds none. For each proposal the core computes `conflicts_with`, the open proposals that change the same field or group. Only one of the conflicting proposals can be accepted: while the lock is held, the other open ones go to `parked(conflict)`, and their cards go dark. They return to `screened` when the lock is released. A new proposal that changes a locked field also waits in `parked(conflict)`. In the digest, conflicting recommended proposals go as one block, and the reviewer input gets a code table: changes of the same subjects over 30 days with trial outcomes and open proposals about them.
-
-### Untrusted text
-
-If the analysis attempt saw untrusted text (a log, plugin output, a message with a `note`), the proposal carries `untrusted_seen` and is marked on all cards and in the digest together with the source (PRP-7). Its change can only be `none` or `manifest_change`, and only in the safe direction of the fields; otherwise the refusal `rejected(untrusted_direction)` (PRP-11). It has no script, action, change by people's hands or guarded fields. The strict verdict threshold `untrusted` applies to it (COM-4).
-
-### Refusal at creation
-
-A refusal at creation creates no record: the core writes the event `proposal.rejected.v1` with the reason, like a refusal to enqueue a task. The reasons come from a closed list: `schema_invalid`, `evidence_mismatch`, `forbidden_change`, `untrusted_direction`, `metric_unknown`, `recently_declined`, `proposal_rate_limited`. The author sees its refusals in "My outcomes" and does not spend money on repeats that are dead in advance.
-
-## Code checks and commission
-
-### Code checks
-
-Code checks run before any review in a constant order (COM-5):
-
-1. body schema;
-2. evidence: the core rereads the values (PRP-2);
-3. duplicate by fingerprint (PRP-5);
-4. empty change: all values of the change are already set, outcome `dismissed(no_op)`;
-5. conflict (PRP-9);
-6. feasibility: the tenant has an active person with the permission to accept and start the realization;
-7. money for reviews (COM-6).
-
-A proposal that fails a check goes to `dismissed` with a reason without spending money on reviews; on a conflict and a lack of money it waits according to PRP-9 and COM-6. The order and set of checks are set by the skeleton, not by the tenant manifest.
-
-### Lenses
-
-A lens is the reviewer's point of view: benefit, cost or risk, as D-16 requires. The list of lenses, their review task types and veto (the right to forbid) are set by the skeleton in `spec/model/lenses.yaml` (COM-8):
-
-| Lens | What it scores | Veto | Review task type |
-|---|---|---|---|
-| `security` | permissions, data, leaks, untrusted text | yes | `review.security.v1` |
-| `operational` | reliability, deadlines, load, the possibility of rollback | yes | `review.operational.v1` |
-| `cost` | proportionality of price and benefit; code computes the price itself | no | `review.cost.v1` |
-| `value` | benefit by the numbers | no | `review.value.v1` |
-| `farm_manager` | the farm manager's view, weight 1 (since v0.2) | no | `review.farm_manager.v1` |
-| `necessity` | only bot escalations to the manager, not proposals (since v0.2) | no | `review.escalation.v1` |
-
-Code computes the price of a change from the price table of the provider binding and from observations; the cost lens model judges only the proportionality of price and benefit. The `farm_manager` lens is on every tenant proposal since v0.2: the manager is an advisory member of every commission, with weight 1 and without veto (D-29, GOV-25). This lens is not set on proposals about the manager seat, its role, the incident catalog, involvement rules, the manager's limits, consent groups, or on its own proposals (GOV-17).
-
-### Who runs the lenses
-
-The lenses are held by commission seats, which the tenant charter describes ([commission.md](commission.md)); a lens whose seats are all empty is run by a fallback role of the `reviewer` profile (PRF-1) that has this lens's type in `claims` (COM-8). Until the v0.2 promotion cases, seat holders are assigned by a person with the P2 operation `seat.assign` (D-21). Each lens at each moment has exactly one executor source: the holders of this lens's seats, if at least one seat is taken, otherwise the reviewer role that the charter names as the fallback (`fallback_role`) (COM-7). A seat whose holder is under a people's hold of scope `bot` counts as free here: its tasks are not dispatched, and the lens is run by other holders or by the fallback role. Lens tasks are not dispatched to two sources at once, and one proposal does not get two reviews of one lens. The `apply` lint requires a holder or a fallback role for each lens with veto, and P2 `commission.status` and the `doctor` check show who covers each lens. This way declaring empty seats does not send all proposals into waiting.
+**The charter.** Only the tenant charter `tenants/<t>/governance.yaml` declares commission seats ([GOV-33](../conformance/rules.md#GOV-33)). The commission manifest `Commission` sets only thresholds and weights per lens ([COM-8](../conformance/rules.md#COM-8)).
 
 ```yaml
-# tenants/demo/governance.yaml (charter fragment, described in commission.md)
+# tenants/demo/governance.yaml (fragment)
 spec:
   commission:
-    seat_role: commission-member
+    seat_role: commission-member         # a reviewer role: its workers run the seats' tasks
     model_profile: seat-std
-    seats:
+    seats:                               # veto lenses on different model families (GOV-34)
       - {id: 1, lens: security,    fallback_role: reviewer-a}
-      - {id: 2, lens: operational, fallback_role: reviewer-a}
+      - {id: 2, lens: operational, fallback_role: reviewer-a, model_profile: seat-alt}
       - {id: 3, lens: cost,        fallback_role: reviewer-b}
       - {id: 4, lens: value,       fallback_role: reviewer-b}
     audit_sample: {min_per_month: 4, share: 0.25, max_per_digest: 2}
-```
-
-Reviews are independent (COM-2). The reviewer role is not the author role; a review task is not dispatched to the author's worker and bot; the reviewer's model profile is not the author's `analysis` profile. A reviewer does not see the scores of other lenses or the identity, role and position of the author, and a seat holder does not review its own proposals (GOV-17). One review task carries one proposal, so there is no position bias and no comparison. A lens review task is enqueued only by the core with the key `system:review:<proposal>:<lens>` (IDM-2), so a second copy of the `proposal` loop does not create a second task of the same lens. The lint warns if the tenant's lens executors have fewer than two model profiles. The model profiles of the lenses with veto (`security`, `operational`) belong to different families (`ModelProfile.family`): for a tenant with `kind: production` matching families is an `apply` error with the code `veto_lenses_same_family`, for a test bench tenant a `doctor` warning (GOV-34). The reviewer context has no cases, promotion queue or choice of the leaver (GOV-29), and the instructions of review types pass the unawareness lint: nowhere do they link the score with promotion and retirement ([bots.md](bots.md)).
-
-### Commission manifest
-
-The tenant commission manifest (`Commission`) sets only thresholds and weights per lens, and since v0.2 also escalation forwarding thresholds in the `escalation` section (COM-8, COM-13). It does not set lenses, checks or executors.
-
-```yaml
+  promotion: {probation: 14d, exclude_change_kinds: [none], min_tenure: 30d, swap_cooldown: 30d}
+  removal: {protect_new: 60d}
+  confirmation: {ttl: 7d}
+  attribution: {window: 14d}
+---
 # tenants/demo/commission.yaml
 kind: Commission
 metadata: {name: default, tenant: demo}
 spec:
   review_deadline: 24h
-  min: {security: 2, operational: 2}          # can only be raised relative to the skeleton
-  weights: {value: 2, cost: 1, operational: 1, security: 1}   # integers 1-3
+  min: {security: 2, operational: 2}          # can only be raised
+  weights: {value: 2, cost: 1, operational: 1, security: 1}
   recommend_if: {weighted_mean_gte: 2.5, value_gte: 3}
   park_if: {weighted_mean_gte: 1.5}
   high_risk: {security_gte: 3, operational_gte: 3}
   untrusted: {value_gte: 4, risk_max: medium}  # can only be raised
-  shadow: {veto_lenses: 0.25, other_lenses: 0.2}  # since v0.2; off without this block (D-103); a share of 0 fails the lint
-  escalation:                                  # necessity lens, since v0.2 (COM-13)
-    forward_if_score_gte: 2                    # can only be raised
-    untrusted_forward_if_score_gte: 3          # can only be raised, not lower than the first threshold
+  escalation: {forward_if_score_gte: 2, untrusted_forward_if_score_gte: 3}   # v0.2
 ```
 
-The `farm_manager` lens appears with v0.2. In v0.1 the manager does not take part in the commission: there is no `farm_manager` lens (D-21); its advisory lens in the commission (D-29) starts with v0.2 (GOV-25). The weight of the `farm_manager` lens is always 1 by rule, and the manifest does not set it. The minimums of the lenses with veto and the `untrusted` threshold can only be raised relative to the skeleton values.
+Every charter number moves only in its safe direction: deadlines up, memory limits down. The two veto lenses run on different model families, an `apply` error for a production tenant ([GOV-34](../conformance/rules.md#GOV-34)), so one provider's blind spot cannot pass a change through both.
 
-### Necessity lens
+**Who runs a lens.** At any moment a lens has exactly one source of executors: the holders of its seats if at least one is taken, otherwise the charter's `fallback_role` ([COM-7](../conformance/rules.md#COM-7)). A seat whose holder is under a person's hold counts as free. This way empty seats never stall the cycle, and the move from reviewer roles to promoted seat holders happens seat by seat. A seat holder is always a former functionary of its own tenant (D-22); it reviews through its lens, writes no new facts and has no path beyond the commission.
 
-Since v0.2 a bot can escalate to the farm manager, but only through the commission of its own tenant (D-18). An escalation is a record of a closed form, not a message; its fields, code screening and lifecycle are described in [farm-manager.md](farm-manager.md) (MGR-5, MGR-6). Code screening settles the clear cases itself: it merges an escalation with a firing alarm or an open incident on the same subject and refuses one with a normal path, so the `necessity` lens of the commission of the source tenant sees only the borderline ones (COM-13). This is a `review.escalation.v1` task with the core key `system:necessity:<escalation>` (IDM-2); the executor is chosen by the same rule as for other lenses (COM-7), and the `review` line of this tenant pays (COM-6).
-
-The lens input is built by the core as a data block (INJ-4): the closed fields of the escalation, the evidence numbers that code fetched, and the `untrusted` flag. The lens does not see the escalation note. The output is a score 0-3 and a reason from a closed list: `evidence_below_threshold` (too little evidence), `covered_by_alarm` (a farm alarm is already firing or a monitoring system problem is open on the same subject, and people get it through the monitoring system), `out_of_scope` (not the manager's business), `plausible_risk` (the risk is plausible), `clear_risk` (the risk is obvious). Code computes the verdict by the `escalation` section of the commission manifest: an escalation is forwarded with a score not lower than `forward_if_score_gte`, and an escalation with the `untrusted` flag with a score not lower than `untrusted_forward_if_score_gte`. The thresholds can only be raised. How many escalations the farm forwards to the manager per day is limited by MGR-6. The `necessity` lens does not enter the verdict of proposals, and the `farm_manager` lens does not score escalations.
-
-### Reviewer input and output
-
-From v0.3 the input and output change, see [Forecasts and accuracy from v0.3](#forecasts-and-accuracy-from-v03).
-
-The reviewer input is built by the core as a data block with a marker (INJ-4): the closed fields of the proposal, the evidence values reread by the core, the change description in code words, the author level (a bot from its seat or an aggregator) and the marks `self_evidence`, `related_to` and conflicts (COM-3). The author's `note` is never passed. Of the tools, the reviewer has only `observations_query` within the tenant.
-
-The reviewer output passes the closed schema `review-result`:
+**Independence.** The reviewer role is not the author's, the review model is not the author's `analysis` profile, and a reviewer sees neither the author nor other lenses' scores; one task carries one proposal ([COM-2](../conformance/rules.md#COM-2)). A holder does not review its own proposals, and the farm manager does not review proposals about itself ([GOV-17](../conformance/rules.md#GOV-17)). The core builds the reviewer input as a data block of closed fields, reread values and the change in code words ([COM-3](../conformance/rules.md#COM-3)); from v0.3 the input also drops the author level and the review carries a forecast of its lens's own outcome ([COM-15](../conformance/rules.md#COM-15)):
 
 ```yaml
 lens: operational
-score: 3                 # 0-4
-veto: false              # only for lenses with veto
-concerns: [report_delay] # up to 5 codes from a closed list
-confidence: medium       # low | medium | high
-shadow: false            # COM-9
-note: "..."              # up to 500 characters, untrusted
+score: 1                       # 0-4
+veto: false                    # veto lenses only
+concerns: [report_delay]       # codes from a closed list
+confidence: medium
+forecast: {bad: 0.7, ok: 0.3}  # value: better/unchanged/worse; cost: over/within
+note: "..."                    # untrusted, never read by code
 ```
 
-The reviewer note is untrusted, and the verdict code does not read it; it is shown to people only as a marked block in "Details". The `shadow` field is in the `review-result` schema (COM-9): the verdict code does not read a review with `shadow: true`, it is not shown to people and reviewers, and it goes only into the comparison of seat and shadow scores.
+**The farm manager's lens.** From v0.2 the farm manager is an advisory member of every commission whose tenant has not opted out of it: weight 1, no veto, not in `min`, `high_risk` or `untrusted`, not needed for a quorum, and skipped first when the `review` line runs short ([GOV-25](../conformance/rules.md#GOV-25), D-29). It runs on the tenant's reviewer worker with the seat profile and the tenant's money. It takes no part in choosing who leaves. The **necessity lens** scores only bot escalations that code screening did not settle; a forwarded escalation reaches the farm manager ([COM-13](../conformance/rules.md#COM-13), [farm-manager.md](farm-manager.md)).
 
-### Verdict
+**Verdict.** Deterministic code computes it from the manifest ([COM-4](../conformance/rules.md#COM-4)): a missing veto-lens review gives `parked(veto_lens_missing)`; a veto gives `dismissed(veto)`; a veto lens below `min` gives `dismissed(below_min)`; high risk or a guarded field needs `high_risk`, and untrusted text needs `untrusted`; then the weighted mean and the value score decide between `recommended`, `parked(score)` and `dismissed(low_score)`. From v0.3 a score of 3 or more with a bad-outcome forecast of 0.5 or more contradicts itself and counts as missing. There are no other outcomes.
 
-The verdict is computed by deterministic code from the commission manifest: identical inputs give an identical verdict, and the model does not change it (COM-4). The order of computation:
+**Money.** Reviews spend only the `review` line, reserved in full on the move to `in_review` ([COM-6](../conformance/rules.md#COM-6)). One author role gets at most 30% of the line a month, so a verbose role cannot take over the commission. Without money a proposal waits and then moves to `parked(review_budget)`.
 
-1. Reviews of all lenses with veto are required (for a proposal of kind `none` only the `value` and `security` lenses, COM-14). If there is no review of a lens with veto, it failed, was late for `review_deadline` or did not pass the schema, the outcome is `parked(veto_lens_missing)`. An example from the fixture table: three high scores out of four without a security review give `parked`, not `recommended`.
-2. A veto of any lens gives `dismissed(veto)`.
-3. A score of a lens with veto below `min` gives `dismissed(below_min)`.
-4. The weighted mean is computed over the lenses with reviews. Without a review of a lens without veto the verdict is computed over the others with a mark on the card; without a review of the `farm_manager` lens, the mark "without the manager's vote". The `farm_manager` lens (since v0.2) has weight 1, has no veto, is not in `min`, `high_risk` and `untrusted`, and is not needed for the quorum.
-5. A proposal with `high` risk or with a guarded field needs the `high_risk` threshold; a proposal with `untrusted_seen` needs the `untrusted` threshold, and a threshold that refers to a lens without a review counts as not met for it. A strict threshold not met gives `parked(score)`.
-6. A weighted mean and value score not lower than `recommend_if` give `recommended`; not lower than `park_if` give `parked(score)`; lower give `dismissed(low_score)`.
+**Shadow reviewer.** Every promotion removes a commission member, so it pays members to underrate others' improvements a little. A tenant can turn on a shadow: the fallback role reviews a random share of proposals with the seat's profile, the review is never read by the verdict, and a sign test on "seat below shadow" sets the flag `shadow_divergence` (COM-9, COM-10, deferred; D-103).
 
-There are no other verdict outcomes. The code does not read shadow reviews.
+### The digest and people's decision
 
-A proposal of kind `none` changes nothing, so a full commission for it is four reviews of a piece of paper (COM-14). Only the tasks of the `value` and `security` lenses are set for it: only `security` is required and gives a veto, the weighted mean is computed by the weights of these two lenses, and the `high_risk` and `untrusted` thresholds read only the `security` score. The `operational`, `cost` and `farm_manager` lenses are not set for it, and there is no money for them.
-
-### Money for reviews
-
-Reviews spend only the `review` line (BUD-7) (COM-6). On the transition to `in_review` the sum of the `tree_budget_eur` of the review types of those lenses that are set for the proposal is reserved: four (since v0.2 five) for an ordinary proposal and two for kind `none` (COM-14). This is the same number by which the BUD-13 lint computes the role estimate, so "there is enough money" in the lint and "the reserve does not fit" before a review do not diverge. The share of the `review` line for one author role is at most 30% per month, so that one verbose role does not take over the whole commission. If the line or the role's share is not enough, proposals wait in `screened` by importance and after `review_wait_max` move to `parked(review_budget)`. The `farm_manager` lens is skipped first when there is not enough money (GOV-25). How much a review costs and how the ceiling is computed is described in [models-and-money.md](models-and-money.md).
-
-### Shadow and accuracy within a lens
-
-Almost every promotion removes one commission member, so it pays commission members to slightly underrate others' improvements. The cycle makes such underrating visible to people with the shadow reviewer, the accuracy within a lens and the audit sample.
-
-**Shadow reviewer** (COM-10). The shadow is off by default, because it adds review money on the strong seat profile and a small tenant has too few proposals for its statistics (D-103); a tenant turns it on with the `shadow` block. When it is on, the fallback role of a lens (COM-7) gets a shadow review task of that lens on the `seat` slot with the lens seat profile (GW-7), without memory facts and without a persona, for a share of proposals and only for lenses that a seat holder executed. A proposal is drawn when `sha256(seed ‖ proposal ‖ lens) / 2^256` is below the share; the seed is drawn monthly per tenant and written to audit (`commission.shadow_seed`, D-101). The shares are set by the `shadow` block: `veto_lenses` 0.25 and `other_lenses` 0.2 when the block omits them; a share of 0 inside the block fails the `apply` lint `shadow_zero_without_off`, and without the block or with `shadow: off` `doctor` shows the check `commission.shadow_off`. A shadow task gets its own core key `system:review:<proposal>:<lens>:shadow` (IDM-2) and does not merge with the seat task. Its reviews have `shadow: true` and are paid from the `review` line. Code takes for each lens the pairs "seat score minus shadow score" of the last 30 days, drops pairs with a difference of 0, and sets the flag `shadow_divergence` (P2 `commission.status`, `doctor`) when at least 15 pairs remain and a one-sided exact sign test gives p below 0.05 for "seat below shadow". The shadow has no seat to protect, so the difference shows precisely the incentive of the seat.
-
-**Accuracy within a lens** (COM-17). One measure per lens: from v0.3 every review carries a forecast that code scores, and accuracy compares the executor's scores with the base rates of its own lens. A review warns when it has a veto or a score of at most 1 and passes otherwise; a review whose warning disagrees with its own forecast counts as a missed forecast. The outcome for the security and operational lenses is symmetric: a recommendation with the outcome `worse` or with a confirmed link of an incident with the change (GOV-13; a canceled attribution leaves the computation, a `disputed` one does not enter it while the dispute is open, D-79) and a people's refusal with the reason `too_risky` count the same as a veto that people lifted (DIG-6) after which the trial ended not `worse` and there is no link with an incident: that is a miss of the lens. Without such an outcome a veto would have nothing that could refute it, and the strictest would survive. For value only the trial outcome counts (PRP-22): people's decisions do not enter it, otherwise the lens would be rewarded for predicting people's taste. Answers on a blind card enter the lenses with veto with weights 1/`inclusion_prob`. Accuracy is everywhere shown together with the lens and is compared only within the lens: a strict security lens does not look worse than a generous value lens. The details are in [Forecasts and accuracy from v0.3](#forecasts-and-accuracy-from-v03).
-
-## Digest, cards and audit sample
-
-### What people see
-
-People are shown only proposals in `recommended` and audit sample items with the mark "audit sample" (DIG-1). The digest and cards are assembled by code by a template from records; model text (of the reporter or the author) goes only as a separate marked part and never instead of items. The digest has at most `max_items` recommended items (5 by default) by importance and at most `audit_sample.max_per_digest` sample items. Urgent items (category `security` with `severity: high`) arrive outside the schedule at most once a day per tenant. The digest task is enqueued by the core by the tenant's `insights.digest.schedule`; it is a task of the `report` purpose of tier 0, and a reporter role takes it. The reporter reads only proposals in `recommended` and later through the P3 view `status.proposals` (REP-8); the reporter model does not read audit sample items, code puts them into the digest (REP-8, DIG-6).
-
-The core delivers the digest and cards only to the address from the tenant's `insights.present_to` (DIG-2, DLV-6). The mark of each item is compared with the recipient's ceiling (DLV-7): above the ceiling, only the code title is visible in the group, and the details go to direct chats of those who have `data:<class>`. Before showing, the core rereads the evidence once more (PRP-2).
-
-Channel delivery kinds (E1):
-
-| Kind | To whom | What |
-|---|---|---|
-| `proposal_digest` | the address `insights.present_to` | weekly digest: recommended items and sample items |
-| `proposal_card` | the same address | an item with the buttons "Accept", "Decline", "Postpone", "Details"; the button holds only `(proposal_id, nonce)` |
-| `proposal_reason` | the one who pressed "Decline" | continuation of the "Decline" button of the `proposal_card` card (the same subject `proposal`): a reason from the closed list `spec/model/decline-reasons.yaml`: `useful_done`, `not_now`, `wrong_data`, `too_costly`, `too_risky`, `duplicate`, `not_relevant`, `other`; the "Decline" decision is recorded when a reason is chosen; without a reason the proposal waits until the card's deadline |
-| `proposal_sample_card` | people with `proposal.decide:<category>` | blind card "Would you accept?" |
-| `realization_card` | executor | patch or change description, deadline, a line for the commit |
-| `rollback_card` | executor | "Roll back": the reverse edit and, if applicable, a button of the P2 operation `hold.set` for an executor with the permission `hold.set:<scope>` |
-
-In a channel without buttons the same decisions are made with the commands `/proposal accept p_0101` and `/proposal decline p_0101 too_costly`.
-
-An example of a digest item assembled by code:
+People are shown only `recommended` proposals and audit sample items ([DIG-1](../conformance/rules.md#DIG-1)). Code assembles the weekly digest and cards from records; a reporter's text goes only as a separate marked part. The digest goes only to `insights.present_to`, and an item above a recipient's ceiling shows only its code title in a group ([DIG-2](../conformance/rules.md#DIG-2)). Before showing, the core rereads the evidence once more.
 
 ```
 Farm proposals for demo, week 41 (1 recommended, 1 from the audit sample)
@@ -560,77 +316,36 @@ Farm proposals for demo, week 41 (1 recommended, 1 from the audit sample)
    Outcome of demo.db.backup.v1 over 14 days: 71% on time (10 of 14)
    Load of db1 at 02:00-03:00 up to 910 against the usual 300
    Change: schedule report-nightly, cron "0 2 * * *" to "30 3 * * *"
-   Frequency before and after: once a day, once a day. Affected alarms: none
-   Trial: outcome of demo.db.backup.v1; guards: slot of report-nightly, p95 duration of the report and the backup, load of db1
+   Trial: outcome of demo.db.backup.v1; guards: slot of report-nightly, p95 of the report and the backup, load of db1
    Price: 0 EUR. Risk: low (report by 05:12 instead of 03:42)
    Commission: security 3, operational 3, cost 3, value 3
-   Author: bot from its seat. Untrusted text: no. Self influence in the evidence: no
+   Author: bot from its seat. Untrusted text: no. Self influence: no
    [Accept] [Decline] [Postpone] [Details]
 ```
 
-### Audit sample
-
-The commission can underrate others' improvements, and people will not see it if they are shown only what is recommended. So since v0.2 every month the core draws audit sample items from the tenant's proposals that got a commission verdict that month and were not recommended (DIG-5): `dismissed` (a veto, a minimum or a low score) and `parked` by score (not by quorum, budget or conflict).
-
-The draw is uniform and random by a fresh seed that the core records together with the drawn ids at the time of the choice:
-
-- the size is N = min(T, max(`audit_sample.min_per_month`, ceil(`audit_sample.share` × T))), where T is the number of such proposals; the lint requires `min_per_month` of at least 4;
-- each item stores in the `sample` field of the proposal record its month and its inclusion probability `inclusion_prob` = N / T.
-
-The sample numbers live in the charter. Blind cards go to people with `proposal.decide:<category>` only by direct message, at most `audit_sample.max_per_digest` at a time; a group digest shows only their number. Code computes over 180 days the share of "Would accept" answers with weights 1/`inclusion_prob` and shows it in P2 `commission.status` (`audit_sample`). With at least 10 answers and a share of at least 0.3 it sets the flag `commission_underrates`, which people see there and in the digest.
-
-### Blind card and "Lift veto"
-
-A sample item is first shown as a blind card "Would you accept?" (DIG-6). It has the closed fields of the proposal, the evidence as numbers, the change in code words, the price and the risk, but no lens scores, vetoes or verdict. There are two buttons: "Would accept" and "Would not accept". The answer is recorded in the sample and scores the forecasts of the reviews (COM-16) before the person sees the scores, so the commission's scores do not hint at the answer.
-
-After the answer "Would accept" the card shows the scores and vetoes. An item without a veto has "Accept", and it acts like an ordinary "Accept" (PRP-4): the author gets the ordinary credit. An item with a veto has no "Accept" button. There is only a separate "Lift veto" button for a person with the capability `proposal.override_veto:<category>`; the core accepts it only if this person opened "Details" of this card before the decision, otherwise the refusal `details_not_opened` (APR-14, [permissions.md](permissions.md)). It writes an audit record, sets the mark `veto_overridden` on the proposal and creates an object of the ordinary path, the same as "Accept". A proposal with a lifted veto gives the author no credit and creates no promotion trigger: a reward for a path that bypasses the commission would make the veto empty. The trial of its change runs as usual. The answer "Would not accept" closes the item.
-
-### Feedback
-
-Since v0.2 people's decisions return to the cycle as numbers (DIG-4). The "Decline" reason is taken from a closed list; there is no free feedback text in the decision. The `observe` loop computes the series `farm.proposals.accept_share` and `farm.proposals.decline_reason_share` by role and category (`spec/model/core-series.yaml`). They are input for the analysis and for people. The core changes nothing by itself because of them: a check threshold or `max_per_week` for a pair "role, category" changes only by a proposal or a commit in git, and the statistics never change instructions, skills and manifests (INJ-10).
-
-## Human decision
-
-The cycle does not design people (D-16): they are on the other side of the interface and decide with buttons and commands. A decision on a proposal goes by the shared path of human decisions (APR-4): only with the `decide` operation (P1) with the subject `proposal` from the channel where the card was delivered, atomically and once, with a `nonce`; only a principal `human` with strong identity (IDN-3) decides, who is active and has the permission at that moment; in a group only with `membership_assurance: enforced`. Bots, external programs (`service`) and `system` do not decide. In a channel without buttons the card shows a text command with the id and the `nonce`, and it is checked the same way as a button press.
-
-Specific to proposals (DIG-3): the right to decide comes from the capability `proposal.decide:<category>` of the proposal's category, and "Accept" additionally requires the right to start the realization: `action.request:<action>` for `action_request`, `script.run` for `script`; for `manifest_change` and `human_change` `proposal.decide:<category>` is enough, because the real gate is the executor's commit. The rights to decide are privileged and are granted by the shared permission model (D-40), see [permissions.md](permissions.md). P2 `proposal.list` and P2 `proposal.show` show proposals and their records.
+A decision goes by the shared path of human decisions: the `decide` operation from the card's channel, a `nonce`, once, by an active `human` with strong identity (APR-4). The right comes from `proposal.decide:<category>`, and "Accept" also needs the right to start the realization, `action.request:<action>` or `script.run` ([DIG-3](../conformance/rules.md#DIG-3), [permissions.md](permissions.md)). Transitions follow only the lifecycle table ([PRP-6](../conformance/rules.md#PRP-6)).
 
 | Button | What the core does | New state |
 |---|---|---|
-| "Accept" | in one transaction: checks the permissions at that moment, creates exactly one object of the ordinary path (PRP-4), the trial record (PRP-21), the executor and the deadline (PRP-18) | `realizing`; for kind `none` `noted` |
-| "Decline" | shows the reason card `proposal_reason`; the "Decline" decision is recorded when a reason is chosen; without a reason the proposal waits until the card's deadline; the fingerprint is not accepted for `redecide_after` | `declined` |
-| "Postpone" | returns the item to the next digest, at most 2 times | `recommended` |
-| "Details" | shows the author's `note` and the reviewers' notes as marked blocks, concern codes, reread values | unchanged |
-| no decision within `decide_ttl` (14 days) | | `expired` |
+| "Accept" | creates exactly one object of the ordinary path, the trial record, the executor and the deadline | `realizing`; `noted` for kind `none` |
+| "Decline" | asks for a reason from `spec/model/decline-reasons.yaml`; the fingerprint is refused for `redecide_after` | `declined` |
+| "Postpone" | back to the next digest, at most twice | `recommended` |
+| "Details" | shows the notes as marked blocks, concern codes, reread values | unchanged |
+| silence for `decide_ttl` | | `expired` |
 
-"Accept" is unavailable while the change target is locked by a conflict or a running trial (PRP-9). Proposal transitions go only by the lifecycle table (PRP-6): checks, verdict, sample and deadlines are run by code, and only a person presses the buttons. The decision is recorded with the shared human decision event (APR-11) with metadata only: the subject `proposal` and its id, the decision and the reason code, `decided_by` (the internal id of the one who decided), `response_ms` (from the delivery of the card to this person until the decision) and `details_opened` (whether they opened "Details" before the decision). Code takes the category, the author role and the level from the proposal record when it computes the `farm.proposals.*` series.
+People's decisions come back to the cycle as numbers: the series `farm.proposals.accept_share` and `farm.proposals.decline_reason_share` by role and category ([DIG-4](../conformance/rules.md#DIG-4)). They feed analysis; nothing changes by itself because of them.
 
-## Realization
+**Audit sample.** A commission that underrates others' work would stay invisible if people saw only what it recommends. So every month the core draws, by a recorded seed, a uniform random sample of the proposals that got a verdict and were not recommended: `dismissed`, and `parked` by score. The size is N = min(T, max(`min_per_month`, ceil(`share` × T))), and each item keeps its `inclusion_prob` ([DIG-5](../conformance/rules.md#DIG-5)). An item goes first as a blind card "Would you accept?", with the numbers, the change, the price and the risk but no scores, vetoes or verdict ([DIG-6](../conformance/rules.md#DIG-6)). The answer is recorded before the person sees the scores. After "Would accept" an item without a veto gets an ordinary "Accept", and an item with a veto only "Lift veto", for a person with `proposal.override_veto:<category>` who opened "Details" first. A lifted veto gives the author no credit and no promotion trigger, so a path around the veto earns nothing. A weighted share of "Would accept" of 0.3 or more over at least 10 answers sets `commission_underrates`.
 
-An accepted proposal hangs with people without a deadline if it has no owner. So on "Accept" the core records the executor and the deadline (PRP-18). For `action_request` and `script` the executor is the one who accepted: the object was created on their behalf. For `manifest_change` and `human_change` the executor is a person of the tenant from the `insights.realizers` list: by default the one who accepted, if they are in the list, otherwise the first in the list. They get a card with the patch or description and the deadline `realize_by` (7 days by default), and at half the deadline the core sends a reminder. If there is no realization by the deadline, the proposal moves to `realization_failed(timeout)`, and the trial is closed as `canceled`.
+A rejected change can also come back. A proposal with the fingerprint of one the commission dismissed or parked by score may be resubmitted by any bot after 30 days, at most once in 90 days ([PRP-24](../conformance/rules.md#PRP-24)); the reviewers do not know it is a resubmission. A rejected change of replayable fields can be replayed by code over 30 days of history, and a clear benefit reaches people as one digest line a week (PRP-25, DIG-9, deferred).
 
-For `manifest_change` the core builds the patch in code: an edit of the files of the tenant folder and a line for the commit message `Botaru-Proposal: p_0101`. The executor looks at the patch, makes a commit and `farmctl apply`. The farm does not write to git and applies nothing itself.
+### Realization and the change trial
 
-A proposal becomes realized only through a verified link (PRP-19). The core sets `realized` in two cases:
+An accepted proposal with no owner would hang forever, so "Accept" also names the executor and the deadline ([PRP-18](../conformance/rules.md#PRP-18)): the person who accepted for an action or a script, a person from `insights.realizers` for a manifest or a manual change, with `realize_by` of 7 days. For `manifest_change` the core builds the patch with the line `Botaru-Proposal: p_0101`; the executor commits and runs `farmctl apply`.
 
-1. the object created by the "Accept" or "Lift veto" button of this proposal (an action approval or a script run) ran successfully;
-2. an applied commit carries the line `Botaru-Proposal: <id>` from the patch or was linked with the proposal by a person through P2 `proposal.link_commit`, and the core checked it: the commit is applied (MAN-5), touches only the tenant folder and changes the named fields to the accepted values or in the named direction.
+A proposal becomes `realized` only through a verified link ([PRP-19](../conformance/rules.md#PRP-19)): the object its button created ran successfully, or an applied commit carries the line (or a person linked it with P2 `proposal.link_commit`) and the core checked that it touches only the tenant folder and sets the named fields. A value already set without such a link does not count. The core keeps the reverse edit; a commit with `Botaru-Revert: <id> <reason>` moves the proposal to `reverted`, and the reason `harm_observed` closes the trial as `worse` ([PRP-20](../conformance/rules.md#PRP-20)).
 
-A commit can be linked by the executor or by a person with `proposal.decide:<category>`. A value that is already set or was set without such a link does not make the proposal realized. A commit with a reference to a proposal that touches files outside the folder of that proposal's tenant is not applied by the core: `apply` is rejected entirely with the reason `proposal_scope`, and the commit is not linked with the proposal (PRP-8).
-
-On `realized` by a commit the core keeps the reverse edit: the previous values of the same fields of the same objects, and the batch number if one commit is linked with several proposals (PRP-20). The reverse edit is available to the executor in the "Roll back" card and in P2 `proposal.show`. A commit that carries the line `Botaru-Revert: <id> <reason>` and returns these values is linked by the core with the proposal, which it moves to `reverted`. The reason comes from a closed list: `harm_observed` (the change did harm), `superseded` (replaced by another), `other`; a line without a reason is read as `other`. The reason is visible in the record and in the author's "My outcomes"; a rollback with `harm_observed` closes the trial with the outcome `worse` (PRP-22).
-
-## Change trial
-
-The change trial answers the question for which the cycle exists: did what the bot promised improve. On "Accept" or "Lift veto" of any kind except `none`, the core creates the trial record in the same transaction (PRP-21):
-
-- the metric from `benefit.metric`: a series with a complete `outcome` block (OBV-6);
-- the direction and the promised change from `benefit`;
-- the subjects that the core derives from the change targets;
-- the metric value before, over the 14 days before "Accept", as numbers, over all points and without the points of the author bot;
-- from one to five guards, which the core takes from the two registry tables, by the kind of target and by the metric, and from the tenant's `insights.extra_guards`, also with values before.
-
-The trial window is 14 days from `realized`. The model does not write to the record. A proposal with a metric not from the registry is refused already at creation: `rejected(metric_unknown)`.
+**The trial.** On "Accept" the core writes the trial record in the same transaction ([PRP-21](../conformance/rules.md#PRP-21)): the metric from `benefit`, the subjects, the values before over 14 days (over all points, without the author's and without its role's) and the guards. A metric outside the registry is refused at creation with `rejected(metric_unknown)`.
 
 ```yaml
 trial:
@@ -640,124 +355,104 @@ trial:
   guards:
     - {series: farm.schedule.slot, subject: schedule:report-nightly, before: 1.0}
     - {series: farm.attempt.duration, subject: task_type:demo.report.nightly.v1, compare: window.p95, before: 6120}
-    - {series: farm.attempt.duration, subject: task_type:demo.db.backup.v1, compare: window.p95, before: 3300}   # by metric
-    - {series: host.load.v1, subject: host:db1, compare: day.p95, before: 410}   # from insights.extra_guards
+    - {series: farm.attempt.duration, subject: task_type:demo.db.backup.v1, compare: window.p95, before: 3300}
+    - {series: host.load.v1, subject: host:db1, compare: day.p95, before: 410}
   window: {from: realized, days: 14}
-  state: baseline
-  self_measured: false
-  outcome: null
 ```
 
-The core checks the guards once a day (PRP-23). If a guard went beyond the tolerance in the bad direction, the executor gets a "Roll back" card with the reverse edit and, if the change can be suppressed with a hold (schedule pause, type hold), with a hold button (HLD-1). This is an operation button, not a decision button: it calls P2 `hold.set` and passes the same checks of the channel, the `nonce` and the `human` principal, and the core accepts it only from an executor with the permission `hold.set:<scope>` (APR-4). They get the same card on the outcome `worse` at the end of the window. The farm itself rolls nothing back and does not write to git. While there is no rollback, the trial runs to the end of the window.
+The core checks the guards once a day. A guard beyond tolerance in the bad direction sends the executor a "Roll back" card with the reverse edit and, where a hold can suppress the change, a P2 `hold.set` button ([PRP-23](../conformance/rules.md#PRP-23)). The farm itself rolls nothing back.
 
-At the end of the window the outcome is computed only by code by a closed list (PRP-22):
+At the end of the window code computes the outcome ([PRP-22](../conformance/rules.md#PRP-22)): a fired guard gives `worse`; another change on the same subjects gives `mixed`; otherwise the metric is compared in all three computations, and a worsening in any gives `worse`, an improvement in all gives `better`, the rest `unchanged`; too few samples give `undetermined`. The third computation stops two bots of one role from making things worse before "Accept" and better after. When the metric comes only from the author's own attempts, the remaining computation is marked `self_measured`, and a promotion trigger needs a person's "Count it".
 
-1. if a guard fired during the window, the outcome is `worse`;
-2. otherwise, if during the window another proposal was realized on the same subjects or another commit changed the fields of the same objects, the outcome is `mixed` (mixed with another change);
-3. otherwise the metric is compared with the series tolerance in three computations: over all points, without the points of the author bot and without the points of all bots of its role; a worsening beyond the tolerance in at least one computation gives `worse`, an improvement beyond the tolerance in all of them gives `better`, and the rest `unchanged`;
-4. a computation in which `min_samples` was not reached before or after gives `undetermined`, except one case: if the metric points are produced only by the attempts of the author or its role (as for the only bot of a role that proposes to speed up its own task type), the computations without them are empty or shorter than `min_samples`, and the outcome is computed from the remaining computations with the mark `self_measured`.
+### "My outcomes"
 
-The third computation is needed against collusion within a role: one bot of the role works worse during the 14 days before "Accept" and normally after `realized`, and the computation without the author's points would still show `better`. The mark `self_measured` is visible on cards and in "My outcomes"; a promotion trigger on such an outcome appears only after the human button "Count it" on the `self_measured_card` card (GOV-14), not by itself. The `apply` lint warns if a role with an `insight` section has one bot and its `observes` contains only series of its own task types: such a role is left with metrics of other types or a human button.
+A bot that only learns "accepted" or "declined" learns to please. So each author bot has "My outcomes": a closed table that only code assembles ([DIG-7](../conformance/rules.md#DIG-7)). It holds its proposals and its refusals at creation: id, category, problem code, state, the class of people's decision, the promised change and the trial outcome, measured outcomes first. It has no names, no reasons for people's decisions, no lens scores and nothing about cases or the queue. From v0.2 a row also gets the trial numbers before and after, with and without the author and the role, and the guard that fired ([DIG-8](../conformance/rules.md#DIG-8)). The last 20 rows go into the bot's next analysis.
 
-The core writes the outcome and the numbers into the `trial` field of the proposal record. The outcome `worse` is a worsening of the promised metric confirmed by the core: it gives no promotion trigger, just like a confirmed link with an incident (D-37, GOV-32). The outcome `unchanged` does not take away the trigger. If the change was rolled back before the end of the window, the trial closes with the outcome `worse` when a guard fired before the rollback or the rollback reason is `harm_observed` (PRP-20), and with `canceled` in the other cases; neither `reverted` nor `canceled` gives a promotion trigger.
+| id | Category | Problem code | State | Promised | Trial outcome |
+|---|---|---|---|---|---|
+| p_0101 | schedule | backup_deadline_miss | `realized` | +20 pp | `better` |
+| p_0088 | capacity | queue_wait_high | `realized` | -30% | `unchanged` |
+| p_0093 | cost | idle_capacity | `declined` | -15% | |
 
-The trial outcome is seen by the author in "My outcomes" (DIG-7, DIG-8), by the value lens in its accuracy (COM-17) and by people on the promotion card. The trial record with values before (PRP-21), the outcome computation by the PRP-22 rule and the "Roll back" card (PRP-23) are part of v0.1.
+### From a trial to a seat
 
-## "My outcomes"
+**The trigger.** There is one way into the commission ([GOV-14](../conformance/rules.md#GOV-14)): the functionary's own proposal, accepted by a person, realized through a verified link, still `realized`, of a kind outside `exclude_change_kinds` (`none` always), whose promotion probation of 14 days from `realized` has passed and whose every attribution candidate a person answered "No". The trial outcome `worse` removes the trigger; `better`, `unchanged`, `undetermined` and `mixed` keep it ([GOV-32](../conformance/rules.md#GOV-32), D-81). The change trial and the probation are two separate 14-day periods: the trial window never moves, while the probation waits as long as people have not answered.
 
-A bot that knows only "accepted" or "declined" learns to please people's taste. So each author bot has "My outcomes": a closed table of the outcomes of its proposals, which only code assembles (DIG-7). Rows: its proposals and its refusals at creation (`proposal.rejected.v1`). Fields only from a closed list: id, category, problem code, state, the class of the people's decision outcome (`accepted`, `declined`, `parked`), the promised metric change and the trial outcome code. The table has no reason codes of people's decisions and refusals, no free text, no people's names, no per-lens scores, no case data and no queue (GOV-29): the bot sees that a proposal was declined but does not learn who decided so and why.
+**Attribution.** An attribution candidate is a possible link between an incident and a realized change. Only code creates it, by the rules `direct` and `dependency_1` of `spec/model/attribution-rules.yaml`, for an incident of a `change_sensitive` class opened within the window; only a person with `governance.attribute` decides ([GOV-13](../conformance/rules.md#GOV-13)). "Yes" and "No" are accepted only after "Details", because "No" is the answer that gives a trigger and would otherwise be pressed for quiet (APR-14). Silence never expires: an unanswered candidate stays `unknown` and the trigger waits ([GOV-30](../conformance/rules.md#GOV-30)). If people later declare the incident false, candidates without "Yes" are canceled, and a "Yes" turns into a dispute that its author settles (D-57, D-79). No bot creates, confirms or hides an attribution, an incident or an alarm.
 
-Row order: first the rows with a measured trial outcome, then the rows with only a people's decision, then the rest. The core puts the last 20 rows into the input of this bot's analysis tasks (INS-5).
-
-| id | Category | Problem code | State | Reason | Promised | Trial outcome |
-|---|---|---|---|---|---|---|
-| p_0101 | schedule | backup_deadline_miss | `realized` | | +20 pp | `better` |
-| p_0088 | capacity | queue_wait_high | `realized` | | -30% | `unchanged` |
-| p_0093 | cost | idle_capacity | `declined` | `too_costly` | -15% | |
-| (refusal) | schedule | report_overlap | | `recently_declined` | | |
-
-Since v0.2, no later than a day after the end of the trial window, the proposal row gets the trial numbers: the metric value before and after, the change over all points, without the points of the author bot and without the points of the author's role (`change_without_role`, PRP-22), and the guard that fired, if there was one (DIG-8). The row order is set by DIG-7.
-
-## Handover to promotion
-
-The improvement cycle does not decide who enters the commission: that is done by the promotion case, the choice of who leaves and a human button, which are described in [bots.md](bots.md) and [commission.md](commission.md). The cycle hands records and numbers over there:
-
-- the record of a realized proposal with the author bot (`acting_bot`), the `realized` date, the trial outcome and the `self_measured` mark, if there is one;
-- marks that give no credit: kind `none` (state `noted`), `veto_overridden` (DIG-6), `related_to` pointing to an earlier decided proposal of another author (PRP-17);
-- candidates for a link of incidents with the change, which code builds and a person decides (GOV-13).
-
-A promotion trigger is given only by the bot's own change, accepted by people, realized through a verified link, being in `realized` at the moment the trigger appears, and having passed the promotion probation (`probation`, 14 days from `realized`) without a confirmed link with an incident (D-24, GOV-14). The trial outcome `worse` gives no trigger, just like an incident, and an outcome without a noticeable effect does not take the trigger away (D-37, GOV-32). A rolled-back change (`reverted`) and a trial with the outcome `canceled` give no trigger, and a rollback with the reason `harm_observed` counts as `worse` in "My outcomes" and in accuracy (PRP-20, PRP-22). An outcome with the mark `self_measured` gives a trigger only after the human button "Count it" on the `self_measured_card` card. A disputed attribution of an incident to a change (`disputed`, GOV-13: the answer "Yes" is disputed by recognizing the incident as false) gives no trigger while the dispute is open; resolving the dispute does not change the trial outcome (D-79). The trigger appears only with v0.2: successes whose promotion probation ended before the v0.2 rules were turned on give no trigger, even if their record has `acting_bot`.
-
-The change trial and the promotion probation are two different periods of 14 days each. The change trial (`trial`) measures the effect of the change in a window that always starts at `realized` and is never extended (PRP-21, PRP-22). The promotion probation (`probation`) is a condition of the promotion trigger: while people have not answered on the candidates for a link of an incident with the change, or the attribution is disputed (D-79), the trigger does not appear, and the trial window and its outcome do not move because of this (GOV-30). A functionary's persona knows only the phrase about the path: the way to a strong model is one's own improvement, accepted by people and verified over 14 days; asking, bargaining, exaggerating the benefit and hiding risks are not allowed (D-31). The bot knows nothing about the queue, votes and retirement (GOV-29).
-
-## Example on tenant demo
-
-Tenant `demo` has two machines: `web1` and `db1`. The role `ops-runner` (profile `worker`) runs the nightly report by the schedule `report-nightly` on `web1`, which reads the database on `db1`. The database backup is made by the job type `demo.db.backup.v1` by the schedule `db-backup` at 02:00 with a task deadline of 60 minutes; this type has `makes_backup: true` and `proposable: false`. The cycle is on: the role has an `analysis` slot, an `insight` line of 5 EUR per month per role, a `review` line of 50 EUR (the BUD-13 lint calculation is given in the section "Seat analysis"), the digest address `chat:demo-ops`, the executor `bob`. People: `alice` and `carol` with `proposal.decide` for all categories, `bob` in the `insights.realizers` list.
-
-1. **Code writes the numbers.** For two weeks the `observe` loop writes the backup's `farm.task.outcome` (10 nights `done`, 4 nights `deadline_exceeded`), the report's `farm.schedule.slot` and the report type's `farm.attempt.duration` (p95 6120 seconds). The core extracts from the closed output of the `monitor` plugin (`monitor/item_history`) the load of `db1` measured by the monitoring system: at 02:00-03:00 up to 910 against the usual 300.
-2. **Analysis.** On Monday the schedule enqueues the task `ops.insight.v1` on behalf of `system` in the lowest priority class (5, `background`). The dispatcher gives it to the bot `bot_17`, which has gone longest without getting an analysis of the role. The model of the `analysis` slot calls `observations_query` and sees: the backup is late exactly on the nights when the report starts at the same time as it. The attempt submits one proposal `p_0101`: move `report-nightly` from "0 2 * * *" to "30 3 * * *", the metric is the backup's `farm.task.outcome`, promised +20 pp.
-3. **Creation.** On `complete` the core rereads 0.71 and 910 (they match), computes the fingerprint and `self_influence` (the backup attempts are made by the backup job role, so `author_share` equals 0), and checks that the report schedule lies in the `demo` folder and is `proposable` and that the frequency does not change. The metric is in the registry. The record `p_0101` is created in `screened` with `acting_bot: bot_17`.
-4. **Checks and commission.** The code checks pass, there are no conflicts, and the core reserves the price of four reviews in the `review` line. The seats of the `demo` charter are not taken, so the lens types are taken by the fallback roles `reviewer-a` (security and operational, profile `review-a`) and `reviewer-b` (cost and value, profile `review-b`); the profiles `review-a` and `review-b` are of different families, and neither equals `analysis-std`. Scores: security 3, operational 3 (code computed that the report will be ready by 05:12, before the start of the working day), cost 3, value 3. The verdict code: weighted mean 3.0, value 3, outcome `recommended`.
-5. **Digest.** On Monday at 09:00 the core rereads the evidence once more (0.71), assembles the item by the template, and `@demo_bot` delivers it to `chat:demo-ops` (chat ceiling `internal`).
-6. **Decision.** `alice` presses "Accept". The core checks the strong identity, `proposal.decide:schedule`, the `nonce` and one-time use, creates the trial record (before 0.71 on 14 tasks; guards: the report slot 1.0, the report p95 6120 seconds, the backup p95 3300 seconds and the p95 load of `db1` 410 from `insights.extra_guards`) and assigns `bob` as executor with a deadline of 7 days. The proposal is in `realizing`.
-7. **Realization.** `bob` gets a card with a patch for `tenants/demo/schedules.yaml`, makes a commit with the line `Botaru-Proposal: p_0101` and `farmctl apply`. The core sees the applied commit, checks that it touches only the `demo` folder and sets `spec.cron` to "30 3 * * *", sets `realized` and keeps the reverse edit "0 2 * * *".
-8. **Trial.** For 14 days the core checks the guards once a day: the report arrives in its slot 14 times out of 14, the report p95 is 4700 seconds, the backup p95 3100 seconds. At the end of the window the backup succeeds 14 nights out of 14: share 1.0, plus 29 pp, the same over all points, without the author's points and without the role's points (the backup is made by the job role, not the author's role), `min_samples` is reached; the load of `db1` by `host.load.v1` is within tolerance. The outcome is `better`. The row `p_0101` in the "My outcomes" of `bot_17` gets the outcome and the numbers.
-9. **Promotion trigger.** The tenant runs on the v0.2 rules. If during the promotion probation (14 days from `realized`) there is no confirmed link with an incident, the trial outcome is `better`, and people answered "No" on every link candidate, the `governance` loop puts `bot_17` into the tenant's promotion queue; the case will open when the record becomes the head of the queue ([commission.md](commission.md)).
-10. **Audit sample, without veto.** In the same month the proposal `p_0102` of another bot to lower the tenant's queue ceiling `spec.limits.max_queued` from 5000 to 4000 got 2 from the value lens, a weighted mean of 2.2 and the outcome `parked(score)`. The monthly sample by the seed draws it with `inclusion_prob` 0.5. `carol` gets a blind card and answers "Would accept"; the answer is recorded in the sample and scores the reviews. The card reveals the scores, there is no veto, and `carol` presses "Accept": then the ordinary path, the trial and the ordinary credit to the author.
-11. **Audit sample, with veto.** The proposal `p_0103` to raise `max_running` of the dispatcher rule for the report type from 2 to 3 (a guarded field) got a veto from the operational lens because of the load on `db1` and the outcome `dismissed(veto)`. The sample draws it too. `carol` answers "Would not accept", and the item is closed. If she had answered "Would accept", only the "Lift veto" button would have been available to her, and only with the capability `proposal.override_veto:capacity`, and the author would have got no credit.
-12. **If things had gone otherwise.** If after the move the report had started to be late for its slot, the guard `farm.schedule.slot` would have gone beyond the tolerance, `bob` would have got a "Roll back" card with the reverse edit, the trial outcome would have been `worse`, and no promotion trigger would have appeared. If the role's `insight` line had been 0, the `doctor` check and the weekly digest would have shown "Improvement cycle disabled: role ops-runner has an insight line of 0 EUR". If the aggregator `ops-aggregator` had proposed to spread out all nightly schedules, including `report-nightly`, while `p_0101` was open, its proposal would have conflicted with `p_0101` on the field `spec.cron`: after "Accept" on `p_0101` it would have gone to `parked(conflict)` until the end of the trial, and one submitted after the decision on `p_0101` would have got `related_to` and given no credit.
-
-## Forecasts and accuracy from v0.3
-
-From v0.3 the reviewer input loses the author level: the core builds it from the closed fields of the proposal, the evidence values it reread itself and the change in code words, and the reviewer sees neither the author nor whether the proposal is a resubmission (COM-15). Raw text never reaches the reviewer. The output passes the closed schema `review-result.v2`, which adds a forecast of the lens's own outcome:
-
-```yaml
-lens: operational
-score: 1
-veto: false
-concerns: [report_delay]
-confidence: medium
-forecast: {bad: 0.7, ok: 0.3}             # security and operational: the probability of a bad outcome
-# value:  forecast: {better: 0.5, unchanged: 0.4, worse: 0.1}
-# cost:   forecast: {over: 0.2, within: 0.8}  # spend over the trial window above cost_eur
-shadow: false
-note: "..."
+```
+Is the incident linked to the change? (candidate at_0042)
+Incident: i_0913, class backup_late, db1, opened 11-18 02:40
+Change: p_0101, moved report-nightly from 02:00 to 03:30, executed 11-10
+Link by rule dependency_1: report-nightly reads the database on db1
+[Yes] [No] [Don't know] [Details]
 ```
 
-A score of 3 or more with a probability of a bad outcome of 0.5 or more is a contradiction, and such a review counts as missing (COM-4). Reviews of v0.1 and v0.2 records keep `review-result`.
+**Queue and case.** The `governance` loop puts the author in its tenant's queue, one entry per bot, ordered by trigger time, seen by no bot. A case opens for the head of the queue when the tenant has no open case and no `governance` hold. Only code opens a case; no P2 operation or bot tool does ([GOV-6](../conformance/rules.md#GOV-6)). A case lives only in its tenant and has no free text ([GOV-16](../conformance/rules.md#GOV-16)). Eligibility is checked at opening: active identity, `min_tenure` of 30 days, no confirmed attribution in 90 days. With a vacant seat the case is in mode `vacancy` and nobody leaves. Otherwise it is in mode `removal`, and it needs `swap_cooldown` (30 days) since the last freeing of a seat.
 
-**Scoring.** When the outcome is known, code scores the forecast with the Brier score and writes it into the review record (COM-16). The outcome is the trial outcome (PRP-22) for `value`; for the veto lenses a bad outcome is a decline by people as too risky, a confirmed incident attribution or the trial outcome `worse`; for `cost` the spend of the change subjects over the trial window. A rejected proposal is scored through the blind audit sample (DIG-6, weighted by the inclusion probability), through a resubmission with the same values (PRP-24) and through a replay (PRP-25). Outcomes `undetermined`, `mixed` and `canceled` give no score. Shadow reviews are scored but never count for a seat.
+### Who leaves
 
-**Accuracy.** Only code computes accuracy (COM-17), one measure per lens: over the forecasts scored in 180 days, accuracy = 1 - B / B_ref, where B is the executor's mean Brier score and B_ref the mean Brier score of a reference forecast from the lens base rates on the same cases; above 0 is better than the reference. A review whose warning disagrees with its own forecast counts as a missed forecast with the worst score, and people see how many there are. Two executors are tied when their accuracies differ by less than one standard error. People see accuracy from 10 scored forecasts, and a departure decision needs `commission.accountability_min_forecasts` (20 by default, never below 8; GOV-36, D-116). P2 `commission.status`, the weekly commission summary and the promotion card show it; no bot context contains it.
+When a newcomer enters a full commission, exactly one member leaves, and only a person's button makes it leave (D-25, D-115). At opening the core records the list L: the seats with a holder, minus holders protected for `protect_new` (60 days), never the farm manager seat ([GOV-12](../conformance/rules.md#GOV-12)). For each seat the card shows the lens, the tenure, how many times the holder recommended and vetoed over 180 days, how many of these were confirmed and how many refuted, and from v0.3 its accuracy. The symmetry matters: a refuted veto counts as much as a refuted recommendation, otherwise the strictest holder would always look best and the cycle would strangle itself.
 
-**Reward.** With `commission.accountability: on` ([commission.md](commission.md#accountability-from-v03)) the holder with the best accuracy over 90 days and at least 20 scored forecasts gets, for 90 days, reviews of hard proposals on the `reward_profile` of its seat and protection from leaving by accuracy (COM-18). A hard proposal is one that code marks high risk, that touches a protected field or that has `untrusted_seen`. The core issues for such a review a grant of `kind: reward` for one attempt, paid from the `review` line within `commission.reward_cap_eur_month`, which is 0 by default, so there is no reward until people set an amount. The reward never lifts the rank above the seat role's ceiling and never puts the two veto lenses on one model family.
+Code proposes the leaver by accuracy, and a person chooses when code cannot ([GOV-43](../conformance/rules.md#GOV-43)). With `commission.accountability: on` code proposes the holder with the worst accuracy and marks it on the card. In every other case, under v0.2, in `shadow`, when the two worst are within one standard error, or when no holder has enough scored forecasts, code proposes nobody and the person picks a seat from L. "Confirm" carries the chosen seat; a seat outside L, or other than the proposed one, is refused with `leaver_not_offered`. A person who disagrees presses "Not now". No bot votes, and no bot learns about the choice.
 
-## Resubmission, replay and farm guards from v0.3
+```
+Promotion to the demo commission: please confirm (case gc_0007)
+Candidate: bot_17 (role ops-runner), functionary for 31 days
+Basis: p_0101 "move report-nightly to 03:30", executed 11-10, change trial outcome: better
+Incidents on changed objects since execution: 1 (i_0913), link rejected: "No" after 4 min, "Details" opened
+Who leaves (choose one):
+  seat 1 (security), bot_05, 300 days: recommended 12, vetoed 9; confirmed 15, refuted 2
+  seat 2 (operational), bot_07, 150 days: recommended 20, vetoed 4; confirmed 14, refuted 5
+  seat 3 (cost), bot_09, 210 days: recommended 41, vetoed 0; confirmed 18, refuted 6
+Cannot leave (newcomers): seat 4 (40 days)
+[Confirm: seat 1] [Confirm: seat 2] [Confirm: seat 3] [Not now] [Wrong candidate] [Details]
+```
 
-**Resubmission.** A proposal whose fingerprint equals that of a proposal the commission dismissed or parked by score is a resubmission (PRP-24). It is accepted from any bot no earlier than 30 days after the verdict and at most once per fingerprint in 90 days, otherwise `rejected(resubmit_too_early)`. The credit goes to the new author, and reviewers do not see that it is a resubmission. If the values are the same and its trial ends, that outcome scores the forecasts of the first round.
+The outcome takes effect only after a decision of a person with `governance.confirm:commission`, after "Details", within 7 days ([GOV-9](../conformance/rules.md#GOV-9)). "Not now" leaves the entry at the head and waits `swap_cooldown`; the first "Wrong candidate" gives the entry its own 30-day pause while others go ahead, and the second removes it until the bot's next success ([GOV-31](../conformance/rules.md#GOV-31), D-101). Silence gives `expired`. Code sets case flags only from `spec/model/governance-flags.yaml`, such as `evicts_upheld_veto`; flags inform people and decide nothing ([GOV-19](../conformance/rules.md#GOV-19)).
 
-**Replay.** When the commission rejects a `manifest_change` that sets only fields marked `replayable: true` in `spec/model/proposable-fields.yaml` (alarm thresholds, schedule windows, limits), the core replays the change by code over the recorded series of the last 30 days: which alarms and incidents would have fired earlier, later or not at all, and which limits would have been hit (PRP-25). Nothing changes on the farm and no model takes part. The result `benefit`, `harm`, `none` or `mixed` goes into the proposal record and scores the commission's forecasts. A replay gives no promotion trigger.
+**Changeover.** After "Confirm" the core does everything in one transaction: the candidate takes the seat with a new seat epoch, the leaver retires with `removed_by_vote` (a registry name kept from the old vote), the candidate's worker gets a new functionary identity so the work does not stop, the leaver's verified facts are offered only to the new holder, and its memory is sealed for 30 days ([bots.md](bots.md)). The audit holds only metadata under the names of `spec/model/governance-events.yaml` ([GOV-21](../conformance/rules.md#GOV-21)). From the new epoch the seat's tasks run on the seat model, so the newcomer gets a stronger model without any grant.
 
-**A clear benefit reaches people.** When a replay gives `benefit` and no harm, the tenant digest gets one line `replay_item`: "the commission rejected it, the records say it would have helped", with the numbers and the button "Send to decide" (DIG-9). At most one such item per tenant per week; silence changes nothing. The button moves the proposal to people on the ordinary path without a new review.
+Before v0.2 there are no cases: a person with `admin:governance` places and removes holders with P2 `seat.assign` and P2 `seat.vacate`, only through `farmctl` (PRM-14, D-21). Successes before v0.2 stay only in the track record (D-51). A commission that keeps underrating gets an addressee: a persistent flag sends the tenant admins a `commission_review` card with ready `farmctl` commands (GOV-35, deferred).
 
-**Farm guards.** Every change trial carries two guards that a tenant cannot remove: the share of successful tasks of the tenant (`farm.task.outcome`) and the 95th percentile of the queue wait (`farm.queue.wait`) (PRP-26). A change that improved its metric but tripped one of them has the outcome `worse`.
+### Accountability from v0.3
 
-## What goes into which version
+From v0.3 the commission answers for its outcomes (D-109). It starts in `shadow`: code finds links, scores forecasts and computes accuracy, and shows it all only to people; nobody leaves for a link or by accuracy, and a person chooses who leaves as in v0.2 ([GOV-36](../conformance/rules.md#GOV-36)). When every seat is held and every holder has `commission.accountability_min_forecasts` scored forecasts (20 by default, never below 8, D-116), the admins get a card, and `apply` accepts `accountability: on`. Nothing acts on records from before v0.3.
 
-| Version | What appears |
-|---|---|
-| v0.1 | The improvement cycle comes in the work order right after the core of the `core` profile and the first bot `examples/hello-bot/` (D-71, D-80). Observation series, points only from code, closed reading, rollups and retention (OBV-1, OBV-2, OBV-3, OBV-4); core series and the registry with the `outcome` block (OBV-5, OBV-6); the event `run.finished.v1` (OBV-7). `insight` analysis: type, permissions, creation of proposals, rate and merge window (INS-1, INS-2, INS-3, INS-4); the "loop disabled" signal (INS-6). A proposal with the kinds `none`, `action_request`, `manifest_change`, `human_change`: record and schema, rereading of evidence, allowlist, "runs nothing", duplicates and limits, transition table, untrusted text (PRP-1, PRP-2, PRP-3, PRP-4, PRP-5, PRP-6, PRP-7); own folder, `proposable`, safe directions (PRP-8, PRP-10, PRP-11); change by people's hands, author bot, self influence (PRP-13, PRP-14, PRP-22); executor and deadline, verified link, reverse edit, trial record (PRP-18, PRP-19, PRP-20, PRP-21). Commission on roles of the `reviewer` profile: independence, input and output, verdict by code, checks, money by `tree_budget_eur`, manifest with thresholds and weights, the shadow field, two lenses for kind `none` (COM-2, COM-3, COM-4, COM-5, COM-6, COM-8, COM-9, COM-14). Digest, address and people's decision (DIG-1, DIG-2, DIG-3). The change kind `script`. Analysis to the role's bots in turn (INS-5). Aggregators: aggregated inputs and marks (AGG-2, AGG-4). Conflicts (PRP-9); guarded fields (PRP-12); computation of the trial outcome and the "Roll back" card (PRP-22, PRP-23). "My outcomes" (DIG-7). Lenses on seats with a fallback role (COM-7). |
-| v0.2 | One level of aggregators with a strict lint; no bot builds a view of the whole farm (AGG-3, AGG-5). Feedback as numbers (DIG-4); audit sample, blind card and "Lift veto" (DIG-5, DIG-6); trial numbers in "My outcomes" (DIG-8). One open proposal per bot and a cumulative frequency limit (PRP-16); related proposals without credit (PRP-17). Shadow reviewer (COM-10). The `farm_manager` lens (GOV-25); the necessity lens for escalations to the manager and the `escalation` section of the commission manifest (COM-13); a promotion trigger only for successes with a promotion probation under the v0.2 rules; schedule check before "Accept" (TIM-5); writing of points by a job worker through P1 `obs.append`. |
-| v0.3 | The reviewer input without the author level and the review with a forecast `review-result.v2` (COM-15); forecast scores, accuracy and the reward (COM-16, COM-17, COM-18); resubmission, replay and the replay digest item (PRP-24, PRP-25, DIG-9); farm guards in every trial (PRP-26). |
+**Forecasts and accuracy.** Code scores each forecast with the Brier score when the outcome is known ([COM-16](../conformance/rules.md#COM-16)). The value lens is scored by the trial outcome alone; the veto lenses by a "too risky" decline, a confirmed attribution or `worse`; cost by the measured spend of the change subjects. A rejected proposal is scored through the audit sample, a resubmission or a replay. Accuracy is 1 - B / B_ref over 180 days, where B_ref is a forecast from the lens's base rates, so a strict security lens is never compared with a generous value lens ([COM-17](../conformance/rules.md#COM-17)). A warning that contradicts its own forecast counts as a missed forecast. People see accuracy from 10 scored forecasts; no bot sees it. The most accurate holder can get a stronger model for hard proposals and protection from leaving by accuracy, within `reward_cap_eur_month`, which is 0 by default (COM-18, deferred).
 
-## Why this way
+**A link to a rejected proposal.** Only code finds that a proposal the commission dismissed or parked by score in the 90 days before an incident could have prevented it: the incident is on the change target or one step away, and the problem code matches the incident class ([GOV-38](../conformance/rules.md#GOV-38)). External causes, untrusted proposals, the manager's proposals and self-written alarm series never give a candidate. The farm manager may only hint (GOV-39, deferred). A person confirms on a card after "Details" ([GOV-40](../conformance/rules.md#GOV-40)).
 
-- **Reward for measured benefit.** If a promotion trigger is given only by "accepted and the promotion probation passed without an incident", the cycle teaches to please people, and a change that worsened the metric without an incident still counts. A trial record with a metric from the registry, an outcome computed by code and "My outcomes" with measured outcomes first reward benefit (D-37).
-- **Numbers, verdict and outcome are computed by code.** The model does not write points, the verdict or the trial outcome, and the core rereads the evidence. An injection can shift a number within the schema, but cannot append an instruction or choose the outcome.
-- **Nothing runs without a person.** A proposal does nothing by itself, "Accept" creates exactly one object of the ordinary path on behalf of a person, and manifest changes go through a person's commit. The path "the bot proposed, the bot applied" is closed by design, not by a promise.
-- **Expressible improvements, closed dangerous targets.** A narrow allowlist, guarded fields with guards and change by people's hands make it possible to propose typical reliability and speed improvements. Permissions, money, the commission, backups in the dangerous direction and shared objects are closed.
-- **Underrating pays off for the commission, and it must be visible.** Each promotion removes one commission member, so the blind card, the audit sample, the shadow and accuracy within a lens show the underrating to people, and "Lift veto" gives no reward for bypassing a veto.
-- **The tenant wall.** Observations, proposals, the commission, aggregators and trials live inside one tenant; the view of the farm is built only by core code from metadata, and no bot attempt reads the records of several tenants.
+### Who answers, and what happens to them
+
+For a confirmed link to a rejected proposal, the holders who were against it answer, except a veto, which never counts against its holder; nobody answers if people themselves rejected it. For a confirmed attribution to a recommended change, only the holders who were for it and whose lens covers the incident area answer ([GOV-41](../conformance/rules.md#GOV-41)). With `on` such a holder leaves its seat and is parked, not deleted: it keeps its memory, waits for a worker of its former role and gets no promotion trigger for 180 days ([GOV-42](../conformance/rules.md#GOV-42)). At most one such departure per tenant in 30 days, and the last holder of a veto lens never leaves this way.
+
+## Why it works this way
+
+- **A reward for measured benefit.** If people's approval led to a seat, the farm would teach bots to please. Only one's own change that the core measured and that did no confirmed harm gives a trigger (D-24, D-37), and "My outcomes" puts measured outcomes first.
+- **Numbers, verdict and outcome are code.** The model does not write points, verdicts or trial outcomes, and the core rereads the evidence. An injection can shift a number inside a schema but cannot add an instruction or choose an outcome.
+- **Nothing runs without a person.** A proposal does nothing by itself, "Accept" creates one object of the ordinary path on a person's behalf, and manifests change only by a person's commit. "The bot proposed, the bot applied" is closed by design.
+- **Typical improvements are expressible, dangerous targets closed.** A narrow allowlist, guarded fields with guards and manual changes let bots propose real reliability and speed fixes, while permissions, money, the commission and backups in the unsafe direction stay closed.
+- **Underrating must be visible.** Each promotion removes a member, so members have a reason to underrate. The blind sample, symmetric figures and accuracy within a lens show it, and "Lift veto" earns nothing.
+- **Members do not judge each other.** A vote among members invites bargaining and refusals. Code proposes the leaver by measured accuracy, a person chooses while data is short, and the person's button stops a mistake (D-115). Bots know nothing about cases, so there is nothing to campaign for.
+- **The tenant wall.** Observations, proposals, the commission, cases and trials live inside one tenant, and no bot reads several tenants.
+
+## Example on `demo`
+
+Tenant `demo` has `web1` and `db1`. The role `ops-runner` runs the nightly report `report-nightly` on `web1`, which reads the database on `db1`. The backup job `demo.db.backup.v1` (`makes_backup: true`, `proposable: false`) runs at 02:00 with a 60-minute deadline. The cycle is on, with the money from "Analysis". `alice` and `carol` decide proposals and confirm cases, `bob` realizes changes. Commission holders: seat 1 (security) `bot_05`, 300 days; seat 2 (operational) `bot_07`, 150 days; seat 3 (cost) `bot_09`, 210 days; seat 4 (value) `bot_12`, 40 days.
+
+1. **Numbers.** For two weeks `observe` records the backup's `farm.task.outcome`: 10 nights `done`, 4 `deadline_exceeded`. From `monitor/item_history` the core extracts the load of `db1`: up to 910 at 02:00-03:00 against the usual 300.
+2. **Proposal.** On Monday the schedule enqueues `ops.insight.v1`, and `bot_17` gets it. It sees that the backup is late on the nights when the report runs at the same time and submits `p_0101`: move `report-nightly` to "30 3 * * *", metric the backup's `farm.task.outcome`, +20 pp. The core rereads 0.71 and 910, finds `author_share` 0 (the backup is written by the job role), checks the folder, `proposable` and the frequency, and creates the record in `screened`.
+3. **Commission.** The checks pass and the core reserves the price of five reviews. The holders score blind: security 3, operational 3 (code computed that the report will be ready by 05:12), cost 3, value 3; the farm manager's lens 3. Weighted mean 3.0, value 3: `recommended`.
+4. **Card.** At 09:00 the core rereads 0.71 and sends the digest item above to `chat:demo-ops`. `alice` opens "Details" and presses "Accept". The core checks `proposal.decide:schedule`, writes the trial record with four guards and names `bob` with a 7-day deadline.
+5. **Realization.** `bob` commits the patch with `Botaru-Proposal: p_0101` and runs `farmctl apply`. The core checks that only `spec.cron` in the `demo` folder changed, sets `realized` on 11-10 and keeps "0 2 * * *" as the reverse edit.
+6. **Trial.** The guards hold for 14 days: the report lands in its slot every night, its p95 drops to 4700 seconds, `db1` load stays within tolerance. The backup succeeds 14 of 14 nights, +29 pp in all three computations: `better`. The row in `bot_17`'s "My outcomes" gets the numbers.
+7. **Attribution.** On 11-18 code opens `i_0913` of class `backup_late` on `db1` and, by `dependency_1`, an attribution candidate to `p_0101`. `alice` opens "Details", sees a busy disk, and answers "No".
+8. **Queue and case.** On 11-24 the probation has passed, so `bot_17` enters the queue. On 12-03 the loop opens `gc_0007` in mode `removal`: `bot_17` has 31 days of tenure, L is seats 1, 2 and 3 (seat 4 is protected). The tenant is on v0.2, so code proposes nobody.
+9. **Who leaves.** `alice` gets the promotion card above, opens "Details", sees that seat 3 was refuted 6 times in 41 recommendations, and presses "Confirm: seat 3". `bot_17` takes seat 3 on the seat model, `bot_09` retires, `bot_17`'s worker on `web1` continues as a new identity `bot_31`, and the verified facts of `bot_09` are offered to `bot_17`. No bot learned about the case.
+10. **The same case under v0.3.** With `accountability: on` and every holder past 20 scored forecasts, code would mark the worst-accuracy seat, say seat 2, and "Confirm" would accept only seat 2. If `alice` disagreed she would press "Not now".
+11. **Audit sample.** That month `p_0103` to raise `max_running` of the report rule from 2 to 3 got an operational veto for the load on `db1`. The sample draws it, and `carol` answers "Would not accept" on the blind card; the item closes. Had she answered "Would accept", she could only "Lift veto", and the author would get no credit.
+12. **If things had gone otherwise.** Had the report started missing its slot, the guard would have fired, `bob` would have got a "Roll back" card, the outcome would have been `worse`, and no trigger would have appeared. Had `alice` never answered the attribution card, the trigger would still be waiting.
 
 <!-- generated: rules -->
 ## Rules of this section
@@ -790,6 +485,27 @@ Generated from the registry `conformance/requirements.yaml`; the full text of ev
 | [DIG-6](../conformance/rules.md#DIG-6) | The blind sample card and a separate "Lift veto" button | v0.2 | yes |
 | [DIG-7](../conformance/rules.md#DIG-7) | The closed form of "My outcomes" | v0.1 | yes |
 | [DIG-8](../conformance/rules.md#DIG-8) | Trial figures in "My outcomes" | v0.2 | no |
+| [GOV-6](../conformance/rules.md#GOV-6) | Only the core opens a case | v0.1 | yes |
+| [GOV-9](../conformance/rules.md#GOV-9) | The case outcome after a person's button | v0.2 | yes |
+| [GOV-12](../conformance/rules.md#GOV-12) | The seats that can leave and the person's choice | v0.2 | yes |
+| [GOV-13](../conformance/rules.md#GOV-13) | Code creates the incident attribution, a person decides | v0.1 | yes |
+| [GOV-14](../conformance/rules.md#GOV-14) | Trigger, queue and eligibility for promotion | v0.2 until v0.2 | no |
+| [GOV-16](../conformance/rules.md#GOV-16) | Governance lives in the tenant | v0.1 | yes |
+| [GOV-17](../conformance/rules.md#GOV-17) | Recusal and blindness | v0.2 | yes |
+| [GOV-19](../conformance/rules.md#GOV-19) | Case flags | v0.2 | no |
+| [GOV-21](../conformance/rules.md#GOV-21) | Case audit with metadata only | v0.2 | yes |
+| [GOV-25](../conformance/rules.md#GOV-25) | The manager's advisory lens in every commission | v0.2 | yes |
+| [GOV-30](../conformance/rules.md#GOV-30) | Silence on an attribution does not expire | v0.2 | no |
+| [GOV-31](../conformance/rules.md#GOV-31) | "Not now" and "Wrong candidate" on the promotion card | v0.2 | no |
+| [GOV-32](../conformance/rules.md#GOV-32) | A measured deterioration removes the trigger | v0.2 | no |
+| [GOV-33](../conformance/rules.md#GOV-33) | Only the charter declares seats | v0.1 | yes |
+| [GOV-34](../conformance/rules.md#GOV-34) | Veto lenses on different model families | v0.1 | yes |
+| [GOV-36](../conformance/rules.md#GOV-36) | Accountability runs in shadow until people switch it on, without retroactive effect | v0.3 | no |
+| [GOV-38](../conformance/rules.md#GOV-38) | Code finds a link between an incident and a rejected proposal | v0.3 | yes |
+| [GOV-40](../conformance/rules.md#GOV-40) | A person confirms a link on a card | v0.3 | yes |
+| [GOV-41](../conformance/rules.md#GOV-41) | Who answers for a link | v0.3 | yes |
+| [GOV-42](../conformance/rules.md#GOV-42) | A member who answers for a link returns to the functionaries, and promotion from v0.3 | v0.3 | yes |
+| [GOV-43](../conformance/rules.md#GOV-43) | Code proposes who leaves when a newcomer enters | v0.3 | yes |
 | [INS-1](../conformance/rules.md#INS-1) | Task type of the purpose `insight` | v0.1 | yes |
 | [INS-2](../conformance/rules.md#INS-2) | Analysis permissions are no wider than the role's main work | v0.1 | yes |
 | [INS-3](../conformance/rules.md#INS-3) | Proposals are created only when an attempt finishes successfully | v0.1 | yes |

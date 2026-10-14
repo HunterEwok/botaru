@@ -6,7 +6,7 @@ description: >-
   one audit record under a name from this list, with metadata only (AUD-2): ids,
   seat ids, reason codes, numbers, numbers and hashes, never free text. Before the
   case is decided no bot sees these records (GOV-29).
-source: docs/commission.md
+source: docs/improvements.md
 entries:
   - id: governance.enabled
     since: v0.2

@@ -32,13 +32,13 @@ This document collects the objects of the skeleton and the relations between the
 | channel, sink | git | tenant | v0.1 | [tasks-and-delivery.md](../tasks-and-delivery.md) |
 | bot group (`BotGroup`), dispatch rule | git | tenant | v0.1 (D-71) | [messaging.md](../messaging.md), [coordination.md](../coordination.md) |
 | observation series (`ObservationSeries`) | git | tenant | v0.1 (D-71) | [improvements.md](../improvements.md) |
-| charter (`governance.yaml`) | git | tenant | v0.1 | [commission.md](../commission.md) |
+| charter (`governance.yaml`) | git | tenant | v0.1 | [improvements.md](../improvements.md) |
 | knowledge corpus | git, catalog resource | tenant | v0.2 | [capabilities.md](../capabilities.md) |
 | principal (`Principal`), identity, membership, invitation | command | tenant | v0.1 | [permissions.md](../permissions.md) |
 | chat binding (`ChatBinding`; the channel secret for P2 is held by the driver, not by the binding, D-87 (3)) | operator command P2 `chat.bind` | tenant | v0.1 | [permissions.md](../permissions.md) |
 | worker | command P2 `worker.enroll` | tenant | v0.1 | [worker.md](../../spec/lifecycles/worker.md) |
 | hold (`Hold`) | command P2 `hold.set`, auto-stop, control operation | tenant of the scope; holds of the scopes `farm` and `seat` in `farm` | v0.1 | [operations.md](../operations.md) |
-| commission seat | charter; the core writes the holder | tenant of the commission | v0.1 | [commission.md](../commission.md) |
+| commission seat | charter; the core writes the holder | tenant of the commission | v0.1 | [improvements.md](../improvements.md) |
 | farm manager seat | charter of `farm`; the core writes the holder | `farm` | v0.1 | [farm-manager.md](../farm-manager.md) |
 | activity (`Activity`) | core, from a channel | tenant | v0.1 | [tasks-and-delivery.md](../tasks-and-delivery.md) |
 | task, attempt, lease, tool call, delivery | core | tenant | v0.1 | [tasks-and-delivery.md](../tasks-and-delivery.md) |
@@ -56,8 +56,8 @@ This document collects the objects of the skeleton and the relations between the
 | campaign and its item | core | tenant | v0.1 | [coordination.md](../coordination.md) |
 | script run and script step | core | tenant | v0.1 | [scripts-and-translator.md](../scripts-and-translator.md) |
 | incident, control operation, finding | core | tenant; a farm incident in `farm` | v0.1 | [farm-manager.md](../farm-manager.md) |
-| attribution of an incident to a change | core or human; a human decides; after the incident is dismissed as false it becomes disputed (`disputed`, D-79) | tenant | v0.2 (ban for bots since v0.1) | [commission.md](../commission.md) |
-| governance case, queue entry | core | tenant of the commission | v0.2 | [commission.md](../commission.md) |
+| attribution of an incident to a change | core or human; a human decides; after the incident is dismissed as false it becomes disputed (`disputed`, D-79) | tenant | v0.2 (ban for bots since v0.1) | [improvements.md](../improvements.md) |
+| governance case, queue entry | core | tenant of the commission | v0.2 | [improvements.md](../improvements.md) |
 | model grant (`ModelGrant`), escalation (`Escalation`) | core | tenant | v0.2 | [farm-manager.md](../farm-manager.md) |
 
 ## Diagram of the main relations

@@ -1,4 +1,4 @@
-# Promotion queue, case opening and eligibility (GOV-14). The demo commission of docs/commission.md; seat 4 is protected
+# Promotion queue, case opening and eligibility (GOV-14). The demo commission of docs/improvements.md; seat 4 is protected
 # by protect_new, so L is seats 1-3.
 id: gov-fx-20
 rules: [GOV-14]

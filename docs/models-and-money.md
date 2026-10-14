@@ -90,7 +90,7 @@ spec:
 |---|---|
 | `provider` | provider binding; the provider must be in the tenant's `providers_allowed` and in its `privacy.subprocessors` (SEC-8) |
 | `model` | exact model name with version; a profile with an alias without a version does not pass `apply` (GW-7) |
-| `family` | model family from `model-families.yaml`; lenses with a veto in a production tenant have profiles of different families, and a match is the `apply` error `veto_lenses_same_family` (GOV-34, `docs/commission.md`) |
+| `family` | model family from `model-families.yaml`; lenses with a veto in a production tenant have profiles of different families, and a match is the `apply` error `veto_lenses_same_family` (GOV-34, `docs/improvements.md`) |
 | `rank` | rank 1-4, a rough measure of strength and price; GOV-3 checks the role's rank ceiling |
 | `pool` | rate limit pool at the provider; models of one family usually share a pool (GW-10, GW-11) |
 | `fallback`, `fallback_on` | fallback profiles and the reasons for which they may be used (GW-5) |

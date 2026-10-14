@@ -3435,7 +3435,7 @@
   profile: governance
   decisions: [D-21, D-33, D-80]
   fixtures: []
-  doc: docs/commission.md
+  doc: docs/improvements.md
 
 - id: GOV-7
   title: Ballot
@@ -3484,7 +3484,7 @@
   profile: governance
   decisions: [D-27, D-28, D-115]
   fixtures: [adapter:channel/promotion-card-from-record, blackbox:channel/promotion-confirm-checks]
-  doc: docs/commission.md
+  doc: docs/improvements.md
 
 - id: GOV-10
   title: Free governance text
@@ -3532,7 +3532,7 @@
   profile: governance
   decisions: [D-25, D-26, D-115]
   fixtures: [gov-mem-01]
-  doc: docs/commission.md
+  doc: docs/improvements.md
 
 - id: GOV-13
   title: Code creates the incident attribution, a person decides
@@ -3577,7 +3577,7 @@
   profile: governance
   decisions: [D-24, D-33, D-57, D-61, D-64, D-69, D-79, D-80]
   fixtures: [gov-att-01, gov-att-02, gov-att-05]
-  doc: docs/commission.md
+  doc: docs/improvements.md
 
 - id: GOV-14
   title: Trigger, queue and eligibility for promotion
@@ -3633,7 +3633,7 @@
   profile: governance
   decisions: [D-22, D-24, D-26, D-37, D-51, D-57, D-79, D-101, D-115]
   fixtures: [gov-fx-16, gov-fx-20, gov-fx-23, gov-fx-30]
-  doc: docs/commission.md
+  doc: docs/improvements.md
 
 - id: GOV-15
   title: Money and priority of a case
@@ -3661,7 +3661,7 @@
   profile: governance
   decisions: [D-23, D-30, D-114]
   fixtures: [gov-fx-10]
-  doc: docs/commission.md
+  doc: docs/improvements.md
 
 - id: GOV-17
   title: Recusal and blindness
@@ -3678,7 +3678,7 @@
   profile: governance
   decisions: [D-29]
   fixtures: [gov-fx-17]
-  doc: docs/commission.md
+  doc: docs/improvements.md
 
 - id: GOV-18
   title: One promotion trigger
@@ -3704,7 +3704,7 @@
   profile: governance
   decisions: [D-25, D-115]
   fixtures: [gov-fx-29]
-  doc: docs/commission.md
+  doc: docs/improvements.md
 
 - id: GOV-20
   title: Audit sample of rejected proposals
@@ -3732,7 +3732,7 @@
   profile: governance
   decisions: [D-115]
   fixtures: [blackbox:governance/case-audit-metadata]
-  doc: docs/commission.md
+  doc: docs/improvements.md
 
 - id: GOV-22
   title: Stopping the manager seat on an incident
@@ -3817,7 +3817,7 @@
   profile: governance
   decisions: [D-29, D-77, D-114, D-115]
   fixtures: [gov-fm-01, gov-fm-02, gov-fx-12]
-  doc: docs/commission.md
+  doc: docs/improvements.md
 
 - id: GOV-26
   title: Candidate speech
@@ -3917,7 +3917,7 @@
   profile: governance
   decisions: [D-24, D-57, D-79]
   fixtures: [blackbox:governance/attribution-silence, blackbox:governance/attribution-reminders]
-  doc: docs/commission.md
+  doc: docs/improvements.md
 
 - id: GOV-31
   title: '"Not now" and "Wrong candidate" on the promotion card'
@@ -3940,7 +3940,7 @@
   profile: governance
   decisions: [D-27, D-101, D-115]
   fixtures: [gov-fx-23]
-  doc: docs/commission.md
+  doc: docs/improvements.md
 
 - id: GOV-32
   title: A measured deterioration removes the trigger
@@ -3960,7 +3960,7 @@
   profile: governance
   decisions: [D-37, D-81]
   fixtures: [gov-fx-21]
-  doc: docs/commission.md
+  doc: docs/improvements.md
 
 - id: GOV-33
   title: Only the charter declares seats
@@ -4001,7 +4001,7 @@
   profile: governance
   decisions: [D-23, D-26, D-77, D-114, D-115]
   fixtures: [gov-fx-26]
-  doc: docs/commission.md
+  doc: docs/improvements.md
 
 - id: GOV-34
   title: Veto lenses on different model families
@@ -4018,7 +4018,7 @@
   profile: governance
   decisions: []
   fixtures: [gov-fx-28]
-  doc: docs/commission.md
+  doc: docs/improvements.md
 
 - id: GOV-35
   title: Locked commission
@@ -4046,7 +4046,7 @@
   profile: governance
   decisions: [D-101]
   fixtures: [gov-fx-27]
-  doc: docs/commission.md
+  doc: docs/improvements.md
 
 - id: GOV-36
   title: Accountability runs in shadow until people switch it on, without retroactive effect
@@ -4081,7 +4081,7 @@
   profile: governance
   decisions: [D-98, D-109, D-116]
   fixtures: [blackbox:governance/accountability-shadow, blackbox:governance/accountability-ready]
-  doc: docs/commission.md
+  doc: docs/improvements.md
 
 - id: GOV-37
   title: No retroactive effect
@@ -4117,7 +4117,7 @@
   profile: governance
   decisions: [D-24, D-109]
   fixtures: [blackbox:governance/rejection-link-candidate, blackbox:governance/rejection-link-exclusions]
-  doc: docs/commission.md
+  doc: docs/improvements.md
 
 - id: GOV-39
   title: The farm manager may only hint at a link
@@ -4142,7 +4142,7 @@
   profile: governance
   decisions: [D-109]
   fixtures: [blackbox:governance/manager-hint]
-  doc: docs/commission.md
+  doc: docs/improvements.md
 
 - id: GOV-40
   title: A person confirms a link on a card
@@ -4168,7 +4168,7 @@
   profile: governance
   decisions: [D-27, D-79, D-109]
   fixtures: [blackbox:governance/rejection-link-card]
-  doc: docs/commission.md
+  doc: docs/improvements.md
 
 - id: GOV-41
   title: Who answers for a link
@@ -4197,7 +4197,7 @@
   profile: governance
   decisions: [D-109]
   fixtures: [blackbox:governance/against-and-for]
-  doc: docs/commission.md
+  doc: docs/improvements.md
 
 - id: GOV-42
   title: "A member who answers for a link returns to the functionaries, and promotion from v0.3"
@@ -4234,7 +4234,7 @@
   profile: governance
   decisions: [D-24, D-26, D-27, D-28, D-109]
   fixtures: [blackbox:governance/unseat-park, blackbox:governance/unseat-pace, blackbox:governance/unseat-false-alarm, blackbox:governance/cooldown-after-unseat]
-  doc: docs/commission.md
+  doc: docs/improvements.md
 
 - id: GOV-43
   title: Code proposes who leaves when a newcomer enters
@@ -4260,7 +4260,7 @@
   profile: governance
   decisions: [D-25, D-109, D-115, D-116]
   fixtures: [blackbox:governance/accuracy-leaver]
-  doc: docs/commission.md
+  doc: docs/improvements.md
 
 - id: GOV-44
   title: "Trigger, queue and eligibility for promotion from v0.3"

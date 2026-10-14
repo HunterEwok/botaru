@@ -276,7 +276,7 @@ The documents of the farm parts walk through their mechanisms on the same tenant
 | [docs/messaging.md](../docs/messaging.md), [docs/coordination.md](../docs/coordination.md) | the bot group `science-pool`, bot messages, a quality control campaign |
 | [docs/scripts-and-translator.md](../docs/scripts-and-translator.md) | a translator script draft, the script confirmation card and the steps |
 | [docs/improvements.md](../docs/improvements.md) | a proposal to move the nightly report: analysis, commission, a trial with the outcome `better`, audit sample items |
-| [docs/bots.md](../docs/bots.md), [docs/commission.md](../docs/commission.md) | the identity `bot_17` from enrollment to a commission seat, a case with voting rounds |
+| [docs/bots.md](../docs/bots.md), [docs/improvements.md](../docs/improvements.md) | the identity `bot_17` from enrollment to a commission seat, a case with voting rounds |
 | [docs/farm-manager.md](../docs/farm-manager.md) | incidents `i-311` and `i-318`: the manager seat, holds and cards to people |
 | [docs/privacy.md](../docs/privacy.md), [docs/operations.md](../docs/operations.md) | the privacy block, `/mydata`, an erasure request, a plugin hold |
 

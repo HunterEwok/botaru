@@ -6,7 +6,7 @@ description: >-
   (button caption), effect (what the governance loop does), modes (in which case
   modes the code is allowed: removal, vacancy). "Not now" is also the answer of a
   person who disagrees with the leaver that code proposed (GOV-43).
-source: docs/commission.md
+source: docs/improvements.md
 entries:
   - id: not_now
     since: v0.2
