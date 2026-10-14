@@ -33,7 +33,31 @@
     },
     "stops_manager": {
       "type": "boolean",
-      "description": "Stops the seat; only for a class whose alarm is built from series with dataorigin: code (GOV-28)."
+      "description": "Stops the seat; only for a class whose alarm is built from series with dataorigin: code (GOV-28). Not used from v0.3: a v0.3 core reads it as manager_accountable: true and warns at apply with stops_manager_unused (MGR-55)."
+    },
+    "manager_accountable": {
+      "type": "boolean",
+      "default": false,
+      "description": "From v0.3: an incident of the class can be preventable by the farm manager (GOV-47, MGR-44, MGR-45); only for a class whose alarm is built from series with dataorigin: code (GOV-48, MGR-55)."
+    },
+    "area": {
+      "enum": [
+        "security",
+        "operational",
+        "cost"
+      ],
+      "description": "From v0.3: which lenses answer for a recommended change linked to an incident of the class, by the accountable_for of spec/model/lenses.yaml (GOV-41, MGR-55)."
+    },
+    "problem_codes": {
+      "type": "array",
+      "maxItems": 20,
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "pattern": "^[a-z][a-z0-9_]*$",
+        "maxLength": 64
+      },
+      "description": "From v0.3: proposal problem codes that could prevent an incident of the class; code links a rejected proposal only by these codes (GOV-38, MGR-55)."
     },
     "inspect": {
       "type": "boolean",

@@ -1,0 +1,28 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:botaru:schema:link-hint:1",
+  "title": "link_hint: request",
+  "description": "From v0.3: a decision attempt of the farm manager seat hints that a rejected proposal could have prevented an incident. The hint creates nothing: people with governance.attribute see it marked \"manager's hint, not checked\", and only a person creates a candidate through P2 attribution.create (GOV-39). At most 3 hints per tenant per week. Refusals: own_proposal, manager_restricted.",
+  "x-botaru-direction": "input",
+  "x-botaru-version": "v0.3",
+  "x-botaru-rules": [
+    "GOV-39",
+    "MGR-47"
+  ],
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "incident",
+    "proposal"
+  ],
+  "properties": {
+    "incident": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/object_id",
+      "description": "An incident of the attempt's tenant."
+    },
+    "proposal": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/object_id",
+      "description": "A proposal of the same tenant that the commission rejected."
+    }
+  }
+}

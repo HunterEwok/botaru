@@ -1,5 +1,5 @@
 registry: reasons
-version: 5
+version: 6
 description: 'Closed registry of reasons: end of an attempt, refusals at enqueue and at a call, waiting, outcomes of calls,
   approvals and deliveries, and also codes of other parts of the farm. A worker in P1 `fail` passes only a code from here; there is no free
   reason text in the records. Record fields: `meaning` (what it means); `spends_attempt` (whether it spends an attempt: true,
@@ -1528,3 +1528,56 @@ entries:
   retry: null
   outcome: canceled
   rules: [GOV-8]
+- id: accountability_not_ready
+  since: v0.3
+  meaning: 'Lint `apply`: the charter sets `commission.accountability: on` while a commission seat has no holder or a holder has
+    fewer than 20 scored forecasts.'
+  spends_attempt: null
+  retry: null
+  outcome: apply_error
+  rules: [GOV-36]
+- id: own_proposal
+  since: v0.3
+  meaning: The farm manager hinted at a link to a proposal whose author is the seat holder; the hint is refused.
+  spends_attempt: null
+  retry: null
+  outcome: rejected
+  rules: [GOV-39]
+- id: manager_restricted
+  since: v0.3
+  meaning: The farm manager seat is in restricted mode in the tenant after a preventable incident; only reading and notices are
+    allowed. It does not count for the safeguard.
+  spends_attempt: null
+  retry: null
+  outcome: rejected
+  rules: [MGR-47]
+- id: resubmit_too_early
+  since: v0.3
+  meaning: A resubmission of a rejected proposal earlier than 30 days after the verdict, or a second one for the same fingerprint
+    within 90 days.
+  spends_attempt: null
+  retry: null
+  outcome: rejected
+  rules: [PRP-24]
+- id: translator_suspended
+  since: v0.3
+  meaning: The translator role of the tenant is paused after three confirmed script links in 90 days; drafts with actions or
+    service control are refused, read-only drafts are accepted.
+  spends_attempt: null
+  retry: null
+  outcome: rejected
+  rules: [TRN-9]
+- id: stops_manager_unused
+  since: v0.3
+  meaning: 'Warning of `apply`: an incident class sets `stops_manager`, which a v0.3 core reads as `manager_accountable: true`.'
+  spends_attempt: null
+  retry: null
+  outcome: mark
+  rules: [MGR-55]
+- id: incident_stop_unused
+  since: v0.3
+  meaning: 'Warning of `apply`: the farm charter sets `farm_manager.incident_stop`, which a v0.3 core does not use.'
+  spends_attempt: null
+  retry: null
+  outcome: mark
+  rules: [MGR-55]

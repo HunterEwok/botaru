@@ -1,0 +1,65 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:botaru:schema:attention-notice:1",
+  "title": "attention_notice: request",
+  "description": "From v0.3: the only way a decision attempt of the farm manager seat reaches people. The core checks every field by code and builds the notice manager_attention; code chooses the recipients (MGR-52). There is no free text, command or link.",
+  "x-botaru-direction": "input",
+  "x-botaru-version": "v0.3",
+  "x-botaru-rules": [
+    "MGR-52"
+  ],
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "sees",
+    "object",
+    "threat"
+  ],
+  "properties": {
+    "sees": {
+      "enum": [
+        "disk_growth",
+        "queue_growth",
+        "failures_repeat",
+        "spend_growth",
+        "monitor_problem"
+      ],
+      "x-botaru-registry": "manager-attention",
+      "x-botaru-registry-kind": "sees",
+      "description": "What the manager sees."
+    },
+    "object": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/object_id",
+      "description": "An object id from the tenant catalog."
+    },
+    "threat": {
+      "enum": [
+        "disk_full_soon",
+        "deadline_miss",
+        "budget_exhausted",
+        "service_down"
+      ],
+      "x-botaru-registry": "manager-attention",
+      "x-botaru-registry-kind": "threat",
+      "description": "What it threatens."
+    },
+    "proposal": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "What the manager proposes: an operation code, or the id of a card or proposal that code issued.",
+      "properties": {
+        "op": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_]*$",
+          "maxLength": 64,
+          "description": "Operation code."
+        },
+        "ref": {
+          "$ref": "urn:botaru:schema:common:1#/$defs/object_id",
+          "description": "A card or proposal id."
+        }
+      },
+      "maxProperties": 1
+    }
+  }
+}

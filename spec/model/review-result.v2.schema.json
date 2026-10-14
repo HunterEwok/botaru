@@ -1,0 +1,282 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:botaru:schema:review-result:2",
+  "title": "Reviewer output from v0.3 (review-result.v2)",
+  "description": "Output of a lens review task from v0.3 (COM-15): review-result with a mandatory forecast of the lens's own outcome (COM-16). The probabilities of a forecast sum to 1; code checks the sum and the contradiction rule (a score of 3 or more with a probability of a bad outcome of 0.5 or more makes the review invalid, COM-4). Reviews of v0.1 and v0.2 records keep review-result (urn:botaru:schema:review-result:1). The reviewer note is untrusted; the verdict code does not read it.",
+  "x-botaru-direction": "input",
+  "x-botaru-version": "v0.3",
+  "x-botaru-rules": [
+    "COM-15",
+    "COM-16",
+    "COM-4",
+    "COM-9"
+  ],
+  "oneOf": [
+    {
+      "type": "object",
+      "description": "Lens with a veto.",
+      "additionalProperties": false,
+      "required": [
+        "lens",
+        "score",
+        "confidence",
+        "forecast"
+      ],
+      "properties": {
+        "lens": {
+          "description": "Proposal lens from spec/model/lenses.yaml.",
+          "enum": [
+            "security",
+            "operational"
+          ],
+          "x-botaru-registry": "lenses"
+        },
+        "score": {
+          "type": "integer",
+          "description": "Score 0-4.",
+          "minimum": 0,
+          "maximum": 4
+        },
+        "veto": {
+          "type": "boolean",
+          "default": false,
+          "description": "Veto; only for lenses with a veto (security, operational)."
+        },
+        "concerns": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "description": "Concern code from a closed list, for example report_delay.",
+            "pattern": "^[a-z][a-z0-9_]*$",
+            "maxLength": 64
+          },
+          "maxItems": 5,
+          "description": "Up to 5 concern codes.",
+          "uniqueItems": true
+        },
+        "confidence": {
+          "enum": [
+            "low",
+            "medium",
+            "high"
+          ],
+          "description": "Reviewer confidence."
+        },
+        "forecast": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "bad",
+            "ok"
+          ],
+          "description": "Forecast of a veto lens: the probability of a bad outcome (people declined as too risky, a confirmed incident attribution or the trial outcome worse) and of its absence.",
+          "properties": {
+            "bad": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1,
+              "multipleOf": 0.1,
+              "description": "Probability of the outcome bad, step 0.1."
+            },
+            "ok": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1,
+              "multipleOf": 0.1,
+              "description": "Probability of the outcome ok, step 0.1."
+            }
+          }
+        },
+        "shadow": {
+          "type": "boolean",
+          "default": false,
+          "description": "Shadow review (COM-9, COM-10)."
+        },
+        "note": {
+          "type": "string",
+          "maxLength": 500,
+          "description": "Reviewer note, untrusted; shown to people only as a marked block in \"Details\"."
+        }
+      }
+    },
+    {
+      "type": "object",
+      "description": "The cost lens.",
+      "additionalProperties": false,
+      "required": [
+        "lens",
+        "score",
+        "confidence",
+        "forecast"
+      ],
+      "properties": {
+        "lens": {
+          "description": "Proposal lens from spec/model/lenses.yaml.",
+          "enum": [
+            "cost"
+          ],
+          "x-botaru-registry": "lenses"
+        },
+        "score": {
+          "type": "integer",
+          "description": "Score 0-4.",
+          "minimum": 0,
+          "maximum": 4
+        },
+        "veto": {
+          "const": false,
+          "description": "For a lens without a veto the field veto is only false."
+        },
+        "concerns": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "description": "Concern code from a closed list, for example report_delay.",
+            "pattern": "^[a-z][a-z0-9_]*$",
+            "maxLength": 64
+          },
+          "maxItems": 5,
+          "description": "Up to 5 concern codes.",
+          "uniqueItems": true
+        },
+        "confidence": {
+          "enum": [
+            "low",
+            "medium",
+            "high"
+          ],
+          "description": "Reviewer confidence."
+        },
+        "forecast": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "over",
+            "within"
+          ],
+          "description": "Forecast of the cost lens: the probability that the spend of the change subjects over the trial window exceeds the cost_eur of the review input.",
+          "properties": {
+            "over": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1,
+              "multipleOf": 0.1,
+              "description": "Probability of the outcome over, step 0.1."
+            },
+            "within": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1,
+              "multipleOf": 0.1,
+              "description": "Probability of the outcome within, step 0.1."
+            }
+          }
+        },
+        "shadow": {
+          "type": "boolean",
+          "default": false,
+          "description": "Shadow review (COM-9, COM-10)."
+        },
+        "note": {
+          "type": "string",
+          "maxLength": 500,
+          "description": "Reviewer note, untrusted; shown to people only as a marked block in \"Details\"."
+        }
+      }
+    },
+    {
+      "type": "object",
+      "description": "The value lens and the farm manager's lens.",
+      "additionalProperties": false,
+      "required": [
+        "lens",
+        "score",
+        "confidence",
+        "forecast"
+      ],
+      "properties": {
+        "lens": {
+          "description": "Proposal lens from spec/model/lenses.yaml.",
+          "enum": [
+            "value",
+            "farm_manager"
+          ],
+          "x-botaru-registry": "lenses"
+        },
+        "score": {
+          "type": "integer",
+          "description": "Score 0-4.",
+          "minimum": 0,
+          "maximum": 4
+        },
+        "veto": {
+          "const": false,
+          "description": "For a lens without a veto the field veto is only false."
+        },
+        "concerns": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "description": "Concern code from a closed list, for example report_delay.",
+            "pattern": "^[a-z][a-z0-9_]*$",
+            "maxLength": 64
+          },
+          "maxItems": 5,
+          "description": "Up to 5 concern codes.",
+          "uniqueItems": true
+        },
+        "confidence": {
+          "enum": [
+            "low",
+            "medium",
+            "high"
+          ],
+          "description": "Reviewer confidence."
+        },
+        "forecast": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "better",
+            "unchanged",
+            "worse"
+          ],
+          "description": "Forecast of the trial outcome classes (PRP-22).",
+          "properties": {
+            "better": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1,
+              "multipleOf": 0.1,
+              "description": "Probability of the outcome better, step 0.1."
+            },
+            "unchanged": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1,
+              "multipleOf": 0.1,
+              "description": "Probability of the outcome unchanged, step 0.1."
+            },
+            "worse": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1,
+              "multipleOf": 0.1,
+              "description": "Probability of the outcome worse, step 0.1."
+            }
+          }
+        },
+        "shadow": {
+          "type": "boolean",
+          "default": false,
+          "description": "Shadow review (COM-9, COM-10)."
+        },
+        "note": {
+          "type": "string",
+          "maxLength": 500,
+          "description": "Reviewer note, untrusted; shown to people only as a marked block in \"Details\"."
+        }
+      }
+    }
+  ]
+}

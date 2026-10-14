@@ -1,5 +1,5 @@
 registry: attribution-rules
-version: 1
+version: 2
 description: >-
   Rules by which code creates a candidate attribution of an incident to an executed
   change (GOV-13). A candidate is created only by code under these rules or
@@ -16,3 +16,19 @@ entries:
     since: v0.2
     when: the incident touches an object that depends on the object of the change by one hop in the catalog
     rules: [GOV-13]
+  - id: rejected_direct
+    since: v0.3
+    when: >-
+      a proposal the commission dismissed or parked by score within 90 days before the incident targets the incident
+      subject directly, and its problem code is in the problem_codes of the incident class (GOV-38)
+    rules: [GOV-38]
+  - id: rejected_dependency_1
+    since: v0.3
+    when: as rejected_direct, but the incident subject is one hop in the catalog from the target of the change (GOV-38)
+    rules: [GOV-38]
+  - id: script_target
+    since: v0.3
+    when: >-
+      the incident subject is among the targets of a script run fixed at confirmation, or one hop from them, within 14 days
+      after the run ended (TRN-7)
+    rules: [TRN-7]

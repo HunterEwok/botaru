@@ -51,3 +51,4 @@ A bot identity (`Bot`) is a core record with a permanent number `bot_<ulid>`, a 
 |---|---|
 | v0.1 | The whole cycle: `active`, `suspended`, `unbound`, `retired`, `erased`; seven retirement reasons; the seal and the tombstone; moving to a commission seat by P2 `seat.assign`; the fields `acting_bot` and `bot_epoch` in the record schemas (empty for records without a bot) |
 | v0.2 | The transition `worker -> seat` by a promotion case becoming `effective`; retirement with the reason `tenant_offboarded` on a tenant offboarding; wiping by the retention class period by the `retention` loop, before the seal ends (RET-10, MEM-10) |
+| v0.3 | A commission seat holder that answers for a confirmed link goes back to the functionaries as a parked bot (`parked` in the bot record) waiting for a worker of its former role; the retirement reason `parked_expired` after 180 days without a worker; `replaced_after_incident` is not applied (GOV-42, IDN-15) |

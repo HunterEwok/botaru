@@ -49,3 +49,4 @@ An attribution candidate (`Attribution`) is a possible link between an incident 
 |---|---|
 | v0.1 | Only a prohibition: bots have no operations on attributions (GOV-13) |
 | v0.2 | The whole cycle: candidates, the `attribution_card` card, `unknown` and reminders, the `disputed` dispute and the `attribution_dispute` card |
+| v0.3 | The same cycle for the kinds `rejected_proposal` (card `rejection_link_card`, GOV-38, GOV-40) and `script_run` (card `script_link_card`, TRN-7) by the schema `attribution.v2`; a dismissal of the incident cancels such candidates and returns departed members (GOV-42) |

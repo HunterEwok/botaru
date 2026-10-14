@@ -1,5 +1,5 @@
 registry: lenses
-version: 1
+version: 2
 description: >-
   Commission lenses: the reviewer's point of view (benefit, costs or risk). The list of lenses, their review task
   types and vetoes are set by the skeleton, not by the tenant manifest (COM-8). The `Commission` manifest sets
@@ -7,7 +7,8 @@ description: >-
   `meaning` (what it assesses), `veto` (whether there is a right of veto), `review_type` (review task type),
   `subject` (what the lens assesses: `proposal` proposals or `escalation` escalations to the farm manager),
   `kind_none` (whether the lens is applied to a proposal of kind `none`, COM-14), `score_max` (the highest output
-  score), `weight` (weight by rule, if the manifest does not set it), `rules`.
+  score), `weight` (weight by rule, if the manifest does not set it), `accountable_for` (from v0.3: the incident class areas for which
+  holders of the lens answer for a recommended change, GOV-41), `rules`.
 source: docs/improvements.md
 entries:
   - id: security
@@ -19,6 +20,7 @@ entries:
     kind_none: true
     score_max: 4
     weight: null
+    accountable_for: [security]
     rules: [COM-8, COM-4, COM-14]
   - id: operational
     since: v0.1
@@ -29,6 +31,7 @@ entries:
     kind_none: false
     score_max: 4
     weight: null
+    accountable_for: [operational]
     rules: [COM-8, COM-4]
   - id: cost
     since: v0.1
@@ -39,6 +42,7 @@ entries:
     kind_none: false
     score_max: 4
     weight: null
+    accountable_for: [cost]
     rules: [COM-8]
   - id: value
     since: v0.1
@@ -49,6 +53,7 @@ entries:
     kind_none: true
     score_max: 4
     weight: null
+    accountable_for: []
     rules: [COM-8, COM-14]
   - id: farm_manager
     since: v0.2
@@ -61,6 +66,7 @@ entries:
     kind_none: false
     score_max: 4
     weight: 1
+    accountable_for: []
     rules: [COM-8, COM-4, GOV-25]
   - id: necessity
     since: v0.2
@@ -73,4 +79,5 @@ entries:
     kind_none: false
     score_max: 3
     weight: null
+    accountable_for: []
     rules: [COM-8, COM-13]

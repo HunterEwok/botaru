@@ -1,0 +1,55 @@
+registry: manager-attention
+version: 1
+description: >-
+  Closed codes of a farm manager notice to people (MGR-52). A decision attempt of the farm manager seat reaches people
+  only with the built-in tool attention_notice; the core builds the notice manager_attention from these codes, an object
+  id from the tenant catalog and an operation code or the id of a card or proposal that code issued. There is no free
+  model text, command or link in a notice. Entry fields: kind (sees: what the manager sees; threat: what it threatens),
+  meaning, rules.
+source: docs/farm-manager.md
+entries:
+  - id: disk_growth
+    since: v0.3
+    kind: sees
+    meaning: the used size of a disk grows in the code series
+    rules: [MGR-52]
+  - id: queue_growth
+    since: v0.3
+    kind: sees
+    meaning: the queue wait of a task type grows
+    rules: [MGR-52]
+  - id: failures_repeat
+    since: v0.3
+    kind: sees
+    meaning: the same task type fails repeatedly
+    rules: [MGR-52]
+  - id: spend_growth
+    since: v0.3
+    kind: sees
+    meaning: the spend of a budget line grows faster than usual
+    rules: [MGR-52]
+  - id: monitor_problem
+    since: v0.3
+    kind: sees
+    meaning: a monitoring system problem on an object of the tenant that no person acknowledged
+    rules: [MGR-52]
+  - id: disk_full_soon
+    since: v0.3
+    kind: threat
+    meaning: the disk fills up and an incident of class disk_full opens
+    rules: [MGR-52]
+  - id: deadline_miss
+    since: v0.3
+    kind: threat
+    meaning: a scheduled task misses its deadline
+    rules: [MGR-52]
+  - id: budget_exhausted
+    since: v0.3
+    kind: threat
+    meaning: a budget line runs out before the end of the period
+    rules: [MGR-52]
+  - id: service_down
+    since: v0.3
+    kind: threat
+    meaning: a service on the object stops answering
+    rules: [MGR-52]

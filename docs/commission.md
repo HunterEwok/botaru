@@ -2,7 +2,7 @@
 
 ## In short
 
-Each tenant has its own commission of bots (D-23): seats with lenses, held by former functionaries of this tenant, and the farm manager with one vote and no veto (D-29). The commission assesses bot proposals blind, and how it does this is described in [improvements.md](improvements.md); this document describes who sits on it and how they get there. There is one path to a seat: a functionary's own improvement that people accepted, the core executed, and that lived through the promotion probation (14 days) without a confirmed link to an incident and without a measured degradation; then the promotion queue, a case and, if there is no vacant seat, a secret mandatory "who leaves" vote, in which exactly one always leaves (D-24, D-25, D-37). Only code opens and counts a case, the outcome takes effect only after a person's button, and bots know nothing about cases, the queue or departures (GOV-6, GOV-9, GOV-29). A bot that leaves is deleted entirely, and only the newcomer takes its verified facts ([bots.md](bots.md)). Before v0.2 there are no votes, and a person appoints the seat holders (D-21).
+Each tenant has its own commission of bots (D-23): seats with lenses, held by former functionaries of this tenant, and the farm manager with one vote and no veto (D-29). The commission assesses bot proposals blind, and how it does this is described in [improvements.md](improvements.md); this document describes who sits on it and how they get there. There is one path to a seat: a functionary's own improvement that people accepted, the core executed, and that lived through the promotion probation (14 days) without a confirmed link to an incident and without a measured degradation; then the promotion queue, a case and, if there is no vacant seat, a secret mandatory "who leaves" vote, in which exactly one always leaves (D-24, D-25, D-37). Only code opens and counts a case, the outcome takes effect only after a person's button, and bots know nothing about cases, the queue or departures (GOV-6, GOV-9, GOV-29). A bot that leaves is deleted entirely, and only the newcomer takes its verified facts ([bots.md](bots.md)). Before v0.2 there are no votes, and a person appoints the seat holders (D-21). From v0.3 the commission answers for its outcomes, first in shadow: see [Accountability from v0.3](#accountability-from-v03) (D-109).
 
 ## The tenant's commission
 
@@ -208,6 +208,8 @@ The snapshot includes only `active` identities with a live worker of the role; i
 **Flags on top of the state.** A person sets the flag `hold`: a hold of scope `governance` or the "Pause" button on the card `governance_stuck`; releasing the hold continues the case from the same point. Code sets the flag `stuck` when a round has waited for votes longer than `stuck_after` (24 h) for an infrastructure reason. All case transitions are collected in [spec/lifecycles/case.md](../spec/lifecycles/case.md).
 
 ## The "who leaves" vote
+
+From v0.3, in a tenant with `commission.accountability: on`, code chooses who leaves by accuracy, and this vote is held only among tied seats or when no holder has 20 scored forecasts (GOV-43).
 
 ### Ballot
 
@@ -427,12 +429,62 @@ The `demo` commission is declared by the charter above: four seats, the seat rol
 10. **If it had got stuck.** If in round 2 the role `commission-member` had no live workers left, the round would wait, and after 24 h `bob` would get `governance_stuck` with the buttons "Pause" and "Cancel".
 11. **A vacant seat.** Half a year later the operator, at the request of `bob`, removes `bot_12` (P2 `bot.retire`): seat 4 is vacant, and `reviewer-b` takes the value lens. The head of the queue `bot_23` gets a case in the mode `vacancy`, `carol` confirms, and `bot_23` takes seat 4 without a vote and without the `swap_cooldown` pause.
 
+## Accountability from v0.3
+
+From v0.3 the commission answers for its outcomes (D-109). Every review is a forecast that code scores, the most accurate member gets a stronger model, a member who blocked a useful change or let through a harmful one returns to the functionaries, and the member who leaves when a newcomer enters is chosen by accuracy instead of by a vote. All of it is computed by code from records; no bot knows about it (GOV-46).
+
+### Shadow first, then on by data
+
+The charter field `commission.accountability` is `shadow` by default (GOV-36). In `shadow` code finds the cases, scores forecasts and computes accuracy, and shows all of it only to people in P2 `commission.status` and in the weekly commission summary. Nobody leaves for a link or by accuracy, nobody gets a reward, no link card goes out, and a newcomer's entry is decided by the vote as in v0.2. When every commission seat has a holder and every holder has at least 20 scored forecasts, the tenant admins get the card `accountability_ready` once a month; `apply` accepts `on` only while that condition holds and otherwise rejects the charter with `accountability_not_ready`. Going back to `shadow` is always accepted.
+
+```yaml
+# tenants/demo/governance.yaml (fragment, v0.3)
+spec:
+  commission:
+    accountability: shadow               # shadow | on; on only when every seat holder has 20 scored forecasts (GOV-36)
+    reward_cap_eur_month: 0              # money for the reward of the most accurate member; 0: no reward (COM-18)
+    seats:
+      - {id: 1, lens: security, fallback_role: reviewer-a, reward_profile: seat-strong}
+```
+
+Nothing acts retroactively (GOV-37): the first `apply` on a v0.3 core writes `governance.v03_enabled`, and only reviews, verdicts, recommendations and script runs after that time are scored or linked. Only incidents opened and links confirmed after `accountability_on_since` lead to departures.
+
+### Forecasts, accuracy and the reward
+
+How a review carries a forecast and how code scores it is described in [improvements.md](improvements.md#forecasts-and-accuracy-from-v03) (COM-15, COM-16, COM-17, COM-18). In short: each lens forecasts the outcome of its own area; code scores the forecast when the outcome is known; accuracy is the score compared with the lens base rates, on one scale across lenses, shown with 10 scored forecasts and used for decisions with 20. The holder with the best accuracy over 90 days gets a stronger model for reviews of hard proposals and protection from leaving by accuracy, within `reward_cap_eur_month`.
+
+### A link to a rejected proposal
+
+Only code finds that a rejected proposal could have prevented an incident (GOV-38). It creates a candidate of `kind: rejected_proposal` under the rules `rejected_direct` and `rejected_dependency_1` when the commission dismissed the proposal or parked it by score within 90 days before the incident, the incident subject is the target of the change or one dependency step away, and the problem code of the proposal is in the `problem_codes` of the incident class. There is never a candidate for an incident with an external cause, for a proposal with `untrusted_seen`, for a proposal of the farm manager, or when the author wrote the alarm series itself. One incident gives at most 3 candidates.
+
+The farm manager may only hint at a link with `link_hint`, at most 3 hints a week and never about its own proposal; a person decides whether the hint becomes a candidate (GOV-39). A person confirms a candidate on the card `rejection_link_card` after "Details", as with any attribution (GOV-40):
+
+```
+Could the rejected proposal have prevented the incident? (candidate at_0107)
+Incident: i_1022, class disk_full, db1, opened 03-02 04:10
+Proposal: p_0230, lower the alarm threshold of disk.used on db1 from 90% to 80%, rejected 02-20
+Link by rule rejected_direct; the alarm series is written by code; author's share in the series 0
+Would leave: seat 2 (operational, against; its lens changed the verdict)
+[Yes] [No] [Don't know] [Details]
+```
+
+### Who answers, and what happens to them
+
+For a confirmed link to a rejected proposal the holders who were against it answer, except a veto, which never counts against its holder; nobody answers when people themselves rejected the proposal as too risky or wrong (GOV-41). For a confirmed attribution to a recommended change, only the holders who were for it and whose lens covers the incident class's `area` answer: `security` for security incidents, `operational` for operational ones, `cost` for cost ones. A missing review counts both as "against" and as "for". The farm manager never answers this way.
+
+With `on` a holder who answers leaves its seat and is parked, not deleted (GOV-42): the bot keeps its memory and track record, waits for a worker of its former role, and the operators get `seat_parked_notice` with the command `farmctl worker enroll --bot`. A parked bot that gets no worker in 180 days retires with `parked_expired`. At most one such departure per tenant in 30 days, and the last holder of a veto lens never leaves this way. If people later declare the incident false, the bot returns: to its seat if it is still vacant (`seat_return_notice`), otherwise to the head of the queue.
+
+### Who leaves when a newcomer enters
+
+With `on` there is no "who leaves" vote: code takes the holder with the worst accuracy (GOV-43). A holder with fewer than 20 scored forecasts counts with the lens median, and as the worst once it has held the seat for `min_tenure` plus 90 days without reaching 20. A reward protects its holder unless nobody else could leave. Overlapping intervals of the two worst are a tie, and the vote of GOV-8 is held among the tied seats only; with no scored holder at all the vote decides as before. A person still confirms the outcome with the button, and the card shows the accuracy of every seat. A bot that left for a link gets no promotion trigger for 180 days, and a resubmitted proposal gives the trigger to its new author (GOV-44).
+
 ## What is in which version
 
 | Version | What appears |
 |---|---|
 | v0.1 | The improvement cycle and the commission, after the core and the first bot (D-71): lenses, the commission manifest with thresholds and weights (COM-8), the verdict and people's decision ([improvements.md](improvements.md)). The charter with seats and fallback roles (GOV-33, COM-7); the field for a tenant to opt out of the farm manager's lens and vote, `farm_manager.lens` (MGR-42, D-77), is accepted and stored but takes effect from v0.2: in v0.1 the farm manager takes no part in the commission: there is no `farm_manager` lens and there are no votes (D-21); its commission seat with one vote (D-29) starts from v0.2 (GOV-25) (COM-8); lenses with a veto on different model families (GOV-34); a person appoints and removes seat holders through P2 `seat.assign` and `seat.vacate`; bot identities and holders' departures ([bots.md](bots.md)). The prohibition on bots opening and moving cases and touching attributions (GOV-6, GOV-13). All governance lives in the tenant (GOV-16). |
 | v0.2 | The promotion queue and eligibility (GOV-14); the change trial outcome and measured degradation (GOV-32); the attribution procedure, silence without expiry (GOV-13, GOV-30); the case and the snapshot (GOV-12); the ballot, the count, the mandatory vote (GOV-7, GOV-8, GOV-23); confirmation and rejection reasons (GOV-9, GOV-31); case money (GOV-15); the farm manager's lens and vote, recusal (GOV-25, GOV-17); calibration within a lens, flags, the audit sample (COM-11, COM-12, GOV-19, DIG-5, DIG-6); commission locked and the card `commission_review` (GOV-35); the case audit (GOV-21). |
+| v0.3 | Accountability in shadow, switched on by data (GOV-36, GOV-37); forecasts, accuracy and the reward (COM-15, COM-16, COM-17, COM-18); links to rejected proposals, the manager's hint and the card (GOV-38, GOV-39, GOV-40); who answers and parking (GOV-41, GOV-42); who leaves by accuracy, the 180-day cooldown (GOV-43, GOV-44). |
 
 ## Why it works this way
 
@@ -456,11 +508,11 @@ Generated from the registry `conformance/requirements.yaml`; the full text of ev
 |---|---|---|---|
 | [GOV-6](../conformance/rules.md#GOV-6) | Only the core opens a case | v0.1 | yes |
 | [GOV-7](../conformance/rules.md#GOV-7) | Ballot | v0.2 | yes |
-| [GOV-8](../conformance/rules.md#GOV-8) | Code counts "who leaves" | v0.2 | yes |
+| [GOV-8](../conformance/rules.md#GOV-8) | Code counts "who leaves" | v0.2 until v0.2 | yes |
 | [GOV-9](../conformance/rules.md#GOV-9) | The case outcome after a person's button | v0.2 | yes |
 | [GOV-12](../conformance/rules.md#GOV-12) | Case snapshot | v0.2 | yes |
 | [GOV-13](../conformance/rules.md#GOV-13) | Code creates the incident attribution, a person decides | v0.1 | yes |
-| [GOV-14](../conformance/rules.md#GOV-14) | Trigger, queue and eligibility for promotion | v0.2 | no |
+| [GOV-14](../conformance/rules.md#GOV-14) | Trigger, queue and eligibility for promotion | v0.2 until v0.2 | no |
 | [GOV-15](../conformance/rules.md#GOV-15) | Money and priority of a case | v0.2 | no |
 | [GOV-16](../conformance/rules.md#GOV-16) | Governance lives in the tenant | v0.1 | yes |
 | [GOV-17](../conformance/rules.md#GOV-17) | Recusal and blindness | v0.2 | yes |
@@ -474,3 +526,12 @@ Generated from the registry `conformance/requirements.yaml`; the full text of ev
 | [GOV-33](../conformance/rules.md#GOV-33) | Only the charter declares seats | v0.1 | yes |
 | [GOV-34](../conformance/rules.md#GOV-34) | Veto lenses on different model families | v0.1 | yes |
 | [GOV-35](../conformance/rules.md#GOV-35) | Locked commission | v0.2 | no |
+| [GOV-36](../conformance/rules.md#GOV-36) | Accountability runs in shadow until people switch it on | v0.3 | no |
+| [GOV-37](../conformance/rules.md#GOV-37) | No retroactive effect | v0.3 | no |
+| [GOV-38](../conformance/rules.md#GOV-38) | Code finds a link between an incident and a rejected proposal | v0.3 | yes |
+| [GOV-39](../conformance/rules.md#GOV-39) | The farm manager may only hint at a link | v0.3 | yes |
+| [GOV-40](../conformance/rules.md#GOV-40) | A person confirms a link on a card | v0.3 | yes |
+| [GOV-41](../conformance/rules.md#GOV-41) | Who answers for a link | v0.3 | yes |
+| [GOV-42](../conformance/rules.md#GOV-42) | A member who answers for a link returns to the functionaries | v0.3 | yes |
+| [GOV-43](../conformance/rules.md#GOV-43) | Who leaves when a newcomer enters | v0.3 | yes |
+| [GOV-44](../conformance/rules.md#GOV-44) | Trigger, queue and eligibility for promotion from v0.3 | v0.3 | yes |

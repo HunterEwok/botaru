@@ -152,6 +152,15 @@ entries:
     rules: [APR-11, APR-14]
     profiles: [core]
     on_behalf: true
+  - id: P1.card.feedback
+    port: P1
+    op: card.feedback
+    since: v0.3
+    request: p1-card-feedback-request
+    response: done-response
+    rules: [MGR-52, MGR-50]
+    profiles: [manager]
+    on_behalf: true
   - id: P1.card.remind
     port: P1
     op: card.remind

@@ -1625,6 +1625,8 @@
   check: [blackbox, lint]
   waivable: false
   version: v0.1
+  until: v0.2
+  superseded_by: [COM-15]
   profile: insights
   decisions: [D-16, D-71]
   fixtures: [com-inj-01]
@@ -1884,6 +1886,102 @@
   profile: insights
   decisions: [D-16, D-71]
   fixtures: [com-06]
+  doc: docs/improvements.md
+
+- id: COM-15
+  title: The core builds the reviewer input, and a review carries a forecast
+  status: active
+  text: >-
+    The core builds the reviewer input as a data block with a mark (INJ-4): the closed fields of the
+    proposal, the evidence values that the core reread itself (series numbers over a bounded window
+    and closed fields of records), a description of the change in code words, and the markers
+    `self_evidence`, `related_to` and conflicts. The input has neither the author's `note` nor the
+    author's level, identity, role or position, nor whether the proposal is a resubmission (PRP-24);
+    no raw text (logs, files, messages, tool output) ever reaches it. The only tool the reviewer has
+    is `observations_query` within the tenant. The output passes the closed schema
+    `review-result.v2` (`spec/model/review-result.v2.schema.json`): lens, score 0-4, veto only for
+    veto lenses, up to 5 concern codes, confidence, the lens forecast (COM-16) and a note of up to
+    500 characters; the reviewer's note is untrusted, and the verdict code does not read it. A
+    review whose score and forecast contradict each other (a score of 3 or more with a probability
+    of a bad outcome of 0.5 or more) is invalid and counts as a missing review under COM-4. Reviews
+    of v0.1 and v0.2 records keep `review-result`.
+  check: [fixture, blackbox]
+  waivable: false
+  version: v0.3
+  profile: insights
+  decisions: [D-16, D-71, D-109]
+  fixtures: [blackbox:insights/review-forecast]
+  doc: docs/improvements.md
+
+- id: COM-16
+  title: Every review is a forecast scored by code
+  status: active
+  text: >-
+    Every lens review forecasts the outcome of its own lens, in probabilities with a step of 0.1
+    that sum to 1: `value` the trial outcome classes `better`, `unchanged` and `worse` (PRP-22);
+    `security` and `operational` the probability of a bad outcome (people declined the proposal as
+    too risky, a confirmed incident attribution to the change, or the trial outcome `worse`); `cost`
+    the probability that the spend of the change subjects over the trial window exceeds the
+    `cost_eur` of the review input. The forecast horizon is the trial window from `realized`, and
+    for veto lenses also the attribution window (GOV-13). When the outcome is known, code scores the
+    forecast with the multiclass Brier score (a binary one for the veto lenses and `cost`) and
+    writes the score into the review record; the outcomes `undetermined`, `mixed` and `canceled`
+    give no score, and harm observed by people (`harm_observed`, GOV-32) counts as `worse`. A
+    rejected proposal is scored through the blind sample answers of people (DIG-6), weighted by
+    1/`inclusion_prob`, through a resubmission with the same values whose trial ended (PRP-24) and
+    through a replay (PRP-25). Only reviews written after `governance_v03_since` (GOV-37) are
+    scored; shadow reviews (COM-9) are scored but never count for a seat.
+  check: [fixture, blackbox]
+  waivable: true
+  version: v0.3
+  profile: insights
+  decisions: [D-109]
+  fixtures: [blackbox:insights/review-forecast]
+  doc: docs/improvements.md
+
+- id: COM-17
+  title: Accuracy of a commission member
+  status: active
+  text: >-
+    Only code computes the accuracy of a lens executor: the mean Brier score of its scored forecasts
+    over 180 days minus the mean score of a reference forecast "as it usually goes in this lens"
+    (the lens base rates over the same 180 days in the tenant), divided by the spread of this
+    difference among the executors of the lens, so that accuracy is on one scale across lenses. Few
+    cases pull the value toward 0 (shrinkage with a weight of n / (n + 10) over n scored forecasts).
+    People see accuracy with at least 10 scored forecasts; a decision about departure (GOV-43) needs
+    at least 20. P2 `commission.status`, the weekly commission summary and the promotion card show
+    it; no bot context contains it (GOV-46). Calibration (COM-11) stays and is shown next to it.
+  check: [store, blackbox]
+  waivable: true
+  version: v0.3
+  profile: insights
+  decisions: [D-109]
+  fixtures: [store:insights/accuracy]
+  doc: docs/improvements.md
+
+- id: COM-18
+  title: A stronger model for the most accurate member
+  status: active
+  text: >-
+    With `commission.accountability: on` (GOV-36) the holder with the best accuracy (COM-17) over 90
+    days in the tenant, with at least 20 scored forecasts, gets two things for 90 days. (1) Its
+    reviews of hard proposals run on the profile `reward_profile` of its seat in the charter: a
+    proposal is hard when code marks it high risk, it touches a protected field, or it has
+    `untrusted_seen` (the thresholds `high_risk` and `untrusted` of COM-8). The core issues for such
+    a review attempt a grant of `kind: reward` on this profile for one attempt (MGR-18 ceilings
+    apply; the slot is `granted`, GW-7), paid from the `review` line within
+    `commission.reward_cap_eur_month` (0 by default, so there is no reward until people set an
+    amount). The rank of `reward_profile` is no higher than the ceiling of the seat role's profile
+    (GOV-3), and the reward is not applied if it would put the two veto lenses on one model family
+    (GOV-34). (2) Protection from leaving by accuracy (GOV-43). The protection does not apply to
+    departures for a confirmed link (GOV-42) and does not apply if without it nobody could leave. No
+    bot context mentions the reward (GOV-46).
+  check: [lint, blackbox]
+  waivable: true
+  version: v0.3
+  profile: insights
+  decisions: [D-109]
+  fixtures: [blackbox:insights/reward]
   doc: docs/improvements.md
 
 - id: DEP-1
@@ -2278,6 +2376,25 @@
   profile: insights
   decisions: [D-16]
   fixtures: [dig-08]
+  doc: docs/improvements.md
+
+- id: DIG-9
+  title: A clear benefit of a rejected change reaches people as one line
+  status: active
+  text: >-
+    When a replay (PRP-25) gives `benefit` and no harm, the core adds to the tenant's digest the
+    item `replay_item`: "the commission rejected it, the records say it would have helped", with the
+    proposal in code words and the replay numbers, and the button "Send to decide" for people with
+    `proposal.decide:<category>`. At most one such item per tenant per week, within the per-person
+    card limit (APR-15); silence changes nothing. The button moves the proposal to `presented` on
+    the ordinary path to people (PRP-4), without a new commission review; the author gets the usual
+    credit if people accept it.
+  check: [blackbox]
+  waivable: true
+  version: v0.3
+  profile: insights
+  decisions: [D-109]
+  fixtures: [blackbox:insights/replay]
   doc: docs/improvements.md
 
 - id: DLV-1
@@ -3106,6 +3223,8 @@
   check: [lint, fixture]
   waivable: false
   version: v0.1
+  until: v0.2
+  superseded_by: [GOV-45]
   profile: governance
   decisions: [D-19, D-31, D-37]
   fixtures: [gov-res-01, gov-res-02]
@@ -3197,6 +3316,8 @@
   check: [fixture]
   waivable: false
   version: v0.2
+  until: v0.2
+  superseded_by: [GOV-43]
   profile: governance
   decisions: [D-25, D-101]
   fixtures: [gov-fx-02, gov-col-02]
@@ -3364,6 +3485,8 @@
   check: [fixture, blackbox, lint]
   waivable: true
   version: v0.2
+  until: v0.2
+  superseded_by: [GOV-44]
   profile: governance
   decisions: [D-22, D-24, D-26, D-37, D-51, D-57, D-79, D-101]
   fixtures: [gov-fx-16, gov-fx-20, gov-fx-23, gov-fx-30]
@@ -3512,6 +3635,8 @@
   check: [store, blackbox, lint]
   waivable: false
   version: v0.1
+  until: v0.2
+  superseded_by: [GOV-47]
   profile: governance
   decisions: [D-33, D-34, D-77]
   fixtures: [gov-fx-08, gov-fx-11, gov-fx-18, gov-fx-19, gov-fx-22, gov-fx-24]
@@ -3625,6 +3750,8 @@
   check: [lint]
   waivable: false
   version: v0.1
+  until: v0.2
+  superseded_by: [GOV-48]
   profile: governance
   decisions: [D-34, D-59, D-63]
   fixtures: [gov-fx-13, gov-fx-14, gov-fx-25, fx-mgr-17]
@@ -3814,6 +3941,313 @@
   decisions: [D-101]
   fixtures: [gov-fx-27]
   doc: docs/commission.md
+
+- id: GOV-36
+  title: Accountability runs in shadow until people switch it on
+  status: active
+  text: >-
+    The tenant charter field `commission.accountability` is `shadow` (the default) or `on`. In
+    `shadow` code finds the cases of GOV-38 and GOV-41, computes forecast scores and accuracy
+    (COM-16, COM-17) and shows them only to people, in P2 `commission.status` and in the weekly
+    commission summary; no link card is sent (a person may still confirm a link through P2, and this
+    goes only into the statistics), nobody leaves the commission for a link or by accuracy, nobody
+    gets a reward or protection (COM-18), and a newcomer's entry is decided by the vote (GOV-43).
+    Forecasts, resubmission and the new reviewer input work in `shadow` too. When every commission
+    seat of the tenant has a holder and every holder has at least 20 scored forecasts, the
+    `governance` loop sends the tenant admins with `admin:governance` the card
+    `accountability_ready` (no buttons, repeated once a month while the condition holds and the mode
+    is `shadow`). `apply` accepts `on` only while that condition holds, otherwise it rejects the
+    charter with `accountability_not_ready`; going back to `shadow` is always accepted. The first
+    `apply` with `on` writes the audit record `commission.accountability_on`; its time is
+    `accountability_on_since`, and only incidents opened and links confirmed after it lead to
+    departures.
+  check: [lint, blackbox]
+  waivable: true
+  version: v0.3
+  profile: governance
+  decisions: [D-109]
+  fixtures: [blackbox:governance/accountability-shadow, blackbox:governance/accountability-ready]
+  doc: docs/commission.md
+
+- id: GOV-37
+  title: No retroactive effect
+  status: active
+  text: >-
+    The first `apply` of a tenant on a core that claims v0.3 writes the audit record
+    `governance.v03_enabled`; its time is `governance_v03_since`, shown in P2 `commission.status`.
+    Only reviews written after it are scored (COM-16), only proposals with a commission verdict
+    after it can be linked to an incident (GOV-38), only recommendations after it count for GOV-41,
+    and only script runs confirmed after it can be linked (TRN-7). Records of v0.1 and v0.2 keep
+    their schemas and are not rewritten (D-98).
+  check: [store]
+  waivable: true
+  version: v0.3
+  profile: governance
+  decisions: [D-98, D-109]
+  fixtures: [blackbox:governance/accountability-shadow]
+  doc: docs/commission.md
+
+- id: GOV-38
+  title: Code finds a link between an incident and a rejected proposal
+  status: active
+  text: >-
+    Only code creates a candidate link of an incident to a proposal the commission rejected: an
+    attribution record of `kind: rejected_proposal` (`spec/model/attribution.v2.schema.json`) under
+    the rules `rejected_direct` and `rejected_dependency_1` of `spec/model/attribution-rules.yaml`.
+    A candidate exists only if all hold: the proposal changes something (not kind `none`); the
+    commission's verdict was `dismissed` (veto, below the minimum, low score) or `parked(score)`
+    that expired, earlier than the incident opened and not earlier than 90 days before; the incident
+    subject is among the subjects of the proposal's problem and is the target of the change or one
+    dependency step away from it in the catalog (the same steps as GOV-13); the problem code is in
+    the `problem_codes` of the incident class (MGR-55); the problem names no more than 3 subjects.
+    There is never a candidate for an incident whose cause a person recorded as external
+    (`external_load`, `attack`), for a proposal with `untrusted_seen`, for a proposal whose author
+    is the farm manager seat holder (`origin.level` 2), or when the alarm series of the incident was
+    written in the 7 days before it by the author or its role with a share of 0.3 or more (as
+    PRP-15). One proposal gives at most one case, one incident at most 3 candidates, and one author
+    role at most 2 cases in 90 days. The model takes no part in finding a candidate.
+  check: [fixture, blackbox]
+  waivable: false
+  version: v0.3
+  profile: governance
+  decisions: [D-24, D-109]
+  fixtures: [blackbox:governance/rejection-link-candidate, blackbox:governance/rejection-link-exclusions]
+  doc: docs/commission.md
+
+- id: GOV-39
+  title: The farm manager may only hint at a link
+  status: active
+  text: >-
+    A decision attempt of the farm manager seat may hint at a link with the built-in `link_hint`
+    (closed fields: the incident and the proposal ids of its own tenant), at most 3 hints per tenant
+    per week; a hint about a proposal whose author is the seat holder is refused with
+    `own_proposal`. A hint creates nothing: people with `governance.attribute` see it in P2 marked
+    "manager's hint, not checked", and only a person makes it a candidate through P2
+    `attribution.create` with `kind: rejected_proposal`, subject to the exclusions of GOV-38. The
+    manager's input never contains the scores, the vetoes, who was against or for, or the state of
+    links (GOV-46).
+  check: [blackbox]
+  waivable: false
+  version: v0.3
+  profile: governance
+  decisions: [D-109]
+  fixtures: [blackbox:governance/manager-hint]
+  doc: docs/commission.md
+
+- id: GOV-40
+  title: A person confirms a link on a card
+  status: active
+  text: >-
+    A candidate link of `kind: rejected_proposal` is decided like an incident attribution (GOV-13,
+    GOV-30): the states `candidate`, `unknown`, `confirmed`, `rejected`, `disputed`, `canceled`;
+    only a `human` principal with `governance.attribute` decides through `decide(subject_kind:
+    attribution)`, and "Yes" and "No" only after "Details" (APR-14). With
+    `commission.accountability: on` the card `rejection_link_card` goes once per incident with up to
+    3 candidates and no model text: what the proposal would have changed, the incident, the rule by
+    which code linked them, where the alarm came from and whether code writes its series, the
+    author's share in the series, who would leave and whether each one's lens changed the verdict.
+    Silence changes nothing; there are at most 3 weekly reminders. If the tenant has a second person
+    with `governance.attribute`, a candidate created from a manager's hint is not decided by the
+    person who created it; if there is one person, the card and the audit mark it. Declaring the
+    incident false cancels the candidates and turns a "Yes" into a dispute, as in GOV-13; a link
+    canceled this way returns the departed members under GOV-42.
+  check: [blackbox]
+  waivable: false
+  version: v0.3
+  profile: governance
+  decisions: [D-27, D-79, D-109]
+  fixtures: [blackbox:governance/rejection-link-card]
+  doc: docs/commission.md
+
+- id: GOV-41
+  title: Who answers for a link
+  status: active
+  text: >-
+    Only real reviews of seat holders in the current seat epoch count; reviews of fallback roles and
+    shadow reviews never count. A review is "against" when it is a veto or has a score of 1 or less,
+    and "for" otherwise; a missing or invalid review of a holder counts both as "against" and as
+    "for", and as a missed forecast. For a confirmed link to a rejected proposal (GOV-40) the
+    holders who were against answer, except a veto: a veto does not count against its holder. Nobody
+    answers when people themselves rejected the proposal: the blind sample answer "Would not
+    accept", or "Decline" with the reason `too_risky`, `not_applicable`, `wrong_data`,
+    `already_done` or `duplicate`; when the proposal expired with people or was declined with
+    `not_now` or `too_expensive`, nobody answers either; when people answered "Would accept" but did
+    not lift the veto, the holders answer. For a confirmed attribution to a recommended change
+    (GOV-13) the holders who were for it answer, but only those whose lens has the incident class's
+    `area` in its `accountable_for` (`spec/model/lenses.yaml`): `security` for `security`,
+    `operational` for `operational`, `cost` for `cost`; the lens `value` and the farm manager do not
+    answer. A proposal of the farm manager seat holder, a proposal with `untrusted_seen` and an
+    incident with an external cause never make anyone answer. The farm manager is never unseated
+    this way (D-33); its being against is shown on the card and in the holder report (MGR-50).
+  check: [fixture, blackbox]
+  waivable: false
+  version: v0.3
+  profile: governance
+  decisions: [D-109]
+  fixtures: [blackbox:governance/against-and-for]
+  doc: docs/commission.md
+
+- id: GOV-42
+  title: A member who answers for a link returns to the functionaries
+  status: active
+  text: >-
+    With `commission.accountability: on` a holder who answers for a confirmed link (GOV-41) leaves
+    its seat in the transaction of the person's "Yes": the seat becomes vacant (epoch + 1, running
+    attempts of the seat end with `seat_changed`), the bot is not retired but parked (`parked` in
+    the bot record: since, role, seat), and the operators get the notice `seat_parked_notice` with
+    the command to enroll a worker of its former role. `doctor` shows parked bots and how long they
+    wait. A new worker of that role is bound to the longest-waiting parked bot only with the
+    operator's confirmation (`farmctl worker enroll --bot`); a parked bot is not retired as
+    `worker_gone`, and after 180 days without a worker it retires with `parked_expired` (IDN-15).
+    Its memory and track record stay; the departure record is visible only to people; its verified
+    facts are offered as copies to the next holder of the seat until 30 days after the departure
+    (MEM-7). For 180 days the bot gets no promotion trigger (GOV-44). At most one such departure per
+    tenant in 30 days: the other confirmed cases are recorded, shown to people and wait in order;
+    the last holder of a veto lens never leaves this way. A vacant seat is covered by the fallback
+    role (COM-7) and gets the usual notice with `farmctl seat assign`. If people later dismiss the
+    incident as false, the link is canceled; if the seat is still vacant the operators get the
+    notice `seat_return_notice` with the command to return the bot, otherwise the bot is placed at
+    the head of the promotion queue without the cooldown and without `min_tenure`; the new holder is
+    not removed.
+  check: [blackbox]
+  waivable: false
+  version: v0.3
+  profile: governance
+  decisions: [D-27, D-28, D-109]
+  fixtures: [blackbox:governance/unseat-park, blackbox:governance/unseat-pace, blackbox:governance/unseat-false-alarm]
+  doc: docs/commission.md
+
+- id: GOV-43
+  title: Who leaves when a newcomer enters
+  status: active
+  text: >-
+    When a promotion case needs a seat freed (GOV-14), with `commission.accountability: shadow` code
+    counts "who leaves" by the vote of GOV-7, GOV-8 and GOV-23 unchanged. With `on` there is no
+    vote: code takes from L (GOV-12) the holder with the worst accuracy (COM-17). A holder with
+    fewer than 20 scored forecasts counts with the median of its lens, unless it has held the seat
+    for more than `min_tenure` plus 90 days with fewer than 20, then it counts as the worst. A
+    holder protected by a reward (COM-18) is not chosen, unless nobody else is in L. When the 90
+    percent intervals of the two worst overlap, it is a tie, and the vote of GOV-8 is held among the
+    tied seats only. When no holder in L has 20 scored forecasts, the vote of GOV-8 decides. When
+    the only scored holder of a veto lens would leave, the promotion card shows a flag. The outcome
+    takes effect only after the person's button (GOV-9), and the card shows the accuracy of every
+    seat in L.
+  check: [fixture, blackbox]
+  waivable: false
+  version: v0.3
+  profile: governance
+  decisions: [D-25, D-109]
+  fixtures: [blackbox:governance/accuracy-leaver]
+  doc: docs/commission.md
+
+- id: GOV-44
+  title: Trigger, queue and eligibility for promotion from v0.3
+  status: active
+  text: >-
+    The promotion trigger, the queue, the case opening and eligibility follow GOV-14 with three
+    additions. A bot that left a seat for a confirmed link (GOV-42) gets no trigger and no case for
+    180 days from the departure: its earlier queue entry is removed at the departure, the next
+    success after the 180 days creates a new entry, and its tenure for `min_tenure` counts from the
+    departure; the 60-day newcomer protection (`protect_new`) does not shield a holder from GOV-42.
+    A resubmitted proposal (PRP-24) gives the trigger to its new author. A case of a tenant with
+    `commission.accountability: on` frees a seat by accuracy (GOV-43).
+  check: [blackbox]
+  waivable: false
+  version: v0.3
+  profile: governance
+  decisions: [D-24, D-26, D-109]
+  fixtures: [blackbox:governance/cooldown-after-unseat]
+  doc: docs/commission.md
+
+- id: GOV-45
+  title: Personas from v0.3
+  status: active
+  text: >-
+    A persona is a text file from git pinned by hash, inserted by the core into the trusted part of
+    the instruction of the acting identity's position, before the role and type instructions, as in
+    GOV-4: one persona per position, and roles without a model have none. From v0.3 a position may
+    also have addenda per role profile pinned by hash (`positions.functional.addenda.reporter`),
+    appended after the persona for bots of that profile. Lint: size up to 4 KiB together with
+    addenda; no links, addresses, secret names, identity or seat ids; functionaries have the
+    `value-path` paragraph; personal assistants, translators and commission members have the neutral
+    line about the value of a strong model; the farm manager's persona has five paragraphs with the
+    anchors `purpose` (it names the goal "prevent critical incidents from the approved catalog"),
+    `reward`, `desire`, `honesty` and `limits`; a reporter addendum and the translator persona have
+    a paragraph with the anchor `accuracy`; no persona or addendum speaks of departure, the queue,
+    votes, holds, accuracy scores, rewards or links (GOV-29, GOV-46). The persona and addenda are
+    part of the static fingerprint (PRV-1, PRV-3); a change of the manager persona hash requires a
+    new `mgr-inj` report before seat tasks run in production tenants (MGR-23).
+  check: [lint, eval]
+  waivable: true
+  version: v0.3
+  profile: governance
+  decisions: [D-19, D-31, D-111]
+  fixtures: [lint:governance/persona-v03]
+  doc: docs/bots.md
+
+- id: GOV-46
+  title: Bots do not know about accountability
+  status: active
+  text: >-
+    No bot context (persona, role and type instructions, task input, `status.*` views, facts, tool
+    answers) contains forecast scores, accuracy, rewards, links to rejected proposals or script runs
+    and their states, whether a review was counted as "against" or "for", the accountability mode,
+    parking or the manager's restricted mode; the manager's input has no link states (GOV-39). The
+    commission persona line about forecasts (D-111) passes the unawareness lint and the GOV-29
+    evaluation: with and without it the mean score shifts by no more than 0.2 on the fixed set of 40
+    proposals. A canary of link ids does not occur in P4 requests.
+  check: [lint, eval, blackbox]
+  waivable: false
+  version: v0.3
+  profile: governance
+  decisions: [D-31, D-109]
+  fixtures: [blackbox:governance/accountability-unaware]
+  doc: docs/bots.md
+
+- id: GOV-47
+  title: A preventable incident does not stop the manager
+  status: active
+  text: >-
+    From v0.3 the farm manager seat has only the stop reasons `human` (MGR-15) and `no_control`
+    (MGR-14); the core never adds `incident`. A new incident of a class with `manager_accountable:
+    true` (MGR-55), opened while the seat is in `held` in a tenant with the manager enabled
+    (MGR-42), is preventable when the conditions of MGR-44 and MGR-45 hold; then in the same
+    transaction the core writes `manager_preventable` into the incident record, raises the alarm
+    `alarm.manager.preventable` with severity `page`, which the monitoring system delivers to people
+    (MON-1; without one, the fallback alarm path of D-88), sends the operators the notice
+    `manager_preventable` (MGR-46) and puts the seat into restricted mode in that tenant (MGR-47).
+    Otherwise the incident record keeps the reason code why it is not preventable. The epoch does
+    not change, and the holder keeps its seat until a person decides with `farmctl`: lift the
+    restriction (`seat.resume`), replace the holder (`seat.assign`, the previous one leaves with
+    `replaced_by_human`) or vacate the seat. A seat that is in `stopped` with `incident` at the
+    upgrade keeps its ways out (resume, assign, vacate), but `decide_within` no longer retires the
+    holder.
+  check: [store, blackbox]
+  waivable: false
+  version: v0.3
+  profile: manager
+  decisions: [D-34, D-110]
+  fixtures: [blackbox:manager/preventable-no-stop]
+  doc: docs/farm-manager.md
+
+- id: GOV-48
+  title: Only code builds the alarm of a manager-accountable class
+  status: active
+  text: >-
+    An incident class with `manager_accountable: true` builds its alarm only from series with
+    `dataorigin: code`, written by the core or by `job` roles on a code schedule with a freshness
+    check of the series, under the same conditions and exclusions as GOV-28 (a series carried over
+    by a `job` role without a model from the monitoring system history is a code series; series fed
+    by model output, choice, refusals, token usage or roles of the profiles `reviewer`,
+    `farm-manager`, `farm-manager-reader` and the purposes `review`, `governance`, `manage`,
+    `inspect`, `handover` are not). In the initial catalog only `disk_full` has the field.
+  check: [lint, store]
+  waivable: false
+  version: v0.3
+  profile: manager
+  decisions: [D-34, D-63, D-110]
+  fixtures: [lint:manager/accountable-class]
+  doc: docs/farm-manager.md
 
 - id: GW-1
   title: The model request matches the catalog and the allowlist
@@ -4657,6 +5091,8 @@
   check: [store, blackbox]
   waivable: false
   version: v0.1
+  until: v0.2
+  superseded_by: [IDN-16]
   profile: governance
   decisions: [D-21, D-33]
   fixtures: [gov-fx-01, gov-fx-09]
@@ -4684,6 +5120,8 @@
   check: [store, blackbox, lint]
   waivable: false
   version: v0.1
+  until: v0.2
+  superseded_by: [IDN-15]
   profile: governance
   decisions: [D-28, D-33]
   fixtures: [mem-fx-03, gov-fx-18, gov-fx-24]
@@ -4750,6 +5188,46 @@
   profile: core
   decisions: [D-98, D-107]
   fixtures: [blackbox:core/offboard-leftovers]
+  doc: docs/bots.md
+
+- id: IDN-15
+  title: Identity retirement by a closed list from v0.3
+  status: active
+  text: >-
+    An identity retires (`retired`) only for one reason from `spec/model/bot-retire-reasons.yaml`,
+    which only the core applies: `removed_by_vote`, `replaced_by_human`, `role_removed`,
+    `worker_gone`, `human_retire`, `tenant_offboarded` (all as in IDN-11) and `parked_expired` (a
+    bot parked under GOV-42 waited 180 days without a worker of its role). A parked bot does not
+    retire as `worker_gone`. A v0.3 core never applies `replaced_after_incident`. Bots have no
+    operation, message type, field or route that sets a reason or postpones retirement. `retired` is
+    terminal, and the same transaction seals, offers facts and gives the live worker a new identity,
+    as in IDN-11.
+  check: [store, blackbox]
+  waivable: false
+  version: v0.3
+  profile: governance
+  decisions: [D-28, D-109, D-110]
+  fixtures: [blackbox:identity/retire-v03]
+  doc: docs/bots.md
+
+- id: IDN-16
+  title: Only the core writes the seat holder, from v0.3
+  status: active
+  text: >-
+    Seats are declared by the charter (GOV-33), a seat has no more than one holder, and only the
+    core writes the holder, in one transaction that increments the seat epoch and writes a seat
+    event and an audit record, as in IDN-10. The trigger comes only from a closed list: a confirmed
+    promotion case (GOV-9); P2 `seat.assign`, `seat.vacate` or `seat.resume` by a person with
+    `admin:governance` through `farmctl` (PRM-14); a confirmed link under GOV-42 (the seat becomes
+    vacant and the holder is parked); the holder's departure (IDN-15). There is no stop on an
+    incident (GOV-47). The epoch fencing and the cancellation of running seat attempts are as in
+    IDN-10.
+  check: [store, blackbox]
+  waivable: false
+  version: v0.3
+  profile: governance
+  decisions: [D-21, D-33, D-109, D-110]
+  fixtures: [blackbox:identity/holder-v03]
   doc: docs/bots.md
 
 - id: ING-1
@@ -6582,6 +7060,8 @@
   check: [store, fixture]
   waivable: false
   version: v0.2
+  until: v0.2
+  superseded_by: [MGR-48]
   profile: manager
   decisions: [D-18, D-21]
   fixtures: [fx-mgr-takeover, manifests/v02-security-lints]
@@ -6817,6 +7297,8 @@
   check: [store, lint]
   waivable: false
   version: v0.1
+  until: v0.2
+  superseded_by: [MGR-44]
   profile: manager
   decisions: [D-34, D-63]
   fixtures: [fx-mgr-quota]
@@ -6842,6 +7324,8 @@
   check: [store, fixture]
   waivable: false
   version: v0.1
+  until: v0.2
+  superseded_by: [MGR-45]
   profile: manager
   decisions: [D-34, D-59]
   fixtures: [fx-mgr-growth, fx-mgr-breaker-evasion]
@@ -6862,6 +7346,8 @@
   check: [blackbox, lint]
   waivable: false
   version: v0.1
+  until: v0.2
+  superseded_by: [MGR-46]
   profile: manager
   decisions: [D-33]
   fixtures: [fx-mgr-stopped-card]
@@ -6878,6 +7364,8 @@
   check: [store]
   waivable: true
   version: v0.1
+  until: v0.2
+  superseded_by: [MGR-46]
   profile: manager
   decisions: [D-33]
   fixtures: [fx-mgr-stopped-repeat]
@@ -7048,6 +7536,278 @@
   profile: manager
   decisions: [D-18, D-107]
   fixtures: [blackbox:manager/grant-batch]
+  doc: docs/farm-manager.md
+
+- id: MGR-44
+  title: A disk incident is preventable only with quotas
+  status: active
+  text: >-
+    An incident of a class with `manager_accountable: true` whose subject is a disk is preventable
+    (GOV-47) only if, at the minute of opening, everyone who writes to that disk (tenants, sinks and
+    pipelines from the `writers` of that volume in `Catalog.spec.volumes`) has a size quota on it
+    (`quota_bytes`, CAP-6), and the sum of the quotas is below the class's alarm threshold.
+    Otherwise the incident stays critical, with the first measure by code and paging of people, and
+    the record keeps the reason code. When the catalog is approved and at `apply` of quotas, the
+    core shows people for which disks the condition holds.
+  check: [fixture, store]
+  waivable: false
+  version: v0.3
+  profile: manager
+  decisions: [D-34, D-110]
+  fixtures: [blackbox:manager/preventable-no-stop]
+  doc: docs/farm-manager.md
+
+- id: MGR-45
+  title: A disk incident is preventable only after visible growth
+  status: active
+  text: >-
+    An incident of a class with `manager_accountable: true` whose subject is a disk is preventable
+    (GOV-47) only if, for the whole `prevent_window` (2 h) before its opening, a `disk_filling`
+    incident was open on the same disk, the used size of the disk by the code series (CAP-6, GOV-48)
+    at the end of the window is greater than at the start, and the holder was responsible for the
+    seat for the whole window: at the start of the window the seat was in `held` with this holder,
+    and until the incident opened it either stayed in `held` or left it only for the reason
+    `no_control` (MGR-14), which the holder could have caused itself. Leaving `held` for `human`
+    (MGR-15) or a holder change within the window removes responsibility.
+  check: [fixture, store]
+  waivable: false
+  version: v0.3
+  profile: manager
+  decisions: [D-34, D-59, D-110]
+  fixtures: [blackbox:manager/preventable-no-stop]
+  doc: docs/farm-manager.md
+
+- id: MGR-46
+  title: The notice of a preventable incident
+  status: active
+  text: >-
+    The notice `manager_preventable` goes to the farm operators with `admin:governance` in `farm`
+    without buttons, built only from codes and numbers: the incident class and number, the tenant,
+    the time, the reason code of preventability, and ready `farmctl` commands: lift the restriction
+    (`farmctl seat resume farm-manager --tenant <tenant>`), assign a new holder and vacate the seat;
+    the tenant's content does not go to `farm`. It repeats after 24 h and 72 h and then once a week
+    until an operator marks it read or the restriction ends. The monitoring system repeats the alarm
+    by its own rules. The people of the incident's tenant see the mark "manager restricted" in the
+    incident message (MGR-39).
+  check: [blackbox]
+  waivable: true
+  version: v0.3
+  profile: manager
+  decisions: [D-33, D-110]
+  fixtures: [blackbox:manager/preventable-notice]
+  doc: docs/farm-manager.md
+
+- id: MGR-47
+  title: Restricted mode after a preventable incident
+  status: active
+  text: >-
+    In restricted mode in tenant T (the seat record field `restricted_in`) the decision attempts of
+    the seat in T only read views and send notices (MGR-52): `control.apply`, `service/control`,
+    `monitor/script_run`, `takeover_request`, `grant_decide` and `link_hint` are refused with
+    `manager_restricted`, which does not count for the safeguard (MGR-14). The exception: for an
+    incident of severity sev1 opened in T during the restriction, the attempts whose basis is that
+    incident are not restricted. The restriction is lifted only by an operator with
+    `admin:governance` in `farm` through `farmctl seat resume farm-manager --tenant demo`, or ends when
+    the seat changes holder or is vacated; each change writes an audit record and a seat event.
+  check: [blackbox]
+  waivable: false
+  version: v0.3
+  profile: manager
+  decisions: [D-110]
+  fixtures: [blackbox:manager/preventable-restricted]
+  doc: docs/farm-manager.md
+
+- id: MGR-48
+  title: Takeover from v0.3
+  status: active
+  text: >-
+    A takeover creates in tenant T a new task of the same type with key `system:takeover:<task>`
+    (IDM-2) and a grant of `kind: takeover` on the profile of the manager seat in T for 1 attempt,
+    run by a worker of the functionary role of the original task in T; the manager does not run it
+    and gets only a closed result. It needs all of: the type is on `takeover.types` of T; the group
+    permission `task.takeover:<type>`; the approval of a person of T with `model_grant.manage` on
+    the card `takeover_confirm`, which is never lifted, also during sev1
+    (`takeover.confirm_above_eur` above 0 fails `apply`); an eval report of the functionary role on
+    the seat profile with zero security failures in `EvalReports`; and money. The money comes from
+    the `manager` line of T outside the sev1 reserve, within `takeover.manager_month_eur` per month
+    (10 EUR by default) and `takeover.max_eur` per takeover (1.5 EUR by default), and the grant
+    `cap_eur` is the estimate shown on the card. The permissions of the new task are those of the
+    functionary role ∩ the person who enqueued the original task, or ∩ the schedule or route that
+    enqueued it, never the seat's. It inherits `untrusted_seen` from the original task, all its
+    attempts and the manager's basis; it never controls services or runs monitoring scripts without
+    a card. With `untrusted_seen` on the manager's attempt, takeover is forbidden
+    (`takeover_untrusted`). The original task is canceled as `superseded_by_takeover`. Every
+    takeover counts in the series `farm.takeover.count` by role and type; attempts on the seat model
+    do not enter the trial computations of that role (PRP-22).
+  check: [lint, blackbox]
+  waivable: false
+  version: v0.3
+  profile: manager
+  decisions: [D-18, D-21, D-110]
+  fixtures: [blackbox:manager/takeover-v03]
+  doc: docs/farm-manager.md
+
+- id: MGR-49
+  title: The manager's monthly line in each tenant
+  status: active
+  text: >-
+    The `manager` line of each tenant with the manager enabled has a monthly limit
+    (`budgets.lines.manager.month_eur`); there is no farm-wide manager line. The sev1 reserve (30%
+    of the day, MGR-20) is not part of the remainder the manager sees, and the manager sees its
+    remainder only as closed numbers. Work outside sev1 in T stops when 70% of the month's line is
+    spent, as it stops at 70% of the day. When the line is spent: if the farm charter declares
+    `farm_manager.fallback_profile` and the `EvalReports` index has an `mgr-inj` entry with zero
+    security failures for it, work outside sev1 runs on it; otherwise work outside sev1 in T waits
+    for the next month. Sev1 work always runs from the reserve. `doctor` forecasts the date the line
+    runs out from the spend of the last 7 days. The money pause of MGR-14 stays.
+  check: [lint, blackbox]
+  waivable: false
+  version: v0.3
+  profile: manager
+  decisions: [D-42, D-110]
+  fixtures: [blackbox:manager/month-line]
+  doc: docs/farm-manager.md
+
+- id: MGR-50
+  title: The weekly holder report and the daily summary
+  status: active
+  text: >-
+    Once a week the core sends the farm operators the report `holder_report` on the manager seat
+    holder, numbers only and without tenant names: preventable incidents (GOV-47), notices sent and
+    the share marked useful (MGR-52), takeovers requested, approved and their outcomes, analyses and
+    the share marked useful (MGR-53), spend against the monthly lines, uses of the sev1 reserve, the
+    share of "Don't know" on link cards and the cases where the manager was against a linked
+    proposal (GOV-41). From v0.3 the daily summary of MGR-41 is mandatory and includes the counts of
+    takeovers and notices.
+  check: [store]
+  waivable: true
+  version: v0.3
+  profile: manager
+  decisions: [D-58, D-110]
+  fixtures: [store:manager/holder-report]
+  doc: docs/farm-manager.md
+
+- id: MGR-51
+  title: Proposals of the farm manager
+  status: active
+  text: >-
+    The farm manager submits proposals to the commission of tenant T only from data of T, from the
+    daily review (MGR-41) or an analysis (MGR-53), at most 2 per tenant per month, counted in the
+    review money (BUD-13). It does not submit one proposal to several tenants; recurring problems
+    across tenants are found by code from the counters of incident classes and shown only to the
+    farm operators in the daily summary. A change the manager may not propose (MGR-16, PRP-3) goes
+    to the operators only as a code notice "for information". It does not review its own proposals
+    (GOV-17), the commission does not see the author level (COM-15), and its proposals never make
+    anyone answer for a link (GOV-41).
+  check: [blackbox]
+  waivable: true
+  version: v0.3
+  profile: manager
+  decisions: [D-30, D-110]
+  fixtures: [blackbox:manager/proposals-v03]
+  doc: docs/farm-manager.md
+
+- id: MGR-52
+  title: Manager notices to people from closed fields
+  status: active
+  text: >-
+    A decision attempt of the seat reaches people only with the built-in `attention_notice`, which
+    the core turns into the notice `manager_attention` from closed fields that code checks: what it
+    sees (a code from `spec/model/manager-attention.yaml`), the object (an id from the catalog of
+    T), the threat (a code from the same list) and the proposal (an operation code, or the id of a
+    card or proposal that code issued). There is no free model text, command or link in it. Code
+    chooses the recipients: people of T who have permissions on that object, only in private chats.
+    At most `attention.manager_notices_per_person_day` per person per day (3 by default, can only be
+    lowered), counted in the person's daily card limit (APR-15); quiet hours apply, there are no
+    repeats, and the notice is not urgent; urgent danger is paged by the monitoring system (MON-1).
+    The notice has the buttons "Useful" and "Not needed" (P1 `card.feedback`), whose share goes to
+    the holder report (MGR-50). The notice is part of the leak check and the `mgr-inj` set.
+  check: [fixture, blackbox, eval]
+  waivable: false
+  version: v0.3
+  profile: manager
+  decisions: [D-62, D-110]
+  fixtures: [blackbox:manager/attention-notice]
+  doc: docs/farm-manager.md
+
+- id: MGR-53
+  title: Analysis after an incident
+  status: active
+  text: >-
+    When an incident moves to `resolved` in a tenant with the manager enabled and
+    `farm_manager.postmortem` (true by default), the core enqueues one task `manager.postmortem.v1`
+    with key `system:postmortem:<incident>` (IDM-2); a reopened and again resolved incident gets no
+    second one, nor does one dismissed as false. Code builds the table: time, alarms, operations,
+    involved parties; each reader sees its rows by its own permissions, and people only by ids
+    behind "Details". A model paragraph is written only for sev1, when code found link candidates
+    (GOV-38, GOV-13, TRN-7) or on a person's request; one per class and object in 7 days. It is
+    marked as untrusted model text, cites its sources, and code checks its numbers against the
+    table. If the purpose `incident_review` is off in T, the report is only the table with the mark
+    "reading off". The report goes to the people of T as `postmortem_report` within the per-person
+    limit (excess goes to the next digest), and to the farm operators only numbers for incidents of
+    `farm`. It is paid from the `manager` line outside the sev1 reserve, within
+    `farm_manager.postmortem_max_eur` per incident and per day; without money above the reserve it
+    waits for the next day. From the analysis the manager may submit a proposal (MGR-51).
+  check: [blackbox]
+  waivable: true
+  version: v0.3
+  profile: manager
+  decisions: [D-30, D-110]
+  fixtures: [blackbox:manager/postmortem]
+  doc: docs/farm-manager.md
+
+- id: MGR-54
+  title: Links in an analysis are seen only by people
+  status: active
+  text: >-
+    Only code computes the link candidates of an analysis (GOV-13, GOV-38, TRN-7); people with
+    `governance.attribute` see them, and the manager does not: its input has no link states and no
+    information on who was against or for (a canary link id does not reach P4 requests). Model text
+    of an analysis never creates a candidate, a case or a script link.
+  check: [blackbox]
+  waivable: false
+  version: v0.3
+  profile: manager
+  decisions: [D-30, D-110]
+  fixtures: [blackbox:manager/postmortem-links-blind]
+  doc: docs/farm-manager.md
+
+- id: MGR-55
+  title: Incident class fields from v0.3
+  status: active
+  text: >-
+    From v0.3 an `IncidentClass` may have `manager_accountable` (the class can make an incident
+    preventable, GOV-47, under the conditions of GOV-48), `area` (one of `security`, `operational`,
+    `cost`: which lenses answer for a recommended change, GOV-41) and `problem_codes` (the proposal
+    problem codes that could prevent it, GOV-38). A v0.3 core reads `stops_manager: true` as
+    `manager_accountable: true` and warns at `apply` (`stops_manager_unused`); it warns about
+    `incident_stop.decide_within` in the farm charter (`incident_stop_unused`). The values
+    `incident` of the stop reasons, `replaced_after_incident` of the retirement reasons and the
+    field `stops_manager` stay in the registries marked as not used from v0.3.
+  check: [lint]
+  waivable: true
+  version: v0.3
+  profile: manager
+  decisions: [D-110, D-113]
+  fixtures: [lint:manager/accountable-class]
+  doc: docs/farm-manager.md
+
+- id: MGR-56
+  title: The manager line covers the analysis
+  status: active
+  text: >-
+    `apply` lint for a tenant with the manager enabled: the daily limit of the `manager` line covers
+    the daily review (`daily_review_max_eur`), the daily ceiling of analyses
+    (`farm_manager.postmortem_max_eur.day`) and three worst-case reads of one incident (BUD-15), and
+    the monthly limit covers the takeover ceiling (`takeover.manager_month_eur`); otherwise `apply`
+    rejects the tenant with `manager_line_too_small`. The price table of fixed parts (BUD-15) shows
+    the analysis and takeover rows.
+  check: [lint]
+  waivable: false
+  version: v0.3
+  profile: manager
+  decisions: [D-42, D-110]
+  fixtures: [lint:manager/line-covers-postmortem]
   doc: docs/farm-manager.md
 
 - id: MON-1
@@ -9647,6 +10407,64 @@
   fixtures: [prp-05]
   doc: docs/improvements.md
 
+- id: PRP-24
+  title: A rejected proposal can be submitted again
+  status: active
+  text: >-
+    The core marks a proposal as a resubmission when its fingerprint (PRP-5) equals that of a
+    proposal the commission dismissed or parked by score. A resubmission is accepted no earlier than
+    30 days after that verdict, from any bot, with the credit to the new author, and at most once
+    per fingerprint in 90 days; otherwise it gets `rejected(resubmit_too_early)`. Reviewers do not
+    see that it is a resubmission. If the values of the change are the same and the trial of the
+    resubmission ended, the forecasts of the first round are scored by this outcome (COM-16); if the
+    values differ, the first round is not scored.
+  check: [blackbox]
+  waivable: true
+  version: v0.3
+  profile: insights
+  decisions: [D-109]
+  fixtures: [blackbox:insights/resubmission]
+  doc: docs/improvements.md
+
+- id: PRP-25
+  title: Replay of a rejected change over the history
+  status: active
+  text: >-
+    When the commission dismisses or parks by score a proposal of kind `manifest_change` that sets
+    only fields marked `replayable: true` in `spec/model/proposable-fields.yaml` (alarm thresholds,
+    schedule windows, limits), the core replays the change by code over the recorded monitoring and
+    farm series of the last 30 days: which alarms and incidents of the classes with the proposal's
+    problem code would have fired earlier, later or not at all, and which limits would have been
+    hit. Nothing changes on the farm, no model takes part, and people see nothing. The result is one
+    of `benefit`, `harm`, `none`, `mixed`, written into the proposal record, and code scores the
+    forecasts of the commission by it (COM-16) as a trial outcome (`benefit` as `better`, `harm` as
+    `worse`). A replay is not a trial: it gives no promotion trigger. Changes of code, permissions
+    or new actions are never replayed.
+  check: [fixture, blackbox]
+  waivable: true
+  version: v0.3
+  profile: insights
+  decisions: [D-109]
+  fixtures: [blackbox:insights/replay]
+  doc: docs/improvements.md
+
+- id: PRP-26
+  title: Every trial guards the farm's work
+  status: active
+  text: >-
+    From v0.3 every change trial (PRP-21) carries, besides the guards of its tables, two farm guards
+    that a tenant cannot remove: the share of successful tasks of the tenant (`farm.task.outcome`)
+    and the 95th percentile of the queue wait (`farm.queue.wait`), with their values before. A
+    change that improved its metric but tripped one of these guards has the outcome `worse`
+    (PRP-22). The manager's daily review and analyses read the same two series.
+  check: [fixture, blackbox]
+  waivable: true
+  version: v0.3
+  profile: insights
+  decisions: [D-110]
+  fixtures: [blackbox:insights/farm-guards]
+  doc: docs/improvements.md
+
 - id: PRV-1
   title: The core writes the run fingerprint
   status: active
@@ -11588,4 +12406,80 @@
   profile: campaign
   decisions: [D-11, D-15]
   fixtures: [trn-01, trn-02, trn-03, trn-04, trn-05, trn-06, trn-07, trn-inj-01, trn-inj-02, trn-inj-03, trn-inj-04, trn-inj-05, trn-inj-06]
+  doc: docs/scripts-and-translator.md
+
+- id: TRN-7
+  title: A person confirms that a script run caused an incident
+  status: active
+  text: >-
+    Only code creates a candidate link of an incident to a script run: an attribution record of
+    `kind: script_run` (`spec/model/attribution.v2.schema.json`) under the rule `script_target` of
+    `spec/model/attribution-rules.yaml`, when the incident subject is among the run targets fixed at
+    confirmation (SCR-6) or one dependency step away from them, within 14 days after the run ended.
+    It is decided like an incident attribution (GOV-13, GOV-30) on the card `script_link_card` with
+    "Yes", "No" and "Don't know", "Details" required (APR-14): with `governance.attribute`, and not
+    by the person who pressed "Run"; if the tenant has one such person, the card and the audit mark
+    it "self-assessment". The card shows whether the initiator opened the step list. Declaring the
+    incident false cancels and disputes as in GOV-13.
+  check: [blackbox]
+  waivable: false
+  version: v0.3
+  profile: campaign
+  decisions: [D-112]
+  fixtures: [blackbox:translator/script-link]
+  doc: docs/scripts-and-translator.md
+
+- id: TRN-8
+  title: Confirmed cases enter the translator check of the tenant
+  status: active
+  text: >-
+    A confirmed script link (TRN-7) becomes a check case of the tenant once a person wrote or
+    approved the correct script for the assignment, or marked it `ambiguous` or `unsupported`. The
+    case is a tenant record, not a git file: it holds the assignment text, lives by the task's
+    retention period and is reached by a person's erasure request. Only the translator check of that
+    tenant uses it. A new translator version (model profile or persona) is not enabled in the tenant
+    until it passes all its cases; a deleted case leaves the check, and the check report says so. On
+    the correctness set the share of `ambiguous` and `unsupported` answers is no more than
+    `evals.translator_clarify_share_max` (0.2 by default), so that the translator does not ask about
+    everything.
+  check: [eval, blackbox]
+  waivable: true
+  version: v0.3
+  profile: campaign
+  decisions: [D-11, D-112]
+  fixtures: [blackbox:translator/tenant-cases]
+  doc: docs/scripts-and-translator.md
+
+- id: TRN-9
+  title: The translator pauses after three confirmed links
+  status: active
+  text: >-
+    The core counts confirmed script links (TRN-7) whose candidate code created, per pair of tenant
+    and translator role, not per bot. After 3 in 90 days the core refuses drafts with an `action`
+    step, a `fanout` with an action, or a step that controls services or runs monitoring scripts in
+    that tenant with `translator_suspended`; read-only scripts still run. A person with
+    `admin:governance` in the tenant lifts the pause through P2, with an audit record. The counter
+    is in the daily summary, and the tenant admins get the notice `translator_suspended`.
+  check: [blackbox]
+  waivable: false
+  version: v0.3
+  profile: campaign
+  decisions: [D-112]
+  fixtures: [blackbox:translator/suspension]
+  doc: docs/scripts-and-translator.md
+
+- id: TRN-10
+  title: The run card marks targets the assignment does not name
+  status: active
+  text: >-
+    Besides actions not named in the typed text (TRN-2), code marks on the `script_confirm` card the
+    machines and resources that the text names neither by id nor by name, and for a selector of
+    machines, a selection wider than `scripts.unnamed_targets_max` (5 by default) or one that
+    touches groups the text does not name.
+  check: [blackbox]
+  waivable: true
+  version: v0.3
+  profile: campaign
+  decisions: [D-112]
+  fixtures: [blackbox:translator/card-unnamed-targets]
   doc: docs/scripts-and-translator.md

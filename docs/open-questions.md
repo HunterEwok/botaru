@@ -45,6 +45,7 @@ This is what the skeleton deliberately leaves open. The first part concerns the 
 | Rank ceiling of a personal assistant | The ceiling of the `worker` profile, as for a functionary (IDN-5). | Which model a personal assistant can get. |
 | Whether a reason code is needed to read the sealed memory of a retired bot | No: an audit record with the author and the time is written (MEM-4). | How thoroughly reading sealed memory is explained. |
 | Whether to close automatically resolved incidents that nobody closed | No: they wait for a person or a closing pass. | How many incidents stay in the resolved state. |
+| How much money a month goes to the reward of the most accurate commission member (v0.3) | `commission.reward_cap_eur_month: 0`: no reward until the owner sets an amount (COM-18). | Whether accuracy brings a stronger model, and the `review` line of each tenant. |
 
 ### Improvements
 

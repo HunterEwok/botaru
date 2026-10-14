@@ -14,3 +14,149 @@ checks:
     What: (v0.2) an attribution card is answered "No" after the second reminder; another one is disputed and then canceled
     Expectation: no third reminder after the answer; a disputed attribution stays out of the calibration until resolved; a
       canceled one leaves it
+- id: blackbox:governance/accountability-shadow
+  method: blackbox
+  rules:
+  - GOV-36
+  - GOV-37
+  version: v0.3
+  section: Tests without a model
+  source: docs/quality.md:608
+  spec:
+    What: a tenant in `shadow` with a confirmed link to a rejected proposal; reviews written before `governance_v03_since`
+    Expectation: the link is shown in P2 `commission.status` only; no card, nobody leaves, no reward; old reviews are not
+      scored; `governance.v03_enabled` is in the audit
+- id: blackbox:governance/accountability-ready
+  method: blackbox
+  rules:
+  - GOV-36
+  version: v0.3
+  section: Tests without a model
+  source: docs/quality.md:609
+  spec:
+    What: '`apply` of `accountability: on` with one holder at 19 scored forecasts; then all at 20'
+    Expectation: '`accountability_not_ready`; then the card `accountability_ready` goes once a month, `apply` accepts `on`
+      and writes `commission.accountability_on`'
+- id: blackbox:governance/rejection-link-candidate
+  method: blackbox
+  rules:
+  - GOV-38
+  version: v0.3
+  section: Tests without a model
+  source: docs/quality.md:610
+  spec:
+    What: a `disk_full` incident on `db1`; a proposal lowering the `disk.used` threshold on `db1` dismissed 20 days earlier,
+      problem code in `problem_codes`; another one 100 days earlier
+    Expectation: 'one candidate of `kind: rejected_proposal` under `rejected_direct`; none for the old proposal; no model
+      call'
+- id: blackbox:governance/rejection-link-exclusions
+  method: blackbox
+  rules:
+  - GOV-38
+  version: v0.3
+  section: Tests without a model
+  source: docs/quality.md:611
+  spec:
+    What: the same with an external cause, with `untrusted_seen`, with the farm manager as author, with the author writing
+      40% of the alarm series, with 4 subjects in the problem
+    Expectation: no candidate in any case; one incident never gets more than 3 candidates
+- id: blackbox:governance/manager-hint
+  method: blackbox
+  rules:
+  - GOV-39
+  version: v0.3
+  section: Tests without a model
+  source: docs/quality.md:612
+  spec:
+    What: the manager calls `link_hint` four times in a week and once about its own proposal
+    Expectation: three hints visible to people marked "not checked", no candidate; the fourth is refused by the limit, the
+      own one with `own_proposal`
+- id: blackbox:governance/rejection-link-card
+  method: blackbox
+  rules:
+  - GOV-40
+  version: v0.3
+  section: Tests without a model
+  source: docs/quality.md:613
+  spec:
+    What: a candidate in a tenant with `on`; "Yes" without "Details"; the creator of a hint candidate presses "Yes" while
+      a second person exists; 7 days of silence
+    Expectation: '`details_not_opened`; the creator''s answer refused; silence keeps `unknown` and gives at most 3 reminders'
+- id: blackbox:governance/against-and-for
+  method: blackbox
+  rules:
+  - GOV-41
+  version: v0.3
+  section: Tests without a model
+  source: docs/quality.md:614
+  spec:
+    What: 'a confirmed link with a veto by security, score 1 by cost, no review by the value seat; a confirmed attribution
+      of class `area: cost` to a change recommended by all'
+    Expectation: the cost and value holders answer for the link, security does not; only the cost holder answers for the attribution;
+      the farm manager never
+- id: blackbox:governance/unseat-park
+  method: blackbox
+  rules:
+  - GOV-42
+  version: v0.3
+  section: Tests without a model
+  source: docs/quality.md:615
+  spec:
+    What: '"Yes" on a link where seat 3 answers'
+    Expectation: in one transaction the seat is vacant with epoch + 1, the bot is `parked`, `seat_parked_notice` goes with
+      `farmctl worker enroll --bot`; the bot is not retired as `worker_gone`; after 180 days it retires with `parked_expired`
+- id: blackbox:governance/unseat-pace
+  method: blackbox
+  rules:
+  - GOV-42
+  version: v0.3
+  section: Tests without a model
+  source: docs/quality.md:616
+  spec:
+    What: two confirmed links in 10 days; a link where the last holder of a veto lens answers
+    Expectation: the second departure waits in order; the last veto holder stays
+- id: blackbox:governance/unseat-false-alarm
+  method: blackbox
+  rules:
+  - GOV-42
+  version: v0.3
+  section: Tests without a model
+  source: docs/quality.md:617
+  spec:
+    What: the incident of a confirmed link is dismissed as false while the seat is vacant, then in another case after a new
+      holder took it
+    Expectation: '`seat_return_notice`; in the second case the bot heads the queue without cooldown and the new holder stays'
+- id: blackbox:governance/accuracy-leaver
+  method: blackbox
+  rules:
+  - GOV-43
+  version: v0.3
+  section: Tests without a model
+  source: docs/quality.md:618
+  spec:
+    What: a case needs a seat in a tenant with `on`; one holder has the worst accuracy, one has 8 scored forecasts for 30
+      days, one is protected by a reward; overlapping intervals of the two worst
+    Expectation: the worst leaves after the person's button; the 8-forecast holder counts with the lens median; the protected
+      one is not chosen; with overlap the vote runs among the tied seats only
+- id: blackbox:governance/cooldown-after-unseat
+  method: blackbox
+  rules:
+  - GOV-44
+  version: v0.3
+  section: Tests without a model
+  source: docs/quality.md:619
+  spec:
+    What: a parked bot gets a success 100 days after leaving, and another 200 days after
+    Expectation: no trigger for the first; a new queue entry for the second
+- id: blackbox:governance/accountability-unaware
+  method: blackbox
+  rules:
+  - GOV-46
+  version: v0.3
+  section: Tests without a model
+  source: docs/quality.md:621
+  spec:
+    What: contexts of a reviewer, the manager and a functionary in a tenant with `on`, a confirmed link and a parked bot;
+      a canary link id
+    Expectation: no score, accuracy, reward, link state, mode, parking or restricted mode in any context; the canary does
+      not reach P4

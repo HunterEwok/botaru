@@ -13,7 +13,7 @@ Run `git fetch origin main` before a local run: without the base branch the addi
 
 | File | What it checks or does |
 |---|---|
-| `check_registry.py` | form of the rule registry: each number once; an active rule has a text, a check method, `waivable`, a version, a profile and a document; a retired rule has a date, a reason and a replacement; unknown row fields are an error |
+| `check_registry.py` | form of the rule registry: each number once; an active rule has a text, a check method, `waivable`, a version, a profile and a document; a retired rule has a date, a reason and a replacement; a rule changed in a later version keeps its row with `until` (the last version it applies to) and `superseded_by` (active rules of a later version that replace it); unknown row fields are an error |
 | `gen_rules.py` | builds `conformance/rules.md`, `conformance/retired.md` and the "Rules of this section" sections, and removes the section from a document without rules; with `--check` it only compares |
 | `gen_lifecycles.py` | builds `spec/lifecycles/<object>.yaml` from the tables of `<object>.md`; with `--check` it compares and checks that transitions name declared states and that transition tables belong to machines by caption |
 | `gen_suites.py` | builds the check descriptions in `conformance/suites/` from the tables of `docs/quality.md`; with `--check` it compares |
@@ -43,7 +43,7 @@ Every message starts with a stable code in square brackets, then the place and t
 - rules covered by data for an implementation runner or an eval: the behavior fixtures in `conformance/fixtures/` and the `evals/` cases; the skeleton CI checks their form and call bodies, and the implementation runner or an eval with a model runs the behavior;
 - rules covered only by a check description: a `conformance/suites/` entry (given, action, expectation; the implementation writes the check code), a `state-machine/` fixture (transitions in prose), a behavior fixture whose call body fails its request schema, or an eval case of a later version.
 
-A separate line gives the number of `core` rules with `waivable: false` that are covered only by a description. The note `[fixture_not_citing]` means that a fixture from the `fixtures` field of a rule does not name that rule in its `rules`. A version is ready when `python3 ci/readiness.py v0.1 --strict` passes; `run_all.py` and CI run v0.1 and v0.2 readiness with `--strict`, so a version rule without a check fails the PR. The black-box runner, which runs the suites against a live implementation, is not part of the skeleton: it is written together with the first implementation (`docs/quality.md`).
+A separate line gives the number of `core` rules with `waivable: false` that are covered only by a description. The note `[fixture_not_citing]` means that a fixture from the `fixtures` field of a rule does not name that rule in its `rules`. A version is ready when `python3 ci/readiness.py v0.1 --strict` passes; `run_all.py` and CI run v0.1, v0.2 and v0.3 readiness with `--strict`, so a version rule without a check fails the PR. The black-box runner, which runs the suites against a live implementation, is not part of the skeleton: it is written together with the first implementation (`docs/quality.md`).
 
 ## Your own files outside the skeleton
 

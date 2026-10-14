@@ -42,3 +42,13 @@ checks:
       `admin` and the team lead group; no model text; the review once a day only with `enabled` and `daily_review`, not more
       expensive than `daily_review_max_eur`; a separate line in `manager.cost`; the review proposal is not in the `related_to`
       of functionaries'
+- id: store:manager/holder-report
+  method: store
+  rules:
+  - MGR-50
+  version: v0.3
+  section: Tests without a model
+  source: docs/quality.md:628
+  spec:
+    What: a week with a preventable incident, 10 notices with 6 marked useful, 2 takeovers and an analysis
+    Expectation: '`holder_report` holds these numbers and no tenant names'

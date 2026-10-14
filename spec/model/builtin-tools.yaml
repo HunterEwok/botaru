@@ -1,5 +1,5 @@
 registry: builtin-tools
-version: 3
+version: 4
 description: >-
   Built-in P3 tools. The core adds them to the tools/list of an attempt at step 7
   of catalog assembly, if the tool allows the role profile (role-profiles.yaml) and
@@ -341,3 +341,25 @@ entries:
     args_schema: kb-read-request.schema.json
     result_schema: kb-read-response.schema.json
     rules: [PRF-1, KNW-1, KNW-2, KNW-5, KNW-6]
+  - id: link_hint
+    since: v0.3
+    access: read
+    changes_state: true
+    profiles: [farm-manager]
+    purposes: [manage]
+    condition: the tenant has commission seats; refused with own_proposal for a proposal of the seat holder and with manager_restricted in restricted mode
+    limit: at most 3 hints per tenant per week (GOV-39)
+    args_schema: link-hint.schema.json
+    result_schema: staged-response.schema.json
+    rules: [PRF-1, GOV-39]
+  - id: attention_notice
+    since: v0.3
+    access: read
+    changes_state: true
+    profiles: [farm-manager]
+    purposes: [manage]
+    condition: the tenant has the manager enabled; code chooses the recipients by permissions on the object
+    limit: attention.manager_notices_per_person_day per person per day (MGR-52)
+    args_schema: attention-notice.schema.json
+    result_schema: staged-response.schema.json
+    rules: [PRF-1, MGR-52]

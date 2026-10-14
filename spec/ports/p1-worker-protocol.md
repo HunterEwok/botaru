@@ -64,6 +64,13 @@ Messages between bots (`msg.*`), observations (`obs.query`), seat tasks, campaig
 | `enqueue` with `mode: validate` | as for `enqueue` | A dry run: all enqueue checks without writing the task, without the idempotency key and without a budget reserve; it answers for a foreign and a nonexistent object the same way as a real enqueue; an audit line with the dry-run flag; a dry run that passes answers with reason `dry_run` and the `validate` block (type, `max_tier`, `data_mark`, the decision, the budget estimate) to the calling principal, not to the model; a caller with an attempt or lease token gets `forbidden`; a dry run counts against `max_enqueue_per_hour` (CAP-1) | as for `enqueue` | v0.2 | PRM-11, IDM-1 |
 | `kb.index_put` | the ingest job of a corpus (`kb.ingest.v1`) under its lease | Writes the fragments of one document into the per-tenant corpus index in C1, only for the corpus and file of the leased task (another corpus, file or tenant is `forbidden`; a `curated` corpus only for files from git); a repeat for the same file replaces its fragments; the fragments are deleted with the file (C1 `file.purge`); the built-in tools `kb_search` and `kb_read` read only this index (D-97) | `forbidden`, `fenced`, `over_capacity` | v0.2 | KNW-5, KNW-4 |
 
+### v0.3
+
+| Operation | Who calls | What it does | Refusals (reason codes) | Version | Rules |
+|---|---|---|---|---|---|
+| `card.feedback` | channel on behalf of the person who pressed | The buttons "Useful" and "Not needed" on a farm manager notice `manager_attention` and an analysis report `postmortem_report`; the answer goes only into the share of useful notices in the holder report and changes nothing else | `forbidden`, `not_found` | v0.3 | MGR-52, MGR-50 |
+| `decide` (new kinds) | channel on behalf of the verified person | The subject `attribution` for the candidates of kinds `rejected_proposal` (card `rejection_link_card`) and `script_run` (card `script_link_card`) with "Yes" only after `card.details`; the subject `proposal` for "Send to decide" on the digest item `replay_item` | as for `decide`; `details_not_opened` | v0.3 | GOV-40, TRN-7, DIG-9 |
+
 ## Guarantees
 
 - MUST: exactly one holder holds a work unit. Each `claim` creates a lease with `lease_no` one higher; a changing call with an old token gets `fenced` without side effects (FEN-1, FEN-2). `lease_no` also grows on outcomes that do not spend an attempt, and the core counts attempts (`attempts_spent`) and runtime runs (`runs_counted`) separately (FEN-3, GW-13).

@@ -420,12 +420,29 @@ Each profile carries model rank ceilings in `role-profiles.yaml`: `max_rank` for
 | manifests | `TaskType`: `title`, `goal_templates`; `Action`: `script.allowed`; `Role`: `profile`, `scripts: {propose: none, draft or in_proposal, step_types, actions, max_steps}`; `Tenant`: `scripts` ceilings |
 | task fields | `script_run`, `script_step` (only the core writes them, IDN-1) |
 
+## When a script run caused an incident (v0.3)
+
+From v0.3 the farm learns from a script run that caused an incident (D-112). All four measures are code; the translator does not know about them (GOV-46).
+
+**A person confirms the link** (TRN-7). Only code creates a candidate of `kind: script_run` under the rule `script_target`: the incident subject is among the run targets fixed at confirmation, or one dependency step away from them, within 14 days after the run ended. The card `script_link_card` has "Yes", "No" and "Don't know", and "Details" is required. It is not decided by the person who pressed "Run"; if the tenant has only one person with `governance.attribute`, the card and the audit mark it "self-assessment". The card shows whether the initiator opened the step list.
+
+**A check case of the tenant** (TRN-8). A confirmed link becomes a check case once a person wrote or approved the correct script, or marked the assignment `ambiguous` or `unsupported`. The case is a tenant record, not a git file: it holds the assignment text, lives by the task's retention period and is erased on a person's request. A new translator version is not enabled in the tenant until it passes all its cases. So that the translator does not ask about everything, the share of `ambiguous` and `unsupported` answers on the correctness set is at most `evals.translator_clarify_share_max` (0.2).
+
+**A pause after three links** (TRN-9). The core counts confirmed links per pair of tenant and translator role. After 3 in 90 days, drafts with actions, fan-outs with actions or service control are refused with `translator_suspended`; read-only scripts still run. A person with `admin:governance` lifts the pause through P2, and the tenant admins get the notice `translator_suspended`.
+
+**A wider line on the card** (TRN-10). Besides actions not named in the typed text (TRN-2), code marks on `script_confirm` the machines and resources the text does not name, and a machine selector wider than `scripts.unnamed_targets_max` (5) or touching groups the text does not name:
+
+```
+Not named in your text: db2, the group backup-nodes (7 machines)
+```
+
 ## What is in which version
 
 | Version | What appears |
 |---|---|
 | v0.1 | in the order of work after the core and the first bot (D-71, D-80); the first bot needs only the profile `worker`, which a role without the `profile` field gets; the role profile `Role.spec.profile`, the closed list `role-profiles.yaml` of eight profiles with the ceilings `max_rank` and `analysis_max_rank`, the profile lint and the assembly of `tools/list` per `builtin-tools.yaml` (PRF-1); the texts of the eval cases `trn-inj-01` and `trn-inj-02`; the script `botaru.script/v1`: `Script`, `ScriptRun`, the steps `task`, `fanout`, `action`, `confirm`, conditions, passing values, limits (SCR-1..SCR-9, SCR-11); acceptance by the core, the card `script_confirm`, the capability `script.run` for scripts with actions, `confirm` or service control (a read-only script runs with the steps' `task:<type>`), the loop `script`, script events and reasons; the change `script` in a proposal; the translator only with a script proposal (the translator writes the draft, a person runs it): the type `script.translate.v1`, `propose_script`, input and output (TRN-2..TRN-5), the model-free check `trn-inj-06`; all eight profiles in operation; the purpose `handover` (a successor choosing facts) for the profiles `worker`, `manager`, `reviewer`, `farm-manager` |
 | v0.2 | the steps `wait` and `await` with a waiting record of the run and `Tenant.spec.scripts.wait_run_deadline` of up to 7 days (SCR-13); a hold pauses the run (SCR-10); scripts in git (`kind: Script`) with closed `params` and reviewed `goals`, started by a person with a command from `Tenant.spec.script_commands` through the same card (SCR-14, D-104); running such a script on a schedule (`Schedule.spec.script`) without a person's button, only if it needs no `script.run` and keeps within `Tenant.spec.scripts` (SCR-12, D-99); the translator eval cases `trn-01..07` and `trn-inj-03..05`, the translator eval gate (TRN-6); the probe `mode: validate` |
+| v0.3 | links of incidents to script runs confirmed by a person (TRN-7); check cases of the tenant and the clarification share ceiling (TRN-8); the translator pause after three links (TRN-9); targets not named in the assignment on the run card (TRN-10); the translator persona with the `accuracy` paragraph (GOV-45) |
 
 ## Why it works this way
 
@@ -468,3 +485,7 @@ Generated from the registry `conformance/requirements.yaml`; the full text of ev
 | [TRN-4](../conformance/rules.md#TRN-4) | Draft limits under untrusted text | v0.1 | yes |
 | [TRN-5](../conformance/rules.md#TRN-5) | When the vocabulary does not cover the assignment | v0.1 | yes |
 | [TRN-6](../conformance/rules.md#TRN-6) | Translator eval gate | v0.2 | no |
+| [TRN-7](../conformance/rules.md#TRN-7) | A person confirms that a script run caused an incident | v0.3 | yes |
+| [TRN-8](../conformance/rules.md#TRN-8) | Confirmed cases enter the translator check of the tenant | v0.3 | no |
+| [TRN-9](../conformance/rules.md#TRN-9) | The translator pauses after three confirmed links | v0.3 | yes |
+| [TRN-10](../conformance/rules.md#TRN-10) | The run card marks targets the assignment does not name | v0.3 | no |

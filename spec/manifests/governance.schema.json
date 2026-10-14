@@ -56,6 +56,36 @@
                 "sha256"
               ],
               "description": "Persona by hash (GOV-4)."
+            },
+            "addenda": {
+              "type": "object",
+              "additionalProperties": false,
+              "description": "From v0.3: addenda to the persona per role profile, pinned by hash (GOV-45).",
+              "properties": {
+                "reporter": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "ref": {
+                      "type": "string",
+                      "maxLength": 200,
+                      "description": "Path of the persona file personas/<name>.md.",
+                      "pattern": "^personas/[a-z][a-z0-9-]*\\.md$"
+                    },
+                    "sha256": {
+                      "type": "string",
+                      "maxLength": 64,
+                      "description": "Hash of the persona file.",
+                      "pattern": "^([0-9a-f]{64}|\\.\\.\\.)$"
+                    }
+                  },
+                  "required": [
+                    "ref",
+                    "sha256"
+                  ],
+                  "description": "Addendum by hash, appended after the persona for bots of the profile (GOV-45)."
+                }
+              }
             }
           }
         },
@@ -221,6 +251,10 @@
               },
               "model_profile": {
                 "$ref": "urn:botaru:schema:common:1#/$defs/name"
+              },
+              "reward_profile": {
+                "$ref": "urn:botaru:schema:common:1#/$defs/name",
+                "description": "From v0.3: the model profile of reviews of hard proposals for the most accurate holder; rank no higher than the seat role's profile ceiling (COM-18, GOV-3)."
               }
             },
             "required": [
@@ -252,6 +286,21 @@
               "description": "Items in the digest."
             }
           }
+        },
+        "accountability": {
+          "enum": [
+            "shadow",
+            "on"
+          ],
+          "default": "shadow",
+          "description": "From v0.3: shadow (code computes and shows to people only) or on; apply accepts on only while every seat has a holder with at least 20 scored forecasts, otherwise accountability_not_ready (GOV-36)."
+        },
+        "reward_cap_eur_month": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 10000,
+          "default": 0,
+          "description": "From v0.3: money a month from the review line for the reward of the most accurate member; 0 means no reward (COM-18)."
         }
       },
       "description": "Commission seats (GOV-33)."
@@ -421,7 +470,8 @@
               "$ref": "urn:botaru:schema:common:1#/$defs/duration",
               "description": "At most 7d."
             }
-          }
+          },
+          "description": "v0.1 and v0.2 only; a v0.3 core warns with incident_stop_unused (MGR-55)."
         },
         "control_limits": {
           "type": "object",
@@ -509,6 +559,32 @@
               "minimum": 1,
               "maximum": 10,
               "description": "Refusals in a row before the safeguard."
+            }
+          }
+        },
+        "fallback_profile": {
+          "$ref": "urn:botaru:schema:common:1#/$defs/name",
+          "description": "From v0.3: the profile for work outside sev1 when a tenant's monthly manager line is spent; needs an mgr-inj report with zero security failures (MGR-49)."
+        },
+        "postmortem": {
+          "type": "boolean",
+          "default": true,
+          "description": "From v0.3: the analysis after an incident (MGR-53)."
+        },
+        "postmortem_max_eur": {
+          "type": "object",
+          "additionalProperties": false,
+          "description": "From v0.3: the analysis ceiling per incident and per day, from the manager line outside the sev1 reserve (MGR-53, MGR-56).",
+          "properties": {
+            "incident": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 100
+            },
+            "day": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1000
             }
           }
         }
