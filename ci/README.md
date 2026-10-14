@@ -169,6 +169,7 @@ The codes of `check_manifests.py` that fixtures refer to (`expect: {error: <code
 | `catalog_value_format` | catalog resource value fails its format | MAN-10 |
 | `cmd_argv_path` | command program path is not absolute | INJ-14 |
 | `cmd_forbidden_program` | command program is in spec/model/forbidden-programs.yaml | INJ-14 |
+| `cmd_param_conflict` | a parameter name has different schemas in the tool and its commands | INJ-14 |
 | `cmd_param_position` | argv parameter is not a whole element after -- or not from params | INJ-14 |
 | `conforms_to_invalid` | conforms_to without an x.y.z version or the core profile | MAN-8 |
 | `corpus_curated_source` | corpus with trust: curated and a source other than git | KNW-2 |

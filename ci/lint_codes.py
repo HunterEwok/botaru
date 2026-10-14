@@ -89,6 +89,7 @@ CODES = {
     'cmd_argv_path': ('command program path is not absolute', 'INJ-14'),
     'cmd_forbidden_program': ('command program is in spec/model/forbidden-programs.yaml', 'INJ-14'),
     'cmd_param_position': ('argv parameter is not a whole element after -- or not from params', 'INJ-14'),
+    'cmd_param_conflict': ('a parameter name has different schemas in the tool and its commands', 'INJ-14'),
     'routine_fields': ('risk: routine fields are incomplete or set on another risk', 'MAN-9, APR-10'),
     'executor_unknown': ('action executor is missing or not a write tool', 'MAN-9'),
     'role_profile_unknown': ('role profile is not in spec/model/role-profiles.yaml', 'PRF-1'),

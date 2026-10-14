@@ -645,6 +645,15 @@ def lint(docs, today=None, farm_hosts=None, examples_mode=False, claimed=None, s
                         'output of a person\'s connection is never cached (PRM-12, SEC-7)')
             if t.get('untrusted_output') is False and t.get('output_schema') and free_text(t['output_schema']):
                 f.error('untrusted_output_false_text', where, f'{tid}: untrusted_output: false with free text in the output (INJ-3)')
+            # The model sees one schema per parameter name, so the tool and all its commands
+            # must agree on it; otherwise a value allowed for one command reaches another.
+            seen_params = dict(t.get('params') or {})
+            for cname, c in sorted((t.get('commands') or {}).items()):
+                for k, v in (c.get('params') or {}).items():
+                    if k in seen_params and seen_params[k] != v:
+                        f.error('cmd_param_conflict', where,
+                                f'{tid} {cname}: parameter {k} has another schema elsewhere in the tool (INJ-14)')
+                    seen_params.setdefault(k, v)
             for cname, c in (t.get('commands') or {}).items():
                 argv = c['argv']
                 if not argv[0].startswith('/'):

@@ -128,6 +128,18 @@ func TestCheck(t *testing.T) {
 	if is := Check(free, nil); len(is) != 1 || is[0].Code != "sandbox_placement" || is[0].Path != "path" {
 		t.Fatalf("a free string on a host plugin: %v", is)
 	}
+	// A parameter name has one schema across the tool and its commands; the same schema twice
+	// is fine.
+	shared := tool("/usr/bin/systemctl", "status", "--", "{unit}")
+	shared.Tools[0].Commands["d"] = Command{Argv: []string{"/usr/bin/journalctl", "--", "{unit}"},
+		Params: map[string]map[string]any{"unit": {"enum_from": "catalog.services"}}}
+	if is := Check(shared, nil); len(is) > 0 {
+		t.Fatalf("one schema shared by two commands: %v", is)
+	}
+	shared.Tools[0].Commands["d"].Params["unit"] = map[string]any{"enum": []any{"sshd.service"}}
+	if is := Check(shared, nil); len(is) != 1 || is[0].Code != "cmd_param_conflict" || is[0].Path != "d" {
+		t.Fatalf("two schemas for one parameter: %v", is)
+	}
 	// Trusted output without a closed schema is shown as untrusted, so it needs the masks.
 	f2 := false
 	fallback := tool("/usr/bin/df")

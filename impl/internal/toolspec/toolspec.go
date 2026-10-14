@@ -10,6 +10,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"path"
+	"reflect"
 	"slices"
 	"sort"
 	"strings"
@@ -284,7 +285,21 @@ func Check(p Plugin, forbidden map[string]bool) []Issue {
 		if !t.Untrusted() && t.OutputSchema != nil && freeText(t.OutputSchema) {
 			out = append(out, Issue{Code: "untrusted_output_false_text", Tool: t.Name})
 		}
+		// The model sees one schema per parameter name, so the tool and all its commands must
+		// agree on it; otherwise a value allowed for one command reaches another.
+		seen := map[string]map[string]any{}
+		for k, v := range t.Params {
+			seen[k] = v
+		}
 		for _, n := range sortedKeys(t.Commands) {
+			for _, k := range sortedKeys(t.Commands[n].Params) {
+				v := t.Commands[n].Params[k]
+				if prev, ok := seen[k]; ok && !reflect.DeepEqual(prev, v) {
+					out = append(out, Issue{Code: "cmd_param_conflict", Tool: t.Name, Path: n})
+				} else if !ok {
+					seen[k] = v
+				}
+			}
 			out = append(out, checkCommand(t, n, t.Commands[n], forbidden)...)
 		}
 	}

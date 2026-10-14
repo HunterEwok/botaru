@@ -153,6 +153,31 @@ cases:
                   argv: [/usr/bin/systemctl, status, "--unit={service.unit}"]
                   params: {service: {enum_from: catalog.services}}
     expect: {error: cmd_param_position}
+  - name: command parameter with two schemas
+    manifests:
+      - apiVersion: botaru/v1alpha1
+        kind: ToolPlugin
+        metadata: {name: cmd}
+        spec:
+          placement: host
+          network: {egress: []}
+          tools:
+            - name: run
+              access: read
+              tier: 1
+              output_class: raw_logs
+              untrusted_output: true
+              redact: [ip, email, secret]
+              target_from: host
+              params: {host: {enum_from: catalog.hosts}}
+              commands:
+                service_status:
+                  argv: [/usr/bin/systemctl, status, --, "{unit}"]
+                  params: {unit: {enum: [nginx.service]}}
+                service_logs:
+                  argv: [/usr/bin/journalctl, --no-pager, --, "{unit}"]
+                  params: {unit: {enum: [sshd.service]}}
+    expect: {error: cmd_param_conflict}
   - name: write tool with args_from and its own schema
     manifests:
       - apiVersion: botaru/v1alpha1
