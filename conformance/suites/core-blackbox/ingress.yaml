@@ -9,7 +9,7 @@ checks:
   - ING-3
   version: v0.2
   section: Tests without a model
-  source: docs/quality.md:339
+  source: docs/quality.md:340
   spec:
     What: (v0.2) a source repeats a delivery id; sends a body above `max_body_bytes`; exceeds `per_minute`
     Expectation: one event with the key `system:ingress:<source>:<delivery id>`; the large body and the excess get a refusal

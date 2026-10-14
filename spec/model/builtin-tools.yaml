@@ -4,7 +4,10 @@ description: >-
   Built-in P3 tools. The core adds them to the tools/list of an attempt at step 7
   of catalog assembly, if the tool allows the role profile (role-profiles.yaml) and
   the task conditions are met. Entry fields: access (read or write; write exists
-  only for service/control and monitor/script_run, APR-18), profiles (profiles
+  only for service/control and monitor/script_run, APR-18), changes_state (true when
+  a call creates or changes a record, a request, a message, a task, a grant or a
+  card, or marks something read, even with access read; since v0.2 such a tool is
+  never cached, PRM-12, and a debug replay only records its call, APR-8), profiles (profiles
   the tool is available to), purposes (task type purposes in which
   the tool exists; null means all purposes of the profile except handover and
   governance, where nobody has built-in tools, MEM-8, GOV-7),
@@ -19,6 +22,7 @@ entries:
   - id: request_action
     since: v0.1
     access: read
+    changes_state: true
     profiles: [worker, manager]
     purposes: [work]
     condition: the role may request actions (actions_may_request) and every initiator has action.request for at least one of them
@@ -68,6 +72,7 @@ entries:
   - id: enqueue_child
     since: v0.1
     access: read
+    changes_state: true
     profiles: [manager]
     purposes: [work]
     condition: the child type is in the role's may_enqueue; the child's permissions are not wider than the parent's permissions and the intersection of the initiators' permissions (PRM-6)
@@ -78,6 +83,7 @@ entries:
   - id: send_message
     since: v0.1
     access: read
+    changes_state: true
     profiles: [worker, manager]
     purposes: [work]
     condition: the role declared messages.send; the initiators have msg.send:<type>
@@ -87,6 +93,7 @@ entries:
   - id: inbox_read
     since: v0.1
     access: read
+    changes_state: true
     profiles: [worker, manager, reporter]
     purposes: [work, report]
     condition: the type declared inbox.read
@@ -105,6 +112,7 @@ entries:
   - id: service/control
     since: v0.1
     access: write
+    changes_state: true
     profiles: [worker, manager, farm-manager]
     purposes: [work, manage]
     condition: >-
@@ -118,6 +126,7 @@ entries:
   - id: monitor/script_run
     since: v0.1
     access: write
+    changes_state: true
     profiles: [worker, manager, farm-manager]
     purposes: [work, manage]
     condition: >-
@@ -151,6 +160,7 @@ entries:
   - id: propose_campaign
     since: v0.1
     access: read
+    changes_state: true
     profiles: [manager]
     purposes: [work]
     condition: the role declared campaigns
@@ -180,6 +190,7 @@ entries:
   - id: propose_script
     since: v0.1
     access: read
+    changes_state: true
     profiles: [translator]
     purposes: [translate]
     condition: the role's scripts.propose is draft
@@ -190,6 +201,7 @@ entries:
   - id: control_ops
     since: v0.1
     access: read
+    changes_state: true
     profiles: [farm-manager]
     purposes: [manage]
     condition: >-
@@ -204,6 +216,7 @@ entries:
   - id: inspect_request
     since: v0.1
     access: read
+    changes_state: true
     profiles: [farm-manager]
     purposes: [manage]
     condition: a read request to the farm manager's reading bot
@@ -214,6 +227,7 @@ entries:
   - id: incident_close
     since: v0.1
     access: read
+    changes_state: true
     profiles: [farm-manager]
     purposes: [manage]
     condition: closing an incident from resolved
@@ -244,6 +258,7 @@ entries:
   - id: escalate
     since: v0.2
     access: read
+    changes_state: true
     profiles: [worker, manager]
     purposes: [work]
     args_schema: escalation-submit-request.schema.json
@@ -252,6 +267,7 @@ entries:
   - id: request_model_grant
     since: v0.2
     access: read
+    changes_state: true
     profiles: [worker, manager]
     purposes: [work]
     condition: the role has a model_grants.ladder, the tenant's grant line is greater than 0; one request per task
@@ -261,6 +277,7 @@ entries:
   - id: grant_decide
     since: v0.2
     access: read
+    changes_state: true
     profiles: [farm-manager]
     purposes: [manage]
     condition: the task manager.grants.v1 as a batch once every 10 minutes; the epoch is current
@@ -270,6 +287,7 @@ entries:
   - id: escalations_take
     since: v0.2
     access: read
+    changes_state: true
     profiles: [farm-manager]
     purposes: [manage]
     args_schema: null
@@ -288,6 +306,7 @@ entries:
   - id: takeover_request
     since: v0.2
     access: read
+    changes_state: true
     profiles: [farm-manager]
     purposes: [manage]
     condition: the tenant's consent group has task.takeover:<type>
@@ -309,12 +328,12 @@ entries:
     access: read
     profiles: [worker, manager]
     purposes: [work]
-    condition: 'the role has the corpus in its resource scope (catalog `resources[]` of kind `corpus`); a search string of format `search_query` over the per-tenant corpus index in C1; output from an `ingested` corpus is untrusted (KNW-2, D-97)'
+    condition: 'the role has the corpus in its resource scope (catalog `resources[]` of kind `corpus`); a search string of format `search_query` over the per-tenant corpus index in C1; output from an `ingested` corpus is untrusted (KNW-2, D-97); the corpus `data_class` is the output class (PRM-5), and `personal: true` sets `personal_seen` (KNW-1)'
     limit: at most 20 fragments per call
     args_schema: null
     result_schema: null
     schema_note: a schema recorded as null will appear in spec/model together with the tool
-    rules: [PRF-1, KNW-2, KNW-5]
+    rules: [PRF-1, KNW-1, KNW-2, KNW-5]
   - id: kb_read
     since: v0.2
     access: read
@@ -324,4 +343,4 @@ entries:
     args_schema: null
     result_schema: null
     schema_note: a schema recorded as null will appear in spec/model together with the tool
-    rules: [PRF-1, KNW-2, KNW-5]
+    rules: [PRF-1, KNW-1, KNW-2, KNW-5]

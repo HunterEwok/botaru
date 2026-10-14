@@ -281,6 +281,19 @@ entries:
     undo: none
     urgent: true
     rules: [APR-12]
+  - id: connection_confirm
+    since: v0.2
+    kind: decision
+    subject: connection
+    decisions:
+      confirm: {right: the principal of the connection}
+      reject: {right: the principal of the connection}
+    recipients: only the person of the connection, in their private chat; the card shows the provider, the external account and the scopes
+    ttl: 10m
+    on_silence: {state: revoked, outcome: "the connection is revoked with not_confirmed and the adapter deletes the token"}
+    undo: the person revokes the connection with /mydata connect revoke
+    urgent: true
+    rules: [APR-12, SEC-7]
   - id: promotion_card
     since: v0.2
     kind: decision

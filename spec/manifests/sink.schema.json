@@ -50,8 +50,8 @@
         "recipient_ref": {
           "type": "string",
           "maxLength": 80,
-          "pattern": "^(admin|human:[A-Za-z0-9_.-]{1,64})$",
-          "description": "From v0.2: the only recipient: admin or the person as human:<id> (SEC-10).",
+          "pattern": "^(admin|self|human:[A-Za-z0-9_.-]{1,64})$",
+          "description": "From v0.2: the only recipient: self (the person whose data the export holds, encrypted with the public key they supplied with their request; the only form for /mydata export and principal.export), admin (only for tenant.export) or the person as human:<id> (SEC-10). With self, key_ref names the store where the core keeps the requester key of each request.",
           "x-botaru-version": "v0.2"
         }
       },

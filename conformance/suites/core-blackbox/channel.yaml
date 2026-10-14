@@ -161,7 +161,7 @@ checks:
   - PRM-18
   version: v0.1
   section: Tests without a model
-  source: docs/quality.md:432
+  source: docs/quality.md:434
   spec:
     What: '`/service stop nginx` from `bob`'
     Expectation: an approval card, as for an ordinary action (D-74); a verb outside the service's `control` is rejected by
@@ -172,7 +172,7 @@ checks:
   - PRM-18
   version: v0.1
   section: Tests without a model
-  source: docs/quality.md:433
+  source: docs/quality.md:435
   spec:
     What: '`/service restart nginx` in the group chat `staff`'
     Expectation: not executed, a code answer
@@ -183,7 +183,7 @@ checks:
   - IDM-3
   version: v0.1
   section: Tests without a model
-  source: docs/quality.md:491
+  source: docs/quality.md:493
   spec:
     What: a repeat `decide` by the same person with the same decision and `nonce`; a different decision; a different person
     Expectation: the same success; `already_decided`; `already_decided`
@@ -194,7 +194,7 @@ checks:
   - GOV-9
   version: v0.2
   section: Tests without a model
-  source: docs/quality.md:493
+  source: docs/quality.md:495
   spec:
     What: (v0.2) "Confirm" on a promotion card without "Details" opened; by a person without `governance.confirm:commission`;
       twice; after the case was canceled
@@ -206,7 +206,7 @@ checks:
   - PRM-16
   version: v0.1
   section: Tests without a model
-  source: docs/quality.md:501
+  source: docs/quality.md:503
   spec:
     What: '`alice` (`admin`) writes `/grant researcher carol`; `/grant approver carol`'
     Expectation: the first passes without an operator (the group is in `delegated_groups`); the second gets `privileged_group`
@@ -216,7 +216,7 @@ checks:
   - PRM-17
   version: v0.1
   section: Tests without a model
-  source: docs/quality.md:502
+  source: docs/quality.md:504
   spec:
     What: '`/cancel` of someone else''s task; of one''s own in `working` with a pending approval'
     Expectation: '`not_found`; the tree and the approval are canceled with `canceled(initiator)`'
@@ -226,7 +226,7 @@ checks:
   - PRM-17
   version: v0.1
   section: Tests without a model
-  source: docs/quality.md:503
+  source: docs/quality.md:505
   spec:
     What: '`/team` without `team.view:<group>`'
     Expectation: '`forbidden`, the text names the needed group (`needs`)'
@@ -236,7 +236,7 @@ checks:
   - CNT-5
   version: v0.1
   section: Tests without a model
-  source: docs/quality.md:505
+  source: docs/quality.md:507
   spec:
     What: 'the bot finished a task with `need_input: true`; `bob` writes free text after 10 minutes; after 40 minutes'
     Expectation: the first text becomes a task with `continues` pointing to the previous one; the second a new task from `default_types`
@@ -246,7 +246,7 @@ checks:
   - SEC-13
   version: v0.1
   section: Tests without a model
-  source: docs/quality.md:529
+  source: docs/quality.md:533
   spec:
     What: 'the first contact of `bob` in a channel with `ai_disclosure: native`; a change of `notice_version`'
     Expectation: a `privacy_notice` delivery before the first model text; after the version change the notice is repeated
@@ -257,7 +257,7 @@ checks:
   - SEC-13
   version: v0.1
   section: Tests without a model
-  source: docs/quality.md:530
+  source: docs/quality.md:534
   spec:
     What: '`alice` joined the group chat `staff` (`membership_assurance: enforced`)'
     Expectation: '`privacy_notice` to her direct messages, no more often than `notice_repeat`'

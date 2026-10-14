@@ -9,7 +9,7 @@ checks:
   - SKL-1
   version: v0.2
   section: Tests without a model
-  source: docs/quality.md:343
+  source: docs/quality.md:345
   spec:
     What: (v0.2) a skill folder with `scripts/run.sh`; an executable file; the field `allowed-tools` in `SKILL.md`; a binary
       file in `assets/`; a tree above the size limit

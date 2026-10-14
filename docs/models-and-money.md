@@ -283,7 +283,7 @@ For every model and tool call and for every publication of a bot message, the co
 | fingerprint | the attempt's run fingerprint (PRV-1) |
 | flags | `spend_estimated` (BUD-11), `spend_reconciled` (BUD-10) |
 
-The principal in the line is needed for the daily limit and is kept for 93 days: from v0.2, for a line whose `subject` is a person, the `retention` loop removes `subject` and writes `subject_kind: human`, in whole days. The amounts and the other fields of the line remain for monthly reports, the line stays in class `metadata`, and this removal is the only edit of a `metadata` row (BUD-16, SEC-14). A series "how much `alice` spent per day over a year" does not exist (DLV-14).
+The principal in the line is needed for the daily limit and is kept for 93 days: from v0.2, for a line whose `subject` is a person, the `retention` loop removes `subject`, `task` and `root`, truncates `time` to the day and writes `subject_kind: human`, in whole days, so that no join with audit or task records leads back to the person. The amounts and the other fields of the line remain for monthly reports, the line stays in class `metadata`, and this removal is the only edit of a `metadata` row (BUD-16, SEC-14). A series "how much `alice` spent per day over a year" does not exist (DLV-14).
 
 Model numbers are taken only from the provider's response through P4. Usage reported by a worker or the runtime is for reference only: it can be incomplete. As of 2026-10-05, with server-side context compaction, the top-level input and output counters in the provider's response did not include compaction iterations, and the full usage was the sum over iterations.
 

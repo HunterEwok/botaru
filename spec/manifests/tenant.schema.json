@@ -1146,7 +1146,7 @@
           "type": "number",
           "minimum": 0,
           "maximum": 1000000,
-          "description": "Amount in euros above which a person confirms; 0 by default, so there is always a card."
+          "description": "Reserved: a takeover always needs the takeover_confirm card of a person; apply rejects a value above 0 (takeover_confirm_threshold, MGR-21)."
         }
       },
       "description": "From v0.2: takeover of tenant tasks by the farm manager (MGR-21).",

@@ -1,0 +1,214 @@
+id: fx-man-v02-sec
+rules: [PRM-12, SEC-10, LCY-2, MGR-21, ING-1, SCR-12, PRM-10, GOV-7, MON-1]
+description: >-
+  Apply lint of the v0.2 security fixes, on top of examples/. A tool with credential.per_principal is
+  never cached (PRM-12); the /mydata export sink sends a copy only to the person (SEC-10, LCY-2);
+  takeover.confirm_above_eur cannot lift the takeover card (MGR-21); a signature source needs a
+  tolerance of at most 5 minutes, and a tls_token source routes only to tier 0 types (ING-1); a
+  scheduled script needs no script.run, has no await step and lists every step type in system-ops
+  (SCR-12, PRM-10); the whole fallback chain of a ballot profile has forced_schema (GOV-7); an
+  installation whose profiles are unknown counts as monitor for the monitoring recipient (MON-1).
+with_examples: true
+cases:
+  - name: per-principal tool with cache_s
+    manifests:
+      - apiVersion: botaru/v1alpha1
+        kind: ToolPlugin
+        metadata: {name: fx-calendar}
+        spec:
+          placement: host
+          network: {egress: []}
+          tools:
+            - name: list_events
+              description: "Lists the events of the initiator's own calendar for a day."
+              access: read
+              tier: 0
+              output_class: internal
+              untrusted_output: true
+              redact: [ip, email, secret]
+              target: any
+              params:
+                day: {type: string, x-botaru-format: date}
+              output_schema: {type: object, additionalProperties: false, properties: {count: {type: integer, minimum: 0, maximum: 1000}}}
+              output_limit_kb: 16
+              timeout_s: 30
+              cache_s: 60
+              credential: {per_principal: {provider: calendar, scopes: [calendar_read]}}
+    expect: {error: cache_per_principal, also: true}
+  - name: export sink of /mydata with an admin recipient
+    manifests:
+      - {apiVersion: botaru/v1alpha1, kind: Sink, metadata: {name: fx-copies, tenant: demo}, spec: {driver: disk, base: /srv/botaru/export, ceiling: internal, export_only: {recipient_ref: admin, key_ref: EXPORT_KEY}}}
+      - {apiVersion: botaru/v1alpha1, kind: Tenant, metadata: {name: demo2}, spec: {kind: test, farm_manager: {enabled: false}, budgets: {month_eur: 60}, privacy: {export_sink: fx-copies2}}}
+      - {apiVersion: botaru/v1alpha1, kind: Sink, metadata: {name: fx-copies2, tenant: demo2}, spec: {driver: disk, base: /srv/botaru/export, ceiling: internal, export_only: {recipient_ref: admin, key_ref: EXPORT_KEY}}}
+    expect: {error: export_sink_not_self, also: true}
+  - name: export sink of /mydata with recipient self passes
+    manifests:
+      - {apiVersion: botaru/v1alpha1, kind: Tenant, metadata: {name: demo2}, spec: {kind: test, farm_manager: {enabled: false}, budgets: {month_eur: 60}, privacy: {export_sink: fx-copies2}}}
+      - {apiVersion: botaru/v1alpha1, kind: Sink, metadata: {name: fx-copies2, tenant: demo2}, spec: {driver: disk, base: /srv/botaru/export, ceiling: internal, export_only: {recipient_ref: self, key_ref: EXPORT_KEY}}}
+    expect: ok
+  - name: takeover threshold above 0
+    manifests:
+      - {apiVersion: botaru/v1alpha1, kind: Tenant, metadata: {name: demo2}, spec: {kind: test, farm_manager: {enabled: false}, budgets: {month_eur: 60}, takeover: {types: [ops.summary.v1], confirm_above_eur: 50}}}
+    expect: {error: takeover_confirm_threshold, also: true}
+  - name: signature source without a tolerance
+    manifests:
+      - apiVersion: botaru/v1alpha1
+        kind: Channel
+        metadata: {name: fx-hooks, tenant: demo}
+        spec:
+          driver: webhook
+          direction: in
+          identity_kind: hook
+          identity_assurance: strong
+          membership_assurance: none
+          ai_disclosure: native
+          provenance: metadata
+          ingress:
+            event: ext.fxsrc.run_failed.v1
+            auth: signature
+            limits: {per_minute: 60, max_body_bytes: 262144}
+            mapping:
+              run_id: {from: /run/id, schema: {type: string, x-botaru-format: id}}
+    expect: {error: ingress_tolerance, also: true}
+  - name: signature source with a tolerance of 10 minutes
+    manifests:
+      - apiVersion: botaru/v1alpha1
+        kind: Channel
+        metadata: {name: fx-hooks, tenant: demo}
+        spec:
+          driver: webhook
+          direction: in
+          identity_kind: hook
+          identity_assurance: strong
+          membership_assurance: none
+          ai_disclosure: native
+          provenance: metadata
+          ingress:
+            event: ext.fxsrc.run_failed.v1
+            auth: signature
+            tolerance: 10m
+            limits: {per_minute: 60, max_body_bytes: 262144}
+            mapping:
+              run_id: {from: /run/id, schema: {type: string, x-botaru-format: id}}
+    expect: {error: ingress_tolerance, also: true}
+  - name: tls_token source routed to a tier 1 type
+    manifests:
+      - apiVersion: botaru/v1alpha1
+        kind: Channel
+        metadata: {name: fx-hooks, tenant: demo}
+        spec:
+          driver: webhook
+          direction: in
+          identity_kind: hook
+          identity_assurance: strong
+          membership_assurance: none
+          ai_disclosure: native
+          provenance: metadata
+          ingress:
+            event: ext.fxsrc.run_failed.v1
+            auth: tls_token
+            limits: {per_minute: 60, max_body_bytes: 262144}
+            mapping:
+              run_id: {from: /run/id, schema: {type: string, x-botaru-format: id}}
+      - apiVersion: botaru/v1alpha1
+        kind: Route
+        metadata: {name: fx-token-route, tenant: demo}
+        spec: {"on": {event: ext.fxsrc.run_failed.v1}, task: {type: pipeline.status.v1}}
+    expect: {error: ingress_token_tier, also: true}
+  - name: scheduled script with an action step
+    manifests:
+      - apiVersion: botaru/v1alpha1
+        kind: Script
+        metadata: {name: fx-nightly, tenant: demo}
+        spec:
+          script: v1
+          steps:
+            - {id: status, kind: task, type: pipeline.status.v1, goal: {assignment: true}}
+            - {id: clean, kind: action, needs: [status], action: cleanup_pipeline_tmp, args: {}}
+      - {apiVersion: botaru/v1alpha1, kind: Schedule, metadata: {name: fx-nightly, tenant: demo}, spec: {cron: "0 2 * * *", script: fx-nightly}}
+    expect: {error: schedule_script_needs_run, also: true}
+  - name: scheduled script with a step whose role controls services
+    manifests:
+      - apiVersion: botaru/v1alpha1
+        kind: Script
+        metadata: {name: fx-nightly, tenant: demo}
+        spec:
+          script: v1
+          steps:
+            - {id: health, kind: task, type: ops.health.v1, goal: {assignment: true}}
+      - {apiVersion: botaru/v1alpha1, kind: Schedule, metadata: {name: fx-nightly, tenant: demo}, spec: {cron: "0 2 * * *", script: fx-nightly}}
+    expect: {error: schedule_script_needs_run, also: true}
+  - name: scheduled script with an await step
+    manifests:
+      - apiVersion: botaru/v1alpha1
+        kind: Script
+        metadata: {name: fx-nightly, tenant: demo}
+        spec:
+          script: v1
+          steps:
+            - {id: status, kind: task, type: pipeline.status.v1, goal: {assignment: true}}
+            - {id: wait-hook, kind: await, needs: [status]}
+      - {apiVersion: botaru/v1alpha1, kind: Schedule, metadata: {name: fx-nightly, tenant: demo}, spec: {cron: "0 2 * * *", script: fx-nightly}}
+    expect: {error: schedule_script_await, also: true}
+  - name: scheduled script with a step type outside system-ops
+    manifests:
+      - apiVersion: botaru/v1alpha1
+        kind: Script
+        metadata: {name: fx-nightly, tenant: demo}
+        spec:
+          script: v1
+          steps:
+            - {id: geo, kind: task, type: geo.describe.v1, goal: {assignment: true}}
+      - {apiVersion: botaru/v1alpha1, kind: Schedule, metadata: {name: fx-nightly, tenant: demo}, spec: {cron: "0 2 * * *", script: fx-nightly}}
+    expect: {error: system_ops_missing, also: true}
+  - name: scheduled script with a delivery to a sink of another tenant
+    manifests:
+      - apiVersion: botaru/v1alpha1
+        kind: Script
+        metadata: {name: fx-nightly, tenant: demo}
+        spec:
+          script: v1
+          steps:
+            - {id: status, kind: task, type: pipeline.status.v1, goal: {assignment: true}}
+      - {apiVersion: botaru/v1alpha1, kind: Schedule, metadata: {name: fx-nightly, tenant: demo}, spec: {cron: "0 2 * * *", script: fx-nightly, deliver_to: ["sink:fx-elsewhere"]}}
+    expect: {error: ref_missing, also: true}
+  - name: scheduled script with only a reading step listed in system-ops passes
+    manifests:
+      - apiVersion: botaru/v1alpha1
+        kind: Script
+        metadata: {name: fx-nightly, tenant: demo}
+        spec:
+          script: v1
+          steps:
+            - {id: status, kind: task, type: pipeline.status.v1, goal: {assignment: true}}
+      - {apiVersion: botaru/v1alpha1, kind: Schedule, metadata: {name: fx-nightly, tenant: demo}, spec: {cron: "0 2 * * *", script: fx-nightly}}
+    expect: ok
+  - name: a seat profile whose fallback has no forced schema
+    manifests:
+      - apiVersion: botaru/v1alpha1
+        kind: ModelProfile
+        metadata: {name: seat-alt}
+        spec:
+          provider: provider-b
+          model: model-b-large-2026-09
+          family: family-b
+          rank: 3
+          pool: family-b
+          fallback: [review-a]
+          fallback_on: [overloaded, unavailable, retired]
+          forced_schema: true
+          max_output_tokens: 8000
+          tokens_per_s: 45
+          price: {input: 3.00, output: 12.00, checked: 2026-10-01}
+          provider_retention_days: {value: 30, checked: 2026-10-01}
+          requires_retention: false
+          provider_training: {value: false, checked: 2026-10-01}
+          provider_human_review: {value: abuse_only, checked: 2026-10-01}
+          subprocessors: [{provider: provider-c, region: region-a}]
+          retires_at: null
+    expect: {error: forced_schema_unsupported, at: review-a, also: true}
+  - name: tenant without monitoring recipient when the installation profiles are unknown
+    with_examples: false
+    manifests:
+      - {apiVersion: botaru/v1alpha1, kind: Tenant, metadata: {name: demo2}, spec: {kind: test, farm_manager: {enabled: false}, budgets: {month_eur: 60}, privacy: {recipients: [model_provider, messenger]}}}
+    expect: {error: recipients_monitoring}

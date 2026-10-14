@@ -273,22 +273,30 @@
   status: active
   text: >-
     A debug replay of a task (P2 `task.replay`) is an operator operation under the same
-    `operator_access.debug_journal` decision as P2 `task.journal` (AUD-4): with `deny` it answers
-    `forbidden`, with `notify` it writes an audit record and sends the tenant admins a code message,
-    with `allow` it writes an audit record. The replay is a new task in the task's tenant with the
-    type, body, mark and tier of the original; the core checks tools against the current permissions
-    of the original initiator, and an inactive initiator gives `forbidden`; the replay is charged to
-    the tenant limits like the original. A replay never creates approvals, `service_grant` records
-    or write calls: `request_action`, `service/control` and `monitor/script_run` in it are only
-    recorded. A task of type `action.*` is not replayed. A replay does not deliver the result to
-    `origin`, returns it only to the operator who requested it, and does not leave the task's
-    tenant.
+    `operator_access.debug_journal` decision as P2 `task.journal` (AUD-4), with `admin:debug` and
+    `data:<mark>`: with `deny` it answers `forbidden`, with `notify` it writes an audit record and
+    sends the tenant admins a code message, with `allow` it writes an audit record. A replay answers
+    every tool call only from the recorded attempt journal of the original and never reads live: it
+    is refused with `replay_journal_missing` when the journal is off or expired, and with
+    `replay_personal` when the original carries `personal_seen` or made a call with `credential:
+    per_principal` (SEC-7). It is refused with `replay_role_forbidden` for a task of purpose `manage`
+    and for a task of a manager role, and a task of type `action.*` is not replayed. The replay is a
+    new task in the task's tenant with the type, body, mark and tier of the original; an inactive
+    initiator gives `forbidden`, and it is charged to the tenant limits like the original, at most 10
+    replays per tenant per day (`replay_quota`). Only a closed list of tools is replayed from the
+    journal: built-in tools without `changes_state` in `spec/model/builtin-tools.yaml` and plugin
+    tools with `access: read` and without `credential`. Every other call, including `request_action`,
+    `enqueue_child`, `send_message`, `escalate`, `request_model_grant`, `service/control`,
+    `monitor/script_run` and any write tool, is only recorded: a replay never creates approvals,
+    tasks, messages, grants, escalations, `service_grant` records or write calls. A replay does not
+    deliver the result to `origin`, returns it only to the operator who requested it, and does not
+    leave the task's tenant.
   check: [blackbox]
   waivable: false
   version: v0.2
   profile: core
-  decisions: []
-  fixtures: [blackbox:core/replay-no-writes]
+  decisions: [D-102]
+  fixtures: [blackbox:core/replay-no-writes, blackbox:core/replay-refusals]
   doc: docs/permissions.md
 
 - id: APR-9
@@ -790,13 +798,16 @@
     uploaded by a person; if the attempt read the body, result, file or message of a task whose
     initiator is another person; if the task body came as a forward or a quote; if the attempt read
     an object with the flag. The flag's source comes from the closed list `masking`, `human_file`,
-    `other_person`, `forward`, `quote`, `declared`, `inherited`. With source `other_person`,
+    `other_person`, `forward`, `quote`, `declared`, `inherited` and, from v0.2, `connection`. With source `other_person`,
     `forward` or `quote`, the core writes into the object the closed field `personal_subjects:
     [<principal id>...]` (ids only, append-only); through it, an erasure request for the scope
     `(tenant, subject)` and the report to a person find objects where their data lies in other
     people's tasks (SEC-11). Source `declared` is set for a file uploaded by a principal with
     `uploads_personal: true`, and for a `service` or `ingested` file whose source declared personal
-    data; the manager reads any file with the flag as personal (MGR-30). The flag is monotonic:
+    data; the manager reads any file with the flag as personal (MGR-30). From v0.2 source
+    `connection` is set when the attempt called a tool with `credential: per_principal` (SEC-7), and
+    a corpus fragment of a resource with `personal: true` read by `kb_search` or `kb_read` sets
+    source `declared` (KNW-1). The flag is monotonic:
     child tasks, continuations and objects created by an attempt with the flag inherit it. The model
     does not see or remove the flag. The report to a person about their data and the privacy report
     count the flag; in audit it is stored as a marker with the source code, without content.
@@ -1242,11 +1253,12 @@
   status: active
   text: >-
     The principal in a usage line is needed for the daily limit and is kept for 93 days. For a line
-    whose `subject` is a person (`human:`), when 93 days pass the `retention` loop removes `subject`
-    and writes `subject_kind: human`, in whole days; the amounts and the other fields of the line
-    stay for monthly reports, and the line stays in class `metadata` (SEC-14). A "usage per person"
-    series longer than 93 days does not exist (DLV-14). Fixture: a usage line older than 93 days
-    carries no `subject`.
+    whose `subject` is a person (`human:`), when 93 days pass the `retention` loop removes `subject`,
+    `task` and `root`, truncates `time` to the day (00:00 UTC) and writes `subject_kind: human`, in
+    whole days; the amounts and the other fields of the line stay for monthly reports, and the line
+    stays in class `metadata` (SEC-14). A "usage per person" series longer than 93 days does not
+    exist, also not through a join with audit, events or task records (DLV-14). Fixture: a usage
+    line older than 93 days carries no `subject`, `task` or `root`, and its `time` is midnight.
   check: [store, fixture]
   waivable: false
   version: v0.2
@@ -1818,7 +1830,9 @@
     assesses not proposals but bot escalations to the manager that passed code screening
     (MGR-6): the task `review.escalation.v1` in the source tenant with the core key
     `system:necessity:<escalation>` (IDM-2); the executor is chosen by the same rule as for
-    other lenses (COM-7), and the review is paid from that tenant's `review` line (COM-6). The
+    other lenses (COM-7), and the review is paid from that tenant's `review` line (COM-6), except an
+    escalation that MGR-6 screens at the farm's expense, which is paid from the `review` line of
+    the tenant `farm`. The
     core builds the lens input as a data block with a mark (INJ-4): the closed fields of the
     escalation, evidence figures from code and the `untrusted` flag; the lens does not see the
     escalation's note. The output passes a closed schema: a score of 0-3 and a reason from a
@@ -3051,22 +3065,28 @@
     people upheld) and how many were refuted (a recommendation with the outcome `better`; a veto
     lifted by people after which the trial outcome is not `worse` and there are no
     attributions), and the calibration (COM-11); the order of seats in the `enum` and in the
-    package is different for each voter, by the seed of the case opening. The output follows a
-    forced schema: `choice` from the `enum` that the core built for this voter, and up to 3
-    reason codes from `spec/model/ballot-reasons.yaml`; there is no "abstain" and no free text.
+    package is different for each voter, by the seed of the case opening. The package and the
+    `enum` name seats only by labels that the core draws for each voter from the same seed (`s1`,
+    `s2`, ...), never by the seat id, and the core maps the chosen label back to the seat. The
+    output follows a forced schema: `choice` from the `enum` that the core built for this voter,
+    and up to 3 reason codes from `spec/model/ballot-reasons.yaml`; there is no "abstain" and no
+    free text.
     The core takes the value from the P4 response with the forced schema in this attempt, not
     from the body of `complete`, and checks it against the voter's `enum`. If the `enum` has one
     value, the core writes a forced ballot (`forced`) without calling the model. Lint at
-    `apply`: the model profiles that ballots run on (the commission seat profiles) have
-    `forced_schema: true` (`forced_schema_unsupported`). Exactly one ballot per voter is
+    `apply`: the model profiles that ballots run on (the commission seat profiles) and every
+    profile of their fallback chains have `forced_schema: true`, and a profile missing from the set
+    fails (`forced_schema_unsupported`). P4 does not fall back to another profile for a
+    `governance.ballot.v1` call (GW-5): when the seat profile is unavailable, the ballot is
+    written as `defaulted` by the code rule. Exactly one ballot per voter is
     recorded in a round; until the round closes, no bot sees the ballots, and they are not
     published as events.
   check: [lint, fixture, blackbox]
   waivable: false
   version: v0.2
   profile: governance
-  decisions: [D-25]
-  fixtures: [gov-fx-02, fx-man-com-v02]
+  decisions: [D-25, D-102]
+  fixtures: [gov-fx-02, fx-man-com-v02, manifests/v02-security-lints]
   doc: docs/commission.md
 
 - id: GOV-8
@@ -4606,13 +4626,15 @@
     with the means of the external system: a signature with a timestamp within `ingress.tolerance`,
     or a token over TLS (`ingress.auth`). A source manifest without `ingress.auth` fails the schema,
     and a source channel without `ingress` fails `apply`; a delivery that fails the check gives no
-    activity, no file and no event.
+    activity, no file and no event. With `auth: signature`, `ingress.tolerance` is required and at
+    most 5 minutes (`ingress_tolerance`). A `tls_token` source has no replay protection, so a route
+    from its events enqueues only task types of tier 0 (`ingress_token_tier`).
   check: [adapter, lint, fixture]
   waivable: false
   version: v0.2
   profile: core
   decisions: []
-  fixtures: [schemas/invalid/manifests/channel-ingress, adapter:channel/ingress-authenticity, manifests/v02-lints]
+  fixtures: [schemas/invalid/manifests/channel-ingress, adapter:channel/ingress-authenticity, manifests/v02-lints, manifests/v02-security-lints]
   doc: docs/capabilities.md
 
 - id: ING-2
@@ -5167,14 +5189,17 @@
     A knowledge corpus belongs to one tenant. The index, fragments and vectors of a corpus are
     stored separately for each tenant. The core computes the search scope from the resource of the
     catalog of the task's tenant, the same way as a call's `target` (TEN-3a), rather than from a
-    filter in the tool request. Check: a canary in a corpus document of the tenant `demo2` is not
-    found by search from any task of the tenant `demo`.
+    filter in the tool request. The `data_class` of the corpus resource is the output class of
+    `kb_search` and `kb_read` on it: a call from a task whose mark is below it is rejected (PRM-5), so
+    the initiator needs `data:<class>` of the corpus. A fragment of a corpus with `personal: true`
+    sets `personal_seen` with source `declared` on the attempt (AUD-5). Check: a canary in a corpus
+    document of the tenant `demo2` is not found by search from any task of the tenant `demo`.
   check: [blackbox]
   waivable: false
   version: v0.2
   profile: core
   decisions: []
-  fixtures: [blackbox:knowledge/tenant-canary]
+  fixtures: [blackbox:knowledge/tenant-canary, blackbox:knowledge/corpus-class]
   doc: docs/capabilities.md
 
 - id: KNW-2
@@ -5222,13 +5247,18 @@
     The model has no write path to a corpus: agent roles have no corpus write tool, and no memory
     record gets into a corpus. Only a principal with the capability `kb.write:<corpus>` uploads
     documents, through a channel or P2 `kb.upload`. Only a task of kind `job` of type `kb.ingest.v1`
-    parses documents, cuts them into fragments and computes vectors.
+    parses documents, cuts them into fragments and computes vectors. P1 `kb.index_put` writes only
+    into the corpus and for the file that the leased ingest task names in its input; the core takes
+    both from the task, and a request that names another corpus or file, or a file of another
+    tenant, gets `forbidden` and writes nothing. Fragments of a `curated` corpus are written only for
+    files that came through `apply` from the tenant's git (KNW-2); an uploaded, synchronized or
+    task-created file never enters a `curated` corpus.
   check: [lint, blackbox]
   waivable: false
   version: v0.2
   profile: core
   decisions: []
-  fixtures: [blackbox:knowledge/upload-rights]
+  fixtures: [blackbox:knowledge/upload-rights, blackbox:knowledge/index-put-binding]
   doc: docs/capabilities.md
 
 - id: KNW-5
@@ -5259,8 +5289,9 @@
     and deliveries get `withheld`, except messages to admins about the hold itself (HLD-3).
     `offboarding` (P2 `tenant.offboard`) sets an operator hold on scope `tenant` with reason
     `offboarding` and the effects of `suspended`, revokes the credentials of the tenant's workers
-    and channels and the key and workspace at the provider (GW-3), and cancels pending approvals;
-    only export is allowed. `deleted` (P2 `tenant.delete`, no earlier than the end of the export
+    and channels and the key and workspace at the provider (GW-3), revokes every connection of the
+    tenant's people (SEC-7, reason `offboarding`; the consent adapter deletes the tokens and revokes
+    them at the provider), and cancels pending approvals; only export is allowed. `deleted` (P2 `tenant.delete`, no earlier than the end of the export
     window: `export_window` of the `tenant.offboard` request, default and ceiling 30 days; an
     earlier `tenant.delete` gets `export_window_open`) creates an erasure request with the scope
     `(tenant)` across all stores (RET-7); the tenant id stays as a tombstone and is not used again
@@ -5270,7 +5301,7 @@
   version: v0.2
   profile: core
   decisions: [D-42]
-  fixtures: [blackbox:core/tenant-suspend, blackbox:core/tenant-offboard-delete]
+  fixtures: [blackbox:core/tenant-suspend, blackbox:core/tenant-offboard-delete, blackbox:core/connections-revoke-bulk]
   doc: docs/operations.md
 
 - id: LCY-2
@@ -5281,16 +5312,20 @@
     `principal.export`, PRM-14) that enqueues a core task. The result is written only to the sink
     that the operator named for the export, in JSON Lines under the `spec/model` schemas with their
     `$id`, never to a chat and never to a model. A principal's export contains only the objects
-    where they are the initiator and the objects that belong to them. A confirmed `/mydata export`
-    request (SEC-11) enqueues the same principal export task to the sink named in
-    `Tenant.spec.privacy.export_sink`, which must be an `export_only` sink (SEC-10). Declared
-    objects are not exported: they are in git.
+    where they are the initiator and the objects that belong to them, and leaves out every object
+    whose `personal_subjects` (AUD-5) name another principal; it goes only to that person (SEC-10).
+    A tenant export leaves out the sessions and messages of private chats, the objects with a
+    `personal_seen` source `connection` (data from a person's connection, SEC-7) and the connection
+    records. A confirmed `/mydata export` request (SEC-11) enqueues the same principal export task to
+    the sink named in `Tenant.spec.privacy.export_sink`, which must be an `export_only` sink with
+    `recipient_ref: self`, encrypted with the public key the person supplied with the request
+    (SEC-10). Declared objects are not exported: they are in git.
   check: [blackbox]
   waivable: true
   version: v0.2
   profile: core
   decisions: []
-  fixtures: [blackbox:core/export-jsonl, blackbox:core/mydata-export]
+  fixtures: [blackbox:core/export-jsonl, blackbox:core/mydata-export, manifests/v02-security-lints]
   doc: docs/operations.md
 
 - id: LCY-3
@@ -5923,14 +5958,19 @@
     forwarded escalation the core enqueues the task `manager.escalations.v1` with key
     `system:escalation:<attempt>` (IDM-2) in class 3, and with `urgency: high` in class 1
     through the `control` lane (DSP-5). No more than 30 escalations per day are forwarded across
-    the whole farm; the next one is dismissed with `escalation_rate_limited`. Without money on
-    the `review` line the escalation is not forwarded to the manager (`parked`): the tenant's
-    people see it as a number in the summary, and an urgent one also as a code template.
+    the whole farm, and each tenant forwards at most its share `max(3, floor(30 / N))` of them per
+    day, where N is the number of tenants with the farm manager enabled; the next one is dismissed
+    with `escalation_rate_limited`. An escalation with `urgency: high` or with the category
+    `suspected_compromise` or `data_risk` is screened at the farm's expense: its necessity review is
+    paid from the `review` line of the service tenant `farm`, so a source tenant without money
+    cannot park it. For other escalations, without money on the source tenant's `review` line the
+    escalation is not forwarded to the manager (`parked`): the tenant's people see it as a number in
+    the summary.
   check: [fixture, eval]
   waivable: false
   version: v0.2
   profile: manager
-  decisions: [D-18, D-63]
+  decisions: [D-18, D-63, D-102]
   fixtures: [fx-mgr-escalation, mgr-inj-03, mgr-inj-05]
   doc: docs/farm-manager.md
 
@@ -6288,8 +6328,11 @@
     `takeover.types` (empty by default), the group permission `task.takeover:<type>`, a
     `takeover` line greater than 0 (0 by default), and the approval of a person of T with
     `model_grant.manage` (card `takeover_confirm`, `decide(subject_kind: takeover)`). Otherwise
-    the refusal is `takeover_not_allowed`. The threshold `takeover.confirm_above_eur` is 0 by
-    default, so there is always a card. The original task is canceled as
+    the refusal is `takeover_not_allowed`. The card is never lifted: the field
+    `takeover.confirm_above_eur` is reserved, and `apply` rejects a value above 0
+    (`takeover_confirm_threshold`). The `cap_eur` of the takeover grant is the estimate that the card
+    showed, within the `takeover` line; a call that does not fit it does not start (MGR-18). The
+    original task is canceled as
     `superseded_by_takeover`. The manager gets only a closed result. With `untrusted_seen` on
     the manager's attempt, takeover is forbidden (`takeover_untrusted`).
   check: [store, fixture]
@@ -6297,7 +6340,7 @@
   version: v0.2
   profile: manager
   decisions: [D-18, D-21]
-  fixtures: [fx-mgr-takeover]
+  fixtures: [fx-mgr-takeover, manifests/v02-security-lints]
   doc: docs/farm-manager.md
 
 - id: MGR-22
@@ -6758,7 +6801,7 @@
   version: v0.1
   profile: core
   decisions: [D-59, D-62, D-66, D-71, D-80, D-88]
-  fixtures: [blackbox:core/alarm-path-monitor, blackbox:core/alarm-notice-no-monitor]
+  fixtures: [blackbox:core/alarm-path-monitor, blackbox:core/alarm-notice-no-monitor, manifests/v02-security-lints]
   doc: docs/monitoring.md
 
 - id: MON-2
@@ -8532,7 +8575,11 @@
     flag. For something foreign or nonexistent the dry run answers the same as a real enqueue. The
     answer (type, `max_tier`, `data_mark`, the decision and reason, the budget estimate) goes to the
     calling principal in the `validate` block of the response, not to the model. The built-in tool
-    `enqueue_child` has no `mode` parameter.
+    `enqueue_child` has no `mode` parameter, and a P1 `enqueue` with `mode: validate` from a caller
+    that holds an attempt or lease token (a worker in an attempt) is refused with `forbidden`, so
+    code next to a model cannot probe with it. A dry run counts against the enqueue limits of the
+    tenant and the caller (`max_enqueue_per_hour`, CAP-1) like a real enqueue, so it cannot flood
+    the audit.
   check: [blackbox]
   waivable: false
   version: v0.2
@@ -8545,18 +8592,23 @@
   title: Tool output cache
   status: active
   text: >-
-    If an implementation caches tool output, it caches only tools with `access: read`, and an answer
-    from the cache is returned only after a full check of the current call (PRM-3). The cache key
-    includes the tenant, plugin, tool, arguments and catalog version, and for a tool with
-    `credential: per_principal` also the connection id (SEC-7). The expiry is set by the tool
-    manifest (`cache_s`, 0 by default, that is no cache). Output from the cache stays untrusted and
-    sets `untrusted_seen`. Audit and usage lines are written with the flag `cached`.
+    If an implementation caches tool output, it caches only plugin tools with `access: read`, never a
+    tool with `credential: per_principal` (SEC-7; `apply` rejects `cache_s` on such a tool,
+    `cache_per_principal`) and never a built-in tool with `changes_state`. An answer from the cache
+    is returned only after a full check of the current call (PRM-3). The cache key includes the
+    tenant, plugin, tool, arguments and catalog version. The expiry is set by the tool manifest
+    (`cache_s`, 0 by default, that is no cache). The cache keeps the flags that the original call
+    gave (`personal_seen` with its sources and `personal_subjects`, AUD-5) and applies them again to
+    the attempt of every hit. Output from the cache stays untrusted and sets `untrusted_seen`. Audit
+    and usage lines are written with the flag `cached`. The cache of a tenant is purged by an erasure
+    request (RET-7) of that tenant, by deletion of a corpus document (KNW-5), and by a hold with
+    `no_tool` on a scope that covers the entry.
   check: [blackbox]
   waivable: false
   version: v0.2
   profile: core
   decisions: []
-  fixtures: [blackbox:toolhost/output-cache]
+  fixtures: [blackbox:toolhost/output-cache, manifests/v02-security-lints]
   doc: docs/permissions.md
 
 - id: PRM-13
@@ -10103,17 +10155,22 @@
     A `kind: Script` manifest reviewed in the tenant's git can be started by a schedule
     (`Schedule.spec.script`, an optional field from v0.2) without a person's button only if it needs
     no `script.run` (SCR-6): no `action` step, no `fanout` with an action, no `confirm` step and no
-    step whose role has `service_control` or `monitor_scripts`; and it keeps within
-    `Tenant.spec.scripts` (SCR-5). Otherwise `apply` rejects the schedule. The run has initiator
-    `system`, fairness key `script:<run>` and the slot rules of TIM-3; its estimate is reserved at
-    each slot as at a run approval (SCR-8), and a slot that does not fit is skipped. A hold on the
-    schedule stops it (CAP-4), and a hold on the run pauses it (SCR-10).
+    step whose role has `service_control` or `monitor_scripts`; it has no `await` step, so an
+    external event cannot steer a run without a person; it keeps within `Tenant.spec.scripts`
+    (SCR-5); and the run's permissions are those of `system`: every `task` and `fanout` type of the
+    script is listed explicitly in `system-ops` (PRM-10). Otherwise `apply` rejects the schedule. The
+    `deliver_to` of such a schedule is checked at `apply` and at every run, as for a task schedule
+    (PRM-10). The run has initiator `system`, fairness key `script:<run>` and the slot rules of
+    TIM-3; at most one run of a schedule is live, and a slot that comes while the previous run is
+    live is skipped with `run_live`. Its estimate is reserved at each slot as at a run approval
+    (SCR-8), and a slot that does not fit is skipped. A hold on the schedule stops it (CAP-4), and a
+    hold on the run pauses it (SCR-10).
   check: [lint, blackbox]
   waivable: true
   version: v0.2
   profile: campaign
-  decisions: [D-99]
-  fixtures: [lint:manifests/schedule-script, blackbox:script/scheduled-run]
+  decisions: [D-99, D-102]
+  fixtures: [lint:manifests/schedule-script, blackbox:script/scheduled-run, manifests/v02-security-lints]
   doc: docs/scripts-and-translator.md
 
 - id: SEC-1
@@ -10209,14 +10266,18 @@
     it takes effect from the next call, without an overlap window. For any secret, in the same
     operation the core sets a hold without expiry with reason `compromised` on every scope from the
     closed list `spec/model/holds.yaml` where the deployment description uses the secret: `channel`,
-    `plugin`, `worker` or `tenant`. A deployment secret is then replaced at the external system by
-    the recipe in `docs/operations.md`. Only the operator releases such a hold (HLD-2).
+    `plugin`, `worker`, `sink` or `tenant`. A deployment secret is then replaced at the external
+    system by the recipe in `docs/operations.md`. Only the operator releases such a hold (HLD-2).
+    The same operation with `connections` instead of `secret` (`farmctl secret revoke --compromised
+    --connections <provider> [--tenant <t>]`) revokes in one transaction every active or pending
+    connection (SEC-7) of that provider, in one tenant or in all tenants, with reason `compromised`,
+    and asks the consent adapter to delete the tokens and revoke them at the provider.
   check: [blackbox]
   waivable: false
   version: v0.2
   profile: core
   decisions: []
-  fixtures: [blackbox:core/rotate-compromised]
+  fixtures: [blackbox:core/rotate-compromised, blackbox:core/connections-revoke-bulk]
   doc: docs/security-model.md
 
 - id: SEC-7
@@ -10226,18 +10287,25 @@
     A person's access to their external service is a recorded connection (`Connection`): the tenant,
     the principal, a provider from the tenant catalog, access scopes from a closed list, the state
     and an expiry. The person creates the connection themselves through the consent adapter, not the
-    model; the deployment stores the token value, and it does not pass through P1-P4. A plugin
-    declares `credential: per_principal(<provider>, <scopes>)`, and the core selects the connection
-    by the task's initiator; the model neither names nor chooses the account. Tasks of other
-    principals and of the service principal `system` do not use the connection. A write on behalf of
-    a person remains a tier 3 action with an approval. Offboarding and `forget` revoke and delete
-    the connection.
+    model; the deployment stores the token value, and it does not pass through P1-P4. The link to
+    the adapter carries a nonce that the core issues at `/mydata connect`: single use, valid for 10
+    minutes, bound to the tenant and the principal. P2 `connection.register` must present it, and
+    the core takes the principal from the nonce, not from the adapter. The request names the
+    external account (`account_id`, the subject id at the provider); the core refuses an account
+    that has an active or pending connection of another principal (`connection_account_taken`),
+    generates `token_ref` itself and writes the connection as `pending`. It becomes `active` only
+    after the person confirms the code card `connection_confirm` in their private chat; the card
+    shows the provider, the external account and the scopes. A plugin declares `credential:
+    per_principal(<provider>, <scopes>)`, and the core selects the connection by the task's
+    initiator; the model neither names nor chooses the account. Tasks of other principals and of the
+    service principal `system` do not use the connection. A write on behalf of a person remains a
+    tier 3 action with an approval. Offboarding and `forget` revoke and delete the connection.
   check: [blackbox]
   waivable: false
   version: v0.2
   profile: core
-  decisions: []
-  fixtures: [blackbox:core/connection-per-principal]
+  decisions: [D-102]
+  fixtures: [blackbox:core/connection-per-principal, blackbox:core/connection-link-bound]
   doc: docs/security-model.md
 
 - id: SEC-8
@@ -10316,17 +10384,20 @@
     separately" without the tenant name and numbers. An operator gets a report by external identity
     across all tenants at once through P2 `principal.data_report --all-tenants`, without content and
     with an audit record. A full copy of the data never goes into a chat, only into a sink with the
-    block `Sink.spec.export_only: {recipient_ref, key_ref}`, where the only recipient (`recipient_ref`)
-    equals the principal or an admin of their tenant, as a file encrypted with their key with the
-    period of class `content` (LCY-2); an export task to a sink without `export_only` is rejected
-    with code `sink_not_export`. The `/mydata` report and the export arrive in v0.2, while the
+    block `Sink.spec.export_only: {recipient_ref, key_ref}`, as a file encrypted for the only
+    recipient with the period of class `content` (LCY-2). A copy of a person's data (`/mydata export`,
+    `principal.export`) goes only to that person: `recipient_ref: self` with the public key the person
+    supplied with the request, or `human:<id>` of that same person; `admin` is allowed only for a
+    tenant export, and `apply` rejects a `privacy.export_sink` whose sink is not `self`
+    (`export_sink_not_self`). An export task to a sink without `export_only` is rejected with code
+    `sink_not_export`, and a person's copy to another recipient with `export_recipient_not_subject`. The `/mydata` report and the export arrive in v0.2, while the
     command `/mydata erase` works from v0.1 (SEC-11, D-76).
   check: [blackbox]
   waivable: true
   version: v0.2
   profile: core
-  decisions: [D-12, D-36, D-76]
-  fixtures: [blackbox:core/export-sink-not-export, blackbox:core/mydata-report, manifests/v02-lints]
+  decisions: [D-12, D-36, D-76, D-102]
+  fixtures: [blackbox:core/export-sink-not-export, blackbox:core/mydata-report, manifests/v02-lints, manifests/v02-security-lints]
   doc: docs/privacy.md
 
 - id: SEC-11
@@ -10339,7 +10410,9 @@
     `principal.data_request` create a request about oneself and a `subject_request` card for the
     tenant's people with `admin:people`. Deletion at a person's request (`erase`, `erase_match`)
     works from v0.1, and for a tenant with `kind: production` this rule cannot be waived (D-76); the
-    data copy (`export`, LCY-2) arrives in v0.2. The model neither creates nor decides a request.
+    data copy (`export`, LCY-2) arrives in v0.2; it is only about oneself, carries the requester's
+    public key (`recipient_key`) and goes only to the requester (SEC-10). The model neither creates
+    nor decides a request.
     Silence neither executes nor closes a request: at half of the period the admins get a reminder,
     and at the deadline an overdue event and a notice to the operator. A confirmed deletion goes
     only through an erasure request with reason `subject_request` and scope `(tenant, subject)`
@@ -10432,12 +10505,14 @@
   status: active
   text: >-
     Usage lines whose `subject` is a person (`human:`) and that are older than 93 days lose the
-    reference: the retention loop removes `subject` and writes `subject_kind: human`, in whole days,
-    and the amounts and other fields remain; the line stays in class `metadata` for its period, and
-    this removal is the only edit of a `metadata` row. The retention loop does it together with
+    reference: the retention loop removes `subject`, `task` and `root`, truncates `time` to the day
+    (00:00 UTC) and writes `subject_kind: human`, in whole days, so that no join with audit, events
+    or task records leads back to the person; the amounts and the other fields remain; the line
+    stays in class `metadata` for its period, and this removal is the only edit of a `metadata`
+    row. The retention loop does it together with
     BUD-16. Daily limits and reports per principal are computed only from lines younger than 93
     days; the report to a person about their data names this period (SEC-10). Fixture: after a loop
-    run, a usage line aged 94 days has no `subject`.
+    run, a usage line aged 94 days has no `subject`, `task` or `root`, and its `time` is midnight.
   check: [store, blackbox]
   waivable: true
   version: v0.2
@@ -10546,7 +10621,9 @@
     time, plus a mismatch code from the closed list `state-mismatch.yaml`:
     `reported_ready_unreachable`, `reported_idle_not_claiming`, `reported_busy_no_lease`,
     `reported_draining_still_claiming`, `reported_plugins_differ`, `state_stale`. Core code computes
-    the codes by a table of conditions; on a mismatch the core observation prevails.
+    the codes by a table of conditions; on a mismatch the core observation prevails. The
+    self-report column carries only the phase from the closed list of `bot-state.schema.json`, its
+    source and time; no other field of a worker's message reaches another bot's model context.
   check: [fixture, blackbox]
   waivable: true
   level: SHOULD

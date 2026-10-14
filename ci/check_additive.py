@@ -517,6 +517,10 @@ def separated(branches, rp, docs, ids, parent):
     if isinstance(parent, dict) and 'type' in parent:
         branches = [dict(b, type=parent['type']) if isinstance(b, dict) and 'type' not in b and '$ref' not in b
                     else b for b in branches]
+    # a value also has every property the holder requires: the branch is proved with those names required too
+    if isinstance(parent, dict) and isinstance(parent.get('required'), list):
+        branches = [dict(b, required=sorted(set(b.get('required') or []) | set(parent['required'])))
+                    if isinstance(b, dict) and '$ref' not in b else b for b in branches]
     return all(disjoint(b, c, res, rp, rp) for i, b in enumerate(branches) for j, c in enumerate(branches) if j != i)
 
 

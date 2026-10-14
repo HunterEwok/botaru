@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "urn:botaru:schema:p2-data-request-request:1",
   "title": "P2 principal.data_request: request",
-  "description": "A person's request about their own data (/mydata erase in a direct chat) or a request by a person with admin:people about a principal of their tenant: a SubjectRequest of kind erase in v0.1, export since v0.2 (SEC-11, D-76). A confirmed erasure goes as an erasure request with the reason subject_request.",
+  "description": "A person's request about their own data (/mydata erase or /mydata export in a direct chat) or a request by a person with admin:people about a principal of their tenant: a SubjectRequest of kind erase in v0.1, export since v0.2 (SEC-11, D-76). A confirmed erasure goes as an erasure request with the reason subject_request. A copy (kind export) is only about oneself and goes only to the requester, encrypted with the public key the requester supplies (recipient_key); admin:people cannot request a copy of another person (SEC-10, LCY-2).",
   "x-botaru-direction": "input",
   "x-botaru-rules": [
     "SEC-11",
@@ -22,7 +22,14 @@
     },
     "subject": {
       "$ref": "urn:botaru:schema:common:1#/$defs/principal_ref",
-      "description": "Only a person with admin:people: whom the request is about; without the field the request is about oneself."
+      "description": "Only a person with admin:people and only for kind erase: whom the request is about; without the field the request is about oneself."
+    },
+    "recipient_key": {
+      "type": "string",
+      "maxLength": 8192,
+      "pattern": "^[A-Za-z0-9+/=:._ -]+$",
+      "description": "From v0.2, only for kind export and required for it: the requester's public key; the copy is encrypted with it and goes only to the requester (SEC-10).",
+      "x-botaru-version": "v0.2"
     }
   },
   "additionalProperties": false

@@ -13,13 +13,27 @@ checks:
   spec:
     What: a canary in a corpus document of `demo2` (v0.2)
     Expectation: no search from any `demo` task finds it
+- id: blackbox:knowledge/corpus-class
+  method: blackbox
+  rules:
+  - AUD-5
+  - KNW-1
+  - PRM-5
+  version: v0.1
+  section: Tests without a model
+  source: docs/quality.md:334
+  spec:
+    What: '(v0.2) the corpus `hr-policies` has `data_class: confidential` and `personal: true`; a task of `bob` with mark
+      `internal` calls `kb_search` on it; a task of `carol` with mark `confidential` calls `kb_search` and `kb_read`'
+    Expectation: '`bob`''s call is rejected and returns no fragment; `carol`''s calls return fragments and the attempt gets
+      `personal_seen` with source `declared`'
 - id: blackbox:knowledge/only-through-tools
   method: blackbox
   rules:
   - KNW-3
   version: v0.2
   section: Tests without a model
-  source: docs/quality.md:334
+  source: docs/quality.md:335
   spec:
     What: a corpus document with an embedded instruction (v0.2)
     Expectation: the document text reaches the model request only as P3 tool output, it is not in the attempt instructions
@@ -29,9 +43,23 @@ checks:
   - KNW-4
   version: v0.2
   section: Tests without a model
-  source: docs/quality.md:340
+  source: docs/quality.md:341
   spec:
     What: (v0.2) `kb.upload` from `alice` without `kb.write:vendor-manuals` and from `carol` with it; the mock model asks
       for a corpus write tool and proposes a memory record that quotes a corpus document
     Expectation: '`forbidden` for `alice`; for `carol` a file with `origin: upload` and one `kb.ingest.v1` task for a `job`
       worker; the tool is not in the catalog; no memory record reaches a corpus'
+- id: blackbox:knowledge/index-put-binding
+  method: blackbox
+  rules:
+  - KNW-2
+  - KNW-4
+  version: v0.2
+  section: Tests without a model
+  source: docs/quality.md:342
+  spec:
+    What: (v0.2) the ingest task of an uploaded document of the `ingested` corpus `vendor-manuals` calls P1 `kb.index_put`
+      with its own corpus and file; then with the `curated` corpus `runbooks`; then with the file of another document; then
+      with a file of `demo2`; an ingest task of an uploaded file names `runbooks` in its input
+    Expectation: the first call writes the fragments; the next three get `forbidden` and the index does not change; the ingest
+      of an uploaded file into `runbooks` is refused, so a search of `runbooks` never finds its text

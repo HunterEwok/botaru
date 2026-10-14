@@ -19,7 +19,8 @@ machines:
   - id: offboarding
     terminal: false
     meaning: 'the tenant is leaving: the credentials of workers and channels are revoked, the key and the workspace at the
-      provider are disabled, pending approvals are canceled; only the export is allowed; data is not touched'
+      provider are disabled, every connection of the tenant''s people to external services is revoked (SEC-7), pending approvals
+      are canceled; only the export is allowed; data is not touched'
   - id: deleted
     terminal: true
     meaning: content and memory are deleted by an erasure request `(tenant)`; metadata lives until the end of its period and

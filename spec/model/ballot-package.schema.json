@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "urn:botaru:schema:ballot-package:1",
   "title": "Ballot case package",
-  "description": "Input of a ballot task governance.ballot.v1 (GOV-7): the case package that the core builds from the tenant's records for one voter. For each seat in L it carries symmetric figures only: recommendations, vetoes, how many were confirmed and refuted, the calibration (COM-11) and the term. The order of seats differs for each voter by the seed of the case opening and matches the order of the voter's enum. There is no free text, no author identity and no other ballot (GOV-29).",
+  "description": "Input of a ballot task governance.ballot.v1 (GOV-7): the case package that the core builds from the tenant's records for one voter. For each seat in L it carries symmetric figures only: recommendations, vetoes, how many were confirmed and refuted, the calibration (COM-11) and the term. The order of seats differs for each voter by the seed of the case opening and matches the order of the voter's enum. Seats are named only by labels that the core draws for each voter from the same seed (s1, s2, ...), never by the seat id; the core maps the chosen label back to the seat (GOV-7). There is no free text, no author identity and no other ballot (GOV-29).",
   "x-botaru-direction": "input",
   "x-botaru-retention": "metadata",
   "x-botaru-version": "v0.2",
@@ -43,7 +43,7 @@
         "type": "object",
         "additionalProperties": false,
         "required": [
-          "seat",
+          "label",
           "lens",
           "recommended",
           "vetoed",
@@ -54,11 +54,11 @@
           "reviews"
         ],
         "properties": {
-          "seat": {
+          "label": {
             "type": "string",
-            "maxLength": 16,
-            "pattern": "^commission:[1-9][0-9]{0,2}$",
-            "description": "Seat id."
+            "maxLength": 4,
+            "pattern": "^s[1-9][0-9]{0,2}$",
+            "description": "Label of the seat for this voter only, drawn from the seed of the case opening; the same value is in the voter's enum. The seat id never reaches the model (GOV-7)."
           },
           "lens": {
             "type": "string",

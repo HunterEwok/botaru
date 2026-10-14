@@ -75,11 +75,14 @@ checks:
   section: Tests without a model
   source: docs/quality.md:251
   spec:
-    What: '(v0.2) a read tool with `cache_s: 60` in a task of `bob`: the same call twice; then `ungrant` of `staff` and a
-      third call; the same call from a task of `demo2`; a catalog change; a tool with `credential: per_principal`'
+    What: '(v0.2) a read tool with `cache_s: 60` in a task of `bob`: the same call twice, the first output masks an email
+      address; then `ungrant` of `staff` and a third call; the same call from a task of `demo2`; a catalog change; a tool
+      with `credential: per_principal`; an erasure request `(demo, carol)` and a `no_tool` hold on the plugin between two
+      calls'
     Expectation: if the second answer comes from a cache, the call passed the full check, the attempt gets `untrusted_seen`
-      and the audit and usage lines carry `cached`; the third call is `denied(rights_revoked)` without output; `demo2`, the
-      new catalog version and the per-principal tool never get cached output
+      and `personal_seen` with source `masking`, and the audit and usage lines carry `cached`; the third call is `denied(rights_revoked)`
+      without output; `demo2`, the new catalog version and the per-principal tool never get cached output; after the erasure
+      and the hold the next call reaches the toolhost
 - id: blackbox:toolhost/plugin-pair-transition
   method: blackbox
   rules:
@@ -100,7 +103,7 @@ checks:
   - MON-8
   version: v0.1
   section: Tests without a model
-  source: docs/quality.md:555
+  source: docs/quality.md:560
   spec:
     What: a mock machine with systemd, an access rule generated from the `demo` catalog for `web1`; `systemctl restart nginx.service`
       from the action toolhost user `botaru-act-demo`
@@ -111,7 +114,7 @@ checks:
   - DEP-4
   version: v0.1
   section: Tests without a model
-  source: docs/quality.md:556
+  source: docs/quality.md:561
   spec:
     What: '`systemctl restart postgresql.service` from the same user'
     Expectation: 'refused by the access rule: the unit is not in the catalog'
@@ -122,7 +125,7 @@ checks:
   - DEP-9
   version: v0.1
   section: Tests without a model
-  source: docs/quality.md:557
+  source: docs/quality.md:562
   spec:
     What: '`systemctl restart nginx.service` from another OS user'
     Expectation: 'refusal: the rule is only for the action toolhost user'

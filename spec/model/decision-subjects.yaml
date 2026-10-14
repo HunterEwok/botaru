@@ -1,5 +1,5 @@
 registry: decision-subjects
-version: 1
+version: 2
 description: >-
   Subjects of human decisions: the closed list of subject_kind values in P1 decide,
   card.details and card.remind, in the card and in the decision event. Entry fields:
@@ -52,3 +52,7 @@ entries:
     since: v0.2
     meaning: an incident attribution candidate; "No" and "Don't know" can be changed while the window is open
     rules: [APR-4, GOV-13]
+  - id: connection
+    since: v0.2
+    meaning: a person's confirmation that a registered connection to an external account is theirs (connection_confirm)
+    rules: [APR-4, SEC-7]

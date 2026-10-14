@@ -44,22 +44,27 @@ cases:
       inbox: none
       tools_list: []
       input_blocks: [case_package]
-    enum: ['commission:2', 'commission:3']
+    enum: [s1, s2]
+    enum_labels_map_to: ['commission:2', 'commission:3']
     enum_order_differs_between_voters: true
-    package_per_seat: [lens, tenure_days, reviews, calibration, recommended, vetoed, confirmed, refuted]
+    labels_differ_between_voters: true
+    package_per_seat: [label, lens, tenure_days, reviews, calibration, recommended, vetoed, confirmed, refuted]
+    package_contains_seat_ids: false
 - id: gov-fx-02-b
   rules: [GOV-7]
-  description: The value comes from the P4 answer with the forced schema; the complete body says something else.
+  description: The value comes from the P4 answer with the forced schema; the complete body says something else. For bot_05
+    the label s2 stands for commission:3, and the core maps it back.
+  given: {labels: {bot_05: {s1: 'commission:2', s2: 'commission:3'}}}
   steps:
-  - model: {forced_output: {choice: 'commission:3', reasons: [calibration_low]}}
+  - model: {forced_output: {choice: s2, reasons: [calibration_low]}}
     by: attempt:governance.ballot.v1
-  - check: complete body of the same attempt carries choice commission:2
+  - check: complete body of the same attempt carries choice s1
     note: the complete body is not read for the ballot value
   expect:
     ballot: {case: gc_7, round: 1, voter: bot_05, choice: 'commission:3', reasons: [calibration_low], forced: false, defaulted: false}
 - id: gov-fx-02-c
   rules: [GOV-7]
-  description: A P4 value outside the voter's enum (its own seat), a fourth reason code, free text or "abstain" is not a ballot.
+  description: A P4 value outside the voter's enum (a seat id instead of a label), a fourth reason code, free text or "abstain" is not a ballot.
   cases:
   - id: gov-fx-02-c1
     steps:
@@ -75,7 +80,7 @@ cases:
     expect: {ballot: null}
   - id: gov-fx-02-c3
     steps:
-    - model: {forced_output: {choice: 'commission:3', reasons: [calibration_low, refuted_vetoes, tenure_long, reviews_few]}}
+    - model: {forced_output: {choice: s2, reasons: [calibration_low, refuted_vetoes, tenure_long, reviews_few]}}
       by: attempt:governance.ballot.v1
       expect: {reason: output_schema_invalid}
     expect: {ballot: null}
@@ -106,6 +111,18 @@ cases:
       seat-std: {rank: 3, forced_schema: false}
   expect:
     apply: {result: rejected, error: forced_schema_unsupported}
+- id: gov-fx-02-f2
+  rules: [GOV-7]
+  description: P4 does not fall back for a ballot call; an unavailable seat profile gives a defaulted ballot, not an answer of
+    the fallback profile.
+  given:
+    model_profiles:
+      seat-std: {rank: 3, forced_schema: true, fallback: [seat-alt]}
+      seat-alt: {rank: 3, forced_schema: true}
+    provider_state: {seat-std: unavailable}
+  expect:
+    p4_calls: {seat-alt: 0}
+    ballot: {voter: bot_05, forced: false, defaulted: true, model_profile: null}
 - id: gov-fx-02-g
   rules: [GOV-8]
   description: 'The count of the example: round 1 tally seat 3: 3, seat 1: 1, seat 2: 1; need 4; seats 1 and 2 tie, K1 does

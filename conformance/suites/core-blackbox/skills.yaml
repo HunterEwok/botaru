@@ -9,7 +9,7 @@ checks:
   - SKL-3
   version: v0.2
   section: Tests without a model
-  source: docs/quality.md:335
+  source: docs/quality.md:336
   spec:
     What: a role skill names a tool outside the role (v0.2)
     Expectation: the tool is not in `tools/list`, the tier and the task class stay the same

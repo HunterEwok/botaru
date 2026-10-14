@@ -6,6 +6,10 @@ generated: ci/gen_lifecycles.py
 machines:
 - name: connection
   states:
+  - id: pending
+    terminal: false
+    meaning: registered by the adapter, waiting for the person's confirmation on the `connection_confirm` card; tools do not
+      use it
   - id: active
     terminal: false
     meaning: the connection is in force; tools of the provider use it for tasks of this initiator
@@ -14,19 +18,46 @@ machines:
     meaning: '`expires_at` arrived by the store clock; tools do not use it, the person connects again'
   - id: revoked
     terminal: true
-    meaning: the person, an admin, offboarding, erasure or the provider ended it; the token reference is deleted and the deployment
-      deletes the token
+    meaning: the person, an admin, offboarding of the person or the tenant, erasure, a compromise, the provider or a missing
+      confirmation ended it; the token reference is deleted and the deployment deletes the token
   transitions:
   - from:
       none: true
     to:
       states:
+      - pending
+      text: '`pending`'
+    by: P2 `connection.register` from the consent adapter
+    when: the link nonce was issued by the core at `/mydata connect`, is unused and younger than 10 minutes; the principal
+      is the active `human` the nonce is bound to, never one from headers or the body; the provider is in the tenant catalog
+      `connection_providers`; the scopes are a subset of the provider's scopes; `expires_at` is not later than `max_days`;
+      no other principal has an active or pending connection with the same provider and `account_id` (otherwise `connection_account_taken`);
+      the core generates `token_ref`
+    rules:
+    - SEC-7
+  - from:
+      states:
+      - pending
+      text: '`pending`'
+    to:
+      states:
       - active
       text: '`active`'
-    by: P2 `connection.register` from the consent adapter on behalf of the person
-    when: the principal is an active `human` of the tenant and comes from the on-behalf headers, not from the body; the provider
-      is in the tenant catalog `connection_providers`; the scopes are a subset of the provider's scopes; `expires_at` is not
-      later than `max_days`; a second active connection of the same person and provider is revoked in the same transaction
+    by: the person confirms the `connection_confirm` card in their private chat
+    when: only the principal of the connection; a second active connection of the same person and provider is revoked in the
+      same transaction
+    rules:
+    - SEC-7
+  - from:
+      states:
+      - pending
+      text: '`pending`'
+    to:
+      states:
+      - revoked
+      text: '`revoked`'
+    by: the person rejects the card, or 10 minutes pass without a confirmation
+    when: reason `by_person` or `not_confirmed`
     rules:
     - SEC-7
   - from:
@@ -91,4 +122,33 @@ machines:
     by: the consent adapter reports that the provider revoked the token
     when: reason `provider`
     rules:
+    - SEC-7
+  - from:
+      states:
+      - active
+      - pending
+      text: '`active` or `pending`'
+    to:
+      states:
+      - revoked
+      text: '`revoked`'
+    by: P2 `tenant.offboard` of the tenant
+    when: in the offboarding transaction of the tenant, for every connection of the tenant; reason `offboarding`; the adapter
+      deletes the tokens and revokes them at the provider
+    rules:
+    - LCY-1
+    - SEC-7
+  - from:
+      states:
+      - active
+      - pending
+      text: '`active` or `pending`'
+    to:
+      states:
+      - revoked
+      text: '`revoked`'
+    by: P2 `secret.revoke` with `connections`
+    when: every connection of the named provider in the named tenant or in all tenants; reason `compromised`
+    rules:
+    - SEC-6
     - SEC-7

@@ -18,7 +18,7 @@ cases:
     expect: ok
   - name: kind without a schema
     manifests:
-      - {apiVersion: botaru/v1alpha1, kind: Script, metadata: {name: fx-script}, spec: {}}
+      - {apiVersion: botaru/v1alpha1, kind: Playbook, metadata: {name: fx-playbook}, spec: {}}
     expect: {error: unknown_kind}
   - name: status field in git
     manifests:

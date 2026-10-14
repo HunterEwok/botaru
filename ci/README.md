@@ -158,6 +158,7 @@ The codes of `check_manifests.py` that fixtures refer to (`expect: {error: <code
 | `backup_external_required` | no copies on a separate machine and no encrypted external backup target | RET-5 |
 | `breaking_change` | breaking schema change inside .vN | MAN-3 |
 | `builtin_command` | tenant command takes a built-in channel command | PRM-17 |
+| `cache_per_principal` | cache_s on a tool with credential.per_principal | PRM-12, SEC-7 |
 | `cap_data_class` | data class not accepted (unknown or reserved) |  |
 | `cap_star` | wildcard in a capability for actions, data or decisions | PRM-7 |
 | `cap_unknown` | capability is not in spec/model/capabilities.yaml |  |
@@ -179,6 +180,7 @@ The codes of `check_manifests.py` that fixtures refer to (`expect: {error: <code
 | `executor_unknown` | action executor is missing or not a write tool | MAN-9 |
 | `expected_failure_not_waivable` | expected failures list a rule with waivable: false | MAN-8 |
 | `export_only_recipient` | export_only without exactly one of recipient and recipient_ref | SEC-10 |
+| `export_sink_not_self` | privacy.export_sink is not an export_only sink with recipient_ref: self | SEC-10, LCY-2 |
 | `family_unregistered` | model family is not in spec/model/model-families.yaml (note) |  |
 | `farm_host_in_catalog` | farm host listed in a tenant catalog | DEP-11 |
 | `flow_args_invalid` | P3 call or action request arguments fail the closed schema |  |
@@ -191,6 +193,8 @@ The codes of `check_manifests.py` that fixtures refer to (`expect: {error: <code
 | `high_risk_one_approver` | production tenant lets a high risk action with approvals: 1 be requested | APR-16 |
 | `host_two_tenants` | host or service in catalogs of two tenants | TEN-4 |
 | `ingress_missing` | source channel (direction: in) without ingress | ING-1 |
+| `ingress_token_tier` | route from an event of a tls_token source enqueues a type above tier 0 | ING-1 |
+| `ingress_tolerance` | source with auth: signature without ingress.tolerance or with more than 5m | ING-1 |
 | `listener_admin_worker_network` | the P2 listener network is a worker network (note) | IDN-7 |
 | `listener_test_in_production` | test-control listener of the core on a kind: production host | DEP-10 |
 | `manager_line_missing` | manager budget line is not above 0 while the manager is enabled | MGR-20 |
@@ -214,7 +218,7 @@ The codes of `check_manifests.py` that fixtures refer to (`expect: {error: <code
 | `provider_training` | model profile with provider_training: true | GW-15 |
 | `purpose_unknown` | type purpose is not in spec/model/task-purposes.yaml |  |
 | `rank_exceeded` | model profile rank above the slot or seat ceiling | GOV-3 |
-| `recipients_monitoring` | privacy.recipients lacks monitoring while the installation claims the monitor profile | MON-1 |
+| `recipients_monitoring` | privacy.recipients lacks monitoring while the installation claims the monitor profile or its profiles are unknown | MON-1 |
 | `redact_required` | placement: host and untrusted_output: true without redact [ip, email, secret] | INJ-4 |
 | `ref_missing` | reference to an object that is not in the set |  |
 | `revert_reason_invalid` | Botaru-Revert reason is not from the closed list | MAN-5, PRP-22 |
@@ -231,6 +235,9 @@ The codes of `check_manifests.py` that fixtures refer to (`expect: {error: <code
 | `run_needs_approval_none` | run starts a type without run.approval: none | APR-17 |
 | `run_not_readonly` | type with run.approval: none is claimed by a role with actions or write tools | APR-17 |
 | `schedule_deadline` | schedule type has no timeouts.deadline |  |
+| `schedule_script_await` | scheduled script has an await step | SCR-12 |
+| `schedule_script_needs_run` | scheduled script has a step that needs script.run | SCR-12, SCR-6 |
+| `schedule_script_over_ceiling` | scheduled script is above Tenant.spec.scripts | SCR-12, SCR-5 |
 | `schedule_target` | schedule has neither or both of task and script | SCR-12, TIM-3 |
 | `schema_invalid` | manifest does not pass the schema of its kind | MAN-1 |
 | `self_approve_production` | production tenant with self_approve: true | APR-9 |
@@ -244,6 +251,7 @@ The codes of `check_manifests.py` that fixtures refer to (`expect: {error: <code
 | `subprocessor_undeclared` | profile provider or subprocessor is not declared in privacy.subprocessors | GW-15 |
 | `system_decision_cap` | system-ops group holds a decision or control capability | PRM-10 |
 | `system_ops_missing` | route or schedule type is not granted to system-ops | PRM-10 |
+| `takeover_confirm_threshold` | takeover.confirm_above_eur above 0 would lift the takeover card | MGR-21 |
 | `tenant_missing` | tenant-scoped kind without metadata.tenant | TEN-6 |
 | `tenant_on_global` | global kind with metadata.tenant | TEN-6 |
 | `timeout_ceiling` | type timeouts above the farm ceiling | DLV-16 |

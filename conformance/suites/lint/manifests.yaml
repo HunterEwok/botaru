@@ -143,23 +143,26 @@ checks:
 - id: lint:manifests/schedule-script
   method: lint
   rules:
+  - PRM-10
   - SCR-6
   - SCR-12
   version: v0.1
   section: Tests without a model
-  source: docs/quality.md:363
+  source: docs/quality.md:365
   spec:
     What: '(v0.2) a `Schedule` with `script` naming a `kind: Script` manifest that has an `action` step; one with a `confirm`
-      step; one with a step whose role has `service_control`; one above `Tenant.spec.scripts.max_steps`; one with only reading
-      steps and a digest'
-    Expectation: the first four are rejected by `apply`; the last is accepted
+      step; one with a step whose role has `service_control`; one with an `await` step; one with a step type that `system-ops`
+      does not list; one with `deliver_to` naming a sink outside the tenant; one above `Tenant.spec.scripts.max_steps`; one
+      with only reading steps listed in `system-ops` and a digest (`manifests/v02-security-lints.yaml`)'
+    Expectation: the first seven are rejected by `apply` (`schedule_script_needs_run`, `schedule_script_await`, `system_ops_missing`,
+      `ref_missing`, `schedule_script_over_ceiling`); the last is accepted
 - id: lint:manifests/service-no-card
   method: lint
   rules:
   - MON-8
   version: v0.1
   section: Tests without a model
-  source: docs/quality.md:430
+  source: docs/quality.md:432
   spec:
     What: '`no_card: [stop]`; `no_card: []`'
     Expectation: the first fails `apply`; the second passes, and a restart goes through a card
@@ -170,7 +173,7 @@ checks:
   - MAN-9
   version: v0.1
   section: Tests without a model
-  source: docs/quality.md:436
+  source: docs/quality.md:438
   spec:
     What: '`risk: routine` without `writes_only` or `runs_per_day`; with `approvals: 2`'
     Expectation: '`apply` rejects the action'
@@ -180,7 +183,7 @@ checks:
   - PRM-16
   version: v0.1
   section: Tests without a model
-  source: docs/quality.md:500
+  source: docs/quality.md:502
   spec:
     What: a group with `action.request` in `delegated_groups`
     Expectation: '`apply` rejects the tenant'
@@ -190,7 +193,7 @@ checks:
   - APR-16
   version: v0.2
   section: Tests without a model
-  source: docs/quality.md:518
+  source: docs/quality.md:520
   spec:
     What: '(v0.2) a `kind: production` tenant `demo` whose group grants `action.request` for an action with `risk: high` and
       `approvals: 1`; the same action with `approvals: 2`; a `kind: test` tenant with `approvals: 1`'
@@ -201,7 +204,7 @@ checks:
   - INJ-4
   version: v0.1
   section: Tests without a model
-  source: docs/quality.md:536
+  source: docs/quality.md:540
   spec:
     What: 'a tool with `placement: host` and `untrusted_output: true` without `redact: [ip, email, secret]`'
     Expectation: '`apply` rejects the plugin'
@@ -211,7 +214,7 @@ checks:
   - DEP-11
   version: v0.1
   section: Tests without a model
-  source: docs/quality.md:537
+  source: docs/quality.md:541
   spec:
     What: 'a `demo` catalog with `monitor_host: core1.example.org` or a resource with `host: core1`'
     Expectation: '`apply` rejects the catalog: `core1` is in the deployment''s `farm_hosts` (case `ops-030`)'

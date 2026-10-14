@@ -260,7 +260,7 @@
             "type": "integer",
             "minimum": 0,
             "maximum": 86400,
-            "description": "From v0.2: how long an implementation may keep the output of a read tool in a cache, in seconds; 0 by default, that is no cache (PRM-12).",
+            "description": "From v0.2: how long an implementation may keep the output of a read tool in a cache, in seconds; 0 by default, that is no cache (PRM-12). A tool with credential.per_principal is never cached: apply rejects cache_s above 0 on it (cache_per_principal).",
             "x-botaru-version": "v0.2"
           },
           "credential": {

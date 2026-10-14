@@ -3,9 +3,9 @@ rules: [MGR-21, MGR-22, IDM-2]
 version: v0.2
 description: 'Takeover. takeover_request passes only with the group permission task.takeover:<type>, a tenant takeover line above
   0, a task type on the takeover list of the tenant, and no untrusted_seen on the manager attempt. A person of T with
-  model_grant.manage decides the card takeover_confirm (confirm_above_eur is 0 by default, so there is always a card). On approve
-  the core creates a task of the same type with the key system:takeover:<task> and a grant of kind takeover with the seat profile
-  for 1 attempt on line takeover; the original task is canceled as superseded_by_takeover. The manager gets only state, reason
+  model_grant.manage decides the card takeover_confirm (the card is never lifted: confirm_above_eur is reserved and only 0
+  passes apply). On approve the core creates a task of the same type with the key system:takeover:<task> and a grant of kind
+  takeover with the seat profile for 1 attempt on line takeover, with cap_eur equal to the estimate the card showed; the original task is canceled as superseded_by_takeover. The manager gets only state, reason
   and price.'
 given:
   tenant: demo
@@ -39,7 +39,7 @@ cases:
   steps:
   - occur: {takeover_request: {task: t_2101}}
     by: seat
-    expect: {outcome: staged, card: takeover_confirm, card_to: 'human:carol'}
+    expect: {outcome: staged, card: takeover_confirm, card_to: 'human:carol', card_estimate_eur: 0.4}
   - call:
       port: P1
       op: decide
@@ -48,6 +48,6 @@ cases:
     card: takeover_confirm
     expect:
       new_task: {type: data.describe.v1, key: 'system:takeover:t_2101', tenant: demo}
-      grant: {kind: takeover, profile: seat-std, attempts_left: 1, line: takeover, decided_by: {kind: human}}
+      grant: {kind: takeover, profile: seat-std, attempts_left: 1, line: takeover, cap_eur: 0.4, decided_by: {kind: human}}
       original_task: {state: canceled, reason: superseded_by_takeover}
       manager_result_fields: [state, reason, price_eur]

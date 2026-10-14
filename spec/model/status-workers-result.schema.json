@@ -86,8 +86,14 @@
                 ],
                 "properties": {
                   "state": {
-                    "type": "string",
-                    "maxLength": 40
+                    "enum": [
+                      "idle",
+                      "busy",
+                      "degraded",
+                      "draining",
+                      "maintenance"
+                    ],
+                    "description": "The reported phase from the closed list of bot-state.schema.json; no free text of a worker reaches another bot's model context (INJ-1, STA-3)."
                   },
                   "source": {
                     "enum": [

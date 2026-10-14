@@ -6,9 +6,11 @@ description: 'Escalation intake and screening by code. An escalation comes only 
   schema, the subject (own worker, own task tree, a catalog resource of the task scope), the rates (1 per hour per worker, 5 per
   day per role in the tenant, 20 per day per tenant), duplicates within 1 hour (dup_count grows, no new record), the evidence,
   an open incident or a firing alarm on the subject (merged), a normal path (dismissed(use_normal_path)) and the chain depth (more
-  than 5: dismissed(chain_too_deep)). Without money in the review line the escalation is parked. A forwarded escalation gives the
+  than 5: dismissed(chain_too_deep)). Without money in the review line an ordinary escalation is parked, while an urgent one or one
+  of the categories suspected_compromise and data_risk is screened at the farm expense. A forwarded escalation gives the
   task manager.escalations.v1 with the key system:escalation:<attempt>; class 3, and class 1 through the control lane for
-  urgency high. The 31st forward in a day across the farm is dismissed with escalation_rate_limited.'
+  urgency high. The 31st forward in a day across the farm, and a forward above the tenant share max(3, floor(30 / N)), are
+  dismissed with escalation_rate_limited.'
 given:
   tenant: demo
   tenant_budget: {review: {month_eur: 50}}
@@ -70,3 +72,21 @@ cases:
   - occur: {escalation_submitted: {by_worker: analyst-1, attempt: att_10, category: dependency_down, subject: {kind: task_tree}, urgency: normal}}
   - occur: {lens_review: {score: 3, reason: clear_risk}}
     expect: {state: dismissed, reason: escalation_rate_limited, manager_tasks: 0}
+- id: fx-mgr-escalation-g
+  description: an urgent or compromise escalation is screened at the farm's expense when the tenant review line is empty
+  steps:
+  - occur: {review_line_empty: {tenant: demo}}
+  - occur: {escalation_submitted: {by_worker: analyst-5, attempt: att_11, category: suspected_compromise, subject: {kind: resource, id: 'res:ctd1:data'}, urgency: normal}}
+    expect: {state: in_review, lens_task: {type: review.escalation.v1, key: 'system:necessity:$last', paid_by: {tenant: farm, line: review}}}
+  - occur: {escalation_submitted: {by_worker: analyst-6, attempt: att_12, category: dependency_down, subject: {kind: task_tree}, urgency: high}}
+    expect: {state: in_review, lens_task: {paid_by: {tenant: farm, line: review}}}
+- id: fx-mgr-escalation-h
+  description: the tenant share of the farm-wide forward ceiling
+  given:
+    tenants_with_manager: 6
+    forwarded_today_tenant: {demo: 5}
+    forwarded_today_farm: 12
+  steps:
+  - occur: {escalation_submitted: {by_worker: analyst-7, attempt: att_13, category: dependency_down, subject: {kind: task_tree}, urgency: normal}}
+  - occur: {lens_review: {score: 3, reason: clear_risk}}
+    expect: {state: dismissed, reason: escalation_rate_limited, manager_tasks: 0, tenant_share: 5}

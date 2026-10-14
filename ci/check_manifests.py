@@ -535,9 +535,11 @@ def lint(docs, today=None, farm_hosts=None, examples_mode=False, claimed=None, s
             if not any((line.get(k) or 0) > 0 for k in ('month_eur', 'day_eur')):
                 f.error('manager_line_missing', where, 'manager budget line is not above 0 while the manager is enabled (MGR-20)')
         priv = ts.get('privacy') or {}
-        # monitoring is a mandatory recipient only when the installation claims the monitor profile (D-88)
-        if 'monitor' in (claimed or []) and 'monitoring' not in priv.get('recipients', ['monitoring']):
-            f.error('recipients_monitoring', where, 'privacy.recipients has no monitoring while the monitor profile is claimed (MON-1)')
+        # monitoring is a mandatory recipient only when the installation claims the monitor profile (D-88);
+        # unknown claimed profiles count as monitor: the check fails closed
+        if (claimed is None or 'monitor' in claimed) and 'monitoring' not in priv.get('recipients', ['monitoring']):
+            f.error('recipients_monitoring', where, 'privacy.recipients has no monitoring while the monitor profile is claimed '
+                    'or the claimed profiles are unknown (MON-1)')
         subs = {s['provider']: s for s in priv.get('subprocessors', [])}
         for mp in ts.get('models_allowed', []):
             prof = profiles.get(mp)
@@ -628,6 +630,9 @@ def lint(docs, today=None, farm_hosts=None, examples_mode=False, claimed=None, s
             if ps['placement'] == 'host' and t.get('untrusted_output') is True \
                     and not {'ip', 'email', 'secret'} <= set(t.get('redact', [])):
                 f.error('redact_required', where, f'{tid}: placement: host and untrusted_output: true without redact [ip, email, secret] (INJ-4)')
+            if (t.get('cache_s') or 0) > 0 and (t.get('credential') or {}).get('per_principal'):
+                f.error('cache_per_principal', where, f'{tid}: cache_s on a tool with credential.per_principal; '
+                        'output of a person\'s connection is never cached (PRM-12, SEC-7)')
             if t.get('untrusted_output') is False and t.get('output_schema') and free_text(t['output_schema']):
                 f.error('untrusted_output_false_text', where, f'{tid}: untrusted_output: false with free text in the output (INJ-3)')
             for cname, c in (t.get('commands') or {}).items():
@@ -812,7 +817,34 @@ def lint(docs, today=None, farm_hosts=None, examples_mode=False, claimed=None, s
             f.error('schedule_target', where, f'schedule {sname}: exactly one of task and script (SCR-12)')
             continue
         if 'script' in ss:
-            continue  # v0.2: the SCR-12 checks of a scheduled script come with the Script kind
+            # SCR-12: a script that a slot starts without a person's button runs as system
+            for addr in ss.get('deliver_to', []):
+                check_address(where, tenant, addr)
+            sc = S.get('Script', ss['script'], tenant)
+            if sc is None:
+                f.error('ref_missing', where, f'schedule {sname}: script {ss["script"]} is not a kind: Script of tenant {tenant}')
+                continue
+            tspec = S.get('Tenant', tenant) or {}
+            ceil = tspec.get('scripts') or {}
+            steps = sc.get('steps') or []
+            if len(steps) > ceil.get('max_steps', 10):
+                f.error('schedule_script_over_ceiling', where,
+                        f'schedule {sname}: script {ss["script"]} has {len(steps)} steps, above Tenant.spec.scripts.max_steps (SCR-5, SCR-12)')
+            for st in steps:
+                sk, stt = st.get('kind'), st.get('type')
+                claimers = [rs for _, rs in roles.values() if stt and stt in rs.get('claims', [])]
+                if sk in ('action', 'confirm') or (sk == 'fanout' and st.get('action')) \
+                        or any(rs.get('service_control') or rs.get('monitor_scripts') for rs in claimers):
+                    f.error('schedule_script_needs_run', where,
+                            f'schedule {sname}: step {st.get("id")} of script {ss["script"]} needs script.run; '
+                            'only a person starts it (SCR-6, SCR-12)')
+                if sk == 'await':
+                    f.error('schedule_script_await', where,
+                            f'schedule {sname}: step {st.get("id")} waits for an external event; an unattended run has no await (SCR-12)')
+                if sk in ('task', 'fanout') and stt and groups and not system_has(tenant, stt):
+                    f.error('system_ops_missing', where,
+                            f'schedule {sname}: step {st.get("id")}: task:{stt} is not in system-ops (PRM-10, SCR-12)')
+            continue
         tt = ss['task']['type']
         if tt.startswith('action.'):
             f.error('action_type_grant', where, f'schedule {sname}: action.* type (APR-5)')
@@ -888,10 +920,23 @@ def lint(docs, today=None, farm_hosts=None, examples_mode=False, claimed=None, s
             if p in profiles and ceil is not None and profiles[p]['rank'] > ceil:
                 f.error('rank_exceeded', where, f'charter {gname}: seat profile {p} is above the reviewer ceiling {ceil} (GOV-3)')
         # Ballots run on the commission seat profiles with a forced output schema (GOV-7).
-        for p in sorted(({com.get('model_profile')} | {s.get('model_profile') for s in com.get('seats', [])}) - {None}):
-            if com.get('seats') and p in profiles and profiles[p].get('forced_schema') is not True:
+        # The whole fallback chain counts (GW-5), and a profile that is not in the set fails: the check is closed.
+        seat_profiles = sorted(({com.get('model_profile')} | {s.get('model_profile') for s in com.get('seats', [])}) - {None})
+        todo, seen = list(seat_profiles), set()
+        while todo and (com.get('seats') or com.get('model_profile')):
+            p = todo.pop(0)
+            if p in seen:
+                continue
+            seen.add(p)
+            if p not in profiles:
+                if profiles:
+                    f.error('forced_schema_unsupported', where,
+                            f'charter {gname}: ballot profile {p} is not in the set, so its forced schema is unknown (GOV-7)')
+                continue
+            if profiles[p].get('forced_schema') is not True:
                 f.error('forced_schema_unsupported', where,
-                        f'charter {gname}: seat profile {p} has no forced_schema: true, and ballots need it (GOV-7)')
+                        f'charter {gname}: profile {p} (a seat profile or its fallback) has no forced_schema: true, and ballots need it (GOV-7)')
+            todo.extend(profiles[p].get('fallback') or [])
     # Shadow shares and escalation thresholds of the commission manifest (COM-10, COM-13).
     for tenant, cname, where, cs in S.each('Commission'):
         sh = cs.get('shadow')
@@ -951,6 +996,43 @@ def lint(docs, today=None, farm_hosts=None, examples_mode=False, claimed=None, s
     for sname, files in (skills or {}).items():
         for _, msg in skill_problems(sname, files):
             f.error('skill_format', f'skills/{sname}/', msg)
+
+    # 11b. v0.2 security checks: a person's copy goes only to that person (SEC-10, LCY-2), the takeover
+    # card is never lifted (MGR-21), ingress authenticity (ING-1).
+    for tenant, tname, where, ts in S.each('Tenant'):
+        es = (ts.get('privacy') or {}).get('export_sink')
+        if es:
+            sk = S.get('Sink', es, tname)
+            if sk is None:
+                f.error('ref_missing', where, f'privacy.export_sink: sink {es} is not in tenant {tname}')
+            elif ((sk.get('export_only') or {}).get('recipient_ref')) != 'self':
+                f.error('export_sink_not_self', where,
+                        f'privacy.export_sink {es}: a /mydata copy goes only to the person; the sink needs '
+                        'export_only.recipient_ref: self (SEC-10, LCY-2)')
+        cab = (ts.get('takeover') or {}).get('confirm_above_eur')
+        if isinstance(cab, (int, float)) and not isinstance(cab, bool) and cab > 0:
+            f.error('takeover_confirm_threshold', where,
+                    f'takeover.confirm_above_eur {cab}: a takeover always needs the takeover_confirm card; the field is reserved and only 0 passes (MGR-21)')
+    token_events = {}
+    for tenant, name, where, cs in S.each('Channel'):
+        ing = cs.get('ingress') or {}
+        if not ing:
+            continue
+        if ing.get('auth') == 'signature':
+            tol = seconds(ing.get('tolerance'))
+            if tol is None or tol > 300:
+                f.error('ingress_tolerance', where,
+                        f'channel {name}: auth: signature needs ingress.tolerance of at most 5m, got {ing.get("tolerance")!r} (ING-1)')
+        elif ing.get('auth') == 'tls_token' and ing.get('event'):
+            token_events.setdefault(tenant, set()).add(ing['event'])
+    for tenant, rname, where, rs in S.each('Route'):
+        ev = (rs.get('on') or {}).get('event') if isinstance(rs.get('on'), dict) else None
+        tt = (rs.get('task') or {}).get('type')
+        if ev and tt and ev in token_events.get(tenant, set()):
+            tier = (types.get(tt) or {}).get('tier')
+            if tier is None or tier > 0:
+                f.error('ingress_token_tier', where,
+                        f'route {rname}: event {ev} comes from a tls_token source, which routes only to tier 0 types; {tt} has tier {tier} (ING-1)')
 
     # 12. Global manifests without tenant data (TEN-6).
     for kind, entry in KINDS.items():

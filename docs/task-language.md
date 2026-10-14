@@ -501,7 +501,7 @@ A manifest passes the schema of its kind and `apiVersion`; a kind without a regi
 | `MessageType`, `BotGroup` | bot message type, bot group | farm git; `tenants/<t>/botgroups/` | v0.1 |
 | `ObservationSeries`, `ModelProfile`, `Commission` | observation series; model profile with the field `family` (model family from `model-families.yaml`: the veto lenses of a production tenant have different families, GOV-34); tenant commission with the block `shadow: {veto_lenses, other_lenses}` (shadow shares, 0.25 and 0.2 by default) or `shadow: off` (COM-10) | farm and tenant git | v0.1 |
 | `IncidentClass`, `Governance` | incident class, charter | farm git | v0.1 |
-| `Script` | script from git | tenant git | v0.2 |
+| `Script` | script from git in the format `botaru.script/v1`; a schedule may start it without a person only under SCR-12 | `tenants/<t>/scripts/<name>.yaml` | v0.2 |
 
 A file can hold several manifests separated by a `---` line; each object has its own name `metadata.name`.
 

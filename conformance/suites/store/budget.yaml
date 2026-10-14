@@ -10,17 +10,18 @@ checks:
   - SEC-14
   version: v0.2
   section: Tests without a model
-  source: docs/quality.md:458
+  source: docs/quality.md:460
   spec:
-    What: a usage record 94 days old (v0.2)
-    Expectation: it has no subject id
+    What: a usage record 94 days old of `bob` (v0.2), and the audit records of its task
+    Expectation: it has no `subject`, `task` or `root`, its `time` is midnight UTC, and no field of it joins with an audit
+      record, event or task record of `bob`
 - id: store:budget/line-by-purpose
   method: store
   rules:
   - BUD-7
   version: v0.1
   section: Tests without a model
-  source: docs/quality.md:462
+  source: docs/quality.md:464
   spec:
     What: tasks with purposes `work`, `report`, `insight`, `review`, `manage`; the worker sends a different budget line
     Expectation: the core sets `line` by purpose (`work`, `work`, `insight`, `review`, `manager`); exhausting the `insight`
@@ -32,7 +33,7 @@ checks:
   - GW-6
   version: v0.1
   section: Tests without a model
-  source: docs/quality.md:464
+  source: docs/quality.md:466
   spec:
     What: a type with 20 finished tasks in 30 days; a type without history
     Expectation: the enqueue estimate is the 90th percentile of the tree price; a new type gets the worst case by the most

@@ -1373,6 +1373,59 @@ entries:
   retry: null
   outcome: error
   rules: [SEC-7]
+- id: connection_link_invalid
+  since: v0.2
+  meaning: 'P2 `connection.register` without a valid link nonce: the nonce was not issued by the core at `/mydata connect`, was
+    already used or is older than 10 minutes. No connection is written.'
+  spends_attempt: null
+  retry: null
+  outcome: rejected
+  rules: [SEC-7]
+- id: connection_account_taken
+  since: v0.2
+  meaning: P2 `connection.register` names an external account that has an active or pending connection of another principal.
+    No connection is written.
+  spends_attempt: null
+  retry: null
+  outcome: rejected
+  rules: [SEC-7]
+- id: replay_journal_missing
+  since: v0.2
+  meaning: 'P2 `task.replay` of a task without a recorded attempt journal (off in the tenant or expired); a replay never reads
+    live.'
+  spends_attempt: null
+  retry: null
+  outcome: rejected
+  rules: [APR-8]
+- id: replay_personal
+  since: v0.2
+  meaning: 'P2 `task.replay` of a task that carries `personal_seen` or made a call with `credential: per_principal`.'
+  spends_attempt: null
+  retry: null
+  outcome: rejected
+  rules: [APR-8]
+- id: replay_role_forbidden
+  since: v0.2
+  meaning: P2 `task.replay` of a task of purpose `manage` or of a manager role.
+  spends_attempt: null
+  retry: null
+  outcome: rejected
+  rules: [APR-8]
+- id: replay_quota
+  since: v0.2
+  meaning: P2 `task.replay` above 10 replays per tenant per day.
+  spends_attempt: null
+  retry: null
+  outcome: rejected
+  rules: [APR-8]
+- id: export_recipient_not_subject
+  since: v0.2
+  meaning: 'A copy of a person''s data (`/mydata export`, `principal.export`) to a sink whose only recipient is not that person
+    (`recipient_ref` other than `self` or their own `human:<id>`).'
+  spends_attempt: null
+  retry: null
+  outcome: rejected
+  rules: [SEC-10, LCY-2]
 - id: file_too_large
   since: v0.2
   meaning: P1 `file.put` or P2 `kb.upload` above `max_file_bytes` or `max_task_files_bytes` of the tenant; no file record is written

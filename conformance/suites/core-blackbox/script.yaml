@@ -9,7 +9,7 @@ checks:
   - SCR-11
   version: v0.1
   section: Tests without a model
-  source: docs/quality.md:350
+  source: docs/quality.md:352
   spec:
     What: run and step transitions by the table of `spec/lifecycles/script.md`, including `on_failure` and run cancelation
     Expectation: allowed transitions pass, the others are rejected
@@ -19,7 +19,7 @@ checks:
   - SCR-7
   version: v0.1
   section: Tests without a model
-  source: docs/quality.md:352
+  source: docs/quality.md:354
   spec:
     What: a `fanout` item outside the list frozen at run approval
     Expectation: not released
@@ -29,7 +29,7 @@ checks:
   - SCR-9
   version: v0.1
   section: Tests without a model
-  source: docs/quality.md:353
+  source: docs/quality.md:355
   spec:
     What: a step takes a field of an agent step with `untrusted_seen` through `items.from`, the condition stands before an
       action
@@ -40,7 +40,7 @@ checks:
   - SCR-10
   version: v0.2
   section: Tests without a model
-  source: docs/quality.md:362
+  source: docs/quality.md:364
   spec:
     What: (v0.2) a `tasktype` hold with `no_enqueue` on the type of step 3 while step 2 runs; release of the hold; `resume`
       by the initiator under another active hold; the run deadline passes during the pause
@@ -54,9 +54,11 @@ checks:
   - TIM-3
   version: v0.1
   section: Tests without a model
-  source: docs/quality.md:364
+  source: docs/quality.md:366
   spec:
     What: (v0.2) the accepted script schedule reaches two slots; a hold of scope `schedule` before the second slot; a slot
-      whose estimate does not fit the tenant budget
+      whose estimate does not fit the tenant budget; a slot that comes while the run of the previous slot waits in a `wait`
+      step; a `deliver_to` group removed from the tenant before a slot
     Expectation: each slot starts a run with initiator `system` and fairness key `script:<run>` without a card; the held slot
-      is skipped with `held`; the slot that does not fit is skipped and no run starts
+      is skipped with `held`; the slot that does not fit is skipped and no run starts; the slot during a live run is skipped
+      with `run_live`; the slot after the group removal is refused at the run's `deliver_to` check

@@ -121,6 +121,13 @@ entries:
     set_by: [operator, tenant_human, autostop]
     record_tenant: own
     rules: [HLD-1, CAP-4]
+  - id: sink
+    kind: scope
+    since: v0.2
+    meaning: a sink of the tenant, for example after a compromise of its credential or of the key of an export sink
+    set_by: [operator, tenant_human]
+    record_tenant: own
+    rules: [HLD-1, HLD-2, SEC-6]
   # Effects
   - id: no_enqueue
     kind: effect

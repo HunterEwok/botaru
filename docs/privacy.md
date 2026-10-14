@@ -204,7 +204,7 @@ The schema of every stored object declares its class, and every store, including
 
 The sealed memory of a retired bot does not extend periods: sessions that live 7 days by their class are not kept longer because of the seal.
 
-From v0.2, per-principal usage lives in the class `metadata` for 400 days, but keeps the reference to a person for only 93 days: after that the retention loop removes `subject` and writes `subject_kind: human`, in whole days, and the sums remain; this is the only edit of a `metadata` row (SEC-14, BUD-16). Limits and reports per person are computed only from records younger than 93 days.
+From v0.2, per-principal usage lives in the class `metadata` for 400 days, but keeps the reference to a person for only 93 days: after that the retention loop removes `subject`, `task` and `root`, truncates `time` to the day and writes `subject_kind: human`, in whole days, so that no join with audit or task records leads back to the person, and the sums remain; this is the only edit of a `metadata` row (SEC-14, BUD-16). Limits and reports per person are computed only from records younger than 93 days.
 
 ### Erasure through the log
 
@@ -252,7 +252,7 @@ The report includes objects where the principal is the initiator, where the obje
 
 ### Request for a copy or erasure
 
-The commands `/mydata export` and `/mydata erase` create, through P2 `principal.data_request`, a subject request record (`SubjectRequest`) of kind `export` or `erase` and a `subject_request` card for the people of the tenant with `admin:people` (SEC-11). A third kind, `erase_match`, is created only by an admin and is described below. Erasure (`erase`, `erase_match`) works from v0.1 and cannot be waived for a tenant with `kind: production` (D-76); the copy (`export`) arrives in v0.2. People of the organization decide, because the decision about erasure is taken by the controller: the organization may be obliged to keep part of the data. The model neither creates nor decides a request.
+The commands `/mydata export` and `/mydata erase` create, through P2 `principal.data_request`, a subject request record (`SubjectRequest`) of kind `export` or `erase` and a `subject_request` card for the people of the tenant with `admin:people` (SEC-11). A third kind, `erase_match`, is created only by an admin and is described below. Erasure (`erase`, `erase_match`) works from v0.1 and cannot be waived for a tenant with `kind: production` (D-76); the copy (`export`) arrives in v0.2. A copy is only about oneself: `/mydata export` carries the person's public key (`recipient_key`), and the copy goes only to an export sink with `recipient_ref: self`, encrypted with that key, so neither an admin nor the operator can read it (SEC-10, LCY-2). It leaves out objects whose `personal_subjects` name other people. A tenant export at offboarding leaves out private chats, data from people's connections and connection records. People of the organization decide, because the decision about erasure is taken by the controller: the organization may be obliged to keep part of the data. The model neither creates nor decides a request.
 
 | State | Meaning | Terminal |
 |---|---|---|

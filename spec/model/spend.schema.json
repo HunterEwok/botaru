@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "urn:botaru:schema:spend:1",
   "title": "Usage line",
-  "description": "A usage line for each model and tool call and for each publication of a bot message (BUD-3). The core sets the budget line line by the type purpose (BUD-7). The principal is kept for 93 days, the period of the class observation; since v0.2 the retention cycle removes subject of a person after 93 days and writes subject_kind: human, in whole days; this is the only edit of the line (BUD-16, SEC-14). Model numbers come only from the provider answer through P4.",
+  "description": "A usage line for each model and tool call and for each publication of a bot message (BUD-3). The core sets the budget line line by the type purpose (BUD-7). The principal is kept for 93 days, the period of the class observation; since v0.2 the retention cycle removes subject, task and root of a line of a person after 93 days, truncates time to the day and writes subject_kind: human, in whole days; this is the only edit of the line (BUD-16, SEC-14). Model numbers come only from the provider answer through P4.",
   "x-botaru-direction": "record",
   "x-botaru-retention": "metadata",
   "x-botaru-rules": [
@@ -194,7 +194,7 @@
       "enum": [
         "human"
       ],
-      "description": "From v0.2: the kind of the removed subject; written by the retention cycle together with the removal of subject (BUD-16, SEC-14).",
+      "description": "From v0.2: the kind of the removed subject; written by the retention cycle together with the removal of subject, task and root and the truncation of time to the day (BUD-16, SEC-14).",
       "x-botaru-version": "v0.2"
     },
     "cached": {

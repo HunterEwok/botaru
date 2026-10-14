@@ -1136,14 +1136,14 @@ entries:
     since: v0.2
     request: p2-secret-revoke-request
     response: done-response
-    rules: [SEC-6, HLD-2]
+    rules: [SEC-6, HLD-2, SEC-7]
     profiles: [core]
   - id: P2.connection.register
     port: P2
     op: connection.register
     since: v0.2
     request: p2-connection-register-request
-    response: done-response
+    response: p2-connection-register-response
     rules: [SEC-7]
     profiles: [core]
     on_behalf: true
