@@ -212,7 +212,7 @@ The terms of the bot farm skeleton: what each one is, what it is easily confused
 | change trial (`trial`) | The core record that measures an accepted change for exactly 14 days from `realized` against a metric and 1-3 guards; outcome `better`, `unchanged`, `worse`, `undetermined` or `mixed`. | probation; dry run | [lifecycle: change trial](../../spec/lifecycles/trial.md) |
 | guard | A series that must not get worse during a change trial; firing gives `worse` and a "Revert" card. | rate limiter | [PRP-23](../../conformance/rules.md#PRP-23) |
 | improvement cycle | Observations, analysis, proposal, code checks, commission, a person's decision, realization, trial, promotion (D-16). | background loops | [Improvements](../improvements.md) |
-| lens | A review point of view from `lenses.yaml`: `security` and `operational` with veto, `cost`, `value`, and since v0.2 `farm_manager` and `necessity`. | seat | [COM-8](../../conformance/rules.md#COM-8) |
+| lens | A review point of view that one member of the commission represents with its own persona addendum: from `lenses.yaml` `security` and `operational` with veto, `cost`, `value`, `speed`, `clarity`, and since v0.2 `farm_manager` and `necessity`; a tenant adds its own lenses `x_<name>` without a veto in its charter. | seat | [COM-19](../../conformance/rules.md#COM-19) |
 | observation | A number or `enum` value in a series, written only by code. | event; fact | [OBV-1](../../conformance/rules.md#OBV-1) |
 | observation series (`ObservationSeries`) | A tenant series declared in git; with a full `outcome` block it can be a trial metric or guard. | metrics catalog | [OBV-2](../../conformance/rules.md#OBV-2) |
 | proposal (`Proposal`) | A closed record with a problem, evidence and exactly one change; it does nothing until a person presses "Accept". | approval; governance case | [lifecycle: proposal](../../spec/lifecycles/proposal.md) |
@@ -233,7 +233,7 @@ The terms of the bot farm skeleton: what each one is, what it is easily confused
 | fallback model | A profile from the slot profile's `fallback` list that P4 uses only for a reason from `fallback_on`. | fallback role | [GW-5](../../conformance/rules.md#GW-5) |
 | file (`File`) | Bytes plus a core record (`file_ref`, origin, type, mark, expiry); a file's content is always untrusted. | artifact | [lifecycle: file](../../spec/lifecycles/file.md) |
 | knowledge corpus (`Corpus`) | A catalog resource of reference documents, `curated` in reviewed git or `ingested`; the model reads it only through `kb` tools. | memory; skill | [KNW-2](../../conformance/rules.md#KNW-2) |
-| model family (`family`) | A profile field from `model-families.yaml`; veto lenses must use different families. | rank | [GOV-34](../../conformance/rules.md#GOV-34) |
+| model family (`family`) | A profile field from `model-families.yaml`; profiles of one family share a pool of rate limits. | rank | [GW-10](../../conformance/rules.md#GW-10) |
 | model profile (`ModelProfile`) | A manifest with the exact model, family, rank, pool, output limit, speed, provider terms and dated prices. | role profile | [GW-7](../../conformance/rules.md#GW-7) |
 | model provider | The external party the farm pays by API key (D-04); for a tenant, a subprocessor. | P4 | [GW-3](../../conformance/rules.md#GW-3) |
 | model rank (`rank`) | 1-4 in a profile: higher is stronger and costlier. Rules name ranks, not models. | tier | [GOV-3](../../conformance/rules.md#GOV-3) |

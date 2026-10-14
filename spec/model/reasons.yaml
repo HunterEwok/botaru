@@ -1,5 +1,5 @@
 registry: reasons
-version: 8
+version: 9
 description: 'Closed registry of reasons: end of an attempt, refusals at enqueue and at a call, waiting, outcomes of calls,
   approvals and deliveries, and also codes of other parts of the farm. A worker in P1 `fail` passes only a code from here; there is no free
   reason text in the records. Record fields: `meaning` (what it means); `spends_attempt` (whether it spends an attempt: true,
@@ -816,11 +816,26 @@ entries:
   rules: [MEM-6]
 - id: veto_lenses_same_family
   since: v0.1
-  meaning: Lenses with veto power from the same model family.
+  retired: true
+  meaning: 'retired: the lenses no longer need different model families (D-117); the entry stays only so that the registry stays additive.'
   spends_attempt: null
   retry: null
   outcome: apply_error
-  rules: [GOV-34]
+  rules: [COM-19]
+- id: lens_persona_missing
+  since: v0.1
+  meaning: A commission seat names a lens that has no persona addendum in the charter.
+  spends_attempt: null
+  retry: null
+  outcome: apply_error
+  rules: [COM-19]
+- id: lens_unknown
+  since: v0.1
+  meaning: A seat or the commission manifest names a lens that is neither in lenses.yaml nor declared with its meaning in the charter.
+  spends_attempt: null
+  retry: null
+  outcome: apply_error
+  rules: [COM-19]
 - id: not_eligible
   since: v0.2
   meaning: 'Promotion queue event: the record did not pass admission and waits.'

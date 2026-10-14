@@ -221,7 +221,7 @@ monitor_scripts: ["*"]                   # all names in the tenant's catalog, bu
 The group `approver` decides the cards that such requests turn into when the bot read untrusted text before them (D-70), and the cards of operations outside `no_card` (D-74).
 
 ```yaml
-# model-profiles/seat-std.yaml and seat-alt.yaml (spec fragments): commission seats on two families
+# model-profiles/seat-std.yaml and seat-alt.yaml (spec fragments): two profiles a seat may use; the lenses need no different families (D-117)
 # seat-std
 provider: provider-a
 family: family-a
@@ -242,15 +242,20 @@ subprocessors: [{provider: provider-c, region: region-a}]
 
 ```yaml
 # tenants/demo/governance.yaml (fragment of spec.commission): only the charter declares commission seats (GOV-33);
-# lenses with veto on different model families (GOV-34): seat-std for seat 1, seat-alt for seat 2
+# every member represents one lens with the persona addendum of that lens (COM-19); all seats run on seat-std
 commission:
   seat_role: commission-member
   model_profile: seat-std
   seats:
     - {id: 1, lens: security, fallback_role: reviewer-a}
-    - {id: 2, lens: operational, fallback_role: reviewer-a, model_profile: seat-alt}
+    - {id: 2, lens: operational, fallback_role: reviewer-a}
     - {id: 3, lens: cost, fallback_role: reviewer-b}
     - {id: 4, lens: value, fallback_role: reviewer-b}
+  lenses:
+    security: {persona: {ref: personas/lens-security.md, sha256: "..."}}
+    operational: {persona: {ref: personas/lens-operational.md, sha256: "..."}}
+    cost: {persona: {ref: personas/lens-cost.md, sha256: "..."}}
+    value: {persona: {ref: personas/lens-value.md, sha256: "..."}}
 ```
 
 Groups carry no alarm permissions: the organization's monitoring system passes farm alarms to people, and it decides who receives and acknowledges them (MON-1).

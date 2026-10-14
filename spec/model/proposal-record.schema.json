@@ -241,14 +241,31 @@
         ],
         "properties": {
           "lens": {
-            "enum": [
-              "security",
-              "operational",
-              "cost",
-              "value",
-              "farm_manager"
-            ],
-            "x-botaru-registry": "lenses"
+            "anyOf": [
+              {
+                "enum": [
+                  "security",
+                  "operational",
+                  "cost",
+                  "value",
+                  "farm_manager"
+                ],
+                "x-botaru-registry": "lenses"
+              },
+              {
+                "enum": [
+                  "speed",
+                  "clarity"
+                ],
+                "x-botaru-registry": "lenses"
+              },
+              {
+                "type": "string",
+                "maxLength": 32,
+                "pattern": "^x_[a-z][a-z0-9_]{0,30}$",
+                "description": "A tenant lens declared in the tenant charter (COM-19)."
+              }
+            ]
           },
           "task": {
             "$ref": "urn:botaru:schema:common:1#/$defs/object_id",
@@ -277,7 +294,7 @@
           }
         }
       },
-      "maxItems": 10
+      "maxItems": 24
     },
     "verdict": {
       "anyOf": [

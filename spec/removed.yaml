@@ -268,3 +268,10 @@ entries:
     reason: >-
       The attempt work item of P1 claim carries reply_locale (DLV-18) and skills (SKL-2), which the removed E4 run request carried; the P1 boundary now holds what crosses it (C10, D-114).
     decisions: [D-114]
+  - schema: spec/manifests/commission.schema.json
+    change: breaking
+    removed: 2026-10-14
+    reason: >-
+      Only widened: the lens names in min and weights may now contain digits, so a tenant lens such as x_iso27001 gets
+      its weight (COM-19). The check counts any change of propertyNames as breaking.
+    decisions: [D-117]

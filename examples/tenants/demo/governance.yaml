@@ -10,9 +10,14 @@ spec:
     model_profile: seat-std
     seats:
       - {id: 1, lens: security, fallback_role: reviewer-a}
-      - {id: 2, lens: operational, fallback_role: reviewer-a, model_profile: seat-alt}
+      - {id: 2, lens: operational, fallback_role: reviewer-a}
       - {id: 3, lens: cost, fallback_role: reviewer-b}
       - {id: 4, lens: value, fallback_role: reviewer-b}
+    lenses:
+      security: {persona: {ref: personas/lens-security.md, sha256: "..."}}
+      operational: {persona: {ref: personas/lens-operational.md, sha256: "..."}}
+      cost: {persona: {ref: personas/lens-cost.md, sha256: "..."}}
+      value: {persona: {ref: personas/lens-value.md, sha256: "..."}}
     audit_sample: {min_per_month: 4, share: 0.25, max_per_digest: 2}
   promotion: {probation: 14d, exclude_change_kinds: [none], min_tenure: 30d, swap_cooldown: 30d}
   removal: {protect_new: 60d}

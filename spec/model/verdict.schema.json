@@ -64,14 +64,31 @@
         ],
         "properties": {
           "lens": {
-            "enum": [
-              "security",
-              "operational",
-              "cost",
-              "value",
-              "farm_manager"
-            ],
-            "x-botaru-registry": "lenses"
+            "anyOf": [
+              {
+                "enum": [
+                  "security",
+                  "operational",
+                  "cost",
+                  "value",
+                  "farm_manager"
+                ],
+                "x-botaru-registry": "lenses"
+              },
+              {
+                "enum": [
+                  "speed",
+                  "clarity"
+                ],
+                "x-botaru-registry": "lenses"
+              },
+              {
+                "type": "string",
+                "maxLength": 32,
+                "pattern": "^x_[a-z][a-z0-9_]{0,30}$",
+                "description": "A tenant lens declared in the tenant charter (COM-19)."
+              }
+            ]
           },
           "score": {
             "type": "integer",
@@ -88,21 +105,39 @@
           }
         }
       },
-      "maxItems": 5,
+      "maxItems": 16,
       "description": "Reviews that the code read (without shadow)."
     },
     "missing_lenses": {
       "type": "array",
       "items": {
-        "enum": [
-          "security",
-          "operational",
-          "cost",
-          "value",
-          "farm_manager"
+        "anyOf": [
+          {
+            "enum": [
+              "security",
+              "operational",
+              "cost",
+              "value",
+              "farm_manager"
+            ],
+            "x-botaru-registry": "lenses"
+          },
+          {
+            "enum": [
+              "speed",
+              "clarity"
+            ],
+            "x-botaru-registry": "lenses"
+          },
+          {
+            "type": "string",
+            "maxLength": 32,
+            "pattern": "^x_[a-z][a-z0-9_]{0,30}$",
+            "description": "A tenant lens declared in the tenant charter (COM-19)."
+          }
         ]
       },
-      "maxItems": 5,
+      "maxItems": 16,
       "description": "Lenses without a review; for a lens without a veto this is a mark on the card."
     },
     "no_manager_vote": {

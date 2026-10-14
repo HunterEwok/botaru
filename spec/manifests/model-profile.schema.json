@@ -10,7 +10,6 @@
     "GW-15",
     "GW-17",
     "GOV-3",
-    "GOV-34",
     "BUD-9",
     "GW-14"
   ],
@@ -41,7 +40,7 @@
     "family": {
       "type": "string",
       "maxLength": 40,
-      "description": "Family from model-families.yaml (GOV-34).",
+      "description": "Family from model-families.yaml: the common pool of rate limits (GW-10).",
       "pattern": "^[a-z][a-z0-9-]*$",
       "x-botaru-registry": "model-families"
     },

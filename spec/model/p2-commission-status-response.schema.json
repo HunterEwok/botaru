@@ -47,7 +47,7 @@
         "properties": {
           "lens": {
             "type": "string",
-            "x-botaru-registry": "lenses"
+            "description": "Lens from spec/model/lenses.yaml or a tenant lens x_<name> from the charter (COM-19)."
           },
           "veto": {
             "type": "boolean"

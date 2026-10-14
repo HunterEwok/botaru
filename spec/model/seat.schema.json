@@ -44,8 +44,7 @@
       "type": "string",
       "maxLength": 32,
       "pattern": "^[a-z][a-z0-9_]*$",
-      "x-botaru-registry": "lenses",
-      "description": "Lens from spec/model/lenses.yaml."
+      "description": "Lens from spec/model/lenses.yaml or a tenant lens x_<name> from the charter (COM-19)."
     },
     "holder": {
       "description": "Holder: a bot identity with the binding mode: seat, or null.",

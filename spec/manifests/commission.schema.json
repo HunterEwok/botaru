@@ -7,7 +7,7 @@
   "x-botaru-rules": [
     "COM-8",
     "COM-10",
-    "GOV-34"
+    "COM-19"
   ],
   "type": "object",
   "additionalProperties": false,
@@ -17,9 +17,9 @@
     },
     "min": {
       "type": "object",
-      "maxProperties": 8,
+      "maxProperties": 16,
       "propertyNames": {
-        "pattern": "^[a-z][a-z_]*$"
+        "pattern": "^[a-z][a-z0-9_]*$"
       },
       "additionalProperties": {
         "type": "number",
@@ -30,16 +30,16 @@
     },
     "weights": {
       "type": "object",
-      "maxProperties": 8,
+      "maxProperties": 16,
       "propertyNames": {
-        "pattern": "^[a-z][a-z_]*$"
+        "pattern": "^[a-z][a-z0-9_]*$"
       },
       "additionalProperties": {
         "type": "number",
         "minimum": 1,
         "maximum": 3
       },
-      "description": "Lens weights, integers 1-3."
+      "description": "Lens weights, integers 1-3; a tenant lens without a weight has weight 1 (COM-19)."
     },
     "recommend_if": {
       "type": "object",

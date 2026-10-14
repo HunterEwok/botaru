@@ -287,7 +287,7 @@ A kind without a registered schema is rejected ([MAN-1](../conformance/rules.md#
 | `Route`, `Schedule` | reactions and timed work | `tenants/<t>/routes.yaml`, `schedules.yaml` | v0.1 |
 | `Channel`, `Sink` | channel with driver declarations, sink | tenant git | v0.1 |
 | `MessageType`, `BotGroup` | message type, bot group | farm git; `tenants/<t>/botgroups/` | v0.1 |
-| `ObservationSeries`, `ModelProfile`, `Commission` | series; model profile with `family` (GOV-34); commission with an optional `shadow` block (COM-10, D-103) | farm and tenant git | v0.1 |
+| `ObservationSeries`, `ModelProfile`, `Commission` | series; model profile with `family` (GW-10); commission with an optional `shadow` block (COM-10, D-103) | farm and tenant git | v0.1 |
 | `IncidentClass`, `Governance` | incident class, charter | farm git | v0.1 |
 | `Script` | reviewed script (SCR-14) | `tenants/<t>/scripts/<name>.yaml` | v0.2 |
 

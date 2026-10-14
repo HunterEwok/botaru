@@ -236,7 +236,7 @@ A refusal at creation makes no record, only the event `proposal.rejected.v1` wit
 
 Code checks run first, in a fixed order: schema, reread evidence, duplicate, empty change, conflict, feasibility (someone can accept and realize), money ([COM-5](../conformance/rules.md#COM-5)). A failure ends in `dismissed` with a reason before any review money is spent.
 
-**Lenses.** A lens is a point of view on benefit, cost or risk. The skeleton sets them in `spec/model/lenses.yaml`:
+**Lenses.** A lens is a point of view on benefit, cost or risk, and every member of the commission represents one lens. The skeleton sets its lenses in `spec/model/lenses.yaml`, and a tenant adds its own (below):
 
 | Lens | What it scores | Veto |
 |---|---|---|
@@ -244,10 +244,30 @@ Code checks run first, in a fixed order: schema, reread evidence, duplicate, emp
 | `operational` | reliability, deadlines, load, rollback | yes |
 | `cost` | proportionality of price and benefit; code computes the price | no |
 | `value` | benefit by the numbers | no |
+| `speed` | how fast people and tasks get their result | no |
+| `clarity` | whether people understand what the farm does and tells them | no |
 | `farm_manager` | the farm manager's advisory view, weight 1 (v0.2) | no |
 | `necessity` | only bot escalations to the farm manager (v0.2) | no |
 
 A proposal of kind `none` changes nothing, so only `value` and `security` score it ([COM-14](../conformance/rules.md#COM-14)).
+
+**A persona per lens, and the tenant's own lenses** ([COM-19](../conformance/rules.md#COM-19), D-117). Each lens has its own persona addendum in the charter, appended after the reviewer persona for every review of that lens, so a member argues for its own aspect: the security member looks at the change as an attacker would, the reliability member asks what happens in the worst hour, and so on. The independence of the lenses rests on these personas and on blindness (a reviewer sees neither the author nor the other scores), not on model families, so all seats may run on one model profile. People extend the list in git: a tenant lens has an id `x_<name>`, a one- or two-sentence `meaning` and its persona addendum. It has no veto, it is reviewed by the skeleton type `review.lens.v1`, and the commission manifest sets its weight like any other. A tenant that also wants speed, clarity and its own reproducibility lens adds three seats and three addenda:
+
+```yaml
+# tenants/<t>/governance.yaml (fragment)
+    seats:
+      - {id: 5, lens: speed,             fallback_role: reviewer-b}
+      - {id: 6, lens: clarity,           fallback_role: reviewer-b}
+      - {id: 7, lens: x_reproducibility, fallback_role: reviewer-b}
+    lenses:
+      speed:   {persona: {ref: personas/lens-speed.md, sha256: "..."}}
+      clarity: {persona: {ref: personas/lens-clarity.md, sha256: "..."}}
+      x_reproducibility:
+        meaning: Whether a result can be produced again from the same data and settings.
+        persona: {ref: personas/lens-reproducibility.md, sha256: "..."}
+```
+
+The example persona addenda of the skeleton lenses are in `examples/personas/`.
 
 **The charter.** Only the tenant charter `tenants/<t>/governance.yaml` declares commission seats ([GOV-33](../conformance/rules.md#GOV-33)). The commission manifest `Commission` sets only thresholds and weights per lens ([COM-8](../conformance/rules.md#COM-8)).
 
@@ -257,11 +277,16 @@ spec:
   commission:
     seat_role: commission-member         # a reviewer role: its workers run the seats' tasks
     model_profile: seat-std
-    seats:                               # veto lenses on different model families (GOV-34)
+    seats:                               # one lens per seat
       - {id: 1, lens: security,    fallback_role: reviewer-a}
-      - {id: 2, lens: operational, fallback_role: reviewer-a, model_profile: seat-alt}
+      - {id: 2, lens: operational, fallback_role: reviewer-a}
       - {id: 3, lens: cost,        fallback_role: reviewer-b}
       - {id: 4, lens: value,       fallback_role: reviewer-b}
+    lenses:                              # a persona addendum for every seat lens (COM-19)
+      security:    {persona: {ref: personas/lens-security.md, sha256: "..."}}
+      operational: {persona: {ref: personas/lens-operational.md, sha256: "..."}}
+      cost:        {persona: {ref: personas/lens-cost.md, sha256: "..."}}
+      value:       {persona: {ref: personas/lens-value.md, sha256: "..."}}
     audit_sample: {min_per_month: 4, share: 0.25, max_per_digest: 2}
   promotion: {probation: 14d, exclude_change_kinds: [none], min_tenure: 30d, swap_cooldown: 30d}
   removal: {protect_new: 60d}
@@ -282,7 +307,7 @@ spec:
   escalation: {forward_if_score_gte: 2, untrusted_forward_if_score_gte: 3}   # v0.2
 ```
 
-Every charter number moves only in its safe direction: deadlines up, memory limits down. The two veto lenses run on different model families, an `apply` error for a production tenant ([GOV-34](../conformance/rules.md#GOV-34)), so one provider's blind spot cannot pass a change through both.
+Every charter number moves only in its safe direction: deadlines up, memory limits down. Each lens adds one review to every proposal, so a longer list of lenses costs more: the `review` line must cover it ([BUD-13](../conformance/rules.md#BUD-13)).
 
 **Who runs a lens.** At any moment a lens has exactly one source of executors: the holders of its seats if at least one is taken, otherwise the charter's `fallback_role` ([COM-7](../conformance/rules.md#COM-7)). A seat whose holder is under a person's hold counts as free. This way empty seats never stall the cycle, and the move from reviewer roles to promoted seat holders happens seat by seat. A seat holder is always a former functionary of its own tenant (D-22); it reviews through its lens, writes no new facts and has no path beyond the commission.
 
@@ -477,6 +502,7 @@ Generated from the registry `conformance/requirements.yaml`; the full text of ev
 | [COM-15](../conformance/rules.md#COM-15) | The core builds the reviewer input, and a review carries a forecast | v0.3 | yes |
 | [COM-16](../conformance/rules.md#COM-16) | Every review is a forecast scored by code | v0.3 | no |
 | [COM-17](../conformance/rules.md#COM-17) | Accuracy of a commission member | v0.3 | no |
+| [COM-19](../conformance/rules.md#COM-19) | Every lens has its persona, and a tenant adds its own lenses | v0.1 | yes |
 | [DIG-1](../conformance/rules.md#DIG-1) | People are shown only recommended proposals and the audit sample | v0.1 | yes |
 | [DIG-2](../conformance/rules.md#DIG-2) | Digest address and recipient ceiling | v0.1 | yes |
 | [DIG-3](../conformance/rules.md#DIG-3) | The right to decide on a proposal | v0.1 | yes |
@@ -499,7 +525,6 @@ Generated from the registry `conformance/requirements.yaml`; the full text of ev
 | [GOV-31](../conformance/rules.md#GOV-31) | "Not now" and "Wrong candidate" on the promotion card | v0.2 | no |
 | [GOV-32](../conformance/rules.md#GOV-32) | A measured deterioration removes the trigger | v0.2 | no |
 | [GOV-33](../conformance/rules.md#GOV-33) | Only the charter declares seats | v0.1 | yes |
-| [GOV-34](../conformance/rules.md#GOV-34) | Veto lenses on different model families | v0.1 | yes |
 | [GOV-36](../conformance/rules.md#GOV-36) | Accountability runs in shadow until people switch it on, without retroactive effect | v0.3 | no |
 | [GOV-38](../conformance/rules.md#GOV-38) | Code finds a link between an incident and a rejected proposal | v0.3 | yes |
 | [GOV-40](../conformance/rules.md#GOV-40) | A person confirms a link on a card | v0.3 | yes |
