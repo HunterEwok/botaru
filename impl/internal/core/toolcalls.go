@@ -11,6 +11,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 
+	"github.com/HunterEwok/botaru/impl/internal/jcs"
 	"github.com/HunterEwok/botaru/impl/internal/mcp"
 	"github.com/HunterEwok/botaru/impl/internal/redact"
 	"github.com/HunterEwok/botaru/impl/internal/toolspec"
@@ -29,6 +30,7 @@ type toolCallRow struct {
 	Resource                string
 	Resolved                map[string]string
 	Untrusted               bool
+	DefHash                 string
 	State, Reason           string
 	StartBy                 time.Time
 }
@@ -50,10 +52,10 @@ func (c *Core) insertToolCall(ctx context.Context, tx pgx.Tx, now time.Time, r t
 		ended = &now
 	}
 	_, err = tx.Exec(ctx, `INSERT INTO toolcalls (id, tenant, task, attempt_lease_no, tool, access, args, target_plugin, target_placement, target_host,
-		resolved, untrusted_output, state, reason, start_by, created_at, updated_at, ended_at, target_resource)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $16, $17, $18)`,
+		resolved, untrusted_output, state, reason, start_by, created_at, updated_at, ended_at, target_resource, tool_def_hash)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $16, $17, $18, $19)`,
 		r.ID, r.Tenant, r.Task, r.LeaseNo, r.Tool, r.Access, args, r.Plugin, r.Placement, nullable(r.Host),
-		resolved, r.Untrusted, r.State, nullable(r.Reason), startBy, now, ended, nullable(r.Resource))
+		resolved, r.Untrusted, r.State, nullable(r.Reason), startBy, now, ended, nullable(r.Resource), nullable(r.DefHash))
 	return err
 }
 
@@ -189,8 +191,10 @@ func endToolCall(ctx context.Context, tx pgx.Tx, now time.Time, id, state, reaso
 func (c *Core) completeToolcall(ctx context.Context, tx pgx.Tx, now time.Time, l *leaseRow, output map[string]any) error {
 	var state, tool, task string
 	var attemptLease int
-	if err := tx.QueryRow(ctx, `SELECT state, tool, task, attempt_lease_no FROM toolcalls WHERE id = $1 FOR UPDATE`, l.WorkID).
-		Scan(&state, &tool, &task, &attemptLease); err != nil {
+	var defHash *string
+	var untrusted bool
+	if err := tx.QueryRow(ctx, `SELECT state, tool, task, attempt_lease_no, tool_def_hash, untrusted_output FROM toolcalls WHERE id = $1 FOR UPDATE`, l.WorkID).
+		Scan(&state, &tool, &task, &attemptLease, &defHash, &untrusted); err != nil {
 		return err
 	}
 	if state != "leased" {
@@ -223,7 +227,13 @@ func (c *Core) completeToolcall(ctx context.Context, tx pgx.Tx, now time.Time, l
 		return err
 	}
 	plugin, name, _ := cutTool(tool)
-	t, _ := cat.Plugins[plugin].Tool(name)
+	pl := cat.Plugins[plugin]
+	t, ok := pl.Tool(name)
+	// An apply while the call ran may have changed or removed the tool: the output is checked
+	// only against the definition the call was queued under, and is dropped otherwise.
+	if !ok || defHash == nil || toolDefHash(pl.Placement, t) != *defHash || untrusted != !t.TrustedOutput() {
+		return endToolCall(ctx, tx, now, l.WorkID, "error", "plugin_unavailable", nil)
+	}
 	clean, err := c.cleanOutput(ctx, tx, cat, task, t, res)
 	if err != nil {
 		var p *Problem
@@ -239,7 +249,7 @@ func (c *Core) completeToolcall(ctx context.Context, tx pgx.Tx, now time.Time, l
 	if err := endToolCall(ctx, tx, now, l.WorkID, "done", "", raw); err != nil {
 		return err
 	}
-	if !t.TrustedOutput() {
+	if untrusted {
 		// The first untrusted output sets untrusted_seen on the attempt; it never goes back
 		// (INJ-13).
 		// The first source stays.
@@ -249,6 +259,16 @@ func (c *Core) completeToolcall(ctx context.Context, tx pgx.Tx, now time.Time, l
 		}
 	}
 	return nil
+}
+
+// toolDefHash fingerprints the definition a call is checked against: the plugin placement and
+// the whole tool entry of the manifest.
+func toolDefHash(placement string, t toolspec.Tool) string {
+	b, _ := json.Marshal(struct {
+		Placement string        `json:"placement"`
+		Tool      toolspec.Tool `json:"tool"`
+	}{placement, t})
+	return jcs.HashBytes(b)
 }
 
 // cleanOutput is the core's second check of a tool output (INJ-4, SEC-1).

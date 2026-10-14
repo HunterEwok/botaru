@@ -205,7 +205,9 @@ func (h *Host) Once(ctx context.Context, waitS int) (bool, error) {
 	default:
 	}
 	if err != nil {
-		h.log.Warn("call failed", "work", w.WorkID, "plugin", plugin.Name, "err", err)
+		// A plugin's error text is its own output: it is masked like stderr before the log.
+		h.log.Warn("call failed", "work", w.WorkID, "plugin", plugin.Name,
+			"err", redact.Text(err.Error(), []string{redact.IP, redact.Email, redact.Secret}))
 		return true, h.fail(ctx, lease, "exec_failed")
 	}
 	out := clean(res, p.Limits.Redact, p.Limits.OutputLimitBytes)

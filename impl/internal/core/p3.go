@@ -359,6 +359,7 @@ func (c *Core) recordToolCall(ctx context.Context, tx pgx.Tx, now time.Time, cat
 	row := toolCallRow{
 		ID: id, Tenant: g.Tenant, Task: g.Task, LeaseNo: g.LeaseNo, Tool: right, Access: "read", Args: args,
 		Plugin: plugin, Placement: pl.Placement, Host: host, Resource: target.resource, Resolved: resolved, Untrusted: !t.TrustedOutput(), State: "queued",
+		DefHash: toolDefHash(pl.Placement, t),
 	}
 	// A target without a live toolhost ends at once (DLV-16, OBS-10).
 	live, err := c.liveToolhost(ctx, tx, now, cat, g.Tenant, plugin, pl.Placement, host)
@@ -599,7 +600,12 @@ func deref(s *string) string {
 func toolOutput(raw []byte, untrusted bool) *mcp.CallResult {
 	var o mcp.CallResult
 	_ = json.Unmarshal(raw, &o)
-	res := &mcp.CallResult{StructuredContent: o.StructuredContent}
+	res := &mcp.CallResult{}
+	if !untrusted {
+		// Structured content goes back only when the output schema checked it; untrusted
+		// output reaches the runtime only inside the mark (INJ-4).
+		res.StructuredContent = o.StructuredContent
+	}
 	var text strings.Builder
 	for _, b := range o.Content {
 		if b.Type == "text" {
