@@ -514,7 +514,7 @@ Verification code: 2HM-Q8T (tell it to the operator if you are granted a new gro
 | `/service <verb> <service>` | a restart of a catalog service without a card and without a model, a `service_grant` record on behalf of the person; start and stop through a card as an ordinary action (PRM-18, D-74) | a person with `service.control:<service>`; v0.1 |
 | `/about` | what this bot is, whose tenant it is, who the operator is, where `/mydata` and `/help` are | for everyone, also in a group chat (PRM-15) |
 | `/lang <language>` | the language of cards, refusals and command answers for this person: the principal's `locale` from the languages of the text catalog `ru`, `en` (DLV-9, PRM-17) | for everyone |
-| `/mydata`, `/mydata erase` | a report about one's data, an erasure request | for everyone; a person with `admin:people` decides the request with the `subject_request` card (D-76) |
+| `/mydata erase` | an erasure request about one's data | for everyone; a person with `admin:people` decides the request with the `subject_request` card (D-76) |
 | `/mydata export` | a request for a copy of one's data | for everyone; v0.2 |
 | `/mydata connect <provider>`, `/mydata connect revoke <provider>` | a one-time link with a nonce from the core to the consent adapter to connect one's own account at an external service, then the `connection_confirm` card that shows the external account; and its revocation (SEC-7, `spec/ports/consent-adapter.md`) | only in a private chat, for a `human` principal; v0.2 |
 
