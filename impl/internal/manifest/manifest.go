@@ -163,6 +163,10 @@ type Tenant struct {
 	Attention        TenantAttention   `json:"attention"`
 	// Run holds the pipelines of the command /run <name> (APR-17).
 	Run map[string]RunEntry `json:"run"`
+	// Campaigns holds the tree limit of a root (PRM-6, ORC-8).
+	Campaigns struct {
+		MaxTreeTasks int `json:"max_tree_tasks"`
+	} `json:"campaigns"`
 }
 
 // RunEntry is one pipeline of /run: a task type or an action, with its positional arguments.
@@ -305,6 +309,8 @@ type Role struct {
 	Tools      []any             `json:"tools"`
 	// ActionsMayRequest are the actions the model may ask for through request_action (APR-1).
 	ActionsMayRequest []string `json:"actions_may_request"`
+	// MayEnqueue are the child task types of enqueue_child (PRM-6).
+	MayEnqueue []string `json:"may_enqueue"`
 	// ServiceControl names the catalog services the role may control, or ["*"] (APR-18).
 	ServiceControl []string `json:"service_control"`
 	Runtime        struct {
@@ -351,6 +357,18 @@ type TaskType struct {
 	Retry         Retry             `json:"retry"`
 	TreeBudgetEUR float64           `json:"tree_budget_eur"`
 	GoalTrust     string            `json:"goal_trust"`
+	// SummaryForManagers is the description of the type that a manager sees (ORC-13).
+	SummaryForManagers string `json:"summary_for_managers"`
+	// MaxChildren limits the direct children of a task; 10 when absent (PRM-6).
+	MaxChildren *int `json:"max_children"`
+	// Continuation is the reply continuation of the type's children (CNT-1).
+	Continuation *struct {
+		Type string `json:"type"`
+		Goal string `json:"goal"`
+	} `json:"continuation"`
+	// FollowupWindowS is the follow-up window after need_input: true; 1800 when absent, 0
+	// turns it off (CNT-5).
+	FollowupWindowS *int `json:"followup_window_s"`
 	// Run with approval none marks a pipeline that /run starts without a button (APR-17).
 	Run *struct {
 		Approval string `json:"approval"`

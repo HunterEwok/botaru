@@ -184,6 +184,13 @@ func (c *Core) Heartbeat(ctx context.Context, w *Worker, header string, req Hear
 		if _, err := tx.Exec(ctx, `UPDATE leases SET lease_until = $3, reason = NULL WHERE work_id = $1 AND lease_no = $2`, l.WorkID, l.LeaseNo, until); err != nil {
 			return nil, err
 		}
+		// A change of the reported progress counts as progress against the stall (CNT-4).
+		if req.Progress != nil && l.Kind == "attempt" {
+			if _, err := tx.Exec(ctx, `UPDATE leases SET progress = $3, progress_at = $4 WHERE work_id = $1 AND lease_no = $2 AND progress IS DISTINCT FROM $3`,
+				l.WorkID, l.LeaseNo, *req.Progress, now); err != nil {
+				return nil, err
+			}
+		}
 		return &HeartbeatResult{LeaseUntil: fmtTime(until), LeaseRemainingS: leaseS, CancelRequested: cancel}, nil
 	})
 }
@@ -326,19 +333,35 @@ func (c *Core) completeAttempt(ctx context.Context, tx pgx.Tx, now time.Time, w 
 	}); err != nil {
 		return err
 	}
+	// A child's end enqueues the reply continuation of its parent (CNT-1, CNT-2).
+	if err := c.replyContinuation(ctx, tx, now, w.Tenant, l.WorkID, "completed"); err != nil {
+		return err
+	}
 	// The answer goes to the task origin; the address comes from the record, never from the
-	// result (DLV-6).
+	// result (DLV-6). A child answers its parent, not the person.
 	var record struct {
-		Origin   *Origin `json:"origin"`
-		DataMark string  `json:"data_mark"`
+		treeRecord
+		DataMark string `json:"data_mark"`
 	}
 	if err := json.Unmarshal(rec, &record); err != nil {
 		return err
 	}
-	if record.Origin == nil {
+	if !record.reportsToOrigin() {
 		return nil
 	}
+	window, err := c.openFollowup(ctx, tx, now, l.WorkID, tt, result)
+	if err != nil {
+		return err
+	}
 	text, fields := resultText(result, tt.SummaryFields)
+	if window > 0 {
+		// The code text under the bot's question says the answer can simply be written (CNT-5).
+		var locale *string
+		if err := tx.QueryRow(ctx, `SELECT locale FROM principals WHERE tenant = $1 AND id = $2`, w.Tenant, initiator).Scan(&locale); err != nil && !errors.Is(err, pgx.ErrNoRows) {
+			return err
+		}
+		text += "\n\n" + c.texts.Render(deref(locale), "cmd.followup.hint", map[string]any{"minutes": int(window / time.Minute)})
+	}
 	body := map[string]any{"form": "result", "text": text}
 	if len(fields) > 0 {
 		body["fields"] = fields
@@ -624,13 +647,14 @@ func (c *Core) failTask(ctx context.Context, tx pgx.Tx, now time.Time, tenant, i
 	if err := c.appendEvent(ctx, tx, now, tenant, Event{Type: "task.failed", Subject: id, Data: data}); err != nil {
 		return err
 	}
-	var record struct {
-		Origin *Origin `json:"origin"`
+	if err := c.replyContinuation(ctx, tx, now, tenant, id, "failed"); err != nil {
+		return err
 	}
+	var record treeRecord
 	if err := json.Unmarshal(rec, &record); err != nil {
 		return err
 	}
-	if record.Origin == nil {
+	if !record.reportsToOrigin() {
 		return nil
 	}
 	_, err := c.planDelivery(ctx, tx, now, plannedDelivery{

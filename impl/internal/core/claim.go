@@ -369,9 +369,10 @@ func (c *Core) claimAttempt(ctx context.Context, tx pgx.Tx, now time.Time, cat *
 		return nil, err
 	}
 	// The model handle of the role's main slot and the tools handle of a role with tools (SEC-3):
-	// bound to this lease and epoch.
+	// bound to this lease and epoch. A role with no plugin tools gets one when the core offers it
+	// a built-in tool.
 	handles := map[string]any{"tools": nil, "model": nil, "session": nil, "memory": nil}
-	if len(roleTools(cat, role)) > 0 {
+	if len(roleTools(cat, role)) > 0 || len(tools) > 0 {
 		h := "bh_" + ids.Secret(32)
 		if _, err := tx.Exec(ctx, `INSERT INTO handles (hash, kind, tenant, work_id, lease_no, epoch, worker_id, created_at)
 			VALUES ($1, 'tools', $2, $3, $4, $5, $6, $7)`,
