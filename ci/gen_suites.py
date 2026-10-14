@@ -3,7 +3,7 @@
 """Builds the check descriptions of the suites conformance/suites/ from the tables of docs/quality.md.
 
 A table row whose first cell is a check name of the form
-`<method>:<area>/<name>` (blackbox, store, adapter, lint) becomes a suite
+`<method>:<area>/<name>` (blackbox, adapter, lint) becomes a suite
 entry: id, method, rules and the row cells under their headers.
 The implementation runner executes the entries; a suite is only data.
 
@@ -27,14 +27,17 @@ ID_RE = id_regex(rows)
 status = {r['id']: r for r in rows}
 kept = referable()
 SRC = 'docs/quality.md'
-NAME = re.compile(r'^`((blackbox|store|adapter|lint):([a-z0-9-]+)/([a-z0-9-]+))`(.*)$')
+NAME = re.compile(r'^`((blackbox|adapter|lint):([a-z0-9-]+)/([a-z0-9-]+))`(.*)$')
+# Adapter suites exist only for the contract boundaries with foreign code (C10, D-114): the channel E1,
+# the toolhost E3 (with the self-stop of work holders by their own clock) and the monitoring adapter E5.
+# The task store, the agent runtime and the sink describe how the core is built and are checked
+# through the core (core-blackbox) or by Go tests of the reference implementation.
 SUITE = {
     ('blackbox', 'gateway'): 'model-gateway',
-    ('adapter', 'channel'): 'channel', ('adapter', 'toolhost'): 'toolhost', ('adapter', 'runtime'): 'runtime',
-    ('adapter', 'monitor'): 'monitor', ('adapter', 'session'): 'session', ('adapter', 'memory'): 'memory',
-    ('adapter', 'sink'): 'sink', ('adapter', 'erasure'): 'erasure', ('adapter', 'lease'): 'runtime',
+    ('adapter', 'channel'): 'channel', ('adapter', 'toolhost'): 'toolhost', ('adapter', 'lease'): 'toolhost',
+    ('adapter', 'monitor'): 'monitor', ('adapter', 'erasure'): 'erasure',
 }
-DEFAULT = {'blackbox': 'core-blackbox', 'store': 'store', 'adapter': 'adapter', 'lint': 'lint'}
+DEFAULT = {'blackbox': 'core-blackbox', 'adapter': 'adapter', 'lint': 'lint'}
 
 
 # rules that name the check in their fixtures field
@@ -88,7 +91,7 @@ for n, line in enumerate(lines, 1):
     suites[(suite, area)].append(entry)
 
 for cid, rids in sorted(named_by.items()):
-    m = re.match(r'^(blackbox|store|adapter|lint):', cid)
+    m = re.match(r'^(blackbox|adapter|lint):', cid)
     if m and cid not in seen:
         v = sorted({status[r]['version'] for r in rids})
         rep.note(cid, f'[suite_check_undescribed] the check is not described in {SRC} (rules {", ".join(sorted(rids, key=id_key))}, {v[0]})')

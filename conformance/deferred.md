@@ -69,7 +69,7 @@ Once a month the core computes, per tenant and subject kind rather than per pers
 <a id="AUD-4"></a>
 ## AUD-4. The attempt journal is only in a deletable store
 
-serves [G5](../docs/goals.md) · was v0.2 · profile debug · check: store, blackbox
+serves [G5](../docs/goals.md) · was v0.2 · profile debug · check: blackbox
 
 The core writes the attempt journal (model requests and responses as P4 saw them, and tool calls with wrapped output as P3 saw them). It is stored only in a deletable store of class `content`, with the tenant's expiry `retention.journals` and the task's mark; it does not reach audit, events or the model context, and only an operator reads it, through P2 `task.journal` with `admin:debug` and `data:<mark>`. Operator reading of the journal is governed by the tenant field `operator_access.debug_journal: deny | notify | allow` (default `notify`): with `deny`, P2 `task.journal` answers `forbidden`; with `notify`, every read writes an audit record and sends the tenant admins a code message without content; with `allow`, only an audit record. Debug replay (APR-8) is decided by the same field. For a tenant with `kind: production` the journal is off until the tenant sets an expiry; for a test tenant the default expiry is 7 days.
 
@@ -83,7 +83,7 @@ A principal of kind `human` or `service` has at most `Tenant.spec.budgets.tasks_
 <a id="BUD-8"></a>
 ## BUD-8. The lowest priority class for analysis and reviews
 
-serves [G1](../docs/goals.md) · was v0.2 · profile core · check: fixture, store
+serves [G1](../docs/goals.md) · was v0.2 · profile core · check: fixture, blackbox
 
 Tasks of the purposes `insight`, `aggregate` and `review` go in priority class 5 (`background`, DSP-5) whatever the type's `dispatch.priority_class` and the request say. One exception: tasks of `review.escalation.v1` (the review type of the `necessity` lens, `spec/model/lenses.yaml`) go in class 3 and are outside the share, because an escalation waits for them. In a bot group whose roles also claim types of other purposes, the class 5 tasks of these purposes together hold at most `Tenant.spec.dispatch.background_share` (default 20%) of the group's capacity: its `max_running`, or the number of its active workers when it has none, rounded down but at least one. A task above the share waits with `waiting_reason: group_quota`.
 
@@ -111,7 +111,7 @@ The `review-result` schema carries the field `shadow` (default `false`). The ver
 <a id="COM-10"></a>
 ## COM-10. Shadow reviewer at the tenant's choice
 
-serves [G5](../docs/goals.md) · was v0.2 · profile insights · check: blackbox, store
+serves [G5](../docs/goals.md) · was v0.2 · profile insights · check: blackbox
 
 The shadow is off by default: a commission manifest without a `shadow` block, or with `shadow: off`, gets no shadow tasks, and `doctor` shows the check `commission.shadow_off` (D-103). A tenant turns it on with a `shadow` block; then for a share of proposals the fallback role of a lens (COM-7) gets a shadow review task of that lens on the `seat` slot with the lens seat profile (GW-7), without memory facts and without a persona; the shadow runs only for lenses whose review a seat holder executed. A proposal is selected when `sha256(seed ‖ proposal id ‖ lens)` falls below the share by the rule and test vector of `spec/hashing.md` ("shadow draw"); the seed is drawn monthly per tenant and written to audit (`commission.shadow_seed`, D-101). The `shadow` block sets `veto_lenses` (0.25 when the block omits it) and `other_lenses` (0.2 when omitted), each above 0 and at most 1; a share of 0 inside the block fails the lint `shadow_zero_without_off` at `apply`, because the shadow is turned off only by leaving the block out or by `shadow: off`. A shadow task gets its own core key `system:review:<proposal>:<lens>:shadow` (IDM-2) and does not merge with the seat's task. Its reviews have `shadow: true` (COM-9) and are paid from the `review` line. For each lens, code takes the pairs "seat score minus shadow score" of the last 30 days, drops pairs with a difference of 0, and sets the flag `shadow_divergence` when at least 15 pairs remain and a one-sided exact sign test gives p below 0.05 for "seat below shadow"; people see it in P2 `commission.status` and in `doctor` (`commission.shadow_divergence`).
 
@@ -132,7 +132,7 @@ When a replay (PRP-25) gives `benefit` and no harm, the core adds to the tenant'
 <a id="DLV-17"></a>
 ## DLV-17. Outgoing webhook sink
 
-serves [G1](../docs/goals.md) · was v0.2 · profile core · check: adapter, lint, fixture
+serves [G1](../docs/goals.md) · was v0.2 · profile core · check: lint, fixture, blackbox
 
 An outgoing webhook is an E2 sink with `driver: webhook`. Its address is the manifest `base` exactly: an `https://` address whose host is not a farm host and not a loopback, private, link-local, shared or unspecified address, never taken from a task body or model text; lint rejects a webhook sink without such a base or without `signing_key_ref` (code `webhook_sink_invalid`). At every send the sink resolves the host itself, refuses the send as `dead` when any resolved address is a farm address or in those ranges, and connects only to an address it checked, so a changed DNS answer cannot turn the sink to the farm or its cloud metadata service. Each send is an HTTP POST of the delivery as JSON with the Standard Webhooks headers: `webhook-id` equals `delivery.id` (FEN-7), `webhook-timestamp` is the send time in seconds, and `webhook-signature` is `v1,<base64 HMAC-SHA256>` over `<id>.<timestamp>.<body>` with the deployment secret named by `signing_key_ref`. A 2xx answer completes the delivery; a timeout, 429 and 5xx are retried as delivery failures up to `dead` (DLV-3); any other answer is `dead` at once; redirects are not followed. A retry keeps the id and gets a new timestamp and signature. The body carries file references and metadata, never file bytes. The sink keeps no copy, so the core closes its erasure steps itself with `not_applicable` and basis `declared_none`.
 
@@ -174,7 +174,7 @@ A decision attempt of the farm manager seat may hint at a link with the built-in
 <a id="INS-5"></a>
 ## INS-5. Analysis to the role's bots in turn
 
-serves [G5](../docs/goals.md) · was v0.1 · profile insights · check: fixture, store
+serves [G5](../docs/goals.md) · was v0.1 · profile insights · check: fixture, blackbox
 
 The dispatcher hands out tasks of the purpose `insight` to the role's bots in turn (dispatcher condition D16): the run goes to the bot of the role with a ready worker that has gone longest without an analysis of this role, and on a tie to the bot with the smaller id. Besides the role's series, the analysis input contains the series of the bot's own attempts (by `acting_bot`) and the rows of its "My outcomes" (DIG-7). The bot whose attempt submitted the result is recorded as the proposal's author (PRP-14).
 
@@ -216,7 +216,7 @@ A task type of `worker_kind: agent` declares `conversation_concurrency: serial |
 <a id="MGR-12"></a>
 ## MGR-12. Task pinning
 
-serves [G4](../docs/goals.md) · was v0.1 · profile manager · check: store
+serves [G4](../docs/goals.md) · was v0.1 · profile manager · check: blackbox
 
 `pin_task` enqueues a class 1 task through the `control` lane (DSP-5) in tenant T for the named worker. The type is taken from the class's `responses.pin_types` ∩ the permissions of group `farm-manager-ops` ∩ the `claims` of the worker's role; tier no higher than 1; no more than `pins_per_worker_hour` (3) per worker; chain depth is counted (PRM-6). Onto a quarantined worker only types with `pinnable: true` and mark `summary` are pinned, without `file_ref` and without tools with tenant data. This is the only task path with a worker field, and it belongs to the core: requests have no worker field (DSP-4). A pinning task gets key `system:control:<epoch>:<number>` (IDM-2).
 
@@ -244,7 +244,7 @@ From v0.2 P1 `obs.append` is accepted only under the lease of a `job` attempt (a
 <a id="ORC-15"></a>
 ## ORC-15. Waves and pace of a campaign
 
-serves [G4](../docs/goals.md) · was v0.2 · profile campaign · check: fixture, store
+serves [G4](../docs/goals.md) · was v0.2 · profile campaign · check: fixture, blackbox
 
 `rollout.waves` is a list of 1-10 cumulative shares of the items after the canary, strictly increasing, the last one `100%`; a proposal that breaks this is rejected with `campaign_waves_invalid` and creates no record. Wave k may release, in item order `n`, the items after the canary up to the share of wave k of their number, rounded up. Wave 1 opens when the canary gate opens (`after_canary`), or at once without a canary; wave k+1 opens only when every item of wave k is final, the failure threshold is not crossed and the `bake` pause has passed since the last of them ended. Without `waves` all items after the canary form one wave. `rollout.rate_per_min` caps the releases of the campaign in any 60 seconds. An item that a closed wave or the pace holds back stays `pending`: that is not a failure and spends nothing. The `campaign` loop and the end of an item release it later by the same gates. Waves and pace only narrow release; they never pass an item that another gate of ORC-4 holds. The campaign record keeps the number of the open wave (`wave`, 0 for the canary), written by the core in the transaction that opens the wave, and the progress card is updated then (ORC-10).
 
@@ -258,7 +258,7 @@ P1 `enqueue` with `mode: validate` passes all enqueue checks, but creates no rec
 <a id="PRP-17"></a>
 ## PRP-17. A late related proposal earns no credit
 
-serves [G5](../docs/goals.md) · was v0.2 · profile insights · check: store, fixture
+serves [G5](../docs/goals.md) · was v0.2 · profile insights · check: blackbox, fixture
 
 The core links a proposal with proposals of another author on which people decided in the last 90 days, if they have the same change kind and their targets or fields overlap (`related_to`). People and reviewers see the mark. If the related proposal was accepted or declined, the late proposal earns its author no credit and creates no promotion trigger, although the change itself can pass the commission, the people and the trial as usual. Proposals whose author is a role of profile `farm-manager` (the farm manager in its daily review, MGR-41, `origin.level` 2) are not part of the `related_to` of other authors' proposals and do not take credit away from them: the core computes relatedness only among proposals of functionaries and aggregators (`origin.level` 0 and 1).
 

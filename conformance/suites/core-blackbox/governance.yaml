@@ -3,6 +3,34 @@ suite: core-blackbox
 area: governance
 source: docs/quality.md
 checks:
+- id: blackbox:governance/case-audit-metadata
+  method: blackbox
+  rules:
+  - GOV-21
+  version: v0.2
+  section: Tests without a model
+  source: docs/quality.md:498
+  spec:
+    What: (v0.2) a governance case goes through opening with the list L, a `not_eligible` queue event and a person's choice
+      of the leaver; then the audit log and the events are read through P2 `audit.query` by a person with `admin:governance`
+      and by a person without it
+    Expectation: every step writes its command from `spec/model/governance-events.yaml` (v0.2) with `case`, the list L with
+      the figures of its seats, the proposed seat, the chosen seat, the flags and the person; no free text appears in events
+      or audit; a person without `admin:governance` gets `forbidden`
+- id: blackbox:governance/attribution-silence
+  method: blackbox
+  rules:
+  - GOV-30
+  version: v0.2
+  section: Tests without a model
+  source: docs/quality.md:499
+  spec:
+    What: (v0.2) an attribution candidate with nobody answering for 7, 14, 21, 28 and 35 days; then an answer "Yes" on another
+      one
+    Expectation: 'after the 7-day card deadline the candidate is `unknown` and stays so: it does not expire, no promotion
+      trigger appears and the track record and accuracy do not change; weekly reminders on day 14, 21 and 28 (no more than
+      3), after that only a row in the weekly digest to people with `governance.attribute`; "Yes" moves the attribution to
+      `confirmed` and writes the audit line'
 - id: blackbox:governance/attribution-reminders
   method: blackbox
   rules:
@@ -10,7 +38,7 @@ checks:
   - GOV-30
   version: v0.2
   section: Tests without a model
-  source: docs/quality.md:524
+  source: docs/quality.md:519
   spec:
     What: (v0.2) an attribution card is answered "No" after the second reminder; another one is disputed and then canceled
     Expectation: no third reminder after the answer; a disputed attribution stays out of the accuracy (COM-17) until resolved;
@@ -21,7 +49,7 @@ checks:
   - GOV-36
   version: v0.3
   section: Tests without a model
-  source: docs/quality.md:608
+  source: docs/quality.md:602
   spec:
     What: a tenant in `shadow` with a confirmed link to a rejected proposal; reviews written before `governance_v03_since`
     Expectation: the link is shown in P2 `commission.status` only; no card, nobody leaves, no reward; old reviews are not
@@ -32,7 +60,7 @@ checks:
   - GOV-36
   version: v0.3
   section: Tests without a model
-  source: docs/quality.md:609
+  source: docs/quality.md:603
   spec:
     What: '`apply` of `accountability: on` with the default `commission.accountability_min_forecasts` 20 and one holder at
       19 scored forecasts; then all at 20; then a tenant with the parameter 8 and all holders at 8'
@@ -44,7 +72,7 @@ checks:
   - GOV-38
   version: v0.3
   section: Tests without a model
-  source: docs/quality.md:610
+  source: docs/quality.md:604
   spec:
     What: a `disk_full` incident on `db1`; a proposal lowering the `disk.used` threshold on `db1` dismissed 20 days earlier,
       problem code in `problem_codes`; another one 100 days earlier
@@ -56,7 +84,7 @@ checks:
   - GOV-38
   version: v0.3
   section: Tests without a model
-  source: docs/quality.md:611
+  source: docs/quality.md:605
   spec:
     What: the same with an external cause, with `untrusted_seen`, with the farm manager as author, with the author writing
       40% of the alarm series, with 4 subjects in the problem
@@ -67,7 +95,7 @@ checks:
   - GOV-39
   version: v0.3
   section: Tests without a model
-  source: docs/quality.md:612
+  source: docs/quality.md:606
   spec:
     What: the manager calls `link_hint` four times in a week and once about its own proposal
     Expectation: three hints visible to people marked "not checked", no candidate; the fourth is refused by the limit, the
@@ -78,7 +106,7 @@ checks:
   - GOV-40
   version: v0.3
   section: Tests without a model
-  source: docs/quality.md:613
+  source: docs/quality.md:607
   spec:
     What: a candidate in a tenant with `on`; "Yes" without "Details"; the creator of a hint candidate presses "Yes" while
       a second person exists; 7 days of silence
@@ -89,7 +117,7 @@ checks:
   - GOV-41
   version: v0.3
   section: Tests without a model
-  source: docs/quality.md:614
+  source: docs/quality.md:608
   spec:
     What: 'a confirmed link with a veto by security, score 1 by cost, no review by the value seat; a confirmed attribution
       of class `area: cost` to a change recommended by all'
@@ -101,7 +129,7 @@ checks:
   - GOV-42
   version: v0.3
   section: Tests without a model
-  source: docs/quality.md:615
+  source: docs/quality.md:609
   spec:
     What: '"Yes" on a link where seat 3 answers'
     Expectation: in one transaction the seat is vacant with epoch + 1, the bot is `parked`, `seat_parked_notice` goes with
@@ -112,7 +140,7 @@ checks:
   - GOV-42
   version: v0.3
   section: Tests without a model
-  source: docs/quality.md:616
+  source: docs/quality.md:610
   spec:
     What: two confirmed links in 10 days; a link where the last holder of a veto lens answers
     Expectation: the second departure waits in order; the last veto holder stays
@@ -122,7 +150,7 @@ checks:
   - GOV-42
   version: v0.3
   section: Tests without a model
-  source: docs/quality.md:617
+  source: docs/quality.md:611
   spec:
     What: the incident of a confirmed link is dismissed as false while the seat is vacant, then in another case after a new
       holder took it
@@ -133,7 +161,7 @@ checks:
   - GOV-43
   version: v0.3
   section: Tests without a model
-  source: docs/quality.md:618
+  source: docs/quality.md:612
   spec:
     What: a case needs a seat in a tenant with `on`; one holder has the worst accuracy, one has 8 scored forecasts for 30
       days, one is protected by a reward; then the two worst differ by less than one standard error
@@ -145,7 +173,7 @@ checks:
   - GOV-42
   version: v0.3
   section: Tests without a model
-  source: docs/quality.md:619
+  source: docs/quality.md:613
   spec:
     What: a parked bot gets a success 100 days after leaving, and another 200 days after
     Expectation: no trigger for the first; a new queue entry for the second
@@ -155,7 +183,7 @@ checks:
   - GOV-46
   version: v0.3
   section: Tests without a model
-  source: docs/quality.md:621
+  source: docs/quality.md:615
   spec:
     What: contexts of a reviewer, the manager and a functionary in a tenant with `on`, a confirmed link and a parked bot;
       a canary link id

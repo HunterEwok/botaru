@@ -3,13 +3,37 @@ suite: core-blackbox
 area: identity
 source: docs/quality.md
 checks:
+- id: blackbox:identity/seal-no-extend
+  method: blackbox
+  rules:
+  - MEM-9
+  version: v0.1
+  section: Tests without a model
+  source: docs/quality.md:414
+  spec:
+    What: retirement of an identity with a `runtime_internal` session; end of `seal_ttl`; `forget` and `erase_match` on a
+      sealed item
+    Expectation: erasure request `bot_retired` by the identity id, E4 `purge` in the retirement transaction; `forget` reaches
+      the sealed item at once
+- id: blackbox:identity/seal-retention-earlier
+  method: blackbox
+  rules:
+  - MEM-10
+  version: v0.2
+  section: Tests without a model
+  source: docs/quality.md:415
+  spec:
+    What: '(v0.2) a retired identity with `seal_ttl` 30 days; a sealed session of a role with `memory: none` (7 days) and
+      a sealed task result with the tenant `content` period of 14 days'
+    Expectation: the session is deleted on day 7 and the result on day 14 by the `retention` loop, before the seal ends; the
+      fact offer no longer lists them; on day 30 the `bot_retired` request covers what is left
 - id: blackbox:identity/retire-v03
   method: blackbox
   rules:
   - IDN-15
   version: v0.3
   section: Tests without a model
-  source: docs/quality.md:634
+  source: docs/quality.md:628
   spec:
     What: a parked bot reaches 180 days; a v0.3 core vacates a manager seat
     Expectation: '`parked_expired`; `replaced_after_incident` is never written'
@@ -19,7 +43,7 @@ checks:
   - IDN-16
   version: v0.3
   section: Tests without a model
-  source: docs/quality.md:635
+  source: docs/quality.md:629
   spec:
     What: the seat holder changes by a promotion case, `seat.assign`, a confirmed link and a departure
     Expectation: each writes the holder in one transaction with epoch + 1, a seat event and an audit record; no stop on an

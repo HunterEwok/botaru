@@ -112,6 +112,79 @@
           ]
         }
       }
+    },
+    "runtime": {
+      "description": "Only an agent: how its runtime performs the farm mechanisms, with values only from spec/model/runtime-deviations.yaml; absent means the farm model without deviation. Any value except the first turns on its non-waivable rule. A declaration with runtime_internal for session or memory without erase and match in erasure, or with built-in tools, blocks the worker (RT-1, RT-2, RT-5, INJ-9).",
+      "type": "object",
+      "additionalProperties": false,
+      "x-botaru-rules": [
+        "RT-1",
+        "RT-2",
+        "RT-3",
+        "RT-4",
+        "RT-5",
+        "INJ-9",
+        "SKL-2"
+      ],
+      "properties": {
+        "session": {
+          "enum": [
+            "farm",
+            "runtime_internal",
+            "none"
+          ],
+          "x-botaru-registry": "runtime-deviations"
+        },
+        "memory": {
+          "enum": [
+            "farm",
+            "bridge",
+            "runtime_internal",
+            "none"
+          ],
+          "x-botaru-registry": "runtime-deviations"
+        },
+        "model_attribution": {
+          "enum": [
+            "per_attempt",
+            "per_profile"
+          ],
+          "x-botaru-registry": "runtime-deviations"
+        },
+        "catalog": {
+          "enum": [
+            "per_attempt",
+            "per_role"
+          ],
+          "x-botaru-registry": "runtime-deviations"
+        },
+        "built_in_tools": {
+          "type": "array",
+          "maxItems": 0,
+          "description": "Only an empty list (INJ-9)."
+        },
+        "skills": {
+          "enum": [
+            "farm",
+            "runtime_files"
+          ],
+          "x-botaru-registry": "runtime-deviations",
+          "description": "From v0.2: how the runtime gets the role's skills (SKL-2); absent means farm.",
+          "x-botaru-version": "v0.2"
+        },
+        "erasure": {
+          "description": "Erase operations of the runtime for erasure work units (op of spec/model/erasure-work.schema.json); required with runtime_internal (RT-5).",
+          "type": "array",
+          "maxItems": 2,
+          "uniqueItems": true,
+          "items": {
+            "enum": [
+              "erase",
+              "match"
+            ]
+          }
+        }
+      }
     }
   }
 }

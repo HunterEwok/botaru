@@ -32,7 +32,7 @@ FAM_NAMES = {
     'TRN': 'Translator',
 }
 MARK = '<!-- generated: rules -->'
-CHECK_NAMES = {'fixture': 'fixture', 'store': 'store', 'blackbox': 'blackbox', 'adapter': 'adapter', 'eval': 'eval', 'lint': 'lint'}
+CHECK_NAMES = {'fixture': 'fixture', 'blackbox': 'blackbox', 'adapter': 'adapter', 'eval': 'eval', 'lint': 'lint'}
 
 rows = [r for r in registry() if isinstance(r, dict) and isinstance(r.get('id'), str)]
 act = [r for r in rows if r.get('status') == 'active']
@@ -68,7 +68,7 @@ L = ['# Skeleton rules', '',
      '- "non-waivable": an implementation cannot put the rule on its list of expected failures. "Waivable": it can, with a recorded reason.',
      '- "profile": the part of the skeleton an implementation claims conformance to separately (`core`, `messaging`, `campaign`, `insights`, `manager`, `governance`, `monitor`, `knowledge`, `ingress`, `connections`, `debug`, `sandbox`); the `core` profile is mandatory, see [docs/quality.md](../docs/quality.md).',
      '- "recommendation": a SHOULD rule; all others are mandatory.',
-     '- "check": how compliance is shown. `fixture`: a ready data sample that must pass or fail a check. `store`: a storage check. `blackbox`: a test through the ports without knowledge of the implementation internals. `adapter`: a test of a port adapter. `eval`: a check of model work quality on a set of cases. `lint`: a check of files and manifests. `impl`: a test of the reference implementation in `impl/`.',
+     '- "check": how compliance is shown. `fixture`: a ready data sample that must pass or fail a check. `blackbox`: a test through the ports without knowledge of the implementation internals. `adapter`: a test of an adapter at a contract boundary with foreign code. `eval`: a check of model work quality on a set of cases. `lint`: a check of files and manifests. `impl`: a test of the reference implementation in `impl/`.',
      '- "decisions": decision numbers from [docs/decisions.md](../docs/decisions.md).', '',
      '## Summary', '',
      '| Family | About | Document | Rules | Non-waivable | ' + ' | '.join(VERSIONS) + ' |',

@@ -3,7 +3,9 @@
 """Cross-file checks: the operation map, registries, the event catalog, behaviour fixtures.
 
 - the operation map spec/ports/operations.yaml: form, the request and response schemas exist,
-  an empty schema only with a reason, rules are active (or deferred with the mechanism kept), every operation of a port sheet is in
+  an empty schema only with a reason, contract: false exactly on the rows of the ports that describe
+  the core (P2, C1-C4, E2, E4, T), operator_only (true or a string) only on P2 rows (PRM-14),
+  rules are active (or deferred with the mechanism kept), every operation of a port sheet is in
   the map, every operation schema is named in the map, the op field of a schema knows the map
   operations, the HTTP binding path is built without substitutions;
 - a schema leaf with x-botaru-registry and enum: every enum value is among the entry ids of
@@ -51,6 +53,8 @@ MODEL = os.path.join(ROOT, 'spec', 'model')
 PORTS = os.path.join(ROOT, 'spec', 'ports')
 OPS_FILE = 'spec/ports/operations.yaml'
 PORT_NAMES = ('P1', 'P2', 'P3', 'P4', 'C1', 'C2', 'C3', 'C4', 'E1', 'E2', 'E3', 'E4', 'E5', 'T')
+# ports that describe how the core is built, not a boundary with foreign code (C10, D-114)
+INTERNAL_PORTS = ('P2', 'C1', 'C2', 'C3', 'C4', 'E2', 'E4', 'T')
 SINCE = VERSIONS
 active = set(referable())
 
@@ -95,6 +99,18 @@ for n, e in enumerate(entries):
     for rid in e.get('rules') or []:
         if rid not in active:
             rep.error(where, f'[rule_not_active] rule {rid} is not active or does not exist')
+    # contract boundaries with foreign code keep contracts; the other ports describe the core (C10, D-114)
+    if 'contract' in e and e['contract'] is not False:
+        rep.error(where, '[ops_contract] contract is written only as false: a row without it is a contract boundary')
+    if (port in INTERNAL_PORTS) != (e.get('contract') is False):
+        rep.error(where, f'[ops_contract] a row of {", ".join(INTERNAL_PORTS)} has contract: false, and a row of a '
+                  'contract boundary (P1, P3, P4, E1, E3, E5) has no contract field (C10, D-114)')
+    if 'operator_only' in e:
+        val = e['operator_only']
+        if port != 'P2':
+            rep.error(where, '[ops_operator_only] operator_only is only for P2 rows (PRM-14)')
+        elif val is not True and not (isinstance(val, str) and val.strip()):
+            rep.error(where, '[ops_operator_only] operator_only is true or a string that names the case (PRM-14)')
     if port in ('P1', 'P2', 'T'):
         if not re.fullmatch(r'[a-z][a-z0-9_.]*', op):
             rep.error(where, f'[ops_path_form] the path /v1/<port>/{op} is built only from [a-z0-9_.]')

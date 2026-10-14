@@ -2,41 +2,38 @@
 
 ## In short
 
-A port is a boundary at which one part of the farm can be replaced or checked separately from the rest. The skeleton has thirteen ports of three kinds: four core protocols (P1-P4), four ports behind the core (C1-C4) and five edge ports (E1-E5) (D-38, D-66). Each port has a sheet in this folder: the meaning of the operations, who calls them, refusals, guarantees and the rules the port holds. HTTP paths, SQL, column names and status codes are not part of a sheet: they live in the bindings `spec/bindings/`. Work is pull-based: a worker takes work itself through P1, the core pushes work to nobody. The background loops of the core are not a port; their shared contract is described in `background-loops.md`.
+A port is a boundary at which one part of the farm meets another. Contracts with checks exist only at the boundaries with foreign code (C10, D-114): workers (P1) and channels (E1), tool plugins (P3 together with E3, the MCP boundary), the model provider (P4) and the monitoring system (E5). Their sheets hold the operations, refusals, guarantees and the rules the boundary holds, and the conformance suites check them. Every other page in this folder describes how the core is built: the admin API P2 that our own `farmctl` and channels use, the parts behind the core C1-C4, the sink E2, the agent runtime E4, the test-control port, the consent adapter and the background loops. Those pages say how it works and which rules it serves, without request and response tables. HTTP paths, SQL, column names and status codes are not part of a page: they live in the bindings `spec/bindings/`. Work is pull-based: a worker takes work itself through P1, the core pushes work to nobody.
 
-## Three kinds of ports
+## Contract boundaries
 
-| Kind | Who calls | Where the boundary is | Ports |
+| Boundary | Sheet | Who is on the other side | Reference | Main rules |
+|---|---|---|---|---|
+| P1 WorkerProtocol | `p1-worker-protocol.md` | every worker: agents, jobs, toolhosts, channels, sinks, monitoring adapters; HTTP binding v1, OpenAPI 3.1 description `spec/bindings/http/p1.openapi.json` (MAN-12) | core | TEN-2..4, TEN-7, IDN-1..3, IDN-7, FEN-1..4, IDM-1..5, DLV-1, PRM-9, SEC-3, MSG-9 |
+| E1 Channel | `e1-channel.md` | the messenger and the people in it | Telegram | IDN-3, IDN-7, APR-3, APR-4, APR-12, DLV-5..7, INJ-11, TEN-4 |
+| P3 ToolGateway and E3 ToolHost | `p3-tool-gateway.md`, `e3-tool-host.md` | tool plugins (MCP servers) | core; toolhost with MCP plugins | APR-1, APR-18, PRM-3..5, INJ-1..6, INJ-13..15, TEN-3a, SEC-3, DEP-1..10, RT-4, MON-8 |
+| P4 ModelGateway | `p4-model-gateway.md` | the model provider | core; a field allowlist per provider | GW-1..3, GW-7, BUD-2, BUD-3, TEN-5, CAP-2 |
+| E5 Monitor | `e5-monitor.md` | the organization's monitoring system, for example Zabbix | monitoring adapter | MON-1..11, AUD-6, TEN-4, DEP-11 |
+
+The sheet of an edge boundary describes both sides: which P1 operations the adapter calls and what it must do with the work it received.
+
+## How the core is built
+
+| Page | What it describes | Reference | Main rules |
 |---|---|---|---|
-| Core protocol | workers, the runtime, people through `farmctl` and a channel call the core | network: HTTP, MCP | P1, P2, P3, P4 |
-| Port behind the core | the core calls a replaceable part | inside the core or its binding | C1, C2, C3, C4 |
-| Edge port | an adapter takes work through P1 and talks to the outside world | inside the edge process | E1, E2, E3, E4, E5 |
+| `p2-admin-api.md` | P2 AdminAPI for `farmctl` and channel commands on behalf of a person; its schemas are implementation schemas (`contract: false` in `operations.yaml`), the operator operations are the rows with `operator_only` (PRM-14) | core and `farmctl` | PRM-7, PRM-13, PRM-14, IDN-7, AUD-1, MAN-5, HLD-1 |
+| `c1-task-store.md` | C1 TaskStore: tasks, leases, transitions in one transaction | PostgreSQL | FEN-1..3, FEN-5, IDM-1..4, DLV-2, AUD-2, AUD-3, TEN-1, RET-3, RET-6 |
+| `c2-authorizer.md` | C2 Authorizer: one decision with a reason at every check point; the permission table fixture | a function in the transition transaction | PRM-1..10, TEN-2, APR-4, HLD-1 |
+| `c3-session-store.md` | C3 SessionStore: conversation transcripts | a table in the farm store | TEN-5, MEM-1, MEM-4, INJ-13, RT-1 |
+| `c4-memory-store.md` | C4 MemoryStore: person memory and verified bot facts | a table in the farm store | TEN-5, MEM-1..4, MEM-6..9, RT-2 |
+| `e2-sink.md` | E2 Sink: a worker that writes artifacts outside the farm | disk (JSON and Markdown) | DLV-3, DLV-6, DLV-17, RET-4, RET-7 |
+| `e4-agent-runtime.md` | E4 AgentRuntime: the model loop inside an agent worker and what the core requires of any runtime | own loop in Go (D-93) | INJ-9, RT-1..5, FEN-4, MEM-4, DEP-5 |
+| `test-control.md` | the test-control port of the check runner, only on a test bench (APR-9) | core | APR-9 |
+| `consent-adapter.md` | the consent adapter that connects a person's own account (SEC-7) | OAuth 2.0 with PKCE | SEC-7 |
+| `background-loops.md` | the background loops of the core | core | OBS-4, MON-2 |
 
-The sheet of an edge port describes both sides: which P1 operations the adapter calls and what it must do with the work it received.
+The schemas of these pages are of two kinds: implementation schemas of the core and `farmctl` (P2) and core test schemas that fixtures check (the permission table `authz-request` and `authz-decision`, the stand steps of the test-control port). A schema of an internal page that nothing checked was removed (`spec/removed.yaml`).
 
-## Summary table
-
-A "thin" port: one page, one reference adapter, a minimal set of checks. A thin port (C3, C4, E2) that has no second implementation and no open decision by the release after v0.2 folds into the prose of the core sheet (D-46).
-
-| Port | Sheet | Kind | Sheet since | Thin | Reference | Main rules |
-|---|---|---|---|---|---|---|
-| P1 WorkerProtocol | `p1-worker-protocol.md` | core protocol | v0.1; HTTP binding v1 from v0.1, OpenAPI 3.1 description `spec/bindings/http/p1.openapi.json` from v0.2 (MAN-12) | no | core; the deployment chooses the transport | TEN-2..4, TEN-7, IDN-1..3, IDN-7, FEN-1..4, IDM-1..5, DLV-1, PRM-9, SEC-3, MSG-9 |
-| P2 AdminAPI | `p2-admin-api.md` | core protocol | v0.1; HTTP binding v1 (`admin.md`) from v0.1, OpenAPI will appear with the second client | no | `farmctl`; commands of people in a channel on behalf of the verified person | PRM-7, PRM-13, PRM-14, IDN-7, AUD-1, MAN-5, HLD-1 |
-| P3 ToolGateway | `p3-tool-gateway.md` | core protocol | v0.1 | no | core; the MCP tool protocol, revision in the binding | APR-1, APR-18, PRM-3..5, INJ-2, INJ-4, INJ-13, INJ-15, TEN-3a, SEC-3, RT-4 |
-| P4 ModelGateway | `p4-model-gateway.md` | core protocol | v0.1 | no | core; a field allowlist per provider | GW-1..3, GW-7, BUD-2, BUD-3, TEN-5, CAP-2 |
-| C1 TaskStore | `c1-task-store.md` | behind the core | v0.1 | no | PostgreSQL | FEN-1..3, FEN-5, IDM-1..4, DLV-2, AUD-2, AUD-3, TEN-1, RET-3, RET-6 |
-| C2 Authorizer | `c2-authorizer.md` | behind the core | v0.1 (the permission table as a fixture) | no | a function in the same transaction as the transition | PRM-1..10, TEN-2, APR-4, HLD-1 |
-| C3 SessionStore | `c3-session-store.md` | behind the core | v0.2 | yes | a table in the farm store | TEN-5, MEM-1, MEM-4, INJ-13, RT-1, RT-5 |
-| C4 MemoryStore | `c4-memory-store.md` | behind the core | v0.1 | yes | a table in the farm store | TEN-5, MEM-1..4, MEM-6..8, RT-2 |
-| E1 Channel | `e1-channel.md` | edge | v0.1 | no | Telegram | IDN-3, IDN-7, APR-3, APR-4, APR-12, DLV-5..7, INJ-11, TEN-4 |
-| E2 Sink | `e2-sink.md` | edge | v0.2 (`match` and `erase` of the reference from v0.1) | yes | disk (JSON and Markdown) | DLV-3, DLV-6, RET-4, RET-7 |
-| E3 ToolHost | `e3-tool-host.md` | edge | v0.1 | no | toolhost with MCP plugins | TEN-3a, INJ-1..6, INJ-14, DEP-1..10, APR-7, APR-18, MON-8 |
-| E4 AgentRuntime | `e4-agent-runtime.md` | edge | v0.1 | no | own loop in Go (D-93) | INJ-9, RT-1..5, FEN-4, MEM-4, DEP-5 |
-| E5 Monitor | `e5-monitor.md` | edge | v0.1 (`match` and `erase` of notes from v0.1, D-76) | no | the organization's monitoring system, for example Zabbix | MON-1..11, AUD-6, TEN-4, DEP-11 |
-
-The test-control port `test-control.md` is not one of the thirteen ports: it is the input of the check runner, which exists only with a test bench key in the settings and a store created as a test bench store that never had a tenant other than `kind: test` (APR-9); a production farm does not have it, and the core of a production farm with a test bench key does not start.
-
-In v0.1 the sheets P1, P2, P3, C1, E1 and E5 hold only v0.1 operations. Operations of later skeleton versions enter a sheet as a minor version of the sheet together with their skeleton version; the "Version" column in the operation tables shows from which version an operation exists. Within v0.1, by D-71, the core and the first bot come first, and then the operations of messages between bots (`msg.*`, `inbox_read`, `send_message`), the improvement cycle (`obs.*`, `proposal.*`, `commission.status`, subject `proposal`), reporters, campaigns, scripts and the manager; in the sheets they are also marked v0.1 (D-80).
+Within v0.1, by D-71, the core and the first bot come first, and then the operations of messages between bots (`msg.*`, `inbox_read`, `send_message`), the improvement cycle (`obs.*`, `proposal.*`, `commission.status`, subject `proposal`), reporters, campaigns, scripts and the manager; in the sheets they are also marked v0.1 (D-80).
 
 ## What is deliberately not a port
 
@@ -62,11 +59,11 @@ In v0.1 the sheets P1, P2, P3, C1, E1 and E5 hold only v0.1 operations. Operatio
 - **Idempotency.** A repeat of a changing operation with the same arguments gives the same answer, side records are made once (IDM-3). The sheet says for each operation by which key it is idempotent.
 - **Erasure and search.** Every port that stores content has its own erase operation by the scope `(tenant)`, `(tenant, subject)` and by a list of ids with the result `done`, `failed` or `not_applicable` into the erasure request: C1 `file.purge` for files and `task.purge` for task content, C3 `delete` and `purge`, C4 `erase`, E1 `erase`, E2 `erase`, E4 `purge`, E5 `erase` (RET-4), and a search operation `match(tenant, subject, needles) -> ids` for erasure by match in stores the core does not read: E2, E4 and E5 from v0.1, E1 from v0.2; a store without `match` counts a search by match as `failed`. Erasure of a person's data on their request (`/mydata erase`, C1 `file.purge` and `task.purge`, E2 and E5 `erase`, `erasure.match`) is part of v0.1 and is non-waivable for a production tenant (D-76); from v0.2 E1 `erase` and `match`, the data extract and the other subject rights are added. The rest of the early versions: C3 `delete` and `purge` and C4 `erase` on `forget` and person offboarding (MEM-4), E4 `purge` and `match` for runtimes with `runtime_internal` (RT-1, RT-2, RT-5), C4 `erase` of what is sealed for a retired bot (MEM-9). A store without an erase operation answers a request with `failed`, and the request stays open with an alarm (RET-7). The result `not_applicable` is accepted only with the `basis` sign by which the store made sure that there is nothing to delete; a channel that declared `driver.stores_content: none` in `hello` closes its step with this declaration, and the core writes its result itself. Edge stores get the erasure and search steps by pull, like any work: as a work unit of kind `erasure` through P1 `claim`, the result is handed in with `complete` (`spec/bindings/http/README.md`, "Erasure and search work for edge stores").
 - **Telemetry** of port processes goes only by the attribute allowlist, without content (OBS-1).
-- **Versions.** Each sheet has its own SemVer version; a new operation is a minor version of the sheet. Bindings have their own versions: the `/v1` path in HTTP, the `.vN` suffix of task and event types, `apiVersion` of manifests, the tool protocol revision and the OS version in `spec/bindings/` (see `spec/bindings/README.md`). The version map is the single file `spec/versions.md`. The operation map of all sheets with request and response schemas and rules is `spec/ports/operations.yaml`: every operation from the sheet tables is in the map, and every schema of the map is in `spec/model`. The `profiles` field of a map row names the conformance profiles that need the operation: an implementation that claims only `core` takes the rows that contain `core`.
+- **Versions.** Each contract sheet has its own SemVer version; a new operation is a minor version of the sheet. A page that describes the core has no version of its own. Bindings have their own versions: the `/v1` path in HTTP, the `.vN` suffix of task and event types, `apiVersion` of manifests, the tool protocol revision and the OS version in `spec/bindings/` (see `spec/bindings/README.md`). The version map is the single file `spec/versions.md`. The operation map of all sheets with request and response schemas and rules is `spec/ports/operations.yaml`: every operation from the sheet tables is in the map, and every schema of the map is in `spec/model`. The `profiles` field of a map row names the conformance profiles that need the operation: an implementation that claims only `core` takes the rows that contain `core`.
 
 ## Sheet template
 
-Every sheet has the same structure.
+Every contract sheet has the same structure. A page that describes how the core is built has only "In short", "How it works" and "Where the details are".
 
 ```
 # <Port name>

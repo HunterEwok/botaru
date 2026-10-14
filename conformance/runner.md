@@ -133,18 +133,18 @@ The other keys are observable facts: the name of a record, field or counter, and
 
 A test bench is a farm whose store was created as a test bench store from the first start, whose deployment settings set the test bench key, and which never had a tenant other than `kind: test`, including a retired one (APR-9, lead decision 4 of the review of 2026-10-12). The service tenant `farm` on a test bench is also `kind: test`. An empty farm is not a test bench: the store sets the flag, not the list of tenants. Everything that cannot be done through P1 and P2 the runner does through the test bench port [spec/ports/test-control.md](../spec/ports/test-control.md) (lead decision 4): a separate core listener, the path `/v1/test/<operation>`, the test bench key in `Authorization: Bearer`. A production farm has no such port, and a core with a test bench key on a store without the test bench flag does not start; a fixture that needs the `stand` verb is not executed on such a farm.
 
-| Action `stand.op` | Arguments in the fixture | Request schema |
+| Action `stand.op` | Arguments in the fixture | Request schema (a core test schema, not a port contract) |
 |---|---|---|
 | `clock.set` | `at`: a UTC instant; the clock only moves forward | `test-clock-request` |
 | `clock.advance` | `by`: a duration (`15m`) or the name of a period from a manifest or a rule (`lease_ttl`, `bake`), which the runner converts to seconds `by_s` | `test-clock-request` |
 | `loop.tick` | `loop`: a loop name from `spec/ports/background-loops.md`; `copies: 2` and `concurrent: true` for two ticks at the same time; other fields (`point`, `day`) specify which deadline of the loop has come | `test-loop-tick-request` |
 | `process.stop` | `process`: a test bench worker or the core; `signal: 9` means `kill`, without the field `graceful`; `during` and `item` name the moment of the stop | `test-process-stop-request` |
-| `store.fault` | `point`: `before_commit`, `unavailable`, `low_space` or `clear`; `count` for `before_commit` | `test-store-fault-request` |
+| `store.fault` | `point`: `before_commit`, `unavailable`, `low_space` or `clear`; `count` for `before_commit` | none: no fixture uses it yet (D-114) |
 | `store.snapshot` | `label`: the backup label; the backup is taken in the same way as by the external backup process (RET-5) | `test-store-snapshot-request` |
 | `store.restore` | `label`: the backup label; the restore follows the real path: the store epoch grows, and a restore record is written into the `farm` chain (RET-6, AUD-6) | `test-store-restore-request` |
-| `authorize.eval` | `request` (an `authz-request` body) and `tenant_kind` (`test` or `production`, `test` by default); the response is an `authz-decision` without a record and without side effects | `test-authorize-eval-request` |
+| `authorize.eval` | `request` (an `authz-request` body) and `tenant_kind` (`test` or `production`, `test` by default); the response is an `authz-decision` without a record and without side effects | the `authz-request` of the row |
 | `function.eval` | `function`: the name of a pure core function; `input`: its input | `test-function-eval-request` |
-| `event.inject` | `event`: an incoming `Activity` of a test bench channel or monitoring adapter; `via`: the process name | `test-event-inject-request` |
+| `event.inject` | `event`: an incoming `Activity` of a test bench channel or monitoring adapter; `via`: the process name | none: no fixture uses it yet (D-114) |
 
 The test bench port seeds no data and does not change records of tasks, decisions, principals or manifests; `authorize.eval` and `function.eval` take their input in the request and write nothing: seeding goes through P2 `apply` and P1 and P2 operations. The mock model sits behind P4 per `spec/bindings/model-providers/mock.md`, not behind the test bench port.
 

@@ -9,7 +9,7 @@ checks:
   - INJ-5
   version: v0.1
   section: Tests without a model
-  source: docs/quality.md:595
+  source: docs/quality.md:589
   spec:
     What: a plugin declared `sampling` and asks for input
     Expectation: the capability is not passed, the input request ends with a call error
@@ -19,7 +19,7 @@ checks:
   - FEN-6
   version: v0.1
   section: Tests without a model
-  source: docs/quality.md:596
+  source: docs/quality.md:590
   spec:
     What: the call lease expired by the toolhost clock
     Expectation: the plugin process is ended, nothing is written
@@ -30,7 +30,7 @@ checks:
   - SBX-2
   version: v0.1
   section: Tests without a model
-  source: docs/quality.md:597
+  source: docs/quality.md:591
   spec:
     What: (v0.2) the sandbox toolhost runs two tasks of tenant `demo` one after the other; in the first the model's command
       tries to open a network socket, read `/run/secrets`, write to `/in` and fill `/out` above its limit, and prints 50 KB

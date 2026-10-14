@@ -151,7 +151,40 @@
                 }
               }
             },
-            "origin": false
+            "origin": false,
+            "skills": {
+              "x-botaru-version": "v0.2",
+              "description": "The skills of the role whose tree hash matches the core copy, as references: name, description and the hash of the skill directory tree (SKL-2, spec/hashing.md).",
+              "type": "array",
+              "maxItems": 20,
+              "items": {
+                "type": "object",
+                "required": [
+                  "name",
+                  "description",
+                  "sha256"
+                ],
+                "properties": {
+                  "name": {
+                    "$ref": "urn:botaru:schema:common:1#/$defs/name"
+                  },
+                  "description": {
+                    "type": "string",
+                    "maxLength": 300
+                  },
+                  "sha256": {
+                    "type": "string",
+                    "pattern": "^[0-9a-f]{64}$",
+                    "maxLength": 64
+                  }
+                }
+              }
+            },
+            "reply_locale": {
+              "x-botaru-version": "v0.2",
+              "description": "Language of the model answer chosen by the core by the locale order; the model does not choose it (DLV-18).",
+              "$ref": "urn:botaru:schema:common:1#/$defs/locale"
+            }
           }
         }
       }

@@ -28,7 +28,7 @@ The promise applies from the first published release 0.1.0. Before that tag (the
 |---|---|---|---|
 | release version | `spec/VERSION`, a git tag | the SemVer of the repository 0.y.z | the minor digit when the next skeleton version comes out, the patch for fixes |
 | skeleton version | the `version` field of a rule, `since` of a registry entry, `x-botaru-version` of a schema, the "Version" column of a sheet | from which release a rule or an operation is checked: v0.1 means the releases 0.1.z, v0.2 means 0.2.z, v0.3 means 0.3.z, v0.4 means 0.4.z; a rule with `until` is checked up to and including that version and replaced from the next one by the rules of its `superseded_by` (D-113), or ends with an `end_reason` when `superseded_by` is empty; a rule with `status: deferred` is in no version and is listed in `conformance/deferred.md` | a new content slice |
-| port sheet version | the line "Sheet version" at the start of every sheet `spec/ports/*.md` | the SemVer of the sheet | minor for a new operation, patch for a clarification of the text, major only together with a new major version of the binding |
+| port sheet version | the line "Sheet version" at the start of every contract sheet in `spec/ports/` | the SemVer of the sheet | minor for a new operation, patch for a clarification of the text, major only together with a new major version of the binding |
 | major P1 version | the `/v1` path of the binding `spec/bindings/http/`, the value `v1` in `protocol_versions` of the `hello` request | the worker protocol | a new major only for a breaking change; a window of the current and the previous one (LCY-7) |
 | major schema version | an `$id` of the form `urn:botaru:schema:<name>:<major>`, the file `<name>.v<major>.schema.json` from the second one on | the shape of data | only for a breaking change (MAN-3) |
 | `.vN` suffix | the name of a task type, an event, a message type, an alarm in the catalog | the meaning and the data shape of that type | `.v(N+1)` next to `.vN` |
@@ -40,22 +40,15 @@ The promise applies from the first published release 0.1.0. Before that tag (the
 
 ## Port sheet versions
 
+Only the sheets of the contract boundaries with foreign code carry a version (C10, D-114); the pages that describe how the core is built (P2, C1-C4, E2, E4, the test-control port, the consent adapter and the background loops) have none.
+
 | Sheet | Sheet version |
 |---|---|
 | `p1-worker-protocol.md` | 0.1.0 |
-| `p2-admin-api.md` | 0.1.0 |
 | `p3-tool-gateway.md` | 0.1.0 |
 | `p4-model-gateway.md` | 0.1.0 |
-| `c1-task-store.md` | 0.1.0 |
-| `c2-authorizer.md` | 0.1.0 |
-| `c3-session-store.md` | 0.1.0 |
-| `c4-memory-store.md` | 0.1.0 |
 | `e1-channel.md` | 0.1.0 |
-| `e2-sink.md` | 0.1.0 |
 | `e3-tool-host.md` | 0.1.0 |
-| `e4-agent-runtime.md` | 0.1.0 |
 | `e5-monitor.md` | 0.1.0 |
-| `test-control.md` | 0.1.0 |
-| `background-loops.md` | 0.1.0 |
 
 The v0.2 operations are already written in the sheets as rows with version v0.2; when 0.2.0 comes out, the sheets get the minor version 0.2.0. The machine map of the operations and their schemas lives in `spec/ports/operations.yaml`, and every row there has a `since` field.

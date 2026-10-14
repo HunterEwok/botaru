@@ -12,6 +12,9 @@ import (
 
 func TestMain(m *testing.M) { pgtest.Main(m) }
 
+// TestMigrateAndInit: the migrations are idempotent, the test bench flag of the store never
+// changes after the first start (APR-9), and the audit is append-only: an UPDATE or a DELETE of
+// an audit record fails even with direct store access (AUD-3).
 func TestMigrateAndInit(t *testing.T) {
 	ctx := context.Background()
 	s, err := Open(ctx, pgtest.DSN(t))
@@ -46,6 +49,9 @@ func TestMigrateAndInit(t *testing.T) {
 	// The audit is append-only (AUD-3).
 	if _, err := s.Pool.Exec(ctx, `INSERT INTO audit (tenant, epoch, seq, at, record, hash) VALUES ('demo', 1, 1, now(), '{}', 'x')`); err != nil {
 		t.Fatal(err)
+	}
+	if _, err := s.Pool.Exec(ctx, `UPDATE audit SET hash = 'y'`); err == nil {
+		t.Fatal("audit row changed")
 	}
 	if _, err := s.Pool.Exec(ctx, `DELETE FROM audit`); err == nil {
 		t.Fatal("audit row deleted")

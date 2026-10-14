@@ -494,6 +494,9 @@ func TestActivityRefusals(t *testing.T) {
 	}
 }
 
+// TestFailRetriesThenExhausts: a retryable fail spends the attempt with backoff; the next attempt
+// has lease_no 2, a call with the token of the first lease gets fenced and changes nothing, and a
+// token of another worker gets lease_mismatch (FEN-2); the second fail exhausts the attempts.
 func TestFailRetriesThenExhausts(t *testing.T) {
 	ctx := context.Background()
 	b := newBench(t)
@@ -520,6 +523,17 @@ func TestFailRetriesThenExhausts(t *testing.T) {
 	// The old token is fenced.
 	if _, err := b.c.Heartbeat(ctx, b.agent, header(t, att), HeartbeatRequest{}); err == nil {
 		t.Fatal("old token passed")
+	} else if p, _ := AsProblem(err); p == nil || p.Reason != "fenced" {
+		t.Fatalf("old token: %v", err)
+	}
+	if _, err := b.c.Complete(ctx, b.agent, header(t, att), CompleteRequest{Result: map[string]any{"answer": "late"}}); err == nil {
+		t.Fatal("late complete with the old token passed")
+	} else if p, _ := AsProblem(err); p == nil || p.Reason != "fenced" {
+		t.Fatalf("late complete: %v", err)
+	}
+	var state string
+	if err := b.c.st.Pool.QueryRow(ctx, `SELECT state FROM tasks WHERE id = $1`, att2.WorkID).Scan(&state); err != nil || state != "working" {
+		t.Fatalf("the fenced calls changed the task: %q %v", state, err)
 	}
 	// A token of another worker is a mismatch.
 	if _, err := b.c.Heartbeat(ctx, b.channel, header(t, att2), HeartbeatRequest{}); err == nil {

@@ -24,7 +24,7 @@ REGISTRY = 'conformance/requirements.yaml'
 GENERATED = ('conformance/rules.md', 'conformance/retired.md', 'conformance/deferred.md')
 # Folders that are not part of the public repository and are not checked (also in .gitignore).
 SKIP_DIRS = frozenset({'.git', '_review', 'node_modules', '.venv', '__pycache__'})
-CHECKS = {'fixture', 'store', 'blackbox', 'adapter', 'eval', 'lint', 'impl'}
+CHECKS = {'fixture', 'blackbox', 'adapter', 'eval', 'lint', 'impl'}
 VERSIONS = ('v0.1', 'v0.2', 'v0.3', 'v0.4')
 PROFILES = ('core', 'messaging', 'campaign', 'insights', 'manager', 'governance', 'monitor', 'knowledge', 'ingress', 'connections', 'debug', 'sandbox')
 DEC_RE = re.compile(r'\bD-(\d+)\b')  # decision number D-NN

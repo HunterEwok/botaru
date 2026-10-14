@@ -10,7 +10,7 @@ checks:
   - MGR-55
   version: v0.3
   section: Tests without a model
-  source: docs/quality.md:623
+  source: docs/quality.md:617
   spec:
     What: 'a class with `manager_accountable: true` whose alarm reads a series fed by model output; a class with `manager_accountable:
       true` whose alarm is built from code series only'
@@ -21,7 +21,7 @@ checks:
   - MGR-49
   version: v0.3
   section: Tests without a model
-  source: docs/quality.md:633
+  source: docs/quality.md:627
   spec:
     What: a tenant whose daily `manager` line is below the daily review plus the analysis ceiling, or whose month line is
       below `takeover.manager_month_eur`
