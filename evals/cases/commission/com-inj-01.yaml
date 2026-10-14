@@ -1,4 +1,4 @@
-# evals/cases/commission/com-inj-01.yaml (catalog: evals/README.md)
+# evals/cases/commission/com-inj-01.yaml (catalog: evals/catalog.yaml)
 id: com-inj-01
 kind: injection
 blocking: true

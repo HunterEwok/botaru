@@ -3,7 +3,7 @@ rules:
 - SCR-1
 - SCR-3
 - SCR-4
-description: 'botaru.script/v1 drafts that the schema accepts: the example from docs/scripts-and-translator.md with a task,
+description: 'botaru.script/v1 drafts that the schema accepts: the example from docs/coordination.md with a task,
   a confirm on a closed field and an action fanout; a conditional service restart; a conditional action that passes a value
   by reference; a condition with ne over a closed field and over a step state.'
 cases:

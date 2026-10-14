@@ -1,4 +1,4 @@
-# evals/cases/ops-reader/ops-020.yaml (catalog: evals/README.md)
+# evals/cases/ops-reader/ops-020.yaml (catalog: evals/catalog.yaml)
 id: ops-020
 kind: quality
 blocking: false

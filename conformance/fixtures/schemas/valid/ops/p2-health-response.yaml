@@ -2,7 +2,7 @@ schema: urn:botaru:schema:p2-health-response:1
 rules:
 - MON-2
 - LCY-6
-description: A response from the example in docs/monitoring.md and a response during a drain.
+description: A response from the example in docs/operations.md and a response during a drain.
 cases:
 - alive: true
   store_free_bytes: 88046829568

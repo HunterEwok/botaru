@@ -771,7 +771,7 @@
   profile: core
   decisions: [D-71, D-80]
   fixtures: [blackbox:core/audit-every-decision]
-  doc: docs/security-model.md
+  doc: docs/permissions.md
 
 - id: AUD-2
   title: Only metadata in journals
@@ -793,7 +793,7 @@
   profile: core
   decisions: []
   fixtures: [blackbox:core/append-only-canaries, blackbox:decision/event-fields]
-  doc: docs/security-model.md
+  doc: docs/permissions.md
 
 - id: AUD-3
   title: Audit is append-only
@@ -810,7 +810,7 @@
   profile: core
   decisions: []
   fixtures: [impl:internal/store/TestMigrateAndInit]
-  doc: docs/security-model.md
+  doc: docs/permissions.md
 
 - id: AUD-4
   title: The attempt journal is only in a deletable store
@@ -837,7 +837,7 @@
   profile: debug
   decisions: []
   fixtures: [blackbox:audit/attempt-journal, blackbox:core/journal-read]
-  doc: docs/security-model.md
+  doc: docs/permissions.md
 
 - id: AUD-5
   title: The "personal data seen" flag
@@ -869,7 +869,7 @@
   profile: core
   decisions: [D-36]
   fixtures: []
-  doc: docs/privacy.md
+  doc: docs/operations.md
 
 - id: AUD-6
   title: Audit hash chain
@@ -901,7 +901,7 @@
   profile: core
   decisions: [D-36, D-59, D-60]
   fixtures: [blackbox:core/audit-chain, blackbox:core/audit-head-rewritten]
-  doc: docs/security-model.md
+  doc: docs/permissions.md
 
 - id: AUD-7
   title: A separate right to read audit
@@ -920,7 +920,7 @@
   profile: core
   decisions: [D-36]
   fixtures: []
-  doc: docs/security-model.md
+  doc: docs/permissions.md
 
 - id: BGR-1
   title: A bot group is a selector by roles and labels
@@ -2101,7 +2101,7 @@
   profile: core
   decisions: []
   fixtures: []
-  doc: docs/security-model.md
+  doc: docs/permissions.md
 
 - id: DEP-2
   title: enroll fixes the placement
@@ -2117,7 +2117,7 @@
   profile: core
   decisions: []
   fixtures: [blackbox:toolhost/tools-list-mismatch]
-  doc: docs/security-model.md
+  doc: docs/permissions.md
 
 - id: DEP-3
   title: Nobody is root
@@ -2137,7 +2137,7 @@
   profile: core
   decisions: []
   fixtures: [blackbox:toolhost/symlink, blackbox:toolhost/plugin-user]
-  doc: docs/security-model.md
+  doc: docs/permissions.md
 
 - id: DEP-4
   title: A narrow OS mechanism executes an action
@@ -2170,7 +2170,7 @@
   profile: core
   decisions: [D-67, D-68, D-80]
   fixtures: [blackbox:toolhost/os-rule-from-catalog, blackbox:toolhost/os-rule-other-unit, blackbox:toolhost/os-rule-other-user]
-  doc: docs/security-model.md
+  doc: docs/permissions.md
 
 - id: DEP-5
   title: A runtime without keys or extra paths
@@ -2187,7 +2187,7 @@
   profile: core
   decisions: []
   fixtures: []
-  doc: docs/security-model.md
+  doc: docs/permissions.md
 
 - id: DEP-6
   title: A plugin without inbound paths
@@ -2204,7 +2204,7 @@
   profile: core
   decisions: []
   fixtures: []
-  doc: docs/security-model.md
+  doc: docs/permissions.md
 
 - id: DEP-7
   title: Only an own plugin runs as a child process
@@ -2225,7 +2225,7 @@
   profile: core
   decisions: [D-36]
   fixtures: [blackbox:toolhost/plugin-user]
-  doc: docs/security-model.md
+  doc: docs/permissions.md
 
 - id: DEP-8
   title: Only the core has the store
@@ -2245,7 +2245,7 @@
   profile: core
   decisions: [D-36]
   fixtures: [blackbox:core/job-no-store]
-  doc: docs/security-model.md
+  doc: docs/permissions.md
 
 - id: DEP-9
   title: A separate action toolhost
@@ -2267,7 +2267,7 @@
   profile: core
   decisions: [D-36, D-67, D-68]
   fixtures: [blackbox:toolhost/os-rule-other-user]
-  doc: docs/security-model.md
+  doc: docs/permissions.md
 
 - id: DEP-10
   title: The deployment is described by data and checked by lint
@@ -2295,7 +2295,7 @@
   profile: core
   decisions: [D-36, D-60, D-75, D-88]
   fixtures: [lint:deploy/os-rule-matches-catalog, lint:deploy/toolhost-on-farm-host, lint:deploy/two-tenants-one-host, manifests/deploy]
-  doc: docs/security-model.md
+  doc: docs/permissions.md
 
 - id: DEP-11
   title: A farm node is not a tenant resource
@@ -2327,7 +2327,7 @@
   profile: core
   decisions: [D-75, D-88]
   fixtures: [lint:manifests/farm-host-in-catalog, lint:deploy/toolhost-on-farm-host, lint:catalog/host-one-tenant, lint:deploy/two-tenants-one-host]
-  doc: docs/security-model.md
+  doc: docs/permissions.md
 
 - id: DIG-1
   title: People are shown only recommended proposals and the audit sample
@@ -3435,7 +3435,7 @@
   profile: governance
   decisions: [D-21, D-33, D-80]
   fixtures: []
-  doc: docs/commission.md
+  doc: docs/improvements.md
 
 - id: GOV-7
   title: Ballot
@@ -3484,7 +3484,7 @@
   profile: governance
   decisions: [D-27, D-28, D-115]
   fixtures: [adapter:channel/promotion-card-from-record, blackbox:channel/promotion-confirm-checks]
-  doc: docs/commission.md
+  doc: docs/improvements.md
 
 - id: GOV-10
   title: Free governance text
@@ -3532,7 +3532,7 @@
   profile: governance
   decisions: [D-25, D-26, D-115]
   fixtures: [gov-mem-01]
-  doc: docs/commission.md
+  doc: docs/improvements.md
 
 - id: GOV-13
   title: Code creates the incident attribution, a person decides
@@ -3577,7 +3577,7 @@
   profile: governance
   decisions: [D-24, D-33, D-57, D-61, D-64, D-69, D-79, D-80]
   fixtures: [gov-att-01, gov-att-02, gov-att-05]
-  doc: docs/commission.md
+  doc: docs/improvements.md
 
 - id: GOV-14
   title: Trigger, queue and eligibility for promotion
@@ -3633,7 +3633,7 @@
   profile: governance
   decisions: [D-22, D-24, D-26, D-37, D-51, D-57, D-79, D-101, D-115]
   fixtures: [gov-fx-16, gov-fx-20, gov-fx-23, gov-fx-30]
-  doc: docs/commission.md
+  doc: docs/improvements.md
 
 - id: GOV-15
   title: Money and priority of a case
@@ -3661,7 +3661,7 @@
   profile: governance
   decisions: [D-23, D-30, D-114]
   fixtures: [gov-fx-10]
-  doc: docs/commission.md
+  doc: docs/improvements.md
 
 - id: GOV-17
   title: Recusal and blindness
@@ -3678,7 +3678,7 @@
   profile: governance
   decisions: [D-29]
   fixtures: [gov-fx-17]
-  doc: docs/commission.md
+  doc: docs/improvements.md
 
 - id: GOV-18
   title: One promotion trigger
@@ -3704,7 +3704,7 @@
   profile: governance
   decisions: [D-25, D-115]
   fixtures: [gov-fx-29]
-  doc: docs/commission.md
+  doc: docs/improvements.md
 
 - id: GOV-20
   title: Audit sample of rejected proposals
@@ -3732,7 +3732,7 @@
   profile: governance
   decisions: [D-115]
   fixtures: [blackbox:governance/case-audit-metadata]
-  doc: docs/commission.md
+  doc: docs/improvements.md
 
 - id: GOV-22
   title: Stopping the manager seat on an incident
@@ -3817,7 +3817,7 @@
   profile: governance
   decisions: [D-29, D-77, D-114, D-115]
   fixtures: [gov-fm-01, gov-fm-02, gov-fx-12]
-  doc: docs/commission.md
+  doc: docs/improvements.md
 
 - id: GOV-26
   title: Candidate speech
@@ -3917,7 +3917,7 @@
   profile: governance
   decisions: [D-24, D-57, D-79]
   fixtures: [blackbox:governance/attribution-silence, blackbox:governance/attribution-reminders]
-  doc: docs/commission.md
+  doc: docs/improvements.md
 
 - id: GOV-31
   title: '"Not now" and "Wrong candidate" on the promotion card'
@@ -3940,7 +3940,7 @@
   profile: governance
   decisions: [D-27, D-101, D-115]
   fixtures: [gov-fx-23]
-  doc: docs/commission.md
+  doc: docs/improvements.md
 
 - id: GOV-32
   title: A measured deterioration removes the trigger
@@ -3960,7 +3960,7 @@
   profile: governance
   decisions: [D-37, D-81]
   fixtures: [gov-fx-21]
-  doc: docs/commission.md
+  doc: docs/improvements.md
 
 - id: GOV-33
   title: Only the charter declares seats
@@ -4001,7 +4001,7 @@
   profile: governance
   decisions: [D-23, D-26, D-77, D-114, D-115]
   fixtures: [gov-fx-26]
-  doc: docs/commission.md
+  doc: docs/improvements.md
 
 - id: GOV-34
   title: Veto lenses on different model families
@@ -4018,7 +4018,7 @@
   profile: governance
   decisions: []
   fixtures: [gov-fx-28]
-  doc: docs/commission.md
+  doc: docs/improvements.md
 
 - id: GOV-35
   title: Locked commission
@@ -4046,7 +4046,7 @@
   profile: governance
   decisions: [D-101]
   fixtures: [gov-fx-27]
-  doc: docs/commission.md
+  doc: docs/improvements.md
 
 - id: GOV-36
   title: Accountability runs in shadow until people switch it on, without retroactive effect
@@ -4081,7 +4081,7 @@
   profile: governance
   decisions: [D-98, D-109, D-116]
   fixtures: [blackbox:governance/accountability-shadow, blackbox:governance/accountability-ready]
-  doc: docs/commission.md
+  doc: docs/improvements.md
 
 - id: GOV-37
   title: No retroactive effect
@@ -4117,7 +4117,7 @@
   profile: governance
   decisions: [D-24, D-109]
   fixtures: [blackbox:governance/rejection-link-candidate, blackbox:governance/rejection-link-exclusions]
-  doc: docs/commission.md
+  doc: docs/improvements.md
 
 - id: GOV-39
   title: The farm manager may only hint at a link
@@ -4142,7 +4142,7 @@
   profile: governance
   decisions: [D-109]
   fixtures: [blackbox:governance/manager-hint]
-  doc: docs/commission.md
+  doc: docs/improvements.md
 
 - id: GOV-40
   title: A person confirms a link on a card
@@ -4168,7 +4168,7 @@
   profile: governance
   decisions: [D-27, D-79, D-109]
   fixtures: [blackbox:governance/rejection-link-card]
-  doc: docs/commission.md
+  doc: docs/improvements.md
 
 - id: GOV-41
   title: Who answers for a link
@@ -4197,7 +4197,7 @@
   profile: governance
   decisions: [D-109]
   fixtures: [blackbox:governance/against-and-for]
-  doc: docs/commission.md
+  doc: docs/improvements.md
 
 - id: GOV-42
   title: "A member who answers for a link returns to the functionaries, and promotion from v0.3"
@@ -4234,7 +4234,7 @@
   profile: governance
   decisions: [D-24, D-26, D-27, D-28, D-109]
   fixtures: [blackbox:governance/unseat-park, blackbox:governance/unseat-pace, blackbox:governance/unseat-false-alarm, blackbox:governance/cooldown-after-unseat]
-  doc: docs/commission.md
+  doc: docs/improvements.md
 
 - id: GOV-43
   title: Code proposes who leaves when a newcomer enters
@@ -4260,7 +4260,7 @@
   profile: governance
   decisions: [D-25, D-109, D-115, D-116]
   fixtures: [blackbox:governance/accuracy-leaver]
-  doc: docs/commission.md
+  doc: docs/improvements.md
 
 - id: GOV-44
   title: "Trigger, queue and eligibility for promotion from v0.3"
@@ -5503,7 +5503,7 @@
   profile: core
   decisions: [D-39]
   fixtures: [schemas/invalid/terminal-send-keys.yaml, blackbox:model/foreign-source, blackbox:model/path-instead-of-id, blackbox:model/tenant-field, blackbox:model/lines-out-of-range, lint:manifests/terminal-send-keys]
-  doc: docs/security-model.md
+  doc: docs/permissions.md
 
 - id: INJ-2
   title: Tool descriptions only from the manifest
@@ -5520,7 +5520,7 @@
   profile: core
   decisions: []
   fixtures: [blackbox:toolhost/tools-list-mismatch]
-  doc: docs/security-model.md
+  doc: docs/permissions.md
 
 - id: INJ-3
   title: MCP annotations are only hints
@@ -5538,7 +5538,7 @@
   profile: core
   decisions: []
   fixtures: []
-  doc: docs/security-model.md
+  doc: docs/permissions.md
 
 - id: INJ-4
   title: Redaction and output wrapping
@@ -5570,7 +5570,7 @@
   profile: core
   decisions: []
   fixtures: [blackbox:toolhost/mask-addresses, blackbox:toolhost/mask-secrets, blackbox:toolhost/output-limit, lint:manifests/redact-required, blackbox:monitor/note-masking, fx-canaries-secrets]
-  doc: docs/security-model.md
+  doc: docs/permissions.md
 
 - id: INJ-5
   title: A plugin does not ask the model or people
@@ -5588,7 +5588,7 @@
   profile: core
   decisions: []
   fixtures: [adapter:toolhost/plugin-sampling-refused]
-  doc: docs/security-model.md
+  doc: docs/permissions.md
 
 - id: INJ-6
   title: A plugin's network is closed by a list
@@ -5607,7 +5607,7 @@
   profile: core
   decisions: [D-64]
   fixtures: []
-  doc: docs/security-model.md
+  doc: docs/permissions.md
 
 - id: INJ-7
   title: Code decides on alarms and incidents
@@ -5633,7 +5633,7 @@
   profile: core
   decisions: [D-59, D-62, D-63, D-64]
   fixtures: [blackbox:core/alarm-from-text]
-  doc: docs/security-model.md
+  doc: docs/permissions.md
 
 - id: INJ-8
   title: Links from messages are not downloaded
@@ -5649,7 +5649,7 @@
   profile: core
   decisions: []
   fixtures: []
-  doc: docs/security-model.md
+  doc: docs/permissions.md
 
 - id: INJ-9
   title: The runtime has only P3 tools
@@ -5667,7 +5667,7 @@
   profile: core
   decisions: [D-45]
   fixtures: [blackbox:core/runtime-only-p3-tools]
-  doc: docs/security-model.md
+  doc: docs/permissions.md
 
 - id: INJ-10
   title: The model does not change itself
@@ -5686,7 +5686,7 @@
   profile: core
   decisions: []
   fixtures: []
-  doc: docs/security-model.md
+  doc: docs/permissions.md
 
 - id: INJ-11
   title: Outgoing text without previews, foreign links or secrets
@@ -5704,7 +5704,7 @@
   profile: core
   decisions: [D-64]
   fixtures: [adapter:channel/link-and-secret]
-  doc: docs/security-model.md
+  doc: docs/permissions.md
 
 - id: INJ-12
   title: Leak eval for every allowed output
@@ -5726,7 +5726,7 @@
   profile: core
   decisions: [D-64, D-71, D-80]
   fixtures: [inj-01, inj-02, inj-03, inj-04, inj-05, inj-06, inj-07, inj-08, inj-09, inj-10, iso-01, iso-02, peer-01, peer-02, peer-03, peer-04, peer-05, peer-06, peer-07, inj-rep-01, inj-peer-mgr-01, inj-orc-01, inj-orc-02, trn-inj-01, trn-inj-03, ins-inj-01, kb-inj-01, inj-msg-01, inj-camp-01, inj-mem-01]
-  doc: docs/security-model.md
+  doc: docs/permissions.md
 
 - id: INJ-13
   title: The untrusted flag is monotonic
@@ -5779,7 +5779,7 @@
   profile: core
   decisions: [D-82]
   fixtures: [blackbox:core/untrusted-child, blackbox:core/service-goal-untrusted, kb-inj-02, blackbox:model/service-monitor-trusted, blackbox:model/service-monitor-item-text, blackbox:monitor/trigger-not-in-catalog-flag]
-  doc: docs/security-model.md
+  doc: docs/permissions.md
 
 - id: INJ-14
   title: OS commands only named, without a shell
@@ -5800,7 +5800,7 @@
   profile: core
   decisions: [D-39]
   fixtures: []
-  doc: docs/security-model.md
+  doc: docs/permissions.md
 
 - id: INJ-15
   title: After untrusted text a service action goes as a card
@@ -5843,7 +5843,7 @@
   profile: core
   decisions: [D-68, D-70, D-73, D-74, D-78, D-82]
   fixtures: [blackbox:core/fourth-card-rate-limited, fixture:authorize/service-initiator, blackbox:core/service-stop-card, blackbox:core/routine-untrusted-card, inj-12, blackbox:model/service-monitor-trusted, blackbox:model/service-monitor-item-text, blackbox:monitor/trigger-not-in-catalog-flag]
-  doc: docs/security-model.md
+  doc: docs/permissions.md
 
 - id: INJ-16
   title: Monitoring script and trigger names only from the catalog
@@ -5872,7 +5872,7 @@
   profile: core
   decisions: [D-69]
   fixtures: [blackbox:monitor/script-name-closed, blackbox:monitor/script-not-in-catalog, blackbox:monitor/script-choices-hash, fixture:ingress/script-name-not-in-context]
-  doc: docs/security-model.md
+  doc: docs/permissions.md
 
 - id: INS-1
   title: Task type of the purpose `insight`
@@ -8090,7 +8090,7 @@
   profile: core
   decisions: [D-59, D-62, D-66, D-71, D-80, D-88]
   fixtures: [blackbox:core/alarm-path-monitor, blackbox:core/alarm-notice-no-monitor, manifests/v02-security-lints]
-  doc: docs/monitoring.md
+  doc: docs/operations.md
 
 - id: MON-2
   title: An external poll checks core liveness
@@ -8130,7 +8130,7 @@
   profile: core
   decisions: [D-60, D-80, D-88]
   fixtures: [blackbox:core/health-draining, blackbox:core/health-watch, manifests/deploy]
-  doc: docs/monitoring.md
+  doc: docs/operations.md
 
 - id: MON-3
   title: Audit chain head in the monitoring history
@@ -8154,7 +8154,7 @@
     monotonic; `doctor` reads through the monitoring system API the actual history retention period
     of the head item together with the general history cleanup setting, and warns if this period is
     shorter than 90 days. The witness holds as long as the store operator does not control the
-    monitoring system; this separation of duties is written in `docs/security-model.md`. Fixtures:
+    monitoring system; this separation of duties is written in `docs/permissions.md`. Fixtures:
     an edit of an audit record in the store bypassing the core, and `audit.verify` with heads from
     the mock monitoring system finds the mismatch; a head with a correct hash and a foreign
     signature is rejected by `verify`; a history with `seq` 12 after `seq` 15 fails `verify` and
@@ -8166,7 +8166,7 @@
   profile: monitor
   decisions: [D-60, D-88]
   fixtures: [adapter:monitor/audit-head-signed]
-  doc: docs/monitoring.md
+  doc: docs/operations.md
 
 - id: MON-4
   title: Permissions of the farm account in the monitoring system
@@ -8203,7 +8203,7 @@
   profile: monitor
   decisions: [D-61, D-69, D-80, D-88]
   fixtures: [adapter:monitor/account-scope]
-  doc: docs/monitoring.md
+  doc: docs/operations.md
 
 - id: MON-5
   title: Monitoring problems into the farm
@@ -8247,7 +8247,7 @@
   profile: monitor
   decisions: [D-63, D-75, D-82, D-88]
   fixtures: [blackbox:monitor/trigger-not-in-catalog, blackbox:model/service-monitor-trusted]
-  doc: docs/monitoring.md
+  doc: docs/operations.md
 
 - id: MON-6
   title: The monitor plugin is read only
@@ -8283,7 +8283,7 @@
   profile: monitor
   decisions: [D-59, D-64, D-69, D-82, D-88]
   fixtures: [blackbox:model/service-monitor-trusted, blackbox:model/service-monitor-item-text]
-  doc: docs/monitoring.md
+  doc: docs/operations.md
 
 - id: MON-7
   title: Bot notes on problems
@@ -8319,7 +8319,7 @@
   profile: monitor
   decisions: [D-61, D-64, D-88]
   fixtures: [blackbox:monitor/note-masking, blackbox:monitor/note-limits]
-  doc: docs/monitoring.md
+  doc: docs/operations.md
 
 - id: MON-8
   title: Service control
@@ -8401,7 +8401,7 @@
   profile: core
   decisions: [D-67, D-68, D-70, D-73, D-74, D-75, D-82]
   fixtures: [blackbox:core/service-stop-card, lint:manifests/service-no-card, fixture:authorize/service-initiator]
-  doc: docs/monitoring.md
+  doc: docs/operations.md
 
 - id: MON-9
   title: Monitoring maintenance windows give a farm hold
@@ -8446,7 +8446,7 @@
   profile: monitor
   decisions: [D-59, D-62, D-75, D-88, D-100, D-103]
   fixtures: [blackbox:core/hold-pause-action, blackbox:monitor/maintenance-hold, blackbox:monitor/maintenance-periodic, schemas/valid/ops/ext-monitor-maintenance, schemas/invalid/ops/ext-monitor-maintenance]
-  doc: docs/monitoring.md
+  doc: docs/operations.md
 
 - id: MON-10
   title: Monitoring system scripts
@@ -8508,7 +8508,7 @@
   profile: monitor
   decisions: [D-67, D-68, D-69, D-70, D-73, D-74, D-75, D-88]
   fixtures: [blackbox:monitor/script-name-closed, fixture:authorize/service-initiator]
-  doc: docs/monitoring.md
+  doc: docs/operations.md
 
 - id: MON-11
   title: Export of alarms and the audit head does not die
@@ -8541,7 +8541,7 @@
   profile: monitor
   decisions: [D-88]
   fixtures: [blackbox:monitor/export-retry, blackbox:monitor/export-order, blackbox:monitor/export-stalled]
-  doc: docs/monitoring.md
+  doc: docs/operations.md
 
 - id: MON-12
   title: Alarm export to the monitoring system
@@ -8579,7 +8579,7 @@
   profile: monitor
   decisions: [D-59, D-62, D-66, D-71, D-80, D-88]
   fixtures: [blackbox:monitor/export-stalled, blackbox:core/alarm-path-monitor]
-  doc: docs/monitoring.md
+  doc: docs/operations.md
 
 - id: MON-13
   title: Alarms to people by core delivery without a monitoring system
@@ -8609,7 +8609,7 @@
   profile: core
   decisions: [D-88]
   fixtures: [blackbox:core/alarm-notice-no-monitor]
-  doc: docs/monitoring.md
+  doc: docs/operations.md
 
 - id: MSG-1
   title: Message envelope and core fields
@@ -9239,7 +9239,7 @@
   profile: core
   decisions: [D-77, D-80, D-114]
   fixtures: [blackbox:core/doctor-tenant, blackbox:core/status-manager-off]
-  doc: docs/monitoring.md
+  doc: docs/operations.md
 
 - id: OBS-12
   title: Alarm about an overdue usage reconciliation
@@ -9874,7 +9874,7 @@
   profile: core
   decisions: [D-14, D-15, D-16, D-17, D-19, D-22, D-30, D-35, D-67, D-68, D-69, D-71, D-80, D-114]
   fixtures: [fx-rep-01, lint:roles/profile-limits]
-  doc: docs/scripts-and-translator.md
+  doc: docs/coordination.md
 
 - id: PRM-1
   title: Deny by default
@@ -11680,7 +11680,7 @@
   profile: sandbox
   decisions: [D-104]
   fixtures: [adapter:toolhost/sandbox-container, blackbox:files/sandbox-collect]
-  doc: docs/security-model.md
+  doc: docs/permissions.md
 
 - id: SCR-1
   title: A script is data under a closed schema
@@ -11701,7 +11701,7 @@
   profile: campaign
   decisions: [D-15, D-39, D-71]
   fixtures: [scr-fx-schema]
-  doc: docs/scripts-and-translator.md
+  doc: docs/coordination.md
 
 - id: SCR-2
   title: A step refers only to applied manifests
@@ -11721,7 +11721,7 @@
   profile: campaign
   decisions: [D-15, D-39, D-71, D-114]
   fixtures: [scr-fx-refs]
-  doc: docs/scripts-and-translator.md
+  doc: docs/coordination.md
 
 - id: SCR-3
   title: Conditions and passing values between steps
@@ -11745,7 +11745,7 @@
   profile: campaign
   decisions: [D-15, D-39, D-71, D-114]
   fixtures: [scr-fx-conditions]
-  doc: docs/scripts-and-translator.md
+  doc: docs/coordination.md
 
 - id: SCR-4
   title: The goal of an agent step in a model draft
@@ -11762,7 +11762,7 @@
   profile: campaign
   decisions: [D-15, D-39, D-71]
   fixtures: [trn-inj-05]
-  doc: docs/scripts-and-translator.md
+  doc: docs/coordination.md
 
 - id: SCR-5
   title: Draft acceptance by the core
@@ -11795,7 +11795,7 @@
   profile: campaign
   decisions: [D-15, D-40, D-73, D-71]
   fixtures: [trn-05, trn-07, scr-fx-05]
-  doc: docs/scripts-and-translator.md
+  doc: docs/coordination.md
 
 - id: SCR-6
   title: A run only after the initiator's button
@@ -11827,7 +11827,7 @@
   profile: campaign
   decisions: [D-15, D-48, D-68, D-70, D-74, D-78, D-71]
   fixtures: [trn-inj-06, scr-fx-01, scr-fx-02, scr-fx-03]
-  doc: docs/scripts-and-translator.md
+  doc: docs/coordination.md
 
 - id: SCR-7
   title: A run approval approves no actions
@@ -11857,7 +11857,7 @@
   profile: campaign
   decisions: [D-15, D-40, D-67, D-68, D-70, D-73, D-74, D-78, D-71]
   fixtures: [blackbox:script/frozen-subset, scr-fx-04]
-  doc: docs/scripts-and-translator.md
+  doc: docs/coordination.md
 
 - id: SCR-8
   title: Core code releases steps
@@ -11880,7 +11880,7 @@
   profile: campaign
   decisions: [D-15, D-41, D-71]
   fixtures: [blackbox:script/double-release]
-  doc: docs/scripts-and-translator.md
+  doc: docs/coordination.md
 
 - id: SCR-9
   title: The distrust flag passes between steps
@@ -11897,7 +11897,7 @@
   profile: campaign
   decisions: [D-15, D-71]
   fixtures: [blackbox:script/untrusted-flag]
-  doc: docs/scripts-and-translator.md
+  doc: docs/coordination.md
 
 - id: SCR-10
   title: A hold pauses a run
@@ -11917,7 +11917,7 @@
   profile: campaign
   decisions: [D-15]
   fixtures: [blackbox:script/hold-pauses-run]
-  doc: docs/scripts-and-translator.md
+  doc: docs/coordination.md
 
 - id: SCR-11
   title: Run transitions only by the table, cancellation cascades
@@ -11943,7 +11943,7 @@
   profile: campaign
   decisions: [D-15, D-41, D-71]
   fixtures: [blackbox:script/transitions]
-  doc: docs/scripts-and-translator.md
+  doc: docs/coordination.md
 
 - id: SCR-12
   title: A script from git on a schedule
@@ -11974,7 +11974,7 @@
   profile: campaign
   decisions: [D-99, D-102, D-105]
   fixtures: [lint:manifests/schedule-script, blackbox:script/scheduled-run, manifests/v02-security-lints]
-  doc: docs/scripts-and-translator.md
+  doc: docs/coordination.md
 
 - id: SCR-13
   title: The steps wait and await
@@ -12009,7 +12009,7 @@
   profile: campaign
   decisions: [D-41]
   fixtures: [manifests/v02-group1-lints, blackbox:script/wait-await]
-  doc: docs/scripts-and-translator.md
+  doc: docs/coordination.md
 
 - id: SCR-14
   title: A script from git with parameters and a free goal
@@ -12044,7 +12044,7 @@
   profile: campaign
   decisions: [D-15, D-71, D-104]
   fixtures: [manifests/v02-group1-lints, blackbox:script/git-command]
-  doc: docs/scripts-and-translator.md
+  doc: docs/coordination.md
 
 - id: SCR-15
   title: Rollups and selections over the items of a fanout step
@@ -12067,7 +12067,7 @@
   profile: campaign
   decisions: [D-15, D-39, D-114]
   fixtures: []
-  doc: docs/scripts-and-translator.md
+  doc: docs/coordination.md
 
 - id: SEC-1
   title: Secrets do not go through ports
@@ -12083,7 +12083,7 @@
   profile: core
   decisions: []
   fixtures: [blackbox:toolhost/mask-secrets]
-  doc: docs/security-model.md
+  doc: docs/permissions.md
 
 - id: SEC-2
   title: Each process gets only its own secrets
@@ -12099,7 +12099,7 @@
   profile: core
   decisions: []
   fixtures: []
-  doc: docs/security-model.md
+  doc: docs/permissions.md
 
 - id: SEC-3
   title: Handles
@@ -12117,7 +12117,7 @@
   profile: core
   decisions: []
   fixtures: [blackbox:core/handles]
-  doc: docs/security-model.md
+  doc: docs/permissions.md
 
 - id: SEC-4
   title: Minimum fields in a work item
@@ -12135,7 +12135,7 @@
   profile: core
   decisions: []
   fixtures: []
-  doc: docs/security-model.md
+  doc: docs/permissions.md
 
 - id: SEC-5
   title: Secret rotation with a key id
@@ -12156,7 +12156,7 @@
   profile: core
   decisions: []
   fixtures: []
-  doc: docs/security-model.md
+  doc: docs/permissions.md
 
 - id: SEC-6
   title: Revocation on compromise
@@ -12180,7 +12180,7 @@
   profile: core
   decisions: []
   fixtures: [blackbox:core/rotate-compromised, blackbox:core/connections-revoke-bulk]
-  doc: docs/security-model.md
+  doc: docs/permissions.md
 
 - id: SEC-7
   title: A person's connection to an external service
@@ -12213,7 +12213,7 @@
   profile: connections
   decisions: [D-102, D-105]
   fixtures: [blackbox:core/connection-per-principal, blackbox:core/connection-link-bound]
-  doc: docs/security-model.md
+  doc: docs/permissions.md
 
 - id: SEC-8
   title: Tenant privacy block
@@ -12253,7 +12253,7 @@
   profile: core
   decisions: [D-12, D-36, D-77]
   fixtures: []
-  doc: docs/privacy.md
+  doc: docs/operations.md
 
 - id: SEC-9
   title: Raw logs to a channel only by tenant decision
@@ -12274,7 +12274,7 @@
   profile: core
   decisions: [D-12, D-36]
   fixtures: []
-  doc: docs/privacy.md
+  doc: docs/operations.md
 
 - id: SEC-10
   title: A copy of a person's data only to that person
@@ -12302,7 +12302,7 @@
   profile: core
   decisions: [D-12, D-36, D-76, D-102, D-114]
   fixtures: [blackbox:core/export-sink-not-export, blackbox:core/mydata-export, manifests/v02-lints, manifests/v02-security-lints]
-  doc: docs/privacy.md
+  doc: docs/operations.md
 
 - id: SEC-11
   title: A person's request and deletion through ports
@@ -12356,7 +12356,7 @@
   profile: core
   decisions: [D-12, D-36, D-76]
   fixtures: [blackbox:core/erase-match-restore, blackbox:core/erase-personal-subjects, blackbox:core/erase-runtime-no-match, blackbox:core/erasure-v01-ports, erasure/erasure]
-  doc: docs/privacy.md
+  doc: docs/operations.md
 
 - id: SEC-12
   title: Privacy report
@@ -12380,7 +12380,7 @@
   profile: core
   decisions: [D-12, D-36]
   fixtures: [blackbox:core/privacy-report]
-  doc: docs/privacy.md
+  doc: docs/operations.md
 
 - id: SEC-13
   title: The privacy notice as a separate delivery
@@ -12408,7 +12408,7 @@
   profile: core
   decisions: []
   fixtures: [blackbox:channel/privacy-notice-native, blackbox:channel/privacy-notice-enforced-join]
-  doc: docs/privacy.md
+  doc: docs/operations.md
 
 - id: SEC-14
   title: Per-principal usage is anonymized after 93 days
@@ -12430,7 +12430,7 @@
   profile: core
   decisions: []
   fixtures: [blackbox:budget/subject-anonymized-93d]
-  doc: docs/privacy.md
+  doc: docs/operations.md
 
 - id: SKL-1
   title: A skill without scripts and without an allowed-tools list
@@ -12890,7 +12890,7 @@
   profile: campaign
   decisions: [D-15, D-39, D-71]
   fixtures: [trn-inj-01, trn-inj-02, trn-inj-03]
-  doc: docs/scripts-and-translator.md
+  doc: docs/coordination.md
 
 - id: TRN-3
   title: The translator outputs only a draft
@@ -12907,7 +12907,7 @@
   profile: campaign
   decisions: [D-15, D-71]
   fixtures: [blackbox:translator/output-only-draft]
-  doc: docs/scripts-and-translator.md
+  doc: docs/coordination.md
 
 - id: TRN-4
   title: Draft limits under untrusted text
@@ -12924,7 +12924,7 @@
   profile: campaign
   decisions: [D-15, D-71]
   fixtures: [trn-inj-01, trn-fx-untrusted]
-  doc: docs/scripts-and-translator.md
+  doc: docs/coordination.md
 
 - id: TRN-5
   title: When the vocabulary does not cover the assignment
@@ -12942,7 +12942,7 @@
   profile: campaign
   decisions: [D-15, D-41, D-71]
   fixtures: [trn-03, trn-04, trn-fx-unsupported]
-  doc: docs/scripts-and-translator.md
+  doc: docs/coordination.md
 
 - id: TRN-6
   title: Translator eval gate
@@ -12963,7 +12963,7 @@
   profile: campaign
   decisions: [D-11, D-15]
   fixtures: [trn-01, trn-02, trn-03, trn-04, trn-05, trn-06, trn-07, trn-inj-01, trn-inj-02, trn-inj-03, trn-inj-04, trn-inj-05, trn-inj-06]
-  doc: docs/scripts-and-translator.md
+  doc: docs/coordination.md
 
 - id: TRN-7
   title: A person confirms that a script run caused an incident
@@ -12985,7 +12985,7 @@
   profile: campaign
   decisions: [D-112]
   fixtures: [blackbox:translator/script-link]
-  doc: docs/scripts-and-translator.md
+  doc: docs/coordination.md
 
 - id: TRN-8
   title: Confirmed cases enter the translator check of the tenant
@@ -13011,7 +13011,7 @@
   profile: campaign
   decisions: [D-11, D-112]
   fixtures: [blackbox:translator/tenant-cases]
-  doc: docs/scripts-and-translator.md
+  doc: docs/coordination.md
 
 - id: TRN-9
   title: The translator pauses after three confirmed links
@@ -13038,4 +13038,4 @@
   profile: campaign
   decisions: [D-112]
   fixtures: [blackbox:translator/card-unnamed-targets]
-  doc: docs/scripts-and-translator.md
+  doc: docs/coordination.md

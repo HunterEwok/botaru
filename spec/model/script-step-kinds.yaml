@@ -5,7 +5,7 @@ description: >-
   no loop and no nested script, and there will be none without an ADR. Record fields: `meaning` (what the step does),
   `executed_by` (what the core executes it with), `changes_world` (whether the step itself changes the world), `fields`
   (step fields, besides the common `id`, `kind`, `needs`, `when`, `run_if`, `on_failure`), `rules`.
-source: docs/scripts-and-translator.md
+source: docs/coordination.md
 entries:
   - id: task
     since: v0.1

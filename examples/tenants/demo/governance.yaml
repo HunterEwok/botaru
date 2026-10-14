@@ -1,4 +1,4 @@
-# Charter of tenant demo (docs/commission.md, docs/bots.md): commission seats, path deadlines and memory limits.
+# Charter of tenant demo (docs/improvements.md, docs/bots.md): commission seats, path deadlines and memory limits.
 apiVersion: botaru/v1alpha1
 kind: Governance
 metadata: {name: demo, tenant: demo}

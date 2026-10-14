@@ -6,7 +6,7 @@ description: >-
   by a person through P2 attribution.create; a candidate is created only if
   an incident of a class with change_sensitive is opened within the attribution window (attribution.window,
   14 days from realized). The when field says when the rule fires.
-source: docs/commission.md
+source: docs/improvements.md
 entries:
   - id: direct
     since: v0.2

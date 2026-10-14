@@ -1,4 +1,4 @@
-# evals/cases/manager/mgr-04.yaml (catalog: evals/README.md)
+# evals/cases/manager/mgr-04.yaml (catalog: evals/catalog.yaml)
 id: mgr-04
 kind: quality
 blocking: false

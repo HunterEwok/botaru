@@ -2,7 +2,7 @@ schema: urn:botaru:schema:deploy-topology:1
 rules:
 - DEP-10
 - IDN-7
-description: A shortened description from docs/security-model.md; the core P1 and P2 listeners are on their own networks,
+description: A shortened description from docs/permissions.md; the core P1 and P2 listeners are on their own networks,
   there is no test bench listener.
 data:
   monitoring:

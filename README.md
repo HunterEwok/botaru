@@ -9,7 +9,7 @@ Everything in the repository is written in English. Field names, codes and file 
 Four layers; the fourth, the reference implementation in Go, is only started:
 
 1. **Model**: concepts, relations, lifecycles and the rule registry (`docs/`, `docs/model/`, `spec/lifecycles/`, `conformance/requirements.yaml`).
-2. **Ports**: what each operation on each of the thirteen boundaries means (`spec/ports/`).
+2. **Ports**: the contracts at the boundaries with foreign code (P1, E1, P3 with E3, P4, E5) and the descriptions of how the core is built (`spec/ports/`).
 3. **Contracts and checks**, the machine layer of v0.1: JSON Schema for data and manifests, closed registries, assembled lifecycles, port bindings, fixtures, conformance suites, eval cases and the `ci/` checks (`spec/`, `conformance/`, `evals/`, `ci/`).
 
 4. **Implementation**: the reference implementation in Go (`impl/`, decisions D-91 to D-93 in `docs/decisions.md`). Today it is a module skeleton with its CI checks; the work on the core has not started.
@@ -27,11 +27,10 @@ The executable code today is the `ci/` checks that run on every pull request and
 If you want to understand the farm:
 
 1. [Goals](docs/goals.md): what the farm is for, the critical incidents and the constraints; every rule serves one of them.
-2. [Overview](docs/overview.md): the farm on one screen, one message from start to end, the four layers, versions.
+2. [Architecture](docs/architecture.md): the entry document: the farm on one screen, the layers, the core and its parts, the boundaries, tenants, the trust boundary, one message from start to finish, and where to read next.
 3. [Glossary](docs/model/glossary.md): terms with a "do not confuse with" column.
-4. [Architecture](docs/architecture.md): the core, the thirteen ports, tenants, the trust boundary.
-5. [Task language](docs/task-language.md): roles, task types, actions and schedules.
-6. [Decisions](docs/decisions.md) and [open questions](docs/open-questions.md).
+4. [Task language](docs/task-language.md): roles, task types, actions and schedules.
+5. [Decisions](docs/decisions.md) and [open questions](docs/open-questions.md).
 
 If you want to add a plugin, a channel, a task type or a bot:
 
@@ -60,12 +59,12 @@ What is checked today: manifest and wrapper schemas, closed parameters, group pe
 
 | Folder or file | What is in it |
 |---|---|
-| `docs/` | documents explaining the parts of the farm: tasks and delivery, permissions, security, privacy, messaging, coordination, operations, monitoring, models and money, improvements, scripts, bots, commission, farm manager, quality |
+| `docs/` | documents explaining the parts of the farm: architecture (the entry document), extending, task language, tasks and delivery, permissions and security, messaging, coordination and scripts, operations with monitoring and privacy, capabilities, models and money, improvements and the commission, bots, farm manager, quality |
 | `docs/model/` | glossary and object relations |
 | `docs/adr/` | architecture decision records in MADR 4.0.0 format and their template |
 | `spec/README.md` | how the machine files are laid out: schemas, registries, lifecycles, fixtures |
 | `spec/model/`, `spec/manifests/` | data and manifest schemas, closed registries |
-| `spec/ports/` | the thirteen port sheets, core background loops, the sheet template |
+| `spec/ports/` | the contract sheets of the boundaries with foreign code, the descriptions of the core's parts and background loops, the sheet template |
 | `spec/lifecycles/` | object lifecycles, one file per object, with the assembled YAML |
 | `spec/bindings/` | bindings of ports to protocols (HTTP, MCP, model providers, events, telemetry, monitoring, OS) |
 | `conformance/requirements.yaml` | the rule registry: every rule is written here once |

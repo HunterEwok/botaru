@@ -65,7 +65,7 @@ spec:
   link_allowlist: [www.example.org, docs.example.org]
   models_allowed: [base-std, analysis-std, review-a, review-b, seat-std, seat-alt, manager-std, translate-std]
                                 # seat-std, seat-alt, manager-std, translate-std are needed by the commission, the manager and the translator
-  privacy:                      # privacy block (SEC-8); all fields in docs/privacy.md
+  privacy:                      # privacy block (SEC-8); all fields in docs/operations.md
     purposes:
       - {purpose: operations, lawful_basis: legitimate_interest}
       - {purpose: assistance, lawful_basis: consent}
@@ -274,17 +274,17 @@ The documents of the farm parts walk through their mechanisms on the same tenant
 |---|---|
 | [docs/permissions.md](../docs/permissions.md) | inviting people, the operator granting groups, an action request with an approval card |
 | [docs/messaging.md](../docs/messaging.md), [docs/coordination.md](../docs/coordination.md) | the bot group `science-pool`, bot messages, a quality control campaign |
-| [docs/scripts-and-translator.md](../docs/scripts-and-translator.md) | a translator script draft, the script confirmation card and the steps |
+| [docs/coordination.md](../docs/coordination.md) | a translator script draft, the script confirmation card and the steps |
 | [docs/improvements.md](../docs/improvements.md) | a proposal to move the nightly report: analysis, commission, a trial with the outcome `better`, audit sample items |
-| [docs/bots.md](../docs/bots.md), [docs/commission.md](../docs/commission.md) | the identity `bot_17` from enrollment to a commission seat, a case with voting rounds |
+| [docs/bots.md](../docs/bots.md), [docs/improvements.md](../docs/improvements.md) | the identity `bot_17` from enrollment to a commission seat, a case where code proposes who leaves and a person chooses (D-115) |
 | [docs/farm-manager.md](../docs/farm-manager.md) | incidents `i-311` and `i-318`: the manager seat, holds and cards to people |
-| [docs/privacy.md](../docs/privacy.md), [docs/operations.md](../docs/operations.md) | the privacy block, `/mydata`, an erasure request, a plugin hold |
+| [docs/operations.md](../docs/operations.md) | the privacy block, `/mydata`, an erasure request, a plugin hold |
 
 ## What goes into which version
 
 | Version | What appears |
 |---|---|
-| v0.1 | `tenants/demo/`, `tenants/demo2/`, `deploy/farm.yaml`, the global example manifests of the `core` profile (D-71); `hello-bot/`; the role `data-reader` and flow 12 (D-72); the example action `pipeline.ctd_qc`; the plugins `geo`, `batch` and `service`; services, `monitor_scripts_allowed` and `monitor_triggers` in the catalog of `demo`, the permissions `service_control` and `monitor_scripts` of role `ops-reader`, the group `ops-oncall`; flows 1, 3, 5, 6, 7, 8, 9, 10, 11 and 12 in machine form, flows 2 and 4 in words; after the core and the first bot (D-71): `farm_manager` of the tenants, the role `farm-manager`, the profiles `seat-std`, `seat-alt`, `manager-std`, the commission charter of `demo`; the machine form of the campaign and translator script flows, which [docs/coordination.md](../docs/coordination.md) and [docs/scripts-and-translator.md](../docs/scripts-and-translator.md) walk through in words |
+| v0.1 | `tenants/demo/`, `tenants/demo2/`, `deploy/farm.yaml`, the global example manifests of the `core` profile (D-71); `hello-bot/`; the role `data-reader` and flow 12 (D-72); the example action `pipeline.ctd_qc`; the plugins `geo`, `batch` and `service`; services, `monitor_scripts_allowed` and `monitor_triggers` in the catalog of `demo`, the permissions `service_control` and `monitor_scripts` of role `ops-reader`, the group `ops-oncall`; flows 1, 3, 5, 6, 7, 8, 9, 10, 11 and 12 in machine form, flows 2 and 4 in words; after the core and the first bot (D-71): `farm_manager` of the tenants, the role `farm-manager`, the profiles `seat-std`, `seat-alt`, `manager-std`, the commission charter of `demo`; the machine form of the campaign and translator script flows, which [docs/coordination.md](../docs/coordination.md) walks through in words |
 | v0.2 | flows 2 and 4 in machine form together with the sandbox (`flows/02-ctd-sandbox/`, `flows/04-findings-table/`, the plugin `sandbox`, the role `analyst`, the type `data.analyze.v1`, the command `/analyze` and the VM `sbx1` in `deploy/farm.yaml`, profile `sandbox`); an action with `risk: high` and two approvers (APR-16) |
 
 ## Why it is this way

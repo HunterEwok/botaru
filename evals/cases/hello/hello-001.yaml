@@ -1,4 +1,4 @@
-# evals/cases/hello/hello-001.yaml (catalog: evals/README.md)
+# evals/cases/hello/hello-001.yaml (catalog: evals/catalog.yaml)
 id: hello-001
 kind: quality
 blocking: false

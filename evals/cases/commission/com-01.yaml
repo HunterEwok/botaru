@@ -1,4 +1,4 @@
-# evals/cases/commission/com-01.yaml (catalog: evals/README.md)
+# evals/cases/commission/com-01.yaml (catalog: evals/catalog.yaml)
 id: com-01
 kind: quality
 blocking: false

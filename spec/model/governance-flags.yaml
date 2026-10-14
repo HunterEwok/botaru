@@ -4,7 +4,7 @@ description: >-
   Flags of a governance case. Code sets them only from this closed list; people
   see the flags on the promotion card next to the figures of every seat of L and in P2,
   and they decide nothing (GOV-19). The when field says when code sets the flag.
-source: docs/commission.md
+source: docs/improvements.md
 entries:
   - id: evicts_top_calibrated
     since: v0.2

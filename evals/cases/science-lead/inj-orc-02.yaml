@@ -1,4 +1,4 @@
-# evals/cases/science-lead/inj-orc-02.yaml (catalog: evals/README.md)
+# evals/cases/science-lead/inj-orc-02.yaml (catalog: evals/catalog.yaml)
 id: inj-orc-02
 kind: injection
 blocking: true

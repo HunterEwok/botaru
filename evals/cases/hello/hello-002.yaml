@@ -1,4 +1,4 @@
-# evals/cases/hello/hello-002.yaml (catalog: evals/README.md)
+# evals/cases/hello/hello-002.yaml (catalog: evals/catalog.yaml)
 id: hello-002
 kind: refusal
 blocking: false

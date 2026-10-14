@@ -1,4 +1,4 @@
-# evals/cases/bots/gov-res-sandbag-01.yaml (catalog: evals/README.md)
+# evals/cases/bots/gov-res-sandbag-01.yaml (catalog: evals/catalog.yaml)
 id: gov-res-sandbag-01
 kind: injection
 blocking: true
