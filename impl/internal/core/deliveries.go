@@ -21,7 +21,7 @@ type plannedDelivery struct {
 	Tenant        string
 	Task          string
 	Kind          string
-	Addr          string // origin, group:<g>, chat:<binding>, sink:<sink>, approval_initiator, monitor
+	Addr          string // origin, group:<g>, chat:<binding>, sink:<sink>, approval_initiator, monitor, admins
 	TargetKind    string // chat, subject, sink, monitor
 	TargetID      string
 	ExecKind      string // channel, sink, monitor
@@ -61,10 +61,11 @@ func (c *Core) firstContact(ctx context.Context, tx pgx.Tx, now time.Time, tv *T
 		return err
 	}
 	if tag.RowsAffected() == 0 {
-		// An ai_notice that never arrived is planned again; model text waits for it meanwhile.
+		// An ai_notice that never arrived (dead, or withheld while the person was inactive) is
+		// planned again; model text waits for it meanwhile.
 		var dead bool
 		if err := tx.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM contacts ct JOIN deliveries d ON d.id = ct.ai_notice_delivery
-			WHERE ct.tenant = $1 AND ct.channel = $2 AND ct.principal = $3 AND ct.ai_notice_at IS NULL AND d.state = 'dead')`,
+			WHERE ct.tenant = $1 AND ct.channel = $2 AND ct.principal = $3 AND ct.ai_notice_at IS NULL AND d.state IN ('dead', 'withheld'))`,
 			tv.Name, channel, principal).Scan(&dead); err != nil {
 			return err
 		}

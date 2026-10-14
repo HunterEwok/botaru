@@ -400,12 +400,24 @@ func (c *Core) claimDelivery(ctx context.Context, tx pgx.Tx, now time.Time, cat 
 		if err != nil {
 			return nil, err
 		}
-		// The recipient's access is checked again at handoff: a person disabled or ungranted after
-		// the task ended does not get its content (DLV-6).
-		if recipient != nil && dataMark != nil && tv != nil {
-			reason, err := c.accessLost(ctx, tx, now, tv, *recipient, "", *dataMark)
+		// The recipient is checked again at handoff: a person disabled, offboarded or ungranted
+		// after the delivery was planned gets nothing, a code notice included (DLV-6).
+		if recipient != nil && tv != nil {
+			mark := ""
+			if dataMark != nil {
+				mark = *dataMark
+			}
+			reason, err := c.accessLost(ctx, tx, now, tv, *recipient, "", mark)
 			if err != nil {
 				return nil, err
+			}
+			if reason == "person_inactive" {
+				// Nothing more goes to an inactive person: their other planned deliveries end too,
+				// so model text waiting behind a withheld notice does not stay planned.
+				if err := c.withholdDeliveriesTo(ctx, tx, now, w.Tenant, *recipient, reason); err != nil {
+					return nil, err
+				}
+				continue
 			}
 			if reason != "" {
 				if _, err := tx.Exec(ctx, `UPDATE deliveries SET state = 'withheld', reason = $2, updated_at = $3 WHERE id = $1`, id, reason, now); err != nil {

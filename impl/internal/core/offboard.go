@@ -30,6 +30,11 @@ func (c *Core) offboard(ctx context.Context, tx pgx.Tx, now time.Time, tv *Tenan
 	if err := c.cancelTasksOf(ctx, tx, now, tv.Name, subject, "person_inactive"); err != nil {
 		return "", 0, err
 	}
+	// Deliveries still planned for them are withheld for good: the chat id they carry may later
+	// belong to a new principal of the freed identity (DLV-6).
+	if err := c.withholdDeliveriesTo(ctx, tx, now, tv.Name, subject, "person_inactive"); err != nil {
+		return "", 0, err
+	}
 	// The request waits for the erasure work, which this version does not run yet.
 	erasure := ids.New(ids.Erasure)
 	authorRec := map[string]any{"kind": "system"}
@@ -42,6 +47,44 @@ func (c *Core) offboard(ctx context.Context, tx pgx.Tx, now time.Time, tv *Tenan
 	}
 	n, err := c.planPrincipalLeft(ctx, tx, now, tv, subject, "offboarding")
 	return erasure, n, err
+}
+
+// withholdDeliveriesTo ends the planned deliveries to a principal with the state withheld.
+func (c *Core) withholdDeliveriesTo(ctx context.Context, tx pgx.Tx, now time.Time, tenant, principal, reason string) error {
+	rows, err := tx.Query(ctx, `UPDATE deliveries SET state = 'withheld', reason = $3, updated_at = $4
+		WHERE tenant = $1 AND recipient = $2 AND state = 'planned' RETURNING id, kind`, tenant, principal, reason, now)
+	if err != nil {
+		return err
+	}
+	type withheld struct{ id, kind string }
+	var ws []withheld
+	for rows.Next() {
+		var w withheld
+		if err := rows.Scan(&w.id, &w.kind); err != nil {
+			rows.Close()
+			return err
+		}
+		ws = append(ws, w)
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	sort.Slice(ws, func(i, j int) bool { return ws[i].id < ws[j].id })
+	for _, w := range ws {
+		// A privacy notice that never arrived is planned again at the next contact (DLV-12).
+		if w.kind == "privacy_notice" {
+			if _, err := tx.Exec(ctx, `UPDATE contacts ct SET privacy_version = NULL FROM deliveries d
+				WHERE d.id = $1 AND ct.tenant = d.tenant AND ct.channel = d.exec_name AND ct.principal = d.recipient`, w.id); err != nil {
+				return err
+			}
+		}
+		if err := c.appendEvent(ctx, tx, now, tenant, Event{Type: "delivery.withheld", Subject: w.id,
+			Data: map[string]any{"delivery": w.id, "kind": w.kind, "reason": reason}}); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // cancelTasksOf cancels the non-terminal tasks a principal initiated. A running attempt loses
@@ -143,7 +186,7 @@ func (c *Core) planPrincipalLeft(ctx context.Context, tx pgx.Tx, now time.Time, 
 				continue
 			}
 			if _, err := c.planDelivery(ctx, tx, now, plannedDelivery{
-				Tenant: tv.Name, Kind: "principal_left", Addr: "subject:" + l.principal, TargetKind: "chat",
+				Tenant: tv.Name, Kind: "principal_left", Addr: "admins", TargetKind: "chat",
 				TargetID: Chat{Kind: "direct", ExternalID: ext}.ID(), ExecKind: "channel", ExecName: name,
 				Recipient: l.principal, DataOrigin: "code",
 				Body: map[string]any{"form": "text_code", "text_key": "notice.principal_left", "params": params},

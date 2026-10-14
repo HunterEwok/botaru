@@ -2493,7 +2493,10 @@
     sets, for exporting an alarm episode, for a monitoring script and a code note about a service
     action, and from v0.2 for a bot note on a problem, and such a delivery has no people's ids
     (MON-1, MON-7); the tenant's `insights.present_to` address for the digest and proposal cards
-    (DIG-2, D-71). The address `approval_initiator` means the direct messages of the initiator of
+    (DIG-2, D-71); the address `admins` for the core's own code notices to the tenant admins
+    (IDN-13), which only the core sets: the direct messages of the active admins with the right
+    the notice names, for example `admin:people` for `principal_left` (REP-5). The address
+    `approval_initiator` means the direct messages of the initiator of
     the approval whose number is in the event data, and it is accepted only if the approval belongs
     to the route's tenant, its action is named in the route, it is in the state `executed`, and the
     initiator is a person. For each human recipient the core checks that they are active and have

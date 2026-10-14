@@ -173,6 +173,11 @@ def disjoint(a, b, res=None, fa=None, fb=None, depth=0):
     va, vb = values(a), values(b)
     if va is not None and vb is not None and not any(among(v, vb) for v in va):
         return True
+    # listed strings against a pattern: no listed value matches it (a pattern passes non-strings)
+    for v, other in ((va, b), (vb, a)):
+        if (v is not None and isinstance(other.get('pattern'), str) and all(isinstance(x, str) for x in v)
+                and not any(matches(other['pattern'], x) for x in v)):
+            return True
     ta, tb = types(a), types(b)
     if ta is not None and tb is not None and not ta & tb:
         return True

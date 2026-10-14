@@ -50,9 +50,12 @@ func TestPrincipalOffboardFinal(t *testing.T) {
 		t.Fatalf("identity links %d %v", links, err)
 	}
 	var body []byte
-	var target, recipient string
-	if err := b.c.st.Pool.QueryRow(ctx, `SELECT body, target_id, recipient FROM deliveries WHERE kind = 'principal_left'`).Scan(&body, &target, &recipient); err != nil {
+	var target, recipient, addr string
+	if err := b.c.st.Pool.QueryRow(ctx, `SELECT body, target_id, recipient, addr FROM deliveries WHERE kind = 'principal_left'`).Scan(&body, &target, &recipient, &addr); err != nil {
 		t.Fatalf("principal_left: %v", err)
+	}
+	if addr != "admins" {
+		t.Fatalf("principal_left address %q, want admins (DLV-6)", addr)
 	}
 	var nb struct {
 		TextKey string         `json:"text_key"`
@@ -155,4 +158,81 @@ func timeNow(t *testing.T, b *bench) time.Time {
 		t.Fatal(err)
 	}
 	return now
+}
+
+// firstContact makes alice write to the bot, which plans the first-contact notices for her.
+func firstContact(t *testing.T, b *bench) {
+	t.Helper()
+	a := Activity{Kind: "message", Channel: "telegram", UpdateID: "77", Chat: Chat{Kind: "direct", ExternalID: "1001"}, Text: "/hello hi"}
+	a.Sender.Identity, a.Sender.Verified = "telegram:1001", true
+	if _, err := b.c.SubmitActivity(context.Background(), b.channel, a); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func deliveriesTo(t *testing.T, b *bench, principal, state string) int {
+	t.Helper()
+	var n int
+	if err := b.c.st.Pool.QueryRow(context.Background(), `SELECT count(*) FROM deliveries WHERE recipient = $1 AND state = $2`, principal, state).Scan(&n); err != nil {
+		t.Fatal(err)
+	}
+	return n
+}
+
+// TestOffboardWithholdsDeliveries: deliveries still planned for an offboarded person end
+// withheld in the same transaction, code notices included, because the chat id they carry
+// may later belong to a new principal of the freed identity (DLV-6, LCY-8).
+func TestOffboardWithholdsDeliveries(t *testing.T) {
+	ctx := context.Background()
+	b := newBench(t)
+	firstContact(t, b)
+	if deliveriesTo(t, b, b.alice, "planned") == 0 {
+		t.Fatal("no planned delivery for alice after first contact")
+	}
+	if _, err := b.c.Principal(ctx, b.op, PrincipalRequest{Op: "principal.offboard", Subject: b.alice}); err != nil {
+		t.Fatal(err)
+	}
+	if n := deliveriesTo(t, b, b.alice, "planned"); n != 0 {
+		t.Fatalf("%d deliveries for the offboarded person are still planned", n)
+	}
+	var reason string
+	if err := b.c.st.Pool.QueryRow(ctx, `SELECT reason FROM deliveries WHERE recipient = $1 AND state = 'withheld' LIMIT 1`, b.alice).Scan(&reason); err != nil || reason != "person_inactive" {
+		t.Fatalf("withheld reason %q %v", reason, err)
+	}
+	if w := b.claim(t, b.channel, "delivery"); w != nil {
+		t.Fatalf("a delivery was handed out: %+v", w)
+	}
+}
+
+// TestHandoffChecksRecipient: a code notice without a data mark is not handed to a channel
+// once its recipient is disabled; it ends withheld (DLV-6).
+func TestHandoffChecksRecipient(t *testing.T) {
+	ctx := context.Background()
+	b := newBench(t)
+	firstContact(t, b)
+	if _, err := b.c.Principal(ctx, b.op, PrincipalRequest{Op: "principal.off", Subject: b.alice}); err != nil {
+		t.Fatal(err)
+	}
+	if deliveriesTo(t, b, b.alice, "planned") == 0 {
+		t.Fatal("principal.off should leave the planned notices to the handoff check")
+	}
+	if w := b.claim(t, b.channel, "delivery"); w != nil {
+		t.Fatalf("a delivery to a disabled person was handed out: %+v", w)
+	}
+	if n := deliveriesTo(t, b, b.alice, "planned"); n != 0 {
+		t.Fatalf("%d deliveries still planned after the handoff check", n)
+	}
+	// Re-enabled, she gets the notices again at her next message.
+	if _, err := b.c.Principal(ctx, b.op, PrincipalRequest{Op: "principal.on", Subject: b.alice}); err != nil {
+		t.Fatal(err)
+	}
+	a := Activity{Kind: "message", Channel: "telegram", UpdateID: "78", Chat: Chat{Kind: "direct", ExternalID: "1001"}, Text: "/hello again"}
+	a.Sender.Identity, a.Sender.Verified = "telegram:1001", true
+	if _, err := b.c.SubmitActivity(ctx, b.channel, a); err != nil {
+		t.Fatal(err)
+	}
+	var notices int
+	if err := b.c.st.Pool.QueryRow(ctx, `SELECT count(*) FROM deliveries WHERE recipient = $1 AND state = 'planned' AND kind IN ('ai_notice', 'privacy_notice')`, b.alice).Scan(&notices); err != nil || notices != 2 {
+		t.Fatalf("planned notices after principal.on: %d %v", notices, err)
+	}
 }
