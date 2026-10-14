@@ -1,0 +1,69 @@
+# Decision table for the core function reporter.number_check (REP-4), run with the test bench operation function.eval (conformance/runner.md).
+id: fx-rep-no-numbers
+rules: [REP-4]
+version: v0.2
+description: 'A model paragraph to people carries no numbers (algorithm in docs/messaging.md, section "No numbers in the
+  model paragraph"). Code reads the paragraph by tokens and rejects a token with a digit and a number word of the locale list
+  number.words. Allowed with digits are only a name that the table or the tenant catalog of the same digest contains, and a
+  date or time equal to the snapshot time or a window bound. One rejected token drops the paragraph; the digest goes without it
+  and the core writes digest.text_dropped with counts only.'
+given:
+  tenant: demo
+  binding: {target: 'direct:alice', kind: direct, locale: en}
+  catalog_names: [web1, db1, st-05]
+  snapshot:
+    id: snap-nn
+    taken_at: '2026-11-20T09:00:00Z'
+    window: {from: '2026-11-19T09:00:00Z', to: '2026-11-20T09:00:00Z'}
+    rows:
+    - {resource: web1, failed: 37, ok: 1204}
+    - {resource: db1, failed: 0, ok: 880}
+cases:
+- id: fx-rep-nn-a
+  description: words only, with names that hold digits
+  steps:
+  - model: {text: 'web1 had most of the failures; db1 and st-05 ran clean.'}
+  expect: {paragraph: present, numbers_unmatched: 0}
+- id: fx-rep-nn-b
+  description: a number copied from the table is still a number
+  steps:
+  - model: {text: 'web1 had 37 failures.'}
+  expect: {paragraph: absent, parts: [table, cards, hidden], event: {type: digest.text_dropped, data: {snapshot_id: snap-nn, numbers_checked: 2, numbers_unmatched: 1}}}
+- id: fx-rep-nn-c
+  description: a number word
+  steps:
+  - model: {text: 'db1 had zero failures.'}
+  expect: {paragraph: absent}
+- id: fx-rep-nn-d
+  description: a percent and a number glued to a unit
+  steps:
+  - model: {text: 'About 97% succeeded and web1 kept 120GB free.'}
+  expect: {paragraph: absent, numbers_unmatched: 2}
+- id: fx-rep-nn-e
+  description: a date and a time of the window are allowed
+  steps:
+  - model: {text: 'Since 2026-11-19 09:00 web1 failed more often than db1.'}
+  expect: {paragraph: present, numbers_unmatched: 0}
+- id: fx-rep-nn-f
+  description: a date outside the snapshot and the window
+  steps:
+  - model: {text: 'Since 2026-11-01 web1 failed more often.'}
+  expect: {paragraph: absent}
+- id: fx-rep-nn-g
+  description: a name with digits that neither the table nor the catalog contains
+  steps:
+  - model: {text: 'web7 looks worse than web1.'}
+  expect: {paragraph: absent}
+- id: fx-rep-nn-h
+  description: the rule covers the text part of a group summary as well (DLV-15)
+  given:
+    binding: {target: 'chat:lab', kind: group, locale: en}
+    part: summary_text
+  steps:
+  - model: {text: 'Two retries on web1 then success.'}
+  expect: {paragraph: absent, summary_table: present}
+- id: fx-rep-nn-i
+  description: event data hold no text and no numbers of the paragraph
+  steps:
+  - model: {text: 'web1 had 12 failures.'}
+  expect: {event: {type: digest.text_dropped, data_fields: [delivery, snapshot_id, numbers_checked, numbers_unmatched]}, event_contains_text: false}

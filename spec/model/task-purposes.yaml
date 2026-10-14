@@ -1,5 +1,5 @@
 registry: task-purposes
-version: 3
+version: 4
 description: >-
   Purposes of task types (TaskType.spec.purpose). By purpose, core code
   chooses the model slot and the budget line, and lints check who may enqueue
@@ -74,17 +74,10 @@ entries:
     budget_line: manager
     proposable: false
     rules: [BUD-7, MGR-20, PRP-10]
-  - id: handover
-    since: v0.1
-    meaning: choice of facts by a successor when a seat's cases are handed over
-    slot: role
-    budget_line: work
-    proposable: false
-    rules: [BUD-7, MEM-7, PRP-10]
   - id: governance
     since: v0.2
-    meaning: tasks of identity and charter cases, the seat ballot
+    meaning: tasks of identity and charter cases; since D-115 the skeleton has no task type of this purpose
     slot: seat
     budget_line: governance
     proposable: false
-    rules: [BUD-7, GOV-7, PRP-10]
+    rules: [BUD-7, GOV-16, PRP-10]

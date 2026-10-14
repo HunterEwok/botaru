@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "urn:botaru:schema:fact-offer:1",
   "title": "Fact offer",
-  "description": "Fact offer (FactOffer) to a successor when an identity retires or its binding changes (MEM-7). Only the core writes it. It contains only active facts, rechecked at creation, at most memory.offer.max (100), only in the same tenant and only to one recipient by the closed successor table. It is open until the end of the seal of the leaving identity (open_until). A person does not approve the handover; P2 and the summary show only numbers.",
+  "description": "Fact offer (FactOffer) to a successor when an identity retires or its binding changes (MEM-7). Only the core writes it. It contains only active facts, rechecked at creation, at most memory.offer.max (100), only in the same tenant and only to one successor: the new identity of the same worker, else the first identity enrolled in the same role, for a seat holder the next holder of the seat. It is open until the end of the seal of the leaving identity (open_until). Code copies the facts that pass a recheck; neither a person nor a model chooses them. P2 and the summary show only numbers.",
   "x-botaru-direction": "record",
   "x-botaru-retention": "memory",
   "x-botaru-rules": [
@@ -69,28 +69,22 @@
         "state": {
           "enum": [
             "waiting",
-            "pending",
-            "picked",
-            "declined",
+            "copied",
             "expired"
           ],
           "description": "Recipient state."
         },
-        "task": {
-          "$ref": "urn:botaru:schema:common:1#/$defs/object_id",
-          "description": "Task memory.pick.v1 with the key system:handover:<fact offer>."
-        },
-        "taken": {
+        "copied": {
           "type": "array",
-          "maxItems": 50,
+          "maxItems": 100,
           "uniqueItems": true,
           "items": {
             "$ref": "urn:botaru:schema:common:1#/$defs/object_id"
           },
-          "description": "Taken facts, at most memory.offer.take_max (50)."
+          "description": "Ids of the facts copied to the successor with the mark inherited, within the free room of its space."
         }
       },
-      "description": "Recipient within the offer: one, the successor by the MEM-7 table."
+      "description": "Recipient within the offer: one, the successor under MEM-7."
     },
     "open_until": {
       "$ref": "urn:botaru:schema:common:1#/$defs/datetime",

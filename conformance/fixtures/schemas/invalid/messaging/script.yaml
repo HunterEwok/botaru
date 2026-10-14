@@ -5,7 +5,7 @@ rules:
 - SCR-4
 - SCR-5
 description: 'Drafts that the schema rejects: step kind shell; free goal; then inside fanout; core field plan_hash; max_tier
-  in the draft; run_if outside the list; on_failure retry; a condition with a regular expression; condition nesting 3; nested
+  in the draft; run_if outside the list; on_failure retry; a condition with a regular expression; condition nesting 3; a size comparison lt; a rollup over fanout items; a selection of items with items.from; an atom without a value; nested
   script; 21 steps; format version v2; worker field on a step.'
 cases:
 - script: v1
@@ -83,9 +83,9 @@ cases:
       all:
       - any:
         - not:
-            ref: disk.free_pct
-            op: lt
-            value: 5
+            ref: disk.free_level
+            op: eq
+            value: low
 - script: v1
   steps:
   - id: inner
@@ -190,3 +190,67 @@ cases:
     type: ops.disk.read.v1
     goal: *id002
     worker: analyst-2
+- script: v1
+  steps:
+  - *id001
+  - id: next
+    kind: task
+    type: ops.disk.read.v1
+    goal: *id002
+    needs:
+    - disk
+    when:
+      ref: disk.free_pct
+      op: lt
+      value: 10
+- script: v1
+  steps:
+  - id: disk
+    kind: fanout
+    type: ops.disk.read.v1
+    goal: *id002
+    items:
+      resources:
+      - web1
+      - db1
+  - id: next
+    kind: confirm
+    needs:
+    - disk
+    when:
+      ref: disk.min.free_pct
+      op: eq
+      value: 7
+- script: v1
+  steps:
+  - id: disk
+    kind: fanout
+    type: ops.disk.read.v1
+    goal: *id002
+    items:
+      resources:
+      - web1
+      - db1
+  - id: clean
+    kind: fanout
+    needs:
+    - disk
+    action: cleanup_tmp
+    items:
+      from: disk
+      where:
+        field: free_level
+        op: eq
+        value: low
+- script: v1
+  steps:
+  - *id001
+  - id: next
+    kind: task
+    type: ops.disk.read.v1
+    goal: *id002
+    needs:
+    - disk
+    when:
+      ref: disk.host
+      op: ne

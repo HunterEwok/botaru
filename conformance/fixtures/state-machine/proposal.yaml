@@ -1,7 +1,7 @@
 # Collected from spec/lifecycles/proposal.yaml. The value null in from means "the object does not exist yet".
 lifecycle: spec/lifecycles/proposal.yaml
 object: proposal
-rules: [COM-4, COM-5, COM-6, COM-7, COM-11, COM-14, DIG-1, DIG-2, DIG-3, DIG-4, DIG-5, DIG-6, INS-3, PRP-1, PRP-2, PRP-3,
+rules: [COM-4, COM-5, COM-6, COM-7, COM-14, COM-16, DIG-1, DIG-2, DIG-3, DIG-4, DIG-5, DIG-6, INS-3, PRP-1, PRP-2, PRP-3,
   PRP-4, PRP-5, PRP-6, PRP-7, PRP-8, PRP-9, PRP-10, PRP-11, PRP-16, PRP-18, PRP-19, PRP-20, PRP-21, PRP-22, PRP-23]
 description: 'Allowed and forbidden transitions of the "proposal" lifecycle, collected from the tables of spec/lifecycles/proposal.md.
   The implementation accepts a transition from the allowed list under the condition of its row (when); a pair from the forbidden
@@ -205,8 +205,8 @@ allowed:
   from: sample_presented
   to: sample_judged
   by: the "Would accept" button
-  when: the answer is written into the sample and into calibration before the scores are shown
-  rules: [COM-11, DIG-6, PRP-6]
+  when: the answer is written into the sample and scores the forecasts before the scores are shown
+  rules: [COM-16, DIG-6, PRP-6]
   version: v0.2
 - id: sm-prp-26
   from: sample_presented
@@ -1696,105 +1696,105 @@ forbidden:
   from: sample_presented
   to: screened
   expect: rejected
-  rules: [COM-11, DIG-6, PRP-6]
+  rules: [COM-16, DIG-6, PRP-6]
   why: the lifecycle table has no such transition
   version: v0.2
 - id: sm-prp-x233
   from: sample_presented
   to: in_review
   expect: rejected
-  rules: [COM-11, DIG-6, PRP-6]
+  rules: [COM-16, DIG-6, PRP-6]
   why: the lifecycle table has no such transition
   version: v0.2
 - id: sm-prp-x234
   from: sample_presented
   to: recommended
   expect: rejected
-  rules: [COM-11, DIG-6, PRP-6]
+  rules: [COM-16, DIG-6, PRP-6]
   why: the lifecycle table has no such transition
   version: v0.2
 - id: sm-prp-x235
   from: sample_presented
   to: parked
   expect: rejected
-  rules: [COM-11, DIG-6, PRP-6]
+  rules: [COM-16, DIG-6, PRP-6]
   why: the lifecycle table has no such transition
   version: v0.2
 - id: sm-prp-x236
   from: sample_presented
   to: dismissed
   expect: rejected
-  rules: [COM-11, DIG-6, PRP-6]
+  rules: [COM-16, DIG-6, PRP-6]
   why: the lifecycle table has no such transition
   version: v0.2
 - id: sm-prp-x237
   from: sample_presented
   to: presented
   expect: rejected
-  rules: [COM-11, DIG-6, PRP-6]
+  rules: [COM-16, DIG-6, PRP-6]
   why: the lifecycle table has no such transition
   version: v0.2
 - id: sm-prp-x238
   from: sample_presented
   to: declined
   expect: rejected
-  rules: [COM-11, DIG-6, PRP-6]
+  rules: [COM-16, DIG-6, PRP-6]
   why: the lifecycle table has no such transition
   version: v0.2
 - id: sm-prp-x239
   from: sample_presented
   to: expired
   expect: rejected
-  rules: [COM-11, DIG-6, PRP-6]
+  rules: [COM-16, DIG-6, PRP-6]
   why: the lifecycle table has no such transition
   version: v0.2
 - id: sm-prp-x240
   from: sample_presented
   to: noted
   expect: rejected
-  rules: [COM-11, DIG-6, PRP-6]
+  rules: [COM-16, DIG-6, PRP-6]
   why: the lifecycle table has no such transition
   version: v0.2
 - id: sm-prp-x241
   from: sample_presented
   to: realizing
   expect: rejected
-  rules: [COM-11, DIG-6, PRP-6]
+  rules: [COM-16, DIG-6, PRP-6]
   why: the lifecycle table has no such transition
   version: v0.2
 - id: sm-prp-x242
   from: sample_presented
   to: realized
   expect: rejected
-  rules: [COM-11, DIG-6, PRP-6]
+  rules: [COM-16, DIG-6, PRP-6]
   why: the lifecycle table has no such transition
   version: v0.2
 - id: sm-prp-x243
   from: sample_presented
   to: realization_failed
   expect: rejected
-  rules: [COM-11, DIG-6, PRP-6]
+  rules: [COM-16, DIG-6, PRP-6]
   why: the lifecycle table has no such transition
   version: v0.2
 - id: sm-prp-x244
   from: sample_presented
   to: reverted
   expect: rejected
-  rules: [COM-11, DIG-6, PRP-6]
+  rules: [COM-16, DIG-6, PRP-6]
   why: the lifecycle table has no such transition
   version: v0.2
 - id: sm-prp-x245
   from: sample_presented
   to: sampled
   expect: rejected
-  rules: [COM-11, DIG-6, PRP-6]
+  rules: [COM-16, DIG-6, PRP-6]
   why: the lifecycle table has no such transition
   version: v0.2
 - id: sm-prp-x246
   from: sample_presented
   to: sample_presented
   expect: rejected
-  rules: [COM-11, DIG-6, PRP-6]
+  rules: [COM-16, DIG-6, PRP-6]
   why: the lifecycle table has no such transition
   version: v0.2
 - id: sm-prp-x247

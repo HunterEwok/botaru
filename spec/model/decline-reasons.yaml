@@ -1,12 +1,12 @@
 registry: decline-reasons
-version: 1
+version: 2
 description: >-
   Closed list of reasons for the "Reject" button on a proposal card. The person chooses the reason on
   the `proposal_reason` card, the continuation of the "Reject" button of the `proposal_card` card; the decision
   "Reject" is recorded only when a reason is chosen, and without a reason the proposal waits until the card
   deadline. There is no free feedback text: the decision carries only the reason code (DIG-4).
   The reason code does not get into the author's "My outcomes" (DIG-7). Entry fields: `meaning`, `calibration`
-  (whether the reason counts as an outcome in the calibration of lenses with a veto, COM-11), `rules`.
+  (whether the reason counts as a bad outcome in the forecast scores of lenses with a veto, COM-16, COM-17), `rules`.
 source: docs/improvements.md
 entries:
   - id: useful_done
@@ -31,9 +31,9 @@ entries:
     rules: [DIG-3]
   - id: too_risky
     since: v0.1
-    meaning: Too risky; since v0.2 counts as an outcome in the calibration of the security and operations lenses.
+    meaning: Too risky; since v0.2 counts as a bad outcome for the security and operations lenses (COM-16).
     calibration: true
-    rules: [DIG-3, COM-11]
+    rules: [DIG-3, COM-16]
   - id: duplicate
     since: v0.1
     meaning: Duplicate of another proposal.

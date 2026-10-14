@@ -28,7 +28,7 @@ machines:
       the bot; a hold of the `governance` scope (v0.2) is set by a person with `admin:governance` in the case's tenant; the
       scope and the effects are in the closed lists of the current version
     rules:
-    - GOV-23
+    - GOV-14
     - HLD-1
     - HLD-2
     - PRM-14
@@ -168,7 +168,7 @@ machines:
       below); otherwise `forbidden`; a hold of the `governance` scope is released by a person with `admin:governance` in the
       case's tenant
     rules:
-    - GOV-23
+    - GOV-14
     - HLD-1
     - HLD-2
     - PRM-14

@@ -32,9 +32,11 @@ checks:
   section: Tests without a model
   source: docs/quality.md:481
   spec:
-    What: a mock provider report
+    What: a provider report file imported with `farmctl spend reconcile --file`; a `spend_estimated` line older than `spend.estimate_release_after`
+      without a report
     Expectation: one adjustment line per day equals the difference; line prices did not change, `spend_estimated` lines got
-      `spend_reconciled`, their reserve returned to the limits; a difference above the tolerance from the settings gives `alarm.spend.estimate_drift`
+      `spend_reconciled`, their reserve returned to the limits; a difference above the tolerance from the settings gives `alarm.spend.estimate_drift`;
+      the old unreconciled line no longer counts toward the limits
 - id: blackbox:gateway/slow-response-one-call
   method: blackbox
   rules:

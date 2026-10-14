@@ -99,15 +99,15 @@ Only P4 sets the field; the same field from the runtime is rejected (GW-14). A r
 | `413 request_too_large` | `model_error` | no |
 | a `200` answer with `stop_reason: refusal` | no error: the answer is given to the runtime, the runtime decides | no |
 
-- The provider client inside P4 retries a call no more than once and only if the request did not go out, that is, there was no answer with a `request-id` header (GW-12). After the body was sent there is no retry.
+- The SDK in the runtime is configured without retries (`max_retries` 0). P4 retries a call no more than once and only if the request did not go out, that is, there was no answer with a `request-id` header (GW-12). After the body was sent there is no retry.
 - Answer deadline: `max_output_tokens` divided by the profile's `tokens_per_s`, multiplied by two, not less than 60 seconds (GW-12).
 - P4 writes the `request-id` of the answer into the usage line and the run record, but not into the answer to the runtime.
 - The fallback profile (GW-5) for the reason `overloaded` is a `529` answer, for the reason `unavailable` a `500` and a dropped connection, for the reason `retired` a `404` on the model.
 
 ## Reconciliation report
 
-- The reconciliation source (BUD-10) is the provider's cost report per workspace for a UTC day; it has no ids of individual requests, so reconciliation uses the daily total, not line by line.
-- The reconciliation process compares the sum of the workspace's usage lines for a day with the provider report and hands in the result with P2 `spend.reconcile`. The mismatch tolerance is set in the deployment settings; a mismatch above the tolerance gives `alarm.spend.estimate_drift`.
+- The reconciliation source (BUD-10) is the provider's cost report per workspace and UTC day, exported from the provider console as a CSV file (or read with the reporting key); it has no ids of individual requests, so reconciliation uses the daily total, not line by line.
+- `farmctl spend reconcile --file` reads the file and hands in each UTC day with P2 `spend.reconcile`; the core compares the sum of the workspace's usage lines for that day with the report. The mismatch tolerance is set in the deployment settings; a mismatch above the tolerance gives `alarm.spend.estimate_drift`.
 - The `spend_estimated` lines of that day get the `spend_reconciled` mark; the price of individual lines does not change.
 - The alarm `alarm.spend.reconcile_overdue` clears as soon as the day is reconciled.
 
@@ -115,7 +115,7 @@ Only P4 sets the field; the same field from the runtime is rejected (GW-14). A r
 
 - Each tenant has its own workspace and its own Anthropic key; only P4 holds the key, by name from the deployment settings, and it never goes to the runtime (GW-3).
 - The spend ceiling and rate limits of a workspace are set in the provider console and described in the deployment for each workspace (GW-9).
-- The daily P4 check with a probe call with `max_tokens: 1` for each workspace makes sure that the key works and the models of the tenant's profiles are available; a refusal gives an alarm with the code `provider_config`.
+- Because the rate limits belong to the tenant's workspace, a `429` answer is a wait of that tenant's pair, not a refusal (GW-10). There is no daily probe call: `farmctl doctor` reads the workspace ceilings when the reporting access allows it, and a key or model failure on a real call gives `provider_config` (GW-13).
 
 ## Checks
 

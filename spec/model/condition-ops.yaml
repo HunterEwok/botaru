@@ -1,76 +1,29 @@
 registry: condition-ops
-version: 1
+version: 2
 description: >-
-  Operations of the atom of a script `when` condition and of the `where` atom in `items.from` (SCR-3). An atom is
-  `{ref: "<step>.<field>", op, value}`, a rollup `{ref: "<step>.<count|sum|min|max>.<field>", op,
-  value: <number>}` or a step state `{ref: "<step>.state", op: eq | in, value}`. Atoms
+  Operations of the atom of a script `when` condition (SCR-3). An atom is `{ref: "<step>.<field>", op, value}`
+  over a closed result field of a step with one result, or a step state `{ref: "<step>.state", op, value}`. Atoms
   are combined only through `all`, `any` and `not`, nesting at most 2, at most 8 atoms.
-  There is no arithmetic, no string functions, no regular expressions, no access to time or to external data;
-  a new atom kind is added only through an ADR. Entry fields: `meaning`, `value` (which literal
-  the operation accepts), `aggregate` (whether it is allowed over a rollup), `state` (whether it is allowed over
-  a step state), `rules`.
+  There is no arithmetic, no comparison of sizes, no string functions, no regular expressions, no access to time
+  or to external data; a new atom kind is added only through an ADR. Entry fields: `meaning`, `value` (which
+  literal the operation accepts), `state` (whether it is allowed over a step state), `rules`.
 source: docs/scripts-and-translator.md
 entries:
   - id: eq
     since: v0.1
     meaning: The field equals the literal.
     value: a literal by the field schema
-    aggregate: true
     state: true
     rules: [SCR-3]
   - id: ne
     since: v0.1
     meaning: The field does not equal the literal.
     value: a literal by the field schema
-    aggregate: true
-    state: false
-    rules: [SCR-3]
-  - id: lt
-    since: v0.1
-    meaning: The number is less than the literal.
-    value: a number within the field bounds
-    aggregate: true
-    state: false
-    rules: [SCR-3]
-  - id: le
-    since: v0.1
-    meaning: The number is not greater than the literal.
-    value: a number within the field bounds
-    aggregate: true
-    state: false
-    rules: [SCR-3]
-  - id: gt
-    since: v0.1
-    meaning: The number is greater than the literal.
-    value: a number within the field bounds
-    aggregate: true
-    state: false
-    rules: [SCR-3]
-  - id: ge
-    since: v0.1
-    meaning: The number is not less than the literal.
-    value: a number within the field bounds
-    aggregate: true
-    state: false
+    state: true
     rules: [SCR-3]
   - id: in
     since: v0.1
     meaning: The field value is in the list of literals.
     value: a list of literals by the field schema
-    aggregate: false
     state: true
-    rules: [SCR-3]
-  - id: not_in
-    since: v0.1
-    meaning: The field value is not in the list of literals.
-    value: a list of literals by the field schema
-    aggregate: false
-    state: false
-    rules: [SCR-3]
-  - id: exists
-    since: v0.1
-    meaning: The field is present in the closed result of the step.
-    value: none
-    aggregate: false
-    state: false
     rules: [SCR-3]

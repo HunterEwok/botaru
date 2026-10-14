@@ -8,11 +8,10 @@ machines:
   states:
   - id: open
     terminal: false
-    meaning: The offer waits for the recipient or its choice, no longer than `open_until` (the end of the seal of the retiring
-      identity)
+    meaning: The offer waits for the successor, no longer than `open_until` (the end of the seal of the retiring identity)
   - id: closed
     terminal: true
-    meaning: The recipient took facts, declined, or the deadline passed
+    meaning: The facts were copied, or the deadline passed
   transitions:
   - from:
       none: true
@@ -44,18 +43,12 @@ machines:
   - id: waiting
     terminal: false
     meaning: 'There is no successor yet: the seat is free or the worker is not enrolled yet'
-  - id: pending
-    terminal: false
-    meaning: The choice task is enqueued
-  - id: picked
+  - id: copied
     terminal: true
-    meaning: The recipient took at least one fact; the copies are written with `inherited`
-  - id: declined
-    terminal: true
-    meaning: The recipient took 0 facts
+    meaning: The core rechecked the facts and copied those that passed, with `inherited` (possibly none)
   - id: expired
     terminal: true
-    meaning: The choice task failed after 3 retries, or the successor did not appear before `open_until`
+    meaning: The successor did not appear before `open_until`
   transitions:
   - from:
       none: true
@@ -64,7 +57,7 @@ machines:
       - waiting
       text: recipient `waiting`
     by: the core
-    when: the successor by the MEM-7 table is not determined yet
+    when: the successor under MEM-7 does not exist yet
     rules:
     - MEM-7
   - from:
@@ -74,46 +67,11 @@ machines:
       text: (none), recipient `waiting`
     to:
       states:
-      - pending
-      text: recipient `pending`
-    by: the core enqueues `memory.pick.v1`
-    when: the successor exists or appeared before `open_until`
-    rules:
-    - MEM-7
-  - from:
-      states:
-      - pending
-      text: recipient `pending`
-    to:
-      states:
-      - picked
-      text: recipient `picked`
-    by: P1 `complete` of the choice task
-    when: '`take` is not empty; every taken fact is rechecked against the recipient''s rights'
-    rules:
-    - MEM-7
-  - from:
-      states:
-      - pending
-      text: recipient `pending`
-    to:
-      states:
-      - declined
-      text: recipient `declined`
-    by: P1 `complete` of the choice task
-    when: '`take` is empty'
-    rules:
-    - MEM-7
-  - from:
-      states:
-      - pending
-      text: recipient `pending`
-    to:
-      states:
-      - expired
-      text: recipient `expired`
-    by: the core
-    when: the task failed after 3 retries
+      - copied
+      text: recipient `copied`
+    by: the core, in the transaction where the successor exists or appears
+    when: the successor exists or appeared before `open_until`; every copied fact passed the recheck with the successor's
+      permissions and fits the free room of its space
     rules:
     - MEM-7
   - from:

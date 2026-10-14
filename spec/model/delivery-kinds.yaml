@@ -1,5 +1,5 @@
 registry: delivery-kinds
-version: 3
+version: 4
 description: >-
   Delivery kinds (the kind field of the Delivery record) on which the core code and the recipient
   worker branch. A decision card and a notice to people are delivered with
@@ -65,11 +65,6 @@ entries:
     meaning: a code text to the tenant admins and the operator in a direct chat when export to the monitoring system fails for longer than 15 minutes; only the tenant and the age of the last successful export, at most once in 6 hours
     target: [subject]
     rules: [MON-12, MON-11]
-  - id: manager_spend_paused
-    since: v0.1
-    meaning: a code notice to the tenant admins about a pause of the farm manager seat in this tenant by the money safeguard
-    target: [subject]
-    rules: [MGR-14]
   - id: digest
     since: v0.1
     meaning: a reporter's digest to people; the code builds the table, numbers and cards from a snapshot, the model paragraph is a separate labeled part

@@ -102,33 +102,6 @@
         }
       }
     },
-    "paused_in": {
-      "type": "array",
-      "maxItems": 1000,
-      "description": "Seat pauses per tenant by the money safeguard of the manager line (MGR-14): seat tasks in the tenant are not handed out until until, the epoch does not change, and the seat stays held.",
-      "items": {
-        "type": "object",
-        "required": [
-          "tenant",
-          "until",
-          "reason"
-        ],
-        "properties": {
-          "tenant": {
-            "$ref": "urn:botaru:schema:common:1#/$defs/tenant_name",
-            "description": "Pause tenant."
-          },
-          "until": {
-            "$ref": "urn:botaru:schema:common:1#/$defs/datetime",
-            "description": "Start of the next daily window of the line."
-          },
-          "reason": {
-            "const": "manager_spend",
-            "description": "Pause reason."
-          }
-        }
-      }
-    },
     "decide_until": {
       "$ref": "urn:botaru:schema:common:1#/$defs/datetime",
       "description": "With the reason incident: the end of the incident_stop.decide_within period (default and at most 7 days), after which the identity lifecycle retires the holder with the trigger replaced_after_incident."

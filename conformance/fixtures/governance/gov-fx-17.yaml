@@ -4,8 +4,7 @@ rules: [GOV-17]
 version: v0.2
 description: 'A commission seat holder does not review its own proposals, and a reviewer does not see the author''s identity, role
   and position. The farm_manager lens is not enqueued for proposals authored by the manager seat or whose target is a role of
-  profile farm-manager or farm-manager-reader or another target from the MGR-16 list. A ballot cannot name the voter''s own seat or
-  the manager seat.'
+  profile farm-manager or farm-manager-reader or another target from the MGR-16 list.'
 given:
   tenant: demo
   commission:
@@ -58,18 +57,3 @@ cases:
     steps:
     - stand: {op: loop.tick, loop: proposal}
     expect: {tasks_of_type: {review.farm_manager.v1: 0}, verdict_mark: null}
-- id: gov-fx-17-e
-  description: The enum of a voter excludes its own seat and the manager seat; a P4 value naming either is not a ballot.
-  given:
-    case: {id: gc_7, snapshot: {voters: [bot_05, bot_06, bot_09, bot_41], list: ['commission:1', 'commission:2', 'commission:3']}}
-  steps:
-  - stand: {op: loop.tick, loop: governance}
-  - model: {forced_output: {choice: farm-manager}}
-    by: attempt:governance.ballot.v1
-    context: {acting_bot: bot_06}
-    expect: {reason: output_schema_invalid}
-  expect:
-    enum:
-      bot_05: ['commission:2', 'commission:3']
-      bot_41: ['commission:1', 'commission:2', 'commission:3']
-    ballot_of_bot_06: null

@@ -12,8 +12,10 @@ The organization's limits at the provider are shared by all its workspaces, so o
 
 - a tenant's monthly limit `month_eur` is no more than its workspace ceiling multiplied by a share from the deployment (0.9 by default), and the sum of `month_eur` of all tenants is no more than the same share of the organization's ceiling: the farm limit runs out before the provider ceiling, and the tenant gets `budget_exhausted` with a reset time, not `provider_spend_cap` until the end of the month;
 - the limits of the test workspaces and the quality evaluation bench together are no more than the share of the organization's limit that the deployment sets (for example, 100 USD a month for the bench); one eval run on the bench is also limited by the thresholds `thresholds.budget` (`max_eur_per_run`, `max_eur_per_case`), and when they are exceeded the run stops (`evals/README.md`);
-- the check runs at `apply` and once a day: the core compares the description with the tenants' limits, reads the ceilings at the provider if the provider binding allows it, and makes a probe, one minimal call for each (workspace, model profile) pair, including seat profiles;
-- a mismatch or a failed probe gives a code alarm and a line in `farmctl doctor`, and a configuration failure sets the reason `provider_config` for the pair (GW-13).
+- the check runs at `apply`: the core compares the description with the tenants' limits;
+- there is no daily probe: `farmctl doctor` reads the ceilings at the provider if the provider binding allows it and shows a mismatch with the description, and a configuration failure on a real call sets the reason `provider_config` for the pair (GW-13).
+
+Because the rate limits belong to the tenant's own workspace, a provider rate limit answer is a wait for that tenant, not a refusal, and it does not touch other tenants (GW-10).
 
 There is no automatic switch to another key, another workspace or another provider: when a ceiling is exhausted, the spending would otherwise silently move to another bill. The runtime reaches the model only through P4, with no fallback or auxiliary providers bypassing it (DEP-5); a fallback model is possible only when declared and only inside P4 (GW-5).
 
@@ -118,18 +120,17 @@ A role whose `base` or `analysis` slot profile is not in the tenant's `models_al
 
 ## Slots and purposes
 
-Which model an attempt gets is decided by the core from the task type's purpose (`purpose`, the closed list `spec/model/task-purposes.yaml`). In v0.1 there are first the purposes `work` and `report` and the slot `base`; after the core and the first bot, together with the improvement cycle, the farm manager and the translator, the purposes `translate`, `insight`, `aggregate`, `review`, `handover`, `manage`, `inspect` and the slot `seat` appear; `governance` and the slot `granted` appear from v0.2 (D-71, D-80). The purpose determines in code the model slot and the budget line; the priority class is set by the type (`dispatch.priority_class`, DSP-5), and the purposes `insight`, `aggregate` and `review` always run in class 5 from v0.2 (BUD-8).
+Which model an attempt gets is decided by the core from the task type's purpose (`purpose`, the closed list `spec/model/task-purposes.yaml`). In v0.1 there are first the purposes `work` and `report` and the slot `base`; after the core and the first bot, together with the improvement cycle, the farm manager and the translator, the purposes `translate`, `insight`, `aggregate`, `review`, `manage`, `inspect` and the slot `seat` appear; `governance` and the slot `granted` appear from v0.2 (D-71, D-80). The purpose determines in code the model slot and the budget line; the priority class is set by the type (`dispatch.priority_class`, DSP-5), and the purposes `insight`, `aggregate` and `review` always run in class 5 from v0.2 (BUD-8).
 
 | Purpose | What it is | Slot | Budget line |
 |---|---|---|---|
 | `work` | main work | `base` | `work` |
 | `report` | a reporter's report | `base` | `work` |
 | `translate` | translating an assignment into a script | `base` | `work` |
-| `handover` | the memory recipient choosing facts | the recipient role's slot | `work` |
 | `insight` | a functionary's analysis of its own work | `analysis` | `insight` |
 | `aggregate` | generalization by an aggregator | `analysis` | `aggregate` |
 | `review` | a commission lens review | `base` of the reviewer role; `seat` if a seat writes the review | `review` |
-| `governance` | a seat's ballot | `seat` | `governance` |
+| `governance` | none since D-115: a case runs no bot tasks | `seat` | `governance` |
 | `manage` | a farm manager decision in a tenant | `seat` | `manager` |
 | `inspect` | reading tenant data for the farm manager | `seat` | `manager` |
 
@@ -156,7 +157,7 @@ Every call on a fallback model writes the actual model and a fallback flag into 
 1. Checks the handle: the lease is alive, the store epoch is current (GW-3, RT-3).
 2. Checks the request (GW-1): `tools` matches the P3 catalog of this handle by names and schema hashes; there are no provider server tools, no `mcp_servers`, no `container` and no region field; there are no fields outside the allowlist of the provider binding `spec/bindings/model-providers/<provider>.md` (in v0.1 there is one reference binding, to the Anthropic Messages API, `anthropic.md`, D-85). A runtime that added a built-in tool fails at the gateway. The translator's catalog consists of a single `propose_script` (PRF-1), and a translator request with another tool is rejected.
 3. Resolves the model profile by slot (GW-7) and checks the rank (GOV-3), the provider against `privacy.subprocessors` (SEC-8), the region and the retention (GW-14, GW-15).
-4. Looks at the pair's circuit breaker (GW-11) and at the pool's rate limiter (GW-10).
+4. Looks at the pair's circuit breaker (GW-11) and whether the pair waits for the provider rate limit (GW-10).
 5. Reserves the worst case in all applicable limits, in the task's budget line and, for a call under a grant, in the remainder of the grant amount `cap_eur` (GW-2), at the most expensive model it may use in this call (GW-6), and sets an output limit in the request no higher than the profile's `max_output_tokens`.
 6. Sets the region (GW-14) and the prompt cache point after the unchanging part of the request (GW-16) and sends the request with the tenant's key and into the tenant's workspace (GW-3).
 7. Having received a response, charges usage per the provider's response summed over all iterations, including server-side compaction, cache write and read and reasoning, writes a usage line (BUD-3) and releases the rest of the call's reserve (GW-2).
@@ -176,7 +177,7 @@ A provider can be unavailable for minutes and hours. During this time the farm m
 |---|---|---|---|---|
 | `provider_unavailable` | network, 5xx responses, provider overload, response deadline, open circuit | no | yes, with a growing pause until `deadline` | `failed(deadline_exceeded)` |
 | `provider_rate_limited` | the provider asks to wait | no | yes, after `retry_after_s` | `failed(deadline_exceeded)` if the wait would go past the deadline |
-| `provider_quota` | the tenant has no free pool share (GW-10) | no | the task waits for dispatch | `failed(deadline_exceeded)` |
+| `provider_quota` | the pair waits for the rate limit of the tenant's workspace (GW-10) | no | the task waits for dispatch | `failed(deadline_exceeded)` |
 | `provider_spend_cap` | the workspace spending ceiling at the provider is exhausted | no | no | `failed` and a code alarm (CAP-2) |
 | `provider_config` | the key is wrong or revoked, no access, the model is not found or withdrawn, the workspace configuration failed, the model is unavailable with the workspace retention | no | not on a timer, the task waits for a fix | code alarm; `failed(deadline_exceeded)` if not fixed before the deadline |
 | `budget_exhausted` | the farm's own limit is exhausted | no | no | `rejected` at enqueue or `failed` during work (BUD-4) |
@@ -195,7 +196,7 @@ After a pause the circuit is half-open: one task makes a probe call; success clo
 
 ### One retry layer
 
-Only one layer retries a provider error (GW-12). The provider client inside P4 makes at most one retry. The runtime does not retry a P4 error: it ends the run with the reason that P4 returned. After that the core retries the task per the type's retry policy. The pause before a provider-caused retry grows with a multiplier up to a ceiling (60 s by default) and is taken with full random jitter, from zero to the current pause, so that the waiting tasks do not all arrive at once after the provider recovers. Without this rule retries multiply: three layers of three retries give 27 requests for one error.
+Only one layer retries a provider error (GW-12). The model SDK in the runtime makes no retries, and P4 retries a call once, only if the request was not sent. The runtime does not retry a P4 error: it ends the run with the reason that P4 returned. After that the core retries the task per the type's retry policy. The pause before a provider-caused retry grows with a multiplier up to a ceiling (60 s by default) and is taken with full random jitter, from zero to the current pause, so that the waiting tasks do not all arrive at once after the provider recovers. Without this rule retries multiply: three layers of three retries give 27 requests for one error.
 
 P4 computes the call response deadline from the profile rather than using a fixed one: `max_output_tokens` divided by the output speed `tokens_per_s`, with a 2x margin and no less than 60 seconds. A rank 4 call with long reasoning takes minutes, and a short deadline would turn it into a call without a response with a full charge. A client retry inside P4 is allowed only if the request was not sent, that is, the call has no provider `request_id`; after the body is sent there is no retry, and a call without a response is charged per BUD-11, because otherwise the provider would execute and bill for both. Fixture: the mock provider takes longer than the deadline to answer; there is exactly one provider call.
 
@@ -205,9 +206,9 @@ Besides the three attempts, a task has a non-waivable ceiling on runtime runs, `
 
 A provider configuration error gives the reason `provider_config`. It does not spend an attempt, is not retried on a timer, gives a code alarm and opens the circuit of its pair, and the task waits for a fix until its `deadline`. Retrying a wrong key on a timer is pointless: only a person can fix it.
 
-### Rate limiter
+### Rate limits
 
-The provider's rate limits (requests and tokens per minute) are shared by a model pool across the whole organization at the provider. To keep one tenant or an eval run from taking them from the others, P4 keeps a rate limiter for each pool with a share for each tenant that the deployment sets (GW-10). The dispatcher does not hand out a task for whose pool the tenant has no free share (dispatch condition D19, `waiting_reason: provider_quota`), and the runtime is not started for it. A call of a run already in progress beyond the share is delayed by P4 until the share frees up, within the attempt's deadline. If it does not get through in time, the run ends with the reason `provider_quota`, which does not spend an attempt and does not count toward `max_runs`.
+P4 keeps no rate limiter of its own: each tenant's workspace has its own rate limits at the provider (GW-9), so one tenant or an eval run does not take them from the others. A provider answer that asks to wait ends the call with `provider_rate_limited` and the wait time; it does not spend an attempt, and the pair (workspace, model pool) waits until that time (GW-10). The dispatcher does not hand out a task of a waiting pair (dispatch condition D19, `waiting_reason: provider_quota`), and the runtime is not started for it. A run that ended before its first response with `provider_rate_limited` or `provider_quota` does not count toward `max_runs`, and the retry pause has a ceiling and jitter (GW-12).
 
 ## Money
 
@@ -233,7 +234,7 @@ Limits on the example of `demo`:
 | principal per day | the largest `day_eur` among the principal's groups; only for tasks of line `work` | `user` 1 EUR, `staff` 5 EUR, `system-ops` (principal `system`) 3 EUR |
 | task tree | `tree_budget_eur` of the root type | `ops.investigate.v1`: 0.40 EUR |
 | budget line | `lines` in the tenant manifest; in v0.1 `work`, `insight`, `aggregate`, `review` and `manager`, the others from v0.2 | `insight` 15 EUR a month and no more than 5 per role, `aggregate` 5, `review` 50, `governance` 5, `manager` 2 EUR a day and 30 a month |
-| meters other than money | `spec/model/meters.yaml` | 60 sandbox minutes a day and 3 tasks in progress per person |
+| units other than money | `spec/model/meters.yaml`; `tokens` and `message` are counted in usage lines without a limit of their own (BUD-5) | from v0.2, 3 tasks in progress per person |
 | wake-ups | `wake_day_eur` and `wakes_per_day` in `Tenant.spec.messaging`, per (tenant, recipient role) pair | 1.5 EUR (one tenth of `day_eur`) and 200 a day |
 
 ```yaml
@@ -250,20 +251,20 @@ budgets:
     manager:    {day_eur: 2, month_eur: 30}
 ```
 
-Limits live only in the tenant manifest in git. P2 `budget.set` only temporarily lowers a principal's limit and only with a deadline (MAN-5); a limit can be raised only by editing the manifest and running `apply`. Schedules pay from the tenant's monthly and daily limits and from the daily limit of the principal `system`. A principal's daily limit applies only to tasks of line `work` (BUD-1): reviews, analysis, the farm manager's review and seat tasks are limited only by their line and the tenant limits, so a hundred reviews in a day do not get in the way of a nightly schedule from `system`.
+The tenant's month and day limits, the tree limit and the line are the four reserve limits; the daily limit of a person and the wake-up ceiling are two simple counters next to them (BUD-1, MSG-11). Limits live only in the tenant manifest in git. P2 `budget.set` only temporarily lowers a principal's limit and only with a deadline (MAN-5); a limit can be raised only by editing the manifest and running `apply`. Schedules pay from the tenant's monthly and daily limits and from the daily limit of the principal `system`. A principal's daily limit applies only to tasks of line `work` (BUD-1): reviews, analysis, the farm manager's review and seat tasks are limited only by their line and the tenant limits, so a hundred reviews in a day do not get in the way of a nightly schedule from `system`.
 
 ### Reserve and charge
 
 Overspending any limit is zero (BUD-2). Money is reserved twice.
 
 1. When a task is enqueued (`enqueue`), the core reserves an estimate of its price in all applicable limits (BUD-1): the tenant's monthly and daily limits, the daily limit of the initiating principal (only for tasks of line `work`), the task tree limit and the budget line of the type's purpose (BUD-7). If a task has several initiators (for example, a wake-up on several messages that have `origininitiators`), the reserve is taken from the daily limit of each of them. A wake-up task also reserves from the daily wake-up ceiling per (tenant, recipient role) pair, `wake_day_eur` and `wakes_per_day` from `Tenant.spec.messaging`: this is the MSG-11 counter, not a budget line. Campaign items with a card and script steps are paid from the reserve of the campaign or the run (BUD-12). If any limit is exhausted: `rejected(budget_exhausted)`, while a wake-up is skipped with an event, and the inbox entries wait for their deadline (MSG-11).
-2. Before each model call, P4 reserves the worst case: an upper estimate of the input plus `max_output_tokens` at the most expensive model that P4 may use in this call, that is, the slot's profile and its declared fallbacks (GW-2, GW-6). A tool call goes ahead only after a reserve at the price from the tool manifest.
+2. Before each model call, P4 reserves the worst case: an upper estimate of the input plus `max_output_tokens` at the most expensive model that P4 may use in this call, that is, the slot's profile and its declared fallbacks (GW-2, GW-6). A tool call with `billing: external` goes ahead only after a reserve at its `price_eur` from the plugin manifest (BUD-5).
 
 The enqueue estimate is computed as the 90th percentile of the actual price of the finished tasks of this type in the tenant over the last 30 days, using the price of the whole task tree from the usage lines (BUD-14). For a type with no finished tasks in 30 days, the estimate is the worst case: at the most expensive model that P4 may resolve for tasks of this type, and at the tree limit `tree_budget_eur` (GW-6). The way the enqueue estimate is computed does not affect zero overspending: before each call P4 reserves the worst case anyway.
 
 After the response, P4 charges the actual usage and releases the rest of the call's reserve. The task's reserve is released when the task becomes terminal, and a fixture checks that a stuck reserve does not eat the limit (BUD-1).
 
-**A call without a response.** A call that P4 sent to the provider and for which it got no response (connection drop, deadline, restart of the core or P4) is charged at its full reserve with a usage line marked `spend_estimated`, and this reserve is not released until reconciliation with the provider's report (BUD-11, BUD-10). The provider may have executed the request and billed for it without the farm learning about it; charging the worst case keeps the limit a ceiling, and reconciliation returns to the limit what the provider did not take. Fixture: the mock provider accepts the request and drops the connection; the `spend_estimated` line equals the call's reserve, and the reserve stays charged after the task ends until reconciliation.
+**A call without a response.** A call that P4 sent to the provider and for which it got no response (connection drop, deadline, restart of the core or P4) is charged at its full reserve with a usage line marked `spend_estimated`, and this reserve is not released until reconciliation with the provider's report or its release by time (BUD-11, BUD-10). The provider may have executed the request and billed for it without the farm learning about it; charging the worst case keeps the limit a ceiling, and reconciliation returns to the limit what the provider did not take. Fixture: the mock provider accepts the request and drops the connection; the `spend_estimated` line equals the call's reserve, and the reserve stays charged after the task ends until reconciliation.
 
 ### Usage line
 
@@ -300,10 +301,10 @@ Every usage line carries a budget line `line`; the core sets it from the type's 
 
 Who pays from which line:
 
-- the farm manager's work in a tenant (decisions, reads, the daily review) is paid from that tenant's `manager` line with its key (MGR-20); the service tenant `farm` does not pay for it; the line's daily limit `manager.day_eur` is no less than the price of three reads of one worst-case incident from the price table (BUD-15), otherwise `apply` rejects the tenant with `manager_line_too_small`;
+- the farm manager's work in a tenant (decisions, reads, the daily review) is paid from that tenant's one `manager` line with its key, with a daily and a monthly limit and 30% of the day kept for sev1 (MGR-20); the service tenant `farm` does not pay for it; the line's daily limit `manager.day_eur` is no less than the price of three reads of one worst-case incident at the seat profile prices, otherwise `apply` rejects the tenant with `manager_line_too_small`;
 - lens reviews are paid from the line `review`, and one author role gets no more than 30% of the line per month; if the line or the role's share is not enough, proposals wait in `screened` and after `review_wait_max` move to `parked(review_budget)` (COM-6);
-- from v0.2 the line `review` also pays for the review of the `farm_manager` lens on every proposal (GOV-25; it is absent with `farm_manager.enabled: false` or `farm_manager.lens: false`, D-77), shadow reviews (COM-10) and the assessment of escalations to the farm manager by the necessity lens (MGR-6);
-- case tasks, including seat ballots, are paid from the line `governance` (GOV-15);
+- from v0.2 the line `review` also pays for the review of the `farm_manager` lens on every proposal (GOV-25; it is absent with `farm_manager.enabled: false`, D-77), shadow reviews (COM-10) and the assessment of escalations to the farm manager by the necessity lens (MGR-6);
+- the line `governance` stays in the budget (BUD-7); a case runs no bot tasks since D-115;
 - a grant of a stronger model is paid from the line `grant`, a takeover from the line `takeover`.
 
 ### Priority class
@@ -324,30 +325,31 @@ A script run (`docs/scripts-and-translator.md`) is paid the same way as a campai
 
 Usage does not go beyond the shown amount. An item that does not fit into the remainder of the campaign's reserve is not released, and the campaign pauses with the reason `estimate_exceeded`. The "Continue" button does not lift such a pause: the campaign can only be canceled and the unreleased items retried in a new campaign with a new estimate (ORC-8).
 
-### Quotas beyond money
+### Units beyond money
 
-Money is not the only expense. The registry `spec/model/meters.yaml` lists the consumable units: `eur_cents`, `tokens`, `tool_calls`, `sandbox_seconds`, `storage_bytes`, `approvals_requested`. Each unit is reserved before use and charged by actual use, just like money (BUD-5). A limit is set per unit and scope: tenant, principal, task tree, chat. The usage line carries the unit.
+Money is the one unit that is reserved before use and has limits (BUD-5). The registry `spec/model/meters.yaml` names the units a usage line carries: `eur_cents` for money, `tokens` for model tokens by kind and `message` for a bot message; they have no limits of their own. A tool whose calls the farm pays outside the model provider declares `billing: external` with the price of one call `price_eur` in its plugin manifest, and is reserved and charged like money; a tool with `billing: external` without a price does not pass `apply`. Other expenses have their own counters: store bytes in `max_storage_bytes` (CAP-1) and approval cards in `attention.cards_per_tenant_hour` (APR-2).
 
-The non-consumable limit `Tenant.spec.budgets.tasks_in_flight` caps the direct requests of one person or program with a running attempt. Exceeding it is not a refusal: the request waits in `submitted` with `waiting_reason: in_flight_cap` (condition D21), and the person's waiting requests of one type go out in enqueue order, while a request held by another condition (no executor, a hold, a ceiling) does not hold back the others; tasks of `system`, campaign items, children and continuations do not count (BUD-6). Defaults: 60 sandbox minutes a day and 3 tasks in progress per person.
+The non-consumable limit `Tenant.spec.budgets.tasks_in_flight` caps the direct requests of one person or program with a running attempt. Exceeding it is not a refusal: the request waits in `submitted` with `waiting_reason: in_flight_cap` (condition D21), and the person's waiting requests of one type go out in enqueue order, while a request held by another condition (no executor, a hold, a ceiling) does not hold back the others; tasks of `system`, campaign items, children and continuations do not count (BUD-6). Default: 3 tasks in progress per person.
 
 ### Reconciliation with the provider
 
-The farm counts usage itself, while the provider bills by its own numbers. Once a day the usage of each workspace is reconciled with the provider's report (BUD-10):
+The farm counts usage itself, while the provider bills by its own numbers. Code reconciles the usage of each workspace with the provider's report; this is the measure of the money goal, not a manual check by the operator (BUD-10):
 
-1. The operator's reconciliation process outside the core gets the provider's usage report with its own reporting key. The core, the workers and the runtimes do not have this key.
-2. The process passes the report to the core through P2 `spend.reconcile`.
+1. The operator exports the usage report file from the provider console and imports it with `farmctl spend reconcile --file`; a process outside the core with the provider's reporting key may hand in the same data. The core, the workers and the runtimes do not have this key.
+2. The data reaches the core through P2 `spend.reconcile`, one request per UTC day of the report.
 3. There is one reconciliation (D-87 (1)): the core compares the provider's daily sum per workspace with the sum of its own usage lines for the same day in micro-euros. There is no line-by-line reconciliation: the provider's report has no ids of individual requests.
 4. The difference is written as one signed correction line (`correction_eur_micros`). The `spend_estimated` lines of that day get the flag `spend_reconciled` without a price change, and their reserve returns to the limits. If the difference is larger than the tolerance from the deployment settings, the core raises the alarm `alarm.spend.estimate_drift` (warn): the farm's bill diverges from the provider's bill and should be investigated.
-5. If reconciliation has not happened for two days (the operator's process did not run, the report did not arrive), the core raises the alarm `alarm.spend.reconcile_overdue` (warn).
-6. A reconciliation that closed the gap clears both reconciliation alarms, `alarm.spend.reconcile_overdue` and `alarm.spend.unreconciled`, and restores the daily limits; neither a person nor time clears these alarms.
+5. A `spend_estimated` line that no reconciliation reached within `spend.estimate_release_after` (7 days by default) releases its reserve by time: it counts as zero in the limits and in the daily sum, and the correction line of its day later brings in what the provider actually billed. Reconciliation may then run at the rhythm of the provider's reports, for example monthly, without freezing the limits.
+6. If a workspace has no reconciliation for longer than `spend.reconcile_overdue_days` (35 days by default, set to the rhythm of reconciliation), the core raises the alarm `alarm.spend.reconcile_overdue` (warn).
+7. A reconciliation that closed the gap clears both reconciliation alarms, `alarm.spend.reconcile_overdue` and `alarm.spend.unreconciled`, and restores the daily limits; neither a person nor time clears these alarms.
 
 After the store is restored from backup, the core does not become ready until the usage gap since the backup is filled with `spend_reconciled` lines from the provider's report (RET-6). Otherwise the calls between the backup and the failure would vanish from the limits, and the limit would stop being a ceiling. The only exception is `restore.complete --spend-pending`: the core becomes ready with the alarm `alarm.spend.unreconciled` (warn), and the daily limits of all tenants are cut in half while the gap is open; reconciliation with the report for the gap clears the alarm and restores the limits.
 
-### Honest price table
+### Usage per line in doctor
 
-Every tenant has fixed costs that run even when people ask nothing: commission reviews, the farm manager's lens on proposals, the farm manager's daily review, the farm manager's reads for incidents. Their estimate is computed by code from the model profiles (prices of input, output with reasoning, and cache) and the tenant manifests, not by a person by hand (BUD-15). The table contains the price of one review of each lens, and it is the `tree_budget_eur` of its review type (BUD-13): in the `demo` example 0.08 EUR for the types `review.*.v1` on rank 3 profiles and 0.20 EUR for `review.farm_manager.v1` on the farm manager seat profile (`docs/improvements.md`). The daily review spends no more than `daily_review_max_eur` from the block `farm_manager.control_limits` of the farm charter per day (MGR-41). The farm manager's reads for incidents are counted as three reads of one worst-case incident: 60 thousand input tokens together and three responses at the seat profile's `max_output_tokens`; the MGR-20 lint compares `manager.day_eur` with this price. For a tenant with `farm_manager.enabled: false` the table has no farm manager lines, with `farm_manager.lens: false` no lens line, with `farm_manager.daily_review: false` no review line (D-77). `farmctl doctor` shows this table for each tenant with the date of the profile prices, with the daily review as a separate line, and P2 `manager.cost` shows the farm manager's usage by kind of work. The price tables in the skeleton examples are produced by the same computation.
+Every tenant has fixed costs that run even when people ask nothing: commission reviews, the farm manager's lens on proposals, the farm manager's daily review, the farm manager's reads for incidents. There is no estimated price table: `farmctl doctor` shows for each tenant the actual usage of each budget line over the last 30 days next to the line's limits, with the daily review as a separate row (BUD-15), and P2 `manager.cost` shows the farm manager's usage by kind of work. For a tenant with `farm_manager.enabled: false` there are no farm manager rows (D-77). The money checks at `apply` are three formulas: the workspace ceiling (GW-9), the `manager` line (MGR-20: `manager.day_eur` is not less than three reads of one worst-case incident, 60 thousand input tokens together and three responses at the seat profile's `max_output_tokens`) and the `review` line below.
 
-The `apply` lint checks that there is enough money for reviews (BUD-13). If a tenant's line `insight` or `aggregate` is above 0, the lint takes every role with an `insight` section and every aggregator and computes the role's ceiling of proposals per month: the ceiling of its runs over 31 days (`insight.max_runs` per INS-4, for an aggregator the slots of its schedules) multiplied by the ceiling of proposals per result (INS-1). The role's estimate is this ceiling multiplied by the price of the reviews of one proposal: the sum of `tree_budget_eur` of the review types of all commission seat lenses, plus from v0.2 the `farm_manager` lens (GOV-25) and the shadow reviews at the shadow shares from the commission manifest (COM-10). COM-6 reserves the same sum in the line `review` when a proposal goes to review, so the lint and the reserve compute the same number, and assumptions about the number of tokens are not part of the computation. A lens model profile with `max_output_tokens` above 2000 does not pass `apply`: otherwise the worst-case reserve for a review is many times its price, and proposals sit in `screened` with a full line. Each role's estimate must fit into the share of the line `review` available to one author role (COM-6), and the sum of the estimates into the line's monthly limit. Otherwise `apply` is rejected, and `farmctl doctor` shows the missing amount. Without this lint, analysis proposals would silently sit without reviews.
+The `apply` lint checks that there is enough money for reviews with one formula (BUD-13). If a tenant's line `insight` or `aggregate` is above 0, `review.month_eur` must be no less than the sum over the roles of `insight.max_per_week` times 4.4 times the price of the reviews of one proposal. That price is the sum of `tree_budget_eur` of the review types of all lenses that review a proposal: the commission seat lenses and, from v0.2, the `farm_manager` lens (GOV-25), in the `demo` example 0.08 EUR for the types `review.*.v1` on rank 3 profiles and 0.20 EUR for `review.farm_manager.v1` on the farm manager seat profile (`docs/improvements.md`). COM-6 reserves the same sum in the line `review` when a proposal goes to review, so the lint and the reserve compute the same number, and assumptions about the number of tokens are not part of the computation. A lens model profile with `max_output_tokens` above 2000 does not pass `apply`: otherwise the worst-case reserve for a review is many times its price, and proposals sit in `screened` with a full line. Otherwise `apply` is rejected, and `farmctl doctor` shows the missing amount. When the line runs out at run time, proposals wait for review (COM-6).
 
 ## Example prices with a date
 
@@ -375,16 +377,16 @@ Fixed parts for a tenant with 10 workers at 10 proposals a week (about 43 a mont
 | farm manager reads, rank 4 | up to 60 thousand input and 3-5 thousand output per read, 3 reads per incident | about 0.75-0.85 USD per read | about 2.5 USD per incident |
 | total | | | 30-40 EUR |
 
-That is 10-13% of a monthly limit of 300 EUR. There is no overspending (BUD-2, BUD-7), but with an empty `review` line improvements silently stall, so `farmctl doctor` shows the table (BUD-15), and the lint catches a shortage of money for reviews (BUD-13). A round to fill a vacant commission seat (5 seats and the farm manager) costs about 0.48 USD; 4 rounds about 1.65 EUR.
+That is 10-13% of a monthly limit of 300 EUR. There is no overspending (BUD-2, BUD-7), but with an empty `review` line improvements silently stall, so `farmctl doctor` shows the usage of every line (BUD-15), and the lint catches a shortage of money for reviews (BUD-13). A round to fill a vacant commission seat (5 seats and the farm manager) costs about 0.48 USD; 4 rounds about 1.65 EUR.
 
 ## Who does what
 
 | Who | What it does | What it does not do |
 |---|---|---|
-| P4 (part of the core) | holds the tenants' keys; checks the request; resolves the model; keeps the circuit breaker and the rate limiter; reserves, charges, writes usage lines; sets the region and the cache point | does not let a request through outside the allowlist |
-| core | reserves at enqueue; sets the budget line; computes thresholds; checks workspace ceilings and makes probes once a day; compares the provider's report with the usage lines and turns `spend_estimated` into actual figures; lints profiles, their price age, slots, lines and money for reviews; de-identifies the principal in usage lines after 93 days | does not choose the model from the task text |
-| dispatcher | does not hand out tasks with an open circuit or without a pool share; keeps analysis and reviews in the lowest priority class | |
-| operator | creates workspaces, keys and ceilings at the provider and describes them in the deployment; runs the reconciliation process outside the core | does not keep the provider key in runtimes |
+| P4 (part of the core) | holds the tenants' keys; checks the request; resolves the model; keeps the circuit breaker; reserves, charges, writes usage lines; sets the region and the cache point | does not let a request through outside the allowlist |
+| core | reserves at enqueue; sets the budget line; computes thresholds; checks workspace ceilings at `apply`; compares the imported provider report with the usage lines and turns `spend_estimated` into actual figures; lints profiles, their price age, slots, lines and money for reviews; de-identifies the principal in usage lines after 93 days | does not choose the model from the task text |
+| dispatcher | does not hand out tasks with an open circuit or of a pair that waits for the provider rate limit; keeps analysis and reviews in the lowest priority class | |
+| operator | creates workspaces, keys and ceilings at the provider and describes them in the deployment; exports the provider's usage report and imports it with `farmctl spend reconcile --file` | does not keep the provider key in runtimes |
 | tenant people | set limits and lines in the tenant manifest, allowed profiles and providers; edit model profiles and prices with a date | |
 | runtime | reaches the model only through P4 with a handle | does not retry P4 errors, does not set the region or the model |
 | model | works within the reserve | does not choose the model and sees no money, except a refusal with a reason |
@@ -393,8 +395,8 @@ That is 10-13% of a monthly limit of 300 EUR. There is no overspending (BUD-2, B
 
 | Version | What appears |
 |---|---|
-| v0.1 | P4 inside the core: request checking, reserve and charge, a key and a workspace per tenant (GW-1, GW-2, GW-3). The model profile, slots, purposes, `models_allowed`, ranks, the fallback model and a reserve at the most expensive model (GW-5, GW-6, GW-7). Euro cents and separate names instead of `max_tokens` (BUD-9), the prompt cache in the binding (GW-16), region and retention at the provider (GW-14, GW-15), workspace ceilings with a daily check (GW-9). The circuit breaker, one retry layer, counting only runs with a response, and the reason `provider_config` (GW-11, GW-12, GW-13). The tenant limits `month_eur`, `day_eur`, `hour_eur`, the reserve at enqueue, the usage line, thresholds (BUD-1, BUD-2, BUD-3, BUD-4); the response deadline from the profile and a retry only of an unsent request (GW-12); provider terms in the profile (GW-15); the age of profile prices (GW-17); the budget line `work` (BUD-7); charging a call without a response (BUD-11); the meter registry and a reserve for every consumable unit, so that every usage line carries its unit from the start (BUD-5, D-94). This is the money of the `core` profile and the first bot (D-71). After the core and the first bot (D-80): the lines `insight`, `aggregate` and `review` together with the improvement cycle and the commission, the lint of money for reviews (BUD-13), the slot `seat` and the translator catalog in request checking (GW-1, GW-7); the line `manager` in tenants together with the farm manager seat, absent for a tenant with `farm_manager.enabled: false` (D-77); the wake-up counter in the reserve (BUD-1, MSG-11). Campaigns with a card and script runs from the monthly limit up to the amount on the card, the pause `estimate_exceeded` (BUD-12). The enqueue estimate from the type's actual price (BUD-14). Daily reconciliation with the provider's report and turning `spend_estimated` into actual figures (BUD-10). A hold on hourly spending above `hour_eur` (HLD-7). The honest price table in `farmctl doctor` (BUD-15). The rate limiter per pool (GW-10). |
-| v0.2 | The limit of tasks in progress without refusal (BUD-6), the lowest priority class for analysis and reviews (BUD-8). The line `governance` together with seat ballots. The slot `granted` with a ceiling on the grant amount in euros and the line `grant`, takeover and the line `takeover`. The `farm_manager` lens and shadow reviews in the estimate of money for reviews (BUD-13). De-identification of the principal in usage lines after 93 days (BUD-16). |
+| v0.1 | P4 inside the core: request checking, reserve and charge, a key and a workspace per tenant (GW-1, GW-2, GW-3). The model profile, slots, purposes, `models_allowed`, ranks, the fallback model and a reserve at the most expensive model (GW-5, GW-6, GW-7). Euro cents and separate names instead of `max_tokens` (BUD-9), the prompt cache in the binding (GW-16), region and retention at the provider (GW-14, GW-15), workspace ceilings checked at `apply` (GW-9). The circuit breaker, one retry layer, counting only runs with a response, and the reason `provider_config` (GW-11, GW-12, GW-13). The tenant limits `month_eur`, `day_eur`, `hour_eur`, the reserve at enqueue, the usage line, thresholds (BUD-1, BUD-2, BUD-3, BUD-4); the response deadline from the profile and a retry only of an unsent request (GW-12); provider terms in the profile (GW-15); the age of profile prices (GW-17); the budget line `work` (BUD-7); charging a call without a response (BUD-11); the unit registry, so that every usage line carries its unit from the start, with money as the one reserved unit and a price for a paid tool (BUD-5, D-94). This is the money of the `core` profile and the first bot (D-71). After the core and the first bot (D-80): the lines `insight`, `aggregate` and `review` together with the improvement cycle and the commission, the lint of money for reviews (BUD-13), the slot `seat` and the translator catalog in request checking (GW-1, GW-7); the line `manager` in tenants together with the farm manager seat, absent for a tenant with `farm_manager.enabled: false` (D-77); the wake-up counter in the reserve (BUD-1, MSG-11). Campaigns with a card and script runs from the monthly limit up to the amount on the card, the pause `estimate_exceeded` (BUD-12). The enqueue estimate from the type's actual price (BUD-14). Reconciliation by code of the imported provider report, turning `spend_estimated` into actual figures, with a release by time (BUD-10). A hold on hourly spending above `hour_eur` (HLD-7). The actual usage per line in `farmctl doctor` (BUD-15). A provider rate limit as a wait (GW-10). |
+| v0.2 | The limit of tasks in progress without refusal (BUD-6), the lowest priority class for analysis and reviews (BUD-8). The line `governance`. The slot `granted` with a ceiling on the grant amount in euros and the line `grant`, takeover and the line `takeover`. The `farm_manager` lens in the formula of money for reviews (BUD-13). De-identification of the principal in usage lines after 93 days (BUD-16). |
 
 ## Why it works this way
 
@@ -404,7 +406,7 @@ That is 10-13% of a monthly limit of 300 EUR. There is no overspending (BUD-2, B
 - Declarations choose the model, because a silent model change breaks eval, the budget and data processing at the same time.
 - Budget lines with a default limit of 0: analysis and reviews are enabled explicitly with money and do not eat into the main work, and the `line` field in the usage line separates the usage history from the first day.
 - One retry layer with a pause ceiling and jitter, and counting only runs with a response: provider unavailability does not kill tasks and does not turn into an avalanche of retries after recovery.
-- Separate ceilings for each workspace and a pool share for each tenant: the organization's limits at the provider are shared, and without this one tenant or eval run would leave everyone without a model.
+- Separate ceilings and rate limits for each workspace: the organization's limits at the provider are shared, and without this one tenant or eval run would leave everyone without a model; a rate limit is then the wait of one tenant.
 
 ## What is not decided
 
@@ -419,19 +421,19 @@ Generated from the registry `conformance/requirements.yaml`; the full text of ev
 
 | Rule | About | Since | Non-waivable |
 |---|---|---|---|
-| [BUD-1](../conformance/rules.md#BUD-1) | Reserve at enqueue in all applicable limits | v0.1 | yes |
+| [BUD-1](../conformance/rules.md#BUD-1) | Reserve at enqueue in the tenant, tree and line limits | v0.1 | yes |
 | [BUD-2](../conformance/rules.md#BUD-2) | Overspend of any limit is zero | v0.1 | yes |
 | [BUD-3](../conformance/rules.md#BUD-3) | A usage line for every call and message | v0.1 | yes |
 | [BUD-4](../conformance/rules.md#BUD-4) | Code decides on exhausted budgets and thresholds | v0.1 | no |
-| [BUD-5](../conformance/rules.md#BUD-5) | A reserve for every metered unit | v0.1 | yes |
+| [BUD-5](../conformance/rules.md#BUD-5) | Money is the one reserved unit | v0.1 | yes |
 | [BUD-7](../conformance/rules.md#BUD-7) | Budget lines by task purpose | v0.1 | yes |
 | [BUD-9](../conformance/rules.md#BUD-9) | Budget in micro-euros per call and in euro cents in limits | v0.1 | yes |
-| [BUD-10](../conformance/rules.md#BUD-10) | Daily reconciliation of usage with the provider report | v0.1 | no |
+| [BUD-10](../conformance/rules.md#BUD-10) | Reconciliation of usage with the provider report by code | v0.1 | no |
 | [BUD-11](../conformance/rules.md#BUD-11) | A call without a response charges its full reserve | v0.1 | yes |
 | [BUD-12](../conformance/rules.md#BUD-12) | A campaign with a card and a script run are paid from the monthly limit by the amount on the card | v0.1 | yes |
-| [BUD-13](../conformance/rules.md#BUD-13) | Review money covers the proposal ceiling | v0.1 | no |
+| [BUD-13](../conformance/rules.md#BUD-13) | Review money covers the weekly proposal ceiling | v0.1 | no |
 | [BUD-14](../conformance/rules.md#BUD-14) | The enqueue estimate uses the type's actual price | v0.1 | no |
-| [BUD-15](../conformance/rules.md#BUD-15) | An honest price table of the fixed parts | v0.1 | no |
+| [BUD-15](../conformance/rules.md#BUD-15) | Actual usage per budget line in doctor | v0.1 | no |
 | [BUD-16](../conformance/rules.md#BUD-16) | The principal in a usage line is anonymized after 93 days | v0.2 | yes |
 | [GW-1](../conformance/rules.md#GW-1) | The model request matches the catalog and the allowlist | v0.1 | yes |
 | [GW-2](../conformance/rules.md#GW-2) | Worst-case reserve and charging by the provider response | v0.1 | yes |
@@ -439,12 +441,12 @@ Generated from the registry `conformance/requirements.yaml`; the full text of ev
 | [GW-5](../conformance/rules.md#GW-5) | Only a declared fallback model, with a record | v0.1 | yes |
 | [GW-6](../conformance/rules.md#GW-6) | Reserve at the most expensive allowed model | v0.1 | yes |
 | [GW-7](../conformance/rules.md#GW-7) | A model only by the role slot and the tenant list | v0.1 | yes |
-| [GW-9](../conformance/rules.md#GW-9) | Each workspace has its own ceilings and a daily check | v0.1 | yes |
-| [GW-10](../conformance/rules.md#GW-10) | A rate limiter per model pool | v0.1 | yes |
+| [GW-9](../conformance/rules.md#GW-9) | Each workspace has its own ceilings, checked at apply | v0.1 | yes |
+| [GW-10](../conformance/rules.md#GW-10) | A provider rate limit is a wait | v0.1 | yes |
 | [GW-11](../conformance/rules.md#GW-11) | A circuit breaker in P4 | v0.1 | yes |
 | [GW-12](../conformance/rules.md#GW-12) | One retry layer with a pause ceiling and jitter | v0.1 | yes |
 | [GW-13](../conformance/rules.md#GW-13) | Only runs with a response count, a configuration error does not spend an attempt | v0.1 | yes |
 | [GW-14](../conformance/rules.md#GW-14) | Only P4 sets the call region | v0.1 | yes |
 | [GW-15](../conformance/rules.md#GW-15) | Provider retention and terms in the model profile | v0.1 | yes |
-| [GW-16](../conformance/rules.md#GW-16) | The prompt cache is part of the provider binding | v0.1 | yes |
+| [GW-16](../conformance/rules.md#GW-16) | The prompt cache is the provider's | v0.1 | yes |
 | [GW-17](../conformance/rules.md#GW-17) | Profile prices and speed with a date and a shelf life | v0.1 | no |

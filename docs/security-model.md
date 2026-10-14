@@ -414,7 +414,7 @@ By default there is no access to personal mail: the assistant prepares the text,
 
 ### What is written
 
-An audit record exists for every decision at permission check points, every tool call, approval and other human decision on a card (including "Lift veto"), delivery, refusal at enqueue, admin change and `apply` with the commit number or the command author (AUD-1). Also recorded are setting and clearing a hold, operations of the manager and requests to it, grants and returns of permissions, opening and closing an incident, the decision on an incident link, case transitions, ballots and vote counting, a change of seat holder, handing facts over to a newcomer, reading tenant content for incident review, people's requests about their data and erasures, and every audit read. Sensitive events are marked separately: release of raw logs, a tenant mismatch, found secrets.
+An audit record exists for every decision at permission check points, every tool call, approval and other human decision on a card (including "Lift veto"), delivery, refusal at enqueue, admin change and `apply` with the commit number or the command author (AUD-1). Also recorded are setting and clearing a hold, operations of the manager and requests to it, grants and returns of permissions, opening and closing an incident, the decision on an incident link, case transitions, the choice of the leaver, a change of seat holder, handing facts over to a newcomer, reading tenant content for incident review, people's requests about their data and erasures, and every audit read. Sensitive events are marked separately: release of raw logs, a tenant mismatch, found secrets.
 
 ```json
 {"seq": 10482, "at": "2026-10-07T09:14:02Z", "tenant": "demo",

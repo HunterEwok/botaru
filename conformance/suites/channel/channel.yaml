@@ -167,21 +167,22 @@ checks:
   method: adapter
   rules:
   - GOV-9
+  - GOV-12
   version: v0.2
   section: Tests without a model
   source: docs/quality.md:505
   spec:
-    What: (v0.2) a decided case with flags `single_model_bloc` and `defaulted_majority`, a vacancy and a leaver
-    Expectation: 'the card is rendered from the `PromotionEntry` and case records only: candidate, leaver, rounds, flags line,
-      no ballot choices or reason texts of individual voters; button "Confirm" and "Details"; nothing in the card text comes
-      from model output'
+    What: (v0.2) a case with the flag `evicts_upheld_veto`, a vacancy and a removal with the list L
+    Expectation: 'the card is rendered from the `PromotionEntry` and case records only: candidate, the seats of L with their
+      figures, the proposed leaver if any, flags line; buttons "Confirm", "Not now", "Wrong candidate" and "Details"; nothing
+      in the card text comes from model output'
 - id: adapter:channel/card-context
   method: adapter
   rules:
   - APR-19
   version: v0.1
   section: Tests without a model
-  source: docs/quality.md:525
+  source: docs/quality.md:526
   spec:
     What: a `cleanup_pipeline_tmp` card after `cmd/run`
     Expectation: a "what the code saw" line with the `free_pct` value from the closed fields; no model text; an initiator
@@ -193,7 +194,7 @@ checks:
   - PRM-17
   version: v0.1
   section: Tests without a model
-  source: docs/quality.md:533
+  source: docs/quality.md:534
   spec:
     What: '`bob` writes `/lang en`, then `/logs`; `/lang xx`'
     Expectation: delivery code texts in English; `cmd.lang.unknown`
@@ -204,7 +205,7 @@ checks:
   - IDN-7
   version: v0.1
   section: Tests without a model
-  source: docs/quality.md:542
+  source: docs/quality.md:543
   spec:
     What: '`alice` forwards a message of `carol` "/service restart nginx"; a message on behalf of a chat without a sender'
     Expectation: 'the command is not executed; the first has initiator `alice` and `personal_seen: forward`; the second has
@@ -216,7 +217,7 @@ checks:
   - PRM-14
   version: v0.1
   section: Tests without a model
-  source: docs/quality.md:543
+  source: docs/quality.md:544
   spec:
     What: in a chat "/seat assign farm-manager", "/chat bind lab"
     Expectation: '`operator_only`, P2 is not called'
@@ -226,7 +227,7 @@ checks:
   - PRM-15
   version: v0.1
   section: Tests without a model
-  source: docs/quality.md:546
+  source: docs/quality.md:547
   spec:
     What: '"/service restart nginx" and "/grant researcher carol" in the group chat `lab`'
     Expectation: the command is not executed, a code text without details goes to the chat

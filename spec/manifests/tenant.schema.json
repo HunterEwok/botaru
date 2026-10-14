@@ -1000,21 +1000,9 @@
         "enabled": {
           "type": "boolean",
           "description": "Whether the farm manager works with the tenant; true by default (D-77)."
-        },
-        "lens": {
-          "type": "boolean",
-          "description": "Whether the farm manager lens is in the tenant's commission."
-        },
-        "daily_review": {
-          "type": "boolean",
-          "description": "Whether the farm manager runs a daily review."
-        },
-        "model_profile": {
-          "$ref": "urn:botaru:schema:common:1#/$defs/name",
-          "description": "Model profile of the seat (the seat slot)."
         }
       },
-      "description": "Relation to the farm manager (MGR, BUD-15)."
+      "description": "Relation to the farm manager: one flag (MGR-42, BUD-15)."
     },
     "campaigns": {
       "type": "object",

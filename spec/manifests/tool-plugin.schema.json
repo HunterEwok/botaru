@@ -263,6 +263,20 @@
             "description": "From v0.2: how long an implementation may keep the output of a read tool in a cache, in seconds; 0 by default, that is no cache (PRM-12). A tool with credential.per_principal is never cached: apply rejects cache_s above 0 on it (cache_per_principal).",
             "x-botaru-version": "v0.2"
           },
+          "billing": {
+            "type": "string",
+            "enum": [
+              "none",
+              "external"
+            ],
+            "description": "Whether the farm pays for a call of this tool outside the model provider: none by default; external needs price_eur, otherwise apply rejects the tool (BUD-5)."
+          },
+          "price_eur": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1000,
+            "description": "The price of one call of a tool with billing: external, in euros; the core reserves it before the call and charges it as a usage line (BUD-2, BUD-5)."
+          },
           "credential": {
             "type": "object",
             "additionalProperties": false,

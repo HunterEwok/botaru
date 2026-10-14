@@ -145,7 +145,7 @@
           "description": "For seat holders: number of reviews."
         },
         "calibration": {
-          "description": "For seat holders: calibration of the seat's lens (COM-11); insufficient when there are fewer than 10 cases.",
+          "description": "For seat holders: accuracy of the seat's lens executor (COM-17), cut to the range from -1 to 1; insufficient with fewer than 10 scored forecasts. The name stays from the calibration of v0.2, which merged into accuracy.",
           "anyOf": [
             {
               "type": "number",

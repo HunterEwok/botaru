@@ -1,5 +1,5 @@
 registry: bot-retire-reasons
-version: 2
+version: 3
 description: >-
   Triggers for a bot identity's retirement (retired). The list is closed: only the
   core sets the trigger; bots have no operation, message type, field or route that sets
@@ -10,9 +10,9 @@ source: docs/bots.md
 entries:
   - id: removed_by_vote
     since: v0.2
-    meaning: the governance case is effective, a commission seat holder leaves by the outcome of the "who leaves" vote
+    meaning: the governance case is effective, and the commission seat holder that a person chose or confirmed leaves (GOV-12, GOV-43); the name stays from the removed vote
     caller: the core after a person's "Confirm" button (GOV-9)
-    rules: [IDN-11, GOV-9]
+    rules: [IDN-11, GOV-9, GOV-12]
   - id: replaced_after_incident
     since: v0.1
     meaning: >-

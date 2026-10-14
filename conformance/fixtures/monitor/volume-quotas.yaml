@@ -1,9 +1,10 @@
 id: cap-fx-05
-rules: [CAP-6]
-description: A volume is a disk of a tenant catalog resource that farm work writes to. The catalog declares volumes in Catalog.spec.volumes
-  and links each volume to all its writers (writers) with a quota quota_bytes. At catalog approval and at apply
-  the core shows for each volume whether every writer has a quota and whether the sum of quotas is below the alarm threshold of the class
-  disk_full; a disk_full incident stops the manager seat only if the volume has a full set of quotas (MGR-33).
+rules: [CAP-6, MGR-33]
+description: A volume is a disk of a tenant catalog resource that farm work writes to, declared in Catalog.spec.volumes; its
+  quotas are file system, sink or pipeline quotas, and the core only reads its free space series (CAP-6). The writers with
+  quota_bytes record the quotas; at catalog approval and at apply the core shows for each volume whether every writer has a
+  quota and whether the sum of quotas is below the alarm threshold of the class disk_full; a disk_full incident stops the
+  manager seat only if the volume has a full set of quotas (MGR-33).
 given:
   tenant: demo
   catalog:
@@ -17,7 +18,7 @@ given:
   disk_full_alarm_free_ratio: 0.05
 cases:
 - id: cap-fx-06
-  rules: [CAP-6]
+  rules: [MGR-33]
   description: A full set of quotas, a sum of 3.5 TB below the alarm threshold (4 TB minus 5%); apply shows the volume as full,
     and a disk_full incident can stop the seat.
   expect:
@@ -26,7 +27,7 @@ cases:
     quota_sum_below_alarm: true
     disk_full_can_stop_seat: true
 - id: cap-fx-07
-  rules: [CAP-6]
+  rules: [MGR-33]
   description: A sink writes to a volume without a quota; apply shows the volume without a full set of quotas, and a disk_full incident
     on it does not stop the seat.
   given:
@@ -41,7 +42,7 @@ cases:
     missing_quota: [archive]
     disk_full_can_stop_seat: false
 - id: cap-fx-08
-  rules: [CAP-6]
+  rules: [MGR-33]
   description: The sum of quotas is above the disk_full alarm threshold; apply shows this, and the incident does not stop the seat.
   given:
     catalog_override:
@@ -52,7 +53,8 @@ cases:
   expect: {quota_sum_below_alarm: false, disk_full_can_stop_seat: false}
 - id: cap-fx-09
   rules: [CAP-6, MON-5]
-  description: The used volume space series is written by a job role from the monitoring system history, dataorigin code.
+  description: The volume space series is written by a job role from the monitoring system history, dataorigin code; the
+    core raises no disk alarm of its own for the volume.
   given:
     series: {subject: 'res:ctd1:data', dataorigin: code, source: monitor_history, model_involved: false}
-  expect: {usable_for_stopping_incident_class: true}
+  expect: {usable_for_stopping_incident_class: true, core_volume_alarm: false}

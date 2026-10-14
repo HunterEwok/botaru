@@ -39,8 +39,8 @@ machines:
       states:
       - active
       text: '`active`, a copy with `inherited`'
-    by: the core on the outcome of a `memory.pick.v1` task
-    when: the recheck against the recipient's rights passed; `untrusted_origin` is kept
+    by: the core when the successor of a fact offer exists
+    when: the recheck against the successor's rights passed; `untrusted_origin` is kept
     rules:
     - MEM-7
   - from:
@@ -51,7 +51,7 @@ machines:
       states:
       - stale
       text: '`stale`'
-    by: the core at a recheck (creating an offer, taking)
+    by: the core at a recheck (creating an offer, copying)
     when: the evidence was wiped
     rules:
     - MEM-6

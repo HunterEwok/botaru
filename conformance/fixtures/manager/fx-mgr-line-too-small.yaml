@@ -1,8 +1,8 @@
 id: fx-mgr-line-too-small
 rules: [MGR-20]
 description: 'apply of a tenant with manager.day_eur below the price of three reads of one worst-case incident (input of 60
-  thousand tokens together and three answers at the seat profile''s max_output_tokens) by the same calculation as the price table of the fixed
-  parts in BUD-15: refusal manager_line_too_small. The lint skips a tenant with farm_manager.enabled: false.'
+  thousand tokens together and three answers at the seat profile''s max_output_tokens, at the seat profile prices): refusal
+  manager_line_too_small. The lint skips a tenant with farm_manager.enabled: false.'
 cases:
 - id: fx-mgr-line-too-small-a
   given:

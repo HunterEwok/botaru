@@ -16,11 +16,10 @@ spec:
     audit_sample: {min_per_month: 4, share: 0.25, max_per_digest: 2}
   promotion: {probation: 14d, exclude_change_kinds: [none], min_tenure: 30d, swap_cooldown: 30d}
   removal: {protect_new: 60d}
-  ballots: {reissue_max: 3, stuck_after: 24h}
   confirmation: {ttl: 7d}
   attribution: {window: 14d}
   identity: {unbound_ttl: 30d}
   memory:
     seal_ttl: 30d
     facts: {max_active: 100, per_attempt: 3}
-    offer: {max: 100, take_max: 50}
+    offer: {max: 100}

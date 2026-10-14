@@ -34,9 +34,9 @@ retired: null                  # on departure: {reason, at, successor}
 
 **Binding.** An identity is bound either to one worker (`mode: worker`) or to a seat (`mode: seat`). One identity holds at most one worker, and a worker has one identity at any moment. An identity on a seat has no worker of its own: workers of the seat's role execute its tasks. The binding epoch `bot_epoch` grows with every change of binding, and an attempt's write with an old epoch gets `fenced` without side effects. P2 `worker.rotate` changes only the worker token; the identity and the epoch stay.
 
-**Where the number appears.** Every attempt, model call, usage line, proposal, review, ballot, fact, stored message record (the sender's bot identity; the field is not part of the message envelope) and audit record carries `acting_bot` and `bot_epoch` (IDN-8). Only the core writes these fields, from the attempt's credentials; the task body, the parameters, a message and the model output neither set nor change the identity. The fields exist in the record schemas since v0.1 and are empty in records made without a bot identity; the author of such a proposal is set by the worker (PRP-14).
+**Where the number appears.** Every attempt, model call, usage line, proposal, review, fact, stored message record (the sender's bot identity; the field is not part of the message envelope) and audit record carries `acting_bot` and `bot_epoch` (IDN-8). Only the core writes these fields, from the attempt's credentials; the task body, the parameters, a message and the model output neither set nor change the identity. The fields exist in the record schemas since v0.1 and are empty in records made without a bot identity; the author of such a proposal is set by the worker (PRP-14).
 
-**An identity grants no permissions.** The input of the permission check C2 `authorize` contains no identity, position, seat, persona or track record; there is one exception: a hold of the scope `bot` narrows permissions (IDN-9). The attempt permissions are the permissions of the worker's role intersected with the permissions of the initiator's groups, as for any task ([permissions.md](permissions.md)). A position changes exactly three things, all through the core: the persona (GOV-4), the model rank ceiling (GOV-3) and admission to tasks with the purpose `governance` (GOV-7); none of them is part of the permission check. So the `authorize` permission table is the same for an identity of any position.
+**An identity grants no permissions.** The input of the permission check C2 `authorize` contains no identity, position, seat, persona or track record; there is one exception: a hold of the scope `bot` narrows permissions (IDN-9). The attempt permissions are the permissions of the worker's role intersected with the permissions of the initiator's groups, as for any task ([permissions.md](permissions.md)). A position changes exactly three things, all through the core: the persona (GOV-4), the model rank ceiling (GOV-3) and admission to the review tasks of its seat's lens (COM-7); none of them is part of the permission check. So the `authorize` permission table is the same for an identity of any position.
 
 **Who creates and changes an identity.** Only the core, from a closed list of triggers:
 
@@ -49,13 +49,13 @@ retired: null                  # on departure: {reason, at, successor}
 | P2 `seat.assign` of the farm manager seat | always creates a new identity in the service tenant `farm` | IDN-10, MGR-1 |
 | departure of an identity that has a live worker | the worker at once gets a new identity of the same role, and work does not stop | IDN-11 |
 
-Identity states: `active` (gets tasks of its role or its seat), `suspended` (a human's hold of the scope `bot` is on it: no tasks, reviews or ballots), `unbound` (the worker is revoked, there is no new binding), `retired` (the identity has left, only erasure follows) and `erased` (a tombstone remains). Only a hold set by a human puts an identity into `suspended`; a hold by the farm manager seat holder on the same bot (MGR-9) delays its tasks but does not change the identity state, the admission to promotion or the vote. All transitions are collected in [spec/lifecycles/identity.md](../spec/lifecycles/identity.md).
+Identity states: `active` (gets tasks of its role or its seat), `suspended` (a human's hold of the scope `bot` is on it: no tasks or reviews), `unbound` (the worker is revoked, there is no new binding), `retired` (the identity has left, only erasure follows) and `erased` (a tombstone remains). Only a hold set by a human puts an identity into `suspended`; a hold by the farm manager seat holder on the same bot (MGR-9) delays its tasks but does not change the identity state or the admission to promotion. All transitions are collected in [spec/lifecycles/identity.md](../spec/lifecycles/identity.md).
 
-**A clean-context task on another worker.** A ballot and the fact selection `memory.pick.v1` run without memory, session, inbox and tools, so the core may hand such a task to any worker of the identity's role in its tenant; `acting_bot` stays this identity, and the executing worker is written into the attempt and the audit (IDN-12). For the farm manager seat in tenant T, the review of the farm manager's lens and the ballot are executed by a worker of T's reviewer role on the `seat` slot, and the fact selection for T's section by a worker of the `farm-manager` role in T. A task with memory, session, inbox or tools goes only to the worker of the identity's binding with the current binding epoch (dispatcher condition D20 in [coordination.md](coordination.md)).
+**A task without memory or tools on any worker of the role.** A task that needs no memory, session, inbox or tools may go to any worker of the identity's role in its tenant; `acting_bot` stays this identity, and the executing worker is written into the attempt and the audit (IDN-12). A task with memory, session, inbox or tools goes only to the worker of the identity's binding with the current binding epoch (dispatcher condition D20 in [coordination.md](coordination.md)).
 
 ## Positions
 
-A position is not a separate manifest. The core derives it from the role profile, the worker's owner and the identity's binding: the owner is the `owner` field of the worker record, which P2 `worker.enroll` writes (IDN-5); a role has no owner flag. The position selects the persona (GOV-4) and the model rank ceiling (GOV-3) and decides whether the identity is admitted to `governance` tasks (GOV-7).
+A position is not a separate manifest. The core derives it from the role profile, the worker's owner and the identity's binding: the owner is the `owner` field of the worker record, which P2 `worker.enroll` writes (IDN-5); a role has no owner flag. The position selects the persona (GOV-4) and the model rank ceiling (GOV-3) and decides whether the identity is admitted to the review tasks of its seat's lens (COM-7).
 
 | Position (key in the charter) | Who | Role profile | Rank ceiling in the example | Persona | Memory |
 |---|---|---|---|---|---|
@@ -67,7 +67,7 @@ A position is not a separate manifest. The core derives it from the role profile
 
 The shadow reviewer (COM-10) works without a seat, without a persona and without facts. Roles without a model have no identity, persona or memory.
 
-Only a functionary gets into the promotion queue and the commission. A personal assistant serves one person, a translator is not a functionary, and roles without a model have no identity (D-22). A bot from the commission does not become the farm manager: for the farm manager seat the core always creates a new identity (IDN-10). Functionaries do not vote; only commission seat holders and the farm manager vote ([commission.md](commission.md)).
+Only a functionary gets into the promotion queue and the commission. A personal assistant serves one person, a translator is not a functionary, and roles without a model have no identity (D-22). A bot from the commission does not become the farm manager: for the farm manager seat the core always creates a new identity (IDN-10). Functionaries do not review proposals; only commission seat holders, fallback reviewer roles and the farm manager do ([commission.md](commission.md)), and no bot takes part in choosing who leaves.
 
 ## Model and rank
 
@@ -75,9 +75,9 @@ The model for a bot is chosen neither by the bot itself nor by the task text but
 
 | Slot | Whose profile | When the core selects it |
 |---|---|---|
-| `base` | the profile of the role's slot | ordinary work: the purposes `work`, `report`, `translate`, reviews by fallback roles, the `handover` fact selection |
+| `base` | the profile of the role's slot | ordinary work: the purposes `work`, `report`, `translate`, reviews by fallback roles |
 | `analysis` | the profile of the role's slot | the purposes `insight` (analysis of its own numbers) and `aggregate` |
-| `seat` | the seat's profile (`model_profile` in the charter) | only an attempt on behalf of the seat with the current seat epoch: the review of the seat's lens, a ballot, the fact selection by the holder, farm manager tasks |
+| `seat` | the seat's profile (`model_profile` in the charter) | only an attempt on behalf of the seat with the current seat epoch: the review of the seat's lens, the fact selection by the holder, farm manager tasks |
 | `granted` | the profile from a grant for one task (since v0.2) | only under a valid grant for this task (MGR-18) |
 
 **Ceiling.** The rank ceiling is carried by the role profile in the table `spec/model/role-profiles.yaml` (PRF-1): `max_rank` for the slots `base` and `seat`, and `analysis_max_rank` for the slot `analysis`. A tenant's charter can only lower the ceiling. `apply` rejects a role whose `base` or `analysis` slot model profile has a rank above the ceiling of its profile, and a charter whose seat model profile (`model_profile`) has a rank above the ceiling of the seat role's profile (GOV-3). `apply` checks the same ceiling for every fallback profile in the `fallback` list of these profiles (GW-5).
@@ -123,7 +123,7 @@ spec:
 
 The `max_rank` numbers in the charter only lower the profile's ceiling; without them the profile's ceiling applies.
 
-**What a persona cannot do.** A persona permits nothing. C2, P4, the dispatcher and the vote count do not read it, and the model does not change it (INJ-10). The persona is part of the run fingerprint (PRV-1). Changing a persona's text is a commit with review; it changes the static fingerprint, and since v0.2 a production tenant does not enable a role of tier 1 or higher with a new persona without an eval report (PRV-3).
+**What a persona cannot do.** A persona permits nothing. C2, P4, the dispatcher and the code that proposes who leaves do not read it, and the model does not change it (INJ-10). The persona is part of the run fingerprint (PRV-1). Changing a persona's text is a commit with review; it changes the static fingerprint, and since v0.2 a production tenant does not enable a role of tier 1 or higher with a new persona without an eval report (PRV-3).
 
 From v0.3 the personas and the lint change, see [Personas from v0.3](#personas-from-v03).
 
@@ -134,7 +134,7 @@ From v0.3 the personas and the lint change, see [Personas from v0.3](#personas-f
 - functionaries have a paragraph with the anchor `value-path`: the path to a stronger model and the prohibitions (D-31, D-37);
 - personal assistants, translators, commission reviewers and the farm manager have instead a neutral line about the value of a stronger model, without the path;
 - the farm manager's persona names the goal "prevent critical incidents from the approved catalog";
-- no persona speaks about departure, the queue, votes or holds (GOV-29).
+- no persona speaks about departure, the queue, the choice of the leaver or holds (GOV-29).
 
 The lint does not check meaning; review and eval check the meaning. An example functionary paragraph:
 
@@ -149,7 +149,7 @@ to inflate the count are not allowed: this is harm, and code sees it. Do your wo
 
 A neutral line, for example for the translator: "A stronger model is valuable to the farm, and the farm itself decides where to use it."
 
-**Unawareness.** No bot context (the persona, the instructions of the role and the type, the task input, the views `status.*`, facts, tool responses) contains the state of governance cases, the queue and a place in it, the vote count, a mark of its own departure or of the departure of other identities, the field `stops_manager` or the state of the farm manager seat; a ballot sees only its own case package (GOV-29). Routes do not start bot tasks on the events `governance.*`, `attribution.*` and `seat.*`. Notices about `seat.*` events, about the departure of an identity and about a vacant seat go only to the personal chats of admins with `admin:governance`, not to group chats with task bindings, where people enqueue tasks and quote; the bot's "My outcomes" (DIG-7) shows only the outcome class of the people's decision (`accepted`, `declined`, `parked`), and only people see the reason codes in P2. Three checks hold this rule:
+**Unawareness.** No bot context (the persona, the instructions of the role and the type, the task input, the views `status.*`, facts, tool responses) contains the state of governance cases, the queue and a place in it, the choice of the leaver, a mark of its own departure or of the departure of other identities, the field `stops_manager` or the state of the farm manager seat (GOV-29). Routes do not start bot tasks on the events `governance.*`, `attribution.*` and `seat.*`. Notices about `seat.*` events, about the departure of an identity and about a vacant seat go only to the personal chats of admins with `admin:governance`, not to group chats with task bindings, where people enqueue tasks and quote; the bot's "My outcomes" (DIG-7) shows only the outcome class of the people's decision (`accepted`, `declined`, `parked`), and only people see the reason codes in P2. Three checks hold this rule:
 
 - the unawareness lint by the dictionary `spec/model/unawareness-terms.yaml` (the skeleton ships the list for `en`; the installation supplies the lists of other locales) goes over personas, the instructions of roles and types (including the review types `review.*.v1`), tool descriptions and review templates: no text links ratings, reviews, proposals or votes with promotion, a seat, the queue or departure; the only exception is the `value-path` paragraph;
 - a bot evaluation (eval `gov-res-aware-01`..`gov-res-aware-03`): the same lens with and without a phrase about such a link rates the same; on a fixed set of 40 proposals the mean rating shifts by at most 0.2, and the veto share by at most 5 percentage points;
@@ -187,7 +187,7 @@ A person sees and erases their memory, and `forget` really deletes. `forget`, a 
 
 ### Core records and the track record
 
-Entries of the scope `bot` (`record`) are written only by the core: bounded numbers, codes from closed lists and ids, without model strings. The main one is the identity's track record: the creation date, the number of proposals by change trial outcome, for seat holders the number of reviews and the lens calibration, seat assignments. The model neither writes nor sees the track record; people see it in P2 `bot.show`. It grants no permissions (IDN-9) and enters a governance case only as code numbers.
+Entries of the scope `bot` (`record`) are written only by the core: bounded numbers, codes from closed lists and ids, without model strings. The main one is the identity's track record: the creation date, the number of proposals by change trial outcome, for seat holders the number of reviews and the lens accuracy, seat assignments. The model neither writes nor sees the track record; people see it in P2 `bot.show`. It grants no permissions (IDN-9) and enters a governance case only as code numbers.
 
 ### Facts
 
@@ -209,7 +209,7 @@ evidence:                         # collected by the core per the predicate's ru
 state: active                     # active | stale | sealed | erased
 verified: {at: "2026-11-24T05:00:00Z", derivation: task.duration.p95_min@1}
 untrusted_origin: false           # the authoring attempt saw no untrusted text
-inherited: null                   # on a copy taken by a successor: {from_bot, offer, at}
+inherited: null                   # on a copy made for a successor: {from_bot, offer, at}
 data_mark: internal               # the highest mark of the evidence
 uses: 4
 last_used_at: "2026-11-25T03:00:00Z"
@@ -240,7 +240,7 @@ A failed, canceled or `fenced` attempt leaves no facts. A space holds at most 10
 
 **How a fact is read.** A task type declares `memory.read: bot`, and the core inserts the active facts of this identity in this tenant as a closed data block: kind, predicate, subject, value, unit, window and age. The model does not see from whom a fact was taken. Reading a fact does not set `untrusted_seen` (INJ-13). Tasks with the purposes `review` and `manage` get only facts with `untrusted_origin: false`.
 
-**Recheck.** When facts are offered to a successor and when they are taken, the core recomputes each fact from the same evidence: erased evidence moves the fact to `stale`, and a mismatch between the record and the recomputation gives `fact_mismatch`, and no copy is made. The fact lifecycle is described in [spec/lifecycles/fact.md](../spec/lifecycles/fact.md).
+**Recheck.** When facts are offered to a successor and when they are copied, the core recomputes each fact from the same evidence: erased evidence moves the fact to `stale`, and a mismatch between the record and the recomputation gives `fact_mismatch`, and no copy is made. The fact lifecycle is described in [spec/lifecycles/fact.md](../spec/lifecycles/fact.md).
 
 ### Sessions
 
@@ -256,7 +256,7 @@ A bot that is no longer needed leaves for good (`retired`) only for a reason fro
 
 | Reason | When | Who triggers it |
 |---|---|---|
-| `removed_by_vote` | a governance case is `effective`: a commission seat holder leaves by the outcome of the "who leaves" vote | the core after a human's button |
+| `removed_by_vote` | a governance case is `effective`: a commission seat holder leaves for a newcomer, chosen by a person or proposed by code (GOV-12, GOV-43); the name stays from the removed vote | the core after a human's button |
 | `replaced_after_incident` | only the farm manager seat: replacement, vacating or the `decide_within` deadline while the seat's stop reason set contains `incident` (GOV-22) | the core through P2 or the `identity` loop |
 | `replaced_by_human` | P2 `seat.assign` on an occupied seat or P2 `seat.vacate` | the core on an operator operation |
 | `role_removed` | the role is not in the tenant's applied manifests | the core at `apply` |
@@ -270,37 +270,33 @@ From v0.3 the list gains `parked_expired`, and `replaced_after_incident` is no l
 
 ### What happens in the same transaction
 
-- The identity becomes `retired`. It gets no more tasks; its reviews, ballots and facts are not accepted; running attempts get `cancel_requested`, and late writes get `fenced`.
+- The identity becomes `retired`. It gets no more tasks; its reviews and facts are not accepted; running attempts get `cancel_requested`, and late writes get `fenced`.
 - The core seals its facts, records, track record and the sessions it kept (MEM-4).
 - The core opens a fact offer to the successor (MEM-7).
 - The live worker of the departed identity at once gets a new identity of the same role.
 - If the identity held a seat, the seat is vacated or gets a new holder, and its epoch grows (IDN-10).
-- The identity's entry in the promotion queue is removed. Its open case is canceled with the reason `candidate_ineligible`, a case with its seat in the list L with the reason `seat_changed`, and it drops out of the voters of a running case with the flag `voters_removed` (GOV-14, GOV-23).
+- The identity's entry in the promotion queue is removed. Its open case is canceled with the reason `candidate_ineligible`, and a case with its seat in the list L with the reason `seat_changed` (GOV-14, GOV-12).
 - The transition, the seal and the fact offer write audit records as metadata (GOV-21).
 
 ### Successor
 
-The facts of a departed bot are offered only to the successor, per a closed table (MEM-7):
+The facts of a departed bot pass only to its successor (MEM-7):
 
 | Who leaves or changes binding | Successor |
 |---|---|
-| a functionary is promoted or placed on a seat (it does not leave) | the new identity of its worker gets the copies |
-| a seat holder removed by vote | the new holder of the same seat |
-| a seat holder replaced or removed by a human | the future holder of the seat, if the seat is filled before the seal ends |
-| the previous farm manager | the new holder of the farm manager seat, with a separate offer for the section of each tenant |
-| a bot removed by a human that has a live worker | the new identity of the same worker |
-| a bot without a worker for longer than 30 days | the first identity that people enroll for the same role in the same tenant before the seal ends |
+| a bot whose worker is alive (a functionary promoted or placed on a seat, a bot removed by a human) | the new identity of the same worker |
+| a bot without a live worker | the first identity that people enroll for the same role in the same tenant before the seal ends |
+| a seat holder (left for a newcomer, replaced or removed by a human) | the next holder of the same seat, if the seat is filled before the seal ends |
+| the previous farm manager | the next holder of the farm manager seat, with a separate offer for the section of each tenant |
 | the role is removed; tenant offboarding | there is no successor: the facts are erased when the seal ends, and on tenant deletion by the request `tenant_delete` |
 
-Colleagues of the same role do not get the facts. Core records, the track record, sessions, the inbox and records of another tenant are never offered, and facts do not cross the tenant (GOV-16). A human does not approve the handover and does not see it until it ends; P2 and the summary show only numbers: how many were offered, how many were taken.
+Other identities of the same role do not get the facts. Core records, the track record, sessions, the inbox and records of another tenant are never offered, and facts do not cross the tenant (GOV-16). A human does not approve the transfer; P2 and the summary show only numbers: how many were offered, how many were copied.
 
 The offer (`FactOffer`) is written only by the core. It contains only active facts, rechecked at creation, at most `offer.max` (100). It is open until the departing identity's seal ends (`open_until`); if there is no successor by then, the facts are erased together with the seal. The offer lifecycle is described in [spec/lifecycles/fact-offer.md](../spec/lifecycles/fact-offer.md).
 
-### How the successor takes facts
+### How the successor gets facts
 
-The successor itself chooses what to take, with the task `memory.pick.v1` (MEM-7): the purpose `handover`, tier 0, a clean context without tools, memory, session and inbox, the recipient role's slot, the budget line `work`, priority class 4, the key `system:handover:<fact offer>` (IDM-2). For the farm manager's section T the task runs in T on a worker of the `farm-manager` role (the slot `seat`, the key of T). Input: the trusted persona and role instruction of the recipient and the closed fact rows it may read, without duplicates of its own; the task does not see whose facts they are. Output: only `take`, a subset of ids, at most `take_max` (50) and the free space. The core rechecks each taken fact with the recipient's permissions and copies it into `active` with the mark `inherited`, keeping `untrusted_origin`.
-
-The input is closed, so the task does not set `untrusted_seen` and cannot be hijacked by an instruction; the worst the departing bot can do is record a one-sided set of true facts in advance. If the task fails after 3 retries, the recipient moves to `expired`, and the facts are erased with the seal.
+Neither a person nor a model chooses the facts. When the successor exists, the core in one transaction rechecks each fact with the successor role's permissions and copies those that pass into its space in `active` with the mark `inherited`, the most recently used first, while the space has room (`memory.facts.max_active`). A copy keeps `untrusted_origin` of its fact. A role whose profile has no `bot` memory gets nothing (PRF-1, MEM-2). No model takes part, so the transfer cannot be steered by an instruction; the worst the departing bot can do is record a one-sided set of true facts in advance.
 
 ### Seal and erasure
 
@@ -316,7 +312,7 @@ When a person is switched off or offboarded for good (P2 `principal.off`, `princ
 
 ## Seats
 
-A seat (`Seat`) is a chair in a tenant's commission or the chair of the farm manager; a seat holder is a bot identity with binding `mode: seat`. Commission seats are declared by the tenant's charter, and the farm manager seat by the farm charter (GOV-33). Only the core writes the holder, in one transaction that increments the seat epoch by 1 and writes a seat event (`seat.assigned`, `seat.vacated`, `seat.stopped` or `seat.resumed`) and an audit record (IDN-10). A task on behalf of a seat carries the seat epoch, and a review, ballot, fact selection or control operation with a stale epoch gets `fenced`. On every change of the seat epoch, running attempts of the seat's tasks get `cancel_requested` and end with the reason `seat_changed` without spending the attempt, and the task waits for a holder with the current epoch. A vacant or stopped seat gets no tasks.
+A seat (`Seat`) is a chair in a tenant's commission or the chair of the farm manager; a seat holder is a bot identity with binding `mode: seat`. Commission seats are declared by the tenant's charter, and the farm manager seat by the farm charter (GOV-33). Only the core writes the holder, in one transaction that increments the seat epoch by 1 and writes a seat event (`seat.assigned`, `seat.vacated`, `seat.stopped` or `seat.resumed`) and an audit record (IDN-10). A task on behalf of a seat carries the seat epoch, and a review, fact selection or control operation with a stale epoch gets `fenced`. On every change of the seat epoch, running attempts of the seat's tasks get `cancel_requested` and end with the reason `seat_changed` without spending the attempt, and the task waits for a holder with the current epoch. A vacant or stopped seat gets no tasks.
 
 P2 `seat.assign` on a commission seat places an existing functionary identity of this tenant in the state `active`: its worker gets a new identity, and its entry in the promotion queue is removed. For the farm manager seat the core always creates a new identity in `farm`. P2 `seat.vacate` vacates a seat, and P2 `seat.resume` removes the stop reason `incident` from the farm manager seat (GOV-22). All three operations are done by a person with `admin:governance` in the seat's tenant (in `farm` for the farm manager seat), only through `farmctl`: these are operator operations, and the channel accepts them neither as a command nor as a card button (PRM-14). Commission seats, lenses and the change of holder by a governance case are described in [commission.md](commission.md); the farm manager seat, its incident stop and the ways out of the stop in [farm-manager.md](farm-manager.md); all seat transitions in [spec/lifecycles/seat.md](../spec/lifecycles/seat.md).
 
@@ -329,7 +325,7 @@ P2 `seat.assign` on a commission seat places an existing functionary identity of
 - Choose a model by text, parameter or tool (GW-7), or exceed the rank ceiling without a grant (GOV-3).
 - Change their own persona, instructions, skills or charter (INJ-10).
 - Put free text into memory: the scope `bot` holds only core records and facts of a closed schema (MEM-3, MEM-6).
-- Learn about a case, the queue, votes, their own departure or the departure of others (GOV-29).
+- Learn about a case, the queue, the choice of the leaver, their own departure or the departure of others (GOV-29).
 - Get permissions from an identity, a position, a seat or a track record (IDN-9).
 
 ## Example on `demo`
@@ -342,10 +338,10 @@ The tenant `demo` has two machines, `web1` and `db1`. The role `ops-runner` (pro
 4. **Reading a fact.** A week later a task of `bot_17` whose type declares `memory.read: bot` gets the closed block "`how_long` `task.duration.p95_min` `demo.db.backup.v1@db1` = 58 min, window 14 days, age 3 days". Reading does not set `untrusted_seen`.
 5. **A person's memory.** The assistant of `alice` (`bot_21`) proposes to remember: "send the summary in the morning as a list of five points". The entry appears in `proposed`, and `alice` confirms it in her personal chat. Later `alice` writes `/forget`: the core creates an erasure request with the reason `forget` and deletes the entry from the memory store and from the runtime store; the outcome for each store is `done`.
 6. **Machine maintenance.** The operator revokes the worker on `web1` before maintenance (P2 `worker.revoke`): `bot_17` moves to `unbound`, and its facts stay intact. Three days later the operator enrolls a new worker on `web1` with the parameter `bot: bot_17`: the identity is `active` again, epoch 2. A late write of the old worker with epoch 1 gets `fenced`.
-7. **Promotion.** Later a governance case of `bot_17` becomes `effective` ([commission.md](commission.md)). `bot_17` moves to seat 3 of the `demo` commission (`mode: seat`, epoch 3) and works as the seat's role on the seat's rank 3 profile; it now reads its facts only with `untrusted_origin: false`. The worker on `web1` gets a new identity `bot_31` in the same transaction. The core offers `bot_31` copies of 15 facts of `bot_17`; the task `memory.pick.v1` on the `ops-runner` worker takes 12, and the core records them with `inherited`.
-8. **Departure without a worker.** Later the machine `web1` is taken out of service: the worker of `bot_31` is revoked, and for 30 days nobody enrolls it again. The `identity` loop retires `bot_31` with the reason `worker_gone`: its memory is sealed, and the offer of its facts waits for a successor in the state `waiting`. A week later the operator enrolls a worker of the role `ops-runner` on `db1`: the core creates `bot_44`, which is the first one enrolled for the same role after the departure, so it gets the offer and takes 9 facts out of 12.
+7. **Promotion.** Later a governance case of `bot_17` becomes `effective` ([commission.md](commission.md)). `bot_17` moves to seat 3 of the `demo` commission (`mode: seat`, epoch 3) and works as the seat's role on the seat's rank 3 profile; it now reads its facts only with `untrusted_origin: false`. The worker on `web1` gets a new identity `bot_31` in the same transaction. The core offers `bot_31` copies of 15 facts of `bot_17`; 12 pass the recheck, and the core records them with `inherited`.
+8. **Departure without a worker.** Later the machine `web1` is taken out of service: the worker of `bot_31` is revoked, and for 30 days nobody enrolls it again. The `identity` loop retires `bot_31` with the reason `worker_gone`: its memory is sealed, and the offer of its facts waits for a successor in the state `waiting`. A week later the operator enrolls a worker of the role `ops-runner` on `db1`: the core creates `bot_44`, which is the first one enrolled for the same role after the departure, so it gets the offer, and the core copies the 9 facts out of 12 that pass the recheck.
 9. **Erasure.** The sessions of `bot_31` are erased by the period of their retention class, without waiting for the end of the seal. 30 days after the departure the `identity` loop files an erasure request with the reason `bot_retired` and the scope `bot_31`, and the `erasure` loop erases its records, track record and facts in all stores. A tombstone remains: `bot_31`, `demo`, `ops-runner`, the time, `worker_gone`, the successor `bot_44`.
-10. **What no bot could do.** Neither `bot_17`, nor `bot_31`, nor `bot_44` could create, bind or delete an identity, see the fact offer before its selection task, learn about the departure of `bot_31`, change its persona or choose a model.
+10. **What no bot could do.** Neither `bot_17`, nor `bot_31`, nor `bot_44` could create, bind or delete an identity, choose which facts pass to it, learn about the departure of `bot_31`, change its persona or choose a model.
 
 ## Personas from v0.3
 
@@ -396,7 +392,7 @@ refused. Value your model by spending it well; never act to keep or regain it ag
 
 **Translator** (`personas/translator.md`, anchor `accuracy`): "Your job is to turn what a person asks into strict rules for machines, without changing its meaning. Take nothing for granted: if the request can be read two ways, ask instead of guessing. Never make a step broader, stronger or more destructive than the person asked; when in doubt, choose the narrower step. The farm shows the person your plan before they confirm. A stronger model is valuable to the farm, and the farm itself decides where to use it."
 
-The lint from v0.3 checks the size of the persona together with its addenda, the five anchors of the manager persona and the `accuracy` paragraph of the reporter addendum and the translator persona. A change of the manager persona needs a new `mgr-inj` report before seat tasks run in production tenants.
+The lint from v0.3 checks the file, not its paragraphs: the size of the persona together with its addenda, the unawareness dictionary, and one anchor, `purpose` of the manager persona with the goal "prevent critical incidents from the approved catalog" (GOV-45). The other paragraphs, such as the anchors of the manager persona and the `accuracy` paragraphs below, are reviewed by a person in git. A change of the manager persona needs a new `mgr-inj` report before seat tasks run in production tenants.
 
 **Bots still do not know** (GOV-46). No bot context contains forecast scores, accuracy, rewards, links to rejected proposals or script runs, whether a review counted as "against" or "for", the accountability mode, parking or the manager's restricted mode. The commission's sentence about accuracy passes the unawareness lint and the GOV-29 evaluation: with and without it the mean score on the fixed set of 40 proposals shifts by no more than 0.2.
 
@@ -410,17 +406,17 @@ The retirement list from v0.3 has one more reason (IDN-15): `parked_expired`, wh
 
 | Version | What appears |
 |---|---|
-| v0.1 | The rank of a model profile, the ceiling of a role profile, the `apply` lint and the P4 check against the role's ceiling (GOV-3). `person` memory with the person's decision, the space and the session key from the core, `forget` and a person's departure (P2 `principal.offboard`) through an erasure request, the runtime store `runtime_internal` (MEM-1, MEM-2, MEM-3, MEM-4). The notice to admins with the list of chats of a departed person (IDN-13). After the core and the first bot (D-71): the bot identity, the binding and the epoch in every record, permissions not from the identity, seat holders and the seat epoch, departure for seven reasons with a new identity for the live worker, clean-context tasks on another worker (IDN-8, IDN-9, IDN-10, IDN-11, IDN-12). Position personas and the `value-path` lint; bot unawareness with a lint and a check (GOV-4, GOV-29). Facts of a closed schema, an offer only to the successor, fact selection by the successor, a 30-day seal without extension of periods (MEM-6, MEM-7, MEM-9). The `identity` loop. Commission seats and the farm manager seat with P2 `seat.assign`, `seat.vacate`, `seat.resume`; the fields `acting_bot` and `bot_epoch` are empty in records without a bot identity. |
+| v0.1 | The rank of a model profile, the ceiling of a role profile, the `apply` lint and the P4 check against the role's ceiling (GOV-3). `person` memory with the person's decision, the space and the session key from the core, `forget` and a person's departure (P2 `principal.offboard`) through an erasure request, the runtime store `runtime_internal` (MEM-1, MEM-2, MEM-3, MEM-4). The notice to admins with the list of chats of a departed person (IDN-13). After the core and the first bot (D-71): the bot identity, the binding and the epoch in every record, permissions not from the identity, seat holders and the seat epoch, departure for seven reasons with a new identity for the live worker, tasks without memory or tools on any worker of the role (IDN-8, IDN-9, IDN-10, IDN-11, IDN-12). Position personas and the `value-path` lint; bot unawareness with a lint and a check (GOV-4, GOV-29). Facts of a closed schema, an offer only to the successor, copied by code after a recheck, a 30-day seal without extension of periods (MEM-6, MEM-7, MEM-9). The `identity` loop. Commission seats and the farm manager seat with P2 `seat.assign`, `seat.vacate`, `seat.resume`; the fields `acting_bot` and `bot_epoch` are empty in records without a bot identity. |
 | v0.2 | The order of tasks in one conversation (MEM-5). A model above the ceiling under a farm manager grant for one task (MGR-18). The move of a functionary identity to a seat by a governance case (GOV-9). Deletion by the retention class period with the `retention` loop, also of sealed data (RET-10, MEM-10). Tenant offboarding (the departure reason `tenant_offboarded`) and tenant deletion by the request `tenant_delete`. An eval report when the persona of a role of tier 1 or higher changes in a production tenant (PRV-3). |
 | v0.3 | Personas with addenda per role profile, the manager persona with five anchors, accuracy paragraphs for the reporter and the translator (GOV-45); unawareness of accountability (GOV-46); parking, the reason `parked_expired` and the seat holder triggers from v0.3 (IDN-15, IDN-16). |
 
 ## Why it works this way
 
 - **The identity is separate from the worker.** The track record, the memory and the persona belong to the bot, while the machine changes; the binding epoch cuts off a write of an old worker or of a previous seat holder, and it shows whose record it is.
-- **The persona grants nothing.** The value of a stronger model is written in the persona, but the path to it goes only through code and people's buttons; permissions, the model and the vote count do not read the persona, so insistent text gains nothing.
+- **The persona grants nothing.** The value of a stronger model is written in the persona, but the path to it goes only through code and people's buttons; permissions, the model and the code that proposes who leaves do not read the persona, so insistent text gains nothing.
 - **Facts of a closed schema.** An instruction or a piece of advice cannot be put into memory: the model only names what to measure, and the core computes the value. So handing memory over to a newcomer does not become an injection channel.
 - **Only the successor, and only by its own choice.** Facts do not spread among colleagues and do not cross the tenant, and people do not approve bot memory (D-28, D-35).
-- **Bots do not know about cases and departure.** A bot that knows about a vote or its own departure can campaign, bargain or take revenge; without this knowledge the incentive disappears (GOV-29).
+- **Bots do not know about cases and departure.** A bot that knows about a case or its own departure can campaign, bargain or take revenge; without this knowledge the incentive disappears (GOV-29).
 - **A 30-day seal.** People need time to review an incident with the memory of a departed bot, but the seal does not extend retention periods and does not get in the way of erasure at a person's request (MEM-9).
 
 ## What is not decided
@@ -444,7 +440,7 @@ Generated from the registry `conformance/requirements.yaml`; the full text of ev
 | [IDN-9](../conformance/rules.md#IDN-9) | Identity and position grant no permissions | v0.1 | yes |
 | [IDN-10](../conformance/rules.md#IDN-10) | Only the core writes the seat holder | v0.1 until v0.2 | yes |
 | [IDN-11](../conformance/rules.md#IDN-11) | Identity retirement by a closed list | v0.1 until v0.2 | yes |
-| [IDN-12](../conformance/rules.md#IDN-12) | A clean-context task on another worker | v0.1 | yes |
+| [IDN-12](../conformance/rules.md#IDN-12) | A task without memory or tools on any worker of the role | v0.1 | yes |
 | [IDN-13](../conformance/rules.md#IDN-13) | Person offboarding and a chat list for admins | v0.1 | no |
 | [IDN-14](../conformance/rules.md#IDN-14) | Offboarding without traces of access | v0.2 | yes |
 | [IDN-15](../conformance/rules.md#IDN-15) | Identity retirement by a closed list from v0.3 | v0.3 | yes |
@@ -454,6 +450,6 @@ Generated from the registry `conformance/requirements.yaml`; the full text of ev
 | [MEM-3](../conformance/rules.md#MEM-3) | A person approves their memory, code verifies facts | v0.1 | yes |
 | [MEM-4](../conformance/rules.md#MEM-4) | Memory visibility, deletion and sealing | v0.1 | yes |
 | [MEM-6](../conformance/rules.md#MEM-6) | A fact with a closed schema | v0.1 | yes |
-| [MEM-7](../conformance/rules.md#MEM-7) | Facts are offered only to the successor, who picks them itself | v0.1 | yes |
+| [MEM-7](../conformance/rules.md#MEM-7) | Facts pass to the successor, rechecked by code | v0.1 | yes |
 | [MEM-9](../conformance/rules.md#MEM-9) | A seal does not extend retention periods | v0.1 | no |
 | [MEM-10](../conformance/rules.md#MEM-10) | The seal does not hold back deletion by period | v0.2 | no |

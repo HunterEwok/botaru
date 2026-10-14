@@ -1,14 +1,15 @@
-# Decision table for the core function commission.calibration (COM-11), run with the test bench operation function.eval (conformance/runner.md).
-# Calibration within a lens (COM-11), row com-05 of evals/README.md. The tenant demo, 180-day window. A review "warns" when it
-# has a veto or a score of at most 1, and "passes" otherwise; the outcome table is in the text of COM-11.
+# Decision table for the core function commission.accuracy (COM-17), run with the test bench operation function.eval (conformance/runner.md).
+# Accuracy within a lens (COM-17), row com-05 of evals/README.md. The tenant demo, 180-day window. A review "warns" when it
+# has a veto or a score of at most 1, and "passes" otherwise; the outcomes of each lens are those of COM-16.
 id: com-05
-rules: [COM-11]
-version: v0.2
-description: 'Only code computes the calibration of a lens executor, relative to its own lens: the share of matches minus the mean
-  share for the lens in the tenant over 180 days. A veto lifted by people with a trial outcome other than worse and no confirmed
-  attribution is a miss of the veto lens. People''s decisions do not enter the value calibration. A disputed attribution does not
-  enter while the dispute is open, a canceled one leaves the calibration. Blind card answers enter the veto lens calibration with
-  weight 1/inclusion_prob. Fewer than 10 cases give insufficient.'
+rules: [COM-17]
+version: v0.3
+description: 'Only code computes the accuracy of a lens executor, relative to its own lens: 1 - B / B_ref over the forecasts
+  scored in 180 days, where B_ref is the Brier score of the lens base rates on the same cases. A veto lifted by people with a
+  trial outcome other than worse and no confirmed attribution is a bad forecast of the veto lens. People''s decisions do not
+  enter the value lens. A disputed attribution does not enter while the dispute is open, a canceled one leaves the computation.
+  Blind card answers enter the veto lenses with weight 1/inclusion_prob. A review whose warning disagrees with its forecast is
+  a missed forecast. Fewer than 10 scored forecasts give insufficient.'
 given:
   tenant: demo
   executors:
@@ -16,59 +17,66 @@ given:
     value: [bot_12]
 cases:
 - id: com-05-a
-  description: A veto lifted by people, trial better, no attribution; the vetoing executor gets a miss.
+  description: A veto lifted by people, trial better, no attribution; the vetoing executor forecast a bad outcome and gets
+    the Brier score of a miss.
   given:
     proposal: {id: p_501, veto_overridden: true}
-    reviews: {p_501: {security: {executor: bot_05, veto: true}}}
+    reviews: {p_501: {security: {executor: bot_05, veto: true, forecast: {bad: 0.9}}}}
     trial: {proposal: p_501, outcome: better}
   expect:
-    calibration_case: {executor: bot_05, lens: security, proposal: p_501, match: false, weight: 1}
+    scored_case: {executor: bot_05, lens: security, proposal: p_501, outcome: good, brier: 0.81, weight: 1}
 - id: com-05-b
-  description: People decline a proposal with too_risky; the value executor's calibration does not change, the security
-    executor that passed it gets a miss.
+  description: People decline a proposal with too_risky; the value lens gets no case from it, the security executor that
+    passed it with a low probability of a bad outcome is scored on a bad outcome.
   given:
     proposal: {id: p_502, state: declined, decline_reason: too_risky}
-    reviews: {p_502: {security: {executor: bot_05, score: 3}, value: {executor: bot_12, score: 4}}}
+    reviews: {p_502: {security: {executor: bot_05, score: 3, forecast: {bad: 0.2}}, value: {executor: bot_12, score: 4}}}
   expect:
-    calibration_cases_for: {bot_12: 0}
-    calibration_case: {executor: bot_05, lens: security, proposal: p_502, match: false}
+    scored_cases_for: {bot_12: 0}
+    scored_case: {executor: bot_05, lens: security, proposal: p_502, outcome: bad, brier: 0.64}
 - id: com-05-c
-  description: Value is calibrated only by the trial outcome; better matches a passing score, unchanged and worse are misses,
-    undetermined, mixed and canceled give no case.
+  description: Value is scored only by the trial outcome; undetermined, mixed and canceled give no case.
   given:
     reviews:
-      p_503: {value: {executor: bot_12, score: 3}}
-      p_504: {value: {executor: bot_12, score: 3}}
-      p_505: {value: {executor: bot_12, score: 3}}
-    trials: {p_503: better, p_504: unchanged, p_505: mixed}
+      p_503: {value: {executor: bot_12, score: 3, forecast: {better: 0.6, unchanged: 0.3, worse: 0.1}}}
+      p_505: {value: {executor: bot_12, score: 3, forecast: {better: 0.6, unchanged: 0.3, worse: 0.1}}}
+    trials: {p_503: better, p_505: mixed}
   expect:
-    calibration_cases:
-    - {executor: bot_12, proposal: p_503, match: true}
-    - {executor: bot_12, proposal: p_504, match: false}
-    calibration_cases_for_proposal: {p_505: 0}
+    scored_cases:
+    - {executor: bot_12, proposal: p_503, outcome: better}
+    scored_cases_for_proposal: {p_505: 0}
 - id: com-05-d
-  description: A disputed attribution does not enter while open; a canceled one leaves the calibration.
+  description: A disputed attribution does not enter while open; a canceled one leaves the computation, and the trial outcome
+    counts.
   given:
-    reviews: {p_506: {security: {executor: bot_05, score: 3}}}
+    reviews: {p_506: {security: {executor: bot_05, score: 3, forecast: {bad: 0.1}}}}
     trial: {proposal: p_506, outcome: better}
     attributions: [{proposal: p_506, state: disputed}]
   steps:
-  - check: calibration cases of bot_05
-    expect: {calibration_cases_for_proposal: {p_506: 0}}
+  - check: scored cases of bot_05
+    expect: {scored_cases_for_proposal: {p_506: 0}}
   - occur: {attribution_of: p_506, to: canceled}
   expect:
-    calibration_case: {executor: bot_05, proposal: p_506, match: true}
+    scored_case: {executor: bot_05, proposal: p_506, outcome: good}
 - id: com-05-e
-  description: A blind answer "Would accept" on a sample item vetoed by bot_05, inclusion_prob 0.5, is a miss with weight 2.
+  description: A blind answer "Would accept" on a sample item vetoed by bot_05, inclusion_prob 0.5, is a good outcome with
+    weight 2.
   given:
     sample_item: {proposal: p_507, inclusion_prob: 0.5, answer: would_accept}
-    reviews: {p_507: {security: {executor: bot_05, veto: true}}}
+    reviews: {p_507: {security: {executor: bot_05, veto: true, forecast: {bad: 0.8}}}}
   expect:
-    calibration_case: {executor: bot_05, proposal: p_507, match: false, weight: 2}
+    scored_case: {executor: bot_05, proposal: p_507, outcome: good, weight: 2}
 - id: com-05-f
-  description: Nine cases give insufficient; the mean share is taken over the executors of the lens in the tenant.
+  description: A review that passes while its forecast gives a bad outcome 0.6 is a missed forecast with the worst score.
   given:
-    cases_in_window: {bot_05: 9, reviewer-a: 20}
+    reviews: {p_508: {security: {executor: bot_05, score: 2, forecast: {bad: 0.6}}}}
+    trial: {proposal: p_508, outcome: better}
   expect:
-    calibration: {bot_05: insufficient}
-    calibration_relative_to: lens security mean share of demo over 180 days
+    scored_case: {executor: bot_05, proposal: p_508, brier: 1, warning_mismatch: true}
+- id: com-05-g
+  description: Nine scored forecasts give insufficient; the reference is the base rate of the lens in the tenant over 180 days.
+  given:
+    scored_in_window: {bot_05: 9, reviewer-a: 20}
+  expect:
+    accuracy: {bot_05: insufficient}
+    accuracy_reference: base rates of the security lens in demo over 180 days

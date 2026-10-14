@@ -20,12 +20,12 @@ given:
       'commission:4': {lens: value, holder: bot_12}
 cases:
 - id: gov-fx-27-a
-  description: commission_underrates in the security veto stratum in three monthly digests in a row.
+  description: commission_underrates in three monthly digests in a row; the card names all seats.
   given:
     audit_sample_flags:
-    - {month: 2027-01, stratum: veto_security, flag: commission_underrates}
-    - {month: 2027-02, stratum: veto_security, flag: commission_underrates}
-    - {month: 2027-03, stratum: veto_security, flag: commission_underrates}
+    - {month: 2027-01, flag: commission_underrates}
+    - {month: 2027-02, flag: commission_underrates}
+    - {month: 2027-03, flag: commission_underrates}
   steps:
   - stand: {op: loop.tick, loop: governance}
   expect:
@@ -34,13 +34,12 @@ cases:
       to: human:bob
       chat_kind: direct
       buttons: []
-      seats: ['commission:1']
-      lens: security
-      holders: [bot_05]
+      seats: ['commission:1', 'commission:2', 'commission:3', 'commission:4']
+      holders: [bot_05, bot_07, bot_09, bot_12]
       flag: commission_underrates
-      commands: ['farmctl seat vacate commission:1', 'farmctl seat assign commission:1 <bot>']
+      commands_include: ['farmctl seat vacate commission:1', 'farmctl seat assign commission:1 <bot>']
     deliveries_to: {human:alice: 0}
-    commission_status: {commission_locked: {flag: commission_underrates, lens: security, seats: [1]}}
+    commission_status: {commission_locked: {flag: commission_underrates, seats: [1, 2, 3, 4]}}
     doctor: {check: commission_locked, tenant: demo, ok: false}
     new_cases: 0
     seat_changes: 0
@@ -48,23 +47,23 @@ cases:
   description: Two months in a row, then a month without the flag, give nothing.
   given:
     audit_sample_flags:
-    - {month: 2027-01, stratum: veto_security, flag: commission_underrates}
-    - {month: 2027-02, stratum: veto_security, flag: commission_underrates}
-    - {month: 2027-03, stratum: veto_security, flag: null}
+    - {month: 2027-01, flag: commission_underrates}
+    - {month: 2027-02, flag: commission_underrates}
+    - {month: 2027-03, flag: null}
   steps:
   - stand: {op: loop.tick, loop: governance}
   expect:
     deliveries_of_card: {commission_review: 0}
     commission_status: {commission_locked: null}
 - id: gov-fx-27-c
-  description: Three closed cases in a row with evicts_top_calibrated give the card for all seats; three with stuck give nothing.
+  description: Three closed cases in a row with evicts_top_calibrated give the card for all seats; flags outside the list give nothing.
   cases:
   - id: gov-fx-27-c1
     given:
       closed_cases:
       - {id: gc_3, state: effective, flags: [evicts_top_calibrated]}
       - {id: gc_4, state: expired, flags: [evicts_top_calibrated]}
-      - {id: gc_5, state: effective, flags: [evicts_top_calibrated, defaulted]}
+      - {id: gc_5, state: effective, flags: [evicts_top_calibrated, evicts_only_scored_veto]}
     steps:
     - stand: {op: loop.tick, loop: governance}
     expect:
@@ -73,9 +72,9 @@ cases:
   - id: gov-fx-27-c2
     given:
       closed_cases:
-      - {id: gc_3, state: effective, flags: [stuck]}
-      - {id: gc_4, state: effective, flags: [stuck]}
-      - {id: gc_5, state: effective, flags: [stuck]}
+      - {id: gc_3, state: effective, flags: [evicts_only_scored_veto]}
+      - {id: gc_4, state: effective, flags: [evicts_only_scored_veto]}
+      - {id: gc_5, state: effective, flags: [evicts_only_scored_veto]}
     steps:
     - stand: {op: loop.tick, loop: governance}
     expect:
@@ -91,7 +90,7 @@ cases:
   - stand: {op: loop.tick, loop: governance}
     at: 31d
     expect: {deliveries_of_card: {commission_review: 2}}
-  - occur: {audit_sample_flag: {month: 2027-05, stratum: veto_security, flag: null}}
+  - occur: {audit_sample_flag: {month: 2027-05, flag: null}}
   - stand: {op: loop.tick, loop: governance}
     at: 62d
   expect:

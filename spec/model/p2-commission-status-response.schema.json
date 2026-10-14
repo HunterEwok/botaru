@@ -179,64 +179,27 @@
     "audit_sample": {
       "type": "object",
       "properties": {
-        "strata": {
-          "type": "array",
-          "maxItems": 20,
-          "items": {
-            "type": "object",
-            "required": [
-              "stratum",
-              "answers",
-              "commission_underrates"
-            ],
-            "properties": {
-              "stratum": {
-                "enum": [
-                  "veto",
-                  "weighted_mean",
-                  "parked_score"
-                ]
-              },
-              "lens": {
-                "type": "string",
-                "x-botaru-registry": "lenses"
-              },
-              "answers": {
-                "type": "integer",
-                "minimum": 0
-              },
-              "would_accept_share": {
-                "anyOf": [
-                  {
-                    "type": "number",
-                    "minimum": 0,
-                    "maximum": 1
-                  },
-                  {
-                    "type": "null"
-                  }
-                ]
-              },
-              "lower_bound": {
-                "anyOf": [
-                  {
-                    "type": "number",
-                    "minimum": 0,
-                    "maximum": 1
-                  },
-                  {
-                    "type": "null"
-                  }
-                ]
-              },
-              "commission_underrates": {
-                "type": "boolean"
-              }
+        "answers": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "would_accept_share": {
+          "anyOf": [
+            {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1
+            },
+            {
+              "type": "null"
             }
-          }
+          ]
+        },
+        "commission_underrates": {
+          "type": "boolean"
         }
       },
-      "description": "From v0.2: the audit sample over 180 days per stratum and the flag commission_underrates (DIG-5).",
+      "description": "From v0.2: the audit sample over 180 days: the number of answers, the weighted share of \"Would accept\" and the flag commission_underrates (DIG-5).",
       "x-botaru-version": "v0.2"
     }
   }

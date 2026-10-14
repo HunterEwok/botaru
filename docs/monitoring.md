@@ -366,4 +366,4 @@ Generated from the registry `conformance/requirements.yaml`; the full text of ev
 | [MON-11](../conformance/rules.md#MON-11) | Export of alarms and the audit head does not die | v0.1 | yes |
 | [MON-12](../conformance/rules.md#MON-12) | Alarm export to the monitoring system | v0.1 | yes |
 | [MON-13](../conformance/rules.md#MON-13) | Alarms to people by core delivery without a monitoring system | v0.1 | yes |
-| [OBS-11](../conformance/rules.md#OBS-11) | The `doctor` and `status` check per tenant | v0.1 | no |
+| [OBS-11](../conformance/rules.md#OBS-11) | The `doctor` and `status` lines of the alarm path per tenant | v0.1 | no |

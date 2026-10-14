@@ -60,7 +60,7 @@ spec:
   budgets: {month_eur: 300, day_eur: 15, hour_eur: 3}   # tenant ceilings (BUD-1); role lines sit inside them
   attention: {cards_per_tenant_hour: 20}                # above this, cards get service_rate_limited (APR-2)
   delegated_groups: [researcher]                        # groups the team lead grants from the channel (PRM-16): only without actions and decisions
-  farm_manager: {enabled: true, lens: true, daily_review: true, model_profile: manager-std}   # D-77
+  farm_manager: {enabled: true}   # D-77, MGR-42
   link_allowlist: [www.example.org, docs.example.org]
   models_allowed: [base-std, analysis-std, review-a, review-b, seat-std, seat-alt, manager-std, translate-std]
                                 # seat-std, seat-alt, manager-std, translate-std are needed by the commission, the manager and the translator

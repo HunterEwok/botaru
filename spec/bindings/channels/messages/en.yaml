@@ -57,12 +57,10 @@ texts:
     {calc_all}, without the author {calc_without_author}, without the role {calc_without_role}.
     Count it as a promotion trigger by {deadline}? Silence leaves the success in the track record.
   card.self_measured.count: Count it
-  # Number check of a model paragraph (REP-4, D-95)
-  number.decimal_sep: "."
-  number.group_sep: ","
+  # Number words that a model paragraph to people may not hold (REP-4)
   number.words: [zero, one, two, three, four, five, six, seven, eight, nine, ten, eleven, twelve,
-    thirteen, fourteen, fifteen, sixteen, seventeen, eighteen, nineteen, twenty]
-  number.units: [ms, s, min, h, d, B, KB, MB, GB, TB, KiB, MiB, GiB, TiB, m, km, °C]
+    thirteen, fourteen, fifteen, sixteen, seventeen, eighteen, nineteen, twenty, thirty, forty, fifty,
+    sixty, seventy, eighty, ninety, hundred, thousand, million, billion, dozen, half, twice]
   # Refusals and outcomes that the first bot shows (DLV-9, PRM-8)
   provenance.model: "[AI answer]"
   task.rejected: "The request was not accepted: {reason}."

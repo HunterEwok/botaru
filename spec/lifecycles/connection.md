@@ -37,7 +37,7 @@ Record fields: `id` (prefix `cn_`), `tenant`, `principal` (only `human`), `provi
 - The token value is kept only by the deployment secret store; records, audit, events and the model context carry only `token_ref`, which the core generates.
 - One external account is connected by at most one principal of the farm at a time.
 - A write with a connection is a tier 3 action with an approval; a read scope never enables a write.
-- The person's data report lists their connections (SEC-10); offboarding of the person or the tenant and erasure revoke and delete them (LCY-1, LCY-3, RET-7).
+- Offboarding of the person or the tenant and erasure revoke and delete them (LCY-1, LCY-3, RET-7).
 
 ## Versions
 

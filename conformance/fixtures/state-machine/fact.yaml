@@ -29,7 +29,7 @@ allowed:
   from: null
   to: active
   to_note: active, a copy with inherited
-  by: the core by the outcome of the memory.pick.v1 task
+  by: the core when the successor of a fact offer exists
   when: the recheck against the recipient's rights passed; untrusted_origin is kept
   rules: [MEM-7]
 - id: sm-fact-03

@@ -1,8 +1,9 @@
 id: scr-fx-conditions
 rules: [SCR-3]
-description: 'A when condition is built only from atoms of the closed table spec/model/condition-ops.yaml over result fields
-  with x-botaru-read-by: code and over the rollups count, sum, min, max. Nesting no deeper than 2, no more than 8 atoms. There is no arithmetic,
-  no string functions, no regular expressions and no access to time.'
+description: 'A when condition is built only from the atoms eq, ne and in of the closed table spec/model/condition-ops.yaml over
+  result fields with x-botaru-read-by: code of a step with one result and over the step state. Nesting no deeper than 2, no more
+  than 8 atoms. There is no arithmetic, no comparison of sizes, no rollup over fanout items, no string functions, no regular
+  expressions and no access to time.'
 given:
   tenant: demo
   result_fields:
@@ -10,14 +11,24 @@ given:
       severity: {read_by: code}
       summary_text: {read_by: model}
     ops.disk.read.v1:
-      free_pct: {read_by: code, summary_field: true}
+      free_level: {read_by: code, summary_field: true}
 cases:
 - given:
     when: {ref: tail.severity, op: eq, value: high}
   expect: {result: ok}
 - given:
-    when: {ref: disk.min.free_pct, op: lt, value: 10}
+    when: {ref: disk.free_level, op: in, value: [low, critical]}
   expect: {result: ok}
+- given:
+    when: {ref: tail.state, op: ne, value: failed}
+  expect: {result: ok}
+- given:
+    when: {ref: tail.severity, op: gt, value: low}
+  expect: {result: rejected, reason: script_invalid, note: there is no comparison of sizes}
+- given:
+    steps: {disk: {kind: fanout}}
+    when: {ref: disk.min.free_level, op: eq, value: low}
+  expect: {result: rejected, reason: script_invalid, note: there is no rollup over fanout items}
 - given:
     when: {ref: tail.summary_text, op: eq, value: ok}
   expect: {result: rejected, reason: script_invalid, note: the model reads the field}

@@ -40,6 +40,12 @@
     "reason_code": {
       "description": "Reason code from a closed list, for example for \"Reject\" on a proposal.",
       "$ref": "urn:botaru:schema:common:1#/$defs/reason"
+    },
+    "choice": {
+      "description": "From v0.2: for subject_kind governance_case and the decision confirm, the seat of the list L that leaves, as the person chose it or as code proposed it (GOV-12, GOV-43).",
+      "type": "string",
+      "pattern": "^commission:[1-9][0-9]{0,2}$",
+      "maxLength": 16
     }
   }
 }

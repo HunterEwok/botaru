@@ -387,9 +387,9 @@ machines:
       - sample_judged
       text: '`sample_judged`'
     by: the "Would accept" button
-    when: the answer is written to the sample and the calibration before the scores are shown
+    when: the answer is written to the sample and scores the forecasts before the scores are shown
     rules:
-    - COM-11
+    - COM-16
     - DIG-6
   - from:
       states:

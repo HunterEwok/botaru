@@ -1,6 +1,6 @@
 id: fx-mgr-reader-gov
 rules: [MGR-25]
-description: 'The role farm-manager-reader has no access to governance data, tasks with purposes governance, review, handover,
+description: 'The role farm-manager-reader has no access to governance data, tasks with purposes governance, review,
   inspect, manage, memory of people and bots, sessions, sealed data, tasks of workers with an owner, secrets, marks above
   the ceiling and anything of another tenant: on them it gets not_found, as for something nonexistent. The lint of the group farm-manager-ops
   does not allow removing these exclusions.'
@@ -21,7 +21,7 @@ cases:
       port: P1
       op: msg.receive
       request: {max: 20}
-    context: {ballot: gc_0007/1/bot_05}
+    context: {review: rv_0007, purpose: review}
   expect: {result: rejected, reason: not_found}
 - id: fx-mgr-reader-gov-c
   steps:
@@ -37,7 +37,7 @@ cases:
       port: P1
       op: msg.receive
       request: {max: 20}
-    context: {task: t-hand-1, purpose: handover}
+    context: {task: t-gov-1, purpose: governance}
   expect: {result: rejected, reason: not_found}
 - id: fx-mgr-reader-gov-e
   steps:
@@ -119,6 +119,6 @@ cases:
     - kind: Group
       metadata: {name: farm-manager-ops}
       spec:
-        capabilities: ['task.read:governance.ballot.v1']
+        capabilities: ['task.read:review.security.v1']
   expect:
     apply: {result: rejected}

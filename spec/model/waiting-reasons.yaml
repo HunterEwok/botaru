@@ -1,5 +1,5 @@
 registry: waiting-reasons
-version: 2
+version: 3
 description: >-
   Reasons why a task in `submitted` cannot be handed out right now. A waiting task carries the field
   `waiting_reason` of the task record from this list; work is not dropped under pressure, and the attempt
@@ -50,7 +50,7 @@ entries:
     rules: [DSP-7, ORC-3]
   - id: provider_quota
     since: v0.1
-    meaning: The tenant has no free share of the needed model pool.
+    meaning: The pair (tenant workspace, model pool) waits for the provider rate limit.
     predicate: D19
     rules: [DSP-7, GW-10]
   - id: group_quota

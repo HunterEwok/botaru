@@ -3,7 +3,7 @@ rules: [MEM-6]
 description: 'One attempt yields no more than 3 facts (memory.facts.per_attempt); the core writes them at complete in the same
   transaction, and a failed, canceled or fenced attempt leaves no facts. A store holds no more than 100 active
   facts (memory.facts.max_active); on overflow the fact with the oldest last_used_at is evicted. When offering
-  a handover and when taking, the core rechecks evidence and value: an erased piece of evidence moves the fact to stale,
+  facts to a successor and when copying them, the core rechecks evidence and value: an erased piece of evidence moves the fact to stale,
   a mismatch gives fact_mismatch. Numbers of identities, facts, tasks and proposals are shortened, as in the example in docs/bots.md.'
 given: {tenant: demo}
 cases:

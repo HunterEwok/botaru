@@ -1,32 +1,28 @@
 id: fx-gateway-gateway
 rules: [GW-10, GW-13]
-description: A rate limiter on a model pool with a tenant share (GW-10) and counting runs in max_runs only with a model
-  answer (GW-13). The reasons provider_quota and provider_config do not spend an attempt.
+description: A provider rate limit of the tenant's workspace is a wait, not a refusal (GW-10), and runs count in max_runs only
+  with a model answer (GW-13). The reasons provider_quota and provider_config do not spend an attempt.
 given: {tenant: demo}
 cases:
 - id: gw-fx-16
   rules: [GW-10]
-  description: The dispatcher does not give out a task whose pool has no free share for the tenant, and the runtime is not
-    started for it.
+  description: The provider asked the pair (demo workspace, pool family-a) to wait 60 seconds; the dispatcher does not give out
+    a task of that pair, and the runtime is not started for it; a task of demo2 on the same pool is given out.
   given:
-    demo_rpm_used: 50
-    pool:
-      name: family-a
-      rpm: 100
-      shares: {demo: 0.5, demo2: 0.5}
+    provider_answer: {tenant: demo, pool: family-a, reason: provider_rate_limited, retry_after_s: 60}
     task: {type: ops.investigate.v1, slot: base, profile: base-std}
-  expect: {claim_gives_task: false, waiting_reason: provider_quota, runtime_started: false}
+  expect: {claim_gives_task: false, waiting_reason: provider_quota, runtime_started: false, demo2_task_given: true}
 - id: gw-fx-17
   rules: [GW-10, GW-13]
-  description: P4 delays a call of a running run beyond the share until the share is freed; if it does not get it within the attempt period,
-    the run ends with provider_quota without spending an attempt and without counting in max_runs.
-  given: {attempt_deadline_s: 120, share_frees_after_s: 300}
-  expect: {run_end_reason: provider_quota, spends_attempt: false, counts_to_max_runs: false}
+  description: A run whose first call gets a rate limit answer ends with provider_rate_limited without spending an attempt
+    and without counting in max_runs; P4 keeps no rate limiter of its own.
+  given: {provider_answer: {reason: provider_rate_limited, retry_after_s: 30}, answered: false}
+  expect: {run_end_reason: provider_rate_limited, spends_attempt: false, counts_to_max_runs: false, p4_limiter: false}
 - id: gw-fx-18
   rules: [GW-10]
-  description: The share was freed within the attempt period; the call goes after a delay.
-  given: {attempt_deadline_s: 120, share_frees_after_s: 20}
-  expect: {call_sent: true, delayed_s: 20}
+  description: After the wait time the task of the pair is given out again.
+  given: {provider_answer: {reason: provider_rate_limited, retry_after_s: 20}, clock_s: 21}
+  expect: {claim_gives_task: true}
 - id: gw-fx-19
   rules: [GW-13]
   description: A run that ended before the first model answer with a provider reason or core_unavailable does not count

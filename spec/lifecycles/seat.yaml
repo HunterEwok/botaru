@@ -51,7 +51,7 @@ machines:
       - held
       text: '`held`'
     by: 'the "Confirm" button on a case with `mode: vacancy`'
-    when: 'the case is `effective`: the queue head takes the seat without a vote'
+    when: 'the case is `effective`: the queue head takes the seat without choosing a leaver'
     rules:
     - GOV-14
     - GOV-9

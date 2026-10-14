@@ -32,7 +32,7 @@ Commission seats:
 |---|---|---|---|---|
 | (none) | `vacant` | `apply` of the tenant charter with a new seat | an id, a lens from `lenses.yaml`, a fallback role optionally | GOV-33 |
 | `vacant` | `held` | P2 `seat.assign` (`farmctl`, `admin:governance` in the seat's tenant) | the identity of a functionary of this tenant (a role of the profile `worker`, `manager`, `reporter` or `aggregator`, the worker is enrolled without an owner) in `active`; its worker gets a new identity, its queue entry is removed | IDN-10, GOV-14 |
-| `vacant` | `held` | the "Confirm" button on a case with `mode: vacancy` | the case is `effective`: the queue head takes the seat without a vote | GOV-9, GOV-14 |
+| `vacant` | `held` | the "Confirm" button on a case with `mode: vacancy` | the case is `effective`: the queue head takes the seat without choosing a leaver | GOV-9, GOV-14 |
 | `held` | `held`, a new holder, epoch + 1 | the "Confirm" button on a case with `mode: removal` | the case is `effective`: the leaver is `retired(removed_by_vote)`, the candidate is on the seat | GOV-9, IDN-11 |
 | `held` | `held`, a new holder, epoch + 1 | P2 `seat.assign` on an occupied seat | the previous holder is `retired(replaced_by_human)` | IDN-10, IDN-11 |
 | `held` | `vacant` | P2 `seat.vacate` | the previous holder is `retired(replaced_by_human)` | IDN-10, IDN-11 |
@@ -60,10 +60,9 @@ Farm manager seat:
 ## Invariants
 
 - A seat has at most one holder. The seat epoch grows with every change of the holder, a vacating, a new stop reason and a return to `held`.
-- A seat task carries the seat epoch; a review, a ballot, a fact choice or a control operation with an outdated epoch gets `fenced` without side effects (IDN-10).
+- A seat task carries the seat epoch; a review, a fact choice or a control operation with an outdated epoch gets `fenced` without side effects (IDN-10).
 - With every change of the seat epoch the running attempts of seat tasks get `cancel_requested` and end with the reason `seat_changed` without spending the attempt; the task waits for a holder with the current epoch (IDN-10).
 - Holds set by the holder of the farm manager seat live at most 15 minutes after the holder is replaced (MGR-1), and on a seat stop by an incident they live out their deadline, at most 2 h (GOV-22); a stopped holder sets no new holds.
-- A pause by tenant from the money safeguard (MGR-14, `paused_in`) is not a seat state: the epoch does not change, the seat stays `held`, seat tasks are not handed out only in that tenant.
 - The set of stop reasons of the farm manager seat is computed from the active holds of the `seat` scope (`human` and `no_control`, HLD-1) and the reason `incident` in the seat record. The farm manager seat is in `held` only when the set is empty. P2 `seat.assign` and `seat.vacate` work from any state and clear the set.
 - The `seat.*` operations and a hold of the `seat` scope go only through `farmctl`, never from a channel (PRM-14); the `manager_stopped` card shows ready commands, not buttons (MGR-35).
 - The new holder of the farm manager seat is always a new identity in `farm`; a bot from a commission does not move to this seat. The holder of a commission seat is always a former functionary of its tenant.

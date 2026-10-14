@@ -40,7 +40,7 @@ C1 is the farm store with atomic transitions: tasks and the queue, leases, tool 
 | `control.apply` | core (P3 of the manager, P2 of people) | A control operation from a closed list: audit, event and a notice to people in one transaction | `fenced`, `held`, `target_not_implicated`, `target_excluded`, `protected_target`, `control_rate_limited` | v0.1 | MGR-1, MGR-9, MGR-13, MGR-14, MGR-32 |
 | `incident.*` | core (`incident` loop, P2) | Open by alarm and class, `resolved` by code, close or declare false by a person (`dismissed` with a reason code); from v0.2 declaring an incident false moves its attributions to changes with another person's "Yes" answer to `disputed` instead of canceling them (D-79) | | v0.1 | MGR-8, GOV-13 |
 | `bot.create`, `bot.bind`, `bot.retire` | core | A bot identity, binding to a worker or a seat with an epoch, retirement by a trigger from a closed list | | v0.1 | IDN-8, IDN-11 |
-| `case.open`, `case.advance`, `case.close`; ballot record | core (`governance` loop) | A governance case; the ballot value is taken from the P4 answer of this attempt | | v0.2 | GOV-7, GOV-12 |
+| `case.open`, `case.advance`, `case.close` | core (`governance` loop) | A governance case with the list of seats, their figures and the person's decision | | v0.2 | GOV-12, GOV-21 |
 | `attribution.create`, `attribution.decide`; grants; escalations | core | Incident attribution (states `pending`, `yes`, `no`, `disputed`, `canceled`; a dispute is resolved by the answer of the author of "Yes" or by silence for 7 days), model grant, escalation | | v0.2 | GOV-13, MGR-5, MGR-18 |
 
 ## Guarantees

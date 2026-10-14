@@ -4,7 +4,7 @@ object: hold
 rules:
 - CAP-4
 - DEP-8
-- GOV-23
+- GOV-14
 - HLD-1
 - HLD-2
 - HLD-1
@@ -42,7 +42,7 @@ allowed:
     with the bot; a hold on the `governance` scope (v0.2) is set by a person with `admin:governance` in the case's tenant;
     the scope and the effects are in the closed lists of the current version
   rules:
-  - GOV-23
+  - GOV-14
   - HLD-1
   - HLD-2
   - HLD-1
@@ -133,7 +133,7 @@ allowed:
     below); otherwise `forbidden`; a hold on the `governance` scope is lifted by a person with `admin:governance` in the
     case's tenant
   rules:
-  - GOV-23
+  - GOV-14
   - HLD-2
   - HLD-1
   - PRM-14
@@ -181,7 +181,7 @@ forbidden:
   rules:
   - CAP-4
   - DEP-8
-  - GOV-23
+  - GOV-14
   - HLD-1
   - HLD-2
   - HLD-1
@@ -192,7 +192,7 @@ forbidden:
   rules:
   - CAP-4
   - DEP-8
-  - GOV-23
+  - GOV-14
   - HLD-1
   - HLD-2
   - HLD-1
@@ -203,7 +203,7 @@ forbidden:
   rules:
   - CAP-4
   - DEP-8
-  - GOV-23
+  - GOV-14
   - HLD-1
   - HLD-2
   - HLD-1
@@ -219,7 +219,7 @@ forbidden:
   to: released
   expect: rejected
   rules:
-  - GOV-23
+  - GOV-14
   - HLD-2
   - HLD-1
   - MGR-15
@@ -232,7 +232,7 @@ forbidden:
   rules:
   - CAP-4
   - DEP-8
-  - GOV-23
+  - GOV-14
   - HLD-1
   - HLD-2
   - HLD-1
@@ -248,7 +248,7 @@ forbidden:
   to: released
   expect: rejected
   rules:
-  - GOV-23
+  - GOV-14
   - HLD-2
   - HLD-1
   - MGR-15

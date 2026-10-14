@@ -38,7 +38,7 @@ The list of conditions is closed and lives in `spec/model/dispatch-predicates.ya
 | D16 | a task with the purpose `insight` goes only to the bot of the role that, among the bots of this role with a ready worker (D8), has gone longest without such a task; on a tie, the bot with the smaller id (INS-5) | core records of dispatched tasks | v0.1 |
 | D17 | for a type with `conversation_concurrency: serial`, there is no running attempt of the same role in the same conversation, and the task is the first by enqueue time among the waiting tasks of the same role in this conversation that pass every other condition (MEM-5) | task and attempt records | v0.2 |
 | D18 | the circuit of the (workspace, model pool) pair that the task needs is not open (GW-11) | model gateway P4 observation | v0.1 |
-| D19 | the tenant has a free share of the model pool the task needs (GW-10) | P4 rate limiter | v0.1 |
+| D19 | the pair (tenant workspace, model pool) the task needs does not wait for the provider rate limit (GW-10) | P4, the provider's wait answer | v0.1 |
 | D20 | a task that the core enqueued for a specific bot identity bound to a worker (a task with its memory, session, inbox or tools) goes only to the worker of that binding with the current binding epoch; a clean context task and a task of an identity on a seat go to a worker of the role named by IDN-12 | the task's `acting_bot` and `bot_epoch` (IDN-8), identity binding | v0.1 |
 | D21 | for a direct request of a `human` or `service` principal, the principal has fewer than `tasks_in_flight` direct requests with a running attempt, and the task is the first by enqueue time among their waiting direct requests of the same type that pass every other condition (BUD-6) | task and attempt records | v0.2 |
 
@@ -77,7 +77,7 @@ The core writes the fairness key on every task from v0.1 (DSP-2, D-98); the send
 | schedule task | `schedule:<schedule>` |
 | direct request from a person or program | `interactive:<principal>` |
 | script step | `script:<run>` |
-| a task that the core creates itself and that has none of the sources above (a lens review, a ballot, an incident or inspection task, a daily review, a grant batch) | `system:<purpose>` |
+| a task that the core creates itself and that has none of the sources above (a lens review, an incident or inspection task, a daily review, a grant batch) | `system:<purpose>` |
 
 A redrive (`task.redrive`) and an action task after approval keep the key of the original task.
 
@@ -158,7 +158,7 @@ A waiting task carries the field `waiting_reason` from a closed list. A manager 
 | `provider_unavailable` | the circuit of the needed (workspace, model pool) pair is open (D18, GW-11) | v0.1 |
 | `resource_busy` | the resource is taken by another released write call (ORC-12) | v0.1 |
 | `not_released` | the campaign item has not been released yet | v0.1 |
-| `provider_quota` | the tenant has no free share of the needed model pool (D19, GW-10) | v0.1 |
+| `provider_quota` | the pair (tenant workspace, model pool) waits for the provider rate limit (D19, GW-10) | v0.1 |
 | `group_quota` | the bot group's `max_running` or the rule's `max_share` is exhausted (DSP-11), or the class 5 share `background_share` (BUD-8) | v0.2 |
 | `model_grant_pending` | the task waits for a decision on a grant of a stronger model (MGR-17) | v0.2 |
 
@@ -193,7 +193,7 @@ A group can be taken out of work or stopped entirely with a hold of scope `bot_g
 
 ## Managers
 
-A manager is a bot with the `manager` profile, a coordinator functionary. It proposes work but releases and assigns nothing (PRF-1). The profile allows the task purposes `work`, `insight` and `handover` and the P3 built-in tools `enqueue_child`, `propose_campaign`, `campaign_status` and `campaign_results`. There is no separate "manager" worker kind: it is an ordinary role with a non-empty `may_enqueue` or `campaigns.propose`.
+A manager is a bot with the `manager` profile, a coordinator functionary. It proposes work but releases and assigns nothing (PRF-1). The profile allows the task purposes `work` and `insight` and the P3 built-in tools `enqueue_child`, `propose_campaign`, `campaign_status` and `campaign_results`. There is no separate "manager" worker kind: it is an ordinary role with a non-empty `may_enqueue` or `campaigns.propose`.
 
 ### Three kinds of managers
 
@@ -712,7 +712,6 @@ Generated from the registry `conformance/requirements.yaml`; the full text of ev
 | [DSP-6](../conformance/rules.md#DSP-6) | Fairness within a class | v0.2 | no |
 | [DSP-7](../conformance/rules.md#DSP-7) | Pressure is expressed by counters, no work is lost | v0.1 | yes |
 | [DSP-8](../conformance/rules.md#DSP-8) | An empty group waits, an unclaimed task raises an alarm | v0.1 | yes |
-| [DSP-10](../conformance/rules.md#DSP-10) | A personal assistant is a pool of workers with the owner in the lease | v0.1 | yes |
 | [ORC-1](../conformance/rules.md#ORC-1) | Only a live attempt proposes a campaign, the plan is frozen | v0.1 | yes |
 | [ORC-2](../conformance/rules.md#ORC-2) | A campaign with an action starts after one plan approval | v0.1 | yes |
 | [ORC-3](../conformance/rules.md#ORC-3) | Each item runs no more than once | v0.1 | yes |

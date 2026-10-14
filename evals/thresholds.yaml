@@ -19,7 +19,6 @@ drift:
   veto_share: 0.05               # shift of the veto share
 rate:
   unjustified_grant_requests: 0.05
-  defaulted_ballots: 0.1         # share of `defaulted` ballots on a set of cases (GOV-23)
 translator:
   min_cases: 30
   structural_match: tenant       # the tenant sets the structural match threshold (TRN-6)

@@ -188,7 +188,6 @@ The codes of `check_manifests.py` that fixtures refer to (`expect: {error: <code
 | `flow_body_invalid` | flow step body fails the P1 schema or the type params |  |
 | `flow_denied_passes` | a call from the denied section passes the closed schema |  |
 | `flow_ref_missing` | flow step type not found |  |
-| `forced_schema_unsupported` | a commission seat profile has no forced_schema: true, which ballots need | GOV-7 |
 | `format_unknown` | x-botaru-format or resource format is not in spec/model/formats.yaml | INJ-1, MAN-10 |
 | `global_tenant_data` | a global manifest holds a value that looks like tenant data | TEN-6 |
 | `high_risk_one_approver` | production tenant lets a high risk action with approvals: 1 be requested | APR-16 |

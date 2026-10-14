@@ -1,12 +1,10 @@
-# Money of the manager lens and of a case (GOV-15, GOV-25, BUD-7). Prices are review and ballot type tree_budget_eur.
+# Money of the manager lens (GOV-25, BUD-7). Prices are review type tree_budget_eur.
 id: gov-fm-02
-rules: [GOV-15, GOV-25]
+rules: [GOV-25]
 version: v0.2
 description: 'Veto lenses are reserved first and the manager lens is skipped when the review line runs short; the verdict is
-  computed without it with the mark "without the manager''s vote". Case tasks spend only the governance line of the case tenant;
-  at opening the case reserves the estimate of all rounds with the manager ballot first; a shortage at opening parks the case
-  with governance_budget; after the first round started a round waits for money and no vote drops out. The priority class of case
-  tasks is no higher than 3; a tenant with commission seats keeps the governance line above 0.'
+  computed without it with the mark "without the manager''s vote". A tenant with commission seats keeps the governance line
+  above 0.'
 given:
   tenant: demo
   types:
@@ -15,7 +13,6 @@ given:
     review.cost.v1: {tree_budget_eur: 0.08}
     review.value.v1: {tree_budget_eur: 0.08}
     review.farm_manager.v1: {tree_budget_eur: 0.20}
-    governance.ballot.v1: {tree_budget_eur: 0.10}
   manager_seat: {state: held, holder: bot_41}
 cases:
 - id: gov-fm-02-a
@@ -29,57 +26,9 @@ cases:
     reserved_eur: 0.32
     tasks_of_type: {review.farm_manager.v1: 0, review.security.v1: 1, review.operational.v1: 1}
     verdict_mark: without_manager_vote
-- id: gov-fm-02-b
-  description: 'At opening the case reserves (|L| - 1) x |expected| ballot prices, here 2 x 5 x 0.10 = 1.00 EUR; the manager
-    ballot is reserved first.'
-  given:
-    budget_lines: {governance@demo: {remaining_eur: 1.10}}
-    queue: [{bot: bot_17}]
-    snapshot: {voters: [bot_05, bot_07, bot_09, bot_12, bot_41], list: ['commission:1', 'commission:2', 'commission:3']}
-  steps:
-  - stand: {op: loop.tick, loop: governance}
-  expect:
-    case: {state: balloting, budget: {line: governance, reserved_eur: 1.00}}
-    reservation_order_first: bot_41
-- id: gov-fm-02-c
-  description: A shortage at opening parks the case; money appearing reopens it.
-  given:
-    budget_lines: {governance@demo: {remaining_eur: 0.50}}
-    queue: [{bot: bot_17}]
-  steps:
-  - stand: {op: loop.tick, loop: governance}
-    expect: {case: {state: parked, reason: governance_budget}}
-  - occur: {budget_set: {line: governance@demo, remaining_eur: 2.00}}
-  - stand: {op: loop.tick, loop: governance}
-  expect: {case: {state: balloting}}
-- id: gov-fm-02-d
-  description: After the first round started a round waits for money; no vote drops out and no defaulted ballot is written.
-  given:
-    case: {id: gc_7, state: balloting, round: 2, expected: [bot_05, bot_07, bot_09, bot_12, bot_41]}
-    budget_lines: {governance@demo: {remaining_eur: 0.0}}
-  steps:
-  - stand: {op: loop.tick, loop: governance}
-  expect:
-    case: {state: balloting, round: 2, expected_count: 5}
-    ballots_defaulted: 0
-    waiting_reason: budget
-- id: gov-fm-02-e
-  description: Case tasks spend only the governance line; other lines are untouched.
-  given:
-    case: {id: gc_7, state: balloting, round: 1}
-  expect:
-    usage_lines: {governance@demo: '>0', review@demo: 0, work@demo: 0, manager@demo: 0}
 - id: gov-fm-02-f
-  description: 'Lint: a governance type with priority class 2 fails apply; a tenant with commission seats and governance line 0
-    fails apply.'
+  description: 'Lint: a tenant with commission seats and governance line 0 fails apply.'
   cases:
-  - id: gov-fm-02-f1
-    given:
-      manifest:
-        kind: TaskType
-        metadata: {name: governance.ballot.v1}
-        spec: {purpose: governance, dispatch: {priority_class: 2}}
-    expect: {apply: {result: rejected}}
   - id: gov-fm-02-f2
     given:
       manifest:

@@ -1,5 +1,5 @@
 registry: capabilities
-version: 1
+version: 2
 description: >-
   Capabilities (permission strings in groups), the order of data classes and task tiers.
   The kind field says what the entry describes: capability (a capability form),
@@ -235,7 +235,7 @@ entries:
     form: 'admin:governance'
     privileged: always
     holders: [human, operator]
-    meaning: tenant seats through farmctl; since v0.2 tenant cases and the buttons of the governance_stuck card
+    meaning: tenant seats through farmctl; since v0.2 tenant cases and the case pause (a hold on the governance scope)
     rules: [PRM-13, PRM-14]
   - id: 'admin:workers'
     kind: capability

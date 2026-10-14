@@ -300,7 +300,7 @@ The table below is the list of future ADRs: none of them is written as a file in
 | Campaign | accepted | a mass action from a plan snapshot with one approval | D-20 |
 | Script and translator | accepted | a closed plan of existing types and actions, run only by the initiator's button | D-15 |
 | A farm manager across tenants | accepted | `farm` holds only the seat registry and the holder's identity; the records and work of the seat are in the tenants; one attempt sees one tenant; references only by id and epoch (TEN-1, MGR-3, MGR-24) | D-30, D-33 |
-| Bot identity and governance | accepted | an identity grants no permissions; a human assigns a seat; votes in v0.2 | D-19, D-21, D-33 |
+| Bot identity and governance | accepted | an identity grants no permissions; a human assigns a seat; promotion cases in v0.2 | D-19, D-21, D-33 |
 | Agent runtime | accepted | the reference implementation runs its own loop over P4 without a ready-made agent; the E4 port stays open to other runtimes | D-93 |
 | Implementation language | accepted | the reference implementation and the runner are written in Go in `impl/`; ports keep other components free to use any language | D-91, D-92 |
 

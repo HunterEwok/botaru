@@ -1,10 +1,10 @@
 id: dig-04
-rules: [DIG-6, DIG-5, COM-11]
+rules: [DIG-6, DIG-5, COM-16]
 version: v0.2
 description: 'Blind card of an audit sample item. The item p (dismissed(veto) by the operational lens) is delivered as the card
   proposal_sample_card to the direct chat of carol, who has proposal.decide:capacity. The card holds the closed fields, the
-  evidence numbers, the change in code words, the price and the risk, and no lens scores, vetoes, verdict or stratum. The answer
-  is written into the sample record and the calibration input before the card shows the scores. "Would not accept" closes the
+  evidence numbers, the change in code words, the price and the risk, and no lens scores, vetoes or verdict. The answer
+  is written into the sample record and the forecast scoring input before the card shows the scores. "Would not accept" closes the
   item; "Would accept" reveals the scores and the veto, and the card then has no "Accept" button.'
 given:
   tenant: demo
@@ -18,12 +18,12 @@ given:
     verdict: {outcome: dismissed, reason: veto, veto_lenses: [operational]}
     scores: {security: 3, operational: 1, cost: 3, value: 3}
     change: {kind: manifest_change, field: max_running, target: {kind: DispatchRule, name: report-nightly}, from: 2, to: 3}
-    sample: {month: '2026-11', stratum: veto_operational, inclusion_prob: 0.5}
+    sample: {month: '2026-11', inclusion_prob: 0.5}
 steps:
 - check: {delivery: proposal_sample_card, to: 'human:carol', chat: carol-dm}
   expect:
     card_fields_present: [category, problem, evidence_numbers, change_code_words, price, risk]
-    card_fields_absent: [scores, veto, verdict, stratum, inclusion_prob]
+    card_fields_absent: [scores, veto, verdict, inclusion_prob]
     buttons: [would_accept, would_not_accept]
 cases:
 - id: dig-04-a
@@ -39,7 +39,7 @@ cases:
     expect:
       state: sample_judged
       sample_answer: {answer: would_accept, by: 'human:carol', recorded_before_reveal: true}
-      calibration_input: {lens: operational, answer: would_accept, weight: 2.0}
+      forecast_scoring_input: {lens: operational, outcome: good, weight: 2.0}
       card_after: {shows: [scores, veto], buttons: [override_veto, reject, details]}
 - id: dig-04-b
   description: '"Would not accept" closes the item'

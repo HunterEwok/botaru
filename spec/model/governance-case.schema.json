@@ -2,18 +2,17 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "urn:botaru:schema:governance-case:1",
   "title": "Governance case",
-  "description": "Governance case (GovernanceCase): one promotion of a functionary to the commission of its tenant together with the \"who leaves\" vote, if there is no vacant seat. Only the core writes it; only the governance loop opens it for the head of the queue, there is no P2 open operation (GOV-6). The snapshot of the voters V, the list L and the seed does not change after opening (GOV-12). A case has no free text, and no bot sees it (GOV-29). Flags only from spec/model/governance-flags.yaml (GOV-19).",
+  "description": "Governance case (GovernanceCase): one promotion of a functionary to the commission of its tenant; if there is no vacant seat, one holder from the list L leaves, proposed by code by accuracy (GOV-43) or chosen by a person on the promotion card (GOV-12). Only the core writes it; only the governance loop opens it for the head of the queue, there is no P2 open operation (GOV-6). The list L does not change after opening (GOV-12). A case has no free text, and no bot sees it (GOV-29). Flags only from spec/model/governance-flags.yaml (GOV-19).",
   "x-botaru-direction": "record",
   "x-botaru-retention": "metadata",
   "x-botaru-version": "v0.2",
   "x-botaru-rules": [
     "GOV-6",
-    "GOV-8",
     "GOV-12",
     "GOV-16",
     "GOV-19",
-    "GOV-23",
-    "GOV-29"
+    "GOV-29",
+    "GOV-43"
   ],
   "type": "object",
   "required": [
@@ -39,9 +38,6 @@
     "state": {
       "enum": [
         "opened",
-        "parked",
-        "balloting",
-        "counted",
         "confirming",
         "effective",
         "rejected",
@@ -50,56 +46,9 @@
       ],
       "description": "State of the case lifecycle (spec/lifecycles/case.md)."
     },
-    "round": {
-      "type": "integer",
-      "minimum": 0,
-      "description": "Round number for balloting(n) and counted(n)."
-    },
     "hold": {
       "type": "boolean",
-      "description": "Pause by people: a stop of the governance scope."
-    },
-    "stuck": {
-      "description": "The stuck flag: the round waits for votes longer than stuck_after.",
-      "anyOf": [
-        {
-          "type": "object",
-          "required": [
-            "since"
-          ],
-          "properties": {
-            "since": {
-              "$ref": "urn:botaru:schema:common:1#/$defs/datetime",
-              "description": "Since when."
-            },
-            "missing": {
-              "type": "array",
-              "maxItems": 100,
-              "items": {
-                "type": "object",
-                "required": [
-                  "voter",
-                  "reason"
-                ],
-                "properties": {
-                  "voter": {
-                    "$ref": "urn:botaru:schema:common:1#/$defs/object_id",
-                    "description": "Voter."
-                  },
-                  "reason": {
-                    "$ref": "urn:botaru:schema:common:1#/$defs/reason",
-                    "description": "Infrastructure reason."
-                  }
-                }
-              },
-              "description": "Missing votes."
-            }
-          }
-        },
-        {
-          "type": "null"
-        }
-      ]
+      "description": "Pause by people: a hold on the governance scope (GOV-14)."
     },
     "trigger": {
       "type": "object",
@@ -138,7 +87,7 @@
             "removal",
             "vacancy"
           ],
-          "description": "removal: someone leaves; vacancy: a vacant seat without a vote."
+          "description": "removal: someone from L leaves; vacancy: a vacant seat."
         }
       },
       "description": "Candidate and mode."
@@ -146,157 +95,98 @@
     "snapshot": {
       "type": "object",
       "required": [
-        "voters",
-        "list",
-        "seed"
+        "list"
       ],
       "properties": {
-        "voters": {
-          "type": "array",
-          "maxItems": 1000,
-          "items": {
-            "$ref": "urn:botaru:schema:common:1#/$defs/object_id"
-          },
-          "description": "Voters V."
-        },
         "list": {
           "type": "array",
           "maxItems": 1000,
           "items": {
             "type": "string",
             "maxLength": 16,
-            "pattern": "^(farm-manager|commission:[1-9][0-9]{0,2})$",
-            "description": "Seat id: farm-manager (the farm manager seat, tenant farm) or commission:<seat number from the tenant charter>."
+            "pattern": "^commission:[1-9][0-9]{0,2}$",
+            "description": "Seat id: commission:<seat number from the tenant charter>; the farm manager seat is never in L."
           },
-          "description": "Seats L; the farm manager seat is never in L."
+          "description": "Seats L (GOV-12)."
         },
-        "seed": {
-          "type": "string",
-          "maxLength": 200,
-          "description": "Order seed."
-        }
-      },
-      "description": "Unchangeable snapshot at opening (GOV-12)."
-    },
-    "expected": {
-      "type": "array",
-      "maxItems": 1000,
-      "items": {
-        "$ref": "urn:botaru:schema:common:1#/$defs/object_id"
-      },
-      "description": "The expected set; it shrinks only by a person's action or a core loop with the flag voters_removed (GOV-23)."
-    },
-    "rounds": {
-      "type": "array",
-      "maxItems": 1000,
-      "description": "Counting rounds (GOV-8).",
-      "items": {
-        "type": "object",
-        "required": [
-          "n",
-          "list",
-          "need"
-        ],
-        "properties": {
-          "n": {
-            "type": "integer",
-            "minimum": 1,
-            "description": "Round number."
-          },
-          "list": {
-            "type": "array",
-            "maxItems": 1000,
-            "items": {
+        "seats": {
+          "type": "array",
+          "maxItems": 1000,
+          "description": "The figures of every seat of L over 180 days, built by code (GOV-12); from v0.3 with accuracy (COM-17).",
+          "items": {
+            "type": "object",
+            "required": [
+              "seat",
+              "recommended",
+              "vetoed",
+              "confirmed",
+              "refuted"
+            ],
+            "properties": {
+              "seat": {
+                "type": "string",
+                "maxLength": 16,
+                "pattern": "^commission:[1-9][0-9]{0,2}$",
+                "description": "Seat id: commission:<seat number from the tenant charter>; the farm manager seat is never in L."
+              },
+              "recommended": {
+                "type": "integer",
+                "minimum": 0,
+                "description": "Recommendations of the holder."
+              },
+              "vetoed": {
+                "type": "integer",
+                "minimum": 0,
+                "description": "Vetoes of the holder."
+              },
+              "confirmed": {
+                "type": "integer",
+                "minimum": 0,
+                "description": "Recommendations with the trial outcome better, and vetoes people upheld."
+              },
+              "refuted": {
+                "type": "integer",
+                "minimum": 0,
+                "description": "Recommendations with the outcome worse or a confirmed attribution, and vetoes lifted by people with the trial outcome not worse and no attributions."
+              },
+              "accuracy": {
+                "description": "From v0.3: accuracy of the holder in its lens, or insufficient (COM-17).",
+                "anyOf": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "const": "insufficient"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "scored_forecasts": {
+                "type": "integer",
+                "minimum": 0,
+                "description": "From v0.3: scored forecasts of the holder (COM-16)."
+              }
+            }
+          }
+        },
+        "proposed": {
+          "description": "From v0.3: the leaver code proposes by accuracy, or null when code proposes nobody and a person chooses (GOV-43).",
+          "anyOf": [
+            {
               "type": "string",
               "maxLength": 16,
-              "pattern": "^(farm-manager|commission:[1-9][0-9]{0,2})$",
-              "description": "Seat id: farm-manager (the farm manager seat, tenant farm) or commission:<seat number from the tenant charter>."
+              "pattern": "^commission:[1-9][0-9]{0,2}$",
+              "description": "Seat id: commission:<seat number from the tenant charter>; the farm manager seat is never in L."
             },
-            "description": "List of the round."
-          },
-          "need": {
-            "type": "integer",
-            "minimum": 1,
-            "description": "ceil(2/3 · |expected|)."
-          },
-          "ballots": {
-            "type": "object",
-            "properties": {
-              "expected": {
-                "type": "integer",
-                "minimum": 0,
-                "description": "Expected."
-              },
-              "recorded": {
-                "type": "integer",
-                "minimum": 0,
-                "description": "Recorded."
-              },
-              "forced": {
-                "type": "integer",
-                "minimum": 0,
-                "description": "Forced."
-              },
-              "defaulted": {
-                "type": "integer",
-                "minimum": 0,
-                "description": "By the code rule."
-              },
-              "reissued": {
-                "type": "integer",
-                "minimum": 0,
-                "description": "Reissues."
-              }
-            },
-            "description": "Ballot counters of the round."
-          },
-          "tally": {
-            "type": "object",
-            "maxProperties": 1000,
-            "additionalProperties": {
-              "type": "integer",
-              "minimum": 0
-            },
-            "description": "Votes by seat."
-          },
-          "tie_seed": {
-            "type": "string",
-            "maxLength": 200,
-            "description": "Tie seed; the core draws it after all ballots of the round are recorded."
-          },
-          "result": {
-            "type": "object",
-            "description": "struck (a struck-out seat) or leaver (the leaving seat)."
-          },
-          "tie": {
-            "type": "array",
-            "maxItems": 4,
-            "items": {
-              "enum": [
-                "K1",
-                "K2",
-                "K3",
-                "K4"
-              ]
-            },
-            "description": "Tie keys that fired."
-          }
-        }
-      }
-    },
-    "budget": {
-      "type": "object",
-      "properties": {
-        "line": {
-          "const": "governance",
-          "description": "Budget line of the case (GOV-15)."
-        },
-        "reserved_eurocents": {
-          "$ref": "urn:botaru:schema:common:1#/$defs/eurocents",
-          "description": "Reserve of the estimate of all rounds."
+            {
+              "type": "null"
+            }
+          ]
         }
       },
-      "description": "Reserve of the governance line."
+      "description": "Unchangeable list at opening with the figures of its seats (GOV-12)."
     },
     "flags": {
       "type": "array",
@@ -311,7 +201,7 @@
       "description": "Case flags."
     },
     "outcome": {
-      "description": "Outcome: {leaver: seat} or {vacancy: seat}.",
+      "description": "Outcome: {leaver: seat} with the seat a person chose or confirmed, or {vacancy: seat}.",
       "anyOf": [
         {
           "type": "null"
@@ -322,7 +212,7 @@
       ]
     },
     "confirmation": {
-      "description": "People's decision: who, when, the decision and a reason code from governance-decline-reasons.yaml; only a human principal.",
+      "description": "People's decision: who, when, the decision with the chosen seat, and a reason code from governance-decline-reasons.yaml for Reject; only a human principal.",
       "anyOf": [
         {
           "type": "null"

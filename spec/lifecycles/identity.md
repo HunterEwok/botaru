@@ -9,9 +9,9 @@ A bot identity (`Bot`) is a core record with a permanent number `bot_<ulid>`, a 
 | State | Meaning | Terminal |
 |---|---|---|
 | `active` | The identity is bound to a worker (`mode: worker`) or to a seat (`mode: seat`) and gets the tasks of its role or its seat | no |
-| `suspended` | There is a hold by people of the `bot` scope on the identity: no tasks, reviews or ballots; it is not included in the voters of a new case, and it drops out of a running case with the flag `voters_removed` | no |
+| `suspended` | There is a hold by people of the `bot` scope on the identity: no tasks or reviews | no |
 | `unbound` | The identity's worker is revoked, there is no new binding. No tasks, the memory is intact. Happens only with a `mode: worker` binding | no |
-| `retired` | The identity retired for a reason from a closed list. No tasks, reviews, ballots and facts from it are not accepted; facts, records, the track record and sessions are sealed; the fact offer to the successor is open | yes, for work: only `erased` follows |
+| `retired` | The identity retired for a reason from a closed list. No tasks, reviews and facts from it are accepted; facts, records, the track record and sessions are sealed; the fact offer to the successor is open | yes, for work: only `erased` follows |
 | `erased` | The sealed data is wiped in all stores; only the tombstone remains: id, tenant, role, time, reason and the successor's id | yes |
 
 ## Transitions
@@ -39,11 +39,11 @@ A bot identity (`Bot`) is a core record with a permanent number `bot_<ulid>`, a 
 - Every change of the binding increments `bot_epoch`; an attempt's write with an outdated epoch gets `fenced`.
 - P2 `worker.rotate` changes only the worker's token: the identity and the epoch stay.
 - The identity, the position and the track record grant no rights (IDN-9).
-- Only a hold by a person of the `bot` scope moves an identity to `suspended`. A hold of the farm manager seat holder on the same bot (no longer than 2 h, MGR-9) delays its tasks, but does not change the identity's state, its eligibility for promotion or its vote.
+- Only a hold by a person of the `bot` scope moves an identity to `suspended`. A hold of the farm manager seat holder on the same bot (no longer than 2 h, MGR-9) delays its tasks, but does not change the identity's state or its eligibility for promotion.
 - No bot has an operation that creates, binds, stops or deletes an identity; only the core sets the retirement reason (IDN-11).
 - `retired` does not return to `active`; a bot that is needed again gets a new identity with a new id.
 - The tombstone has no content: only id, tenant, role, time, reason and the successor's id.
-- The track record (`record`) contains only numbers and core codes: the creation date, the number of proposals by outcome, for seat holders the number of reviews and the calibration, the seat assignments. The model neither writes nor sees it.
+- The track record (`record`) contains only numbers and core codes: the creation date, the number of proposals by outcome, for seat holders the number of reviews and the accuracy, the seat assignments. The model neither writes nor sees it.
 
 ## Versions
 
