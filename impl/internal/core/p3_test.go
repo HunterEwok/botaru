@@ -502,6 +502,9 @@ func TestToolhostAfterApply(t *testing.T) {
 	// under; its output is dropped once that definition changed.
 	done := callAsync(b, h, mcp.CallParams{Name: "checks_latest", Arguments: map[string]any{"check": "www-health"}})
 	item := b.claimTool(t, th)
+	// A call still queued during the apply is not handed out under the new definition.
+	queued := callAsync(b, h, mcp.CallParams{Name: "checks_latest", Arguments: map[string]any{"check": "www-health"}})
+	waitQueued(t, b)
 	for _, m := range ms {
 		if m["kind"] == "ToolPlugin" && m["metadata"].(map[string]any)["name"] == "checks" {
 			m["spec"].(map[string]any)["tools"].([]any)[0].(map[string]any)["description"] = "Changed."
@@ -523,5 +526,14 @@ func TestToolhostAfterApply(t *testing.T) {
 	}
 	if item := b.claim(t, th, "toolcall"); item != nil {
 		t.Fatalf("a stale toolhost got a call: %+v", item)
+	}
+	// A toolhost that says hello again with the new tools takes no call queued under the old
+	// definition.
+	fresh := b.toolhost(t, "checks")
+	if item := b.claim(t, fresh, "toolcall"); item != nil {
+		t.Fatalf("a call queued under the old definition was handed out: %+v", item)
+	}
+	if res := <-queued; res.err != nil || callText(res.r) != "error: plugin_unavailable" {
+		t.Fatalf("a call queued across an apply: %+v %v", res.r, res.err)
 	}
 }

@@ -74,16 +74,16 @@ func (c *Core) claimToolcall(ctx context.Context, tx pgx.Tx, now time.Time, cat 
 	for {
 		var (
 			id, task, tool, plugin, placement string
-			host, resource                    *string
+			host, resource, defHash           *string
 			leaseNo, attemptLease             int
 			args, resolved                    []byte
 			startBy                           time.Time
 		)
-		err := tx.QueryRow(ctx, `SELECT id, task, attempt_lease_no, tool, target_plugin, target_placement, target_host, target_resource, args, resolved, start_by, lease_no
+		err := tx.QueryRow(ctx, `SELECT id, task, attempt_lease_no, tool, target_plugin, target_placement, target_host, target_resource, args, resolved, start_by, lease_no, tool_def_hash
 			FROM toolcalls WHERE tenant = $1 AND state = 'queued' AND target_plugin = ANY($2) AND target_placement = $3
 			AND (target_host IS NULL OR target_host = $4) AND start_by > $5
 			ORDER BY created_at, id LIMIT 1 FOR UPDATE SKIP LOCKED`, w.Tenant, w.Plugins, w.Placement, w.Host, now).
-			Scan(&id, &task, &attemptLease, &tool, &plugin, &placement, &host, &resource, &args, &resolved, &startBy, &leaseNo)
+			Scan(&id, &task, &attemptLease, &tool, &plugin, &placement, &host, &resource, &args, &resolved, &startBy, &leaseNo, &defHash)
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, nil
 		}
@@ -96,6 +96,15 @@ func (c *Core) claimToolcall(ctx context.Context, tx pgx.Tx, now time.Time, cat 
 		}
 		if !alive {
 			if err := endToolCall(ctx, tx, now, id, "abandoned", "fenced", nil); err != nil {
+				return nil, err
+			}
+			continue
+		}
+		// A call queued before an apply changed or removed its tool is not run under the new
+		// definition: its arguments and target were checked against the old one.
+		pl := cat.Plugins[plugin]
+		if t, ok := pl.Tool(toolName(tool)); !ok || defHash == nil || toolDefHash(pl.Placement, t) != *defHash {
+			if err := endToolCall(ctx, tx, now, id, "error", "plugin_unavailable", nil); err != nil {
 				return nil, err
 			}
 			continue
@@ -162,6 +171,12 @@ func (c *Core) claimToolcall(ctx context.Context, tx pgx.Tx, now time.Time, cat 
 		item.StartBy = fmtTime(startBy)
 		return item, nil
 	}
+}
+
+// toolName is the tool part of <plugin>/<tool>.
+func toolName(right string) string {
+	_, name, _ := cutTool(right)
+	return name
 }
 
 // attemptAlive says whether the attempt lease that made a call is still active.

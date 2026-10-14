@@ -177,14 +177,8 @@ func (a *Agent) run(ctx context.Context, p attemptPayload) (map[string]any, stri
 		hc = &http.Client{Timeout: 10 * time.Minute}
 	}
 	var p3 *toolsClient
-	var tools []anthropic.ToolUnionParam
 	if th, _ := p.Handles["tools"].(string); th != "" {
 		p3 = &toolsClient{url: strings.TrimRight(a.cfg.Core.BaseURL, "/") + "/v1/p3/mcp", handle: th, http: hc}
-		list, err := p3.list(ctx)
-		if err != nil {
-			return nil, "runtime_error", err
-		}
-		tools = list
 	}
 	client := anthropic.NewClient(
 		option.WithoutEnvironmentDefaults(),
@@ -195,6 +189,16 @@ func (a *Agent) run(ctx context.Context, p attemptPayload) (map[string]any, stri
 	)
 	messages := []anthropic.MessageParam{anthropic.NewUserMessage(anthropic.NewTextBlock(goal))}
 	for turn := 0; turn < maxTurns; turn++ {
+		// The catalog is read before every model call: P4 requires the current one, and an
+		// apply between turns may change it (GW-1).
+		var tools []anthropic.ToolUnionParam
+		if p3 != nil {
+			list, err := p3.list(ctx)
+			if err != nil {
+				return nil, "runtime_error", err
+			}
+			tools = list
+		}
 		msg, err := client.Messages.New(ctx, anthropic.MessageNewParams{
 			Model:     anthropic.Model("base"), // P4 sets the model of the slot (GW-7)
 			MaxTokens: a.cfg.MaxTokens,
