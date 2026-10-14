@@ -64,6 +64,13 @@ func run(path string, log *slog.Logger) error {
 		return err
 	}
 	defer l2.Close()
+	var lt net.Listener
+	if cfg.TestListen != "" {
+		if lt, err = net.Listen("tcp", cfg.TestListen); err != nil {
+			return err
+		}
+		defer lt.Close()
+	}
 
 	dsn, err := config.Secret(cfg.StoreDSNFile)
 	if err != nil {
@@ -116,33 +123,44 @@ func run(path string, log *slog.Logger) error {
 	if err != nil {
 		return err
 	}
-	srv, err := api.New(c, api.Config{Operators: cfg.Operators, HealthKeysSHA256: cfg.HealthKeysSHA256, Logger: log}, gw)
+	srv, err := api.New(c, api.Config{Operators: cfg.Operators, HealthKeysSHA256: cfg.HealthKeysSHA256, TestKeySHA256: cfg.TestKeySHA256, Logger: log}, gw)
 	if err != nil {
 		return err
 	}
 	if err := c.RecoverLeases(ctx); err != nil {
 		return err
 	}
-	go c.Run(ctx)
+	if lt != nil {
+		// With the test-control port the loops tick only by loop.tick (test-control.md: loops
+		// do not start by themselves).
+		go c.RunManual(ctx)
+	} else {
+		go c.Run(ctx)
+	}
 
 	p1 := &http.Server{Addr: cfg.P1Listen, Handler: srv.P1Handler(), ReadHeaderTimeout: 10 * time.Second}
 	p2 := &http.Server{Addr: cfg.P2Listen, Handler: srv.P2Handler(), ReadHeaderTimeout: 10 * time.Second}
-	errc := make(chan error, 2)
-	for s, l := range map[*http.Server]net.Listener{p1: l1, p2: l2} {
+	servers := map[*http.Server]net.Listener{p1: l1, p2: l2}
+	if lt != nil {
+		servers[&http.Server{Addr: cfg.TestListen, Handler: srv.TestHandler(), ReadHeaderTimeout: 10 * time.Second}] = lt
+	}
+	errc := make(chan error, len(servers))
+	for s, l := range servers {
 		go func() {
 			if err := s.Serve(l); !errors.Is(err, http.ErrServerClosed) {
 				errc <- err
 			}
 		}()
 	}
-	log.Info("botaru-core started", "version", version.Version, "p1", cfg.P1Listen, "p2", cfg.P2Listen, "epoch", c.Epoch(), "test_bench", cfg.TestBench)
+	log.Info("botaru-core started", "version", version.Version, "p1", cfg.P1Listen, "p2", cfg.P2Listen, "epoch", c.Epoch(), "test_bench", cfg.TestBench, "test_port", cfg.TestListen)
 	select {
 	case <-ctx.Done():
 	case err = <-errc:
 	}
 	shut, cancel := context.WithTimeout(context.Background(), 70*time.Second)
 	defer cancel()
-	_ = p1.Shutdown(shut)
-	_ = p2.Shutdown(shut)
+	for s := range servers {
+		_ = s.Shutdown(shut)
+	}
 	return err
 }

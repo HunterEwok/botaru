@@ -59,6 +59,8 @@ token_key_file: /etc/botaru/secrets/token.key
 test_bench: true
 p1_listen: 127.0.0.1:8401        # workers
 p2_listen: 127.0.0.1:8402        # farmctl only; a separate listener (IDN-7)
+# test_listen: 127.0.0.1:8403    # optional: the test-control port for the conformance runner
+# test_key_sha256: <the SHA-256 of the test bench key>   # needed with test_listen; only with test_bench: true
 texts_dir: /etc/botaru/texts     # optional: ru.yaml and other locales of the code texts
 operator: "Example operator"     # the operator named in the AI notice (notice.ai)
 operators:

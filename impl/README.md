@@ -33,6 +33,7 @@ This folder holds the reference implementation of the botaru core (D-91, D-92 in
 | `internal/gateway` | P4 with the Anthropic Messages binding: allowlist, model of the slot, reserve and charge |
 | `internal/agent`, `internal/channel/telegram`, `internal/p1client` | the workers and their P1 client |
 | `internal/e2e` | the hello-bot sequence over the wire with the mock provider and a fake Bot API server |
+| `internal/conform` | the conformance runner (`conformance/runner.md`): it runs the behaviour fixtures on fresh test benches over HTTP and reports per case and per rule |
 
 ## Implementation choices
 
@@ -54,7 +55,7 @@ These are decisions of this implementation where the skeleton leaves a choice; n
 
 ## Not in this version
 
-v0.1 of the implementation stops at the first working bot; the following parts of the v0.1 rules are not built yet: P3 and tools, sessions and memory, approvals, cards and buttons, holds, messages between bots, routes and schedules, campaigns and scripts, the monitoring adapter and farm alarms (`alarm_notice`, MON-1, MON-13), the storage headroom (CAP-5), the `retention` loop (RET-2), erasure work (offboarding records the erasure request by the scope `(tenant, subject)` with the reason `offboarding` in the state `requested`, LCY-8, but nothing processes it yet, RET-7), the test-control port, streaming on P4, the circuit breaker and the pool limiter of P4, files and artifacts (with their provenance, PRV-2), group chats (`chat.bind`; activity from a group is ignored, so `principal_left` lists no chats), and the verification code for privileged groups (PRM-13): `grant` of a privileged group answers `privileged_group`. The core writes `fairness_key` on every task (DSP-2), but P2 `task.show` is not built. The P2 operations outside `apply`, `principal.add`, `principal.off`, `principal.on`, `principal.set_identity`, `principal.offboard`, `grant`, `ungrant`, `worker.enroll`, `health` and `audit.verify` answer `404 not_found`.
+v0.1 of the implementation stops at the first working bot; the following parts of the v0.1 rules are not built yet: P3 and tools, sessions and memory, approvals, cards and buttons, holds, messages between bots, routes and schedules, campaigns and scripts, the monitoring adapter and farm alarms (`alarm_notice`, MON-1, MON-13), the storage headroom (CAP-5), the `retention` loop (RET-2), erasure work (offboarding records the erasure request by the scope `(tenant, subject)` with the reason `offboarding` in the state `requested`, LCY-8, but nothing processes it yet, RET-7), the test-control operations other than `clock.set`, `clock.advance` and `loop.tick` of the `reaper` and `deadline` loops, streaming on P4, the circuit breaker and the pool limiter of P4, files and artifacts (with their provenance, PRV-2), group chats (`chat.bind`; activity from a group is ignored, so `principal_left` lists no chats), and the verification code for privileged groups (PRM-13): `grant` of a privileged group answers `privileged_group`. The core writes `fairness_key` on every task (DSP-2), but P2 `task.show` is not built. The P2 operations outside `apply`, `principal.add`, `principal.off`, `principal.on`, `principal.set_identity`, `principal.offboard`, `grant`, `ungrant`, `worker.enroll`, `health` and `audit.verify` answer `404 not_found`.
 
 ## Checks
 
@@ -71,5 +72,9 @@ go tool govulncheck ./...
 ```
 
 The `go` command downloads the toolchain named in `go.mod` by itself (`GOTOOLCHAIN=auto`). staticcheck and govulncheck are tool dependencies in `go.mod`, so their versions are pinned and Dependabot updates them.
+
+### Rule coverage
+
+`TestConformance` in `internal/conform` runs every behaviour case of `conformance/fixtures/` whose rules are of v0.1, all profiles, on the reference core: each case on a fresh test bench (a new database, the core with its P1, P2 and test-control listeners), reached only over HTTP. A case is passed, failed, skipped (a later version) or unchecked: it needs a given key, a step, an operation or a fact that the runner or the core cannot do yet, and the report names the first such need. An unchecked case never counts for its rule. A rule is done when every case that names it passes. `testdata/passing.txt` lists the passing cases: the test fails when a listed case stops passing, and when a case starts to pass without being listed (record it with `go test ./internal/conform -run TestConformance -update`). With `BOTARU_CONFORM_OUT=<folder>` the test writes `junit.xml` and the coverage table `coverage.md`; CI puts the table into the job summary.
 
 The store tests need PostgreSQL: either `BOTARU_TEST_DSN` names a server where the tests may create and drop databases, or `initdb` of PostgreSQL 16 or later is installed (in `PATH` or `/usr/lib/postgresql/*/bin`) and the tests start a private server; they refuse to do that as root. Without PostgreSQL the store tests are skipped, unless `BOTARU_TEST_PG_REQUIRED=1`, as in CI.

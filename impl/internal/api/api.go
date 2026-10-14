@@ -37,9 +37,11 @@ type Config struct {
 	Operators []OperatorCred
 	// HealthKeysSHA256 are the hex SHA-256 of the health keys.
 	HealthKeysSHA256 []string
-	MaxBodyBytes     int64
-	MaxDepth         int
-	Logger           *slog.Logger
+	// TestKeySHA256 is the hex SHA-256 of the test bench key that opens the test-control port.
+	TestKeySHA256 string
+	MaxBodyBytes  int64
+	MaxDepth      int
+	Logger        *slog.Logger
 }
 
 // Server serves P1, P4 and P2 over a core.
