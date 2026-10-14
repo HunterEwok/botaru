@@ -7747,8 +7747,7 @@
     numbers only, without model text. The task `manager.review.v1` should run once a day separately
     in each tenant with `farm_manager.enabled: true` (MGR-42) and should not spend more than
     `daily_review_max_eur` from `control_limits` of the `farm_manager` block of the farm charter
-    (0.40 EUR per day by default, from the tenant's `manager` line); P2 `manager.cost` and the price
-    table of fixed parts (BUD-15) show its usage as a separate line. A proposal that the review
+    (0.40 EUR per day by default, from the tenant's `manager` line); P2 `manager.cost` and the actual usage rows of `farmctl doctor` (BUD-15) show its usage as a separate line. A proposal that the review
     submits to the commission of T is not part of the `related_to` of functionaries' proposals and
     does not take their slot (PRP-17, PRP-16).
   goal: G5

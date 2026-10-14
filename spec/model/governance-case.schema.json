@@ -95,7 +95,8 @@
     "snapshot": {
       "type": "object",
       "required": [
-        "list"
+        "list",
+        "seats"
       ],
       "properties": {
         "list": {

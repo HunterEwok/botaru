@@ -376,7 +376,7 @@ A kind from an implementation is registered under its own `apiVersion` group, gr
 2. `ModelProfile` profiles of this provider: prices in euro per million tokens, the retention period at the provider, the rank, `max_output_tokens` and `tokens_per_s` (P4 computes the response deadline from them), `provider_training: false`, `provider_human_review`, `subprocessors[]` (BUD-9, GW-15).
 3. The provider in `providers_allowed` and among the subprocessors of the tenant's privacy block (SEC-8); each tenant has its own workspace and key (GW-3).
 
-**What the core checks.** The model gateway check suite with a mock provider: refusal of fields outside the allowlist, the number of calls equals the number of usage lines, tenant canaries, refusal reasons per the binding table; a daily probe of every pair (workspace, model profile).
+**What the core checks.** The model gateway check suite with a mock provider: refusal of fields outside the allowlist, the number of calls equals the number of usage lines, tenant canaries, refusal reasons per the binding table; the workspace ceiling check at `apply` (GW-9).
 
 **Rules.** GW-1, GW-3, GW-9, GW-14, GW-15, GW-16, BUD-9, SEC-8.
 
