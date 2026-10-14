@@ -247,6 +247,13 @@ func (c *Core) Complete(ctx context.Context, w *Worker, header string, req Compl
 			if err := c.completeToolcall(ctx, tx, now, l, req.Output); err != nil {
 				return nil, err
 			}
+		case "erasure":
+			if req.Erasure == nil {
+				return nil, refuse("input_schema_invalid", "an erasure completes with erasure")
+			}
+			if err := c.completeErasure(ctx, tx, now, l, req.Erasure); err != nil {
+				return nil, err
+			}
 		default:
 			return nil, refuse("input_schema_invalid", "this work kind is not served in v0.1")
 		}
@@ -475,6 +482,9 @@ func (c *Core) Fail(ctx context.Context, w *Worker, header string, req FailReque
 			res, err = c.endDelivery(ctx, tx, now, w.Tenant, l, req.Reason, req.Retryable, req.RetryAfterS)
 		case "toolcall":
 			res, err = &FailResult{Final: true, Reason: req.Reason}, c.failToolcall(ctx, tx, now, l, req.Reason)
+		case "erasure":
+			res = &FailResult{Final: !req.Retryable, Reason: req.Reason}
+			err = c.endErasureStep(ctx, tx, now, l, "failed", "", req.Reason, req.Retryable)
 		default:
 			return nil, refuse("input_schema_invalid", "this work kind is not served in v0.1")
 		}
@@ -507,6 +517,8 @@ func (c *Core) requeue(ctx context.Context, tx pgx.Tx, now time.Time, l *leaseRo
 	case "toolcall":
 		// A call is not handed out again (DLV-1): a released call ends, and the model decides.
 		_, err = tx.Exec(ctx, `UPDATE toolcalls SET state = 'error', reason = 'worker_drain', updated_at = $2, ended_at = $2 WHERE id = $1 AND state = 'leased'`, l.WorkID, now)
+	case "erasure":
+		_, err = tx.Exec(ctx, `UPDATE erasure_steps SET state = 'pending', run_at = $2, updated_at = $3 WHERE id = $1 AND state = 'leased'`, l.WorkID, runAt, now)
 	}
 	if err != nil {
 		return err

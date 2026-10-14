@@ -16,11 +16,12 @@ import (
 )
 
 // The commands of a person answered by code, without a model and without a task (PRM-17,
-// REP-12): /tasks, /status, /cancel, /help, /me, /lang, /team and /about. Every text comes from
+// REP-12): /tasks, /status, /cancel, /help, /me, /lang, /team, /about, /mydata and /forget. Every text comes from
 // the code text catalog; a type is shown by its title, never by its name.
 
 // codeCommands are the built-in commands this file answers.
-var codeCommands = map[string]bool{"/tasks": true, "/status": true, "/cancel": true, "/help": true, "/me": true, "/lang": true, "/team": true, "/about": true}
+var codeCommands = map[string]bool{"/tasks": true, "/status": true, "/cancel": true, "/help": true, "/me": true, "/lang": true, "/team": true, "/about": true,
+	"/mydata": true, "/forget": true}
 
 func (c *Core) codeCommand(ctx context.Context, tx pgx.Tx, now time.Time, pc personCommand, word, rest string) (*ActivityResult, error) {
 	switch word {
@@ -36,6 +37,10 @@ func (c *Core) codeCommand(ctx context.Context, tx pgx.Tx, now time.Time, pc per
 		return c.langCommand(ctx, tx, pc, rest)
 	case "/team":
 		return c.teamCommand(ctx, tx, now, pc, rest)
+	case "/mydata":
+		return c.mydataCommand(ctx, tx, now, pc, rest)
+	case "/forget":
+		return c.forgetCommand(ctx, tx, now, pc)
 	}
 	return pc.reply(c, "cmd.about.text", map[string]any{"tenant": pc.tv.Name}), nil
 }
@@ -407,4 +412,40 @@ func (c *Core) cancelTaskIDs(ctx context.Context, tx pgx.Tx, now time.Time, tena
 		}
 	}
 	return nil
+}
+
+// mydataCommand is /mydata: without an argument what the farm keeps about the person in its
+// own memory; /mydata erase asks to erase all their data, which a person with admin:people
+// decides (SEC-11); the extract (/mydata export) arrives in v0.2.
+func (c *Core) mydataCommand(ctx context.Context, tx pgx.Tx, now time.Time, pc personCommand, rest string) (*ActivityResult, error) {
+	switch strings.TrimSpace(rest) {
+	case "":
+		var records, sessions int
+		if err := tx.QueryRow(ctx, `SELECT (SELECT count(*) FROM memory_items WHERE tenant = $1 AND subject = $2 AND state = 'active'),
+			(SELECT count(*) FROM sessions WHERE tenant = $1 AND subjects @> ARRAY[$2])`, pc.tv.Name, pc.person).Scan(&records, &sessions); err != nil {
+			return nil, err
+		}
+		return pc.reply(c, "cmd.mydata.summary", map[string]any{"records": records, "sessions": sessions}), nil
+	case "erase":
+		id, err := c.createSubjectRequest(ctx, tx, now, pc.tv, "erase", pc.person, pc.person, nil)
+		if err != nil {
+			return nil, err
+		}
+		return pc.reply(c, "cmd.mydata.erase", map[string]any{"request": id, "days": subjectRequestDays(pc.tv)}), nil
+	case "export":
+		return pc.reply(c, "cmd.mydata.export", nil), nil
+	}
+	return pc.reply(c, "cmd.mydata.usage", nil), nil
+}
+
+// forgetCommand is /forget: the person's memory records and the sessions of their
+// conversations are erased for real through an erasure request (MEM-4).
+func (c *Core) forgetCommand(ctx context.Context, tx pgx.Tx, now time.Time, pc personCommand) (*ActivityResult, error) {
+	id, err := c.requestErasure(ctx, tx, now, pc.tv, erasureSpec{
+		Scope: ErasureScope{Tenant: pc.tv.Name, Subject: pc.person}, Reason: "forget", Author: pc.person,
+	})
+	if err != nil {
+		return nil, err
+	}
+	return pc.reply(c, "cmd.forget.done", map[string]any{"request": id}), nil
 }

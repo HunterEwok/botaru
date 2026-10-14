@@ -648,6 +648,10 @@ func (c *Core) approvalLoop(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+	// A memory record card that expired without a decision discards its record (MEM-3).
+	if err := c.tx(ctx, func(tx pgx.Tx, now time.Time) error { return c.expireMemory(ctx, tx, now) }); err != nil {
+		return err
+	}
 	var list []struct{ id, tenant string }
 	err = c.tx(ctx, func(tx pgx.Tx, now time.Time) error {
 		list = list[:0]
@@ -962,8 +966,14 @@ func (c *Core) Decide(ctx context.Context, w *Worker, ob *OnBehalf, req DecideRe
 	if ob == nil {
 		return nil, refuse("forbidden", "decide needs Botaru-On-Behalf and Botaru-Chat")
 	}
-	if req.SubjectKind != "approval" {
-		return nil, refuse("not_found", "this build decides only approvals")
+	switch req.SubjectKind {
+	case "approval":
+	case "memory_record":
+		return c.decideMemory(ctx, w, *ob, req)
+	case "subject_request":
+		return c.decideSubject(ctx, w, *ob, req)
+	default:
+		return nil, refuse("not_found", "this build decides approvals, memory records and a person's requests")
 	}
 	if req.Decision != "approve" && req.Decision != "reject" {
 		return nil, refuse("input_schema_invalid", "an approval is approved or rejected")

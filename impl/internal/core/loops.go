@@ -150,6 +150,8 @@ func (c *Core) reapWith(ctx context.Context, reason string, spends bool) error {
 				_, err = c.endDelivery(ctx, tx, now, l.Tenant, &l, reason, true, 0)
 			case "toolcall":
 				err = c.reapToolcall(ctx, tx, now, &l, reason)
+			case "erasure":
+				err = c.endErasureStep(ctx, tx, now, &l, "", "", reason, true)
 			}
 			return err
 		})

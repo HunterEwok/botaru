@@ -165,6 +165,45 @@ func (s *Server) p2(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		out, err = s.c.Redrive(ctx, oper, req)
+	case "erasure.request":
+		req, derr := decode[core.ErasureRequestInput](m)
+		if derr != nil {
+			s.fail(w, derr)
+			return
+		}
+		out, err = s.c.ErasureRequest(ctx, oper, req)
+	case "erasure.status", "erasure.retry":
+		req, derr := decode[core.ErasureIDRequest](m)
+		if derr != nil {
+			s.fail(w, derr)
+			return
+		}
+		if op == "erasure.status" {
+			out, err = s.c.ErasureStatus(ctx, oper, req)
+		} else {
+			out, err = s.c.ErasureRetry(ctx, oper, req)
+		}
+	case "erasure.list":
+		req, derr := decode[core.TenantRequest](m)
+		if derr != nil {
+			s.fail(w, derr)
+			return
+		}
+		out, err = s.c.ErasureList(ctx, oper, req)
+	case "erasure.match":
+		req, derr := decode[core.MatchRequest](m)
+		if derr != nil {
+			s.fail(w, derr)
+			return
+		}
+		out, err = s.c.ErasureMatch(ctx, oper, req)
+	case "principal.data_request":
+		req, derr := decode[core.DataRequest](m)
+		if derr != nil {
+			s.fail(w, derr)
+			return
+		}
+		out, err = s.c.PrincipalDataRequest(ctx, oper, req)
 	case "audit.query":
 		req, derr := decode[core.AuditQueryRequest](m)
 		if derr != nil {

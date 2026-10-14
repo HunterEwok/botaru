@@ -3,6 +3,7 @@
 package api
 
 import (
+	"context"
 	"net/http"
 	"strings"
 
@@ -39,6 +40,20 @@ func (s *Server) p1(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	ctx := r.Context()
+	// The session and memory operations take the handle of the lease as the bearer (MEM-1).
+	if strings.HasPrefix(op, "session.") || strings.HasPrefix(op, "memory.") {
+		m, ok := s.body(w, r, info.Request)
+		if !ok {
+			return
+		}
+		out, err := s.handleOp(ctx, op, bearer(r), m)
+		if err != nil {
+			s.fail(w, err)
+			return
+		}
+		writeJSON(w, out)
+		return
+	}
 	wk, err := s.c.AuthenticateWorker(ctx, bearer(r))
 	if err != nil {
 		s.fail(w, err)
@@ -169,4 +184,35 @@ func onBehalf(r *http.Request) *core.OnBehalf {
 		return nil
 	}
 	return &ob
+}
+
+// handleOp runs a P1 operation authenticated by a session or memory handle.
+func (s *Server) handleOp(ctx context.Context, op, handle string, m map[string]any) (any, error) {
+	switch op {
+	case "session.load":
+		req, err := decode[core.SessionLoadRequest](m)
+		if err != nil {
+			return nil, err
+		}
+		return s.c.SessionLoad(ctx, handle, req)
+	case "session.append":
+		req, err := decode[core.SessionAppendRequest](m)
+		if err != nil {
+			return nil, err
+		}
+		return s.c.SessionAppend(ctx, handle, req)
+	case "memory.search":
+		req, err := decode[core.MemorySearchRequest](m)
+		if err != nil {
+			return nil, err
+		}
+		return s.c.MemorySearch(ctx, handle, req)
+	case "memory.propose":
+		req, err := decode[core.MemoryProposeRequest](m)
+		if err != nil {
+			return nil, err
+		}
+		return s.c.MemoryPropose(ctx, handle, req)
+	}
+	return nil, &core.Problem{Reason: "not_found", Detail: "the operation is not implemented in this build"}
 }
