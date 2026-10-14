@@ -16,7 +16,7 @@ description: >-
   (GOV-3). Which P3 built-in tools are available to a profile is set by
   builtin-tools.yaml. A new profile is added only through an ADR and a minor
   version of the role schema.
-source: docs/scripts-and-translator.md
+source: docs/coordination.md
 entries:
   - id: worker
     since: v0.1

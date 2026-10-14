@@ -16,7 +16,7 @@ This document collects the objects of the skeleton and the relations between the
 | Object | Origin | Owner | Since | Described in |
 |---|---|---|---|---|
 | role (`Role`) | git | global | v0.1 | [task-language.md](../task-language.md) |
-| role profile | skeleton, `spec/model/role-profiles.yaml` | global | v0.1 | [scripts-and-translator.md](../scripts-and-translator.md) |
+| role profile | skeleton, `spec/model/role-profiles.yaml` | global | v0.1 | [coordination.md](../coordination.md) |
 | task type (`TaskType`), action (`Action`) | git | global | v0.1 | [task-language.md](../task-language.md), [permissions.md](../permissions.md) |
 | plugin and its tools (`ToolPlugin`) | git | global | v0.1 | [extending.md](../extending.md), [permissions.md](../permissions.md) |
 | message type (`MessageType`) | git | global | v0.1 (D-71) | [messaging.md](../messaging.md) |
@@ -54,7 +54,7 @@ This document collects the objects of the skeleton and the relations between the
 | bot identity (`Bot`) | core | tenant; the farm manager seat holder in `farm` | v0.1 | [bots.md](../bots.md) |
 | fact, fact offer (`FactOffer`) | core | tenant | v0.1 | [bots.md](../bots.md) |
 | campaign and its item | core | tenant | v0.1 | [coordination.md](../coordination.md) |
-| script run and script step | core | tenant | v0.1 | [scripts-and-translator.md](../scripts-and-translator.md) |
+| script run and script step | core | tenant | v0.1 | [coordination.md](../coordination.md) |
 | incident, control operation, finding | core | tenant; a farm incident in `farm` | v0.1 | [farm-manager.md](../farm-manager.md) |
 | attribution of an incident to a change | core or human; a human decides; after the incident is dismissed as false it becomes disputed (`disputed`, D-79) | tenant | v0.2 (ban for bots since v0.1) | [improvements.md](../improvements.md) |
 | governance case, queue entry | core | tenant of the commission | v0.2 | [improvements.md](../improvements.md) |

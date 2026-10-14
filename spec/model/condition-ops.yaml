@@ -7,7 +7,7 @@ description: >-
   There is no arithmetic, no comparison of sizes, no string functions, no regular expressions, no access to time
   or to external data; a new atom kind is added only through an ADR. Entry fields: `meaning`, `value` (which
   literal the operation accepts), `state` (whether it is allowed over a step state), `rules`.
-source: docs/scripts-and-translator.md
+source: docs/coordination.md
 entries:
   - id: eq
     since: v0.1

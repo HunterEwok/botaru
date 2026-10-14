@@ -9874,7 +9874,7 @@
   profile: core
   decisions: [D-14, D-15, D-16, D-17, D-19, D-22, D-30, D-35, D-67, D-68, D-69, D-71, D-80, D-114]
   fixtures: [fx-rep-01, lint:roles/profile-limits]
-  doc: docs/scripts-and-translator.md
+  doc: docs/coordination.md
 
 - id: PRM-1
   title: Deny by default
@@ -11701,7 +11701,7 @@
   profile: campaign
   decisions: [D-15, D-39, D-71]
   fixtures: [scr-fx-schema]
-  doc: docs/scripts-and-translator.md
+  doc: docs/coordination.md
 
 - id: SCR-2
   title: A step refers only to applied manifests
@@ -11721,7 +11721,7 @@
   profile: campaign
   decisions: [D-15, D-39, D-71, D-114]
   fixtures: [scr-fx-refs]
-  doc: docs/scripts-and-translator.md
+  doc: docs/coordination.md
 
 - id: SCR-3
   title: Conditions and passing values between steps
@@ -11745,7 +11745,7 @@
   profile: campaign
   decisions: [D-15, D-39, D-71, D-114]
   fixtures: [scr-fx-conditions]
-  doc: docs/scripts-and-translator.md
+  doc: docs/coordination.md
 
 - id: SCR-4
   title: The goal of an agent step in a model draft
@@ -11762,7 +11762,7 @@
   profile: campaign
   decisions: [D-15, D-39, D-71]
   fixtures: [trn-inj-05]
-  doc: docs/scripts-and-translator.md
+  doc: docs/coordination.md
 
 - id: SCR-5
   title: Draft acceptance by the core
@@ -11795,7 +11795,7 @@
   profile: campaign
   decisions: [D-15, D-40, D-73, D-71]
   fixtures: [trn-05, trn-07, scr-fx-05]
-  doc: docs/scripts-and-translator.md
+  doc: docs/coordination.md
 
 - id: SCR-6
   title: A run only after the initiator's button
@@ -11827,7 +11827,7 @@
   profile: campaign
   decisions: [D-15, D-48, D-68, D-70, D-74, D-78, D-71]
   fixtures: [trn-inj-06, scr-fx-01, scr-fx-02, scr-fx-03]
-  doc: docs/scripts-and-translator.md
+  doc: docs/coordination.md
 
 - id: SCR-7
   title: A run approval approves no actions
@@ -11857,7 +11857,7 @@
   profile: campaign
   decisions: [D-15, D-40, D-67, D-68, D-70, D-73, D-74, D-78, D-71]
   fixtures: [blackbox:script/frozen-subset, scr-fx-04]
-  doc: docs/scripts-and-translator.md
+  doc: docs/coordination.md
 
 - id: SCR-8
   title: Core code releases steps
@@ -11880,7 +11880,7 @@
   profile: campaign
   decisions: [D-15, D-41, D-71]
   fixtures: [blackbox:script/double-release]
-  doc: docs/scripts-and-translator.md
+  doc: docs/coordination.md
 
 - id: SCR-9
   title: The distrust flag passes between steps
@@ -11897,7 +11897,7 @@
   profile: campaign
   decisions: [D-15, D-71]
   fixtures: [blackbox:script/untrusted-flag]
-  doc: docs/scripts-and-translator.md
+  doc: docs/coordination.md
 
 - id: SCR-10
   title: A hold pauses a run
@@ -11917,7 +11917,7 @@
   profile: campaign
   decisions: [D-15]
   fixtures: [blackbox:script/hold-pauses-run]
-  doc: docs/scripts-and-translator.md
+  doc: docs/coordination.md
 
 - id: SCR-11
   title: Run transitions only by the table, cancellation cascades
@@ -11943,7 +11943,7 @@
   profile: campaign
   decisions: [D-15, D-41, D-71]
   fixtures: [blackbox:script/transitions]
-  doc: docs/scripts-and-translator.md
+  doc: docs/coordination.md
 
 - id: SCR-12
   title: A script from git on a schedule
@@ -11974,7 +11974,7 @@
   profile: campaign
   decisions: [D-99, D-102, D-105]
   fixtures: [lint:manifests/schedule-script, blackbox:script/scheduled-run, manifests/v02-security-lints]
-  doc: docs/scripts-and-translator.md
+  doc: docs/coordination.md
 
 - id: SCR-13
   title: The steps wait and await
@@ -12009,7 +12009,7 @@
   profile: campaign
   decisions: [D-41]
   fixtures: [manifests/v02-group1-lints, blackbox:script/wait-await]
-  doc: docs/scripts-and-translator.md
+  doc: docs/coordination.md
 
 - id: SCR-14
   title: A script from git with parameters and a free goal
@@ -12044,7 +12044,7 @@
   profile: campaign
   decisions: [D-15, D-71, D-104]
   fixtures: [manifests/v02-group1-lints, blackbox:script/git-command]
-  doc: docs/scripts-and-translator.md
+  doc: docs/coordination.md
 
 - id: SCR-15
   title: Rollups and selections over the items of a fanout step
@@ -12067,7 +12067,7 @@
   profile: campaign
   decisions: [D-15, D-39, D-114]
   fixtures: []
-  doc: docs/scripts-and-translator.md
+  doc: docs/coordination.md
 
 - id: SEC-1
   title: Secrets do not go through ports
@@ -12890,7 +12890,7 @@
   profile: campaign
   decisions: [D-15, D-39, D-71]
   fixtures: [trn-inj-01, trn-inj-02, trn-inj-03]
-  doc: docs/scripts-and-translator.md
+  doc: docs/coordination.md
 
 - id: TRN-3
   title: The translator outputs only a draft
@@ -12907,7 +12907,7 @@
   profile: campaign
   decisions: [D-15, D-71]
   fixtures: [blackbox:translator/output-only-draft]
-  doc: docs/scripts-and-translator.md
+  doc: docs/coordination.md
 
 - id: TRN-4
   title: Draft limits under untrusted text
@@ -12924,7 +12924,7 @@
   profile: campaign
   decisions: [D-15, D-71]
   fixtures: [trn-inj-01, trn-fx-untrusted]
-  doc: docs/scripts-and-translator.md
+  doc: docs/coordination.md
 
 - id: TRN-5
   title: When the vocabulary does not cover the assignment
@@ -12942,7 +12942,7 @@
   profile: campaign
   decisions: [D-15, D-41, D-71]
   fixtures: [trn-03, trn-04, trn-fx-unsupported]
-  doc: docs/scripts-and-translator.md
+  doc: docs/coordination.md
 
 - id: TRN-6
   title: Translator eval gate
@@ -12963,7 +12963,7 @@
   profile: campaign
   decisions: [D-11, D-15]
   fixtures: [trn-01, trn-02, trn-03, trn-04, trn-05, trn-06, trn-07, trn-inj-01, trn-inj-02, trn-inj-03, trn-inj-04, trn-inj-05, trn-inj-06]
-  doc: docs/scripts-and-translator.md
+  doc: docs/coordination.md
 
 - id: TRN-7
   title: A person confirms that a script run caused an incident
@@ -12985,7 +12985,7 @@
   profile: campaign
   decisions: [D-112]
   fixtures: [blackbox:translator/script-link]
-  doc: docs/scripts-and-translator.md
+  doc: docs/coordination.md
 
 - id: TRN-8
   title: Confirmed cases enter the translator check of the tenant
@@ -13011,7 +13011,7 @@
   profile: campaign
   decisions: [D-11, D-112]
   fixtures: [blackbox:translator/tenant-cases]
-  doc: docs/scripts-and-translator.md
+  doc: docs/coordination.md
 
 - id: TRN-9
   title: The translator pauses after three confirmed links
@@ -13038,4 +13038,4 @@
   profile: campaign
   decisions: [D-112]
   fixtures: [blackbox:translator/card-unnamed-targets]
-  doc: docs/scripts-and-translator.md
+  doc: docs/coordination.md
