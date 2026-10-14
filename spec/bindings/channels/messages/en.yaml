@@ -42,6 +42,19 @@ texts:
   cmd.lang.unknown: "Unknown language. Available: {locales}."
   cmd.forbidden.needs: This needs the group {group}; contact the tenant administrator.
   cmd.followup.hint: You can simply reply with a message within {minutes} minutes.
+  # Service control and pipelines by command, without a model (PRM-18, APR-17)
+  cmd.service.usage: "Usage: /service <verb> <service>, for example /service restart nginx."
+  cmd.service.unknown: There is no such service or verb in the catalog of this tenant.
+  cmd.service.accepted: "{verb} {service}: accepted; the outcome comes here."
+  cmd.run.usage: "Usage: /run <pipeline> <arguments>."
+  cmd.run.unknown: There is no such pipeline here.
+  cmd.run.invalid: The arguments do not fit the pipeline.
+  cmd.run.accepted: "{title}: started; the outcome comes here."
+  cmd.action.pending: '"{title}" awaits the decision of a person until {deadline}.'
+  cmd.action.done: "{action}: done."
+  cmd.refused.held: This is stopped by a hold right now.
+  cmd.refused.service_rate_limited: The limit of such actions is reached; try again later.
+  cmd.refused.resource_busy: Another operation on this service is running; try again later.
   # Cards (APR-19, GOV-13, GOV-14)
   card.copy.initiator: "Approval \"{title}\": {state}, deadline {deadline}. Decided by: {decided_by}."
   card.copy.remind_button: Remind approvers

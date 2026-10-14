@@ -35,6 +35,8 @@ type Alarm struct {
 	Subject  AlarmSubject
 	Severity string // used when the events catalog gives the alarm no severity
 	Values   map[string]any
+	// Page raises the severity to page, as for a stop that hit the service limit (MON-8).
+	Page bool
 }
 
 // pageRepeat is the pause between the repeated notices of an open page alarm (MON-13).
@@ -46,6 +48,9 @@ func (a Alarm) eventType() string { return "alarm." + a.Name + ".v1" }
 
 // alarmSeverity takes the severity of the events catalog, where it names one.
 func (c *Core) alarmSeverity(a Alarm) (string, error) {
+	if a.Page {
+		return "page", nil
+	}
 	cat, err := c.spec.Registry("spec/bindings/events/catalog.yaml")
 	if err != nil {
 		return "", err

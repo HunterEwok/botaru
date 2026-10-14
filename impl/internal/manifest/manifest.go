@@ -161,6 +161,15 @@ type Tenant struct {
 	Dispatcher       TenantDispatcher  `json:"dispatcher"`
 	Dispatch         TenantDispatch    `json:"dispatch"`
 	Attention        TenantAttention   `json:"attention"`
+	// Run holds the pipelines of the command /run <name> (APR-17).
+	Run map[string]RunEntry `json:"run"`
+}
+
+// RunEntry is one pipeline of /run: a task type or an action, with its positional arguments.
+type RunEntry struct {
+	Type   string   `json:"type"`
+	Action string   `json:"action"`
+	Args   []string `json:"args"`
 }
 
 // TenantAttention holds the card limits of the tenant (APR-2).
@@ -296,6 +305,8 @@ type Role struct {
 	Tools      []any             `json:"tools"`
 	// ActionsMayRequest are the actions the model may ask for through request_action (APR-1).
 	ActionsMayRequest []string `json:"actions_may_request"`
+	// ServiceControl names the catalog services the role may control, or ["*"] (APR-18).
+	ServiceControl []string `json:"service_control"`
 	Runtime           struct {
 		Driver string `json:"driver"`
 	} `json:"runtime"`
@@ -340,6 +351,10 @@ type TaskType struct {
 	Retry         Retry             `json:"retry"`
 	TreeBudgetEUR float64           `json:"tree_budget_eur"`
 	GoalTrust     string            `json:"goal_trust"`
+	// Run with approval none marks a pipeline that /run starts without a button (APR-17).
+	Run *struct {
+		Approval string `json:"approval"`
+	} `json:"run"`
 }
 
 // Timeouts are the type deadlines as durations (15m, 60s).

@@ -38,7 +38,7 @@ type toolsGrant struct {
 	MaxTier   int
 	Mark      string
 	Purpose   string
-	// InitiatorGroups are the groups of an active human initiator, for the built-in tools.
+	// InitiatorGroups are the groups of an active initiator, for the built-in tools.
 	InitiatorGroups []string
 }
 
@@ -115,7 +115,9 @@ func (c *Core) loadGrantTask(ctx context.Context, q store.Querier, g *toolsGrant
 		return err
 	}
 	g.MaxTier, g.Mark, g.Purpose = r.MaxTier, r.DataMark, r.Purpose
-	if strings.HasPrefix(g.Initiator, "human:") {
+	// The groups of an active initiator: a person, or a service or system principal whose
+	// rights to a built-in write tool come only from explicit rows (APR-18).
+	if g.Initiator != "" {
 		var state string
 		err := q.QueryRow(ctx, `SELECT state FROM principals WHERE tenant = $1 AND id = $2`, g.Tenant, g.Initiator).Scan(&state)
 		if err != nil && !errors.Is(err, pgx.ErrNoRows) {
@@ -179,6 +181,9 @@ func (c *Core) toolCatalog(cat *Catalog, g *toolsGrant) ([]catalogTool, error) {
 		return nil, err
 	} else if rt != nil {
 		out = append(out, *rt)
+	}
+	if st := c.serviceControlTool(cat, g); st != nil {
+		out = append(out, *st)
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
 	return out, nil
@@ -333,8 +338,9 @@ func (c *Core) P3ToolsCall(ctx context.Context, handle string, p mcp.CallParams)
 	var callID string
 	var refusal *toolRefusal
 	var builtin *mcp.CallResult
+	var grantID string
 	err = c.tx(ctx, func(tx pgx.Tx, now time.Time) error {
-		callID, refusal, builtin = "", nil, nil
+		callID, refusal, builtin, grantID = "", nil, nil, ""
 		g, err := c.resolveToolsHandle(ctx, tx, handle)
 		if err != nil {
 			return err
@@ -364,6 +370,26 @@ func (c *Core) P3ToolsCall(ctx context.Context, handle string, p mcp.CallParams)
 			builtin = res.call()
 			return nil
 		}
+		if p.Name == serviceToolName {
+			offered := slices.ContainsFunc(tools, func(t catalogTool) bool { return t.Builtin && t.Name == serviceToolName })
+			args := p.Arguments
+			if args == nil {
+				args = map[string]any{}
+			}
+			res, id, grant, err := c.serviceControl(ctx, tx, now, cat, g, offered, args)
+			if errors.Is(err, errSchema) {
+				refusal = &toolRefusal{state: "error", reason: "input_schema_invalid"}
+				return nil
+			}
+			if err != nil {
+				return err
+			}
+			if res != nil {
+				builtin = res.call()
+			}
+			callID, grantID = id, grant
+			return nil
+		}
 		callID, refusal, err = c.recordToolCall(ctx, tx, now, cat, g, p)
 		return err
 	})
@@ -378,6 +404,13 @@ func (c *Core) P3ToolsCall(ctx context.Context, handle string, p mcp.CallParams)
 	}
 	if refusal != nil {
 		return toolError(refusal), nil
+	}
+	if grantID != "" {
+		// A grant call is a write call: the model gets only the closed outcome (APR-18).
+		if _, err := c.awaitToolCall(ctx, cat, callID); err != nil {
+			return nil, err
+		}
+		return c.serviceOutcome(ctx, callID, grantID)
 	}
 	return c.awaitToolCall(ctx, cat, callID)
 }

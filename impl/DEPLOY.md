@@ -159,7 +159,7 @@ Then `farmctl audit verify demo` answers `"ok": true`. A message from someone wh
 
 ## Tools: a toolhost on a machine
 
-A bot reads a machine through a toolhost on that machine (E3): `botaru-toolhost` takes the tool calls of one tenant over P1 and runs each in a new process of its plugin. This version has three own plugins: `cmd` (named commands such as `disk_usage` and `service_status`), `logs` (the tail of a log file) and `checks` (the latest site check results). Only read tools are called, and only by a role that lists them.
+A bot reads a machine through a toolhost on that machine (E3): `botaru-toolhost` takes the tool calls of one tenant over P1 and runs each in a new process of its plugin. This version has three own read plugins: `cmd` (named commands such as `disk_usage` and `service_status`), `logs` (the tail of a log file) and `checks` (the latest site check results). Only read tools are called, and only by a role that lists them.
 
 1. **Manifests.** Apply `examples/tools/cmd/tool.yaml`, `examples/tools/logs/tool.yaml` and `examples/tools/checks/tool.yaml`, a `Catalog` of your tenant with the machine and its resources, and a role whose `tools` lists what it may call, for example `[checks/latest, logs/tail, cmd/run]`. The example catalog `examples/tenants/demo/catalog.yaml` carries fields of later versions that cannot be left out; write your own with only `hosts` (with `services` and their `unit`) and `resources` (`list: log_sources` for logs, `list: checks` for checks, each with its `host`). A tool reaches the model only when the task type's `tier` and `data_class` allow it: `logs/tail` and `cmd/run` are tier 1 with output `raw_logs`.
 2. **A user per tenant.** The toolhost never runs as root and refuses to. Create one user per tenant on the machine, for example `useradd -r -s /usr/sbin/nologin botaru-tools-demo`, and give it read access only to the log files it serves (for example the `adm` group).
@@ -211,6 +211,38 @@ A bot reads a machine through a toolhost on that machine (E3): `botaru-toolhost`
    ```
 
 At start the toolhost asks every plugin for its `tools/list` and reports the fingerprint in `hello`. If the manifests in the checkout on the machine differ from those applied to the core, the core moves the toolhost to `blocked`: update the checkout or apply again, then enroll a new toolhost. After an `apply` that changes a plugin manifest, restart the toolhosts of that plugin once their checkout carries the same manifest: until they say hello again they take no calls. A call that no toolhost of the machine takes within 30 seconds ends with `no_executor`, and the model is told so; to stop all tool calls of a tenant at once, set a hold with the effect `no_tool`.
+
+## Actions: restarting services and running actions
+
+A bot never writes on a machine with its own tools. A write runs only through the **action toolhost** of the tenant on that machine, under an approval decided on a card or a `service_grant` record (APR-7, APR-18). This version has two write plugins of its own: `service` (start, stop and restart of catalog services through systemd) and `queue` (actions of `Action` manifests with the `oneshot` mechanism: the plugin puts a run request into the tenant queue for a path unit of yours).
+
+1. **Catalog and role.** Declare each controllable service in the catalog: `hosts[].services[]` with `name`, the exact `unit` (for example `nginx.service`), `control` (a subset of `start`, `stop`, `restart`) and `via: host`. `no_card` defaults to `[restart]`: a restart runs without a card, `start` and `stop` always go by card. Give the role `service_control: [nginx]` (or `["*"]`) and apply `examples/tools/service/tool.yaml`.
+2. **Rights of people.** The initiator of the task needs `service.control:<service>` in one of their groups, and the person who decides a card `action.approve:service.control` (or `action.approve:service.control:<service>`). A schedule or route task runs as `system`, which gets the right only by an explicit row in a group. These groups are privileged: this version does not give them through `grant`, so add the membership with SQL as for the other privileged groups.
+3. **A separate OS user** for the action toolhost, for example `useradd -r -s /usr/sbin/nologin botaru-act-demo`: it is not the user of the read toolhost, is in no group with access to containers or `sudo`, and has no other polkit rules (DEP-9).
+4. **The polkit rule** lets this user run exactly the catalog verbs on the exact units of this machine and nothing else. Generate it from the catalog, never by hand:
+
+   ```sh
+   /opt/botaru/bin/botaru-plugin polkit -catalog tenants/demo/catalog.yaml -host web1 -user botaru-act-demo \
+     > /etc/polkit-1/rules.d/60-botaru-demo.rules
+   ```
+
+   Generate it again after every change of the services of this machine in the catalog.
+5. **Enroll and settings.** Enroll a second toolhost of the tenant with `-plugins service,fixer` (the plugins of your actions) on the same machine, and give it its own settings file:
+
+   ```yaml
+   placement: host
+   kill_after: 10s
+   plugins:
+     - name: service
+       command: [/opt/botaru/bin/botaru-plugin, service, -manifest, /opt/botaru/src/examples/tools/service/tool.yaml]
+     - name: fixer
+       command: [/opt/botaru/bin/botaru-plugin, queue, -manifest, /etc/botaru/tools/fixer.yaml, -queue, /var/lib/botaru/demo/queue]
+   ```
+
+   The unit is the one of the read toolhost with `User=botaru-act-demo`. The queue directory `/var/lib/botaru/<tenant>/queue/` is writable only by this user; your root path unit (`PathExistsGlob=/var/lib/botaru/demo/queue/*.json`) starts your request parser, which checks each request against the action schema before it runs anything. The parser is yours: this version does not ship one.
+6. **From a chat.** A person with the right writes `/service restart nginx`: the restart runs under a `service_grant` with the person as author and the outcome comes back to the same chat; `/service stop nginx` sends a card to the approvers. `/run <pipeline> <arguments>` starts a pipeline of the tenant's `run` field: an action by card, an action with `risk: routine` without a card within its `runs_per_hour` and `runs_per_day`.
+
+A hold with `no_action` (or `no_tool`) on the tenant, the machine, the plugin `service` or the action `service.control` stops new service actions at once; a hold on the tenant or the action also cancels the pending cards.
 
 ## Stopping work with a hold
 

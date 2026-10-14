@@ -297,38 +297,6 @@ func (c *Core) requestAction(ctx context.Context, tx pgx.Tx, now time.Time, cat 
 	if err != nil {
 		return requestActionResult{}, err
 	}
-	// The approvals of the tenant are counted under its lock, so two requests at once do not
-	// both pass a limit.
-	if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock(7300108, hashtext($1))`, g.Tenant); err != nil {
-		return requestActionResult{}, err
-	}
-	var existing string
-	err = tx.QueryRow(ctx, `SELECT id FROM approvals WHERE tenant = $1 AND action = $2 AND args_hash = $3 AND state = 'pending'`, g.Tenant, name, argsHash).Scan(&existing)
-	if err == nil {
-		// An identical pending request returns its number (APR-2).
-		if err := audit(true, "", existing); err != nil {
-			return requestActionResult{}, err
-		}
-		return requestActionResult{Code: "pending", ApprovalID: existing}, nil
-	}
-	if !errors.Is(err, pgx.ErrNoRows) {
-		return requestActionResult{}, err
-	}
-	var perTask, perHour int
-	if err := tx.QueryRow(ctx, `SELECT count(*) FILTER (WHERE source_task = $2), count(*) FILTER (WHERE created_at > $3) FROM approvals WHERE tenant = $1`,
-		g.Tenant, g.Task, now.Add(-time.Hour)).Scan(&perTask, &perHour); err != nil {
-		return requestActionResult{}, err
-	}
-	if perTask >= maxActionRequests {
-		return deny("service_rate_limited", "service_rate_limited")
-	}
-	limit := tv.Spec.Attention.CardsPerTenantHour
-	if limit == 0 {
-		limit = defaultCardsPerHour
-	}
-	if perHour >= limit {
-		return deny("service_rate_limited", "service_rate_limited")
-	}
 	var rec []byte
 	if err := tx.QueryRow(ctx, `SELECT record FROM tasks WHERE id = $1`, g.Task).Scan(&rec); err != nil {
 		return requestActionResult{}, err
@@ -340,7 +308,7 @@ func (c *Core) requestAction(ctx context.Context, tx pgx.Tx, now time.Time, cat 
 	if err := json.Unmarshal(rec, &tr); err != nil {
 		return requestActionResult{}, err
 	}
-	id, err := c.insertApproval(ctx, tx, now, approvalRow{
+	id, code, err := c.openApproval(ctx, tx, now, tv, approvalRow{
 		Tenant: g.Tenant, SourceTask: g.Task, Initiator: g.Initiator, Action: name, ArgsHash: argsHash, Args: actArgs, Risk: a.Risk,
 		RequestedBy:   map[string]any{"kind": "bot", "role": g.Role, "task": g.Task},
 		UntrustedSeen: tr.UntrustedSeen, UntrustedSource: tr.UntrustedSource, ExpiresAt: now.Add(actionTTL(a)),
@@ -348,10 +316,45 @@ func (c *Core) requestAction(ctx context.Context, tx pgx.Tx, now time.Time, cat 
 	if err != nil {
 		return requestActionResult{}, err
 	}
+	if code != "pending" {
+		return deny(code, code)
+	}
 	if err := audit(true, "", id); err != nil {
 		return requestActionResult{}, err
 	}
 	return requestActionResult{Code: "pending", ApprovalID: id}, nil
+}
+
+// openApproval writes a pending approval, or returns the identical pending one (APR-2). The
+// approvals of the tenant are counted under its lock, so two requests at once do not both pass
+// a limit: at most 3 per source task and the tenant's cards per hour; above them the code is
+// service_rate_limited.
+func (c *Core) openApproval(ctx context.Context, tx pgx.Tx, now time.Time, tv *TenantView, a approvalRow) (string, string, error) {
+	if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock(7300108, hashtext($1))`, a.Tenant); err != nil {
+		return "", "", err
+	}
+	var existing string
+	err := tx.QueryRow(ctx, `SELECT id FROM approvals WHERE tenant = $1 AND action = $2 AND args_hash = $3 AND state = 'pending'`, a.Tenant, a.Action, a.ArgsHash).Scan(&existing)
+	if err == nil {
+		return existing, "pending", nil
+	}
+	if !errors.Is(err, pgx.ErrNoRows) {
+		return "", "", err
+	}
+	var perTask, perHour int
+	if err := tx.QueryRow(ctx, `SELECT count(*) FILTER (WHERE $2 <> '' AND source_task = $2), count(*) FILTER (WHERE created_at > $3) FROM approvals WHERE tenant = $1`,
+		a.Tenant, a.SourceTask, now.Add(-time.Hour)).Scan(&perTask, &perHour); err != nil {
+		return "", "", err
+	}
+	limit := tv.Spec.Attention.CardsPerTenantHour
+	if limit == 0 {
+		limit = defaultCardsPerHour
+	}
+	if perTask >= maxActionRequests || perHour >= limit {
+		return "", "service_rate_limited", nil
+	}
+	id, err := c.insertApproval(ctx, tx, now, a)
+	return id, "pending", err
 }
 
 // approvalScopes are the hold scopes of an approval: the farm, the tenant, the action and,
@@ -430,7 +433,8 @@ func cardChat(ctx context.Context, q store.Querier, tv *TenantView, principal st
 
 // approvers are the active people of the tenant with action.approve:<a>, without the
 // initiator unless the tenant allows self approval (APR-9, decision-points approval_card).
-func approvers(ctx context.Context, q store.Querier, now time.Time, tv *TenantView, action, initiator string) ([]string, error) {
+func approvers(ctx context.Context, q store.Querier, now time.Time, tv *TenantView, a *approvalRow) ([]string, error) {
+	initiator := a.Initiator
 	rows, err := q.Query(ctx, `SELECT DISTINCT m.principal FROM memberships m JOIN principals p ON p.tenant = m.tenant AND p.id = m.principal
 		WHERE m.tenant = $1 AND m.state = 'active' AND (m.until IS NULL OR m.until > $2) AND p.state = 'active' AND p.kind = 'human'
 		ORDER BY m.principal`, tv.Name, now)
@@ -459,7 +463,7 @@ func approvers(ctx context.Context, q store.Querier, now time.Time, tv *TenantVi
 		if err != nil {
 			return nil, err
 		}
-		if hasCap(tv, groupClosure(tv, info.Groups), "action.approve:"+action) {
+		if mayApprove(tv, groupClosure(tv, info.Groups), a) {
 			out = append(out, p)
 		}
 	}
@@ -469,7 +473,7 @@ func approvers(ctx context.Context, q store.Querier, now time.Time, tv *TenantVi
 // planCards plans the card to every approver and the copy to the initiator (APR-3, APR-19). A
 // person without a direct chat in a channel of the tenant gets no card.
 func (c *Core) planCards(ctx context.Context, tx pgx.Tx, now time.Time, tv *TenantView, a *approvalRow) error {
-	people, err := approvers(ctx, tx, now, tv, a.Action, a.Initiator)
+	people, err := approvers(ctx, tx, now, tv, a)
 	if err != nil {
 		return err
 	}
@@ -543,7 +547,7 @@ func (c *Core) planCardUpdates(ctx context.Context, tx pgx.Tx, now time.Time, a 
 
 // buildCard draws a card from the approval record by the code template (APR-3, APR-12, APR-19).
 func (c *Core) buildCard(ctx context.Context, q store.Querier, cat *Catalog, a *approvalRow, kind string, reminder bool) (map[string]any, error) {
-	act := cat.Actions[a.Action]
+	act, _ := c.actionOf(cat, a.Action)
 	title := act.Title
 	if title == "" {
 		title = a.Action
@@ -736,7 +740,7 @@ func mustJSON(v any) []byte {
 // remindApprovers sends the approvers who have not decided a new card with the reminder line
 // (APR-19); it returns how many got one.
 func (c *Core) remindApprovers(ctx context.Context, tx pgx.Tx, now time.Time, tv *TenantView, a *approvalRow) (int, error) {
-	people, err := approvers(ctx, tx, now, tv, a.Action, a.Initiator)
+	people, err := approvers(ctx, tx, now, tv, a)
 	if err != nil {
 		return 0, err
 	}
@@ -831,7 +835,7 @@ func (c *Core) recheckApprovalsOf(ctx context.Context, tx pgx.Tx, now time.Time,
 		switch {
 		case p == nil || p.State != "active":
 			err = c.closeApproval(ctx, tx, now, a, "canceled", "person_inactive")
-		case !hasCap(tv, groupClosure(tv, p.Groups), "action.request:"+a.Action):
+		case !hasCap(tv, groupClosure(tv, p.Groups), requestCap(a.Action, a.Args)):
 			err = c.closeApproval(ctx, tx, now, a, "canceled", "rights_revoked")
 		}
 		if err != nil {
@@ -996,7 +1000,7 @@ func (c *Core) Decide(ctx context.Context, w *Worker, ob *OnBehalf, req DecideRe
 			}
 			return &committed{p: refuse(reason, "%s", detail)}
 		}
-		if !hasCap(press.tv, press.groups, "action.approve:"+a.Action) {
+		if !mayApprove(press.tv, press.groups, a) {
 			return deny("forbidden", "the person has no action.approve for this action")
 		}
 		if press.principal == a.Initiator && !press.tv.Spec.SelfApprove {
@@ -1082,7 +1086,7 @@ func (c *Core) Decide(ctx context.Context, w *Worker, ob *OnBehalf, req DecideRe
 // checks again that the initiator is active with action.request:<a> and that the arguments
 // still pass the catalog (APR-6, MAN-10).
 func (c *Core) executeApproval(ctx context.Context, tx pgx.Tx, now time.Time, cat *Catalog, tv *TenantView, a *approvalRow) error {
-	act, ok := cat.Actions[a.Action]
+	act, ok := c.actionOf(cat, a.Action)
 	if !ok {
 		return c.closeApproval(ctx, tx, now, a, "canceled", "ref_invalid")
 	}
@@ -1094,7 +1098,15 @@ func (c *Core) executeApproval(ctx context.Context, tx pgx.Tx, now time.Time, ca
 		if err != nil {
 			return err
 		}
-		if !hasCap(tv, groupClosure(tv, p.Groups), "action.request:"+a.Action) {
+		if !hasCap(tv, groupClosure(tv, p.Groups), requestCap(a.Action, a.Args)) {
+			return c.closeApproval(ctx, tx, now, a, "canceled", "rights_revoked")
+		}
+	}
+	// A service action from a bot needs the role's permission at the decision too (APR-18).
+	if a.Action == serviceAction {
+		role, _ := a.RequestedBy["role"].(string)
+		svc, _ := a.Args["service"].(string)
+		if role != "" && !roleControls(cat, role, svc) {
 			return c.closeApproval(ctx, tx, now, a, "canceled", "rights_revoked")
 		}
 	}
@@ -1116,7 +1128,9 @@ func (c *Core) executeApproval(ctx context.Context, tx pgx.Tx, now time.Time, ca
 	if c.rs.validate(schema, a.Args) != nil {
 		return c.closeApproval(ctx, tx, now, a, "canceled", "ref_invalid")
 	}
-	taskID, err := c.insertActionTask(ctx, tx, now, a, act, mark)
+	taskID, err := c.insertActionTask(ctx, tx, now, actionTaskInput{
+		Tenant: a.Tenant, Action: a.Action, Args: a.Args, Initiator: a.Initiator, SourceTask: a.SourceTask, Mark: mark, ApprovalID: a.ID,
+	})
 	if err != nil {
 		return err
 	}
@@ -1155,21 +1169,32 @@ func (c *Core) executeApproval(ctx context.Context, tx pgx.Tx, now time.Time, ca
 	return nil
 }
 
+// actionTaskInput is the action.<a> task of an approval or a grant.
+type actionTaskInput struct {
+	Tenant, Action, Initiator, SourceTask, Mark string
+	Args                                        map[string]any
+	ApprovalID, GrantID                         string
+	// Origin is the chat of a person's command, which gets the outcome as code text; Key is
+	// then the key of the activity, so a repeat of the same update finds the task (DLV-5).
+	Origin *Origin
+	Key    string
+}
+
 // insertActionTask creates the action.<a> task directly in working, without an attempt and a
-// lease, with the key system:approval:<id> (CNT-7). It has no deadline of its own: the card's
-// deadline and the call's timeout hold it.
-func (c *Core) insertActionTask(ctx context.Context, tx pgx.Tx, now time.Time, a *approvalRow, act manifest.Action, mark string) (string, error) {
+// lease, with the key system:approval:<id> or system:grant:<id> (CNT-7). It has no deadline of
+// its own: the card's deadline and the call's timeout hold it.
+func (c *Core) insertActionTask(ctx context.Context, tx pgx.Tx, now time.Time, in actionTaskInput) (string, error) {
 	id := ids.New(ids.Task)
-	typ := "action." + a.Action
-	body := map[string]any{"type": typ, "params": a.Args}
+	typ := "action." + in.Action
+	body := map[string]any{"type": typ, "params": in.Args}
 	bodyHash, err := jcs.Hash(body)
 	if err != nil {
 		return "", err
 	}
-	root, fairness := id, "action:"+a.Action
-	if a.SourceTask != "" {
+	root, fairness := id, "action:"+in.Action
+	if in.SourceTask != "" {
 		var rec []byte
-		if err := tx.QueryRow(ctx, `SELECT record FROM tasks WHERE id = $1`, a.SourceTask).Scan(&rec); err == nil {
+		if err := tx.QueryRow(ctx, `SELECT record FROM tasks WHERE id = $1`, in.SourceTask).Scan(&rec); err == nil {
 			var r struct {
 				Root     string `json:"root"`
 				Fairness string `json:"fairness_key"`
@@ -1184,11 +1209,24 @@ func (c *Core) insertActionTask(ctx context.Context, tx pgx.Tx, now time.Time, a
 		}
 	}
 	record := map[string]any{
-		"tenant": a.Tenant, "enqueued_by": "core", "depth": 0, "root": root, "correlationid": root, "max_tier": 3,
-		"untrusted_seen": false, "fairness_key": fairness, "approval_id": a.ID, "budget_line": "work", "purpose": "work",
+		"tenant": in.Tenant, "enqueued_by": "core", "depth": 0, "root": root, "correlationid": root, "max_tier": 3,
+		"untrusted_seen": false, "fairness_key": fairness, "budget_line": "work", "purpose": "work",
 	}
-	if mark != "" {
-		record["data_mark"] = mark
+	key, cause := "system:approval:"+in.ApprovalID, in.ApprovalID
+	if in.ApprovalID != "" {
+		record["approval_id"] = in.ApprovalID
+	} else {
+		record["grant_id"] = in.GrantID
+		key, cause = "system:grant:"+in.GrantID, in.GrantID
+	}
+	if in.Key != "" {
+		key = in.Key
+	}
+	if in.Mark != "" {
+		record["data_mark"] = in.Mark
+	}
+	if in.Origin != nil {
+		record["origin"] = in.Origin
 	}
 	rec, err := json.Marshal(record)
 	if err != nil {
@@ -1200,10 +1238,10 @@ func (c *Core) insertActionTask(ctx context.Context, tx pgx.Tx, now time.Time, a
 	}
 	if _, err := tx.Exec(ctx, `INSERT INTO tasks (id, tenant, type, state, initiator, priority_class, idempotency_key, body_hash, body, record, created_at, updated_at)
 		VALUES ($1, $2, $3, 'working', $4, 2, $5, $6, $7, $8, $9, $9)`,
-		id, a.Tenant, typ, a.Initiator, "system:approval:"+a.ID, bodyHash, raw, rec, now); err != nil {
+		id, in.Tenant, typ, in.Initiator, key, bodyHash, raw, rec, now); err != nil {
 		return "", err
 	}
-	if err := c.appendEvent(ctx, tx, now, a.Tenant, Event{Type: "task.submitted", Subject: id, Data: map[string]any{"task": id, "type": typ}, Causation: a.ID}); err != nil {
+	if err := c.appendEvent(ctx, tx, now, in.Tenant, Event{Type: "task.submitted", Subject: id, Data: map[string]any{"task": id, "type": typ}, Causation: cause}); err != nil {
 		return "", err
 	}
 	return id, nil
@@ -1361,17 +1399,24 @@ func (c *Core) writeCallEnded(ctx context.Context, tx pgx.Tx, now time.Time, cal
 		}
 		result = mustJSON(sc)
 	}
-	tag, err := tx.Exec(ctx, `UPDATE tasks SET state = $2, reason = $3, result = $4, updated_at = $5 WHERE id = $1 AND state = 'working'`,
-		task, taskState, nullable(taskReason), result, now)
-	if err != nil {
+	// Only an action task lives and ends with its write call (CNT-7); a grant call of a bot's
+	// own task ends only the call.
+	var rec []byte
+	var typ, initiator string
+	err = tx.QueryRow(ctx, `UPDATE tasks SET state = $2, reason = $3, result = $4, updated_at = $5 WHERE id = $1 AND state = 'working' AND type LIKE 'action.%'
+		RETURNING record, type, initiator`, task, taskState, nullable(taskReason), result, now).Scan(&rec, &typ, &initiator)
+	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
 		return err
 	}
-	if tag.RowsAffected() > 0 {
+	if err == nil {
 		data := map[string]any{"task": task}
 		if taskReason != "" {
 			data["reason"] = taskReason
 		}
 		if err := c.appendEvent(ctx, tx, now, tenant, Event{Type: "task." + taskState, Subject: task, Data: data}); err != nil {
+			return err
+		}
+		if err := c.grantOutcomeNotice(ctx, tx, now, tenant, task, typ, initiator, rec, taskState, taskReason); err != nil {
 			return err
 		}
 	}
@@ -1401,6 +1446,26 @@ func (c *Core) writeCallEnded(ctx context.Context, tx pgx.Tx, now time.Time, cal
 		return err
 	}
 	return c.planCardUpdates(ctx, tx, now, a)
+}
+
+// grantOutcomeNotice tells the person who gave /service or /run the outcome of the grant's
+// action as code text in the chat of the command (PRM-18).
+func (c *Core) grantOutcomeNotice(ctx context.Context, tx pgx.Tx, now time.Time, tenant, task, typ, initiator string, rec []byte, state, reason string) error {
+	var r struct {
+		Origin *Origin `json:"origin"`
+	}
+	if json.Unmarshal(rec, &r) != nil || r.Origin == nil {
+		return nil
+	}
+	body := map[string]any{"form": "text_code", "text_key": "cmd.action.done", "params": map[string]any{"action": strings.TrimPrefix(typ, "action.")}}
+	if state != "completed" {
+		body = map[string]any{"form": "text_code", "text_key": "task.failed", "params": map[string]any{"reason": reason}}
+	}
+	_, err := c.planDelivery(ctx, tx, now, plannedDelivery{
+		Tenant: tenant, Task: task, Kind: "task_result", Addr: "origin", TargetKind: "chat", TargetID: r.Origin.Chat.ID(),
+		ExecKind: "channel", ExecName: r.Origin.Channel, Recipient: initiator, DataOrigin: "code", Body: body,
+	})
+	return err
 }
 
 // CardOp is p1-card-request: a press of an operation button of a card: Details or Remind approvers.
@@ -1444,7 +1509,7 @@ func (c *Core) CardDetails(ctx context.Context, w *Worker, ob *OnBehalf, req Car
 			a.ID, press.principal, now); err != nil {
 			return err
 		}
-		act := cat.Actions[a.Action]
+		act, _ := c.actionOf(cat, a.Action)
 		fields := map[string]any{
 			"action": a.Action, "title": act.Title, "args": a.Args, "risk": a.Risk, "state": a.State,
 			"requested_by": a.RequestedBy, "untrusted_seen": a.UntrustedSeen, "expires_at": fmtTime(a.ExpiresAt),
