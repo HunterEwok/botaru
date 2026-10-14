@@ -185,6 +185,9 @@ func (c *Core) toolCatalog(cat *Catalog, g *toolsGrant) ([]catalogTool, error) {
 	if st := c.serviceControlTool(cat, g); st != nil {
 		out = append(out, *st)
 	}
+	if ct := c.enqueueChildTool(cat, g); ct != nil {
+		out = append(out, *ct)
+	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
 	return out, nil
 }
@@ -364,6 +367,19 @@ func (c *Core) P3ToolsCall(ctx context.Context, handle string, p mcp.CallParams)
 				args = map[string]any{}
 			}
 			res, err := c.requestAction(ctx, tx, now, cat, g, offered, args)
+			if err != nil {
+				return err
+			}
+			builtin = res.call()
+			return nil
+		}
+		if p.Name == enqueueChildName {
+			offered := slices.ContainsFunc(tools, func(t catalogTool) bool { return t.Builtin && t.Name == enqueueChildName })
+			args := p.Arguments
+			if args == nil {
+				args = map[string]any{}
+			}
+			res, err := c.enqueueChild(ctx, tx, now, cat, g, offered, args)
 			if err != nil {
 				return err
 			}

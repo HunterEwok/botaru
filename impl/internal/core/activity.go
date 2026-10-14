@@ -114,12 +114,17 @@ func (c *Core) SubmitActivity(ctx context.Context, w *Worker, a Activity) (*Acti
 			reply("activity.not_verified")
 			return nil
 		}
+		groups := groupClosure(tv, p.Groups)
 		// The commands the core runs by code, without a model and without a task type.
 		if word, rest, ok := commandWord(a); ok && (word == "/service" || word == "/run" || codeCommands[word]) {
+			// A channel command closes the follow-up window (CNT-5).
+			if err := closeFollowups(ctx, tx, w.Tenant, "c:"+a.Channel+":"+a.Chat.ID(), principal); err != nil {
+				return err
+			}
 			if err := c.firstContact(ctx, tx, now, tv, a.Channel, principal, a.Chat); err != nil {
 				return err
 			}
-			pc := personCommand{tv: tv, cat: cat, person: principal, groups: groupClosure(tv, p.Groups), locale: locale,
+			pc := personCommand{tv: tv, cat: cat, person: principal, groups: groups, locale: locale,
 				channel: a.Channel, chat: a.Chat, key: key}
 			var r *ActivityResult
 			switch word {
@@ -137,6 +142,16 @@ func (c *Core) SubmitActivity(ctx context.Context, w *Worker, a Activity) (*Acti
 			return nil
 		}
 		typ, goal, ok := c.chooseType(cat, tv, a)
+		_, _, command := commandWord(a)
+		prev, err := c.continuesTo(ctx, tx, now, tv, a, principal, groups, command && ok)
+		if err != nil {
+			return err
+		}
+		// A reply or an answer in the window continues the earlier task with its type, unless
+		// the message is a command (CNT-5).
+		if prev != nil && !command && strings.TrimSpace(a.Text) != "" {
+			typ, goal, ok = prev.Type, strings.TrimSpace(a.Text), true
+		}
 		if !ok {
 			reply("activity.not_command")
 			return nil
@@ -150,15 +165,20 @@ func (c *Core) SubmitActivity(ctx context.Context, w *Worker, a Activity) (*Acti
 			return err
 		}
 		body := map[string]any{"type": typ, "goal": goal}
-		subjects, err := c.textAuthors(ctx, tx, w.Tenant, principal, a)
-		if err != nil {
-			return err
-		}
-		res, err := c.enqueue(ctx, tx, now, cat, enqueueInput{
+		in := enqueueInput{
 			Tenant: w.Tenant, Type: typ, Body: body, IdempotencyKey: key, Initiator: principal,
 			EnqueuedBy: "channel:" + a.Channel, Origin: origin, Source: "interactive", Cause: key,
-			Forwarded: a.Forwarded, Quoted: a.Quoted, Subjects: subjects,
-		})
+			Forwarded: a.Forwarded, Quoted: a.Quoted,
+		}
+		if prev != nil {
+			// The outcome of the earlier task is an attachment block of the new one (CNT-5).
+			body["attachments"] = []any{map[string]any{"data": prev.Data}}
+			in.Continues, in.Untrusted, in.ContinuesMark = prev.ID, prev.Untrusted, prev.Mark
+		}
+		if in.Subjects, err = c.textAuthors(ctx, tx, w.Tenant, principal, a); err != nil {
+			return err
+		}
+		res, err := c.enqueue(ctx, tx, now, cat, in)
 		if err != nil {
 			if p, ok := AsProblem(err); ok {
 				out = ActivityResult{Result: "reply", Text: c.rejectText(locale, p.Reason)}

@@ -188,11 +188,11 @@ func (c *Core) Charge(ctx context.Context, spendID string, micros int64, tokens 
 	}
 	return c.tx(ctx, func(tx pgx.Tx, now time.Time) error {
 		if estimated {
-			_, err := tx.Exec(ctx, `UPDATE spend SET state = $2, request_id = $3 WHERE id = $1 AND state = 'reserved'`, spendID, state, nullable(requestID))
+			_, err := tx.Exec(ctx, `UPDATE spend SET state = $2, request_id = $3, settled_at = $4 WHERE id = $1 AND state = 'reserved'`, spendID, state, nullable(requestID), now)
 			return err
 		}
-		_, err := tx.Exec(ctx, `UPDATE spend SET state = $2, eur_micros = $3, tokens = $4, request_id = $5 WHERE id = $1 AND state = 'reserved'`,
-			spendID, state, micros, tok, nullable(requestID))
+		_, err := tx.Exec(ctx, `UPDATE spend SET state = $2, eur_micros = $3, tokens = $4, request_id = $5, settled_at = $6 WHERE id = $1 AND state = 'reserved'`,
+			spendID, state, micros, tok, nullable(requestID), now)
 		return err
 	})
 }

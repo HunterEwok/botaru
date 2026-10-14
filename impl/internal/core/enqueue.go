@@ -65,6 +65,14 @@ type enqueueInput struct {
 	Subjects []string
 	// Refs link the task to earlier work: the original of a redrive (DLV-4).
 	Refs []string
+	// Chain makes the task a child or a continuation in an existing tree (PRM-6, CNT-3).
+	Chain *chainLink
+	// Continues is the task this one continues: a reply or the follow-up window (CNT-5).
+	Continues string
+	// Untrusted carries untrusted_seen over from the continued task (CNT-5).
+	Untrusted bool
+	// ContinuesMark is the data mark of the continued task, whose outcome the new one carries.
+	ContinuesMark string
 }
 
 // fairnessKey writes the dispatcher fairness key <kind>:<id> from the task source (DSP-2,
@@ -279,10 +287,25 @@ func (c *Core) enqueue(ctx context.Context, tx pgx.Tx, now time.Time, cat *Catal
 		pr.Needs = groupsWithCap(tv, capName)
 		return reject(pr)
 	}
-	if !hasData(tv, groups, tt.DataClass) {
-		pr := refuse("no_data_class", "the initiator has no data:%s", tt.DataClass)
-		pr.Needs = []string{"data:" + tt.DataClass}
+	// In a tree the mark is not lower than the participants' marks (PRM-6, CNT-3).
+	mark := tt.DataClass
+	if in.Chain != nil {
+		mark = c.higherMark(mark, in.Chain.Mark)
+	}
+	if in.ContinuesMark != "" {
+		mark = c.higherMark(mark, in.ContinuesMark)
+	}
+	if !hasData(tv, groups, mark) {
+		pr := refuse("no_data_class", "the initiator has no data:%s", mark)
+		pr.Needs = []string{"data:" + mark}
 		return reject(pr)
+	}
+	if in.Chain != nil {
+		if p, err := c.checkChain(ctx, tx, tv, tt, in.Chain); err != nil {
+			return nil, err
+		} else if p != nil {
+			return reject(p)
+		}
 	}
 	// Money: the estimate of the task is reserved in the tenant windows and the person's day
 	// limit, next to usage and open reserves (BUD-1). The reserve is written with the task below.
@@ -385,6 +408,40 @@ func (c *Core) enqueue(ctx context.Context, tx pgx.Tx, now time.Time, cat *Catal
 		record["origin"] = in.Origin
 		record["conversation"] = "c:" + in.Origin.Channel + ":" + in.Origin.Chat.ID()
 	}
+	root := id
+	if ch := in.Chain; ch != nil {
+		root = ch.Root
+		record["parent"], record["root"], record["correlationid"], record["depth"] = ch.Parent, ch.Root, ch.Root, ch.Depth
+		record["data_mark"], record["max_tier"] = mark, min(tt.Tier, ch.MaxTier)
+		if ch.Untrusted {
+			record["untrusted_seen"] = true
+		}
+		if ch.Conversation != "" {
+			record["conversation"] = ch.Conversation
+		}
+		if ch.Trace != "" {
+			record["trace"] = ch.Trace
+		}
+		// The tree draws on the one limit pinned in its root (PRM-6, BUD-1).
+		var rootType string
+		var rootRec []byte
+		if err := tx.QueryRow(ctx, `SELECT type, record FROM tasks WHERE id = $1`, ch.Root).Scan(&rootType, &rootRec); err != nil {
+			return nil, err
+		}
+		record["tree_budget_micros"] = taskTreeBudget(rootRec, cat.TaskTypes[rootType])
+	}
+	if in.Continues != "" {
+		record["data_mark"] = mark
+		record["continues"] = in.Continues
+		record["refs"] = append(slices.Clone(in.Refs), in.Continues)
+	}
+	if in.Untrusted {
+		// The continued task saw untrusted text: so does its follow-up (CNT-5).
+		record["untrusted_seen"] = true
+		if record["untrusted_source"] == nil {
+			record["untrusted_source"] = "continues"
+		}
+	}
 	rec, err := json.Marshal(record)
 	if err != nil {
 		return nil, err
@@ -411,11 +468,15 @@ func (c *Core) enqueue(ctx context.Context, tx pgx.Tx, now time.Time, cat *Catal
 	}
 	if estimate > 0 {
 		if _, err := tx.Exec(ctx, `INSERT INTO spend (id, tenant, task, root, subject, line, purpose, unit, state, eur_micros, time)
-			VALUES ($1, $2, $3, $3, $4, $5, $6, 'task', 'reserved', $7, $8)`, ids.New(ids.Spend), in.Tenant, id, in.Initiator, line, purposeOf(tt), estimate, now); err != nil {
+			VALUES ($1, $2, $3, $9, $4, $5, $6, 'task', 'reserved', $7, $8)`, ids.New(ids.Spend), in.Tenant, id, in.Initiator, line, purposeOf(tt), estimate, now, root); err != nil {
 			return nil, err
 		}
 	}
-	if err := c.appendEvent(ctx, tx, now, in.Tenant, Event{Type: "task.submitted", Subject: id, Data: map[string]any{"task": id, "type": in.Type}, Causation: in.Cause}); err != nil {
+	submitted := map[string]any{"task": id, "type": in.Type}
+	if in.Chain != nil {
+		submitted["parent"] = in.Chain.Parent
+	}
+	if err := c.appendEvent(ctx, tx, now, in.Tenant, Event{Type: "task.submitted", Subject: id, Data: submitted, Causation: in.Cause}); err != nil {
 		return nil, err
 	}
 	if _, err := c.appendAudit(ctx, tx, now, Audit{
