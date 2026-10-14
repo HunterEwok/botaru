@@ -62,6 +62,7 @@ ALTER TABLE erasure_requests ADD COLUMN deadline_at timestamptz;
 ALTER TABLE erasure_requests ADD COLUMN needles text[];
 ALTER TABLE erasure_requests ADD COLUMN updated_at timestamptz;
 ALTER TABLE erasure_requests ADD COLUMN closed_at timestamptz;
+ALTER TABLE erasure_requests ADD COLUMN overdue_at timestamptz;   -- when its overdue alarm fired
 UPDATE erasure_requests SET scope = jsonb_build_object('tenant', tenant, 'subject', subject) WHERE scope IS NULL AND subject IS NOT NULL;
 UPDATE erasure_requests SET scope = jsonb_build_object('tenant', tenant) WHERE scope IS NULL;
 UPDATE erasure_requests SET deadline_at = created_at + interval '30 days', updated_at = created_at WHERE deadline_at IS NULL;

@@ -240,6 +240,7 @@ func TestEraseMatch(t *testing.T) {
 	b.hello(t, "1")
 	b.finish(t, b.claim(t, b.agent, "attempt"))
 	b.drain(t)
+	queued := b.hello(t, "2")
 	if _, err := b.c.st.Pool.Exec(ctx, `UPDATE tasks SET body = body || '{"note": "call Mari Tamm"}'`); err != nil {
 		t.Fatal(err)
 	}
@@ -253,7 +254,7 @@ func TestEraseMatch(t *testing.T) {
 	}
 	card := cardOf(t, b.drain(t), subjectCard, "direct:1002")
 	cd := card.body["card"].(map[string]any)
-	if cd["context"].(map[string]any)["found"].(map[string]any)["tasks"] != float64(1) && cd["context"].(map[string]any)["found"].(map[string]any)["tasks"] != 1 {
+	if n := fmt.Sprint(cd["context"].(map[string]any)["found"].(map[string]any)["tasks"]); n != "2" {
 		t.Fatalf("card %v", cd)
 	}
 	req := DecideRequest{SubjectKind: "subject_request", ID: d.ID, Nonce: cd["nonce"].(string), Decision: "approve"}
@@ -269,6 +270,14 @@ func TestEraseMatch(t *testing.T) {
 	var n int
 	if err := b.c.st.Pool.QueryRow(ctx, `SELECT count(*) FROM tasks WHERE body::text LIKE '%Mari%'`).Scan(&n); err != nil || n != 0 {
 		t.Fatalf("the string is still in %d tasks %v", n, err)
+	}
+	// A queued task among the ids is canceled, so no attempt claims a purged body.
+	var state string
+	if err := b.c.st.Pool.QueryRow(ctx, `SELECT state FROM tasks WHERE id = $1`, queued).Scan(&state); err != nil || state != "canceled" {
+		t.Fatalf("queued task %s %v", state, err)
+	}
+	if item := b.claim(t, b.agent, "attempt"); item != nil {
+		t.Fatalf("claimed %+v", item)
 	}
 	b.advance(t, 31*24*3600)
 	b.tick(t, "erasure")

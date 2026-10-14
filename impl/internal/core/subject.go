@@ -233,6 +233,10 @@ func (c *Core) decideSubject(ctx context.Context, w *Worker, ob OnBehalf, req De
 			return err
 		}
 		out.State = want
+		if err := c.resolveAlarm(ctx, tx, now, Alarm{Tenant: r.Tenant, Name: "subject_request.overdue",
+			Subject: AlarmSubject{Kind: "subject_request", ID: strings.ToLower(r.ID)}, Severity: "warn"}); err != nil {
+			return err
+		}
 		if err := c.appendEvent(ctx, tx, now, w.Tenant, Event{Type: "decision.made", Subject: r.ID, Data: map[string]any{
 			"subject": map[string]any{"kind": "subject_request", "id": r.ID}, "card": subjectCard, "decision": req.Decision,
 			"decided_by": press.principal, "channel": w.Target, "chat_kind": ob.Chat.Kind, "via": "decide",

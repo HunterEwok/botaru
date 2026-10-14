@@ -183,7 +183,12 @@ func (c *Core) erasureLoop(ctx context.Context) error {
 	var open []string
 	err := c.tx(ctx, func(tx pgx.Tx, now time.Time) error {
 		open = open[:0]
-		rows, err := tx.Query(ctx, `SELECT id FROM erasure_requests WHERE state IN ('requested', 'running', 'failed') ORDER BY created_at LIMIT 100`)
+		// The requests with work left, the least recently touched first, so that requests
+		// waiting on an edge store never starve newer ones; a failed request comes back only
+		// after erasure.retry.
+		rows, err := tx.Query(ctx, `SELECT id FROM erasure_requests r WHERE state IN ('requested', 'running')
+			OR (state = 'failed' AND EXISTS (SELECT 1 FROM erasure_steps s WHERE s.request = r.id AND s.state = 'pending'))
+			ORDER BY updated_at, created_at LIMIT 100`)
 		if err != nil {
 			return err
 		}
@@ -220,6 +225,9 @@ func (c *Core) erasureLoop(ctx context.Context) error {
 		}); err != nil {
 			return err
 		}
+	}
+	if err := c.erasureOverdue(ctx); err != nil {
+		return err
 	}
 	return c.subjectRequestTimers(ctx, cat)
 }
@@ -292,7 +300,11 @@ func (c *Core) eraseCore(ctx context.Context, tx pgx.Tx, now time.Time, cat *Cat
 	args := []any{r.Tenant, sc.Subject, idsWith(sc.IDs, "t_")}
 	switch st {
 	case "tasks":
-		if sc.Subject != "" || len(sc.IDs) == 0 {
+		if len(sc.IDs) > 0 && len(idsWith(sc.IDs, "t_")) == 0 {
+			return nil
+		}
+		{
+			// A live task in the scope is canceled first, by person, tenant or id alike.
 			var live []string
 			rows, err := tx.Query(ctx, tasksIn+` AND state IN ('submitted', 'working')`, args...)
 			if err != nil {
@@ -316,9 +328,6 @@ func (c *Core) eraseCore(ctx context.Context, tx pgx.Tx, now time.Time, cat *Cat
 				}
 			}
 		}
-		if len(sc.IDs) > 0 && len(idsWith(sc.IDs, "t_")) == 0 {
-			return nil
-		}
 		_, err := tx.Exec(ctx, `UPDATE tasks SET body = NULL, result = NULL WHERE id IN (`+tasksIn+`) AND (body IS NOT NULL OR result IS NOT NULL)`, args...)
 		return err
 	case "deliveries":
@@ -338,9 +347,9 @@ func (c *Core) eraseCore(ctx context.Context, tx pgx.Tx, now time.Time, cat *Cat
 		if len(sc.IDs) > 0 && len(idsWith(sc.IDs, "t_", "c_")) == 0 {
 			return nil
 		}
-		_, err := tx.Exec(ctx, `UPDATE toolcalls SET args = '{}', output = NULL WHERE (args <> '{}' OR output IS NOT NULL) AND (
-			(cardinality($4::text[]) = 0 AND task IN (`+tasksIn+`)) OR id = ANY($4))`,
-			r.Tenant, sc.Subject, idsWith(sc.IDs, "t_"), idsWith(sc.IDs, "c_"))
+		_, err := tx.Exec(ctx, `UPDATE toolcalls SET args = '{}', output = NULL WHERE tenant = $1 AND (args <> '{}' OR output IS NOT NULL) AND (
+			((cardinality($3::text[]) > 0 OR $5) AND task IN (`+tasksIn+`)) OR id = ANY($4))`,
+			r.Tenant, sc.Subject, idsWith(sc.IDs, "t_"), idsWith(sc.IDs, "c_"), len(sc.IDs) == 0)
 		return err
 	case "sessions":
 		if len(sc.IDs) > 0 && len(idsWith(sc.IDs, "s_")) == 0 {
@@ -377,7 +386,7 @@ func idsWith(all []string, prefixes ...string) []string {
 // settleErasure writes the results and the state of a request: done when every step is done
 // or not_applicable (a failed monitoring step on a list of ids does not keep it open, RET-4),
 // failed when no step is left to run but one failed, else running. A closed request drops its
-// needles; an open one past its deadline raises its alarm.
+// needles and resolves its overdue alarm.
 func (c *Core) settleErasure(ctx context.Context, tx pgx.Tx, now time.Time, r *erasureRow) error {
 	rows, err := tx.Query(ctx, `SELECT store, kind, state FROM erasure_steps WHERE request = $1 ORDER BY store`, r.ID)
 	if err != nil {
@@ -440,10 +449,37 @@ func (c *Core) settleErasure(ctx context.Context, tx pgx.Tx, now time.Time, r *e
 		}
 		return c.erasureClosed(ctx, tx, now, r, results)
 	}
-	if !r.Deadline.After(now) {
-		return c.fireAlarm(ctx, tx, now, alarm)
-	}
 	return nil
+}
+
+// erasureOverdue raises the alarm of every open request past its deadline, once (RET-7).
+func (c *Core) erasureOverdue(ctx context.Context) error {
+	return c.tx(ctx, func(tx pgx.Tx, now time.Time) error {
+		rows, err := tx.Query(ctx, `UPDATE erasure_requests SET overdue_at = $1 WHERE state <> 'done' AND deadline_at <= $1 AND overdue_at IS NULL RETURNING id, tenant`, now)
+		if err != nil {
+			return err
+		}
+		type due struct{ id, tenant string }
+		var ds []due
+		for rows.Next() {
+			var d due
+			if err := rows.Scan(&d.id, &d.tenant); err != nil {
+				rows.Close()
+				return err
+			}
+			ds = append(ds, d)
+		}
+		rows.Close()
+		if err := rows.Err(); err != nil {
+			return err
+		}
+		for _, d := range ds {
+			if err := c.fireAlarm(ctx, tx, now, Alarm{Tenant: d.tenant, Name: "erasure.overdue", Subject: AlarmSubject{Kind: "erasure", ID: strings.ToLower(d.id)}, Severity: "warn"}); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
 }
 
 // claimErasure takes the oldest pending erasure step of this sink or monitoring adapter
