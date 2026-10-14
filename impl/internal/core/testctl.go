@@ -25,9 +25,16 @@ type TestClock struct {
 // TestLoops are the background loops of spec/ports/background-loops.md that this build runs, with
 // their tick. A loop of the list that this build does not have is refused with not_found.
 var testLoops = map[string]func(c *Core, ctx context.Context) error{
-	"reaper":   (*Core).reap,
-	"deadline": (*Core).deadlines,
+	"reaper":          (*Core).reap,
+	"deadline":        (*Core).deadlines,
+	"hold":            (*Core).expireHolds,
+	"worker-liveness": (*Core).liveness,
+	"alarm":           (*Core).alarmLoop,
 }
+
+// loopOrder is the order of one Tick: leases and deadlines first, then holds, then the loops
+// that raise and repeat alarms about what the others left.
+var loopOrder = []string{"reaper", "deadline", "hold", "worker-liveness", "alarm"}
 
 func (c *Core) requireTestBench() error {
 	if !c.cfg.TestBench {

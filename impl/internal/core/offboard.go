@@ -4,6 +4,7 @@ package core
 
 import (
 	"context"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -130,14 +131,40 @@ func (c *Core) cancelTasksOf(ctx context.Context, tx pgx.Tx, now time.Time, tena
 // planPrincipalLeft sends the code notice principal_left to the direct chats of the active
 // admins of the tenant with admin:people (IDN-13, REP-5), never to a group. This version has no
 // chat bindings, so the list of chats where the person remains is always empty and the text
-// says so. A direct chat is reached through each channel of the tenant whose identity kind
-// matches an identity of the admin; the chat id of a direct chat is the external user id.
-// It returns the number of planned notices.
+// says so. It returns the number of planned notices.
 func (c *Core) planPrincipalLeft(ctx context.Context, tx pgx.Tx, now time.Time, tv *TenantView, subject, reason string) (int, error) {
-	rows, err := tx.Query(ctx, `SELECT p.id, i.identity FROM principals p JOIN identities i ON i.tenant = p.tenant AND i.principal = p.id
-		WHERE p.tenant = $1 AND p.id <> $2 AND p.state = 'active' AND p.kind = 'human' ORDER BY p.id, i.identity`, tv.Name, subject)
+	chats, err := c.adminChats(ctx, tx, now, tv, subject, "admin:people")
 	if err != nil {
 		return 0, err
+	}
+	for _, a := range chats {
+		params := map[string]any{"subject": subject, "reason": reason, "chats": c.texts.Render(a.Locale, "notice.principal_left.no_chats", nil)}
+		if _, err := c.planDelivery(ctx, tx, now, plannedDelivery{
+			Tenant: tv.Name, Kind: "principal_left", Addr: "admins", TargetKind: "chat",
+			TargetID: Chat{Kind: "direct", ExternalID: a.ExternalID}.ID(), ExecKind: "channel", ExecName: a.Channel,
+			Recipient: a.Principal, DataOrigin: "code",
+			Body: map[string]any{"form": "text_code", "text_key": "notice.principal_left", "params": params},
+		}); err != nil {
+			return 0, err
+		}
+	}
+	return len(chats), nil
+}
+
+// adminChat is the direct chat of an admin with one channel of the tenant.
+type adminChat struct {
+	Principal, Locale, Channel, ExternalID string
+}
+
+// adminChats lists the direct chats of the active persons of the tenant that hold one of the
+// capabilities, except the principal exclude. A direct chat is reached through each channel of
+// the tenant that sends and whose identity kind matches an identity of the admin; the chat id
+// of a direct chat is the external user id.
+func (c *Core) adminChats(ctx context.Context, tx pgx.Tx, now time.Time, tv *TenantView, exclude string, caps ...string) ([]adminChat, error) {
+	rows, err := tx.Query(ctx, `SELECT p.id, i.identity FROM principals p JOIN identities i ON i.tenant = p.tenant AND i.principal = p.id
+		WHERE p.tenant = $1 AND p.id <> $2 AND p.state = 'active' AND p.kind = 'human' ORDER BY p.id, i.identity`, tv.Name, exclude)
+	if err != nil {
+		return nil, err
 	}
 	type link struct{ principal, identity string }
 	var links []link
@@ -145,13 +172,13 @@ func (c *Core) planPrincipalLeft(ctx context.Context, tx pgx.Tx, now time.Time, 
 		var l link
 		if err := rows.Scan(&l.principal, &l.identity); err != nil {
 			rows.Close()
-			return 0, err
+			return nil, err
 		}
 		links = append(links, l)
 	}
 	rows.Close()
 	if err := rows.Err(); err != nil {
-		return 0, err
+		return nil, err
 	}
 	channels := make([]string, 0, len(tv.Channels))
 	for name := range tv.Channels {
@@ -159,15 +186,16 @@ func (c *Core) planPrincipalLeft(ctx context.Context, tx pgx.Tx, now time.Time, 
 	}
 	sort.Strings(channels)
 	admins := map[string]*principalInfo{}
-	planned := 0
+	var out []adminChat
 	for _, l := range links {
 		p, seen := admins[l.principal]
 		if !seen {
 			var err error
 			if p, err = loadPrincipal(ctx, tx, now, tv.Name, l.principal); err != nil {
-				return 0, err
+				return nil, err
 			}
-			if !hasCap(tv, groupClosure(tv, p.Groups), "admin:people") {
+			groups := groupClosure(tv, p.Groups)
+			if !slices.ContainsFunc(caps, func(cp string) bool { return hasCap(tv, groups, cp) }) {
 				p = nil
 			}
 			admins[l.principal] = p
@@ -175,7 +203,6 @@ func (c *Core) planPrincipalLeft(ctx context.Context, tx pgx.Tx, now time.Time, 
 		if p == nil {
 			continue
 		}
-		params := map[string]any{"subject": subject, "reason": reason, "chats": c.texts.Render(p.Locale, "notice.principal_left.no_chats", nil)}
 		kind, ext, found := strings.Cut(l.identity, ":")
 		if !found {
 			continue
@@ -185,16 +212,8 @@ func (c *Core) planPrincipalLeft(ctx context.Context, tx pgx.Tx, now time.Time, 
 			if ch.IdentityKind != kind || ch.Direction == "in" {
 				continue
 			}
-			if _, err := c.planDelivery(ctx, tx, now, plannedDelivery{
-				Tenant: tv.Name, Kind: "principal_left", Addr: "admins", TargetKind: "chat",
-				TargetID: Chat{Kind: "direct", ExternalID: ext}.ID(), ExecKind: "channel", ExecName: name,
-				Recipient: l.principal, DataOrigin: "code",
-				Body: map[string]any{"form": "text_code", "text_key": "notice.principal_left", "params": params},
-			}); err != nil {
-				return 0, err
-			}
-			planned++
+			out = append(out, adminChat{Principal: l.principal, Locale: p.Locale, Channel: name, ExternalID: ext})
 		}
 	}
-	return planned, nil
+	return out, nil
 }

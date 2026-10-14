@@ -158,6 +158,25 @@ func (r *Runner) Needs(c *Case) string {
 				}
 			}
 		case "manifest", "manifests":
+		case "holds":
+			for _, h := range asList(c.Given[k]) {
+				hm := asMap(h)
+				for f := range hm {
+					switch f {
+					case "id", "scope", "effects", "reason", "until", "tenant":
+					case "author_kind":
+						if str(hm[f]) != "operator" {
+							return "given hold by " + str(hm[f])
+						}
+					case "author":
+						if _, ok := hm["author_kind"]; !ok {
+							return "given hold by a person"
+						}
+					default:
+						return "given hold " + f
+					}
+				}
+			}
 		default:
 			return "given " + k
 		}
@@ -176,7 +195,7 @@ func (r *Runner) Needs(c *Case) string {
 var runnerOps = map[string]bool{
 	"P2.apply": true, "P2.principal.add": true, "P2.principal.off": true, "P2.principal.on": true,
 	"P2.principal.set_identity": true, "P2.principal.offboard": true, "P2.grant": true, "P2.ungrant": true,
-	"P2.audit.verify": true, "P2.health": true,
+	"P2.audit.verify": true, "P2.health": true, "P2.hold.set": true, "P2.hold.release": true, "P2.hold.list": true,
 }
 
 func (r *Runner) stepNeeds(st map[string]any) string {
@@ -326,6 +345,12 @@ func (x *exec) run(ctx context.Context) Result {
 		}
 		last = o
 	}
+	if err := x.seedHolds(ctx); err != nil {
+		if u, ok := err.(errUnchecked); ok {
+			return res(Unchecked, "%s", string(u))
+		}
+		return res(Failed, "given holds: %v", err)
+	}
 	for i, st := range x.c.Steps {
 		o, err := x.step(ctx, st)
 		if err != nil {
@@ -466,6 +491,37 @@ func (x *exec) givenGroups(handle string) map[string]bool {
 	return nil
 }
 
+// seedHolds sets the holds of given.holds through P2 hold.set by the operator of farm; a
+// fixture id of a hold becomes a handle for the requests of the steps.
+func (x *exec) seedHolds(ctx context.Context) error {
+	for _, h := range asList(x.c.Given["holds"]) {
+		hm := asMap(h)
+		reason := str(hm["reason"])
+		if reason == "" {
+			reason = "manual"
+		}
+		body := map[string]any{"scope": hm["scope"], "effects": hm["effects"], "reason": reason, "until": hm["until"]}
+		status, resp, err := x.post(ctx, x.ep.P2+"/v1/p2/hold.set", x.ep.Operators["farm"], body)
+		if err != nil {
+			return err
+		}
+		if status != 200 {
+			o := problemOutcome(status, resp)
+			if o.Unimplemented != "" {
+				return errUnchecked("core: " + o.Unimplemented)
+			}
+			if hm["until"] != nil && o.Reason == "input_schema_invalid" {
+				return errUnchecked("given hold with an until before the bench clock")
+			}
+			return fmt.Errorf("hold.set: %s%s", o.Reason, o.why())
+		}
+		if id := str(hm["id"]); id != "" {
+			x.ids[id] = str(resp["id"])
+		}
+	}
+	return nil
+}
+
 // errUnchecked marks a seed step the core cannot do yet: the case is unchecked, not failed.
 type errUnchecked string
 
@@ -594,6 +650,11 @@ func (x *exec) step(ctx context.Context, st map[string]any) (*outcome, error) {
 		req := x.expand(asMap(call["request"]))
 		if op == "apply" {
 			return x.applyBody(ctx, req)
+		}
+		if strings.HasPrefix(op, "hold.") {
+			// Holds go with the operator credential of farm, which reaches every tenant and
+			// the scopes farm and seat (PRM-14).
+			return x.p2(ctx, "farm", op, req)
 		}
 		return x.p2(ctx, "demo", op, req)
 	case st["stand"] != nil:

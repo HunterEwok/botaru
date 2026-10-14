@@ -44,6 +44,11 @@ commands:
   ungrant ID GROUP
   worker enroll -tenant T -role R -kind K [-target NAME] -token-out FILE
   audit verify TENANT
+  hold set KIND [TENANT [NAME]] -effects E[,E] -reason R [-until TIME]
+  hold release ID
+  hold list [TENANT]
+  hold farm -config FILE -effects E[,E] -reason R [-until TIME] [-by PRINCIPAL]
+                                             a hold of scope farm written straight to the store
   health
   new-secret                                 print a random secret (for tokens and keys)
   hash-token                                 print the SHA-256 of a token read from stdin
@@ -114,6 +119,8 @@ func run(c *client, args []string) error {
 			return errors.New("worker needs enroll")
 		}
 		return enroll(c, args[2:])
+	case "hold":
+		return hold(c, args[1:])
 	case "audit":
 		if len(args) != 3 || args[1] != "verify" {
 			return errors.New("audit verify TENANT")

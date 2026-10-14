@@ -239,6 +239,23 @@ func (c *Core) claimAttempt(ctx context.Context, tx pgx.Tx, now time.Time, cat *
 			claims = append(claims, t)
 		}
 	}
+	// A hold with no_claim or cancel_running on the farm, the tenant, the role or this worker
+	// gives it no work; one on a type takes that type out of the claim (HLD-3).
+	stop := []string{"no_claim", "cancel_running"}
+	if held, err := heldBy(ctx, tx, now, stop, workerScopes(w)...); err != nil || held != "" {
+		return nil, err
+	}
+	open := claims[:0:0]
+	for _, t := range claims {
+		held, err := heldBy(ctx, tx, now, stop, scopeRef{kind: "tasktype", tenant: w.Tenant, name: t})
+		if err != nil {
+			return nil, err
+		}
+		if held == "" {
+			open = append(open, t)
+		}
+	}
+	claims = open
 	if len(claims) == 0 {
 		return nil, nil
 	}
@@ -284,7 +301,7 @@ func (c *Core) claimAttempt(ctx context.Context, tx pgx.Tx, now time.Time, cat *
 	if err != nil {
 		return nil, err
 	}
-	if _, err := tx.Exec(ctx, `UPDATE tasks SET state = 'working', lease_no = $2, run_at = NULL, updated_at = $3 WHERE id = $1`, id, leaseNo, now); err != nil {
+	if _, err := tx.Exec(ctx, `UPDATE tasks SET state = 'working', lease_no = $2, run_at = NULL, reason = NULL, updated_at = $3 WHERE id = $1`, id, leaseNo, now); err != nil {
 		return nil, err
 	}
 	var record map[string]any
@@ -392,6 +409,8 @@ func (c *Core) claimDelivery(ctx context.Context, tx pgx.Tx, now time.Time, cat 
 				AND p.kind = 'privacy_notice' AND p.state IN ('planned', 'sending'))
 			OR NOT EXISTS (SELECT 1 FROM deliveries p WHERE p.tenant = d.tenant AND p.exec_name = d.exec_name AND p.recipient = d.recipient
 				AND p.kind = 'privacy_notice' AND p.state = 'delivered' AND p.notice_version IS NOT DISTINCT FROM nullif($5, ''))))
+		AND NOT (d.alarmkey IS NOT NULL AND EXISTS (SELECT 1 FROM deliveries o WHERE o.tenant = d.tenant AND o.alarmkey = d.alarmkey
+			AND o.recipient IS NOT DISTINCT FROM d.recipient AND o.seq < d.seq AND o.state IN ('planned', 'sending')))
 		ORDER BY d.seq LIMIT 1 FOR UPDATE SKIP LOCKED`, w.Tenant, w.Kind, w.Target, now, version).
 			Scan(&id, &kind, &addr, &targetKind, &targetID, &recipient, &dataMark, &body, &leaseNo)
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -424,6 +443,25 @@ func (c *Core) claimDelivery(ctx context.Context, tx pgx.Tx, now time.Time, cat 
 					return nil, err
 				}
 				if err := c.appendEvent(ctx, tx, now, w.Tenant, Event{Type: "delivery.withheld", Subject: id, Data: map[string]any{"delivery": id, "kind": kind, "reason": reason}}); err != nil {
+					return nil, err
+				}
+				continue
+			}
+		}
+		// A hold with no_delivery on the farm, the tenant or this channel withholds the
+		// delivery; an alarm notice still goes, since a hold does not silence alarms (HLD-3,
+		// MON-1).
+		if kind != "alarm_notice" {
+			held, err := heldBy(ctx, tx, now, []string{"no_delivery"},
+				append(tenantScopes(w.Tenant), scopeRef{kind: "channel", tenant: w.Tenant, name: w.Target})...)
+			if err != nil {
+				return nil, err
+			}
+			if held != "" {
+				if _, err := tx.Exec(ctx, `UPDATE deliveries SET state = 'withheld', reason = 'held', updated_at = $2 WHERE id = $1`, id, now); err != nil {
+					return nil, err
+				}
+				if err := c.appendEvent(ctx, tx, now, w.Tenant, Event{Type: "delivery.withheld", Subject: id, Data: map[string]any{"delivery": id, "kind": kind, "reason": "held"}}); err != nil {
 					return nil, err
 				}
 				continue

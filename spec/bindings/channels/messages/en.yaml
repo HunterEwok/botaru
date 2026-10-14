@@ -17,6 +17,8 @@ texts:
   notice.not_registered: You are not registered with this bot; the administrator of tenant {tenant} grants access.
   notice.principal_left: "{subject} has been deactivated ({reason}). Still a member of the chats: {chats}."
   notice.principal_left.no_chats: none
+  # An alarm without a monitoring system (MON-13)
+  notice.alarm: "Alarm {alarm} ({severity}) is {state}: {subject}, change {seq} at {at}."
   # Channel commands (REP-12, PRM-15, DLV-9)
   cmd.tasks.header: "Your tasks today:"
   cmd.tasks.row: "{n}. {title}: {state}{waiting}"

@@ -123,6 +123,27 @@ func (s *Server) p2(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		out, err = s.c.Enroll(ctx, oper, req)
+	case "hold.set":
+		req, derr := decode[core.HoldSetRequest](m)
+		if derr != nil {
+			s.fail(w, derr)
+			return
+		}
+		out, err = s.c.HoldSet(ctx, core.OperatorActor(oper), req)
+	case "hold.release":
+		req, derr := decode[core.HoldReleaseRequest](m)
+		if derr != nil {
+			s.fail(w, derr)
+			return
+		}
+		out, err = s.c.HoldRelease(ctx, core.OperatorActor(oper), req)
+	case "hold.list":
+		req, derr := decode[core.TenantRequest](m)
+		if derr != nil {
+			s.fail(w, derr)
+			return
+		}
+		out, err = s.c.HoldList(ctx, core.OperatorActor(oper), req)
 	case "audit.verify":
 		tenant, _ := m["tenant"].(string)
 		if tenant != oper.Tenant {
