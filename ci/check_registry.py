@@ -140,6 +140,12 @@ for n, r in enumerate(rows):
         rep.error(where, f'[rule_status] status {status!r} is not active, deferred or retired')
 
 active = {r['id'] for r in rows if isinstance(r, dict) and r.get('status') == 'active'}
+retired_ids = {r['id'] for r in rows if isinstance(r, dict) and r.get('status') == 'retired' and isinstance(r.get('id'), str)}
+for r in rows:
+    if isinstance(r, dict) and r.get('status') in ('active', 'deferred'):
+        for x in sorted(set(re.findall(r'\b[A-Z]{2,3}-\d+[a-z]?\b', f"{r.get('title') or ''} {r.get('text') or ''}")) & retired_ids):
+            rep.error(f'{REGISTRY} {r.get("id")}', f'[rule_cites_retired] the rule text cites the retired number {x}: '
+                      'name the rule that replaced it')
 by_id = {r['id']: r for r in rows if isinstance(r, dict) and r.get('status') == 'active' and isinstance(r.get('id'), str)}
 for r in by_id.values():
     until = r.get('until')

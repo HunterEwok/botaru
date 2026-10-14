@@ -321,7 +321,7 @@ P2 `tenant.privacy_report` collects per tenant: the processing purposes; the ret
 
 serves [G1](../docs/goals.md) · was v0.2 · profile knowledge · check: blackbox
 
-From v0.2 a run whose runtime declares `skills: farm` gets the built-in tool `skill_read` in its P3 catalog, only for profiles `worker` and `manager` and never in a `handover` task (PRF-1, MEM-8). Its arguments are closed: `name` by an enum of the role's pinned skills and `file` by an enum of that skill's files (`skill-read-request`); the answer is the file text from the core copy of the pinned tree, at most 32 KiB per call with `next_offset` for the rest (`skill-read-response`). A skill outside the role, or a tree whose hash does not match, is not readable (SKL-2). Skill text is reviewed git text and does not set `untrusted_seen`; it changes no tool, tier or data class (SKL-3).
+From v0.2 a run whose runtime declares `skills: farm` gets the built-in tool `skill_read` in its P3 catalog, only for profiles `worker` and `manager` and never in a `handover` task (PRF-1, MEM-7). Its arguments are closed: `name` by an enum of the role's pinned skills and `file` by an enum of that skill's files (`skill-read-request`); the answer is the file text from the core copy of the pinned tree, at most 32 KiB per call with `next_offset` for the rest (`skill-read-response`). A skill outside the role, or a tree whose hash does not match, is not readable (SKL-2). Skill text is reviewed git text and does not set `untrusted_seen`; it changes no tool, tier or data class (SKL-3).
 
 <a id="STA-3"></a>
 ## STA-3. Two columns and a mismatch code
