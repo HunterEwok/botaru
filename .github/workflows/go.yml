@@ -53,7 +53,15 @@ jobs:
         # (PostgreSQL 16 on ubuntu-24.04); without it they would be skipped, so here they must run.
         env:
           BOTARU_TEST_PG_REQUIRED: "1"
+          BOTARU_CONFORM_OUT: ${{ runner.temp }}/conform
         run: CGO_ENABLED=1 go test -race ./...
+      - name: rule coverage
+        # The conformance runner (internal/conform) wrote the coverage table of the rules during
+        # the tests: done means every behaviour case of the rule passes on this core.
+        if: always()
+        run: |
+          f="$RUNNER_TEMP/conform/coverage.md"
+          if [ -f "$f" ]; then cat "$f" >> "$GITHUB_STEP_SUMMARY"; else echo "no coverage table: the conformance test did not run"; fi
       - name: build
         run: |
           GOOS=linux GOARCH=amd64 go build ./...

@@ -1,0 +1,3 @@
+# Behaviour cases that pass on the reference core (TestConformance); rewrite with -update.
+apr-self-03
+com-fx-10

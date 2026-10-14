@@ -26,6 +26,10 @@ type Core struct {
 	TestBench    bool   `yaml:"test_bench"`
 	P1Listen     string `yaml:"p1_listen"`
 	P2Listen     string `yaml:"p2_listen"`
+	// TestListen is the separate listener of the test-control port (spec/ports/test-control.md);
+	// empty means no port. It needs test_bench and the hex SHA-256 of the test bench key.
+	TestListen    string `yaml:"test_listen"`
+	TestKeySHA256 string `yaml:"test_key_sha256"`
 	// TextsDir holds extra locales of the code text catalog (<locale>.yaml).
 	TextsDir         string             `yaml:"texts_dir"`
 	Operators        []api.OperatorCred `yaml:"operators"`
@@ -64,6 +68,18 @@ func Load(path string) (*Core, error) {
 	}
 	if c.P1Listen == c.P2Listen {
 		return nil, errors.New("config: P2 listens separately from P1 (IDN-7)")
+	}
+	if c.TestKeySHA256 != "" && !c.TestBench {
+		// A test bench key outside a test bench must stop the start (APR-9).
+		return nil, errors.New("config: test_key_sha256 is set, but test_bench is not")
+	}
+	if c.TestListen != "" {
+		if c.TestKeySHA256 == "" {
+			return nil, errors.New("config: test_listen needs test_key_sha256")
+		}
+		if c.TestListen == c.P1Listen || c.TestListen == c.P2Listen {
+			return nil, errors.New("config: the test-control port listens separately from P1 and P2")
+		}
 	}
 	return &c, nil
 }
