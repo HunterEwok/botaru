@@ -222,7 +222,7 @@ for cid, (rp, c) in sorted(cases.items()):
 # The catalog evals/catalog.yaml: one entry per case and per row without a model that the skeleton rules
 # name. Every skeleton case file has an entry, and the entry agrees with the file on rules, version and
 # blocking. Own cases (--cases) keep their own catalog and are not checked against this one.
-BLOCKS = {'yes': True, 'no': False, 'threshold': None, 'without a model': None}
+BLOCKS = {'yes': True, 'no': False, 'threshold': False, 'without a model': None}
 CATALOG = os.path.join(EVALS, 'catalog.yaml')
 if not OWN:
     cat = load_yaml(CATALOG) if os.path.exists(CATALOG) else None
@@ -271,7 +271,9 @@ if not OWN:
             continue
         if sorted(set(e.get('rules') or [])) != sorted(set(c.get('rules') or [])):
             rep.error(rp, f'[catalog_mismatch] rules differ from the catalog entry: {sorted(c.get("rules") or [])} here, {sorted(e.get("rules") or [])} in {crp}')
-        if c.get('version') not in re.findall(r'v\d+\.\d+', str(e.get('version') or '')):
+        # In "text vN.M, run vN.M" the case version is the run version: when the case enters the run.
+        cv = re.findall(r'v\d+\.\d+', str(e.get('version') or ''))
+        if not cv or c.get('version') != cv[-1]:
             rep.error(rp, f'[catalog_mismatch] version {c.get("version")} is not the catalog version {e.get("version")}')
         want = BLOCKS.get(e.get('block'))
         if want is not None and c.get('blocking') is not want:
