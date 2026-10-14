@@ -342,13 +342,20 @@ func (c *Core) recordToolCall(ctx context.Context, tx pgx.Tx, now time.Time, cat
 	if err := c.rs.validate(schema, args); err != nil {
 		return deny("denied", "input_schema_invalid")
 	}
-	host, resolved, err := c.callTarget(cat, g.Tenant, t, args)
+	target, resolved, err := c.callTarget(cat, g.Tenant, t, args)
 	if err != nil {
 		return deny("denied", "input_schema_invalid")
 	}
+	// A no_tool hold on the target machine or resource, known only now (HLD-1).
+	if held, err := heldBy(ctx, tx, now, []string{"no_tool"}, targetScopes(g.Tenant, target)...); err != nil {
+		return "", nil, err
+	} else if held != "" {
+		return deny("denied", "held")
+	}
+	host := target.host
 	row := toolCallRow{
 		ID: id, Tenant: g.Tenant, Task: g.Task, LeaseNo: g.LeaseNo, Tool: right, Access: "read", Args: args,
-		Plugin: plugin, Placement: pl.Placement, Host: host, Resolved: resolved, Untrusted: t.Untrusted(), State: "queued",
+		Plugin: plugin, Placement: pl.Placement, Host: host, Resource: target.resource, Resolved: resolved, Untrusted: t.Untrusted(), State: "queued",
 	}
 	// A target without a live toolhost ends at once (DLV-16, OBS-10).
 	live, err := c.liveToolhost(ctx, tx, now, g.Tenant, plugin, pl.Placement, host)
@@ -377,6 +384,18 @@ func (c *Core) recordToolCall(ctx context.Context, tx pgx.Tx, now time.Time, cat
 		return "", nil, err
 	}
 	return id, nil, notifyWork(ctx, tx)
+}
+
+// targetScopes are the hold scopes of a call's target: its machine and its catalog resource.
+func targetScopes(tenant string, t callTargetRef) []scopeRef {
+	var out []scopeRef
+	if t.host != "" {
+		out = append(out, scopeRef{kind: "host", tenant: tenant, name: t.host})
+	}
+	if t.resource != "" {
+		out = append(out, scopeRef{kind: "resource", tenant: tenant, name: t.resource})
+	}
+	return out
 }
 
 func toolAudit(g *toolsGrant, id, right string, ok bool, reason string) Audit {
@@ -412,11 +431,14 @@ func withDefaults(t toolspec.Tool, args map[string]any) map[string]any {
 	return out
 }
 
+// callTargetRef is the machine of a call and the catalog resource of its target value.
+type callTargetRef struct{ host, resource string }
+
 // callTarget computes the machine of a call from the argument named in target_from: a machine
 // of catalog.hosts, the machine of the service of catalog.services, or the machine of the
 // catalog resource whose list holds the value; a tool with target: any has no machine
 // (TEN-3a). It also resolves the catalog fields a plugin needs, such as the unit of a service.
-func (c *Core) callTarget(cat *Catalog, tenant string, t toolspec.Tool, args map[string]any) (string, map[string]string, error) {
+func (c *Core) callTarget(cat *Catalog, tenant string, t toolspec.Tool, args map[string]any) (callTargetRef, map[string]string, error) {
 	spec, _ := tenantCatalog(cat, tenant)
 	resolved := map[string]string{}
 	params := t.AllParams()
@@ -435,20 +457,20 @@ func (c *Core) callTarget(cat *Catalog, tenant string, t toolspec.Tool, args map
 		}
 	}
 	if t.Target == "any" {
-		return "", resolved, nil
+		return callTargetRef{}, resolved, nil
 	}
 	v, ok := args[t.TargetFrom].(string)
 	if !ok {
-		return "", nil, errors.New("no target argument")
+		return callTargetRef{}, nil, errors.New("no target argument")
 	}
 	switch params[t.TargetFrom]["enum_from"] {
 	case "catalog.hosts":
-		return v, resolved, nil
+		return callTargetRef{host: v}, resolved, nil
 	case "catalog.services":
 		if _, host := findService(spec, v); host != "" {
-			return host, resolved, nil
+			return callTargetRef{host: host}, resolved, nil
 		}
-		return "", nil, errors.New("unknown service")
+		return callTargetRef{}, nil, errors.New("unknown service")
 	}
 	list, _ := strings.CutPrefix(asString(params[t.TargetFrom]["enum_from"]), "catalog.")
 	res, _ := spec["resources"].([]any)
@@ -461,12 +483,13 @@ func (c *Core) callTarget(cat *Catalog, tenant string, t toolspec.Tool, args map
 		for _, x := range vals {
 			if x == v {
 				if h, ok := rm["host"].(string); ok {
-					return h, resolved, nil
+					id, _ := rm["id"].(string)
+					return callTargetRef{host: h, resource: id}, resolved, nil
 				}
 			}
 		}
 	}
-	return "", nil, errors.New("the target value has no machine")
+	return callTargetRef{}, nil, errors.New("the target value has no machine")
 }
 
 func asString(v any) string {

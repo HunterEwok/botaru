@@ -411,3 +411,37 @@ func TestToolhostHello(t *testing.T) {
 		}
 	}
 }
+
+// A no_tool hold on the target machine denies a call at P3, and a hold set after the call was
+// queued denies it at the handout (HLD-1, HLD-3).
+func TestP3HostHold(t *testing.T) {
+	ctx := context.Background()
+	b := newToolBench(t)
+	_, h := b.attemptTools(t, "1", false)
+	th := b.toolhost(t, "checks")
+	args := map[string]any{"check": "www-health"}
+	hold := func(kind, name string) string {
+		set, err := b.c.HoldSet(ctx, OperatorActor(b.op), HoldSetRequest{
+			Scope: HoldScope{Kind: kind, Tenant: "demo", Name: name}, Effects: []string{"no_tool"}, Reason: "manual"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return set.ID
+	}
+	id := hold("host", "web1")
+	if r, err := b.c.P3ToolsCall(ctx, h, mcp.CallParams{Name: "checks_latest", Arguments: args}); err != nil || callText(r) != noPermission {
+		t.Fatalf("host hold at P3: %+v %v", r, err)
+	}
+	if _, err := b.c.HoldRelease(ctx, OperatorActor(b.op), HoldReleaseRequest{ID: id}); err != nil {
+		t.Fatal(err)
+	}
+	done := callAsync(b, h, mcp.CallParams{Name: "checks_latest", Arguments: args})
+	waitQueued(t, b)
+	hold("resource", "web-checks")
+	if item := b.claim(t, th, "toolcall"); item != nil {
+		t.Fatalf("a held call was handed out: %+v", item)
+	}
+	if res := <-done; res.err != nil || callText(res.r) != noPermission {
+		t.Fatalf("resource hold at handout: %+v %v", res.r, res.err)
+	}
+}

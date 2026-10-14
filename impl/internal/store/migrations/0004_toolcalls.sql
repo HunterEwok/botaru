@@ -16,6 +16,7 @@ CREATE TABLE toolcalls (
     target_plugin     text NOT NULL,
     target_placement  text NOT NULL,
     target_host       text,                  -- NULL for a tool with target: any
+    target_resource   text,                  -- the catalog resource of the target value, if any
     resolved          jsonb NOT NULL DEFAULT '{}',
     untrusted_output  boolean NOT NULL,
     state             text NOT NULL CHECK (state IN ('requested', 'denied', 'queued', 'leased', 'done', 'error', 'exec_unknown', 'abandoned')),

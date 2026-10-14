@@ -218,16 +218,17 @@ func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 }
 
 // checkTools compares the tools of a request with the P3 catalog of the handle's attempt by
-// name and by the P4 tool hash of spec/hashing.md (GW-1): a tool the catalog does not have, or
-// one with another description or schema, is refused before the provider.
+// name and by the P4 tool hash of spec/hashing.md (GW-1): the request carries exactly the
+// catalog, so a tool the catalog does not have, one with another description or schema, and a
+// missing one are refused before the provider.
 func (g *Gateway) checkTools(ctx context.Context, body map[string]any, grant *core.ModelGrant) error {
 	tools, _ := body["tools"].([]any)
-	if len(tools) == 0 {
-		return nil
-	}
 	want, err := g.c.CatalogHashes(ctx, grant)
 	if err != nil {
 		return err
+	}
+	if len(tools) != len(want) {
+		return &core.Problem{Reason: "input_schema_invalid", Detail: "tools differ from the P3 catalog of the handle"}
 	}
 	seen := map[string]bool{}
 	for _, x := range tools {

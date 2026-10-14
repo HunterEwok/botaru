@@ -26,6 +26,7 @@ type toolCallRow struct {
 	Tool, Access            string
 	Args                    map[string]any
 	Plugin, Placement, Host string
+	Resource                string
 	Resolved                map[string]string
 	Untrusted               bool
 	State, Reason           string
@@ -49,10 +50,10 @@ func (c *Core) insertToolCall(ctx context.Context, tx pgx.Tx, now time.Time, r t
 		ended = &now
 	}
 	_, err = tx.Exec(ctx, `INSERT INTO toolcalls (id, tenant, task, attempt_lease_no, tool, access, args, target_plugin, target_placement, target_host,
-		resolved, untrusted_output, state, reason, start_by, created_at, updated_at, ended_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $16, $17)`,
+		resolved, untrusted_output, state, reason, start_by, created_at, updated_at, ended_at, target_resource)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $16, $17, $18)`,
 		r.ID, r.Tenant, r.Task, r.LeaseNo, r.Tool, r.Access, args, r.Plugin, r.Placement, nullable(r.Host),
-		resolved, r.Untrusted, r.State, nullable(r.Reason), startBy, now, ended)
+		resolved, r.Untrusted, r.State, nullable(r.Reason), startBy, now, ended, nullable(r.Resource))
 	return err
 }
 
@@ -66,16 +67,16 @@ func (c *Core) claimToolcall(ctx context.Context, tx pgx.Tx, now time.Time, cat 
 	for {
 		var (
 			id, task, tool, plugin, placement string
-			host                              *string
+			host, resource                    *string
 			leaseNo, attemptLease             int
 			args, resolved                    []byte
 			startBy                           time.Time
 		)
-		err := tx.QueryRow(ctx, `SELECT id, task, attempt_lease_no, tool, target_plugin, target_placement, target_host, args, resolved, start_by, lease_no
+		err := tx.QueryRow(ctx, `SELECT id, task, attempt_lease_no, tool, target_plugin, target_placement, target_host, target_resource, args, resolved, start_by, lease_no
 			FROM toolcalls WHERE tenant = $1 AND state = 'queued' AND target_plugin = ANY($2) AND target_placement = $3
 			AND (target_host IS NULL OR target_host = $4) AND start_by > $5
 			ORDER BY created_at, id LIMIT 1 FOR UPDATE SKIP LOCKED`, w.Tenant, w.Plugins, w.Placement, w.Host, now).
-			Scan(&id, &task, &attemptLease, &tool, &plugin, &placement, &host, &args, &resolved, &startBy, &leaseNo)
+			Scan(&id, &task, &attemptLease, &tool, &plugin, &placement, &host, &resource, &args, &resolved, &startBy, &leaseNo)
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, nil
 		}
@@ -92,14 +93,19 @@ func (c *Core) claimToolcall(ctx context.Context, tx pgx.Tx, now time.Time, cat 
 			}
 			continue
 		}
-		var typ, role string
-		if err := tx.QueryRow(ctx, `SELECT t.type, w.role FROM tasks t, leases l JOIN workers w ON w.id = l.worker_id
-			WHERE t.id = $1 AND l.work_id = $1 AND l.lease_no = $2`, task, attemptLease).Scan(&typ, &role); err != nil {
+		var typ, role, agent string
+		if err := tx.QueryRow(ctx, `SELECT t.type, w.role, w.id FROM tasks t, leases l JOIN workers w ON w.id = l.worker_id
+			WHERE t.id = $1 AND l.work_id = $1 AND l.lease_no = $2`, task, attemptLease).Scan(&typ, &role, &agent); err != nil {
 			return nil, err
 		}
-		held, err := heldBy(ctx, tx, now, []string{"no_tool"}, append(tenantScopes(w.Tenant),
+		// The holds of the P3 check again, a hold set meanwhile counts (HLD-3): the agent, the
+		// toolhost, the target machine and resource.
+		scopes := append(tenantScopes(w.Tenant),
 			scopeRef{kind: "role", tenant: w.Tenant, name: role}, scopeRef{kind: "tasktype", tenant: w.Tenant, name: typ},
-			scopeRef{kind: "plugin", tenant: w.Tenant, name: plugin}, scopeRef{kind: "worker", tenant: w.Tenant, name: strings.ToLower(w.ID)})...)
+			scopeRef{kind: "plugin", tenant: w.Tenant, name: plugin}, scopeRef{kind: "worker", tenant: w.Tenant, name: strings.ToLower(agent)},
+			scopeRef{kind: "worker", tenant: w.Tenant, name: strings.ToLower(w.ID)})
+		scopes = append(scopes, targetScopes(w.Tenant, callTargetRef{host: deref(host), resource: deref(resource)})...)
+		held, err := heldBy(ctx, tx, now, []string{"no_tool"}, scopes...)
 		if err != nil {
 			return nil, err
 		}

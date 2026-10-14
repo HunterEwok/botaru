@@ -111,9 +111,10 @@ func toolManifests(t *testing.T, root string) []map[string]any {
 // checks plugin on web1 whose plugin process runs in the given mode.
 type toolRig struct {
 	*rig
-	agent   *agent.Agent
-	host    *toolhost.Host
-	results string
+	agent      *agent.Agent
+	agentToken string
+	host       *toolhost.Host
+	results    string
 }
 
 func newToolRig(t *testing.T, mode string, killAfter time.Duration) *toolRig {
@@ -179,7 +180,7 @@ func newToolRig(t *testing.T, mode string, killAfter time.Duration) *toolRig {
 		"sender": map[string]any{"identity": "telegram:1001", "verified": true}}, &sub); err != nil || sub["result"] != "task" {
 		t.Fatalf("submit_activity %v %v", sub, err)
 	}
-	return &toolRig{rig: r, agent: ag, host: h, results: results}
+	return &toolRig{rig: r, agent: ag, agentToken: agentEnroll.Token, host: h, results: results}
 }
 
 // toolTurns is a mock scenario: the model calls checks_latest, then answers.
@@ -268,5 +269,53 @@ func TestToolhostRefusesAndKills(t *testing.T) {
 				t.Fatal("the toolhost did not finish the call")
 			}
 		})
+	}
+}
+
+// P4 refuses a request whose tools are not exactly the P3 catalog of the handle: missing,
+// extra or changed (GW-1); none of them reaches the provider.
+func TestP4RequiresTheCatalog(t *testing.T) {
+	ctx := context.Background()
+	r := newToolRig(t, "checks", time.Second)
+	ag := &p1client.Client{BaseURL: r.p1.URL, Token: r.agentToken}
+	w, err := ag.Claim(ctx, []string{"attempt"}, 1)
+	if err != nil || w == nil {
+		t.Fatalf("claim %v %v", w, err)
+	}
+	var p struct {
+		Handles map[string]string `json:"handles"`
+	}
+	if err := json.Unmarshal(w.Payload, &p); err != nil {
+		t.Fatal(err)
+	}
+	var list mcp.ListResult
+	raw, _ := json.Marshal(map[string]any{"jsonrpc": "2.0", "id": 1, "method": "tools/list", "params": map[string]any{}})
+	code, body := rawPost(t, r.p1.URL+"/v1/p3/mcp", p.Handles["tools"], "", string(raw))
+	if b, _ := json.Marshal(body["result"]); code != 200 || json.Unmarshal(b, &list) != nil || len(list.Tools) != 1 {
+		t.Fatalf("tools/list %d %v", code, body)
+	}
+	tool := list.Tools[0].(map[string]any)
+	good := map[string]any{"name": tool["name"], "input_schema": tool["inputSchema"]}
+	changed := map[string]any{"name": tool["name"], "input_schema": map[string]any{"type": "object"}}
+	extra := map[string]any{"name": "logs_tail", "input_schema": map[string]any{"type": "object"}}
+	for i, tools := range [][]any{nil, {changed}, {good, extra}, {good, good}} {
+		req := map[string]any{"model": "x", "max_tokens": 100, "messages": []any{map[string]any{"role": "user", "content": "hi"}}}
+		if tools != nil {
+			req["tools"] = tools
+		}
+		b, _ := json.Marshal(req)
+		if code, body := rawPost(t, r.p1.URL+"/v1/p4/anthropic/v1/messages", p.Handles["model"], "", string(b)); code != 400 || body["reason"] != "input_schema_invalid" {
+			t.Errorf("case %d: %d %v", i, code, body)
+		}
+	}
+	if n := len(r.mock.Calls()); n != 0 {
+		t.Fatalf("%d calls reached the provider", n)
+	}
+	// The exact catalog passes.
+	r.mock.Reset(toolTurns())
+	b, _ := json.Marshal(map[string]any{"model": "x", "max_tokens": 100, "tools": []any{good},
+		"messages": []any{map[string]any{"role": "user", "content": "hi"}}})
+	if code, body := rawPost(t, r.p1.URL+"/v1/p4/anthropic/v1/messages", p.Handles["model"], "", string(b)); code != 200 {
+		t.Fatalf("the exact catalog: %d %v", code, body)
 	}
 }
