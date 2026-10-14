@@ -605,3 +605,23 @@ func TestToolcallExpiredAttempt(t *testing.T) {
 	}
 	<-done
 }
+
+// A plugin with secrets or network egress needs its own container, which this build does not
+// start, so a toolhost that would run it as a child process is not enrolled (DEP-7).
+func TestToolhostContainerPlugin(t *testing.T) {
+	ctx := context.Background()
+	b := newToolBenchWith(t, nil, func(ms []map[string]any) []map[string]any {
+		for _, m := range ms {
+			if m["kind"] == "ToolPlugin" && m["metadata"].(map[string]any)["name"] == "checks" {
+				m["spec"].(map[string]any)["network"] = map[string]any{"egress": []any{"web1"}}
+			}
+		}
+		return ms
+	})
+	if _, err := b.c.Enroll(ctx, b.op, EnrollRequest{Tenant: "demo", Kind: "toolhost", Plugins: []string{"checks"}, Placement: "host", Host: "web1"}); err == nil {
+		t.Fatal("a plugin with network egress was enrolled as a child process")
+	}
+	if _, err := b.c.Enroll(ctx, b.op, EnrollRequest{Tenant: "demo", Kind: "toolhost", Plugins: []string{"logs"}, Placement: "host", Host: "web1"}); err != nil {
+		t.Fatalf("an own plugin without network: %v", err)
+	}
+}

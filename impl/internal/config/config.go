@@ -45,6 +45,9 @@ type Core struct {
 	LeaseS              int    `yaml:"lease_s"`
 	HeartbeatS          int    `yaml:"heartbeat_s"`
 	DeliveryMaxAttempts int    `yaml:"delivery_max_attempts"`
+	// FarmHosts are the farm nodes of the deployment description (DEP-11), which no tenant
+	// catalog may name.
+	FarmHosts []string `yaml:"farm_hosts"`
 }
 
 // Load reads and checks a settings file.

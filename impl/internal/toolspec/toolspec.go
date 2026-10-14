@@ -450,3 +450,6 @@ func asString(v any) string {
 	s, _ := v.(string)
 	return s
 }
+
+// FreeText says whether a schema has free text anywhere in it (INJ-3); see freeText.
+func FreeText(v any) bool { return freeText(v) }

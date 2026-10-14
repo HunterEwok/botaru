@@ -102,7 +102,7 @@ func run(path string, log *slog.Logger) error {
 	}
 	c, err := core.New(ctx, core.Config{
 		TokenKey: []byte(key), TestBench: cfg.TestBench, LeaseS: cfg.LeaseS, HeartbeatS: cfg.HeartbeatS,
-		DeliveryMaxAttempts: cfg.DeliveryMaxAttempts, Operator: cfg.Operator, Logger: log,
+		DeliveryMaxAttempts: cfg.DeliveryMaxAttempts, Operator: cfg.Operator, FarmHosts: cfg.FarmHosts, Logger: log,
 	}, st, sp, tx)
 	if err != nil {
 		return err

@@ -87,3 +87,26 @@ func metaName(m map[string]any) any {
 	md, _ := m["metadata"].(map[string]any)
 	return md["name"]
 }
+
+// ExampleActions reads the actions of examples/actions.yaml without the fields this core
+// refuses as later (DropUnsupported).
+func ExampleActions(root string) ([]map[string]any, error) {
+	docs, err := manifest.ReadFiles([]string{filepath.Join(root, "examples/actions.yaml")})
+	if err != nil {
+		return nil, err
+	}
+	var out []map[string]any
+	for _, d := range docs {
+		if d.Kind == "Action" {
+			out = append(out, d.Value)
+		}
+	}
+	sp, err := spec.Load(root)
+	if err != nil {
+		return nil, err
+	}
+	if _, err := DropUnsupported(sp, out); err != nil {
+		return nil, err
+	}
+	return out, nil
+}

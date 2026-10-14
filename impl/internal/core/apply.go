@@ -86,6 +86,7 @@ func (c *Core) Apply(ctx context.Context, op Operator, req ApplyRequest) (*Apply
 		return nil, err
 	}
 	var docs []manifest.Doc
+	var index []int
 	seen := map[manifest.Key]bool{}
 	for i, v := range req.Manifests {
 		d := manifest.FromValue(v, fmt.Sprintf("manifests/%d", i))
@@ -102,6 +103,27 @@ func (c *Core) Apply(ctx context.Context, op Operator, req ApplyRequest) (*Apply
 			res.Errors = append(res.Errors, e)
 			continue
 		}
+		// The envelope first, with the codes of the skeleton lint (MAN-1, TEN-6).
+		ki, ok := kinds[d.Kind]
+		md, _ := v["metadata"].(map[string]any)
+		_, hasTenant := md["tenant"]
+		switch {
+		case v["status"] != nil:
+			// The core keeps status; git has none (MAN-1).
+			e.Code, e.Path = "status_in_git", fmt.Sprintf("/manifests/%d/status", i)
+		case !ok:
+			e.Code, e.Path = "unknown_kind", fmt.Sprintf("/manifests/%d/kind", i)
+		case v["apiVersion"] != "botaru/v1alpha1":
+			e.Code, e.Path = "api_version", fmt.Sprintf("/manifests/%d/apiVersion", i)
+		case ki.scope == "tenant" && !hasTenant:
+			e.Code, e.Path = "tenant_missing", fmt.Sprintf("/manifests/%d/metadata/tenant", i)
+		case (ki.scope == "global" || ki.scope == "self") && hasTenant:
+			e.Code, e.Path = "tenant_on_global", fmt.Sprintf("/manifests/%d/metadata/tenant", i)
+		}
+		if e.Code != "" {
+			res.Errors = append(res.Errors, e)
+			continue
+		}
 		if err := c.spec.Validate("manifest:manifest", v); err != nil {
 			var ve *spec.ValidationError
 			if errors.As(err, &ve) && len(ve.Violations) > 0 {
@@ -111,33 +133,11 @@ func (c *Core) Apply(ctx context.Context, op Operator, req ApplyRequest) (*Apply
 			res.Errors = append(res.Errors, e)
 			continue
 		}
-		ki, ok := kinds[d.Kind]
-		if !ok {
-			e.Code = "kind_unknown"
-			res.Errors = append(res.Errors, e)
-			continue
-		}
 		if len(later) > 0 {
 			for _, p := range later {
 				e.Code, e.Path = "version_unsupported", fmt.Sprintf("/manifests/%d%s", i, p)
 				res.Errors = append(res.Errors, e)
 			}
-			continue
-		}
-		md, _ := v["metadata"].(map[string]any)
-		_, hasTenant := md["tenant"]
-		switch ki.scope {
-		case "tenant":
-			if !hasTenant {
-				e.Code, e.Path = "tenant_required", fmt.Sprintf("/manifests/%d/metadata/tenant", i)
-			}
-		case "global":
-			if hasTenant {
-				e.Code, e.Path = "tenant_not_allowed", fmt.Sprintf("/manifests/%d/metadata/tenant", i)
-			}
-		}
-		if e.Code != "" {
-			res.Errors = append(res.Errors, e)
 			continue
 		}
 		if d.Kind == "Tenant" {
@@ -153,7 +153,7 @@ func (c *Core) Apply(ctx context.Context, op Operator, req ApplyRequest) (*Apply
 			d.Tenant = ""
 		}
 		if seen[d.Key()] {
-			e.Code = "duplicate"
+			e.Code = "duplicate_object"
 			res.Errors = append(res.Errors, e)
 			continue
 		}
@@ -167,6 +167,14 @@ func (c *Core) Apply(ctx context.Context, op Operator, req ApplyRequest) (*Apply
 			}
 		}
 		docs = append(docs, d)
+		index = append(index, i)
+	}
+	if len(res.Errors) == 0 {
+		errs, err := c.lintManifests(docs, index)
+		if err != nil {
+			return nil, err
+		}
+		res.Errors = append(res.Errors, errs...)
 	}
 	if len(res.Errors) == 0 {
 		if _, err := buildCatalog(docs); err != nil {

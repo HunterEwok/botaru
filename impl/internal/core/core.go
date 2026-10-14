@@ -42,6 +42,10 @@ type Config struct {
 	// Offline opens the core for one command of farmctl on the core machine (DEP-8): it
 	// changes nothing at start and runs no loops.
 	Offline bool
+	// FarmHosts are the farm nodes of the deployment description (DEP-11): the machines of the
+	// core, the store, farmctl, the channels, the watchdog and the backups. A tenant catalog
+	// never names them.
+	FarmHosts []string
 }
 
 func (c *Config) defaults() {

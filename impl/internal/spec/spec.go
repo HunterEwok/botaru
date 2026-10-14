@@ -323,3 +323,16 @@ func ReadYAMLFile(path string) (any, error) {
 	}
 	return v, nil
 }
+
+// Raw returns a schema document as read, by $id or short name.
+func (s *Spec) Raw(name string) (map[string]any, error) {
+	id := name
+	if v, ok := s.ids[name]; ok {
+		id = v
+	}
+	m, ok := s.raw[id].(map[string]any)
+	if !ok {
+		return nil, fmt.Errorf("spec: no schema %s", name)
+	}
+	return m, nil
+}
