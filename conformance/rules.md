@@ -45,26 +45,26 @@ The line under a rule heading:
 | [MAN](#man) | Manifests | [docs/task-language.md](../docs/task-language.md) | 10 | 4 | 10 | 0 | 0 | 0 |
 | [MEM](#mem) | Memory | [docs/bots.md](../docs/bots.md) | 8 | 6 | 7 | 1 | 0 | 0 |
 | [MGR](#mgr) | Farm manager | [docs/farm-manager.md](../docs/farm-manager.md) | 48 | 37 | 32 | 6 | 10 | 0 |
-| [MON](#mon) | External monitoring | [docs/monitoring.md](../docs/monitoring.md) | 12 | 10 | 11 | 1 | 0 | 0 |
+| [MON](#mon) | External monitoring | [docs/operations.md](../docs/operations.md) | 12 | 10 | 11 | 1 | 0 | 0 |
 | [MSG](#msg) | Messages between bots | [docs/messaging.md](../docs/messaging.md) | 17 | 16 | 16 | 1 | 0 | 0 |
 | [OBS](#obs) | Observability | [docs/operations.md](../docs/operations.md) | 9 | 4 | 9 | 0 | 0 | 0 |
 | [OBV](#obv) | Observations | [docs/improvements.md](../docs/improvements.md) | 7 | 4 | 7 | 0 | 0 | 0 |
 | [ORC](#orc) | Campaigns | [docs/coordination.md](../docs/coordination.md) | 14 | 13 | 14 | 0 | 0 | 0 |
 | [OUT](#out) | Structured results | [docs/tasks-and-delivery.md](../docs/tasks-and-delivery.md) | 2 | 1 | 1 | 1 | 0 | 0 |
-| [PRF](#prf) | Role profiles | [docs/scripts-and-translator.md](../docs/scripts-and-translator.md) | 1 | 1 | 1 | 0 | 0 | 0 |
+| [PRF](#prf) | Role profiles | [docs/coordination.md](../docs/coordination.md) | 1 | 1 | 1 | 0 | 0 | 0 |
 | [PRM](#prm) | Permissions | [docs/permissions.md](../docs/permissions.md) | 17 | 17 | 16 | 1 | 0 | 0 |
 | [PRP](#prp) | Improvement proposals | [docs/improvements.md](../docs/improvements.md) | 23 | 14 | 20 | 1 | 2 | 0 |
 | [PRV](#prv) | Instruction versions and execution fingerprint | [docs/capabilities.md](../docs/capabilities.md) | 4 | 4 | 2 | 2 | 0 | 0 |
 | [REP](#rep) | Reporters | [docs/messaging.md](../docs/messaging.md) | 11 | 11 | 9 | 2 | 0 | 0 |
 | [RET](#ret) | Retention and deletion | [docs/operations.md](../docs/operations.md) | 10 | 9 | 8 | 2 | 0 | 0 |
 | [RT](#rt) | Agent runtime | [docs/architecture.md](../docs/architecture.md) | 5 | 5 | 5 | 0 | 0 | 0 |
-| [SCR](#scr) | Scripts | [docs/scripts-and-translator.md](../docs/scripts-and-translator.md) | 11 | 10 | 10 | 1 | 0 | 0 |
+| [SCR](#scr) | Scripts | [docs/coordination.md](../docs/coordination.md) | 11 | 10 | 10 | 1 | 0 | 0 |
 | [SEC](#sec) | Secrets | [docs/permissions.md](../docs/permissions.md) | 12 | 5 | 9 | 3 | 0 | 0 |
 | [SKL](#skl) | Skills | [docs/capabilities.md](../docs/capabilities.md) | 3 | 3 | 0 | 3 | 0 | 0 |
 | [STA](#sta) | Bot state | [docs/messaging.md](../docs/messaging.md) | 2 | 2 | 2 | 0 | 0 | 0 |
 | [TEN](#ten) | Tenants | [docs/architecture.md](../docs/architecture.md) | 8 | 8 | 8 | 0 | 0 | 0 |
 | [TIM](#tim) | Time and clocks | [docs/operations.md](../docs/operations.md) | 4 | 2 | 3 | 1 | 0 | 0 |
-| [TRN](#trn) | Translator | [docs/scripts-and-translator.md](../docs/scripts-and-translator.md) | 7 | 5 | 4 | 1 | 2 | 0 |
+| [TRN](#trn) | Translator | [docs/coordination.md](../docs/coordination.md) | 7 | 5 | 4 | 1 | 2 | 0 |
 | Total | | | 476 | 367 | 377 | 69 | 30 | 0 |
 
 Retired numbers (45) are listed in [retired.md](retired.md), deferred rules (43) in [deferred.md](deferred.md).
@@ -320,7 +320,7 @@ Checked by: `fixture:files/declared-personal`
 <a id="aud"></a>
 ## AUD: Audit
 
-Explained in: [docs/permissions.md](../docs/permissions.md), [docs/privacy.md](../docs/privacy.md)
+Explained in: [docs/operations.md](../docs/operations.md), [docs/permissions.md](../docs/permissions.md)
 
 <a id="AUD-1"></a>
 ### AUD-1. An audit record for every decision
@@ -2840,7 +2840,7 @@ Checked by: `lint:manager/accountable-class`
 <a id="mon"></a>
 ## MON: External monitoring
 
-Explained in: [docs/monitoring.md](../docs/monitoring.md)
+Explained in: [docs/operations.md](../docs/operations.md)
 
 <a id="MON-1"></a>
 ### MON-1. Alarms to people along one installation path
@@ -3111,7 +3111,7 @@ Checked by: `blackbox:messaging/p2-message-views`
 <a id="obs"></a>
 ## OBS: Observability
 
-Explained in: [docs/monitoring.md](../docs/monitoring.md), [docs/operations.md](../docs/operations.md)
+Explained in: [docs/operations.md](../docs/operations.md)
 
 <a id="OBS-1"></a>
 ### OBS-1. Telemetry without content
@@ -3403,7 +3403,7 @@ Checked by: `blackbox:model/output-schema`
 <a id="prf"></a>
 ## PRF: Role profiles
 
-Explained in: [docs/scripts-and-translator.md](../docs/scripts-and-translator.md)
+Explained in: [docs/coordination.md](../docs/coordination.md)
 
 <a id="PRF-1"></a>
 ### PRF-1. Role profile table
@@ -4051,7 +4051,7 @@ Checked by: `blackbox:core/runtime-internal-match`, `impl:internal/core/TestHell
 <a id="scr"></a>
 ## SCR: Scripts
 
-Explained in: [docs/scripts-and-translator.md](../docs/scripts-and-translator.md)
+Explained in: [docs/coordination.md](../docs/coordination.md)
 
 <a id="SCR-1"></a>
 ### SCR-1. A script is data under a closed schema
@@ -4155,7 +4155,7 @@ Checked by: `blackbox:script/transitions`
 <a id="sec"></a>
 ## SEC: Secrets
 
-Explained in: [docs/permissions.md](../docs/permissions.md), [docs/privacy.md](../docs/privacy.md)
+Explained in: [docs/operations.md](../docs/operations.md), [docs/permissions.md](../docs/permissions.md)
 
 <a id="SEC-1"></a>
 ### SEC-1. Secrets do not go through ports
@@ -4431,7 +4431,7 @@ Checked by: `time/schedule-proposal-check`
 <a id="trn"></a>
 ## TRN: Translator
 
-Explained in: [docs/scripts-and-translator.md](../docs/scripts-and-translator.md)
+Explained in: [docs/coordination.md](../docs/coordination.md)
 
 <a id="TRN-2"></a>
 ### TRN-2. What the translator sees
