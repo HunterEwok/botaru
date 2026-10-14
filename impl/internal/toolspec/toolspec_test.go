@@ -102,6 +102,14 @@ func TestCheck(t *testing.T) {
 	if is := Check(trusted, nil); len(is) > 0 {
 		t.Fatalf("closed trusted output: %v", is)
 	}
+	if !trusted.Tools[0].TrustedOutput() {
+		t.Fatal("closed output declared trusted is not trusted")
+	}
+	noSchema := trusted.Tools[0]
+	noSchema.OutputSchema = nil
+	if noSchema.TrustedOutput() {
+		t.Fatal("trusted output without a schema")
+	}
 	trusted.Tools[0].OutputSchema["properties"].(map[string]any)["note"] = map[string]any{"type": "string", "maxLength": 50}
 	if is := Check(trusted, nil); len(is) != 1 || is[0].Code != "untrusted_output_false_text" {
 		t.Fatalf("free text declared trusted: %v", is)

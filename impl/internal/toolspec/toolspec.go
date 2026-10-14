@@ -77,6 +77,14 @@ func (t Tool) On() bool { return t.Enabled == nil || *t.Enabled }
 // the field counts as untrusted.
 func (t Tool) Untrusted() bool { return t.UntrustedOutput == nil || *t.UntrustedOutput }
 
+// TrustedOutput says whether the output of a tool reaches the model without the untrusted mark:
+// the tool declares untrusted_output: false and has an output schema without free text, so
+// only its structured output, checked against that schema, is shown (INJ-3). A tool that
+// declares trusted output without such a schema is treated as untrusted.
+func (t Tool) TrustedOutput() bool {
+	return !t.Untrusted() && t.OutputSchema != nil && !freeText(t.OutputSchema)
+}
+
 // Tool returns a tool of the plugin by name.
 func (p Plugin) Tool(name string) (Tool, bool) {
 	for _, t := range p.Tools {

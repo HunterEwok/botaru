@@ -17,6 +17,7 @@ import (
 	"log/slog"
 	"os/exec"
 	"sort"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"syscall"
@@ -258,18 +259,16 @@ func clean(res *mcp.CallResult, kinds []string, limit int) *mcp.CallResult {
 	if limit <= 0 {
 		limit = 32 << 10
 	}
-	out := &mcp.CallResult{IsError: res.IsError, InputRequired: res.InputRequired}
-	left := limit
+	out := &mcp.CallResult{IsError: res.IsError, InputRequired: res.InputRequired, Content: []mcp.Content{}}
+	// The text blocks are joined before masking, so nothing split across blocks escapes it.
+	var joined strings.Builder
 	for _, c := range res.Content {
-		if c.Type != "text" || left <= 0 {
-			continue
+		if c.Type == "text" {
+			joined.WriteString(c.Text)
 		}
-		text, _ := redact.Cut(redact.Text(c.Text, kinds), left)
-		left -= len(text)
-		out.Content = append(out.Content, mcp.Content{Type: "text", Text: text})
 	}
-	if out.Content == nil {
-		out.Content = []mcp.Content{}
+	if text, _ := redact.Cut(redact.Text(joined.String(), kinds), limit); text != "" {
+		out.Content = append(out.Content, mcp.Content{Type: "text", Text: text})
 	}
 	if res.StructuredContent != nil {
 		sc, _ := redact.Value(res.StructuredContent, kinds).(map[string]any)

@@ -297,7 +297,7 @@ func (c *Core) recordToolCall(ctx context.Context, tx pgx.Tx, now time.Time, cat
 		}
 		if err := c.insertToolCall(ctx, tx, now, toolCallRow{
 			ID: id, Tenant: g.Tenant, Task: g.Task, LeaseNo: g.LeaseNo, Tool: right, Access: access, Args: args,
-			Plugin: plugin, Placement: pl.Placement, State: state, Reason: reason, Untrusted: haveTool && t.Untrusted(),
+			Plugin: plugin, Placement: pl.Placement, State: state, Reason: reason, Untrusted: haveTool && !t.TrustedOutput(),
 		}); err != nil {
 			return "", nil, err
 		}
@@ -355,7 +355,7 @@ func (c *Core) recordToolCall(ctx context.Context, tx pgx.Tx, now time.Time, cat
 	host := target.host
 	row := toolCallRow{
 		ID: id, Tenant: g.Tenant, Task: g.Task, LeaseNo: g.LeaseNo, Tool: right, Access: "read", Args: args,
-		Plugin: plugin, Placement: pl.Placement, Host: host, Resource: target.resource, Resolved: resolved, Untrusted: t.Untrusted(), State: "queued",
+		Plugin: plugin, Placement: pl.Placement, Host: host, Resource: target.resource, Resolved: resolved, Untrusted: !t.TrustedOutput(), State: "queued",
 	}
 	// A target without a live toolhost ends at once (DLV-16, OBS-10).
 	live, err := c.liveToolhost(ctx, tx, now, g.Tenant, plugin, pl.Placement, host)
@@ -585,7 +585,9 @@ func toolOutput(raw []byte, untrusted bool) *mcp.CallResult {
 		}
 	}
 	body := text.String()
-	if body == "" && o.StructuredContent != nil {
+	// Trusted output is only the structured content the output schema checked; the plugin's
+	// text is not shown (INJ-3).
+	if (body == "" || !untrusted) && o.StructuredContent != nil {
 		b, _ := json.Marshal(o.StructuredContent)
 		body = string(b)
 	}

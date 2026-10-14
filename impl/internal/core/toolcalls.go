@@ -234,7 +234,7 @@ func (c *Core) completeToolcall(ctx context.Context, tx pgx.Tx, now time.Time, l
 	if err := endToolCall(ctx, tx, now, l.WorkID, "done", "", raw); err != nil {
 		return err
 	}
-	if t.Untrusted() {
+	if !t.TrustedOutput() {
 		// The first untrusted output sets untrusted_seen on the attempt; it never goes back
 		// (INJ-13).
 		if _, err := tx.Exec(ctx, `UPDATE tasks SET record = record || '{"untrusted_seen": true}' WHERE id = $1`, task); err != nil {
@@ -250,18 +250,23 @@ func (c *Core) cleanOutput(ctx context.Context, tx pgx.Tx, cat *Catalog, task st
 	if limit == 0 {
 		limit = defaultOutputLimit
 	}
-	out := &mcp.CallResult{}
-	left := limit
+	// The text blocks are joined before the secret check, so a secret split across blocks is
+	// still found; the model sees them joined anyway.
+	var joined strings.Builder
 	for _, x := range res.Content {
-		text, _ := redact.Cut(redact.Secrets(x.Text), left)
-		left -= len(text)
+		joined.WriteString(x.Text)
+	}
+	text, _ := redact.Cut(redact.Secrets(joined.String()), limit)
+	out := &mcp.CallResult{Content: []mcp.Content{}}
+	if text != "" {
 		out.Content = append(out.Content, mcp.Content{Type: "text", Text: text})
-		if left <= 0 {
-			break
-		}
 	}
 	if res.StructuredContent != nil {
 		sc, _ := redact.Value(res.StructuredContent, []string{redact.Secret}).(map[string]any)
+		// Structured output is bounded by the same tool limit; it cannot be cut and stay valid.
+		if b, err := json.Marshal(sc); err != nil || len(b) > limit {
+			return nil, refuse("output_schema_invalid", "the structured output is larger than the tool's output limit")
+		}
 		out.StructuredContent = sc
 	}
 	if t.OutputSchema != nil {
