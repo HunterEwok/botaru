@@ -26,6 +26,9 @@ type attemptRecord struct {
 	Parts       map[string]any   `json:"parts"`
 	Catalog     *string          `json:"catalog"`
 	EnumFrom    map[string][]any `json:"enum_from,omitempty"`
+	// ResultSchema is the result_schema of the type at claim: the result is checked against the
+	// type the attempt ran under, even if an apply changes the type meanwhile.
+	ResultSchema map[string]any `json:"result_schema,omitempty"`
 }
 
 // runFingerprint computes the run fingerprint by the row "run fingerprint" of spec/hashing.md:
@@ -251,7 +254,7 @@ func (c *Core) prepareAttempt(cat *Catalog, w *Worker, tenant, typ, mark, slot, 
 	if err != nil {
 		return nil, err
 	}
-	rec := &attemptRecord{Fingerprint: fp, Parts: parts}
+	rec := &attemptRecord{Fingerprint: fp, Parts: parts, ResultSchema: cat.TaskTypes[typ].ResultSchema}
 	_, rec.Catalog = tenantCatalog(cat, tenant)
 	names := map[string]bool{}
 	enumFromNames(cat.TaskTypes[typ].ResultSchema, names)

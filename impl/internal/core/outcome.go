@@ -206,10 +206,16 @@ func (c *Core) completeAttempt(ctx context.Context, tx pgx.Tx, now time.Time, w 
 	if err != nil {
 		return err
 	}
+	// The schema of the type at claim; a lease taken before the upgrade has none and uses the
+	// current type.
+	schema := att.ResultSchema
+	if schema == nil {
+		schema = tt.ResultSchema
+	}
 	// A lease taken before the upgrade has no attempt record: its enum_from values are
 	// resolved now, against the current catalog and the task's mark.
 	if names := (map[string]bool{}); att.EnumFrom == nil {
-		enumFromNames(tt.ResultSchema, names)
+		enumFromNames(schema, names)
 		if len(names) > 0 {
 			var mark struct {
 				DataMark string `json:"data_mark"`
@@ -222,8 +228,8 @@ func (c *Core) completeAttempt(ctx context.Context, tx pgx.Tx, now time.Time, w 
 	}
 	// The full result check (OUT-1, D-98): enum_from against the catalog values fixed for this
 	// attempt and filtered by the task's mark, and x-botaru-format as an assertion.
-	if tt.ResultSchema != nil {
-		full, err := c.fullSchema(tt.ResultSchema, att.EnumFrom)
+	if schema != nil {
+		full, err := c.fullSchema(schema, att.EnumFrom)
 		if err != nil {
 			return err
 		}

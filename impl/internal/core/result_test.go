@@ -266,3 +266,27 @@ func TestFairnessKey(t *testing.T) {
 		}
 	}
 }
+
+// The result is checked against the result_schema of the type at claim: an apply that
+// narrows the type while the attempt runs does not refuse the attempt's valid result.
+func TestResultSchemaFixedAtClaim(t *testing.T) {
+	ctx := context.Background()
+	b := newBench(t)
+	applyResultCheckSet(t, b)
+	task := b.hello(t, "41")
+	att := b.claim(t, b.agent, "attempt")
+	if att == nil || att.WorkID != task {
+		t.Fatalf("attempt %+v", att)
+	}
+	ms, at := helloSet(t)
+	ms[at["TaskType"]]["spec"].(map[string]any)["result_schema"] = map[string]any{
+		"type": "object", "additionalProperties": false, "required": []any{"answer"},
+		"properties": map[string]any{"answer": map[string]any{"type": "string", "maxLength": 1}},
+	}
+	if res, err := b.c.Apply(ctx, b.op, ApplyRequest{Commit: "5555555555555555555555555555555555555555", Manifests: ms}); err != nil || !res.Applied {
+		t.Fatalf("apply: %+v %v", res, err)
+	}
+	if _, err := b.c.Complete(ctx, b.agent, header(t, att), CompleteRequest{Result: map[string]any{"answer": "longer than one", "run": "r-01"}}); err != nil {
+		t.Fatalf("a result valid for the type at claim: %v", err)
+	}
+}
