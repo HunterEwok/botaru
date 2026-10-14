@@ -97,8 +97,8 @@ machines:
     by: P2 `hold.release` or the background loop `hold` by `until`
     when: the last hold by a person of the `bot` scope is released or expired, there is a binding
     rules:
+    - HLD-1
     - HLD-2
-    - HLD-5
   - from:
       states:
       - active

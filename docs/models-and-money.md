@@ -114,7 +114,7 @@ models:
   analysis: analysis-std      # only the purposes insight and aggregate
 ```
 
-A role whose `base` or `analysis` slot profile is not in the tenant's `models_allowed` does not pass `apply` for this tenant and does not get `enroll` in it (GW-8).
+A role whose `base` or `analysis` slot profile is not in the tenant's `models_allowed` does not pass `apply` for this tenant and does not get `enroll` in it (GW-7).
 
 ## Slots and purposes
 
@@ -393,7 +393,7 @@ That is 10-13% of a monthly limit of 300 EUR. There is no overspending (BUD-2, B
 
 | Version | What appears |
 |---|---|
-| v0.1 | P4 inside the core: request checking, reserve and charge, a key and a workspace per tenant (GW-1, GW-2, GW-3). The model profile, slots, purposes, `models_allowed`, ranks, the fallback model and a reserve at the most expensive model (GW-5, GW-6, GW-7, GW-8). Euro cents and separate names instead of `max_tokens` (BUD-9), the prompt cache in the binding (GW-16), region and retention at the provider (GW-14, GW-15), workspace ceilings with a daily check (GW-9). The circuit breaker, one retry layer, counting only runs with a response, and the reason `provider_config` (GW-11, GW-12, GW-13). The tenant limits `month_eur`, `day_eur`, `hour_eur`, the reserve at enqueue, the usage line, thresholds (BUD-1, BUD-2, BUD-3, BUD-4); the response deadline from the profile and a retry only of an unsent request (GW-12); provider terms in the profile (GW-15); the age of profile prices (GW-17); the budget line `work` (BUD-7); charging a call without a response (BUD-11); the meter registry and a reserve for every consumable unit, so that every usage line carries its unit from the start (BUD-5, D-94). This is the money of the `core` profile and the first bot (D-71). After the core and the first bot (D-80): the lines `insight`, `aggregate` and `review` together with the improvement cycle and the commission, the lint of money for reviews (BUD-13), the slot `seat` and the translator catalog in request checking (GW-1, GW-7); the line `manager` in tenants together with the farm manager seat, absent for a tenant with `farm_manager.enabled: false` (D-77); the wake-up counter in the reserve (BUD-1, MSG-11). Campaigns with a card and script runs from the monthly limit up to the amount on the card, the pause `estimate_exceeded` (BUD-12). The enqueue estimate from the type's actual price (BUD-14). Daily reconciliation with the provider's report and turning `spend_estimated` into actual figures (BUD-10). A hold on hourly spending above `hour_eur` (HLD-7). The honest price table in `farmctl doctor` (BUD-15). The rate limiter per pool (GW-10). |
+| v0.1 | P4 inside the core: request checking, reserve and charge, a key and a workspace per tenant (GW-1, GW-2, GW-3). The model profile, slots, purposes, `models_allowed`, ranks, the fallback model and a reserve at the most expensive model (GW-5, GW-6, GW-7). Euro cents and separate names instead of `max_tokens` (BUD-9), the prompt cache in the binding (GW-16), region and retention at the provider (GW-14, GW-15), workspace ceilings with a daily check (GW-9). The circuit breaker, one retry layer, counting only runs with a response, and the reason `provider_config` (GW-11, GW-12, GW-13). The tenant limits `month_eur`, `day_eur`, `hour_eur`, the reserve at enqueue, the usage line, thresholds (BUD-1, BUD-2, BUD-3, BUD-4); the response deadline from the profile and a retry only of an unsent request (GW-12); provider terms in the profile (GW-15); the age of profile prices (GW-17); the budget line `work` (BUD-7); charging a call without a response (BUD-11); the meter registry and a reserve for every consumable unit, so that every usage line carries its unit from the start (BUD-5, D-94). This is the money of the `core` profile and the first bot (D-71). After the core and the first bot (D-80): the lines `insight`, `aggregate` and `review` together with the improvement cycle and the commission, the lint of money for reviews (BUD-13), the slot `seat` and the translator catalog in request checking (GW-1, GW-7); the line `manager` in tenants together with the farm manager seat, absent for a tenant with `farm_manager.enabled: false` (D-77); the wake-up counter in the reserve (BUD-1, MSG-11). Campaigns with a card and script runs from the monthly limit up to the amount on the card, the pause `estimate_exceeded` (BUD-12). The enqueue estimate from the type's actual price (BUD-14). Daily reconciliation with the provider's report and turning `spend_estimated` into actual figures (BUD-10). A hold on hourly spending above `hour_eur` (HLD-7). The honest price table in `farmctl doctor` (BUD-15). The rate limiter per pool (GW-10). |
 | v0.2 | The limit of tasks in progress without refusal (BUD-6), the lowest priority class for analysis and reviews (BUD-8). The line `governance` together with seat ballots. The slot `granted` with a ceiling on the grant amount in euros and the line `grant`, takeover and the line `takeover`. The `farm_manager` lens and shadow reviews in the estimate of money for reviews (BUD-13). De-identification of the principal in usage lines after 93 days (BUD-16). |
 
 ## Why it works this way
@@ -424,9 +424,7 @@ Generated from the registry `conformance/requirements.yaml`; the full text of ev
 | [BUD-3](../conformance/rules.md#BUD-3) | A usage line for every call and message | v0.1 | yes |
 | [BUD-4](../conformance/rules.md#BUD-4) | Code decides on exhausted budgets and thresholds | v0.1 | no |
 | [BUD-5](../conformance/rules.md#BUD-5) | A reserve for every metered unit | v0.1 | yes |
-| [BUD-6](../conformance/rules.md#BUD-6) | In-flight task limit without refusal | v0.2 | no |
 | [BUD-7](../conformance/rules.md#BUD-7) | Budget lines by task purpose | v0.1 | yes |
-| [BUD-8](../conformance/rules.md#BUD-8) | The lowest priority class for analysis and reviews | v0.2 | no |
 | [BUD-9](../conformance/rules.md#BUD-9) | Budget in micro-euros per call and in euro cents in limits | v0.1 | yes |
 | [BUD-10](../conformance/rules.md#BUD-10) | Daily reconciliation of usage with the provider report | v0.1 | no |
 | [BUD-11](../conformance/rules.md#BUD-11) | A call without a response charges its full reserve | v0.1 | yes |
@@ -441,7 +439,6 @@ Generated from the registry `conformance/requirements.yaml`; the full text of ev
 | [GW-5](../conformance/rules.md#GW-5) | Only a declared fallback model, with a record | v0.1 | yes |
 | [GW-6](../conformance/rules.md#GW-6) | Reserve at the most expensive allowed model | v0.1 | yes |
 | [GW-7](../conformance/rules.md#GW-7) | A model only by the role slot and the tenant list | v0.1 | yes |
-| [GW-8](../conformance/rules.md#GW-8) | A role only with profiles allowed to the tenant | v0.1 | yes |
 | [GW-9](../conformance/rules.md#GW-9) | Each workspace has its own ceilings and a daily check | v0.1 | yes |
 | [GW-10](../conformance/rules.md#GW-10) | A rate limiter per model pool | v0.1 | yes |
 | [GW-11](../conformance/rules.md#GW-11) | A circuit breaker in P4 | v0.1 | yes |

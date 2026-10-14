@@ -8,7 +8,7 @@
     "COM-3",
     "COM-2",
     "PRP-9",
-    "PRP-15"
+    "PRP-22"
   ],
   "type": "object",
   "additionalProperties": false,
@@ -165,7 +165,7 @@
     },
     "self_evidence": {
       "type": "boolean",
-      "description": "Mark of the author's own share in the evidence when author_share is at least 0.3, without the author identity (PRP-15)."
+      "description": "Mark of the author's own share in the evidence when author_share is at least 0.3, without the author identity (PRP-22)."
     },
     "related_to": {
       "type": "array",

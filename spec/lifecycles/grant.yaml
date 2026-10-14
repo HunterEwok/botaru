@@ -56,11 +56,10 @@ machines:
       text: '`denied`'
     by: the core at intake
     when: 'no right to ask (`grant_not_eligible`: neither the initial input above the class threshold nor the type history
-      by MGR-40); the evidence did not match `reason`; the price does not fit (`grant_over_budget`); the rate (`grant_rate_limited`:
-      more than 3 requests per role in the tenant per day, MGR-40)'
+      by MGR-17); the evidence did not match `reason`; the price does not fit (`grant_over_budget`); the rate (`grant_rate_limited`:
+      more than 3 requests per role in the tenant per day, MGR-17)'
     rules:
     - MGR-17
-    - MGR-40
   - from:
       states:
       - requested

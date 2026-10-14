@@ -16,7 +16,7 @@ A hold (`Hold`) is a recorded object that forbids part of the farm's work: a sco
 
 | From | To | Trigger | Condition | Rules |
 |---|---|---|---|---|
-| (none) | `active` | P2 `hold.set` | the operator through `farmctl` (any scope; the scopes `farm` and `seat` only the operator) or a person of their own tenant with `hold.set:<scope>` on scopes of their tenant, through `farmctl` or with a command in a direct chat with the bot; a hold of the `governance` scope (v0.2) is set by a person with `admin:governance` in the case's tenant; the scope and the effects are in the closed lists of the current version | HLD-1, HLD-2, HLD-5, PRM-14, PRM-15, GOV-23 |
+| (none) | `active` | P2 `hold.set` | the operator through `farmctl` (any scope; the scopes `farm` and `seat` only the operator) or a person of their own tenant with `hold.set:<scope>` on scopes of their tenant, through `farmctl` or with a command in a direct chat with the bot; a hold of the `governance` scope (v0.2) is set by a person with `admin:governance` in the case's tenant; the scope and the effects are in the closed lists of the current version | HLD-1, HLD-2, PRM-14, PRM-15, GOV-23 |
 | (none) | `active` | `farmctl hold farm` (a write directly to the store, without the core process and without a channel) | the operator on the core machine; `farmctl` with the core's credentials is part of the core; the scope `farm` | HLD-1, DEP-8 |
 | (none) | `active` | the background loop `hold` by an auto-stop rule | the condition of a rule from `spec/model/holds.yaml` is met; the author is `contain_auto`; no deadline (HLD-6, CAP-4) or one hour (HLD-7 `runaway_spend`) | HLD-2, HLD-6, HLD-7, CAP-4 |
 | (none) | `active` | the core when an incident is opened | the first measure of the incident class from git with its own deadline; the author is `contain_auto` | HLD-2, MGR-7 |
@@ -26,8 +26,8 @@ A hold (`Hold`) is a recorded object that forbids part of the farm's work: a sco
 | (none) | `active` | the background loop `hold` by a maintenance window of the monitoring system (the E5 adapter polls the maintenance status, v0.2) | the first `active` event of a window on a node that the tenant catalog linked to its resource (`Catalog.spec.hosts[].monitor_host`); the scope `host` (the catalog host whose `monitor_host` is the node); the effects `no_tool` and `pause_action` (with `hosts[].maintenance_hold: true` the effect `no_action` instead of `pause_action`); the reason `maintenance`; the author `contain_auto`, the source `system:monitor`; `until` from the event, the poll time plus two poll intervals; no new hold for a window whose hold a person released | HLD-2, MON-9 |
 | (none) | `active` | P2 `tenant.suspend` | the operator; a hold of the `tenant` scope with the reason `suspended` | LCY-1 |
 | (none) | `active` | P2 `secret.revoke` (`farmctl secret revoke --compromised`) | the operator; in the same operation a hold without `until` on every scope where the deployment description uses the secret, the reason `compromised` | SEC-6 |
-| `active` | `expired` | the background loop `hold` | `until` arrived | HLD-5, TIM-1 |
-| `active` | `released` | P2 `hold.release` | a principal with `hold.release` on the hold's scope and not below the author in rank (the table "Who sets, who releases" below); otherwise `forbidden`; a hold of the `governance` scope is released by a person with `admin:governance` in the case's tenant | HLD-2, HLD-5, PRM-14, GOV-23 |
+| `active` | `expired` | the background loop `hold` | `until` arrived | HLD-1, TIM-1 |
+| `active` | `released` | P2 `hold.release` | a principal with `hold.release` on the hold's scope and not below the author in rank (the table "Who sets, who releases" below); otherwise `forbidden`; a hold of the `governance` scope is released by a person with `admin:governance` in the case's tenant | HLD-2, HLD-1, PRM-14, GOV-23 |
 | `active` | `released` | C1 `control.apply`, releasing a hold | the seat holder releases only its own holds | HLD-2, MGR-9 |
 | `active` | `released` | P2 `control.revert` with `since` | only the operator with `admin:farm`; the holds that the seat holder set after `since` are released | MGR-15, PRM-14 |
 | `active` | `released` | P2 `control.revert` with `incident` | the operator or a person of the tenant with `hold.release` in this tenant (the command `/control revert <number>` in a direct chat with the bot); only the seat holder's holds for this incident are released | MGR-15, PRM-15 |
@@ -59,7 +59,7 @@ Ranks from top to bottom: the operator, a tenant admin (a person of the tenant w
 - The scope, the effects, the reason and the author do not change after the hold is set. Only the deadline of an active hold can change: toward shortening when the seat holder is replaced, and toward extension only for a maintenance window hold while the monitoring adapter reports the window active (MON-9). To change the effects, a new hold is set and the old one is released.
 - A hold applies from the next check, without `apply` and restarts (HLD-3).
 - Deadlines are counted by the store clock (TIM-1).
-- Every transition publishes an event (`hold.set`, `hold.released`, `hold.expired`) and writes an audit record (HLD-5, AUD-1).
+- Every transition publishes an event (`hold.set`, `hold.released`, `hold.expired`) and writes an audit record (HLD-1, AUD-1).
 - A hold does not silence alarms and does not delay their export: notification and silencing live in the monitoring system (MON-1).
 
 ## Versions

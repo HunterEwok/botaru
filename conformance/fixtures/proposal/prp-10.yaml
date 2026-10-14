@@ -1,5 +1,5 @@
 id: prp-10
-rules: [PRP-15]
+rules: [PRP-22]
 description: 'Share of one''s own evidence. For each evidence series the core computes self_influence at creation:
   the share of points from attempts of the author bot (author_share) and of its role (role_share). With author_share of at least 0.3 the people''s
   card and the reviewer input carry the mark self_evidence without the author''s identity; at 0.29 there is no mark.'

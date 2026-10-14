@@ -287,8 +287,8 @@ machines:
     when: 'the hold of the `seat` scope is released or expired: its reasons `human` or `no_control` go away; the seat is `held`
       only if the set is empty'
     rules:
+    - HLD-1
     - HLD-2
-    - HLD-5
     - MGR-15
   - from:
       states:

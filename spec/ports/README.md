@@ -21,7 +21,7 @@ A "thin" port: one page, one reference adapter, a minimal set of checks. A thin 
 | Port | Sheet | Kind | Sheet since | Thin | Reference | Main rules |
 |---|---|---|---|---|---|---|
 | P1 WorkerProtocol | `p1-worker-protocol.md` | core protocol | v0.1; HTTP binding v1 from v0.1, OpenAPI 3.1 description `spec/bindings/http/p1.openapi.json` from v0.2 (MAN-12) | no | core; the deployment chooses the transport | TEN-2..4, TEN-7, IDN-1..3, IDN-7, FEN-1..4, IDM-1..5, DLV-1, PRM-9, SEC-3, MSG-9 |
-| P2 AdminAPI | `p2-admin-api.md` | core protocol | v0.1; HTTP binding v1 (`admin.md`) from v0.1, OpenAPI will appear with the second client | no | `farmctl`; commands of people in a channel on behalf of the verified person | PRM-7, PRM-13, PRM-14, IDN-7, AUD-1, MAN-5, HLD-5 |
+| P2 AdminAPI | `p2-admin-api.md` | core protocol | v0.1; HTTP binding v1 (`admin.md`) from v0.1, OpenAPI will appear with the second client | no | `farmctl`; commands of people in a channel on behalf of the verified person | PRM-7, PRM-13, PRM-14, IDN-7, AUD-1, MAN-5, HLD-1 |
 | P3 ToolGateway | `p3-tool-gateway.md` | core protocol | v0.1 | no | core; the MCP tool protocol, revision in the binding | APR-1, APR-18, PRM-3..5, INJ-2, INJ-4, INJ-13, INJ-15, TEN-3a, SEC-3, RT-4 |
 | P4 ModelGateway | `p4-model-gateway.md` | core protocol | v0.1 | no | core; a field allowlist per provider | GW-1..3, GW-7, BUD-2, BUD-3, TEN-5, CAP-2 |
 | C1 TaskStore | `c1-task-store.md` | behind the core | v0.1 | no | PostgreSQL | FEN-1..3, FEN-5, IDM-1..4, DLV-2, AUD-2, AUD-3, TEN-1, RET-3, RET-6 |

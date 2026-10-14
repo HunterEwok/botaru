@@ -1,9 +1,9 @@
 id: fx-model-profiles-lint
-rules: [GW-3, GW-7, GW-8, GW-9, GW-14]
+rules: [GW-3, GW-7, GW-9, GW-14]
 description: Model profiles, role slots and the provider workspace at apply and in the daily check. A model is chosen
   only as a role slot profile from the tenant's models_allowed; a profile with an alias without a version and a type whose purpose
   needs a slot the role lacks do not pass apply (GW-7); a role without a base or analysis profile in models_allowed
-  does not pass apply and does not get enroll (GW-8); tenant limits are below the share of the workspace ceiling (GW-9); only P4
+  does not pass apply and does not get enroll (GW-7); tenant limits are below the share of the workspace ceiling (GW-9); only P4
   sets the call region (GW-14); each tenant has its own provider key (GW-3).
 given:
   tenant: demo
@@ -55,7 +55,7 @@ cases:
   expect:
     slot_by_purpose: {work: base, report: base, translate: base, insight: analysis, aggregate: analysis, review: base}
 - id: gw-fx-05
-  rules: [GW-8]
+  rules: [GW-7]
   description: A role whose base slot profile is not in models_allowed does not pass apply and does not get enroll.
   given:
     role:
@@ -66,7 +66,7 @@ cases:
     stage: apply
     enroll: {result: denied}
 - id: gw-fx-06
-  rules: [GW-8]
+  rules: [GW-7]
   description: The same for the analysis slot.
   given:
     role:

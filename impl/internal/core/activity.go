@@ -74,7 +74,7 @@ func (c *Core) SubmitActivity(ctx context.Context, w *Worker, a Activity) (*Acti
 
 	var out ActivityResult
 	err = c.tx(ctx, func(tx pgx.Tx, now time.Time) error {
-		// A repeat of the same update returns the same task (IDM-5).
+		// A repeat of the same update returns the same task (DLV-5).
 		var existing string
 		err := tx.QueryRow(ctx, `SELECT id FROM tasks WHERE tenant = $1 AND idempotency_key = $2`, w.Tenant, key).Scan(&existing)
 		if err == nil {

@@ -2,10 +2,9 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "urn:botaru:schema:hold-event:1",
   "title": "Stop event data",
-  "description": "Data of the events hold.set, hold.released and hold.expired: every stop transition publishes an event and writes an audit record (HLD-5, spec/lifecycles/hold.md). Metadata only: id, scope, effects, reason, deadline and author.",
+  "description": "Data of the events hold.set, hold.released and hold.expired: every stop transition publishes an event and writes an audit record (HLD-1, spec/lifecycles/hold.md). Metadata only: id, scope, effects, reason, deadline and author.",
   "x-botaru-direction": "output",
   "x-botaru-rules": [
-    "HLD-5",
     "HLD-1"
   ],
   "type": "object",

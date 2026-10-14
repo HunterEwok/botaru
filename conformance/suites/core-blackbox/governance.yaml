@@ -18,7 +18,6 @@ checks:
   method: blackbox
   rules:
   - GOV-36
-  - GOV-37
   version: v0.3
   section: Tests without a model
   source: docs/quality.md:608
@@ -141,7 +140,7 @@ checks:
 - id: blackbox:governance/cooldown-after-unseat
   method: blackbox
   rules:
-  - GOV-44
+  - GOV-42
   version: v0.3
   section: Tests without a model
   source: docs/quality.md:619

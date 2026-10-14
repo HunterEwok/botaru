@@ -2,10 +2,10 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "urn:botaru:schema:p2-hold-list-response:1",
   "title": "P2 hold.list: response",
-  "description": "Stops of a tenant or of the farm (HLD-5).",
+  "description": "Stops of a tenant or of the farm (HLD-1).",
   "x-botaru-direction": "output",
   "x-botaru-rules": [
-    "HLD-5"
+    "HLD-1"
   ],
   "type": "object",
   "required": [

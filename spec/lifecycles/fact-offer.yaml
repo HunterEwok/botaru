@@ -79,7 +79,7 @@ machines:
     by: the core enqueues `memory.pick.v1`
     when: the successor exists or appeared before `open_until`
     rules:
-    - MEM-8
+    - MEM-7
   - from:
       states:
       - pending
@@ -91,7 +91,7 @@ machines:
     by: P1 `complete` of the choice task
     when: '`take` is not empty; every taken fact is rechecked against the recipient''s rights'
     rules:
-    - MEM-8
+    - MEM-7
   - from:
       states:
       - pending
@@ -103,7 +103,7 @@ machines:
     by: P1 `complete` of the choice task
     when: '`take` is empty'
     rules:
-    - MEM-8
+    - MEM-7
   - from:
       states:
       - pending
@@ -115,7 +115,7 @@ machines:
     by: the core
     when: the task failed after 3 retries
     rules:
-    - MEM-8
+    - MEM-7
   - from:
       states:
       - waiting

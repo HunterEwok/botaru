@@ -6,7 +6,6 @@
   "x-botaru-direction": "input",
   "x-botaru-rules": [
     "TIM-3",
-    "TIM-4",
     "PRM-10",
     "DLV-6",
     "PRP-10",
@@ -21,7 +20,7 @@
     "cron": {
       "type": "string",
       "maxLength": 100,
-      "description": "Five cron fields, without CRON_TZ and TZ (TIM-3, TIM-4).",
+      "description": "Five cron fields, without CRON_TZ and TZ (TIM-3).",
       "pattern": "^[0-9*/,-]+( [0-9*/,-]+){4}$"
     },
     "timezone": {

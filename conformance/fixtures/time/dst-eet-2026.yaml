@@ -1,5 +1,5 @@
 id: fx-time-dst-eet-2026
-rules: [TIM-3, TIM-4]
+rules: [TIM-3]
 description: 'Both 2026 clock changes in the training time zone Europe/Berlin for the schedule cron "30 2 * * *". A slot is a UTC instant
   to the minute (schedule_slot), and the slot task key is system:schedule:<name>:<slot>. Local time 02:30 does not exist in spring:
   the slot is skipped with the event schedule.skipped with reason dst_gap and is not caught up. In autumn 02:30 occurs twice: the task

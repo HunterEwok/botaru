@@ -376,6 +376,5 @@ Generated from the registry `conformance/requirements.yaml`; the full text of ev
 | [SEC-9](../conformance/rules.md#SEC-9) | Raw logs to a channel only by tenant decision | v0.1 | no |
 | [SEC-10](../conformance/rules.md#SEC-10) | A report to a person about their data | v0.2 | no |
 | [SEC-11](../conformance/rules.md#SEC-11) | A person's request and deletion through ports | v0.1 | no |
-| [SEC-12](../conformance/rules.md#SEC-12) | Privacy report | v0.2 | no |
 | [SEC-13](../conformance/rules.md#SEC-13) | The privacy notice as a separate delivery | v0.1 | no |
 | [SEC-14](../conformance/rules.md#SEC-14) | Per-principal usage is anonymized after 93 days | v0.2 | no |

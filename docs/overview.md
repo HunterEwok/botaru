@@ -107,7 +107,7 @@ A person's personal assistant is a worker with an owner: it takes only the owner
 
 | # | Who | What happens | Rules |
 |---|---|---|---|
-| 1 | person, channel | The channel verifies the authenticity of the update and the sender, builds an incoming `Activity` and calls P1 `submit_activity`. A repeat of the same update does not create a second task | IDN-3, IDN-7, IDM-5 |
+| 1 | person, channel | The channel verifies the authenticity of the update and the sender, builds an incoming `Activity` and calls P1 `submit_activity`. A repeat of the same update does not create a second task | IDN-3, IDN-7, DLV-5 |
 | 2 | core | The channel identity gives the principal `alice` in `demo`. Code picks the task type `ops.investigate.v1` (a command or the tenant's `default_types`), not the model. C2 checks permissions, the budget is reserved, and the core writes the task record: class mark `raw_logs`, `max_tier: 1` | TEN-2, IDN-6, PRM-2..5, BUD-1 |
 | 3 | dispatcher, agent worker | The dispatcher hands an attempt to a worker of role `ops-reader` through `claim`: a lease with a token, and tool and model handles. The E4 adapter gives the runtime the body, the instruction and the handles, but not its own token | FEN-1, DSP-2, SEC-3, SEC-4, DEP-5 |
 | 4 | runtime, P3, P4 | The runtime gets `tools/list` from P3 by the handle and calls the model through P4. The gateway checks the request's tools against the catalog, reserves the worst case, and after the answer charges the actual usage | PRM-4, GW-1, GW-2 |
@@ -182,7 +182,9 @@ For a first reading: this overview, then `docs/architecture.md`, the glossary an
 | `docs/quality.md` | quality, eval, skeleton readiness criteria |
 | `evals/README.md` | the eval case format and thresholds |
 | `examples/*.md` | worked examples on the tenant `demo` |
+| `docs/goals.md` | the goals and constraints of the farm that every rule serves |
 | `docs/decisions.md` | decisions with dates |
+| `conformance/deferred.md` | rules not needed before the pilot, with the reason and the condition of return |
 | `docs/adr/` | architecture decision records in MADR 4.0.0 format and the template |
 | `docs/open-questions.md` | what is not decided yet and what is chosen by default |
 | `conformance/rules.md` | all rules with their texts by family |

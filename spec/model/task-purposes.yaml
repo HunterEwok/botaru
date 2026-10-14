@@ -1,5 +1,5 @@
 registry: task-purposes
-version: 2
+version: 3
 description: >-
   Purposes of task types (TaskType.spec.purpose). By purpose, core code
   chooses the model slot and the budget line, and lints check who may enqueue
@@ -80,7 +80,7 @@ entries:
     slot: role
     budget_line: work
     proposable: false
-    rules: [BUD-7, MEM-8, PRP-10]
+    rules: [BUD-7, MEM-7, PRP-10]
   - id: governance
     since: v0.2
     meaning: tasks of identity and charter cases, the seat ballot

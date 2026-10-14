@@ -1,5 +1,5 @@
 registry: formats
-version: 1
+version: 2
 description: >-
   Closed string formats. A string leaf of a schema from a manifest (params_schema,
   result_schema, an action schema, tool arguments) passes only with a format
@@ -49,7 +49,7 @@ entries:
     pattern: '^[A-Za-z][A-Za-z0-9_+-]*(/[A-Za-z0-9_+-]+){0,2}$'
     max_length: 64
     example: Europe/Berlin
-    rules: [INJ-1, TIM-4]
+    rules: [INJ-1, TIM-3]
   - id: type_name
     since: v0.1
     meaning: name of a task type, event or message type with the version .vN

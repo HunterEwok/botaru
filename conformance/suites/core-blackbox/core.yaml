@@ -623,7 +623,7 @@ checks:
 - id: blackbox:core/reconcile-overdue
   method: blackbox
   rules:
-  - OBS-12
+  - BUD-10
   version: v0.1
   section: Tests without a model
   source: docs/quality.md:480
@@ -656,7 +656,7 @@ checks:
 - id: blackbox:core/hold-events-visible
   method: blackbox
   rules:
-  - HLD-5
+  - HLD-1
   version: v0.1
   section: Tests without a model
   source: docs/quality.md:496

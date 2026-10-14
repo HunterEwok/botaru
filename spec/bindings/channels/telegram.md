@@ -28,7 +28,7 @@ The driver receives updates in one of two ways; the Bot API does not allow using
 
 `allowed_updates` are `message`, `callback_query`, `chat_member` and `my_chat_member`. The driver does not request other kinds of updates and does not submit them to the core.
 
-One update submitted twice (a webhook retry, two channel processes, a restart before `offset` moved) gives one task: the core builds the idempotency key from the channel name and `update_id` (`system:activity:<channel>:<update_id>`, IDM-5).
+One update submitted twice (a webhook retry, two channel processes, a restart before `offset` moved) gives one task: the core builds the idempotency key from the channel name and `update_id` (`system:activity:<channel>:<update_id>`, DLV-5).
 
 ## Input: `message` -> `Activity`
 

@@ -1,7 +1,7 @@
 # Collected from spec/lifecycles/fact-offer.yaml. The value null in from means "the object does not exist yet".
 lifecycle: spec/lifecycles/fact-offer.yaml
 object: fact-offer
-rules: [IDN-11, MEM-7, MEM-8, MEM-9]
+rules: [IDN-11, MEM-7, MEM-9]
 description: 'Allowed and forbidden transitions of the "fact offer" lifecycle, collected from the tables of spec/lifecycles/fact-offer.md.
   The implementation accepts a transition from the allowed list under the condition of its row (when); a pair from the forbidden
   list does not change the state, and the call that asks for it is rejected. The value null in from means "the object does
@@ -80,35 +80,35 @@ machines:
     to_note: recipient pending
     by: the core enqueues memory.pick.v1
     when: the successor exists or appeared before open_until
-    rules: [MEM-8]
+    rules: [MEM-7]
   - id: sm-for-03
     from: waiting
     to: pending
     to_note: recipient pending
     by: the core enqueues memory.pick.v1
     when: the successor exists or appeared before open_until
-    rules: [MEM-8]
+    rules: [MEM-7]
   - id: sm-for-04
     from: pending
     to: picked
     to_note: recipient picked
     by: P1 complete of the pick task
     when: take is not empty; each taken fact is rechecked against the recipient's rights
-    rules: [MEM-8]
+    rules: [MEM-7]
   - id: sm-for-05
     from: pending
     to: declined
     to_note: recipient declined
     by: P1 complete of the pick task
     when: take is empty
-    rules: [MEM-8]
+    rules: [MEM-7]
   - id: sm-for-06
     from: pending
     to: expired
     to_note: recipient expired
     by: the core
     when: the task failed after 3 retries
-    rules: [MEM-8]
+    rules: [MEM-7]
   - id: sm-for-07
     from: waiting
     to: expired
@@ -121,137 +121,137 @@ machines:
     from: null
     to: picked
     expect: rejected
-    rules: [MEM-7, MEM-8]
+    rules: [MEM-7]
     why: the object does not appear directly in the state picked
   - id: sm-for-x02
     from: null
     to: declined
     expect: rejected
-    rules: [MEM-7, MEM-8]
+    rules: [MEM-7]
     why: the object does not appear directly in the state declined
   - id: sm-for-x03
     from: null
     to: expired
     expect: rejected
-    rules: [MEM-7, MEM-8]
+    rules: [MEM-7]
     why: the object does not appear directly in the state expired
   - id: sm-for-x04
     from: waiting
     to: waiting
     expect: rejected
-    rules: [MEM-7, MEM-8]
+    rules: [MEM-7]
     why: the lifecycle table has no such transition
   - id: sm-for-x05
     from: waiting
     to: picked
     expect: rejected
-    rules: [MEM-7, MEM-8]
+    rules: [MEM-7]
     why: the lifecycle table has no such transition
   - id: sm-for-x06
     from: waiting
     to: declined
     expect: rejected
-    rules: [MEM-7, MEM-8]
+    rules: [MEM-7]
     why: the lifecycle table has no such transition
   - id: sm-for-x07
     from: pending
     to: waiting
     expect: rejected
-    rules: [MEM-7, MEM-8]
+    rules: [MEM-7]
     why: the lifecycle table has no such transition
   - id: sm-for-x08
     from: pending
     to: pending
     expect: rejected
-    rules: [MEM-8]
+    rules: [MEM-7]
     why: the lifecycle table has no such transition
   - id: sm-for-x09
     from: picked
     to: waiting
     expect: rejected
-    rules: [MEM-8]
+    rules: [MEM-7]
     why: 'picked is a terminal state: there are no transitions out of it'
   - id: sm-for-x10
     from: picked
     to: pending
     expect: rejected
-    rules: [MEM-8]
+    rules: [MEM-7]
     why: 'picked is a terminal state: there are no transitions out of it'
   - id: sm-for-x11
     from: picked
     to: picked
     expect: rejected
-    rules: [MEM-8]
+    rules: [MEM-7]
     why: 'picked is a terminal state: there are no transitions out of it'
   - id: sm-for-x12
     from: picked
     to: declined
     expect: rejected
-    rules: [MEM-8]
+    rules: [MEM-7]
     why: 'picked is a terminal state: there are no transitions out of it'
   - id: sm-for-x13
     from: picked
     to: expired
     expect: rejected
-    rules: [MEM-8]
+    rules: [MEM-7]
     why: 'picked is a terminal state: there are no transitions out of it'
   - id: sm-for-x14
     from: declined
     to: waiting
     expect: rejected
-    rules: [MEM-8]
+    rules: [MEM-7]
     why: 'declined is a terminal state: there are no transitions out of it'
   - id: sm-for-x15
     from: declined
     to: pending
     expect: rejected
-    rules: [MEM-8]
+    rules: [MEM-7]
     why: 'declined is a terminal state: there are no transitions out of it'
   - id: sm-for-x16
     from: declined
     to: picked
     expect: rejected
-    rules: [MEM-8]
+    rules: [MEM-7]
     why: 'declined is a terminal state: there are no transitions out of it'
   - id: sm-for-x17
     from: declined
     to: declined
     expect: rejected
-    rules: [MEM-8]
+    rules: [MEM-7]
     why: 'declined is a terminal state: there are no transitions out of it'
   - id: sm-for-x18
     from: declined
     to: expired
     expect: rejected
-    rules: [MEM-8]
+    rules: [MEM-7]
     why: 'declined is a terminal state: there are no transitions out of it'
   - id: sm-for-x19
     from: expired
     to: waiting
     expect: rejected
-    rules: [MEM-7, MEM-8]
+    rules: [MEM-7]
     why: 'expired is a terminal state: there are no transitions out of it'
   - id: sm-for-x20
     from: expired
     to: pending
     expect: rejected
-    rules: [MEM-7, MEM-8]
+    rules: [MEM-7]
     why: 'expired is a terminal state: there are no transitions out of it'
   - id: sm-for-x21
     from: expired
     to: picked
     expect: rejected
-    rules: [MEM-7, MEM-8]
+    rules: [MEM-7]
     why: 'expired is a terminal state: there are no transitions out of it'
   - id: sm-for-x22
     from: expired
     to: declined
     expect: rejected
-    rules: [MEM-7, MEM-8]
+    rules: [MEM-7]
     why: 'expired is a terminal state: there are no transitions out of it'
   - id: sm-for-x23
     from: expired
     to: expired
     expect: rejected
-    rules: [MEM-7, MEM-8]
+    rules: [MEM-7]
     why: 'expired is a terminal state: there are no transitions out of it'

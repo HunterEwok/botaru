@@ -25,7 +25,7 @@ Record fields: `id`, `tenant`, `task`, `role`, `profile`, `attempts_left` (1 or 
 | From | To | Trigger | Condition | Rules |
 |---|---|---|---|---|
 | (none) | `requested` | P3 `request_model_grant`; P1 `grant.request` for `job` | the role has the ladder `model_grants.ladder`, the tenant's `grant` line is greater than 0; one request per task; the profile is from the ladder ∩ the profiles allowed to the tenant, not the seat profile | MGR-17 |
-| `requested` | `denied` | the core at intake | no right to ask (`grant_not_eligible`: neither the initial input above the class threshold nor the type history by MGR-40); the evidence did not match `reason`; the price does not fit (`grant_over_budget`); the rate (`grant_rate_limited`: more than 3 requests per role in the tenant per day, MGR-40) | MGR-17, MGR-40 |
+| `requested` | `denied` | the core at intake | no right to ask (`grant_not_eligible`: neither the initial input above the class threshold nor the type history by MGR-17); the evidence did not match `reason`; the price does not fit (`grant_over_budget`); the rate (`grant_rate_limited`: more than 3 requests per role in the tenant per day, MGR-17) | MGR-17 |
 | `requested` | `screened` | the core at intake | all code checks passed | MGR-17 |
 | `screened` | `pending` | the core | always, right after the code checks; the request waits for the next batch of the seat holder or for a person's decision | MGR-18 |
 | `pending` | `approved` | P3 `grant_decide` of the seat holder (the `manager.grants.v1` task, in a batch once every 10 minutes, key `system:grants:<tenant>:<window>`, IDM-2); P2 `model_grant.issue` of a person with `model_grant.manage` | the epoch is current; at most 2 attempts, a period of at most 6 h, the `cap_eur` amount within the `grant` line and within the seat's daily grant ceiling `seat_grants_eur_day`; in distrust mode only the first step of the ladder | MGR-18, MGR-22 |
@@ -40,7 +40,7 @@ Record fields: `id`, `tenant`, `task`, `role`, `profile`, `attempts_left` (1 or 
 ## Invariants
 
 - A grant belongs to one task of one tenant; other tasks, the role and the worker's identity do not get it, and it does not get into the bot's track record.
-- The right to ask never depends on signals that the worker's own attempts produce: the type history is computed only by a run of `grant_eval_set` on the base model, or is set by a person's mark `grant_eligible: true` in the type manifest (MGR-40). The failure share of working attempts is only shown to the holder.
+- The right to ask never depends on signals that the worker's own attempts produce: the type history is computed only by a run of `grant_eval_set` on the base model, or is set by a person's mark `grant_eligible: true` in the type manifest (MGR-17). The failure share of working attempts is only shown to the holder.
 - A record of kind `grant` never gives the seat profile to a worker. The one and only path of a tenant task to the seat profile is a takeover by a person's card: a record of kind `takeover` for 1 attempt on the new task `system:takeover:<task>`, paid from the `takeover` line (MGR-21).
 - A grant does not change the tools, the tier, the rights and other budget lines. The code ceilings apply to any decision of the model or a person.
 - Before every call under a grant P4 reserves the worst case in the rest of `cap_eur` and in the `grant` line (GW-2). The output limit is set by `max_output_tokens` of the model profile (BUD-9).
@@ -53,4 +53,4 @@ Record fields: `id`, `tenant`, `task`, `role`, `profile`, `attempts_left` (1 or 
 | Version | What appears |
 |---|---|
 | v0.1 | only the reserved `granted` slot; no requests and no grants |
-| v0.2 | the whole cycle, the type history by MGR-40 |
+| v0.2 | the whole cycle, the type history by MGR-17 |

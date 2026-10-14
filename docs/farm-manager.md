@@ -102,9 +102,9 @@ The manager wakes up only on triggers created by code, a schedule or a person; i
 | data of T needs to be read | the core, from the `inspect` field of the class or from `inspect_request` of the decision role | `manager.inspect.v1` (purpose `inspect`) | `system:inspect:<basis>:<n>` | 1 through the `control` lane if a class 1 task needs the read, otherwise 3 | v0.1 |
 | human directive | P2 `manager.direct` or the `/manager` command in a direct message | `manager.directive.v1` | the P2 call key (IDM-1); for a channel command `system:activity:<channel>:<update id>` | 2: a direct request from a person, the type has `interactive: true` | v0.1 |
 | daily review | the core schedule in T | `manager.review.v1` | `system:daily:<tenant>:<day>` | 4 | v0.1 |
-| a new holder got a fact offer for the partition of T (MEM-7) | the core | `memory.pick.v1` (purpose `handover`, MEM-8) | `system:handover:<fact offer>` | 4 | v0.1 |
+| a new holder got a fact offer for the partition of T (MEM-7) | the core | `memory.pick.v1` (purpose `handover`, MEM-7) | `system:handover:<fact offer>` | 4 | v0.1 |
 | a forwarded bot escalation | the escalation loop | `manager.escalations.v1` | `system:escalation:<attempt>` | 3, with `urgency: high` 1 through the `control` lane | v0.2 |
-| waiting grant requests | the `grant` loop, in a batch every 10 minutes per tenant with a `pending` request, none for a tenant with `farm_manager.enabled: false` or a seat not `held` (MGR-43) | `manager.grants.v1` | `system:grants:<tenant>:<window>`, the window is the UTC start of the 10-minute interval | 3 | v0.2 |
+| waiting grant requests | the `grant` loop, in a batch every 10 minutes per tenant with a `pending` request, none for a tenant with `farm_manager.enabled: false` or a seat not `held` (MGR-18) | `manager.grants.v1` | `system:grants:<tenant>:<window>`, the window is the UTC start of the 10-minute interval | 3 | v0.2 |
 
 The classes follow DSP-5: class 1 is set only by the core `control` lane for urgent control work, class 2 only by a direct request from a person, and the other seat tasks that code enqueues go with class 3 or lower. The key of every task the core enqueues comes only from the closed list of IDM-2, so a trigger that fires twice yields one task.
 
@@ -393,7 +393,7 @@ From v0.2 a worker can ask for a stronger model for one task (D-18, D-21). Befor
 
 **Request** (MGR-17). The tool `request_model_grant` (a `job` worker through P1 `grant.request`) is present in an attempt only if the role has a ladder `model_grants.ladder` and the tenant's `grant` line is above 0. The fields are closed: `reason` (`output_schema_invalid_repeated`, `context_too_large`, `quality_gate_failed`, `tool_plan_failed`, `low_confidence_declared`), `evidence` (its own attempts of this task; code checks their reasons against `reason`), `requested_profile` (the role ladder ∩ the profiles allowed to the tenant, never the seat profile), `benefit` (`pass_schema`, `fit_context`, `pass_quality_gate`, `complete_tool_plan` and the declared confidence), `attempts` (1 or 2) and an untrusted `note` that the manager does not see. One request per task. The call answers only `{staged: true}`. The attempt ends without being spent (`awaiting_model_grant`), and the task waits with `model_grant_pending`.
 
-Code derives the **right to ask** only from signs that the model does not control: the task's initial input is above `grant.input_tokens_min` of the task type, or the type history (MGR-40). The initial input is the body, attachments and blocks that the core inserted on enqueue; tool output is not part of it, so an attempt that built up context by reading logs does not get the right, and the reason `context_too_large` is accepted only with an initial input above the threshold. At most 3 requests per day are accepted per role in a tenant; extra ones get `grant_rate_limited`, and the manager does not wake up. The type history is computed in one of two ways: by code, when the `EvalReports` entry of the type's fixed input set (`grant_eval_set` in git) run on the base model has `base_fail_share` not below `grant_limits.eval_fail_share_min` (0.3 by default), or by a person's mark `grant_eligible: true` in the type manifest. The failure share of the type's working attempts is only shown to the manager and gives no right. So a bot that fails the schema on purpose does not get the right to a grant: without the signs, code answers `grant_not_eligible`, and the manager does not wake up.
+Code derives the **right to ask** only from signs that the model does not control: the task's initial input is above `grant.input_tokens_min` of the task type, or the type history (MGR-17). The initial input is the body, attachments and blocks that the core inserted on enqueue; tool output is not part of it, so an attempt that built up context by reading logs does not get the right, and the reason `context_too_large` is accepted only with an initial input above the threshold. At most 3 requests per day are accepted per role in a tenant; extra ones get `grant_rate_limited`, and the manager does not wake up. The type history is computed in one of two ways: by code, when the `EvalReports` entry of the type's fixed input set (`grant_eval_set` in git) run on the base model has `base_fail_share` not below `grant_limits.eval_fail_share_min` (0.3 by default), or by a person's mark `grant_eligible: true` in the type manifest. The failure share of the type's working attempts is only shown to the manager and gives no right. So a bot that fails the schema on purpose does not get the right to a grant: without the signs, code answers `grant_not_eligible`, and the manager does not wake up.
 
 **Decision** (MGR-18). The seat holder handles waiting requests with the tool `grant_decide` in a batch every 10 minutes, only for its own tenant: approve with a profile, a number of attempts, an amount `cap_eur` and a deadline, or refuse with a reason from the list. A person with `model_grant.manage` can also issue or revoke a grant through P2 `model_grant.issue` and `model_grant.revoke` within the same line. Code checks the ceilings on every decision: at most 2 attempts, a deadline of at most 6 h, an amount within the tenant's `grant` line and the seat's daily grant ceiling (`seat_grants_eur_day`). No decision within 15 minutes: refusal `grant_expired_unanswered`, and the task continues on the base model.
 
@@ -450,8 +450,8 @@ spec:
       seat_grants_eur_day: 20
       decide_debounce: 10m
       grant_wait_max: 15m
-      requests_per_role_day: 3  # grant requests per role in a tenant per day (MGR-40)
-      eval_fail_share_min: 0.3  # the type history sign from grant_eval_set (MGR-40)
+      requests_per_role_day: 3  # grant requests per role in a tenant per day (MGR-17)
+      eval_fail_share_min: 0.3  # the type history sign from grant_eval_set (MGR-17)
     breaker: {consecutive_denials: 3}
 ```
 
@@ -527,7 +527,7 @@ The seat has no notes; memory is core records and verified facts (D-35, MGR-27).
 
 - The space `(T, bot, <holder identity>)` is separate in each tenant. It holds only `record` and facts (MEM-6). The reader role has no memory at all.
 - Only a decision attempt in T offers facts. Decision attempts and lens reviews of the manager in T read them, and only facts with `untrusted_origin: false`.
-- On a change of holder, the facts of each partition are offered to the new holder, and it selects them with the task `memory.pick.v1` in T with the key `system:handover:<fact offer>` (MEM-7, MEM-8, IDM-2). The rest is sealed for the seal period and erased.
+- On a change of holder, the facts of each partition are offered to the new holder, and it selects them with the task `memory.pick.v1` in T with the key `system:handover:<fact offer>` (MEM-7, IDM-2). The rest is sealed for the seal period and erased.
 - Nothing moves between tenants. The service record in `farm` is only numbers and codes, and the model does not see it.
 
 ## Money, summary and daily review
@@ -568,13 +568,13 @@ From v0.3 the manager is no longer stopped by an incident it could have prevente
 
 ### A preventable incident and restricted mode
 
-From v0.3 the seat has only the stop reasons `human` and `no_control`; the core never adds `incident` (GOV-47). An incident class may set `manager_accountable: true` (MGR-55), and such a class builds its alarm only from code series under the same conditions as GOV-28 (GOV-48); in the initial catalog only `disk_full` has it. A new incident of such a class is preventable when the quota and visible growth conditions hold, as described above for v0.2: everyone who writes to the disk has a quota and the sum of the quotas is below the alarm threshold (MGR-44), and the disk grew in the code series for the whole `prevent_window` while the same holder was responsible for the seat (MGR-45).
+From v0.3 the seat has only the stop reasons `human` and `no_control`; the core never adds `incident` (GOV-47). An incident class may set `manager_accountable: true` (MGR-55), and such a class builds its alarm only from code series under the same conditions as GOV-28 (GOV-48); in the initial catalog only `disk_full` has it. A new incident of such a class is preventable when the quota and visible growth conditions hold, as described above for v0.2: everyone who writes to the disk has a quota and the sum of the quotas is below the alarm threshold, and the disk grew in the code series for the whole `prevent_window` while the same holder was responsible for the seat (MGR-45).
 
 When the incident is preventable, in the same transaction:
 
 - the incident record gets `manager_preventable`, otherwise it keeps the reason code why it is not;
 - the alarm `alarm.manager.preventable` with severity `page` goes through the monitoring system and wakes a person;
-- the farm operators get the notice `manager_preventable` without buttons (MGR-46): the class, number, tenant, time and the reason code, with ready commands to lift the restriction, assign a new holder or vacate the seat; it repeats after 24 h, 72 h and then weekly until an operator marks it read or the restriction ends;
+- the farm operators get the notice `manager_preventable` without buttons (GOV-47): the class, number, tenant, time and the reason code, with ready commands to lift the restriction, assign a new holder or vacate the seat; it repeats after 24 h, 72 h and then weekly until an operator marks it read or the restriction ends;
 - the seat goes into restricted mode in that tenant (MGR-47).
 
 In restricted mode the decision attempts of the seat in the tenant only read and send notices: control operations, service control, monitoring scripts, takeover requests, grants and link hints are refused with `manager_restricted`. A new sev1 incident in that tenant lifts the restriction for the attempts based on it. Only an operator lifts the restriction:
@@ -623,8 +623,8 @@ spec:
 | Version | What appears |
 |---|---|
 | v0.1 | After the core and the first bot (D-71): the seat `farm-manager` with an epoch and a stop reason set, appointment only by a person, the farm without a manager (MGR-1, MGR-2). Seat tasks in tenants, decision and reader roles, findings, tenant consent, the read log, files of people only by incident subject (MGR-3, MGR-24-MGR-28, MGR-30). The incident catalog with the class "low space for the database" and the incident lifecycle (MGR-7, MGR-8, MGR-38); incidents from monitoring system problems and the `monitor` plugin for the reader role (MON-5, MON-6). Control operations, excluded and protected targets, role quarter, preemption, pinning, human directives, distrust mode (MGR-4, MGR-9-MGR-12, MGR-22, MGR-26, MGR-32, MGR-37). The immediate report as one message per incident, the notice about a change of holder, limits, safeguard, kill switch, revert, no self-modification (MGR-13-MGR-16, MGR-31, MGR-39). Stop on incident with the quota and visible growth conditions, the card with commands and its repeats (MGR-33-MGR-36). Money from the tenant's `manager` line with the lint of its daily limit, pause by tenant, daily summary and review (MGR-20, MGR-14, MGR-41). Service actions and monitoring scripts within the class, the consent and the seat (MON-8, MON-10). Tenant opt-out of the manager entirely, of its lens and of the review; `incident_review` is off in the production tenant template (MGR-42, D-77). Incident dismissal only with a reason code and "Details" (MGR-8, D-79). |
-| v0.2 | Bot escalations through the commission lens (MGR-5, MGR-6). Grant of a stronger model and the type history from a fixed input set or a person's mark (MGR-17, MGR-18, MGR-40). Takeover by a person's card (MGR-21). The `mgr-inj-*` suite check before a new holder works (MGR-23). Manager notes on monitoring system problems (MON-7). |
-| v0.3 | No stop on incident: a preventable incident pages people and restricts the manager (GOV-47, GOV-48, MGR-44, MGR-45, MGR-46, MGR-47); incident class fields `manager_accountable`, `area`, `problem_codes` (MGR-55); takeover on the seat profile with a monthly cap (MGR-48); the monthly manager line, the fallback profile and the line lint (MGR-49, MGR-56); notices from closed fields, analysis after an incident, proposals, the holder report (MGR-50, MGR-51, MGR-52, MGR-53, MGR-54). |
+| v0.2 | Bot escalations through the commission lens (MGR-5, MGR-6). Grant of a stronger model and the type history from a fixed input set or a person's mark (MGR-17, MGR-18). Takeover by a person's card (MGR-21). The `mgr-inj-*` suite check before a new holder works (MGR-23). Manager notes on monitoring system problems (MON-7). |
+| v0.3 | No stop on incident: a preventable incident pages people and restricts the manager (GOV-47, GOV-48, MGR-45, MGR-47); incident class fields `manager_accountable`, `area`, `problem_codes` (MGR-55); takeover on the seat profile with a monthly cap (MGR-48); the monthly manager line, the fallback profile and the line lint (MGR-49, MGR-56); notices from closed fields, analysis after an incident, proposals, the holder report (MGR-50, MGR-51, MGR-52, MGR-53, MGR-54). |
 
 ## Why it works this way
 
@@ -649,7 +649,7 @@ Generated from the registry `conformance/requirements.yaml`; the full text of ev
 |---|---|---|---|
 | [GOV-22](../conformance/rules.md#GOV-22) | Stopping the manager seat on an incident | v0.1 until v0.2 | yes |
 | [GOV-28](../conformance/rules.md#GOV-28) | Only code builds the alarm of a stopping class | v0.1 until v0.2 | yes |
-| [GOV-47](../conformance/rules.md#GOV-47) | A preventable incident does not stop the manager | v0.3 | yes |
+| [GOV-47](../conformance/rules.md#GOV-47) | A preventable incident does not stop the manager, and the operators get a notice | v0.3 | yes |
 | [GOV-48](../conformance/rules.md#GOV-48) | Only code builds the alarm of a manager-accountable class | v0.3 | yes |
 | [MGR-1](../conformance/rules.md#MGR-1) | One seat, one holder, one epoch | v0.1 | yes |
 | [MGR-2](../conformance/rules.md#MGR-2) | A farm without a manager | v0.1 | yes |
@@ -662,13 +662,12 @@ Generated from the registry `conformance/requirements.yaml`; the full text of ev
 | [MGR-9](../conformance/rules.md#MGR-9) | Control operations and their targets | v0.1 | yes |
 | [MGR-10](../conformance/rules.md#MGR-10) | What control is not | v0.1 | yes |
 | [MGR-11](../conformance/rules.md#MGR-11) | Preemption | v0.1 | yes |
-| [MGR-12](../conformance/rules.md#MGR-12) | Task pinning | v0.1 | yes |
 | [MGR-13](../conformance/rules.md#MGR-13) | Immediate report | v0.1 | yes |
 | [MGR-14](../conformance/rules.md#MGR-14) | Limits and safeguard | v0.1 | yes |
 | [MGR-15](../conformance/rules.md#MGR-15) | Kill switch and revert | v0.1 | yes |
 | [MGR-16](../conformance/rules.md#MGR-16) | No self-modification | v0.1 | yes |
-| [MGR-17](../conformance/rules.md#MGR-17) | Model grant request | v0.2 | yes |
-| [MGR-18](../conformance/rules.md#MGR-18) | Grant and the model gateway | v0.2 | yes |
+| [MGR-17](../conformance/rules.md#MGR-17) | Model grant request and signs not from its own attempts | v0.2 | yes |
+| [MGR-18](../conformance/rules.md#MGR-18) | Grant, the batch of grant requests and the model gateway | v0.2 | yes |
 | [MGR-20](../conformance/rules.md#MGR-20) | Manager money and turning off reading | v0.1 | yes |
 | [MGR-21](../conformance/rules.md#MGR-21) | Takeover | v0.2 until v0.2 | yes |
 | [MGR-22](../conformance/rules.md#MGR-22) | Distrust mode | v0.1 | yes |
@@ -688,13 +687,9 @@ Generated from the registry `conformance/requirements.yaml`; the full text of ev
 | [MGR-37](../conformance/rules.md#MGR-37) | A role quarter rounded down | v0.1 | yes |
 | [MGR-38](../conformance/rules.md#MGR-38) | The "low space for the database" class | v0.1 | no |
 | [MGR-39](../conformance/rules.md#MGR-39) | One updatable message per incident | v0.1 | no |
-| [MGR-40](../conformance/rules.md#MGR-40) | Type history not from its own attempts | v0.2 | no |
 | [MGR-41](../conformance/rules.md#MGR-41) | Daily summary and review | v0.1 | no |
 | [MGR-42](../conformance/rules.md#MGR-42) | Tenant opt-out of the farm manager | v0.1 | yes |
-| [MGR-43](../conformance/rules.md#MGR-43) | The batch of grant requests | v0.2 | no |
-| [MGR-44](../conformance/rules.md#MGR-44) | A disk incident is preventable only with quotas | v0.3 | yes |
-| [MGR-45](../conformance/rules.md#MGR-45) | A disk incident is preventable only after visible growth | v0.3 | yes |
-| [MGR-46](../conformance/rules.md#MGR-46) | The notice of a preventable incident | v0.3 | no |
+| [MGR-45](../conformance/rules.md#MGR-45) | A disk incident is preventable only with quotas and visible growth | v0.3 | yes |
 | [MGR-47](../conformance/rules.md#MGR-47) | Restricted mode after a preventable incident | v0.3 | yes |
 | [MGR-48](../conformance/rules.md#MGR-48) | Takeover from v0.3 | v0.3 | yes |
 | [MGR-49](../conformance/rules.md#MGR-49) | The manager's monthly line in each tenant | v0.3 | yes |

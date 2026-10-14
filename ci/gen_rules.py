@@ -49,7 +49,8 @@ def link(frm, to):
 
 def meta(r):
     since = f"since {r['version']}" + (f", until {r['until']}" if r.get('until') else '')
-    bits = [since, 'non-waivable' if r.get('waivable') is False else 'waivable', f"profile {r.get('profile')}"]
+    bits = [f"serves [{r.get('goal')}](../docs/goals.md)", since, 'non-waivable' if r.get('waivable') is False else 'waivable',
+            f"profile {r.get('profile')}"]
     if r.get('level') == 'SHOULD':
         bits.append('recommendation')
     bits.append('check: ' + ', '.join(r.get('check') or []))
@@ -62,6 +63,7 @@ L = ['# Skeleton rules', '',
      'This file is generated from the registry `conformance/requirements.yaml`. Edit the registry, then rebuild this file.', '',
      'Every rule is written once in the registry. The documents in `docs/` explain how a part of the farm works and refer to rules by number; the normative text of a rule is here.', '',
      'The line under a rule heading:', '',
+     '- "serves": the goal (G1 to G6) or constraint (C1 to C10) of the farm the rule serves most directly, see [docs/goals.md](../docs/goals.md) (D-114).',
      '- "since v0.1": the skeleton version from which the conformance suite checks the rule; "until v0.2": the last version that checks it, and the rules named under "replaced by" take over from the next version. An implementation is checked by the rules of the version it claims (MAN-8).',
      '- "non-waivable": an implementation cannot put the rule on its list of expected failures. "Waivable": it can, with a recorded reason.',
      '- "profile": the part of the skeleton an implementation claims conformance to separately (`core`, `messaging`, `campaign`, `insights`, `manager`, `governance`, `monitor`, `knowledge`, `ingress`, `connections`, `debug`, `sandbox`); the `core` profile is mandatory, see [docs/quality.md](../docs/quality.md).',
@@ -108,10 +110,14 @@ OUTPUT['conformance/retired.md'] = '\n'.join(R) + '\n'
 
 D = ['# Deferred rules', '',
      'This file is generated from the registry `conformance/requirements.yaml`.', '',
-     'A deferred rule is not part of any skeleton version: no version checks it, and no document, schema or '
-     'registry may refer to it. Its row keeps the full text so that the rule can come back unchanged when the '
+     'A deferred rule is not part of any skeleton version: no version checks it. While its mechanism is still in '
+     'the skeleton ("Mechanism removed: no"), documents, schemas and registries may still name it; once the '
+     'mechanism is removed, nothing outside this file, the decision log and the changelog may refer to it. '
+     'Its row keeps the full text so that the rule can come back unchanged when the '
      'condition in "Returns when" holds; it then becomes active in the version current at that time. '
-     '"Mechanism removed" says whether the code and the skeleton were cleaned of what the rule needed.', '',
+     '"Mechanism removed" says whether the code and the skeleton were cleaned of what the rule needed. '
+     'An implementation does not offer the mechanism of a deferred rule even where its fields are still in the '
+     'schemas: without its rule the mechanism has none of its conditions (D-114).', '',
      f'Deferred rules: {len(dfr)}.', '',
      '| Number | Title | Deferred | Why | Returns when | Mechanism removed |', '|---|---|---|---|---|---|']
 for r in sorted(dfr, key=lambda r: id_key(r['id'])):
@@ -120,7 +126,8 @@ for r in sorted(dfr, key=lambda r: id_key(r['id'])):
 D.append('')
 for r in sorted(dfr, key=lambda r: id_key(r['id'])):
     D += [f'<a id="{r["id"]}"></a>', f"## {r['id']}. {r['title']}", '',
-          f"was {r.get('version')} · profile {r.get('profile')} · check: {', '.join(r.get('check') or [])}", '',
+          f"serves [{r.get('goal')}](../docs/goals.md) · was {r.get('version')} · profile {r.get('profile')} · "
+          f"check: {', '.join(r.get('check') or [])}", '',
           ' '.join(str(r['text']).split()), '']
 OUTPUT['conformance/deferred.md'] = '\n'.join(D).rstrip() + '\n'
 

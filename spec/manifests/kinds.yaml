@@ -154,4 +154,4 @@ entries:
     scope: global
     path: evals/reports/index.yaml
     name_format: name
-    rules: [MAN-1, PRV-3, TRN-6, MGR-23, MGR-40]
+    rules: [MAN-1, PRV-3, TRN-6, MGR-23, MGR-17]

@@ -114,7 +114,6 @@ checks:
   method: adapter
   rules:
   - DLV-5
-  - IDM-5
   version: v0.1
   section: Tests without a model
   source: docs/quality.md:291
@@ -124,7 +123,7 @@ checks:
 - id: adapter:channel/update-twice
   method: adapter
   rules:
-  - IDM-5
+  - DLV-5
   version: v0.1
   section: Tests without a model
   source: docs/quality.md:297

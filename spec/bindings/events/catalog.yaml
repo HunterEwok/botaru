@@ -80,7 +80,7 @@ entries:
     data_schema: spec/model/event-data/alarm.schema.json
     producer: [core]
     severity: warn
-    rules: [OBS-12, OBS-6]
+    rules: [BUD-10, OBS-6]
   - id: alarm.spend.estimate_drift.v1
     since: v0.1
     data_schema: spec/model/event-data/alarm.schema.json
@@ -196,17 +196,17 @@ entries:
     since: v0.1
     data_schema: spec/model/event-data/hold-event.schema.json
     producer: [core]
-    rules: [HLD-5]
+    rules: [HLD-1]
   - id: hold.released.v1
     since: v0.1
     data_schema: spec/model/event-data/hold-event.schema.json
     producer: [core]
-    rules: [HLD-5]
+    rules: [HLD-1]
   - id: hold.expired.v1
     since: v0.1
     data_schema: spec/model/event-data/hold-event.schema.json
     producer: [core]
-    rules: [HLD-5]
+    rules: [HLD-1]
   - id: worker.stale.v1
     since: v0.1
     data_schema: spec/model/event-data/worker-stale.schema.json

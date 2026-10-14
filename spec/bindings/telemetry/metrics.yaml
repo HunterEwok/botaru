@@ -42,4 +42,4 @@ entries:
   - {id: botaru.loop.last_tick_age_s, since: v0.2, instrument: gauge, unit: s, labels: [loop],
      group: liveness, meaning: age of the last tick of a background loop, rules: [OBS-1, OBS-4, OBS-13]}
   - {id: botaru.hold.active, since: v0.2, instrument: gauge, unit: '{hold}', labels: [tenant],
-     group: holds, meaning: active holds, rules: [OBS-1, HLD-5, OBS-13]}
+     group: holds, meaning: active holds, rules: [OBS-1, HLD-1, OBS-13]}

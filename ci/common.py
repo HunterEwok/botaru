@@ -178,6 +178,12 @@ def id_key(rid):
     return (m.group(1), int(m.group(2)), m.group(3)) if m else ('~', 0, rid)
 
 
+def known_goals():
+    """Goal and constraint ids (G1, C3) from the tables of docs/goals.md (D-114)."""
+    p = os.path.join(ROOT, 'docs', 'goals.md')
+    return set(re.findall(r'^\| ([GC]\d+) \|', read(p), re.M)) if os.path.exists(p) else set()
+
+
 def known_decisions():
     text = read(os.path.join(ROOT, 'docs', 'decisions.md'))
     return {int(n) for n in re.findall(r'^\| D-(\d+) \|', text, re.M)}

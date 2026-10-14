@@ -38,7 +38,7 @@ The body and the result are content: they lie in a deletable store with the expi
 
 | Source | Operation | Initiator | Idempotency key |
 |---|---|---|---|
-| a person in a channel | P1 `submit_activity` from the channel | the person, by verified identity | `system:activity:<channel>:<update id>` (IDM-5) |
+| a person in a channel | P1 `submit_activity` from the channel | the person, by verified identity | `system:activity:<channel>:<update id>` (DLV-5) |
 | external program (D-47) | P1 `enqueue` with its own key | the program | the program's own key |
 | `job` worker | P1 `enqueue` with the attempt token | the parent's initiator | the worker's own key |
 | model | P3 `enqueue_child` | the parent's initiator | `system:child:<parent>:<body hash>` |
@@ -93,15 +93,15 @@ Keys with the prefix `system:` are set only by the core and only from a closed l
 | `system:incident:<incident>:close` | the closing pass of an incident that moved to `resolved` | v0.1 |
 | `system:inspect:<basis>:<n>` | a data read by the manager seat (`manager.inspect.v1`) from the `inspect` field of an incident class or from `inspect_request` of the decision role | v0.1 |
 | `system:daily:<tenant>:<day>` | the daily review of the manager seat, the task `manager.review.v1` on the core schedule (MGR-41) | v0.1 |
-| `system:handover:<fact offer>` | fact selection by the successor, the task `memory.pick.v1` with the purpose `handover` (MEM-8) | v0.1 |
+| `system:handover:<fact offer>` | fact selection by the successor, the task `memory.pick.v1` with the purpose `handover` (MEM-7) | v0.1 |
 | `system:ingress:<source>:<delivery id>` | an external event (ING-3): from v0.1 for the monitoring adapter, from v0.2 for source channels | v0.1 |
 | `system:escalation:<attempt>`, `system:takeover:<task>` | an escalation to the manager, a takeover | v0.2 |
-| `system:grants:<tenant>:<window>` | a batch of waiting model grant requests, the task `manager.grants.v1` every 10 minutes; the window is the UTC start of the 10-minute interval (MGR-43) | v0.2 |
+| `system:grants:<tenant>:<window>` | a batch of waiting model grant requests, the task `manager.grants.v1` every 10 minutes; the window is the UTC start of the 10-minute interval (MGR-18) | v0.2 |
 | `system:governance:<case>:<round>:<bot>` | a bot's ballot on a case: a voter has one task per round | v0.2 |
 | `system:review:<proposal>:<lens>:shadow` | a task of a lens's shadow reviewer; it does not merge with the seat's task (COM-10) | v0.2 |
 | `system:necessity:<escalation>` | review of an escalation to the manager by the necessity lens in the source tenant (COM-13) | v0.2 |
 
-The core computes the key of a channel incoming message itself from (channel, update id), so one update submitted twice gives one task (IDM-5); the channel moves the external system's offset only after the core answers (DLV-5).
+The core computes the key of a channel incoming message itself from (channel, update id), so one update submitted twice gives one task; the channel moves the external system's offset only after the core answers (DLV-5).
 
 Example. The external program `report-client` of tenant `demo` enqueues a nightly report with the key `nightly-2026-10-05`. The answer is lost in the network, the program repeats the request with the same body and gets the same `TaskRef` with `existing: true`. Had it sent a different body with the same key, the answer would have been `idempotency_conflict` without an id. Half a year later the task body has been deleted by expiry, and a repeat of the same key gets `gone`, not a new task.
 
@@ -211,7 +211,7 @@ The same registry holds the codes of other parts of the farm. Each part describe
 | port answers to a call; records do not change | `fenced` (the holder stops working), `not_ready` (retry after `retry_after_s`), `not_found` (one answer for foreign and nonexistent), `type_not_allowed` (an event outside the type's `events`, P1 `emit`), `gone`, `handle_invalid`, `forbidden`, `already_terminal`, `version_unsupported` | FEN-2, FEN-4, OBS-8, PRM-9, IDM-4, RET-3, LCY-7 |
 | permissions and human decisions (`docs/permissions.md`) | `rights_revoked`, `person_inactive`, `egress_denied`, `self_approve`, `privileged_group`, `already_decided` (a different decision or a different person on an already decided subject, IDM-3), `expired`, the `needs` field in a permission refusal, `service_rate_limited` (the card ceiling `attention.cards_per_tenant_hour`), `forbidden` (the initiator lacks `service.control:<service>` or `monitor.script_run`, D-73), `operator_only`; from v0.2 `details_not_opened`; approval outcomes `exec_unknown`, `exec_failed(held)`, `exec_failed(no_executor)`, `canceled(held)`, `canceled(ref_invalid)`, `canceled(restored)`, `canceled(initiator)` (cancellation by the initiator through P2 `task.cancel`) | PRM-3, PRM-13, PRM-14, APR-2, APR-4, APR-6, APR-7, APR-9, APR-14, APR-18, HLD-3, IDM-3, MAN-10, RET-6 |
 | pool and dispatcher (`docs/coordination.md`, profile `core`) | `group_invalid`, `waiting_reason` from a closed list, `activity.ignored(not_subject)` (an incoming message in a group from a non-principal), the lint `assistant_in_default_types` | DSP-3, DSP-4, DSP-7, DSP-10, MSG-17 |
-| bot messages and campaigns (`docs/messaging.md`, `docs/coordination.md`) | `address_invalid`, `data_class_exceeded`, `delivery_exhausted`, `inbox_full`, `sender_quota`, `hops_exceeded`, `msg_type_not_allowed` (a message type outside the role's `messages.send`), `note_not_allowed` (a note on a type without the right to one), `data_schema_invalid`, `discarded(held)`, the lint `summary_fields_required`; `service_rate_limited` and `wake.skipped(budget_exhausted | service_rate_limited)` (the wake-up ceilings `wake_day_eur`, `wakes_per_day`); `resource_busy`, `estimate_exceeded`; `discarded(recipient_gone)` (the recipient of the inbox entry no longer exists); for a campaign `campaign_frozen`, `campaign_policy_exceeded`, `campaign_untrusted_limit`, the pause reasons `gate` and `human` (the "Pause" button), the stop reason `threshold_exceeded` | MSG-3, MSG-4, MSG-6, MSG-9, MSG-10, MSG-11, MSG-13, MSG-15, REP-11, HLD-3, ORC-1, ORC-4, ORC-5, ORC-12, ORC-14, BUD-12 |
+| bot messages and campaigns (`docs/messaging.md`, `docs/coordination.md`) | `address_invalid`, `data_class_exceeded`, `delivery_exhausted`, `inbox_full`, `sender_quota`, `hops_exceeded`, `msg_type_not_allowed` (a message type outside the role's `messages.send`), `note_not_allowed` (a note on a type without the right to one), `data_schema_invalid`, `discarded(held)`, the lint `summary_fields_required`; `service_rate_limited` and `wake.skipped(budget_exhausted | service_rate_limited)` (the wake-up ceilings `wake_day_eur`, `wakes_per_day`); `resource_busy`, `estimate_exceeded`; `discarded(recipient_gone)` (the recipient of the inbox entry no longer exists); for a campaign `campaign_frozen`, `campaign_policy_exceeded`, `campaign_untrusted_limit`, the pause reasons `gate` and `human` (the "Pause" button), the stop reason `threshold_exceeded` | MSG-3, MSG-4, MSG-6, MSG-9, MSG-15, MSG-11, MSG-13, REP-11, HLD-3, ORC-1, ORC-4, ORC-5, ORC-12, ORC-14, BUD-12 |
 | operations (`docs/operations.md`) | `over_capacity`, `held`, `restored`, `provider_spend_cap`, `plugin_unavailable` (v0.1, DLV-16), `draining` and `unknown` (`health` values), `runaway_spend` (a hold by `hour_eur`), `contain_auto` (a hold of an incident's first measure and of a maintenance window, removed by the tenant admin or an operator), `pause_action` (a maintenance window without `maintenance_hold`), `monitor_export_stalled`, the event `schedule.skipped` with the reason `waiting`; from v0.2 `schedule_time_invalid` (refusal of a proposal after which the backup schedule would lose a slot); hold reasons from `holds.yaml` (`secret_in_outbound`, from v0.2 `suspended`; the code `spend_rate` is retired, D-107); erasure request reasons `forget`, `offboarding`, `bot_retired`, `tenant_delete`, `worker_revoke`, `subject_request`, `manual` | CAP-1, CAP-2, HLD-1, HLD-3, HLD-6, HLD-7, LCY-1, OBS-10, RET-6, RET-7, TIM-3, TIM-5 |
 | models and money (`docs/models-and-money.md`) | `provider_unavailable`, `provider_rate_limited`, `provider_config`, `provider_quota` (table above), `budget_exhausted` | GW-10, GW-11, GW-12, GW-13, CAP-2, BUD-1 |
 | bots, memory and commission (`docs/bots.md`, `docs/commission.md`) | `rank_exceeded`, `memory_untrusted`, the notice `principal_left`, `fact_insufficient`, `fact_mismatch`, `stale`, `seat_changed`, `veto_lenses_same_family`, cancellation of an incident attribution `incident_dismissed`; from v0.2 the marks `defaulted_majority` and `reopened_after_wrong_leaver`, `manager_absent`, `not_eligible`, `candidate_ineligible`, `governance_budget`, `voters_removed`, `commission_locked` | GOV-3, GOV-13, MEM-3, MEM-6, IDN-10, IDN-13, GOV-12, GOV-14, GOV-15, GOV-19, GOV-34, GOV-35 |
@@ -397,13 +397,12 @@ Generated from the registry `conformance/requirements.yaml`; the full text of ev
 | [CNT-3](../conformance/rules.md#CNT-3) | Inheritance for a continuation | v0.1 | yes |
 | [CNT-4](../conformance/rules.md#CNT-4) | An attempt never waits | v0.1 | yes |
 | [CNT-5](../conformance/rules.md#CNT-5) | A person's answer is linked by a reply | v0.1 | yes |
-| [CNT-6](../conformance/rules.md#CNT-6) | Waiting for an event only from the type | v0.2 | yes |
 | [CNT-7](../conformance/rules.md#CNT-7) | An action task lives together with its write call | v0.1 | yes |
 | [DLV-1](../conformance/rules.md#DLV-1) | At least once, no silent losses | v0.1 | no |
 | [DLV-2](../conformance/rules.md#DLV-2) | A transition and its consequences in one transaction | v0.1 | no |
 | [DLV-3](../conformance/rules.md#DLV-3) | A delivery failure does not touch the task | v0.1 | no |
 | [DLV-4](../conformance/rules.md#DLV-4) | Dead work and redrive | v0.1 | no |
-| [DLV-5](../conformance/rules.md#DLV-5) | The channel offset moves after the core answers | v0.1 | no |
+| [DLV-5](../conformance/rules.md#DLV-5) | One channel update gives one task, and the offset moves after the core answers | v0.1 | no |
 | [DLV-6](../conformance/rules.md#DLV-6) | The delivery target comes only from a closed list | v0.1 | yes |
 | [DLV-7](../conformance/rules.md#DLV-7) | A group chat only of admitted members | v0.1 | yes |
 | [DLV-9](../conformance/rules.md#DLV-9) | Code texts from the message catalog by language | v0.1 | no |
@@ -414,7 +413,6 @@ Generated from the registry `conformance/requirements.yaml`; the full text of ev
 | [DLV-14](../conformance/rules.md#DLV-14) | Farm records do not assess a person | v0.1 | yes |
 | [DLV-15](../conformance/rules.md#DLV-15) | A group chat gets only a summary | v0.1 | yes |
 | [DLV-16](../conformance/rules.md#DLV-16) | A tool call does not wait for an executor beyond its deadline | v0.1 | yes |
-| [DLV-17](../conformance/rules.md#DLV-17) | Outgoing webhook sink | v0.2 | no |
 | [DLV-18](../conformance/rules.md#DLV-18) | Locale order and the answer language | v0.2 | no |
 | [FEN-1](../conformance/rules.md#FEN-1) | A lease with a growing number and a token | v0.1 | no |
 | [FEN-2](../conformance/rules.md#FEN-2) | A stale token gets fenced without writes | v0.1 | yes |
@@ -427,6 +425,5 @@ Generated from the registry `conformance/requirements.yaml`; the full text of ev
 | [IDM-2](../conformance/rules.md#IDM-2) | A closed list of core keys | v0.1 | no |
 | [IDM-3](../conformance/rules.md#IDM-3) | A repeat of holder operations gives the same answer | v0.1 | no |
 | [IDM-4](../conformance/rules.md#IDM-4) | An event is unique by source and id, which the core sets | v0.1 | no |
-| [IDM-5](../conformance/rules.md#IDM-5) | One channel update gives one task | v0.1 | no |
 | [OUT-1](../conformance/rules.md#OUT-1) | Result fields read by code are of closed kinds | v0.1 | yes |
 | [OUT-2](../conformance/rules.md#OUT-2) | Provider constrained decoding is only a hint | v0.2 | no |

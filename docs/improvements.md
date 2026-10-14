@@ -382,7 +382,7 @@ After "Accept" the executor gets a card with the description and a deadline. The
 
 Evidence is at most 10 references only to objects of its own tenant that the author could read (TEN-7, PRM-9, OBV-3). The core itself rereads the cited values at creation and once more before showing to people (PRP-2). A mismatch above the series tolerance at creation gives the refusal `rejected(evidence_mismatch)`, and before showing it removes the item from the digest into `parked(evidence_drift)`. People see the core's numbers, not the bot's numbers.
 
-A bot whose attempts themselves produce the numbers could create a problem and then propose to "fix" it. So for each evidence series the core at creation computes `self_influence`: the share of points produced by the attempts of the author bot (`author_share`; while bots have no numbers, of its worker), and the share of points of its role (`role_share`) (PRP-15). With `author_share` of at least 0.3 the people's card and the reviewers' input carry the mark `self_evidence` without the author's identity. The change trial also computes the outcome three times: over all points, without the points of the author bot and without the points of all bots of its role, so that two bots of one role cannot "worsen before" and "improve after" together (PRP-22).
+A bot whose attempts themselves produce the numbers could create a problem and then propose to "fix" it. So for each evidence series the core at creation computes `self_influence`: the share of points produced by the attempts of the author bot (`author_share`; while bots have no numbers, of its worker), and the share of points of its role (`role_share`) (PRP-22). With `author_share` of at least 0.3 the people's card and the reviewers' input carry the mark `self_evidence` without the author's identity. The change trial also computes the outcome three times: over all points, without the points of the author bot and without the points of all bots of its role, so that two bots of one role cannot "worsen before" and "improve after" together (PRP-22).
 
 ### Author, duplicates and limits
 
@@ -755,7 +755,7 @@ A score of 3 or more with a probability of a bad outcome of 0.5 or more is a con
 
 | Version | What appears |
 |---|---|
-| v0.1 | The improvement cycle comes in the work order right after the core of the `core` profile and the first bot `examples/hello-bot/` (D-71, D-80). Observation series, points only from code, closed reading, rollups and retention (OBV-1, OBV-2, OBV-3, OBV-4); core series and the registry with the `outcome` block (OBV-5, OBV-6); the event `run.finished.v1` (OBV-7). `insight` analysis: type, permissions, creation of proposals, rate and merge window (INS-1, INS-2, INS-3, INS-4); the "loop disabled" signal (INS-6). A proposal with the kinds `none`, `action_request`, `manifest_change`, `human_change`: record and schema, rereading of evidence, allowlist, "runs nothing", duplicates and limits, transition table, untrusted text (PRP-1, PRP-2, PRP-3, PRP-4, PRP-5, PRP-6, PRP-7); own folder, `proposable`, safe directions (PRP-8, PRP-10, PRP-11); change by people's hands, author bot, self influence (PRP-13, PRP-14, PRP-15); executor and deadline, verified link, reverse edit, trial record (PRP-18, PRP-19, PRP-20, PRP-21). Commission on roles of the `reviewer` profile: independence, input and output, verdict by code, checks, money by `tree_budget_eur`, manifest with thresholds and weights, the shadow field, two lenses for kind `none` (COM-2, COM-3, COM-4, COM-5, COM-6, COM-8, COM-9, COM-14). Digest, address and people's decision (DIG-1, DIG-2, DIG-3). The change kind `script`. Analysis to the role's bots in turn (INS-5). Aggregators: aggregated inputs and marks (AGG-2, AGG-4). Conflicts (PRP-9); guarded fields (PRP-12); computation of the trial outcome and the "Roll back" card (PRP-22, PRP-23). "My outcomes" (DIG-7). Lenses on seats with a fallback role (COM-7). |
+| v0.1 | The improvement cycle comes in the work order right after the core of the `core` profile and the first bot `examples/hello-bot/` (D-71, D-80). Observation series, points only from code, closed reading, rollups and retention (OBV-1, OBV-2, OBV-3, OBV-4); core series and the registry with the `outcome` block (OBV-5, OBV-6); the event `run.finished.v1` (OBV-7). `insight` analysis: type, permissions, creation of proposals, rate and merge window (INS-1, INS-2, INS-3, INS-4); the "loop disabled" signal (INS-6). A proposal with the kinds `none`, `action_request`, `manifest_change`, `human_change`: record and schema, rereading of evidence, allowlist, "runs nothing", duplicates and limits, transition table, untrusted text (PRP-1, PRP-2, PRP-3, PRP-4, PRP-5, PRP-6, PRP-7); own folder, `proposable`, safe directions (PRP-8, PRP-10, PRP-11); change by people's hands, author bot, self influence (PRP-13, PRP-14, PRP-22); executor and deadline, verified link, reverse edit, trial record (PRP-18, PRP-19, PRP-20, PRP-21). Commission on roles of the `reviewer` profile: independence, input and output, verdict by code, checks, money by `tree_budget_eur`, manifest with thresholds and weights, the shadow field, two lenses for kind `none` (COM-2, COM-3, COM-4, COM-5, COM-6, COM-8, COM-9, COM-14). Digest, address and people's decision (DIG-1, DIG-2, DIG-3). The change kind `script`. Analysis to the role's bots in turn (INS-5). Aggregators: aggregated inputs and marks (AGG-2, AGG-4). Conflicts (PRP-9); guarded fields (PRP-12); computation of the trial outcome and the "Roll back" card (PRP-22, PRP-23). "My outcomes" (DIG-7). Lenses on seats with a fallback role (COM-7). |
 | v0.2 | One level of aggregators with a strict lint; no bot builds a view of the whole farm (AGG-3, AGG-5). Feedback as numbers (DIG-4); audit sample, blind card and "Lift veto" (DIG-5, DIG-6); trial numbers in "My outcomes" (DIG-8). One open proposal per bot and a cumulative frequency limit (PRP-16); related proposals without credit (PRP-17). Shadow reviewer, calibration within a lens, the single-model flag (COM-10, COM-11, COM-12). The `farm_manager` lens (GOV-25); the necessity lens for escalations to the manager and the `escalation` section of the commission manifest (COM-13); a promotion trigger only for successes with a promotion probation under the v0.2 rules; schedule check before "Accept" (TIM-5); writing of points by a job worker through P1 `obs.append`. |
 | v0.3 | The reviewer input without the author level and the review with a forecast `review-result.v2` (COM-15); forecast scores, accuracy and the reward (COM-16, COM-17, COM-18); resubmission, replay and the replay digest item (PRP-24, PRP-25, DIG-9); farm guards in every trial (PRP-26). |
 
@@ -786,8 +786,6 @@ Generated from the registry `conformance/requirements.yaml`; the full text of ev
 | [COM-6](../conformance/rules.md#COM-6) | Money for reviews | v0.1 | no |
 | [COM-7](../conformance/rules.md#COM-7) | A lens has one executor, the rule for moving from roles to seats | v0.1 | no |
 | [COM-8](../conformance/rules.md#COM-8) | The commission manifest sets only thresholds and weights | v0.1 | no |
-| [COM-9](../conformance/rules.md#COM-9) | The shadow field in a review | v0.1 | yes |
-| [COM-10](../conformance/rules.md#COM-10) | Shadow reviewer at the tenant's choice | v0.2 | no |
 | [COM-11](../conformance/rules.md#COM-11) | Calibration within a lens | v0.2 | no |
 | [COM-12](../conformance/rules.md#COM-12) | The flag "all votes from one model for one seat" | v0.2 | no |
 | [COM-13](../conformance/rules.md#COM-13) | The necessity lens and the `escalation` section of the commission manifest | v0.2 | yes |
@@ -795,7 +793,6 @@ Generated from the registry `conformance/requirements.yaml`; the full text of ev
 | [COM-15](../conformance/rules.md#COM-15) | The core builds the reviewer input, and a review carries a forecast | v0.3 | yes |
 | [COM-16](../conformance/rules.md#COM-16) | Every review is a forecast scored by code | v0.3 | no |
 | [COM-17](../conformance/rules.md#COM-17) | Accuracy of a commission member | v0.3 | no |
-| [COM-18](../conformance/rules.md#COM-18) | A stronger model for the most accurate member | v0.3 | no |
 | [DIG-1](../conformance/rules.md#DIG-1) | People are shown only recommended proposals and the audit sample | v0.1 | yes |
 | [DIG-2](../conformance/rules.md#DIG-2) | Digest address and recipient ceiling | v0.1 | yes |
 | [DIG-3](../conformance/rules.md#DIG-3) | The right to decide on a proposal | v0.1 | yes |
@@ -804,12 +801,10 @@ Generated from the registry `conformance/requirements.yaml`; the full text of ev
 | [DIG-6](../conformance/rules.md#DIG-6) | The blind sample card and a separate "Lift veto" button | v0.2 | yes |
 | [DIG-7](../conformance/rules.md#DIG-7) | The closed form of "My outcomes" | v0.1 | yes |
 | [DIG-8](../conformance/rules.md#DIG-8) | Trial figures in "My outcomes" | v0.2 | no |
-| [DIG-9](../conformance/rules.md#DIG-9) | A clear benefit of a rejected change reaches people as one line | v0.3 | no |
 | [INS-1](../conformance/rules.md#INS-1) | Task type of the purpose `insight` | v0.1 | yes |
 | [INS-2](../conformance/rules.md#INS-2) | Analysis permissions are no wider than the role's main work | v0.1 | yes |
 | [INS-3](../conformance/rules.md#INS-3) | Proposals are created only when an attempt finishes successfully | v0.1 | yes |
 | [INS-4](../conformance/rules.md#INS-4) | Analysis frequency and merge window | v0.1 | yes |
-| [INS-5](../conformance/rules.md#INS-5) | Analysis to the role's bots in turn | v0.1 | no |
 | [INS-6](../conformance/rules.md#INS-6) | A visible "loop disabled" signal | v0.1 | no |
 | [OBV-1](../conformance/rules.md#OBV-1) | Only code writes observation points | v0.1 | yes |
 | [OBV-2](../conformance/rules.md#OBV-2) | An observation series is declared in git | v0.1 | yes |
@@ -818,7 +813,6 @@ Generated from the registry `conformance/requirements.yaml`; the full text of ev
 | [OBV-5](../conformance/rules.md#OBV-5) | Core series are deterministic and stay within the tenant | v0.1 | no |
 | [OBV-6](../conformance/rules.md#OBV-6) | Registry of core series with definitions of "good" and "bad" | v0.1 | yes |
 | [OBV-7](../conformance/rules.md#OBV-7) | Run finished event outside the farm | v0.1 | no |
-| [OBV-8](../conformance/rules.md#OBV-8) | P1 obs.append for job attempts | v0.2 | yes |
 | [PRP-1](../conformance/rules.md#PRP-1) | The core writes the proposal record, the body passes a closed schema | v0.1 | yes |
 | [PRP-2](../conformance/rules.md#PRP-2) | The core rereads the evidence | v0.1 | yes |
 | [PRP-3](../conformance/rules.md#PRP-3) | Exactly one change from the allowlist | v0.1 | yes |
@@ -833,15 +827,12 @@ Generated from the registry `conformance/requirements.yaml`; the full text of ev
 | [PRP-12](../conformance/rules.md#PRP-12) | Guarded fields | v0.1 | no |
 | [PRP-13](../conformance/rules.md#PRP-13) | The kind "change made by people by hand" | v0.1 | no |
 | [PRP-14](../conformance/rules.md#PRP-14) | The author bot in the proposal record | v0.1 | no |
-| [PRP-15](../conformance/rules.md#PRP-15) | Share of one's own evidence | v0.1 | yes |
 | [PRP-16](../conformance/rules.md#PRP-16) | One open proposal per bot and a cumulative frequency limit | v0.2 | no |
-| [PRP-17](../conformance/rules.md#PRP-17) | A late related proposal earns no credit | v0.2 | no |
 | [PRP-18](../conformance/rules.md#PRP-18) | Executor and deadline of an accepted proposal | v0.1 | no |
 | [PRP-19](../conformance/rules.md#PRP-19) | "Executed" only by a verified link | v0.1 | yes |
 | [PRP-20](../conformance/rules.md#PRP-20) | Reverse edit of an executed change | v0.1 | yes |
 | [PRP-21](../conformance/rules.md#PRP-21) | Change trial record on "Accept" | v0.1 | yes |
-| [PRP-22](../conformance/rules.md#PRP-22) | Code computes the trial outcome | v0.1 | no |
+| [PRP-22](../conformance/rules.md#PRP-22) | Own evidence share and the trial outcome computed by code | v0.1 | yes |
 | [PRP-23](../conformance/rules.md#PRP-23) | The "Revert" card for the executor | v0.1 | no |
 | [PRP-24](../conformance/rules.md#PRP-24) | A rejected proposal can be submitted again | v0.3 | no |
-| [PRP-25](../conformance/rules.md#PRP-25) | Replay of a rejected change over the history | v0.3 | no |
 | [PRP-26](../conformance/rules.md#PRP-26) | Every trial guards the farm's work | v0.3 | no |

@@ -1,5 +1,5 @@
 registry: decision-points
-version: 3
+version: 4
 description: >-
   Registry of human decisions (APR-12): one row for each kind of card and
   notice. A kind without a row does not pass the skeleton CI, and the core does not create such
@@ -472,13 +472,13 @@ entries:
     since: v0.3
     kind: notice
     subject: null
-    recipients: operators with admin:governance in farm; the class, number, tenant, time and reason code of a preventable incident, and the commands farmctl seat resume farm-manager --tenant, farmctl seat assign, farmctl seat vacate; no buttons and no tenant content (MGR-46)
+    recipients: operators with admin:governance in farm; the class, number, tenant, time and reason code of a preventable incident, and the commands farmctl seat resume farm-manager --tenant, farmctl seat assign, farmctl seat vacate; no buttons and no tenant content (GOV-47)
     ttl: none
     on_silence: {state: null, outcome: "the seat stays restricted in the tenant", remind: "after 24 h, after 72 h, then weekly until marked read or the restriction ends"}
     undo: none
     urgent: false
     attention_limit: false
-    rules: [APR-12, MGR-46, PRM-14]
+    rules: [APR-12, GOV-47, PRM-14]
   - id: manager_attention
     since: v0.3
     kind: notice

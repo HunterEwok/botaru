@@ -31,7 +31,6 @@ machines:
     - GOV-23
     - HLD-1
     - HLD-2
-    - HLD-5
     - PRM-14
     - PRM-15
   - from:
@@ -154,7 +153,7 @@ machines:
     by: the background loop `hold`
     when: '`until` arrived'
     rules:
-    - HLD-5
+    - HLD-1
     - TIM-1
   - from:
       states:
@@ -170,8 +169,8 @@ machines:
       case's tenant
     rules:
     - GOV-23
+    - HLD-1
     - HLD-2
-    - HLD-5
     - PRM-14
   - from:
       states:

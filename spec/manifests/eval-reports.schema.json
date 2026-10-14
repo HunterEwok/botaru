@@ -2,14 +2,14 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "urn:botaru:schema:eval-reports:1",
   "title": "Eval report index",
-  "description": "spec of the EvalReports manifest: the eval report index of the installation. Only run metadata: the static fingerprint, the subject, the set, the date and the failure counts; no inputs and no model text. apply reads it for PRV-3, TRN-6 and MGR-23, and the grant sign of MGR-40 reads base_fail_share.",
+  "description": "spec of the EvalReports manifest: the eval report index of the installation. Only run metadata: the static fingerprint, the subject, the set, the date and the failure counts; no inputs and no model text. apply reads it for PRV-3, TRN-6 and MGR-23, and the grant sign of MGR-17 reads base_fail_share.",
   "x-botaru-direction": "input",
   "x-botaru-version": "v0.2",
   "x-botaru-rules": [
     "PRV-3",
     "TRN-6",
     "MGR-23",
-    "MGR-40"
+    "MGR-17"
   ],
   "type": "object",
   "additionalProperties": false,
@@ -89,7 +89,7 @@
             "type": "number",
             "minimum": 0,
             "maximum": 1,
-            "description": "Failure share of a grant_eval_set run on the base model (MGR-40)."
+            "description": "Failure share of a grant_eval_set run on the base model (MGR-17)."
           }
         }
       }

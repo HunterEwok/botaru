@@ -1,11 +1,11 @@
 id: fx-time-lint
-rules: [TIM-2, TIM-4]
+rules: [TIM-2, TIM-3]
 description: 'Time lint: all times in contracts are UTC in datetime format, a time zone is an IANA name only in Tenant.spec.timezone
-  and Schedule.spec.timezone (TIM-2); an unknown time zone name and a time zone inside a cron expression do not pass apply (TIM-4);
+  and Schedule.spec.timezone (TIM-2); an unknown time zone name and a time zone inside a cron expression do not pass apply (TIM-3);
   the default schedule time zone is taken from the tenant.'
 cases:
 - id: tim-fx-12
-  rules: [TIM-4]
+  rules: [TIM-3]
   description: An unknown time zone name does not pass apply.
   given:
     manifest:
@@ -14,7 +14,7 @@ cases:
       spec: {cron: 30 3 * * *, timezone: Mars/Olympus}
   expect: {result: rejected, stage: apply, field: timezone}
 - id: tim-fx-13
-  rules: [TIM-4]
+  rules: [TIM-3]
   description: A time zone inside cron (CRON_TZ) does not pass apply.
   given:
     manifest:
@@ -23,7 +23,7 @@ cases:
       spec: {cron: CRON_TZ=Europe/Berlin 30 3 * * *}
   expect: {result: rejected, stage: apply, field: cron}
 - id: tim-fx-14
-  rules: [TIM-4]
+  rules: [TIM-3]
   description: A time zone inside cron (TZ) does not pass apply.
   given:
     manifest:
@@ -32,7 +32,7 @@ cases:
       spec: {cron: TZ=UTC 30 3 * * *}
   expect: {result: rejected, stage: apply, field: cron}
 - id: tim-fx-15
-  rules: [TIM-4]
+  rules: [TIM-3]
   description: Without Schedule.spec.timezone, Tenant.spec.timezone applies.
   given:
     tenant_timezone: Europe/Berlin

@@ -1,5 +1,5 @@
 id: fx-msg-flood
-rules: [MSG-10, MSG-15]
+rules: [MSG-15]
 description: Overflow does not evict entries silently. A full inbox immediately gives the sender rejected(inbox_full), and
   the core writes one event per (inbox, period). The first refusal by share or fullness in a period raises the event inbox.flood
   by code; old entries are not evicted or lost. Staged entries already take space in the inbox and in the sender's share.

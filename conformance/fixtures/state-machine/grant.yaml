@@ -1,7 +1,7 @@
 # Collected from spec/lifecycles/grant.yaml. The value null in from means "the object does not exist yet".
 lifecycle: spec/lifecycles/grant.yaml
 object: grant
-rules: [GW-2, MGR-17, MGR-18, MGR-2, MGR-22, MGR-40]
+rules: [GW-2, MGR-17, MGR-18, MGR-2, MGR-22]
 description: Allowed and forbidden transitions of the "model grant" lifecycle, collected from the tables of spec/lifecycles/grant.md.
   The implementation accepts a transition from the allowed list under the condition of its row (when); a pair from the forbidden
   list does not change the state, and the call that asks for it is rejected. A grant lives in the task's tenant and ends
@@ -39,9 +39,9 @@ allowed:
   to: denied
   by: the core on receipt
   when: 'no right to ask (grant_not_eligible: neither the initial input above the class threshold nor the type history by
-    MGR-40); the evidence did not match reason; the price does not fit (grant_over_budget); rate (grant_rate_limited: more
-    than 3 requests per role in the tenant per day, MGR-40)'
-  rules: [MGR-17, MGR-40]
+    MGR-17); the evidence did not match reason; the price does not fit (grant_over_budget); rate (grant_rate_limited: more
+    than 3 requests per role in the tenant per day, MGR-17)'
+  rules: [MGR-17]
 - id: sm-grt-03
   from: requested
   to: screened
@@ -162,7 +162,7 @@ forbidden:
   from: null
   to: denied
   expect: rejected
-  rules: [MGR-17, MGR-18, MGR-40]
+  rules: [MGR-17, MGR-18]
   why: the object does not appear directly in the state denied
 - id: sm-grt-x07
   from: null
@@ -180,13 +180,13 @@ forbidden:
   from: requested
   to: requested
   expect: rejected
-  rules: [MGR-17, MGR-40]
+  rules: [MGR-17]
   why: the lifecycle table has no such transition
 - id: sm-grt-x10
   from: requested
   to: pending
   expect: rejected
-  rules: [MGR-17, MGR-18, MGR-40]
+  rules: [MGR-17, MGR-18]
   why: the lifecycle table has no such transition
 - id: sm-grt-x11
   from: requested
@@ -198,7 +198,7 @@ forbidden:
   from: requested
   to: active
   expect: rejected
-  rules: [MGR-17, MGR-18, MGR-40]
+  rules: [MGR-17, MGR-18]
   why: the lifecycle table has no such transition
 - id: sm-grt-x13
   from: requested
@@ -216,7 +216,7 @@ forbidden:
   from: requested
   to: revoked
   expect: rejected
-  rules: [MGR-17, MGR-18, MGR-40]
+  rules: [MGR-17, MGR-18]
   why: the lifecycle table has no such transition
 - id: sm-grt-x16
   from: screened
@@ -252,7 +252,7 @@ forbidden:
   from: screened
   to: denied
   expect: rejected
-  rules: [MGR-17, MGR-18, MGR-40]
+  rules: [MGR-17, MGR-18]
   why: the lifecycle table has no such transition
 - id: sm-grt-x22
   from: screened
@@ -402,7 +402,7 @@ forbidden:
   from: consumed
   to: denied
   expect: rejected
-  rules: [MGR-17, MGR-18, MGR-40]
+  rules: [MGR-17, MGR-18]
   why: consumed is a terminal state
 - id: sm-grt-x47
   from: consumed
@@ -456,7 +456,7 @@ forbidden:
   from: denied
   to: denied
   expect: rejected
-  rules: [MGR-17, MGR-18, MGR-40]
+  rules: [MGR-17, MGR-18]
   why: denied is a terminal state
 - id: sm-grt-x56
   from: denied
@@ -510,7 +510,7 @@ forbidden:
   from: expired
   to: denied
   expect: rejected
-  rules: [MGR-17, MGR-18, MGR-40]
+  rules: [MGR-17, MGR-18]
   why: expired is a terminal state
 - id: sm-grt-x65
   from: expired
@@ -564,7 +564,7 @@ forbidden:
   from: revoked
   to: denied
   expect: rejected
-  rules: [MGR-17, MGR-18, MGR-40]
+  rules: [MGR-17, MGR-18]
   why: revoked is a terminal state
 - id: sm-grt-x74
   from: revoked

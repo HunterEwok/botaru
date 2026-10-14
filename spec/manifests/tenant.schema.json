@@ -79,7 +79,7 @@
       "items": {
         "$ref": "urn:botaru:schema:common:1#/$defs/name"
       },
-      "description": "Allowed model profiles (GW-7, GW-8).",
+      "description": "Allowed model profiles (GW-7).",
       "uniqueItems": true
     },
     "providers_allowed": {

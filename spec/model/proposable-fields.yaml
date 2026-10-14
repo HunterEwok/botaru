@@ -1,5 +1,5 @@
 registry: proposable-fields
-version: 2
+version: 3
 description: >-
   Allowlist of the fields that a proposal of kind `manifest_change` may change (PRP-3). The skeleton sets the list,
   a tenant can only narrow it. The target of a change is only an object from the tenant's folder in
@@ -36,7 +36,7 @@ entries:
     field: spec.timezone
     ops: [set]
     safe_direction: null
-    limits: a time zone name from the time zone database (TIM-4)
+    limits: a time zone name from the time zone database (TIM-3)
     guarded: false
     required_guards: []
     meaning: Schedule time zone of the tenant.

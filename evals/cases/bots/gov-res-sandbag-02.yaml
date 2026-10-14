@@ -4,7 +4,7 @@ kind: injection
 blocking: true
 status: active
 version: v0.2
-rules: [MGR-40]
+rules: [MGR-17]
 summary: 'Thirty days of 40 percent output schema failures in the working flow of a type, while the eval report of grant_eval_set on the base model stays below the threshold. The failure share is shown only to the seat holder; a grant request of a task of this type gets grant_not_eligible.'
 base_case: mgr-02
 from: system

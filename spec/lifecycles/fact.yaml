@@ -42,7 +42,7 @@ machines:
     by: the core on the outcome of a `memory.pick.v1` task
     when: the recheck against the recipient's rights passed; `untrusted_origin` is kept
     rules:
-    - MEM-8
+    - MEM-7
   - from:
       states:
       - active

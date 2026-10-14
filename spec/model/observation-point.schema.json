@@ -9,7 +9,7 @@
     "OBV-1",
     "OBV-4",
     "OBV-5",
-    "PRP-15"
+    "PRP-22"
   ],
   "type": "object",
   "required": [
@@ -58,7 +58,7 @@
         },
         "role": {
           "$ref": "urn:botaru:schema:common:1#/$defs/name",
-          "description": "Role of the attempt; the core computes the evidence role_share by it (PRP-15)."
+          "description": "Role of the attempt; the core computes the evidence role_share by it (PRP-22)."
         },
         "worker": {
           "$ref": "urn:botaru:schema:common:1#/$defs/object_id",
@@ -66,7 +66,7 @@
         },
         "acting_bot": {
           "$ref": "urn:botaru:schema:common:1#/$defs/object_id",
-          "description": "The bot on whose behalf the attempt ran; the core computes author_share by it (PRP-15) and the series of the bot's own attempts (INS-5)."
+          "description": "The bot on whose behalf the attempt ran; the core computes author_share by it (PRP-22) and the series of the bot's own attempts (INS-5)."
         }
       }
     }

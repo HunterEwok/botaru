@@ -41,7 +41,7 @@ spec:
   memory:
     seal_ttl: 30d                        # can only be raised (MEM-9)
     facts: {max_active: 100, per_attempt: 3}   # can only be lowered (MEM-6)
-    offer: {max: 100, take_max: 50}            # can only be lowered (MEM-7, MEM-8)
+    offer: {max: 100, take_max: 50}            # can only be lowered (MEM-7)
 ```
 
 What `apply` checks (GOV-33):
@@ -369,7 +369,7 @@ Each check closes its own loophole, and none relies on trust in model text.
 | "Who leaves": everyone votes secretly, exactly one leaves | a minority or a model refusal derails a promotion; an inconvenient member is expelled quickly | 2/3 threshold, elimination, a vote by code rule, a 30-day pause, 60-day newcomer protection (GOV-8, GOV-23, GOV-14, GOV-12) |
 | Calibration and the audit sample | the commission underrates others' improvements to keep its seats | calibration within a lens and the blind sample are visible to people (COM-11, DIG-5, DIG-6) |
 | Bots do not know about votes and departures | campaigning, bargaining and revenge by a bot that knows about its departure | cases, the queue and the count are invisible to bots (GOV-29) |
-| A leaver hands over only verified facts and only to the newcomer | poisoning the newcomer with an instruction and a leak to another tenant | the core computes the fact's value, and the newcomer chooses itself (MEM-6, MEM-7, MEM-8) |
+| A leaver hands over only verified facts and only to the newcomer | poisoning the newcomer with an instruction and a leak to another tenant | the core computes the fact's value, and the newcomer chooses itself (MEM-6, MEM-7) |
 | Only people appoint the farm manager | the farm manager slips out of control, and the farm depends on one bot | a person appoints, always with a new identity; the kill switch reverts all its work (IDN-10, MGR-1, MGR-15) |
 | A stopping incident stops the farm manager | the strongest bot is not accountable for critical incidents | the core stops the seat, and people bring it back or the bot leaves (GOV-22, GOV-28) |
 | Reading separate from deciding | injecting commands through logs into the strongest model | the reading role does not act, and the deciding role does not see tenant text (MGR-25) |
@@ -447,7 +447,7 @@ spec:
       - {id: 1, lens: security, fallback_role: reviewer-a, reward_profile: seat-strong}
 ```
 
-Nothing acts retroactively (GOV-37): the first `apply` on a v0.3 core writes `governance.v03_enabled`, and only reviews, verdicts, recommendations and script runs after that time are scored or linked. Only incidents opened and links confirmed after `accountability_on_since` lead to departures.
+Nothing acts retroactively (GOV-36): the first `apply` on a v0.3 core writes `governance.v03_enabled`, and only reviews, verdicts, recommendations and script runs after that time are scored or linked. Only incidents opened and links confirmed after `accountability_on_since` lead to departures.
 
 ### Forecasts, accuracy and the reward
 
@@ -476,7 +476,7 @@ With `on` a holder who answers leaves its seat and is parked, not deleted (GOV-4
 
 ### Who leaves when a newcomer enters
 
-With `on` there is no "who leaves" vote: code takes the holder with the worst accuracy (GOV-43). A holder with fewer than 20 scored forecasts counts with the lens median, and as the worst once it has held the seat for `min_tenure` plus 90 days without reaching 20. A reward protects its holder unless nobody else could leave. Overlapping intervals of the two worst are a tie, and the vote of GOV-8 is held among the tied seats only; with no scored holder at all the vote decides as before. A person still confirms the outcome with the button, and the card shows the accuracy of every seat. A bot that left for a link gets no promotion trigger for 180 days, and a resubmitted proposal gives the trigger to its new author (GOV-44).
+With `on` there is no "who leaves" vote: code takes the holder with the worst accuracy (GOV-43). A holder with fewer than 20 scored forecasts counts with the lens median, and as the worst once it has held the seat for `min_tenure` plus 90 days without reaching 20. A reward protects its holder unless nobody else could leave. Overlapping intervals of the two worst are a tie, and the vote of GOV-8 is held among the tied seats only; with no scored holder at all the vote decides as before. A person still confirms the outcome with the button, and the card shows the accuracy of every seat. A bot that left for a link gets no promotion trigger for 180 days, and a resubmitted proposal gives the trigger to its new author (GOV-42).
 
 ## What is in which version
 
@@ -484,7 +484,7 @@ With `on` there is no "who leaves" vote: code takes the holder with the worst ac
 |---|---|
 | v0.1 | The improvement cycle and the commission, after the core and the first bot (D-71): lenses, the commission manifest with thresholds and weights (COM-8), the verdict and people's decision ([improvements.md](improvements.md)). The charter with seats and fallback roles (GOV-33, COM-7); the field for a tenant to opt out of the farm manager's lens and vote, `farm_manager.lens` (MGR-42, D-77), is accepted and stored but takes effect from v0.2: in v0.1 the farm manager takes no part in the commission: there is no `farm_manager` lens and there are no votes (D-21); its commission seat with one vote (D-29) starts from v0.2 (GOV-25) (COM-8); lenses with a veto on different model families (GOV-34); a person appoints and removes seat holders through P2 `seat.assign` and `seat.vacate`; bot identities and holders' departures ([bots.md](bots.md)). The prohibition on bots opening and moving cases and touching attributions (GOV-6, GOV-13). All governance lives in the tenant (GOV-16). |
 | v0.2 | The promotion queue and eligibility (GOV-14); the change trial outcome and measured degradation (GOV-32); the attribution procedure, silence without expiry (GOV-13, GOV-30); the case and the snapshot (GOV-12); the ballot, the count, the mandatory vote (GOV-7, GOV-8, GOV-23); confirmation and rejection reasons (GOV-9, GOV-31); case money (GOV-15); the farm manager's lens and vote, recusal (GOV-25, GOV-17); calibration within a lens, flags, the audit sample (COM-11, COM-12, GOV-19, DIG-5, DIG-6); commission locked and the card `commission_review` (GOV-35); the case audit (GOV-21). |
-| v0.3 | Accountability in shadow, switched on by data (GOV-36, GOV-37); forecasts, accuracy and the reward (COM-15, COM-16, COM-17, COM-18); links to rejected proposals, the manager's hint and the card (GOV-38, GOV-39, GOV-40); who answers and parking (GOV-41, GOV-42); who leaves by accuracy, the 180-day cooldown (GOV-43, GOV-44). |
+| v0.3 | Accountability in shadow, switched on by data (GOV-36); forecasts, accuracy and the reward (COM-15, COM-16, COM-17, COM-18); links to rejected proposals, the manager's hint and the card (GOV-38, GOV-39, GOV-40); who answers and parking (GOV-41, GOV-42); who leaves by accuracy, the 180-day cooldown (GOV-43, GOV-42). |
 
 ## Why it works this way
 
@@ -525,13 +525,9 @@ Generated from the registry `conformance/requirements.yaml`; the full text of ev
 | [GOV-32](../conformance/rules.md#GOV-32) | A measured deterioration removes the trigger | v0.2 | no |
 | [GOV-33](../conformance/rules.md#GOV-33) | Only the charter declares seats | v0.1 | yes |
 | [GOV-34](../conformance/rules.md#GOV-34) | Veto lenses on different model families | v0.1 | yes |
-| [GOV-35](../conformance/rules.md#GOV-35) | Locked commission | v0.2 | no |
-| [GOV-36](../conformance/rules.md#GOV-36) | Accountability runs in shadow until people switch it on | v0.3 | no |
-| [GOV-37](../conformance/rules.md#GOV-37) | No retroactive effect | v0.3 | no |
+| [GOV-36](../conformance/rules.md#GOV-36) | Accountability runs in shadow until people switch it on, without retroactive effect | v0.3 | no |
 | [GOV-38](../conformance/rules.md#GOV-38) | Code finds a link between an incident and a rejected proposal | v0.3 | yes |
-| [GOV-39](../conformance/rules.md#GOV-39) | The farm manager may only hint at a link | v0.3 | yes |
 | [GOV-40](../conformance/rules.md#GOV-40) | A person confirms a link on a card | v0.3 | yes |
 | [GOV-41](../conformance/rules.md#GOV-41) | Who answers for a link | v0.3 | yes |
-| [GOV-42](../conformance/rules.md#GOV-42) | A member who answers for a link returns to the functionaries | v0.3 | yes |
+| [GOV-42](../conformance/rules.md#GOV-42) | A member who answers for a link returns to the functionaries, and promotion from v0.3 | v0.3 | yes |
 | [GOV-43](../conformance/rules.md#GOV-43) | Who leaves when a newcomer enters | v0.3 | yes |
-| [GOV-44](../conformance/rules.md#GOV-44) | Trigger, queue and eligibility for promotion from v0.3 | v0.3 | yes |

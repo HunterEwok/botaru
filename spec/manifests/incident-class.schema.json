@@ -38,7 +38,7 @@
     "manager_accountable": {
       "type": "boolean",
       "default": false,
-      "description": "From v0.3: an incident of the class can be preventable by the farm manager (GOV-47, MGR-44, MGR-45); only for a class whose alarm is built from series with dataorigin: code (GOV-48, MGR-55)."
+      "description": "From v0.3: an incident of the class can be preventable by the farm manager (GOV-47, MGR-45); only for a class whose alarm is built from series with dataorigin: code (GOV-48, MGR-55)."
     },
     "area": {
       "enum": [

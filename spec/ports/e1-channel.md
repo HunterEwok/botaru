@@ -17,7 +17,7 @@ E1 is the adapter of a communication channel with people: a worker of kind `chan
 
 | Operation | Who calls | What it does | Refusals (reason codes) | Version | Rules |
 |---|---|---|---|---|---|
-| update receipt -> P1 `submit_activity` | adapter | Checks the authenticity of the update by the means of the external system and the real sender, saves attachments through `file.put`, builds an `Activity`; forwarded and quoted text is not a command; moves the external system offset only after the core answers | `identity_unknown`, `not_ready` | v0.1 | IDN-3, IDN-7, IDM-5, DLV-5, INJ-8, TEN-4 |
+| update receipt -> P1 `submit_activity` | adapter | Checks the authenticity of the update by the means of the external system and the real sender, saves attachments through `file.put`, builds an `Activity`; forwarded and quoted text is not a command; moves the external system offset only after the core answers | `identity_unknown`, `not_ready` | v0.1 | IDN-3, IDN-7, DLV-5, INJ-8, TEN-4 |
 | decision button press -> P1 `decide` | adapter on behalf of the person who pressed | The button holds only `(subject, id, nonce)`; a decision is accepted only from a `human` subject with a strong identity and only from the chat where the card was delivered, and in a group chat only under `membership_assurance: enforced`. In a channel without buttons the card shows a text command with the id and `nonce`, and it is checked the same way | `forbidden`, `expired`, `already_decided`, `self_approve`; from v0.2 `details_not_opened` | v0.1 | APR-3, APR-4, APR-14, REP-6 |
 | "Details" -> P1 `card.details` | adapter on behalf of the person who pressed | Card details by a code template, model text only inside the untrusted wrapper; what is above the group chat ceiling goes to a private message; the core records the opening | `forbidden`, `expired` | v0.1 | APR-11, APR-14 |
 | "Remind approvers" -> P1 `card.remind` | adapter on behalf of the initiator on the card copy | A copy of the card without decision buttons comes to the initiator in a private message (`approval_initiator_copy`); the button repeats `card_update` to those who have not decided yet, no more than once in 5 minutes | `forbidden`, `expired`, `service_rate_limited` | v0.1 | APR-19 |
@@ -44,7 +44,7 @@ Each kind of card and notice is recorded as a row of the decision registry `spec
 
 - MUST: an activity where the channel cannot name the real sender, and input of a channel with `identity_assurance: weak`, do not execute privileged commands and do not approve actions; an unknown identity does not create a task (IDN-3).
 - MUST: the identity is looked up only among the subjects of the channel's tenant (TEN-4); an activity from a non-subject in a bound chat creates no `Activity`, file or session record: the channel saves nothing of it and passes nothing to the core except the event `activity.ignored(not_subject)`, and the code answers by repeating the `ai_notice` and `privacy_notice` notices no more than once per `notice_repeat` period (MSG-17, DLV-7).
-- MUST: one update submitted twice gives one task (IDM-5); the external system offset moves only after the core answers (DLV-5).
+- MUST: one update submitted twice gives one task; the external system offset moves only after the core answers (DLV-5).
 - MUST: the channel builds the card of any decision only from the subject record by a code template; there is no model text in the card (APR-3). In a channel without buttons the card shows a text command with the id and `nonce`, and it is checked the same way as a press (APR-4).
 - MUST: to each card the channel adds the code bottom line "why you, until when, what happens if you stay silent" from the decision registry row (APR-12).
 - MUST: outgoing messages go without link previews and without markup, links outside the tenant's list are cut out; a found secret stops the sending, the admins get an event without content (INJ-11).
@@ -60,7 +60,7 @@ Each kind of card and notice is recorded as a row of the decision registry `spec
 
 - `spec/bindings/channels/<channel>.md`: how channel fields map onto `Activity` and `Delivery`, how authenticity and chat membership are checked (reference `telegram.md`); for a source channel also the incoming format, the authentication methods and a ready field mapping. Monitoring system problems do not go through a source channel, but through the E5 adapter (MON-5).
 - `spec/model/activity.schema.json`, `delivery.schema.json`; the driver meta-schema in `spec/manifests/drivers/`.
-- The channel check suite `conformance/suites/channel`: IDN-3, IDN-7, APR-3, IDM-5, DLV-5..7, INJ-11, MSG-17; an activity from a non-subject in a chat with `membership_assurance: none` gives no `Activity` and no `file.put`.
+- The channel check suite `conformance/suites/channel`: IDN-3, IDN-7, APR-3, DLV-5..7, INJ-11, MSG-17; an activity from a non-subject in a chat with `membership_assurance: none` gives no `Activity` and no `file.put`.
 
 ## What the port does not do
 

@@ -602,7 +602,7 @@
           "IDN-3",
           "IDN-6",
           "IDN-7",
-          "IDM-5",
+          "DLV-5",
           "CNT-5"
         ],
         "parameters": [
@@ -635,7 +635,7 @@
             "$ref": "#/components/responses/Problem"
           }
         },
-        "x-botaru-idempotent-by": "(channel, update_id) (IDM-5)"
+        "x-botaru-idempotent-by": "(channel, update_id) (DLV-5)"
       }
     },
     "/v1/p1/decide": {
@@ -1068,7 +1068,7 @@
           "MSG-1",
           "MSG-4",
           "MSG-5",
-          "MSG-10",
+          "MSG-15",
           "MSG-11",
           "STA-1",
           "HLD-3"

@@ -360,7 +360,7 @@ A profile gives no permissions, it only narrows. It is checked by `apply` (manif
 
 | Profile | Who | Type purposes (`claims`) | Built-in P3 tools | What must be empty or is forbidden | Memory |
 |---|---|---|---|---|---|
-| `worker` | functionary: working bot (default); a role with per-person memory (`memory: person`) is a personal assistant, whose owner the core writes into the task lease (IDN-5) | `work`, `insight`, `handover` | the common ones per `builtin-tools.yaml`: `request_action`, `send_message`, `inbox_read`, `status.*`, from v0.2 `escalate`, `request_model_grant` and `skill_read`; in `insight` tasks only `observations_query` among the built-in ones, within the role's `insight.observes` (INS-1, OBV-3), in `handover` tasks none (MEM-8) | nothing beyond the general skeleton rules | core records and verified facts per the memory rules (MEM-2) |
+| `worker` | functionary: working bot (default); a role with per-person memory (`memory: person`) is a personal assistant, whose owner the core writes into the task lease (IDN-5) | `work`, `insight`, `handover` | the common ones per `builtin-tools.yaml`: `request_action`, `send_message`, `inbox_read`, `status.*`, from v0.2 `escalate`, `request_model_grant` and `skill_read`; in `insight` tasks only `observations_query` among the built-in ones, within the role's `insight.observes` (INS-1, OBV-3), in `handover` tasks none (MEM-7) | nothing beyond the general skeleton rules | core records and verified facts per the memory rules (MEM-2) |
 | `manager` | functionary: manager | `work`, `insight`, `handover` | as for `worker`, plus `enqueue_child`, `propose_campaign`, `campaign_status`, `campaign_results` in `work` tasks | nothing beyond the general rules; it releases and assigns nothing itself | as for `worker` |
 | `reporter` | functionary: reporter | only `report`, tier 0; the types declare only `status.*` views and `inbox.read` | only `status.*` and `inbox_read` | `tools`, `may_enqueue`, `campaigns`, `actions_may_request`, `scripts`, `messages.send`; `messages.receive` only of genus `report`; model only of the slot `base` | none (`memory: none`) |
 | `translator` | translator | only `translate`, tier 0 | only `propose_script` | `tools`, `may_enqueue`, `actions_may_request`, `messages.send`, `messages.receive`; `campaigns.propose: none`; `scripts.propose` only `draft`; model only of the slot `base` | none (`memory: none`) |
@@ -372,8 +372,8 @@ A profile gives no permissions, it only narrows. It is checked by `apply` (manif
 Common lines of the table:
 
 - `escalate` and `request_model_grant` (from v0.2) are available only to the profiles `worker` and `manager`; the output of the other profiles is strictly their own (draft, summary, assessment, proposal, findings);
-- `skill_read` (from v0.2) is available only to the profiles `worker` and `manager`, only for runtimes that declare `skills: farm`, and it is absent in `handover` tasks (MEM-8, SKL-4);
-- in `handover` tasks (a successor choosing facts) no profile has built-in tools (MEM-8);
+- `skill_read` (from v0.2) is available only to the profiles `worker` and `manager`, only for runtimes that declare `skills: farm`, and it is absent in `handover` tasks (MEM-7, SKL-4);
+- in `handover` tasks (a successor choosing facts) no profile has built-in tools (MEM-7);
 - `propose_script` is available only to the profile `translator`;
 - the sections `insight` and `scripts` with `propose: in_proposal` (a script draft only inside a proposal) can be declared only by `worker` and `manager`;
 - a new profile is added only through an ADR and a minor version of the role schema.
@@ -477,15 +477,11 @@ Generated from the registry `conformance/requirements.yaml`; the full text of ev
 | [SCR-9](../conformance/rules.md#SCR-9) | The distrust flag passes between steps | v0.1 | yes |
 | [SCR-10](../conformance/rules.md#SCR-10) | A hold pauses a run | v0.2 | no |
 | [SCR-11](../conformance/rules.md#SCR-11) | Run transitions only by the table, cancellation cascades | v0.1 | yes |
-| [SCR-12](../conformance/rules.md#SCR-12) | A script from git on a schedule | v0.2 | no |
-| [SCR-13](../conformance/rules.md#SCR-13) | The steps wait and await | v0.2 | yes |
-| [SCR-14](../conformance/rules.md#SCR-14) | A script from git with parameters and a free goal | v0.2 | yes |
 | [TRN-2](../conformance/rules.md#TRN-2) | What the translator sees | v0.1 | yes |
 | [TRN-3](../conformance/rules.md#TRN-3) | The translator outputs only a draft | v0.1 | yes |
 | [TRN-4](../conformance/rules.md#TRN-4) | Draft limits under untrusted text | v0.1 | yes |
 | [TRN-5](../conformance/rules.md#TRN-5) | When the vocabulary does not cover the assignment | v0.1 | yes |
 | [TRN-6](../conformance/rules.md#TRN-6) | Translator eval gate | v0.2 | no |
 | [TRN-7](../conformance/rules.md#TRN-7) | A person confirms that a script run caused an incident | v0.3 | yes |
-| [TRN-8](../conformance/rules.md#TRN-8) | Confirmed cases enter the translator check of the tenant | v0.3 | no |
 | [TRN-9](../conformance/rules.md#TRN-9) | The translator pauses after three confirmed links | v0.3 | yes |
 | [TRN-10](../conformance/rules.md#TRN-10) | The run card marks targets the assignment does not name | v0.3 | no |

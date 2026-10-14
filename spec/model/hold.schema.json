@@ -8,7 +8,7 @@
   "x-botaru-rules": [
     "HLD-1",
     "HLD-2",
-    "HLD-5",
+    "HLD-1",
     "TEN-1"
   ],
   "type": "object",

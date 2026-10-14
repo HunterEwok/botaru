@@ -334,7 +334,6 @@ Generated from the registry `conformance/requirements.yaml`; the full text of ev
 
 | Rule | About | Since | Non-waivable |
 |---|---|---|---|
-| [MAN-12](../conformance/rules.md#MAN-12) | The P1 OpenAPI description | v0.2 | no |
 | [RT-1](../conformance/rules.md#RT-1) | Session inside the runtime | v0.1 | yes |
 | [RT-2](../conformance/rules.md#RT-2) | Memory inside the runtime | v0.1 | yes |
 | [RT-3](../conformance/rules.md#RT-3) | A model handle per profile | v0.1 | yes |
