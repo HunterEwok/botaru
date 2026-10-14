@@ -340,7 +340,9 @@ func (c *Core) enqueue(ctx context.Context, tx pgx.Tx, now time.Time, cat *Catal
 		// purpose later does not move the task's spending to another line (BUD-7).
 		"budget_line": line,
 		"purpose":     purposeOf(tt),
-		"trace":       trace,
+		// So is the tree budget of the root type (GW-6).
+		"tree_budget_micros": money.FromEUR(tt.TreeBudgetEUR),
+		"trace":              trace,
 	}
 	if in.Origin != nil {
 		record["origin"] = in.Origin

@@ -116,13 +116,25 @@ func TestToolCallMoney(t *testing.T) {
 	}
 	b.advance(t, -31)
 
+	// The tree budget is pinned in the record too: with 0.02 EUR spent, a limit of 0.03 EUR
+	// stops the next paid call whatever the type says now.
+	if _, err := b.c.st.Pool.Exec(ctx, `UPDATE tasks SET record = record || '{"tree_budget_micros": 30000}' WHERE id = $1`, task); err != nil {
+		t.Fatal(err)
+	}
+	var p *Problem
+	if _, err := b.c.P3ToolsCall(ctx, h, mcp.CallParams{Name: "checks_latest", Arguments: args}); !errors.As(err, &p) || p.Reason != "budget_exhausted" {
+		t.Fatalf("over the pinned tree budget: %v", err)
+	}
+	if _, err := b.c.st.Pool.Exec(ctx, `UPDATE tasks SET record = record || '{"tree_budget_micros": 0}' WHERE id = $1`, task); err != nil {
+		t.Fatal(err)
+	}
+
 	// A call that does not fit the day limit does not go: the attempt gets budget_exhausted.
 	if _, err := b.c.st.Pool.Exec(ctx, `INSERT INTO spend (id, tenant, line, unit, state, eur_micros, time)
 		VALUES ('spd_full', 'demo', 'work', 'tokens', 'committed', 14990000, botaru_now())`); err != nil {
 		t.Fatal(err)
 	}
 	_, err := b.c.P3ToolsCall(ctx, h, mcp.CallParams{Name: "checks_latest", Arguments: args})
-	var p *Problem
 	if !errors.As(err, &p) || p.Reason != "budget_exhausted" {
 		t.Fatalf("over the limit: %v", err)
 	}

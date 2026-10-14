@@ -13,7 +13,6 @@ import (
 
 	"github.com/HunterEwok/botaru/impl/internal/ids"
 	"github.com/HunterEwok/botaru/impl/internal/manifest"
-	"github.com/HunterEwok/botaru/impl/internal/money"
 )
 
 // ModelGrant is what a live model handle opens on P4: the attempt it belongs to and the model
@@ -94,9 +93,7 @@ func (c *Core) ResolveModelHandle(ctx context.Context, handle string) (*ModelGra
 	}
 	g.Role = role
 	tt := cat.TaskTypes[typ]
-	if tt.TreeBudgetEUR > 0 {
-		g.TreeBudget = money.FromEUR(tt.TreeBudgetEUR)
-	}
+	g.TreeBudget = taskTreeBudget(rec, tt)
 	g.Line, g.Purpose = c.taskLine(rec, tt)
 	tv := cat.Tenants[g.Tenant]
 	if tv == nil {

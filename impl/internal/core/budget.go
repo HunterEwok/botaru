@@ -53,6 +53,20 @@ func (c *Core) taskLine(rec []byte, tt manifest.TaskType) (line, purpose string)
 	return c.budgetLine(tt.Purpose), purposeOf(tt)
 }
 
+// taskTreeBudget is the tree budget in micro-euros pinned in a task record at enqueue, so an
+// apply that changes the type's tree_budget_eur does not move the limit of a running tree; a
+// task written before takes it from its type. 0 means none.
+func taskTreeBudget(rec []byte, tt manifest.TaskType) int64 {
+	var r struct {
+		Tree *int64 `json:"tree_budget_micros"`
+	}
+	_ = json.Unmarshal(rec, &r)
+	if r.Tree != nil {
+		return *r.Tree
+	}
+	return money.FromEUR(tt.TreeBudgetEUR)
+}
+
 // spendFilter narrows a window sum to a subject, a budget line and a role; an empty field
 // does not narrow.
 type spendFilter struct {
@@ -236,11 +250,7 @@ func (c *Core) reserveToolCall(ctx context.Context, tx pgx.Tx, now time.Time, ca
 	if p, err := loadPrincipal(ctx, tx, now, g.Tenant, g.Initiator); err == nil {
 		groups = groupClosure(tv, p.Groups)
 	}
-	tt := cat.TaskTypes[g.Type]
-	var tree int64
-	if tt.TreeBudgetEUR > 0 {
-		tree = money.FromEUR(tt.TreeBudgetEUR)
-	}
+	tree := taskTreeBudget(rec, cat.TaskTypes[g.Type])
 	return c.reserveSpend(ctx, tx, now, tv, spendRow{
 		ID: ids.New(ids.Spend), Tenant: g.Tenant, Task: g.Task, Root: r.Root, Subject: g.Initiator, Role: g.Role, Worker: g.Worker,
 		Line: line, Purpose: purpose, Unit: "eur_cents", Fingerprint: deref(fp), Toolcall: callID, Micros: micros,
