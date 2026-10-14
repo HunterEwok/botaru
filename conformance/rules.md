@@ -4149,7 +4149,7 @@ Checked by: `blackbox:script/transitions`
 <a id="SCR-12"></a>
 ### SCR-12. A script from git on a schedule
 
-since v0.2 · waivable · profile campaign · check: lint, blackbox · decisions: D-99, D-102
+since v0.2 · waivable · profile campaign · check: lint, blackbox · decisions: D-99, D-102, D-105
 
 A `kind: Script` manifest reviewed in the tenant's git can be started by a schedule (`Schedule.spec.script`, an optional field from v0.2) without a person's button only if it needs no `script.run` (SCR-6): no `action` step, no `fanout` with an action, no `confirm` step and no step whose role has `service_control` or `monitor_scripts`; it has no `await` step, so an external event cannot steer a run without a person; it keeps within `Tenant.spec.scripts` (SCR-5); and the run's permissions are those of `system`: every `task` and `fanout` type of the script is listed explicitly in `system-ops` (PRM-10). Otherwise `apply` rejects the schedule. The `deliver_to` of such a schedule is checked at `apply` and at every run, as for a task schedule (PRM-10). The run has initiator `system`, fairness key `script:<run>` and the slot rules of TIM-3; at most one run of a schedule is live, and a slot that comes while the previous run is live is skipped with `run_live`. Its estimate is reserved at each slot as at a run approval (SCR-8), and a slot that does not fit is skipped with `budget_exhausted` (TIM-3). A hold on the schedule stops it (CAP-4), and a hold on the run pauses it (SCR-10).
 
@@ -4229,7 +4229,7 @@ Checked by: `blackbox:core/rotate-compromised`, `blackbox:core/connections-revok
 <a id="SEC-7"></a>
 ### SEC-7. A person's connection to an external service
 
-since v0.2 · non-waivable · profile connections · check: blackbox · decisions: D-102
+since v0.2 · non-waivable · profile connections · check: blackbox · decisions: D-102, D-105
 
 A person's access to their external service is a recorded connection (`Connection`): the tenant, the principal, a provider from the tenant catalog, access scopes from a closed list, the state and an expiry. The person creates the connection themselves through the consent adapter, not the model; the deployment stores the token value, and it does not pass through P1-P4. The link to the adapter carries a nonce that the core issues at `/mydata connect`: single use, valid for 10 minutes, bound to the tenant and the principal. P2 `connection.register` must present it, and the core takes the principal from the nonce, not from the adapter. The request names the external account (`account_id`, the subject id at the provider); the core refuses an account that has an active or pending connection of another principal (`connection_account_taken`), generates `token_ref` itself and writes the connection as `pending`. It becomes `active` only after the person confirms the code card `connection_confirm` in their private chat; the card shows the provider, the external account and the scopes. A plugin declares `credential: per_principal(<provider>, <scopes>)`, and the core selects the connection by the task's initiator; the model neither names nor chooses the account. Tasks of other principals and of the service principal `system` do not use the connection. A write on behalf of a person remains a tier 3 action with an approval. Offboarding and `forget` revoke and delete the connection.
 

@@ -10361,7 +10361,7 @@
   waivable: true
   version: v0.2
   profile: campaign
-  decisions: [D-99, D-102]
+  decisions: [D-99, D-102, D-105]
   fixtures: [lint:manifests/schedule-script, blackbox:script/scheduled-run, manifests/v02-security-lints]
   doc: docs/scripts-and-translator.md
 
@@ -10555,7 +10555,7 @@
   waivable: false
   version: v0.2
   profile: connections
-  decisions: [D-102]
+  decisions: [D-102, D-105]
   fixtures: [blackbox:core/connection-per-principal, blackbox:core/connection-link-bound]
   doc: docs/security-model.md
 

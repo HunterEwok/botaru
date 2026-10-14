@@ -439,7 +439,7 @@ Each profile carries model rank ceilings in `role-profiles.yaml`: `max_rank` for
 ## Decided questions
 
 - `propose_campaign` and `propose_script` are not merged in v0.2 (D-96). They stay two separate tools with separate profile fields, gates and counters. The format of the `fanout` step already matches the campaign request, so a later merge is possible as an addition.
-- A script from the tenant's git may run on a schedule without a person (D-99, SCR-12). The condition is the same one that makes a run need no `script.run` (SCR-6): no `action` step, no `fanout` with an action, no `confirm` step and no step whose role has `service_control` or `monitor_scripts`. The run has initiator `system` and fairness key `script:<run>`; its estimate is reserved at each slot, and a slot that does not fit is skipped with `budget_exhausted`. A schedule hold stops it (CAP-4), and a hold on the run pauses it (SCR-10). The whole feature is this one rule, so it can be dropped without touching others.
+- A script from the tenant's git may run on a schedule without a person (D-99, SCR-12). The condition is the same one that makes a run need no `script.run` (SCR-6): no `action` step, no `fanout` with an action, no `confirm` step and no step whose role has `service_control` or `monitor_scripts`. The run has initiator `system` and fairness key `script:<run>`; its estimate is reserved at each slot, and a slot that does not fit is skipped with `budget_exhausted`. A schedule hold stops it (CAP-4), and a hold on the run pauses it (SCR-10). The owner confirmed this on 2026-10-14 (D-105).
 
 <!-- generated: rules -->
 ## Rules of this section
