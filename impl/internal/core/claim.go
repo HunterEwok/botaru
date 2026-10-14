@@ -476,8 +476,10 @@ func (c *Core) claimDelivery(ctx context.Context, tx pgx.Tx, now time.Time, cat 
 		}
 		if kind != "alarm_notice" {
 			scopes := append(tenantScopes(w.Tenant), scopeRef{kind: "channel", tenant: w.Tenant, name: w.Target})
-			if role != "" {
-				// The role whose attempt wrote the text, as the auto-stop of HLD-6 scopes it.
+			if role != "" && origin == "model" {
+				// The role whose attempt wrote the text, as the auto-stop of HLD-6 scopes it. A
+				// code text, such as the notice in place of an answer above the ceiling, is not
+				// the role's writing.
 				scopes = append(scopes, scopeRef{kind: "role", tenant: w.Tenant, name: role})
 			}
 			held, err := heldBy(ctx, tx, now, []string{"no_delivery"}, scopes...)

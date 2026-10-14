@@ -149,6 +149,11 @@ func TestChannelCeilingWithholds(t *testing.T) {
 	if n := countEvents(t, b, "alarm.outbound.secret.detected.v1", "outbound.secret.detected:hello"); n != 1 {
 		t.Fatalf("secret alarm events %d", n)
 	}
+	// The second secret stops the role; the code text in place of its answer still goes.
+	b.helloDone(t, "4", "internal", "use password=hunter22 to log in")
+	if w := b.claim(t, b.channel, "delivery"); w == nil || w.Payload["delivery"].(map[string]any)["body"].(map[string]any)["text_key"] != "delivery.withheld.channel_ceiling" {
+		t.Fatalf("the code text under the auto-stop of the role: %+v", w)
+	}
 }
 
 // Model text with a secret is not sent and raises an alarm without content (INJ-11); the second
