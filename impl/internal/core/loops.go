@@ -117,6 +117,8 @@ func (c *Core) reapWith(ctx context.Context, reason string, spends bool) error {
 				_, err = c.endAttempt(ctx, tx, now, l.Tenant, &l, reason, spends, true, 0, "")
 			case "delivery":
 				_, err = c.endDelivery(ctx, tx, now, l.Tenant, &l, reason, true, 0)
+			case "toolcall":
+				err = reapToolcall(ctx, tx, now, &l, reason)
 			}
 			return err
 		})
@@ -159,6 +161,9 @@ func (c *Core) deadlines(ctx context.Context) error {
 			return err
 		}
 		if done {
+			if err := c.toolcallDeadlines(ctx); err != nil {
+				return err
+			}
 			return c.unclaimed(ctx)
 		}
 	}

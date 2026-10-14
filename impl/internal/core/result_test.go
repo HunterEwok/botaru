@@ -194,11 +194,11 @@ func TestRunFingerprint(t *testing.T) {
 		}
 	}
 	cat, _ := b.c.Catalog(ctx)
-	again, parts, err := runFingerprint(cat, b.agent, "hello", "hello.greet.v1", "base", "base-std")
+	again, parts, err := runFingerprint(cat, b.agent, "hello", "hello.greet.v1", "base", "base-std", nil)
 	if err != nil || again != fp || parts["model"] != rec.Parts["model"] {
 		t.Fatalf("recomputed %s, %v", again, err)
 	}
-	if other, _, _ := runFingerprint(cat, b.agent, "hello", "hello.greet.v1", "base", "seat-std"); other == fp {
+	if other, _, _ := runFingerprint(cat, b.agent, "hello", "hello.greet.v1", "base", "seat-std", nil); other == fp {
 		t.Fatal("another configured profile gave the same fingerprint")
 	}
 	handle, _ := att.Payload["handles"].(map[string]any)["model"].(string)

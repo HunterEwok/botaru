@@ -1,0 +1,183 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+
+package plugins
+
+import (
+	"context"
+	"encoding/json"
+	"io"
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/HunterEwok/botaru/impl/internal/mcp"
+	"github.com/HunterEwok/botaru/impl/internal/toolspec"
+)
+
+func cmdPlugin(argv ...string) toolspec.Plugin {
+	return toolspec.Plugin{Name: "cmd", Placement: "host", Tools: []toolspec.Tool{{
+		Name: "run", Access: "read", TargetFrom: "host", Redact: []string{"ip", "email", "secret"}, TimeoutS: 2,
+		Params: map[string]map[string]any{"host": {"enum_from": "catalog.hosts"}},
+		Commands: map[string]toolspec.Command{
+			"say":  {Argv: argv, Params: map[string]map[string]any{"service": {"enum_from": "catalog.services"}}},
+			"wait": {Argv: []string{"/bin/sleep", "5"}},
+		},
+	}}}
+}
+
+func TestCmd(t *testing.T) {
+	c, err := NewCmd(cmdPlugin("/bin/echo", "unit", "--", "{service.unit}"), "web1", map[string]bool{"sh": true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	meta := &mcp.Meta{Resolved: map[string]string{"service.unit": "nginx.service"}}
+	r, err := c.Call(context.Background(), "run", map[string]any{"host": "web1", "command": "say", "service": "nginx"}, meta)
+	if err != nil || r.Content[0].Text != "unit -- nginx.service\n" {
+		t.Fatalf("say: %+v %v", r, err)
+	}
+	if _, err := c.Call(context.Background(), "run", map[string]any{"host": "db1", "command": "say"}, meta); err == nil {
+		t.Fatal("a call for another machine ran")
+	}
+	for _, bad := range []string{"-rf", "", "a\nb"} {
+		m := &mcp.Meta{Resolved: map[string]string{"service.unit": bad}}
+		if _, err := c.Call(context.Background(), "run", map[string]any{"host": "web1", "command": "say"}, m); err == nil {
+			t.Fatalf("value %q became an argument", bad)
+		}
+	}
+	start := time.Now()
+	if _, err := c.Call(context.Background(), "run", map[string]any{"host": "web1", "command": "wait"}, nil); err == nil || time.Since(start) > 4*time.Second {
+		t.Fatalf("timeout: %v after %v", err, time.Since(start))
+	}
+	if _, err := NewCmd(cmdPlugin("/bin/sh", "-c", "id"), "web1", map[string]bool{"sh": true}); err == nil {
+		t.Fatal("a forbidden program passed")
+	}
+	f, err := NewCmd(cmdPlugin("/bin/false"), "", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if r, err := f.Call(context.Background(), "run", map[string]any{"command": "say"}, nil); err != nil || !strings.Contains(r.Content[0].Text, "[exit status 1]") {
+		t.Fatalf("nonzero exit: %+v %v", r, err)
+	}
+}
+
+func TestLogs(t *testing.T) {
+	dir := t.TempDir()
+	log := filepath.Join(dir, "a.log")
+	var b strings.Builder
+	for i := range 50 {
+		b.WriteString("line ")
+		b.WriteString(string(rune('A' + i%26)))
+		b.WriteString("\n")
+	}
+	if err := os.WriteFile(log, []byte(b.String()), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	link := filepath.Join(dir, "link.log")
+	if err := os.Symlink(log, link); err != nil {
+		t.Fatal(err)
+	}
+	l := &Logs{Sources: map[string]string{"a": log, "link": link, "dir": dir}}
+	r, err := l.Call(context.Background(), "tail", map[string]any{"source": "a", "lines": 10.0}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	lines := strings.Split(r.Content[0].Text, "\n")
+	if len(lines) != 10 || lines[9] != "line X" {
+		t.Fatalf("tail %q", r.Content[0].Text)
+	}
+	for _, src := range []string{"link", "dir", "nope"} {
+		if _, err := l.Call(context.Background(), "tail", map[string]any{"source": src}, nil); err == nil {
+			t.Fatalf("source %s was read", src)
+		}
+	}
+	// With a byte bound, the cut first line is dropped.
+	got, err := tail(log, 100, 20)
+	if err != nil || got != "line W\nline X" {
+		t.Fatalf("bounded tail %q %v", got, err)
+	}
+}
+
+func TestChecks(t *testing.T) {
+	res := filepath.Join(t.TempDir(), "results.json")
+	if err := os.WriteFile(res, []byte(`{"www-health": {"ok": 3, "total": 4, "last_status": 503, "ms_max": 812, "note": "x"}, "bad": {"ok": -1, "total": 1}}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	c := &Checks{Results: res}
+	r, err := c.Call(context.Background(), "latest", map[string]any{"check": "www-health"}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sc := r.StructuredContent
+	if sc["ok"] != 3 || sc["total"] != 4 || sc["last_status"] != 503 || sc["note"] != nil {
+		t.Fatalf("latest %v", sc)
+	}
+	for _, check := range []string{"bad", "nope"} {
+		if _, err := c.Call(context.Background(), "latest", map[string]any{"check": check}, nil); err == nil {
+			t.Fatalf("check %s passed", check)
+		}
+	}
+}
+
+// Serve answers discover and tools/list from the manifest, runs a call and cancels a call on
+// notifications/cancelled.
+func TestServe(t *testing.T) {
+	p := cmdPlugin("/bin/echo", "--", "{service.unit}")
+	inR, inW := io.Pipe()
+	outR, outW := io.Pipe()
+	started := make(chan struct{}, 1)
+	h := func(ctx context.Context, tool string, args map[string]any, meta *mcp.Meta) (*mcp.CallResult, error) {
+		if args["command"] == "wait" {
+			started <- struct{}{}
+			<-ctx.Done()
+			return nil, ctx.Err()
+		}
+		return Text("ok " + meta.WorkID), nil
+	}
+	done := make(chan error, 1)
+	go func() { done <- Serve(context.Background(), p, inR, outW, h) }()
+	client := mcp.NewConn(outR, inW)
+	send := func(id int, method string, params any) {
+		b, _ := json.Marshal(params)
+		m := mcp.Message{Method: method, Params: b}
+		if id > 0 {
+			m.ID = json.RawMessage(strings.TrimSpace(string(rune('0' + id))))
+		}
+		if err := client.Send(m); err != nil {
+			t.Fatal(err)
+		}
+	}
+	recv := func() mcp.Message {
+		m, err := client.Receive(1 << 20)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return m
+	}
+	send(1, "tools/list", map[string]any{})
+	var l mcp.ListResult
+	if err := json.Unmarshal(recv().Result, &l); err != nil || len(l.Tools) != 1 {
+		t.Fatalf("tools/list %+v %v", l, err)
+	}
+	send(2, "tools/call", mcp.CallParams{Name: "run", Arguments: map[string]any{"command": "say"}, Meta: &mcp.Meta{WorkID: "c1"}})
+	var r mcp.CallResult
+	if err := json.Unmarshal(recv().Result, &r); err != nil || r.Content[0].Text != "ok c1" {
+		t.Fatalf("call %+v %v", r, err)
+	}
+	send(3, "tools/call", mcp.CallParams{Name: "run", Arguments: map[string]any{"command": "wait"}})
+	<-started
+	send(0, "notifications/cancelled", map[string]any{"requestId": 3})
+	r = mcp.CallResult{}
+	if err := json.Unmarshal(recv().Result, &r); err != nil || !r.IsError {
+		t.Fatalf("cancelled call %+v %v", r, err)
+	}
+	send(4, "sampling/createMessage", map[string]any{})
+	if m := recv(); m.Error == nil {
+		t.Fatal("an unknown method was served")
+	}
+	inW.Close()
+	if err := <-done; err != nil {
+		t.Fatal(err)
+	}
+}

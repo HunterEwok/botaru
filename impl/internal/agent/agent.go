@@ -155,8 +155,12 @@ func (a *Agent) heartbeats(ctx context.Context, cancel context.CancelFunc, lease
 	}
 }
 
-// run is the runtime loop of one attempt: one model call in v0.1, since the attempt has no
-// tools. It returns the result object, or a reason code from reasons.yaml.
+// maxTurns bounds the model calls of one attempt.
+const maxTurns = 10
+
+// run is the runtime loop of one attempt: model calls through P4, and between them the tool
+// calls the model asks for, through P3 with the attempt's tools handle. It returns the result
+// object, or a reason code from reasons.yaml.
 func (a *Agent) run(ctx context.Context, p attemptPayload) (map[string]any, string, error) {
 	handle, _ := p.Handles["model"].(string)
 	if handle == "" {
@@ -172,6 +176,16 @@ func (a *Agent) run(ctx context.Context, p attemptPayload) (map[string]any, stri
 	if hc == nil {
 		hc = &http.Client{Timeout: 10 * time.Minute}
 	}
+	var p3 *toolsClient
+	var tools []anthropic.ToolUnionParam
+	if th, _ := p.Handles["tools"].(string); th != "" {
+		p3 = &toolsClient{url: strings.TrimRight(a.cfg.Core.BaseURL, "/") + "/v1/p3/mcp", handle: th, http: hc}
+		list, err := p3.list(ctx)
+		if err != nil {
+			return nil, "runtime_error", err
+		}
+		tools = list
+	}
 	client := anthropic.NewClient(
 		option.WithoutEnvironmentDefaults(),
 		option.WithBaseURL(strings.TrimRight(a.cfg.Core.BaseURL, "/")+"/v1/p4/anthropic/"),
@@ -179,35 +193,59 @@ func (a *Agent) run(ctx context.Context, p attemptPayload) (map[string]any, stri
 		option.WithMaxRetries(0), // only P4 retries (GW-12)
 		option.WithHTTPClient(hc),
 	)
-	msg, err := client.Messages.New(ctx, anthropic.MessageNewParams{
-		Model:     anthropic.Model("base"), // P4 sets the model of the slot (GW-7)
-		MaxTokens: a.cfg.MaxTokens,
-		System:    []anthropic.TextBlockParam{{Text: system}},
-		Messages:  []anthropic.MessageParam{anthropic.NewUserMessage(anthropic.NewTextBlock(goal))},
-	})
-	if err != nil {
-		var apiErr *anthropic.Error
-		if errors.As(err, &apiErr) {
-			var prob struct {
-				Reason string `json:"reason"`
+	messages := []anthropic.MessageParam{anthropic.NewUserMessage(anthropic.NewTextBlock(goal))}
+	for turn := 0; turn < maxTurns; turn++ {
+		msg, err := client.Messages.New(ctx, anthropic.MessageNewParams{
+			Model:     anthropic.Model("base"), // P4 sets the model of the slot (GW-7)
+			MaxTokens: a.cfg.MaxTokens,
+			System:    []anthropic.TextBlockParam{{Text: system}},
+			Messages:  messages,
+			Tools:     tools,
+		})
+		if err != nil {
+			var apiErr *anthropic.Error
+			if errors.As(err, &apiErr) {
+				var prob struct {
+					Reason string `json:"reason"`
+				}
+				if json.Unmarshal([]byte(apiErr.RawJSON()), &prob) == nil && prob.Reason != "" {
+					return nil, failReason(prob.Reason), err
+				}
 			}
-			if json.Unmarshal([]byte(apiErr.RawJSON()), &prob) == nil && prob.Reason != "" {
-				return nil, failReason(prob.Reason), err
+			return nil, "model_error", err
+		}
+		if msg.StopReason != anthropic.StopReasonToolUse || p3 == nil {
+			var text strings.Builder
+			for _, b := range msg.Content {
+				if b.Type == "text" {
+					text.WriteString(b.Text)
+				}
 			}
+			res, err := parseResult(text.String(), p.ResultSchema)
+			if err != nil {
+				return nil, "output_schema_invalid", err
+			}
+			return res, "", nil
 		}
-		return nil, "model_error", err
-	}
-	var text strings.Builder
-	for _, b := range msg.Content {
-		if b.Type == "text" {
-			text.WriteString(b.Text)
+		// The tool results go back as tool_result blocks; the output text of a tool is data
+		// for the model, never an instruction (INJ-4).
+		messages = append(messages, msg.ToParam())
+		var results []anthropic.ContentBlockParamUnion
+		for _, b := range msg.Content {
+			if b.Type != "tool_use" {
+				continue
+			}
+			var input map[string]any
+			_ = json.Unmarshal(b.Input, &input)
+			text, isErr, err := p3.call(ctx, b.Name, input)
+			if err != nil {
+				return nil, "runtime_error", err
+			}
+			results = append(results, anthropic.NewToolResultBlock(b.ID, text, isErr))
 		}
+		messages = append(messages, anthropic.NewUserMessage(results...))
 	}
-	res, err := parseResult(text.String(), p.ResultSchema)
-	if err != nil {
-		return nil, "output_schema_invalid", err
-	}
-	return res, "", nil
+	return nil, "runtime_error", errors.New("the model did not answer within the turn limit")
 }
 
 // failReason maps a P4 refusal to the reason of fail: the provider codes do not spend the
