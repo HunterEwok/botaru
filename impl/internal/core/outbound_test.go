@@ -5,11 +5,13 @@ package core
 import (
 	"context"
 	"fmt"
+	"slices"
 	"testing"
 	"time"
 
 	"github.com/jackc/pgx/v5"
 
+	"github.com/HunterEwok/botaru/impl/internal/ids"
 	"github.com/HunterEwok/botaru/impl/internal/manifest"
 	"github.com/HunterEwok/botaru/impl/internal/mcp"
 	"github.com/HunterEwok/botaru/impl/internal/spec"
@@ -82,6 +84,13 @@ func TestChannelCeilingOf(t *testing.T) {
 	tv.Spec.Privacy.Channels[0].Ceiling = "raw_logs"
 	if got := channelCeiling(tv, "telegram"); got != "raw_logs" {
 		t.Errorf("raised ceiling %q", got)
+	}
+	// The monitoring system gets summaries only; a sink is not a channel of the block.
+	if got := executorCeiling(tv, "monitor", "zabbix"); got != "summary" {
+		t.Errorf("monitor ceiling %q", got)
+	}
+	if got := executorCeiling(tv, "sink", "telegram"); got != "" {
+		t.Errorf("a sink read as a channel: %q", got)
 	}
 }
 
@@ -244,5 +253,56 @@ func TestMaskingMarksPersonalSeen(t *testing.T) {
 	var audit string
 	if err := b.c.st.Pool.QueryRow(ctx, `SELECT record->>'personal_seen' FROM audit WHERE record->>'command' = 'task.complete'`).Scan(&audit); err != nil || audit != `["masking"]` {
 		t.Fatalf("audit marker %q %v", audit, err)
+	}
+}
+
+// The authors of forwarded or quoted text known in the tenant go into personal_subjects, the
+// sender and unknown authors do not (AUD-5).
+func TestForwardQuoteSubjects(t *testing.T) {
+	ctx := context.Background()
+	b := newBench(t)
+	bob := ids.PrincipalID()
+	if _, err := b.c.Principal(ctx, b.op, PrincipalRequest{Op: "principal.add", Subject: bob, Identity: "telegram:2002"}); err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct {
+		a    Activity
+		want []string
+	}{
+		{Activity{Forwarded: true, ForwardedFrom: "telegram:2002"}, []string{bob}},
+		{Activity{Forwarded: true, ForwardedFrom: "telegram:9999"}, nil},
+		{Activity{Quoted: true, QuotedFrom: "telegram:1001"}, nil},
+		{Activity{Quoted: true, QuotedFrom: "telegram:2002", Forwarded: true, ForwardedFrom: "telegram:2002"}, []string{bob}},
+		{Activity{ForwardedFrom: "telegram:2002"}, nil},
+	} {
+		var got []string
+		err := b.c.tx(ctx, func(tx pgx.Tx, _ time.Time) error {
+			var err error
+			got, err = b.c.textAuthors(ctx, tx, "demo", b.alice, tc.a)
+			return err
+		})
+		if err != nil || !slices.Equal(got, tc.want) {
+			t.Errorf("%+v: %v %v", tc.a, got, err)
+		}
+	}
+	cat, err := b.c.Catalog(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var task string
+	err = b.c.tx(ctx, func(tx pgx.Tx, now time.Time) error {
+		res, err := b.c.enqueue(ctx, tx, now, cat, enqueueInput{Tenant: "demo", Type: "hello.greet.v1", Body: map[string]any{"type": "hello.greet.v1", "goal": "hi"},
+			IdempotencyKey: "subj", Initiator: b.alice, EnqueuedBy: "channel:telegram", Source: "interactive", Forwarded: true, Subjects: []string{bob}})
+		if res != nil {
+			task = res.TaskID
+		}
+		return err
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var subjects string
+	if err := b.c.st.Pool.QueryRow(ctx, `SELECT record->>'personal_subjects' FROM tasks WHERE id = $1`, task).Scan(&subjects); err != nil || subjects != `["`+bob+`"]` {
+		t.Fatalf("personal_subjects %q %v", subjects, err)
 	}
 }

@@ -52,21 +52,38 @@ type outgoing struct {
 	Body                                 []byte
 }
 
-// outboundRefusal checks a delivery at handoff against the channel ceiling (SEC-9) and, for
-// model text, searches it for secrets with the toolhost's patterns (INJ-11). It returns the
-// withheld reason, or "". A delivery above the ceiling gets a code text in its place; a
-// secret raises alarm.outbound.secret.detected without content, and the second case of one
-// role within an hour stops the deliveries of that role (HLD-6).
-func (c *Core) outboundRefusal(ctx context.Context, tx pgx.Tx, now time.Time, tv *TenantView, channel string, d outgoing, role string) (string, error) {
+// executorCeiling is the highest data mark an executor of deliveries may receive: a channel by
+// the privacy block (SEC-9), the monitoring system summaries only (MON-1). A sink has the
+// ceiling of its own manifest, which the handoff does not read: this build plans no delivery
+// to a sink. "" means no ceiling.
+func executorCeiling(tv *TenantView, kind, target string) string {
+	switch kind {
+	case "channel":
+		return channelCeiling(tv, target)
+	case "monitor":
+		return "summary"
+	}
+	return ""
+}
+
+// outboundRefusal checks a delivery at handoff against the ceiling of its executor (SEC-9)
+// and, for model text, searches it for secrets with the toolhost's patterns (INJ-11). It
+// returns the withheld reason, or "". A delivery to a chat above the ceiling gets a code text
+// in its place; a secret raises alarm.outbound.secret.detected without content, and the second
+// case of one role within an hour stops the deliveries of that role (HLD-6).
+func (c *Core) outboundRefusal(ctx context.Context, tx pgx.Tx, now time.Time, tv *TenantView, kind, target string, d outgoing, role string) (string, error) {
 	if d.DataMark != "" {
-		if ceiling := channelCeiling(tv, channel); ceiling != "" && !c.markWithin(d.DataMark, ceiling) {
+		if ceiling := executorCeiling(tv, kind, target); ceiling != "" && !c.markWithin(d.DataMark, ceiling) {
 			if err := c.withhold(ctx, tx, now, tv.Name, d, "channel_ceiling"); err != nil {
 				return "", err
+			}
+			if kind != "channel" {
+				return "channel_ceiling", nil
 			}
 			// The person learns that the answer exists, without its content.
 			_, err := c.planDelivery(ctx, tx, now, plannedDelivery{
 				Tenant: tv.Name, Task: d.Task, Kind: d.Kind, Addr: d.Addr, TargetKind: d.TargetKind, TargetID: d.TargetID,
-				ExecKind: "channel", ExecName: channel, Recipient: d.Recipient, DataOrigin: "code",
+				ExecKind: "channel", ExecName: target, Recipient: d.Recipient, DataOrigin: "code",
 				Body: map[string]any{"form": "text_code", "text_key": "delivery.withheld.channel_ceiling"},
 			})
 			return "channel_ceiling", err

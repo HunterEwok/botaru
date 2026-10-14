@@ -495,7 +495,7 @@ func (c *Core) claimDelivery(ctx context.Context, tx pgx.Tx, now time.Time, cat 
 			}
 		}
 		if tv != nil {
-			reason, err := c.outboundRefusal(ctx, tx, now, tv, w.Target, outgoing{
+			reason, err := c.outboundRefusal(ctx, tx, now, tv, w.Kind, w.Target, outgoing{
 				ID: id, Kind: kind, Addr: addr, TargetKind: targetKind, TargetID: targetID,
 				Task: deref(task), Recipient: deref(recipient), DataMark: deref(dataMark), DataOrigin: origin, Body: body,
 			}, role)

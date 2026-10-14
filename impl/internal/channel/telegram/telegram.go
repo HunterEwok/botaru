@@ -170,11 +170,13 @@ type message struct {
 	SenderChat         *struct{} `json:"sender_chat"`
 	SenderBusinessBot  *struct{} `json:"sender_business_bot"`
 	ViaBot             *struct{} `json:"via_bot"`
-	ForwardOrigin      *struct{} `json:"forward_origin"`
+	ForwardOrigin      *origin   `json:"forward_origin"`
 	IsAutomaticForward bool      `json:"is_automatic_forward"`
 	Quote              *struct{} `json:"quote"`
-	ExternalReply      *struct{} `json:"external_reply"`
-	Chat               struct {
+	ExternalReply      *struct {
+		Origin *origin `json:"origin"`
+	} `json:"external_reply"`
+	Chat struct {
 		ID   int64  `json:"id"`
 		Type string `json:"type"`
 	} `json:"chat"`
@@ -182,7 +184,28 @@ type message struct {
 	Caption        string `json:"caption"`
 	ReplyToMessage *struct {
 		MessageID int64 `json:"message_id"`
+		From      *struct {
+			ID    int64 `json:"id"`
+			IsBot bool  `json:"is_bot"`
+		} `json:"from"`
 	} `json:"reply_to_message"`
+}
+
+// origin is the MessageOrigin of the Bot API: the author of forwarded or quoted text.
+type origin struct {
+	Type       string `json:"type"`
+	SenderUser *struct {
+		ID    int64 `json:"id"`
+		IsBot bool  `json:"is_bot"`
+	} `json:"sender_user"`
+}
+
+// person is the identity of an origin that is a visible person, or "".
+func (o *origin) person() string {
+	if o == nil || o.Type != "user" || o.SenderUser == nil || o.SenderUser.IsBot {
+		return ""
+	}
+	return "telegram:" + strconv.FormatInt(o.SenderUser.ID, 10)
 }
 
 // PollOnce reads one batch of updates and submits them. The offset moves past an update only
@@ -252,8 +275,21 @@ func Activity(channel string, u update) map[string]any {
 	if m.ForwardOrigin != nil || m.ViaBot != nil || m.IsAutomaticForward || m.SenderBusinessBot != nil {
 		a["forwarded"] = true
 	}
+	// The author of someone else's text, when the messenger shows a person, so the core can
+	// find their data in this task (AUD-5).
+	if id := m.ForwardOrigin.person(); id != "" {
+		a["forwarded_from"] = id
+	}
 	if m.Quote != nil || m.ExternalReply != nil {
 		a["quoted"] = true
+	}
+	switch {
+	case m.Quote != nil && m.ReplyToMessage != nil && m.ReplyToMessage.From != nil && !m.ReplyToMessage.From.IsBot:
+		a["quoted_from"] = "telegram:" + strconv.FormatInt(m.ReplyToMessage.From.ID, 10)
+	case m.ExternalReply != nil:
+		if id := m.ExternalReply.Origin.person(); id != "" {
+			a["quoted_from"] = id
+		}
 	}
 	return a
 }

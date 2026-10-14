@@ -4,6 +4,7 @@ Skeleton versions: v0.1, v0.2, v0.3, v0.4. A skeleton version states which rules
 
 ## Unreleased
 
+- The activity schema gets the optional fields `forwarded_from` and `quoted_from`: the identity of the author of forwarded or quoted text when the messenger shows a person, so the core can record that person in `personal_subjects` (AUD-5). The Telegram binding fills them from `forward_origin`, the replied message of a `quote` and `external_reply`.
 - The code text catalog gets `delivery.withheld.channel_ceiling`, the text a person gets in place of an answer above the ceiling of the channel (SEC-9).
 - The code text catalog gets `notice.alarm`, the text of the `alarm_notice` delivery to admins in an installation without the monitoring system (MON-13).
 - Owner decision D-117, commission lenses: every member of the commission represents one lens with its own persona addendum in the tenant charter (`commission.lenses.<lens>.persona`), and the independence of the lenses rests on these personas and blind reviews, not on model families: the rule on different model families is retired and the reason `veto_lenses_same_family` is kept only as a retired entry. The skeleton adds the lenses `speed` and `clarity` without a veto (lenses registry version 3), and a tenant adds its own lenses `x_<name>` without a veto, with a meaning and a persona addendum, reviewed by the type `review.lens.v1` (the new rule COM-19, the apply reasons `lens_persona_missing` and `lens_unknown`). Example addenda are in `examples/personas/`.

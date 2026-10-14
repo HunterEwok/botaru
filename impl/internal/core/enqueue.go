@@ -60,6 +60,9 @@ type enqueueInput struct {
 	// Forwarded and Quoted mark a body that came as a forward or a quote: someone else's text
 	// (INJ-13, AUD-5).
 	Forwarded, Quoted bool
+	// Subjects are the other persons whose data the body carries, for personal_subjects
+	// (AUD-5): the authors of forwarded or quoted text.
+	Subjects []string
 }
 
 // fairnessKey writes the dispatcher fairness key <kind>:<id> from the task source (DSP-2,
@@ -362,6 +365,9 @@ func (c *Core) enqueue(ctx context.Context, tx pgx.Tx, now time.Time, cat *Catal
 	}
 	if len(personal) > 0 {
 		record["personal_seen"] = personal
+	}
+	if len(in.Subjects) > 0 {
+		record["personal_subjects"] = in.Subjects
 	}
 	if in.Origin != nil {
 		record["origin"] = in.Origin
