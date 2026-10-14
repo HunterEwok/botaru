@@ -126,15 +126,16 @@ func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	// The pair (workspace, model pool) answers at once while its circuit is open or it waits
 	// for the provider (GW-10, GW-11, GW-13).
-	if err := g.c.ProviderGate(ctx, grant); err != nil {
+	probe, err := g.c.ProviderGateProbe(ctx, grant)
+	if err != nil {
 		g.refuse(w, err)
 		return
 	}
-	// A probe that ends before the provider is called gives the probe back (GW-11).
+	// The probe that ends before the provider is called gives the probe back (GW-11).
 	sentToProvider := false
 	defer func() {
-		if !sentToProvider {
-			if err := g.c.ProviderProbeAbandoned(context.WithoutCancel(ctx), grant); err != nil {
+		if probe != nil && !sentToProvider {
+			if err := g.c.ProviderProbeAbandoned(context.WithoutCancel(ctx), grant, *probe); err != nil {
 				g.log.Warn("giving back the probe failed", "err", err)
 			}
 		}

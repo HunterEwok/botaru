@@ -57,8 +57,17 @@ func alarmID(s string) string {
 // provider_config until an apply. After the pause of an open circuit one call becomes the
 // probe (half-open).
 func (c *Core) ProviderGate(ctx context.Context, g *ModelGrant) error {
+	_, err := c.ProviderGateProbe(ctx, g)
+	return err
+}
+
+// ProviderGateProbe is ProviderGate that also returns the probe lease when this call took the
+// probe of an open circuit, or nil; only that call gives the probe back (GW-11).
+func (c *Core) ProviderGateProbe(ctx context.Context, g *ModelGrant) (*time.Time, error) {
 	pool := pairPool(g.ProfileName, g.Profile)
-	return c.tx(ctx, func(tx pgx.Tx, now time.Time) error {
+	var probe *time.Time
+	err := c.tx(ctx, func(tx pgx.Tx, now time.Time) error {
+		probe = nil
 		var state string
 		var until *time.Time
 		err := tx.QueryRow(ctx, `SELECT state, until FROM provider_pairs WHERE tenant = $1 AND pool = $2 FOR UPDATE`, g.Tenant, pool).Scan(&state, &until)
@@ -87,22 +96,26 @@ func (c *Core) ProviderGate(ctx context.Context, g *ModelGrant) error {
 				p.RetryAfterS = left
 				return p
 			}
-			_, err := tx.Exec(ctx, `UPDATE provider_pairs SET state = 'probing', until = $3, updated_at = $4 WHERE tenant = $1 AND pool = $2`,
-				g.Tenant, pool, now.Add(probeLease), now)
-			return err
+			until := now.Add(probeLease).Truncate(time.Microsecond)
+			if _, err := tx.Exec(ctx, `UPDATE provider_pairs SET state = 'probing', until = $3, updated_at = $4 WHERE tenant = $1 AND pool = $2`,
+				g.Tenant, pool, until, now); err != nil {
+				return err
+			}
+			probe = &until
 		}
 		return nil
 	})
+	return probe, err
 }
 
 // ProviderProbeAbandoned reopens the circuit of a pair whose probe ended before the provider
 // was called (a refused reserve, a tools mismatch): the next call probes at once instead of
 // waiting out the probe lease, since the provider was never tried (GW-11).
-func (c *Core) ProviderProbeAbandoned(ctx context.Context, g *ModelGrant) error {
+func (c *Core) ProviderProbeAbandoned(ctx context.Context, g *ModelGrant, probe time.Time) error {
 	pool := pairPool(g.ProfileName, g.Profile)
 	return c.tx(ctx, func(tx pgx.Tx, now time.Time) error {
-		_, err := tx.Exec(ctx, `UPDATE provider_pairs SET state = 'open', until = $3, updated_at = $3 WHERE tenant = $1 AND pool = $2 AND state = 'probing'`,
-			g.Tenant, pool, now)
+		_, err := tx.Exec(ctx, `UPDATE provider_pairs SET state = 'open', until = $3, updated_at = $3 WHERE tenant = $1 AND pool = $2 AND state = 'probing' AND until = $4`,
+			g.Tenant, pool, now, probe)
 		return err
 	})
 }
