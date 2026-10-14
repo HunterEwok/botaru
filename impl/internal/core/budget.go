@@ -11,6 +11,7 @@ import (
 	"github.com/jackc/pgx/v5"
 
 	"github.com/HunterEwok/botaru/impl/internal/ids"
+	"github.com/HunterEwok/botaru/impl/internal/manifest"
 	"github.com/HunterEwok/botaru/impl/internal/money"
 )
 
@@ -28,6 +29,28 @@ func (c *Core) budgetLine(purpose string) string {
 		}
 	}
 	return "work"
+}
+
+// purposeOf is the purpose of a type; a type without one is work.
+func purposeOf(tt manifest.TaskType) string {
+	if tt.Purpose == "" {
+		return "work"
+	}
+	return tt.Purpose
+}
+
+// taskLine is the budget line and purpose pinned in a task record at enqueue; a task written
+// before they were pinned takes them from its type as applied now.
+func (c *Core) taskLine(rec []byte, tt manifest.TaskType) (line, purpose string) {
+	var r struct {
+		Line    string `json:"budget_line"`
+		Purpose string `json:"purpose"`
+	}
+	_ = json.Unmarshal(rec, &r)
+	if r.Line != "" {
+		return r.Line, r.Purpose
+	}
+	return c.budgetLine(tt.Purpose), purposeOf(tt)
 }
 
 // spendFilter narrows a window sum to a subject, a budget line and a role; an empty field
@@ -208,6 +231,7 @@ func (c *Core) reserveToolCall(ctx context.Context, tx pgx.Tx, now time.Time, ca
 	if r.Root == "" {
 		r.Root = g.Task
 	}
+	line, purpose := c.taskLine(rec, cat.TaskTypes[g.Type])
 	var groups []string
 	if p, err := loadPrincipal(ctx, tx, now, g.Tenant, g.Initiator); err == nil {
 		groups = groupClosure(tv, p.Groups)
@@ -219,7 +243,7 @@ func (c *Core) reserveToolCall(ctx context.Context, tx pgx.Tx, now time.Time, ca
 	}
 	return c.reserveSpend(ctx, tx, now, tv, spendRow{
 		ID: ids.New(ids.Spend), Tenant: g.Tenant, Task: g.Task, Root: r.Root, Subject: g.Initiator, Role: g.Role, Worker: g.Worker,
-		Line: c.budgetLine(tt.Purpose), Purpose: tt.Purpose, Unit: "eur_cents", Fingerprint: deref(fp), Toolcall: callID, Micros: micros,
+		Line: line, Purpose: purpose, Unit: "eur_cents", Fingerprint: deref(fp), Toolcall: callID, Micros: micros,
 	}, groups, tree)
 }
 

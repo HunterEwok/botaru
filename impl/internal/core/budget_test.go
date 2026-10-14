@@ -72,9 +72,16 @@ func lastCall(t *testing.T, b *bench) (string, string, string) {
 func TestToolCallMoney(t *testing.T) {
 	ctx := context.Background()
 	b := newToolBenchWith(t, nil, pricedChecks(0.02))
-	_, h := b.attemptTools(t, "1", false)
+	att, h := b.attemptTools(t, "1", false)
 	th := b.toolhost(t, "checks")
 	args := map[string]any{"check": "www-health"}
+	// The line is pinned at enqueue: a line written in the record wins over the type's purpose
+	// as applied now (BUD-7).
+	task := att.Payload["task"].(map[string]any)["id"].(string)
+	var pinned string
+	if err := b.c.st.Pool.QueryRow(ctx, `SELECT record->>'budget_line' FROM tasks WHERE id = $1`, task).Scan(&pinned); err != nil || pinned != "work" {
+		t.Fatalf("pinned line %q %v", pinned, err)
+	}
 
 	done := callAsync(b, h, mcp.CallParams{Name: "checks_latest", Arguments: args})
 	item := b.claimTool(t, th)
@@ -128,11 +135,16 @@ func TestToolCallMoney(t *testing.T) {
 	}
 }
 
-// A tool without billing: external costs nothing but still gets its usage line (BUD-3).
+// A tool without billing: external costs nothing but still gets its usage line (BUD-3), on
+// the line pinned in the task record, not the one of the type as applied now (BUD-7).
 func TestFreeToolCallLine(t *testing.T) {
 	ctx := context.Background()
 	b := newToolBench(t)
-	_, h := b.attemptTools(t, "1", false)
+	att, h := b.attemptTools(t, "1", false)
+	task := att.Payload["task"].(map[string]any)["id"].(string)
+	if _, err := b.c.st.Pool.Exec(ctx, `UPDATE tasks SET record = record || '{"budget_line": "review", "purpose": "review"}' WHERE id = $1`, task); err != nil {
+		t.Fatal(err)
+	}
 	th := b.toolhost(t, "checks")
 	done := callAsync(b, h, mcp.CallParams{Name: "checks_latest", Arguments: map[string]any{"check": "www-health"}})
 	item := b.claimTool(t, th)
@@ -141,7 +153,7 @@ func TestFreeToolCallLine(t *testing.T) {
 	}
 	<-done
 	id, _, _ := lastCall(t, b)
-	if s := toolSpend(t, b)[id]; s.state != "committed" || s.micros != 0 {
+	if s := toolSpend(t, b)[id]; s.state != "committed" || s.micros != 0 || s.line != "review" {
 		t.Fatalf("usage line of a free call %+v", s)
 	}
 }

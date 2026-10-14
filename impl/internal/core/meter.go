@@ -97,8 +97,7 @@ func (c *Core) ResolveModelHandle(ctx context.Context, handle string) (*ModelGra
 	if tt.TreeBudgetEUR > 0 {
 		g.TreeBudget = money.FromEUR(tt.TreeBudgetEUR)
 	}
-	g.Purpose = tt.Purpose
-	g.Line = c.budgetLine(tt.Purpose)
+	g.Line, g.Purpose = c.taskLine(rec, tt)
 	tv := cat.Tenants[g.Tenant]
 	if tv == nil {
 		return nil, refuse("not_ready", "tenant is not applied")

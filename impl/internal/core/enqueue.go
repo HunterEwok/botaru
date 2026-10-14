@@ -336,7 +336,11 @@ func (c *Core) enqueue(ctx context.Context, tx pgx.Tx, now time.Time, cat *Catal
 		"data_mark":      tt.DataClass,
 		"untrusted_seen": false,
 		"fairness_key":   fairnessKey(in, tt),
-		"trace":          trace,
+		// The budget line and purpose are fixed at enqueue: an apply that changes the type's
+		// purpose later does not move the task's spending to another line (BUD-7).
+		"budget_line": line,
+		"purpose":     purposeOf(tt),
+		"trace":       trace,
 	}
 	if in.Origin != nil {
 		record["origin"] = in.Origin
@@ -368,7 +372,7 @@ func (c *Core) enqueue(ctx context.Context, tx pgx.Tx, now time.Time, cat *Catal
 	}
 	if estimate > 0 {
 		if _, err := tx.Exec(ctx, `INSERT INTO spend (id, tenant, task, root, subject, line, purpose, unit, state, eur_micros, time)
-			VALUES ($1, $2, $3, $3, $4, $5, $6, 'task', 'reserved', $7, $8)`, ids.New(ids.Spend), in.Tenant, id, in.Initiator, line, nullable(tt.Purpose), estimate, now); err != nil {
+			VALUES ($1, $2, $3, $3, $4, $5, $6, 'task', 'reserved', $7, $8)`, ids.New(ids.Spend), in.Tenant, id, in.Initiator, line, purposeOf(tt), estimate, now); err != nil {
 			return nil, err
 		}
 	}
