@@ -28,7 +28,7 @@ import yaml
 
 sys.dont_write_bytecode = True
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from common import ROOT, Report, iter_nodes, load_json, load_yaml, rel, rules, schema_registry, walk
+from common import ROOT, Report, iter_nodes, load_json, load_yaml, referable, rel, schema_registry, walk
 
 from jsonschema import Draft202012Validator, FormatChecker
 from jsonschema.exceptions import SchemaError
@@ -61,7 +61,7 @@ for f in walk(('.schema.json',)):
     schemas[sid], by_path[sid] = doc, rp
 
 MODEL = os.path.join(ROOT, 'spec', 'model')
-active_rules = set(rules('active'))
+active_rules = set(referable())
 COMPOSE = ('$ref', 'allOf', 'anyOf', 'oneOf', 'not', 'if', 'then', 'else', 'const', 'enum')
 # Keys under which schemas live (not data such as enum, examples, default).
 SUBSCHEMA_MAPS = ('properties', 'patternProperties', '$defs', 'definitions', 'dependentSchemas')
