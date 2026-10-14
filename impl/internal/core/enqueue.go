@@ -57,6 +57,12 @@ type enqueueInput struct {
 	// Cause is the id of the direct cause of task.submitted: the incoming message of a channel
 	// task (OBS-2).
 	Cause string
+	// Forwarded and Quoted mark a body that came as a forward or a quote: someone else's text
+	// (INJ-13, AUD-5).
+	Forwarded, Quoted bool
+	// Subjects are the other persons whose data the body carries, for personal_subjects
+	// (AUD-5): the authors of forwarded or quoted text.
+	Subjects []string
 }
 
 // fairnessKey writes the dispatcher fairness key <kind>:<id> from the task source (DSP-2,
@@ -343,6 +349,25 @@ func (c *Core) enqueue(ctx context.Context, tx pgx.Tx, now time.Time, cat *Catal
 		// So is the tree budget of the root type (GW-6).
 		"tree_budget_micros": money.FromEUR(tt.TreeBudgetEUR),
 		"trace":              trace,
+	}
+	// Someone else's text in the body: the task starts untrusted and with personal data seen
+	// (INJ-13, AUD-5). A forward has no principal of its author, so no personal_subjects.
+	var personal []string
+	switch {
+	case in.Forwarded:
+		record["untrusted_seen"], record["untrusted_source"] = true, "forward"
+		personal = append(personal, "forward")
+	case in.Quoted:
+		record["untrusted_seen"], record["untrusted_source"] = true, "quote"
+	}
+	if in.Quoted {
+		personal = append(personal, "quote")
+	}
+	if len(personal) > 0 {
+		record["personal_seen"] = personal
+	}
+	if len(in.Subjects) > 0 {
+		record["personal_subjects"] = in.Subjects
 	}
 	if in.Origin != nil {
 		record["origin"] = in.Origin

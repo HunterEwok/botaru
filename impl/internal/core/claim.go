@@ -408,7 +408,8 @@ func mainSlot(role manifest.Role) (string, string) {
 func (c *Core) claimDelivery(ctx context.Context, tx pgx.Tx, now time.Time, cat *Catalog, w *Worker) (*WorkItem, error) {
 	var (
 		id, kind, addr, targetKind, targetID string
-		recipient, dataMark                  *string
+		recipient, dataMark, task            *string
+		origin                               string
 		body                                 []byte
 		leaseNo                              int
 	)
@@ -418,7 +419,7 @@ func (c *Core) claimDelivery(ctx context.Context, tx pgx.Tx, now time.Time, cat 
 		version = tv.Spec.Privacy.NoticeVersionString()
 	}
 	for picked := false; !picked; {
-		err := tx.QueryRow(ctx, `SELECT d.id, d.kind, d.addr, d.target_kind, d.target_id, d.recipient, d.data_mark, d.body, d.lease_no FROM deliveries d
+		err := tx.QueryRow(ctx, `SELECT d.id, d.kind, d.addr, d.target_kind, d.target_id, d.recipient, d.data_mark, d.body, d.lease_no, d.task, d.dataorigin FROM deliveries d
 		WHERE d.tenant = $1 AND d.exec_kind = $2 AND d.exec_name = $3 AND d.state = 'planned' AND (d.run_at IS NULL OR d.run_at <= $4)
 		AND NOT (d.dataorigin = 'model' AND EXISTS (SELECT 1 FROM contacts ct WHERE ct.tenant = d.tenant AND ct.channel = d.exec_name
 			AND ct.principal = d.recipient AND ct.ai_notice_delivery IS NOT NULL AND ct.ai_notice_at IS NULL))
@@ -430,7 +431,7 @@ func (c *Core) claimDelivery(ctx context.Context, tx pgx.Tx, now time.Time, cat 
 		AND NOT (d.alarmkey IS NOT NULL AND EXISTS (SELECT 1 FROM deliveries o WHERE o.tenant = d.tenant AND o.alarmkey = d.alarmkey
 			AND o.recipient IS NOT DISTINCT FROM d.recipient AND o.seq < d.seq AND o.state IN ('planned', 'sending')))
 		ORDER BY d.seq LIMIT 1 FOR UPDATE SKIP LOCKED`, w.Tenant, w.Kind, w.Target, now, version).
-			Scan(&id, &kind, &addr, &targetKind, &targetID, &recipient, &dataMark, &body, &leaseNo)
+			Scan(&id, &kind, &addr, &targetKind, &targetID, &recipient, &dataMark, &body, &leaseNo, &task, &origin)
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, nil
 		}
@@ -469,9 +470,19 @@ func (c *Core) claimDelivery(ctx context.Context, tx pgx.Tx, now time.Time, cat 
 		// A hold with no_delivery on the farm, the tenant or this channel withholds the
 		// delivery; an alarm notice still goes, since a hold does not silence alarms (HLD-3,
 		// MON-1).
+		role, err := deliveryRole(ctx, tx, deref(task))
+		if err != nil {
+			return nil, err
+		}
 		if kind != "alarm_notice" {
-			held, err := heldBy(ctx, tx, now, []string{"no_delivery"},
-				append(tenantScopes(w.Tenant), scopeRef{kind: "channel", tenant: w.Tenant, name: w.Target})...)
+			scopes := append(tenantScopes(w.Tenant), scopeRef{kind: "channel", tenant: w.Tenant, name: w.Target})
+			if role != "" && origin == "model" {
+				// The role whose attempt wrote the text, as the auto-stop of HLD-6 scopes it. A
+				// code text, such as the notice in place of an answer above the ceiling, is not
+				// the role's writing.
+				scopes = append(scopes, scopeRef{kind: "role", tenant: w.Tenant, name: role})
+			}
+			held, err := heldBy(ctx, tx, now, []string{"no_delivery"}, scopes...)
 			if err != nil {
 				return nil, err
 			}
@@ -482,6 +493,18 @@ func (c *Core) claimDelivery(ctx context.Context, tx pgx.Tx, now time.Time, cat 
 				if err := c.appendEvent(ctx, tx, now, w.Tenant, Event{Type: "delivery.withheld", Subject: id, Data: map[string]any{"delivery": id, "kind": kind, "reason": "held"}}); err != nil {
 					return nil, err
 				}
+				continue
+			}
+		}
+		if tv != nil {
+			reason, err := c.outboundRefusal(ctx, tx, now, tv, w.Kind, w.Target, outgoing{
+				ID: id, Kind: kind, Addr: addr, TargetKind: targetKind, TargetID: targetID,
+				Task: deref(task), Recipient: deref(recipient), DataMark: deref(dataMark), DataOrigin: origin, Body: body,
+			}, role)
+			if err != nil {
+				return nil, err
+			}
+			if reason != "" {
 				continue
 			}
 		}

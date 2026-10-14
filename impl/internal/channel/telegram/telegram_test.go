@@ -37,6 +37,29 @@ func TestActivity(t *testing.T) {
 	}
 }
 
+// The author of forwarded or quoted text is passed when the messenger shows a person (AUD-5).
+func TestActivityAuthors(t *testing.T) {
+	for _, tc := range []struct {
+		msg, fwd, quote string
+	}{
+		{`"forward_origin":{"type":"user","sender_user":{"id":2002,"is_bot":false}}`, "telegram:2002", ""},
+		{`"forward_origin":{"type":"hidden_user","sender_user_name":"X"}`, "", ""},
+		{`"forward_origin":{"type":"user","sender_user":{"id":9,"is_bot":true}}`, "", ""},
+		{`"quote":{"text":"x"},"reply_to_message":{"message_id":7,"from":{"id":3003,"is_bot":false}}`, "", "telegram:3003"},
+		{`"reply_to_message":{"message_id":7,"from":{"id":3003,"is_bot":false}}`, "", ""},
+		{`"external_reply":{"origin":{"type":"user","sender_user":{"id":4004,"is_bot":false}}}`, "", "telegram:4004"},
+		{`"external_reply":{"origin":{"type":"channel"}}`, "", ""},
+	} {
+		a := Activity("telegram", parse(t, `{"update_id":9,"message":{"message_id":5,"from":{"id":1001,"is_bot":false},"chat":{"id":1001,"type":"private"},"text":"x",`+tc.msg+`}}`))
+		if f, _ := a["forwarded_from"].(string); f != tc.fwd {
+			t.Errorf("%s: forwarded_from %q", tc.msg, f)
+		}
+		if q, _ := a["quoted_from"].(string); q != tc.quote {
+			t.Errorf("%s: quoted_from %q", tc.msg, q)
+		}
+	}
+}
+
 func TestCutLinks(t *testing.T) {
 	c := New(Config{LinkAllowlist: []string{"docs.example.org"}})
 	got := c.cutLinks("see https://docs.example.org/a and http://evil.example.com/x or www.other.org")

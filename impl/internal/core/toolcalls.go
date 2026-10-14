@@ -266,6 +266,12 @@ func (c *Core) completeToolcall(ctx context.Context, tx pgx.Tx, now time.Time, l
 	if err := endToolCall(ctx, tx, now, l.WorkID, "done", "", raw); err != nil {
 		return err
 	}
+	if masked(t.Redact, raw) {
+		// The toolhost replaced an address: the attempt saw personal data (AUD-5).
+		if err := addPersonalSeen(ctx, tx, task, "masking"); err != nil {
+			return err
+		}
+	}
 	if untrusted {
 		// The first untrusted output sets untrusted_seen on the attempt; it never goes back
 		// (INJ-13).
@@ -276,6 +282,28 @@ func (c *Core) completeToolcall(ctx context.Context, tx pgx.Tx, now time.Time, l
 		}
 	}
 	return nil
+}
+
+// masked says whether an output holds a mark the toolhost puts in place of an IP or email
+// address it masked by the tool's redact kinds. A plugin that prints such a mark itself only
+// sets the flag too early, never too late.
+func masked(kinds []string, output []byte) bool {
+	s := string(output)
+	for _, k := range kinds {
+		if k == redact.IP && strings.Contains(s, "[ip]") || k == redact.Email && strings.Contains(s, "[email]") {
+			return true
+		}
+	}
+	return false
+}
+
+// addPersonalSeen adds a source of the personal_seen flag of a task; the flag is only ever
+// added to, never cleared (AUD-5).
+func addPersonalSeen(ctx context.Context, tx pgx.Tx, task, source string) error {
+	_, err := tx.Exec(ctx, `UPDATE tasks SET record = jsonb_set(record, '{personal_seen}',
+		coalesce(record->'personal_seen', '[]'::jsonb) || to_jsonb($2::text)) WHERE id = $1
+		AND NOT coalesce(record->'personal_seen', '[]'::jsonb) ? $2`, task, source)
+	return err
 }
 
 // toolDefHash fingerprints the definition a call is checked against: the plugin placement and

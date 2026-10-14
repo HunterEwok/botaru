@@ -240,6 +240,15 @@ func (c *Core) Complete(ctx context.Context, w *Worker, header string, req Compl
 	})
 }
 
+// personalSeen are the sources of the personal_seen flag in a task record (AUD-5).
+func personalSeen(rec []byte) []string {
+	var r struct {
+		PersonalSeen []string `json:"personal_seen"`
+	}
+	_ = json.Unmarshal(rec, &r)
+	return r.PersonalSeen
+}
+
 func (c *Core) completeAttempt(ctx context.Context, tx pgx.Tx, now time.Time, w *Worker, l *leaseRow, result map[string]any) error {
 	cat, err := c.Catalog(ctx)
 	if err != nil {
@@ -306,7 +315,7 @@ func (c *Core) completeAttempt(ctx context.Context, tx pgx.Tx, now time.Time, w 
 	if _, err := c.appendAudit(ctx, tx, now, Audit{
 		Tenant: w.Tenant, Kind: "command", Actor: Actor{Principal: workerPrincipal(w.ID), Via: "bot", Role: w.Role, Task: l.WorkID},
 		Command: "task.complete", Target: &Target{Kind: "task", ID: l.WorkID}, OK: true,
-		After: map[string]any{"state": "completed", "worker": w.ID},
+		After: map[string]any{"state": "completed", "worker": w.ID}, PersonalSeen: personalSeen(rec),
 	}); err != nil {
 		return err
 	}
@@ -370,9 +379,14 @@ func (c *Core) rejectResult(ctx context.Context, tx pgx.Tx, now time.Time, w *Wo
 	if _, err := tx.Exec(ctx, `DELETE FROM handles WHERE work_id = $1 AND lease_no = $2`, l.WorkID, l.LeaseNo); err != nil {
 		return err
 	}
+	// The rejected result carried the same personal data as an accepted one would (AUD-5).
+	var rec []byte
+	if err := tx.QueryRow(ctx, `SELECT record FROM tasks WHERE id = $1`, l.WorkID).Scan(&rec); err != nil {
+		return err
+	}
 	if _, err := c.appendAudit(ctx, tx, now, Audit{
 		Tenant: w.Tenant, Kind: "command", Actor: Actor{Principal: workerPrincipal(w.ID), Via: "bot", Role: w.Role, Task: l.WorkID},
-		Command: "task.complete", Target: &Target{Kind: "task", ID: l.WorkID}, OK: false, Reason: p.Reason,
+		Command: "task.complete", Target: &Target{Kind: "task", ID: l.WorkID}, OK: false, Reason: p.Reason, PersonalSeen: personalSeen(rec),
 	}); err != nil {
 		return err
 	}

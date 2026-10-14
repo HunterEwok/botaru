@@ -200,10 +200,19 @@ type Privacy struct {
 		Name    string `json:"name"`
 		Contact string `json:"contact"`
 	} `json:"controller"`
-	Recipients    []string        `json:"recipients"`
-	Subprocessors []Subprocessor  `json:"subprocessors"`
-	NoticeRef     string          `json:"notice_ref"`
-	NoticeVersion json.RawMessage `json:"notice_version"`
+	Recipients    []string       `json:"recipients"`
+	Subprocessors []Subprocessor `json:"subprocessors"`
+	// Channels are the channel drivers with their third-party storage and ceiling (SEC-9).
+	Channels      []PrivacyChannel `json:"channels"`
+	NoticeRef     string           `json:"notice_ref"`
+	NoticeVersion json.RawMessage  `json:"notice_version"`
+}
+
+// PrivacyChannel is one channel driver of the privacy block (SEC-9).
+type PrivacyChannel struct {
+	Driver            string `json:"driver"`
+	ThirdPartyStorage bool   `json:"third_party_storage"`
+	Ceiling           string `json:"ceiling"`
 }
 
 // Subprocessor is one model provider entry of the privacy block.

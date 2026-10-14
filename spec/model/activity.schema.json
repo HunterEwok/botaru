@@ -108,6 +108,18 @@
       "description": "The message contains a quote: the quote is not a command, personal_seen source quote.",
       "type": "boolean"
     },
+    "forwarded_from": {
+      "description": "Identity of the author of the forwarded text when the messenger shows it; the core writes the principal of that identity in the tenant into personal_subjects (AUD-5). Absent when the author is hidden or is not a person.",
+      "type": "string",
+      "pattern": "^(telegram:[0-9]{1,20}|api:[a-z0-9][a-z0-9_-]{0,62}|hook:[a-z][a-z0-9_-]{0,62}|email:[A-Za-z0-9._%+-]{1,64}@[a-z0-9.-]{1,190})$",
+      "maxLength": 260
+    },
+    "quoted_from": {
+      "description": "Identity of the author of the quoted text when the messenger shows it; the core writes the principal of that identity in the tenant into personal_subjects (AUD-5).",
+      "type": "string",
+      "pattern": "^(telegram:[0-9]{1,20}|api:[a-z0-9][a-z0-9_-]{0,62}|hook:[a-z][a-z0-9_-]{0,62}|email:[A-Za-z0-9._%+-]{1,64}@[a-z0-9.-]{1,190})$",
+      "maxLength": 260
+    },
     "received_at": {
       "$ref": "urn:botaru:schema:common:1#/$defs/datetime"
     }

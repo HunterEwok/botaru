@@ -73,6 +73,7 @@ texts:
   task.rejected.held: Requests of this kind are paused right now.
   task.rejected.person_inactive: Your access is turned off.
   task.failed: The request could not be completed ({reason}).
+  delivery.withheld.channel_ceiling: The answer holds data of a class this chat may not receive, so it was not sent here.
   activity.not_command: Send a command, for example /hello.
   activity.unknown_command: Unknown command.
   activity.not_verified: The sender of this message is not known, so it is not executed.

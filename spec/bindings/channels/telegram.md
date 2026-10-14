@@ -46,6 +46,8 @@ One update submitted twice (a webhook retry, two channel processes, a restart be
 | `reply_to` | `Message.reply_to_message.message_id` if the message is a reply |
 | `forwarded` | `true` if the message has `forward_origin`, `via_bot` (a third-party inline bot composed the text), `is_automatic_forward` (automatic forwarding from a channel to a discussion group) or `sender_business_bot`: such a message is never a command (IDN-7) |
 | `quoted` | `true` if the message has `quote` or `external_reply`: a quote is not a command |
+| `forwarded_from` | `telegram:<forward_origin.sender_user.id>` when `forward_origin.type` is `user`; absent for a hidden user, a chat or a channel (AUD-5) |
+| `quoted_from` | `telegram:<reply_to_message.from.id>` when the message has `quote`, or `telegram:<external_reply.origin.sender_user.id>` when `external_reply.origin.type` is `user`; absent otherwise (AUD-5) |
 | `received_at` | the time the driver received it, in UTC; the core does not use `Message.date` for decisions |
 
 The core looks up the identity only among the subjects of the channel's tenant (TEN-4). A message from a non-subject in a bound chat gives no `Activity` and no `file.put`: the driver saves nothing of it and passes nothing to the core except the event `activity.ignored(not_subject)` (MSG-17, DLV-7).

@@ -5,6 +5,7 @@ package core
 import (
 	"context"
 	"errors"
+	"slices"
 	"strings"
 	"time"
 
@@ -25,6 +26,10 @@ type Activity struct {
 	ReplyTo   string `json:"reply_to,omitempty"`
 	Forwarded bool   `json:"forwarded,omitempty"`
 	Quoted    bool   `json:"quoted,omitempty"`
+	// ForwardedFrom and QuotedFrom name the author of someone else's text when the messenger
+	// shows a person (AUD-5).
+	ForwardedFrom string `json:"forwarded_from,omitempty"`
+	QuotedFrom    string `json:"quoted_from,omitempty"`
 }
 
 // ActivityResult is p1-submit-activity-response.
@@ -123,9 +128,14 @@ func (c *Core) SubmitActivity(ctx context.Context, w *Worker, a Activity) (*Acti
 			return err
 		}
 		body := map[string]any{"type": typ, "goal": goal}
+		subjects, err := c.textAuthors(ctx, tx, w.Tenant, principal, a)
+		if err != nil {
+			return err
+		}
 		res, err := c.enqueue(ctx, tx, now, cat, enqueueInput{
 			Tenant: w.Tenant, Type: typ, Body: body, IdempotencyKey: key, Initiator: principal,
 			EnqueuedBy: "channel:" + a.Channel, Origin: origin, Source: "interactive", Cause: key,
+			Forwarded: a.Forwarded, Quoted: a.Quoted, Subjects: subjects,
 		})
 		if err != nil {
 			if p, ok := AsProblem(err); ok {
@@ -195,4 +205,29 @@ func containsStr(xs []string, s string) bool {
 		}
 	}
 	return false
+}
+
+// textAuthors are the principals of the tenant whose forwarded or quoted text the activity
+// carries, other than the sender, for personal_subjects (AUD-5). An author the tenant does not
+// know has no principal id to record.
+func (c *Core) textAuthors(ctx context.Context, tx pgx.Tx, tenant, sender string, a Activity) ([]string, error) {
+	var ids []string
+	if a.Forwarded && a.ForwardedFrom != "" {
+		ids = append(ids, a.ForwardedFrom)
+	}
+	if a.Quoted && a.QuotedFrom != "" {
+		ids = append(ids, a.QuotedFrom)
+	}
+	var out []string
+	for _, id := range ids {
+		p, err := principalByIdentity(ctx, tx, tenant, id)
+		if errors.Is(err, pgx.ErrNoRows) || p == sender || slices.Contains(out, p) {
+			continue
+		}
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, p)
+	}
+	return out, nil
 }
