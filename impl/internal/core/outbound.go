@@ -72,28 +72,37 @@ func executorCeiling(tv *TenantView, kind, target string) string {
 // in its place; a secret raises alarm.outbound.secret.detected without content, and the second
 // case of one role within an hour stops the deliveries of that role (HLD-6).
 func (c *Core) outboundRefusal(ctx context.Context, tx pgx.Tx, now time.Time, tv *TenantView, kind, target string, d outgoing, role string) (string, error) {
+	above := false
 	if d.DataMark != "" {
 		if ceiling := executorCeiling(tv, kind, target); ceiling != "" && !c.markWithin(d.DataMark, ceiling) {
-			if err := c.withhold(ctx, tx, now, tv.Name, d, "channel_ceiling"); err != nil {
-				return "", err
-			}
-			if kind != "channel" {
-				return "channel_ceiling", nil
-			}
-			// The person learns that the answer exists, without its content.
-			_, err := c.planDelivery(ctx, tx, now, plannedDelivery{
-				Tenant: tv.Name, Task: d.Task, Kind: d.Kind, Addr: d.Addr, TargetKind: d.TargetKind, TargetID: d.TargetID,
-				ExecKind: "channel", ExecName: target, Recipient: d.Recipient, DataOrigin: "code",
-				Body: map[string]any{"form": "text_code", "text_key": "delivery.withheld.channel_ceiling"},
-			})
-			return "channel_ceiling", err
+			above = true
 		}
 	}
-	if d.DataOrigin != "model" || !redact.HasSecret(outgoingText(d.Body)) {
+	// The secret search runs whatever the ceiling says, so a secret above the ceiling still
+	// raises the alarm and counts toward the auto-stop of its role.
+	secret := d.DataOrigin == "model" && redact.HasSecret(outgoingText(d.Body))
+	if !above && !secret {
 		return "", nil
 	}
-	if err := c.withhold(ctx, tx, now, tv.Name, d, "secret_in_outbound"); err != nil {
+	reason := "channel_ceiling"
+	if secret {
+		reason = "secret_in_outbound"
+	}
+	if err := c.withhold(ctx, tx, now, tv.Name, d, reason); err != nil {
 		return "", err
+	}
+	if above && kind == "channel" {
+		// The person learns that the answer exists, without its content.
+		if _, err := c.planDelivery(ctx, tx, now, plannedDelivery{
+			Tenant: tv.Name, Task: d.Task, Kind: d.Kind, Addr: d.Addr, TargetKind: d.TargetKind, TargetID: d.TargetID,
+			ExecKind: "channel", ExecName: target, Recipient: d.Recipient, DataOrigin: "code",
+			Body: map[string]any{"form": "text_code", "text_key": "delivery.withheld.channel_ceiling"},
+		}); err != nil {
+			return "", err
+		}
+	}
+	if !secret {
+		return reason, nil
 	}
 	subject := AlarmSubject{Kind: "tenant", ID: tv.Name}
 	if role != "" {
@@ -104,9 +113,9 @@ func (c *Core) outboundRefusal(ctx context.Context, tx pgx.Tx, now time.Time, tv
 		return "", err
 	}
 	if role == "" {
-		return "secret_in_outbound", nil
+		return reason, nil
 	}
-	return "secret_in_outbound", c.secretAutostop(ctx, tx, now, tv.Name, role)
+	return reason, c.secretAutostop(ctx, tx, now, tv.Name, role)
 }
 
 // secretAutostop sets the hold of HLD-6: a role whose messages were stopped for a secret twice

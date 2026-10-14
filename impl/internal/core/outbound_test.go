@@ -137,6 +137,18 @@ func TestChannelCeilingWithholds(t *testing.T) {
 	if got := deliveryStates(t, b, task)["model:text"]; got != "sending:" {
 		t.Fatalf("answer within the ceiling: %q", got)
 	}
+	// A secret above the ceiling still raises the secret alarm, and the person still gets the
+	// code text of the ceiling.
+	task = b.helloDone(t, "3", "internal", "use password=hunter22 to log in")
+	if w := b.claim(t, b.channel, "delivery"); w == nil || w.Payload["delivery"].(map[string]any)["body"].(map[string]any)["text_key"] != "delivery.withheld.channel_ceiling" {
+		t.Fatalf("the code text in place of a secret above the ceiling: %+v", w)
+	}
+	if got := deliveryStates(t, b, task)["model:text"]; got != "withheld:secret_in_outbound" {
+		t.Fatalf("secret above the ceiling: %q", got)
+	}
+	if n := countEvents(t, b, "alarm.outbound.secret.detected.v1", "outbound.secret.detected:hello"); n != 1 {
+		t.Fatalf("secret alarm events %d", n)
+	}
 }
 
 // Model text with a secret is not sent and raises an alarm without content (INJ-11); the second
@@ -304,5 +316,33 @@ func TestForwardQuoteSubjects(t *testing.T) {
 	var subjects string
 	if err := b.c.st.Pool.QueryRow(ctx, `SELECT record->>'personal_subjects' FROM tasks WHERE id = $1`, task).Scan(&subjects); err != nil || subjects != `["`+bob+`"]` {
 		t.Fatalf("personal_subjects %q %v", subjects, err)
+	}
+}
+
+// A result refused by the full check still writes the personal data marker of the task into
+// its completion audit, since no later completion may come (AUD-5).
+func TestRejectedResultAuditMarker(t *testing.T) {
+	ctx := context.Background()
+	b := newBench(t)
+	cat, err := b.c.Catalog(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := b.c.tx(ctx, func(tx pgx.Tx, now time.Time) error {
+		_, err := b.c.enqueue(ctx, tx, now, cat, enqueueInput{Tenant: "demo", Type: "hello.greet.v1", Body: map[string]any{"type": "hello.greet.v1", "goal": "hi"},
+			IdempotencyKey: "fwd-rejected", Initiator: b.alice, EnqueuedBy: "channel:telegram", Source: "interactive", Forwarded: true})
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
+	att := b.claim(t, b.agent, "attempt")
+	if att == nil {
+		t.Fatal("no attempt")
+	}
+	_, err = b.c.Complete(ctx, b.agent, header(t, att), CompleteRequest{Result: map[string]any{"wrong": "x"}})
+	wantReason(t, err, "output_schema_invalid")
+	var audit string
+	if err := b.c.st.Pool.QueryRow(ctx, `SELECT coalesce(record->>'personal_seen', '') FROM audit WHERE record->>'command' = 'task.complete'`).Scan(&audit); err != nil || audit != `["forward"]` {
+		t.Fatalf("audit marker of the refused result %q %v", audit, err)
 	}
 }
