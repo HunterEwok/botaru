@@ -165,6 +165,9 @@ def scan_go_tests():
     base = os.path.join(ROOT, 'impl')
     for f in walk(('_test.go',), base) if os.path.isdir(base) else []:
         folder = os.path.relpath(os.path.dirname(f), base).replace(os.sep, '/')
+        # go test ./... ignores files and folders that start with _ or . and folders named testdata
+        if any(x.startswith(('_', '.')) or x == 'testdata' for x in os.path.relpath(f, base).split(os.sep)):
+            continue
         text = open(f, encoding='utf-8').read()
         # only tests that go test runs in CI (linux/amd64, no tags): a file under a build constraint or with a
         # GOOS or GOARCH suffix other than linux or amd64 may never run, so its tests cover nothing
