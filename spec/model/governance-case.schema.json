@@ -153,7 +153,9 @@
                 "description": "From v0.3: accuracy of the holder in its lens, or insufficient (COM-17).",
                 "anyOf": [
                   {
-                    "type": "number"
+                    "type": "number",
+                    "minimum": -1,
+                    "maximum": 1
                   },
                   {
                     "const": "insufficient"

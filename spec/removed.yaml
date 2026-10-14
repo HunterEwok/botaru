@@ -172,3 +172,9 @@ entries:
     reason: >-
       The rate metric defaulted_ballots measured ballots by the code rule, which went with the vote.
     decisions: [D-114, D-115]
+  - schema: spec/manifests/tool-plugin.schema.json
+    change: breaking
+    removed: 2026-10-14
+    reason: >-
+      A tool with billing: external must name price_eur, so that the core can reserve and charge its price (BUD-5).
+    decisions: [D-114]

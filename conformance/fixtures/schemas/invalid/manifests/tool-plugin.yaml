@@ -1,6 +1,7 @@
 schema: spec/manifests/tool-plugin.schema.json
 rules:
 - MAN-1
+- BUD-5
 description: 'ToolPlugin manifest specs that the kind schema rejects: extra field, missing required field, value outside
   the closed list or format.'
 cases:
@@ -188,3 +189,50 @@ cases:
           maximum: 60000
     output_limit_kb: 4
     timeout_s: 10
+# billing: external without price_eur (BUD-5)
+- placement: host
+  network:
+    egress: []
+  tools:
+  - name: latest
+    access: read
+    tier: 0
+    output_class: summary
+    untrusted_output: false
+    redact:
+    - ip
+    - email
+    - secret
+    target_from: check
+    params:
+      check:
+        enum_from: catalog.checks
+    output_schema:
+      type: object
+      additionalProperties: false
+      required:
+      - check
+      - ok
+      - total
+      properties:
+        check:
+          enum_from: catalog.checks
+        ok:
+          type: integer
+          minimum: 0
+          maximum: 1000
+        total:
+          type: integer
+          minimum: 0
+          maximum: 1000
+        last_status:
+          type: integer
+          minimum: 0
+          maximum: 599
+        ms_max:
+          type: integer
+          minimum: 0
+          maximum: 60000
+    output_limit_kb: 4
+    timeout_s: 10
+    billing: external

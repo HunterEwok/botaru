@@ -535,7 +535,10 @@ def lint(docs, today=None, farm_hosts=None, examples_mode=False, claimed=None, s
         fm = ts.get('farm_manager') or {}
         if fm.get('enabled', True):
             mp = seat_mp
-            if mp and mp not in ts.get('models_allowed', []):
+            if not mp:
+                f.error('manager_profile_missing', where, 'the manager is enabled, but the farm charter (Governance of '
+                        'tenant farm) sets no farm_manager.model_profile for the seat (GOV-33, MGR-20)')
+            elif mp not in ts.get('models_allowed', []):
                 f.error('manager_profile_not_allowed', where,
                         f'manager seat profile {mp} is not in models_allowed (MGR-20)')
             line = ((ts.get('budgets') or {}).get('lines') or {}).get('manager') or {}

@@ -39,6 +39,7 @@ CODES = {
     'run_arg_unknown': ('run argument is not in the closed schema of the type or action', 'APR-17'),
     'run_not_readonly': ('type with run.approval: none is claimed by a role with actions or write tools', 'APR-17'),
     'delegated_group_privileged': ('a group in delegated_groups carries privileged capabilities', 'PRM-16'),
+    'manager_profile_missing': ('manager enabled without the seat profile in the farm charter', 'MGR-20'),
     'manager_profile_not_allowed': ('manager seat profile is not in models_allowed', 'MGR-20'),
     'shadow_zero_without_off': ('a commission shadow share of 0 instead of an explicit shadow: off', 'COM-10'),
     'escalation_threshold_lowered': ('a commission escalation threshold below its default (2, untrusted 3)', 'COM-13'),

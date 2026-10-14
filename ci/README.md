@@ -198,6 +198,7 @@ The codes of `check_manifests.py` that fixtures refer to (`expect: {error: <code
 | `listener_admin_worker_network` | the P2 listener network is a worker network (note) | IDN-7 |
 | `listener_test_in_production` | test-control listener of the core on a kind: production host | DEP-10 |
 | `manager_line_missing` | manager budget line is not above 0 while the manager is enabled | MGR-20 |
+| `manager_profile_missing` | manager enabled without the seat profile in the farm charter | MGR-20 |
 | `manager_profile_not_allowed` | manager seat profile is not in models_allowed | MGR-20 |
 | `max_share_without_group` | dispatch rule with max_share and without group | DSP-11 |
 | `max_tokens_field` | manifest has a max_tokens field | BUD-9 |

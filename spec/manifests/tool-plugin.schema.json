@@ -345,7 +345,26 @@
           "required": [
             "reason"
           ]
-        }
+        },
+        "allOf": [
+          {
+            "if": {
+              "properties": {
+                "billing": {
+                  "const": "external"
+                }
+              },
+              "required": [
+                "billing"
+              ]
+            },
+            "then": {
+              "required": [
+                "price_eur"
+              ]
+            }
+          }
+        ]
       },
       "description": "Plugin tools.",
       "minItems": 1
