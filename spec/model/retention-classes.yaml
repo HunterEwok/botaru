@@ -1,13 +1,14 @@
 registry: retention-classes
-version: 2
+version: 3
 description: >-
   Retention classes. Every kind of stored object and every store, including
   journals with content, runtime stores, sinks and the channel cache, belongs
   to exactly one class; the schema of the stored object names it in
   x-botaru-retention (RET-1). The field default is the default period in words and
   numbers, deletion is the way of deletion, retention_cycle_v01 says whether
-  the retention cycle already deletes objects of the class by period in v0.1 (RET-2); since v0.2 the periods are set by
-  Tenant.spec.retention within the farm ceilings, and the cycle deletes all classes.
+  the retention cycle already deletes objects of the class by period in v0.1 (RET-2); since v0.2 a tenant sets the periods
+  of the classes that have ceiling_days in Tenant.spec.retention, at most ceiling_days (RET-9), and the cycle deletes
+  all classes by period in every copy (RET-10). min_days is the shortest period a tenant may set.
   Before its period ends, any class is deleted only by an erasure request (RET-7).
 source: docs/operations.md
 entries:
@@ -23,15 +24,19 @@ entries:
       sessions_without_memory_days: 7
     deletion: one object at a time
     retention_cycle_v01: true
-    rules: [RET-1, RET-2, OBS-1, AUD-4]
+    ceiling_days: 400
+    min_days: 1
+    rules: [RET-1, RET-2, RET-9, OBS-1, AUD-4]
   - id: memory
     since: v0.1
     meaning: Memory records of people and bots.
     default:
       text: until forget, the person leaving or the end of the tenant
-    deletion: only by an erasure request, with the C4 erase operation
+    deletion: by an erasure request, with the C4 erase operation; from v0.2 also by a tenant period, if the tenant sets one
     retention_cycle_v01: false
-    rules: [RET-1, RET-7, MEM-4]
+    ceiling_days: 3650
+    min_days: 30
+    rules: [RET-1, RET-7, RET-9, MEM-4]
   - id: metadata
     since: v0.1
     meaning: Audit, transition journal, events, spending, human decisions, final holds.
@@ -43,7 +48,9 @@ entries:
       is the retention loop that removes `subject`, `task` and `root` of a person's usage lines older
       than 93 days, truncates their `time` to the day and writes `subject_kind: human` (BUD-16, SEC-14)
     retention_cycle_v01: false
-    rules: [RET-1, RET-2, AUD-3]
+    ceiling_days: 3650
+    min_days: 93
+    rules: [RET-1, RET-2, RET-9, AUD-3]
   - id: tombstone
     since: v0.1
     meaning: >-

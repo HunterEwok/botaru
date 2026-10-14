@@ -22,7 +22,7 @@ A memory record of the `person` scope (`MemoryItem`) keeps what the bot remember
 | `proposed` | `active` | P1 `decide` with the subject `memory_record`: a button on the card in the person's direct chat | only the person whose memory it is decides | MEM-3, APR-4 |
 | `proposed` | `discarded` | P1 `decide` with a refusal, or the `approval-expiry` loop at the card's deadline | the default deadline is 7 days, the outcome on silence comes from the decision registry row (APR-12) | MEM-3, APR-12 |
 | `active` | `superseded` | approval of a new record with the same key | | MEM-3 |
-| `proposed`, `active` | `forgotten` | a person's `/forget`, an erasure request (including on a person's offboarding and on tenant deletion), from v0.2 the retention class period (the `erasure` and `retention` loops) | deletion in all stores, including runtime stores | MEM-4, RET-7 |
+| `proposed`, `active` | `forgotten` | a person's `/forget`, an erasure request (including on a person's offboarding and on tenant deletion), from v0.2 the tenant's `memory` period, if it sets one (the `erasure` and `retention` loops, RET-9, RET-10) | deletion in all stores, including runtime stores | MEM-4, RET-7, RET-10 |
 
 ## Invariants
 
@@ -37,4 +37,4 @@ A memory record of the `person` scope (`MemoryItem`) keeps what the bot remember
 | Version | What appears |
 |---|---|
 | v0.1 | The whole cycle, except deletion by the retention class period and tenant deletion |
-| v0.2 | Deletion by the retention class period by the `retention` loop (RET-2); tenant deletion (P2 `tenant.delete`) |
+| v0.2 | Deletion by the tenant's `memory` period by the `retention` loop (RET-9, RET-10); tenant deletion (P2 `tenant.delete`) |

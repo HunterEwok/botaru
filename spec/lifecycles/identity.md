@@ -29,7 +29,7 @@ A bot identity (`Bot`) is a core record with a permanent number `bot_<ulid>`, a 
 | `unbound` | `active` | P2 `worker.enroll` with the `bot` parameter (`admin:workers`) | the same tenant and role; there is no hold of the `bot` scope; binding epoch + 1 | IDN-8 |
 | `unbound` | `suspended` | P2 `worker.enroll` with the `bot` parameter | the identity has a hold of the `bot` scope; binding epoch + 1 | IDN-8 |
 | `active`, `suspended`, `unbound` | `retired` | the core for a reason from `bot-retire-reasons.yaml`: a case becomes `effective` (`removed_by_vote`); P2 `seat.assign` or `seat.vacate` (`replaced_by_human`, for the farm manager seat with the reason `incident` `replaced_after_incident`); the `identity` loop by the `decide_within` deadline (`replaced_after_incident`) or `unbound_ttl` (`worker_gone`); `apply` without the role (`role_removed`); P2 `bot.retire` (`human_retire`); from v0.2 a tenant offboarding (`tenant_offboarded`) | a reason from the closed list; in the same transaction the seal (MEM-4), the fact offer (MEM-7) and a new identity for the live worker | IDN-11 |
-| `retired` | `erased` | at the end of `seal_ttl` (30 days) the `identity` loop enqueues an erasure request with the reason `bot_retired` and the scope of the identity id, and the `erasure` loop executes it in all stores | the request is executed; from v0.2 records whose retention class period ended earlier are already wiped by the `retention` loop (RET-2); on tenant deletion everything is wiped by its `tenant_delete` request | MEM-9, IDN-11, RET-7 |
+| `retired` | `erased` | at the end of `seal_ttl` (30 days) the `identity` loop enqueues an erasure request with the reason `bot_retired` and the scope of the identity id, and the `erasure` loop executes it in all stores | the request is executed; from v0.2 records whose retention class period ended earlier are already wiped by the `retention` loop (RET-10, MEM-10); on tenant deletion everything is wiped by its `tenant_delete` request | MEM-9, IDN-11, RET-7, MEM-10 |
 
 ## Invariants
 
@@ -50,4 +50,4 @@ A bot identity (`Bot`) is a core record with a permanent number `bot_<ulid>`, a 
 | Version | What appears |
 |---|---|
 | v0.1 | The whole cycle: `active`, `suspended`, `unbound`, `retired`, `erased`; seven retirement reasons; the seal and the tombstone; moving to a commission seat by P2 `seat.assign`; the fields `acting_bot` and `bot_epoch` in the record schemas (empty for records without a bot) |
-| v0.2 | The transition `worker -> seat` by a promotion case becoming `effective`; retirement with the reason `tenant_offboarded` on a tenant offboarding; wiping by the retention class period by the `retention` loop (RET-2) |
+| v0.2 | The transition `worker -> seat` by a promotion case becoming `effective`; retirement with the reason `tenant_offboarded` on a tenant offboarding; wiping by the retention class period by the `retention` loop, before the seal ends (RET-10, MEM-10) |

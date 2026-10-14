@@ -568,7 +568,7 @@ What the line in the header of file 17 could not do if it held the injected text
 | P3 | `status.campaigns` | roles with `views` | the same for campaigns | v0.1 |
 | C1 | `msg.stage`, `msg.publish`, `msg.lease`, `msg.ack`, `msg.nack`, `msg.expire`, `state.put` | core | atomic transitions of an inbox entry with events (DLV-2) | v0.1 |
 | P2 | `status` | operator; tenant admin | also shows the self-report with the mismatch code | v0.2 |
-| P2 | `msg.list`, `msg.show`, `inbox.status` | operator; tenant admin | metadata of messages and inboxes; `msg.show` shows the note only with the permission to read the audit | v0.2 |
+| P2 | `msg.list`, `msg.show`, `inbox.status` | operator (any tenant); a person with `admin:people` (own tenant) | metadata of messages and inboxes, closed filters, at most 200 rows per page; `msg.show` shows the note only to a caller with `audit.read`, in an untrusted wrapper and with an audit record of the read; a foreign and an unknown id give the same `not_found` (MSG-18) | v0.2 |
 | E1 | delivery `digest` | channel | rendering of the table, cards, paragraph and `hidden` from the delivery record | v0.1 |
 | background | the `inbox` loop | core | entry expiry, stale states, wake-ups by routes, `dead` and `inbox.flood` events | v0.1 |
 
@@ -589,7 +589,7 @@ The order of work within v0.1 is set by D-71: first the `core` profile and the f
 | Version | What appears |
 |---|---|
 | v0.1 | the `core` profile: the self-report is informational, the truth about liveness is with the core (STA-2, fixture `fx-sta-01`); the code text catalog in `en` for cards, refusals and notices, other locales supplied by the installation (DLV-9); the first bot `examples/hello-bot/` without messages between bots and without a reporter; then the `messaging` profile: the envelope `botaru.message/v1`, the genera `report` and `state`, the `MessageType` manifest; role, bot group and reply addresses, the worker address only for the core; inboxes in C1, `one` and `all` delivery, lease and acknowledgement together with `complete`; P1 `msg.send`, `msg.receive`, `msg.ack`, `msg.nack`; P3 `send_message`, `inbox_read`, `status.workers`, `status.proposals`, `status.campaigns`; routes `on: inbox`, `on: message`, `on: task_done` and the auto-report by `summary_fields`; `dataorigin`, `origininitiators`, sender share, limits and the wake-up budget; the fields `messaging.wake_day_eur` and `wakes_per_day`; the `state` self-report only by worker code (STA-1); the reporter, the `digest` delivery of a table, cards and a marked paragraph, the audience ceiling at read time, the filter by the permissions of chat participants; the `inbox` loop; incoming messages from a non-principal without a trace (MSG-17); `ChatBinding.model_text: labeled` and mandatory `summary_fields` for group types (REP-11); the commands `/tasks`, `/status`, `/cancel`, `/help`, `/team`, `/about`, `/lang` with code texts (REP-12); bot groups (BGR-1, BGR-2); campaign cards; manager notices and notices about people bypassing the reporter (REP-5); inbox viewing by the manager's reading bot; holds with scope `bot_group`; the sender's bot identity in the message record; `decide` subjects for campaigns and scripts; rules MSG-1..17, STA-1, REP-2, REP-3, REP-5..9, REP-11, REP-12, BGR-1, BGR-2; `traceparent` in the envelope (OBS-2, D-94); fixtures `fx-msg-*`, `fx-rep-01..07` and eval cases `inj-rep-01`, `inj-rep-03`, `inj-peer-mgr-01` |
-| v0.2 | two columns and self-report mismatch codes (STA-3); checking the numbers of the paragraph (REP-4); pace, merging and language of digests (REP-10); P2 `msg.list`, `msg.show`, `inbox.status`; the remaining eval cases for the bus and the reporter |
+| v0.2 | two columns and self-report mismatch codes (STA-3); checking the numbers of the paragraph (REP-4); pace, merging and language of digests (REP-10); P2 `msg.list`, `msg.show`, `inbox.status` (MSG-18); the remaining eval cases for the bus and the reporter |
 
 ## Why it works this way
 
@@ -628,6 +628,7 @@ Generated from the registry `conformance/requirements.yaml`; the full text of ev
 | [MSG-15](../conformance/rules.md#MSG-15) | Size, rate and capacity limits | v0.1 | yes |
 | [MSG-16](../conformance/rules.md#MSG-16) | Tasks and notifications from messages only by routes from git | v0.1 | yes |
 | [MSG-17](../conformance/rules.md#MSG-17) | Activity from a non-principal in a bound chat | v0.1 | yes |
+| [MSG-18](../conformance/rules.md#MSG-18) | Message and inbox views for people | v0.2 | no |
 | [REP-2](../conformance/rules.md#REP-2) | A digest is a code table and a marked paragraph | v0.1 | yes |
 | [REP-3](../conformance/rules.md#REP-3) | The audience ceiling applies at reading | v0.1 | yes |
 | [REP-4](../conformance/rules.md#REP-4) | Paragraph numbers are checked against the table | v0.2 | no |

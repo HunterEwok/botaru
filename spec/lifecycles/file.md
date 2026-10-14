@@ -17,8 +17,8 @@ A file is bytes plus a record that only the core writes (ART-1). The file cycle 
 | From | To | Trigger | Condition | Rules |
 |---|---|---|---|---|
 | (none) | `stored` | P1 `file.put`: a channel (a person's attachment), a `job` worker or a sandbox toolhost (a result file) | the caller works for this tenant; the mark is not below the lower bound and not above what the uploader is allowed; the size is within the limits; for a file from a `service` principal with `uploads_personal: true` and for an `ingested` file from a resource with `personal: true` the core sets `personal_seen: declared` | ART-1, ART-3, ART-4, ART-6, CAP-1 |
-| `stored` | `expired` | `expires_at` arrived; the core loop `retention` records the transition, and a hand-out after `expires_at` already answers `gone` | the period is the smaller of `Tenant.spec.retention.files` and the task type's `result_ttl`, if the file became a result | ART-1, RET-2 |
-| `expired` | `purged` | the core loop `retention` or the `erasure` loop on an erasure request; C1 `file.purge` (from v0.2) | for `retention`: no later than the period plus the loop period | RET-2, RET-4, RET-7, KNW-5 |
+| `stored` | `expired` | `expires_at` arrived; the core loop `retention` records the transition, and a hand-out after `expires_at` already answers `gone` | the period is the smaller of `Tenant.spec.retention.files` and the task type's `result_ttl`, if the file became a result; a shorter period set later reaches the file at the next loop run (RET-9) | ART-1, RET-2, RET-9 |
+| `expired` | `purged` | the core loop `retention` or the `erasure` loop on an erasure request; C1 `file.purge` (from v0.2) | for `retention`: no later than 24 hours after the period ends | RET-2, RET-4, RET-7, RET-10, KNW-5 |
 | `stored` | `purged` | the core loop `erasure` on an erasure request; C1 `file.purge` (from v0.1, D-76) | an erasure request with the reason `forget`, `offboarding`, `tenant_delete`, `subject_request` or `manual` is written to the erasure log before the first byte is deleted | RET-4, RET-7, KNW-5 |
 
 ## Invariants
@@ -38,4 +38,4 @@ A file is bytes plus a record that only the core writes (ART-1). The file cycle 
 | Version | What appears |
 |---|---|
 | v0.1 | The states `stored` and `purged`: the file record, P1 `file.put` and `file.get` (ART-1, ART-2, ART-3); `personal_seen: declared` at the write (ART-6); C1 `file.purge` on an erasure request (RET-4, RET-7): deleting a person's data at their request exists from the first version and cannot be waived for a tenant with `kind: production` (D-76). |
-| v0.2 | The `expired` state and deletion by period by the `retention` loop (RET-2); deletion of corpus fragments together with the file (KNW-5); size limits (ART-4). |
+| v0.2 | The `expired` state and deletion by period by the `retention` loop (RET-9, RET-10); deletion of corpus fragments together with the file (KNW-5); size limits (ART-4). |

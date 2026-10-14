@@ -126,6 +126,7 @@ cases:
             wake_day_eur: 1.5
             wakes_per_day: 200
           retention:
+            classes: {content: 90d}
             files: 90d
             journals: 30d
           privacy:
@@ -299,6 +300,7 @@ cases:
             wake_day_eur: 1.5
             wakes_per_day: 200
           retention:
+            classes: {content: 90d}
             files: 90d
             journals: 30d
           privacy:

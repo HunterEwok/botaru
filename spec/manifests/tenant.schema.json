@@ -1128,11 +1128,11 @@
       "properties": {
         "files": {
           "$ref": "urn:botaru:schema:common:1#/$defs/duration",
-          "description": "File period; by it the core sets expires_at (ART-1)."
+          "description": "File period; the core sets expires_at at write to the smaller of this and the result_ttl of the type (ART-1); at most the content period (RET-9)."
         },
         "journals": {
           "$ref": "urn:botaru:schema:common:1#/$defs/duration",
-          "description": "Period of attempt journals (AUD-4)."
+          "description": "Period of attempt journals (AUD-4); at most the content period (RET-9)."
         },
         "classes": {
           "type": "object",
@@ -1143,10 +1143,10 @@
           "additionalProperties": {
             "$ref": "urn:botaru:schema:common:1#/$defs/duration"
           },
-          "description": "Periods by retention classes from retention-classes.yaml (RET-2)."
+          "description": "Periods by retention class: only classes with ceiling_days in retention-classes.yaml (content, memory, metadata), between min_days and ceiling_days (RET-9)."
         }
       },
-      "description": "From v0.2: retention periods (RET-2).",
+      "description": "From v0.2: retention periods of the tenant within the farm ceilings of spec/model/retention-classes.yaml (RET-9); lint code retention_period.",
       "x-botaru-version": "v0.2"
     },
     "locale": {

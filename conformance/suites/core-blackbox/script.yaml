@@ -9,7 +9,7 @@ checks:
   - SCR-11
   version: v0.1
   section: Tests without a model
-  source: docs/quality.md:359
+  source: docs/quality.md:363
   spec:
     What: run and step transitions by the table of `spec/lifecycles/script.md`, including `on_failure` and run cancelation
     Expectation: allowed transitions pass, the others are rejected
@@ -19,7 +19,7 @@ checks:
   - SCR-7
   version: v0.1
   section: Tests without a model
-  source: docs/quality.md:361
+  source: docs/quality.md:365
   spec:
     What: a `fanout` item outside the list frozen at run approval
     Expectation: not released
@@ -29,7 +29,7 @@ checks:
   - SCR-9
   version: v0.1
   section: Tests without a model
-  source: docs/quality.md:362
+  source: docs/quality.md:366
   spec:
     What: a step takes a field of an agent step with `untrusted_seen` through `items.from`, the condition stands before an
       action
@@ -40,7 +40,7 @@ checks:
   - SCR-10
   version: v0.2
   section: Tests without a model
-  source: docs/quality.md:371
+  source: docs/quality.md:375
   spec:
     What: (v0.2) a `tasktype` hold with `no_enqueue` on the type of step 3 while step 2 runs; release of the hold; `resume`
       by the initiator under another active hold; the run deadline passes during the pause
@@ -54,7 +54,7 @@ checks:
   - TIM-3
   version: v0.1
   section: Tests without a model
-  source: docs/quality.md:373
+  source: docs/quality.md:377
   spec:
     What: (v0.2) the accepted script schedule reaches two slots; a hold of scope `schedule` before the second slot; a slot
       whose estimate does not fit the tenant budget; a slot that comes while the run of the previous slot waits in a `wait`
@@ -69,7 +69,7 @@ checks:
   - SCR-13
   version: v0.1
   section: Tests without a model
-  source: docs/quality.md:374
+  source: docs/quality.md:378
   spec:
     What: '(v0.2) a script from git with a `task` step, a `wait` step of `1h` and an `await` step for `ext.fxsrc.run_failed.v1`
       with `match` on a result field and `timeout: 2h`; a matching event of another tenant, then a matching event of the same
@@ -85,7 +85,7 @@ checks:
   - SCR-14
   version: v0.1
   section: Tests without a model
-  source: docs/quality.md:375
+  source: docs/quality.md:379
   spec:
     What: (v0.2) `Tenant.spec.script_commands` maps `/monthcheck` to a script from git with the parameters `month` (format
       `year_month`, default) and `days` (1-30) and its own `goals`; `alice` sends `/monthcheck month=2026-09 days=40`, then

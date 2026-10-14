@@ -959,6 +959,39 @@ def lint(docs, today=None, farm_hosts=None, examples_mode=False, claimed=None, s
                 f.error('driver_config_forbidden', where,
                         f'{kind} {name}: spec.config has fields {bad}; they exist only in the common envelope (MAN-4)')
 
+    # 11b. Retention periods (RET-9) and the outgoing webhook sink (DLV-17).
+    rclasses = model_registry('retention-classes')
+    for tenant, tname, where, ts in S.each('Tenant'):
+        ret = ts.get('retention') or {}
+        periods = {}
+        for cls, dur in (ret.get('classes') or {}).items():
+            e = rclasses.get(cls) or {}
+            secs = seconds(dur)
+            if 'ceiling_days' not in e:
+                f.error('retention_period', where, f'tenant {tname}: retention.classes.{cls}: the class has no tenant period (RET-9)')
+            elif secs is None or not e.get('min_days', 1) * 86400 <= secs <= e['ceiling_days'] * 86400:
+                f.error('retention_period', where, f'tenant {tname}: retention.classes.{cls} {dur} is outside '
+                        f'{e.get("min_days", 1)}..{e["ceiling_days"]} days (RET-9)')
+            else:
+                periods[cls] = secs
+        content = periods.get('content', ((rclasses.get('content') or {}).get('default') or {}).get('days', 30) * 86400)
+        for k in ('files', 'journals'):
+            secs = seconds(ret.get(k)) if k in ret else None
+            if secs is not None and secs > content:
+                f.error('retention_period', where, f'tenant {tname}: retention.{k} {ret[k]} is longer than the content period (RET-9)')
+    for tenant, name, where, ss in S.each('Sink'):
+        if ss.get('driver') != 'webhook':
+            continue
+        base = str(ss.get('base') or '')
+        m = re.match(r'^https://([^/:?#]+)', base)
+        host = m.group(1).lower() if m else None
+        private = host is not None and (host == 'localhost' or host.endswith('.local') or re.match(
+            r'^(10\.|127\.|192\.168\.|172\.(1[6-9]|2[0-9]|3[01])\.|\[)', host))
+        if host is None or private or host in farm_hosts or host.split('.')[0] in farm_hosts:
+            f.error('webhook_sink_invalid', where, f'sink {name}: base {base!r} is not an https:// address outside the farm (DLV-17)')
+        if not ss.get('signing_key_ref'):
+            f.error('webhook_sink_invalid', where, f'sink {name}: driver webhook without signing_key_ref (DLV-17)')
+
     # 11a. v0.2 checks: two approvers (APR-16), curated corpora (KNW-2), source channels (ING-1),
     # export sinks (SEC-10), skill folders (SKL-1).
     for tenant, tname, where, ts in S.each('Tenant'):

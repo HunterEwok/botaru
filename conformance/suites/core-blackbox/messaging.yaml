@@ -9,9 +9,23 @@ checks:
   - REP-5
   version: v0.1
   section: Tests without a model
-  source: docs/quality.md:322
+  source: docs/quality.md:325
   spec:
     What: a core alarm, a farm manager notice and an immediate report of a control operation while the `reporter` role is
       alive
     Expectation: the alarm goes to the monitoring adapter (E5), the notice and the report go to people by core delivery; no
       `reporter` task and no entry in its inbox
+- id: blackbox:messaging/p2-message-views
+  method: blackbox
+  rules:
+  - MSG-18
+  version: v0.2
+  section: Tests without a model
+  source: docs/quality.md:326
+  spec:
+    What: (v0.2) a `report.qc_note.v1` message with a note in `demo`; `carol` (`admin:people`) calls `msg.list`, `msg.show`
+      and `inbox.status`; `dave` with `audit.read` calls `msg.show`; `carol` calls `msg.show` with a `demo2` message id and
+      with an unknown id; the operator calls `msg.list` for `demo2`
+    Expectation: '`carol` sees metadata and closed fields without the note; `dave` sees the note in an untrusted wrapper and
+      an audit record of the read appears; both foreign and unknown ids give the same `not_found`; `inbox.status` gives counts
+      by state, the oldest age, the capacity and the wake-up budget; a `msg.list` page has at most 200 rows'

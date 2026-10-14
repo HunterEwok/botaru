@@ -10,7 +10,7 @@ checks:
   - GOV-21
   version: v0.2
   section: Tests without a model
-  source: docs/quality.md:487
+  source: docs/quality.md:494
   spec:
     What: (v0.2) a governance case goes through opening, two rounds with ballots, a `not_eligible` queue event, `voters_removed`
       and `decided`; then the audit log and the events are read through P2 `audit.query` by a person with `admin:governance`
@@ -25,7 +25,7 @@ checks:
   - GOV-30
   version: v0.2
   section: Tests without a model
-  source: docs/quality.md:488
+  source: docs/quality.md:495
   spec:
     What: (v0.2) an attribution candidate with nobody answering for 7, 14, 21, 28 and 35 days; then an answer "Yes" on another
       one

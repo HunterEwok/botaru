@@ -322,7 +322,7 @@ The channel draws an approval card from the approval record with a code template
 
 ### Sinks and webhooks
 
-A sink (E2) writes the result to file storage or an external system. It writes idempotently by `delivery.id`, and a file that contains model text gets `ai_generated: true` in its metadata (FEN-7, DLV-13). From v0.2 an outgoing webhook is a kind of sink: the address is built from the base in the sink manifest, and every send carries `delivery.id` in the `webhook-id` header and the sink's signature.
+A sink (E2) writes the result to file storage or an external system. It writes idempotently by `delivery.id`, and a file that contains model text gets `ai_generated: true` in its metadata (FEN-7, DLV-13). From v0.2 an outgoing webhook is a kind of sink (`driver: webhook`, DLV-17): the address is exactly the `base` of the sink manifest, an `https://` address outside the farm; every send is a POST with `delivery.id` in the `webhook-id` header, a timestamp and an HMAC signature with the key named by `signing_key_ref` (the Standard Webhooks format); a timeout, 429 and 5xx are retried up to `dead`, any other refusal is `dead` at once, and redirects are not followed. The body carries file references, not file bytes, and the sink keeps no copy.
 
 ### No streaming
 
@@ -414,6 +414,7 @@ Generated from the registry `conformance/requirements.yaml`; the full text of ev
 | [DLV-14](../conformance/rules.md#DLV-14) | Farm records do not assess a person | v0.1 | yes |
 | [DLV-15](../conformance/rules.md#DLV-15) | A group chat gets only a summary | v0.1 | yes |
 | [DLV-16](../conformance/rules.md#DLV-16) | A tool call does not wait for an executor beyond its deadline | v0.1 | yes |
+| [DLV-17](../conformance/rules.md#DLV-17) | Outgoing webhook sink | v0.2 | no |
 | [FEN-1](../conformance/rules.md#FEN-1) | A lease with a growing number and a token | v0.1 | no |
 | [FEN-2](../conformance/rules.md#FEN-2) | A stale token gets fenced without writes | v0.1 | yes |
 | [FEN-3](../conformance/rules.md#FEN-3) | Ceilings of leases, attempts and runs | v0.1 | yes |

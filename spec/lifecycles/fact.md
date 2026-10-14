@@ -26,7 +26,7 @@ A refusal at creation (`fact_insufficient`, a schema error, a subject not from t
 | `active` | `erased` | the core when writing a new fact | the space has more than 100 active facts; the fact with the oldest `last_used_at` is evicted | MEM-6 |
 | `active`, `stale` | `sealed` | the core in the transaction of an identity's retirement | IDN-11 | MEM-4 |
 | `stale` | `erased` | the `retention` loop | the retention class period | MEM-9, RET-2 |
-| `sealed` | `erased` | the `identity` loop enqueues an erasure request `bot_retired`, the `erasure` loop wipes | `seal_ttl` has passed; from v0.2 earlier, if the retention class period ended earlier (the `retention` loop, RET-2) | MEM-9, RET-7 |
+| `sealed` | `erased` | the `identity` loop enqueues an erasure request `bot_retired`, the `erasure` loop wipes | `seal_ttl` has passed; from v0.2 earlier, if the retention class period ended earlier (the `retention` loop, RET-10, MEM-10) | MEM-9, MEM-10, RET-7 |
 | any | `erased` | the `erasure` loop | tenant deletion (P2 `tenant.delete`, the reason `tenant_delete`) or an erasure request for its scope | MEM-4, RET-7 |
 
 ## Invariants
@@ -45,4 +45,4 @@ A refusal at creation (`fact_insufficient`, a schema error, a subject not from t
 | Version | What appears |
 |---|---|
 | v0.1 | The whole cycle: creation, recheck, `stale`, the seal, the choice by the successor, wiping |
-| v0.2 | Wiping of `stale` and sealed facts by the retention class period by the `retention` loop (RET-2) |
+| v0.2 | Wiping of `stale` and sealed facts by the retention class period by the `retention` loop (RET-10, MEM-10) |

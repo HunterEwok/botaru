@@ -1,8 +1,8 @@
 id: fx-retention-retention
-rules: [RET-2, RET-3, RET-4]
+rules: [RET-2, RET-3, RET-4, RET-9, RET-10]
 description: The retention loop in v0.1 deletes only objects of the classes content and observation older than the default term
   from spec/model/retention-classes.yaml; everything else is deleted before its term only by an erasure request. From v0.2 the terms
-  are set by Tenant.spec.retention, and after the term the canary is not found in any store. An erasure request by
+  are set by Tenant.spec.retention (RET-9), and after the term the canary is not found in any store (RET-10). An erasure request by
   scope (tenant, subject) deletes task content with the C1 operation task.purge and leaves a tombstone.
 given: {tenant: demo, now: '2026-10-12T00:00:00Z'}
 cases:
@@ -66,12 +66,12 @@ cases:
   - stand: {op: loop.tick, loop: retention}
   expect: {c4_record: present}
 - id: ret-fx-05
-  rules: [RET-2]
+  rules: [RET-10]
   version: v0.2
   description: From v0.2, after the Tenant.spec.retention term, the canary is not found in any store that the farm
     keeps.
   given:
-    tenant_retention: {content_days: 14, files: 14d}
+    tenant_retention: {classes: {content: 14d}, files: 14d}
     records:
     - store: c3
       class: content
@@ -86,6 +86,45 @@ cases:
   - stand: {op: loop.tick, loop: retention}
   expect:
     found_in_any_store: {CANARY-NOT-A-SECRET-ret2-all: false}
+- id: ret-fx-14
+  rules: [RET-9, RET-10]
+  version: v0.2
+  description: 'A file written with retention.files 30d gets expires_at 30 days after the write. The tenant then
+    shortens files to 7d: at the next loop run a file written 10 days ago is deleted, and the corpus fragments of
+    that file go with it. A later change back to 30d does not bring the file back.'
+  given:
+    tenant_retention: {classes: {content: 30d}, files: 30d}
+    records:
+    - {store: c1, kind: file, id: f_old, created_at: '2026-10-02T00:00:00Z', expires_at: '2026-11-01T00:00:00Z', content: CANARY-NOT-A-SECRET-ret9-short}
+    - {store: c1, kind: corpus_fragment, file: f_old, content: CANARY-NOT-A-SECRET-ret9-short}
+  steps:
+  - call:
+      port: P2
+      op: apply
+      request:
+        commit: 0123456789abcdef0123456789abcdef01234567
+        manifests:
+        - apiVersion: botaru/v1alpha1
+          kind: Tenant
+          metadata: {name: demo}
+          spec: {kind: test, farm_manager: {enabled: false}, budgets: {month_eur: 60}, retention: {classes: {content: 30d}, files: 7d}}
+    by: operator
+  - stand: {op: loop.tick, loop: retention}
+  - call:
+      port: P2
+      op: apply
+      request:
+        commit: 1123456789abcdef0123456789abcdef01234567
+        manifests:
+        - apiVersion: botaru/v1alpha1
+          kind: Tenant
+          metadata: {name: demo}
+          spec: {kind: test, farm_manager: {enabled: false}, budgets: {month_eur: 60}, retention: {classes: {content: 30d}, files: 30d}}
+    by: operator
+  - stand: {op: loop.tick, loop: retention}
+  expect:
+    found_in_any_store: {CANARY-NOT-A-SECRET-ret9-short: false}
+    file: {id: f_old, state: expired}
 - id: ret-fx-13
   rules: [RET-3, RET-4]
   version: v0.1

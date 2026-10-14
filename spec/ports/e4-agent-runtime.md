@@ -18,7 +18,7 @@ E4 describes the model loop inside a worker of kind `agent`. An agent has two pa
 | `describe` | adapter at start | Declares how the runtime performs the four mechanisms; values only from `spec/model/runtime-deviations.yaml` | | v0.1 | RT-1, RT-2, RT-3, RT-4, INJ-9 |
 | `run` | adapter after `claim` | Input `RunRequest`; output `completed{artifacts, usage}` or `failed{reason, retryable, usage}`; `usage` is for reference | | v0.1 | FEN-4, BUD-3 |
 | `cancel` | adapter on `cancel_requested` from `heartbeat` | Stops the work before the next heartbeat | | v0.1 | FEN-4 |
-| `purge` | adapter on an erasure request from the `erasure` loop; the adapter gets the step as an `erasure` work unit (the adapter takes it with P1 `claim` and hands in the result with `complete`) and passes it to the runtime | Deletes runtime data by scope (the session and memory profile under `runtime_internal`) or by a list of ids and hands the result into the erasure request; required from v0.1 for runtimes that declared `runtime_internal`, from v0.2 for all, together with cleanup when a worker is retired | | v0.1 | RT-1, RT-2, MEM-4, RET-7, RET-4 |
+| `purge` | adapter on an erasure request from the `erasure` loop; the adapter gets the step as an `erasure` work unit (the adapter takes it with P1 `claim` and hands in the result with `complete`) and passes it to the runtime | Deletes runtime data by scope (the session and memory profile under `runtime_internal`) or by a list of ids and hands the result into the erasure request; required from v0.1 for runtimes that declared `runtime_internal`, from v0.2 for all: working files, caches and logs with content of every runtime that ran an attempt of the tenant, together with cleanup when a worker is retired (RET-11) | | v0.1 | RT-1, RT-2, MEM-4, RET-7, RET-4, RET-11 |
 | `match(tenant, subject, needles)` | adapter on a match search from the `erasure` loop; the adapter gets the step as an `erasure` work unit (the adapter takes it with P1 `claim` and hands in the result with `complete`) and passes it to the runtime | Searches the transcripts and memory inside the runtime for the subject's exact strings and answers only with a list of ids, without content; required from v0.1 for runtimes with `session: runtime_internal` or `memory: runtime_internal`, otherwise `describe` blocks the worker at `hello` | `blocked` | v0.1 | RT-5, RET-7, SEC-11 |
 
 `RunRequest` (sketch):
@@ -61,7 +61,7 @@ Every implementation must (MUST):
 - stop working on cancellation before the next heartbeat (FEN-4);
 - use `run_id` as the idempotency key;
 - not leave a transcript on its disk after `run`, except under a declared `session: runtime_internal` (MEM-4);
-- delete data by scope through the adapter with the `purge` operation on an erasure request: from v0.1 under `runtime_internal` (RT-1, RT-2, RET-7), from v0.2 for all runtimes (RET-4); under `runtime_internal`, answer `match` with a list of ids where the subject's strings occur (RT-5);
+- delete data by scope through the adapter with the `purge` operation on an erasure request: from v0.1 under `runtime_internal` (RT-1, RT-2, RET-7), from v0.2 for all runtimes (RET-4, RET-11); under `runtime_internal`, answer `match` with a list of ids where the subject's strings occur (RT-5);
 - send telemetry only through the adapter and only by the allowlist, without content (OBS-1);
 - not set the region of a model call: P4 sets it;
 - not see the worker token and the provider key (DEP-5); handles do not get into the model context (SEC-3).

@@ -9,7 +9,7 @@ checks:
   - PRV-4
   version: v0.2
   section: Tests without a model
-  source: docs/quality.md:345
+  source: docs/quality.md:349
   spec:
     What: '(v0.2) a catalog resource with `model_exposure: none` has in `read_by` a tool of a role with `worker_kind: agent`;
       a resource with `aggregates` is read by an agent tool with `untrusted_output: true` (`manifests/model-exposure.yaml`)'
@@ -21,7 +21,7 @@ checks:
   - KNW-2
   version: v0.2
   section: Tests without a model
-  source: docs/quality.md:351
+  source: docs/quality.md:355
   spec:
     What: '(v0.2) a corpus with `trust: curated` and `source: upload` or `source: sync`; the same corpus with `source: git`'
     Expectation: '`apply` rejects the first two catalogs; the third passes'
@@ -32,7 +32,7 @@ checks:
   - TEN-4
   version: v0.1
   section: Tests without a model
-  source: docs/quality.md:553
+  source: docs/quality.md:560
   spec:
     What: 'a `demo2` catalog with `machine: web1` or `monitor_host: db1.example.org`, which are already in the `demo` catalog;
       the service `nginx` on `web1` in two catalogs'

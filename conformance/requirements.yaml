@@ -2601,6 +2601,30 @@
   fixtures: [blackbox:core/toolcall-no-executor]
   doc: docs/tasks-and-delivery.md
 
+- id: DLV-17
+  title: Outgoing webhook sink
+  status: active
+  text: >-
+    An outgoing webhook is an E2 sink with `driver: webhook`. Its address is the manifest `base`
+    exactly: an `https://` address whose host is not a farm host, never taken from a task body or
+    model text; lint rejects a webhook sink without such a base or without `signing_key_ref` (code
+    `webhook_sink_invalid`). Each send is an HTTP POST of the delivery as JSON with the Standard
+    Webhooks headers: `webhook-id` equals `delivery.id` (FEN-7), `webhook-timestamp` is the send
+    time in seconds, and `webhook-signature` is `v1,<base64 HMAC-SHA256>` over
+    `<id>.<timestamp>.<body>` with the deployment secret named by `signing_key_ref`. A 2xx answer
+    completes the delivery; a timeout, 429 and 5xx are retried as delivery failures up to `dead`
+    (DLV-3); any other answer is `dead` at once; redirects are not followed. A retry keeps the id
+    and gets a new timestamp and signature. The body carries file references and metadata, never
+    file bytes. The sink keeps no copy, so the core closes its erasure steps itself with
+    `not_applicable` and basis `declared_none`.
+  check: [adapter, lint, fixture]
+  waivable: true
+  version: v0.2
+  profile: core
+  decisions: [D-106]
+  fixtures: [manifests/v02-retention, adapter:sink/webhook-send]
+  doc: docs/tasks-and-delivery.md
+
 - id: DSP-1
   title: The task pool is the C1 queue, work only through claim
   status: active
@@ -5897,20 +5921,36 @@
   text: >-
     The seal of a retired identity does not extend retention periods. At the end of `seal_ttl` (30
     days) the `identity` loop enqueues an erasure request with reason `bot_retired` and the identity
-    id as scope (RET-7), and erasure goes through it; from v0.2 sealed data whose retention class
-    period ends earlier is deleted by the `retention` loop (RET-2), and sessions are deleted at the
-    period of their class even if the seal is still running. `forget`, a person's request about
-    their data (including `erase_match`, SEC-11), person offboarding and tenant deletion reach
-    sealed data too, and the seal does not delay them. The core cannot seal a `session:
-    runtime_internal` session, so in the identity retirement transaction it enqueues an erasure
-    request with reason `bot_retired` for it, and the runtime adapter deletes it with the E4 `purge`
-    operation (RET-4, RET-7).
+    id as scope (RET-7), and erasure goes through it; from v0.2 the `retention` loop deletes sealed
+    data earlier when its class period ends first (MEM-10). `forget`, a person's request about their
+    data (including `erase_match`, SEC-11), person offboarding and tenant deletion reach sealed data
+    too, and the seal does not delay them. The core cannot seal a `session: runtime_internal`
+    session, so in the identity retirement transaction it enqueues an erasure request with reason
+    `bot_retired` for it, and the runtime adapter deletes it with the E4 `purge` operation (RET-4,
+    RET-7).
   check: [store, blackbox]
   waivable: true
   version: v0.1
   profile: governance
   decisions: [D-28]
   fixtures: [store:identity/seal-no-extend]
+  doc: docs/bots.md
+
+- id: MEM-10
+  title: The seal does not hold back deletion by period
+  status: active
+  text: >-
+    From v0.2 a sealed item of a retired identity whose class period (RET-9) ends before `seal_ttl`
+    is deleted by the `retention` loop at its period (RET-10), and a sealed session is deleted at
+    the period of its class even while the seal runs. A fact offer then no longer lists the deleted
+    item, and the successor's re-verification does not read it (MEM-7). The end of the seal still
+    files the `bot_retired` erasure request for what is left (MEM-9).
+  check: [store]
+  waivable: true
+  version: v0.2
+  profile: governance
+  decisions: [D-106]
+  fixtures: [store:identity/seal-retention-earlier, sm-fact-09, sm-idn-14]
   doc: docs/bots.md
 
 - id: MGR-1
@@ -7765,6 +7805,29 @@
   profile: messaging
   decisions: [D-71]
   fixtures: [fx-msg-11]
+  doc: docs/messaging.md
+
+- id: MSG-18
+  title: Message and inbox views for people
+  status: active
+  text: >-
+    P2 `msg.list`, `msg.show` and `inbox.status` show messages and inboxes to the operator (any
+    tenant) and to a person with `admin:people` (only their own tenant) as metadata (MSG-3): id,
+    type, genus, address, sender role, state, times, size, hand-out count, reason, and only the
+    fields whose leaves are all `enum` values, ids or numbers. `msg.list` filters only by closed
+    values (type, role, state, a time window) and returns at most 200 rows per page. `msg.show`
+    returns the note only to a caller with `audit.read` in the message's tenant, in an untrusted
+    text wrapper, and writes an audit record of that read; any other caller gets the message without
+    the note. `inbox.status` gives for each (tenant, role) inbox the counts by state, the age of the
+    oldest waiting entry, the capacity and the wake-up budget left. A message or inbox of another
+    tenant and a nonexistent one give the same `not_found`. No model or worker calls these
+    operations.
+  check: [blackbox]
+  waivable: true
+  version: v0.2
+  profile: messaging
+  decisions: [D-106]
+  fixtures: [blackbox:messaging/p2-message-views]
   doc: docs/messaging.md
 
 - id: OBS-1
@@ -9759,16 +9822,10 @@
     Content is deleted at the retention class expiry by the background loop `retention`. In v0.1 the
     loop deletes only objects of classes `content` and `observation` older than the default period
     from `spec/model/retention-classes.yaml` (RET-1); everything else is deleted before its period
-    only by an erasure request (RET-7). From v0.2 the periods are set by `Tenant.spec.retention`
-    within the farm ceilings: by retention class, and also `files` (the file period, by which the
-    core sets `expires_at`, ART-1) and `journals` (the attempt journal period, AUD-4); content is
-    deleted no later than the period plus the loop period and is deleted in all copies the farm
-    keeps (indexes, caches, runtime stores): the loop deletes C3 records with the `prune` operation,
-    files after `expires_at` with the C1 operation `file.purge`, and with them corpus fragments and
-    vectors (KNW-5); metadata and observation series are deleted only in whole periods, never by a
-    selective edit of a row (AUD-3). Fixtures: a `content` class canary older than the default
-    period is not found in C3 after a loop tick, while a `metadata` record of the same age remains
-    (v0.1); a canary after its period is not found in any store (v0.2).
+    only by an erasure request (RET-7). From v0.2 the tenant sets the periods (RET-9) and the loop
+    deletes every class in every copy (RET-10). Fixture: a `content` class canary older than the
+    default period is not found in C3 after a loop tick, while a `metadata` record of the same age
+    remains.
   check: [store, blackbox]
   waivable: false
   version: v0.1
@@ -9818,9 +9875,9 @@
     `delete` and `purge`, C4 `erase` (MEM-4), E4 `purge` for a runtime with `runtime_internal`
     (RT-1, RT-2), C1 `file.purge`, E2 `erase` and E5 `erase`: deletion of a person's data at their
     request is part of v0.1 and cannot be waived for a `kind: production` tenant (D-76, SEC-11). E1
-    `erase` and E4 `purge` for the other runtimes appear in v0.2. Until a store with content has its
-    own erase operation, it answers an erasure request with `failed`, and the request stays open
-    with an alarm (RET-7).
+    `erase` and `match` and E4 `purge` for the other runtimes are added in v0.2 (RET-11). Until a
+    store with content has its own erase operation, it answers an erasure request with `failed`, and
+    the request stays open with an alarm (RET-7).
   check: [adapter, blackbox]
   waivable: false
   version: v0.1
@@ -9948,6 +10005,75 @@
   profile: core
   decisions: [D-36, D-88]
   fixtures: [restore/, blackbox:core/backup-report]
+  doc: docs/operations.md
+
+- id: RET-9
+  title: Tenant retention periods
+  status: active
+  text: >-
+    From v0.2 a tenant sets its retention periods in `Tenant.spec.retention`: `classes` for the
+    classes that have `ceiling_days` in `spec/model/retention-classes.yaml` (`content`, `memory` and
+    `metadata`), `files` (the file period) and `journals` (the attempt journal period, AUD-4). A
+    class period lies between `min_days` and `ceiling_days` of its class (`content` 1 to 400 days,
+    `memory` 30 to 3650 days, `metadata` 93 to 3650 days); `files` and `journals` are not longer
+    than the tenant's `content` period. Lint rejects anything else with `retention_period`. A field
+    the tenant leaves out takes the class default; `memory` without a tenant period lives until
+    `forget` or an erasure request, `tombstone` has no period, and `observation` keeps its own
+    periods (OBV-4). When a file is written the core sets `expires_at` to the write time plus the
+    smaller of `retention.files` and the type's `result_ttl` if the file became a result (ART-1). A
+    shorter period applied later reaches objects already stored at the next loop run; a longer
+    period never extends an object that has already expired.
+  check: [lint, fixture, blackbox]
+  waivable: true
+  version: v0.2
+  profile: core
+  decisions: [D-106]
+  fixtures: [manifests/v02-retention, blackbox:core/retention-periods]
+  doc: docs/operations.md
+
+- id: RET-10
+  title: Deletion by period in every copy
+  status: active
+  text: >-
+    From v0.2 the `retention` loop deletes objects of every class with a period (RET-9) no later
+    than 24 hours after the period ends, without an erasure request, and in every copy the farm
+    keeps: C3 entries with `prune`, files after `expires_at` with C1 `file.purge` together with
+    their corpus fragments (KNW-5) and cached tool output (PRM-12), attempt journals (AUD-4), task
+    content with `task.purge` leaving a tombstone (RET-3), and the sessions of a runtime with
+    `session: runtime_internal` through E4 `purge` by their ids. `metadata` and `observation` are
+    deleted only in whole calendar months, never by editing a row (AUD-3); the only edit is the
+    anonymization of usage lines (BUD-16). After a restore the loop deletes what is overdue again.
+    Fixture: after the tenant period a canary is found in no store, including the corpus index, the
+    tool cache and the runtime; a `metadata` record of the same age stays until its month ends.
+  check: [store, blackbox]
+  waivable: false
+  version: v0.2
+  profile: core
+  decisions: [D-106]
+  fixtures: [retention/, store:core/retention-all-copies]
+  doc: docs/operations.md
+
+- id: RET-11
+  title: Channel cache, every runtime and tenant scope in erasure
+  status: active
+  text: >-
+    From v0.2 three erase operations are added to RET-4, and the adapter of each passes the
+    `erasure` suite. A channel that declares `driver.stores_content: attachments` or `cache`
+    implements E1 `match` (it searches its cache and saved attachments for the needles and answers
+    only with ids) and E1 `erase` by `(tenant)`, `(tenant, subject)` and a list of ids. Every agent
+    runtime implements E4 `purge` by the same scopes, also without `runtime_internal`: it deletes
+    the working files, caches and logs with content it keeps, and the core sends this work to every
+    agent worker that ran an attempt of the tenant. C3 `purge` accepts the scope `(tenant)` for
+    tenant deletion (LCY-1). A store that lacks the operation answers `failed`, and the request
+    stays open with an alarm (RET-7). After a restore the replayed erasure requests (RET-6) send
+    this work again, and an `erase_match` request is replayed only by its recorded ids, never by a
+    new search.
+  check: [adapter, blackbox]
+  waivable: false
+  version: v0.2
+  profile: core
+  decisions: [D-106]
+  fixtures: [erasure/erasure, adapter:channel/cache-erase-match, adapter:runtime/purge-any-runtime]
   doc: docs/operations.md
 
 - id: RT-1
@@ -10663,40 +10789,39 @@
     works from v0.1, and for a tenant with `kind: production` this rule cannot be waived (D-76); the
     data copy (`export`, LCY-2) arrives in v0.2; it is only about oneself, carries the requester's
     public key (`recipient_key`) and goes only to the requester (SEC-10). The model neither creates
-    nor decides a request.
-    Silence neither executes nor closes a request: at half of the period the admins get a reminder,
-    and at the deadline an overdue event and a notice to the operator. A confirmed deletion goes
-    only through an erasure request with reason `subject_request` and scope `(tenant, subject)`
-    through the erase operation of each port (RET-4, RET-7), including the sealed memory of retired
-    bots. The scope includes objects where the principal is the initiator or owner, objects with
-    them in `personal_subjects` (AUD-5) and group chat sessions whose key includes them (C3); before
-    deleting the identity, the core itself creates an `erase_match` request by the principal's
-    external ids and display name, which a second person with `admin:people` confirms; the person
-    gets the result for each store as code text. A confirmed export enqueues a principal export task
-    (LCY-2). The data of a person who is not a farm principal is deleted by an `erase_match`
-    request: a person with `admin:people` creates it through P2 `erasure.match`, and another person
-    with the same permission confirms it; if the tenant has no second active person with
-    `admin:people`, a farm admin confirms through `farmctl`, and this counts as the second person
-    (D-86 (8)). At creation the core searches for the exact string in all objects of classes
-    `content` and `memory` of the tenant, including sealed ones, and in stores that the core does
-    not read, with the port's `match` operation: the E4 runtime (short-term memory and transcripts),
-    the E2 sink, the E1 channel cache; notes in the monitoring system are deleted by E5 `erase` by
-    `(tenant, subject)` and found by `match`; a binding that cannot delete notes answers `failed`,
-    and this is acceptable: by design a note carries no personal data (class `summary`, redaction,
-    INJ-4), so such a result is shown to the person as a separate line and does not keep the request
-    open. In v0.1 erase operations exist for C1 `file.purge`, C3 `delete` and `purge`, C4 `erase`,
-    E2 `erase`, E4 `purge` and E5 `erase`; `erase` and `match` of the E1 channel cache arrive in
-    v0.2, and until then a channel without a cache answers `not_applicable`, and a channel with a
-    cache `failed`. Any other store without `match` gives the result `failed` with an alarm, not
-    "not found"; production tenant lint allows a role with `session: runtime_internal` or `memory:
-    runtime_internal` only with a runtime adapter that declared `match` (RT-1). The core writes the
-    ids of the objects found into the request and erases the string at once; the card shows the
-    number of objects found per store, without content. The confirmation creates an erasure request
-    with reason `subject_request` for these ids; an object is deleted as a whole, a tombstone
-    remains, and after a restore the deletion is replayed by the same ids. The string does not enter
-    the audit, events or the erasure log, not even as a hash. Fixture: after `erase_match` and a
-    restore from a backup taken before the request, the canary string is in no store and in no
-    request record.
+    nor decides a request. Silence neither executes nor closes a request: at half of the period the
+    admins get a reminder, and at the deadline an overdue event and a notice to the operator. A
+    confirmed deletion goes only through an erasure request with reason `subject_request` and scope
+    `(tenant, subject)` through the erase operation of each port (RET-4, RET-7), including the
+    sealed memory of retired bots. The scope includes objects where the principal is the initiator
+    or owner, objects with them in `personal_subjects` (AUD-5) and group chat sessions whose key
+    includes them (C3); before deleting the identity, the core itself creates an `erase_match`
+    request by the principal's external ids and display name, which a second person with
+    `admin:people` confirms; the person gets the result for each store as code text. A confirmed
+    export enqueues a principal export task (LCY-2). The data of a person who is not a farm
+    principal is deleted by an `erase_match` request: a person with `admin:people` creates it
+    through P2 `erasure.match`, and another person with the same permission confirms it; if the
+    tenant has no second active person with `admin:people`, a farm admin confirms through `farmctl`,
+    and this counts as the second person (D-86 (8)). At creation the core searches for the exact
+    string in all objects of classes `content` and `memory` of the tenant, including sealed ones,
+    and in stores that the core does not read, with the port's `match` operation: the E4 runtime
+    (short-term memory and transcripts), the E2 sink, the E1 channel cache; notes in the monitoring
+    system are deleted by E5 `erase` by `(tenant, subject)` and found by `match`; a binding that
+    cannot delete notes answers `failed`, and this is acceptable: by design a note carries no
+    personal data (class `summary`, redaction, INJ-4), so such a result is shown to the person as a
+    separate line and does not keep the request open. In v0.1 erase operations exist for C1
+    `file.purge`, C3 `delete` and `purge`, C4 `erase`, E2 `erase`, E4 `purge` and E5 `erase`;
+    `erase` and `match` of the E1 channel cache arrive in v0.2 (RET-11), and until then a channel
+    without a cache answers `not_applicable`, and a channel with a cache `failed`. Any other store
+    without `match` gives the result `failed` with an alarm, not "not found"; production tenant lint
+    allows a role with `session: runtime_internal` or `memory: runtime_internal` only with a runtime
+    adapter that declared `match` (RT-1). The core writes the ids of the objects found into the
+    request and erases the string at once; the card shows the number of objects found per store,
+    without content. The confirmation creates an erasure request with reason `subject_request` for
+    these ids; an object is deleted as a whole, a tombstone remains, and after a restore the
+    deletion is replayed by the same ids. The string does not enter the audit, events or the erasure
+    log, not even as a hash. Fixture: after `erase_match` and a restore from a backup taken before
+    the request, the canary string is in no store and in no request record.
   check: [blackbox, store]
   waivable: true
   version: v0.1

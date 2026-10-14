@@ -1,7 +1,7 @@
 # Steps of an erasure request at edge stores (spec/bindings/http/README.md, "Erasure and search work for edge stores";
 # spec/lifecycles/deletion-request.md). Shape of steps and expectations: conformance/runner.md.
 id: fx-erasure-edge
-rules: [RET-4, RET-7, SEC-11]
+rules: [RET-4, RET-7, SEC-11, RET-11]
 description: 'An erase work with scope (tenant, subject) carries the needles of the principal; an outcome not_applicable without basis
   is rejected by the schema; a channel that declared driver.stores_content: none in hello gets no erasure work, and the core
   writes its step with the outcome not_applicable with basis declared_none; erase_match in a tenant with only one person with
@@ -106,3 +106,105 @@ cases:
   expect:
     request: {state: requested, reason: subject_request, scope: ids}
     second_person: operator
+- id: era-04
+  rules: [RET-11, SEC-11]
+  version: v0.2
+  description: 'A channel that declared driver.stores_content: cache gets match work for an erase_match on a canary string
+    and answers only with ids; after the confirmation it gets erase work by these ids, and a second match is empty.'
+  given:
+    channels:
+    - {name: mail-demo, driver: email, stores_content: cache}
+  steps:
+  - call:
+      port: P1
+      op: claim
+      request: {kinds: [erasure]}
+    by: channel:mail-demo
+    expect:
+      work:
+        kind: erasure
+        payload:
+          op: match
+          target: {kind: channel, name: mail-demo}
+  - call:
+      port: P1
+      op: complete
+      request:
+        erasure: {outcome: done, ids: [out-17, out-18]}
+    by: channel:mail-demo
+  - call:
+      port: P1
+      op: claim
+      request: {kinds: [erasure]}
+    by: channel:mail-demo
+    expect:
+      work:
+        kind: erasure
+        payload:
+          op: erase
+          target: {kind: channel, name: mail-demo}
+          scope: {tenant: demo, ids: [out-17, out-18]}
+  - call:
+      port: P1
+      op: complete
+      request:
+        erasure: {outcome: done}
+    by: channel:mail-demo
+  expect:
+    request: {state: done}
+    channel_contains: {CANARY-NOT-A-SECRET-era4: false}
+- id: era-05
+  rules: [RET-11]
+  version: v0.2
+  description: 'An agent runtime without runtime_internal that ran an attempt of demo gets purge work for the scope
+    (tenant, subject) and deletes its working files with the canary; the request closes only after its step.'
+  given:
+    workers:
+    - {id: w_01JB0000000000000000000E05, kind: agent, runtime: {session: farm, memory: farm}}
+  steps:
+  - call:
+      port: P2
+      op: erasure.request
+      request:
+        scope: {tenant: demo, subject: 'human:p_01JB3Q7N0M2V8XK4DGT5RZP9WC'}
+        reason: subject_request
+    by: operator
+  - call:
+      port: P1
+      op: claim
+      request: {kinds: [erasure]}
+    by: worker:w_01JB0000000000000000000E05
+    expect:
+      work:
+        kind: erasure
+        payload:
+          op: erase
+          target: {kind: runtime, worker_id: w_01JB0000000000000000000E05}
+          scope: {tenant: demo, subject: 'human:p_01JB3Q7N0M2V8XK4DGT5RZP9WC'}
+  - call:
+      port: P1
+      op: complete
+      request:
+        erasure: {outcome: done}
+    by: worker:w_01JB0000000000000000000E05
+  expect:
+    request:
+      steps:
+        e4_runtime: {outcome: done}
+    runtime_contains: {CANARY-NOT-A-SECRET-era5: false}
+- id: era-06
+  rules: [RET-11]
+  version: v0.2
+  description: 'A request with the scope (tenant), as tenant deletion files it (here a manual request by the operator);
+    C3 purge deletes all sessions of the tenant, and the sessions of demo2 stay.'
+  steps:
+  - call:
+      port: P2
+      op: erasure.request
+      request:
+        scope: {tenant: demo}
+        reason: manual
+    by: operator
+  - occur: {erasure_request: done}
+  expect:
+    c3_contains: {CANARY-NOT-A-SECRET-era6-demo: false, CANARY-NOT-A-SECRET-era6-demo2: true}

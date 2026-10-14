@@ -284,7 +284,7 @@ Distribution (who gets which task) is set by the dispatch rules and bot groups, 
 | erased task -> tombstone | 1 : 1 | the idempotency key stays taken, and a repeat gets `gone` (RET-3) |
 | principal -> subject request (erase, export) | 1 : N | an erasure request from a subject creates an erasure request ([privacy.md](../privacy.md)) |
 | runtime with `runtime_internal` -> runtime profile | 1 : N, a profile per (tenant, role, principal) or per chat | the profile is cleaned at its expiry and by an erasure request through the adapter; a principal's rows are found with the `match` operation (RT-1, RT-2, RT-5) |
-| erasure request by match -> store with `match` | 1 : N | E2, E4 and E5 since v0.1 (D-76), E1 since v0.2; a store without `match` is `failed`, and a channel without a cache answers `not_applicable` (RET-7, SEC-11) |
+| erasure request by match -> store with `match` | 1 : N | E2, E4 and E5 since v0.1 (D-76), E1 since v0.2 (RET-11); a store without `match` is `failed`, and a channel without a cache answers `not_applicable` (RET-7, SEC-11) |
 | group chat session -> principals of the conversation | 1 : N in the key | the key includes the principals who wrote, so `(tenant, subject)` finds group sessions (MEM-1) |
 | data export -> sink | N : 1 | only a sink with `export_only` (a single recipient, encryption) (LCY-2, SEC-10), v0.2 |
 

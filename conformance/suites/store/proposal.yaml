@@ -9,7 +9,7 @@ checks:
   - PRP-14
   version: v0.1
   section: Tests without a model
-  source: docs/quality.md:319
+  source: docs/quality.md:322
   spec:
     What: the result was submitted by `bot_17` of epoch 1; then a duplicate from `bot_18`; a worker result without a bot
     Expectation: '`origin.acting_bot` and `bot_epoch` from the submitting attempt; on merge the author does not change; without
@@ -20,7 +20,7 @@ checks:
   - PRP-18
   version: v0.1
   section: Tests without a model
-  source: docs/quality.md:320
+  source: docs/quality.md:323
   spec:
     What: '"Accept" on a `manifest_change` proposal is pressed by a person not in `insights.realizers`'
     Expectation: the executor is the first of `realizers`, deadline `realize_by`, a reminder at the halfway point; at the

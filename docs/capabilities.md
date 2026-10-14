@@ -160,7 +160,7 @@ File bytes do not travel through task bodies, events, audit records or usage lin
 |---|---|---|---|
 | P1 | `file.put` | a channel (people's attachments), a `job` worker and a sandbox toolhost (result files) | accepts bytes; the core writes the file record and returns `file_ref` |
 | P1 | `file.get` | a channel and a sink under a delivery lease, a toolhost under a call lease, the E4 adapter under an attempt lease | returns the bytes if the file belongs to the work's tenant and its mark is not above what the recipient is allowed |
-| C1 | `file.put`, `file.get`, `file.stat`, `file.purge` | the core | stores the bytes and the record and returns them; `file.purge` deletes the bytes on an erasure request (since v0.1, RET-4, RET-7, D-76) and by expiry (since v0.2, RET-2) |
+| C1 | `file.put`, `file.get`, `file.stat`, `file.purge` | the core | stores the bytes and the record and returns them; `file.purge` deletes the bytes on an erasure request (since v0.1, RET-4, RET-7, D-76) and by expiry (since v0.2, RET-10) |
 
 The file store is part of C1, a thin sheet inside it. Where the bytes live (in the farm store, on disk, in object storage) is decided by the implementation.
 
@@ -194,7 +194,7 @@ People and sinks are given only files whose content type is in the list `result_
 
 ### Periods and erasure
 
-The core sets a file's period when it is written: the smaller of `Tenant.spec.retention.files` and the task type's `result_ttl`, if the file became a result. By default attachments are kept for 30 days, results for 30 days, and a sink's archive lives by the sink manifest. Only an erasure request deletes a file early (RET-7): `forget`, a person's departure, tenant deletion, a person's request, manual deletion by the operator. The bytes are deleted by the C1 operation `file.purge` (RET-4), and erasure of a person's data at their request is part of v0.1 and cannot be waived for a tenant with `kind: production` (D-76). Since v0.2, when the period has passed, the file moves to `expired` and is no longer handed out, and the core's `retention` loop deletes the bytes by expiry (RET-2). A reference to a deleted file gives the mark `file_gone` in the artifact, not a task error. The full lifecycle is described in `spec/lifecycles/file.md`.
+The core sets a file's period when it is written: the smaller of `Tenant.spec.retention.files` and the task type's `result_ttl`, if the file became a result. By default attachments are kept for 30 days, results for 30 days, and a sink's archive lives by the sink manifest. Only an erasure request deletes a file early (RET-7): `forget`, a person's departure, tenant deletion, a person's request, manual deletion by the operator. The bytes are deleted by the C1 operation `file.purge` (RET-4), and erasure of a person's data at their request is part of v0.1 and cannot be waived for a tenant with `kind: production` (D-76). Since v0.2, when the period has passed, the file moves to `expired` and is no longer handed out, and the core's `retention` loop deletes the bytes by expiry within 24 hours, together with the corpus fragments of the file (RET-9, RET-10). A shorter `retention.files` set later reaches files already stored at the next loop run. A reference to a deleted file gives the mark `file_gone` in the artifact, not a task error. The full lifecycle is described in `spec/lifecycles/file.md`.
 
 ### Large data
 
@@ -237,7 +237,7 @@ The plugin takes the bytes through P1 `file.get` under the call lease (ART-3) an
 3. The model sees the first lines of the CSV only in the untrusted text wrapper, and from the first call the attempt works under the rules of a marked task (`docs/security-model.md`).
 4. The sandbox toolhost takes the call, reads the file through P1 `file.get` under the call lease, builds `plot.png` and submits it through P1 `file.put` with `origin: produced`; the plot's mark is not lower than the task's mark.
 5. The result has a part with a reference to the plot and a short summary; the `provenance` block lists the input `{kind: file, id: <file_ref of the CSV>}` (PRV-2). The type `image/png` is in the type's `result_media_types`, the mark is not above the ceiling of the personal chat, and the channel delivers the plot.
-6. Since v0.2, after 30 days both files move to `expired`, the `retention` loop deletes the bytes, and the artifact shows `file_gone` in place of the plot; if `alice` asks earlier to erase her data, an erasure request deletes the bytes already in v0.1 (RET-7, D-76).
+6. Since v0.2, after 30 days both files move to `expired`, the `retention` loop deletes the bytes (RET-10), and the artifact shows `file_gone` in place of the plot; if `alice` asks earlier to erase her data, an erasure request deletes the bytes already in v0.1 (RET-7, D-76).
 
 ## Run fingerprint and provenance
 

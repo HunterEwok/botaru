@@ -1071,29 +1071,26 @@ entries:
     port: P2
     op: msg.list
     since: v0.2
-    request: null
-    response: null
-    rules: [MSG-3]
+    request: p2-msg-list-request
+    response: p2-msg-list-response
+    rules: [MSG-18, MSG-3]
     profiles: [messaging]
-    note: 'v0.2: the schemas will appear with v0.2'
   - id: P2.msg.show
     port: P2
     op: msg.show
     since: v0.2
-    request: null
-    response: null
-    rules: [MSG-3]
+    request: p2-msg-show-request
+    response: p2-msg-show-response
+    rules: [MSG-18, MSG-3]
     profiles: [messaging]
-    note: 'v0.2: the schemas will appear with v0.2'
   - id: P2.inbox.status
     port: P2
     op: inbox.status
     since: v0.2
-    request: null
-    response: null
-    rules: [MSG-3]
+    request: p2-inbox-status-request
+    response: p2-inbox-status-response
+    rules: [MSG-18, MSG-3]
     profiles: [messaging]
-    note: 'v0.2: the schemas will appear with v0.2'
   - id: P2.task.journal
     port: P2
     op: task.journal
@@ -1781,7 +1778,7 @@ entries:
     since: v0.1
     request: null
     response: null
-    rules: []
+    rules: [RET-4, RET-11]
     profiles: [core]
     wire: false
     note: 'inside the core: the implementation sets the shape, the skeleton has no store binding, the operation is not on the wire'
@@ -1941,7 +1938,7 @@ entries:
     since: v0.2
     request: null
     response: null
-    rules: [RET-1, RET-2]
+    rules: [RET-1, RET-2, RET-10]
     profiles: [core]
     wire: false
     note: 'inside the core: the implementation sets the shape, the skeleton has no store binding, the operation is not on the wire'
@@ -1951,7 +1948,7 @@ entries:
     since: v0.2
     request: erasure-work
     response: erasure-outcome
-    rules: [RET-4, RET-7, SEC-11]
+    rules: [RET-4, RET-7, SEC-11, RET-11]
     profiles: [core]
     transport: 'P1 claim(erasure) with op: match, result by P1 complete in the erasure field'
   - id: E1.erase
@@ -1960,7 +1957,7 @@ entries:
     since: v0.2
     request: erasure-work
     response: erasure-outcome
-    rules: [RET-4, RET-7]
+    rules: [RET-4, RET-7, RET-11]
     profiles: [core]
     transport: 'P1 claim(erasure) with op: erase, result by P1 complete in the erasure field; until v0.2 the channel answers not_applicable or failed'
   - id: E2.write
@@ -1996,9 +1993,9 @@ entries:
     since: v0.2
     request: null
     response: null
-    rules: [DLV-3, FEN-7]
+    rules: [DLV-17, DLV-3, FEN-7]
     profiles: [core]
-    note: 'v0.2: the schemas will appear with v0.2'
+    note: 'the send is an HTTP POST to the receiver by the binding in spec/ports/e2-sink.md; the body is the delivery, not a farm schema'
   - id: E3.tools/call
     port: E3
     op: tools/call
@@ -2043,7 +2040,7 @@ entries:
     since: v0.1
     request: erasure-work
     response: erasure-outcome
-    rules: [RT-1, RT-2, MEM-4, RET-7, RET-4]
+    rules: [RT-1, RT-2, MEM-4, RET-7, RET-4, RET-11]
     profiles: [core]
     transport: 'P1 claim(erasure) with op: erase at the adapter, then to the runtime'
   - id: E4.match

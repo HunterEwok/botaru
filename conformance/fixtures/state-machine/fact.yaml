@@ -1,7 +1,7 @@
 # Collected from spec/lifecycles/fact.yaml. The value null in from means "the object does not exist yet".
 lifecycle: spec/lifecycles/fact.yaml
 object: fact
-rules: [MEM-3, MEM-4, MEM-6, MEM-8, MEM-9, RET-2, RET-7]
+rules: [MEM-3, MEM-4, MEM-6, MEM-8, MEM-9, MEM-10, RET-2, RET-7, RET-10]
 description: Allowed and forbidden transitions of the "bot memory fact" lifecycle, collected from the tables of spec/lifecycles/fact.md.
   The implementation accepts a transition from the allowed list under the condition of its row (when); a pair from the forbidden
   list does not change the state, and the call that asks for it is rejected. The value null in from means "the object does
@@ -72,8 +72,9 @@ allowed:
   from: sealed
   to: erased
   by: the identity loop enqueues an erasure request bot_retired, the erasure loop erases
-  when: seal_ttl has passed; from v0.2 earlier, if the retention class period ended earlier (the retention loop, RET-2)
-  rules: [MEM-9, RET-7]
+  when: seal_ttl has passed; from v0.2 earlier, if the retention class period ended earlier (the retention loop, RET-10,
+    MEM-10)
+  rules: [MEM-9, MEM-10, RET-7]
   version: v0.2
 - id: sm-fact-10
   from: active

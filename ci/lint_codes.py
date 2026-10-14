@@ -66,6 +66,8 @@ CODES = {
     'approvers_fewer_than_two': ('production tenant: no group grants action.approve for a high risk action (note)', 'APR-16'),
     'corpus_curated_source': ('corpus with trust: curated and a source other than git', 'KNW-2'),
     'ingress_missing': ('source channel (direction: in) without ingress', 'ING-1'),
+    'retention_period': ('tenant retention period outside the class bounds or longer than the content period', 'RET-9'),
+    'webhook_sink_invalid': ('webhook sink without an https base outside the farm or without signing_key_ref', 'DLV-17'),
     'export_only_recipient': ('export_only without exactly one of recipient and recipient_ref', 'SEC-10'),
     'skill_format': ('skill folder breaks the format: files, types, sizes, front matter or name', 'SKL-1'),
     'provider_training': ('model profile with provider_training: true', 'GW-15'),

@@ -527,7 +527,7 @@ The `Tenant` manifest collects blocks of different parts of the farm. Each field
 | `farm_manager` | relation to the farm manager: `{enabled, lens, daily_review, model_profile}`, `enabled: true` by default. With `enabled: false` the manager does not read the tenant's data, does not run a review or a lens on it, the tenant has no `manager` budget line, and the tenant's incidents go only to its admins (D-77) | MGR, BUD-15 | v0.1 |
 | `campaigns`, `scripts` | ceilings of the tenant's campaigns and scripts | ORC-5, SCR-5 | v0.1 |
 | `attention` | `cards_per_tenant_hour` (20 by default): how many cards per hour are created per tenant, above it `service_rate_limited` (v0.1); since v0.2 how many non-urgent cards a person receives per day | APR-2, APR-15 | v0.1 |
-| `retention` | retention periods by retention class, the file period `files` (by it the core sets the file's `expires_at`) and the attempt journal period `journals` | RET-2, ART-1, AUD-4 | v0.2 |
+| `retention` | retention periods by retention class, the file period `files` (by it the core sets the file's `expires_at`) and the attempt journal period `journals` | RET-9, ART-1, AUD-4 | v0.2 |
 | `locale` | default language of code texts | DLV-9 | v0.2 |
 
 The fields `commands`, `run` and `default_types` are set by the task language:

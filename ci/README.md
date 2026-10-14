@@ -222,6 +222,7 @@ The codes of `check_manifests.py` that fixtures refer to (`expect: {error: <code
 | `recipients_monitoring` | privacy.recipients lacks monitoring while the installation claims the monitor profile or its profiles are unknown | MON-1 |
 | `redact_required` | placement: host and untrusted_output: true without redact [ip, email, secret] | INJ-4 |
 | `ref_missing` | reference to an object that is not in the set |  |
+| `retention_period` | tenant retention period outside the class bounds or longer than the content period | RET-9 |
 | `revert_reason_invalid` | Botaru-Revert reason is not from the closed list | MAN-5, PRP-22 |
 | `role_profile_forbidden` | role declares what the profile forbids | PRF-1 |
 | `role_profile_memory` | role memory is outside the profile | PRF-1 |
@@ -271,5 +272,6 @@ The codes of `check_manifests.py` that fixtures refer to (`expect: {error: <code
 | `watch_missing` | neither a monitoring system nor a kind: watch process with notify_ref | MON-2 |
 | `watch_same_host` | the watch process runs only on the core machine (note) | MON-2 |
 | `watch_with_monitoring` | both a monitoring system and a watch process (note) | MON-2 |
+| `webhook_sink_invalid` | webhook sink without an https base outside the farm or without signing_key_ref | DLV-17 |
 | `worker_kind_mismatch` | role and type worker_kind differ |  |
 <!-- /generated: lint-codes -->

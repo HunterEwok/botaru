@@ -30,7 +30,7 @@ A session is the transcript of a runtime conversation under the key `(tenant, ro
 - Only a new conversation or `forget` removes the `untrusted_seen` mark; a new session of the same conversation keeps the mark (INJ-13).
 - Records are only appended; the core does not read the content.
 - A session is not handed to a successor and does not get into a fact offer (MEM-7).
-- From v0.2 a sealed session lives no longer than the period of its class (MEM-9, RET-2).
+- From v0.2 a sealed session lives no longer than the period of its class (MEM-10, RET-10).
 - With `conversation_concurrency: serial` one role has at most one attempt in one conversation, and tasks are taken in the order they were enqueued (MEM-5, dispatcher condition D17).
 
 ## Versions
@@ -38,4 +38,4 @@ A session is the transcript of a runtime conversation under the key `(tenant, ro
 | Version | What appears |
 |---|---|
 | v0.1 | `open` and `deleted`: appending, compaction, `forget`, a person's offboarding (P2 `principal.offboard`); `sealed` on an identity's retirement; deletion of a `runtime_internal` session on an identity's retirement by a `bot_retired` request through E4 `purge` |
-| v0.2 | Deletion by the class period by the `retention` loop (RET-2), and the seal does not extend this period (MEM-9); tenant deletion (P2 `tenant.delete`); the order of tasks in a conversation (MEM-5) |
+| v0.2 | Deletion by the class period by the `retention` loop (RET-10), and the seal does not extend this period (MEM-10); tenant deletion (P2 `tenant.delete`); the order of tasks in a conversation (MEM-5) |

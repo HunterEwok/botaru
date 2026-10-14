@@ -45,10 +45,11 @@ machines:
     by: '`expires_at` arrived; the core loop `retention` records the transition, and a hand-out after `expires_at` already
       answers `gone`'
     when: the period is the smaller of `Tenant.spec.retention.files` and the task type's `result_ttl`, if the file became
-      a result
+      a result; a shorter period set later reaches the file at the next loop run (RET-9)
     rules:
     - ART-1
     - RET-2
+    - RET-9
   - from:
       states:
       - expired
@@ -58,9 +59,10 @@ machines:
       - purged
       text: '`purged`'
     by: the core loop `retention` or the `erasure` loop on an erasure request; C1 `file.purge` (from v0.2)
-    when: 'for `retention`: no later than the period plus the loop period'
+    when: 'for `retention`: no later than 24 hours after the period ends'
     rules:
     - KNW-5
+    - RET-10
     - RET-2
     - RET-4
     - RET-7
