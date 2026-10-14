@@ -76,7 +76,7 @@ The farm manager is a member of the commission of every tenant that has not opte
 - weight 1 by rule, no veto, the lens is not in `min`, `high_risk` and `untrusted`, and it is not needed for a quorum (COM-4);
 - lenses with a veto are paid first, and the farm manager's lens is skipped when the line `review` runs short: the verdict is computed without it, marked "without the farm manager's vote", and its silence does not become a veto.
 
-The farm manager's lens is not applied to proposals about the farm manager seat, its role, the incident catalog, the involvement rules, the farm manager's limits, consent groups (MGR-16) or its own proposals (GOV-17). The farm manager takes no part in choosing who leaves (GOV-12, GOV-43). `apply` lint: every active tenant with the farm manager's lens allows the farm manager seat's profile (or its own `farm_manager.model_profile` from the tenant spec, MGR-42) on the slot `seat` of the reviewer role and keeps the line `governance` above 0 (GOV-25).
+The farm manager's lens is not applied to proposals about the farm manager seat, its role, the incident catalog, the involvement rules, the farm manager's limits, consent groups (MGR-16) or its own proposals (GOV-17). The farm manager takes no part in choosing who leaves (GOV-12, GOV-43). `apply` lint: every active tenant with the farm manager's lens allows the farm manager seat's profile (`farm_manager.model_profile` of the farm charter, GOV-33, MGR-42) on the slot `seat` of the reviewer role and keeps the line `governance` above 0 (GOV-25).
 
 ## The functionary's path
 
