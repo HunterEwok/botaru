@@ -178,6 +178,9 @@ func (c *Core) CatalogHashes(ctx context.Context, g *ModelGrant) ([]ToolHash, er
 	if err != nil {
 		return nil, err
 	}
+	if err := pinnedCatalog(ctx, c.st.Pool, g.Task, tools); err != nil {
+		return nil, err
+	}
 	out := make([]ToolHash, 0, len(tools))
 	for _, t := range tools {
 		h, err := t.P4Hash()
@@ -187,6 +190,37 @@ func (c *Core) CatalogHashes(ctx context.Context, g *ModelGrant) ([]ToolHash, er
 		out = append(out, ToolHash{t.Name, h})
 	}
 	return out, nil
+}
+
+// pinnedCatalog refuses with fenced once an apply has changed the P3 catalog of an attempt:
+// the run fingerprint fixed at claim would no longer describe its tools (PRV-1). The runtime
+// returns the work without spending the attempt, and the next attempt starts with the new
+// catalog.
+func pinnedCatalog(ctx context.Context, q store.Querier, task string, tools []catalogTool) error {
+	var raw []byte
+	err := q.QueryRow(ctx, `SELECT attempt FROM leases WHERE work_id = $1 AND state = 'active' ORDER BY lease_no DESC LIMIT 1`, task).Scan(&raw)
+	if errors.Is(err, pgx.ErrNoRows) || err == nil && len(raw) == 0 {
+		return nil // no active attempt: the handle check refuses on its own
+	}
+	if err != nil {
+		return err
+	}
+	var rec attemptRecord
+	if err := json.Unmarshal(raw, &rec); err != nil {
+		return err
+	}
+	var want any
+	if len(tools) > 0 {
+		h, err := catalogPart(tools)
+		if err != nil {
+			return err
+		}
+		want = h
+	}
+	if rec.Parts["catalog"] != want {
+		return refuse("fenced", "the tool catalog changed after the attempt began")
+	}
+	return nil
 }
 
 // catalogPart is the catalog part of the run fingerprint: the P4 tool hashes in ascending
@@ -229,6 +263,9 @@ func (c *Core) P3ToolsList(ctx context.Context, handle string) (*mcp.ListResult,
 	if err != nil {
 		return nil, err
 	}
+	if err := pinnedCatalog(ctx, c.st.Pool, g.Task, tools); err != nil {
+		return nil, err
+	}
 	res := &mcp.ListResult{Tools: []any{}}
 	for _, t := range tools {
 		res.Tools = append(res.Tools, t.MCP())
@@ -265,6 +302,13 @@ func (c *Core) P3ToolsCall(ctx context.Context, handle string, p mcp.CallParams)
 		// The attempt's lease row is locked, so a lease that ends meanwhile ends after this call
 		// is recorded, and the sweep then abandons it (FEN-4).
 		if _, err := tx.Exec(ctx, `SELECT 1 FROM leases WHERE work_id = $1 AND lease_no = $2 FOR SHARE`, g.Task, g.LeaseNo); err != nil {
+			return err
+		}
+		tools, err := c.toolCatalog(cat, g)
+		if err != nil {
+			return err
+		}
+		if err := pinnedCatalog(ctx, tx, g.Task, tools); err != nil {
 			return err
 		}
 		callID, refusal, err = c.recordToolCall(ctx, tx, now, cat, g, p)

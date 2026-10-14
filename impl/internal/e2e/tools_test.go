@@ -9,8 +9,11 @@ import (
 	"io"
 	"log/slog"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 
@@ -33,6 +36,9 @@ import (
 // BOTARU_E2E_MANIFEST, served as is (checks), or with a tools/call that sends a sampling
 // request back (sample) or never ends and ignores cancellation (hang).
 func fakePlugin(mode string) int {
+	if mode == "sleep" {
+		select {}
+	}
 	docs, err := manifest.ReadFiles([]string{os.Getenv("BOTARU_E2E_MANIFEST")})
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
@@ -44,7 +50,19 @@ func fakePlugin(mode string) int {
 		return 1
 	}
 	switch mode {
-	case "checks":
+	case "fork", "checks":
+		if mode == "fork" {
+			// A child left behind in the plugin's process group, as a daemonizing command would.
+			child := exec.Command(os.Args[0])
+			child.Env = []string{"BOTARU_E2E_PLUGIN=sleep"}
+			if err := child.Start(); err != nil {
+				return 1
+			}
+			pidFile := filepath.Join(filepath.Dir(os.Getenv("BOTARU_E2E_RESULTS")), "child.pid")
+			if err := os.WriteFile(pidFile, []byte(strconv.Itoa(child.Process.Pid)), 0o600); err != nil {
+				return 1
+			}
+		}
 		h := (&plugins.Checks{Results: os.Getenv("BOTARU_E2E_RESULTS")}).Call
 		if err := plugins.Serve(context.Background(), p, os.Stdin, os.Stdout, h); err != nil {
 			return 1
@@ -228,6 +246,42 @@ func TestToolCallOverTheWire(t *testing.T) {
 	if calls := r.mock.Calls(); len(calls) != 2 {
 		t.Fatalf("model calls %d", len(calls))
 	}
+}
+
+// Nothing a plugin started outlives its call: a child left in its process group is killed
+// after the plugin exits on time (FEN-6).
+func TestPluginChildrenDie(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	r := newToolRig(t, "fork", 2*time.Second)
+	r.mock.Reset(toolTurns())
+	go func() {
+		for ctx.Err() == nil {
+			_, _ = r.host.Once(ctx, 1)
+		}
+	}()
+	if ok, err := r.agent.Once(ctx, 2); err != nil || !ok {
+		t.Fatalf("attempt: %v %v", ok, err)
+	}
+	var state string
+	if err := r.c.Store().Pool.QueryRow(ctx, `SELECT state FROM toolcalls`).Scan(&state); err != nil || state != "done" {
+		t.Fatalf("tool call %s %v", state, err)
+	}
+	b, err := os.ReadFile(filepath.Join(filepath.Dir(r.results), "child.pid"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	pid, _ := strconv.Atoi(string(b))
+	for range 100 {
+		// A killed child that nobody reaped yet is a zombie: it counts as gone.
+		st, err := os.ReadFile(fmt.Sprintf("/proc/%d/stat", pid))
+		if err != nil || strings.Contains(string(st), ") Z ") {
+			return
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	_ = syscall.Kill(pid, syscall.SIGKILL)
+	t.Fatal("a child of the plugin outlived the call")
 }
 
 // A plugin that asks the client for sampling gets a refusal and the call ends with

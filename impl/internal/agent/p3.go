@@ -28,6 +28,24 @@ type toolsClient struct {
 	id     atomic.Int64
 }
 
+// p3Error is a refusal of the P3 endpoint with its reason code.
+type p3Error struct {
+	method string
+	status int
+	reason string
+}
+
+func (e *p3Error) Error() string { return fmt.Sprintf("p3 %s: %d %s", e.method, e.status, e.reason) }
+
+// p3Reason returns the reason code of a P3 refusal, or "".
+func p3Reason(err error) string {
+	var e *p3Error
+	if errors.As(err, &e) {
+		return e.reason
+	}
+	return ""
+}
+
 func (t *toolsClient) rpc(ctx context.Context, method string, params any) (json.RawMessage, error) {
 	p, err := json.Marshal(params)
 	if err != nil {
@@ -58,7 +76,7 @@ func (t *toolsClient) rpc(ctx context.Context, method string, params any) (json.
 			Reason string `json:"reason"`
 		}
 		_ = json.Unmarshal(b, &prob)
-		return nil, fmt.Errorf("p3 %s: %d %s", method, resp.StatusCode, prob.Reason)
+		return nil, &p3Error{method: method, status: resp.StatusCode, reason: prob.Reason}
 	}
 	var m mcp.Message
 	if err := json.Unmarshal(b, &m); err != nil {

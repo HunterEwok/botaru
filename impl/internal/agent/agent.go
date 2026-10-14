@@ -116,8 +116,9 @@ func (a *Agent) Once(ctx context.Context, waitS int) (bool, error) {
 	result, reason, err := a.run(runCtx, p)
 	if err != nil {
 		a.log.Warn("run failed", "task", p.Task.ID, "reason", reason, "err", err)
-		if ctx.Err() != nil {
-			// Shutting down: return the work without spending the attempt.
+		if ctx.Err() != nil || reason == "fenced" {
+			// Shutting down, or the core no longer serves this attempt as it began (its lease
+			// or its tool catalog changed): return the work without spending the attempt.
 			rctx, rcancel := context.WithTimeout(context.Background(), 5*time.Second)
 			defer rcancel()
 			return true, a.cfg.Core.Call(rctx, "release", lease, nil, nil)
@@ -194,6 +195,9 @@ func (a *Agent) run(ctx context.Context, p attemptPayload) (map[string]any, stri
 		var tools []anthropic.ToolUnionParam
 		if p3 != nil {
 			list, err := p3.list(ctx)
+			if p3Reason(err) == "fenced" {
+				return nil, "fenced", err
+			}
 			if err != nil {
 				return nil, "runtime_error", err
 			}
@@ -242,6 +246,9 @@ func (a *Agent) run(ctx context.Context, p attemptPayload) (map[string]any, stri
 			var input map[string]any
 			_ = json.Unmarshal(b.Input, &input)
 			text, isErr, err := p3.call(ctx, b.Name, input)
+			if p3Reason(err) == "fenced" {
+				return nil, "fenced", err
+			}
 			if err != nil {
 				return nil, "runtime_error", err
 			}
@@ -256,7 +263,7 @@ func (a *Agent) run(ctx context.Context, p attemptPayload) (map[string]any, stri
 // attempt, the others end the run.
 func failReason(r string) string {
 	switch r {
-	case "provider_unavailable", "provider_rate_limited", "provider_config", "provider_spend_cap", "budget_exhausted":
+	case "provider_unavailable", "provider_rate_limited", "provider_config", "provider_spend_cap", "budget_exhausted", "fenced":
 		return r
 	}
 	return "model_error"

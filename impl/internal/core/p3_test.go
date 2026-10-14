@@ -520,7 +520,18 @@ func TestToolhostAfterApply(t *testing.T) {
 	if res := <-done; res.err != nil || callText(res.r) != "error: plugin_unavailable" {
 		t.Fatalf("a call across an apply: %+v %v", res.r, res.err)
 	}
-	r, err := b.c.P3ToolsCall(ctx, h, mcp.CallParams{Name: "checks_latest", Arguments: map[string]any{"check": "www-health"}})
+	// The attempt began with the old catalog: P3 and P4 refuse it with fenced, so its run
+	// fingerprint never describes tools it did not have (PRV-1).
+	var p *Problem
+	if _, err := b.c.P3ToolsList(ctx, h); !errors.As(err, &p) || p.Reason != "fenced" {
+		t.Fatalf("tools/list after the catalog changed: %v", err)
+	}
+	if _, err := b.c.P3ToolsCall(ctx, h, mcp.CallParams{Name: "checks_latest", Arguments: map[string]any{"check": "www-health"}}); !errors.As(err, &p) || p.Reason != "fenced" {
+		t.Fatalf("tools/call after the catalog changed: %v", err)
+	}
+	// A new attempt sees the new catalog; the stale toolhost does not count as live for it.
+	_, h2 := b.attemptTools(t, "2", false)
+	r, err := b.c.P3ToolsCall(ctx, h2, mcp.CallParams{Name: "checks_latest", Arguments: map[string]any{"check": "www-health"}})
 	if err != nil || callText(r) != "error: plugin_unavailable" {
 		t.Fatalf("a stale toolhost counted as live: %+v %v", r, err)
 	}

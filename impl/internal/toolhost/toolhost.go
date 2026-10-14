@@ -360,6 +360,9 @@ func (h *Host) session(ctx context.Context, p Plugin, fn func(*session) error) e
 		_ = syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
 		<-exited
 	}
+	// Nothing a plugin started outlives its call: the rest of its process group is killed
+	// even after the plugin itself exited on time.
+	_ = syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
 	if ferr != nil && stderr.Len() > 0 {
 		h.log.Warn("plugin stderr", "plugin", p.Name, "text", redact.Text(stderr.String(), []string{redact.IP, redact.Email, redact.Secret}))
 	}
