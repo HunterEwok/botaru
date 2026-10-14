@@ -21,11 +21,11 @@ sys.dont_write_bytecode = True
 
 ROOT = os.path.abspath(os.environ.get('BOTARU_ROOT') or os.path.join(os.path.dirname(os.path.abspath(__file__)), '..'))
 REGISTRY = 'conformance/requirements.yaml'
-GENERATED = ('conformance/rules.md', 'conformance/retired.md')
+GENERATED = ('conformance/rules.md', 'conformance/retired.md', 'conformance/deferred.md')
 # Folders that are not part of the public repository and are not checked (also in .gitignore).
 SKIP_DIRS = frozenset({'.git', '_review', 'node_modules', '.venv', '__pycache__'})
-CHECKS = {'fixture', 'store', 'blackbox', 'adapter', 'eval', 'lint'}
-VERSIONS = ('v0.1', 'v0.2', 'v0.3')
+CHECKS = {'fixture', 'store', 'blackbox', 'adapter', 'eval', 'lint', 'impl'}
+VERSIONS = ('v0.1', 'v0.2', 'v0.3', 'v0.4')
 PROFILES = ('core', 'messaging', 'campaign', 'insights', 'manager', 'governance', 'monitor', 'knowledge', 'ingress', 'connections', 'debug', 'sandbox')
 DEC_RE = re.compile(r'\bD-(\d+)\b')  # decision number D-NN
 CODE_RE = re.compile(r'^\[([a-z][a-z0-9_]*)\] ')
@@ -154,6 +154,14 @@ def rules(status=None):
     """Registry rows by id; status='active' keeps only active rules."""
     return {r['id']: r for r in registry()
             if isinstance(r, dict) and isinstance(r.get('id'), str) and (status is None or r.get('status') == status)}
+
+
+def referable():
+    """Rule numbers that checks, fixtures and cases may still name: the active rules and the deferred
+    rules whose mechanism is still in the skeleton (mechanism_removed: false). A deferred rule is in no
+    version; once its mechanism is removed, nothing may name it."""
+    return {i: r for i, r in rules().items()
+            if r.get('status') == 'active' or (r.get('status') == 'deferred' and r.get('mechanism_removed') is False)}
 
 
 def families(rows):

@@ -32,6 +32,9 @@ does not name that rule in its rules (neither its own nor those of the file).
   python3 ci/readiness.py v0.1 --strict         error if the version is not covered
   python3 ci/readiness.py v0.1 --list           list the uncovered names
   python3 ci/readiness.py v0.1 --extra <folder> one more folder with implementation fixtures (can repeat)
+
+A test of the reference implementation counts as data for a runner: it runs
+against an implementation (the workflow go runs it on every change).
 """
 import collections
 import os
@@ -150,8 +153,47 @@ if os.path.exists(ev):
         later.update(re.findall(r'`([a-z][a-z0-9-]*-\d+)`', line))
 
 
+GO_FUNC = re.compile(r'^func (Test[A-Za-z0-9_]*)\(')
+RULE_TOKEN = re.compile(r'\b[A-Z]{2,3}-\d+[a-z]?\b')
+go_tests = {}  # (folder under impl/, TestName) -> rule numbers named in the comment above it
+OTHER_PLATFORMS = {'aix', 'android', 'darwin', 'dragonfly', 'freebsd', 'illumos', 'ios', 'js', 'netbsd', 'openbsd',
+                   'plan9', 'solaris', 'wasip1', 'windows', '386', 'arm', 'arm64', 'loong64', 'mips', 'mipsle',
+                   'mips64', 'mips64le', 'ppc64', 'ppc64le', 'riscv64', 's390x', 'wasm'}
+
+
+def scan_go_tests():
+    base = os.path.join(ROOT, 'impl')
+    for f in walk(('_test.go',), base) if os.path.isdir(base) else []:
+        folder = os.path.relpath(os.path.dirname(f), base).replace(os.sep, '/')
+        # go test ./... ignores files and folders that start with _ or . and folders named testdata
+        if any(x.startswith(('_', '.')) or x == 'testdata' for x in os.path.relpath(f, base).split(os.sep)):
+            continue
+        text = open(f, encoding='utf-8').read()
+        # only tests that go test runs in CI (linux/amd64, no tags): a file under a build constraint or with a
+        # GOOS or GOARCH suffix other than linux or amd64 may never run, so its tests cover nothing
+        parts = os.path.basename(f)[:-len('_test.go')].split('_')
+        if re.search(r'^//go:build ', text, re.M) or any(p in OTHER_PLATFORMS for p in parts[1:]):
+            continue
+        comment = []
+        for line in text.split('\n'):
+            if line.startswith('//'):
+                comment.append(line)
+                continue
+            m = GO_FUNC.match(line)
+            if m:
+                go_tests[(folder, m.group(1))] = set(RULE_TOKEN.findall(''.join(comment)))
+            comment = []
+
+
+scan_go_tests()
+
+
 def covered(name):
     """What covers a name: (kind or None, rule numbers named by the covering check, or None)."""
+    if name.startswith('impl:'):
+        folder, _, test = name[len('impl:'):].rpartition('/')
+        hit = go_tests.get((folder, test))
+        return (RUNNER, hit) if hit is not None else (None, None)
     if name in declared and name not in later:
         return declared[name], cites[name]
     m = re.match(r'^([a-z]+):(.+)$', name)

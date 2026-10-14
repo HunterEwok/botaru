@@ -3,7 +3,10 @@
 """Text and links: rule and decision numbers, file paths, port operations.
 
 - a mentioned rule number (any token like ABC-12, except SHA-256 and
-  similar) is in the registry and is not retired;
+  similar) is in the registry and is not retired; a deferred rule may be
+  named only while its mechanism is still in the skeleton
+  (mechanism_removed: false, a note), and always in the decision log and
+  the changelog;
 - a mentioned decision number (D-NN) is in docs/decisions.md;
 - a Markdown link ([x](path), [x](path "title"), [x]: path) leads to an
   existing file inside the public repository, and the anchor #frag exists in
@@ -38,6 +41,8 @@ rep = Report('text and links')
 rows = [r for r in registry() if isinstance(r, dict) and isinstance(r.get('id'), str)]
 ID_RE = id_regex(rows)
 status = {r['id']: r.get('status') for r in rows}
+removed = {r['id']: r.get('mechanism_removed') is not False for r in rows}
+gone_ids = {i for i, st in status.items() if st == 'deferred' and removed[i]}
 decisions = known_decisions()
 MARK = '<!-- generated: rules -->'
 EM_DASH = '\u2014'
@@ -119,6 +124,15 @@ for f in walk():
         for n, line in enumerate(text.split('\n'), 1):
             if EM_DASH in line:
                 rep.error(f'{rp}:{n}', '[em_dash] em dash: skeleton texts use a colon, a comma or a new sentence')
+    if rp.endswith(('.json', '.py', '.go')) and gone_ids:
+        # schemas, check scripts and code are not scanned for rule numbers in general, but a deferred rule
+        # whose mechanism was removed may not appear anywhere, also not in a schema description or a lint
+        for n, line in enumerate(text.split('\n'), 1):
+            for m in ANY_ID.finditer(line):
+                if m.group(0) in gone_ids:
+                    rep.error(f'{rp}:{n}', f'[rule_deferred] reference to the deferred rule {m.group(0)} whose mechanism '
+                              'was removed: a schema, check or code that still names it describes a mechanism '
+                              'the skeleton no longer has')
     if not rp.endswith(('.md', '.yaml', '.yml', '.json')):
         continue
     if rp.endswith('.json'):
@@ -134,6 +148,8 @@ for f in walk():
             rep.error(rp, f'[yaml_invalid] the YAML cannot be read: {" ".join(str(e).split())[:240]}')
     gen = rp in GENERATED or rp == REGISTRY
     in_retired_list = rp in ('conformance/retired.md', REGISTRY)
+    # the decision log and the changelog are history: they may name a rule that was deferred later
+    in_deferred_list = rp in ('conformance/deferred.md', REGISTRY, 'docs/decisions.md', 'CHANGELOG.md')
     prose = text.split(MARK)[0]
     if rp.endswith('.md') and not rp.startswith('conformance/'):
         for m in ID_RE.finditer(prose):
@@ -155,6 +171,13 @@ for f in walk():
                     rep.error(where, f'[rule_unknown] rule number {rid} is not found in the registry')
                 elif status[rid] == 'retired' and not in_retired_list:
                     rep.error(where, f'[rule_retired] reference to the retired number {rid}')
+                elif status[rid] == 'deferred' and not in_deferred_list and removed[rid]:
+                    rep.error(where, f'[rule_deferred] reference to the deferred rule {rid} whose mechanism was removed: '
+                              'a document, schema, registry or check that still names it describes a mechanism '
+                              'the skeleton no longer has')
+                elif status[rid] == 'deferred' and not in_deferred_list:
+                    rep.note(where, f'[rule_deferred_kept] reference to the deferred rule {rid}: its mechanism is still '
+                             'in the skeleton (mechanism_removed: false)')
         for m in DEC_RE.finditer(line):
             if int(m.group(1)) not in decisions:
                 rep.error(where, f'[decision_unknown] decision {m.group(0)} is not found in docs/decisions.md')

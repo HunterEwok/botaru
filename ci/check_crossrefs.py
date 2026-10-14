@@ -3,7 +3,7 @@
 """Cross-file checks: the operation map, registries, the event catalog, behaviour fixtures.
 
 - the operation map spec/ports/operations.yaml: form, the request and response schemas exist,
-  an empty schema only with a reason, rules are active, every operation of a port sheet is in
+  an empty schema only with a reason, rules are active (or deferred with the mechanism kept), every operation of a port sheet is in
   the map, every operation schema is named in the map, the op field of a schema knows the map
   operations, the HTTP binding path is built without substitutions;
 - a schema leaf with x-botaru-registry and enum: every enum value is among the entry ids of
@@ -44,15 +44,15 @@ from jsonschema import Draft202012Validator
 
 sys.dont_write_bytecode = True
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from common import PROFILES, ROOT, Loader, Report, _expand_short, call_body_errors, stand_body_errors, iter_nodes, load_json, load_yaml, md_cells, read, registry, rel, rules, schema_registry, schemas, walk
+from common import PROFILES, ROOT, VERSIONS, Loader, Report, _expand_short, call_body_errors, stand_body_errors, iter_nodes, load_json, load_yaml, md_cells, read, referable, registry, rel, schema_registry, schemas, walk
 
 rep = Report('cross-checks')
 MODEL = os.path.join(ROOT, 'spec', 'model')
 PORTS = os.path.join(ROOT, 'spec', 'ports')
 OPS_FILE = 'spec/ports/operations.yaml'
 PORT_NAMES = ('P1', 'P2', 'P3', 'P4', 'C1', 'C2', 'C3', 'C4', 'E1', 'E2', 'E3', 'E4', 'E5', 'T')
-SINCE = ('v0.1', 'v0.2', 'v0.3')
-active = set(rules('active'))
+SINCE = VERSIONS
+active = set(referable())
 
 
 def schema_file(name):
@@ -330,7 +330,7 @@ if os.path.exists(SEQ):
 
 
 # ---------------------------------------------------------------- profiles of map rows
-prof_of = {r['id']: r.get('profile') for r in registry() if isinstance(r, dict) and r.get('status') == 'active'}
+prof_of = {i: r.get('profile') for i, r in referable().items()}
 no_prof = []
 for e in entries:
     want = sorted({prof_of[x] for x in e.get('rules') or [] if prof_of.get(x)})

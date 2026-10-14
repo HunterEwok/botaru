@@ -19,12 +19,12 @@ import yaml
 
 sys.dont_write_bytecode = True
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from common import ROOT, Report, load_yaml_all, rel, rules, walk
+from common import ROOT, Report, load_yaml_all, referable, rel, walk
 
 rep = Report('fixtures')
 FX = os.path.join(ROOT, 'conformance', 'fixtures')
 SCHEMA_FX = os.path.join(FX, 'schemas') + os.sep
-active = set(rules('active'))
+active = set(referable())
 seen = collections.defaultdict(list)  # id -> [where]
 ITEM_KEYS = ('cases', 'checks', 'fixtures')
 

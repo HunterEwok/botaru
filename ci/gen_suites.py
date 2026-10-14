@@ -19,12 +19,13 @@ import yaml
 
 sys.dont_write_bytecode = True
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from common import ROOT, Report, id_key, id_regex, md_cells, read, registry, rel
+from common import ROOT, Report, id_key, id_regex, md_cells, read, referable, registry, rel
 
 rep = Report('check suites')
 rows = [r for r in registry() if isinstance(r, dict) and isinstance(r.get('id'), str)]
 ID_RE = id_regex(rows)
 status = {r['id']: r for r in rows}
+kept = referable()
 SRC = 'docs/quality.md'
 NAME = re.compile(r'^`((blackbox|store|adapter|lint):([a-z0-9-]+)/([a-z0-9-]+))`(.*)$')
 SUITE = {
@@ -39,7 +40,7 @@ DEFAULT = {'blackbox': 'core-blackbox', 'store': 'store', 'adapter': 'adapter', 
 # rules that name the check in their fixtures field
 named_by = collections.defaultdict(set)
 for r in rows:
-    if r.get('status') == 'active':
+    if r['id'] in kept:
         for fx in r.get('fixtures') or []:
             named_by[fx].add(r['id'])
 
@@ -70,9 +71,9 @@ for n, line in enumerate(lines, 1):
     rules_in_row = sorted({x.group(0) for x in ID_RE.finditer(' '.join(c[1:]))}, key=id_key)
     rules = sorted(set(rules_in_row) | named_by.get(cid, set()), key=id_key)
     for x in rules:
-        if x not in status or status[x]['status'] != 'active':
-            rep.error(f'{SRC}:{n}', f'[rule_not_active] {cid}: rule {x} is not active')
-    versions = sorted({status[x]['version'] for x in rules if x in status and status[x]['status'] == 'active'})
+        if x not in kept:
+            rep.error(f'{SRC}:{n}', f'[rule_not_active] {cid}: rule {x} is not active (nor deferred with its mechanism kept)')
+    versions = sorted({status[x]['version'] for x in rules if x in kept})
     entry = {'id': cid, 'method': method, 'rules': rules, 'version': versions[0] if versions else None,
              'section': section, 'source': f'{SRC}:{n}'}
     note = m.group(5).strip()

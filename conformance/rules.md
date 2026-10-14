@@ -10,64 +10,64 @@ The line under a rule heading:
 - "non-waivable": an implementation cannot put the rule on its list of expected failures. "Waivable": it can, with a recorded reason.
 - "profile": the part of the skeleton an implementation claims conformance to separately (`core`, `messaging`, `campaign`, `insights`, `manager`, `governance`, `monitor`, `knowledge`, `ingress`, `connections`, `debug`, `sandbox`); the `core` profile is mandatory, see [docs/quality.md](../docs/quality.md).
 - "recommendation": a SHOULD rule; all others are mandatory.
-- "check": how compliance is shown. `fixture`: a ready data sample that must pass or fail a check. `store`: a storage check. `blackbox`: a test through the ports without knowledge of the implementation internals. `adapter`: a test of a port adapter. `eval`: a check of model work quality on a set of cases. `lint`: a check of files and manifests.
+- "check": how compliance is shown. `fixture`: a ready data sample that must pass or fail a check. `store`: a storage check. `blackbox`: a test through the ports without knowledge of the implementation internals. `adapter`: a test of a port adapter. `eval`: a check of model work quality on a set of cases. `lint`: a check of files and manifests. `impl`: a test of the reference implementation in `impl/`.
 - "decisions": decision numbers from [docs/decisions.md](../docs/decisions.md).
 
 ## Summary
 
-| Family | About | Document | Rules | Non-waivable | v0.1 | v0.2 | v0.3 |
-|---|---|---|---|---|---|---|---|
-| [AGG](#agg) | Aggregators | [docs/improvements.md](../docs/improvements.md) | 4 | 4 | 2 | 2 | 0 |
-| [APR](#apr) | Approvals | [docs/permissions.md](../docs/permissions.md) | 19 | 16 | 14 | 5 | 0 |
-| [ART](#art) | Files and artifacts | [docs/capabilities.md](../docs/capabilities.md) | 6 | 5 | 4 | 2 | 0 |
-| [AUD](#aud) | Audit | [docs/security-model.md](../docs/security-model.md) | 7 | 4 | 6 | 1 | 0 |
-| [BGR](#bgr) | Bot groups | [docs/coordination.md](../docs/coordination.md) | 2 | 2 | 2 | 0 | 0 |
-| [BUD](#bud) | Budgets | [docs/models-and-money.md](../docs/models-and-money.md) | 16 | 9 | 13 | 3 | 0 |
-| [CAP](#cap) | Dependency admission and refusal | [docs/operations.md](../docs/operations.md) | 6 | 1 | 4 | 2 | 0 |
-| [CNT](#cnt) | Continuations | [docs/tasks-and-delivery.md](../docs/tasks-and-delivery.md) | 7 | 7 | 6 | 1 | 0 |
-| [COM](#com) | Commission | [docs/improvements.md](../docs/improvements.md) | 17 | 6 | 9 | 4 | 4 |
-| [DEP](#dep) | Deployment and least privilege | [docs/security-model.md](../docs/security-model.md) | 11 | 11 | 11 | 0 | 0 |
-| [DIG](#dig) | Showing proposals to people | [docs/improvements.md](../docs/improvements.md) | 9 | 6 | 4 | 4 | 1 |
-| [DLV](#dlv) | Delivery | [docs/tasks-and-delivery.md](../docs/tasks-and-delivery.md) | 17 | 9 | 14 | 3 | 0 |
-| [DSP](#dsp) | Task pool and dispatcher | [docs/coordination.md](../docs/coordination.md) | 11 | 8 | 8 | 3 | 0 |
-| [FEN](#fen) | Leases | [docs/tasks-and-delivery.md](../docs/tasks-and-delivery.md) | 7 | 5 | 7 | 0 | 0 |
-| [GOV](#gov) | Bot governance | [docs/commission.md](../docs/commission.md) | 38 | 28 | 10 | 15 | 13 |
-| [GW](#gw) | Model gateway | [docs/models-and-money.md](../docs/models-and-money.md) | 16 | 15 | 16 | 0 | 0 |
-| [HLD](#hld) | Stop | [docs/operations.md](../docs/operations.md) | 7 | 5 | 6 | 1 | 0 |
-| [IDM](#idm) | Idempotency | [docs/tasks-and-delivery.md](../docs/tasks-and-delivery.md) | 5 | 1 | 5 | 0 | 0 |
-| [IDN](#idn) | Identity | [docs/bots.md](../docs/bots.md) | 16 | 13 | 13 | 1 | 2 |
-| [ING](#ing) | Incoming external events | [docs/capabilities.md](../docs/capabilities.md) | 4 | 3 | 0 | 4 | 0 |
-| [INJ](#inj) | Injection resistance | [docs/security-model.md](../docs/security-model.md) | 16 | 16 | 16 | 0 | 0 |
-| [INS](#ins) | Analysis of own data | [docs/improvements.md](../docs/improvements.md) | 6 | 4 | 6 | 0 | 0 |
-| [KNW](#knw) | Tenant knowledge | [docs/capabilities.md](../docs/capabilities.md) | 6 | 5 | 0 | 6 | 0 |
-| [LCY](#lcy) | Tenant lifecycle | [docs/operations.md](../docs/operations.md) | 8 | 3 | 3 | 5 | 0 |
-| [MAN](#man) | Manifests | [docs/task-language.md](../docs/task-language.md) | 12 | 4 | 10 | 2 | 0 |
-| [MEM](#mem) | Memory | [docs/bots.md](../docs/bots.md) | 10 | 7 | 8 | 2 | 0 |
-| [MGR](#mgr) | Farm manager | [docs/farm-manager.md](../docs/farm-manager.md) | 54 | 40 | 33 | 8 | 13 |
-| [MON](#mon) | External monitoring | [docs/monitoring.md](../docs/monitoring.md) | 13 | 10 | 11 | 2 | 0 |
-| [MSG](#msg) | Messages between bots | [docs/messaging.md](../docs/messaging.md) | 18 | 17 | 17 | 1 | 0 |
-| [OBS](#obs) | Observability | [docs/operations.md](../docs/operations.md) | 11 | 4 | 10 | 1 | 0 |
-| [OBV](#obv) | Observations | [docs/improvements.md](../docs/improvements.md) | 8 | 5 | 7 | 1 | 0 |
-| [ORC](#orc) | Campaigns | [docs/coordination.md](../docs/coordination.md) | 15 | 14 | 14 | 1 | 0 |
-| [OUT](#out) | Structured results | [docs/tasks-and-delivery.md](../docs/tasks-and-delivery.md) | 2 | 1 | 1 | 1 | 0 |
-| [PRF](#prf) | Role profiles | [docs/scripts-and-translator.md](../docs/scripts-and-translator.md) | 1 | 1 | 1 | 0 | 0 |
-| [PRM](#prm) | Permissions | [docs/permissions.md](../docs/permissions.md) | 18 | 18 | 16 | 2 | 0 |
-| [PRP](#prp) | Improvement proposals | [docs/improvements.md](../docs/improvements.md) | 26 | 14 | 21 | 2 | 3 |
-| [PRV](#prv) | Instruction versions and execution fingerprint | [docs/capabilities.md](../docs/capabilities.md) | 4 | 4 | 2 | 2 | 0 |
-| [REP](#rep) | Reporters | [docs/messaging.md](../docs/messaging.md) | 11 | 10 | 9 | 2 | 0 |
-| [RET](#ret) | Retention and deletion | [docs/operations.md](../docs/operations.md) | 11 | 9 | 8 | 3 | 0 |
-| [RT](#rt) | Agent runtime | [docs/architecture.md](../docs/architecture.md) | 5 | 5 | 5 | 0 | 0 |
-| [SBX](#sbx) | Sandbox | [docs/task-language.md](../docs/task-language.md) | 2 | 2 | 0 | 2 | 0 |
-| [SCR](#scr) | Scripts | [docs/scripts-and-translator.md](../docs/scripts-and-translator.md) | 14 | 12 | 10 | 4 | 0 |
-| [SEC](#sec) | Secrets | [docs/security-model.md](../docs/security-model.md) | 14 | 6 | 9 | 5 | 0 |
-| [SKL](#skl) | Skills | [docs/capabilities.md](../docs/capabilities.md) | 4 | 4 | 0 | 4 | 0 |
-| [STA](#sta) | Bot state | [docs/messaging.md](../docs/messaging.md) | 3 | 2 | 2 | 1 | 0 |
-| [TEN](#ten) | Tenants | [docs/architecture.md](../docs/architecture.md) | 8 | 8 | 8 | 0 | 0 |
-| [TIM](#tim) | Time and clocks | [docs/operations.md](../docs/operations.md) | 5 | 3 | 4 | 1 | 0 |
-| [TRN](#trn) | Translator | [docs/scripts-and-translator.md](../docs/scripts-and-translator.md) | 9 | 6 | 4 | 1 | 4 |
-| Total | | | 539 | 392 | 389 | 110 | 40 |
+| Family | About | Document | Rules | Non-waivable | v0.1 | v0.2 | v0.3 | v0.4 |
+|---|---|---|---|---|---|---|---|---|
+| [AGG](#agg) | Aggregators | [docs/improvements.md](../docs/improvements.md) | 4 | 4 | 2 | 2 | 0 | 0 |
+| [APR](#apr) | Approvals | [docs/permissions.md](../docs/permissions.md) | 19 | 16 | 14 | 5 | 0 | 0 |
+| [ART](#art) | Files and artifacts | [docs/capabilities.md](../docs/capabilities.md) | 6 | 5 | 4 | 2 | 0 | 0 |
+| [AUD](#aud) | Audit | [docs/security-model.md](../docs/security-model.md) | 7 | 4 | 6 | 1 | 0 | 0 |
+| [BGR](#bgr) | Bot groups | [docs/coordination.md](../docs/coordination.md) | 2 | 2 | 2 | 0 | 0 | 0 |
+| [BUD](#bud) | Budgets | [docs/models-and-money.md](../docs/models-and-money.md) | 16 | 9 | 13 | 3 | 0 | 0 |
+| [CAP](#cap) | Dependency admission and refusal | [docs/operations.md](../docs/operations.md) | 6 | 1 | 4 | 2 | 0 | 0 |
+| [CNT](#cnt) | Continuations | [docs/tasks-and-delivery.md](../docs/tasks-and-delivery.md) | 7 | 7 | 6 | 1 | 0 | 0 |
+| [COM](#com) | Commission | [docs/improvements.md](../docs/improvements.md) | 17 | 6 | 9 | 4 | 4 | 0 |
+| [DEP](#dep) | Deployment and least privilege | [docs/security-model.md](../docs/security-model.md) | 11 | 11 | 11 | 0 | 0 | 0 |
+| [DIG](#dig) | Showing proposals to people | [docs/improvements.md](../docs/improvements.md) | 9 | 6 | 4 | 4 | 1 | 0 |
+| [DLV](#dlv) | Delivery | [docs/tasks-and-delivery.md](../docs/tasks-and-delivery.md) | 17 | 9 | 14 | 3 | 0 | 0 |
+| [DSP](#dsp) | Task pool and dispatcher | [docs/coordination.md](../docs/coordination.md) | 11 | 8 | 8 | 3 | 0 | 0 |
+| [FEN](#fen) | Leases | [docs/tasks-and-delivery.md](../docs/tasks-and-delivery.md) | 7 | 5 | 7 | 0 | 0 | 0 |
+| [GOV](#gov) | Bot governance | [docs/commission.md](../docs/commission.md) | 38 | 28 | 10 | 15 | 13 | 0 |
+| [GW](#gw) | Model gateway | [docs/models-and-money.md](../docs/models-and-money.md) | 16 | 15 | 16 | 0 | 0 | 0 |
+| [HLD](#hld) | Stop | [docs/operations.md](../docs/operations.md) | 7 | 5 | 6 | 1 | 0 | 0 |
+| [IDM](#idm) | Idempotency | [docs/tasks-and-delivery.md](../docs/tasks-and-delivery.md) | 5 | 1 | 5 | 0 | 0 | 0 |
+| [IDN](#idn) | Identity | [docs/bots.md](../docs/bots.md) | 16 | 13 | 13 | 1 | 2 | 0 |
+| [ING](#ing) | Incoming external events | [docs/capabilities.md](../docs/capabilities.md) | 4 | 3 | 0 | 4 | 0 | 0 |
+| [INJ](#inj) | Injection resistance | [docs/security-model.md](../docs/security-model.md) | 16 | 16 | 16 | 0 | 0 | 0 |
+| [INS](#ins) | Analysis of own data | [docs/improvements.md](../docs/improvements.md) | 6 | 4 | 6 | 0 | 0 | 0 |
+| [KNW](#knw) | Tenant knowledge | [docs/capabilities.md](../docs/capabilities.md) | 6 | 5 | 0 | 6 | 0 | 0 |
+| [LCY](#lcy) | Tenant lifecycle | [docs/operations.md](../docs/operations.md) | 8 | 3 | 3 | 5 | 0 | 0 |
+| [MAN](#man) | Manifests | [docs/task-language.md](../docs/task-language.md) | 12 | 4 | 10 | 2 | 0 | 0 |
+| [MEM](#mem) | Memory | [docs/bots.md](../docs/bots.md) | 10 | 7 | 8 | 2 | 0 | 0 |
+| [MGR](#mgr) | Farm manager | [docs/farm-manager.md](../docs/farm-manager.md) | 54 | 40 | 33 | 8 | 13 | 0 |
+| [MON](#mon) | External monitoring | [docs/monitoring.md](../docs/monitoring.md) | 13 | 10 | 11 | 2 | 0 | 0 |
+| [MSG](#msg) | Messages between bots | [docs/messaging.md](../docs/messaging.md) | 18 | 17 | 17 | 1 | 0 | 0 |
+| [OBS](#obs) | Observability | [docs/operations.md](../docs/operations.md) | 11 | 4 | 10 | 1 | 0 | 0 |
+| [OBV](#obv) | Observations | [docs/improvements.md](../docs/improvements.md) | 8 | 5 | 7 | 1 | 0 | 0 |
+| [ORC](#orc) | Campaigns | [docs/coordination.md](../docs/coordination.md) | 15 | 14 | 14 | 1 | 0 | 0 |
+| [OUT](#out) | Structured results | [docs/tasks-and-delivery.md](../docs/tasks-and-delivery.md) | 2 | 1 | 1 | 1 | 0 | 0 |
+| [PRF](#prf) | Role profiles | [docs/scripts-and-translator.md](../docs/scripts-and-translator.md) | 1 | 1 | 1 | 0 | 0 | 0 |
+| [PRM](#prm) | Permissions | [docs/permissions.md](../docs/permissions.md) | 18 | 18 | 16 | 2 | 0 | 0 |
+| [PRP](#prp) | Improvement proposals | [docs/improvements.md](../docs/improvements.md) | 26 | 14 | 21 | 2 | 3 | 0 |
+| [PRV](#prv) | Instruction versions and execution fingerprint | [docs/capabilities.md](../docs/capabilities.md) | 4 | 4 | 2 | 2 | 0 | 0 |
+| [REP](#rep) | Reporters | [docs/messaging.md](../docs/messaging.md) | 11 | 10 | 9 | 2 | 0 | 0 |
+| [RET](#ret) | Retention and deletion | [docs/operations.md](../docs/operations.md) | 11 | 9 | 8 | 3 | 0 | 0 |
+| [RT](#rt) | Agent runtime | [docs/architecture.md](../docs/architecture.md) | 5 | 5 | 5 | 0 | 0 | 0 |
+| [SBX](#sbx) | Sandbox | [docs/task-language.md](../docs/task-language.md) | 2 | 2 | 0 | 2 | 0 | 0 |
+| [SCR](#scr) | Scripts | [docs/scripts-and-translator.md](../docs/scripts-and-translator.md) | 14 | 12 | 10 | 4 | 0 | 0 |
+| [SEC](#sec) | Secrets | [docs/security-model.md](../docs/security-model.md) | 14 | 6 | 9 | 5 | 0 | 0 |
+| [SKL](#skl) | Skills | [docs/capabilities.md](../docs/capabilities.md) | 4 | 4 | 0 | 4 | 0 | 0 |
+| [STA](#sta) | Bot state | [docs/messaging.md](../docs/messaging.md) | 3 | 2 | 2 | 1 | 0 | 0 |
+| [TEN](#ten) | Tenants | [docs/architecture.md](../docs/architecture.md) | 8 | 8 | 8 | 0 | 0 | 0 |
+| [TIM](#tim) | Time and clocks | [docs/operations.md](../docs/operations.md) | 5 | 3 | 4 | 1 | 0 | 0 |
+| [TRN](#trn) | Translator | [docs/scripts-and-translator.md](../docs/scripts-and-translator.md) | 9 | 6 | 4 | 1 | 4 | 0 |
+| Total | | | 539 | 392 | 389 | 110 | 40 | 0 |
 
-Retired numbers (23) are listed in [retired.md](retired.md).
+Retired numbers (23) are listed in [retired.md](retired.md), deferred rules (0) in [deferred.md](deferred.md).
 
 <a id="agg"></a>
 ## AGG: Aggregators
