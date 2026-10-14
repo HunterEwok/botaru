@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -36,6 +37,9 @@ type toolsGrant struct {
 	Initiator string
 	MaxTier   int
 	Mark      string
+	Purpose   string
+	// InitiatorGroups are the groups of an active initiator, for the built-in tools.
+	InitiatorGroups []string
 }
 
 // catalogTool is one entry of the P3 catalog of an attempt.
@@ -45,6 +49,9 @@ type catalogTool struct {
 	Plugin toolspec.Plugin
 	Tool   toolspec.Tool
 	Schema map[string]any // the input schema with enum_from turned into the catalog values
+	// Builtin marks a built-in tool of the core (spec/model/builtin-tools.yaml), which has no
+	// plugin.
+	Builtin bool
 }
 
 // MCP is the tool as the runtime sees it in tools/list.
@@ -102,11 +109,40 @@ func (c *Core) loadGrantTask(ctx context.Context, q store.Querier, g *toolsGrant
 	var r struct {
 		MaxTier  int    `json:"max_tier"`
 		DataMark string `json:"data_mark"`
+		Purpose  string `json:"purpose"`
 	}
 	if err := json.Unmarshal(rec, &r); err != nil {
 		return err
 	}
-	g.MaxTier, g.Mark = r.MaxTier, r.DataMark
+	g.MaxTier, g.Mark, g.Purpose = r.MaxTier, r.DataMark, r.Purpose
+	// The groups of an active initiator: a person, or a service or system principal whose
+	// rights to a built-in write tool come only from explicit rows (APR-18).
+	if g.Initiator != "" {
+		var state string
+		err := q.QueryRow(ctx, `SELECT state FROM principals WHERE tenant = $1 AND id = $2`, g.Tenant, g.Initiator).Scan(&state)
+		if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+			return err
+		}
+		if state == "active" {
+			rows, err := q.Query(ctx, `SELECT grp FROM memberships WHERE tenant = $1 AND principal = $2 AND state = 'active' AND (until IS NULL OR until > botaru_now()) ORDER BY grp`,
+				g.Tenant, g.Initiator)
+			if err != nil {
+				return err
+			}
+			for rows.Next() {
+				var grp string
+				if err := rows.Scan(&grp); err != nil {
+					rows.Close()
+					return err
+				}
+				g.InitiatorGroups = append(g.InitiatorGroups, grp)
+			}
+			rows.Close()
+			if err := rows.Err(); err != nil {
+				return err
+			}
+		}
+	}
 	return q.QueryRow(ctx, `SELECT role FROM workers WHERE id = $1`, g.Worker).Scan(&g.Role)
 }
 
@@ -114,7 +150,7 @@ func (c *Core) loadGrantTask(ctx context.Context, q store.Querier, g *toolsGrant
 // role's tools (1), read only (2), tier not above the task's max_tier (3), output class not
 // above the task's mark (4), description and schema from the manifest (5), "which resource"
 // parameters as an enum of the tenant's catalog filtered by the mark (6), in a stable order
-// (8). The built-in tools of step 7 are not served by this build.
+// (8). Of the built-in tools of step 7 this build serves request_action (APR-1).
 func (c *Core) toolCatalog(cat *Catalog, g *toolsGrant) ([]catalogTool, error) {
 	role, ok := cat.Roles[g.Role]
 	if !ok {
@@ -140,6 +176,14 @@ func (c *Core) toolCatalog(cat *Catalog, g *toolsGrant) ([]catalogTool, error) {
 			return nil, err
 		}
 		out = append(out, catalogTool{Name: toolspec.ModelName(plugin, tool), Right: right, Plugin: p, Tool: t, Schema: schema})
+	}
+	if rt, err := c.requestActionTool(cat, g); err != nil {
+		return nil, err
+	} else if rt != nil {
+		out = append(out, *rt)
+	}
+	if st := c.serviceControlTool(cat, g); st != nil {
+		out = append(out, *st)
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
 	return out, nil
@@ -293,8 +337,10 @@ func (c *Core) P3ToolsCall(ctx context.Context, handle string, p mcp.CallParams)
 	}
 	var callID string
 	var refusal *toolRefusal
+	var builtin *mcp.CallResult
+	var grantID string
 	err = c.tx(ctx, func(tx pgx.Tx, now time.Time) error {
-		callID, refusal = "", nil
+		callID, refusal, builtin, grantID = "", nil, nil, ""
 		g, err := c.resolveToolsHandle(ctx, tx, handle)
 		if err != nil {
 			return err
@@ -311,17 +357,60 @@ func (c *Core) P3ToolsCall(ctx context.Context, handle string, p mcp.CallParams)
 		if err := pinnedCatalog(ctx, tx, g.Task, tools); err != nil {
 			return err
 		}
+		if p.Name == requestActionName {
+			offered := slices.ContainsFunc(tools, func(t catalogTool) bool { return t.Builtin && t.Name == requestActionName })
+			args := p.Arguments
+			if args == nil {
+				args = map[string]any{}
+			}
+			res, err := c.requestAction(ctx, tx, now, cat, g, offered, args)
+			if err != nil {
+				return err
+			}
+			builtin = res.call()
+			return nil
+		}
+		if p.Name == serviceToolName {
+			offered := slices.ContainsFunc(tools, func(t catalogTool) bool { return t.Builtin && t.Name == serviceToolName })
+			args := p.Arguments
+			if args == nil {
+				args = map[string]any{}
+			}
+			res, id, grant, err := c.serviceControl(ctx, tx, now, cat, g, offered, args)
+			if errors.Is(err, errSchema) {
+				refusal = &toolRefusal{state: "error", reason: "input_schema_invalid"}
+				return nil
+			}
+			if err != nil {
+				return err
+			}
+			if res != nil {
+				builtin = res.call()
+			}
+			callID, grantID = id, grant
+			return nil
+		}
 		callID, refusal, err = c.recordToolCall(ctx, tx, now, cat, g, p)
 		return err
 	})
 	if err != nil {
 		return nil, err
 	}
+	if builtin != nil {
+		return builtin, nil
+	}
 	if refusal != nil && refusal.reason == "budget_exhausted" {
 		return nil, refuse("budget_exhausted", "the tool call does not fit the budget")
 	}
 	if refusal != nil {
 		return toolError(refusal), nil
+	}
+	if grantID != "" {
+		// A grant call is a write call: the model gets only the closed outcome (APR-18).
+		if _, err := c.awaitToolCall(ctx, cat, callID); err != nil {
+			return nil, err
+		}
+		return c.serviceOutcome(ctx, callID, grantID)
 	}
 	return c.awaitToolCall(ctx, cat, callID)
 }
@@ -544,7 +633,7 @@ func (c *Core) callTarget(cat *Catalog, tenant, right string, t toolspec.Tool, a
 	var found []callTargetRef
 	for _, r := range res {
 		rm, _ := r.(map[string]any)
-		if rm["list"] != list || !readBy(rm, right) {
+		if rm["list"] != list || right != "" && !readBy(rm, right) {
 			continue
 		}
 		vals, _ := rm["values"].([]any)
@@ -563,6 +652,12 @@ func (c *Core) callTarget(cat *Catalog, tenant, right string, t toolspec.Tool, a
 		return callTargetRef{}, nil, errors.New("the target value has no single machine")
 	}
 	return found[0], resolved, nil
+}
+
+// callTargetAny is callTarget for a write call of an action: its target values come from the
+// action's catalog lists, whatever tools read them.
+func (c *Core) callTargetAny(cat *Catalog, tenant string, t toolspec.Tool, args map[string]any) (callTargetRef, map[string]string, error) {
+	return c.callTarget(cat, tenant, "", t, args)
 }
 
 func asString(v any) string {
@@ -592,7 +687,7 @@ func findService(spec map[string]any, name string) (map[string]any, string) {
 // after an apply takes no calls until it says hello again (INJ-2).
 func (c *Core) liveToolhost(ctx context.Context, q store.Querier, now time.Time, cat *Catalog, tenant, plugin, placement, host string) (bool, error) {
 	rows, err := q.Query(ctx, `SELECT plugins, hello FROM workers WHERE tenant = $1 AND kind = 'toolhost' AND state = 'active'
-		AND plugins ? $2 AND placement = $3 AND ($4 = '' OR host = $4) AND last_seen > $5`,
+		AND plugins ? $2 AND NOT plugins_down ? $2 AND placement = $3 AND ($4 = '' OR host = $4) AND last_seen > $5`,
 		tenant, plugin, placement, host, now.Add(-staleAfter))
 	if err != nil {
 		return false, err

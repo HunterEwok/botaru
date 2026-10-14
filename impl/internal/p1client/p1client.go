@@ -62,10 +62,16 @@ func LeaseHeader(token json.RawMessage) string {
 
 // Call posts a request to /v1/p1/<op> and decodes the answer into out.
 func (c *Client) Call(ctx context.Context, op, lease string, req, out any) error {
-	return c.post(ctx, "/v1/p1/"+op, lease, req, out)
+	return c.post(ctx, "/v1/p1/"+op, lease, nil, req, out)
 }
 
-func (c *Client) post(ctx context.Context, path, lease string, req, out any) error {
+// CallAs calls a P1 operation on behalf of a person: headers carries Botaru-On-Behalf,
+// Botaru-Chat and, for a button, Botaru-Message (spec/bindings/http/README.md).
+func (c *Client) CallAs(ctx context.Context, op string, headers map[string]string, req, out any) error {
+	return c.post(ctx, "/v1/p1/"+op, "", headers, req, out)
+}
+
+func (c *Client) post(ctx context.Context, path, lease string, headers map[string]string, req, out any) error {
 	if req == nil {
 		req = map[string]any{}
 	}
@@ -81,6 +87,9 @@ func (c *Client) post(ctx context.Context, path, lease string, req, out any) err
 	hr.Header.Set("Authorization", "Bearer "+c.Token)
 	if lease != "" {
 		hr.Header.Set("Botaru-Lease", lease)
+	}
+	for k, v := range headers {
+		hr.Header.Set(k, v)
 	}
 	hc := c.HTTP
 	if hc == nil {

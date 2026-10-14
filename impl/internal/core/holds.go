@@ -53,6 +53,7 @@ type TenantRequest struct {
 	Tenant string `json:"tenant"`
 	State  string `json:"state"`
 	Limit  int    `json:"limit"`
+	After  string `json:"after"`
 }
 
 // Hold is the hold record (spec/model/hold.schema.json).

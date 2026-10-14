@@ -2,8 +2,8 @@
 
 // Package telegram is the E1 channel driver for the Telegram Bot API
 // (spec/bindings/channels/telegram.md): getUpdates polling into submit_activity, and
-// deliveries into sendMessage. v0.1 of this build serves text messages; buttons, files and
-// group membership come later.
+// deliveries into sendMessage, cards with buttons and their presses (callback_query) into P1
+// decide, card.details and card.remind. Files and group membership come later.
 package telegram
 
 import (
@@ -157,8 +157,26 @@ type APIError struct {
 func (e *APIError) Error() string { return fmt.Sprintf("bot api %d: %s", e.Status, e.Description) }
 
 type update struct {
-	UpdateID int64    `json:"update_id"`
-	Message  *message `json:"message"`
+	UpdateID      int64          `json:"update_id"`
+	Message       *message       `json:"message"`
+	CallbackQuery *callbackQuery `json:"callback_query"`
+}
+
+// callbackQuery is a press of an inline button.
+type callbackQuery struct {
+	ID   string `json:"id"`
+	From struct {
+		ID    int64 `json:"id"`
+		IsBot bool  `json:"is_bot"`
+	} `json:"from"`
+	Message *struct {
+		MessageID int64 `json:"message_id"`
+		Chat      struct {
+			ID   int64  `json:"id"`
+			Type string `json:"type"`
+		} `json:"chat"`
+	} `json:"message"`
+	Data string `json:"data"`
 }
 
 type message struct {
@@ -211,7 +229,7 @@ func (o *origin) person() string {
 // PollOnce reads one batch of updates and submits them. The offset moves past an update only
 // after the core answered for it (DLV-5).
 func (c *Channel) PollOnce(ctx context.Context) error {
-	params := map[string]any{"timeout": c.cfg.PollTimeoutS, "allowed_updates": []string{"message"}}
+	params := map[string]any{"timeout": c.cfg.PollTimeoutS, "allowed_updates": []string{"message", "callback_query"}}
 	if c.offset > 0 {
 		params["offset"] = c.offset
 	}
@@ -295,6 +313,9 @@ func Activity(channel string, u update) map[string]any {
 }
 
 func (c *Channel) submit(ctx context.Context, u update) error {
+	if u.CallbackQuery != nil {
+		return c.press(ctx, u.CallbackQuery)
+	}
 	a := Activity(c.cfg.Channel, u)
 	if a == nil {
 		return nil
@@ -324,12 +345,23 @@ func (c *Channel) submit(ctx context.Context, u update) error {
 }
 
 func (c *Channel) send(ctx context.Context, chatID int64, text string) (int64, error) {
+	return c.sendWith(ctx, chatID, text, nil)
+}
+
+func cutText(text string) string {
 	if r := []rune(text); len(r) > 4096 {
-		text = string(r[:4095]) + "…"
+		return string(r[:4095]) + "…"
 	}
-	res, err := c.botCall(ctx, "sendMessage", map[string]any{
-		"chat_id": chatID, "text": text, "link_preview_options": map[string]any{"is_disabled": true},
-	})
+	return text
+}
+
+// sendWith sends a message, with the inline keyboard of a card when markup is set.
+func (c *Channel) sendWith(ctx context.Context, chatID int64, text string, markup any) (int64, error) {
+	params := map[string]any{"chat_id": chatID, "text": cutText(text), "link_preview_options": map[string]any{"is_disabled": true}}
+	if markup != nil {
+		params["reply_markup"] = markup
+	}
+	res, err := c.botCall(ctx, "sendMessage", params)
 	if err != nil {
 		return 0, err
 	}
@@ -356,7 +388,9 @@ type deliveryPayload struct {
 			Text    string         `json:"text"`
 			TextKey string         `json:"text_key"`
 			Params  map[string]any `json:"params"`
+			Card    *card          `json:"card"`
 		} `json:"body"`
+		ReplacesExternalID string `json:"replaces_external_id"`
 	} `json:"delivery"`
 }
 
@@ -389,7 +423,22 @@ func (c *Channel) DeliverOnce(ctx context.Context, waitS int) (bool, error) {
 	if err != nil {
 		return true, c.fail(ctx, lease, "address_invalid", false, 0)
 	}
-	id, err := c.send(ctx, chat, text)
+	var markup any
+	if cd := p.Delivery.Body.Card; cd != nil {
+		markup = c.keyboard(p.Locale, cd)
+	}
+	var id int64
+	if p.Delivery.Kind == "card_update" {
+		// A card update edits the message of the card; no new message is sent (FEN-7).
+		var msg int64
+		msg, err = strconv.ParseInt(p.Delivery.ReplacesExternalID, 10, 64)
+		if err != nil {
+			return true, c.fail(ctx, lease, "input_schema_invalid", false, 0)
+		}
+		id, err = msg, c.edit(ctx, chat, msg, text, markup)
+	} else {
+		id, err = c.sendWith(ctx, chat, text, markup)
+	}
 	if err != nil {
 		var ae *APIError
 		switch {
@@ -427,6 +476,11 @@ func (c *Channel) render(p deliveryPayload) (string, bool) {
 			return "", false
 		}
 		return c.cfg.Texts.Render(p.Locale, b.TextKey, b.Params), true
+	case "card":
+		if b.Card == nil {
+			return "", false
+		}
+		return c.renderCard(p.Locale, b.Card), true
 	}
 	return "", false
 }

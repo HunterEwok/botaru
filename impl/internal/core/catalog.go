@@ -24,6 +24,8 @@ type Catalog struct {
 	Tenants   map[string]*TenantView
 	Roles     map[string]manifest.Role
 	TaskTypes map[string]manifest.TaskType
+	// Actions are the Action manifests by name (global, MAN-9).
+	Actions map[string]manifest.Action
 	// Profiles are keyed by tenant and name; a farm-wide profile has the tenant "".
 	Profiles map[[2]string]manifest.ModelProfile
 	// Plugins are the ToolPlugin manifests by name (global, D-92).
@@ -57,6 +59,7 @@ func newCatalog() *Catalog {
 		Tenants:    map[string]*TenantView{},
 		Roles:      map[string]manifest.Role{},
 		TaskTypes:  map[string]manifest.TaskType{},
+		Actions:    map[string]manifest.Action{},
 		Profiles:   map[[2]string]manifest.ModelProfile{},
 		Plugins:    map[string]toolspec.Plugin{},
 		RawGlobals: map[manifest.Key]map[string]any{},
@@ -107,6 +110,11 @@ func buildCatalog(docs []manifest.Doc) (*Catalog, error) {
 			var tt manifest.TaskType
 			if tt, err = manifest.Decode[manifest.TaskType](d); err == nil {
 				c.TaskTypes[d.Name] = tt
+			}
+		case "Action":
+			var a manifest.Action
+			if a, err = manifest.Decode[manifest.Action](d); err == nil {
+				c.Actions[d.Name] = a
 			}
 		case "ModelProfile":
 			var p manifest.ModelProfile

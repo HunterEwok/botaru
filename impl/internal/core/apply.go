@@ -366,6 +366,12 @@ func (c *Core) applyOnce(ctx context.Context, op Operator, req ApplyRequest) (*A
 			req.Commit, setHash+":"+fmtTime(now), now); err != nil {
 			return err
 		}
+		// A new configuration may be the fix that tasks waiting on_fix wait for, and that a
+		// pair closed by a provider configuration error waits for (GW-13): its next call is
+		// the test.
+		if _, err := tx.Exec(ctx, `DELETE FROM provider_pairs WHERE state = 'config'`); err != nil {
+			return err
+		}
 		// A new configuration may be the fix that tasks waiting on_fix wait for.
 		if _, err := tx.Exec(ctx, `UPDATE tasks SET run_at = $1, reason = NULL, updated_at = $1 WHERE state = 'submitted' AND reason = 'waiting_on_fix'`, now); err != nil {
 			return err

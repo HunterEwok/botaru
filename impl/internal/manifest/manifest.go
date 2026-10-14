@@ -159,6 +159,39 @@ type Tenant struct {
 	DefaultTypes     []DefaultType     `json:"default_types"`
 	DelegatedGroups  []string          `json:"delegated_groups"`
 	Dispatcher       TenantDispatcher  `json:"dispatcher"`
+	Dispatch         TenantDispatch    `json:"dispatch"`
+	Attention        TenantAttention   `json:"attention"`
+	// Run holds the pipelines of the command /run <name> (APR-17).
+	Run map[string]RunEntry `json:"run"`
+}
+
+// RunEntry is one pipeline of /run: a task type or an action, with its positional arguments.
+type RunEntry struct {
+	Type   string   `json:"type"`
+	Action string   `json:"action"`
+	Args   []string `json:"args"`
+}
+
+// TenantAttention holds the card limits of the tenant (APR-2).
+type TenantAttention struct {
+	// CardsPerTenantHour is how many action approvals the core creates per hour; 20 when unset.
+	CardsPerTenantHour int `json:"cards_per_tenant_hour"`
+}
+
+// TenantDispatch holds the dispatch rules of the tenant policy (DSP-3, DSP-7).
+type TenantDispatch struct {
+	Rules []DispatchRule `json:"rules"`
+}
+
+// DispatchRule matches tasks by type or type prefix and source kind; this build reads its
+// ceiling of running tasks (DSP-7).
+type DispatchRule struct {
+	Match struct {
+		Type       string `json:"type"`
+		TypePrefix string `json:"type_prefix"`
+		Source     string `json:"source"`
+	} `json:"match"`
+	MaxRunning int `json:"max_running"`
 }
 
 // TenantDispatcher holds the dispatcher settings the core reads (DSP-3, DSP-8).
@@ -270,9 +303,31 @@ type Role struct {
 	Models     map[string]string `json:"models"`
 	Memory     any               `json:"memory"`
 	Tools      []any             `json:"tools"`
-	Runtime    struct {
+	// ActionsMayRequest are the actions the model may ask for through request_action (APR-1).
+	ActionsMayRequest []string `json:"actions_may_request"`
+	// ServiceControl names the catalog services the role may control, or ["*"] (APR-18).
+	ServiceControl []string `json:"service_control"`
+	Runtime        struct {
 		Driver string `json:"driver"`
 	} `json:"runtime"`
+}
+
+// Action is the spec of an Action manifest: a button with a closed form (MAN-9).
+type Action struct {
+	Title       string         `json:"title"`
+	Description string         `json:"description"`
+	Risk        string         `json:"risk"`
+	Args        map[string]any `json:"args"`
+	TTL         string         `json:"ttl"`
+	Idempotent  bool           `json:"idempotent"`
+	Approvals   int            `json:"approvals"`
+	Executor    struct {
+		Plugin string `json:"plugin"`
+		Tool   string `json:"tool"`
+	} `json:"executor"`
+	WritesOnly  []string `json:"writes_only"`
+	RunsPerHour int      `json:"runs_per_hour"`
+	RunsPerDay  int      `json:"runs_per_day"`
 }
 
 // TaskType is the spec of a TaskType manifest.
@@ -296,6 +351,10 @@ type TaskType struct {
 	Retry         Retry             `json:"retry"`
 	TreeBudgetEUR float64           `json:"tree_budget_eur"`
 	GoalTrust     string            `json:"goal_trust"`
+	// Run with approval none marks a pipeline that /run starts without a button (APR-17).
+	Run *struct {
+		Approval string `json:"approval"`
+	} `json:"run"`
 }
 
 // Timeouts are the type deadlines as durations (15m, 60s).

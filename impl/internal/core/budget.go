@@ -76,14 +76,17 @@ type spendFilter struct {
 // windowUsed sums the spend of a window: usage lines and call reserves in full, and of each
 // task reserve only the part its tree has not spent yet, because the calls of a tree draw on
 // its task reserve. The task reserve of ownRoot is left out: the caller's call is that draw.
-// A task reserve has no role, so a window of one role counts only the calls of that role.
+// A task reserve has no role, so a window of one role counts only the calls of that role. The
+// reserve of a task that waits for the provider is kept but not counted: the reserve is taken
+// again before its call (BUD-4, GW-2).
 func windowUsed(ctx context.Context, tx pgx.Tx, tenant string, f spendFilter, from time.Time, ownRoot string) (int64, error) {
 	var used int64
 	err := tx.QueryRow(ctx, `WITH w AS (SELECT * FROM spend WHERE tenant = $1 AND time >= $2
 			AND ($3 = '' OR subject = $3) AND ($5 = '' OR line = $5) AND ($6 = '' OR role = $6))
 		SELECT coalesce((SELECT sum(eur_micros) FROM w WHERE unit <> 'task'), 0)
 			+ coalesce((SELECT sum(greatest(r.eur_micros - coalesce((SELECT sum(s.eur_micros) FROM spend s WHERE s.root = r.root AND s.unit <> 'task'), 0), 0))
-				FROM w r WHERE r.unit = 'task' AND r.root <> $4), 0)`,
+				FROM w r WHERE r.unit = 'task' AND r.root <> $4
+				AND NOT EXISTS (SELECT 1 FROM tasks t WHERE t.id = r.task AND t.state = 'submitted' AND t.reason IN ('provider_unavailable', 'provider_quota'))), 0)`,
 		tenant, from, f.subject, ownRoot, f.line, f.role).Scan(&used)
 	return used, err
 }
@@ -100,6 +103,25 @@ type budgetAsk struct {
 	line string
 	// role is the role of a call; empty at enqueue, where the per-role limit is not known.
 	role string
+	// crossed collects the windows whose 80% threshold the ask reaches. The caller gives the
+	// events only once the ask is accepted, so a refused ask takes no threshold slot (BUD-4).
+	crossed *[]crossing
+}
+
+// crossing is a window at its 80% threshold.
+type crossing struct {
+	scope, subject string
+	period         time.Time
+}
+
+// emitCrossed gives the threshold events of an accepted ask.
+func (c *Core) emitCrossed(ctx context.Context, tx pgx.Tx, now time.Time, tenant string, crossed []crossing) error {
+	for _, x := range crossed {
+		if err := c.budgetThreshold(ctx, tx, now, tenant, x.scope, x.subject, x.period); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // checkBudget compares the money windows with the limits (BUD-1, BUD-7): the tenant's month
@@ -142,6 +164,8 @@ func (c *Core) checkBudget(ctx context.Context, tx pgx.Tx, now time.Time, tv *Te
 		from   time.Time
 		filter spendFilter
 		why    string
+		// scope names the window for the 80% event; "" has none.
+		scope string
 	}
 	lb := b.Lines[line]
 	lineMonth := lb.MonthEUR
@@ -151,13 +175,13 @@ func (c *Core) checkBudget(ctx context.Context, tx pgx.Tx, now time.Time, tv *Te
 		lineMonth = &zero
 	}
 	windows := []window{
-		{b.MonthEUR, month, spendFilter{}, "the tenant limit is used up"},
-		{dayLimit, day, spendFilter{}, "the tenant limit is used up"},
-		{lineMonth, month, spendFilter{line: line}, "the budget line is used up"},
-		{lb.DayEUR, day, spendFilter{line: line}, "the budget line is used up"},
+		{b.MonthEUR, month, spendFilter{}, "the tenant limit is used up", "tenant_month"},
+		{dayLimit, day, spendFilter{}, "the tenant limit is used up", "tenant_day"},
+		{lineMonth, month, spendFilter{line: line}, "the budget line is used up", ""},
+		{lb.DayEUR, day, spendFilter{line: line}, "the budget line is used up", ""},
 	}
 	if ask.role != "" {
-		windows = append(windows, window{lb.PerRoleMonthEUR, month, spendFilter{line: line, role: ask.role}, "the budget line of the role is used up"})
+		windows = append(windows, window{lb.PerRoleMonthEUR, month, spendFilter{line: line, role: ask.role}, "the budget line of the role is used up", ""})
 	}
 	if line == "work" && ask.subject != "system" {
 		var personal *float64
@@ -166,8 +190,9 @@ func (c *Core) checkBudget(ctx context.Context, tx pgx.Tx, now time.Time, tv *Te
 				personal = l
 			}
 		}
-		windows = append(windows, window{personal, day, spendFilter{subject: ask.subject, line: "work"}, "the personal day limit is used up"})
+		windows = append(windows, window{personal, day, spendFilter{subject: ask.subject, line: "work"}, "the personal day limit is used up", "person_day"})
 	}
+	var crossed []crossing
 	for _, w := range windows {
 		if w.limit == nil {
 			continue
@@ -179,8 +204,34 @@ func (c *Core) checkBudget(ctx context.Context, tx pgx.Tx, now time.Time, tv *Te
 		if over(used, *w.limit) {
 			return refuse("budget_exhausted", "%s", w.why)
 		}
+		if w.scope != "" && *w.limit > 0 && float64(used+ask.extra) >= 0.8*float64(money.FromEUR(*w.limit)) {
+			crossed = append(crossed, crossing{w.scope, w.filter.subject, w.from})
+		}
+	}
+	if ask.crossed != nil {
+		*ask.crossed = append(*ask.crossed, crossed...)
+		return nil
+	}
+	if err := c.emitCrossed(ctx, tx, now, tv.Name, crossed); err != nil {
+		return refuse("not_ready", "store")
 	}
 	return nil
+}
+
+// budgetThreshold gives the event budget.threshold once per period of a window when the
+// usage with the reserves of running attempts reaches 80% of its limit (BUD-4). The event has
+// no amounts; a person's window names the person as its subject.
+func (c *Core) budgetThreshold(ctx context.Context, tx pgx.Tx, now time.Time, tenant, scope, subject string, period time.Time) error {
+	key := scope
+	if subject != "" {
+		key += ":" + subject
+	}
+	tag, err := tx.Exec(ctx, `INSERT INTO budget_thresholds (tenant, scope, period) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING`, tenant, key, period)
+	if err != nil || tag.RowsAffected() == 0 {
+		return err
+	}
+	return c.appendEvent(ctx, tx, now, tenant, Event{Type: "budget.threshold", Subject: subject,
+		Data: map[string]any{"scope": scope, "threshold_pct": 80, "period_start": fmtTime(period)}})
 }
 
 // spendRow is a usage line or a reserve of one call (BUD-3).
@@ -195,7 +246,8 @@ type spendRow struct {
 // checkBudget and the tree budget. A call of no price passes no limit and still gets its line.
 func (c *Core) reserveSpend(ctx context.Context, tx pgx.Tx, now time.Time, tv *TenantView, r spendRow, groups []string, treeBudget int64) error {
 	if r.Micros > 0 {
-		if p := c.checkBudget(ctx, tx, now, tv, budgetAsk{subject: r.Subject, groups: groups, extra: r.Micros, ownRoot: r.Root, line: r.Line, role: r.Role}); p != nil {
+		var crossed []crossing
+		if p := c.checkBudget(ctx, tx, now, tv, budgetAsk{subject: r.Subject, groups: groups, extra: r.Micros, ownRoot: r.Root, line: r.Line, role: r.Role, crossed: &crossed}); p != nil {
 			return p
 		}
 		if treeBudget > 0 {
@@ -206,6 +258,9 @@ func (c *Core) reserveSpend(ctx context.Context, tx pgx.Tx, now time.Time, tv *T
 			if used+r.Micros > treeBudget {
 				return refuse("budget_exhausted", "the call reserve does not fit the tree budget")
 			}
+		}
+		if err := c.emitCrossed(ctx, tx, now, r.Tenant, crossed); err != nil {
+			return err
 		}
 	}
 	_, err := tx.Exec(ctx, `INSERT INTO spend (id, tenant, task, root, subject, role, worker, line, purpose, unit, profile, state, eur_micros, time, fingerprint, toolcall)

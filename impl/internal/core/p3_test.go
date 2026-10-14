@@ -625,3 +625,63 @@ func TestToolhostContainerPlugin(t *testing.T) {
 		t.Fatalf("an own plugin without network: %v", err)
 	}
 }
+
+// A plugin its toolhost reports down gets no hand-out and its call plugin_unavailable at once;
+// a call queued when the report comes ends at once too; after a hello with ok the call passes
+// (OBS-10, blackbox:core/plugin-unavailable).
+func TestPluginDown(t *testing.T) {
+	ctx := context.Background()
+	b := newToolBench(t)
+	_, h := b.attemptTools(t, "1", false)
+	th := b.toolhost(t, "checks")
+	cat, err := b.c.Catalog(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	fp, err := expectedFingerprint(cat, th.Plugins)
+	if err != nil {
+		t.Fatal(err)
+	}
+	hello := func(state string) {
+		t.Helper()
+		req := HelloRequest{Kind: "toolhost", ProtocolVersions: []string{"v1"}, Plugins: []string{"checks"}, Placement: "host", ToolsFingerprint: fp,
+			Health: []ComponentHealth{{Component: "plugin", Name: "checks", State: state, Time: fmtTime(time.Now())}}}
+		if err := b.c.spec.Validate("p1-hello-request", jsonMap(t, req)); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := b.c.Hello(ctx, th, req); err != nil {
+			t.Fatal(err)
+		}
+	}
+	args := map[string]any{"check": "www-health"}
+	// A call queued while the plugin is up ends when the toolhost reports it down.
+	queued := callAsync(b, h, mcp.CallParams{Name: "checks_latest", Arguments: args})
+	for range 100 {
+		var n int
+		b.c.st.Pool.QueryRow(ctx, `SELECT count(*) FROM toolcalls WHERE state = 'queued'`).Scan(&n)
+		if n == 1 {
+			break
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	hello("down")
+	if res := <-queued; res.err != nil || callText(res.r) != "error: plugin_unavailable" {
+		t.Fatalf("a queued call of a plugin reported down: %+v %v", res.r, res.err)
+	}
+	start := time.Now()
+	r, err := b.c.P3ToolsCall(ctx, h, mcp.CallParams{Name: "checks_latest", Arguments: args})
+	if err != nil || callText(r) != "error: plugin_unavailable" || time.Since(start) > 5*time.Second {
+		t.Fatalf("a call of a plugin in down: %+v %v", r, err)
+	}
+	if item := b.claim(t, th, "toolcall"); item != nil {
+		t.Fatalf("a plugin in down got a call: %+v", item)
+	}
+	hello("ok")
+	done := callAsync(b, h, mcp.CallParams{Name: "checks_latest", Arguments: args})
+	if item := b.claimTool(t, th); item == nil {
+		t.Fatal("no call after ok")
+	} else if _, err := b.c.Complete(ctx, th, header(t, item), CompleteRequest{Output: map[string]any{"content": []any{map[string]any{"type": "text", "text": "ok"}}}}); err != nil {
+		t.Fatal(err)
+	}
+	<-done
+}

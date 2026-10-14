@@ -198,6 +198,19 @@ type HelloRequest struct {
 	Plugins          []string          `json:"plugins,omitempty"`
 	Placement        string            `json:"placement,omitempty"`
 	ToolsFingerprint string            `json:"tools_fingerprint,omitempty"`
+	Health           []ComponentHealth `json:"health,omitempty"`
+}
+
+// ComponentHealth is health-report: the state of one component by codes only (OBS-10, OBS-1).
+type ComponentHealth struct {
+	Component string `json:"component"`
+	Name      string `json:"name,omitempty"`
+	State     string `json:"state"`
+	Checks    []struct {
+		Code  string `json:"code"`
+		State string `json:"state"`
+	} `json:"checks,omitempty"`
+	Time string `json:"time"`
 }
 
 // RuntimeDecl is how an agent's runtime performs the farm mechanisms (RT-1, RT-2, RT-5).
@@ -302,6 +315,12 @@ func (c *Core) Hello(ctx context.Context, w *Worker, req HelloRequest) (*HelloRe
 		if _, err := tx.Exec(ctx, `UPDATE workers SET hello = $2, state = CASE WHEN state = 'draining' THEN state ELSE $3 END WHERE id = $1`,
 			w.ID, raw, state); err != nil {
 			return err
+		}
+		// A hello reports every plugin: one not reported down is ok again.
+		if w.Kind == "toolhost" && !mismatch {
+			if err := c.pluginHealth(ctx, tx, now, w, req.Health, true); err != nil {
+				return err
+			}
 		}
 		if mismatch {
 			_, err := c.appendAudit(ctx, tx, now, Audit{

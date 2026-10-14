@@ -34,6 +34,8 @@ type Audit struct {
 	// PersonalSeen are the sources of the personal_seen flag of the object, a marker without
 	// content (AUD-5).
 	PersonalSeen []string
+	// ServiceGrant is the block of a service_grant record (APR-17, APR-18).
+	ServiceGrant map[string]any
 }
 
 // Actor is who made the change.
@@ -104,6 +106,9 @@ func (c *Core) appendAudit(ctx context.Context, tx pgx.Tx, now time.Time, a Audi
 	}
 	if len(a.PersonalSeen) > 0 {
 		rec["personal_seen"] = a.PersonalSeen
+	}
+	if a.ServiceGrant != nil {
+		rec["service_grant"] = a.ServiceGrant
 	}
 	h, err := jcs.Hash(rec)
 	if err != nil {

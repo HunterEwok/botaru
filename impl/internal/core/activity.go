@@ -114,6 +114,28 @@ func (c *Core) SubmitActivity(ctx context.Context, w *Worker, a Activity) (*Acti
 			reply("activity.not_verified")
 			return nil
 		}
+		// The commands the core runs by code, without a model and without a task type.
+		if word, rest, ok := commandWord(a); ok && (word == "/service" || word == "/run" || codeCommands[word]) {
+			if err := c.firstContact(ctx, tx, now, tv, a.Channel, principal, a.Chat); err != nil {
+				return err
+			}
+			pc := personCommand{tv: tv, cat: cat, person: principal, groups: groupClosure(tv, p.Groups), locale: locale,
+				channel: a.Channel, chat: a.Chat, key: key}
+			var r *ActivityResult
+			switch word {
+			case "/service":
+				r, err = c.serviceCommand(ctx, tx, now, pc, rest)
+			case "/run":
+				r, err = c.runCommand(ctx, tx, now, pc, rest)
+			default:
+				r, err = c.codeCommand(ctx, tx, now, pc, word, rest)
+			}
+			if err != nil {
+				return err
+			}
+			out = *r
+			return nil
+		}
 		typ, goal, ok := c.chooseType(cat, tv, a)
 		if !ok {
 			reply("activity.not_command")

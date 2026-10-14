@@ -25,7 +25,8 @@ texts:
   cmd.tasks.empty: You have no tasks today.
   cmd.status.row: "Task {n} \"{title}\": {state}, attempt {attempt}{waiting}, deadline {deadline}."
   cmd.status.not_found: There is no task {n} of yours.
-  cmd.cancel.confirm: 'Cancel task {n} "{title}"? Its child tasks will stop too.'
+  cmd.cancel.confirm: 'Cancel task {n} "{title}"? Its child tasks will stop too. To confirm, send /cancel {n} {nonce}.'
+  cmd.cancel.finished: "Task {n} has already finished ({state})."
   cmd.cancel.done: Task {n} is canceled.
   cmd.cancel.forbidden: You cannot cancel task {n}.
   cmd.help.header: "Commands you can use here:"
@@ -39,9 +40,26 @@ texts:
     This is the bot of tenant {tenant}. Your messages are processed by an external provider's
     model; you can request your data with the /mydata command.
   cmd.lang.done: The language is now {locale}.
+  cmd.profile.groups: "Your groups: {groups}."
+  cmd.profile.types: "You can ask for: {titles}."
+  cmd.profile.actions: "Actions you can request: {titles}."
+  cmd.profile.data: "Your data classes: {classes}."
   cmd.lang.unknown: "Unknown language. Available: {locales}."
   cmd.forbidden.needs: This needs the group {group}; contact the tenant administrator.
   cmd.followup.hint: You can simply reply with a message within {minutes} minutes.
+  # Service control and pipelines by command, without a model (PRM-18, APR-17)
+  cmd.service.usage: "Usage: /service <verb> <service>, for example /service restart nginx."
+  cmd.service.unknown: There is no such service or verb in the catalog of this tenant.
+  cmd.service.accepted: "{verb} {service}: accepted; the outcome comes here."
+  cmd.run.usage: "Usage: /run <pipeline> <arguments>."
+  cmd.run.unknown: There is no such pipeline here.
+  cmd.run.invalid: The arguments do not fit the pipeline.
+  cmd.run.accepted: "{title}: started; the outcome comes here."
+  cmd.action.pending: '"{title}" awaits the decision of a person until {deadline}.'
+  cmd.action.done: "{action}: done."
+  cmd.refused.held: This is stopped by a hold right now.
+  cmd.refused.service_rate_limited: The limit of such actions is reached; try again later.
+  cmd.refused.resource_busy: Another operation on this service is running; try again later.
   # Cards (APR-19, GOV-13, GOV-14)
   card.copy.initiator: "Approval \"{title}\": {state}, deadline {deadline}. Decided by: {decided_by}."
   card.copy.remind_button: Remind approvers
@@ -59,6 +77,26 @@ texts:
     {calc_all}, without the author {calc_without_author}, without the role {calc_without_role}.
     Count it as a promotion trigger by {deadline}? Silence leaves the success in the track record.
   card.self_measured.count: Count it
+  # The approval card and its answers, drawn by the channel from the card fields (APR-3, APR-19)
+  card.title: "Approval needed: {title}"
+  card.risk: "Risk: {risk}"
+  card.args: "Arguments: {args}"
+  card.requested_by: "Requested by {initiator} ({source})"
+  card.context: "What the code saw: {context}"
+  card.untrusted: "The request was made after reading untrusted text ({source})."
+  card.deadline: "Decide by {deadline}."
+  card.state: "State: {state}"
+  card.footer: "You get this card because you hold {why_you}. If nobody decides by {until}: {on_silence}."
+  card.button.approve: Approve
+  card.button.reject: Reject
+  card.button.details: Details
+  card.answer.accepted: Accepted.
+  card.answer.forbidden: You cannot decide on this card.
+  card.answer.expired: The card has expired.
+  card.answer.already_decided: This card is already decided.
+  card.answer.failed: The press could not be processed; try again later.
+  card.details.header: "Details of \"{title}\":"
+  card.details.row: "{field}: {value}"
   # Number words that a model paragraph to people may not hold (REP-4)
   number.words: [zero, one, two, three, four, five, six, seven, eight, nine, ten, eleven, twelve,
     thirteen, fourteen, fifteen, sixteen, seventeen, eighteen, nineteen, twenty, thirty, forty, fifty,

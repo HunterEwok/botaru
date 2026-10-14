@@ -144,6 +144,34 @@ func (s *Server) p2(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		out, err = s.c.HoldList(ctx, core.OperatorActor(oper), req)
+	case "status", "doctor", "deadletter.list":
+		req, derr := decode[core.TenantRequest](m)
+		if derr != nil {
+			s.fail(w, derr)
+			return
+		}
+		switch op {
+		case "status":
+			out, err = s.c.Status(ctx, oper, req)
+		case "doctor":
+			out, err = s.c.Doctor(ctx, oper, req)
+		default:
+			out, err = s.c.DeadletterList(ctx, oper, req)
+		}
+	case "task.redrive", "delivery.redrive":
+		req, derr := decode[core.RedriveRequest](m)
+		if derr != nil {
+			s.fail(w, derr)
+			return
+		}
+		out, err = s.c.Redrive(ctx, oper, req)
+	case "audit.query":
+		req, derr := decode[core.AuditQueryRequest](m)
+		if derr != nil {
+			s.fail(w, derr)
+			return
+		}
+		out, err = s.c.AuditQuery(ctx, oper, req)
 	case "audit.verify":
 		tenant, _ := m["tenant"].(string)
 		if tenant != oper.Tenant {

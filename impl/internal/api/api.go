@@ -141,8 +141,9 @@ func (s *Server) fail(w http.ResponseWriter, err error) {
 	if errors.Is(err, context.Canceled) {
 		return
 	}
+	// The core neither loses nor starts work when the store fails: the caller retries (OBS-8).
 	s.log.Error("request failed", "err", err)
-	Problem(w, &core.Problem{Reason: "store_unavailable", Detail: "internal error"})
+	Problem(w, &core.Problem{Reason: "not_ready", Detail: "internal error"})
 }
 
 func writeJSON(w http.ResponseWriter, v any) {

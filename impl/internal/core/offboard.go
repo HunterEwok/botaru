@@ -91,7 +91,11 @@ func (c *Core) withholdDeliveriesTo(ctx context.Context, tx pgx.Tx, now time.Tim
 // cancelTasksOf cancels the non-terminal tasks a principal initiated. A running attempt loses
 // its lease and handles in the same transaction, so the worker is fenced at its next call.
 func (c *Core) cancelTasksOf(ctx context.Context, tx pgx.Tx, now time.Time, tenant, principal, reason string) error {
-	rows, err := tx.Query(ctx, `SELECT id FROM tasks WHERE tenant = $1 AND initiator = $2 AND state IN ('submitted', 'working') ORDER BY id FOR UPDATE`, tenant, principal)
+	if err := c.cancelApprovalsOf(ctx, tx, now, tenant, principal, reason); err != nil {
+		return err
+	}
+	// An action task is not canceled: its write call may already run (APR-7).
+	rows, err := tx.Query(ctx, `SELECT id FROM tasks WHERE tenant = $1 AND initiator = $2 AND state IN ('submitted', 'working') AND type NOT LIKE 'action.%' ORDER BY id FOR UPDATE`, tenant, principal)
 	if err != nil {
 		return err
 	}
@@ -108,24 +112,7 @@ func (c *Core) cancelTasksOf(ctx context.Context, tx pgx.Tx, now time.Time, tena
 	if err := rows.Err(); err != nil {
 		return err
 	}
-	for _, id := range tasks {
-		if _, err := tx.Exec(ctx, `DELETE FROM handles WHERE work_id = $1`, id); err != nil {
-			return err
-		}
-		if _, err := tx.Exec(ctx, `UPDATE leases SET state = 'revoked', reason = $3, closed_at = $2 WHERE work_id = $1 AND state = 'active'`, id, now, reason); err != nil {
-			return err
-		}
-		if _, err := tx.Exec(ctx, `UPDATE tasks SET state = 'canceled', reason = $2, run_at = NULL, updated_at = $3 WHERE id = $1`, id, reason, now); err != nil {
-			return err
-		}
-		if err := releaseTaskReserve(ctx, tx, id); err != nil {
-			return err
-		}
-		if err := c.appendEvent(ctx, tx, now, tenant, Event{Type: "task.canceled", Subject: id, Data: map[string]any{"task": id, "reason": reason}}); err != nil {
-			return err
-		}
-	}
-	return nil
+	return c.cancelTaskIDs(ctx, tx, now, tenant, tasks, reason)
 }
 
 // planPrincipalLeft sends the code notice principal_left to the direct chats of the active

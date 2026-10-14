@@ -27,6 +27,7 @@ const (
 	Approval  = "a"
 	Hold      = "h"
 	Erasure   = "er"
+	Grant     = "sg"
 )
 
 var (

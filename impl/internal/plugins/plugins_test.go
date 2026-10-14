@@ -212,3 +212,78 @@ func TestServe(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+// service/control runs systemctl with the resolved unit after --, never a unit of the model,
+// and returns only the state (MON-8, DEP-4).
+func TestService(t *testing.T) {
+	var calls [][]string
+	state := "activating"
+	s := &Service{Wait: 3 * time.Second, run: func(ctx context.Context, name string, args ...string) (string, int, error) {
+		calls = append(calls, append([]string{name}, args...))
+		if args[0] == "is-active" {
+			out := state
+			state = "active"
+			return out + "\n", 3, nil
+		}
+		return "noise from systemctl", 0, nil
+	}}
+	meta := &mcp.Meta{Resolved: map[string]string{"service.unit": "nginx.service"}}
+	r, err := s.Call(context.Background(), "control", map[string]any{"service": "nginx", "verb": "restart"}, meta)
+	if err != nil || r.StructuredContent["state"] != "active" || len(r.Content) != 0 {
+		t.Fatalf("restart %+v %v", r, err)
+	}
+	if strings.Join(calls[0], " ") != "/usr/bin/systemctl restart -- nginx.service" {
+		t.Fatalf("argv %v", calls[0])
+	}
+	for _, bad := range []struct {
+		verb, unit string
+	}{{"reload", "nginx.service"}, {"restart", "nginx@1.service"}, {"restart", "-nginx.service"}, {"restart", ""}, {"restart", "nginx.socket"}} {
+		if _, err := s.Call(context.Background(), "control", map[string]any{"verb": bad.verb}, &mcp.Meta{Resolved: map[string]string{"service.unit": bad.unit}}); err == nil {
+			t.Errorf("%v ran", bad)
+		}
+	}
+}
+
+// The oneshot queue gets one request file per approval or grant number (APR-7).
+func TestQueue(t *testing.T) {
+	dir := t.TempDir()
+	q := &Queue{Dir: dir}
+	meta := &mcp.Meta{WorkID: "sg_01JB0000000000000000000000"}
+	for range 2 {
+		r, err := q.Call(context.Background(), "clean_tmp", map[string]any{"host": "web1"}, meta)
+		if err != nil || r.StructuredContent["code"] != "accepted" {
+			t.Fatalf("%+v %v", r, err)
+		}
+	}
+	ents, _ := os.ReadDir(dir)
+	if len(ents) != 1 || ents[0].Name() != "sg_01JB0000000000000000000000.json" {
+		t.Fatalf("queue %v", ents)
+	}
+	raw, _ := os.ReadFile(filepath.Join(dir, ents[0].Name()))
+	var req map[string]any
+	if json.Unmarshal(raw, &req) != nil || req["tool"] != "clean_tmp" || req["args"].(map[string]any)["host"] != "web1" {
+		t.Fatalf("request %s", raw)
+	}
+	if _, err := q.Call(context.Background(), "clean_tmp", nil, &mcp.Meta{WorkID: "../x"}); err == nil {
+		t.Fatal("a request without a number was queued")
+	}
+}
+
+// The polkit rule holds only the exact units and the catalog verbs (spec/bindings/os/systemd.md).
+func TestPolkitRule(t *testing.T) {
+	r, err := PolkitRule("tenants/demo/catalog.yaml", "botaru-act-demo", map[string][]string{"nginx.service": {"start", "stop", "restart"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{`subject.user !== "botaru-act-demo"`, `unit === "nginx.service" && (verb === "restart" || verb === "start" || verb === "stop")`, "return polkit.Result.NO;"} {
+		if !strings.Contains(r, want) {
+			t.Fatalf("rule lacks %q:\n%s", want, r)
+		}
+	}
+	if _, err := PolkitRule("x", "botaru-act-demo", map[string][]string{"nginx*.service": {"restart"}}); err == nil {
+		t.Fatal("a mask passed")
+	}
+	if _, err := PolkitRule("x", "botaru-act-demo", map[string][]string{"nginx.service": {"reload"}}); err == nil {
+		t.Fatal("a verb outside the three passed")
+	}
+}

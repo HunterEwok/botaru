@@ -63,6 +63,8 @@ type enqueueInput struct {
 	// Subjects are the other persons whose data the body carries, for personal_subjects
 	// (AUD-5): the authors of forwarded or quoted text.
 	Subjects []string
+	// Refs link the task to earlier work: the original of a redrive (DLV-4).
+	Refs []string
 }
 
 // fairnessKey writes the dispatcher fairness key <kind>:<id> from the task source (DSP-2,
@@ -289,7 +291,8 @@ func (c *Core) enqueue(ctx context.Context, tx pgx.Tx, now time.Time, cat *Catal
 		return nil, err
 	}
 	line := c.budgetLine(tt.Purpose)
-	if p := c.checkBudget(ctx, tx, now, tv, budgetAsk{subject: in.Initiator, groups: groups, extra: estimate, line: line}); p != nil {
+	var crossed []crossing
+	if p := c.checkBudget(ctx, tx, now, tv, budgetAsk{subject: in.Initiator, groups: groups, extra: estimate, line: line, crossed: &crossed}); p != nil {
 		return reject(p)
 	}
 	// The enqueue ceiling of the sliding hour, under the tenant's budget lock (CAP-1).
@@ -326,6 +329,12 @@ func (c *Core) enqueue(ctx context.Context, tx pgx.Tx, now time.Time, cat *Catal
 		if in.Source == "interactive" && tt.Interactive {
 			prio = 2
 		}
+	}
+	// Below the soft threshold of the store volume only classes 1 and 2 enter (CAP-5).
+	if prio >= 3 && c.capacity.Load() != capacityOK {
+		pr := refuse("over_capacity", "the store volume is below its soft threshold")
+		pr.RetryAfterS = 60
+		return reject(pr)
 	}
 	id := ids.New(ids.Task)
 	trace, err := newTraceparent()
@@ -369,6 +378,9 @@ func (c *Core) enqueue(ctx context.Context, tx pgx.Tx, now time.Time, cat *Catal
 	if len(in.Subjects) > 0 {
 		record["personal_subjects"] = in.Subjects
 	}
+	if len(in.Refs) > 0 {
+		record["refs"] = in.Refs
+	}
 	if in.Origin != nil {
 		record["origin"] = in.Origin
 		record["conversation"] = "c:" + in.Origin.Channel + ":" + in.Origin.Chat.ID()
@@ -411,6 +423,10 @@ func (c *Core) enqueue(ctx context.Context, tx pgx.Tx, now time.Time, cat *Catal
 		Command: "task.enqueue", Target: &Target{Kind: "task", ID: id}, OK: true,
 		After: map[string]any{"type": in.Type, "decision": "allow"},
 	}); err != nil {
+		return nil, err
+	}
+	// The thresholds the accepted task reaches (BUD-4).
+	if err := c.emitCrossed(ctx, tx, now, in.Tenant, crossed); err != nil {
 		return nil, err
 	}
 	if err := notifyWork(ctx, tx); err != nil {

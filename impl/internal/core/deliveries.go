@@ -34,6 +34,8 @@ type plannedDelivery struct {
 	// Alarmkey and Episode name the alarm episode of an alarm_notice (MON-13).
 	Alarmkey string
 	Episode  int64
+	// SubjectKind and SubjectID name the decision subject of a card delivery (APR-3).
+	SubjectKind, SubjectID string
 }
 
 func (c *Core) planDelivery(ctx context.Context, tx pgx.Tx, now time.Time, d plannedDelivery) (string, error) {
@@ -46,10 +48,10 @@ func (c *Core) planDelivery(ctx context.Context, tx pgx.Tx, now time.Time, d pla
 	if d.Episode != 0 {
 		episode = d.Episode
 	}
-	_, err = tx.Exec(ctx, `INSERT INTO deliveries (id, tenant, task, kind, addr, target_kind, target_id, exec_kind, exec_name, recipient, state, body, data_mark, dataorigin, notice_version, alarmkey, episode, created_at, updated_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 'planned', $11, $12, $13, $14, $15, $16, $17, $17)`,
+	_, err = tx.Exec(ctx, `INSERT INTO deliveries (id, tenant, task, kind, addr, target_kind, target_id, exec_kind, exec_name, recipient, state, body, data_mark, dataorigin, notice_version, alarmkey, episode, created_at, updated_at, subject_kind, subject_id)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 'planned', $11, $12, $13, $14, $15, $16, $17, $17, $18, $19)`,
 		id, d.Tenant, nullable(d.Task), d.Kind, d.Addr, d.TargetKind, d.TargetID, d.ExecKind, d.ExecName, nullable(d.Recipient),
-		body, nullable(d.DataMark), d.DataOrigin, nullable(d.NoticeVersion), nullable(d.Alarmkey), episode, now)
+		body, nullable(d.DataMark), d.DataOrigin, nullable(d.NoticeVersion), nullable(d.Alarmkey), episode, now, nullable(d.SubjectKind), nullable(d.SubjectID))
 	if err != nil {
 		return "", err
 	}

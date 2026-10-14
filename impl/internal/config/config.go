@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	"github.com/HunterEwok/botaru/impl/internal/api"
+	"github.com/HunterEwok/botaru/impl/internal/core"
 	"github.com/HunterEwok/botaru/impl/internal/yamlx"
 )
 
@@ -48,6 +49,8 @@ type Core struct {
 	// FarmHosts are the farm nodes of the deployment description (DEP-11), which no tenant
 	// catalog may name.
 	FarmHosts []string `yaml:"farm_hosts"`
+	// Health holds the thresholds of the health indicators and the store volume (OBS-9, CAP-5).
+	Health core.HealthConfig `yaml:"health"`
 }
 
 // Load reads and checks a settings file.
