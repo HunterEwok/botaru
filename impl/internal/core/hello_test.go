@@ -261,14 +261,14 @@ func taskReserve(t *testing.T, b *bench, task string) int64 {
 	return n
 }
 
-// TestEnqueueReservesEstimate: a task whose estimate does not fit the hour limit is refused at
+// TestEnqueueReservesEstimate: a task whose estimate does not fit the day limit is refused at
 // enqueue, not accepted and failed later (BUD-1).
 func TestEnqueueReservesEstimate(t *testing.T) {
 	ctx := context.Background()
 	b := newBench(t)
-	// 2.98 of the 3 EUR hour limit is used; the estimate of hello.greet.v1 is 0.05 EUR.
+	// 14.98 of the 15 EUR day limit is used; the estimate of hello.greet.v1 is 0.05 EUR.
 	if _, err := b.c.st.Pool.Exec(ctx, `INSERT INTO spend (id, tenant, line, unit, state, eur_micros, time)
-		VALUES ('spd_test', 'demo', 'work', 'tokens', 'committed', 2980000, botaru_now())`); err != nil {
+		VALUES ('spd_test', 'demo', 'work', 'tokens', 'committed', 14980000, botaru_now())`); err != nil {
 		t.Fatal(err)
 	}
 	a := Activity{Kind: "message", Channel: "telegram", UpdateID: "9", Chat: Chat{Kind: "direct", ExternalID: "1001"}, Text: "/hello"}
@@ -345,7 +345,7 @@ func TestTaskReserveDrawDown(t *testing.T) {
 	}
 	err = b.c.tx(ctx, func(tx pgx.Tx, now time.Time) error {
 		for root, want := range map[string]int64{"": 180, "tsk_a": 130} {
-			got, err := windowUsed(ctx, tx, "demo", "", now.Add(-time.Hour), root)
+			got, err := windowUsed(ctx, tx, "demo", spendFilter{}, now.Add(-time.Hour), root)
 			if err != nil {
 				return err
 			}

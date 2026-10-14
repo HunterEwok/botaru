@@ -179,6 +179,16 @@ type Budgets struct {
 	MonthEUR *float64 `json:"month_eur"`
 	DayEUR   *float64 `json:"day_eur"`
 	HourEUR  *float64 `json:"hour_eur"`
+	// Lines are the sublimits of the budget lines by purpose (BUD-7).
+	Lines map[string]LineBudget `json:"lines"`
+}
+
+// LineBudget is one budget line: limits inside the tenant total. A line other than work has
+// a month limit of 0 when it sets none (BUD-7).
+type LineBudget struct {
+	MonthEUR        *float64 `json:"month_eur"`
+	DayEUR          *float64 `json:"day_eur"`
+	PerRoleMonthEUR *float64 `json:"per_role_month_eur"`
 }
 
 // Privacy is the tenant privacy block (SEC-8).

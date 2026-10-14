@@ -1,0 +1,309 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+
+package core
+
+import (
+	"context"
+	"encoding/json"
+	"slices"
+	"time"
+
+	"github.com/jackc/pgx/v5"
+
+	"github.com/HunterEwok/botaru/impl/internal/ids"
+	"github.com/HunterEwok/botaru/impl/internal/money"
+)
+
+// budgetLine is the budget line of a task type purpose from spec/model/task-purposes.yaml
+// (BUD-7). The core sets it, never the worker or the model; a type without a purpose is work.
+func (c *Core) budgetLine(purpose string) string {
+	if purpose == "" {
+		return "work"
+	}
+	if reg, err := c.spec.Registry("spec/model/task-purposes.yaml"); err == nil {
+		if e, ok := reg.Entry(purpose); ok {
+			if l, _ := e["budget_line"].(string); l != "" {
+				return l
+			}
+		}
+	}
+	return "work"
+}
+
+// spendFilter narrows a window sum to a subject, a budget line and a role; an empty field
+// does not narrow.
+type spendFilter struct {
+	subject, line, role string
+}
+
+// windowUsed sums the spend of a window: usage lines and call reserves in full, and of each
+// task reserve only the part its tree has not spent yet, because the calls of a tree draw on
+// its task reserve. The task reserve of ownRoot is left out: the caller's call is that draw.
+// A task reserve has no role, so a window of one role counts only the calls of that role.
+func windowUsed(ctx context.Context, tx pgx.Tx, tenant string, f spendFilter, from time.Time, ownRoot string) (int64, error) {
+	var used int64
+	err := tx.QueryRow(ctx, `WITH w AS (SELECT * FROM spend WHERE tenant = $1 AND time >= $2
+			AND ($3 = '' OR subject = $3) AND ($5 = '' OR line = $5) AND ($6 = '' OR role = $6))
+		SELECT coalesce((SELECT sum(eur_micros) FROM w WHERE unit <> 'task'), 0)
+			+ coalesce((SELECT sum(greatest(r.eur_micros - coalesce((SELECT sum(s.eur_micros) FROM spend s WHERE s.root = r.root AND s.unit <> 'task'), 0), 0))
+				FROM w r WHERE r.unit = 'task' AND r.root <> $4), 0)`,
+		tenant, from, f.subject, ownRoot, f.line, f.role).Scan(&used)
+	return used, err
+}
+
+// budgetAsk is one reserve to check: who it is for, its budget line and role, and its size.
+type budgetAsk struct {
+	subject string
+	groups  []string
+	// extra is the reserve in micro-euros; 0 checks only that no limit is used up.
+	extra int64
+	// ownRoot is the tree whose task reserve the reserve draws on.
+	ownRoot string
+	// line is the budget line (BUD-7); empty is work.
+	line string
+	// role is the role of a call; empty at enqueue, where the per-role limit is not known.
+	role string
+}
+
+// checkBudget compares the money windows with the limits (BUD-1, BUD-7): the tenant's month
+// and day, the month and day of the budget line and its limit per role, and the person's day
+// limit from their groups, which counts only the work line. Reserves count until they are
+// released. With a reserve it refuses when the reserve would pass a limit (BUD-2). The hourly
+// figure is not a reserve limit: it is the threshold of the runaway_spend hold (BUD-4, HLD-7).
+// The tenant's budget lock is held until the transaction ends, so two reserves of one tenant
+// never both pass on the same old sum.
+func (c *Core) checkBudget(ctx context.Context, tx pgx.Tx, now time.Time, tv *TenantView, ask budgetAsk) *Problem {
+	if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock(7300102, hashtext($1))`, tv.Name); err != nil {
+		return refuse("not_ready", "store")
+	}
+	over := func(used int64, limit float64) bool {
+		if ask.extra > 0 {
+			return used+ask.extra > money.FromEUR(limit)
+		}
+		return used >= money.FromEUR(limit)
+	}
+	line := ask.line
+	if line == "" {
+		line = "work"
+	}
+	b := tv.Spec.Budgets
+	// Days and months are the tenant's calendar ones (TIM-2).
+	loc := time.UTC
+	if l, err := time.LoadLocation(tv.Spec.Timezone); err == nil && tv.Spec.Timezone != "" {
+		loc = l
+	}
+	local := now.In(loc)
+	month := time.Date(local.Year(), local.Month(), 1, 0, 0, 0, 0, loc)
+	day := time.Date(local.Year(), local.Month(), local.Day(), 0, 0, 0, 0, loc)
+	dayLimit := b.DayEUR
+	if dayLimit == nil && b.MonthEUR != nil {
+		v := *b.MonthEUR / 20
+		dayLimit = &v
+	}
+	type window struct {
+		limit  *float64
+		from   time.Time
+		filter spendFilter
+		why    string
+	}
+	lb := b.Lines[line]
+	lineMonth := lb.MonthEUR
+	if lineMonth == nil && line != "work" {
+		// Analysis, reviews and the other lines are turned on explicitly with money (BUD-7).
+		zero := 0.0
+		lineMonth = &zero
+	}
+	windows := []window{
+		{b.MonthEUR, month, spendFilter{}, "the tenant limit is used up"},
+		{dayLimit, day, spendFilter{}, "the tenant limit is used up"},
+		{lineMonth, month, spendFilter{line: line}, "the budget line is used up"},
+		{lb.DayEUR, day, spendFilter{line: line}, "the budget line is used up"},
+	}
+	if ask.role != "" {
+		windows = append(windows, window{lb.PerRoleMonthEUR, month, spendFilter{line: line, role: ask.role}, "the budget line of the role is used up"})
+	}
+	if line == "work" && ask.subject != "system" {
+		var personal *float64
+		for _, g := range ask.groups {
+			if l := tv.Groups[g].DayEUR; l != nil && (personal == nil || *l > *personal) {
+				personal = l
+			}
+		}
+		windows = append(windows, window{personal, day, spendFilter{subject: ask.subject, line: "work"}, "the personal day limit is used up"})
+	}
+	for _, w := range windows {
+		if w.limit == nil {
+			continue
+		}
+		used, err := windowUsed(ctx, tx, tv.Name, w.filter, w.from, ask.ownRoot)
+		if err != nil {
+			return refuse("not_ready", "store")
+		}
+		if over(used, *w.limit) {
+			return refuse("budget_exhausted", "%s", w.why)
+		}
+	}
+	return nil
+}
+
+// spendRow is a usage line or a reserve of one call (BUD-3).
+type spendRow struct {
+	ID, Tenant, Task, Root, Subject, Role, Worker string
+	Line, Purpose, Unit, Profile, Fingerprint     string
+	Toolcall                                      string
+	Micros                                        int64
+}
+
+// reserveSpend writes the reserve of a call after the limits pass (BUD-2): the windows of
+// checkBudget and the tree budget. A call of no price passes no limit and still gets its line.
+func (c *Core) reserveSpend(ctx context.Context, tx pgx.Tx, now time.Time, tv *TenantView, r spendRow, groups []string, treeBudget int64) error {
+	if r.Micros > 0 {
+		if p := c.checkBudget(ctx, tx, now, tv, budgetAsk{subject: r.Subject, groups: groups, extra: r.Micros, ownRoot: r.Root, line: r.Line, role: r.Role}); p != nil {
+			return p
+		}
+		if treeBudget > 0 {
+			var used int64
+			if err := tx.QueryRow(ctx, `SELECT coalesce(sum(eur_micros), 0) FROM spend WHERE root = $1 AND unit <> 'task'`, r.Root).Scan(&used); err != nil {
+				return err
+			}
+			if used+r.Micros > treeBudget {
+				return refuse("budget_exhausted", "the call reserve does not fit the tree budget")
+			}
+		}
+	}
+	_, err := tx.Exec(ctx, `INSERT INTO spend (id, tenant, task, root, subject, role, worker, line, purpose, unit, profile, state, eur_micros, time, fingerprint, toolcall)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, 'reserved', $12, $13, $14, $15)`,
+		r.ID, r.Tenant, r.Task, r.Root, r.Subject, r.Role, r.Worker, r.Line, nullable(r.Purpose), r.Unit, nullable(r.Profile), r.Micros, now,
+		nullable(r.Fingerprint), nullable(r.Toolcall))
+	return err
+}
+
+// toolPrice is the price of one call in micro-euros: the manifest price of a tool the farm
+// pays outside the model provider, else 0 (BUD-5).
+func toolPrice(billing string, priceEUR float64) int64 {
+	if billing == "external" {
+		return money.FromEUR(priceEUR)
+	}
+	return 0
+}
+
+// reserveToolCall reserves the manifest price of a read call before it is queued (BUD-2,
+// BUD-5) on the line of the task's purpose (BUD-7). The reserve becomes the usage line of the
+// call when a toolhost takes it, and is given back when nobody does (migration 0005).
+func (c *Core) reserveToolCall(ctx context.Context, tx pgx.Tx, now time.Time, cat *Catalog, g *toolsGrant, callID string, micros int64) error {
+	tv := cat.Tenants[g.Tenant]
+	if tv == nil {
+		return refuse("not_ready", "tenant is not applied")
+	}
+	var rec []byte
+	var fp *string
+	if err := tx.QueryRow(ctx, `SELECT t.record, l.fingerprint FROM tasks t JOIN leases l ON l.work_id = t.id AND l.lease_no = $2 WHERE t.id = $1`,
+		g.Task, g.LeaseNo).Scan(&rec, &fp); err != nil {
+		return err
+	}
+	var r struct {
+		Root string `json:"root"`
+	}
+	_ = json.Unmarshal(rec, &r)
+	if r.Root == "" {
+		r.Root = g.Task
+	}
+	var groups []string
+	if p, err := loadPrincipal(ctx, tx, now, g.Tenant, g.Initiator); err == nil {
+		groups = groupClosure(tv, p.Groups)
+	}
+	tt := cat.TaskTypes[g.Type]
+	var tree int64
+	if tt.TreeBudgetEUR > 0 {
+		tree = money.FromEUR(tt.TreeBudgetEUR)
+	}
+	return c.reserveSpend(ctx, tx, now, tv, spendRow{
+		ID: ids.New(ids.Spend), Tenant: g.Tenant, Task: g.Task, Root: r.Root, Subject: g.Initiator, Role: g.Role, Worker: g.Worker,
+		Line: c.budgetLine(tt.Purpose), Purpose: tt.Purpose, Unit: "eur_cents", Fingerprint: deref(fp), Toolcall: callID, Micros: micros,
+	}, groups, tree)
+}
+
+// runawayHold is the hold of HLD-7 from spec/model/holds.yaml (runaway_spend_hour).
+const runawayHold = time.Hour
+
+// runawaySpend sets the runaway_spend hold of HLD-7: a tenant whose usage over the sliding hour
+// is above hour_eur (by default a hundredth of month_eur) gets a no_claim hold on every agent
+// role for an hour, by the author contain_auto, and the alarm alarm.hold.auto. A job role
+// keeps working. A role that already has such a hold gets no second one; the alarm resolves
+// when no such hold is active in the tenant.
+func (c *Core) runawaySpend(ctx context.Context) error {
+	cat, err := c.Catalog(ctx)
+	if err != nil {
+		return err
+	}
+	var agents []string
+	for name, r := range cat.Roles {
+		if r.WorkerKind == "agent" {
+			agents = append(agents, name)
+		}
+	}
+	slices.Sort(agents)
+	names := make([]string, 0, len(cat.Tenants))
+	for name := range cat.Tenants {
+		names = append(names, name)
+	}
+	slices.Sort(names)
+	for _, name := range names {
+		tv := cat.Tenants[name]
+		b := tv.Spec.Budgets
+		limit := b.HourEUR
+		if limit == nil && b.MonthEUR != nil {
+			v := *b.MonthEUR / 100
+			limit = &v
+		}
+		err := c.tx(ctx, func(tx pgx.Tx, now time.Time) error {
+			// The same lock as the reserves: two copies of the loop set one hold.
+			if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock(7300102, hashtext($1))`, name); err != nil {
+				return err
+			}
+			a := Alarm{Tenant: name, Name: "hold.auto", Subject: AlarmSubject{Kind: "tenant", ID: name}, Severity: "page"}
+			var used int64
+			if err := tx.QueryRow(ctx, `SELECT coalesce(sum(eur_micros), 0) FROM spend WHERE tenant = $1 AND time > $2 AND unit <> 'task' AND state <> 'reserved'`,
+				name, now.Add(-time.Hour)).Scan(&used); err != nil {
+				return err
+			}
+			if limit == nil || used <= money.FromEUR(*limit) {
+				var n int
+				if err := tx.QueryRow(ctx, `SELECT count(*) FROM holds WHERE tenant = $1 AND state = 'active' AND reason = 'runaway_spend'
+					AND (until IS NULL OR until > $2)`, name, now).Scan(&n); err != nil {
+					return err
+				}
+				if n == 0 {
+					return c.resolveAlarm(ctx, tx, now, a)
+				}
+				return nil
+			}
+			until := now.Add(runawayHold)
+			set := 0
+			for _, role := range agents {
+				var n int
+				if err := tx.QueryRow(ctx, `SELECT count(*) FROM holds WHERE tenant = $1 AND state = 'active' AND reason = 'runaway_spend'
+					AND scope_kind = 'role' AND scope_tenant = $1 AND scope_name = $2 AND (until IS NULL OR until > $3)`, name, role, now).Scan(&n); err != nil {
+					return err
+				}
+				if n > 0 {
+					continue
+				}
+				actor := HoldActor{Principal: "system", Rank: "contain_auto", Tenant: name, Via: "system", Source: "runaway_spend_hour"}
+				if _, _, err := c.insertHold(ctx, tx, now, actor, HoldScope{Kind: "role", Tenant: name, Name: role}, []string{"no_claim"}, "runaway_spend", &until); err != nil {
+					return err
+				}
+				set++
+			}
+			if set == 0 {
+				return nil
+			}
+			a.Values = map[string]any{"reason": "runaway_spend", "hour_cents": money.CentsUp(used), "limit_cents": money.CentsUp(money.FromEUR(*limit)), "roles": set}
+			return c.fireAlarm(ctx, tx, now, a)
+		})
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}

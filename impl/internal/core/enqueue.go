@@ -282,7 +282,8 @@ func (c *Core) enqueue(ctx context.Context, tx pgx.Tx, now time.Time, cat *Catal
 	if err != nil {
 		return nil, err
 	}
-	if p := c.checkBudget(ctx, tx, now, tv, in.Initiator, groups, estimate, ""); p != nil {
+	line := c.budgetLine(tt.Purpose)
+	if p := c.checkBudget(ctx, tx, now, tv, budgetAsk{subject: in.Initiator, groups: groups, extra: estimate, line: line}); p != nil {
 		return reject(p)
 	}
 	// The enqueue ceiling of the sliding hour, under the tenant's budget lock (CAP-1).
@@ -366,8 +367,8 @@ func (c *Core) enqueue(ctx context.Context, tx pgx.Tx, now time.Time, cat *Catal
 		return nil, err
 	}
 	if estimate > 0 {
-		if _, err := tx.Exec(ctx, `INSERT INTO spend (id, tenant, task, root, subject, line, unit, state, eur_micros, time)
-			VALUES ($1, $2, $3, $3, $4, 'work', 'task', 'reserved', $5, $6)`, ids.New(ids.Spend), in.Tenant, id, in.Initiator, estimate, now); err != nil {
+		if _, err := tx.Exec(ctx, `INSERT INTO spend (id, tenant, task, root, subject, line, purpose, unit, state, eur_micros, time)
+			VALUES ($1, $2, $3, $3, $4, $5, $6, 'task', 'reserved', $7, $8)`, ids.New(ids.Spend), in.Tenant, id, in.Initiator, line, nullable(tt.Purpose), estimate, now); err != nil {
 			return nil, err
 		}
 	}
@@ -430,86 +431,4 @@ func taskEstimate(ctx context.Context, tx pgx.Tx, now time.Time, tenant, typ str
 		return money.FromEUR(tt.TreeBudgetEUR), nil
 	}
 	return 0, nil
-}
-
-// windowUsed sums the spend of a window, of one subject when subject is set: usage lines and
-// call reserves in full, and of each task reserve only the part its tree has not spent yet,
-// because the calls of a tree draw on its task reserve. The task reserve of ownRoot is left
-// out: the caller's call is that draw.
-func windowUsed(ctx context.Context, tx pgx.Tx, tenant, subject string, from time.Time, ownRoot string) (int64, error) {
-	var used int64
-	err := tx.QueryRow(ctx, `WITH w AS (SELECT * FROM spend WHERE tenant = $1 AND time >= $2 AND ($3 = '' OR subject = $3))
-		SELECT coalesce((SELECT sum(eur_micros) FROM w WHERE unit <> 'task'), 0)
-			+ coalesce((SELECT sum(greatest(r.eur_micros - coalesce((SELECT sum(s.eur_micros) FROM spend s WHERE s.root = r.root AND s.unit <> 'task'), 0), 0))
-				FROM w r WHERE r.unit = 'task' AND r.root <> $4), 0)`, tenant, from, subject, ownRoot).Scan(&used)
-	return used, err
-}
-
-// checkBudget compares the money windows with the limits: the tenant's month, day and hour
-// and the person's day limit from their groups (BUD-1). Reserves count until they are released.
-// With a reserve of extra micro-euros it refuses when the reserve would pass a limit (BUD-2).
-// The task reserve of the tree ownRoot is left out: a model call of that tree draws on it.
-// The tenant's budget lock is held until the transaction ends, so two reserves of one tenant
-// never both pass on the same old sum.
-func (c *Core) checkBudget(ctx context.Context, tx pgx.Tx, now time.Time, tv *TenantView, subject string, groups []string, extra int64, ownRoot string) *Problem {
-	if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock(7300102, hashtext($1))`, tv.Name); err != nil {
-		return refuse("not_ready", "store")
-	}
-	over := func(used int64, limit float64) bool {
-		if extra > 0 {
-			return used+extra > money.FromEUR(limit)
-		}
-		return used >= money.FromEUR(limit)
-	}
-	b := tv.Spec.Budgets
-	type window struct {
-		limit *float64
-		from  time.Time
-	}
-	// Days and months are the tenant's calendar ones.
-	loc := time.UTC
-	if l, err := time.LoadLocation(tv.Spec.Timezone); err == nil && tv.Spec.Timezone != "" {
-		loc = l
-	}
-	local := now.In(loc)
-	month := time.Date(local.Year(), local.Month(), 1, 0, 0, 0, 0, loc)
-	day := time.Date(local.Year(), local.Month(), local.Day(), 0, 0, 0, 0, loc)
-	dayLimit := b.DayEUR
-	if dayLimit == nil && b.MonthEUR != nil {
-		v := *b.MonthEUR / 20
-		dayLimit = &v
-	}
-	hourLimit := b.HourEUR
-	if hourLimit == nil && b.MonthEUR != nil {
-		v := *b.MonthEUR / 100
-		hourLimit = &v
-	}
-	for _, w := range []window{{b.MonthEUR, month}, {dayLimit, day}, {hourLimit, now.Add(-time.Hour)}} {
-		if w.limit == nil {
-			continue
-		}
-		used, err := windowUsed(ctx, tx, tv.Name, "", w.from, ownRoot)
-		if err != nil {
-			return refuse("not_ready", "store")
-		}
-		if over(used, *w.limit) {
-			return refuse("budget_exhausted", "the tenant limit is used up")
-		}
-	}
-	var personal *float64
-	for _, g := range groups {
-		if l := tv.Groups[g].DayEUR; l != nil && (personal == nil || *l > *personal) {
-			personal = l
-		}
-	}
-	if personal != nil && subject != "system" {
-		used, err := windowUsed(ctx, tx, tv.Name, subject, day, ownRoot)
-		if err != nil {
-			return refuse("not_ready", "store")
-		}
-		if over(used, *personal) {
-			return refuse("budget_exhausted", "the personal day limit is used up")
-		}
-	}
-	return nil
 }

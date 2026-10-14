@@ -495,8 +495,16 @@ func workerScopes(w *Worker) []scopeRef {
 		scopeRef{kind: "worker", tenant: w.Tenant, name: strings.ToLower(w.ID)})
 }
 
-// expireHolds is the hold loop: a hold whose until has come ends as expired with its event and
-// audit record (HLD-1). The loop never ends a hold early.
+// holdLoop is the hold loop: hold deadlines, then the auto-stops (HLD-1, HLD-7).
+func (c *Core) holdLoop(ctx context.Context) error {
+	if err := c.expireHolds(ctx); err != nil {
+		return err
+	}
+	return c.runawaySpend(ctx)
+}
+
+// expireHolds ends each hold whose until has come as expired, with its event and
+// audit record (HLD-1). It never ends a hold early.
 func (c *Core) expireHolds(ctx context.Context) error {
 	for {
 		done := true
