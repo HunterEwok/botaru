@@ -9,7 +9,9 @@
 - pending appears only on a case of the next skeleton version;
 - from, chat, the generator data.gen and the references answers#/... exist in the stand data
   evals/fixtures/seed.yaml, the person in from is a member of the chat chat;
-- evals/thresholds.yaml holds a security threshold of zero and thresholds.budget.
+- evals/thresholds.yaml holds a security threshold of zero and thresholds.budget;
+- the catalog evals/catalog.yaml has one entry per skeleton case file, with the same rules,
+  a matching version and the same blocking, and only active rules.
 
   python3 ci/check_evals.py                  the skeleton cases in evals/cases/
   python3 ci/check_evals.py --cases <folder> [--seed <own seed.yaml>] [--manifests <manifest folder>]
@@ -216,6 +218,65 @@ for cid, (rp, c) in sorted(cases.items()):
             rep.error(rp, f'[case_answers_no_gen] reference answers#/{key} without the generator data.gen')
         elif gen in generators and key not in ((generators[gen] or {}).get('answers') or {}):
             rep.error(rp, f'[case_answer_unknown] generator {gen} has no answer {key}')
+
+# The catalog evals/catalog.yaml: one entry per case and per row without a model that the skeleton rules
+# name. Every skeleton case file has an entry, and the entry agrees with the file on rules, version and
+# blocking. Own cases (--cases) keep their own catalog and are not checked against this one.
+BLOCKS = {'yes': True, 'no': False, 'threshold': None, 'without a model': None}
+CATALOG = os.path.join(EVALS, 'catalog.yaml')
+if not OWN:
+    cat = load_yaml(CATALOG) if os.path.exists(CATALOG) else None
+    crp = rel(CATALOG)
+    entries = {}
+    if not isinstance(cat, dict) or not isinstance(cat.get('areas'), list):
+        rep.error(crp, '[catalog_form] the catalog is a mapping with a list areas')
+        cat = {'areas': []}
+    for ai, a in enumerate(cat['areas']):
+        if not isinstance(a, dict) or not isinstance(a.get('area'), str) or not isinstance(a.get('cases'), list):
+            rep.error(f'{crp}#areas/{ai}', '[catalog_form] an area has a title area and a list cases')
+            continue
+        for ci, e in enumerate(a['cases']):
+            where = f'{crp}#areas/{ai}/cases/{ci}'
+            if not isinstance(e, dict) or not isinstance(e.get('case'), str):
+                rep.error(where, '[catalog_form] an entry is a mapping with a case name')
+                continue
+            name = e['case']
+            if name in entries:
+                rep.error(where, f'[catalog_duplicate] {name} is already in the catalog')
+                continue
+            entries[name] = e
+            for k in e:
+                if k not in ('case', 'group', 'rules', 'decisions', 'version', 'block', 'method', 'spec'):
+                    rep.error(where, f'[catalog_form] {name}: unknown field {k}')
+            rl = e.get('rules')
+            if not isinstance(rl, list) or not all(isinstance(x, str) for x in rl):
+                rep.error(where, f'[catalog_form] {name}: rules must be a list of rule ids')
+                rl = []
+            for rid in rl:
+                if rid not in rules:
+                    rep.error(where, f'[rule_not_active] {name}: rule {rid} is not active')
+            if not re.fullmatch(r'(text )?v\d+\.\d+(, run v\d+\.\d+)?', str(e.get('version') or '')):
+                rep.error(where, f'[catalog_form] {name}: version must be vN.M or "text vN.M, run vN.M"')
+            if 'block' in e and e['block'] not in BLOCKS:
+                rep.error(where, f'[catalog_form] {name}: block must be one of {", ".join(BLOCKS)}')
+            if ('block' in e) == ('method' in e):
+                rep.error(where, f'[catalog_form] {name}: an entry has either block (a case) or method (a row without a model)')
+            spec = e.get('spec')
+            if not isinstance(spec, dict) or not spec or not all(isinstance(v, str) for v in spec.values()):
+                rep.error(where, f'[catalog_form] {name}: spec must be a non-empty mapping of strings')
+    for cid, (rp, c) in sorted(cases.items()):
+        e = entries.get(cid)
+        if e is None:
+            rep.error(rp, f'[catalog_missing] case {cid} has no entry in {crp}')
+            continue
+        if sorted(set(e.get('rules') or [])) != sorted(set(c.get('rules') or [])):
+            rep.error(rp, f'[catalog_mismatch] rules differ from the catalog entry: {sorted(c.get("rules") or [])} here, {sorted(e.get("rules") or [])} in {crp}')
+        if c.get('version') not in re.findall(r'v\d+\.\d+', str(e.get('version') or '')):
+            rep.error(rp, f'[catalog_mismatch] version {c.get("version")} is not the catalog version {e.get("version")}')
+        want = BLOCKS.get(e.get('block'))
+        if want is not None and c.get('blocking') is not want:
+            rep.error(rp, f'[catalog_mismatch] blocking: {c.get("blocking")} here, block: {e.get("block")} in the catalog')
+    rep.info(f'catalog entries {len(entries)}')
 
 # INJ-12: every model output named in the rule text is covered by at least one active case with INJ-12.
 # An output is recognized by words in the summary and expect of a case; output names in backticks in the
