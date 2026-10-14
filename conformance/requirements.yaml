@@ -771,7 +771,7 @@
   profile: core
   decisions: [D-71, D-80]
   fixtures: [blackbox:core/audit-every-decision]
-  doc: docs/security-model.md
+  doc: docs/permissions.md
 
 - id: AUD-2
   title: Only metadata in journals
@@ -793,7 +793,7 @@
   profile: core
   decisions: []
   fixtures: [blackbox:core/append-only-canaries, blackbox:decision/event-fields]
-  doc: docs/security-model.md
+  doc: docs/permissions.md
 
 - id: AUD-3
   title: Audit is append-only
@@ -810,7 +810,7 @@
   profile: core
   decisions: []
   fixtures: [impl:internal/store/TestMigrateAndInit]
-  doc: docs/security-model.md
+  doc: docs/permissions.md
 
 - id: AUD-4
   title: The attempt journal is only in a deletable store
@@ -837,7 +837,7 @@
   profile: debug
   decisions: []
   fixtures: [blackbox:audit/attempt-journal, blackbox:core/journal-read]
-  doc: docs/security-model.md
+  doc: docs/permissions.md
 
 - id: AUD-5
   title: The "personal data seen" flag
@@ -901,7 +901,7 @@
   profile: core
   decisions: [D-36, D-59, D-60]
   fixtures: [blackbox:core/audit-chain, blackbox:core/audit-head-rewritten]
-  doc: docs/security-model.md
+  doc: docs/permissions.md
 
 - id: AUD-7
   title: A separate right to read audit
@@ -920,7 +920,7 @@
   profile: core
   decisions: [D-36]
   fixtures: []
-  doc: docs/security-model.md
+  doc: docs/permissions.md
 
 - id: BGR-1
   title: A bot group is a selector by roles and labels
@@ -2101,7 +2101,7 @@
   profile: core
   decisions: []
   fixtures: []
-  doc: docs/security-model.md
+  doc: docs/permissions.md
 
 - id: DEP-2
   title: enroll fixes the placement
@@ -2117,7 +2117,7 @@
   profile: core
   decisions: []
   fixtures: [blackbox:toolhost/tools-list-mismatch]
-  doc: docs/security-model.md
+  doc: docs/permissions.md
 
 - id: DEP-3
   title: Nobody is root
@@ -2137,7 +2137,7 @@
   profile: core
   decisions: []
   fixtures: [blackbox:toolhost/symlink, blackbox:toolhost/plugin-user]
-  doc: docs/security-model.md
+  doc: docs/permissions.md
 
 - id: DEP-4
   title: A narrow OS mechanism executes an action
@@ -2170,7 +2170,7 @@
   profile: core
   decisions: [D-67, D-68, D-80]
   fixtures: [blackbox:toolhost/os-rule-from-catalog, blackbox:toolhost/os-rule-other-unit, blackbox:toolhost/os-rule-other-user]
-  doc: docs/security-model.md
+  doc: docs/permissions.md
 
 - id: DEP-5
   title: A runtime without keys or extra paths
@@ -2187,7 +2187,7 @@
   profile: core
   decisions: []
   fixtures: []
-  doc: docs/security-model.md
+  doc: docs/permissions.md
 
 - id: DEP-6
   title: A plugin without inbound paths
@@ -2204,7 +2204,7 @@
   profile: core
   decisions: []
   fixtures: []
-  doc: docs/security-model.md
+  doc: docs/permissions.md
 
 - id: DEP-7
   title: Only an own plugin runs as a child process
@@ -2225,7 +2225,7 @@
   profile: core
   decisions: [D-36]
   fixtures: [blackbox:toolhost/plugin-user]
-  doc: docs/security-model.md
+  doc: docs/permissions.md
 
 - id: DEP-8
   title: Only the core has the store
@@ -2245,7 +2245,7 @@
   profile: core
   decisions: [D-36]
   fixtures: [blackbox:core/job-no-store]
-  doc: docs/security-model.md
+  doc: docs/permissions.md
 
 - id: DEP-9
   title: A separate action toolhost
@@ -2267,7 +2267,7 @@
   profile: core
   decisions: [D-36, D-67, D-68]
   fixtures: [blackbox:toolhost/os-rule-other-user]
-  doc: docs/security-model.md
+  doc: docs/permissions.md
 
 - id: DEP-10
   title: The deployment is described by data and checked by lint
@@ -2295,7 +2295,7 @@
   profile: core
   decisions: [D-36, D-60, D-75, D-88]
   fixtures: [lint:deploy/os-rule-matches-catalog, lint:deploy/toolhost-on-farm-host, lint:deploy/two-tenants-one-host, manifests/deploy]
-  doc: docs/security-model.md
+  doc: docs/permissions.md
 
 - id: DEP-11
   title: A farm node is not a tenant resource
@@ -2327,7 +2327,7 @@
   profile: core
   decisions: [D-75, D-88]
   fixtures: [lint:manifests/farm-host-in-catalog, lint:deploy/toolhost-on-farm-host, lint:catalog/host-one-tenant, lint:deploy/two-tenants-one-host]
-  doc: docs/security-model.md
+  doc: docs/permissions.md
 
 - id: DIG-1
   title: People are shown only recommended proposals and the audit sample
@@ -5503,7 +5503,7 @@
   profile: core
   decisions: [D-39]
   fixtures: [schemas/invalid/terminal-send-keys.yaml, blackbox:model/foreign-source, blackbox:model/path-instead-of-id, blackbox:model/tenant-field, blackbox:model/lines-out-of-range, lint:manifests/terminal-send-keys]
-  doc: docs/security-model.md
+  doc: docs/permissions.md
 
 - id: INJ-2
   title: Tool descriptions only from the manifest
@@ -5520,7 +5520,7 @@
   profile: core
   decisions: []
   fixtures: [blackbox:toolhost/tools-list-mismatch]
-  doc: docs/security-model.md
+  doc: docs/permissions.md
 
 - id: INJ-3
   title: MCP annotations are only hints
@@ -5538,7 +5538,7 @@
   profile: core
   decisions: []
   fixtures: []
-  doc: docs/security-model.md
+  doc: docs/permissions.md
 
 - id: INJ-4
   title: Redaction and output wrapping
@@ -5570,7 +5570,7 @@
   profile: core
   decisions: []
   fixtures: [blackbox:toolhost/mask-addresses, blackbox:toolhost/mask-secrets, blackbox:toolhost/output-limit, lint:manifests/redact-required, blackbox:monitor/note-masking, fx-canaries-secrets]
-  doc: docs/security-model.md
+  doc: docs/permissions.md
 
 - id: INJ-5
   title: A plugin does not ask the model or people
@@ -5588,7 +5588,7 @@
   profile: core
   decisions: []
   fixtures: [adapter:toolhost/plugin-sampling-refused]
-  doc: docs/security-model.md
+  doc: docs/permissions.md
 
 - id: INJ-6
   title: A plugin's network is closed by a list
@@ -5607,7 +5607,7 @@
   profile: core
   decisions: [D-64]
   fixtures: []
-  doc: docs/security-model.md
+  doc: docs/permissions.md
 
 - id: INJ-7
   title: Code decides on alarms and incidents
@@ -5633,7 +5633,7 @@
   profile: core
   decisions: [D-59, D-62, D-63, D-64]
   fixtures: [blackbox:core/alarm-from-text]
-  doc: docs/security-model.md
+  doc: docs/permissions.md
 
 - id: INJ-8
   title: Links from messages are not downloaded
@@ -5649,7 +5649,7 @@
   profile: core
   decisions: []
   fixtures: []
-  doc: docs/security-model.md
+  doc: docs/permissions.md
 
 - id: INJ-9
   title: The runtime has only P3 tools
@@ -5667,7 +5667,7 @@
   profile: core
   decisions: [D-45]
   fixtures: [blackbox:core/runtime-only-p3-tools]
-  doc: docs/security-model.md
+  doc: docs/permissions.md
 
 - id: INJ-10
   title: The model does not change itself
@@ -5686,7 +5686,7 @@
   profile: core
   decisions: []
   fixtures: []
-  doc: docs/security-model.md
+  doc: docs/permissions.md
 
 - id: INJ-11
   title: Outgoing text without previews, foreign links or secrets
@@ -5704,7 +5704,7 @@
   profile: core
   decisions: [D-64]
   fixtures: [adapter:channel/link-and-secret]
-  doc: docs/security-model.md
+  doc: docs/permissions.md
 
 - id: INJ-12
   title: Leak eval for every allowed output
@@ -5726,7 +5726,7 @@
   profile: core
   decisions: [D-64, D-71, D-80]
   fixtures: [inj-01, inj-02, inj-03, inj-04, inj-05, inj-06, inj-07, inj-08, inj-09, inj-10, iso-01, iso-02, peer-01, peer-02, peer-03, peer-04, peer-05, peer-06, peer-07, inj-rep-01, inj-peer-mgr-01, inj-orc-01, inj-orc-02, trn-inj-01, trn-inj-03, ins-inj-01, kb-inj-01, inj-msg-01, inj-camp-01, inj-mem-01]
-  doc: docs/security-model.md
+  doc: docs/permissions.md
 
 - id: INJ-13
   title: The untrusted flag is monotonic
@@ -5779,7 +5779,7 @@
   profile: core
   decisions: [D-82]
   fixtures: [blackbox:core/untrusted-child, blackbox:core/service-goal-untrusted, kb-inj-02, blackbox:model/service-monitor-trusted, blackbox:model/service-monitor-item-text, blackbox:monitor/trigger-not-in-catalog-flag]
-  doc: docs/security-model.md
+  doc: docs/permissions.md
 
 - id: INJ-14
   title: OS commands only named, without a shell
@@ -5800,7 +5800,7 @@
   profile: core
   decisions: [D-39]
   fixtures: []
-  doc: docs/security-model.md
+  doc: docs/permissions.md
 
 - id: INJ-15
   title: After untrusted text a service action goes as a card
@@ -5843,7 +5843,7 @@
   profile: core
   decisions: [D-68, D-70, D-73, D-74, D-78, D-82]
   fixtures: [blackbox:core/fourth-card-rate-limited, fixture:authorize/service-initiator, blackbox:core/service-stop-card, blackbox:core/routine-untrusted-card, inj-12, blackbox:model/service-monitor-trusted, blackbox:model/service-monitor-item-text, blackbox:monitor/trigger-not-in-catalog-flag]
-  doc: docs/security-model.md
+  doc: docs/permissions.md
 
 - id: INJ-16
   title: Monitoring script and trigger names only from the catalog
@@ -5872,7 +5872,7 @@
   profile: core
   decisions: [D-69]
   fixtures: [blackbox:monitor/script-name-closed, blackbox:monitor/script-not-in-catalog, blackbox:monitor/script-choices-hash, fixture:ingress/script-name-not-in-context]
-  doc: docs/security-model.md
+  doc: docs/permissions.md
 
 - id: INS-1
   title: Task type of the purpose `insight`
@@ -8154,7 +8154,7 @@
     monotonic; `doctor` reads through the monitoring system API the actual history retention period
     of the head item together with the general history cleanup setting, and warns if this period is
     shorter than 90 days. The witness holds as long as the store operator does not control the
-    monitoring system; this separation of duties is written in `docs/security-model.md`. Fixtures:
+    monitoring system; this separation of duties is written in `docs/permissions.md`. Fixtures:
     an edit of an audit record in the store bypassing the core, and `audit.verify` with heads from
     the mock monitoring system finds the mismatch; a head with a correct hash and a foreign
     signature is rejected by `verify`; a history with `seq` 12 after `seq` 15 fails `verify` and
@@ -11680,7 +11680,7 @@
   profile: sandbox
   decisions: [D-104]
   fixtures: [adapter:toolhost/sandbox-container, blackbox:files/sandbox-collect]
-  doc: docs/security-model.md
+  doc: docs/permissions.md
 
 - id: SCR-1
   title: A script is data under a closed schema
@@ -12083,7 +12083,7 @@
   profile: core
   decisions: []
   fixtures: [blackbox:toolhost/mask-secrets]
-  doc: docs/security-model.md
+  doc: docs/permissions.md
 
 - id: SEC-2
   title: Each process gets only its own secrets
@@ -12099,7 +12099,7 @@
   profile: core
   decisions: []
   fixtures: []
-  doc: docs/security-model.md
+  doc: docs/permissions.md
 
 - id: SEC-3
   title: Handles
@@ -12117,7 +12117,7 @@
   profile: core
   decisions: []
   fixtures: [blackbox:core/handles]
-  doc: docs/security-model.md
+  doc: docs/permissions.md
 
 - id: SEC-4
   title: Minimum fields in a work item
@@ -12135,7 +12135,7 @@
   profile: core
   decisions: []
   fixtures: []
-  doc: docs/security-model.md
+  doc: docs/permissions.md
 
 - id: SEC-5
   title: Secret rotation with a key id
@@ -12156,7 +12156,7 @@
   profile: core
   decisions: []
   fixtures: []
-  doc: docs/security-model.md
+  doc: docs/permissions.md
 
 - id: SEC-6
   title: Revocation on compromise
@@ -12180,7 +12180,7 @@
   profile: core
   decisions: []
   fixtures: [blackbox:core/rotate-compromised, blackbox:core/connections-revoke-bulk]
-  doc: docs/security-model.md
+  doc: docs/permissions.md
 
 - id: SEC-7
   title: A person's connection to an external service
@@ -12213,7 +12213,7 @@
   profile: connections
   decisions: [D-102, D-105]
   fixtures: [blackbox:core/connection-per-principal, blackbox:core/connection-link-bound]
-  doc: docs/security-model.md
+  doc: docs/permissions.md
 
 - id: SEC-8
   title: Tenant privacy block

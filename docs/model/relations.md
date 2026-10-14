@@ -18,7 +18,7 @@ This document collects the objects of the skeleton and the relations between the
 | role (`Role`) | git | global | v0.1 | [task-language.md](../task-language.md) |
 | role profile | skeleton, `spec/model/role-profiles.yaml` | global | v0.1 | [scripts-and-translator.md](../scripts-and-translator.md) |
 | task type (`TaskType`), action (`Action`) | git | global | v0.1 | [task-language.md](../task-language.md), [permissions.md](../permissions.md) |
-| plugin and its tools (`ToolPlugin`) | git | global | v0.1 | [extending.md](../extending.md), [security-model.md](../security-model.md) |
+| plugin and its tools (`ToolPlugin`) | git | global | v0.1 | [extending.md](../extending.md), [permissions.md](../permissions.md) |
 | message type (`MessageType`) | git | global | v0.1 (D-71) | [messaging.md](../messaging.md) |
 | model profile (`ModelProfile`) | git | global | v0.1 | [models-and-money.md](../models-and-money.md) |
 | lens | skeleton, `spec/model/lenses.yaml` | global | v0.1 (D-71) | [improvements.md](../improvements.md) |
@@ -46,7 +46,7 @@ This document collects the objects of the skeleton and the relations between the
 | message, inbox entry | core | tenant | v0.1 (D-71) | [messaging.md](../messaging.md) |
 | file, artifact | core | tenant | v0.1 | [capabilities.md](../capabilities.md) |
 | session, memory item | core | tenant | v0.1 | [bots.md](../bots.md) |
-| usage line, event, audit record | core | tenant | v0.1 | [models-and-money.md](../models-and-money.md), [security-model.md](../security-model.md) |
+| usage line, event, audit record | core | tenant | v0.1 | [models-and-money.md](../models-and-money.md), [permissions.md](../permissions.md) |
 | observation series point | code: the core or a `job` worker | tenant | v0.1 (D-71) | [improvements.md](../improvements.md) |
 | proposal, review, change trial | core | tenant | v0.1 (D-71) | [improvements.md](../improvements.md) |
 | alarm | core | tenant; alarms of the farm itself in `farm` | v0.1 | [operations.md](../operations.md) |

@@ -2,7 +2,7 @@ id: fx-authorize-holds-holds
 rules: [HLD-1, HLD-2]
 description: 'A hold as a record and who sets it: whose tenant record a hold becomes, who may set and release
   a hold. The action of holds on checks and work (effects) is described once, in effects.yaml of this folder. The hold reasons
-  are taken from the examples in docs/operations.md and docs/security-model.md.'
+  are taken from the examples in docs/operations.md and docs/permissions.md.'
 given:
   holds:
   - id: h_01JB8M0000000000000000000A

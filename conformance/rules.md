@@ -21,13 +21,13 @@ The line under a rule heading:
 | [AGG](#agg) | Aggregators | [docs/improvements.md](../docs/improvements.md) | 4 | 4 | 2 | 2 | 0 | 0 |
 | [APR](#apr) | Approvals | [docs/permissions.md](../docs/permissions.md) | 17 | 15 | 14 | 3 | 0 | 0 |
 | [ART](#art) | Files and artifacts | [docs/capabilities.md](../docs/capabilities.md) | 6 | 5 | 4 | 2 | 0 | 0 |
-| [AUD](#aud) | Audit | [docs/security-model.md](../docs/security-model.md) | 6 | 3 | 6 | 0 | 0 | 0 |
+| [AUD](#aud) | Audit | [docs/permissions.md](../docs/permissions.md) | 6 | 3 | 6 | 0 | 0 | 0 |
 | [BGR](#bgr) | Bot groups | [docs/coordination.md](../docs/coordination.md) | 2 | 2 | 2 | 0 | 0 | 0 |
 | [BUD](#bud) | Budgets | [docs/models-and-money.md](../docs/models-and-money.md) | 14 | 9 | 13 | 1 | 0 | 0 |
 | [CAP](#cap) | Dependency admission and refusal | [docs/operations.md](../docs/operations.md) | 5 | 1 | 4 | 1 | 0 | 0 |
 | [CNT](#cnt) | Continuations | [docs/tasks-and-delivery.md](../docs/tasks-and-delivery.md) | 6 | 6 | 6 | 0 | 0 | 0 |
 | [COM](#com) | Commission | [docs/improvements.md](../docs/improvements.md) | 12 | 5 | 8 | 1 | 3 | 0 |
-| [DEP](#dep) | Deployment and least privilege | [docs/security-model.md](../docs/security-model.md) | 11 | 11 | 11 | 0 | 0 | 0 |
+| [DEP](#dep) | Deployment and least privilege | [docs/permissions.md](../docs/permissions.md) | 11 | 11 | 11 | 0 | 0 | 0 |
 | [DIG](#dig) | Showing proposals to people | [docs/improvements.md](../docs/improvements.md) | 8 | 6 | 4 | 4 | 0 | 0 |
 | [DLV](#dlv) | Delivery | [docs/tasks-and-delivery.md](../docs/tasks-and-delivery.md) | 16 | 9 | 14 | 2 | 0 | 0 |
 | [DSP](#dsp) | Task pool and dispatcher | [docs/coordination.md](../docs/coordination.md) | 8 | 7 | 7 | 1 | 0 | 0 |
@@ -38,7 +38,7 @@ The line under a rule heading:
 | [IDM](#idm) | Idempotency | [docs/tasks-and-delivery.md](../docs/tasks-and-delivery.md) | 4 | 1 | 4 | 0 | 0 | 0 |
 | [IDN](#idn) | Identity | [docs/bots.md](../docs/bots.md) | 16 | 13 | 13 | 1 | 2 | 0 |
 | [ING](#ing) | Incoming external events | [docs/capabilities.md](../docs/capabilities.md) | 4 | 3 | 0 | 4 | 0 | 0 |
-| [INJ](#inj) | Injection resistance | [docs/security-model.md](../docs/security-model.md) | 16 | 16 | 16 | 0 | 0 | 0 |
+| [INJ](#inj) | Injection resistance | [docs/permissions.md](../docs/permissions.md) | 16 | 16 | 16 | 0 | 0 | 0 |
 | [INS](#ins) | Analysis of own data | [docs/improvements.md](../docs/improvements.md) | 5 | 4 | 5 | 0 | 0 | 0 |
 | [KNW](#knw) | Tenant knowledge | [docs/capabilities.md](../docs/capabilities.md) | 5 | 5 | 0 | 5 | 0 | 0 |
 | [LCY](#lcy) | Tenant lifecycle | [docs/operations.md](../docs/operations.md) | 7 | 3 | 3 | 4 | 0 | 0 |
@@ -59,7 +59,7 @@ The line under a rule heading:
 | [RET](#ret) | Retention and deletion | [docs/operations.md](../docs/operations.md) | 10 | 9 | 8 | 2 | 0 | 0 |
 | [RT](#rt) | Agent runtime | [docs/architecture.md](../docs/architecture.md) | 5 | 5 | 5 | 0 | 0 | 0 |
 | [SCR](#scr) | Scripts | [docs/scripts-and-translator.md](../docs/scripts-and-translator.md) | 11 | 10 | 10 | 1 | 0 | 0 |
-| [SEC](#sec) | Secrets | [docs/security-model.md](../docs/security-model.md) | 12 | 5 | 9 | 3 | 0 | 0 |
+| [SEC](#sec) | Secrets | [docs/permissions.md](../docs/permissions.md) | 12 | 5 | 9 | 3 | 0 | 0 |
 | [SKL](#skl) | Skills | [docs/capabilities.md](../docs/capabilities.md) | 3 | 3 | 0 | 3 | 0 | 0 |
 | [STA](#sta) | Bot state | [docs/messaging.md](../docs/messaging.md) | 2 | 2 | 2 | 0 | 0 | 0 |
 | [TEN](#ten) | Tenants | [docs/architecture.md](../docs/architecture.md) | 8 | 8 | 8 | 0 | 0 | 0 |
@@ -320,7 +320,7 @@ Checked by: `fixture:files/declared-personal`
 <a id="aud"></a>
 ## AUD: Audit
 
-Explained in: [docs/privacy.md](../docs/privacy.md), [docs/security-model.md](../docs/security-model.md)
+Explained in: [docs/permissions.md](../docs/permissions.md), [docs/privacy.md](../docs/privacy.md)
 
 <a id="AUD-1"></a>
 ### AUD-1. An audit record for every decision
@@ -745,7 +745,7 @@ Checked by: `blackbox:insights/accuracy`, `com-05`
 <a id="dep"></a>
 ## DEP: Deployment and least privilege
 
-Explained in: [docs/security-model.md](../docs/security-model.md)
+Explained in: [docs/permissions.md](../docs/permissions.md)
 
 <a id="DEP-1"></a>
 ### DEP-1. Production machine and sandbox
@@ -1926,7 +1926,7 @@ Checked by: `schemas/invalid/manifests/channel-ingress`, `manifests/ingress-rout
 <a id="inj"></a>
 ## INJ: Injection resistance
 
-Explained in: [docs/security-model.md](../docs/security-model.md)
+Explained in: [docs/permissions.md](../docs/permissions.md)
 
 <a id="INJ-1"></a>
 ### INJ-1. No free input on a production machine
@@ -2865,7 +2865,7 @@ Checked by: `blackbox:core/health-draining`, `blackbox:core/health-watch`, `mani
 
 serves [G2](../docs/goals.md) · since v0.1 · non-waivable · profile monitor · check: adapter, blackbox · decisions: D-60, D-88
 
-At least once a day the core background loop `audit-head` puts, with a delivery of kind `monitor_audit_head` for E5, the audit chain head of each tenant and of the service tenant `farm`: the triple `(seq, hash, sig)`, where `seq` is the number of the last record, `hash` is its hash, and `sig` is the signature of this object with the core key with the key id (`spec/hashing.md`, chain head: type, tenant, epoch, seq, hash, key_id; AUD-6, SEC-5); `seq` decreases only together with a growth of `epoch`, and such growth appears in the `farm` chain as a restore record (D-86 (7)); the monitoring adapter of this tenant writes the head into the monitoring system history. This is an external witness for P2 `audit.verify`: `verify` checks the signature of each head from the history and the monotonicity of `seq` between them, so an adapter that writes the head with its token cannot forge or rewrite the witness, and an edit of the audit directly in the store gives a mismatch with the signed head or a gap in `seq`. The head delivery does not die by attempt count, it is repeated until the head is exported (MON-11). The retention period of this item's history in the monitoring system is not shorter than the audit retention period; the deployment sets it. P2 `doctor` shows the time of the last written head and fails the check if there is none for more than a day or if `seq` in the history is not monotonic; `doctor` reads through the monitoring system API the actual history retention period of the head item together with the general history cleanup setting, and warns if this period is shorter than 90 days. The witness holds as long as the store operator does not control the monitoring system; this separation of duties is written in `docs/security-model.md`. Fixtures: an edit of an audit record in the store bypassing the core, and `audit.verify` with heads from the mock monitoring system finds the mismatch; a head with a correct hash and a foreign signature is rejected by `verify`; a history with `seq` 12 after `seq` 15 fails `verify` and `doctor`; a mock monitoring system with a 30-day history period gives a `doctor` warning.
+At least once a day the core background loop `audit-head` puts, with a delivery of kind `monitor_audit_head` for E5, the audit chain head of each tenant and of the service tenant `farm`: the triple `(seq, hash, sig)`, where `seq` is the number of the last record, `hash` is its hash, and `sig` is the signature of this object with the core key with the key id (`spec/hashing.md`, chain head: type, tenant, epoch, seq, hash, key_id; AUD-6, SEC-5); `seq` decreases only together with a growth of `epoch`, and such growth appears in the `farm` chain as a restore record (D-86 (7)); the monitoring adapter of this tenant writes the head into the monitoring system history. This is an external witness for P2 `audit.verify`: `verify` checks the signature of each head from the history and the monotonicity of `seq` between them, so an adapter that writes the head with its token cannot forge or rewrite the witness, and an edit of the audit directly in the store gives a mismatch with the signed head or a gap in `seq`. The head delivery does not die by attempt count, it is repeated until the head is exported (MON-11). The retention period of this item's history in the monitoring system is not shorter than the audit retention period; the deployment sets it. P2 `doctor` shows the time of the last written head and fails the check if there is none for more than a day or if `seq` in the history is not monotonic; `doctor` reads through the monitoring system API the actual history retention period of the head item together with the general history cleanup setting, and warns if this period is shorter than 90 days. The witness holds as long as the store operator does not control the monitoring system; this separation of duties is written in `docs/permissions.md`. Fixtures: an edit of an audit record in the store bypassing the core, and `audit.verify` with heads from the mock monitoring system finds the mismatch; a head with a correct hash and a foreign signature is rejected by `verify`; a history with `seq` 12 after `seq` 15 fails `verify` and `doctor`; a mock monitoring system with a 30-day history period gives a `doctor` warning.
 
 Checked by: `adapter:monitor/audit-head-signed`
 
@@ -4155,7 +4155,7 @@ Checked by: `blackbox:script/transitions`
 <a id="sec"></a>
 ## SEC: Secrets
 
-Explained in: [docs/privacy.md](../docs/privacy.md), [docs/security-model.md](../docs/security-model.md)
+Explained in: [docs/permissions.md](../docs/permissions.md), [docs/privacy.md](../docs/privacy.md)
 
 <a id="SEC-1"></a>
 ### SEC-1. Secrets do not go through ports

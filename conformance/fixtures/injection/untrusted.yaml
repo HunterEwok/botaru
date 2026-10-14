@@ -3,7 +3,7 @@ id: fx-injection-untrusted
 rules: [INJ-13, INJ-4]
 description: The first untrusted output sets untrusted_seen on the attempt; the flag is only set and is inherited by children
   and continuations. Text in the wrapper gets a random mark per call in the form [[untrusted <value>]] and [[/untrusted
-  <value>]] (docs/security-model.md), and the same mark inside the text is cut out.
+  <value>]] (docs/permissions.md), and the same mark inside the text is cut out.
 cases:
 - id: inj-13-01
   rules: [INJ-13]
