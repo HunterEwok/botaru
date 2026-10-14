@@ -24,7 +24,8 @@ checks:
     What: '(v0.2) an agent worker that declares `runtime.skills: runtime_files`; the role pins `disk-triage` by hash; the
       core copy differs by one byte'
     Expectation: the attempt work item of `claim` holds only `disk-triage` with the hash of the core copy; with a tree of
-      another hash the skill is not given and the attempt fails
+      another hash the skill is not given and the attempt fails; a skill of another role on the agent's disk makes the worker
+      `blocked`; the skill directory is read only
 - id: blackbox:skills/skill-read
   method: blackbox
   rules:

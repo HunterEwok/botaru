@@ -1766,11 +1766,11 @@ Checked by: `adapter:channel/sender-chat`, `adapter:channel/unbound-chat`, `chan
 <a id="IDN-4"></a>
 ### IDN-4. A principal in one tenant, secrets as hashes
 
-serves [G2](../docs/goals.md) · since v0.1 · waivable · profile core · check: blackbox · decisions: D-47
+serves [G2](../docs/goals.md) · since v0.1 · waivable · profile core · check: blackbox, impl · decisions: D-47
 
 A principal belongs to one tenant, and its identity is unique in that tenant; a person or program working in two tenants is two principals. Tokens and keys are stored only as hashes. The identity of an external program is `api:<key_id>`, and of an external event source `hook:<source>`, but never the key itself. After a token or key is rotated, the old one is valid for a limited window, whose value the binding sets.
 
-Checked by: `blackbox:principal/one-tenant-hashed`
+Checked by: `blackbox:principal/one-tenant-hashed`, `impl:internal/core/TestSecretsStoredAsHashes`
 
 <a id="IDN-5"></a>
 ### IDN-5. A personal assistant takes only the owner's tasks

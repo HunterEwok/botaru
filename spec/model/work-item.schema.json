@@ -186,7 +186,7 @@
               "$ref": "urn:botaru:schema:common:1#/$defs/locale"
             },
             "limits": {
-              "description": "Limits of the runtime run of this attempt, set by the core from the task type and the manager's remainder; the runtime stops at the first one it reaches (BUD-9)..",
+              "description": "Limits of the runtime run of this attempt, set by the core; the runtime stops at the first one it reaches (BUD-9). Without them the agent process applies its own configured limits. Money does not depend on them: P4 reserves and charges every call within the tenant's limits whatever the runtime does (BUD-2, BUD-3)..",
               "type": "object",
               "additionalProperties": false,
               "required": [

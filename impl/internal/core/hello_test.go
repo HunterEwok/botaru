@@ -739,3 +739,56 @@ func TestHelloRuntimeDeclaration(t *testing.T) {
 		}
 	}
 }
+
+// TestSecretsStoredAsHashes: no table of the store holds a worker token, a channel P2 secret or
+// a model handle in the clear (IDN-4, SEC-3).
+func TestSecretsStoredAsHashes(t *testing.T) {
+	ctx := context.Background()
+	b := newBench(t)
+	r, err := b.c.Enroll(ctx, b.op, EnrollRequest{Tenant: "demo", Kind: "channel", Target: "telegram", RotateP2: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	secrets := []string{r.Token, r.P2Token}
+	a := Activity{Kind: "message", Channel: "telegram", UpdateID: "s1", Chat: Chat{Kind: "direct", ExternalID: "1001"}, Text: "/hello hi"}
+	a.Sender.Identity, a.Sender.Verified = "telegram:1001", true
+	if _, err := b.c.SubmitActivity(ctx, b.channel, a); err != nil {
+		t.Fatal(err)
+	}
+	if w := b.claim(t, b.agent, "attempt"); w != nil {
+		if h, ok := w.Payload["handles"].(map[string]any)["model"].(string); ok {
+			secrets = append(secrets, h)
+		}
+	}
+	rows, err := b.c.st.Pool.Query(ctx, `SELECT tablename FROM pg_tables WHERE schemaname = 'public'`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var tables []string
+	for rows.Next() {
+		var n string
+		if err := rows.Scan(&n); err != nil {
+			t.Fatal(err)
+		}
+		tables = append(tables, n)
+	}
+	rows.Close()
+	if len(secrets) < 3 {
+		t.Fatalf("the bench produced only %d secrets", len(secrets))
+	}
+	for _, s := range secrets {
+		if s == "" {
+			t.Fatal("an empty secret")
+		}
+		for _, tb := range tables {
+			var n int
+			q := `SELECT count(*) FROM "` + tb + `" x WHERE x::text LIKE '%' || $1 || '%'`
+			if err := b.c.st.Pool.QueryRow(ctx, q, s).Scan(&n); err != nil {
+				t.Fatal(err)
+			}
+			if n > 0 {
+				t.Fatalf("table %s holds a secret in the clear", tb)
+			}
+		}
+	}
+}

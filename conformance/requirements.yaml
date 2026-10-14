@@ -5133,12 +5133,12 @@
     `hook:<source>`, but never the key itself. After a token or key is rotated, the old one is valid
     for a limited window, whose value the binding sets.
   goal: G2
-  check: [blackbox]
+  check: [blackbox, impl]
   waivable: true
   version: v0.1
   profile: core
   decisions: [D-47]
-  fixtures: [blackbox:principal/one-tenant-hashed]
+  fixtures: [blackbox:principal/one-tenant-hashed, impl:internal/core/TestSecretsStoredAsHashes]
   doc: docs/permissions.md
 
 - id: IDN-5
