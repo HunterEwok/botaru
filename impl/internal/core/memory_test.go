@@ -232,6 +232,35 @@ func TestSubjectErasure(t *testing.T) {
 	}
 }
 
+// A request an offboarding recorded before erasure steps existed gets its steps at the next
+// tick and erases the stores; it is never closed with nothing erased.
+func TestErasureWithoutSteps(t *testing.T) {
+	ctx := context.Background()
+	b, _ := newMemoryBench(t)
+	task := b.hello(t, "1")
+	b.finish(t, b.claim(t, b.agent, "attempt"))
+	b.drain(t)
+	var subject string
+	if err := b.c.st.Pool.QueryRow(ctx, `SELECT initiator FROM tasks WHERE id = $1`, task).Scan(&subject); err != nil {
+		t.Fatal(err)
+	}
+	id := ids.New(ids.Erasure)
+	if _, err := b.c.st.Pool.Exec(ctx, `INSERT INTO erasure_requests (id, tenant, subject, reason, author, state, created_at, scope, deadline_at, updated_at)
+		VALUES ($1, 'demo', $2, 'offboarding', '{"kind":"system"}', 'requested', now(), jsonb_build_object('tenant', 'demo', 'subject', $2::text), now() + interval '30 days', now())`, id, subject); err != nil {
+		t.Fatal(err)
+	}
+	b.tick(t, "erasure")
+	var body *string
+	if err := b.c.st.Pool.QueryRow(ctx, `SELECT body::text FROM tasks WHERE id = $1`, task).Scan(&body); err != nil || body != nil {
+		t.Fatalf("the task kept its content: %v %v", body, err)
+	}
+	rec, _ := b.c.ErasureStatus(ctx, b.op, ErasureIDRequest{Op: "erasure.status", ID: id})
+	res, _ := rec["results"].(map[string]any)
+	if rec["state"] != "done" || res["tasks"] != "done" || res["channel_telegram"] != "not_applicable" {
+		t.Fatalf("request %v", rec)
+	}
+}
+
 // erasure.match finds the exact string, records only ids, and needs a second person; an open
 // request past its deadline raises its alarm (SEC-11, RET-7).
 func TestEraseMatch(t *testing.T) {

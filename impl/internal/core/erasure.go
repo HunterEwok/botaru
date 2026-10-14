@@ -15,6 +15,7 @@ import (
 	"github.com/jackc/pgx/v5"
 
 	"github.com/HunterEwok/botaru/impl/internal/ids"
+	"github.com/HunterEwok/botaru/impl/internal/manifest"
 	"github.com/HunterEwok/botaru/impl/internal/store"
 )
 
@@ -96,40 +97,8 @@ func (c *Core) requestErasure(ctx context.Context, tx pgx.Tx, now time.Time, tv 
 		id, tv.Name, nullable(s.Scope.Subject), s.Reason, author, now, scope, now.Add(time.Duration(subjectRequestDays(tv))*24*time.Hour), needles); err != nil {
 		return "", err
 	}
-	type step struct{ store, kind, target string }
-	var steps []step
-	for _, st := range coreStores {
-		if s.Reason == "forget" && st != "sessions" && st != "memory" {
-			continue
-		}
-		steps = append(steps, step{st, "core", st})
-	}
-	if s.Reason != "forget" {
-		for _, n := range slices.Sorted(mapKeys(tv.Channels)) {
-			steps = append(steps, step{storeKey("channel", n), "channel", n})
-		}
-		rows, err := tx.Query(ctx, `SELECT DISTINCT kind, target FROM workers WHERE tenant = $1 AND kind IN ('sink', 'monitor') AND state <> 'revoked' AND target IS NOT NULL ORDER BY 1, 2`, tv.Name)
-		if err != nil {
-			return "", err
-		}
-		for rows.Next() {
-			var k, t string
-			if err := rows.Scan(&k, &t); err != nil {
-				rows.Close()
-				return "", err
-			}
-			steps = append(steps, step{storeKey(k, t), k, t})
-		}
-		rows.Close()
-		if err := rows.Err(); err != nil {
-			return "", err
-		}
-	}
-	for _, st := range steps {
-		if _, err := tx.Exec(ctx, `INSERT INTO erasure_steps (id, request, tenant, store, kind, target, state, updated_at) VALUES ($1, $2, $3, $4, $5, $6, 'pending', $7)
-			ON CONFLICT (request, store) DO NOTHING`, ids.New(ids.Step), id, tv.Name, st.store, st.kind, st.target, now); err != nil {
-			return "", err
-		}
+	if err := addErasureSteps(ctx, tx, now, tv.Name, tv, id, s.Reason); err != nil {
+		return "", err
 	}
 	if err := c.appendEvent(ctx, tx, now, tv.Name, Event{Type: "erasure.requested", Subject: id, Data: map[string]any{
 		"request": id, "scope_kind": s.Scope.kind(), "reason": s.Reason,
@@ -143,6 +112,52 @@ func (c *Core) requestErasure(ctx context.Context, tx pgx.Tx, now time.Time, tv 
 	})
 	_ = notifyWork(ctx, tx)
 	return id, err
+}
+
+// addErasureSteps records a step per store a request reaches: forget reaches only memory and
+// sessions (MEM-4), every other reason every store of the tenant with content. tv is nil for
+// a tenant no longer in the catalog; then it has no channels.
+func addErasureSteps(ctx context.Context, tx pgx.Tx, now time.Time, tenant string, tv *TenantView, id, reason string) error {
+	var channels map[string]manifest.Channel
+	if tv != nil {
+		channels = tv.Channels
+	}
+	type step struct{ store, kind, target string }
+	var steps []step
+	for _, st := range coreStores {
+		if reason == "forget" && st != "sessions" && st != "memory" {
+			continue
+		}
+		steps = append(steps, step{st, "core", st})
+	}
+	if reason != "forget" {
+		for _, n := range slices.Sorted(mapKeys(channels)) {
+			steps = append(steps, step{storeKey("channel", n), "channel", n})
+		}
+		rows, err := tx.Query(ctx, `SELECT DISTINCT kind, target FROM workers WHERE tenant = $1 AND kind IN ('sink', 'monitor') AND state <> 'revoked' AND target IS NOT NULL ORDER BY 1, 2`, tenant)
+		if err != nil {
+			return err
+		}
+		for rows.Next() {
+			var k, t string
+			if err := rows.Scan(&k, &t); err != nil {
+				rows.Close()
+				return err
+			}
+			steps = append(steps, step{storeKey(k, t), k, t})
+		}
+		rows.Close()
+		if err := rows.Err(); err != nil {
+			return err
+		}
+	}
+	for _, st := range steps {
+		if _, err := tx.Exec(ctx, `INSERT INTO erasure_steps (id, request, tenant, store, kind, target, state, updated_at) VALUES ($1, $2, $3, $4, $5, $6, 'pending', $7)
+			ON CONFLICT (request, store) DO NOTHING`, ids.New(ids.Step), id, tenant, st.store, st.kind, st.target, now); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func principalOr(p string) string {
@@ -217,6 +232,17 @@ func (c *Core) erasureLoop(ctx context.Context) error {
 			}
 			if r.State == "done" {
 				return nil
+			}
+			// A request recorded before erasure steps existed (an offboarding on an older
+			// build) gets its steps now, so it is never closed with nothing erased.
+			var n int
+			if err := tx.QueryRow(ctx, `SELECT count(*) FROM erasure_steps WHERE request = $1`, r.ID).Scan(&n); err != nil {
+				return err
+			}
+			if n == 0 {
+				if err := addErasureSteps(ctx, tx, now, r.Tenant, cat.Tenants[r.Tenant], r.ID, r.Reason); err != nil {
+					return err
+				}
 			}
 			if err := c.runCoreSteps(ctx, tx, now, cat, r); err != nil {
 				return err
@@ -418,6 +444,9 @@ func (c *Core) settleErasure(ctx context.Context, tx pgx.Tx, now time.Time, r *e
 	}
 	state := "running"
 	switch {
+	case len(results) == 0 && !open:
+		// No step at all: nothing was erased, so the request is not done.
+		state = "failed"
 	case !open && !failed:
 		state = "done"
 	case !open:
