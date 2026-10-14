@@ -98,6 +98,10 @@ func (c *Core) TestLoopTick(ctx context.Context, loop string, copies int) (*Test
 	if copies < 1 {
 		copies = 1
 	}
+	// The request schema allows at most 4 copies; the core holds the same bound.
+	if copies > 4 {
+		return nil, refuse("input_schema_invalid", "at most 4 copies")
+	}
 	errs := make(chan error, copies)
 	for range copies {
 		go func() { errs <- tick(c, ctx) }()
