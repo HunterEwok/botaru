@@ -17,8 +17,9 @@ import (
 
 // HeartbeatRequest is p1-heartbeat-request.
 type HeartbeatRequest struct {
-	Stage    string   `json:"stage,omitempty"`
-	Progress *float64 `json:"progress,omitempty"`
+	Health   []ComponentHealth `json:"health,omitempty"`
+	Stage    string            `json:"stage,omitempty"`
+	Progress *float64          `json:"progress,omitempty"`
 	Usage    *struct {
 		InputTokens  int64 `json:"input_tokens,omitempty"`
 		OutputTokens int64 `json:"output_tokens,omitempty"`
@@ -138,6 +139,11 @@ func (c *Core) auditFence(ctx context.Context, w *Worker, op, reason string) {
 // Heartbeat extends a lease (FEN-4).
 func (c *Core) Heartbeat(ctx context.Context, w *Worker, header string, req HeartbeatRequest) (*HeartbeatResult, error) {
 	return underLease(ctx, c, w, header, "heartbeat", nil, func(tx pgx.Tx, now time.Time, l *leaseRow) (*HeartbeatResult, error) {
+		if w.Kind == "toolhost" && req.Health != nil {
+			if err := c.pluginHealth(ctx, tx, now, w, req.Health, false); err != nil {
+				return nil, err
+			}
+		}
 		leaseS := c.cfg.LeaseS
 		cancel := false
 		if l.Kind == "attempt" {

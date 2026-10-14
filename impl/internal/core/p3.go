@@ -592,7 +592,7 @@ func findService(spec map[string]any, name string) (map[string]any, string) {
 // after an apply takes no calls until it says hello again (INJ-2).
 func (c *Core) liveToolhost(ctx context.Context, q store.Querier, now time.Time, cat *Catalog, tenant, plugin, placement, host string) (bool, error) {
 	rows, err := q.Query(ctx, `SELECT plugins, hello FROM workers WHERE tenant = $1 AND kind = 'toolhost' AND state = 'active'
-		AND plugins ? $2 AND placement = $3 AND ($4 = '' OR host = $4) AND last_seen > $5`,
+		AND plugins ? $2 AND NOT plugins_down ? $2 AND placement = $3 AND ($4 = '' OR host = $4) AND last_seen > $5`,
 		tenant, plugin, placement, host, now.Add(-staleAfter))
 	if err != nil {
 		return false, err

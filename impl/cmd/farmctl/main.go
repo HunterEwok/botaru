@@ -45,6 +45,12 @@ commands:
   worker enroll -tenant T -role R -kind K [-target NAME] -token-out FILE
                 [-plugins P[,P] -placement host|sandbox [-host MACHINE]]   (toolhost)
   audit verify TENANT
+  audit query [-kind K] [-command C] [-actor P] [-target-kind K] [-from T] [-to T] [-limit N] [-after-seq N]
+                                             the audit of the credential's tenant; the read is audited
+  status [TENANT]                            the applied commit, holds and the conformance claim
+  doctor [TENANT]                            farm checks: loop ticks, store volume, indicators, dead work
+  dead [TENANT] [-after CURSOR]              dead tasks and deliveries
+  redrive task|delivery ID                   new work from dead work
   hold set KIND [TENANT [NAME]] -effects E[,E] -reason R [-until TIME]
   hold release ID
   hold list [TENANT]
@@ -123,12 +129,63 @@ func run(c *client, args []string) error {
 	case "hold":
 		return hold(c, args[1:])
 	case "audit":
+		if len(args) >= 2 && args[1] == "query" {
+			return auditQuery(c, args[2:])
+		}
 		if len(args) != 3 || args[1] != "verify" {
-			return errors.New("audit verify TENANT")
+			return errors.New("audit verify TENANT, or audit query [flags]")
 		}
 		return c.print("audit.verify", map[string]any{"tenant": args[2]})
+	case "status", "doctor":
+		req := map[string]any{}
+		if len(args) == 2 {
+			req["tenant"] = args[1]
+		}
+		return c.print(args[0], req)
+	case "dead":
+		fs := flag.NewFlagSet("dead", flag.ExitOnError)
+		after := fs.String("after", "", "the cursor next of the previous answer")
+		_ = fs.Parse(reorder(args[1:]))
+		req := map[string]any{}
+		if fs.NArg() == 1 {
+			req["tenant"] = fs.Arg(0)
+		}
+		if *after != "" {
+			req["after"] = *after
+		}
+		return c.print("deadletter.list", req)
+	case "redrive":
+		if len(args) != 3 || (args[1] != "task" && args[1] != "delivery") {
+			return errors.New("redrive task|delivery ID")
+		}
+		op := args[1] + ".redrive"
+		return c.print(op, map[string]any{"op": op, "id": args[2]})
 	}
 	return fmt.Errorf("unknown command %q; run farmctl without arguments for help", args[0])
+}
+
+func auditQuery(c *client, args []string) error {
+	fs := flag.NewFlagSet("audit query", flag.ExitOnError)
+	str := map[string]*string{}
+	for _, f := range []string{"kind", "command", "actor", "target-kind", "from", "to"} {
+		str[f] = fs.String(f, "", "filter "+f)
+	}
+	limit := fs.Int("limit", 0, "at most this many records")
+	afterSeq := fs.Int64("after-seq", 0, "records after this sequence number")
+	_ = fs.Parse(args)
+	req := map[string]any{}
+	for f, v := range str {
+		if *v != "" {
+			req[strings.ReplaceAll(f, "-", "_")] = *v
+		}
+	}
+	if *limit > 0 {
+		req["limit"] = *limit
+	}
+	if *afterSeq > 0 {
+		req["after_seq"] = *afterSeq
+	}
+	return c.print("audit.query", req)
 }
 
 // reorder puts flags before positional arguments, so that both orders work.

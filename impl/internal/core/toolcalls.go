@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"slices"
 	"strings"
 	"time"
 
@@ -71,6 +72,15 @@ func (c *Core) claimToolcall(ctx context.Context, tx pgx.Tx, now time.Time, cat 
 	if w.Hello == nil || toolhostMismatch(cat, w, *w.Hello) != "" {
 		return nil, nil
 	}
+	// No hand-out for a plugin the toolhost reported down (OBS-10).
+	var down []string
+	if err := tx.QueryRow(ctx, `SELECT plugins_down FROM workers WHERE id = $1`, w.ID).Scan(&down); err != nil {
+		return nil, err
+	}
+	plugins := slices.DeleteFunc(slices.Clone(w.Plugins), func(p string) bool { return slices.Contains(down, p) })
+	if len(plugins) == 0 {
+		return nil, nil
+	}
 	for {
 		var (
 			id, task, tool, plugin, placement string
@@ -82,7 +92,7 @@ func (c *Core) claimToolcall(ctx context.Context, tx pgx.Tx, now time.Time, cat 
 		err := tx.QueryRow(ctx, `SELECT id, task, attempt_lease_no, tool, target_plugin, target_placement, target_host, target_resource, args, resolved, start_by, lease_no, tool_def_hash
 			FROM toolcalls WHERE tenant = $1 AND state = 'queued' AND target_plugin = ANY($2) AND target_placement = $3
 			AND (target_host IS NULL OR target_host = $4) AND start_by > $5
-			ORDER BY created_at, id LIMIT 1 FOR UPDATE SKIP LOCKED`, w.Tenant, w.Plugins, w.Placement, w.Host, now).
+			ORDER BY created_at, id LIMIT 1 FOR UPDATE SKIP LOCKED`, w.Tenant, plugins, w.Placement, w.Host, now).
 			Scan(&id, &task, &attemptLease, &tool, &plugin, &placement, &host, &resource, &args, &resolved, &startBy, &leaseNo, &defHash)
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, nil
@@ -422,4 +432,73 @@ func reapToolcall(ctx context.Context, tx pgx.Tx, now time.Time, l *leaseRow, re
 		return nil
 	}
 	return endToolCall(ctx, tx, now, l.WorkID, "error", reason, nil)
+}
+
+// pluginHealth records the plugins a toolhost reports down (OBS-10). A report of a hello is
+// complete, so a plugin it does not report down is ok; a heartbeat changes only the plugins it
+// names. A queued call of a plugin that no live toolhost serves any more ends at once with
+// plugin_unavailable: the model sees the error and decides itself. Down only narrows hand-out
+// (STA-2), so a report for a plugin outside the enroll record changes nothing.
+func (c *Core) pluginHealth(ctx context.Context, tx pgx.Tx, now time.Time, w *Worker, reports []ComponentHealth, complete bool) error {
+	var down []string
+	if !complete {
+		if err := tx.QueryRow(ctx, `SELECT plugins_down FROM workers WHERE id = $1`, w.ID).Scan(&down); err != nil {
+			return err
+		}
+	}
+	for _, r := range reports {
+		if r.Component != "plugin" || !slices.Contains(w.Plugins, r.Name) {
+			continue
+		}
+		down = slices.DeleteFunc(down, func(p string) bool { return p == r.Name })
+		if r.State == "down" {
+			down = append(down, r.Name)
+		}
+	}
+	if down == nil {
+		down = []string{}
+	}
+	slices.Sort(down)
+	raw, _ := json.Marshal(down)
+	if _, err := tx.Exec(ctx, `UPDATE workers SET plugins_down = $2 WHERE id = $1`, w.ID, raw); err != nil {
+		return err
+	}
+	if len(down) == 0 {
+		return nil
+	}
+	cat, err := c.Catalog(ctx)
+	if err != nil {
+		return err
+	}
+	rows, err := tx.Query(ctx, `SELECT id, target_plugin, target_placement, coalesce(target_host, '') FROM toolcalls
+		WHERE tenant = $1 AND state = 'queued' AND target_plugin = ANY($2) ORDER BY id FOR UPDATE`, w.Tenant, down)
+	if err != nil {
+		return err
+	}
+	type call struct{ id, plugin, placement, host string }
+	var calls []call
+	for rows.Next() {
+		var k call
+		if err := rows.Scan(&k.id, &k.plugin, &k.placement, &k.host); err != nil {
+			rows.Close()
+			return err
+		}
+		calls = append(calls, k)
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	for _, k := range calls {
+		live, err := c.liveToolhost(ctx, tx, now, cat, w.Tenant, k.plugin, k.placement, k.host)
+		if err != nil {
+			return err
+		}
+		if !live {
+			if err := endToolCall(ctx, tx, now, k.id, "error", "plugin_unavailable", nil); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
 }

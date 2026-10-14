@@ -7,7 +7,8 @@
   "x-botaru-rules": [
     "TEN-2",
     "TEN-4",
-    "LCY-7"
+    "LCY-7",
+    "OBS-10"
   ],
   "type": "object",
   "additionalProperties": false,
@@ -184,6 +185,14 @@
             ]
           }
         }
+      }
+    },
+    "health": {
+      "description": "Only a toolhost: a health report for each plugin (OBS-10). State down narrows hand-out only; a hello without it reports every plugin ok.",
+      "type": "array",
+      "maxItems": 64,
+      "items": {
+        "$ref": "urn:botaru:schema:health-report:1"
       }
     }
   }

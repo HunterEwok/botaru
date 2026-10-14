@@ -63,6 +63,8 @@ type enqueueInput struct {
 	// Subjects are the other persons whose data the body carries, for personal_subjects
 	// (AUD-5): the authors of forwarded or quoted text.
 	Subjects []string
+	// Refs link the task to earlier work: the original of a redrive (DLV-4).
+	Refs []string
 }
 
 // fairnessKey writes the dispatcher fairness key <kind>:<id> from the task source (DSP-2,
@@ -374,6 +376,9 @@ func (c *Core) enqueue(ctx context.Context, tx pgx.Tx, now time.Time, cat *Catal
 	}
 	if len(in.Subjects) > 0 {
 		record["personal_subjects"] = in.Subjects
+	}
+	if len(in.Refs) > 0 {
+		record["refs"] = in.Refs
 	}
 	if in.Origin != nil {
 		record["origin"] = in.Origin

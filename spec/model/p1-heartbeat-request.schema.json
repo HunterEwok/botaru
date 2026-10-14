@@ -9,7 +9,8 @@
     "FEN-4",
     "DLV-11",
     "IDM-3",
-    "STA-2"
+    "STA-2",
+    "OBS-10"
   ],
   "type": "object",
   "additionalProperties": false,
@@ -41,6 +42,14 @@
           "minimum": 0,
           "maximum": 100000000
         }
+      }
+    },
+    "health": {
+      "description": "Only a toolhost: a health report for each plugin (OBS-10); without it the last report stays.",
+      "type": "array",
+      "maxItems": 64,
+      "items": {
+        "$ref": "urn:botaru:schema:health-report:1"
       }
     }
   }
