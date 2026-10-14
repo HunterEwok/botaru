@@ -307,7 +307,7 @@
         ],
         "parameters": [
           {
-            "$ref": "#/components/parameters/BotaruLease"
+            "$ref": "#/components/parameters/BotaruLeaseOptional"
           },
           {
             "$ref": "#/components/parameters/traceparent"
@@ -480,7 +480,7 @@
         ],
         "parameters": [
           {
-            "$ref": "#/components/parameters/BotaruLease"
+            "$ref": "#/components/parameters/BotaruLeaseOptional"
           },
           {
             "$ref": "#/components/parameters/traceparent"
@@ -562,6 +562,22 @@
         "responses": {
           "200": {
             "description": "The file bytes; metadata in headers (spec/bindings/http/README.md).",
+            "headers": {
+              "Botaru-File-Ref": {
+                "required": true,
+                "description": "file_ref of the p1-file-get-response schema.",
+                "schema": {
+                  "$ref": "../../model/common.schema.json#/$defs/file_ref"
+                }
+              },
+              "Botaru-Data-Mark": {
+                "required": true,
+                "description": "data_mark of the p1-file-get-response schema.",
+                "schema": {
+                  "$ref": "../../model/common.schema.json#/$defs/data_mark"
+                }
+              }
+            },
             "content": {
               "application/octet-stream": {
                 "schema": {
@@ -1009,7 +1025,7 @@
         ],
         "parameters": [
           {
-            "$ref": "#/components/parameters/BotaruLease"
+            "$ref": "#/components/parameters/BotaruLeaseOptional"
           },
           {
             "$ref": "#/components/parameters/traceparent"
@@ -1057,7 +1073,7 @@
         ],
         "parameters": [
           {
-            "$ref": "#/components/parameters/BotaruLease"
+            "$ref": "#/components/parameters/BotaruLeaseOptional"
           },
           {
             "$ref": "#/components/parameters/traceparent"
@@ -1604,10 +1620,20 @@
           "maxLength": 2000
         }
       },
+      "BotaruLeaseOptional": {
+        "name": "Botaru-Lease",
+        "in": "header",
+        "required": false,
+        "description": "The holder's current lease token; sent by callers under a lease, absent for the callers the map row names without one.",
+        "schema": {
+          "type": "string",
+          "maxLength": 2000
+        }
+      },
       "BotaruOnBehalf": {
         "name": "Botaru-On-Behalf",
         "in": "header",
-        "required": false,
+        "required": true,
         "description": "Identity of the person verified by the channel.",
         "schema": {
           "type": "string",
@@ -1617,7 +1643,7 @@
       "BotaruChat": {
         "name": "Botaru-Chat",
         "in": "header",
-        "required": false,
+        "required": true,
         "description": "The chat of the press or command: direct:<id> or group:<id>.",
         "schema": {
           "type": "string",
@@ -1628,7 +1654,7 @@
         "name": "Botaru-Message",
         "in": "header",
         "required": false,
-        "description": "The channel message of a card button press.",
+        "description": "The channel message of a card button press; required for a button press, absent for a typed command.",
         "schema": {
           "type": "string",
           "maxLength": 2000

@@ -62,3 +62,17 @@ cases:
         metadata: {name: lims-hook, tenant: demo2}
         spec: {driver: webhook, base: 'https://[::1]/hook', ceiling: internal, signing_key_ref: LIMS_HOOK_KEY}
     expect: {error: webhook_sink_invalid}
+  - name: webhook sink to a public IPv6 address passes (documentation range stands for a public one)
+    manifests:
+      - apiVersion: botaru/v1alpha1
+        kind: Sink
+        metadata: {name: lims-hook, tenant: demo2}
+        spec: {driver: webhook, base: 'https://[2001:db8::10]/hook', ceiling: internal, signing_key_ref: LIMS_HOOK_KEY}
+    expect: ok
+  - name: webhook sink to an IPv4 loopback address with a port
+    manifests:
+      - apiVersion: botaru/v1alpha1
+        kind: Sink
+        metadata: {name: lims-hook, tenant: demo2}
+        spec: {driver: webhook, base: 'https://127.0.0.1:8443/hook', ceiling: internal, signing_key_ref: LIMS_HOOK_KEY}
+    expect: {error: webhook_sink_invalid}

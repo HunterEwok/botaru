@@ -39,10 +39,12 @@ ci/lint_codes.py, the table in ci/README.md (python3 ci/gen_codes.py).
       without --manifests the plugin from examples/ is compared; the option can repeat
 """
 import datetime
+import ipaddress
 import json
 import os
 import re
 import sys
+import urllib.parse
 
 sys.dont_write_bytecode = True
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -64,6 +66,8 @@ NOT_MANIFESTS = {'examples/hello-bot/mock-model.yaml'}
 FIXTURES = os.path.join(ROOT, 'conformance', 'fixtures', 'manifests')
 API_VERSION = 'botaru/v1alpha1'
 
+
+WEBHOOK_DOC_NETS = [ipaddress.ip_network(n) for n in ('192.0.2.0/24', '198.51.100.0/24', '203.0.113.0/24', '2001:db8::/32')]
 
 def norm(x):
     """Turns YAML dates and times into strings, the way apply sees them."""
@@ -983,11 +987,22 @@ def lint(docs, today=None, farm_hosts=None, examples_mode=False, claimed=None, s
         if ss.get('driver') != 'webhook':
             continue
         base = str(ss.get('base') or '')
-        m = re.match(r'^https://([^/:?#]+)', base)
-        host = m.group(1).lower() if m else None
-        private = host is not None and (host == 'localhost' or host.endswith('.local') or re.match(
-            r'^(0\.|10\.|127\.|169\.254\.|192\.168\.|172\.(1[6-9]|2[0-9]|3[01])\.|100\.(6[4-9]|[7-9][0-9]|1[01][0-9]|12[0-7])\.|\[)',
-            host))
+        try:
+            u = urllib.parse.urlsplit(base)
+            host = u.hostname if u.scheme == 'https' else None
+        except ValueError:
+            host = None
+        private = False
+        if host is not None:
+            try:
+                ip = ipaddress.ip_address(host)
+                # Documentation ranges stand for public addresses in examples; the shared range of RFC 6598
+                # is written as a number because the repository text holds documentation addresses only.
+                if not any(ip in n for n in WEBHOOK_DOC_NETS):
+                    private = (ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_reserved or ip.is_unspecified
+                               or ip.is_multicast or (ip.version == 4 and ip in ipaddress.ip_network((0x64400000, 10))))
+            except ValueError:
+                private = host == 'localhost' or host.endswith('.local') or host.endswith('.localhost')
         if host is None or private or host in farm_hosts or host.split('.')[0] in farm_hosts:
             f.error('webhook_sink_invalid', where, f'sink {name}: base {base!r} is not an https:// address outside the farm (DLV-17)')
         if not ss.get('signing_key_ref'):

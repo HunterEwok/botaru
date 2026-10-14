@@ -32,8 +32,11 @@ def ref(name):
 def operation(e):
     op = e['op']
     params = []
-    if e.get('lease'):
+    if e.get('lease') is True:
         params.append({'$ref': '#/components/parameters/BotaruLease'})
+    elif e.get('lease'):
+        # A descriptive lease names callers that have no lease, so the header is optional there.
+        params.append({'$ref': '#/components/parameters/BotaruLeaseOptional'})
     if e.get('on_behalf'):
         params += [{'$ref': '#/components/parameters/BotaruOnBehalf'}, {'$ref': '#/components/parameters/BotaruChat'},
                    {'$ref': '#/components/parameters/BotaruMessage'}]
@@ -47,6 +50,10 @@ def operation(e):
         body = {'required': True, 'content': {'application/json': {'schema': ref(e['request'])}}}
     if op == 'file.get':
         ok = {'description': 'The file bytes; metadata in headers (spec/bindings/http/README.md).',
+              'headers': {'Botaru-File-Ref': {'required': True, 'description': 'file_ref of the p1-file-get-response schema.',
+                                              'schema': {'$ref': f'{MODEL_REL}common.schema.json#/$defs/file_ref'}},
+                          'Botaru-Data-Mark': {'required': True, 'description': 'data_mark of the p1-file-get-response schema.',
+                                               'schema': {'$ref': f'{MODEL_REL}common.schema.json#/$defs/data_mark'}}},
               'content': {'application/octet-stream': {'schema': {'type': 'string', 'contentMediaType': 'application/octet-stream'}}}}
     else:
         ok = {'description': 'Success.', 'content': {'application/json': {'schema': ref(e['response'])}}}
@@ -83,9 +90,12 @@ def build():
                                            'description': 'The worker token, or the handle named by the operation.'}},
             'parameters': {
                 'BotaruLease': header('Botaru-Lease', 'The holder\'s current lease token.', True),
-                'BotaruOnBehalf': header('Botaru-On-Behalf', 'Identity of the person verified by the channel.'),
-                'BotaruChat': header('Botaru-Chat', 'The chat of the press or command: direct:<id> or group:<id>.'),
-                'BotaruMessage': header('Botaru-Message', 'The channel message of a card button press.'),
+                'BotaruLeaseOptional': header('Botaru-Lease', 'The holder\'s current lease token; '
+                                              'sent by callers under a lease, absent for the callers the map row names without one.'),
+                'BotaruOnBehalf': header('Botaru-On-Behalf', 'Identity of the person verified by the channel.', True),
+                'BotaruChat': header('Botaru-Chat', 'The chat of the press or command: direct:<id> or group:<id>.', True),
+                'BotaruMessage': header('Botaru-Message', 'The channel message of a card button press; '
+                                        'required for a button press, absent for a typed command.'),
                 'traceparent': header('traceparent', 'W3C trace context; decides nothing (OBS-3).'),
             },
             'responses': {'Problem': {'description': 'A refusal: problem details (RFC 9457) with a reason from spec/model/reasons.yaml.',
