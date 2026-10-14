@@ -247,7 +247,8 @@ func Check(p Plugin, forbidden map[string]bool) []Issue {
 		switch {
 		case t.TargetFrom == "" && t.Target != "any":
 			out = append(out, Issue{Code: "tool_target_missing", Tool: t.Name})
-		case t.TargetFrom != "":
+		case t.TargetFrom != "" && t.ArgsFrom == "":
+			// With args_from the parameters are the action's, checked with the action.
 			if _, ok := t.AllParams()[t.TargetFrom]; !ok {
 				out = append(out, Issue{Code: "tool_target_unknown", Tool: t.Name, Path: t.TargetFrom})
 			}
@@ -259,6 +260,10 @@ func Check(p Plugin, forbidden map[string]bool) []Issue {
 					break
 				}
 			}
+		}
+		// Output declared trusted holds only numbers, booleans and closed values (INJ-3).
+		if !t.Untrusted() && t.OutputSchema != nil && freeText(t.OutputSchema) {
+			out = append(out, Issue{Code: "untrusted_output_false_text", Tool: t.Name})
 		}
 		for _, n := range sortedKeys(t.Commands) {
 			out = append(out, checkCommand(t, n, t.Commands[n], forbidden)...)
@@ -297,6 +302,47 @@ func checkCommand(t Tool, name string, c Command, forbidden map[string]bool) []I
 		}
 	}
 	return out
+}
+
+// freeText says whether a schema has a string without enum, enum_from, const or format
+// anywhere in it, as ci/check_manifests.py does; a string of any length counts.
+func freeText(v any) bool {
+	switch x := v.(type) {
+	case map[string]any:
+		if x["type"] == "string" || isStringType(x["type"]) {
+			closed := false
+			for _, k := range []string{"enum", "enum_from", "const", "x-botaru-format"} {
+				if _, ok := x[k]; ok {
+					closed = true
+				}
+			}
+			if !closed {
+				return true
+			}
+		}
+		for _, e := range x {
+			if freeText(e) {
+				return true
+			}
+		}
+	case []any:
+		for _, e := range x {
+			if freeText(e) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func isStringType(t any) bool {
+	l, _ := t.([]any)
+	for _, e := range l {
+		if e == "string" {
+			return true
+		}
+	}
+	return false
 }
 
 // IsPlaceholder says whether an argv element is a whole parameter reference: {param} or

@@ -95,9 +95,32 @@ func TestCheck(t *testing.T) {
 	if len(is) != 2 || is[0].Code != "tool_target_missing" || is[1].Code != "redact_required" {
 		t.Fatalf("issues %v", is)
 	}
+	f := false
+	trusted := Plugin{Name: "checks", Placement: "host", Tools: []Tool{{Name: "latest", Access: "read", Target: "any", UntrustedOutput: &f,
+		OutputSchema: map[string]any{"type": "object", "properties": map[string]any{
+			"check": map[string]any{"enum_from": "catalog.checks"}, "ok": map[string]any{"type": "integer"}}}}}}
+	if is := Check(trusted, nil); len(is) > 0 {
+		t.Fatalf("closed trusted output: %v", is)
+	}
+	trusted.Tools[0].OutputSchema["properties"].(map[string]any)["note"] = map[string]any{"type": "string", "maxLength": 50}
+	if is := Check(trusted, nil); len(is) != 1 || is[0].Code != "untrusted_output_false_text" {
+		t.Fatalf("free text declared trusted: %v", is)
+	}
+	if is := Check(readPlugin(t, "checks"), nil); len(is) > 0 {
+		t.Fatalf("the checks example: %v", is)
+	}
 	for a, want := range map[string]bool{"{x}": true, "{service.unit}": true, "{}": false, "{x.}": false, "a{x}": false, "{X}": false} {
 		if IsPlaceholder(a) != want {
 			t.Errorf("IsPlaceholder(%q)", a)
+		}
+	}
+}
+
+// Every example plugin passes the checks.
+func TestExamplesPass(t *testing.T) {
+	for _, n := range []string{"batch", "checks", "cmd", "data", "geo", "logs", "monitor", "pipeline", "sandbox", "service", "storage"} {
+		if is := Check(readPlugin(t, n), map[string]bool{"sh": true}); len(is) > 0 {
+			t.Errorf("%s: %v", n, is)
 		}
 	}
 }
