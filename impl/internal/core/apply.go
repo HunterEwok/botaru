@@ -86,8 +86,11 @@ func (c *Core) Apply(ctx context.Context, op Operator, req ApplyRequest) (*Apply
 	// this one start again, so that two applies never pass the lint on each other's old state.
 	for try := 0; ; try++ {
 		res, err := c.applyOnce(ctx, op, req)
-		if !errors.Is(err, errStoreChanged) || try == 4 {
+		if !errors.Is(err, errStoreChanged) {
 			return res, err
+		}
+		if try == 4 {
+			return nil, fmt.Errorf("%w five times in a row; apply again", err)
 		}
 	}
 }
