@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "urn:botaru:schema:ext-monitor-maintenance:1",
   "title": "Data of the event ext.monitor.maintenance.v1",
-  "description": "Maintenance window of a catalog node; on it the core sets a stop of the scope host or resource with the reason maintenance until the end of the window (MON-9).",
+  "description": "Maintenance status of a catalog node from one poll of the adapter; on the first active event of a window the core sets a stop of the scope host with the reason maintenance, and later active events move its until forward (MON-9).",
   "x-botaru-direction": "input",
   "x-botaru-version": "v0.2",
   "type": "object",
@@ -32,7 +32,7 @@
     },
     "until": {
       "$ref": "urn:botaru:schema:common:1#/$defs/datetime",
-      "description": "End of the window."
+      "description": "With state active: the poll time plus two poll intervals; the adapter does not compute the end of the window (MON-9)."
     }
   },
   "x-botaru-rules": [

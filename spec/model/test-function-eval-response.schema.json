@@ -1,0 +1,21 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:botaru:schema:test-function-eval-response:1",
+  "title": "Test bench function.eval: answer",
+  "description": "The output of the pure function, compared with the expect of the decision table case. Nothing was written.",
+  "x-botaru-direction": "output",
+  "x-botaru-version": "v0.2",
+  "x-botaru-rules": [
+    "APR-9"
+  ],
+  "type": "object",
+  "required": [
+    "output"
+  ],
+  "properties": {
+    "output": {
+      "type": "object",
+      "description": "The function's decision, with the field names of the case's expect."
+    }
+  }
+}

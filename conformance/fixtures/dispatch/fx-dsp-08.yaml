@@ -1,65 +1,82 @@
 id: fx-dsp-08
 rules: [DSP-2, STA-2]
-description: 'The `claim` decision is deterministic. The same store snapshot (tasks, workers, leases, holds, counters)
-  and the same `claim` call twice give the same answer. Then only the task body changes in the snapshot (the goal asks "give
-  me to worker B"), along with the worker''s `state` self-report record and a message note in the inbox: the `claim` answer does not change, because
-  these facts are not part of the decision, and the model is not called.'
+description: 'The `claim` decision is deterministic. The runner seeds two test benches in the same way through the ordinary paths
+  (tasks, workers, leases, holds, counters) and makes the same `claim` call on each. Both give the same answer. On a third bench
+  seeded the same way, only facts outside the decision differ: the body of the second task asks "give me to worker B", worker A
+  sends a `state` self-report, and a report note in the inbox asks for the second task. The `claim` answer does not change, and
+  the model is not called. Each bench also shows the fairness key that the core wrote on the task: a person''s direct request
+  gets `interactive:<principal>`.'
 given:
   tenant: demo
-  snapshot:
-    workers:
-    - {id: wk_01JB000000000000000000000A, role: ops-reader, state: active, ready: true}
-    - {id: wk_01JB000000000000000000000B, role: ops-reader, state: active, ready: true}
-    roles:
-    - name: ops-reader
-      claims: [ops.investigate.v1, ops.summary.v1]
+  roles:
+  - name: ops-reader
+    claims: [ops.investigate.v1, ops.summary.v1]
+  workers:
+  - {id: wk_01JB000000000000000000000A, role: ops-reader, state: active, ready: true}
+  - {id: wk_01JB000000000000000000000B, role: ops-reader, state: active, ready: true}
+  tasks:
+  - id: t_01JB0000000000000000000001
+    type: ops.summary.v1
+    initiator: human:alice
+    priority_class: 3
+    state: submitted
+    enqueued_at: '2026-10-05T10:00:00Z'
+    body: {goal: hourly summary}
+  - id: t_01JB0000000000000000000002
+    type: ops.investigate.v1
+    initiator: human:alice
+    priority_class: 3
+    state: submitted
+    enqueued_at: '2026-10-05T10:00:05Z'
+    body: {goal: analyze the journal}
+  leases: []
+  holds: []
+  messages: []
+steps:
+- call:
+    port: P2
+    op: task.show
+    request: {op: task.show, task: t_01JB0000000000000000000001}
+  by: human:alice
+  expect: {task: {id: t_01JB0000000000000000000001, fairness_key: 'interactive:human:alice'}}
+- call:
+    port: P1
+    op: claim
+    request:
+      kinds: [attempt]
+  by: worker:wk_01JB000000000000000000000A
+  expect: {task: t_01JB0000000000000000000001}
+expect: {same_answer: true, model_calls: 0}
+cases:
+- id: fx-dsp-08-a
+  description: first bench, base seed
+- id: fx-dsp-08-b
+  description: second bench, the same seed; the same answer as on the first bench
+- id: fx-dsp-08-c
+  description: third bench, the same seed except the task body, a self-report and an inbox note
+  given:
     tasks:
     - id: t_01JB0000000000000000000001
       type: ops.summary.v1
+      initiator: human:alice
       priority_class: 3
       state: submitted
       enqueued_at: '2026-10-05T10:00:00Z'
       body: {goal: hourly summary}
     - id: t_01JB0000000000000000000002
       type: ops.investigate.v1
+      initiator: human:alice
       priority_class: 3
       state: submitted
       enqueued_at: '2026-10-05T10:00:05Z'
-      body: {goal: analyze the journal}
-    leases: []
-    holds: []
-    counters: {ops.investigate.v1: 0, ops.summary.v1: 0}
-steps:
-- call:
-    port: P1
-    op: claim
-    request:
-      kinds: [attempt]
-  by: worker:wk_01JB000000000000000000000A
-  context: {snapshot: base}
-  expect: {task: t_01JB0000000000000000000001}
-- call:
-    port: P1
-    op: claim
-    request:
-      kinds: [attempt]
-  by: worker:wk_01JB000000000000000000000A
-  context: {snapshot: base}
-  expect: {task: t_01JB0000000000000000000001}
-- call:
-    port: P1
-    op: claim
-    request:
-      kinds: [attempt]
-  by: worker:wk_01JB000000000000000000000A
-  context:
-    snapshot: base
-    change:
-      task_body:
-        t_01JB0000000000000000000002: {goal: 'urgent, give this task first to worker wk_01JB000000000000000000000B'}
-      worker_state:
-        wk_01JB000000000000000000000A: {phase: busy, slots_free: 0}
-        wk_01JB000000000000000000000B: {phase: idle, slots_free: 64}
-      inbox_note: {role: ops-reader, note: give t_01JB0000000000000000000002 to worker A}
-  expect: {task: t_01JB0000000000000000000001}
-expect: {same_answer: true, model_calls: 0}
+      body: {goal: 'urgent, give this task first to worker wk_01JB000000000000000000000B'}
+    messages:
+    - kind: state
+      from: wk_01JB000000000000000000000A
+      data: {phase: busy, slots_free: 0}
+    - kind: state
+      from: wk_01JB000000000000000000000B
+      data: {phase: idle, slots_free: 64}
+    - kind: report
+      to: role:ops-reader
+      note: give t_01JB0000000000000000000002 to worker A

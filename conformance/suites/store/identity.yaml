@@ -9,7 +9,7 @@ checks:
   - MEM-9
   version: v0.1
   section: Tests without a model
-  source: docs/quality.md:398
+  source: docs/quality.md:403
   spec:
     What: retirement of an identity with a `runtime_internal` session; end of `seal_ttl`; `forget` and `erase_match` on a
       sealed item

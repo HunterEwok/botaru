@@ -112,9 +112,9 @@ cases:
   expect:
     apply: {result: rejected, error: forced_schema_unsupported}
 - id: gov-fx-02-f2
-  rules: [GOV-7]
-  description: P4 does not fall back for a ballot call; an unavailable seat profile gives a defaulted ballot, not an answer of
-    the fallback profile.
+  rules: [GOV-7, GOV-23]
+  description: P4 does not fall back for a ballot call; an unavailable seat profile is an infrastructure cause, so the ballot
+    waits and is not written by rule, and no answer of the fallback profile is used (GOV-23).
   given:
     model_profiles:
       seat-std: {rank: 3, forced_schema: true, fallback: [seat-alt]}
@@ -122,7 +122,9 @@ cases:
     provider_state: {seat-std: unavailable}
   expect:
     p4_calls: {seat-alt: 0}
-    ballot: {voter: bot_05, forced: false, defaulted: true, model_profile: null}
+    ballot: null
+    reissue_count: 0
+    task: {key: 'system:governance:gc_7:1:bot_05', state: submitted}
 - id: gov-fx-02-g
   rules: [GOV-8]
   description: 'The count of the example: round 1 tally seat 3: 3, seat 1: 1, seat 2: 1; need 4; seats 1 and 2 tie, K1 does

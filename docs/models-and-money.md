@@ -328,7 +328,7 @@ Usage does not go beyond the shown amount. An item that does not fit into the re
 
 Money is not the only expense. The registry `spec/model/meters.yaml` lists the consumable units: `eur_cents`, `tokens`, `tool_calls`, `sandbox_seconds`, `storage_bytes`, `approvals_requested`. Each unit is reserved before use and charged by actual use, just like money (BUD-5). A limit is set per unit and scope: tenant, principal, task tree, chat. The usage line carries the unit.
 
-The non-consumable limit `Tenant.spec.budgets.tasks_in_flight` caps the direct requests of one person or program with a running attempt. Exceeding it is not a refusal: the request waits in `submitted` with `waiting_reason: in_flight_cap` (condition D21), and the person's waiting requests go out in enqueue order; tasks of `system`, campaign items, children and continuations do not count (BUD-6). Defaults: 60 sandbox minutes a day and 3 tasks in progress per person.
+The non-consumable limit `Tenant.spec.budgets.tasks_in_flight` caps the direct requests of one person or program with a running attempt. Exceeding it is not a refusal: the request waits in `submitted` with `waiting_reason: in_flight_cap` (condition D21), and the person's waiting requests of one type go out in enqueue order, while a request held by another condition (no executor, a hold, a ceiling) does not hold back the others; tasks of `system`, campaign items, children and continuations do not count (BUD-6). Defaults: 60 sandbox minutes a day and 3 tasks in progress per person.
 
 ### Reconciliation with the provider
 

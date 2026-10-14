@@ -9,7 +9,7 @@ checks:
   - MSG-12
   version: v0.1
   section: Tests without a model
-  source: docs/quality.md:317
+  source: docs/quality.md:322
   spec:
     What: an inbox entry with `ttl` 1 minute, time shifted by 2 minutes
     Expectation: the entry is `expired`, it is not in `inbox_read`, the event `msg.expired` has metadata only

@@ -1,3 +1,4 @@
+# Decision table for the core function commission.calibration (COM-11), run with the test bench operation function.eval (conformance/runner.md).
 # Calibration within a lens (COM-11), row com-05 of evals/README.md. The tenant demo, 180-day window. A review "warns" when it
 # has a veto or a score of at most 1, and "passes" otherwise; the outcome table is in the text of COM-11.
 id: com-05

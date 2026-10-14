@@ -102,7 +102,7 @@ entries:
     request: p1-kb-index-put-request
     response: done-response
     rules: [KNW-5, KNW-4]
-    profiles: [core]
+    profiles: [knowledge]
     lease: true
   - id: P1.file.put
     port: P1
@@ -356,7 +356,7 @@ entries:
     since: v0.1
     request: p2-principal-request
     response: done-response
-    rules: [IDN-4, APR-6]
+    rules: [IDN-4, APR-6, LCY-8]
     profiles: [core]
   - id: P2.principal.on
     port: P2
@@ -364,7 +364,7 @@ entries:
     since: v0.1
     request: p2-principal-request
     response: done-response
-    rules: [IDN-4]
+    rules: [IDN-4, LCY-8]
     profiles: [core]
   - id: P2.principal.set_identity
     port: P2
@@ -372,7 +372,7 @@ entries:
     since: v0.1
     request: p2-principal-request
     response: done-response
-    rules: [IDN-4]
+    rules: [IDN-4, LCY-8]
     profiles: [core]
   - id: P2.invite.create
     port: P2
@@ -404,7 +404,7 @@ entries:
     since: v0.1
     request: p2-grant-request
     response: done-response
-    rules: [PRM-7, PRM-13, APR-6]
+    rules: [PRM-7, PRM-13, APR-6, LCY-8]
     profiles: [core]
   - id: P2.ungrant
     port: P2
@@ -676,9 +676,9 @@ entries:
     since: v0.1
     request: p2-principal-offboard-request
     response: done-response
-    rules: [RET-7, MEM-4, LCY-3, PRM-14, IDN-13]
+    rules: [RET-7, MEM-4, LCY-3, LCY-8, PRM-14, IDN-13]
     profiles: [core, governance]
-    note: 'v0.1 by the rules MEM-4, RET-7, IDN-13 and PRM-14: the offboarded state (D-98), an erasure request (tenant, subject), the principal_left notice. Parts of rule LCY-3 (version v0.2): the principal.offboarded event and deletion of the Identity'
+    note: 'v0.1 by the rules LCY-8, MEM-4, RET-7, IDN-13 and PRM-14: the offboarded state, deletion of the identity links (D-98), an erasure request (tenant, subject), the principal_left notice. Part of rule LCY-3 (version v0.2): the principal.offboarded event'
   - id: P2.restore.complete
     port: P2
     op: restore.complete
@@ -1101,7 +1101,7 @@ entries:
     request: null
     response: null
     rules: [AUD-4]
-    profiles: [core]
+    profiles: [debug]
     note: 'v0.2: the schemas will appear with v0.2'
   - id: P2.task.replay
     port: P2
@@ -1110,7 +1110,7 @@ entries:
     request: null
     response: null
     rules: [APR-8, AUD-4]
-    profiles: [core]
+    profiles: [debug]
     note: 'v0.2: the schemas will appear with v0.2'
   - id: P2.principal.data_report
     port: P2
@@ -1137,7 +1137,7 @@ entries:
     request: p2-secret-revoke-request
     response: done-response
     rules: [SEC-6, HLD-2, SEC-7]
-    profiles: [core]
+    profiles: [core, connections]
   - id: P2.connection.register
     port: P2
     op: connection.register
@@ -1145,7 +1145,7 @@ entries:
     request: p2-connection-register-request
     response: p2-connection-register-response
     rules: [SEC-7]
-    profiles: [core]
+    profiles: [connections]
     on_behalf: true
   - id: P2.connection.revoke
     port: P2
@@ -1154,7 +1154,7 @@ entries:
     request: p2-connection-revoke-request
     response: done-response
     rules: [SEC-7]
-    profiles: [core]
+    profiles: [connections]
   - id: P2.kb.upload
     port: P2
     op: kb.upload
@@ -1162,7 +1162,7 @@ entries:
     request: null
     response: null
     rules: [KNW-4, ART-4]
-    profiles: [core]
+    profiles: [core, knowledge]
     note: 'v0.2: the schemas will appear with v0.2'
   - id: P3.server/discover
     port: P3
@@ -2189,6 +2189,15 @@ entries:
     response: authz-decision
     rules: [APR-9, PRM-2]
     profiles: [core]
+    note: 'test-control port spec/ports/test-control.md; only on a test bench store that never had a tenant other than kind: test'
+  - id: T.function.eval
+    port: T
+    op: function.eval
+    since: v0.2
+    request: test-function-eval-request
+    response: test-function-eval-response
+    rules: [APR-9, GOV-8, COM-11, DIG-5, REP-4, TIM-5]
+    profiles: [core, governance, insights, messaging]
     note: 'test-control port spec/ports/test-control.md; only on a test bench store that never had a tenant other than kind: test'
   - id: T.event.inject
     port: T

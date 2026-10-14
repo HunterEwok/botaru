@@ -499,7 +499,7 @@ A manifest passes the schema of its kind and `apiVersion`; a kind without a regi
 | `Schedule` | schedule with time zone and address | `tenants/<t>/schedules.yaml` | v0.1 |
 | `Channel`, `Sink` | channel with driver declarations (`ai_disclosure`, `provenance`, `membership_assurance`, pace) and sink | tenant git | v0.1 |
 | `MessageType`, `BotGroup` | bot message type, bot group | farm git; `tenants/<t>/botgroups/` | v0.1 |
-| `ObservationSeries`, `ModelProfile`, `Commission` | observation series; model profile with the field `family` (model family from `model-families.yaml`: the veto lenses of a production tenant have different families, GOV-34); tenant commission with the block `shadow: {veto_lenses, other_lenses}` (shadow shares, 0.25 and 0.2 by default) or `shadow: off` (COM-10) | farm and tenant git | v0.1 |
+| `ObservationSeries`, `ModelProfile`, `Commission` | observation series; model profile with the field `family` (model family from `model-families.yaml`: the veto lenses of a production tenant have different families, GOV-34); tenant commission with the block `shadow: {veto_lenses, other_lenses}` (turns the shadow on, with shares 0.25 and 0.2 when omitted) or `shadow: off`; without the block the shadow is off (COM-10, D-103) | farm and tenant git | v0.1 |
 | `IncidentClass`, `Governance` | incident class, charter | farm git | v0.1 |
 | `Script` | script from git in the format `botaru.script/v1`; a schedule may start it without a person only under SCR-12 | `tenants/<t>/scripts/<name>.yaml` | v0.2 |
 
@@ -629,7 +629,7 @@ A group chat binding (`ChatBinding`) is a recorded object that an operator creat
 
 ### Versions, deprecation and apiVersion change
 
-Within a version `.vN` of a task type, event type, message type and schema only additions of optional fields are allowed; the CI check `ci/check-additive` compares the schema with the previous commit, and workers tolerate unknown fields (MAN-3). Since v0.2 a manifest can carry `deprecated: true` and `sunset: <date>`, and `apply` warns about references to deprecated objects; a type `.vN` is deleted only when it has no non-terminal tasks, schedules and routes (MAN-7). An `apiVersion` change goes through a `farmctl` converter, which translates the wrapper without changing its meaning, and the check "the `apply --dry-run` plan before and after is the same" (MAN-7). An implementation declares the skeleton version and the conformance profiles in the field `conforms_to: {skeleton: <version>, profiles: [core, ...]}` in P2 `status` and in the runner report; the runner checks the active rules of the declared profiles whose `version` is not newer than the declared version (MAN-8).
+Within a version `.vN` of a task type, event type, message type and schema only additions of optional fields are allowed; the CI check `ci/check-additive` compares the schema with the previous commit, and workers tolerate unknown fields (MAN-3). Since v0.2 a manifest can carry `deprecated: true` and `sunset: <date>`, and `apply` warns about references to deprecated objects; a type `.vN` is deleted only when it has no non-terminal tasks, schedules and routes (MAN-7). An `apiVersion` change goes through a `farmctl` converter, which translates the wrapper without changing its meaning, and the check "the `apply --dry-run` plan before and after is the same" (MAN-7). An implementation declares the skeleton version and the conformance profiles in the field `conforms_to: {skeleton: <version>, profiles: [core, ...]}` in P2 `status` and in the runner report; the runner checks the active rules of the declared profiles whose `version` is not newer than the declared version (MAN-8). The other side of the claim: at `apply` a core rejects with `version_unsupported` a manifest kind or field of a later skeleton version, and the fields of a feature profile it does not claim (corpora and skills, source channels, per-person connections, attempt journals), rather than accept them and silently do nothing (MAN-11).
 
 ### Drivers and kinds from the implementation
 
@@ -1122,3 +1122,4 @@ Generated from the registry `conformance/requirements.yaml`; the full text of ev
 | [MAN-8](../conformance/rules.md#MAN-8) | The implementation declares the skeleton version and profiles | v0.1 | no |
 | [MAN-9](../conformance/rules.md#MAN-9) | Action manifest, what is approved is what runs | v0.1 | yes |
 | [MAN-10](../conformance/rules.md#MAN-10) | Catalog values pass a format and are rechecked | v0.1 | yes |
+| [MAN-11](../conformance/rules.md#MAN-11) | A core rejects what it does not implement | v0.1 | yes |

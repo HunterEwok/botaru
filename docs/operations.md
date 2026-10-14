@@ -221,7 +221,7 @@ A hold only narrows: it cannot become a path to extra rights (HLD-2). A hold is 
 - the operator, on any scope, through `farmctl` (P2 `hold.set`) or, for the whole farm, with the command `farmctl hold farm`. A hold on the scopes `farm` and `seat` and its release are operator operations only (PRM-14);
 - a person of their own tenant with the right `hold.set:<scope>`, on scopes of their tenant, through `farmctl` or with a command in a direct chat with the bot (PRM-15);
 - the core by an auto-stop rule from the closed list `spec/model/holds.yaml` and as the first measure of an incident class from git (MGR-7);
-- from v0.2 the core by a maintenance window in the monitoring system: a hold on scope `host` with reason `maintenance` until the end of the window (MON-9).
+- from v0.2 the core by a maintenance window in the monitoring system: a hold on scope `host` with reason `maintenance`; each poll of the maintenance status moves its `until` forward, so it ends at most two poll intervals after the window (MON-9).
 
 A code hold inside a tenant (an auto-stop, the first measure of an incident, a maintenance window hold) is recorded with the author `contain_auto`; the source (rule, incident class, `system:monitor`) is written next to it. The model, a worker, a route and a schedule neither set nor release holds. A coordinator bot does not set holds and does not ask for them: people or code set a mass stop.
 
@@ -264,7 +264,7 @@ A series of requests with a foreign tenant or foreign handles from the same cred
 | worker quarantine | a `worker` hold with `no_claim` and `cancel_running` |
 | urgent plugin recall | a `plugin` hold with `no_tool` |
 | a bot token leaked | a `channel` hold with `no_delivery` and `no_enqueue`: outgoing messages are not sent, tasks from this channel's incoming messages are not enqueued |
-| a two-hour maintenance window for `db1` | people set the window in the monitoring system; from v0.2 the core sets by it a `host` hold with `until` the end of the window, the effects `no_tool`, `pause_action` (pending cards are not canceled but wait; with `hosts[].maintenance_hold: true` there is `no_action` instead) and reason `maintenance`; schedules whose tasks depend on `db1` skip slots with reason `held`, without catching up (MON-9) |
+| a two-hour maintenance window for `db1` | people set the window in the monitoring system; from v0.2 the core sets by it a `host` hold whose `until` follows the polls and ends at most two poll intervals after the window, the effects `no_tool`, `pause_action` (pending cards are not canceled but wait; with `hosts[].maintenance_hold: true` there is `no_action` instead) and reason `maintenance`; schedules whose tasks depend on `db1` skip slots with reason `held`, without catching up (MON-9) |
 | suspected theft of the core key | a `farm` hold with `no_action` and `no_tool` |
 
 ### Emergency stop of the whole farm
@@ -546,13 +546,13 @@ A tenant is declared in git with the file `tenants/<name>/tenant.yaml` and appea
 
 In `active` the tenant works according to its rights and periods. In `suspended` there is no new work except core tasks for erasure and export, pending approvals are canceled, deliveries get `withheld` except messages to admins about the hold itself (HLD-3), and data, credentials and the provider key are not touched. In `offboarding` only export is allowed. In `deleted` content and memory are deleted, metadata lives until the end of its period, and the tenant id stays as a tombstone.
 
-A suspension (for example for non-payment) is a `tenant` hold with reason `suspended`, and a return is the release of this hold, and only the operator can release it: a tenant admin with `hold.release` gets `forbidden` (HLD-2). Offboarding (P2 `tenant.offboard`) revokes everything with which the tenant could spend money and act: every tenant has its own workspace and key at the model provider (GW-3, D-42). Deletion (P2 `tenant.delete`) is possible no earlier than the end of the export window, by default 30 days; it creates an erasure request with scope `(tenant)` across all stores, and `apply` of a tenant with the same name is rejected after that. The audit of a deleted tenant lives for the `metadata` period without a link to people and is then deleted in full.
+A suspension (for example for non-payment) is a `tenant` hold with reason `suspended`, and a return is the release of this hold, and only the operator can release it: a tenant admin with `hold.release` gets `forbidden` (HLD-2). Offboarding (P2 `tenant.offboard`) revokes everything with which the tenant could spend money and act: every tenant has its own workspace and key at the model provider (GW-3, D-42). The core forgets the key and stops using it; revoking the key and the workspace at the provider needs an organization admin key, which the core does not hold, so `tenant.offboard` prints it as an operator step (D-103). Deletion (P2 `tenant.delete`) is possible no earlier than the end of the export window, by default 30 days; it creates an erasure request with scope `(tenant)` across all stores, and `apply` of a tenant with the same name is rejected after that. The audit of a deleted tenant lives for the `metadata` period without a link to people and is then deleted in full.
 
 Export of a tenant or a person (P2 `tenant.export`, `principal.export`, v0.2) is an operator operation (PRM-14). It enqueues a core task and writes the result only to a sink named by the operator, in JSON Lines by the schemas of `spec/model` with their `$id` (LCY-2). A person asks for a copy of their data with the command `/mydata export`, and an approved request enqueues the same export task (SEC-11). Export never goes to a chat or to the model: it contains raw data. A person's export contains only objects where they are the initiator and objects that belong to them. Declared objects are not exported: they are in git.
 
 ### A person leaving
 
-A principal (a person or an external program, D-47) goes through the states `active`, `off`, `offboarded` (LCY-3). An admin's `/off` deletes nothing and is reversible: in one transaction the person's pending approvals (APR-6) and tasks (`canceled(person_inactive)`) are canceled. Schedules have no creator in their record, so they stay; the tenant admins decide on them. Leaving for good (P2 `principal.offboard`: an admin with `admin:people` for people without privileged groups, an operator through `farmctl` for people with them, PRM-14) does the same, writes the state `offboarded`, which no operation leaves (D-98), and additionally deletes the person's memory and sessions through an erasure request (MEM-4, RET-7). From v0.2 leaving publishes the event `principal.offboarded` and deletes the person's `Identity`, after which only an opaque id remains in the audit. In core records (task, audit, usage, grants, campaign, erasure) the person is recorded by this principal id `human:p_<ULID>` even before leaving, so the records are not rewritten after leaving: the audit keeps the same id, and the name is deleted from the principal record (D-85). A person who returns gets a new principal, and the old rights do not come back; there is no return window (D-100).
+A principal (a person or an external program, D-47) goes through the states `active`, `off`, `offboarded` (LCY-3). An admin's `/off` deletes nothing and is reversible: in one transaction the person's pending approvals (APR-6) and tasks (`canceled(person_inactive)`) are canceled. Schedules have no creator in their record, so they stay; the tenant admins decide on them. Leaving for good (P2 `principal.offboard`: an admin with `admin:people` for people without privileged groups, an operator through `farmctl` for people with them, PRM-14) does the same, writes the state `offboarded`, which no operation leaves (`principal.on`, `principal.off`, `principal.set_identity` and `grant` answer `subject_closed`), deletes the links of the person's channel identities, so that the same external identity can later be given to a new principal, and additionally deletes the person's memory and sessions through an erasure request (LCY-8, MEM-4, RET-7, D-98). From v0.2 leaving also publishes the event `principal.offboarded`; only an opaque id remains in the audit. In core records (task, audit, usage, grants, campaign, erasure) the person is recorded by this principal id `human:p_<ULID>` even before leaving, so the records are not rewritten after leaving: the audit keeps the same id, and the name is deleted from the principal record (D-85). A person who returns gets a new principal, and the old rights do not come back; there is no return window (D-100).
 
 ## Workers and plugins
 
@@ -606,7 +606,7 @@ Every recipe is a sequence of port operations. The commands of a particular impl
 ### Planned work on a machine
 
 1. A person sets a maintenance window on the machine's node in the monitoring system, for example `db1`; alerts for it are silent there.
-2. From v0.2 the core sets by the window a hold on scope `host` with `no_tool`, `pause_action`, reason `maintenance` and a deadline at the end of the window (MON-9); pending cards for the machine are not canceled but wait. Before v0.2 a person sets such a hold themselves: P2 `hold.set`.
+2. From v0.2 the core sets by the window a hold on scope `host` with `no_tool`, `pause_action`, reason `maintenance` and an `until` that each poll of the maintenance status moves forward (MON-9); pending cards for the machine are not canceled but wait. Before v0.2 a person sets such a hold themselves: P2 `hold.set`.
 3. The work ended earlier: the tenant admin or the operator releases the hold with P2 `hold.release`. Otherwise the hold ends at `until`.
 4. While the hold is active, bots do not start, stop or restart services on the machine and do not run monitoring scripts on it: the calls `service/control` and `monitor/script_run` get `denied(held)` (MON-8, MON-10). People manage the services during the work.
 
@@ -646,7 +646,7 @@ The recipe in git (`tenants/<name>/`, catalog, groups, roles) is described in `d
 ### Suspend and delete a tenant
 
 1. P2 `tenant.suspend`: a `tenant` hold with reason `suspended`. To return: only the operator, P2 `hold.release` of this hold (HLD-2).
-2. P2 `tenant.offboard`: credentials are revoked, the provider key is disabled.
+2. P2 `tenant.offboard`: credentials are revoked, the core forgets the provider key; the operator revokes the key and the workspace at the provider by the step that the answer prints.
 3. P2 `tenant.export` to a sink named by the operator.
 4. After the export window P2 `tenant.delete`; watch `erasure.status` until `done`.
 
@@ -729,6 +729,7 @@ Generated from the registry `conformance/requirements.yaml`; the full text of ev
 | [LCY-5](../conformance/rules.md#LCY-5) | Plugin update and deprecation | v0.2 | no |
 | [LCY-6](../conformance/rules.md#LCY-6) | Core drain before rollout | v0.1 | no |
 | [LCY-7](../conformance/rules.md#LCY-7) | Worker port version window | v0.1 | no |
+| [LCY-8](../conformance/rules.md#LCY-8) | Offboarding is final and frees the identity | v0.1 | yes |
 | [OBS-1](../conformance/rules.md#OBS-1) | Telemetry without content | v0.1 | yes |
 | [OBS-2](../conformance/rules.md#OBS-2) | One trace per task tree | v0.1 | no |
 | [OBS-3](../conformance/rules.md#OBS-3) | External trace context decides nothing | v0.1 | yes |

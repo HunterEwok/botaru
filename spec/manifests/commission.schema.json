@@ -109,7 +109,7 @@
       }
     },
     "shadow": {
-      "description": "Shadow shares (COM-10, GOV-34). A share of 0 is expressed only by an explicit shadow: off; an object with a share of 0 fails the apply lint shadow_zero_without_off.",
+      "description": "Shadow shares (COM-10). The shadow is off without this field or with shadow: off (D-103); an object turns it on, with 0.25 and 0.2 for omitted shares; an object with a share of 0 fails the apply lint shadow_zero_without_off.",
       "anyOf": [
         {
           "const": "off"

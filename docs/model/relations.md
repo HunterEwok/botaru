@@ -261,7 +261,7 @@ Distribution (who gets which task) is set by the dispatch rules and bot groups, 
 | catalog node -> monitoring system script (`monitor_scripts_allowed`) | 1 : N | the name for the model comes from the catalog; the core checks `scriptid` against the latest list of the E5 adapter, and the list arrives only when its hash changes; on farm nodes and on nodes of other tenants the adapter user has no scripts (MON-10, MON-4), v0.1 |
 | action with a service or script -> code note `service_control_done` | 1 : 0..1 | on the node's open problem, without model text, outside the bot note limit (MON-8), v0.1 |
 | task result -> problem note | 1 : 0..1; at most 10 per hour per tenant | only a role with `outputs: [monitor_note]` (MON-7), v0.2 |
-| maintenance window -> hold | 1 : 1 per resource | author `system:monitor`, expiry at the end of the window (MON-9), v0.2 |
+| maintenance window -> hold | 1 : 1 per host and active period | author `contain_auto`, source `system:monitor`, `until` from the latest poll, moved forward and never back (MON-9), v0.2 |
 | incident class -> incident | 1 : N | classes only from the farm git with human review (MGR-7), v0.1 |
 | alarm -> incident | N : 0..1 | only the core opens an incident, from an alarm and a class (MGR-8) |
 | incident -> involved target | 1 : 0..20 | the class rules name the involved parties (MGR-7) |

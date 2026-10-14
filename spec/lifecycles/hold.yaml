@@ -112,12 +112,13 @@ machines:
       states:
       - active
       text: '`active`'
-    by: the background loop `hold` by a maintenance window of the monitoring system (the E5 adapter reads the windows, v0.2)
-    when: 'the window started on a node that the tenant catalog linked to its resource (`Catalog.spec.hosts[].monitor_host`);
+    by: the background loop `hold` by a maintenance window of the monitoring system (the E5 adapter polls the maintenance
+      status, v0.2)
+    when: 'the first `active` event of a window on a node that the tenant catalog linked to its resource (`Catalog.spec.hosts[].monitor_host`);
       the scope `host` (the catalog host whose `monitor_host` is the node); the effects `no_tool` and `pause_action` (with
       `hosts[].maintenance_hold: true` the effect `no_action` instead of `pause_action`); the reason `maintenance`; the author
-      `contain_auto`, the source `system:monitor`; `until` the end of the window; an extension of the window gives a new hold
-      until the new end'
+      `contain_auto`, the source `system:monitor`; `until` from the event, the poll time plus two poll intervals; no new hold
+      for a window whose hold a person released'
     rules:
     - HLD-2
     - MON-9
@@ -212,6 +213,20 @@ machines:
     rules:
     - MGR-15
     - PRM-15
+  - from:
+      states:
+      - active
+      text: '`active`'
+    to:
+      states:
+      - active
+      text: '`active`'
+    by: the background loop `hold` by a later `active` event of the same maintenance window (v0.2)
+    when: the core moves `until` of the maintenance window hold forward to the event's `until`, never back; nothing else of
+      the hold changes
+    rules:
+    - HLD-2
+    - MON-9
   - from:
       states:
       - active

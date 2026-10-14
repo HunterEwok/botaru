@@ -8,7 +8,7 @@ The line under a rule heading:
 
 - "since v0.1": the skeleton version from which the conformance suite checks the rule.
 - "non-waivable": an implementation cannot put the rule on its list of expected failures. "Waivable": it can, with a recorded reason.
-- "profile": the part of the skeleton an implementation claims conformance to separately (`core`, `messaging`, `campaign`, `insights`, `manager`, `governance`, `monitor`); the `core` profile is mandatory, see [docs/quality.md](../docs/quality.md).
+- "profile": the part of the skeleton an implementation claims conformance to separately (`core`, `messaging`, `campaign`, `insights`, `manager`, `governance`, `monitor`, `knowledge`, `ingress`, `connections`, `debug`); the `core` profile is mandatory, see [docs/quality.md](../docs/quality.md).
 - "recommendation": a SHOULD rule; all others are mandatory.
 - "check": how compliance is shown. `fixture`: a ready data sample that must pass or fail a check. `store`: a storage check. `blackbox`: a test through the ports without knowledge of the implementation internals. `adapter`: a test of a port adapter. `eval`: a check of model work quality on a set of cases. `lint`: a check of files and manifests.
 - "decisions": decision numbers from [docs/decisions.md](../docs/decisions.md).
@@ -40,8 +40,8 @@ The line under a rule heading:
 | [INJ](#inj) | Injection resistance | [docs/security-model.md](../docs/security-model.md) | 16 | 16 | 16 | 0 |
 | [INS](#ins) | Analysis of own data | [docs/improvements.md](../docs/improvements.md) | 6 | 4 | 6 | 0 |
 | [KNW](#knw) | Tenant knowledge | [docs/capabilities.md](../docs/capabilities.md) | 5 | 5 | 0 | 5 |
-| [LCY](#lcy) | Tenant lifecycle | [docs/operations.md](../docs/operations.md) | 7 | 2 | 2 | 5 |
-| [MAN](#man) | Manifests | [docs/task-language.md](../docs/task-language.md) | 10 | 3 | 9 | 1 |
+| [LCY](#lcy) | Tenant lifecycle | [docs/operations.md](../docs/operations.md) | 8 | 3 | 3 | 5 |
+| [MAN](#man) | Manifests | [docs/task-language.md](../docs/task-language.md) | 11 | 4 | 10 | 1 |
 | [MEM](#mem) | Memory | [docs/bots.md](../docs/bots.md) | 9 | 7 | 8 | 1 |
 | [MGR](#mgr) | Farm manager | [docs/farm-manager.md](../docs/farm-manager.md) | 40 | 32 | 33 | 7 |
 | [MON](#mon) | External monitoring | [docs/monitoring.md](../docs/monitoring.md) | 13 | 10 | 11 | 2 |
@@ -64,7 +64,7 @@ The line under a rule heading:
 | [TEN](#ten) | Tenants | [docs/architecture.md](../docs/architecture.md) | 8 | 8 | 8 | 0 |
 | [TIM](#tim) | Time and clocks | [docs/operations.md](../docs/operations.md) | 5 | 3 | 4 | 1 |
 | [TRN](#trn) | Translator | [docs/scripts-and-translator.md](../docs/scripts-and-translator.md) | 5 | 4 | 4 | 1 |
-| Total | | | 476 | 356 | 387 | 89 |
+| Total | | | 478 | 358 | 389 | 89 |
 
 Retired numbers (23) are listed in [retired.md](retired.md).
 
@@ -176,7 +176,7 @@ Checked by: `blackbox:channel/double-press`, `blackbox:core/kill-toolhost-mid-wr
 <a id="APR-8"></a>
 ### APR-8. Debug replay without approvals or writes
 
-since v0.2 · non-waivable · profile core · check: blackbox · decisions: D-102
+since v0.2 · non-waivable · profile debug · check: blackbox · decisions: D-102
 
 A debug replay of a task (P2 `task.replay`) is an operator operation under the same `operator_access.debug_journal` decision as P2 `task.journal` (AUD-4), with `admin:debug` and `data:<mark>`: with `deny` it answers `forbidden`, with `notify` it writes an audit record and sends the tenant admins a code message, with `allow` it writes an audit record. A replay answers every tool call only from the recorded attempt journal of the original and never reads live: it is refused with `replay_journal_missing` when the journal is off or expired, and with `replay_personal` when the original carries `personal_seen` or made a call with `credential: per_principal` (SEC-7). It is refused with `replay_role_forbidden` for a task of purpose `manage` and for a task of a manager role, and a task of type `action.*` is not replayed. The replay is a new task in the task's tenant with the type, body, mark and tier of the original; an inactive initiator gives `forbidden`, and it is charged to the tenant limits like the original, at most 10 replays per tenant per day (`replay_quota`). Only a closed list of tools is replayed from the journal: built-in tools without `changes_state` in `spec/model/builtin-tools.yaml` and plugin tools with `access: read` and without `credential`. Every other call, including `request_action`, `enqueue_child`, `send_message`, `escalate`, `request_model_grant`, `service/control`, `monitor/script_run` and any write tool, is only recorded: a replay never creates approvals, tasks, messages, grants, escalations, `service_grant` records or write calls. A replay does not deliver the result to `origin`, returns it only to the operator who requested it, and does not leave the task's tenant.
 
@@ -239,7 +239,7 @@ Checked by: `blackbox:channel/details-not-opened`, `dig-05`, `gov-att-03`
 
 since v0.2 · waivable · profile core · check: blackbox · decisions: D-62, D-88
 
-A tenant has the field `attention.noncritical_per_day` (default 10): how many cards of non-urgent decisions a person gets per day. Above the limit, cards of rows with `urgent: false` in `spec/model/decision-points.yaml` (proposals, audit sample items, promotion cases, attributions, memory records, people's requests about their own data) stay `planned` until the next day in order of expiry and are not lost; the expiry of such a subject counts from the first delivery of its card to any recipient. Cards of rows with `urgent: true` are not deferred, but they count. Notices (incident messages, `manager_stopped`, `alarm_notice`) are not subject to the limit and do not count. Tenant admins see the excess as a number per day, without names, in the `approve_unread_digest` notice.
+A tenant has the field `attention.noncritical_per_day` (default 10): how many cards of non-urgent decisions a person gets per day. Above the limit, cards of rows with `urgent: false` in `spec/model/decision-points.yaml` (proposals, audit sample items, promotion cases, attributions, memory records, people's requests about their own data) stay `planned` until the next day in order of expiry and are not lost; the expiry of such a subject counts from the first delivery of its card to any recipient: the core writes `expires_at` at creation as for any card and rewrites it, once, in the transaction of that first delivery. Cards of rows with `urgent: true` are not deferred, but they count. Notices (incident messages, `manager_stopped`, `alarm_notice`) are not subject to the limit and do not count. Tenant admins see the excess as a number per day, without names, in the `approve_unread_digest` notice.
 
 Checked by: `blackbox:core/cards-per-person-day`
 
@@ -321,7 +321,7 @@ Checked by: `blackbox:core/file-size-limits`
 
 since v0.2 · non-waivable · profile core · check: adapter, blackbox, lint
 
-People and sinks get only result files whose content type, which the core determines from the content and not from the name, is in the task type's `result_media_types`; another file is not handed out (`media_type_not_allowed`), and the task outcome does not change. Active formats are never handed out and cannot be declared: `text/html`, `application/xhtml+xml`, `image/svg+xml`, `application/pdf`, JavaScript and any `+xml` type; the `apply` lint rejects a type that lists one.
+People and sinks get only result files whose content type is in the task type's `result_media_types`; another file is not handed out (`media_type_not_allowed`), and the task outcome does not change. The core determines the content type from the content, by the WHATWG MIME Sniffing standard, not from the name; only inside the `text/*` family, where content cannot tell `text/csv` from `text/plain`, the file extension refines the sniffed type. Active formats are never handed out and cannot be declared: `text/html`, `application/xhtml+xml`, `image/svg+xml`, JavaScript and any `+xml` type. `application/pdf` may be declared only by a type with `worker_kind: job`, whose code renders the file from closed result fields, never by an agent type; the `apply` lint rejects a type that breaks either rule.
 
 Checked by: `blackbox:core/result-media-type`, `lint:manifests/result-media-active`
 
@@ -369,7 +369,7 @@ Checked by: `store:audit/append-only`
 <a id="AUD-4"></a>
 ### AUD-4. The attempt journal is only in a deletable store
 
-since v0.2 · non-waivable · profile core · check: store, blackbox
+since v0.2 · non-waivable · profile debug · check: store, blackbox
 
 The core writes the attempt journal (model requests and responses as P4 saw them, and tool calls with wrapped output as P3 saw them). It is stored only in a deletable store of class `content`, with the tenant's expiry `retention.journals` and the task's mark; it does not reach audit, events or the model context, and only an operator reads it, through P2 `task.journal` with `admin:debug` and `data:<mark>`. Operator reading of the journal is governed by the tenant field `operator_access.debug_journal: deny | notify | allow` (default `notify`): with `deny`, P2 `task.journal` answers `forbidden`; with `notify`, every read writes an audit record and sends the tenant admins a code message without content; with `allow`, only an audit record. Debug replay (APR-8) is decided by the same field. For a tenant with `kind: production` the journal is off until the tenant sets an expiry; for a test tenant the default expiry is 7 days.
 
@@ -474,7 +474,7 @@ Every metered unit from the registry `spec/model/meters.yaml` (`eur_cents`, `tok
 
 since v0.2 · waivable · profile core · check: blackbox
 
-A principal of kind `human` or `service` has at most `Tenant.spec.budgets.tasks_in_flight` (default 3) of their direct requests with a running attempt. A further direct request is not refused: it waits in `submitted` with `waiting_reason: in_flight_cap` (dispatch condition D21), and the principal's waiting direct requests are handed out in enqueue order. Tasks of `system`, campaign items, children and continuations do not count.
+A principal of kind `human` or `service` has at most `Tenant.spec.budgets.tasks_in_flight` (default 3) of their direct requests with a running attempt. A further direct request is not refused: it waits in `submitted` with `waiting_reason: in_flight_cap` (dispatch condition D21), and the principal's waiting direct requests of one type are handed out in enqueue order; a request held by another dispatch condition (no executor, a hold, a ceiling) does not hold back the requests behind it. Tasks of `system`, campaign items, children and continuations do not count.
 
 Checked by: `blackbox:core/in-flight-wait`
 
@@ -763,9 +763,9 @@ The `review-result` schema carries the field `shadow` (default `false`). The ver
 <a id="COM-10"></a>
 ### COM-10. Shadow reviewer at the tenant's choice
 
-since v0.2 · waivable · profile insights · check: blackbox, store · decisions: D-16, D-101
+since v0.2 · waivable · profile insights · check: blackbox, store · decisions: D-16, D-101, D-103
 
-If the shadow is not turned off in the commission manifest, for a share of proposals the fallback role of a lens (COM-7) gets a shadow review task of that lens on the `seat` slot with the lens seat profile (GW-7), without memory facts and without a persona; the shadow runs only for lenses whose review a seat holder executed. A proposal is selected when `sha256(seed ‖ proposal id ‖ lens) / 2^256` is below the share; the seed is drawn monthly per tenant and written to audit (`commission.shadow_seed`, D-101). The `shadow` block of the commission manifest sets `veto_lenses` (default 0.25) and `other_lenses` (default 0.2), each above 0 and at most 1; a share of 0 is expressed only by an explicit `shadow: off` (lint `shadow_zero_without_off` at `apply`), and then `doctor` shows the check `commission.shadow_off`. A shadow task gets its own core key `system:review:<proposal>:<lens>:shadow` (IDM-2) and does not merge with the seat's task. Its reviews have `shadow: true` (COM-9) and are paid from the `review` line. For each lens, code takes the pairs "seat score minus shadow score" of the last 30 days, drops pairs with a difference of 0, and sets the flag `shadow_divergence` when at least 15 pairs remain and a one-sided exact sign test gives p below 0.05 for "seat below shadow"; people see it in P2 `commission.status` and in `doctor` (`commission.shadow_divergence`).
+The shadow is off by default: a commission manifest without a `shadow` block, or with `shadow: off`, gets no shadow tasks, and `doctor` shows the check `commission.shadow_off` (D-103). A tenant turns it on with a `shadow` block; then for a share of proposals the fallback role of a lens (COM-7) gets a shadow review task of that lens on the `seat` slot with the lens seat profile (GW-7), without memory facts and without a persona; the shadow runs only for lenses whose review a seat holder executed. A proposal is selected when `sha256(seed ‖ proposal id ‖ lens)` falls below the share by the rule and test vector of `spec/hashing.md` ("shadow draw"); the seed is drawn monthly per tenant and written to audit (`commission.shadow_seed`, D-101). The `shadow` block sets `veto_lenses` (0.25 when the block omits it) and `other_lenses` (0.2 when omitted), each above 0 and at most 1; a share of 0 inside the block fails the lint `shadow_zero_without_off` at `apply`, because the shadow is turned off only by leaving the block out or by `shadow: off`. A shadow task gets its own core key `system:review:<proposal>:<lens>:shadow` (IDM-2) and does not merge with the seat's task. Its reviews have `shadow: true` (COM-9) and are paid from the `review` line. For each lens, code takes the pairs "seat score minus shadow score" of the last 30 days, drops pairs with a difference of 0, and sets the flag `shadow_divergence` when at least 15 pairs remain and a one-sided exact sign test gives p below 0.05 for "seat below shadow"; people see it in P2 `commission.status` and in `doctor` (`commission.shadow_divergence`).
 
 Checked by: `com-07`, `fx-man-com-v02`
 
@@ -949,7 +949,7 @@ Checked by: `dig-09`
 
 since v0.2 · non-waivable · profile insights · check: store, fixture, blackbox · decisions: D-16
 
-Every month the core picks audit sample items from three strata of the tenant's proposals with a commission verdict for that month: `dismissed` by veto or by the minimum of a veto lens (separately for each such lens; a proposal vetoed by several lenses goes to the first veto lens in `lenses.yaml` order), `dismissed` by the weighted mean, and `parked` by score (not by quorum, budget or conflict). The size is N = min(T, max(`min_per_month`, ceil(`share` × T))), where T is the size of the strata; `min_per_month` is at least 4 by lint. Each non-empty stratum gives one item; the rest go by the largest remainder of the proportional share, and ties go by stratum order. Inside a stratum the core takes the items with the smallest HMAC-SHA256(seed, proposal id). The core records the seed at the time of the choice; each item stores in the `sample` field of the proposal its stratum and its inclusion probability (`inclusion_prob`). Blind cards go in the digest only by direct message to people with `proposal.decide:<category>`, no more than `audit_sample.max_per_digest` at a time; a group digest shows only their number. Code computes per stratum over 180 days the share of "Would accept" answers with weights 1/`inclusion_prob` and sets the flag `commission_underrates`, visible to people in P2 `commission.status`, when the lower bound of the 90 percent Wilson interval (z = 1.645) on the effective size (Σw)²/Σw² is above 0.1; a stratum with fewer than 5 answers gets no flag.
+Every month the core picks audit sample items from three strata of the tenant's proposals with a commission verdict for that month: `dismissed` by veto or by the minimum of a veto lens (separately for each such lens; a proposal vetoed by several lenses goes to the first veto lens in `lenses.yaml` order), `dismissed` by the weighted mean, and `parked` by score (not by quorum, budget or conflict). The size is N = min(T, max(`min_per_month`, ceil(`share` × T))), where T is the size of the strata; `min_per_month` is at least 4 by lint. Each non-empty stratum gives one item; the rest go by the largest remainder of the proportional share, and ties go by stratum order. Inside a stratum the core takes the items with the smallest HMAC-SHA256(seed, proposal id), with the byte encoding and test vector of `spec/hashing.md` ("audit sample order"). The core records the seed at the time of the choice; each item stores in the `sample` field of the proposal its stratum and its inclusion probability (`inclusion_prob`). Blind cards go in the digest only by direct message to people with `proposal.decide:<category>`, no more than `audit_sample.max_per_digest` at a time; a group digest shows only their number. Code computes per stratum over 180 days the share of "Would accept" answers with weights 1/`inclusion_prob` and sets the flag `commission_underrates`, visible to people in P2 `commission.status`, when the lower bound of the 90 percent Wilson interval (z = 1.645) on the effective size (Σw)²/Σw² is above 0.1; a stratum with fewer than 5 answers gets no flag.
 
 Checked by: `dig-06`
 
@@ -1137,7 +1137,7 @@ Checked by: `fx-dsp-09`
 
 since v0.1 · non-waivable · profile core · check: fixture, lint · decisions: D-14, D-98
 
-The `claim` decision is deterministic: it depends only on the conditions of the closed list `dispatch-predicates.yaml` and the ordering keys (priority class, fairness key from v0.2 by DSP-6, enqueue time, task id). The task body, messages, model output and the self-report `state` are not part of it; no model is called. The core writes `fairness_key` on every task from v0.1 (D-98) as `<kind>:<id>` from the task source: `campaign:<campaign>` for a campaign item, `root:<root task>` for any child, `route:<route>` for a route or wake-up task, `schedule:<schedule>`, `script:<run>` for a script step, `interactive:<principal>` for a person's or program's direct request, and `system:<purpose>` for any other task that the core creates itself (a lens review, a ballot, an incident, inspection or daily review task, a grant batch); a continuation keeps the key of its source, and a redrive and an action task after approval keep the key of the original task. So every task has a key. Check: fixture `fx-dsp-08` submits the same store snapshot (tasks, workers, leases, holds, counters) and the same `claim` call twice and expects the same answer, and then changes only the task body, the worker's `state` record and the note of a message in the inbox, and expects the answer to be unchanged. Lint at `apply` checks that every condition referred to by the tenant policy `Tenant.spec.dispatch` is in the `dispatch-predicates.yaml` list of the version that the implementation declares (`conforms_to`).
+The `claim` decision is deterministic: it depends only on the conditions of the closed list `dispatch-predicates.yaml` and the ordering keys (priority class, fairness key from v0.2 by DSP-6, enqueue time, task id). The task body, messages, model output and the self-report `state` are not part of it; no model is called. The core writes `fairness_key` on every task from v0.1 (D-98) as `<kind>:<id>` from the task source: `campaign:<campaign>` for a campaign item, `root:<root task>` for any child, `route:<route>` for a route or wake-up task, `schedule:<schedule>`, `script:<run>` for a script step, `interactive:<principal>` for a person's or program's direct request, and `system:<purpose>` for any other task that the core creates itself (a lens review, a ballot, an incident, inspection or daily review task, a grant batch); a continuation keeps the key of its source, and a redrive and an action task after approval keep the key of the original task. So every task has a key. Check: fixture `fx-dsp-08` seeds two test benches in the same way through the ordinary paths and expects the same `claim` answer on both. A third bench differs only in the task body, a `state` self-report and the note of a message in the inbox, and the answer is unchanged. On each bench P2 `task.show` returns `fairness_key` `interactive:<principal>` for a person's request. Lint at `apply` checks that every condition referred to by the tenant policy `Tenant.spec.dispatch` is in the `dispatch-predicates.yaml` list of the version that the implementation declares (`conforms_to`).
 
 Checked by: `fx-dsp-08`
 
@@ -1316,7 +1316,7 @@ Only the core's `governance` loop opens a promotion case, for one trigger: the h
 
 since v0.2 · non-waivable · profile governance · check: lint, fixture, blackbox · decisions: D-25, D-102
 
-A ballot is a task of type `governance.ballot.v1` of the purpose `governance` of tier 0 in a clean context: without memory, session, inbox, plugin tools and built-in tools, without `request_action`, `send_message`, `enqueue_child` and `propose_*`. The task carries the core key `system:governance:<case>:<round>:<bot>` (IDM-2): a voter has one task per round, and a repeated handout (GOV-23) is a new attempt of the same task. The input is only the case package (`spec/model/ballot-package.schema.json`), which the core puts into the task input from the tenant's records; for each seat in L the package carries symmetric figures: how many times the holder recommended and how many times they vetoed, how many of these were confirmed (a recommendation with the outcome `better`; a veto that people upheld) and how many were refuted (a recommendation with the outcome `worse` or a confirmed attribution; a veto lifted by people after which the trial outcome is not `worse` and there are no attributions), and the calibration (COM-11); the order of seats in the `enum` and in the package is different for each voter, by the seed of the case opening. The package and the `enum` name seats only by labels that the core draws for each voter from the same seed (`s1`, `s2`, ...), never by the seat id, and the core maps the chosen label back to the seat. The output follows a forced schema: `choice` from the `enum` that the core built for this voter, and up to 3 reason codes from `spec/model/ballot-reasons.yaml`; there is no "abstain" and no free text. The core takes the value from the P4 response with the forced schema in this attempt, not from the body of `complete`, and checks it against the voter's `enum`. If the `enum` has one value, the core writes a forced ballot (`forced`) without calling the model. Lint at `apply`: the model profiles that ballots run on (the commission seat profiles) and every profile of their fallback chains have `forced_schema: true`, and a profile missing from the set fails (`forced_schema_unsupported`). P4 does not fall back to another profile for a `governance.ballot.v1` call (GW-5): when the seat profile is unavailable, the ballot is written as `defaulted` by the code rule. Exactly one ballot per voter is recorded in a round; until the round closes, no bot sees the ballots, and they are not published as events.
+A ballot is a task of type `governance.ballot.v1` of the purpose `governance` of tier 0 in a clean context: without memory, session, inbox, plugin tools and built-in tools, without `request_action`, `send_message`, `enqueue_child` and `propose_*`. The task carries the core key `system:governance:<case>:<round>:<bot>` (IDM-2): a voter has one task per round, and a repeated handout (GOV-23) is a new attempt of the same task. The input is only the case package (`spec/model/ballot-package.schema.json`), which the core puts into the task input from the tenant's records; for each seat in L the package carries symmetric figures: how many times the holder recommended and how many times they vetoed, how many of these were confirmed (a recommendation with the outcome `better`; a veto that people upheld) and how many were refuted (a recommendation with the outcome `worse` or a confirmed attribution; a veto lifted by people after which the trial outcome is not `worse` and there are no attributions), and the calibration (COM-11); the order of seats in the `enum` and in the package is different for each voter, by the seed of the case opening. The package and the `enum` name seats only by labels that the core draws for each voter from the same seed (`s1`, `s2`, ...), never by the seat id, and the core maps the chosen label back to the seat. The output follows a forced schema: `choice` from the `enum` that the core built for this voter, and up to 3 reason codes from `spec/model/ballot-reasons.yaml`; there is no "abstain" and no free text. The core takes the value from the P4 response with the forced schema in this attempt, not from the body of `complete`, and checks it against the voter's `enum`. If the `enum` has one value, the core writes a forced ballot (`forced`) without calling the model. Lint at `apply`: the model profiles that ballots run on (the commission seat profiles) and every profile of their fallback chains have `forced_schema: true`, and a profile missing from the set fails (`forced_schema_unsupported`). P4 does not fall back to another profile for a `governance.ballot.v1` call (GW-5): an unavailable seat profile is an infrastructure cause (`provider_unavailable`), so the ballot waits and is handed out again under GOV-23 without counting against `reissue_max`; only failures caused by the model past `reissue_max` give a `defaulted` ballot. Exactly one ballot per voter is recorded in a round; until the round closes, no bot sees the ballots, and they are not published as events.
 
 Checked by: `gov-fx-02`, `fx-man-com-v02`, `manifests/v02-security-lints`
 
@@ -1325,7 +1325,7 @@ Checked by: `gov-fx-02`, `fx-man-com-v02`, `manifests/v02-security-lints`
 
 since v0.2 · non-waivable · profile governance · check: fixture · decisions: D-25, D-101
 
-Deterministic code does the count from the case snapshot, the set `expected` and the seed. If L has one seat, it leaves without ballots; if `expected` becomes empty, the case ends `canceled(no_voters)`. In each round `need = ceil(2/3 · |expected|)`. A seat that got at least `need` votes leaves; otherwise the seat with the fewest votes is struck out, and the round repeats over the remaining list, and if one seat is left in the list, it leaves. A struck-out seat stays in the commission. A tie when striking out is resolved by keys in order: K1 the seat with fewer votes in all previous rounds of the case is struck out first; K2 the holder with the higher calibration (`insufficient` is below any number); K3 the holder with the shorter continuous term in the commission; K4 the smaller `sha256(tie_seed ‖ seat id)`, where the core draws `tie_seed` after all ballots of the round are recorded. Ballots `forced` and `defaulted` count. Identical inputs give an identical outcome; there is always an outcome, and exactly one leaver is found in no more than |L| - 1 rounds. The model does not change the outcome, and a tie is not passed to people.
+Deterministic code does the count from the case snapshot, the set `expected` and the seed. If L has one seat, it leaves without ballots; if `expected` becomes empty, the case ends `canceled(no_voters)`. In each round `need = ceil(2/3 · |expected|)`. A seat that got at least `need` votes leaves; otherwise the seat with the fewest votes is struck out, and the round repeats over the remaining list, and if one seat is left in the list, it leaves. A struck-out seat stays in the commission. A tie when striking out is resolved by keys in order: K1 the seat with fewer votes in all previous rounds of the case is struck out first; K2 the holder with the higher calibration (`insufficient` is below any number); K3 the holder with the shorter continuous term in the commission; K4 the smaller `sha256(tie_seed ‖ seat id)`, where the core draws `tie_seed` after all ballots of the round are recorded (byte encoding and test vector: `spec/hashing.md`, "K4 tie key"). Ballots `forced` and `defaulted` count. Identical inputs give an identical outcome; there is always an outcome, and exactly one leaver is found in no more than |L| - 1 rounds. The model does not change the outcome, and a tie is not passed to people.
 
 Checked by: `gov-fx-02`, `gov-col-02`
 
@@ -1492,7 +1492,7 @@ A tenant's commission seats are declared only by its charter `tenants/<t>/govern
 Checked by: `gov-fx-26`
 
 <a id="GOV-34"></a>
-### GOV-34. Veto lenses on different model families, shadow by default
+### GOV-34. Veto lenses on different model families
 
 since v0.1 · non-waivable · profile governance · check: lint
 
@@ -1665,7 +1665,7 @@ Checked by: `authorize/holds/`
 
 since v0.1 · non-waivable · profile core · check: fixture, lint, blackbox · decisions: D-62, D-71, D-80
 
-A hold only narrows: it grants no permissions, deletes no data and changes no manifests. Holds are set by: an operator through `farmctl` on any scope, and a hold on the scopes `farm` and `seat` and its lifting are operator operations only (PRM-14); a person of the tenant with the right `hold.set:<scope>` on scopes of their tenant, through `farmctl` or with a command in a private chat with the bot (PRM-15); the core by an auto-stop rule from the closed list `spec/model/holds.yaml`; the core as the first measure of an incident class from git (MGR-7); from v0.2 the core by a maintenance window of the monitoring system (MON-9). A code hold within a tenant (auto-stop, the first measure of an incident, a maintenance window hold) is recorded with the author `contain_auto`. A model, worker, route or schedule does not set or lift a hold. The only exception: the current holder of the manager seat with the current epoch sets and lifts holds with `control.apply` operations (MGR-9), only on targets from the list that code built, with an expiry no longer than `hold_ttl_max`, and lifts only its own holds. A hold is lifted by a principal with the right `hold.release` on its scope and not below the hold's author in rank; ranks from top to bottom: operator, tenant admin (a person of the tenant with `hold.release`), seat holder. A hold set by an operator, with any reason, including `suspended` (LCY-1) and `compromised` (SEC-6), is lifted only by an operator; a hold with the author `contain_auto` is lifted by a tenant admin or an operator; a hold set by a person of the tenant is lifted by a tenant admin or an operator; a seat holder's hold is lifted by the holder itself, a tenant admin (P2 `control.revert` with `incident`, MGR-15) or an operator. A hold on the scopes `farm` and `seat`, including the seat safeguard (MGR-14), is lifted only by an operator. A hold on the scope `governance` is set and lifted by a person with `admin:governance` in the case's tenant (GOV-23). The rights `hold.set:<scope>` and `hold.release` are privileged and are granted only through `farmctl` (PRM-13). Only a person lifts a code hold; otherwise it ends at `until`. The core does not lift holds itself; when the seat holder is replaced, the core shortens the expiry of the holder's holds to 15 minutes (MGR-1). Check: C2 at the check point `hold.release` compares the rank of the hold's author and the rank of the principal; the refusal is `forbidden`. Fixtures: a model, route or schedule cannot set or lift a hold; a seat holder with an old epoch gets a refusal; the manager does not lift a person's hold or an auto-stop; a tenant admin with `hold.release` gets `forbidden` on a `suspended` hold set by an operator, and lifts an auto-stop with the author `contain_auto` in their tenant.
+A hold only narrows: it grants no permissions, deletes no data and changes no manifests. Holds are set by: an operator through `farmctl` on any scope, and a hold on the scopes `farm` and `seat` and its lifting are operator operations only (PRM-14); a person of the tenant with the right `hold.set:<scope>` on scopes of their tenant, through `farmctl` or with a command in a private chat with the bot (PRM-15); the core by an auto-stop rule from the closed list `spec/model/holds.yaml`; the core as the first measure of an incident class from git (MGR-7); from v0.2 the core by a maintenance window of the monitoring system (MON-9). A code hold within a tenant (auto-stop, the first measure of an incident, a maintenance window hold) is recorded with the author `contain_auto`. A model, worker, route or schedule does not set or lift a hold. The only exception: the current holder of the manager seat with the current epoch sets and lifts holds with `control.apply` operations (MGR-9), only on targets from the list that code built, with an expiry no longer than `hold_ttl_max`, and lifts only its own holds. A hold is lifted by a principal with the right `hold.release` on its scope and not below the hold's author in rank; ranks from top to bottom: operator, tenant admin (a person of the tenant with `hold.release`), seat holder. A hold set by an operator, with any reason, including `suspended` (LCY-1) and `compromised` (SEC-6), is lifted only by an operator; a hold with the author `contain_auto` is lifted by a tenant admin or an operator; a hold set by a person of the tenant is lifted by a tenant admin or an operator; a seat holder's hold is lifted by the holder itself, a tenant admin (P2 `control.revert` with `incident`, MGR-15) or an operator. A hold on the scopes `farm` and `seat`, including the seat safeguard (MGR-14), is lifted only by an operator. A hold on the scope `governance` is set and lifted by a person with `admin:governance` in the case's tenant (GOV-23). The rights `hold.set:<scope>` and `hold.release` are privileged and are granted only through `farmctl` (PRM-13). Only a person lifts a code hold; otherwise it ends at `until`. The core does not lift holds itself; when the seat holder is replaced, the core shortens the expiry of the holder's holds to 15 minutes (MGR-1); the only extension of an expiry is the `until` of a maintenance window hold, which the core moves forward while the monitoring adapter reports the window active (MON-9). Check: C2 at the check point `hold.release` compares the rank of the hold's author and the rank of the principal; the refusal is `forbidden`. Fixtures: a model, route or schedule cannot set or lift a hold; a seat holder with an old epoch gets a refusal; the manager does not lift a person's hold or an auto-stop; a tenant admin with `hold.release` gets `forbidden` on a `suspended` hold set by an operator, and lifts an auto-stop with the author `contain_auto` in their tenant.
 
 Checked by: `authorize/holds/`, `fixture:authorize/holds/release-rank`
 
@@ -1867,11 +1867,11 @@ Checked by: `gov-fx-07`
 <a id="IDN-13"></a>
 ### IDN-13. Person offboarding and a chat list for admins
 
-since v0.1 · waivable · profile governance · check: blackbox, fixture · decisions: D-98
+since v0.1 · waivable · profile governance · check: blackbox, fixture
 
-When a person is disabled or removed for good (P2 `principal.off`, `principal.offboard`), the principal goes to `off`, or with `principal.offboard` to `offboarded`, which no operation leaves: `principal.on` does not revive it (D-98, LCY-3). In the same transaction the core sends the admins of their tenant with `admin:people` the code notice `principal_left` (only to their private chats, not to a group, text under the key `notice.principal_left`, REP-5): the principal id, the reason and the list of chats with a farm binding (`ChatBinding`) where this person remains a member according to the E1 channel's information that the core stores on the binding, with a marker on chats with `membership_assurance: enforced`. If the person has no chat with a farm binding, the notice goes anyway: the tenant administrator gets it, and instead of the chat list it says that there are no chats. There is no model text in the notice. In v0.1 the core only reports the list; full offboarding (leaving chats or asking the chat administrator to remove the person, removing delegated rights, handing over their tasks) arrives in v0.2.
+When a person is disabled or removed for good (P2 `principal.off`, `principal.offboard`), the principal goes to `off`, or with `principal.offboard` to `offboarded` (LCY-8). In the same transaction the core sends the admins of their tenant with `admin:people` the code notice `principal_left` (only to their private chats, not to a group, text under the key `notice.principal_left`, REP-5): the principal id, the reason and the list of chats with a farm binding (`ChatBinding`) where this person remains a member according to the E1 channel's information that the core stores on the binding, with a marker on chats with `membership_assurance: enforced`. If the person has no chat with a farm binding, the notice goes anyway: the tenant administrator gets it, and instead of the chat list it says that there are no chats. There is no model text in the notice. In v0.1 the core only reports the list; full offboarding (leaving chats or asking the chat administrator to remove the person, removing delegated rights, handing over their tasks) arrives in v0.2.
 
-Checked by: `idn-fx-13`
+Checked by: `idn-fx-13`, `blackbox:core/principal-offboard-final`
 
 <a id="ing"></a>
 ## ING: Incoming external events
@@ -1881,7 +1881,7 @@ Explained in: [docs/capabilities.md](../docs/capabilities.md)
 <a id="ING-1"></a>
 ### ING-1. Authenticity of an external source
 
-since v0.2 · non-waivable · profile core · check: adapter, lint, fixture
+since v0.2 · non-waivable · profile ingress · check: adapter, lint, fixture
 
 A source channel (an E1 driver with `direction: in`) checks the authenticity of every delivery with the means of the external system: a signature with a timestamp within `ingress.tolerance`, or a token over TLS (`ingress.auth`). A source manifest without `ingress.auth` fails the schema, and a source channel without `ingress` fails `apply`; a delivery that fails the check gives no activity, no file and no event. With `auth: signature`, `ingress.tolerance` is required and at most 5 minutes (`ingress_tolerance`). A `tls_token` source has no replay protection, so a route from its events enqueues only task types of tier 0 (`ingress_token_tier`).
 
@@ -1890,7 +1890,7 @@ Checked by: `schemas/invalid/manifests/channel-ingress`, `adapter:channel/ingres
 <a id="ING-2"></a>
 ### ING-2. Only closed fields in external event data
 
-since v0.2 · non-waivable · profile core · check: lint, fixture · decisions: D-69
+since v0.2 · non-waivable · profile ingress · check: lint, fixture · decisions: D-69
 
 The data of an `ext.*` event contains only the fields extracted by `ingress.mapping` of the source manifest, and only of closed kinds (the leaves of INJ-1). The rest of the external delivery body is saved as a file and reaches a task only as an attachment, which sets `untrusted_seen`. Free text of the external body never reaches a task's `goal`, the event data or the audit. Monitoring system names follow INJ-16.
 
@@ -1899,7 +1899,7 @@ Checked by: `fixture:ingress/annotation-instruction`
 <a id="ING-3"></a>
 ### ING-3. Delivery key and source limits
 
-since v0.2 · waivable · profile core · check: adapter, blackbox, fixture
+since v0.2 · waivable · profile ingress · check: adapter, blackbox, fixture
 
 An incoming delivery of an external source gets the idempotency key `system:ingress:<source>:<delivery id>` (IDM-2): a repeated delivery gives one event. The delivery id is the id that the external system sends (for Standard Webhooks the `webhook-id` header); a source without one gets the sha256 of the body. The source manifest sets a rate limit and a body size limit (`ingress.limits`); exceeding them gives the source a refusal, not a truncated body.
 
@@ -1908,7 +1908,7 @@ Checked by: `schemas/invalid/manifests/channel-ingress`, `blackbox:ingress/repea
 <a id="ING-4"></a>
 ### ING-4. External events only in the ext namespace
 
-since v0.2 · non-waivable · profile core · check: lint, fixture · decisions: D-62, D-63, D-88
+since v0.2 · non-waivable · profile ingress · check: lint, fixture · decisions: D-62, D-63, D-88
 
 External events live only in the `ext.*` namespace: a source manifest whose `ingress.event` is outside `ext.*` fails the schema, so a source cannot produce `alarm.*`, `task.*`, `message.*` or an event of another core namespace. A farm alarm on an external event is raised only by a `job` task that a route enqueues and that checks the condition in code (INJ-7); a monitoring system problem `ext.monitor.problem.v1` gives an alarm only after a recheck by code (MON-5). Alarms reach people only along the installation's one alarm path (MON-1). A route from `ext.*` enqueues only types listed in `system-ops` (PRM-10).
 
@@ -2116,7 +2116,7 @@ Explained in: [docs/capabilities.md](../docs/capabilities.md)
 <a id="KNW-1"></a>
 ### KNW-1. A corpus and its index belong to one tenant
 
-since v0.2 · non-waivable · profile core · check: blackbox
+since v0.2 · non-waivable · profile knowledge · check: blackbox
 
 A knowledge corpus belongs to one tenant. The index and fragments of a corpus are stored separately for each tenant. The core computes the search scope from the resource of the catalog of the task's tenant, the same way as a call's `target` (TEN-3a), rather than from a filter in the tool request. The `data_class` of the corpus resource is the output class of `kb_search` and `kb_read` on it: a call from a task whose mark is below it is rejected (PRM-5), so the initiator needs `data:<class>` of the corpus. A fragment of a corpus with `personal: true` sets `personal_seen` with source `declared` on the attempt (AUD-5). Check: a canary in a corpus document of the tenant `demo2` is not found by search from any task of the tenant `demo`.
 
@@ -2125,7 +2125,7 @@ Checked by: `blackbox:knowledge/tenant-canary`, `blackbox:knowledge/corpus-class
 <a id="KNW-2"></a>
 ### KNW-2. A corpus's source sets the trust in it
 
-since v0.2 · non-waivable · profile core · check: lint, fixture, eval
+since v0.2 · non-waivable · profile knowledge · check: lint, fixture, eval
 
 A corpus gets `trust: curated` only if `source: git`, that is all its documents are in the tenant's git and reach the farm only through `apply` (MAN-5); lint rejects a `curated` corpus with another source. Documents uploaded by people, synchronized or created by tasks form a corpus with `trust: ingested`. Tool output from an `ingested` corpus is untrusted and sets `untrusted_seen` on the attempt (INJ-13). Output from a `curated` corpus does not set `untrusted_seen`, but stays data: the model sees it in a data block of tool output, not as an instruction, and an action it names takes the ordinary approval path. The corpus tools `kb_search` and `kb_read` take the trust of the corpus that is the call target. Changes of the tenant's `knowledge/` folder are part of the digest to admins (MAN-5). The eval case `kb-inj-02` checks the `curated` corpus.
 
@@ -2134,7 +2134,7 @@ Checked by: `kb-inj-02`, `lint:catalog/curated-only-git`, `manifests/v02-lints`
 <a id="KNW-3"></a>
 ### KNW-3. Corpus text reaches the model only through P3
 
-since v0.2 · non-waivable · profile core · check: adapter, blackbox
+since v0.2 · non-waivable · profile knowledge · check: adapter, blackbox
 
 Corpus text reaches the model context only as P3 tool output. Automatic insertion of documents into the attempt instruction and the runtime's built-in search are forbidden (INJ-9). A procedure that the model must follow as an instruction is written as a skill, not as a corpus document.
 
@@ -2143,7 +2143,7 @@ Checked by: `blackbox:knowledge/only-through-tools`
 <a id="KNW-4"></a>
 ### KNW-4. The model has no write path to a corpus
 
-since v0.2 · non-waivable · profile core · check: lint, blackbox
+since v0.2 · non-waivable · profile knowledge · check: lint, blackbox
 
 The model has no write path to a corpus: agent roles have no corpus write tool, and no memory record gets into a corpus. Only a principal with the capability `kb.write:<corpus>` uploads documents, through a channel or P2 `kb.upload`. Only a task of kind `job` of type `kb.ingest.v1` parses documents and cuts them into fragments for the per-tenant word index (D-97). P1 `kb.index_put` writes only into the corpus and for the file that the leased ingest task names in its input; the core takes both from the task, and a request that names another corpus or file, or a file of another tenant, gets `forbidden` and writes nothing. Fragments of a `curated` corpus are written only for files that came through `apply` from the tenant's git (KNW-2); an uploaded, synchronized or task-created file never enters a `curated` corpus.
 
@@ -2152,9 +2152,9 @@ Checked by: `blackbox:knowledge/upload-rights`, `blackbox:knowledge/index-put-bi
 <a id="KNW-5"></a>
 ### KNW-5. Deleting a document deletes its fragments
 
-since v0.2 · non-waivable · profile core · check: store · decisions: D-97
+since v0.2 · non-waivable · profile knowledge · check: store · decisions: D-97
 
-Deleting a corpus document, the expiry of its file and deleting the whole corpus delete the fragments of this document in the per-tenant corpus index in C1 together with the file (C1 `file.purge`), and in every other farm store that holds them. After deletion, search does not find them (D-97).
+Deleting a corpus document, the expiry of its file and deleting the whole corpus delete the fragments of this document in the per-tenant corpus index in C1 together with the file (C1 `file.purge`), and the cached output of `kb_search` and `kb_read` that holds them (PRM-12). After deletion, search does not find them (D-97). Fragments live only in C1, so the check is a C1 store check; for the edge stores the check asks their `match` operation for the document canary and expects no fragment record, while copies that tasks quoted into sessions, memory or results are task content under their own retention and erasure.
 
 Checked by: `store:knowledge/delete-document`
 
@@ -2168,7 +2168,7 @@ Explained in: [docs/operations.md](../docs/operations.md)
 
 since v0.2 · non-waivable · profile core · check: blackbox, store · decisions: D-42
 
-A tenant is declared in git (`tenants/<name>/tenant.yaml`) and appears at `farmctl apply`; tenant operations are operator operations (PRM-14). A tenant goes through the states `active`, `suspended`, `offboarding`, `deleted` under the lifecycle `spec/lifecycles/tenant.md`. `suspended` is a hold on the scope `tenant` with the reason `suspended` and the effects `no_enqueue`, `no_claim`, `no_tool`, `no_action`, `no_delivery` (HLD-1); data is not touched, and deliveries get `withheld`, except messages to admins about the hold itself (HLD-3). `offboarding` (P2 `tenant.offboard`) sets an operator hold on scope `tenant` with reason `offboarding` and the effects of `suspended`, revokes the credentials of the tenant's workers and channels and the key and workspace at the provider (GW-3), revokes every connection of the tenant's people (SEC-7, reason `offboarding`; the consent adapter deletes the tokens and revokes them at the provider), and cancels pending approvals; only export is allowed. `deleted` (P2 `tenant.delete`, no earlier than the end of the export window: `export_window` of the `tenant.offboard` request, default and ceiling 30 days; an earlier `tenant.delete` gets `export_window_open`) creates an erasure request with the scope `(tenant)` across all stores (RET-7); the tenant id stays as a tombstone and is not used again (RET-3), and `apply` of a tenant with that name is rejected.
+A tenant is declared in git (`tenants/<name>/tenant.yaml`) and appears at `farmctl apply`; tenant operations are operator operations (PRM-14). A tenant goes through the states `active`, `suspended`, `offboarding`, `deleted` under the lifecycle `spec/lifecycles/tenant.md`. `suspended` is a hold on the scope `tenant` with the reason `suspended` and the effects `no_enqueue`, `no_claim`, `no_tool`, `no_action`, `no_delivery` (HLD-1); data is not touched, and deliveries get `withheld`, except messages to admins about the hold itself (HLD-3). `offboarding` (P2 `tenant.offboard`) sets an operator hold on scope `tenant` with reason `offboarding` and the effects of `suspended`, revokes the credentials of the tenant's workers and channels, forgets the tenant's provider key and stops using it (GW-3; revoking the key and the workspace at the provider is an operator step that `tenant.offboard` prints in its answer, D-103), revokes every connection of the tenant's people (SEC-7, reason `offboarding`; the consent adapter deletes the tokens and revokes them at the provider), and cancels pending approvals; only export is allowed. `deleted` (P2 `tenant.delete`, no earlier than the end of the export window: `export_window` of the `tenant.offboard` request, default and ceiling 30 days; an earlier `tenant.delete` gets `export_window_open`) creates an erasure request with the scope `(tenant)` across all stores (RET-7); the tenant id stays as a tombstone and is not used again (RET-3), and `apply` of a tenant with that name is rejected.
 
 Checked by: `blackbox:core/tenant-suspend`, `blackbox:core/tenant-offboard-delete`, `blackbox:core/connections-revoke-bulk`
 
@@ -2186,7 +2186,7 @@ Checked by: `blackbox:core/export-jsonl`, `blackbox:core/mydata-export`, `manife
 
 since v0.2 · non-waivable · profile core · check: blackbox · decisions: D-47, D-98, D-100
 
-A principal goes through `active`, `off`, `offboarded`. `/off` (a tenant admin) and P2 `principal.offboard` cancel in one transaction their pending approvals (APR-6) and their non-terminal tasks (`canceled(person_inactive)`). `offboarded` cannot be left (the core writes it from v0.1, IDN-13, D-98); from v0.2 it also publishes `principal.offboarded`, deletes their `Identity` and creates an erasure request `(tenant, subject)` across all stores with their data (RET-7); only the opaque principal id stays in audit. A returning person gets a new principal without the old groups; there is no return window (D-100).
+A principal goes through `active`, `off`, `offboarded`. `/off` (a tenant admin) and P2 `principal.offboard` cancel in one transaction their pending approvals (APR-6) and their non-terminal tasks (`canceled(person_inactive)`). From v0.1 `offboarded` cannot be left, offboarding deletes the links of their channel identities and creates an erasure request `(tenant, subject)` across all stores with their data (LCY-8, RET-7, D-98); from v0.2 it also publishes the event `principal.offboarded`, and only the opaque principal id stays in audit. A returning person gets a new principal without the old groups; there is no return window (D-100).
 
 Checked by: `blackbox:core/principal-offboard`
 
@@ -2225,6 +2225,15 @@ since v0.1 · waivable · profile core · check: blackbox · decisions: D-36
 The core accepts the current and the previous major version of P1. A worker outside this window gets `version_unsupported` at `hello`, not errors in the middle of work. Fixture: a worker of the previous major version works with the new core, and a worker two versions older gets `version_unsupported` at `hello`.
 
 Checked by: `blackbox:core/p1-version-window`
+
+<a id="LCY-8"></a>
+### LCY-8. Offboarding is final and frees the identity
+
+since v0.1 · non-waivable · profile core · check: blackbox · decisions: D-98
+
+P2 `principal.offboard` writes the principal state `offboarded`, which no operation leaves: `principal.on`, `principal.off`, `principal.set_identity`, `grant` and the use of an invitation for this principal answer `subject_closed`. In the same transaction the core deletes the links of the principal's channel identities, so the same external identity can be given to a new principal with `principal.add` or an invitation; the new principal has none of the old groups. The principal record keeps its opaque id, which core records already use (D-85). The same transaction cancels the principal's pending approvals and tasks (APR-6), creates the erasure request `(tenant, subject)` with the reason `offboarding` (RET-7, MEM-4) and sends the notice of IDN-13. The record shape is fixed in v0.1, so that records written before v0.2 hold no principal that v0.2 would revive (D-98); the event `principal.offboarded` comes in v0.2 (LCY-3).
+
+Checked by: `blackbox:core/principal-offboard-final`
 
 <a id="man"></a>
 ## MAN: Manifests
@@ -2317,6 +2326,15 @@ The values of a catalog list that `enum_from` refers to (tool parameters, action
 
 Checked by: `lint:manifests/catalog-values`
 
+<a id="MAN-11"></a>
+### MAN-11. A core rejects what it does not implement
+
+since v0.1 · non-waivable · profile core · check: blackbox · decisions: D-98, D-103
+
+At `apply` a core rejects, with the error `version_unsupported` and the path, a manifest of a kind whose `since` in `spec/manifests/kinds.yaml` is later than the skeleton version it claims in `conforms_to` (MAN-8), and a field whose `x-botaru-version` is later than that version. It also rejects the fields of a feature profile it does not claim: a catalog resource of kind `corpus` and `skills` of a role (`knowledge`), a channel with `direction: in` and its `ingress` block (`ingress`), a tool with `credential: per_principal` (`connections`), and the tenant fields `retention.journals` and `operator_access.debug_journal` (`debug`). A core never accepts such a manifest and ignores the field: an operator who sees `apply` pass would believe the feature works. Records the core writes stay as its version defines them (D-98).
+
+Checked by: `blackbox:core/apply-later-version`
+
 <a id="mem"></a>
 ## MEM: Memory
 
@@ -2361,7 +2379,7 @@ Checked by: `mem-fx-03`
 
 since v0.2 · waivable · profile core · check: blackbox · decisions: D-41
 
-A task type of `worker_kind: agent` declares `conversation_concurrency: serial | parallel`, default `serial`. With `serial`, one role has no more than one attempt in progress in one conversation: the core does not hand out a task of this conversation on `claim` while the same role has an attempt running in it, and hands out the conversation's tasks in enqueue order (dispatcher condition D17); a task held back waits with `waiting_reason: conversation_busy`. A clarification from a person is a new task in the same conversation, and it waits its turn (D-41).
+A task type of `worker_kind: agent` declares `conversation_concurrency: serial | parallel`, default `serial`. With `serial`, one role has no more than one attempt in progress in one conversation: the core does not hand out a task of this conversation on `claim` while the same role has an attempt running in it, and hands out the tasks of that role in the conversation in enqueue order (dispatcher condition D17); a task held by another dispatch condition does not hold back the tasks behind it, and tasks of other roles in the conversation are not ordered against it; a task held back waits with `waiting_reason: conversation_busy`. A clarification from a person is a new task in the same conversation, and it waits its turn (D-41).
 
 Checked by: `blackbox:model/conversation-serial`
 
@@ -2842,11 +2860,11 @@ Checked by: `blackbox:core/service-stop-card`, `lint:manifests/service-no-card`,
 <a id="MON-9"></a>
 ### MON-9. Monitoring maintenance windows give a farm hold
 
-since v0.2 · waivable · profile monitor · check: adapter, blackbox · decisions: D-59, D-62, D-75, D-88, D-100
+since v0.2 · waivable · profile monitor · check: adapter, blackbox · decisions: D-59, D-62, D-75, D-88, D-100, D-103
 
-The monitoring adapter reads monitoring system maintenance windows for nodes that the tenant catalog linked to its resources (`Catalog.spec.hosts[].monitor_host`). The adapter passes the start and end of a window with the event `ext.monitor.maintenance.v1` through P1 `submit_activity` with identity `hook:monitor`. When the window starts, the core sets a hold of scope `host` on the catalog host whose `monitor_host` is the node, with effects `no_tool` and `pause_action`, reason `maintenance`, author `contain_auto`, source `system:monitor` and `until` at the end of the window; a node is linked to a resource of exactly one tenant (D-75, MON-5), so there is one hold. `no_tool` also stops reading tools on that host, because people work on the machine during the window (D-100). The window does not cancel waiting approvals: with `pause_action` new `request_action` calls are rejected, while waiting cards wait, and their expiry is extended by the length of the hold (HLD-3); people who set windows in the monitoring system are not farm principals and cannot cancel its approvals. A machine with `hosts[].maintenance_hold: true` in the catalog gets the effect `no_action` instead of `pause_action`: waiting approvals become `canceled(held)`. Extending the window gives a new hold until the new end. The event of a window that ended or was deleted early changes no hold: a tenant admin or an operator releases the code hold, otherwise it ends at `until` (HLD-2). A slot of a schedule whose task scope holds a resource of that host is skipped with `schedule.skipped(held)`, without catch-up: TIM-3 skips a slot for a maintenance hold although its effects do not include `no_enqueue`. A window on a node of the farm itself sets no holds. Fixtures: a 2-hour window on the mock monitoring system gives a hold with `until` at the end of the window; a tool call on this machine gets `denied(held)`; a schedule slot in the window is skipped with `held`; a card that was waiting before the window stays `pending` after the window, with its expiry extended by the window length; the same card on a machine with `maintenance_hold: true` becomes `canceled(held)`.
+The monitoring adapter polls the maintenance status of the nodes that the tenant catalog linked to its resources (`Catalog.spec.hosts[].monitor_host`) every `maintenance_poll_s` of the deployment binding (60 seconds by default, at most 300). It does not compute the time periods of the monitoring system: while a node is in maintenance, every poll sends the event `ext.monitor.maintenance.v1` with `state: active` and `until` = the poll time plus two poll intervals, and the first poll that finds the node out of maintenance sends `state: ended`; the events go through P1 `submit_activity` with identity `hook:monitor`. On the first `active` event of a window the core sets a hold of scope `host` on the catalog host whose `monitor_host` is the node, with effects `no_tool` and `pause_action`, reason `maintenance`, author `contain_auto`, source `system:monitor` and the event's `until`; a node is linked to a resource of exactly one tenant (D-75, MON-5), so there is one hold. Each later `active` event of the same `maintenanceid` moves the `until` of that hold forward, never back; this is the only way a hold's deadline grows (HLD-2). An `ended` event or a missing poll changes no hold: the hold ends at its `until`, at most two poll intervals after the window, or a tenant admin or an operator releases it earlier; after a person released it, the core sets no new hold for the same `maintenanceid` while it stays active. A periodic maintenance (for example every night from 01:00 to 03:00) thus gives one hold per active period. `no_tool` also stops reading tools on that host, because people work on the machine during the window (D-100). The window does not cancel waiting approvals: with `pause_action` new `request_action` calls are rejected, while waiting cards wait, and their expiry is extended by the length of the hold (HLD-3); people who set windows in the monitoring system are not farm principals and cannot cancel its approvals. A machine with `hosts[].maintenance_hold: true` in the catalog gets the effect `no_action` instead of `pause_action`: waiting approvals become `canceled(held)`. A slot of a schedule whose task scope holds a resource of that host is skipped with `schedule.skipped(held)`, without catch-up: TIM-3 skips a slot for a maintenance hold although its effects do not include `no_enqueue`. A window on a node of the farm itself sets no holds. Fixtures: a 2-hour window on the mock monitoring system gives one hold whose `until` follows the polls and ends at most two poll intervals after the window; a periodic maintenance gives one hold per active period; a tool call on this machine gets `denied(held)`; a schedule slot in the window is skipped with `held`; a card that was waiting before the window stays `pending` after the window, with its expiry extended by the length of the hold; the same card on a machine with `maintenance_hold: true` becomes `canceled(held)`.
 
-Checked by: `blackbox:core/hold-pause-action`, `blackbox:monitor/maintenance-hold`, `schemas/valid/ops/ext-monitor-maintenance`, `schemas/invalid/ops/ext-monitor-maintenance`
+Checked by: `blackbox:core/hold-pause-action`, `blackbox:monitor/maintenance-hold`, `blackbox:monitor/maintenance-periodic`, `schemas/valid/ops/ext-monitor-maintenance`, `schemas/invalid/ops/ext-monitor-maintenance`
 
 <a id="MON-10"></a>
 ### MON-10. Monitoring system scripts
@@ -3328,11 +3346,11 @@ Explained in: [docs/tasks-and-delivery.md](../docs/tasks-and-delivery.md)
 <a id="OUT-1"></a>
 ### OUT-1. Result fields read by code are of closed kinds
 
-since v0.1 · non-waivable · profile core · check: lint · decisions: D-71, D-72, D-80, D-98
+since v0.1 · non-waivable · profile core · check: lint, blackbox · decisions: D-71, D-72, D-80, D-98
 
-Result fields that code reads (route filters, continuations, waits, `summary_fields` summaries, card texts, the campaign summary table and script conditions) are marked in the type's result schema with `x-botaru-read-by: code` and have only closed INJ-1 leaf kinds. Code does not read or parse free model text. Lint rejects a reference of a route, continuation, wait, summary or script to an unmarked field. The model takes numbers in such fields only from a tool answer or from task data, and does not compute them itself: a type whose result carries numbers declares the source tool in `instruction` and in `summary_fields`, and the type's eval compares the result numbers with the tool answer (example `data.describe.v1`, D-72). At `complete` the core checks the result against the type's full `result_schema`; a failure is `output_schema_invalid` and the attempt is spent (D-98).
+Result fields that code reads (route filters, continuations, waits, `summary_fields` summaries, card texts, the campaign summary table and script conditions) are marked in the type's result schema with `x-botaru-read-by: code` and have only closed INJ-1 leaf kinds. Code does not read or parse free model text. Lint rejects a reference of a route, continuation, wait, summary or script to an unmarked field. The model takes numbers in such fields only from a tool answer or from task data, and does not compute them itself: a type whose result carries numbers declares the source tool in `instruction` and in `summary_fields`, and the type's eval compares the result numbers with the tool answer (example `data.describe.v1`, D-72). At `complete` the core checks the result against the type's full `result_schema`: `enum_from` resolves against the catalog version recorded for the attempt (its run fingerprint, PRV-1), filtered by the task's `data_mark`, and `x-botaru-format` is an assertion, not an annotation. A failure is `output_schema_invalid`: the core ends the attempt, the attempt is spent and the retry follows its backoff, so the holder cannot hand in another result under the same lease (D-98).
 
-Checked by: `eval:data/describe-numbers-match`, `ctd-001`, `ctd-inj-01`
+Checked by: `eval:data/describe-numbers-match`, `ctd-001`, `ctd-inj-01`, `blackbox:model/result-full-schema`
 
 <a id="OUT-2"></a>
 ### OUT-2. Provider constrained decoding is only a hint
@@ -3726,7 +3744,7 @@ Explained in: [docs/capabilities.md](../docs/capabilities.md)
 
 since v0.1 · non-waivable · profile core · check: blackbox · decisions: D-94
 
-The core computes the run fingerprint at `claim`: a hash of an ordered set of parts, namely the role manifest, the task type with instruction and schemas, the role's skills, the bot identity's persona, the P3 catalog of this handle, the model profile that P4 allowed, the runtime driver and version with the `describe()` values, and the sandbox image digest. The core writes the fingerprint and the hashes of its parts into the attempt, the usage lines and the data of the `task.completed` event. The runtime and the worker do not set the fingerprint.
+The core computes the run fingerprint at `claim` by the row "run fingerprint" of `spec/hashing.md`: a hash over the parts role manifest, task type with instruction and schemas, the role's skills, the bot identity's persona, the P3 catalog of this handle, the model profile configured for the slot at `claim`, the runtime driver and version with the `describe()` values, and the sandbox image digest; an absent part is `null`. A later fallback or grant does not change the fingerprint: the actual profile of each call is written on its usage line. The core writes the fingerprint and the hashes of its parts into the attempt, the usage lines and the data of the `task.completed` event. The runtime and the worker do not set the fingerprint.
 
 <a id="PRV-2"></a>
 ### PRV-2. The core writes artifact provenance
@@ -3738,9 +3756,9 @@ Only the core writes an artifact's `provenance` block, from the records of calls
 <a id="PRV-3"></a>
 ### PRV-3. Quality check on a static fingerprint change
 
-since v0.2 · non-waivable · profile core · check: lint
+since v0.2 · non-waivable · profile core · check: lint · decisions: D-103
 
-`apply` in a production tenant (`kind: production`) does not enable a role of tier 1 and higher if the `EvalReports` index has no entry with zero security failures for its new static fingerprint; the refusal is `eval_report_missing`. In a test tenant (`kind: test`) such an `apply` passes with a warning. The static fingerprint is the run fingerprint without the attempt's catalog (`spec/hashing.md`): the role, its types, skills, the persona of its position, the `base` and `analysis` model profiles, the core agent loop version and the sandbox digest. A change of any of them changes the static fingerprint.
+`apply` in a production tenant (`kind: production`) does not enable a role of tier 1 and higher if the `EvalReports` index has no entry with zero security failures for its new static fingerprint; the refusal is `eval_report_missing`. In a test tenant (`kind: test`) such an `apply` passes with a warning. The static fingerprint is computed by its own row of `spec/hashing.md`: the role, its types, skills, the persona of its position, the `base` and `analysis` model profiles, the runtime driver with only the major and minor digits of its version, and the sandbox digest. A change of any of them changes the static fingerprint; a patch release of the core does not (D-103). The check runs at `apply` when a role is enabled or one of its parts changes in the set: a role that is already enabled stays enabled after a core upgrade without `apply`, and `doctor` warns `eval_report_stale` for each production role whose current static fingerprint has no entry.
 
 Checked by: `fx-prv-03`
 
@@ -3781,7 +3799,7 @@ Checked by: `fx-rep-02`, `inj-rep-02`
 
 since v0.2 · waivable · profile messaging · recommendation · check: fixture, eval · decisions: D-14, D-95
 
-At `complete`, before delivery, code checks each number in the model paragraph against the allowed set of the same digest: the numbers of the rendered table snapshot, shares also as percent, dates and times, the snapshot time, the window bounds and the closed parameters of the task. Tokens are read by the digest `locale`; number words come from a closed list in the message catalog; digits joined to letters are a name, not a number. A number matches when its absolute value, rounded to the precision written, equals an allowed value. If even one number does not match, the paragraph is not sent, the digest goes out as the table alone, and the core writes the event `digest.text_dropped.v1` with counts only (D-95).
+At `complete`, before delivery, code checks each number in the model paragraph against the allowed set of the same digest: the numbers of the rendered table snapshot, shares also as percent, dates and times, the snapshot time, the window bounds and the closed parameters of the task. Tokens are read by the token grammar of the digest `locale` in the message catalog (`number.decimal_sep`, `number.group_sep`, `number.words`, `number.units`, `docs/messaging.md`): a token is a number when it is digits with these separators, with an optional sign and `%`, or a number word, optionally followed by a unit from the closed list `number.units` (`120GB` and `2.5 s` are numbers); a token where letters come before the digits or letters outside the unit list follow them (`web1`, `bathy-50m`, `1st`) is a name. Comparison is decimal, never binary floating point: an allowed value is rounded half away from zero to the number of decimals written, and a number matches when its absolute value equals such a rounded value; a percent is compared with a share times 100. If even one number does not match, the paragraph is not sent, the digest goes out as the table alone, and the core writes the event `digest.text_dropped.v1` with counts only (D-95).
 
 Checked by: `fx-rep-08`
 
@@ -4151,7 +4169,7 @@ Checked by: `blackbox:core/rotate-compromised`, `blackbox:core/connections-revok
 <a id="SEC-7"></a>
 ### SEC-7. A person's connection to an external service
 
-since v0.2 · non-waivable · profile core · check: blackbox · decisions: D-102
+since v0.2 · non-waivable · profile connections · check: blackbox · decisions: D-102
 
 A person's access to their external service is a recorded connection (`Connection`): the tenant, the principal, a provider from the tenant catalog, access scopes from a closed list, the state and an expiry. The person creates the connection themselves through the consent adapter, not the model; the deployment stores the token value, and it does not pass through P1-P4. The link to the adapter carries a nonce that the core issues at `/mydata connect`: single use, valid for 10 minutes, bound to the tenant and the principal. P2 `connection.register` must present it, and the core takes the principal from the nonce, not from the adapter. The request names the external account (`account_id`, the subject id at the provider); the core refuses an account that has an active or pending connection of another principal (`connection_account_taken`), generates `token_ref` itself and writes the connection as `pending`. It becomes `active` only after the person confirms the code card `connection_confirm` in their private chat; the card shows the provider, the external account and the scopes. A plugin declares `credential: per_principal(<provider>, <scopes>)`, and the core selects the connection by the task's initiator; the model neither names nor chooses the account. Tasks of other principals and of the service principal `system` do not use the connection. A write on behalf of a person remains a tier 3 action with an approval. Offboarding and `forget` revoke and delete the connection.
 
@@ -4224,7 +4242,7 @@ Explained in: [docs/capabilities.md](../docs/capabilities.md)
 <a id="SKL-1"></a>
 ### SKL-1. A skill without scripts and without an allowed-tools list
 
-since v0.2 · non-waivable · profile core · check: lint, fixture
+since v0.2 · non-waivable · profile knowledge · check: lint, fixture
 
 A skill is a directory `skills/<name>/` in the farm git that contains only `SKILL.md`, `references/` and `assets/`, with UTF-8 text files of the types `.md`, `.txt`, `.yaml`, `.json`, `.csv`, at most 50 files, `SKILL.md` up to 32 KiB and the whole tree up to 256 KiB. The front matter of `SKILL.md` passes `spec/manifests/skill.schema.json`, and its `name` equals the directory name. A `scripts/` folder, executable files, symbolic links and the field `allowed-tools` are rejected at `apply`.
 
@@ -4233,7 +4251,7 @@ Checked by: `schemas/invalid/manifests/skill`, `lint:skills/format`, `manifests/
 <a id="SKL-2"></a>
 ### SKL-2. The runtime gets only role skills with a matching hash
 
-since v0.2 · non-waivable · profile core · check: adapter
+since v0.2 · non-waivable · profile knowledge · check: adapter
 
 A role pins a skill by the tree hash of its directory (`skill-ref`: name, description, `sha256` by `spec/hashing.md`). The core gives a run only the skills of its role whose tree hash matches, and only from the core's copy. A runtime that declares `skills: runtime_files` in `describe()` gets them as files: its skill directory is read only, and a skill that is not in the role is forbidden on its disk (complements RT-2). A runtime with `skills: farm` gets them as a section of the instruction and through the built-in tool `skill_read`.
 
@@ -4242,7 +4260,7 @@ Checked by: `adapter:runtime/skills-role-only`
 <a id="SKL-3"></a>
 ### SKL-3. A skill does not change the tool catalog
 
-since v0.2 · non-waivable · profile core · check: fixture, blackbox
+since v0.2 · non-waivable · profile knowledge · check: fixture, blackbox
 
 A skill does not change the tool catalog: a tool named in a skill but not allowed by the role does not appear in `tools/list`, and the skill does not change the task's tier and data class. Fixture: a role's skill names a tool outside the role.
 

@@ -8,6 +8,6 @@ spec:
   weights: {security: 3, operational: 2, cost: 1, value: 2}
   recommend_if: {weighted_mean_gte: 2.5, value_gte: 2}
   park_if: {weighted_mean_gte: 1.5}
-  # The shadow (COM-10) is on by default with 0.25 for veto lenses and 0.2 for the others; this example turns it off
-  # explicitly so that the review line of 50 EUR passes the lint (docs/improvements.md, "Commission").
+  # The shadow (COM-10) is off by default (D-103); a shadow block turns it on with 0.25 for veto lenses and 0.2 for the
+  # others. This example keeps it off explicitly so that the review line of 50 EUR passes the lint (docs/improvements.md).
   shadow: 'off'

@@ -2,12 +2,13 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "urn:botaru:schema:p2-principal-offboard-request:1",
   "title": "P2 principal.offboard: request",
-  "description": "A person leaves for good: the state offboarded, which no operation leaves (D-98), and an erasure request by the scope (tenant, subject) with the reason offboarding; a principal_left notice to the admins (IDN-13). The operation exists since v0.1 (MEM-4, RET-7, PRM-14); by the rule LCY-3, since v0.2 offboarding also publishes principal.offboarded and deletes its Identity. The body is the same in both versions.",
+  "description": "A person leaves for good: the state offboarded, which no operation leaves, deletion of the links of their channel identities, and an erasure request by the scope (tenant, subject) with the reason offboarding; a principal_left notice to the admins (IDN-13). All of this exists since v0.1 (LCY-8, D-98, MEM-4, RET-7, PRM-14); by the rule LCY-3, since v0.2 offboarding also publishes principal.offboarded. The body is the same in both versions.",
   "x-botaru-direction": "input",
   "x-botaru-rules": [
     "RET-7",
     "MEM-4",
     "LCY-3",
+    "LCY-8",
     "PRM-14",
     "IDN-13"
   ],

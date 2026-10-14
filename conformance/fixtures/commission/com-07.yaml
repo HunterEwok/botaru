@@ -2,7 +2,7 @@
 id: com-07
 rules: [COM-10]
 version: v0.2
-description: 'A shadow share of 0 is allowed only with an explicit shadow: off, and then doctor shows "shadow off". A shadow task
+description: 'The shadow is off by default (D-103). A shadow share of 0 is allowed only with an explicit shadow: off, and then doctor shows "shadow off". A shadow task
   gets its own key system:review:<proposal>:<lens>:shadow and does not merge with the seat task; it runs on the lens fallback role
   without memory and persona, on the seat profile of the lens, only for lenses executed by seat holders; its review has shadow:
   true, is paid from the review line and is not read by the verdict. Code sets shadow_divergence when, over the pairs "seat score minus
@@ -34,6 +34,20 @@ cases:
       metadata: {name: demo}
       spec: {shadow: 'off'}
     proposal: {id: p_601, kind: schedule, state: screened}
+  steps:
+  - stand: {op: loop.tick, loop: proposal}
+  expect:
+    apply: ok
+    doctor: {check: commission.shadow_off, tenant: demo, value: true}
+    tasks_with_key_suffix: {':shadow': 0}
+- id: com-07-b2
+  description: Without a shadow block the shadow is off by default (D-103); doctor shows "shadow off" and no shadow tasks are enqueued.
+  given:
+    manifest:
+      kind: Commission
+      metadata: {name: demo}
+      spec: {review_deadline: 48h}
+    proposal: {id: p_605, kind: schedule, state: screened}
   steps:
   - stand: {op: loop.tick, loop: proposal}
   expect:

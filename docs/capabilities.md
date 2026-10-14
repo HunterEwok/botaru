@@ -56,7 +56,7 @@ Parsing is the task type `kb.ingest.v1` for a `job` worker: deterministic code w
 
 ### Erasure
 
-The corpus index is a copy of the documents' content, so its retention class is `content` (RET-1). Deleting a document, the expiry of its file and deleting the whole corpus delete the document's fragments in the index together with the file (C1 `file.purge`) and in every other farm store that holds them, and after that search does not find them (KNW-5). Early deletion goes through an erasure request (RET-7), and deletion by expiry is done by the core's `retention` loop (RET-2).
+The corpus index is a copy of the documents' content, so its retention class is `content` (RET-1). Deleting a document, the expiry of its file and deleting the whole corpus delete the document's fragments in the per-tenant index in C1 together with the file (C1 `file.purge`) and the cached output of `kb_search` and `kb_read` that holds them (PRM-12). After that search does not find them (KNW-5). Fragments live only in C1. The check for the edge stores asks their `match` operation for the document canary and expects no fragment record. Copies that tasks quoted into sessions, memory or results are task content under their own retention and erasure. Early deletion goes through an erasure request (RET-7), and deletion by expiry is done by the core's `retention` loop (RET-2).
 
 ### Example on `demo`
 
@@ -190,7 +190,7 @@ The farm manager reads a file with `personal_seen` from any source as personal, 
 
 The size limits of one file and of all files of one task are set by the tenant's `Tenant.spec.limits` within the farm ceilings (ART-4); the overall space ceiling for the tenant's files and artifacts is set there too, by `max_storage_bytes` (CAP-1). Exceeding them gives a refusal with a reason from `reasons.yaml`, and a file is never silently truncated.
 
-People and sinks are given only files whose content type is in the list `result_media_types` of the task type (ART-5). The core determines the type from the content. Active formats are not handed out: a PDF assembled in the sandbox, HTML, an SVG with a script. A task type that needs a result in the form of a document declares a safe type, for example PNG or CSV.
+People and sinks are given only files whose content type is in the list `result_media_types` of the task type (ART-5). The core determines the type from the content by the WHATWG MIME Sniffing standard; only inside `text/*`, where the content cannot tell CSV from plain text, the file extension refines it. Active formats are never handed out: HTML, XHTML, an SVG with a script, JavaScript and any `+xml` type. A PDF is allowed only for a type with `worker_kind: job`, whose code renders it from closed result fields, so a lab can get its reports as PDF while a PDF assembled by a model in the sandbox is never handed out. Other task types that need a document declare a safe type, for example PNG or CSV.
 
 ### Periods and erasure
 
@@ -243,7 +243,7 @@ The plugin takes the bytes through P1 `file.get` under the call lease (ART-3) an
 
 ### Run fingerprint
 
-The run fingerprint (`RunFingerprint`) answers the question "what exactly produced this answer". It is the hash of an ordered set of parts; the parts are stored alongside, to show what exactly changed (PRV-1).
+The run fingerprint (`RunFingerprint`) answers the question "what exactly produced this answer". It is the hash of an object of part hashes by the row "run fingerprint" of `spec/hashing.md`; an absent part is `null`, and the parts are stored alongside, to show what exactly changed (PRV-1).
 
 | Part | What goes in |
 |---|---|
@@ -252,7 +252,7 @@ The run fingerprint (`RunFingerprint`) answers the question "what exactly produc
 | skills | the hashes of the role's skills (`skill-ref`) |
 | persona | the hash of the bot identity's persona |
 | catalog | the hash of the P3 catalog of this handle, the same one P4 checks (GW-1) |
-| model | the model profile that P4 allowed (GW-7) |
+| model | the slot and the profile configured for it at `claim` (GW-7); a later fallback or grant does not change the fingerprint, and the actual profile of each call is on its usage line |
 | runtime | the driver and version with the values of `describe()` |
 | sandbox | the digest of the sandbox image |
 
@@ -260,9 +260,9 @@ The core computes the fingerprint at `claim` and writes it and the hashes of the
 
 ### Quality check on change
 
-The static fingerprint is the fingerprint without the attempt's catalog. There is one per role. Its parts are the role manifest, the claimed types, the skills, the persona of the role's position (not the persona of one bot), the `base` and `analysis` model profiles, the version of the core agent loop (D-93) and the sandbox digest; `spec/hashing.md` gives the exact object. It changes when the model, the instruction, a skill, the persona or the runtime changes. The report index is a manifest of kind `EvalReports` in the installation repository: `evals/reports/index.yaml` (planned in the installation repository). It holds only run metadata: the static fingerprint, the subject, the eval set, the date and the numbers of failures and of security failures.
+The static fingerprint has its own object in `spec/hashing.md`; it is not derived from the run fingerprint and has no catalog part. There is one per role. Its parts are the role manifest, the claimed types, the skills, the persona of the role's position (not the persona of one bot), the `base` and `analysis` model profiles, the runtime driver with only the major and minor digits of its version (D-93, D-103) and the sandbox digest. It changes when the model, the instruction, a skill, the persona or the runtime changes. The report index is a manifest of kind `EvalReports` in the installation repository: `evals/reports/index.yaml` (planned in the installation repository). It holds only run metadata: the static fingerprint, the subject, the eval set, the date and the numbers of failures and of security failures.
 
-`apply` in a production tenant (`kind: production`) does not enable a role of tier 1 or higher if there is no eval report with zero security failures for its new static fingerprint (PRV-3); the refusal is `eval_report_missing`. In a test tenant (`kind: test`) such an `apply` passes with a warning. This check runs at `apply`; the v0.1 `--attest` check stays as it is, and both are kept. How the runs work and what counts as a security failure is described in `docs/quality.md`.
+`apply` in a production tenant (`kind: production`) does not enable a role of tier 1 or higher if there is no eval report with zero security failures for its new static fingerprint (PRV-3); the refusal is `eval_report_missing`. In a test tenant (`kind: test`) such an `apply` passes with a warning. This check runs at `apply` when a role is enabled or one of its parts changes. A patch release of the core does not change the static fingerprint; a minor release does, but a role that is already enabled stays enabled after a core upgrade without `apply`, and `doctor` warns `eval_report_stale` until a report for the new fingerprint is in the index (D-103). The v0.1 `--attest` check stays as it is, and both are kept. How the runs work and what counts as a security failure is described in `docs/quality.md`.
 
 ### Datasets
 

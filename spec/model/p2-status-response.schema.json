@@ -56,10 +56,14 @@
               "insights",
               "manager",
               "governance",
-              "monitor"
+              "monitor",
+              "knowledge",
+              "ingress",
+              "connections",
+              "debug"
             ]
           },
-          "maxItems": 6,
+          "maxItems": 11,
           "uniqueItems": true
         }
       }

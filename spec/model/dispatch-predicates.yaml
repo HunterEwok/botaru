@@ -129,7 +129,9 @@ entries:
     since: v0.2
     checks: >-
       For a type with `conversation_concurrency: serial`, the same conversation has no running attempt of the same role, and
-      the task is the first by enqueue time among the waiting tasks of this conversation.
+      the task is the first by enqueue time among the waiting tasks of the same role in this conversation that pass every
+      other condition; for this order D17 and D21 count only their running-attempt part, so a task held by another
+      condition (no executor, a hold, a ceiling) does not hold back the tasks behind it.
     fact_from: task and attempt records
     applies_to: [attempt]
     waiting_reason: conversation_busy
@@ -162,7 +164,8 @@ entries:
     checks: >-
       For a direct request of a `human` or `service` principal (fairness key `interactive:<principal>`), the principal
       has fewer than `Tenant.spec.budgets.tasks_in_flight` direct requests with a running attempt, and the task is the
-      first by enqueue time among their waiting direct requests.
+      first by enqueue time among their waiting direct requests of the same type that pass every other condition; for
+      this order D17 and D21 count only their running-attempt part.
     fact_from: task and attempt records
     applies_to: [attempt]
     waiting_reason: in_flight_cap

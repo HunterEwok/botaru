@@ -158,7 +158,8 @@
       "maxLength": 64
     },
     "expires_at": {
-      "$ref": "urn:botaru:schema:common:1#/$defs/datetime"
+      "$ref": "urn:botaru:schema:common:1#/$defs/datetime",
+      "description": "Expiry of the decision. From v0.2, for a card deferred by the per-person limit (APR-15), the core rewrites it once at the first delivery of the card, counting from that delivery."
     },
     "state": {
       "enum": [

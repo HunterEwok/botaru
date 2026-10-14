@@ -1,5 +1,6 @@
-# Count of "who leaves" against blocs and splits (GOV-8). A table of ballot patterns; the runner seeds the case snapshot
-# and the ballots of each round and reads the case record after the governance loop counted.
+# Decision table for the core function governance.count (GOV-8), run with the test bench operation function.eval (conformance/runner.md).
+# Count of "who leaves" against blocs and splits (GOV-8). A table of ballot patterns; the input of each case is the case
+# snapshot and the ballots of each round, and the output is the rounds and the case outcome.
 id: gov-col-02
 rules: [GOV-8]
 version: v0.2

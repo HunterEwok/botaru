@@ -294,7 +294,7 @@
   check: [blackbox]
   waivable: false
   version: v0.2
-  profile: core
+  profile: debug
   decisions: [D-102]
   fixtures: [blackbox:core/replay-no-writes, blackbox:core/replay-refusals]
   doc: docs/permissions.md
@@ -429,10 +429,11 @@
     in `spec/model/decision-points.yaml` (proposals, audit sample items, promotion cases,
     attributions, memory records, people's requests about their own data) stay `planned` until the
     next day in order of expiry and are not lost; the expiry of such a subject counts from the first
-    delivery of its card to any recipient. Cards of rows with `urgent: true` are not deferred, but
-    they count. Notices (incident messages, `manager_stopped`, `alarm_notice`) are not subject to
-    the limit and do not count. Tenant admins see the excess as a number per day, without names, in
-    the `approve_unread_digest` notice.
+    delivery of its card to any recipient: the core writes `expires_at` at creation as for any card
+    and rewrites it, once, in the transaction of that first delivery. Cards of rows with `urgent:
+    true` are not deferred, but they count. Notices (incident messages, `manager_stopped`,
+    `alarm_notice`) are not subject to the limit and do not count. Tenant admins see the excess as a
+    number per day, without names, in the `approve_unread_digest` notice.
   check: [blackbox]
   waivable: true
   version: v0.2
@@ -674,12 +675,15 @@
   title: Only declared content types are handed out
   status: active
   text: >-
-    People and sinks get only result files whose content type, which the core determines from the
-    content and not from the name, is in the task type's `result_media_types`; another file is not
-    handed out (`media_type_not_allowed`), and the task outcome does not change. Active formats are
-    never handed out and cannot be declared: `text/html`, `application/xhtml+xml`, `image/svg+xml`,
-    `application/pdf`, JavaScript and any `+xml` type; the `apply` lint rejects a type that lists
-    one.
+    People and sinks get only result files whose content type is in the task type's
+    `result_media_types`; another file is not handed out (`media_type_not_allowed`), and the task
+    outcome does not change. The core determines the content type from the content, by the WHATWG
+    MIME Sniffing standard, not from the name; only inside the `text/*` family, where content cannot
+    tell `text/csv` from `text/plain`, the file extension refines the sniffed type. Active formats
+    are never handed out and cannot be declared: `text/html`, `application/xhtml+xml`,
+    `image/svg+xml`, JavaScript and any `+xml` type. `application/pdf` may be declared only by a
+    type with `worker_kind: job`, whose code renders the file from closed result fields, never by an
+    agent type; the `apply` lint rejects a type that breaks either rule.
   check: [adapter, blackbox, lint]
   waivable: false
   version: v0.2
@@ -785,7 +789,7 @@
   check: [store, blackbox]
   waivable: false
   version: v0.2
-  profile: core
+  profile: debug
   decisions: []
   fixtures: [store:audit/attempt-journal, blackbox:core/journal-read]
   doc: docs/security-model.md
@@ -1020,8 +1024,10 @@
     A principal of kind `human` or `service` has at most `Tenant.spec.budgets.tasks_in_flight`
     (default 3) of their direct requests with a running attempt. A further direct request is not
     refused: it waits in `submitted` with `waiting_reason: in_flight_cap` (dispatch condition D21),
-    and the principal's waiting direct requests are handed out in enqueue order. Tasks of `system`,
-    campaign items, children and continuations do not count.
+    and the principal's waiting direct requests of one type are handed out in enqueue order; a
+    request held by another dispatch condition (no executor, a hold, a ceiling) does not hold back
+    the requests behind it. Tasks of `system`, campaign items, children and continuations do not
+    count.
   check: [blackbox]
   waivable: true
   version: v0.2
@@ -1754,19 +1760,21 @@
   title: Shadow reviewer at the tenant's choice
   status: active
   text: >-
-    If the shadow is not turned off in the commission manifest, for a share of proposals the
-    fallback role of a lens (COM-7) gets a shadow review task of that lens on the `seat` slot
-    with the lens seat profile (GW-7), without memory facts and without a persona; the shadow
-    runs only for lenses whose review a seat holder executed. A proposal is selected when
-    `sha256(seed ‖ proposal id ‖ lens) / 2^256` is below the share; the seed is drawn monthly
-    per tenant and written to audit (`commission.shadow_seed`, D-101). The `shadow` block of the
-    commission manifest sets `veto_lenses` (default 0.25) and `other_lenses` (default 0.2), each
-    above 0 and at most 1; a share of 0 is expressed only by an explicit `shadow: off` (lint
-    `shadow_zero_without_off` at `apply`), and then `doctor` shows the check
-    `commission.shadow_off`. A shadow task gets its own core key
-    `system:review:<proposal>:<lens>:shadow` (IDM-2) and does not merge with the seat's task.
-    Its reviews have `shadow: true` (COM-9) and are paid from the `review` line. For each lens,
-    code takes the pairs "seat score minus shadow score" of the last 30 days, drops pairs with a
+    The shadow is off by default: a commission manifest without a `shadow` block, or with `shadow:
+    off`, gets no shadow tasks, and `doctor` shows the check `commission.shadow_off` (D-103). A
+    tenant turns it on with a `shadow` block; then for a share of proposals the fallback role of a
+    lens (COM-7) gets a shadow review task of that lens on the `seat` slot with the lens seat
+    profile (GW-7), without memory facts and without a persona; the shadow runs only for lenses
+    whose review a seat holder executed. A proposal is selected when `sha256(seed ‖ proposal id ‖
+    lens)` falls below the share by the rule and test vector of `spec/hashing.md` ("shadow draw");
+    the seed is drawn monthly per tenant and written to audit (`commission.shadow_seed`, D-101). The
+    `shadow` block sets `veto_lenses` (0.25 when the block omits it) and `other_lenses` (0.2 when
+    omitted), each above 0 and at most 1; a share of 0 inside the block fails the lint
+    `shadow_zero_without_off` at `apply`, because the shadow is turned off only by leaving the block
+    out or by `shadow: off`. A shadow task gets its own core key
+    `system:review:<proposal>:<lens>:shadow` (IDM-2) and does not merge with the seat's task. Its
+    reviews have `shadow: true` (COM-9) and are paid from the `review` line. For each lens, code
+    takes the pairs "seat score minus shadow score" of the last 30 days, drops pairs with a
     difference of 0, and sets the flag `shadow_divergence` when at least 15 pairs remain and a
     one-sided exact sign test gives p below 0.05 for "seat below shadow"; people see it in P2
     `commission.status` and in `doctor` (`commission.shadow_divergence`).
@@ -1774,7 +1782,7 @@
   waivable: true
   version: v0.2
   profile: insights
-  decisions: [D-16, D-101]
+  decisions: [D-16, D-101, D-103]
   fixtures: [com-07, fx-man-com-v02]
   doc: docs/improvements.md
 
@@ -2187,23 +2195,23 @@
   title: An audit sample from three strata by a recorded seed
   status: active
   text: >-
-    Every month the core picks audit sample items from three strata of the tenant's proposals
-    with a commission verdict for that month: `dismissed` by veto or by the minimum of a veto
-    lens (separately for each such lens; a proposal vetoed by several lenses goes to the first
-    veto lens in `lenses.yaml` order), `dismissed` by the weighted mean, and `parked` by score
-    (not by quorum, budget or conflict). The size is N = min(T, max(`min_per_month`,
-    ceil(`share` × T))), where T is the size of the strata; `min_per_month` is at least 4 by
-    lint. Each non-empty stratum gives one item; the rest go by the largest remainder of the
-    proportional share, and ties go by stratum order. Inside a stratum the core takes the items
-    with the smallest HMAC-SHA256(seed, proposal id). The core records the seed at the time of
-    the choice; each item stores in the `sample` field of the proposal its stratum and its
-    inclusion probability (`inclusion_prob`). Blind cards go in the digest only by direct
-    message to people with `proposal.decide:<category>`, no more than
-    `audit_sample.max_per_digest` at a time; a group digest shows only their number. Code
-    computes per stratum over 180 days the share of "Would accept" answers with weights
-    1/`inclusion_prob` and sets the flag `commission_underrates`, visible to people in P2
-    `commission.status`, when the lower bound of the 90 percent Wilson interval (z = 1.645) on
-    the effective size (Σw)²/Σw² is above 0.1; a stratum with fewer than 5 answers gets no flag.
+    Every month the core picks audit sample items from three strata of the tenant's proposals with a
+    commission verdict for that month: `dismissed` by veto or by the minimum of a veto lens
+    (separately for each such lens; a proposal vetoed by several lenses goes to the first veto lens
+    in `lenses.yaml` order), `dismissed` by the weighted mean, and `parked` by score (not by quorum,
+    budget or conflict). The size is N = min(T, max(`min_per_month`, ceil(`share` × T))), where T is
+    the size of the strata; `min_per_month` is at least 4 by lint. Each non-empty stratum gives one
+    item; the rest go by the largest remainder of the proportional share, and ties go by stratum
+    order. Inside a stratum the core takes the items with the smallest HMAC-SHA256(seed, proposal
+    id), with the byte encoding and test vector of `spec/hashing.md` ("audit sample order"). The
+    core records the seed at the time of the choice; each item stores in the `sample` field of the
+    proposal its stratum and its inclusion probability (`inclusion_prob`). Blind cards go in the
+    digest only by direct message to people with `proposal.decide:<category>`, no more than
+    `audit_sample.max_per_digest` at a time; a group digest shows only their number. Code computes
+    per stratum over 180 days the share of "Would accept" answers with weights 1/`inclusion_prob`
+    and sets the flag `commission_underrates`, visible to people in P2 `commission.status`, when the
+    lower bound of the 90 percent Wilson interval (z = 1.645) on the effective size (Σw)²/Σw² is
+    above 0.1; a stratum with fewer than 5 answers gets no flag.
   check: [store, fixture, blackbox]
   waivable: false
   version: v0.2
@@ -2614,21 +2622,21 @@
   text: >-
     The `claim` decision is deterministic: it depends only on the conditions of the closed list
     `dispatch-predicates.yaml` and the ordering keys (priority class, fairness key from v0.2 by
-    DSP-6, enqueue time, task id). The task body, messages, model output and the self-report
-    `state` are not part of it; no model is called. The core writes `fairness_key` on every task
-    from v0.1 (D-98) as `<kind>:<id>` from the task source: `campaign:<campaign>` for a campaign
-    item, `root:<root task>` for any child, `route:<route>` for a route or wake-up task,
+    DSP-6, enqueue time, task id). The task body, messages, model output and the self-report `state`
+    are not part of it; no model is called. The core writes `fairness_key` on every task from v0.1
+    (D-98) as `<kind>:<id>` from the task source: `campaign:<campaign>` for a campaign item,
+    `root:<root task>` for any child, `route:<route>` for a route or wake-up task,
     `schedule:<schedule>`, `script:<run>` for a script step, `interactive:<principal>` for a
-    person's or program's direct request, and `system:<purpose>` for any other task that the
-    core creates itself (a lens review, a ballot, an incident, inspection or daily review task,
-    a grant batch); a continuation keeps the key of its source, and a redrive and an action task
-    after approval keep the key of the original task. So every task has a key. Check: fixture
-    `fx-dsp-08` submits the same store snapshot (tasks, workers, leases, holds, counters) and
-    the same `claim` call twice and expects the same answer, and then changes only the task
-    body, the worker's `state` record and the note of a message in the inbox, and expects the
-    answer to be unchanged. Lint at `apply` checks that every condition referred to by the
-    tenant policy `Tenant.spec.dispatch` is in the `dispatch-predicates.yaml` list of the
-    version that the implementation declares (`conforms_to`).
+    person's or program's direct request, and `system:<purpose>` for any other task that the core
+    creates itself (a lens review, a ballot, an incident, inspection or daily review task, a grant
+    batch); a continuation keeps the key of its source, and a redrive and an action task after
+    approval keep the key of the original task. So every task has a key. Check: fixture `fx-dsp-08`
+    seeds two test benches in the same way through the ordinary paths and expects the same `claim`
+    answer on both. A third bench differs only in the task body, a `state` self-report and the note
+    of a message in the inbox, and the answer is unchanged. On each bench P2 `task.show` returns
+    `fairness_key` `interactive:<principal>` for a person's request. Lint at `apply` checks that
+    every condition referred to by the tenant policy `Tenant.spec.dispatch` is in the
+    `dispatch-predicates.yaml` list of the version that the implementation declares (`conforms_to`).
   check: [fixture, lint]
   waivable: false
   version: v0.1
@@ -3061,31 +3069,32 @@
   text: >-
     A ballot is a task of type `governance.ballot.v1` of the purpose `governance` of tier 0 in a
     clean context: without memory, session, inbox, plugin tools and built-in tools, without
-    `request_action`, `send_message`, `enqueue_child` and `propose_*`. The task carries the core
-    key `system:governance:<case>:<round>:<bot>` (IDM-2): a voter has one task per round, and a
-    repeated handout (GOV-23) is a new attempt of the same task. The input is only the case
-    package (`spec/model/ballot-package.schema.json`), which the core puts into the task input
-    from the tenant's records; for each seat in L the package carries symmetric figures: how
-    many times the holder recommended and how many times they vetoed, how many of these were
-    confirmed (a recommendation with the outcome `better`; a veto that people upheld) and how
-    many were refuted (a recommendation with the outcome `worse` or a confirmed attribution; a
-    veto lifted by people after which the trial outcome is not `worse` and there are no
-    attributions), and the calibration (COM-11); the order of seats in the `enum` and in the
-    package is different for each voter, by the seed of the case opening. The package and the
-    `enum` name seats only by labels that the core draws for each voter from the same seed
-    (`s1`, `s2`, ...), never by the seat id, and the core maps the chosen label back to the
-    seat. The output follows a forced schema: `choice` from the `enum` that the core built for
-    this voter, and up to 3 reason codes from `spec/model/ballot-reasons.yaml`; there is no
-    "abstain" and no free text. The core takes the value from the P4 response with the forced
-    schema in this attempt, not from the body of `complete`, and checks it against the voter's
-    `enum`. If the `enum` has one value, the core writes a forced ballot (`forced`) without
-    calling the model. Lint at `apply`: the model profiles that ballots run on (the commission
-    seat profiles) and every profile of their fallback chains have `forced_schema: true`, and a
-    profile missing from the set fails (`forced_schema_unsupported`). P4 does not fall back to
-    another profile for a `governance.ballot.v1` call (GW-5): when the seat profile is
-    unavailable, the ballot is written as `defaulted` by the code rule. Exactly one ballot per
-    voter is recorded in a round; until the round closes, no bot sees the ballots, and they are
-    not published as events.
+    `request_action`, `send_message`, `enqueue_child` and `propose_*`. The task carries the core key
+    `system:governance:<case>:<round>:<bot>` (IDM-2): a voter has one task per round, and a repeated
+    handout (GOV-23) is a new attempt of the same task. The input is only the case package
+    (`spec/model/ballot-package.schema.json`), which the core puts into the task input from the
+    tenant's records; for each seat in L the package carries symmetric figures: how many times the
+    holder recommended and how many times they vetoed, how many of these were confirmed (a
+    recommendation with the outcome `better`; a veto that people upheld) and how many were refuted
+    (a recommendation with the outcome `worse` or a confirmed attribution; a veto lifted by people
+    after which the trial outcome is not `worse` and there are no attributions), and the calibration
+    (COM-11); the order of seats in the `enum` and in the package is different for each voter, by
+    the seed of the case opening. The package and the `enum` name seats only by labels that the core
+    draws for each voter from the same seed (`s1`, `s2`, ...), never by the seat id, and the core
+    maps the chosen label back to the seat. The output follows a forced schema: `choice` from the
+    `enum` that the core built for this voter, and up to 3 reason codes from
+    `spec/model/ballot-reasons.yaml`; there is no "abstain" and no free text. The core takes the
+    value from the P4 response with the forced schema in this attempt, not from the body of
+    `complete`, and checks it against the voter's `enum`. If the `enum` has one value, the core
+    writes a forced ballot (`forced`) without calling the model. Lint at `apply`: the model profiles
+    that ballots run on (the commission seat profiles) and every profile of their fallback chains
+    have `forced_schema: true`, and a profile missing from the set fails
+    (`forced_schema_unsupported`). P4 does not fall back to another profile for a
+    `governance.ballot.v1` call (GW-5): an unavailable seat profile is an infrastructure cause
+    (`provider_unavailable`), so the ballot waits and is handed out again under GOV-23 without
+    counting against `reissue_max`; only failures caused by the model past `reissue_max` give a
+    `defaulted` ballot. Exactly one ballot per voter is recorded in a round; until the round closes,
+    no bot sees the ballots, and they are not published as events.
   check: [lint, fixture, blackbox]
   waivable: false
   version: v0.2
@@ -3098,19 +3107,19 @@
   title: Code counts "who leaves"
   status: active
   text: >-
-    Deterministic code does the count from the case snapshot, the set `expected` and the seed.
-    If L has one seat, it leaves without ballots; if `expected` becomes empty, the case ends
-    `canceled(no_voters)`. In each round `need = ceil(2/3 · |expected|)`. A seat that got at
-    least `need` votes leaves; otherwise the seat with the fewest votes is struck out, and the
-    round repeats over the remaining list, and if one seat is left in the list, it leaves. A
-    struck-out seat stays in the commission. A tie when striking out is resolved by keys in
-    order: K1 the seat with fewer votes in all previous rounds of the case is struck out first;
-    K2 the holder with the higher calibration (`insufficient` is below any number); K3 the
-    holder with the shorter continuous term in the commission; K4 the smaller `sha256(tie_seed ‖
-    seat id)`, where the core draws `tie_seed` after all ballots of the round are recorded.
-    Ballots `forced` and `defaulted` count. Identical inputs give an identical outcome; there is
-    always an outcome, and exactly one leaver is found in no more than |L| - 1 rounds. The model
-    does not change the outcome, and a tie is not passed to people.
+    Deterministic code does the count from the case snapshot, the set `expected` and the seed. If L
+    has one seat, it leaves without ballots; if `expected` becomes empty, the case ends
+    `canceled(no_voters)`. In each round `need = ceil(2/3 · |expected|)`. A seat that got at least
+    `need` votes leaves; otherwise the seat with the fewest votes is struck out, and the round
+    repeats over the remaining list, and if one seat is left in the list, it leaves. A struck-out
+    seat stays in the commission. A tie when striking out is resolved by keys in order: K1 the seat
+    with fewer votes in all previous rounds of the case is struck out first; K2 the holder with the
+    higher calibration (`insufficient` is below any number); K3 the holder with the shorter
+    continuous term in the commission; K4 the smaller `sha256(tie_seed ‖ seat id)`, where the core
+    draws `tie_seed` after all ballots of the round are recorded (byte encoding and test vector:
+    `spec/hashing.md`, "K4 tie key"). Ballots `forced` and `defaulted` count. Identical inputs give
+    an identical outcome; there is always an outcome, and exactly one leaver is found in no more
+    than |L| - 1 rounds. The model does not change the outcome, and a tie is not passed to people.
   check: [fixture]
   waivable: false
   version: v0.2
@@ -3692,7 +3701,7 @@
   doc: docs/commission.md
 
 - id: GOV-34
-  title: Veto lenses on different model families, shadow by default
+  title: Veto lenses on different model families
   status: active
   text: >-
     For a tenant with `kind: production`, the seat model profiles of the veto lenses (`security`,
@@ -4126,12 +4135,14 @@
     (GOV-23). The rights `hold.set:<scope>` and `hold.release` are privileged and are granted only
     through `farmctl` (PRM-13). Only a person lifts a code hold; otherwise it ends at `until`. The
     core does not lift holds itself; when the seat holder is replaced, the core shortens the expiry
-    of the holder's holds to 15 minutes (MGR-1). Check: C2 at the check point `hold.release`
-    compares the rank of the hold's author and the rank of the principal; the refusal is
-    `forbidden`. Fixtures: a model, route or schedule cannot set or lift a hold; a seat holder with
-    an old epoch gets a refusal; the manager does not lift a person's hold or an auto-stop; a tenant
-    admin with `hold.release` gets `forbidden` on a `suspended` hold set by an operator, and lifts
-    an auto-stop with the author `contain_auto` in their tenant.
+    of the holder's holds to 15 minutes (MGR-1); the only extension of an expiry is the `until` of a
+    maintenance window hold, which the core moves forward while the monitoring adapter reports the
+    window active (MON-9). Check: C2 at the check point `hold.release` compares the rank of the
+    hold's author and the rank of the principal; the refusal is `forbidden`. Fixtures: a model,
+    route or schedule cannot set or lift a hold; a seat holder with an old epoch gets a refusal; the
+    manager does not lift a person's hold or an auto-stop; a tenant admin with `hold.release` gets
+    `forbidden` on a `suspended` hold set by an operator, and lifts an auto-stop with the author
+    `contain_auto` in their tenant.
   check: [fixture, lint, blackbox]
   waivable: false
   version: v0.1
@@ -4604,23 +4615,23 @@
   status: active
   text: >-
     When a person is disabled or removed for good (P2 `principal.off`, `principal.offboard`), the
-    principal goes to `off`, or with `principal.offboard` to `offboarded`, which no operation
-    leaves: `principal.on` does not revive it (D-98, LCY-3). In the same transaction the core sends
-    the admins of their tenant with `admin:people` the code notice `principal_left` (only to their
-    private chats, not to a group, text under the key `notice.principal_left`, REP-5): the principal
-    id, the reason and the list of chats with a farm binding (`ChatBinding`) where this person
-    remains a member according to the E1 channel's information that the core stores on the binding,
-    with a marker on chats with `membership_assurance: enforced`. If the person has no chat with a
-    farm binding, the notice goes anyway: the tenant administrator gets it, and instead of the chat
-    list it says that there are no chats. There is no model text in the notice. In v0.1 the core
-    only reports the list; full offboarding (leaving chats or asking the chat administrator to
-    remove the person, removing delegated rights, handing over their tasks) arrives in v0.2.
+    principal goes to `off`, or with `principal.offboard` to `offboarded` (LCY-8). In the same
+    transaction the core sends the admins of their tenant with `admin:people` the code notice
+    `principal_left` (only to their private chats, not to a group, text under the key
+    `notice.principal_left`, REP-5): the principal id, the reason and the list of chats with a farm
+    binding (`ChatBinding`) where this person remains a member according to the E1 channel's
+    information that the core stores on the binding, with a marker on chats with
+    `membership_assurance: enforced`. If the person has no chat with a farm binding, the notice goes
+    anyway: the tenant administrator gets it, and instead of the chat list it says that there are no
+    chats. There is no model text in the notice. In v0.1 the core only reports the list; full
+    offboarding (leaving chats or asking the chat administrator to remove the person, removing
+    delegated rights, handing over their tasks) arrives in v0.2.
   check: [blackbox, fixture]
   waivable: true
   version: v0.1
   profile: governance
-  decisions: [D-98]
-  fixtures: [idn-fx-13]
+  decisions: []
+  fixtures: [idn-fx-13, blackbox:core/principal-offboard-final]
   doc: docs/bots.md
 
 - id: ING-1
@@ -4637,7 +4648,7 @@
   check: [adapter, lint, fixture]
   waivable: false
   version: v0.2
-  profile: core
+  profile: ingress
   decisions: []
   fixtures: [schemas/invalid/manifests/channel-ingress, adapter:channel/ingress-authenticity, manifests/v02-lints, manifests/v02-security-lints]
   doc: docs/capabilities.md
@@ -4654,7 +4665,7 @@
   check: [lint, fixture]
   waivable: false
   version: v0.2
-  profile: core
+  profile: ingress
   decisions: [D-69]
   fixtures: [fixture:ingress/annotation-instruction]
   doc: docs/capabilities.md
@@ -4672,7 +4683,7 @@
   check: [adapter, blackbox, fixture]
   waivable: true
   version: v0.2
-  profile: core
+  profile: ingress
   decisions: []
   fixtures: [schemas/invalid/manifests/channel-ingress, blackbox:ingress/repeat-and-limits]
   doc: docs/capabilities.md
@@ -4691,7 +4702,7 @@
   check: [lint, fixture]
   waivable: false
   version: v0.2
-  profile: core
+  profile: ingress
   decisions: [D-62, D-63, D-88]
   fixtures: [schemas/invalid/manifests/channel-ingress, manifests/ingress-routes]
   doc: docs/capabilities.md
@@ -5203,7 +5214,7 @@
   check: [blackbox]
   waivable: false
   version: v0.2
-  profile: core
+  profile: knowledge
   decisions: []
   fixtures: [blackbox:knowledge/tenant-canary, blackbox:knowledge/corpus-class]
   doc: docs/capabilities.md
@@ -5225,7 +5236,7 @@
   check: [lint, fixture, eval]
   waivable: false
   version: v0.2
-  profile: core
+  profile: knowledge
   decisions: []
   fixtures: [kb-inj-02, lint:catalog/curated-only-git, manifests/v02-lints]
   doc: docs/capabilities.md
@@ -5241,7 +5252,7 @@
   check: [adapter, blackbox]
   waivable: false
   version: v0.2
-  profile: core
+  profile: knowledge
   decisions: []
   fixtures: [blackbox:knowledge/only-through-tools]
   doc: docs/capabilities.md
@@ -5263,7 +5274,7 @@
   check: [lint, blackbox]
   waivable: false
   version: v0.2
-  profile: core
+  profile: knowledge
   decisions: []
   fixtures: [blackbox:knowledge/upload-rights, blackbox:knowledge/index-put-binding]
   doc: docs/capabilities.md
@@ -5274,12 +5285,15 @@
   text: >-
     Deleting a corpus document, the expiry of its file and deleting the whole corpus delete the
     fragments of this document in the per-tenant corpus index in C1 together with the file (C1
-    `file.purge`), and in every other farm store that holds them. After deletion, search does not
-    find them (D-97).
+    `file.purge`), and the cached output of `kb_search` and `kb_read` that holds them (PRM-12).
+    After deletion, search does not find them (D-97). Fragments live only in C1, so the check is a
+    C1 store check; for the edge stores the check asks their `match` operation for the document
+    canary and expects no fragment record, while copies that tasks quoted into sessions, memory or
+    results are task content under their own retention and erasure.
   check: [store]
   waivable: false
   version: v0.2
-  profile: core
+  profile: knowledge
   decisions: [D-97]
   fixtures: [store:knowledge/delete-document]
   doc: docs/capabilities.md
@@ -5296,10 +5310,12 @@
     and deliveries get `withheld`, except messages to admins about the hold itself (HLD-3).
     `offboarding` (P2 `tenant.offboard`) sets an operator hold on scope `tenant` with reason
     `offboarding` and the effects of `suspended`, revokes the credentials of the tenant's workers
-    and channels and the key and workspace at the provider (GW-3), revokes every connection of the
-    tenant's people (SEC-7, reason `offboarding`; the consent adapter deletes the tokens and revokes
-    them at the provider), and cancels pending approvals; only export is allowed. `deleted` (P2 `tenant.delete`, no earlier than the end of the export
-    window: `export_window` of the `tenant.offboard` request, default and ceiling 30 days; an
+    and channels, forgets the tenant's provider key and stops using it (GW-3; revoking the key and
+    the workspace at the provider is an operator step that `tenant.offboard` prints in its answer,
+    D-103), revokes every connection of the tenant's people (SEC-7, reason `offboarding`; the
+    consent adapter deletes the tokens and revokes them at the provider), and cancels pending
+    approvals; only export is allowed. `deleted` (P2 `tenant.delete`, no earlier than the end of the
+    export window: `export_window` of the `tenant.offboard` request, default and ceiling 30 days; an
     earlier `tenant.delete` gets `export_window_open`) creates an erasure request with the scope
     `(tenant)` across all stores (RET-7); the tenant id stays as a tombstone and is not used again
     (RET-3), and `apply` of a tenant with that name is rejected.
@@ -5341,11 +5357,11 @@
   text: >-
     A principal goes through `active`, `off`, `offboarded`. `/off` (a tenant admin) and P2
     `principal.offboard` cancel in one transaction their pending approvals (APR-6) and their
-    non-terminal tasks (`canceled(person_inactive)`). `offboarded` cannot be left (the core writes
-    it from v0.1, IDN-13, D-98); from v0.2 it also publishes `principal.offboarded`, deletes their
-    `Identity` and creates an erasure request `(tenant, subject)` across all stores with their data
-    (RET-7); only the opaque principal id stays in audit. A returning person gets a new principal
-    without the old groups; there is no return window (D-100).
+    non-terminal tasks (`canceled(person_inactive)`). From v0.1 `offboarded` cannot be left,
+    offboarding deletes the links of their channel identities and creates an erasure request
+    `(tenant, subject)` across all stores with their data (LCY-8, RET-7, D-98); from v0.2 it also
+    publishes the event `principal.offboarded`, and only the opaque principal id stays in audit. A
+    returning person gets a new principal without the old groups; there is no return window (D-100).
   check: [blackbox]
   waivable: false
   version: v0.2
@@ -5427,6 +5443,28 @@
   profile: core
   decisions: [D-36]
   fixtures: [blackbox:core/p1-version-window]
+  doc: docs/operations.md
+
+- id: LCY-8
+  title: Offboarding is final and frees the identity
+  status: active
+  text: >-
+    P2 `principal.offboard` writes the principal state `offboarded`, which no operation leaves:
+    `principal.on`, `principal.off`, `principal.set_identity`, `grant` and the use of an invitation
+    for this principal answer `subject_closed`. In the same transaction the core deletes the links
+    of the principal's channel identities, so the same external identity can be given to a new
+    principal with `principal.add` or an invitation; the new principal has none of the old groups.
+    The principal record keeps its opaque id, which core records already use (D-85). The same
+    transaction cancels the principal's pending approvals and tasks (APR-6), creates the erasure
+    request `(tenant, subject)` with the reason `offboarding` (RET-7, MEM-4) and sends the notice of
+    IDN-13. The record shape is fixed in v0.1, so that records written before v0.2 hold no principal
+    that v0.2 would revive (D-98); the event `principal.offboarded` comes in v0.2 (LCY-3).
+  check: [blackbox]
+  waivable: false
+  version: v0.1
+  profile: core
+  decisions: [D-98]
+  fixtures: [blackbox:core/principal-offboard-final]
   doc: docs/operations.md
 
 - id: MAN-1
@@ -5619,6 +5657,27 @@
   fixtures: [lint:manifests/catalog-values]
   doc: docs/task-language.md
 
+- id: MAN-11
+  title: A core rejects what it does not implement
+  status: active
+  text: >-
+    At `apply` a core rejects, with the error `version_unsupported` and the path, a manifest of a
+    kind whose `since` in `spec/manifests/kinds.yaml` is later than the skeleton version it claims
+    in `conforms_to` (MAN-8), and a field whose `x-botaru-version` is later than that version. It
+    also rejects the fields of a feature profile it does not claim: a catalog resource of kind
+    `corpus` and `skills` of a role (`knowledge`), a channel with `direction: in` and its `ingress`
+    block (`ingress`), a tool with `credential: per_principal` (`connections`), and the tenant
+    fields `retention.journals` and `operator_access.debug_journal` (`debug`). A core never accepts
+    such a manifest and ignores the field: an operator who sees `apply` pass would believe the
+    feature works. Records the core writes stay as its version defines them (D-98).
+  check: [blackbox]
+  waivable: false
+  version: v0.1
+  profile: core
+  decisions: [D-98, D-103]
+  fixtures: [blackbox:core/apply-later-version]
+  doc: docs/task-language.md
+
 - id: MEM-1
   title: The core computes the memory space and the session key
   status: active
@@ -5709,10 +5768,11 @@
     A task type of `worker_kind: agent` declares `conversation_concurrency: serial | parallel`,
     default `serial`. With `serial`, one role has no more than one attempt in progress in one
     conversation: the core does not hand out a task of this conversation on `claim` while the same
-    role has an attempt running in it, and hands out the conversation's tasks in enqueue order
-    (dispatcher condition D17); a task held back waits with `waiting_reason: conversation_busy`. A
-    clarification from a person is a new task in the same conversation, and it waits its turn
-    (D-41).
+    role has an attempt running in it, and hands out the tasks of that role in the conversation in
+    enqueue order (dispatcher condition D17); a task held by another dispatch condition does not
+    hold back the tasks behind it, and tasks of other roles in the conversation are not ordered
+    against it; a task held back waits with `waiting_reason: conversation_busy`. A clarification
+    from a person is a new task in the same conversation, and it waits its turn (D-41).
   check: [blackbox]
   waivable: true
   version: v0.2
@@ -7116,37 +7176,44 @@
   title: Monitoring maintenance windows give a farm hold
   status: active
   text: >-
-    The monitoring adapter reads monitoring system maintenance windows for nodes that the tenant
-    catalog linked to its resources (`Catalog.spec.hosts[].monitor_host`). The adapter passes
-    the start and end of a window with the event `ext.monitor.maintenance.v1` through P1
-    `submit_activity` with identity `hook:monitor`. When the window starts, the core sets a hold
-    of scope `host` on the catalog host whose `monitor_host` is the node, with effects `no_tool`
-    and `pause_action`, reason `maintenance`, author `contain_auto`, source `system:monitor` and
-    `until` at the end of the window; a node is linked to a resource of exactly one tenant
-    (D-75, MON-5), so there is one hold. `no_tool` also stops reading tools on that host,
-    because people work on the machine during the window (D-100). The window does not cancel
-    waiting approvals: with `pause_action` new `request_action` calls are rejected, while
-    waiting cards wait, and their expiry is extended by the length of the hold (HLD-3); people
-    who set windows in the monitoring system are not farm principals and cannot cancel its
-    approvals. A machine with `hosts[].maintenance_hold: true` in the catalog gets the effect
-    `no_action` instead of `pause_action`: waiting approvals become `canceled(held)`. Extending
-    the window gives a new hold until the new end. The event of a window that ended or was
-    deleted early changes no hold: a tenant admin or an operator releases the code hold,
-    otherwise it ends at `until` (HLD-2). A slot of a schedule whose task scope holds a resource
-    of that host is skipped with `schedule.skipped(held)`, without catch-up: TIM-3 skips a slot
-    for a maintenance hold although its effects do not include `no_enqueue`. A window on a node
-    of the farm itself sets no holds. Fixtures: a 2-hour window on the mock monitoring system
-    gives a hold with `until` at the end of the window; a tool call on this machine gets
-    `denied(held)`; a schedule slot in the window is skipped with `held`; a card that was
-    waiting before the window stays `pending` after the window, with its expiry extended by the
-    window length; the same card on a machine with `maintenance_hold: true` becomes
-    `canceled(held)`.
+    The monitoring adapter polls the maintenance status of the nodes that the tenant catalog linked
+    to its resources (`Catalog.spec.hosts[].monitor_host`) every `maintenance_poll_s` of the
+    deployment binding (60 seconds by default, at most 300). It does not compute the time periods of
+    the monitoring system: while a node is in maintenance, every poll sends the event
+    `ext.monitor.maintenance.v1` with `state: active` and `until` = the poll time plus two poll
+    intervals, and the first poll that finds the node out of maintenance sends `state: ended`; the
+    events go through P1 `submit_activity` with identity `hook:monitor`. On the first `active` event
+    of a window the core sets a hold of scope `host` on the catalog host whose `monitor_host` is the
+    node, with effects `no_tool` and `pause_action`, reason `maintenance`, author `contain_auto`,
+    source `system:monitor` and the event's `until`; a node is linked to a resource of exactly one
+    tenant (D-75, MON-5), so there is one hold. Each later `active` event of the same
+    `maintenanceid` moves the `until` of that hold forward, never back; this is the only way a
+    hold's deadline grows (HLD-2). An `ended` event or a missing poll changes no hold: the hold ends
+    at its `until`, at most two poll intervals after the window, or a tenant admin or an operator
+    releases it earlier; after a person released it, the core sets no new hold for the same
+    `maintenanceid` while it stays active. A periodic maintenance (for example every night from
+    01:00 to 03:00) thus gives one hold per active period. `no_tool` also stops reading tools on
+    that host, because people work on the machine during the window (D-100). The window does not
+    cancel waiting approvals: with `pause_action` new `request_action` calls are rejected, while
+    waiting cards wait, and their expiry is extended by the length of the hold (HLD-3); people who
+    set windows in the monitoring system are not farm principals and cannot cancel its approvals. A
+    machine with `hosts[].maintenance_hold: true` in the catalog gets the effect `no_action` instead
+    of `pause_action`: waiting approvals become `canceled(held)`. A slot of a schedule whose task
+    scope holds a resource of that host is skipped with `schedule.skipped(held)`, without catch-up:
+    TIM-3 skips a slot for a maintenance hold although its effects do not include `no_enqueue`. A
+    window on a node of the farm itself sets no holds. Fixtures: a 2-hour window on the mock
+    monitoring system gives one hold whose `until` follows the polls and ends at most two poll
+    intervals after the window; a periodic maintenance gives one hold per active period; a tool call
+    on this machine gets `denied(held)`; a schedule slot in the window is skipped with `held`; a
+    card that was waiting before the window stays `pending` after the window, with its expiry
+    extended by the length of the hold; the same card on a machine with `maintenance_hold: true`
+    becomes `canceled(held)`.
   check: [adapter, blackbox]
   waivable: true
   version: v0.2
   profile: monitor
-  decisions: [D-59, D-62, D-75, D-88, D-100]
-  fixtures: [blackbox:core/hold-pause-action, blackbox:monitor/maintenance-hold, schemas/valid/ops/ext-monitor-maintenance, schemas/invalid/ops/ext-monitor-maintenance]
+  decisions: [D-59, D-62, D-75, D-88, D-100, D-103]
+  fixtures: [blackbox:core/hold-pause-action, blackbox:monitor/maintenance-hold, blackbox:monitor/maintenance-periodic, schemas/valid/ops/ext-monitor-maintenance, schemas/invalid/ops/ext-monitor-maintenance]
   doc: docs/monitoring.md
 
 - id: MON-10
@@ -8347,14 +8414,17 @@
     from task data, and does not compute them itself: a type whose result carries numbers declares
     the source tool in `instruction` and in `summary_fields`, and the type's eval compares the
     result numbers with the tool answer (example `data.describe.v1`, D-72). At `complete` the core
-    checks the result against the type's full `result_schema`; a failure is `output_schema_invalid`
-    and the attempt is spent (D-98).
-  check: [lint]
+    checks the result against the type's full `result_schema`: `enum_from` resolves against the
+    catalog version recorded for the attempt (its run fingerprint, PRV-1), filtered by the task's
+    `data_mark`, and `x-botaru-format` is an assertion, not an annotation. A failure is
+    `output_schema_invalid`: the core ends the attempt, the attempt is spent and the retry follows
+    its backoff, so the holder cannot hand in another result under the same lease (D-98).
+  check: [lint, blackbox]
   waivable: false
   version: v0.1
   profile: core
   decisions: [D-71, D-72, D-80, D-98]
-  fixtures: [eval:data/describe-numbers-match, ctd-001, ctd-inj-01]
+  fixtures: [eval:data/describe-numbers-match, ctd-001, ctd-inj-01, blackbox:model/result-full-schema]
   doc: docs/tasks-and-delivery.md
 
 - id: OUT-2
@@ -9291,12 +9361,14 @@
   title: The core writes the run fingerprint
   status: active
   text: >-
-    The core computes the run fingerprint at `claim`: a hash of an ordered set of parts, namely the
-    role manifest, the task type with instruction and schemas, the role's skills, the bot identity's
-    persona, the P3 catalog of this handle, the model profile that P4 allowed, the runtime driver
-    and version with the `describe()` values, and the sandbox image digest. The core writes the
-    fingerprint and the hashes of its parts into the attempt, the usage lines and the data of the
-    `task.completed` event. The runtime and the worker do not set the fingerprint.
+    The core computes the run fingerprint at `claim` by the row "run fingerprint" of
+    `spec/hashing.md`: a hash over the parts role manifest, task type with instruction and schemas,
+    the role's skills, the bot identity's persona, the P3 catalog of this handle, the model profile
+    configured for the slot at `claim`, the runtime driver and version with the `describe()` values,
+    and the sandbox image digest; an absent part is `null`. A later fallback or grant does not
+    change the fingerprint: the actual profile of each call is written on its usage line. The core
+    writes the fingerprint and the hashes of its parts into the attempt, the usage lines and the
+    data of the `task.completed` event. The runtime and the worker do not set the fingerprint.
   check: [blackbox]
   waivable: false
   version: v0.1
@@ -9325,18 +9397,22 @@
   title: Quality check on a static fingerprint change
   status: active
   text: >-
-    `apply` in a production tenant (`kind: production`) does not enable a role of tier 1 and
-    higher if the `EvalReports` index has no entry with zero security failures for its new
-    static fingerprint; the refusal is `eval_report_missing`. In a test tenant (`kind: test`)
-    such an `apply` passes with a warning. The static fingerprint is the run fingerprint without
-    the attempt's catalog (`spec/hashing.md`): the role, its types, skills, the persona of its
-    position, the `base` and `analysis` model profiles, the core agent loop version and the
-    sandbox digest. A change of any of them changes the static fingerprint.
+    `apply` in a production tenant (`kind: production`) does not enable a role of tier 1 and higher
+    if the `EvalReports` index has no entry with zero security failures for its new static
+    fingerprint; the refusal is `eval_report_missing`. In a test tenant (`kind: test`) such an
+    `apply` passes with a warning. The static fingerprint is computed by its own row of
+    `spec/hashing.md`: the role, its types, skills, the persona of its position, the `base` and
+    `analysis` model profiles, the runtime driver with only the major and minor digits of its
+    version, and the sandbox digest. A change of any of them changes the static fingerprint; a patch
+    release of the core does not (D-103). The check runs at `apply` when a role is enabled or one of
+    its parts changes in the set: a role that is already enabled stays enabled after a core upgrade
+    without `apply`, and `doctor` warns `eval_report_stale` for each production role whose current
+    static fingerprint has no entry.
   check: [lint]
   waivable: false
   version: v0.2
   profile: core
-  decisions: []
+  decisions: [D-103]
   fixtures: [fx-prv-03]
   doc: docs/capabilities.md
 
@@ -9416,12 +9492,18 @@
   text: >-
     At `complete`, before delivery, code checks each number in the model paragraph against the
     allowed set of the same digest: the numbers of the rendered table snapshot, shares also as
-    percent, dates and times, the snapshot time, the window bounds and the closed parameters of
-    the task. Tokens are read by the digest `locale`; number words come from a closed list in
-    the message catalog; digits joined to letters are a name, not a number. A number matches
-    when its absolute value, rounded to the precision written, equals an allowed value. If even
-    one number does not match, the paragraph is not sent, the digest goes out as the table
-    alone, and the core writes the event `digest.text_dropped.v1` with counts only (D-95).
+    percent, dates and times, the snapshot time, the window bounds and the closed parameters of the
+    task. Tokens are read by the token grammar of the digest `locale` in the message catalog
+    (`number.decimal_sep`, `number.group_sep`, `number.words`, `number.units`, `docs/messaging.md`):
+    a token is a number when it is digits with these separators, with an optional sign and `%`, or a
+    number word, optionally followed by a unit from the closed list `number.units` (`120GB` and `2.5
+    s` are numbers); a token where letters come before the digits or letters outside the unit list
+    follow them (`web1`, `bathy-50m`, `1st`) is a name. Comparison is decimal, never binary floating
+    point: an allowed value is rounded half away from zero to the number of decimals written, and a
+    number matches when its absolute value equals such a rounded value; a percent is compared with a
+    share times 100. If even one number does not match, the paragraph is not sent, the digest goes
+    out as the table alone, and the core writes the event `digest.text_dropped.v1` with counts only
+    (D-95).
   check: [fixture, eval]
   waivable: true
   level: SHOULD
@@ -10314,7 +10396,7 @@
   check: [blackbox]
   waivable: false
   version: v0.2
-  profile: core
+  profile: connections
   decisions: [D-102]
   fixtures: [blackbox:core/connection-per-principal, blackbox:core/connection-link-bound]
   doc: docs/security-model.md
@@ -10545,7 +10627,7 @@
   check: [lint, fixture]
   waivable: false
   version: v0.2
-  profile: core
+  profile: knowledge
   decisions: []
   fixtures: [schemas/invalid/manifests/skill, lint:skills/format, manifests/v02-lints]
   doc: docs/capabilities.md
@@ -10563,7 +10645,7 @@
   check: [adapter]
   waivable: false
   version: v0.2
-  profile: core
+  profile: knowledge
   decisions: []
   fixtures: [adapter:runtime/skills-role-only]
   doc: docs/capabilities.md
@@ -10578,7 +10660,7 @@
   check: [fixture, blackbox]
   waivable: false
   version: v0.2
-  profile: core
+  profile: knowledge
   decisions: []
   fixtures: [blackbox:skills/tool-outside-role]
   doc: docs/capabilities.md

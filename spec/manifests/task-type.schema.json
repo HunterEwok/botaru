@@ -334,7 +334,7 @@
         "maxLength": 100,
         "pattern": "^[a-z]+/[a-z0-9.+-]+$"
       },
-      "description": "Result file types (ART-5)."
+      "description": "Result file types (ART-5). The core sniffs the type from the content (WHATWG MIME Sniffing; the extension refines it only inside text/*). text/html, application/xhtml+xml, image/svg+xml, JavaScript and +xml types are never allowed; application/pdf only for worker_kind: job."
     },
     "await": {
       "type": "object",

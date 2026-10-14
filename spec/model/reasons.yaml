@@ -325,10 +325,11 @@ entries:
   since: v0.1
   meaning: The decision subject was closed by its own lifecycle (the campaign was canceled, the case was canceled, the person withdrew their request,
     the binding candidate was canceled together with a false incident); the decision outcome is `canceled(subject_closed)`.
+    Also the refusal of a P2 people operation on an `offboarded` principal (LCY-8).
   spends_attempt: null
   retry: none
   outcome: canceled
-  rules: [APR-6]
+  rules: [APR-6, LCY-8]
 - id: over_capacity
   since: v0.1
   meaning: The tenant queue ceiling `max_queued` or `max_enqueue_per_hour` was exceeded, or the soft threshold of storage space;
@@ -420,11 +421,12 @@ entries:
   rules: []
 - id: version_unsupported
   since: v0.1
-  meaning: The protocol version is outside the window; the worker gets this at `hello`, not in the middle of work.
+  meaning: The protocol version is outside the window; the worker gets this at `hello`, not in the middle of work. Also an `apply`
+    error for a manifest kind or field of a later skeleton version or of a feature profile the core does not claim (MAN-11).
   spends_attempt: null
   retry: null
   outcome: response
-  rules: [LCY-7]
+  rules: [LCY-7, MAN-11]
 - id: unauthenticated
   since: v0.1
   meaning: The credentials are not recognized.

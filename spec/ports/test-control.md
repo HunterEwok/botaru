@@ -4,7 +4,7 @@ Sheet version: 0.1.0.
 
 ## In short
 
-The test-control port gives the check runner what cannot be done through P1 and P2: move the store clock, run one tick of a background loop, stop a process, inject a store fault, take a store snapshot and restore from it, submit an external event and query the permission table. Without it every core implementation would invent its own way, and the same fixtures would mean different things (lead decision 4 of the 2026-10-12 review). The port exists only on a farm that was created as a test bench from its first start and that never had a tenant other than `kind: test` (APR-9); a production farm has no such port, and the core of a production farm with the port enabled does not start. The initial state is seeded through the ordinary paths: P2 `apply` of manifests and P1 and P2 operations, not through this port.
+The test-control port gives the check runner what cannot be done through P1 and P2: move the store clock, run one tick of a background loop, stop a process, inject a store fault, take a store snapshot and restore from it, submit an external event, query the permission table and call a pure core function. Without it every core implementation would invent its own way, and the same fixtures would mean different things (lead decision 4 of the 2026-10-12 review). The port exists only on a farm that was created as a test bench from its first start and that never had a tenant other than `kind: test` (APR-9); a production farm has no such port, and the core of a production farm with the port enabled does not start. The initial state is seeded through the ordinary paths: P2 `apply` of manifests and P1 and P2 operations, not through this port.
 
 ## Who calls and who implements
 
@@ -24,6 +24,7 @@ The test-control port gives the check runner what cannot be done through P1 and 
 | `store.snapshot` | runner | Takes a snapshot of the test bench store with the label `label` in the same way as the external backup process (RET-5) | `input_schema_invalid`, `forbidden` | v0.1 | RET-5, RET-6 |
 | `store.restore` | runner | Restores the test bench store from the snapshot `label` by the real restore path: the store epoch grows, a restore record is written into the `farm` chain, the core answers `not_ready` until it is ready (RET-6). The answer comes when the core is ready again | `not_found`, `forbidden` | v0.1 | RET-6, AUD-6 |
 | `authorize.eval` | runner | Queries the C2 permission table with one `authz-request` request and answers with `authz-decision` without a write and without side effects; for rows of the production kind of the table, the test bench passes the tenant kind in the request instead of creating a production tenant | `input_schema_invalid`, `forbidden` | v0.1 | PRM-2, APR-9 |
+| `function.eval` | runner | Calls one pure core function by name with the `input` of a decision table case and answers with its `output`, without a write and without side effects: `governance.count` (GOV-8), `commission.calibration` (COM-11), `digest.sample` (DIG-5), `reporter.number_check` (REP-4), `schedule.check` (TIM-5). The core uses the same code for the function as on its ordinary path | `input_schema_invalid`, `not_found`, `forbidden` | v0.2 | APR-9, GOV-8, COM-11, DIG-5, REP-4, TIM-5 |
 | `event.inject` | runner | Submits an incoming `Activity` the way the test bench channel or monitoring adapter named `via` would submit it; the core processes it by the same path as `submit_activity` of that process, with the same authenticity check by the process mark | `not_found`, `forbidden`, `submit_activity` refusals | v0.1 | IDN-3 |
 
 Request and response schemas: the `T.*` rows of the map `spec/ports/operations.yaml`. The answer of a changing operation is `test-control-response` with the store clock after the action.
@@ -42,11 +43,11 @@ Request and response schemas: the `T.*` rows of the map `spec/ports/operations.y
 ## Bindings
 
 - Transport: `spec/bindings/http/README.md`, path `/v1/test/<operation>`, a separate listener, the test bench key in `Authorization: Bearer`.
-- Schemas: `spec/model/test-clock-request.schema.json`, `test-loop-tick-request`, `test-process-stop-request`, `test-store-fault-request`, `test-event-inject-request`, `test-store-snapshot-request`, `test-store-restore-request`, `test-control-response`; `authorize.eval` has the request `authz-request` and the response `authz-decision`.
+- Schemas: `spec/model/test-clock-request.schema.json`, `test-loop-tick-request`, `test-process-stop-request`, `test-store-fault-request`, `test-event-inject-request`, `test-store-snapshot-request`, `test-store-restore-request`, `test-control-response`; `authorize.eval` has the request `test-authorize-eval-request` and the response `authz-decision`; `function.eval` has `test-function-eval-request` and `test-function-eval-response`.
 - Checks: the `conformance/suites/` suites that refer to test bench actions.
 
 ## What the port does not do
 
-- It does not seed data: the initial state of a fixture is set by manifests and by P1 and P2 calls.
+- It does not seed data: the initial state of a fixture is set by manifests and by P1 and P2 calls. `authorize.eval` and `function.eval` take their input in the request and keep nothing.
 - It does not replace the model and the provider: for that there is the mock provider `spec/bindings/model-providers/mock.md` behind P4.
 - It does not work on a production farm in any mode: there is no flag "open the port on production".
