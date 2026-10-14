@@ -44,14 +44,14 @@ from jsonschema import Draft202012Validator
 
 sys.dont_write_bytecode = True
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from common import PROFILES, ROOT, Loader, Report, _expand_short, call_body_errors, stand_body_errors, iter_nodes, load_json, load_yaml, md_cells, read, registry, rel, rules, schema_registry, schemas, walk
+from common import PROFILES, ROOT, VERSIONS, Loader, Report, _expand_short, call_body_errors, stand_body_errors, iter_nodes, load_json, load_yaml, md_cells, read, registry, rel, rules, schema_registry, schemas, walk
 
 rep = Report('cross-checks')
 MODEL = os.path.join(ROOT, 'spec', 'model')
 PORTS = os.path.join(ROOT, 'spec', 'ports')
 OPS_FILE = 'spec/ports/operations.yaml'
 PORT_NAMES = ('P1', 'P2', 'P3', 'P4', 'C1', 'C2', 'C3', 'C4', 'E1', 'E2', 'E3', 'E4', 'E5', 'T')
-SINCE = ('v0.1', 'v0.2', 'v0.3')
+SINCE = VERSIONS
 active = set(rules('active'))
 
 

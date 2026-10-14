@@ -36,17 +36,17 @@ git fetch origin main
 python3 -I ci/run_all.py origin/main
 ```
 
-Without `git fetch origin main` the "additive only" check does not find the base branch and compares nothing. Generated files (`conformance/rules.md`, `conformance/retired.md`, the "Rules of this section" sections, `spec/lifecycles/*.yaml`, `conformance/suites/`) are never edited by hand: you edit the source and then run the generator. What each check does is described in [ci/README.md](ci/README.md).
+Without `git fetch origin main` the "additive only" check does not find the base branch and compares nothing. Generated files (`conformance/rules.md`, `conformance/retired.md`, `conformance/deferred.md`, the "Rules of this section" sections, `spec/lifecycles/*.yaml`, `conformance/suites/`) are never edited by hand: you edit the source and then run the generator. What each check does is described in [ci/README.md](ci/README.md).
 
 If after a change in `examples/` the fixtures `conformance/fixtures/manifests/*` fail with the message "expects ok", fix the first error in `examples/` first: fixtures with `with_examples: true` load the training manifests as background.
 
 ## Rules
 
-- A rule is written once, in `conformance/requirements.yaml`. The files `conformance/rules.md`, `conformance/retired.md` and the "Rules of this section" sections in the documents are generated from the registry and are never edited by hand.
+- A rule is written once, in `conformance/requirements.yaml`. The files `conformance/rules.md`, `conformance/retired.md`, `conformance/deferred.md` and the "Rules of this section" sections in the documents are generated from the registry and are never edited by hand.
 - Fields of a row: `id`, `title`, `status`, `text`, `check`, `waivable`, `version`, `profile`, `decisions`, `fixtures`, `doc`; the optional `level: SHOULD` marks a recommendation rule. A sample row is in [docs/quality.md](docs/quality.md), section "Rule registry".
-- After changing the registry, run `python3 ci/gen_rules.py`: it regenerates `conformance/rules.md`, `conformance/retired.md` and the "Rules of this section" sections.
+- After changing the registry, run `python3 ci/gen_rules.py`: it regenerates `conformance/rules.md`, `conformance/retired.md`, `conformance/deferred.md` and the "Rules of this section" sections.
 - The number of a new rule is mentioned in the prose of the document named in the `doc` field, not only in the generated table.
-- A rule number is never reused. A retired rule stays as a row with `status: retired`, a date, a reason and the field `replaced_by` if another rule replaced it.
+- A rule number is never reused. A retired rule stays as a row with `status: retired`, a date, a reason and the field `replaced_by` if another rule replaced it. A rule not needed yet gets `status: deferred` with `deferred` (a date), `reason`, `return_when` and `mechanism_removed`, and keeps its text so it can come back. A rule that stops after a version without a replacement keeps `until`, an empty `superseded_by` and `end_reason`.
 - A new rule gets the next free number of its family: the highest number the family ever had, plus one.
 - A new rule family is added to the profile table of [docs/quality.md](docs/quality.md), section "Rule registry".
 - A rule is self-contained: no references such as "as above" or "the rest unchanged". References to the numbers of other rules are allowed.

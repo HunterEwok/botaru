@@ -3,7 +3,8 @@
 """Text and links: rule and decision numbers, file paths, port operations.
 
 - a mentioned rule number (any token like ABC-12, except SHA-256 and
-  similar) is in the registry and is not retired;
+  similar) is in the registry, is not retired and is not deferred (the
+  decision log and the changelog may name a deferred rule);
 - a mentioned decision number (D-NN) is in docs/decisions.md;
 - a Markdown link ([x](path), [x](path "title"), [x]: path) leads to an
   existing file inside the public repository, and the anchor #frag exists in
@@ -134,6 +135,8 @@ for f in walk():
             rep.error(rp, f'[yaml_invalid] the YAML cannot be read: {" ".join(str(e).split())[:240]}')
     gen = rp in GENERATED or rp == REGISTRY
     in_retired_list = rp in ('conformance/retired.md', REGISTRY)
+    # the decision log and the changelog are history: they may name a rule that was deferred later
+    in_deferred_list = rp in ('conformance/deferred.md', REGISTRY, 'docs/decisions.md', 'CHANGELOG.md')
     prose = text.split(MARK)[0]
     if rp.endswith('.md') and not rp.startswith('conformance/'):
         for m in ID_RE.finditer(prose):
@@ -155,6 +158,10 @@ for f in walk():
                     rep.error(where, f'[rule_unknown] rule number {rid} is not found in the registry')
                 elif status[rid] == 'retired' and not in_retired_list:
                     rep.error(where, f'[rule_retired] reference to the retired number {rid}')
+                elif status[rid] == 'deferred' and not in_deferred_list:
+                    rep.error(where, f'[rule_deferred] reference to the deferred rule {rid}: a deferred rule is in no '
+                              'version, so a document, schema, registry or check that still names it describes '
+                              'a mechanism the skeleton no longer has')
         for m in DEC_RE.finditer(line):
             if int(m.group(1)) not in decisions:
                 rep.error(where, f'[decision_unknown] decision {m.group(0)} is not found in docs/decisions.md')

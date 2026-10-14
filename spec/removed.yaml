@@ -1,0 +1,12 @@
+# Schemas, closed registries and registry values removed, and schemas changed incompatibly,
+# before the first release, when the compatibility promise does not hold yet (spec/versions.md).
+# ci/check_additive.py accepts such a change only together with a new entry here; after the first
+# release a new entry is an error. Entries stay as history.
+#
+#   - schema: spec/model/<name>.schema.json   # or registry: spec/model/<name>.yaml
+#     change: removed                         # schema only: removed or breaking
+#     values: [<id>, ...]                     # registry only: the removed values; none means the whole file
+#     removed: 2026-10-14
+#     reason: why it goes
+#     decisions: [D-NN]
+entries: []

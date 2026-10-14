@@ -4,11 +4,17 @@
 
 An active rule has a text, a check method, the waivable flag, a version,
 a profile and a document; a retired one has a date, a reason and a replacement.
+A deferred rule keeps its full row (text, version, profile, document) so it
+can come back, and adds the date it was deferred, the reason, the condition
+under which it returns and whether its mechanism was removed from the code
+and the skeleton; no version checks it and no text may refer to it.
 A number appears once. Rules carry no pending mark. Unknown row fields
 (a typo such as decison:) are an error. A rule that a later version changes
 keeps its row with until (the last version it applies to) and
 superseded_by (the active rules of the next versions that replace it), so
 an implementation that claims the earlier version is still checked by it.
+A rule that ends without a replacement has until, an empty superseded_by and
+end_reason.
 """
 import datetime
 import os
@@ -22,8 +28,9 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from common import CHECKS, PROFILES, REGISTRY, ROOT, VERSIONS, Loader, Report, known_decisions, read, registry
 
 ACTIVE_KEYS = {'id', 'title', 'status', 'text', 'check', 'waivable', 'version', 'profile', 'level',
-               'decisions', 'fixtures', 'doc', 'until', 'superseded_by'}
+               'decisions', 'fixtures', 'doc', 'until', 'superseded_by', 'end_reason'}
 RETIRED_KEYS = {'id', 'title', 'status', 'retired', 'reason', 'replaced_by'}
+DEFERRED_KEYS = ACTIVE_KEYS - {'until', 'superseded_by', 'end_reason'} | {'deferred', 'reason', 'return_when', 'mechanism_removed'}
 
 rep = Report('registry')
 try:
@@ -58,12 +65,12 @@ for n, r in enumerate(rows):
     if not r.get('title'):
         rep.error(where, '[rule_title_missing] no title')
     status = r.get('status')
-    allowed = ACTIVE_KEYS if status == 'active' else RETIRED_KEYS if status == 'retired' else None
+    allowed = {'active': ACTIVE_KEYS, 'retired': RETIRED_KEYS, 'deferred': DEFERRED_KEYS}.get(status)
     if allowed is not None:
         extra = sorted(set(r) - allowed)
         if extra:
             rep.error(where, f'[rule_unknown_field] unknown fields {extra}; allowed are {sorted(allowed)}')
-    if status == 'active':
+    if status in ('active', 'deferred'):
         if not str(r.get('text') or '').strip():
             rep.error(where, '[rule_text_missing] no rule text')
         checks = r.get('check') or []
@@ -98,11 +105,25 @@ for n, r in enumerate(rows):
             if until not in VERSIONS or r.get('version') not in VERSIONS \
                     or VERSIONS.index(until) < VERSIONS.index(r.get('version')) or until == VERSIONS[-1]:
                 rep.error(where, f'[rule_until] until {until!r} must be a version from {VERSIONS}, not before the rule version and not the last one')
-            if not isinstance(r.get('superseded_by'), list) or not r.get('superseded_by'):
-                rep.error(where, '[rule_superseded_by] a rule with until names the rules that replace it in superseded_by')
+            if not isinstance(r.get('superseded_by'), list):
+                rep.error(where, '[rule_superseded_by] a rule with until names the rules that replace it in superseded_by, '
+                          'an empty list if it ends without a replacement')
+            elif not r.get('superseded_by') and not str(r.get('end_reason') or '').strip():
+                rep.error(where, '[rule_end_reason] a rule that ends without a replacement says why in end_reason')
+        if r.get('end_reason') is not None and (until is None or r.get('superseded_by')):
+            rep.error(where, '[rule_end_reason] end_reason is only for a rule with until and an empty superseded_by')
         doc = r.get('doc')
         if not doc or not os.path.exists(os.path.join(ROOT, doc)):
             rep.error(where, f'[rule_doc_missing] document {doc!r} not found')
+        if status == 'deferred':
+            if not isinstance(r.get('deferred'), (datetime.date, str)) or not r.get('deferred'):
+                rep.error(where, '[deferred_date] the deferred rule has no date in deferred')
+            for k in ('reason', 'return_when'):
+                if not str(r.get(k) or '').strip():
+                    rep.error(where, f'[deferred_{k}] the deferred rule has no {k}')
+            if not isinstance(r.get('mechanism_removed'), bool):
+                rep.error(where, '[deferred_mechanism] mechanism_removed must be true or false: '
+                          'whether the mechanism of the rule was removed from the code and the skeleton')
     elif status == 'retired':
         if not isinstance(r.get('retired'), (datetime.date, str)) or not r.get('retired'):
             rep.error(where, '[retired_date] the retired number has no date')
@@ -111,7 +132,7 @@ for n, r in enumerate(rows):
         if not isinstance(r.get('replaced_by'), list):
             rep.error(where, '[retired_replaced_by] replaced_by must be a list, empty if there is no replacement')
     else:
-        rep.error(where, f'[rule_status] status {status!r} is neither active nor retired')
+        rep.error(where, f'[rule_status] status {status!r} is not active, deferred or retired')
 
 active = {r['id'] for r in rows if isinstance(r, dict) and r.get('status') == 'active'}
 by_id = {r['id']: r for r in rows if isinstance(r, dict) and r.get('status') == 'active' and isinstance(r.get('id'), str)}

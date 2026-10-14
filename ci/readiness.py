@@ -32,6 +32,9 @@ does not name that rule in its rules (neither its own nor those of the file).
   python3 ci/readiness.py v0.1 --strict         error if the version is not covered
   python3 ci/readiness.py v0.1 --list           list the uncovered names
   python3 ci/readiness.py v0.1 --extra <folder> one more folder with implementation fixtures (can repeat)
+
+A test of the reference implementation counts as data for a runner: it runs
+against an implementation (the workflow go runs it on every change).
 """
 import collections
 import os
@@ -150,8 +153,35 @@ if os.path.exists(ev):
         later.update(re.findall(r'`([a-z][a-z0-9-]*-\d+)`', line))
 
 
+GO_FUNC = re.compile(r'^func (Test[A-Za-z0-9_]*)\(')
+RULE_TOKEN = re.compile(r'\b[A-Z]{2,3}-\d+[a-z]?\b')
+go_tests = {}  # (folder under impl/, TestName) -> rule numbers named in the comment above it
+
+
+def scan_go_tests():
+    base = os.path.join(ROOT, 'impl')
+    for f in walk(('_test.go',), base) if os.path.isdir(base) else []:
+        folder = os.path.relpath(os.path.dirname(f), base).replace(os.sep, '/')
+        comment = []
+        for line in open(f, encoding='utf-8'):
+            if line.startswith('//'):
+                comment.append(line)
+                continue
+            m = GO_FUNC.match(line)
+            if m:
+                go_tests[(folder, m.group(1))] = set(RULE_TOKEN.findall(''.join(comment)))
+            comment = []
+
+
+scan_go_tests()
+
+
 def covered(name):
     """What covers a name: (kind or None, rule numbers named by the covering check, or None)."""
+    if name.startswith('impl:'):
+        folder, _, test = name[len('impl:'):].rpartition('/')
+        hit = go_tests.get((folder, test))
+        return (RUNNER, hit) if hit is not None else (None, None)
     if name in declared and name not in later:
         return declared[name], cites[name]
     m = re.match(r'^([a-z]+):(.+)$', name)

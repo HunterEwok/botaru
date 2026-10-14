@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: AGPL-3.0-only
-"""Builds conformance/rules.md, conformance/retired.md and the "Rules of this section" sections.
+"""Builds conformance/rules.md, retired.md, deferred.md and the "Rules of this section" sections.
 
 There is one source: the registry conformance/requirements.yaml.
   python3 ci/gen_rules.py          rebuild the files
@@ -12,7 +12,7 @@ import sys
 
 sys.dont_write_bytecode = True
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from common import ROOT, Report, id_key, read, registry, walk
+from common import ROOT, VERSIONS, Report, id_key, read, registry, walk
 from common import rel as root_rel
 
 OUTPUT = {}
@@ -37,6 +37,7 @@ CHECK_NAMES = {'fixture': 'fixture', 'store': 'store', 'blackbox': 'blackbox', '
 rows = [r for r in registry() if isinstance(r, dict) and isinstance(r.get('id'), str)]
 act = [r for r in rows if r.get('status') == 'active']
 ret = [r for r in rows if r.get('status') == 'retired']
+dfr = [r for r in rows if r.get('status') == 'deferred']
 byfam = collections.defaultdict(list)
 for r in act:
     byfam[r['id'].split('-')[0]].append(r)
@@ -65,11 +66,11 @@ L = ['# Skeleton rules', '',
      '- "non-waivable": an implementation cannot put the rule on its list of expected failures. "Waivable": it can, with a recorded reason.',
      '- "profile": the part of the skeleton an implementation claims conformance to separately (`core`, `messaging`, `campaign`, `insights`, `manager`, `governance`, `monitor`, `knowledge`, `ingress`, `connections`, `debug`, `sandbox`); the `core` profile is mandatory, see [docs/quality.md](../docs/quality.md).',
      '- "recommendation": a SHOULD rule; all others are mandatory.',
-     '- "check": how compliance is shown. `fixture`: a ready data sample that must pass or fail a check. `store`: a storage check. `blackbox`: a test through the ports without knowledge of the implementation internals. `adapter`: a test of a port adapter. `eval`: a check of model work quality on a set of cases. `lint`: a check of files and manifests.',
+     '- "check": how compliance is shown. `fixture`: a ready data sample that must pass or fail a check. `store`: a storage check. `blackbox`: a test through the ports without knowledge of the implementation internals. `adapter`: a test of a port adapter. `eval`: a check of model work quality on a set of cases. `lint`: a check of files and manifests. `impl`: a test of the reference implementation in `impl/`.',
      '- "decisions": decision numbers from [docs/decisions.md](../docs/decisions.md).', '',
      '## Summary', '',
-     '| Family | About | Document | Rules | Non-waivable | v0.1 | v0.2 | v0.3 |',
-     '|---|---|---|---|---|---|---|---|']
+     '| Family | About | Document | Rules | Non-waivable | ' + ' | '.join(VERSIONS) + ' |',
+     '|---|---|---|---|---|' + '---|' * len(VERSIONS)]
 tot = collections.Counter()
 for fam in sorted(byfam):
     rs = byfam[fam]
@@ -77,9 +78,10 @@ for fam in sorted(byfam):
     c = collections.Counter(r['version'] for r in rs)
     nw = sum(1 for r in rs if r.get('waivable') is False)
     tot.update(c); tot['all'] += len(rs); tot['nw'] += nw
-    L.append(f"| [{fam}](#{fam.lower()}) | {FAM_NAMES.get(fam, fam)} | [{docs}]({link('conformance/rules.md', docs)}) | {len(rs)} | {nw} | {c['v0.1']} | {c['v0.2']} | {c['v0.3']} |")
-L.append(f"| Total | | | {tot['all']} | {tot['nw']} | {tot['v0.1']} | {tot['v0.2']} | {tot['v0.3']} |")
-L += ['', f'Retired numbers ({len(ret)}) are listed in [retired.md](retired.md).', '']
+    L.append(f"| [{fam}](#{fam.lower()}) | {FAM_NAMES.get(fam, fam)} | [{docs}]({link('conformance/rules.md', docs)}) | {len(rs)} | {nw} | " + ' | '.join(str(c[v]) for v in VERSIONS) + ' |')
+L.append(f"| Total | | | {tot['all']} | {tot['nw']} | " + ' | '.join(str(tot[v]) for v in VERSIONS) + ' |')
+L += ['', f'Retired numbers ({len(ret)}) are listed in [retired.md](retired.md), '
+      f'deferred rules ({len(dfr)}) in [deferred.md](deferred.md).', '']
 for fam in sorted(byfam):
     rs = sorted(byfam[fam], key=lambda r: id_key(r['id']))
     docs = sorted(set(r['doc'] for r in rs))
@@ -89,6 +91,8 @@ for fam in sorted(byfam):
         L += [f'<a id="{r["id"]}"></a>', f"### {r['id']}. {r['title']}", '', meta(r), '', ' '.join(str(r['text']).split()), '']
         if r.get('superseded_by'):
             L += [f"From the next version replaced by: " + ', '.join(f'[{x}](#{x})' for x in r['superseded_by']), '']
+        elif r.get('until'):
+            L += ['Ends without a replacement: ' + ' '.join(str(r.get('end_reason') or '').split()), '']
         if r.get('fixtures'):
             L += ['Checked by: ' + ', '.join(f'`{x}`' for x in r['fixtures']), '']
 OUTPUT['conformance/rules.md'] = '\n'.join(L).rstrip() + '\n'
@@ -101,6 +105,24 @@ for r in sorted(ret, key=lambda r: id_key(r['id'])):
     rb = ', '.join(f'[{x}](rules.md#{x})' for x in (r.get('replaced_by') or [])) or 'none'
     R.append(f"| {r['id']} | {r['title']} | {r['retired']} | {' '.join(str(r['reason']).split())} | {rb} |")
 OUTPUT['conformance/retired.md'] = '\n'.join(R) + '\n'
+
+D = ['# Deferred rules', '',
+     'This file is generated from the registry `conformance/requirements.yaml`.', '',
+     'A deferred rule is not part of any skeleton version: no version checks it, and no document, schema or '
+     'registry may refer to it. Its row keeps the full text so that the rule can come back unchanged when the '
+     'condition in "Returns when" holds; it then becomes active in the version current at that time. '
+     '"Mechanism removed" says whether the code and the skeleton were cleaned of what the rule needed.', '',
+     f'Deferred rules: {len(dfr)}.', '',
+     '| Number | Title | Deferred | Why | Returns when | Mechanism removed |', '|---|---|---|---|---|---|']
+for r in sorted(dfr, key=lambda r: id_key(r['id'])):
+    D.append(f"| [{r['id']}](#{r['id']}) | {r['title']} | {r.get('deferred')} | {' '.join(str(r.get('reason')).split())} | "
+             f"{' '.join(str(r.get('return_when')).split())} | {'yes' if r.get('mechanism_removed') else 'no'} |")
+D.append('')
+for r in sorted(dfr, key=lambda r: id_key(r['id'])):
+    D += [f'<a id="{r["id"]}"></a>', f"## {r['id']}. {r['title']}", '',
+          f"was {r.get('version')} · profile {r.get('profile')} · check: {', '.join(r.get('check') or [])}", '',
+          ' '.join(str(r['text']).split()), '']
+OUTPUT['conformance/deferred.md'] = '\n'.join(D).rstrip() + '\n'
 
 # per-doc sections
 bydoc = collections.defaultdict(list)

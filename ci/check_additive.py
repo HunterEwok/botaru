@@ -46,6 +46,13 @@ spec/model/*.yaml with their state at the branch point from the base branch
 A breaking schema change is made as a new file .v(N+1) next to .vN;
 a retired registry value stays an entry marked retired.
 
+Before the first release (no git tag v<digit>...) the compatibility promise
+does not hold yet (spec/versions.md). Then a change may remove a schema, a
+closed registry or registry values, or change a schema incompatibly, if it
+records that in spec/removed.yaml with a reason and the deciding decisions.
+Only entries this change adds count, so a recorded file is not exempt
+forever; after the first release a new entry is an error.
+
   python3 ci/check_additive.py [base]   origin/main by default (or BASE_REF)
 
 Without a base: in GitHub Actions and with an explicit argument this is an error;
@@ -62,7 +69,7 @@ import yaml
 
 sys.dont_write_bytecode = True
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from common import ROOT, Loader, Report, no_dup_json, walk
+from common import ROOT, Loader, Report, no_dup_json, read, walk
 
 rep = Report('additive only')
 explicit = next((a for a in sys.argv[1:] if not a.startswith('-')), None)
@@ -403,6 +410,59 @@ def show(p):
     return out.stdout if out.returncode == 0 else None
 
 
+REMOVED = 'spec/removed.yaml'
+REMOVED_KEYS = {'schema', 'registry', 'change', 'values', 'reason', 'decisions', 'removed'}
+
+
+def removal_entries(text, where):
+    try:
+        doc = yaml.load(text or '', Loader=Loader) or {}
+    except yaml.YAMLError as e:
+        rep.error(where, f'[yaml_invalid] cannot be read: {" ".join(str(e).split())[:200]}')
+        return []
+    out = doc.get('entries') if isinstance(doc, dict) else None
+    return [e for e in out if isinstance(e, dict)] if isinstance(out, list) else []
+
+
+def entry_key(e):
+    return json.dumps(e, sort_keys=True, default=str)
+
+
+removal_new = []
+if os.path.exists(os.path.join(ROOT, REMOVED)):
+    before = {entry_key(e) for e in removal_entries(show(prefix + REMOVED), REMOVED)}
+    for e in removal_entries(read(os.path.join(ROOT, REMOVED)), REMOVED):
+        extra = sorted(set(e) - REMOVED_KEYS)
+        target = e.get('schema') or e.get('registry')
+        if extra or bool(e.get('schema')) == bool(e.get('registry')) or not str(e.get('reason') or '').strip() \
+                or not e.get('decisions') or (e.get('schema') and e.get('change') not in ('removed', 'breaking')):
+            rep.error(f'{REMOVED} {target}', '[removal_entry_form] an entry names one schema (with change: removed or '
+                      'breaking) or one registry (with values, or none for the whole file), a reason and decisions'
+                      + (f'; unknown fields {extra}' if extra else ''))
+            continue
+        if entry_key(e) not in before:
+            removal_new.append(e)
+released = bool(git('tag', '--list', 'v[0-9]*').stdout.strip())
+if released and removal_new:
+    rep.error(REMOVED, '[removal_after_release] the first release is out: the compatibility promise holds, '
+              'a breaking change is a new file .v(N+1) and a retired value stays marked retired')
+    removal_new = []
+waived_schemas = {e['schema'] for e in removal_new if e.get('schema')}
+waived_regs = {e['registry']: set(e.get('values') or []) or None for e in removal_new if e.get('registry')}
+_error = rep.error
+
+
+def error_unless_recorded(where, msg):
+    """A breaking change recorded in spec/removed.yaml by this change is a note, not an error."""
+    path = re.split(r'[#\s]', str(where), maxsplit=1)[0]
+    if path in waived_schemas:
+        rep.note(where, f'[change_recorded] recorded in {REMOVED}: {msg}')
+    else:
+        _error(where, msg)
+
+
+rep.error = error_unless_recorded
+
 olds, news = {}, {}
 for p in old_files:
     rp = p[len(prefix):]
@@ -612,7 +672,10 @@ for p in old_regs:
     rp = p[len(prefix):]
     full = os.path.join(ROOT, rp)
     if not os.path.exists(full):
-        rep.error(rp, '[registry_removed] the closed registry was removed or renamed')
+        if rp in waived_regs and waived_regs[rp] is None:
+            rep.note(rp, f'[change_recorded] recorded in {REMOVED}: the closed registry was removed')
+        else:
+            rep.error(rp, '[registry_removed] the closed registry was removed or renamed')
         continue
     try:
         old = yaml.load(show(p) or '', Loader=Loader) or {}
@@ -625,6 +688,12 @@ for p in old_regs:
     oe = {e.get('id'): e for e in old.get('entries') or [] if isinstance(e, dict)}
     ne = {e.get('id'): e for e in new.get('entries') or [] if isinstance(e, dict)}
     gone = [i for i in oe if i not in ne]
+    recorded = waived_regs.get(rp, set()) if rp in waived_regs else set()
+    if recorded is None:
+        recorded = set(gone)
+    if gone and set(gone) <= recorded:
+        rep.note(rp, f'[change_recorded] recorded in {REMOVED}: values {gone} were removed')
+        gone = []
     if gone:
         rep.error(rp, f'[registry_value_removed] values {gone} left the registry: a retired value stays '
                   'an entry marked retired')

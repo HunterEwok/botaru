@@ -18,6 +18,7 @@ import traceback
 sys.dont_write_bytecode = True
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
+from common import VERSIONS  # noqa: E402
 
 args = [a for a in sys.argv[1:] if not a.startswith('-')]
 flags = [a for a in sys.argv[1:] if a.startswith('-')]
@@ -36,9 +37,7 @@ STEPS = [
     ['check_evals.py'],
     ['check_additive.py', *args[:1]],
     ['public_safety.py'],
-    ['readiness.py', 'v0.1', '--strict'],
-    ['readiness.py', 'v0.2', '--strict'],
-    ['readiness.py', 'v0.3', '--strict'],
+    *(['readiness.py', v, '--strict'] for v in VERSIONS),
 ]
 failed = []
 gh = bool(os.environ.get('GITHUB_ACTIONS'))
