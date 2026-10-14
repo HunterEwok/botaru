@@ -352,17 +352,24 @@ func freeParam(s map[string]any) bool {
 	return true
 }
 
-// freeText says whether a schema has a string without enum, enum_from, const or format
-// anywhere in it, as ci/check_manifests.py does; a string of any length counts.
+// proseFormats are the formats of spec/model/formats.yaml whose values are prose, not a
+// closed shape: a string of such a format is free text (INJ-3).
+var proseFormats = map[string]bool{"search_query": true}
+
+// freeText says whether a schema has a string without enum, enum_from, const or a non-prose
+// format anywhere in it, as ci/check_manifests.py does; a string of any length counts.
 func freeText(v any) bool {
 	switch x := v.(type) {
 	case map[string]any:
 		if x["type"] == "string" || isStringType(x["type"]) {
 			closed := false
-			for _, k := range []string{"enum", "enum_from", "const", "x-botaru-format"} {
+			for _, k := range []string{"enum", "enum_from", "const"} {
 				if _, ok := x[k]; ok {
 					closed = true
 				}
+			}
+			if f, ok := x["x-botaru-format"].(string); ok && !proseFormats[f] {
+				closed = true
 			}
 			if !closed {
 				return true

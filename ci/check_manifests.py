@@ -252,11 +252,17 @@ def enum_from_lists(node):
     return {n['enum_from'] for _, n in walk_nodes(node) if isinstance(n.get('enum_from'), str)}
 
 
+# Formats of spec/model/formats.yaml whose values are prose, not a closed shape: a string of
+# such a format is free text (INJ-3).
+PROSE_FORMATS = {'search_query'}
+
+
 def free_text(node):
-    """Whether the output schema has a string without enum, const and format (INJ-3)."""
+    """Whether the output schema has a string without enum, const and a non-prose format (INJ-3)."""
     for _, n in walk_nodes(node):
         if n.get('type') == 'string' and 'maxLength' in n and not any(
-                k in n for k in ('enum', 'enum_from', 'const', 'x-botaru-format')):
+                k in n for k in ('enum', 'enum_from', 'const')) and (
+                'x-botaru-format' not in n or n['x-botaru-format'] in PROSE_FORMATS):
             return True
     return False
 

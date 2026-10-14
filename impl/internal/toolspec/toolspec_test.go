@@ -114,6 +114,12 @@ func TestCheck(t *testing.T) {
 	if is := Check(trusted, nil); len(is) != 2 || is[1].Code != "untrusted_output_false_text" {
 		t.Fatalf("free text declared trusted: %v", is)
 	}
+	// A prose format is free text, not a closed shape.
+	delete(trusted.Tools[0].OutputSchema["properties"].(map[string]any), "note")
+	trusted.Tools[0].OutputSchema["properties"].(map[string]any)["query"] = map[string]any{"type": "string", "x-botaru-format": "search_query"}
+	if is := Check(trusted, nil); len(is) != 2 || is[1].Code != "untrusted_output_false_text" || trusted.Tools[0].TrustedOutput() {
+		t.Fatalf("a search_query declared trusted: %v", is)
+	}
 	if is := Check(readPlugin(t, "checks"), nil); len(is) > 0 {
 		t.Fatalf("the checks example: %v", is)
 	}

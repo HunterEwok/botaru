@@ -179,7 +179,10 @@ func (a *Agent) run(ctx context.Context, p attemptPayload) (map[string]any, stri
 	}
 	var p3 *toolsClient
 	if th, _ := p.Handles["tools"].(string); th != "" {
-		p3 = &toolsClient{url: strings.TrimRight(a.cfg.Core.BaseURL, "/") + "/v1/p3/mcp", handle: th, http: hc}
+		// A tool call may run for the tool's timeout_s, up to an hour; the core bounds the wait
+		// by start_by, the tool deadline and the lease, so P3 has no client timeout of its own.
+		p3hc := &http.Client{Transport: hc.Transport, CheckRedirect: hc.CheckRedirect, Jar: hc.Jar}
+		p3 = &toolsClient{url: strings.TrimRight(a.cfg.Core.BaseURL, "/") + "/v1/p3/mcp", handle: th, http: p3hc}
 	}
 	client := anthropic.NewClient(
 		option.WithoutEnvironmentDefaults(),

@@ -574,3 +574,25 @@ func TestToolhostAfterApply(t *testing.T) {
 		t.Fatalf("a call queued across an apply: %+v %v", res.r, res.err)
 	}
 }
+
+// A call whose attempt lease is past lease_until is not handed out, even before the reaper
+// ends the lease (FEN-1, FEN-4).
+func TestToolcallExpiredAttempt(t *testing.T) {
+	ctx := context.Background()
+	b := newToolBench(t)
+	att, h := b.attemptTools(t, "1", false)
+	th := b.toolhost(t, "checks")
+	done := callAsync(b, h, mcp.CallParams{Name: "checks_latest", Arguments: map[string]any{"check": "www-health"}})
+	waitQueued(t, b)
+	if _, err := b.c.st.Pool.Exec(ctx, `UPDATE leases SET lease_until = now() - interval '1 second' WHERE work_id = $1 AND state = 'active'`, att.WorkID); err != nil {
+		t.Fatal(err)
+	}
+	if item := b.claim(t, th, "toolcall"); item != nil {
+		t.Fatalf("a call of an expired attempt was handed out: %+v", item)
+	}
+	var state string
+	if err := b.c.st.Pool.QueryRow(ctx, `SELECT state FROM toolcalls`).Scan(&state); err != nil || state != "abandoned" {
+		t.Fatalf("call state %s %v", state, err)
+	}
+	<-done
+}

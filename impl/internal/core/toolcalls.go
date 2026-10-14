@@ -90,7 +90,7 @@ func (c *Core) claimToolcall(ctx context.Context, tx pgx.Tx, now time.Time, cat 
 		if err != nil {
 			return nil, err
 		}
-		alive, err := attemptAlive(ctx, tx, task, attemptLease)
+		alive, err := attemptAlive(ctx, tx, now, task, attemptLease)
 		if err != nil {
 			return nil, err
 		}
@@ -180,13 +180,15 @@ func toolName(right string) string {
 }
 
 // attemptAlive says whether the attempt lease that made a call is still active.
-func attemptAlive(ctx context.Context, tx pgx.Tx, task string, leaseNo int) (bool, error) {
+// A lease past lease_until is not alive, even before the reaper ends it (FEN-1).
+func attemptAlive(ctx context.Context, tx pgx.Tx, now time.Time, task string, leaseNo int) (bool, error) {
 	var state string
-	err := tx.QueryRow(ctx, `SELECT state FROM leases WHERE work_id = $1 AND lease_no = $2`, task, leaseNo).Scan(&state)
+	var until time.Time
+	err := tx.QueryRow(ctx, `SELECT state, lease_until FROM leases WHERE work_id = $1 AND lease_no = $2`, task, leaseNo).Scan(&state, &until)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return false, nil
 	}
-	return state == "active", err
+	return state == "active" && now.Before(until), err
 }
 
 // endToolCall moves a call to a terminal state.
@@ -215,7 +217,7 @@ func (c *Core) completeToolcall(ctx context.Context, tx pgx.Tx, now time.Time, l
 	if state != "leased" {
 		return nil // abandoned or ended meanwhile: the outcome is dropped
 	}
-	if alive, err := attemptAlive(ctx, tx, task, attemptLease); err != nil {
+	if alive, err := attemptAlive(ctx, tx, now, task, attemptLease); err != nil {
 		return err
 	} else if !alive {
 		return endToolCall(ctx, tx, now, l.WorkID, "abandoned", "fenced", nil)
