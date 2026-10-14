@@ -3,8 +3,10 @@
 """Text and links: rule and decision numbers, file paths, port operations.
 
 - a mentioned rule number (any token like ABC-12, except SHA-256 and
-  similar) is in the registry, is not retired and is not deferred (the
-  decision log and the changelog may name a deferred rule);
+  similar) is in the registry and is not retired; a deferred rule may be
+  named only while its mechanism is still in the skeleton
+  (mechanism_removed: false, a note), and always in the decision log and
+  the changelog;
 - a mentioned decision number (D-NN) is in docs/decisions.md;
 - a Markdown link ([x](path), [x](path "title"), [x]: path) leads to an
   existing file inside the public repository, and the anchor #frag exists in
@@ -39,6 +41,7 @@ rep = Report('text and links')
 rows = [r for r in registry() if isinstance(r, dict) and isinstance(r.get('id'), str)]
 ID_RE = id_regex(rows)
 status = {r['id']: r.get('status') for r in rows}
+removed = {r['id']: r.get('mechanism_removed') is not False for r in rows}
 decisions = known_decisions()
 MARK = '<!-- generated: rules -->'
 EM_DASH = '\u2014'
@@ -158,10 +161,13 @@ for f in walk():
                     rep.error(where, f'[rule_unknown] rule number {rid} is not found in the registry')
                 elif status[rid] == 'retired' and not in_retired_list:
                     rep.error(where, f'[rule_retired] reference to the retired number {rid}')
+                elif status[rid] == 'deferred' and not in_deferred_list and removed[rid]:
+                    rep.error(where, f'[rule_deferred] reference to the deferred rule {rid} whose mechanism was removed: '
+                              'a document, schema, registry or check that still names it describes a mechanism '
+                              'the skeleton no longer has')
                 elif status[rid] == 'deferred' and not in_deferred_list:
-                    rep.error(where, f'[rule_deferred] reference to the deferred rule {rid}: a deferred rule is in no '
-                              'version, so a document, schema, registry or check that still names it describes '
-                              'a mechanism the skeleton no longer has')
+                    rep.note(where, f'[rule_deferred_kept] reference to the deferred rule {rid}: its mechanism is still '
+                             'in the skeleton (mechanism_removed: false)')
         for m in DEC_RE.finditer(line):
             if int(m.group(1)) not in decisions:
                 rep.error(where, f'[decision_unknown] decision {m.group(0)} is not found in docs/decisions.md')

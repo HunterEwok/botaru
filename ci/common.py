@@ -156,6 +156,14 @@ def rules(status=None):
             if isinstance(r, dict) and isinstance(r.get('id'), str) and (status is None or r.get('status') == status)}
 
 
+def referable():
+    """Rule numbers that checks, fixtures and cases may still name: the active rules and the deferred
+    rules whose mechanism is still in the skeleton (mechanism_removed: false). A deferred rule is in no
+    version; once its mechanism is removed, nothing may name it."""
+    return {i: r for i, r in rules().items()
+            if r.get('status') == 'active' or (r.get('status') == 'deferred' and r.get('mechanism_removed') is False)}
+
+
 def families(rows):
     return sorted({r['id'].split('-')[0] for r in rows if isinstance(r, dict) and isinstance(r.get('id'), str)})
 

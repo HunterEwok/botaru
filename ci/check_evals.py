@@ -28,7 +28,7 @@ import yaml
 
 sys.dont_write_bytecode = True
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from common import ROOT, Report, load_json, load_yaml, load_yaml_all, rel, rules as active_rules, schema_registry, walk
+from common import ROOT, Report, load_json, load_yaml, load_yaml_all, referable, rel, schema_registry, walk
 
 from jsonschema import Draft202012Validator, FormatChecker
 
@@ -72,7 +72,7 @@ if not os.path.exists(SCHEMA):
 case_schema = load_json(SCHEMA)
 validator = Draft202012Validator(case_schema, registry=schema_registry(), format_checker=FormatChecker())
 
-rules = active_rules('active')
+rules = referable()
 skeleton = vkey('v' + '.'.join(open(os.path.join(ROOT, 'spec', 'VERSION'), encoding='utf-8').read().strip().split('.')[:2]))
 
 seed = load_yaml(SEED) if os.path.exists(SEED) else None
