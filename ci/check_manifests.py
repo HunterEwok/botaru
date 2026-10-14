@@ -45,6 +45,7 @@ import os
 import re
 import sys
 import urllib.parse
+import zoneinfo
 
 sys.dont_write_bytecode = True
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -68,6 +69,15 @@ API_VERSION = 'botaru/v1alpha1'
 
 
 WEBHOOK_DOC_NETS = [ipaddress.ip_network(n) for n in ('192.0.2.0/24', '198.51.100.0/24', '203.0.113.0/24', '2001:db8::/32')]
+
+
+def known_zone(name):
+    """Whether an IANA time zone name exists in the zone database (TIM-3)."""
+    try:
+        zoneinfo.ZoneInfo(name)
+    except (zoneinfo.ZoneInfoNotFoundError, ValueError):
+        return False
+    return True
 
 def norm(x):
     """Turns YAML dates and times into strings, the way apply sees them."""
@@ -485,6 +495,8 @@ def lint(docs, today=None, farm_hosts=None, examples_mode=False, claimed=None, s
     seat_mp = next(((gs.get('farm_manager') or {}).get('model_profile') for t, _, _, gs in S.each('Governance')
                     if t == 'farm' and (gs.get('farm_manager') or {}).get('model_profile')), None)
     for _, tname, where, ts in S.each('Tenant'):
+        if ts.get('timezone') and not known_zone(ts['timezone']):
+            f.error('timezone_unknown', where, f'tenant {tname}: time zone {ts["timezone"]} is not in the IANA database (TIM-3)')
         if ts.get('kind', 'production') == 'production' and ts.get('self_approve') is True:
             f.error('self_approve_production', where, 'production tenant with self_approve: true (APR-9)')
         for cmd, tt in (ts.get('commands') or {}).items():
@@ -840,6 +852,8 @@ def lint(docs, today=None, farm_hosts=None, examples_mode=False, claimed=None, s
         cron = ss['cron']
         if len(cron.split()) != 5 or re.search(r'(CRON_)?TZ\s*=', cron):
             f.error('cron_invalid', where, f'schedule {sname}: cron of five fields without CRON_TZ and TZ (TIM-2)')
+        if ss.get('timezone') and not known_zone(ss['timezone']):
+            f.error('timezone_unknown', where, f'schedule {sname}: time zone {ss["timezone"]} is not in the IANA database (TIM-3)')
         if ('task' in ss) == ('script' in ss):
             f.error('schedule_target', where, f'schedule {sname}: exactly one of task and script (SCR-12)')
             continue

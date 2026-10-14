@@ -188,6 +188,7 @@ Alarms raised by operations code:
 | `alarm.worker.stale` | a worker unseen for two long-poll periods | OBS-4 |
 | `alarm.store.free.low` | store volume below the soft threshold | CAP-5 |
 | `alarm.erasure.overdue` | an erasure request open past its deadline | RET-7 |
+| `alarm.schedule.refused` | the enqueue refused a schedule slot for a reason other than a hold or a capacity limit, for example a missing line in `system-ops` or money; it resolves at the next enqueued slot | TIM-3, PRM-10 |
 | `alarm.provider.spend_cap` | the provider refused on the spend cap | CAP-2 |
 | `alarm.hold.auto` | the core set an auto-stop | HLD-6, HLD-7, CAP-4, HLD-9 |
 | `alarm.health.urgent_age`, `.delivery_share`, `.loop_tick` | a health indicator past its threshold | OBS-9 |

@@ -280,6 +280,10 @@ func (c *Core) enqueue(ctx context.Context, tx pgx.Tx, now time.Time, cat *Catal
 			return reject(refuse("person_inactive", "the initiator is not active"))
 		}
 		groups = groupClosure(tv, p.Groups)
+	} else {
+		// system enqueues with its own group only: the types of its schedules and routes
+		// (PRM-10).
+		groups = groupClosure(tv, []string{"system-ops"})
 	}
 	capName := "task:" + in.Type
 	if !hasCap(tv, groups, capName) {

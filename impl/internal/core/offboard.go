@@ -148,6 +148,14 @@ type adminChat struct {
 // the tenant that sends and whose identity kind matches an identity of the admin; the chat id
 // of a direct chat is the external user id.
 func (c *Core) adminChats(ctx context.Context, tx pgx.Tx, now time.Time, tv *TenantView, exclude string, caps ...string) ([]adminChat, error) {
+	return c.principalChats(ctx, tx, now, tv, exclude, func(groups []string) bool {
+		return slices.ContainsFunc(caps, func(cp string) bool { return hasCap(tv, groups, cp) })
+	})
+}
+
+// principalChats are the direct chats of the active people of the tenant whose groups keep
+// accepts, in every outgoing channel of their identities.
+func (c *Core) principalChats(ctx context.Context, tx pgx.Tx, now time.Time, tv *TenantView, exclude string, keep func(groups []string) bool) ([]adminChat, error) {
 	rows, err := tx.Query(ctx, `SELECT p.id, i.identity FROM principals p JOIN identities i ON i.tenant = p.tenant AND i.principal = p.id
 		WHERE p.tenant = $1 AND p.id <> $2 AND p.state = 'active' AND p.kind = 'human' ORDER BY p.id, i.identity`, tv.Name, exclude)
 	if err != nil {
@@ -182,7 +190,7 @@ func (c *Core) adminChats(ctx context.Context, tx pgx.Tx, now time.Time, tv *Ten
 				return nil, err
 			}
 			groups := groupClosure(tv, p.Groups)
-			if !slices.ContainsFunc(caps, func(cp string) bool { return hasCap(tv, groups, cp) }) {
+			if !keep(groups) {
 				p = nil
 			}
 			admins[l.principal] = p

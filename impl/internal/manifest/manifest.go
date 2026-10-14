@@ -483,3 +483,16 @@ func DropPointer(v map[string]any, ptr string) bool {
 	}
 	return false
 }
+
+// Schedule is the spec of a Schedule manifest (TIM-3).
+type Schedule struct {
+	Cron     string `json:"cron"`
+	Timezone string `json:"timezone"`
+	Task     *struct {
+		Type   string         `json:"type"`
+		Goal   string         `json:"goal"`
+		Params map[string]any `json:"params"`
+	} `json:"task"`
+	DeliverTo     []any `json:"deliver_to"`
+	SkipIfWaiting *bool `json:"skip_if_waiting"`
+}

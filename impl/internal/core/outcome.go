@@ -353,6 +353,9 @@ func (c *Core) completeAttempt(ctx context.Context, tx pgx.Tx, now time.Time, w 
 	if err := json.Unmarshal(rec, &record); err != nil {
 		return err
 	}
+	if name, ok := strings.CutPrefix(record.EnqueuedBy, "schedule:"); ok && record.Parent == "" {
+		return c.deliverScheduled(ctx, tx, now, cat, w.Tenant, l.WorkID, name, tt, result, record.DataMark)
+	}
 	if !record.reportsToOrigin() {
 		return nil
 	}

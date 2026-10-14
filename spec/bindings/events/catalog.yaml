@@ -31,6 +31,11 @@ entries:
     data_schema: spec/model/event-data/alarm.schema.json
     producer: [core]
     rules: [RET-7, OBS-6]
+  - id: alarm.schedule.refused.v1
+    since: v0.1
+    data_schema: spec/model/event-data/alarm.schema.json
+    producer: [core]
+    rules: [TIM-3, PRM-10, OBS-6]
   - id: alarm.provider.spend_cap.v1
     since: v0.1
     data_schema: spec/model/event-data/alarm.schema.json
