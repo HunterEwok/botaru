@@ -83,7 +83,7 @@ CODES = {
     'args_from_second_schema': ('tool with args_from has its own params', 'MAN-9'),
     'args_from_mismatch': ('the args_from action is executed by another tool', 'MAN-9'),
     'tool_target_missing': ('tool lacks exactly one of target_from and target: any', 'TEN-3a'),
-    'tool_target_unknown': ('target_from is not a tool parameter', 'TEN-3a'),
+    'tool_target_unknown': ('target_from is not a tool parameter with a catalog list', 'TEN-3a'),
     'redact_required': ('placement: host and untrusted_output: true without redact [ip, email, secret]', 'INJ-4'),
     'untrusted_output_false_text': ('untrusted_output: false while the output has free text', 'INJ-3'),
     'cmd_argv_path': ('command program path is not absolute', 'INJ-14'),

@@ -129,6 +129,12 @@ func TestCheck(t *testing.T) {
 	if is := Check(both, nil); len(is) != 1 || is[0].Code != "tool_target_missing" {
 		t.Fatalf("both target modes: %v", is)
 	}
+	// The target parameter takes a catalog list.
+	plain := tool("/usr/bin/df")
+	plain.Tools[0].Params["host"] = map[string]any{"enum": []any{"web1"}}
+	if is := Check(plain, nil); len(is) != 1 || is[0].Code != "tool_target_unknown" {
+		t.Fatalf("a target without a catalog list: %v", is)
+	}
 	free := tool("/usr/bin/df")
 	free.Tools[0].Params["path"] = map[string]any{"type": "string", "maxLength": 1000}
 	if is := Check(free, nil); len(is) != 1 || is[0].Code != "sandbox_placement" || is[0].Path != "path" {

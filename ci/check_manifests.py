@@ -641,8 +641,10 @@ def lint(docs, today=None, farm_hosts=None, examples_mode=False, claimed=None, s
                 params.update(c.get('params') or {})
             if bool(t.get('target_from')) == bool(t.get('target')):
                 f.error('tool_target_missing', where, f'{tid}: exactly one of target_from and target: any is required (TEN-3a)')
-            elif t.get('target_from') and t['target_from'] not in params:
-                f.error('tool_target_unknown', where, f'{tid}: target_from {t["target_from"]} is not a tool parameter (TEN-3a)')
+            elif t.get('target_from') and (t['target_from'] not in params or not t.get('args_from') and not str(
+                    (params[t['target_from']] or {}).get('enum_from', '')).startswith('catalog.')):
+                f.error('tool_target_unknown', where,
+                        f'{tid}: target_from {t["target_from"]} is not a tool parameter with a catalog list (TEN-3a)')
             if ps['placement'] == 'host' and t.get('untrusted_output') is True \
                     and not {'ip', 'email', 'secret'} <= set(t.get('redact', [])):
                 f.error('redact_required', where, f'{tid}: placement: host and untrusted_output: true without redact [ip, email, secret] (INJ-4)')

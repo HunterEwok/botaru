@@ -259,7 +259,8 @@ func Check(p Plugin, forbidden map[string]bool) []Issue {
 			out = append(out, Issue{Code: "tool_target_missing", Tool: t.Name})
 		case t.TargetFrom != "" && t.ArgsFrom == "":
 			// With args_from the parameters are the action's, checked with the action.
-			if _, ok := t.AllParams()[t.TargetFrom]; !ok {
+			// The target is a machine: the parameter takes a catalog list the core maps to one.
+			if s, ok := t.AllParams()[t.TargetFrom]; !ok || !strings.HasPrefix(asString(s["enum_from"]), "catalog.") {
 				out = append(out, Issue{Code: "tool_target_unknown", Tool: t.Name, Path: t.TargetFrom})
 			}
 		}
@@ -443,4 +444,9 @@ func normalize(v any) any {
 		return v
 	}
 	return out
+}
+
+func asString(v any) string {
+	s, _ := v.(string)
+	return s
 }

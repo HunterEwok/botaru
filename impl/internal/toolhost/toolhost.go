@@ -62,6 +62,9 @@ type Host struct {
 
 // New returns a toolhost.
 func New(cfg Config) (*Host, error) {
+	if cfg.KillAfter < 0 || cfg.StopMargin < 0 {
+		return nil, errors.New("toolhost: kill_after and the stop margin cannot be negative")
+	}
 	if cfg.KillAfter == 0 {
 		cfg.KillAfter = 10 * time.Second
 	}
@@ -193,6 +196,12 @@ func (h *Host) Once(ctx context.Context, waitS int) (bool, error) {
 	plugin, ok := h.byName[p.Target.Plugin]
 	if !ok {
 		return true, h.fail(ctx, lease, "plugin_unavailable")
+	}
+	// A lease no longer than the stop margin plus kill_after leaves the call no time at all: it
+	// fails at once instead of being cancelled at start and left to expire.
+	if margin := h.cfg.StopMargin + h.cfg.KillAfter; time.Duration(w.LeaseRemainingS)*time.Second <= margin {
+		h.log.Error("the lease is too short for the stop margin and kill_after", "lease_s", w.LeaseRemainingS, "margin", margin)
+		return true, h.fail(ctx, lease, "exec_failed")
 	}
 	timeout := 20 * time.Second
 	if p.Limits.TimeoutS > 0 {

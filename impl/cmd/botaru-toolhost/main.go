@@ -72,6 +72,9 @@ func run(log *slog.Logger, coreURL, tokenFile, settingsFile string) error {
 		if killAfter, err = time.ParseDuration(s.KillAfter); err != nil {
 			return fmt.Errorf("%s: kill_after: %w", settingsFile, err)
 		}
+		if killAfter <= 0 {
+			return fmt.Errorf("%s: kill_after must be positive", settingsFile)
+		}
 	}
 	h, err := toolhost.New(toolhost.Config{
 		Core:      &p1client.Client{BaseURL: coreURL, Token: token, HTTP: &http.Client{Timeout: 2 * time.Minute}},

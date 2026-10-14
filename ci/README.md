@@ -267,7 +267,7 @@ The codes of `check_manifests.py` that fixtures refer to (`expect: {error: <code
 | `tenant_on_global` | global kind with metadata.tenant | TEN-6 |
 | `timeout_ceiling` | type timeouts above the farm ceiling | DLV-16 |
 | `tool_target_missing` | tool lacks exactly one of target_from and target: any | TEN-3a |
-| `tool_target_unknown` | target_from is not a tool parameter | TEN-3a |
+| `tool_target_unknown` | target_from is not a tool parameter with a catalog list | TEN-3a |
 | `tools_list_mismatch` | the plugin server tools/list output does not match the tools of tool.yaml | INJ-2 |
 | `transfer_basis_missing` | production tenant with a provider region outside the EU and no spec.model_transfer entry | GW-14 |
 | `tree_budget_below_call` | tree budget of a model task type is below the reserve of one model call | GW-2, BUD-2, BUD-9 |
