@@ -253,7 +253,8 @@ func Check(p Plugin, forbidden map[string]bool) []Issue {
 			continue
 		}
 		switch {
-		case t.TargetFrom == "" && t.Target != "any":
+		case (t.TargetFrom == "") == (t.Target != "any"):
+			// Exactly one of target_from and target: any (TEN-3a).
 			out = append(out, Issue{Code: "tool_target_missing", Tool: t.Name})
 		case t.TargetFrom != "" && t.ArgsFrom == "":
 			// With args_from the parameters are the action's, checked with the action.
@@ -261,7 +262,17 @@ func Check(p Plugin, forbidden map[string]bool) []Issue {
 				out = append(out, Issue{Code: "tool_target_unknown", Tool: t.Name, Path: t.TargetFrom})
 			}
 		}
-		if p.Placement == "host" && t.Untrusted() && t.Access != "write" {
+		// A parameter that is a free string is only for a sandbox plugin (INJ-1, SBX-1).
+		if p.Placement != "sandbox" {
+			for _, n := range sortedKeys(t.AllParams()) {
+				if freeParam(t.AllParams()[n]) {
+					out = append(out, Issue{Code: "sandbox_placement", Tool: t.Name, Path: n})
+				}
+			}
+		}
+		// Output shown as untrusted, also when trusted output lacks a closed schema, is masked
+		// on the machine (INJ-4).
+		if p.Placement == "host" && !t.TrustedOutput() && t.Access != "write" {
 			for _, k := range []string{"ip", "email", "secret"} {
 				if !slices.Contains(t.Redact, k) {
 					out = append(out, Issue{Code: "redact_required", Tool: t.Name, Path: k})
@@ -310,6 +321,20 @@ func checkCommand(t Tool, name string, c Command, forbidden map[string]bool) []I
 		}
 	}
 	return out
+}
+
+// freeParam says whether a parameter schema is a string without enum, enum_from, const or
+// format: the sandbox_param form of the manifest schema.
+func freeParam(s map[string]any) bool {
+	if s["type"] != "string" {
+		return false
+	}
+	for _, k := range []string{"enum", "enum_from", "const", "x-botaru-format"} {
+		if _, ok := s[k]; ok {
+			return false
+		}
+	}
+	return true
 }
 
 // freeText says whether a schema has a string without enum, enum_from, const or format

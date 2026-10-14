@@ -68,7 +68,7 @@ func TestCheck(t *testing.T) {
 		return Plugin{Name: "cmd", Placement: "host", Tools: []Tool{{
 			Name: "run", Access: "read", TargetFrom: "host", Redact: []string{"ip", "email", "secret"},
 			Params:   map[string]map[string]any{"host": {"enum_from": "catalog.hosts"}},
-			Commands: map[string]Command{"c": {Argv: argv, Params: map[string]map[string]any{"unit": {"type": "string"}}}},
+			Commands: map[string]Command{"c": {Argv: argv, Params: map[string]map[string]any{"unit": {"enum_from": "catalog.services"}}}},
 		}}}
 	}
 	for _, c := range []struct {
@@ -111,11 +111,29 @@ func TestCheck(t *testing.T) {
 		t.Fatal("trusted output without a schema")
 	}
 	trusted.Tools[0].OutputSchema["properties"].(map[string]any)["note"] = map[string]any{"type": "string", "maxLength": 50}
-	if is := Check(trusted, nil); len(is) != 1 || is[0].Code != "untrusted_output_false_text" {
+	if is := Check(trusted, nil); len(is) != 2 || is[1].Code != "untrusted_output_false_text" {
 		t.Fatalf("free text declared trusted: %v", is)
 	}
 	if is := Check(readPlugin(t, "checks"), nil); len(is) > 0 {
 		t.Fatalf("the checks example: %v", is)
+	}
+	// Both target modes, and a free string on a host plugin, are refused.
+	both := tool("/usr/bin/df")
+	both.Tools[0].Target = "any"
+	if is := Check(both, nil); len(is) != 1 || is[0].Code != "tool_target_missing" {
+		t.Fatalf("both target modes: %v", is)
+	}
+	free := tool("/usr/bin/df")
+	free.Tools[0].Params["path"] = map[string]any{"type": "string", "maxLength": 1000}
+	if is := Check(free, nil); len(is) != 1 || is[0].Code != "sandbox_placement" || is[0].Path != "path" {
+		t.Fatalf("a free string on a host plugin: %v", is)
+	}
+	// Trusted output without a closed schema is shown as untrusted, so it needs the masks.
+	f2 := false
+	fallback := tool("/usr/bin/df")
+	fallback.Tools[0].UntrustedOutput, fallback.Tools[0].Redact = &f2, nil
+	if is := Check(fallback, nil); len(is) != 1 || is[0].Code != "redact_required" {
+		t.Fatalf("fallback untrusted without masks: %v", is)
 	}
 	for a, want := range map[string]bool{"{x}": true, "{service.unit}": true, "{}": false, "{x.}": false, "a{x}": false, "{X}": false} {
 		if IsPlaceholder(a) != want {
