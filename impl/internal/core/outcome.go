@@ -451,7 +451,7 @@ func (c *Core) Fail(ctx context.Context, w *Worker, header string, req FailReque
 		case "delivery":
 			res, err = c.endDelivery(ctx, tx, now, w.Tenant, l, req.Reason, req.Retryable, req.RetryAfterS)
 		case "toolcall":
-			res, err = &FailResult{Final: true, Reason: req.Reason}, failToolcall(ctx, tx, now, l, req.Reason)
+			res, err = &FailResult{Final: true, Reason: req.Reason}, c.failToolcall(ctx, tx, now, l, req.Reason)
 		default:
 			return nil, refuse("input_schema_invalid", "this work kind is not served in v0.1")
 		}

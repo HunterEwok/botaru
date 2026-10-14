@@ -143,7 +143,7 @@ func (c *Core) reapWith(ctx context.Context, reason string, spends bool) error {
 			case "delivery":
 				_, err = c.endDelivery(ctx, tx, now, l.Tenant, &l, reason, true, 0)
 			case "toolcall":
-				err = reapToolcall(ctx, tx, now, &l, reason)
+				err = c.reapToolcall(ctx, tx, now, &l, reason)
 			}
 			return err
 		})

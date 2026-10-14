@@ -34,6 +34,8 @@ type toolCallRow struct {
 	DefHash                 string
 	State, Reason           string
 	StartBy                 time.Time
+	// ArgsHash, ApprovalID and GrantID are set on the write call of an action (APR-7).
+	ArgsHash, ApprovalID, GrantID string
 }
 
 func (c *Core) insertToolCall(ctx context.Context, tx pgx.Tx, now time.Time, r toolCallRow) error {
@@ -53,11 +55,20 @@ func (c *Core) insertToolCall(ctx context.Context, tx pgx.Tx, now time.Time, r t
 		ended = &now
 	}
 	_, err = tx.Exec(ctx, `INSERT INTO toolcalls (id, tenant, task, attempt_lease_no, tool, access, args, target_plugin, target_placement, target_host,
-		resolved, untrusted_output, state, reason, start_by, created_at, updated_at, ended_at, target_resource, tool_def_hash)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $16, $17, $18, $19)`,
-		r.ID, r.Tenant, r.Task, r.LeaseNo, r.Tool, r.Access, args, r.Plugin, r.Placement, nullable(r.Host),
-		resolved, r.Untrusted, r.State, nullable(r.Reason), startBy, now, ended, nullable(r.Resource), nullable(r.DefHash))
+		resolved, untrusted_output, state, reason, start_by, created_at, updated_at, ended_at, target_resource, tool_def_hash, args_hash, approval_id, grant_id)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $16, $17, $18, $19, $20, $21, $22)`,
+		r.ID, r.Tenant, r.Task, leaseNo(r), r.Tool, r.Access, args, r.Plugin, r.Placement, nullable(r.Host),
+		resolved, r.Untrusted, r.State, nullable(r.Reason), startBy, now, ended, nullable(r.Resource), nullable(r.DefHash),
+		nullable(r.ArgsHash), nullable(r.ApprovalID), nullable(r.GrantID))
 	return err
+}
+
+// leaseNo is the attempt lease of a read call; a write call of an action has no attempt.
+func leaseNo(r toolCallRow) any {
+	if r.Access == "write" {
+		return nil
+	}
+	return r.LeaseNo
 }
 
 // claimToolcall hands a queued call to a toolhost whose enroll record matches its target: the
@@ -83,60 +94,82 @@ func (c *Core) claimToolcall(ctx context.Context, tx pgx.Tx, now time.Time, cat 
 	}
 	for {
 		var (
-			id, task, tool, plugin, placement string
-			host, resource, defHash           *string
-			leaseNo, attemptLease             int
-			args, resolved                    []byte
-			startBy                           time.Time
+			id, task, tool, plugin, placement, access string
+			host, resource, defHash                   *string
+			argsHash, approval, grant                 *string
+			leaseNo                                   int
+			attemptLease                              *int
+			args, resolved                            []byte
+			startBy                                   time.Time
 		)
-		err := tx.QueryRow(ctx, `SELECT id, task, attempt_lease_no, tool, target_plugin, target_placement, target_host, target_resource, args, resolved, start_by, lease_no, tool_def_hash
+		err := tx.QueryRow(ctx, `SELECT id, task, attempt_lease_no, tool, target_plugin, target_placement, target_host, target_resource, args, resolved, start_by, lease_no, tool_def_hash,
+			access, args_hash, approval_id, grant_id
 			FROM toolcalls WHERE tenant = $1 AND state = 'queued' AND target_plugin = ANY($2) AND target_placement = $3
 			AND (target_host IS NULL OR target_host = $4) AND start_by > $5
 			ORDER BY created_at, id LIMIT 1 FOR UPDATE SKIP LOCKED`, w.Tenant, plugins, w.Placement, w.Host, now).
-			Scan(&id, &task, &attemptLease, &tool, &plugin, &placement, &host, &resource, &args, &resolved, &startBy, &leaseNo, &defHash)
+			Scan(&id, &task, &attemptLease, &tool, &plugin, &placement, &host, &resource, &args, &resolved, &startBy, &leaseNo, &defHash,
+				&access, &argsHash, &approval, &grant)
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, nil
 		}
 		if err != nil {
 			return nil, err
 		}
-		alive, err := attemptAlive(ctx, tx, now, task, attemptLease)
-		if err != nil {
-			return nil, err
-		}
-		if !alive {
-			if err := endToolCall(ctx, tx, now, id, "abandoned", "fenced", nil); err != nil {
+		write := access == "write"
+		if !write {
+			alive, err := attemptAlive(ctx, tx, now, task, deref0(attemptLease))
+			if err != nil {
 				return nil, err
 			}
-			continue
+			if !alive {
+				if err := c.endToolCall(ctx, tx, now, id, "abandoned", "fenced", nil); err != nil {
+					return nil, err
+				}
+				continue
+			}
 		}
 		// A call queued before an apply changed or removed its tool is not run under the new
 		// definition: its arguments and target were checked against the old one.
 		pl := cat.Plugins[plugin]
 		if t, ok := pl.Tool(toolName(tool)); !ok || defHash == nil || toolDefHash(pl.Placement, t) != *defHash {
-			if err := endToolCall(ctx, tx, now, id, "error", "plugin_unavailable", nil); err != nil {
+			if err := c.endToolCall(ctx, tx, now, id, "error", "plugin_unavailable", nil); err != nil {
 				return nil, err
 			}
 			continue
 		}
-		var typ, role, agent string
-		if err := tx.QueryRow(ctx, `SELECT t.type, w.role, w.id FROM tasks t, leases l JOIN workers w ON w.id = l.worker_id
-			WHERE t.id = $1 AND l.work_id = $1 AND l.lease_no = $2`, task, attemptLease).Scan(&typ, &role, &agent); err != nil {
-			return nil, err
+		var typ string
+		var scopes []scopeRef
+		effects := []string{"no_tool"}
+		if write {
+			// A write call of an action: the holds of its tenant, plugin, action and type; a
+			// hold set before the handout means the action is not executed late (APR-7).
+			if err := tx.QueryRow(ctx, `SELECT type FROM tasks WHERE id = $1`, task).Scan(&typ); err != nil {
+				return nil, err
+			}
+			effects = append(effects, "no_action")
+			scopes = append(tenantScopes(w.Tenant), scopeRef{kind: "tasktype", tenant: w.Tenant, name: typ},
+				scopeRef{kind: "action", tenant: w.Tenant, name: strings.TrimPrefix(typ, "action.")},
+				scopeRef{kind: "plugin", tenant: w.Tenant, name: plugin}, scopeRef{kind: "worker", tenant: w.Tenant, name: strings.ToLower(w.ID)})
+		} else {
+			var role, agent string
+			if err := tx.QueryRow(ctx, `SELECT t.type, w.role, w.id FROM tasks t, leases l JOIN workers w ON w.id = l.worker_id
+				WHERE t.id = $1 AND l.work_id = $1 AND l.lease_no = $2`, task, deref0(attemptLease)).Scan(&typ, &role, &agent); err != nil {
+				return nil, err
+			}
+			// The holds of the P3 check again, a hold set meanwhile counts (HLD-3): the agent,
+			// the toolhost, the target machine and resource.
+			scopes = append(tenantScopes(w.Tenant),
+				scopeRef{kind: "role", tenant: w.Tenant, name: role}, scopeRef{kind: "tasktype", tenant: w.Tenant, name: typ},
+				scopeRef{kind: "plugin", tenant: w.Tenant, name: plugin}, scopeRef{kind: "worker", tenant: w.Tenant, name: strings.ToLower(agent)},
+				scopeRef{kind: "worker", tenant: w.Tenant, name: strings.ToLower(w.ID)})
 		}
-		// The holds of the P3 check again, a hold set meanwhile counts (HLD-3): the agent, the
-		// toolhost, the target machine and resource.
-		scopes := append(tenantScopes(w.Tenant),
-			scopeRef{kind: "role", tenant: w.Tenant, name: role}, scopeRef{kind: "tasktype", tenant: w.Tenant, name: typ},
-			scopeRef{kind: "plugin", tenant: w.Tenant, name: plugin}, scopeRef{kind: "worker", tenant: w.Tenant, name: strings.ToLower(agent)},
-			scopeRef{kind: "worker", tenant: w.Tenant, name: strings.ToLower(w.ID)})
 		scopes = append(scopes, targetScopes(w.Tenant, callTargetRef{host: deref(host), resource: deref(resource)})...)
-		held, err := heldBy(ctx, tx, now, []string{"no_tool"}, scopes...)
+		held, err := heldBy(ctx, tx, now, effects, scopes...)
 		if err != nil {
 			return nil, err
 		}
 		if held != "" {
-			if err := endToolCall(ctx, tx, now, id, "denied", "held", nil); err != nil {
+			if err := c.endToolCall(ctx, tx, now, id, "denied", "held", nil); err != nil {
 				return nil, err
 			}
 			continue
@@ -158,7 +191,7 @@ func (c *Core) claimToolcall(ctx context.Context, tx pgx.Tx, now time.Time, cat 
 		if host != nil {
 			target["host"] = *host
 		}
-		payload := map[string]any{"target": target, "tool": name, "args": a, "approval_id": nil, "grant_id": nil, "args_hash": nil}
+		payload := map[string]any{"target": target, "tool": name, "args": a, "approval_id": derefNil(approval), "grant_id": derefNil(grant), "args_hash": derefNil(argsHash)}
 		// Implementation extensions (MAN-3): the catalog fields a plugin needs, and the limits of
 		// the tool from the manifest, so the toolhost redacts and cuts without reading manifests.
 		var res map[string]string
@@ -183,6 +216,21 @@ func (c *Core) claimToolcall(ctx context.Context, tx pgx.Tx, now time.Time, cat 
 	}
 }
 
+func deref0(n *int) int {
+	if n == nil {
+		return 0
+	}
+	return *n
+}
+
+// derefNil is a nullable column as a JSON value: the string, or null.
+func derefNil(s *string) any {
+	if s == nil {
+		return nil
+	}
+	return *s
+}
+
 // toolName is the tool part of <plugin>/<tool>.
 func toolName(right string) string {
 	_, name, _ := cutTool(right)
@@ -201,11 +249,15 @@ func attemptAlive(ctx context.Context, tx pgx.Tx, now time.Time, task string, le
 	return state == "active" && now.Before(until), err
 }
 
-// endToolCall moves a call to a terminal state.
-func endToolCall(ctx context.Context, tx pgx.Tx, now time.Time, id, state, reason string, output []byte) error {
+// endToolCall moves a call to a terminal state; the end of a write call closes its action
+// task and approval (CNT-7).
+func (c *Core) endToolCall(ctx context.Context, tx pgx.Tx, now time.Time, id, state, reason string, output []byte) error {
 	_, err := tx.Exec(ctx, `UPDATE toolcalls SET state = $2, reason = $3, output = $4, updated_at = $5, ended_at = $5 WHERE id = $1`,
 		id, state, nullable(reason), output, now)
 	if err != nil {
+		return err
+	}
+	if err := c.writeCallEnded(ctx, tx, now, id, state, reason, output); err != nil {
 		return err
 	}
 	return notifyWork(ctx, tx)
@@ -216,21 +268,22 @@ func endToolCall(ctx context.Context, tx pgx.Tx, now time.Time, id, state, reaso
 // marks the task untrusted_seen for a tool with untrusted output (INJ-4, INJ-13). The outcome
 // of a call whose attempt is gone goes to nobody (FEN-4).
 func (c *Core) completeToolcall(ctx context.Context, tx pgx.Tx, now time.Time, l *leaseRow, output map[string]any) error {
-	var state, tool, task string
-	var attemptLease int
+	var state, tool, task, access string
+	var attemptLease *int
 	var defHash *string
 	var untrusted bool
-	if err := tx.QueryRow(ctx, `SELECT state, tool, task, attempt_lease_no, tool_def_hash, untrusted_output FROM toolcalls WHERE id = $1 FOR UPDATE`, l.WorkID).
-		Scan(&state, &tool, &task, &attemptLease, &defHash, &untrusted); err != nil {
+	if err := tx.QueryRow(ctx, `SELECT state, tool, task, attempt_lease_no, tool_def_hash, untrusted_output, access FROM toolcalls WHERE id = $1 FOR UPDATE`, l.WorkID).
+		Scan(&state, &tool, &task, &attemptLease, &defHash, &untrusted, &access); err != nil {
 		return err
 	}
 	if state != "leased" {
 		return nil // abandoned or ended meanwhile: the outcome is dropped
 	}
-	if alive, err := attemptAlive(ctx, tx, now, task, attemptLease); err != nil {
+	// A write call of an action has no attempt; its outcome closes its task (CNT-7).
+	if alive, err := attemptAlive(ctx, tx, now, task, deref0(attemptLease)); err != nil {
 		return err
-	} else if !alive {
-		return endToolCall(ctx, tx, now, l.WorkID, "abandoned", "fenced", nil)
+	} else if !alive && access != "write" {
+		return c.endToolCall(ctx, tx, now, l.WorkID, "abandoned", "fenced", nil)
 	}
 	var res mcp.CallResult
 	b, err := json.Marshal(output)
@@ -247,7 +300,7 @@ func (c *Core) completeToolcall(ctx context.Context, tx pgx.Tx, now time.Time, l
 	}
 	if res.IsError || res.InputRequired {
 		// A plugin error, and an "input needed" answer, are call errors (INJ-5).
-		return endToolCall(ctx, tx, now, l.WorkID, "error", "exec_failed", nil)
+		return c.endToolCall(ctx, tx, now, l.WorkID, "error", "exec_failed", nil)
 	}
 	cat, err := c.Catalog(ctx)
 	if err != nil {
@@ -259,13 +312,13 @@ func (c *Core) completeToolcall(ctx context.Context, tx pgx.Tx, now time.Time, l
 	// An apply while the call ran may have changed or removed the tool: the output is checked
 	// only against the definition the call was queued under, and is dropped otherwise.
 	if !ok || defHash == nil || toolDefHash(pl.Placement, t) != *defHash || untrusted != !t.TrustedOutput() {
-		return endToolCall(ctx, tx, now, l.WorkID, "error", "plugin_unavailable", nil)
+		return c.endToolCall(ctx, tx, now, l.WorkID, "error", "plugin_unavailable", nil)
 	}
 	clean, err := c.cleanOutput(ctx, tx, cat, task, tool, t, res)
 	if err != nil {
 		var p *Problem
 		if errors.As(err, &p) {
-			return endToolCall(ctx, tx, now, l.WorkID, "error", p.Reason, nil)
+			return c.endToolCall(ctx, tx, now, l.WorkID, "error", p.Reason, nil)
 		}
 		return err
 	}
@@ -273,7 +326,7 @@ func (c *Core) completeToolcall(ctx context.Context, tx pgx.Tx, now time.Time, l
 	if err != nil {
 		return err
 	}
-	if err := endToolCall(ctx, tx, now, l.WorkID, "done", "", raw); err != nil {
+	if err := c.endToolCall(ctx, tx, now, l.WorkID, "done", "", raw); err != nil {
 		return err
 	}
 	if masked(t.Redact, raw) {
@@ -378,7 +431,7 @@ func (c *Core) cleanOutput(ctx context.Context, tx pgx.Tx, cat *Catalog, task, r
 }
 
 // failToolcall ends a call with the toolhost's reason; the core does not retry it (DLV-1).
-func failToolcall(ctx context.Context, tx pgx.Tx, now time.Time, l *leaseRow, reason string) error {
+func (c *Core) failToolcall(ctx context.Context, tx pgx.Tx, now time.Time, l *leaseRow, reason string) error {
 	var state string
 	if err := tx.QueryRow(ctx, `SELECT state FROM toolcalls WHERE id = $1 FOR UPDATE`, l.WorkID).Scan(&state); err != nil {
 		return err
@@ -386,7 +439,7 @@ func failToolcall(ctx context.Context, tx pgx.Tx, now time.Time, l *leaseRow, re
 	if state != "leased" {
 		return nil
 	}
-	return endToolCall(ctx, tx, now, l.WorkID, "error", reason, nil)
+	return c.endToolCall(ctx, tx, now, l.WorkID, "error", reason, nil)
 }
 
 // toolcallCanceled says whether the call under a lease was abandoned or ended, so the
@@ -403,6 +456,29 @@ func toolcallCanceled(ctx context.Context, tx pgx.Tx, id string) (bool, error) {
 // abandons the read calls whose attempt lost its lease (FEN-4).
 func (c *Core) toolcallDeadlines(ctx context.Context) error {
 	return c.tx(ctx, func(tx pgx.Tx, now time.Time) error {
+		// A write call nobody took ends its action as exec_failed(no_executor) (CNT-7).
+		rows, err := tx.Query(ctx, `SELECT id FROM toolcalls WHERE state = 'queued' AND access = 'write' AND start_by <= $1 ORDER BY id FOR UPDATE`, now)
+		if err != nil {
+			return err
+		}
+		var writes []string
+		for rows.Next() {
+			var id string
+			if err := rows.Scan(&id); err != nil {
+				rows.Close()
+				return err
+			}
+			writes = append(writes, id)
+		}
+		rows.Close()
+		if err := rows.Err(); err != nil {
+			return err
+		}
+		for _, id := range writes {
+			if err := c.endToolCall(ctx, tx, now, id, "error", "no_executor", nil); err != nil {
+				return err
+			}
+		}
 		tag, err := tx.Exec(ctx, `UPDATE toolcalls SET state = 'error', reason = 'no_executor', updated_at = $1, ended_at = $1
 			WHERE state = 'queued' AND start_by <= $1`, now)
 		if err != nil {
@@ -422,16 +498,20 @@ func (c *Core) toolcallDeadlines(ctx context.Context) error {
 }
 
 // reapToolcall ends a call whose toolhost lease expired: a read gets error(lease_expired), or
-// error(core_unavailable) when the lease ran out during core downtime (DLV-1, FEN-5).
-func reapToolcall(ctx context.Context, tx pgx.Tx, now time.Time, l *leaseRow, reason string) error {
-	var state string
-	if err := tx.QueryRow(ctx, `SELECT state FROM toolcalls WHERE id = $1 FOR UPDATE`, l.WorkID).Scan(&state); err != nil {
+// error(core_unavailable) when the lease ran out during core downtime (DLV-1, FEN-5); a write
+// gets exec_unknown, since nobody knows whether it ran, and is never retried (APR-7).
+func (c *Core) reapToolcall(ctx context.Context, tx pgx.Tx, now time.Time, l *leaseRow, reason string) error {
+	var state, access string
+	if err := tx.QueryRow(ctx, `SELECT state, access FROM toolcalls WHERE id = $1 FOR UPDATE`, l.WorkID).Scan(&state, &access); err != nil {
 		return err
 	}
 	if state != "leased" {
 		return nil
 	}
-	return endToolCall(ctx, tx, now, l.WorkID, "error", reason, nil)
+	if access == "write" {
+		return c.endToolCall(ctx, tx, now, l.WorkID, "exec_unknown", "exec_unknown", nil)
+	}
+	return c.endToolCall(ctx, tx, now, l.WorkID, "error", reason, nil)
 }
 
 // pluginHealth records the plugins a toolhost reports down (OBS-10). A report of a hello is
@@ -495,7 +575,7 @@ func (c *Core) pluginHealth(ctx context.Context, tx pgx.Tx, now time.Time, w *Wo
 			return err
 		}
 		if !live {
-			if err := endToolCall(ctx, tx, now, k.id, "error", "plugin_unavailable", nil); err != nil {
+			if err := c.endToolCall(ctx, tx, now, k.id, "error", "plugin_unavailable", nil); err != nil {
 				return err
 			}
 		}

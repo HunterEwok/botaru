@@ -23,6 +23,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/HunterEwok/botaru/impl/internal/jcs"
 	"github.com/HunterEwok/botaru/impl/internal/mcp"
 	"github.com/HunterEwok/botaru/impl/internal/p1client"
 	"github.com/HunterEwok/botaru/impl/internal/redact"
@@ -172,7 +173,11 @@ type callPayload struct {
 	Tool     string            `json:"tool"`
 	Args     map[string]any    `json:"args"`
 	Resolved map[string]string `json:"resolved"`
-	Limits   struct {
+	// ApprovalID, GrantID and ArgsHash are set on the write call of an action (APR-7).
+	ApprovalID string `json:"approval_id"`
+	GrantID    string `json:"grant_id"`
+	ArgsHash   string `json:"args_hash"`
+	Limits     struct {
 		Redact           []string `json:"redact"`
 		OutputLimitBytes int      `json:"output_limit_bytes"`
 		TimeoutS         int      `json:"timeout_s"`
@@ -196,6 +201,15 @@ func (h *Host) Once(ctx context.Context, waitS int) (bool, error) {
 	plugin, ok := h.byName[p.Target.Plugin]
 	if !ok {
 		return true, h.fail(ctx, lease, "plugin_unavailable")
+	}
+	// A write call runs only with its approval or grant and with the arguments that were
+	// approved: their hash must equal the approved one (APR-7).
+	if p.ArgsHash != "" || p.ApprovalID != "" || p.GrantID != "" {
+		got, err := jcs.Hash(p.Args)
+		if p.ArgsHash == "" || p.ApprovalID == "" && p.GrantID == "" || err != nil || got != p.ArgsHash {
+			h.log.Error("a write call without a matching approval was refused", "work", w.WorkID)
+			return true, h.fail(ctx, lease, "exec_failed")
+		}
 	}
 	// A lease no longer than the stop margin plus kill_after leaves the call no time at all: it
 	// fails at once instead of being cancelled at start and left to expire.
@@ -308,6 +322,12 @@ func (h *Host) call(ctx context.Context, p Plugin, workID string, c callPayload)
 		meta := mcp.ClientMeta("botaru-toolhost", version.Version)
 		meta.Resolved = c.Resolved
 		meta.WorkID = workID
+		// The plugin recognizes a repeated write by the approval or grant id (APR-7, FEN-7).
+		if c.ApprovalID != "" {
+			meta.WorkID = c.ApprovalID
+		} else if c.GrantID != "" {
+			meta.WorkID = c.GrantID
+		}
 		raw, err := s.request(ctx, "tools/call", mcp.CallParams{Name: c.Tool, Arguments: c.Args, Meta: meta})
 		if err != nil {
 			return err

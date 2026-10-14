@@ -4,6 +4,8 @@ Skeleton versions: v0.1, v0.2, v0.3, v0.4. A skeleton version states which rules
 
 ## Unreleased
 
+- The card schema gets the optional fields `state` (the state of the subject when the card was drawn, for an update in place) and `reminder` (a reminder card); the code text catalog gets the `card.*` texts of an action approval card, its buttons, its answers and its "Details" view.
+- impl: actions by manifest with approval cards: the built-in tool `request_action`, approvals, cards drawn from the record, P1 `decide`, `card.details` and `card.remind`, the action task with its write call executed at most once, reminders, expiry and cancellation by holds, offboarding and revoked rights (APR-1 to APR-5, APR-7, APR-10, APR-11, APR-19, CNT-7, MAN-9); Telegram cards with inline buttons and edits in place.
 - The events catalog gets `alarm.provider.config.v1`, the alarm by code of GW-13 for a provider configuration error, which had no catalog entry.
 - impl: provider pairs with a circuit breaker, the wait for a provider rate limit and the wait for a configuration fix, seen by the dispatcher (GW-10, GW-11, GW-13, CAP-2); the running ceiling of dispatch rules (DSP-7); the 80% threshold event and the waiting reserve exception (BUD-4).
 - The P1 `hello` and `heartbeat` request schemas get the optional field `health`, a list of `health-report` records, so a toolhost can report the state of each plugin as OBS-10 requires; the rule had no field to carry the report.

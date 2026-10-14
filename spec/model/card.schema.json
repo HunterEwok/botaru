@@ -120,6 +120,16 @@
       "maxItems": 2,
       "uniqueItems": true
     },
+    "state": {
+      "description": "State of the subject after its lifecycle; a card update shows the outcome (spec/lifecycles/approval.md).",
+      "type": "string",
+      "maxLength": 64,
+      "pattern": "^[a-z][a-z0-9_]*$"
+    },
+    "reminder": {
+      "description": "The card repeats a pending decision as a reminder: the channel shows the code text card.remind above it (APR-19).",
+      "type": "boolean"
+    },
     "campaign": {
       "type": "object",
       "additionalProperties": false,

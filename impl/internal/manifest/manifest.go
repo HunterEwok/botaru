@@ -160,6 +160,13 @@ type Tenant struct {
 	DelegatedGroups  []string          `json:"delegated_groups"`
 	Dispatcher       TenantDispatcher  `json:"dispatcher"`
 	Dispatch         TenantDispatch    `json:"dispatch"`
+	Attention        TenantAttention   `json:"attention"`
+}
+
+// TenantAttention holds the card limits of the tenant (APR-2).
+type TenantAttention struct {
+	// CardsPerTenantHour is how many action approvals the core creates per hour; 20 when unset.
+	CardsPerTenantHour int `json:"cards_per_tenant_hour"`
 }
 
 // TenantDispatch holds the dispatch rules of the tenant policy (DSP-3, DSP-7).
@@ -287,9 +294,29 @@ type Role struct {
 	Models     map[string]string `json:"models"`
 	Memory     any               `json:"memory"`
 	Tools      []any             `json:"tools"`
-	Runtime    struct {
+	// ActionsMayRequest are the actions the model may ask for through request_action (APR-1).
+	ActionsMayRequest []string `json:"actions_may_request"`
+	Runtime           struct {
 		Driver string `json:"driver"`
 	} `json:"runtime"`
+}
+
+// Action is the spec of an Action manifest: a button with a closed form (MAN-9).
+type Action struct {
+	Title       string         `json:"title"`
+	Description string         `json:"description"`
+	Risk        string         `json:"risk"`
+	Args        map[string]any `json:"args"`
+	TTL         string         `json:"ttl"`
+	Idempotent  bool           `json:"idempotent"`
+	Approvals   int            `json:"approvals"`
+	Executor    struct {
+		Plugin string `json:"plugin"`
+		Tool   string `json:"tool"`
+	} `json:"executor"`
+	WritesOnly  []string `json:"writes_only"`
+	RunsPerHour int      `json:"runs_per_hour"`
+	RunsPerDay  int      `json:"runs_per_day"`
 }
 
 // TaskType is the spec of a TaskType manifest.

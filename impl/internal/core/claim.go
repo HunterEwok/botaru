@@ -177,7 +177,9 @@ func (c *Core) revokeWorkOf(ctx context.Context, tx pgx.Tx, now time.Time, tv *T
 		id, typ string
 		rec     []byte
 	}
-	rows, err := tx.Query(ctx, `SELECT id, type, record FROM tasks WHERE tenant = $1 AND initiator = $2 AND state = 'working' ORDER BY id FOR UPDATE`, tv.Name, principal)
+	// An action task is not stopped: its write call may already run; only a pending approval
+	// is canceled (APR-6).
+	rows, err := tx.Query(ctx, `SELECT id, type, record FROM tasks WHERE tenant = $1 AND initiator = $2 AND state = 'working' AND type NOT LIKE 'action.%' ORDER BY id FOR UPDATE`, tv.Name, principal)
 	if err != nil {
 		return err
 	}
@@ -212,7 +214,7 @@ func (c *Core) revokeWorkOf(ctx context.Context, tx pgx.Tx, now time.Time, tv *T
 			return err
 		}
 	}
-	return nil
+	return c.recheckApprovalsOf(ctx, tx, now, tv, principal)
 }
 
 // hasLabels says whether a worker has every label a task type requires.
@@ -347,8 +349,11 @@ func (c *Core) claimAttempt(ctx context.Context, tx pgx.Tx, now time.Time, cat *
 	// written into the attempt (PRV-1, OUT-1); the worker does not set them.
 	slot, profile := mainSlot(role)
 	mark, _ := record["data_mark"].(string)
-	maxTier, _ := record["max_tier"].(float64)
-	tools, err := c.toolCatalog(cat, &toolsGrant{Tenant: w.Tenant, Task: id, Type: typ, Role: w.Role, Worker: w.ID, MaxTier: int(maxTier), Mark: mark})
+	g := &toolsGrant{Tenant: w.Tenant, Task: id, Worker: w.ID}
+	if err := c.loadGrantTask(ctx, tx, g); err != nil {
+		return nil, err
+	}
+	tools, err := c.toolCatalog(cat, g)
 	if err != nil {
 		return nil, err
 	}
@@ -441,6 +446,7 @@ func (c *Core) claimDelivery(ctx context.Context, tx pgx.Tx, now time.Time, cat 
 	var (
 		id, kind, addr, targetKind, targetID string
 		recipient, dataMark, task            *string
+		subjectKind, subjectID               *string
 		origin                               string
 		body                                 []byte
 		leaseNo                              int
@@ -450,8 +456,10 @@ func (c *Core) claimDelivery(ctx context.Context, tx pgx.Tx, now time.Time, cat 
 	if tv != nil {
 		version = tv.Spec.Privacy.NoticeVersionString()
 	}
+	var cardBody map[string]any
+	replacesID := ""
 	for picked := false; !picked; {
-		err := tx.QueryRow(ctx, `SELECT d.id, d.kind, d.addr, d.target_kind, d.target_id, d.recipient, d.data_mark, d.body, d.lease_no, d.task, d.dataorigin FROM deliveries d
+		err := tx.QueryRow(ctx, `SELECT d.id, d.kind, d.addr, d.target_kind, d.target_id, d.recipient, d.data_mark, d.body, d.lease_no, d.task, d.dataorigin, d.subject_kind, d.subject_id FROM deliveries d
 		WHERE d.tenant = $1 AND d.exec_kind = $2 AND d.exec_name = $3 AND d.state = 'planned' AND (d.run_at IS NULL OR d.run_at <= $4)
 		AND NOT (d.dataorigin = 'model' AND EXISTS (SELECT 1 FROM contacts ct WHERE ct.tenant = d.tenant AND ct.channel = d.exec_name
 			AND ct.principal = d.recipient AND ct.ai_notice_delivery IS NOT NULL AND ct.ai_notice_at IS NULL))
@@ -463,7 +471,7 @@ func (c *Core) claimDelivery(ctx context.Context, tx pgx.Tx, now time.Time, cat 
 		AND NOT (d.alarmkey IS NOT NULL AND EXISTS (SELECT 1 FROM deliveries o WHERE o.tenant = d.tenant AND o.alarmkey = d.alarmkey
 			AND o.recipient IS NOT DISTINCT FROM d.recipient AND o.seq < d.seq AND o.state IN ('planned', 'sending')))
 		ORDER BY d.seq LIMIT 1 FOR UPDATE SKIP LOCKED`, w.Tenant, w.Kind, w.Target, now, version).
-			Scan(&id, &kind, &addr, &targetKind, &targetID, &recipient, &dataMark, &body, &leaseNo, &task, &origin)
+			Scan(&id, &kind, &addr, &targetKind, &targetID, &recipient, &dataMark, &body, &leaseNo, &task, &origin, &subjectKind, &subjectID)
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, nil
 		}
@@ -540,6 +548,35 @@ func (c *Core) claimDelivery(ctx context.Context, tx pgx.Tx, now time.Time, cat 
 				continue
 			}
 		}
+		if deref(subjectKind) == "approval" {
+			// A card is drawn from the record now, so it shows the current state (APR-3). An
+			// update waits while the card it edits is being sent, and is dropped when that card
+			// never arrived: the card itself then shows the current state.
+			var b map[string]any
+			if err := json.Unmarshal(body, &b); err != nil {
+				return nil, err
+			}
+			drawn, replaces, err := c.approvalCardBody(ctx, tx, cat, w.Tenant, kind, deref(subjectID), targetID, deref(recipient), w.Target, b)
+			if err != nil {
+				return nil, err
+			}
+			if kind == cardUpdate && replaces == "" {
+				var sending bool
+				if err := tx.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM deliveries WHERE subject_kind = 'approval' AND subject_id = $1 AND kind = $2
+					AND exec_name = $3 AND target_id = $4 AND state IN ('planned', 'sending'))`, deref(subjectID), b["card"], w.Target, targetID).Scan(&sending); err != nil {
+					return nil, err
+				}
+				if sending {
+					if _, err := tx.Exec(ctx, `UPDATE deliveries SET run_at = $2 WHERE id = $1`, id, now.Add(5*time.Second)); err != nil {
+						return nil, err
+					}
+				} else if _, err := tx.Exec(ctx, `UPDATE deliveries SET state = 'withheld', reason = 'ref_invalid', updated_at = $2 WHERE id = $1`, id, now); err != nil {
+					return nil, err
+				}
+				continue
+			}
+			cardBody, replacesID = drawn, replaces
+		}
 		picked = true
 	}
 	leaseNo++
@@ -555,7 +592,13 @@ func (c *Core) claimDelivery(ctx context.Context, tx pgx.Tx, now time.Time, cat 
 	if err := json.Unmarshal(body, &b); err != nil {
 		return nil, err
 	}
+	if cardBody != nil {
+		b = cardBody
+	}
 	d := map[string]any{"id": id, "kind": kind, "to": addr, "body": b}
+	if replacesID != "" {
+		d["replaces_external_id"] = replacesID
+	}
 	if targetKind == "chat" {
 		k, ext, _ := strings.Cut(targetID, ":")
 		d["recipient"] = map[string]any{"chat": map[string]any{"kind": k, "external_id": ext}}

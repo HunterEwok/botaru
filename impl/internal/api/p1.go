@@ -124,9 +124,49 @@ func (s *Server) p1(w http.ResponseWriter, r *http.Request) {
 			s.fail(w, err)
 			return
 		}
+	case "decide":
+		req, err := decode[core.DecideRequest](m)
+		if err != nil {
+			s.fail(w, err)
+			return
+		}
+		out, err = s.c.Decide(ctx, wk, onBehalf(r), req)
+		if err != nil {
+			s.fail(w, err)
+			return
+		}
+	case "card.details", "card.remind":
+		req, err := decode[core.CardOp](m)
+		if err != nil {
+			s.fail(w, err)
+			return
+		}
+		if req.Op != op {
+			s.fail(w, &core.Problem{Reason: "input_schema_invalid", Detail: "the op of the body is not the operation of the path"})
+			return
+		}
+		if op == "card.details" {
+			out, err = s.c.CardDetails(ctx, wk, onBehalf(r), req)
+		} else {
+			out, err = s.c.CardRemind(ctx, wk, onBehalf(r), req)
+		}
+		if err != nil {
+			s.fail(w, err)
+			return
+		}
 	default:
 		Problem(w, &core.Problem{Reason: "not_found", Detail: "the operation is not implemented in this build"})
 		return
 	}
 	writeJSON(w, out)
+}
+
+// onBehalf reads the headers of a channel call on behalf of a person; without them, or with a
+// malformed value, the core refuses the call as forbidden.
+func onBehalf(r *http.Request) *core.OnBehalf {
+	ob, ok := core.ParseOnBehalf(r.Header.Get("Botaru-On-Behalf"), r.Header.Get("Botaru-Chat"), r.Header.Get("Botaru-Message"))
+	if !ok {
+		return nil
+	}
+	return &ob
 }

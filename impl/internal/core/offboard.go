@@ -91,7 +91,11 @@ func (c *Core) withholdDeliveriesTo(ctx context.Context, tx pgx.Tx, now time.Tim
 // cancelTasksOf cancels the non-terminal tasks a principal initiated. A running attempt loses
 // its lease and handles in the same transaction, so the worker is fenced at its next call.
 func (c *Core) cancelTasksOf(ctx context.Context, tx pgx.Tx, now time.Time, tenant, principal, reason string) error {
-	rows, err := tx.Query(ctx, `SELECT id FROM tasks WHERE tenant = $1 AND initiator = $2 AND state IN ('submitted', 'working') ORDER BY id FOR UPDATE`, tenant, principal)
+	if err := c.cancelApprovalsOf(ctx, tx, now, tenant, principal, reason); err != nil {
+		return err
+	}
+	// An action task is not canceled: its write call may already run (APR-7).
+	rows, err := tx.Query(ctx, `SELECT id FROM tasks WHERE tenant = $1 AND initiator = $2 AND state IN ('submitted', 'working') AND type NOT LIKE 'action.%' ORDER BY id FOR UPDATE`, tenant, principal)
 	if err != nil {
 		return err
 	}
