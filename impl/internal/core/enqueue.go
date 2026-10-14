@@ -71,6 +71,8 @@ type enqueueInput struct {
 	Continues string
 	// Untrusted carries untrusted_seen over from the continued task (CNT-5).
 	Untrusted bool
+	// ContinuesMark is the data mark of the continued task, whose outcome the new one carries.
+	ContinuesMark string
 }
 
 // fairnessKey writes the dispatcher fairness key <kind>:<id> from the task source (DSP-2,
@@ -290,6 +292,9 @@ func (c *Core) enqueue(ctx context.Context, tx pgx.Tx, now time.Time, cat *Catal
 	if in.Chain != nil {
 		mark = c.higherMark(mark, in.Chain.Mark)
 	}
+	if in.ContinuesMark != "" {
+		mark = c.higherMark(mark, in.ContinuesMark)
+	}
 	if !hasData(tv, groups, mark) {
 		pr := refuse("no_data_class", "the initiator has no data:%s", mark)
 		pr.Needs = []string{"data:" + mark}
@@ -417,9 +422,16 @@ func (c *Core) enqueue(ctx context.Context, tx pgx.Tx, now time.Time, cat *Catal
 		if ch.Trace != "" {
 			record["trace"] = ch.Trace
 		}
-		delete(record, "tree_budget_micros")
+		// The tree draws on the one limit pinned in its root (PRM-6, BUD-1).
+		var rootType string
+		var rootRec []byte
+		if err := tx.QueryRow(ctx, `SELECT type, record FROM tasks WHERE id = $1`, ch.Root).Scan(&rootType, &rootRec); err != nil {
+			return nil, err
+		}
+		record["tree_budget_micros"] = taskTreeBudget(rootRec, cat.TaskTypes[rootType])
 	}
 	if in.Continues != "" {
+		record["data_mark"] = mark
 		record["continues"] = in.Continues
 		record["refs"] = append(slices.Clone(in.Refs), in.Continues)
 	}

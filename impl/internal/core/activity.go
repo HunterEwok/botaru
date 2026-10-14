@@ -173,7 +173,7 @@ func (c *Core) SubmitActivity(ctx context.Context, w *Worker, a Activity) (*Acti
 		if prev != nil {
 			// The outcome of the earlier task is an attachment block of the new one (CNT-5).
 			body["attachments"] = []any{map[string]any{"data": prev.Data}}
-			in.Continues, in.Untrusted = prev.ID, prev.Untrusted
+			in.Continues, in.Untrusted, in.ContinuesMark = prev.ID, prev.Untrusted, prev.Mark
 		}
 		if in.Subjects, err = c.textAuthors(ctx, tx, w.Tenant, principal, a); err != nil {
 			return err

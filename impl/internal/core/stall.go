@@ -38,7 +38,7 @@ func (c *Core) stalls(ctx context.Context) error {
 				AND NOT EXISTS (SELECT 1 FROM toolcalls tc WHERE tc.task = l.work_id AND tc.state IN ('queued', 'leased'))
 				AND greatest(l.created_at, coalesce(l.progress_at, l.created_at),
 					coalesce((SELECT max(tc.ended_at) FROM toolcalls tc WHERE tc.task = l.work_id AND tc.attempt_lease_no = l.lease_no AND tc.state IN ('done', 'error')), l.created_at),
-					coalesce((SELECT max(sp.time) FROM spend sp WHERE sp.task = l.work_id AND sp.unit <> 'task' AND sp.state = 'charged' AND sp.time >= l.created_at), l.created_at))
+					coalesce((SELECT max(sp.settled_at) FROM spend sp WHERE sp.task = l.work_id AND sp.unit <> 'task' AND sp.state IN ('committed', 'estimated') AND sp.settled_at >= l.created_at), l.created_at))
 					+ (s.after - 'epoch'::timestamptz) <= $3
 				ORDER BY l.created_at LIMIT 1 FOR UPDATE OF l SKIP LOCKED`, types, afters, now).
 				Scan(&l.WorkID, &l.LeaseNo, &l.Kind, &l.Tenant, &l.WorkerID, &l.Epoch, &l.State, &l.Until)

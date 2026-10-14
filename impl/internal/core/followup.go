@@ -57,6 +57,8 @@ func closeFollowups(ctx context.Context, tx pgx.Tx, tenant, conversation, initia
 type earlier struct {
 	ID, Type  string
 	Untrusted bool
+	// Mark is the data mark of the earlier task: the new one is not lower (CNT-3).
+	Mark string
 	// Data is the outcome of the earlier task, the attachment block of the new one.
 	Data map[string]any
 }
@@ -110,7 +112,8 @@ func (c *Core) continuesTo(ctx context.Context, tx pgx.Tx, now time.Time, tv *Te
 	if r.Conversation != conversation {
 		return nil, nil
 	}
-	if initiator != person && !(hasCap(tv, groups, "task.read:"+typ) && hasData(tv, groups, r.DataMark)) {
+	// The person reads the earlier outcome only with its data class, as initiator too.
+	if !hasData(tv, groups, r.DataMark) || (initiator != person && !hasCap(tv, groups, "task.read:"+typ)) {
 		return nil, nil
 	}
 	if window {
@@ -118,7 +121,7 @@ func (c *Core) continuesTo(ctx context.Context, tx pgx.Tx, now time.Time, tv *Te
 			return nil, err
 		}
 	}
-	out := &earlier{ID: id, Type: typ, Untrusted: r.UntrustedSeen, Data: map[string]any{"task": id, "state": state}}
+	out := &earlier{ID: id, Type: typ, Untrusted: r.UntrustedSeen, Mark: r.DataMark, Data: map[string]any{"task": id, "state": state}}
 	if len(result) > 0 {
 		var res map[string]any
 		if json.Unmarshal(result, &res) == nil && len(res) > 0 && len(res) <= 60 {

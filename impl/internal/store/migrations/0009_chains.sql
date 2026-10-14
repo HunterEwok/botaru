@@ -10,3 +10,5 @@ CREATE INDEX tasks_followup ON tasks (tenant, initiator, (record->>'conversation
 -- The last progress an attempt reported in heartbeat and when it changed (CNT-4).
 ALTER TABLE leases ADD COLUMN progress double precision;
 ALTER TABLE leases ADD COLUMN progress_at timestamptz;
+-- When a call's reserve was settled: a finished model call is progress too (CNT-4).
+ALTER TABLE spend ADD COLUMN settled_at timestamptz;

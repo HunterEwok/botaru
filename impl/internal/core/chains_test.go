@@ -41,6 +41,7 @@ func newChainBench(t *testing.T, maxChildren int) *bench {
 		}
 		child["metadata"].(map[string]any)["name"] = "hello.child.v1"
 		child["spec"].(map[string]any)["summary_for_managers"] = "Looks something up"
+		child["spec"].(map[string]any)["tree_budget_eur"] = 10
 		return append(ms, child)
 	})
 }
@@ -95,6 +96,11 @@ func TestChildAndContinuation(t *testing.T) {
 	ch := taskTree(t, b, r.ID)
 	if ch.Parent != root || ch.Root != root || ch.Depth != 1 || ch.Origin == nil || ch.reportsToOrigin() {
 		t.Fatalf("child record %+v", ch)
+	}
+	// The child draws on the tree limit of the root, not on its own type's (PRM-6).
+	var tree int64
+	if err := b.c.st.Pool.QueryRow(ctx, `SELECT (record->>'tree_budget_micros')::bigint FROM tasks WHERE id = $1`, r.ID).Scan(&tree); err != nil || tree != 50000 {
+		t.Fatalf("child tree budget %d %v", tree, err)
 	}
 	if _, err := b.c.Complete(ctx, b.agent, header(t, att), CompleteRequest{Result: map[string]any{"answer": "asked"}}); err != nil {
 		t.Fatal(err)
@@ -182,6 +188,13 @@ func TestFollowupWindow(t *testing.T) {
 	if err := b.c.st.Pool.QueryRow(ctx, `SELECT record->>'continues' FROM tasks WHERE id = $1`, fourth).Scan(&continues); err != nil || deref(continues) != first {
 		t.Fatalf("a reply: %v %v", continues, err)
 	}
+	// An outcome of a class the person no longer reads is not carried on, even to its initiator.
+	if _, err := b.c.st.Pool.Exec(ctx, `UPDATE tasks SET record = record || '{"data_mark": "raw_logs"}' WHERE id = $1`, first); err != nil {
+		t.Fatal(err)
+	}
+	if fifth := say("5", "again", "777"); fifth != "" {
+		t.Fatalf("a reply carried an outcome above the person's classes: %s", fifth)
+	}
 }
 
 // An attempt without progress for longer than stall_after ends with stalled, is spent and
@@ -219,7 +232,8 @@ func TestStall(t *testing.T) {
 	}
 	// The next attempt, after the backoff, resolves the alarm.
 	b.advance(t, 600)
-	if b.claim(t, b.agent, "attempt") == nil {
+	retry := b.claim(t, b.agent, "attempt")
+	if retry == nil {
 		t.Fatal("no retry")
 	}
 	if err := b.c.tickLoop(ctx, "stall"); err != nil {
@@ -227,5 +241,26 @@ func TestStall(t *testing.T) {
 	}
 	if err := b.c.st.Pool.QueryRow(ctx, `SELECT count(*) FROM alarm_episodes WHERE alarm LIKE 'alarm.task.stalled.%' AND state = 'firing'`).Scan(&firing); err != nil || firing != 0 {
 		t.Fatalf("alarm after the retry %d %v", firing, err)
+	}
+	// A finished model call is progress: 50 s after it the attempt is not stalled, though 80 s
+	// passed since the claim.
+	b.advance(t, 30)
+	g, err := b.c.ResolveModelHandle(ctx, retry.Payload["handles"].(map[string]any)["model"].(string))
+	if err != nil {
+		t.Fatal(err)
+	}
+	sp, err := b.c.Reserve(ctx, g, 1000)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := b.c.Charge(ctx, sp, 100, &Tokens{Input: 10, Output: 5}, "req_s", false); err != nil {
+		t.Fatal(err)
+	}
+	b.advance(t, 50)
+	if err := b.c.tickLoop(ctx, "stall"); err != nil {
+		t.Fatal(err)
+	}
+	if err := b.c.st.Pool.QueryRow(ctx, `SELECT state FROM leases WHERE work_id = $1 AND lease_no = 2`, task).Scan(&state); err != nil || state != "active" {
+		t.Fatalf("an attempt with a finished model call stalled: %s %v", state, err)
 	}
 }
