@@ -1,0 +1,34 @@
+id: fx-rep-09
+rules: [REP-10, CAP-3, DLV-9]
+version: v0.2
+description: 'Pace, merging and language of digests. A group binding with digest.max_per_hour 1 gets at most one digest per hour.
+  Digests that pile up are merged by code: the table of the latest snapshot replaces the earlier tables and the paragraphs of the
+  earlier digests are dropped; waiting for the pace is not a failure. Table headings, reason codes and button labels come from the
+  message catalog of ChatBinding.locale, and the model gets locale as a parameter.'
+given:
+  tenant: demo
+  binding: {target: 'chat:lab', kind: group, digest: {max_per_hour: 1}, locale: et}
+cases:
+- id: fx-rep-09-a
+  steps:
+  - occur: {digest_task_done: {snapshot_id: snap-1, paragraph: present}}
+    at: '2026-11-20T09:00:00Z'
+    expect: {deliveries: 1}
+  - occur: {digest_task_done: {snapshot_id: snap-2, paragraph: present}}
+    at: '2026-11-20T09:10:00Z'
+    expect: {deliveries: 1, waiting: 1, task_state: completed}
+  - occur: {digest_task_done: {snapshot_id: snap-3, paragraph: present}}
+    at: '2026-11-20T09:40:00Z'
+    expect: {deliveries: 1, waiting: 1}
+  - stand: {op: clock.set, at: '2026-11-20T10:00:01Z'}
+  - stand: {op: loop.tick, loop: delivery}
+    expect: {deliveries: 2, last_delivery: {table_snapshot: snap-3, paragraph: absent, merged_from: [snap-2, snap-3]}, failures: 0}
+- id: fx-rep-09-b
+  given:
+    binding: {target: 'direct:alice', kind: direct, locale: et}
+  steps:
+  - occur: {digest_task_done: {snapshot_id: snap-4, paragraph: absent}}
+    expect:
+      table_headings_locale: et
+      reason_codes_rendered_by: message catalog
+      model_params: {locale: et}

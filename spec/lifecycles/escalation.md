@@ -25,14 +25,14 @@ Record fields: `id`, `tenant`, `source_attempt`, `category`, `subject`, `observe
 | From | To | Trigger | Condition | Rules |
 |---|---|---|---|---|
 | (none) | `screened` | P3 `escalate`; P1 `escalation.submit` for `job`; publication at the end of the attempt | a live attempt, at most one per attempt; the schema; the subject: its own worker, its own task tree or a resource from the task's scope; the rate: 1 per hour per worker, 5 per day per role in the tenant, 20 per day per tenant; the evidence exists and belongs to the tenant and the attempt | MGR-5, MGR-6 |
-| (none) | `dismissed` | same | the schema, the subject, the rate or the evidence failed; the chain depth is greater than 5 (`chain_too_deep`, PRM-6) | MGR-5, MGR-6 |
+| (none) | `dismissed` | same | the schema, the subject or the evidence failed; a rate is exceeded (`escalation_rate_limited`); the chain depth is greater than 5 (`chain_too_deep`, PRM-6). A duplicate within 1 hour creates no record: `dup_count` of the first one grows | MGR-5, MGR-6 |
 | `screened` | `merged` | the core | an alarm is firing or an incident is open for the subject | MGR-6 |
 | `screened` | `dismissed` | the core | the request has a normal path: a model grant or `request_action` (`use_normal_path`) | MGR-6 |
 | `screened` | `in_review` | the core | the tenant's `review` line covers the lens scoring; a task of the necessity lens `review.escalation.v1` is enqueued with the key `system:necessity:<escalation>` (IDM-2) | MGR-6, COM-13 |
 | `screened` | `parked` | the core | the `review` line is empty | MGR-6 |
 | `parked` | `in_review` | the core | money in the `review` line appeared | MGR-6 |
 | `in_review` | `forwarded` | the core by the `escalation` section of the commission manifest | the lens score is at least `forward_if_score_gte` (2), for untrusted at least `untrusted_forward_if_score_gte` (3); at most 30 forwarded per day across the whole farm | MGR-6 |
-| `in_review` | `dismissed` | the core | the score is below the threshold; the lens reason is from the list (`evidence_below_threshold`, `covered_by_alarm`, `out_of_scope`) | MGR-6 |
+| `in_review` | `dismissed` | the core | the score is below the threshold; the lens reason is from the list (`evidence_below_threshold`, `covered_by_alarm`, `out_of_scope`); or 30 escalations were already forwarded today across the farm (`escalation_rate_limited`) | MGR-6 |
 | `forwarded` | `taken` | P3 `escalations_take` of a decision attempt of the holder with the current epoch | the seat is in `held`; a task in T of class 3, with `urgency: high` of class 1 through the `control` lane (DSP-5) | MGR-4, MGR-24 |
 | `taken` | `forwarded` | the core | the decision attempt ended without an outcome (`seat_changed`, `fenced`, cancellation, failure) | MGR-1 |
 | `taken` | `answered` | the core at `complete` of the decision attempt | the outcome is recorded: operations (MGR-9), a card or "no action needed" | MGR-9, MGR-13 |

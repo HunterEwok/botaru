@@ -7,7 +7,10 @@
   "x-botaru-rules": [
     "DLV-7",
     "REP-7",
-    "PRM-14"
+    "PRM-14",
+    "REP-10",
+    "DLV-9",
+    "DLV-15"
   ],
   "type": "object",
   "required": [
@@ -43,6 +46,31 @@
     "notice_repeat": {
       "$ref": "urn:botaru:schema:common:1#/$defs/duration",
       "description": "Binding setting: how often code repeats the ai_notice and privacy_notice notices in response to an activity from a non-principal in this chat, per pair (chat, identity); by default 90 days (MSG-17)."
+    },
+    "digest": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "max_per_hour": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 60,
+          "description": "Digests per hour; 1 for a group and 4 for a private chat by default."
+        }
+      },
+      "description": "From v0.2: digest pace of the binding (REP-10).",
+      "x-botaru-version": "v0.2"
+    },
+    "locale": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/locale",
+      "description": "Language of the binding (DLV-9, v0.1): code texts and, from v0.2, the digest language (REP-10)."
+    },
+    "model_text": {
+      "enum": [
+        "summary_only",
+        "labeled"
+      ],
+      "description": "summary_only by default; labeled lets a marked model paragraph into a group chat (DLV-15, REP-2, v0.1)."
     }
   },
   "additionalProperties": false

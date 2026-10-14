@@ -1,0 +1,70 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:botaru:schema:grant-decide-request:1",
+  "title": "grant_decide: request",
+  "description": "Decisions of the farm manager seat on pending grant requests, as a batch of the task manager.grants.v1 with the current epoch. Code applies the ceilings to every decision: at most 2 attempts, an expiry of at most 6 h, the grant line and seat_grants_eur_day (MGR-18).",
+  "x-botaru-direction": "input",
+  "x-botaru-version": "v0.2",
+  "x-botaru-rules": [
+    "MGR-18"
+  ],
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "decisions"
+  ],
+  "properties": {
+    "decisions": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 50,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "grant",
+          "decision"
+        ],
+        "properties": {
+          "grant": {
+            "$ref": "urn:botaru:schema:common:1#/$defs/object_id",
+            "description": "The grant record in state pending."
+          },
+          "decision": {
+            "enum": [
+              "issue",
+              "deny"
+            ]
+          },
+          "profile": {
+            "$ref": "urn:botaru:schema:common:1#/$defs/name",
+            "description": "Profile from the ladder; the requested one by default."
+          },
+          "attempts": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 2
+          },
+          "cap_eur": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1000,
+            "description": "Amount in euros; stored in euro cents (BUD-9)."
+          },
+          "expires_in": {
+            "$ref": "urn:botaru:schema:common:1#/$defs/duration",
+            "description": "At most 6 h."
+          },
+          "reason": {
+            "enum": [
+              "grant_not_eligible",
+              "grant_over_budget"
+            ],
+            "description": "Reason for deny.",
+            "x-botaru-registry": "reasons"
+          }
+        }
+      }
+    }
+  }
+}

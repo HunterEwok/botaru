@@ -2,20 +2,20 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "urn:botaru:schema:schedule:1",
   "title": "Schedule",
-  "description": "spec of the Schedule manifest: slots by cron, a time zone, a task and an address (docs/task-language.md, \"Schedule\").",
+  "description": "spec of the Schedule manifest: slots by cron, a time zone, a task and an address (docs/task-language.md, \"Schedule\"). Exactly one of task and script is set (lint schedule_target); task is the only form until v0.2.",
   "x-botaru-direction": "input",
   "x-botaru-rules": [
     "TIM-3",
     "TIM-4",
     "PRM-10",
     "DLV-6",
-    "PRP-10"
+    "PRP-10",
+    "SCR-12"
   ],
   "type": "object",
   "additionalProperties": false,
   "required": [
-    "cron",
-    "task"
+    "cron"
   ],
   "properties": {
     "cron": {
@@ -31,6 +31,11 @@
     "task": {
       "$ref": "urn:botaru:schema:manifest:1#/$defs/task_template",
       "description": "The slot task: a type from the system-ops group."
+    },
+    "script": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/name",
+      "description": "From v0.2: name of a kind: Script manifest reviewed in the tenant's git that the slot starts without a person's button; only a script that needs no script.run (SCR-12).",
+      "x-botaru-version": "v0.2"
     },
     "deliver_to": {
       "type": "array",

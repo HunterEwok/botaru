@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:botaru:schema:p2-model-grant-revoke-request:1",
+  "title": "P2 model_grant.revoke: request",
+  "description": "A person with model_grant.manage revokes an active grant; the grant ends with grant_revoked without spending, and the task goes on with the base model (MGR-18).",
+  "x-botaru-direction": "input",
+  "x-botaru-version": "v0.2",
+  "x-botaru-rules": [
+    "MGR-18"
+  ],
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "tenant",
+    "grant"
+  ],
+  "properties": {
+    "tenant": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/tenant_name"
+    },
+    "grant": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/object_id"
+    }
+  }
+}

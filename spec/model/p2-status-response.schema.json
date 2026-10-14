@@ -8,7 +8,8 @@
     "MAN-2",
     "MAN-8",
     "HLD-5",
-    "MGR-14"
+    "MGR-14",
+    "STA-3"
   ],
   "type": "object",
   "required": [
@@ -55,10 +56,15 @@
               "insights",
               "manager",
               "governance",
-              "monitor"
+              "monitor",
+              "knowledge",
+              "ingress",
+              "connections",
+              "debug",
+              "sandbox"
             ]
           },
-          "maxItems": 6,
+          "maxItems": 12,
           "uniqueItems": true
         }
       }
@@ -76,6 +82,11 @@
         "$ref": "urn:botaru:schema:common:1#/$defs/tenant_name"
       },
       "maxItems": 1000
+    },
+    "workers": {
+      "$ref": "urn:botaru:schema:status-workers-result:1#/properties/workers",
+      "description": "From v0.2: workers with both columns and the mismatch code (STA-3).",
+      "x-botaru-version": "v0.2"
     }
   }
 }

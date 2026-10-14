@@ -1,0 +1,11 @@
+schema: spec/manifests/skill.schema.json
+rules:
+- SKL-1
+description: Front matter of SKILL.md that the skill schema accepts.
+cases:
+- name: disk-triage
+  description: Procedure for triaging a filling disk.
+- name: disk-triage
+  description: Procedure for triaging a filling disk.
+  license: AGPL-3.0-only
+  version: '1.2'

@@ -1,0 +1,100 @@
+id: fx-dsp-03
+rules: [DSP-6, DSP-5, DSP-2]
+version: v0.2
+description: 'Fairness within one priority class. The core writes the fairness key from the task source as
+  `<kind>:<id>`: `campaign:<campaign id>`, `root:<tree root id>`, `route:<route name>`, `schedule:<schedule name>`,
+  `interactive:<principal id>`, `script:<run id>`. Within a class the next task comes from the key with the smallest
+  number of running attempts divided by the weight of its kind from `Tenant.spec.dispatch.fairness.weights` (a kind
+  without a weight has weight 1); a tie goes to the key whose oldest waiting task was enqueued first, then to the
+  smaller task id. The decision depends only on the store snapshot (DSP-2). Six workers claim one task each without
+  finishing it: campaign `c1` with four items enqueued first does not take all workers, and the manager tree `r1`
+  with weight 2 gets two places in a row. A class 3 task enqueued last still goes before every class 4 task (DSP-5).'
+given:
+  tenant:
+    name: demo
+    dispatch:
+      fairness:
+        weights: {campaign: 1, root: 2}
+  roles:
+  - name: analyst
+    claims: [data.qc.ctd.v1, report.render.v1]
+  workers:
+  - {id: wk_01JB000000000000000000001A, role: analyst, state: active, ready: true}
+  - {id: wk_01JB000000000000000000001B, role: analyst, state: active, ready: true}
+  - {id: wk_01JB000000000000000000001C, role: analyst, state: active, ready: true}
+  - {id: wk_01JB000000000000000000001D, role: analyst, state: active, ready: true}
+  - {id: wk_01JB000000000000000000001E, role: analyst, state: active, ready: true}
+  - {id: wk_01JB000000000000000000001F, role: analyst, state: active, ready: true}
+  campaigns:
+  - {id: cmp_01JB00000000000000000000C1, state: running}
+  - {id: cmp_01JB00000000000000000000C2, state: running}
+  tasks:
+  - {id: t_01JB0000000000000000000R01, type: report.render.v1, state: working, priority_class: 3, note: root of the manager tree r1}
+  - {id: t_01JB0000000000000000000M01, type: data.qc.ctd.v1, state: submitted, priority_class: 4,
+     campaign: cmp_01JB00000000000000000000C1, enqueued_at: '2026-10-05T10:00:00Z'}
+  - {id: t_01JB0000000000000000000M02, type: data.qc.ctd.v1, state: submitted, priority_class: 4,
+     campaign: cmp_01JB00000000000000000000C1, enqueued_at: '2026-10-05T10:00:01Z'}
+  - {id: t_01JB0000000000000000000M03, type: data.qc.ctd.v1, state: submitted, priority_class: 4,
+     campaign: cmp_01JB00000000000000000000C1, enqueued_at: '2026-10-05T10:00:02Z'}
+  - {id: t_01JB0000000000000000000M04, type: data.qc.ctd.v1, state: submitted, priority_class: 4,
+     campaign: cmp_01JB00000000000000000000C1, enqueued_at: '2026-10-05T10:00:03Z'}
+  - {id: t_01JB0000000000000000000J01, type: data.qc.ctd.v1, state: submitted, priority_class: 4,
+     campaign: cmp_01JB00000000000000000000C2, enqueued_at: '2026-10-05T10:01:00Z'}
+  - {id: t_01JB0000000000000000000J02, type: data.qc.ctd.v1, state: submitted, priority_class: 4,
+     campaign: cmp_01JB00000000000000000000C2, enqueued_at: '2026-10-05T10:01:01Z'}
+  - {id: t_01JB0000000000000000000K01, type: data.qc.ctd.v1, state: submitted, priority_class: 4,
+     parent: t_01JB0000000000000000000R01, root: t_01JB0000000000000000000R01, enqueued_at: '2026-10-05T10:02:00Z'}
+  - {id: t_01JB0000000000000000000K02, type: data.qc.ctd.v1, state: submitted, priority_class: 4,
+     parent: t_01JB0000000000000000000R01, root: t_01JB0000000000000000000R01, enqueued_at: '2026-10-05T10:02:01Z'}
+  - {id: t_01JB0000000000000000000K03, type: data.qc.ctd.v1, state: submitted, priority_class: 4,
+     parent: t_01JB0000000000000000000R01, root: t_01JB0000000000000000000R01, enqueued_at: '2026-10-05T10:02:02Z'}
+cases:
+- id: dsp-fx-03a
+  rules: [DSP-6]
+  description: The core writes the fairness key from the source; the sender does not set it.
+  expect:
+    fairness_key:
+      t_01JB0000000000000000000M01: campaign:cmp_01JB00000000000000000000C1
+      t_01JB0000000000000000000J01: campaign:cmp_01JB00000000000000000000C2
+      t_01JB0000000000000000000K01: root:t_01JB0000000000000000000R01
+- id: dsp-fx-03b
+  rules: [DSP-6, DSP-2]
+  description: 'Weighted round robin by running attempts per weight. Ratios before each claim (c1, c2, r1): 0,0,0 -> c1
+    (oldest head); 1,0,0 -> c2; 1,1,0 -> r1; 1,1,0.5 -> r1; 1,1,1 -> c1 (oldest head); 2,1,1 -> c2 (older head than r1).'
+  steps:
+  - call: {port: P1, op: claim, request: {kinds: [attempt]}}
+    by: worker:wk_01JB000000000000000000001A
+    expect: {task: t_01JB0000000000000000000M01}
+  - call: {port: P1, op: claim, request: {kinds: [attempt]}}
+    by: worker:wk_01JB000000000000000000001B
+    expect: {task: t_01JB0000000000000000000J01}
+  - call: {port: P1, op: claim, request: {kinds: [attempt]}}
+    by: worker:wk_01JB000000000000000000001C
+    expect: {task: t_01JB0000000000000000000K01}
+  - call: {port: P1, op: claim, request: {kinds: [attempt]}}
+    by: worker:wk_01JB000000000000000000001D
+    expect: {task: t_01JB0000000000000000000K02}
+  - call: {port: P1, op: claim, request: {kinds: [attempt]}}
+    by: worker:wk_01JB000000000000000000001E
+    expect: {task: t_01JB0000000000000000000M02}
+  - call: {port: P1, op: claim, request: {kinds: [attempt]}}
+    by: worker:wk_01JB000000000000000000001F
+    expect: {task: t_01JB0000000000000000000J02}
+  expect:
+    order: [t_01JB0000000000000000000M01, t_01JB0000000000000000000J01, t_01JB0000000000000000000K01,
+      t_01JB0000000000000000000K02, t_01JB0000000000000000000M02, t_01JB0000000000000000000J02]
+- id: dsp-fx-03c
+  rules: [DSP-5, DSP-6]
+  description: A class 3 task from a schedule, enqueued after all class 4 tasks, is handed out first; fairness acts
+    only inside a class.
+  given:
+    tasks_add:
+    - {id: t_01JB0000000000000000000S01, type: report.render.v1, state: submitted, priority_class: 3,
+       schedule: sensor-nightly, enqueued_at: '2026-10-05T10:05:00Z'}
+  steps:
+  - call: {port: P1, op: claim, request: {kinds: [attempt]}}
+    by: worker:wk_01JB000000000000000000001A
+    expect: {task: t_01JB0000000000000000000S01}
+  expect:
+    fairness_key:
+      t_01JB0000000000000000000S01: schedule:sensor-nightly

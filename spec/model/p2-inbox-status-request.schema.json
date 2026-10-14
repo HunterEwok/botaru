@@ -1,0 +1,28 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:botaru:schema:p2-inbox-status-request:1",
+  "title": "P2 inbox.status: request",
+  "description": "Inbox state by role (MSG-18). The operator may name a tenant; a person with admin:people sees only their own tenant.",
+  "x-botaru-direction": "input",
+  "x-botaru-version": "v0.2",
+  "x-botaru-rules": [
+    "MSG-18",
+    "MSG-3"
+  ],
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "op"
+  ],
+  "properties": {
+    "op": {
+      "const": "inbox.status"
+    },
+    "tenant": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/tenant_name"
+    },
+    "role": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/name"
+    }
+  }
+}

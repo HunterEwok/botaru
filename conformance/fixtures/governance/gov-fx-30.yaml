@@ -1,0 +1,68 @@
+# A self-measured trial outcome and the "Count it" button (GOV-14, PRP-22). The fixture starts at realized_at of p_101.
+id: gov-fx-30
+rules: [GOV-14]
+version: v0.2
+description: 'A trial outcome with self_measured: true gives no trigger by itself. The governance loop sends people with
+  governance.confirm:commission the card self_measured_card (subject proposal) with the numbers of the three computations; the
+  trigger appears with the "Count it" button and carries the button time; 7 days of silence leave the success only in the track
+  record.'
+given:
+  tenant: demo
+  people:
+  - {principal: human:alice, caps: ['governance.confirm:commission']}
+  - {principal: human:bob, groups: [staff]}
+  bots:
+    bot_17: {role: ops-runner, profile: worker, worker_owner: null, state: active}
+  proposal: {id: p_101, author: bot_17, kind: schedule, state: realized}
+  trial: {proposal: p_101, outcome: better, self_measured: true}
+cases:
+- id: gov-fx-30-a
+  description: No trigger after the probation; the card goes to alice, not to bob.
+  steps:
+  - stand: {op: loop.tick, loop: governance}
+    at: 15d
+  expect:
+    queue: []
+    deliveries:
+    - {card: self_measured_card, to: human:alice, subject: proposal, computations: 3, mark: self_measured}
+    deliveries_to: {human:bob: 0}
+- id: gov-fx-30-b
+  description: '"Count it" gives the trigger with the button time.'
+  steps:
+  - stand: {op: loop.tick, loop: governance}
+    at: 15d
+  - call:
+      port: P1
+      op: decide
+      request: {subject_kind: proposal, id: p_101, decision: count}
+    by: human:alice
+    card: self_measured_card
+    at: 17d
+  - stand: {op: loop.tick, loop: governance}
+  expect:
+    queue: [{bot: bot_17, trigger: p_101, trigger_at_equals: time of the "Count it" press}]
+- id: gov-fx-30-c
+  description: Seven days of silence leave the success in the track record without a trigger.
+  steps:
+  - stand: {op: loop.tick, loop: governance}
+    at: 15d
+  - stand: {op: loop.tick, loop: approval-expiry}
+    at: 23d
+  - stand: {op: loop.tick, loop: governance}
+  expect:
+    queue: []
+    card_state: expired
+    track_record: {bot_17: {better: 1}}
+- id: gov-fx-30-d
+  description: '"Count it" from a person without governance.confirm:commission is refused.'
+  steps:
+  - stand: {op: loop.tick, loop: governance}
+    at: 15d
+  - call:
+      port: P1
+      op: decide
+      request: {subject_kind: proposal, id: p_101, decision: count}
+    by: human:bob
+    card: self_measured_card
+    expect: {result: rejected, reason: forbidden}
+  expect: {queue: []}

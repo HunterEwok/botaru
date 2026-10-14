@@ -1,0 +1,74 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:botaru:schema:p2-inbox-status-response:1",
+  "title": "P2 inbox.status: response",
+  "description": "One row per (tenant, role) inbox: counts by state, the age of the oldest waiting entry, the capacity and the wake-up budget left (MSG-18). Numbers only.",
+  "x-botaru-direction": "output",
+  "x-botaru-version": "v0.2",
+  "x-botaru-rules": [
+    "MSG-18",
+    "MSG-3"
+  ],
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "inboxes"
+  ],
+  "properties": {
+    "inboxes": {
+      "type": "array",
+      "maxItems": 500,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "role",
+          "counts"
+        ],
+        "properties": {
+          "tenant": {
+            "$ref": "urn:botaru:schema:common:1#/$defs/tenant_name"
+          },
+          "role": {
+            "$ref": "urn:botaru:schema:common:1#/$defs/name"
+          },
+          "counts": {
+            "type": "object",
+            "maxProperties": 11,
+            "propertyNames": {
+              "enum": [
+                "staged",
+                "queued",
+                "leased",
+                "acked",
+                "discarded",
+                "dead",
+                "expired",
+                "current",
+                "stale",
+                "replaced",
+                "removed"
+              ]
+            },
+            "additionalProperties": {
+              "type": "integer",
+              "minimum": 0
+            }
+          },
+          "oldest_queued_s": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "capacity": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "wake_budget_left": {
+            "type": "integer",
+            "minimum": 0
+          }
+        }
+      }
+    }
+  }
+}

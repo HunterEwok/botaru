@@ -1,0 +1,131 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:botaru:schema:status-workers-result:1",
+  "title": "status.workers: result",
+  "description": "The workers view: core observations and the last self-report side by side, plus a mismatch code from state-mismatch.yaml. Core code computes the codes by a table of conditions; on a mismatch the core observation prevails (STA-3).",
+  "x-botaru-direction": "output",
+  "x-botaru-version": "v0.2",
+  "x-botaru-rules": [
+    "STA-3"
+  ],
+  "type": "object",
+  "required": [
+    "workers"
+  ],
+  "properties": {
+    "workers": {
+      "type": "array",
+      "maxItems": 1000,
+      "items": {
+        "type": "object",
+        "required": [
+          "worker",
+          "observed",
+          "reported",
+          "mismatch"
+        ],
+        "properties": {
+          "worker": {
+            "$ref": "urn:botaru:schema:common:1#/$defs/name"
+          },
+          "role": {
+            "$ref": "urn:botaru:schema:common:1#/$defs/name"
+          },
+          "observed": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "presence",
+              "lifecycle"
+            ],
+            "properties": {
+              "presence": {
+                "enum": [
+                  "connected",
+                  "stale",
+                  "gone"
+                ]
+              },
+              "lifecycle": {
+                "type": "string",
+                "maxLength": 40,
+                "description": "Worker lifecycle state (spec/lifecycles/worker.md)."
+              },
+              "holds": {
+                "type": "array",
+                "maxItems": 50,
+                "items": {
+                  "$ref": "urn:botaru:schema:common:1#/$defs/object_id"
+                }
+              },
+              "leases": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 1000
+              },
+              "last_seen_age_s": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "claim_wait_s": {
+                "type": "integer",
+                "minimum": 0,
+                "description": "The wait_s of the last claim; the waiting period of the mismatch table."
+              }
+            }
+          },
+          "reported": {
+            "anyOf": [
+              {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "state",
+                  "source",
+                  "at"
+                ],
+                "properties": {
+                  "state": {
+                    "enum": [
+                      "idle",
+                      "busy",
+                      "degraded",
+                      "draining",
+                      "maintenance"
+                    ],
+                    "description": "The reported phase from the closed list of bot-state.schema.json; no free text of a worker reaches another bot's model context (INJ-1, STA-3)."
+                  },
+                  "source": {
+                    "enum": [
+                      "heartbeat",
+                      "state_message"
+                    ]
+                  },
+                  "at": {
+                    "$ref": "urn:botaru:schema:common:1#/$defs/datetime"
+                  }
+                }
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The last self-report with its source and time; null if there is none."
+          },
+          "mismatch": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 64,
+                "x-botaru-registry": "state-mismatch"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        }
+      }
+    }
+  }
+}

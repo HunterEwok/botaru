@@ -9,7 +9,8 @@ machines:
   - id: planned
     terminal: false
     meaning: 'The delivery is created with the target `target` and waits to be sent: for a free channel, a retry pause, the
-      `ai_disclosure.ack` mark for this recipient, and from v0.2 the channel pace, quiet hours or a digest'
+      `ai_disclosure.ack` mark for this recipient, and from v0.2 the channel pace, quiet hours, a digest or the card limit
+      per person `attention.noncritical_per_day` (APR-15)'
   - id: sending
     terminal: false
     meaning: A channel or a sink took the delivery under a lease and is sending it
@@ -90,9 +91,11 @@ machines:
       - planned
       text: '`planned`'
     by: the core (waiting)
-    when: model text waits while the recipient has no `ai_disclosure.ack` mark (the time of the `ai_notice` delivery); a retry
-      pause; from v0.2 the channel pace, quiet hours, a digest. Waiting does not spend an attempt
+    when: 'model text waits while the recipient has no `ai_disclosure.ack` mark (the time of the `ai_notice` delivery); a
+      retry pause; from v0.2 the channel pace, quiet hours, a digest, and for a card of a non-urgent decision the limit per
+      person per day: it waits until the next day in order of expiry (APR-15). Waiting does not spend an attempt'
     rules:
+    - APR-15
     - CAP-3
     - DLV-10
     - DLV-12

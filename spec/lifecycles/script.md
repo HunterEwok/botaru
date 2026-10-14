@@ -52,7 +52,7 @@ A script run (`ScriptRun`) is a core record that appears when a draft passed acc
 | `running` | `canceled` | P1 `script.control` with `cancel` from the channel on the initiator's button; P2 `script.cancel` (the initiator or a person with `admin:people`); cancellation of the anchor task; the initiator being disabled (`person_inactive`) | in the same transaction unreleased steps become `canceled`, pending approvals of steps are canceled, the tasks and campaigns of released steps get a cancellation | SCR-11 |
 | `paused` | `canceled` | the same calls as for `running`; the `script` loop at the run deadline | same | SCR-10, SCR-11 |
 
-From v0.2 a script from git (`kind: Script`) is started by a schedule directly in `running`, without `proposed` and without a button, only if it has no `action` steps and no `fanout` steps with an action and it is below the tenant's thresholds; acceptance and the reserve are the same.
+From v0.2 a script from git (`kind: Script`) is started by a schedule directly in `running`, without `proposed` and without a button, only if it needs no `script.run`, has no `await` step and keeps within the tenant's thresholds, and only with the default values of its parameters; acceptance and the reserve are the same (SCR-12). A person starts a script from git with a command from `Tenant.spec.script_commands`: the run is created in `proposed` with the `script_confirm` card, exactly as for a draft (SCR-14).
 
 ### Step
 
@@ -67,8 +67,8 @@ From v0.2 a script from git (`kind: Script`) is started by a schedule directly i
 | `waiting` | `ok` | P1 `decide` "Continue" on a `script_gate` | a person decided by the step's `who` | SCR-7 |
 | `waiting` | `declined` | P1 `decide` "Reject" or "Stop"; the decision deadline (`expired`) | | SCR-11 |
 | `waiting` | `failed` | a hold with the effect `no_action` on the step's scope | the pending approval of the step moved to `canceled(held)` (HLD-3); the step is `failed(held)` | SCR-11 |
-| `released` | `ok` | the core at the end of the task, the campaign or the action; for `wait` the deadline arrived, for `await` the event came (v0.2) | the task is `completed`, the campaign finished successfully, the action was executed | SCR-8 |
-| `released` | `failed` | same; for `await` the timeout expired (v0.2) | the task is `failed`, the campaign failed, the action failed | SCR-11 |
+| `released` | `ok` | the core at the end of the task, the campaign or the action; for `wait` the timer of `for` fired, for `await` the first matching event of the same tenant came (v0.2) | the task is `completed`, the campaign finished successfully, the action was executed | SCR-8, SCR-13 |
+| `released` | `failed` | same; for `await` the timeout expired: `failed(await_timeout)` (v0.2) | the task is `failed`, the campaign failed, the action failed | SCR-11, SCR-13 |
 | `released` | `unknown` | the core on the outcome of the action | the outcome of the write call is unknown (`exec_unknown`) | SCR-11 |
 | `pending`, `waiting`, `released` | `canceled` | cancellation of the run or expiry of its deadline | the pending approval is canceled, the released task or campaign gets a cancellation | SCR-11 |
 
@@ -90,4 +90,4 @@ From v0.2 a script from git (`kind: Script`) is started by a schedule directly i
 | Version | What appears |
 |---|---|
 | v0.1 | all states of the run and the steps; the kinds `task`, `fanout`, `action`, `confirm`; a routine action without approval (D-78); pause only by the initiator's button; a step whose release was rejected by a hold becomes `failed(held)` |
-| v0.2 | the kinds `wait` and `await` (a waiting record, an `await` timeout gives `failed`); a hold puts the run into `paused` (SCR-10); a script from git started by a schedule without steps with an action goes directly into `running` |
+| v0.2 | the kinds `wait` and `await` (a waiting record of the run without a task, an `await` timeout gives `failed(await_timeout)`, the run deadline `wait_run_deadline`, SCR-13); a script from git started by a command through `proposed` (SCR-14); a hold puts the run into `paused` (SCR-10); a script from git started by a schedule without steps with an action goes directly into `running` |

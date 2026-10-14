@@ -24,12 +24,14 @@
       "description": "Slot: a UTC instant to the minute."
     },
     "reason": {
-      "description": "Skip reason: dst_gap (the local time does not exist at the switch to daylight saving time), waiting (skip_if_waiting and the task of the previous slot is in submitted, or the provider circuit is open), held (a stop on the resources of the scope), over_capacity (CAP-1).",
+      "description": "Skip reason: dst_gap (the local time does not exist at the switch to daylight saving time), waiting (skip_if_waiting and the task of the previous slot is in submitted, or the provider circuit is open), held (a stop on the resources of the scope), over_capacity (CAP-1). From v0.2 also budget_exhausted: the estimate of a scheduled script run does not fit the reserve, and run_live: the previous run of a scheduled script is still live (SCR-12).",
       "enum": [
         "dst_gap",
         "waiting",
         "held",
-        "over_capacity"
+        "over_capacity",
+        "budget_exhausted",
+        "run_live"
       ]
     }
   }

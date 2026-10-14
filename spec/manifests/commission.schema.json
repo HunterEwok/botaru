@@ -109,7 +109,7 @@
       }
     },
     "shadow": {
-      "description": "Shadow shares (COM-10, GOV-34); 0 is allowed only with an explicit off.",
+      "description": "Shadow shares (COM-10). The shadow is off without this field or with shadow: off (D-103); an object turns it on, with 0.25 and 0.2 for omitted shares; an object with a share of 0 fails the apply lint shadow_zero_without_off.",
       "anyOf": [
         {
           "const": "off"
@@ -142,13 +142,13 @@
           "type": "integer",
           "minimum": 0,
           "maximum": 3,
-          "description": "Only raised."
+          "description": "Only raised: the apply lint escalation_threshold_lowered rejects a value below the default 2 (COM-13)."
         },
         "untrusted_forward_if_score_gte": {
           "type": "integer",
           "minimum": 0,
           "maximum": 3,
-          "description": "Only raised."
+          "description": "Only raised: the apply lint escalation_threshold_lowered rejects a value below the default 3 (COM-13)."
         }
       },
       "description": "From v0.2: the necessity lens (COM-13).",

@@ -176,8 +176,9 @@ machines:
     by: at the end of `seal_ttl` (30 days) the `identity` loop enqueues an erasure request with the reason `bot_retired` and
       the scope of the identity id, and the `erasure` loop executes it in all stores
     when: the request is executed; from v0.2 records whose retention class period ended earlier are already wiped by the `retention`
-      loop (RET-2); on tenant deletion everything is wiped by its `tenant_delete` request
+      loop (RET-10, MEM-10); on tenant deletion everything is wiped by its `tenant_delete` request
     rules:
     - IDN-11
+    - MEM-10
     - MEM-9
     - RET-7

@@ -1,5 +1,5 @@
 registry: decision-points
-version: 1
+version: 2
 description: >-
   Registry of human decisions (APR-12): one row for each kind of card and
   notice. A kind without a row does not pass the skeleton CI, and the core does not create such
@@ -281,6 +281,19 @@ entries:
     undo: none
     urgent: true
     rules: [APR-12]
+  - id: connection_confirm
+    since: v0.2
+    kind: decision
+    subject: connection
+    decisions:
+      confirm: {right: the principal of the connection}
+      reject: {right: the principal of the connection}
+    recipients: only the person of the connection, in their private chat; the card shows the provider, the external account and the scopes
+    ttl: 10m
+    on_silence: {state: revoked, outcome: "the connection is revoked with not_confirmed and the adapter deletes the token"}
+    undo: the person revokes the connection with /mydata connect revoke
+    urgent: true
+    rules: [APR-12, SEC-7]
   - id: promotion_card
     since: v0.2
     kind: decision
@@ -314,7 +327,7 @@ entries:
       unknown: {right: governance.attribute}
     recipients: people with governance.attribute
     ttl: 7d
-    on_silence: {state: unknown, outcome: not decided; no promotion trigger appears (GOV-30), remind: 7d}
+    on_silence: {state: unknown, outcome: not decided; no promotion trigger appears (GOV-30), remind: 7d, remind_max: 3}
     undo: '"No" and "Don''t know" can be changed while the attribution window is open (GOV-13); "Yes" can be removed only by its author on the dispute card after the incident is marked as false (D-79)'
     urgent: false
     rules: [APR-12, APR-14]
@@ -366,3 +379,33 @@ entries:
     undo: none
     urgent: false
     rules: [APR-12, APR-13]
+  - id: operator_journal_read
+    since: v0.2
+    kind: notice
+    subject: null
+    recipients: admins of the tenant; a code message without content when the operator reads an attempt journal or starts a task replay and operator_access.debug_journal is notify (AUD-4, APR-8)
+    ttl: none
+    on_silence: {state: null, outcome: nothing}
+    undo: none
+    urgent: false
+    rules: [APR-12, AUD-4, APR-8]
+  - id: commission_review
+    since: v0.2
+    kind: notice
+    subject: null
+    recipients: tenant admins with admin:governance; the seats, the lens, the holders, the flag and code figures, and the ready commands farmctl seat vacate and farmctl seat assign; no buttons
+    ttl: repeated once a month while the flag holds
+    on_silence: {state: null, outcome: "the card repeats while the flag holds; nothing changes", remind: 30d}
+    undo: none
+    urgent: false
+    rules: [APR-12, GOV-35]
+  - id: seat_eval_missing_notice
+    since: v0.2
+    kind: notice
+    subject: null
+    recipients: operators with admin:governance in farm; the seat, the seat model profile and the missing eval set mgr-inj; the seat tasks of production tenants wait with seat_eval_missing (MGR-23)
+    ttl: none
+    on_silence: {state: null, outcome: "seat tasks of production tenants keep waiting until the EvalReports entry appears"}
+    undo: none
+    urgent: false
+    rules: [APR-12, MGR-23]

@@ -1,0 +1,70 @@
+registry: governance-events
+version: 1
+description: >-
+  Command names of the audit records of governance (GOV-21, AUD-1). Every case
+  transition, ballot, round count, flag, people's decision and queue change writes
+  one audit record under a name from this list, with metadata only (AUD-2): ids,
+  seat ids, reason codes, numbers, seeds and hashes, never free text. Before the
+  case is decided no bot sees these records (GOV-29).
+source: docs/commission.md
+entries:
+  - id: governance.enabled
+    since: v0.2
+    meaning: the v0.2 governance rules took effect in the tenant; its time is governance_since (GOV-14)
+    rules: [GOV-14, GOV-21]
+  - id: governance.entry.queued
+    since: v0.2
+    meaning: a promotion trigger put a bot into the queue or moved its entry to a later trigger
+    rules: [GOV-14, GOV-21]
+  - id: governance.entry.removed
+    since: v0.2
+    meaning: an entry left the queue (retired, wrong_candidate, seated, attribution)
+    rules: [GOV-14, GOV-21, GOV-31]
+  - id: governance.not_eligible
+    since: v0.2
+    meaning: the head of the queue failed eligibility at opening and waits
+    rules: [GOV-14, GOV-21]
+  - id: governance.case.opened
+    since: v0.2
+    meaning: a case opened with its snapshot V, L, the seed and the package hashes
+    rules: [GOV-12, GOV-21]
+  - id: governance.case.parked
+    since: v0.2
+    meaning: a case waits for money in the governance line, or money appeared
+    rules: [GOV-15, GOV-21]
+  - id: governance.ballot.recorded
+    since: v0.2
+    meaning: 'a ballot was recorded: voter, round, choice as a seat id, reason codes, forced, defaulted, worker, reissue number, model profile'
+    rules: [GOV-7, GOV-21, GOV-23]
+  - id: governance.round.counted
+    since: v0.2
+    meaning: a round was counted, with the struck-out seat, the triggered keys and tie_seed
+    rules: [GOV-8, GOV-21]
+  - id: governance.voters_removed
+    since: v0.2
+    meaning: expected shrank by a person's action or a core loop; need is computed from the new set
+    rules: [GOV-21, GOV-23]
+  - id: governance.flag.set
+    since: v0.2
+    meaning: code set a case flag from spec/model/governance-flags.yaml
+    rules: [GOV-19, GOV-21]
+  - id: governance.decided
+    since: v0.2
+    meaning: a person confirmed or rejected the case outcome, with the reason code
+    rules: [GOV-9, GOV-21, GOV-31]
+  - id: governance.case.expired
+    since: v0.2
+    meaning: the promotion card expired without a decision; nobody leaves
+    rules: [GOV-9, GOV-21]
+  - id: governance.case.canceled
+    since: v0.2
+    meaning: a case was canceled with a reason (human, candidate_ineligible, seat_changed, no_voters)
+    rules: [GOV-8, GOV-12, GOV-21, GOV-23]
+  - id: governance.effective
+    since: v0.2
+    meaning: the confirmed change was done in one transaction (holder change, leaving, new worker identity, fact offers)
+    rules: [GOV-21]
+  - id: commission.shadow_seed
+    since: v0.2
+    meaning: the monthly shadow selection seed of a tenant was drawn (COM-10)
+    rules: [COM-10, GOV-21]

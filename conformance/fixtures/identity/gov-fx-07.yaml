@@ -1,5 +1,5 @@
 id: gov-fx-07
-rules: [IDN-12]
+rules: [IDN-12, GOV-23]
 description: 'A task of an identity in a clean context (a ballot, a memory.pick.v1 fact selection) can be executed by a worker that is not
   its own: acting_bot stays this identity, and the executing worker is written into the attempt and the audit. It is executed by a worker of the identity''s
   role in its tenant on the role slot; for the manager seat in tenant T the farm_manager lens review and the ballot

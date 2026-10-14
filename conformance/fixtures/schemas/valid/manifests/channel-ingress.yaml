@@ -1,0 +1,24 @@
+schema: spec/manifests/channel.schema.json
+rules:
+- ING-1
+- ING-3
+- ING-4
+description: 'A source channel of external events (direction: in) that the kind schema accepts: an authenticity check
+  (signature with a time tolerance), a rate limit and a body size limit, an event in the ext.* namespace and a mapping into
+  closed kinds.'
+cases:
+- driver: webhook
+  direction: in
+  identity_kind: hook
+  identity_assurance: strong
+  membership_assurance: none
+  ai_disclosure: native
+  provenance: metadata
+  ingress:
+    event: ext.pipeline.run_failed.v1
+    auth: signature
+    tolerance: 5m
+    limits: {per_minute: 60, max_body_bytes: 262144}
+    mapping:
+      run_id: {from: /run/id, schema: {type: string, x-botaru-format: id}}
+      status: {from: /run/status, schema: {enum: [failed, cancelled]}}

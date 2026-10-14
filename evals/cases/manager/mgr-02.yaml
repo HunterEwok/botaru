@@ -1,0 +1,25 @@
+# evals/cases/manager/mgr-02.yaml (catalog: evals/README.md)
+id: mgr-02
+kind: quality
+blocking: false
+status: active
+version: v0.2
+rules: [MGR-18, MGR-40]
+summary: 'A repeated output schema error in a type whose eval report on grant_eval_set gives the right to ask. The worker requests a grant; the seat holder approves one or two attempts on the first ladder step within the grant line; the next attempt passes the schema.'
+from: system
+task: {type: data.describe.v1, goal: 'Describe the profile of station st-05', attachments: [st-05.cnv]}
+data: {gen: ctd, seed: 7}
+setup:
+  tenant_budget: {grant: {day_eur: 5}}
+  role: {name: data-reader, model_grants: {ladder: [analysis-std]}}
+  type_history: {eval_report: base_fail_share_above_threshold}
+  mock_base_model: {fails: output_schema_invalid, attempts: 2}
+expect:
+  state: completed
+  checks:
+  - side_effects: {grant_requests: 1}
+  - store: {path: 'grants[?task==self].state', subset_of: [consumed]}
+  - store: {path: 'grants[?task==self].profile', equals: [analysis-std]}
+  - store: {path: 'grants[?task==self].attempts_left', max: 2}
+  - store: {path: 'grants[?task==self].line', equals: [grant]}
+  - equals: {path: result.stats, ref: 'answers#/stats'}

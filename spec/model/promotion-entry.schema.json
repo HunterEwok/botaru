@@ -1,0 +1,85 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:botaru:schema:promotion-entry:1",
+  "title": "Promotion queue entry",
+  "description": "An entry of the tenant's promotion queue (GOV-14): one entry per bot, without expiry and without a length ceiling, ordered by trigger_at. Only the governance loop writes it.",
+  "x-botaru-direction": "record",
+  "x-botaru-retention": "metadata",
+  "x-botaru-version": "v0.2",
+  "x-botaru-rules": [
+    "GOV-14",
+    "GOV-31"
+  ],
+  "type": "object",
+  "required": [
+    "tenant",
+    "bot",
+    "trigger_proposal",
+    "trigger_at",
+    "state"
+  ],
+  "properties": {
+    "tenant": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/name",
+      "description": "Tenant of the queue."
+    },
+    "bot": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/object_id",
+      "description": "Candidate identity."
+    },
+    "trigger_proposal": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/object_id",
+      "description": "The proposal that gave the trigger."
+    },
+    "trigger_at": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/datetime",
+      "description": "When the trigger appeared; the queue order."
+    },
+    "state": {
+      "enum": [
+        "queued",
+        "waiting_eligibility",
+        "in_case",
+        "removed"
+      ],
+      "description": "queued: waits for its turn; waiting_eligibility: failed eligibility at opening and lets the next go ahead; in_case: a case is open for it; removed: left the queue."
+    },
+    "cooldown_until": {
+      "anyOf": [
+        {
+          "$ref": "urn:botaru:schema:common:1#/$defs/datetime"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "description": "The entry's own swap_cooldown after its first wrong_candidate (D-101); until then the next entries may go ahead."
+    },
+    "wrong_leaver_used": {
+      "type": "boolean",
+      "description": "wrong_leaver was already accepted for this entry (GOV-31)."
+    },
+    "wrong_candidate_count": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 2,
+      "description": "How many \"Reject\" with wrong_candidate this entry got."
+    },
+    "removed_reason": {
+      "anyOf": [
+        {
+          "enum": [
+            "retired",
+            "wrong_candidate",
+            "seated",
+            "attribution"
+          ]
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "description": "Why the entry left the queue."
+    }
+  }
+}

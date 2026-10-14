@@ -1,0 +1,41 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:botaru:schema:escalation-submit-request:1",
+  "title": "escalate and P1 escalation.submit: request",
+  "description": "An escalation from a live attempt: the built-in tool escalate, or P1 escalation.submit for a job worker; at most one per attempt. The fields are closed; the subject is the own worker, the own task tree or a catalog resource of the task scope (MGR-5). note is untrusted: neither the lens nor the manager sees it. The lease token goes in the Botaru-Lease header.",
+  "x-botaru-direction": "input",
+  "x-botaru-version": "v0.2",
+  "x-botaru-rules": [
+    "MGR-5",
+    "MGR-6"
+  ],
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "category",
+    "subject",
+    "urgency"
+  ],
+  "properties": {
+    "category": {
+      "$ref": "urn:botaru:schema:escalation:1#/properties/category"
+    },
+    "subject": {
+      "$ref": "urn:botaru:schema:escalation:1#/properties/subject"
+    },
+    "observed": {
+      "$ref": "urn:botaru:schema:escalation:1#/properties/observed"
+    },
+    "requested_response": {
+      "$ref": "urn:botaru:schema:escalation:1#/properties/requested_response"
+    },
+    "urgency": {
+      "$ref": "urn:botaru:schema:escalation:1#/properties/urgency"
+    },
+    "note": {
+      "type": "string",
+      "maxLength": 500,
+      "description": "Untrusted note; only the tenant people see it in P2."
+    }
+  }
+}

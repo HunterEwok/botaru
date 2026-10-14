@@ -337,10 +337,11 @@ machines:
       states:
       - ok
       text: '`ok`'
-    by: the core at the end of the task, the campaign or the action; for `wait` the deadline arrived, for `await` the event
-      came (v0.2)
+    by: the core at the end of the task, the campaign or the action; for `wait` the timer of `for` fired, for `await` the
+      first matching event of the same tenant came (v0.2)
     when: the task is `completed`, the campaign finished successfully, the action was executed
     rules:
+    - SCR-13
     - SCR-8
   - from:
       states:
@@ -350,10 +351,11 @@ machines:
       states:
       - failed
       text: '`failed`'
-    by: same; for `await` the timeout expired (v0.2)
+    by: 'same; for `await` the timeout expired: `failed(await_timeout)` (v0.2)'
     when: the task is `failed`, the campaign failed, the action failed
     rules:
     - SCR-11
+    - SCR-13
   - from:
       states:
       - released

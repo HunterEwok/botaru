@@ -1,0 +1,62 @@
+id: agg-02
+rules: [AGG-3]
+check: lint:roles/aggregator-sources
+description: >-
+  One level of aggregators. An aggregator (profile aggregator) reads only the sources listed in aggregate.sources, at most
+  max_sources entries in total, and none of its sources is an aggregator: no role of profile aggregator in sources.roles
+  and no bot group that holds such a role in sources.bot_groups. apply rejects a violation.
+with_examples: true
+cases:
+  - name: aggregator over a worker role
+    manifests:
+      - apiVersion: botaru/v1alpha1
+        kind: Role
+        metadata: {name: ops-aggregator}
+        spec:
+          profile: aggregator
+          worker_kind: agent
+          claims: [aggregate.ops.weekly.v1]
+          models: {base: base-std, analysis: analysis-std}
+          aggregate:
+            sources: {roles: [ops-runner], series: [farm.schedule.slot], message_kinds: [report.ops.v1]}
+            max_sources: 50
+    expect: ok
+  - name: aggregator reads another aggregator role
+    manifests:
+      - apiVersion: botaru/v1alpha1
+        kind: Role
+        metadata: {name: ops-aggregator}
+        spec:
+          profile: aggregator
+          worker_kind: agent
+          claims: [aggregate.ops.weekly.v1]
+          models: {base: base-std, analysis: analysis-std}
+          aggregate:
+            sources: {roles: [ops-runner], series: [farm.schedule.slot]}
+            max_sources: 50
+      - apiVersion: botaru/v1alpha1
+        kind: Role
+        metadata: {name: meta-aggregator}
+        spec:
+          profile: aggregator
+          worker_kind: agent
+          claims: [aggregate.ops.weekly.v1]
+          models: {base: base-std, analysis: analysis-std}
+          aggregate:
+            sources: {roles: [ops-aggregator]}
+            max_sources: 50
+    expect: {error: aggregator_source_aggregator}
+  - name: more sources than max_sources
+    manifests:
+      - apiVersion: botaru/v1alpha1
+        kind: Role
+        metadata: {name: ops-aggregator}
+        spec:
+          profile: aggregator
+          worker_kind: agent
+          claims: [aggregate.ops.weekly.v1]
+          models: {base: base-std, analysis: analysis-std}
+          aggregate:
+            sources: {roles: [ops-runner], series: [farm.schedule.slot, farm.attempt.duration, host.load.v1]}
+            max_sources: 3
+    expect: {error: aggregator_sources_over_max}

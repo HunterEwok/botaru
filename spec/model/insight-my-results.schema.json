@@ -193,6 +193,17 @@
                       }
                     ]
                   },
+                  "change_without_role": {
+                    "anyOf": [
+                      {
+                        "type": "number"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ],
+                    "description": "The change without the points of all bots of the author role (PRP-22)."
+                  },
                   "guard_broken": {
                     "anyOf": [
                       {

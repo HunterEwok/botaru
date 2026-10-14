@@ -1,0 +1,15 @@
+schema: spec/manifests/skill.schema.json
+rules:
+- SKL-1
+description: 'Front matter of SKILL.md that the skill schema rejects: the field allowed-tools, an unknown field, a missing
+  description, a name outside the name format.'
+cases:
+- name: disk-triage
+  description: Procedure for triaging a filling disk.
+  allowed-tools: [Bash, Read]
+- name: disk-triage
+  description: Procedure for triaging a filling disk.
+  scripts: [triage.sh]
+- name: disk-triage
+- name: Disk_Triage
+  description: Procedure for triaging a filling disk.

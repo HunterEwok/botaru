@@ -1,0 +1,208 @@
+id: fx-man-v02-features
+rules: [SBX-1, MAN-11, SCR-13, SCR-14, SCR-12, DSP-11]
+description: >-
+  Apply lint of the v0.2 features, on top of examples/. A tier 2 tool lives only in a sandbox plugin, which
+  holds only tier 2 read tools with target: any; a role with a
+  tier 2 type has no host tool; an installation that does not claim the sandbox profile has no tier 2
+  (SBX-1, MAN-11). A wait step has only for, an await step event, match and timeout, each within the
+  run deadline of at most 7 days (SCR-13). A script from git declares closed parameters, uses only
+  declared ones, and its goal names do not clash with the type's templates; a script command takes no
+  built-in command; a scheduled script needs a default for every parameter (SCR-14, SCR-12). A dispatch
+  rule with max_share names a group (DSP-11).
+with_examples: true
+cases:
+  - name: tier 2 tool in a host plugin
+    manifests:
+      - apiVersion: botaru/v1alpha1
+        kind: ToolPlugin
+        metadata: {name: fx-calc}
+        spec:
+          placement: host
+          network: {egress: []}
+          tools:
+            - name: stats
+              description: "Computes statistics of a dataset."
+              access: read
+              tier: 2
+              output_class: internal
+              untrusted_output: false
+              target: any
+              params:
+                dataset: {enum_from: catalog.sandbox_datasets}
+              output_schema: {type: object, additionalProperties: false, properties: {rows: {type: integer, minimum: 0, maximum: 1000000}}}
+              output_limit_kb: 4
+              timeout_s: 30
+    expect: {error: sandbox_placement, also: true}
+  - name: tier 1 tool in a sandbox plugin
+    manifests:
+      - apiVersion: botaru/v1alpha1
+        kind: ToolPlugin
+        metadata: {name: fx-sbx}
+        spec:
+          placement: sandbox
+          network: {egress: []}
+          tools:
+            - name: peek
+              description: "Reads a dataset row count."
+              access: read
+              tier: 1
+              output_class: internal
+              untrusted_output: false
+              target: any
+              params:
+                dataset: {enum_from: catalog.sandbox_datasets}
+              output_schema: {type: object, additionalProperties: false, properties: {rows: {type: integer, minimum: 0, maximum: 1000000}}}
+              output_limit_kb: 4
+              timeout_s: 30
+    expect: {error: sandbox_placement, also: true}
+  - name: tier 2 role with a live host tool
+    manifests:
+      - apiVersion: botaru/v1alpha1
+        kind: Role
+        metadata: {name: analyst}
+        spec:
+          profile: worker
+          worker_kind: agent
+          claims: [data.analyze.v1]
+          tools: [sandbox/run, logs/tail]
+          models: {base: base-std}
+          memory: none
+    expect: {error: sandbox_live_tools, also: true}
+  - name: tier 2 while the sandbox profile is not claimed
+    conforms_to: {skeleton: 0.2.0, profiles: [core]}
+    manifests: []
+    expect: {error: sandbox_not_claimed, also: true}
+  - name: the example sandbox with the sandbox profile claimed passes
+    conforms_to: {skeleton: 0.2.0, profiles: [core, sandbox]}
+    manifests: []
+    expect: ok
+  - name: wait step without for
+    manifests:
+      - apiVersion: botaru/v1alpha1
+        kind: Script
+        metadata: {name: fx-later, tenant: demo}
+        spec:
+          script: v1
+          steps:
+            - {id: status, kind: task, type: pipeline.status.v1, goal: {assignment: true}}
+            - {id: pause, kind: wait, needs: [status]}
+    expect: {error: script_wait_fields, also: true}
+  - name: await step without timeout
+    manifests:
+      - apiVersion: botaru/v1alpha1
+        kind: Script
+        metadata: {name: fx-later, tenant: demo}
+        spec:
+          script: v1
+          steps:
+            - {id: status, kind: task, type: pipeline.status.v1, goal: {assignment: true}}
+            - {id: hook, kind: await, needs: [status], event: ext.fxsrc.run_failed.v1, match: [{event_field: run_id, value: run-2026-09}]}
+    expect: {error: script_wait_fields, also: true}
+  - name: wait longer than the 7 day ceiling
+    manifests:
+      - apiVersion: botaru/v1alpha1
+        kind: Script
+        metadata: {name: fx-later, tenant: demo}
+        spec:
+          script: v1
+          steps:
+            - {id: pause, kind: wait, for: 8d}
+            - {id: status, kind: task, needs: [pause], type: pipeline.status.v1, goal: {assignment: true}}
+    expect: {error: script_wait_fields, also: true}
+  - name: task step with a wait field
+    manifests:
+      - apiVersion: botaru/v1alpha1
+        kind: Script
+        metadata: {name: fx-later, tenant: demo}
+        spec:
+          script: v1
+          steps:
+            - {id: status, kind: task, type: pipeline.status.v1, goal: {assignment: true}, timeout: 1h}
+    expect: {error: script_wait_fields, also: true}
+  - name: tenant wait_run_deadline above 7 days
+    manifests:
+      - {apiVersion: botaru/v1alpha1, kind: Tenant, metadata: {name: demo2}, spec: {kind: test, farm_manager: {enabled: false}, budgets: {month_eur: 60}, scripts: {wait_run_deadline: 10d}}}
+    expect: {error: script_wait_fields, also: true}
+  - name: wait and await within the deadline pass
+    manifests:
+      - apiVersion: botaru/v1alpha1
+        kind: Script
+        metadata: {name: fx-later, tenant: demo}
+        spec:
+          script: v1
+          steps:
+            - {id: status, kind: task, type: pipeline.status.v1, goal: {assignment: true}}
+            - {id: pause, kind: wait, needs: [status], for: 2d}
+            - {id: hook, kind: await, needs: [pause], event: ext.fxsrc.run_failed.v1, timeout: 3d,
+               match: [{event_field: run_id, value: {ref: status.run}}]}
+    expect: ok
+  - name: script parameter as a free string
+    manifests:
+      - apiVersion: botaru/v1alpha1
+        kind: Script
+        metadata: {name: fx-check, tenant: demo}
+        spec:
+          script: v1
+          params:
+            note: {type: string}
+          steps:
+            - {id: status, kind: task, type: pipeline.status.v1, goal: {assignment: true}}
+    expect: {error: script_param_invalid, also: true}
+  - name: step uses an undeclared parameter
+    manifests:
+      - apiVersion: botaru/v1alpha1
+        kind: Script
+        metadata: {name: fx-check, tenant: demo}
+        spec:
+          script: v1
+          params:
+            month: {type: string, format: year_month}
+          steps:
+            - {id: status, kind: task, type: pipeline.status.v1, goal: {assignment: true}, params: {run: {param: run}}}
+    expect: {error: script_param_invalid, also: true}
+  - name: script command takes the built-in /run
+    manifests:
+      - apiVersion: botaru/v1alpha1
+        kind: Script
+        metadata: {name: fx-check, tenant: demo2}
+        spec:
+          script: v1
+          steps:
+            - {id: status, kind: task, type: pipeline.status.v1, goal: {assignment: true}}
+      - {apiVersion: botaru/v1alpha1, kind: Tenant, metadata: {name: demo2}, spec: {kind: test, farm_manager: {enabled: false}, budgets: {month_eur: 60}, script_commands: {"/run": fx-check}}}
+    expect: {error: builtin_command, also: true}
+  - name: script from git with parameters, its own goal and a command passes
+    manifests:
+      - apiVersion: botaru/v1alpha1
+        kind: Script
+        metadata: {name: fx-check, tenant: demo2}
+        spec:
+          script: v1
+          params:
+            month: {type: string, format: year_month, title: "Month", default: "2026-09"}
+            days: {type: integer, minimum: 1, maximum: 30, default: 7}
+          goals:
+            month_check: "Check the pipeline status for the month and list the runs that failed."
+          steps:
+            - {id: status, kind: task, type: pipeline.status.v1, goal: {template: month_check}}
+            - {id: pause, kind: wait, needs: [status], for: 1d}
+            - {id: again, kind: task, needs: [pause], type: pipeline.status.v1, goal: {template: month_check}}
+      - {apiVersion: botaru/v1alpha1, kind: Tenant, metadata: {name: demo2}, spec: {kind: test, farm_manager: {enabled: false}, budgets: {month_eur: 60}, script_commands: {"/monthcheck": fx-check}}}
+    expect: ok
+  - name: scheduled script with a parameter without a default
+    manifests:
+      - apiVersion: botaru/v1alpha1
+        kind: Script
+        metadata: {name: fx-nightly, tenant: demo}
+        spec:
+          script: v1
+          params:
+            month: {type: string, format: year_month}
+          steps:
+            - {id: status, kind: task, type: pipeline.status.v1, goal: {assignment: true}}
+      - {apiVersion: botaru/v1alpha1, kind: Schedule, metadata: {name: fx-nightly, tenant: demo}, spec: {cron: "0 2 * * *", script: fx-nightly}}
+    expect: {error: script_param_invalid, also: true}
+  - name: dispatch rule with max_share and no group
+    manifests:
+      - {apiVersion: botaru/v1alpha1, kind: Tenant, metadata: {name: demo2}, spec: {kind: test, farm_manager: {enabled: false}, budgets: {month_eur: 60}, dispatch: {rules: [{match: {type: pipeline.status.v1}, max_share: "20%"}]}}}
+    expect: {error: max_share_without_group, also: true}

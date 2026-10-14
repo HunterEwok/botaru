@@ -28,7 +28,7 @@ FAM_NAMES = {
     'OBV': 'Observations', 'ORC': 'Campaigns', 'OUT': 'Structured results', 'PRF': 'Role profiles',
     'PRM': 'Permissions', 'PRP': 'Improvement proposals', 'PRV': 'Instruction versions and execution fingerprint',
     'REP': 'Reporters', 'RET': 'Retention and deletion', 'RT': 'Agent runtime', 'SCR': 'Scripts',
-    'SEC': 'Secrets', 'SKL': 'Skills', 'STA': 'Bot state', 'TEN': 'Tenants', 'TIM': 'Time and clocks',
+    'SBX': 'Sandbox', 'SEC': 'Secrets', 'SKL': 'Skills', 'STA': 'Bot state', 'TEN': 'Tenants', 'TIM': 'Time and clocks',
     'TRN': 'Translator',
 }
 MARK = '<!-- generated: rules -->'
@@ -62,7 +62,7 @@ L = ['# Skeleton rules', '',
      'The line under a rule heading:', '',
      '- "since v0.1": the skeleton version from which the conformance suite checks the rule.',
      '- "non-waivable": an implementation cannot put the rule on its list of expected failures. "Waivable": it can, with a recorded reason.',
-     '- "profile": the part of the skeleton an implementation claims conformance to separately (`core`, `messaging`, `campaign`, `insights`, `manager`, `governance`, `monitor`); the `core` profile is mandatory, see [docs/quality.md](../docs/quality.md).',
+     '- "profile": the part of the skeleton an implementation claims conformance to separately (`core`, `messaging`, `campaign`, `insights`, `manager`, `governance`, `monitor`, `knowledge`, `ingress`, `connections`, `debug`, `sandbox`); the `core` profile is mandatory, see [docs/quality.md](../docs/quality.md).',
      '- "recommendation": a SHOULD rule; all others are mandatory.',
      '- "check": how compliance is shown. `fixture`: a ready data sample that must pass or fail a check. `store`: a storage check. `blackbox`: a test through the ports without knowledge of the implementation internals. `adapter`: a test of a port adapter. `eval`: a check of model work quality on a set of cases. `lint`: a check of files and manifests.',
      '- "decisions": decision numbers from [docs/decisions.md](../docs/decisions.md).', '',

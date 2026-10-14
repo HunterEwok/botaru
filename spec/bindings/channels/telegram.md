@@ -95,8 +95,8 @@ The `details` and `remind` buttons lead to P1 `card.details` and `card.remind`, 
 
 ## Rate and errors
 
-- Bot API limits: no more than one message per second to one chat, no more than 20 messages per minute to one group and about 30 messages per second per bot in total. The channel manifest sets a pace no higher than this (`rate: {per_minute: 20}` in the example).
-- The answer `429 Too Many Requests` carries `parameters.retry_after` in seconds: the driver stops sending to that chat and hands in `fail` with `retryable: true` and `retry_after_s` equal to `retry_after`. A `5xx` answer and a dropped connection are also `retryable: true`.
+- Bot API limits: no more than one message per second to one chat, no more than 20 messages per minute to one group and about 30 messages per second per bot in total. From v0.2 the driver declares these maxima: `per_chat_per_minute: 60`, `per_group_per_minute: 20`, `per_minute: 1800`. `Channel.spec.rate` can only lower them (CAP-3; `rate: {per_minute: 20}` in the example).
+- The answer `429 Too Many Requests` carries `parameters.retry_after` in seconds: the driver stops sending to that chat and hands in `fail` with `retryable: true` and `retry_after_s` equal to `retry_after`. A `5xx` answer and a dropped connection are also `retryable: true`. From v0.2 a `429` does not spend a delivery attempt: the delivery stays `planned`, and the chat is paused for `retry_after_s` (CAP-3).
 - The answers `400` (bad request) and `403` (the bot was removed from the chat or the user blocked it) are final: `fail` with `retryable: false`. The farm ceiling limits the number of delivery attempts; attempts exhausted: the delivery is `dead(attempts_exhausted)`, the task does not change (DLV-3, DLV-4).
 - The reason code of `fail` comes only from `spec/model/reasons.yaml`; the binding introduces no codes of its own.
 

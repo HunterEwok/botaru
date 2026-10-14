@@ -261,7 +261,7 @@ Distribution (who gets which task) is set by the dispatch rules and bot groups, 
 | catalog node -> monitoring system script (`monitor_scripts_allowed`) | 1 : N | the name for the model comes from the catalog; the core checks `scriptid` against the latest list of the E5 adapter, and the list arrives only when its hash changes; on farm nodes and on nodes of other tenants the adapter user has no scripts (MON-10, MON-4), v0.1 |
 | action with a service or script -> code note `service_control_done` | 1 : 0..1 | on the node's open problem, without model text, outside the bot note limit (MON-8), v0.1 |
 | task result -> problem note | 1 : 0..1; at most 10 per hour per tenant | only a role with `outputs: [monitor_note]` (MON-7), v0.2 |
-| maintenance window -> hold | 1 : 1 per resource | author `system:monitor`, expiry at the end of the window (MON-9), v0.2 |
+| maintenance window -> hold | 1 : 1 per host and active period | author `contain_auto`, source `system:monitor`, `until` from the latest poll, moved forward and never back (MON-9), v0.2 |
 | incident class -> incident | 1 : N | classes only from the farm git with human review (MGR-7), v0.1 |
 | alarm -> incident | N : 0..1 | only the core opens an incident, from an alarm and a class (MGR-8) |
 | incident -> involved target | 1 : 0..20 | the class rules name the involved parties (MGR-7) |
@@ -284,7 +284,7 @@ Distribution (who gets which task) is set by the dispatch rules and bot groups, 
 | erased task -> tombstone | 1 : 1 | the idempotency key stays taken, and a repeat gets `gone` (RET-3) |
 | principal -> subject request (erase, export) | 1 : N | an erasure request from a subject creates an erasure request ([privacy.md](../privacy.md)) |
 | runtime with `runtime_internal` -> runtime profile | 1 : N, a profile per (tenant, role, principal) or per chat | the profile is cleaned at its expiry and by an erasure request through the adapter; a principal's rows are found with the `match` operation (RT-1, RT-2, RT-5) |
-| erasure request by match -> store with `match` | 1 : N | E2, E4 and E5 since v0.1 (D-76), E1 since v0.2; a store without `match` is `failed`, and a channel without a cache answers `not_applicable` (RET-7, SEC-11) |
+| erasure request by match -> store with `match` | 1 : N | E2, E4 and E5 since v0.1 (D-76), E1 since v0.2 (RET-11); a store without `match` is `failed`, and a channel without a cache answers `not_applicable` (RET-7, SEC-11) |
 | group chat session -> principals of the conversation | 1 : N in the key | the key includes the principals who wrote, so `(tenant, subject)` finds group sessions (MEM-1) |
 | data export -> sink | N : 1 | only a sink with `export_only` (a single recipient, encryption) (LCY-2, SEC-10), v0.2 |
 

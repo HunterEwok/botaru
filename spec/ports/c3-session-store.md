@@ -19,8 +19,8 @@ C3 stores runtime conversation transcripts under a key that the core computes an
 | `load` | core | Reads a session by key | `not_found` | v0.1 | MEM-1, TEN-5 |
 | `list` | core | Sessions of a namespace | | v0.1 | TEN-5 |
 | `delete` | `erasure` loop on an erasure request (`forget`) | Deletes a session by id; the result goes into the erasure request | | v0.1 | MEM-4, RET-7 |
-| `purge` | `erasure` loop on an erasure request (`forget`, person offboarding, tenant deletion, `bot_retired`) | Deletes all sessions of the scope `(tenant, subject)` (the subject's sessions and the group sessions whose key contains the subject) or by a list of ids; the result goes into the erasure request. Also the sealed sessions of a bot identity (the identity id scope, a `bot_retired` request at the end of the seal, MEM-9); from v0.2 the scope `(tenant)` together with tenant deletion and the `erasure` suite | | v0.1 | MEM-4, MEM-9, RET-7, RET-4 |
-| `prune` | `retention` loop | Deletes entries older than the period of the `content` class | | v0.2 | RET-1, RET-2 |
+| `purge` | `erasure` loop on an erasure request (`forget`, person offboarding, tenant deletion, `bot_retired`) | Deletes all sessions of the scope `(tenant, subject)` (the subject's sessions and the group sessions whose key contains the subject) or by a list of ids; the result goes into the erasure request. Also the sealed sessions of a bot identity (the identity id scope, a `bot_retired` request at the end of the seal, MEM-9); from v0.2 the scope `(tenant)` together with tenant deletion and the `erasure` suite (RET-11) | | v0.1 | MEM-4, MEM-9, RET-7, RET-4, RET-11 |
+| `prune` | `retention` loop | Deletes entries older than the tenant's `content` period (RET-9), no later than 24 hours after it ends | | v0.2 | RET-1, RET-2, RET-10 |
 
 ## Guarantees
 

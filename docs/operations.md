@@ -35,7 +35,7 @@ A debug log with prompts is not enabled in production. Analysis goes by the sess
 
 ### Metrics
 
-The metrics catalog (v0.2) is a contract for dashboards and alarms that survives a change of implementation. It lives in `spec/bindings/telemetry/metrics.yaml` and covers the four monitoring signals: latency, traffic, errors and saturation. It has 14 metrics with labels from closed sets: queue (`botaru.queue.depth`, `botaru.queue.oldest_age_s`, `botaru.claim.wait_s`), outcomes and duration (`botaru.task.outcome`, `botaru.attempt.duration_s`), model and tools (`gen_ai.client.operation.duration`, `gen_ai.execute_tool.duration`, `botaru.model.tokens`), budget and approvals (`botaru.budget.used_ratio`, `botaru.approval.count`), deliveries (`botaru.delivery.outcome`), liveness (`botaru.worker.last_seen_age_s`, `botaru.loop.last_tick_age_s`) and holds (`botaru.hold.active`). The check "every catalog metric is in the output" runs as a black box. Where a core observation series coincides with a catalog metric, they have the same name (OBV-5).
+The metrics catalog (v0.2, OBS-13) is a contract for dashboards and alarms that survives a change of implementation. It lives in `spec/bindings/telemetry/metrics.yaml` and covers the four monitoring signals of farm work: latency, traffic, errors and saturation. It holds only what the farm alone knows from its records; machine, disk, network and service metrics stay with the monitoring system, which collects them itself (D-59). Every entry fixes its instrument, unit and labels, and no core decision reads a metric. It has 14 metrics with labels from closed sets: queue (`botaru.queue.depth`, `botaru.queue.oldest_age_s`, `botaru.claim.wait_s`), outcomes and duration (`botaru.task.outcome`, `botaru.attempt.duration_s`), model and tools (`gen_ai.client.operation.duration`, `gen_ai.execute_tool.duration`, `botaru.model.tokens`), budget and approvals (`botaru.budget.used_ratio`, `botaru.approval.count`), deliveries (`botaru.delivery.outcome`), liveness (`botaru.worker.last_seen_age_s`, `botaru.loop.last_tick_age_s`) and holds (`botaru.hold.active`). The skeleton CI checks the catalog form, and the check "every catalog metric is in the output, and no other `botaru.*` name" runs as a black box. Where a core observation series coincides with a catalog metric, they have the same name (OBV-5).
 
 ### P2 `status` and `doctor`
 
@@ -77,7 +77,7 @@ The core's background loops (core duties that work without an outside request) a
 | `alarm` | keeps alarm episodes (`firing`, `resolved`, `seq`, `repeat_count`), puts every episode change as a delivery for the monitoring adapter E5 and re-exports open episodes after a connection failure (MON-1, MON-11) | v0.1 |
 | `erasure` | sends erasure requests to the stores, collects outcomes, raises an alarm at the deadline | v0.1 |
 | `schedule` | enqueues a task for every slot in UTC by the schedule time zone, skips nonexistent local time | v0.1 |
-| `retention` | deletes by the periods of retention classes: in v0.1 only `content` and `observation` by defaults, from v0.2 by `Tenant.spec.retention` (RET-2) | v0.1 |
+| `retention` | deletes by the periods of retention classes: in v0.1 only `content` and `observation` by defaults (RET-2), from v0.2 by `Tenant.spec.retention` in every copy (RET-9, RET-10) | v0.1 |
 | `health` | computes the three health indicators, the age of backups and restore checks from the reports of the backup process, and raises alarms (OBS-9, RET-8) | v0.1 |
 
 The other core loops (`reaper`, `deadline`, `delivery`, `approval-expiry`, `budget`, `provider_check`, `membership`, `inbox`, `observe`, `proposal`, `campaign`, `script`, `incident`, `control`, `identity`, `grant`, `governance`, `expectation`) follow the same contract and mark their ticks the same way; their full list with versions is in `spec/ports/background-loops.md`.
@@ -185,7 +185,7 @@ Scopes and effects are closed lists in `spec/model/holds.yaml`. The scopes `sche
 | `worker` | one worker (quarantine) | the operator; a tenant person with `hold.set:<scope>`; the holder of the farm manager seat | v0.1 |
 | `plugin`, `action` | a plugin or an action in a tenant | the operator; a tenant person with `hold.set:<scope>` | v0.1 |
 | `channel` | a tenant channel | the operator; a tenant person with `hold.set:<scope>` | v0.1 |
-| `host` | a machine from the catalog | the operator; a tenant person with `hold.set:<scope>` | v0.1 |
+| `host` | a machine from the catalog | the operator; a tenant person with `hold.set:<scope>`; from v0.2 a monitoring maintenance window (MON-9) | v0.1 |
 | `resource` | a catalog resource | the operator; a tenant person with `hold.set:<scope>`; the holder of the farm manager seat | v0.1 |
 | `bot_group`, `bot` | a bot group or one bot | the operator; a tenant person with `hold.set:<scope>`; the holder of the farm manager seat | v0.1 |
 | `seat` | the farm manager seat | only an operator with `admin:farm` (kill switch, MGR-15); the seat safeguard by code (MGR-14) | v0.1 |
@@ -202,7 +202,7 @@ Scopes and effects are closed lists in `spec/model/holds.yaml`. The scopes `sche
 | `no_action` | new `request_action` calls and decisions on pending ones; pending approvals become `canceled(held)` with `card_update` | P3, P1 `decide` | v0.1 |
 | `no_delivery` | deliveries to the scope: `withheld`, except messages to admins about the hold itself | the `delivery` loop | v0.1 |
 | `no_control` | control operations of the seat holder | C1 `control.apply` | v0.1 |
-| `pause_action` | new `request_action` calls; pending approvals are not canceled but wait: the deadline is extended by the length of the hold, the card carries a pause mark, decisions are not accepted until the hold ends | P3, P1 `decide`, the `approval-expiry` loop | v0.2 |
+| `pause_action` | new `request_action` calls; pending approvals are not canceled but wait: the deadline is extended by the time they were pending under the hold, by at most 7 days in total, the card carries a pause mark (`card.paused`), decisions get `held` until the hold ends; a person sets it on any scope with approvals, a maintenance window on a host; `no_action` wins (HLD-8) | P3, P1 `decide`, the `approval-expiry` loop | v0.2 |
 
 ### How a hold works
 
@@ -221,7 +221,7 @@ A hold only narrows: it cannot become a path to extra rights (HLD-2). A hold is 
 - the operator, on any scope, through `farmctl` (P2 `hold.set`) or, for the whole farm, with the command `farmctl hold farm`. A hold on the scopes `farm` and `seat` and its release are operator operations only (PRM-14);
 - a person of their own tenant with the right `hold.set:<scope>`, on scopes of their tenant, through `farmctl` or with a command in a direct chat with the bot (PRM-15);
 - the core by an auto-stop rule from the closed list `spec/model/holds.yaml` and as the first measure of an incident class from git (MGR-7);
-- from v0.2 the core by a maintenance window in the monitoring system: a hold on scope `host` or `resource` with reason `maintenance` until the end of the window (MON-9).
+- from v0.2 the core by a maintenance window in the monitoring system: a hold on scope `host` with reason `maintenance`; each poll of the maintenance status moves its `until` forward, so it ends at most two poll intervals after the window (MON-9).
 
 A code hold inside a tenant (an auto-stop, the first measure of an incident, a maintenance window hold) is recorded with the author `contain_auto`; the source (rule, incident class, `system:monitor`) is written next to it. The model, a worker, a route and a schedule neither set nor release holds. A coordinator bot does not set holds and does not ask for them: people or code set a mass stop.
 
@@ -248,7 +248,7 @@ An auto-stop is a hold that code sets by a rule from a closed list. A new auto-s
 | the channel refused twice within an hour to send a message of one role because it found a secret in it (INJ-11) | a `role` hold in the tenant with `no_delivery`, without a deadline | HLD-6 | v0.1 |
 | the operation limits of the farm manager seat are exceeded | a `seat` hold with `no_control`, without a deadline | MGR-14 | v0.1 |
 | the tenant's spend within a sliding hour is above its hourly limit `Tenant.spec.budgets.hour_eur` (default `month_eur`/100, BUD-1) | a `role` hold with `no_claim` on every agent role of the tenant, reason `runaway_spend`, author `contain_auto`, deadline one hour; `job` tasks without a model run | HLD-7 | v0.1 |
-| a schedule gave `K` slots in a row with `attempts_exhausted` | a `schedule` hold with `no_enqueue` | CAP-4 | v0.2 |
+| the last `K` = 3 slots of a schedule in a row ended with `attempts_exhausted` or `runs_exhausted` (D-100) | a `schedule` hold with `no_enqueue`, reason `schedule_failing`, author `contain_auto`, without a deadline; later slots are skipped with `held` | CAP-4 | v0.2 |
 
 Every auto-stop raises the alarm `alarm.hold.auto`. An injection in text can trigger an auto-stop but cannot bypass it: this is a deliberate fail-safe refusal.
 
@@ -264,7 +264,7 @@ A series of requests with a foreign tenant or foreign handles from the same cred
 | worker quarantine | a `worker` hold with `no_claim` and `cancel_running` |
 | urgent plugin recall | a `plugin` hold with `no_tool` |
 | a bot token leaked | a `channel` hold with `no_delivery` and `no_enqueue`: outgoing messages are not sent, tasks from this channel's incoming messages are not enqueued |
-| a two-hour maintenance window for `db1` | people set the window in the monitoring system; from v0.2 the core sets by it a `host` hold with `until` the end of the window, the effects `no_tool`, `pause_action` (pending cards are not canceled but wait; with `hosts[].maintenance_hold: true` there is `no_action` instead) and reason `maintenance`; schedules whose tasks depend on `db1` skip slots with reason `held`, without catching up (MON-9) |
+| a two-hour maintenance window for `db1` | people set the window in the monitoring system; from v0.2 the core sets by it a `host` hold whose `until` follows the polls and ends at most two poll intervals after the window, the effects `no_tool`, `pause_action` (pending cards are not canceled but wait; with `hosts[].maintenance_hold: true` there is `no_action` instead) and reason `maintenance`; schedules whose tasks depend on `db1` skip slots with reason `held`, without catching up (MON-9) |
 | suspected theft of the core key | a `farm` hold with `no_action` and `no_tool` |
 
 ### Emergency stop of the whole farm
@@ -300,7 +300,7 @@ Every kind of stored object and every store belongs to exactly one retention cla
 
 ### Periods
 
-Deletion by period is done by the background loop `retention`, and a minimal part of it exists already in v0.1 (RET-2): the loop deletes objects of the classes `content` and `observation` older than the default period from `spec/model/retention-classes.yaml`, and only those; in v0.1 metadata, tombstones and memory are not deleted by period, and anything earlier than its period is deleted only by a request (RET-7). Without this the store would grow until v0.2, and an operator whose core volume reached the CAP-5 threshold would formally have no right to clean up sessions older than 30 days. From v0.2 the periods are set by `Tenant.spec.retention` within the farm's ceilings, and the loop deletes all classes by them. It holds the periods of the retention classes, plus `files` (the file period, by which the core sets `expires_at` when a file is written, ART-1) and `journals` (the period of attempt journals; on a production tenant without this field the journal is disabled, AUD-4). Content is deleted no later than the period plus the loop period, and is deleted in all copies that the farm keeps: in indexes, caches, runtime stores. The loop deletes C3 records with the operation `prune`, and files after `expires_at` with the C1 operation `file.purge` together with the chunks and vectors of corpora (KNW-5). Metadata and observation series are deleted only by whole periods, never by selective editing of a row: the audit is append-only (AUD-3). Deleting the `principal` and `Identity` rows anonymizes the audit without a single edit of its rows. The seal of a retired bot does not extend retention periods: from v0.2 the `retention` loop deletes its sessions and records whose class period ends earlier, even if the seal is still valid. Already from v0.1, at the end of the seal everything sealed of a retired bot is erased by an erasure request with reason `bot_retired` and the scope of the bot identity id, which the `identity` loop enqueues (MEM-9). The core cannot seal a session inside the runtime (`runtime_internal`), so such a request for it is enqueued at once, in the bot retirement transaction, with a list of session ids, and the runtime adapter deletes it with the E4 operation `purge`.
+Deletion by period is done by the background loop `retention`, and a minimal part of it exists already in v0.1 (RET-2): the loop deletes objects of the classes `content` and `observation` older than the default period from `spec/model/retention-classes.yaml`, and only those; in v0.1 metadata, tombstones and memory are not deleted by period, and anything earlier than its period is deleted only by a request (RET-7). Without this the store would grow until v0.2, and an operator whose core volume reached the CAP-5 threshold would formally have no right to clean up sessions older than 30 days. From v0.2 a tenant sets its periods in `Tenant.spec.retention` (RET-9): `classes` only for `content` (1 to 400 days), `memory` (30 to 3650 days; without it memory lives until `forget`) and `metadata` (93 to 3650 days), the bounds `min_days` and `ceiling_days` of `spec/model/retention-classes.yaml`; `files` (the file period, by which the core sets `expires_at` when a file is written, ART-1) and `journals` (the period of attempt journals; on a production tenant without this field the journal is disabled, AUD-4), both not longer than the tenant's `content` period. The manifest lint rejects anything else with `retention_period`. A shorter period reaches stored objects at the next loop run, except `metadata`: a shorter `metadata` period applies only to records written after the `apply` that set it, so a tenant admin cannot erase audit, decisions or spending already written by changing a manifest (D-108); a longer one never brings back an expired object. The loop deletes every class with a period no later than 24 hours after the period ends, in all copies that the farm keeps (RET-10): C3 records with the operation `prune`, files after `expires_at` with the C1 operation `file.purge` together with the fragments of corpora (KNW-5) and cached tool output (PRM-12), attempt journals, task content with `task.purge`, and sessions inside a runtime with E4 `purge`. Metadata and observation series are deleted only by whole periods, never by selective editing of a row: the audit is append-only (AUD-3). Deleting the `principal` and `Identity` rows anonymizes the audit without a single edit of its rows. The seal of a retired bot does not extend retention periods: from v0.2 the `retention` loop deletes its sessions and records whose class period ends earlier, even if the seal is still valid (MEM-10). Already from v0.1, at the end of the seal everything sealed of a retired bot is erased by an erasure request with reason `bot_retired` and the scope of the bot identity id, which the `identity` loop enqueues (MEM-9). The core cannot seal a session inside the runtime (`runtime_internal`), so such a request for it is enqueued at once, in the bot retirement transaction, with a list of session ids, and the runtime adapter deletes it with the E4 operation `purge`.
 
 ### Tombstones
 
@@ -332,17 +332,17 @@ Every port that stores content has an erase operation by the scope `(tenant)`, `
 
 | Store | Erase operation | From version |
 |---|---|---|
-| sessions (C3) | `delete` of one session by id, `purge` by scope or list of ids | v0.1; scope `(tenant)` from v0.2 |
+| sessions (C3) | `delete` of one session by id, `purge` by scope or list of ids | v0.1; scope `(tenant)` from v0.2 (RET-11) |
 | memory (C4) | `erase` | v0.1 (people's memory and the sealed memory of retired bots) |
 | runtime store with `runtime_internal` (E4) | `purge` through the adapter (RT-1, RT-2) | v0.1 |
 | files (C1) | `file.purge` | v0.1 (D-76) |
 | task content (C1) | `task.purge`: `body`, `result`, the bodies of deliveries and events with content; a tombstone remains | v0.1 (D-76, D-86 (8)) |
 | sink archive (E2) | `erase` | v0.1 (D-76) |
 | monitoring system (E5) | `erase`: the scope `(tenant)` removes this tenant's items from the farm template; `(tenant, subject)` answers `not_applicable`, because notes carry no personal data (class `summary` and redaction, MON-7); for a list of note ids the reference binding from the E5 sheet answers `failed` if the monitoring system API does not delete notes, the binding sheet declares this in advance, and such an outcome does not keep the request open | v0.1 (D-76) |
-| saved attachments and the channel cache (E1) | `erase`; in v0.1 the channel declares `driver.stores_content: none`, and the core itself writes its step with the outcome `not_applicable` with `basis: declared_none`, so the request does not hang because of E1 (D-86 (8)) | v0.2 |
-| runtime store without `runtime_internal` (E4) | `purge` through the adapter | v0.2 |
+| saved attachments and the channel cache (E1) | `erase`; in v0.1 the channel declares `driver.stores_content: none`, and the core itself writes its step with the outcome `not_applicable` with `basis: declared_none`, so the request does not hang because of E1 (D-86 (8)); from v0.2 a channel with `stores_content: attachments` or `cache` has `erase` and `match` (RET-11) | v0.2 |
+| runtime store without `runtime_internal` (E4) | `purge` through the adapter: working files, caches and logs with content of every agent worker that ran an attempt of the tenant (RET-11) | v0.2 |
 
-Every operation returns the outcome `done`, `failed` or `not_applicable`, and the core writes it into the erasure request. An outcome `not_applicable` without a `basis` field (how the store made sure there is nothing to delete) is not accepted. Erasure work by subject carries `needles` (the person's handles and addresses), which the core keeps until the end of the erasure so that an edge store knows whom to delete. The adapter of every such port passes the `erasure` suite: without it, it does not conform to the skeleton. A content store without its own erase operation (in v0.1 the attachments and cache of channel E1, and runtimes without `runtime_internal`) answers the request with `failed`, and the request stays open with an alarm; `failed` from E5 for note ids does not keep the request (RET-4, RET-7). Erasure of a person's data at their request is part of v0.1 and cannot be waived for a tenant with `kind: production` (D-76).
+Every operation returns the outcome `done`, `failed` or `not_applicable`, and the core writes it into the erasure request. An outcome `not_applicable` without a `basis` field (how the store made sure there is nothing to delete) is not accepted. Erasure work by subject carries `needles` (the person's handles and addresses), which the core keeps until the end of the erasure so that an edge store knows whom to delete. The adapter of every such port passes the `erasure` suite: without it, it does not conform to the skeleton. A content store without its own erase operation (in v0.1 the attachments and cache of channel E1, and runtimes without `runtime_internal`; both get their operations in v0.2, RET-11) answers the request with `failed`, and the request stays open with an alarm; `failed` from E5 for note ids does not keep the request (RET-4, RET-7). Erasure of a person's data at their request is part of v0.1 and cannot be waived for a tenant with `kind: production` (D-76).
 
 ### What erasure does not reach
 
@@ -413,7 +413,7 @@ spec:
   kind: production              # production tenant (APR-9)
   timezone: Europe/Berlin       # IANA name (TIM-2)
   attention:
-    cards_per_person_day: 10    # non-urgent decision cards per person per day (APR-15, v0.2)
+    noncritical_per_day: 10     # non-urgent decision cards per person per day (APR-15, v0.2)
     cards_per_tenant_hour: 20   # action cards after untrusted text per tenant per hour (APR-2)
   delegated_groups: [researcher] # groups that the tenant admin grants by themselves (PRM-16)
   farm_manager:                 # the farm manager for this tenant (D-77)
@@ -427,10 +427,9 @@ spec:
     hour_eur: 2                 # default month/100
   operator_access:
     debug_journal: notify       # deny | notify | allow: the operator reading journals through admin:debug
-  retention:                    # retention periods (RET-2, v0.2; in v0.1 the class defaults)
-    content: 30d
-    metadata: 400d
-    files: 30d                  # file period, used to set expires_at (ART-1)
+  retention:                    # retention periods (RET-9, v0.2; in v0.1 the class defaults)
+    classes: {content: 30d, metadata: 400d}   # content 1-400 days, memory 30-3650 days, metadata 93-3650 days
+    files: 30d                  # file period, used to set expires_at (ART-1); not longer than content
     journals: 7d                # attempt journal; on a production tenant without the field it is disabled (AUD-4)
   limits:                       # only below the farm ceilings (CAP-1)
     max_queued: 5000            # tasks in submitted
@@ -538,7 +537,7 @@ Daily tasks are better scheduled at a time outside the night window of clock cha
 
 ### Schedule check before "Accept"
 
-A bot can propose to change the `cron`, the time zone or the pause of a schedule. From v0.2, before the "Accept" button of such a proposal, the core computes with code the slots of the new schedule for a year ahead and shows on the card (TIM-5): local times that will disappear or repeat at clock changes; overlaps with slots of the tenant's other schedules whose tasks depend on the same resources; overlaps with maintenance windows of the monitoring system (MON-9); overlaps with the change windows of changes that have a running change trial (PRP-21), because a new change of the same subjects in such a window makes the trial outcome `mixed` (PRP-22). An expression or time zone that would fail `apply` gets no "Accept" button. If a slot of a backup schedule (a type with `makes_backup: true`) disappears on at least one day, for example at a clock change, the proposal gets the refusal `rejected(schedule_time_invalid)`. At the press of "Accept" itself the core repeats the check: if another schedule changed in the meantime and the outcome became different, the decision is not accepted, and the card is updated with the new outcome. The model takes no part in this check. How a proposal reaches the card and how its outcome is measured is described in `docs/improvements.md`.
+A bot can propose to change the `cron`, the time zone or the pause of a schedule. From v0.2, before the "Accept" button of such a proposal, the core computes with code the slots of the new schedule for a year ahead and shows on the card (TIM-5): local times that will disappear or repeat at clock changes; overlaps with slots of the tenant's other schedules whose tasks depend on the same resources; overlaps with the change windows of changes that have a running change trial (PRP-21), because a new change of the same subjects in such a window makes the trial outcome `mixed` (PRP-22). An expression or time zone that would fail `apply` gets no "Accept" button. If a slot of a backup schedule (a type with `makes_backup: true`) disappears on at least one day, for example at a clock change, the proposal gets the refusal `rejected(schedule_time_invalid)`. At the press of "Accept" itself the core repeats the check: if another schedule changed in the meantime and the outcome became different, the decision is not accepted, and the card is updated with the new outcome. The model takes no part in this check. Maintenance windows of the monitoring system are not computed a year ahead: that would rebuild the monitoring system's own window scheduler, and a slot inside a window is skipped when it comes (MON-9, D-100). How a proposal reaches the card and how its outcome is measured is described in `docs/improvements.md`.
 
 ## Tenant lifecycle
 
@@ -546,19 +545,19 @@ A tenant is declared in git with the file `tenants/<name>/tenant.yaml` and appea
 
 In `active` the tenant works according to its rights and periods. In `suspended` there is no new work except core tasks for erasure and export, pending approvals are canceled, deliveries get `withheld` except messages to admins about the hold itself (HLD-3), and data, credentials and the provider key are not touched. In `offboarding` only export is allowed. In `deleted` content and memory are deleted, metadata lives until the end of its period, and the tenant id stays as a tombstone.
 
-A suspension (for example for non-payment) is a `tenant` hold with reason `suspended`, and a return is the release of this hold, and only the operator can release it: a tenant admin with `hold.release` gets `forbidden` (HLD-2). Offboarding (P2 `tenant.offboard`) revokes everything with which the tenant could spend money and act: every tenant has its own workspace and key at the model provider (GW-3, D-42). Deletion (P2 `tenant.delete`) is possible no earlier than the end of the export window, by default 30 days; it creates an erasure request with scope `(tenant)` across all stores, and `apply` of a tenant with the same name is rejected after that. The audit of a deleted tenant lives for the `metadata` period without a link to people and is then deleted in full.
+A suspension (for example for non-payment) is a `tenant` hold with reason `suspended`, and a return is the release of this hold, and only the operator can release it: a tenant admin with `hold.release` gets `forbidden` (HLD-2). Offboarding (P2 `tenant.offboard`) revokes everything with which the tenant could spend money and act: every tenant has its own workspace and key at the model provider (GW-3, D-42). The core forgets the key and stops using it; revoking the key and the workspace at the provider needs an organization admin key, which the core does not hold, so `tenant.offboard` prints it as an operator step (D-103). Deletion (P2 `tenant.delete`) is possible no earlier than the end of the export window, by default 30 days; it creates an erasure request with scope `(tenant)` across all stores, and `apply` of a tenant with the same name is rejected after that. The audit of a deleted tenant lives for the `metadata` period without a link to people and is then deleted in full.
 
 Export of a tenant or a person (P2 `tenant.export`, `principal.export`, v0.2) is an operator operation (PRM-14). It enqueues a core task and writes the result only to a sink named by the operator, in JSON Lines by the schemas of `spec/model` with their `$id` (LCY-2). A person asks for a copy of their data with the command `/mydata export`, and an approved request enqueues the same export task (SEC-11). Export never goes to a chat or to the model: it contains raw data. A person's export contains only objects where they are the initiator and objects that belong to them. Declared objects are not exported: they are in git.
 
 ### A person leaving
 
-A principal (a person or an external program, D-47) goes through the states `active`, `off`, `offboarded` (LCY-3). An admin's `/off` deletes nothing and is reversible: in one transaction the person's pending approvals (APR-6) and tasks (`canceled(person_inactive)`) are canceled, and the schedules they created are disabled. Leaving for good (P2 `principal.offboard`: an admin with `admin:people` for people without privileged groups, an operator through `farmctl` for people with them, PRM-14) does the same and additionally deletes the person's memory and sessions through an erasure request (MEM-4, RET-7). From v0.2 leaving publishes the event `principal.offboarded` and deletes the person's `Identity`, after which only an opaque id remains in the audit. In core records (task, audit, usage, grants, campaign, erasure) the person is recorded by this principal id `human:p_<ULID>` even before leaving, so the records are not rewritten after leaving: the audit keeps the same id, and the name is deleted from the principal record (D-85). A person who returns gets a new principal, and the old rights do not come back.
+A principal (a person or an external program, D-47) goes through the states `active`, `off`, `offboarded` (LCY-3). An admin's `/off` deletes nothing and is reversible: in one transaction the person's pending approvals (APR-6) and tasks (`canceled(person_inactive)`) are canceled. Schedules have no creator in their record, so they stay; the tenant admins decide on them. Leaving for good (P2 `principal.offboard`: an admin with `admin:people` for people without privileged groups, an operator through `farmctl` for people with them, PRM-14) does the same, writes the state `offboarded`, which no operation leaves (`principal.on`, `principal.off`, `principal.set_identity` and `grant` answer `subject_closed`), deletes the links of the person's channel identities, so that the same external identity can later be given to a new principal, and additionally deletes the person's memory and sessions through an erasure request (LCY-8, MEM-4, RET-7, D-98). From v0.2 leaving also publishes the event `principal.offboarded`; only an opaque id remains in the audit. In core records (task, audit, usage, grants, campaign, erasure) the person is recorded by this principal id `human:p_<ULID>` even before leaving, so the records are not rewritten after leaving: the audit keeps the same id, and the name is deleted from the principal record (D-85). A person who returns gets a new principal, and the old rights do not come back; there is no return window (D-100).
 
 ## Workers and plugins
 
 ### Worker drain and revocation
 
-A worker in `draining` (P2 `worker.drain`) gets no new work, finishes the running work until `drain_deadline`, then lets it go through `release`, and the attempt is not spent (LCY-4). The work version is pinned at the task type level (`.vN`), not at the worker: attempts are short, a retry can go to a new image, so the image must understand all `.vN` from the `claims` of its role. At the revocation (P2 `worker.revoke`) of a worker whose runtime keeps sessions or memory itself, the store of its profile is cleaned through the adapter by an erasure request with reason `worker_revoke` and the scope of the worker id (RET-7).
+A worker in `draining` (P2 `worker.drain` with a `deadline`) gets no new work and finishes the running work until `drain_deadline`. From the deadline the heartbeat answer asks for release (`release_requested`), the worker lets the work go through `release`, and the attempt is not spent; a lease of a draining worker that expires after the deadline ends with `worker_drain` without spending an attempt either (LCY-4). The work version is pinned at the task type level (`.vN`), not at the worker: attempts are short, a retry can go to a new image, so the image must understand all `.vN` from the `claims` of its role. At the revocation (P2 `worker.revoke`) of a worker whose runtime keeps sessions or memory itself, the store of its profile is cleaned through the adapter by an erasure request with reason `worker_revoke` and the scope of the worker id (RET-7).
 
 ### Worker port version window
 
@@ -566,14 +565,15 @@ The core accepts the current and the previous major version of P1 (LCY-7). A wor
 
 ### Plugin update
 
-From v0.2 a plugin is updated without the toolhost moving to `blocked` (LCY-5). During the transition the plugin manifest lists the allowed pairs (image digest, `tools/list` fingerprint), and `hello` passes with any of them; after the transition the old pair is removed, and a toolhost with the old image gets `blocked`. The model sees the description from the manifest of the pair that the target's toolhost brought. A plugin with `deprecated: true` gives an `apply` warning, and after the `sunset` date `apply` does not accept roles that refer to it.
+From v0.2 a plugin is updated without the toolhost moving to `blocked` (LCY-5). During the transition `source.accepted` in the plugin manifest lists up to two pairs (image digest, `tools/list` fingerprint), both matching the manifest's `tools`, and `hello` passes with either; an `apply` that removes the old pair makes a toolhost with the old image `blocked`. The model always sees the tool descriptions of the manifest. Deprecation and sunset of a plugin follow the general manifest rule (MAN-7).
 
 ```yaml
 # tools/logs/tool.yaml (fragment)
-image:
+source:
+  image: registry.example/tools/logs@sha256:<digest>
   accepted:
-    - {digest: "sha256:aaa...", tools_fingerprint: "sha256:111..."}   # current pair
-    - {digest: "sha256:bbb...", tools_fingerprint: "sha256:222..."}   # new one, for the transition
+    - {image: "registry.example/tools/logs@sha256:<digest>", tools_fingerprint: "sha256:<digest>"}   # current pair
+    - {image: "registry.example/tools/logs@sha256:<digest>", tools_fingerprint: "sha256:<digest>"}   # new one, for the transition
 ```
 
 ## Rolling out a new core version
@@ -605,7 +605,7 @@ Every recipe is a sequence of port operations. The commands of a particular impl
 ### Planned work on a machine
 
 1. A person sets a maintenance window on the machine's node in the monitoring system, for example `db1`; alerts for it are silent there.
-2. From v0.2 the core sets by the window a hold on scope `host` with `no_tool`, `pause_action`, reason `maintenance` and a deadline at the end of the window (MON-9); pending cards for the machine are not canceled but wait. Before v0.2 a person sets such a hold themselves: P2 `hold.set`.
+2. From v0.2 the core sets by the window a hold on scope `host` with `no_tool`, `pause_action`, reason `maintenance` and an `until` that each poll of the maintenance status moves forward (MON-9); pending cards for the machine are not canceled but wait. Before v0.2 a person sets such a hold themselves: P2 `hold.set`.
 3. The work ended earlier: the tenant admin or the operator releases the hold with P2 `hold.release`. Otherwise the hold ends at `until`.
 4. While the hold is active, bots do not start, stop or restart services on the machine and do not run monitoring scripts on it: the calls `service/control` and `monitor/script_run` get `denied(held)` (MON-8, MON-10). People manage the services during the work.
 
@@ -645,7 +645,7 @@ The recipe in git (`tenants/<name>/`, catalog, groups, roles) is described in `d
 ### Suspend and delete a tenant
 
 1. P2 `tenant.suspend`: a `tenant` hold with reason `suspended`. To return: only the operator, P2 `hold.release` of this hold (HLD-2).
-2. P2 `tenant.offboard`: credentials are revoked, the provider key is disabled.
+2. P2 `tenant.offboard`: credentials are revoked, the core forgets the provider key; the operator revokes the key and the workspace at the provider by the step that the answer prints.
 3. P2 `tenant.export` to a sink named by the operator.
 4. After the export window P2 `tenant.delete`; watch `erasure.status` until `done`.
 
@@ -682,8 +682,8 @@ The general rule: everything the core issues or signs carries a key id, and the 
 
 | Version | What appears |
 |---|---|
-| v0.1 | telemetry without content (OBS-1); one trace per task tree with `correlationid` and `causationid` in every event, and external tracing context that decides nothing (OBS-2, OBS-3, D-94); `last_seen`, `worker.stale` and loop ticks (OBS-4); the common alarm schema, episodes with `seq` and `repeat_count` (OBS-6); alarm export and core liveness check by the monitoring system (MON-1, MON-2, `docs/monitoring.md`); `doctor` and `status` lines per tenant (OBS-11); behavior with an unavailable store (OBS-8); plugin health and `plugin_unavailable` (OBS-10); holds with the scopes `farm`, `tenant`, `role`, `tasktype`, `worker`, the effects `no_enqueue`, `no_claim`, `cancel_running`, the command `farmctl hold farm` and release by rank (HLD-1, HLD-2, HLD-3, HLD-5); retention classes (RET-1); deletion of `content` and `observation` by defaults with the `retention` loop (RET-2); tombstones (RET-3); erase operations C3, C4, E4 with `runtime_internal`, C1 `file.purge`, E2 `erase`, E5 `erase` and erasure of a person's data at their request `/mydata erase`, non-waivable on a production tenant (RET-4, D-76); backups and restore (RET-5, RET-6); early erasure through the erasure log (RET-7); tenant limits with a queue reserve for urgent tasks (CAP-1); a dependency failure without spending an attempt (CAP-2); storage headroom (CAP-5); the store clock, UTC, the slot format, the event `schedule.skipped`, `skip_if_waiting` and the schedule time zone (TIM-1, TIM-2, TIM-3, TIM-4); rotation recipes for every secret; `operator_access.debug_journal`; the three health indicators (OBS-9); an alarm about an overdue usage reconciliation (OBS-12); `status` lines about the farm manager, its pause and the commission shadow (OBS-11); the other hold scopes and effects, including `no_message`, holds by the seat holder, the auto-stop "secret in outbound" (HLD-6), the auto-stop by spend rate `runaway_spend` (HLD-7); erasing the memory of a retired bot with an erasure request (RET-7); usage reconciliation before readiness after a restore and `restore.complete --spend-pending` (RET-6); backup process reports `backup.report` and the weekly restore check (RET-8); space quotas on volumes with a used space series from the monitoring history (CAP-6); alarms from monitoring problems (MON-5); an alarm export that does not die (MON-11); core drain with reason `draining` in `health` (LCY-6) and the P1 version window (LCY-7) |
-| v0.2 | holds by monitoring system maintenance windows with the effect `pause_action` (MON-9); retention periods `Tenant.spec.retention` and deletion of all classes by period (RET-2); E1 `erase` and E4 `purge` for the other runtimes (RET-4); the extract `/mydata export` (SEC-10); delivery rate (CAP-3); dead work and pausing a schedule with a hold (CAP-4); the schedule check before "Accept" (TIM-5); tenant and principal lifecycles, export (LCY-1, LCY-2, LCY-3); worker drain and revocation (LCY-4); plugin update (LCY-5); the metrics catalog |
+| v0.1 | telemetry without content (OBS-1); one trace per task tree with `correlationid` and `causationid` in every event, and external tracing context that decides nothing (OBS-2, OBS-3, D-94); `last_seen`, `worker.stale` and loop ticks (OBS-4); the common alarm schema, episodes with `seq` and `repeat_count` (OBS-6); alarm export and core liveness check by the monitoring system (MON-1, MON-2, `docs/monitoring.md`); `doctor` and `status` lines per tenant (OBS-11); behavior with an unavailable store (OBS-8); plugin health and `plugin_unavailable` (OBS-10); holds with the scopes `farm`, `tenant`, `role`, `tasktype`, `worker`, the effects `no_enqueue`, `no_claim`, `cancel_running`, the command `farmctl hold farm` and release by rank (HLD-1, HLD-2, HLD-3, HLD-5); retention classes (RET-1); deletion of `content` and `observation` by defaults with the `retention` loop (RET-2); tombstones (RET-3); erase operations C3, C4, E4 with `runtime_internal`, C1 `file.purge`, E2 `erase`, E5 `erase` and erasure of a person's data at their request `/mydata erase`, non-waivable on a production tenant (RET-4, D-76); backups and restore (RET-5, RET-6); early erasure through the erasure log (RET-7); tenant limits with a queue reserve for urgent tasks (CAP-1); a dependency failure without spending an attempt (CAP-2); storage headroom (CAP-5); the store clock, UTC, the slot format, the event `schedule.skipped`, `skip_if_waiting` and the schedule time zone (TIM-1, TIM-2, TIM-3, TIM-4); rotation recipes for every secret; the three health indicators (OBS-9); an alarm about an overdue usage reconciliation (OBS-12); `status` lines about the farm manager, its pause and the commission shadow (OBS-11); the other hold scopes and effects, including `no_message`, holds by the seat holder, the auto-stop "secret in outbound" (HLD-6), the auto-stop by spend rate `runaway_spend` (HLD-7); erasing the memory of a retired bot with an erasure request (RET-7); usage reconciliation before readiness after a restore and `restore.complete --spend-pending` (RET-6); backup process reports `backup.report` and the weekly restore check (RET-8); space quotas on volumes with a used space series from the monitoring history (CAP-6); alarms from monitoring problems (MON-5); an alarm export that does not die (MON-11); core drain with reason `draining` in `health` (LCY-6) and the P1 version window (LCY-7) |
+| v0.2 | holds by monitoring system maintenance windows with the effect `pause_action` (MON-9); retention periods `Tenant.spec.retention` (RET-9) and deletion of all classes by period in every copy (RET-10); E1 `erase` and `match`, E4 `purge` for every runtime and C3 `purge` by `(tenant)` (RET-11); the outgoing webhook sink (DLV-17); the extract `/mydata export` (SEC-10); delivery rate (CAP-3); dead work and pausing a schedule with a hold (CAP-4); the schedule check before "Accept" (TIM-5); tenant and principal lifecycles, export (LCY-1, LCY-2, LCY-3); worker drain and revocation (LCY-4); plugin update (LCY-5); `operator_access.debug_journal`; the metrics catalog |
 
 The improvement cycle, the farm manager, messages between bots, reporters, campaigns and scripts are part of v0.1 and come after the core and the first bot (D-71, D-80); the first measure hold of an incident, holds by the seat holder, and the effects `no_message` and `no_control` appear together with them.
 
@@ -701,8 +701,6 @@ The improvement cycle, the farm manager, messages between bots, reporters, campa
 ## What is not decided
 
 - The default retention periods (`content` 30 days, `metadata` 400 days, memory until `forget`) apply until the organization decides on personal data (D-12); the skeleton needs only the fields and checks.
-- The return window after a person leaves: by default there is none; `/off` is already reversible and deletes nothing.
-- Whether a separate retention class is needed for spend aggregates without people over years: by default no, spend lives as `metadata`; the decision comes together with the payment model.
 
 <!-- generated: rules -->
 ## Rules of this section
@@ -723,6 +721,7 @@ Generated from the registry `conformance/requirements.yaml`; the full text of ev
 | [HLD-5](../conformance/rules.md#HLD-5) | Holds are visible and recorded | v0.1 | no |
 | [HLD-6](../conformance/rules.md#HLD-6) | Auto-stop "secret in outbound" | v0.1 | yes |
 | [HLD-7](../conformance/rules.md#HLD-7) | Auto-stop on spend rate | v0.1 | no |
+| [HLD-8](../conformance/rules.md#HLD-8) | A pause of approvals set by a person | v0.2 | yes |
 | [LCY-1](../conformance/rules.md#LCY-1) | Tenant lifecycle | v0.2 | yes |
 | [LCY-2](../conformance/rules.md#LCY-2) | Tenant and principal export | v0.2 | no |
 | [LCY-3](../conformance/rules.md#LCY-3) | Principal lifecycle | v0.2 | yes |
@@ -730,6 +729,7 @@ Generated from the registry `conformance/requirements.yaml`; the full text of ev
 | [LCY-5](../conformance/rules.md#LCY-5) | Plugin update and deprecation | v0.2 | no |
 | [LCY-6](../conformance/rules.md#LCY-6) | Core drain before rollout | v0.1 | no |
 | [LCY-7](../conformance/rules.md#LCY-7) | Worker port version window | v0.1 | no |
+| [LCY-8](../conformance/rules.md#LCY-8) | Offboarding is final and frees the identity | v0.1 | yes |
 | [OBS-1](../conformance/rules.md#OBS-1) | Telemetry without content | v0.1 | yes |
 | [OBS-2](../conformance/rules.md#OBS-2) | One trace per task tree | v0.1 | no |
 | [OBS-3](../conformance/rules.md#OBS-3) | External trace context decides nothing | v0.1 | yes |
@@ -739,6 +739,7 @@ Generated from the registry `conformance/requirements.yaml`; the full text of ev
 | [OBS-9](../conformance/rules.md#OBS-9) | Three health indicators | v0.1 | no |
 | [OBS-10](../conformance/rules.md#OBS-10) | Health of plugins, channels and the provider | v0.1 | no |
 | [OBS-12](../conformance/rules.md#OBS-12) | Alarm about an overdue usage reconciliation | v0.1 | no |
+| [OBS-13](../conformance/rules.md#OBS-13) | The metrics catalog | v0.2 | no |
 | [RET-1](../conformance/rules.md#RET-1) | A retention class for every stored object | v0.1 | yes |
 | [RET-2](../conformance/rules.md#RET-2) | Retention periods and deletion at expiry | v0.1 | yes |
 | [RET-3](../conformance/rules.md#RET-3) | Tombstones keep uniqueness | v0.1 | yes |
@@ -747,6 +748,9 @@ Generated from the registry `conformance/requirements.yaml`; the full text of ev
 | [RET-6](../conformance/rules.md#RET-6) | Restore from backup | v0.1 | yes |
 | [RET-7](../conformance/rules.md#RET-7) | Early deletion only through the erasure log | v0.1 | yes |
 | [RET-8](../conformance/rules.md#RET-8) | Backup reports and restore checks | v0.1 | no |
+| [RET-9](../conformance/rules.md#RET-9) | Tenant retention periods | v0.2 | no |
+| [RET-10](../conformance/rules.md#RET-10) | Deletion by period in every copy | v0.2 | yes |
+| [RET-11](../conformance/rules.md#RET-11) | Channel cache, every runtime and tenant scope in erasure | v0.2 | yes |
 | [TIM-1](../conformance/rules.md#TIM-1) | One clock, the store clock | v0.1 | yes |
 | [TIM-2](../conformance/rules.md#TIM-2) | UTC in contracts, a time zone only for the tenant and the schedule | v0.1 | no |
 | [TIM-3](../conformance/rules.md#TIM-3) | Schedule slot format and time transitions | v0.1 | yes |

@@ -95,6 +95,15 @@ entries:
     response: p1-task-get-response
     rules: [PRM-9]
     profiles: [core]
+  - id: P1.kb.index_put
+    port: P1
+    op: kb.index_put
+    since: v0.2
+    request: p1-kb-index-put-request
+    response: done-response
+    rules: [KNW-5, KNW-4]
+    profiles: [knowledge]
+    lease: true
   - id: P1.file.put
     port: P1
     op: file.put
@@ -294,30 +303,27 @@ entries:
     op: obs.append
     since: v0.2
     request: p1-obs-append-request
-    response: null
-    rules: [OBV-1, OBV-2]
+    response: done-response
+    rules: [OBV-1, OBV-2, OBV-8]
     profiles: [insights]
-    note: 'v0.2: there is no response schema until v0.2'
     lease: true
   - id: P1.escalation.submit
     port: P1
     op: escalation.submit
     since: v0.2
-    request: null
-    response: null
+    request: escalation-submit-request
+    response: staged-response
     rules: [MGR-5, MGR-6]
     profiles: [manager]
-    note: 'v0.2: the schemas will appear with v0.2'
     lease: true
   - id: P1.grant.request
     port: P1
     op: grant.request
     since: v0.2
     request: p1-grant-request
-    response: null
+    response: staged-response
     rules: [MGR-17, MGR-18]
     profiles: [manager]
-    note: 'v0.2: the response schema will appear with v0.2'
     lease: true
   - id: P2.apply
     port: P2
@@ -333,8 +339,8 @@ entries:
     since: v0.1
     request: p2-tenant-request
     response: p2-status-response
-    rules: [MAN-2, HLD-5, MAN-8, MGR-14]
-    profiles: [core, manager]
+    rules: [MAN-2, HLD-5, MAN-8, MGR-14, STA-3]
+    profiles: [core, manager, messaging]
   - id: P2.principal.add
     port: P2
     op: principal.add
@@ -349,7 +355,7 @@ entries:
     since: v0.1
     request: p2-principal-request
     response: done-response
-    rules: [IDN-4, APR-6]
+    rules: [IDN-4, APR-6, LCY-8]
     profiles: [core]
   - id: P2.principal.on
     port: P2
@@ -357,7 +363,7 @@ entries:
     since: v0.1
     request: p2-principal-request
     response: done-response
-    rules: [IDN-4]
+    rules: [IDN-4, LCY-8]
     profiles: [core]
   - id: P2.principal.set_identity
     port: P2
@@ -365,7 +371,7 @@ entries:
     since: v0.1
     request: p2-principal-request
     response: done-response
-    rules: [IDN-4]
+    rules: [IDN-4, LCY-8]
     profiles: [core]
   - id: P2.invite.create
     port: P2
@@ -397,7 +403,7 @@ entries:
     since: v0.1
     request: p2-grant-request
     response: done-response
-    rules: [PRM-7, PRM-13, APR-6]
+    rules: [PRM-7, PRM-13, APR-6, LCY-8]
     profiles: [core]
   - id: P2.ungrant
     port: P2
@@ -413,7 +419,7 @@ entries:
     since: v0.1
     request: p2-chat-bind-request
     response: done-response
-    rules: [DLV-7, REP-7, PRM-14]
+    rules: [DLV-7, REP-7, PRM-14, REP-10]
     profiles: [core, messaging]
   - id: P2.worker.enroll
     port: P2
@@ -605,7 +611,7 @@ entries:
     since: v0.1
     request: p2-tenant-request
     response: p2-commission-status-response
-    rules: [COM-6, COM-7, COM-8, COM-10]
+    rules: [COM-6, COM-7, COM-8, COM-10, DIG-5]
     profiles: [insights]
   - id: P2.obs.series
     port: P2
@@ -669,9 +675,9 @@ entries:
     since: v0.1
     request: p2-principal-offboard-request
     response: done-response
-    rules: [RET-7, MEM-4, LCY-3, PRM-14, IDN-13]
+    rules: [RET-7, MEM-4, LCY-3, LCY-8, PRM-14, IDN-13]
     profiles: [core, governance]
-    note: 'v0.1 by the rules MEM-4, RET-7, IDN-13 and PRM-14: disabling, an erasure request (tenant, subject), the principal_left notice. Parts of rule LCY-3 (version v0.2): the offboarded state, the principal.offboarded event and deletion of the Identity'
+    note: 'v0.1 by the rules LCY-8, MEM-4, RET-7, IDN-13 and PRM-14: the offboarded state, deletion of the identity links (D-98), an erasure request (tenant, subject), the principal_left notice. Part of rule LCY-3 (version v0.2): the principal.offboarded event'
   - id: P2.restore.complete
     port: P2
     op: restore.complete
@@ -924,47 +930,42 @@ entries:
     port: P2
     op: dispatch.explain
     since: v0.2
-    request: null
-    response: null
+    request: p2-dispatch-explain-request
+    response: p2-dispatch-explain-response
     rules: [DSP-9]
     profiles: [core]
-    note: 'v0.2: the schemas will appear with v0.2'
   - id: P2.dispatch.queue
     port: P2
     op: dispatch.queue
     since: v0.2
-    request: null
-    response: null
+    request: p2-dispatch-queue-request
+    response: p2-dispatch-queue-response
     rules: [DSP-9]
     profiles: [core]
-    note: 'v0.2: the schemas will appear with v0.2'
   - id: P2.model_grant.list
     port: P2
     op: model_grant.list
     since: v0.2
-    request: null
-    response: null
+    request: p2-tenant-request
+    response: p2-model-grant-list-response
     rules: [MGR-17]
     profiles: [manager]
-    note: 'v0.2: the schemas will appear with v0.2'
   - id: P2.model_grant.issue
     port: P2
     op: model_grant.issue
     since: v0.2
-    request: null
-    response: null
+    request: p2-model-grant-issue-request
+    response: p2-model-grant-response
     rules: [MGR-18]
     profiles: [manager]
-    note: 'v0.2: the schemas will appear with v0.2'
   - id: P2.model_grant.revoke
     port: P2
     op: model_grant.revoke
     since: v0.2
-    request: null
-    response: null
+    request: p2-model-grant-revoke-request
+    response: done-response
     rules: [MGR-18]
     profiles: [manager]
-    note: 'v0.2: the schemas will appear with v0.2'
   - id: P2.escalation.list
     port: P2
     op: escalation.list
@@ -987,29 +988,26 @@ entries:
     port: P2
     op: governance.list
     since: v0.2
-    request: null
-    response: null
-    rules: [GOV-12]
+    request: p2-tenant-request
+    response: p2-list-response
+    rules: [GOV-12, GOV-21]
     profiles: [governance]
-    note: 'v0.2: the schemas will appear with v0.2'
   - id: P2.governance.show
     port: P2
     op: governance.show
     since: v0.2
-    request: null
-    response: null
-    rules: [GOV-12]
+    request: p2-object-request
+    response: governance-case
+    rules: [GOV-12, GOV-21]
     profiles: [governance]
-    note: 'v0.2: the schemas will appear with v0.2'
   - id: P2.governance.cancel
     port: P2
     op: governance.cancel
     since: v0.2
-    request: null
-    response: null
+    request: p2-object-request
+    response: done-response
     rules: [GOV-12, GOV-23]
     profiles: [governance]
-    note: 'v0.2: the schemas will appear with v0.2'
   - id: P2.attribution.list
     port: P2
     op: attribution.list
@@ -1032,74 +1030,66 @@ entries:
     port: P2
     op: tenant.suspend
     since: v0.2
-    request: null
-    response: null
+    request: p2-tenant-lifecycle-request
+    response: done-response
     rules: [LCY-1]
     profiles: [core]
-    note: 'v0.2: the schemas will appear with v0.2'
   - id: P2.tenant.offboard
     port: P2
     op: tenant.offboard
     since: v0.2
-    request: null
-    response: null
+    request: p2-tenant-lifecycle-request
+    response: done-response
     rules: [LCY-1]
     profiles: [core]
-    note: 'v0.2: the schemas will appear with v0.2'
   - id: P2.tenant.delete
     port: P2
     op: tenant.delete
     since: v0.2
-    request: null
-    response: null
+    request: p2-tenant-lifecycle-request
+    response: done-response
     rules: [LCY-1, RET-3]
     profiles: [core]
-    note: 'v0.2: the schemas will appear with v0.2'
   - id: P2.tenant.export
     port: P2
     op: tenant.export
     since: v0.2
-    request: null
-    response: null
+    request: p2-export-request
+    response: done-response
     rules: [LCY-2, SEC-10]
     profiles: [core]
-    note: 'v0.2: the schemas will appear with v0.2'
   - id: P2.principal.export
     port: P2
     op: principal.export
     since: v0.2
-    request: null
-    response: null
+    request: p2-export-request
+    response: done-response
     rules: [LCY-2, SEC-10]
     profiles: [core]
-    note: 'v0.2: the schemas will appear with v0.2'
   - id: P2.msg.list
     port: P2
     op: msg.list
     since: v0.2
-    request: null
-    response: null
-    rules: [MSG-3]
+    request: p2-msg-list-request
+    response: p2-msg-list-response
+    rules: [MSG-18, MSG-3]
     profiles: [messaging]
-    note: 'v0.2: the schemas will appear with v0.2'
   - id: P2.msg.show
     port: P2
     op: msg.show
     since: v0.2
-    request: null
-    response: null
-    rules: [MSG-3]
+    request: p2-msg-show-request
+    response: p2-msg-show-response
+    rules: [MSG-18, MSG-3]
     profiles: [messaging]
-    note: 'v0.2: the schemas will appear with v0.2'
   - id: P2.inbox.status
     port: P2
     op: inbox.status
     since: v0.2
-    request: null
-    response: null
-    rules: [MSG-3]
+    request: p2-inbox-status-request
+    response: p2-inbox-status-response
+    rules: [MSG-18, MSG-3]
     profiles: [messaging]
-    note: 'v0.2: the schemas will appear with v0.2'
   - id: P2.task.journal
     port: P2
     op: task.journal
@@ -1107,7 +1097,7 @@ entries:
     request: null
     response: null
     rules: [AUD-4]
-    profiles: [core]
+    profiles: [debug]
     note: 'v0.2: the schemas will appear with v0.2'
   - id: P2.task.replay
     port: P2
@@ -1116,7 +1106,7 @@ entries:
     request: null
     response: null
     rules: [APR-8, AUD-4]
-    profiles: [core]
+    profiles: [debug]
     note: 'v0.2: the schemas will appear with v0.2'
   - id: P2.principal.data_report
     port: P2
@@ -1136,6 +1126,31 @@ entries:
     rules: [SEC-12]
     profiles: [core]
     note: 'v0.2: the schemas will appear with v0.2'
+  - id: P2.secret.revoke
+    port: P2
+    op: secret.revoke
+    since: v0.2
+    request: p2-secret-revoke-request
+    response: done-response
+    rules: [SEC-6, HLD-2, SEC-7]
+    profiles: [core, connections]
+  - id: P2.connection.register
+    port: P2
+    op: connection.register
+    since: v0.2
+    request: p2-connection-register-request
+    response: p2-connection-register-response
+    rules: [SEC-7]
+    profiles: [connections]
+    on_behalf: true
+  - id: P2.connection.revoke
+    port: P2
+    op: connection.revoke
+    since: v0.2
+    request: p2-connection-revoke-request
+    response: done-response
+    rules: [SEC-7]
+    profiles: [connections]
   - id: P2.kb.upload
     port: P2
     op: kb.upload
@@ -1143,7 +1158,7 @@ entries:
     request: null
     response: null
     rules: [KNW-4, ART-4]
-    profiles: [core]
+    profiles: [core, knowledge]
     note: 'v0.2: the schemas will appear with v0.2'
   - id: P3.server/discover
     port: P3
@@ -1762,7 +1777,7 @@ entries:
     since: v0.1
     request: null
     response: null
-    rules: []
+    rules: [RET-4, RET-11]
     profiles: [core]
     wire: false
     note: 'inside the core: the implementation sets the shape, the skeleton has no store binding, the operation is not on the wire'
@@ -1922,7 +1937,7 @@ entries:
     since: v0.2
     request: null
     response: null
-    rules: [RET-1, RET-2]
+    rules: [RET-1, RET-2, RET-10]
     profiles: [core]
     wire: false
     note: 'inside the core: the implementation sets the shape, the skeleton has no store binding, the operation is not on the wire'
@@ -1932,7 +1947,7 @@ entries:
     since: v0.2
     request: erasure-work
     response: erasure-outcome
-    rules: [RET-4, RET-7, SEC-11]
+    rules: [RET-4, RET-7, SEC-11, RET-11]
     profiles: [core]
     transport: 'P1 claim(erasure) with op: match, result by P1 complete in the erasure field'
   - id: E1.erase
@@ -1941,7 +1956,7 @@ entries:
     since: v0.2
     request: erasure-work
     response: erasure-outcome
-    rules: [RET-4, RET-7]
+    rules: [RET-4, RET-7, RET-11]
     profiles: [core]
     transport: 'P1 claim(erasure) with op: erase, result by P1 complete in the erasure field; until v0.2 the channel answers not_applicable or failed'
   - id: E2.write
@@ -1977,9 +1992,9 @@ entries:
     since: v0.2
     request: null
     response: null
-    rules: [DLV-3, FEN-7]
+    rules: [DLV-17, DLV-3, FEN-7]
     profiles: [core]
-    note: 'v0.2: the schemas will appear with v0.2'
+    note: 'the send is an HTTP POST to the receiver by the binding in spec/ports/e2-sink.md; the body is the delivery, not a farm schema'
   - id: E3.tools/call
     port: E3
     op: tools/call
@@ -2024,7 +2039,7 @@ entries:
     since: v0.1
     request: erasure-work
     response: erasure-outcome
-    rules: [RT-1, RT-2, MEM-4, RET-7, RET-4]
+    rules: [RT-1, RT-2, MEM-4, RET-7, RET-4, RET-11]
     profiles: [core]
     transport: 'P1 claim(erasure) with op: erase at the adapter, then to the runtime'
   - id: E4.match
@@ -2170,6 +2185,15 @@ entries:
     response: authz-decision
     rules: [APR-9, PRM-2]
     profiles: [core]
+    note: 'test-control port spec/ports/test-control.md; only on a test bench store that never had a tenant other than kind: test'
+  - id: T.function.eval
+    port: T
+    op: function.eval
+    since: v0.2
+    request: test-function-eval-request
+    response: test-function-eval-response
+    rules: [APR-9, GOV-8, COM-11, DIG-5, REP-4, TIM-5]
+    profiles: [core, governance, insights, messaging]
     note: 'test-control port spec/ports/test-control.md; only on a test bench store that never had a tenant other than kind: test'
   - id: T.event.inject
     port: T

@@ -2,14 +2,16 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "urn:botaru:schema:script:1",
   "title": "Script botaru.script/v1",
-  "description": "A script draft: a strict plan of steps by a closed schema; there is no expression language, code, loops or nested scripts (SCR-1). A step refers only to applied manifests of its own tenant (SCR-2); conditions only from the atoms of condition-ops.yaml, nesting at most 2 (SCR-3, the lint checks that there are at most 8 atoms); the agent goal only by a template or the assignment text (SCR-4). The schema rejects the fields that the core computes (max_tier, data_mark, untrusted_seen, the action list, the estimate, plan_hash, expanded fanout lists) and the field then inside fanout (SCR-5). At most 20 steps for the farm; draft acceptance checks the tenant ceiling (default 10) and the role ceiling.",
+  "description": "A script draft: a strict plan of steps by a closed schema; there is no expression language, code, loops or nested scripts (SCR-1). A step refers only to applied manifests of its own tenant (SCR-2); conditions only from the atoms of condition-ops.yaml, nesting at most 2 (SCR-3, the lint checks that there are at most 8 atoms); the agent goal only by a template or the assignment text, and from v0.2 a free goal text and parameters only in a kind: Script manifest from git (SCR-4, SCR-14). The schema rejects the fields that the core computes (max_tier, data_mark, untrusted_seen, the action list, the estimate, plan_hash, expanded fanout lists) and the field then inside fanout (SCR-5). At most 20 steps for the farm; draft acceptance checks the tenant ceiling (default 10) and the role ceiling.",
   "x-botaru-direction": "input",
   "x-botaru-rules": [
     "SCR-1",
     "SCR-2",
     "SCR-3",
     "SCR-4",
-    "SCR-5"
+    "SCR-5",
+    "SCR-13",
+    "SCR-14"
   ],
   "type": "object",
   "additionalProperties": false,
@@ -30,6 +32,32 @@
       },
       "minItems": 1,
       "description": "Script steps in order; the order of writing is the order of the graph."
+    },
+    "params": {
+      "type": "object",
+      "maxProperties": 16,
+      "x-botaru-version": "v0.2",
+      "description": "From v0.2, only in a kind: Script manifest from git: the parameters a person gives when starting the script. Each is typed and closed: integer, number, boolean, or a string with enum or a format from formats.yaml (no free string, INJ-1). A draft from the model with params is rejected (SCR-14).",
+      "propertyNames": {
+        "pattern": "^[a-z][a-z0-9_]{0,31}$"
+      },
+      "additionalProperties": {
+        "$ref": "#/$defs/param_decl"
+      }
+    },
+    "goals": {
+      "type": "object",
+      "maxProperties": 20,
+      "x-botaru-version": "v0.2",
+      "description": "From v0.2, only in a kind: Script manifest from git: free goal texts reviewed in git, without substitution, that a step names with goal: {template: <id>}. A name may not repeat a goal template of the step's type. A draft from the model with goals is rejected (script_free_goal, SCR-14).",
+      "propertyNames": {
+        "pattern": "^[a-z][a-z0-9_-]{0,62}$"
+      },
+      "additionalProperties": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 2000
+      }
     }
   },
   "$defs": {
@@ -356,7 +384,7 @@
           "description": "An action with script.allowed: true from the vocabulary of the author role (scripts.actions)."
         },
         "goal": {
-          "description": "Step goal for the agent: only a type template or the verbatim assignment text; there is no free goal (SCR-4).",
+          "description": "Step goal for the agent: a template or the verbatim assignment text. A template names an entry of the type goal_templates or, from v0.2 in a kind: Script manifest from git, of the script's own goals (SCR-4, SCR-14).",
           "oneOf": [
             {
               "type": "object",
@@ -389,7 +417,7 @@
         },
         "params": {
           "type": "object",
-          "description": "Literals by the type params_schema or the action argument schema, or references {ref: <step>.<field>} (SCR-3).",
+          "description": "Literals by the type params_schema or the action argument schema, references {ref: <step>.<field>} (SCR-3), or from v0.2 in a script from git {param: <name>} (SCR-14).",
           "maxProperties": 32,
           "additionalProperties": {
             "anyOf": [
@@ -412,13 +440,28 @@
                 "not": {
                   "type": "object"
                 }
+              },
+              {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "param"
+                ],
+                "properties": {
+                  "param": {
+                    "$ref": "urn:botaru:schema:common:1#/$defs/name",
+                    "description": "A declared parameter of the script from git (SCR-14)."
+                  }
+                },
+                "description": "From v0.2: the whole value of a declared parameter; only in a kind: Script manifest from git (SCR-14).",
+                "x-botaru-version": "v0.2"
               }
             ]
           }
         },
         "args": {
           "type": "object",
-          "description": "Literals by the type params_schema or the action argument schema, or references {ref: <step>.<field>} (SCR-3).",
+          "description": "Literals by the type params_schema or the action argument schema, references {ref: <step>.<field>} (SCR-3), or from v0.2 in a script from git {param: <name>} (SCR-14).",
           "maxProperties": 32,
           "additionalProperties": {
             "anyOf": [
@@ -441,6 +484,21 @@
                 "not": {
                   "type": "object"
                 }
+              },
+              {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "param"
+                ],
+                "properties": {
+                  "param": {
+                    "$ref": "urn:botaru:schema:common:1#/$defs/name",
+                    "description": "A declared parameter of the script from git (SCR-14)."
+                  }
+                },
+                "description": "From v0.2: the whole value of a declared parameter; only in a kind: Script manifest from git (SCR-14).",
+                "x-botaru-version": "v0.2"
               }
             ]
           }
@@ -577,6 +635,84 @@
               }
             }
           ]
+        },
+        "for": {
+          "$ref": "urn:botaru:schema:common:1#/$defs/duration",
+          "x-botaru-version": "v0.2",
+          "description": "From v0.2: the pause of a wait step, at most the run deadline (SCR-13). Only for kind wait; the lint checks it (script_wait_fields)."
+        },
+        "event": {
+          "$ref": "urn:botaru:schema:common:1#/$defs/type_name",
+          "x-botaru-version": "v0.2",
+          "description": "From v0.2: the event type of an await step from spec/bindings/events/catalog.yaml (SCR-13)."
+        },
+        "match": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 5,
+          "x-botaru-version": "v0.2",
+          "description": "From v0.2: pairs of an await step that must all be equal: a closed event field and a literal, a reference to a closed result field with x-botaru-read-by: code, or a parameter (SCR-13).",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "event_field",
+              "value"
+            ],
+            "properties": {
+              "event_field": {
+                "type": "string",
+                "pattern": "^[a-z][a-z0-9_]{0,63}$",
+                "maxLength": 64,
+                "description": "A closed field of the event data schema."
+              },
+              "value": {
+                "anyOf": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "boolean"
+                  },
+                  {
+                    "type": "string",
+                    "maxLength": 120
+                  },
+                  {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                      "ref"
+                    ],
+                    "properties": {
+                      "ref": {
+                        "type": "string",
+                        "pattern": "^[a-z][a-z0-9-]{0,62}\\.[a-z][a-z0-9_]{0,63}$",
+                        "maxLength": 128
+                      }
+                    }
+                  },
+                  {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                      "param"
+                    ],
+                    "properties": {
+                      "param": {
+                        "$ref": "urn:botaru:schema:common:1#/$defs/name"
+                      }
+                    }
+                  }
+                ]
+              }
+            }
+          }
+        },
+        "timeout": {
+          "$ref": "urn:botaru:schema:common:1#/$defs/duration",
+          "x-botaru-version": "v0.2",
+          "description": "From v0.2: the required timeout of an await step, at most the run deadline; the timeout ends the step failed(await_timeout) (SCR-13)."
         }
       },
       "allOf": [
@@ -740,6 +876,72 @@
           }
         }
       ]
+    },
+    "param_decl": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "type"
+      ],
+      "description": "A script parameter declaration (SCR-14). The lint checks that a string has enum or format and that default passes the declaration.",
+      "properties": {
+        "type": {
+          "enum": [
+            "integer",
+            "number",
+            "boolean",
+            "string"
+          ]
+        },
+        "title": {
+          "type": "string",
+          "maxLength": 120,
+          "description": "Shown to the person in the command help and on the card."
+        },
+        "enum": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 64,
+          "uniqueItems": true,
+          "items": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "string",
+                "maxLength": 120
+              }
+            ]
+          }
+        },
+        "minimum": {
+          "type": "number"
+        },
+        "maximum": {
+          "type": "number"
+        },
+        "default": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "string",
+              "maxLength": 120
+            }
+          ]
+        },
+        "format": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_]{0,31}$",
+          "maxLength": 32,
+          "description": "A format from spec/model/formats.yaml."
+        }
+      }
     }
   }
 }

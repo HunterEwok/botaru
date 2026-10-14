@@ -154,7 +154,7 @@
       "maximum": 5
     },
     "fairness_key": {
-      "description": "Dispatcher fairness key; the core writes it.",
+      "description": "Dispatcher fairness key <kind>:<id> from the task source; the core writes it on every task from v0.1 (DSP-2, D-98), and it orders dispatch from v0.2 (DSP-6). A task that the core creates itself and that has none of the other sources gets system:<purpose>; a redrive and an action task after approval keep the key of the original task. Not in required only for compatibility with records of older drafts; a v0.1 core always writes it.",
       "type": "string",
       "maxLength": 200
     },

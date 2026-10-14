@@ -18,10 +18,11 @@ Run `git fetch origin main` before a local run: without the base branch the addi
 | `gen_lifecycles.py` | builds `spec/lifecycles/<object>.yaml` from the tables of `<object>.md`; with `--check` it compares and checks that transitions name declared states and that transition tables belong to machines by caption |
 | `gen_suites.py` | builds the check descriptions in `conformance/suites/` from the tables of `docs/quality.md`; with `--check` it compares |
 | `gen_codes.py` | builds the lint code table below from `lint_codes.py`; with `--check` it compares |
+| `gen_openapi.py` | builds the P1 OpenAPI 3.1 description `spec/bindings/http/p1.openapi.json` from the P1 rows of `spec/ports/operations.yaml` (MAN-12); with `--check` it compares and checks that every body reference exists |
 | `check_text.py` | rule and decision numbers in text, Markdown links and their anchors, repository paths in backticks, port operations, no em dash in any text file, YAML and JSON readable without duplicate keys, every rule explained in the documents, no name of a specific product in a rule text (`[vendor_in_rule]`: Telegram, Zabbix, PostgreSQL, systemd, polkit, Anthropic; D-66) |
 | `check_schemas.py` | JSON Schema 2020-12 schemas and their `$id`, every `$ref`, `x-botaru-*` fields, closed input schemas, closed registries, the `schemas/valid` and `schemas/invalid` fixtures |
 | `check_fixtures.py` | every fixture in `conformance/fixtures/`: the YAML is readable, `description` and `rules` are present, rule numbers are active, check `id` values are unique across `conformance/` and `evals/` |
-| `check_crossrefs.py` | cross-file checks: the operation map `spec/ports/operations.yaml` (form, schemas exist, an empty schema only with `note`, rules active, every operation of a port sheet is in the map, every operation schema is named in the map, the `op` field of the common schema, the binding path); the `expect.task.record` expectation against `task-record.schema.json`, in `examples/hello-bot/sequence.yaml` too; an `enum` with `x-botaru-registry` against the registry entries (and `x-botaru-registry-kind`); the alarms of `incident-classes.yaml` and `holds.yaml` in the event catalog; a key without a value in a YAML flow mapping (`[yaml_null_key]`); the behavior fixture envelope against `conformance/fixtures/fixture.schema.json`, and the operations, loops and reasons it names; `call` and `stand` step bodies against the request schema of their map row (`[fixture_body_invalid]`, lead decision 11; short ids, the `$last` and `$from:` references and a missing `nonce` in a `decide` body are allowed per `conformance/runner.md`, and a step that expects a schema refusal is not compared); the `profiles` field of a map row (for a row with rules it is the union of the profiles of its rules); the E1 delivery kinds are in `delivery-kinds.yaml` or `decision-points.yaml`; the note `[schema_orphan]` about a `spec/model/` schema nothing refers to |
+| `check_crossrefs.py` | cross-file checks: the operation map `spec/ports/operations.yaml` (form, schemas exist, an empty schema only with `note`, rules active, every operation of a port sheet is in the map, every operation schema is named in the map, the `op` field of the common schema, the binding path); the `expect.task.record` expectation against `task-record.schema.json`, in `examples/hello-bot/sequence.yaml` too; an `enum` with `x-botaru-registry` against the registry entries (and `x-botaru-registry-kind`); the alarms of `incident-classes.yaml` and `holds.yaml` in the event catalog; a key without a value in a YAML flow mapping (`[yaml_null_key]`); the behavior fixture envelope against `conformance/fixtures/fixture.schema.json`, and the operations, loops and reasons it names; `call` and `stand` step bodies against the request schema of their map row (`[fixture_body_invalid]`, lead decision 11; short ids, the `$last` and `$from:` references and a missing `nonce` in a `decide` body are allowed per `conformance/runner.md`, and a step that expects a schema refusal is not compared); the `profiles` field of a map row (for a row with rules it is the union of the profiles of its rules); the E1 delivery kinds are in `delivery-kinds.yaml` or `decision-points.yaml`; the code text catalog `spec/bindings/channels/messages/en.yaml` has every key that DLV-9 and the key columns of `docs/messaging.md` name (`[catalog_key_missing]`); every metric of `spec/bindings/telemetry/metrics.yaml` has an instrument, a unit and labels from `label_sets` (OBS-13); the note `[schema_orphan]` about a `spec/model/` schema nothing refers to |
 | `check_manifests.py` | the `examples/` manifests as `farmctl apply` sees them, flows (P1 bodies and `activity` against the operation map schemas) and the lint fixtures in `conformance/fixtures/manifests/`; the tree budget of a type is not below the reserve of one model call (`tree_budget_below_call`); with `--tools-list` it compares a `tools/list` dump of your own MCP server with `tool.yaml`; with `--manifests` your own folder goes on top of the examples, with `--driver-schemas` your own driver schemas (section "Your own files outside the skeleton") |
 | `check_evals.py` | the eval cases in `evals/cases/`, thresholds and stand data; with `--cases`, `--seed` and `--manifests` your own cases on top of the skeleton cases (section "Your own files outside the skeleton") |
 | `check_additive.py`, `check-additive` | additive-only changes: schemas and closed registries against the merge base (MAN-3); narrowing is caught also through a new `allOf` item, fewer `anyOf` and `oneOf` branches, a new `dependentSchemas` name, a new `not`, `if`, `contains`, `uniqueItems: true` or `multipleOf`, a changed `if` or `not`, a new or changed `oneOf` branch (matched by content, not position) that is not provably disjoint from the others, `unevaluatedItems: false`, and any keyword other than an annotation on a schema that was absent, `true` or `{}` |
@@ -42,7 +43,7 @@ Every message starts with a stable code in square brackets, then the place and t
 - rules covered by data for an implementation runner or an eval: the behavior fixtures in `conformance/fixtures/` and the `evals/` cases; the skeleton CI checks their form and call bodies, and the implementation runner or an eval with a model runs the behavior;
 - rules covered only by a check description: a `conformance/suites/` entry (given, action, expectation; the implementation writes the check code), a `state-machine/` fixture (transitions in prose), a behavior fixture whose call body fails its request schema, or an eval case of a later version.
 
-A separate line gives the number of `core` rules with `waivable: false` that are covered only by a description. The note `[fixture_not_citing]` means that a fixture from the `fixtures` field of a rule does not name that rule in its `rules`. A version is ready when `python3 ci/readiness.py v0.1 --strict` passes; `run_all.py` and CI run v0.1 readiness with `--strict`, so a version rule without a check fails the PR. The black-box runner, which runs the suites against a live implementation, is not part of the skeleton: it is written together with the first implementation (`docs/quality.md`).
+A separate line gives the number of `core` rules with `waivable: false` that are covered only by a description. The note `[fixture_not_citing]` means that a fixture from the `fixtures` field of a rule does not name that rule in its `rules`. A version is ready when `python3 ci/readiness.py v0.1 --strict` passes; `run_all.py` and CI run v0.1 and v0.2 readiness with `--strict`, so a version rule without a check fails the PR. The black-box runner, which runs the suites against a live implementation, is not part of the skeleton: it is written together with the first implementation (`docs/quality.md`).
 
 ## Your own files outside the skeleton
 
@@ -136,7 +137,7 @@ The code owner in `.github/CODEOWNERS` is already set; the owner name is allowed
 
 ## Generated files
 
-Generated files are never edited by hand: edit the source (the registry, a lifecycle table, a check table, the code dictionary), then run `python3 ci/gen_rules.py`, `python3 ci/gen_lifecycles.py`, `python3 ci/gen_suites.py` or `python3 ci/gen_codes.py`.
+Generated files are never edited by hand: edit the source (the registry, a lifecycle table, a check table, the code dictionary), then run `python3 ci/gen_rules.py`, `python3 ci/gen_lifecycles.py`, `python3 ci/gen_suites.py`, `python3 ci/gen_codes.py` or `python3 ci/gen_openapi.py`.
 
 ## Manifest lint codes
 
@@ -146,15 +147,19 @@ The codes of `check_manifests.py` that fixtures refer to (`expect: {error: <code
 | Code | Meaning | Rules |
 |---|---|---|
 | `action_type_grant` | grant, command, route or type named action.* | APR-5 |
+| `aggregator_source_aggregator` | an aggregator names an aggregator role among its sources, directly or through a bot group | AGG-3 |
+| `aggregator_sources_over_max` | an aggregator lists more source entries than max_sources | AGG-3 |
 | `alarm_inbox` | type with alarm.* reads the inbox | INJ-7 |
 | `alarm_not_job` | alarm.* in events of a type that is not a job | INJ-7 |
 | `api_version` | apiVersion is not botaru/v1alpha1 | MAN-1 |
+| `approvers_fewer_than_two` | production tenant: no group grants action.approve for a high risk action (note) | APR-16 |
 | `args_from_mismatch` | the args_from action is executed by another tool | MAN-9 |
 | `args_from_second_schema` | tool with args_from has its own params | MAN-9 |
 | `assistant_in_default_types` | assistant type in default_types | DSP-10 |
 | `backup_external_required` | no copies on a separate machine and no encrypted external backup target | RET-5 |
 | `breaking_change` | breaking schema change inside .vN | MAN-3 |
 | `builtin_command` | tenant command takes a built-in channel command | PRM-17 |
+| `cache_per_principal` | cache_s on a tool with credential.per_principal | PRM-12, SEC-7 |
 | `cap_data_class` | data class not accepted (unknown or reserved) |  |
 | `cap_star` | wildcard in a capability for actions, data or decisions | PRM-7 |
 | `cap_unknown` | capability is not in spec/model/capabilities.yaml |  |
@@ -164,6 +169,7 @@ The codes of `check_manifests.py` that fixtures refer to (`expect: {error: <code
 | `cmd_forbidden_program` | command program is in spec/model/forbidden-programs.yaml | INJ-14 |
 | `cmd_param_position` | argv parameter is not a whole element after -- or not from params | INJ-14 |
 | `conforms_to_invalid` | conforms_to without an x.y.z version or the core profile | MAN-8 |
+| `corpus_curated_source` | corpus with trust: curated and a source other than git | KNW-2 |
 | `cron_invalid` | cron is not five fields or has CRON_TZ, TZ | TIM-2 |
 | `delegated_group_privileged` | a group in delegated_groups carries privileged capabilities | PRM-16 |
 | `driver_config_forbidden` | driver spec.config holds fields of the common wrapper | MAN-4 |
@@ -171,26 +177,37 @@ The codes of `check_manifests.py` that fixtures refer to (`expect: {error: <code
 | `driver_schema_missing` | own channel with a driver that has neither a skeleton binding note nor a driver schema (note) | MAN-4 |
 | `duplicate_object` | an object of the same kind and name is already declared | MAN-1 |
 | `enum_from_unknown_list` | the enum_from list is in no catalog of the set (note) |  |
+| `escalation_threshold_lowered` | a commission escalation threshold below its default (2, untrusted 3) | COM-13 |
 | `executor_unknown` | action executor is missing or not a write tool | MAN-9 |
 | `expected_failure_not_waivable` | expected failures list a rule with waivable: false | MAN-8 |
+| `export_only_recipient` | export_only without exactly one of recipient and recipient_ref | SEC-10 |
+| `export_sink_not_self` | privacy.export_sink is not an export_only sink with recipient_ref: self | SEC-10, LCY-2 |
 | `family_unregistered` | model family is not in spec/model/model-families.yaml (note) |  |
 | `farm_host_in_catalog` | farm host listed in a tenant catalog | DEP-11 |
 | `flow_args_invalid` | P3 call or action request arguments fail the closed schema |  |
 | `flow_body_invalid` | flow step body fails the P1 schema or the type params |  |
 | `flow_denied_passes` | a call from the denied section passes the closed schema |  |
 | `flow_ref_missing` | flow step type not found |  |
+| `forced_schema_unsupported` | a commission seat profile has no forced_schema: true, which ballots need | GOV-7 |
 | `format_unknown` | x-botaru-format or resource format is not in spec/model/formats.yaml | INJ-1, MAN-10 |
 | `global_tenant_data` | a global manifest holds a value that looks like tenant data | TEN-6 |
+| `high_risk_one_approver` | production tenant lets a high risk action with approvals: 1 be requested | APR-16 |
 | `host_two_tenants` | host or service in catalogs of two tenants | TEN-4 |
+| `ingress_missing` | source channel (direction: in) without ingress | ING-1 |
+| `ingress_token_tier` | route from an event of a tls_token source enqueues a type above tier 0 | ING-1 |
+| `ingress_tolerance` | source with auth: signature without ingress.tolerance or with more than 5m | ING-1 |
 | `listener_admin_worker_network` | the P2 listener network is a worker network (note) | IDN-7 |
 | `listener_test_in_production` | test-control listener of the core on a kind: production host | DEP-10 |
 | `manager_line_missing` | manager budget line is not above 0 while the manager is enabled | MGR-20 |
 | `manager_profile_not_allowed` | manager seat profile is not in models_allowed | MGR-20 |
+| `max_share_without_group` | dispatch rule with max_share and without group | DSP-11 |
 | `max_tokens_field` | manifest has a max_tokens field | BUD-9 |
 | `mcp_annotation_conflict` | an MCP annotation in tools/list contradicts the manifest access | INJ-3 |
 | `memory_person` | memory: person with disallowed types or tools | MEM-2 |
 | `message_fields` | message type lacks a field its kind requires | MSG-2 |
 | `message_name` | message type name does not start with its kind | MSG-2 |
+| `model_exposure_agent_read` | a resource with model_exposure: none is read by a tool of an agent role | PRV-4 |
+| `model_exposure_not_aggregate` | a resource with model_exposure: aggregates is read by an agent tool whose output is not only numbers and enum values | PRV-4 |
 | `not_in_version` | field or value appears in a later skeleton version | APR-10, APR-16 |
 | `observes_not_job` | observes on a type that is not a job | OBV-3 |
 | `params_invalid` | route or schedule params fail the closed type schema |  |
@@ -203,9 +220,10 @@ The codes of `check_manifests.py` that fixtures refer to (`expect: {error: <code
 | `provider_training` | model profile with provider_training: true | GW-15 |
 | `purpose_unknown` | type purpose is not in spec/model/task-purposes.yaml |  |
 | `rank_exceeded` | model profile rank above the slot or seat ceiling | GOV-3 |
-| `recipients_monitoring` | privacy.recipients lacks monitoring | MON-1 |
+| `recipients_monitoring` | privacy.recipients lacks monitoring while the installation claims the monitor profile or its profiles are unknown | MON-1 |
 | `redact_required` | placement: host and untrusted_output: true without redact [ip, email, secret] | INJ-4 |
 | `ref_missing` | reference to an object that is not in the set |  |
+| `retention_period` | tenant retention period outside the class bounds or longer than the content period | RET-9 |
 | `revert_reason_invalid` | Botaru-Revert reason is not from the closed list | MAN-5, PRP-22 |
 | `role_profile_forbidden` | role declares what the profile forbids | PRF-1 |
 | `role_profile_memory` | role memory is outside the profile | PRF-1 |
@@ -219,17 +237,29 @@ The codes of `check_manifests.py` that fixtures refer to (`expect: {error: <code
 | `run_arg_unknown` | run argument is not in the closed schema of the type or action | APR-17 |
 | `run_needs_approval_none` | run starts a type without run.approval: none | APR-17 |
 | `run_not_readonly` | type with run.approval: none is claimed by a role with actions or write tools | APR-17 |
+| `sandbox_live_tools` | role that claims a tier 2 type has a tool with placement: host | SBX-1 |
+| `sandbox_not_claimed` | tier 2 type or tool, or a sandbox plugin, while the sandbox profile is not claimed | MAN-11, SBX-1 |
+| `sandbox_placement` | tier 2 tool outside a sandbox plugin, or a sandbox plugin tool that is not a tier 2 read tool with target: any | SBX-1 |
 | `schedule_deadline` | schedule type has no timeouts.deadline |  |
+| `schedule_script_await` | scheduled script has an await step | SCR-12 |
+| `schedule_script_needs_run` | scheduled script has a step that needs script.run | SCR-12, SCR-6 |
+| `schedule_script_over_ceiling` | scheduled script is above Tenant.spec.scripts | SCR-12, SCR-5 |
+| `schedule_target` | schedule has neither or both of task and script | SCR-12, TIM-3 |
 | `schema_invalid` | manifest does not pass the schema of its kind | MAN-1 |
+| `script_param_invalid` | script parameter is free, undeclared, without a default where a schedule needs one, or a goal name clashes | SCR-14, SCR-12 |
+| `script_wait_fields` | wait or await step with missing or foreign fields, or a wait above the run deadline | SCR-13 |
 | `self_approve_production` | production tenant with self_approve: true | APR-9 |
 | `service_no_card` | service no_card holds something other than restart | MON-8 |
 | `service_script_unknown` | no script from monitor_scripts_allowed for a service verb | MON-8, MON-10 |
 | `service_unit_missing` | via: host without unit, or unit with via: monitor | MON-8 |
+| `shadow_zero_without_off` | a commission shadow share of 0 instead of an explicit shadow: off | COM-10 |
+| `skill_format` | skill folder breaks the format: files, types, sizes, front matter or name | SKL-1 |
 | `state_agent_producer` | state message kind has producers other than code | STA-1, MSG-2 |
 | `status_in_git` | manifest has a status field: status is kept by the core | MAN-1 |
 | `subprocessor_undeclared` | profile provider or subprocessor is not declared in privacy.subprocessors | GW-15 |
 | `system_decision_cap` | system-ops group holds a decision or control capability | PRM-10 |
 | `system_ops_missing` | route or schedule type is not granted to system-ops | PRM-10 |
+| `takeover_confirm_threshold` | takeover.confirm_above_eur above 0 would lift the takeover card | MGR-21 |
 | `tenant_missing` | tenant-scoped kind without metadata.tenant | TEN-6 |
 | `tenant_on_global` | global kind with metadata.tenant | TEN-6 |
 | `timeout_ceiling` | type timeouts above the farm ceiling | DLV-16 |
@@ -243,5 +273,6 @@ The codes of `check_manifests.py` that fixtures refer to (`expect: {error: <code
 | `watch_missing` | neither a monitoring system nor a kind: watch process with notify_ref | MON-2 |
 | `watch_same_host` | the watch process runs only on the core machine (note) | MON-2 |
 | `watch_with_monitoring` | both a monitoring system and a watch process (note) | MON-2 |
+| `webhook_sink_invalid` | webhook sink without an https base outside the farm or without signing_key_ref | DLV-17 |
 | `worker_kind_mismatch` | role and type worker_kind differ |  |
 <!-- /generated: lint-codes -->

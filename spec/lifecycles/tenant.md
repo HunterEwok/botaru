@@ -10,7 +10,7 @@ A tenant (`Tenant`) is a wall of data and money: whose tasks, whose memory, whos
 |---|---|---|
 | `active` | the tenant works: enqueue, hand-out, tools, actions and deliveries are allowed by the rights; data is kept by the periods | no |
 | `suspended` | a hold of the `tenant` scope with the reason `suspended` and the effects `no_enqueue`, `no_claim`, `no_tool`, `no_action`, `no_delivery` is in force: there is no new work except core tasks for deletion and export; pending approvals are canceled; deliveries get `withheld`, except messages to the admins about the hold itself (HLD-3); data is not touched; the credentials and the provider key stay valid | no |
-| `offboarding` | the tenant is leaving: the credentials of workers and channels are revoked, the key and the workspace at the provider are disabled, pending approvals are canceled; only the export is allowed; data is not touched | no |
+| `offboarding` | the tenant is leaving: the credentials of workers and channels are revoked, the core forgets the provider key and stops using it, and the answer of `tenant.offboard` names the operator step to revoke the key and the workspace at the provider (D-103), every connection of the tenant's people to external services is revoked (SEC-7), pending approvals are canceled; only the export is allowed; data is not touched | no |
 | `deleted` | content and memory are deleted by an erasure request `(tenant)`; metadata lives until the end of its period and is deleted in whole periods; the tenant id remains a tombstone | yes |
 
 ## Transitions

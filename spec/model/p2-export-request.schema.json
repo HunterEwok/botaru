@@ -1,0 +1,39 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:botaru:schema:p2-export-request:1",
+  "title": "P2 tenant.export, principal.export: request",
+  "description": "The operator enqueues an export task to a sink with export_only; another sink gets sink_not_export (LCY-2, SEC-10). The answer is done-response with the task id.",
+  "x-botaru-direction": "input",
+  "x-botaru-version": "v0.2",
+  "x-botaru-rules": [
+    "LCY-2",
+    "SEC-10",
+    "PRM-14"
+  ],
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "op",
+    "tenant",
+    "sink"
+  ],
+  "properties": {
+    "op": {
+      "enum": [
+        "tenant.export",
+        "principal.export"
+      ]
+    },
+    "tenant": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/tenant_name"
+    },
+    "subject": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/principal_ref",
+      "description": "Only with principal.export: the principal whose data is exported."
+    },
+    "sink": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/name",
+      "description": "Name of a sink of the tenant with export_only."
+    }
+  }
+}

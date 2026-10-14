@@ -81,8 +81,9 @@ machines:
       - forgotten
       text: '`forgotten`'
     by: a person's `/forget`, an erasure request (including on a person's offboarding and on tenant deletion), from v0.2 the
-      retention class period (the `erasure` and `retention` loops)
+      tenant's `memory` period, if it sets one (the `erasure` and `retention` loops, RET-9, RET-10)
     when: deletion in all stores, including runtime stores
     rules:
     - MEM-4
+    - RET-10
     - RET-7

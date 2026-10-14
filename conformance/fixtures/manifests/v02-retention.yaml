@@ -1,0 +1,78 @@
+id: fx-man-v02-ret-01
+rules: [RET-9, DLV-17]
+description: >-
+  Manifest lint of tenant retention periods and of the outgoing webhook sink. A class period lies between
+  min_days and ceiling_days of spec/model/retention-classes.yaml, only content, memory and metadata take a
+  tenant period, and files and journals are not longer than the content period (RET-9, code retention_period). A
+  webhook sink needs an https:// base outside the farm and signing_key_ref (DLV-17, code
+  webhook_sink_invalid).
+cases:
+  - name: tenant periods inside the bounds pass
+    manifests:
+      - {apiVersion: botaru/v1alpha1, kind: Tenant, metadata: {name: demo2}, spec: {kind: test, farm_manager: {enabled: false}, budgets: {month_eur: 60}, retention: {classes: {content: 60d, metadata: 400d}, files: 30d, journals: 7d}}}
+    expect: ok
+  - name: content period above the ceiling
+    manifests:
+      - {apiVersion: botaru/v1alpha1, kind: Tenant, metadata: {name: demo2}, spec: {kind: test, farm_manager: {enabled: false}, budgets: {month_eur: 60}, retention: {classes: {content: 500d}}}}
+    expect: {error: retention_period}
+  - name: metadata period below 93 days
+    manifests:
+      - {apiVersion: botaru/v1alpha1, kind: Tenant, metadata: {name: demo2}, spec: {kind: test, farm_manager: {enabled: false}, budgets: {month_eur: 60}, retention: {classes: {metadata: 30d}}}}
+    expect: {error: retention_period}
+  - name: a period for the tombstone class
+    manifests:
+      - {apiVersion: botaru/v1alpha1, kind: Tenant, metadata: {name: demo2}, spec: {kind: test, farm_manager: {enabled: false}, budgets: {month_eur: 60}, retention: {classes: {tombstone: 30d}}}}
+    expect: {error: retention_period}
+  - name: file period longer than the content period
+    manifests:
+      - {apiVersion: botaru/v1alpha1, kind: Tenant, metadata: {name: demo2}, spec: {kind: test, farm_manager: {enabled: false}, budgets: {month_eur: 60}, retention: {classes: {content: 14d}, files: 30d}}}
+    expect: {error: retention_period}
+  - name: webhook sink with a signing key and an external https base passes
+    manifests:
+      - apiVersion: botaru/v1alpha1
+        kind: Sink
+        metadata: {name: lims-hook, tenant: demo2}
+        spec: {driver: webhook, base: 'https://lims.example.org/hooks/botaru', ceiling: internal, signing_key_ref: LIMS_HOOK_KEY}
+    expect: ok
+  - name: webhook sink without a signing key
+    manifests:
+      - apiVersion: botaru/v1alpha1
+        kind: Sink
+        metadata: {name: lims-hook, tenant: demo2}
+        spec: {driver: webhook, base: 'https://lims.example.org/hooks/botaru', ceiling: internal}
+    expect: {error: webhook_sink_invalid}
+  - name: webhook sink to plain http
+    manifests:
+      - apiVersion: botaru/v1alpha1
+        kind: Sink
+        metadata: {name: lims-hook, tenant: demo2}
+        spec: {driver: webhook, base: 'http://lims.example.org/hooks/botaru', ceiling: internal, signing_key_ref: LIMS_HOOK_KEY}
+    expect: {error: webhook_sink_invalid}
+  - name: webhook sink to a farm host
+    manifests:
+      - apiVersion: botaru/v1alpha1
+        kind: Sink
+        metadata: {name: lims-hook, tenant: demo2}
+        spec: {driver: webhook, base: 'https://core1.example.org/hooks', ceiling: internal, signing_key_ref: LIMS_HOOK_KEY}
+    expect: {error: webhook_sink_invalid}
+  - name: webhook sink to a loopback address
+    manifests:
+      - apiVersion: botaru/v1alpha1
+        kind: Sink
+        metadata: {name: lims-hook, tenant: demo2}
+        spec: {driver: webhook, base: 'https://[::1]/hook', ceiling: internal, signing_key_ref: LIMS_HOOK_KEY}
+    expect: {error: webhook_sink_invalid}
+  - name: webhook sink to a public IPv6 address passes (documentation range stands for a public one)
+    manifests:
+      - apiVersion: botaru/v1alpha1
+        kind: Sink
+        metadata: {name: lims-hook, tenant: demo2}
+        spec: {driver: webhook, base: 'https://[2001:db8::10]/hook', ceiling: internal, signing_key_ref: LIMS_HOOK_KEY}
+    expect: ok
+  - name: webhook sink to an IPv4 loopback address with a port
+    manifests:
+      - apiVersion: botaru/v1alpha1
+        kind: Sink
+        metadata: {name: lims-hook, tenant: demo2}
+        spec: {driver: webhook, base: 'https://127.0.0.1:8443/hook', ceiling: internal, signing_key_ref: LIMS_HOOK_KEY}
+    expect: {error: webhook_sink_invalid}

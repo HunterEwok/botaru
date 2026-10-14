@@ -470,6 +470,24 @@
         }
       },
       "description": "Vocabulary of the script author (SCR-5)."
+    },
+    "model_grants": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "ladder": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 5,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "urn:botaru:schema:common:1#/$defs/name"
+          },
+          "description": "Model profiles the role may ask for, weakest first; never a seat profile."
+        }
+      },
+      "description": "From v0.2: the ladder of stronger models for request_model_grant (MGR-17).",
+      "x-botaru-version": "v0.2"
     }
   }
 }

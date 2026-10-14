@@ -1,0 +1,37 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:botaru:schema:kb-search-request:1",
+  "title": "P3 kb_search: arguments",
+  "description": "A word search over one knowledge corpus of the role resource scope (KNW-6).",
+  "x-botaru-direction": "input",
+  "x-botaru-version": "v0.2",
+  "x-botaru-rules": [
+    "KNW-6",
+    "KNW-1"
+  ],
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "corpus",
+    "query"
+  ],
+  "properties": {
+    "corpus": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/name",
+      "description": "Corpus from enum_from: catalog.corpora, only corpora in the role scope.",
+      "x-botaru-closed-by": "enum of the corpora in the role resource scope in tools/list"
+    },
+    "query": {
+      "type": "string",
+      "maxLength": 256,
+      "x-botaru-format": "search_query",
+      "description": "Search words; no operators, wildcards or regular expressions."
+    },
+    "limit": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 20,
+      "description": "At most this many fragments; 20 by default."
+    }
+  }
+}

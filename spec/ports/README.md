@@ -20,7 +20,7 @@ A "thin" port: one page, one reference adapter, a minimal set of checks. A thin 
 
 | Port | Sheet | Kind | Sheet since | Thin | Reference | Main rules |
 |---|---|---|---|---|---|---|
-| P1 WorkerProtocol | `p1-worker-protocol.md` | core protocol | v0.1; HTTP binding v1 from v0.1, OpenAPI 3.1 description from v0.2 | no | core; the deployment chooses the transport | TEN-2..4, TEN-7, IDN-1..3, IDN-7, FEN-1..4, IDM-1..5, DLV-1, PRM-9, SEC-3, MSG-9 |
+| P1 WorkerProtocol | `p1-worker-protocol.md` | core protocol | v0.1; HTTP binding v1 from v0.1, OpenAPI 3.1 description `spec/bindings/http/p1.openapi.json` from v0.2 (MAN-12) | no | core; the deployment chooses the transport | TEN-2..4, TEN-7, IDN-1..3, IDN-7, FEN-1..4, IDM-1..5, DLV-1, PRM-9, SEC-3, MSG-9 |
 | P2 AdminAPI | `p2-admin-api.md` | core protocol | v0.1; HTTP binding v1 (`admin.md`) from v0.1, OpenAPI will appear with the second client | no | `farmctl`; commands of people in a channel on behalf of the verified person | PRM-7, PRM-13, PRM-14, IDN-7, AUD-1, MAN-5, HLD-5 |
 | P3 ToolGateway | `p3-tool-gateway.md` | core protocol | v0.1 | no | core; the MCP tool protocol, revision in the binding | APR-1, APR-18, PRM-3..5, INJ-2, INJ-4, INJ-13, INJ-15, TEN-3a, SEC-3, RT-4 |
 | P4 ModelGateway | `p4-model-gateway.md` | core protocol | v0.1 | no | core; a field allowlist per provider | GW-1..3, GW-7, BUD-2, BUD-3, TEN-5, CAP-2 |
@@ -49,6 +49,7 @@ In v0.1 the sheets P1, P2, P3, C1, E1 and E5 hold only v0.1 operations. Operatio
 | Meter, FileStore, AuditLog | Parts of C1. Only P4 reserves and charges model usage, workers only report usage (BUD-3) |
 | ToolPlugin | A plugin is an external MCP server; its contract is the plugin profile in the binding `spec/bindings/mcp/README.md` and sheet E3 |
 | Telemetry | This is a binding contract (`spec/bindings/telemetry/`) and a rule about what may be sent out (OBS-1). The organization's monitoring system is not telemetry: it has its own port E5, because alarms to people and core liveness go through it (MON-1, MON-2) |
+| ConsentAdapter | An edge process that connects a person's own account at an external service: the consent screen, the token in the deployment secret store and the P2 operations `connection.register` and `connection.revoke` on behalf of the person. The core calls nothing in it, so it adds no operation; its sheet is `consent-adapter.md` (SEC-7) |
 | Watchdog | The farm has no separate liveness check process: the monitoring system checks core liveness by polling P2 `health` (D-60, MON-2) |
 
 ## Common to all ports

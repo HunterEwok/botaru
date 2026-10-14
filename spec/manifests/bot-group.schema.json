@@ -38,7 +38,7 @@
       "type": "integer",
       "minimum": 1,
       "maximum": 100000,
-      "description": "From v0.2: the group quota (D10).",
+      "description": "From v0.2: the group quota (D10, DSP-11): at most this many running attempts on the members of the group; a task above it waits with group_quota.",
       "x-botaru-version": "v0.2"
     },
     "summary_for_managers": {

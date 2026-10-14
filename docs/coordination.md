@@ -29,17 +29,18 @@ The list of conditions is closed and lives in `spec/model/dispatch-predicates.ya
 | D7 | `run_at` has come; for a campaign item, the release is recorded in the campaign | task and campaign records | v0.1 |
 | D8 | the worker is `active` (not `draining` and not `blocked`) and `ready` according to core observation (OBS-4) | core observation | v0.1 |
 | D9 | there is no active hold with the effect `no_claim` or `cancel_running` whose scope covers the farm, tenant, role, type, bot group, bot, seat, worker, machine or resource of the task (HLD-3, MGR-15) | hold records | v0.1 |
-| D10 | counters are not exceeded: `max_running` per (tenant, type), from v0.2 also the bot group's `max_running` and the rule's `max_share` | lease counters | v0.1; group and share from v0.2 |
+| D10 | counters are not exceeded: `max_running` per (tenant, type), from v0.2 also the bot group's `max_running` and the rule's `max_share` (DSP-11) and the class 5 share (BUD-8) | lease counters | v0.1; group and share from v0.2 |
 | D11 | the resource is free if the action declared `exclusive: resource` (ORC-12) | campaign and approval records | v0.1 |
 | D12 | if the task has a `pin`, this is that very worker; only the `control` lane writes a pin | task record | v0.1 |
 | D13 | the initiator is active and has the permissions (PRM-3 at the point of `claim`) | C2 | v0.1 |
 | D14 | the task's `max_tier` is not above the tiers that the worker's role can execute with its tools at all | role manifest | v0.1 |
 | D15 | a task with the purpose `manage` goes only to a worker of the farm manager seat role enrolled in the task's tenant, while the seat is in `held` (there is a holder and no seat stop reasons); the core writes the seat epoch into the attempt (a number that grows when the seat is assigned or vacated, on every new stop reason and on return to `held`), and an attempt with an old epoch gets `fenced` (MGR-1) | seat record | v0.1 |
 | D16 | a task with the purpose `insight` goes only to the bot of the role that, among the bots of this role with a ready worker (D8), has gone longest without such a task; on a tie, the bot with the smaller id (INS-5) | core records of dispatched tasks | v0.1 |
-| D17 | for a type with `conversation_concurrency: serial`, there is no running attempt of the same role in the same conversation, and the task is the first by enqueue time among the waiting tasks of this conversation (MEM-5) | task and attempt records | v0.2 |
+| D17 | for a type with `conversation_concurrency: serial`, there is no running attempt of the same role in the same conversation, and the task is the first by enqueue time among the waiting tasks of the same role in this conversation that pass every other condition (MEM-5) | task and attempt records | v0.2 |
 | D18 | the circuit of the (workspace, model pool) pair that the task needs is not open (GW-11) | model gateway P4 observation | v0.1 |
 | D19 | the tenant has a free share of the model pool the task needs (GW-10) | P4 rate limiter | v0.1 |
 | D20 | a task that the core enqueued for a specific bot identity bound to a worker (a task with its memory, session, inbox or tools) goes only to the worker of that binding with the current binding epoch; a clean context task and a task of an identity on a seat go to a worker of the role named by IDN-12 | the task's `acting_bot` and `bot_epoch` (IDN-8), identity binding | v0.1 |
+| D21 | for a direct request of a `human` or `service` principal, the principal has fewer than `tasks_in_flight` direct requests with a running attempt, and the task is the first by enqueue time among their waiting direct requests of the same type that pass every other condition (BUD-6) | task and attempt records | v0.2 |
 
 A new condition appears only through a skeleton architecture decision record (ADR) and a new version of the list; a tenant policy does not add conditions, it only narrows dispatch (DSP-3).
 
@@ -62,20 +63,25 @@ Among the tasks that passed the filter for the asking worker, `claim` returns on
 
 The control lane (`control`) is the core path for operations from the closed list `control-ops.yaml`: people call them through P2 `control.apply` (pinning and preemption by people only by the operator through `farmctl`, PRM-14), the farm manager seat holder through C1 `control.apply`, and both share one code path and one audit (MGR-9). The type sets the class with the field `dispatch.priority_class`. A request can only lower the class with the field `priority`; a child, a continuation and a campaign item get a class no higher than the parent. Class 1 never comes from a request, a route or a type, and the core sets class 2 itself and only for a direct request from a person (DSP-5).
 
-The strict order could leave class 5 without work. What protects against this is not priority aging but ceilings: `max_running` per type and, from v0.2, `max_share` in the rules of classes 2-4. The health indicator "age of the oldest urgent task" is computed over classes 1 and 2 (OBS-9). From v0.2 tasks with the purposes `insight`, `aggregate` and `review` always go with class 5, it cannot be raised, and together they take no more than `max_share` (20% by default) of the bot group's concurrent slots (BUD-8).
+The strict order could leave class 5 without work. What protects against this is not priority aging but ceilings: `max_running` per type and, from v0.2, `max_share` in the rules of classes 2-4. The health indicator "age of the oldest urgent task" is computed over classes 1 and 2 (OBS-9). From v0.2 tasks with the purposes `insight`, `aggregate` and `review` always go with class 5, it cannot be raised, and in a bot group that also does other work they together take no more than `Tenant.spec.dispatch.background_share` (20% by default) of the group's capacity; a task above the share waits with `group_quota`. Tasks of `review.escalation.v1` (the `necessity` lens) are the exception: they go in class 3 and are outside the share, because an escalation waits for them (BUD-8, D-100).
 
 ### Fairness within a class
 
-From v0.2, within one class, tasks with different fairness keys are dispatched round robin with weights from `Tenant.spec.dispatch.fairness.weights` (DSP-6). The core writes the key (IDN-1), the sender does not set it:
+The core writes the fairness key on every task from v0.1 (DSP-2, D-98); the sender does not set it. The key is `<kind>:<id>`, and a continuation keeps the key of its source:
 
 | Where the task comes from | Fairness key |
 |---|---|
-| campaign item | campaign id |
-| manager child | tree root id |
-| wake-up task from an inbox | route name |
-| schedule task | schedule name |
-| direct request from a person | initiator principal |
-| script step | script run id |
+| campaign item | `campaign:<campaign>` |
+| any child (of a manager or another task) | `root:<root task>` |
+| route or wake-up task from an inbox | `route:<route>` |
+| schedule task | `schedule:<schedule>` |
+| direct request from a person or program | `interactive:<principal>` |
+| script step | `script:<run>` |
+| a task that the core creates itself and that has none of the sources above (a lens review, a ballot, an incident or inspection task, a daily review, a grant batch) | `system:<purpose>` |
+
+A redrive (`task.redrive`) and an action task after approval keep the key of the original task.
+
+From v0.2, within one class, `claim` hands out the next task from the key with the smallest number of running attempts divided by the weight of its kind in `Tenant.spec.dispatch.fairness.weights` (a kind without a weight has 1; a key of weight 0 gets work only when no key with a higher weight waits in the class). A tie goes to the key whose oldest waiting task was enqueued first, then to the smaller task id, so the order stays deterministic (DSP-2, DSP-6).
 
 This way a campaign of 400 items does not take all analysts away from a person's question of the same class, and two managers share a group equally. The keys are coarse (campaign, root, route) rather than individual tasks, because the accuracy of a fair round robin drops as the number of keys grows. In v0.1 the key is already recorded, and the order within a class is set by enqueue time.
 
@@ -90,7 +96,7 @@ spec:
     max_queued: 5000                  # tenant queue ceiling (CAP-1)
   dispatch:
     fairness:                         # from v0.2 (DSP-6)
-      weights: {interactive: 2, campaign: 1, root: 1, route: 1, schedule: 1}
+      weights: {interactive: 2, campaign: 1, root: 1, route: 1, schedule: 1, script: 1, system: 1}
     rules:                            # first match; only by type name and source kind
       - match: {type: data.qc.ctd.v1}
         group: science-pool           # default group
@@ -99,8 +105,9 @@ spec:
         timeouts: {attempt: 8m}       # attempt deadline: at most twice the type's deadline and not past deadline
         retry: {max_attempts: 2}      # only fewer than the type has, and at least 1
       - match: {type_prefix: "ops.nightly."}
-        priority_class: 5
-        max_share: 20%                # from v0.2: share of the bot group's concurrent slots (D10, BUD-8)
+        group: science-pool
+        priority_class: 4
+        max_share: 20%                # from v0.2: share of the capacity of the rule's group, needs group (D10, DSP-11)
       - match: {type_prefix: "report."}
         group: reporters
         group_fixed: true             # a request cannot set another group
@@ -152,7 +159,7 @@ A waiting task carries the field `waiting_reason` from a closed list. A manager 
 | `resource_busy` | the resource is taken by another released write call (ORC-12) | v0.1 |
 | `not_released` | the campaign item has not been released yet | v0.1 |
 | `provider_quota` | the tenant has no free share of the needed model pool (D19, GW-10) | v0.1 |
-| `group_quota` | the bot group's `max_running` or the rule's `max_share` is exhausted | v0.2 |
+| `group_quota` | the bot group's `max_running` or the rule's `max_share` is exhausted (DSP-11), or the class 5 share `background_share` (BUD-8) | v0.2 |
 | `model_grant_pending` | the task waits for a decision on a grant of a stronger model (MGR-17) | v0.2 |
 
 ### Dispatch explanation
@@ -174,7 +181,7 @@ spec:
   select:
     roles: [analyst]
     labels: {zone: lab}            # match against the labels recorded at enroll
-  max_running: 6                   # from v0.2: group quota (D10)
+  max_running: 6                   # from v0.2: group quota (D10, DSP-11)
   summary_for_managers: "Analysts in the lab"   # only from git, visible to managers
 ```
 
@@ -383,12 +390,12 @@ An item goes through `pending`, then `released`, then one of the results `ok`, `
 
 Release is held by deterministic core code according to the campaign record (ORC-4):
 
-1. An item is released only if the campaign is `running`, there is no hold in its scope (ORC-11), fewer than `max_in_flight` are released and unfinished, the resource is free (ORC-12), the tenant's queue for the item type is no longer than `queue_max`, and every initiator still has the permissions (ORC-6). From v0.2 also: the pace `rate_per_min` is not exceeded and the current wave is open.
+1. An item is released only if the campaign is `running`, there is no hold in its scope (ORC-11), fewer than `max_in_flight` are released and unfinished, the resource is free (ORC-12), the tenant's queue for the item type is no longer than `queue_max`, and every initiator still has the permissions (ORC-6). From v0.2 also: the pace `rate_per_min` is not exceeded and the current wave is open (ORC-15).
 2. The canary (the first `canary` items) is released as a separate portion. Any failure in it stops the campaign regardless of the threshold. After a successful canary with `after_canary: manual` the campaign pauses on `gate` until a person presses a button; with `after_canary: auto` (only if the action allows it) the core waits for `bake` and continues by itself.
 3. The threshold is counted on `failed`: the campaign stops when failures are above the threshold; equality does not exceed it. Released items are finished, new ones are not released, and unreleased ones become `skipped`.
 4. `unknown` does not count toward the threshold. With `on_unknown: pause` the campaign pauses and a person decides: the machine state is unknown.
 5. Release happens in the transaction in which the previous item closed (DLV-2), and in the core background loop `campaign` for timers (`bake`, `deadline`, `no_executor`, pause escalation). The loop is deterministic, does not call the model, is idempotent and safe with two running copies.
-6. From v0.2 the next wave opens when all items of the previous one are final and the `bake` pause has passed.
+6. From v0.2 `waves` split the items after the canary by cumulative shares, strictly increasing and ending with `100%`; otherwise the proposal is rejected with `campaign_waves_invalid`. Wave k releases, in item order, up to its share of those items rounded up. Wave 1 opens with the canary gate, or at once without a canary; the next wave opens when all items of the previous one are final, the threshold is not crossed and the `bake` pause has passed. The pace `rate_per_min` caps the releases in any 60 seconds. An item held back by a closed wave or the pace stays `pending`; that is not a failure. The record field `wave` shows the open wave, and the progress card is updated when it changes (ORC-15, D-104).
 
 The model and workers do not release items and do not change counters; only the core produces campaign alarms (ORC-4). Each item is executed at most once (ORC-3): the release of an item with an action, in one transaction, moves the item to `released`, creates an `action.<a>` task with `approval_id`, `campaign_item` and the key `system:campaign:<campaign>:<n>`, and exactly one write call with the item's arguments from the snapshot. The toolhost accepts the call only if the arguments hash equals the item's hash in the snapshot, and the plugin gets `<approval_id>:<n>` as the idempotency key.
 
@@ -407,8 +414,8 @@ rollout:
   on_unknown: pause     # write call without a result: pause, a person decides
   deadline: 2h          # deadline of the whole campaign
   # from v0.2:
-  # waves: [25%, 100%]  # cumulative release shares after the canary
-  # rate_per_min: 10    # no more often
+  # waves: [25%, 100%]  # cumulative release shares after the canary, the last 100% (ORC-15)
+  # rate_per_min: 10    # at most 10 releases in any 60 seconds
 ```
 
 ```yaml
@@ -673,7 +680,7 @@ The order of work within v0.1 is set by D-71: first the task pool and the dispat
 | Version | What appears |
 |---|---|
 | v0.1 | the pool is the C1 queue, `claim` is the only path for work; conditions D1-D4, D6-D10, D13, D14, D18 (in D9 the core hold scopes: farm, tenant, role, type, worker); classes 1-5 with strict order; the fairness key is recorded, the order within a class is by enqueue time; tenant rules `dispatch.rules` with group, class, `max_running` per type, deadline and number of attempts (DSP-3); `max_queued`; the field `to.group` in schemas and the refusal `group_invalid` (DSP-4); `waiting_reason` (`type_quota`, `held`, `run_at`, `provider_unavailable`); `enqueue_child` and the permission intersection formula, the fields `enqueued_by`, `scope`; `status.tasks`; the alarm `alarm.task.unclaimed` for a task that nobody took (DSP-8); the personal assistant as a worker pool with `owner` in the lease, `/a` and `ChatBinding.assistant` (DSP-10); rules DSP-1..10 and STA-2 in the `core` profile; bot groups `BotGroup`, condition D5, `may_target_groups`, the field `to_group` in the record, waiting on an empty group and the `waiting_reason` values `no_member`, `no_member_ready` (BGR-1, BGR-2, DSP-8); the `manager` profile and three kinds of managers; campaign and item; rollout policy (`canary`, `after_canary` with `bake`, `max_in_flight`, `max_failures`, `on_unknown`, `deadline`); approval with the subject `campaign` and payment by the amount on the card; `propose_campaign`, `campaign_status`, `campaign_results`, `status.campaigns`; P1 and P2 `campaign.*`; the `campaign` loop; `exclusive: resource` (D11); pinning `pin_task` through the `control` lane (D12); `manage` tasks to a worker of the seat role while the seat is in `held` (D15); round robin analysis (D16); model pool share (D19); bot identity tasks to its worker (D20); narrowing of the `scope`; the worker directory with `summary_for_managers`; holds with scope `bot_group` and campaign pause on hold; in D9 the hold scopes bot group, bot, seat, machine and resource; inboxes and the wake-up budget as a source of pressure (MSG-10, MSG-11); `waiting_reason` `resource_busy`, `not_released` and `provider_quota` |
-| v0.2 | fairness by weighted keys (DSP-6); the group's `max_running` and `max_share` (D10); class 5 and the share for analysis and reviews (BUD-8); task order in a conversation (D17); `waiting_reason` `group_quota` and `model_grant_pending`; P2 `dispatch.explain` and `dispatch.queue` (DSP-9); `waves` and the pace `rate_per_min`; progress card update on a wave change |
+| v0.2 | fairness by weighted keys (DSP-6); the group's `max_running` and `max_share` (D10); class 5 and the share `background_share` for analysis and reviews (BUD-8); task order in a conversation (D17); the in-flight limit of direct requests (D21, BUD-6); `waiting_reason` `group_quota`, `model_grant_pending`, `conversation_busy` and `in_flight_cap`; P2 `dispatch.explain` and `dispatch.queue` (DSP-9); `waves` and the pace `rate_per_min`; progress card update on a wave change |
 
 ## Why it works this way
 
@@ -707,6 +714,7 @@ Generated from the registry `conformance/requirements.yaml`; the full text of ev
 | [DSP-8](../conformance/rules.md#DSP-8) | An empty group waits, an unclaimed task raises an alarm | v0.1 | yes |
 | [DSP-9](../conformance/rules.md#DSP-9) | Dispatch can be explained | v0.2 | no |
 | [DSP-10](../conformance/rules.md#DSP-10) | A personal assistant is a pool of workers with the owner in the lease | v0.1 | yes |
+| [DSP-11](../conformance/rules.md#DSP-11) | Bot group quota and a rule's share | v0.2 | no |
 | [ORC-1](../conformance/rules.md#ORC-1) | Only a live attempt proposes a campaign, the plan is frozen | v0.1 | yes |
 | [ORC-2](../conformance/rules.md#ORC-2) | A campaign with an action starts after one plan approval | v0.1 | yes |
 | [ORC-3](../conformance/rules.md#ORC-3) | Each item runs no more than once | v0.1 | yes |
@@ -721,3 +729,4 @@ Generated from the registry `conformance/requirements.yaml`; the full text of ev
 | [ORC-12](../conformance/rules.md#ORC-12) | One released write call per resource | v0.1 | yes |
 | [ORC-13](../conformance/rules.md#ORC-13) | The core builds the worker directory from manifests | v0.1 | yes |
 | [ORC-14](../conformance/rules.md#ORC-14) | Campaign ceiling with distrust or initiator system | v0.1 | yes |
+| [ORC-15](../conformance/rules.md#ORC-15) | Waves and pace of a campaign | v0.2 | yes |

@@ -15,6 +15,7 @@ P4 has no named operations: the runtime talks to P4 in the provider's format thr
 | Model | which field names the model and how P4 sets the model of the handle's slot profile in it | GW-7, GW-5 |
 | Tools | how the request's `tools` are compared with the P3 catalog of the handle by names and schema hashes (`spec/hashing.md`) | GW-1 |
 | Output limit | which field limits the response and how P4 sets it no higher than the profile's `max_output_tokens` | GW-2 |
+| Structured output | from v0.2: whether the binding sends the result schema to the provider for constrained decoding, and if so the list of JSON Schema keywords it removes from the projection; or "not used". The core checks the result against the full schema at `complete` in any case | OUT-1, OUT-2 |
 | Region | the request field or workspace setting through which P4 sets the region from `privacy.subprocessors[].region` | GW-14 |
 | Cache | the cache control fields in the allowlist and the rule for where P4 sets the cache point | GW-16 |
 | Usage | which response fields give tokens by kind (input, output, cache write and read, reasoning, compaction iterations), how they are converted to micro-euros by the `ModelProfile` prices, the "model answered" flag | BUD-2, BUD-3, BUD-9, GW-13 |

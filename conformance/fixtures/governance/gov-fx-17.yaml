@@ -1,0 +1,75 @@
+# Recusal and blindness (GOV-17, COM-2, COM-3, MGR-16).
+id: gov-fx-17
+rules: [GOV-17]
+version: v0.2
+description: 'A commission seat holder does not review its own proposals, and a reviewer does not see the author''s identity, role
+  and position. The farm_manager lens is not enqueued for proposals authored by the manager seat or whose target is a role of
+  profile farm-manager or farm-manager-reader or another target from the MGR-16 list. A ballot cannot name the voter''s own seat or
+  the manager seat.'
+given:
+  tenant: demo
+  commission:
+    seat_role: commission-member
+    seats:
+      'commission:1': {lens: security, holder: bot_05}
+      'commission:2': {lens: security, holder: bot_06}
+      'commission:3': {lens: cost, holder: bot_09, fallback_role: reviewer-b}
+  manager_seat: {state: held, holder: bot_41}
+cases:
+- id: gov-fx-17-a
+  description: A proposal authored by bot_05 before it was seated goes to the other security holder, never to bot_05.
+  given:
+    proposal: {id: p_401, author: bot_05, kind: schedule, state: screened}
+  steps:
+  - stand: {op: loop.tick, loop: proposal}
+  expect:
+    review_task: {lens: security, acting_bot: bot_06}
+    review_tasks_for: {bot_05: 0}
+- id: gov-fx-17-b
+  description: The only holder of a lens is the author; the fallback role of the seat executes the lens for this proposal.
+  given:
+    proposal: {id: p_402, author: bot_09, kind: schedule, state: screened}
+  steps:
+  - stand: {op: loop.tick, loop: proposal}
+  expect:
+    review_task: {lens: cost, claimed_by_role: reviewer-b}
+    review_tasks_for: {bot_09: 0}
+- id: gov-fx-17-c
+  description: The review input carries no author identity, role or position.
+  given:
+    proposal: {id: p_403, author: bot_17, author_role: ops-runner, kind: schedule, state: screened}
+  steps:
+  - stand: {op: loop.tick, loop: proposal}
+  expect:
+    review_input_fields_absent: [acting_bot, author, role, position, origin.worker]
+    p4_requests_contain: {bot_17: false, ops-runner: false}
+- id: gov-fx-17-d
+  description: The manager lens is not enqueued for the manager's own proposal or for a target role of profile farm-manager.
+  cases:
+  - id: gov-fx-17-d1
+    given:
+      proposal: {id: p_404, author: bot_41, origin: daily_review, kind: schedule, state: screened}
+    steps:
+    - stand: {op: loop.tick, loop: proposal}
+    expect: {tasks_of_type: {review.farm_manager.v1: 0}, verdict_mark: null}
+  - id: gov-fx-17-d2
+    given:
+      proposal: {id: p_405, author: bot_17, kind: manifest_change, target: {kind: Role, name: farm-manager-ops, profile: farm-manager}, state: screened}
+    steps:
+    - stand: {op: loop.tick, loop: proposal}
+    expect: {tasks_of_type: {review.farm_manager.v1: 0}, verdict_mark: null}
+- id: gov-fx-17-e
+  description: The enum of a voter excludes its own seat and the manager seat; a P4 value naming either is not a ballot.
+  given:
+    case: {id: gc_7, snapshot: {voters: [bot_05, bot_06, bot_09, bot_41], list: ['commission:1', 'commission:2', 'commission:3']}}
+  steps:
+  - stand: {op: loop.tick, loop: governance}
+  - model: {forced_output: {choice: farm-manager}}
+    by: attempt:governance.ballot.v1
+    context: {acting_bot: bot_06}
+    expect: {reason: output_schema_invalid}
+  expect:
+    enum:
+      bot_05: ['commission:2', 'commission:3']
+      bot_41: ['commission:1', 'commission:2', 'commission:3']
+    ballot_of_bot_06: null

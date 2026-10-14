@@ -1,0 +1,52 @@
+# The flag "all votes from one model for one seat" (COM-12, GOV-19).
+id: com-09
+rules: [COM-12, GOV-19]
+version: v0.2
+description: 'In a round code sets single_model_bloc when all ballots that came from a model (not forced, not defaulted) went to
+  one seat, there are at least two of them, and the model calls of their attempts ran on one model profile. People see the flag on
+  the promotion card; it changes nothing in the count.'
+given:
+  tenant: demo
+  case:
+    id: gc_7
+    snapshot:
+      voters: [bot_05, bot_07, bot_09, bot_12, bot_40]
+      list: ['commission:1', 'commission:2', 'commission:3']
+cases:
+- id: com-09-a
+  description: Five model ballots for seat 3, four on seat-std and one on manager-std; profiles differ, no flag.
+  given:
+    ballots:
+      round_1:
+        bot_05: {choice: 'commission:3', model_profile: seat-std}
+        bot_07: {choice: 'commission:3', model_profile: seat-std}
+        bot_09: {choice: 'commission:3', model_profile: seat-std}
+        bot_12: {choice: 'commission:3', model_profile: seat-std}
+        bot_40: {choice: 'commission:3', model_profile: manager-std}
+  expect: {flags_exclude: [single_model_bloc]}
+- id: com-09-b
+  description: All model ballots of round 2 go to seat 3 on seat-std; the forced ballots do not count for the flag.
+  given:
+    ballots:
+      round_2:
+        bot_05: {choice: 'commission:3', model_profile: seat-std}
+        bot_07: {choice: 'commission:3', forced: true}
+        bot_09: {choice: 'commission:2', forced: true}
+        bot_12: {choice: 'commission:3', model_profile: seat-std}
+        bot_40: {choice: 'commission:3', model_profile: seat-std}
+  expect:
+    flags_include: [single_model_bloc]
+    card: {kind: promotion_card, flags_line_contains: single_model_bloc}
+- id: com-09-c
+  description: A fallback profile on one ballot attempt (GW-5) breaks the bloc.
+  given:
+    ballots:
+      round_2:
+        bot_05: {choice: 'commission:3', model_profile: seat-std}
+        bot_12: {choice: 'commission:3', model_profile: seat-alt, via_fallback: true}
+        bot_40: {choice: 'commission:3', model_profile: seat-std}
+  expect: {flags_exclude: [single_model_bloc]}
+- id: com-09-d
+  description: The flag changes nothing in the count.
+  given: {replay_of: com-09-b, flags_suppressed_in_replay: true}
+  expect: {same_rounds_and_outcome: true}

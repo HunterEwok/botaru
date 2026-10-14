@@ -1,0 +1,66 @@
+id: dig-04
+rules: [DIG-6, DIG-5, COM-11]
+version: v0.2
+description: 'Blind card of an audit sample item. The item p (dismissed(veto) by the operational lens) is delivered as the card
+  proposal_sample_card to the direct chat of carol, who has proposal.decide:capacity. The card holds the closed fields, the
+  evidence numbers, the change in code words, the price and the risk, and no lens scores, vetoes, verdict or stratum. The answer
+  is written into the sample record and the calibration input before the card shows the scores. "Would not accept" closes the
+  item; "Would accept" reveals the scores and the veto, and the card then has no "Accept" button.'
+given:
+  tenant: demo
+  people:
+  - principal: human:carol
+    caps: ['proposal.decide:capacity']
+  proposal:
+    id: p_01JB0000000000000000000403
+    state: sample_presented
+    category: capacity
+    verdict: {outcome: dismissed, reason: veto, veto_lenses: [operational]}
+    scores: {security: 3, operational: 1, cost: 3, value: 3}
+    change: {kind: manifest_change, field: max_running, target: {kind: DispatchRule, name: report-nightly}, from: 2, to: 3}
+    sample: {month: '2026-11', stratum: veto_operational, inclusion_prob: 0.5}
+steps:
+- check: {delivery: proposal_sample_card, to: 'human:carol', chat: carol-dm}
+  expect:
+    card_fields_present: [category, problem, evidence_numbers, change_code_words, price, risk]
+    card_fields_absent: [scores, veto, verdict, stratum, inclusion_prob]
+    buttons: [would_accept, would_not_accept]
+cases:
+- id: dig-04-a
+  description: '"Would accept": the answer is recorded first, then the card reveals scores and veto; no Accept button'
+  steps:
+  - call:
+      port: P1
+      op: decide
+      request: {subject_kind: proposal, id: p_01JB0000000000000000000403, decision: would_accept}
+    by: human:carol
+    chat: carol-dm
+    card: proposal_sample_card
+    expect:
+      state: sample_judged
+      sample_answer: {answer: would_accept, by: 'human:carol', recorded_before_reveal: true}
+      calibration_input: {lens: operational, answer: would_accept, weight: 2.0}
+      card_after: {shows: [scores, veto], buttons: [override_veto, reject, details]}
+- id: dig-04-b
+  description: '"Would not accept" closes the item'
+  steps:
+  - call:
+      port: P1
+      op: decide
+      request: {subject_kind: proposal, id: p_01JB0000000000000000000403, decision: would_not_accept}
+    by: human:carol
+    chat: carol-dm
+    card: proposal_sample_card
+    expect:
+      state: sample_closed
+      sample_answer: {answer: would_not_accept}
+      card_after: {shows: [], buttons: []}
+- id: dig-04-c
+  description: 'the sample card never goes to a group chat: the digest at insights.present_to carries only the number of sample items'
+  given:
+    insights: {present_to: 'chat:lab'}
+  steps:
+  - check: {delivery: proposal_digest, chat: lab}
+    expect:
+      sample_items_in_digest: count_only
+      proposal_sample_card_in_group: false

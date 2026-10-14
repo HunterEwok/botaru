@@ -2,11 +2,12 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "urn:botaru:schema:ballot:1",
   "title": "Ballot",
-  "description": "Ballot record of the \"who leaves\" vote (GOV-7, GOV-23). The core takes the choice value from the P4 answer with the forced schema of this attempt, not from the complete body; the core writes forced without a model call if the choice list has one seat; the core writes defaulted by the code rule when the model refuses. In a round there is exactly one ballot per voter; until the round closes no bot sees the ballots. Reason codes come from a closed list that the skeleton text does not name yet.",
+  "description": "Ballot record of the \"who leaves\" vote (GOV-7, GOV-23). The core takes the choice value from the P4 answer with the forced schema of this attempt, not from the complete body; the core writes forced without a model call if the choice list has one seat; the core writes defaulted by the code rule when the model refuses. In a round there is exactly one ballot per voter; until the round closes no bot sees the ballots. Reason codes come from the closed list spec/model/ballot-reasons.yaml. The core never writes farm-manager as a choice: L never holds the manager seat (GOV-12, GOV-17).",
   "x-botaru-direction": "record",
   "x-botaru-retention": "metadata",
   "x-botaru-version": "v0.2",
   "x-botaru-rules": [
+    "COM-12",
     "GOV-7",
     "GOV-21",
     "GOV-23",
@@ -39,7 +40,7 @@
       "type": "string",
       "maxLength": 16,
       "pattern": "^(farm-manager|commission:[1-9][0-9]{0,2})$",
-      "description": "Seat id: farm-manager (the farm manager seat, tenant farm) or commission:<seat number from the tenant charter>."
+      "description": "Seat id commission:<seat number from the tenant charter>. The pattern also admits farm-manager for compatibility, but the core never writes it: L never holds the manager seat (GOV-12, GOV-17)."
     },
     "reasons": {
       "type": "array",
@@ -48,9 +49,10 @@
       "items": {
         "type": "string",
         "maxLength": 64,
-        "pattern": "^[a-z][a-z0-9_]*$"
+        "pattern": "^[a-z][a-z0-9_]*$",
+        "x-botaru-registry": "ballot-reasons"
       },
-      "description": "Up to 3 reason codes."
+      "description": "Up to 3 reason codes from spec/model/ballot-reasons.yaml (GOV-7)."
     },
     "forced": {
       "type": "boolean",
@@ -60,6 +62,17 @@
       "type": "boolean",
       "description": "Ballot by the code rule."
     },
+    "model_profile": {
+      "anyOf": [
+        {
+          "$ref": "urn:botaru:schema:common:1#/$defs/name"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "description": "Model profile of the attempt's actual P4 call, fallback included (GW-5); null for forced and defaulted ballots. Code reads it for the flag single_model_bloc (COM-12)."
+    },
     "worker": {
       "$ref": "urn:botaru:schema:common:1#/$defs/object_id",
       "description": "The worker that executed it (IDN-12)."
@@ -67,8 +80,8 @@
     "reissue": {
       "type": "integer",
       "minimum": 0,
-      "maximum": 3,
-      "description": "Reissue number, at most ballots.reissue_max."
+      "maximum": 100,
+      "description": "Reissue number, at most ballots.reissue_max (charter maximum 100)."
     },
     "recorded_at": {
       "$ref": "urn:botaru:schema:common:1#/$defs/datetime",

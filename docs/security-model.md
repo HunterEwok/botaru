@@ -115,13 +115,13 @@ A production machine is any host where the core, the store, the channel or a too
 
 On a production machine the model has no shell, eval, SQL as a string, free paths, URLs, hosts, commands or regular expressions (INJ-1). This is not a role setting but a property of the machine: the lint rejects any tool with `placement: host` that has free input.
 
-**The sandbox** (`placement: sandbox`, tier 2) is needed for analysis that cannot be described in advance: the model writes and runs code on a copy of the data. It lives only on a separate VM, where there is no core, store, channel, and no tenant data or secrets (DEP-1). This VM has only the sandbox toolhost with its worker token and a network path to P1. The sandbox toolhost manages containers, and that equals root on its machine, so it does not share a machine with production data (DEP-3). One sandbox toolhost serves one tenant, one container one task.
+**The sandbox** (`placement: sandbox`, tier 2, from v0.2 in the optional `sandbox` profile, SBX-1, D-104) is needed for analysis that cannot be described in advance: the model writes and runs code on a copy of the data. It lives only on a separate VM, where there is no core, store, channel, and no tenant data or secrets (DEP-1). This VM has only the sandbox toolhost with its worker token and a network path to P1. The sandbox toolhost manages containers, and that equals root on its machine, so it does not share a machine with production data (DEP-3). One sandbox toolhost serves one tenant, one container one task.
 
 The task container starts without network, with a read-only root, without privileges (`--cap-drop ALL`, `no-new-privileges`), with limits on memory, CPU, number of processes and file size, as an unprivileged user, and on a production farm also under gVisor. The input directory `/in` is mounted read-only, the output `/out` is a separate volume with a limit. The result is collected like this:
 
 1. The container is stopped, and only then is `/out` read. Otherwise a background process would swap a file between the check and the collection.
 2. Files are opened without following links (`openat2` with `RESOLVE_BENEATH | RESOLVE_NO_SYMLINKS`), only regular files are taken. Links, pipes and devices are skipped and written to the audit.
-3. The type is checked by the first bytes, not by the extension. Only CSV, JSON, GeoJSON and PNG are returned. PDF is not returned: a file made by code under the influence of foreign data can carry scripts and links.
+3. The type is checked by the first bytes, not by the extension. Only CSV, JSON, GeoJSON and PNG are returned, and the model's script as plain text (item 4), each within the type's `result_media_types` and through P1 `file.put` with a mark not lower than the task's (SBX-2). PDF is not returned: a file made by code under the influence of foreign data can carry scripts and links.
 4. A script that the model wrote is returned with the mark "the script was written by the model, the data could have influenced it; do not run it outside the sandbox without review".
 
 **Fixing the placement.** `placement`, the plugin list and the toolhost's machine are fixed by `enroll` in its credentials. At `hello` a worker can only narrow its labels; a toolhost recorded as `host` that brings a sandbox plugin gets `blocked`, and vice versa (DEP-2).
@@ -394,7 +394,7 @@ Everything the core issues or signs (worker tokens, program keys, handles, the a
 | monitoring adapter token | adapter container | a new token in the monitoring system, the old one is revoked after the adapter switches |
 | backup encryption key | operator, outside the store | a new key for new backups; the old one is kept while the old backups live |
 
-Revocation on compromise (`rotate --compromised`) takes effect from the next call, without an overlap window, and in the same operation sets a hold without a deadline on a scope from the closed list `spec/model/holds.yaml` where the secret was used: `channel`, `plugin`, `worker` or `tenant`. Only a person with `hold.release` clears such a hold (SEC-6, HLD-2). For example, the token of the bot `@demo_bot` leaked: the operator revokes it at the external system, and a hold of scope `channel` of tenant `demo` with the effects `no_delivery` and `no_enqueue` prevents the farm from sending messages the old way and from enqueueing tasks from this channel. On suspicion that the key of the core itself was stolen, the operator sets a hold on the whole farm (`no_action`, `no_tool`).
+Revocation on compromise is the operator operation P2 `secret.revoke` (`farmctl secret revoke --compromised`). For a credential that the core issued (a worker token, a program key, a handle) it takes effect from the next call, without an overlap window. For any secret it sets, in the same operation, a hold without a deadline with reason `compromised` on every scope from the closed list `spec/model/holds.yaml` where the deployment description uses the secret: `channel`, `plugin`, `worker`, `sink` or `tenant`. A deployment secret is then replaced at the external system by the recipe in `docs/operations.md`. Only the operator clears such a hold (SEC-6, HLD-2). People's connections (SEC-7) are revoked in bulk with the same operation: `farmctl secret revoke --compromised --connections <provider> [--tenant <t>]` revokes every connection of that provider in one tenant or in all tenants in one transaction, and the consent adapter deletes the tokens and revokes them at the provider. For example, the token of the bot `@demo_bot` leaked: the operator revokes it at the external system, and a hold of scope `channel` of tenant `demo` with the effects `no_delivery` and `no_enqueue` prevents the farm from sending messages the old way and from enqueueing tasks from this channel. On suspicion that the key of the core itself was stolen, the operator sets a hold on the whole farm (`no_action`, `no_tool`).
 
 A hold does not help if the core itself is compromised. For this case there is an external stop that does not require a working core: stop the containers, revoke the bot token at the external system, disable the key at the model provider. The order of the external stop is written in `docs/operations.md`.
 
@@ -402,11 +402,11 @@ A hold does not help if the core itself is compromised. For this case there is a
 
 A person's assistant may need their mail or calendar. A deployment secret does not fit this: there is one per plugin, and one person's assistant would read another person's mail. So a person's access to an external service is a recorded connection (`Connection`): tenant, principal, a provider from the tenant catalog, access scopes from a closed list, state and expiry (SEC-7).
 
-- The connection is created by the person themselves through a separate consent adapter, not by the model. The token value is kept by the deployment and does not pass through P1-P4.
+- The connection is created by the person themselves through a separate consent adapter, not by the model. The link to the adapter carries a nonce that the core issued at `/mydata connect` for this person (single use, 10 minutes). The core takes the principal from the nonce, generates the token reference itself and keeps the connection `pending` until the person confirms the `connection_confirm` card in their private chat; the card shows the external account. So a link forwarded to a colleague does not give its sender the colleague's mailbox, and one external account is connected by at most one principal. The token value is kept by the deployment and does not pass through P1-P4.
 - The plugin declares `credential: per_principal(<provider>, <scopes>)`. The core passes the toolhost a reference to the connection of the task initiator; the model neither names nor chooses the account.
 - Tasks of other principals and of the service principal `system` do not use the connection.
 - Writing anything on behalf of a person (sending an email, creating a meeting) stays a tier 3 action with approval.
-- Offboarding and `forget` revoke and delete the connection.
+- Offboarding of the person or of the tenant and `forget` revoke and delete the connection; on a compromise the operator revokes all connections of a provider at once (SEC-6).
 
 By default there is no access to personal mail: the assistant prepares the text, and the person sends it.
 
@@ -711,6 +711,7 @@ Generated from the registry `conformance/requirements.yaml`; the full text of ev
 | [INJ-14](../conformance/rules.md#INJ-14) | OS commands only named, without a shell | v0.1 | yes |
 | [INJ-15](../conformance/rules.md#INJ-15) | After untrusted text a service action goes as a card | v0.1 | yes |
 | [INJ-16](../conformance/rules.md#INJ-16) | Monitoring script and trigger names only from the catalog | v0.1 | yes |
+| [SBX-2](../conformance/rules.md#SBX-2) | One disposable container per task | v0.2 | yes |
 | [SEC-1](../conformance/rules.md#SEC-1) | Secrets do not go through ports | v0.1 | yes |
 | [SEC-2](../conformance/rules.md#SEC-2) | Each process gets only its own secrets | v0.1 | yes |
 | [SEC-3](../conformance/rules.md#SEC-3) | Handles | v0.1 | yes |

@@ -10,7 +10,7 @@ This binding holds rule OBS-1 for the telemetry of farm processes: traces, metri
 |---|---|---|
 | the allowlist of telemetry attributes and names | OBS-1, AUD-2 | v0.1 |
 | prohibition of GenAI content attributes | OBS-1 | v0.1 |
-| metric labels only from closed sets | OBS-1, the `metrics.yaml` catalog in this folder | v0.1 (metric catalog from v0.2) |
+| metric labels only from closed sets | OBS-1, the `metrics.yaml` catalog in this folder | v0.1 (metric catalog from v0.2, OBS-13) |
 | dropping external `baggage` and `tracestate` at the core boundary | OBS-3 | v0.1 |
 | runtime telemetry only through the E4 adapter | OBS-1 | v0.1 |
 
@@ -31,7 +31,7 @@ Only attributes of these kinds are let through:
 | hashes | tool schema hash, run fingerprint | core |
 | time | a UTC instant in `datetime` format | store clock (TIM-1) |
 
-Metric labels come only from the sets `tenant`, `task_type`, `role`, `plugin`, `tool`, `reason`, `state` (`label_sets` in `metrics.yaml`). Ids of people, chats and external systems are not labels.
+Metric labels come only from the sets `tenant`, `task_type`, `role`, `plugin`, `tool`, `reason`, `state` and `loop` (`label_sets` in `metrics.yaml`); each catalog metric names its own labels, instrument and unit (OBS-13). Ids of people, chats, workers and external systems are not labels.
 
 ## What is always dropped
 

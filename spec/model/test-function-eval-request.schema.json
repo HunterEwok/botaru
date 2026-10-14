@@ -1,0 +1,40 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:botaru:schema:test-function-eval-request:1",
+  "title": "Test bench function.eval: request",
+  "description": "One call of a pure core function by name, without a record and without side effects. input is the function's input as a decision table case writes it (conformance/runner.md, section Decision table). Test bench port only.",
+  "x-botaru-direction": "input",
+  "x-botaru-version": "v0.2",
+  "x-botaru-rules": [
+    "APR-9",
+    "GOV-8",
+    "COM-11",
+    "DIG-5",
+    "REP-4",
+    "TIM-5"
+  ],
+  "type": "object",
+  "required": [
+    "function",
+    "input"
+  ],
+  "properties": {
+    "function": {
+      "description": "governance.count: the rounds of one removal case from the snapshot and the ballots (GOV-8). commission.calibration: the calibration of a lens executor from its reviews and outcomes (COM-11). digest.sample: the monthly audit sample from the verdicts, the settings and the seed (DIG-5). reporter.number_check: the number check of a paragraph against a table snapshot and a locale (REP-4). schedule.check: the slot check of a schedule change for one year (TIM-5).",
+      "enum": [
+        "governance.count",
+        "commission.calibration",
+        "digest.sample",
+        "reporter.number_check",
+        "schedule.check"
+      ]
+    },
+    "input": {
+      "type": "object",
+      "maxProperties": 64,
+      "description": "The function's input: the given of a decision table case, with the same field names.",
+      "x-botaru-closed-by": "the input of the named function, as the decision table of conformance/runner.md writes it"
+    }
+  },
+  "additionalProperties": false
+}

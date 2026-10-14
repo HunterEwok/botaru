@@ -1,0 +1,97 @@
+# Shadow reviewer (COM-10), row com-07 of evals/README.md.
+id: com-07
+rules: [COM-10]
+version: v0.2
+description: 'The shadow is off by default (D-103). A shadow share of 0 is allowed only with an explicit shadow: off, and then doctor shows "shadow off". A shadow task
+  gets its own key system:review:<proposal>:<lens>:shadow and does not merge with the seat task; it runs on the lens fallback role
+  without memory and persona, on the seat profile of the lens, only for lenses executed by seat holders; its review has shadow:
+  true, is paid from the review line and is not read by the verdict. Code sets shadow_divergence when, over the pairs "seat score minus
+  shadow score" of 30 days with ties dropped, at least 15 pairs remain and a one-sided exact sign test gives p below 0.05 for
+  "seat below shadow" (D-101).'
+given:
+  tenant: demo
+  commission:
+    seat_role: commission-member
+    model_profile: seat-std
+    seats:
+      'commission:1': {lens: security, holder: bot_05, fallback_role: reviewer-a}
+      'commission:3': {lens: cost, holder: null, fallback_role: reviewer-b}
+cases:
+- id: com-07-a
+  description: shadow with veto_lenses 0 without off fails the apply lint.
+  given:
+    manifest:
+      kind: Commission
+      metadata: {name: demo}
+      spec: {shadow: {veto_lenses: 0, other_lenses: 0.2}}
+  expect:
+    apply: {result: rejected, error: shadow_zero_without_off}
+- id: com-07-b
+  description: shadow off passes and doctor shows "shadow off"; no shadow tasks are enqueued.
+  given:
+    manifest:
+      kind: Commission
+      metadata: {name: demo}
+      spec: {shadow: 'off'}
+    proposal: {id: p_601, kind: schedule, state: screened}
+  steps:
+  - stand: {op: loop.tick, loop: proposal}
+  expect:
+    apply: ok
+    doctor: {check: commission.shadow_off, tenant: demo, value: true}
+    tasks_with_key_suffix: {':shadow': 0}
+- id: com-07-b2
+  description: Without a shadow block the shadow is off by default (D-103); doctor shows "shadow off" and no shadow tasks are enqueued.
+  given:
+    manifest:
+      kind: Commission
+      metadata: {name: demo}
+      spec: {review_deadline: 48h}
+    proposal: {id: p_605, kind: schedule, state: screened}
+  steps:
+  - stand: {op: loop.tick, loop: proposal}
+  expect:
+    apply: ok
+    doctor: {check: commission.shadow_off, tenant: demo, value: true}
+    tasks_with_key_suffix: {':shadow': 0}
+- id: com-07-c
+  description: A proposal drawn for the shadow of the security lens gets two tasks with different keys.
+  given:
+    manifest:
+      kind: Commission
+      metadata: {name: demo}
+      spec: {shadow: {veto_lenses: 1, other_lenses: 1}}
+    proposal: {id: p_602, kind: schedule, state: screened}
+  steps:
+  - stand: {op: loop.tick, loop: proposal}
+  expect:
+    tasks:
+    - {key: 'system:review:p_602:security', acting_bot: bot_05, slot: seat}
+    - {key: 'system:review:p_602:security:shadow', claimed_by_role: reviewer-a, slot: seat, model_profile: seat-std, memory: none, persona: none}
+    shadow_tasks_for_lens: {cost: 0}
+    shadow_seed_recorded: true
+- id: com-07-d
+  description: The shadow review has shadow true, is paid from the review line and is not read by the verdict.
+  given:
+    reviews:
+      p_602:
+        security: {score: 3, shadow: false}
+        security_shadow: {score: 0, veto: true, shadow: true}
+  expect:
+    verdict_reads: [security]
+    verdict_not: dismissed
+    usage_line_of_shadow_review: review@demo
+    shown_to_people: false
+- id: com-07-e
+  description: shadow_divergence with 16 pairs whose differences are all below zero; no flag with 14 pairs.
+  cases:
+  - id: com-07-e1
+    given:
+      pairs_30d: {security: {count: 16, seat_minus_shadow_all_negative: true}}
+    expect:
+      commission_status_lens: {lens: security, shadow_divergence: true}
+  - id: com-07-e2
+    given:
+      pairs_30d: {security: {count: 14, seat_minus_shadow_all_negative: true}}
+    expect:
+      commission_status_lens: {lens: security, shadow_divergence: false}

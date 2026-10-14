@@ -1,0 +1,58 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:botaru:schema:p1-kb-index-put-request:1",
+  "title": "P1 kb.index_put: request",
+  "description": "The ingest job of a corpus (kb.ingest.v1) writes the fragments of one document into the per-tenant corpus index in C1 (KNW-5, D-97). The core takes the corpus and the file from the leased ingest task: a request whose corpus or file differ from the task input, or whose file belongs to another tenant, gets forbidden and writes nothing; fragments of a curated corpus are written only for files that came through apply from git (KNW-4, KNW-2). A repeat for the same document replaces its fragments. The fragments are deleted together with the file (C1 file.purge); the built-in tools kb_search and kb_read read only this index.",
+  "x-botaru-direction": "input",
+  "x-botaru-version": "v0.2",
+  "x-botaru-rules": [
+    "KNW-5",
+    "KNW-4",
+    "KNW-2"
+  ],
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "corpus",
+    "file",
+    "fragments"
+  ],
+  "properties": {
+    "corpus": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/name",
+      "description": "Corpus id from the tenant catalog; it must equal the corpus of the leased ingest task."
+    },
+    "file": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/object_id",
+      "description": "The document file; it must equal the file of the leased ingest task."
+    },
+    "fragments": {
+      "type": "array",
+      "maxItems": 2000,
+      "description": "Fragments in document order.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "n",
+          "text"
+        ],
+        "properties": {
+          "n": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 1999
+          },
+          "text": {
+            "type": "string",
+            "maxLength": 4000
+          },
+          "title": {
+            "type": "string",
+            "maxLength": 200
+          }
+        }
+      }
+    }
+  }
+}

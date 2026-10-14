@@ -9,7 +9,7 @@ checks:
   - COM-5
   version: v0.1
   section: Tests without a model
-  source: docs/quality.md:302
+  source: docs/quality.md:321
   spec:
     What: a proposal with an empty change and with a conflict; the `review` budget line is empty
     Expectation: '`dismissed(no_op)` without a money reserve; on conflict `parked(conflict)`, when money is short it waits

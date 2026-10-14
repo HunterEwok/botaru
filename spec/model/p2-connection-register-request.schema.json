@@ -1,0 +1,61 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:botaru:schema:p2-connection-register-request:1",
+  "title": "P2 connection.register: request",
+  "description": "The consent adapter registers a connection after the person granted access at the provider (SEC-7). The request presents the link nonce that the core issued at /mydata connect (single use, 10 minutes, bound to the tenant and the principal); the core takes the principal from the nonce, not from the adapter or the body. The core refuses an external account that another principal has connected (connection_account_taken), generates token_ref itself and writes the connection as pending until the person confirms the connection_confirm card. The answer names token_ref, under which the adapter stores the token.",
+  "x-botaru-direction": "input",
+  "x-botaru-version": "v0.2",
+  "x-botaru-rules": [
+    "SEC-7"
+  ],
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "tenant",
+    "link_nonce",
+    "provider",
+    "account_id",
+    "scopes",
+    "expires_at"
+  ],
+  "properties": {
+    "tenant": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/tenant_name"
+    },
+    "link_nonce": {
+      "type": "string",
+      "minLength": 16,
+      "maxLength": 128,
+      "pattern": "^[A-Za-z0-9_-]+$",
+      "description": "The single-use nonce of the link that the core issued at /mydata connect."
+    },
+    "provider": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/name"
+    },
+    "account_id": {
+      "type": "string",
+      "maxLength": 256,
+      "description": "The external account: the subject id that the provider returned with the token; shown to the person on the connection_confirm card."
+    },
+    "scopes": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 10,
+      "uniqueItems": true,
+      "items": {
+        "enum": [
+          "mail_read",
+          "mail_send",
+          "calendar_read",
+          "calendar_write",
+          "files_read",
+          "files_write"
+        ],
+        "x-botaru-registry": "connection-scopes"
+      }
+    },
+    "expires_at": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/datetime"
+    }
+  }
+}

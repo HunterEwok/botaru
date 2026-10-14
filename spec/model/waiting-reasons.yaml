@@ -1,5 +1,5 @@
 registry: waiting-reasons
-version: 1
+version: 2
 description: >-
   Reasons why a task in `submitted` cannot be handed out right now. A waiting task carries the field
   `waiting_reason` of the task record from this list; work is not dropped under pressure, and the attempt
@@ -55,10 +55,24 @@ entries:
     rules: [DSP-7, GW-10]
   - id: group_quota
     since: v0.2
-    meaning: The `max_running` of the bot group or the `max_share` of the tenant rule is exhausted.
+    meaning: The `max_running` of the bot group, the `max_share` of the tenant rule or the class 5 share `background_share` is exhausted.
     predicate: D10
-    rules: [DSP-7]
+    rules: [DSP-7, DSP-11, BUD-8]
   - id: model_grant_pending
     since: v0.2
     meaning: The task waits for a decision on a grant of a stronger model.
     rules: [DSP-7, MGR-17]
+  - id: seat_eval_missing
+    since: v0.2
+    meaning: The seat model profile has no eval report of the `mgr-inj` set with zero security failures; seat tasks of production tenants wait (MGR-23).
+    rules: [DSP-7, MGR-23]
+  - id: in_flight_cap
+    since: v0.2
+    meaning: The initiator already has `tasks_in_flight` direct requests with a running attempt (BUD-6).
+    predicate: D21
+    rules: [DSP-7, BUD-6]
+  - id: conversation_busy
+    since: v0.2
+    meaning: 'The same role has a running attempt in the conversation, or an earlier task of the conversation waits (`conversation_concurrency: serial`).'
+    predicate: D17
+    rules: [DSP-7, MEM-5]

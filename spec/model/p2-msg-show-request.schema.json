@@ -1,0 +1,28 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:botaru:schema:p2-msg-show-request:1",
+  "title": "P2 msg.show: request",
+  "description": "One message by id (MSG-18). Another tenant's message and a nonexistent one give the same not_found.",
+  "x-botaru-direction": "input",
+  "x-botaru-version": "v0.2",
+  "x-botaru-rules": [
+    "MSG-18",
+    "MSG-3"
+  ],
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "op",
+    "id"
+  ],
+  "properties": {
+    "op": {
+      "const": "msg.show"
+    },
+    "id": {
+      "type": "string",
+      "maxLength": 64,
+      "pattern": "^[A-Za-z0-9_:.-]+$"
+    }
+  }
+}

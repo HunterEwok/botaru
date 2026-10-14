@@ -9,9 +9,21 @@ checks:
   - MEM-9
   version: v0.1
   section: Tests without a model
-  source: docs/quality.md:365
+  source: docs/quality.md:419
   spec:
     What: retirement of an identity with a `runtime_internal` session; end of `seal_ttl`; `forget` and `erase_match` on a
       sealed item
     Expectation: erasure request `bot_retired` by the identity id, E4 `purge` in the retirement transaction; `forget` reaches
       the sealed item at once
+- id: store:identity/seal-retention-earlier
+  method: store
+  rules:
+  - MEM-10
+  version: v0.2
+  section: Tests without a model
+  source: docs/quality.md:420
+  spec:
+    What: '(v0.2) a retired identity with `seal_ttl` 30 days; a sealed session of a role with `memory: none` (7 days) and
+      a sealed task result with the tenant `content` period of 14 days'
+    Expectation: the session is deleted on day 7 and the result on day 14 by the `retention` loop, before the seal ends; the
+      fact offer no longer lists them; on day 30 the `bot_retired` request covers what is left

@@ -490,6 +490,12 @@
               "minimum": 0,
               "maximum": 100,
               "description": "Grant requests per role per day (MGR-40)."
+            },
+            "eval_fail_share_min": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1,
+              "description": "The sign \"type history\": the lowest failure share of a grant_eval_set run on the base model; 0.3 by default (MGR-40)."
             }
           },
           "x-botaru-version": "v0.2"

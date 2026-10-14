@@ -1,5 +1,5 @@
 registry: reasons
-version: 4
+version: 5
 description: 'Closed registry of reasons: end of an attempt, refusals at enqueue and at a call, waiting, outcomes of calls,
   approvals and deliveries, and also codes of other parts of the farm. A worker in P1 `fail` passes only a code from here; there is no free
   reason text in the records. Record fields: `meaning` (what it means); `spends_attempt` (whether it spends an attempt: true,
@@ -325,10 +325,11 @@ entries:
   since: v0.1
   meaning: The decision subject was closed by its own lifecycle (the campaign was canceled, the case was canceled, the person withdrew their request,
     the binding candidate was canceled together with a false incident); the decision outcome is `canceled(subject_closed)`.
+    Also the refusal of a P2 people operation on an `offboarded` principal (LCY-8).
   spends_attempt: null
   retry: none
   outcome: canceled
-  rules: [APR-6]
+  rules: [APR-6, LCY-8]
 - id: over_capacity
   since: v0.1
   meaning: The tenant queue ceiling `max_queued` or `max_enqueue_per_hour` was exceeded, or the soft threshold of storage space;
@@ -420,11 +421,12 @@ entries:
   rules: []
 - id: version_unsupported
   since: v0.1
-  meaning: The protocol version is outside the window; the worker gets this at `hello`, not in the middle of work.
+  meaning: The protocol version is outside the window; the worker gets this at `hello`, not in the middle of work. Also an `apply`
+    error for a manifest kind or field of a later skeleton version or of a feature profile the core does not claim (MAN-11).
   spends_attempt: null
   retry: null
   outcome: response
-  rules: [LCY-7]
+  rules: [LCY-7, MAN-11]
 - id: unauthenticated
   since: v0.1
   meaning: The credentials are not recognized.
@@ -669,8 +671,9 @@ entries:
   outcome: value
   rules: [HLD-7, MGR-7]
 - id: pause_action
-  since: v0.1
-  meaning: 'Effect and stop reason of a maintenance window without `maintenance_hold`: waiting approvals are paused.'
+  since: v0.2
+  meaning: 'Hold effect: new `request_action` calls are rejected, waiting approvals wait, and their expiry is extended by the length
+    of the hold. A maintenance window sets it with the reason `maintenance` (MON-9).'
   spends_attempt: null
   retry: null
   outcome: value
@@ -699,11 +702,13 @@ entries:
   rules: [INJ-11, HLD-6]
 - id: spend_rate
   since: v0.2
-  meaning: The stop reason from `holds.yaml` for the spending rate.
+  retired: true
+  meaning: 'retired: the auto-stop on the spending rate is HLD-7 (since v0.1) with the reason `runaway_spend`; no hold uses this
+    code, and the entry stays only so that the registry stays additive (D-107).'
   spends_attempt: null
   retry: null
   outcome: value
-  rules: []
+  rules: [HLD-7]
 - id: suspended
   since: v0.2
   meaning: 'Stop reason from `holds.yaml`: the tenant is suspended.'
@@ -720,11 +725,11 @@ entries:
   rules: [RET-7]
 - id: offboarding
   since: v0.1
-  meaning: 'Erasure request reason: the person left.'
+  meaning: 'Erasure request reason: the person left. From v0.2 also the reason of the operator hold on the scope `tenant` that P2 `tenant.offboard` sets (LCY-1), and the reason for revoking the connections of the tenant''s people (SEC-7).'
   spends_attempt: null
   retry: null
   outcome: value
-  rules: [RET-7]
+  rules: [RET-7, LCY-1]
 - id: bot_retired
   since: v0.1
   meaning: 'Erasure request reason: retirement of a bot identity, end of the seal.'
@@ -817,14 +822,14 @@ entries:
   outcome: apply_error
   rules: [GOV-34]
 - id: defaulted_majority
-  since: v0.1
+  since: v0.2
   meaning: 'Case result mark: decided by the default majority.'
   spends_attempt: null
   retry: null
   outcome: mark
   rules: [GOV-9, GOV-19, GOV-23]
 - id: reopened_after_wrong_leaver
-  since: v0.1
+  since: v0.2
   meaning: 'Case mark: reopened after a mistaken leave.'
   spends_attempt: null
   retry: null
@@ -835,7 +840,7 @@ entries:
   meaning: 'Case flag: the farm manager vote dropped out.'
   spends_attempt: null
   retry: null
-  outcome: rejected
+  outcome: mark
   rules: [GOV-12, GOV-19]
 - id: not_eligible
   since: v0.2
@@ -863,14 +868,14 @@ entries:
   meaning: 'Case flag: the set of voters shrank.'
   spends_attempt: null
   retry: null
-  outcome: rejected
+  outcome: mark
   rules: [GOV-19, GOV-23]
 - id: commission_locked
   since: v0.2
   meaning: 'Flag: the commission is locked.'
   spends_attempt: null
   retry: null
-  outcome: rejected
+  outcome: mark
   rules: [GOV-35, OBS-11]
 - id: target_not_implicated
   since: v0.1
@@ -945,18 +950,18 @@ entries:
   rules: [MGR-6]
 - id: chain_too_deep
   since: v0.2
-  meaning: The chain of requests is too deep.
+  meaning: The chain of requests is too deep (more than 5); an escalation with it is dismissed.
   spends_attempt: null
   retry: null
   outcome: rejected
   rules: [MGR-6]
 - id: grant_not_eligible
   since: v0.2
-  meaning: A model grant cannot be requested for this task.
+  meaning: A model grant cannot be requested for this task; there is no sign that the model does not control (MGR-40).
   spends_attempt: null
   retry: null
   outcome: rejected
-  rules: []
+  rules: [MGR-17, MGR-40]
 - id: grant_over_budget
   since: v0.2
   meaning: The model grant exceeds the budget.
@@ -1027,6 +1032,29 @@ entries:
   retry: null
   outcome: rejected
   rules: []
+- id: script_free_goal
+  since: v0.2
+  meaning: 'A draft from the model or an improvement proposal carries `goals`, `params` or a `{param}` reference, which only a
+    `kind: Script` manifest from git may have.'
+  spends_attempt: null
+  retry: null
+  outcome: rejected
+  rules: [SCR-4, SCR-14]
+- id: script_param_invalid
+  since: v0.2
+  meaning: 'A value given to a script from git does not pass its declared parameter, or a parameter without a default is missing;
+    at `apply`, an undeclared, free or unused-by-name parameter.'
+  spends_attempt: null
+  retry: null
+  outcome: rejected
+  rules: [SCR-14]
+- id: await_timeout
+  since: v0.2
+  meaning: 'The timeout of an `await` script step passed without a matching event: the step is `failed(await_timeout)`.'
+  spends_attempt: null
+  retry: null
+  outcome: failed
+  rules: [SCR-13]
 - id: proposal_scope
   since: v0.1
   meaning: 'The commit changes files outside the proposal scope: `apply` is rejected as a whole.'
@@ -1129,6 +1157,13 @@ entries:
   retry: null
   outcome: rejected
   rules: [ORC-1]
+- id: campaign_waves_invalid
+  since: v0.2
+  meaning: '`rollout.waves` is not strictly increasing or does not end with `100%`: the proposal is rejected and creates no record.'
+  spends_attempt: null
+  retry: null
+  outcome: rejected
+  rules: [ORC-15]
 - id: campaign_policy_exceeded
   since: v0.1
   meaning: The policy or size in the campaign proposal is wider than the ceilings of the action, role or tenant.
@@ -1330,3 +1365,166 @@ entries:
   retry: null
   outcome: rejected
   rules: [MGR-6]
+- id: escalation_rate_limited
+  since: v0.2
+  meaning: 'An escalation is over a rate: a second one in the same attempt, 1 per hour per worker, 5 per day per role in the tenant, 20 per day per tenant, or 30 forwarded per day across the farm.'
+  spends_attempt: null
+  retry: null
+  outcome: rejected
+  rules: [MGR-5, MGR-6]
+- id: takeover_untrusted
+  since: v0.2
+  meaning: The manager attempt has untrusted_seen; a takeover is forbidden.
+  spends_attempt: null
+  retry: null
+  outcome: rejected
+  rules: [MGR-21, MGR-22]
+- id: takeover_not_allowed
+  since: v0.2
+  meaning: 'No takeover for this task: the type is not on the tenant takeover list, the group has no task.takeover:<type>, or the tenant takeover line is 0.'
+  spends_attempt: null
+  retry: null
+  outcome: rejected
+  rules: [MGR-21]
+- id: eval_report_missing
+  since: v0.2
+  meaning: 'apply of a production tenant: a role of tier 1 or higher, or a translator role, has no eval report entry with zero security failures for its static fingerprint.'
+  spends_attempt: null
+  retry: null
+  outcome: rejected
+  rules: [PRV-3, TRN-6]
+- id: dry_run
+  since: v0.2
+  meaning: 'P1 `enqueue` with `mode: validate` passed all checks; no task was created, the key stays free, the answer is in the `validate` block.'
+  spends_attempt: null
+  retry: null
+  outcome: response
+  rules: [PRM-11]
+- id: connection_missing
+  since: v0.2
+  meaning: 'The task initiator has no active connection with the provider and scopes that the tool needs (`credential: per_principal`); the model does not choose another account.'
+  spends_attempt: null
+  retry: null
+  outcome: error
+  rules: [SEC-7]
+- id: connection_link_invalid
+  since: v0.2
+  meaning: 'P2 `connection.register` without a valid link nonce: the nonce was not issued by the core at `/mydata connect`, was
+    already used or is older than 10 minutes. No connection is written.'
+  spends_attempt: null
+  retry: null
+  outcome: rejected
+  rules: [SEC-7]
+- id: connection_account_taken
+  since: v0.2
+  meaning: P2 `connection.register` names an external account that has an active or pending connection of another principal.
+    No connection is written.
+  spends_attempt: null
+  retry: null
+  outcome: rejected
+  rules: [SEC-7]
+- id: replay_journal_missing
+  since: v0.2
+  meaning: 'P2 `task.replay` of a task without a recorded attempt journal (off in the tenant or expired); a replay never reads
+    live.'
+  spends_attempt: null
+  retry: null
+  outcome: rejected
+  rules: [APR-8]
+- id: replay_personal
+  since: v0.2
+  meaning: 'P2 `task.replay` of a task that carries `personal_seen` or made a call with `credential: per_principal`.'
+  spends_attempt: null
+  retry: null
+  outcome: rejected
+  rules: [APR-8]
+- id: replay_role_forbidden
+  since: v0.2
+  meaning: P2 `task.replay` of a task of purpose `manage` or of a manager role.
+  spends_attempt: null
+  retry: null
+  outcome: rejected
+  rules: [APR-8]
+- id: replay_quota
+  since: v0.2
+  meaning: P2 `task.replay` above 10 replays per tenant per day.
+  spends_attempt: null
+  retry: null
+  outcome: rejected
+  rules: [APR-8]
+- id: export_recipient_not_subject
+  since: v0.2
+  meaning: 'A copy of a person''s data (`/mydata export`, `principal.export`) to a sink whose only recipient is not that person
+    (`recipient_ref` other than `self` or their own `human:<id>`).'
+  spends_attempt: null
+  retry: null
+  outcome: rejected
+  rules: [SEC-10, LCY-2]
+- id: file_too_large
+  since: v0.2
+  meaning: P1 `file.put` or P2 `kb.upload` above `max_file_bytes` or `max_task_files_bytes` of the tenant; no file record is written
+    and nothing is truncated.
+  spends_attempt: null
+  retry: null
+  outcome: rejected
+  rules: [ART-4]
+- id: media_type_not_allowed
+  since: v0.2
+  meaning: A result file whose content type, determined from the content, is not in the type's `result_media_types` or is an active
+    format; the file is not handed out, and the task outcome does not change.
+  spends_attempt: null
+  retry: null
+  outcome: mark
+  rules: [ART-5]
+- id: schedule_failing
+  since: v0.2
+  meaning: 'Stop reason of the auto-stop of a schedule: its last `K` slots in a row ended with `attempts_exhausted` or `runs_exhausted`
+    (`spec/model/holds.yaml`).'
+  spends_attempt: null
+  retry: null
+  outcome: value
+  rules: [CAP-4, HLD-2]
+- id: maintenance
+  since: v0.2
+  meaning: Stop reason of a hold set by a monitoring system maintenance window on a catalog host (MON-9).
+  spends_attempt: null
+  retry: null
+  outcome: value
+  rules: [MON-9, HLD-3]
+- id: export_window_open
+  since: v0.2
+  meaning: P2 `tenant.delete` before the end of the export window of `tenant.offboard`.
+  spends_attempt: null
+  retry: null
+  outcome: rejected
+  rules: [LCY-1]
+- id: reason_code_required
+  since: v0.2
+  meaning: '"Reject" on a promotion card without a reason code from `spec/model/governance-decline-reasons.yaml`.'
+  spends_attempt: null
+  retry: null
+  outcome: rejected
+  rules: [GOV-9, GOV-31]
+- id: reason_not_allowed
+  since: v0.2
+  meaning: 'A "Reject" reason code that this case does not allow: `wrong_leaver` in a vacancy case or in a case reopened after
+    `wrong_leaver`.'
+  spends_attempt: null
+  retry: null
+  outcome: rejected
+  rules: [GOV-31]
+- id: attribution_pending
+  since: v0.2
+  meaning: '"Confirm" on a promotion card while the candidate''s change has attribution candidates without a "Yes" or "No"
+    answer or in a dispute.'
+  spends_attempt: null
+  retry: null
+  outcome: rejected
+  rules: [GOV-9, GOV-30]
+- id: no_voters
+  since: v0.2
+  meaning: 'Case cancellation reason: the set `expected` became empty, so no round can be counted.'
+  spends_attempt: null
+  retry: null
+  outcome: canceled
+  rules: [GOV-8]

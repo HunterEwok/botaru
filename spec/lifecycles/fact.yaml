@@ -114,8 +114,10 @@ machines:
       - erased
       text: '`erased`'
     by: the `identity` loop enqueues an erasure request `bot_retired`, the `erasure` loop wipes
-    when: '`seal_ttl` has passed; from v0.2 earlier, if the retention class period ended earlier (the `retention` loop, RET-2)'
+    when: '`seal_ttl` has passed; from v0.2 earlier, if the retention class period ended earlier (the `retention` loop, RET-10,
+      MEM-10)'
     rules:
+    - MEM-10
     - MEM-9
     - RET-7
   - from:

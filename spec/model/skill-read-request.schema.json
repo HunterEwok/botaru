@@ -1,0 +1,38 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:botaru:schema:skill-read-request:1",
+  "title": "P3 skill_read: arguments",
+  "description": "Reads one file of a skill of the role from the core copy (SKL-4). P3 closes name and file by enum lists of the role skills and of their files in tools/list.",
+  "x-botaru-direction": "input",
+  "x-botaru-version": "v0.2",
+  "x-botaru-rules": [
+    "SKL-4",
+    "SKL-2"
+  ],
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "name",
+    "file"
+  ],
+  "properties": {
+    "name": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/name",
+      "description": "Skill name; tools/list closes it by an enum of the role skills.",
+      "x-botaru-closed-by": "enum of the role skills in tools/list"
+    },
+    "file": {
+      "type": "string",
+      "maxLength": 200,
+      "pattern": "^(SKILL\\.md|(references|assets)/[A-Za-z0-9_][A-Za-z0-9._-]*(/[A-Za-z0-9_][A-Za-z0-9._-]*)*)$",
+      "description": "File path inside the skill directory, no segment starting with a dot (no .. and no hidden file); tools/list closes it by an enum of the skill files.",
+      "x-botaru-closed-by": "enum of the skill files in tools/list"
+    },
+    "offset": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 262144,
+      "description": "Byte offset of a file longer than one answer; 0 by default."
+    }
+  }
+}

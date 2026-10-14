@@ -1,5 +1,5 @@
 registry: dispatch-predicates
-version: 1
+version: 2
 description: >-
   Closed list of the dispatcher's filter conditions inside P1 `claim`. A task goes only to a worker
   for which all conditions hold; then the order: priority class strictly, since v0.2 fairness within
@@ -78,11 +78,12 @@ entries:
     since: v0.1
     checks: >-
       Counters are not exceeded: `max_running` per (tenant, type); since v0.2 also `max_running` of the bot
-      group and `max_share` of the rule.
+      group, `max_share` of the rule (DSP-11) and `Tenant.spec.dispatch.background_share` for class 5 tasks
+      (BUD-8). The per-type ceiling gives `type_quota`; the group, share and class 5 caps give `group_quota`.
     fact_from: lease counters
     applies_to: [attempt]
     waiting_reason: type_quota
-    rules: [DSP-7]
+    rules: [DSP-7, DSP-11, BUD-8]
   - id: D11
     since: v0.1
     checks: 'The resource is free, if the action declared `exclusive: resource`.'
@@ -129,9 +130,12 @@ entries:
     since: v0.2
     checks: >-
       For a type with `conversation_concurrency: serial`, the same conversation has no running attempt of the same role, and
-      the task is the first by enqueue time among the waiting tasks of this conversation.
+      the task is the first by enqueue time among the waiting tasks of the same role in this conversation that pass every
+      other condition; for this order D17 and D21 count only their running-attempt part, so a task held by another
+      condition (no executor, a hold, a ceiling) does not hold back the tasks behind it.
     fact_from: task and attempt records
     applies_to: [attempt]
+    waiting_reason: conversation_busy
     rules: [MEM-5]
   - id: D18
     since: v0.1
@@ -156,3 +160,14 @@ entries:
     fact_from: '`acting_bot` and `bot_epoch` of the task, identity binding'
     applies_to: [attempt]
     rules: [DSP-4, IDN-8, IDN-12]
+  - id: D21
+    since: v0.2
+    checks: >-
+      For a direct request of a `human` or `service` principal (fairness key `interactive:<principal>`), the principal
+      has fewer than `Tenant.spec.budgets.tasks_in_flight` direct requests with a running attempt, and the task is the
+      first by enqueue time among their waiting direct requests of the same type that pass every other condition; for
+      this order D17 and D21 count only their running-attempt part.
+    fact_from: task and attempt records
+    applies_to: [attempt]
+    waiting_reason: in_flight_cap
+    rules: [BUD-6]

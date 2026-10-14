@@ -168,10 +168,11 @@
           "forward",
           "quote",
           "declared",
-          "inherited"
+          "inherited",
+          "connection"
         ]
       },
-      "maxItems": 7,
+      "maxItems": 8,
       "uniqueItems": true
     },
     "personal_subjects": {

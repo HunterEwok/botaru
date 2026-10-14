@@ -1,0 +1,144 @@
+# "Reject" on the promotion card with a reason code (GOV-31) and its effect on the queue entry (GOV-14). Case gc_7 of the
+# demo example is in confirming with the outcome "seat 3 leaves"; alice has governance.confirm:commission.
+id: gov-fx-23
+rules: [GOV-31, GOV-14]
+version: v0.2
+description: '"Reject" requires a reason code from governance-decline-reasons.yaml. wrong_leaver opens a new case for the same
+  candidate at once without the rejected seat in L and without the swap_cooldown pause, at most once per queue entry; the new case
+  carries reopened_after_wrong_leaver and allows only not_now and wrong_candidate. not_now keeps the entry at the head and the next
+  case waits swap_cooldown. The first wrong_candidate returns the entry to the head, the second removes it until the next success.
+  A vacancy case has only not_now and wrong_candidate.'
+given:
+  tenant: demo
+  people:
+  - {principal: human:alice, caps: ['governance.confirm:commission']}
+  case:
+    id: gc_7
+    mode: removal
+    candidate: bot_17
+    state: confirming
+    details_opened_by: [human:alice]
+    snapshot:
+      list: ['commission:1', 'commission:2', 'commission:3']
+    outcome: {leaver: 'commission:3'}
+  queue: [{bot: bot_17, state: in_case}, {bot: bot_18, state: queued}]
+cases:
+- id: gov-fx-23-a
+  description: '"Reject" without a reason code is refused.'
+  steps:
+  - call:
+      port: P1
+      op: decide
+      request: {subject_kind: governance_case, id: gc_7, decision: reject}
+    by: human:alice
+    card: promotion_card
+    expect: {result: rejected, reason: reason_code_required}
+  expect: {case: {state: confirming}}
+- id: gov-fx-23-b
+  description: wrong_leaver opens a new case at once without seat 3; no swap_cooldown starts.
+  steps:
+  - call:
+      port: P1
+      op: decide
+      request: {subject_kind: governance_case, id: gc_7, decision: reject, reason_code: wrong_leaver}
+    by: human:alice
+    card: promotion_card
+  - stand: {op: loop.tick, loop: governance}
+  expect:
+    case_gc_7: {state: rejected}
+    new_case:
+      candidate: bot_17
+      snapshot: {list: ['commission:1', 'commission:2']}
+      flags: [reopened_after_wrong_leaver]
+      card_line: reopened after wrong_leaver
+    swap_cooldown_started: false
+- id: gov-fx-23-c
+  description: In the reopened case wrong_leaver is not accepted; not_now and wrong_candidate are.
+  given:
+    case: {id: gc_8, mode: removal, candidate: bot_17, state: confirming, flags: [reopened_after_wrong_leaver], details_opened_by: [human:alice]}
+  steps:
+  - call:
+      port: P1
+      op: decide
+      request: {subject_kind: governance_case, id: gc_8, decision: reject, reason_code: wrong_leaver}
+    by: human:alice
+    card: promotion_card
+    expect: {result: rejected, reason: reason_not_allowed}
+  expect: {case: {state: confirming}}
+- id: gov-fx-23-d
+  description: not_now keeps the entry at the head; the next case opens only after swap_cooldown.
+  steps:
+  - call:
+      port: P1
+      op: decide
+      request: {subject_kind: governance_case, id: gc_7, decision: reject, reason_code: not_now}
+    by: human:alice
+    card: promotion_card
+  - stand: {op: loop.tick, loop: governance}
+    at: 29d
+    expect: {new_cases: 0}
+  - stand: {op: loop.tick, loop: governance}
+    at: 30d
+  expect:
+    queue_head: bot_17
+    new_case: {candidate: bot_17}
+- id: gov-fx-23-e
+  description: The first wrong_candidate returns the entry to the head with its own swap_cooldown (30 days, D-101), during which
+    the next entry may go ahead; once bot_18 has left, no case opens before day 30; the second wrong_candidate for the same entry removes it.
+  steps:
+  - call:
+      port: P1
+      op: decide
+      request: {subject_kind: governance_case, id: gc_7, decision: reject, reason_code: wrong_candidate}
+    by: human:alice
+    card: promotion_card
+    expect: {queue_head: bot_17}
+  - stand: {op: loop.tick, loop: governance}
+    at: 1d
+    expect: {open_case: {candidate: bot_18}, entry: {bot: bot_17, state: queued, cooldown_until: 30d}}
+  - occur: {bot_retired: bot_18, reason: human_retire}
+    expect: {case_of_bot_18: {state: canceled, reason: candidate_ineligible}, entry: {bot: bot_18, state: removed}}
+  - stand: {op: loop.tick, loop: governance}
+    at: 29d
+    expect: {open_case: null}
+  - stand: {op: loop.tick, loop: governance}
+    at: 30d
+    expect: {open_case: {candidate: bot_17}}
+  - occur: {case: gc_9, candidate: bot_17, state: confirming}
+  - call:
+      port: P1
+      op: decide
+      request: {subject_kind: governance_case, id: gc_9, decision: reject, reason_code: wrong_candidate}
+    by: human:alice
+    card: promotion_card
+  expect:
+    queue: []
+    entry_returns_with: next success of bot_17
+- id: gov-fx-23-f
+  description: A vacancy case refuses wrong_leaver.
+  given:
+    case: {id: gc_10, mode: vacancy, candidate: bot_17, state: confirming, details_opened_by: [human:alice]}
+  steps:
+  - call:
+      port: P1
+      op: decide
+      request: {subject_kind: governance_case, id: gc_10, decision: reject, reason_code: wrong_leaver}
+    by: human:alice
+    card: promotion_card
+    expect: {result: rejected, reason: reason_not_allowed}
+  expect: {case: {state: confirming}}
+- id: gov-fx-23-g
+  description: wrong_leaver when L without the rejected seat is empty returns the entry to the queue instead of a new case.
+  given:
+    case: {id: gc_11, mode: removal, candidate: bot_17, state: confirming, snapshot: {list: ['commission:3']}, details_opened_by: [human:alice]}
+  steps:
+  - call:
+      port: P1
+      op: decide
+      request: {subject_kind: governance_case, id: gc_11, decision: reject, reason_code: wrong_leaver}
+    by: human:alice
+    card: promotion_card
+  - stand: {op: loop.tick, loop: governance}
+  expect:
+    new_cases: 0
+    queue_head: {bot: bot_17, state: queued}

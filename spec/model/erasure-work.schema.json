@@ -2,14 +2,15 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "urn:botaru:schema:erasure-work:1",
   "title": "Erasure or match work",
-  "description": "Payload of a work item of kind erasure from P1 claim: a step of an erasure request for one edge store (E1, E2, E4, E5). The core creates one work item for each store that holds tenant content: the channel, sink and monitoring adapter by the name from the enroll record, the runtime by the id of the worker that declared runtime_internal. Erase work deletes by scope, and for the scope (tenant, subject) recognizes the person by needles; match work searches for the exact needles strings and returns only a list of ids. claim(erasure) gives the work only to a process with this target and the tenant scope.tenant (TEN-3). The outcome is handed in through P1 complete in the erasure field (schema erasure-outcome). A store without the needed operation hands in failed, and the request stays open with an alarm (RET-7).",
+  "description": "Payload of a work item of kind erasure from P1 claim: a step of an erasure request for one edge store (E1, E2, E4, E5). The core creates one work item for each store that holds tenant content: the channel, sink and monitoring adapter by the name from the enroll record, the runtime by the id of the agent worker: from v0.1 for a worker that declared runtime_internal, from v0.2 for every agent worker of the tenant (RET-11). Erase work deletes by scope, and for the scope (tenant, subject) recognizes the person by needles; match work searches for the exact needles strings and returns only a list of ids. claim(erasure) gives the work only to a process with this target and the tenant scope.tenant (TEN-3). The outcome is handed in through P1 complete in the erasure field (schema erasure-outcome). A store without the needed operation hands in failed, and the request stays open with an alarm (RET-7).",
   "x-botaru-direction": "output",
   "x-botaru-rules": [
     "RET-4",
     "RET-7",
     "SEC-11",
     "RT-5",
-    "TEN-3"
+    "TEN-3",
+    "RET-11"
   ],
   "type": "object",
   "required": [

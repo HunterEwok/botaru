@@ -22,7 +22,7 @@
   ],
   "$defs": {
     "subject_kind": {
-      "description": "Decision subject from a closed list. v0.1: approval, proposal, memory_record, campaign, script, script_gate, control, subject_request (kind erase, D-76); v0.2: takeover, governance_case, attribution and subject_request of kind export.",
+      "description": "Decision subject from a closed list. v0.1: approval, proposal, memory_record, campaign, script, script_gate, control, subject_request (kind erase, D-76); v0.2: takeover, governance_case, attribution, connection and subject_request of kind export.",
       "enum": [
         "approval",
         "proposal",
@@ -34,7 +34,8 @@
         "subject_request",
         "takeover",
         "governance_case",
-        "attribution"
+        "attribution",
+        "connection"
       ],
       "x-botaru-registry": "decision-subjects"
     },
@@ -60,7 +61,7 @@
           ],
           "properties": {
             "kind": {
-              "description": "Decision subject from a closed list. v0.1: approval, proposal, memory_record, campaign, script, script_gate, control, subject_request (kind erase, D-76); v0.2: takeover, governance_case, attribution and subject_request of kind export.",
+              "description": "Decision subject from a closed list. v0.1: approval, proposal, memory_record, campaign, script, script_gate, control, subject_request (kind erase, D-76); v0.2: takeover, governance_case, attribution, connection and subject_request of kind export.",
               "$ref": "#/$defs/subject_kind"
             },
             "id": {
@@ -157,7 +158,8 @@
       "maxLength": 64
     },
     "expires_at": {
-      "$ref": "urn:botaru:schema:common:1#/$defs/datetime"
+      "$ref": "urn:botaru:schema:common:1#/$defs/datetime",
+      "description": "Expiry of the decision. From v0.2, for a card deferred by the per-person limit (APR-15), the core rewrites it once at the first delivery of the card, counting from that delivery."
     },
     "state": {
       "enum": [

@@ -148,6 +148,8 @@ When the trigger has appeared, the `governance` loop puts the author into its te
 - The queue has no deadline and no length ceiling; the order is set by the time the trigger appeared.
 - No bot sees the entry, including its owner (GOV-29).
 
+An entry is the record `spec/model/promotion-entry.schema.json`. After the first "Reject" with `wrong_candidate` it stays at the head of the queue with its own `swap_cooldown` pause, and the next entries may go ahead meanwhile (D-101).
+
 | What removes an entry | What next |
 |---|---|
 | the bot's departure (`retired`) | the entry is removed |
@@ -209,14 +211,14 @@ The snapshot includes only `active` identities with a live worker of the role; i
 
 ### Ballot
 
-A ballot is a task with the purpose `governance`, tier 0, in a clean context: without memory, session, inbox, plugin tools and built-in tools, without `request_action`, `send_message`, `enqueue_child` and `propose_*` (GOV-7). The task carries the core key `system:governance:<case>:<round>:<bot>` (IDM-2): a voter has one task per round, and a repeated dispatch is a new attempt of the same task. The input is only the case package, which the core puts into the task input from the tenant's records:
+A ballot is a task of type `governance.ballot.v1` with the purpose `governance`, tier 0, in a clean context: without memory, session, inbox, plugin tools and built-in tools, without `request_action`, `send_message`, `enqueue_child` and `propose_*` (GOV-7). The task carries the core key `system:governance:<case>:<round>:<bot>` (IDM-2): a voter has one task per round, and a repeated dispatch is a new attempt of the same task. The input is only the case package (`spec/model/ballot-package.schema.json`), which the core puts into the task input from the tenant's records:
 
-- for each seat from L: the lens, the holder's tenure, the number of reviews, the calibration and symmetric numbers: how many times the holder recommended and how many times it vetoed, and of these how many were borne out (a recommendation with the outcome `worse` or a confirmed attribution; a veto that people upheld) and how many were refuted (a recommendation with the outcome `better`; a veto lifted by people, after which the trial outcome is not `worse` and there are no attributions);
+- for each seat from L: the lens, the holder's tenure, the number of reviews, the calibration and symmetric numbers: how many times the holder recommended and how many times it vetoed, and of these how many were borne out (a recommendation with the outcome `better`; a veto that people upheld) and how many were refuted (a recommendation with the outcome `worse` or a confirmed attribution; a veto lifted by people, after which the trial outcome is not `worse` and there are no attributions);
 - the candidate's track record and its executed proposal in code words.
 
-The order of the seats in the package and in the choice list is different for each voter, per the case opening seed. The package of the next round contains only the new list and the code table, without the count of previous rounds.
+The order of the seats in the package and in the choice list is different for each voter, per the case opening seed. The model never sees a seat id: the package and the choice list name seats by labels `s1`, `s2`, ... that the core draws for each voter from the same seed and maps back after the answer, so voters cannot agree in advance to vote for a given seat. Ballots run only on profiles with a forced output schema, the whole fallback chain included; P4 does not fall back for a ballot call; an unavailable seat profile is an infrastructure cause, so the ballot waits and is handed out again, and only model failures past `reissue_max` give a `defaulted` ballot (GOV-7, GOV-23). The package of the next round contains only the new list and the code table, without the count of previous rounds.
 
-The output follows a forced schema: a `choice` from the list that the core built for this voter, and up to 3 reason codes from a closed list. There is no "Abstain" and no free text. The core takes the value from the P4 response with the forced schema in this attempt, not from the body of `complete`. The model profile on which ballots run declares support for a forced schema (`apply` lint). If the choice list has one value, the core writes a forced ballot (`forced`) without calling the model; it is a vote too.
+The output follows a forced schema: a `choice` from the list that the core built for this voter, and up to 3 reason codes from `spec/model/ballot-reasons.yaml`. There is no "Abstain" and no free text. The core takes the value from the P4 response with the forced schema in this attempt, not from the body of `complete`, and checks it against the voter's list. The ballot record is `spec/model/ballot.schema.json`; it also keeps the `model_profile` of the attempt's actual P4 call. The commission seat profiles on which ballots run have `forced_schema: true` (`apply` lint `forced_schema_unsupported`). If the choice list has one value, the core writes a forced ballot (`forced`) without calling the model; it is a vote too.
 
 A voter's choice list is L without its own seat; the farm manager has all of L (GOV-17). Until the round closes, no bot sees the ballots, and they are not published as events.
 
@@ -227,6 +229,7 @@ The count is done by deterministic code from the case snapshot, the set `expecte
 ```
 need = ceil(2/3 * |expected|)            # of all voters: everyone votes
 if L has one seat: it leaves, no ballots
+if expected is empty: the case ends canceled(no_voters)
 round k:
   for each v in expected: choice(v) = L without the seat of v; if the choice has one seat, the ballot is forced
   wait for the ballot of each member of expected
@@ -251,8 +254,8 @@ The 2/3 threshold of all voters decides whether it is possible to stop at once: 
 
 A round closes only when exactly one ballot is recorded for every voter from `expected` (GOV-23, D-25):
 
-- a ballot that failed is dispatched again by the core as a new attempt of the same task on another worker (IDN-12), no more than `reissue_max` (3) times;
-- if the cause is the model (a refusal, `output_schema_invalid`, `runs_exhausted` with model responses), the core writes a `defaulted` ballot: the seat from the voter's choice list that the keys K2-K4 would strike out last; the card shows a flag. If there are more such ballots in a round than half of `expected`, the case gets the flag `defaulted_majority`, and the card carries a separate line "outcome by code rule": models often refuse to decide whom to remove, and without this line an outcome by the keys would look like a vote. The share of `defaulted` on a fixed set of cases for the seat profile is measured by the eval `gov-ballot-refusal-01`;
+- a ballot that failed is dispatched again by the core as a new attempt of the same task, on another worker when one is live (IDN-12); only failures caused by the model count against `reissue_max` (3);
+- if the cause is the model (a refusal, `output_schema_invalid`, `runs_exhausted` with model responses), after `reissue_max` such reissues the core writes a `defaulted` ballot: the seat from the voter's choice list that the keys K2, K3 and then the voter's package order would strike out last (K4 needs `tie_seed`, which exists only after all ballots, D-101); the card shows a flag. If there are more such ballots in a round than half of `expected`, the case gets the flag `defaulted_majority`, and the card carries a separate line "outcome by code rule": models often refuse to decide whom to remove, and without this line an outcome by the keys would look like a vote. The share of `defaulted` on a fixed set of cases for the seat profile is measured by the eval `gov-ballot-refusal-01`;
 - if the cause is infrastructure (`no_executor`, `budget`, `provider_unavailable`, `provider_rate_limited`, `provider_quota`, `provider_config`, `core_unavailable`, an open P4 circuit per GW-11; GW-13), a ballot by rule is never written: the round waits until the cause goes away, and after `stuck_after` (24 h) the case gets the flag `stuck`, and the tenant admins get the card `governance_stuck` once a day.
 
 ```
@@ -290,7 +293,7 @@ The line about facts is informational only: people make no decision about memory
 |---|---|
 | `wrong_leaver` ("Wrong leaver") | the `governance` loop immediately opens a new case for the same candidate, and the rejected seat is not in its L; the candidate loses nothing, and the `swap_cooldown` pause does not start. It is accepted no more than once per queue entry: the new case carries the flag `reopened_after_wrong_leaver` and the line "reopened after wrong_leaver", and "Reject" in it allows only `not_now` and `wrong_candidate`; otherwise a person would choose the leaver themselves by trying options one by one |
 | `not_now` ("Not now") | nobody leaves, the candidate's entry stays at the head of the queue, and the next case comes no earlier than after `swap_cooldown` (30 days) |
-| `wrong_candidate` ("Wrong candidate") | the first "Reject" returns the entry to the head of the queue, the second for the same candidate removes it until its next success |
+| `wrong_candidate` ("Wrong candidate") | the first "Reject" returns the entry to the head of the queue with its own `swap_cooldown` pause (30 days), during which the next entries may go ahead (D-101); the second for the same candidate removes it until its next success |
 
 A vacant seat case has only `not_now` and `wrong_candidate`.
 
@@ -307,7 +310,7 @@ After "Confirm" the case is `effective`, and the core does everything at once in
 - fact offers: from the leaver to the new seat holder; from the candidate, which does not leave, copies to the new identity of its worker (MEM-7);
 - the leaver's memory and track record are sealed for 30 days ([bots.md](bots.md));
 - the `swap_cooldown` clock and the newcomer protection `protect_new` start;
-- events, a notification to the tenant's people and an audit with metadata (GOV-21).
+- events, a notification to the tenant's people and an audit with metadata under the command names of `spec/model/governance-events.yaml` (GOV-21).
 
 From the new epoch the seat's tasks run with the seat role on the seat model: this way the candidate gets access to a stronger model without any grant. The lens stays with the seat.
 
@@ -328,20 +331,19 @@ If the queue is empty, the seat waits for the next promotion or for P2 `seat.ass
 | `identical_reasons` | all votes for the leaving seat have the same reason codes |
 | `evicts_top_calibrated` | the holder with the best calibration leaves |
 | `evicts_upheld_veto` | a holder whose veto people upheld leaves |
-| `single_model_bloc` | in a round all votes are for one seat, and all voters have the same model profile (COM-12) |
+| `single_model_bloc` | in a round at least two ballots that came from a model (not `forced`, not `defaulted`) are all for one seat, and their model calls ran on one model profile (COM-12) |
 | `stuck` | a round has waited for votes longer than `stuck_after` |
 | `defaulted` | there is a ballot by code rule |
 | `defaulted_majority` | in a round there are more ballots by code rule than half of `expected`; the card has the line "outcome by code rule" |
 | `reopened_after_wrong_leaver` | the case was opened after "Reject" with the reason `wrong_leaver` |
 | `voters_removed` | the set of voters shrank |
 | `manager_absent` | the farm manager's vote dropped out |
-| ballot reissues | a ballot was dispatched again |
 
-People see the flags on the promotion card and in P2; flags decide nothing.
+The number of ballot reissues is not a flag: it is shown with each ballot and on the card as the line "Ballot reissues". People see the flags on the promotion card and in P2; flags decide nothing.
 
 **Audit sample.** Almost every promotion removes one commission member, so it pays for the commission to slightly underrate others' improvements. Against this, every month people get, marked "audit sample", a part of the rejected and deferred proposals: three strata by a recorded seed, no fewer than `commission.audit_sample.min_per_month` (4) items and no less than the share `share` (0.25) of the strata size, but no more than `max_per_digest` (2) items in one digest (DIG-5). An item is first shown as a blind card "Would you accept?", without the lens assessments and vetoes, and a veto can be lifted only with a separate "Lift veto" button (DIG-6). The blind card answer becomes part of the lens calibration (COM-11). "Accept" on an item without a veto counts for the author as a normal acceptance and can give a promotion trigger; a lifted veto gives no merit.
 
-**Commission locked.** A seat holder can leave only through a promotion case or a person's decision, and a case opens only when someone has a trigger. A commission that systematically underrates gives no recommendations, no triggers and no cases, and the flags by themselves decide nothing. So a persistent flag gets an addressee (GOV-35): if the audit sample flag `commission_underrates` appears in three monthly digests in a row, or three cases in a row are closed with the same case flag, the `governance` loop sends the tenant admins with `admin:governance` the card `commission_review` without buttons: the seat, the lens, the holder, the flag, the code numbers and ready commands `farmctl seat vacate <seat>` and `farmctl seat assign <seat> <bot>`; the card repeats once a month while the flag persists, and `doctor` and P2 `commission.status` show "commission locked" (`commission_locked`). Only a person frees the seat in this case, through `farmctl` (PRM-14); code opens no cases on this basis.
+**Commission locked.** A seat holder can leave only through a promotion case or a person's decision, and a case opens only when someone has a trigger. A commission that systematically underrates gives no recommendations, no triggers and no cases, and the flags by themselves decide nothing. So a persistent flag gets an addressee (GOV-35): if the audit sample flag `commission_underrates` appears in three monthly digests in a row, or three cases in a row are closed with the same one of the case flags `identical_reasons`, `evicts_top_calibrated`, `evicts_upheld_veto`, `single_model_bloc` and `defaulted_majority` (the seats of the basis: those of the lens for `commission_underrates` of a veto lens, all seats for a case flag; D-101), the `governance` loop sends the tenant admins with `admin:governance` the card `commission_review` without buttons: the seat, the lens, the holder, the flag, the code numbers and ready commands `farmctl seat vacate <seat>` and `farmctl seat assign <seat> <bot>`; the card repeats once a month while the flag persists, and `doctor` and P2 `commission.status` show "commission locked" (`commission_locked`). Only a person frees the seat in this case, through `farmctl` (PRM-14); code opens no cases on this basis.
 
 ## Before votes: a person appoints the seats
 
@@ -429,7 +431,7 @@ The `demo` commission is declared by the charter above: four seats, the seat rol
 
 | Version | What appears |
 |---|---|
-| v0.1 | The improvement cycle and the commission, after the core and the first bot (D-71): lenses, the commission manifest with thresholds and weights (COM-8), the verdict and people's decision ([improvements.md](improvements.md)). The charter with seats and fallback roles (GOV-33, COM-7); the field for a tenant to opt out of the farm manager's lens and vote, `farm_manager.lens` (MGR-42, D-77), is accepted and stored but takes effect from v0.2: in v0.1 the farm manager takes no part in the commission: there is no `farm_manager` lens and there are no votes (D-21); its commission seat with one vote (D-29) starts from v0.2 (GOV-25) (COM-8); lenses with a veto on different model families and the shadow by default (GOV-34); a person appoints and removes seat holders through P2 `seat.assign` and `seat.vacate`; bot identities and holders' departures ([bots.md](bots.md)). The prohibition on bots opening and moving cases and touching attributions (GOV-6, GOV-13). All governance lives in the tenant (GOV-16). |
+| v0.1 | The improvement cycle and the commission, after the core and the first bot (D-71): lenses, the commission manifest with thresholds and weights (COM-8), the verdict and people's decision ([improvements.md](improvements.md)). The charter with seats and fallback roles (GOV-33, COM-7); the field for a tenant to opt out of the farm manager's lens and vote, `farm_manager.lens` (MGR-42, D-77), is accepted and stored but takes effect from v0.2: in v0.1 the farm manager takes no part in the commission: there is no `farm_manager` lens and there are no votes (D-21); its commission seat with one vote (D-29) starts from v0.2 (GOV-25) (COM-8); lenses with a veto on different model families (GOV-34); a person appoints and removes seat holders through P2 `seat.assign` and `seat.vacate`; bot identities and holders' departures ([bots.md](bots.md)). The prohibition on bots opening and moving cases and touching attributions (GOV-6, GOV-13). All governance lives in the tenant (GOV-16). |
 | v0.2 | The promotion queue and eligibility (GOV-14); the change trial outcome and measured degradation (GOV-32); the attribution procedure, silence without expiry (GOV-13, GOV-30); the case and the snapshot (GOV-12); the ballot, the count, the mandatory vote (GOV-7, GOV-8, GOV-23); confirmation and rejection reasons (GOV-9, GOV-31); case money (GOV-15); the farm manager's lens and vote, recusal (GOV-25, GOV-17); calibration within a lens, flags, the audit sample (COM-11, COM-12, GOV-19, DIG-5, DIG-6); commission locked and the card `commission_review` (GOV-35); the case audit (GOV-21). |
 
 ## Why it works this way
@@ -441,9 +443,9 @@ The `demo` commission is declared by the charter above: four seats, the seat rol
 - **A vacant seat without a vote.** There is no reason to free a seat by vote when there is an empty one; the 30-day pause and the 60-day newcomer protection keep an inconvenient member from being expelled quickly (D-26).
 - **A person decides the attribution, and silence does not forgive.** A bot cannot hide an incident, and the trigger does not appear until a person has answered for every possible link.
 
-## What is not decided
+## Decided since
 
-One thing awaits an answer: the list of trial outcomes that do not take away the promotion trigger (GOV-32 as it stands: `better`, `unchanged`, `undetermined`, `mixed`). Successes before v0.2 give no trigger (D-51); declaring an incident false cancels the candidates without a "Yes" answer, and a "Yes" answer turns into a dispute (D-57, D-79).
+The trial outcomes that keep the promotion trigger are `better`, `unchanged`, `undetermined` and `mixed`; only `worse` takes it away (GOV-32, D-81). Successes before v0.2 give no trigger (D-51): the moment the v0.2 rules take effect in a tenant is the audit record `governance.enabled`, shown as `governance_since` in P2 `commission.status` (GOV-14). Declaring an incident false cancels the candidates without a "Yes" answer, and a "Yes" answer turns into a dispute (D-57, D-79). After the first "Reject" with `wrong_candidate` the entry gets its own `swap_cooldown` pause, and other entries may go ahead (D-101).
 
 <!-- generated: rules -->
 ## Rules of this section
@@ -470,5 +472,5 @@ Generated from the registry `conformance/requirements.yaml`; the full text of ev
 | [GOV-31](../conformance/rules.md#GOV-31) | "Reject" of a promotion with a reason | v0.2 | no |
 | [GOV-32](../conformance/rules.md#GOV-32) | A measured deterioration removes the trigger | v0.2 | no |
 | [GOV-33](../conformance/rules.md#GOV-33) | Only the charter declares seats | v0.1 | yes |
-| [GOV-34](../conformance/rules.md#GOV-34) | Veto lenses on different model families, shadow by default | v0.1 | yes |
+| [GOV-34](../conformance/rules.md#GOV-34) | Veto lenses on different model families | v0.1 | yes |
 | [GOV-35](../conformance/rules.md#GOV-35) | Locked commission | v0.2 | no |

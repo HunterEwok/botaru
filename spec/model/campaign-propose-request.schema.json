@@ -260,14 +260,14 @@
             "maxLength": 4
           },
           "minItems": 1,
-          "description": "Since v0.2: cumulative release shares after the canary.",
+          "description": "Since v0.2: cumulative release shares of the items after the canary, strictly increasing, the last 100%; otherwise campaign_waves_invalid. The next wave opens when the previous one is final and bake has passed (ORC-15).",
           "x-botaru-version": "v0.2"
         },
         "rate_per_min": {
           "type": "integer",
           "minimum": 1,
           "maximum": 10000,
-          "description": "Since v0.2: not more often than.",
+          "description": "Since v0.2: at most this many releases of the campaign in any 60 seconds; an item held back stays pending (ORC-15).",
           "x-botaru-version": "v0.2"
         }
       }

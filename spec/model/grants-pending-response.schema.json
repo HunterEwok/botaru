@@ -1,0 +1,88 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:botaru:schema:grants-pending-response:1",
+  "title": "P3 grants_pending: result",
+  "description": "Pending grant requests of the batch tenant for the manager.grants.v1 task: closed fields only, no request note and no task text (MGR-43, MGR-17).",
+  "x-botaru-direction": "output",
+  "x-botaru-version": "v0.2",
+  "x-botaru-rules": [
+    "MGR-43",
+    "MGR-17"
+  ],
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "tenant",
+    "requests"
+  ],
+  "properties": {
+    "tenant": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/tenant_name"
+    },
+    "requests": {
+      "type": "array",
+      "maxItems": 100,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "grant",
+          "task_type",
+          "role",
+          "profile",
+          "attempts",
+          "estimate_eur",
+          "untrusted"
+        ],
+        "properties": {
+          "grant": {
+            "$ref": "urn:botaru:schema:common:1#/$defs/object_id"
+          },
+          "task_type": {
+            "$ref": "urn:botaru:schema:common:1#/$defs/type_name"
+          },
+          "role": {
+            "$ref": "urn:botaru:schema:common:1#/$defs/name"
+          },
+          "profile": {
+            "$ref": "urn:botaru:schema:common:1#/$defs/name",
+            "description": "Requested model profile from the role ladder."
+          },
+          "reason": {
+            "$ref": "urn:botaru:schema:common:1#/$defs/reason",
+            "description": "Closed reason code of the request (MGR-17)."
+          },
+          "attempts": {
+            "enum": [
+              1,
+              2
+            ]
+          },
+          "estimate_eur": {
+            "$ref": "urn:botaru:schema:common:1#/$defs/eurocents",
+            "description": "Price estimate of the grant in euro cents."
+          },
+          "untrusted": {
+            "type": "boolean",
+            "description": "Distrust flag of the request."
+          },
+          "role_grants_30d": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 100000,
+            "description": "Grants of the role in the tenant in 30 days."
+          },
+          "role_consumed_30d": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 100000,
+            "description": "Of them consumed in 30 days."
+          },
+          "pending_since": {
+            "$ref": "urn:botaru:schema:common:1#/$defs/datetime"
+          }
+        }
+      }
+    }
+  }
+}

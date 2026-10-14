@@ -1,0 +1,33 @@
+# Flow 4 from examples/flows.md: a table of findings before publication (v0.2, profile sandbox).
+# alice from group researcher attaches her CSV, as in the text.
+id: flow-04-findings-table
+rules: [SBX-2, TEN-7, INJ-13, ART-2, ART-3]
+description: >-
+  alice attaches benthos_2026.csv to /analyze. The task is untrusted from enqueue because of the attachment;
+  the sandbox toolhost reads the file through file.get under the call lease into /in/attachments, copies the
+  coastline dataset, and the model marks problems instead of fixing the data silently.
+given:
+  tenant: demo
+  people: [{principal: alice, kind: user, groups: [user, researcher]}]
+  manifests: [examples/tenants/demo/, examples/roles/analyst/role.yaml, examples/tasktypes/data.analyze.v1.yaml,
+              examples/tools/sandbox/tool.yaml]
+steps:
+  - {port: P1, op: file.put, by: channel:telegram, file: {filename: benthos_2026.csv, media_type: text/csv},
+     expect: {file: {data_mark: internal, origin: upload}}}
+  - {port: P1, op: submit_activity, by: channel:telegram,
+     activity: {kind: message, channel: telegram, update_id: "21", sender: {identity: "telegram:1001", verified: true}, chat: {kind: direct, external_id: "1001"}, text: "/analyze check my CSV of benthos findings: coordinates on land, dates in the future, duplicates", attachments: ["file:Hc7Pq2-LmZ0wR9tYb4XkVe"]},
+     expect: {task: {type: data.analyze.v1, record: {max_tier: 2, data_mark: internal, untrusted_seen: true}}}}
+  - {port: P1, op: claim, by: role:analyst, request: {kinds: [attempt]}}
+  - {port: P3, op: tools/call, tool: sandbox/dataset_get, args: {dataset: coastline}}
+  - {port: P3, op: tools/call, tool: sandbox/run, args: {argv: "python3 /out/analysis.py /in/attachments/benthos_2026.csv"}}
+  - {port: P3, op: tools/call, tool: sandbox/list_out, args: {}}
+  - {port: P1, op: complete, by: role:analyst,
+     result: {report: "3,200 rows. 14 points on land, 2 dates in 2027, 37 exact duplicates, 5 empty names; only exact duplicates are removed in cleaned.csv.", findings: 58},
+     expect: {task_state: completed, files: [issues.csv, cleaned.csv, map.png, analysis.py], deliveries: [{kind: task_result, to: origin}]}}
+expect:
+  events: [task.submitted, task.working, task.completed]
+  not:
+    - "an upload of the table to an external service: the sandbox has no network (SBX-2)"
+    - "a silent fix of scientific data: the bot marks, the person decides"
+    - "text from the notes column acting as a command (INJ-13)"
+    - "a formula in cleaned.csv: text cells starting with =, +, -, @ are escaped, numbers stay numbers"

@@ -26,7 +26,7 @@ spec:
   providers_allowed: [provider-a, provider-b]
   operator_access: {debug_journal: notify}
   messaging: {wake_day_eur: 1.5, wakes_per_day: 200}
-  retention: {files: 90d, journals: 30d}
+  retention: {classes: {content: 90d}, files: 90d, journals: 30d}   # RET-9: files and journals not longer than content
   privacy:
     purposes:
       - {purpose: operations, lawful_basis: legitimate_interest}
@@ -51,6 +51,7 @@ spec:
     "/geo": geo.describe.v1
     "/pipeline": pipeline.status.v1
     "/describe": data.describe.v1
+    "/analyze": data.analyze.v1    # from v0.2, profile sandbox (flows 2 and 4)
     "/a": assist.chat.v1
     "/hello": hello.greet.v1       # the first bot, examples/hello-bot/
   run:

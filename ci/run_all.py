@@ -27,6 +27,7 @@ STEPS = [
     ['gen_lifecycles.py', '--check'],
     ['gen_suites.py', '--check'],
     ['gen_codes.py', '--check'],
+    ['gen_openapi.py', '--check'],
     ['check_text.py'],
     ['check_schemas.py'],
     ['check_fixtures.py'],
@@ -36,6 +37,7 @@ STEPS = [
     ['check_additive.py', *args[:1]],
     ['public_safety.py'],
     ['readiness.py', 'v0.1', '--strict'],
+    ['readiness.py', 'v0.2', '--strict'],
 ]
 failed = []
 gh = bool(os.environ.get('GITHUB_ACTIONS'))

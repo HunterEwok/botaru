@@ -10,7 +10,8 @@
     "RT-3",
     "RT-4",
     "RT-5",
-    "INJ-9"
+    "INJ-9",
+    "SKL-2"
   ],
   "type": "object",
   "required": [
@@ -61,6 +62,15 @@
       "type": "string",
       "maxLength": 200,
       "description": "Name and version of the runtime."
+    },
+    "skills": {
+      "enum": [
+        "farm",
+        "runtime_files"
+      ],
+      "x-botaru-registry": "runtime-deviations",
+      "description": "From v0.2: how the runtime gets the role's skills (SKL-2); absent means farm.",
+      "x-botaru-version": "v0.2"
     }
   }
 }

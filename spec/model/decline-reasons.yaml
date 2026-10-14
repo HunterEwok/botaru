@@ -4,7 +4,7 @@ description: >-
   Closed list of reasons for the "Reject" button on a proposal card. The person chooses the reason on
   the `proposal_reason` card, the continuation of the "Reject" button of the `proposal_card` card; the decision
   "Reject" is recorded only when a reason is chosen, and without a reason the proposal waits until the card
-  deadline. The free feedback text is stored separately with the class `content` and is always untrusted (DIG-4).
+  deadline. There is no free feedback text: the decision carries only the reason code (DIG-4).
   The reason code does not get into the author's "My outcomes" (DIG-7). Entry fields: `meaning`, `calibration`
   (whether the reason counts as an outcome in the calibration of lenses with a veto, COM-11), `rules`.
 source: docs/improvements.md

@@ -1,0 +1,78 @@
+# Fixture gov-att-03 (docs/quality.md, v0.2 fixtures of commission and cases; APR-14, GOV-13). The data are for training.
+id: gov-att-03
+rules: [APR-14, GOV-13]
+version: v0.2
+description: '"Yes" and "No" on an attribution_card are accepted only after the same person opened "Details" of this card
+  (APR-14). Without it, decide is rejected with details_not_opened, the attribution stays a candidate and the card asks to open
+  "Details" first. "Don''t know" needs no "Details". After P1 card.details the same "Yes" passes and the decision event carries
+  details_opened: true.'
+given:
+  tenant: demo
+  attributions:
+  - {id: at_0031, change: p_0101, incident: i_0901, state: candidate}
+  people:
+  - principal: human:carol
+    caps: [governance.attribute]
+  - principal: human:bob
+    caps: [governance.attribute]
+cases:
+- id: gov-att-03-a
+  description: '"Yes" without "Details".'
+  steps:
+  - call:
+      port: P1
+      op: decide
+      request: {subject_kind: attribution, id: $last, decision: 'yes'}
+    by: human:carol
+    card: attribution_card
+    expect: {result: rejected, reason: details_not_opened, at_0031: candidate, note: the card asks to open "Details" first}
+- id: gov-att-03-b
+  description: '"No" without "Details".'
+  steps:
+  - call:
+      port: P1
+      op: decide
+      request: {subject_kind: attribution, id: $last, decision: 'no'}
+    by: human:carol
+    card: attribution_card
+    expect: {result: rejected, reason: details_not_opened, at_0031: candidate}
+- id: gov-att-03-c
+  description: '"Don''t know" without "Details" passes.'
+  steps:
+  - call:
+      port: P1
+      op: decide
+      request: {subject_kind: attribution, id: $last, decision: unknown}
+    by: human:carol
+    card: attribution_card
+    expect: {result: ok, at_0031: unknown}
+- id: gov-att-03-d
+  description: '"Details" by bob does not open the decision for carol; "Details" by carol does.'
+  steps:
+  - call:
+      port: P1
+      op: card.details
+      request: {op: card.details, subject_kind: attribution, id: $last}
+    by: human:bob
+    card: attribution_card
+  - call:
+      port: P1
+      op: decide
+      request: {subject_kind: attribution, id: $last, decision: 'yes'}
+    by: human:carol
+    card: attribution_card
+    expect: {result: rejected, reason: details_not_opened, at_0031: candidate}
+  - call:
+      port: P1
+      op: card.details
+      request: {op: card.details, subject_kind: attribution, id: $last}
+    by: human:carol
+    card: attribution_card
+    expect: {result: ok}
+  - call:
+      port: P1
+      op: decide
+      request: {subject_kind: attribution, id: $last, decision: 'yes'}
+    by: human:carol
+    card: attribution_card
+    expect: {result: ok, at_0031: confirmed, decision_event: {decided_by: 'human:carol', details_opened: true}}

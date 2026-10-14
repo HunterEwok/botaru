@@ -1,0 +1,34 @@
+id: fx-mgr-09
+rules: [MGR-18, MGR-17]
+version: v0.2
+description: 'Grant wait, expiry and revoke. A pending request without a decision within grant_wait_max (15 minutes) expires
+  with the reason grant_expired_unanswered, and the task continues on the base model. A person with model_grant.manage revokes an active
+  grant with P2 model_grant.revoke: the running attempt is canceled with grant_revoked without spending, the task continues on
+  the base model. A grant does not change tools, tier or other budget lines and is not written into the bot track record.'
+given:
+  tenant: demo
+  tenant_budget: {grant: {day_eur: 5}}
+  people:
+  - principal: human:carol
+    caps: [model_grant.manage@demo]
+cases:
+- id: fx-mgr-09-a
+  given:
+    grant: {id: g_901, task: t_901, state: pending, requested_at: '2026-11-20T10:00:00Z'}
+  steps:
+  - stand: {op: clock.set, at: '2026-11-20T10:15:01Z'}
+  - stand: {op: loop.tick, loop: grant}
+    expect: {grant_state: expired, reason: grant_expired_unanswered, task: {state: submitted, model_slot_next: base}}
+- id: fx-mgr-09-b
+  given:
+    grant: {id: g_902, task: t_902, state: active, profile: analysis-std, attempts_left: 1}
+  steps:
+  - call: {port: P2, op: model_grant.revoke, request: {tenant: demo, grant: g_902}}
+    by: human:carol
+    expect:
+      grant_state: revoked
+      attempt: {reason: grant_revoked, spent: false}
+      task: {state: submitted, model_slot_next: base}
+      tools_list_changed: false
+      other_lines_changed: false
+      bot_track_record_entries: 0

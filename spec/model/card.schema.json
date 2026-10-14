@@ -29,7 +29,7 @@
       "x-botaru-registry": "decision-points"
     },
     "subject_kind": {
-      "description": "Decision subject from a closed list. v0.1: approval, proposal, memory_record, campaign, script, script_gate, control, subject_request (kind erase, D-76); v0.2: takeover, governance_case, attribution and subject_request of kind export.",
+      "description": "Decision subject from a closed list. v0.1: approval, proposal, memory_record, campaign, script, script_gate, control, subject_request (kind erase, D-76); v0.2: takeover, governance_case, attribution, connection and subject_request of kind export.",
       "$ref": "urn:botaru:schema:decision:1#/$defs/subject_kind"
     },
     "id": {
@@ -195,7 +195,7 @@
             ]
           },
           "subject_kind": {
-            "description": "Decision subject from a closed list. v0.1: approval, proposal, memory_record, campaign, script, script_gate, control, subject_request (kind erase, D-76); v0.2: takeover, governance_case, attribution and subject_request of kind export.",
+            "description": "Decision subject from a closed list. v0.1: approval, proposal, memory_record, campaign, script, script_gate, control, subject_request (kind erase, D-76); v0.2: takeover, governance_case, attribution, connection and subject_request of kind export.",
             "$ref": "urn:botaru:schema:decision:1#/$defs/subject_kind"
           },
           "id": {

@@ -1,0 +1,102 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:botaru:schema:p2-msg-list-response:1",
+  "title": "P2 msg.list: response",
+  "description": "Messages as metadata only (MSG-3, MSG-18): no fields with free text and no note; at most 200 rows per page.",
+  "x-botaru-direction": "output",
+  "x-botaru-version": "v0.2",
+  "x-botaru-rules": [
+    "MSG-18",
+    "MSG-3"
+  ],
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "items"
+  ],
+  "properties": {
+    "items": {
+      "type": "array",
+      "maxItems": 200,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "type",
+          "kind",
+          "state",
+          "sent_at"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "maxLength": 64,
+            "pattern": "^[A-Za-z0-9_:.-]+$",
+            "description": "Message id."
+          },
+          "tenant": {
+            "$ref": "urn:botaru:schema:common:1#/$defs/tenant_name",
+            "description": "Only for the operator."
+          },
+          "type": {
+            "$ref": "urn:botaru:schema:common:1#/$defs/type_name"
+          },
+          "kind": {
+            "enum": [
+              "report",
+              "state"
+            ]
+          },
+          "to": {
+            "type": "string",
+            "maxLength": 200,
+            "pattern": "^[a-z][a-z0-9_.:-]*$",
+            "description": "Address."
+          },
+          "from_role": {
+            "$ref": "urn:botaru:schema:common:1#/$defs/name"
+          },
+          "state": {
+            "enum": [
+              "staged",
+              "queued",
+              "leased",
+              "acked",
+              "discarded",
+              "dead",
+              "expired",
+              "current",
+              "stale",
+              "replaced",
+              "removed"
+            ]
+          },
+          "reason": {
+            "$ref": "urn:botaru:schema:common:1#/$defs/reason"
+          },
+          "sent_at": {
+            "$ref": "urn:botaru:schema:common:1#/$defs/datetime"
+          },
+          "expires_at": {
+            "$ref": "urn:botaru:schema:common:1#/$defs/datetime"
+          },
+          "deliveries": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 1000
+          },
+          "size_bytes": {
+            "type": "integer",
+            "minimum": 0
+          }
+        }
+      }
+    },
+    "next": {
+      "type": "string",
+      "maxLength": 64,
+      "pattern": "^[A-Za-z0-9_:.-]+$"
+    }
+  }
+}

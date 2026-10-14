@@ -1,0 +1,33 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:botaru:schema:await-expired:1",
+  "title": "Data of the event await.expired",
+  "description": "A waiting record of a task type with await ended at its timeout without on_timeout (CNT-6). Metadata only.",
+  "x-botaru-direction": "output",
+  "x-botaru-version": "v0.2",
+  "x-botaru-rules": [
+    "CNT-6"
+  ],
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "task",
+    "type",
+    "event"
+  ],
+  "properties": {
+    "task": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/object_id",
+      "description": "The task whose complete created the waiting record."
+    },
+    "type": {
+      "type": "string",
+      "maxLength": 120,
+      "description": "Task type with version."
+    },
+    "event": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/type_name",
+      "description": "The awaited event type."
+    }
+  }
+}

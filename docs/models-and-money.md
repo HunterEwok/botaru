@@ -147,7 +147,7 @@ A fallback profile is used only for a reason from the closed list `fallback_on` 
 - it is in the tenant's `models_allowed`, and its provider is in `providers_allowed` and in `privacy.subprocessors` (SEC-8);
 - its rank is not above the ceiling: at `apply` the ceiling of the role profile, at each call the position ceiling of the acting identity (GOV-3);
 - its region and retention are acceptable (GW-14, GW-15);
-- the role has an eval report on it without safety failures (an entry in `evals/reports/index.yaml` (planned in the installation repository)).
+- the role has an eval report on it without security failures (an entry of the `EvalReports` index, `evals/reports/index.yaml` (planned in the installation repository)).
 
 Every call on a fallback model writes the actual model and a fallback flag into the usage line and into the event `model.fallback.v1`. By default the `fallback` list is empty: provider overload means waiting (section "Provider outages"), not a silent model change. A silent model change breaks three things at once: the eval (the answer came from a different model than the one that passed the check), the budget (a reserve at a different price) and data processing (a different provider is a different data processor).
 
@@ -283,7 +283,7 @@ For every model and tool call and for every publication of a bot message, the co
 | fingerprint | the attempt's run fingerprint (PRV-1) |
 | flags | `spend_estimated` (BUD-11), `spend_reconciled` (BUD-10) |
 
-The principal in the line is needed for the daily limit and is kept for 93 days, the period of the class `observation`: from v0.2 the `retention` loop replaces the principal id with the id of its group or tenant in whole periods, and the other fields of the line remain for monthly reports (BUD-16, SEC-14). A series "how much `alice` spent per day over a year" does not exist (DLV-14).
+The principal in the line is needed for the daily limit and is kept for 93 days: from v0.2, for a line whose `subject` is a person, the `retention` loop removes `subject`, `task` and `root`, truncates `time` to the day and writes `subject_kind: human`, in whole days, so that no join with audit or task records leads back to the person. The amounts and the other fields of the line remain for monthly reports, the line stays in class `metadata`, and this removal is the only edit of a `metadata` row (BUD-16, SEC-14). A series "how much `alice` spent per day over a year" does not exist (DLV-14).
 
 Model numbers are taken only from the provider's response through P4. Usage reported by a worker or the runtime is for reference only: it can be incomplete. As of 2026-10-05, with server-side context compaction, the top-level input and output counters in the provider's response did not include compaction iterations, and the full usage was the sum over iterations.
 
@@ -308,7 +308,7 @@ Who pays from which line:
 
 ### Priority class
 
-From v0.2 tasks with the purposes `insight`, `aggregate` and `review` run in the lowest priority class (5, `background`), and it cannot be raised (BUD-8). Together they take no more than `max_share` (20% by default) of the bot group's concurrent slots in the dispatcher policy. This way analysis and reviews do not take workers away from the main work, even when their lines have money.
+From v0.2 tasks with the purposes `insight`, `aggregate` and `review` run in the lowest priority class (5, `background`), and it cannot be raised (BUD-8). In a bot group that also does other work they together take no more than `Tenant.spec.dispatch.background_share` (20% by default) of the group's capacity: its `max_running`, or the number of its active workers, rounded down but at least one; a task above the share waits with `group_quota`. Tasks of `review.escalation.v1` (the `necessity` lens) go in class 3 and are outside the share, because an escalation waits for them (D-100). This way analysis and reviews do not take workers away from the main work, even when their lines have money.
 
 ### Thresholds and refusal
 
@@ -328,7 +328,7 @@ Usage does not go beyond the shown amount. An item that does not fit into the re
 
 Money is not the only expense. The registry `spec/model/meters.yaml` lists the consumable units: `eur_cents`, `tokens`, `tool_calls`, `sandbox_seconds`, `storage_bytes`, `approvals_requested`. Each unit is reserved before use and charged by actual use, just like money (BUD-5). A limit is set per unit and scope: tenant, principal, task tree, chat. The usage line carries the unit.
 
-The non-consumable limit `tasks_in_flight` caps the number of a principal's tasks in progress. Exceeding it is not a refusal: the task waits in `submitted` with a visible waiting reason, and the order of the principal's tasks is preserved (BUD-6). Defaults: 60 sandbox minutes a day and 3 tasks in progress per person.
+The non-consumable limit `Tenant.spec.budgets.tasks_in_flight` caps the direct requests of one person or program with a running attempt. Exceeding it is not a refusal: the request waits in `submitted` with `waiting_reason: in_flight_cap` (condition D21), and the person's waiting requests of one type go out in enqueue order, while a request held by another condition (no executor, a hold, a ceiling) does not hold back the others; tasks of `system`, campaign items, children and continuations do not count (BUD-6). Defaults: 60 sandbox minutes a day and 3 tasks in progress per person.
 
 ### Reconciliation with the provider
 

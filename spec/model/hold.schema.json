@@ -122,7 +122,7 @@
   },
   "$defs": {
     "scope_kind": {
-      "description": "Scope kind (holds.yaml, kind: scope). The schedule and governance scopes since v0.2.",
+      "description": "Scope kind (holds.yaml, kind: scope). The schedule, governance and sink scopes since v0.2.",
       "enum": [
         "farm",
         "tenant",
@@ -138,7 +138,8 @@
         "bot",
         "seat",
         "schedule",
-        "governance"
+        "governance",
+        "sink"
       ],
       "x-botaru-registry": "holds",
       "x-botaru-registry-kind": "scope"

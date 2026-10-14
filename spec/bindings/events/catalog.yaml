@@ -1,5 +1,5 @@
 registry: events-catalog
-version: 3
+version: 4
 description: >-
   Catalog of events for observability, hold, retention and erasure, time and
   external monitoring, plus events of campaigns, scripts, seats and proposal
@@ -252,6 +252,11 @@ entries:
     data_schema: spec/model/event-data/ext-monitor-maintenance.schema.json
     producer: [adapter]
     rules: [MON-9]
+  - id: digest.text_dropped.v1
+    since: v0.2
+    data_schema: spec/model/event-data/digest-text-dropped.schema.json
+    producer: [core]
+    rules: [REP-4]
   - id: tenant.suspended.v1
     since: v0.2
     producer: [core]
@@ -328,3 +333,13 @@ entries:
     data_schema: spec/model/proposal-rejected.schema.json
     producer: [core]
     rules: [PRP-1, PRP-2, PRP-3, PRP-5, PRP-11, PRP-21]
+  - id: await.expired.v1
+    since: v0.2
+    data_schema: spec/model/event-data/await-expired.schema.json
+    producer: [core]
+    rules: [CNT-6]
+  - id: principal.offboarded.v1
+    since: v0.2
+    data_schema: spec/model/event-data/principal-offboarded.schema.json
+    producer: [core]
+    rules: [LCY-3]

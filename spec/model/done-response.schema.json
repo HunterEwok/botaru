@@ -31,6 +31,18 @@
       "maxLength": 64,
       "pattern": "^[a-z][a-z0-9_]*$",
       "description": "State of the object after the operation, if the object has one."
+    },
+    "operator_steps": {
+      "type": "array",
+      "maxItems": 8,
+      "uniqueItems": true,
+      "items": {
+        "enum": [
+          "provider_key_revoke"
+        ]
+      },
+      "description": "From v0.2: steps the operator does outside the farm after the operation, as codes; provider_key_revoke after tenant.offboard: revoke the tenant's key and workspace at the model provider, which needs an organization admin key the core does not hold (LCY-1, D-103).",
+      "x-botaru-version": "v0.2"
     }
   }
 }

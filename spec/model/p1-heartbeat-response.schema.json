@@ -6,7 +6,8 @@
   "x-botaru-direction": "output",
   "x-botaru-rules": [
     "FEN-4",
-    "TIM-1"
+    "TIM-1",
+    "LCY-4"
   ],
   "type": "object",
   "required": [
@@ -24,6 +25,11 @@
     },
     "cancel_requested": {
       "type": "boolean"
+    },
+    "release_requested": {
+      "type": "boolean",
+      "description": "From v0.2: the worker is draining and its deadline has passed; the holder hands the work back with release, and the attempt is not spent (LCY-4).",
+      "x-botaru-version": "v0.2"
     }
   }
 }

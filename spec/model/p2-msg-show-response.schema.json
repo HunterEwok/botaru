@@ -1,0 +1,111 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:botaru:schema:p2-msg-show-response:1",
+  "title": "P2 msg.show: response",
+  "description": "One message as metadata; the note only to a person with audit.read and data:<mark> for the message datamark (MSG-18).",
+  "x-botaru-direction": "output",
+  "x-botaru-version": "v0.2",
+  "x-botaru-rules": [
+    "MSG-18",
+    "MSG-3"
+  ],
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "message"
+  ],
+  "properties": {
+    "message": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "type",
+        "kind",
+        "state",
+        "sent_at"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "maxLength": 64,
+          "pattern": "^[A-Za-z0-9_:.-]+$",
+          "description": "Message id."
+        },
+        "tenant": {
+          "$ref": "urn:botaru:schema:common:1#/$defs/tenant_name",
+          "description": "Only for the operator."
+        },
+        "type": {
+          "$ref": "urn:botaru:schema:common:1#/$defs/type_name"
+        },
+        "kind": {
+          "enum": [
+            "report",
+            "state"
+          ]
+        },
+        "to": {
+          "type": "string",
+          "maxLength": 200,
+          "pattern": "^[a-z][a-z0-9_.:-]*$",
+          "description": "Address."
+        },
+        "from_role": {
+          "$ref": "urn:botaru:schema:common:1#/$defs/name"
+        },
+        "state": {
+          "enum": [
+            "staged",
+            "queued",
+            "leased",
+            "acked",
+            "discarded",
+            "dead",
+            "expired",
+            "current",
+            "stale",
+            "replaced",
+            "removed"
+          ]
+        },
+        "reason": {
+          "$ref": "urn:botaru:schema:common:1#/$defs/reason"
+        },
+        "sent_at": {
+          "$ref": "urn:botaru:schema:common:1#/$defs/datetime"
+        },
+        "expires_at": {
+          "$ref": "urn:botaru:schema:common:1#/$defs/datetime"
+        },
+        "deliveries": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 1000
+        },
+        "size_bytes": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "fields": {
+          "type": "object",
+          "maxProperties": 50,
+          "description": "Only the fields whose leaves are all enum values, ids or numbers (MSG-3)."
+        },
+        "hops": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 100
+        },
+        "untrusted": {
+          "type": "boolean"
+        },
+        "note": {
+          "type": "string",
+          "maxLength": 500,
+          "description": "Only for a person with audit.read in the message's tenant and data:<mark> for its datamark, in an untrusted text wrapper; the read writes an audit record (MSG-18). At most 500 characters, as in the message (MSG-13)."
+        }
+      }
+    }
+  }
+}

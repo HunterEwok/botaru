@@ -39,10 +39,12 @@ ci/lint_codes.py, the table in ci/README.md (python3 ci/gen_codes.py).
       without --manifests the plugin from examples/ is compared; the option can repeat
 """
 import datetime
+import ipaddress
 import json
 import os
 import re
 import sys
+import urllib.parse
 
 sys.dont_write_bytecode = True
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -64,6 +66,8 @@ NOT_MANIFESTS = {'examples/hello-bot/mock-model.yaml'}
 FIXTURES = os.path.join(ROOT, 'conformance', 'fixtures', 'manifests')
 API_VERSION = 'botaru/v1alpha1'
 
+
+WEBHOOK_DOC_NETS = [ipaddress.ip_network(n) for n in ('192.0.2.0/24', '198.51.100.0/24', '203.0.113.0/24', '2001:db8::/32')]
 
 def norm(x):
     """Turns YAML dates and times into strings, the way apply sees them."""
@@ -299,8 +303,9 @@ def parse_cap(cap):
     return None, None
 
 
-def lint(docs, today=None, farm_hosts=None, examples_mode=False):
-    """Apply checks over a set; returns Findings."""
+def lint(docs, today=None, farm_hosts=None, examples_mode=False, claimed=None, skills=None):
+    """Apply checks over a set; returns Findings. claimed: the claimed conformance profiles of the
+    installation (conforms_to.profiles), None when unknown. skills: {name: {path: text}} of the skills/ folder."""
     f = Findings()
     today = today or datetime.date.today()
     farm_hosts = farm_hosts if farm_hosts is not None else farm_hosts_default()[0]
@@ -534,8 +539,11 @@ def lint(docs, today=None, farm_hosts=None, examples_mode=False):
             if not any((line.get(k) or 0) > 0 for k in ('month_eur', 'day_eur')):
                 f.error('manager_line_missing', where, 'manager budget line is not above 0 while the manager is enabled (MGR-20)')
         priv = ts.get('privacy') or {}
-        if 'monitoring' not in priv.get('recipients', ['monitoring']):
-            f.error('recipients_monitoring', where, 'privacy.recipients has no monitoring (MON-1)')
+        # monitoring is a mandatory recipient only when the installation claims the monitor profile (D-88);
+        # unknown claimed profiles count as monitor: the check fails closed
+        if (claimed is None or 'monitor' in claimed) and 'monitoring' not in priv.get('recipients', ['monitoring']):
+            f.error('recipients_monitoring', where, 'privacy.recipients has no monitoring while the monitor profile is claimed '
+                    'or the claimed profiles are unknown (MON-1)')
         subs = {s['provider']: s for s in priv.get('subprocessors', [])}
         for mp in ts.get('models_allowed', []):
             prof = profiles.get(mp)
@@ -626,6 +634,9 @@ def lint(docs, today=None, farm_hosts=None, examples_mode=False):
             if ps['placement'] == 'host' and t.get('untrusted_output') is True \
                     and not {'ip', 'email', 'secret'} <= set(t.get('redact', [])):
                 f.error('redact_required', where, f'{tid}: placement: host and untrusted_output: true without redact [ip, email, secret] (INJ-4)')
+            if (t.get('cache_s') or 0) > 0 and (t.get('credential') or {}).get('per_principal'):
+                f.error('cache_per_principal', where, f'{tid}: cache_s on a tool with credential.per_principal; '
+                        'output of a person\'s connection is never cached (PRM-12, SEC-7)')
             if t.get('untrusted_output') is False and t.get('output_schema') and free_text(t['output_schema']):
                 f.error('untrusted_output_false_text', where, f'{tid}: untrusted_output: false with free text in the output (INJ-3)')
             for cname, c in (t.get('commands') or {}).items():
@@ -728,6 +739,43 @@ def lint(docs, today=None, farm_hosts=None, examples_mode=False):
             if bad:
                 f.error('memory_person', where, f'role {rname}: memory: person with {bad} (MEM-2)')
 
+    # 9a. One level of aggregators (AGG-3): no aggregator among the sources, no more than max_sources.
+    for rname, (where, rs) in roles.items():
+        if rs.get('profile') != 'aggregator':
+            continue
+        agg = rs.get('aggregate') or {}
+        src = agg.get('sources') or {}
+        count = sum(len(src.get(k) or []) for k in ('roles', 'bot_groups', 'series', 'message_kinds'))
+        if agg.get('max_sources') is not None and count > agg['max_sources']:
+            f.error('aggregator_sources_over_max', where,
+                    f'role {rname}: {count} source entries, more than max_sources {agg["max_sources"]} (AGG-3)')
+        named = [(r, f'sources.roles {r}') for r in src.get('roles') or []]
+        for bg in src.get('bot_groups') or []:
+            g = S.get('BotGroup', bg) or {}
+            named += [(r, f'bot group {bg}') for r in (g.get('select') or {}).get('roles') or []]
+        for r, via in named:
+            if r in roles and roles[r][1].get('profile') == 'aggregator':
+                f.error('aggregator_source_aggregator', where,
+                        f'role {rname}: {via} is aggregator role {r}; one level of aggregators (AGG-3)')
+
+    # 9b. Exposure of datasets to the model (PRV-4). A dataset without model_exposure counts as aggregates.
+    agent_tools = {t for _, rs in roles.values() if rs.get('worker_kind') == 'agent' for t in rs.get('tools', [])}
+    for tenant, cname, where, cs in S.each('Catalog'):
+        for r in cs.get('resources', []):
+            exp = r.get('model_exposure') or ('aggregates' if r.get('kind') == 'dataset' else None)
+            for tref in r.get('read_by', []):
+                if exp is None or tref not in agent_tools:
+                    continue
+                t = (tools.get(tref) or (None, None, {}))[2]
+                if exp == 'none':
+                    f.error('model_exposure_agent_read', where,
+                            f'resource {r["id"]}: model_exposure none, but agent tool {tref} reads it (PRV-4)')
+                elif exp == 'aggregates' and (t.get('untrusted_output') is not False
+                                              or free_text(t.get('output_schema') or {})):
+                    f.error('model_exposure_not_aggregate', where,
+                            f'resource {r["id"]}: model_exposure aggregates, but agent tool {tref} has output '
+                            'that is not only numbers and enum values (PRV-4)')
+
     # 10. Routes and schedules.
     def check_address(where, tenant, addr):
         if isinstance(addr, dict):
@@ -769,6 +817,38 @@ def lint(docs, today=None, farm_hosts=None, examples_mode=False):
         cron = ss['cron']
         if len(cron.split()) != 5 or re.search(r'(CRON_)?TZ\s*=', cron):
             f.error('cron_invalid', where, f'schedule {sname}: cron of five fields without CRON_TZ and TZ (TIM-2)')
+        if ('task' in ss) == ('script' in ss):
+            f.error('schedule_target', where, f'schedule {sname}: exactly one of task and script (SCR-12)')
+            continue
+        if 'script' in ss:
+            # SCR-12: a script that a slot starts without a person's button runs as system
+            for addr in ss.get('deliver_to', []):
+                check_address(where, tenant, addr)
+            sc = S.get('Script', ss['script'], tenant)
+            if sc is None:
+                f.error('ref_missing', where, f'schedule {sname}: script {ss["script"]} is not a kind: Script of tenant {tenant}')
+                continue
+            tspec = S.get('Tenant', tenant) or {}
+            ceil = tspec.get('scripts') or {}
+            steps = sc.get('steps') or []
+            if len(steps) > ceil.get('max_steps', 10):
+                f.error('schedule_script_over_ceiling', where,
+                        f'schedule {sname}: script {ss["script"]} has {len(steps)} steps, above Tenant.spec.scripts.max_steps (SCR-5, SCR-12)')
+            for st in steps:
+                sk, stt = st.get('kind'), st.get('type')
+                claimers = [rs for _, rs in roles.values() if stt and stt in rs.get('claims', [])]
+                if sk in ('action', 'confirm') or (sk == 'fanout' and st.get('action')) \
+                        or any(rs.get('service_control') or rs.get('monitor_scripts') for rs in claimers):
+                    f.error('schedule_script_needs_run', where,
+                            f'schedule {sname}: step {st.get("id")} of script {ss["script"]} needs script.run; '
+                            'only a person starts it (SCR-6, SCR-12)')
+                if sk == 'await':
+                    f.error('schedule_script_await', where,
+                            f'schedule {sname}: step {st.get("id")} waits for an external event; an unattended run has no await (SCR-12)')
+                if sk in ('task', 'fanout') and stt and groups and not system_has(tenant, stt):
+                    f.error('system_ops_missing', where,
+                            f'schedule {sname}: step {st.get("id")}: task:{stt} is not in system-ops (PRM-10, SCR-12)')
+            continue
         tt = ss['task']['type']
         if tt.startswith('action.'):
             f.error('action_type_grant', where, f'schedule {sname}: action.* type (APR-5)')
@@ -843,6 +923,38 @@ def lint(docs, today=None, farm_hosts=None, examples_mode=False):
         for p in [com.get('model_profile')] + [s.get('model_profile') for s in com.get('seats', [])]:
             if p in profiles and ceil is not None and profiles[p]['rank'] > ceil:
                 f.error('rank_exceeded', where, f'charter {gname}: seat profile {p} is above the reviewer ceiling {ceil} (GOV-3)')
+        # Ballots run on the commission seat profiles with a forced output schema (GOV-7).
+        # The whole fallback chain counts (GW-5), and a profile that is not in the set fails: the check is closed.
+        seat_profiles = sorted(({com.get('model_profile')} | {s.get('model_profile') for s in com.get('seats', [])}) - {None})
+        todo, seen = list(seat_profiles), set()
+        while todo and (com.get('seats') or com.get('model_profile')):
+            p = todo.pop(0)
+            if p in seen:
+                continue
+            seen.add(p)
+            if p not in profiles:
+                if profiles:
+                    f.error('forced_schema_unsupported', where,
+                            f'charter {gname}: ballot profile {p} is not in the set, so its forced schema is unknown (GOV-7)')
+                continue
+            if profiles[p].get('forced_schema') is not True:
+                f.error('forced_schema_unsupported', where,
+                        f'charter {gname}: profile {p} (a seat profile or its fallback) has no forced_schema: true, and ballots need it (GOV-7)')
+            todo.extend(profiles[p].get('fallback') or [])
+    # Shadow shares and escalation thresholds of the commission manifest (COM-10, COM-13).
+    for tenant, cname, where, cs in S.each('Commission'):
+        sh = cs.get('shadow')
+        if isinstance(sh, dict):
+            zero = sorted(k for k in ('veto_lenses', 'other_lenses') if sh.get(k) == 0)
+            if zero:
+                f.error('shadow_zero_without_off', where,
+                        f'commission {cname}: shadow share {zero} is 0; turn the shadow off only with shadow: off (COM-10)')
+        esc = cs.get('escalation') or {}
+        for k, floor in (('forward_if_score_gte', 2), ('untrusted_forward_if_score_gte', 3)):
+            v = esc.get(k)
+            if isinstance(v, int) and not isinstance(v, bool) and v < floor:
+                f.error('escalation_threshold_lowered', where,
+                        f'commission {cname}: escalation.{k} {v} is below the default {floor}; it can only be raised (COM-13)')
     forbidden = set(schemas.get('urn:botaru:schema:driver-config:1', {}).get('$defs', {}).get('forbidden', {}).get('enum', []))
     for kind in ('Channel', 'Sink'):
         for _, name, where, cs in S.each(kind):
@@ -850,6 +962,126 @@ def lint(docs, today=None, farm_hosts=None, examples_mode=False):
             if bad:
                 f.error('driver_config_forbidden', where,
                         f'{kind} {name}: spec.config has fields {bad}; they exist only in the common envelope (MAN-4)')
+
+    # 11b. Retention periods (RET-9) and the outgoing webhook sink (DLV-17).
+    rclasses = model_registry('retention-classes')
+    for tenant, tname, where, ts in S.each('Tenant'):
+        ret = ts.get('retention') or {}
+        periods = {}
+        for cls, dur in (ret.get('classes') or {}).items():
+            e = rclasses.get(cls) or {}
+            secs = seconds(dur)
+            if 'ceiling_days' not in e:
+                f.error('retention_period', where, f'tenant {tname}: retention.classes.{cls}: the class has no tenant period (RET-9)')
+            elif secs is None or not e.get('min_days', 1) * 86400 <= secs <= e['ceiling_days'] * 86400:
+                f.error('retention_period', where, f'tenant {tname}: retention.classes.{cls} {dur} is outside '
+                        f'{e.get("min_days", 1)}..{e["ceiling_days"]} days (RET-9)')
+            else:
+                periods[cls] = secs
+        content = periods.get('content', ((rclasses.get('content') or {}).get('default') or {}).get('days', 30) * 86400)
+        for k in ('files', 'journals'):
+            secs = seconds(ret.get(k)) if k in ret else None
+            if secs is not None and secs > content:
+                f.error('retention_period', where, f'tenant {tname}: retention.{k} {ret[k]} is longer than the content period (RET-9)')
+    for tenant, name, where, ss in S.each('Sink'):
+        if ss.get('driver') != 'webhook':
+            continue
+        base = str(ss.get('base') or '')
+        try:
+            u = urllib.parse.urlsplit(base)
+            host = u.hostname if u.scheme == 'https' else None
+        except ValueError:
+            host = None
+        private = False
+        if host is not None:
+            try:
+                ip = ipaddress.ip_address(host)
+                # Documentation ranges stand for public addresses in examples; the shared range of RFC 6598
+                # is written as a number because the repository text holds documentation addresses only.
+                if not any(ip in n for n in WEBHOOK_DOC_NETS):
+                    private = (ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_reserved or ip.is_unspecified
+                               or ip.is_multicast or (ip.version == 4 and ip in ipaddress.ip_network((0x64400000, 10))))
+            except ValueError:
+                private = host == 'localhost' or host.endswith('.local') or host.endswith('.localhost')
+        if host is None or private or host in farm_hosts or host.split('.')[0] in farm_hosts:
+            f.error('webhook_sink_invalid', where, f'sink {name}: base {base!r} is not an https:// address outside the farm (DLV-17)')
+        if not ss.get('signing_key_ref'):
+            f.error('webhook_sink_invalid', where, f'sink {name}: driver webhook without signing_key_ref (DLV-17)')
+
+    # 11a. v0.2 checks: two approvers (APR-16), curated corpora (KNW-2), source channels (ING-1),
+    # export sinks (SEC-10), skill folders (SKL-1).
+    for tenant, tname, where, ts in S.each('Tenant'):
+        if ts.get('kind', 'production') != 'production':
+            continue
+        for aname, a in actions.items():
+            if a.get('risk') != 'high':
+                continue
+            req_caps = [g for (t, g), gs in groups.items() if t == tname and f'action.request:{aname}' in gs.get('caps', [])]
+            if a.get('approvals', 1) == 1:
+                via_roles = [r for r, (_, rs) in roles.items() if aname in rs.get('actions_may_request', [])]
+                if req_caps or via_roles:
+                    f.error('high_risk_one_approver', where,
+                            f'production tenant {tname}: high risk action {aname} with approvals: 1 can be requested '
+                            f'(groups {req_caps}, roles {via_roles}) (APR-16)')
+            elif req_caps:
+                approvers = [g for (t, g), gs in groups.items() if t == tname and f'action.approve:{aname}' in gs.get('caps', [])]
+                if not approvers:
+                    f.note('approvers_fewer_than_two', where,
+                           f'production tenant {tname}: no group grants action.approve:{aname}; the core counts people at apply '
+                           'and doctor warns while fewer than two people other than the initiator can approve (APR-16)')
+    for tenant, cname, where, cs in S.each('Catalog'):
+        for r in cs.get('resources', []):
+            if r.get('kind') == 'corpus' and r.get('trust') == 'curated' and r.get('source', 'git') != 'git':
+                f.error('corpus_curated_source', where,
+                        f'corpus {r.get("id")}: trust: curated with source: {r.get("source")}; only a git corpus is curated (KNW-2)')
+    for tenant, name, where, cs in S.each('Channel'):
+        if cs.get('direction') == 'in' and not cs.get('ingress'):
+            f.error('ingress_missing', where, f'channel {name}: a source channel (direction: in) without ingress (ING-1)')
+    for tenant, name, where, ss in S.each('Sink'):
+        eo = ss.get('export_only')
+        if isinstance(eo, dict) and ('recipient' in eo) == ('recipient_ref' in eo):
+            f.error('export_only_recipient', where,
+                    f'sink {name}: export_only needs exactly one of recipient and recipient_ref (SEC-10)')
+    for sname, files in (skills or {}).items():
+        for _, msg in skill_problems(sname, files):
+            f.error('skill_format', f'skills/{sname}/', msg)
+
+    # 11b. v0.2 security checks: a person's copy goes only to that person (SEC-10, LCY-2), the takeover
+    # card is never lifted (MGR-21), ingress authenticity (ING-1).
+    for tenant, tname, where, ts in S.each('Tenant'):
+        es = (ts.get('privacy') or {}).get('export_sink')
+        if es:
+            sk = S.get('Sink', es, tname)
+            if sk is None:
+                f.error('ref_missing', where, f'privacy.export_sink: sink {es} is not in tenant {tname}')
+            elif ((sk.get('export_only') or {}).get('recipient_ref')) != 'self':
+                f.error('export_sink_not_self', where,
+                        f'privacy.export_sink {es}: a /mydata copy goes only to the person; the sink needs '
+                        'export_only.recipient_ref: self (SEC-10, LCY-2)')
+        cab = (ts.get('takeover') or {}).get('confirm_above_eur')
+        if isinstance(cab, (int, float)) and not isinstance(cab, bool) and cab > 0:
+            f.error('takeover_confirm_threshold', where,
+                    f'takeover.confirm_above_eur {cab}: a takeover always needs the takeover_confirm card; the field is reserved and only 0 passes (MGR-21)')
+    token_events = {}
+    for tenant, name, where, cs in S.each('Channel'):
+        ing = cs.get('ingress') or {}
+        if not ing:
+            continue
+        if ing.get('auth') == 'signature':
+            tol = seconds(ing.get('tolerance'))
+            if tol is None or tol > 300:
+                f.error('ingress_tolerance', where,
+                        f'channel {name}: auth: signature needs ingress.tolerance of at most 5m, got {ing.get("tolerance")!r} (ING-1)')
+        elif ing.get('auth') == 'tls_token' and ing.get('event'):
+            token_events.setdefault(tenant, set()).add(ing['event'])
+    for tenant, rname, where, rs in S.each('Route'):
+        ev = (rs.get('on') or {}).get('event') if isinstance(rs.get('on'), dict) else None
+        tt = (rs.get('task') or {}).get('type')
+        if ev and tt and ev in token_events.get(tenant, set()):
+            tier = (types.get(tt) or {}).get('tier')
+            if tier is None or tier > 0:
+                f.error('ingress_token_tier', where,
+                        f'route {rname}: event {ev} comes from a tls_token source, which routes only to tier 0 types; {tt} has tier {tier} (ING-1)')
 
     # 12. Global manifests without tenant data (TEN-6).
     for kind, entry in KINDS.items():
@@ -861,7 +1093,201 @@ def lint(docs, today=None, farm_hosts=None, examples_mode=False):
                         or re.search(r'[\w.+-]+@[\w-]+\.[\w.]+', s):
                     f.error('global_tenant_data', where, f'{kind} {name}: value {s!r} looks like tenant data (TEN-6)')
                     break
+    lint_v02_features(S, f, types, tools, roles, claimed)
     return f
+
+
+WAIT_CEILING_S = 7 * 86400  # farm ceiling of a run with wait or await steps (SCR-13)
+STEP_WAIT_FIELDS = {'wait': {'for'}, 'await': {'event', 'match', 'timeout'}}
+
+
+def lint_v02_features(S, f, types, tools, roles, claimed):
+    """v0.2 features: the sandbox (SBX-1, MAN-11), script steps wait and await (SCR-13), scripts from git with
+    parameters, goals and commands (SCR-14), a scheduled script with parameters (SCR-12), the rule share (DSP-11)."""
+    no_sandbox = claimed is not None and 'sandbox' not in claimed
+    # SBX-1: tier 2 only in a sandbox plugin, a sandbox plugin holds only tier 2 read tools with target: any.
+    for _, pname, where, ps in S.each('ToolPlugin'):
+        sandbox = ps.get('placement') == 'sandbox'
+        if sandbox and no_sandbox:
+            f.error('sandbox_not_claimed', where, f'plugin {pname}: placement: sandbox while the sandbox profile is not claimed (MAN-11, SBX-1)')
+        for t in ps.get('tools', []):
+            tid = f'{pname}/{t["name"]}'
+            if t.get('tier') == 2 and not sandbox:
+                f.error('sandbox_placement', where, f'{tid}: a tier 2 tool outside a plugin with placement: sandbox (SBX-1)')
+            elif sandbox and (t.get('tier') != 2 or t.get('access') != 'read' or t.get('target') != 'any'):
+                f.error('sandbox_placement', where, f'{tid}: a sandbox plugin holds only tier 2 read tools with target: any (SBX-1)')
+    for _, tname, twhere, ts in S.each('TaskType'):
+        if ts.get('tier') == 2 and no_sandbox:
+            f.error('sandbox_not_claimed', twhere, f'type {tname}: tier 2 while the sandbox profile is not claimed (MAN-11, SBX-1)')
+    for rname, (where, rs) in roles.items():
+        if not any((types.get(tt) or {}).get('tier') == 2 for tt in rs.get('claims', [])):
+            continue
+        for ref in rs.get('tools', []):
+            plugin = ref.split('/', 1)[0]
+            ps = next((x for _, n, _, x in S.each('ToolPlugin') if n == plugin), None)
+            if ps is not None and ps.get('placement') == 'host':
+                f.error('sandbox_live_tools', where, f'role {rname}: claims a tier 2 type and has the host tool {ref} (SBX-1)')
+    # SCR-13, SCR-14: scripts from git.
+    for tenant, sname, where, sc in S.each('Script'):
+        tspec = S.get('Tenant', tenant) or {}
+        ceil = seconds((tspec.get('scripts') or {}).get('wait_run_deadline')) or WAIT_CEILING_S
+        declared = sc.get('params') or {}
+        goals = sc.get('goals') or {}
+        for pn, pd in declared.items():
+            if pd.get('type') == 'string' and not pd.get('enum') and not pd.get('format'):
+                f.error('script_param_invalid', where, f'script {sname}: parameter {pn} is a free string; give enum or format (SCR-14, INJ-1)')
+            if pd.get('format') and pd['format'] not in FORMATS:
+                f.error('format_unknown', where, f'script {sname}: parameter {pn}: format {pd["format"]!r} is not in formats.yaml')
+            if 'default' in pd and errors_of(param_schema(pd), pd['default']):
+                f.error('script_param_invalid', where, f'script {sname}: parameter {pn}: default does not pass the declaration (SCR-14)')
+        for st in sc.get('steps') or []:
+            sid, kind = st.get('id'), st.get('kind')
+            for pn in param_refs(st):
+                if pn not in declared:
+                    f.error('script_param_invalid', where, f'script {sname}: step {sid} names the undeclared parameter {pn} (SCR-14)')
+            if kind in STEP_WAIT_FIELDS:
+                need = STEP_WAIT_FIELDS[kind]
+                other = set().union(*STEP_WAIT_FIELDS.values()) - need
+                extra = [k for k in st if k in other or k in ('type', 'action', 'goal', 'params', 'args', 'items', 'rollout', 'who')]
+                missing = sorted(k for k in need if k not in st)
+                if missing or extra:
+                    f.error('script_wait_fields', where, f'script {sname}: step {sid} ({kind}) misses {missing} or has {extra} (SCR-13)')
+                dur = seconds(st.get('for') or st.get('timeout'))
+                if dur and dur > ceil:
+                    f.error('script_wait_fields', where, f'script {sname}: step {sid} waits longer than the run deadline (SCR-13)')
+            elif any(k in st for k in ('for', 'event', 'match', 'timeout')):
+                f.error('script_wait_fields', where, f'script {sname}: step {sid} ({kind}) has a field of wait or await (SCR-13)')
+            tpl = (st.get('goal') or {}).get('template')
+            if tpl:
+                own = tpl in goals
+                typed = tpl in ((types.get(st.get('type')) or {}).get('goal_templates') or {})
+                if own and typed:
+                    f.error('script_param_invalid', where, f'script {sname}: step {sid}: goal {tpl} is in both goals and the type goal_templates (SCR-14)')
+                elif not own and types and st.get('type') in types and not typed:
+                    f.error('ref_missing', where, f'script {sname}: step {sid}: goal template {tpl} is in neither goals nor the type (SCR-4, SCR-14)')
+    for tenant, tname, where, ts in S.each('Tenant'):
+        dl = (ts.get('scripts') or {}).get('wait_run_deadline')
+        if dl and (seconds(dl) or 0) > WAIT_CEILING_S:
+            f.error('script_wait_fields', where, f'tenant {tname}: scripts.wait_run_deadline {dl} is above the farm ceiling of 7d (SCR-13)')
+        for cmd, script in (ts.get('script_commands') or {}).items():
+            if cmd in BUILTIN_COMMANDS or cmd in (ts.get('commands') or {}):
+                f.error('builtin_command', where, f'script command {cmd} takes a built-in or a tenant command (PRM-17, SCR-14)')
+            if S.get('Script', script, tname) is None:
+                f.error('ref_missing', where, f'script command {cmd}: script {script} is not a kind: Script of tenant {tname}')
+        for i, rule in enumerate((ts.get('dispatch') or {}).get('rules') or []):
+            if rule.get('max_share') and not rule.get('group'):
+                f.error('max_share_without_group', where, f'tenant {tname}: dispatch.rules[{i}] has max_share without group (DSP-11)')
+    for tenant, sname, where, ss in S.each('Schedule'):
+        sc = S.get('Script', ss.get('script'), tenant) if ss.get('script') else None
+        for pn, pd in ((sc or {}).get('params') or {}).items():
+            if 'default' not in pd:
+                f.error('script_param_invalid', where, f'schedule {sname}: parameter {pn} of script {ss["script"]} has no default (SCR-12, SCR-14)')
+
+
+def param_schema(pd):
+    """JSON schema of one declared script parameter (SCR-14)."""
+    out = {'type': pd['type']}
+    for k in ('enum', 'minimum', 'maximum'):
+        if k in pd:
+            out[k] = pd[k]
+    if pd.get('format') in FORMATS:
+        out['pattern'] = FORMATS[pd['format']].pattern
+    return out
+
+
+def param_refs(node):
+    """Names in {param: <name>} references inside a script step."""
+    if isinstance(node, dict):
+        if set(node) == {'param'} and isinstance(node['param'], str):
+            return [node['param']]
+        return [x for v in node.values() for x in param_refs(v)]
+    if isinstance(node, list):
+        return [x for v in node for x in param_refs(v)]
+    return []
+
+
+SKILL_TYPES = ('.md', '.txt', '.yaml', '.json', '.csv')
+SKILL_TOP = {'SKILL.md', 'references', 'assets'}
+
+
+def skill_problems(name, files):
+    """SKL-1: one skill folder as {relative path: text or bytes}; returns [(code, message)].
+    A value None marks a symbolic link, a value with the key 'mode' an executable file."""
+    out = []
+    if 'SKILL.md' not in files:
+        return [('skill_format', f'skill {name}: no SKILL.md (SKL-1)')]
+    if len(files) > 50:
+        out.append(('skill_format', f'skill {name}: {len(files)} files, at most 50 (SKL-1)'))
+    total = 0
+    for path, body in sorted(files.items()):
+        top = path.split('/')[0]
+        if top not in SKILL_TOP:
+            out.append(('skill_format', f'skill {name}: {path} is outside SKILL.md, references/ and assets/ (SKL-1)'))
+        if body is None or (isinstance(body, dict) and body.get('link')):
+            out.append(('skill_format', f'skill {name}: {path} is a symbolic link (SKL-1)'))
+            continue
+        if isinstance(body, dict) and body.get('executable'):
+            out.append(('skill_format', f'skill {name}: {path} is executable (SKL-1)'))
+            body = body.get('text', '')
+        if not path.endswith(SKILL_TYPES):
+            out.append(('skill_format', f'skill {name}: {path} has a type outside {list(SKILL_TYPES)} (SKL-1)'))
+        data = body.encode('utf-8') if isinstance(body, str) else body
+        if not isinstance(data, bytes):
+            continue
+        try:
+            data.decode('utf-8')
+        except UnicodeDecodeError:
+            out.append(('skill_format', f'skill {name}: {path} is not UTF-8 text (SKL-1)'))
+        total += len(data)
+        if path == 'SKILL.md' and len(data) > 32 * 1024:
+            out.append(('skill_format', f'skill {name}: SKILL.md is over 32 KiB (SKL-1)'))
+    if total > 256 * 1024:
+        out.append(('skill_format', f'skill {name}: the tree is over 256 KiB (SKL-1)'))
+    text = files['SKILL.md'] if isinstance(files['SKILL.md'], str) else ''
+    m = re.match(r'---\n(.*?)\n---\n', text, re.S)
+    fm = None
+    if m:
+        try:
+            fm = yaml.safe_load(m.group(1))
+        except yaml.YAMLError:
+            fm = None
+    if not isinstance(fm, dict):
+        out.append(('skill_format', f'skill {name}: SKILL.md has no YAML front matter (SKL-1)'))
+        return out
+    for e in errors_of({'$ref': 'urn:botaru:schema:skill:1'}, fm):
+        out.append(('skill_format', f'skill {name}: front matter: {e} (SKL-1)'))
+    if fm.get('name') != name:
+        out.append(('skill_format', f'skill {name}: front matter name {fm.get("name")!r} differs from the folder name (SKL-1)'))
+    return out
+
+
+def read_skills(root):
+    """The skills/ folder under root as {name: {path: text | {'link': True} | {'executable': True, 'text': ...}}}."""
+    base = os.path.join(root, 'skills')
+    out = {}
+    if not os.path.isdir(base):
+        return out
+    for name in sorted(os.listdir(base)):
+        d = os.path.join(base, name)
+        if not os.path.isdir(d) or name.startswith('.'):
+            continue
+        files = {}
+        for dp, dns, fns in os.walk(d, followlinks=False):
+            for fn in dns + fns:
+                full = os.path.join(dp, fn)
+                relp = os.path.relpath(full, d).replace(os.sep, '/')
+                if os.path.islink(full):
+                    files[relp] = {'link': True}
+                elif os.path.isfile(full):
+                    with open(full, 'rb') as fh:
+                        data = fh.read()
+                    try:
+                        text = data.decode('utf-8')
+                    except UnicodeDecodeError:
+                        text = data
+                    files[relp] = {'executable': True, 'text': text} if os.access(full, os.X_OK) else text
+        out[name] = files
+    return out
 
 
 def resolve(schema, lists):
@@ -1360,7 +1786,7 @@ if own_dir:
                     rep.note(where, '[not_a_manifest] document in a kind folder is neither a manifest nor a flow: skipped')
     keys = {obj_key(d) for _, d in own}
     docs = [(w, d) for w, d in manifests if obj_key(d) not in keys] + own
-    found = lint(docs, farm_hosts=farm_hosts, examples_mode=True)
+    found = lint(docs, farm_hosts=farm_hosts, examples_mode=True, skills=read_skills(own_dir))
     lint_driver_schemas(own, own_dir, driver_schema_dirs(), found)
     found.items = [x for x in found.items if not x[2].startswith('examples/')] + \
         [x for x in found.items if x[2].startswith('examples/') and x[0] == 'error']
@@ -1378,7 +1804,11 @@ if tools_list_args():
     run_tools_list(manifests)
     rep.finish()
 
-examples_found = lint(manifests, farm_hosts=farm_hosts, examples_mode=True)
+_FARM = load_yaml(os.path.join(EXAMPLES, 'deploy', 'farm.yaml')) or {}
+EXAMPLE_PROFILES = ['core'] + (['monitor'] if 'monitoring' in _FARM else []) + \
+    (['sandbox'] if any((h or {}).get('kind') == 'sandbox' for h in (_FARM.get('hosts') or {}).values()) else [])
+examples_found = lint(manifests, farm_hosts=farm_hosts, examples_mode=True, claimed=EXAMPLE_PROFILES,
+                      skills=read_skills(EXAMPLES))
 emit(examples_found)
 deploy_f = Findings()
 for dp in ('examples/deploy/farm.yaml', 'examples/deploy/single.yaml', 'deploy/compose.example.yaml'):
@@ -1419,7 +1849,9 @@ if os.path.isdir(FIXTURES):
                     continue
                 keys = {obj_key(d) for _, d in docs if isinstance(d, dict)}
                 docs = [(w, d) for w, d in manifests if obj_key(d) not in keys] + docs
-            got = lint(docs, today=today, farm_hosts=case.get('farm_hosts', farm_hosts)) if docs else Findings()
+            claimed = (case.get('conforms_to') or fx.get('conforms_to') or {}).get('profiles')
+            got = lint(docs, today=today, farm_hosts=case.get('farm_hosts', farm_hosts), claimed=claimed,
+                       skills=case.get('skills')) if (docs or case.get('skills')) else Findings()
             if 'before' in case:
                 lint_additive([(f'{where}/before/{j}', d) for j, d in enumerate(case['before'])], docs, got)
             if 'commit' in case:

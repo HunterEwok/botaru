@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:botaru:schema:p2-dispatch-explain-request:1",
+  "title": "P2 dispatch.explain: request",
+  "description": "Why a waiting task is not handed out (DSP-9). Reads only.",
+  "x-botaru-direction": "input",
+  "x-botaru-version": "v0.2",
+  "x-botaru-rules": [
+    "DSP-9"
+  ],
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "tenant",
+    "task"
+  ],
+  "properties": {
+    "tenant": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/tenant_name"
+    },
+    "task": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/object_id"
+    }
+  }
+}

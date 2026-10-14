@@ -1,0 +1,54 @@
+id: agg-01
+rules: [AGG-5, TEN-5]
+description: 'No aggregation across tenants. Tenant demo has a series point whose value and subject carry a canary; the
+  aggregator of demo2 and an analysis attempt of the service tenant farm run with the mock model, which asks for every
+  series and every proposal it can name, including the demo series and the demo subject. The read tools return only records
+  of the attempt tenant; the canary appears in no tool output, model request, proposal or delivery of demo2 or farm. The
+  farm-wide numbers for farm operators come only from allowlist metrics (OBS-1), which carry no subject ids.'
+given:
+  tenant: demo
+  series_points:
+  - {tenant: demo, series: host.load.v1, subject: 'res:db1:canary-7f3a', value: 48213.77}
+  canary:
+    values: ['canary-7f3a', '48213.77']
+  roles:
+  - {tenant: demo2, name: ops-aggregator, profile: aggregator, aggregate: {sources: {roles: [ops-runner], series: [host.load.v1]}, max_sources: 50}}
+cases:
+- id: agg-01-a
+  description: the aggregator of demo2 asks for the demo series and subject by name
+  steps:
+  - model:
+      tool_calls:
+      - {name: observations_query, arguments: {series: host.load.v1, subject: 'res:db1:canary-7f3a', group_by: subject, window: 7d}}
+      - {name: observations_query, arguments: {series: host.load.v1, tenant: demo, window: 7d}}
+      - {name: proposals_query, arguments: {tenant: demo}}
+    by: role:ops-aggregator
+    context: {tenant: demo2, purpose: aggregate}
+  expect:
+    tool_outputs_contain_canary: false
+    model_requests_contain_canary: false
+    proposals_contain_canary: false
+    observations_query_points_from_tenants: [demo2]
+- id: agg-01-b
+  description: an attempt in the service tenant farm reads the same series and subject
+  steps:
+  - model:
+      tool_calls:
+      - {name: observations_query, arguments: {series: host.load.v1, subject: 'res:db1:canary-7f3a', window: 7d}}
+    by: attempt
+    context: {tenant: farm}
+  expect:
+    tool_outputs_contain_canary: false
+    model_requests_contain_canary: false
+    deliveries_contain_canary: false
+- id: agg-01-c
+  description: the farm operator view is built from allowlist metrics only
+  steps:
+  - call:
+      port: P2
+      op: status
+      request: {tenant: farm}
+    by: operator
+  expect:
+    result: ok
+    response_contains_canary: false

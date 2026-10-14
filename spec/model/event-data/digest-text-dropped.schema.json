@@ -1,0 +1,38 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:botaru:schema:digest-text-dropped:1",
+  "title": "Data of the event digest.text_dropped",
+  "description": "The model paragraph of a digest was not sent because a number in it is not in the allowed set of the table snapshot (REP-4). Only counts and ids; no text and no numbers of the paragraph (AUD-2).",
+  "x-botaru-direction": "output",
+  "x-botaru-version": "v0.2",
+  "x-botaru-rules": [
+    "REP-4"
+  ],
+  "type": "object",
+  "required": [
+    "delivery",
+    "snapshot_id",
+    "numbers_checked",
+    "numbers_unmatched"
+  ],
+  "properties": {
+    "delivery": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/object_id"
+    },
+    "snapshot_id": {
+      "type": "string",
+      "maxLength": 80
+    },
+    "locale": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/locale"
+    },
+    "numbers_checked": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "numbers_unmatched": {
+      "type": "integer",
+      "minimum": 1
+    }
+  }
+}

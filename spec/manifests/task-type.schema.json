@@ -334,14 +334,82 @@
         "maxLength": 100,
         "pattern": "^[a-z]+/[a-z0-9.+-]+$"
       },
-      "description": "Result file types (ART-5)."
+      "description": "Result file types (ART-5). The core sniffs the type from the content (WHATWG MIME Sniffing; the extension refines it only inside text/*). text/html, application/xhtml+xml, image/svg+xml, JavaScript and +xml types are never allowed; application/pdf only for worker_kind: job."
     },
     "await": {
       "type": "object",
-      "maxProperties": 0,
-      "description": "From v0.2: waiting for an external event after complete (CNT-6); v0.2 sets the fields.",
+      "description": "From v0.2: waiting for an external event after complete (CNT-6). event, match, timeout and then are required by the apply lint (the schema cannot add required fields inside a version, MAN-3). The core creates a waiting record at complete; the first matching event of the same tenant enqueues the then continuation; the timeout enqueues on_timeout or ends the record with the event await.expired.",
       "x-botaru-version": "v0.2",
-      "x-botaru-closed-by": "maxProperties: 0 until v0.2; v0.2 sets the fields"
+      "properties": {
+        "event": {
+          "$ref": "urn:botaru:schema:common:1#/$defs/type_name",
+          "description": "Event type from spec/bindings/events/catalog.yaml."
+        },
+        "match": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 5,
+          "description": "All pairs must be equal. result_field is a result field with x-botaru-read-by: code (OUT-1); event_field is a closed field of the event data schema.",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "event_field",
+              "result_field"
+            ],
+            "properties": {
+              "event_field": {
+                "$ref": "urn:botaru:schema:common:1#/$defs/name"
+              },
+              "result_field": {
+                "$ref": "urn:botaru:schema:common:1#/$defs/name"
+              }
+            }
+          }
+        },
+        "timeout": {
+          "$ref": "urn:botaru:schema:common:1#/$defs/duration",
+          "description": "Required; no longer than the farm ceiling (7d by default); the lint checks the ceiling."
+        },
+        "then": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "type"
+          ],
+          "properties": {
+            "type": {
+              "$ref": "urn:botaru:schema:common:1#/$defs/type_name"
+            },
+            "goal": {
+              "type": "string",
+              "maxLength": 4000,
+              "description": "Goal template of the continuation."
+            }
+          },
+          "description": "Continuation on a matching event (trigger await)."
+        },
+        "on_timeout": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "type"
+          ],
+          "properties": {
+            "type": {
+              "$ref": "urn:botaru:schema:common:1#/$defs/type_name"
+            },
+            "goal": {
+              "type": "string",
+              "maxLength": 4000,
+              "description": "Goal template of the continuation."
+            }
+          },
+          "description": "Continuation on the timeout (trigger timer); without it the waiting record ends with the event await.expired."
+        }
+      },
+      "maxProperties": 5,
+      "x-botaru-closed-by": "apply lint await_field_unknown: only the five fields of CNT-6; the schema cannot close the object inside a version (MAN-3, ci/check-additive)"
     },
     "conversation_concurrency": {
       "enum": [
@@ -359,6 +427,20 @@
     "grant_eval_set": {
       "$ref": "urn:botaru:schema:common:1#/$defs/name",
       "description": "From v0.2: the set of inputs for checking the type history (MGR-40).",
+      "x-botaru-version": "v0.2"
+    },
+    "grant": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "input_tokens_min": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 10000000,
+          "description": "The sign \"input above the threshold\": initial input tokens at enqueue (MGR-40)."
+        }
+      },
+      "description": "From v0.2: grant thresholds of the type (MGR-17, MGR-40).",
       "x-botaru-version": "v0.2"
     }
   }

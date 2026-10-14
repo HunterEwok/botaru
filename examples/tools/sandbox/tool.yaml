@@ -1,0 +1,72 @@
+# Sandbox plugin (tier 2, v0.2, profile sandbox): flows 2 and 4. It runs only on the sandbox VM sbx1,
+# one container per task, without network and secrets (DEP-1, SBX-1, SBX-2).
+apiVersion: botaru/v1alpha1
+kind: ToolPlugin
+metadata: {name: sandbox}
+spec:
+  placement: sandbox
+  network: {egress: []}
+  tools:
+    - name: dataset_get
+      description: "Copies a slice of a catalog dataset into /in of the task container; the source does not change."
+      access: read
+      tier: 2
+      output_class: internal
+      untrusted_output: false
+      target: any
+      params:
+        dataset: {enum_from: catalog.sandbox_datasets}
+        month: {type: string, x-botaru-format: year_month}
+      output_schema:
+        type: object
+        additionalProperties: false
+        required: [files, bytes]
+        properties:
+          files: {type: integer, minimum: 0, maximum: 10000}
+          bytes: {type: integer, minimum: 0, maximum: 2000000000}
+      output_limit_kb: 4
+      timeout_s: 300
+    - name: run
+      description: "Runs one command in the task container without network; the output is redacted and cut to 32 KB."
+      access: read
+      tier: 2
+      output_class: internal
+      untrusted_output: true
+      redact: [ip, email, secret]
+      target: any
+      params:
+        argv: {type: string, maxLength: 8000, description: "The command line inside the container."}
+      output_schema:
+        type: object
+        additionalProperties: false
+        required: [exit_code, output]
+        properties:
+          exit_code: {type: integer, minimum: 0, maximum: 255}
+          output: {type: string, maxLength: 32768}
+      output_limit_kb: 32
+      timeout_s: 600
+    - name: list_out
+      description: "Lists the names and sizes of the files in /out."
+      access: read
+      tier: 2
+      output_class: internal
+      untrusted_output: true
+      target: any
+      params: {}
+      output_schema:
+        type: object
+        additionalProperties: false
+        required: [files]
+        properties:
+          files:
+            type: array
+            maxItems: 100
+            items:
+              type: object
+              additionalProperties: false
+              required: [name, bytes]
+              properties:
+                name: {type: string, maxLength: 200}
+                bytes: {type: integer, minimum: 0, maximum: 2000000000}
+      output_limit_kb: 8
+      timeout_s: 30

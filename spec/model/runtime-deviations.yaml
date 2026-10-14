@@ -1,5 +1,5 @@
 registry: runtime-deviations
-version: 1
+version: 2
 description: >-
   Agent runtime deviations that the E4 adapter declares in the `describe()` answer. Each record is
   a field of the `describe()` answer; `values` is the closed list of its values, and the first value is the farm
@@ -45,3 +45,10 @@ entries:
     values:
       - {value: '[]', meaning: no built-in tools, rules: [INJ-9]}
     rules: [INJ-9]
+  - id: skills
+    since: v0.2
+    meaning: How the runtime gets the skills of the role (SKL-2).
+    values:
+      - {value: farm, meaning: 'skills as a section of the instruction and through the built-in tool `skill_read`, from the core copy', rules: []}
+      - {value: runtime_files, meaning: 'skills as files in a read-only skill directory; only the skills of the role whose tree hash matches, any other skill is forbidden on its disk', rules: [SKL-2, RT-2]}
+    rules: [SKL-2]

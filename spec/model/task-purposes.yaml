@@ -1,5 +1,5 @@
 registry: task-purposes
-version: 1
+version: 2
 description: >-
   Purposes of task types (TaskType.spec.purpose). By purpose, core code
   chooses the model slot and the budget line, and lints check who may enqueue
@@ -43,7 +43,9 @@ entries:
     rules: [BUD-7, BUD-8, PRP-10]
   - id: review
     since: v0.1
-    meaning: review by a commission lens
+    meaning: >-
+      review by a commission lens; tasks of review.escalation.v1 (the necessity lens) go in class 3
+      instead of the fixed class, because an escalation waits for them (BUD-8, D-100)
     slot: base
     seat_slot: seat
     budget_line: review

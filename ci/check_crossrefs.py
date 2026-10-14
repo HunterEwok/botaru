@@ -26,6 +26,11 @@
 - every delivery kind name in the "Delivery kinds" table of the E1 sheet is in
   spec/model/delivery-kinds.yaml or spec/model/decision-points.yaml (schema field
   names, enum values, decision subjects and tenant names do not count);
+- the code text catalog spec/bindings/channels/messages/en.yaml has the form {locale, texts},
+  its locale is in the closed list of common.schema.json, and it holds every key that rule
+  DLV-9 and the key columns of the tables in docs/messaging.md name (DLV-9, DLV-18);
+- the metrics catalog spec/bindings/telemetry/metrics.yaml: every metric has an instrument
+  kind, a unit and labels only from its label_sets, and no label names a person (OBS-13);
 - note [schema_orphan]: a spec/model/ schema without a single reference
   by $id, by file name or from the operation map.
 """
@@ -373,6 +378,54 @@ if os.path.exists(e1):
                               'nor in spec/model/decision-points.yaml')
         elif inside and line.startswith('**'):
             break
+
+# ---------------------------------------------------------------- code text catalog (DLV-9, DLV-18)
+CATALOG = os.path.join(ROOT, 'spec', 'bindings', 'channels', 'messages', 'en.yaml')
+KEY_RE = re.compile(r'`((?:cmd|notice|card|number)\.[a-z_.]*[a-z_])`')
+if not os.path.exists(CATALOG):
+    rep.error('spec/bindings/channels/messages', '[catalog_missing] the en code text catalog is missing (DLV-9)')
+else:
+    cat = load_yaml(CATALOG) or {}
+    texts_en = cat.get('texts') if isinstance(cat, dict) else None
+    locales = load_json(os.path.join(MODEL, 'common.schema.json')).get('$defs', {}).get('locale', {}).get('enum', [])
+    if not isinstance(texts_en, dict) or cat.get('locale') != 'en' or 'en' not in locales:
+        rep.error(rel(CATALOG), '[catalog_form] the catalog is {locale: en, texts: {key: text}} and en is in the locale list')
+        texts_en = {}
+    for k, v in texts_en.items():
+        if not (isinstance(v, str) or (isinstance(v, list) and all(isinstance(x, str) for x in v))):
+            rep.error(rel(CATALOG), f'[catalog_value] {k}: a text is a string or a list of strings')
+    wanted = {}
+    dlv9 = next((r for r in registry() if r.get('id') == 'DLV-9'), {})
+    for k in KEY_RE.findall(dlv9.get('text') or ''):
+        wanted.setdefault(k, 'conformance/requirements.yaml DLV-9')
+    msg = os.path.join(ROOT, 'docs', 'messaging.md')
+    for i, line in enumerate(read(msg).split('\n'), 1):
+        if not line.startswith('|') or line.startswith('|---'):
+            continue
+        cells = md_cells(line)
+        if cells and cells[0] in ('Command', 'Key'):
+            continue
+        cols = cells[-1:] if len(cells) == 5 and line.count('`cmd.') else cells[:1]
+        for c in cols:
+            for k in KEY_RE.findall(c):
+                wanted.setdefault(k, f'docs/messaging.md:{i}')
+    for k, where in sorted(wanted.items()):
+        if k not in texts_en and not any(t.startswith(k + '.') for t in texts_en):
+            rep.error(rel(CATALOG), f'[catalog_key_missing] key {k} named in {where} is not in the en catalog (DLV-9)')
+
+# ---------------------------------------------------------------- metrics catalog (OBS-13)
+METRICS = os.path.join(ROOT, 'spec', 'bindings', 'telemetry', 'metrics.yaml')
+mcat = load_yaml(METRICS) or {}
+label_sets = set(mcat.get('label_sets') or [])
+for e in mcat.get('entries') or []:
+    where = f'{rel(METRICS)} {e.get("id")}'
+    if e.get('instrument') not in ('counter', 'gauge', 'histogram'):
+        rep.error(where, '[metric_instrument] instrument is counter, gauge or histogram (OBS-13)')
+    if not e.get('unit'):
+        rep.error(where, '[metric_unit] a metric has a unit (OBS-13)')
+    labels = e.get('labels')
+    if not isinstance(labels, list) or not set(labels) <= label_sets:
+        rep.error(where, f'[metric_label] labels must be a list from label_sets {sorted(label_sets)} (OBS-1, OBS-13)')
 
 # ---------------------------------------------------------------- schemas without references
 texts = {}

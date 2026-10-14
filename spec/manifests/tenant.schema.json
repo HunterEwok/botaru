@@ -266,9 +266,56 @@
                 }
               },
               "description": "Budget line: a sublimit inside the total, 0 by default."
+            },
+            "grant": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "month_eur": {
+                  "type": "number",
+                  "minimum": 0,
+                  "maximum": 1000000,
+                  "description": "Amount in euros."
+                },
+                "day_eur": {
+                  "type": "number",
+                  "minimum": 0,
+                  "maximum": 1000000,
+                  "description": "Amount in euros."
+                }
+              },
+              "description": "From v0.2: model grants of the tenant executors (MGR-17, MGR-18); 0 by default, then there is no request_model_grant.",
+              "x-botaru-version": "v0.2"
+            },
+            "takeover": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "month_eur": {
+                  "type": "number",
+                  "minimum": 0,
+                  "maximum": 1000000,
+                  "description": "Amount in euros."
+                },
+                "day_eur": {
+                  "type": "number",
+                  "minimum": 0,
+                  "maximum": 1000000,
+                  "description": "Amount in euros."
+                }
+              },
+              "description": "From v0.2: takeover tasks on the seat profile (MGR-21); 0 by default, then there is no takeover.",
+              "x-botaru-version": "v0.2"
             }
           },
           "description": "Budget lines by type purposes (BUD-7)."
+        },
+        "tasks_in_flight": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 100,
+          "description": "From v0.2: direct requests of one human or service principal with a running attempt at the same time; 3 by default. A further request waits with in_flight_cap (BUD-6).",
+          "x-botaru-version": "v0.2"
         }
       },
       "required": [
@@ -449,7 +496,7 @@
               "monitoring"
             ]
           },
-          "description": "Data recipients; monitoring is mandatory (MON-1).",
+          "description": "Data recipients; monitoring is mandatory only when the installation claims the monitor profile (MON-1, D-88).",
           "uniqueItems": true
         },
         "notice_ref": {
@@ -478,6 +525,11 @@
           "minimum": 1,
           "maximum": 90,
           "description": "Deadline for answering a person's request, 30 days by default."
+        },
+        "export_sink": {
+          "$ref": "urn:botaru:schema:common:1#/$defs/name",
+          "description": "From v0.2: the sink of a confirmed /mydata export; it must be an export_only sink (SEC-10, LCY-2).",
+          "x-botaru-version": "v0.2"
         }
       },
       "description": "Privacy block of the tenant (SEC-8); the fields are described in docs/privacy.md."
@@ -548,7 +600,7 @@
             "notify",
             "allow"
           ],
-          "description": "Reading the tenant's logs by the operator; notify by default."
+          "description": "Operator reading of attempt journals and task replays (AUD-4, APR-8); notify by default."
         }
       }
     },
@@ -620,10 +672,29 @@
                   "minimum": 0,
                   "maximum": 100,
                   "description": "Fairness key weight."
+                },
+                "script": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 100,
+                  "description": "Fairness key weight."
+                },
+                "system": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 100,
+                  "description": "Fairness key weight of tasks that the core creates itself (system:<purpose>, DSP-2)."
                 }
               }
             }
           },
+          "x-botaru-version": "v0.2"
+        },
+        "background_share": {
+          "type": "string",
+          "maxLength": 4,
+          "pattern": "^[1-9][0-9]?%$|^100%$",
+          "description": "From v0.2: the share of a bot group's capacity that class 5 tasks of the purposes insight, aggregate and review hold together, 20% by default (BUD-8).",
           "x-botaru-version": "v0.2"
         },
         "rules": {
@@ -652,9 +723,11 @@
                       "campaign",
                       "root",
                       "route",
-                      "schedule"
+                      "schedule",
+                      "script",
+                      "system"
                     ],
-                    "description": "Kind of the task source."
+                    "description": "Kind of the task source; system for tasks that the core creates itself (DSP-2)."
                   }
                 },
                 "description": "Matching only by the type name or name prefix and the source kind (DSP-3)."
@@ -682,7 +755,7 @@
               "max_share": {
                 "type": "string",
                 "maxLength": 4,
-                "description": "From v0.2: the share of concurrent slots of a bot group, for example 20%.",
+                "description": "From v0.2: the share of the capacity of the rule's group that the tasks of this rule hold, for example 20%, rounded down but at least one; the rule needs group (DSP-11, lint max_share_without_group).",
                 "pattern": "^[1-9][0-9]?%$|^100%$",
                 "x-botaru-version": "v0.2"
               },
@@ -732,6 +805,18 @@
       },
       "additionalProperties": {
         "$ref": "urn:botaru:schema:common:1#/$defs/type_name"
+      }
+    },
+    "script_commands": {
+      "type": "object",
+      "maxProperties": 20,
+      "x-botaru-version": "v0.2",
+      "description": "From v0.2: channel command -> the name of a kind: Script manifest of the tenant; the command starts the script with key=value parameters through the script_confirm card (SCR-14). Built-in commands and commands of commands cannot be taken (PRM-17).",
+      "propertyNames": {
+        "pattern": "^/[a-z][a-z0-9_-]{0,30}$"
+      },
+      "additionalProperties": {
+        "$ref": "urn:botaru:schema:common:1#/$defs/name"
       }
     },
     "run": {
@@ -1001,7 +1086,12 @@
         },
         "run_deadline": {
           "$ref": "urn:botaru:schema:common:1#/$defs/duration",
-          "description": "Script run deadline, at most 6 hours."
+          "description": "Script run deadline, at most 6 hours; a run with wait or await steps uses wait_run_deadline (SCR-13)."
+        },
+        "wait_run_deadline": {
+          "$ref": "urn:botaru:schema:common:1#/$defs/duration",
+          "x-botaru-version": "v0.2",
+          "description": "From v0.2: the deadline of a run whose script has a wait or await step, 7d by default and at most (SCR-13); the lint checks the ceiling."
         }
       },
       "description": "Script ceilings; the tenant can only decrease them (SCR-5)."
@@ -1020,7 +1110,14 @@
           "type": "integer",
           "minimum": 0,
           "maximum": 1000,
-          "description": "From v0.2: non-urgent cards to a person per day (APR-15).",
+          "description": "From v0.2: non-urgent cards to a person per day; 10 by default (APR-15).",
+          "x-botaru-version": "v0.2"
+        },
+        "fast_decision_s": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 600,
+          "description": "From v0.2: a decision faster than this many seconds after delivery, without \"Details\" opened, counts as fast in the monthly summary; 10 by default (APR-13).",
           "x-botaru-version": "v0.2"
         }
       }
@@ -1031,11 +1128,11 @@
       "properties": {
         "files": {
           "$ref": "urn:botaru:schema:common:1#/$defs/duration",
-          "description": "File period; by it the core sets expires_at (ART-1)."
+          "description": "File period; the core sets expires_at at write to the smaller of this and the result_ttl of the type (ART-1); at most the content period (RET-9)."
         },
         "journals": {
           "$ref": "urn:botaru:schema:common:1#/$defs/duration",
-          "description": "Period of attempt journals (AUD-4)."
+          "description": "Period of attempt journals (AUD-4); at most the content period (RET-9)."
         },
         "classes": {
           "type": "object",
@@ -1046,15 +1143,51 @@
           "additionalProperties": {
             "$ref": "urn:botaru:schema:common:1#/$defs/duration"
           },
-          "description": "Periods by retention classes from retention-classes.yaml (RET-2)."
+          "description": "Periods by retention class: only classes with ceiling_days in retention-classes.yaml (content, memory, metadata), between min_days and ceiling_days (RET-9)."
         }
       },
-      "description": "From v0.2: retention periods (RET-2).",
+      "description": "From v0.2: retention periods of the tenant within the farm ceilings of spec/model/retention-classes.yaml (RET-9); lint code retention_period.",
       "x-botaru-version": "v0.2"
     },
     "locale": {
       "$ref": "urn:botaru:schema:common:1#/$defs/locale",
       "description": "From v0.2: the default language of code texts (DLV-9).",
+      "x-botaru-version": "v0.2"
+    },
+    "takeover": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "types": {
+          "type": "array",
+          "maxItems": 100,
+          "items": {
+            "$ref": "urn:botaru:schema:common:1#/$defs/type_name"
+          },
+          "description": "Task types the manager may take over; empty by default."
+        },
+        "confirm_above_eur": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1000000,
+          "description": "Reserved: a takeover always needs the takeover_confirm card of a person; apply rejects a value above 0 (takeover_confirm_threshold, MGR-21)."
+        }
+      },
+      "description": "From v0.2: takeover of tenant tasks by the farm manager (MGR-21).",
+      "x-botaru-version": "v0.2"
+    },
+    "evals": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "translator_structural_match": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1,
+          "description": "Lowest structural match of the translator correctness set; 0.9 by default (TRN-6)."
+        }
+      },
+      "description": "From v0.2: eval gates of the tenant (TRN-6).",
       "x-botaru-version": "v0.2"
     }
   }

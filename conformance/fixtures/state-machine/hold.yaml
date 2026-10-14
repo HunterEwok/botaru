@@ -24,8 +24,8 @@ rules:
 description: Allowed and forbidden transitions of the "hold" lifecycle, collected from the tables of spec/lifecycles/hold.md.
   The implementation accepts a transition from the allowed list under the condition of its row; a pair from the forbidden
   list does not change the state, and the call that asks for it is rejected. The scope, effects, reason and author do not
-  change after the hold is set; for an active hold only the term may change, and only toward shortening (when the seat holder
-  is replaced). The core does not lift holds by itself.
+  change after the hold is set; for an active hold only the term may change, toward shortening when the seat holder is replaced,
+  and toward extension only for a maintenance window hold while the polls report the window active (MON-9). The core does not lift holds by itself.
 states:
 - id: active
   terminal: false
@@ -98,11 +98,12 @@ allowed:
   - PRM-14
 - from: null
   to: active
-  by: the background loop `hold` by a maintenance window of the monitoring system (the E5 adapter reads the windows, v0.2)
-  when: 'the window started on a node that the tenant catalog linked to its resource (`Catalog.spec.hosts[].monitor_host`);
-    scope `host` or `resource`; effects `no_tool` and `pause_action` (with `hosts[].maintenance_hold: true` the effect `no_action`
-    instead of `pause_action`); reason `maintenance`; author `contain_auto`, source `system:monitor`; `until` to the end
-    of the window; an extension of the window gives a new hold until the new end'
+  by: the background loop `hold` by a maintenance window of the monitoring system (the E5 adapter polls the maintenance
+    status, v0.2)
+  when: 'the first `active` event of a window on a node that the tenant catalog linked to its resource (`Catalog.spec.hosts[].monitor_host`);
+    scope `host` (the catalog host whose `monitor_host` is the node); effects `no_tool` and `pause_action` (with `hosts[].maintenance_hold:
+    true` the effect `no_action` instead of `pause_action`); reason `maintenance`; author `contain_auto`, source `system:monitor`;
+    `until` from the event, the poll time plus two poll intervals; no new hold for a window whose hold a person released'
   rules:
   - HLD-2
   - MON-9
@@ -158,6 +159,14 @@ allowed:
   rules:
   - MGR-15
   - PRM-15
+- from: active
+  to: active
+  by: the background loop `hold` by a later `active` event of the same maintenance window (v0.2)
+  when: the core moves `until` of the maintenance window hold forward to the event's `until`, never back; nothing else of
+    the hold changes
+  rules:
+  - HLD-2
+  - MON-9
 - from: active
   to: active
   by: P2 `seat.assign` (replacement of the seat holder)

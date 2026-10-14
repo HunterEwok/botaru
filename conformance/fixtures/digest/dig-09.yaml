@@ -1,0 +1,38 @@
+id: dig-09
+rules: [DIG-4, INJ-10]
+version: v0.2
+description: 'Feedback from human decisions as numbers. "Reject" takes a reason only from decline-reasons.yaml. The observe loop
+  writes the series farm.proposals.accept_share and farm.proposals.decline_reason_share by role and category. An aggregator and
+  the analysis role read them with observations_query as numbers. No statistic changes an instruction, a skill, a persona or a
+  manifest; the core changes nothing by itself: max_per_week of a pair "role, category" changes only by a commit.'
+given:
+  tenant: demo
+  people:
+  - principal: human:alice
+    caps: ['proposal.decide:schedule']
+  proposal:
+    id: p_01JB0000000000000000000901
+    state: presented
+    category: schedule
+    origin: {level: 0, role: ops-runner}
+steps:
+- call:
+    port: P1
+    op: decide
+    request: {subject_kind: proposal, id: p_01JB0000000000000000000901, decision: reject, reason_code: made_up_reason}
+  by: human:alice
+  expect: {result: rejected, note: the reason code is not in decline-reasons.yaml}
+- call:
+    port: P1
+    op: decide
+    request: {subject_kind: proposal, id: p_01JB0000000000000000000901, decision: reject, reason_code: too_costly}
+  by: human:alice
+  expect: {state: declined}
+- stand: {op: loop.tick, loop: observe}
+  expect:
+    series_points:
+    - {series: farm.proposals.decline_reason_share, labels: {role: ops-runner, category: schedule, reason: too_costly}}
+    - {series: farm.proposals.accept_share, labels: {role: ops-runner, category: schedule}}
+    manifests_changed: 0
+    instructions_changed: 0
+    insight_limits_changed: 0

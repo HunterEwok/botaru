@@ -1,5 +1,5 @@
 registry: manifest-kinds
-version: 1
+version: 2
 description: >-
   Manifest kinds of the farm. A manifest in git lies in the wrapper apiVersion, kind,
   metadata and spec and passes the wrapper schema spec/manifests/manifest.schema.json
@@ -10,8 +10,9 @@ description: >-
   tenant itself; either means that the object can be either common or the tenant's. The path
   field repeats the "Where it lives" column of the "Manifest kinds" table in
   docs/task-language.md, and name_format names the format of metadata.name from
-  spec/model/common.schema.json. The Script kind will appear in v0.2 together with its
-  schema; until then no entry for the kind is created.
+  spec/model/common.schema.json. The Script kind (v0.2) is a script reviewed in the
+  tenant's git; its spec is the script format botaru.script/v1 (spec/model/script.schema.json),
+  and a schedule may start it without a person's button only under SCR-12.
 source: docs/task-language.md
 entries:
   - id: Tenant
@@ -77,6 +78,13 @@ entries:
     path: tenants/<t>/schedules.yaml
     name_format: name
     rules: [MAN-1, TIM-2]
+  - id: Script
+    since: v0.2
+    schema: urn:botaru:schema:script:1
+    scope: tenant
+    path: tenants/<t>/scripts/<name>.yaml
+    name_format: name
+    rules: [MAN-1, SCR-1, SCR-12]
   - id: Channel
     since: v0.1
     schema: urn:botaru:schema:channel:1
@@ -140,3 +148,10 @@ entries:
     path: farm git
     name_format: name
     rules: [MAN-1]
+  - id: EvalReports
+    since: v0.2
+    schema: urn:botaru:schema:eval-reports:1
+    scope: global
+    path: evals/reports/index.yaml
+    name_format: name
+    rules: [MAN-1, PRV-3, TRN-6, MGR-23, MGR-40]

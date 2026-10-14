@@ -1,0 +1,65 @@
+# The necessity lens and the escalation section of the commission manifest (COM-13, MGR-6).
+id: com-10
+rules: [COM-13]
+version: v0.2
+description: 'An escalation that passed code screening gets a review.escalation.v1 task in the source tenant with the key
+  system:necessity:<escalation>, paid from that tenant''s review line. The input is a data block with the closed fields, the
+  evidence numbers from code and the untrusted flag, without the note. Code forwards with a score of at least forward_if_score_gte
+  (default 2) and, for an untrusted escalation, at least untrusted_forward_if_score_gte (default 3). The necessity lens does not
+  enter a proposal verdict, and the farm_manager lens does not assess escalations.'
+given:
+  tenant: demo
+  roles:
+    reviewer-a: {profile: reviewer, claims: [review.escalation.v1]}
+  escalation:
+    id: esc_7
+    state: screened
+    category: capacity_exhausted
+    subject: {kind: self}
+    note: CANARY-NOT-A-SECRET-esc-note
+cases:
+- id: com-10-a
+  description: Task, key, line and input without the note.
+  steps:
+  - stand: {op: loop.tick, loop: proposal}
+  expect:
+    task:
+      type: review.escalation.v1
+      tenant: demo
+      key: 'system:necessity:esc_7'
+      claimed_by_role: reviewer-a
+      budget_line: review@demo
+    p4_requests_contain: {CANARY-NOT-A-SECRET-esc-note: false}
+    input_data_block_marked: true
+- id: com-10-b
+  description: Verdict thresholds with the default section.
+  cases:
+  - id: com-10-b1
+    given: {review: {escalation: esc_7, score: 2, reason: plausible_risk}, untrusted: false}
+    expect: {escalation: {state: forwarded}}
+  - id: com-10-b2
+    given: {review: {escalation: esc_7, score: 1, reason: evidence_below_threshold}, untrusted: false}
+    expect: {escalation: {state: dismissed}}
+  - id: com-10-b3
+    given: {review: {escalation: esc_7, score: 2, reason: plausible_risk}, untrusted: true}
+    expect: {escalation: {state: dismissed}}
+  - id: com-10-b4
+    given: {review: {escalation: esc_7, score: 3, reason: clear_risk}, untrusted: true}
+    expect: {escalation: {state: forwarded}}
+- id: com-10-c
+  description: A raised forward threshold of 3 holds back a score of 2.
+  given:
+    commission_manifest: {escalation: {forward_if_score_gte: 3, untrusted_forward_if_score_gte: 3}}
+    review: {escalation: esc_7, score: 2, reason: plausible_risk}
+    untrusted: false
+  expect: {escalation: {state: dismissed}}
+- id: com-10-d
+  description: The necessity lens is not part of a proposal verdict, and no farm_manager lens task exists for an escalation.
+  given:
+    proposal: {id: p_701, kind: schedule, state: screened}
+  steps:
+  - stand: {op: loop.tick, loop: proposal}
+  expect:
+    proposal_review_lenses_exclude: [necessity]
+    escalation_review_lenses: [necessity]
+    tasks_of_type_for_escalation: {review.farm_manager.v1: 0}

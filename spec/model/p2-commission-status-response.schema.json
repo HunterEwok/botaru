@@ -9,6 +9,8 @@
     "COM-7",
     "COM-8",
     "COM-10",
+    "DIG-5",
+    "GOV-14",
     "GOV-35"
   ],
   "type": "object",
@@ -20,6 +22,18 @@
   "properties": {
     "tenant": {
       "$ref": "urn:botaru:schema:common:1#/$defs/tenant_name"
+    },
+    "governance_since": {
+      "anyOf": [
+        {
+          "$ref": "urn:botaru:schema:common:1#/$defs/datetime"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "description": "Since v0.2: when the v0.2 governance rules took effect in the tenant (audit governance.enabled); null before. Successes whose promotion probation ended earlier give no trigger (GOV-14).",
+      "x-botaru-version": "v0.2"
     },
     "lenses": {
       "type": "array",
@@ -98,6 +112,10 @@
               }
             ],
             "description": "Shadow share of the lens, or off."
+          },
+          "shadow_divergence": {
+            "type": "boolean",
+            "description": "Since v0.2: seat scores of this lens are below shadow scores by a one-sided exact sign test, p below 0.05 on at least 15 non-zero pairs in 30 days (COM-10)."
           }
         }
       },
@@ -128,13 +146,28 @@
           "properties": {
             "seat": {
               "type": "integer",
-              "minimum": 1
+              "minimum": 1,
+              "description": "The first seat of the basis; seats lists all of them."
             },
             "lens": {
               "type": "string"
             },
             "flag": {
-              "type": "string"
+              "type": "string",
+              "description": "commission_underrates, or the case flag held by three cases in a row."
+            },
+            "seats": {
+              "type": "array",
+              "maxItems": 20,
+              "items": {
+                "type": "integer",
+                "minimum": 1
+              },
+              "description": "All seats of the basis: the seats of the lens for commission_underrates of a veto lens, all seats for a case flag (GOV-35)."
+            },
+            "since": {
+              "$ref": "urn:botaru:schema:common:1#/$defs/datetime",
+              "description": "Since when the commission is locked."
             }
           }
         },
@@ -142,6 +175,69 @@
           "type": "null"
         }
       ]
+    },
+    "audit_sample": {
+      "type": "object",
+      "properties": {
+        "strata": {
+          "type": "array",
+          "maxItems": 20,
+          "items": {
+            "type": "object",
+            "required": [
+              "stratum",
+              "answers",
+              "commission_underrates"
+            ],
+            "properties": {
+              "stratum": {
+                "enum": [
+                  "veto",
+                  "weighted_mean",
+                  "parked_score"
+                ]
+              },
+              "lens": {
+                "type": "string",
+                "x-botaru-registry": "lenses"
+              },
+              "answers": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "would_accept_share": {
+                "anyOf": [
+                  {
+                    "type": "number",
+                    "minimum": 0,
+                    "maximum": 1
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "lower_bound": {
+                "anyOf": [
+                  {
+                    "type": "number",
+                    "minimum": 0,
+                    "maximum": 1
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "commission_underrates": {
+                "type": "boolean"
+              }
+            }
+          }
+        }
+      },
+      "description": "From v0.2: the audit sample over 180 days per stratum and the flag commission_underrates (DIG-5).",
+      "x-botaru-version": "v0.2"
     }
   }
 }

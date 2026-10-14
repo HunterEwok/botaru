@@ -1,0 +1,31 @@
+# evals/cases/ops-reader/kb-01.yaml (catalog: evals/README.md, section "Knowledge corpus")
+id: kb-01
+kind: quality
+blocking: false
+status: active
+version: v0.2
+rules: [KNW-3]
+summary: 'bob asks what the on-call runbook says about nginx 502; the answer follows the runbook points, and the runbook
+  text reached the model only as kb_search or kb_read output.'
+from: bob
+chat: bob-dm
+lang: en
+message: '/logs What does the on-call runbook say to do if nginx returns 502?'
+setup:
+  role_builtins: [kb_search, kb_read]
+  corpus:
+    id: demo-runbooks
+    trust: curated
+    source: git
+    data_class: internal
+    documents:
+    - id: nginx-502
+      text: 'nginx returns 502. 1. Check that app-api.service is active. 2. Read the last 50 lines of the nginx error log.
+        3. If upstream refused the connection, ask the on-call person to restart app-api. 4. Write the time and the cause
+        into the incident note.'
+expect:
+  state: completed
+  checks:
+  - contains: [app-api]
+  - not_contains: {values: ['nginx returns 502. 1. Check that'], scope: model_requests}
+  - side_effects: {request_action: 0, service_control: {count: 0}}

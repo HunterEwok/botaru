@@ -8,7 +8,8 @@
     "DLV-6",
     "TEN-3",
     "SEC-10",
-    "MAN-4"
+    "MAN-4",
+    "DLV-17"
   ],
   "type": "object",
   "additionalProperties": false,
@@ -24,7 +25,7 @@
     "base": {
       "type": "string",
       "maxLength": 300,
-      "description": "Address base; the address is built from the base, the tenant and the delivery id (DLV-6)."
+      "description": "Address base; the address is built from the base, the tenant and the delivery id (DLV-6). For driver webhook the base is the whole https:// address of the receiver (DLV-17)."
     },
     "ceiling": {
       "$ref": "urn:botaru:schema:common:1#/$defs/data_mark",
@@ -41,15 +42,22 @@
         "recipient": {
           "type": "string",
           "maxLength": 80,
-          "description": "The only recipient: the principal or admin.",
+          "description": "Deprecated form kept for schema compatibility; rules and documents name only recipient_ref. Exactly one of the two is set (lint export_only_recipient).",
+          "deprecated": true,
           "pattern": "^(admin|(user|staff|service):[a-z][a-z0-9_.-]{0,62})$"
         },
         "key_ref": {
           "$ref": "urn:botaru:schema:manifest:1#/$defs/secret_name"
+        },
+        "recipient_ref": {
+          "type": "string",
+          "maxLength": 80,
+          "pattern": "^(admin|self|human:[A-Za-z0-9_.-]{1,64})$",
+          "description": "From v0.2: the only recipient: self (the person whose data the export holds, encrypted with the public key they supplied with their request; the only form for /mydata export and principal.export), admin (only for tenant.export) or the person as human:<id> (SEC-10). With self, key_ref names the store where the core keeps the requester key of each request.",
+          "x-botaru-version": "v0.2"
         }
       },
       "required": [
-        "recipient",
         "key_ref"
       ],
       "description": "Sink for operator exports (SEC-10)."
@@ -58,6 +66,11 @@
       "type": "object",
       "description": "Driver configuration; it is closed by the driver schema.",
       "x-botaru-closed-by": "sink driver schema under drivers/driver-config.schema.json"
+    },
+    "signing_key_ref": {
+      "$ref": "urn:botaru:schema:manifest:1#/$defs/secret_name",
+      "description": "From v0.2, only for driver webhook: the deployment secret that signs every send (DLV-17).",
+      "x-botaru-version": "v0.2"
     }
   }
 }

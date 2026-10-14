@@ -1,0 +1,121 @@
+id: fx-man-v02-01
+rules: [APR-16, KNW-2, ING-1, SEC-10, SKL-1, MON-1]
+description: >-
+  Manifest lint of v0.2 fields. A production tenant that lets a high risk action with approvals: 1 be
+  requested fails (APR-16); a curated corpus with a source other than git fails (KNW-2); a source
+  channel without ingress fails (ING-1); an export sink needs exactly one recipient field (SEC-10); a
+  skill folder with a scripts/ folder, an executable file, a foreign file type or a front matter name
+  that differs from the folder fails (SKL-1); monitoring is a required data recipient only when the
+  installation claims the monitor profile (MON-1, D-88).
+cases:
+  - name: production tenant, high risk action with one approval that a group may request
+    manifests:
+      - {apiVersion: botaru/v1alpha1, kind: Tenant, metadata: {name: demo2}, spec: {kind: production, farm_manager: {enabled: false}, budgets: {month_eur: 60}}}
+      - {apiVersion: botaru/v1alpha1, kind: Group, metadata: {name: ops, tenant: demo2}, spec: {caps: ["action.request:db_restore"]}}
+      - apiVersion: botaru/v1alpha1
+        kind: Action
+        metadata: {name: db_restore}
+        spec:
+          title: "Database restore from the nightly dump"
+          description: "Restores the tenant database from the nightly dump."
+          risk: high
+          approvals: 1
+          args: {type: object, additionalProperties: false, properties: {}}
+          ttl: 60m
+          executor:
+            plugin: db
+            tool: restore
+            os_mechanism:
+              oneshot: {unit: "db-restore-{tenant}.service", started_by: "db-restore-{tenant}.path", wait: false}
+    expect: {error: high_risk_one_approver}
+  - name: the same action that no group or role may request passes
+    manifests:
+      - {apiVersion: botaru/v1alpha1, kind: Tenant, metadata: {name: demo2}, spec: {kind: production, farm_manager: {enabled: false}, budgets: {month_eur: 60}}}
+      - {apiVersion: botaru/v1alpha1, kind: Group, metadata: {name: dba, tenant: demo2}, spec: {caps: ["action.approve:db_restore"]}}
+      - apiVersion: botaru/v1alpha1
+        kind: Action
+        metadata: {name: db_restore}
+        spec:
+          title: "Database restore from the nightly dump"
+          description: "Restores the tenant database from the nightly dump."
+          risk: high
+          approvals: 1
+          args: {type: object, additionalProperties: false, properties: {}}
+          ttl: 60m
+          executor:
+            plugin: db
+            tool: restore
+            os_mechanism:
+              oneshot: {unit: "db-restore-{tenant}.service", started_by: "db-restore-{tenant}.path", wait: false}
+    expect: ok
+  - name: curated corpus from uploads
+    manifests:
+      - apiVersion: botaru/v1alpha1
+        kind: Catalog
+        metadata: {name: demo2, tenant: demo2}
+        spec:
+          resources:
+            - {id: vendor-manuals, kind: corpus, list: corpora, title: Vendor manuals, trust: curated, source: upload}
+    expect: {error: corpus_curated_source}
+  - name: curated corpus from git passes
+    manifests:
+      - apiVersion: botaru/v1alpha1
+        kind: Catalog
+        metadata: {name: demo2, tenant: demo2}
+        spec:
+          resources:
+            - {id: runbooks, kind: corpus, list: corpora, title: On-call runbooks, trust: curated, source: git}
+    expect: ok
+  - name: source channel without ingress
+    manifests:
+      - apiVersion: botaru/v1alpha1
+        kind: Channel
+        metadata: {name: hooks, tenant: demo2}
+        spec: {driver: webhook, direction: in, identity_kind: hook, identity_assurance: strong, membership_assurance: none, ai_disclosure: native, provenance: metadata}
+    expect: {error: ingress_missing}
+  - name: export sink with both recipient fields
+    manifests:
+      - apiVersion: botaru/v1alpha1
+        kind: Sink
+        metadata: {name: export, tenant: demo2}
+        spec: {driver: disk, base: /srv/botaru/export, ceiling: internal, export_only: {recipient: admin, recipient_ref: admin, key_ref: EXPORT_KEY}}
+    expect: {error: export_only_recipient}
+  - name: export sink with recipient_ref passes
+    manifests:
+      - apiVersion: botaru/v1alpha1
+        kind: Sink
+        metadata: {name: export, tenant: demo2}
+        spec: {driver: disk, base: /srv/botaru/export, ceiling: internal, export_only: {recipient_ref: 'human:alice', key_ref: EXPORT_KEY}}
+    expect: ok
+  - name: skill with a scripts folder and an executable file
+    skills:
+      disk-triage:
+        SKILL.md: "---\nname: disk-triage\ndescription: Procedure for triaging a filling disk\n---\nSteps.\n"
+        scripts/clean.sh: {executable: true, text: "rm -rf /tmp/x\n"}
+    expect: {error: skill_format}
+  - name: skill whose front matter name differs from the folder
+    skills:
+      disk-triage:
+        SKILL.md: "---\nname: disk-check\ndescription: Procedure for triaging a filling disk\n---\nSteps.\n"
+    expect: {error: skill_format}
+  - name: skill with allowed-tools in the front matter
+    skills:
+      disk-triage:
+        SKILL.md: "---\nname: disk-triage\ndescription: Procedure for triaging a filling disk\nallowed-tools: [Bash]\n---\nSteps.\n"
+    expect: {error: skill_format}
+  - name: skill in the allowed form passes
+    skills:
+      disk-triage:
+        SKILL.md: "---\nname: disk-triage\ndescription: Procedure for triaging a filling disk\n---\nSteps.\n"
+        references/paths.md: "Folders that usually grow on web1 and db1.\n"
+    expect: ok
+  - name: tenant without monitoring recipient on an installation without the monitor profile passes
+    conforms_to: {skeleton: 0.2.0, profiles: [core]}
+    manifests:
+      - {apiVersion: botaru/v1alpha1, kind: Tenant, metadata: {name: demo2}, spec: {kind: test, farm_manager: {enabled: false}, budgets: {month_eur: 60}, privacy: {recipients: [model_provider, messenger]}}}
+    expect: ok
+  - name: tenant without monitoring recipient on an installation that claims the monitor profile
+    conforms_to: {skeleton: 0.2.0, profiles: [core, monitor]}
+    manifests:
+      - {apiVersion: botaru/v1alpha1, kind: Tenant, metadata: {name: demo2}, spec: {kind: test, farm_manager: {enabled: false}, budgets: {month_eur: 60}, privacy: {recipients: [model_provider, messenger]}}}
+    expect: {error: recipients_monitoring}

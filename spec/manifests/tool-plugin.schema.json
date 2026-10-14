@@ -31,6 +31,35 @@
           "maxLength": 300,
           "description": "Image pinned by digest (DEP-6).",
           "pattern": "^[a-z0-9.-]+(/[a-z0-9._-]+)+@sha256:([0-9a-f]{64}|<digest>)$"
+        },
+        "accepted": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 2,
+          "description": "From v0.2: the pairs (image digest, tools/list fingerprint) that hello accepts during an update; both must match the manifest's tools. An apply that removes the old pair makes a toolhost with the old image blocked (LCY-5).",
+          "x-botaru-version": "v0.2",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "image": {
+                "type": "string",
+                "maxLength": 300,
+                "pattern": "^[a-z0-9.-]+(/[a-z0-9._-]+)+@sha256:([0-9a-f]{64}|<digest>)$",
+                "description": "Image pinned by digest (DEP-6)."
+              },
+              "tools_fingerprint": {
+                "type": "string",
+                "maxLength": 71,
+                "pattern": "^sha256:([0-9a-f]{64}|<digest>)$",
+                "description": "Fingerprint of the tools/list answer."
+              }
+            },
+            "required": [
+              "image",
+              "tools_fingerprint"
+            ]
+          }
         }
       },
       "required": [
@@ -225,6 +254,56 @@
               "required": [
                 "argv"
               ]
+            }
+          },
+          "cache_s": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 86400,
+            "description": "From v0.2: how long an implementation may keep the output of a read tool in a cache, in seconds; 0 by default, that is no cache (PRM-12). A tool with credential.per_principal is never cached: apply rejects cache_s above 0 on it (cache_per_principal).",
+            "x-botaru-version": "v0.2"
+          },
+          "credential": {
+            "type": "object",
+            "additionalProperties": false,
+            "description": "From v0.2: the tool calls the external service with the connection of the task's initiator (SEC-7); the model neither names nor chooses the account.",
+            "x-botaru-version": "v0.2",
+            "required": [
+              "per_principal"
+            ],
+            "properties": {
+              "per_principal": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "provider",
+                  "scopes"
+                ],
+                "properties": {
+                  "provider": {
+                    "$ref": "urn:botaru:schema:common:1#/$defs/name",
+                    "description": "Provider from the tenant catalog connection_providers."
+                  },
+                  "scopes": {
+                    "type": "array",
+                    "minItems": 1,
+                    "maxItems": 10,
+                    "uniqueItems": true,
+                    "items": {
+                      "enum": [
+                        "mail_read",
+                        "mail_send",
+                        "calendar_read",
+                        "calendar_write",
+                        "files_read",
+                        "files_write"
+                      ],
+                      "x-botaru-registry": "connection-scopes"
+                    },
+                    "description": "Access scopes the tool needs; the connection must carry all of them."
+                  }
+                }
+              }
             }
           }
         },

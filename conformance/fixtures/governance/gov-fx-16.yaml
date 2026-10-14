@@ -1,0 +1,158 @@
+# Promotion trigger table (GOV-14, GOV-30, GOV-32). Each case seeds one proposal of a functionary and its trial and
+# attribution records, ticks the governance loop after the promotion probation and reads the queue. The fixture starts at
+# realized_at (2026-11-10T00:00:00Z), so a step offset such as 15d is counted from the execution of the change.
+id: gov-fx-16
+rules: [GOV-14]
+version: v0.2
+description: 'One promotion trigger: a functionary''s own proposal accepted by a person, realized, with a change kind not in
+  exclude_change_kinds, after the promotion probation, with a trial outcome other than worse, with "No" for every attribution
+  candidate except canceled ones, and no open dispute. Lifted vetoes, late related proposals, reverted changes, canceled trials
+  and probations that ended before the v0.2 rules took effect give no trigger; such successes stay in the track record.'
+given:
+  tenant: demo
+  governance_since: '2026-10-20T00:00:00Z'
+  bots:
+    bot_17: {role: ops-runner, profile: worker, worker_owner: null, state: active}
+  proposal:
+    id: p_101
+    author: bot_17
+    kind: schedule
+    state: realized
+    realized_at: '2026-11-10T00:00:00Z'
+  trial: {proposal: p_101, outcome: better}
+  charter: {promotion: {probation: 14d, exclude_change_kinds: [none]}}
+cases:
+- id: gov-fx-16-a
+  description: All conditions hold; the trigger time is the end of the probation.
+  steps:
+  - stand: {op: clock.set, at: '2026-11-24T00:01:00Z'}
+  - stand: {op: loop.tick, loop: governance}
+  expect:
+    queue: [{bot: bot_17, trigger: p_101, trigger_at: '2026-11-24T00:00:00Z'}]
+- id: gov-fx-16-b
+  rules: [GOV-14, GOV-32]
+  description: Outcomes unchanged, undetermined and mixed give the trigger; worse does not.
+  cases:
+  - id: gov-fx-16-b1
+    given: {trial: {proposal: p_101, outcome: unchanged}}
+    steps: [{stand: {op: loop.tick, loop: governance}, at: 15d}]
+    expect: {queue: [{bot: bot_17}]}
+  - id: gov-fx-16-b2
+    given: {trial: {proposal: p_101, outcome: undetermined}}
+    steps: [{stand: {op: loop.tick, loop: governance}, at: 15d}]
+    expect: {queue: [{bot: bot_17}]}
+  - id: gov-fx-16-b3
+    given: {trial: {proposal: p_101, outcome: mixed}}
+    steps: [{stand: {op: loop.tick, loop: governance}, at: 15d}]
+    expect: {queue: [{bot: bot_17}]}
+  - id: gov-fx-16-b4
+    given: {trial: {proposal: p_101, outcome: worse}}
+    steps: [{stand: {op: loop.tick, loop: governance}, at: 15d}]
+    expect: {queue: [], track_record: {bot_17: {worse: 1}}}
+- id: gov-fx-16-c
+  rules: [GOV-14, GOV-30]
+  description: An attribution candidate without an answer holds the trigger past the probation; the answer "No" gives the
+    trigger with the time of the answer.
+  given:
+    attributions: [{id: at_42, proposal: p_101, state: unknown}]
+  steps:
+  - stand: {op: loop.tick, loop: governance}
+    at: 20d
+    expect: {queue: []}
+  - call:
+      port: P1
+      op: decide
+      request: {subject_kind: attribution, id: at_42, decision: 'no'}
+    by: human:alice
+    at: 21d
+  - stand: {op: loop.tick, loop: governance}
+  expect:
+    queue: [{bot: bot_17, trigger_at_equals: time of the "No" answer}]
+- id: gov-fx-16-d
+  description: An open dispute (disputed) gives no trigger; withdrawal of "Yes" cancels the attribution and the trigger
+    appears not earlier than the cancellation.
+  given:
+    attributions: [{id: at_43, proposal: p_101, state: disputed}]
+  steps:
+  - stand: {op: loop.tick, loop: governance}
+    at: 15d
+    expect: {queue: []}
+  - occur: {attribution: at_43, to: canceled, by: withdraw}
+    at: 18d
+  - stand: {op: loop.tick, loop: governance}
+  expect:
+    queue: [{bot: bot_17, trigger_at_not_before: cancellation of at_43}]
+- id: gov-fx-16-e
+  description: A proposal reverted before the trigger gives no trigger; a revert with harm_observed is worse in the track record.
+  cases:
+  - id: gov-fx-16-e1
+    given:
+      proposal: {id: p_101, author: bot_17, kind: schedule, state: reverted, revert_reason: superseded}
+      trial: {proposal: p_101, outcome: canceled}
+    steps: [{stand: {op: loop.tick, loop: governance}, at: 15d}]
+    expect: {queue: []}
+  - id: gov-fx-16-e2
+    given:
+      proposal: {id: p_101, author: bot_17, kind: schedule, state: reverted, revert_reason: harm_observed}
+      trial: {proposal: p_101, outcome: worse}
+    steps: [{stand: {op: loop.tick, loop: governance}, at: 15d}]
+    expect: {queue: [], track_record: {bot_17: {worse: 1}}}
+- id: gov-fx-16-f
+  description: A trial canceled because realization failed gives no trigger.
+  given:
+    proposal: {id: p_101, author: bot_17, kind: schedule, state: realization_failed}
+    trial: {proposal: p_101, outcome: canceled}
+  steps: [{stand: {op: loop.tick, loop: governance}, at: 15d}]
+  expect: {queue: []}
+- id: gov-fx-16-g
+  description: A change kind in exclude_change_kinds gives no trigger; the charter cannot remove none from the list.
+  cases:
+  - id: gov-fx-16-g1
+    given:
+      charter: {promotion: {exclude_change_kinds: [none, schedule]}}
+    steps: [{stand: {op: loop.tick, loop: governance}, at: 15d}]
+    expect: {queue: []}
+  - id: gov-fx-16-g2
+    given:
+      manifest:
+        kind: Governance
+        metadata: {name: demo}
+        spec: {promotion: {exclude_change_kinds: [schedule]}}
+    expect:
+      apply: {result: rejected}
+- id: gov-fx-16-h
+  description: A lifted veto (DIG-6) and a late related proposal (PRP-17) give no trigger.
+  cases:
+  - id: gov-fx-16-h1
+    given:
+      proposal: {id: p_101, author: bot_17, kind: schedule, state: realized, veto_overridden: true}
+    steps: [{stand: {op: loop.tick, loop: governance}, at: 15d}]
+    expect: {queue: [], track_record: {bot_17: {better: 1}}}
+  - id: gov-fx-16-h2
+    given:
+      proposal: {id: p_101, author: bot_17, kind: schedule, state: realized, related_to: [p_100], related_decided: accepted}
+    steps: [{stand: {op: loop.tick, loop: governance}, at: 15d}]
+    expect: {queue: []}
+- id: gov-fx-16-i
+  description: A probation that ended before the v0.2 rules took effect in the tenant gives no trigger.
+  given:
+    governance_since: '2026-12-01T00:00:00Z'
+  steps:
+  - stand: {op: clock.set, at: '2026-12-02T00:00:00Z'}
+  - stand: {op: loop.tick, loop: governance}
+  expect: {queue: [], track_record: {bot_17: {better: 1}}}
+- id: gov-fx-16-j
+  description: Authors that are not functionaries give no trigger.
+  cases:
+  - id: gov-fx-16-j1
+    given:
+      bots:
+        bot_17: {role: translator-ru, profile: translator, worker_owner: null, state: active}
+    steps: [{stand: {op: loop.tick, loop: governance}, at: 15d}]
+    expect: {queue: []}
+  - id: gov-fx-16-j2
+    given:
+      bots:
+        bot_17: {role: assistant, profile: worker, worker_owner: human:alice, state: active}
+    steps: [{stand: {op: loop.tick, loop: governance}, at: 15d}]
+    expect: {queue: []}

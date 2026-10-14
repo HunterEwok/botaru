@@ -1,0 +1,12 @@
+# Analysis in the sandbox (tier 2, v0.2, profile sandbox): flows 2 and 4. Only sandbox tools: a tier 2
+# role has no tool with placement: host (SBX-1).
+apiVersion: botaru/v1alpha1
+kind: Role
+metadata: {name: analyst}
+spec:
+  profile: worker
+  worker_kind: agent
+  claims: [data.analyze.v1]
+  tools: [sandbox/dataset_get, sandbox/run, sandbox/list_out]
+  models: {base: base-std}
+  memory: none

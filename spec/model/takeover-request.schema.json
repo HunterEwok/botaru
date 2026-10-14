@@ -1,0 +1,23 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:botaru:schema:takeover-request:1",
+  "title": "takeover_request: request",
+  "description": "The farm manager seat asks to take over a task: a new task of the same type with a grant of kind takeover on the seat profile for 1 attempt. A person of the tenant always confirms it on the takeover_confirm card (MGR-21). Refusals: takeover_untrusted, takeover_not_allowed.",
+  "x-botaru-direction": "input",
+  "x-botaru-version": "v0.2",
+  "x-botaru-rules": [
+    "MGR-21",
+    "MGR-22"
+  ],
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "task"
+  ],
+  "properties": {
+    "task": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/object_id",
+      "description": "The task to take over."
+    }
+  }
+}

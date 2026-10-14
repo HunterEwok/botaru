@@ -9,7 +9,21 @@ checks:
   - MGR-13
   version: v0.1
   section: Tests without a model
-  source: docs/quality.md:366
+  source: docs/quality.md:421
   spec:
     What: '`control.apply` with a failure while writing the message to people'
     Expectation: 'no operation, no audit, no `control.applied`: everything in one transaction'
+- id: blackbox:manager/grant-batch
+  method: blackbox
+  rules:
+  - MGR-18
+  - MGR-43
+  version: v0.2
+  section: Tests without a model
+  source: docs/quality.md:422
+  spec:
+    What: '(v0.2) three grant requests of `demo` within one 10-minute window, one of `demo2` with `farm_manager.enabled: false`;
+      the seat decides two of the three and adds a decision on the `demo2` request'
+    Expectation: one `manager.grants.v1` task for `demo` with the key `system:grants:demo:<window>`, none for `demo2`; the
+      third request stays `pending`, goes into the next window and expires at `grant_wait_max` with `grant_expired_unanswered`;
+      the `demo2` item gets `not_found` and that request stays unchanged

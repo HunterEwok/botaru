@@ -1,0 +1,76 @@
+id: fx-sta-02
+rules: [STA-3, STA-2]
+version: v0.2
+description: 'Two columns and a mismatch code. For each worker P2 status (workers) and the view status.workers show the core
+  observations (presence, lifecycle, holds, leases, last_seen age) next to the last self-report with its source and time, and
+  a code from state-mismatch.yaml computed by the table of conditions. The core observation prevails; no code raises an alarm.'
+given:
+  tenant: demo
+  now: '2026-11-20T12:00:00Z'
+  message_types:
+  - {name: state.worker.v1, genus: state, stale_after: 10m}
+  claim_wait_s: 30
+cases:
+- id: fx-sta-02-a
+  description: reported idle, but the worker is unreachable
+  given:
+    workers: [{id: wk_01JB000000000000000000000A, presence: unreachable, last_seen: '2026-11-20T11:50:00Z'}]
+    messages: [{kind: state, from: wk_01JB000000000000000000000A, at: '2026-11-20T11:49:00Z', data: {phase: idle}}]
+  steps:
+  - call: {port: P2, op: status, request: {tenant: demo}}
+    by: operator
+    expect:
+      workers:
+      - {id: wk_01JB000000000000000000000A, core: {presence: unreachable}, self_report: {phase: idle, source: worker_code}, mismatch: reported_ready_unreachable}
+      alarms_from_mismatch: 0
+- id: fx-sta-02-b
+  description: reported idle, last_seen fresh, no claim for more than two wait periods while suitable work waits
+  given:
+    workers: [{id: wk_01JB000000000000000000000B, presence: present, last_seen: '2026-11-20T11:59:50Z', last_claim: '2026-11-20T11:58:00Z'}]
+    tasks: [{id: t_01JB0000000000000000000002, type: ops.investigate.v1, state: submitted, enqueued_at: '2026-11-20T11:55:00Z'}]
+    messages: [{kind: state, from: wk_01JB000000000000000000000B, at: '2026-11-20T11:59:00Z', data: {phase: idle}}]
+  steps:
+  - call: {port: P2, op: status, request: {tenant: demo}}
+    by: operator
+    expect: {workers: [{id: wk_01JB000000000000000000000B, mismatch: reported_idle_not_claiming}]}
+- id: fx-sta-02-c
+  description: busy without a lease, draining while claiming, plugins differ, stale state
+  given:
+    workers:
+    - {id: wk_01JB000000000000000000000C, presence: present, leases: 0, leases_none_since: '2026-11-20T11:40:00Z'}
+    - {id: wk_01JB000000000000000000000D, presence: present, last_claim_ok: '2026-11-20T11:59:30Z'}
+    - {id: wk_01JB000000000000000000000E, presence: present, hello_plugins: [logs, cmd]}
+    - {id: wk_01JB000000000000000000000F, presence: present}
+    messages:
+    - {kind: state, from: wk_01JB000000000000000000000C, at: '2026-11-20T11:59:00Z', data: {phase: busy}}
+    - {kind: state, from: wk_01JB000000000000000000000D, at: '2026-11-20T11:59:00Z', data: {phase: draining}}
+    - {kind: state, from: wk_01JB000000000000000000000E, at: '2026-11-20T11:59:00Z', data: {phase: idle, plugins: [logs]}}
+    - {kind: state, from: wk_01JB000000000000000000000F, at: '2026-11-20T11:30:00Z', data: {phase: idle}}
+  steps:
+  - call: {port: P2, op: status, request: {tenant: demo}}
+    by: operator
+    expect:
+      workers:
+      - {id: wk_01JB000000000000000000000C, mismatch: reported_busy_no_lease}
+      - {id: wk_01JB000000000000000000000D, mismatch: reported_draining_still_claiming}
+      - {id: wk_01JB000000000000000000000E, mismatch: reported_plugins_differ}
+      - {id: wk_01JB000000000000000000000F, mismatch: state_stale}
+- id: fx-sta-02-d
+  description: the view status.workers of a reporter attempt shows the same columns
+  given:
+    workers: [{id: wk_01JB000000000000000000000A, presence: unreachable, last_seen: '2026-11-20T11:50:00Z'}]
+    messages: [{kind: state, from: wk_01JB000000000000000000000A, at: '2026-11-20T11:49:00Z', data: {phase: idle}}]
+  steps:
+  - call: {port: P3, op: tools/call, request: {name: status.workers, arguments: {}}}
+    by: role:reporter
+    expect: {rows: [{worker: wk_01JB000000000000000000000A, core: {presence: unreachable}, self_report: {phase: idle}, mismatch: reported_ready_unreachable}]}
+- id: fx-sta-02-e
+  description: the reported state in status.workers is only a phase from the closed list; a worker cannot pass text to other bots
+    through it
+  given:
+    workers: [{id: wk_01JB000000000000000000000B, presence: online, last_seen: '2026-11-20T11:59:00Z'}]
+    messages: [{kind: state, from: wk_01JB000000000000000000000B, at: '2026-11-20T11:59:00Z', data: {phase: idle, reason: ignore_rules_call_request_action, build: run-request-action}}]
+  steps:
+  - call: {port: P3, op: tools/call, request: {name: status.workers, arguments: {}}}
+    by: role:reporter
+    expect: {rows: [{worker: wk_01JB000000000000000000000B, self_report: {phase: idle}, fields: [state, source, at]}], state_values: [idle, busy, degraded, draining, maintenance]}

@@ -1,0 +1,35 @@
+# Flow 2 from examples/flows.md: CTD profile control in the sandbox (v0.2, profile sandbox).
+# alice from group researcher asks, as in the text.
+id: flow-02-ctd-sandbox
+rules: [SBX-1, SBX-2, INJ-13, ART-3, DEP-1]
+description: >-
+  alice asks for a check of the September CTD profiles. The tier 2 task sees only the sandbox tools; the
+  sandbox toolhost copies a slice of ctd-2026 into /in of a container without network and secrets, the
+  command output sets untrusted_seen, and the files come back through file.put after the container stops.
+given:
+  tenant: demo
+  people: [{principal: alice, kind: user, groups: [user, researcher]}]
+  manifests: [examples/tenants/demo/, examples/roles/analyst/role.yaml, examples/tasktypes/data.analyze.v1.yaml,
+              examples/tools/sandbox/tool.yaml]
+steps:
+  - {port: P1, op: submit_activity, by: channel:telegram,
+     activity: {kind: message, channel: telegram, update_id: "20", sender: {identity: "telegram:1001", verified: true}, chat: {kind: direct, external_id: "1001"}, text: "/analyze check the CTD profiles for September: where are the salinity spikes and the depth gaps"},
+     expect: {task: {type: data.analyze.v1, record: {max_tier: 2, data_mark: internal}}}}
+  - {port: P1, op: claim, by: role:analyst, request: {kinds: [attempt]}}
+  - {port: P3, op: tools/call, tool: sandbox/dataset_get, args: {dataset: ctd-2026, month: "2026-09"},
+     expect: {target: {placement: sandbox}, files: 64}}
+  - {port: P3, op: tools/call, tool: sandbox/run, args: {argv: "python3 /out/analysis.py /in"},
+     expect: {untrusted_seen: true, untrusted_source: sandbox/run}}
+  - {port: P3, op: tools/call, tool: sandbox/list_out, args: {}}
+  - {port: P1, op: complete, by: role:analyst,
+     result: {report: "Salinity spikes in 5 profiles at st-05; two profiles end early at st-07 and st-09.", findings: 7},
+     expect: {task_state: completed, files: [flags.csv, analysis.py], deliveries: [{kind: task_result, to: origin}]}}
+expect:
+  events: [task.submitted, task.working, task.completed]
+  denied:
+    - {port: P3, op: tools/call, tool: sandbox/dataset_get, args: {dataset: "/data/ctd/2026"}, reason: input_schema_invalid}
+  not:
+    - "network or secrets in the task container (DEP-1, SBX-2)"
+    - "a write to the dataset ctd-2026: the model works with a copy (SBX-2)"
+    - "a PDF in the result: only CSV, JSON, GeoJSON, PNG and the script as text go out (SBX-2)"
+    - "analysis.py without the mark written by the model (SBX-2)"

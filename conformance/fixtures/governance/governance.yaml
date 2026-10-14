@@ -459,8 +459,8 @@ cases:
   rules: [GOV-34]
   description: 'For a tenant with kind: production the model profiles of the seats of the veto lenses (security, operational) come from different
     families: a match is the apply error veto_lenses_same_family; on a test bench the same gives a doctor warning. Default shadow
-    shares are 0.25 for veto lenses and 0.2 for the others; a share of 0 is allowed only with an explicit shadow: off, and doctor
-    shows "shadow off".'
+    shares are 0.25 for veto lenses and 0.2 for the others; a share of 0 is allowed only with an explicit shadow: off (lint shadow_zero_without_off), and doctor
+    shows the check commission.shadow_off.'
   given:
     model_profiles:
       seat-std: {family: family-a, rank: 3}
@@ -493,10 +493,10 @@ cases:
       commission_manifest:
         shadow: {veto_lenses: 0}
     expect:
-      apply: {result: rejected}
+      apply: {result: rejected, error: shadow_zero_without_off}
   - given:
       commission_manifest: {shadow: 'off'}
-    expect: {apply: ok, doctor: shadow off}
+    expect: {apply: ok, doctor: {check: commission.shadow_off}}
   - given:
       commission_manifest: {}
     expect:

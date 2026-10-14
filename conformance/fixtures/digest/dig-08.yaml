@@ -1,0 +1,41 @@
+id: dig-08
+rules: [DIG-8, DIG-7, PRP-22]
+version: v0.2
+description: 'Trial figures in "My outcomes". The trial of p ends at the end of its 14-day window with the outcome better. No later
+  than one day after the window end, the row of p in the author bot''s "My outcomes" carries trial_numbers: the metric value
+  before and after, the change over all points, without the author bot''s points and without the points of its role, and the
+  guard that fired (none here). Rows with trial figures come before rows with only a human decision in the analysis input.'
+given:
+  tenant: demo
+  proposals:
+  - id: p_01JB0000000000000000000801
+    state: realized
+    origin: {level: 0, acting_bot: bot_17}
+    trial:
+      metric: farm.task.outcome
+      window_end: '2026-11-20T00:00:00Z'
+      before: 0.71
+      after: 1.0
+      change_all: 0.29
+      change_without_author: 0.29
+      change_without_role: 0.29
+      outcome: better
+  - id: p_01JB0000000000000000000802
+    state: declined
+    origin: {level: 0, acting_bot: bot_17}
+steps:
+- check: {my_outcomes: {bot: bot_17}}
+  at: '2026-11-20T23:00:00Z'
+  expect:
+    rows:
+    - id: p_01JB0000000000000000000801
+      trial_outcome: better
+      trial_numbers: {before: 0.71, after: 1.0, change_all: 0.29, change_without_author: 0.29, change_without_role: 0.29, guard_broken: null}
+    - id: p_01JB0000000000000000000802
+      decision_class: declined
+      trial_numbers: null
+- check: {my_outcomes: {bot: bot_17}}
+  at: '2026-11-21T00:00:01Z'
+  expect:
+    rows_with_trial_numbers: [p_01JB0000000000000000000801]
+    note: the deadline is one day after the window end; the row must have the figures by then

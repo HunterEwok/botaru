@@ -1,0 +1,21 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:botaru:schema:p2-dispatch-queue-request:1",
+  "title": "P2 dispatch.queue: request",
+  "description": "Counters of the dispatcher queue of a tenant (DSP-9). Reads only.",
+  "x-botaru-direction": "input",
+  "x-botaru-version": "v0.2",
+  "x-botaru-rules": [
+    "DSP-9"
+  ],
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "tenant"
+  ],
+  "properties": {
+    "tenant": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/tenant_name"
+    }
+  }
+}

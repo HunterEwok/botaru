@@ -239,6 +239,9 @@ def unmatched(old_list, new_list):
     return left, fresh
 
 
+DEFERRED = []  # (where, branch, what, holder): new oneOf branches to prove with $ref followed
+
+
 def compare(old, new, where):
     # true accepts everything, like an empty schema
     old = {} if old is True else old
@@ -259,7 +262,11 @@ def compare(old, new, where):
         gone = [v for v in old['enum'] if not among(v, new['enum'])]
         if gone:
             rep.error(where, f'[enum_value_removed] values {gone} left enum')
-    if 'enum' not in old and 'enum' in new:
+    if 'const' in old and 'enum' in new and 'const' not in new:
+        # a const that became an enum widens only when the enum keeps the old value
+        if not among(old['const'], new['enum']):
+            rep.error(where, f'[enum_value_removed] the old const {old["const"]!r} is not in the new enum')
+    elif 'enum' not in old and 'enum' in new:
         rep.error(where, '[enum_added] enum appeared: the set of values is narrowed')
     for k, tighter in TIGHTER.items():
         if k in new and (k not in old or tighter(new[k], old[k])):
@@ -355,9 +362,8 @@ def compare(old, new, where):
         left, fresh = unmatched(ob, nb)
         for i, _ in fresh:
             if not all(disjoint(nb[i], b) for j, b in enumerate(nb) if j != i):
-                what = 'changed' if left else 'new'
-                rep.error(where, f'[oneof_overlap] {what} oneOf branch {i} is not provably disjoint from the others: '
-                          'values matching two branches would stop passing')
+                # the proof is retried with $ref followed once all schemas are read (DEFERRED below)
+                DEFERRED.append((where, i, 'changed' if left else 'new', new))
     od, nd = old.get('dependentSchemas') or {}, new.get('dependentSchemas') or {}
     if isinstance(od, dict) and isinstance(nd, dict):
         for name in sorted(set(nd) - set(od)):
@@ -515,6 +521,10 @@ def separated(branches, rp, docs, ids, parent):
     if isinstance(parent, dict) and 'type' in parent:
         branches = [dict(b, type=parent['type']) if isinstance(b, dict) and 'type' not in b and '$ref' not in b
                     else b for b in branches]
+    # a value also has every property the holder requires: the branch is proved with those names required too
+    if isinstance(parent, dict) and isinstance(parent.get('required'), list):
+        branches = [dict(b, required=sorted(set(b.get('required') or []) | set(parent['required'])))
+                    if isinstance(b, dict) and '$ref' not in b else b for b in branches]
     return all(disjoint(b, c, res, rp, rp) for i, b in enumerate(branches) for j, c in enumerate(branches) if j != i)
 
 
@@ -535,6 +545,17 @@ def oneofs(s, path=''):
         for i, x in enumerate(s):
             yield from oneofs(x, f'{path}/{i}')
 
+
+for where, i, what, holder in DEFERRED:
+    # a branch behind $ref is proved disjoint by following the reference inside the repository
+    rp = where.split('#', 1)[0]
+    branches = holder.get('oneOf') or []
+    others = [b for j, b in enumerate(branches) if j != i]
+    def res(s, frm, rp=rp):
+        return deref(s, frm, news, news_by_id)
+    if not all(disjoint(branches[i], b, res, rp, rp) for b in others):
+        rep.error(where, f'[oneof_overlap] {what} oneOf branch {i} is not provably disjoint from the others: '
+                  'values matching two branches would stop passing')
 
 for rp, old in olds.items():
     # not and if reverse polarity: a definition they reach may not change at all
