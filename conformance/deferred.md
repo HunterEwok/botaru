@@ -2,7 +2,7 @@
 
 This file is generated from the registry `conformance/requirements.yaml`.
 
-A deferred rule is not part of any skeleton version: no version checks it, and no document, schema or registry may refer to it. Its row keeps the full text so that the rule can come back unchanged when the condition in "Returns when" holds; it then becomes active in the version current at that time. "Mechanism removed" says whether the code and the skeleton were cleaned of what the rule needed. An implementation does not offer the mechanism of a deferred rule even where its fields are still in the schemas: without its rule the mechanism has none of its conditions (D-114).
+A deferred rule is not part of any skeleton version: no version checks it. While its mechanism is still in the skeleton ("Mechanism removed: no"), documents, schemas and registries may still name it; once the mechanism is removed, nothing outside this file, the decision log and the changelog may refer to it. Its row keeps the full text so that the rule can come back unchanged when the condition in "Returns when" holds; it then becomes active in the version current at that time. "Mechanism removed" says whether the code and the skeleton were cleaned of what the rule needed. An implementation does not offer the mechanism of a deferred rule even where its fields are still in the schemas: without its rule the mechanism has none of its conditions (D-114).
 
 Deferred rules: 41.
 
