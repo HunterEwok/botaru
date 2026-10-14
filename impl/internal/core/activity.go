@@ -126,6 +126,7 @@ func (c *Core) SubmitActivity(ctx context.Context, w *Worker, a Activity) (*Acti
 		res, err := c.enqueue(ctx, tx, now, cat, enqueueInput{
 			Tenant: w.Tenant, Type: typ, Body: body, IdempotencyKey: key, Initiator: principal,
 			EnqueuedBy: "channel:" + a.Channel, Origin: origin, Source: "interactive", Cause: key,
+			Forwarded: a.Forwarded, Quoted: a.Quoted,
 		})
 		if err != nil {
 			if p, ok := AsProblem(err); ok {

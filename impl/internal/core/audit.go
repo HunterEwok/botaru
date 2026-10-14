@@ -31,6 +31,9 @@ type Audit struct {
 	GitRev  string
 	OK      bool
 	Flags   []string
+	// PersonalSeen are the sources of the personal_seen flag of the object, a marker without
+	// content (AUD-5).
+	PersonalSeen []string
 }
 
 // Actor is who made the change.
@@ -98,6 +101,9 @@ func (c *Core) appendAudit(ctx context.Context, tx pgx.Tx, now time.Time, a Audi
 	}
 	if len(a.Flags) > 0 {
 		rec["flags"] = a.Flags
+	}
+	if len(a.PersonalSeen) > 0 {
+		rec["personal_seen"] = a.PersonalSeen
 	}
 	h, err := jcs.Hash(rec)
 	if err != nil {
