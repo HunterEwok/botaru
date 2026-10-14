@@ -156,14 +156,23 @@ if os.path.exists(ev):
 GO_FUNC = re.compile(r'^func (Test[A-Za-z0-9_]*)\(')
 RULE_TOKEN = re.compile(r'\b[A-Z]{2,3}-\d+[a-z]?\b')
 go_tests = {}  # (folder under impl/, TestName) -> rule numbers named in the comment above it
+OTHER_PLATFORMS = {'aix', 'android', 'darwin', 'dragonfly', 'freebsd', 'illumos', 'ios', 'js', 'netbsd', 'openbsd',
+                   'plan9', 'solaris', 'wasip1', 'windows', '386', 'arm', 'arm64', 'loong64', 'mips', 'mipsle',
+                   'mips64', 'mips64le', 'ppc64', 'ppc64le', 'riscv64', 's390x', 'wasm'}
 
 
 def scan_go_tests():
     base = os.path.join(ROOT, 'impl')
     for f in walk(('_test.go',), base) if os.path.isdir(base) else []:
         folder = os.path.relpath(os.path.dirname(f), base).replace(os.sep, '/')
+        text = open(f, encoding='utf-8').read()
+        # only tests that go test runs in CI (linux/amd64, no tags): a file under a build constraint or with a
+        # GOOS or GOARCH suffix other than linux or amd64 may never run, so its tests cover nothing
+        parts = os.path.basename(f)[:-len('_test.go')].split('_')
+        if re.search(r'^//go:build ', text, re.M) or any(p in OTHER_PLATFORMS for p in parts[1:]):
+            continue
         comment = []
-        for line in open(f, encoding='utf-8'):
+        for line in text.split('\n'):
             if line.startswith('//'):
                 comment.append(line)
                 continue

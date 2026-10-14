@@ -69,7 +69,7 @@ import yaml
 
 sys.dont_write_bytecode = True
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from common import ROOT, Loader, Report, no_dup_json, read, walk
+from common import ROOT, Loader, Report, known_decisions, no_dup_json, read, walk
 
 rep = Report('additive only')
 explicit = next((a for a in sys.argv[1:] if not a.startswith('-')), None)
@@ -429,15 +429,20 @@ def entry_key(e):
 
 
 removal_new = []
+known = known_decisions()
 if os.path.exists(os.path.join(ROOT, REMOVED)):
     before = {entry_key(e) for e in removal_entries(show(prefix + REMOVED), REMOVED)}
     for e in removal_entries(read(os.path.join(ROOT, REMOVED)), REMOVED):
         extra = sorted(set(e) - REMOVED_KEYS)
         target = e.get('schema') or e.get('registry')
+        decs = e.get('decisions')
+        decs_ok = isinstance(decs, list) and decs and all(
+            isinstance(d, str) and re.fullmatch(r'D-(\d+)', d) and int(d[2:]) in known for d in decs)
         if extra or bool(e.get('schema')) == bool(e.get('registry')) or not str(e.get('reason') or '').strip() \
-                or not e.get('decisions') or (e.get('schema') and e.get('change') not in ('removed', 'breaking')):
+                or not decs_ok or (e.get('schema') and e.get('change') not in ('removed', 'breaking')):
             rep.error(f'{REMOVED} {target}', '[removal_entry_form] an entry names one schema (with change: removed or '
-                      'breaking) or one registry (with values, or none for the whole file), a reason and decisions'
+                      'breaking) or one registry (with values, or none for the whole file), a reason and decisions '
+                      '(a non-empty list of numbers D-NN from docs/decisions.md)'
                       + (f'; unknown fields {extra}' if extra else ''))
             continue
         if entry_key(e) not in before:

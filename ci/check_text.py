@@ -42,6 +42,7 @@ rows = [r for r in registry() if isinstance(r, dict) and isinstance(r.get('id'),
 ID_RE = id_regex(rows)
 status = {r['id']: r.get('status') for r in rows}
 removed = {r['id']: r.get('mechanism_removed') is not False for r in rows}
+gone_ids = {i for i, st in status.items() if st == 'deferred' and removed[i]}
 decisions = known_decisions()
 MARK = '<!-- generated: rules -->'
 EM_DASH = '\u2014'
@@ -123,6 +124,15 @@ for f in walk():
         for n, line in enumerate(text.split('\n'), 1):
             if EM_DASH in line:
                 rep.error(f'{rp}:{n}', '[em_dash] em dash: skeleton texts use a colon, a comma or a new sentence')
+    if rp.endswith(('.json', '.py', '.go')) and gone_ids:
+        # schemas, check scripts and code are not scanned for rule numbers in general, but a deferred rule
+        # whose mechanism was removed may not appear anywhere, also not in a schema description or a lint
+        for n, line in enumerate(text.split('\n'), 1):
+            for m in ANY_ID.finditer(line):
+                if m.group(0) in gone_ids:
+                    rep.error(f'{rp}:{n}', f'[rule_deferred] reference to the deferred rule {m.group(0)} whose mechanism '
+                              'was removed: a schema, check or code that still names it describes a mechanism '
+                              'the skeleton no longer has')
     if not rp.endswith(('.md', '.yaml', '.yml', '.json')):
         continue
     if rp.endswith('.json'):
