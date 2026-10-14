@@ -278,7 +278,7 @@ String values pass only formats from the skeleton registry `spec/model/formats.y
 | `year_month` | year and month | `2026-09` | v0.1 |
 | `schedule_slot` | schedule slot, a UTC instant to the minute; part of the slot task key (TIM-3) | `2026-10-25T00:30Z` | v0.1 |
 | `tz` | time zone name from the time zone database, only for a tenant and a schedule (TIM-4) | `Europe/Berlin` | v0.1 |
-| `search_query` | search string over a knowledge corpus, up to 256 characters, without control characters | `sensor calibration` | v0.2 |
+| `search_query` | search string over a knowledge corpus, up to 256 characters, without control characters; the core reads it only as words, without operators (KNW-6) | `sensor calibration` | v0.2 |
 
 A new format is a reviewed change to the skeleton registry, not a manifest field.
 
@@ -528,7 +528,7 @@ The `Tenant` manifest collects blocks of different parts of the farm. Each field
 | `campaigns`, `scripts` | ceilings of the tenant's campaigns and scripts | ORC-5, SCR-5 | v0.1 |
 | `attention` | `cards_per_tenant_hour` (20 by default): how many cards per hour are created per tenant, above it `service_rate_limited` (v0.1); since v0.2 how many non-urgent cards a person receives per day | APR-2, APR-15 | v0.1 |
 | `retention` | retention periods by retention class, the file period `files` (by it the core sets the file's `expires_at`) and the attempt journal period `journals` | RET-9, ART-1, AUD-4 | v0.2 |
-| `locale` | default language of code texts | DLV-9 | v0.2 |
+| `locale` | default language of code texts after the recipient's and the schedule's `locale` (DLV-18) | DLV-9, DLV-18 | v0.2 |
 
 The fields `commands`, `run` and `default_types` are set by the task language:
 
@@ -577,7 +577,7 @@ spec:
 | `deliver_to` | list of delivery targets (as for a route); the core checks it at `apply` and at every run | DLV-6, PRM-10 |
 | `proposable` | whether a change to the schedule can be proposed, `true` by default; a schedule of a type with `proposable: false` is not proposed either | PRP-10 |
 | `skip_if_waiting` | `true` by default: a slot is skipped with a `schedule.skipped` event if the task of this schedule's previous slot is still `submitted` or the circuit of the provider of the needed model slot is open; this way a broken provider does not fill the queue with service tasks, and the reserve of places stays for people's questions (CAP). `false` enqueues a task for every slot | TIM-3, CAP-1 |
-| `locale` | since v0.2: language of code texts for the schedule's addresses | DLV-9 |
+| `locale` | since v0.2: language of code texts for the schedule's addresses that have no `locale` of their own, and the `reply_locale` of its tasks (DLV-18) | DLV-9, DLV-18 |
 
 The slot task is enqueued by the `schedule` loop on behalf of the `system` principal with the key `system:schedule:<schedule>:<slot>`, where the slot is a UTC instant in the `schedule_slot` format; a double firing gives one task (IDM-2, TIM-3). `apply` requires `timeouts.deadline` for the schedule's type: a schedule task without a deadline would hang in the queue while the provider circuit is open.
 

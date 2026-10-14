@@ -303,10 +303,9 @@ entries:
     op: obs.append
     since: v0.2
     request: p1-obs-append-request
-    response: null
-    rules: [OBV-1, OBV-2]
+    response: done-response
+    rules: [OBV-1, OBV-2, OBV-8]
     profiles: [insights]
-    note: 'v0.2: there is no response schema until v0.2'
     lease: true
   - id: P1.escalation.submit
     port: P1

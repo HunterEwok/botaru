@@ -28,26 +28,26 @@ The line under a rule heading:
 | [COM](#com) | Commission | [docs/improvements.md](../docs/improvements.md) | 13 | 5 | 9 | 4 |
 | [DEP](#dep) | Deployment and least privilege | [docs/security-model.md](../docs/security-model.md) | 11 | 11 | 11 | 0 |
 | [DIG](#dig) | Showing proposals to people | [docs/improvements.md](../docs/improvements.md) | 8 | 6 | 4 | 4 |
-| [DLV](#dlv) | Delivery | [docs/tasks-and-delivery.md](../docs/tasks-and-delivery.md) | 16 | 9 | 14 | 2 |
+| [DLV](#dlv) | Delivery | [docs/tasks-and-delivery.md](../docs/tasks-and-delivery.md) | 17 | 9 | 14 | 3 |
 | [DSP](#dsp) | Task pool and dispatcher | [docs/coordination.md](../docs/coordination.md) | 11 | 8 | 8 | 3 |
 | [FEN](#fen) | Leases | [docs/tasks-and-delivery.md](../docs/tasks-and-delivery.md) | 7 | 5 | 7 | 0 |
 | [GOV](#gov) | Bot governance | [docs/commission.md](../docs/commission.md) | 25 | 18 | 10 | 15 |
 | [GW](#gw) | Model gateway | [docs/models-and-money.md](../docs/models-and-money.md) | 16 | 15 | 16 | 0 |
-| [HLD](#hld) | Stop | [docs/operations.md](../docs/operations.md) | 6 | 4 | 6 | 0 |
+| [HLD](#hld) | Stop | [docs/operations.md](../docs/operations.md) | 7 | 5 | 6 | 1 |
 | [IDM](#idm) | Idempotency | [docs/tasks-and-delivery.md](../docs/tasks-and-delivery.md) | 5 | 1 | 5 | 0 |
-| [IDN](#idn) | Identity | [docs/permissions.md](../docs/permissions.md) | 13 | 10 | 13 | 0 |
+| [IDN](#idn) | Identity | [docs/permissions.md](../docs/permissions.md) | 14 | 11 | 13 | 1 |
 | [ING](#ing) | Incoming external events | [docs/capabilities.md](../docs/capabilities.md) | 4 | 3 | 0 | 4 |
 | [INJ](#inj) | Injection resistance | [docs/security-model.md](../docs/security-model.md) | 16 | 16 | 16 | 0 |
 | [INS](#ins) | Analysis of own data | [docs/improvements.md](../docs/improvements.md) | 6 | 4 | 6 | 0 |
-| [KNW](#knw) | Tenant knowledge | [docs/capabilities.md](../docs/capabilities.md) | 5 | 5 | 0 | 5 |
+| [KNW](#knw) | Tenant knowledge | [docs/capabilities.md](../docs/capabilities.md) | 6 | 5 | 0 | 6 |
 | [LCY](#lcy) | Tenant lifecycle | [docs/operations.md](../docs/operations.md) | 8 | 3 | 3 | 5 |
-| [MAN](#man) | Manifests | [docs/task-language.md](../docs/task-language.md) | 11 | 4 | 10 | 1 |
+| [MAN](#man) | Manifests | [docs/task-language.md](../docs/task-language.md) | 12 | 4 | 10 | 2 |
 | [MEM](#mem) | Memory | [docs/bots.md](../docs/bots.md) | 10 | 7 | 8 | 2 |
-| [MGR](#mgr) | Farm manager | [docs/farm-manager.md](../docs/farm-manager.md) | 40 | 32 | 33 | 7 |
+| [MGR](#mgr) | Farm manager | [docs/farm-manager.md](../docs/farm-manager.md) | 41 | 32 | 33 | 8 |
 | [MON](#mon) | External monitoring | [docs/monitoring.md](../docs/monitoring.md) | 13 | 10 | 11 | 2 |
 | [MSG](#msg) | Messages between bots | [docs/messaging.md](../docs/messaging.md) | 18 | 17 | 17 | 1 |
-| [OBS](#obs) | Observability | [docs/operations.md](../docs/operations.md) | 10 | 4 | 10 | 0 |
-| [OBV](#obv) | Observations | [docs/improvements.md](../docs/improvements.md) | 7 | 4 | 7 | 0 |
+| [OBS](#obs) | Observability | [docs/operations.md](../docs/operations.md) | 11 | 4 | 10 | 1 |
+| [OBV](#obv) | Observations | [docs/improvements.md](../docs/improvements.md) | 8 | 5 | 7 | 1 |
 | [ORC](#orc) | Campaigns | [docs/coordination.md](../docs/coordination.md) | 15 | 14 | 14 | 1 |
 | [OUT](#out) | Structured results | [docs/tasks-and-delivery.md](../docs/tasks-and-delivery.md) | 2 | 1 | 1 | 1 |
 | [PRF](#prf) | Role profiles | [docs/scripts-and-translator.md](../docs/scripts-and-translator.md) | 1 | 1 | 1 | 0 |
@@ -60,12 +60,12 @@ The line under a rule heading:
 | [SBX](#sbx) | Sandbox | [docs/task-language.md](../docs/task-language.md) | 2 | 2 | 0 | 2 |
 | [SCR](#scr) | Scripts | [docs/scripts-and-translator.md](../docs/scripts-and-translator.md) | 14 | 12 | 10 | 4 |
 | [SEC](#sec) | Secrets | [docs/security-model.md](../docs/security-model.md) | 14 | 6 | 9 | 5 |
-| [SKL](#skl) | Skills | [docs/capabilities.md](../docs/capabilities.md) | 3 | 3 | 0 | 3 |
+| [SKL](#skl) | Skills | [docs/capabilities.md](../docs/capabilities.md) | 4 | 4 | 0 | 4 |
 | [STA](#sta) | Bot state | [docs/messaging.md](../docs/messaging.md) | 3 | 2 | 2 | 1 |
 | [TEN](#ten) | Tenants | [docs/architecture.md](../docs/architecture.md) | 8 | 8 | 8 | 0 |
 | [TIM](#tim) | Time and clocks | [docs/operations.md](../docs/operations.md) | 5 | 3 | 4 | 1 |
 | [TRN](#trn) | Translator | [docs/scripts-and-translator.md](../docs/scripts-and-translator.md) | 5 | 4 | 4 | 1 |
-| Total | | | 490 | 365 | 389 | 101 |
+| Total | | | 499 | 369 | 389 | 110 |
 
 Retired numbers (23) are listed in [retired.md](retired.md).
 
@@ -276,7 +276,7 @@ Checked by: `fixture:authorize/service-initiator`, `blackbox:core/service-stop-c
 
 since v0.1 · non-waivable · profile core · check: adapter, blackbox, fixture · decisions: D-78, D-71
 
-An action approval card carries the line `context`, which code assembles from closed fields of the source attempt's result with `x-botaru-read-by: code` (for example `verdict: cause_found`, `free_pct: 0`), and for `/run` and a script step, from the command arguments and closed fields of previous steps; there is no model text in the line (APR-3). The initiator gets in a direct message a copy of the card without decision buttons (registry row `approval_initiator_copy`, kind `notice`, code text under the key `card.copy.initiator` of the text catalog, DLV-9): the state, the expiry, who has already decided, and the "Remind approvers" button (key `card.copy.remind_button`). The button calls P1 `card.remind(subject_kind, id, nonce)` from the channel of the copy; the core repeats the `card_update` delivery to approvers who have not decided yet, no more than once every 5 minutes per approval (reminder text under the key `card.remind`); beyond that, the answer is `service_rate_limited` with text under the key `card.remind.rate_limited`. The field `ttl` of the action manifest is optional, and the card expiry is set by the risk: an action with `risk: low` has an expiry of 60 minutes unless the manifest set a longer `ttl`; an action with `risk: high` without `ttl` has an expiry of 30 minutes, and the manifest's `ttl` sets it otherwise (shorter or longer); the card of a `risk: routine` action (requested by the model) lives as for `low`. A hold with the effect `pause_action` (HLD-3, v0.2) extends the expiry of pending approvals in its scope by the length of the hold, the card gets a `card_update` marked as paused, and no decision on them is accepted until the hold ends. At half the expiry, the core once sends approvers who have not decided a `card_update` reminder with the same text `card.remind`. All these texts come from the code text catalog; there is no model in them. Fixtures: a card from an attempt with the closed field `free_pct` shows it in `context`; `ttl: 15m` with `risk: low` gives an expiry of 60 minutes; an action `risk: high` without `ttl` gives an expiry of 30 minutes; a second "Remind" a minute later gets `service_rate_limited`.
+An action approval card carries the line `context`, which code assembles from closed fields of the source attempt's result with `x-botaru-read-by: code` (for example `verdict: cause_found`, `free_pct: 0`), and for `/run` and a script step, from the command arguments and closed fields of previous steps; there is no model text in the line (APR-3). The initiator gets in a direct message a copy of the card without decision buttons (registry row `approval_initiator_copy`, kind `notice`, code text under the key `card.copy.initiator` of the text catalog, DLV-9): the state, the expiry, who has already decided, and the "Remind approvers" button (key `card.copy.remind_button`). The button calls P1 `card.remind(subject_kind, id, nonce)` from the channel of the copy; the core repeats the `card_update` delivery to approvers who have not decided yet, no more than once every 5 minutes per approval (reminder text under the key `card.remind`); beyond that, the answer is `service_rate_limited` with text under the key `card.remind.rate_limited`. The field `ttl` of the action manifest is optional, and the card expiry is set by the risk: an action with `risk: low` has an expiry of 60 minutes unless the manifest set a longer `ttl`; an action with `risk: high` without `ttl` has an expiry of 30 minutes, and the manifest's `ttl` sets it otherwise (shorter or longer); the card of a `risk: routine` action (requested by the model) lives as for `low`. A hold with the effect `pause_action` (HLD-3, HLD-8, v0.2) extends the expiry of pending approvals in its scope by the length of the hold, the card gets a `card_update` marked as paused, and no decision on them is accepted until the hold ends. At half the expiry, the core once sends approvers who have not decided a `card_update` reminder with the same text `card.remind`. All these texts come from the code text catalog; there is no model in them. Fixtures: a card from an attempt with the closed field `free_pct` shows it in `context`; `ttl: 15m` with `risk: low` gives an expiry of 60 minutes; an action `risk: high` without `ttl` gives an expiry of 30 minutes; a second "Remind" a minute later gets `service_rate_limited`.
 
 Checked by: `adapter:channel/card-context`, `blackbox:core/card-ttl-low-60m`, `blackbox:core/card-ttl-high-30m`, `blackbox:core/card-remind-rate`
 
@@ -1052,7 +1052,7 @@ Checked by: `adapter:channel/unbound-chat`, `adapter:channel/unknown-member`
 
 since v0.1 · waivable · profile core · check: adapter, fixture
 
-Code texts (cards, refusals, statuses, notices, `ai_notice`, `privacy_notice`, answers to channel commands) come from the message catalog `spec/bindings/channels/messages/<locale>.yaml` by the reason or field code and the recipient's `locale`. In v0.1 `locale` is a BCP 47 tag on the principal (set at invitation and by the channel command `/lang`) and on the chat binding; the skeleton catalog ships only `en`, with full coverage of the codes; catalogs for other locales are supplied by the installation, and the order is: the recipient's `locale`, then `en`. From v0.2 there is `locale` on the schedule and on the tenant (the default for principals without `locale`), other languages, and the model's answer language through the field `reply_locale` to the runtime; the model does not guess it. There is no translation; argument values and resource ids are not translated. Required catalog keys, without any of which the catalog fails the skeleton CI: answers to channel commands `cmd.<command>.*` (including `cmd.lang.done`, `cmd.lang.unknown`, `cmd.forbidden.needs`), the follow-up window hint `cmd.followup.hint`, the notices `notice.ai`, `notice.privacy`, `notice.not_registered`, `notice.principal_left`, the card texts `card.copy.initiator`, `card.copy.remind_button`, `card.remind`, `card.remind.rate_limited`, `card.attribution_dispute` and `card.self_measured`; the keys, substitutions and examples are listed in `docs/messaging.md` (REP-12). Fixture `fixture:channel/locale-en`: a principal with `locale: en` gets `ai_notice` and a permission refusal from the `en` catalog, and a principal without `locale` in a chat with `locale: et` and no `et` catalog gets the `en` text.
+Code texts (cards, refusals, statuses, notices, `ai_notice`, `privacy_notice`, answers to channel commands) come from the message catalog `spec/bindings/channels/messages/<locale>.yaml` by the reason or field code and the recipient's `locale`. In v0.1 `locale` is a value of the closed list `locale` of `spec/model/common.schema.json` (BCP 47 tags) on the principal (set at invitation and by the channel command `/lang`) and on the chat binding; the skeleton catalog ships only `en`, with full coverage of the codes; catalogs for other locales are supplied by the installation, and the order is: the recipient's `locale`, then `en`. From v0.2 the schedule and the tenant have a `locale` too, and the core passes the model's answer language as `reply_locale` to the runtime (DLV-18); the model does not guess it. There is no translation; argument values and resource ids are not translated. Required catalog keys, without any of which the catalog fails the skeleton CI: answers to channel commands `cmd.<command>.*` (including `cmd.lang.done`, `cmd.lang.unknown`, `cmd.forbidden.needs`), the follow-up window hint `cmd.followup.hint`, the notices `notice.ai`, `notice.privacy`, `notice.not_registered`, `notice.principal_left`, the card texts `card.copy.initiator`, `card.copy.remind_button`, `card.remind`, `card.remind.rate_limited`, `card.attribution_dispute` and `card.self_measured`; the keys, substitutions and examples are listed in `docs/messaging.md` (REP-12). Fixture `fixture:channel/locale-en`: a principal with `locale: en` gets `ai_notice` and a permission refusal from the `en` catalog, and a principal without `locale` in a chat with `locale: et` and no `et` catalog gets the `en` text.
 
 Checked by: `fixture:channel/locale-en`
 
@@ -1127,6 +1127,15 @@ since v0.2 · waivable · profile core · check: adapter, lint, fixture · decis
 An outgoing webhook is an E2 sink with `driver: webhook`. Its address is the manifest `base` exactly: an `https://` address whose host is not a farm host, never taken from a task body or model text; lint rejects a webhook sink without such a base or without `signing_key_ref` (code `webhook_sink_invalid`). Each send is an HTTP POST of the delivery as JSON with the Standard Webhooks headers: `webhook-id` equals `delivery.id` (FEN-7), `webhook-timestamp` is the send time in seconds, and `webhook-signature` is `v1,<base64 HMAC-SHA256>` over `<id>.<timestamp>.<body>` with the deployment secret named by `signing_key_ref`. A 2xx answer completes the delivery; a timeout, 429 and 5xx are retried as delivery failures up to `dead` (DLV-3); any other answer is `dead` at once; redirects are not followed. A retry keeps the id and gets a new timestamp and signature. The body carries file references and metadata, never file bytes. The sink keeps no copy, so the core closes its erasure steps itself with `not_applicable` and basis `declared_none`.
 
 Checked by: `manifests/v02-retention`, `adapter:sink/webhook-send`
+
+<a id="DLV-18"></a>
+### DLV-18. Locale order and the answer language
+
+since v0.2 · waivable · profile core · check: blackbox, adapter · decisions: D-90, D-107
+
+From v0.2 the core chooses the language of a code text for each delivery in this order and takes the first value for which the installation has a catalog: the recipient's own `locale` (the principal's for a person or a private chat, the chat binding's for a group chat); for a delivery of a schedule task to the schedule's `deliver_to`, the schedule's `locale`; the tenant's `Tenant.spec.locale`; `en`. A key missing in the chosen catalog takes the `en` text of that key. Languages are the closed list `locale` of `spec/model/common.schema.json`; the skeleton ships only the `en` catalog, and catalogs of other languages are installation data (D-90). For an agent attempt the core writes `reply_locale` into the E4 run request with the language that the same order gives for the recipient of the task result (the initiator of a direct request, the chat of a group request, the schedule's addresses); the model does not choose it, and the core translates no model text and no argument value.
+
+Checked by: `blackbox:channel/locale-order`, `adapter:runtime/reply-locale`
 
 <a id="dsp"></a>
 ## DSP: Task pool and dispatcher
@@ -1693,7 +1702,7 @@ Checked by: `authorize/holds/`, `fixture:authorize/holds/release-rank`
 
 since v0.1 · non-waivable · profile core · check: blackbox · decisions: D-62, D-68, D-71, D-80
 
-A hold acts from the next check, without `apply` or restarts. Effects: `no_enqueue`: an enqueue in the scope gets `rejected(held)`, except core tasks for erasure and export; `no_claim`: `claim` does not hand out work of the scope; `no_tool`: a tool call gets `denied(held)`, and the toolhost does not get the call; `no_action`: new `request_action` calls are rejected, and pending approvals of the scope move to `canceled(held)` with a `card_update` delivery; `no_delivery`: deliveries to the scope get `withheld`, except messages to admins about the hold itself; `no_message`: sending bot messages in the scope gets `rejected(held)`, records that the attempt accumulated are removed at its `complete` (`discarded(held)`), wake-ups in the scope are not enqueued, and the hold does not forbid reading inboxes; `cancel_running`: running attempts of the scope get `cancel_requested` in the heartbeat answer (FEN-4), their handles are revoked, the attempt ends with the reason `held` without spending an attempt, and while a hold with `cancel_running` or `no_claim` on the task's scope is in effect, `claim` does not hand it out; `no_control`: the holder of the manager seat applies no control operations; `pause_action` (v0.2): new `request_action` calls are rejected, and pending approvals of the scope are not canceled but wait: their expiry is extended by the length of the hold, the card gets a `card_update` marked as paused, and no decision on them is accepted until the hold ends. A write call in `queued` whose scope a hold with `no_tool` or `no_action` hit gets `denied(held)`, and its approval ends with `exec_failed(held)`; nothing is executed late (APR-7). Calls of `service/control` and `monitor/script_run` go without a card (APR-18), but a hold with `no_tool` or `no_action` on their scope rejects them with `denied(held)` in the same way (MON-8, MON-10). Campaigns in the scope pause in the same transaction (ORC-11), and a script step whose enqueue a hold rejected or whose pending approval a hold canceled becomes `failed(held)`; from v0.2 a hold that touches a script run pauses the run (SCR-10). A hold on the scope `bot` set by a person moves the bot identity to `suspended` (IDN-9, `spec/lifecycles/identity.md`); a hold by the manager seat holder on the same scope delays the identity's tasks and changes nothing else (MGR-9). An urgent withdrawal of a plugin, action, task type or channel is done with a hold, and the removal from git later with an ordinary `apply`. A hold does not silence alarms and does not delay their export: notification and silencing live in the monitoring system (MON-1). Fixtures: a hold on a task type with `cancel_running` in the middle of a task gives `cancel_requested`, the attempt is not spent, and the task waits in `submitted`; a hold on a plugin in the middle of a task: the next `tools/call` is refused, and the toolhost does not get the call.
+A hold acts from the next check, without `apply` or restarts. Effects: `no_enqueue`: an enqueue in the scope gets `rejected(held)`, except core tasks for erasure and export; `no_claim`: `claim` does not hand out work of the scope; `no_tool`: a tool call gets `denied(held)`, and the toolhost does not get the call; `no_action`: new `request_action` calls are rejected, and pending approvals of the scope move to `canceled(held)` with a `card_update` delivery; `no_delivery`: deliveries to the scope get `withheld`, except messages to admins about the hold itself; `no_message`: sending bot messages in the scope gets `rejected(held)`, records that the attempt accumulated are removed at its `complete` (`discarded(held)`), wake-ups in the scope are not enqueued, and the hold does not forbid reading inboxes; `cancel_running`: running attempts of the scope get `cancel_requested` in the heartbeat answer (FEN-4), their handles are revoked, the attempt ends with the reason `held` without spending an attempt, and while a hold with `cancel_running` or `no_claim` on the task's scope is in effect, `claim` does not hand it out; `no_control`: the holder of the manager seat applies no control operations; `pause_action` (v0.2, set by a person or a maintenance window, HLD-8): new `request_action` calls are rejected, and pending approvals of the scope are not canceled but wait: their expiry is extended by the length of the hold, the card gets a `card_update` marked as paused, and no decision on them is accepted until the hold ends. A write call in `queued` whose scope a hold with `no_tool` or `no_action` hit gets `denied(held)`, and its approval ends with `exec_failed(held)`; nothing is executed late (APR-7). Calls of `service/control` and `monitor/script_run` go without a card (APR-18), but a hold with `no_tool` or `no_action` on their scope rejects them with `denied(held)` in the same way (MON-8, MON-10). Campaigns in the scope pause in the same transaction (ORC-11), and a script step whose enqueue a hold rejected or whose pending approval a hold canceled becomes `failed(held)`; from v0.2 a hold that touches a script run pauses the run (SCR-10). A hold on the scope `bot` set by a person moves the bot identity to `suspended` (IDN-9, `spec/lifecycles/identity.md`); a hold by the manager seat holder on the same scope delays the identity's tasks and changes nothing else (MGR-9). An urgent withdrawal of a plugin, action, task type or channel is done with a hold, and the removal from git later with an ordinary `apply`. A hold does not silence alarms and does not delay their export: notification and silencing live in the monitoring system (MON-1). Fixtures: a hold on a task type with `cancel_running` in the middle of a task gives `cancel_requested`, the attempt is not spent, and the task waits in `submitted`; a hold on a plugin in the middle of a task: the next `tools/call` is refused, and the toolhost does not get the call.
 
 Checked by: `authorize/holds/`, `blackbox:core/hold-pause-action`
 
@@ -1721,6 +1730,15 @@ since v0.1 · waivable · profile core · check: blackbox · decisions: D-54
 If a tenant's usage over a sliding hour is above its hourly limit `Tenant.spec.budgets.hour_eur` (default one hundredth of `month_eur`, BUD-1), the core sets a hold on the scope `role` on every agent role of the tenant with the effect `no_claim`, the reason `runaway_spend`, the author `contain_auto` and the expiry `until` one hour after setting, and raises the alarm `alarm.hold.auto` by code. The hold does not delay `job` tasks without a model slot. A tenant admin or an operator lifts such a hold before its expiry (HLD-2). The threshold and expiry are written in `spec/model/holds.yaml`; the tenant catalog can only make them stricter. Fixture: mock usage lines summing to more than `hour_eur` in an hour give a `no_claim` hold on every agent role with `until` in an hour and an alarm; a `job` task of the same tenant is handed out.
 
 Checked by: `blackbox:core/runaway-spend`
+
+<a id="HLD-8"></a>
+### HLD-8. A pause of approvals set by a person
+
+since v0.2 · non-waivable · profile core · check: blackbox, fixture · decisions: D-107
+
+From v0.2 a person with `hold.set:<scope>` may set the effect `pause_action` on any scope that holds approvals (`tenant`, `role`, `tasktype`, `action`, `host`, `resource`, `bot_group`, `bot`), not only through a maintenance window (MON-9). While it is in effect, a new `request_action` in the scope gets `rejected(held)`, P1 `decide` on a pending approval of the scope gets `held` and changes nothing, and the `approval-expiry` loop does not expire it; the card gets a `card_update` with the text `card.paused`. When the hold ends, the expiry of each such approval moves forward by the time it was pending under the hold, and the card gets a `card_update` with the new expiry. `no_action` on the same approval, in the same hold or another, wins over `pause_action`.
+
+Checked by: `sm-apr-09`, `blackbox:core/hold-pause-by-person`
 
 <a id="idm"></a>
 ## IDM: Idempotency
@@ -1888,9 +1906,18 @@ Checked by: `gov-fx-07`
 
 since v0.1 · waivable · profile governance · check: blackbox, fixture
 
-When a person is disabled or removed for good (P2 `principal.off`, `principal.offboard`), the principal goes to `off`, or with `principal.offboard` to `offboarded` (LCY-8). In the same transaction the core sends the admins of their tenant with `admin:people` the code notice `principal_left` (only to their private chats, not to a group, text under the key `notice.principal_left`, REP-5): the principal id, the reason and the list of chats with a farm binding (`ChatBinding`) where this person remains a member according to the E1 channel's information that the core stores on the binding, with a marker on chats with `membership_assurance: enforced`. If the person has no chat with a farm binding, the notice goes anyway: the tenant administrator gets it, and instead of the chat list it says that there are no chats. There is no model text in the notice. In v0.1 the core only reports the list; full offboarding (leaving chats or asking the chat administrator to remove the person, removing delegated rights, handing over their tasks) arrives in v0.2.
+When a person is disabled or removed for good (P2 `principal.off`, `principal.offboard`), the principal goes to `off`, or with `principal.offboard` to `offboarded` (LCY-8). In the same transaction the core sends the admins of their tenant with `admin:people` the code notice `principal_left` (only to their private chats, not to a group, text under the key `notice.principal_left`, REP-5): the principal id, the reason and the list of chats with a farm binding (`ChatBinding`) where this person remains a member according to the E1 channel's information that the core stores on the binding, with a marker on chats with `membership_assurance: enforced`. If the person has no chat with a farm binding, the notice goes anyway: the tenant administrator gets it, and instead of the chat list it says that there are no chats. There is no model text in the notice. In v0.1 the core only reports the list; from v0.2 offboarding also removes groups, unused invitations and connections and empties views for chats the person stays in (IDN-14). The farm never removes a person from an external chat itself.
 
 Checked by: `idn-fx-13`, `blackbox:core/principal-offboard-final`
+
+<a id="IDN-14"></a>
+### IDN-14. Offboarding without traces of access
+
+since v0.2 · non-waivable · profile core · check: blackbox · decisions: D-98, D-107
+
+From v0.2 offboarding (LCY-8) in the same transaction also removes the person from all groups, revokes the unused invitations they issued and, where the profile `connections` is claimed, their connections (SEC-7). The person's tasks are canceled, not handed over (LCY-3). The farm does not remove a person from an external chat and does not leave it: the `principal_left` notice names the chats (IDN-13), and while the person remains a member of a bound chat, the core counts them as a participant without permissions, so views for that chat carry nothing (REP-7), and repeats the notice once a day for at most 7 days.
+
+Checked by: `blackbox:core/offboard-leftovers`
 
 <a id="ing"></a>
 ## ING: Incoming external events
@@ -2177,6 +2204,15 @@ Deleting a corpus document, the expiry of its file and deleting the whole corpus
 
 Checked by: `store:knowledge/delete-document`
 
+<a id="KNW-6"></a>
+### KNW-6. Corpus search is a word search
+
+since v0.2 · waivable · profile knowledge · check: blackbox · decisions: D-97, D-107
+
+From v0.2 `kb_search` takes a corpus of the role's resource scope and a `query` in the format `search_query` (`kb-search-request`). The core splits the query into words by Unicode letters and digits, lowercases them, ignores words shorter than two characters and at most keeps the first 16; there are no operators, wildcards, regular expressions or phrase marks, and the query text never reaches a model or a log. A fragment matches when it holds every word; matches are ordered by the number of word occurrences, then by file id and fragment number, at most `limit` (20) of them (`kb-search-response`). `kb_read` returns up to 20 fragments of one document from a fragment id in document order. Both answers carry the corpus trust (KNW-2).
+
+Checked by: `blackbox:knowledge/search-words`
+
 <a id="lcy"></a>
 ## LCY: Tenant lifecycle
 
@@ -2257,7 +2293,7 @@ Checked by: `blackbox:core/principal-offboard-final`
 <a id="man"></a>
 ## MAN: Manifests
 
-Explained in: [docs/task-language.md](../docs/task-language.md)
+Explained in: [docs/architecture.md](../docs/architecture.md), [docs/task-language.md](../docs/task-language.md)
 
 <a id="MAN-1"></a>
 ### MAN-1. Wrapper, kind schema and apiVersion
@@ -2353,6 +2389,15 @@ since v0.1 · non-waivable · profile core · check: blackbox · decisions: D-98
 At `apply` a core rejects, with the error `version_unsupported` and the path, a manifest of a kind whose `since` in `spec/manifests/kinds.yaml` is later than the skeleton version it claims in `conforms_to` (MAN-8), and a field whose `x-botaru-version` is later than that version. It also rejects the fields of a feature profile it does not claim: a catalog resource of kind `corpus` and `skills` of a role (`knowledge`), a channel with `direction: in` and its `ingress` block (`ingress`), a tool with `credential: per_principal` (`connections`), and the tenant fields `retention.journals` and `operator_access.debug_journal` (`debug`), a type or a tool of tier 2 and a plugin with `placement: sandbox` (`sandbox`). A core never accepts such a manifest and ignores the field: an operator who sees `apply` pass would believe the feature works. Records the core writes stay as its version defines them (D-98).
 
 Checked by: `blackbox:core/apply-later-version`
+
+<a id="MAN-12"></a>
+### MAN-12. The P1 OpenAPI description
+
+since v0.2 · waivable · profile core · check: lint, blackbox · decisions: D-107
+
+From v0.2 the P1 HTTP binding has an OpenAPI 3.1 description `spec/bindings/http/p1.openapi.json`, generated by `ci/gen_openapi.py` from the P1 rows of `spec/ports/operations.yaml`: one `POST /v1/p1/<operation>` per row, every body a reference to its `spec/model` schema, the headers and problem details of `spec/bindings/http/README.md`. It has no types of its own, so it changes only additively together with the schemas (MAN-3), and the skeleton CI fails when it does not match the map. A core serves exactly these paths under `/v1/p1/`.
+
+Checked by: `lint:http/p1-openapi`, `blackbox:core/p1-openapi-paths`
 
 <a id="mem"></a>
 ## MEM: Memory
@@ -2808,6 +2853,15 @@ The tenant's relation to the manager is set by the block `Tenant.spec.farm_manag
 
 Checked by: `fx-mgr-tenant-optout`
 
+<a id="MGR-43"></a>
+### MGR-43. The batch of grant requests
+
+since v0.2 · waivable · profile manager · check: blackbox, store · decisions: D-18, D-107
+
+From v0.2 the `grant` loop enqueues every 10 minutes, for each tenant with at least one grant request in `pending`, one task `manager.grants.v1` for the farm manager seat (condition D15) with the key `system:grants:<tenant>:<window>`, where the window is the UTC start of the 10-minute interval, and class 3. A tenant with `farm_manager.enabled: false`, or a seat that is not `held`, gets no task: its requests wait for a person with `model_grant.manage`. The task carries no request text; `grants_pending` returns only the closed fields of the tenant's pending requests, and `grant_decide` decides them in one batch with the current epoch. A request that the batch leaves undecided stays `pending` for the next window or a person, and expires at `grant_wait_max` with `grant_expired_unanswered` (MGR-18).
+
+Checked by: `blackbox:manager/grant-batch`
+
 <a id="mon"></a>
 ## MON: External monitoring
 
@@ -3188,6 +3242,15 @@ The daily reconciliation of usage with the provider report is done by the operat
 
 Checked by: `blackbox:core/reconcile-overdue`
 
+<a id="OBS-13"></a>
+### OBS-13. The metrics catalog
+
+since v0.2 · waivable · profile core · check: lint, blackbox · decisions: D-59, D-107
+
+From v0.2 the core exports the metrics of `spec/bindings/telemetry/metrics.yaml` through the telemetry binding: each with the instrument, unit and labels of its entry, labels only from `label_sets`, and no `botaru.*` metric outside the catalog. The catalog holds only what the farm alone knows from its records; machine, disk, network and service metrics are left to the monitoring system (D-59), and no core decision reads a metric. A metric carries no id of a person, chat, worker or external system. The skeleton CI checks the catalog form; the black box checks that every catalog metric appears in the export of a mock collector after one task, and that no other `botaru.*` name does.
+
+Checked by: `blackbox:core/metrics-catalog`
+
 <a id="obv"></a>
 ## OBV: Observations
 
@@ -3243,6 +3306,15 @@ The skeleton sets the registry of core series `spec/model/core-series.yaml`, and
 since v0.1 · waivable · profile insights · check: blackbox, fixture · decisions: D-16, D-71
 
 Work that continues outside the farm after a task result of "accepted for run" (a pipeline, a database backup outside manifests) reports its end with the event `run.finished.v1`. A job worker submits it through P1 `emit`, if this event type is in the `events` of its task type, with closed fields: the work id, an optional approval number `approval_id` (by it the route finds the address `approval_initiator`, DLV-6), a subject from its own tenant's catalog, `duration_s`, `retries`, `exit_code` and `outcome` from a closed list; the core sets the event's `source` and `id` (IDM-4). The core itself writes the points of the outside-work series (duration, retries, outcome) and the backup age from such an event in the `observe` loop, without `obs.append`.
+
+<a id="OBV-8"></a>
+### OBV-8. P1 obs.append for job attempts
+
+since v0.2 · non-waivable · profile insights · check: blackbox · decisions: D-16, D-107
+
+From v0.2 P1 `obs.append` is accepted only under the lease of a `job` attempt (another holder or a stale token gets `fenced`) and only into a series from the `observes` of the attempt's task type (`type_not_allowed`). The value must be of the series kind (`input_schema_invalid`), and the subject must be a catalog object of the series subject kind in the task's tenant (`ref_invalid`). The core writes the point in the transaction of the call with the store time, the tenant and the producer `job` with the attempt; the body carries none of them. One attempt writes at most 1000 points, more get `service_rate_limited`. Points are only added; a point is never changed.
+
+Checked by: `obv-fx-11`, `obv-fx-12`, `blackbox:core/obs-append`
 
 <a id="orc"></a>
 ## ORC: Campaigns
@@ -4379,6 +4451,15 @@ since v0.2 · non-waivable · profile knowledge · check: fixture, blackbox
 A skill does not change the tool catalog: a tool named in a skill but not allowed by the role does not appear in `tools/list`, and the skill does not change the task's tier and data class. Fixture: a role's skill names a tool outside the role.
 
 Checked by: `blackbox:skills/tool-outside-role`
+
+<a id="SKL-4"></a>
+### SKL-4. Reading a skill through the core
+
+since v0.2 · non-waivable · profile knowledge · check: blackbox · decisions: D-107
+
+From v0.2 a run whose runtime declares `skills: farm` gets the built-in tool `skill_read` in its P3 catalog, only for profiles `worker` and `manager` and never in a `handover` task (PRF-1, MEM-8). Its arguments are closed: `name` by an enum of the role's pinned skills and `file` by an enum of that skill's files (`skill-read-request`); the answer is the file text from the core copy of the pinned tree, at most 32 KiB per call with `next_offset` for the rest (`skill-read-response`). A skill outside the role, or a tree whose hash does not match, is not readable (SKL-2). Skill text is reviewed git text and does not set `untrusted_seen`; it changes no tool, tier or data class (SKL-3).
+
+Checked by: `blackbox:skills/skill-read`
 
 <a id="sta"></a>
 ## STA: Bot state

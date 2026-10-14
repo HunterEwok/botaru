@@ -1,28 +1,45 @@
 registry: metrics
-version: 1
+version: 2
 description: >-
-  Catalog of farm metrics (v0.2): a contract for dashboards and alarms that
-  survives a change of implementation. It covers the four monitoring signals:
-  latency, traffic, errors and saturation. The group field is the metric group
-  from docs/operations.md. The labels of any metric come only from the closed
-  label_sets below: ids of people, chats and external systems are not labels (OBS-1). Where
-  a core observation series matches a catalog metric, they share one name (OBV-5).
-  The check "every catalog metric is present in the output" is a black-box check.
+  Catalog of farm metrics (v0.2, OBS-13): a contract for dashboards and alarms that
+  survives a change of implementation. It covers the four monitoring signals of farm work:
+  latency, traffic, errors and saturation. It holds only what the farm alone knows from its
+  records (queue, tasks, model and tool calls, budget, approvals, deliveries, worker and loop
+  liveness, holds); machine, disk, network and service metrics are not here, because the
+  monitoring system collects them itself (D-59). Entry fields: instrument (counter, gauge or
+  histogram), unit (UCUM, with {...} for a count of things), labels (only from the closed
+  label_sets below: ids of people, chats, workers and external systems are not labels, OBS-1),
+  group (the metric group of docs/operations.md), meaning. Where a core observation series
+  matches a catalog metric, they share one name (OBV-5). No core decision reads a metric.
 source: docs/operations.md
 since: v0.2
-label_sets: [tenant, task_type, role, plugin, tool, reason, state]
+label_sets: [tenant, task_type, role, plugin, tool, reason, state, loop]
 entries:
-  - {id: botaru.queue.depth, since: v0.2, group: queue, rules: [OBS-1]}
-  - {id: botaru.queue.oldest_age_s, since: v0.2, group: queue, rules: [OBS-1]}
-  - {id: botaru.claim.wait_s, since: v0.2, group: queue, rules: [OBS-1]}
-  - {id: botaru.task.outcome, since: v0.2, group: outcome_duration, rules: [OBS-1, OBV-5]}
-  - {id: botaru.attempt.duration_s, since: v0.2, group: outcome_duration, rules: [OBS-1, OBV-5]}
-  - {id: gen_ai.client.operation.duration, since: v0.2, group: model_tools, rules: [OBS-1]}
-  - {id: gen_ai.execute_tool.duration, since: v0.2, group: model_tools, rules: [OBS-1]}
-  - {id: botaru.model.tokens, since: v0.2, group: model_tools, rules: [OBS-1]}
-  - {id: botaru.budget.used_ratio, since: v0.2, group: budget_approvals, rules: [OBS-1]}
-  - {id: botaru.approval.count, since: v0.2, group: budget_approvals, rules: [OBS-1]}
-  - {id: botaru.delivery.outcome, since: v0.2, group: delivery, rules: [OBS-1]}
-  - {id: botaru.worker.last_seen_age_s, since: v0.2, group: liveness, rules: [OBS-1, OBS-4]}
-  - {id: botaru.loop.last_tick_age_s, since: v0.2, group: liveness, rules: [OBS-1, OBS-4]}
-  - {id: botaru.hold.active, since: v0.2, group: holds, rules: [OBS-1, HLD-5]}
+  - {id: botaru.queue.depth, since: v0.2, instrument: gauge, unit: '{task}', labels: [tenant, task_type], group: queue,
+     meaning: tasks in submitted, rules: [OBS-1, OBS-13]}
+  - {id: botaru.queue.oldest_age_s, since: v0.2, instrument: gauge, unit: s, labels: [tenant], group: queue,
+     meaning: age of the oldest task in submitted, rules: [OBS-1, OBS-13]}
+  - {id: botaru.claim.wait_s, since: v0.2, instrument: histogram, unit: s, labels: [tenant, task_type], group: queue,
+     meaning: time from enqueue to the first claim, rules: [OBS-1, OBS-13]}
+  - {id: botaru.task.outcome, since: v0.2, instrument: counter, unit: '{task}', labels: [tenant, task_type, state, reason],
+     group: outcome_duration, meaning: tasks that reached a terminal state, rules: [OBS-1, OBS-13, OBV-5]}
+  - {id: botaru.attempt.duration_s, since: v0.2, instrument: histogram, unit: s, labels: [tenant, task_type, role],
+     group: outcome_duration, meaning: duration of an attempt from claim to complete or fail, rules: [OBS-1, OBS-13, OBV-5]}
+  - {id: gen_ai.client.operation.duration, since: v0.2, instrument: histogram, unit: s, labels: [tenant, role],
+     group: model_tools, meaning: duration of a P4 model call, rules: [OBS-1, OBS-13]}
+  - {id: gen_ai.execute_tool.duration, since: v0.2, instrument: histogram, unit: s, labels: [tenant, plugin, tool],
+     group: model_tools, meaning: duration of a P3 tool call, rules: [OBS-1, OBS-13]}
+  - {id: botaru.model.tokens, since: v0.2, instrument: counter, unit: '{token}', labels: [tenant, role],
+     group: model_tools, meaning: tokens of model calls by the usage lines, rules: [OBS-1, OBS-13]}
+  - {id: botaru.budget.used_ratio, since: v0.2, instrument: gauge, unit: '1', labels: [tenant],
+     group: budget_approvals, meaning: share of the monthly limit used, rules: [OBS-1, OBS-13]}
+  - {id: botaru.approval.count, since: v0.2, instrument: counter, unit: '{approval}', labels: [tenant, state],
+     group: budget_approvals, meaning: approvals by their final state, rules: [OBS-1, OBS-13]}
+  - {id: botaru.delivery.outcome, since: v0.2, instrument: counter, unit: '{delivery}', labels: [tenant, state, reason],
+     group: delivery, meaning: deliveries by their final state, rules: [OBS-1, OBS-13]}
+  - {id: botaru.worker.last_seen_age_s, since: v0.2, instrument: gauge, unit: s, labels: [tenant, role],
+     group: liveness, meaning: the largest last_seen age among the active workers of the role, rules: [OBS-1, OBS-4, OBS-13]}
+  - {id: botaru.loop.last_tick_age_s, since: v0.2, instrument: gauge, unit: s, labels: [loop],
+     group: liveness, meaning: age of the last tick of a background loop, rules: [OBS-1, OBS-4, OBS-13]}
+  - {id: botaru.hold.active, since: v0.2, instrument: gauge, unit: '{hold}', labels: [tenant],
+     group: holds, meaning: active holds, rules: [OBS-1, HLD-5, OBS-13]}

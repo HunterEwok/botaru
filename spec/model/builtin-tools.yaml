@@ -299,10 +299,9 @@ entries:
     access: read
     profiles: [farm-manager]
     purposes: [manage]
-    args_schema: null
-    result_schema: null
-    schema_note: a schema recorded as null will appear in spec/model together with the tool
-    rules: [PRF-1]
+    args_schema: empty-request.schema.json
+    result_schema: grants-pending-response.schema.json
+    rules: [PRF-1, MGR-43]
   - id: takeover_request
     since: v0.2
     access: read
@@ -318,11 +317,11 @@ entries:
     access: read
     profiles: [worker, manager]
     purposes: [work]
-    condition: a skill file of the role by enum, only for runtimes without their own skills; not present in handover tasks (MEM-8)
-    args_schema: null
-    result_schema: null
-    schema_note: a schema recorded as null will appear in spec/model together with the tool
-    rules: [PRF-1]
+    condition: 'a skill file of the role by enum, only for runtimes that declare `skills: farm`; not present in handover tasks (MEM-8, SKL-4)'
+    limit: at most 32 KiB of text per call
+    args_schema: skill-read-request.schema.json
+    result_schema: skill-read-response.schema.json
+    rules: [PRF-1, SKL-2, SKL-4]
   - id: kb_search
     since: v0.2
     access: read
@@ -330,17 +329,15 @@ entries:
     purposes: [work]
     condition: 'the role has the corpus in its resource scope (catalog `resources[]` of kind `corpus`); a search string of format `search_query` over the per-tenant corpus index in C1; output from an `ingested` corpus is untrusted (KNW-2, D-97); the corpus `data_class` is the output class (PRM-5), and `personal: true` sets `personal_seen` (KNW-1)'
     limit: at most 20 fragments per call
-    args_schema: null
-    result_schema: null
-    schema_note: a schema recorded as null will appear in spec/model together with the tool
-    rules: [PRF-1, KNW-1, KNW-2, KNW-5]
+    args_schema: kb-search-request.schema.json
+    result_schema: kb-search-response.schema.json
+    rules: [PRF-1, KNW-1, KNW-2, KNW-5, KNW-6]
   - id: kb_read
     since: v0.2
     access: read
     profiles: [worker, manager]
     purposes: [work]
     condition: 'a fragment or document of a corpus in the role resource scope by id from `kb_search`; the trust of the corpus decides `untrusted_seen` (KNW-2, D-97)'
-    args_schema: null
-    result_schema: null
-    schema_note: a schema recorded as null will appear in spec/model together with the tool
-    rules: [PRF-1, KNW-1, KNW-2, KNW-5]
+    args_schema: kb-read-request.schema.json
+    result_schema: kb-read-response.schema.json
+    rules: [PRF-1, KNW-1, KNW-2, KNW-5, KNW-6]

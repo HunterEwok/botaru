@@ -57,7 +57,7 @@ An observation point (series, subject, time, value, producer, tenant) is written
 | Source | Who writes | Example |
 |---|---|---|
 | `core` | the core loop `observe` from core records and events of the end of work outside the farm | `farm.task.outcome`, `farm.queue.wait`, `farm.backup.age` |
-| `job` | a job worker through P1 `obs.append` with an attempt token (since v0.2), only into series from the `observes` of its task type | a backup check series computed by a job type |
+| `job` | a job worker through P1 `obs.append` under the lease of its attempt (since v0.2), only into series from the `observes` of its task type, with a value of the series kind and a catalog subject, at most 1000 points per attempt; the core sets the time and the producer (OBV-8) | a backup check series computed by a job type |
 | `tool` | the core extracts a closed field from tool output by the mapping in the tool manifest | `host.load.v1` from the output of `monitor/item_history`: machine load is measured by the monitoring system, and the `monitor` plugin only reads it (MON-6) |
 
 An agent attempt has no operation for writing observations, and the model never writes a point. This way the data on which people later decide cannot be poisoned by model text.
@@ -775,6 +775,7 @@ Generated from the registry `conformance/requirements.yaml`; the full text of ev
 | [OBV-5](../conformance/rules.md#OBV-5) | Core series are deterministic and stay within the tenant | v0.1 | no |
 | [OBV-6](../conformance/rules.md#OBV-6) | Registry of core series with definitions of "good" and "bad" | v0.1 | yes |
 | [OBV-7](../conformance/rules.md#OBV-7) | Run finished event outside the farm | v0.1 | no |
+| [OBV-8](../conformance/rules.md#OBV-8) | P1 obs.append for job attempts | v0.2 | yes |
 | [PRP-1](../conformance/rules.md#PRP-1) | The core writes the proposal record, the body passes a closed schema | v0.1 | yes |
 | [PRP-2](../conformance/rules.md#PRP-2) | The core rereads the evidence | v0.1 | yes |
 | [PRP-3](../conformance/rules.md#PRP-3) | Exactly one change from the allowlist | v0.1 | yes |

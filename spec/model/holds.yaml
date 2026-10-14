@@ -180,9 +180,9 @@ entries:
   - id: pause_action
     kind: effect
     since: v0.2
-    meaning: new request_action calls are rejected, pending approvals are not canceled but wait; their deadline is extended by the length of the stop
+    meaning: new request_action calls are rejected, pending approvals are not canceled but wait; their deadline is extended by the time they were pending under the stop; a person sets it on any scope with approvals, a maintenance window on a host; no_action wins
     checked_at: [p3.request_action, p1.decide, loop.approval-expiry]
-    rules: [HLD-3, MON-9]
+    rules: [HLD-3, HLD-8, MON-9]
   # Auto-stops
   - id: secret_in_outbound_twice
     kind: autostop

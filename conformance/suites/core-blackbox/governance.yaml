@@ -9,7 +9,7 @@ checks:
   - GOV-30
   version: v0.2
   section: Tests without a model
-  source: docs/quality.md:513
+  source: docs/quality.md:523
   spec:
     What: (v0.2) an attribution card is answered "No" after the second reminder; another one is disputed and then canceled
     Expectation: no third reminder after the answer; a disputed attribution stays out of the calibration until resolved; a

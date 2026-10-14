@@ -104,7 +104,7 @@ The manager wakes up only on triggers created by code, a schedule or a person; i
 | daily review | the core schedule in T | `manager.review.v1` | `system:daily:<tenant>:<day>` | 4 | v0.1 |
 | a new holder got a fact offer for the partition of T (MEM-7) | the core | `memory.pick.v1` (purpose `handover`, MEM-8) | `system:handover:<fact offer>` | 4 | v0.1 |
 | a forwarded bot escalation | the escalation loop | `manager.escalations.v1` | `system:escalation:<attempt>` | 3, with `urgency: high` 1 through the `control` lane | v0.2 |
-| waiting grant requests | the `grant` loop, in a batch every 10 minutes | `manager.grants.v1` | `system:grants:<tenant>:<window>` | 3 | v0.2 |
+| waiting grant requests | the `grant` loop, in a batch every 10 minutes per tenant with a `pending` request, none for a tenant with `farm_manager.enabled: false` or a seat not `held` (MGR-43) | `manager.grants.v1` | `system:grants:<tenant>:<window>`, the window is the UTC start of the 10-minute interval | 3 | v0.2 |
 
 The classes follow DSP-5: class 1 is set only by the core `control` lane for urgent control work, class 2 only by a direct request from a person, and the other seat tasks that code enqueues go with class 3 or lower. The key of every task the core enqueues comes only from the closed list of IDM-2, so a trigger that fires twice yields one task.
 
@@ -233,7 +233,7 @@ The starting catalog below is an example that people approve; the alarm names in
 | `disk_full` | sev1 | `alarm.disk.free.low` from a monitoring problem of class `disk_free`: less than 5% free for 5 minutes | resource | hold `no_claim` on the resource for 1 h | quarantine and drain of involved workers, preemption, cancellation, the cleanup action, restart of services on the subject's node, monitoring scripts of that node |
 | `disk_filling` | sev2 | `alarm.disk.free.low` from a monitoring problem of class `disk_free`: less than 15% free | resource | none | drain of involved workers, the cleanup action, restart of services on the subject's node |
 | `store_low` | sev1 | `alarm.store.free.low`: free space of the core store volume below the soft threshold (CAP-5) | farm | refusal `over_capacity` for enqueues of priority classes 3-5 (CAP-5) | people only |
-| `runaway_spend` | sev1 | `alarm.budget.burn.rate`: spend per hour above three times the average or 80% of the day | tenant, role | none (D-54; from v0.2 the auto-stop by spend rate acts separately, HLD-7) | role hold (through a card, MGR-37), task cancellation |
+| `runaway_spend` | sev1 | `alarm.budget.burn.rate`: spend per hour above three times the average or 80% of the day | tenant, role | none (D-54); the auto-stop by `hour_eur` with the same reason `runaway_spend` acts separately, since v0.1 (HLD-7) | role hold (through a card, MGR-37), task cancellation |
 | `secret_in_outbound` | sev1 | `alarm.outbound.secret.detected` | worker | hold `no_delivery` on the worker | quarantine, notice |
 | `tenant_mismatch_storm` | sev1 | `alarm.auth.tenant_mismatch.count` above the threshold | worker | quarantine by code | notice |
 | `crash_loop` | sev2 | `alarm.worker.crash.rate` | worker, role | none | drain, role hold through a card, notice |
@@ -628,3 +628,4 @@ Generated from the registry `conformance/requirements.yaml`; the full text of ev
 | [MGR-40](../conformance/rules.md#MGR-40) | Type history not from its own attempts | v0.2 | no |
 | [MGR-41](../conformance/rules.md#MGR-41) | Daily summary and review | v0.1 | no |
 | [MGR-42](../conformance/rules.md#MGR-42) | Tenant opt-out of the farm manager | v0.1 | yes |
+| [MGR-43](../conformance/rules.md#MGR-43) | The batch of grant requests | v0.2 | no |

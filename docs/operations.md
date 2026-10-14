@@ -35,7 +35,7 @@ A debug log with prompts is not enabled in production. Analysis goes by the sess
 
 ### Metrics
 
-The metrics catalog (v0.2) is a contract for dashboards and alarms that survives a change of implementation. It lives in `spec/bindings/telemetry/metrics.yaml` and covers the four monitoring signals: latency, traffic, errors and saturation. It has 14 metrics with labels from closed sets: queue (`botaru.queue.depth`, `botaru.queue.oldest_age_s`, `botaru.claim.wait_s`), outcomes and duration (`botaru.task.outcome`, `botaru.attempt.duration_s`), model and tools (`gen_ai.client.operation.duration`, `gen_ai.execute_tool.duration`, `botaru.model.tokens`), budget and approvals (`botaru.budget.used_ratio`, `botaru.approval.count`), deliveries (`botaru.delivery.outcome`), liveness (`botaru.worker.last_seen_age_s`, `botaru.loop.last_tick_age_s`) and holds (`botaru.hold.active`). The check "every catalog metric is in the output" runs as a black box. Where a core observation series coincides with a catalog metric, they have the same name (OBV-5).
+The metrics catalog (v0.2, OBS-13) is a contract for dashboards and alarms that survives a change of implementation. It lives in `spec/bindings/telemetry/metrics.yaml` and covers the four monitoring signals of farm work: latency, traffic, errors and saturation. It holds only what the farm alone knows from its records; machine, disk, network and service metrics stay with the monitoring system, which collects them itself (D-59). Every entry fixes its instrument, unit and labels, and no core decision reads a metric. It has 14 metrics with labels from closed sets: queue (`botaru.queue.depth`, `botaru.queue.oldest_age_s`, `botaru.claim.wait_s`), outcomes and duration (`botaru.task.outcome`, `botaru.attempt.duration_s`), model and tools (`gen_ai.client.operation.duration`, `gen_ai.execute_tool.duration`, `botaru.model.tokens`), budget and approvals (`botaru.budget.used_ratio`, `botaru.approval.count`), deliveries (`botaru.delivery.outcome`), liveness (`botaru.worker.last_seen_age_s`, `botaru.loop.last_tick_age_s`) and holds (`botaru.hold.active`). The skeleton CI checks the catalog form, and the check "every catalog metric is in the output, and no other `botaru.*` name" runs as a black box. Where a core observation series coincides with a catalog metric, they have the same name (OBV-5).
 
 ### P2 `status` and `doctor`
 
@@ -202,7 +202,7 @@ Scopes and effects are closed lists in `spec/model/holds.yaml`. The scopes `sche
 | `no_action` | new `request_action` calls and decisions on pending ones; pending approvals become `canceled(held)` with `card_update` | P3, P1 `decide` | v0.1 |
 | `no_delivery` | deliveries to the scope: `withheld`, except messages to admins about the hold itself | the `delivery` loop | v0.1 |
 | `no_control` | control operations of the seat holder | C1 `control.apply` | v0.1 |
-| `pause_action` | new `request_action` calls; pending approvals are not canceled but wait: the deadline is extended by the length of the hold, the card carries a pause mark, decisions are not accepted until the hold ends | P3, P1 `decide`, the `approval-expiry` loop | v0.2 |
+| `pause_action` | new `request_action` calls; pending approvals are not canceled but wait: the deadline is extended by the time they were pending under the hold, the card carries a pause mark (`card.paused`), decisions get `held` until the hold ends; a person sets it on any scope with approvals, a maintenance window on a host; `no_action` wins (HLD-8) | P3, P1 `decide`, the `approval-expiry` loop | v0.2 |
 
 ### How a hold works
 
@@ -721,6 +721,7 @@ Generated from the registry `conformance/requirements.yaml`; the full text of ev
 | [HLD-5](../conformance/rules.md#HLD-5) | Holds are visible and recorded | v0.1 | no |
 | [HLD-6](../conformance/rules.md#HLD-6) | Auto-stop "secret in outbound" | v0.1 | yes |
 | [HLD-7](../conformance/rules.md#HLD-7) | Auto-stop on spend rate | v0.1 | no |
+| [HLD-8](../conformance/rules.md#HLD-8) | A pause of approvals set by a person | v0.2 | yes |
 | [LCY-1](../conformance/rules.md#LCY-1) | Tenant lifecycle | v0.2 | yes |
 | [LCY-2](../conformance/rules.md#LCY-2) | Tenant and principal export | v0.2 | no |
 | [LCY-3](../conformance/rules.md#LCY-3) | Principal lifecycle | v0.2 | yes |
@@ -738,6 +739,7 @@ Generated from the registry `conformance/requirements.yaml`; the full text of ev
 | [OBS-9](../conformance/rules.md#OBS-9) | Three health indicators | v0.1 | no |
 | [OBS-10](../conformance/rules.md#OBS-10) | Health of plugins, channels and the provider | v0.1 | no |
 | [OBS-12](../conformance/rules.md#OBS-12) | Alarm about an overdue usage reconciliation | v0.1 | no |
+| [OBS-13](../conformance/rules.md#OBS-13) | The metrics catalog | v0.2 | no |
 | [RET-1](../conformance/rules.md#RET-1) | A retention class for every stored object | v0.1 | yes |
 | [RET-2](../conformance/rules.md#RET-2) | Retention periods and deletion at expiry | v0.1 | yes |
 | [RET-3](../conformance/rules.md#RET-3) | Tombstones keep uniqueness | v0.1 | yes |

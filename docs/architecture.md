@@ -42,7 +42,7 @@ Work is pulled: a worker makes a long-polling `claim` itself, a toolhost contact
 
 | Port | Purpose | Kind | Sheet since | Thin | Reference |
 |---|---|---|---|---|---|
-| P1 WorkerProtocol | The only entry point of farm processes into the core | core protocol | v0.1; OpenAPI 3.1 binding since v0.2 | no | the core; the deployment chooses the transport |
+| P1 WorkerProtocol | The only entry point of farm processes into the core | core protocol | v0.1; OpenAPI 3.1 description `spec/bindings/http/p1.openapi.json` since v0.2 (MAN-12) | no | the core; the deployment chooses the transport |
 | P2 AdminAPI | Everything people change and view | core protocol | v0.1 (v0.1 operations only) | no | `farmctl`; admin commands in a channel on behalf of a verified person |
 | P3 ToolGateway | The tool catalog and tool calls for the runtime | core protocol | v0.1 | no | the core; the MCP tool protocol, the revision in the binding |
 | P4 ModelGateway | A model call with check, reserve and charge | core protocol | v0.1 | no | the core, a field allowlist per provider |
@@ -89,7 +89,7 @@ Regardless of `describe()`, the model gateway checks that a request has no tools
 |---|---|---|
 | Data, task bodies, manifests, events | JSON Schema 2020-12, the single source of types; custom annotations only `x-botaru-*` | the current version of the standard; MCP understands tool schemas in this dialect by default |
 | String formats of parameters | the closed registry `spec/model/formats.yaml`; only the skeleton sets regular expressions | a `pattern` of its own in a manifest can be bypassed (INJ-1) |
-| P1 over HTTP | OpenAPI 3.1, only references to `spec/model` | the binding has no types of its own; long polling needs no streams |
+| P1 over HTTP | OpenAPI 3.1, only references to `spec/model`, generated from the operation map (MAN-12) | the binding has no types of its own; long polling needs no streams |
 | P2 | a list of operations in the sheet | there is no second client; OpenAPI arrives together with it |
 | Events | CloudEvents 1.0 and the catalog `spec/bindings/events/catalog.yaml` | mandatory `id`, `source`, `specversion`, `type`; the pair `source` and `id` is unique (IDM-4) |
 | Tools | the MCP tool protocol; the revision (not lower than 2026-07-28), the sessionless mode and passing client capabilities in `_meta` are set by the binding `spec/bindings/mcp/` | a runtime with another revision connects through a new binding, and the rules do not name the revision |
@@ -334,6 +334,7 @@ Generated from the registry `conformance/requirements.yaml`; the full text of ev
 
 | Rule | About | Since | Non-waivable |
 |---|---|---|---|
+| [MAN-12](../conformance/rules.md#MAN-12) | The P1 OpenAPI description | v0.2 | no |
 | [RT-1](../conformance/rules.md#RT-1) | Session inside the runtime | v0.1 | yes |
 | [RT-2](../conformance/rules.md#RT-2) | Memory inside the runtime | v0.1 | yes |
 | [RT-3](../conformance/rules.md#RT-3) | A model handle per profile | v0.1 | yes |

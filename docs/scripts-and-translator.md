@@ -372,7 +372,7 @@ A profile gives no permissions, it only narrows. It is checked by `apply` (manif
 Common lines of the table:
 
 - `escalate` and `request_model_grant` (from v0.2) are available only to the profiles `worker` and `manager`; the output of the other profiles is strictly their own (draft, summary, assessment, proposal, findings);
-- `skill_read` (from v0.2) is available only to the profiles `worker` and `manager`, and it is absent in `handover` tasks (MEM-8);
+- `skill_read` (from v0.2) is available only to the profiles `worker` and `manager`, only for runtimes that declare `skills: farm`, and it is absent in `handover` tasks (MEM-8, SKL-4);
 - in `handover` tasks (a successor choosing facts) no profile has built-in tools (MEM-8);
 - `propose_script` is available only to the profile `translator`;
 - the sections `insight` and `scripts` with `propose: in_proposal` (a script draft only inside a proposal) can be declared only by `worker` and `manager`;

@@ -27,6 +27,7 @@ STEPS = [
     ['gen_lifecycles.py', '--check'],
     ['gen_suites.py', '--check'],
     ['gen_codes.py', '--check'],
+    ['gen_openapi.py', '--check'],
     ['check_text.py'],
     ['check_schemas.py'],
     ['check_fixtures.py'],

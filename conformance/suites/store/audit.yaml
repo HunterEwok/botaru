@@ -9,7 +9,7 @@ checks:
   - AUD-3
   version: v0.1
   section: Tests without a model
-  source: docs/quality.md:529
+  source: docs/quality.md:539
   spec:
     What: UPDATE and DELETE of an audit record through C1 bypassing the core
     Expectation: the operation is rejected; `audit.verify` sees a gap if the record was touched from outside
@@ -19,7 +19,7 @@ checks:
   - AUD-4
   version: v0.2
   section: Tests without a model
-  source: docs/quality.md:564
+  source: docs/quality.md:574
   spec:
     What: '(v0.2) an attempt of a `kind: test` tenant with two model calls and one tool call, a canary in the tool output;
       a `kind: production` tenant without `retention.journals`'

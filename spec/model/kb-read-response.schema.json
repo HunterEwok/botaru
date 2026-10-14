@@ -1,0 +1,68 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:botaru:schema:kb-read-response:1",
+  "title": "P3 kb_read: result",
+  "description": "Fragments of one document in document order (KNW-6).",
+  "x-botaru-direction": "output",
+  "x-botaru-version": "v0.2",
+  "x-botaru-rules": [
+    "KNW-6",
+    "KNW-2"
+  ],
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "corpus",
+    "trust",
+    "fragments"
+  ],
+  "properties": {
+    "corpus": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/name"
+    },
+    "trust": {
+      "enum": [
+        "curated",
+        "ingested"
+      ]
+    },
+    "fragments": {
+      "type": "array",
+      "maxItems": 20,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "fragment",
+          "file",
+          "n",
+          "text"
+        ],
+        "properties": {
+          "fragment": {
+            "type": "string",
+            "maxLength": 64,
+            "pattern": "^[a-z]{1,8}_[0-9A-HJKMNP-TV-Z]{26}:[0-9]{1,4}$",
+            "description": "Fragment id <file>:<n>."
+          },
+          "file": {
+            "$ref": "urn:botaru:schema:common:1#/$defs/object_id"
+          },
+          "n": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 1999
+          },
+          "title": {
+            "type": "string",
+            "maxLength": 200
+          },
+          "text": {
+            "type": "string",
+            "maxLength": 4000
+          }
+        }
+      }
+    }
+  }
+}

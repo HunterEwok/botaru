@@ -9,7 +9,7 @@ checks:
   - REP-5
   version: v0.1
   section: Tests without a model
-  source: docs/quality.md:325
+  source: docs/quality.md:326
   spec:
     What: a core alarm, a farm manager notice and an immediate report of a control operation while the `reporter` role is
       alive
@@ -21,7 +21,7 @@ checks:
   - MSG-18
   version: v0.2
   section: Tests without a model
-  source: docs/quality.md:326
+  source: docs/quality.md:327
   spec:
     What: (v0.2) a `report.qc_note.v1` message with a note in `demo`; `carol` (`admin:people`) calls `msg.list`, `msg.show`
       and `inbox.status`; `dave` with `audit.read` calls `msg.show`; `carol` calls `msg.show` with a `demo2` message id and

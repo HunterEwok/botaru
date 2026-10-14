@@ -702,11 +702,13 @@ entries:
   rules: [INJ-11, HLD-6]
 - id: spend_rate
   since: v0.2
-  meaning: The stop reason from `holds.yaml` for the spending rate.
+  retired: true
+  meaning: 'retired: the auto-stop on the spending rate is HLD-7 (since v0.1) with the reason `runaway_spend`; no hold uses this
+    code, and the entry stays only so that the registry stays additive (D-107).'
   spends_attempt: null
   retry: null
   outcome: value
-  rules: []
+  rules: [HLD-7]
 - id: suspended
   since: v0.2
   meaning: 'Stop reason from `holds.yaml`: the tenant is suspended.'

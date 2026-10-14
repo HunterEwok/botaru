@@ -1,0 +1,35 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:botaru:schema:kb-read-request:1",
+  "title": "P3 kb_read: arguments",
+  "description": "Reads fragments of one document of a corpus in the role scope by a fragment id from kb_search (KNW-6).",
+  "x-botaru-direction": "input",
+  "x-botaru-version": "v0.2",
+  "x-botaru-rules": [
+    "KNW-6"
+  ],
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "corpus",
+    "fragment"
+  ],
+  "properties": {
+    "corpus": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/name",
+      "x-botaru-closed-by": "enum of the corpora in the role resource scope in tools/list"
+    },
+    "fragment": {
+      "type": "string",
+      "maxLength": 64,
+      "pattern": "^[a-z]{1,8}_[0-9A-HJKMNP-TV-Z]{26}:[0-9]{1,4}$",
+      "description": "Fragment id <file>:<n>."
+    },
+    "count": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 20,
+      "description": "Fragments from this one on in document order; 1 by default."
+    }
+  }
+}

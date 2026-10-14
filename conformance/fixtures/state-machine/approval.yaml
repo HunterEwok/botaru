@@ -1,7 +1,7 @@
 # Collected from spec/lifecycles/approval.yaml. The value null in from means "the object does not exist yet".
 lifecycle: spec/lifecycles/approval.yaml
 object: approval
-rules: [APR-1, APR-12, APR-16, APR-17, APR-18, APR-19, APR-2, APR-3, APR-4, APR-5, APR-6, APR-7, APR-9, HLD-3, IDN-6, INJ-1, INJ-15,
+rules: [APR-1, APR-12, APR-16, APR-17, APR-18, APR-19, APR-2, APR-3, APR-4, APR-5, APR-6, APR-7, APR-9, HLD-3, HLD-8, IDN-6, INJ-1, INJ-15,
   MAN-10, MON-8, ORC-2, ORC-3, PRM-17, PRM-18, PRM-3, RET-6]
 description: 'Allowed and forbidden transitions of the "action approval" lifecycle, collected from the tables of spec/lifecycles/approval.md.
   The implementation accepts a transition from the allowed list under the condition of its row (when); a pair from the forbidden
@@ -91,10 +91,10 @@ allowed:
 - id: sm-apr-09
   from: pending
   to: pending
-  by: P2 hold.set with the effect pause_action on the approval's scope (v0.2)
-  when: the deadline is extended by the length of the hold, the card gets a card_update with a pause mark, no decision is
-    accepted until the hold ends
-  rules: [APR-19, HLD-3]
+  by: P2 hold.set with the effect pause_action on the approval's scope, by a person or a maintenance window (v0.2)
+  when: the deadline is extended by the time the approval was pending under the hold, the card gets a card_update with a
+    pause mark, no decision is accepted until the hold ends; no_action wins
+  rules: [APR-19, HLD-3, HLD-8]
   since: v0.2
 - id: sm-apr-10
   from: pending
