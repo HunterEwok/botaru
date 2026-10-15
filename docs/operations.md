@@ -640,7 +640,7 @@ The git side (`tenants/<name>/`, catalog, groups, roles) is in `docs/extending.m
 
 ### Rotating secrets
 
-Everything the core issues or signs carries a key id, and old and new keys are valid together within the rotation window (SEC-5). A revocation on compromise takes effect at the next call, without overlap, and the operator sets a hold without deadline on the affected scopes, which only the operator releases (SEC-6).
+Everything the core issues or signs carries a key id, and old and new keys are valid together within the rotation window (SEC-5). The deployment description names the method of each secret under `secrets` (`overlap` with a `window`, or `cutover`); the deployment lint rejects a named secret without one (`secret_rotation_missing`). A revocation on compromise takes effect at the next call, without overlap, and the operator sets a hold without deadline on the affected scopes, which only the operator releases (SEC-6).
 
 | Secret | Order | `doctor` shows |
 |---|---|---|
@@ -652,6 +652,7 @@ Everything the core issues or signs carries a key id, and old and new keys are v
 | channel driver P2 secret (D-87 (3)) | `worker.enroll` with `rotate_p2: true`; restart the channel processes one at a time | old secret rejected after the window |
 | channel bot token | no overlap at the external system: change it and restart the adapter; the incoming queue waits (DLV-5) | fresh last channel poll (OBS-10) |
 | audit signing key | new key with a new id; `verify` accepts both within the window (AUD-6) | `verify` passes over all heads |
+| core token key (`token_key_file`: lease tokens, handles, token hashes) | a new key file with a new `token_key_id`; the old key and its id move to `previous_token_keys`; restart the core; a worker token is rehashed under the new key at its first call; after the window (the longest lease, and every worker called once) remove the old key | no growth of `lease_mismatch` and `unauthenticated` |
 
 ## Why it works this way
 

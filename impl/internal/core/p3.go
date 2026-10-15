@@ -84,7 +84,7 @@ func (c *Core) resolveToolsHandle(ctx context.Context, q store.Querier, handle s
 	var until, now time.Time
 	err := q.QueryRow(ctx, `SELECT h.tenant, h.work_id, h.lease_no, h.epoch, h.worker_id, l.state, l.lease_until, botaru_now()
 		FROM handles h JOIN leases l ON l.work_id = h.work_id AND l.lease_no = h.lease_no
-		WHERE h.hash = $1 AND h.kind = 'tools'`, c.hashSecret(handle)).
+		WHERE h.hash = ANY($1) AND h.kind = 'tools'`, c.secretHashes(handle)).
 		Scan(&g.Tenant, &g.Task, &g.LeaseNo, &epoch, &g.Worker, &state, &until, &now)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, refuse("handle_invalid", "unknown tools handle")

@@ -107,34 +107,11 @@ func holdFarm(args []string) error {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
 	defer cancel()
-	dsn, err := config.Secret(cfg.StoreDSNFile)
+	c, closeStore, err := offlineCore(ctx, cfg, false)
 	if err != nil {
-		return err
+		return fmt.Errorf("hold farm: %w", err)
 	}
-	key, err := config.Secret(cfg.TokenKeyFile)
-	if err != nil {
-		return err
-	}
-	root, err := spec.FindRoot(cfg.SpecRoot)
-	if err != nil {
-		return err
-	}
-	sp, err := spec.Load(root)
-	if err != nil {
-		return err
-	}
-	st, err := store.Open(ctx, dsn)
-	if err != nil {
-		return err
-	}
-	defer st.Close()
-	c, err := core.New(ctx, core.Config{
-		TokenKey: []byte(key), TestBench: cfg.TestBench, Offline: true,
-		Logger: slog.New(slog.NewTextHandler(io.Discard, nil)),
-	}, st, sp, nil)
-	if err != nil {
-		return fmt.Errorf("hold farm: the store is not ready (the core migrates it at its first start): %w", err)
-	}
+	defer closeStore()
 	req := core.HoldSetRequest{Scope: core.HoldScope{Kind: "farm"}, Effects: strings.Split(*effects, ","), Reason: *reason}
 	if *until != "" {
 		req.Until = until
@@ -146,4 +123,45 @@ func holdFarm(args []string) error {
 	b, _ := json.MarshalIndent(out, "", "  ")
 	fmt.Println(string(b))
 	return nil
+}
+
+// offlineCore opens the core over the store with the core's settings for one command on the
+// core machine (DEP-8): no loops, no ports. With migrate it brings the store to this build
+// first, as a restore of a backup taken before an upgrade needs while the core is stopped.
+func offlineCore(ctx context.Context, cfg *config.Core, migrate bool) (*core.Core, func(), error) {
+	dsn, err := config.Secret(cfg.StoreDSNFile)
+	if err != nil {
+		return nil, nil, err
+	}
+	key, keyID, prevKeys, err := cfg.TokenKeys()
+	if err != nil {
+		return nil, nil, err
+	}
+	root, err := spec.FindRoot(cfg.SpecRoot)
+	if err != nil {
+		return nil, nil, err
+	}
+	sp, err := spec.Load(root)
+	if err != nil {
+		return nil, nil, err
+	}
+	st, err := store.Open(ctx, dsn)
+	if err != nil {
+		return nil, nil, err
+	}
+	if migrate {
+		if err := st.Migrate(ctx); err != nil {
+			st.Close()
+			return nil, nil, err
+		}
+	}
+	c, err := core.New(ctx, core.Config{
+		TokenKey: key, KeyID: keyID, PreviousKeys: prevKeys, TestBench: cfg.TestBench, Offline: true,
+		Logger: slog.New(slog.NewTextHandler(io.Discard, nil)),
+	}, st, sp, nil)
+	if err != nil {
+		st.Close()
+		return nil, nil, fmt.Errorf("the store is not ready (the core migrates it at its first start): %w", err)
+	}
+	return c, st.Close, nil
 }

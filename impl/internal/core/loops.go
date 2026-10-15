@@ -76,6 +76,9 @@ func (c *Core) RunManual(ctx context.Context) {
 // loops after it still run.
 func (c *Core) Tick(ctx context.Context) error {
 	var errs []error
+	if err := c.loadRestoring(ctx); err != nil {
+		errs = append(errs, err)
+	}
 	for _, loop := range loopOrder {
 		if err := c.tickLoop(ctx, loop); err != nil {
 			errs = append(errs, err)

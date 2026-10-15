@@ -24,9 +24,17 @@ type Core struct {
 	StoreDSNFile string `yaml:"store_dsn_file"`
 	// TokenKeyFile holds at least 32 random bytes: the key of token hashes and lease signatures.
 	TokenKeyFile string `yaml:"token_key_file"`
-	TestBench    bool   `yaml:"test_bench"`
-	P1Listen     string `yaml:"p1_listen"`
-	P2Listen     string `yaml:"p2_listen"`
+	// TokenKeyID names the current token key in signed tokens (SEC-5); default k1.
+	TokenKeyID string `yaml:"token_key_id"`
+	// PreviousTokenKeys stay valid in the rotation window of the token key: a new key gets a new
+	// id, the old one moves here until the window ends (SEC-5, docs/operations.md).
+	PreviousTokenKeys []struct {
+		ID   string `yaml:"id"`
+		File string `yaml:"file"`
+	} `yaml:"previous_token_keys"`
+	TestBench bool   `yaml:"test_bench"`
+	P1Listen  string `yaml:"p1_listen"`
+	P2Listen  string `yaml:"p2_listen"`
 	// TestListen is the separate listener of the test-control port (spec/ports/test-control.md);
 	// empty means no port. It needs test_bench and the hex SHA-256 of the test bench key.
 	TestListen    string `yaml:"test_listen"`
@@ -53,6 +61,8 @@ type Core struct {
 	Health core.HealthConfig `yaml:"health"`
 	// Spend holds the reconciliation settings with the provider report (BUD-10).
 	Spend core.SpendConfig `yaml:"spend"`
+	// Backup holds the backup locations the core watches (RET-8).
+	Backup core.BackupConfig `yaml:"backup"`
 }
 
 // Load reads and checks a settings file.
@@ -90,6 +100,23 @@ func Load(path string) (*Core, error) {
 		}
 	}
 	return &c, nil
+}
+
+// TokenKeys reads the current token key and the previous keys of the rotation window (SEC-5).
+func (c *Core) TokenKeys() (key []byte, id string, previous map[string][]byte, err error) {
+	k, err := Secret(c.TokenKeyFile)
+	if err != nil {
+		return nil, "", nil, err
+	}
+	previous = map[string][]byte{}
+	for _, p := range c.PreviousTokenKeys {
+		pk, err := Secret(p.File)
+		if err != nil {
+			return nil, "", nil, err
+		}
+		previous[p.ID] = []byte(pk)
+	}
+	return []byte(k), c.TokenKeyID, previous, nil
 }
 
 // Secret reads a secret file and trims the trailing newline.

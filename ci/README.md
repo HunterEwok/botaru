@@ -253,6 +253,7 @@ The codes of `check_manifests.py` that fixtures refer to (`expect: {error: <code
 | `schema_invalid` | manifest does not pass the schema of its kind | MAN-1 |
 | `script_param_invalid` | script parameter is free, undeclared, without a default where a schedule needs one, or a goal name clashes | SCR-14, SCR-12 |
 | `script_wait_fields` | wait or await step with missing or foreign fields, or a wait above the run deadline | SCR-13 |
+| `secret_rotation_missing` | a named secret of the deployment description has no rotation method, or overlap without a window | SEC-5 |
 | `self_approve_production` | production tenant with self_approve: true | APR-9 |
 | `service_no_card` | service no_card holds something other than restart | MON-8 |
 | `service_script_unknown` | no script from monitor_scripts_allowed for a service verb | MON-8, MON-10 |

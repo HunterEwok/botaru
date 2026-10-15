@@ -122,6 +122,8 @@ CODES = {
     'watch_same_host': ('the watch process runs only on the core machine (note)', 'MON-2'),
     'watch_with_monitoring': ('both a monitoring system and a watch process (note)', 'MON-2'),
     'backup_external_required': ('no copies on a separate machine and no encrypted external backup target', 'RET-5'),
+    'secret_rotation_missing': ('a named secret of the deployment description has no rotation method, or overlap without a window',
+                                'SEC-5'),
     'driver_config_invalid': ('channel or sink spec.config does not match its driver schema', 'MAN-4'),
     'driver_schema_missing': ('own channel with a driver that has neither a skeleton binding note nor a driver schema (note)',
                              'MAN-4'),

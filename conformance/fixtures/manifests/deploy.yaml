@@ -1,5 +1,5 @@
 id: fx-man-deploy-01
-rules: [DEP-10, RET-5, MON-2]
+rules: [DEP-10, RET-5, MON-2, SEC-5]
 description: >-
   Deployment lint per spec/model/deploy-topology.schema.json: a process kind: core on a machine
   kind: production has no test-control port listener (listeners.test), otherwise listener_test_in_production
@@ -8,6 +8,14 @@ description: >-
 cases:
   - name: training farm without a test-control port
     deploy:
+      secrets:
+        backup-key:                {rotation: overlap, window: 60d}
+        health-key:                {rotation: overlap, window: 1d}
+        store-core:                {rotation: overlap, window: 1d}
+        worker-token-channel-demo: {rotation: overlap, window: 7d}
+        worker-token-monitor-demo: {rotation: overlap, window: 7d}
+        worker-token-th-demo-act:  {rotation: overlap, window: 7d}
+        worker-token-th-demo-read: {rotation: overlap, window: 7d}
       monitoring:
         url: https://monitor.example.org
         address: 192.0.2.40
@@ -95,6 +103,14 @@ cases:
     expect: ok
   - name: test-control port listener on a production machine
     deploy:
+      secrets:
+        backup-key:                {rotation: overlap, window: 60d}
+        health-key:                {rotation: overlap, window: 1d}
+        store-core:                {rotation: overlap, window: 1d}
+        worker-token-channel-demo: {rotation: overlap, window: 7d}
+        worker-token-monitor-demo: {rotation: overlap, window: 7d}
+        worker-token-th-demo-act:  {rotation: overlap, window: 7d}
+        worker-token-th-demo-read: {rotation: overlap, window: 7d}
       monitoring:
         url: https://monitor.example.org
         address: 192.0.2.40
@@ -185,6 +201,14 @@ cases:
     expect: {error: listener_test_in_production}
   - name: 'single-server farm without a monitoring system, watchdog and encrypted backups in external storage (D-88)'
     deploy:
+      secrets:
+        backup-encryption-key:     {rotation: overlap, window: 60d}
+        backup-write-only:         {rotation: overlap, window: 1d}
+        health-key:                {rotation: overlap, window: 1d}
+        store-core:                {rotation: overlap, window: 1d}
+        watch-notify:              {rotation: cutover}
+        worker-token-channel-demo: {rotation: overlap, window: 7d}
+        worker-token-th-demo-read: {rotation: overlap, window: 7d}
       farm_hosts:
       - core1
       health_keys:
@@ -265,6 +289,14 @@ cases:
     expect: ok
   - name: single server, backups in external storage without encryption
     deploy:
+      secrets:
+        backup-encryption-key:     {rotation: overlap, window: 60d}
+        backup-write-only:         {rotation: overlap, window: 1d}
+        health-key:                {rotation: overlap, window: 1d}
+        store-core:                {rotation: overlap, window: 1d}
+        watch-notify:              {rotation: cutover}
+        worker-token-channel-demo: {rotation: overlap, window: 7d}
+        worker-token-th-demo-read: {rotation: overlap, window: 7d}
       farm_hosts:
       - core1
       health_keys:
@@ -345,6 +377,14 @@ cases:
     expect: {error: backup_external_required}
   - name: single server without a backup location
     deploy:
+      secrets:
+        backup-encryption-key:     {rotation: overlap, window: 60d}
+        backup-write-only:         {rotation: overlap, window: 1d}
+        health-key:                {rotation: overlap, window: 1d}
+        store-core:                {rotation: overlap, window: 1d}
+        watch-notify:              {rotation: cutover}
+        worker-token-channel-demo: {rotation: overlap, window: 7d}
+        worker-token-th-demo-read: {rotation: overlap, window: 7d}
       farm_hosts:
       - core1
       health_keys:
@@ -418,6 +458,13 @@ cases:
     expect: {error: backup_external_required}
   - name: without a monitoring system and without a watchdog
     deploy:
+      secrets:
+        backup-encryption-key:     {rotation: overlap, window: 60d}
+        backup-write-only:         {rotation: overlap, window: 1d}
+        health-key:                {rotation: overlap, window: 1d}
+        store-core:                {rotation: overlap, window: 1d}
+        worker-token-channel-demo: {rotation: overlap, window: 7d}
+        worker-token-th-demo-read: {rotation: overlap, window: 7d}
       farm_hosts:
       - core1
       health_keys:
@@ -484,3 +531,90 @@ cases:
             secrets:
             - worker-token-th-demo-read
     expect: {error: watch_missing}
+  - name: a named secret without a rotation method (SEC-5)
+    deploy:
+      secrets:
+        backup-encryption-key:     {rotation: overlap, window: 60d}
+        backup-write-only:         {rotation: overlap, window: 1d}
+        health-key:                {rotation: overlap, window: 1d}
+        store-core:                {rotation: overlap, window: 1d}
+        worker-token-channel-demo: {rotation: overlap, window: 7d}
+        worker-token-th-demo-read: {rotation: overlap, window: 7d}
+      farm_hosts:
+      - core1
+      health_keys:
+      - health-key
+      watch:
+        notify_ref: watch-notify
+        interval_s: 60
+      backup:
+        target: external
+        url: https://backup.example.org/farm
+        location_id: offsite-1
+        encrypted: true
+        key_ref: backup-encryption-key
+        credentials_ref: backup-write-only
+      hosts:
+        core1:
+          kind: production
+          processes:
+          - name: farmd
+            kind: core
+            user: botaru-core
+            networks:
+            - core
+            - store
+            secrets:
+            - store-core
+            listeners:
+              p1:
+                networks:
+                - core
+              p2:
+                networks:
+                - admin
+                - watch
+          - name: store
+            kind: store
+            user: botaru-store
+            networks:
+            - store
+          - name: channel-demo
+            kind: channel
+            tenant: demo
+            user: botaru-ch-demo
+            networks:
+            - core
+            secrets:
+            - worker-token-channel-demo
+          - name: watch
+            kind: watch
+            user: botaru-watch
+            networks:
+            - watch
+            - notify-out
+            secrets:
+            - health-key
+            - watch-notify
+          - name: backup
+            kind: backup
+            user: botaru-backup
+            networks:
+            - store
+            - backup-out
+            secrets:
+            - backup-encryption-key
+            - backup-write-only
+        web1:
+          kind: production
+          processes:
+          - name: th-demo-read
+            kind: toolhost
+            tenant: demo
+            placement: host
+            user: botaru-read-demo
+            networks:
+            - core
+            secrets:
+            - worker-token-th-demo-read
+    expect: {error: secret_rotation_missing, at: watch-notify}

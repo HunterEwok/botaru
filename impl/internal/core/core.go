@@ -14,6 +14,8 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"maps"
+	"slices"
 	"sync/atomic"
 	"time"
 
@@ -31,6 +33,9 @@ type Config struct {
 	TokenKey []byte
 	// KeyID names TokenKey in signed lease tokens.
 	KeyID string
+	// PreviousKeys are the token keys of the rotation window by key id: tokens they signed and
+	// secrets they hashed stay valid until the operator removes them (SEC-5).
+	PreviousKeys map[string][]byte
 	// TestBench is true when the deployment set the test bench key (APR-9).
 	TestBench bool
 	// Lease and heartbeat periods: the farm defaults and ceilings (FEN-3).
@@ -52,6 +57,8 @@ type Config struct {
 	Health HealthConfig
 	// Spend holds the reconciliation settings (BUD-10).
 	Spend SpendConfig
+	// Backup holds the backup locations the core watches (RET-8).
+	Backup BackupConfig
 	// FreeSpace, when set, measures the store volume instead of Health.StoreVolume: free and
 	// total bytes. A test sets a mock measurement here.
 	FreeSpace func() (free, total uint64, err error)
@@ -95,6 +102,8 @@ type Core struct {
 	storeDown atomic.Bool
 	// budgetAt and retentionAt are the store times of the last slow passes.
 	budgetAt, retentionAt atomic.Int64
+	// restoring is set while a restore from a backup waits for restore.complete (RET-6).
+	restoring atomic.Bool
 	// manual is set when the loops tick only by loop.tick on a test bench.
 	manual atomic.Bool
 }
@@ -104,6 +113,11 @@ func New(ctx context.Context, cfg Config, st *store.Store, sp *spec.Spec, tx *te
 	cfg.defaults()
 	if len(cfg.TokenKey) < 32 {
 		return nil, errors.New("core: the token key must be at least 32 bytes")
+	}
+	for id, k := range cfg.PreviousKeys {
+		if len(k) < 32 || id == cfg.KeyID || id == "" {
+			return nil, fmt.Errorf("core: previous token key %q must be at least 32 bytes and have its own key id", id)
+		}
 	}
 	meta, err := st.Init(ctx, cfg.TestBench)
 	if err != nil {
@@ -117,6 +131,12 @@ func New(ctx context.Context, cfg Config, st *store.Store, sp *spec.Spec, tx *te
 	}
 	if cfg.Offline {
 		return c, nil
+	}
+	if err := c.settleRestore(ctx); err != nil {
+		return nil, err
+	}
+	if err := c.loadRestoring(ctx); err != nil {
+		return nil, err
 	}
 	c.warnNoticeFallbacks(cat)
 	if err := c.fillNoticeParams(ctx, cat); err != nil {
@@ -165,15 +185,38 @@ func AsProblem(err error) (*Problem, bool) {
 }
 
 // hashSecret is the keyed hash of a token, handle or code (spec/hashing.md, "Hashes of secrets").
-func (c *Core) hashSecret(secret string) string {
-	m := hmac.New(sha256.New, c.cfg.TokenKey)
+func (c *Core) hashSecret(secret string) string { return hashSecretWith(c.cfg.TokenKey, secret) }
+
+// secretHashes are the hashes of a secret under the current key and every previous key of the
+// rotation window, the current first, for a lookup (SEC-5).
+func (c *Core) secretHashes(secret string) []string {
+	out := []string{c.hashSecret(secret)}
+	for _, id := range slices.Sorted(maps.Keys(c.cfg.PreviousKeys)) {
+		out = append(out, hashSecretWith(c.cfg.PreviousKeys[id], secret))
+	}
+	return out
+}
+
+func hashSecretWith(key []byte, secret string) string {
+	m := hmac.New(sha256.New, key)
 	m.Write([]byte("botaru.secret.v1\x00"))
 	m.Write([]byte(secret))
 	return "hmac-sha256:" + hex.EncodeToString(m.Sum(nil))
 }
 
-func (c *Core) sign(b []byte) string {
-	m := hmac.New(sha256.New, c.cfg.TokenKey)
+func (c *Core) sign(b []byte) string { return signWith(c.cfg.TokenKey, b) }
+
+// signingKey is the key a lease token names by its key id: the current or a previous key of
+// the rotation window (SEC-5).
+func (c *Core) signingKey(id string) []byte {
+	if id == c.cfg.KeyID {
+		return c.cfg.TokenKey
+	}
+	return c.cfg.PreviousKeys[id]
+}
+
+func signWith(key []byte, b []byte) string {
+	m := hmac.New(sha256.New, key)
 	m.Write([]byte("botaru.lease.v1\x00"))
 	m.Write(b)
 	return base64.RawURLEncoding.EncodeToString(m.Sum(nil))

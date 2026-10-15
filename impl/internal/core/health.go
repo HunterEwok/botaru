@@ -111,6 +111,12 @@ func (c *Core) measureCapacity() (free, total uint64, ok bool) {
 // loops after the store was unavailable (OBS-8), and below the hard threshold of the store
 // volume except heartbeat, complete, fail and release (CAP-5).
 func (c *Core) P1Ready(op string) error {
+	if c.restoring.Load() {
+		// After a restore nothing is handed out or enqueued until restore.complete (RET-6).
+		p := refuse("not_ready", "the store was restored; waiting for restore.complete")
+		p.RetryAfterS = 60
+		return p
+	}
 	if c.storeDown.Load() {
 		p := refuse("not_ready", "the store is unavailable")
 		p.RetryAfterS = 5
@@ -238,7 +244,10 @@ func (c *Core) healthLoop(ctx context.Context) error {
 		if measured {
 			low.Values = map[string]any{"free_bytes": int64(free), "free_ratio": float64(free) / float64(total), "soft": h.StoreFreeSoft, "hard": h.StoreFreeHard}
 		}
-		return set(low, measured && c.capacity.Load() != capacityOK)
+		if err := set(low, measured && c.capacity.Load() != capacityOK); err != nil {
+			return err
+		}
+		return c.backupAlarms(ctx, tx, now, set)
 	})
 }
 
@@ -284,7 +293,8 @@ func (c *Core) Health(ctx context.Context) HealthReport {
 	case drain != nil:
 		// A planned rollout, which the monitoring system tells from a failure (LCY-6, MON-2).
 		r.Alive, r.Reason, r.DrainUntilS = false, "draining", drain
-	case c.storeDown.Load() || c.capacity.Load() == capacityHard:
+	case c.storeDown.Load() || c.capacity.Load() == capacityHard || c.restoring.Load():
+		// A restore waiting for restore.complete is not ready either (RET-6).
 		r.Alive, r.Reason = false, "not_ready"
 	default:
 		for _, loop := range loopOrder {

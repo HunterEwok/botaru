@@ -1724,6 +1724,17 @@ def lint_deploy(topo, f, where):
                     'no copies on a separate machine: backup.target: external, encrypted: true and key_ref are required (RET-5, D-88)')
     if bk.get('target') == 'host' and bk.get('host') and bk['host'] in core_hosts:
         f.error('backup_external_required', where, f'backup.host {bk["host"]} is the core machine (RET-5)')
+    # SEC-5: each named secret has a rotation method; overlap names its window.
+    rot = (topo or {}).get('secrets') or {}
+    named = set((topo or {}).get('health_keys') or [])
+    named |= {v for v in (((topo or {}).get('watch') or {}).get('notify_ref'), bk.get('key_ref'), bk.get('credentials_ref')) if v}
+    named |= {s for h in hosts.values() for pr in (h or {}).get('processes') or [] for s in pr.get('secrets') or []}
+    for name in sorted(named):
+        m = rot.get(name) if isinstance(rot, dict) else None
+        if not isinstance(m, dict) or m.get('rotation') not in ('overlap', 'cutover'):
+            f.error('secret_rotation_missing', where, f'secret {name} has no rotation method in secrets (SEC-5)')
+        elif m['rotation'] == 'overlap' and not m.get('window'):
+            f.error('secret_rotation_missing', where, f'secret {name}: rotation overlap without a window (SEC-5)')
 
 
 def obj_key(d):

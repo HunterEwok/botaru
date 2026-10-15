@@ -5,6 +5,15 @@ monitoring:
   address: 192.0.2.40
 farm_hosts: [core1, backup1]        # farm nodes: core, store, channels, backups (DEP-11)
 health_keys: [health-key]
+secrets:                                   # rotation method of each named secret (SEC-5, docs/operations.md)
+  backup-key:                   {rotation: overlap, window: 60d}
+  health-key:                   {rotation: overlap, window: 1d}
+  store-core:                   {rotation: overlap, window: 1d}
+  worker-token-channel-demo:    {rotation: overlap, window: 7d}
+  worker-token-monitor-demo:    {rotation: overlap, window: 7d}
+  worker-token-th-demo-act:     {rotation: overlap, window: 7d}
+  worker-token-th-demo-read:    {rotation: overlap, window: 7d}
+  worker-token-th-demo-sandbox: {rotation: overlap, window: 7d}
 hosts:
   core1:
     kind: production

@@ -195,10 +195,21 @@ func (c *Core) checkBudget(ctx context.Context, tx pgx.Tx, now time.Time, tv *Te
 		}
 		windows = append(windows, window{personal, day, spendFilter{subject: ask.subject, line: "work"}, "the personal day limit is used up", "person_day"})
 	}
+	// After a restore without the provider report the daily limits are halved until a
+	// reconciliation covers the gap (RET-6).
+	halve, err := spendGapOpen(ctx, tx)
+	if err != nil {
+		return refuse("not_ready", "store")
+	}
 	var crossed []crossing
 	for _, w := range windows {
 		if w.limit == nil {
 			continue
+		}
+		// Only the day windows: on the first of a month the month windows start at the same time.
+		if halve && (w.limit == dayLimit || w.limit == lb.DayEUR || w.scope == "person_day") {
+			half := *w.limit / 2
+			w.limit = &half
 		}
 		used, err := windowUsed(ctx, tx, tv.Name, w.filter, w.from, ask.ownRoot)
 		if err != nil {

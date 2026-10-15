@@ -7,6 +7,18 @@
 monitoring: {url: "https://monitor.example.org", address: 192.0.2.40}   # not on the core machine (MON-2)
 farm_hosts: [core1, backup1]                                             # farm nodes (DEP-11)
 health_keys: [health-key]                  # names of the P2 health key values; two names during a rotation
+secrets:                                   # rotation method of each named secret (SEC-5, docs/operations.md)
+  backup-key:                {rotation: overlap, window: 60d}
+  bot-token-demo:            {rotation: cutover}
+  health-key:                {rotation: overlap, window: 1d}
+  metrics-token-demo:        {rotation: overlap, window: 7d}
+  monitor-api-token:         {rotation: overlap, window: 7d}
+  provider-key-demo:         {rotation: overlap, window: 7d}
+  store-core:                {rotation: overlap, window: 1d}
+  store-server:              {rotation: overlap, window: 1d}
+  worker-token-monitor:      {rotation: overlap, window: 7d}
+  worker-token-th-demo-act:  {rotation: overlap, window: 7d}
+  worker-token-th-demo-read: {rotation: overlap, window: 7d}
 hosts:
   core1:
     kind: production

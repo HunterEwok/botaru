@@ -1,0 +1,86 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+# A farm of one server in docker compose: the store, the core, the hello agent, the Telegram
+# channel and, for a check without a real model, the mock provider. impl/DEPLOY.md, section
+# "Running with docker compose", gives the order: secrets, `up store core`, enroll, `up`.
+# Secrets are files in ./secrets (never in this repository); each is mounted read-only at
+# /run/secrets/<name> of the services that name it.
+name: botaru
+
+x-farm: &farm
+  image: botaru:local
+  restart: on-failure
+  read_only: true
+  cap_drop: [ALL]
+  security_opt: [no-new-privileges:true]
+  tmpfs: [/tmp]
+
+services:
+  store:
+    image: postgres:16-bookworm
+    restart: on-failure
+    environment:
+      POSTGRES_USER: botaru
+      POSTGRES_DB: botaru
+      POSTGRES_PASSWORD_FILE: /run/secrets/store-password
+    secrets: [store-password]
+    volumes: [store:/var/lib/postgresql/data]
+    networks: [store]
+    healthcheck:
+      test: [CMD-SHELL, pg_isready -U botaru -d botaru]
+      interval: 5s
+      retries: 20
+
+  core:
+    <<: *farm
+    build: {context: ../../.., dockerfile: impl/deploy/compose/Dockerfile}
+    command: [botaru-core, -config, /etc/botaru/core.yaml]
+    depends_on: {store: {condition: service_healthy}}
+    volumes:
+      - ./core.yaml:/etc/botaru/core.yaml:ro
+      - workers:/var/lib/botaru/workers          # worker tokens written by farmctl worker enroll
+    secrets: [store-dsn, token-key, operator, provider-key-demo]
+    networks:
+      store: {}
+      core: {aliases: [core.botaru.example.org]}   # a name under example.org keeps the repository free of real hosts
+      provider-out: {}
+
+  mockmodel:
+    <<: *farm
+    profiles: [mock]
+    command: [botaru-mockmodel, -listen, "0.0.0.0:8409", -scenario, /opt/botaru/src/examples/hello-bot/mock-model.yaml]
+    networks:
+      provider-out: {aliases: [mock.botaru.example.org]}
+
+  agent:
+    <<: *farm
+    profiles: [workers]
+    command: [botaru-agent, -core, "http://core.botaru.example.org:8401", -token-file, /var/lib/botaru/workers/agent]
+    volumes: [workers:/var/lib/botaru/workers:ro]
+    networks: [core, provider-out]
+
+  telegram:
+    <<: *farm
+    profiles: [workers]
+    command: [botaru-telegram, -core, "http://core.botaru.example.org:8401", -token-file, /var/lib/botaru/workers/channel,
+              -bot-token-file, /run/secrets/bot-token, -spec-root, /opt/botaru/src]
+    volumes: [workers:/var/lib/botaru/workers:ro]
+    secrets: [bot-token]
+    networks: [core, messenger-out]
+
+networks:
+  store: {internal: true}
+  core: {internal: true}
+  provider-out: {}
+  messenger-out: {}
+
+volumes:
+  store: {}
+  workers: {}
+
+secrets:
+  store-password: {file: ./secrets/store-password}
+  store-dsn: {file: ./secrets/store-dsn}
+  token-key: {file: ./secrets/token-key}
+  operator: {file: ./secrets/operator}
+  provider-key-demo: {file: ./secrets/provider-key-demo}
+  bot-token: {file: ./secrets/bot-token}
