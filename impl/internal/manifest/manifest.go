@@ -410,6 +410,11 @@ type TaskType struct {
 	Run *struct {
 		Approval string `json:"approval"`
 	} `json:"run"`
+	// Memory says whether the model may propose facts and whether the attempt reads them (MEM-6).
+	Memory *struct {
+		Facts string `json:"facts"`
+		Read  string `json:"read"`
+	} `json:"memory"`
 	// Events are the event types a job of the type may publish through P1 emit (IDM-4).
 	Events []string `json:"events"`
 	// Observes are the series a job of the type reads through P1 obs.query (OBV-3).

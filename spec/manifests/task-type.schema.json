@@ -442,6 +442,25 @@
       },
       "description": "From v0.2: grant thresholds of the type (MGR-17).",
       "x-botaru-version": "v0.2"
+    },
+    "memory": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "facts": {
+          "enum": [
+            "propose"
+          ],
+          "description": "The model may propose at most memory.facts.per_attempt facts in the result field facts (MEM-6); the role needs bot memory."
+        },
+        "read": {
+          "enum": [
+            "bot"
+          ],
+          "description": "The attempt reads the active facts of the acting identity (MEM-6)."
+        }
+      },
+      "description": "Bot memory of the type: facts it may propose and read (MEM-6)."
     }
   }
 }

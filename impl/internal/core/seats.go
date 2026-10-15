@@ -186,13 +186,23 @@ func (c *Core) SeatAssign(ctx context.Context, op Operator, req SeatRequest) (*D
 			return err
 		}
 		if worker != "" {
-			if _, err := c.insertBot(ctx, tx, now, b.Tenant, b.Role, "worker", worker, "", "seat.assign"); err != nil {
+			next, err := c.insertBot(ctx, tx, now, b.Tenant, b.Role, "worker", worker, "", "seat.assign")
+			if err != nil {
+				return err
+			}
+			// The binding changed: the worker's new identity gets copies of the facts, and the
+			// holder keeps its own (MEM-7).
+			if err := c.offerFacts(ctx, tx, now, cat, b, next, "", now.Add(charterDuration(cat, b.Tenant, "memory", "seal_ttl", defaultSealTTL))); err != nil {
 				return err
 			}
 		}
 		seq, err := c.moveSeat(ctx, tx, now, s, b.ID, "held", "seat.assigned.v1", "seat.assign", op.Principal)
 		out.AuditSeq = seq
-		return err
+		if err != nil {
+			return err
+		}
+		// A seat that waited with an offer of its previous holder hands it to the new one.
+		return c.pickUpOffers(ctx, tx, now, cat, b.Tenant, b.Role, s.ID, b.ID)
 	})
 	if err != nil {
 		return nil, err
