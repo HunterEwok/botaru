@@ -1,0 +1,8 @@
+# Operators of the farm (docs/permissions.md): they decide on the farm manager seat through
+# farmctl and get its code notices without buttons (PRM-14, MGR-35).
+apiVersion: botaru/v1alpha1
+kind: Group
+metadata: {name: operator, tenant: farm}
+spec:
+  caps: ["admin:governance", "admin:people", "hold.release"]
+  data: [summary]

@@ -1,0 +1,14 @@
+# Telegram channel of tenant farm (bot @farm_ops_bot): code notices to operators only. The
+# deployment keeps the bot token and the driver's P2 secret (D-87 (3)).
+apiVersion: botaru/v1alpha1
+kind: Channel
+metadata: {name: telegram, tenant: farm}
+spec:
+  driver: telegram
+  identity_kind: telegram
+  identity_assurance: strong
+  membership_assurance: enforced
+  ai_disclosure: first_contact
+  provenance: visible_label
+  capabilities: {max_text: 4096, buttons: false, files: false, edit: true}
+  rate: {per_minute: 20}

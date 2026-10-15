@@ -810,7 +810,9 @@ func (c *Core) noticeAdmins(ctx context.Context, tx pgx.Tx, now time.Time, cat *
 		}
 	}
 	if sent == 0 {
-		c.log.Info("a seat notice has no recipient: no admin has a private chat", "kind", kind)
+		// A stop that reaches nobody still shows as alarm.manager.absent after absentAfter.
+		c.log.Error("a seat notice has no recipient: no operator of farm or admin has a private chat; declare tenant farm with an operator group and a channel",
+			"kind", kind)
 	}
 	return nil
 }

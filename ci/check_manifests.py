@@ -1194,13 +1194,14 @@ def lint(docs, today=None, farm_hosts=None, examples_mode=False, claimed=None, s
                 f.error('ingress_token_tier', where,
                         f'route {rname}: event {ev} comes from a tls_token source, which routes only to tier 0 types; {tt} has tier {tier} (ING-1)')
 
-    # 12. Global manifests without tenant data (TEN-6).
+    # 12. Global manifests without tenant data (TEN-6). The service tenant farm is also a word
+    # of the language (a subject kind, a hold scope).
     for kind, entry in KINDS.items():
         if entry.get('scope') != 'global':
             continue
         for _, name, where, gs in S.each(kind):
             for s in strings(gs):
-                if s in tenants or re.search(r'(?<![\w.])(user|staff|service|chat|group):[a-z]', s) \
+                if (s in tenants and s != 'farm') or re.search(r'(?<![\w.])(user|staff|service|chat|group):[a-z]', s) \
                         or re.search(r'[\w.+-]+@[\w-]+\.[\w.]+', s):
                     f.error('global_tenant_data', where, f'{kind} {name}: value {s!r} looks like tenant data (TEN-6)')
                     break

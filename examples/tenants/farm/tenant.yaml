@@ -1,0 +1,18 @@
+# The service tenant farm (docs/architecture.md): the farm manager seat, the operators and the
+# holds of the scopes farm and seat. It makes no model calls. Its operators get the
+# manager_stopped card in private chats of its channel (MGR-35), so the farm needs this
+# manifest, an operator group and a channel.
+apiVersion: botaru/v1alpha1
+kind: Tenant
+metadata: {name: farm}
+spec:
+  kind: production
+  timezone: Europe/Berlin
+  self_approve: false
+  farm_manager: {enabled: false}
+  budgets: {month_eur: 0, day_eur: 0, hour_eur: 0}
+  models_allowed: []
+  privacy:
+    purposes:
+      - {purpose: operations, lawful_basis: legitimate_interest}
+    recipients: [messenger, monitoring]
