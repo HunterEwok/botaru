@@ -1018,6 +1018,7 @@ def lint(docs, today=None, farm_hosts=None, examples_mode=False, claimed=None, s
         if not roles or 'commission' not in gs:
             continue
         seats = (gs.get('commission') or {}).get('seats', [])
+        analysis = {(rs.get('models') or {}).get('analysis') for _, rs in roles.values()} - {None}
         for lid, le in sorted(lenses.items()):
             if le.get('veto') is not True:
                 continue
@@ -1026,11 +1027,10 @@ def lint(docs, today=None, farm_hosts=None, examples_mode=False, claimed=None, s
             # A lens without a seat goes to a role of profile reviewer that claims its type (COM-8).
             if not any(s.get('lens') == lid for s in seats):
                 covered = covered or any(rs.get('profile') == 'reviewer' and le.get('review_type') in (rs.get('claims') or [])
-                                         for _, rs in roles.values())
+                                         and (rs.get('models') or {}).get('base') not in analysis for _, rs in roles.values())
             if not covered:
                 f.error('veto_lens_no_executor', where, f'charter {gname}: veto lens {lid} has no executor claiming {le.get("review_type")} (COM-7, COM-8)')
         # A seat's fallback role does not run on the analysis profile of a role that writes proposals (COM-2).
-        analysis = {(rs.get('models') or {}).get('analysis') for _, rs in roles.values()} - {None}
         for s in seats:
             fr = roles.get(s.get('fallback_role'))
             if fr and (fr[1].get('models') or {}).get('base') in analysis:

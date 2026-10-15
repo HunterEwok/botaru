@@ -276,20 +276,46 @@ func TestCommissionVetoLensMissing(t *testing.T) {
 	}
 }
 
-// A refusal other than money keeps the proposal waiting in screened with its code and never
-// parks it as review_budget (COM-6).
+// A refusal other than money keeps the proposal waiting in screened with its code, parks it
+// after review_wait_max, and park_ttl ends it (COM-6, PRP-6).
 func TestCommissionWaitsForCap(t *testing.T) {
 	b := newCommissionBench(t, true, func(ms []map[string]any) {
 		s := specOf(ms, "Group", "system-ops")
 		s["caps"] = slices.DeleteFunc(slices.Clone(s["caps"].([]any)), func(c any) bool { return strings.HasPrefix(c.(string), "task:review.") })
 	})
 	proposeNone(t, b)
-	for range 2 {
-		if state, rec := proposalState(t, b); state != "screened" || rec["waiting_for"] != "no_group_cap" {
-			t.Fatalf("state %s %v %v", state, rec["state_reason"], rec["waiting_for"])
-		}
+	if state, rec := proposalState(t, b); state != "screened" || rec["waiting_for"] != "no_group_cap" {
+		t.Fatalf("state %s %v %v", state, rec["state_reason"], rec["waiting_for"])
+	}
+	b.advance(t, 8*24*3600)
+	b.loop(t, "proposal")
+	if state, rec := proposalState(t, b); state != "parked" || rec["state_reason"] != "review_budget" || rec["waiting_for"] != "no_group_cap" {
+		t.Fatalf("state %s %v %v", state, rec["state_reason"], rec["waiting_for"])
+	}
+	for range 4 {
 		b.advance(t, 8*24*3600)
 		b.loop(t, "proposal")
+	}
+	if state, _ := proposalState(t, b); state != "expired" {
+		t.Fatalf("state %s", state)
+	}
+}
+
+// A veto lens review that never comes parks the proposal, and the same absent reviewer does
+// not bring it back (COM-4, COM-7).
+func TestCommissionVetoReviewMissing(t *testing.T) {
+	b := newCommissionBench(t, true)
+	proposeNone(t, b)
+	rb := b.enroll(t, EnrollRequest{Tenant: "demo", Role: "reviewer-b", Kind: "agent"})
+	if err := b.review(t, rb, map[string]any{"lens": "value", "score": 3, "confidence": "medium"}); err != nil {
+		t.Fatal(err)
+	}
+	b.advance(t, 49*3600)
+	for range 3 {
+		b.loop(t, "proposal")
+		if state, rec := proposalState(t, b); state != "parked" || rec["state_reason"] != "veto_lens_missing" {
+			t.Fatalf("state %s %v", state, rec["state_reason"])
+		}
 	}
 }
 

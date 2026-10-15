@@ -198,7 +198,8 @@ func (p *proposalRow) kind() string { return p.body().Change.Kind }
 
 func (p *proposalRow) reason() string { return asString(p.Rec["state_reason"]) }
 
-// moveProposal writes a transition of the table with its reason and an event.
+// moveProposal writes a transition of the table with its reason. The record carries the state;
+// the events catalog has no proposal state event in v0.1.
 func (c *Core) moveProposal(ctx context.Context, tx pgx.Tx, now time.Time, p *proposalRow, state, reason string) error {
 	p.Rec["state"] = state
 	if reason != "" {
@@ -207,20 +208,20 @@ func (c *Core) moveProposal(ctx context.Context, tx pgx.Tx, now time.Time, p *pr
 		p.Rec["state_reason"] = nil
 	}
 	p.State, p.StateAt = state, now
-	// park_ttl counts from the first park: a parked proposal screened again and parked again
-	// keeps its clock (PRP-6); waiting_since is the start of a wait in screened (COM-6).
+	// park_ttl counts from the first park: a parked proposal screened and reviewed again and
+	// parked again keeps its clock, so a proposal that cannot pass leaves by park_ttl (PRP-6);
+	// waiting_since is the start of a wait in screened (COM-6).
 	switch state {
 	case "parked":
 		if p.Rec["parked_since"] == nil {
 			p.Rec["parked_since"] = fmtTime(now)
 		}
-	case "screened":
+	case "screened", "in_review":
 	default:
 		delete(p.Rec, "parked_since")
 	}
 	if state != "screened" {
 		delete(p.Rec, "waiting_since")
-		delete(p.Rec, "waiting_for")
 	}
 	raw, err := json.Marshal(p.Rec)
 	if err != nil {
@@ -287,8 +288,9 @@ func (c *Core) stepProposal(ctx context.Context, tx pgx.Tx, now time.Time, cat *
 				return c.moveProposal(ctx, tx, now, p, "screened", "")
 			}
 		case "veto_lens_missing":
-			// The veto lens has an executor again (COM-7).
-			if c.vetoCovered(lenses, exec) {
+			// The veto lens has an executor again (COM-7): a role other than the one whose
+			// review was missing, so the same absent reviewer does not loop the proposal.
+			if c.vetoCovered(lenses, exec) && execChanged(mmapAny(p.Rec["missing_exec"]), exec) {
 				return c.moveProposal(ctx, tx, now, p, "screened", "")
 			}
 		}
@@ -323,7 +325,9 @@ func (c *Core) screenProposal(ctx context.Context, tx pgx.Tx, now time.Time, cat
 			p.Rec["waiting_since"] = fmtTime(now)
 		}
 		p.Rec["waiting_for"] = pr.Reason
-		if pr.Reason == "budget_exhausted" && now.Sub(p.since("waiting_since", now)) > durationOr(tv.Spec.Insights.ReviewWaitMax, defaultReviewWaitMax) {
+		// Any refusal parks after review_wait_max, so a gap in the configuration does not hold
+		// the proposal and the open limits forever; waiting_for keeps the refusal code.
+		if now.Sub(p.since("waiting_since", now)) > durationOr(tv.Spec.Insights.ReviewWaitMax, defaultReviewWaitMax) {
 			return c.moveProposal(ctx, tx, now, p, "parked", "review_budget")
 		}
 		return c.saveProposal(ctx, tx, now, p)
@@ -353,8 +357,17 @@ func (c *Core) screenProposal(ctx context.Context, tx pgx.Tx, now time.Time, cat
 	}
 	p.Rec["review_lenses"] = lenses
 	p.Rec["reviews"] = reviews
-	p.Rec["review_reserved_eur"] = reserved
-	p.Rec["review_started_at"] = fmtTime(now)
+	// The role share counts the spend of earlier rounds and the reserve of this one in the
+	// month of the first round (COM-6).
+	spent, _ := toFloat(p.Rec["review_spent_eur"])
+	p.Rec["review_reserved_eur"] = spent + reserved
+	if p.Rec["review_started_at"] == nil {
+		p.Rec["review_started_at"] = fmtTime(now)
+	}
+	p.Rec["review_round_at"] = fmtTime(now)
+	p.Rec["review_round"] = p.round() + 1
+	delete(p.Rec, "missing_exec")
+	delete(p.Rec, "waiting_for")
 	return c.moveProposal(ctx, tx, now, p, "in_review", "")
 }
 
@@ -409,7 +422,7 @@ func (c *Core) enqueueReviews(ctx context.Context, tx pgx.Tx, now time.Time, cat
 		// The review carries the proposal's mark; enqueue checks data:<mark> for the system
 		// initiator against it (COM-3, PRM-6).
 		res, err := c.enqueue(ctx, tx, now, cat, enqueueInput{Tenant: p.Tenant, Type: e.Type, Body: body,
-			IdempotencyKey: "system:review:" + p.ID + ":" + l, Initiator: "system", EnqueuedBy: "system:proposal", Source: reviewSource, SourceID: p.ID,
+			IdempotencyKey: reviewKey(p, l), Initiator: "system", EnqueuedBy: "system:proposal", Source: reviewSource, SourceID: p.ID,
 			ContinuesMark: asString(p.Rec["data_mark"])})
 		if err != nil {
 			return nil, 0, err
@@ -457,7 +470,7 @@ func reviewInput(p *proposalRow) map[string]any {
 // review_deadline; when no review is pending the code verdict moves the proposal (COM-4).
 func (c *Core) reviewProposal(ctx context.Context, tx pgx.Tx, now time.Time, cat *Catalog, tv *TenantView, p *proposalRow) error {
 	policy := policyFrom(tenantSpecOf(cat, "Commission", p.Tenant))
-	started, _ := time.Parse(time.RFC3339, asString(p.Rec["review_started_at"]))
+	started := p.since("review_round_at", p.since("review_started_at", p.StateAt))
 	deadline := started.Add(durationOr(policy.ReviewDeadline, 24*time.Hour))
 	reviews, _ := p.Rec["reviews"].([]any)
 	pending := false
@@ -478,6 +491,9 @@ func (c *Core) reviewProposal(ctx context.Context, tx pgx.Tx, now time.Time, cat
 		}
 		switch {
 		// A review counts by the time it was handed in, not by when the loop reads it.
+		case state == "completed" && (len(result) == 0 || string(result) == "null"):
+			// A purged task has no result left: the review failed.
+			rm["state"], changed = "failed", true
 		case state == "completed" && done.After(deadline):
 			rm["state"], changed = "late", true
 		case state == "completed":
@@ -540,12 +556,57 @@ func (c *Core) reviewProposal(ctx context.Context, tx pgx.Tx, now time.Time, cat
 	if err := tx.QueryRow(ctx, `SELECT coalesce(sum(eur_micros), 0) FROM spend WHERE root = ANY($1) AND unit <> 'task' AND state <> 'reserved'`, tasks).Scan(&spent); err != nil {
 		return err
 	}
-	p.Rec["review_reserved_eur"] = float64(spent) / 1e6
+	total, _ := toFloat(p.Rec["review_spent_eur"])
+	total += float64(spent) / 1e6
+	p.Rec["review_spent_eur"], p.Rec["review_reserved_eur"] = total, total
 	v := verdict(policy, in)
 	v["computed_at"] = fmtTime(now)
 	p.Rec["verdict"] = v
 	state, reason, _ := strings.Cut(asString(v["outcome"]), "(")
-	return c.moveProposal(ctx, tx, now, p, state, strings.TrimSuffix(reason, ")"))
+	reason = strings.TrimSuffix(reason, ")")
+	if reason == "veto_lens_missing" {
+		// Which role was to review each missing veto lens: the proposal comes back only with
+		// another one (COM-7).
+		roles := map[string]any{}
+		_, exec := c.commissionLenses(cat, p.Tenant, in.KindNone, p.Role)
+		for _, l := range asList(v["missing_lenses"]) {
+			if defs[asString(l)].Veto {
+				roles[asString(l)] = exec[asString(l)].Role
+			}
+		}
+		p.Rec["missing_exec"] = roles
+	}
+	return c.moveProposal(ctx, tx, now, p, state, reason)
+}
+
+// execChanged says whether some lens of missing has an executor role other than the recorded
+// one.
+func execChanged(missing map[string]any, exec map[string]lensExecutor) bool {
+	if len(missing) == 0 {
+		return true
+	}
+	for l, role := range missing {
+		if e, ok := exec[l]; ok && e.Role != asString(role) {
+			return true
+		}
+	}
+	return false
+}
+
+func (p *proposalRow) round() int {
+	n, _ := toFloat(p.Rec["review_round"])
+	return int(n)
+}
+
+// reviewKey is the idempotency key of a lens review: system:review:<proposal>:<lens> for the
+// first round (IDM-2), with the round number after a proposal is screened again, so a new round
+// sends new tasks.
+func reviewKey(p *proposalRow, lens string) string {
+	k := "system:review:" + p.ID + ":" + lens
+	if n := p.round() + 1; n > 1 {
+		k += fmt.Sprintf(":%d", n)
+	}
+	return k
 }
 
 func mmapAny(v any) map[string]any {
