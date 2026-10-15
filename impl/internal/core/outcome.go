@@ -547,6 +547,20 @@ func (c *Core) requeue(ctx context.Context, tx pgx.Tx, now time.Time, l *leaseRo
 	case "attempt":
 		_, err = tx.Exec(ctx, `UPDATE tasks SET state = 'submitted', run_at = $2, updated_at = $3 WHERE id = $1 AND state = 'working'`, l.WorkID, runAt, now)
 	case "delivery":
+		var kind string
+		if err := tx.QueryRow(ctx, `SELECT kind FROM deliveries WHERE id = $1`, l.WorkID).Scan(&kind); err != nil {
+			return err
+		}
+		if kind == "monitor_script" {
+			// A script is handed out once (MON-10): a released run ends, as a released call does.
+			if _, err := tx.Exec(ctx, `UPDATE deliveries SET state = 'dead', reason = 'worker_drain', updated_at = $2 WHERE id = $1 AND state = 'sending'`, l.WorkID, now); err != nil {
+				return err
+			}
+			if err := c.scriptFailed(ctx, tx, now, l.WorkID, "worker_drain"); err != nil {
+				return err
+			}
+			return notifyWork(ctx, tx)
+		}
 		_, err = tx.Exec(ctx, `UPDATE deliveries SET state = 'planned', run_at = $2, updated_at = $3 WHERE id = $1 AND state = 'sending'`, l.WorkID, runAt, now)
 	case "toolcall":
 		// A call is not handed out again (DLV-1): a released call ends, and the model decides.

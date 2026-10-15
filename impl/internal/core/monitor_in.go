@@ -19,6 +19,7 @@ import (
 	"github.com/HunterEwok/botaru/impl/internal/ids"
 	"github.com/HunterEwok/botaru/impl/internal/jcs"
 	"github.com/HunterEwok/botaru/impl/internal/mcp"
+	"github.com/HunterEwok/botaru/impl/internal/redact"
 	"github.com/HunterEwok/botaru/impl/internal/store"
 	"github.com/HunterEwok/botaru/impl/internal/toolspec"
 )
@@ -384,6 +385,39 @@ func (c *Core) scriptGuards(ctx context.Context, tx pgx.Tx, now time.Time, g *to
 	return "", nil
 }
 
+// scriptHandout checks a script run again when an adapter claims it: the holds of the call
+// scopes and the start window. It returns the reason to withhold it, or "" (HLD-3, MON-10).
+func (c *Core) scriptHandout(ctx context.Context, tx pgx.Tx, now time.Time, delivery string) (string, error) {
+	s, err := loadScriptCall(ctx, tx, delivery)
+	if err != nil || s == nil {
+		return "", err
+	}
+	var typ string
+	var startBy *time.Time
+	if err := tx.QueryRow(ctx, `SELECT t.type, c.start_by FROM tasks t, toolcalls c WHERE t.id = $1 AND c.id = $2`, s.Task, s.Toolcall).Scan(&typ, &startBy); err != nil {
+		return "", err
+	}
+	if startBy != nil && !now.Before(*startBy) {
+		return "no_executor", nil
+	}
+	role, err := deliveryRole(ctx, tx, s.Task)
+	if err != nil {
+		return "", err
+	}
+	scopes := append(tenantScopes(s.Tenant), scopeRef{kind: "plugin", tenant: s.Tenant, name: scriptPlugin},
+		scopeRef{kind: "action", tenant: s.Tenant, name: scriptCap}, scopeRef{kind: "tasktype", tenant: s.Tenant, name: typ},
+		scopeRef{kind: "worker", tenant: s.Tenant, name: strings.ToLower(s.BotID)})
+	if role != "" {
+		scopes = append(scopes, scopeRef{kind: "role", tenant: s.Tenant, name: role})
+	}
+	scopes = append(scopes, targetScopes(s.Tenant, callTargetRef{host: s.Host})...)
+	held, err := heldBy(ctx, tx, now, []string{"no_tool", "no_action"}, scopes...)
+	if err != nil || held == "" {
+		return "", err
+	}
+	return "held", nil
+}
+
 // scriptOutcome turns the end of a script call into the closed result for the model: the code
 // and the grant number; the output stays in the task journal (MON-10).
 func (c *Core) scriptOutcome(ctx context.Context, callID, grant string) (*mcp.CallResult, error) {
@@ -409,6 +443,9 @@ func (c *Core) scriptOutcome(ctx context.Context, callID, grant string) (*mcp.Ca
 		switch deref(reason) {
 		case "forbidden", "script_unknown":
 			r.Code = deref(reason)
+		case "held":
+			// A hold set after the call was queued, as at the call (HLD-3).
+			r.Code = "forbidden"
 		default:
 			r.Code = "failed"
 		}
@@ -469,9 +506,8 @@ func (c *Core) scriptDone(ctx context.Context, tx pgx.Tx, now time.Time, deliver
 // scriptJournal stores the output of a script as a produced file of the task: untrusted text,
 // so a task that reads it gets untrusted_seen (MON-10, INJ-13).
 func (c *Core) scriptJournal(ctx context.Context, tx pgx.Tx, now time.Time, s *scriptCall, output string) (string, error) {
-	if len(output) > scriptOutputMax {
-		output = output[:scriptOutputMax]
-	}
+	// The output is masked as tool output is, and cut on a character boundary (INJ-4).
+	output, _ = redact.Cut(redact.Secrets(output), scriptOutputMax)
 	tv, cat, err := c.requireTenant(ctx, s.Tenant)
 	if err != nil {
 		return "", err
@@ -526,7 +562,7 @@ func (c *Core) scriptFailed(ctx context.Context, tx pgx.Tx, now time.Time, deliv
 		return nil
 	}
 	switch reason {
-	case "forbidden", "script_unknown", "provider_unavailable", "held":
+	case "forbidden", "script_unknown", "provider_unavailable", "held", "no_executor", "worker_drain":
 		return c.endToolCall(ctx, tx, now, s.Toolcall, "error", reason, nil)
 	}
 	return c.endToolCall(ctx, tx, now, s.Toolcall, "exec_unknown", "exec_unknown", nil)
@@ -636,7 +672,8 @@ func (c *Core) problemSignal(ctx context.Context, w *Worker, cat *Catalog, data 
 	// The class and the item come only from the catalog; the adapter cannot set them.
 	class, item, inCatalog := monitorTrigger(cat, w.Tenant, ev.TriggerID)
 	ev.Class, ev.Item = "unknown", ""
-	if inCatalog {
+	// A catalog class longer than the event allows stays unknown rather than refuse the problem.
+	if inCatalog && len(class) <= 32 {
 		ev.Class = class
 		// An item key outside the closed form of the event (a path, for example) stays in the
 		// catalog; the event carries only the class.
@@ -676,10 +713,15 @@ func (c *Core) problemSignal(ctx context.Context, w *Worker, cat *Catalog, data 
 		}
 		subject := AlarmSubject{Kind: "resource", ID: strings.ToLower(host.ID)}
 		if ev.State == "open" {
-			if _, err := tx.Exec(ctx, `INSERT INTO monitor_problems (tenant, eventid, host, triggerid, class, alarm, state, opened_at)
+			tag, err := tx.Exec(ctx, `INSERT INTO monitor_problems (tenant, eventid, host, triggerid, class, alarm, state, opened_at)
 				VALUES ($1, $2, $3, $4, $5, $6, 'open', $7) ON CONFLICT (tenant, eventid) DO NOTHING`,
-				w.Tenant, ev.EventID, host.ID, ev.TriggerID, ev.Class, alarm, now); err != nil {
+				w.Tenant, ev.EventID, host.ID, ev.TriggerID, ev.Class, alarm, now)
+			if err != nil {
 				return err
+			}
+			if tag.RowsAffected() == 0 {
+				// The problem is known already, perhaps resolved before this open came in.
+				return nil
 			}
 			return c.fireAlarm(ctx, tx, now, Alarm{Tenant: w.Tenant, Name: alarm, Subject: subject, Values: values, Origin: "monitor"})
 		}
@@ -749,10 +791,10 @@ func (c *Core) monitorNote(ctx context.Context, tx pgx.Tx, now time.Time, callID
 		return nil
 	}
 	var tool, tenant, task string
-	var host, grant, approval, worker *string
+	var host, grant, approval *string
 	var args map[string]any
-	err := tx.QueryRow(ctx, `SELECT tool, tenant, task, target_host, grant_id, approval_id, args, worker_id FROM toolcalls WHERE id = $1 AND access = 'write'`, callID).
-		Scan(&tool, &tenant, &task, &host, &grant, &approval, &args, &worker)
+	err := tx.QueryRow(ctx, `SELECT tool, tenant, task, target_host, grant_id, approval_id, args FROM toolcalls WHERE id = $1 AND access = 'write'`, callID).
+		Scan(&tool, &tenant, &task, &host, &grant, &approval, &args)
 	if errors.Is(err, pgx.ErrNoRows) || err == nil && tool != scriptRight && tool != serviceRight {
 		return nil
 	}
@@ -807,7 +849,7 @@ func (c *Core) monitorNote(ctx context.Context, tx pgx.Tx, now time.Time, callID
 	if err != nil {
 		return err
 	}
-	bot, err := noteBot(ctx, tx, task, deref(worker))
+	bot, err := noteBot(ctx, tx, task)
 	if err != nil || bot == "" {
 		return err
 	}
@@ -822,12 +864,14 @@ func (c *Core) monitorNote(ctx context.Context, tx pgx.Tx, now time.Time, callID
 	return err
 }
 
-// noteBot is the bot of a note: the worker of the task's last attempt, else the executor.
-func noteBot(ctx context.Context, tx pgx.Tx, task, executor string) (string, error) {
+// noteBot is the bot of a note: the worker of the task's last attempt. An action task of a
+// person has no attempt and no bot, so it gets no note: the mark would name a bot that did
+// nothing (MON-8).
+func noteBot(ctx context.Context, tx pgx.Tx, task string) (string, error) {
 	var w string
 	err := tx.QueryRow(ctx, `SELECT worker_id FROM leases WHERE work_id = $1 AND kind = 'attempt' ORDER BY lease_no DESC LIMIT 1`, task).Scan(&w)
 	if errors.Is(err, pgx.ErrNoRows) {
-		return executor, nil
+		return "", nil
 	}
 	return w, err
 }

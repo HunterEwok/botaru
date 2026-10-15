@@ -559,6 +559,26 @@ func (c *Core) claimDelivery(ctx context.Context, tx pgx.Tx, now time.Time, cat 
 				continue
 			}
 		}
+		// A script run is checked again at hand-out: a hold set after the call was queued, or a
+		// start window that ran out, withholds it, and the sweep ends its call (HLD-3, MON-10).
+		if kind == "monitor_script" {
+			reason, err := c.scriptHandout(ctx, tx, now, id)
+			if err != nil {
+				return nil, err
+			}
+			if reason != "" {
+				if _, err := tx.Exec(ctx, `UPDATE deliveries SET state = 'withheld', reason = $2, updated_at = $3 WHERE id = $1`, id, reason, now); err != nil {
+					return nil, err
+				}
+				if err := c.appendEvent(ctx, tx, now, w.Tenant, Event{Type: "delivery.withheld", Subject: id, Data: map[string]any{"delivery": id, "kind": kind, "reason": reason}}); err != nil {
+					return nil, err
+				}
+				if err := c.scriptFailed(ctx, tx, now, id, reason); err != nil {
+					return nil, err
+				}
+				continue
+			}
+		}
 		// A group chat gets a delivery only while it is bound, has no unknown member and the
 		// mark is within the binding ceiling (DLV-7, DLV-15).
 		if w.Kind == "channel" && targetKind == "chat" && strings.HasPrefix(targetID, "group:") {
@@ -651,7 +671,12 @@ func (c *Core) claimDelivery(ctx context.Context, tx pgx.Tx, now time.Time, cat 
 		picked = true
 	}
 	leaseNo++
-	item, err := c.newLease(ctx, tx, now, w, "delivery", id, leaseNo, c.cfg.LeaseS, "")
+	leaseS := c.cfg.LeaseS
+	if kind == "monitor_script" {
+		// A script runs up to its timeout plus the API round trip within one lease.
+		leaseS = max(leaseS, min(scriptTimeout+60, maxLeaseS))
+	}
+	item, err := c.newLease(ctx, tx, now, w, "delivery", id, leaseNo, leaseS, "")
 	if err != nil {
 		return nil, err
 	}

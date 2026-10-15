@@ -269,6 +269,8 @@ monitor:
   enabled: true
 ```
 
+With the profile on, `apply` refuses a tenant whose `privacy.recipients` does not list `monitoring` (`recipients_monitoring`, MON-1): add it to every tenant before the next `apply`.
+
 Restart the core, then enroll the adapter of each tenant and start it:
 
 ```sh

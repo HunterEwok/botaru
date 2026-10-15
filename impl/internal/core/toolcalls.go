@@ -277,7 +277,8 @@ func (c *Core) endToolCall(ctx context.Context, tx pgx.Tx, now time.Time, id, st
 	// A script call and the write call of a service action note their end on the problem
 	// of the host (MON-8, MON-10); a script call ends in the e5 placement, which no toolhost
 	// serves, so the sweep of the monitor loop ends it when no adapter does.
-	if state == "done" {
+	// A run that may have happened (exec_unknown) is noted as failed, so people see it.
+	if state == "done" || state == "exec_unknown" {
 		if err := c.monitorNote(ctx, tx, now, id, state); err != nil {
 			return err
 		}

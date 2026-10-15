@@ -11,6 +11,7 @@ package zabbix
 
 import (
 	"bytes"
+	"cmp"
 	"context"
 	"crypto/sha256"
 	"crypto/subtle"
@@ -21,6 +22,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"regexp"
 	"sort"
 	"strings"
 	"sync"
@@ -475,6 +477,9 @@ func (a *Adapter) loadHostIDs(ctx context.Context) error {
 	return nil
 }
 
+// choiceForm is the form of a choice of a script input list in ext.monitor.scripts.v1.
+var choiceForm = regexp.MustCompile(`^[A-Za-z0-9_.:-]+$`)
+
 // SyncScripts reads the scripts Zabbix gives the adapter user on each catalog host and sends
 // the list of a host to the core when its hash changed (MON-10). The script name is dropped.
 func (a *Adapter) SyncScripts(ctx context.Context) error {
@@ -493,6 +498,7 @@ func (a *Adapter) SyncScripts(ctx context.Context) error {
 	if len(ids) == 0 {
 		return nil
 	}
+	var firstErr error
 	var res map[string][]struct {
 		ScriptID      string `json:"scriptid"`
 		Scope         string `json:"scope"`
@@ -515,15 +521,21 @@ func (a *Adapter) SyncScripts(ctx context.Context) error {
 				list = append(list, script{ScriptID: s.ScriptID, Input: "none"})
 			case s.ValidatorType == "1":
 				var choices []string
+				ok := true
 				for _, c := range strings.Split(s.Validator, ",") {
 					if c = strings.TrimSpace(c); c != "" {
 						choices = append(choices, c)
+						ok = ok && len(c) <= 64 && choiceForm.MatchString(c)
 					}
 				}
-				list = append(list, script{ScriptID: s.ScriptID, Input: "list", Choices: choices})
+				// A list the core would refuse leaves out this script only, not the host.
+				if ok && len(choices) <= 32 {
+					list = append(list, script{ScriptID: s.ScriptID, Input: "list", Choices: choices})
+				}
 			}
 		}
 		sort.Slice(list, func(i, j int) bool { return list[i].ScriptID < list[j].ScriptID })
+		list = list[:min(len(list), 64)]
 		raw, _ := json.Marshal(list)
 		sum := sha256.Sum256(raw)
 		hash := "sha256:" + hex.EncodeToString(sum[:16])
@@ -536,13 +548,15 @@ func (a *Adapter) SyncScripts(ctx context.Context) error {
 		}
 		if _, err := a.signal(ctx, "ext.monitor.scripts.v1", "scripts:"+resource+":"+hash[7:23],
 			map[string]any{"resource": resource, "hash": hash, "scripts": list}); err != nil {
-			return err
+			// One refused list does not stop the lists of the other hosts.
+			firstErr = cmp.Or(firstErr, err)
+			continue
 		}
 		a.mu.Lock()
 		a.sent[resource] = hash
 		a.mu.Unlock()
 	}
-	return nil
+	return firstErr
 }
 
 // signal submits an external event to the core as an activity of kind signal.

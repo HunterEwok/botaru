@@ -368,3 +368,46 @@ func recv(t *testing.T, ch <-chan struct {
 	}
 	panic("unreachable")
 }
+
+// A hold set after the call was queued withholds the run at hand-out, and a released run ends
+// its call instead of going back to the queue (HLD-3, MON-10).
+func TestScriptRunHandout(t *testing.T) {
+	ctx := context.Background()
+	b := newScriptBench(t)
+	b.scripts(t, "hash-0001", map[string]any{"scriptid": "17", "input": "none"})
+	_, h := b.attemptTools(t, "1", true)
+	args := map[string]any{"resource": "web1", "script": "app-api-restart"}
+
+	ch := callAsync(b.bench, h, mcp.CallParams{Name: scriptToolName, Arguments: args})
+	if !queued(t, b.bench) {
+		t.Fatal("the run was not queued")
+	}
+	item := b.claim(t, b.mon, "delivery")
+	if item == nil || dbody(item)["scriptid"] != "17" {
+		t.Fatalf("the run was not handed out: %+v", item)
+	}
+	if _, err := b.c.Release(ctx, b.mon, header(t, item)); err != nil {
+		t.Fatal(err)
+	}
+	if again := b.claim(t, b.mon, "delivery"); again != nil && dbody(again)["scriptid"] == "17" {
+		t.Fatal("a released run was handed out again")
+	}
+	if g := recv(t, ch); strings.Contains(callText(g.r), `"done"`) {
+		t.Fatalf("a released run: %s", callText(g.r))
+	}
+
+	ch = callAsync(b.bench, h, mcp.CallParams{Name: scriptToolName, Arguments: args})
+	if !queued(t, b.bench) {
+		t.Fatal("the second run was not queued")
+	}
+	if _, err := b.c.HoldSet(ctx, OperatorActor(b.op), HoldSetRequest{
+		Scope: HoldScope{Kind: "tenant", Tenant: "demo"}, Effects: []string{"no_action"}, Reason: "manual"}); err != nil {
+		t.Fatal(err)
+	}
+	if item := b.claim(t, b.mon, "delivery"); item != nil && dbody(item)["scriptid"] == "17" {
+		t.Fatal("a run was handed out under a hold set after it was queued")
+	}
+	if g := recv(t, ch); !strings.Contains(callText(g.r), "forbidden") {
+		t.Fatalf("a held run: %s", callText(g.r))
+	}
+}
