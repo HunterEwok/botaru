@@ -22,6 +22,7 @@ CODES = {
     'farm_host_in_catalog': ('farm host listed in a tenant catalog', 'DEP-11'),
     'host_two_tenants': ('host or service in catalogs of two tenants', 'TEN-4'),
     'series_source_invalid': ('observation series source does not fit its kind (tool without tool or field, a tool on another kind, job without field)', 'OBV-2, OBV-7'),
+    'series_name_reserved': ('observation series named like a core series (a name of core-series.yaml or the farm. prefix)', 'OBV-6'),
     'series_class_below_source': ('observation series data_class below the output_class of its source tool', 'OBV-2'),
     'rollup_unknown': ('observation series rollup or outcome.compare is not in spec/model/rollups.yaml', 'OBV-4'),
     'guard_not_metric': ('insights.extra_guards names a series without a complete outcome block', 'OBV-6'),

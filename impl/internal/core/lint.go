@@ -1372,6 +1372,9 @@ func (c *Core) lintManifests(docs []manifest.Doc, index []int) ([]ApplyError, er
 	tenantSeriesOutcome := map[[2]string]map[string]any{}
 	for _, o := range S.each("ObservationSeries") {
 		tenantSeriesOutcome[[2]string{o.tenant, o.name}] = mmap(o.spec, "outcome")
+		if _, core := coreOutcome[o.name]; core || strings.HasPrefix(o.name, "farm.") {
+			f.add(o, "series_name_reserved", "/metadata/name")
+		}
 		if dc, ok := r.dataClasses[mstr(o.spec, "data_class")]; !ok || truthy(dc["reserved"]) {
 			f.add(o, "cap_data_class", "/data_class")
 		}

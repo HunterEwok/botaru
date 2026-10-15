@@ -4,7 +4,7 @@ description: >-
   Observation series checks: a tool source names the tool and its field, a job source its
   field of run.finished.v1 (OBV-2, OBV-7); the data class is not below the output_class of the
   source tool (OBV-2); rollups and outcome.compare come from spec/model/rollups.yaml (OBV-4); a
-  trial guard of the tenant names only a series with a complete outcome block (OBV-6).
+  trial guard of the tenant names only a series with a complete outcome block, and a tenant series does not take a core series name (OBV-6).
 with_examples: true
 cases:
   - name: series from a tool field
@@ -82,3 +82,14 @@ cases:
     manifests:
       - {apiVersion: botaru/v1alpha1, kind: Tenant, metadata: {name: demo2}, spec: {kind: test, farm_manager: {enabled: false}, budgets: {month_eur: 60}, insights: {extra_guards: [{metric: farm.task.outcome, guards: [farm.attempt.duration]}]}}}
     expect: ok
+  - name: tenant series named like a core series
+    manifests:
+      - apiVersion: botaru/v1alpha1
+        kind: ObservationSeries
+        metadata: {name: farm.task.outcome, tenant: demo}
+        spec:
+          catalog_kind: host
+          value: {type: number, minimum: 0, maximum: 10000}
+          data_class: internal
+          source: {kind: job, field: duration_s}
+    expect: {error: series_name_reserved}

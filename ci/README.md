@@ -258,6 +258,7 @@ The codes of `check_manifests.py` that fixtures refer to (`expect: {error: <code
 | `secret_rotation_missing` | a named secret of the deployment description has no rotation method, or overlap without a window | SEC-5 |
 | `self_approve_production` | production tenant with self_approve: true | APR-9 |
 | `series_class_below_source` | observation series data_class below the output_class of its source tool | OBV-2 |
+| `series_name_reserved` | observation series named like a core series (a name of core-series.yaml or the farm. prefix) | OBV-6 |
 | `series_source_invalid` | observation series source does not fit its kind (tool without tool or field, a tool on another kind, job without field) | OBV-2, OBV-7 |
 | `service_no_card` | service no_card holds something other than restart | MON-8 |
 | `service_script_unknown` | no script from monitor_scripts_allowed for a service verb | MON-8, MON-10 |

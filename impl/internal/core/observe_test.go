@@ -222,3 +222,39 @@ func TestToolSeries(t *testing.T) {
 		t.Fatalf("hour.max %v", p)
 	}
 }
+
+// A batch full of rows with one time does not hold the cursor: the next pass reads after the
+// last row of the batch, and a task that ends later is observed.
+func TestObserveCursorFullBatch(t *testing.T) {
+	ctx := context.Background()
+	b := newObsBench(t)
+	id := b.helloDone(t, "1", "", "hi")
+	if _, err := b.c.st.Pool.Exec(ctx, `INSERT INTO tasks SELECT (jsonb_populate_record(null::tasks, to_jsonb(t) ||
+		jsonb_build_object('id', t.id || '-' || g, 'idempotency_key', coalesce(t.idempotency_key, 'k') || '-' || g))).*
+		FROM tasks t, generate_series(1, $2::int) g WHERE t.id = $1`, id, obsBatch+100); err != nil {
+		t.Fatal(err)
+	}
+	for range 3 {
+		b.loop(t, "observe")
+	}
+	b.helloDone(t, "2", "", "hi")
+	for range 3 {
+		b.loop(t, "observe")
+	}
+	if n := b.obsCount(t, seriesTaskOutcome); n != obsBatch+102 {
+		t.Fatalf("outcome points %d", n)
+	}
+}
+
+// A window longer than the raw points kept is refused for a rollup the series does not store.
+func TestObsWindowBeyondRaw(t *testing.T) {
+	b := newObsBench(t)
+	q := ObsQueryRequest{Series: seriesTaskOutcome, Subject: "task_type:hello.greet.v1", Window: "93d", Rollup: "window.share"}
+	if out, err := b.c.ObsSeries(context.Background(), b.op, q); err == nil {
+		t.Fatalf("a 93d share over 14 days of points: %v", out)
+	}
+	q = ObsQueryRequest{Series: seriesAttemptTime, Subject: "task_type:hello.greet.v1", Window: "93d", Rollup: "day.p95"}
+	if _, err := b.c.ObsSeries(context.Background(), b.op, q); err != nil {
+		t.Fatal(err)
+	}
+}

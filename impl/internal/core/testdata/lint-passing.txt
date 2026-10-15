@@ -58,6 +58,7 @@ fx-man-obs-01#3
 fx-man-obs-01#4
 fx-man-obs-01#5
 fx-man-obs-01#6
+fx-man-obs-01#7
 fx-man-prm-01#0
 fx-man-prm-01#1
 fx-man-prm-01#10

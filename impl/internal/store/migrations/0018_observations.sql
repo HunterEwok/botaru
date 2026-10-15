@@ -42,7 +42,11 @@ CREATE INDEX obs_rollups_at ON obs_rollups (period_start);
 -- Where the observe loop read up to, by source of records.
 CREATE TABLE obs_cursor (
     name  text PRIMARY KEY,
-    at    timestamptz NOT NULL
+    at    timestamptz NOT NULL,
+    -- After a full batch the cursor is a keyset position (at, last_id) read strictly after;
+    -- otherwise the next pass reads again from at minus the look-back.
+    last_id text NOT NULL DEFAULT '',
+    full_batch boolean NOT NULL DEFAULT false
 );
 
 -- The last good backup by tenant and catalog resource, from run.finished.v1 of a backup type

@@ -1184,6 +1184,8 @@ def lint_series(S, f, tools):
     series = {}
     for tenant, name, where, ss in S.each('ObservationSeries'):
         series[(tenant, name)] = ss
+        if name in CORE_SERIES or name.startswith('farm.'):
+            f.error('series_name_reserved', where, f'series {name}: the name belongs to the core series (OBV-6)')
         if ss.get('data_class') not in DATA_CLASSES or DATA_CLASSES[ss['data_class']].get('reserved'):
             f.error('cap_data_class', where, f'series {name}: data class {ss.get("data_class")} is not accepted (OBV-2)')
         src = ss.get('source') or {}

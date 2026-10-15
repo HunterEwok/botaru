@@ -78,6 +78,11 @@ func (c *Core) tenantSeries(cat *Catalog, tenant string) map[string]seriesDef {
 			}
 			d := seriesDef{Name: asString(e["id"]), CatalogKind: asString(e["catalog_kind"]), DataClass: coreSeriesMark, Source: "core",
 				Enum: strList(e["values"]), RawDays: obsRawDays, RollDays: obsRollupDays}
+			// A numeric core series keeps its day rollups for the rollup period; a series of a
+			// closed list has only the window share over its raw points.
+			if len(d.Enum) == 0 {
+				d.Rollups = []string{"day.max", "day.p95"}
+			}
 			if o, ok := e["outcome"].(map[string]any); ok {
 				d.Outcome = decodeOutcome(o)
 			}
@@ -85,7 +90,8 @@ func (c *Core) tenantSeries(cat *Catalog, tenant string) map[string]seriesDef {
 		}
 	}
 	for k, raw := range cat.RawGlobals {
-		if k.Kind != "ObservationSeries" || k.Tenant != tenant {
+		// A tenant series never takes a core series name (apply refuses it, OBV-6).
+		if _, core := out[k.Name]; k.Kind != "ObservationSeries" || k.Tenant != tenant || core || strings.HasPrefix(k.Name, "farm.") {
 			continue
 		}
 		spec, _ := raw["spec"].(map[string]any)
@@ -189,18 +195,33 @@ func (c *Core) observe(ctx context.Context) error {
 	return nil
 }
 
-// obsCursor reads where a source was read up to; a new store reads the last 14 days.
-func obsCursor(ctx context.Context, q store.Querier, name string, now time.Time) (time.Time, error) {
+// obsCursor gives where a pass starts: strictly after the keyset position (at, id) of a full
+// batch, so a run of rows with one time cannot hold the cursor; otherwise from at minus the
+// look-back with no id, so a late commit is read again.
+func obsCursor(ctx context.Context, q store.Querier, name string, now time.Time) (time.Time, string, error) {
 	var at time.Time
-	err := q.QueryRow(ctx, `SELECT at FROM obs_cursor WHERE name = $1`, name).Scan(&at)
+	var id string
+	var full bool
+	err := q.QueryRow(ctx, `SELECT at, last_id, full_batch FROM obs_cursor WHERE name = $1`, name).Scan(&at, &id, &full)
 	if errors.Is(err, pgx.ErrNoRows) {
-		return now.AddDate(0, 0, -obsRawDays), nil
+		return now.AddDate(0, 0, -obsRawDays), "", nil
 	}
-	return at, err
+	if err != nil || full {
+		return at, id, err
+	}
+	return at.Add(-obsLookback), "", nil
 }
 
-func setObsCursor(ctx context.Context, tx pgx.Tx, name string, at time.Time) error {
-	_, err := tx.Exec(ctx, `INSERT INTO obs_cursor (name, at) VALUES ($1, $2) ON CONFLICT (name) DO UPDATE SET at = greatest(obs_cursor.at, $2)`, name, at)
+// setObsCursor stores the end of a pass: the keyset position of a full batch, or the later of
+// the stored time, the last row and the look-back edge.
+func setObsCursor(ctx context.Context, tx pgx.Tx, name string, n int, at time.Time, id string, now time.Time) error {
+	if n == obsBatch {
+		_, err := tx.Exec(ctx, `INSERT INTO obs_cursor (name, at, last_id, full_batch) VALUES ($1, $2, $3, true)
+			ON CONFLICT (name) DO UPDATE SET at = $2, last_id = $3, full_batch = true`, name, at, id)
+		return err
+	}
+	_, err := tx.Exec(ctx, `INSERT INTO obs_cursor (name, at, last_id, full_batch) VALUES ($1, $2, '', false)
+		ON CONFLICT (name) DO UPDATE SET at = greatest(obs_cursor.at, $2), last_id = '', full_batch = false`, name, maxTime(at, now.Add(-obsLookback)))
 	return err
 }
 
@@ -222,7 +243,7 @@ func taskOutcome(state, reason string) string {
 // look-back, and its points are written once by key, so a late commit is not missed.
 func (c *Core) observeTasks(ctx context.Context, cat *Catalog) error {
 	return c.tx(ctx, func(tx pgx.Tx, now time.Time) error {
-		from, err := obsCursor(ctx, tx, "tasks", now)
+		from, after, err := obsCursor(ctx, tx, "tasks", now)
 		if err != nil {
 			return err
 		}
@@ -232,7 +253,7 @@ func (c *Core) observeTasks(ctx context.Context, cat *Catalog) error {
 			(SELECT l.worker_id FROM leases l WHERE l.work_id = t.id AND l.kind = 'attempt' ORDER BY l.lease_no DESC LIMIT 1),
 			(SELECT w.role FROM leases l JOIN workers w ON w.id = l.worker_id WHERE l.work_id = t.id AND l.kind = 'attempt' ORDER BY l.lease_no DESC LIMIT 1),
 			coalesce((SELECT sum(s.eur_micros) FROM spend s WHERE s.task = t.id AND s.state <> 'reserved'), 0)
-			FROM tasks t WHERE t.state IN ('completed', 'failed', 'canceled') AND t.updated_at > $1 ORDER BY t.updated_at LIMIT $2`, from.Add(-obsLookback), obsBatch)
+			FROM tasks t WHERE t.state IN ('completed', 'failed', 'canceled') AND (t.updated_at, t.id) > ($1, $3) ORDER BY t.updated_at, t.id LIMIT $2`, from, obsBatch, after)
 		if err != nil {
 			return err
 		}
@@ -251,9 +272,9 @@ func (c *Core) observeTasks(ctx context.Context, cat *Catalog) error {
 		if err != nil {
 			return err
 		}
-		last := from
+		last, lastID := from, ""
 		for _, r := range rs {
-			last = r.updated
+			last, lastID = r.updated, r.id
 			subject := "task_type:" + r.typ
 			base := obsPoint{Tenant: r.tenant, Subject: subject, Source: "core", Mark: coreSeriesMark, Worker: deref(r.worker), Role: deref(r.role), At: r.updated}
 			pts := []obsPoint{}
@@ -282,10 +303,7 @@ func (c *Core) observeTasks(ctx context.Context, cat *Catalog) error {
 				}
 			}
 		}
-		if len(rs) == obsBatch {
-			return setObsCursor(ctx, tx, "tasks", last)
-		}
-		return setObsCursor(ctx, tx, "tasks", maxTime(last, now.Add(-obsLookback)))
+		return setObsCursor(ctx, tx, "tasks", len(rs), last, lastID, now)
 	})
 }
 
@@ -329,41 +347,40 @@ func (c *Core) slotPoint(cat *Catalog, tenant, key, state string, created time.T
 // observeAttempts writes farm.attempt.duration for each attempt that ended.
 func (c *Core) observeAttempts(ctx context.Context, _ *Catalog) error {
 	return c.tx(ctx, func(tx pgx.Tx, now time.Time) error {
-		from, err := obsCursor(ctx, tx, "attempts", now)
+		from, after, err := obsCursor(ctx, tx, "attempts", now)
 		if err != nil {
 			return err
 		}
-		rows, err := tx.Query(ctx, `SELECT l.work_id, l.lease_no, l.tenant, t.type, l.worker_id, w.role, l.created_at, l.closed_at
+		rows, err := tx.Query(ctx, `SELECT l.work_id, l.lease_no, l.tenant, t.type, l.worker_id, w.role, l.created_at, l.closed_at,
+			l.work_id || '#' || lpad(l.lease_no::text, 8, '0') AS k
 			FROM leases l JOIN tasks t ON t.id = l.work_id JOIN workers w ON w.id = l.worker_id
-			WHERE l.kind = 'attempt' AND l.closed_at IS NOT NULL AND l.closed_at > $1 ORDER BY l.closed_at LIMIT $2`, from.Add(-obsLookback), obsBatch)
+			WHERE l.kind = 'attempt' AND l.closed_at IS NOT NULL AND (l.closed_at, l.work_id || '#' || lpad(l.lease_no::text, 8, '0')) > ($1, $3)
+			ORDER BY l.closed_at, k LIMIT $2`, from, obsBatch, after)
 		if err != nil {
 			return err
 		}
 		type row struct {
-			work, tenant, typ, worker, role string
-			no                              int
-			created, closed                 time.Time
+			work, tenant, typ, worker, role, k string
+			no                                 int
+			created, closed                    time.Time
 		}
 		rs, err := pgx.CollectRows(rows, func(r pgx.CollectableRow) (row, error) {
 			var x row
-			return x, r.Scan(&x.work, &x.no, &x.tenant, &x.typ, &x.worker, &x.role, &x.created, &x.closed)
+			return x, r.Scan(&x.work, &x.no, &x.tenant, &x.typ, &x.worker, &x.role, &x.created, &x.closed, &x.k)
 		})
 		if err != nil {
 			return err
 		}
-		last := from
+		last, lastID := from, ""
 		for _, r := range rs {
-			last = r.closed
+			last, lastID = r.closed, r.k
 			if err := writePoint(ctx, tx, now, obsPoint{Tenant: r.tenant, Series: seriesAttemptTime, Subject: "task_type:" + r.typ, Source: "core",
 				Mark: coreSeriesMark, Worker: r.worker, Role: r.role, At: r.closed, Num: num(r.closed.Sub(r.created).Seconds()),
 				Key: fmt.Sprintf("lease:%s:%d", r.work, r.no)}); err != nil {
 				return err
 			}
 		}
-		if len(rs) == obsBatch {
-			return setObsCursor(ctx, tx, "attempts", last)
-		}
-		return setObsCursor(ctx, tx, "attempts", maxTime(last, now.Add(-obsLookback)))
+		return setObsCursor(ctx, tx, "attempts", len(rs), last, lastID, now)
 	})
 }
 
@@ -371,12 +388,12 @@ func (c *Core) observeAttempts(ctx context.Context, _ *Catalog) error {
 // good backup) and of skipped schedule slots (OBV-7, TIM-3).
 func (c *Core) observeEvents(ctx context.Context, cat *Catalog) error {
 	return c.tx(ctx, func(tx pgx.Tx, now time.Time) error {
-		from, err := obsCursor(ctx, tx, "events", now)
+		from, after, err := obsCursor(ctx, tx, "events", now)
 		if err != nil {
 			return err
 		}
 		rows, err := tx.Query(ctx, `SELECT id, tenant, type, coalesce(subject, ''), time, data FROM events
-			WHERE type IN ($3, $4) AND time > $1 ORDER BY time LIMIT $2`, from.Add(-obsLookback), obsBatch, runFinishedType, scheduleSkippedType)
+			WHERE type IN ($3, $4) AND (time, id) > ($1, $5) ORDER BY time, id LIMIT $2`, from, obsBatch, runFinishedType, scheduleSkippedType, after)
 		if err != nil {
 			return err
 		}
@@ -392,9 +409,9 @@ func (c *Core) observeEvents(ctx context.Context, cat *Catalog) error {
 		if err != nil {
 			return err
 		}
-		last := from
+		last, lastID := from, ""
 		for _, r := range rs {
-			last = r.at
+			last, lastID = r.at, r.id
 			if r.typ == scheduleSkippedType {
 				name, slot := asString(r.data["schedule"]), asString(r.data["slot"])
 				if err := writePoint(ctx, tx, now, obsPoint{Tenant: r.tenant, Series: seriesScheduleSlot, Subject: "schedule:" + name, Source: "core",
@@ -407,10 +424,7 @@ func (c *Core) observeEvents(ctx context.Context, cat *Catalog) error {
 				return err
 			}
 		}
-		if len(rs) == obsBatch {
-			return setObsCursor(ctx, tx, "events", last)
-		}
-		return setObsCursor(ctx, tx, "events", maxTime(last, now.Add(-obsLookback)))
+		return setObsCursor(ctx, tx, "events", len(rs), last, lastID, now)
 	})
 }
 
@@ -560,10 +574,7 @@ func (c *Core) observeRollups(ctx context.Context, cat *Catalog) error {
 			series := c.tenantSeries(cat, tenant)
 			for _, name := range slices.Sorted(mapKeys(series)) {
 				s := series[name]
-				wanted := slices.Clone(s.Rollups)
-				if name == seriesBackupAge {
-					wanted = append(wanted, "day.max")
-				}
+				wanted := s.Rollups
 				for _, id := range wanted {
 					d, ok := defs[id]
 					if !ok || d.Period == "window" {
@@ -732,8 +743,18 @@ func (c *Core) queryObservations(ctx context.Context, q store.Querier, now time.
 	if d.Function != "share" && len(s.Enum) > 0 {
 		return nil, refuse("input_schema_invalid", "a series of a closed list has only a share")
 	}
+	// A window longer than the raw points kept is answered only from stored rollups; otherwise
+	// the answer would cover less than the window it names.
+	stored := d.Period != "window" && slices.Contains(s.Rollups, req.Rollup)
+	if !stored && days > s.RawDays {
+		return nil, refuse("input_schema_invalid", "the series keeps raw points for %d days; this window needs a stored rollup", s.RawDays)
+	}
 	from := now.AddDate(0, 0, -days)
-	groups, err := readPoints(ctx, q, tenant, req.Series, req.Subject, from, now.Add(time.Second))
+	readFrom := from
+	if d.Period != "window" {
+		readFrom = periodStart(d.Period, from)
+	}
+	groups, err := readPoints(ctx, q, tenant, req.Series, req.Subject, readFrom, now.Add(time.Second))
 	if err != nil {
 		return nil, err
 	}
@@ -771,8 +792,13 @@ func (c *Core) queryObservations(ctx context.Context, q store.Querier, now time.
 		if err := rows.Err(); err != nil {
 			return nil, err
 		}
-		// The points give the periods they still have, the open one included.
+		// The points give the periods with no stored rollup, the open one included; a period
+		// that began before the raw points kept would be partial and is left out.
+		rawEdge := now.AddDate(0, 0, -s.RawDays)
 		for start, vals := range bucket(pts, d.Period) {
+			if _, has := byPeriod[start]; has || start.Before(rawEdge) {
+				continue
+			}
 			if v, ok := rollupValue(d.Function, good, vals.nums, vals.enums); ok {
 				byPeriod[start] = map[string]any{"at": fmtTime(start), "value": v, "samples": vals.n()}
 			}
@@ -1040,6 +1066,9 @@ func (c *Core) ObsQuery(ctx context.Context, w *Worker, header string, req ObsQu
 		if err := tx.QueryRow(ctx, `SELECT type, coalesce(record->>'data_mark', '') FROM tasks WHERE id = $1`, l.WorkID).Scan(&typ, &mark); err != nil {
 			return err
 		}
+		if mark == "" {
+			return refuse("forbidden", "the task has no data mark to bound the read")
+		}
 		out, err = c.queryObservations(ctx, tx, now, cat, l.Tenant, cat.TaskTypes[typ].Observes, mark,
 			obsQuery(req))
 		return err
@@ -1110,7 +1139,7 @@ func (c *Core) obsToolCall(ctx context.Context, tx pgx.Tx, now time.Time, cat *C
 		b, _ := json.Marshal(map[string]any{"code": code})
 		return &mcp.CallResult{IsError: true, Content: []mcp.Content{{Type: "text", Text: string(b)}}}
 	}
-	if !offered {
+	if !offered || g.Mark == "" {
 		return fail("forbidden"), nil
 	}
 	if err := c.spec.Validate("observation-query", args); err != nil || args["group_by"] != nil {
