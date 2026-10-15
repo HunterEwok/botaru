@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"net/http"
 	"sort"
 	"strconv"
@@ -50,6 +51,9 @@ var DefaultMonitorItems = map[string]string{
 }
 
 const monitorMaxPoints = 500
+
+// monitorHistoryLimit caps the raw values one history.get reads.
+const monitorHistoryLimit = 10000
 
 // monitorClasses are the classes of spec/model/monitor-map.yaml other than unknown.
 var monitorClasses = map[string]bool{"disk_free": true, "disk_fill": true}
@@ -188,7 +192,8 @@ func (m *Monitor) problems(ctx context.Context, host, hostid string, args map[st
 	for _, e := range events {
 		eid, err1 := strconv.ParseInt(e.EventID, 10, 64)
 		tid, err2 := strconv.ParseInt(e.ObjectID, 10, 64)
-		if err1 != nil || err2 != nil {
+		sev, err3 := strconv.Atoi(e.Severity)
+		if err1 != nil || err2 != nil || err3 != nil || sev < 0 || sev > 5 || unixTime(e.Clock) == "" {
 			return nil, errors.New("the monitoring system answer is not valid")
 		}
 		// The class comes from the catalog and only from the closed table of classes; the
@@ -197,7 +202,6 @@ func (m *Monitor) problems(ctx context.Context, host, hostid string, args map[st
 		if t, ok := m.Triggers[e.ObjectID]; ok && monitorClasses[t.Class] {
 			class = t.Class
 		}
-		sev, _ := strconv.Atoi(e.Severity)
 		state := "open"
 		if e.REventID != "" && e.REventID != "0" {
 			state = "resolved"
@@ -216,9 +220,17 @@ func (m *Monitor) maintenance(ctx context.Context, hostid string) (*mcp.CallResu
 	if err := m.call(ctx, "maintenance.get", map[string]any{"hostids": []string{hostid}, "output": []string{"active_since", "active_till"}}, &ms); err != nil {
 		return nil, err
 	}
+	// Ended windows and windows without valid times are left out; the list stays within its
+	// schema bound.
+	now := time.Now().Unix()
 	list := []any{}
 	for _, w := range ms {
-		list = append(list, map[string]any{"start": unixTime(w.ActiveSince), "end": unixTime(w.ActiveTill)})
+		till, _ := strconv.ParseInt(w.ActiveTill, 10, 64)
+		start, end := unixTime(w.ActiveSince), unixTime(w.ActiveTill)
+		if start == "" || end == "" || till < now || len(list) == 100 {
+			continue
+		}
+		list = append(list, map[string]any{"start": start, "end": end})
 	}
 	return structured(map[string]any{"windows": list}), nil
 }
@@ -281,12 +293,18 @@ func (m *Monitor) itemHistory(ctx context.Context, hostid string, args map[strin
 		Value string `json:"value"`
 		Avg   string `json:"value_avg"`
 	}
+	// At most the last monitorMaxPoints steps before end are read, newest first, so a cut list
+	// still ends at end; a step whose oldest values the limit cut off is dropped below.
+	if first := end - end%step - (monitorMaxPoints-1)*step; start < first {
+		start = first
+	}
 	var pts []point
 	if step == 3600 {
-		err = m.call(ctx, "trend.get", map[string]any{"itemids": []string{it.ItemID}, "time_from": start, "time_till": end, "output": []string{"clock", "value_avg"}, "limit": monitorMaxPoints}, &pts)
+		err = m.call(ctx, "trend.get", map[string]any{"itemids": []string{it.ItemID}, "time_from": start, "time_till": end, "output": []string{"clock", "value_avg"},
+			"sortfield": "clock", "sortorder": "DESC", "limit": monitorMaxPoints}, &pts)
 	} else {
 		err = m.call(ctx, "history.get", map[string]any{"itemids": []string{it.ItemID}, "history": it.ValueType, "time_from": start, "time_till": end,
-			"output": []string{"clock", "value"}, "sortfield": "clock", "sortorder": "ASC", "limit": 10000}, &pts)
+			"output": []string{"clock", "value"}, "sortfield": "clock", "sortorder": "DESC", "limit": monitorHistoryLimit}, &pts)
 	}
 	if err != nil {
 		return nil, err
@@ -299,7 +317,7 @@ func (m *Monitor) itemHistory(ctx context.Context, hostid string, args map[strin
 			raw = p.Avg
 		}
 		v, err2 := strconv.ParseFloat(raw, 64)
-		if err1 != nil || err2 != nil {
+		if err1 != nil || err2 != nil || math.IsNaN(v) || math.IsInf(v, 0) {
 			return nil, errors.New("item_not_numeric")
 		}
 		b := c - c%step
@@ -311,6 +329,9 @@ func (m *Monitor) itemHistory(ctx context.Context, hostid string, args map[strin
 		buckets = append(buckets, b)
 	}
 	sort.Slice(buckets, func(i, j int) bool { return buckets[i] < buckets[j] })
+	if len(pts) >= monitorHistoryLimit && step != 3600 && len(buckets) > 1 {
+		buckets = buckets[1:]
+	}
 	if len(buckets) > monitorMaxPoints {
 		buckets = buckets[len(buckets)-monitorMaxPoints:]
 	}

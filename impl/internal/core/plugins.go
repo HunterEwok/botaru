@@ -75,10 +75,16 @@ func (c *Core) checkToolhostEnroll(cat *Catalog, req EnrollRequest) error {
 			return refuse("input_schema_invalid", "plugin %s has placement %s", name, p.Placement)
 		}
 		// Only an own plugin without secrets and network runs as a child process of a shared
-		// toolhost; any other runs alone in its own toolhost, which the deployment puts in its
-		// own container with its own OS user and network (DEP-7, INJ-6).
-		if (len(p.Secrets) > 0 || len(p.Network.Egress) > 0) && len(req.Plugins) > 1 {
-			return refuse("input_schema_invalid", "plugin %s has secrets or network egress and needs a toolhost of its own (DEP-7)", name)
+		// toolhost (DEP-7, INJ-6). The core cannot see a container, so a plugin with secrets or
+		// network is refused, except the farm's own read plugin monitor (MON-6) alone in a
+		// toolhost of its own, which the deployment runs under its own OS user.
+		if len(p.Secrets) > 0 || len(p.Network.Egress) > 0 {
+			if name != "monitor" {
+				return refuse("input_schema_invalid", "plugin %s has secrets or network egress; it runs in a container the toolhost does not provide (DEP-7)", name)
+			}
+			if len(req.Plugins) > 1 {
+				return refuse("input_schema_invalid", "plugin %s has secrets or network egress and needs a toolhost of its own (DEP-7)", name)
+			}
 		}
 	}
 	switch req.Placement {

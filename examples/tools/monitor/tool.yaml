@@ -39,7 +39,7 @@ spec:
                 severity: {type: integer, minimum: 0, maximum: 5}
                 state: {enum: [open, resolved]}
                 time: {type: string, x-botaru-format: datetime}
-      output_limit_kb: 16
+      output_limit_kb: 32
     - name: item_history
       access: read
       tier: 1

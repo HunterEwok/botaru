@@ -622,8 +622,8 @@ func TestToolhostContainerPlugin(t *testing.T) {
 	if _, err := b.c.Enroll(ctx, b.op, EnrollRequest{Tenant: "demo", Kind: "toolhost", Plugins: []string{"checks", "logs"}, Placement: "host", Host: "web1"}); err == nil {
 		t.Fatal("a plugin with network egress was enrolled beside another plugin")
 	}
-	if _, err := b.c.Enroll(ctx, b.op, EnrollRequest{Tenant: "demo", Kind: "toolhost", Plugins: []string{"checks"}, Placement: "host", Host: "web1"}); err != nil {
-		t.Fatalf("a plugin with network egress alone: %v", err)
+	if _, err := b.c.Enroll(ctx, b.op, EnrollRequest{Tenant: "demo", Kind: "toolhost", Plugins: []string{"checks"}, Placement: "host", Host: "web1"}); err == nil {
+		t.Fatal("a plugin with network egress other than monitor was enrolled alone")
 	}
 	if _, err := b.c.Enroll(ctx, b.op, EnrollRequest{Tenant: "demo", Kind: "toolhost", Plugins: []string{"logs"}, Placement: "host", Host: "web1"}); err != nil {
 		t.Fatalf("an own plugin without network: %v", err)
