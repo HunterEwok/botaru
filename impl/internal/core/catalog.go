@@ -42,6 +42,8 @@ type TenantView struct {
 	Spec     manifest.Tenant
 	Groups   map[string]manifest.Group
 	Channels map[string]manifest.Channel
+	// Schedules are the Schedule manifests of the tenant by name (TIM-3).
+	Schedules map[string]manifest.Schedule
 }
 
 // Profile resolves a model profile for a tenant: the tenant's own profile of that name, else
@@ -70,7 +72,7 @@ func newCatalog() *Catalog {
 func (c *Catalog) tenant(name string) *TenantView {
 	t, ok := c.Tenants[name]
 	if !ok {
-		t = &TenantView{Name: name, Groups: map[string]manifest.Group{}, Channels: map[string]manifest.Channel{}}
+		t = &TenantView{Name: name, Groups: map[string]manifest.Group{}, Channels: map[string]manifest.Channel{}, Schedules: map[string]manifest.Schedule{}}
 		c.Tenants[name] = t
 	}
 	return t
@@ -121,6 +123,12 @@ func buildCatalog(docs []manifest.Doc) (*Catalog, error) {
 			if p, err = manifest.Decode[manifest.ModelProfile](d); err == nil {
 				c.Profiles[[2]string{d.Tenant, d.Name}] = p
 			}
+		case "Schedule":
+			var sc manifest.Schedule
+			if sc, err = manifest.Decode[manifest.Schedule](d); err == nil {
+				c.tenant(d.Tenant).Schedules[d.Name] = sc
+			}
+			c.RawGlobals[d.Key()] = d.Value
 		case "ToolPlugin":
 			spec, _ := d.Value["spec"].(map[string]any)
 			var p toolspec.Plugin

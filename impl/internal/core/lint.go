@@ -1104,11 +1104,19 @@ func (c *Core) lintManifests(docs []manifest.Doc, index []int) ([]ApplyError, er
 			checkAddress(o, fmt.Sprintf("/deliver_to/%d", j), a)
 		}
 	}
+	for _, o := range S.each("Tenant") {
+		if tz := mstr(o.spec, "timezone"); tz != "" && !knownZone(tz) {
+			f.add(o, "timezone_unknown", "/timezone")
+		}
+	}
 	for _, o := range S.each("Schedule") {
 		ss := o.spec
 		cron := mstr(ss, "cron")
-		if len(strings.Fields(cron)) != 5 || reCronTZ.MatchString(cron) {
+		if _, err := parseCron(cron); err != nil || reCronTZ.MatchString(cron) {
 			f.add(o, "cron_invalid", "/cron")
+		}
+		if tz := mstr(ss, "timezone"); tz != "" && !knownZone(tz) {
+			f.add(o, "timezone_unknown", "/timezone")
 		}
 		_, hasTask := ss["task"]
 		_, hasScript := ss["script"]
@@ -1525,4 +1533,13 @@ func mapSlice[T, U any](in []T, fn func(T) U) []U {
 		out = append(out, fn(v))
 	}
 	return out
+}
+
+// knownZone says whether an IANA time zone name exists in the zone database (TIM-3).
+func knownZone(name string) bool {
+	if name == "Local" {
+		return false
+	}
+	_, err := time.LoadLocation(name)
+	return err == nil
 }
