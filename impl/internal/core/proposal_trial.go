@@ -121,8 +121,13 @@ func (c *Core) trialOutcome(ctx context.Context, tx pgx.Tx, cat *Catalog, p *pro
 	m := mmapAny(t["metric"])
 	s, ok := series[asString(m["series"])]
 	if !ok || s.Outcome == nil {
-		// The metric left the catalog or lost its outcome block: nothing can be measured.
-		t["state"], t["outcome"] = "undetermined", "undetermined"
+		// The metric left the catalog or lost its outcome block: only a broken guard still
+		// gives an outcome.
+		out := "undetermined"
+		if guardBroken(t) {
+			out = "worse"
+		}
+		t["state"], t["outcome"] = out, out
 		return nil
 	}
 	after, err := trialValue(ctx, tx, p.Tenant, s, asString(m["subject"]), start, end, author, p.Role)

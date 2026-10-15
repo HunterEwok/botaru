@@ -156,6 +156,9 @@ func (c *Core) sendDigest(ctx context.Context, tx pgx.Tx, now time.Time, cat *Ca
 			if err := c.moveProposal(ctx, tx, now, p, "parked", "conflict"); err != nil {
 				return err
 			}
+			if err := c.planProposalCardUpdates(ctx, tx, now, p); err != nil {
+				return err
+			}
 			continue
 		}
 		// The evidence is reread before showing; a drift parks the item (PRP-2).
@@ -165,6 +168,9 @@ func (c *Core) sendDigest(ctx context.Context, tx pgx.Tx, now time.Time, cat *Ca
 		}
 		if !ok {
 			if err := c.moveProposal(ctx, tx, now, p, "parked", "evidence_drift"); err != nil {
+				return err
+			}
+			if err := c.planProposalCardUpdates(ctx, tx, now, p); err != nil {
 				return err
 			}
 			continue
