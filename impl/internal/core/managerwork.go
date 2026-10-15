@@ -64,6 +64,14 @@ func (r ManagerDirectRequest) check() *Problem {
 	if r.Op != "" && !slices.Contains(directiveOps, r.Op) {
 		return refuse("input_schema_invalid", "op")
 	}
+	// A directive names only what this version can do: an operation it serves, and cancel or
+	// preempt, which take a task, only within an incident whose involved tasks they reach.
+	if r.Op != "" && !slices.Contains(controlOpsServed, r.Op) {
+		return refuse("input_schema_invalid", "operation %s is not served by this version", r.Op)
+	}
+	if (r.Op == "cancel" || r.Op == "preempt") && r.Scope.Kind != "incident" {
+		return refuse("input_schema_invalid", "%s takes a task: give an incident scope", r.Op)
+	}
 	if len([]rune(r.Text)) > maxDirectiveText {
 		return refuse("input_schema_invalid", "text")
 	}
@@ -207,8 +215,8 @@ func (c *Core) directiveAllows(ctx context.Context, tx pgx.Tx, now time.Time, ca
 	if d.Op != "" && d.Op != req.Op {
 		return refuse("forbidden", "the directive names another operation"), nil
 	}
-	if req.Op != "release" && (req.Target.Kind != d.Scope.Kind || !strings.EqualFold(req.Target.ID, d.Scope.ID)) {
-		return refuse("target_not_implicated", "the target is not the directive's scope"), nil
+	if p, err := directiveScopeHolds(ctx, tx, tenant, d, req); err != nil || p != nil {
+		return p, err
 	}
 	if d.Via != "channel" {
 		return nil, nil
@@ -219,6 +227,33 @@ func (c *Core) directiveAllows(ctx context.Context, tx pgx.Tx, now time.Time, ca
 		return refuse("forbidden", "the person of the directive has no control.apply"), nil
 	}
 	return nil, err
+}
+
+// directiveScopeHolds checks that the target falls within the directive's scope. An incident
+// scope is the incident as the basis, whose code list then bounds the target; a release takes
+// a hold whose operation was on the scope's target or within the scope's incident.
+func directiveScopeHolds(ctx context.Context, tx pgx.Tx, tenant string, d *directive, req ControlRequest) (*Problem, error) {
+	kind, id, incident := req.Target.Kind, req.Target.ID, req.Basis.Incident
+	if req.Op == "release" {
+		err := tx.QueryRow(ctx, `SELECT target_kind, target_id, coalesce(incident, '') FROM control_ops
+			WHERE tenant = $1 AND hold = $2 AND actor_kind = 'seat' AND op <> 'release' ORDER BY created_at LIMIT 1`, tenant, req.Target.ID).Scan(&kind, &id, &incident)
+		if errors.Is(err, pgx.ErrNoRows) {
+			return refuse("target_not_implicated", "the hold is not within the directive's scope"), nil
+		}
+		if err != nil {
+			return nil, err
+		}
+	}
+	if d.Scope.Kind == "incident" {
+		if !strings.EqualFold(incident, d.Scope.ID) || !strings.EqualFold(req.Basis.Incident, d.Scope.ID) {
+			return refuse("target_not_implicated", "the operation is not within the directive's incident"), nil
+		}
+		return nil, nil
+	}
+	if kind != d.Scope.Kind || !strings.EqualFold(id, d.Scope.ID) {
+		return refuse("target_not_implicated", "the target is not the directive's scope"), nil
+	}
+	return nil, nil
 }
 
 // reviewMaxEUR is control_limits.daily_review_max_eur of the farm charter (MGR-41).
@@ -248,12 +283,13 @@ func (c *Core) managerDaily(ctx context.Context, cat *Catalog) error {
 	if managerRole(cat) == "" {
 		return nil
 	}
-	var farm managerNumbers
+	var enabled []string
 	for _, t := range slices.Sorted(mapKeys(cat.Tenants)) {
 		tv := cat.Tenants[t]
 		if !managerEnabled(cat, t) || tv.Spec.Kind == "" {
 			continue
 		}
+		enabled = append(enabled, t)
 		err := c.tx(ctx, func(tx pgx.Tx, now time.Time) error {
 			day := tenantDay(tv, now)
 			tag, err := tx.Exec(ctx, `INSERT INTO manager_days (tenant, day, created_at) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING`, t, day.Format("2006-01-02"), now)
@@ -264,7 +300,6 @@ func (c *Core) managerDaily(ctx context.Context, cat *Catalog) error {
 			if err != nil {
 				return err
 			}
-			farm.add(n)
 			review, err := c.enqueueReview(ctx, tx, now, cat, t, day, n)
 			if err != nil {
 				return err
@@ -283,10 +318,28 @@ func (c *Core) managerDaily(ctx context.Context, cat *Catalog) error {
 			return err
 		}
 	}
-	if farm.empty() {
-		return nil
-	}
+	// The farm's numbers have their own day mark and are counted in their own transaction, so a
+	// failure in any tenant leaves them for the next run whole.
 	return c.tx(ctx, func(tx pgx.Tx, now time.Time) error {
+		day := now.UTC()
+		if tv := cat.Tenants[farmTenant]; tv != nil {
+			day = tenantDay(tv, now)
+		}
+		tag, err := tx.Exec(ctx, `INSERT INTO manager_days (tenant, day, created_at) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING`, farmTenant, day.Format("2006-01-02"), now)
+		if err != nil || tag.RowsAffected() == 0 {
+			return err
+		}
+		var farm managerNumbers
+		for _, t := range enabled {
+			n, err := dayNumbers(ctx, tx, t, now.Add(-24*time.Hour))
+			if err != nil {
+				return err
+			}
+			farm.add(n)
+		}
+		if farm.empty() {
+			return nil
+		}
 		return c.noticeAdmins(ctx, tx, now, cat, []string{farmTenant}, "manager_daily", "notice.manager_daily_farm", farm.params(false))
 	})
 }
@@ -336,6 +389,10 @@ func dayNumbers(ctx context.Context, tx pgx.Tx, tenant string, since time.Time) 
 func (c *Core) enqueueReview(ctx context.Context, tx pgx.Tx, now time.Time, cat *Catalog, tenant string, day time.Time, n managerNumbers) (string, error) {
 	role := managerRole(cat)
 	if _, ok := cat.TaskTypes[reviewType]; !ok || !slices.Contains(cat.Roles[role].Claims, reviewType) {
+		return "", nil
+	}
+	// A zero ceiling means no review: a tree budget of zero would mean no ceiling at all.
+	if money.FromEUR(reviewMaxEUR(cat)) <= 0 {
 		return "", nil
 	}
 	input := map[string]any{"day": day.Format("2006-01-02"), "numbers": n.params(false)}

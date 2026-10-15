@@ -36,6 +36,8 @@ texts:
   notice.manager_notice.state: "{at}: {state}"
   notice.manager_notice.op: "{at}: {op} {target_kind} {target} by {by}"
   notice.manager_notice.op_farm: "{at}: {op}"
+  notice.manager_notice.card: "{at}: card {op} {target_kind} {target}: {state}"
+  notice.manager_notice.card_farm: "{at}: card {op}: {state}"
   notice.manager_notice.earlier: "({n} earlier lines)"
   notice.manager_notice.revert: "To revert every seat operation of this incident: farmctl control revert incident={incident}"
   notice.manager_notice.batch: "Incident {incident}:\n{lines}"

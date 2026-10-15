@@ -37,7 +37,7 @@ const (
 // with codes and ids only.
 type noticeEntry struct {
 	At     string         `json:"at"`
-	Kind   string         `json:"kind"` // state or op
+	Kind   string         `json:"kind"` // state, op, or card (a card that applied nothing)
 	State  string         `json:"state,omitempty"`
 	Op     string         `json:"op,omitempty"`
 	Target *ControlTarget `json:"target,omitempty"`
@@ -277,6 +277,11 @@ func (c *Core) noticeLines(locale, route string, log []noticeEntry) string {
 				"at": e.At, "op": e.Op, "target_kind": e.Target.Kind, "target": e.Target.ID, "by": e.By}))
 		case e.Kind == "op":
 			lines = append(lines, c.texts.Render(locale, "notice.manager_notice.op_farm", map[string]any{"at": e.At, "op": e.Op}))
+		case e.Kind == "card" && route == "tenant" && e.Target != nil:
+			lines = append(lines, c.texts.Render(locale, "notice.manager_notice.card", map[string]any{
+				"at": e.At, "op": e.Op, "target_kind": e.Target.Kind, "target": e.Target.ID, "state": e.State}))
+		case e.Kind == "card":
+			lines = append(lines, c.texts.Render(locale, "notice.manager_notice.card_farm", map[string]any{"at": e.At, "op": e.Op, "state": e.State}))
 		default:
 			lines = append(lines, c.texts.Render(locale, "notice.manager_notice.state", map[string]any{"at": e.At, "state": e.State}))
 		}

@@ -575,12 +575,6 @@ func (c *Core) subjectCardBody(ctx context.Context, tx pgx.Tx, tenant, subjectKi
 			card["reminder"] = true
 		}
 		return card, nil
-	case "control":
-		r, err := loadControlCard(ctx, tx, tenant, id, false)
-		if err != nil || r == nil {
-			return nil, err
-		}
-		return r.card(), nil
 	}
 	return nil, nil
 }

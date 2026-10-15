@@ -210,6 +210,10 @@ func TestManagerDaily(t *testing.T) {
 	if err := b.c.st.Pool.QueryRow(ctx, `SELECT min(id), count(*) FROM tasks WHERE type = $1 AND tenant = 'demo'`, reviewType).Scan(&id, &n); err != nil || n != 1 {
 		t.Fatalf("reviews %d %v", n, err)
 	}
+	var farmDays int
+	if err := b.c.st.Pool.QueryRow(ctx, `SELECT count(*) FROM manager_days WHERE tenant = $1`, farmTenant).Scan(&farmDays); err != nil || farmDays != 1 {
+		t.Fatalf("the farm's day mark %d %v", farmDays, err)
+	}
 	_, _, rec, _ := taskRecord(t, b, id)
 	if rec["tree_budget_micros"] != float64(400000) || rec["executor_role"] != "farm-manager" || rec["seat"] != managerSeatID {
 		t.Fatalf("review record %v", rec)
@@ -344,6 +348,73 @@ func TestManagerReading(t *testing.T) {
 	if origin != "finding:"+f["id"].(string) || actor != bob || approved != bob {
 		t.Fatalf("control op %s %s %s", origin, actor, approved)
 	}
+	// The delivered card is updated to its final state, without buttons.
+	up := cardOf(t, b.drain(t), cardUpdate, "direct:1002")
+	if ub := asMap(up.body["card"]); up.replaces != card.external || ub["state"] != "applied" || len(ub["buttons"].([]any)) != 0 {
+		t.Fatalf("card update %+v", up)
+	}
+	// A rejected card applies nothing and leaves a line in the incident's notice log.
+	out = seatCall(t, b, handle, controlToolName, map[string]any{"op": "hold", "target": map[string]any{"kind": "worker", "id": agent},
+		"basis": map[string]any{"incident": incident}, "finding": f["id"], "effects": []any{"no_claim"}, "ttl": "20m"})
+	if out["code"] != "card" {
+		t.Fatalf("a second card: %v", out)
+	}
+	card = cardOf(t, b.drain(t), controlCard, "direct:1002")
+	body = asMap(card.body["card"])
+	req = DecideRequest{SubjectKind: "control", ID: body["id"].(string), Nonce: body["nonce"].(string), Decision: "reject"}
+	if res, err := b.c.Decide(ctx, b.channel, press("telegram:1002", "direct:1002", card.external), req); err != nil || res.State != "rejected" {
+		t.Fatalf("reject %+v %v", res, err)
+	}
+	var logged bool
+	if err := b.c.st.Pool.QueryRow(ctx, `SELECT notice_log @> '[{"kind": "card", "op": "hold", "state": "rejected"}]' FROM incidents WHERE id = $1`, incident).Scan(&logged); err != nil || !logged {
+		t.Fatalf("the rejected card is not in the notice log: %v", err)
+	}
+}
+
+// A release by a directive reaches only a hold whose operation was within the directive's
+// scope; an incident scope is the incident as the basis (MGR-4).
+func TestDirectiveScope(t *testing.T) {
+	ctx := context.Background()
+	b := newManagerWorkBench(t)
+	if _, err := b.c.st.Pool.Exec(ctx, `INSERT INTO control_ops (id, tenant, op, target_kind, target_id, incident, actor_kind, actor, epoch, hold, created_at) VALUES
+		('c1', 'demo', 'hold', 'resource', 'db1', NULL, 'seat', 'x', 1, 'h1', now()),
+		('c2', 'demo', 'hold', 'resource', 'db2', 'inc_a', 'seat', 'x', 1, 'h2', now())`); err != nil {
+		t.Fatal(err)
+	}
+	res := ControlTarget{Kind: "resource", ID: "db1"}
+	inc := ControlTarget{Kind: "incident", ID: "inc_a"}
+	cases := []struct {
+		scope ControlTarget
+		req   ControlRequest
+		ok    bool
+	}{
+		{res, ControlRequest{Op: "release", Target: ControlTarget{Kind: "hold", ID: "h1"}}, true},
+		{res, ControlRequest{Op: "release", Target: ControlTarget{Kind: "hold", ID: "h2"}}, false},
+		{res, ControlRequest{Op: "release", Target: ControlTarget{Kind: "hold", ID: "h9"}}, false},
+		{res, ControlRequest{Op: "hold", Target: res}, true},
+		{inc, ControlRequest{Op: "release", Target: ControlTarget{Kind: "hold", ID: "h2"}, Basis: ControlBasis{Incident: "inc_a"}}, true},
+		{inc, ControlRequest{Op: "release", Target: ControlTarget{Kind: "hold", ID: "h1"}, Basis: ControlBasis{Incident: "inc_a"}}, false},
+		{inc, ControlRequest{Op: "hold", Target: res, Basis: ControlBasis{Incident: "inc_a"}}, true},
+		{inc, ControlRequest{Op: "hold", Target: res}, false},
+	}
+	for i, k := range cases {
+		err := b.c.tx(ctx, func(tx pgx.Tx, _ time.Time) error {
+			p, err := directiveScopeHolds(ctx, tx, "demo", &directive{Scope: k.scope}, k.req)
+			if err == nil && (p == nil) != k.ok {
+				t.Errorf("case %d: %v", i, p)
+			}
+			return err
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	// A directive names only operations this version serves, and a task operation only in an
+	// incident.
+	_, err := b.c.ManagerDirect(ctx, b.op, ManagerDirectRequest{Scope: res, Op: "notify"})
+	wantReason(t, err, "input_schema_invalid")
+	_, err = b.c.ManagerDirect(ctx, b.op, ManagerDirectRequest{Scope: res, Op: "cancel"})
+	wantReason(t, err, "input_schema_invalid")
 }
 
 func agentLower(id string) string {

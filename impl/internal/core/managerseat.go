@@ -728,6 +728,9 @@ func (c *Core) managerDisabled(ctx context.Context, tx pgx.Tx, now time.Time, ca
 		if err := c.cancelTaskIDs(ctx, tx, now, t, list, "manager_disabled"); err != nil {
 			return err
 		}
+		if err := c.endPendingCards(ctx, tx, now, `state = 'pending' AND tenant = $1`, "failed", "manager_disabled", t); err != nil {
+			return err
+		}
 		if m != nil && m.Holder != "" {
 			if err := capHolderHolds(ctx, tx, now, m.Holder, t); err != nil {
 				return err

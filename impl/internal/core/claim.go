@@ -750,7 +750,7 @@ func (c *Core) claimDelivery(ctx context.Context, tx pgx.Tx, now time.Time, cat 
 				continue
 			}
 		}
-		if sk := deref(subjectKind); sk == "approval" || sk == "proposal" {
+		if sk := deref(subjectKind); sk == "approval" || sk == "proposal" || sk == "control" {
 			// A card is drawn from the record now, so it shows the current state (APR-3). An
 			// update waits while the card it edits is being sent, and is dropped when that card
 			// never arrived: the card itself then shows the current state.
@@ -761,13 +761,22 @@ func (c *Core) claimDelivery(ctx context.Context, tx pgx.Tx, now time.Time, cat 
 			var drawn map[string]any
 			var replaces string
 			var err error
-			if sk == "approval" {
+			switch sk {
+			case "approval":
 				drawn, replaces, err = c.approvalCardBody(ctx, tx, cat, w.Tenant, kind, deref(subjectID), targetID, deref(recipient), w.Target, b)
-			} else {
+			case "proposal":
 				drawn, replaces, err = c.proposalCardBody(ctx, tx, cat, kind, deref(subjectID), targetID, deref(recipient), w.Target, b)
+			default:
+				drawn, replaces, err = controlCardBody(ctx, tx, w.Tenant, kind, deref(subjectID), targetID, deref(recipient), w.Target, b)
 			}
 			if err != nil {
 				return nil, err
+			}
+			if drawn == nil && kind != cardUpdate {
+				if _, err := tx.Exec(ctx, `UPDATE deliveries SET state = 'withheld', reason = 'ref_invalid', updated_at = $2 WHERE id = $1`, id, now); err != nil {
+					return nil, err
+				}
+				continue
 			}
 			if kind == cardUpdate && replaces == "" {
 				var sending bool
@@ -784,7 +793,7 @@ func (c *Core) claimDelivery(ctx context.Context, tx pgx.Tx, now time.Time, cat 
 				continue
 			}
 			cardBody, replacesID = drawn, replaces
-		} else if sk := deref(subjectKind); sk == "memory_record" || sk == "subject_request" || sk == "control" {
+		} else if sk := deref(subjectKind); sk == "memory_record" || sk == "subject_request" {
 			// The card of a memory record or a person's request is drawn now too; one whose
 			// record was erased is not sent.
 			var b map[string]any

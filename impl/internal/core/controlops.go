@@ -57,18 +57,21 @@ type ControlTarget struct {
 	ID   string `json:"id"`
 }
 
+// ControlBasis is the basis of a control operation: the incident it answers.
+type ControlBasis struct {
+	Incident string `json:"incident,omitempty"`
+}
+
 // ControlRequest is p2-control-apply-request and the arguments of the control_ops tool.
 type ControlRequest struct {
-	Op     string        `json:"op"`
-	Target ControlTarget `json:"target"`
-	Basis  struct {
-		Incident string `json:"incident,omitempty"`
-	} `json:"basis"`
-	Effects  []string `json:"effects,omitempty"`
-	TTL      string   `json:"ttl,omitempty"`
-	Action   string   `json:"action,omitempty"`
-	TaskType string   `json:"tasktype,omitempty"`
-	Template string   `json:"template,omitempty"`
+	Op       string        `json:"op"`
+	Target   ControlTarget `json:"target"`
+	Basis    ControlBasis  `json:"basis"`
+	Effects  []string      `json:"effects,omitempty"`
+	TTL      string        `json:"ttl,omitempty"`
+	Action   string        `json:"action,omitempty"`
+	TaskType string        `json:"tasktype,omitempty"`
+	Template string        `json:"template,omitempty"`
 	// Finding names the finding a seat operation's target came from (MGR-26).
 	Finding string `json:"finding,omitempty"`
 }

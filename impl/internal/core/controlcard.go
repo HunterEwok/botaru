@@ -171,13 +171,16 @@ func (c *Core) decideControl(ctx context.Context, w *Worker, ob OnBehalf, req De
 			return refuse("no_group_cap", "the person has no control.approve")
 		}
 		if !r.Expires.After(now) {
-			if err := closeControlCard(ctx, tx, now, r.ID, "expired", "", "", "expired"); err != nil {
+			if err := c.endControlCard(ctx, tx, now, r, "expired", "", "", "expired"); err != nil {
 				return err
 			}
 			return &committed{p: refuse("expired", "the card has expired")}
 		}
 		state, opID, reason := "rejected", "", ""
-		if req.Decision == "approve" {
+		if req.Decision == "approve" && !managerEnabled(cat, r.Tenant) {
+			// A tenant that disabled the manager after the card opened gets no seat operation.
+			state, reason = "failed", "manager_disabled"
+		} else if req.Decision == "approve" {
 			// The person applies the operation by the code path of control.apply; the seat's
 			// checks of the target do not apply to a person (MGR-26, PRM-14).
 			op := Operator{Principal: press.principal, Tenant: r.Tenant}
@@ -192,7 +195,7 @@ func (c *Core) decideControl(ctx context.Context, w *Worker, ob OnBehalf, req De
 				opID = d.ID
 			}
 		}
-		if err := closeControlCard(ctx, tx, now, r.ID, state, press.principal, opID, reason); err != nil {
+		if err := c.endControlCard(ctx, tx, now, r, state, press.principal, opID, reason); err != nil {
 			return err
 		}
 		out.State = state
@@ -218,17 +221,113 @@ func (c *Core) decideControl(ctx context.Context, w *Worker, ob OnBehalf, req De
 	return out, err
 }
 
-func closeControlCard(ctx context.Context, tx pgx.Tx, now time.Time, id, state, by, op, reason string) error {
-	_, err := tx.Exec(ctx, `UPDATE control_cards SET state = $2, decided_by = $3, control_op = $4, reason = $5, updated_at = $6 WHERE id = $1`,
-		id, state, nullable(by), nullable(op), nullable(reason), now)
-	return err
+// endControlCard puts a card in its final state, plans an update of every delivered copy so
+// none keeps its buttons, and logs in the card's incident an outcome that applied nothing; an
+// applied operation logs its own line (MGR-13, MGR-26).
+func (c *Core) endControlCard(ctx context.Context, tx pgx.Tx, now time.Time, r *controlCardRow, state, by, op, reason string) error {
+	if _, err := tx.Exec(ctx, `UPDATE control_cards SET state = $2, decided_by = $3, control_op = $4, reason = $5, updated_at = $6 WHERE id = $1`,
+		r.ID, state, nullable(by), nullable(op), nullable(reason), now); err != nil {
+		return err
+	}
+	rows, err := tx.Query(ctx, `SELECT id, exec_name, target_id, coalesce(recipient, '') FROM deliveries
+		WHERE subject_kind = 'control' AND subject_id = $1 AND kind = $2 AND state IN ('planned', 'sending', 'delivered') ORDER BY seq`, r.ID, controlCard)
+	if err != nil {
+		return err
+	}
+	type copyOf struct{ id, channel, chat, recipient string }
+	var cs []copyOf
+	for rows.Next() {
+		var d copyOf
+		if err := rows.Scan(&d.id, &d.channel, &d.chat, &d.recipient); err != nil {
+			rows.Close()
+			return err
+		}
+		cs = append(cs, d)
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	for _, d := range cs {
+		if _, err := c.planDelivery(ctx, tx, now, plannedDelivery{
+			Tenant: r.Tenant, Kind: cardUpdate, Addr: "admins", TargetKind: "chat", TargetID: d.chat,
+			ExecKind: "channel", ExecName: d.channel, Recipient: d.recipient, Body: map[string]any{"form": "card", "card": controlCard, "of": d.id},
+			DataOrigin: "code", SubjectKind: "control", SubjectID: r.ID,
+		}); err != nil {
+			return err
+		}
+	}
+	if r.Incident == "" || state == "applied" {
+		return nil
+	}
+	t := r.Request.Target
+	return c.noticeLog(ctx, tx, now, r.Incident, noticeEntry{Kind: "card", Op: r.Request.Op, Target: &t, State: state}, true)
+}
+
+// controlCardBody draws a control card or its update at hand-out; an update names the
+// delivered card message it edits.
+func controlCardBody(ctx context.Context, tx pgx.Tx, tenant, kind, id, target, recipient, channel string, body map[string]any) (map[string]any, string, error) {
+	r, err := loadControlCard(ctx, tx, tenant, id, false)
+	if err != nil || r == nil {
+		return nil, "", err
+	}
+	replaces := ""
+	if kind == cardUpdate {
+		of, _ := body["of"].(string)
+		var ext *string
+		err := tx.QueryRow(ctx, `SELECT external_id FROM deliveries WHERE id = $5 AND subject_kind = 'control' AND subject_id = $1 AND kind = $6
+			AND exec_name = $2 AND target_id = $3 AND recipient IS NOT DISTINCT FROM $4 AND state = 'delivered' AND external_id IS NOT NULL`,
+			id, channel, target, nullable(recipient), of, controlCard).Scan(&ext)
+		if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+			return nil, "", err
+		}
+		if ext == nil {
+			return nil, "", nil
+		}
+		replaces = *ext
+	}
+	return map[string]any{"form": "card", "card": r.card()}, replaces, nil
 }
 
 // expireControlCards ends the control cards whose hour passed without a decision: the
 // operation is not applied (MGR-26).
 func (c *Core) expireControlCards(ctx context.Context, _ *Catalog) error {
 	return c.tx(ctx, func(tx pgx.Tx, now time.Time) error {
-		_, err := tx.Exec(ctx, `UPDATE control_cards SET state = 'expired', reason = 'expired', updated_at = $1 WHERE state = 'pending' AND expires_at <= $1`, now)
-		return err
+		return c.endPendingCards(ctx, tx, now, `state = 'pending' AND expires_at <= $1`, "expired", "expired", now)
 	})
+}
+
+// endPendingCards ends the pending control cards a condition selects.
+func (c *Core) endPendingCards(ctx context.Context, tx pgx.Tx, now time.Time, where, state, reason string, args ...any) error {
+	rows, err := tx.Query(ctx, `SELECT id, tenant FROM control_cards WHERE `+where+` ORDER BY id FOR UPDATE`, args...)
+	if err != nil {
+		return err
+	}
+	type key struct{ id, tenant string }
+	var ks []key
+	for rows.Next() {
+		var k key
+		if err := rows.Scan(&k.id, &k.tenant); err != nil {
+			rows.Close()
+			return err
+		}
+		ks = append(ks, k)
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	for _, k := range ks {
+		r, err := loadControlCard(ctx, tx, k.tenant, k.id, true)
+		if err != nil {
+			return err
+		}
+		if r == nil || r.State != "pending" {
+			continue
+		}
+		if err := c.endControlCard(ctx, tx, now, r, state, "", "", reason); err != nil {
+			return err
+		}
+	}
+	return nil
 }
