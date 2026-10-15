@@ -29,6 +29,9 @@ type PrincipalRequest struct {
 	Kind     string `json:"kind"`
 	Identity string `json:"identity"`
 	Locale   string `json:"locale"`
+	// UploadsPersonal declares a service principal's uploads personal (ART-6); unset follows
+	// the tenant kind.
+	UploadsPersonal *bool `json:"uploads_personal,omitempty"`
 }
 
 // Done is done-response.
@@ -87,8 +90,8 @@ func (c *Core) Principal(ctx context.Context, op Operator, req PrincipalRequest)
 			if kind == "" {
 				kind = "human"
 			}
-			if _, err := tx.Exec(ctx, `INSERT INTO principals (tenant, id, kind, state, locale, created_by, created_at) VALUES ($1, $2, $3, 'active', $4, $5, $6)`,
-				op.Tenant, req.Subject, kind, nullable(req.Locale), op.Principal, now); err != nil {
+			if _, err := tx.Exec(ctx, `INSERT INTO principals (tenant, id, kind, state, locale, created_by, created_at, uploads_personal) VALUES ($1, $2, $3, 'active', $4, $5, $6, $7)`,
+				op.Tenant, req.Subject, kind, nullable(req.Locale), op.Principal, now, req.UploadsPersonal); err != nil {
 				return err
 			}
 			state = "active"

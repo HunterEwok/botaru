@@ -33,11 +33,22 @@ func (s *Server) operator(token string) (core.Operator, bool) {
 }
 
 func (s *Server) isHealthKey(token string) bool {
+	return keyIn(token, s.cfg.HealthKeysSHA256)
+}
+
+// reportOps are the operations a report key opens: the external backup process and the usage
+// reconciliation process hand in their reports and nothing else (BUD-10, RET-8).
+var reportOps = map[string]bool{"backup.report": true, "spend.reconcile": true}
+
+// reportOperator is the operator a report key acts as: farm level, with no person behind it.
+var reportOperator = core.Operator{Principal: "system", Tenant: "farm"}
+
+func keyIn(token string, keys []string) bool {
 	if token == "" {
 		return false
 	}
 	h := sha256Hex(token)
-	for _, k := range s.cfg.HealthKeysSHA256 {
+	for _, k := range keys {
 		if equalHex(h, strings.ToLower(k)) {
 			return true
 		}
@@ -70,6 +81,13 @@ func (s *Server) p2(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	oper, ok := s.operator(token)
+	if !ok && keyIn(token, s.cfg.ReportKeysSHA256) {
+		if !reportOps[op] {
+			Problem(w, &core.Problem{Reason: "forbidden", Detail: "a report key opens only backup.report and spend.reconcile"})
+			return
+		}
+		oper, ok = reportOperator, true
+	}
 	if !ok {
 		Problem(w, &core.Problem{Reason: "unauthenticated", Detail: "unknown P2 credentials"})
 		return

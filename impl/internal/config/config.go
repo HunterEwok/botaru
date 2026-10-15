@@ -43,6 +43,7 @@ type Core struct {
 	TextsDir         string             `yaml:"texts_dir"`
 	Operators        []api.OperatorCred `yaml:"operators"`
 	HealthKeysSHA256 []string           `yaml:"health_keys_sha256"`
+	ReportKeysSHA256 []string           `yaml:"report_keys_sha256"`
 	Providers        map[string]struct {
 		Binding string `yaml:"binding"`
 		BaseURL string `yaml:"base_url"`

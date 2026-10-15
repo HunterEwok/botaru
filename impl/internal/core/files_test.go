@@ -120,3 +120,97 @@ func TestFiles(t *testing.T) {
 		t.Fatalf("declared personal %v %v", personal, err)
 	}
 }
+
+// The storage ceiling refuses a put beyond max_storage_bytes (CAP-1); principal.add writes
+// uploads_personal (ART-6); reading a person's upload marks the task personal_seen human_file
+// (AUD-5); an ingest job's file is ingested (ART-6); a lost data class revokes a task by the
+// mark it took, not only its type's class (PRM-8); an expired file is purged (RET-2).
+func TestFileCeilingAndMarks(t *testing.T) {
+	ctx := context.Background()
+	b := newBenchWith(t, func(root string, ms []map[string]any) []map[string]any {
+		var extra []map[string]any
+		for _, m := range ms {
+			switch m["kind"] {
+			case "Tenant":
+				m["spec"].(map[string]any)["limits"] = map[string]any{"max_storage_bytes": 50}
+			case "Group":
+				raw, _ := json.Marshal(m)
+				var g map[string]any
+				_ = json.Unmarshal(raw, &g)
+				g["metadata"].(map[string]any)["name"] = "files"
+				g["spec"].(map[string]any)["data"] = []any{"summary", "internal"}
+				extra = append(extra, g)
+			}
+		}
+		return append(ms, extra...)
+	})
+	if _, err := b.c.Grant(ctx, b.op, GrantRequest{Op: "grant", Subject: b.alice, Group: "files"}); err != nil {
+		t.Fatal(err)
+	}
+	yes := true
+	if _, err := b.c.Principal(ctx, b.op, PrincipalRequest{Op: "principal.add", Subject: "p_svc", Kind: "service", Identity: "telegram:1003", UploadsPersonal: &yes}); err != nil {
+		t.Fatal(err)
+	}
+	var declared *bool
+	if err := b.c.st.Pool.QueryRow(ctx, `SELECT uploads_personal FROM principals WHERE id = 'p_svc'`).Scan(&declared); err != nil || declared == nil || !*declared {
+		t.Fatalf("uploads_personal %v %v", declared, err)
+	}
+	alice := &OnBehalf{Identity: "telegram:1001", Chat: Chat{Kind: "direct", ExternalID: "1001"}}
+	up, err := b.c.FilePut(ctx, b.channel, "", alice, FilePutRequest{MediaType: "text/plain"}, make([]byte, 30))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := b.c.FilePut(ctx, b.channel, "", alice, FilePutRequest{MediaType: "text/plain"}, make([]byte, 30)); err == nil || !strings.Contains(err.Error(), "over_capacity") {
+		t.Fatalf("a put past the ceiling: %v", err)
+	}
+	a := Activity{Kind: "message", Channel: "telegram", UpdateID: "1", Chat: Chat{Kind: "direct", ExternalID: "1001"}, Text: "/hello look", Attachments: []string{up.FileRef}}
+	a.Sender.Identity, a.Sender.Verified = "telegram:1001", true
+	r, err := b.c.SubmitActivity(ctx, b.channel, a)
+	if err != nil || r.Result != "task" {
+		t.Fatalf("own file %+v %v", r, err)
+	}
+	att := b.claim(t, b.agent, "attempt")
+	h := header(t, att)
+	if _, err := b.c.FileGet(ctx, b.agent, h, FileGetRequest{FileRef: up.FileRef}); err != nil {
+		t.Fatal(err)
+	}
+	var seen, typ string
+	if err := b.c.st.Pool.QueryRow(ctx, `SELECT coalesce(record->>'personal_seen', ''), type FROM tasks WHERE id = $1`, r.Task).Scan(&seen, &typ); err != nil || seen != `["human_file"]` {
+		t.Fatalf("personal_seen %q %v", seen, err)
+	}
+	// The same lease seen as an ingest job's.
+	if _, err := b.c.st.Pool.Exec(ctx, `UPDATE tasks SET type = 'kb.ingest.v1' WHERE id = $1`, r.Task); err != nil {
+		t.Fatal(err)
+	}
+	job := *b.agent
+	job.Kind = "job"
+	in, err := b.c.FilePut(ctx, &job, h, nil, FilePutRequest{MediaType: "text/plain"}, []byte("doc"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var origin string
+	if err := b.c.st.Pool.QueryRow(ctx, `SELECT origin FROM files WHERE file_ref = $1`, in.FileRef).Scan(&origin); err != nil || origin != "ingested" {
+		t.Fatalf("origin %q %v", origin, err)
+	}
+	if _, err := b.c.st.Pool.Exec(ctx, `UPDATE tasks SET type = $2 WHERE id = $1`, r.Task, typ); err != nil {
+		t.Fatal(err)
+	}
+	// The task took the internal mark of the file; without the group that sees internal the
+	// task stops, though its type's class is summary.
+	if _, err := b.c.Grant(ctx, b.op, GrantRequest{Op: "ungrant", Subject: b.alice, Group: "files"}); err != nil {
+		t.Fatal(err)
+	}
+	var state string
+	if err := b.c.st.Pool.QueryRow(ctx, `SELECT state FROM tasks WHERE id = $1`, r.Task).Scan(&state); err != nil || state != "failed" {
+		t.Fatalf("task after the data class was lost: %q %v", state, err)
+	}
+	if _, err := b.c.st.Pool.Exec(ctx, `UPDATE files SET expires_at = botaru_now() - interval '1 second' WHERE file_ref = $1`, up.FileRef); err != nil {
+		t.Fatal(err)
+	}
+	if err := b.c.tickLoop(ctx, "retention"); err != nil {
+		t.Fatal(err)
+	}
+	if err := b.c.st.Pool.QueryRow(ctx, `SELECT state FROM files WHERE file_ref = $1`, up.FileRef).Scan(&state); err != nil || state != "purged" {
+		t.Fatalf("an expired file: %q %v", state, err)
+	}
+}

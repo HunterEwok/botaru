@@ -199,6 +199,16 @@ func (c *Core) accessLost(ctx context.Context, tx store.Querier, now time.Time, 
 	return "", nil
 }
 
+// taskMark is the data mark a task's reader must see: the type's class, raised by the mark in
+// the task record (a session, a file or an attachment, ART-2, OUT-1).
+func (c *Core) taskMark(rec []byte, class string) string {
+	var r struct {
+		DataMark string `json:"data_mark"`
+	}
+	_ = json.Unmarshal(rec, &r)
+	return c.higherMark(class, r.DataMark)
+}
+
 // revokeWorkOf ends the tasks a principal has in work once their access no longer covers
 // them: the lease and handles go in the same transaction, so the worker is fenced at its next
 // call and no more task data reaches the model in their name (PRM-8, FEN-4).
@@ -231,7 +241,7 @@ func (c *Core) revokeWorkOf(ctx context.Context, tx pgx.Tx, now time.Time, tv *T
 		return err
 	}
 	for _, w := range ws {
-		reason, err := c.accessLost(ctx, tx, now, tv, principal, "task:"+w.typ, cat.TaskTypes[w.typ].DataClass)
+		reason, err := c.accessLost(ctx, tx, now, tv, principal, "task:"+w.typ, c.taskMark(w.rec, cat.TaskTypes[w.typ].DataClass))
 		if err != nil {
 			return err
 		}

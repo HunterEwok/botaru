@@ -102,7 +102,7 @@ func (c *Core) ResolveModelHandle(ctx context.Context, handle string) (*ModelGra
 	}
 	// The initiator's rights are checked again at every call: a membership that expired or a
 	// right removed by apply after the claim stops the task data from reaching the model (PRM-8).
-	if reason, err := c.accessLost(ctx, c.st.Pool, now, tv, g.Initiator, "task:"+typ, tt.DataClass); err != nil {
+	if reason, err := c.accessLost(ctx, c.st.Pool, now, tv, g.Initiator, "task:"+typ, c.taskMark(rec, tt.DataClass)); err != nil {
 		return nil, err
 	} else if reason != "" {
 		return nil, refuse(reason, "the initiator no longer has access to this task")

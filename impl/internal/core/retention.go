@@ -73,6 +73,13 @@ func (c *Core) retentionLoop(ctx context.Context) error {
 				now, now.AddDate(0, 0, -contentDays), retentionBatch)
 			return tag.RowsAffected(), err
 		},
+		// An expired file has no bytes left; the next step records expired -> purged and the
+		// record stays as the tombstone (spec/lifecycles/file.md, RET-2).
+		func(tx pgx.Tx, now time.Time) (int64, error) {
+			tag, err := tx.Exec(ctx, `UPDATE files SET state = 'purged', content = NULL WHERE file_ref IN (SELECT file_ref FROM files
+				WHERE state = 'expired' LIMIT $1 FOR UPDATE SKIP LOCKED)`, retentionBatch)
+			return tag.RowsAffected(), err
+		},
 	}
 	for _, step := range steps {
 		for range retentionMaxBatchesTick {

@@ -37,6 +37,9 @@ type Config struct {
 	Operators []OperatorCred
 	// HealthKeysSHA256 are the hex SHA-256 of the health keys.
 	HealthKeysSHA256 []string
+	// ReportKeysSHA256 are the hex SHA-256 of the report keys of the backup and reconciliation
+	// processes: they open only backup.report and spend.reconcile (P2 "Who calls").
+	ReportKeysSHA256 []string
 	// TestKeySHA256 is the hex SHA-256 of the test bench key that opens the test-control port.
 	TestKeySHA256 string
 	MaxBodyBytes  int64

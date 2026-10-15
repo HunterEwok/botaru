@@ -86,11 +86,7 @@ func decideGroups(tv *TenantView) []string {
 }
 
 // doctorInsights shows the improvement cycle state of each tenant in scope (INS-6).
-func (c *Core) doctorInsights(ctx context.Context, tx pgx.Tx, _ time.Time, tenant string, add func(DoctorCheck)) error {
-	cat, err := c.Catalog(ctx)
-	if err != nil {
-		return err
-	}
+func (c *Core) doctorInsights(ctx context.Context, tx pgx.Tx, _ time.Time, cat *Catalog, tenant string, add func(DoctorCheck)) error {
 	for _, t := range slices.Sorted(mapKeys(cat.Tenants)) {
 		if tenant != "farm" && t != tenant {
 			continue

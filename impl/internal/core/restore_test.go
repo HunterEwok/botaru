@@ -107,7 +107,8 @@ func TestRestore(t *testing.T) {
 		t.Fatal("the spend gap closed without the restore day")
 	}
 	b.advance(t, 24*3600)
-	if _, err := b.c.SpendReconcile(ctx, farm, SpendReconcileRequest{Day: now.UTC().Format("2006-01-02"), Provider: "mock", Rows: []SpendReconcileItem{{Tenant: "demo", SpentEURMicros: 0}}}); err != nil {
+	// A provider day without usage has no rows; its report still closes the day.
+	if _, err := b.c.SpendReconcile(ctx, farm, SpendReconcileRequest{Day: now.UTC().Format("2006-01-02"), Provider: "mock"}); err != nil {
 		t.Fatal(err)
 	}
 	if open := b.gapOpen(t); open {
@@ -152,6 +153,12 @@ func TestBackupReport(t *testing.T) {
 	}
 	if _, err := b.c.BackupReport(ctx, b.op, BackupReportRequest{Kind: "backup", LocationID: "offsite-1", StartedAt: "2027-01-01T00:00:00Z", FinishedAt: "2027-01-01T00:01:00Z"}); err == nil {
 		t.Fatal("a tenant operator reported a backup")
+	}
+	var clock time.Time
+	_ = b.c.st.Pool.QueryRow(ctx, `SELECT botaru_now()`).Scan(&clock)
+	if _, err := b.c.BackupReport(ctx, farm, BackupReportRequest{Kind: "backup", LocationID: "offsite-1", OK: true,
+		StartedAt: clock.Format(time.RFC3339), FinishedAt: clock.Add(time.Hour).Format(time.RFC3339)}); err == nil {
+		t.Fatal("a backup finished in the future was taken")
 	}
 	report("backup", "offsite-1-erasure", true)
 	b.advance(t, 60)

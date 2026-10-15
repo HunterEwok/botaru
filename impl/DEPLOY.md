@@ -76,6 +76,7 @@ operators:
   # - token_sha256: <the SHA-256 of another token>
   #   principal: human:p_01JB00000000000000000000A1
   #   tenant: farm
+# report_keys_sha256: [<the SHA-256 of the report key>]   # optional: opens only backup.report and spend.reconcile
 providers:
   # The model profile base-std of the example names provider-a. Map it to the mock provider:
   provider-a:
@@ -311,10 +312,10 @@ pg_dump -Fc botaru | age -r <the backup public key> > /var/backups/botaru/store-
 farmctl erasure-log export -config /etc/botaru/core.yaml > /var/backups/botaru/erasure-$(date -u +%F).json
 ```
 
-Copy both to the backup machine or to a write-only external store, then report each:
+Copy both to the backup machine or to a write-only external store, then report each. The backup job reports with a report key, not an operator credential: put the SHA-256 of a random value in `report_keys_sha256` of `core.yaml`, and the key opens only P2 `backup.report` and `spend.reconcile` (every other operation answers `forbidden`). An operator credential of `farm` works too.
 
 ```sh
-F="farmctl -token-file /etc/botaru/secrets/backup-operator"   # an operator credential of tenant farm
+F="farmctl -token-file /etc/botaru/secrets/report-key"   # a report key (report_keys_sha256)
 $F backup report -kind backup -location offsite-1 -started <start, RFC 3339> -finished <end> -ok -size <bytes>
 $F backup report -kind backup -location erasure-1 -started ... -finished ... -ok   # the erasure log backup
 ```
@@ -340,7 +341,7 @@ To restore the farm:
 1. Stop every farm process. Load the backup into an empty store (`pg_restore -d botaru`).
 2. On the core machine: `farmctl restore begin -config /etc/botaru/core.yaml -erasure-log <the newest erasure log backup>`.
 3. Start the core. It answers `not_ready` until the restore completes.
-4. Reconcile each day from the backup to the day of the restore with the provider's cost report (`farmctl spend reconcile`), then `farmctl restore complete`. The report of the restore day exists only from the next day, so a farm restored the same day usually starts with `farmctl restore complete -spend-pending`: the daily limits are halved until the reconciliation arrives.
+4. Reconcile each day from the backup to the day of the restore with the provider's cost report (`farmctl spend reconcile -from <first day> -to <last day>`; a day without rows in the CSV is handed in as a day without usage, which also counts), then `farmctl restore complete`. The report of the restore day exists only from the next day, so a farm restored the same day usually starts with `farmctl restore complete -spend-pending`: the daily limits are halved until the reconciliation arrives.
 5. A worker token revoked after the backup is valid again in the restored store. Rotate the token key without keeping the old one (section "Rotating the token key", with no `previous_token_keys`), enroll every worker again, and start them.
 
 ## Rotating the token key

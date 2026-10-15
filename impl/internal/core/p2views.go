@@ -457,6 +457,10 @@ func (c *Core) Doctor(ctx context.Context, op Operator, req TenantRequest) (*Doc
 	} else {
 		add(DoctorCheck{ID: "store.free_ratio", OK: true, Severity: "info", Value: nil})
 	}
+	cat, err := c.Catalog(ctx)
+	if err != nil {
+		return nil, err
+	}
 	err = c.tx(ctx, func(tx pgx.Tx, now time.Time) error {
 		in, err := c.indicators(ctx, tx, now)
 		if err != nil {
@@ -501,13 +505,13 @@ func (c *Core) Doctor(ctx context.Context, op Operator, req TenantRequest) (*Doc
 			{"alarms.open", `SELECT count(*) FROM alarm_episodes WHERE tenant = $1 AND state = 'firing'`, []any{tenant}, true},
 			{"erasure.open", `SELECT count(*) FROM erasure_requests WHERE tenant = $1 AND state <> 'done'`, []any{tenant}, true},
 		}
-		if err := c.doctorMoney(ctx, tx, now, tenant, add); err != nil {
+		if err := c.doctorMoney(ctx, tx, now, cat, tenant, add); err != nil {
 			return err
 		}
 		if err := c.doctorMonitor(ctx, tx, now, tenant, add); err != nil {
 			return err
 		}
-		if err := c.doctorInsights(ctx, tx, now, tenant, add); err != nil {
+		if err := c.doctorInsights(ctx, tx, now, cat, tenant, add); err != nil {
 			return err
 		}
 		for _, q := range counts {

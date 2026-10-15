@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 func (b *bench) spendLine(t *testing.T, id, state string, micros int64, at time.Time) {
@@ -116,6 +117,14 @@ func TestReconcile(t *testing.T) {
 	}
 	if _, err := b.c.st.Pool.Exec(ctx, `DELETE FROM spend WHERE id = 'sp_open'`); err != nil {
 		t.Fatal(err)
+	}
+	// A model line without a provider (from before the provider column) is not in the farm
+	// sum: the day is refused instead of corrected twice.
+	if _, err := b.c.st.Pool.Exec(ctx, `INSERT INTO spend (id, tenant, line, unit, state, eur_micros, time) VALUES ('sp_old', 'demo', 'work', 'tokens', 'committed', 1000, $1)`, day.Add(-48*time.Hour)); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := b.c.SpendReconcile(ctx, farm, SpendReconcileRequest{Day: "2027-02-27", Provider: "mock", Rows: req.Rows}); err == nil {
+		t.Fatal("a day with a line without a provider was reconciled")
 	}
 	if _, err := b.c.SpendReconcile(ctx, farm, SpendReconcileRequest{Day: "2027-03-02", Provider: "mock", Rows: req.Rows}); err == nil {
 		t.Fatal("today was reconciled")
@@ -228,5 +237,26 @@ func TestDrain(t *testing.T) {
 	}
 	if w := b.claim(t, b.agent, "attempt"); w == nil {
 		t.Fatal("no work after the next start")
+	}
+}
+
+// doctor answers on a store pool of one connection: nothing inside its transaction asks the
+// pool for a second one (the catalog is loaded before).
+func TestDoctorOneConnection(t *testing.T) {
+	ctx := context.Background()
+	b := newBench(t)
+	cfg := b.c.st.Pool.Config()
+	cfg.MaxConns = 1
+	pool, err := pgxpool.NewWithConfig(ctx, cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	old := b.c.st.Pool
+	b.c.st.Pool = pool
+	t.Cleanup(func() { b.c.st.Pool = old; pool.Close() })
+	tctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+	if _, err := b.c.Doctor(tctx, Operator{Principal: b.op.Principal, Tenant: "farm"}, TenantRequest{}); err != nil {
+		t.Fatalf("doctor on one connection: %v", err)
 	}
 }
