@@ -71,7 +71,7 @@ func loadBot(ctx context.Context, q store.Querier, id string, lock bool) (*botRo
 // view is the bot record of spec/model/bot.schema.json.
 func (b *botRow) view() map[string]any {
 	binding := map[string]any{"mode": b.Mode, "worker": nil, "seat": nil, "epoch": b.Epoch}
-	if b.Worker != "" && b.Mode == "worker" {
+	if b.Worker != "" && b.Mode == "worker" && (b.State == "active" || b.State == "suspended") {
 		binding["worker"] = b.Worker
 	}
 	if b.Seat != "" {
@@ -111,9 +111,10 @@ func (c *Core) insertBot(ctx context.Context, tx pgx.Tx, now time.Time, tenant, 
 
 // workerBot is the identity of a worker: the bound one, or a new one for a live worker of a
 // role with a model that has none (a worker enrolled before identities, or one whose
-// identity retired). A worker without a model role has no identity: nil.
+// identity retired). A worker without a model role has no identity: nil. The row is read FOR
+// SHARE, so a retirement waits for the claim and its fence then finds the new lease.
 func (c *Core) workerBot(ctx context.Context, tx pgx.Tx, now time.Time, cat *Catalog, w *Worker) (*botRow, error) {
-	b, err := scanBot(tx.QueryRow(ctx, `SELECT `+botCols+` FROM bots WHERE worker_id = $1 AND mode = 'worker' AND state IN ('active', 'suspended')`, w.ID))
+	b, err := scanBot(tx.QueryRow(ctx, `SELECT `+botCols+` FROM bots WHERE worker_id = $1 AND mode = 'worker' AND state IN ('active', 'suspended') FOR SHARE`, w.ID))
 	if err == nil {
 		return b, nil
 	}
@@ -127,7 +128,7 @@ func (c *Core) workerBot(ctx context.Context, tx pgx.Tx, now time.Time, cat *Cat
 		return nil, err
 	}
 	// A second claim of the same worker may have created it meanwhile.
-	b, err = scanBot(tx.QueryRow(ctx, `SELECT `+botCols+` FROM bots WHERE worker_id = $1 AND mode = 'worker' AND state IN ('active', 'suspended')`, w.ID))
+	b, err = scanBot(tx.QueryRow(ctx, `SELECT `+botCols+` FROM bots WHERE worker_id = $1 AND mode = 'worker' AND state IN ('active', 'suspended') FOR SHARE`, w.ID))
 	if err == nil {
 		return b, nil
 	}

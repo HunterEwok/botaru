@@ -63,9 +63,10 @@ func seatRole(cat *Catalog, tenant string) string {
 
 // syncSeats brings the commission seats of every tenant in line with its applied charter: a
 // new seat starts vacant, a seat's lens follows the charter, and a seat the charter dropped is
-// removed; a seat with a holder is not removed (GOV-33).
+// removed; a seat with a holder is not removed (GOV-33). The seats are read FOR UPDATE, so a
+// seat.assign running meanwhile either lands first and is seen, or waits for the apply.
 func (c *Core) syncSeats(ctx context.Context, tx pgx.Tx, now time.Time, cat *Catalog) error {
-	rows, err := tx.Query(ctx, `SELECT tenant, id, coalesce(lens, ''), coalesce(holder, ''), state FROM seats WHERE kind = 'commission' AND state <> 'removed' ORDER BY tenant, id`)
+	rows, err := tx.Query(ctx, `SELECT tenant, id, coalesce(lens, ''), coalesce(holder, ''), state FROM seats WHERE kind = 'commission' AND state <> 'removed' ORDER BY tenant, id FOR UPDATE`)
 	if err != nil {
 		return err
 	}
@@ -97,8 +98,10 @@ func (c *Core) syncSeats(ctx context.Context, tx pgx.Tx, now time.Time, cat *Cat
 		if s.holder != "" {
 			return refuse("forbidden", "seat %s of tenant %s has a holder: seat.vacate first", k[1], k[0])
 		}
-		if _, err := tx.Exec(ctx, `UPDATE seats SET state = 'removed', updated_at = $3 WHERE tenant = $1 AND id = $2`, k[0], k[1], now); err != nil {
+		if tag, err := tx.Exec(ctx, `UPDATE seats SET state = 'removed', updated_at = $3 WHERE tenant = $1 AND id = $2 AND holder IS NULL`, k[0], k[1], now); err != nil {
 			return err
+		} else if tag.RowsAffected() == 0 {
+			return refuse("forbidden", "seat %s of tenant %s has a holder: seat.vacate first", k[1], k[0])
 		}
 	}
 	for k, lens := range want {
@@ -348,11 +351,21 @@ func seatOfRecord(rec []byte) string {
 // binding epoch and the seat epoch; not ok when the seat is vacant or its holder is not active
 // or is under a hold of people.
 func (c *Core) seatActing(ctx context.Context, tx pgx.Tx, now time.Time, tenant, seat string) (actingOf, bool, error) {
-	s, err := loadSeat(ctx, tx, tenant, seat, false)
-	if err != nil || s == nil || s.State != "held" || s.Holder == "" {
+	// The seat and its holder are read FOR SHARE: a seat move or a retirement waits for the
+	// claim, and its fence then finds the new lease (IDN-10, IDN-11).
+	var s seatRow
+	err := tx.QueryRow(ctx, `SELECT id, coalesce(holder, ''), state, epoch FROM seats WHERE tenant = $1 AND id = $2 FOR SHARE`, tenant, seat).
+		Scan(&s.ID, &s.Holder, &s.State, &s.Epoch)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return actingOf{}, false, nil
+	}
+	if err != nil || s.State != "held" || s.Holder == "" {
 		return actingOf{}, false, err
 	}
-	b, err := loadBot(ctx, tx, s.Holder, false)
+	b, err := scanBot(tx.QueryRow(ctx, `SELECT `+botCols+` FROM bots WHERE id = $1 FOR SHARE`, s.Holder))
+	if errors.Is(err, pgx.ErrNoRows) {
+		return actingOf{}, false, nil
+	}
 	if err != nil || b == nil || b.State != "active" {
 		return actingOf{}, false, err
 	}
