@@ -373,6 +373,11 @@ const slowPassEvery = time.Minute
 
 // slowPass says whether a slow loop runs at now, and records the pass.
 func (c *Core) slowPass(last *atomic.Int64, now time.Time) bool {
+	// A loop.tick on a test bench always runs the pass it asks for.
+	if c.manual.Load() {
+		last.Store(now.UnixNano())
+		return true
+	}
 	prev := last.Load()
 	if prev != 0 && now.UnixNano()-prev < int64(slowPassEvery) {
 		return false
