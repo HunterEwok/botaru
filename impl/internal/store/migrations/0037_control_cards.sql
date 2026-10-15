@@ -1,6 +1,7 @@
 -- SPDX-License-Identifier: AGPL-3.0-only
 -- The control card (MGR-26, decision point control_card): a seat operation on a target that
--- came from a finding waits for a person with control.approve for an hour, and an approved one
+-- came from a finding (or empty finding: a cancellation in distrust mode, MGR-22, or a role share
+-- over the limit, the why) waits for a person with control.approve for an hour, and an approved one
 -- applies through control.apply on behalf of that person. control_ops.origin keeps the target
 -- origin, code or finding:<id>; approved_by names the person of a card.
 CREATE TABLE control_cards (
@@ -8,6 +9,7 @@ CREATE TABLE control_cards (
     tenant      text NOT NULL,
     request     jsonb NOT NULL,
     finding     text NOT NULL,
+    why         text NOT NULL CHECK (why IN ('finding', 'distrust', 'share_held')),
     incident    text,
     task        text,
     acting_bot  text,

@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"maps"
 	"slices"
 	"testing"
 	"time"
@@ -322,6 +323,10 @@ func TestManagerReading(t *testing.T) {
 	if out["code"] != "ok" || len(list) != 1 {
 		t.Fatalf("findings %v", out)
 	}
+	_, _, drec, _ := taskRecord(t, b, item.Payload["task"].(map[string]any)["id"].(string))
+	if drec["untrusted_seen"] != true {
+		t.Fatalf("the decision task that read findings is not in distrust mode: %v", drec)
+	}
 	f := asMap(list[0])
 	if f["untrusted"] != true || f["note"] != nil || f["subject_in_code_targets"] != false {
 		t.Fatalf("finding %v", f)
@@ -570,5 +575,24 @@ func TestManagerSeatFacts(t *testing.T) {
 	}
 	if n := factCount(t, b, old, "sealed"); n != 1 {
 		t.Fatalf("sealed %d", n)
+	}
+	// A tenant that turns the manager off keeps no seat memory.
+	cat, err := b.c.Catalog(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	off := *cat
+	off.Tenants = maps.Clone(cat.Tenants)
+	tv := *cat.Tenants["demo"]
+	tv.Raw = maps.Clone(tv.Raw)
+	spec := maps.Clone(asMap(tv.Raw["spec"]))
+	spec["farm_manager"] = map[string]any{"enabled": false}
+	tv.Raw["spec"] = spec
+	off.Tenants["demo"] = &tv
+	if err := b.c.tx(ctx, func(tx pgx.Tx, now time.Time) error { return b.c.managerDisabled(ctx, tx, now, &off) }); err != nil {
+		t.Fatal(err)
+	}
+	if err := b.c.st.Pool.QueryRow(ctx, `SELECT count(*) FROM facts WHERE tenant = 'demo' AND bot IN ($1, $2)`, old, holder).Scan(&n); err != nil || n != 0 {
+		t.Fatalf("seat facts after the opt-out %d %v", n, err)
 	}
 }

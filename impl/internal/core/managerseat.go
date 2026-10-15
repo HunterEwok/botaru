@@ -742,6 +742,16 @@ func (c *Core) managerDisabled(ctx context.Context, tx pgx.Tx, now time.Time, ca
 			AND basis IN (SELECT id FROM incidents WHERE tenant = $1)`, t); err != nil {
 			return err
 		}
+		// The seat keeps no memory section in the tenant: the facts of its holders there go and
+		// their offers close (MGR-42).
+		if _, err := tx.Exec(ctx, `DELETE FROM facts WHERE tenant = $1 AND bot IN (SELECT id FROM bots WHERE seat = $2)`, t, managerSeatID); err != nil {
+			return err
+		}
+		if _, err := tx.Exec(ctx, `UPDATE fact_offers SET state = 'closed', recipient_state = CASE WHEN recipient_state = 'waiting' THEN 'expired' ELSE recipient_state END,
+			closed_at = coalesce(closed_at, $3) WHERE tenant = $1 AND from_bot IN (SELECT id FROM bots WHERE seat = $2) AND (state = 'open' OR recipient_state = 'waiting')`,
+			t, managerSeatID, now); err != nil {
+			return err
+		}
 		if m != nil && m.Holder != "" {
 			if err := capHolderHolds(ctx, tx, now, m.Holder, t); err != nil {
 				return err

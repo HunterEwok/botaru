@@ -130,6 +130,13 @@ func (c *Core) inspectToolCall(ctx context.Context, tx pgx.Tx, now time.Time, ca
 		if state == "" {
 			return answer(map[string]any{"code": "not_found"}, true), nil
 		}
+		// Findings are untrusted: the decision task that saw them works in distrust mode from
+		// now on (MGR-22).
+		if len(items) > 0 {
+			if _, err := tx.Exec(ctx, `UPDATE tasks SET record = record || '{"untrusted_seen": true}'::jsonb WHERE id = $1`, g.Task); err != nil {
+				return nil, err
+			}
+		}
 		return answer(map[string]any{"code": "ok", "state": state, "findings": items}, false), nil
 	}
 	id, code, err := c.enqueueInspect(ctx, tx, now, cat, g, mstr(args, "incident"), asMap(args["subject"]))
@@ -353,6 +360,20 @@ func (c *Core) seatFileRead(ctx context.Context, tx pgx.Tx, now time.Time, tenan
 	if err := tx.QueryRow(ctx, `SELECT f.personal_seen, coalesce(p.kind, ''), f.sha256 FROM files f
 		LEFT JOIN principals p ON f.origin = 'upload' AND p.tenant = f.tenant AND p.id = f.producer WHERE f.file_ref = $1`, f.Ref).Scan(&declared, &producerKind, &sum); err != nil {
 		return err
+	}
+	// A file a task of an excluded purpose or profile produced is not the reader's to open, the
+	// same answer as for a file that does not exist (MGR-9, PRF-1).
+	var purpose, role string
+	if err := tx.QueryRow(ctx, `SELECT coalesce(t.record->>'purpose', ''), coalesce(t.record->>'executor_role', '') FROM files f
+		JOIN tasks t ON f.origin = 'produced' AND t.id = f.producer WHERE f.file_ref = $1`, f.Ref).Scan(&purpose, &role); err != nil && !errors.Is(err, pgx.ErrNoRows) {
+		return err
+	}
+	cat, err := c.Catalog(ctx)
+	if err != nil {
+		return err
+	}
+	if slices.Contains(excludedPurposes, purpose) || role != "" && slices.Contains(excludedProfiles, profileOf(cat, role)) {
+		return refuse("not_found", "no such file")
 	}
 	personal := producerKind == "human" || deref(declared) == "declared"
 	if personal && !slices.Contains(r.Files, f.Ref) {

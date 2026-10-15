@@ -44,7 +44,7 @@ func findingTarget(ctx context.Context, tx pgx.Tx, tenant, finding string, t Con
 
 // openControlCard records the operation on a card and plans it to the tenant's people with
 // control.approve. The seat's request is kept as it was; nothing of the model's text is in it.
-func (c *Core) openControlCard(ctx context.Context, tx pgx.Tx, now time.Time, cat *Catalog, tenant string, a controlActor, req ControlRequest, inc *incidentRow) (string, error) {
+func (c *Core) openControlCard(ctx context.Context, tx pgx.Tx, now time.Time, cat *Catalog, tenant string, a controlActor, req ControlRequest, inc *incidentRow, why string) (string, error) {
 	raw, err := json.Marshal(req)
 	if err != nil {
 		return "", err
@@ -54,9 +54,9 @@ func (c *Core) openControlCard(ctx context.Context, tx pgx.Tx, now time.Time, ca
 	if inc != nil {
 		incident = inc.ID
 	}
-	if _, err := tx.Exec(ctx, `INSERT INTO control_cards (id, tenant, request, finding, incident, task, acting_bot, epoch, state, nonce, expires_at, created_at, updated_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'pending', $9, $10, $11, $11)`,
-		id, tenant, raw, req.Finding, nullable(incident), nullable(a.Task), nullable(a.Principal), a.Epoch, ids.Secret(16), now.Add(controlCardTTL), now); err != nil {
+	if _, err := tx.Exec(ctx, `INSERT INTO control_cards (id, tenant, request, finding, why, incident, task, acting_bot, epoch, state, nonce, expires_at, created_at, updated_at)
+		VALUES ($1, $2, $3, $4, $12, $5, $6, $7, $8, 'pending', $9, $10, $11, $11)`,
+		id, tenant, raw, req.Finding, nullable(incident), nullable(a.Task), nullable(a.Principal), a.Epoch, ids.Secret(16), now.Add(controlCardTTL), now, why); err != nil {
 		return "", err
 	}
 	if tv := cat.Tenants[tenant]; tv != nil {
@@ -78,29 +78,38 @@ func (c *Core) openControlCard(ctx context.Context, tx pgx.Tx, now time.Time, ca
 	_, err = c.appendAudit(ctx, tx, now, Audit{
 		Tenant: tenant, Kind: "command", Actor: Actor{Principal: "system", Via: "seat", Role: managerSeatID}, Command: "control.card",
 		Target: &Target{Kind: req.Target.Kind, ID: req.Target.ID}, OK: true,
-		After: map[string]any{"op": req.Op, "card": id, "incident": nullable(incident), "origin": "finding:" + req.Finding, "result": "card", "epoch": a.Epoch},
+		After: map[string]any{"op": req.Op, "card": id, "incident": nullable(incident), "origin": cardOrigin(req.Finding), "why": why, "result": "card", "epoch": a.Epoch},
 	})
 	return id, err
 }
 
+// cardOrigin is the target origin of a card's operation: the finding it came from, or the code
+// list of its basis.
+func cardOrigin(finding string) string {
+	if finding == "" {
+		return "code"
+	}
+	return "finding:" + finding
+}
+
 // controlCardRow is a control card as the store keeps it.
 type controlCardRow struct {
-	ID, Tenant, Finding, Incident, State, Nonce, DecidedBy string
-	Request                                                ControlRequest
-	Expires                                                time.Time
+	ID, Tenant, Finding, Why, Incident, State, Nonce, DecidedBy string
+	Request                                                     ControlRequest
+	Expires                                                     time.Time
 	// FindingFacts are the closed fields of the finding: its kind, confidence and numbers,
 	// never its note.
 	FindingFacts map[string]any
 }
 
 func loadControlCard(ctx context.Context, tx pgx.Tx, tenant, id string, lock bool) (*controlCardRow, error) {
-	q := `SELECT id, tenant, finding, coalesce(incident, ''), state, nonce, coalesce(decided_by, ''), request, expires_at FROM control_cards WHERE id = $1 AND tenant = $2`
+	q := `SELECT id, tenant, finding, why, coalesce(incident, ''), state, nonce, coalesce(decided_by, ''), request, expires_at FROM control_cards WHERE id = $1 AND tenant = $2`
 	if lock {
 		q += ` FOR UPDATE`
 	}
 	var r controlCardRow
 	var raw []byte
-	err := tx.QueryRow(ctx, q, id, tenant).Scan(&r.ID, &r.Tenant, &r.Finding, &r.Incident, &r.State, &r.Nonce, &r.DecidedBy, &raw, &r.Expires)
+	err := tx.QueryRow(ctx, q, id, tenant).Scan(&r.ID, &r.Tenant, &r.Finding, &r.Why, &r.Incident, &r.State, &r.Nonce, &r.DecidedBy, &raw, &r.Expires)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, nil
 	}
@@ -109,6 +118,9 @@ func loadControlCard(ctx context.Context, tx pgx.Tx, tenant, id string, lock boo
 	}
 	if err := json.Unmarshal(raw, &r.Request); err != nil {
 		return nil, err
+	}
+	if r.Finding == "" {
+		return &r, nil
 	}
 	var kind string
 	var body []byte
@@ -144,7 +156,10 @@ func (r *controlCardRow) card() map[string]any {
 		buttons = append(buttons, button("approve"), button("reject"))
 	}
 	ctx := map[string]any{"op": r.Request.Op, "target": map[string]any{"kind": r.Request.Target.Kind, "id": r.Request.Target.ID},
-		"finding": r.Finding, "origin": "finding:" + r.Finding, "label": "manager output from reading tenant data, untrusted"}
+		"origin": cardOrigin(r.Finding), "why": r.Why, "label": "manager output from reading tenant data, untrusted"}
+	if r.Finding != "" {
+		ctx["finding"] = r.Finding
+	}
 	if r.Incident != "" {
 		ctx["incident"] = r.Incident
 	}
@@ -213,7 +228,7 @@ func (c *Core) decideControl(ctx context.Context, w *Worker, ob OnBehalf, req De
 			// The person applies the operation by the code path of control.apply; the seat's
 			// checks of the target do not apply to a person (MGR-26, PRM-14).
 			op := Operator{Principal: press.principal, Tenant: r.Tenant}
-			d, p, err := c.controlApply(ctx, tx, now, cat, r.Tenant, controlActor{Operator: op, Origin: "finding:" + r.Finding, ApprovedBy: press.principal}, r.Request)
+			d, p, err := c.controlApply(ctx, tx, now, cat, r.Tenant, controlActor{Operator: op, Origin: cardOrigin(r.Finding), ApprovedBy: press.principal}, r.Request)
 			if err != nil {
 				return err
 			}

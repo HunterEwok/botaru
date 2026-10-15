@@ -213,9 +213,21 @@ func (c *Core) controlApply(ctx context.Context, tx pgx.Tx, now time.Time, cat *
 		if err != nil {
 			return nil, nil, err
 		}
-		// A target that came from a finding goes to a person on a control card (MGR-26).
-		if p != nil && p.Reason == "approval_required" && strings.HasPrefix(origin, "finding:") {
-			id, err := c.openControlCard(ctx, tx, now, cat, tenant, a, req, inc)
+		// What the seat may not do alone goes to a person on a control card: a target from a
+		// finding (MGR-26), a cancellation or a second quarantine in distrust mode (MGR-22), a
+		// role share over the limit.
+		if p != nil && p.Reason == "approval_required" {
+			why := "share_held"
+			switch {
+			case strings.HasPrefix(origin, "finding:"):
+				why = "finding"
+			case a.Untrusted && (req.Op == "cancel" || req.Op == "quarantine"):
+				why = "distrust"
+			}
+			if why != "finding" {
+				req.Finding = ""
+			}
+			id, err := c.openControlCard(ctx, tx, now, cat, tenant, a, req, inc, why)
 			if err != nil {
 				return nil, nil, err
 			}
