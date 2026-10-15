@@ -41,9 +41,11 @@ var openProposalStates = []string{"screened", "in_review", "recommended", "prese
 type proposalAuthor struct {
 	Tenant, Role, Worker, Task, Type, Mark string
 	Level                                  int
-	Untrusted                              bool
-	Sources                                []string
-	Readable                               []string
+	// Acting is the identity of the attempt that wrote the proposals (IDN-8).
+	Acting    actingOf
+	Untrusted bool
+	Sources   []string
+	Readable  []string
 }
 
 // rejection is the refusal of one proposal body: no record, an event with the reason (PRP-1).
@@ -100,6 +102,11 @@ func (c *Core) createProposals(ctx context.Context, tx pgx.Tx, now time.Time, ca
 	if r.UntrustedSeen {
 		a.Sources = []string{r.UntrustedSource}
 	}
+	acting, err := leaseActing(ctx, tx, task, w.ID)
+	if err != nil {
+		return err
+	}
+	a.Acting = acting
 	if cat.TaskTypes[typ].Purpose == "aggregate" {
 		a.Level = 1
 	}
@@ -120,7 +127,11 @@ func (c *Core) createProposals(ctx context.Context, tx pgx.Tx, now time.Time, ca
 }
 
 func (c *Core) proposalRejected(ctx context.Context, tx pgx.Tx, now time.Time, a proposalAuthor, body map[string]any, fp, reason string) error {
-	data := map[string]any{"reason": reason, "task": a.Task, "role": a.Role, "acting_bot": nil, "category": nil, "problem_code": nil, "fingerprint": nil}
+	var actingBot any
+	if a.Acting.Bot != "" {
+		actingBot = a.Acting.Bot
+	}
+	data := map[string]any{"reason": reason, "task": a.Task, "role": a.Role, "acting_bot": actingBot, "category": nil, "problem_code": nil, "fingerprint": nil}
 	if cat, ok := body["category"].(string); ok && validCategory(cat) {
 		data["category"] = cat
 	}
@@ -260,9 +271,13 @@ func (c *Core) createProposal(ctx context.Context, tx pgx.Tx, now time.Time, cat
 	if sources == nil {
 		sources = []string{}
 	}
+	var actingBot, botEpoch any
+	if a.Acting.Bot != "" {
+		actingBot, botEpoch = a.Acting.Bot, a.Acting.BotEpoch
+	}
 	record := map[string]any{
 		"id": id, "tenant": a.Tenant,
-		"origin":      map[string]any{"role": a.Role, "worker": a.Worker, "acting_bot": nil, "bot_epoch": nil, "task": a.Task, "level": a.Level},
+		"origin":      map[string]any{"role": a.Role, "worker": a.Worker, "acting_bot": actingBot, "bot_epoch": botEpoch, "task": a.Task, "level": a.Level},
 		"fingerprint": fp, "data_mark": a.Mark,
 		"untrusted_seen": map[string]any{"value": a.Untrusted, "sources": sources},
 		"self_influence": influence, "self_evidence": self, "conflicts_with": []any{}, "seen_count": 1,

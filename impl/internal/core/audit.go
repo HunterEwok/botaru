@@ -46,6 +46,10 @@ type Actor struct {
 	Via       string `json:"via"`
 	Role      string `json:"role,omitempty"`
 	Task      string `json:"task,omitempty"`
+	// ActingBot and BotEpoch name the identity of a bot's work; the core fills them from the
+	// task's lease (IDN-8).
+	ActingBot string `json:"acting_bot,omitempty"`
+	BotEpoch  int    `json:"bot_epoch,omitempty"`
 }
 
 // Target is what the change is about.
@@ -82,6 +86,13 @@ func (c *Core) appendAuditAt(ctx context.Context, tx pgx.Tx, now time.Time, epoc
 		return 0, err
 	}
 	seq++
+	if a.Actor.Via == "bot" && a.Actor.Task != "" && a.Actor.ActingBot == "" {
+		acting, err := leaseActing(ctx, tx, a.Actor.Task, "")
+		if err != nil {
+			return 0, err
+		}
+		a.Actor.ActingBot, a.Actor.BotEpoch = acting.Bot, acting.BotEpoch
+	}
 	rec := map[string]any{
 		"seq":       seq,
 		"at":        fmtTime(now),

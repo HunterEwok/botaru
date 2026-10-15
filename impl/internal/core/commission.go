@@ -470,6 +470,19 @@ func (c *Core) enqueueReviews(ctx context.Context, tx pgx.Tx, now time.Time, cat
 			return nil, 0, res.Rejected
 		}
 		extra := map[string]any{"lens": l, "proposal": p.ID, "executor_role": e.Role, "not_worker": asString(origin["worker"])}
+		source := e.Source
+		// A held seat of the lens reviews it on behalf of its holder, on workers of the seat
+		// role; a vacant seat, or a holder under a hold of people, leaves it to the fallback
+		// role (COM-7, IDN-10).
+		if sr := seatRole(cat, p.Tenant); sr != "" && slices.Contains(cat.Roles[sr].Claims, e.Type) && c.independentReviewer(cat, sr, e.Type, p.Role) {
+			seat, err := c.seatExecutor(ctx, tx, now, p.Tenant, l)
+			if err != nil {
+				return nil, 0, err
+			}
+			if seat != nil {
+				extra["executor_role"], extra["seat"], source = sr, seat.ID, "seat"
+			}
+		}
 		raw, err := json.Marshal(extra)
 		if err != nil {
 			return nil, 0, err
@@ -478,7 +491,7 @@ func (c *Core) enqueueReviews(ctx context.Context, tx pgx.Tx, now time.Time, cat
 			return nil, 0, err
 		}
 		reserved += cat.TaskTypes[e.Type].TreeBudgetEUR
-		reviews = append(reviews, map[string]any{"lens": l, "task": res.TaskID, "executor": e.Source, "state": "pending"})
+		reviews = append(reviews, map[string]any{"lens": l, "task": res.TaskID, "executor": source, "state": "pending"})
 	}
 	return reviews, reserved, nil
 }

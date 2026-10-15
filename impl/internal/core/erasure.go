@@ -39,6 +39,7 @@ var coreStores = []string{"tasks", "deliveries", "toolcalls", "sessions", "memor
 type ErasureScope struct {
 	Tenant  string   `json:"tenant"`
 	Subject string   `json:"subject,omitempty"`
+	Bot     string   `json:"bot,omitempty"`
 	IDs     []string `json:"ids,omitempty"`
 }
 
@@ -46,6 +47,8 @@ func (s ErasureScope) kind() string {
 	switch {
 	case s.Subject != "":
 		return "tenant_subject"
+	case s.Bot != "":
+		return "bot"
 	case len(s.IDs) > 0:
 		return "ids"
 	}
@@ -128,9 +131,13 @@ func addErasureSteps(ctx context.Context, tx pgx.Tx, now time.Time, tenant strin
 		if reason == "forget" && st != "sessions" && st != "memory" {
 			continue
 		}
+		// A retired identity's sealed data is its memory of the bot scope (MEM-9).
+		if reason == "bot_retired" && st != "memory" {
+			continue
+		}
 		steps = append(steps, step{st, "core", st})
 	}
-	if reason != "forget" {
+	if reason != "forget" && reason != "bot_retired" {
 		for _, n := range slices.Sorted(mapKeys(channels)) {
 			steps = append(steps, step{storeKey("channel", n), "channel", n})
 		}
@@ -319,6 +326,10 @@ func (c *Core) runCoreSteps(ctx context.Context, tx pgx.Tx, now time.Time, cat *
 // tenant or person scope is canceled first, so no attempt writes into a purged task.
 func (c *Core) eraseCore(ctx context.Context, tx pgx.Tx, now time.Time, cat *Catalog, r *erasureRow, st string) error {
 	sc := r.Scope
+	if sc.Bot != "" {
+		// The bot scope reaches only the identity's own memory, none in the person stores.
+		return nil
+	}
 	// tasksIn selects the tasks of the scope: the person's own and those carrying their data
 	// (AUD-5).
 	tasksIn := `SELECT id FROM tasks WHERE tenant = $1 AND ($2 = '' OR initiator = $2 OR record->'personal_subjects' ? $2)
@@ -486,6 +497,11 @@ func (c *Core) settleErasure(ctx context.Context, tx pgx.Tx, now time.Time, r *e
 	if state == "done" {
 		if err := c.resolveAlarm(ctx, tx, now, alarm); err != nil {
 			return err
+		}
+		if r.Scope.Bot != "" {
+			if err := botErased(ctx, tx, now, r.Scope.Bot); err != nil {
+				return err
+			}
 		}
 		return c.erasureClosed(ctx, tx, now, r, results)
 	}

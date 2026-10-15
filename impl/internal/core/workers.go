@@ -28,6 +28,8 @@ type Worker struct {
 	Placement string        `json:"placement,omitempty"`
 	Host      string        `json:"host,omitempty"`
 	Hello     *HelloRequest `json:"-"`
+	// Bot is the identity bound at enroll (IDN-8).
+	Bot string `json:"bot,omitempty"`
 }
 
 // EnrollRequest is p2-worker-enroll-request.
@@ -38,6 +40,7 @@ type EnrollRequest struct {
 	Labels    map[string]string `json:"labels"`
 	Target    string            `json:"target"`
 	RotateP2  bool              `json:"rotate_p2"`
+	Bot       string            `json:"bot"`
 	Plugins   []string          `json:"plugins"`
 	Placement string            `json:"placement"`
 	Host      string            `json:"host"`
@@ -111,6 +114,15 @@ func (c *Core) Enroll(ctx context.Context, op Operator, req EnrollRequest) (*Enr
 			w.ID, w.Tenant, w.Role, w.Kind, lb, nullable(w.Target), pb, nullable(w.Placement), nullable(w.Host), c.hashSecret(token), now); err != nil {
 			return err
 		}
+		// A worker of a model role is bound to a new identity, or to the unbound one named.
+		if req.Bot != "" && req.Kind != "agent" && req.Kind != "job" {
+			return refuse("input_schema_invalid", "bot is only for an agent or a job worker")
+		}
+		bot, err := c.enrollBot(ctx, tx, now, cat, w, req.Bot)
+		if err != nil {
+			return err
+		}
+		w.Bot = bot
 		if driver != "" {
 			var n int
 			if err := tx.QueryRow(ctx, `SELECT count(*) FROM driver_secrets WHERE tenant = $1 AND driver = $2`, req.Tenant, driver).Scan(&n); err != nil {
@@ -132,7 +144,7 @@ func (c *Core) Enroll(ctx context.Context, op Operator, req EnrollRequest) (*Enr
 				res.P2Token = p2
 			}
 		}
-		_, err := c.appendAudit(ctx, tx, now, Audit{
+		_, err = c.appendAudit(ctx, tx, now, Audit{
 			Tenant: req.Tenant, Kind: "command", Actor: Actor{Principal: op.Principal, Via: "farmctl"},
 			Command: "worker.enroll", Target: &Target{Kind: "worker", ID: w.ID}, OK: true,
 			After: enrollAfter(w),
