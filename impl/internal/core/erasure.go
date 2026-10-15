@@ -338,6 +338,21 @@ func (c *Core) eraseCore(ctx context.Context, tx pgx.Tx, now time.Time, cat *Cat
 		// The bot scope reaches only the identity's own memory, none in the person stores.
 		return nil
 	}
+	if len(sc.IDs) > 0 {
+		// The erasure of an erase_match names the ids of every store; a core store takes only
+		// the ids the core stores found, so an edge id that looks like a core one never
+		// erases a core object (SEC-11). None left: nothing here to erase, never the tenant.
+		ids, match, err := coreMatchIDs(ctx, tx, r.ID)
+		if err != nil {
+			return err
+		}
+		if match {
+			if len(ids) == 0 {
+				return nil
+			}
+			sc.IDs = ids
+		}
+	}
 	// tasksIn selects the tasks of the scope: the person's own and those carrying their data
 	// (AUD-5).
 	tasksIn := `SELECT id FROM tasks WHERE tenant = $1 AND ($2 = '' OR initiator = $2 OR record->'personal_subjects' ? $2)
@@ -423,6 +438,32 @@ func (c *Core) eraseCore(ctx context.Context, tx pgx.Tx, now time.Time, cat *Cat
 		return err
 	}
 	return nil
+}
+
+// coreMatchIDs gives, for the erasure of an erase_match, the ids its core stores found; match
+// says the erasure is one.
+func coreMatchIDs(ctx context.Context, tx pgx.Tx, erasure string) ([]string, bool, error) {
+	var raw []byte
+	err := tx.QueryRow(ctx, `SELECT found FROM subject_requests WHERE erasure = $1 AND kind = 'erase_match'`, erasure).Scan(&raw)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, false, nil
+	}
+	if err != nil {
+		return nil, false, err
+	}
+	var found map[string][]string
+	if len(raw) > 0 {
+		if err := json.Unmarshal(raw, &found); err != nil {
+			return nil, true, err
+		}
+	}
+	var ids []string
+	for _, k := range slices.Sorted(mapKeys(found)) {
+		if !strings.HasPrefix(k, "sink_") && !strings.HasPrefix(k, "monitor_") {
+			ids = append(ids, found[k]...)
+		}
+	}
+	return ids, true, nil
 }
 
 // idsWith keeps the ids with one of the prefixes.

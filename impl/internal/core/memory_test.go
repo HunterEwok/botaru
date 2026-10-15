@@ -352,7 +352,13 @@ func TestEraseMatchEdge(t *testing.T) {
 		t.Fatalf("match work %+v", item)
 	}
 	validOut(t, b.bench, "erasure-work", item.Payload)
-	if _, err := b.c.Complete(ctx, sink, header(t, item), CompleteRequest{Erasure: map[string]any{"outcome": "done", "ids": []any{"out-17"}}}); err != nil {
+	// The sink's own id happens to look like a core task id: it is the sink's to erase, never
+	// the core task's.
+	var task string
+	if err := b.c.st.Pool.QueryRow(ctx, `SELECT id FROM tasks WHERE tenant = 'demo' AND body IS NOT NULL ORDER BY id LIMIT 1`).Scan(&task); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := b.c.Complete(ctx, sink, header(t, item), CompleteRequest{Erasure: map[string]any{"outcome": "done", "ids": []any{"out-17", task}}}); err != nil {
 		t.Fatal(err)
 	}
 	var needles *string
@@ -361,7 +367,7 @@ func TestEraseMatchEdge(t *testing.T) {
 	}
 	card := cardOf(t, b.drain(t), subjectCard, "direct:1002")
 	cd := card.body["card"].(map[string]any)
-	if n := fmt.Sprint(cd["context"].(map[string]any)["found"].(map[string]any)["sink_archive"]); n != "1" {
+	if n := fmt.Sprint(cd["context"].(map[string]any)["found"].(map[string]any)["sink_archive"]); n != "2" {
 		t.Fatalf("card %v", cd)
 	}
 	req := DecideRequest{SubjectKind: "subject_request", ID: d.ID, Nonce: cd["nonce"].(string), Decision: "approve"}
@@ -370,7 +376,7 @@ func TestEraseMatchEdge(t *testing.T) {
 	}
 	b.tick(t, "erasure")
 	item = b.claim(t, sink, "erasure")
-	if item == nil || item.Payload["op"] != "erase" || fmt.Sprint(item.Payload["scope"].(map[string]any)["ids"]) != "[out-17]" {
+	if item == nil || item.Payload["op"] != "erase" || fmt.Sprint(item.Payload["scope"].(map[string]any)["ids"]) != "[out-17 "+task+"]" {
 		t.Fatalf("erase work %+v", item)
 	}
 	if _, err := b.c.Complete(ctx, sink, header(t, item), CompleteRequest{Erasure: map[string]any{"outcome": "done"}}); err != nil {
@@ -384,6 +390,10 @@ func TestEraseMatchEdge(t *testing.T) {
 	rec, _ := b.c.ErasureStatus(ctx, b.op, ErasureIDRequest{Op: "erasure.status", ID: erasure})
 	if res := rec["results"].(map[string]any); res["sink_archive"] != "done" {
 		t.Fatalf("request %v", rec)
+	}
+	var kept bool
+	if err := b.c.st.Pool.QueryRow(ctx, `SELECT body IS NOT NULL FROM tasks WHERE id = $1`, task).Scan(&kept); err != nil || !kept {
+		t.Fatalf("a sink id erased a core task: %v %v", kept, err)
 	}
 }
 
