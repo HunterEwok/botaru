@@ -17,6 +17,7 @@ import (
 	"log/slog"
 	"os/exec"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -240,7 +241,10 @@ type callPayload struct {
 	ApprovalID string `json:"approval_id"`
 	GrantID    string `json:"grant_id"`
 	ArgsHash   string `json:"args_hash"`
-	Limits     struct {
+	// CampaignItem is the item number of a campaign write call: the plugin key is
+	// <approval_id>:<n> (ORC-3).
+	CampaignItem int `json:"campaign_item"`
+	Limits       struct {
 		Redact           []string `json:"redact"`
 		OutputLimitBytes int      `json:"output_limit_bytes"`
 		TimeoutS         int      `json:"timeout_s"`
@@ -388,6 +392,9 @@ func (h *Host) call(ctx context.Context, p Plugin, workID string, c callPayload)
 		// The plugin recognizes a repeated write by the approval or grant id (APR-7, FEN-7).
 		if c.ApprovalID != "" {
 			meta.WorkID = c.ApprovalID
+			if c.CampaignItem > 0 {
+				meta.WorkID += ":" + strconv.Itoa(c.CampaignItem)
+			}
 		} else if c.GrantID != "" {
 			meta.WorkID = c.GrantID
 		}

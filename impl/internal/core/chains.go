@@ -304,8 +304,9 @@ func (c *Core) checkChain(ctx context.Context, tx pgx.Tx, tv *TenantView, tt man
 	if _, err := tx.Exec(ctx, `SELECT 1 FROM tasks WHERE id = $1 FOR UPDATE`, ch.Root); err != nil {
 		return nil, err
 	}
-	var n int
-	if err := tx.QueryRow(ctx, `SELECT count(*) FROM tasks WHERE tenant = $1 AND (id = $2 OR record->>'root' = $2)`, tv.Name, ch.Root).Scan(&n); err != nil {
+	// The pending items of the root's live campaigns are reserved in it (ORC-8).
+	n, err := treeSize(ctx, tx, tv.Name, ch.Root)
+	if err != nil {
 		return nil, err
 	}
 	if n >= limit {

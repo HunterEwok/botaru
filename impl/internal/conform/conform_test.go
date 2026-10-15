@@ -216,7 +216,7 @@ func TestTestControlPort(t *testing.T) {
 	if status, resp := post("loop.tick", ep.TestKey, map[string]any{"loop": "reaper", "copies": 2}); status != 200 {
 		t.Fatalf("loop.tick reaper: %d %v", status, resp)
 	}
-	status, resp = post("loop.tick", ep.TestKey, map[string]any{"loop": "campaign"})
+	status, resp = post("loop.tick", ep.TestKey, map[string]any{"loop": "expectation"})
 	if o := problemOutcome(status, resp); o.Unimplemented == "" {
 		t.Fatalf("a missing loop is not reported as unimplemented: %d %v", status, resp)
 	}

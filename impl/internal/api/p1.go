@@ -199,6 +199,28 @@ func (s *Server) p1(w http.ResponseWriter, r *http.Request) {
 			s.fail(w, err)
 			return
 		}
+	case "campaign.control":
+		req, err := decode[core.CampaignControlRequest](m)
+		if err != nil {
+			s.fail(w, err)
+			return
+		}
+		out, err = s.c.CampaignControl(ctx, wk, onBehalf(r), req)
+		if err != nil {
+			s.fail(w, err)
+			return
+		}
+	case "campaign.get":
+		req, err := decode[core.CampaignGetRequest](m)
+		if err != nil {
+			s.fail(w, err)
+			return
+		}
+		out, err = s.c.CampaignGet(ctx, wk, lease, req)
+		if err != nil {
+			s.fail(w, err)
+			return
+		}
 	case "msg.send":
 		req, err := decode[core.MsgSendRequest](m)
 		if err != nil {

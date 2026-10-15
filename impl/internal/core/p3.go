@@ -46,6 +46,10 @@ type toolsGrant struct {
 	// CoGroups are the groups of each initiator of what the attempt read: C2 intersects the
 	// attempt's permissions with theirs (MSG-7).
 	CoGroups [][]string
+	// CampaignCont is the campaign a continuation task continues: only it reads campaign_results
+	// (ORC-9). Scope is the resource scope of a campaign item (ORC-7).
+	CampaignCont string
+	Scope        []string
 }
 
 // coHave says whether every initiator of what the attempt read has the capability (MSG-7).
@@ -127,11 +131,16 @@ func (c *Core) loadGrantTask(ctx context.Context, q store.Querier, g *toolsGrant
 		DataMark     string   `json:"data_mark"`
 		Purpose      string   `json:"purpose"`
 		CoInitiators []string `json:"co_initiators"`
+		CampaignCont string   `json:"campaign_continuation"`
+		Scope        struct {
+			Resources []string `json:"resources"`
+		} `json:"scope"`
 	}
 	if err := json.Unmarshal(rec, &r); err != nil {
 		return err
 	}
 	g.MaxTier, g.Mark, g.Purpose = r.MaxTier, r.DataMark, r.Purpose
+	g.CampaignCont, g.Scope = r.CampaignCont, r.Scope.Resources
 	g.CoGroups = nil
 	if len(r.CoInitiators) > 0 {
 		var now time.Time
@@ -259,6 +268,7 @@ func (c *Core) toolCatalog(cat *Catalog, g *toolsGrant) ([]catalogTool, error) {
 		out = append(out, *it)
 	}
 	out = append(out, statusTools(cat, g)...)
+	out = append(out, c.campaignTools(cat, g)...)
 	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
 	return out, nil
 }
@@ -269,7 +279,28 @@ func (c *Core) modelSchema(cat *Catalog, g *toolsGrant, right string, t toolspec
 	schema := t.InputSchema()
 	names := map[string]bool{}
 	enumFromNames(schema, names)
-	return c.fullSchema(schema, c.resolveEnumFor(cat, g.Tenant, g.Mark, right, names))
+	return c.fullSchema(schema, scopeEnums(c.resolveEnumFor(cat, g.Tenant, g.Mark, right, names), g.Scope))
+}
+
+// scopeEnums narrows the catalog lists of a task with a resource scope to that scope: a campaign
+// item reaches only its own resource, and a call outside it fails the schema (ORC-7).
+func scopeEnums(enums map[string][]any, scope []string) map[string][]any {
+	if len(scope) == 0 {
+		return enums
+	}
+	for name, vals := range enums {
+		if !strings.HasPrefix(name, "catalog.") {
+			continue
+		}
+		out := []any{}
+		for _, v := range vals {
+			if s, ok := v.(string); ok && slices.Contains(scope, s) {
+				out = append(out, v)
+			}
+		}
+		enums[name] = out
+	}
+	return enums
 }
 
 // attemptCatalog builds the P3 catalog of the attempt of a task held by a worker, for the P4
@@ -482,6 +513,10 @@ func (c *Core) P3ToolsCall(ctx context.Context, handle string, p mcp.CallParams)
 				args = map[string]any{}
 			}
 			builtin, err = c.msgToolCall(ctx, tx, now, cat, g, p.Name, offeredTool(tools, p.Name), args)
+			return err
+		}
+		if p.Name == proposeCampaignName || p.Name == campaignStatusName || p.Name == campaignResultsName {
+			builtin, err = c.campaignToolCall(ctx, tx, now, cat, g, p.Name, offeredTool(tools, p.Name), p.Arguments)
 			return err
 		}
 		if statusToolName(p.Name) {

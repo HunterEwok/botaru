@@ -42,6 +42,7 @@ const (
 	Finding   = "fd"
 	Card      = "cc"
 	Read      = "rd"
+	Campaign  = "cmp"
 )
 
 var (

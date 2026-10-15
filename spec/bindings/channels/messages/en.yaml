@@ -131,6 +131,14 @@ texts:
   card.button.defer: Postpone
   # Proposal cards and the proposal digest, drawn by code from the records (DIG-1, DIG-3, PRP-18)
   card.proposal.title: "Bot proposal: {title}"
+  card.campaign.title: "Campaign needs approval: {title}"
+  card.campaign.progress_title: "Campaign: {title}"
+  card.campaign.items: "Items: {count}; first: {first}"
+  card.campaign.rollout: "Rollout: {rollout}"
+  card.campaign.footer: "You get this card as the initiator of the campaign."
+  card.campaign.list: "All {count} items of the campaign: {items}"
+  card.button.pause: Pause
+  card.button.cancel: Cancel
   card.realization.title: "Change to carry out: {title}"
   card.rollback.title: "A change may need reverting: {title}"
   proposal.digest: "Recommended bot proposals ({count}); each has its card in your private chat:\n{items}"

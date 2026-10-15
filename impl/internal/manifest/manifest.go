@@ -169,9 +169,17 @@ type Tenant struct {
 	} `json:"retention"`
 	// Insights holds the improvement cycle settings of the tenant (INS-6, PRP-5, DIG-1).
 	Insights TenantInsights `json:"insights"`
-	// Campaigns holds the tree limit of a root (PRM-6, ORC-8).
+	// Campaigns holds the tree limit of a root and the campaign ceilings of the tenant (PRM-6,
+	// ORC-5, ORC-8, ORC-14).
 	Campaigns struct {
-		MaxTreeTasks int `json:"max_tree_tasks"`
+		MaxTreeTasks      int  `json:"max_tree_tasks"`
+		MaxItems          int  `json:"max_items"`
+		MaxItemsUntrusted *int `json:"max_items_untrusted"`
+		ConfirmReadOver   struct {
+			Items int      `json:"items"`
+			EUR   *float64 `json:"eur"`
+		} `json:"confirm_read_over"`
+		QueueMax int `json:"queue_max"`
 	} `json:"campaigns"`
 	// Messaging holds the wake-up ceilings of the tenant (MSG-11).
 	Messaging struct {
@@ -359,10 +367,21 @@ type Role struct {
 	// toolhost or channel worker has one and an agent role has none (MSG-14).
 	InstanceInbox *bool `json:"instance_inbox"`
 	// Views are the status.* views of the role (REP-8).
-	Views   []string `json:"views"`
-	Runtime struct {
+	Views []string `json:"views"`
+	// Campaigns says which campaigns the role proposes and the continuation types of their end
+	// (ORC-1, CNT-1).
+	Campaigns *RoleCampaigns `json:"campaigns"`
+	// MayTargetGroups are the bot groups the role may address work to (DSP-4).
+	MayTargetGroups []string `json:"may_target_groups"`
+	Runtime         struct {
 		Driver string `json:"driver"`
 	} `json:"runtime"`
+}
+
+// RoleCampaigns is the campaigns block of a role: propose is none, read or action.
+type RoleCampaigns struct {
+	Propose string   `json:"propose"`
+	Then    []string `json:"then"`
 }
 
 // RoleMessages is the messages block of a role (MSG-5).
@@ -472,6 +491,20 @@ type Action struct {
 	WritesOnly  []string `json:"writes_only"`
 	RunsPerHour int      `json:"runs_per_hour"`
 	RunsPerDay  int      `json:"runs_per_day"`
+	// Exclusive resource allows one released write call per resource (ORC-12).
+	Exclusive string `json:"exclusive"`
+	// Campaign holds the ceilings of a campaign with the action (ORC-5).
+	Campaign *ActionCampaign `json:"campaign"`
+}
+
+// ActionCampaign is the campaign section of an action (ORC-5).
+type ActionCampaign struct {
+	Allowed        bool   `json:"allowed"`
+	MaxItems       int    `json:"max_items"`
+	MaxInFlight    int    `json:"max_in_flight"`
+	CanaryMin      int    `json:"canary_min"`
+	AfterCanary    string `json:"after_canary"`
+	MaxFailuresMax *int   `json:"max_failures_max"`
 }
 
 // TaskType is the spec of a TaskType manifest.

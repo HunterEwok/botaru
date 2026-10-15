@@ -84,6 +84,16 @@ type enqueueInput struct {
 	// Sev1 marks a seat task of a sev1 incident: it may use the reserve of the manager line
 	// (MGR-20).
 	Sev1 bool
+	// Campaign and CampaignItem make the task an item of a campaign, with the resource scope of
+	// its one resource (ORC-3, ORC-7); PaidByCard keeps the item out of the person's day limit,
+	// since the approved card pays it (ORC-8, BUD-12).
+	Campaign     string
+	CampaignItem int
+	Scope        []string
+	PaidByCard   bool
+	// ContinuesCampaign makes the task the continuation of a campaign, which reads its results
+	// (ORC-9).
+	ContinuesCampaign string
 }
 
 // fairnessKey writes the dispatcher fairness key <kind>:<id> from the task source (DSP-2,
@@ -416,7 +426,11 @@ func (c *Core) enqueue(ctx context.Context, tx pgx.Tx, now time.Time, cat *Catal
 	estimate = max(estimate, in.EstimateMin)
 	line := c.budgetLine(tt.Purpose)
 	var crossed []crossing
-	if p := c.checkBudget(ctx, tx, now, tv, budgetAsk{subject: in.Initiator, groups: groups, extra: estimate, line: line, sev1: in.Sev1, crossed: &crossed}); p != nil {
+	askSubject := in.Initiator
+	if in.PaidByCard {
+		askSubject = "system"
+	}
+	if p := c.checkBudget(ctx, tx, now, tv, budgetAsk{subject: askSubject, groups: groups, extra: estimate, line: line, sev1: in.Sev1, crossed: &crossed}); p != nil {
 		return reject(p)
 	}
 	// A wake-up reserves in the day limit of each principal the entries came from too (MSG-11).
@@ -645,6 +659,18 @@ func (c *Core) enqueue(ctx context.Context, tx pgx.Tx, now time.Time, cat *Catal
 		if record["untrusted_source"] == nil {
 			record["untrusted_source"] = "continues"
 		}
+	}
+	if in.Campaign != "" {
+		record["campaign"], record["campaign_item"] = in.Campaign, in.CampaignItem
+		if len(in.Scope) > 0 {
+			record["scope"] = map[string]any{"resources": in.Scope}
+		}
+		if in.PaidByCard {
+			record["paid_by_card"] = true
+		}
+	}
+	if in.ContinuesCampaign != "" {
+		record["campaign_continuation"] = in.ContinuesCampaign
 	}
 	// A reporter task reports to an audience fixed now: its views filter by their permissions
 	// and its mark is no higher than their ceiling (REP-3, REP-7, REP-9).
