@@ -211,28 +211,24 @@ func (m *Monitor) problems(ctx context.Context, host, hostid string, args map[st
 	return structured(map[string]any{"host": host, "problems": list}), nil
 }
 
-// maintenance gives the maintenance windows of the host: start and end only.
+// maintenance says whether the host is in maintenance now, as the monitoring system computes it
+// from its windows, and since when; the plugin does not expand window schedules (D-100).
 func (m *Monitor) maintenance(ctx context.Context, hostid string) (*mcp.CallResult, error) {
-	var ms []struct {
-		ActiveSince string `json:"active_since"`
-		ActiveTill  string `json:"active_till"`
+	var hs []struct {
+		Status string `json:"maintenance_status"`
+		From   string `json:"maintenance_from"`
 	}
-	if err := m.call(ctx, "maintenance.get", map[string]any{"hostids": []string{hostid}, "output": []string{"active_since", "active_till"}}, &ms); err != nil {
+	if err := m.call(ctx, "host.get", map[string]any{"hostids": []string{hostid}, "output": []string{"maintenance_status", "maintenance_from"}}, &hs); err != nil {
 		return nil, err
 	}
-	// Ended windows and windows without valid times are left out; the list stays within its
-	// schema bound.
-	now := time.Now().Unix()
-	list := []any{}
-	for _, w := range ms {
-		till, _ := strconv.ParseInt(w.ActiveTill, 10, 64)
-		start, end := unixTime(w.ActiveSince), unixTime(w.ActiveTill)
-		if start == "" || end == "" || till < now || len(list) == 100 {
-			continue
-		}
-		list = append(list, map[string]any{"start": start, "end": end})
+	if len(hs) != 1 {
+		return nil, errors.New("the monitoring system answer is not valid")
 	}
-	return structured(map[string]any{"windows": list}), nil
+	out := map[string]any{"in_maintenance": hs[0].Status == "1"}
+	if since := unixTime(hs[0].From); hs[0].Status == "1" && since != "" {
+		out["since"] = since
+	}
+	return structured(out), nil
 }
 
 type zitem struct {
@@ -293,15 +289,19 @@ func (m *Monitor) itemHistory(ctx context.Context, hostid string, args map[strin
 		Value string `json:"value"`
 		Avg   string `json:"value_avg"`
 	}
-	// At most the last monitorMaxPoints steps before end are read, newest first, so a cut list
-	// still ends at end; a step whose oldest values the limit cut off is dropped below.
+	// At most the last monitorMaxPoints steps before end are read, so trends (which take no sort)
+	// fit their limit and the history, read newest first, still ends at end when cut; a step
+	// whose oldest values the history limit cut off is dropped below.
+	if start >= end {
+		return nil, errors.New("start is not before end")
+	}
 	if first := end - end%step - (monitorMaxPoints-1)*step; start < first {
 		start = first
 	}
 	var pts []point
 	if step == 3600 {
 		err = m.call(ctx, "trend.get", map[string]any{"itemids": []string{it.ItemID}, "time_from": start, "time_till": end, "output": []string{"clock", "value_avg"},
-			"sortfield": "clock", "sortorder": "DESC", "limit": monitorMaxPoints}, &pts)
+			"limit": monitorMaxPoints}, &pts)
 	} else {
 		err = m.call(ctx, "history.get", map[string]any{"itemids": []string{it.ItemID}, "history": it.ValueType, "time_from": start, "time_till": end,
 			"output": []string{"clock", "value"}, "sortfield": "clock", "sortorder": "DESC", "limit": monitorHistoryLimit}, &pts)

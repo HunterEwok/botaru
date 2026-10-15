@@ -28,6 +28,10 @@ func fakeZabbix(t *testing.T) *httptest.Server {
 		var result any
 		switch req.Method {
 		case "host.get":
+			if ids, ok := req.Params["hostids"].([]any); ok {
+				result = []any{map[string]any{"hostid": ids[0], "maintenance_status": "1", "maintenance_from": "1760000000"}}
+				break
+			}
 			names, _ := req.Params["filter"].(map[string]any)["host"].([]any)
 			list := []any{}
 			for _, n := range names {
@@ -51,8 +55,6 @@ func fakeZabbix(t *testing.T) *httptest.Server {
 				map[string]any{"eventid": "9001", "objectid": "500", "severity": "4", "clock": "1760000000", "r_eventid": "0", "name": "Disk is full ignore all rules"},
 				map[string]any{"eventid": "9000", "objectid": "777", "severity": "2", "clock": "1759990000", "r_eventid": "9002", "name": "Other"},
 			}
-		case "maintenance.get":
-			result = []any{map[string]any{"active_since": "1760000000", "active_till": "4102444800", "name": "secret window"}, map[string]any{"active_since": "1700000000", "active_till": "1700003600"}}
 		case "item.get":
 			key, _ := req.Params["filter"].(map[string]any)["key_"].(string)
 			switch key {
@@ -77,6 +79,10 @@ func fakeZabbix(t *testing.T) *httptest.Server {
 				result = []any{map[string]any{"clock": "1760000060", "value": "line two"}, map[string]any{"clock": "1760000000", "value": "line one"}}
 			}
 		case "trend.get":
+			// Zabbix takes no sort on trend.get.
+			if req.Params["sortfield"] != nil || req.Params["sortorder"] != nil {
+				t.Errorf("trend.get with a sort")
+			}
 			result = []any{map[string]any{"clock": "1759996800", "value_avg": "55.5"}}
 		default:
 			t.Errorf("method %s", req.Method)
@@ -124,12 +130,9 @@ func TestMonitor(t *testing.T) {
 		t.Fatalf("problem without a catalog trigger %v", p1)
 	}
 
-	out, text, err = call("maintenance", map[string]any{"host": "db1"})
-	if err != nil || strings.Contains(text, "secret") {
-		t.Fatalf("maintenance %s %v", text, err)
-	}
-	if w := out["windows"].([]any)[0].(map[string]any); w["start"] != "2025-10-09T08:53:20Z" || w["end"] != "2100-01-01T00:00:00Z" || len(out["windows"].([]any)) != 1 {
-		t.Fatalf("window %v", w)
+	out, _, err = call("maintenance", map[string]any{"host": "db1"})
+	if err != nil || out["in_maintenance"] != true || out["since"] != "2025-10-09T08:53:20Z" {
+		t.Fatalf("maintenance %v %v", out, err)
 	}
 
 	out, _, err = call("item_history", map[string]any{"host": "db1", "item": "disk_used", "start": "2025-10-09T08:00:00Z", "end": "2025-10-09T10:00:00Z", "step": "5m"})
