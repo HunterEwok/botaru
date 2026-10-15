@@ -649,5 +649,6 @@ func personaRefs(spec map[string]any) [][2]string {
 	for _, v := range lenses {
 		add(v)
 	}
+	add(spec["farm_manager"])
 	return out
 }
