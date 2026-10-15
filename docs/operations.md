@@ -130,7 +130,7 @@ Severity comes from the class table, not from the problem, or a trigger editor c
 | Tool | Returns | Untrusted |
 |---|---|---|
 | `monitor/problems` | problems with `triggerid`, class and item from the catalog, resource, severity, state | no |
-| `monitor/maintenance` | maintenance windows | no |
+| `monitor/maintenance` | whether the machine is in maintenance now, and since when | no |
 | `monitor/item_history` | numeric history and trends; a text item gets `item_not_numeric` | no |
 | `monitor/item_text` | text and log item values | yes, source `monitor_item_text` |
 | `monitor/problem_comments` | comments by people and bots | yes, source `monitor_comment` |
