@@ -744,15 +744,24 @@ func (c *Core) endDelivery(ctx context.Context, tx pgx.Tx, now time.Time, tenant
 	}
 	// The export of an alarm change or of the audit head does not die by attempt count: it is
 	// retried with a pause of at most 10 minutes until it is exported (MON-11).
+	// A refusal the adapter calls final is retried too: a lost alarm change would leave the
+	// monitoring system wrong until the next failure. A newer change of the same alarm replaces
+	// this one, so it is not retried.
 	export := kind == "monitor_alarm" || kind == "monitor_audit_head"
 	if export {
 		if err := monitorFailed(ctx, tx, now, tenant); err != nil {
 			return nil, err
 		}
+		if superseded, err := exportSuperseded(ctx, tx, now, l.WorkID, kind); err != nil || superseded {
+			if err != nil {
+				return nil, err
+			}
+			return &FailResult{Final: true, Reason: "superseded"}, nil
+		}
 	}
 	// An alarm notice does not die by attempt count while its episode is open; it is retried
 	// with a pause of at most 10 minutes (MON-13, like the export of MON-11).
-	if retryable && (export || kind == "alarm_notice" && episodeOpen) {
+	if export || retryable && kind == "alarm_notice" && episodeOpen {
 		runAt := now.Add(min(backoff(manifest.Backoff{}, attempts), 10*time.Minute))
 		if ra := now.Add(time.Duration(retryAfterS) * time.Second); ra.After(runAt) {
 			runAt = ra

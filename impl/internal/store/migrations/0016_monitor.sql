@@ -14,3 +14,11 @@ CREATE TABLE monitor_exports (
 );
 
 CREATE INDEX deliveries_monitor_open ON deliveries (tenant, created_at) WHERE exec_kind = 'monitor' AND state IN ('planned', 'sending');
+
+-- The public key of each audit-head key id, written when it first signs and never replaced, so
+-- heads stay verifiable after the token key rotates away (MON-3).
+CREATE TABLE audit_head_keys (
+    key_id text PRIMARY KEY,
+    public_key bytea NOT NULL,
+    created_at timestamptz NOT NULL
+);

@@ -531,13 +531,13 @@ func (c *Core) claimDelivery(ctx context.Context, tx pgx.Tx, now time.Time, cat 
 			}
 		}
 		// A hold with no_delivery on the farm, the tenant or this channel withholds the
-		// delivery; an alarm notice still goes, since a hold does not silence alarms (HLD-3,
-		// MON-1).
+		// delivery; an alarm notice and the export of alarms and of the audit head still go,
+		// since a hold does not silence alarms (HLD-3, MON-1).
 		role, err := deliveryRole(ctx, tx, deref(task))
 		if err != nil {
 			return nil, err
 		}
-		if kind != "alarm_notice" {
+		if kind != "alarm_notice" && kind != "monitor_alarm" && kind != "monitor_audit_head" {
 			scopes := append(tenantScopes(w.Tenant), scopeRef{kind: "channel", tenant: w.Tenant, name: w.Target})
 			if role != "" && origin == "model" {
 				// The role whose attempt wrote the text, as the auto-stop of HLD-6 scopes it. A

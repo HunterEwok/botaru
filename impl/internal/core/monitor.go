@@ -8,6 +8,7 @@ import (
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"regexp"
@@ -18,6 +19,7 @@ import (
 	"github.com/jackc/pgx/v5"
 
 	"github.com/HunterEwok/botaru/impl/internal/jcs"
+	"github.com/HunterEwok/botaru/impl/internal/store"
 )
 
 // MonitorConfig is the monitor profile of the installation (D-88): with it the monitoring
@@ -60,8 +62,11 @@ func (c *Core) exportEpisode(ctx context.Context, tx pgx.Tx, now time.Time, ep *
 	}
 	name := strings.TrimSuffix(strings.TrimPrefix(ep.Alarm, "alarm."), ".v1")
 	subject := strings.ToLower(ep.Subject.ID)
-	if !exportSubject.MatchString(subject) {
-		subject = ep.Subject.Kind
+	if !exportSubject.MatchString(subject) || len(subject) > 120 {
+		// An id outside the closed form still gets a key of its own: the kind and a short hash
+		// of the id, so two subjects never share one problem.
+		sum := sha256.Sum256([]byte(ep.Subject.ID))
+		subject = ep.Subject.Kind + ":" + hex.EncodeToString(sum[:6])
 	}
 	scope := "tenant"
 	if ep.Tenant == "farm" {
@@ -87,6 +92,11 @@ func (c *Core) exportEpisode(ctx context.Context, tx pgx.Tx, now time.Time, ep *
 	if err := ensureMonitorRow(ctx, tx, ep.Tenant); err != nil {
 		return err
 	}
+	// A newer change of the same alarm replaces one not handed out yet (MON-11).
+	if _, err := tx.Exec(ctx, `UPDATE deliveries SET state = 'withheld', reason = 'superseded', updated_at = $3
+		WHERE tenant = $1 AND kind = 'monitor_alarm' AND alarmkey = $2 AND state = 'planned'`, ep.Tenant, ep.Tenant+"/"+ep.Alarmkey, now); err != nil {
+		return err
+	}
 	_, err := c.planDelivery(ctx, tx, now, plannedDelivery{
 		Tenant: ep.Tenant, Kind: "monitor_alarm", Addr: "monitor", TargetKind: "monitor", TargetID: c.monitorTarget(),
 		ExecKind: "monitor", ExecName: c.monitorTarget(), DataOrigin: "code", Alarmkey: ep.Tenant + "/" + ep.Alarmkey, Episode: ep.ID, Body: body,
@@ -100,7 +110,9 @@ func ensureMonitorRow(ctx context.Context, tx pgx.Tx, tenant string) error {
 }
 
 // headKey is the Ed25519 key of audit heads for a key id: derived from the token key of that
-// id, so it rotates with it and needs no secret of its own (SEC-5, spec/hashing.md).
+// id, so it needs no secret of its own (SEC-5, spec/hashing.md). Its public key is kept in
+// audit_head_keys when it first signs, so heads stay verifiable after the token key rotates
+// away.
 func (c *Core) headKey(id string) ed25519.PrivateKey {
 	k := c.signingKey(id)
 	if k == nil {
@@ -109,6 +121,23 @@ func (c *Core) headKey(id string) ed25519.PrivateKey {
 	m := hmac.New(sha256.New, k)
 	m.Write([]byte("botaru.audit-head.key.v1"))
 	return ed25519.NewKeyFromSeed(m.Sum(nil))
+}
+
+// headPublicKey is the public key of a key id: the one kept in the store, else the one of a
+// configured token key.
+func (c *Core) headPublicKey(ctx context.Context, q store.Querier, id string) (ed25519.PublicKey, error) {
+	var pub []byte
+	err := q.QueryRow(ctx, `SELECT public_key FROM audit_head_keys WHERE key_id = $1`, id).Scan(&pub)
+	if err == nil && len(pub) == ed25519.PublicKeySize {
+		return ed25519.PublicKey(pub), nil
+	}
+	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+		return nil, err
+	}
+	if k := c.headKey(id); k != nil {
+		return k.Public().(ed25519.PublicKey), nil
+	}
+	return nil, nil
 }
 
 // AuditHead is the signed head of an audit chain (monitor-audit-head).
@@ -125,31 +154,47 @@ func (h AuditHead) signed() ([]byte, error) {
 	return jcs.Canonical(map[string]any{"type": "botaru.audit-head.v1", "tenant": h.Tenant, "epoch": h.Epoch, "seq": h.Seq, "hash": h.Hash, "key_id": h.KeyID})
 }
 
-func (c *Core) signHead(h AuditHead) (AuditHead, error) {
+func (c *Core) signHead(ctx context.Context, tx pgx.Tx, now time.Time, h AuditHead) (AuditHead, error) {
 	h.KeyID = c.cfg.KeyID
 	b, err := h.signed()
 	if err != nil {
 		return h, err
 	}
-	h.Sig = base64.StdEncoding.EncodeToString(ed25519.Sign(c.headKey(h.KeyID), b))
+	key := c.headKey(h.KeyID)
+	// The public key is written once and never replaced (MON-3).
+	if _, err := tx.Exec(ctx, `INSERT INTO audit_head_keys (key_id, public_key, created_at) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING`,
+		h.KeyID, []byte(key.Public().(ed25519.PublicKey)), now); err != nil {
+		return h, err
+	}
+	h.Sig = base64.StdEncoding.EncodeToString(ed25519.Sign(key, b))
 	return h, nil
 }
 
-// headSignatureOK checks the signature of a head with the key its key id names: the current
-// key or one of the rotation window.
-func (c *Core) headSignatureOK(h AuditHead) bool {
-	key := c.headKey(h.KeyID)
+// headSignatureOK checks the signature of a head with the public key its key id names.
+func (c *Core) headSignatureOK(ctx context.Context, q store.Querier, h AuditHead) (bool, error) {
+	key, err := c.headPublicKey(ctx, q, h.KeyID)
+	if err != nil {
+		return false, err
+	}
 	sig, err := base64.StdEncoding.DecodeString(h.Sig)
 	if key == nil || err != nil {
-		return false
+		return false, nil
 	}
 	b, err := h.signed()
-	return err == nil && ed25519.Verify(key.Public().(ed25519.PublicKey), b, sig)
+	return err == nil && ed25519.Verify(key, b, sig), nil
 }
 
 // planHead puts the signed head of a tenant chain as a monitor_audit_head delivery; an older
 // head not handed out yet is replaced, since only the newest one matters (MON-3, MON-11).
 func (c *Core) planHead(ctx context.Context, tx pgx.Tx, now time.Time, tenant string) error {
+	// monitor_exports is locked first, as in monitorExported, so the two never wait on each
+	// other.
+	if err := ensureMonitorRow(ctx, tx, tenant); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(ctx, `SELECT 1 FROM monitor_exports WHERE tenant = $1 FOR UPDATE`, tenant); err != nil {
+		return err
+	}
 	h := AuditHead{Tenant: tenant, Epoch: c.epoch}
 	err := tx.QueryRow(ctx, `SELECT seq, hash FROM audit_heads WHERE tenant = $1 AND epoch = $2`, tenant, c.epoch).Scan(&h.Seq, &h.Hash)
 	if errors.Is(err, pgx.ErrNoRows) {
@@ -158,14 +203,11 @@ func (c *Core) planHead(ctx context.Context, tx pgx.Tx, now time.Time, tenant st
 	if err != nil {
 		return err
 	}
-	if h, err = c.signHead(h); err != nil {
+	if h, err = c.signHead(ctx, tx, now, h); err != nil {
 		return err
 	}
 	if _, err := tx.Exec(ctx, `UPDATE deliveries SET state = 'withheld', reason = 'superseded', updated_at = $2
 		WHERE tenant = $1 AND kind = 'monitor_audit_head' AND state = 'planned'`, tenant, now); err != nil {
-		return err
-	}
-	if err := ensureMonitorRow(ctx, tx, tenant); err != nil {
 		return err
 	}
 	if _, err := tx.Exec(ctx, `UPDATE monitor_exports SET head_planned_at = $2 WHERE tenant = $1`, tenant, now); err != nil {
@@ -410,7 +452,11 @@ func (c *Core) verifyHeads(ctx context.Context, tenant string, heads []AuditHead
 	var prev *AuditHead
 	for i := range heads {
 		h := heads[i]
-		if h.Tenant != tenant || !c.headSignatureOK(h) {
+		ok, err := c.headSignatureOK(ctx, c.st.Pool, h)
+		if err != nil {
+			return "", 0, err
+		}
+		if h.Tenant != tenant || !ok {
 			return "head_signature", h.Seq, nil
 		}
 		if prev != nil && (h.Epoch < prev.Epoch || h.Epoch == prev.Epoch && h.Seq < prev.Seq) {
@@ -490,4 +536,14 @@ func (c *Core) profiles() []string {
 		return []string{"core", "monitor"}
 	}
 	return []string{"core"}
+}
+
+// exportSuperseded withholds a failed export that a newer one replaces: an alarm change with a
+// later change of the same alarm waiting, or a head with a newer head waiting (MON-11).
+func exportSuperseded(ctx context.Context, tx pgx.Tx, now time.Time, id, kind string) (bool, error) {
+	tag, err := tx.Exec(ctx, `UPDATE deliveries d SET state = 'withheld', reason = 'superseded', updated_at = $2
+		WHERE d.id = $1 AND EXISTS (SELECT 1 FROM deliveries n WHERE n.tenant = d.tenant AND n.kind = $3 AND n.id <> d.id
+			AND n.state IN ('planned', 'sending') AND n.created_at >= d.created_at
+			AND ($3 = 'monitor_audit_head' OR n.alarmkey = d.alarmkey))`, id, now, kind)
+	return tag.RowsAffected() > 0, err
 }

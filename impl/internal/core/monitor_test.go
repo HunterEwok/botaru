@@ -43,16 +43,16 @@ func TestMonitorExport(t *testing.T) {
 	if n := countKind(t, b, "monitor_alarm", ""); n != 1 || countNotices(t, b) != 0 {
 		t.Fatalf("monitor_alarm %d, alarm_notice %d", n, countNotices(t, b))
 	}
-	b.alarmTx(t, func(tx pgx.Tx, now time.Time) error { return b.c.resolveAlarm(ctx, tx, now, a) })
 	item := b.claim(t, mon, "delivery")
 	if item == nil {
 		t.Fatal("no monitor_alarm for the adapter")
 	}
+	b.alarmTx(t, func(tx pgx.Tx, now time.Time) error { return b.c.resolveAlarm(ctx, tx, now, a) })
 	body := dbody(item)
 	if body["state"] != "firing" || body["key"] != "demo:worker.stale:wk_1" || body["scope"] != "tenant" || body["origin"] != "code" || body["severity"] != "warn" {
 		t.Fatalf("export body %v", body)
 	}
-	// resolved does not go out while firing is not exported (MON-11).
+	// resolved does not go out while firing is being exported (MON-11).
 	if next := b.claim(t, mon, "delivery"); next != nil {
 		t.Fatalf("resolved went out before firing: %v", dbody(next))
 	}
@@ -178,6 +178,14 @@ func TestAuditHead(t *testing.T) {
 	if r := verify(heads); !r.OK {
 		t.Fatalf("a good witness: %+v", r)
 	}
+	// The token key rotates away: the heads it signed still verify by the kept public key.
+	rotated, err := New(ctx, Config{TokenKey: []byte("fedcba9876543210fedcba9876543210"), KeyID: "k2", TestBench: true}, b.c.st, b.c.spec, b.c.texts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if r, err := rotated.AuditVerify(ctx, "demo", heads); err != nil || !r.OK {
+		t.Fatalf("a good witness after the key rotated away: %+v %v", r, err)
+	}
 	bad := append([]AuditHead{}, heads...)
 	bad[1].Hash = heads[0].Hash
 	if r := verify(bad); r.OK || r.Reason != "head_signature" {
@@ -212,6 +220,31 @@ func TestAuditHead(t *testing.T) {
 		if ch.ID == "monitor.audit_head_age_s" && ch.Tenant == "demo" && !ch.OK {
 			t.Fatalf("head age %+v", ch)
 		}
+	}
+}
+
+// A hold with no_delivery does not withhold the export; a newer change of the same alarm
+// replaces one not handed out yet (MON-1, MON-11).
+func TestMonitorExportHoldAndSupersede(t *testing.T) {
+	ctx := context.Background()
+	b := newBench(t)
+	b.withAdmins(t)
+	mon := b.monitorOn(t)
+	if _, err := b.c.HoldSet(ctx, OperatorActor(b.op), HoldSetRequest{
+		Scope: HoldScope{Kind: "tenant", Tenant: "demo"}, Effects: []string{"no_delivery"}, Reason: "manual"}); err != nil {
+		t.Fatal(err)
+	}
+	a := Alarm{Tenant: "demo", Name: "worker.stale", Subject: AlarmSubject{Kind: "worker", ID: "wk_1"}, Severity: "warn"}
+	for range 3 {
+		b.alarmTx(t, func(tx pgx.Tx, now time.Time) error { return b.c.fireAlarm(ctx, tx, now, a) })
+		b.alarmTx(t, func(tx pgx.Tx, now time.Time) error { return b.c.resolveAlarm(ctx, tx, now, a) })
+	}
+	if n := countKind(t, b, "monitor_alarm", "planned"); n != 1 {
+		t.Fatalf("planned exports of one alarm %d, want 1", n)
+	}
+	item := b.claim(t, mon, "delivery")
+	if item == nil || dbody(item)["state"] != "resolved" {
+		t.Fatalf("the hold withheld the export, or the newest change is not the one left: %v", item)
 	}
 }
 
