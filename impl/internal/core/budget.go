@@ -206,7 +206,8 @@ func (c *Core) checkBudget(ctx context.Context, tx pgx.Tx, now time.Time, tv *Te
 		if w.limit == nil {
 			continue
 		}
-		if halve && w.from.Equal(day) {
+		// Only the day windows: on the first of a month the month windows start at the same time.
+		if halve && (w.limit == dayLimit || w.limit == lb.DayEUR || w.scope == "person_day") {
 			half := *w.limit / 2
 			w.limit = &half
 		}

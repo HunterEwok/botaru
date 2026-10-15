@@ -102,6 +102,14 @@ func TestRestore(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
+	// The restore day itself is reconciled from the next day on: until then the gap stays.
+	if open := b.gapOpen(t); !open {
+		t.Fatal("the spend gap closed without the restore day")
+	}
+	b.advance(t, 24*3600)
+	if _, err := b.c.SpendReconcile(ctx, farm, SpendReconcileRequest{Day: now.UTC().Format("2006-01-02"), Provider: "mock", Rows: []SpendReconcileItem{{Tenant: "demo", SpentEURMicros: 0}}}); err != nil {
+		t.Fatal(err)
+	}
 	if open := b.gapOpen(t); open {
 		t.Fatal("the spend gap stays open after its reconciliation")
 	}

@@ -29,7 +29,7 @@ func erasureLog(args []string) error {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
 	defer cancel()
-	c, closeStore, err := offlineCore(ctx, cfg)
+	c, closeStore, err := offlineCore(ctx, cfg, false)
 	if err != nil {
 		return err
 	}
@@ -70,7 +70,7 @@ func restore(c *client, args []string) error {
 		}
 		ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
 		defer cancel()
-		cc, closeStore, err := offlineCore(ctx, cfg)
+		cc, closeStore, err := offlineCore(ctx, cfg, false)
 		if err != nil {
 			return err
 		}

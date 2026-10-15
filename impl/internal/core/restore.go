@@ -62,8 +62,8 @@ func (c *Core) RestoreBegin(ctx context.Context, log []ErasureLogEntry) (int, er
 			return err
 		}
 		var prevEpoch, epoch int64
-		if err := tx.QueryRow(ctx, `UPDATE farm_meta SET epoch = epoch + 1, restoring = true, restore_point = coalesce($1, restore_point) WHERE id = 1
-			RETURNING epoch - 1, epoch, restore_point`, point).Scan(&prevEpoch, &epoch, &point); err != nil {
+		if err := tx.QueryRow(ctx, `UPDATE farm_meta SET epoch = epoch + 1, restoring = true, restore_point = coalesce($1, restore_point), restored_at = $2 WHERE id = 1
+			RETURNING epoch - 1, epoch, restore_point`, point, now).Scan(&prevEpoch, &epoch, &point); err != nil {
 			return err
 		}
 		backupAt := now
@@ -150,11 +150,23 @@ func (c *Core) settleRestore(ctx context.Context) error {
 			if call == nil {
 				continue
 			}
-			tag, err := tx.Exec(ctx, `UPDATE toolcalls SET state = 'exec_unknown', updated_at = $2 WHERE id = $1 AND state IN ('queued', 'leased')`, *call, now)
-			if err != nil {
+			var state string
+			if err := tx.QueryRow(ctx, `SELECT state FROM toolcalls WHERE id = $1 FOR UPDATE`, *call).Scan(&state); err != nil {
 				return err
 			}
-			if tag.RowsAffected() == 1 {
+			if state != "queued" && state != "leased" {
+				continue
+			}
+			// The call ends as exec_unknown the usual way: the task and the approval learn it,
+			// and the action is not repeated.
+			if err := c.endToolCall(ctx, tx, now, *call, "exec_unknown", "restored", nil); err != nil {
+				return err
+			}
+			var still bool
+			if err := tx.QueryRow(ctx, `SELECT state = 'executing' FROM approvals WHERE id = $1`, a.ID).Scan(&still); err != nil {
+				return err
+			}
+			if still {
 				if err := c.closeApproval(ctx, tx, now, a, "exec_unknown", "restored"); err != nil {
 					return err
 				}
@@ -196,7 +208,6 @@ func (c *Core) RestoreComplete(ctx context.Context, op Operator, req RestoreComp
 		if _, err := tx.Exec(ctx, `UPDATE farm_meta SET restoring = false, spend_gap_open = $1 WHERE id = 1`, gap); err != nil {
 			return err
 		}
-		c.restoring.Store(false)
 		if gap {
 			if err := c.fireAlarm(ctx, tx, now, unreconciledAlarm()); err != nil {
 				return err
@@ -212,6 +223,7 @@ func (c *Core) RestoreComplete(ctx context.Context, op Operator, req RestoreComp
 	if err != nil {
 		return nil, err
 	}
+	c.restoring.Store(false)
 	return &Done{OK: true}, nil
 }
 
@@ -219,31 +231,41 @@ func unreconciledAlarm() Alarm {
 	return Alarm{Tenant: "farm", Name: "spend.unreconciled", Subject: AlarmSubject{Kind: "store", ID: "store"}, Severity: "warn"}
 }
 
-// spendGap lists the workspace days from the restore point to yesterday (UTC) that have no
-// reconciliation, as tenant/provider/day.
+// spendGap lists the provider days from the restore point to the day the restore began, both
+// included (UTC), that have no reconciliation, as provider/day. A provider's report of a day
+// covers every workspace of that provider: a report leaves out idle workspaces, and a
+// workspace first used after the backup is in it too. The restore day itself is reconciled
+// from the next day on, so the gap of a same-day restore stays open until then.
 func spendGap(ctx context.Context, tx pgx.Tx, now time.Time) ([]string, error) {
-	var point *time.Time
-	if err := tx.QueryRow(ctx, `SELECT restore_point FROM farm_meta WHERE id = 1`).Scan(&point); err != nil {
+	var point, began *time.Time
+	if err := tx.QueryRow(ctx, `SELECT restore_point, restored_at FROM farm_meta WHERE id = 1`).Scan(&point, &began); err != nil {
 		return nil, err
 	}
 	if point == nil {
 		return nil, nil
 	}
-	ws, err := workspaceAges(ctx, tx, "")
+	last := now
+	if began != nil {
+		last = *began
+	}
+	rows, err := tx.Query(ctx, `SELECT DISTINCT provider FROM spend_workspaces ORDER BY provider`)
+	if err != nil {
+		return nil, err
+	}
+	providers, err := pgx.CollectRows(rows, pgx.RowTo[string])
 	if err != nil {
 		return nil, err
 	}
 	var missing []string
-	today := now.UTC().Truncate(24 * time.Hour)
-	for _, w := range ws {
-		for d := point.UTC().Truncate(24 * time.Hour); d.Before(today); d = d.Add(24 * time.Hour) {
+	end := last.UTC().Truncate(24 * time.Hour)
+	for _, p := range providers {
+		for d := point.UTC().Truncate(24 * time.Hour); !d.After(end); d = d.Add(24 * time.Hour) {
 			var ok bool
-			if err := tx.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM spend_reconciliations WHERE tenant = $1 AND provider = $2 AND day = $3)`,
-				w.Tenant, w.Provider, d).Scan(&ok); err != nil {
+			if err := tx.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM spend_reconciliations WHERE provider = $1 AND day = $2)`, p, d).Scan(&ok); err != nil {
 				return nil, err
 			}
 			if !ok {
-				missing = append(missing, w.Tenant+"/"+w.Provider+"/"+d.Format("2006-01-02"))
+				missing = append(missing, p+"/"+d.Format("2006-01-02"))
 			}
 		}
 	}

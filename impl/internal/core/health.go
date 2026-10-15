@@ -293,7 +293,8 @@ func (c *Core) Health(ctx context.Context) HealthReport {
 	case drain != nil:
 		// A planned rollout, which the monitoring system tells from a failure (LCY-6, MON-2).
 		r.Alive, r.Reason, r.DrainUntilS = false, "draining", drain
-	case c.storeDown.Load() || c.capacity.Load() == capacityHard:
+	case c.storeDown.Load() || c.capacity.Load() == capacityHard || c.restoring.Load():
+		// A restore waiting for restore.complete is not ready either (RET-6).
 		r.Alive, r.Reason = false, "not_ready"
 	default:
 		for _, loop := range loopOrder {

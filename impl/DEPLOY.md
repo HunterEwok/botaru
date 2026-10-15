@@ -296,8 +296,8 @@ To restore the farm:
 1. Stop every farm process. Load the backup into an empty store (`pg_restore -d botaru`).
 2. On the core machine: `farmctl restore begin -config /etc/botaru/core.yaml -erasure-log <the newest erasure log backup>`.
 3. Start the core. It answers `not_ready` until the restore completes.
-4. Reconcile each day since the backup with the provider's cost report (`farmctl spend reconcile`), then `farmctl restore complete`. If the report is not there yet, `farmctl restore complete -spend-pending` starts the farm with the daily limits halved until the reconciliation arrives.
-5. Enroll the workers again if their tokens were issued after the backup, and start them.
+4. Reconcile each day from the backup to the day of the restore with the provider's cost report (`farmctl spend reconcile`), then `farmctl restore complete`. The report of the restore day exists only from the next day, so a farm restored the same day usually starts with `farmctl restore complete -spend-pending`: the daily limits are halved until the reconciliation arrives.
+5. A worker token revoked after the backup is valid again in the restored store. Rotate the token key without keeping the old one (section "Rotating the token key", with no `previous_token_keys`), enroll every worker again, and start them.
 
 ## Rotating the token key
 
@@ -330,7 +330,7 @@ $F new-secret > operator
 cat operator | docker run --rm -i botaru:local farmctl hash-token    # put it into ../core.yaml
 echo '<the bot token from @BotFather>' > bot-token
 echo '<the Anthropic key, any text for the mock>' > provider-key-demo
-sudo chown 10001 * && sudo chown 999 store-password && chmod 600 *
+chmod 600 * && sudo chown 10001 * && sudo chown 999 store-password
 cd ..
 ```
 

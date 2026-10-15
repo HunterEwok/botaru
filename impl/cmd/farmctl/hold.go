@@ -107,7 +107,7 @@ func holdFarm(args []string) error {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
 	defer cancel()
-	c, closeStore, err := offlineCore(ctx, cfg)
+	c, closeStore, err := offlineCore(ctx, cfg, false)
 	if err != nil {
 		return fmt.Errorf("hold farm: %w", err)
 	}
@@ -126,8 +126,9 @@ func holdFarm(args []string) error {
 }
 
 // offlineCore opens the core over the store with the core's settings for one command on the
-// core machine (DEP-8): no loops, no ports.
-func offlineCore(ctx context.Context, cfg *config.Core) (*core.Core, func(), error) {
+// core machine (DEP-8): no loops, no ports. With migrate it brings the store to this build
+// first, as a restore of a backup taken before an upgrade needs while the core is stopped.
+func offlineCore(ctx context.Context, cfg *config.Core, migrate bool) (*core.Core, func(), error) {
 	dsn, err := config.Secret(cfg.StoreDSNFile)
 	if err != nil {
 		return nil, nil, err
@@ -147,6 +148,12 @@ func offlineCore(ctx context.Context, cfg *config.Core) (*core.Core, func(), err
 	st, err := store.Open(ctx, dsn)
 	if err != nil {
 		return nil, nil, err
+	}
+	if migrate {
+		if err := st.Migrate(ctx); err != nil {
+			st.Close()
+			return nil, nil, err
+		}
 	}
 	c, err := core.New(ctx, core.Config{
 		TokenKey: key, KeyID: keyID, PreviousKeys: prevKeys, TestBench: cfg.TestBench, Offline: true,
