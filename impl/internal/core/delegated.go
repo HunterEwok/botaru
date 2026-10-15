@@ -81,7 +81,8 @@ func (c *Core) grantCommand(ctx context.Context, tx pgx.Tx, now time.Time, pc pe
 			return pc.reply(c, "task.rejected.person_inactive", nil), nil
 		}
 		if _, err := tx.Exec(ctx, `INSERT INTO memberships (tenant, principal, grp, state, created_at) VALUES ($1, $2, $3, 'active', $4)
-			ON CONFLICT (tenant, principal, grp) DO UPDATE SET state = 'active'`, pc.tv.Name, subject, group, now); err != nil {
+			ON CONFLICT (tenant, principal, grp) DO UPDATE SET state = 'active',
+			until = CASE WHEN memberships.until <= $4 THEN NULL ELSE memberships.until END`, pc.tv.Name, subject, group, now); err != nil {
 			return nil, err
 		}
 	case "ungrant":

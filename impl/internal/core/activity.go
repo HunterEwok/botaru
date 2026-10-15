@@ -153,7 +153,7 @@ func (c *Core) SubmitActivity(ctx context.Context, w *Worker, a Activity) (*Acti
 			if err := closeFollowups(ctx, tx, w.Tenant, "c:"+a.Channel+":"+a.Chat.ID(), principal); err != nil {
 				return err
 			}
-			if err := c.firstContact(ctx, tx, now, tv, a.Channel, principal, noticeChat(a)); err != nil {
+			if err := c.noticeContact(ctx, tx, now, tv, a, principal); err != nil {
 				return err
 			}
 			pc := personCommand{tv: tv, cat: cat, person: principal, groups: groups, locale: locale,
@@ -193,7 +193,7 @@ func (c *Core) SubmitActivity(ctx context.Context, w *Worker, a Activity) (*Acti
 			return nil
 		}
 		origin := &Origin{Channel: a.Channel, Chat: a.Chat}
-		if err := c.firstContact(ctx, tx, now, tv, a.Channel, principal, noticeChat(a)); err != nil {
+		if err := c.noticeContact(ctx, tx, now, tv, a, principal); err != nil {
 			return err
 		}
 		body := map[string]any{"type": typ, "goal": goal}
@@ -320,12 +320,19 @@ func groupCommand(a Activity) (string, bool) {
 	return word, true
 }
 
-// noticeChat is where the first-contact notices of an activity go: its chat, or for a group
+// noticeContact plans the first-contact notices of an activity: in its chat, or for a group in
 // the sender's direct chat, so the notices reach the person and not the group (DLV-12).
-func noticeChat(a Activity) Chat {
-	if a.Chat.Kind != "group" {
-		return a.Chat
+// It is the same direct chat the person's half of a split answer goes to; a person without
+// one gets no notices, and the group asks them to open a private chat instead (DLV-15).
+func (c *Core) noticeContact(ctx context.Context, tx pgx.Tx, now time.Time, tv *TenantView, a Activity, principal string) error {
+	chat := a.Chat
+	if chat.Kind == "group" {
+		dm, err := directChat(ctx, tx, tv, principal, a.Channel)
+		if err != nil || dm == "" {
+			return err
+		}
+		_, ext, _ := strings.Cut(dm, ":")
+		chat = Chat{Kind: "direct", ExternalID: ext}
 	}
-	_, ext, _ := strings.Cut(a.Sender.Identity, ":")
-	return Chat{Kind: "direct", ExternalID: ext}
+	return c.firstContact(ctx, tx, now, tv, a.Channel, principal, chat)
 }

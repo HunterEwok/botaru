@@ -227,6 +227,19 @@ func (c *Core) planGroupAnswer(ctx context.Context, tx pgx.Tx, now time.Time, tv
 	if err != nil {
 		return err
 	}
+	if dm != "" {
+		// A person whose notice of AI never reached the direct chat cannot get model text
+		// there (DLV-12).
+		var dead bool
+		if err := tx.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM contacts ct JOIN deliveries d ON d.id = ct.ai_notice_delivery
+			WHERE ct.tenant = $1 AND ct.channel = $2 AND ct.principal = $3 AND ct.ai_notice_at IS NULL AND d.state IN ('dead', 'withheld'))`,
+			tenant, origin.Channel, initiator).Scan(&dead); err != nil {
+			return err
+		}
+		if dead {
+			dm = ""
+		}
+	}
 	if dm == "" {
 		return group(map[string]any{"form": "text_code", "text_key": "delivery.open_private_chat"}, "")
 	}

@@ -765,11 +765,7 @@ func (c *Core) endDelivery(ctx context.Context, tx pgx.Tx, now time.Time, tenant
 	// The direct message of a split group answer never arrived: the group asks the person to
 	// open a private chat with the bot, and the content does not go to the group (DLV-15).
 	if fallback != nil {
-		if _, err := c.planDelivery(ctx, tx, now, plannedDelivery{
-			Tenant: tenant, Task: deref(task), Kind: "task_result", Addr: "origin", TargetKind: "chat", TargetID: *fallback,
-			ExecKind: "channel", ExecName: channel, DataOrigin: "code",
-			Body: map[string]any{"form": "text_code", "text_key": "delivery.open_private_chat"},
-		}); err != nil {
+		if err := c.planOpenPrivateChat(ctx, tx, now, tenant, deref(task), *fallback, channel); err != nil {
 			return nil, err
 		}
 	}
@@ -785,18 +781,23 @@ func (c *Core) endDelivery(ctx context.Context, tx pgx.Tx, now time.Time, tenant
 	if kind == "ai_notice" {
 		rows, err := tx.Query(ctx, `UPDATE deliveries m SET state = 'withheld', reason = 'ai_notice_dead', updated_at = $2 FROM deliveries d
 			WHERE d.id = $1 AND m.tenant = d.tenant AND m.exec_name = d.exec_name AND m.recipient = d.recipient
-			AND m.dataorigin = 'model' AND m.state = 'planned' RETURNING m.id, m.kind`, l.WorkID, now)
+			AND m.dataorigin = 'model' AND m.state = 'planned' RETURNING m.id, m.kind, m.task, m.fallback_chat`, l.WorkID, now)
 		if err != nil {
 			return nil, err
 		}
 		var held [][2]string
+		var asks [][2]string
 		for rows.Next() {
 			var id, k string
-			if err := rows.Scan(&id, &k); err != nil {
+			var t, fb *string
+			if err := rows.Scan(&id, &k, &t, &fb); err != nil {
 				rows.Close()
 				return nil, err
 			}
 			held = append(held, [2]string{id, k})
+			if fb != nil {
+				asks = append(asks, [2]string{deref(t), *fb})
+			}
 		}
 		rows.Close()
 		if err := rows.Err(); err != nil {
@@ -804,6 +805,13 @@ func (c *Core) endDelivery(ctx context.Context, tx pgx.Tx, now time.Time, tenant
 		}
 		for _, h := range held {
 			if err := c.appendEvent(ctx, tx, now, tenant, Event{Type: "delivery.withheld", Subject: h[0], Data: map[string]any{"delivery": h[0], "kind": h[1], "reason": "ai_notice_dead"}}); err != nil {
+				return nil, err
+			}
+		}
+		// The direct half of a split group answer cannot reach the person: the group asks them
+		// to open a private chat with the bot (DLV-15).
+		for _, a := range asks {
+			if err := c.planOpenPrivateChat(ctx, tx, now, tenant, a[0], a[1], channel); err != nil {
 				return nil, err
 			}
 		}
@@ -850,5 +858,16 @@ func releaseTaskReserve(ctx context.Context, tx pgx.Tx, task string) error {
 func resetPrivacyNotice(ctx context.Context, tx pgx.Tx, delivery string) error {
 	_, err := tx.Exec(ctx, `UPDATE contacts ct SET privacy_version = NULL FROM deliveries d
 		WHERE d.id = $1 AND ct.tenant = d.tenant AND ct.channel = d.exec_name AND ct.principal = d.recipient`, delivery)
+	return err
+}
+
+// planOpenPrivateChat asks a group chat to open a private chat with the bot for the answer to
+// a task; the content does not go to the group (DLV-15).
+func (c *Core) planOpenPrivateChat(ctx context.Context, tx pgx.Tx, now time.Time, tenant, task, group, channel string) error {
+	_, err := c.planDelivery(ctx, tx, now, plannedDelivery{
+		Tenant: tenant, Task: task, Kind: "task_result", Addr: "origin", TargetKind: "chat", TargetID: group,
+		ExecKind: "channel", ExecName: channel, DataOrigin: "code",
+		Body: map[string]any{"form": "text_code", "text_key": "delivery.open_private_chat"},
+	})
 	return err
 }

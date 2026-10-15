@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -109,7 +110,9 @@ func (c *Core) continuesTo(ctx context.Context, tx pgx.Tx, now time.Time, tv *Te
 	if err := json.Unmarshal(rec, &r); err != nil {
 		return nil, err
 	}
-	if r.Conversation != conversation {
+	// A group conversation is kept per person (MEM-1 in this build): a reply in the group
+	// continues a task of any person of that group chat.
+	if r.Conversation != conversation && !(a.Chat.Kind == "group" && strings.HasPrefix(r.Conversation, conversation+":")) {
 		return nil, nil
 	}
 	// The person reads the earlier outcome only with its data class, as initiator too.

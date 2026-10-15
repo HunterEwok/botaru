@@ -163,6 +163,13 @@ func TestDelegatedGrant(t *testing.T) {
 // The direct message of a split answer dies: the group gets the request to open a private
 // chat, never the content (DLV-15).
 func TestGroupAnswerNoDirect(t *testing.T) {
+	// The direct half dies itself, or the notice of AI before it does (DLV-12, DLV-15).
+	for _, failKind := range []string{"task_result", "ai_notice"} {
+		t.Run(failKind, func(t *testing.T) { testGroupAnswerNoDirect(t, failKind) })
+	}
+}
+
+func testGroupAnswerNoDirect(t *testing.T, failKind string) {
 	ctx := context.Background()
 	b := newGroupBench(t)
 	if _, err := b.c.ChatBind(ctx, b.op, ChatBindRequest{Op: "chat.bind", Tenant: "demo", Channel: "telegram", Chat: Chat{Kind: "group", ExternalID: "-500"}, Ceiling: "summary"}); err != nil {
@@ -178,7 +185,7 @@ func TestGroupAnswerNoDirect(t *testing.T) {
 		}
 		d := item.Payload["delivery"].(map[string]any)
 		chat := d["recipient"].(map[string]any)["chat"].(map[string]any)
-		if chat["kind"] == "direct" && d["kind"] == "task_result" {
+		if chat["kind"] == "direct" && d["kind"] == failKind {
 			if _, err := b.c.Fail(ctx, b.channel, header(t, item), FailRequest{Reason: "recipient_inactive"}); err != nil {
 				t.Fatal(err)
 			}
