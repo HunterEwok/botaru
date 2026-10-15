@@ -560,8 +560,32 @@ func (c *Core) enqueue(ctx context.Context, tx pgx.Tx, now time.Time, cat *Catal
 	}
 	if w := in.Wake; w != nil {
 		record["wake_inbox"], record["depth"] = w.Inbox, w.Depth
+		// The wake-up joins the tree its oldest entry came from: the tree's limits and budget
+		// stay the ones of its root (MSG-12, BUD-1, PRM-6).
 		if w.Correlation != "" {
 			record["correlationid"] = w.Correlation
+			var rootType string
+			var rootRec []byte
+			err := tx.QueryRow(ctx, `SELECT type, record FROM tasks WHERE id = $1 AND tenant = $2`, w.Correlation, in.Tenant).Scan(&rootType, &rootRec)
+			switch {
+			case err == nil:
+				root = w.Correlation
+				record["root"] = root
+				record["tree_budget_micros"] = taskTreeBudget(rootRec, cat.TaskTypes[rootType])
+			case !errors.Is(err, pgx.ErrNoRows):
+				return nil, err
+			}
+		}
+		// The initiators the entries came from narrow what the wake-up's tree may enqueue, as
+		// the co-initiators of a tree that read them (MSG-7).
+		var co []string
+		for _, sub := range w.Subjects {
+			if sub != "system" && sub != in.Initiator && !slices.Contains(co, sub) {
+				co = append(co, sub)
+			}
+		}
+		if len(co) > 0 {
+			record["co_initiators"] = co
 		}
 	}
 	if in.Continues != "" {

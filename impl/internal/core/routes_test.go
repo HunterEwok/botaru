@@ -74,6 +74,11 @@ func TestRouteWake(t *testing.T) {
 	if n := len(wakeTasks(t, b)); n != 0 {
 		t.Fatalf("an empty inbox woke %d", n)
 	}
+	// The entries come from the tree of t_root, which pins its own tree budget.
+	if _, err := b.c.st.Pool.Exec(ctx, `INSERT INTO tasks (id, tenant, type, state, initiator, priority_class, idempotency_key, body_hash, body, record, deadline_at, created_at, updated_at)
+		VALUES ('t_root', 'demo', 'lead.review.v1', 'completed', $1, 1, 'root-of-entries', 'h', '{}', '{"root": "t_root", "tree_budget_micros": 4242}', now(), now(), now())`, b.alice); err != nil {
+		t.Fatal(err)
+	}
 	coreSend(t, b, "role:lead")
 	b.loop(t, "inbox")
 	b.loop(t, "inbox")
@@ -89,14 +94,18 @@ func TestRouteWake(t *testing.T) {
 		t.Fatal(err)
 	}
 	var r struct {
-		Depth     int    `json:"depth"`
-		WakeInbox string `json:"wake_inbox"`
-		Root      string `json:"correlationid"`
+		Depth     int      `json:"depth"`
+		WakeInbox string   `json:"wake_inbox"`
+		Root      string   `json:"correlationid"`
+		TreeRoot  string   `json:"root"`
+		Budget    int64    `json:"tree_budget_micros"`
+		Co        []string `json:"co_initiators"`
 	}
 	if err := json.Unmarshal(rec, &r); err != nil {
 		t.Fatal(err)
 	}
-	if initiator != "system" || r.Depth != 1 || r.WakeInbox != "role:lead" || r.Root != "t_root" || startBy == nil || expires == nil || startBy.After(*expires) {
+	if initiator != "system" || r.Depth != 1 || r.WakeInbox != "role:lead" || r.Root != "t_root" || startBy == nil || expires == nil || startBy.After(*expires) ||
+		r.TreeRoot != "t_root" || r.Budget != 4242 || len(r.Co) != 1 || r.Co[0] != b.alice {
 		t.Fatalf("wake-up %s %s %v %v", initiator, rec, startBy, expires)
 	}
 	// The wake-up reads its inbox and completes; its auto-report goes to hello.
