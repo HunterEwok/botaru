@@ -1,0 +1,80 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:botaru:schema:control-event:1",
+  "title": "Data of the control.applied event",
+  "description": "Data of control.applied: every applied control operation writes one in its transaction, by the seat holder or a person (MGR-9). Codes and ids only.",
+  "x-botaru-direction": "output",
+  "x-botaru-rules": [
+    "MGR-9"
+  ],
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "op",
+    "target",
+    "by"
+  ],
+  "properties": {
+    "op": {
+      "enum": [
+        "hold",
+        "quarantine",
+        "drain",
+        "preempt",
+        "cancel",
+        "pin_task",
+        "request_action",
+        "release",
+        "notify"
+      ],
+      "description": "Operation from control-ops.yaml.",
+      "x-botaru-registry": "control-ops"
+    },
+    "target": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "id"
+      ],
+      "properties": {
+        "kind": {
+          "enum": [
+            "worker",
+            "bot",
+            "bot_group",
+            "role",
+            "tasktype",
+            "resource",
+            "task",
+            "hold"
+          ],
+          "description": "Target kind."
+        },
+        "id": {
+          "type": "string",
+          "maxLength": 64,
+          "pattern": "^[A-Za-z0-9:_.-]{1,64}$",
+          "description": "Target id or name."
+        }
+      },
+      "description": "Target of the operation."
+    },
+    "by": {
+      "enum": [
+        "seat",
+        "person"
+      ],
+      "description": "Who applied the operation: the seat holder or a person."
+    },
+    "incident": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/object_id",
+      "description": "Basis incident."
+    },
+    "epoch": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "Seat epoch of a seat operation."
+    }
+  }
+}

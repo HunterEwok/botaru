@@ -30,6 +30,7 @@ func diskClass() map[string]any {
 			"contain_auto": []any{map[string]any{"op": "hold", "scope": map[string]any{"resource": "$subject"}, "effects": []any{"no_claim"}, "ttl": "1h"}},
 			"humans":       map[string]any{"notify_on_open": true, "page_if_unhandled_after": "10m"},
 			"resolve":      map[string]any{"alarm_state": "resolved", "for": "10m"},
+			"responses":    map[string]any{"ops": []any{"hold", "quarantine", "drain", "preempt", "cancel", "release"}},
 		},
 	}
 }

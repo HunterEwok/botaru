@@ -60,7 +60,8 @@ func newManagerBench(t *testing.T, edits ...func([]map[string]any)) *bench {
 		// The tenant's consent group for the manager allows the seat task (MGR-3).
 		ms = append(append(ms, extra...), diskClass(), stopClass(), map[string]any{
 			"apiVersion": "botaru/v1alpha1", "kind": "Group", "metadata": map[string]any{"name": "farm-manager-ops", "tenant": "demo"},
-			"spec": map[string]any{"caps": []any{"task:" + incidentRespondType}, "data": []any{"summary", "internal"}}})
+			"spec": map[string]any{"caps": []any{"task:" + incidentRespondType, "control.apply:hold", "control.apply:quarantine",
+				"control.apply:drain", "control.apply:preempt"}, "data": []any{"summary", "internal"}}})
 		for _, e := range edits {
 			e(ms)
 		}

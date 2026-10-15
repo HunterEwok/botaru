@@ -36,6 +36,7 @@ const (
 	Fact      = "fct"
 	FactOffer = "fo"
 	Incident  = "inc"
+	Control   = "ctl"
 )
 
 var (

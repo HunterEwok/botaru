@@ -108,5 +108,6 @@ kind: Group
 metadata: {name: farm-manager-ops, tenant: demo}
 spec:
   title: "What the farm manager may do in this tenant (MGR-3)"
-  caps: ["task:manager.incident.respond.v1"]
+  caps: ["task:manager.incident.respond.v1", "control.apply:hold", "control.apply:quarantine", "control.apply:drain",
+         "control.apply:preempt", "control.apply:cancel"]
   data: [summary, internal]
