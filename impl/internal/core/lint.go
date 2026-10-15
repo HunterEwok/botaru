@@ -1322,9 +1322,15 @@ func (c *Core) lintManifests(docs []manifest.Doc, index []int, personas personaL
 			continue
 		}
 		seats := mlist(mmap(o.spec, "commission"), "seats")
+		// The analysis profiles of the roles that can write proposals: they claim a type of
+		// purpose insight or aggregate (COM-2).
 		analysis := map[string]bool{}
 		for _, ro := range roles {
-			if a := mstr(mmap(ro.spec, "models"), "analysis"); a != "" {
+			author := slices.ContainsFunc(mstrs(ro.spec, "claims"), func(t string) bool {
+				p := mstr(types[t], "purpose")
+				return p == "insight" || p == "aggregate"
+			})
+			if a := mstr(mmap(ro.spec, "models"), "analysis"); a != "" && author {
 				analysis[a] = true
 			}
 		}

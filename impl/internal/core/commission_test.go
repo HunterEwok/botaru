@@ -342,3 +342,125 @@ func TestCommissionLateRead(t *testing.T) {
 		t.Fatalf("state %s %v", state, rec["verdict"])
 	}
 }
+
+// reviewOf is the review of a lens in a proposal record, with the record of its task.
+func reviewOf(t *testing.T, b *bench, rec map[string]any, lens string) (map[string]any, map[string]any) {
+	t.Helper()
+	for _, r := range asList(rec["reviews"]) {
+		rm := r.(map[string]any)
+		if rm["lens"] != lens {
+			continue
+		}
+		var task map[string]any
+		if err := b.c.st.Pool.QueryRow(context.Background(), `SELECT record FROM tasks WHERE id = $1`, rm["task"]).Scan(&task); err != nil {
+			t.Fatal(err)
+		}
+		return rm, task
+	}
+	t.Fatalf("no %s review in %v", lens, rec["reviews"])
+	return nil, nil
+}
+
+// A review reserves its type's tree budget, the sum the review line was checked for, even
+// when the history of the type is cheaper (COM-6, BUD-14).
+func TestCommissionReviewReserve(t *testing.T) {
+	ctx := context.Background()
+	b := newCommissionBench(t, true)
+	proposeNone(t, b)
+	ra := b.enroll(t, EnrollRequest{Tenant: "demo", Role: "reviewer-a", Kind: "agent"})
+	rb := b.enroll(t, EnrollRequest{Tenant: "demo", Role: "reviewer-b", Kind: "agent"})
+	if err := b.review(t, ra, map[string]any{"lens": "security", "score": 3, "confidence": "high"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := b.review(t, rb, map[string]any{"lens": "value", "score": 3, "confidence": "medium"}); err != nil {
+		t.Fatal(err)
+	}
+	b.loop(t, "proposal")
+	// The finished reviews cost nothing: the p90 of the types is 0 from now on.
+	if _, err := b.analysis(t, "2", false, map[string]any{"proposals": []any{noneBody("queue_full", 1)}}); err != nil {
+		t.Fatal(err)
+	}
+	b.loop(t, "proposal")
+	var n int
+	var min, max int64
+	if err := b.c.st.Pool.QueryRow(ctx, `SELECT count(*), coalesce(min(s.eur_micros), 0), coalesce(max(s.eur_micros), 0) FROM spend s JOIN tasks t ON t.id = s.task
+		WHERE t.type LIKE 'review.%' AND t.state = 'submitted' AND s.unit = 'task' AND s.state = 'reserved'`).Scan(&n, &min, &max); err != nil {
+		t.Fatal(err)
+	}
+	if n != 2 || min != 80000 || max != 80000 {
+		t.Fatalf("review reserves %d %d..%d", n, min, max)
+	}
+}
+
+// A seat whose holder is the author's own bot does not review the proposal: the lens goes to
+// its fallback role (COM-2, GOV-17).
+func TestCommissionSeatNotAuthor(t *testing.T) {
+	ctx := context.Background()
+	b := newCommissionBench(t, true, func(ms []map[string]any) {
+		specOf(ms, "Governance", "demo")["commission"].(map[string]any)["seat_role"] = "reviewer-a"
+	})
+	author := b.botOf(t, b.agent.ID)
+	b.helloDone(t, "1", "", "hi")
+	b.loop(t, "observe")
+	if _, err := b.analysis(t, "1", false, map[string]any{"proposals": []any{noneBody("slow", 1)}}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := b.c.SeatAssign(ctx, b.op, SeatRequest{Seat: "commission:1", Bot: author.ID}); err != nil {
+		t.Fatal(err)
+	}
+	b.loop(t, "proposal")
+	state, rec := proposalState(t, b)
+	if state != "in_review" {
+		t.Fatalf("state %s %v", state, rec["state_reason"])
+	}
+	r, task := reviewOf(t, b, rec, "security")
+	if r["executor"] != "fallback_role" || task["seat"] != nil {
+		t.Fatalf("the author's seat reviews: %v %v", r, task)
+	}
+}
+
+// A held seat reviews its lens even when the lens has no fallback executor: the seated lens
+// counts for the veto cover and the review money (COM-6, COM-7).
+func TestCommissionSeatWithoutFallback(t *testing.T) {
+	ctx := context.Background()
+	b := newCommissionBench(t, true, func(ms []map[string]any) {
+		specOf(ms, "Governance", "demo")["commission"].(map[string]any)["seat_role"] = "reviewer-b"
+	})
+	holder := b.botOf(t, b.agent.ID)
+	if _, err := b.c.SeatAssign(ctx, b.op, SeatRequest{Seat: "commission:1", Bot: holder.ID}); err != nil {
+		t.Fatal(err)
+	}
+	b.helloDone(t, "1", "", "hi")
+	b.loop(t, "observe")
+	if _, err := b.analysis(t, "1", false, map[string]any{"proposals": []any{noneBody("slow", 1)}}); err != nil {
+		t.Fatal(err)
+	}
+	// The fallback role of the security seat no longer claims the lens; the seat role does.
+	cat, err := b.c.Catalog(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	narrow := *cat
+	narrow.Roles = maps.Clone(cat.Roles)
+	ra, rb := narrow.Roles["reviewer-a"], narrow.Roles["reviewer-b"]
+	ra.Claims = []string{"review.operational.v1"}
+	rb.Claims = append(slices.Clone(rb.Claims), "review.security.v1")
+	narrow.Roles["reviewer-a"], narrow.Roles["reviewer-b"] = ra, rb
+	_, rec := proposalState(t, b)
+	if err := b.c.tx(ctx, func(tx pgx.Tx, now time.Time) error {
+		return b.c.stepProposal(ctx, tx, now, &narrow, rec["id"].(string))
+	}); err != nil {
+		t.Fatal(err)
+	}
+	state, rec := proposalState(t, b)
+	if state != "in_review" {
+		t.Fatalf("state %s %v", state, rec["state_reason"])
+	}
+	r, task := reviewOf(t, b, rec, "security")
+	if r["executor"] != "seat" || task["seat"] != "commission:1" || task["executor_role"] != "reviewer-b" {
+		t.Fatalf("security review %v %v", r, task)
+	}
+	if v, _ := rec["review_reserved_eur"].(float64); v < 0.16-1e-9 {
+		t.Fatalf("reserved %v", rec["review_reserved_eur"])
+	}
+}

@@ -162,3 +162,35 @@ func TestFactsOffer(t *testing.T) {
 		t.Fatal("sealed facts outlived the seal")
 	}
 }
+
+// The claim of a type with memory.facts: propose offers the facts field in the result schema
+// it hands the runtime, and the type's schema stays as it is; a duration fact on a resource is
+// refused, since the attempt times are kept by task type only (MEM-6).
+func TestFactsProposeSchemaAndOn(t *testing.T) {
+	ctx := context.Background()
+	b := newFactBench(t)
+	bot := b.botOf(t, b.agent.ID)
+	_, att := b.helloAttempt(t, "1")
+	rs, _ := att.Payload["result_schema"].(map[string]any)
+	facts, _ := mmap(rs, "properties")["facts"].(map[string]any)
+	if facts == nil || facts["type"] != "array" || mmap(facts, "items")["required"] == nil {
+		t.Fatalf("result schema %v", rs)
+	}
+	cat, err := b.c.Catalog(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := mmap(cat.TaskTypes["hello.greet.v1"].ResultSchema, "properties")["facts"]; ok {
+		t.Fatal("the type's own result schema got the facts field")
+	}
+	on := map[string]any{"kind": "how_long", "predicate": "task.duration.p95_min", "subject": map[string]any{"type": "tasktype", "id": "hello.greet.v1", "on": "db1"}}
+	if _, err := b.c.Complete(ctx, b.agent, header(t, att), CompleteRequest{Result: map[string]any{"answer": "hi", "facts": []any{on}}}); err != nil {
+		t.Fatal(err)
+	}
+	if n := factCount(t, b, bot.ID, "active"); n != 0 {
+		t.Fatalf("active facts %d", n)
+	}
+	if n := countEvents(t, b, "fact.rejected.v1", att.Token.WorkID); n != 1 {
+		t.Fatalf("rejected events %d", n)
+	}
+}

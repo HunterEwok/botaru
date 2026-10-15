@@ -413,3 +413,36 @@ func TestAnalysisAboveMaxData(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+// A refusal shows in "My outcomes" of the worker that handed in the body, not of another
+// worker that held an attempt of the same task (DIG-7).
+func TestMyOutcomesRejectedWorker(t *testing.T) {
+	ctx := context.Background()
+	b := newInsightBench(t, nil)
+	b.helloDone(t, "1", "", "hi")
+	b.loop(t, "observe")
+	task, err := b.analysis(t, "1", false, map[string]any{"proposals": []any{noneBody("slow", 50)}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := b.c.st.Pool.Exec(ctx, `INSERT INTO leases (work_id, lease_no, kind, tenant, worker_id, epoch, state, lease_until, created_at)
+		VALUES ($1, 9, 'attempt', 'demo', $2, 1, 'closed', now(), now())`, task, b.channel.ID); err != nil {
+		t.Fatal(err)
+	}
+	rows := func(worker string) int {
+		t.Helper()
+		tx, err := b.c.st.Pool.Begin(ctx)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer tx.Rollback(ctx)
+		mo, err := myOutcomes(ctx, tx, "demo", worker, myOutcomesRows)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return len(mo["rows"].([]any))
+	}
+	if a, o := rows(b.agent.ID), rows(b.channel.ID); a != 1 || o != 0 {
+		t.Fatalf("rows of the author %d, of the other worker %d", a, o)
+	}
+}

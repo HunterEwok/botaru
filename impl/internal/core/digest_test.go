@@ -6,6 +6,9 @@ import (
 	"context"
 	"strings"
 	"testing"
+	"time"
+
+	"github.com/jackc/pgx/v5"
 )
 
 // presentEdit sends the digest every minute to the direct chats of the deciders.
@@ -161,5 +164,30 @@ func TestProposalDigestNoTarget(t *testing.T) {
 	var n int
 	if err := b.c.st.Pool.QueryRow(context.Background(), `SELECT count(*) FROM proposal_digests`).Scan(&n); err != nil || n != 0 {
 		t.Fatalf("digests %d %v", n, err)
+	}
+}
+
+// A member of a group that inherits another is among that group's people (PRM-2).
+func TestGroupMembersInherited(t *testing.T) {
+	ctx := context.Background()
+	// alice is a member of deciders, which inherits system-ops.
+	b := newCommissionBench(t, true, func(ms []map[string]any) {
+		specOf(ms, "Group", "deciders")["inherits"] = []any{"system-ops"}
+	})
+	cat, err := b.c.Catalog(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := b.c.tx(ctx, func(tx pgx.Tx, now time.Time) error {
+		people, err := groupMembers(ctx, tx, now, cat.Tenants["demo"], "system-ops")
+		if err != nil {
+			return err
+		}
+		if len(people) != 1 || people[0] != b.alice {
+			t.Errorf("members of system-ops %v", people)
+		}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
 	}
 }

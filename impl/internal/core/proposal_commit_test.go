@@ -116,6 +116,12 @@ func TestProposalCommitLink(t *testing.T) {
 	if err := b.c.spec.Validate("urn:botaru:schema:proposal-record:1", rec); err != nil {
 		t.Fatalf("record: %v", err)
 	}
+	// Each guard keeps the points behind its value before (PRP-22).
+	for _, g := range asList(rec["trial"].(map[string]any)["guards"]) {
+		if _, ok := g.(map[string]any)["before_samples"].(float64); !ok {
+			t.Fatalf("guard without before_samples %v", g)
+		}
+	}
 	prev := asList(r["revert_patch"])[0].(map[string]any)["previous"]
 	back := withLimit(t, b, int(prev.(float64)))
 	if res, err := b.c.Apply(ctx, b.op, ApplyRequest{Commit: "a000000000000000000000000000000000000003", Message: "Revert\n\nBotaru-Revert: " + id + " harm_observed", Manifests: back}); err != nil || !res.Applied {
@@ -176,5 +182,46 @@ func TestMyOutcomes(t *testing.T) {
 	}
 	if rows := mo["rows"].([]any); len(rows) != 2 || rows[0].(map[string]any)["human_outcome"] != "accepted" {
 		t.Fatalf("rows %v", rows)
+	}
+}
+
+// A commit whose object of another tenant a later apply replaced is still outside the scope
+// of the proposal: the replaced versions count as well as the current manifests (PRP-19).
+func TestProposalLinkCommitOldVersion(t *testing.T) {
+	ctx := context.Background()
+	b := newCommissionBench(t, true, presentEdit)
+	id, _ := acceptLimits(t, b)
+	commit := "a000000000000000000000000000000000000009"
+	if _, err := b.c.st.Pool.Exec(ctx, `INSERT INTO manifest_versions (kind, tenant, name, doc, commit, replaced_by, replaced_at)
+		VALUES ('Group', 'demo2', 'ops', '{}', $1, 'a00000000000000000000000000000000000000a', now())`, commit); err != nil {
+		t.Fatal(err)
+	}
+	_, err := b.c.LinkCommit(ctx, Operator{Principal: b.alice, Tenant: "demo"}, LinkCommitRequest{Proposal: id, Commit: commit})
+	wantReason(t, err, "proposal_scope")
+}
+
+// The metric outcome comes from the rest of the points only when the author's or its role's
+// points are all there are; a few other points below min_samples leave it undetermined
+// (PRP-22).
+func TestMetricOutcome(t *testing.T) {
+	s := seriesDef{Outcome: &seriesOutcome{Compare: "window.p95", Better: "down", TolerancePct: 10, MinSamples: 5}}
+	side := func(v float64, n int, author, role int) map[string]any {
+		return map[string]any{"value": v, "samples": n,
+			"without_author": map[string]any{"value": v, "samples": author}, "without_role": map[string]any{"value": v, "samples": role}}
+	}
+	for _, c := range []struct {
+		before, after map[string]any
+		out           string
+		self          bool
+	}{
+		{side(100, 20, 20, 20), side(50, 20, 20, 20), "better", false},
+		{side(100, 20, 0, 0), side(50, 20, 0, 0), "better", true},
+		{side(100, 20, 3, 3), side(50, 20, 3, 3), "undetermined", false},
+		{side(100, 20, 0, 0), side(50, 20, 3, 3), "undetermined", false},
+		{side(100, 20, 20, 20), side(150, 20, 20, 20), "worse", false},
+	} {
+		if out, self := metricOutcome(s, c.before, c.after); out != c.out || self != c.self {
+			t.Errorf("%v -> %v: %s %v, want %s %v", c.before, c.after, out, self, c.out, c.self)
+		}
 	}
 }

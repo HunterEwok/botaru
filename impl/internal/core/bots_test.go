@@ -247,3 +247,25 @@ func TestSeatAssign(t *testing.T) {
 		t.Fatalf("seat %s %d", state, epoch)
 	}
 }
+
+// worker.revoke fences every lease of the worker, not only its attempts: a delivery in
+// sending goes back to planned (IDN-4).
+func TestWorkerRevokeDelivery(t *testing.T) {
+	ctx := context.Background()
+	b := newBench(t)
+	b.hello(t, "1")
+	w := b.claim(t, b.channel, "delivery")
+	if w == nil {
+		t.Fatal("no delivery")
+	}
+	if _, err := b.c.WorkerRevoke(ctx, b.op, WorkerRequest{Op: "worker.revoke", Worker: b.channel.ID}); err != nil {
+		t.Fatal(err)
+	}
+	var lease, delivery string
+	if err := b.c.st.Pool.QueryRow(ctx, `SELECT l.state, d.state FROM leases l JOIN deliveries d ON d.id = l.work_id WHERE l.work_id = $1`, w.Token.WorkID).Scan(&lease, &delivery); err != nil {
+		t.Fatal(err)
+	}
+	if lease != "revoked" || delivery != "planned" {
+		t.Fatalf("lease %s delivery %s", lease, delivery)
+	}
+}

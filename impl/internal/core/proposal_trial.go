@@ -84,7 +84,10 @@ func (c *Core) trialStep(ctx context.Context, tx pgx.Tx, now time.Time, cat *Cat
 		if err != nil {
 			return err
 		}
-		before := map[string]any{"value": gm["before"], "samples": s.Outcome.MinSamples}
+		// A guard without its baseline points (a trial from before they were kept) has 0 and
+		// is never broken (PRP-22).
+		bn, _ := toFloat(gm["before_samples"])
+		before := map[string]any{"value": gm["before"], "samples": bn}
 		if d, ok := change(s, before, v); ok && d < 0 {
 			gm["broken_at"], broke = fmtTime(now), true
 		}
@@ -149,41 +152,50 @@ func (c *Core) trialOutcome(ctx context.Context, tx pgx.Tx, cat *Catalog, p *pro
 		}
 	}
 	if out == "" {
-		before := mmapAny(t["before"])
-		all, okAll := change(s, before, after)
-		var results []int
-		var undetermined, selfOnly bool
-		if okAll {
-			results = append(results, all)
-		} else {
-			undetermined = true
-		}
-		for _, k := range []string{"without_author", "without_role"} {
-			d, ok := change(s, mmapAny(before[k]), mmapAny(after[k]))
-			switch {
-			case ok:
-				results = append(results, d)
-			case okAll:
-				// The points are the author's or its role's own: the outcome comes from the rest.
-				selfOnly = true
-			default:
-				undetermined = true
-			}
-		}
-		switch {
-		case slices.Contains(results, -1):
-			out = "worse"
-		case undetermined:
-			out = "undetermined"
-		case len(results) > 0 && !slices.ContainsFunc(results, func(d int) bool { return d != 1 }):
-			out = "better"
-		default:
-			out = "unchanged"
-		}
+		var selfOnly bool
+		out, selfOnly = metricOutcome(s, mmapAny(t["before"]), after)
 		t["self_measured"] = selfOnly
 	}
 	t["state"], t["outcome"] = out, out
 	return nil
+}
+
+// metricOutcome is the outcome of the metric by the tolerance over all points, without the
+// author and without its role (PRP-22); selfOnly says the points are only the author's or its
+// role's own and the outcome comes from the rest. A filtered side with too few points but not
+// none leaves the outcome undetermined.
+func metricOutcome(s seriesDef, before, after map[string]any) (string, bool) {
+	all, okAll := change(s, before, after)
+	var results []int
+	var undetermined, selfOnly bool
+	if okAll {
+		results = append(results, all)
+	} else {
+		undetermined = true
+	}
+	for _, k := range []string{"without_author", "without_role"} {
+		d, ok := change(s, mmapAny(before[k]), mmapAny(after[k]))
+		bn, _ := toFloat(mmapAny(before[k])["samples"])
+		an, _ := toFloat(mmapAny(after[k])["samples"])
+		switch {
+		case ok:
+			results = append(results, d)
+		case okAll && bn == 0 && an == 0:
+			// The points are the author's or its role's own: the outcome comes from the rest.
+			selfOnly = true
+		default:
+			undetermined = true
+		}
+	}
+	switch {
+	case slices.Contains(results, -1):
+		return "worse", selfOnly
+	case undetermined:
+		return "undetermined", selfOnly
+	case len(results) > 0 && !slices.ContainsFunc(results, func(d int) bool { return d != 1 }):
+		return "better", selfOnly
+	}
+	return "unchanged", selfOnly
 }
 
 // otherChange says whether another proposal was realized within the window on one of the

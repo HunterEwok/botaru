@@ -82,8 +82,11 @@ func myOutcomes(ctx context.Context, tx pgx.Tx, tenant, worker string, limit int
 	if err := rs.Err(); err != nil {
 		return nil, err
 	}
+	// A refusal is the worker's that handed in the body; an event from before the worker was
+	// written falls back to the workers that held an attempt of the task (DIG-7).
 	rs, err = tx.Query(ctx, `SELECT e.data, e.time FROM events e WHERE e.tenant = $1 AND e.type = $2
-		AND EXISTS (SELECT 1 FROM leases l WHERE l.work_id = e.data->>'task' AND l.kind = 'attempt' AND l.worker_id = $3)`, tenant, proposalRejectedType, worker)
+		AND (e.data->>'worker' = $3 OR e.data->>'worker' IS NULL
+			AND EXISTS (SELECT 1 FROM leases l WHERE l.work_id = e.data->>'task' AND l.kind = 'attempt' AND l.worker_id = $3))`, tenant, proposalRejectedType, worker)
 	if err != nil {
 		return nil, err
 	}

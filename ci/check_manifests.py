@@ -1018,7 +1018,10 @@ def lint(docs, today=None, farm_hosts=None, examples_mode=False, claimed=None, s
         if not roles or 'commission' not in gs:
             continue
         seats = (gs.get('commission') or {}).get('seats', [])
-        analysis = {(rs.get('models') or {}).get('analysis') for _, rs in roles.values()} - {None}
+        # The analysis profiles of the roles that can write proposals: they claim a type of purpose insight or
+        # aggregate (COM-2).
+        analysis = {(rs.get('models') or {}).get('analysis') for _, rs in roles.values()
+                    if any((types.get(t) or {}).get('purpose') in ('insight', 'aggregate') for t in rs.get('claims') or [])} - {None}
         for lid, le in sorted(lenses.items()):
             if le.get('veto') is not True:
                 continue

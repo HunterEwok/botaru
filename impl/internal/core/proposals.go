@@ -133,7 +133,7 @@ func (c *Core) proposalRejected(ctx context.Context, tx pgx.Tx, now time.Time, a
 	if a.Acting.Bot != "" {
 		actingBot = a.Acting.Bot
 	}
-	data := map[string]any{"reason": reason, "task": a.Task, "role": a.Role, "acting_bot": actingBot, "category": nil, "problem_code": nil, "fingerprint": nil}
+	data := map[string]any{"reason": reason, "task": a.Task, "role": a.Role, "worker": a.Worker, "acting_bot": actingBot, "category": nil, "problem_code": nil, "fingerprint": nil}
 	if cat, ok := body["category"].(string); ok && validCategory(cat) {
 		data["category"] = cat
 	}

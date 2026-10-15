@@ -73,6 +73,9 @@ type enqueueInput struct {
 	Untrusted bool
 	// ContinuesMark is the data mark of the continued task, whose outcome the new one carries.
 	ContinuesMark string
+	// EstimateMin is the least reserve of the task: a review reserves its type's tree budget,
+	// the sum the review line was checked for (COM-6).
+	EstimateMin int64
 }
 
 // fairnessKey writes the dispatcher fairness key <kind>:<id> from the task source (DSP-2,
@@ -361,6 +364,7 @@ func (c *Core) enqueue(ctx context.Context, tx pgx.Tx, now time.Time, cat *Catal
 	if err != nil {
 		return nil, err
 	}
+	estimate = max(estimate, in.EstimateMin)
 	line := c.budgetLine(tt.Purpose)
 	var crossed []crossing
 	if p := c.checkBudget(ctx, tx, now, tv, budgetAsk{subject: in.Initiator, groups: groups, extra: estimate, line: line, crossed: &crossed}); p != nil {

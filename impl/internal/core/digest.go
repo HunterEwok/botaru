@@ -293,7 +293,7 @@ func (c *Core) planDigest(ctx context.Context, tx pgx.Tx, now time.Time, tv *Ten
 			targets = append(targets, target{channel: b.Channel, chat: b.Chat, ceiling: b.Ceiling})
 		}
 	case "group":
-		people, err := groupMembers(ctx, tx, now, tv.Name, name)
+		people, err := groupMembers(ctx, tx, now, tv, name)
 		if err != nil {
 			return nil, false, err
 		}
@@ -364,11 +364,17 @@ func (c *Core) planDigest(ctx context.Context, tx pgx.Tx, now time.Time, tv *Ten
 }
 
 // groupMembers are the active people of a group of the tenant, directly or through a group
-// that includes it.
-func groupMembers(ctx context.Context, tx pgx.Tx, now time.Time, tenant, group string) ([]string, error) {
+// that inherits it (PRM-2).
+func groupMembers(ctx context.Context, tx pgx.Tx, now time.Time, tv *TenantView, group string) ([]string, error) {
+	via := []string{group}
+	for g := range tv.Groups {
+		if g != group && slices.Contains(groupClosure(tv, []string{g}), group) {
+			via = append(via, g)
+		}
+	}
 	rows, err := tx.Query(ctx, `SELECT DISTINCT m.principal FROM memberships m JOIN principals p ON p.tenant = m.tenant AND p.id = m.principal
-		WHERE m.tenant = $1 AND m.grp = $2 AND m.state = 'active' AND (m.until IS NULL OR m.until > $3) AND p.state = 'active' AND p.kind = 'human'
-		ORDER BY m.principal`, tenant, group, now)
+		WHERE m.tenant = $1 AND m.grp = ANY($2) AND m.state = 'active' AND (m.until IS NULL OR m.until > $3) AND p.state = 'active' AND p.kind = 'human'
+		ORDER BY m.principal`, tv.Name, via, now)
 	if err != nil {
 		return nil, err
 	}
