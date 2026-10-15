@@ -289,6 +289,19 @@ func (c *Core) decideSubject(ctx context.Context, w *Worker, ob OnBehalf, req De
 				if len(spec.Scope.IDs) > maxMatchIDs {
 					spec.Scope.IDs = spec.Scope.IDs[:maxMatchIDs]
 				}
+				// With no id found, an erasure request has nothing to name: a scope of no ids
+				// is the whole tenant. A store that could not be searched is then no proof of
+				// "nothing to erase", so the request stays open rather than closing as approved
+				// with no record of that store (SEC-11); a person rejects it and asks again.
+				if len(spec.Scope.IDs) == 0 {
+					var failed bool
+					if err := tx.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM subject_match_steps WHERE request = $1 AND state = 'failed')`, r.ID).Scan(&failed); err != nil {
+						return err
+					}
+					if failed {
+						return refuse("not_ready", "a store could not be searched and nothing was found; reject the request and ask again")
+					}
+				}
 			}
 			if len(spec.Scope.IDs) > 0 || r.Kind == "erase" {
 				if erasure, err = c.requestErasure(ctx, tx, now, tv, spec); err != nil {

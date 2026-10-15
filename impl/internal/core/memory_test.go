@@ -420,6 +420,18 @@ func TestEraseMatchEdgeOverflow(t *testing.T) {
 	if state != "failed" || reason != "match_overflow" || strings.Contains(found, "out-") {
 		t.Fatalf("overflow match %s %s %s", state, reason, found)
 	}
+	// Nothing else was found: an approval would close the request with no record of the
+	// store that could not be searched, so it is refused and the request stays open.
+	card := cardOf(t, b.drain(t), subjectCard, "direct:1002")
+	cd := card.body["card"].(map[string]any)
+	req := DecideRequest{SubjectKind: "subject_request", ID: d.ID, Nonce: cd["nonce"].(string), Decision: "approve"}
+	if _, err := b.c.Decide(ctx, b.channel, press("telegram:1002", "direct:1002", card.external), req); err == nil || !strings.Contains(err.Error(), "could not be searched") {
+		t.Fatalf("approved with a failed store and no ids: %v", err)
+	}
+	var open string
+	if err := b.c.st.Pool.QueryRow(ctx, `SELECT state FROM subject_requests WHERE id = $1`, d.ID).Scan(&open); err != nil || open != "pending" {
+		t.Fatalf("request %s %v", open, err)
+	}
 }
 
 // Two stores whose names sanitise to one key keep their own keys (RET-7).
