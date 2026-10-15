@@ -190,7 +190,7 @@ FORBIDDEN_PROGRAMS = set(model_registry('forbidden-programs'))
 REQUIREMENTS = rules()
 # Built-in channel commands: commands cannot take them (PRM-17, docs/task-language.md).
 BUILTIN_COMMANDS = {'/help', '/about', '/lang', '/mydata', '/tasks', '/status', '/cancel', '/me', '/team',
-                    '/run', '/service', '/forget', '/grant', '/ungrant', '/incident'}
+                    '/run', '/service', '/forget', '/grant', '/ungrant', '/incident', '/manager'}
 # Farm ceilings (docs/tasks-and-delivery.md, "Deadlines and ceilings"; DLV-16).
 CEILINGS = {'lease': 120, 'heartbeat': 30, 'tool_start_by': 30}
 # Decision and management capabilities: system does not have them (PRM-10), nor do delegated_groups (PRM-16).
@@ -609,6 +609,14 @@ def lint(docs, today=None, farm_hosts=None, examples_mode=False, claimed=None, s
             line = ((ts.get('budgets') or {}).get('lines') or {}).get('manager') or {}
             if not any((line.get(k) or 0) > 0 for k in ('month_eur', 'day_eur')):
                 f.error('manager_line_missing', where, 'manager budget line is not above 0 while the manager is enabled (MGR-20)')
+            # three readings of one worst-case incident: 60 thousand input tokens and three answers at max_output_tokens
+            sp = profiles.get(mp) if mp else None
+            if sp and line.get('day_eur') is not None:
+                price = sp.get('price') or {}
+                worst = (60000 * price.get('input', 0) + 3 * sp.get('max_output_tokens', 0) * price.get('output', 0)) / 1e6
+                if line['day_eur'] < worst:
+                    f.error('manager_line_too_small', where,
+                            f'manager.day_eur {line["day_eur"]} is below {worst:.2f} EUR, three readings of a worst-case incident (MGR-20)')
         priv = ts.get('privacy') or {}
         # monitoring is a mandatory recipient only when the installation claims the monitor profile (D-88);
         # unknown claimed profiles count as monitor: the check fails closed
@@ -654,6 +662,12 @@ def lint(docs, today=None, farm_hosts=None, examples_mode=False, claimed=None, s
             f.error('action_type_grant', where, f'type {tname}: only the core sets action.* names (APR-5)')
         if ts['purpose'] not in PURPOSES:
             f.error('purpose_unknown', where, f'type {tname}: purpose {ts["purpose"]!r} is not in task-purposes.yaml')
+        for path in (('continuation',), ('await', 'then'), ('await', 'on_timeout')):
+            node = ts
+            for k in path:
+                node = (node or {}).get(k) or {}
+            if (types.get(node.get('type')) or {}).get('purpose') == 'manage':
+                f.error('manage_enqueued', where, f'type {tname}: {"/".join(path)} starts {node["type"]} of purpose manage (MGR-4)')
         for k, cap in CEILINGS.items():
             s = seconds((ts.get('timeouts') or {}).get(k))
             if s is not None and s > cap:
@@ -814,6 +828,8 @@ def lint(docs, today=None, farm_hosts=None, examples_mode=False, claimed=None, s
         for tt in rs.get('may_enqueue', []):
             if tt.startswith('action.'):
                 f.error('action_type_grant', where, f'role {rname}: action.* in may_enqueue (APR-5)')
+            if (types.get(tt) or {}).get('purpose') == 'manage':
+                f.error('manage_enqueued', where, f'role {rname}: {tt} of purpose manage in may_enqueue (MGR-4)')
         for an in rs.get('actions_may_request', []):
             if actions and an not in actions:
                 f.error('ref_missing', where, f'role {rname}: action {an} is not in the set')
@@ -1210,6 +1226,7 @@ def lint(docs, today=None, farm_hosts=None, examples_mode=False, claimed=None, s
     lint_insight_types(S, f, roles)
     lint_governance(S, f)
     lint_incident_classes(S, f)
+    lint_seat_profiles(S, f)
     return f
 
 
@@ -1408,6 +1425,76 @@ def lint_incident_classes(S, f):
                 and all((holds.get(e) or {}).get('kind') == 'effect' for e in effects)
             if not ok:
                 f.error('incident_contain_auto', where, f'class {cname}: a first measure is a hold with one tenant scope, known effects and a ttl (MGR-7, HLD-2)')
+    lint_store_low(S, f)
+
+
+def lint_store_low(S, f):
+    """The required class store_low of an incident catalog: subject farm, opened by the core's own
+    alarm.store.free.low, without stops_manager (MGR-38). A set without incident classes has no catalog."""
+    classes = S.each('IncidentClass')
+    if not classes:
+        return
+    for _, cname, where, cs in classes:
+        if cname != 'store_low':
+            continue
+        if (cs.get('subject') or {}).get('kind') != 'farm':
+            f.error('incident_store_low', where, 'class store_low: the subject is the farm (MGR-38)')
+        if (cs.get('detect') or {}).get('alarm') != 'alarm.store.free.low.v1':
+            f.error('incident_store_low', where, 'class store_low: opens on alarm.store.free.low (MGR-38, CAP-5)')
+        if 'stops_manager' in cs:
+            f.error('incident_store_low', where, 'class store_low: no stops_manager field (MGR-38)')
+        return
+    f.error('incident_store_low', classes[0][2], 'the incident catalog has no class store_low (MGR-38)')
+
+
+# The built-in tools a seat profile may have (MGR-10); impl/internal/core/seatlint.go keeps the same list.
+SEAT_BUILTINS = {
+    'farm-manager': {'control_ops', 'inspect_request', 'incident_close', 'incident_view', 'service/control', 'monitor/script_run',
+                     'grant_decide', 'escalations_take', 'grants_pending', 'takeover_request', 'link_hint', 'attention_notice'},
+    'farm-manager-reader': {'file_read'},
+}
+# The kinds the seat holder never changes (MGR-16): proposals only with kind none or never.
+SELF_CHANGE_KINDS = ('Seat', 'IncidentClass', 'Governance', 'Commission', 'Group')
+# The target kinds no control operation may name (MGR-16).
+SELF_CHANGE_TARGETS = {'seat', 'seat_role', 'incident_class', 'involvement_rule', 'control_ops', 'control_limits', 'breaker',
+                       'budget_line', 'group', 'consent_group', 'protected_set', 'commission', 'governance', 'holder', 'auto_stop'}
+
+
+def self_change_problem():
+    """An operation target kind among the MGR-16 targets, or a gap in the forbidden list of proposals (PRP-3)."""
+    req = load_json(os.path.join(MODEL, 'p2-control-apply-request.schema.json'))
+    kinds = (((req.get('properties') or {}).get('target') or {}).get('properties') or {}).get('kind') or {}
+    if SELF_CHANGE_TARGETS & set(kinds.get('enum') or []):
+        return True
+    pf = load_yaml(os.path.join(MODEL, 'proposable-fields.yaml')) or {}
+    covered = set(pf.get('none_only') or [])
+    lines = False
+    for n in pf.get('never') or []:
+        covered |= set((n or {}).get('kinds') or [])
+        if (n or {}).get('object') == 'Tenant' and 'spec.budgets.lines' in ((n or {}).get('fields') or []):
+            lines = True
+    if any((e or {}).get('object') in SELF_CHANGE_KINDS + ('Role',) for e in pf.get('entries') or []):
+        return True
+    return not lines or not set(SELF_CHANGE_KINDS + ('Role',)) <= covered
+
+
+def lint_seat_profiles(S, f):
+    """For a set with a role of a seat profile: the built-in tools of the seat profiles (MGR-10), the
+    operation targets and the forbidden list of proposals (MGR-16, PRP-3)."""
+    seat = [(rname, where, rs) for _, rname, where, rs in S.each('Role') if rs.get('profile') in SEAT_BUILTINS]
+    if not seat:
+        return
+    bad = set()
+    for tid, e in model_registry('builtin-tools').items():
+        for p in e.get('profiles') or []:
+            if p in SEAT_BUILTINS and tid not in SEAT_BUILTINS[p]:
+                bad.add(p)
+    self_change = self_change_problem()
+    for rname, where, rs in seat:
+        if rs['profile'] in bad:
+            f.error('role_profile_forbidden', where, f'role {rname}: profile {rs["profile"]} has a built-in tool outside the seat list (MGR-10)')
+        if self_change:
+            f.error('manager_self_change', where, f'role {rname}: an operation target or a proposable field reaches a target of MGR-16')
 
 
 def lint_insight(f, rname, where, rs, types):
@@ -1530,6 +1617,8 @@ def lint_v02_features(S, f, types, tools, roles, claimed):
                 f.error('script_param_invalid', where, f'script {sname}: parameter {pn}: default does not pass the declaration (SCR-14)')
         for st in sc.get('steps') or []:
             sid, kind = st.get('id'), st.get('kind')
+            if (types.get(st.get('type')) or {}).get('purpose') == 'manage':
+                f.error('manage_enqueued', where, f'script {sname}: step {sid} starts {st["type"]} of purpose manage (MGR-4)')
             for pn in param_refs(st):
                 if pn not in declared:
                     f.error('script_param_invalid', where, f'script {sname}: step {sid} names the undeclared parameter {pn} (SCR-14)')

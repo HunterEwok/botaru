@@ -32,13 +32,19 @@ func stopClass() map[string]any {
 // profile, the farm charter, the disk class and a stopping class.
 func newManagerBench(t *testing.T, edits ...func([]map[string]any)) *bench {
 	t.Helper()
+	return newManagerBenchWith(t, nil, nil, edits...)
+}
+
+// newManagerBenchWith is the manager bench with more example manifests and documents.
+func newManagerBenchWith(t *testing.T, more []string, add []map[string]any, edits ...func([]map[string]any)) *bench {
+	t.Helper()
 	root, err := spec.FindRoot("")
 	if err != nil {
 		t.Fatal(err)
 	}
 	var files []string
-	for _, f := range []string{"examples/roles/farm-manager/role.yaml", "examples/tasktypes/manager.incident.respond.v1.yaml",
-		"examples/model-profiles/manager-std.yaml", "examples/tenants/farm/governance.yaml"} {
+	for _, f := range append([]string{"examples/roles/farm-manager/role.yaml", "examples/tasktypes/manager.incident.respond.v1.yaml",
+		"examples/model-profiles/manager-std.yaml", "examples/tenants/farm/governance.yaml"}, more...) {
 		files = append(files, filepath.Join(root, f))
 	}
 	docs, err := manifest.ReadFiles(files)
@@ -58,7 +64,7 @@ func newManagerBench(t *testing.T, edits ...func([]map[string]any)) *bench {
 	}
 	return newBenchWith(t, func(_ string, ms []map[string]any) []map[string]any {
 		// The tenant's consent group for the manager allows the seat task (MGR-3).
-		ms = append(append(ms, extra...), diskClass(), stopClass(), map[string]any{
+		ms = append(append(append(ms, extra...), add...), diskClass(), stopClass(), storeLowManifest(), map[string]any{
 			"apiVersion": "botaru/v1alpha1", "kind": "Group", "metadata": map[string]any{"name": "farm-manager-ops", "tenant": "demo"},
 			"spec": map[string]any{"caps": []any{"task:" + incidentRespondType, "control.apply:hold", "control.apply:quarantine",
 				"control.apply:drain", "control.apply:preempt"}, "data": []any{"summary", "internal"}}})

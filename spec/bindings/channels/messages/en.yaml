@@ -24,8 +24,24 @@ texts:
   notice.monitor_export_stalled: "Alarms of tenant {tenant} do not reach the monitoring system: the last successful export was {age_min} minutes ago."
   # The farm manager seat (MGR-31, GOV-22, MGR-35): codes, ids and times only
   notice.manager_holder_changed: "The farm manager seat was {what}: holder {holder}, epoch {epoch}, at {at}."
-  notice.manager_stopped: "The farm manager seat stopped after incident {incident} at {at}. Decide with farmctl: seat resume farm-manager --incident {incident} (after the incidents are dismissed), seat assign farm-manager, or seat vacate farm-manager."
-  notice.manager_stopped_joined: "Incident {incident} opened at {at} while the farm manager seat is stopped."
+  notice.manager_stopped: "The farm manager seat stopped at {at} after incident {incident} ({class}, tenant {tenant}). Incidents opened during the stop: {joined}. Without a decision by {until} the holder leaves and the seat is vacant. Decide with farmctl:\nfarmctl seat resume farm-manager --incident {incident} (once the incident and the stopping incidents of its minute are dismissed as false)\nfarmctl seat assign farm-manager\nfarmctl seat vacate farm-manager"
+  notice.manager_stopped_repeat: "Reminder: the farm manager seat is stopped since {at} after incident {incident} ({class}, tenant {tenant}). Incidents opened during the stop: {joined}. Without a decision by {until} the holder leaves and the seat is vacant. Decide with farmctl:\nfarmctl seat resume farm-manager --incident {incident} (once the incident and the stopping incidents of its minute are dismissed as false)\nfarmctl seat assign farm-manager\nfarmctl seat vacate farm-manager"
+  notice.manager_stopped.none: none
+  notice.manager_stopped_joined: "Incident {incident} ({class}, tenant {tenant}) opened at {at} while the farm manager seat is stopped."
+  # The message to people about an incident (MGR-39, MGR-13): one per incident and chat, edited
+  # on each operation and state change; the farm operators see only codes and numbers
+  notice.manager_notice: "{header}\n{lines}\n{revert}"
+  notice.manager_notice.header: "Incident {incident} ({class}) on {subject}: {state}; opened {opened}, operations {ops}."
+  notice.manager_notice.header_farm: "Incident {incident} ({class}): {state}; opened {opened}, operations {ops}."
+  notice.manager_notice.state: "{at}: {state}"
+  notice.manager_notice.op: "{at}: {op} {target_kind} {target} by {by}"
+  notice.manager_notice.op_farm: "{at}: {op}"
+  notice.manager_notice.earlier: "({n} earlier lines)"
+  notice.manager_notice.revert: "To revert every seat operation of this incident: farmctl control revert incident={incident}"
+  notice.manager_notice.batch: "Incident {incident}:\n{lines}"
+  # The day of the farm manager (MGR-41): numbers only; the usage of the manager line only to the tenant's admins
+  notice.manager_daily: "Farm manager, last day: {incidents} incidents, {ops} operations, {reverts} reverts, {reads} reads; manager line {spent_cents} cents."
+  notice.manager_daily_farm: "Farm manager on the whole farm, last day: {incidents} incidents, {ops} operations, {reverts} reverts, {reads} reads."
   # Channel commands (REP-12, PRM-15, DLV-9)
   cmd.tasks.header: "Your tasks today:"
   cmd.tasks.row: "{n}. {title}: {state}{waiting}"
@@ -151,6 +167,10 @@ texts:
   cmd.incident.not_found: There is no such incident in this tenant.
   cmd.incident.conflict: The incident cannot change this way now; it closes only after it is resolved.
   cmd.incident.done: "Incident {incident} is now {state}."
+  cmd.manager.usage: "Usage: /manager [operation] <role|worker|resource|incident> <id> [your text], for example /manager drain worker w_7 it loops."
+  cmd.manager.disabled: The farm manager is turned off in this tenant.
+  cmd.manager.done: "The farm manager got your directive (task {task})."
+  cmd.manager.forwarded: A forwarded or quoted message is not a directive to the farm manager; type the command yourself.
   notice.delegated_grant: "{by} granted {subject} the delegated group {group}."
   notice.delegated_ungrant: "{by} removed {subject} from the delegated group {group}."
   cmd.ungrant.not_member: "{subject} is not in group {group}."

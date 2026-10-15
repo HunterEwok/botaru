@@ -1,0 +1,22 @@
+# Farm manager directive (MGR-4): a person with manager.direct in the tenant gives it by P2
+# manager.direct, farmctl manager direct or /manager in a private chat. The decision role gets
+# only the closed fields the code parsed (scope and operation) in the input block and the text
+# the person typed as the goal; its operations are the seat's rights within the directive's scope.
+apiVersion: botaru/v1alpha1
+kind: TaskType
+metadata: {name: manager.directive.v1}
+spec:
+  title: "Farm manager directive"
+  worker_kind: agent
+  purpose: manage
+  tier: 1
+  data_class: internal
+  instruction: |
+    A person of the tenant directs you to look at the scope in the input block and, if it names one, to apply the operation.
+    Apply operations only to that scope; the core refuses anything else.
+  params_schema: {type: object, additionalProperties: false, properties: {}}   # the core passes its own input block
+  timeouts: {start_by: 1h, lease: 60s, heartbeat: 20s, attempt: 10m, deadline: 2h}
+  retry: {max_attempts: 2, max_runs: 2}
+  tree_budget_eur: 0.20
+  max_children: 0
+  proposable: false

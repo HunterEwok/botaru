@@ -396,18 +396,22 @@ func seatOfRecord(rec []byte) string {
 // binding epoch and the seat epoch; not ok when the seat is vacant or its holder is not active
 // or is under a hold of people. The farm manager seat is read in farm; it acts only in a tenant
 // with the manager, and one decision attempt at a time per tenant (MGR-1, MGR-42).
-func (c *Core) seatActing(ctx context.Context, tx pgx.Tx, now time.Time, cat *Catalog, tenant, seat string) (actingOf, bool, error) {
+func (c *Core) seatActing(ctx context.Context, tx pgx.Tx, now time.Time, cat *Catalog, tenant, seat string, reading bool) (actingOf, bool, error) {
 	if seat == managerSeatID {
 		if !managerEnabled(cat, tenant) {
 			return actingOf{}, false, nil
 		}
-		if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock(7300105, hashtext($1))`, tenant); err != nil {
-			return actingOf{}, false, err
-		}
-		var busy bool
-		if err := tx.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM leases WHERE state = 'active' AND kind = 'attempt' AND seat = $1 AND tenant = $2)`,
-			seat, tenant).Scan(&busy); err != nil || busy {
-			return actingOf{}, false, err
+		// One decision attempt at a time per tenant; a reading runs beside the decision attempt
+		// that asked for it (MGR-25).
+		if !reading {
+			if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock(7300105, hashtext($1))`, tenant); err != nil {
+				return actingOf{}, false, err
+			}
+			var busy bool
+			if err := tx.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM leases l JOIN tasks t ON t.id = l.work_id WHERE l.state = 'active' AND l.kind = 'attempt'
+				AND l.seat = $1 AND l.tenant = $2 AND t.type <> $3)`, seat, tenant, inspectType).Scan(&busy); err != nil || busy {
+				return actingOf{}, false, err
+			}
 		}
 	}
 	// The seat and its holder are read FOR SHARE: a seat move or a retirement waits for the

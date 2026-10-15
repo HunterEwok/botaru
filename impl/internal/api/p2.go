@@ -199,6 +199,27 @@ func (s *Server) p2(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		out, err = s.c.ControlList(ctx, oper, req)
+	case "manager.direct":
+		req, derr := decode[core.ManagerDirectRequest](m)
+		if derr != nil {
+			s.fail(w, derr)
+			return
+		}
+		out, err = s.c.ManagerDirect(ctx, oper, req)
+	case "manager.cost":
+		req, derr := decode[core.ManagerCostRequest](m)
+		if derr != nil {
+			s.fail(w, derr)
+			return
+		}
+		out, err = s.c.ManagerCost(ctx, oper, req)
+	case "manager.reads":
+		req, derr := decode[core.ManagerReadsRequest](m)
+		if derr != nil {
+			s.fail(w, derr)
+			return
+		}
+		out, err = s.c.ManagerReads(ctx, oper, req)
 	case "incident.list":
 		req, derr := decode[core.TenantRequest](m)
 		if derr != nil {

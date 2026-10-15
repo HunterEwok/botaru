@@ -183,6 +183,12 @@ func (c *Core) SubmitActivity(ctx context.Context, w *Worker, a Activity) (*Acti
 			out = *r
 			return nil
 		}
+		// A forwarded or quoted directive to the farm manager is someone else's text: it creates
+		// no task (MGR-4).
+		if (a.Forwarded || a.Quoted) && forwardedDirective(a.Text) {
+			reply("cmd.manager.forwarded")
+			return nil
+		}
 		typ, goal, ok := c.chooseType(cat, tv, a, binding)
 		_, _, command := commandWord(a)
 		prev, err := c.continuesTo(ctx, tx, now, tv, a, principal, groups, command && ok)

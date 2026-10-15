@@ -428,8 +428,10 @@ func (c *Channel) DeliverOnce(ctx context.Context, waitS int) (bool, error) {
 		markup = c.keyboard(p.Locale, cd)
 	}
 	var id int64
-	if p.Delivery.Kind == "card_update" {
-		// A card update edits the message of the card; no new message is sent (FEN-7).
+	if p.Delivery.Kind == "card_update" || p.Delivery.ReplacesExternalID != "" {
+		// A card update, and any delivery that names the message it replaces (the
+		// manager_notice of an incident, MGR-39), edits that message; no new message is sent
+		// (FEN-7).
 		var msg int64
 		msg, err = strconv.ParseInt(p.Delivery.ReplacesExternalID, 10, 64)
 		if err != nil {

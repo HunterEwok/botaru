@@ -1,0 +1,234 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+
+package core
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"strings"
+	"time"
+
+	"github.com/jackc/pgx/v5"
+
+	"github.com/HunterEwok/botaru/impl/internal/ids"
+)
+
+// The control card (MGR-26, decision point control_card). A seat operation on a target that is
+// not on the code list of its basis and came from a finding is not applied: the core opens a
+// card to the people of the tenant with control.approve, drawn from the record without model
+// text and marked as coming from untrusted reading. The card expires after an hour and the
+// operation is then not applied; an approved one applies through control.apply on behalf of
+// the person who decided, with the target origin finding:<id>.
+
+const (
+	controlCard    = "control_card"
+	controlCardTTL = time.Hour
+)
+
+// findingTarget says whether a finding of the tenant names the target as its subject.
+func findingTarget(ctx context.Context, tx pgx.Tx, tenant, finding string, t ControlTarget) (bool, error) {
+	if finding == "" {
+		return false, nil
+	}
+	var kind, id string
+	err := tx.QueryRow(ctx, `SELECT subject_kind, subject_id FROM findings WHERE tenant = $1 AND lower(id) = lower($2)`, tenant, finding).Scan(&kind, &id)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	return kind == t.Kind && strings.EqualFold(id, t.ID), nil
+}
+
+// openControlCard records the operation on a card and plans it to the tenant's people with
+// control.approve. The seat's request is kept as it was; nothing of the model's text is in it.
+func (c *Core) openControlCard(ctx context.Context, tx pgx.Tx, now time.Time, cat *Catalog, tenant string, a controlActor, req ControlRequest, inc *incidentRow) (string, error) {
+	raw, err := json.Marshal(req)
+	if err != nil {
+		return "", err
+	}
+	id := ids.New(ids.Card)
+	incident := ""
+	if inc != nil {
+		incident = inc.ID
+	}
+	if _, err := tx.Exec(ctx, `INSERT INTO control_cards (id, tenant, request, finding, incident, task, acting_bot, epoch, state, nonce, expires_at, created_at, updated_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'pending', $9, $10, $11, $11)`,
+		id, tenant, raw, req.Finding, nullable(incident), nullable(a.Task), nullable(a.Principal), a.Epoch, ids.Secret(16), now.Add(controlCardTTL), now); err != nil {
+		return "", err
+	}
+	if tv := cat.Tenants[tenant]; tv != nil {
+		chats, err := c.adminChats(ctx, tx, now, tv, "", "control.approve")
+		if err != nil {
+			return "", err
+		}
+		for _, ch := range chats {
+			if _, err := c.planDelivery(ctx, tx, now, plannedDelivery{
+				Tenant: tenant, Kind: controlCard, Addr: "admins", TargetKind: "chat",
+				TargetID: Chat{Kind: "direct", ExternalID: ch.ExternalID}.ID(), ExecKind: "channel", ExecName: ch.Channel,
+				Recipient: ch.Principal, Body: map[string]any{"form": "card", "card": controlCard}, DataOrigin: "code",
+				SubjectKind: "control", SubjectID: id,
+			}); err != nil {
+				return "", err
+			}
+		}
+	}
+	_, err = c.appendAudit(ctx, tx, now, Audit{
+		Tenant: tenant, Kind: "command", Actor: Actor{Principal: "system", Via: "seat", Role: managerSeatID}, Command: "control.card",
+		Target: &Target{Kind: req.Target.Kind, ID: req.Target.ID}, OK: true,
+		After: map[string]any{"op": req.Op, "card": id, "incident": nullable(incident), "origin": "finding:" + req.Finding, "result": "card", "epoch": a.Epoch},
+	})
+	return id, err
+}
+
+// controlCardRow is a control card as the store keeps it.
+type controlCardRow struct {
+	ID, Tenant, Finding, Incident, State, Nonce, DecidedBy string
+	Request                                                ControlRequest
+	Expires                                                time.Time
+}
+
+func loadControlCard(ctx context.Context, tx pgx.Tx, tenant, id string, lock bool) (*controlCardRow, error) {
+	q := `SELECT id, tenant, finding, coalesce(incident, ''), state, nonce, coalesce(decided_by, ''), request, expires_at FROM control_cards WHERE id = $1 AND tenant = $2`
+	if lock {
+		q += ` FOR UPDATE`
+	}
+	var r controlCardRow
+	var raw []byte
+	err := tx.QueryRow(ctx, q, id, tenant).Scan(&r.ID, &r.Tenant, &r.Finding, &r.Incident, &r.State, &r.Nonce, &r.DecidedBy, &raw, &r.Expires)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &r, json.Unmarshal(raw, &r.Request)
+}
+
+// card draws the control card from the record: the operation, the target, the incident and the
+// finding by id, with the label of untrusted reading; never a note or other model text.
+func (r *controlCardRow) card() map[string]any {
+	button := func(code string) map[string]any {
+		return map[string]any{"code": code, "subject_kind": "control", "id": r.ID, "nonce": r.Nonce}
+	}
+	buttons := []any{}
+	if r.State == "pending" {
+		buttons = append(buttons, button("approve"), button("reject"))
+	}
+	ctx := map[string]any{"op": r.Request.Op, "target": map[string]any{"kind": r.Request.Target.Kind, "id": r.Request.Target.ID},
+		"finding": r.Finding, "origin": "finding:" + r.Finding, "label": "manager output from reading tenant data, untrusted"}
+	if r.Incident != "" {
+		ctx["incident"] = r.Incident
+	}
+	return map[string]any{
+		"card": controlCard, "subject_kind": "control", "id": r.ID, "nonce": r.Nonce,
+		"title": cut("Farm manager: "+r.Request.Op+" "+r.Request.Target.Kind+" "+r.Request.Target.ID, 200), "state": r.State,
+		"buttons": buttons, "context": ctx, "untrusted_seen": true, "untrusted_source": "finding", "expires_at": fmtTime(r.Expires),
+		"footer": map[string]any{"why_you": "control.approve", "until": fmtTime(r.Expires), "on_silence": "the operation is not applied"},
+	}
+}
+
+// decideControl is P1 decide on a control card: once, by a person of the tenant with
+// control.approve, before the card expires. An approval applies the operation through
+// control.apply on behalf of that person, in the same transaction (MGR-26).
+func (c *Core) decideControl(ctx context.Context, w *Worker, ob OnBehalf, req DecideRequest) (*DecideResult, error) {
+	if req.Decision != "approve" && req.Decision != "reject" {
+		return nil, refuse("input_schema_invalid", "a control card is approved or rejected")
+	}
+	cat, err := c.Catalog(ctx)
+	if err != nil {
+		return nil, err
+	}
+	var out *DecideResult
+	err = c.tx(ctx, func(tx pgx.Tx, now time.Time) error {
+		r, err := loadControlCard(ctx, tx, w.Tenant, req.ID, true)
+		if err != nil {
+			return err
+		}
+		if r == nil {
+			return refuse("not_found", "no such control card")
+		}
+		if r.Nonce != req.Nonce {
+			return refuse("forbidden", "the nonce is not the card's")
+		}
+		press, err := c.checkPress(ctx, tx, now, cat, w, ob, "control", r.ID, []string{controlCard})
+		if err != nil {
+			return err
+		}
+		out = &DecideResult{SubjectKind: "control", ID: r.ID, Decision: req.Decision, State: r.State}
+		if r.State != "pending" {
+			if r.DecidedBy == press.principal && (r.State == "rejected") == (req.Decision == "reject") {
+				return nil
+			}
+			if r.State == "expired" {
+				return refuse("expired", "the card has expired")
+			}
+			return refuse("already_decided", "the card is decided")
+		}
+		if !hasCap(press.tv, press.groups, "control.approve") {
+			return refuse("no_group_cap", "the person has no control.approve")
+		}
+		if !r.Expires.After(now) {
+			if err := closeControlCard(ctx, tx, now, r.ID, "expired", "", "", "expired"); err != nil {
+				return err
+			}
+			return &committed{p: refuse("expired", "the card has expired")}
+		}
+		state, opID, reason := "rejected", "", ""
+		if req.Decision == "approve" {
+			// The person applies the operation by the code path of control.apply; the seat's
+			// checks of the target do not apply to a person (MGR-26, PRM-14).
+			op := Operator{Principal: press.principal, Tenant: r.Tenant}
+			d, p, err := c.controlApply(ctx, tx, now, cat, r.Tenant, controlActor{Operator: op, Origin: "finding:" + r.Finding, ApprovedBy: press.principal}, r.Request)
+			if err != nil {
+				return err
+			}
+			state = "applied"
+			if p != nil {
+				state, reason = "failed", p.Reason
+			} else {
+				opID = d.ID
+			}
+		}
+		if err := closeControlCard(ctx, tx, now, r.ID, state, press.principal, opID, reason); err != nil {
+			return err
+		}
+		out.State = state
+		if err := c.appendEvent(ctx, tx, now, w.Tenant, Event{Type: "decision.made", Subject: r.ID, Data: map[string]any{
+			"subject": map[string]any{"kind": "control", "id": r.ID}, "card": controlCard, "decision": req.Decision,
+			"decided_by": press.principal, "channel": w.Target, "chat_kind": ob.Chat.Kind, "via": "decide",
+			"delivered_at": fmtTime(press.deliveredAt), "decided_at": fmtTime(now),
+			"response_ms": max(now.Sub(press.deliveredAt).Milliseconds(), 0),
+		}}); err != nil {
+			return err
+		}
+		_, err = c.appendAudit(ctx, tx, now, Audit{
+			Tenant: w.Tenant, Kind: "decision", Actor: Actor{Principal: press.principal, Via: "channel"},
+			Command: "decide", Target: &Target{Kind: "control", ID: r.ID}, OK: true,
+			After: map[string]any{"decision": req.Decision, "state": state, "control": nullable(opID), "reason": nullable(reason)},
+		})
+		return err
+	})
+	var cm *committed
+	if errors.As(err, &cm) {
+		return nil, cm.p
+	}
+	return out, err
+}
+
+func closeControlCard(ctx context.Context, tx pgx.Tx, now time.Time, id, state, by, op, reason string) error {
+	_, err := tx.Exec(ctx, `UPDATE control_cards SET state = $2, decided_by = $3, control_op = $4, reason = $5, updated_at = $6 WHERE id = $1`,
+		id, state, nullable(by), nullable(op), nullable(reason), now)
+	return err
+}
+
+// expireControlCards ends the control cards whose hour passed without a decision: the
+// operation is not applied (MGR-26).
+func (c *Core) expireControlCards(ctx context.Context, _ *Catalog) error {
+	return c.tx(ctx, func(tx pgx.Tx, now time.Time) error {
+		_, err := tx.Exec(ctx, `UPDATE control_cards SET state = 'expired', reason = 'expired', updated_at = $1 WHERE state = 'pending' AND expires_at <= $1`, now)
+		return err
+	})
+}

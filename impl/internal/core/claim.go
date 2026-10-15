@@ -391,7 +391,8 @@ func (c *Core) claimAttempt(ctx context.Context, tx pgx.Tx, now time.Time, cat *
 		// A seat task runs on behalf of the seat's holder with the current seat epoch; a
 		// vacant seat, or one whose holder is stopped, gets no tasks (IDN-10, IDN-12).
 		if seat := seatOfRecord(rec); seat != "" {
-			a, ok, err := c.seatActing(ctx, tx, now, cat, w.Tenant, seat)
+			// A reading runs beside the decision attempt that asked for it (MGR-25).
+			a, ok, err := c.seatActing(ctx, tx, now, cat, w.Tenant, seat, seat == managerSeatID && cat.TaskTypes[typ].Purpose == "inspect")
 			if err != nil {
 				return nil, err
 			}
@@ -783,7 +784,7 @@ func (c *Core) claimDelivery(ctx context.Context, tx pgx.Tx, now time.Time, cat 
 				continue
 			}
 			cardBody, replacesID = drawn, replaces
-		} else if sk := deref(subjectKind); sk == "memory_record" || sk == "subject_request" {
+		} else if sk := deref(subjectKind); sk == "memory_record" || sk == "subject_request" || sk == "control" {
 			// The card of a memory record or a person's request is drawn now too; one whose
 			// record was erased is not sent.
 			var b map[string]any
@@ -801,6 +802,31 @@ func (c *Core) claimDelivery(ctx context.Context, tx pgx.Tx, now time.Time, cat 
 				continue
 			}
 			cardBody = map[string]any{"form": "card", "card": drawn}
+		} else if deref(subjectKind) == "incident" && kind == managerNoticeKind {
+			// The message to people about an incident is drawn now from its record and its
+			// notice log; an update edits the first message, or waits while it is being sent
+			// (MGR-39).
+			var b map[string]any
+			if err := json.Unmarshal(body, &b); err != nil {
+				return nil, err
+			}
+			drawn, replaces, reason, wait, err := c.managerNoticeBody(ctx, tx, now, id, deref(subjectID), deref(recipient), b)
+			if err != nil {
+				return nil, err
+			}
+			if wait {
+				if _, err := tx.Exec(ctx, `UPDATE deliveries SET run_at = $2 WHERE id = $1`, id, now.Add(5*time.Second)); err != nil {
+					return nil, err
+				}
+				continue
+			}
+			if reason != "" {
+				if _, err := tx.Exec(ctx, `UPDATE deliveries SET state = 'withheld', reason = $2, updated_at = $3 WHERE id = $1`, id, reason, now); err != nil {
+					return nil, err
+				}
+				continue
+			}
+			cardBody, replacesID = drawn, replaces
 		}
 		picked = true
 	}

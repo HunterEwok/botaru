@@ -1,0 +1,14 @@
+# Farm manager, reader role (MGR-25): profile farm-manager-reader. It reads tenant content for an
+# incident at the decision role's request and hands in only manager-finding/v1 findings; it has
+# only read tools and no memory. The core enqueues its tasks only while the tenant's
+# privacy.purposes holds incident_review (MGR-20).
+apiVersion: botaru/v1alpha1
+kind: Role
+metadata: {name: farm-manager-reader}
+spec:
+  profile: farm-manager-reader
+  worker_kind: agent
+  claims: [manager.inspect.v1]
+  tools: [logs/tail, monitor/problems, monitor/item_history]
+  models: {base: manager-std}
+  memory: none

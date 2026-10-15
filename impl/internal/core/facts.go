@@ -391,17 +391,43 @@ func (c *Core) taskFacts(ctx context.Context, tx pgx.Tx, now time.Time, cat *Cat
 // end of its seal. A successor that exists gets the copies at once; otherwise the offer waits
 // for the next holder of seat, or for the first identity enrolled in the role.
 func (c *Core) offerFacts(ctx context.Context, tx pgx.Tx, now time.Time, cat *Catalog, from *botRow, successor, seat string, openUntil time.Time) error {
-	list, err := loadFacts(ctx, tx, from.Tenant, from.ID, []string{"active"})
+	if from.Mode == "seat" && from.Seat == managerSeatID {
+		// The farm manager seat's memory is a section in each tenant: each section passes by an
+		// offer of its own, rechecked in that tenant, and nothing moves between tenants (MGR-27).
+		rows, err := tx.Query(ctx, `SELECT DISTINCT tenant FROM facts WHERE bot = $1 AND state = 'active' ORDER BY tenant`, from.ID)
+		if err != nil {
+			return err
+		}
+		tenants, err := pgx.CollectRows(rows, pgx.RowTo[string])
+		if err != nil {
+			return err
+		}
+		if successor == "" {
+			seat = managerSeatID
+		}
+		for _, t := range tenants {
+			if err := c.offerSection(ctx, tx, now, cat, from, t, successor, seat, openUntil); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
+	return c.offerSection(ctx, tx, now, cat, from, from.Tenant, successor, seat, openUntil)
+}
+
+// offerSection offers the facts of one tenant's space of an identity.
+func (c *Core) offerSection(ctx context.Context, tx pgx.Tx, now time.Time, cat *Catalog, from *botRow, tenant, successor, seat string, openUntil time.Time) error {
+	list, err := loadFacts(ctx, tx, tenant, from.ID, []string{"active"})
 	if err != nil {
 		return err
 	}
-	max := factLimit(cat, from.Tenant, []string{"offer", "max"}, defaultOfferMax)
+	max := factLimit(cat, tenant, []string{"offer", "max"}, defaultOfferMax)
 	var offered []string
 	for _, f := range list {
 		if len(offered) >= max {
 			break
 		}
-		if _, reason, err := recheck(ctx, tx, from.Tenant, f); err != nil {
+		if _, reason, err := recheck(ctx, tx, tenant, f); err != nil {
 			return err
 		} else if reason != "" {
 			if _, err := tx.Exec(ctx, `UPDATE facts SET state = 'stale' WHERE id = $1`, f.ID); err != nil {
@@ -416,7 +442,7 @@ func (c *Core) offerFacts(ctx context.Context, tx pgx.Tx, now time.Time, cat *Ca
 	}
 	id := ids.New(ids.FactOffer)
 	if _, err := tx.Exec(ctx, `INSERT INTO fact_offers (id, tenant, from_bot, role, seat, facts, state, recipient_state, open_until, created_at)
-		VALUES ($1, $2, $3, $4, $5, $6, 'open', 'waiting', $7, $8)`, id, from.Tenant, from.ID, from.Role, nullable(seat), offered, openUntil, now); err != nil {
+		VALUES ($1, $2, $3, $4, $5, $6, 'open', 'waiting', $7, $8)`, id, tenant, from.ID, from.Role, nullable(seat), offered, openUntil, now); err != nil {
 		return err
 	}
 	if successor != "" {
@@ -443,7 +469,9 @@ func (c *Core) copyOffer(ctx context.Context, tx pgx.Tx, now time.Time, cat *Cat
 		return err
 	}
 	copied := []string{}
-	if to != nil && to.Tenant == tenant && roleMemory(cat.Roles[to.Role]) == "bot" {
+	// The farm manager seat's holder lives in farm and keeps a section in each tenant (MGR-27).
+	holder := to != nil && to.Mode == "seat" && to.Seat == managerSeatID
+	if to != nil && (to.Tenant == tenant || holder) && roleMemory(cat.Roles[to.Role]) == "bot" {
 		var room int
 		if err := tx.QueryRow(ctx, `SELECT $3 - count(*) FROM facts WHERE tenant = $1 AND bot = $2 AND state = 'active'`, tenant, to.ID,
 			factLimit(cat, tenant, []string{"facts", "max_active"}, defaultFactsMaxActive)).Scan(&room); err != nil {
@@ -515,6 +543,26 @@ func (c *Core) pickUpOffers(ctx context.Context, tx pgx.Tx, now time.Time, cat *
 	return nil
 }
 
+// pickUpSeatOffers gives a new holder of the farm manager seat the waiting offers of the seat in
+// every tenant, each copied in its own tenant (MGR-27).
+func (c *Core) pickUpSeatOffers(ctx context.Context, tx pgx.Tx, now time.Time, cat *Catalog, bot string) error {
+	rows, err := tx.Query(ctx, `SELECT id FROM fact_offers WHERE seat = $1 AND state = 'open' AND recipient_state = 'waiting' AND open_until > $2 AND from_bot <> $3
+		ORDER BY tenant, created_at, id`, managerSeatID, now, bot)
+	if err != nil {
+		return err
+	}
+	list, err := pgx.CollectRows(rows, pgx.RowTo[string])
+	if err != nil {
+		return err
+	}
+	for _, id := range list {
+		if err := c.copyOffer(ctx, tx, now, cat, id, bot); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // expireOffers closes the offers whose successor did not come before the end of the seal; their
 // facts go with the seal (MEM-7, MEM-9).
 func expireOffers(ctx context.Context, tx pgx.Tx, now time.Time) error {
@@ -522,9 +570,10 @@ func expireOffers(ctx context.Context, tx pgx.Tx, now time.Time) error {
 	return err
 }
 
-// sealFacts seals the facts of a retired identity: no bot reads them any more (MEM-4).
+// sealFacts seals the facts of a retired identity in every section: no bot reads them any more
+// (MEM-4, MGR-27).
 func sealFacts(ctx context.Context, tx pgx.Tx, b *botRow) error {
-	_, err := tx.Exec(ctx, `UPDATE facts SET state = 'sealed' WHERE tenant = $1 AND bot = $2 AND state IN ('active', 'stale')`, b.Tenant, b.ID)
+	_, err := tx.Exec(ctx, `UPDATE facts SET state = 'sealed' WHERE bot = $1 AND state IN ('active', 'stale')`, b.ID)
 	return err
 }
 

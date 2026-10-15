@@ -258,8 +258,16 @@ func (c *Core) incidentEvent(ctx context.Context, tx pgx.Tx, now time.Time, r *i
 	if r.SubjectID != "" {
 		subject["id"] = r.SubjectID
 	}
-	return c.appendEvent(ctx, tx, now, r.Tenant, Event{Type: "incident." + what + ".v1", Subject: r.ID, Data: map[string]any{
-		"incident": r.ID, "class": r.Class, "state": r.State, "severity": r.Record["severity"], "subject": subject}})
+	if err := c.appendEvent(ctx, tx, now, r.Tenant, Event{Type: "incident." + what + ".v1", Subject: r.ID, Data: map[string]any{
+		"incident": r.ID, "class": r.Class, "state": r.State, "severity": r.Record["severity"], "subject": subject}}); err != nil {
+		return err
+	}
+	// Each state change and the closing edit the incident's message to people; the opening
+	// creates it (MGR-39).
+	if e, ok := noticeStateEntry(r, what); ok {
+		return c.noticeLog(ctx, tx, now, r.ID, e, what != "opened")
+	}
+	return nil
 }
 
 // incidentLoop is the incident loop (spec/ports/background-loops.md).
@@ -468,6 +476,9 @@ func (c *Core) openIncident(ctx context.Context, tx pgx.Tx, now time.Time, cat *
 			return err
 		}
 		if err := c.incidentEvent(ctx, tx, now, r, "opened"); err != nil {
+			return err
+		}
+		if err := c.noticeOpen(ctx, tx, now, cat, r); err != nil {
 			return err
 		}
 		// Only a new incident may stop the farm manager seat (GOV-22).
@@ -1253,5 +1264,43 @@ func (c *Core) lintIncidentClasses(S *lintSet, f *lintFindings) error {
 			}
 		}
 	}
+	lintStoreLow(S, f)
 	return nil
+}
+
+// storeLowClass is the required class of the initial catalog (MGR-38).
+const storeLowClass = "store_low"
+
+// lintStoreLow requires the class store_low in an incident catalog: subject farm, opened by the
+// core's own alarm.store.free.low, without stops_manager (MGR-38). A set without incident
+// classes has no catalog to check.
+func lintStoreLow(S *lintSet, f *lintFindings) {
+	classes := S.each("IncidentClass")
+	if len(classes) == 0 {
+		return
+	}
+	for _, o := range classes {
+		if o.name != storeLowClass {
+			continue
+		}
+		if o.i < 0 {
+			return
+		}
+		if mstr(mmap(o.spec, "subject"), "kind") != "farm" {
+			f.add(o, "incident_store_low", "/subject")
+		}
+		if mstr(mmap(o.spec, "detect"), "alarm") != "alarm.store.free.low.v1" {
+			f.add(o, "incident_store_low", "/detect/alarm")
+		}
+		if _, ok := o.spec["stops_manager"]; ok {
+			f.add(o, "incident_store_low", "/stops_manager")
+		}
+		return
+	}
+	for _, o := range classes {
+		if o.i >= 0 {
+			f.add(o, "incident_store_low", "")
+			return
+		}
+	}
 }

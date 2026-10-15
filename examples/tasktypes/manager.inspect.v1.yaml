@@ -1,0 +1,22 @@
+# Reading for the farm manager (MGR-25, MGR-30): the decision role asks for it with the built-in
+# inspect_request; a worker of the reader role runs it on behalf of the seat holder. The result is
+# {findings: [...]} with at most 10 findings manager-finding/v1, which the core checks at complete
+# and stores as untrusted; the type declares no result_schema of its own.
+apiVersion: botaru/v1alpha1
+kind: TaskType
+metadata: {name: manager.inspect.v1}
+spec:
+  title: "Reading for the farm manager"
+  worker_kind: agent
+  purpose: inspect
+  tier: 1
+  data_class: internal
+  instruction: |
+    Read what the input block names for the incident and hand in findings: each names a subject of this tenant and
+    the ids of the objects you read as evidence.
+  params_schema: {type: object, additionalProperties: false, properties: {}}   # the core passes its own input block
+  timeouts: {start_by: 1h, lease: 60s, heartbeat: 20s, attempt: 10m, deadline: 2h}
+  retry: {max_attempts: 2, max_runs: 2}
+  tree_budget_eur: 0.20
+  max_children: 0
+  proposable: false

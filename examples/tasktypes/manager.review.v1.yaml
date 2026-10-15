@@ -1,0 +1,21 @@
+# Daily review of the farm manager (MGR-41): the core enqueues it once a day in each tenant with
+# the manager enabled; it spends at most control_limits.daily_review_max_eur of the farm charter
+# (0.40 EUR by default) from the tenant's manager line.
+apiVersion: botaru/v1alpha1
+kind: TaskType
+metadata: {name: manager.review.v1}
+spec:
+  title: "Daily review of the farm manager"
+  worker_kind: agent
+  purpose: manage
+  tier: 1
+  data_class: internal
+  instruction: |
+    Review the numbers of the last day of the tenant in the input block: incidents, operations, reverts and reads.
+    Answer with what you noticed; the core and people decide what runs.
+  params_schema: {type: object, additionalProperties: false, properties: {}}   # the core passes its own input block
+  timeouts: {start_by: 6h, lease: 60s, heartbeat: 20s, attempt: 10m, deadline: 12h}
+  retry: {max_attempts: 1, max_runs: 1}
+  tree_budget_eur: 0.40
+  max_children: 0
+  proposable: false

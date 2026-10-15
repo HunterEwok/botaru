@@ -35,10 +35,19 @@ func diskClass() map[string]any {
 	}
 }
 
+// storeLowManifest is the required class store_low of every incident catalog (MGR-38).
+func storeLowManifest() map[string]any {
+	return map[string]any{
+		"apiVersion": "botaru/v1alpha1", "kind": "IncidentClass", "metadata": map[string]any{"name": storeLowClass},
+		"spec": map[string]any{"title": "Low space for the database", "severity": "sev1",
+			"detect": map[string]any{"alarm": "alarm.store.free.low.v1"}, "subject": map[string]any{"kind": "farm"}},
+	}
+}
+
 func newIncidentBench(t *testing.T) *bench {
 	t.Helper()
 	return newBenchWith(t, func(_ string, ms []map[string]any) []map[string]any {
-		return append(ms, diskClass())
+		return append(ms, diskClass(), storeLowManifest())
 	})
 }
 
@@ -289,7 +298,7 @@ func TestIncidentTenantSubject(t *testing.T) {
 			fns = append(fns, map[string]any{"fn": fn, "args": map[string]any{"resource": "db1", "role": "assistant"}})
 		}
 		spec["implicate"] = fns
-		return append(ms, cl)
+		return append(ms, cl, storeLowManifest())
 	})
 	fire := func(id string, firing bool) {
 		t.Helper()
