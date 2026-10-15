@@ -28,6 +28,8 @@ type ChatBindRequest struct {
 	Assistant bool   `json:"assistant"`
 	Locale    string `json:"locale"`
 	ModelText string `json:"model_text"`
+	// NoticeRepeat is how often code repeats the notices to a non-principal (MSG-17).
+	NoticeRepeat string `json:"notice_repeat"`
 }
 
 // chatBinding is a bound group chat (DLV-7).
@@ -35,7 +37,12 @@ type chatBinding struct {
 	Tenant, Name, Channel, Chat, Ceiling, ModelText string
 	Locale                                          string
 	MembersUnknown                                  bool
+	// NoticeRepeat is the period of the notices to a non-principal in the chat (MSG-17).
+	NoticeRepeat time.Duration
 }
+
+// defaultNoticeRepeat is the period of the notices to a non-principal by default (MSG-17).
+const defaultNoticeRepeat = 90 * 24 * time.Hour
 
 var bindingNameBad = regexp.MustCompile(`[^a-z0-9-]+`)
 
@@ -52,9 +59,9 @@ func bindingName(channel, external string) string {
 // loadBinding is the binding of a group chat of a channel, or nil.
 func loadBinding(ctx context.Context, q store.Querier, tenant, channel, chat string) (*chatBinding, error) {
 	var b chatBinding
-	var locale *string
-	err := q.QueryRow(ctx, `SELECT tenant, name, channel, chat, ceiling, model_text, locale, members_unknown FROM chat_bindings WHERE tenant = $1 AND channel = $2 AND chat = $3`,
-		tenant, channel, chat).Scan(&b.Tenant, &b.Name, &b.Channel, &b.Chat, &b.Ceiling, &b.ModelText, &locale, &b.MembersUnknown)
+	var locale, repeat *string
+	err := q.QueryRow(ctx, `SELECT tenant, name, channel, chat, ceiling, model_text, locale, members_unknown, notice_repeat FROM chat_bindings WHERE tenant = $1 AND channel = $2 AND chat = $3`,
+		tenant, channel, chat).Scan(&b.Tenant, &b.Name, &b.Channel, &b.Chat, &b.Ceiling, &b.ModelText, &locale, &b.MembersUnknown, &repeat)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, nil
 	}
@@ -62,6 +69,7 @@ func loadBinding(ctx context.Context, q store.Querier, tenant, channel, chat str
 		return nil, err
 	}
 	b.Locale = deref(locale)
+	b.NoticeRepeat = durationOr(deref(repeat), defaultNoticeRepeat)
 	return &b, nil
 }
 
@@ -119,6 +127,9 @@ func (c *Core) ChatBind(ctx context.Context, op Operator, req ChatBindRequest) (
 	if modelText != "summary_only" {
 		return nil, refuse("version_unsupported", "this build sends only the closed summary to a group (model_text: summary_only)")
 	}
+	if _, ok := parseDuration(req.NoticeRepeat); req.NoticeRepeat != "" && !ok {
+		return nil, refuse("input_schema_invalid", "notice_repeat")
+	}
 	chat := req.Chat.ID()
 	var out Done
 	err = c.tx(ctx, func(tx pgx.Tx, now time.Time) error {
@@ -144,10 +155,10 @@ func (c *Core) ChatBind(ctx context.Context, op Operator, req ChatBindRequest) (
 		if err := tx.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM chat_bindings WHERE tenant = $1 AND name = $2)`, op.Tenant, name).Scan(&known); err != nil {
 			return err
 		}
-		if _, err := tx.Exec(ctx, `INSERT INTO chat_bindings (tenant, name, channel, chat, ceiling, locale, model_text, created_by, created_at, updated_at)
-			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $9)
-			ON CONFLICT (tenant, name) DO UPDATE SET ceiling = $5, locale = $6, model_text = $7, members_unknown = false, updated_at = $9`,
-			op.Tenant, name, req.Channel, chat, req.Ceiling, nullable(req.Locale), modelText, op.Principal, now); err != nil {
+		if _, err := tx.Exec(ctx, `INSERT INTO chat_bindings (tenant, name, channel, chat, ceiling, locale, model_text, created_by, created_at, updated_at, notice_repeat)
+			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $9, $10)
+			ON CONFLICT (tenant, name) DO UPDATE SET ceiling = $5, locale = $6, model_text = $7, members_unknown = false, updated_at = $9, notice_repeat = $10`,
+			op.Tenant, name, req.Channel, chat, req.Ceiling, nullable(req.Locale), modelText, op.Principal, now, nullable(req.NoticeRepeat)); err != nil {
 			return err
 		}
 		// A newly bound chat on a channel with ai_disclosure: first_contact gets ai_notice and

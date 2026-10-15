@@ -114,7 +114,7 @@ func (c *Core) SubmitActivity(ctx context.Context, w *Worker, a Activity) (*Acti
 				}
 			}
 			out = ActivityResult{Result: "ignored", Reason: "not_subject"}
-			return nil
+			return c.notSubject(ctx, tx, now, tv, a, binding, &out)
 		}
 		if err != nil {
 			return err
@@ -378,4 +378,43 @@ func (c *Core) noticeContact(ctx context.Context, tx pgx.Tx, now time.Time, tv *
 		chat = Chat{Kind: "direct", ExternalID: ext}
 	}
 	return c.firstContact(ctx, tx, now, tv, a.Channel, principal, chat)
+}
+
+// notSubject answers activity from a channel identity that is no principal of the tenant: the
+// audit gets activity.ignored(not_subject) with the identity and the chat, nothing of the text
+// is kept, and code repeats ai_notice and privacy_notice at most once per notice_repeat for the
+// pair (chat, identity); a direct chat also hears that the person is not registered (MSG-17).
+func (c *Core) notSubject(ctx context.Context, tx pgx.Tx, now time.Time, tv *TenantView, a Activity, binding *chatBinding, out *ActivityResult) error {
+	target := &Target{Kind: "channel", ID: a.Channel}
+	after := map[string]any{"channel": a.Channel, "identity": a.Sender.Identity, "chat_kind": a.Chat.Kind}
+	if binding != nil {
+		target = &Target{Kind: "chat_binding", ID: binding.Name}
+	}
+	if _, err := c.appendAudit(ctx, tx, now, Audit{
+		Tenant: tv.Name, Kind: "command", Actor: Actor{Principal: "system", Via: "channel"},
+		Command: "activity.ignored", Target: target, Reason: "not_subject", After: after,
+	}); err != nil {
+		return err
+	}
+	repeat, locale := defaultNoticeRepeat, "en"
+	if binding != nil {
+		repeat = binding.NoticeRepeat
+		if binding.Locale != "" {
+			locale = binding.Locale
+		}
+	}
+	due, err := markOnce(ctx, tx, now, tv.Name, "notice:"+a.Channel+":"+a.Chat.ID()+":"+a.Sender.Identity, repeat)
+	if err != nil || !due {
+		return err
+	}
+	privacy, err := c.privacyNoticeParams(tv)
+	if err != nil {
+		return err
+	}
+	parts := []string{c.texts.Render(locale, "notice.ai", c.aiNoticeParams(tv)), c.texts.Render(locale, "notice.privacy", privacy)}
+	if a.Chat.Kind == "direct" {
+		parts = append(parts, c.texts.Render(locale, "notice.not_registered", map[string]any{"tenant": tv.Name}))
+	}
+	*out = ActivityResult{Result: "reply", Text: strings.Join(parts, "\n\n")}
+	return nil
 }

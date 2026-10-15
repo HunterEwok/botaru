@@ -646,6 +646,18 @@ func (c *Core) enqueue(ctx context.Context, tx pgx.Tx, now time.Time, cat *Catal
 			record["untrusted_source"] = "continues"
 		}
 	}
+	// A reporter task reports to an audience fixed now: its views filter by their permissions
+	// and its mark is no higher than their ceiling (REP-3, REP-7, REP-9).
+	if purposeOf(tt) == "report" {
+		a, err := c.reportAudience(ctx, tx, now, cat, tv, in, tt, groups)
+		if err != nil {
+			return nil, err
+		}
+		record["audience"] = a
+		if a.Ceiling != "" && in.Chain == nil && in.Continues == "" && in.ContinuesMark == "" && len(files) == 0 {
+			record["data_mark"] = a.Ceiling
+		}
+	}
 	rec, err := json.Marshal(record)
 	if err != nil {
 		return nil, err

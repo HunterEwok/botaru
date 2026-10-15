@@ -258,6 +258,7 @@ func (c *Core) toolCatalog(cat *Catalog, g *toolsGrant) ([]catalogTool, error) {
 	if it := c.inboxReadTool(cat, g); it != nil {
 		out = append(out, *it)
 	}
+	out = append(out, statusTools(cat, g)...)
 	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
 	return out, nil
 }
@@ -481,6 +482,10 @@ func (c *Core) P3ToolsCall(ctx context.Context, handle string, p mcp.CallParams)
 				args = map[string]any{}
 			}
 			builtin, err = c.msgToolCall(ctx, tx, now, cat, g, p.Name, offeredTool(tools, p.Name), args)
+			return err
+		}
+		if statusToolName(p.Name) {
+			builtin, err = c.statusToolCall(ctx, tx, now, cat, g, p.Name, offeredTool(tools, p.Name))
 			return err
 		}
 		if p.Name == inspectToolName {

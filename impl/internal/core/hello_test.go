@@ -484,7 +484,8 @@ func TestActivityRefusals(t *testing.T) {
 		result string
 		reason string
 	}{
-		{mk("10", "telegram:2002", "/hello", true), "ignored", "not_subject"},
+		// A non-principal hears the notices and that they are not registered (MSG-17).
+		{mk("10", "telegram:2002", "/hello", true), "reply", ""},
 		{mk("11", "telegram:1001", "/hello", false), "reply", ""},
 		{mk("12", "telegram:1001", "/nope", true), "reply", ""},
 		{mk("13", "telegram:1001", "/health", true), "reply", ""},

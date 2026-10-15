@@ -4,7 +4,11 @@ package telegram
 
 import (
 	"encoding/json"
+	"strings"
 	"testing"
+
+	"github.com/HunterEwok/botaru/impl/internal/spec"
+	"github.com/HunterEwok/botaru/impl/internal/texts"
 )
 
 func parse(t *testing.T, s string) update {
@@ -65,6 +69,29 @@ func TestCutLinks(t *testing.T) {
 	got := c.cutLinks("see https://docs.example.org/a and http://evil.example.com/x or www.other.org")
 	want := "see https://docs.example.org/a and [link removed] or [link removed]"
 	if got != want {
+		t.Fatalf("%q", got)
+	}
+}
+
+// A digest is drawn from the catalog texts: the table, the hidden count and the model paragraph
+// under its sources line as a separate part (REP-2).
+func TestRenderDigest(t *testing.T) {
+	root, err := spec.FindRoot("")
+	if err != nil {
+		t.Fatal(err)
+	}
+	tx, err := texts.Load(root, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	c := New(Config{Texts: tx})
+	got := c.renderDigest("en", "24h", []digestRow{{Title: "Greeting", State: "completed", Count: 2}}, 1, "All quiet.", []string{"web"})
+	for _, want := range []string{"Report, window 24h:", "Greeting, completed: 2", "Hidden as above this chat's class: 1.", "[AI text; it read text from: web]\nAll quiet."} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("%q lacks %q", got, want)
+		}
+	}
+	if got := c.renderDigest("en", "1h", nil, 0, "", nil); got != "Report, window 1h:\nNo tasks in the window." {
 		t.Fatalf("%q", got)
 	}
 }

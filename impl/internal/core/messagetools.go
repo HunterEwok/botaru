@@ -118,6 +118,10 @@ func inboxReadTypes(cat *Catalog, g *toolsGrant) []string {
 	}
 	var out []string
 	for _, t := range cat.TaskTypes[g.Type].Inbox.Read {
+		// A reporter reads only report entries; it sees the state of workers in a view (REP-8).
+		if role.Profile == "reporter" && cat.MessageTypes[t].Kind != "report" {
+			continue
+		}
 		if role.Receives(t) {
 			out = append(out, t)
 		}

@@ -109,9 +109,9 @@ func TestGroupChat(t *testing.T) {
 	if dm := cardOf(t, got, "task_result", "direct:1001"); !strings.Contains(fmt.Sprint(dm.body), "Seven") {
 		t.Fatalf("direct answer %v", dm.body)
 	}
-	// A person outside the tenant writes: ignored, and the chat gets nothing until it is bound
-	// again.
-	if r := b.inGroup(t, "5", "telegram:9999", "hello all"); r.Result != "ignored" {
+	// A person outside the tenant writes: code repeats the notices to them once (MSG-17), and
+	// the chat gets nothing else until it is bound again.
+	if r := b.inGroup(t, "5", "telegram:9999", "hello all"); r.Result != "reply" || strings.Contains(r.Text, "not registered") {
 		t.Fatalf("a stranger %+v", r)
 	}
 	b.inGroup(t, "6", "telegram:1001", "/tasks")

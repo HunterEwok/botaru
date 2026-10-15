@@ -389,6 +389,11 @@ type deliveryPayload struct {
 			TextKey string         `json:"text_key"`
 			Params  map[string]any `json:"params"`
 			Card    *card          `json:"card"`
+			// The digest form (REP-2).
+			Window  string      `json:"window"`
+			Rows    []digestRow `json:"rows"`
+			Hidden  int         `json:"hidden"`
+			Sources []string    `json:"sources"`
 		} `json:"body"`
 		ReplacesExternalID string `json:"replaces_external_id"`
 	} `json:"delivery"`
@@ -483,8 +488,41 @@ func (c *Channel) render(p deliveryPayload) (string, bool) {
 			return "", false
 		}
 		return c.renderCard(p.Locale, b.Card), true
+	case "digest":
+		return c.renderDigest(p.Locale, b.Window, b.Rows, b.Hidden, b.Text, b.Sources), true
 	}
 	return "", false
+}
+
+// digestRow is a line of the code table of a digest.
+type digestRow struct {
+	Title string `json:"title"`
+	State string `json:"state"`
+	Count int    `json:"count"`
+}
+
+// renderDigest draws a digest: the code table and the hidden count from the catalog texts, then
+// the model paragraph as a separate part under the provenance line, with its sources when the
+// attempt saw untrusted text (REP-2).
+func (c *Channel) renderDigest(locale, window string, rows []digestRow, hidden int, text string, sources []string) string {
+	lines := []string{c.cfg.Texts.Render(locale, "digest.title", map[string]any{"window": window})}
+	for _, r := range rows {
+		lines = append(lines, c.cfg.Texts.Render(locale, "digest.row", map[string]any{"title": r.Title, "state": r.State, "count": r.Count}))
+	}
+	if len(rows) == 0 {
+		lines = append(lines, c.cfg.Texts.Render(locale, "digest.empty", nil))
+	}
+	if hidden > 0 {
+		lines = append(lines, c.cfg.Texts.Render(locale, "digest.hidden", map[string]any{"count": hidden}))
+	}
+	if text != "" {
+		label := c.cfg.Texts.Render(locale, "provenance.model", nil)
+		if sources != nil {
+			label = c.cfg.Texts.Render(locale, "digest.sources", map[string]any{"sources": strings.Join(sources, ", ")})
+		}
+		lines = append(lines, "", label, c.cutLinks(text))
+	}
+	return strings.Join(lines, "\n")
 }
 
 var linkRE = regexp.MustCompile(`(?i)\b(?:https?://|www\.)[^\s<>()]+`)
