@@ -1,5 +1,5 @@
 registry: reasons
-version: 10
+version: 11
 description: 'Closed registry of reasons: end of an attempt, refusals at enqueue and at a call, waiting, outcomes of calls,
   approvals and deliveries, and also codes of other parts of the farm. A worker in P1 `fail` passes only a code from here; there is no free
   reason text in the records. Record fields: `meaning` (what it means); `spends_attempt` (whether it spends an attempt: true,
@@ -663,6 +663,13 @@ entries:
   retry: null
   outcome: value
   rules: [HLD-7, BUD-4]
+- id: manager_breaker
+  since: v0.1
+  meaning: The reason for the safeguard hold on the farm manager seat with the effect `no_control`, set by code after three refused control operations in a row; a person with `admin:farm` releases it.
+  spends_attempt: null
+  retry: null
+  outcome: value
+  rules: [MGR-14]
 - id: contain_auto
   since: v0.1
   meaning: The reason for the stop of the first incident measure and of a maintenance window; the tenant admin or the operator releases it.

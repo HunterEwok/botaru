@@ -359,6 +359,11 @@ entries:
     data_schema: spec/model/event-data/incident-event.schema.json
     producer: [core]
     rules: [MGR-8]
+  - id: incident.mitigating.v1
+    since: v0.1
+    data_schema: spec/model/event-data/incident-event.schema.json
+    producer: [core]
+    rules: [MGR-8, MGR-9]
   - id: incident.resolved.v1
     since: v0.1
     data_schema: spec/model/event-data/incident-event.schema.json

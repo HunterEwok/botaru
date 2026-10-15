@@ -189,8 +189,18 @@ func (c *Core) controlApply(ctx context.Context, tx pgx.Tx, now time.Time, cat *
 		inc = r
 	}
 	holdID, p, err := c.controlDo(ctx, tx, now, cat, tenant, a, req, inc)
-	if err != nil || p != nil {
-		return nil, p, err
+	if err != nil {
+		return nil, nil, err
+	}
+	if p != nil {
+		// A refusal of the operation itself counts toward the safeguard like one of the checks
+		// (MGR-14).
+		if m != nil && p.Reason != "protected_target" && p.Reason != "approval_required" {
+			if err := c.seatDenied(ctx, tx, now, cat, m); err != nil {
+				return nil, nil, err
+			}
+		}
+		return nil, p, nil
 	}
 	id := ids.New(ids.Control)
 	actorKind, actor := "person", a.Operator.Principal
@@ -241,8 +251,18 @@ func (c *Core) controlApply(ctx context.Context, tx pgx.Tx, now time.Time, cat *
 			inc.Record["ops"] = append(ops, entry)
 		}
 		inc.Handled = true
+		// The first operation for the incident moves it to mitigating (MGR-8, spec/lifecycles/incident.md).
+		first := inc.State == "open" || inc.State == "contained" || inc.State == "reopened"
+		if first {
+			inc.State = "mitigating"
+		}
 		if err := inc.save(ctx, tx, now); err != nil {
 			return nil, nil, err
+		}
+		if first {
+			if err := c.incidentEvent(ctx, tx, now, inc, "mitigating"); err != nil {
+				return nil, nil, err
+			}
 		}
 		if err := c.settleUnhandled(ctx, tx, now, inc); err != nil {
 			return nil, nil, err
@@ -340,7 +360,7 @@ func implicatedTarget(inc *incidentRow, t ControlTarget) bool {
 	if t.Kind == inc.SubjectKind && strings.EqualFold(t.ID, inc.SubjectID) && t.Kind != "tenant" {
 		return true
 	}
-	key := map[string]string{"worker": "worker", "task": "task", "bot": "bot", "role": "role", "tasktype": "task_type"}[t.Kind]
+	key := map[string]string{"worker": "worker", "task": "task", "bot": "bot", "role": "role", "tasktype": "tasktype"}[t.Kind]
 	if key == "" {
 		return false
 	}
@@ -475,7 +495,10 @@ func (c *Core) seatDenied(ctx context.Context, tx pgx.Tx, now time.Time, cat *Ca
 	if _, err := tx.Exec(ctx, `UPDATE seats SET denials = 0 WHERE tenant = $1 AND id = $2`, farmTenant, managerSeatID); err != nil {
 		return err
 	}
-	if err := c.stopManager(ctx, tx, now, cat, m, "no_control", ""); err != nil {
+	// The safeguard is a seat hold with the effect no_control: the hold adds the stop reason in
+	// the same transaction, and its release by a person with admin:farm removes it.
+	if _, _, err := c.insertHold(ctx, tx, now, HoldActor{Principal: "system", Rank: "contain_auto", Tenant: farmTenant, Via: "system", Source: "safeguard"},
+		HoldScope{Kind: "seat", Tenant: farmTenant, Name: managerSeatID}, []string{"no_control"}, "manager_breaker", nil); err != nil {
 		return err
 	}
 	return c.fireAlarm(ctx, tx, now, Alarm{Tenant: farmTenant, Name: "manager.breaker", Subject: AlarmSubject{Kind: "seat", ID: managerSeatID}, Severity: "page",
@@ -673,7 +696,7 @@ func (c *Core) ControlRevert(ctx context.Context, op Operator, req ControlRevert
 		q := `SELECT ` + holdColumns + ` FROM holds WHERE state = 'active' AND author_kind = 'seat_holder' AND created_at >= $1 ORDER BY id FOR UPDATE`
 		args := []any{since}
 		if req.Incident != "" {
-			q = `SELECT ` + holdColumns + ` FROM holds WHERE state = 'active' AND author_kind = 'seat_holder' AND lower(source) = lower($1) AND tenant = $2 ORDER BY id FOR UPDATE`
+			q = `SELECT ` + holdColumns + ` FROM holds WHERE state = 'active' AND author_kind = 'seat_holder' AND lower(source) = lower($1) AND ($2 = 'farm' OR tenant = $2) ORDER BY id FOR UPDATE`
 			args = []any{req.Incident, op.Tenant}
 		}
 		rows, err := tx.Query(ctx, q, args...)

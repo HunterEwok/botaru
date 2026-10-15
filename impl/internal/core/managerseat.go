@@ -407,31 +407,53 @@ func (c *Core) stopManager(ctx context.Context, tx pgx.Tx, now time.Time, cat *C
 	return nil
 }
 
-// syncHumanStop keeps the reason human in step with the holds on the scope seat: a hold adds it,
-// and the release of the last one removes human and no_control (MGR-15).
+// syncHumanStop keeps the reasons human and no_control in step with the holds on the scope seat:
+// a person's hold adds human and the safeguard hold adds no_control, and the release of the last
+// one of each removes its reason (MGR-14, MGR-15).
 func (c *Core) syncHumanStop(ctx context.Context, tx pgx.Tx, now time.Time, cat *Catalog) error {
 	m, err := loadManagerSeat(ctx, tx, true)
 	if err != nil || m == nil {
 		return err
 	}
-	var held bool
-	if err := tx.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM holds WHERE state = 'active' AND scope_kind = 'seat' AND scope_name = $1
-		AND (until IS NULL OR until > $2))`, managerSeatID, now).Scan(&held); err != nil {
+	// A hold with only the effect no_control is the safeguard (MGR-14); any other seat hold is a
+	// person's kill switch (MGR-15).
+	var held, guard bool
+	if err := tx.QueryRow(ctx, `SELECT
+		EXISTS (SELECT 1 FROM holds WHERE state = 'active' AND scope_kind = 'seat' AND scope_name = $1 AND (until IS NULL OR until > $2) AND effects <> ARRAY['no_control']),
+		EXISTS (SELECT 1 FROM holds WHERE state = 'active' AND scope_kind = 'seat' AND scope_name = $1 AND (until IS NULL OR until > $2) AND 'no_control' = ANY(effects))`,
+		managerSeatID, now).Scan(&held, &guard); err != nil {
 		return err
 	}
+	// A no_control reason without a safeguard hold, from before the hold existed, goes with the
+	// release of the last person's hold.
+	keepGuard := guard || (m.has("no_control") && held)
+	if held == m.has("human") && keepGuard == m.has("no_control") {
+		return nil
+	}
+	reasons := m.without("human", "no_control")
+	for _, r := range m.Reasons {
+		if (r.Reason == "human" && held) || (r.Reason == "no_control" && keepGuard) {
+			reasons = append(reasons, r)
+		}
+	}
+	if held && !m.has("human") {
+		reasons = append(reasons, stopReason{Reason: "human", At: fmtTime(now)})
+	}
+	if keepGuard && !m.has("no_control") {
+		reasons = append(reasons, stopReason{Reason: "no_control", At: fmtTime(now)})
+	}
+	event, cause := "seat.stopped.v1", "hold.release"
 	switch {
 	case held && !m.has("human"):
-		return c.stopManager(ctx, tx, now, cat, m, "human", "")
-	case !held && m.has("human"):
-		reasons := m.without("human", "no_control")
-		event := "seat.stopped.v1"
-		if len(reasons) == 0 {
-			event = "seat.resumed.v1"
-		}
-		_, err := c.shiftManager(ctx, tx, now, cat, m, m.Holder, reasons, event, "hold.release", "system")
-		return err
+		cause = "human"
+	case keepGuard && !m.has("no_control"):
+		cause = "no_control"
 	}
-	return nil
+	if len(reasons) == 0 {
+		event = "seat.resumed.v1"
+	}
+	_, err = c.shiftManager(ctx, tx, now, cat, m, m.Holder, reasons, event, cause, "system")
+	return err
 }
 
 // incidentStop applies GOV-22 to a new incident of a class with stops_manager: the seat stops

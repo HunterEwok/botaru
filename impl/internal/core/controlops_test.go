@@ -82,8 +82,11 @@ func TestControlOpsSeat(t *testing.T) {
 		t.Fatal("no control.applied event")
 	}
 	inc := incidentsOf(t, b.bench, "disk_full")[0]
-	if !inc.Handled || len(inc.Record["ops"].([]any)) != 1 {
+	if !inc.Handled || len(inc.Record["ops"].([]any)) != 1 || inc.State != "mitigating" {
 		t.Fatalf("incident %+v", inc)
+	}
+	if countEvents(t, b.bench, "incident.mitigating.v1", "") != 1 {
+		t.Fatal("no incident.mitigating event")
 	}
 	list, err := b.c.ControlList(ctx, b.op, TenantRequest{})
 	if err != nil || len(list["items"].([]any)) != 1 {
@@ -118,6 +121,30 @@ func TestControlOpsBreaker(t *testing.T) {
 	}
 	if openAlarms(t, b.bench, "alarm.manager.breaker.v1") != 1 {
 		t.Fatal("no breaker alarm")
+	}
+	// The safeguard is a seat hold that a person releases; its release removes no_control.
+	ctx := context.Background()
+	var hold string
+	if err := b.c.st.Pool.QueryRow(ctx, `SELECT id FROM holds WHERE state = 'active' AND scope_kind = 'seat' AND effects = ARRAY['no_control']
+		AND reason = 'manager_breaker'`).Scan(&hold); err != nil {
+		t.Fatalf("safeguard hold: %v", err)
+	}
+	if _, err := b.c.HoldRelease(ctx, OperatorActor(b.farmOp()), HoldReleaseRequest{ID: hold}); err != nil {
+		t.Fatal(err)
+	}
+	if m := b.managerSeat(t); m.State != "held" || m.has("no_control") {
+		t.Fatalf("seat after the release %+v", m)
+	}
+}
+
+// A task type among the incident's involved parties is a valid target (MGR-9).
+func TestImplicatedTaskType(t *testing.T) {
+	inc := &incidentRow{SubjectKind: "resource", SubjectID: "db1", Record: map[string]any{"implicated": []any{implicated{TaskType: "ops.summary.v1"}.view()}}}
+	if !implicatedTarget(inc, ControlTarget{Kind: "tasktype", ID: "ops.summary.v1"}) {
+		t.Fatal("the involved task type is not a target")
+	}
+	if implicatedTarget(inc, ControlTarget{Kind: "tasktype", ID: "ops.health.v1"}) {
+		t.Fatal("an uninvolved task type is a target")
 	}
 }
 
