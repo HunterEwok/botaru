@@ -258,10 +258,6 @@ func (m *Monitor) itemHistory(ctx context.Context, hostid string, args map[strin
 	if !ok {
 		return nil, errors.New("item_unknown")
 	}
-	start, err := since(args, "start", time.Hour)
-	if err != nil {
-		return nil, err
-	}
 	end := time.Now().Unix()
 	if s, _ := args["end"].(string); s != "" {
 		t, err := time.Parse(time.RFC3339, s)
@@ -269,6 +265,14 @@ func (m *Monitor) itemHistory(ctx context.Context, hostid string, args map[strin
 			return nil, errors.New("bad end")
 		}
 		end = t.Unix()
+	}
+	start := end - 3600
+	if s, _ := args["start"].(string); s != "" {
+		t, err := time.Parse(time.RFC3339, s)
+		if err != nil {
+			return nil, errors.New("bad start")
+		}
+		start = t.Unix()
 	}
 	step, stepName := int64(300), "5m"
 	switch args["step"] {
