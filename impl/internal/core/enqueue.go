@@ -432,6 +432,11 @@ func (c *Core) enqueue(ctx context.Context, tx pgx.Tx, now time.Time, cat *Catal
 			if p := c.checkBudget(ctx, tx, now, tv, budgetAsk{subject: sub, groups: sg, extra: estimate, line: line}); p != nil {
 				return reject(p)
 			}
+			if p, err := c.wakeShare(ctx, tx, now, tv, sub, sg, line, estimate); err != nil {
+				return nil, err
+			} else if p != nil {
+				return reject(p)
+			}
 		}
 	}
 	// The enqueue ceiling of the sliding hour, under the tenant's budget lock (CAP-1).
@@ -585,7 +590,7 @@ func (c *Core) enqueue(ctx context.Context, tx pgx.Tx, now time.Time, cat *Catal
 			}
 		}
 		if len(co) > 0 {
-			record["co_initiators"] = co
+			record["co_initiators"], record["wake_subjects"] = co, co
 		}
 	}
 	if in.Continues != "" {
@@ -742,4 +747,40 @@ func attachedFiles(body map[string]any) ([]string, error) {
 		}
 	}
 	return out, nil
+}
+
+// wakeShare refuses a wake-up past the personal day limit of a principal its entries came from:
+// the wake-ups their entries caused this day, spent and still reserved, count in that limit
+// beside their own spending, though the wake-ups run as system (MSG-11, BUD-1).
+func (c *Core) wakeShare(ctx context.Context, tx pgx.Tx, now time.Time, tv *TenantView, sub string, groups []string, line string, estimate int64) (*Problem, error) {
+	if line != "" && line != "work" {
+		return nil, nil
+	}
+	var personal *float64
+	for _, g := range groups {
+		if l := tv.Groups[g].DayEUR; l != nil && (personal == nil || *l > *personal) {
+			personal = l
+		}
+	}
+	if personal == nil {
+		return nil, nil
+	}
+	day := tenantDay(tv, now)
+	own, err := windowUsed(ctx, tx, tv.Name, spendFilter{subject: sub, line: "work"}, day, "")
+	if err != nil {
+		return nil, err
+	}
+	var wakes int64
+	// Usage lines in full, and of an open wake-up's reserve the part it has not spent yet.
+	if err := tx.QueryRow(ctx, `SELECT coalesce(sum(CASE WHEN s.unit <> 'task' THEN s.eur_micros
+			WHEN t.state IN ('submitted', 'working') THEN greatest(s.eur_micros - coalesce((SELECT sum(x.eur_micros) FROM spend x WHERE x.task = s.task AND x.unit <> 'task'), 0), 0)
+			ELSE 0 END), 0)
+		FROM spend s JOIN tasks t ON t.id = s.task
+		WHERE t.tenant = $1 AND t.created_at >= $2 AND t.record->'wake_subjects' ? $3`, tv.Name, day, sub).Scan(&wakes); err != nil {
+		return nil, err
+	}
+	if own+wakes+estimate > money.FromEUR(*personal) {
+		return refuse("budget_exhausted", "the personal day limit is used up"), nil
+	}
+	return nil, nil
 }

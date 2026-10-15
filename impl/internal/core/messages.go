@@ -452,9 +452,14 @@ func (c *Core) sendMessage(ctx context.Context, tx pgx.Tx, now time.Time, cat *C
 		return deny("address_invalid", "the address is not valid")
 	}
 	// The initiator of the attempt and every initiator of what it read have msg.send:<type>;
-	// system through system-ops (MSG-5, MSG-7).
-	if s.Task != "" {
-		ok, err := initiatorsHave(ctx, tx, now, tv, "msg.send:"+req.Type, append([]string{s.Initiator}, s.Initiators...)...)
+	// system through system-ops (MSG-5, MSG-7). A route's auto-report is sent by system for the
+	// ended task, so system needs it as well as the task's initiators.
+	if s.Task != "" || s.TreeTask != "" {
+		who := append([]string{s.Initiator}, s.Initiators...)
+		if s.Task == "" && s.Initiator != "system" {
+			who = append(who, "system")
+		}
+		ok, err := initiatorsHave(ctx, tx, now, tv, "msg.send:"+req.Type, who...)
 		if err != nil {
 			return nil, nil, err
 		}

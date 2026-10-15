@@ -13,8 +13,11 @@ import (
 
 // newRouteBench is the message bench with three routes of tenant demo: wake-lead wakes the role
 // lead by its inbox, tell-people tells the group hello of each report.work.v1, review-done
-// reports the end of each lead.review.v1 to the role hello. The tenant allows one wake-up a day.
-func newRouteBench(t *testing.T) *bench {
+// reports the end of each lead.review.v1 to the role hello. The tenant allows one wake-up a day;
+// a person of hello has a personal day limit of 1 EUR. sysReport grants system the report.
+func newRouteBench(t *testing.T) *bench { t.Helper(); return newRouteBenchWith(t, true) }
+
+func newRouteBenchWith(t *testing.T, sysReport bool) *bench {
 	t.Helper()
 	return newMsgBenchWith(t, func(ms []map[string]any) []map[string]any {
 		for _, m := range ms {
@@ -28,6 +31,11 @@ func newRouteBench(t *testing.T) *bench {
 				msgs["receive"] = append(msgs["receive"].([]any), map[string]any{"type": "report.done.v1"})
 			case m["kind"] == "TaskType" && name == "lead.review.v1":
 				s["summary_fields"] = []any{"ok"}
+			case m["kind"] == "Group" && name == "system-ops" && sysReport:
+				s["caps"] = append(s["caps"].([]any), "msg.send:report.done.v1")
+			case m["kind"] == "Group" && name == "hello":
+				s["day_eur"] = 1.0
+				s["caps"] = append(s["caps"].([]any), "msg.send:report.done.v1")
 			}
 		}
 		route := func(name string, spec map[string]any) map[string]any {
@@ -199,5 +207,69 @@ func TestRouteLint(t *testing.T) {
 	}
 	if !found {
 		t.Fatalf("errors %+v", res.Errors)
+	}
+}
+
+// A route's auto-report is refused, as message.rejected, when system has no msg.send for its
+// type; the task ends anyway (MSG-5, MSG-16).
+func TestRouteReportNeedsSystemCap(t *testing.T) {
+	ctx := context.Background()
+	b := newRouteBenchWith(t, false)
+	lead := b.enroll(t, EnrollRequest{Tenant: "demo", Role: "lead", Kind: "job", Labels: map[string]string{"zone": "a"}})
+	b.loop(t, "inbox")
+	coreSend(t, b, "role:lead")
+	b.loop(t, "inbox")
+	b.loop(t, "inbox")
+	wakes := wakeTasks(t, b)
+	if len(wakes) != 1 {
+		t.Fatalf("wake-ups %d", len(wakes))
+	}
+	it := claimFor(t, b, lead, wakes[0])
+	if _, err := b.c.Complete(ctx, lead, header(t, it), CompleteRequest{Result: map[string]any{"ok": true}}); err != nil {
+		t.Fatal(err)
+	}
+	var reason string
+	if err := b.c.st.Pool.QueryRow(ctx, `SELECT data->>'reason' FROM events WHERE type = 'message.rejected' AND subject = 'report.done.v1'`).Scan(&reason); err != nil || reason != "msg_type_not_allowed" {
+		t.Fatalf("message.rejected %q %v", reason, err)
+	}
+}
+
+// The wake-ups a person's entries caused count in that person's day limit, though they run as
+// system (MSG-11, BUD-1).
+func TestWakeShare(t *testing.T) {
+	ctx := context.Background()
+	b := newRouteBench(t)
+	if _, err := b.c.st.Pool.Exec(ctx, `INSERT INTO tasks (id, tenant, type, state, initiator, priority_class, idempotency_key, body_hash, body, record, deadline_at, created_at, updated_at)
+		VALUES ('t_wake', 'demo', 'lead.review.v1', 'completed', 'system', 1, 'old-wake', 'h', '{}', jsonb_build_object('root', 't_wake', 'wake_subjects', jsonb_build_array($1::text)), now(), now(), now())`, b.alice); err != nil {
+		t.Fatal(err)
+	}
+	cat, err := b.c.Catalog(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tv := cat.Tenants["demo"]
+	share := func() *Problem {
+		var p *Problem
+		if err := b.c.tx(ctx, func(tx pgx.Tx, now time.Time) error {
+			groups, err := principalGroups(ctx, tx, now, tv, b.alice)
+			if err != nil {
+				return err
+			}
+			p, err = b.c.wakeShare(ctx, tx, now, tv, b.alice, groups, "work", 0)
+			return err
+		}); err != nil {
+			t.Fatal(err)
+		}
+		return p
+	}
+	if p := share(); p != nil {
+		t.Fatalf("an unspent day refused: %v", p)
+	}
+	if _, err := b.c.st.Pool.Exec(ctx, `INSERT INTO spend (id, tenant, task, root, subject, line, purpose, unit, state, eur_micros, time)
+		VALUES ('sp_wake', 'demo', 't_wake', 't_wake', 'system', 'work', 'work', 'tokens', 'committed', 2000000, now())`); err != nil {
+		t.Fatal(err)
+	}
+	if p := share(); p == nil || p.Reason != "budget_exhausted" {
+		t.Fatalf("the wake-ups of the day passed: %v", p)
 	}
 }
