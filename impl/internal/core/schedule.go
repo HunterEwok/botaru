@@ -18,6 +18,9 @@ import (
 // skipped slot is not caught up, so only the latest one matters (TIM-3).
 const scheduleLookback = 48 * time.Hour
 
+// scheduleLateness is how late a due slot still runs; a later one is dropped.
+const scheduleLateness = 15 * time.Minute
+
 // scheduleTZ is the time zone of a schedule: its own, else the tenant's, else UTC (TIM-3).
 func scheduleTZ(tv *TenantView, sc manifest.Schedule) string {
 	switch {
@@ -36,17 +39,26 @@ func (c *Core) scheduleLoop(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+	var first error
 	for _, tenant := range slices.Sorted(mapKeys(cat.Tenants)) {
 		tv := cat.Tenants[tenant]
 		for _, name := range slices.Sorted(mapKeys(tv.Schedules)) {
+			// One failing schedule does not stop the others; the loop reports the first error
+			// after it ran them all.
 			if err := c.tx(ctx, func(tx pgx.Tx, now time.Time) error {
 				return c.runSchedule(ctx, tx, now, cat, tv, name, tv.Schedules[name])
 			}); err != nil {
-				return err
+				if ctx.Err() != nil {
+					return err
+				}
+				c.log.Warn("schedule failed", "tenant", tenant, "schedule", name, "err", err)
+				if first == nil {
+					first = err
+				}
 			}
 		}
 	}
-	return nil
+	return first
 }
 
 func (c *Core) runSchedule(ctx context.Context, tx pgx.Tx, now time.Time, cat *Catalog, tv *TenantView, name string, sc manifest.Schedule) error {
@@ -89,6 +101,11 @@ func (c *Core) runSchedule(ctx context.Context, tx pgx.Tx, now time.Time, cat *C
 	}
 	if _, err := tx.Exec(ctx, `UPDATE schedule_state SET last_slot = $3, updated_at = $4 WHERE tenant = $1 AND name = $2`, tv.Name, name, due.At, now); err != nil {
 		return err
+	}
+	// A slot found long after its time, after a stop of the core, is not run late: a skipped
+	// slot is not caught up (TIM-3).
+	if now.Sub(due.At) > scheduleLateness {
+		return nil
 	}
 	slot := fmtSlot(due.At)
 	skip := func(reason string) error {
@@ -222,4 +239,22 @@ func (c *Core) deliverScheduled(ctx context.Context, tx pgx.Tx, now time.Time, c
 		}
 	}
 	return nil
+}
+
+// scheduleOf is the schedule whose slot started the tree of a task, or "": the root's
+// enqueued_by names it.
+func scheduleOf(ctx context.Context, tx pgx.Tx, r treeRecord, id string) (string, error) {
+	by := r.EnqueuedBy
+	if r.Root != "" && r.Root != id {
+		var root *string
+		if err := tx.QueryRow(ctx, `SELECT record->>'enqueued_by' FROM tasks WHERE id = $1`, r.Root).Scan(&root); err != nil && !errors.Is(err, pgx.ErrNoRows) {
+			return "", err
+		}
+		by = deref(root)
+	}
+	name, _ := strings.CutPrefix(by, "schedule:")
+	if name == by {
+		return "", nil
+	}
+	return name, nil
 }

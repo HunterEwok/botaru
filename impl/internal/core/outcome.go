@@ -353,7 +353,14 @@ func (c *Core) completeAttempt(ctx context.Context, tx pgx.Tx, now time.Time, w 
 	if err := json.Unmarshal(rec, &record); err != nil {
 		return err
 	}
-	if name, ok := strings.CutPrefix(record.EnqueuedBy, "schedule:"); ok && record.Parent == "" {
+	// A task of a schedule's tree reports to the schedule's addresses where a task with an
+	// origin would report to it: the root and its continuations, never a child (DLV-6, CNT-1).
+	if name, err := scheduleOf(ctx, tx, record.treeRecord, l.WorkID); err != nil {
+		return err
+	} else if name != "" {
+		if record.child() {
+			return nil
+		}
 		return c.deliverScheduled(ctx, tx, now, cat, w.Tenant, l.WorkID, name, tt, result, record.DataMark)
 	}
 	if !record.reportsToOrigin() {

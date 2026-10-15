@@ -71,11 +71,32 @@ API_VERSION = 'botaru/v1alpha1'
 WEBHOOK_DOC_NETS = [ipaddress.ip_network(n) for n in ('192.0.2.0/24', '198.51.100.0/24', '203.0.113.0/24', '2001:db8::/32')]
 
 
+
+def cron_valid(expr):
+    """Five cron fields with values in range: lists, ranges and steps (TIM-3)."""
+    fields = expr.split()
+    if len(fields) != 5:
+        return False
+    for f, (lo, hi) in zip(fields, ((0, 59), (0, 23), (1, 31), (1, 12), (0, 7))):
+        for part in f.split(','):
+            rng, _, step = part.partition('/')
+            if step and (not step.isdigit() or int(step) < 1):
+                return False
+            if rng == '*':
+                continue
+            a, _, b = rng.partition('-')
+            if not a.isdigit() or (b and not b.isdigit()):
+                return False
+            a, b = int(a), int(b) if b else int(a)
+            if a < lo or b > hi or a > b:
+                return False
+    return True
+
 def known_zone(name):
     """Whether an IANA time zone name exists in the zone database (TIM-3)."""
     try:
         zoneinfo.ZoneInfo(name)
-    except (zoneinfo.ZoneInfoNotFoundError, ValueError):
+    except (zoneinfo.ZoneInfoNotFoundError, ValueError, OSError):
         return False
     return True
 
@@ -850,7 +871,7 @@ def lint(docs, today=None, farm_hosts=None, examples_mode=False, claimed=None, s
             check_address(where, tenant, addr)
     for tenant, sname, where, ss in S.each('Schedule'):
         cron = ss['cron']
-        if len(cron.split()) != 5 or re.search(r'(CRON_)?TZ\s*=', cron):
+        if not cron_valid(cron) or re.search(r'(CRON_)?TZ\s*=', cron):
             f.error('cron_invalid', where, f'schedule {sname}: cron of five fields without CRON_TZ and TZ (TIM-2)')
         if ss.get('timezone') and not known_zone(ss['timezone']):
             f.error('timezone_unknown', where, f'schedule {sname}: time zone {ss["timezone"]} is not in the IANA database (TIM-3)')

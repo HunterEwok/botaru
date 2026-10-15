@@ -6,6 +6,8 @@ import (
 	"context"
 	"testing"
 	"time"
+
+	"github.com/jackc/pgx/v5"
 )
 
 // newScheduleBench is the hello bench with a daily schedule at 02:30 Berlin time that delivers
@@ -98,7 +100,7 @@ func TestSchedule(t *testing.T) {
 	b.enroll(t, EnrollRequest{Tenant: "demo", Kind: "sink", Target: "archive"})
 	b.at(t, "2027-03-27T12:00:00Z")
 	b.tick(t, "schedule") // the first sight: slots count from now
-	b.at(t, "2027-03-28T02:00:00Z")
+	b.at(t, "2027-03-28T01:01:00Z")
 	b.tick(t, "schedule")
 	if s := b.skips(t); len(s) != 1 || s[0] != "2027-03-28T00:59Z dst_gap" {
 		t.Fatalf("skips %v", s)
@@ -114,6 +116,18 @@ func TestSchedule(t *testing.T) {
 	if s := b.skips(t); len(s) != 2 || s[1] != "2027-03-30T00:30Z waiting" {
 		t.Fatalf("skips %v", s)
 	}
+	// A continuation of the scheduled root reports to the schedule's addresses too (DLV-6).
+	var root string
+	if err := b.c.st.Pool.QueryRow(context.Background(), `SELECT id FROM tasks WHERE idempotency_key LIKE 'system:schedule:%'`).Scan(&root); err != nil {
+		t.Fatal(err)
+	}
+	b.alarmTx(t, func(tx pgx.Tx, now time.Time) error {
+		name, err := scheduleOf(context.Background(), tx, treeRecord{Root: root, Parent: root, EnqueuedBy: "core"}, "t_cont")
+		if err != nil || name != "morning" {
+			t.Fatalf("continuation schedule %q %v", name, err)
+		}
+		return nil
+	})
 	b.finish(t, b.claim(t, b.agent, "attempt"))
 	got := b.drain(t)
 	r := cardOf(t, got, "task_result", "direct:1001")
