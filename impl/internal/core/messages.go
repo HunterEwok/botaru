@@ -654,7 +654,14 @@ func (c *Core) sendMessage(ctx context.Context, tx pgx.Tx, now time.Time, cat *C
 		if err := c.publishRows(ctx, tx, now, cat, s, `seq = $1`, seq); err != nil {
 			return nil, nil, err
 		}
-		state = "queued"
+		// A hold or a full inbox may have discarded it, or refused every copy of an all
+		// delivery: the audit says what happened.
+		err := tx.QueryRow(ctx, `SELECT state FROM messages WHERE id = $1`, id).Scan(&state)
+		if errors.Is(err, pgx.ErrNoRows) {
+			state = "discarded"
+		} else if err != nil {
+			return nil, nil, err
+		}
 	}
 	hash, _ := jcs.Hash(fields)
 	if err := c.msgAudit(ctx, tx, now, s, "msg.send", id, true, "", map[string]any{"type": req.Type, "kind": "report", "to": addr, "bytes": size, "fields_hash": hash, "state": state}); err != nil {

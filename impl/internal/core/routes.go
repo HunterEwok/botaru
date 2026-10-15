@@ -359,6 +359,27 @@ func (c *Core) runWake(ctx context.Context, tx pgx.Tx, now time.Time, cat *Catal
 	if !ok {
 		return nil
 	}
+	// A hold with no_message on the tenant or on the woken role or group sets no wake-ups
+	// (HLD-3).
+	scopes := tenantScopes(tv.Name)
+	switch kind {
+	case "role":
+		scopes = append(scopes, scopeRef{kind: "role", tenant: tv.Name, name: inbox})
+	case "group":
+		scopes = append(scopes, scopeRef{kind: "bot_group", tenant: tv.Name, name: inbox})
+	}
+	if held, err := heldBy(ctx, tx, now, []string{"no_message"}, scopes...); err != nil {
+		return err
+	} else if held != "" {
+		return skip("held")
+	}
+	// A wake-up refused in this window is not tried again before the next one: a refusal
+	// writes its audit once per window, not once per pass.
+	var refused bool
+	if err := tx.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM message_marks WHERE tenant = $1 AND key = $2 AND until > $3)`,
+		tv.Name, "wake:"+name+":refused", now).Scan(&refused); err != nil || refused {
+		return err
+	}
 	// The wake-up ceilings are checked under the tenant's budget lock, as the enqueue's own.
 	if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock(7300102, hashtext($1))`, tv.Name); err != nil {
 		return err
@@ -405,24 +426,27 @@ func (c *Core) runWake(ctx context.Context, tx pgx.Tx, now time.Time, cat *Catal
 	}
 	res, err := c.enqueue(ctx, tx, now, cat, enqueueInput{
 		Tenant: tv.Name, Type: rt.Task.Type, Body: body, IdempotencyKey: key, Initiator: "system",
-		EnqueuedBy: "route:" + name, Source: "route", SourceID: name,
+		EnqueuedBy: "route:" + name, Source: "route", SourceID: name, CoInitiators: inits,
 		Wake: &wakeInput{Inbox: rt.On.Inbox, Depth: hops, Correlation: deref(root), StartBy: latest, Subjects: inits},
 	})
-	if err != nil {
-		if p, ok := AsProblem(err); ok {
-			c.log.Warn("a wake-up was refused", "tenant", tv.Name, "route", name, "reason", p.Reason)
-			return nil
-		}
+	reason := ""
+	if p, ok := AsProblem(err); ok {
+		reason = p.Reason
+	} else if err != nil {
+		return err
+	} else if res.Rejected != nil {
+		reason = res.Rejected.Reason
+	}
+	if reason == "" {
+		return nil
+	}
+	if reason != "budget_exhausted" && reason != "service_rate_limited" {
+		c.log.Warn("a wake-up was refused", "tenant", tv.Name, "route", name, "reason", reason)
+	}
+	if _, err := markOnce(ctx, tx, now, tv.Name, "wake:"+name+":refused", window); err != nil {
 		return err
 	}
-	if res.Rejected != nil {
-		switch res.Rejected.Reason {
-		case "budget_exhausted", "service_rate_limited":
-			return skip(res.Rejected.Reason)
-		}
-		c.log.Warn("a wake-up was refused", "tenant", tv.Name, "route", name, "reason", res.Rejected.Reason)
-	}
-	return nil
+	return skip(reason)
 }
 
 // wakeInput is what a wake-up task carries from the entries it wakes for (MSG-11, MSG-12).

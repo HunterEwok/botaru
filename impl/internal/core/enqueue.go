@@ -574,6 +574,18 @@ func (c *Core) enqueue(ctx context.Context, tx pgx.Tx, now time.Time, cat *Catal
 			err := tx.QueryRow(ctx, `SELECT type, record FROM tasks WHERE id = $1 AND tenant = $2`, w.Correlation, in.Tenant).Scan(&rootType, &rootRec)
 			switch {
 			case err == nil:
+				// It is one more task of that tree, within the tree's task limit (PRM-6).
+				limit := defaultMaxTreeTasks
+				if m := tv.Spec.Campaigns.MaxTreeTasks; m > 0 {
+					limit = m
+				}
+				var n int
+				if err := tx.QueryRow(ctx, `SELECT count(*) FROM tasks WHERE tenant = $1 AND (id = $2 OR record->>'root' = $2)`, in.Tenant, w.Correlation).Scan(&n); err != nil {
+					return nil, err
+				}
+				if n >= min(limit, farmMaxTreeTasks) {
+					return reject(refuse("tree_too_large", "the tree of this root has %d tasks", n))
+				}
 				root = w.Correlation
 				record["root"] = root
 				record["tree_budget_micros"] = taskTreeBudget(rootRec, cat.TaskTypes[rootType])

@@ -290,3 +290,64 @@ func (b *bench) atNoon(t *testing.T, zone string) {
 		t.Fatal(err)
 	}
 }
+
+// A wake-up is not set under a no_message hold on the woken role, and the initiators of its
+// entries narrow it as co-initiators: an entry from a person who may not enqueue the type wakes
+// nothing, and the refusal is not tried again in the same window (HLD-3, MSG-7, MSG-11).
+func TestRouteWakeGuards(t *testing.T) {
+	ctx := context.Background()
+	rootTask := func(b *bench) {
+		if _, err := b.c.st.Pool.Exec(ctx, `INSERT INTO tasks (id, tenant, type, state, initiator, priority_class, idempotency_key, body_hash, body, record, deadline_at, created_at, updated_at)
+			VALUES ('t_root', 'demo', 'lead.review.v1', 'completed', $1, 1, 'root-of-entries', 'h', '{}', '{"root": "t_root"}', now(), now(), now())`, b.alice); err != nil {
+			t.Fatal(err)
+		}
+	}
+	skipped := func(b *bench) []string {
+		rows, err := b.c.st.Pool.Query(ctx, `SELECT data->>'reason' FROM events WHERE type = 'wake.skipped' AND subject = 'wake-lead' ORDER BY seq`)
+		if err != nil {
+			t.Fatal(err)
+		}
+		out, err := pgx.CollectRows(rows, pgx.RowTo[string])
+		if err != nil {
+			t.Fatal(err)
+		}
+		return out
+	}
+	b := newRouteBench(t)
+	b.atNoon(t, "Europe/Berlin")
+	b.enroll(t, EnrollRequest{Tenant: "demo", Role: "lead", Kind: "job", Labels: map[string]string{"zone": "a"}})
+	rootTask(b)
+	if _, err := b.c.HoldSet(ctx, OperatorActor(b.op), HoldSetRequest{Op: "hold.set",
+		Scope: HoldScope{Kind: "role", Tenant: "demo", Name: "lead"}, Effects: []string{"no_message"}, Reason: "manual"}); err != nil {
+		t.Fatal(err)
+	}
+	coreSend(t, b, "role:lead")
+	b.loop(t, "inbox")
+	if n := len(wakeTasks(t, b)); n != 0 {
+		t.Fatalf("a held role woke %d", n)
+	}
+	if s := skipped(b); len(s) != 1 || s[0] != "held" {
+		t.Fatalf("wake.skipped %v", s)
+	}
+
+	b = newRouteBench(t)
+	b.atNoon(t, "Europe/Berlin")
+	b.enroll(t, EnrollRequest{Tenant: "demo", Role: "lead", Kind: "job", Labels: map[string]string{"zone": "a"}})
+	rootTask(b)
+	coreSend(t, b, "role:lead")
+	if _, err := b.c.Principal(ctx, b.op, PrincipalRequest{Op: "principal.off", Subject: b.alice}); err != nil {
+		t.Fatal(err)
+	}
+	b.loop(t, "inbox")
+	b.loop(t, "inbox")
+	if n := len(wakeTasks(t, b)); n != 0 {
+		t.Fatalf("entries of a disabled person woke %d", n)
+	}
+	var denials int
+	if err := b.c.st.Pool.QueryRow(ctx, `SELECT count(*) FROM audit WHERE record->>'ok' = 'false' AND record->'target'->>'kind' = 'task'`).Scan(&denials); err != nil {
+		t.Fatal(err)
+	}
+	if s := skipped(b); len(s) != 1 || s[0] == "held" || denials > 1 {
+		t.Fatalf("wake.skipped %v, denials %d", s, denials)
+	}
+}

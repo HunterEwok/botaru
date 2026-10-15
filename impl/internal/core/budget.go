@@ -88,7 +88,7 @@ func windowUsed(ctx context.Context, tx pgx.Tx, tenant string, f spendFilter, fr
 			AND ($3 = '' OR subject = $3) AND ($5 = '' OR line = $5) AND ($6 = '' OR role = $6))
 		SELECT coalesce((SELECT sum(CASE WHEN state = 'estimated' AND (reconciled_at IS NOT NULL OR released_at IS NOT NULL) THEN 0
 				ELSE eur_micros + coalesce(correction_eur_micros, 0) END) FROM w WHERE unit <> 'task'), 0)
-			+ coalesce((SELECT sum(greatest(r.eur_micros - coalesce((SELECT sum(s.eur_micros) FROM spend s WHERE s.root = r.root AND s.unit <> 'task'), 0), 0))
+			+ coalesce((SELECT sum(greatest(r.eur_micros - coalesce((SELECT sum(s.eur_micros) FROM spend s WHERE s.root = r.root AND s.unit <> 'task' AND s.time >= r.time), 0), 0))
 				FROM w r WHERE r.unit = 'task' AND r.root <> $4
 				AND NOT EXISTS (SELECT 1 FROM tasks t WHERE t.id = r.task AND t.state = 'submitted' AND t.reason IN ('provider_unavailable', 'provider_quota'))), 0)`,
 		tenant, from, f.subject, ownRoot, f.line, f.role).Scan(&used)
