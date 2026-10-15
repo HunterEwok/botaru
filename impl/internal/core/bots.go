@@ -235,6 +235,9 @@ func (c *Core) fenceLeases(ctx context.Context, tx pgx.Tx, now time.Time, reason
 		if l.Kind != "attempt" {
 			continue
 		}
+		if err := c.settleMessages(ctx, tx, now, l.WorkID); err != nil {
+			return err
+		}
 		if _, err := tx.Exec(ctx, `UPDATE tasks SET reason = $2 WHERE id = $1`, l.WorkID, reason); err != nil {
 			return err
 		}
@@ -360,6 +363,10 @@ func (c *Core) WorkerRevoke(ctx context.Context, op Operator, req WorkerRequest)
 		}
 		// A revoked token holds no work of any kind (IDN-4).
 		if err := c.fenceLeases(ctx, tx, now, "worker_revoke", `worker_id = $1`, req.Worker); err != nil {
+			return err
+		}
+		// Its own inbox and its state values go with it (MSG-14, STA-2).
+		if err := c.workerGone(ctx, tx, now, tenant, req.Worker); err != nil {
 			return err
 		}
 		b, err := scanBot(tx.QueryRow(ctx, `SELECT `+botCols+` FROM bots WHERE worker_id = $1 AND mode = 'worker' AND state IN ('active', 'suspended') FOR UPDATE`, req.Worker))

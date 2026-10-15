@@ -201,6 +201,9 @@ func (c *Core) endAttemptHeld(ctx context.Context, tx pgx.Tx, now time.Time, w *
 	if err := closeLease(ctx, tx, now, l, "revoked", "held", "heartbeat", nil, res); err != nil {
 		return nil, err
 	}
+	if err := c.settleMessages(ctx, tx, now, l.WorkID); err != nil {
+		return nil, err
+	}
 	if err := c.requeue(ctx, tx, now, l, now); err != nil {
 		return nil, err
 	}
@@ -383,6 +386,11 @@ func (c *Core) completeAttempt(ctx context.Context, tx pgx.Tx, now time.Time, w 
 			return err
 		}
 	}
+	// What the attempt staged is published and what it read acknowledged, in this transaction
+	// (MSG-9).
+	if err := c.publishMessages(ctx, tx, now, cat, w.Tenant, l.WorkID, l.LeaseNo, w.ID); err != nil {
+		return err
+	}
 	if err := releaseTaskReserve(ctx, tx, l.WorkID); err != nil {
 		return err
 	}
@@ -496,6 +504,9 @@ func (c *Core) rejectResult(ctx context.Context, tx pgx.Tx, now time.Time, w *Wo
 	if _, err := tx.Exec(ctx, `DELETE FROM handles WHERE work_id = $1 AND lease_no = $2`, l.WorkID, l.LeaseNo); err != nil {
 		return err
 	}
+	if err := c.settleMessages(ctx, tx, now, l.WorkID); err != nil {
+		return err
+	}
 	// The rejected result carried the same personal data as an accepted one would (AUD-5).
 	var rec []byte
 	if err := tx.QueryRow(ctx, `SELECT record FROM tasks WHERE id = $1`, l.WorkID).Scan(&rec); err != nil {
@@ -581,7 +592,11 @@ func (c *Core) Fail(ctx context.Context, w *Worker, header string, req FailReque
 		if err != nil {
 			return nil, err
 		}
-		return res, closeLease(ctx, tx, now, l, "closed", req.Reason, "fail", req, res)
+		if err := closeLease(ctx, tx, now, l, "closed", req.Reason, "fail", req, res); err != nil {
+			return nil, err
+		}
+		// What the attempt staged is discarded, what it read returns (MSG-9).
+		return res, c.settleMessages(ctx, tx, now, l.WorkID)
 	})
 }
 
@@ -592,7 +607,10 @@ func (c *Core) Release(ctx context.Context, w *Worker, header string) (*ReleaseR
 			return nil, err
 		}
 		res := &ReleaseResult{LeaseState: "released"}
-		return res, closeLease(ctx, tx, now, l, "released", "worker_drain", "release", nil, res)
+		if err := closeLease(ctx, tx, now, l, "released", "worker_drain", "release", nil, res); err != nil {
+			return nil, err
+		}
+		return res, c.settleMessages(ctx, tx, now, l.WorkID)
 	})
 }
 

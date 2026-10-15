@@ -163,6 +163,9 @@ func (c *Core) reapWith(ctx context.Context, reason string, spends bool) error {
 			case "erasure":
 				err = c.endErasureStep(ctx, tx, now, &l, "", "", reason, true)
 			}
+			if err == nil && l.Kind == "attempt" {
+				err = c.settleMessages(ctx, tx, now, l.WorkID)
+			}
 			return err
 		})
 		if err != nil || done {
@@ -197,6 +200,9 @@ func (c *Core) deadlines(ctx context.Context) error {
 					WHERE work_id = $1 AND state = 'active'`, id, now); err != nil {
 					return err
 				}
+			}
+			if err := c.settleMessages(ctx, tx, now, id); err != nil {
+				return err
 			}
 			return c.failTask(ctx, tx, now, tenant, id, initiator, rec, "deadline_exceeded")
 		})

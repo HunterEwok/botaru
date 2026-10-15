@@ -173,6 +173,11 @@ type Tenant struct {
 	Campaigns struct {
 		MaxTreeTasks int `json:"max_tree_tasks"`
 	} `json:"campaigns"`
+	// Messaging holds the wake-up ceilings of the tenant (MSG-11).
+	Messaging struct {
+		WakeDayEUR  *float64 `json:"wake_day_eur"`
+		WakesPerDay *int     `json:"wakes_per_day"`
+	} `json:"messaging"`
 }
 
 // TenantInsights is the insights block of a tenant: where the digest goes, who realizes
@@ -348,9 +353,72 @@ type Role struct {
 	MonitorScripts []string `json:"monitor_scripts"`
 	// Insight is the seat analysis of the role (INS-1).
 	Insight *RoleInsight `json:"insight"`
+	// Messages are the message types the role sends and receives (MSG-5).
+	Messages RoleMessages `json:"messages"`
+	// InstanceInbox gives every worker of the role its own inbox; unset, a role of a job,
+	// toolhost or channel worker has one and an agent role has none (MSG-14).
+	InstanceInbox *bool `json:"instance_inbox"`
+	// Views are the status.* views of the role (REP-8).
+	Views   []string `json:"views"`
 	Runtime struct {
 		Driver string `json:"driver"`
 	} `json:"runtime"`
+}
+
+// RoleMessages is the messages block of a role (MSG-5).
+type RoleMessages struct {
+	Send []struct {
+		Type string   `json:"type"`
+		To   []string `json:"to"`
+	} `json:"send"`
+	Receive []struct {
+		Type string `json:"type"`
+	} `json:"receive"`
+}
+
+// Receives says whether the role receives the message type.
+func (r Role) Receives(typ string) bool {
+	for _, x := range r.Messages.Receive {
+		if x.Type == typ {
+			return true
+		}
+	}
+	return false
+}
+
+// HasInstanceInbox says whether every worker of the role has its own inbox (MSG-14).
+func (r Role) HasInstanceInbox() bool {
+	if r.InstanceInbox != nil {
+		return *r.InstanceInbox
+	}
+	return r.WorkerKind != "" && r.WorkerKind != "agent"
+}
+
+// MessageType is the spec of a MessageType manifest (MSG-2).
+type MessageType struct {
+	Kind         string         `json:"kind"`
+	FieldsSchema map[string]any `json:"fields_schema"`
+	SubjectFrom  string         `json:"subject_from"`
+	DataClass    string         `json:"data_class"`
+	Note         struct {
+		MaxChars int `json:"max_chars"`
+	} `json:"note"`
+	Delivery   string   `json:"delivery"`
+	TTL        string   `json:"ttl"`
+	StaleAfter string   `json:"stale_after"`
+	MaxBytes   int      `json:"max_bytes"`
+	Producers  []string `json:"producers"`
+	Rate       struct {
+		PerHourPerSender int `json:"per_hour_per_sender"`
+	} `json:"rate"`
+}
+
+// BotGroup is the spec of a BotGroup manifest: a selector by roles and labels (BGR-1).
+type BotGroup struct {
+	Select struct {
+		Roles  []string          `json:"roles"`
+		Labels map[string]string `json:"labels"`
+	} `json:"select"`
 }
 
 // Action is the spec of an Action manifest: a button with a closed form (MAN-9).
@@ -423,6 +491,10 @@ type TaskType struct {
 	Proposable *bool `json:"proposable"`
 	// MakesBackup marks a backup type: its run.finished.v1 events give the backup age (OBV-7).
 	MakesBackup bool `json:"makes_backup"`
+	// Inbox names the message types an attempt of the type reads (MSG-8).
+	Inbox struct {
+		Read []string `json:"read"`
+	} `json:"inbox"`
 }
 
 // Timeouts are the type deadlines as durations (15m, 60s).

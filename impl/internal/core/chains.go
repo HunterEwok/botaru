@@ -48,20 +48,24 @@ type chainLink struct {
 	// ParentPriority is the priority class of the parent: a task of the tree is not more
 	// urgent than its parent, a higher number being less urgent (DSP-2).
 	ParentPriority int
+	// CoInitiators are the initiators of what the tree read (MSG-7).
+	CoInitiators []string
 }
 
 // treeRecord is the part of a task record a chain reads.
 type treeRecord struct {
-	Parent        string  `json:"parent"`
-	Root          string  `json:"root"`
-	Depth         int     `json:"depth"`
-	MaxTier       int     `json:"max_tier"`
-	DataMark      string  `json:"data_mark"`
-	UntrustedSeen bool    `json:"untrusted_seen"`
-	Conversation  string  `json:"conversation"`
-	Origin        *Origin `json:"origin"`
-	EnqueuedBy    string  `json:"enqueued_by"`
-	Trace         string  `json:"trace"`
+	Parent        string   `json:"parent"`
+	Root          string   `json:"root"`
+	Depth         int      `json:"depth"`
+	DepthFloor    int      `json:"depth_floor"`
+	CoInitiators  []string `json:"co_initiators"`
+	MaxTier       int      `json:"max_tier"`
+	DataMark      string   `json:"data_mark"`
+	UntrustedSeen bool     `json:"untrusted_seen"`
+	Conversation  string   `json:"conversation"`
+	Origin        *Origin  `json:"origin"`
+	EnqueuedBy    string   `json:"enqueued_by"`
+	Trace         string   `json:"trace"`
 }
 
 // child says whether the task is a child of enqueue_child: a task with a parent that a worker
@@ -98,7 +102,7 @@ func childTypes(cat *Catalog, g *toolsGrant) []string {
 	groups := groupClosure(tv, g.InitiatorGroups)
 	var out []string
 	for _, t := range role.MayEnqueue {
-		if _, ok := cat.TaskTypes[t]; ok && !strings.HasPrefix(t, "action.") && hasCap(tv, groups, "task:"+t) {
+		if _, ok := cat.TaskTypes[t]; ok && !strings.HasPrefix(t, "action.") && hasCap(tv, groups, "task:"+t) && g.coHave(tv, "task:"+t) {
 			out = append(out, t)
 		}
 	}
@@ -242,9 +246,10 @@ func (c *Core) enqueueChild(ctx context.Context, tx pgx.Tx, now time.Time, cat *
 		Tenant: g.Tenant, Type: typ, Body: body, IdempotencyKey: key, Initiator: g.Initiator,
 		EnqueuedBy: "worker:" + g.Worker, Origin: parent.Origin, FairnessKey: fairnessOf(ctx, tx, g.Task),
 		Chain: &chainLink{
-			Parent: g.Task, Root: parent.Root, Depth: parent.Depth + 1, Mark: parent.DataMark, MaxTier: parent.MaxTier,
+			// A tree that read a message is at least as deep as its hops (MSG-11).
+			Parent: g.Task, Root: parent.Root, Depth: max(parent.Depth, parent.DepthFloor) + 1, Mark: parent.DataMark, MaxTier: parent.MaxTier,
 			Untrusted: parent.UntrustedSeen, Conversation: parent.Conversation, Trace: parent.Trace,
-			ParentPriority: priorityOf(ctx, tx, g.Task),
+			ParentPriority: priorityOf(ctx, tx, g.Task), CoInitiators: parent.CoInitiators,
 		},
 	})
 	if err != nil {

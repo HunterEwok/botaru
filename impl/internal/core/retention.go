@@ -21,8 +21,9 @@ const (
 // request (RET-2): the body and result of a finished task (its row stays as a tombstone that
 // keeps the idempotency key, RET-3), the body of a finished delivery, the arguments and output
 // of a finished tool call, a session that has not changed for the period (7 days for a role
-// without memory), and the bytes of a file past its expiry or the period. Metadata (audit,
-// events, usage lines, decisions) stays. The class observation has no store in this build.
+// without memory), the bytes of a file past its expiry or the period, and an ended entry of a
+// bot message with its fields. Metadata (audit, events, usage lines, decisions) stays. The class
+// observation has no store in this build.
 // Each pass deletes in bounded batches, so a long backlog does not hold one transaction.
 func (c *Core) retentionLoop(ctx context.Context) error {
 	cat, err := c.Catalog(ctx)
@@ -76,6 +77,20 @@ func (c *Core) retentionLoop(ctx context.Context) error {
 			tag, err := tx.Exec(ctx, `UPDATE files SET state = 'expired', content = NULL WHERE file_ref IN (SELECT file_ref FROM files
 				WHERE state = 'stored' AND (expires_at <= $1 OR (expires_at IS NULL AND created_at <= $2)) LIMIT $3 FOR UPDATE SKIP LOCKED)`,
 				now, now.AddDate(0, 0, -contentDays), retentionBatch)
+			return tag.RowsAffected(), err
+		},
+		// An entry of a bot message that ended (acknowledged, discarded, dead, expired, replaced,
+		// removed, or a state value gone stale) leaves the store with its fields after the
+		// period; the audit and the events keep its metadata (MSG-3, MSG-12).
+		func(tx pgx.Tx, now time.Time) (int64, error) {
+			tag, err := tx.Exec(ctx, `DELETE FROM messages WHERE seq IN (SELECT seq FROM messages
+				WHERE state NOT IN ('staged', 'queued', 'leased', 'current') AND updated_at <= $1 LIMIT $2 FOR UPDATE SKIP LOCKED)`,
+				now.AddDate(0, 0, -contentDays), retentionBatch)
+			return tag.RowsAffected(), err
+		},
+		func(tx pgx.Tx, now time.Time) (int64, error) {
+			tag, err := tx.Exec(ctx, `DELETE FROM message_marks WHERE (tenant, key) IN (SELECT tenant, key FROM message_marks
+				WHERE until <= $1 LIMIT $2 FOR UPDATE SKIP LOCKED)`, now, retentionBatch)
 			return tag.RowsAffected(), err
 		},
 		// An expired file has no bytes left; the next step records expired -> purged and the
