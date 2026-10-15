@@ -49,6 +49,8 @@ commands:
   worker revoke ID                           the token stops working; the bot identity becomes unbound
   bot list | bot show ID | bot retire ID     bot identities of the credential's tenant (IDN-8, IDN-11)
   incident list | incident show|ack|close ID | incident dismiss ID REASON DETAILS
+  control list [TENANT] | control revert incident=ID|since=TIME
+  control apply OP KIND ID [incident=ID] [ttl=DURATION] [effects=E1,E2]
                                             incidents of the credential's tenant (MGR-8)
   seat assign SEAT BOT | seat vacate SEAT    a commission seat, for example commission:1 (IDN-10)
   seat assign farm-manager | seat vacate farm-manager | seat resume farm-manager [--incident] INCIDENT
@@ -160,6 +162,39 @@ func run(c *client, args []string) error {
 			return c.print("bot.retire", map[string]any{"bot": args[2]})
 		}
 		return errors.New("usage: farmctl bot list | bot show ID | bot retire ID")
+	case "control":
+		switch {
+		case len(args) == 2 && args[1] == "list":
+			return c.print("control.list", map[string]any{})
+		case len(args) == 3 && args[1] == "list":
+			return c.print("control.list", map[string]any{"tenant": args[2]})
+		case len(args) == 3 && args[1] == "revert":
+			k, v, ok := strings.Cut(args[2], "=")
+			if ok && (k == "incident" || k == "since") {
+				return c.print("control.revert", map[string]any{k: v})
+			}
+		case len(args) >= 5 && args[1] == "apply":
+			req := map[string]any{"op": args[2], "target": map[string]any{"kind": args[3], "id": args[4]}}
+			for _, a := range args[5:] {
+				k, v, _ := strings.Cut(a, "=")
+				switch k {
+				case "incident":
+					req["basis"] = map[string]any{"incident": v}
+				case "ttl":
+					req["ttl"] = v
+				case "effects":
+					effects := []any{}
+					for _, e := range strings.Split(v, ",") {
+						effects = append(effects, e)
+					}
+					req["effects"] = effects
+				default:
+					return fmt.Errorf("unknown argument %s", a)
+				}
+			}
+			return c.print("control.apply", req)
+		}
+		return errors.New("usage: farmctl control list [TENANT] | control revert incident=ID|since=TIME | control apply OP KIND ID [incident=ID] [ttl=DURATION] [effects=E1,E2]")
 	case "incident":
 		switch {
 		case len(args) == 2 && args[1] == "list":

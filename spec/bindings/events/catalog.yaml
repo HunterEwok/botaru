@@ -344,6 +344,11 @@ entries:
     data_schema: spec/model/seat-event.schema.json
     producer: [core]
     rules: [IDN-10, GOV-29, GOV-21]
+  - id: control.applied.v1
+    since: v0.1
+    data_schema: spec/model/event-data/control-event.schema.json
+    producer: [core]
+    rules: [MGR-9]
   - id: incident.opened.v1
     since: v0.1
     data_schema: spec/model/event-data/incident-event.schema.json

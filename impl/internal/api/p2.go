@@ -178,6 +178,27 @@ func (s *Server) p2(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		out, err = s.c.SeatResume(ctx, oper, req)
+	case "control.apply":
+		req, derr := decode[core.ControlRequest](m)
+		if derr != nil {
+			s.fail(w, derr)
+			return
+		}
+		out, err = s.c.ControlApply(ctx, oper, req)
+	case "control.revert":
+		req, derr := decode[core.ControlRevertRequest](m)
+		if derr != nil {
+			s.fail(w, derr)
+			return
+		}
+		out, err = s.c.ControlRevert(ctx, oper, req)
+	case "control.list":
+		req, derr := decode[core.TenantRequest](m)
+		if derr != nil {
+			s.fail(w, derr)
+			return
+		}
+		out, err = s.c.ControlList(ctx, oper, req)
 	case "incident.list":
 		req, derr := decode[core.TenantRequest](m)
 		if derr != nil {
