@@ -162,12 +162,14 @@ func run(c *client, args []string) error {
 		switch {
 		case len(args) == 2 && args[1] == "list":
 			return c.print("incident.list", map[string]any{})
+		case len(args) == 3 && args[1] == "list":
+			return c.print("incident.list", map[string]any{"tenant": args[2]})
 		case len(args) == 3 && (args[1] == "show" || args[1] == "ack" || args[1] == "close"):
 			return c.print("incident."+args[1], map[string]any{"op": "incident." + args[1], "id": args[2]})
 		case len(args) >= 5 && args[1] == "dismiss":
 			return c.print("incident.dismiss", map[string]any{"incident": args[2], "reason_code": args[3], "details": strings.Join(args[4:], " ")})
 		}
-		return errors.New("usage: farmctl incident list | incident show|ack|close ID | incident dismiss ID REASON DETAILS")
+		return errors.New("usage: farmctl incident list [TENANT] | incident show|ack|close ID | incident dismiss ID REASON DETAILS")
 	case "seat":
 		switch {
 		case len(args) == 4 && args[1] == "assign":

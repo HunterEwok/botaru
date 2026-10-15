@@ -319,6 +319,21 @@ func (c *Core) openIncidents(ctx context.Context, cat *Catalog, classes []incide
 				continue
 			}
 			if err := c.tx(ctx, func(tx pgx.Tx, now time.Time) error {
+				// The episode is re-read under a lock: it may have repeated with other numbers or
+				// resolved since the list above was read.
+				ep := ep
+				var state string
+				var vals []byte
+				if err := tx.QueryRow(ctx, `SELECT state, vals, coalesce(vals_at, opened_at) FROM alarm_episodes WHERE id = $1 FOR UPDATE`,
+					ep.ID).Scan(&state, &vals, &ep.ValsAt); err != nil {
+					return err
+				}
+				ep.Values = nil
+				_ = json.Unmarshal(vals, &ep.Values)
+				if state != "firing" {
+					_, err := tx.Exec(ctx, `DELETE FROM incident_detect WHERE class = $1 AND episode = $2`, ic.Name, ep.ID)
+					return err
+				}
 				// detect.for counts from when the conditions last started to hold on the
 				// episode's latest numbers, not from the episode's start.
 				if !detectHolds(ic.Spec, ep) {
