@@ -1,0 +1,32 @@
+# Incident class from spec/model/incident-classes.yaml (farm git, human review). It opens before
+# disk_full on the same alarm, and the farm manager's disk stop needs it live for the whole
+# prevention window (MGR-34).
+apiVersion: botaru/v1alpha1
+kind: IncidentClass
+metadata: {name: disk_filling}
+spec:
+  title: "Disk filling"
+  severity: sev2
+  change_sensitive: false
+  stops_manager: false
+  inspect: false
+  detect:
+    alarm: alarm.disk.free.low.v1
+    when:
+      - {atom: lt, field: values.free_pct, value: 15}
+    for: 5m
+  subject: {kind: resource}
+  implicate:
+    - {fn: lease_holders_on, args: {resource: $subject}}
+  responses:
+    ops: [drain, notify]
+    actions: [cleanup_pipeline_tmp]
+    services: [restart]
+  takeover: false
+  humans:
+    notify_on_open: false
+  resolve:
+    alarm_state: resolved
+    for: 10m
+  limits:
+    ops_max: 5

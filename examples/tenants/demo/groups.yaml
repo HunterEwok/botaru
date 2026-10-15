@@ -102,3 +102,11 @@ spec:
          "service.control:nginx"]
   data: [summary, internal]
   day_eur: 3.0
+---
+apiVersion: botaru/v1alpha1
+kind: Group
+metadata: {name: farm-manager-ops, tenant: demo}
+spec:
+  title: "What the farm manager may do in this tenant (MGR-3)"
+  caps: ["task:manager.incident.respond.v1"]
+  data: [summary, internal]

@@ -309,8 +309,9 @@ func (c *Core) openIncidents(ctx context.Context, cat *Catalog, classes []incide
 	var errs []error
 	// The number log of an episode that no longer fires is dropped. A firing one keeps the changes
 	// of the longest detect.for and the last change before it, which is all detectSince needs to
-	// see a run that lasted that long.
-	var keep time.Duration
+	// see a run that lasted that long, and at least the prevention window of the farm manager's
+	// disk stop, which compares the numbers at the window's start and end (MGR-34).
+	keep := preventWindow
 	for _, ic := range classes {
 		keep = max(keep, specDuration(mmap(ic.Spec, "detect"), "for"))
 	}

@@ -176,7 +176,22 @@ func (c *Core) newLease(ctx context.Context, tx pgx.Tx, now time.Time, w *Worker
 // accessLost rechecks a principal: active, with the capability cap (none when empty) and the
 // data class mark. It returns the refusal reason, or "" when the access still holds.
 func (c *Core) accessLost(ctx context.Context, tx store.Querier, now time.Time, tv *TenantView, principal, cap, mark string) (string, error) {
-	if principal == "system" || tv == nil {
+	if tv == nil {
+		return "", nil
+	}
+	if principal == seatConsent {
+		// A farm manager seat task answers to the tenant's consent group as it stands now: a
+		// right the tenant took back after enqueue stops it (MGR-3).
+		groups := groupClosure(tv, []string{"farm-manager-ops"})
+		if cap != "" && !hasCap(tv, groups, cap) {
+			return "no_group_cap", nil
+		}
+		if mark != "" && !hasData(tv, groups, mark) {
+			return "no_data_class", nil
+		}
+		return "", nil
+	}
+	if principal == "system" {
 		return "", nil
 	}
 	p, err := loadPrincipal(ctx, tx, now, tv.Name, principal)
@@ -197,6 +212,18 @@ func (c *Core) accessLost(ctx context.Context, tx store.Querier, now time.Time, 
 		return "no_data_class", nil
 	}
 	return "", nil
+}
+
+// seatConsent stands for the tenant's consent group farm-manager-ops in accessLost.
+const seatConsent = "seat:" + managerSeatID
+
+// accessPrincipal is whose rights a task's work answers to: the farm manager seat's tasks to the
+// tenant's consent group, any other task to its initiator.
+func accessPrincipal(initiator string, rec []byte) string {
+	if seatOfRecord(rec) == managerSeatID {
+		return seatConsent
+	}
+	return initiator
 }
 
 // taskMark is the data mark a task's reader must see: the type's class, raised by the mark in
@@ -380,7 +407,7 @@ func (c *Core) claimAttempt(ctx context.Context, tx pgx.Tx, now time.Time, cat *
 		}
 		// The initiator's rights are checked again under the task lock: a person disabled or
 		// ungranted after enqueue gets no work done in their name (PRM-8).
-		if reason, err := c.accessLost(ctx, tx, now, tv, initiator, "task:"+typ, cat.TaskTypes[typ].DataClass); err != nil {
+		if reason, err := c.accessLost(ctx, tx, now, tv, accessPrincipal(initiator, rec), "task:"+typ, cat.TaskTypes[typ].DataClass); err != nil {
 			return nil, err
 		} else if reason != "" {
 			if err := c.failTask(ctx, tx, now, w.Tenant, id, initiator, rec, reason); err != nil {
@@ -437,6 +464,12 @@ func (c *Core) claimAttempt(ctx context.Context, tx pgx.Tx, now time.Time, cat *
 	// The run fingerprint and the catalog values of the result check are fixed at claim and
 	// written into the attempt (PRV-1, OUT-1); the worker does not set them.
 	slot, profile := mainSlot(role)
+	// An attempt of the farm manager seat runs on the seat model of the farm charter (MGR-1).
+	if seatOfRecord(rec) == managerSeatID {
+		if mp := mstr(managerCharter(cat), "model_profile"); mp != "" {
+			slot, profile = "seat", mp
+		}
+	}
 	mark, _ := record["data_mark"].(string)
 	g := &toolsGrant{Tenant: w.Tenant, Task: id, Worker: w.ID}
 	if err := c.loadGrantTask(ctx, tx, g); err != nil {

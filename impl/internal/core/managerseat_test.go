@@ -347,3 +347,28 @@ func TestAlarmValuesAt(t *testing.T) {
 		t.Fatal("a flat window counted as growth")
 	}
 }
+
+// A seat task answers to the tenant's consent group as it stands, not to the system initiator
+// (MGR-3).
+func TestSeatConsent(t *testing.T) {
+	ctx := context.Background()
+	b := newManagerBench(t)
+	cat, err := b.c.Catalog(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tv := cat.Tenants["demo"]
+	rec := []byte(`{"seat": "farm-manager"}`)
+	if p := accessPrincipal("system", rec); p != seatConsent {
+		t.Fatalf("principal %s", p)
+	}
+	if r, err := b.c.accessLost(ctx, b.c.st.Pool, time.Now(), tv, seatConsent, "task:"+incidentRespondType, "internal"); err != nil || r != "" {
+		t.Fatalf("allowed task: %s %v", r, err)
+	}
+	if r, _ := b.c.accessLost(ctx, b.c.st.Pool, time.Now(), tv, seatConsent, "task:ops.summary.v1", ""); r != "no_group_cap" {
+		t.Fatalf("a right outside the group: %s", r)
+	}
+	if r, _ := b.c.accessLost(ctx, b.c.st.Pool, time.Now(), tv, seatConsent, "", "raw_logs"); r != "no_data_class" {
+		t.Fatalf("a data class outside the group: %s", r)
+	}
+}
