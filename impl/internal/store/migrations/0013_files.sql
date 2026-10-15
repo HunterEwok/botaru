@@ -20,6 +20,11 @@ CREATE TABLE files (
     expires_at      timestamptz
 );
 CREATE INDEX files_tenant ON files (tenant, created_at);
+CREATE INDEX files_producer ON files (tenant, producer);
 
 -- A service principal that declares the personal data of its uploads (ART-6).
 ALTER TABLE principals ADD COLUMN uploads_personal boolean;
+
+-- A session carries the highest data mark of the tasks that wrote to it, so a later task that
+-- loads it is not lower.
+ALTER TABLE sessions ADD COLUMN data_mark text;

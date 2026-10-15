@@ -55,7 +55,7 @@ func TestFiles(t *testing.T) {
 	}
 	a := Activity{Kind: "message", Channel: "telegram", UpdateID: "1", Chat: Chat{Kind: "direct", ExternalID: "1002"}, Text: "/hello look", Attachments: []string{up.FileRef}}
 	a.Sender.Identity, a.Sender.Verified = "telegram:1002", true
-	if r, _ := b.c.SubmitActivity(ctx, b.channel, a); r.Result != "reply" || !strings.Contains(r.Text, "could not be used") {
+	if r, err := b.c.SubmitActivity(ctx, b.channel, a); err != nil || r.Result != "reply" || !strings.Contains(r.Text, "could not be used") {
 		t.Fatalf("someone else's file %+v", r)
 	}
 	a.UpdateID, a.Chat.ExternalID, a.Sender.Identity = "2", "1001", "telegram:1001"
@@ -81,7 +81,13 @@ func TestFiles(t *testing.T) {
 	if _, err := b.c.FileGet(ctx, b.agent, h, FileGetRequest{FileRef: "file:AAAAAAAAAAAAAAAAAAAAAA"}); err == nil {
 		t.Fatal("an unknown file was handed out")
 	}
-	prod, err := b.c.FilePut(ctx, b.agent, h, nil, FilePutRequest{MediaType: "text/plain", DataMark: "summary"}, []byte("report"))
+	if _, err := b.c.FilePut(ctx, b.agent, h, nil, FilePutRequest{MediaType: "text/plain"}, []byte("report")); err == nil {
+		t.Fatal("a model runtime produced a file")
+	}
+	// The same lease seen as a job worker's: only a job produces a file under an attempt.
+	job := *b.agent
+	job.Kind = "job"
+	prod, err := b.c.FilePut(ctx, &job, h, nil, FilePutRequest{MediaType: "text/plain", DataMark: "summary"}, []byte("report"))
 	if err != nil {
 		t.Fatal(err)
 	}

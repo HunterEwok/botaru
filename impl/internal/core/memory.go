@@ -59,6 +59,7 @@ func (c *Core) leaseHandles(ctx context.Context, tx pgx.Tx, now time.Time, w *Wo
 	if conv, _ := record["conversation"].(string); conv != "" {
 		var sid string
 		var marked bool
+		var sessionMark *string
 		subjects := []string{}
 		if strings.HasPrefix(initiator, "human:") {
 			subjects = append(subjects, initiator)
@@ -68,9 +69,17 @@ func (c *Core) leaseHandles(ctx context.Context, tx pgx.Tx, now time.Time, w *Wo
 			ON CONFLICT (tenant, role, conversation) DO UPDATE SET
 				subjects = CASE WHEN sessions.subjects @> EXCLUDED.subjects THEN sessions.subjects ELSE sessions.subjects || EXCLUDED.subjects END,
 				updated_at = EXCLUDED.updated_at
-			RETURNING id, untrusted_seen`, ids.New(ids.Session), w.Tenant, w.Role, conv, subjects, now).Scan(&sid, &marked)
+			RETURNING id, untrusted_seen, data_mark`, ids.New(ids.Session), w.Tenant, w.Role, conv, subjects, now).Scan(&sid, &marked, &sessionMark)
 		if err != nil {
 			return err
+		}
+		// A session carries the highest mark of the tasks that wrote to it: a task that loads
+		// it is not lower (OUT-1, ART-2).
+		if own, _ := record["data_mark"].(string); sessionMark != nil && c.higherMark(own, *sessionMark) != own {
+			record["data_mark"] = *sessionMark
+			if _, err := tx.Exec(ctx, `UPDATE tasks SET record = jsonb_set(record, '{data_mark}', to_jsonb($2::text)) WHERE id = $1`, task, *sessionMark); err != nil {
+				return err
+			}
 		}
 		if marked && record["untrusted_seen"] != true {
 			record["untrusted_seen"] = true
@@ -93,6 +102,8 @@ type leaseHandle struct {
 	Tenant, Task, Worker, Role, Ref string
 	LeaseNo                         int
 	Untrusted                       bool
+	// Mark is the data mark of the task.
+	Mark string
 }
 
 // resolveLeaseHandle finds a live handle of a kind; a handle of a dead lease or of another
@@ -123,10 +134,11 @@ func (c *Core) resolveLeaseHandle(ctx context.Context, q store.Querier, handle, 
 	}
 	h.Ref = deref(ref)
 	var r struct {
-		Untrusted bool `json:"untrusted_seen"`
+		Untrusted bool   `json:"untrusted_seen"`
+		Mark      string `json:"data_mark"`
 	}
 	_ = json.Unmarshal(rec, &r)
-	h.Untrusted = r.Untrusted
+	h.Untrusted, h.Mark = r.Untrusted, r.Mark
 	return &h, nil
 }
 
@@ -207,7 +219,16 @@ func (c *Core) SessionAppend(ctx context.Context, handle string, req SessionAppe
 		if err != nil {
 			return err
 		}
-		tag, err := tx.Exec(ctx, `UPDATE sessions SET updated_at = $2, untrusted_seen = untrusted_seen OR $3 WHERE id = $1`, h.Ref, now, h.Untrusted)
+		var sessionMark *string
+		err = tx.QueryRow(ctx, `SELECT data_mark FROM sessions WHERE id = $1 FOR UPDATE`, h.Ref).Scan(&sessionMark)
+		if errors.Is(err, pgx.ErrNoRows) {
+			return refuse("handle_invalid", "the session was erased")
+		}
+		if err != nil {
+			return err
+		}
+		mark := c.higherMark(deref(sessionMark), h.Mark)
+		tag, err := tx.Exec(ctx, `UPDATE sessions SET updated_at = $2, untrusted_seen = untrusted_seen OR $3, data_mark = nullif($4, '') WHERE id = $1`, h.Ref, now, h.Untrusted, mark)
 		if err != nil {
 			return err
 		}

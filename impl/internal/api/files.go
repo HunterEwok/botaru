@@ -92,6 +92,9 @@ func (s *Server) fileGet(ctx context.Context, w http.ResponseWriter, r *http.Req
 		return
 	}
 	w.Header().Set("Content-Type", out.MediaType)
+	// The bytes are data: no client renders an active type of them in place.
+	w.Header().Set("X-Content-Type-Options", "nosniff")
+	w.Header().Set("Content-Disposition", "attachment")
 	w.Header().Set("Content-Length", strconv.FormatInt(int64(len(out.Content)), 10))
 	w.Header().Set("Botaru-File-Ref", out.FileRef)
 	w.Header().Set("Botaru-Data-Mark", out.DataMark)

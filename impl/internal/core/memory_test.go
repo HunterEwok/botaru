@@ -111,8 +111,9 @@ func TestSessionAndMemory(t *testing.T) {
 		validOut(t, b.bench, "memory-item", r.Items[0])
 	}
 
-	// Untrusted text in the attempt: no proposal, and the session is marked.
-	if _, err := b.c.st.Pool.Exec(ctx, `UPDATE tasks SET record = record || '{"untrusted_seen": true}' WHERE id = $1`, att.WorkID); err != nil {
+	// Untrusted text in the attempt: no proposal, and the session is marked. The attempt
+	// also read data of a higher class, which the session carries to the next task.
+	if _, err := b.c.st.Pool.Exec(ctx, `UPDATE tasks SET record = record || '{"untrusted_seen": true, "data_mark": "internal"}' WHERE id = $1`, att.WorkID); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := b.c.MemoryPropose(ctx, mh, MemoryProposeRequest{Key: "x", Content: "y"}); err == nil || !strings.Contains(err.Error(), "untrusted") {
@@ -126,6 +127,9 @@ func TestSessionAndMemory(t *testing.T) {
 	att2 := b.claim(t, b.agent, "attempt")
 	if att2.WorkID != next || att2.Payload["task"].(map[string]any)["record"].(map[string]any)["untrusted_seen"] != true {
 		t.Fatalf("a task of a marked session is not marked: %v", att2.Payload["task"])
+	}
+	if m := att2.Payload["task"].(map[string]any)["record"].(map[string]any)["data_mark"]; m != "internal" {
+		t.Fatalf("the session mark did not carry over: %v", m)
 	}
 }
 

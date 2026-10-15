@@ -13,6 +13,7 @@ import (
 	"mime"
 	"net/http"
 	"slices"
+	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -70,7 +71,12 @@ func sniffType(content []byte) string {
 	return mt
 }
 
-// fileExpiry is the smaller of the tenant file period and the type's result_ttl (ART-1).
+// contentDays is the default period of the retention class content
+// (spec/model/retention-classes.yaml, RET-1).
+const contentDays = 30
+
+// fileExpiry is the smaller of the tenant file period and the type's result_ttl (ART-1), else the
+// default period of class content.
 func fileExpiry(now time.Time, tenantFiles, resultTTL string) any {
 	var out time.Duration
 	for _, s := range []string{tenantFiles, resultTTL} {
@@ -79,7 +85,8 @@ func fileExpiry(now time.Time, tenantFiles, resultTTL string) any {
 		}
 	}
 	if out == 0 {
-		return nil
+		// Without a tenant period a file keeps the default period of class content (RET-2).
+		out = contentDays * 24 * time.Hour
 	}
 	return now.Add(out)
 }
@@ -113,6 +120,15 @@ func (c *Core) FilePut(ctx context.Context, w *Worker, lease string, ob *OnBehal
 		case lease == "" && w.Kind == "channel":
 			if ob == nil {
 				return refuse("forbidden", "a channel puts a file on behalf of a person")
+			}
+			// The same checks as an activity of the channel: an accepted hello, a channel of
+			// the tenant and an identity of the channel's kind (IDN-2).
+			if w.State != "active" && w.State != "draining" {
+				return refuse("not_ready", "send hello first")
+			}
+			ch, ok := tv.Channels[w.Target]
+			if !ok || ch.IdentityKind == "" || !strings.HasPrefix(ob.Identity, ch.IdentityKind+":") {
+				return refuse("forbidden", "the identity kind does not match the channel driver")
 			}
 			principal, err := principalByIdentity(ctx, tx, w.Tenant, ob.Identity)
 			if errors.Is(err, pgx.ErrNoRows) {
@@ -152,6 +168,10 @@ func (c *Core) FilePut(ctx context.Context, w *Worker, lease string, ob *OnBehal
 			task, toolcall := l.WorkID, ""
 			switch l.Kind {
 			case "attempt":
+				// A job produces files; a model runtime does not (P1 file.put).
+				if w.Kind != "job" {
+					return refuse("forbidden", "only a job worker produces a file under an attempt")
+				}
 			case "toolcall":
 				toolcall = l.WorkID
 				if err := tx.QueryRow(ctx, `SELECT task FROM toolcalls WHERE id = $1`, l.WorkID).Scan(&task); err != nil {
@@ -189,7 +209,7 @@ func (c *Core) FilePut(ctx context.Context, w *Worker, lease string, ob *OnBehal
 		}
 		out = FilePutResult{FileRef: ref}
 		return c.appendEvent(ctx, tx, now, w.Tenant, Event{Type: "file.stored", Subject: ref, Data: map[string]any{
-			"file_ref": ref, "origin": origin, "data_mark": mark,
+			"file_ref": ref, "origin": origin, "data_mark": mark, "worker": w.ID,
 		}})
 	})
 	if err != nil {
@@ -303,8 +323,14 @@ func (c *Core) FileGet(ctx context.Context, w *Worker, lease string, req FileGet
 		case "delivery":
 			var recipient, dmark *string
 			var execKind, execName string
-			if err := tx.QueryRow(ctx, `SELECT recipient, data_mark, exec_kind, exec_name FROM deliveries WHERE id = $1`, l.WorkID).Scan(&recipient, &dmark, &execKind, &execName); err != nil {
+			var named bool
+			// A delivery hands out only the files its body names.
+			if err := tx.QueryRow(ctx, `SELECT recipient, data_mark, exec_kind, exec_name, position($2 in coalesce(body::text, '')) > 0 FROM deliveries WHERE id = $1`,
+				l.WorkID, `"`+f.Ref+`"`).Scan(&recipient, &dmark, &execKind, &execName, &named); err != nil {
 				return err
+			}
+			if !named {
+				return refuse("not_found", "no such file")
 			}
 			// The delivery hands out a file no higher than its own mark, which the claim
 			// checked against the recipient and the ceiling.

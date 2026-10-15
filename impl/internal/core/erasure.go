@@ -391,7 +391,7 @@ func (c *Core) eraseCore(ctx context.Context, tx pgx.Tx, now time.Time, cat *Cat
 		}
 		_, err := tx.Exec(ctx, `UPDATE files SET state = 'purged', content = NULL WHERE tenant = $1 AND state <> 'purged' AND (
 			(cardinality($4::text[]) = 0 AND ($2 = '' OR producer = $2) AND cardinality($3::text[]) = 0)
-			OR producer IN (`+tasksIn+`) AND ($2 <> '' OR cardinality($3::text[]) > 0)
+			OR producer IN (`+tasksIn+`) AND (cardinality($3::text[]) > 0 OR ($2 <> '' AND cardinality($4::text[]) = 0))
 			OR file_ref = ANY($4))`,
 			r.Tenant, sc.Subject, idsWith(sc.IDs, "t_"), idsWith(sc.IDs, "file:"))
 		return err
