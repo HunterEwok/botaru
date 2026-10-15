@@ -374,7 +374,7 @@ func (c *Core) Status(ctx context.Context, op Operator, req TenantRequest) (*Sta
 		return nil, err
 	}
 	out := &StatusResult{Errors: []ApplyError{}, FarmManagerDisabled: []string{},
-		ConformsTo: ConformsTo{Skeleton: strings.TrimPrefix(spec.Version, "v") + ".0", Profiles: []string{"core"}}}
+		ConformsTo: ConformsTo{Skeleton: strings.TrimPrefix(spec.Version, "v") + ".0", Profiles: c.profiles()}}
 	err = c.tx(ctx, func(tx pgx.Tx, now time.Time) error {
 		err := tx.QueryRow(ctx, `SELECT commit, set_hash FROM apply_status WHERE id = 1`).Scan(&out.Commit, &out.SetHash)
 		if err != nil && !errors.Is(err, pgx.ErrNoRows) {
@@ -502,6 +502,9 @@ func (c *Core) Doctor(ctx context.Context, op Operator, req TenantRequest) (*Doc
 			{"erasure.open", `SELECT count(*) FROM erasure_requests WHERE tenant = $1 AND state <> 'done'`, []any{tenant}, true},
 		}
 		if err := c.doctorMoney(ctx, tx, now, tenant, add); err != nil {
+			return err
+		}
+		if err := c.doctorMonitor(ctx, tx, now, tenant, add); err != nil {
 			return err
 		}
 		for _, q := range counts {

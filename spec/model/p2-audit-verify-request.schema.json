@@ -5,7 +5,8 @@
   "description": "Check the audit hash chain of a tenant or farm and compare it with the signed head at the witness (AUD-6, spec/hashing.md).",
   "x-botaru-direction": "input",
   "x-botaru-rules": [
-    "AUD-6"
+    "AUD-6",
+    "MON-3"
   ],
   "type": "object",
   "required": [
@@ -14,6 +15,14 @@
   "properties": {
     "tenant": {
       "$ref": "urn:botaru:schema:common:1#/$defs/tenant_name"
+    },
+    "heads": {
+      "description": "Heads of the chain that the witness kept in the history of the monitoring system, oldest first; verify checks the signature of each, seq growing within an epoch and each head of the current epoch against its record (MON-3).",
+      "type": "array",
+      "maxItems": 100000,
+      "items": {
+        "$ref": "urn:botaru:schema:monitor-audit-head:1"
+      }
     }
   },
   "additionalProperties": false

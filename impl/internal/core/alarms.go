@@ -7,13 +7,10 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"slices"
 	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5"
-
-	"github.com/HunterEwok/botaru/impl/internal/spec"
 )
 
 // Alarms (spec/lifecycles/alarm.md). Only code raises and resolves an alarm (INJ-7): the loops
@@ -37,6 +34,8 @@ type Alarm struct {
 	Values   map[string]any
 	// Page raises the severity to page, as for a stop that hit the service limit (MON-8).
 	Page bool
+	// Origin is monitor for an alarm raised by a monitoring problem (MON-5), else code.
+	Origin string
 }
 
 // pageRepeat is the pause between the repeated notices of an open page alarm (MON-13).
@@ -124,12 +123,19 @@ func (c *Core) fireAlarm(ctx context.Context, tx pgx.Tx, now time.Time, a Alarm)
 	if a.Values == nil {
 		vals = []byte("{}")
 	}
-	if err := tx.QueryRow(ctx, `INSERT INTO alarm_episodes (tenant, alarmkey, alarm, state, severity, subject, vals, seq, opened_at, last_seen_at, notified_at)
-		VALUES ($1, $2, $3, 'firing', $4, $5, $6, 1, $7, $7, $7) RETURNING id`,
-		a.Tenant, ep.Alarmkey, ep.Alarm, sev, subj, vals, now).Scan(&ep.ID); err != nil {
+	origin := a.Origin
+	if origin == "" {
+		origin = "code"
+	}
+	if err := tx.QueryRow(ctx, `INSERT INTO alarm_episodes (tenant, alarmkey, alarm, state, severity, subject, vals, seq, opened_at, last_seen_at, notified_at, origin)
+		VALUES ($1, $2, $3, 'firing', $4, $5, $6, 1, $7, $7, $7, $8) RETURNING id`,
+		a.Tenant, ep.Alarmkey, ep.Alarm, sev, subj, vals, now, origin).Scan(&ep.ID); err != nil {
 		return err
 	}
 	if err := c.appendEvent(ctx, tx, now, a.Tenant, Event{Type: ep.Alarm, Subject: ep.Alarmkey, Data: data}); err != nil {
+		return err
+	}
+	if err := c.exportEpisode(ctx, tx, now, ep, origin, a.Values); err != nil {
 		return err
 	}
 	return c.noticeAlarm(ctx, tx, now, ep)
@@ -142,9 +148,10 @@ func (c *Core) resolveAlarm(ctx context.Context, tx pgx.Tx, now time.Time, a Ala
 	}
 	ep := &episode{Tenant: a.Tenant, Alarmkey: a.key(), State: "resolved", Seq: 2, At: now}
 	var subj []byte
+	var origin string
 	err := tx.QueryRow(ctx, `UPDATE alarm_episodes SET state = 'resolved', seq = 2, resolved_at = $3, notified_at = $3
-		WHERE tenant = $1 AND alarmkey = $2 AND state = 'firing' RETURNING id, alarm, severity, subject`,
-		a.Tenant, ep.Alarmkey, now).Scan(&ep.ID, &ep.Alarm, &ep.Severity, &subj)
+		WHERE tenant = $1 AND alarmkey = $2 AND state = 'firing' RETURNING id, alarm, severity, subject, origin`,
+		a.Tenant, ep.Alarmkey, now).Scan(&ep.ID, &ep.Alarm, &ep.Severity, &subj, &origin)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil
 	}
@@ -161,6 +168,9 @@ func (c *Core) resolveAlarm(ctx context.Context, tx pgx.Tx, now time.Time, a Ala
 	if err := c.appendEvent(ctx, tx, now, a.Tenant, Event{Type: ep.Alarm, Subject: ep.Alarmkey, Data: data}); err != nil {
 		return err
 	}
+	if err := c.exportEpisode(ctx, tx, now, ep, origin, nil); err != nil {
+		return err
+	}
 	return c.noticeAlarm(ctx, tx, now, ep)
 }
 
@@ -169,7 +179,7 @@ func (c *Core) resolveAlarm(ctx context.Context, tx pgx.Tx, now time.Time, a Ala
 // admin is an active person with admin:people or hold.release. The text comes only from the
 // code text catalog: the alarm, severity, state, subject, seq and time.
 func (c *Core) noticeAlarm(ctx context.Context, tx pgx.Tx, now time.Time, ep *episode) error {
-	if slices.Contains(spec.Profiles, "monitor") {
+	if c.monitorOn() {
 		return nil // the monitoring system is the one path to people (MON-1)
 	}
 	cat, err := c.Catalog(ctx)

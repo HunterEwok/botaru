@@ -247,12 +247,16 @@ func (s *Server) p2(w http.ResponseWriter, r *http.Request) {
 		}
 		out, err = s.c.AuditQuery(ctx, oper, req)
 	case "audit.verify":
-		tenant, _ := m["tenant"].(string)
-		if tenant != oper.Tenant {
+		req, derr := decode[core.AuditVerifyRequest](m)
+		if derr != nil {
+			s.fail(w, derr)
+			return
+		}
+		if req.Tenant != oper.Tenant {
 			Problem(w, &core.Problem{Reason: "forbidden", Detail: "the operator credential is for another tenant"})
 			return
 		}
-		out, err = s.c.AuditVerify(ctx, tenant)
+		out, err = s.c.AuditVerify(ctx, req.Tenant, req.Heads)
 	default:
 		Problem(w, &core.Problem{Reason: "not_found", Detail: "the operation is not implemented in this build"})
 		return

@@ -20,6 +20,8 @@ texts:
   notice.erasure_done: "Your data is erased (request {request}). Result per store:\n{results}"
   # An alarm without a monitoring system (MON-13)
   notice.alarm: "Alarm {alarm} ({severity}) is {state}: {subject}, change {seq} at {at}."
+  # Export to the monitoring system fails for longer than 15 minutes (MON-12)
+  notice.monitor_export_stalled: "Alarms of tenant {tenant} do not reach the monitoring system: the last successful export was {age_min} minutes ago."
   # Channel commands (REP-12, PRM-15, DLV-9)
   cmd.tasks.header: "Your tasks today:"
   cmd.tasks.row: "{n}. {title}: {state}{waiting}"

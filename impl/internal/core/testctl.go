@@ -31,6 +31,8 @@ var testLoops = map[string]func(c *Core, ctx context.Context) error{
 	"hold":            (*Core).holdLoop,
 	"worker-liveness": (*Core).liveness,
 	"alarm":           (*Core).alarmLoop,
+	"monitor":         (*Core).monitorLoop,
+	"audit-head":      (*Core).auditHeadLoop,
 	"health":          (*Core).healthLoop,
 	"approval-expiry": (*Core).approvalLoop,
 	"erasure":         (*Core).erasureLoop,
@@ -41,7 +43,7 @@ var testLoops = map[string]func(c *Core, ctx context.Context) error{
 
 // loopOrder is the order of one Tick: leases and deadlines first, then holds, then the loops
 // that raise and repeat alarms about what the others left, and the health indicators last.
-var loopOrder = []string{"reaper", "deadline", "stall", "hold", "schedule", "approval-expiry", "erasure", "budget", "retention", "worker-liveness", "alarm", "health"}
+var loopOrder = []string{"reaper", "deadline", "stall", "hold", "schedule", "approval-expiry", "erasure", "budget", "retention", "worker-liveness", "alarm", "monitor", "audit-head", "health"}
 
 func (c *Core) requireTestBench() error {
 	if !c.cfg.TestBench {

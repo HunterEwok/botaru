@@ -44,7 +44,7 @@ commands:
   ungrant ID GROUP
   worker enroll -tenant T -role R -kind K [-target NAME] -token-out FILE
                 [-plugins P[,P] -placement host|sandbox [-host MACHINE]]   (toolhost)
-  audit verify TENANT
+  audit verify TENANT [-heads FILE]          FILE: the JSON array of heads from the monitoring history, oldest first
   audit query [-kind K] [-command C] [-actor P] [-target-kind K] [-from T] [-to T] [-limit N] [-after-seq N]
                                              the audit of the credential's tenant; the read is audited
   status [TENANT]                            the applied commit, holds and the conformance claim
@@ -139,10 +139,25 @@ func run(c *client, args []string) error {
 		if len(args) >= 2 && args[1] == "query" {
 			return auditQuery(c, args[2:])
 		}
-		if len(args) != 3 || args[1] != "verify" {
-			return errors.New("audit verify TENANT, or audit query [flags]")
+		if len(args) < 3 || args[1] != "verify" {
+			return errors.New("audit verify TENANT [-heads FILE], or audit query [flags]")
 		}
-		return c.print("audit.verify", map[string]any{"tenant": args[2]})
+		fs := flag.NewFlagSet("audit verify", flag.ExitOnError)
+		headsFile := fs.String("heads", "", "a JSON array of the heads the monitoring history kept, oldest first (MON-3)")
+		_ = fs.Parse(args[3:])
+		req := map[string]any{"tenant": args[2]}
+		if *headsFile != "" {
+			b, err := os.ReadFile(*headsFile)
+			if err != nil {
+				return err
+			}
+			var heads []any
+			if err := json.Unmarshal(b, &heads); err != nil {
+				return fmt.Errorf("%s: %w", *headsFile, err)
+			}
+			req["heads"] = heads
+		}
+		return c.print("audit.verify", req)
 	case "status", "doctor":
 		req := map[string]any{}
 		if len(args) == 2 {
