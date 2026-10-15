@@ -102,8 +102,13 @@ func (c *Core) SpendReconcile(ctx context.Context, op Operator, req SpendReconci
 			ON CONFLICT (provider, day) DO UPDATE SET created_at = $3`, provider, day, now); err != nil {
 			return err
 		}
-		// A workspace with usage or a correction of the provider that day but no row in the
-		// report billed nothing: it is reconciled to zero, so the complete day holds no stale sum.
+		// A report without rows says the provider billed nothing that day: every workspace
+		// with usage or a correction of the provider that day is reconciled to zero, so the
+		// reported day holds no stale sum. A report with rows may be one batch of several
+		// (the request holds at most 1000 rows), so it reconciles only its own workspaces.
+		if len(req.Rows) > 0 {
+			return c.reconcileRows(ctx, tx, now, op, day, provider, sums)
+		}
 		rows, err := tx.Query(ctx, `SELECT DISTINCT tenant FROM spend WHERE provider = $1 AND time >= $2 AND time < $3`, provider, day, day.Add(24*time.Hour))
 		if err != nil {
 			return err
@@ -117,25 +122,30 @@ func (c *Core) SpendReconcile(ctx context.Context, op Operator, req SpendReconci
 				sums[t] = SpendReconcileItem{Tenant: t}
 			}
 		}
-		for _, tenant := range slices.Sorted(mapKeys(sums)) {
-			r := sums[tenant]
-			var known bool
-			if err := tx.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM tenants WHERE name = $1)`, r.Tenant).Scan(&known); err != nil {
-				return err
-			}
-			if !known {
-				return refuse("not_found", "no tenant %s", r.Tenant)
-			}
-			if err := c.reconcileDay(ctx, tx, now, op, day, provider, r); err != nil {
-				return err
-			}
-		}
-		return c.closeSpendGap(ctx, tx, now)
+		return c.reconcileRows(ctx, tx, now, op, day, provider, sums)
 	})
 	if err != nil {
 		return nil, err
 	}
 	return &Done{OK: true}, nil
+}
+
+// reconcileRows reconciles each workspace of a report and closes the spend gap of a restore.
+func (c *Core) reconcileRows(ctx context.Context, tx pgx.Tx, now time.Time, op Operator, day time.Time, provider string, sums map[string]SpendReconcileItem) error {
+	for _, tenant := range slices.Sorted(mapKeys(sums)) {
+		r := sums[tenant]
+		var known bool
+		if err := tx.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM tenants WHERE name = $1)`, r.Tenant).Scan(&known); err != nil {
+			return err
+		}
+		if !known {
+			return refuse("not_found", "no tenant %s", r.Tenant)
+		}
+		if err := c.reconcileDay(ctx, tx, now, op, day, provider, r); err != nil {
+			return err
+		}
+	}
+	return c.closeSpendGap(ctx, tx, now)
 }
 
 func (c *Core) reconcileDay(ctx context.Context, tx pgx.Tx, now time.Time, op Operator, day time.Time, provider string, r SpendReconcileItem) error {

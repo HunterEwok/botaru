@@ -1,5 +1,5 @@
 registry: reasons
-version: 9
+version: 10
 description: 'Closed registry of reasons: end of an attempt, refusals at enqueue and at a call, waiting, outcomes of calls,
   approvals and deliveries, and also codes of other parts of the farm. A worker in P1 `fail` passes only a code from here; there is no free
   reason text in the records. Record fields: `meaning` (what it means); `spends_attempt` (whether it spends an attempt: true,
@@ -1540,3 +1540,11 @@ entries:
   retry: null
   outcome: rejected
   rules: [PRP-24]
+- id: match_overflow
+  since: v0.1
+  meaning: An edge store found more objects for an erase_match than the request keeps (1000 ids in all); its match step fails
+    instead of keeping a part, so the erasure of that store fails and is not reported done.
+  spends_attempt: null
+  retry: null
+  outcome: failed
+  rules: [SEC-11]

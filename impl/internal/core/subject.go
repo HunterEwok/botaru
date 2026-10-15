@@ -727,15 +727,22 @@ func (c *Core) endMatchStep(ctx context.Context, tx pgx.Tx, now time.Time, l *le
 		for _, v := range r.Found {
 			total += len(v)
 		}
+		var fresh []string
 		for _, id := range found {
-			if total >= maxMatchIDs {
-				break
-			}
-			if !slices.Contains(r.Found[store], id) {
-				r.Found[store] = append(r.Found[store], id)
-				total++
+			if !slices.Contains(r.Found[store], id) && !slices.Contains(fresh, id) {
+				fresh = append(fresh, id)
 			}
 		}
+		// More ids than the request keeps: the store's match fails as a whole, so its erasure
+		// fails visibly instead of erasing a part and reporting done (SEC-11).
+		if total+len(fresh) > maxMatchIDs {
+			_, err := tx.Exec(ctx, `UPDATE subject_match_steps SET state = 'failed', reason = 'match_overflow', updated_at = $2 WHERE id = $1`, l.WorkID, now)
+			if err != nil {
+				return err
+			}
+			fresh = nil
+		}
+		r.Found[store] = append(r.Found[store], fresh...)
 		raw, _ := json.Marshal(r.Found)
 		if _, err := tx.Exec(ctx, `UPDATE subject_requests SET found = $2, updated_at = $3 WHERE id = $1`, r.ID, raw, now); err != nil {
 			return err

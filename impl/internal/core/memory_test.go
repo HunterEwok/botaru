@@ -387,6 +387,41 @@ func TestEraseMatchEdge(t *testing.T) {
 	}
 }
 
+// A sink that matches more ids than the request keeps fails its match as a whole instead of
+// keeping a part of them (SEC-11).
+func TestEraseMatchEdgeOverflow(t *testing.T) {
+	ctx := context.Background()
+	b, _ := newMemoryBench(t)
+	sink := b.enroll(t, EnrollRequest{Tenant: "demo", Kind: "sink", Target: "archive"})
+	b.hello(t, "1")
+	b.finish(t, b.claim(t, b.agent, "attempt"))
+	b.drain(t)
+	d, err := b.c.ErasureMatch(ctx, b.op, MatchRequest{Subject: "system", Needles: []string{"Mari Tamm"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	b.drain(t)
+	item := b.claim(t, sink, "erasure")
+	if item == nil || item.Payload["op"] != "match" {
+		t.Fatalf("match work %+v", item)
+	}
+	ids := make([]any, maxMatchIDs+1)
+	for i := range ids {
+		ids[i] = fmt.Sprintf("out-%d", i)
+	}
+	if _, err := b.c.Complete(ctx, sink, header(t, item), CompleteRequest{Erasure: map[string]any{"outcome": "done", "ids": ids}}); err != nil {
+		t.Fatal(err)
+	}
+	var state, reason, found string
+	if err := b.c.st.Pool.QueryRow(ctx, `SELECT m.state, coalesce(m.reason, ''), coalesce(r.found::text, '') FROM subject_match_steps m
+		JOIN subject_requests r ON r.id = m.request WHERE m.request = $1`, d.ID).Scan(&state, &reason, &found); err != nil {
+		t.Fatal(err)
+	}
+	if state != "failed" || reason != "match_overflow" || strings.Contains(found, "out-") {
+		t.Fatalf("overflow match %s %s %s", state, reason, found)
+	}
+}
+
 // Two stores whose names sanitise to one key keep their own keys (RET-7).
 func TestStoreKey(t *testing.T) {
 	if a, b := storeKey("sink", "foo-bar"), storeKey("sink", "foo.bar"); a == b || len(a) > 32 || len(b) > 32 {
