@@ -219,6 +219,7 @@ The codes of `check_manifests.py` that fixtures refer to (`expect: {error: <code
 | `price_stale` | profile price older than 120 days (a note in examples) | GW-17 |
 | `proposable_required_false` | type or schedule without the required proposable: false | PRP-10 |
 | `proposal_scope` | proposal commit touches files outside the tenant folder | MAN-5, PRP-8 |
+| `provenance_in_result` | a result schema has a provenance field | PRV-2 |
 | `provider_human_review` | provider_human_review: yes against the subprocessor terms | GW-15 |
 | `provider_retention` | provider retention contradicts the subprocessor retention | GW-15 |
 | `provider_training` | model profile with provider_training: true | GW-15 |

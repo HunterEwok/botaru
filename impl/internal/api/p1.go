@@ -59,8 +59,16 @@ func (s *Server) p1(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, err)
 		return
 	}
+	if op == "file.put" {
+		s.filePut(ctx, w, r, wk, info.Request)
+		return
+	}
 	m, ok := s.body(w, r, info.Request)
 	if !ok {
+		return
+	}
+	if op == "file.get" {
+		s.fileGet(ctx, w, r, wk, m)
 		return
 	}
 	lease := r.Header.Get("Botaru-Lease")

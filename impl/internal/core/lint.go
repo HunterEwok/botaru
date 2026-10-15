@@ -1205,6 +1205,10 @@ func (c *Core) lintManifests(docs []manifest.Doc, index []int) ([]ApplyError, er
 		if rs := mmap(o.spec, "result_schema"); readByCode(rs) && namesHuman(rs) {
 			f.add(o, "human_subject_in_record", "/result_schema")
 		}
+		// Only the core writes provenance (PRV-2).
+		if _, ok := mmap(mmap(o.spec, "result_schema"), "properties")["provenance"]; ok {
+			f.add(o, "provenance_in_result", "/result_schema/properties/provenance")
+		}
 	}
 	for _, o := range S.each("TaskType") {
 		ts := o.spec

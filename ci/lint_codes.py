@@ -107,6 +107,7 @@ CODES = {
     'params_invalid': ('route or schedule params fail the closed type schema', ''),
     'cron_invalid': ('cron is not five fields or has CRON_TZ, TZ', 'TIM-2'),
     'human_subject_in_record': ('a result read by code names a human principal or the kind human', 'DLV-14'),
+    'provenance_in_result': ('a result schema has a provenance field', 'PRV-2'),
     'timezone_unknown': ('tenant or schedule timezone is not in the IANA database', 'TIM-3'),
     'schedule_deadline': ('schedule type has no timeouts.deadline', ''),
     'schedule_target': ('schedule has neither or both of task and script', 'SCR-12, TIM-3'),

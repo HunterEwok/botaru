@@ -138,4 +138,5 @@ texts:
   cmd.help.group_hint: Other commands are given in a private chat with the bot.
   activity.not_command: Send a command, for example /hello.
   activity.unknown_command: Unknown command.
+  activity.attachment_invalid: The attached file could not be used; send it again.
   activity.not_verified: The sender of this message is not known, so it is not executed.
