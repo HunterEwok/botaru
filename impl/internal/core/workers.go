@@ -75,6 +75,10 @@ func (c *Core) Enroll(ctx context.Context, op Operator, req EnrollRequest) (*Enr
 		if role.WorkerKind != req.Kind {
 			return nil, refuse("input_schema_invalid", "the role is for worker kind %s", role.WorkerKind)
 		}
+		// A seat role works only in a tenant with the farm manager (MGR-42).
+		if slices.Contains(managerProfiles, profileOf(cat, req.Role)) && !managerEnabled(cat, req.Tenant) {
+			return nil, refuse("manager_disabled", "the farm manager is disabled in the tenant")
+		}
 	case "channel":
 		ch, ok := tv.Channels[req.Target]
 		if !ok {

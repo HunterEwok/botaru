@@ -469,11 +469,18 @@ func (c *Core) openIncident(ctx context.Context, tx pgx.Tx, now time.Time, cat *
 		if err := c.incidentEvent(ctx, tx, now, r, "opened"); err != nil {
 			return err
 		}
+		// Only a new incident may stop the farm manager seat (GOV-22).
+		if err := c.incidentStop(ctx, tx, now, cat, ic, r); err != nil {
+			return err
+		}
 	}
 	if err := c.implicate(ctx, tx, now, cat, ic.Spec, r); err != nil {
 		return err
 	}
-	return c.containAuto(ctx, tx, now, cat, ic, r)
+	if err := c.containAuto(ctx, tx, now, cat, ic, r); err != nil {
+		return err
+	}
+	return c.enqueueIncidentTask(ctx, tx, now, cat, r)
 }
 
 // adoptEpisode adds an episode and its alarm key to an incident.

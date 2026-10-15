@@ -364,7 +364,7 @@ func (c *Core) claimAttempt(ctx context.Context, tx pgx.Tx, now time.Time, cat *
 		// A seat task runs on behalf of the seat's holder with the current seat epoch; a
 		// vacant seat, or one whose holder is stopped, gets no tasks (IDN-10, IDN-12).
 		if seat := seatOfRecord(rec); seat != "" {
-			a, ok, err := c.seatActing(ctx, tx, now, w.Tenant, seat)
+			a, ok, err := c.seatActing(ctx, tx, now, cat, w.Tenant, seat)
 			if err != nil {
 				return nil, err
 			}

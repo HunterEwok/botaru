@@ -1,0 +1,21 @@
+# Farm manager seat task (MGR-3, MGR-8): the core enqueues it in the incident's tenant for a new or reopened incident
+# of a class whose subject is not farm, and runs it on behalf of the seat holder on a worker of a seat role
+# enrolled in that tenant. The attempt sees only objects of that tenant (MGR-24).
+apiVersion: botaru/v1alpha1
+kind: TaskType
+metadata: {name: manager.incident.respond.v1}
+spec:
+  title: "Respond to an incident"
+  worker_kind: agent
+  purpose: manage
+  tier: 1
+  data_class: internal
+  instruction: |
+    Read the incident the core passes in the input block, its involved parties and the numbers of its alarm.
+    Answer with what you found and the operation you propose; the core and people decide what runs.
+  params_schema: {type: object, additionalProperties: false, properties: {}}   # the core passes its own input block
+  timeouts: {start_by: 1h, lease: 60s, heartbeat: 20s, attempt: 10m, deadline: 2h}
+  retry: {max_attempts: 2, max_runs: 2}
+  tree_budget_eur: 0.20
+  max_children: 0
+  proposable: false

@@ -24,8 +24,12 @@ import (
 // positionOf is the position of an identity of a role, acting on its own or on behalf of a
 // seat, with the role profile whose ceilings it takes. This version has no owners of workers
 // (IDN-5), so a worker profile is always a functionary.
-func positionOf(cat *Catalog, role string, seat bool) (position, profile string) {
-	if seat {
+func positionOf(cat *Catalog, role string, seat string) (position, profile string) {
+	switch seat {
+	case "":
+	case managerSeatID:
+		return "farm_manager", "farm-manager"
+	default:
 		return "commission", "reviewer"
 	}
 	switch p := profileOf(cat, role); p {
@@ -58,6 +62,10 @@ func (c *Core) rankCeiling(cat *Catalog, tenant, position, profile, slot string)
 		return 0, false
 	}
 	pos := mmap(mmap(tenantSpecOf(cat, "Governance", tenant), "positions"), position)
+	if position == "farm_manager" {
+		// The seat's ceiling is the farm charter's, whatever tenant the attempt runs in (GOV-33).
+		pos = managerCharter(cat)
+	}
 	if v, ok := mnum(pos, key); ok && v < ceil {
 		ceil = v
 	}
@@ -83,7 +91,7 @@ func (c *Core) rankAllowed(ctx context.Context, cat *Catalog, g *ModelGrant) (bo
 			role = b.Role
 		}
 	}
-	position, profile := positionOf(cat, role, acting.Seat != "")
+	position, profile := positionOf(cat, role, acting.Seat)
 	ceil, ok := c.rankCeiling(cat, g.Tenant, position, profile, g.Slot)
 	if !ok {
 		return true, nil
@@ -115,6 +123,9 @@ func charterPersonas(gov map[string]any) map[string]personaRef {
 				out["/positions/"+pos+"/persona"] = pr
 			}
 		}
+	}
+	if pr := personaOf(mmap(mmap(gov, "farm_manager"), "persona")); pr.Ref != "" {
+		out["/farm_manager/persona"] = pr
 	}
 	for lens, v := range mmap(mmap(gov, "commission"), "lenses") {
 		if l, ok := v.(map[string]any); ok {
@@ -268,15 +279,20 @@ func attemptPersona(ctx context.Context, q store.Querier, cat *Catalog, tenant, 
 			actingRole = b.Role
 		}
 	}
-	position, _ := positionOf(cat, actingRole, acting.Seat != "")
+	position, _ := positionOf(cat, actingRole, acting.Seat)
 	gov := tenantSpecOf(cat, "Governance", tenant)
 	refs := []personaRef{personaOf(mmap(mmap(mmap(gov, "positions"), position), "persona"))}
+	personaTenant := tenant
+	if position == "farm_manager" {
+		// The seat persona is the farm charter's, stored in farm (GOV-4, GOV-33).
+		refs, personaTenant = []personaRef{personaOf(mmap(managerCharter(cat), "persona"))}, farmTenant
+	}
 	if lens != "" {
 		refs = append(refs, personaOf(mmap(mmap(mmap(mmap(gov, "commission"), "lenses"), lens), "persona")))
 	}
 	var texts, hashes []string
 	for _, r := range refs {
-		t, err := personaText(ctx, q, tenant, r)
+		t, err := personaText(ctx, q, personaTenant, r)
 		if err != nil {
 			return "", nil, err
 		}

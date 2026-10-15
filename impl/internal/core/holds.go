@@ -319,6 +319,16 @@ func (c *Core) holdChanged(ctx context.Context, tx pgx.Tx, now time.Time, h Hold
 	if err := c.appendEvent(ctx, tx, now, h.Tenant, Event{Type: event, Subject: h.ID, Data: data}); err != nil {
 		return 0, err
 	}
+	// A hold on the farm manager seat stops the seat in the same transaction (MGR-15).
+	if h.Scope.Kind == "seat" && h.Scope.Name == managerSeatID {
+		cat, err := c.Catalog(ctx)
+		if err != nil {
+			return 0, err
+		}
+		if err := c.syncHumanStop(ctx, tx, now, cat); err != nil {
+			return 0, err
+		}
+	}
 	return c.appendAudit(ctx, tx, now, Audit{
 		Tenant: h.Tenant, Kind: "command", Actor: Actor{Principal: a.Principal, Via: a.Via},
 		Command: command, Target: &Target{Kind: "hold", ID: h.ID}, OK: true,

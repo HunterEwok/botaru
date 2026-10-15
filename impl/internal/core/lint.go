@@ -1861,7 +1861,9 @@ func (c *Core) lintGovernance(S *lintSet, f *lintFindings, personas personaLooku
 				continue
 			}
 			position := "lens"
-			if strings.HasPrefix(path, "/positions/") {
+			if path == "/farm_manager/persona" {
+				position = "farm_manager"
+			} else if strings.HasPrefix(path, "/positions/") {
 				position = strings.Split(path, "/")[2]
 			}
 			for _, code := range personaFindings(text, position, u) {

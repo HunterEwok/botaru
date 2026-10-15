@@ -430,6 +430,9 @@ func (c *Core) applyOnce(ctx context.Context, op Operator, req ApplyRequest) (*A
 			WHERE k.tenant = s.tenant AND k.name = s.name)`, schedTenants, schedNames); err != nil {
 			return err
 		}
+		if err := c.managerDisabled(ctx, tx, now, next); err != nil {
+			return err
+		}
 		// The texts go to every charter of the store that pins them, the ones applied earlier
 		// included.
 		if err := storePersonas(ctx, tx, now, after, req.Personas); err != nil {
