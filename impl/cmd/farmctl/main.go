@@ -19,6 +19,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -603,6 +604,10 @@ func personaFiles(docs []manifest.Doc) map[string]string {
 	return out
 }
 
+// personaRefRe is the path of a persona file as the charter schema allows it: no other file
+// of the operator's machine is read.
+var personaRefRe = regexp.MustCompile(`^personas/[a-z][a-z0-9-]*\.md$`)
+
 // personaRefs are the pinned persona references of a charter spec: ref and sha256.
 func personaRefs(spec map[string]any) [][2]string {
 	var out [][2]string
@@ -611,7 +616,7 @@ func personaRefs(spec map[string]any) [][2]string {
 		p, _ := m["persona"].(map[string]any)
 		ref, _ := p["ref"].(string)
 		sha, _ := p["sha256"].(string)
-		if ref != "" && len(sha) == 64 {
+		if personaRefRe.MatchString(ref) && len(sha) == 64 {
 			out = append(out, [2]string{ref, sha})
 		}
 	}

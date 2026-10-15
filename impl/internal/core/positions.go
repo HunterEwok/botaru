@@ -42,7 +42,7 @@ func positionOf(cat *Catalog, role string, seat bool) (position, profile string)
 
 // rankCeiling is the rank ceiling of a position for a model slot: the role profile ceiling of
 // spec/model/role-profiles.yaml, lowered by the charter's positions block (GOV-3). ok is false
-// when the profile has no ceiling for the slot.
+// when the profile has no ceiling for the slot; a registry that cannot be read gives ceiling 0.
 func (c *Core) rankCeiling(cat *Catalog, tenant, position, profile, slot string) (int, bool) {
 	key := "max_rank"
 	if slot == "analysis" {
@@ -50,7 +50,7 @@ func (c *Core) rankCeiling(cat *Catalog, tenant, position, profile, slot string)
 	}
 	reg, err := c.spec.Registry("spec/model/role-profiles.yaml")
 	if err != nil {
-		return 0, false
+		return 0, true
 	}
 	e, _ := reg.Entry(profile)
 	ceil, ok := mnum(e, key)
