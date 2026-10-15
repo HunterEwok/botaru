@@ -156,6 +156,10 @@ func TestControlOpsLimits(t *testing.T) {
 	if code := b.call(t, "cancel", "task", "tk_x"); code != "input_schema_invalid" {
 		t.Fatalf("an operation without consent: %s", code)
 	}
+	var denials int
+	if err := b.c.st.Pool.QueryRow(ctx, `SELECT denials FROM seats WHERE id = $1`, managerSeatID).Scan(&denials); err != nil || denials != 2 {
+		t.Fatalf("the schema refusals counted %d %v", denials, err)
+	}
 	cat, err := b.c.Catalog(ctx)
 	if err != nil {
 		t.Fatal(err)

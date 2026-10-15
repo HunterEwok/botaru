@@ -278,9 +278,12 @@ func (c *Core) controlApply(ctx context.Context, tx pgx.Tx, now time.Time, cat *
 		if holdID != "" {
 			entry["id"] = holdID
 		}
-		if len(ops) < 100 {
-			inc.Record["ops"] = append(ops, entry)
+		// The record keeps the latest 100 operations; control_ops keeps them all.
+		ops = append(ops, entry)
+		if len(ops) > 100 {
+			ops = ops[len(ops)-100:]
 		}
+		inc.Record["ops"] = ops
 		inc.Handled = true
 		// The first operation for the incident moves it to mitigating (MGR-8, spec/lifecycles/incident.md).
 		first := inc.State == "open" || inc.State == "contained" || inc.State == "reopened"
@@ -996,20 +999,34 @@ func (c *Core) controlToolCall(ctx context.Context, tx pgx.Tx, now time.Time, ca
 	if tool == nil {
 		return answer(map[string]any{"code": "forbidden"}, true), nil
 	}
-	if err := c.rs.validate(tool.Schema, args); err != nil {
-		return answer(map[string]any{"code": "input_schema_invalid"}, true), nil
-	}
-	raw, _ := json.Marshal(args)
-	var req ControlRequest
-	if err := json.Unmarshal(raw, &req); err != nil {
-		return answer(map[string]any{"code": "input_schema_invalid"}, true), nil
-	}
 	acting, err := leaseActing(ctx, tx, g.Task, g.Worker)
 	if err != nil {
 		return nil, err
 	}
 	if acting.Seat != managerSeatID {
 		return answer(map[string]any{"code": "forbidden"}, true), nil
+	}
+	// Arguments outside the schema, an operation without consent included, are a refusal of the
+	// holder's call like any other (MGR-14).
+	invalid := func() (*mcp.CallResult, error) {
+		m, err := loadManagerSeat(ctx, tx, true)
+		if err != nil {
+			return nil, err
+		}
+		if m != nil && m.State == "held" && m.Holder == acting.Bot && m.Epoch == acting.SeatEpoch {
+			if err := c.seatDenied(ctx, tx, now, cat, m); err != nil {
+				return nil, err
+			}
+		}
+		return answer(map[string]any{"code": "input_schema_invalid"}, true), nil
+	}
+	if err := c.rs.validate(tool.Schema, args); err != nil {
+		return invalid()
+	}
+	raw, _ := json.Marshal(args)
+	var req ControlRequest
+	if err := json.Unmarshal(raw, &req); err != nil {
+		return invalid()
 	}
 	var untrusted bool
 	if err := tx.QueryRow(ctx, `SELECT coalesce((record->>'untrusted_seen')::boolean, false) FROM tasks WHERE id = $1`, g.Task).Scan(&untrusted); err != nil {
