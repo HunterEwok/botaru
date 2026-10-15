@@ -436,7 +436,17 @@ func (c *Core) claimAttempt(ctx context.Context, tx pgx.Tx, now time.Time, cat *
 	if err != nil {
 		return nil, err
 	}
-	att, err := c.prepareAttempt(cat, w, w.Tenant, typ, mark, slot, profile, tools)
+	// The persona of the acting identity's position, and the lens addendum of a review, go
+	// before the type instruction and into the run fingerprint (GOV-4, COM-19, PRV-1).
+	lens := ""
+	if tt := cat.TaskTypes[typ]; tt.Purpose == "review" {
+		lens, _ = record["lens"].(string)
+	}
+	persona, personaHashes, err := attemptPersona(ctx, tx, cat, w.Tenant, w.Role, acting, lens)
+	if err != nil {
+		return nil, err
+	}
+	att, err := c.prepareAttempt(cat, w, w.Tenant, typ, mark, slot, profile, tools, personaHashes)
 	if err != nil {
 		return nil, err
 	}
@@ -481,7 +491,7 @@ func (c *Core) claimAttempt(ctx context.Context, tx pgx.Tx, now time.Time, cat *
 			"id": id, "type": typ, "body": taskBody,
 			"record": map[string]any{"max_tier": record["max_tier"], "data_mark": record["data_mark"], "untrusted_seen": record["untrusted_seen"]},
 		},
-		"instruction": strings.TrimSpace(tt.Instruction),
+		"instruction": joinInstruction(persona, tt.Instruction),
 		"handles":     handles,
 	}
 	// Implementation extension (MAN-3): the result schema, so that the runtime can ask the
@@ -789,4 +799,16 @@ func (c *Core) claimDelivery(ctx context.Context, tx pgx.Tx, now time.Time, cat 
 	}
 	item.Payload = payload
 	return item, nil
+}
+
+// joinInstruction puts the persona before the type instruction (GOV-4).
+func joinInstruction(persona, instruction string) string {
+	instruction = strings.TrimSpace(instruction)
+	if persona == "" {
+		return instruction
+	}
+	if instruction == "" {
+		return persona
+	}
+	return persona + "\n\n" + instruction
 }

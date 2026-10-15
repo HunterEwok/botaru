@@ -4,7 +4,9 @@ kind: Governance
 metadata: {name: demo, tenant: demo}
 spec:
   positions:
-    functional: {max_rank: 1, analysis_max_rank: 2}
+    functional: {max_rank: 1, analysis_max_rank: 2, persona: {ref: personas/functional.md, sha256: "c95bcb1045450c957a9905410a9340e11c34cab887c6d39158b84671fe01defe"}}
+    translator: {persona: {ref: personas/translator.md, sha256: "fd4f328259917d1533caaea0c10852f58eceaea1c2949c124b85402a08c9b112"}}
+    commission: {persona: {ref: personas/reviewer.md, sha256: "615ad67d13d6e5553ca8c6f1f604150b27e9ffa8f63381933c707d8a34c66f04"}}
   commission:
     seat_role: commission-member
     model_profile: seat-std
@@ -14,10 +16,10 @@ spec:
       - {id: 3, lens: cost, fallback_role: reviewer-b}
       - {id: 4, lens: value, fallback_role: reviewer-b}
     lenses:
-      security: {persona: {ref: personas/lens-security.md, sha256: "..."}}
-      operational: {persona: {ref: personas/lens-operational.md, sha256: "..."}}
-      cost: {persona: {ref: personas/lens-cost.md, sha256: "..."}}
-      value: {persona: {ref: personas/lens-value.md, sha256: "..."}}
+      security: {persona: {ref: personas/lens-security.md, sha256: "b5a294701cae9b883bf4d786e28ddf45eb2fe9e113229bc31aea3a5f74177185"}}
+      operational: {persona: {ref: personas/lens-operational.md, sha256: "32319aaf8e0079bf00d61311eef8ca4f291510f9de5d2e45f91117ec235966fb"}}
+      cost: {persona: {ref: personas/lens-cost.md, sha256: "1d3b1e355baf61049237f147b5fd9dd978f6d5b674d74b1421d740698f411671"}}
+      value: {persona: {ref: personas/lens-value.md, sha256: "973ce2fea98f8ad90f7f2b97c4a497860238054f1355e1a65ad1e7a3b31a4e6f"}}
     audit_sample: {min_per_month: 4, share: 0.25, max_per_digest: 2}
   promotion: {probation: 14d, exclude_change_kinds: [none], min_tenure: 30d, swap_cooldown: 30d}
   removal: {protect_new: 60d}

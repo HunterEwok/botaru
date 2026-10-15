@@ -19,6 +19,7 @@ import (
 	"github.com/HunterEwok/botaru/impl/internal/pgtest"
 	"github.com/HunterEwok/botaru/impl/internal/spec"
 	"github.com/HunterEwok/botaru/impl/internal/store"
+	"github.com/HunterEwok/botaru/impl/internal/testbench"
 	"github.com/HunterEwok/botaru/impl/internal/texts"
 	"github.com/HunterEwok/botaru/impl/internal/yamlx"
 )
@@ -108,10 +109,14 @@ func TestLintFixtures(t *testing.T) {
 		t.Fatal(err)
 	}
 	examples := exampleManifests(t, root, sp)
+	personas, err := testbench.Personas(root)
+	if err != nil {
+		t.Fatal(err)
+	}
 	// The examples as this core sees them miss the objects of later versions, so references
 	// to those fail in every case; such errors of the examples alone are not counted.
 	base := map[string]bool{}
-	if res, err := c.Apply(ctx, Operator{Principal: ids.PrincipalID(), Tenant: "farm"}, ApplyRequest{Commit: strings.Repeat("0", 40), Manifests: examples, DryRun: true}); err == nil {
+	if res, err := c.Apply(ctx, Operator{Principal: ids.PrincipalID(), Tenant: "farm"}, ApplyRequest{Commit: strings.Repeat("0", 40), Manifests: examples, DryRun: true, Personas: personas}); err == nil {
 		for _, e := range res.Errors {
 			base[e.Kind+"/"+e.Name+"/"+e.Code] = true
 		}
@@ -195,7 +200,7 @@ func TestLintFixtures(t *testing.T) {
 				}
 			}
 			c.cfg.FarmHosts = farm
-			res, err := c.Apply(ctx, Operator{Principal: ids.PrincipalID(), Tenant: "farm"}, ApplyRequest{Commit: strings.Repeat("0", 40), Manifests: docs, DryRun: true})
+			res, err := c.Apply(ctx, Operator{Principal: ids.PrincipalID(), Tenant: "farm"}, ApplyRequest{Commit: strings.Repeat("0", 40), Manifests: docs, DryRun: true, Personas: personas})
 			got := map[string]bool{}
 			if err != nil {
 				var p *Problem

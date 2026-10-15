@@ -9,7 +9,8 @@
     "MAN-2",
     "MAN-6",
     "PRM-13",
-    "PRM-14"
+    "PRM-14",
+    "GOV-4"
   ],
   "type": "object",
   "required": [
@@ -64,6 +65,18 @@
       },
       "maxItems": 500,
       "description": "Explicit list of objects to delete."
+    },
+    "personas": {
+      "type": "object",
+      "maxProperties": 200,
+      "propertyNames": {
+        "pattern": "^[0-9a-f]{64}$"
+      },
+      "additionalProperties": {
+        "type": "string",
+        "maxLength": 65536
+      },
+      "description": "Texts of the persona files that the charters of the set pin, by their SHA-256; the core checks each hash, lints the text and keeps it in the tenant of the charter (GOV-4, COM-19)."
     }
   },
   "additionalProperties": false

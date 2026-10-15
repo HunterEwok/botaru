@@ -193,6 +193,7 @@ The codes of `check_manifests.py` that fixtures refer to (`expect: {error: <code
 | `flow_ref_missing` | flow step type not found |  |
 | `format_unknown` | x-botaru-format or resource format is not in spec/model/formats.yaml | INJ-1, MAN-10 |
 | `global_tenant_data` | a global manifest holds a value that looks like tenant data | TEN-6 |
+| `governance_ref` | a role, task type, action, message type or route refers to governance, attribution, seat or incident operations or events | GOV-6, GOV-13, GOV-29 |
 | `guard_not_metric` | insights.extra_guards names a series without a complete outcome block | OBV-6 |
 | `high_risk_one_approver` | production tenant lets a high risk action with approvals: 1 be requested | APR-16 |
 | `host_two_tenants` | host or service in catalogs of two tenants | TEN-4 |
@@ -203,6 +204,7 @@ The codes of `check_manifests.py` that fixtures refer to (`expect: {error: <code
 | `insight_merge_window` | insight.merge_window shorter than an hour | INS-4 |
 | `insight_type_invalid` | insight type of tier above 1, not claimed, with its own result_schema, of a class above insight.max_data, claimed outside the insight section, or not in exactly one role insight section | INS-1, INS-2 |
 | `insight_wider` | insight tool outside the role tools | INS-2 |
+| `lens_persona_missing` | a charter seat names a lens without a persona addendum in commission.lenses | COM-19 |
 | `lens_profile_output` | a role that claims a lens review has a base profile with max_output_tokens above 2000 | COM-6 |
 | `listener_admin_worker_network` | the P2 listener network is a worker network (note) | IDN-7 |
 | `listener_test_in_production` | test-control listener of the core on a kind: production host | DEP-10 |
@@ -220,6 +222,11 @@ The codes of `check_manifests.py` that fixtures refer to (`expect: {error: <code
 | `not_in_version` | field or value appears in a later skeleton version | APR-10, APR-16 |
 | `observes_not_job` | observes on a type that is not a job | OBV-3 |
 | `params_invalid` | route or schedule params fail the closed type schema |  |
+| `persona_hash` | a persona text sent with apply does not match its SHA-256 | GOV-4 |
+| `persona_link` | a persona or lens addendum holds a link, an address, an id or a secret name | GOV-4 |
+| `persona_missing` | a charter pins a persona by hash and apply has no text of that hash | GOV-4 |
+| `persona_size` | a persona or lens addendum is longer than 4 KiB | GOV-4 |
+| `persona_value_path` | a functionary persona without the value-path paragraph, or another persona with one | GOV-4 |
 | `price_old` | profile price older than 60 days (note) | GW-17 |
 | `price_stale` | profile price older than 120 days (a note in examples) | GW-17 |
 | `proposable_required_false` | type or schedule without the required proposable: false | PRP-10 |
@@ -285,6 +292,7 @@ The codes of `check_manifests.py` that fixtures refer to (`expect: {error: <code
 | `tools_list_mismatch` | the plugin server tools/list output does not match the tools of tool.yaml | INJ-2 |
 | `transfer_basis_missing` | production tenant with a provider region outside the EU and no spec.model_transfer entry | GW-14 |
 | `tree_budget_below_call` | tree budget of a model task type is below the reserve of one model call | GW-2, BUD-2, BUD-9 |
+| `unaware_text` | a persona, type instruction or tool description links scores, reviews, proposals or votes with promotion, a seat, the queue or departure, or a persona speaks of voting or stops | GOV-29 |
 | `unknown_kind` | manifest kind has no registered schema in spec/manifests/kinds.yaml | MAN-1 |
 | `untrusted_output_false_text` | untrusted_output: false while the output has free text | INJ-3 |
 | `veto_lens_no_executor` | a veto lens has no charter seat whose fallback role claims its review type | COM-7 |

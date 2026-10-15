@@ -112,6 +112,13 @@ func (c *Core) ResolveModelHandle(ctx context.Context, handle string) (*ModelGra
 		return nil, refuse("provider_config", "the model profile of the slot is not applied")
 	}
 	g.Profile = p
+	// The rank of the slot's profile against the ceiling of the acting identity's position
+	// (GOV-3).
+	if ok, err := c.rankAllowed(ctx, cat, &g); err != nil {
+		return nil, err
+	} else if !ok {
+		return nil, refuse("rank_exceeded", "the model profile is above the rank ceiling of the acting position")
+	}
 	if l := tv.Spec.ModelsAllowed; len(l) > 0 && !slices.Contains(l, g.ProfileName) {
 		return nil, refuse("provider_config", "the profile is not in the tenant's models_allowed")
 	}

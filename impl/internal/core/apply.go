@@ -26,6 +26,8 @@ type ApplyRequest struct {
 	Manifests []map[string]any `json:"manifests"`
 	DryRun    bool             `json:"dry_run"`
 	Delete    []ApplyDelete    `json:"delete"`
+	// Personas are the texts of the persona files the charters pin, by their SHA-256 (GOV-4).
+	Personas map[string]string `json:"personas,omitempty"`
 }
 
 // ApplyDelete names an object that apply deletes.
@@ -237,7 +239,12 @@ func (c *Core) applyOnce(ctx context.Context, op Operator, req ApplyRequest) (*A
 			after = append(after, d)
 			lintIndex = append(lintIndex, -1)
 		}
-		errs, err := c.lintManifests(after, lintIndex)
+		lookup, perrs, err := c.personaTexts(ctx, req.Personas)
+		if err != nil {
+			return nil, err
+		}
+		res.Errors = append(res.Errors, perrs...)
+		errs, err := c.lintManifests(after, lintIndex, lookup)
 		if err != nil {
 			return nil, err
 		}
@@ -411,6 +418,9 @@ func (c *Core) applyOnce(ctx context.Context, op Operator, req ApplyRequest) (*A
 		if err := c.syncSeats(ctx, tx, now, next); err != nil {
 			return err
 		}
+		if err := storePersonas(ctx, tx, now, docs, req.Personas); err != nil {
+			return err
+		}
 		if err := notifyWork(ctx, tx); err != nil {
 			return err
 		}
@@ -492,4 +502,59 @@ func (c *Core) privilegeRaised(ctx context.Context, tx pgx.Tx, now time.Time, do
 		}
 	}
 	return nil, nil
+}
+
+// personaTexts checks the persona texts of an apply against their hashes and gives the lint
+// these texts with the ones the store keeps (GOV-4).
+func (c *Core) personaTexts(ctx context.Context, sent map[string]string) (personaLookup, []ApplyError, error) {
+	var errs []ApplyError
+	for sha, text := range sent {
+		if personaHash(text) != sha {
+			errs = append(errs, ApplyError{Code: "persona_hash", Path: "/personas/" + sha})
+		}
+	}
+	stored := map[[2]string]string{}
+	rows, err := c.st.Pool.Query(ctx, `SELECT tenant, sha256, body FROM personas`)
+	if err != nil {
+		return nil, nil, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var t, sha, body string
+		if err := rows.Scan(&t, &sha, &body); err != nil {
+			return nil, nil, err
+		}
+		stored[[2]string{t, sha}] = body
+	}
+	if err := rows.Err(); err != nil {
+		return nil, nil, err
+	}
+	return func(tenant, sha string) (string, bool) {
+		if t, ok := sent[sha]; ok && personaHash(t) == sha {
+			return t, true
+		}
+		t, ok := stored[[2]string{tenant, sha}]
+		return t, ok
+	}, errs, nil
+}
+
+// storePersonas keeps the texts of the personas the applied charters pin, each in its tenant.
+func storePersonas(ctx context.Context, tx pgx.Tx, now time.Time, docs []manifest.Doc, sent map[string]string) error {
+	for _, d := range docs {
+		if d.Kind != "Governance" {
+			continue
+		}
+		spec, _ := d.Value["spec"].(map[string]any)
+		for _, r := range charterPersonas(spec) {
+			text, ok := sent[r.SHA256]
+			if !r.pinned() || !ok {
+				continue
+			}
+			if _, err := tx.Exec(ctx, `INSERT INTO personas (tenant, sha256, body, created_at) VALUES ($1, $2, $3, $4) ON CONFLICT DO NOTHING`,
+				d.Tenant, r.SHA256, text, now); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
 }
