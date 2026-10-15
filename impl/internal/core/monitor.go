@@ -373,6 +373,8 @@ func (c *Core) noticeStalled(ctx context.Context, tx pgx.Tx, now time.Time, tena
 		if !ok || tv.Spec.Kind == "" || (t == "farm" && tenant == "farm" && sent > 0) {
 			continue
 		}
+		params := map[string]any{"age_min": age / 60}
+		params["tenant"] = tenant
 		chats, err := c.adminChats(ctx, tx, now, tv, "", "admin:people", "hold.release")
 		if err != nil {
 			return err
@@ -387,9 +389,7 @@ func (c *Core) noticeStalled(ctx context.Context, tx pgx.Tx, now time.Time, tena
 				Tenant: t, Kind: "monitor_export_stalled", Addr: "admins", TargetKind: "chat",
 				TargetID: Chat{Kind: "direct", ExternalID: a.ExternalID}.ID(), ExecKind: "channel", ExecName: a.Channel,
 				Recipient: a.Principal, DataOrigin: "code",
-				Body: map[string]any{"form": "text_code", "text_key": "notice.monitor_export_stalled", "params": map[string]any{
-					"tenant": tenant, "age_min": age / 60,
-				}},
+				Body: map[string]any{"form": "text_code", "text_key": "notice.monitor_export_stalled", "params": params},
 			}); err != nil {
 				return err
 			}
