@@ -18,6 +18,27 @@ spec:
       params:
         host: {enum_from: catalog.hosts}
         since: {type: string, x-botaru-format: datetime}
+      output_schema:
+        type: object
+        additionalProperties: false
+        required: [host, problems]
+        properties:
+          host: {enum_from: catalog.hosts}
+          problems:
+            type: array
+            maxItems: 100
+            items:
+              type: object
+              additionalProperties: false
+              required: [eventid, triggerid, class, resource, severity, state, time]
+              properties:
+                eventid: {type: integer, minimum: 0, maximum: 9007199254740991}
+                triggerid: {type: integer, minimum: 0, maximum: 9007199254740991}
+                class: {enum: [disk_free, disk_fill, unknown]}
+                resource: {enum_from: catalog.hosts}
+                severity: {type: integer, minimum: 0, maximum: 5}
+                state: {enum: [open, resolved]}
+                time: {type: string, x-botaru-format: datetime}
       output_limit_kb: 16
     - name: item_history
       access: read
@@ -32,6 +53,23 @@ spec:
         start: {type: string, x-botaru-format: datetime}
         end: {type: string, x-botaru-format: datetime}
         step: {enum: ["1m", "5m", "1h"]}
+      output_schema:
+        type: object
+        additionalProperties: false
+        required: [item, step, points]
+        properties:
+          item: {enum: [cpu_load, mem_used, disk_used, net_in, net_out]}
+          step: {enum: ["1m", "5m", "1h"]}
+          points:
+            type: array
+            maxItems: 500
+            items:
+              type: object
+              additionalProperties: false
+              required: [t, v]
+              properties:
+                t: {type: string, x-botaru-format: datetime}
+                v: {type: number, minimum: -1000000000000000, maximum: 1000000000000000}
       output_limit_kb: 32
     - name: maintenance
       access: read
@@ -42,6 +80,21 @@ spec:
       target: any
       params:
         host: {enum_from: catalog.hosts}
+      output_schema:
+        type: object
+        additionalProperties: false
+        required: [windows]
+        properties:
+          windows:
+            type: array
+            maxItems: 100
+            items:
+              type: object
+              additionalProperties: false
+              required: [start, end]
+              properties:
+                start: {type: string, x-botaru-format: datetime}
+                end: {type: string, x-botaru-format: datetime}
       output_limit_kb: 8
     - name: item_text
       access: read

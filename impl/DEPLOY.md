@@ -283,6 +283,25 @@ $F worker enroll -tenant demo -kind monitor -target zabbix -token-out /etc/botar
 
 In Zabbix add a media type of type Webhook that sends `POST https://<adapter>:8443/` with the header `Authorization: Bearer <webhook token>` and the body `{"eventid": "{EVENT.ID}", "triggerid": "{TRIGGER.ID}", "host": "{HOST.HOST}", "value": "{EVENT.VALUE}"}`, and an action with a condition on the catalog hosts and a recovery operation. The `farm` process runs the same way with `-tenant farm` and without `-listen`. A script runs only if its `scriptid` is in `monitor_scripts_allowed` of the catalog, Zabbix gives it to the adapter user on that host with scope "Manual host action", and its input is none or a list equal to the catalog's `choices`.
 
+Bots read Zabbix through the plugin `monitor` (`examples/tools/monitor/tool.yaml`): `monitor/problems`, `monitor/maintenance` and `monitor/item_history` give closed fields and numbers, `monitor/item_text` and `monitor/problem_comments` give text others wrote and set `untrusted_seen` on the task. It has a secret and network, so it runs alone in a toolhost of its own, under its own OS user, with a second read-only Zabbix user of the tenant (read on the tenant's host groups only, no actions); a toolhost that would run it beside another plugin is not enrolled. The enroll record of placement `host` names a catalog machine, although the plugin's calls have no machine target:
+
+```sh
+$F worker enroll -tenant demo -role toolhost -kind toolhost -plugins monitor -placement host -host db1 \
+  -token-out /etc/botaru/secrets/toolhost-monitor-demo
+```
+
+```yaml
+placement: host
+kill_after: 10s
+plugins:
+  - name: monitor
+    command: [/opt/botaru/bin/botaru-plugin, monitor, -manifest, /opt/botaru/src/examples/tools/monitor/tool.yaml,
+              -api, https://zabbix.example.org/api_jsonrpc.php, -api-token-file, /etc/botaru/secrets/zabbix-read-demo,
+              -catalog, /srv/botaru-config/tenants/demo, -tenant, demo]
+```
+
+The plugin answers only for catalog hosts with a `monitor_host` and refuses any other before it calls the API. `item_text` reads only the item of a `monitor_triggers` row. The fields of `item_history` map to the keys of the standard Linux template (`cpu_load` `system.cpu.load[all,avg1]`, `mem_used` `vm.memory.utilization`, `disk_used` `vfs.fs.size[/,pused]`, `net_in` and `net_out` on `eth0`); `-item disk_used=vfs.fs.size[/data,pused]` changes one.
+
 ## Backups and restore
 
 The backup is your own job, run as its own user off the core process; the core only checks that it happens. One way, on the core machine every night, with the encryption key of the backup on this machine only:

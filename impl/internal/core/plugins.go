@@ -74,11 +74,11 @@ func (c *Core) checkToolhostEnroll(cat *Catalog, req EnrollRequest) error {
 		if p.Placement != req.Placement {
 			return refuse("input_schema_invalid", "plugin %s has placement %s", name, p.Placement)
 		}
-		// Only an own plugin without secrets and network runs as a child process of the
-		// toolhost; any other runs in its own container, which this build does not start
-		// (DEP-7, INJ-6).
-		if len(p.Secrets) > 0 || len(p.Network.Egress) > 0 {
-			return refuse("input_schema_invalid", "plugin %s has secrets or network egress and needs its own container (DEP-7)", name)
+		// Only an own plugin without secrets and network runs as a child process of a shared
+		// toolhost; any other runs alone in its own toolhost, which the deployment puts in its
+		// own container with its own OS user and network (DEP-7, INJ-6).
+		if (len(p.Secrets) > 0 || len(p.Network.Egress) > 0) && len(req.Plugins) > 1 {
+			return refuse("input_schema_invalid", "plugin %s has secrets or network egress and needs a toolhost of its own (DEP-7)", name)
 		}
 	}
 	switch req.Placement {

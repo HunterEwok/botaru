@@ -138,7 +138,8 @@ func (c *Core) markOrder(mark string) (int, bool) {
 }
 
 // resolveEnumFrom fills the values of enum_from lists for an attempt (OUT-1):
-// catalog.hosts gives the machine ids, catalog.services the service names, catalog.<list> the
+// catalog.hosts gives the machine ids, catalog.services the service names,
+// catalog.monitor_triggers the trigger ids of monitor_triggers, catalog.<list> the
 // values of the resources with that list whose data class is not above the task's mark;
 // task.attachments is empty, because this version has no files; reasons.<name> gives the ids
 // of spec/model/<name>-reasons.yaml. An unknown list resolves to no values, so no value fits.
@@ -162,6 +163,14 @@ func (c *Core) resolveEnumFor(cat *Catalog, tenant, mark, right string, names ma
 			case "hosts":
 				for _, h := range hosts {
 					if id, ok := h.(map[string]any)["id"]; ok {
+						vals = append(vals, id)
+					}
+				}
+			case "monitor_triggers":
+				// The trigger ids of the catalog, for the monitor plugin (MON-6).
+				trigs, _ := spec["monitor_triggers"].([]any)
+				for _, t := range trigs {
+					if id, ok := t.(map[string]any)["triggerid"]; ok {
 						vals = append(vals, id)
 					}
 				}

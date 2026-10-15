@@ -606,8 +606,9 @@ func TestToolcallExpiredAttempt(t *testing.T) {
 	<-done
 }
 
-// A plugin with secrets or network egress needs its own container, which this build does not
-// start, so a toolhost that would run it as a child process is not enrolled (DEP-7).
+// A plugin with secrets or network egress runs alone in a toolhost of its own, which the
+// deployment puts in its own container; a toolhost that would run it beside other plugins is
+// not enrolled (DEP-7).
 func TestToolhostContainerPlugin(t *testing.T) {
 	ctx := context.Background()
 	b := newToolBenchWith(t, nil, func(ms []map[string]any) []map[string]any {
@@ -618,8 +619,11 @@ func TestToolhostContainerPlugin(t *testing.T) {
 		}
 		return ms
 	})
-	if _, err := b.c.Enroll(ctx, b.op, EnrollRequest{Tenant: "demo", Kind: "toolhost", Plugins: []string{"checks"}, Placement: "host", Host: "web1"}); err == nil {
-		t.Fatal("a plugin with network egress was enrolled as a child process")
+	if _, err := b.c.Enroll(ctx, b.op, EnrollRequest{Tenant: "demo", Kind: "toolhost", Plugins: []string{"checks", "logs"}, Placement: "host", Host: "web1"}); err == nil {
+		t.Fatal("a plugin with network egress was enrolled beside another plugin")
+	}
+	if _, err := b.c.Enroll(ctx, b.op, EnrollRequest{Tenant: "demo", Kind: "toolhost", Plugins: []string{"checks"}, Placement: "host", Host: "web1"}); err != nil {
+		t.Fatalf("a plugin with network egress alone: %v", err)
 	}
 	if _, err := b.c.Enroll(ctx, b.op, EnrollRequest{Tenant: "demo", Kind: "toolhost", Plugins: []string{"logs"}, Placement: "host", Host: "web1"}); err != nil {
 		t.Fatalf("an own plugin without network: %v", err)
@@ -684,4 +688,25 @@ func TestPluginDown(t *testing.T) {
 		t.Fatal(err)
 	}
 	<-done
+}
+
+// catalog.monitor_triggers resolves to the trigger ids of the catalog (MON-6).
+func TestEnumMonitorTriggers(t *testing.T) {
+	ctx := context.Background()
+	b := newToolBenchWith(t, nil, func(ms []map[string]any) []map[string]any {
+		for _, m := range ms {
+			if m["kind"] == "Catalog" {
+				m["spec"].(map[string]any)["monitor_triggers"] = []any{map[string]any{"triggerid": "500", "class": "disk_free", "item": "a"}, map[string]any{"triggerid": "501", "class": "disk_fill", "item": "b"}}
+			}
+		}
+		return ms
+	})
+	cat, err := b.c.Catalog(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := b.c.resolveEnumFrom(cat, "demo", "internal", map[string]bool{"catalog.monitor_triggers": true})
+	if !slices.Equal(got["catalog.monitor_triggers"], []any{"500", "501"}) {
+		t.Fatalf("triggers %v", got)
+	}
 }
