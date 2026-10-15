@@ -510,13 +510,19 @@ func (c *Core) doctorMonitor(ctx context.Context, tx pgx.Tx, now time.Time, tena
 		return err
 	}
 	mine := func(t string) bool { return tenant == "farm" || t == tenant }
-	if tenant == "farm" {
-		conflict, err := c.headKeyConflict(ctx, tx)
-		if err != nil {
-			return err
-		}
-		add(DoctorCheck{ID: "monitor.head_key_id", Tenant: "farm", OK: !conflict, Severity: sevOf(!conflict, "fail")})
+	// The head key concerns every chain, so every operator sees why heads stopped.
+	conflict, err := c.headKeyConflict(ctx, tx)
+	if err != nil {
+		return err
 	}
+	add(DoctorCheck{ID: "monitor.head_key_id", Tenant: tenant, OK: !conflict, Severity: sevOf(!conflict, "fail")})
+	// An export the adapter refused for good is lost; the last day's count is a warning.
+	var dead int64
+	if err := tx.QueryRow(ctx, `SELECT count(*) FROM deliveries WHERE exec_kind = 'monitor' AND kind IN ('monitor_alarm', 'monitor_audit_head')
+		AND state = 'dead' AND updated_at > $1 AND ($2 = 'farm' OR tenant = $2)`, now.Add(-24*time.Hour), tenant).Scan(&dead); err != nil {
+		return err
+	}
+	add(DoctorCheck{ID: "monitor.export_dead", Tenant: tenant, OK: dead == 0, Severity: sevOf(dead == 0, "warn"), Value: dead})
 	for _, t := range slices.Sorted(mapKeys(ages)) {
 		if !mine(t) {
 			continue
