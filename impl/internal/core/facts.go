@@ -423,6 +423,12 @@ func (c *Core) copyOffer(ctx context.Context, tx pgx.Tx, now time.Time, cat *Cat
 			if reason != "" {
 				continue
 			}
+			// A copy replaces a fact of the same predicate and subject the successor already has.
+			subj, _ := json.Marshal(f.Subject)
+			if _, err := tx.Exec(ctx, `DELETE FROM facts WHERE tenant = $1 AND bot = $2 AND state = 'active' AND predicate = $3 AND subject = $4`,
+				tenant, to.ID, f.Predicate, subj); err != nil {
+				return err
+			}
 			kind := f.Kind
 			nid, err := c.insertFact(ctx, tx, now, tenant, to.ID, kind, f.Predicate, f.Subject, v, f.From, f.To, f.Untrusted, f.Personal, actingOf{},
 				map[string]any{"from_bot": fromBot, "offer": offer, "at": fmtTime(now)})
