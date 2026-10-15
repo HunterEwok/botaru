@@ -1113,6 +1113,10 @@ func (c *Core) emitAlarm(ctx context.Context, tx pgx.Tx, now time.Time, tenant s
 	subj, _ := req.Data["subject"].(map[string]any)
 	a := Alarm{Tenant: tenant, Name: strings.TrimSuffix(strings.TrimPrefix(req.Type, "alarm."), ".v1"),
 		Subject: AlarmSubject{Kind: asString(subj["kind"]), ID: asString(subj["id"])}, Severity: asString(req.Data["severity"])}
+	// The numbers of the job's alarm reach the episode, which incident conditions read (MGR-8).
+	if v, ok := req.Data["values"].(map[string]any); ok {
+		a.Values = v
+	}
 	if a.eventType() != req.Type || asString(req.Data["alarmkey"]) != a.key() {
 		return "", refuse("input_schema_invalid", "the alarmkey is not the alarm name and its subject")
 	}

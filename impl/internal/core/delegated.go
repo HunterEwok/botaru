@@ -39,6 +39,13 @@ func coversGroup(tv *TenantView, grantor []string, group string) bool {
 // every admin of the tenant privately. A retried update of the same activity gets the reply of
 // the first and changes nothing again (DLV-5, IDM-3).
 func (c *Core) grantCommand(ctx context.Context, tx pgx.Tx, now time.Time, pc personCommand, word, rest string) (*ActivityResult, error) {
+	// Two deliveries of the same update wait for each other here, so the second reads the
+	// first one's outcome instead of granting again.
+	if pc.key != "" {
+		if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtextextended($1, 7300105))`, pc.tv.Name+"/"+pc.key); err != nil {
+			return nil, err
+		}
+	}
 	var raw []byte
 	err := tx.QueryRow(ctx, `SELECT reply FROM activity_outcomes WHERE tenant = $1 AND key = $2`, pc.tv.Name, pc.key).Scan(&raw)
 	if err == nil {

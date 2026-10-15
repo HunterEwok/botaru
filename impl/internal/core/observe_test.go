@@ -321,7 +321,8 @@ func TestEmitAlarm(t *testing.T) {
 		err := b.c.tx(ctx, func(tx pgx.Tx, now time.Time) error {
 			var err error
 			id, err = b.c.emitAlarm(ctx, tx, now, "demo", EmitRequest{Type: "alarm.disk.free.low.v1", Data: map[string]any{
-				"alarmkey": key, "state": state, "severity": "warn", "subject": map[string]any{"kind": "resource", "id": "web1-logs"}}})
+				"alarmkey": key, "state": state, "severity": "warn", "subject": map[string]any{"kind": "resource", "id": "web1-logs"},
+				"values": map[string]any{"free_pct": 4}}})
 			return err
 		})
 		return id, err
@@ -349,6 +350,14 @@ func TestEmitAlarm(t *testing.T) {
 	}
 	if states != "firing,resolved" {
 		t.Fatalf("alarm events %s", states)
+	}
+	// The job's numbers and the catalog's origin reach the episode (MGR-8, MON-5).
+	var origin, vals string
+	if err := b.c.st.Pool.QueryRow(ctx, `SELECT origin, vals::text FROM alarm_episodes WHERE alarm = 'alarm.disk.free.low.v1'`).Scan(&origin, &vals); err != nil {
+		t.Fatal(err)
+	}
+	if origin != "monitor" || vals != `{"free_pct": 4}` {
+		t.Fatalf("episode origin %s values %s", origin, vals)
 	}
 }
 
