@@ -788,6 +788,33 @@ func (c *Core) endMatchStep(ctx context.Context, tx pgx.Tx, now time.Time, l *le
 // came later, fails, since unmatched is not "not found" (SEC-11). A store with found ids gets
 // erase work by its own ids (claimErasure).
 func settleEdgeSteps(ctx context.Context, tx pgx.Tx, now time.Time, r *subjectRequest, erasure string) error {
+	// A store that answered the match but whose worker was revoked since gets no step from
+	// the active workers; it gets one from its match step, so its found ids stay owed and the
+	// erasure stays open instead of finishing done without it (SEC-11).
+	mrows, err := tx.Query(ctx, `SELECT store, kind, target FROM subject_match_steps WHERE request = $1 ORDER BY store`, r.ID)
+	if err != nil {
+		return err
+	}
+	type edge struct{ store, kind, target string }
+	var edges []edge
+	for mrows.Next() {
+		var e edge
+		if err := mrows.Scan(&e.store, &e.kind, &e.target); err != nil {
+			mrows.Close()
+			return err
+		}
+		edges = append(edges, e)
+	}
+	mrows.Close()
+	if err := mrows.Err(); err != nil {
+		return err
+	}
+	for _, e := range edges {
+		if _, err := tx.Exec(ctx, `INSERT INTO erasure_steps (id, request, tenant, store, kind, target, state, updated_at) VALUES ($1, $2, $3, $4, $5, $6, 'pending', $7)
+			ON CONFLICT (request, store) DO NOTHING`, ids.New(ids.Step), erasure, r.Tenant, e.store, e.kind, e.target, now); err != nil {
+			return err
+		}
+	}
 	rows, err := tx.Query(ctx, `SELECT s.store, m.state, coalesce(m.reason, '') FROM erasure_steps s
 		LEFT JOIN subject_match_steps m ON m.request = $2 AND m.store = s.store
 		WHERE s.request = $1 AND s.kind IN ('sink', 'monitor') AND s.state = 'pending' ORDER BY s.store`, erasure, r.ID)

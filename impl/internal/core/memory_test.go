@@ -397,6 +397,44 @@ func TestEraseMatchEdge(t *testing.T) {
 	}
 }
 
+// A sink that found ids and was revoked before the approval still gets its erasure step: the
+// request stays open for its ids instead of finishing without it (SEC-11).
+func TestEraseMatchEdgeRevoked(t *testing.T) {
+	ctx := context.Background()
+	b, _ := newMemoryBench(t)
+	sink := b.enroll(t, EnrollRequest{Tenant: "demo", Kind: "sink", Target: "archive"})
+	b.hello(t, "1")
+	b.finish(t, b.claim(t, b.agent, "attempt"))
+	b.drain(t)
+	d, err := b.c.ErasureMatch(ctx, b.op, MatchRequest{Subject: "system", Needles: []string{"Mari Tamm"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	b.drain(t)
+	item := b.claim(t, sink, "erasure")
+	if _, err := b.c.Complete(ctx, sink, header(t, item), CompleteRequest{Erasure: map[string]any{"outcome": "done", "ids": []any{"out-17"}}}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := b.c.WorkerRevoke(ctx, b.op, WorkerRequest{Op: "worker.revoke", Worker: sink.ID}); err != nil {
+		t.Fatal(err)
+	}
+	card := cardOf(t, b.drain(t), subjectCard, "direct:1002")
+	cd := card.body["card"].(map[string]any)
+	req := DecideRequest{SubjectKind: "subject_request", ID: d.ID, Nonce: cd["nonce"].(string), Decision: "approve"}
+	if _, err := b.c.Decide(ctx, b.channel, press("telegram:1002", "direct:1002", card.external), req); err != nil {
+		t.Fatal(err)
+	}
+	b.tick(t, "erasure")
+	var state, done string
+	if err := b.c.st.Pool.QueryRow(ctx, `SELECT s.state, e.state FROM subject_requests r JOIN erasure_steps s ON s.request = r.erasure AND s.store = 'sink_archive'
+		JOIN erasure_requests e ON e.id = r.erasure WHERE r.id = $1`, d.ID).Scan(&state, &done); err != nil {
+		t.Fatal(err)
+	}
+	if state != "pending" || done == "done" {
+		t.Fatalf("the revoked sink's ids were dropped: step %s, request %s", state, done)
+	}
+}
+
 // A sink that matches more ids than the request keeps fails its match as a whole instead of
 // keeping a part of them (SEC-11).
 func TestEraseMatchEdgeOverflow(t *testing.T) {

@@ -81,11 +81,12 @@ func (c *Core) runSchedule(ctx context.Context, tx pgx.Tx, now time.Time, cat *C
 		// apply does not move the start past a slot that was already due.
 		from := now
 		// The tenant's apply counts only when the zone the schedule takes from its tenant
-		// is what changed, not for any other edit of the tenant.
+		// is what changed, not for any other edit of the tenant; then it alone counts, as a
+		// later edit of another field of the schedule moves no slot.
 		zoneOnly := err == nil && cron == sc.Cron && sc.Timezone == ""
 		var applied *time.Time
 		if err := tx.QueryRow(ctx, `SELECT max(applied_at) FROM manifests WHERE tenant = $1
-			AND ((kind = 'Schedule' AND name = $2) OR (kind = 'Tenant' AND $3))`, tv.Name, name, zoneOnly).Scan(&applied); err != nil {
+			AND ((kind = 'Schedule' AND name = $2 AND NOT $3) OR (kind = 'Tenant' AND $3))`, tv.Name, name, zoneOnly).Scan(&applied); err != nil {
 			return err
 		}
 		if applied != nil && applied.Before(now) {

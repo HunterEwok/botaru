@@ -15,6 +15,12 @@ import (
 // to the group hello and the sink archive, and the group system-ops that may enqueue it.
 func newScheduleBench(t *testing.T, cron string, skipIfWaiting *bool) *actionBench {
 	t.Helper()
+	return newScheduleBenchZone(t, cron, skipIfWaiting, "Europe/Berlin")
+}
+
+// newScheduleBenchZone is newScheduleBench with the schedule's own zone; "" takes the tenant's.
+func newScheduleBenchZone(t *testing.T, cron string, skipIfWaiting *bool, zone string) *actionBench {
+	t.Helper()
 	b := newBenchWith(t, func(root string, ms []map[string]any) []map[string]any {
 		for _, m := range ms {
 			if m["kind"] == "TaskType" {
@@ -22,12 +28,15 @@ func newScheduleBench(t *testing.T, cron string, skipIfWaiting *bool) *actionBen
 			}
 		}
 		sc := map[string]any{
-			"cron": cron, "timezone": "Europe/Berlin",
+			"cron":       cron,
 			"task":       map[string]any{"type": "hello.greet.v1", "goal": "Say good morning."},
 			"deliver_to": []any{"group:hello", "sink:archive"},
 		}
 		if skipIfWaiting != nil {
 			sc["skip_if_waiting"] = *skipIfWaiting
+		}
+		if zone != "" {
+			sc["timezone"] = zone
 		}
 		return append(ms, map[string]any{
 			"apiVersion": "botaru/v1alpha1", "kind": "Group",
@@ -204,6 +213,30 @@ func TestScheduleNoSkip(t *testing.T) {
 	b.tick(t, "schedule")
 	if k := b.scheduled(t); len(k) != 4 || k[3] != "system:schedule:morning:2027-04-01T16:00Z" {
 		t.Fatalf("the first slot after the apply was lost: %v", k)
+	}
+}
+
+// A schedule that takes its zone from the tenant starts, after a change of that zone, from the
+// tenant's apply: a later edit of another field of the schedule does not skip a due slot
+// (TIM-3).
+func TestScheduleTenantZoneChange(t *testing.T) {
+	ctx := context.Background()
+	b := newScheduleBenchZone(t, "0 * * * *", nil, "")
+	b.at(t, "2027-04-01T10:30:00Z")
+	b.tick(t, "schedule")
+	if _, err := b.c.st.Pool.Exec(ctx, `UPDATE schedule_state SET timezone = 'UTC'`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := b.c.st.Pool.Exec(ctx, `UPDATE manifests SET applied_at = '2027-04-01T10:59:50Z' WHERE tenant = 'demo' AND kind = 'Tenant'`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := b.c.st.Pool.Exec(ctx, `UPDATE manifests SET applied_at = '2027-04-01T11:00:10Z' WHERE tenant = 'demo' AND kind = 'Schedule'`); err != nil {
+		t.Fatal(err)
+	}
+	b.at(t, "2027-04-01T11:00:20Z")
+	b.tick(t, "schedule")
+	if k := b.scheduled(t); len(k) != 1 || k[0] != "system:schedule:morning:2027-04-01T11:00Z" {
+		t.Fatalf("the slot after the zone change was lost: %v", k)
 	}
 }
 
