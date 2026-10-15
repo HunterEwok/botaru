@@ -4,10 +4,13 @@ package core
 
 import (
 	"context"
+	"slices"
 	"testing"
 	"time"
 
 	"github.com/jackc/pgx/v5"
+
+	"github.com/HunterEwok/botaru/impl/internal/mcp"
 )
 
 // newInsightBench is the tool bench whose hello role also runs the analysis hello.insight.v1,
@@ -46,6 +49,20 @@ func newInsightBench(t *testing.T, insight map[string]any) *bench {
 func (b *bench) analysis(t *testing.T, key string, untrusted bool, result map[string]any) (string, error) {
 	t.Helper()
 	ctx := context.Background()
+	task, att := b.analysisAttempt(t, key)
+	if untrusted {
+		if _, err := b.c.st.Pool.Exec(ctx, `UPDATE tasks SET record = record || '{"untrusted_seen": true, "untrusted_source": "logs/tail"}' WHERE id = $1`, task); err != nil {
+			t.Fatal(err)
+		}
+	}
+	_, err := b.c.Complete(ctx, b.agent, header(t, att), CompleteRequest{Result: result})
+	return task, err
+}
+
+// analysisAttempt enqueues the analysis as a schedule would and claims its attempt.
+func (b *bench) analysisAttempt(t *testing.T, key string) (string, *WorkItem) {
+	t.Helper()
+	ctx := context.Background()
 	var task string
 	err := b.c.tx(ctx, func(tx pgx.Tx, now time.Time) error {
 		cat, err := b.c.Catalog(ctx)
@@ -70,13 +87,7 @@ func (b *bench) analysis(t *testing.T, key string, untrusted bool, result map[st
 	if att == nil {
 		t.Fatal("no analysis attempt")
 	}
-	if untrusted {
-		if _, err := b.c.st.Pool.Exec(ctx, `UPDATE tasks SET record = record || '{"untrusted_seen": true, "untrusted_source": "logs/tail"}' WHERE id = $1`, task); err != nil {
-			t.Fatal(err)
-		}
-	}
-	_, err = b.c.Complete(ctx, b.agent, header(t, att), CompleteRequest{Result: result})
-	return task, err
+	return task, att
 }
 
 func evidence(value any) []any {
@@ -298,4 +309,70 @@ func TestLoopDisabled(t *testing.T) {
 		}
 	}
 	t.Fatal("no insights.loop_disabled check")
+}
+
+// Analysis calls only the tools its catalog offers, even when the role's main work holds more
+// (INS-2).
+func TestAnalysisToolCalls(t *testing.T) {
+	ctx := context.Background()
+	b := newInsightBench(t, map[string]any{"tools": []any{}})
+	_, att := b.analysisAttempt(t, "1")
+	h, _ := att.Payload["handles"].(map[string]any)["tools"].(string)
+	if got := toolNames(t, b, h); !slices.Equal(got, []string{obsToolName}) {
+		t.Fatalf("analysis catalog %v", got)
+	}
+	r, err := b.c.P3ToolsCall(ctx, h, mcp.CallParams{Name: "checks_latest", Arguments: map[string]any{"check": "www-health"}})
+	if err != nil || !r.IsError || callText(r) != noPermission {
+		t.Fatalf("checks_latest from an analysis: %+v %v", r, err)
+	}
+}
+
+// A schedule proposal only shifts the window: the days stay, and the slots of a day neither
+// grow nor fall below half (PRP-3, PRP-11).
+func TestCronShift(t *testing.T) {
+	for _, c := range []struct {
+		cur, next     string
+		before, after int
+		ok            bool
+	}{
+		{"0 3 * * *", "30 4 * * *", 1, 1, true},
+		{"0 3 * * 1", "0 5 * * 1", 1, 1, true},
+		{"0 */2 * * *", "0 */4 * * *", 12, 6, true},
+		{"0 3 * * *", "0 1-7 5-8 1 *", 0, 0, false},
+		{"0 3 * * 1", "0 3 5,12,19,26 1 *", 0, 0, false},
+		{"0 3 * * 1", "0 3 * * 1,3", 0, 0, false},
+	} {
+		before, after, ok := cronShift(c.cur, c.next)
+		if ok != c.ok || ok && (before != c.before || after != c.after) {
+			t.Errorf("%q -> %q: %d %d %v", c.cur, c.next, before, after, ok)
+		}
+	}
+}
+
+// An untrusted arrival does not join a trusted proposal that changes something, and a joined
+// arrival raises the record's mark (PRP-5, PRP-12, INJ-4).
+func TestProposalMerge(t *testing.T) {
+	ctx := context.Background()
+	b := newInsightBench(t, nil)
+	b.helloDone(t, "1", "", "hi")
+	b.loop(t, "observe")
+	if _, err := b.analysis(t, "1", false, map[string]any{"proposals": []any{changeBody("queue_long", limitsChange(10)), noneBody("seen", 1)}}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := b.c.st.Pool.Exec(ctx, `UPDATE proposals SET record = jsonb_set(record, '{data_mark}', '"summary"')`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := b.analysis(t, "2", true, map[string]any{"proposals": []any{changeBody("queue_long", limitsChange(10)), noneBody("seen", 1)}}); err != nil {
+		t.Fatal(err)
+	}
+	if got := rejections(t, b); len(got) != 1 || got[0] != "untrusted_direction" {
+		t.Fatalf("rejections %v", got)
+	}
+	for _, r := range proposals(t, b) {
+		ch := r["body"].(map[string]any)["change"].(map[string]any)
+		us := r["untrusted_seen"].(map[string]any)
+		if ch["kind"] == "none" && (r["data_mark"] != "internal" || us["value"] != true || r["seen_count"] != float64(2)) {
+			t.Fatalf("merged %v %v %v", r["data_mark"], us, r["seen_count"])
+		}
+	}
 }

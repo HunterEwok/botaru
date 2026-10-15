@@ -224,13 +224,11 @@ func (c *Core) checkScheduleOp(cat *Catalog, tv *TenantView, a proposalAuthor, o
 		if !isString {
 			return false, rejection("forbidden_change")
 		}
-		loc, err := time.LoadLocation(scheduleTZ(tv, sc))
-		if err != nil {
+		if _, err := time.LoadLocation(scheduleTZ(tv, sc)); err != nil {
 			return false, rejection("forbidden_change")
 		}
-		before, ok1 := cronFrequency(sc.Cron, loc)
-		after, ok2 := cronFrequency(value, loc)
-		if !ok1 || !ok2 || after == 0 {
+		before, after, ok := cronShift(sc.Cron, value)
+		if !ok || after == 0 {
 			return false, rejection("forbidden_change")
 		}
 		if tt.MakesBackup {
@@ -244,7 +242,7 @@ func (c *Core) checkScheduleOp(cat *Catalog, tv *TenantView, a proposalAuthor, o
 			}
 			return true, nil
 		}
-		if !proposable || after*2 < before {
+		if !proposable || after*2 < before || after > before {
 			return false, rejection("forbidden_change")
 		}
 		if a.Untrusted {
@@ -266,23 +264,33 @@ func (c *Core) checkScheduleOp(cat *Catalog, tv *TenantView, a proposalAuthor, o
 	return false, rejection("forbidden_change")
 }
 
-// cronFrequency counts the slots of an expression over four weeks from a fixed instant, so
-// the same expression always gives the same count.
-func cronFrequency(expr string, loc *time.Location) (int, bool) {
-	spec, err := parseCron(expr)
-	if err != nil {
-		return 0, false
+// cronShift compares two expressions as a shift of the window (PRP-3, PRP-11): the day,
+// month and weekday fields must stay as they are, so only the minutes and hours of a day move,
+// and the frequency is the number of slots in a day. A change of the days would let a
+// frequency count over a fixed span be gamed (all slots of a monthly expression put inside
+// it), so it is refused.
+func cronShift(cur, next string) (before, after int, ok bool) {
+	a, err1 := parseCron(cur)
+	b, err2 := parseCron(next)
+	if err1 != nil || err2 != nil || a.dom != b.dom || a.month != b.month || a.dow != b.dow ||
+		a.domAny != b.domAny || a.dowAny != b.dowAny {
+		return 0, 0, false
 	}
-	from := time.Date(2026, 1, 5, 0, 0, 0, 0, time.UTC)
-	end := from.AddDate(0, 0, 28)
-	n := 0
-	for s, ok := spec.nextSlot(from, loc); ok && s.At.Before(end); s, ok = spec.nextSlot(s.At, loc) {
-		n++
-		if n > 28*24*60 {
-			break
+	daily := func(c *cronSpec) int {
+		m, h := 0, 0
+		for i := range 60 {
+			if c.min[i] {
+				m++
+			}
 		}
+		for i := range 24 {
+			if c.hour[i] {
+				h++
+			}
+		}
+		return m * h
 	}
-	return n, true
+	return daily(a), daily(b), true
 }
 
 // checkTenantOp: a tenant limit, campaign or script ceiling only lower (its safe direction),

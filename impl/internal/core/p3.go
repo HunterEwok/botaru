@@ -464,7 +464,7 @@ func (c *Core) P3ToolsCall(ctx context.Context, handle string, p mcp.CallParams)
 			callID, grantID = id, grant
 			return nil
 		}
-		callID, refusal, err = c.recordToolCall(ctx, tx, now, cat, g, p)
+		callID, refusal, err = c.recordToolCall(ctx, tx, now, cat, g, tools, p)
 		return err
 	})
 	if err != nil {
@@ -493,7 +493,7 @@ func (c *Core) P3ToolsCall(ctx context.Context, handle string, p mcp.CallParams)
 }
 
 // recordToolCall checks a call and writes its record: queued, or denied or error at once.
-func (c *Core) recordToolCall(ctx context.Context, tx pgx.Tx, now time.Time, cat *Catalog, g *toolsGrant, p mcp.CallParams) (string, *toolRefusal, error) {
+func (c *Core) recordToolCall(ctx context.Context, tx pgx.Tx, now time.Time, cat *Catalog, g *toolsGrant, tools []catalogTool, p mcp.CallParams) (string, *toolRefusal, error) {
 	role := cat.Roles[g.Role]
 	plugin, tool, _ := strings.Cut(p.Name, "_")
 	// A name of the model maps back to <plugin>/<tool>; plugin names have no underscore
@@ -523,6 +523,11 @@ func (c *Core) recordToolCall(ctx context.Context, tx pgx.Tx, now time.Time, cat
 		return id, &toolRefusal{state: state, reason: reason}, nil
 	}
 	if !havePlugin || !haveTool || !containsString(roleTools(cat, role), right) || !t.On() {
+		return deny("denied", "forbidden")
+	}
+	// Analysis calls only what its catalog offers: insight.tools, tier 1 at most and up to
+	// insight.max_data (INS-2).
+	if g.Purpose == "insight" && !slices.ContainsFunc(tools, func(ct catalogTool) bool { return !ct.Builtin && ct.Right == right }) {
 		return deny("denied", "forbidden")
 	}
 	// Holds come before rights (HLD-1): no_tool on the farm, the tenant, the role, the type, the

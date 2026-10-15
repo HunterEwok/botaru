@@ -240,7 +240,7 @@ func (c *Core) createProposal(ctx context.Context, tx pgx.Tx, now time.Time, cat
 	err = tx.QueryRow(ctx, `SELECT id, record FROM proposals WHERE tenant = $1 AND fingerprint = $2 AND state = ANY($3) ORDER BY created_at LIMIT 1 FOR UPDATE`,
 		a.Tenant, fp, openProposalStates).Scan(&dupID, &dupRec)
 	if err == nil {
-		return fp, mergeDuplicate(ctx, tx, now, dupID, dupRec, body, seen)
+		return fp, c.mergeDuplicate(ctx, tx, now, a, dupID, dupRec, body, seen)
 	}
 	if !errors.Is(err, pgx.ErrNoRows) {
 		return fp, err
@@ -447,11 +447,43 @@ func evidenceMoved(old, now []map[string]any) bool {
 }
 
 // mergeDuplicate counts one more arrival of an open proposal and adds the new evidence
-// references it does not have, up to ten; the author does not change (PRP-5, PRP-14).
-func mergeDuplicate(ctx context.Context, tx pgx.Tx, now time.Time, id string, raw []byte, body map[string]any, seen []map[string]any) error {
+// references it does not have, up to ten; the author does not change (PRP-5, PRP-14). The
+// record takes the higher data mark and the untrusted flag and sources of the arrival, so the
+// added values are never read below their class (INJ-4); an untrusted arrival does not join a
+// trusted record that changes something, because that change was checked without the
+// untrusted rule (PRP-12).
+func (c *Core) mergeDuplicate(ctx context.Context, tx pgx.Tx, now time.Time, a proposalAuthor, id string, raw []byte, body map[string]any, seen []map[string]any) error {
 	var rec map[string]any
 	if err := json.Unmarshal(raw, &rec); err != nil {
 		return err
+	}
+	us, _ := rec["untrusted_seen"].(map[string]any)
+	if us == nil {
+		us = map[string]any{"value": false, "sources": []any{}}
+		rec["untrusted_seen"] = us
+	}
+	if a.Untrusted {
+		recBody, _ := rec["body"].(map[string]any)
+		ch, _ := recBody["change"].(map[string]any)
+		if us["value"] != true && asString(ch["kind"]) != "none" {
+			return rejection("untrusted_direction")
+		}
+		us["value"] = true
+		srcs, _ := us["sources"].([]any)
+		for _, src := range a.Sources {
+			if !slices.Contains(srcs, any(src)) {
+				srcs = append(srcs, src)
+			}
+		}
+		if srcs == nil {
+			srcs = []any{}
+		}
+		us["sources"] = srcs
+	}
+	if newO, ok := c.markOrder(a.Mark); ok {
+		if oldO, ok := c.markOrder(asString(rec["data_mark"])); !ok || newO > oldO {
+			rec["data_mark"] = a.Mark
+		}
 	}
 	n, _ := toFloat(rec["seen_count"])
 	rec["seen_count"] = int(n) + 1
