@@ -548,6 +548,12 @@ func (c *Core) metricGuards(metric string) []string {
 // of points equal to the good value, a window rollup its function over all points, an hour or
 // day rollup the mean of its hourly or daily values.
 func trialValue(ctx context.Context, tx pgx.Tx, tenant string, s seriesDef, subject string, from, to time.Time, worker, role string) (map[string]any, error) {
+	if s.Outcome == nil {
+		none := func() map[string]any { return map[string]any{"value": nil, "samples": 0} }
+		out := none()
+		out["without_author"], out["without_role"] = none(), none()
+		return out, nil
+	}
 	one := func(column, value string) (map[string]any, error) {
 		args := []any{tenant, s.Name, subject, from, to}
 		where := `tenant = $1 AND series = $2 AND subject = $3 AND at >= $4 AND at < $5`

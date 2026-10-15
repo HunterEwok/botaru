@@ -26,6 +26,9 @@ const (
 	digestLate = 24 * time.Hour
 	// Urgent items arrive outside the schedule at most once a day per tenant (DIG-1).
 	urgentEvery = 24 * time.Hour
+	// The digest record holds at most 30 items and 20 cycle-off reasons.
+	maxDigestItems = 30
+	maxLoopOff     = 20
 
 	proposalDigest  = "proposal_digest"
 	proposalCard    = "proposal_card"
@@ -137,12 +140,23 @@ func (c *Core) sendDigest(ctx context.Context, tx pgx.Tx, now time.Time, cat *Ca
 	})
 	limit := defaultDigestItems
 	if n := tv.Spec.Insights.Digest.MaxItems; n > 0 {
-		limit = n
+		// The digest record holds at most 30 items (digest.schema.json).
+		limit = min(n, maxDigestItems)
 	}
 	var items []*proposalRow
 	for _, p := range cands {
 		if len(items) >= limit {
 			break
+		}
+		// A field another accepted change still locks parks the item (PRP-9).
+		if holders, err := lockHolders(ctx, tx, p.Tenant, p.ID, lockKeys(p.body())); err != nil {
+			return err
+		} else if len(holders) > 0 {
+			p.Rec["conflicts_with"] = []any{holders[0]}
+			if err := c.moveProposal(ctx, tx, now, p, "parked", "conflict"); err != nil {
+				return err
+			}
+			continue
 		}
 		// The evidence is reread before showing; a drift parks the item (PRP-2).
 		ok, err := c.evidenceHolds(ctx, tx, now, cat, p)
@@ -162,6 +176,7 @@ func (c *Core) sendDigest(ctx context.Context, tx pgx.Tx, now time.Time, cat *Ca
 		if off, err = loopOff(ctx, tx, cat, tv.Name); err != nil {
 			return err
 		}
+		off = off[:min(len(off), maxLoopOff)]
 	}
 	if len(items) == 0 && len(off) == 0 {
 		// Nothing to say: the slot stays open for a day, so items recommended later in it

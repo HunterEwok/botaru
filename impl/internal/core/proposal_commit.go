@@ -138,8 +138,12 @@ func (c *Core) linkCommit(ctx context.Context, tx pgx.Tx, now time.Time, commit 
 	batch := len(l.Proposals) > 1
 	for _, id := range l.Proposals {
 		p, err := lockedProposal(ctx, tx, id)
-		if err != nil || p == nil {
+		if err != nil {
 			return err
+		}
+		if p == nil {
+			// An unknown id is skipped; the other lines still count.
+			continue
 		}
 		if _, err := c.realizeByCommit(ctx, tx, now, p, commit, "commit_trailer", batch); err != nil {
 			return err
@@ -147,8 +151,11 @@ func (c *Core) linkCommit(ctx context.Context, tx pgx.Tx, now time.Time, commit 
 	}
 	for _, id := range slices.Sorted(mapKeys(l.Reverts)) {
 		p, err := lockedProposal(ctx, tx, id)
-		if err != nil || p == nil {
+		if err != nil {
 			return err
+		}
+		if p == nil {
+			continue
 		}
 		if err := c.revertByCommit(ctx, tx, now, p, commit, l.Reverts[id]); err != nil {
 			return err
@@ -251,7 +258,7 @@ func (c *Core) revertByCommit(ctx context.Context, tx pgx.Tx, now time.Time, p *
 		}
 		t["state"], t["outcome"] = out, out
 	}
-	if err := c.moveProposal(ctx, tx, now, p, "reverted", ""); err != nil {
+	if err := c.moveProposal(ctx, tx, now, p, "reverted", reason); err != nil {
 		return err
 	}
 	return c.planProposalCardUpdates(ctx, tx, now, p)
@@ -287,7 +294,7 @@ func (c *Core) LinkCommit(ctx context.Context, op Operator, req LinkCommitReques
 		if err != nil {
 			return err
 		}
-		if p == nil {
+		if p == nil || p.Tenant != op.Tenant && op.Tenant != "farm" {
 			return refuse("not_found", "no such proposal")
 		}
 		tv := cat.Tenants[p.Tenant]
@@ -393,7 +400,7 @@ func (c *Core) parkConflicts(ctx context.Context, tx pgx.Tx, now time.Time, p *p
 	if len(keys) == 0 {
 		return nil
 	}
-	rows, err := tx.Query(ctx, `SELECT id FROM proposals WHERE tenant = $1 AND id <> $2 AND state IN ('screened', 'in_review', 'recommended', 'presented')
+	rows, err := tx.Query(ctx, `SELECT id FROM proposals WHERE tenant = $1 AND id <> $2 AND state IN ('screened', 'recommended', 'presented')
 		AND record->'body'->'change'->>'kind' = 'manifest_change' ORDER BY id`, p.Tenant, p.ID)
 	if err != nil {
 		return err
@@ -407,7 +414,8 @@ func (c *Core) parkConflicts(ctx context.Context, tx pgx.Tx, now time.Time, p *p
 		if err != nil {
 			return err
 		}
-		if !keysOverlap(keys, lockKeys(q.body())) {
+		// A proposal in review finishes its round; the digest parks it if the lock still holds.
+		if !slices.Contains([]string{"screened", "recommended", "presented"}, q.State) || !keysOverlap(keys, lockKeys(q.body())) {
 			continue
 		}
 		q.Rec["conflicts_with"] = []any{p.ID}
@@ -416,7 +424,7 @@ func (c *Core) parkConflicts(ctx context.Context, tx pgx.Tx, now time.Time, p *p
 			return err
 		}
 		if was == "presented" {
-			if _, err := tx.Exec(ctx, `UPDATE proposals SET nonce = NULL, presented_at = NULL WHERE id = $1`, q.ID); err != nil {
+			if _, err := tx.Exec(ctx, `UPDATE proposals SET presented_at = NULL WHERE id = $1`, q.ID); err != nil {
 				return err
 			}
 			if err := c.planProposalCardUpdates(ctx, tx, now, q); err != nil {

@@ -119,7 +119,12 @@ func (c *Core) trialStep(ctx context.Context, tx pgx.Tx, now time.Time, cat *Cat
 // metric over all points, without the author and without its role, by the tolerance.
 func (c *Core) trialOutcome(ctx context.Context, tx pgx.Tx, cat *Catalog, p *proposalRow, t map[string]any, series map[string]seriesDef, start, end time.Time, author string) error {
 	m := mmapAny(t["metric"])
-	s := series[asString(m["series"])]
+	s, ok := series[asString(m["series"])]
+	if !ok || s.Outcome == nil {
+		// The metric left the catalog or lost its outcome block: nothing can be measured.
+		t["state"], t["outcome"] = "undetermined", "undetermined"
+		return nil
+	}
 	after, err := trialValue(ctx, tx, p.Tenant, s, asString(m["subject"]), start, end, author, p.Role)
 	if err != nil {
 		return err

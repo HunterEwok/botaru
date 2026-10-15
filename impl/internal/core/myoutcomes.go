@@ -50,7 +50,7 @@ func myOutcomes(ctx context.Context, tx pgx.Tx, tenant, worker string, limit int
 			human = "accepted"
 		case d == "reject":
 			human = "declined"
-		case state == "parked":
+		case d == "defer":
 			human = "parked"
 		}
 		var promised any
