@@ -1074,10 +1074,14 @@ func (c *Core) Emit(ctx context.Context, w *Worker, header string, req EmitReque
 			return refuse("input_schema_invalid", "the event data is outside its schema")
 		}
 		subject := asString(req.Data["subject"])
+		known := slices.Contains(catalogResources(cat, l.Tenant), subject) || slices.Contains(catalogHosts(cat, l.Tenant), subject)
 		if m, ok := req.Data["subject"].(map[string]any); ok {
+			// An alarm's subject names its kind, which must be the kind of that catalog entry
+			// (MON-1, MGR-8).
 			subject = asString(m["id"])
+			known = c.subjectOfTenant(cat, l.Tenant, asString(m["kind"]), asString(m["kind"])+":"+subject)
 		}
-		if !slices.Contains(catalogResources(cat, l.Tenant), subject) && !slices.Contains(catalogHosts(cat, l.Tenant), subject) {
+		if !known {
 			return refuse("ref_invalid", "the subject is not in the catalog of the tenant")
 		}
 		if strings.HasPrefix(req.Type, "alarm.") {

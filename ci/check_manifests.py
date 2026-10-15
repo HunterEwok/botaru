@@ -556,8 +556,9 @@ def lint(docs, today=None, farm_hosts=None, examples_mode=False, claimed=None, s
                 f.error('assistant_in_default_types', where, f'assistant type {t} in default_types (DSP-10)')
             elif types and t not in types:
                 f.error('ref_missing', where, f'default_types: type {t} is not in the set')
-            elif (isinstance(dt, dict) and t in types and not types[t].get('summary_fields')
-                  and any(ch == 'group' or str(ch).startswith('chat:') for ch in dt.get('chats') or [])):
+            elif (t in types and not types[t].get('summary_fields')
+                  and (isinstance(dt, str) or not dt.get('chats')
+                       or any(ch == 'group' or str(ch).startswith('chat:') for ch in dt['chats']))):
                 f.error('summary_fields_required', where, f'default_types: type {t} for a group chat has no summary_fields (REP-11)')
         for rname, r in (ts.get('run') or {}).items():
             if 'type' in r:

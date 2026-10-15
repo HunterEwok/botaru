@@ -198,7 +198,6 @@ cases:
           - type: ops.summary.v1
             chats:
             - direct
-          - ops.summary.v1
       - apiVersion: botaru/v1alpha1
         kind: ModelProfile
         metadata:
@@ -369,7 +368,6 @@ cases:
           - type: ops.summary.v1
             chats:
             - direct
-          - ops.summary.v1
       - apiVersion: botaru/v1alpha1
         kind: ModelProfile
         metadata:

@@ -102,13 +102,10 @@ func (c *Core) SpendReconcile(ctx context.Context, op Operator, req SpendReconci
 			ON CONFLICT (provider, day) DO UPDATE SET created_at = $3`, provider, day, now); err != nil {
 			return err
 		}
-		// A report without rows says the provider billed nothing that day: every workspace
-		// with usage or a correction of the provider that day is reconciled to zero, so the
-		// reported day holds no stale sum. A report with rows may be one batch of several
-		// (the request holds at most 1000 rows), so it reconciles only its own workspaces.
-		if len(req.Rows) > 0 {
-			return c.reconcileRows(ctx, tx, now, op, day, provider, sums)
-		}
+		// The request is the provider's whole report of the day (one request per UTC day; a
+		// later one replaces it): a workspace with usage or a correction of the provider that
+		// day but no row billed nothing and is reconciled to zero, so the reported day holds
+		// no stale sum.
 		rows, err := tx.Query(ctx, `SELECT DISTINCT tenant FROM spend WHERE provider = $1 AND time >= $2 AND time < $3`, provider, day, day.Add(24*time.Hour))
 		if err != nil {
 			return err

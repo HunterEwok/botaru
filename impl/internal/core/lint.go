@@ -667,8 +667,7 @@ func (c *Core) lintManifests(docs []manifest.Doc, index []int, personas personaL
 				f.add(o, "assistant_in_default_types", path)
 			} else if len(types) > 0 && types[t] == nil {
 				c.lintWarn(o, "ref_missing", path)
-			} else if m, ok := dt.(map[string]any); ok && types[t] != nil && len(mlist(types[t], "summary_fields")) == 0 &&
-				slices.ContainsFunc(mstrs(m, "chats"), func(ch string) bool { return ch == "group" || strings.HasPrefix(ch, "chat:") }) {
+			} else if types[t] != nil && len(mlist(types[t], "summary_fields")) == 0 && groupDefault(dt) {
 				// A type for group chats carries a code table in its summary (REP-11, DLV-15).
 				f.add(o, "summary_fields_required", path)
 			}
@@ -1912,4 +1911,15 @@ func (c *Core) lintGovernance(S *lintSet, f *lintFindings, personas personaLooku
 		}
 	}
 	return nil
+}
+
+// groupDefault says whether a default_types entry also serves group chats: a bare type name or
+// an entry without chats serves every chat (REP-11).
+func groupDefault(dt any) bool {
+	m, ok := dt.(map[string]any)
+	if !ok {
+		return true
+	}
+	chats := mstrs(m, "chats")
+	return len(chats) == 0 || slices.ContainsFunc(chats, func(ch string) bool { return ch == "group" || strings.HasPrefix(ch, "chat:") })
 }
