@@ -372,6 +372,9 @@ func (c *Core) monitorLoop(ctx context.Context) error {
 		return nil
 	}
 	return c.tx(ctx, func(tx pgx.Tx, now time.Time) error {
+		if err := c.scriptSweep(ctx, tx, now); err != nil {
+			return err
+		}
 		rows, err := tx.Query(ctx, `SELECT m.tenant, m.stalled_notice_at,
 			EXISTS (SELECT 1 FROM deliveries d WHERE d.tenant = m.tenant AND d.exec_kind = 'monitor' AND d.state IN ('planned', 'sending') AND d.created_at <= $1)
 			AND (m.last_ok_at IS NULL OR m.last_ok_at <= $1)

@@ -274,6 +274,15 @@ func (c *Core) endToolCall(ctx context.Context, tx pgx.Tx, now time.Time, id, st
 	if err := c.writeCallEnded(ctx, tx, now, id, state, reason, output); err != nil {
 		return err
 	}
+	// A script call and the write call of a service action note their end on the problem
+	// of the host (MON-8, MON-10); a script call ends in the e5 placement, which no toolhost
+	// serves, so the sweep of the monitor loop ends it when no adapter does.
+	// A run that may have happened (exec_unknown) is noted as failed, so people see it.
+	if state == "done" || state == "exec_unknown" {
+		if err := c.monitorNote(ctx, tx, now, id, state); err != nil {
+			return err
+		}
+	}
 	return notifyWork(ctx, tx)
 }
 
@@ -471,7 +480,7 @@ func toolcallCanceled(ctx context.Context, tx pgx.Tx, id string) (bool, error) {
 func (c *Core) toolcallDeadlines(ctx context.Context) error {
 	return c.tx(ctx, func(tx pgx.Tx, now time.Time) error {
 		// A write call nobody took ends its action as exec_failed(no_executor) (CNT-7).
-		rows, err := tx.Query(ctx, `SELECT id FROM toolcalls WHERE state = 'queued' AND access = 'write' AND start_by <= $1 ORDER BY id FOR UPDATE`, now)
+		rows, err := tx.Query(ctx, `SELECT id FROM toolcalls WHERE state = 'queued' AND access = 'write' AND start_by <= $1 AND target_placement <> 'e5' ORDER BY id FOR UPDATE`, now)
 		if err != nil {
 			return err
 		}
@@ -494,7 +503,7 @@ func (c *Core) toolcallDeadlines(ctx context.Context) error {
 			}
 		}
 		tag, err := tx.Exec(ctx, `UPDATE toolcalls SET state = 'error', reason = 'no_executor', updated_at = $1, ended_at = $1
-			WHERE state = 'queued' AND start_by <= $1`, now)
+			WHERE state = 'queued' AND start_by <= $1 AND target_placement <> 'e5'`, now)
 		if err != nil {
 			return err
 		}

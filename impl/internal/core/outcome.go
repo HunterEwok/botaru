@@ -465,6 +465,11 @@ func (c *Core) completeDelivery(ctx context.Context, tx pgx.Tx, now time.Time, w
 			return err
 		}
 	}
+	if kind == "monitor_script" {
+		if err := c.scriptDone(ctx, tx, now, l.WorkID, r); err != nil {
+			return err
+		}
+	}
 	if kind == "ai_notice" {
 		if _, err := tx.Exec(ctx, `UPDATE contacts SET ai_notice_at = $2 WHERE ai_notice_delivery = $1`, l.WorkID, now); err != nil {
 			return err
@@ -542,6 +547,25 @@ func (c *Core) requeue(ctx context.Context, tx pgx.Tx, now time.Time, l *leaseRo
 	case "attempt":
 		_, err = tx.Exec(ctx, `UPDATE tasks SET state = 'submitted', run_at = $2, updated_at = $3 WHERE id = $1 AND state = 'working'`, l.WorkID, runAt, now)
 	case "delivery":
+		var kind string
+		if err := tx.QueryRow(ctx, `SELECT kind FROM deliveries WHERE id = $1`, l.WorkID).Scan(&kind); err != nil {
+			return err
+		}
+		if kind == "monitor_script" {
+			// A script is handed out once (MON-10): a released run ends, as a released call does.
+			// The adapter may have run it before releasing, so nobody knows whether it ran (APR-7).
+			if _, err := tx.Exec(ctx, `UPDATE deliveries SET state = 'dead', reason = 'worker_drain', updated_at = $2 WHERE id = $1 AND state = 'sending'`, l.WorkID, now); err != nil {
+				return err
+			}
+			if err := c.scriptFailed(ctx, tx, now, l.WorkID, "worker_drain"); err != nil {
+				return err
+			}
+			if err := c.appendEvent(ctx, tx, now, l.Tenant, Event{Type: "delivery.dead", Subject: l.WorkID,
+				Data: map[string]any{"delivery": l.WorkID, "kind": kind, "reason": "worker_drain"}}); err != nil {
+				return err
+			}
+			return notifyWork(ctx, tx)
+		}
 		_, err = tx.Exec(ctx, `UPDATE deliveries SET state = 'planned', run_at = $2, updated_at = $3 WHERE id = $1 AND state = 'sending'`, l.WorkID, runAt, now)
 	case "toolcall":
 		// A call is not handed out again (DLV-1): a released call ends, and the model decides.
@@ -716,6 +740,20 @@ func (c *Core) endDelivery(ctx context.Context, tx pgx.Tx, now time.Time, tenant
 	if err := tx.QueryRow(ctx, `SELECT d.attempts, d.kind, d.exec_name, d.target_id, d.task, d.fallback_chat, coalesce(e.state = 'firing', false) FROM deliveries d
 		LEFT JOIN alarm_episodes e ON e.id = d.episode WHERE d.id = $1 FOR UPDATE OF d`, l.WorkID).Scan(&attempts, &kind, &channel, &targetID, &task, &fallback, &episodeOpen); err != nil {
 		return nil, err
+	}
+	// A script runs at most once: any end of its delivery ends the call, by the reason (MON-10,
+	// APR-7).
+	if kind == "monitor_script" {
+		if _, err := tx.Exec(ctx, `UPDATE deliveries SET state = 'dead', reason = $2, updated_at = $3 WHERE id = $1`, l.WorkID, reason, now); err != nil {
+			return nil, err
+		}
+		if err := c.scriptFailed(ctx, tx, now, l.WorkID, reason); err != nil {
+			return nil, err
+		}
+		if err := c.appendEvent(ctx, tx, now, tenant, Event{Type: "delivery.dead", Subject: l.WorkID, Data: map[string]any{"delivery": l.WorkID, "kind": kind, "reason": reason}}); err != nil {
+			return nil, err
+		}
+		return &FailResult{Final: true, Reason: reason}, nil
 	}
 	// The channel saw an unknown member in a group chat: the delivery is withheld and the chat
 	// gets nothing more until the operator binds it again (DLV-7).

@@ -7,6 +7,8 @@
   "x-botaru-rules": [
     "IDN-1",
     "IDN-7",
+    "MON-10",
+    "MON-5",
     "PRM-15"
   ],
   "type": "object",
@@ -122,6 +124,30 @@
     },
     "received_at": {
       "$ref": "urn:botaru:schema:common:1#/$defs/datetime"
+    },
+    "event": {
+      "description": "Only kind signal: the external event of the monitoring adapter, its type and its data by the event data schema (MON-5, MON-10). The channel is the adapter target, the chat a direct chat with the external id monitor, the update id the idempotency part of the event.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "type",
+        "data"
+      ],
+      "properties": {
+        "type": {
+          "description": "Event type.",
+          "enum": [
+            "ext.monitor.problem.v1",
+            "ext.monitor.scripts.v1"
+          ]
+        },
+        "data": {
+          "description": "Event data, checked by the core against the data schema of the type.",
+          "type": "object",
+          "maxProperties": 16,
+          "x-botaru-closed-by": "the data schema of the event type in spec/bindings/events/catalog.yaml"
+        }
+      }
     }
   }
 }

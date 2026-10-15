@@ -256,17 +256,18 @@ func (c *Core) serviceGuards(ctx context.Context, tx pgx.Tx, now time.Time, s se
 		}
 		return "held", nil
 	}
-	// The service actions of the tenant are counted under its lock.
+	// The service actions and scripts of the tenant are counted under its lock.
 	if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock(7300109, hashtext($1))`, s.Tenant); err != nil {
 		return "", err
 	}
 	var perService, perTenant int
 	var busy bool
-	if err := tx.QueryRow(ctx, `SELECT count(*) FILTER (WHERE args->>'service' = $2 AND created_at > $3),
-		count(*) FILTER (WHERE created_at > $3), coalesce(bool_or(args->>'service' = $2 AND state IN ('queued', 'leased')), false)
-		FROM toolcalls WHERE tenant = $1 AND tool = $4 AND access = 'write' AND (grant_id IS NOT NULL OR approval_id IS NOT NULL)
-		AND state <> 'denied' AND coalesce(reason, '') <> 'plugin_unavailable'`,
-		s.Tenant, s.Service.Name, now.Add(-time.Hour), serviceRight).Scan(&perService, &perTenant, &busy); err != nil {
+	// Scripts count toward the tenant limit too (MON-10).
+	if err := tx.QueryRow(ctx, `SELECT count(*) FILTER (WHERE tool = $4 AND args->>'service' = $2 AND created_at > $3),
+		count(*) FILTER (WHERE created_at > $3), coalesce(bool_or(tool = $4 AND args->>'service' = $2 AND state IN ('queued', 'leased')), false)
+		FROM toolcalls WHERE tenant = $1 AND tool IN ($4, $5) AND access = 'write' AND (grant_id IS NOT NULL OR approval_id IS NOT NULL)
+		AND state <> 'denied' AND coalesce(reason, '') NOT IN ('plugin_unavailable', 'no_executor')`,
+		s.Tenant, s.Service.Name, now.Add(-time.Hour), serviceRight, scriptRight).Scan(&perService, &perTenant, &busy); err != nil {
 		return "", err
 	}
 	if perService >= servicePerHour || perTenant >= tenantPerHour {

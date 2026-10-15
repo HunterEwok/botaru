@@ -32,6 +32,8 @@ type Activity struct {
 	// shows a person (AUD-5).
 	ForwardedFrom string `json:"forwarded_from,omitempty"`
 	QuotedFrom    string `json:"quoted_from,omitempty"`
+	// Event is the external event of a signal from the monitoring adapter (MON-5, MON-10).
+	Event *SignalEvent `json:"event,omitempty"`
 }
 
 // ActivityResult is p1-submit-activity-response.
@@ -47,6 +49,12 @@ type ActivityResult struct {
 // word in a direct chat by the tenant's commands, else a default type of the chat kind. The text
 // never chooses anything else; forwarded and quoted text is never a command (IDN-7).
 func (c *Core) SubmitActivity(ctx context.Context, w *Worker, a Activity) (*ActivityResult, error) {
+	if w.Kind == "monitor" {
+		return c.submitSignal(ctx, w, a)
+	}
+	if a.Kind == "signal" || a.Event != nil {
+		return nil, refuse("forbidden", "only a monitoring adapter submits a signal")
+	}
 	if w.Kind != "channel" {
 		return nil, refuse("forbidden", "only a channel submits activity")
 	}
