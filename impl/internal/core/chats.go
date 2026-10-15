@@ -116,6 +116,9 @@ func (c *Core) ChatBind(ctx context.Context, op Operator, req ChatBindRequest) (
 	if modelText == "" {
 		modelText = "summary_only"
 	}
+	if modelText != "summary_only" {
+		return nil, refuse("version_unsupported", "this build sends only the closed summary to a group (model_text: summary_only)")
+	}
 	chat := req.Chat.ID()
 	var out Done
 	err = c.tx(ctx, func(tx pgx.Tx, now time.Time) error {
@@ -189,10 +192,16 @@ func closedSummary(tt manifest.TaskType, result map[string]any) (string, map[str
 		if !(isEnum || isConst || typ == "integer" || typ == "number" || typ == "boolean") {
 			continue
 		}
+		// The value must be of the closed kind its schema names; anything else is left out.
 		var text string
 		switch x := v.(type) {
 		case string:
+			if !isEnum && !isConst {
+				continue
+			}
 			text = x
+		case map[string]any, []any:
+			continue
 		default:
 			b, _ := json.Marshal(x)
 			text = string(b)
@@ -232,7 +241,7 @@ func (c *Core) planGroupAnswer(ctx context.Context, tx pgx.Tx, now time.Time, tv
 		// there (DLV-12).
 		var dead bool
 		if err := tx.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM contacts ct JOIN deliveries d ON d.id = ct.ai_notice_delivery
-			WHERE ct.tenant = $1 AND ct.channel = $2 AND ct.principal = $3 AND ct.ai_notice_at IS NULL AND d.state IN ('dead', 'withheld'))`,
+			WHERE ct.tenant = $1 AND ct.channel = $2 AND ct.principal = $3 AND ct.ai_notice_at IS NULL AND d.state = 'dead')`,
 			tenant, origin.Channel, initiator).Scan(&dead); err != nil {
 			return err
 		}
