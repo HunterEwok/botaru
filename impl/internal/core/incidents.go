@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"slices"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 	"unicode"
@@ -304,9 +305,11 @@ func (c *Core) openIncidents(ctx context.Context, cat *Catalog, classes []incide
 		return err
 	}
 	var errs []error
-	// The start of the conditions is forgotten for an episode that no longer fires.
-	if _, err := c.st.Pool.Exec(ctx, `DELETE FROM incident_detect d WHERE NOT EXISTS
-		(SELECT 1 FROM alarm_episodes e WHERE e.id = d.episode AND e.state = 'firing')`); err != nil {
+	// The number log of an episode that no longer fires is dropped, and a long run keeps its last
+	// week and its latest change.
+	if _, err := c.st.Pool.Exec(ctx, `DELETE FROM alarm_values v WHERE NOT EXISTS
+		(SELECT 1 FROM alarm_episodes e WHERE e.id = v.episode AND e.state = 'firing')
+		OR v.at < now() - interval '7 days' AND EXISTS (SELECT 1 FROM alarm_values n WHERE n.episode = v.episode AND n.at > v.at)`); err != nil {
 		errs = append(errs, err)
 	}
 	for _, ep := range eps {
@@ -330,23 +333,11 @@ func (c *Core) openIncidents(ctx context.Context, cat *Catalog, classes []incide
 				}
 				ep.Values = nil
 				_ = json.Unmarshal(vals, &ep.Values)
-				if state != "firing" {
-					_, err := tx.Exec(ctx, `DELETE FROM incident_detect WHERE class = $1 AND episode = $2`, ic.Name, ep.ID)
-					return err
+				if state != "firing" || !detectHolds(ic.Spec, ep) {
+					return nil
 				}
-				// detect.for counts from when the conditions last started to hold on the
-				// episode's latest numbers, not from the episode's start.
-				if !detectHolds(ic.Spec, ep) {
-					_, err := tx.Exec(ctx, `DELETE FROM incident_detect WHERE class = $1 AND episode = $2`, ic.Name, ep.ID)
-					return err
-				}
-				// The conditions hold at least since the current numbers arrived.
-				if _, err := tx.Exec(ctx, `INSERT INTO incident_detect (class, episode, since) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING`,
-					ic.Name, ep.ID, ep.ValsAt); err != nil {
-					return err
-				}
-				var since time.Time
-				if err := tx.QueryRow(ctx, `SELECT since FROM incident_detect WHERE class = $1 AND episode = $2`, ic.Name, ep.ID).Scan(&since); err != nil {
+				since, err := detectSince(ctx, tx, ic.Spec, ep)
+				if err != nil {
 					return err
 				}
 				if since.After(now.Add(-specDuration(mmap(ic.Spec, "detect"), "for"))) {
@@ -360,6 +351,33 @@ func (c *Core) openIncidents(ctx context.Context, cat *Catalog, classes []incide
 		}
 	}
 	return errors.Join(errs...)
+}
+
+// detectSince is when the conditions of a class last started to hold without a break on an
+// episode's numbers: the earliest change of the latest run of matching numbers in its log, or the
+// arrival of the current numbers when the log has none (MGR-8).
+func detectSince(ctx context.Context, tx pgx.Tx, class map[string]any, ep alarmEpisode) (time.Time, error) {
+	rows, err := tx.Query(ctx, `SELECT at, vals FROM alarm_values WHERE episode = $1 ORDER BY at DESC LIMIT 5000`, ep.ID)
+	if err != nil {
+		return time.Time{}, err
+	}
+	defer rows.Close()
+	since := ep.ValsAt
+	for rows.Next() {
+		var at time.Time
+		var vals []byte
+		if err := rows.Scan(&at, &vals); err != nil {
+			return time.Time{}, err
+		}
+		v := ep
+		v.Values = nil
+		_ = json.Unmarshal(vals, &v.Values)
+		if !detectHolds(class, v) {
+			break
+		}
+		since = at
+	}
+	return since, rows.Err()
 }
 
 // incidentFailed logs a failure of one incident or episode, so the loop goes on with the rest.
@@ -885,26 +903,47 @@ func (c *Core) IncidentList(ctx context.Context, op Operator, req TenantRequest)
 	if err != nil {
 		return nil, err
 	}
+	// The cursor is the opening time and id of the last item of the previous page.
+	cursor, afterID := time.Time{}, ""
+	if req.After != "" {
+		us, id, ok := strings.Cut(req.After, "/")
+		n, perr := strconv.ParseInt(us, 10, 64)
+		if !ok || perr != nil {
+			return nil, refuse("input_schema_invalid", "after is not a cursor of this operation")
+		}
+		cursor, afterID = time.UnixMicro(n).UTC(), id
+	}
 	rows, err := c.st.Pool.Query(ctx, `SELECT id, state, opened_at, class FROM incidents WHERE tenant = $1 AND ($2 = '' OR state = $2)
-		ORDER BY opened_at DESC, id DESC LIMIT $3`, tenant, req.State, limit)
+		AND ($4 = '' OR (opened_at, id) < ($5, $4)) ORDER BY opened_at DESC, id DESC LIMIT $3`, tenant, req.State, limit+1, afterID, cursor)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
 	items := []any{}
+	next, last := "", ""
+	var lastAt time.Time
 	for rows.Next() {
 		var id, state, class string
 		var at time.Time
 		if err := rows.Scan(&id, &state, &at, &class); err != nil {
 			return nil, err
 		}
+		if len(items) == limit {
+			next = fmt.Sprintf("%d/%s", lastAt.UnixMicro(), last)
+			break
+		}
 		title := mstr(classByName(cat, class), "title")
 		if title == "" {
 			title = class
 		}
 		items = append(items, map[string]any{"id": id, "state": state, "created_at": fmtTime(at), "title": title})
+		last, lastAt = id, at
 	}
-	return map[string]any{"items": items}, rows.Err()
+	out := map[string]any{"items": items}
+	if next != "" {
+		out["next"] = next
+	}
+	return out, rows.Err()
 }
 
 // IncidentShow is P2 incident.show: the incident record for people of its tenant.

@@ -367,3 +367,48 @@ func TestIncidentDetectFor(t *testing.T) {
 		t.Fatalf("not opened after detect.for: %d", n)
 	}
 }
+
+// A break in the conditions between two loop passes still restarts detect.for (MGR-8).
+func TestIncidentDetectBreakBetweenPasses(t *testing.T) {
+	b := newIncidentBench(t)
+	b.diskAlarm(t, true, 3)
+	b.loop(t, "incident")
+	b.advance(t, 4*60)
+	b.diskAlarm(t, true, 10)
+	b.advance(t, 30)
+	b.diskAlarm(t, true, 2)
+	b.advance(t, 2*60)
+	b.loop(t, "incident")
+	if n := len(incidentsOf(t, b, "disk_full")); n != 0 {
+		t.Fatalf("opened on time from before the break: %d", n)
+	}
+	b.advance(t, 3*60)
+	b.loop(t, "incident")
+	if n := len(incidentsOf(t, b, "disk_full")); n != 1 {
+		t.Fatalf("not opened after detect.for: %d", n)
+	}
+}
+
+// incident.list pages newest first by its cursor.
+func TestIncidentListPages(t *testing.T) {
+	ctx := context.Background()
+	b := newIncidentBench(t)
+	for _, id := range []string{"db1", "db2"} {
+		a := Alarm{Tenant: "demo", Name: "disk.free.low", Subject: AlarmSubject{Kind: "resource", ID: id}, Origin: "monitor",
+			Values: map[string]any{"free_pct": 1}}
+		b.alarmTx(t, func(tx pgx.Tx, now time.Time) error { return b.c.fireAlarm(ctx, tx, now, a) })
+		b.advance(t, 6*60)
+		b.loop(t, "incident")
+	}
+	first, err := b.c.IncidentList(ctx, b.op, TenantRequest{Limit: 1})
+	if err != nil || len(first["items"].([]any)) != 1 || first["next"] == nil {
+		t.Fatalf("first page %v %v", first, err)
+	}
+	second, err := b.c.IncidentList(ctx, b.op, TenantRequest{Limit: 1, After: first["next"].(string)})
+	if err != nil || len(second["items"].([]any)) != 1 || second["next"] != nil {
+		t.Fatalf("second page %v %v", second, err)
+	}
+	if first["items"].([]any)[0].(map[string]any)["id"] == second["items"].([]any)[0].(map[string]any)["id"] {
+		t.Fatal("the cursor repeated the page")
+	}
+}

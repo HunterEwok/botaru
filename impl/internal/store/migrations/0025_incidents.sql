@@ -32,11 +32,12 @@ CREATE INDEX incidents_tenant ON incidents (tenant, opened_at);
 -- When an episode's numbers last changed: a repeat carries the latest numbers.
 ALTER TABLE alarm_episodes ADD COLUMN vals_at timestamptz;
 
--- When the conditions of a class started to hold, without a break, on a firing episode: the
--- incident opens only after detect.for of that (MGR-8).
-CREATE TABLE incident_detect (
-    class    text NOT NULL,
+-- Every change of a firing episode's numbers, so detect.for counts from when the conditions of a
+-- class last started to hold without a break, even when the numbers change between loop passes
+-- (MGR-8).
+CREATE TABLE alarm_values (
     episode  bigint NOT NULL,
-    since    timestamptz NOT NULL,
-    PRIMARY KEY (class, episode)
+    at       timestamptz NOT NULL,
+    vals     jsonb NOT NULL,
+    PRIMARY KEY (episode, at)
 );
