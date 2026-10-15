@@ -77,6 +77,9 @@ func wakeTasks(t *testing.T, b *bench) []string {
 func TestRouteWake(t *testing.T) {
 	ctx := context.Background()
 	b := newRouteBench(t)
+	// The number of wake-ups counts a local day: the test runs at noon in the tenant's zone, so
+	// its clock steps never cross midnight.
+	b.atNoon(t, "Europe/Berlin")
 	lead := b.enroll(t, EnrollRequest{Tenant: "demo", Role: "lead", Kind: "job", Labels: map[string]string{"zone": "a"}})
 	b.loop(t, "inbox")
 	if n := len(wakeTasks(t, b)); n != 0 {
@@ -271,5 +274,19 @@ func TestWakeShare(t *testing.T) {
 	}
 	if p := share(); p == nil || p.Reason != "budget_exhausted" {
 		t.Fatalf("the wake-ups of the day passed: %v", p)
+	}
+}
+
+// atNoon sets the bench clock to noon of today in the zone.
+func (b *bench) atNoon(t *testing.T, zone string) {
+	t.Helper()
+	loc, err := time.LoadLocation(zone)
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now().In(loc)
+	noon := time.Date(now.Year(), now.Month(), now.Day(), 12, 0, 0, 0, loc)
+	if _, err := b.c.st.Pool.Exec(context.Background(), `UPDATE farm_meta SET clock_offset_us = $1`, noon.Sub(time.Now()).Microseconds()); err != nil {
+		t.Fatal(err)
 	}
 }
