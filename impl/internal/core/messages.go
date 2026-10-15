@@ -341,6 +341,13 @@ func allRecipients(ctx context.Context, tx pgx.Tx, cat *Catalog, tv *TenantView,
 
 // inboxLoad is how many live entries an inbox holds and how many of them came from one role:
 // staged, queued and leased entries take space (MSG-15).
+// lockInbox serializes the room checks of one inbox until the end of the transaction, so two
+// sends never pass its capacity or a sender's share together (MSG-15).
+func lockInbox(ctx context.Context, tx pgx.Tx, tenant string, in msgInbox) error {
+	_, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock(7300123, hashtext($1 || ':' || $2))`, tenant, in.addr())
+	return err
+}
+
 func inboxLoad(ctx context.Context, tx pgx.Tx, tenant string, in msgInbox, role string) (int, int, error) {
 	var all, mine int
 	err := tx.QueryRow(ctx, `SELECT count(*), count(*) FILTER (WHERE from_role = $4) FROM messages
@@ -516,6 +523,11 @@ func (c *Core) sendMessage(ctx context.Context, tx pgx.Tx, now time.Time, cat *C
 	if r := mt.Rate.PerHourPerSender; r > 0 {
 		rate = min(rate, r)
 	}
+	// The rate is counted under a lock of (tenant, role, type), so parallel sends of the role do
+	// not pass it together.
+	if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock(7300122, hashtext($1 || ':' || $2 || ':' || $3))`, s.Tenant, s.Role, req.Type); err != nil {
+		return nil, nil, err
+	}
 	var lastHour int
 	if err := tx.QueryRow(ctx, `SELECT count(DISTINCT id) FROM messages WHERE tenant = $1 AND from_role = $2 AND type = $3 AND created_at > $4`,
 		s.Tenant, s.Role, req.Type, now.Add(-time.Hour)).Scan(&lastHour); err != nil {
@@ -638,6 +650,9 @@ func (c *Core) sendMessage(ctx context.Context, tx pgx.Tx, now time.Time, cat *C
 // inboxRoom checks the capacity of an inbox and the sending role's share of it; the first
 // refusal of a period raises inbox.flood (MSG-15). Old entries are never pushed out.
 func (c *Core) inboxRoom(ctx context.Context, tx pgx.Tx, now time.Time, tenant string, in msgInbox, role string) (*Problem, error) {
+	if err := lockInbox(ctx, tx, tenant, in); err != nil {
+		return nil, err
+	}
 	all, mine, err := inboxLoad(ctx, tx, tenant, in, role)
 	if err != nil {
 		return nil, err
@@ -765,6 +780,19 @@ func (c *Core) sendState(ctx context.Context, tx pgx.Tx, now time.Time, cat *Cat
 	if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock(7300121, hashtext($1 || ':' || $2))`, w.ID, req.Type); err != nil {
 		return nil, nil, err
 	}
+	// A repeat with the worker's own key returns the value it already sent (IDM-1).
+	own := ""
+	if req.IdempotencyKey != nil && *req.IdempotencyKey != "" {
+		own = strings.ToLower(w.ID) + ":" + *req.IdempotencyKey
+		var id string
+		err := tx.QueryRow(ctx, `SELECT id FROM messages WHERE tenant = $1 AND idem_key = $2 ORDER BY seq LIMIT 1`, w.Tenant, own).Scan(&id)
+		if err == nil {
+			return &MsgSendResult{MessageID: id, State: "current"}, nil, nil
+		}
+		if !errors.Is(err, pgx.ErrNoRows) {
+			return nil, nil, err
+		}
+	}
 	// Once a minute, plus on a change of phase; an extra value is refused without an event.
 	var last []byte
 	var at time.Time
@@ -786,6 +814,9 @@ func (c *Core) sendState(ctx context.Context, tx pgx.Tx, now time.Time, cat *Cat
 		"datacontenttype": "application/json", "dataschema": "urn:botaru:schema:msg:" + req.Type, "tenant": w.Tenant, "msgkind": "state",
 		"fromrole": w.Role, "fromworker": w.ID, "correlationid": w.ID, "idempotencykey": strings.ToLower(w.ID) + ":" + id,
 		"hops": 1, "datamark": mt.DataClass, "untrusted": false, "dataorigin": "code", "data": map[string]any{"fields": fields},
+	}
+	if own != "" {
+		env["idempotencykey"] = own
 	}
 	if sub := asString(fields[mt.SubjectFrom]); mt.SubjectFrom != "" && sub != "" {
 		env["subject"] = sub
@@ -917,13 +948,21 @@ func (c *Core) publishMessages(ctx context.Context, tx pgx.Tx, now time.Time, ca
 			recipients = 0
 			for _, wid := range ws {
 				in := msgInbox{Kind: "worker", Name: wid}
-				all, _, err := inboxLoad(ctx, tx, tenant, in, "")
+				if err := lockInbox(ctx, tx, tenant, in); err != nil {
+					return err
+				}
+				all, mine, err := inboxLoad(ctx, tx, tenant, in, s.Role)
 				if err != nil {
 					return err
 				}
-				if all >= in.capacity() {
+				// A copy keeps to the inbox's capacity and the sending role's share of it (MSG-15).
+				if reason := ""; all >= in.capacity() || mine >= in.capacity()/4 {
+					reason = "inbox_full"
+					if all < in.capacity() {
+						reason = "sender_quota"
+					}
 					if err := c.appendEvent(ctx, tx, now, tenant, Event{Type: "message.rejected", Subject: st.id,
-						Data: map[string]any{"message": st.id, "type": st.typ, "inbox": "worker", "reason": "inbox_full"}}); err != nil {
+						Data: map[string]any{"message": st.id, "type": st.typ, "inbox": map[string]any{"kind": "worker", "name": strings.ToLower(wid)}, "reason": reason}}); err != nil {
 						return err
 					}
 					continue
@@ -1214,9 +1253,26 @@ func (c *Core) readInbox(ctx context.Context, tx pgx.Tx, now time.Time, r *msgRe
 		return nil, err
 	}
 	if len(list) < limit {
-		rows, err := tx.Query(ctx, `SELECT `+cols+` FROM messages m JOIN unnest($2::text[], $3::text[]) AS i(k, n) ON m.inbox_kind = i.k AND m.inbox_name = i.n
-			WHERE m.tenant = $1 AND m.state = 'queued' AND m.type = ANY($4) AND (m.expires_at IS NULL OR m.expires_at > $5)
-			ORDER BY m.seq LIMIT 500 FOR UPDATE OF m SKIP LOCKED`, r.Tenant, kinds, names, r.Types, now)
+		// The marks the reader may see are chosen first, so entries above its mark neither
+		// fill the read nor hide the ones behind them; they only count in hidden.
+		const live = `FROM messages m JOIN unnest($2::text[], $3::text[]) AS i(k, n) ON m.inbox_kind = i.k AND m.inbox_name = i.n
+			WHERE m.tenant = $1 AND m.state = 'queued' AND m.type = ANY($4) AND (m.expires_at IS NULL OR m.expires_at > $5)`
+		mrows, err := tx.Query(ctx, `SELECT DISTINCT m.data_mark `+live, r.Tenant, kinds, names, r.Types, now)
+		if err != nil {
+			return nil, err
+		}
+		present, err := pgx.CollectRows(mrows, pgx.RowTo[string])
+		if err != nil {
+			return nil, err
+		}
+		allowed := slices.DeleteFunc(present, above)
+		var hidden int
+		if err := tx.QueryRow(ctx, `SELECT count(*) `+live+` AND NOT (m.data_mark = ANY($6))`, r.Tenant, kinds, names, r.Types, now, allowed).Scan(&hidden); err != nil {
+			return nil, err
+		}
+		out.Hidden += hidden
+		rows, err := tx.Query(ctx, `SELECT `+cols+` `+live+` AND m.data_mark = ANY($6) ORDER BY m.seq LIMIT $7 FOR UPDATE OF m SKIP LOCKED`,
+			r.Tenant, kinds, names, r.Types, now, allowed, limit-len(list))
 		if err != nil {
 			return nil, err
 		}

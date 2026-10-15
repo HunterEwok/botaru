@@ -528,8 +528,15 @@ func TestStateValues(t *testing.T) {
 	if p, ok := AsProblem(put("idle")); !ok || p.Reason != "service_rate_limited" {
 		t.Fatalf("a second value within a minute: %v", p)
 	}
-	if err := put("busy"); err != nil {
+	key := "k1"
+	first, err := b.c.MsgSend(ctx, lead, "", MsgSendRequest{Type: "state.worker.v1", Fields: map[string]any{"phase": "busy"}, IdempotencyKey: &key})
+	if err != nil {
 		t.Fatal(err)
+	}
+	// A repeat with the worker's key returns the value it sent (IDM-1).
+	again, err := b.c.MsgSend(ctx, lead, "", MsgSendRequest{Type: "state.worker.v1", Fields: map[string]any{"phase": "busy"}, IdempotencyKey: &key})
+	if err != nil || again.MessageID != first.MessageID {
+		t.Fatalf("repeat %+v %v", again, err)
 	}
 	if n := msgCount(t, b, `type = 'state.worker.v1' AND state = 'current'`); n != 1 {
 		t.Fatalf("current %d", n)
