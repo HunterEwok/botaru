@@ -106,6 +106,7 @@ spec:
   volumes:
     - host: ctd1
       volume: data
+      size_bytes: 4000000000000
       writers:
         - {tenant: demo, quota_bytes: 2000000000000}
         - {sink: archive, quota_bytes: 500000000000}

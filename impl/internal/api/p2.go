@@ -171,6 +171,13 @@ func (s *Server) p2(w http.ResponseWriter, r *http.Request) {
 		} else {
 			out, err = s.c.SeatVacate(ctx, oper, req)
 		}
+	case "seat.resume":
+		req, derr := decode[core.SeatResumeRequest](m)
+		if derr != nil {
+			s.fail(w, derr)
+			return
+		}
+		out, err = s.c.SeatResume(ctx, oper, req)
 	case "incident.list":
 		req, derr := decode[core.TenantRequest](m)
 		if derr != nil {

@@ -309,8 +309,9 @@ func (c *Core) openIncidents(ctx context.Context, cat *Catalog, classes []incide
 	var errs []error
 	// The number log of an episode that no longer fires is dropped. A firing one keeps the changes
 	// of the longest detect.for and the last change before it, which is all detectSince needs to
-	// see a run that lasted that long.
-	var keep time.Duration
+	// see a run that lasted that long, and at least the prevention window of the farm manager's
+	// disk stop, which compares the numbers at the window's start and end (MGR-34).
+	keep := preventWindow
 	for _, ic := range classes {
 		keep = max(keep, specDuration(mmap(ic.Spec, "detect"), "for"))
 	}
@@ -469,11 +470,18 @@ func (c *Core) openIncident(ctx context.Context, tx pgx.Tx, now time.Time, cat *
 		if err := c.incidentEvent(ctx, tx, now, r, "opened"); err != nil {
 			return err
 		}
+		// Only a new incident may stop the farm manager seat (GOV-22).
+		if err := c.incidentStop(ctx, tx, now, cat, ic, r); err != nil {
+			return err
+		}
 	}
 	if err := c.implicate(ctx, tx, now, cat, ic.Spec, r); err != nil {
 		return err
 	}
-	return c.containAuto(ctx, tx, now, cat, ic, r)
+	if err := c.containAuto(ctx, tx, now, cat, ic, r); err != nil {
+		return err
+	}
+	return c.enqueueIncidentTask(ctx, tx, now, cat, ic, r)
 }
 
 // adoptEpisode adds an episode and its alarm key to an incident.

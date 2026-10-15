@@ -250,6 +250,10 @@ func (c *Core) enqueue(ctx context.Context, tx pgx.Tx, now time.Time, cat *Catal
 	if tt.Purpose == "review" && (in.Initiator != "system" || in.Source != reviewSource || in.Chain != nil) {
 		return nil, refuse("type_not_allowed", "a review is enqueued only by the proposal loop")
 	}
+	// A farm manager seat task is enqueued only by the core, for its seat (MGR-3, MGR-42).
+	if (tt.Purpose == "manage" || tt.Purpose == "inspect") && (in.Initiator != "system" || in.Source != seatSource || in.Chain != nil) {
+		return nil, refuse("type_not_allowed", "a farm manager seat task is enqueued only by the core")
+	}
 	bodyHash, err := jcs.Hash(in.Body)
 	if err != nil {
 		return nil, err
@@ -313,8 +317,12 @@ func (c *Core) enqueue(ctx context.Context, tx pgx.Tx, now time.Time, cat *Catal
 		groups = groupClosure(tv, p.Groups)
 	} else {
 		// system enqueues with its own group only: the types of its schedules and routes
-		// (PRM-10).
+		// (PRM-10); a farm manager seat task with the tenant's consent group for the manager
+		// (MGR-3).
 		groups = groupClosure(tv, []string{"system-ops"})
+		if in.Source == seatSource {
+			groups = groupClosure(tv, []string{"farm-manager-ops"})
+		}
 	}
 	capName := "task:" + in.Type
 	if !hasCap(tv, groups, capName) {
@@ -585,10 +593,10 @@ func (c *Core) validateParams(tt manifest.TaskType, body map[string]any) error {
 	}
 	// A lens review carries only the input block the core builds (COM-3); its type declares
 	// no parameters of its own.
-	if tt.Purpose == "review" {
+	if tt.Purpose == "review" || tt.Purpose == "manage" || tt.Purpose == "inspect" {
 		m, _ := params.(map[string]any)
 		if _, ok := m["input"].(map[string]any); !ok || len(m) != 1 {
-			return errors.New("a review carries only the core's input block")
+			return errors.New("a review or a seat task carries only the core's input block")
 		}
 		return nil
 	}

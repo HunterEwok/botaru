@@ -51,6 +51,8 @@ commands:
   incident list | incident show|ack|close ID | incident dismiss ID REASON DETAILS
                                             incidents of the credential's tenant (MGR-8)
   seat assign SEAT BOT | seat vacate SEAT    a commission seat, for example commission:1 (IDN-10)
+  seat assign farm-manager | seat vacate farm-manager | seat resume farm-manager [--incident] INCIDENT
+                                         the farm manager seat, with the operator credential of farm (MGR-1, GOV-22)
   audit verify TENANT [-heads FILE]          FILE: the JSON array of heads from the monitoring history, oldest first
   audit query [-kind K] [-command C] [-actor P] [-target-kind K] [-from T] [-to T] [-limit N] [-after-seq N]
                                              the audit of the credential's tenant; the read is audited
@@ -174,10 +176,16 @@ func run(c *client, args []string) error {
 		switch {
 		case len(args) == 4 && args[1] == "assign":
 			return c.print("seat.assign", map[string]any{"seat": args[2], "bot": args[3]})
+		case len(args) == 3 && args[1] == "assign":
+			return c.print("seat.assign", map[string]any{"seat": args[2]})
 		case len(args) == 3 && args[1] == "vacate":
 			return c.print("seat.vacate", map[string]any{"seat": args[2]})
+		case len(args) == 4 && args[1] == "resume" && !strings.HasPrefix(args[3], "-"):
+			return c.print("seat.resume", map[string]any{"seat": args[2], "incident": args[3]})
+		case len(args) == 5 && args[1] == "resume" && args[3] == "--incident":
+			return c.print("seat.resume", map[string]any{"seat": args[2], "incident": args[4]})
 		}
-		return errors.New("usage: farmctl seat assign SEAT BOT | seat vacate SEAT")
+		return errors.New("usage: farmctl seat assign SEAT [BOT] | seat vacate SEAT | seat resume farm-manager [--incident] INCIDENT")
 	case "hold":
 		return hold(c, args[1:])
 	case "audit":
@@ -643,5 +651,6 @@ func personaRefs(spec map[string]any) [][2]string {
 	for _, v := range lenses {
 		add(v)
 	}
+	add(spec["farm_manager"])
 	return out
 }

@@ -314,8 +314,8 @@ func (c *Core) retireBot(ctx context.Context, tx pgx.Tx, now time.Time, cat *Cat
 		return "", err
 	}
 	// A holder that leaves other than by a seat operation frees its seat.
-	if reason != "replaced_by_human" {
-		if err := c.seatVacated(ctx, tx, now, b, "bot.retire"); err != nil {
+	if reason != "replaced_by_human" && reason != "replaced_after_incident" {
+		if err := c.seatVacated(ctx, tx, now, cat, b, "bot.retire"); err != nil {
 			return "", err
 		}
 	}
@@ -481,6 +481,10 @@ func (c *Core) identityLoop(ctx context.Context) error {
 			errs = append(errs, fmt.Errorf("identity %s: %w", id, err))
 		}
 	}
+	// The farm manager seat is part of the identity lifecycle (GOV-22, MGR-2).
+	if err := c.managerLoop(ctx); err != nil {
+		errs = append(errs, fmt.Errorf("farm manager seat: %w", err))
+	}
 	return errors.Join(errs...)
 }
 
@@ -610,7 +614,7 @@ func actingFenced(ctx context.Context, q store.Querier, l *leaseRow) (bool, erro
 	}
 	var sstate string
 	var sepoch int
-	err = q.QueryRow(ctx, `SELECT state, epoch FROM seats WHERE tenant = $1 AND id = $2`, l.Tenant, l.Acting.Seat).Scan(&sstate, &sepoch)
+	err = q.QueryRow(ctx, `SELECT state, epoch FROM seats WHERE tenant = $1 AND id = $2`, seatTenant(l.Tenant, l.Acting.Seat), l.Acting.Seat).Scan(&sstate, &sepoch)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return true, nil
 	}

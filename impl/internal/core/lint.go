@@ -1455,7 +1455,8 @@ func (c *Core) lintManifests(docs []manifest.Doc, index []int, personas personaL
 			}
 		}
 	}
-	// Global manifests carry no tenant data (TEN-6).
+	// Global manifests carry no tenant data (TEN-6). The service tenant farm is also a word of
+	// the language (a subject kind, a hold scope).
 	for _, kind := range sortedKinds(S) {
 		if mstr(r.kinds[kind], "scope") != "global" {
 			continue
@@ -1463,7 +1464,7 @@ func (c *Core) lintManifests(docs []manifest.Doc, index []int, personas personaL
 		for _, o := range S.each(kind) {
 			bad := false
 			allStrings(o.spec, func(s string) {
-				if tenants[s] || reAddrPerson.MatchString(s) || reEmail.MatchString(s) {
+				if (tenants[s] && s != farmTenant) || reAddrPerson.MatchString(s) || reEmail.MatchString(s) {
 					bad = true
 				}
 			})
@@ -1861,7 +1862,9 @@ func (c *Core) lintGovernance(S *lintSet, f *lintFindings, personas personaLooku
 				continue
 			}
 			position := "lens"
-			if strings.HasPrefix(path, "/positions/") {
+			if path == "/farm_manager/persona" {
+				position = "farm_manager"
+			} else if strings.HasPrefix(path, "/positions/") {
 				position = strings.Split(path, "/")[2]
 			}
 			for _, code := range personaFindings(text, position, u) {

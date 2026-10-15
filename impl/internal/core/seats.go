@@ -17,7 +17,7 @@ import (
 // seats; apply keeps the seats table in step with it. Only the core writes a holder, in one
 // transaction that increments the seat epoch, writes a seat event and an audit record, and
 // fences the running attempts of the seat's tasks. The farm manager seat arrives with the
-// farm manager (stage 4).
+// farm manager seat is in managerseat.go.
 
 // seatRow is a seat as the store keeps it.
 type seatRow struct {
@@ -132,8 +132,8 @@ var functionaryProfiles = []string{"worker", "manager", "reporter", "aggregator"
 // the new holder as successor, the new holder's worker gets a new identity, and the seat epoch
 // grows.
 func (c *Core) SeatAssign(ctx context.Context, op Operator, req SeatRequest) (*Done, error) {
-	if req.Seat == "farm-manager" {
-		return nil, refuse("not_found", "the farm manager seat arrives with the farm manager")
+	if req.Seat == managerSeatID {
+		return c.managerAssign(ctx, op, req)
 	}
 	if req.Bot == "" {
 		return nil, refuse("input_schema_invalid", "a commission seat is assigned to a bot identity")
@@ -214,8 +214,8 @@ func (c *Core) SeatAssign(ctx context.Context, op Operator, req SeatRequest) (*D
 
 // SeatVacate is P2 seat.vacate: the holder leaves as replaced_by_human and the seat is vacant.
 func (c *Core) SeatVacate(ctx context.Context, op Operator, req SeatRequest) (*Done, error) {
-	if req.Seat == "farm-manager" {
-		return nil, refuse("not_found", "the farm manager seat arrives with the farm manager")
+	if req.Seat == managerSeatID {
+		return c.managerVacate(ctx, op)
 	}
 	cat, err := c.Catalog(ctx)
 	if err != nil {
@@ -255,9 +255,19 @@ func (c *Core) SeatVacate(ctx context.Context, op Operator, req SeatRequest) (*D
 
 // seatVacated frees the seat of a holder that retired for a reason other than a seat
 // operation (human_retire, role_removed; spec/lifecycles/seat.md).
-func (c *Core) seatVacated(ctx context.Context, tx pgx.Tx, now time.Time, b *botRow, cause string) error {
+func (c *Core) seatVacated(ctx context.Context, tx pgx.Tx, now time.Time, cat *Catalog, b *botRow, cause string) error {
 	if b.Mode != "seat" || b.Seat == "" {
 		return nil
+	}
+	if b.Seat == managerSeatID {
+		m, err := loadManagerSeat(ctx, tx, true)
+		if err != nil || m == nil || m.Holder != b.ID {
+			return err
+		}
+		if _, err := c.shiftManager(ctx, tx, now, cat, m, "", m.without("incident"), "seat.vacated.v1", cause, "system"); err != nil {
+			return err
+		}
+		return c.noticeManagerChanged(ctx, tx, now, cat, m, "vacated")
 	}
 	s, err := loadSeat(ctx, tx, b.Tenant, b.Seat, true)
 	if err != nil || s == nil || s.Holder != b.ID {
@@ -275,7 +285,12 @@ func (c *Core) moveSeat(ctx context.Context, tx pgx.Tx, now time.Time, s *seatRo
 		s.Tenant, s.ID, nullable(holder), state, now); err != nil {
 		return 0, err
 	}
-	if err := c.fenceAttempts(ctx, tx, now, "seat_changed", `seat = $1 AND tenant = $2`, s.ID, s.Tenant); err != nil {
+	// The tasks of the farm manager seat live in every tenant (MGR-3).
+	fence, args := `seat = $1 AND tenant = $2`, []any{s.ID, s.Tenant}
+	if s.ID == managerSeatID {
+		fence, args = `seat = $1`, []any{s.ID}
+	}
+	if err := c.fenceAttempts(ctx, tx, now, "seat_changed", fence, args...); err != nil {
 		return 0, err
 	}
 	var h, prev any
@@ -379,12 +394,26 @@ func seatOfRecord(rec []byte) string {
 
 // seatActing is the identity a seat task runs on behalf of: the holder of a held seat with its
 // binding epoch and the seat epoch; not ok when the seat is vacant or its holder is not active
-// or is under a hold of people.
-func (c *Core) seatActing(ctx context.Context, tx pgx.Tx, now time.Time, tenant, seat string) (actingOf, bool, error) {
+// or is under a hold of people. The farm manager seat is read in farm; it acts only in a tenant
+// with the manager, and one decision attempt at a time per tenant (MGR-1, MGR-42).
+func (c *Core) seatActing(ctx context.Context, tx pgx.Tx, now time.Time, cat *Catalog, tenant, seat string) (actingOf, bool, error) {
+	if seat == managerSeatID {
+		if !managerEnabled(cat, tenant) {
+			return actingOf{}, false, nil
+		}
+		if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock(7300105, hashtext($1))`, tenant); err != nil {
+			return actingOf{}, false, err
+		}
+		var busy bool
+		if err := tx.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM leases WHERE state = 'active' AND kind = 'attempt' AND seat = $1 AND tenant = $2)`,
+			seat, tenant).Scan(&busy); err != nil || busy {
+			return actingOf{}, false, err
+		}
+	}
 	// The seat and its holder are read FOR SHARE: a seat move or a retirement waits for the
 	// claim, and its fence then finds the new lease (IDN-10, IDN-11).
 	var s seatRow
-	err := tx.QueryRow(ctx, `SELECT id, coalesce(holder, ''), state, epoch FROM seats WHERE tenant = $1 AND id = $2 FOR SHARE`, tenant, seat).
+	err := tx.QueryRow(ctx, `SELECT id, coalesce(holder, ''), state, epoch FROM seats WHERE tenant = $1 AND id = $2 FOR SHARE`, seatTenant(tenant, seat), seat).
 		Scan(&s.ID, &s.Holder, &s.State, &s.Epoch)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return actingOf{}, false, nil
