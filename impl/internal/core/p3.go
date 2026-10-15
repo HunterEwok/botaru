@@ -219,6 +219,9 @@ func (c *Core) toolCatalog(cat *Catalog, g *toolsGrant) ([]catalogTool, error) {
 	if ct := c.controlTool(cat, g); ct != nil {
 		out = append(out, *ct)
 	}
+	if it := c.inspectTool(cat, g); it != nil {
+		out = append(out, *it)
+	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
 	return out, nil
 }
@@ -436,6 +439,15 @@ func (c *Core) P3ToolsCall(ctx context.Context, handle string, p mcp.CallParams)
 			builtin, err = c.controlToolCall(ctx, tx, now, cat, g, offered, args)
 			return err
 		}
+		if p.Name == inspectToolName {
+			offered := slices.ContainsFunc(tools, func(t catalogTool) bool { return t.Builtin && t.Name == inspectToolName })
+			args := p.Arguments
+			if args == nil {
+				args = map[string]any{}
+			}
+			builtin, err = c.inspectToolCall(ctx, tx, now, cat, g, offered, args)
+			return err
+		}
 		if p.Name == scriptToolName {
 			offered := slices.ContainsFunc(tools, func(t catalogTool) bool { return t.Builtin && t.Name == scriptToolName })
 			args := p.Arguments
@@ -477,7 +489,12 @@ func (c *Core) P3ToolsCall(ctx context.Context, handle string, p mcp.CallParams)
 			return nil
 		}
 		callID, refusal, err = c.recordToolCall(ctx, tx, now, cat, g, tools, p)
-		return err
+		if err != nil || refusal != nil || callID == "" {
+			return err
+		}
+		// A seat attempt's call goes into the read log (MGR-28).
+		plugin, tool, _ := strings.Cut(p.Name, "_")
+		return c.seatToolRead(ctx, tx, now, g, toolspec.RightName(plugin, tool), p.Arguments)
 	})
 	if err != nil {
 		return nil, err

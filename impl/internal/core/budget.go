@@ -5,6 +5,7 @@ package core
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"slices"
 	"time"
 
@@ -106,6 +107,9 @@ type budgetAsk struct {
 	line string
 	// role is the role of a call; empty at enqueue, where the per-role limit is not known.
 	role string
+	// sev1 marks a seat ask for a sev1 incident, which may use the reserve of the manager line
+	// (MGR-20).
+	sev1 bool
 	// crossed collects the windows whose 80% threshold the ask reaches. The caller gives the
 	// events only once the ask is accepted, so a refused ask takes no threshold slot (BUD-4).
 	crossed *[]crossing
@@ -183,6 +187,11 @@ func (c *Core) checkBudget(ctx context.Context, tx pgx.Tx, now time.Time, tv *Te
 		{lineMonth, month, spendFilter{line: line}, "the budget line is used up", ""},
 		{lb.DayEUR, day, spendFilter{line: line}, "the budget line is used up", ""},
 	}
+	// 30% of the manager line's day is a reserve for sev1: work outside sev1 stops at 70% (MGR-20).
+	if line == "manager" && lb.DayEUR != nil && !ask.sev1 {
+		v := *lb.DayEUR * managerNonSev1Share
+		windows = append(windows, window{&v, day, spendFilter{line: line}, "the manager line keeps its sev1 reserve", ""})
+	}
 	if ask.role != "" {
 		windows = append(windows, window{lb.PerRoleMonthEUR, month, spendFilter{line: line, role: ask.role}, "the budget line of the role is used up", ""})
 	}
@@ -207,7 +216,7 @@ func (c *Core) checkBudget(ctx context.Context, tx pgx.Tx, now time.Time, tv *Te
 			continue
 		}
 		// Only the day windows: on the first of a month the month windows start at the same time.
-		if halve && (w.limit == dayLimit || w.limit == lb.DayEUR || w.scope == "person_day") {
+		if halve && (w.limit == dayLimit || w.limit == lb.DayEUR || w.scope == "person_day" || w.why == "the manager line keeps its sev1 reserve") {
 			half := *w.limit / 2
 			w.limit = &half
 		}
@@ -266,7 +275,11 @@ type spendRow struct {
 func (c *Core) reserveSpend(ctx context.Context, tx pgx.Tx, now time.Time, tv *TenantView, r spendRow, groups []string, treeBudget int64) error {
 	if r.Micros > 0 {
 		var crossed []crossing
-		if p := c.checkBudget(ctx, tx, now, tv, budgetAsk{subject: r.Subject, groups: groups, extra: r.Micros, ownRoot: r.Root, line: r.Line, role: r.Role, crossed: &crossed}); p != nil {
+		sev1, err := taskSev1(ctx, tx, r.Line, r.Task)
+		if err != nil {
+			return err
+		}
+		if p := c.checkBudget(ctx, tx, now, tv, budgetAsk{subject: r.Subject, groups: groups, extra: r.Micros, ownRoot: r.Root, line: r.Line, role: r.Role, sev1: sev1, crossed: &crossed}); p != nil {
 			return p
 		}
 		if treeBudget > 0 {
@@ -308,6 +321,24 @@ func (c *Core) reserveSpend(ctx context.Context, tx pgx.Tx, now time.Time, tv *T
 		r.ID, r.Tenant, r.Task, r.Root, r.Subject, r.Role, r.Worker, r.Line, nullable(r.Purpose), r.Unit, nullable(r.Profile), r.Micros, now,
 		nullable(r.Fingerprint), nullable(r.Toolcall), nullable(r.Provider), nullable(acting.Bot), be, leaseNo)
 	return err
+}
+
+// managerNonSev1Share is the share of the manager line's day that work outside sev1 may use
+// (MGR-20).
+const managerNonSev1Share = 0.7
+
+// taskSev1 says whether a task of the manager line acts on a sev1 incident: the severity the
+// core pinned in its record at enqueue (MGR-20).
+func taskSev1(ctx context.Context, tx pgx.Tx, line, task string) (bool, error) {
+	if line != "manager" || task == "" {
+		return false, nil
+	}
+	var sev string
+	err := tx.QueryRow(ctx, `SELECT coalesce(record->>'severity', '') FROM tasks WHERE id = $1`, task).Scan(&sev)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return false, nil
+	}
+	return sev == "sev1", err
 }
 
 // toolPrice is the price of one call in micro-euros: the manifest price of a tool the farm

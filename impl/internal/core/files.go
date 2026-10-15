@@ -377,6 +377,12 @@ func (c *Core) FileGet(ctx context.Context, w *Worker, lease string, req FileGet
 		default:
 			return refuse("forbidden", "no file under this kind of work")
 		}
+		if task != "" && l.Kind == "attempt" {
+			// A seat attempt: MGR-25, MGR-30 and the read log (MGR-28).
+			if err := c.seatFileRead(ctx, tx, now, w.Tenant, task, l.LeaseNo, f); err != nil {
+				return err
+			}
+		}
 		if task != "" {
 			if err := c.taintByFile(ctx, tx, now, tv, task, f); err != nil {
 				return err

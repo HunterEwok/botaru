@@ -52,6 +52,9 @@ commands:
   control list [TENANT] | control revert incident=ID|since=TIME
   control apply OP KIND ID [incident=ID] [ttl=DURATION] [effects=E1,E2]
                                             incidents of the credential's tenant (MGR-8)
+  manager direct KIND ID [op=OP] [TEXT...]  a directive to the farm manager in the credential's tenant (MGR-4)
+  manager cost [TENANT] | manager reads [TENANT] [-after CURSOR]
+                                            the manager line usage and the read log (MGR-28, MGR-41, AUD-7)
   seat assign SEAT BOT | seat vacate SEAT    a commission seat, for example commission:1 (IDN-10)
   seat assign farm-manager | seat vacate farm-manager | seat resume farm-manager [--incident] INCIDENT
                                          the farm manager seat, with the operator credential of farm (MGR-1, GOV-22)
@@ -195,6 +198,8 @@ func run(c *client, args []string) error {
 			return c.print("control.apply", req)
 		}
 		return errors.New("usage: farmctl control list [TENANT] | control revert incident=ID|since=TIME | control apply OP KIND ID [incident=ID] [ttl=DURATION] [effects=E1,E2]")
+	case "manager":
+		return manager(c, args[1:])
 	case "incident":
 		switch {
 		case len(args) == 2 && args[1] == "list":
@@ -218,6 +223,7 @@ func run(c *client, args []string) error {
 		case len(args) == 4 && args[1] == "resume" && !strings.HasPrefix(args[3], "-"):
 			return c.print("seat.resume", map[string]any{"seat": args[2], "incident": args[3]})
 		case len(args) == 5 && args[1] == "resume" && args[3] == "--incident":
+			// The form of the ready command on the manager_stopped card (MGR-35).
 			return c.print("seat.resume", map[string]any{"seat": args[2], "incident": args[4]})
 		}
 		return errors.New("usage: farmctl seat assign SEAT [BOT] | seat vacate SEAT | seat resume farm-manager [--incident] INCIDENT")
@@ -688,4 +694,45 @@ func personaRefs(spec map[string]any) [][2]string {
 	}
 	add(spec["farm_manager"])
 	return out
+}
+
+// manager is the farmctl manager command: a directive to the farm manager in the credential's
+// tenant, the manager line usage and the read log (MGR-4, MGR-28, MGR-41).
+func manager(c *client, args []string) error {
+	const use = "usage: farmctl manager direct KIND ID [op=OP] [TEXT...] | manager cost [TENANT] | manager reads [TENANT] [-after CURSOR]"
+	switch {
+	case len(args) >= 3 && args[0] == "direct":
+		req := map[string]any{"scope": map[string]any{"kind": args[1], "id": args[2]}}
+		var text []string
+		for _, a := range args[3:] {
+			if v, ok := strings.CutPrefix(a, "op="); ok && len(text) == 0 {
+				req["op"] = v
+				continue
+			}
+			text = append(text, a)
+		}
+		if len(text) > 0 {
+			req["text"] = strings.Join(text, " ")
+		}
+		return c.print("manager.direct", req)
+	case len(args) >= 1 && args[0] == "cost":
+		req := map[string]any{}
+		if len(args) == 2 {
+			req["tenant"] = args[1]
+		}
+		return c.print("manager.cost", req)
+	case len(args) >= 1 && args[0] == "reads":
+		fs := flag.NewFlagSet("manager reads", flag.ExitOnError)
+		after := fs.String("after", "", "the cursor of the next page")
+		_ = fs.Parse(reorder(args[1:]))
+		req := map[string]any{}
+		if fs.NArg() == 1 {
+			req["tenant"] = fs.Arg(0)
+		}
+		if *after != "" {
+			req["after"] = *after
+		}
+		return c.print("manager.reads", req)
+	}
+	return errors.New(use)
 }

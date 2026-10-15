@@ -21,7 +21,7 @@ import (
 
 // codeCommands are the built-in commands this file answers.
 var codeCommands = map[string]bool{"/tasks": true, "/status": true, "/cancel": true, "/help": true, "/me": true, "/lang": true, "/team": true, "/about": true,
-	"/mydata": true, "/forget": true, "/grant": true, "/ungrant": true, "/incident": true}
+	"/mydata": true, "/forget": true, "/grant": true, "/ungrant": true, "/incident": true, "/manager": true}
 
 func (c *Core) codeCommand(ctx context.Context, tx pgx.Tx, now time.Time, pc personCommand, word, rest string) (*ActivityResult, error) {
 	switch word {
@@ -45,6 +45,8 @@ func (c *Core) codeCommand(ctx context.Context, tx pgx.Tx, now time.Time, pc per
 		return c.grantCommand(ctx, tx, now, pc, word, rest)
 	case "/incident":
 		return c.incidentCommand(ctx, tx, now, pc, rest)
+	case "/manager":
+		return c.managerCommand(ctx, tx, now, pc, rest)
 	}
 	return pc.reply(c, "cmd.about.text", map[string]any{"tenant": pc.tv.Name}), nil
 }

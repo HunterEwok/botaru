@@ -974,8 +974,10 @@ func (c *Core) Decide(ctx context.Context, w *Worker, ob *OnBehalf, req DecideRe
 		return c.decideSubject(ctx, w, *ob, req)
 	case "proposal":
 		return c.decideProposal(ctx, w, *ob, req)
+	case "control":
+		return c.decideControl(ctx, w, *ob, req)
 	default:
-		return nil, refuse("not_found", "this build decides approvals, memory records, a person's requests and proposals")
+		return nil, refuse("not_found", "this build decides approvals, memory records, a person's requests, proposals and control cards")
 	}
 	if req.Decision != "approve" && req.Decision != "reject" {
 		return nil, refuse("input_schema_invalid", "an approval is approved or rejected")

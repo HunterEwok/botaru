@@ -518,6 +518,8 @@ type personCommand struct {
 	key     string
 	// binding is the name of the bound group chat of the command, or "" in a direct chat.
 	binding string
+	// attachments counts the files the person attached to the command.
+	attachments int
 }
 
 func (pc personCommand) reply(c *Core, key string, params map[string]any) *ActivityResult {

@@ -76,6 +76,9 @@ type enqueueInput struct {
 	// EstimateMin is the least reserve of the task: a review reserves its type's tree budget,
 	// the sum the review line was checked for (COM-6).
 	EstimateMin int64
+	// Sev1 marks a seat task of a sev1 incident: it may use the reserve of the manager line
+	// (MGR-20).
+	Sev1 bool
 }
 
 // fairnessKey writes the dispatcher fairness key <kind>:<id> from the task source (DSP-2,
@@ -375,7 +378,7 @@ func (c *Core) enqueue(ctx context.Context, tx pgx.Tx, now time.Time, cat *Catal
 	estimate = max(estimate, in.EstimateMin)
 	line := c.budgetLine(tt.Purpose)
 	var crossed []crossing
-	if p := c.checkBudget(ctx, tx, now, tv, budgetAsk{subject: in.Initiator, groups: groups, extra: estimate, line: line, crossed: &crossed}); p != nil {
+	if p := c.checkBudget(ctx, tx, now, tv, budgetAsk{subject: in.Initiator, groups: groups, extra: estimate, line: line, sev1: in.Sev1, crossed: &crossed}); p != nil {
 		return reject(p)
 	}
 	// The enqueue ceiling of the sliding hour, under the tenant's budget lock (CAP-1).

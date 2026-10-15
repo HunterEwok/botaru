@@ -430,6 +430,9 @@ func (c *Core) applyOnce(ctx context.Context, op Operator, req ApplyRequest) (*A
 			WHERE k.tenant = s.tenant AND k.name = s.name)`, schedTenants, schedNames); err != nil {
 			return err
 		}
+		if err := c.inspectPurposeOff(ctx, tx, now, next); err != nil {
+			return err
+		}
 		if err := c.managerDisabled(ctx, tx, now, next); err != nil {
 			return err
 		}

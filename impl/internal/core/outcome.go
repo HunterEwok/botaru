@@ -342,6 +342,13 @@ func (c *Core) completeAttempt(ctx context.Context, tx pgx.Tx, now time.Time, w 
 			return err
 		}
 	}
+	// A reading of the farm manager hands in only findings, which the core checks and stores
+	// (MGR-25).
+	if tt.Purpose == "inspect" {
+		if err := c.takeFindings(ctx, tx, now, cat, w.Tenant, l, rec, result); err != nil {
+			return err
+		}
+	}
 	// A lens review hands in review-result for its own lens and never as a shadow, which only
 	// the shadow executor writes (COM-3, COM-9).
 	if tt.Purpose == "review" {

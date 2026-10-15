@@ -57,18 +57,23 @@ type ControlTarget struct {
 	ID   string `json:"id"`
 }
 
+// ControlBasis is the basis of a control operation: the incident it answers.
+type ControlBasis struct {
+	Incident string `json:"incident,omitempty"`
+}
+
 // ControlRequest is p2-control-apply-request and the arguments of the control_ops tool.
 type ControlRequest struct {
-	Op     string        `json:"op"`
-	Target ControlTarget `json:"target"`
-	Basis  struct {
-		Incident string `json:"incident,omitempty"`
-	} `json:"basis"`
-	Effects  []string `json:"effects,omitempty"`
-	TTL      string   `json:"ttl,omitempty"`
-	Action   string   `json:"action,omitempty"`
-	TaskType string   `json:"tasktype,omitempty"`
-	Template string   `json:"template,omitempty"`
+	Op       string        `json:"op"`
+	Target   ControlTarget `json:"target"`
+	Basis    ControlBasis  `json:"basis"`
+	Effects  []string      `json:"effects,omitempty"`
+	TTL      string        `json:"ttl,omitempty"`
+	Action   string        `json:"action,omitempty"`
+	TaskType string        `json:"tasktype,omitempty"`
+	Template string        `json:"template,omitempty"`
+	// Finding names the finding a seat operation's target came from (MGR-26).
+	Finding string `json:"finding,omitempty"`
 }
 
 // controlActor is who applies an operation: the seat holder with the seat epoch, or a person
@@ -79,6 +84,14 @@ type controlActor struct {
 	Epoch     int
 	Untrusted bool // the decision attempt read an untrusted source (MGR-22)
 	Operator  Operator
+	// Directive is the directive of a seat attempt's task, whose scope bounds its operations
+	// (MGR-4).
+	Directive *directive
+	// Task is the seat attempt's task, for a control card.
+	Task string
+	// Origin is the target origin of a person's operation approved on a control card,
+	// finding:<id>, and ApprovedBy that person (MGR-26).
+	Origin, ApprovedBy string
 }
 
 // controlLimits are the seat limits of the farm charter (MGR-14, MGR-37).
@@ -195,9 +208,32 @@ func (c *Core) controlApply(ctx context.Context, tx pgx.Tx, now time.Time, cat *
 		if m == nil || m.State != "held" || m.Holder != a.Principal || m.Epoch != a.Epoch {
 			return nil, refuse("fenced", "the seat epoch changed"), nil
 		}
-		p, err := c.seatChecks(ctx, tx, now, cat, tenant, a, req, &inc)
+		origin := ""
+		p, err := c.seatChecks(ctx, tx, now, cat, tenant, a, req, &inc, &origin)
 		if err != nil {
 			return nil, nil, err
+		}
+		// What the seat may not do alone goes to a person on a control card: a target from a
+		// finding (MGR-26), a cancellation or a second quarantine in distrust mode (MGR-22), a
+		// role share over the limit, a protected target (MGR-16).
+		if p != nil && (p.Reason == "approval_required" || p.Reason == "protected_target") {
+			why := "share_held"
+			switch {
+			case p.Reason == "protected_target":
+				why = "protected"
+			case strings.HasPrefix(origin, "finding:"):
+				why = "finding"
+			case a.Untrusted && (req.Op == "cancel" || req.Op == "quarantine"):
+				why = "distrust"
+			}
+			if why != "finding" {
+				req.Finding = ""
+			}
+			id, err := c.openControlCard(ctx, tx, now, cat, tenant, a, req, inc, why)
+			if err != nil {
+				return nil, nil, err
+			}
+			return &Done{OK: true, ID: id, State: "card"}, nil, nil
 		}
 		if p != nil {
 			// A conversion to a person's decision, or a person's hold, is not a refusal of the
@@ -245,9 +281,13 @@ func (c *Core) controlApply(ctx context.Context, tx pgx.Tx, now time.Time, cat *
 	if inc != nil {
 		incident = inc.ID
 	}
-	if _, err := tx.Exec(ctx, `INSERT INTO control_ops (id, tenant, op, target_kind, target_id, incident, actor_kind, actor, epoch, hold, created_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
-		id, tenant, req.Op, req.Target.Kind, req.Target.ID, nullable(incident), actorKind, actor, epoch, nullable(holdID), now); err != nil {
+	origin := "code"
+	if a.Origin != "" {
+		origin = a.Origin
+	}
+	if _, err := tx.Exec(ctx, `INSERT INTO control_ops (id, tenant, op, target_kind, target_id, incident, actor_kind, actor, epoch, origin, hold, approved_by, created_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)`,
+		id, tenant, req.Op, req.Target.Kind, req.Target.ID, nullable(incident), actorKind, actor, epoch, origin, nullable(holdID), nullable(a.ApprovedBy), now); err != nil {
 		return nil, nil, err
 	}
 	data := map[string]any{"op": req.Op, "target": map[string]any{"kind": req.Target.Kind, "id": req.Target.ID}, "by": actorKind}
@@ -267,7 +307,8 @@ func (c *Core) controlApply(ctx context.Context, tx pgx.Tx, now time.Time, cat *
 	seq, err := c.appendAudit(ctx, tx, now, Audit{
 		Tenant: tenant, Kind: "command", Actor: auditActor, Command: "control.apply",
 		Target: &Target{Kind: req.Target.Kind, ID: req.Target.ID}, OK: true,
-		After: map[string]any{"op": req.Op, "incident": nullable(incident), "epoch": epoch, "hold": nullable(holdID), "ttl": nullable(req.TTL)},
+		After: map[string]any{"op": req.Op, "incident": nullable(incident), "epoch": epoch, "hold": nullable(holdID), "ttl": nullable(req.TTL),
+			"origin": origin, "result": "applied"},
 	})
 	if err != nil {
 		return nil, nil, err
@@ -301,6 +342,11 @@ func (c *Core) controlApply(ctx context.Context, tx pgx.Tx, now time.Time, cat *
 		if err := c.settleUnhandled(ctx, tx, now, inc); err != nil {
 			return nil, nil, err
 		}
+		// The operation edits the incident's message to people in its own transaction: there
+		// is no operation without an entry there (MGR-13, MGR-39).
+		if err := c.noticeOpLine(ctx, tx, now, inc.ID, req, a.Seat); err != nil {
+			return nil, nil, err
+		}
 	}
 	if m != nil {
 		// An applied seat operation ends a run of refusals (MGR-14).
@@ -314,7 +360,7 @@ func (c *Core) controlApply(ctx context.Context, tx pgx.Tx, now time.Time, cat *
 // seatChecks are the checks of a seat operation before it applies: the manager works in the
 // tenant, the hourly limit, the basis incident, the target from its involved parties, the
 // exclusions, the distrust mode, the protected set and the share of a role under holds.
-func (c *Core) seatChecks(ctx context.Context, tx pgx.Tx, now time.Time, cat *Catalog, tenant string, a controlActor, req ControlRequest, incOut **incidentRow) (*Problem, error) {
+func (c *Core) seatChecks(ctx context.Context, tx pgx.Tx, now time.Time, cat *Catalog, tenant string, a controlActor, req ControlRequest, incOut **incidentRow, origin *string) (*Problem, error) {
 	if !managerEnabled(cat, tenant) {
 		return refuse("manager_disabled", "the farm manager is disabled in the tenant"), nil
 	}
@@ -337,36 +383,66 @@ func (c *Core) seatChecks(ctx context.Context, tx pgx.Tx, now time.Time, cat *Ca
 	if n >= lim.OpsPerHour {
 		return refuse("control_rate_limited", "the seat reached ops_per_hour"), nil
 	}
-	if req.Basis.Incident == "" {
-		return refuse("target_not_implicated", "a seat operation names its incident"), nil
-	}
-	inc, err := loadIncident(ctx, tx, tenant, req.Basis.Incident, true)
-	if err != nil {
-		return nil, err
-	}
-	if inc == nil || !slices.Contains(incidentLive, inc.State) {
-		return refuse("target_not_implicated", "no live incident of the tenant"), nil
-	}
-	*incOut = inc
-	// The class's responses list what the seat may do for its incidents; release only undoes
-	// the seat's own hold (MGR-9).
-	if req.Op != "release" && !slices.Contains(mstrs(mmap(classByName(cat, inc.Class), "responses"), "ops"), req.Op) {
-		return refuse("forbidden", "the incident class does not allow %s", req.Op), nil
+	// A directive without an incident bounds the operation by its scope (MGR-4).
+	var inc *incidentRow
+	if req.Basis.Incident == "" && a.Directive != nil {
+		if p, err := c.directiveAllows(ctx, tx, now, cat, tenant, a.Directive, req); err != nil || p != nil {
+			return p, err
+		}
+	} else {
+		if req.Basis.Incident == "" {
+			return refuse("target_not_implicated", "a seat operation names its incident"), nil
+		}
+		var err error
+		inc, err = loadIncident(ctx, tx, tenant, req.Basis.Incident, true)
+		if err != nil {
+			return nil, err
+		}
+		if inc == nil || !slices.Contains(incidentLive, inc.State) {
+			return refuse("target_not_implicated", "no live incident of the tenant"), nil
+		}
+		*incOut = inc
+		// The class's responses list what the seat may do for its incidents; release only
+		// undoes the seat's own hold (MGR-9).
+		if req.Op != "release" && !slices.Contains(mstrs(mmap(classByName(cat, inc.Class), "responses"), "ops"), req.Op) {
+			return refuse("forbidden", "the incident class does not allow %s", req.Op), nil
+		}
+		if a.Directive != nil {
+			if p, err := c.directiveAllows(ctx, tx, now, cat, tenant, a.Directive, req); err != nil || p != nil {
+				return p, err
+			}
+		}
 	}
 	if req.Op == "release" {
-		// Only a hold the seat set with the current epoch for this incident (control-ops.yaml,
-		// release).
+		// Only a hold the seat set with the current epoch on the same basis, this incident or
+		// none (control-ops.yaml, release).
+		basis := ""
+		if inc != nil {
+			basis = inc.ID
+		}
 		var author, kind string
 		var epoch *int
-		err := tx.QueryRow(ctx, `SELECT h.author, h.author_kind, (SELECT o.epoch FROM control_ops o WHERE o.hold = h.id AND o.actor_kind = 'seat' AND o.incident = $3 LIMIT 1)
-			FROM holds h WHERE h.id = $1 AND h.tenant = $2`, req.Target.ID, tenant, inc.ID).Scan(&author, &kind, &epoch)
+		err := tx.QueryRow(ctx, `SELECT h.author, h.author_kind, (SELECT o.epoch FROM control_ops o WHERE o.hold = h.id AND o.actor_kind = 'seat'
+				AND o.incident IS NOT DISTINCT FROM $3 LIMIT 1)
+			FROM holds h WHERE h.id = $1 AND h.tenant = $2`, req.Target.ID, tenant, nullable(basis)).Scan(&author, &kind, &epoch)
 		if errors.Is(err, pgx.ErrNoRows) || err == nil && (author != a.Principal || kind != "seat_holder" || epoch == nil || *epoch != a.Epoch) {
 			return refuse("forbidden", "only the seat's own holds of the current epoch are released"), nil
 		}
 		return nil, err
 	}
-	if !implicatedTarget(inc, req.Target) {
-		return refuse("target_not_implicated", "the target is not among the incident's involved parties"), nil
+	// A target outside the code list is reachable only through a finding of the tenant on that
+	// target, and then only on a person's card (MGR-26).
+	fromFinding := false
+	if inc != nil && !implicatedTarget(inc, req.Target) {
+		ok, err := findingTarget(ctx, tx, tenant, inc.ID, req.Finding, req.Target)
+		if err != nil {
+			return nil, err
+		}
+		if !ok {
+			return refuse("target_not_implicated", "the target is not among the incident's involved parties"), nil
+		}
+		fromFinding = true
+		*origin = "finding:" + req.Finding
 	}
 	if excluded, err := c.targetExcluded(ctx, tx, cat, tenant, req.Target); err != nil || excluded {
 		if excluded {
@@ -380,7 +456,7 @@ func (c *Core) seatChecks(ctx context.Context, tx pgx.Tx, now time.Time, cat *Ca
 		if req.Op == "cancel" {
 			return refuse("approval_required", "a cancellation in distrust mode goes to a person"), nil
 		}
-		if req.Op == "quarantine" {
+		if req.Op == "quarantine" && inc != nil {
 			var q int
 			if err := tx.QueryRow(ctx, `SELECT count(*) FROM control_ops WHERE incident = $1 AND op = 'quarantine' AND actor_kind = 'seat'`, inc.ID).Scan(&q); err != nil {
 				return nil, err
@@ -395,6 +471,9 @@ func (c *Core) seatChecks(ctx context.Context, tx pgx.Tx, now time.Time, cat *Ca
 			return refuse("protected_target", "a person decides on a protected target"), nil
 		}
 		return nil, err
+	}
+	if fromFinding {
+		return refuse("approval_required", "a target from a finding goes to a person"), nil
 	}
 	if slices.Contains([]string{"hold", "quarantine", "drain"}, req.Op) {
 		over, err := c.shareExceeded(ctx, tx, now, cat, tenant, req.Target, lim.ShareHeld)
@@ -879,7 +958,10 @@ func (c *Core) ControlRevert(ctx context.Context, op Operator, req ControlRevert
 		q := `SELECT ` + holdColumns + ` FROM holds WHERE state = 'active' AND author_kind = 'seat_holder' AND created_at >= $1 ORDER BY id FOR UPDATE`
 		args := []any{since}
 		if req.Incident != "" {
-			q = `SELECT ` + holdColumns + ` FROM holds WHERE state = 'active' AND author_kind = 'seat_holder' AND lower(source) = lower($1) AND ($2 = 'farm' OR tenant = $2) ORDER BY id FOR UPDATE`
+			// The operator of farm reverts an incident of any tenant: the revert command of the
+			// farm operators' message names only the incident (MGR-15, MGR-39).
+			q = `SELECT ` + holdColumns + ` FROM holds WHERE state = 'active' AND author_kind = 'seat_holder' AND lower(source) = lower($1)
+				AND ($2 = 'farm' OR tenant = $2) ORDER BY id FOR UPDATE`
 			args = []any{req.Incident, op.Tenant}
 		}
 		rows, err := tx.Query(ctx, q, args...)
@@ -921,8 +1003,29 @@ func (c *Core) ControlRevert(ctx context.Context, op Operator, req ControlRevert
 				return err
 			}
 		}
+		// So would a pending control card of the seat.
+		if req.Incident != "" {
+			err = c.endPendingCards(ctx, tx, now, `state = 'pending' AND lower(incident) = lower($1) AND ($2 = 'farm' OR tenant = $2)`, "failed", "control_reverted", req.Incident, op.Tenant)
+		} else {
+			err = c.endPendingCards(ctx, tx, now, `state = 'pending' AND created_at >= $1`, "failed", "control_reverted", since)
+		}
+		if err != nil {
+			return err
+		}
 		out = Done{OK: true, State: fmt.Sprintf("released %d", len(list))}
-		return nil
+		if req.Incident == "" || len(list) == 0 {
+			return nil
+		}
+		// The revert is a line of the incident's message to people too (MGR-39).
+		var id string
+		err = tx.QueryRow(ctx, `SELECT id FROM incidents WHERE lower(id) = lower($1) AND ($2 = 'farm' OR tenant = $2)`, req.Incident, op.Tenant).Scan(&id)
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+		return c.noticeLog(ctx, tx, now, id, noticeEntry{Kind: "op", Op: "revert", By: "person"}, true)
 	})
 	if err != nil {
 		return nil, err
@@ -971,22 +1074,23 @@ func (c *Core) controlTool(cat *Catalog, g *toolsGrant) *catalogTool {
 		}
 	}
 	schema := map[string]any{
-		"type": "object", "additionalProperties": false, "required": []any{"op", "target", "basis"},
+		"type": "object", "additionalProperties": false, "required": []any{"op", "target"},
 		"properties": map[string]any{
 			"op": map[string]any{"enum": ops},
 			"target": map[string]any{"type": "object", "additionalProperties": false, "required": []any{"kind", "id"}, "properties": map[string]any{
 				"kind": map[string]any{"enum": []any{"worker", "bot", "role", "tasktype", "resource", "task", "hold"}},
 				"id":   map[string]any{"type": "string", "maxLength": 64, "pattern": "^[A-Za-z0-9:_.-]{1,64}$"},
 			}},
-			"basis": map[string]any{"type": "object", "additionalProperties": false, "required": []any{"incident"}, "properties": map[string]any{
+			"basis": map[string]any{"type": "object", "additionalProperties": false, "properties": map[string]any{
 				"incident": map[string]any{"type": "string", "maxLength": 64, "pattern": "^inc_[A-Za-z0-9]{1,60}$"},
 			}},
+			"finding": map[string]any{"type": "string", "maxLength": 64, "pattern": "^fd_[A-Za-z0-9]{1,60}$"},
 			"effects": map[string]any{"type": "array", "maxItems": 6, "uniqueItems": true, "items": map[string]any{
 				"enum": []any{"no_enqueue", "no_claim", "no_tool", "no_action", "no_delivery", "cancel_running"}}},
 			"ttl": map[string]any{"type": "string", "maxLength": 8, "pattern": "^[1-9][0-9]{0,3}(s|m|h)$"},
 		},
 	}
-	desc := "Apply a control operation of the farm manager seat on a target involved in the incident: hold, quarantine, drain, preempt, cancel, or release your own hold."
+	desc := "Apply a control operation of the farm manager seat on a target involved in the incident or in the directive's scope: hold, quarantine, drain, preempt, cancel, or release your own hold. A target that only a finding names goes to a person; name the finding."
 	return &catalogTool{Name: controlToolName, Builtin: true, Tool: toolspec.Tool{Description: desc}, Schema: schema}
 }
 
@@ -1034,15 +1138,20 @@ func (c *Core) controlToolCall(ctx context.Context, tx pgx.Tx, now time.Time, ca
 		return invalid()
 	}
 	var untrusted bool
-	if err := tx.QueryRow(ctx, `SELECT coalesce((record->>'untrusted_seen')::boolean, false) FROM tasks WHERE id = $1`, g.Task).Scan(&untrusted); err != nil {
+	var rec []byte
+	if err := tx.QueryRow(ctx, `SELECT coalesce((record->>'untrusted_seen')::boolean, false), record FROM tasks WHERE id = $1`, g.Task).Scan(&untrusted, &rec); err != nil {
 		return nil, err
 	}
-	d, p, err := c.controlApply(ctx, tx, now, cat, g.Tenant, controlActor{Seat: true, Principal: acting.Bot, Epoch: acting.SeatEpoch, Untrusted: untrusted}, req)
+	d, p, err := c.controlApply(ctx, tx, now, cat, g.Tenant, controlActor{Seat: true, Principal: acting.Bot, Epoch: acting.SeatEpoch, Untrusted: untrusted,
+		Directive: taskDirective(rec), Task: g.Task}, req)
 	if err != nil {
 		return nil, err
 	}
 	if p != nil {
 		return answer(map[string]any{"code": p.Reason}, true), nil
+	}
+	if d.State == "card" {
+		return answer(map[string]any{"code": "card", "id": d.ID}, false), nil
 	}
 	out := map[string]any{"code": "applied", "id": d.ID}
 	// A hold's own id is what release takes.

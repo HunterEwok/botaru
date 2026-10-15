@@ -58,6 +58,8 @@ type stopReason struct {
 	Reason   string `json:"reason"`
 	At       string `json:"at"`
 	Incident string `json:"incident,omitempty"`
+	// Repeats counts the repeats of manager_stopped sent for the reason incident (MGR-36).
+	Repeats int `json:"repeats,omitempty"`
 }
 
 // managerSeat is the farm manager seat as the store keeps it.
@@ -279,6 +281,10 @@ func (c *Core) managerAssign(ctx context.Context, op Operator, req SeatRequest) 
 		if err := c.retireHolder(ctx, tx, now, cat, m, id, op.Principal); err != nil {
 			return err
 		}
+		// The sections of a holder that left before come to the new one (MGR-27).
+		if err := c.pickUpSeatOffers(ctx, tx, now, cat, id); err != nil {
+			return err
+		}
 		seq, err := c.shiftManager(ctx, tx, now, cat, m, id, m.without("incident"), "seat.assigned.v1", "seat.assign", op.Principal)
 		if err != nil {
 			return err
@@ -402,7 +408,7 @@ func (c *Core) stopManager(ctx context.Context, tx pgx.Tx, now time.Time, cat *C
 		return err
 	}
 	if reason == "incident" && m.Holder != "" {
-		return c.noticeManagerStopped(ctx, tx, now, cat, incident, false)
+		return c.noticeManagerStopped(ctx, tx, now, cat, m, "notice.manager_stopped")
 	}
 	return nil
 }
@@ -498,7 +504,9 @@ func (c *Core) incidentStop(ctx context.Context, tx pgx.Tx, now time.Time, cat *
 			return c.stopManager(ctx, tx, now, cat, m, "incident", r.ID)
 		case m.has("incident"):
 			effect = "seat_stopped"
-			if err := c.noticeManagerStopped(ctx, tx, now, cat, r.ID, true); err != nil {
+			// An incident of the stop is appended to the card as its own line (MGR-35).
+			if err := c.noticeAdmins(ctx, tx, now, cat, []string{farmTenant}, "manager_stopped", "notice.manager_stopped_joined",
+				map[string]any{"incident": r.ID, "class": r.Class, "tenant": r.Tenant, "at": fmtTime(now)}, "admin:governance"); err != nil {
 				return err
 			}
 		default:
@@ -648,9 +656,10 @@ func (c *Core) enqueueIncidentTask(ctx context.Context, tx pgx.Tx, now time.Time
 		return nil
 	}
 	body := map[string]any{"type": incidentRespondType, "goal": "Respond to the incident.", "params": map[string]any{"input": incidentView(ic, r)}}
+	sev := mstr(r.Record, "severity")
 	res, err := c.enqueue(ctx, tx, now, cat, enqueueInput{Tenant: r.Tenant, Type: incidentRespondType, Body: body,
 		IdempotencyKey: "incident:" + r.ID + ":" + strconv.FormatInt(r.Episode, 10), Initiator: "system", EnqueuedBy: "system:incident",
-		Source: seatSource, SourceID: r.ID, Priority: 1})
+		Source: seatSource, SourceID: r.ID, Priority: 1, Sev1: sev == "sev1"})
 	if err != nil {
 		return err
 	}
@@ -658,7 +667,7 @@ func (c *Core) enqueueIncidentTask(ctx context.Context, tx pgx.Tx, now time.Time
 		c.log.Warn("the seat task of an incident was refused", "incident", r.ID, "reason", res.Rejected.Reason)
 		return nil
 	}
-	extra, err := json.Marshal(map[string]any{"seat": managerSeatID, "executor_role": role, "incident": r.ID})
+	extra, err := json.Marshal(map[string]any{"seat": managerSeatID, "executor_role": role, "incident": r.ID, "severity": nullable(sev)})
 	if err != nil {
 		return err
 	}
@@ -719,6 +728,30 @@ func (c *Core) managerDisabled(ctx context.Context, tx pgx.Tx, now time.Time, ca
 		if err := c.cancelTaskIDs(ctx, tx, now, t, list, "manager_disabled"); err != nil {
 			return err
 		}
+		if err := c.endPendingCards(ctx, tx, now, `state = 'pending' AND tenant = $1`, "failed", "manager_disabled", t); err != nil {
+			return err
+		}
+		// The farm operators no longer follow the tenant's incidents: their messages get no
+		// update (MGR-42).
+		if _, err := tx.Exec(ctx, `UPDATE deliveries SET state = 'withheld', reason = 'manager_disabled', updated_at = $3
+			WHERE kind = $1 AND state = 'planned' AND tenant = $4 AND subject_kind = 'incident'
+			AND subject_id IN (SELECT id FROM incidents WHERE tenant = $2)`, managerNoticeKind, t, now, farmTenant); err != nil {
+			return err
+		}
+		if _, err := tx.Exec(ctx, `DELETE FROM manager_notices WHERE route = 'farm' AND basis_kind = 'incident'
+			AND basis IN (SELECT id FROM incidents WHERE tenant = $1)`, t); err != nil {
+			return err
+		}
+		// The seat keeps no memory section in the tenant: the facts of its holders there go and
+		// their offers close (MGR-42).
+		if _, err := tx.Exec(ctx, `DELETE FROM facts WHERE tenant = $1 AND bot IN (SELECT id FROM bots WHERE seat = $2)`, t, managerSeatID); err != nil {
+			return err
+		}
+		if _, err := tx.Exec(ctx, `UPDATE fact_offers SET state = 'closed', recipient_state = CASE WHEN recipient_state = 'waiting' THEN 'expired' ELSE recipient_state END,
+			closed_at = coalesce(closed_at, $3) WHERE tenant = $1 AND from_bot IN (SELECT id FROM bots WHERE seat = $2) AND (state = 'open' OR recipient_state = 'waiting')`,
+			t, managerSeatID, now); err != nil {
+			return err
+		}
 		if m != nil && m.Holder != "" {
 			if err := capHolderHolds(ctx, tx, now, m.Holder, t); err != nil {
 				return err
@@ -737,7 +770,7 @@ func (c *Core) managerLoop(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	return c.tx(ctx, func(tx pgx.Tx, now time.Time) error {
+	err = c.tx(ctx, func(tx pgx.Tx, now time.Time) error {
 		if err := c.syncHumanStop(ctx, tx, now, cat); err != nil {
 			return err
 		}
@@ -756,8 +789,18 @@ func (c *Core) managerLoop(ctx context.Context) error {
 				return err
 			}
 		}
+		if err := c.repeatManagerStopped(ctx, tx, now, cat, m); err != nil {
+			return err
+		}
 		return c.managerAbsent(ctx, tx, now, cat, m)
 	})
+	if err != nil {
+		return err
+	}
+	if err := c.expireControlCards(ctx, cat); err != nil {
+		return err
+	}
+	return c.managerDaily(ctx, cat)
 }
 
 // managerAbsent raises or resolves alarm.manager.absent. A farm whose catalog has no role of
@@ -768,8 +811,10 @@ func (c *Core) managerAbsent(ctx context.Context, tx pgx.Tx, now time.Time, cat 
 	if managerRole(cat) != "" {
 		absent = m.State != "held" && m.UnheldSince != nil && !m.UnheldSince.After(now.Add(-absentAfter))
 		if !absent {
-			if err := tx.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM tasks WHERE state = 'submitted' AND record->>'seat' = $1 AND created_at <= $2)`,
-				managerSeatID, now.Add(-absentAfter)).Scan(&absent); err != nil {
+			// A reading waits for a worker of the reader role without an alarm: doctor warns
+			// of the missing role (MGR-20).
+			if err := tx.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM tasks WHERE state = 'submitted' AND record->>'seat' = $1 AND created_at <= $2 AND type <> $3)`,
+				managerSeatID, now.Add(-absentAfter), inspectType).Scan(&absent); err != nil {
 				return err
 			}
 		}
@@ -789,29 +834,96 @@ func (c *Core) noticeManagerChanged(ctx context.Context, tx pgx.Tx, now time.Tim
 		holder = "-"
 	}
 	params := map[string]any{"what": what, "holder": holder, "epoch": m.Epoch, "at": fmtTime(now)}
-	return c.noticeAdmins(ctx, tx, now, cat, slices.Sorted(mapKeys(cat.Tenants)), "manager_holder_changed", "notice.manager_holder_changed", params)
+	return c.noticeAdmins(ctx, tx, now, cat, slices.Sorted(mapKeys(cat.Tenants)), "manager_holder_changed", "notice.manager_holder_changed", params,
+		"admin:people", "admin:governance")
 }
 
-// noticeManagerStopped sends manager_stopped to the admins of farm without buttons, with the
-// farmctl commands that end the stop; an incident opened during the stop is appended as a
-// new line of the same notice (GOV-22, MGR-35).
-func (c *Core) noticeManagerStopped(ctx context.Context, tx pgx.Tx, now time.Time, cat *Catalog, incident string, joined bool) error {
-	key := "notice.manager_stopped"
-	if joined {
-		key = "notice.manager_stopped_joined"
+// noticeManagerStopped sends manager_stopped to the operators with admin:governance in farm,
+// without buttons: the class, number and tenant of the incident that stopped the seat, the stop
+// time, the incidents opened during the stop, the decide_within expiry and the ready farmctl
+// commands from code (MGR-35, PRM-14). key is the first card or a repeat (MGR-36).
+func (c *Core) noticeManagerStopped(ctx context.Context, tx pgx.Tx, now time.Time, cat *Catalog, m *managerSeat, key string) error {
+	r := m.reason("incident")
+	if r == nil {
+		return nil
 	}
-	return c.noticeAdmins(ctx, tx, now, cat, []string{farmTenant}, "manager_stopped", key, map[string]any{"incident": incident, "at": fmtTime(now)})
+	var inc struct{ tenant, class string }
+	if err := tx.QueryRow(ctx, `SELECT tenant, class FROM incidents WHERE id = $1`, r.Incident).Scan(&inc.tenant, &inc.class); err != nil && !errors.Is(err, pgx.ErrNoRows) {
+		return err
+	}
+	at, _ := time.Parse(time.RFC3339Nano, r.At)
+	rows, err := tx.Query(ctx, `SELECT id FROM incidents WHERE stops_manager AND opened_at >= $1 AND id <> $2 ORDER BY opened_at, id LIMIT 20`, at, r.Incident)
+	if err != nil {
+		return err
+	}
+	joined, err := pgx.CollectRows(rows, pgx.RowTo[string])
+	if err != nil {
+		return err
+	}
+	list := c.texts.Render("en", "notice.manager_stopped.none", nil)
+	if len(joined) > 0 {
+		list = strings.Join(joined, ", ")
+	}
+	until := "-"
+	if m.DecideUntil != nil {
+		until = fmtTime(*m.DecideUntil)
+	}
+	return c.noticeAdmins(ctx, tx, now, cat, []string{farmTenant}, "manager_stopped", key, map[string]any{
+		"incident": r.Incident, "class": inc.class, "tenant": inc.tenant, "at": r.At, "until": until, "joined": cut(list, 500)}, "admin:governance")
 }
 
-// noticeAdmins plans a code notice to the admins of the tenants in their private chats.
-func (c *Core) noticeAdmins(ctx context.Context, tx pgx.Tx, now time.Time, cat *Catalog, tenants []string, kind, textKey string, params map[string]any) error {
+// stopRepeats are the times of the manager_stopped repeats: 24 h and 72 h after the stop and
+// 24 h before the end of decide_within; a repeat at or after the end, or at the time of an
+// earlier one, is not sent (MGR-36).
+func stopRepeats(at, until time.Time) []time.Time {
+	var out []time.Time
+	for _, t := range []time.Time{at.Add(24 * time.Hour), at.Add(72 * time.Hour), until.Add(-24 * time.Hour)} {
+		if t.Before(until) && t.After(at) && !slices.ContainsFunc(out, t.Equal) {
+			out = append(out, t)
+		}
+	}
+	slices.SortFunc(out, func(a, b time.Time) int { return a.Compare(b) })
+	return out
+}
+
+// repeatManagerStopped repeats manager_stopped while the seat's reason set holds incident; the
+// repeats end with that reason, which assign, vacate and resume remove (MGR-36).
+func (c *Core) repeatManagerStopped(ctx context.Context, tx pgx.Tx, now time.Time, cat *Catalog, m *managerSeat) error {
+	r := m.reason("incident")
+	if r == nil || m.Holder == "" || m.DecideUntil == nil {
+		return nil
+	}
+	at, err := time.Parse(time.RFC3339Nano, r.At)
+	if err != nil {
+		return nil
+	}
+	due := 0
+	for _, t := range stopRepeats(at, *m.DecideUntil) {
+		if !t.After(now) {
+			due++
+		}
+	}
+	if due <= r.Repeats {
+		return nil
+	}
+	// Repeats the loop missed are not sent one after another: one card covers them.
+	r.Repeats = due
+	if err := m.save(ctx, tx); err != nil {
+		return err
+	}
+	return c.noticeManagerStopped(ctx, tx, now, cat, m, "notice.manager_stopped_repeat")
+}
+
+// noticeAdmins plans a code notice to the people of the tenants with one of the capabilities, in
+// their private chats.
+func (c *Core) noticeAdmins(ctx context.Context, tx pgx.Tx, now time.Time, cat *Catalog, tenants []string, kind, textKey string, params map[string]any, caps ...string) error {
 	sent := 0
 	for _, t := range tenants {
 		tv, ok := cat.Tenants[t]
 		if !ok || tv.Spec.Kind == "" {
 			continue
 		}
-		chats, err := c.adminChats(ctx, tx, now, tv, "", "admin:people", "admin:governance")
+		chats, err := c.adminChats(ctx, tx, now, tv, "", caps...)
 		if err != nil {
 			return err
 		}

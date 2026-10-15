@@ -204,6 +204,7 @@ The codes of `check_manifests.py` that fixtures refer to (`expect: {error: <code
 | `human_subject_in_record` | a result read by code names a human principal or the kind human | DLV-14 |
 | `incident_class_ref` | an incident class names an alarm outside the events catalog, a condition atom or field outside the closed list, an unknown involvement function, operation, action or pinnable type, or services and monitoring scripts for a farm subject | MGR-7 |
 | `incident_contain_auto` | a first measure of an incident class is not a hold with one tenant scope, known effects and an expiry | MGR-7, HLD-2 |
+| `incident_store_low` | an incident catalog lacks the class store_low, or store_low is not a farm class opened by alarm.store.free.low or carries stops_manager | MGR-38 |
 | `ingress_missing` | source channel (direction: in) without ingress | ING-1 |
 | `ingress_token_tier` | route from an event of a tls_token source enqueues a type above tier 0 | ING-1 |
 | `ingress_tolerance` | source with auth: signature without ingress.tolerance or with more than 5m | ING-1 |
@@ -214,9 +215,12 @@ The codes of `check_manifests.py` that fixtures refer to (`expect: {error: <code
 | `lens_profile_output` | a role that claims a lens review has a base profile with max_output_tokens above 2000 | COM-6 |
 | `listener_admin_worker_network` | the P2 listener network is a worker network (note) | IDN-7 |
 | `listener_test_in_production` | test-control listener of the core on a kind: production host | DEP-10 |
+| `manage_enqueued` | a type of purpose manage in a role may_enqueue, a script step or a continuation | MGR-4 |
 | `manager_line_missing` | manager budget line is not above 0 while the manager is enabled | MGR-20 |
+| `manager_line_too_small` | manager.day_eur is below the price of three readings of one worst-case incident at the seat profile prices | MGR-20 |
 | `manager_profile_missing` | manager enabled without the seat profile in the farm charter | MGR-20 |
 | `manager_profile_not_allowed` | manager seat profile is not in models_allowed | MGR-20 |
+| `manager_self_change` | a control operation target or a proposable field reaches what the farm manager seat may not change about itself (the seat, its roles, the incident catalog, the charter limits and safeguard, budget lines, consent groups, the commission) | MGR-16, PRP-3 |
 | `max_share_without_group` | dispatch rule with max_share and without group | DSP-11 |
 | `max_tokens_field` | manifest has a max_tokens field | BUD-9 |
 | `mcp_annotation_conflict` | an MCP annotation in tools/list contradicts the manifest access | INJ-3 |
@@ -249,7 +253,7 @@ The codes of `check_manifests.py` that fixtures refer to (`expect: {error: <code
 | `retention_period` | tenant retention period outside the class bounds or longer than the content period | RET-9 |
 | `revert_reason_invalid` | Botaru-Revert reason is not from the closed list | MAN-5, PRP-22 |
 | `reviewer_not_independent` | a commission seat fallback role runs on the analysis profile of a role that writes proposals | COM-2 |
-| `role_profile_forbidden` | role declares what the profile forbids | PRF-1 |
+| `role_profile_forbidden` | role declares what the profile forbids, or a seat profile has a built-in tool outside its list | PRF-1, MGR-10 |
 | `role_profile_memory` | role memory is outside the profile | PRF-1 |
 | `role_profile_purpose` | role claims a type whose purpose is outside the profile | PRF-1 |
 | `role_profile_slot` | role model slot is outside the profile | PRF-1 |

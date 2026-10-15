@@ -22,7 +22,7 @@ import (
 
 // builtinCommands are the channel commands that a tenant's commands cannot take (PRM-17).
 var builtinCommands = map[string]bool{"/help": true, "/about": true, "/lang": true, "/mydata": true, "/tasks": true, "/status": true,
-	"/cancel": true, "/me": true, "/team": true, "/run": true, "/service": true, "/forget": true, "/grant": true, "/ungrant": true, "/incident": true}
+	"/cancel": true, "/me": true, "/team": true, "/run": true, "/service": true, "/forget": true, "/grant": true, "/ungrant": true, "/incident": true, "/manager": true}
 
 // timeoutCeilings are the farm ceilings of type timeouts in seconds (DLV-16).
 var timeoutCeilings = map[string]int64{"lease": 120, "heartbeat": 30, "tool_start_by": 30}
@@ -743,9 +743,19 @@ func (c *Core) lintManifests(docs []manifest.Doc, index []int, personas personaL
 			}
 			line := mmap(mmap(mmap(ts, "budgets"), "lines"), "manager")
 			m, _ := mnum(line, "month_eur")
-			d, _ := mnum(line, "day_eur")
+			d, hasDay := mnum(line, "day_eur")
 			if m <= 0 && d <= 0 {
 				f.add(o, "manager_line_missing", "/budgets/lines")
+			}
+			// The day of the line holds three readings of one worst-case incident at the seat
+			// profile's prices (MGR-20).
+			if p := profile(o.name, seatProfile); p != nil && hasDay {
+				in, _ := mnum(mmap(p, "price"), "input")
+				out, _ := mnum(mmap(p, "price"), "output")
+				maxOut, _ := mnum(p, "max_output_tokens")
+				if d*1e6 < seatWorstReadMicros(in, out, int(maxOut)) {
+					f.add(o, "manager_line_too_small", "/budgets/lines/manager/day_eur")
+				}
 			}
 		}
 		priv := mmap(ts, "privacy")
@@ -807,6 +817,16 @@ func (c *Core) lintManifests(docs []manifest.Doc, index []int, personas personaL
 		}
 		if !r.purposes[mstr(ts, "purpose")] {
 			f.add(o, "purpose_unknown", "/purpose")
+		}
+		// No continuation starts a farm manager task (MGR-4).
+		for _, path := range [][]string{{"continuation"}, {"await", "then"}, {"await", "on_timeout"}} {
+			m := ts
+			for _, k := range path {
+				m = mmap(m, k)
+			}
+			if tt := S.get("TaskType", mstr(m, "type"), ""); tt != nil && mstr(tt, "purpose") == "manage" {
+				f.add(o, "manage_enqueued", "/"+strings.Join(path, "/")+"/type")
+			}
 		}
 		for _, k := range slices.Sorted(mapKeys(timeoutCeilings)) {
 			if s := durSeconds(mmap(ts, "timeouts")[k]); s > timeoutCeilings[k] {
@@ -1061,6 +1081,10 @@ func (c *Core) lintManifests(docs []manifest.Doc, index []int, personas personaL
 		for j, tn := range mstrs(rs, "may_enqueue") {
 			if strings.HasPrefix(tn, "action.") {
 				f.add(o, "action_type_grant", fmt.Sprintf("/may_enqueue/%d", j))
+			}
+			// Only code, the review schedule and people direct the farm manager (MGR-4).
+			if tt := S.get("TaskType", tn, ""); tt != nil && mstr(tt, "purpose") == "manage" {
+				f.add(o, "manage_enqueued", fmt.Sprintf("/may_enqueue/%d", j))
 			}
 		}
 		for j, an := range mstrs(rs, "actions_may_request") {
@@ -1555,6 +1579,9 @@ func (c *Core) lintManifests(docs []manifest.Doc, index []int, personas personaL
 		return nil, err
 	}
 	if err := c.lintIncidentClasses(S, f); err != nil {
+		return nil, err
+	}
+	if err := c.lintSeatProfiles(S, f); err != nil {
 		return nil, err
 	}
 	sort.SliceStable(f.out, func(i, j int) bool { return f.out[i].Path < f.out[j].Path })

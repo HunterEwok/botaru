@@ -5,7 +5,7 @@ metadata: {name: farm-manager}
 spec:
   profile: farm-manager
   worker_kind: agent
-  claims: [manager.review.v1, manager.incident.respond.v1]
+  claims: [manager.review.v1, manager.incident.respond.v1, manager.directive.v1]
   monitor_scripts: ["*"]
   models: {base: manager-std}
   memory: bot
