@@ -18,6 +18,10 @@ texts:
   notice.principal_left: "{subject} has been deactivated ({reason}). Still a member of the chats: {chats}."
   notice.principal_left.no_chats: none
   notice.erasure_done: "Your data is erased (request {request}). Result per store:\n{results}"
+  # A route notice (MSG-16): a Route with mode notify and template <t> sends route.<t>, filled in
+  # with the closed fields of the message and its type and subject; an installation adds its own
+  # route.<t> texts to its catalogs.
+  route.report-arrived: "A bot report {type} arrived: {subject}."
   # An alarm without a monitoring system (MON-13)
   notice.alarm: "Alarm {alarm} ({severity}) is {state}: {subject}, change {seq} at {at}."
   # Export to the monitoring system fails for longer than 15 minutes (MON-12)

@@ -50,6 +50,8 @@ type TenantView struct {
 	Schedules map[string]manifest.Schedule
 	// BotGroups are the BotGroup manifests of the tenant by name (BGR-1).
 	BotGroups map[string]manifest.BotGroup
+	// Routes are the Route manifests of the tenant by name (MSG-16).
+	Routes map[string]manifest.Route
 }
 
 // Profile resolves a model profile for a tenant: the tenant's own profile of that name, else
@@ -80,7 +82,7 @@ func (c *Catalog) tenant(name string) *TenantView {
 	t, ok := c.Tenants[name]
 	if !ok {
 		t = &TenantView{Name: name, Groups: map[string]manifest.Group{}, Channels: map[string]manifest.Channel{}, Schedules: map[string]manifest.Schedule{},
-			BotGroups: map[string]manifest.BotGroup{}}
+			BotGroups: map[string]manifest.BotGroup{}, Routes: map[string]manifest.Route{}}
 		c.Tenants[name] = t
 	}
 	return t
@@ -148,6 +150,12 @@ func buildCatalog(docs []manifest.Doc) (*Catalog, error) {
 			var bg manifest.BotGroup
 			if bg, err = manifest.Decode[manifest.BotGroup](d); err == nil {
 				c.tenant(d.Tenant).BotGroups[d.Name] = bg
+			}
+			c.RawGlobals[d.Key()] = d.Value
+		case "Route":
+			var rt manifest.Route
+			if rt, err = manifest.Decode[manifest.Route](d); err == nil {
+				c.tenant(d.Tenant).Routes[d.Name] = rt
 			}
 			c.RawGlobals[d.Key()] = d.Value
 		case "ToolPlugin":

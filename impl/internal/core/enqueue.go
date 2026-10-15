@@ -79,6 +79,8 @@ type enqueueInput struct {
 	// EstimateMin is the least reserve of the task: a review reserves its type's tree budget,
 	// the sum the review line was checked for (COM-6).
 	EstimateMin int64
+	// Wake makes the task a wake-up of a route's inbox (MSG-11).
+	Wake *wakeInput
 	// Sev1 marks a seat task of a sev1 incident: it may use the reserve of the manager line
 	// (MGR-20).
 	Sev1 bool
@@ -417,6 +419,21 @@ func (c *Core) enqueue(ctx context.Context, tx pgx.Tx, now time.Time, cat *Catal
 	if p := c.checkBudget(ctx, tx, now, tv, budgetAsk{subject: in.Initiator, groups: groups, extra: estimate, line: line, sev1: in.Sev1, crossed: &crossed}); p != nil {
 		return reject(p)
 	}
+	// A wake-up reserves in the day limit of each principal the entries came from too (MSG-11).
+	if in.Wake != nil {
+		for _, sub := range in.Wake.Subjects {
+			if sub == "system" || sub == in.Initiator {
+				continue
+			}
+			sg, err := principalGroups(ctx, tx, now, tv, sub)
+			if err != nil {
+				return nil, err
+			}
+			if p := c.checkBudget(ctx, tx, now, tv, budgetAsk{subject: sub, groups: sg, extra: estimate, line: line}); p != nil {
+				return reject(p)
+			}
+		}
+	}
 	// The enqueue ceiling of the sliding hour, under the tenant's budget lock (CAP-1).
 	if max := tv.Spec.Limits.MaxEnqueuePerHour; max > 0 {
 		var n int
@@ -541,6 +558,12 @@ func (c *Core) enqueue(ctx context.Context, tx pgx.Tx, now time.Time, cat *Catal
 		}
 		record["tree_budget_micros"] = taskTreeBudget(rootRec, cat.TaskTypes[rootType])
 	}
+	if w := in.Wake; w != nil {
+		record["wake_inbox"], record["depth"] = w.Inbox, w.Depth
+		if w.Correlation != "" {
+			record["correlationid"] = w.Correlation
+		}
+	}
 	if in.Continues != "" {
 		record["data_mark"] = mark
 		record["continues"] = in.Continues
@@ -581,6 +604,12 @@ func (c *Core) enqueue(ctx context.Context, tx pgx.Tx, now time.Time, cat *Catal
 	}
 	if d, ok := parseDuration(after); ok {
 		startBy = now.Add(d)
+	}
+	// A wake-up starts no later than the latest expiry of its entries (MSG-12).
+	if w := in.Wake; w != nil && w.StartBy != nil {
+		if t, ok := startBy.(time.Time); !ok || w.StartBy.Before(t) {
+			startBy = *w.StartBy
+		}
 	}
 	if _, err := tx.Exec(ctx, `INSERT INTO tasks (id, tenant, type, state, initiator, priority_class, idempotency_key, body_hash, body, record, deadline_at, start_by_at, created_at, updated_at)
 		VALUES ($1, $2, $3, 'submitted', $4, $5, $6, $7, $8, $9, $10, $11, $12, $12)`,

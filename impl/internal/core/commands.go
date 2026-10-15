@@ -419,6 +419,9 @@ func (c *Core) cancelTaskIDs(ctx context.Context, tx pgx.Tx, now time.Time, tena
 		if err := releaseTaskReserve(ctx, tx, id); err != nil {
 			return err
 		}
+		if err := c.autoReports(ctx, tx, now, tenant, id); err != nil {
+			return err
+		}
 		if err := c.appendEvent(ctx, tx, now, tenant, Event{Type: "task.canceled", Subject: id, Data: map[string]any{"task": id, "reason": reason}}); err != nil {
 			return err
 		}

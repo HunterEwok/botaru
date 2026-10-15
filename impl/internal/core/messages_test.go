@@ -26,9 +26,13 @@ func msgFields() map[string]any {
 // newMsgBench is the hello bench with messages: hello (agent) reports report.work.v1 to the
 // role lead and the bot group pool and broadcasts report.bcast.v1 to lead; lead is a job role
 // whose lead.review.v1 reads its inbox; state.worker.v1 is the state of worker code.
-func newMsgBench(t *testing.T) *bench {
+func newMsgBench(t *testing.T) *bench { t.Helper(); return newMsgBenchWith(t, nil) }
+
+// newMsgBenchWith is newMsgBench with more manifests.
+func newMsgBenchWith(t *testing.T, more func(ms []map[string]any) []map[string]any) *bench {
 	t.Helper()
 	return newBenchWith(t, func(_ string, ms []map[string]any) []map[string]any {
+
 		for _, m := range ms {
 			s := m["spec"].(map[string]any)
 			switch m["kind"] {
@@ -55,7 +59,7 @@ func newMsgBench(t *testing.T) *bench {
 			}
 			return map[string]any{"apiVersion": "botaru/v1alpha1", "kind": "MessageType", "metadata": map[string]any{"name": name}, "spec": base}
 		}
-		return append(ms,
+		ms = append(ms,
 			mtype("report.work.v1", nil),
 			mtype("report.bcast.v1", map[string]any{"delivery": "all", "note": map[string]any{"max_chars": 0}, "producers": []any{"agent", "job"}}),
 			mtype("state.worker.v1", map[string]any{"kind": "state", "delivery": nil, "ttl": nil, "stale_after": "10m", "note": map[string]any{"max_chars": 0},
@@ -77,6 +81,10 @@ func newMsgBench(t *testing.T) *bench {
 			map[string]any{"apiVersion": "botaru/v1alpha1", "kind": "Group", "metadata": map[string]any{"name": "system-ops", "tenant": "demo"},
 				"spec": map[string]any{"caps": []any{"task:lead.review.v1", "msg.send:report.work.v1"}, "data": []any{"summary"}}},
 		)
+		if more != nil {
+			ms = more(ms)
+		}
+		return ms
 	})
 }
 
@@ -263,7 +271,7 @@ func TestMessageSendPublish(t *testing.T) {
 	if n := msgCount(t, b, `inbox_kind = 'group' AND inbox_name = 'pool' AND state = 'queued'`); n != 1 {
 		t.Fatalf("group entries %d", n)
 	}
-	if n := countEvents(t, b, "message.published", ""); n != 3 {
+	if n := countEvents(t, b, "message.published", ""); n != 4 {
 		t.Fatalf("published events %d", n)
 	}
 }
@@ -604,15 +612,19 @@ func TestMessageGoneRetention(t *testing.T) {
 	b := newMsgBench(t)
 	coreSend(t, b, "role:lead")
 	coreSend(t, b, "group:pool")
-	lead := map[string]any{"apiVersion": "botaru/v1alpha1", "kind": "Role", "metadata": map[string]any{"name": "lead"},
-		"spec": map[string]any{"profile": "worker", "worker_kind": "job", "claims": []any{"lead.review.v1"},
-			"messages": map[string]any{"receive": []any{map[string]any{"type": "report.bcast.v1"}, map[string]any{"type": "state.worker.v1"}}}}}
-	res, err := b.c.Apply(ctx, b.op, ApplyRequest{Commit: "1111111111111111111111111111111111111111", Manifests: []map[string]any{lead}})
+	// The bot group goes; the role inbox stays.
+	res, err := b.c.Apply(ctx, b.op, ApplyRequest{Commit: "1111111111111111111111111111111111111111", Delete: []ApplyDelete{{Kind: "BotGroup", Tenant: "demo", Name: "pool"}}})
 	if err != nil || !res.Applied {
 		t.Fatalf("apply %+v %v", res, err)
 	}
-	if n := msgCount(t, b, `state = 'discarded' AND reason = 'recipient_gone' AND note IS NULL`); n != 2 {
+	if n := msgCount(t, b, `state = 'discarded' AND reason = 'recipient_gone' AND note IS NULL AND inbox_kind = 'group'`); n != 1 {
 		t.Fatalf("entries of a gone inbox %d", n)
+	}
+	if n := msgCount(t, b, `state = 'queued' AND inbox_kind = 'role'`); n != 1 {
+		t.Fatalf("entries of a kept inbox %d", n)
+	}
+	if _, err := b.c.st.Pool.Exec(ctx, `UPDATE messages SET state = 'acked' WHERE state = 'queued'`); err != nil {
+		t.Fatal(err)
 	}
 	if _, err := b.c.st.Pool.Exec(ctx, `UPDATE messages SET updated_at = updated_at - interval '31 days'`); err != nil {
 		t.Fatal(err)
