@@ -178,7 +178,21 @@ func (c *Core) indicators(ctx context.Context, tx pgx.Tx, now time.Time) (*indic
 		}
 		in.ticks[loop] = max(int(now.Sub(at)/time.Second), 0)
 	}
-	return in, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	// A loop that never ticked since the loops started is as old as the start, so a loop
+	// stuck in its first pass shows as stale too (OBS-4, OBS-9).
+	if c.running.Load() {
+		c.startedAt.CompareAndSwap(0, now.UnixNano())
+		since := max(int(now.Sub(time.Unix(0, c.startedAt.Load()))/time.Second), 0)
+		for _, loop := range loopOrder {
+			if _, ok := in.ticks[loop]; !ok {
+				in.ticks[loop] = since
+			}
+		}
+	}
+	return in, nil
 }
 
 // markTick records the tick of a loop in the store (OBS-4).

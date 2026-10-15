@@ -64,6 +64,24 @@ func (c *Core) alarmSeverity(a Alarm) (string, error) {
 	return a.Severity, nil
 }
 
+// alarmOrigin is the origin the alarm names, else the one of its events catalog entry (an alarm
+// a job raises from a monitoring problem is monitor, MON-5), else code.
+func (c *Core) alarmOrigin(a Alarm) (string, error) {
+	if a.Origin != "" {
+		return a.Origin, nil
+	}
+	cat, err := c.spec.Registry("spec/bindings/events/catalog.yaml")
+	if err != nil {
+		return "", err
+	}
+	if e, ok := cat.Entry(a.eventType()); ok {
+		if o, _ := e["origin"].(string); o != "" {
+			return o, nil
+		}
+	}
+	return "code", nil
+}
+
 type episode struct {
 	ID       int64
 	Tenant   string
@@ -143,9 +161,9 @@ func (c *Core) fireAlarm(ctx context.Context, tx pgx.Tx, now time.Time, a Alarm)
 	if a.Values == nil {
 		vals = []byte("{}")
 	}
-	origin := a.Origin
-	if origin == "" {
-		origin = "code"
+	origin, err := c.alarmOrigin(a)
+	if err != nil {
+		return err
 	}
 	if err := tx.QueryRow(ctx, `INSERT INTO alarm_episodes (tenant, alarmkey, alarm, state, severity, subject, vals, seq, opened_at, last_seen_at, notified_at, origin, vals_at)
 		VALUES ($1, $2, $3, 'firing', $4, $5, $6, 1, $7, $7, $7, $8, $7) RETURNING id`,

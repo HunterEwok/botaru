@@ -446,6 +446,7 @@ func (c *Core) lintManifests(docs []manifest.Doc, index []int, personas personaL
 		for _, tr := range mlist(o.spec, "monitor_triggers") {
 			tm, _ := tr.(map[string]any)
 			lists["monitor_triggers"] = append(lists["monitor_triggers"], mstr(tm, "triggerid"))
+			lists["monitor_items"] = append(lists["monitor_items"], mstr(tm, "item"))
 		}
 		for j, res := range mlist(o.spec, "resources") {
 			rm, _ := res.(map[string]any)
@@ -666,6 +667,9 @@ func (c *Core) lintManifests(docs []manifest.Doc, index []int, personas personaL
 				f.add(o, "assistant_in_default_types", path)
 			} else if len(types) > 0 && types[t] == nil {
 				c.lintWarn(o, "ref_missing", path)
+			} else if types[t] != nil && len(mlist(types[t], "summary_fields")) == 0 && groupDefault(dt) {
+				// A type for group chats carries a code table in its summary (REP-11, DLV-15).
+				f.add(o, "summary_fields_required", path)
 			}
 		}
 		for _, rn := range slices.Sorted(mapKeys(mmap(ts, "run"))) {
@@ -1322,9 +1326,15 @@ func (c *Core) lintManifests(docs []manifest.Doc, index []int, personas personaL
 			continue
 		}
 		seats := mlist(mmap(o.spec, "commission"), "seats")
+		// The analysis profiles of the roles that can write proposals: they claim a type of
+		// purpose insight or aggregate (COM-2).
 		analysis := map[string]bool{}
 		for _, ro := range roles {
-			if a := mstr(mmap(ro.spec, "models"), "analysis"); a != "" {
+			author := slices.ContainsFunc(mstrs(ro.spec, "claims"), func(t string) bool {
+				p := mstr(types[t], "purpose")
+				return p == "insight" || p == "aggregate"
+			})
+			if a := mstr(mmap(ro.spec, "models"), "analysis"); a != "" && author {
 				analysis[a] = true
 			}
 		}
@@ -1901,4 +1911,15 @@ func (c *Core) lintGovernance(S *lintSet, f *lintFindings, personas personaLooku
 		}
 	}
 	return nil
+}
+
+// groupDefault says whether a default_types entry also serves group chats: a bare type name or
+// an entry without chats serves every chat (REP-11).
+func groupDefault(dt any) bool {
+	m, ok := dt.(map[string]any)
+	if !ok {
+		return true
+	}
+	chats := mstrs(m, "chats")
+	return len(chats) == 0 || slices.ContainsFunc(chats, func(ch string) bool { return ch == "group" || strings.HasPrefix(ch, "chat:") })
 }

@@ -133,3 +133,36 @@ cases:
             facts: {max_active: 100, per_attempt: 3}
             offer: {max: 100}
     expect: {error: reviewer_not_independent, also: [lens_profile_output]}
+  - name: a seat falls back to a role on the analysis profile of a role that writes no proposals
+    manifests:
+      - apiVersion: botaru/v1alpha1
+        kind: Role
+        metadata: {name: data-reader}
+        spec:
+          profile: worker
+          worker_kind: agent
+          claims: [data.describe.v1]
+          tools: [data/describe]
+          models: {base: base-std, analysis: review-a}
+          memory: none
+      - apiVersion: botaru/v1alpha1
+        kind: ModelProfile
+        metadata: {name: review-a}
+        spec:
+          provider: provider-a
+          model: model-a-large-2026-09
+          family: family-a
+          rank: 2
+          pool: family-a
+          fallback: []
+          fallback_on: [overloaded, unavailable, retired]
+          max_output_tokens: 2000
+          tokens_per_s: 60
+          price: {input: 3.00, output: 12.00, checked: 2026-10-01}
+          provider_retention_days: {value: 30, checked: 2026-10-01}
+          requires_retention: false
+          provider_training: {value: false, checked: 2026-10-01}
+          provider_human_review: {value: abuse_only, checked: 2026-10-01}
+          subprocessors: []
+          retires_at: null
+    expect: ok

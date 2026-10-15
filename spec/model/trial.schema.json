@@ -243,6 +243,11 @@
               }
             ]
           },
+          "before_samples": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "The points behind before; a guard without them is never broken (PRP-22, PRP-23)."
+          },
           "source": {
             "enum": [
               "target",

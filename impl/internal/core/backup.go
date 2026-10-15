@@ -27,6 +27,7 @@ type BackupConfig struct {
 const (
 	backupOverdue       = 26 * time.Hour
 	restoreCheckOverdue = 8 * 24 * time.Hour
+	backupClockSkew     = 5 * time.Minute
 )
 
 // BackupReportRequest is p2-backup-report-request.
@@ -41,8 +42,8 @@ type BackupReportRequest struct {
 }
 
 // BackupReport records a report of the external backup process after a store backup, an
-// erasure log backup or a restore check (RET-8). The process reports with a narrow operator
-// credential of farm.
+// erasure log backup or a restore check (RET-8). The process reports with its report key, which
+// opens only the report operations, or an operator credential of farm.
 func (c *Core) BackupReport(ctx context.Context, op Operator, req BackupReportRequest) (*Done, error) {
 	if op.Tenant != "farm" {
 		return nil, refuse("forbidden", "only the backup process of farm reports backups")
@@ -53,6 +54,11 @@ func (c *Core) BackupReport(ctx context.Context, op Operator, req BackupReportRe
 		return nil, refuse("input_schema_invalid", "started_at and finished_at are times, the end not before the start")
 	}
 	err := c.tx(ctx, func(tx pgx.Tx, now time.Time) error {
+		// A report from the future would count as a fresh backup and hold the alarms off
+		// (RET-8); a few minutes cover the clock skew of the backup machine.
+		if finished.After(now.Add(backupClockSkew)) {
+			return refuse("input_schema_invalid", "finished_at is in the future")
+		}
 		if _, err := tx.Exec(ctx, `INSERT INTO backup_reports (kind, location_id, started_at, finished_at, ok, size, reported_by, created_at)
 			VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`, req.Kind, req.LocationID, started, finished, req.OK, req.Size, op.Principal, now); err != nil {
 			return err

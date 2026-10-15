@@ -2,7 +2,11 @@
 
 package agent
 
-import "testing"
+import (
+	"encoding/json"
+	"strings"
+	"testing"
+)
 
 func TestParseResult(t *testing.T) {
 	schema := map[string]any{"type": "object", "required": []any{"answer"}, "properties": map[string]any{"answer": map[string]any{"type": "string"}}}
@@ -18,5 +22,20 @@ func TestParseResult(t *testing.T) {
 	}
 	if _, err := parseResult("plain", map[string]any{"required": []any{"a", "b"}}); err == nil {
 		t.Error("plain text passed a two-field result")
+	}
+}
+
+// The facts and "My outcomes" of the claim payload reach the model as data beside the goal.
+func TestDataText(t *testing.T) {
+	var p attemptPayload
+	if err := json.Unmarshal([]byte(`{"task":{"id":"t1"},"facts":[{"key":"k1"}],"my_outcomes":{"rows":[]}}`), &p); err != nil {
+		t.Fatal(err)
+	}
+	d := dataText(p)
+	if !strings.Contains(d, `"facts":[{"key":"k1"}]`) || !strings.Contains(d, `"my_outcomes":{"rows":[]}`) {
+		t.Errorf("data text %q", d)
+	}
+	if dataText(attemptPayload{}) != "" {
+		t.Error("an attempt without data got a data text")
 	}
 }

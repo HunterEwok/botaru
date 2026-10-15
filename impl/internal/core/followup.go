@@ -62,6 +62,9 @@ type earlier struct {
 	Mark string
 	// Data is the outcome of the earlier task, the attachment block of the new one.
 	Data map[string]any
+	// Tree is set when the earlier task is a child or a continuation: the new one joins its
+	// tree under the same parent, so the tree limits hold for it too (PRM-6).
+	Tree *treeRecord
 }
 
 // continuesTo finds the task an activity continues (CNT-5, PRM-9): the task of the bot message
@@ -125,9 +128,14 @@ func (c *Core) continuesTo(ctx context.Context, tx pgx.Tx, now time.Time, tv *Te
 		}
 	}
 	out := &earlier{ID: id, Type: typ, Untrusted: r.UntrustedSeen, Mark: r.DataMark, Data: map[string]any{"task": id, "state": state}}
+	if tr, err := loadTree(ctx, tx, id); err != nil {
+		return nil, err
+	} else if tr.Parent != "" {
+		out.Tree = &tr
+	}
 	if len(result) > 0 {
 		var res map[string]any
-		if json.Unmarshal(result, &res) == nil && len(res) > 0 && len(res) <= 60 {
+		if json.Unmarshal(result, &res) == nil && len(res) > 0 && len(res) <= maxResultFields {
 			out.Data["result"] = res
 		}
 	}

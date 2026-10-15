@@ -199,8 +199,14 @@ func botHeld(ctx context.Context, q store.Querier, now time.Time, b *botRow) (bo
 // revoked with the reason, the tasks go back to the queue, so the next call of the holder is
 // fenced (IDN-10, IDN-11).
 func (c *Core) fenceAttempts(ctx context.Context, tx pgx.Tx, now time.Time, reason, where string, args ...any) error {
+	return c.fenceLeases(ctx, tx, now, reason, `kind = 'attempt' AND `+where, args...)
+}
+
+// fenceLeases revokes the active leases that match, of any kind, and returns their work as
+// requeue does; an attempt keeps the reason on its task and gets an attempt.cancel record.
+func (c *Core) fenceLeases(ctx context.Context, tx pgx.Tx, now time.Time, reason, where string, args ...any) error {
 	rows, err := tx.Query(ctx, `SELECT work_id, lease_no, kind, tenant, worker_id, epoch, state, lease_until FROM leases
-		WHERE state = 'active' AND kind = 'attempt' AND `+where+` ORDER BY work_id FOR UPDATE`, args...)
+		WHERE state = 'active' AND `+where+` ORDER BY kind, work_id FOR UPDATE`, args...)
 	if err != nil {
 		return err
 	}
@@ -225,6 +231,9 @@ func (c *Core) fenceAttempts(ctx context.Context, tx pgx.Tx, now time.Time, reas
 		}
 		if err := c.requeue(ctx, tx, now, l, now); err != nil {
 			return err
+		}
+		if l.Kind != "attempt" {
+			continue
 		}
 		if _, err := tx.Exec(ctx, `UPDATE tasks SET reason = $2 WHERE id = $1`, l.WorkID, reason); err != nil {
 			return err
@@ -349,7 +358,8 @@ func (c *Core) WorkerRevoke(ctx context.Context, op Operator, req WorkerRequest)
 		if _, err := tx.Exec(ctx, `UPDATE workers SET state = 'revoked' WHERE id = $1`, req.Worker); err != nil {
 			return err
 		}
-		if err := c.fenceAttempts(ctx, tx, now, "worker_revoke", `worker_id = $1`, req.Worker); err != nil {
+		// A revoked token holds no work of any kind (IDN-4).
+		if err := c.fenceLeases(ctx, tx, now, "worker_revoke", `worker_id = $1`, req.Worker); err != nil {
 			return err
 		}
 		b, err := scanBot(tx.QueryRow(ctx, `SELECT `+botCols+` FROM bots WHERE worker_id = $1 AND mode = 'worker' AND state IN ('active', 'suspended') FOR UPDATE`, req.Worker))

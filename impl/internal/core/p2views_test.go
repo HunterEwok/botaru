@@ -92,17 +92,19 @@ func TestDeadletterRedrive(t *testing.T) {
 	_, err = b.c.Redrive(ctx, b.op, RedriveRequest{Op: "task.redrive", ID: task})
 	wantReason(t, err, "forbidden")
 
+	// The decision subject goes along, so a redriven card is built again (APR-3).
+	exec(`UPDATE deliveries SET subject_kind = 'approval', subject_id = 'apr_1' WHERE id = $1`, dead)
 	done, err := b.c.Redrive(ctx, b.op, RedriveRequest{Op: "delivery.redrive", ID: dead})
 	if err != nil {
 		t.Fatal(err)
 	}
-	var state, of, key, pointer string
-	if err := b.c.st.Pool.QueryRow(ctx, `SELECT d.state, d.redrive_of, d.redrive_key, ct.ai_notice_delivery FROM deliveries d, contacts ct WHERE d.id = $1`, done.ID).
-		Scan(&state, &of, &key, &pointer); err != nil {
+	var state, of, key, pointer, subject string
+	if err := b.c.st.Pool.QueryRow(ctx, `SELECT d.state, d.redrive_of, d.redrive_key, ct.ai_notice_delivery, d.subject_kind || ':' || d.subject_id FROM deliveries d, contacts ct WHERE d.id = $1`, done.ID).
+		Scan(&state, &of, &key, &pointer, &subject); err != nil {
 		t.Fatal(err)
 	}
-	if state != "planned" || of != dead || key != "system:redrive:"+dead+":1" || pointer != done.ID {
-		t.Fatalf("delivery redrive: %s %s %s %s", state, of, key, pointer)
+	if state != "planned" || of != dead || key != "system:redrive:"+dead+":1" || pointer != done.ID || subject != "approval:apr_1" {
+		t.Fatalf("delivery redrive: %s %s %s %s %s", state, of, key, pointer, subject)
 	}
 	var audits int
 	b.c.st.Pool.QueryRow(ctx, `SELECT count(*) FROM audit WHERE record->>'command' LIKE '%.redrive'`).Scan(&audits)

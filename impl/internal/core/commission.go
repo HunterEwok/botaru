@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"slices"
 	"sort"
 	"strings"
@@ -72,6 +73,8 @@ func (c *Core) lensDefs() map[string]lensDef {
 // reviewer that claims the lens type, or nothing (COM-7, COM-8).
 type lensExecutor struct {
 	Lens, Type, Role, Source string
+	// Seat is the held seat that reviews the lens, with Source seat.
+	Seat string
 }
 
 // commissionLenses are the lenses a proposal is reviewed by, with their executors: the lenses
@@ -129,6 +132,41 @@ func (c *Core) commissionLenses(cat *Catalog, tenant string, kindNone bool, auth
 	}
 	sort.Strings(lenses)
 	return lenses, exec
+}
+
+// seatExecutors puts a held seat in front of the fallback of each lens it reviews: the seat role
+// claims the lens type and is independent of the author, and the holder is not the author's
+// bot; a seated lens counts without a fallback role (COM-2, COM-7, IDN-10).
+func (c *Core) seatExecutors(ctx context.Context, tx pgx.Tx, now time.Time, cat *Catalog, p *proposalRow, lenses []string, exec map[string]lensExecutor) (map[string]lensExecutor, error) {
+	out := maps.Clone(exec)
+	if out == nil {
+		out = map[string]lensExecutor{}
+	}
+	sr := seatRole(cat, p.Tenant)
+	if sr == "" {
+		return out, nil
+	}
+	defs := c.lensDefs()
+	origin, _ := p.Rec["origin"].(map[string]any)
+	author := asString(origin["acting_bot"])
+	for _, l := range lenses {
+		typ := defs[l].ReviewType
+		if e, ok := exec[l]; ok {
+			typ = e.Type
+		}
+		if typ == "" || !c.independentReviewer(cat, sr, typ, p.Role) {
+			continue
+		}
+		seat, err := c.seatExecutor(ctx, tx, now, p.Tenant, l)
+		if err != nil {
+			return nil, err
+		}
+		if seat == nil || (author != "" && seat.Holder == author) {
+			continue
+		}
+		out[l] = lensExecutor{Lens: l, Type: typ, Role: sr, Source: "seat", Seat: seat.ID}
+	}
+	return out, nil
 }
 
 // vetoCovered says whether every veto lens among lenses has an executor (COM-7).
@@ -298,6 +336,10 @@ func (c *Core) stepProposal(ctx context.Context, tx pgx.Tx, now time.Time, cat *
 			return c.moveProposal(ctx, tx, now, p, "expired", "")
 		}
 		lenses, exec := c.commissionLenses(cat, p.Tenant, p.kind() == "none", p.Role)
+		exec, err := c.seatExecutors(ctx, tx, now, cat, p, lenses, exec)
+		if err != nil {
+			return err
+		}
 		switch p.reason() {
 		case "review_budget":
 			// Money for reviews came back: the proposal is screened again (COM-6).
@@ -346,6 +388,10 @@ func (c *Core) screenProposal(ctx context.Context, tx pgx.Tx, now time.Time, cat
 		return c.moveProposal(ctx, tx, now, p, "dismissed", "other")
 	}
 	lenses, exec := c.commissionLenses(cat, p.Tenant, b.Change.Kind == "none", p.Role)
+	exec, err := c.seatExecutors(ctx, tx, now, cat, p, lenses, exec)
+	if err != nil {
+		return err
+	}
 	// Without an executor of a veto lens no review goes out: the proposal enters in_review
 	// with none and the verdict parks it as veto_lens_missing (COM-4, COM-7).
 	if !c.vetoCovered(lenses, exec) {
@@ -462,25 +508,23 @@ func (c *Core) enqueueReviews(ctx context.Context, tx pgx.Tx, now time.Time, cat
 		// initiator against it (COM-3, PRM-6).
 		res, err := c.enqueue(ctx, tx, now, cat, enqueueInput{Tenant: p.Tenant, Type: e.Type, Body: body,
 			IdempotencyKey: reviewKey(p, l), Initiator: "system", EnqueuedBy: "system:proposal", Source: reviewSource, SourceID: p.ID,
-			ContinuesMark: asString(p.Rec["data_mark"])})
+			ContinuesMark: asString(p.Rec["data_mark"]), EstimateMin: money.FromEUR(cat.TaskTypes[e.Type].TreeBudgetEUR)})
 		if err != nil {
 			return nil, 0, err
 		}
 		if res.Rejected != nil {
 			return nil, 0, res.Rejected
 		}
-		extra := map[string]any{"lens": l, "proposal": p.ID, "executor_role": e.Role, "not_worker": asString(origin["worker"])}
-		source := e.Source
 		// A held seat of the lens reviews it on behalf of its holder, on workers of the seat
-		// role; a vacant seat, or a holder under a hold of people, leaves it to the fallback
-		// role (COM-7, IDN-10).
-		if sr := seatRole(cat, p.Tenant); sr != "" && slices.Contains(cat.Roles[sr].Claims, e.Type) && c.independentReviewer(cat, sr, e.Type, p.Role) {
-			seat, err := c.seatExecutor(ctx, tx, now, p.Tenant, l)
-			if err != nil {
-				return nil, 0, err
-			}
-			if seat != nil {
-				extra["executor_role"], extra["seat"], source = sr, seat.ID, "seat"
+		// role; a vacant seat, a holder under a hold of people or the author's own bot leaves
+		// it to the fallback role (COM-7, IDN-10).
+		extra := map[string]any{"lens": l, "proposal": p.ID, "executor_role": e.Role, "not_worker": asString(origin["worker"])}
+		if e.Source == "seat" {
+			extra["seat"] = e.Seat
+			// The author's bot never reviews its own proposal, even if it takes the seat
+			// before the review is claimed (COM-2); claim checks this against the holder.
+			if a := asString(origin["acting_bot"]); a != "" {
+				extra["not_bot"] = a
 			}
 		}
 		raw, err := json.Marshal(extra)
@@ -491,7 +535,7 @@ func (c *Core) enqueueReviews(ctx context.Context, tx pgx.Tx, now time.Time, cat
 			return nil, 0, err
 		}
 		reserved += cat.TaskTypes[e.Type].TreeBudgetEUR
-		reviews = append(reviews, map[string]any{"lens": l, "task": res.TaskID, "executor": source, "state": "pending"})
+		reviews = append(reviews, map[string]any{"lens": l, "task": res.TaskID, "executor": e.Source, "state": "pending"})
 	}
 	return reviews, reserved, nil
 }

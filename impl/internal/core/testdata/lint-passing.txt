@@ -40,6 +40,7 @@ fx-man-com-07#1
 fx-man-com-07#2
 fx-man-com-07#3
 fx-man-com-07#4
+fx-man-com-07#5
 fx-man-com-v02#0
 fx-man-com-v02#1
 fx-man-com-v02#2
@@ -92,6 +93,8 @@ fx-man-sch-01#7
 fx-man-sch-01#8
 fx-man-ten-01#0
 fx-man-ten-01#1
+fx-man-ten-01#10
+fx-man-ten-01#11
 fx-man-ten-01#2
 fx-man-ten-01#3
 fx-man-ten-01#4

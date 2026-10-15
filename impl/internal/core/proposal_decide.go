@@ -341,7 +341,7 @@ func (c *Core) realizer(ctx context.Context, tx pgx.Tx, now time.Time, tv *Tenan
 	}
 	var cands []string
 	for _, g := range groups {
-		people, err := groupMembers(ctx, tx, now, tv.Name, g)
+		people, err := groupMembers(ctx, tx, now, tv, g)
 		if err != nil {
 			return "", err
 		}
@@ -413,7 +413,7 @@ func (c *Core) trialBaseline(ctx context.Context, tx pgx.Tx, now time.Time, cat 
 			subjects = append(subjects, gs)
 		}
 		guards = append(guards, map[string]any{"series": name, "subject": gs, "compare": g.Outcome.Compare, "before": v["value"],
-			"source": source, "broken_at": nil})
+			"before_samples": v["samples"], "source": source, "broken_at": nil})
 		return nil
 	}
 	for _, name := range c.targetGuards(cat, p) {

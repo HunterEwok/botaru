@@ -13,6 +13,7 @@ import (
 	"github.com/jackc/pgx/v5"
 
 	"github.com/HunterEwok/botaru/impl/internal/ids"
+	"github.com/HunterEwok/botaru/impl/internal/manifest"
 	"github.com/HunterEwok/botaru/impl/internal/store"
 )
 
@@ -61,6 +62,11 @@ type factValue struct {
 func computeFact(ctx context.Context, q store.Querier, tenant, predicate string, s factSubject, from, to time.Time) (*factValue, bool, error) {
 	switch predicate {
 	case "task.duration.p95_min":
+		// The attempt times are kept by task type, not by the resource it runs on: a subject
+		// with on cannot be derived and stays insufficient.
+		if s.On != "" {
+			return nil, false, nil
+		}
 		var n int
 		var p95 *float64
 		err := q.QueryRow(ctx, `SELECT count(*), percentile_disc(0.95) WITHIN GROUP (ORDER BY num) FROM obs_points
@@ -73,6 +79,44 @@ func computeFact(ctx context.Context, q store.Querier, tenant, predicate string,
 			Evidence: []map[string]any{{"kind": "obs_points", "series": seriesAttemptTime, "samples": n}}}, true, nil
 	}
 	return nil, false, nil
+}
+
+// payloadResultSchema is the result schema the claim hands the runtime: for a type with
+// memory.facts: propose a copy with the optional facts field beside the result, which complete
+// takes out before the result check (MEM-6); the attempt keeps the type's own schema.
+func (c *Core) payloadResultSchema(cat *Catalog, tenant string, tt manifest.TaskType) map[string]any {
+	if tt.Memory == nil || tt.Memory.Facts != "propose" {
+		return tt.ResultSchema
+	}
+	raw, err := c.spec.Raw("urn:botaru:schema:fact:1")
+	if err != nil {
+		return tt.ResultSchema
+	}
+	item := mmap(mmap(raw, "$defs"), "proposal")
+	if item == nil {
+		return tt.ResultSchema
+	}
+	var out map[string]any
+	b, err := json.Marshal(tt.ResultSchema)
+	if err != nil || json.Unmarshal(b, &out) != nil {
+		return tt.ResultSchema
+	}
+	var items map[string]any
+	if b, err = json.Marshal(item); err != nil || json.Unmarshal(b, &items) != nil {
+		return tt.ResultSchema
+	}
+	props, _ := out["properties"].(map[string]any)
+	if props == nil {
+		props = map[string]any{}
+		out["properties"] = props
+	}
+	props["facts"] = map[string]any{
+		"type":        "array",
+		"items":       items,
+		"maxItems":    factLimit(cat, tenant, []string{"facts", "per_attempt"}, defaultFactsPerTry),
+		"description": "Optional facts of your memory to propose: only the kind, the predicate and the subject (MEM-6).",
+	}
+	return out
 }
 
 // sameValue says whether a recomputed value agrees with the recorded one.

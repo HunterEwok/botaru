@@ -79,13 +79,14 @@ def cron_valid(expr):
         return False
     for f, (lo, hi) in zip(fields, ((0, 59), (0, 23), (1, 31), (1, 12), (0, 7))):
         for part in f.split(','):
-            rng, _, step = part.partition('/')
-            if step and (not re.fullmatch(r'[0-9]+', step) or int(step) < 1):
+            # An empty step or range end ('*/', '5-') is refused, as the core does at apply.
+            rng, slash, step = part.partition('/')
+            if slash and (not re.fullmatch(r'[0-9]+', step) or int(step) < 1):
                 return False
             if rng == '*':
                 continue
-            a, _, b = rng.partition('-')
-            if not re.fullmatch(r'[0-9]+', a) or (b and not re.fullmatch(r'[0-9]+', b)):
+            a, dash, b = rng.partition('-')
+            if not re.fullmatch(r'[0-9]+', a) or (dash and not re.fullmatch(r'[0-9]+', b)):
                 return False
             a, b = int(a), int(b) if b else int(a)
             if a < lo or b > hi or a > b:
@@ -424,7 +425,8 @@ def lint(docs, today=None, farm_hosts=None, examples_mode=False, claimed=None, s
     for tenant, name, where, cs in S.each('Catalog'):
         lists = {'hosts': [h['id'] for h in cs.get('hosts', [])],
                  'services': [s['name'] for h in cs.get('hosts', []) for s in h.get('services', [])],
-                 'monitor_triggers': [t['triggerid'] for t in cs.get('monitor_triggers', [])]}
+                 'monitor_triggers': [t['triggerid'] for t in cs.get('monitor_triggers', [])],
+                 'monitor_items': [t['item'] for t in cs.get('monitor_triggers', [])]}
         for r in cs.get('resources', []):
             fmt = r.get('format', 'id')
             if fmt not in FORMATS:
@@ -554,6 +556,10 @@ def lint(docs, today=None, farm_hosts=None, examples_mode=False, claimed=None, s
                 f.error('assistant_in_default_types', where, f'assistant type {t} in default_types (DSP-10)')
             elif types and t not in types:
                 f.error('ref_missing', where, f'default_types: type {t} is not in the set')
+            elif (t in types and not types[t].get('summary_fields')
+                  and (isinstance(dt, str) or not dt.get('chats')
+                       or any(ch == 'group' or str(ch).startswith('chat:') for ch in dt['chats']))):
+                f.error('summary_fields_required', where, f'default_types: type {t} for a group chat has no summary_fields (REP-11)')
         for rname, r in (ts.get('run') or {}).items():
             if 'type' in r:
                 tt = types.get(r['type'])
@@ -1018,7 +1024,10 @@ def lint(docs, today=None, farm_hosts=None, examples_mode=False, claimed=None, s
         if not roles or 'commission' not in gs:
             continue
         seats = (gs.get('commission') or {}).get('seats', [])
-        analysis = {(rs.get('models') or {}).get('analysis') for _, rs in roles.values()} - {None}
+        # The analysis profiles of the roles that can write proposals: they claim a type of purpose insight or
+        # aggregate (COM-2).
+        analysis = {(rs.get('models') or {}).get('analysis') for _, rs in roles.values()
+                    if any((types.get(t) or {}).get('purpose') in ('insight', 'aggregate') for t in rs.get('claims') or [])} - {None}
         for lid, le in sorted(lenses.items()):
             if le.get('veto') is not True:
                 continue
@@ -1982,7 +1991,8 @@ def context(f_docs):
         elif k == 'Catalog':
             lists = {'hosts': [h['id'] for h in spec.get('hosts', [])],
                      'services': [s['name'] for h in spec.get('hosts', []) for s in h.get('services', [])],
-                     'monitor_triggers': [t['triggerid'] for t in spec.get('monitor_triggers', [])]}
+                     'monitor_triggers': [t['triggerid'] for t in spec.get('monitor_triggers', [])],
+                     'monitor_items': [t['item'] for t in spec.get('monitor_triggers', [])]}
             for r in spec.get('resources', []):
                 if r.get('list'):
                     lists.setdefault(r['list'], []).extend(str(v) for v in r.get('values', []))

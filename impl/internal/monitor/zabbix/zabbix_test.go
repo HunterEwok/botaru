@@ -48,6 +48,14 @@ func (z *fakeZabbix) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	case "host.get":
 		result = []any{map[string]any{"hostid": "10501", "host": "web1.example.org"}}
 	case "script.getscriptsbyhosts":
+		// Zabbix 7.0 takes an array of host objects, each with a hostid.
+		var hosts []struct {
+			HostID string `json:"hostid"`
+		}
+		if json.Unmarshal(req.Params, &hosts) != nil || len(hosts) == 0 || hosts[0].HostID == "" {
+			_ = json.NewEncoder(w).Encode(map[string]any{"jsonrpc": "2.0", "id": req.ID, "error": map[string]any{"code": -32602, "message": "invalid params"}})
+			return
+		}
 		result = map[string]any{"10501": z.scripts}
 	case "script.execute":
 		result = map[string]any{"response": "success", "value": strings.Repeat("x", 5000) + canary}

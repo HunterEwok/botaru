@@ -413,3 +413,65 @@ func TestAnalysisAboveMaxData(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+// A refusal shows in "My outcomes" of the worker that handed in the body, not of another
+// worker that held an attempt of the same task (DIG-7).
+func TestMyOutcomesRejectedWorker(t *testing.T) {
+	ctx := context.Background()
+	b := newInsightBench(t, nil)
+	b.helloDone(t, "1", "", "hi")
+	b.loop(t, "observe")
+	task, err := b.analysis(t, "1", false, map[string]any{"proposals": []any{noneBody("slow", 50)}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := b.c.st.Pool.Exec(ctx, `INSERT INTO leases (work_id, lease_no, kind, tenant, worker_id, epoch, state, lease_until, created_at)
+		VALUES ($1, 9, 'attempt', 'demo', $2, 1, 'closed', now(), now())`, task, b.channel.ID); err != nil {
+		t.Fatal(err)
+	}
+	rows := func(worker string) int {
+		t.Helper()
+		tx, err := b.c.st.Pool.Begin(ctx)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer tx.Rollback(ctx)
+		mo, err := myOutcomes(ctx, tx, "demo", worker, myOutcomesRows)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return len(mo["rows"].([]any))
+	}
+	if a, o := rows(b.agent.ID), rows(b.channel.ID); a != 1 || o != 0 {
+		t.Fatalf("rows of the author %d, of the other worker %d", a, o)
+	}
+}
+
+// Rollups keep no producer, so the self influence over a window longer than the raw points of
+// its series is marked partial (PRP-22).
+func TestSelfInfluencePartial(t *testing.T) {
+	b := newInsightBench(t, nil)
+	ctx := context.Background()
+	cat, err := b.c.Catalog(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	series := b.c.tenantSeries(cat, "demo")
+	a := proposalAuthor{Tenant: "demo", Role: "hello", Worker: b.agent.ID}
+	err = b.c.tx(ctx, func(tx pgx.Tx, now time.Time) error {
+		out, _, err := selfInfluence(ctx, tx, now, a, []evidenceRef{{Series: seriesAttemptTime, Window: "93d"}, {Series: seriesTaskOutcome, Window: "1d"}}, series)
+		if err != nil {
+			return err
+		}
+		if long := out[0].(map[string]any); long["partial"] != true {
+			t.Errorf("a 93d window over 14 days of points: %v", long)
+		}
+		if short := out[1].(map[string]any); short["partial"] != nil {
+			t.Errorf("a 1d window marked partial: %v", short)
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+}

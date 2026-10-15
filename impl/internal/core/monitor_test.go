@@ -253,12 +253,19 @@ func TestMonitorExportHoldAndSupersede(t *testing.T) {
 		b.alarmTx(t, func(tx pgx.Tx, now time.Time) error { return b.c.fireAlarm(ctx, tx, now, a) })
 		b.alarmTx(t, func(tx pgx.Tx, now time.Time) error { return b.c.resolveAlarm(ctx, tx, now, a) })
 	}
-	if n := countKind(t, b, "monitor_alarm", "planned"); n != 1 {
-		t.Fatalf("planned exports of one alarm %d, want 1", n)
+	// A resolution replaces the one before it; a firing is never replaced, so no seq 2 goes
+	// out without its seq 1 (MON-11).
+	var firing, resolved int
+	if err := b.c.st.Pool.QueryRow(ctx, `SELECT count(*) FILTER (WHERE body->>'state' = 'firing'), count(*) FILTER (WHERE body->>'state' = 'resolved')
+		FROM deliveries WHERE kind = 'monitor_alarm' AND state = 'planned'`).Scan(&firing, &resolved); err != nil {
+		t.Fatal(err)
+	}
+	if firing != 3 || resolved != 1 {
+		t.Fatalf("planned exports: %d firing, %d resolved; want 3 and 1", firing, resolved)
 	}
 	item := b.claim(t, mon, "delivery")
-	if item == nil || dbody(item)["state"] != "resolved" {
-		t.Fatalf("the hold withheld the export, or the newest change is not the one left: %v", item)
+	if item == nil || dbody(item)["state"] != "firing" {
+		t.Fatalf("the hold withheld the export, or a firing was replaced: %v", item)
 	}
 }
 
@@ -272,5 +279,14 @@ func (b *bench) loop(t *testing.T, loop string) {
 	t.Helper()
 	if err := b.c.tickLoop(context.Background(), loop); err != nil {
 		t.Fatal(err)
+	}
+}
+
+// The untrusted monitor tools record the documented source ids (INJ-13, e3-tool-host.md).
+func TestUntrustedSource(t *testing.T) {
+	for tool, want := range map[string]string{"monitor/item_text": "monitor_item_text", "monitor/problem_comments": "monitor_comment", "web/fetch": "web/fetch"} {
+		if got := untrustedSource(tool); got != want {
+			t.Errorf("%s: %s, want %s", tool, got, want)
+		}
 	}
 }

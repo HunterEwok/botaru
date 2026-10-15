@@ -468,3 +468,30 @@ func TestApprovalSelfAndRights(t *testing.T) {
 		t.Fatalf("approval after ungrant %s %s", a.State, a.Reason)
 	}
 }
+
+// A service initiator that lost action.request before the decision gets no release either:
+// the approval ends with rights_revoked (APR-6, APR-18).
+func TestApprovalServiceInitiatorRights(t *testing.T) {
+	ctx := context.Background()
+	b := newActionBench(t, nil)
+	att, h := b.attemptTools(t, "1", false)
+	r := b.request(t, h, map[string]any{"action": "fix_web", "args": map[string]any{"host": "web1"}})
+	b.finish(t, att)
+	b.tick(t, "approval-expiry")
+	card := cardOf(t, b.drain(t), approvalCard, "direct:1002")
+	if _, err := b.c.Principal(ctx, b.op, PrincipalRequest{Op: "principal.add", Subject: "p_svc", Kind: "service", Identity: "telegram:1009"}); err != nil {
+		t.Fatal(err)
+	}
+	// The service principal holds no requesters membership.
+	if _, err := b.c.st.Pool.Exec(ctx, `UPDATE approvals SET initiator = 'p_svc' WHERE id = $1`, r.ApprovalID); err != nil {
+		t.Fatal(err)
+	}
+	a := b.approval(t, r.ApprovalID)
+	if _, err := b.c.Decide(ctx, b.channel, press("telegram:1002", "direct:1002", card.external),
+		DecideRequest{SubjectKind: "approval", ID: a.ID, Nonce: a.Nonce, Decision: "approve"}); err != nil {
+		t.Fatal(err)
+	}
+	if a = b.approval(t, r.ApprovalID); a.State != "canceled" || a.Reason != "rights_revoked" {
+		t.Fatalf("a service initiator without the right: %s %s", a.State, a.Reason)
+	}
+}

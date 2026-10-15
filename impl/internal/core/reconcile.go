@@ -96,25 +96,53 @@ func (c *Core) SpendReconcile(ctx context.Context, op Operator, req SpendReconci
 		if !day.Before(now.UTC().Truncate(24 * time.Hour)) {
 			return refuse("input_schema_invalid", "only a past UTC day is reconciled")
 		}
-		for _, tenant := range slices.Sorted(mapKeys(sums)) {
-			r := sums[tenant]
-			var known bool
-			if err := tx.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM tenants WHERE name = $1)`, r.Tenant).Scan(&known); err != nil {
-				return err
-			}
-			if !known {
-				return refuse("not_found", "no tenant %s", r.Tenant)
-			}
-			if err := c.reconcileDay(ctx, tx, now, op, day, provider, r); err != nil {
-				return err
+		// The report of the day is received, with rows or without: a provider day with no usage
+		// still closes the spend gap after a restore (RET-6).
+		if _, err := tx.Exec(ctx, `INSERT INTO spend_report_days (provider, day, created_at) VALUES ($1, $2, $3)
+			ON CONFLICT (provider, day) DO UPDATE SET created_at = $3`, provider, day, now); err != nil {
+			return err
+		}
+		// The request is the provider's whole report of the day (one request per UTC day; a
+		// later one replaces it): a workspace with usage or a correction of the provider that
+		// day but no row billed nothing and is reconciled to zero, so the reported day holds
+		// no stale sum.
+		rows, err := tx.Query(ctx, `SELECT DISTINCT tenant FROM spend WHERE provider = $1 AND time >= $2 AND time < $3`, provider, day, day.Add(24*time.Hour))
+		if err != nil {
+			return err
+		}
+		omitted, err := pgx.CollectRows(rows, pgx.RowTo[string])
+		if err != nil {
+			return err
+		}
+		for _, t := range omitted {
+			if _, ok := sums[t]; !ok {
+				sums[t] = SpendReconcileItem{Tenant: t}
 			}
 		}
-		return c.closeSpendGap(ctx, tx, now)
+		return c.reconcileRows(ctx, tx, now, op, day, provider, sums)
 	})
 	if err != nil {
 		return nil, err
 	}
 	return &Done{OK: true}, nil
+}
+
+// reconcileRows reconciles each workspace of a report and closes the spend gap of a restore.
+func (c *Core) reconcileRows(ctx context.Context, tx pgx.Tx, now time.Time, op Operator, day time.Time, provider string, sums map[string]SpendReconcileItem) error {
+	for _, tenant := range slices.Sorted(mapKeys(sums)) {
+		r := sums[tenant]
+		var known bool
+		if err := tx.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM tenants WHERE name = $1)`, r.Tenant).Scan(&known); err != nil {
+			return err
+		}
+		if !known {
+			return refuse("not_found", "no tenant %s", r.Tenant)
+		}
+		if err := c.reconcileDay(ctx, tx, now, op, day, provider, r); err != nil {
+			return err
+		}
+	}
+	return c.closeSpendGap(ctx, tx, now)
 }
 
 func (c *Core) reconcileDay(ctx context.Context, tx pgx.Tx, now time.Time, op Operator, day time.Time, provider string, r SpendReconcileItem) error {
@@ -133,6 +161,15 @@ func (c *Core) reconcileDay(ctx context.Context, tx pgx.Tx, now time.Time, op Op
 	// correction, once when it settles.
 	if open {
 		return refuse("conflict", "the day still has open reserves of %s; reconcile it later", r.Tenant)
+	}
+	// A model call line without a provider (from before 0014, its profile no longer applied)
+	// is not in the farm sum, so the correction would count it twice.
+	var unnamed bool
+	if err := tx.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM spend WHERE tenant = $1 AND provider IS NULL AND unit = 'tokens' AND time >= $2 AND time < $3)`, r.Tenant, from, to).Scan(&unnamed); err != nil {
+		return err
+	}
+	if unnamed {
+		return refuse("conflict", "the day has model usage of %s without a provider", r.Tenant)
 	}
 	diff := r.SpentEURMicros - farm
 	if _, err := tx.Exec(ctx, `DELETE FROM spend WHERE tenant = $1 AND provider = $2 AND unit = 'correction' AND time = $3`, r.Tenant, provider, from); err != nil {
@@ -294,7 +331,9 @@ func (c *Core) lineUsages(ctx context.Context, tx pgx.Tx, now time.Time, tv *Ten
 // the age of the last reconciliation of each workspace of the tenant (BUD-10), the usage of each
 // budget line over 30 days next to its limit (BUD-15) and the age of the profile prices
 // (GW-17: older than 60 days warns, older than 120 days fails).
-func (c *Core) doctorMoney(ctx context.Context, tx pgx.Tx, now time.Time, tenant string, add func(DoctorCheck)) error {
+// The catalog is loaded before the transaction: Catalog reads through the pool, which a
+// single-connection pool would not hand out while the transaction holds it.
+func (c *Core) doctorMoney(ctx context.Context, tx pgx.Tx, now time.Time, cat *Catalog, tenant string, add func(DoctorCheck)) error {
 	if err := c.doctorBackup(ctx, tx, now, add); err != nil {
 		return err
 	}
@@ -322,10 +361,6 @@ func (c *Core) doctorMoney(ctx context.Context, tx pgx.Tx, now time.Time, tenant
 			ch.OK, ch.Severity = false, "warn"
 		}
 		add(ch)
-	}
-	cat, err := c.Catalog(ctx)
-	if err != nil {
-		return err
 	}
 	if tv := cat.Tenants[tenant]; tv != nil {
 		lines, err := c.lineUsages(ctx, tx, now, tv)

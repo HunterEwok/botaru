@@ -4,7 +4,9 @@ package core
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"slices"
 	"strings"
 	"testing"
 
@@ -217,7 +219,7 @@ func TestSubjectErasure(t *testing.T) {
 		t.Fatalf("the request closed before the sink answered: %v", rec)
 	}
 	item := b.claim(t, sink, "erasure")
-	if item == nil || item.Payload["scope"].(map[string]any)["subject"] == nil || len(item.Payload["needles"].([]string)) != 1 {
+	if item == nil || item.Payload["scope"].(map[string]any)["subject"] == nil || !slices.Contains(item.Payload["needles"].([]string), "telegram:1001") {
 		t.Fatalf("erasure work %+v", item)
 	}
 	validOut(t, b.bench, "erasure-work", item.Payload)
@@ -324,5 +326,288 @@ func TestEraseMatch(t *testing.T) {
 	var firing int
 	if err := b.c.st.Pool.QueryRow(ctx, `SELECT count(*) FROM alarm_episodes WHERE alarm LIKE 'alarm.erasure.overdue.%' AND state = 'firing'`).Scan(&firing); err != nil || firing != 1 {
 		t.Fatalf("overdue alarm %d %v", firing, err)
+	}
+}
+
+// erasure.match asks every sink for a match with the needles and shows the card only after
+// its answer; the needles are gone then, and the sink erases by the ids its match found
+// (SEC-11, RET-4).
+func TestEraseMatchEdge(t *testing.T) {
+	ctx := context.Background()
+	b, _ := newMemoryBench(t)
+	sink := b.enroll(t, EnrollRequest{Tenant: "demo", Kind: "sink", Target: "archive"})
+	b.hello(t, "1")
+	b.finish(t, b.claim(t, b.agent, "attempt"))
+	b.drain(t)
+	d, err := b.c.ErasureMatch(ctx, b.op, MatchRequest{Subject: "system", Needles: []string{"Mari Tamm"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, s := range b.drain(t) {
+		if s.kind == subjectCard {
+			t.Fatalf("a card before the sink matched: %+v", s)
+		}
+	}
+	item := b.claim(t, sink, "erasure")
+	if item == nil || item.Payload["op"] != "match" || len(item.Payload["needles"].([]string)) != 1 {
+		t.Fatalf("match work %+v", item)
+	}
+	validOut(t, b.bench, "erasure-work", item.Payload)
+	// The sink's own id happens to look like a core task id: it is the sink's to erase, never
+	// the core task's.
+	var task string
+	if err := b.c.st.Pool.QueryRow(ctx, `SELECT id FROM tasks WHERE tenant = 'demo' AND body IS NOT NULL ORDER BY id LIMIT 1`).Scan(&task); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := b.c.Complete(ctx, sink, header(t, item), CompleteRequest{Erasure: map[string]any{"outcome": "done", "ids": []any{"out-17", task}}}); err != nil {
+		t.Fatal(err)
+	}
+	var needles *string
+	if err := b.c.st.Pool.QueryRow(ctx, `SELECT needles::text FROM subject_requests WHERE id = $1`, d.ID).Scan(&needles); err != nil || needles != nil {
+		t.Fatalf("the request kept its needles after the last match: %v %v", needles, err)
+	}
+	card := cardOf(t, b.drain(t), subjectCard, "direct:1002")
+	cd := card.body["card"].(map[string]any)
+	if n := fmt.Sprint(cd["context"].(map[string]any)["found"].(map[string]any)["sink_archive"]); n != "2" {
+		t.Fatalf("card %v", cd)
+	}
+	req := DecideRequest{SubjectKind: "subject_request", ID: d.ID, Nonce: cd["nonce"].(string), Decision: "approve"}
+	if _, err := b.c.Decide(ctx, b.channel, press("telegram:1002", "direct:1002", card.external), req); err != nil {
+		t.Fatal(err)
+	}
+	b.tick(t, "erasure")
+	item = b.claim(t, sink, "erasure")
+	if item == nil || item.Payload["op"] != "erase" || fmt.Sprint(item.Payload["scope"].(map[string]any)["ids"]) != "[out-17 "+task+"]" {
+		t.Fatalf("erase work %+v", item)
+	}
+	if _, err := b.c.Complete(ctx, sink, header(t, item), CompleteRequest{Erasure: map[string]any{"outcome": "done"}}); err != nil {
+		t.Fatal(err)
+	}
+	b.tick(t, "erasure")
+	var erasure string
+	if err := b.c.st.Pool.QueryRow(ctx, `SELECT erasure FROM subject_requests WHERE id = $1`, d.ID).Scan(&erasure); err != nil {
+		t.Fatal(err)
+	}
+	rec, _ := b.c.ErasureStatus(ctx, b.op, ErasureIDRequest{Op: "erasure.status", ID: erasure})
+	if res := rec["results"].(map[string]any); res["sink_archive"] != "done" {
+		t.Fatalf("request %v", rec)
+	}
+	var kept bool
+	if err := b.c.st.Pool.QueryRow(ctx, `SELECT body IS NOT NULL FROM tasks WHERE id = $1`, task).Scan(&kept); err != nil || !kept {
+		t.Fatalf("a sink id erased a core task: %v %v", kept, err)
+	}
+}
+
+// A sink that found ids and was revoked before the approval still gets its erasure step: the
+// request stays open for its ids instead of finishing without it (SEC-11).
+func TestEraseMatchEdgeRevoked(t *testing.T) {
+	ctx := context.Background()
+	b, _ := newMemoryBench(t)
+	sink := b.enroll(t, EnrollRequest{Tenant: "demo", Kind: "sink", Target: "archive"})
+	b.hello(t, "1")
+	b.finish(t, b.claim(t, b.agent, "attempt"))
+	b.drain(t)
+	d, err := b.c.ErasureMatch(ctx, b.op, MatchRequest{Subject: "system", Needles: []string{"Mari Tamm"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	b.drain(t)
+	item := b.claim(t, sink, "erasure")
+	if _, err := b.c.Complete(ctx, sink, header(t, item), CompleteRequest{Erasure: map[string]any{"outcome": "done", "ids": []any{"out-17"}}}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := b.c.WorkerRevoke(ctx, b.op, WorkerRequest{Op: "worker.revoke", Worker: sink.ID}); err != nil {
+		t.Fatal(err)
+	}
+	card := cardOf(t, b.drain(t), subjectCard, "direct:1002")
+	cd := card.body["card"].(map[string]any)
+	req := DecideRequest{SubjectKind: "subject_request", ID: d.ID, Nonce: cd["nonce"].(string), Decision: "approve"}
+	if _, err := b.c.Decide(ctx, b.channel, press("telegram:1002", "direct:1002", card.external), req); err != nil {
+		t.Fatal(err)
+	}
+	b.tick(t, "erasure")
+	var state, done string
+	if err := b.c.st.Pool.QueryRow(ctx, `SELECT s.state, e.state FROM subject_requests r JOIN erasure_steps s ON s.request = r.erasure AND s.store = 'sink_archive'
+		JOIN erasure_requests e ON e.id = r.erasure WHERE r.id = $1`, d.ID).Scan(&state, &done); err != nil {
+		t.Fatal(err)
+	}
+	if state != "pending" || done == "done" {
+		t.Fatalf("the revoked sink's ids were dropped: step %s, request %s", state, done)
+	}
+}
+
+// A sink that matches more ids than the request keeps fails its match as a whole instead of
+// keeping a part of them (SEC-11).
+func TestEraseMatchEdgeOverflow(t *testing.T) {
+	ctx := context.Background()
+	b, _ := newMemoryBench(t)
+	sink := b.enroll(t, EnrollRequest{Tenant: "demo", Kind: "sink", Target: "archive"})
+	b.hello(t, "1")
+	b.finish(t, b.claim(t, b.agent, "attempt"))
+	b.drain(t)
+	d, err := b.c.ErasureMatch(ctx, b.op, MatchRequest{Subject: "system", Needles: []string{"Mari Tamm"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	b.drain(t)
+	item := b.claim(t, sink, "erasure")
+	if item == nil || item.Payload["op"] != "match" {
+		t.Fatalf("match work %+v", item)
+	}
+	ids := make([]any, maxMatchIDs+1)
+	for i := range ids {
+		ids[i] = fmt.Sprintf("out-%d", i)
+	}
+	if _, err := b.c.Complete(ctx, sink, header(t, item), CompleteRequest{Erasure: map[string]any{"outcome": "done", "ids": ids}}); err != nil {
+		t.Fatal(err)
+	}
+	var state, reason, found string
+	if err := b.c.st.Pool.QueryRow(ctx, `SELECT m.state, coalesce(m.reason, ''), coalesce(r.found::text, '') FROM subject_match_steps m
+		JOIN subject_requests r ON r.id = m.request WHERE m.request = $1`, d.ID).Scan(&state, &reason, &found); err != nil {
+		t.Fatal(err)
+	}
+	if state != "failed" || reason != "match_overflow" || strings.Contains(found, "out-") {
+		t.Fatalf("overflow match %s %s %s", state, reason, found)
+	}
+	// Nothing else was found: an approval would close the request with no record of the
+	// store that could not be searched, so it is refused and the request stays open.
+	card := cardOf(t, b.drain(t), subjectCard, "direct:1002")
+	cd := card.body["card"].(map[string]any)
+	req := DecideRequest{SubjectKind: "subject_request", ID: d.ID, Nonce: cd["nonce"].(string), Decision: "approve"}
+	if _, err := b.c.Decide(ctx, b.channel, press("telegram:1002", "direct:1002", card.external), req); err == nil || !strings.Contains(err.Error(), "could not be searched") {
+		t.Fatalf("approved with a failed store and no ids: %v", err)
+	}
+	var open string
+	if err := b.c.st.Pool.QueryRow(ctx, `SELECT state FROM subject_requests WHERE id = $1`, d.ID).Scan(&open); err != nil || open != "pending" {
+		t.Fatalf("request %s %v", open, err)
+	}
+}
+
+// Two stores whose names sanitise to one key keep their own keys (RET-7).
+func TestStoreKey(t *testing.T) {
+	if a, b := storeKey("sink", "foo-bar"), storeKey("sink", "foo.bar"); a == b || len(a) > 32 || len(b) > 32 {
+		t.Fatalf("keys %s %s", a, b)
+	}
+	long := strings.Repeat("a", 40)
+	if a, b := storeKey("sink", long+"1"), storeKey("sink", long+"2"); a == b || len(a) != 32 {
+		t.Fatalf("long keys %s %s", a, b)
+	}
+	if k := storeKey("sink", "archive"); k != "sink_archive" {
+		t.Fatalf("a plain name changed its key: %s", k)
+	}
+}
+
+// A manual erasure.request about a person carries the person's needles to the edge stores
+// (RET-4).
+func TestErasureRequestNeedles(t *testing.T) {
+	ctx := context.Background()
+	b, _ := newMemoryBench(t)
+	d, err := b.c.ErasureRequest(ctx, b.op, ErasureRequestInput{Scope: ErasureScope{Tenant: "demo", Subject: b.alice}, Reason: "manual"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var needles string
+	if err := b.c.st.Pool.QueryRow(ctx, `SELECT coalesce(needles::text, '') FROM erasure_requests WHERE id = $1`, d.ID).Scan(&needles); err != nil || needles != "{telegram:1001,1001}" {
+		t.Fatalf("needles %q %v", needles, err)
+	}
+}
+
+// A tenant with no second person with admin:people: the card of an erase_match goes to a farm
+// admin, whose approval counts as the second person; the tenant's own author still does not
+// decide (SEC-11, D-86 (8)).
+func TestSubjectFarmFallback(t *testing.T) {
+	ctx := context.Background()
+	b := newBenchWith(t, func(root string, ms []map[string]any) []map[string]any {
+		var extra []map[string]any
+		for _, m := range ms {
+			md := m["metadata"].(map[string]any)
+			if (m["kind"] == "Tenant" && md["name"] == "demo") || (m["kind"] == "Channel" && md["tenant"] == "demo") {
+				var c map[string]any
+				raw, _ := json.Marshal(m)
+				_ = json.Unmarshal(raw, &c)
+				cm := c["metadata"].(map[string]any)
+				if c["kind"] == "Tenant" {
+					cm["name"] = "farm"
+					spec := c["spec"].(map[string]any)
+					for _, k := range []string{"catalog", "default_types", "commands", "run", "delegated_groups"} {
+						delete(spec, k)
+					}
+				} else {
+					cm["tenant"] = "farm"
+				}
+				extra = append(extra, c)
+			}
+		}
+		return append(append(ms, extra...), map[string]any{
+			"apiVersion": "botaru/v1alpha1", "kind": "Group",
+			"metadata": map[string]any{"name": "admins", "tenant": "farm"},
+			"spec":     map[string]any{"caps": []any{"admin:people"}},
+		})
+	})
+	farmOp := Operator{Principal: b.op.Principal, Tenant: "farm"}
+	if _, err := b.c.Principal(ctx, farmOp, PrincipalRequest{Op: "principal.add", Subject: "human:p_farmadmin", Identity: "telegram:2001"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := b.c.st.Pool.Exec(ctx, `INSERT INTO memberships (tenant, principal, grp, state, created_at) VALUES ('farm', 'human:p_farmadmin', 'admins', 'active', now())`); err != nil {
+		t.Fatal(err)
+	}
+	r, err := b.c.Enroll(ctx, farmOp, EnrollRequest{Tenant: "farm", Kind: "channel", Target: "telegram"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	fch, err := b.c.AuthenticateWorker(ctx, r.Token)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := b.c.Hello(ctx, fch, HelloRequest{Kind: "channel", ProtocolVersions: []string{"v1"}}); err != nil {
+		t.Fatal(err)
+	}
+	fch.State = "active"
+	d, err := b.c.ErasureMatch(ctx, b.op, MatchRequest{Subject: "system", Needles: []string{"Mari Tamm"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var card map[string]any
+	var external string
+	for range 10 {
+		item := b.claim(t, fch, "delivery")
+		if item == nil {
+			break
+		}
+		dl := item.Payload["delivery"].(map[string]any)
+		if dl["kind"] == subjectCard {
+			card, external = dl["body"].(map[string]any)["card"].(map[string]any), "f1"
+		}
+		if _, err := b.c.Complete(ctx, fch, header(t, item), CompleteRequest{Receipt: &Receipt{ExternalID: "f1"}}); err != nil {
+			t.Fatal(err)
+		}
+		if card != nil {
+			break
+		}
+	}
+	if card == nil || card["id"] != d.ID {
+		t.Fatalf("no card to the farm admin: %v", card)
+	}
+	req := DecideRequest{SubjectKind: "subject_request", ID: d.ID, Nonce: card["nonce"].(string), Decision: "approve"}
+	// The author under another principal of the same person is not the second person.
+	if _, err := b.c.st.Pool.Exec(ctx, `INSERT INTO principals (tenant, id, kind, state, created_at) VALUES ('demo', $1, 'human', 'active', now()) ON CONFLICT DO NOTHING`, b.op.Principal); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := b.c.st.Pool.Exec(ctx, `INSERT INTO identities (tenant, identity, principal) VALUES ('demo', 'telegram:2001', $1)`, b.op.Principal); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := b.c.Decide(ctx, fch, press("telegram:2001", "direct:2001", external), req); err == nil {
+		t.Fatal("the author decided its own request as a farm admin")
+	}
+	if _, err := b.c.st.Pool.Exec(ctx, `DELETE FROM identities WHERE tenant = 'demo' AND identity = 'telegram:2001'`); err != nil {
+		t.Fatal(err)
+	}
+	res, err := b.c.Decide(ctx, fch, press("telegram:2001", "direct:2001", external), req)
+	if err != nil || res.State != "approved" {
+		t.Fatalf("farm admin decide %+v %v", res, err)
+	}
+	var state, by string
+	if err := b.c.st.Pool.QueryRow(ctx, `SELECT state, decided_by FROM subject_requests WHERE id = $1 AND tenant = 'demo'`, d.ID).Scan(&state, &by); err != nil || state != "approved" || by != "human:p_farmadmin" {
+		t.Fatalf("request %s %s %v", state, by, err)
 	}
 }

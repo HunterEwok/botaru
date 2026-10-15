@@ -151,6 +151,7 @@ func newRig(t *testing.T) *rig {
 	srv, err := api.New(c, api.Config{
 		Operators:        []api.OperatorCred{{TokenSHA256: hashHex(r.opToken), Principal: ids.PrincipalID(), Tenant: "demo"}},
 		HealthKeysSHA256: []string{hashHex("health-key")},
+		ReportKeysSHA256: []string{hashHex("report-key")},
 	}, gw)
 	if err != nil {
 		t.Fatal(err)
@@ -243,6 +244,17 @@ func TestHelloBotOverTheWire(t *testing.T) {
 	}
 	if code := r.p2call(t, "health-key", "status", map[string]any{}, nil); code != 403 {
 		t.Fatalf("the health key on status: %d", code)
+	}
+	// A report key opens only the reports, as a farm operator without a person.
+	for _, op := range []string{"restore.complete", "core.drain", "status"} {
+		if code := r.p2call(t, "report-key", op, map[string]any{}, nil); code != 403 {
+			t.Fatalf("the report key on %s: %d", op, code)
+		}
+	}
+	now := time.Now().UTC()
+	if code := r.p2call(t, "report-key", "backup.report", map[string]any{"kind": "backup", "location_id": "offsite-1", "ok": true,
+		"started_at": now.Add(-time.Minute).Format(time.RFC3339), "finished_at": now.Format(time.RFC3339)}, nil); code != 200 {
+		t.Fatalf("the report key on backup.report: %d", code)
 	}
 	var health map[string]any
 	r.p2call(t, "health-key", "health", map[string]any{}, &health)

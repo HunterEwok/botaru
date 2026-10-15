@@ -35,6 +35,8 @@ type ModelGrant struct {
 	TreeBudget int64
 	// Fingerprint is the run fingerprint of the attempt, written on every usage line (PRV-1).
 	Fingerprint string
+	// LeaseNo is the lease of the attempt, written on its usage lines (CNT-4).
+	LeaseNo int
 }
 
 // ResolveModelHandle checks a model handle: it exists, its lease is alive and of the current
@@ -66,6 +68,7 @@ func (c *Core) ResolveModelHandle(ctx context.Context, handle string) (*ModelGra
 	if epoch != c.epoch || state != "active" || !until.After(now) {
 		return nil, refuse("fenced", "the lease of the handle is not alive")
 	}
+	g.LeaseNo = leaseNo
 	if slot != nil {
 		g.Slot = *slot
 	}
@@ -102,7 +105,7 @@ func (c *Core) ResolveModelHandle(ctx context.Context, handle string) (*ModelGra
 	}
 	// The initiator's rights are checked again at every call: a membership that expired or a
 	// right removed by apply after the claim stops the task data from reaching the model (PRM-8).
-	if reason, err := c.accessLost(ctx, c.st.Pool, now, tv, g.Initiator, "task:"+typ, tt.DataClass); err != nil {
+	if reason, err := c.accessLost(ctx, c.st.Pool, now, tv, g.Initiator, "task:"+typ, c.taskMark(rec, tt.DataClass)); err != nil {
 		return nil, err
 	} else if reason != "" {
 		return nil, refuse(reason, "the initiator no longer has access to this task")
@@ -167,6 +170,7 @@ func (c *Core) Reserve(ctx context.Context, g *ModelGrant, micros int64) (string
 		return c.reserveSpend(ctx, tx, now, tv, spendRow{
 			ID: id, Tenant: g.Tenant, Task: g.Task, Root: g.Root, Subject: g.Initiator, Role: g.Role, Worker: g.Worker,
 			Line: g.Line, Purpose: g.Purpose, Unit: "tokens", Profile: g.ProfileName, Provider: strings.ToLower(g.Profile.Provider), Fingerprint: g.Fingerprint, Micros: micros,
+			LeaseNo: g.LeaseNo,
 		}, groups, g.TreeBudget)
 	})
 	if err != nil {

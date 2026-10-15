@@ -179,3 +179,25 @@ func TestStoreDownGate(t *testing.T) {
 		t.Fatalf("health %+v", h)
 	}
 }
+
+// A loop that never ticked since the loops started counts its age from the start: one stuck
+// in its first pass makes health not alive and raises its alarm (OBS-4, OBS-9).
+func TestLoopNeverTicked(t *testing.T) {
+	ctx := context.Background()
+	b := newBench(t)
+	b.c.running.Store(true)
+	if h := b.c.Health(ctx); !h.Alive || h.LoopTickAgeS["reaper"] != 0 {
+		t.Fatalf("health at the start %+v", h)
+	}
+	b.advance(t, 40)
+	h := b.c.Health(ctx)
+	if h.Alive || h.Reason != "loop_stale" || h.LoopTickAgeS["reaper"] < 40 {
+		t.Fatalf("health %+v", h)
+	}
+	if err := b.c.healthLoop(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if n := openAlarms(t, b, "alarm.health.loop_tick.v1"); n != len(loopOrder)-1 {
+		t.Fatalf("%d loop tick alarms", n)
+	}
+}

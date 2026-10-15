@@ -354,6 +354,18 @@ func (c *Core) seatExecutor(ctx context.Context, tx pgx.Tx, now time.Time, tenan
 	return nil, nil
 }
 
+// notBotOfRecord is the bot a task must not run on behalf of: the author of the proposal a
+// seat review reviews (COM-2).
+func notBotOfRecord(rec []byte) string {
+	var r struct {
+		NotBot string `json:"not_bot"`
+	}
+	if json.Unmarshal(rec, &r) != nil {
+		return ""
+	}
+	return r.NotBot
+}
+
 // seatOfRecord is the seat a task record names, or "".
 func seatOfRecord(rec []byte) string {
 	var r struct {

@@ -367,11 +367,22 @@ func (c *Core) completeToolcall(ctx context.Context, tx pgx.Tx, now time.Time, l
 		// (INJ-13).
 		// The first source stays.
 		if _, err := tx.Exec(ctx, `UPDATE tasks SET record = record || jsonb_build_object('untrusted_seen', true,
-			'untrusted_source', coalesce(record->>'untrusted_source', $2::text)) WHERE id = $1`, task, tool); err != nil {
+			'untrusted_source', coalesce(record->>'untrusted_source', $2::text)) WHERE id = $1`, task, untrustedSource(tool)); err != nil {
 			return err
 		}
 	}
 	return nil
+}
+
+// untrustedSources are the documented source ids of tools whose name is not the source
+// (INJ-13, e3-tool-host.md); any other tool is its own source.
+var untrustedSources = map[string]string{"monitor/item_text": "monitor_item_text", "monitor/problem_comments": "monitor_comment"}
+
+func untrustedSource(tool string) string {
+	if s, ok := untrustedSources[tool]; ok {
+		return s
+	}
+	return tool
 }
 
 // masked says whether an output holds a mark the toolhost puts in place of an IP or email

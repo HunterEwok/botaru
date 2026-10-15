@@ -621,6 +621,9 @@ func (c *Core) requeue(ctx context.Context, tx pgx.Tx, now time.Time, l *leaseRo
 		_, err = tx.Exec(ctx, `UPDATE toolcalls SET state = 'error', reason = 'worker_drain', updated_at = $2, ended_at = $2 WHERE id = $1 AND state = 'leased'`, l.WorkID, now)
 	case "erasure":
 		_, err = tx.Exec(ctx, `UPDATE erasure_steps SET state = 'pending', run_at = $2, updated_at = $3 WHERE id = $1 AND state = 'leased'`, l.WorkID, runAt, now)
+		if err == nil {
+			_, err = tx.Exec(ctx, `UPDATE subject_match_steps SET state = 'pending', run_at = $2, updated_at = $3 WHERE id = $1 AND state = 'leased'`, l.WorkID, runAt, now)
+		}
 	}
 	if err != nil {
 		return err

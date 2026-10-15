@@ -28,6 +28,9 @@ const (
 	// Tasks from one root: the tenant default and the farm ceiling (PRM-6, ORC-8).
 	defaultMaxTreeTasks = 300
 	farmMaxTreeTasks    = 1000
+	// maxResultFields is the field limit of a result (p1-complete-request), up to which an
+	// outcome goes as an attachment block.
+	maxResultFields = 64
 )
 
 // chainLink ties a child or a continuation to its tree (PRM-6, CNT-3). The core fills it from
@@ -42,6 +45,9 @@ type chainLink struct {
 	Untrusted    bool
 	Conversation string
 	Trace        string
+	// ParentPriority is the priority class of the parent: a task of the tree is not more
+	// urgent than its parent, a higher number being less urgent (DSP-2).
+	ParentPriority int
 }
 
 // treeRecord is the part of a task record a chain reads.
@@ -238,6 +244,7 @@ func (c *Core) enqueueChild(ctx context.Context, tx pgx.Tx, now time.Time, cat *
 		Chain: &chainLink{
 			Parent: g.Task, Root: parent.Root, Depth: parent.Depth + 1, Mark: parent.DataMark, MaxTier: parent.MaxTier,
 			Untrusted: parent.UntrustedSeen, Conversation: parent.Conversation, Trace: parent.Trace,
+			ParentPriority: priorityOf(ctx, tx, g.Task),
 		},
 	})
 	if err != nil {
@@ -253,6 +260,13 @@ func (c *Core) enqueueChild(ctx context.Context, tx pgx.Tx, now time.Time, cat *
 		return childResult{}, err
 	}
 	return childResult{Code: "enqueued", ID: res.TaskID, Existing: res.Existing}, nil
+}
+
+// priorityOf is the priority class of a task, the ceiling of its children and continuations.
+func priorityOf(ctx context.Context, tx pgx.Tx, task string) int {
+	var p int
+	_ = tx.QueryRow(ctx, `SELECT priority_class FROM tasks WHERE id = $1`, task).Scan(&p)
+	return p
 }
 
 // fairnessOf is the fairness key of a task, which its children and continuations keep (DSP-2).
@@ -356,7 +370,7 @@ func (c *Core) replyContinuation(ctx context.Context, tx pgx.Tx, now time.Time, 
 	data := map[string]any{"task": child, "state": state}
 	if len(result) > 0 && state == "completed" {
 		var r map[string]any
-		if json.Unmarshal(result, &r) == nil && len(r) > 0 && len(r) <= 60 {
+		if json.Unmarshal(result, &r) == nil && len(r) > 0 && len(r) <= maxResultFields {
 			data["result"] = r
 		}
 	}
@@ -367,6 +381,7 @@ func (c *Core) replyContinuation(ctx context.Context, tx pgx.Tx, now time.Time, 
 		Chain: &chainLink{
 			Parent: src.Parent, Root: src.Root, Depth: src.Depth + 1, Mark: c.higherMark(parent.DataMark, src.DataMark),
 			MaxTier: parent.MaxTier, Untrusted: parent.UntrustedSeen || src.UntrustedSeen, Conversation: src.Conversation, Trace: src.Trace,
+			ParentPriority: priorityOf(ctx, tx, src.Parent),
 		},
 	})
 	if err != nil {

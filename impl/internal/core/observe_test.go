@@ -8,6 +8,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/jackc/pgx/v5"
+
 	"github.com/HunterEwok/botaru/impl/internal/ids"
 	"github.com/HunterEwok/botaru/impl/internal/mcp"
 )
@@ -256,5 +258,137 @@ func TestObsWindowBeyondRaw(t *testing.T) {
 	q = ObsQueryRequest{Series: seriesAttemptTime, Subject: "task_type:hello.greet.v1", Window: "93d", Rollup: "day.p95"}
 	if _, err := b.c.ObsSeries(context.Background(), b.op, q); err != nil {
 		t.Fatal(err)
+	}
+}
+
+// A tenant series of source job takes its field from run.finished.v1 on the event's catalog
+// subject (OBV-1, OBV-7).
+func TestEmitJobSeries(t *testing.T) {
+	ctx := context.Background()
+	b := newToolBenchWith(t, nil, func(ms []map[string]any) []map[string]any {
+		for _, m := range ms {
+			if m["kind"] == "TaskType" && m["metadata"].(map[string]any)["name"] == "hello.greet.v1" {
+				m["spec"].(map[string]any)["events"] = []any{"run.finished.v1"}
+			}
+		}
+		return append(ms, map[string]any{
+			"apiVersion": "botaru/v1alpha1", "kind": "ObservationSeries", "metadata": map[string]any{"name": "logs_qc.duration", "tenant": "demo"},
+			"spec": map[string]any{"catalog_kind": "resource", "value": map[string]any{"type": "integer", "minimum": 0, "maximum": 604800},
+				"data_class": "internal", "source": map[string]any{"kind": "job", "field": "duration_s"}},
+		})
+	})
+	b.hello(t, "1")
+	att := b.claim(t, b.agent, "attempt")
+	if att == nil {
+		t.Fatal("no attempt")
+	}
+	job := *b.agent
+	job.Kind = "job"
+	data := map[string]any{"run_id": "r1", "subject": "web1-logs", "duration_s": 42, "retries": 0, "exit_code": 0, "outcome": "done"}
+	if _, err := b.c.Emit(ctx, &job, header(t, att), EmitRequest{Type: runFinishedType, Data: data}); err != nil {
+		t.Fatal(err)
+	}
+	b.loop(t, "observe")
+	var subject, source string
+	var v float64
+	if err := b.c.st.Pool.QueryRow(ctx, `SELECT subject, source, num FROM obs_points WHERE series = 'logs_qc.duration'`).Scan(&subject, &source, &v); err != nil {
+		t.Fatal(err)
+	}
+	if subject != "resource:web1-logs" || source != "job" || v != 42 {
+		t.Fatalf("job point %s %s %v", subject, source, v)
+	}
+}
+
+// Emit takes the data schema of the events catalog for any type a job produces; a type the
+// core produces is never published by a job (IDM-4).
+func TestJobEventSchema(t *testing.T) {
+	b := newObsBench(t)
+	for typ, want := range map[string]string{runFinishedType: "run-finished", "alarm.disk.free.low.v1": "alarm", "alarm.worker.stale.v1": "", "schedule.skipped": "", "no.such.v1": ""} {
+		got, ok, err := b.c.jobEventSchema(typ)
+		if err != nil || got != want || ok != (want != "") {
+			t.Fatalf("%s: %q %v %v", typ, got, ok, err)
+		}
+	}
+}
+
+// A job's alarm goes the one alarm path: an episode opens once, its alarmkey must be its name
+// and subject, and a resolution closes it (MON-1, OBS-6).
+func TestEmitAlarm(t *testing.T) {
+	b := newObsBench(t)
+	ctx := context.Background()
+	alarm := func(state, key string) (string, error) {
+		var id string
+		err := b.c.tx(ctx, func(tx pgx.Tx, now time.Time) error {
+			var err error
+			id, err = b.c.emitAlarm(ctx, tx, now, "demo", EmitRequest{Type: "alarm.disk.free.low.v1", Data: map[string]any{
+				"alarmkey": key, "state": state, "severity": "warn", "subject": map[string]any{"kind": "resource", "id": "web1-logs"},
+				"values": map[string]any{"free_pct": 4}}})
+			return err
+		})
+		return id, err
+	}
+	if _, err := alarm("firing", "disk.free.low:db1"); err == nil {
+		t.Fatal("an alarmkey of another subject was taken")
+	}
+	if _, err := alarm("resolved", "disk.free.low:web1-logs"); err == nil {
+		t.Fatal("a resolution without an episode answered an event")
+	}
+	first, err := alarm("firing", "disk.free.low:web1-logs")
+	if err != nil {
+		t.Fatal(err)
+	}
+	again, err := alarm("firing", "disk.free.low:web1-logs")
+	if err != nil || again != first {
+		t.Fatalf("a repeat wrote an event: %s %s %v", first, again, err)
+	}
+	if _, err := alarm("resolved", "disk.free.low:web1-logs"); err != nil {
+		t.Fatal(err)
+	}
+	var states string
+	if err := b.c.st.Pool.QueryRow(ctx, `SELECT string_agg(data->>'state', ',' ORDER BY time, id) FROM events WHERE type = 'alarm.disk.free.low.v1'`).Scan(&states); err != nil {
+		t.Fatal(err)
+	}
+	if states != "firing,resolved" {
+		t.Fatalf("alarm events %s", states)
+	}
+	// The job's numbers and the catalog's origin reach the episode (MGR-8, MON-5).
+	var origin, vals string
+	if err := b.c.st.Pool.QueryRow(ctx, `SELECT origin, vals::text FROM alarm_episodes WHERE alarm = 'alarm.disk.free.low.v1'`).Scan(&origin, &vals); err != nil {
+		t.Fatal(err)
+	}
+	if origin != "monitor" || vals != `{"free_pct": 4}` {
+		t.Fatalf("episode origin %s values %s", origin, vals)
+	}
+}
+
+// Rollups cover periods older than two days that no rollup has yet, within the raw points
+// kept, and a window longer than the rollups kept is refused (OBV-4).
+func TestObserveRollupBackfill(t *testing.T) {
+	ctx := context.Background()
+	b := newToolBenchWith(t, nil, func(ms []map[string]any) []map[string]any {
+		return append(ms, map[string]any{
+			"apiVersion": "botaru/v1alpha1", "kind": "ObservationSeries", "metadata": map[string]any{"name": "site.ms.v1", "tenant": "demo"},
+			"spec": map[string]any{"catalog_kind": "host", "value": map[string]any{"type": "integer", "minimum": 0, "maximum": 30000},
+				"data_class": "summary", "source": map[string]any{"kind": "tool", "tool": "checks/latest", "field": "ms_max"}, "rollups": []any{"day.max"},
+				"retention": map[string]any{"raw": "14d", "rollup": "30d"}},
+		})
+	})
+	if _, err := b.c.st.Pool.Exec(ctx, `INSERT INTO obs_points (tenant, series, subject, at, num, source, data_mark, key, created_at)
+		VALUES ('demo', 'site.ms.v1', 'host:web1', botaru_now() - interval '5 days', 77, 'tool', 'summary', 'old', botaru_now()),
+		('demo', 'site.ms.v1', 'host:web1', botaru_now() - interval '20 days', 99, 'tool', 'summary', 'gone', botaru_now())`); err != nil {
+		t.Fatal(err)
+	}
+	b.loop(t, "observe")
+	var n int
+	var v float64
+	if err := b.c.st.Pool.QueryRow(ctx, `SELECT count(*), coalesce(max(value), 0) FROM obs_rollups WHERE series = 'site.ms.v1'`).Scan(&n, &v); err != nil {
+		t.Fatal(err)
+	}
+	if n != 1 || v != 77 {
+		t.Fatalf("rollups %d max %v", n, v)
+	}
+	q := ObsQueryRequest{Series: "site.ms.v1", Subject: "host:web1", Window: "93d", Rollup: "day.max"}
+	if out, err := b.c.ObsSeries(ctx, b.op, q); err == nil {
+		t.Fatalf("a 93d window over 30 days of rollups: %v", out)
 	}
 }

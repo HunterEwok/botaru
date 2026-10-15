@@ -39,6 +39,10 @@
     "role": {
       "$ref": "urn:botaru:schema:common:1#/$defs/name"
     },
+    "worker": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/object_id",
+      "description": "The worker of the attempt that handed in the body; \"My results\" shows the refusal to it alone (DIG-7)."
+    },
     "acting_bot": {
       "anyOf": [
         {

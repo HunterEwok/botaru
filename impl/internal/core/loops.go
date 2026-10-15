@@ -32,6 +32,13 @@ func (c *Core) RecoverLeases(ctx context.Context) error {
 // Run starts the background loops of the core (spec/ports/background-loops.md) and blocks
 // until ctx ends: the work listener, reaper and deadline. RecoverLeases runs before it.
 func (c *Core) Run(ctx context.Context) {
+	// The age of a loop that never ticked counts from here, by the store's clock (OBS-4); if
+	// the store does not answer, the first indicators pass sets it.
+	_ = c.tx(ctx, func(_ pgx.Tx, now time.Time) error {
+		c.startedAt.CompareAndSwap(0, now.UnixNano())
+		return nil
+	})
+	c.running.Store(true)
 	go c.listen(ctx)
 	t := time.NewTicker(time.Second)
 	defer t.Stop()

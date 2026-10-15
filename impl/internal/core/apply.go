@@ -418,6 +418,18 @@ func (c *Core) applyOnce(ctx context.Context, op Operator, req ApplyRequest) (*A
 		if err := c.syncSeats(ctx, tx, now, next); err != nil {
 			return err
 		}
+		// A removed schedule loses its state, so one recreated later starts from its apply
+		// and not from the slot its old self handled (TIM-3).
+		var schedTenants, schedNames []string
+		for t, tv := range next.Tenants {
+			for n := range tv.Schedules {
+				schedTenants, schedNames = append(schedTenants, t), append(schedNames, n)
+			}
+		}
+		if _, err := tx.Exec(ctx, `DELETE FROM schedule_state s WHERE NOT EXISTS (SELECT 1 FROM unnest($1::text[], $2::text[]) k(tenant, name)
+			WHERE k.tenant = s.tenant AND k.name = s.name)`, schedTenants, schedNames); err != nil {
+			return err
+		}
 		// The texts go to every charter of the store that pins them, the ones applied earlier
 		// included.
 		if err := storePersonas(ctx, tx, now, after, req.Personas); err != nil {

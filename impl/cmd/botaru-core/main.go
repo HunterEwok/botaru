@@ -123,7 +123,7 @@ func run(path string, log *slog.Logger) error {
 	if err != nil {
 		return err
 	}
-	srv, err := api.New(c, api.Config{Operators: cfg.Operators, HealthKeysSHA256: cfg.HealthKeysSHA256, TestKeySHA256: cfg.TestKeySHA256, Logger: log}, gw)
+	srv, err := api.New(c, api.Config{Operators: cfg.Operators, HealthKeysSHA256: cfg.HealthKeysSHA256, ReportKeysSHA256: cfg.ReportKeysSHA256, TestKeySHA256: cfg.TestKeySHA256, Logger: log}, gw)
 	if err != nil {
 		return err
 	}

@@ -93,3 +93,23 @@ cases:
         metadata: {name: demo2}
         spec: {farm_manager: {enabled: false}, budgets: {month_eur: 60}, limits: {max_storage_bytes: 20GiB}}
     expect: {error: schema_invalid}
+  - name: a type for a group chat without summary_fields
+    manifests:
+      - apiVersion: botaru/v1alpha1
+        kind: Tenant
+        metadata: {name: demo2}
+        spec:
+          farm_manager: {enabled: false}
+          budgets: {month_eur: 60}
+          default_types: [{type: ops.summary.v1, chats: [group, direct]}]
+    expect: {error: summary_fields_required}
+  - name: a type with summary_fields for a bound chat
+    manifests:
+      - apiVersion: botaru/v1alpha1
+        kind: Tenant
+        metadata: {name: demo2}
+        spec:
+          farm_manager: {enabled: false}
+          budgets: {month_eur: 60}
+          default_types: [{type: data.analyze.v1, chats: ['chat:lab']}]
+    expect: ok

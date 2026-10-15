@@ -254,6 +254,11 @@ func TestMaskingMarksPersonalSeen(t *testing.T) {
 	for range 2 {
 		done := callAsync(b, h, mcp.CallParams{Name: "logs_tail", Arguments: map[string]any{"source": "nginx-error"}})
 		item := b.claimTool(t, th)
+		// Only a sandbox toolhost produces a file under a tool call (P1 file.put).
+		_, err := b.c.FilePut(ctx, th, header(t, item), nil, FilePutRequest{MediaType: "text/plain"}, []byte("x"))
+		if p, ok := AsProblem(err); !ok || p.Reason != "forbidden" {
+			t.Fatalf("a host toolhost produced a file: %v", err)
+		}
 		out := map[string]any{"content": []any{map[string]any{"type": "text", "text": "[ip] GET / 404"}}}
 		if _, err := b.c.Complete(ctx, th, header(t, item), CompleteRequest{Output: out}); err != nil {
 			t.Fatal(err)

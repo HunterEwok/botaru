@@ -174,8 +174,13 @@ func (c *Core) FilePut(ctx context.Context, w *Worker, lease string, ob *OnBehal
 				}
 			case "toolcall":
 				toolcall = l.WorkID
-				if err := tx.QueryRow(ctx, `SELECT task FROM toolcalls WHERE id = $1`, l.WorkID).Scan(&task); err != nil {
+				var placement string
+				if err := tx.QueryRow(ctx, `SELECT task, target_placement FROM toolcalls WHERE id = $1`, l.WorkID).Scan(&task, &placement); err != nil {
 					return err
+				}
+				// Only a sandbox toolhost produces a file under a tool call (P1 file.put).
+				if w.Placement != "sandbox" && placement != "sandbox" {
+					return refuse("forbidden", "only a sandbox toolhost produces a file under a tool call")
 				}
 			default:
 				return refuse("forbidden", "a file is produced under an attempt or a tool call")
@@ -191,12 +196,32 @@ func (c *Core) FilePut(ctx context.Context, w *Worker, lease string, ob *OnBehal
 			_ = json.Unmarshal(rec, &r)
 			mark = c.higherMark(r.DataMark, req.DataMark)
 			origin, producer = "produced", task
+			// A file an ingest job brings in is ingested, not produced (ART-6). The catalog
+			// resources and their personal mark are not in this version, so the core cannot
+			// declare personal data for an ingested file yet.
+			if typ == "kb.ingest.v1" || typ == "data.arrived.v1" {
+				origin = "ingested"
+			}
 			expires = fileExpiry(now, tv.Spec.Retention.Files, cat.TaskTypes[typ].ResultTTL)
 			if provenance, err = c.fileProvenance(ctx, tx, now, task, toolcall); err != nil {
 				return err
 			}
 		default:
 			return refuse("fenced", "no lease token")
+		}
+		// The storage ceiling of the tenant's files, under a tenant lock so two puts do not both
+		// pass (CAP-1).
+		if max := tv.Spec.Limits.MaxStorageBytes; max > 0 {
+			if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock(7300112, hashtext($1))`, w.Tenant); err != nil {
+				return err
+			}
+			var used int64
+			if err := tx.QueryRow(ctx, `SELECT coalesce(sum(size), 0) FROM files WHERE tenant = $1 AND content IS NOT NULL`, w.Tenant).Scan(&used); err != nil {
+				return err
+			}
+			if used+int64(len(content)) > max {
+				return refuse("over_capacity", "the tenant storage ceiling is reached")
+			}
 		}
 		var prov []byte
 		if provenance != nil {
@@ -269,15 +294,15 @@ func (c *Core) fileProvenance(ctx context.Context, tx pgx.Tx, now time.Time, tas
 
 // fileRow is a file record as the handout reads it.
 type fileRow struct {
-	Ref, Tenant, Origin, Producer, MediaType, Mark, State string
-	Size                                                  int64
-	Expires                                               *time.Time
+	Ref, Tenant, Origin, Producer, MediaType, Mark, State, PersonalSeen string
+	Size                                                                int64
+	Expires                                                             *time.Time
 }
 
 func loadFile(ctx context.Context, q store.Querier, tenant, ref string) (*fileRow, error) {
 	var f fileRow
-	err := q.QueryRow(ctx, `SELECT file_ref, tenant, origin, producer, media_type, data_mark, state, size, expires_at FROM files WHERE file_ref = $1 AND tenant = $2`,
-		ref, tenant).Scan(&f.Ref, &f.Tenant, &f.Origin, &f.Producer, &f.MediaType, &f.Mark, &f.State, &f.Size, &f.Expires)
+	err := q.QueryRow(ctx, `SELECT file_ref, tenant, origin, producer, media_type, data_mark, state, coalesce(personal_seen, ''), size, expires_at FROM files WHERE file_ref = $1 AND tenant = $2`,
+		ref, tenant).Scan(&f.Ref, &f.Tenant, &f.Origin, &f.Producer, &f.MediaType, &f.Mark, &f.State, &f.PersonalSeen, &f.Size, &f.Expires)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, nil
 	}
@@ -371,7 +396,9 @@ func (c *Core) FileGet(ctx context.Context, w *Worker, lease string, req FileGet
 }
 
 // taintByFile checks a file read for a task: the initiator may see its mark (a person's task
-// only), and the task becomes untrusted and takes the higher mark (ART-2, ART-3, INJ-13).
+// only), and the task becomes untrusted and takes the higher mark (ART-2, ART-3, INJ-13). A
+// person's upload marks the task personal_seen human_file, a file with the flag inherited
+// (AUD-5).
 func (c *Core) taintByFile(ctx context.Context, tx pgx.Tx, now time.Time, tv *TenantView, task string, f *fileRow) error {
 	var initiator string
 	var rec []byte
@@ -392,6 +419,22 @@ func (c *Core) taintByFile(ctx context.Context, tx pgx.Tx, now time.Time, tv *Te
 	var r map[string]any
 	if err := json.Unmarshal(rec, &r); err != nil {
 		return err
+	}
+	if f.Origin == "upload" {
+		var kind string
+		if err := tx.QueryRow(ctx, `SELECT kind FROM principals WHERE tenant = $1 AND id = $2`, tv.Name, f.Producer).Scan(&kind); err != nil && !errors.Is(err, pgx.ErrNoRows) {
+			return err
+		}
+		if kind == "human" {
+			if err := addPersonalSeen(ctx, tx, task, "human_file"); err != nil {
+				return err
+			}
+		}
+	}
+	if f.PersonalSeen != "" {
+		if err := addPersonalSeen(ctx, tx, task, "inherited"); err != nil {
+			return err
+		}
 	}
 	mark, _ := r["data_mark"].(string)
 	newMark := c.higherMark(mark, f.Mark)

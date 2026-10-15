@@ -4,6 +4,7 @@ package core
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"slices"
 	"strings"
@@ -35,8 +36,43 @@ func coversGroup(tv *TenantView, grantor []string, group string) bool {
 // with admin:people (PRM-16, PRM-7). The person is named by an identity (telegram:1002) or a
 // principal id. A delegated group or an ordinary one is granted at once; a privileged group
 // outside delegated_groups only by an operator (PRM-13). A grant of a delegated group tells
-// every admin of the tenant privately.
+// every admin of the tenant privately. A retried update of the same activity gets the reply of
+// the first and changes nothing again (DLV-5, IDM-3).
 func (c *Core) grantCommand(ctx context.Context, tx pgx.Tx, now time.Time, pc personCommand, word, rest string) (*ActivityResult, error) {
+	// Two deliveries of the same update wait for each other here, so the second reads the
+	// first one's outcome instead of granting again.
+	if pc.key != "" {
+		if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtextextended($1, 7300105))`, pc.tv.Name+"/"+pc.key); err != nil {
+			return nil, err
+		}
+	}
+	var raw []byte
+	err := tx.QueryRow(ctx, `SELECT reply FROM activity_outcomes WHERE tenant = $1 AND key = $2`, pc.tv.Name, pc.key).Scan(&raw)
+	if err == nil {
+		var out ActivityResult
+		if err := json.Unmarshal(raw, &out); err != nil {
+			return nil, err
+		}
+		return &out, nil
+	}
+	if !errors.Is(err, pgx.ErrNoRows) {
+		return nil, err
+	}
+	out, err := c.grantOnce(ctx, tx, now, pc, word, rest)
+	if err != nil || pc.key == "" {
+		return out, err
+	}
+	if raw, err = json.Marshal(out); err != nil {
+		return nil, err
+	}
+	if _, err := tx.Exec(ctx, `INSERT INTO activity_outcomes (tenant, key, reply, created_at) VALUES ($1, $2, $3, $4) ON CONFLICT DO NOTHING`,
+		pc.tv.Name, pc.key, raw, now); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *Core) grantOnce(ctx context.Context, tx pgx.Tx, now time.Time, pc personCommand, word, rest string) (*ActivityResult, error) {
 	f := strings.Fields(rest)
 	if len(f) != 2 {
 		return pc.reply(c, "cmd.grant.usage", nil), nil

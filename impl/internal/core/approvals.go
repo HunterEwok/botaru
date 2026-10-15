@@ -1112,7 +1112,9 @@ func (c *Core) executeApproval(ctx context.Context, tx pgx.Tx, now time.Time, ca
 	if !ok {
 		return c.closeApproval(ctx, tx, now, a, "canceled", "ref_invalid")
 	}
-	if strings.HasPrefix(a.Initiator, "human:") {
+	// Every initiator but the literal system is a principal row: a person, a service or a
+	// system principal loses the release with its state or its right (APR-6, APR-18).
+	if a.Initiator != "" && a.Initiator != "system" {
 		p, err := loadPrincipal(ctx, tx, now, a.Tenant, a.Initiator)
 		if errors.Is(err, pgx.ErrNoRows) || err == nil && p.State != "active" {
 			return c.closeApproval(ctx, tx, now, a, "canceled", "person_inactive")

@@ -141,6 +141,76 @@ func TestChildAndContinuation(t *testing.T) {
 	}
 }
 
+// A child and a continuation are not more urgent than their parent, and a reply to the outcome
+// of a continuation is the next task of its tree, not a new root with a fresh depth and budget
+// (PRM-6, CNT-5, DSP-2).
+func TestTreeFollowup(t *testing.T) {
+	ctx := context.Background()
+	b := newChainBench(t, 10)
+	root := b.hello(t, "1")
+	if _, err := b.c.st.Pool.Exec(ctx, `UPDATE tasks SET priority_class = 4 WHERE id = $1`, root); err != nil {
+		t.Fatal(err)
+	}
+	att := b.claim(t, b.agent, "attempt")
+	h := att.Payload["handles"].(map[string]any)["tools"].(string)
+	r := childCall(t, b, h, map[string]any{"type": "hello.child.v1", "goal": "look it up"})
+	if r.Code != "enqueued" {
+		t.Fatalf("child %+v", r)
+	}
+	prio := func(id string) int {
+		var p int
+		if err := b.c.st.Pool.QueryRow(ctx, `SELECT priority_class FROM tasks WHERE id = $1`, id).Scan(&p); err != nil {
+			t.Fatal(err)
+		}
+		return p
+	}
+	if p := prio(r.ID); p != 4 {
+		t.Fatalf("child priority %d", p)
+	}
+	if _, err := b.c.Complete(ctx, b.agent, header(t, att), CompleteRequest{Result: map[string]any{"answer": "asked"}}); err != nil {
+		t.Fatal(err)
+	}
+	catt := b.claim(t, b.agent, "attempt")
+	if _, err := b.c.Complete(ctx, b.agent, header(t, catt), CompleteRequest{Result: map[string]any{"answer": "found"}}); err != nil {
+		t.Fatal(err)
+	}
+	var cont string
+	if err := b.c.st.Pool.QueryRow(ctx, `SELECT id FROM tasks WHERE idempotency_key = $1`, "system:cont:reply:"+r.ID).Scan(&cont); err != nil {
+		t.Fatal(err)
+	}
+	if p := prio(cont); p != 4 {
+		t.Fatalf("continuation priority %d", p)
+	}
+	katt := b.claim(t, b.agent, "attempt")
+	if katt == nil || katt.Payload["task"].(map[string]any)["id"] != cont {
+		t.Fatalf("continuation attempt %v", katt)
+	}
+	if _, err := b.c.Complete(ctx, b.agent, header(t, katt), CompleteRequest{Result: map[string]any{"answer": "here it is"}}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := b.c.st.Pool.Exec(ctx, `UPDATE deliveries SET state = 'delivered', external_id = '888' WHERE task = $1 AND kind = 'task_result'`, cont); err != nil {
+		t.Fatal(err)
+	}
+	a := Activity{Kind: "message", Channel: "telegram", UpdateID: "9", Chat: Chat{Kind: "direct", ExternalID: "1001"}, Text: "and then?", ReplyTo: "888"}
+	a.Sender.Identity, a.Sender.Verified = "telegram:1001", true
+	res, err := b.c.SubmitActivity(ctx, b.channel, a)
+	if err != nil || res.Task == "" {
+		t.Fatalf("follow-up %+v %v", res, err)
+	}
+	k, f := taskTree(t, b, cont), taskTree(t, b, res.Task)
+	if f.Root != root || f.Parent != k.Parent || f.Depth != k.Depth+1 || prio(res.Task) != 4 {
+		t.Fatalf("follow-up record %+v (continuation %+v) priority %d", f, k, prio(res.Task))
+	}
+	// At the depth limit the follow-up is refused, not started as a new root.
+	if _, err := b.c.st.Pool.Exec(ctx, `UPDATE tasks SET record = record || '{"depth": 5}' WHERE id = $1`, cont); err != nil {
+		t.Fatal(err)
+	}
+	a.UpdateID = "10"
+	if res, err := b.c.SubmitActivity(ctx, b.channel, a); err != nil || res.Task != "" {
+		t.Fatalf("a follow-up past the depth limit: %+v %v", res, err)
+	}
+}
+
 // A person's answer continues the earlier task: by a reply to the bot message, or without a
 // reply within the follow-up window that need_input opens; a command closes the window
 // (CNT-5, blackbox:channel/followup-window).
@@ -262,5 +332,16 @@ func TestStall(t *testing.T) {
 	}
 	if err := b.c.st.Pool.QueryRow(ctx, `SELECT state FROM leases WHERE work_id = $1 AND lease_no = 2`, task).Scan(&state); err != nil || state != "active" {
 		t.Fatalf("an attempt with a finished model call stalled: %s %v", state, err)
+	}
+	// A late model call of the expired first attempt is no progress of the retry (CNT-4).
+	b.advance(t, 20)
+	if _, err := b.c.st.Pool.Exec(ctx, `UPDATE spend SET attempt_lease_no = 1, settled_at = botaru_now() WHERE id = $1`, sp); err != nil {
+		t.Fatal(err)
+	}
+	if err := b.c.tickLoop(ctx, "stall"); err != nil {
+		t.Fatal(err)
+	}
+	if err := b.c.st.Pool.QueryRow(ctx, `SELECT state FROM leases WHERE work_id = $1 AND lease_no = 2`, task).Scan(&state); err != nil || state != "revoked" {
+		t.Fatalf("a call of another attempt kept the retry alive: %s %v", state, err)
 	}
 }

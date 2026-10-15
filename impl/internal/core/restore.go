@@ -232,7 +232,7 @@ func unreconciledAlarm() Alarm {
 }
 
 // spendGap lists the provider days from the restore point to the day the restore began, both
-// included (UTC), that have no reconciliation, as provider/day. A provider's report of a day
+// included (UTC), that have no provider report, as provider/day. A provider's report of a day
 // covers every workspace of that provider: a report leaves out idle workspaces, and a
 // workspace first used after the backup is in it too. The restore day itself is reconciled
 // from the next day on, so the gap of a same-day restore stays open until then.
@@ -261,7 +261,7 @@ func spendGap(ctx context.Context, tx pgx.Tx, now time.Time) ([]string, error) {
 	for _, p := range providers {
 		for d := point.UTC().Truncate(24 * time.Hour); !d.After(end); d = d.Add(24 * time.Hour) {
 			var ok bool
-			if err := tx.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM spend_reconciliations WHERE provider = $1 AND day = $2)`, p, d).Scan(&ok); err != nil {
+			if err := tx.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM spend_report_days WHERE provider = $1 AND day = $2)`, p, d).Scan(&ok); err != nil {
 				return nil, err
 			}
 			if !ok {

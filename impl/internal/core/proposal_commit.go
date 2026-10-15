@@ -313,8 +313,11 @@ func (c *Core) LinkCommit(ctx context.Context, op Operator, req LinkCommitReques
 		if !allowed {
 			return refuse("forbidden", "only the executor or a person who may decide links a commit")
 		}
+		// The commit's objects are the current manifests it wrote and the versions it wrote or
+		// replaced that a later apply has replaced since.
 		var other int
-		if err := tx.QueryRow(ctx, `SELECT count(*) FROM manifests WHERE commit = $1 AND tenant <> $2`, req.Commit, p.Tenant).Scan(&other); err != nil {
+		if err := tx.QueryRow(ctx, `SELECT (SELECT count(*) FROM manifests WHERE commit = $1 AND tenant <> $2)
+			+ (SELECT count(*) FROM manifest_versions WHERE (commit = $1 OR replaced_by = $1) AND tenant <> $2)`, req.Commit, p.Tenant).Scan(&other); err != nil {
 			return err
 		}
 		if other > 0 {

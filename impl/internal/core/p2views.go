@@ -225,12 +225,13 @@ func (c *Core) redriveTask(ctx context.Context, tx pgx.Tx, now time.Time, cat *C
 func (c *Core) redriveDelivery(ctx context.Context, tx pgx.Tx, now time.Time, op Operator, id string) (string, error) {
 	var d plannedDelivery
 	var state string
-	var task, recipient, mark, notice, alarmkey *string
+	var task, recipient, mark, notice, alarmkey, subjectKind, subjectID *string
 	var episode *int64
 	var body []byte
-	err := tx.QueryRow(ctx, `SELECT tenant, task, kind, addr, target_kind, target_id, exec_kind, exec_name, recipient, state, body, data_mark, dataorigin, notice_version, alarmkey, episode
+	// The subject goes along, so a redriven card or card update is built again (APR-3).
+	err := tx.QueryRow(ctx, `SELECT tenant, task, kind, addr, target_kind, target_id, exec_kind, exec_name, recipient, state, body, data_mark, dataorigin, notice_version, alarmkey, episode, subject_kind, subject_id
 		FROM deliveries WHERE id = $1 FOR UPDATE`, id).Scan(&d.Tenant, &task, &d.Kind, &d.Addr, &d.TargetKind, &d.TargetID, &d.ExecKind, &d.ExecName,
-		&recipient, &state, &body, &mark, &d.DataOrigin, &notice, &alarmkey, &episode)
+		&recipient, &state, &body, &mark, &d.DataOrigin, &notice, &alarmkey, &episode, &subjectKind, &subjectID)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return "", refuse("not_found", "no such delivery")
 	}
@@ -250,6 +251,7 @@ func (c *Core) redriveDelivery(ctx context.Context, tx pgx.Tx, now time.Time, op
 		return "", err
 	}
 	d.Task, d.Recipient, d.DataMark, d.NoticeVersion, d.Alarmkey = deref(task), deref(recipient), deref(mark), deref(notice), deref(alarmkey)
+	d.SubjectKind, d.SubjectID = deref(subjectKind), deref(subjectID)
 	if episode != nil {
 		d.Episode = *episode
 	}
@@ -457,6 +459,10 @@ func (c *Core) Doctor(ctx context.Context, op Operator, req TenantRequest) (*Doc
 	} else {
 		add(DoctorCheck{ID: "store.free_ratio", OK: true, Severity: "info", Value: nil})
 	}
+	cat, err := c.Catalog(ctx)
+	if err != nil {
+		return nil, err
+	}
 	err = c.tx(ctx, func(tx pgx.Tx, now time.Time) error {
 		in, err := c.indicators(ctx, tx, now)
 		if err != nil {
@@ -501,13 +507,13 @@ func (c *Core) Doctor(ctx context.Context, op Operator, req TenantRequest) (*Doc
 			{"alarms.open", `SELECT count(*) FROM alarm_episodes WHERE tenant = $1 AND state = 'firing'`, []any{tenant}, true},
 			{"erasure.open", `SELECT count(*) FROM erasure_requests WHERE tenant = $1 AND state <> 'done'`, []any{tenant}, true},
 		}
-		if err := c.doctorMoney(ctx, tx, now, tenant, add); err != nil {
+		if err := c.doctorMoney(ctx, tx, now, cat, tenant, add); err != nil {
 			return err
 		}
 		if err := c.doctorMonitor(ctx, tx, now, tenant, add); err != nil {
 			return err
 		}
-		if err := c.doctorInsights(ctx, tx, now, tenant, add); err != nil {
+		if err := c.doctorInsights(ctx, tx, now, cat, tenant, add); err != nil {
 			return err
 		}
 		for _, q := range counts {

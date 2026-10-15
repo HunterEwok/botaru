@@ -4,6 +4,7 @@ package core
 
 import (
 	"context"
+	"slices"
 	"testing"
 	"time"
 
@@ -14,6 +15,12 @@ import (
 // to the group hello and the sink archive, and the group system-ops that may enqueue it.
 func newScheduleBench(t *testing.T, cron string, skipIfWaiting *bool) *actionBench {
 	t.Helper()
+	return newScheduleBenchZone(t, cron, skipIfWaiting, "Europe/Berlin")
+}
+
+// newScheduleBenchZone is newScheduleBench with the schedule's own zone; "" takes the tenant's.
+func newScheduleBenchZone(t *testing.T, cron string, skipIfWaiting *bool, zone string) *actionBench {
+	t.Helper()
 	b := newBenchWith(t, func(root string, ms []map[string]any) []map[string]any {
 		for _, m := range ms {
 			if m["kind"] == "TaskType" {
@@ -21,12 +28,15 @@ func newScheduleBench(t *testing.T, cron string, skipIfWaiting *bool) *actionBen
 			}
 		}
 		sc := map[string]any{
-			"cron": cron, "timezone": "Europe/Berlin",
+			"cron":       cron,
 			"task":       map[string]any{"type": "hello.greet.v1", "goal": "Say good morning."},
 			"deliver_to": []any{"group:hello", "sink:archive"},
 		}
 		if skipIfWaiting != nil {
 			sc["skip_if_waiting"] = *skipIfWaiting
+		}
+		if zone != "" {
+			sc["timezone"] = zone
 		}
 		return append(ms, map[string]any{
 			"apiVersion": "botaru/v1alpha1", "kind": "Group",
@@ -169,9 +179,12 @@ func TestScheduleNoSkip(t *testing.T) {
 	if _, err := b.c.HoldRelease(ctx, OperatorActor(b.op), HoldReleaseRequest{ID: set.ID}); err != nil {
 		t.Fatal(err)
 	}
-	// A changed zone takes effect from the next slot: the tick that sees it runs nothing, the
-	// next slot runs once.
+	// A changed zone takes effect from the next slot after its apply: the tick that sees it
+	// runs nothing, the next slot runs once.
 	if _, err := b.c.st.Pool.Exec(ctx, `UPDATE schedule_state SET timezone = 'UTC'`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := b.c.st.Pool.Exec(ctx, `UPDATE manifests SET applied_at = '2027-04-01T14:00:30Z' WHERE tenant = 'demo' AND kind IN ('Schedule', 'Tenant')`); err != nil {
 		t.Fatal(err)
 	}
 	b.at(t, "2027-04-01T14:00:30Z")
@@ -183,6 +196,86 @@ func TestScheduleNoSkip(t *testing.T) {
 	b.tick(t, "schedule")
 	b.tick(t, "schedule")
 	if k := b.scheduled(t); len(k) != 3 || k[2] != "system:schedule:morning:2027-04-01T15:00Z" {
+		t.Fatalf("tasks %v", k)
+	}
+	// The first slot after an apply runs even when the loop sees the change only after it, and
+	// after a later apply that did not touch the schedule.
+	if _, err := b.c.st.Pool.Exec(ctx, `UPDATE schedule_state SET timezone = 'Europe/Berlin'`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := b.c.st.Pool.Exec(ctx, `UPDATE manifests SET applied_at = '2027-04-01T15:59:50Z' WHERE tenant = 'demo' AND kind IN ('Schedule', 'Tenant')`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := b.c.st.Pool.Exec(ctx, `UPDATE apply_status SET applied_at = '2027-04-01T16:00:10Z'`); err != nil {
+		t.Fatal(err)
+	}
+	b.at(t, "2027-04-01T16:00:20Z")
+	b.tick(t, "schedule")
+	if k := b.scheduled(t); len(k) != 4 || k[3] != "system:schedule:morning:2027-04-01T16:00Z" {
+		t.Fatalf("the first slot after the apply was lost: %v", k)
+	}
+}
+
+// A schedule that takes its zone from the tenant starts, after a change of that zone, from the
+// tenant's apply: a later edit of another field of the schedule does not skip a due slot
+// (TIM-3).
+func TestScheduleTenantZoneChange(t *testing.T) {
+	ctx := context.Background()
+	b := newScheduleBenchZone(t, "0 * * * *", nil, "")
+	b.at(t, "2027-04-01T10:30:00Z")
+	b.tick(t, "schedule")
+	if _, err := b.c.st.Pool.Exec(ctx, `UPDATE schedule_state SET timezone = 'UTC'`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := b.c.st.Pool.Exec(ctx, `UPDATE manifests SET applied_at = '2027-04-01T10:59:50Z' WHERE tenant = 'demo' AND kind = 'Tenant'`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := b.c.st.Pool.Exec(ctx, `UPDATE manifests SET applied_at = '2027-04-01T11:00:10Z' WHERE tenant = 'demo' AND kind = 'Schedule'`); err != nil {
+		t.Fatal(err)
+	}
+	b.at(t, "2027-04-01T11:00:20Z")
+	b.tick(t, "schedule")
+	if k := b.scheduled(t); len(k) != 1 || k[0] != "system:schedule:morning:2027-04-01T11:00Z" {
+		t.Fatalf("the slot after the zone change was lost: %v", k)
+	}
+}
+
+// With skip_if_waiting a slot whose model slot has an open provider circuit is skipped with
+// waiting (TIM-3).
+func TestScheduleSkipsOpenCircuit(t *testing.T) {
+	b := newScheduleBench(t, "0 * * * *", nil)
+	ctx := context.Background()
+	b.at(t, "2027-04-01T10:30:00Z")
+	b.tick(t, "schedule")
+	cat, err := b.c.Catalog(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	opened := 0
+	for _, r := range cat.Roles {
+		if !slices.Contains(r.Claims, "hello.greet.v1") {
+			continue
+		}
+		_, name := mainSlot(r)
+		p, ok := cat.Profile("demo", name)
+		if !ok {
+			continue
+		}
+		if _, err := b.c.st.Pool.Exec(ctx, `INSERT INTO provider_pairs (tenant, pool, state, until, updated_at) VALUES ('demo', $1, 'open', '2027-04-02T00:00:00Z', now())
+			ON CONFLICT DO NOTHING`, pairPool(name, p)); err != nil {
+			t.Fatal(err)
+		}
+		opened++
+	}
+	if opened == 0 {
+		t.Fatal("no role claims the scheduled type")
+	}
+	b.at(t, "2027-04-01T11:00:00Z")
+	b.tick(t, "schedule")
+	if s := b.skips(t); len(s) != 1 || s[0] != "2027-04-01T11:00Z waiting" {
+		t.Fatalf("skips %v", s)
+	}
+	if k := b.scheduled(t); len(k) != 0 {
 		t.Fatalf("tasks %v", k)
 	}
 }
