@@ -43,6 +43,10 @@ CREATE INDEX messages_sender ON messages (sender_task, sender_lease) WHERE state
 CREATE INDEX messages_reader ON messages (reader_task, reader_lease) WHERE state = 'leased';
 CREATE INDEX messages_rate ON messages (tenant, from_role, type, created_at);
 CREATE INDEX messages_expiry ON messages (expires_at) WHERE state IN ('queued', 'current');
+-- One live state value per (inbox, sending worker, type) (MSG-14).
+CREATE UNIQUE INDEX messages_state_value ON messages (tenant, inbox_kind, inbox_name, from_worker, type) WHERE kind = 'state' AND state IN ('current', 'stale');
+-- Ended entries leave the store after the period of class content (RET-2, MSG-12).
+CREATE INDEX messages_ended ON messages (updated_at) WHERE state NOT IN ('staged', 'queued', 'leased', 'current');
 
 -- One event per period: a refusal by rate, fullness or sender share raises its event once per
 -- (key, period) (MSG-15).

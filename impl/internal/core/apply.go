@@ -436,6 +436,10 @@ func (c *Core) applyOnce(ctx context.Context, op Operator, req ApplyRequest) (*A
 		if err := c.managerDisabled(ctx, tx, now, next); err != nil {
 			return err
 		}
+		// An inbox the new set no longer has loses its live entries (recipient_gone).
+		if err := c.inboxesGone(ctx, tx, now, next); err != nil {
+			return err
+		}
 		// The texts go to every charter of the store that pins them, the ones applied earlier
 		// included.
 		if err := storePersonas(ctx, tx, now, after, req.Personas); err != nil {

@@ -589,3 +589,29 @@ func TestMessageHidden(t *testing.T) {
 		t.Fatalf("hidden %+v %v", got, err)
 	}
 }
+
+// An apply that takes an inbox away ends its live entries with recipient_gone, and an ended
+// entry leaves the store with its fields after the period of class content (MSG-12, RET-2).
+func TestMessageGoneRetention(t *testing.T) {
+	ctx := context.Background()
+	b := newMsgBench(t)
+	coreSend(t, b, "role:lead")
+	coreSend(t, b, "group:pool")
+	lead := map[string]any{"apiVersion": "botaru/v1alpha1", "kind": "Role", "metadata": map[string]any{"name": "lead"},
+		"spec": map[string]any{"profile": "worker", "worker_kind": "job", "claims": []any{"lead.review.v1"},
+			"messages": map[string]any{"receive": []any{map[string]any{"type": "report.bcast.v1"}, map[string]any{"type": "state.worker.v1"}}}}}
+	res, err := b.c.Apply(ctx, b.op, ApplyRequest{Commit: "1111111111111111111111111111111111111111", Manifests: []map[string]any{lead}})
+	if err != nil || !res.Applied {
+		t.Fatalf("apply %+v %v", res, err)
+	}
+	if n := msgCount(t, b, `state = 'discarded' AND reason = 'recipient_gone' AND note IS NULL`); n != 2 {
+		t.Fatalf("entries of a gone inbox %d", n)
+	}
+	if _, err := b.c.st.Pool.Exec(ctx, `UPDATE messages SET updated_at = updated_at - interval '31 days'`); err != nil {
+		t.Fatal(err)
+	}
+	b.loop(t, "retention")
+	if n := msgCount(t, b, `true`); n != 0 {
+		t.Fatalf("ended entries kept %d", n)
+	}
+}

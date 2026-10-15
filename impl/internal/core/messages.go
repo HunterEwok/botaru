@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"slices"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -476,11 +477,21 @@ func (c *Core) sendMessage(ctx context.Context, tx pgx.Tx, now time.Time, cat *C
 	// Idempotency: the sender's own key, or the core key of the n-th send of the attempt (MSG-9).
 	var sent int
 	if s.Task != "" {
+		// The sends of one attempt are counted one at a time, so parallel calls neither share
+		// a key nor pass the limit together.
+		if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock(7300120, hashtext($1 || ':' || $2))`, s.Task, strconv.Itoa(s.Lease)); err != nil {
+			return nil, nil, err
+		}
 		if err := tx.QueryRow(ctx, `SELECT count(*) FROM messages WHERE sender_task = $1 AND sender_lease = $2`, s.Task, s.Lease).Scan(&sent); err != nil {
 			return nil, nil, err
 		}
 	}
+	id := ids.New(ids.Message)
 	key := fmt.Sprintf("system:msg:%s:%d:%d", s.Task, s.Lease, sent+1)
+	if s.Task == "" {
+		// The core's own message without a key of its own is a message of its own.
+		key = "system:msg:" + id
+	}
 	if req.IdempotencyKey != nil && *req.IdempotencyKey != "" {
 		key = strings.ToLower(s.Worker) + ":" + *req.IdempotencyKey
 		var id, state string
@@ -550,7 +561,6 @@ func (c *Core) sendMessage(ctx context.Context, tx pgx.Tx, now time.Time, cat *C
 	if mark == "" {
 		mark = mt.DataClass
 	}
-	id := ids.New(ids.Message)
 	source := "/core"
 	if s.Worker != "" {
 		source = "/w/" + strings.ToLower(s.Worker)
@@ -594,6 +604,10 @@ func (c *Core) sendMessage(ctx context.Context, tx pgx.Tx, now time.Time, cat *C
 	if recipients != nil {
 		env["recipients"] = *recipients
 	}
+	if s.Task == "" {
+		env["expiresat"] = fmtTime(now.Add(ttl))
+		delete(env, "ttl_s")
+	}
 	raw, err := json.Marshal(env)
 	if err != nil {
 		return nil, nil, err
@@ -602,14 +616,16 @@ func (c *Core) sendMessage(ctx context.Context, tx pgx.Tx, now time.Time, cat *C
 		return deny("data_schema_invalid", "the envelope is above 8 KiB")
 	}
 	state := "staged"
+	var expires any
 	if s.Task == "" {
-		state = "queued" // the core's own message, published at once
+		// The core's own message is published at once, with its expiry.
+		state, expires = "queued", now.Add(ttl)
 	}
 	if _, err := tx.Exec(ctx, `INSERT INTO messages (id, tenant, inbox_kind, inbox_name, type, kind, delivery, state, envelope, note, from_role, from_worker,
 		sender_task, sender_lease, idem_key, data_mark, untrusted, hops, expires_at, created_at, updated_at)
 		VALUES ($1, $2, $3, $4, $5, 'report', $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $19)`,
 		id, s.Tenant, in.Kind, in.Name, req.Type, deliveryOf(mt), state, raw, nullable(req.Note), s.Role, nullable(s.Worker),
-		nullable(s.Task), nullableInt(s.Lease), key, mark, untrusted, hops, nil, now); err != nil {
+		nullable(s.Task), nullableInt(s.Lease), key, mark, untrusted, hops, expires, now); err != nil {
 		return nil, nil, err
 	}
 	hash, _ := jcs.Hash(fields)
@@ -744,6 +760,10 @@ func (c *Core) sendState(ctx context.Context, tx pgx.Tx, now time.Time, cat *Cat
 	}
 	if p != nil {
 		return deny(p.Reason, p.Detail, true)
+	}
+	// One value of a worker and type at a time, so two sends never leave two current values.
+	if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock(7300121, hashtext($1 || ':' || $2))`, w.ID, req.Type); err != nil {
+		return nil, nil, err
 	}
 	// Once a minute, plus on a change of phase; an extra value is refused without an event.
 	var last []byte
@@ -1457,4 +1477,40 @@ func (c *Core) workerGone(ctx context.Context, tx pgx.Tx, now time.Time, tenant,
 	}
 	_, err = tx.Exec(ctx, `UPDATE messages SET state = 'removed', updated_at = $3 WHERE tenant = $1 AND from_worker = $2 AND state IN ('current', 'stale')`, tenant, worker, now)
 	return err
+}
+
+// inboxesGone ends the live entries of inboxes the applied catalog no longer has: a role that
+// is gone or no longer receives the type, a bot group that is gone. A report entry is discarded
+// and a state value removed, both with recipient_gone (MSG-12, MSG-14).
+func (c *Core) inboxesGone(ctx context.Context, tx pgx.Tx, now time.Time, next *Catalog) error {
+	rows, err := tx.Query(ctx, `SELECT DISTINCT tenant, inbox_kind, inbox_name, type FROM messages
+		WHERE inbox_kind <> 'worker' AND state IN ('staged', 'queued', 'leased', 'current', 'stale')`)
+	if err != nil {
+		return err
+	}
+	type inbox struct{ tenant, kind, name, typ string }
+	var gone []inbox
+	for rows.Next() {
+		var in inbox
+		if err := rows.Scan(&in.tenant, &in.kind, &in.name, &in.typ); err != nil {
+			rows.Close()
+			return err
+		}
+		if tv := next.Tenants[in.tenant]; tv == nil || len(receivingRoles(next, tv, in.kind+":"+in.name, in.typ)) == 0 {
+			gone = append(gone, in)
+		}
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	for _, in := range gone {
+		if _, err := tx.Exec(ctx, `UPDATE messages SET state = CASE WHEN kind = 'state' THEN 'removed' ELSE 'discarded' END, reason = 'recipient_gone',
+			note = NULL, handle = NULL, updated_at = $5
+			WHERE tenant = $1 AND inbox_kind = $2 AND inbox_name = $3 AND type = $4 AND state IN ('staged', 'queued', 'leased', 'current', 'stale')`,
+			in.tenant, in.kind, in.name, in.typ, now); err != nil {
+			return err
+		}
+	}
+	return nil
 }
