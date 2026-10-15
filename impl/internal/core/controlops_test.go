@@ -20,10 +20,10 @@ type controlBench struct {
 	handle   string
 }
 
-func newControlBench(t *testing.T) *controlBench {
+func newControlBench(t *testing.T, edits ...func([]map[string]any)) *controlBench {
 	t.Helper()
 	ctx := context.Background()
-	b := newManagerBench(t)
+	b := newManagerBench(t, edits...)
 	w := b.enroll(t, EnrollRequest{Tenant: "demo", Kind: "agent", Role: "farm-manager"})
 	b.diskAlarm(t, true, 3)
 	b.advance(t, 6*60)
@@ -164,11 +164,47 @@ func TestControlOpsLimits(t *testing.T) {
 		t.Fatalf("hold %s", code)
 	}
 	var hold string
-	if err := b.c.st.Pool.QueryRow(ctx, `UPDATE control_ops SET epoch = epoch - 1 WHERE actor_kind = 'seat' RETURNING hold`).Scan(&hold); err != nil {
+	if err := b.c.st.Pool.QueryRow(ctx, `UPDATE control_ops SET incident = NULL WHERE actor_kind = 'seat' RETURNING hold`).Scan(&hold); err != nil {
+		t.Fatal(err)
+	}
+	if code := b.call(t, "release", "hold", hold); code != "forbidden" {
+		t.Fatalf("a hold of another incident was released: %s", code)
+	}
+	if _, err := b.c.st.Pool.Exec(ctx, `UPDATE control_ops SET incident = $1, epoch = epoch - 1 WHERE actor_kind = 'seat'`, b.incident); err != nil {
 		t.Fatal(err)
 	}
 	if code := b.call(t, "release", "hold", hold); code != "forbidden" {
 		t.Fatalf("a hold of an earlier epoch was released: %s", code)
+	}
+}
+
+// The seat applies for an incident only the operations its class lists in responses (MGR-9).
+func TestControlOpsClassResponses(t *testing.T) {
+	b := newControlBench(t, func(ms []map[string]any) {
+		for _, m := range ms {
+			if m["kind"] == "IncidentClass" && m["metadata"].(map[string]any)["name"] == "disk_full" {
+				m["spec"].(map[string]any)["responses"] = map[string]any{"ops": []any{"drain", "release"}}
+			}
+		}
+	})
+	if code := b.call(t, "hold", "resource", "db1"); code != "forbidden" {
+		t.Fatalf("an operation the class does not list: %s", code)
+	}
+}
+
+// Types and roles any incident class names are protected targets (MGR-32).
+func TestClassNamedProtected(t *testing.T) {
+	cat := newCatalog()
+	cat.RawGlobals[manifest.Key{Kind: "IncidentClass", Name: "slow"}] = map[string]any{"spec": map[string]any{
+		"responses": map[string]any{"pin_types": []any{"ops.pin.v1"}}, "implicate": []any{map[string]any{"fn": "role_failing", "args": map[string]any{"role": "pinner"}}}}}
+	cat.TaskTypes["ops.pin.v1"] = manifest.TaskType{}
+	cat.TaskTypes["ops.other.v1"] = manifest.TaskType{}
+	if !protectedType(cat, "ops.pin.v1") || protectedType(cat, "ops.other.v1") {
+		t.Fatal("a type named by a class")
+	}
+	c := &Core{}
+	if p, err := c.protectedTarget(context.Background(), nil, cat, "demo", ControlTarget{Kind: "role", ID: "pinner"}); err != nil || !p {
+		t.Fatal("a role named by a class")
 	}
 }
 

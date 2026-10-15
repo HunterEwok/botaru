@@ -360,15 +360,26 @@ func (c *Core) serviceControl(ctx context.Context, tx pgx.Tx, now time.Time, cat
 		return nil, "", "", err
 	}
 	s.UntrustedSeen, s.UntrustedSource = tr.UntrustedSeen, tr.UntrustedSource
-	// A seat task's service actions and scripts share the seat's ops_per_hour (MGR-14).
-	if limited, err := seatRateLimited(ctx, tx, now, cat, rec); err != nil {
+	// A seat task's service actions and scripts share the seat's ops_per_hour, and their
+	// refusals count toward its safeguard (MGR-14).
+	seatTask, limit, err := seatToolGate(ctx, tx, now, cat, rec)
+	if err != nil {
 		return nil, "", "", err
-	} else if limited {
-		return deny("control_rate_limited", "control_rate_limited")
+	}
+	if limit != "" {
+		if err := c.seatToolDone(ctx, tx, now, cat, true); err != nil {
+			return nil, "", "", err
+		}
+		return deny(limit, limit)
 	}
 	if code, err := c.serviceGuards(ctx, tx, now, s); err != nil {
 		return nil, "", "", err
 	} else if code != "" {
+		if seatTask {
+			if err := c.seatToolDone(ctx, tx, now, cat, true); err != nil {
+				return nil, "", "", err
+			}
+		}
 		// The model sees a hold as the same short forbidden (PRM-8).
 		if code == "held" {
 			return deny("forbidden", "held")
@@ -409,6 +420,11 @@ func (c *Core) serviceControl(ctx context.Context, tx pgx.Tx, now time.Time, cat
 	}
 	if err := audit(true, "", grant); err != nil {
 		return nil, "", "", err
+	}
+	if seatTask {
+		if err := c.seatToolDone(ctx, tx, now, cat, false); err != nil {
+			return nil, "", "", err
+		}
 	}
 	return nil, callID, grant, nil
 }

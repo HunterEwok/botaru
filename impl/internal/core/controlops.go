@@ -306,12 +306,18 @@ func (c *Core) seatChecks(ctx context.Context, tx pgx.Tx, now time.Time, cat *Ca
 		return refuse("target_not_implicated", "no live incident of the tenant"), nil
 	}
 	*incOut = inc
+	// The class's responses list what the seat may do for its incidents; release only undoes
+	// the seat's own hold (MGR-9).
+	if req.Op != "release" && !slices.Contains(mstrs(mmap(classByName(cat, inc.Class), "responses"), "ops"), req.Op) {
+		return refuse("forbidden", "the incident class does not allow %s", req.Op), nil
+	}
 	if req.Op == "release" {
-		// Only a hold the seat set with the current epoch (control-ops.yaml, release).
+		// Only a hold the seat set with the current epoch for this incident (control-ops.yaml,
+		// release).
 		var author, kind string
 		var epoch *int
-		err := tx.QueryRow(ctx, `SELECT h.author, h.author_kind, (SELECT o.epoch FROM control_ops o WHERE o.hold = h.id AND o.actor_kind = 'seat' LIMIT 1)
-			FROM holds h WHERE h.id = $1 AND h.tenant = $2`, req.Target.ID, tenant).Scan(&author, &kind, &epoch)
+		err := tx.QueryRow(ctx, `SELECT h.author, h.author_kind, (SELECT o.epoch FROM control_ops o WHERE o.hold = h.id AND o.actor_kind = 'seat' AND o.incident = $3 LIMIT 1)
+			FROM holds h WHERE h.id = $1 AND h.tenant = $2`, req.Target.ID, tenant, inc.ID).Scan(&author, &kind, &epoch)
 		if errors.Is(err, pgx.ErrNoRows) || err == nil && (author != a.Principal || kind != "seat_holder" || epoch == nil || *epoch != a.Epoch) {
 			return refuse("forbidden", "only the seat's own holds of the current epoch are released"), nil
 		}
@@ -447,6 +453,10 @@ func seatConsents(cat *Catalog, tenant, op string) bool {
 // seatOpsLastHour counts what the seat did in the sliding hour: its control operations and the
 // granted service actions and scripts of its tasks, which share ops_per_hour (MGR-14).
 func seatOpsLastHour(ctx context.Context, tx pgx.Tx, now time.Time) (int, error) {
+	// One lock across tenants holds the count and the admission together until commit.
+	if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock(7300110)`); err != nil {
+		return 0, err
+	}
 	var n int
 	err := tx.QueryRow(ctx, `SELECT (SELECT count(*) FROM control_ops WHERE actor_kind = 'seat' AND created_at > $1)
 		+ (SELECT count(*) FROM toolcalls c JOIN tasks t ON t.id = c.task WHERE c.tool IN ($2, $3) AND c.access = 'write'
@@ -455,14 +465,32 @@ func seatOpsLastHour(ctx context.Context, tx pgx.Tx, now time.Time) (int, error)
 	return n, err
 }
 
-// seatRateLimited says whether a service action or a script of a seat task would pass the
-// seat's ops_per_hour (MGR-14); rec is the task record.
-func seatRateLimited(ctx context.Context, tx pgx.Tx, now time.Time, cat *Catalog, rec []byte) (bool, error) {
+// seatToolGate locks the seat for a service action or a script of a seat task (rec is the task
+// record) and checks the seat's shared ops_per_hour (MGR-14). It returns whether the task is a
+// seat task, and control_rate_limited when the hour is full.
+func seatToolGate(ctx context.Context, tx pgx.Tx, now time.Time, cat *Catalog, rec []byte) (bool, string, error) {
 	if seatOfRecord(rec) != managerSeatID {
-		return false, nil
+		return false, "", nil
+	}
+	// The seat row first, as in control.apply, then the count's lock.
+	if _, err := loadManagerSeat(ctx, tx, true); err != nil {
+		return false, "", err
 	}
 	n, err := seatOpsLastHour(ctx, tx, now)
-	return n >= seatLimits(cat).OpsPerHour, err
+	if err != nil || n < seatLimits(cat).OpsPerHour {
+		return true, "", err
+	}
+	return true, "control_rate_limited", nil
+}
+
+// seatToolDone counts a seat task's service action or script toward the safeguard: a refusal
+// adds to the run of refusals, a granted call ends it (MGR-14).
+func (c *Core) seatToolDone(ctx context.Context, tx pgx.Tx, now time.Time, cat *Catalog, refused bool) error {
+	if refused {
+		return c.seatDenied(ctx, tx, now, cat, nil)
+	}
+	_, err := tx.Exec(ctx, `UPDATE seats SET denials = 0 WHERE tenant = $1 AND id = $2`, farmTenant, managerSeatID)
+	return err
 }
 
 // protectedType is a type of the protected set: one that publishes alarms, makes backups or is a
@@ -472,16 +500,43 @@ func protectedType(cat *Catalog, typ string) bool {
 	if !ok {
 		return false
 	}
-	if tt.MakesBackup || tt.Proposable != nil && !*tt.Proposable {
+	if classNamed(cat)[typ] || tt.MakesBackup || tt.Proposable != nil && !*tt.Proposable {
 		return true
 	}
 	return slices.ContainsFunc(tt.Events, func(e string) bool { return strings.HasPrefix(e, "alarm.") })
+}
+
+// classNamed are the names any class of the incident catalog mentions; the types and roles
+// among them are protected targets (MGR-32).
+func classNamed(cat *Catalog) map[string]bool {
+	out := map[string]bool{}
+	var walk func(v any)
+	walk = func(v any) {
+		switch x := v.(type) {
+		case string:
+			out[x] = true
+		case []any:
+			for _, e := range x {
+				walk(e)
+			}
+		case map[string]any:
+			for _, e := range x {
+				walk(e)
+			}
+		}
+	}
+	for _, ic := range incidentClasses(cat) {
+		walk(ic.Spec)
+	}
+	return out
 }
 
 // protectedTarget says whether a target is in the protected set of the tenant: a protected type,
 // a task of one, or a worker running a task of one now (MGR-32).
 func (c *Core) protectedTarget(ctx context.Context, tx pgx.Tx, cat *Catalog, tenant string, t ControlTarget) (bool, error) {
 	switch t.Kind {
+	case "role":
+		return classNamed(cat)[t.ID], nil
 	case "tasktype":
 		return protectedType(cat, t.ID), nil
 	case "task":
