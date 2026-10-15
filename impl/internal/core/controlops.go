@@ -200,9 +200,9 @@ func (c *Core) controlApply(ctx context.Context, tx pgx.Tx, now time.Time, cat *
 			return nil, nil, err
 		}
 		if p != nil {
-			// A conversion to a person's decision is not a refusal of the safeguard (MGR-32,
-			// MGR-37).
-			if p.Reason != "protected_target" && p.Reason != "approval_required" {
+			// A conversion to a person's decision, or a person's hold, is not a refusal of the
+			// safeguard (MGR-32, MGR-37).
+			if p.Reason != "protected_target" && p.Reason != "approval_required" && p.Reason != "held" {
 				if err := c.seatDenied(ctx, tx, now, cat, m); err != nil {
 					return nil, nil, err
 				}
@@ -314,6 +314,14 @@ func (c *Core) controlApply(ctx context.Context, tx pgx.Tx, now time.Time, cat *
 func (c *Core) seatChecks(ctx context.Context, tx pgx.Tx, now time.Time, cat *Catalog, tenant string, a controlActor, req ControlRequest, incOut **incidentRow) (*Problem, error) {
 	if !managerEnabled(cat, tenant) {
 		return refuse("manager_disabled", "the farm manager is disabled in the tenant"), nil
+	}
+	// A person's no_control hold on the farm or the tenant stops the seat's operations there
+	// (MGR-15).
+	if held, err := heldBy(ctx, tx, now, []string{"no_control"}, tenantScopes(tenant)...); err != nil || held != "" {
+		if held != "" {
+			return refuse("held", "a hold stops control operations in the tenant"), nil
+		}
+		return nil, err
 	}
 	if req.Op != "release" && !seatConsents(cat, tenant, req.Op) {
 		return refuse("forbidden", "the tenant's farm-manager-ops has no control.apply:%s", req.Op), nil
@@ -490,8 +498,10 @@ func seatOpsLastHour(ctx context.Context, tx pgx.Tx, now time.Time) (int, error)
 	}
 	var n int
 	err := tx.QueryRow(ctx, `SELECT (SELECT count(*) FROM control_ops WHERE actor_kind = 'seat' AND created_at > $1)
-		+ (SELECT count(*) FROM toolcalls c JOIN tasks t ON t.id = c.task WHERE c.tool IN ($2, $3) AND c.access = 'write'
-			AND (c.grant_id IS NOT NULL OR c.approval_id IS NOT NULL) AND c.state <> 'denied' AND c.created_at > $1 AND t.record->>'seat' = $4)`,
+		+ (SELECT count(*) FROM toolcalls c JOIN tasks t ON t.id = c.task
+			LEFT JOIN approvals a ON a.id = c.approval_id LEFT JOIN tasks st ON st.id = a.source_task
+			WHERE c.tool IN ($2, $3) AND c.access = 'write' AND (c.grant_id IS NOT NULL OR c.approval_id IS NOT NULL) AND c.state <> 'denied'
+			AND c.created_at > $1 AND (t.record->>'seat' = $4 OR st.record->>'seat' = $4))`,
 		now.Add(-time.Hour), serviceRight, scriptRight, managerSeatID).Scan(&n)
 	return n, err
 }
@@ -878,6 +888,28 @@ func (c *Core) ControlRevert(ctx context.Context, op Operator, req ControlRevert
 			}
 			h.State = "released"
 			if _, err := c.holdChanged(ctx, tx, now, h.Hold, "hold.released.v1", "control.revert", OperatorActor(op), op.Principal); err != nil {
+				return err
+			}
+		}
+		// A pending approval a seat task asked for would still run the reverted work (MGR-15).
+		aq := `SELECT ` + approvalColumns + ` FROM approvals a WHERE a.state = 'pending' AND a.created_at >= $1
+			AND EXISTS (SELECT 1 FROM tasks t WHERE t.id = a.source_task AND t.record->>'seat' = $2) ORDER BY a.id FOR UPDATE`
+		aargs := []any{since, managerSeatID}
+		if req.Incident != "" {
+			aq = `SELECT ` + approvalColumns + ` FROM approvals a WHERE a.state = 'pending' AND ($3 = 'farm' OR a.tenant = $3)
+				AND EXISTS (SELECT 1 FROM tasks t WHERE t.id = a.source_task AND t.record->>'seat' = $2 AND lower(t.record->>'incident') = lower($1)) ORDER BY a.id FOR UPDATE`
+			aargs = []any{req.Incident, managerSeatID, op.Tenant}
+		}
+		arows, err := tx.Query(ctx, aq, aargs...)
+		if err != nil {
+			return err
+		}
+		as, err := pgx.CollectRows(arows, func(r pgx.CollectableRow) (*approvalRow, error) { return scanApproval(r) })
+		if err != nil {
+			return err
+		}
+		for _, a := range as {
+			if err := c.closeApproval(ctx, tx, now, a, "canceled", "control_reverted"); err != nil {
 				return err
 			}
 		}

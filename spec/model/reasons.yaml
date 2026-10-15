@@ -670,6 +670,13 @@ entries:
   retry: null
   outcome: value
   rules: [MGR-14]
+- id: control_reverted
+  since: v0.1
+  meaning: An approval outcome `canceled(control_reverted)`; a person's `control.revert` cancels the pending approvals that a farm manager seat task asked for in the reverted incident or period.
+  spends_attempt: null
+  retry: null
+  outcome: canceled
+  rules: [MGR-15]
 - id: contain_auto
   since: v0.1
   meaning: The reason for the stop of the first incident measure and of a maintenance window; the tenant admin or the operator releases it.

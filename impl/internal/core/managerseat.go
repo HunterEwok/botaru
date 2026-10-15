@@ -415,12 +415,14 @@ func (c *Core) syncHumanStop(ctx context.Context, tx pgx.Tx, now time.Time, cat 
 	if err != nil || m == nil {
 		return err
 	}
-	// A hold with only the effect no_control is the safeguard (MGR-14); any other seat hold is a
-	// person's kill switch (MGR-15).
+	// The safeguard is the hold code sets with the reason manager_breaker (MGR-14); any other
+	// seat hold is a person's kill switch (MGR-15), whatever its effects.
 	var held, guard bool
 	if err := tx.QueryRow(ctx, `SELECT
-		EXISTS (SELECT 1 FROM holds WHERE state = 'active' AND scope_kind = 'seat' AND scope_name = $1 AND (until IS NULL OR until > $2) AND effects <> ARRAY['no_control']),
-		EXISTS (SELECT 1 FROM holds WHERE state = 'active' AND scope_kind = 'seat' AND scope_name = $1 AND (until IS NULL OR until > $2) AND 'no_control' = ANY(effects))`,
+		EXISTS (SELECT 1 FROM holds WHERE state = 'active' AND scope_kind = 'seat' AND scope_name = $1 AND (until IS NULL OR until > $2)
+			AND NOT (author_kind = 'contain_auto' AND reason = 'manager_breaker')),
+		EXISTS (SELECT 1 FROM holds WHERE state = 'active' AND scope_kind = 'seat' AND scope_name = $1 AND (until IS NULL OR until > $2)
+			AND author_kind = 'contain_auto' AND reason = 'manager_breaker')`,
 		managerSeatID, now).Scan(&held, &guard); err != nil {
 		return err
 	}

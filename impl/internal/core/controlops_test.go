@@ -7,6 +7,9 @@ import (
 	"encoding/json"
 	"strings"
 	"testing"
+	"time"
+
+	"github.com/jackc/pgx/v5"
 
 	"github.com/HunterEwok/botaru/impl/internal/manifest"
 	"github.com/HunterEwok/botaru/impl/internal/mcp"
@@ -213,6 +216,41 @@ func TestControlOpsDrain(t *testing.T) {
 	}
 	if hello(); state() != "active" {
 		t.Fatalf("after the release and a hello: %s", state())
+	}
+}
+
+// A person's no_control hold on the tenant stops seat operations there without counting toward
+// the safeguard; a person's seat hold with only no_control is a kill switch, not the safeguard
+// (MGR-14, MGR-15).
+func TestControlOpsPersonHolds(t *testing.T) {
+	ctx := context.Background()
+	b := newControlBench(t)
+	set := func(scope HoldScope) string {
+		var id string
+		if err := b.c.tx(ctx, func(tx pgx.Tx, now time.Time) error {
+			var err error
+			id, _, err = b.c.insertHold(ctx, tx, now, OperatorActor(b.farmOp()), scope, []string{"no_control"}, "operator", nil)
+			return err
+		}); err != nil {
+			t.Fatal(err)
+		}
+		return id
+	}
+	h := set(HoldScope{Kind: "tenant", Tenant: "demo"})
+	for range 3 {
+		if code := b.call(t, "hold", "resource", "db1"); code != "held" {
+			t.Fatalf("under a tenant no_control hold: %s", code)
+		}
+	}
+	if m := b.managerSeat(t); m.State != "held" {
+		t.Fatalf("a person's hold tripped the safeguard: %+v", m)
+	}
+	if _, err := b.c.HoldRelease(ctx, OperatorActor(b.farmOp()), HoldReleaseRequest{ID: h}); err != nil {
+		t.Fatal(err)
+	}
+	set(HoldScope{Kind: "seat", Tenant: farmTenant, Name: managerSeatID})
+	if m := b.managerSeat(t); !m.has("human") || m.has("no_control") {
+		t.Fatalf("a person's no_control seat hold: %+v", m)
 	}
 }
 
