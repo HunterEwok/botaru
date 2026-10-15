@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"regexp"
 	"slices"
 	"sort"
 	"strconv"
@@ -1160,6 +1161,9 @@ func (c *Core) incidentCommand(ctx context.Context, tx pgx.Tx, now time.Time, pc
 // incidentSubjectScopes are the hold scopes a first measure may name in a tenant.
 var incidentSubjectScopes = []string{"worker", "bot", "bot_group", "role", "tasktype", "resource"}
 
+// incidentClassName is the class name of incident records and events.
+var incidentClassName = regexp.MustCompile(`^[a-z][a-z0-9_]{0,62}$`)
+
 // lintIncidentClasses checks the references of an IncidentClass (MGR-7): detect names a code
 // alarm of the events catalog and closed condition atoms; implicate only the involvement
 // functions; responses only operations of control-ops.yaml, applied actions, pinnable types
@@ -1181,6 +1185,10 @@ func (c *Core) lintIncidentClasses(S *lintSet, f *lintFindings) error {
 	for _, o := range S.each("IncidentClass") {
 		if o.i < 0 {
 			continue
+		}
+		// The class name goes into incident records and events, which take a short snake_case name.
+		if !incidentClassName.MatchString(o.name) {
+			f.add(o, "incident_class_ref", "")
 		}
 		d := mmap(o.spec, "detect")
 		if a := mstr(d, "alarm"); !strings.HasPrefix(a, "alarm.") || !events.Has(a) || a == "alarm.incident.unhandled.v1" {

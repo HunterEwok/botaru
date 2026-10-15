@@ -1362,6 +1362,8 @@ def lint_incident_classes(S, f):
     ops = model_registry('control-ops')
     holds = model_registry('holds')
     for _, cname, where, cs in S.each('IncidentClass'):
+        if not re.fullmatch(r'[a-z][a-z0-9_]{0,62}', str(cname)):
+            f.error('incident_class_ref', where, f'class {cname}: the name is not a short snake_case name of incident records (MGR-7)')
         d = cs.get('detect') or {}
         alarm = d.get('alarm')
         if not (isinstance(alarm, str) and alarm.startswith('alarm.') and alarm in events) or alarm == 'alarm.incident.unhandled.v1':
