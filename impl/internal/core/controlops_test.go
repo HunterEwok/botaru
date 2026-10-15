@@ -5,8 +5,10 @@ package core
 import (
 	"context"
 	"encoding/json"
+	"strings"
 	"testing"
 
+	"github.com/HunterEwok/botaru/impl/internal/manifest"
 	"github.com/HunterEwok/botaru/impl/internal/mcp"
 )
 
@@ -45,7 +47,7 @@ func (b *controlBench) call(t *testing.T, op, kind, id string) string {
 	args := map[string]any{"op": op, "target": map[string]any{"kind": kind, "id": id}, "basis": map[string]any{"incident": b.incident}}
 	if op == "hold" {
 		args["effects"] = []any{"no_claim"}
-		args["ttl"] = "3h"
+		args["ttl"] = "1h"
 	}
 	r, err := b.c.P3ToolsCall(context.Background(), b.handle, mcp.CallParams{Name: controlToolName, Arguments: args})
 	if err != nil {
@@ -65,7 +67,7 @@ func (b *controlBench) call(t *testing.T, op, kind, id string) string {
 }
 
 // The seat holder applies an operation on a target involved in the incident: the hold carries
-// the seat as its author with the ttl capped at hold_ttl_max, the operation is recorded and
+// the seat as its author within hold_ttl_max, the operation is recorded and
 // handles the incident; a person reverts the seat's holds on the incident (MGR-9, MGR-14, MGR-15).
 func TestControlOpsSeat(t *testing.T) {
 	ctx := context.Background()
@@ -134,6 +136,57 @@ func TestControlOpsBreaker(t *testing.T) {
 	}
 	if m := b.managerSeat(t); m.State != "held" || m.has("no_control") {
 		t.Fatalf("seat after the release %+v", m)
+	}
+}
+
+// A seat hold longer than hold_ttl_max is refused, not cut short; an operation the tenant did
+// not consent to is not offered (cancel is not in the bench's farm-manager-ops); release takes
+// only a hold of the current epoch (MGR-3, MGR-9, MGR-14).
+func TestControlOpsLimits(t *testing.T) {
+	ctx := context.Background()
+	b := newControlBench(t)
+	args := map[string]any{"op": "hold", "target": map[string]any{"kind": "resource", "id": "db1"}, "basis": map[string]any{"incident": b.incident},
+		"effects": []any{"no_claim"}, "ttl": "3h"}
+	if r, err := b.c.P3ToolsCall(ctx, b.handle, mcp.CallParams{Name: controlToolName, Arguments: args}); err != nil || !strings.Contains(callText(r), "input_schema_invalid") {
+		t.Fatalf("a hold above hold_ttl_max: %v %v", callText(r), err)
+	}
+	if code := b.call(t, "cancel", "task", "tk_x"); code != "input_schema_invalid" {
+		t.Fatalf("an operation without consent: %s", code)
+	}
+	cat, err := b.c.Catalog(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !seatConsents(cat, "demo", "hold") || seatConsents(cat, "demo", "cancel") {
+		t.Fatal("consent of the tenant group")
+	}
+	if code := b.call(t, "hold", "resource", "db1"); code != "applied" {
+		t.Fatalf("hold %s", code)
+	}
+	var hold string
+	if err := b.c.st.Pool.QueryRow(ctx, `UPDATE control_ops SET epoch = epoch - 1 WHERE actor_kind = 'seat' RETURNING hold`).Scan(&hold); err != nil {
+		t.Fatal(err)
+	}
+	if code := b.call(t, "release", "hold", hold); code != "forbidden" {
+		t.Fatalf("a hold of an earlier epoch was released: %s", code)
+	}
+}
+
+// The types that publish the alarm of a class with stops_manager, and the roles that claim
+// them, are out of reach of seat operations (GOV-28, MGR-9).
+func TestStopWriters(t *testing.T) {
+	cat := newCatalog()
+	cat.RawGlobals[manifest.Key{Kind: "IncidentClass", Name: "disk_full"}] = map[string]any{"spec": map[string]any{"stops_manager": true,
+		"detect": map[string]any{"alarm": "alarm.disk.free.low.v1"}}}
+	cat.RawGlobals[manifest.Key{Kind: "IncidentClass", Name: "slow"}] = map[string]any{"spec": map[string]any{
+		"detect": map[string]any{"alarm": "alarm.slow.v1"}}}
+	cat.TaskTypes["ops.volume.series.v1"] = manifest.TaskType{Events: []string{"alarm.disk.free.low.v1"}}
+	cat.TaskTypes["ops.slow.v1"] = manifest.TaskType{Events: []string{"alarm.slow.v1"}}
+	cat.Roles["volume-series"] = manifest.Role{Claims: []string{"ops.volume.series.v1"}}
+	cat.Roles["slow-watch"] = manifest.Role{Claims: []string{"ops.slow.v1"}}
+	types, roles := stopWriters(cat)
+	if !types["ops.volume.series.v1"] || types["ops.slow.v1"] || !roles["volume-series"] || roles["slow-watch"] {
+		t.Fatalf("writers %v %v", types, roles)
 	}
 }
 

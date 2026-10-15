@@ -360,6 +360,12 @@ func (c *Core) serviceControl(ctx context.Context, tx pgx.Tx, now time.Time, cat
 		return nil, "", "", err
 	}
 	s.UntrustedSeen, s.UntrustedSource = tr.UntrustedSeen, tr.UntrustedSource
+	// A seat task's service actions and scripts share the seat's ops_per_hour (MGR-14).
+	if limited, err := seatRateLimited(ctx, tx, now, cat, rec); err != nil {
+		return nil, "", "", err
+	} else if limited {
+		return deny("control_rate_limited", "control_rate_limited")
+	}
 	if code, err := c.serviceGuards(ctx, tx, now, s); err != nil {
 		return nil, "", "", err
 	} else if code != "" {

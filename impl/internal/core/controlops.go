@@ -284,9 +284,12 @@ func (c *Core) seatChecks(ctx context.Context, tx pgx.Tx, now time.Time, cat *Ca
 	if !managerEnabled(cat, tenant) {
 		return refuse("manager_disabled", "the farm manager is disabled in the tenant"), nil
 	}
+	if req.Op != "release" && !seatConsents(cat, tenant, req.Op) {
+		return refuse("forbidden", "the tenant's farm-manager-ops has no control.apply:%s", req.Op), nil
+	}
 	lim := seatLimits(cat)
-	var n int
-	if err := tx.QueryRow(ctx, `SELECT count(*) FROM control_ops WHERE actor_kind = 'seat' AND created_at > $1`, now.Add(-time.Hour)).Scan(&n); err != nil {
+	n, err := seatOpsLastHour(ctx, tx, now)
+	if err != nil {
 		return nil, err
 	}
 	if n >= lim.OpsPerHour {
@@ -304,10 +307,13 @@ func (c *Core) seatChecks(ctx context.Context, tx pgx.Tx, now time.Time, cat *Ca
 	}
 	*incOut = inc
 	if req.Op == "release" {
-		var author, kind, state string
-		err := tx.QueryRow(ctx, `SELECT author, author_kind, state FROM holds WHERE id = $1 AND tenant = $2`, req.Target.ID, tenant).Scan(&author, &kind, &state)
-		if errors.Is(err, pgx.ErrNoRows) || err == nil && (author != a.Principal || kind != "seat_holder") {
-			return refuse("forbidden", "only the seat's own holds are released"), nil
+		// Only a hold the seat set with the current epoch (control-ops.yaml, release).
+		var author, kind string
+		var epoch *int
+		err := tx.QueryRow(ctx, `SELECT h.author, h.author_kind, (SELECT o.epoch FROM control_ops o WHERE o.hold = h.id AND o.actor_kind = 'seat' LIMIT 1)
+			FROM holds h WHERE h.id = $1 AND h.tenant = $2`, req.Target.ID, tenant).Scan(&author, &kind, &epoch)
+		if errors.Is(err, pgx.ErrNoRows) || err == nil && (author != a.Principal || kind != "seat_holder" || epoch == nil || *epoch != a.Epoch) {
+			return refuse("forbidden", "only the seat's own holds of the current epoch are released"), nil
 		}
 		return nil, err
 	}
@@ -401,7 +407,62 @@ func (c *Core) targetExcluded(ctx context.Context, tx pgx.Tx, cat *Catalog, tena
 	if typ != "" && slices.Contains(excludedPurposes, cat.TaskTypes[typ].Purpose) {
 		return true, nil
 	}
-	return false, nil
+	types, roles := stopWriters(cat)
+	return roles[role] || types[typ], nil
+}
+
+// stopWriters are the task types that publish the alarm of a class with stops_manager and the
+// roles that claim them: the manager may not blind the alarm that stops it (GOV-28, MGR-9).
+func stopWriters(cat *Catalog) (types, roles map[string]bool) {
+	alarms := map[string]bool{}
+	for _, ic := range incidentClasses(cat) {
+		if a := mstr(mmap(ic.Spec, "detect"), "alarm"); a != "" && truthy(ic.Spec["stops_manager"]) {
+			alarms[a] = true
+		}
+	}
+	types, roles = map[string]bool{}, map[string]bool{}
+	for name, tt := range cat.TaskTypes {
+		if slices.ContainsFunc(tt.Events, func(e string) bool { return alarms[e] }) {
+			types[name] = true
+		}
+	}
+	for name, r := range cat.Roles {
+		if slices.ContainsFunc(r.Claims, func(t string) bool { return types[t] }) {
+			roles[name] = true
+		}
+	}
+	return types, roles
+}
+
+// seatConsents says whether the tenant's consent group farm-manager-ops holds
+// control.apply:<op> (MGR-3, PRM-13); release has no row in the consent table.
+func seatConsents(cat *Catalog, tenant, op string) bool {
+	tv := cat.Tenants[tenant]
+	if tv == nil {
+		return false
+	}
+	return hasCap(tv, groupClosure(tv, []string{"farm-manager-ops"}), "control.apply:"+op)
+}
+
+// seatOpsLastHour counts what the seat did in the sliding hour: its control operations and the
+// granted service actions and scripts of its tasks, which share ops_per_hour (MGR-14).
+func seatOpsLastHour(ctx context.Context, tx pgx.Tx, now time.Time) (int, error) {
+	var n int
+	err := tx.QueryRow(ctx, `SELECT (SELECT count(*) FROM control_ops WHERE actor_kind = 'seat' AND created_at > $1)
+		+ (SELECT count(*) FROM toolcalls c JOIN tasks t ON t.id = c.task WHERE c.tool IN ($2, $3) AND c.access = 'write'
+			AND (c.grant_id IS NOT NULL OR c.approval_id IS NOT NULL) AND c.state <> 'denied' AND c.created_at > $1 AND t.record->>'seat' = $4)`,
+		now.Add(-time.Hour), serviceRight, scriptRight, managerSeatID).Scan(&n)
+	return n, err
+}
+
+// seatRateLimited says whether a service action or a script of a seat task would pass the
+// seat's ops_per_hour (MGR-14); rec is the task record.
+func seatRateLimited(ctx context.Context, tx pgx.Tx, now time.Time, cat *Catalog, rec []byte) (bool, error) {
+	if seatOfRecord(rec) != managerSeatID {
+		return false, nil
+	}
+	n, err := seatOpsLastHour(ctx, tx, now)
+	return n >= seatLimits(cat).OpsPerHour, err
 }
 
 // protectedType is a type of the protected set: one that publishes alarms, makes backups or is a
@@ -516,21 +577,28 @@ func (c *Core) controlDo(ctx context.Context, tx pgx.Tx, now time.Time, cat *Cat
 		if req.Op != "hold" && req.Target.Kind != "worker" {
 			return "", refuse("input_schema_invalid", "%s takes a worker", req.Op), nil
 		}
-		if !slices.Contains([]string{"worker", "bot", "bot_group", "role", "tasktype", "resource"}, req.Target.Kind) {
-			return "", refuse("input_schema_invalid", "a hold takes a worker, bot, bot group, role, type or resource"), nil
+		// A bot group hold is not checked by this version's hold matching, so it is not offered.
+		if !slices.Contains([]string{"worker", "bot", "role", "tasktype", "resource"}, req.Target.Kind) {
+			return "", refuse("input_schema_invalid", "a hold takes a worker, bot, role, type or resource"), nil
 		}
 		ttl := defaultHoldTTLMax
+		if a.Seat {
+			ttl = seatLimits(cat).HoldTTLMax
+		}
 		if req.TTL != "" {
 			d, ok := parseDuration(req.TTL)
 			if !ok || d <= 0 {
 				return "", refuse("input_schema_invalid", "ttl"), nil
+			}
+			if a.Seat && d > ttl {
+				// A longer hold is refused, not cut short, so the seat does not count on it.
+				return "", refuse("input_schema_invalid", "ttl above hold_ttl_max"), nil
 			}
 			ttl = d
 		}
 		var until *time.Time
 		actor := OperatorActor(a.Operator)
 		if a.Seat {
-			ttl = min(ttl, seatLimits(cat).HoldTTLMax)
 			source := ""
 			if inc != nil {
 				source = inc.ID
@@ -758,9 +826,12 @@ func (c *Core) controlTool(cat *Catalog, g *toolsGrant) *catalogTool {
 	if g.Purpose != "manage" || profileOf(cat, g.Role) != "farm-manager" {
 		return nil
 	}
+	// Only the operations the tenant consented to (MGR-3); release undoes the seat's own hold.
 	ops := []any{}
 	for _, o := range controlOpsServed {
-		ops = append(ops, o)
+		if o == "release" || seatConsents(cat, g.Tenant, o) {
+			ops = append(ops, o)
+		}
 	}
 	schema := map[string]any{
 		"type": "object", "additionalProperties": false, "required": []any{"op", "target", "basis"},
@@ -792,7 +863,11 @@ func (c *Core) controlToolCall(ctx context.Context, tx pgx.Tx, now time.Time, ca
 	if !offered {
 		return answer(map[string]any{"code": "forbidden"}, true), nil
 	}
-	if err := c.rs.validate(c.controlTool(cat, g).Schema, args); err != nil {
+	tool := c.controlTool(cat, g)
+	if tool == nil {
+		return answer(map[string]any{"code": "forbidden"}, true), nil
+	}
+	if err := c.rs.validate(tool.Schema, args); err != nil {
 		return answer(map[string]any{"code": "input_schema_invalid"}, true), nil
 	}
 	raw, _ := json.Marshal(args)
