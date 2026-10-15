@@ -36,6 +36,8 @@ type Audit struct {
 	PersonalSeen []string
 	// ServiceGrant is the block of a service_grant record (APR-17, APR-18).
 	ServiceGrant map[string]any
+	// Restore is the block of a restore record that opens a new epoch (RET-6, D-86 (7)).
+	Restore map[string]any
 }
 
 // Actor is who made the change.
@@ -59,15 +61,21 @@ func workerPrincipal(workerID string) string { return "worker:" + strings.ToLowe
 // appendAudit numbers the record in the tenant chain and links it to the previous hash
 // (AUD-1, AUD-6). The chain head row is locked, so records of one tenant are serialized.
 func (c *Core) appendAudit(ctx context.Context, tx pgx.Tx, now time.Time, a Audit) (int64, error) {
+	return c.appendAuditAt(ctx, tx, now, c.epoch, a)
+}
+
+// appendAuditAt appends to the chain of the given epoch; only a restore writes to an epoch
+// other than the core's own, the first record of the new one.
+func (c *Core) appendAuditAt(ctx context.Context, tx pgx.Tx, now time.Time, epoch int64, a Audit) (int64, error) {
 	var seq int64
 	var prev string
-	err := tx.QueryRow(ctx, `SELECT seq, hash FROM audit_heads WHERE tenant = $1 AND epoch = $2 FOR UPDATE`, a.Tenant, c.epoch).Scan(&seq, &prev)
+	err := tx.QueryRow(ctx, `SELECT seq, hash FROM audit_heads WHERE tenant = $1 AND epoch = $2 FOR UPDATE`, a.Tenant, epoch).Scan(&seq, &prev)
 	if errors.Is(err, pgx.ErrNoRows) {
 		seq, prev = 0, jcs.ZeroHash
-		if _, err := tx.Exec(ctx, `INSERT INTO audit_heads (tenant, epoch, seq, hash) VALUES ($1, $2, 0, $3) ON CONFLICT (tenant, epoch) DO NOTHING`, a.Tenant, c.epoch, prev); err != nil {
+		if _, err := tx.Exec(ctx, `INSERT INTO audit_heads (tenant, epoch, seq, hash) VALUES ($1, $2, 0, $3) ON CONFLICT (tenant, epoch) DO NOTHING`, a.Tenant, epoch, prev); err != nil {
 			return 0, err
 		}
-		if err := tx.QueryRow(ctx, `SELECT seq, hash FROM audit_heads WHERE tenant = $1 AND epoch = $2 FOR UPDATE`, a.Tenant, c.epoch).Scan(&seq, &prev); err != nil {
+		if err := tx.QueryRow(ctx, `SELECT seq, hash FROM audit_heads WHERE tenant = $1 AND epoch = $2 FOR UPDATE`, a.Tenant, epoch).Scan(&seq, &prev); err != nil {
 			return 0, err
 		}
 	} else if err != nil {
@@ -110,6 +118,9 @@ func (c *Core) appendAudit(ctx context.Context, tx pgx.Tx, now time.Time, a Audi
 	if a.ServiceGrant != nil {
 		rec["service_grant"] = a.ServiceGrant
 	}
+	if a.Restore != nil {
+		rec["restore"] = a.Restore
+	}
 	h, err := jcs.Hash(rec)
 	if err != nil {
 		return 0, err
@@ -120,10 +131,10 @@ func (c *Core) appendAudit(ctx context.Context, tx pgx.Tx, now time.Time, a Audi
 		return 0, err
 	}
 	if _, err := tx.Exec(ctx, `INSERT INTO audit (tenant, epoch, seq, at, record, hash) VALUES ($1, $2, $3, $4, $5, $6)`,
-		a.Tenant, c.epoch, seq, now, raw, h); err != nil {
+		a.Tenant, epoch, seq, now, raw, h); err != nil {
 		return 0, err
 	}
-	if _, err := tx.Exec(ctx, `UPDATE audit_heads SET seq = $2, hash = $3 WHERE tenant = $1 AND epoch = $4`, a.Tenant, seq, h, c.epoch); err != nil {
+	if _, err := tx.Exec(ctx, `UPDATE audit_heads SET seq = $2, hash = $3 WHERE tenant = $1 AND epoch = $4`, a.Tenant, seq, h, epoch); err != nil {
 		return 0, err
 	}
 	return seq, nil

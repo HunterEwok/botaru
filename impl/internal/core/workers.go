@@ -154,8 +154,11 @@ func (c *Core) AuthenticateWorker(ctx context.Context, token string) (*Worker, e
 	var w Worker
 	var labels, hello, plugins []byte
 	var target, placement, host *string
-	err := c.st.Pool.QueryRow(ctx, `UPDATE workers SET last_seen = botaru_now() WHERE token_hash = $1
-		RETURNING id, tenant, role, kind, target, state, labels, hello, plugins, placement, host`, c.hashSecret(token)).
+	// A token hashed under a previous key of the rotation window is rehashed under the current
+	// one at its first use, so it outlives the window (SEC-5).
+	hashes := c.secretHashes(token)
+	err := c.st.Pool.QueryRow(ctx, `UPDATE workers SET last_seen = botaru_now(), token_hash = $2 WHERE token_hash = ANY($1)
+		RETURNING id, tenant, role, kind, target, state, labels, hello, plugins, placement, host`, hashes, hashes[0]).
 		Scan(&w.ID, &w.Tenant, &w.Role, &w.Kind, &target, &w.State, &labels, &hello, &plugins, &placement, &host)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, refuse("unauthenticated", "unknown worker token")

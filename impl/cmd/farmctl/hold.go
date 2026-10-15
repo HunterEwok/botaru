@@ -132,7 +132,7 @@ func offlineCore(ctx context.Context, cfg *config.Core) (*core.Core, func(), err
 	if err != nil {
 		return nil, nil, err
 	}
-	key, err := config.Secret(cfg.TokenKeyFile)
+	key, keyID, prevKeys, err := cfg.TokenKeys()
 	if err != nil {
 		return nil, nil, err
 	}
@@ -149,7 +149,7 @@ func offlineCore(ctx context.Context, cfg *config.Core) (*core.Core, func(), err
 		return nil, nil, err
 	}
 	c, err := core.New(ctx, core.Config{
-		TokenKey: []byte(key), TestBench: cfg.TestBench, Offline: true,
+		TokenKey: key, KeyID: keyID, PreviousKeys: prevKeys, TestBench: cfg.TestBench, Offline: true,
 		Logger: slog.New(slog.NewTextHandler(io.Discard, nil)),
 	}, st, sp, nil)
 	if err != nil {

@@ -258,6 +258,98 @@ farmctl hold release h_...
 
 Farm alarms (a silent worker, a task nobody took) come as messages to the private chats of the tenant's admins, people with `admin:people` or `hold.release`. This version cannot grant such a group yet (PRM-13), so the core logs a warning instead of sending.
 
+## Backups and restore
+
+The backup is your own job, run as its own user off the core process; the core only checks that it happens. One way, on the core machine every night, with the encryption key of the backup on this machine only:
+
+```sh
+pg_dump -Fc botaru | age -r <the backup public key> > /var/backups/botaru/store-$(date -u +%F).age
+farmctl erasure-log export -config /etc/botaru/core.yaml > /var/backups/botaru/erasure-$(date -u +%F).json
+```
+
+Copy both to the backup machine or to a write-only external store, then report each:
+
+```sh
+F="farmctl -token-file /etc/botaru/secrets/backup-operator"   # an operator credential of tenant farm
+$F backup report -kind backup -location offsite-1 -started <start, RFC 3339> -finished <end> -ok -size <bytes>
+$F backup report -kind backup -location erasure-1 -started ... -finished ... -ok   # the erasure log backup
+```
+
+Add to `/etc/botaru/core.yaml`:
+
+```yaml
+backup:
+  locations: [offsite-1]          # location_id of each store backup place (RET-5)
+  erasure_log_location: erasure-1
+  monitor: false                  # true when a monitoring system watches the backups
+spend:                            # reconciliation with the provider report (BUD-10); these are the defaults
+  tolerance_eur: 0.5
+  tolerance_pct: 2
+  estimate_release_after: 7d
+  reconcile_overdue_days: 35
+```
+
+Once a week restore the newest backup into a scratch database, check it, and report `-kind restore_check`.
+
+To restore the farm:
+
+1. Stop every farm process. Load the backup into an empty store (`pg_restore -d botaru`).
+2. On the core machine: `farmctl restore begin -config /etc/botaru/core.yaml -erasure-log <the newest erasure log backup>`.
+3. Start the core. It answers `not_ready` until the restore completes.
+4. Reconcile each day since the backup with the provider's cost report (`farmctl spend reconcile`), then `farmctl restore complete`. If the report is not there yet, `farmctl restore complete -spend-pending` starts the farm with the daily limits halved until the reconciliation arrives.
+5. Enroll the workers again if their tokens were issued after the backup, and start them.
+
+## Rotating the token key
+
+```sh
+farmctl new-secret > /etc/botaru/secrets/token-k2.key
+```
+
+In `/etc/botaru/core.yaml` point `token_key_file` at the new file, set `token_key_id: k2`, and keep the old key for the window:
+
+```yaml
+previous_token_keys:
+  - {id: k1, file: /etc/botaru/secrets/token.key}
+```
+
+Restart the core. After the window (every worker has called once, and the longest lease has passed) remove the old key from `previous_token_keys` and restart again.
+
+## Running with docker compose
+
+`impl/deploy/compose/` runs the same test bench in containers: the store, the core, the agent, the Telegram channel and the mock provider. The containers run as user 10001 with a read-only root, and only the store and core networks connect them; P1 and P2 publish no port.
+
+```sh
+cd /opt/botaru/src/impl/deploy/compose
+install -d -m 700 secrets && cd secrets
+F="docker run --rm botaru:local farmctl"
+docker compose -f ../compose.yaml build core
+$F new-secret > store-password
+printf 'postgres://botaru:%s@store:5432/botaru?sslmode=disable' "$(cat store-password)" > store-dsn
+$F new-secret > token-key
+$F new-secret > operator
+cat operator | docker run --rm -i botaru:local farmctl hash-token    # put it into ../core.yaml
+echo '<the bot token from @BotFather>' > bot-token
+echo '<the Anthropic key, any text for the mock>' > provider-key-demo
+sudo chown 10001 * && sudo chown 999 store-password && chmod 600 *
+cd ..
+```
+
+Then start the store, the core and the mock provider, apply the manifests and enroll the workers from inside the core container, and start the workers. The image has no git history, so `apply` takes the commit of the checkout the image was built from:
+
+```sh
+docker compose --profile mock up -d store core mockmodel
+X="docker compose exec core farmctl -token-file /run/secrets/operator"
+$X apply -as-test -drop-unsupported -commit $(git -C /opt/botaru/src rev-parse HEAD) examples/hello-bot/role.yaml examples/hello-bot/tasktype.yaml examples/hello-bot/group.yaml \
+  examples/tenants/demo/tenant.yaml examples/tenants/demo/channels.yaml examples/model-profiles/base-std.yaml
+$X principal add -identity telegram:<your id> -locale ru
+$X grant <the principal id> hello
+$X worker enroll -tenant demo -role hello -kind agent -token-out /var/lib/botaru/workers/agent
+$X worker enroll -tenant demo -role telegram -kind channel -target telegram -token-out /var/lib/botaru/workers/channel
+docker compose --profile mock --profile workers up -d
+```
+
+The check is the same as section 8. For a real model, set `base_url` in `core.yaml` to `https://api.anthropic.com`, leave the `mock` profile out, and apply your copy of the model profile as in section 7 (mount it into the core container).
+
 ## Upgrading from the first version
 
 A farm built from the first version of this guide keeps its store, settings and secrets. The steps:

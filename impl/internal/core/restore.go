@@ -61,7 +61,20 @@ func (c *Core) RestoreBegin(ctx context.Context, log []ErasureLogEntry) (int, er
 		if err := tx.QueryRow(ctx, `SELECT greatest((SELECT max(time) FROM events), (SELECT max(time) FROM spend), (SELECT max(updated_at) FROM tasks))`).Scan(&point); err != nil {
 			return err
 		}
-		if _, err := tx.Exec(ctx, `UPDATE farm_meta SET epoch = epoch + 1, restoring = true, restore_point = coalesce($1, restore_point) WHERE id = 1`, point); err != nil {
+		var prevEpoch, epoch int64
+		if err := tx.QueryRow(ctx, `UPDATE farm_meta SET epoch = epoch + 1, restoring = true, restore_point = coalesce($1, restore_point) WHERE id = 1
+			RETURNING epoch - 1, epoch, restore_point`, point).Scan(&prevEpoch, &epoch, &point); err != nil {
+			return err
+		}
+		backupAt := now
+		if point != nil {
+			backupAt = *point
+		}
+		// The farm chain of the new epoch opens with the restore record (D-86 (7)).
+		if _, err := c.appendAuditAt(ctx, tx, now, epoch, Audit{
+			Tenant: "farm", Kind: "restore", Actor: Actor{Principal: "system", Via: "farmctl"}, OK: true,
+			Restore: map[string]any{"epoch": epoch, "previous_epoch": prevEpoch, "backup_at": fmtTime(backupAt)},
+		}); err != nil {
 			return err
 		}
 		for _, e := range log {
@@ -77,7 +90,7 @@ func (c *Core) RestoreBegin(ctx context.Context, log []ErasureLogEntry) (int, er
 			}
 			added += int(tag.RowsAffected())
 		}
-		_, err := c.appendAudit(ctx, tx, now, Audit{
+		_, err := c.appendAuditAt(ctx, tx, now, epoch, Audit{
 			Tenant: "farm", Kind: "command", Actor: Actor{Principal: "system", Via: "farmctl"},
 			Command: "restore.begin", Target: &Target{Kind: "store", ID: "store"}, OK: true,
 			After: map[string]any{"erasure_requests_replayed": added},

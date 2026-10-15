@@ -135,6 +135,35 @@
       "maxItems": 2,
       "minItems": 1
     },
+    "secrets": {
+      "description": "Rotation method of each named secret of the description (SEC-5, DEP-10): overlap, with a window in which the old and the new value both work, or cutover, without overlap. The names are constant, so a rotation changes no manifest.",
+      "type": "object",
+      "propertyNames": {
+        "type": "string",
+        "maxLength": 64,
+        "pattern": "^[a-z][a-z0-9-]*$"
+      },
+      "maxProperties": 256,
+      "additionalProperties": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "rotation"
+        ],
+        "properties": {
+          "rotation": {
+            "enum": [
+              "overlap",
+              "cutover"
+            ]
+          },
+          "window": {
+            "description": "Overlap window; required for overlap.",
+            "$ref": "urn:botaru:schema:common:1#/$defs/duration"
+          }
+        }
+      }
+    },
     "hosts": {
       "description": "Machines by name.",
       "type": "object",

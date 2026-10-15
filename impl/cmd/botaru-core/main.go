@@ -76,7 +76,7 @@ func run(path string, log *slog.Logger) error {
 	if err != nil {
 		return err
 	}
-	key, err := config.Secret(cfg.TokenKeyFile)
+	key, keyID, prevKeys, err := cfg.TokenKeys()
 	if err != nil {
 		return err
 	}
@@ -101,7 +101,7 @@ func run(path string, log *slog.Logger) error {
 		return err
 	}
 	c, err := core.New(ctx, core.Config{
-		TokenKey: []byte(key), TestBench: cfg.TestBench, LeaseS: cfg.LeaseS, HeartbeatS: cfg.HeartbeatS,
+		TokenKey: key, KeyID: keyID, PreviousKeys: prevKeys, TestBench: cfg.TestBench, LeaseS: cfg.LeaseS, HeartbeatS: cfg.HeartbeatS,
 		DeliveryMaxAttempts: cfg.DeliveryMaxAttempts, Operator: cfg.Operator, FarmHosts: cfg.FarmHosts, Health: cfg.Health, Spend: cfg.Spend, Backup: cfg.Backup, Logger: log,
 	}, st, sp, tx)
 	if err != nil {

@@ -135,7 +135,7 @@ func (c *Core) resolveLeaseHandle(ctx context.Context, q store.Querier, handle, 
 	err := q.QueryRow(ctx, `SELECT h.tenant, h.work_id, h.lease_no, h.epoch, h.worker_id, h.ref, l.state, l.lease_until, botaru_now(), t.record, w.role
 		FROM handles h JOIN leases l ON l.work_id = h.work_id AND l.lease_no = h.lease_no
 		JOIN tasks t ON t.id = h.work_id JOIN workers w ON w.id = h.worker_id
-		WHERE h.hash = $1 AND h.kind = $2`, c.hashSecret(handle), kind).
+		WHERE h.hash = ANY($1) AND h.kind = $2`, c.secretHashes(handle), kind).
 		Scan(&h.Tenant, &h.Task, &h.LeaseNo, &epoch, &h.Worker, &ref, &state, &until, &now, &rec, &h.Role)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, refuse("handle_invalid", "unknown %s handle", kind)

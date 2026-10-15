@@ -55,7 +55,7 @@ func (c *Core) ResolveModelHandle(ctx context.Context, handle string) (*ModelGra
 	var slot, profile, fp *string
 	err = c.st.Pool.QueryRow(ctx, `SELECT h.tenant, h.work_id, h.lease_no, h.epoch, h.worker_id, h.slot, h.profile, l.state, l.lease_until, l.fingerprint, botaru_now()
 		FROM handles h JOIN leases l ON l.work_id = h.work_id AND l.lease_no = h.lease_no
-		WHERE h.hash = $1 AND h.kind = 'model'`, c.hashSecret(handle)).
+		WHERE h.hash = ANY($1) AND h.kind = 'model'`, c.secretHashes(handle)).
 		Scan(&g.Tenant, &g.Task, &leaseNo, &epoch, &g.Worker, &slot, &profile, &state, &until, &fp, &now)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, refuse("handle_invalid", "unknown model handle")

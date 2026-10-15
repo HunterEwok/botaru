@@ -14,6 +14,14 @@ backup:
   encrypted: true                   # encrypted on core1 before sending, the storage has no key (RET-5)
   key_ref: backup-encryption-key
   credentials_ref: backup-write-only
+secrets:                                   # rotation method of each named secret (SEC-5, docs/operations.md)
+  backup-encryption-key:     {rotation: overlap, window: 60d}
+  backup-write-only:         {rotation: overlap, window: 1d}
+  health-key:                {rotation: overlap, window: 1d}
+  store-core:                {rotation: overlap, window: 1d}
+  watch-notify:              {rotation: cutover}
+  worker-token-channel-demo: {rotation: overlap, window: 7d}
+  worker-token-th-demo-read: {rotation: overlap, window: 7d}
 hosts:
   core1:
     kind: production

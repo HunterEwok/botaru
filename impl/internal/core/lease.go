@@ -92,7 +92,8 @@ func (c *Core) decodeToken(header string) (LeaseToken, error) {
 	// This core signs every token it issues, so a token without the signature is not one of
 	// its tokens (FEN-2, D-87 (5)).
 	b, err := jcs.Canonical(t.fields())
-	if err != nil || t.Sig == "" || t.KeyID != c.cfg.KeyID || !hmac.Equal([]byte(c.sign(b)), []byte(t.Sig)) {
+	key := c.signingKey(t.KeyID)
+	if err != nil || t.Sig == "" || key == nil || !hmac.Equal([]byte(signWith(key, b)), []byte(t.Sig)) {
 		return t, mismatch
 	}
 	return t, nil

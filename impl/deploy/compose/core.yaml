@@ -1,0 +1,19 @@
+# Settings of the core in the compose farm (impl/DEPLOY.md, step 5, explains every field).
+spec_root: /opt/botaru/src
+store_dsn_file: /run/secrets/store-dsn
+token_key_file: /run/secrets/token-key
+token_key_id: k1
+test_bench: true
+p1_listen: 0.0.0.0:8401          # the core network of the compose file only, no published port
+p2_listen: 127.0.0.1:8402        # farmctl inside the core container only (IDN-7)
+operator: "Example operator"
+farm_hosts: [core1]
+operators:
+  - token_sha256: <the SHA-256 of secrets/operator>
+    principal: human:p_01JB00000000000000000000A1
+    tenant: demo
+providers:
+  provider-a:
+    binding: anthropic
+    base_url: http://mock.botaru.example.org:8409   # or https://api.anthropic.com with a real key
+    key_files: {demo: /run/secrets/provider-key-demo}
