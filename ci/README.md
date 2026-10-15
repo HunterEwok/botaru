@@ -113,6 +113,10 @@ Without that run, the words of a PR are checked only after the merge, that is, a
 
 `python3 -I ci/public_safety.py --history` (with the list) checks the forbidden words in every file of every commit reachable from any branch or tag, not only the current files. Every commit of a public repository is public: a word found in an old commit is not removed by a new commit, and the owner decides what to do about it.
 
+## Gemini review
+
+The workflow `.github/workflows/gemini-review.yml` is a second automatic reviewer, for when Codex has no quota left. A comment `/gemini review` on a pull request by the owner, a member or a collaborator runs the Gemini CLI (`@google/gemini-cli`, version pinned in the workflow) over the PR's diff and posts its findings as a PR comment. The PR's changes are read as a diff from the API and never fetched or checked out; the model gets the diff only, with every tool denied by an admin-tier policy (plan mode alone is not enough: without a person it may switch itself to yolo), and its step has no GitHub token. The comment always runs the workflow as it is on the default branch, so a change of the workflow takes effect only after its merge. The key is the repository secret `GEMINI_API_KEY` (Settings > Secrets and variables > Actions); a PR from a fork never gets it. The workflow is not a required check.
+
 ## Protecting the main branch
 
 The repository belongs to a personal account, so GitHub offers no merge queue. The owner sets a ruleset for the `main` branch in Settings > Rules > Rulesets:
