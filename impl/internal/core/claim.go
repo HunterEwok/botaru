@@ -108,8 +108,12 @@ func (c *Core) claimOnce(ctx context.Context, w *Worker, kinds []string) (*WorkI
 	var item *WorkItem
 	err = c.tx(ctx, func(tx pgx.Tx, now time.Time) error {
 		item = nil
-		if _, err := tx.Exec(ctx, `UPDATE workers SET last_seen = $2 WHERE id = $1`, w.ID, now); err != nil {
+		// A worker revoked during the long poll gets no more work: the row lock orders this with
+		// worker.revoke, and a revoked worker never gets a new identity (IDN-8).
+		if tag, err := tx.Exec(ctx, `UPDATE workers SET last_seen = $2 WHERE id = $1 AND state <> 'revoked'`, w.ID, now); err != nil {
 			return err
+		} else if tag.RowsAffected() == 0 {
+			return refuse("unauthenticated", "the worker is revoked")
 		}
 		until, err := drainUntil(ctx, tx)
 		if err != nil {
@@ -406,13 +410,15 @@ func (c *Core) claimAttempt(ctx context.Context, tx pgx.Tx, now time.Time, cat *
 	if _, err := tx.Exec(ctx, `UPDATE tasks SET state = 'working', lease_no = $2, run_at = NULL, reason = NULL, updated_at = $3 WHERE id = $1`, id, leaseNo, now); err != nil {
 		return nil, err
 	}
+	// The task record names the identity of its current attempt, or none; only the core writes
+	// it (IDN-8).
 	if acting.Bot != "" {
-		// The task record names the identity of its current attempt; only the core writes it
-		// (IDN-8).
 		if _, err := tx.Exec(ctx, `UPDATE tasks SET record = record || jsonb_build_object('acting_bot', $2::text, 'bot_epoch', $3::int) WHERE id = $1`,
 			id, acting.Bot, acting.BotEpoch); err != nil {
 			return nil, err
 		}
+	} else if _, err := tx.Exec(ctx, `UPDATE tasks SET record = record - 'acting_bot' - 'bot_epoch' WHERE id = $1 AND record ? 'acting_bot'`, id); err != nil {
+		return nil, err
 	}
 	var record map[string]any
 	if err := json.Unmarshal(rec, &record); err != nil {
