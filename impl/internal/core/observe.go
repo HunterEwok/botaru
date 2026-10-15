@@ -957,14 +957,19 @@ func lookupField(m map[string]any, path string) (any, bool) {
 }
 
 // readableSeries are the series a task may read: for an insight task the role's
-// insight.observes, for a job its type's observes (OBV-3).
-func readableSeries(cat *Catalog, role, typ string) []string {
+// insight.observes, for a review any series of the tenant, for a job its type's observes (OBV-3,
+// COM-3).
+func (c *Core) readableSeries(cat *Catalog, tenant, role, typ string) []string {
 	tt := cat.TaskTypes[typ]
-	if tt.Purpose == "insight" {
+	switch tt.Purpose {
+	case "insight":
 		if r, ok := cat.Roles[role]; ok && r.Insight != nil {
 			return r.Insight.Observes
 		}
 		return nil
+	case "review":
+		// A reviewer reads any series of the tenant within the task's mark (COM-3).
+		return slices.Sorted(mapKeys(c.tenantSeries(cat, tenant)))
 	}
 	return tt.Observes
 }
@@ -1105,7 +1110,7 @@ func (c *Core) obsTool(cat *Catalog, g *toolsGrant) *catalogTool {
 	default:
 		return nil
 	}
-	series := readableSeries(cat, g.Role, g.Type)
+	series := c.readableSeries(cat, g.Tenant, g.Role, g.Type)
 	known := c.tenantSeries(cat, g.Tenant)
 	enum := []any{}
 	for _, s := range series {
@@ -1145,7 +1150,7 @@ func (c *Core) obsToolCall(ctx context.Context, tx pgx.Tx, now time.Time, cat *C
 	if err := c.spec.Validate("observation-query", args); err != nil || args["group_by"] != nil {
 		return fail("input_schema_invalid"), nil
 	}
-	out, err := c.queryObservations(ctx, tx, now, cat, g.Tenant, readableSeries(cat, g.Role, g.Type), g.Mark,
+	out, err := c.queryObservations(ctx, tx, now, cat, g.Tenant, c.readableSeries(cat, g.Tenant, g.Role, g.Type), g.Mark,
 		obsQuery{Series: asString(args["series"]), Subject: asString(args["subject"]), Window: asString(args["window"]), Rollup: asString(args["rollup"])})
 	if p, ok := AsProblem(err); ok {
 		return fail(p.Reason), nil

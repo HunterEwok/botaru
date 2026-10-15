@@ -1011,6 +1011,38 @@ def lint(docs, today=None, farm_hosts=None, examples_mode=False, claimed=None, s
         for p in [com.get('model_profile')] + [s.get('model_profile') for s in com.get('seats', [])]:
             if p in profiles and ceil is not None and profiles[p]['rank'] > ceil:
                 f.error('rank_exceeded', where, f'charter {gname}: seat profile {p} is above the reviewer ceiling {ceil} (GOV-3)')
+    # Every veto lens has an executor: a seat of the lens whose fallback role claims the lens review type
+    # (COM-7). A lens review answers in at most 2000 output tokens (COM-6).
+    lenses = {k: e for k, e in model_registry('lenses').items() if e.get('since') == 'v0.1' and e.get('subject') == 'proposal'}
+    for tenant, gname, where, gs in S.each('Governance'):
+        if not roles or 'commission' not in gs:
+            continue
+        seats = (gs.get('commission') or {}).get('seats', [])
+        analysis = {(rs.get('models') or {}).get('analysis') for _, rs in roles.values()} - {None}
+        for lid, le in sorted(lenses.items()):
+            if le.get('veto') is not True:
+                continue
+            covered = any(s.get('lens') == lid and s.get('fallback_role') in roles
+                          and le.get('review_type') in (roles[s['fallback_role']][1].get('claims') or []) for s in seats)
+            # A lens without a seat goes to a role of profile reviewer that claims its type (COM-8).
+            if not any(s.get('lens') == lid for s in seats):
+                covered = covered or any(rs.get('profile') == 'reviewer' and le.get('review_type') in (rs.get('claims') or [])
+                                         and (rs.get('models') or {}).get('base') not in analysis for _, rs in roles.values())
+            if not covered:
+                f.error('veto_lens_no_executor', where, f'charter {gname}: veto lens {lid} has no executor claiming {le.get("review_type")} (COM-7, COM-8)')
+        # A seat's fallback role does not run on the analysis profile of a role that writes proposals (COM-2).
+        for s in seats:
+            fr = roles.get(s.get('fallback_role'))
+            if fr and (fr[1].get('models') or {}).get('base') in analysis:
+                f.error('reviewer_not_independent', where,
+                        f'charter {gname}: seat {s.get("id")} fallback role {s.get("fallback_role")} runs on an analysis profile of a proposal author (COM-2)')
+    for rname, (rwhere, rs) in sorted(roles.items()):
+        if not any((types.get(t) or {}).get('purpose') == 'review' for t in rs.get('claims') or []):
+            continue
+        mp = (rs.get('models') or {}).get('base')
+        out = (profiles.get(mp) or {}).get('max_output_tokens')
+        if isinstance(out, int) and out > 2000:
+            f.error('lens_profile_output', rwhere, f'role {rname}: profile {mp} has max_output_tokens {out} above 2000 for lens reviews (COM-6)')
     # Shadow shares and escalation thresholds of the commission manifest (COM-10, COM-13).
     for tenant, cname, where, cs in S.each('Commission'):
         sh = cs.get('shadow')

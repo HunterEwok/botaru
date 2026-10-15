@@ -35,6 +35,11 @@ fx-man-cat-01#2
 fx-man-cat-01#3
 fx-man-cat-01#4
 fx-man-cat-01#5
+fx-man-com-07#0
+fx-man-com-07#1
+fx-man-com-07#2
+fx-man-com-07#3
+fx-man-com-07#4
 fx-man-com-v02#0
 fx-man-com-v02#1
 fx-man-com-v02#2

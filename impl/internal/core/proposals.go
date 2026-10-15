@@ -96,7 +96,7 @@ func (c *Core) createProposals(ctx context.Context, tx pgx.Tx, now time.Time, ca
 		return err
 	}
 	a := proposalAuthor{Tenant: w.Tenant, Role: w.Role, Worker: w.ID, Task: task, Type: typ, Mark: r.DataMark,
-		Untrusted: r.UntrustedSeen, Readable: readableSeries(cat, w.Role, typ)}
+		Untrusted: r.UntrustedSeen, Readable: c.readableSeries(cat, w.Tenant, w.Role, typ)}
 	if r.UntrustedSeen {
 		a.Sources = []string{r.UntrustedSource}
 	}

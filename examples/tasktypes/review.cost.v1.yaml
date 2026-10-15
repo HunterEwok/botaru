@@ -1,0 +1,20 @@
+# Commission review through the cost lens (COM-2, COM-3): the core enqueues it for a screened proposal with the
+# input block it builds as params.input; the result schema is the core's review-result, so the type declares none.
+apiVersion: botaru/v1alpha1
+kind: TaskType
+metadata: {name: review.cost.v1}
+spec:
+  title: "Review a proposal: cost"
+  worker_kind: agent
+  purpose: review
+  tier: 1
+  data_class: internal
+  instruction: |
+    What the change costs in money and effort against the farm's limits.
+    Read only the input block. Answer review-result for the lens cost with a score from 0 to 4 and your confidence.
+  params_schema: {type: object, additionalProperties: false, properties: {}}   # the core passes its own input block
+  timeouts: {start_by: 12h, lease: 60s, heartbeat: 20s, attempt: 5m, deadline: 24h}
+  retry: {max_attempts: 2, max_runs: 2}
+  tree_budget_eur: 0.08
+  max_children: 0
+  proposable: false

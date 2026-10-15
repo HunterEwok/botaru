@@ -243,6 +243,10 @@ func (c *Core) enqueue(ctx context.Context, tx pgx.Tx, now time.Time, cat *Catal
 			}
 		}
 	}
+	// A lens review is enqueued only by the proposal loop, as system (COM-2).
+	if tt.Purpose == "review" && (in.Initiator != "system" || in.Source != reviewSource || in.Chain != nil) {
+		return nil, refuse("type_not_allowed", "a review is enqueued only by the proposal loop")
+	}
 	bodyHash, err := jcs.Hash(in.Body)
 	if err != nil {
 		return nil, err
@@ -484,6 +488,9 @@ func (c *Core) enqueue(ctx context.Context, tx pgx.Tx, now time.Time, cat *Catal
 		record["continues"] = in.Continues
 		record["refs"] = append(slices.Clone(in.Refs), in.Continues)
 	}
+	if in.ContinuesMark != "" {
+		record["data_mark"] = mark
+	}
 	if len(files) > 0 {
 		record["data_mark"] = mark
 		record["untrusted_seen"] = true
@@ -567,6 +574,15 @@ func (c *Core) validateParams(tt manifest.TaskType, body map[string]any) error {
 	params, ok := body["params"]
 	if !ok {
 		params = map[string]any{}
+	}
+	// A lens review carries only the input block the core builds (COM-3); its type declares
+	// no parameters of its own.
+	if tt.Purpose == "review" {
+		m, _ := params.(map[string]any)
+		if _, ok := m["input"].(map[string]any); !ok || len(m) != 1 {
+			return errors.New("a review carries only the core's input block")
+		}
+		return nil
 	}
 	if tt.ParamsSchema == nil {
 		return nil

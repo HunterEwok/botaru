@@ -1,0 +1,11 @@
+# Fallback reviewer of the commission seats for the lenses cost, value (COM-2, COM-7): every review starts from a
+# clean slate, sees only the input block the core builds and hands in review-result for its own lens.
+apiVersion: botaru/v1alpha1
+kind: Role
+metadata: {name: reviewer-b}
+spec:
+  profile: reviewer
+  worker_kind: agent
+  claims: [review.cost.v1, review.value.v1]
+  models: {base: review-b}
+  memory: none

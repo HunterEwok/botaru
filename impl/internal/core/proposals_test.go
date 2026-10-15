@@ -18,7 +18,12 @@ import (
 // which system may start; the hello tasks give core series points to cite.
 func newInsightBench(t *testing.T, insight map[string]any) *bench {
 	t.Helper()
-	return newToolBenchWith(t, nil, func(ms []map[string]any) []map[string]any {
+	return newToolBenchWith(t, nil, insightEdit(insight))
+}
+
+// insightEdit adds the analysis hello.insight.v1 to the hello role of a tool bench.
+func insightEdit(insight map[string]any) func(ms []map[string]any) []map[string]any {
+	return func(ms []map[string]any) []map[string]any {
 		for _, m := range ms {
 			if m["kind"] == "Role" && m["metadata"].(map[string]any)["name"] == "hello" {
 				s := m["spec"].(map[string]any)
@@ -42,7 +47,7 @@ func newInsightBench(t *testing.T, insight map[string]any) *bench {
 			"apiVersion": "botaru/v1alpha1", "kind": "Group", "metadata": map[string]any{"name": "system-ops", "tenant": "demo"},
 			"spec": map[string]any{"caps": []any{"task:hello.insight.v1"}, "data": []any{"summary", "internal"}},
 		})
-	})
+	}
 }
 
 // analysis enqueues the analysis as a schedule would, claims its attempt and hands in result;

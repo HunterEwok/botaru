@@ -306,11 +306,13 @@ func (c *Core) claimAttempt(ctx context.Context, tx pgx.Tx, now time.Time, cat *
 		}
 	}
 	skip := []string{}
+	// A lens review goes only to its executor role and never to the author's worker (COM-2).
 	for picked := false; !picked; {
 		err := tx.QueryRow(ctx, `SELECT id, type, body, record, lease_no, initiator FROM tasks
 			WHERE tenant = $1 AND state = 'submitted' AND body IS NOT NULL AND type = ANY($2) AND (run_at IS NULL OR run_at <= $3) AND (deadline_at IS NULL OR deadline_at > $3)
 			AND NOT id = ANY($4)
-			ORDER BY priority_class, created_at, id LIMIT 1 FOR UPDATE SKIP LOCKED`, w.Tenant, claims, now, skip).
+			AND (record->>'executor_role' IS NULL OR record->>'executor_role' = $5) AND (record->>'not_worker' IS NULL OR record->>'not_worker' <> $6)
+			ORDER BY priority_class, created_at, id LIMIT 1 FOR UPDATE SKIP LOCKED`, w.Tenant, claims, now, skip, w.Role, w.ID).
 			Scan(&id, &typ, &body, &rec, &leaseNo, &initiator)
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, nil

@@ -203,6 +203,7 @@ The codes of `check_manifests.py` that fixtures refer to (`expect: {error: <code
 | `insight_merge_window` | insight.merge_window shorter than an hour | INS-4 |
 | `insight_type_invalid` | insight type of tier above 1, not claimed, with its own result_schema, of a class above insight.max_data, claimed outside the insight section, or not in exactly one role insight section | INS-1, INS-2 |
 | `insight_wider` | insight tool outside the role tools | INS-2 |
+| `lens_profile_output` | a role that claims a lens review has a base profile with max_output_tokens above 2000 | COM-6 |
 | `listener_admin_worker_network` | the P2 listener network is a worker network (note) | IDN-7 |
 | `listener_test_in_production` | test-control listener of the core on a kind: production host | DEP-10 |
 | `manager_line_missing` | manager budget line is not above 0 while the manager is enabled | MGR-20 |
@@ -234,6 +235,7 @@ The codes of `check_manifests.py` that fixtures refer to (`expect: {error: <code
 | `ref_missing` | reference to an object that is not in the set |  |
 | `retention_period` | tenant retention period outside the class bounds or longer than the content period | RET-9 |
 | `revert_reason_invalid` | Botaru-Revert reason is not from the closed list | MAN-5, PRP-22 |
+| `reviewer_not_independent` | a commission seat fallback role runs on the analysis profile of a role that writes proposals | COM-2 |
 | `role_profile_forbidden` | role declares what the profile forbids | PRF-1 |
 | `role_profile_memory` | role memory is outside the profile | PRF-1 |
 | `role_profile_purpose` | role claims a type whose purpose is outside the profile | PRF-1 |
@@ -285,6 +287,7 @@ The codes of `check_manifests.py` that fixtures refer to (`expect: {error: <code
 | `tree_budget_below_call` | tree budget of a model task type is below the reserve of one model call | GW-2, BUD-2, BUD-9 |
 | `unknown_kind` | manifest kind has no registered schema in spec/manifests/kinds.yaml | MAN-1 |
 | `untrusted_output_false_text` | untrusted_output: false while the output has free text | INJ-3 |
+| `veto_lens_no_executor` | a veto lens has no charter seat whose fallback role claims its review type | COM-7 |
 | `watch_missing` | neither a monitoring system nor a kind: watch process with notify_ref | MON-2 |
 | `watch_same_host` | the watch process runs only on the core machine (note) | MON-2 |
 | `watch_with_monitoring` | both a monitoring system and a watch process (note) | MON-2 |
