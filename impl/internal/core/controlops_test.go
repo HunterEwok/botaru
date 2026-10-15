@@ -178,6 +178,44 @@ func TestControlOpsLimits(t *testing.T) {
 	}
 }
 
+// A drain by the id as the incident view shows it (lowercase) moves the stored worker to
+// draining; a hello keeps it there while the hold lasts and returns it to active after the
+// release (MGR-9, spec/lifecycles/worker.md).
+func TestControlOpsDrain(t *testing.T) {
+	ctx := context.Background()
+	b := newControlBench(t)
+	w := b.enroll(t, EnrollRequest{Tenant: "demo", Kind: "agent", Role: "hello"})
+	d, err := b.c.ControlApply(ctx, b.op, ControlRequest{Op: "drain", Target: ControlTarget{Kind: "worker", ID: strings.ToLower(w.ID)}, TTL: "30m"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	state := func() string {
+		var s string
+		if err := b.c.st.Pool.QueryRow(ctx, `SELECT state FROM workers WHERE id = $1`, w.ID).Scan(&s); err != nil {
+			t.Fatal(err)
+		}
+		return s
+	}
+	hello := func() {
+		if _, err := b.c.Hello(ctx, w, HelloRequest{Kind: "agent", ProtocolVersions: []string{"v1"}}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if hello(); state() != "draining" {
+		t.Fatalf("after the drain and a hello: %s", state())
+	}
+	var hold string
+	if err := b.c.st.Pool.QueryRow(ctx, `SELECT hold FROM control_ops WHERE id = $1`, d.ID).Scan(&hold); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := b.c.HoldRelease(ctx, OperatorActor(b.op), HoldReleaseRequest{ID: hold}); err != nil {
+		t.Fatal(err)
+	}
+	if hello(); state() != "active" {
+		t.Fatalf("after the release and a hello: %s", state())
+	}
+}
+
 // The seat applies for an incident only the operations its class lists in responses (MGR-9).
 func TestControlOpsClassResponses(t *testing.T) {
 	b := newControlBench(t, func(ms []map[string]any) {

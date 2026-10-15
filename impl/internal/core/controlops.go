@@ -144,9 +144,40 @@ func controlTargetTenant(ctx context.Context, tx pgx.Tx, t ControlTarget, caller
 	return tenant, err
 }
 
+// resolveTargetID turns a worker or task id as the incident view shows it (lowercase) into the
+// stored one, so every check and the operation see the same row (MGR-9).
+func resolveTargetID(ctx context.Context, tx pgx.Tx, t *ControlTarget) error {
+	var q string
+	switch t.Kind {
+	case "worker":
+		q = `SELECT id FROM workers WHERE id = ANY($1) ORDER BY id = $2 DESC LIMIT 1`
+	case "task":
+		q = `SELECT id FROM tasks WHERE id = ANY($1) ORDER BY id = $2 DESC LIMIT 1`
+	default:
+		return nil
+	}
+	// A generated id is a lowercase prefix and an uppercase ULID (ids.New).
+	canon := t.ID
+	if p, rest, ok := strings.Cut(t.ID, "_"); ok {
+		canon = strings.ToLower(p) + "_" + strings.ToUpper(rest)
+	}
+	var id string
+	err := tx.QueryRow(ctx, q, []string{t.ID, canon}, t.ID).Scan(&id)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil
+	}
+	if err == nil {
+		t.ID = id
+	}
+	return err
+}
+
 // controlApply applies one control operation in tenant. A refusal comes back as a Problem in
 // the first result, not as an error, so the safeguard's count of a seat refusal commits.
 func (c *Core) controlApply(ctx context.Context, tx pgx.Tx, now time.Time, cat *Catalog, tenant string, a controlActor, req ControlRequest) (*Done, *Problem, error) {
+	if err := resolveTargetID(ctx, tx, &req.Target); err != nil {
+		return nil, nil, err
+	}
 	if !slices.Contains(controlOpsServed, req.Op) {
 		return nil, refuse("input_schema_invalid", "operation %s is not served by this version", req.Op), nil
 	}
@@ -563,7 +594,6 @@ func (c *Core) protectedTarget(ctx context.Context, tx pgx.Tx, cat *Catalog, ten
 // floor(max_share_held × n) of the workers of a role of the tenant under seat holds (MGR-37).
 func (c *Core) shareExceeded(ctx context.Context, tx pgx.Tx, now time.Time, cat *Catalog, tenant string, t ControlTarget, share float64) (bool, error) {
 	role := ""
-	add := 1
 	switch t.Kind {
 	case "role":
 		role = t.ID
@@ -581,21 +611,20 @@ func (c *Core) shareExceeded(ctx context.Context, tx pgx.Tx, now time.Time, cat 
 	if role == "" {
 		return false, nil
 	}
-	var n, held int
-	if err := tx.QueryRow(ctx, `SELECT count(*) FROM workers WHERE tenant = $1 AND role = $2 AND state <> 'revoked'`, tenant, role).Scan(&n); err != nil {
+	// Workers already under a live seat hold of their own, of their identity or of their role,
+	// and those the new hold would add; a worker already held counts once.
+	var n, held, after int
+	if err := tx.QueryRow(ctx, `WITH w AS (SELECT w.id, EXISTS (
+			SELECT 1 FROM holds h WHERE h.state = 'active' AND h.author_kind = 'seat_holder' AND h.scope_tenant = $1 AND (h.until IS NULL OR h.until > $3)
+			AND (h.scope_kind = 'worker' AND h.scope_name = lower(w.id) OR h.scope_kind = 'role' AND h.scope_name = w.role
+				OR h.scope_kind = 'bot' AND h.scope_name IN (SELECT id FROM bots WHERE worker_id = w.id))) AS held,
+			($4 = 'role' OR $4 = 'worker' AND w.id = $5 OR $4 = 'bot' AND w.id IN (SELECT worker_id FROM bots WHERE id = $5)) AS covered
+		FROM workers w WHERE w.tenant = $1 AND w.role = $2 AND w.state <> 'revoked')
+		SELECT count(*), count(*) FILTER (WHERE held), count(*) FILTER (WHERE held OR covered) FROM w`,
+		tenant, role, now, t.Kind, t.ID).Scan(&n, &held, &after); err != nil {
 		return false, err
 	}
-	if t.Kind == "role" {
-		add = n
-	}
-	// Workers already under a live seat hold of their own, of their identity or of their role.
-	if err := tx.QueryRow(ctx, `SELECT count(*) FROM workers w WHERE w.tenant = $1 AND w.role = $2 AND w.state <> 'revoked' AND EXISTS (
-		SELECT 1 FROM holds h WHERE h.state = 'active' AND h.author_kind = 'seat_holder' AND h.scope_tenant = $1 AND (h.until IS NULL OR h.until > $3)
-		AND (h.scope_kind = 'worker' AND h.scope_name = lower(w.id) OR h.scope_kind = 'role' AND h.scope_name = w.role
-			OR h.scope_kind = 'bot' AND h.scope_name IN (SELECT id FROM bots WHERE worker_id = w.id)))`, tenant, role, now).Scan(&held); err != nil {
-		return false, err
-	}
-	return held+add > int(math.Floor(share*float64(n))), nil
+	return after > held && after > int(math.Floor(share*float64(n))), nil
 }
 
 // seatDenied counts a seat refusal; the third in a row trips the safeguard: no_control joins
@@ -671,7 +700,17 @@ func (c *Core) controlDo(ctx context.Context, tx pgx.Tx, now time.Time, cat *Cat
 			effects = []string{"no_claim"}
 		}
 		id, _, err := c.insertHold(ctx, tx, now, actor, HoldScope{Kind: req.Target.Kind, Tenant: tenant, Name: name}, effects, "by_manager", until)
-		return id, nil, err
+		if err != nil {
+			return "", nil, err
+		}
+		if req.Op == "drain" {
+			// Only a drain moves the worker to draining; hello after the hold ends returns it to
+			// active (spec/lifecycles/worker.md).
+			if _, err := tx.Exec(ctx, `UPDATE workers SET state = 'draining' WHERE id = $1 AND tenant = $2 AND state = 'active'`, req.Target.ID, tenant); err != nil {
+				return "", nil, err
+			}
+		}
+		return id, nil, nil
 	case "cancel", "preempt":
 		if req.Target.Kind != "task" {
 			return "", refuse("input_schema_invalid", "%s takes a task", req.Op), nil
@@ -767,6 +806,9 @@ func (c *Core) ControlApply(ctx context.Context, op Operator, req ControlRequest
 	}
 	var out *Done
 	err = c.tx(ctx, func(tx pgx.Tx, now time.Time) error {
+		if err := resolveTargetID(ctx, tx, &req.Target); err != nil {
+			return err
+		}
 		tenant, err := controlTargetTenant(ctx, tx, req.Target, op.Tenant)
 		if err != nil {
 			return err
@@ -948,5 +990,14 @@ func (c *Core) controlToolCall(ctx context.Context, tx pgx.Tx, now time.Time, ca
 	if p != nil {
 		return answer(map[string]any{"code": p.Reason}, true), nil
 	}
-	return answer(map[string]any{"code": "applied", "id": d.ID}, false), nil
+	out := map[string]any{"code": "applied", "id": d.ID}
+	// A hold's own id is what release takes.
+	var hold string
+	if err := tx.QueryRow(ctx, `SELECT coalesce(hold, '') FROM control_ops WHERE id = $1`, d.ID).Scan(&hold); err != nil {
+		return nil, err
+	}
+	if hold != "" {
+		out["hold"] = hold
+	}
+	return answer(out, false), nil
 }

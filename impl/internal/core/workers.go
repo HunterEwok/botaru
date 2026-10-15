@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"slices"
+	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -331,8 +332,14 @@ func (c *Core) Hello(ctx context.Context, w *Worker, req HelloRequest) (*HelloRe
 	}
 	raw, _ := json.Marshal(req)
 	err := c.tx(ctx, func(tx pgx.Tx, now time.Time) error {
-		if _, err := tx.Exec(ctx, `UPDATE workers SET hello = $2, state = CASE WHEN state = 'draining' THEN state ELSE $3 END WHERE id = $1`,
-			w.ID, raw, state); err != nil {
+		// A draining worker stays so while a hold of its own scope keeps no_claim; after that a
+		// hello returns it (spec/lifecycles/worker.md).
+		drain, err := heldBy(ctx, tx, now, []string{"no_claim"}, scopeRef{kind: "worker", tenant: w.Tenant, name: strings.ToLower(w.ID)})
+		if err != nil {
+			return err
+		}
+		if _, err := tx.Exec(ctx, `UPDATE workers SET hello = $2, state = CASE WHEN state = 'draining' AND $4 THEN state ELSE $3 END WHERE id = $1`,
+			w.ID, raw, state, drain != ""); err != nil {
 			return err
 		}
 		// A hello reports every plugin: one not reported down is ok again.
