@@ -320,11 +320,22 @@ func (c *Core) completeAttempt(ctx context.Context, tx pgx.Tx, now time.Time, w 
 			return refuse("output_schema_invalid", "the result does not match the full result_schema")
 		}
 	}
+	// An analysis or aggregator result is proposals or nothing_found (INS-1).
+	var bodies []map[string]any
+	if p := tt.Purpose; p == "insight" || p == "aggregate" {
+		if bodies, err = insightBodies(result); err != nil {
+			return err
+		}
+	}
 	raw, err := json.Marshal(result)
 	if err != nil {
 		return err
 	}
 	if _, err := tx.Exec(ctx, `UPDATE tasks SET state = 'completed', result = $2, updated_at = $3 WHERE id = $1`, l.WorkID, raw, now); err != nil {
+		return err
+	}
+	// Proposals are born only here, in the transaction of a successful complete (INS-3).
+	if err := c.createProposals(ctx, tx, now, cat, w, l.WorkID, typ, rec, bodies); err != nil {
 		return err
 	}
 	if err := releaseTaskReserve(ctx, tx, l.WorkID); err != nil {

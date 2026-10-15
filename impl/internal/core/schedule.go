@@ -124,6 +124,14 @@ func (c *Core) runSchedule(ctx context.Context, tx pgx.Tx, now time.Time, cat *C
 		}
 	}
 	tt := cat.TaskTypes[sc.Task.Type]
+	// Analysis keeps to the run limit and the merge window of its role (INS-4).
+	if tt.Purpose == "insight" {
+		if over, err := insightOverLimit(ctx, tx, now, cat, tv.Name, sc.Task.Type); err != nil {
+			return err
+		} else if over {
+			return skip("insight_limit")
+		}
+	}
 	goal := sc.Task.Goal
 	if goal == "" {
 		goal = tt.Title
@@ -274,4 +282,39 @@ func scheduleOf(ctx context.Context, tx pgx.Tx, r treeRecord, id string) (string
 		return "", nil
 	}
 	return name, nil
+}
+
+// insightOverLimit says whether a scheduled analysis of the role that runs the type would pass
+// its max_runs or start inside its merge window, which is at least an hour (INS-4).
+func insightOverLimit(ctx context.Context, tx pgx.Tx, now time.Time, cat *Catalog, tenant, typ string) (bool, error) {
+	var ins *manifest.RoleInsight
+	for _, name := range slices.Sorted(mapKeys(cat.Roles)) {
+		if r := cat.Roles[name]; r.Insight != nil && slices.Contains(r.Insight.Types, typ) {
+			ins = r.Insight
+			break
+		}
+	}
+	if ins == nil {
+		return true, nil
+	}
+	window := durationOr(ins.MergeWindow, time.Hour)
+	if window < time.Hour {
+		window = time.Hour
+	}
+	since := now.Add(-window)
+	per, limit := since, -1
+	if ins.MaxRuns != nil {
+		limit = ins.MaxRuns.Count
+		if ins.MaxRuns.Per == "week" {
+			per = now.AddDate(0, 0, -7)
+		} else {
+			per = now.AddDate(0, 0, -1)
+		}
+	}
+	var recent, runs int
+	if err := tx.QueryRow(ctx, `SELECT count(*) FILTER (WHERE created_at > $3), count(*) FILTER (WHERE created_at > $4 AND idempotency_key LIKE 'system:schedule:%')
+		FROM tasks WHERE tenant = $1 AND type = ANY($2) AND created_at > least($3, $4)`, tenant, ins.Types, since, per).Scan(&recent, &runs); err != nil {
+		return false, err
+	}
+	return recent > 0 || limit >= 0 && runs >= limit, nil
 }

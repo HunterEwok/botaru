@@ -32,6 +32,7 @@ const (
 	Memory    = "m"
 	Subject   = "sr"
 	Step      = "es"
+	Proposal  = "prp"
 )
 
 var (

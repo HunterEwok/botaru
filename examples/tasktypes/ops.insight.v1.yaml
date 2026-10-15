@@ -1,0 +1,20 @@
+# Analysis of the ops-reader role (INS-1): it reads the core series and the machine load and hands in at most
+# three proposals or nothing_found. The result schema is the core's insight-result, so the type declares none.
+apiVersion: botaru/v1alpha1
+kind: TaskType
+metadata: {name: ops.insight.v1}
+spec:
+  title: "Weekly look at the role's own results"
+  worker_kind: agent
+  purpose: insight
+  tier: 1
+  data_class: internal
+  instruction: |
+    Look at the outcomes, attempts and durations of this role's tasks and at the machine load.
+    Propose at most three changes with evidence from the series you read, or answer nothing_found.
+  params_schema: {type: object, additionalProperties: false, properties: {}}
+  timeouts: {start_by: 1h, lease: 60s, heartbeat: 20s, attempt: 5m, deadline: 2h}
+  retry: {max_attempts: 1, max_runs: 2}
+  tree_budget_eur: 0.10
+  max_children: 0
+  proposable: false

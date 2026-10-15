@@ -224,6 +224,11 @@ func (c *Core) enqueue(ctx context.Context, tx pgx.Tx, now time.Time, cat *Catal
 	if !ok || strings.HasPrefix(in.Type, "action.") {
 		return nil, refuse("type_not_allowed", "unknown task type")
 	}
+	// Analysis starts only from a schedule or a route, as system; an agent or a person does
+	// not start it (INS-1).
+	if p := tt.Purpose; (p == "insight" || p == "aggregate") && (in.Initiator != "system" || in.Source != "schedule" && in.Source != "route" || in.Chain != nil) {
+		return nil, refuse("type_not_allowed", "analysis starts only from a schedule or a route")
+	}
 	bodyHash, err := jcs.Hash(in.Body)
 	if err != nil {
 		return nil, err

@@ -778,6 +778,7 @@ def lint(docs, today=None, farm_hosts=None, examples_mode=False, claimed=None, s
         for field in ('service_control', 'monitor_scripts', 'insight'):
             if rs.get(field) and field not in prof.get('may_declare', []):
                 f.error('role_profile_forbidden', where, f'role {rname}: profile {pname} does not declare {field} (PRF-1)')
+        lint_insight(f, rname, where, rs, types)
         mem = rs.get('memory', 'none')
         mem = 'read_bot' if isinstance(mem, dict) else mem
         if mem not in prof.get('memory', []):
@@ -1162,6 +1163,7 @@ def lint(docs, today=None, farm_hosts=None, examples_mode=False, claimed=None, s
                     break
     lint_v02_features(S, f, types, tools, roles, claimed)
     lint_series(S, f, tools)
+    lint_insight_types(S, f, roles)
     return f
 
 
@@ -1174,6 +1176,40 @@ def outcome_complete(o):
     o = o if isinstance(o, dict) else {}
     return bool(o.get('compare') and o.get('better') and o.get('min_samples')
                 and ('tolerance_pct' in o or 'tolerance_pp' in o))
+
+
+def lint_insight(f, rname, where, rs, types):
+    """The insight section of a role (INS-1, INS-2, INS-4): its types are insight types of tier 1 at most that
+    the role claims and that take the core's result insight-result; its tools are among the role's own; the
+    merge window is at least an hour."""
+    ins = rs.get('insight') or {}
+    for tt in ins.get('types', []):
+        ts = types.get(tt)
+        if ts is None:
+            if types:
+                f.error('ref_missing', where, f'role {rname}: insight type {tt} is not in the set')
+            continue
+        if (ts['purpose'] != 'insight' or tt not in rs.get('claims', []) or ts.get('tier', 0) > 1
+                or ts.get('result_schema') is not None):
+            f.error('insight_type_invalid', where, f'role {rname}: insight type {tt} is an insight type of tier 1 at most, '
+                    'claimed by the role, without its own result_schema (INS-1)')
+    own = set(rs.get('tools', []))
+    for t in ins.get('tools', []):
+        if t not in own and t.split('/')[0] not in own:
+            f.error('insight_wider', where, f'role {rname}: insight tool {t} is not among the role tools (INS-2)')
+    mw = ins.get('merge_window')
+    if mw is not None and (seconds(mw) or 0) < 3600:
+        f.error('insight_merge_window', where, f'role {rname}: insight.merge_window {mw} is shorter than an hour (INS-4)')
+
+
+def lint_insight_types(S, f, roles):
+    """Each insight type is run by exactly one role's insight section (INS-1, INS-4)."""
+    for _, tname, where, ts in S.each('TaskType'):
+        if ts.get('purpose') != 'insight':
+            continue
+        n = sum(1 for _, rs in roles.values() if tname in (rs.get('insight') or {}).get('types', []))
+        if n != 1:
+            f.error('insight_type_invalid', where, f'type {tname}: an insight type is in the insight section of exactly one role, not {n} (INS-1)')
 
 
 def lint_series(S, f, tools):

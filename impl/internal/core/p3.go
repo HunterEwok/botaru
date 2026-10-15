@@ -15,6 +15,7 @@ import (
 
 	"github.com/HunterEwok/botaru/impl/internal/ids"
 	"github.com/HunterEwok/botaru/impl/internal/jcs"
+	"github.com/HunterEwok/botaru/impl/internal/manifest"
 	"github.com/HunterEwok/botaru/impl/internal/mcp"
 	"github.com/HunterEwok/botaru/impl/internal/store"
 	"github.com/HunterEwok/botaru/impl/internal/toolspec"
@@ -164,17 +165,31 @@ func (c *Core) toolCatalog(cat *Catalog, g *toolsGrant) ([]catalogTool, error) {
 		return nil, nil
 	}
 	maxOrder, markOK := c.markOrder(g.Mark)
+	rights, maxTier := roleTools(cat, role), g.MaxTier
+	// Analysis reads only insight.tools, at tier 1 at most and up to insight.max_data (INS-2).
+	insightMax, insightOK := -1, true
+	if g.Purpose == "insight" {
+		var only []string
+		if role.Insight != nil {
+			only = roleTools(cat, manifest.Role{Tools: strAny(role.Insight.Tools)})
+			if role.Insight.MaxData != "" {
+				insightMax, insightOK = c.markOrder(role.Insight.MaxData)
+			}
+		}
+		rights = slices.DeleteFunc(rights, func(r string) bool { return !slices.Contains(only, r) })
+		maxTier = min(maxTier, 1)
+	}
 	var out []catalogTool
-	for _, right := range roleTools(cat, role) {
+	for _, right := range rights {
 		plugin, tool, _ := cutTool(right)
 		p := cat.Plugins[plugin]
 		t, _ := p.Tool(tool)
-		if !t.On() || t.Access != "read" || t.Tier > g.MaxTier {
+		if !t.On() || t.Access != "read" || t.Tier > maxTier {
 			continue
 		}
 		if t.OutputClass != "" {
 			o, ok := c.markOrder(t.OutputClass)
-			if !ok || !markOK || o > maxOrder {
+			if !ok || !markOK || o > maxOrder || insightMax >= 0 && o > insightMax || !insightOK {
 				continue
 			}
 		}
