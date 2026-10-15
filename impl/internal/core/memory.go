@@ -75,7 +75,19 @@ func (c *Core) leaseHandles(ctx context.Context, tx pgx.Tx, now time.Time, w *Wo
 		}
 		// A session carries the highest mark of the tasks that wrote to it: a task that loads
 		// it is not lower (OUT-1, ART-2).
-		if own, _ := record["data_mark"].(string); sessionMark != nil && c.higherMark(own, *sessionMark) != own {
+		own, _ := record["data_mark"].(string)
+		raise := sessionMark != nil && c.higherMark(own, *sessionMark) != own
+		if raise && strings.HasPrefix(initiator, "human:") {
+			// A person who may no longer see the session's class does not get it loaded.
+			ok, err := c.mayRead(ctx, tx, now, w.Tenant, initiator, *sessionMark)
+			if err != nil {
+				return err
+			}
+			if !ok {
+				raise, conv = false, ""
+			}
+		}
+		if raise {
 			record["data_mark"] = *sessionMark
 			if _, err := tx.Exec(ctx, `UPDATE tasks SET record = jsonb_set(record, '{data_mark}', to_jsonb($2::text)) WHERE id = $1`, task, *sessionMark); err != nil {
 				return err
@@ -87,8 +99,10 @@ func (c *Core) leaseHandles(ctx context.Context, tx pgx.Tx, now time.Time, w *Wo
 				return err
 			}
 		}
-		if err := issue("session", sid); err != nil {
-			return err
+		if conv != "" {
+			if err := issue("session", sid); err != nil {
+				return err
+			}
 		}
 	}
 	if roleMemory(role) == "person" && strings.HasPrefix(initiator, "human:") {
@@ -563,4 +577,21 @@ func (c *Core) subjectCardBody(ctx context.Context, tx pgx.Tx, tenant, subjectKi
 		return card, nil
 	}
 	return nil, nil
+}
+
+// mayRead says whether a person may see data of a class now (hasData of their groups).
+func (c *Core) mayRead(ctx context.Context, tx pgx.Tx, now time.Time, tenant, person, mark string) (bool, error) {
+	cat, err := c.Catalog(ctx)
+	if err != nil {
+		return false, err
+	}
+	tv := cat.Tenants[tenant]
+	p, err := loadPrincipal(ctx, tx, now, tenant, person)
+	if errors.Is(err, pgx.ErrNoRows) || tv == nil {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	return hasData(tv, groupClosure(tv, p.Groups), mark), nil
 }

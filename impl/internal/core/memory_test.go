@@ -128,8 +128,15 @@ func TestSessionAndMemory(t *testing.T) {
 	if att2.WorkID != next || att2.Payload["task"].(map[string]any)["record"].(map[string]any)["untrusted_seen"] != true {
 		t.Fatalf("a task of a marked session is not marked: %v", att2.Payload["task"])
 	}
-	if m := att2.Payload["task"].(map[string]any)["record"].(map[string]any)["data_mark"]; m != "internal" {
-		t.Fatalf("the session mark did not carry over: %v", m)
+	// The session now carries internal, which alice (data: summary) may not see: her next
+	// task does not get the session loaded, and its mark stays.
+	var sm string
+	if err := b.c.st.Pool.QueryRow(ctx, `SELECT data_mark FROM sessions`).Scan(&sm); err != nil || sm != "internal" {
+		t.Fatalf("session mark %q %v", sm, err)
+	}
+	hs2, _ := att2.Payload["handles"].(map[string]any)
+	if hs2["session"] != nil || att2.Payload["task"].(map[string]any)["record"].(map[string]any)["data_mark"] != "summary" {
+		t.Fatalf("a session above the person's class was loaded: %v %v", hs2, att2.Payload["task"])
 	}
 }
 
