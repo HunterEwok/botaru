@@ -137,12 +137,13 @@ func TestIncidentLifecycle(t *testing.T) {
 	if r = incidentsOf(t, b, "disk_full")[0]; r.State != "resolved" {
 		t.Fatalf("after resolve.for: %s", r.State)
 	}
-	// Back within an hour: the same number, reopened, and the first measure again.
+	// Back within an hour: the same number, reopened without the acks of the last round; the
+	// first measure still holds, so there is no second one.
 	b.diskAlarm(t, true, 2)
 	b.advance(t, 6*60)
 	b.loop(t, "incident")
 	list = incidentsOf(t, b, "disk_full")
-	if len(list) != 1 || list[0].State != "contained" || list[0].Handled {
+	if len(list) != 1 || list[0].State != "reopened" || list[0].Handled || list[0].Record["taken_by"] != nil {
 		t.Fatalf("after the return %d %+v", len(list), list[0])
 	}
 	if countEvents(t, b, "incident.reopened.v1", r.ID) != 1 {
@@ -157,7 +158,7 @@ func TestIncidentLifecycle(t *testing.T) {
 	}
 	// Closing does not release the holds of the first measure (HLD-2).
 	var active int
-	if err := b.c.st.Pool.QueryRow(ctx, `SELECT count(*) FROM holds WHERE author_kind = 'contain_auto' AND state = 'active'`).Scan(&active); err != nil || active != 2 {
+	if err := b.c.st.Pool.QueryRow(ctx, `SELECT count(*) FROM holds WHERE author_kind = 'contain_auto' AND state = 'active'`).Scan(&active); err != nil || active != 1 {
 		t.Fatalf("active first measures %d %v", active, err)
 	}
 	// An alarm below the class condition opens nothing.
@@ -271,5 +272,69 @@ spec:
   subject: {kind: farm}
 `); len(codes) != 0 {
 		t.Fatalf("good class %v", codes)
+	}
+}
+
+// A tenant-subject class joins the alarms of several resources into one incident that resolves
+// only when none of them fires, and every involvement function runs (MGR-7, MGR-8).
+func TestIncidentTenantSubject(t *testing.T) {
+	b := newBenchWith(t, func(_ string, ms []map[string]any) []map[string]any {
+		cl := diskClass()
+		spec := cl["spec"].(map[string]any)
+		spec["subject"] = map[string]any{"kind": "tenant"}
+		delete(spec, "contain_auto")
+		var fns []any
+		for _, fn := range implicateFns {
+			fns = append(fns, map[string]any{"fn": fn, "args": map[string]any{"resource": "db1", "role": "assistant"}})
+		}
+		spec["implicate"] = fns
+		return append(ms, cl)
+	})
+	fire := func(id string, firing bool) {
+		t.Helper()
+		a := Alarm{Tenant: "demo", Name: "disk.free.low", Subject: AlarmSubject{Kind: "resource", ID: id}, Origin: "monitor",
+			Values: map[string]any{"free_pct": 1}}
+		if err := b.c.tx(context.Background(), func(tx pgx.Tx, now time.Time) error {
+			if firing {
+				return b.c.fireAlarm(context.Background(), tx, now, a)
+			}
+			return b.c.resolveAlarm(context.Background(), tx, now, a)
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	fire("db1", true)
+	fire("db2", true)
+	b.advance(t, 6*60)
+	b.loop(t, "incident")
+	b.advance(t, 2*60)
+	b.loop(t, "incident")
+	list := incidentsOf(t, b, "disk_full")
+	if len(list) != 1 || list[0].SubjectKind != "tenant" || list[0].SubjectID != "demo" || list[0].State != "open" {
+		t.Fatalf("incidents %d %+v", len(list), list)
+	}
+	ep := list[0].Episode
+	b.loop(t, "incident")
+	if r := incidentsOf(t, b, "disk_full")[0]; r.Episode != ep {
+		t.Fatalf("the incident flipped between episodes: %d %d", ep, r.Episode)
+	}
+	fire("db1", false)
+	b.advance(t, 11*60)
+	b.loop(t, "incident")
+	if r := incidentsOf(t, b, "disk_full")[0]; r.State != "open" {
+		t.Fatalf("resolved while db2 fires: %s", r.State)
+	}
+	fire("db2", false)
+	b.advance(t, 11*60)
+	b.loop(t, "incident")
+	if r := incidentsOf(t, b, "disk_full")[0]; r.State != "resolved" {
+		t.Fatalf("after both resolved: %s", r.State)
+	}
+	// The other resource coming back within the hour reopens the same incident.
+	fire("db1", true)
+	b.advance(t, 6*60)
+	b.loop(t, "incident")
+	if list := incidentsOf(t, b, "disk_full"); len(list) != 1 || list[0].State != "reopened" {
+		t.Fatalf("after the return %d %+v", len(list), list)
 	}
 }

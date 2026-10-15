@@ -1364,7 +1364,7 @@ def lint_incident_classes(S, f):
     for _, cname, where, cs in S.each('IncidentClass'):
         d = cs.get('detect') or {}
         alarm = d.get('alarm')
-        if not (isinstance(alarm, str) and alarm.startswith('alarm.') and alarm in events):
+        if not (isinstance(alarm, str) and alarm.startswith('alarm.') and alarm in events) or alarm == 'alarm.incident.unhandled.v1':
             f.error('incident_class_ref', where, f'class {cname}: detect.alarm {alarm} is not a code alarm of the events catalog (MGR-7)')
         for w in d.get('when') or []:
             field = (w or {}).get('field', '')
@@ -1392,6 +1392,7 @@ def lint_incident_classes(S, f):
             effects = m.get('effects') or []
             ok = m.get('op') == 'hold' and len(scope) == 1 and duration_s(m.get('ttl')) > 0 and len(effects) > 0 \
                 and all(k in CONTAIN_SCOPES for k in scope) \
+                and all(v != '$subject' or k == ((cs.get('subject') or {}).get('kind')) for k, v in scope.items()) \
                 and all((holds.get(e) or {}).get('kind') == 'effect' for e in effects)
             if not ok:
                 f.error('incident_contain_auto', where, f'class {cname}: a first measure is a hold with one tenant scope, known effects and a ttl (MGR-7, HLD-2)')

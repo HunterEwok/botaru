@@ -11,6 +11,7 @@ import (
 	"sort"
 	"strings"
 	"time"
+	"unicode"
 
 	"github.com/jackc/pgx/v5"
 
@@ -204,7 +205,8 @@ func scanIncident(row pgx.Row) (*incidentRow, error) {
 }
 
 func loadIncident(ctx context.Context, tx pgx.Tx, tenant, id string, lock bool) (*incidentRow, error) {
-	q := `SELECT ` + incidentCols + ` FROM incidents WHERE tenant = $1 AND id = $2`
+	// People type ids in any case.
+	q := `SELECT ` + incidentCols + ` FROM incidents WHERE tenant = $1 AND lower(id) = lower($2)`
 	if lock {
 		q += ` FOR UPDATE`
 	}
@@ -262,17 +264,11 @@ func (c *Core) incidentLoop(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+	// Every step runs even when another failed: a failed opening still lets incidents resolve and
+	// page.
 	classes := incidentClasses(cat)
-	if err := c.openIncidents(ctx, cat, classes); err != nil {
-		return err
-	}
-	if err := c.resolveIncidents(ctx, cat); err != nil {
-		return err
-	}
-	if err := c.refreshImplicated(ctx, cat); err != nil {
-		return err
-	}
-	return c.unhandledIncidents(ctx, cat)
+	return errors.Join(c.openIncidents(ctx, cat, classes), c.resolveIncidents(ctx, cat),
+		c.refreshImplicated(ctx, cat), c.unhandledIncidents(ctx, cat))
 }
 
 // openIncidents opens or reopens an incident for every firing episode that a class detects and
@@ -306,6 +302,7 @@ func (c *Core) openIncidents(ctx context.Context, cat *Catalog, classes []incide
 	if err := rows.Err(); err != nil {
 		return err
 	}
+	var errs []error
 	for _, ep := range eps {
 		for _, ic := range classes {
 			if mstr(mmap(ic.Spec, "detect"), "alarm") != ep.Alarm || !detectHolds(ic.Spec, ep) {
@@ -321,11 +318,21 @@ func (c *Core) openIncidents(ctx context.Context, cat *Catalog, classes []incide
 				}
 				return c.openIncident(ctx, tx, now, cat, ic, ep, kind, id)
 			}); err != nil {
-				return err
+				// One episode that fails does not stop the others; the loop still reports it.
+				errs = append(errs, c.incidentFailed(ctx, err, "open", ic.Name, ep.Alarmkey))
 			}
 		}
 	}
-	return nil
+	return errors.Join(errs...)
+}
+
+// incidentFailed logs a failure of one incident or episode, so the loop goes on with the rest.
+func (c *Core) incidentFailed(ctx context.Context, err error, what, class, key string) error {
+	if ctx.Err() != nil {
+		return err
+	}
+	c.log.Warn("incident loop: one item failed", "step", what, "class", class, "key", key, "err", err)
+	return fmt.Errorf("incident %s %s %s: %w", what, class, key, err)
 }
 
 // openIncident opens, reopens or keeps the incident of one class and subject for an episode, in
@@ -336,14 +343,14 @@ func (c *Core) openIncident(ctx context.Context, tx pgx.Tx, now time.Time, cat *
 		return err
 	}
 	var seen bool
-	if err := tx.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM incidents WHERE class = $1 AND episode = $2)`, ic.Name, ep.ID).Scan(&seen); err != nil {
+	if err := tx.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM incidents WHERE class = $1 AND episodes @> ARRAY[$2::bigint])`, ic.Name, ep.ID).Scan(&seen); err != nil {
 		return err
 	}
 	if seen {
 		return nil
 	}
 	// A live incident of the class and subject keeps its number: an alarm that came back
-	// before the incident resolved continues it.
+	// before the incident resolved, or another alarm key of the same subject, joins it.
 	live, err := scanIncident(tx.QueryRow(ctx, `SELECT `+incidentCols+` FROM incidents
 		WHERE tenant = $1 AND class = $2 AND subject_kind = $3 AND subject_id = $4 AND state = ANY($5) FOR UPDATE`,
 		ep.Tenant, ic.Name, kind, id, incidentLive))
@@ -353,20 +360,29 @@ func (c *Core) openIncident(ctx context.Context, tx pgx.Tx, now time.Time, cat *
 	if live != nil {
 		live.Episode = ep.ID
 		live.Record["alarm"] = incidentAlarm(ep)
-		return live.save(ctx, tx, now)
+		if err := live.save(ctx, tx, now); err != nil {
+			return err
+		}
+		return adoptEpisode(ctx, tx, live.ID, ep)
 	}
-	// An alarm of the same key back within an hour after resolved reopens the incident (MGR-8).
+	// The class and subject back within an hour after resolved reopen the incident (MGR-8).
 	r, err := scanIncident(tx.QueryRow(ctx, `SELECT `+incidentCols+` FROM incidents
-		WHERE tenant = $1 AND class = $2 AND alarmkey = $3 AND state = 'resolved' AND resolved_at >= $4
-		ORDER BY resolved_at DESC LIMIT 1 FOR UPDATE`, ep.Tenant, ic.Name, ep.Alarmkey, now.Add(-reopenWindow)))
+		WHERE tenant = $1 AND class = $2 AND subject_kind = $3 AND subject_id = $4 AND state = 'resolved' AND resolved_at >= $5
+		ORDER BY resolved_at DESC LIMIT 1 FOR UPDATE`, ep.Tenant, ic.Name, kind, id, now.Add(-reopenWindow)))
 	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
 		return err
 	}
 	if r != nil {
 		r.State, r.Episode, r.Since, r.Handled, r.ResolvedAt = "reopened", ep.ID, now, false, nil
 		r.Record["alarm"] = incidentAlarm(ep)
+		// The new round is not taken up yet: the acks of the previous one do not carry over.
 		delete(r.Record, "resolved_at")
+		delete(r.Record, "taken_by")
+		delete(r.Record, "humans_took")
 		if err := r.save(ctx, tx, now); err != nil {
+			return err
+		}
+		if err := adoptEpisode(ctx, tx, r.ID, ep); err != nil {
 			return err
 		}
 		if err := c.incidentEvent(ctx, tx, now, r, "reopened"); err != nil {
@@ -380,8 +396,8 @@ func (c *Core) openIncident(ctx context.Context, tx pgx.Tx, now time.Time, cat *
 		if err != nil {
 			return err
 		}
-		if _, err := tx.Exec(ctx, `INSERT INTO incidents (id, tenant, class, subject_kind, subject_id, alarmkey, episode, state, record,
-			since, implicated_at, opened_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6, $7, 'open', $8, $9, $9, $9, $9)`,
+		if _, err := tx.Exec(ctx, `INSERT INTO incidents (id, tenant, class, subject_kind, subject_id, alarmkey, episode, episodes, alarmkeys, state, record,
+			since, implicated_at, opened_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6, $7, ARRAY[$7::bigint], ARRAY[$6::text], 'open', $8, $9, $9, $9, $9)`,
 			r.ID, r.Tenant, r.Class, kind, id, ep.Alarmkey, ep.ID, rec, now); err != nil {
 			return err
 		}
@@ -393,6 +409,13 @@ func (c *Core) openIncident(ctx context.Context, tx pgx.Tx, now time.Time, cat *
 		return err
 	}
 	return c.containAuto(ctx, tx, now, cat, ic, r)
+}
+
+// adoptEpisode adds an episode and its alarm key to an incident.
+func adoptEpisode(ctx context.Context, tx pgx.Tx, id string, ep alarmEpisode) error {
+	_, err := tx.Exec(ctx, `UPDATE incidents SET episodes = array_append(episodes, $2::bigint),
+		alarmkeys = CASE WHEN $3::text = ANY(alarmkeys) THEN alarmkeys ELSE array_append(alarmkeys, $3::text) END WHERE id = $1`, id, ep.ID, ep.Alarmkey)
+	return err
 }
 
 // incidentAlarm is the alarm block of the record: only the key, the numbers and the origin, never
@@ -438,6 +461,17 @@ func (c *Core) containAuto(ctx context.Context, tx pgx.Tx, now time.Time, cat *C
 		if ttl <= 0 {
 			continue
 		}
+		// A reopened incident whose first measure still holds gets no second hold on the scope.
+		k := scope.key()
+		var held bool
+		if err := tx.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM holds WHERE state = 'active' AND author_kind = 'contain_auto' AND source = $1
+			AND scope_kind = $2 AND scope_tenant = $3 AND scope_name = $4 AND (until IS NULL OR until > $5))`,
+			ic.Name, k.kind, k.tenant, k.name, now).Scan(&held); err != nil {
+			return err
+		}
+		if held {
+			continue
+		}
 		until := now.Add(ttl)
 		actor := HoldActor{Principal: "system", Rank: "contain_auto", Tenant: r.Tenant, Via: "system", Source: ic.Name}
 		if _, _, err := c.insertHold(ctx, tx, now, actor, scope, mstrs(mm, "effects"), "contain_auto", &until); err != nil {
@@ -477,8 +511,11 @@ func containScope(m map[string]any, r *incidentRow) (HoldScope, bool) {
 // resolveIncidents moves a live incident to resolved when its alarm episode has been resolved
 // for the class's resolve.for (MGR-8).
 func (c *Core) resolveIncidents(ctx context.Context, cat *Catalog) error {
-	rows, err := c.st.Pool.Query(ctx, `SELECT i.id, i.tenant, i.class, e.resolved_at FROM incidents i JOIN alarm_episodes e ON e.id = i.episode
-		WHERE i.state = ANY($1) AND e.state = 'resolved' ORDER BY i.id`, incidentLive)
+	// An incident resolves when none of its episodes fires; the wait counts from the last one.
+	rows, err := c.st.Pool.Query(ctx, `SELECT i.id, i.tenant, i.class,
+		coalesce((SELECT max(e.resolved_at) FROM alarm_episodes e WHERE e.id = ANY(i.episodes)), i.since) FROM incidents i
+		WHERE i.state = ANY($1) AND NOT EXISTS (SELECT 1 FROM alarm_episodes e WHERE e.id = ANY(i.episodes) AND e.state <> 'resolved')
+		ORDER BY i.id`, incidentLive)
 	if err != nil {
 		return err
 	}
@@ -499,6 +536,7 @@ func (c *Core) resolveIncidents(ctx context.Context, cat *Catalog) error {
 	if err := rows.Err(); err != nil {
 		return err
 	}
+	var errs []error
 	for _, d := range all {
 		wait := specDuration(mmap(classByName(cat, d.class), "resolve"), "for")
 		if err := c.tx(ctx, func(tx pgx.Tx, now time.Time) error {
@@ -509,11 +547,12 @@ func (c *Core) resolveIncidents(ctx context.Context, cat *Catalog) error {
 			if err != nil || r == nil || !slices.Contains(incidentLive, r.State) {
 				return err
 			}
-			var state string
-			if err := tx.QueryRow(ctx, `SELECT state FROM alarm_episodes WHERE id = $1`, r.Episode).Scan(&state); err != nil {
+			var firing bool
+			if err := tx.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM alarm_episodes WHERE id = ANY(SELECT unnest(episodes) FROM incidents WHERE id = $1)
+				AND state <> 'resolved')`, r.ID).Scan(&firing); err != nil {
 				return err
 			}
-			if state != "resolved" {
+			if firing {
 				return nil
 			}
 			r.State, r.ResolvedAt = "resolved", &now
@@ -525,16 +564,18 @@ func (c *Core) resolveIncidents(ctx context.Context, cat *Catalog) error {
 			}
 			return c.settleUnhandled(ctx, tx, now, r)
 		}); err != nil {
-			return err
+			errs = append(errs, c.incidentFailed(ctx, err, "resolve", d.class, d.id))
 		}
 	}
-	return nil
+	return errors.Join(errs...)
 }
 
 // refreshImplicated recomputes the involved parties of each live incident once a minute.
 func (c *Core) refreshImplicated(ctx context.Context, cat *Catalog) error {
+	var errs []error
 	for {
 		done := true
+		var id, class string
 		err := c.tx(ctx, func(tx pgx.Tx, now time.Time) error {
 			r, err := scanIncident(tx.QueryRow(ctx, `SELECT `+incidentCols+` FROM incidents WHERE state = ANY($1) AND implicated_at <= $2
 				ORDER BY implicated_at, id LIMIT 1 FOR UPDATE SKIP LOCKED`, incidentLive, now.Add(-implicateEvery)))
@@ -544,11 +585,24 @@ func (c *Core) refreshImplicated(ctx context.Context, cat *Catalog) error {
 			if err != nil {
 				return err
 			}
-			done = false
+			done, id, class = false, r.ID, r.Class
 			return c.implicate(ctx, tx, now, cat, classByName(cat, r.Class), r)
 		})
-		if err != nil || done {
-			return err
+		if err != nil && id == "" {
+			return errors.Join(append(errs, err)...)
+		}
+		if err != nil {
+			// The failed incident waits for the next minute, so the others are recomputed.
+			errs = append(errs, c.incidentFailed(ctx, err, "implicate", class, id))
+			if err := c.tx(ctx, func(tx pgx.Tx, now time.Time) error {
+				_, err := tx.Exec(ctx, `UPDATE incidents SET implicated_at = $2 WHERE id = $1`, id, now)
+				return err
+			}); err != nil {
+				return errors.Join(append(errs, err)...)
+			}
+		}
+		if done {
+			return errors.Join(errs...)
 		}
 	}
 }
@@ -665,15 +719,15 @@ func implicateFn(ctx context.Context, tx pgx.Tx, now time.Time, fn string, args 
 		qargs = []any{r.Tenant, now.Add(-window(15 * time.Minute)), role}
 	case "spend_top":
 		q = `SELECT worker, '' FROM spend WHERE tenant = $1 AND time >= $2 AND worker IS NOT NULL
-			GROUP BY worker ORDER BY sum(eur_micros) DESC, worker LIMIT $3`
+			GROUP BY worker ORDER BY sum(eur_micros) DESC, worker LIMIT least($3, 50)`
 		qargs = []any{r.Tenant, now.Add(-window(time.Hour)), num("n", 3)}
 	default:
 		return nil, nil
 	}
-	rows, err := tx.Query(ctx, q+` LIMIT 50`, qargs...)
-	if fn == "spend_top" {
-		rows, err = tx.Query(ctx, q, qargs...)
+	if fn != "spend_top" {
+		q += ` LIMIT 50`
 	}
+	rows, err := tx.Query(ctx, q, qargs...)
 	if err != nil {
 		return nil, err
 	}
@@ -716,6 +770,7 @@ func (c *Core) unhandledIncidents(ctx context.Context, cat *Catalog) error {
 	if err := rows.Err(); err != nil {
 		return err
 	}
+	var errs []error
 	for _, x := range all {
 		after := specDuration(mmap(classByName(cat, x.class), "humans"), "page_if_unhandled_after")
 		if err := c.tx(ctx, func(tx pgx.Tx, now time.Time) error {
@@ -735,10 +790,10 @@ func (c *Core) unhandledIncidents(ctx context.Context, cat *Catalog) error {
 			}
 			return c.fireAlarm(ctx, tx, now, unhandledAlarm(r, now))
 		}); err != nil {
-			return err
+			errs = append(errs, c.incidentFailed(ctx, err, "unhandled", x.class, x.id))
 		}
 	}
-	return nil
+	return errors.Join(errs...)
 }
 
 func unhandledAlarm(r *incidentRow, now time.Time) Alarm {
@@ -778,6 +833,10 @@ func (q IncidentRequest) target() string {
 
 // IncidentList is P2 incident.list: the incidents of the operator's tenant, newest first.
 func (c *Core) IncidentList(ctx context.Context, op Operator, req TenantRequest) (map[string]any, error) {
+	cat, err := c.Catalog(ctx)
+	if err != nil {
+		return nil, err
+	}
 	limit := req.Limit
 	if limit <= 0 || limit > 1000 {
 		limit = 1000
@@ -795,7 +854,11 @@ func (c *Core) IncidentList(ctx context.Context, op Operator, req TenantRequest)
 		if err := rows.Scan(&id, &state, &at, &class); err != nil {
 			return nil, err
 		}
-		items = append(items, map[string]any{"id": id, "state": state, "created_at": fmtTime(at), "title": class})
+		title := mstr(classByName(cat, class), "title")
+		if title == "" {
+			title = class
+		}
+		items = append(items, map[string]any{"id": id, "state": state, "created_at": fmtTime(at), "title": title})
 	}
 	return map[string]any{"items": items}, rows.Err()
 }
@@ -952,6 +1015,19 @@ func (c *Core) incidentActTx(ctx context.Context, tx pgx.Tx, now time.Time, tena
 	return done, nil
 }
 
+// afterFields is the text after the first n words.
+func afterFields(s string, n int) string {
+	s = strings.TrimSpace(s)
+	for range n {
+		i := strings.IndexFunc(s, unicode.IsSpace)
+		if i < 0 {
+			return ""
+		}
+		s = strings.TrimSpace(s[i:])
+	}
+	return s
+}
+
 // incidentCommand is /incident ack|close|dismiss <id> [<reason_code> <details>] from a person of
 // the tenant with incident.manage (MGR-8).
 func (c *Core) incidentCommand(ctx context.Context, tx pgx.Tx, now time.Time, pc personCommand, rest string) (*ActivityResult, error) {
@@ -968,8 +1044,7 @@ func (c *Core) incidentCommand(ctx context.Context, tx pgx.Tx, now time.Time, pc
 			return pc.reply(c, "cmd.incident.dismiss_reason", nil), nil
 		}
 		req.ReasonCode = f[2]
-		_, after, _ := strings.Cut(rest, f[2])
-		req.Details = strings.TrimSpace(after)
+		req.Details = afterFields(rest, 3)
 	}
 	d, err := c.incidentActTx(ctx, tx, now, pc.tv.Name, incidentActor{Principal: pc.person, Via: "channel"}, f[0], req)
 	var p *Problem
@@ -1015,7 +1090,7 @@ func (c *Core) lintIncidentClasses(S *lintSet, f *lintFindings) error {
 			continue
 		}
 		d := mmap(o.spec, "detect")
-		if a := mstr(d, "alarm"); !strings.HasPrefix(a, "alarm.") || !events.Has(a) {
+		if a := mstr(d, "alarm"); !strings.HasPrefix(a, "alarm.") || !events.Has(a) || a == "alarm.incident.unhandled.v1" {
 			f.add(o, "incident_class_ref", "/detect/alarm")
 		}
 		for j, w := range mlist(d, "when") {
@@ -1055,8 +1130,10 @@ func (c *Core) lintIncidentClasses(S *lintSet, f *lintFindings) error {
 			mm, _ := m.(map[string]any)
 			scope := mmap(mm, "scope")
 			ok := mstr(mm, "op") == "hold" && len(scope) == 1 && specDuration(mm, "ttl") > 0 && len(mstrs(mm, "effects")) > 0
-			for k := range scope {
+			for k, v := range scope {
 				ok = ok && slices.Contains(incidentSubjectScopes, k)
+				// $subject names the incident subject, so the scope kind is the subject kind.
+				ok = ok && (v != "$subject" || k == mstr(mmap(o.spec, "subject"), "kind"))
 			}
 			for _, e := range mstrs(mm, "effects") {
 				he, known := holds.Entry(e)
