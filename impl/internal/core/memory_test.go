@@ -493,6 +493,19 @@ func TestSubjectFarmFallback(t *testing.T) {
 		t.Fatalf("no card to the farm admin: %v", card)
 	}
 	req := DecideRequest{SubjectKind: "subject_request", ID: d.ID, Nonce: card["nonce"].(string), Decision: "approve"}
+	// The author under another principal of the same person is not the second person.
+	if _, err := b.c.st.Pool.Exec(ctx, `INSERT INTO principals (tenant, id, kind, state, created_at) VALUES ('demo', $1, 'human', 'active', now()) ON CONFLICT DO NOTHING`, b.op.Principal); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := b.c.st.Pool.Exec(ctx, `INSERT INTO identities (tenant, identity, principal) VALUES ('demo', 'telegram:2001', $1)`, b.op.Principal); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := b.c.Decide(ctx, fch, press("telegram:2001", "direct:2001", external), req); err == nil {
+		t.Fatal("the author decided its own request as a farm admin")
+	}
+	if _, err := b.c.st.Pool.Exec(ctx, `DELETE FROM identities WHERE tenant = 'demo' AND identity = 'telegram:2001'`); err != nil {
+		t.Fatal(err)
+	}
 	res, err := b.c.Decide(ctx, fch, press("telegram:2001", "direct:2001", external), req)
 	if err != nil || res.State != "approved" {
 		t.Fatalf("farm admin decide %+v %v", res, err)

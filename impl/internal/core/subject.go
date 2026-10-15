@@ -164,6 +164,16 @@ func (c *Core) planSubjectCards(ctx context.Context, tx pgx.Tx, now time.Time, t
 			continue
 		}
 		seen[a.Principal] = true
+		// A farm admin who is the author under another principal is not the second person.
+		if tenant != tv.Name {
+			same, err := sharesIdentity(ctx, tx, tv.Name, author, tenant, a.Principal)
+			if err != nil {
+				return err
+			}
+			if same {
+				continue
+			}
+		}
 		body := map[string]any{"form": "card", "card": subjectCard}
 		if reminder {
 			body["reminder"] = true
@@ -239,6 +249,15 @@ func (c *Core) decideSubject(ctx context.Context, w *Worker, ob OnBehalf, req De
 		}
 		if press.principal == r.Author {
 			return refuse("forbidden", "the author of a request does not decide it")
+		}
+		if press.tv.Name != r.Tenant {
+			same, err := sharesIdentity(ctx, tx, r.Tenant, r.Author, press.tv.Name, press.principal)
+			if err != nil {
+				return err
+			}
+			if same {
+				return refuse("forbidden", "the author of a request does not decide it")
+			}
 		}
 		tv := cat.Tenants[r.Tenant]
 		if tv == nil {
@@ -789,4 +808,13 @@ func settleEdgeSteps(ctx context.Context, tx pgx.Tx, now time.Time, r *subjectRe
 		}
 	}
 	return nil
+}
+
+// sharesIdentity says whether two principals of two tenants are one person: they share a
+// channel identity (SEC-11).
+func sharesIdentity(ctx context.Context, tx pgx.Tx, tenantA, principalA, tenantB, principalB string) (bool, error) {
+	var same bool
+	err := tx.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM identities a JOIN identities b ON a.identity = b.identity
+		WHERE a.tenant = $1 AND a.principal = $2 AND b.tenant = $3 AND b.principal = $4)`, tenantA, principalA, tenantB, principalB).Scan(&same)
+	return same, err
 }
