@@ -1304,9 +1304,10 @@ def lint_governance(S, f):
             if path is None:
                 f.error('persona_missing', where, f'charter {gname}: persona file {pr.get("ref")} is not found (GOV-4)')
                 continue
-            with open(path, encoding='utf-8') as fh:
-                text = fh.read()
-            if hashlib.sha256(text.encode()).hexdigest() != sha:
+            with open(path, 'rb') as fh:
+                data = fh.read()
+            text = data.decode('utf-8', errors='replace')
+            if hashlib.sha256(data).hexdigest() != sha:
                 f.error('persona_hash', where, f'charter {gname}: {pr.get("ref")} does not match its sha256 (GOV-4)')
                 continue
             codes = persona_findings(text, position, terms)

@@ -418,7 +418,9 @@ func (c *Core) applyOnce(ctx context.Context, op Operator, req ApplyRequest) (*A
 		if err := c.syncSeats(ctx, tx, now, next); err != nil {
 			return err
 		}
-		if err := storePersonas(ctx, tx, now, docs, req.Personas); err != nil {
+		// The texts go to every charter of the store that pins them, the ones applied earlier
+		// included.
+		if err := storePersonas(ctx, tx, now, after, req.Personas); err != nil {
 			return err
 		}
 		if err := notifyWork(ctx, tx); err != nil {

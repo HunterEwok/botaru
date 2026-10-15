@@ -1839,7 +1839,12 @@ func (c *Core) lintGovernance(S *lintSet, f *lintFindings, personas personaLooku
 				text, ok = personas(o.tenant, r.SHA256)
 			}
 			if !ok {
-				f.add(o, "persona_missing", path)
+				// A charter of an earlier apply whose text the store lacks (pinned before the
+				// core kept persona texts) runs without its persona until it is applied again
+				// with the file; it does not block an apply of other objects.
+				if o.i >= 0 {
+					f.add(o, "persona_missing", path)
+				}
 				continue
 			}
 			position := "lens"

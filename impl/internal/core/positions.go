@@ -140,12 +140,13 @@ var (
 	personaLinkRe = regexp.MustCompile(`(?i)(https?://|ftp://|www\.|mailto:|[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,})`)
 	personaIDRe   = regexp.MustCompile(`(?i)(\bbot_[0-9a-z]{6,}|\bcommission:[0-9]+|\bfarm-manager\b|\bcse_|\bcmsg_)`)
 	personaEnvRe  = regexp.MustCompile(`\b[A-Z][A-Z0-9]*_(KEY|TOKEN|SECRET|PASSWORD)\b`)
+	paragraphRe   = regexp.MustCompile(`\n[ \t]*\n`)
 )
 
 // paragraphs splits a text into its paragraphs.
 func paragraphs(text string) []string {
 	var out []string
-	for _, p := range regexp.MustCompile(`\n[ \t]*\n`).Split(strings.ReplaceAll(text, "\r\n", "\n"), -1) {
+	for _, p := range paragraphRe.Split(strings.ReplaceAll(text, "\r\n", "\n"), -1) {
 		if p = strings.TrimSpace(p); p != "" {
 			out = append(out, p)
 		}
