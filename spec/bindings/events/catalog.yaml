@@ -344,6 +344,41 @@ entries:
     data_schema: spec/model/seat-event.schema.json
     producer: [core]
     rules: [IDN-10, GOV-29, GOV-21]
+  - id: incident.opened.v1
+    since: v0.1
+    data_schema: spec/model/event-data/incident-event.schema.json
+    producer: [core]
+    rules: [MGR-8]
+  - id: incident.contained.v1
+    since: v0.1
+    data_schema: spec/model/event-data/incident-event.schema.json
+    producer: [core]
+    rules: [MGR-8]
+  - id: incident.resolved.v1
+    since: v0.1
+    data_schema: spec/model/event-data/incident-event.schema.json
+    producer: [core]
+    rules: [MGR-8]
+  - id: incident.reopened.v1
+    since: v0.1
+    data_schema: spec/model/event-data/incident-event.schema.json
+    producer: [core]
+    rules: [MGR-8]
+  - id: incident.acked.v1
+    since: v0.1
+    data_schema: spec/model/event-data/incident-event.schema.json
+    producer: [core]
+    rules: [MGR-8]
+  - id: incident.closed.v1
+    since: v0.1
+    data_schema: spec/model/event-data/incident-event.schema.json
+    producer: [core]
+    rules: [MGR-8]
+  - id: incident.dismissed.v1
+    since: v0.1
+    data_schema: spec/model/event-data/incident-event.schema.json
+    producer: [core]
+    rules: [MGR-8]
   - id: fact.rejected.v1
     since: v0.1
     data_schema: spec/model/event-data/fact-rejected.schema.json

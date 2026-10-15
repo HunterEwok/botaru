@@ -48,6 +48,8 @@ commands:
                 [-plugins P[,P] -placement host|sandbox [-host MACHINE]]   (toolhost)
   worker revoke ID                           the token stops working; the bot identity becomes unbound
   bot list | bot show ID | bot retire ID     bot identities of the credential's tenant (IDN-8, IDN-11)
+  incident list | incident show|ack|close ID | incident dismiss ID REASON DETAILS
+                                            incidents of the credential's tenant (MGR-8)
   seat assign SEAT BOT | seat vacate SEAT    a commission seat, for example commission:1 (IDN-10)
   audit verify TENANT [-heads FILE]          FILE: the JSON array of heads from the monitoring history, oldest first
   audit query [-kind K] [-command C] [-actor P] [-target-kind K] [-from T] [-to T] [-limit N] [-after-seq N]
@@ -156,6 +158,18 @@ func run(c *client, args []string) error {
 			return c.print("bot.retire", map[string]any{"bot": args[2]})
 		}
 		return errors.New("usage: farmctl bot list | bot show ID | bot retire ID")
+	case "incident":
+		switch {
+		case len(args) == 2 && args[1] == "list":
+			return c.print("incident.list", map[string]any{})
+		case len(args) == 3 && args[1] == "list":
+			return c.print("incident.list", map[string]any{"tenant": args[2]})
+		case len(args) == 3 && (args[1] == "show" || args[1] == "ack" || args[1] == "close"):
+			return c.print("incident."+args[1], map[string]any{"op": "incident." + args[1], "id": args[2]})
+		case len(args) >= 5 && args[1] == "dismiss":
+			return c.print("incident.dismiss", map[string]any{"incident": args[2], "reason_code": args[3], "details": strings.Join(args[4:], " ")})
+		}
+		return errors.New("usage: farmctl incident list [TENANT] | incident show|ack|close ID | incident dismiss ID REASON DETAILS")
 	case "seat":
 		switch {
 		case len(args) == 4 && args[1] == "assign":

@@ -22,7 +22,7 @@ import (
 
 // builtinCommands are the channel commands that a tenant's commands cannot take (PRM-17).
 var builtinCommands = map[string]bool{"/help": true, "/about": true, "/lang": true, "/mydata": true, "/tasks": true, "/status": true,
-	"/cancel": true, "/me": true, "/team": true, "/run": true, "/service": true, "/forget": true, "/grant": true, "/ungrant": true}
+	"/cancel": true, "/me": true, "/team": true, "/run": true, "/service": true, "/forget": true, "/grant": true, "/ungrant": true, "/incident": true}
 
 // timeoutCeilings are the farm ceilings of type timeouts in seconds (DLV-16).
 var timeoutCeilings = map[string]int64{"lease": 120, "heartbeat": 30, "tool_start_by": 30}
@@ -1541,6 +1541,9 @@ func (c *Core) lintManifests(docs []manifest.Doc, index []int, personas personaL
 		}
 	}
 	if err := c.lintGovernance(S, f, personas); err != nil {
+		return nil, err
+	}
+	if err := c.lintIncidentClasses(S, f); err != nil {
 		return nil, err
 	}
 	sort.SliceStable(f.out, func(i, j int) bool { return f.out[i].Path < f.out[j].Path })

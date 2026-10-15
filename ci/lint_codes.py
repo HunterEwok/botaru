@@ -39,6 +39,8 @@ CODES = {
     'persona_value_path': ('a functionary persona without the value-path paragraph, or another persona with one', 'GOV-4'),
     'unaware_text': ('a persona, type instruction or tool description links scores, reviews, proposals or votes with promotion, a seat, the queue or departure, or a persona speaks of voting or stops', 'GOV-29'),
     'governance_ref': ('a role, task type, action, message type or route refers to governance, attribution, seat or incident operations or events', 'GOV-6, GOV-13, GOV-29'),
+    'incident_class_ref': ('an incident class names an alarm outside the events catalog, a condition atom or field outside the closed list, an unknown involvement function, operation, action or pinnable type, or services and monitoring scripts for a farm subject', 'MGR-7'),
+    'incident_contain_auto': ('a first measure of an incident class is not a hold with one tenant scope, known effects and an expiry', 'MGR-7, HLD-2'),
     'lens_persona_missing': ('a charter seat names a lens without a persona addendum in commission.lenses', 'COM-19'),
     'ref_missing': ('reference to an object that is not in the set', ''),
     'service_no_card': ('service no_card holds something other than restart', 'MON-8'),

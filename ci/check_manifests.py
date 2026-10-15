@@ -189,7 +189,7 @@ FORBIDDEN_PROGRAMS = set(model_registry('forbidden-programs'))
 REQUIREMENTS = rules()
 # Built-in channel commands: commands cannot take them (PRM-17, docs/task-language.md).
 BUILTIN_COMMANDS = {'/help', '/about', '/lang', '/mydata', '/tasks', '/status', '/cancel', '/me', '/team',
-                    '/run', '/service', '/forget', '/grant', '/ungrant'}
+                    '/run', '/service', '/forget', '/grant', '/ungrant', '/incident'}
 # Farm ceilings (docs/tasks-and-delivery.md, "Deadlines and ceilings"; DLV-16).
 CEILINGS = {'lease': 120, 'heartbeat': 30, 'tool_start_by': 30}
 # Decision and management capabilities: system does not have them (PRM-10), nor do delegated_groups (PRM-16).
@@ -1199,6 +1199,7 @@ def lint(docs, today=None, farm_hosts=None, examples_mode=False, claimed=None, s
     lint_series(S, f, tools)
     lint_insight_types(S, f, roles)
     lint_governance(S, f)
+    lint_incident_classes(S, f)
     return f
 
 
@@ -1342,6 +1343,61 @@ def lint_governance(S, f):
         ev = (rs.get('on') or {}).get('event')
         if governance_name(ev, incidents=False):
             f.error('governance_ref', where, f'route {n} starts on {ev} (GOV-29)')
+
+
+IMPLICATE_FNS = ('lease_holders_on', 'recent_targets', 'worker_of_subject', 'role_failing', 'spend_top')
+DETECT_ATOMS = ('eq', 'ne', 'lt', 'le', 'gt', 'ge', 'in')
+CONTAIN_SCOPES = ('worker', 'bot', 'bot_group', 'role', 'tasktype', 'resource')
+
+
+def duration_s(v):
+    m = re.fullmatch(r'([0-9]+)([smhd])', v) if isinstance(v, str) else None
+    return int(m.group(1)) * {'s': 1, 'm': 60, 'h': 3600, 'd': 86400}[m.group(2)] if m else 0
+
+
+def lint_incident_classes(S, f):
+    """References of an IncidentClass (MGR-7) and its first measure, a hold with an expiry (HLD-2)."""
+    cat = load_yaml(os.path.join(ROOT, 'spec', 'bindings', 'events', 'catalog.yaml')) or {}
+    events = {e.get('id') for e in cat.get('entries', []) if isinstance(e, dict)}
+    ops = model_registry('control-ops')
+    holds = model_registry('holds')
+    for _, cname, where, cs in S.each('IncidentClass'):
+        if not re.fullmatch(r'[a-z][a-z0-9_]{0,62}', str(cname)):
+            f.error('incident_class_ref', where, f'class {cname}: the name is not a short snake_case name of incident records (MGR-7)')
+        d = cs.get('detect') or {}
+        alarm = d.get('alarm')
+        if not (isinstance(alarm, str) and alarm.startswith('alarm.') and alarm in events) or alarm == 'alarm.incident.unhandled.v1':
+            f.error('incident_class_ref', where, f'class {cname}: detect.alarm {alarm} is not a code alarm of the events catalog (MGR-7)')
+        for w in d.get('when') or []:
+            field = (w or {}).get('field', '')
+            if (w or {}).get('atom') not in DETECT_ATOMS or not (str(field).startswith('values.') or field in ('subject.kind', 'subject.id')):
+                f.error('incident_class_ref', where, f'class {cname}: condition {w} is outside the closed atoms and fields (MGR-7)')
+        for fn in cs.get('implicate') or []:
+            if (fn or {}).get('fn') not in IMPLICATE_FNS:
+                f.error('incident_class_ref', where, f'class {cname}: involvement function {(fn or {}).get("fn")} is not in the closed list (MGR-7)')
+        r = cs.get('responses') or {}
+        for op in r.get('ops') or []:
+            if op not in ops:
+                f.error('incident_class_ref', where, f'class {cname}: operation {op} is not in control-ops.yaml (MGR-7)')
+        for a in r.get('actions') or []:
+            if S.get('Action', a) is None:
+                f.error('incident_class_ref', where, f'class {cname}: action {a} is not in the set (MGR-7)')
+        for t in r.get('pin_types') or []:
+            tt = S.get('TaskType', t)
+            if tt is None or not tt.get('pinnable'):
+                f.error('incident_class_ref', where, f'class {cname}: pin type {t} is not a pinnable type of the set (MGR-7)')
+        if (cs.get('subject') or {}).get('kind') == 'farm' and ('services' in r or 'monitor_scripts' in r):
+            f.error('incident_class_ref', where, f'class {cname}: a farm class has no services and no monitoring scripts (MGR-7)')
+        for m in cs.get('contain_auto') or []:
+            m = m or {}
+            scope = m.get('scope') or {}
+            effects = m.get('effects') or []
+            ok = m.get('op') == 'hold' and len(scope) == 1 and duration_s(m.get('ttl')) > 0 and len(effects) > 0 \
+                and all(k in CONTAIN_SCOPES for k in scope) \
+                and all(v != '$subject' or k == ((cs.get('subject') or {}).get('kind')) for k, v in scope.items()) \
+                and all((holds.get(e) or {}).get('kind') == 'effect' for e in effects)
+            if not ok:
+                f.error('incident_contain_auto', where, f'class {cname}: a first measure is a hold with one tenant scope, known effects and a ttl (MGR-7, HLD-2)')
 
 
 def lint_insight(f, rname, where, rs, types):

@@ -35,6 +35,7 @@ const (
 	Proposal  = "prp"
 	Fact      = "fct"
 	FactOffer = "fo"
+	Incident  = "inc"
 )
 
 var (
