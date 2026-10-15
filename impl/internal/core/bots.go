@@ -150,7 +150,12 @@ func (c *Core) enrollBot(ctx context.Context, tx pgx.Tx, now time.Time, cat *Cat
 		if (w.Kind != "agent" && w.Kind != "job") || !hasModel(cat, w.Role) {
 			return "", nil
 		}
-		return c.insertBot(ctx, tx, now, w.Tenant, w.Role, "worker", w.ID, "", "worker.enroll")
+		id, err := c.insertBot(ctx, tx, now, w.Tenant, w.Role, "worker", w.ID, "", "worker.enroll")
+		if err != nil {
+			return "", err
+		}
+		// The first identity people enroll in a role takes the waiting fact offers (MEM-7).
+		return id, c.pickUpOffers(ctx, tx, now, cat, w.Tenant, w.Role, "", id)
 	}
 	b, err := loadBot(ctx, tx, botID, true)
 	if err != nil {
@@ -282,6 +287,21 @@ func (c *Core) retireBot(ctx context.Context, tx pgx.Tx, now time.Time, cat *Cat
 		return "", err
 	}
 	if err := c.fenceAttempts(ctx, tx, now, "bot_retired", `acting_bot = $1`, b.ID); err != nil {
+		return "", err
+	}
+	// The facts go to the successor: the new identity of the worker, the next holder of the
+	// seat, or the first identity enrolled in the role before the seal ends; a role that left
+	// the catalog has none. Then they are sealed (MEM-4, MEM-7).
+	if reason != "role_removed" && reason != "tenant_offboarded" {
+		seat := ""
+		if b.Mode == "seat" && successor == "" {
+			seat = b.Seat
+		}
+		if err := c.offerFacts(ctx, tx, now, cat, b, successor, seat, sealed); err != nil {
+			return "", err
+		}
+	}
+	if err := sealFacts(ctx, tx, b); err != nil {
 		return "", err
 	}
 	// A holder that leaves other than by a seat operation frees its seat.
@@ -433,6 +453,9 @@ func (c *Core) identityLoop(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+	if err := c.tx(ctx, func(tx pgx.Tx, now time.Time) error { return expireOffers(ctx, tx, now) }); err != nil {
+		return err
+	}
 	rows, err := c.st.Pool.Query(ctx, `SELECT id FROM bots WHERE state IN ('active', 'suspended', 'unbound')
 		OR state = 'retired' AND sealed_until IS NOT NULL ORDER BY id`)
 	if err != nil {
@@ -515,8 +538,10 @@ func (c *Core) identityStep(ctx context.Context, tx pgx.Tx, now time.Time, cat *
 // botErased ends a retired identity whose bot_retired request closed: only the tombstone
 // remains (id, tenant, role, time, reason and successor).
 func botErased(ctx context.Context, tx pgx.Tx, now time.Time, id string) error {
-	_, err := tx.Exec(ctx, `UPDATE bots SET state = 'erased', record = '{}', retired = retired - 'erasure', updated_at = $2 WHERE id = $1 AND state = 'retired'`, id, now)
-	return err
+	if _, err := tx.Exec(ctx, `UPDATE bots SET state = 'erased', record = '{}', retired = retired - 'erasure', updated_at = $2 WHERE id = $1 AND state = 'retired'`, id, now); err != nil {
+		return err
+	}
+	return eraseBotFacts(ctx, tx, now, id)
 }
 
 // actingOf is the identity a lease runs on behalf of, with its epochs.

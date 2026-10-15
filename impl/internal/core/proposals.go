@@ -107,6 +107,8 @@ func (c *Core) createProposals(ctx context.Context, tx pgx.Tx, now time.Time, ca
 		return err
 	}
 	a.Acting = acting
+	// An aggregator's proposal takes the mark and the untrusted flag of its task, which carry
+	// the highest mark and the logical OR of the inputs it read (AGG-4).
 	if cat.TaskTypes[typ].Purpose == "aggregate" {
 		a.Level = 1
 	}

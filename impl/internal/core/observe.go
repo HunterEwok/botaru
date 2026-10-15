@@ -1103,7 +1103,8 @@ const obsToolName = "observations_query"
 
 // obsTool offers observations_query in an insight, review or aggregate task of a role that may
 // read series: the series enum within what the task may read, the windows and rollups of the
-// closed lists (OBV-3, PRF-1).
+// closed lists (OBV-3, PRF-1). It answers only rollups of the closed list, so an aggregator,
+// whose profile has no other tools, reads only aggregated inputs (AGG-2).
 func (c *Core) obsTool(cat *Catalog, g *toolsGrant) *catalogTool {
 	switch g.Purpose {
 	case "insight", "review", "aggregate":

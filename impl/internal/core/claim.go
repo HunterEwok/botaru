@@ -499,6 +499,12 @@ func (c *Core) claimAttempt(ctx context.Context, tx pgx.Tx, now time.Time, cat *
 	if tt.ResultSchema != nil {
 		payload["result_schema"] = tt.ResultSchema
 	}
+	// A type that reads bot memory gets the facts of the acting identity (MEM-6).
+	if facts, err := c.taskFacts(ctx, tx, now, cat, w, typ, id, acting, record); err != nil {
+		return nil, err
+	} else if facts != nil {
+		payload["facts"] = facts
+	}
 	// An analysis task carries the author's "My outcomes", the last rows by code (DIG-7, INS-5).
 	if tt.Purpose == "insight" {
 		mo, err := myOutcomes(ctx, tx, w.Tenant, w.ID, myOutcomesRows)

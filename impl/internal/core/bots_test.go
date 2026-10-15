@@ -9,7 +9,7 @@ import (
 )
 
 // helloAttempt makes a hello task and claims its attempt on the agent.
-func (b *bench) helloAttempt(t *testing.T, update string) (string, *WorkItem) {
+func (b *bench) helloAttempt(t *testing.T, update string, mark ...string) (string, *WorkItem) {
 	t.Helper()
 	ctx := context.Background()
 	task := b.hello(t, update)
@@ -24,6 +24,11 @@ func (b *bench) helloAttempt(t *testing.T, update string) (string, *WorkItem) {
 	}
 	if _, err := b.c.st.Pool.Exec(ctx, `UPDATE contacts SET ai_notice_at = now() WHERE ai_notice_at IS NULL`); err != nil {
 		t.Fatal(err)
+	}
+	if len(mark) > 0 {
+		if _, err := b.c.st.Pool.Exec(ctx, `UPDATE tasks SET record = record || jsonb_build_object('data_mark', $2::text) WHERE id = $1`, task, mark[0]); err != nil {
+			t.Fatal(err)
+		}
 	}
 	att := b.claim(t, b.agent, "attempt")
 	if att == nil {

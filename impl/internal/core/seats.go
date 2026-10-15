@@ -166,6 +166,27 @@ func (c *Core) SeatAssign(ctx context.Context, op Operator, req SeatRequest) (*D
 		if b.State != "active" || b.Mode != "worker" || !slices.Contains(functionaryProfiles, profileOf(cat, b.Role)) {
 			return refuse("forbidden", "only an active functionary identity of the tenant takes a seat")
 		}
+		// The identity moves to the seat; its worker keeps working under a new identity.
+		worker := b.Worker
+		if _, err := tx.Exec(ctx, `UPDATE bots SET mode = 'seat', seat = $2, worker_id = NULL, epoch = epoch + 1, updated_at = $3 WHERE id = $1`, b.ID, s.ID, now); err != nil {
+			return err
+		}
+		if err := c.fenceAttempts(ctx, tx, now, "seat_changed", `acting_bot = $1`, b.ID); err != nil {
+			return err
+		}
+		if worker != "" {
+			next, err := c.insertBot(ctx, tx, now, b.Tenant, b.Role, "worker", worker, "", "seat.assign")
+			if err != nil {
+				return err
+			}
+			// The binding changed: the worker's new identity gets copies of the facts, and the
+			// holder keeps its own (MEM-7).
+			if err := c.offerFacts(ctx, tx, now, cat, b, next, "", now.Add(charterDuration(cat, b.Tenant, "memory", "seal_ttl", defaultSealTTL))); err != nil {
+				return err
+			}
+		}
+		// The previous holder leaves only after the worker split, so its facts go to the new
+		// holder alone and not on to the worker's new identity (MEM-7).
 		if s.Holder != "" {
 			prev, err := loadBot(ctx, tx, s.Holder, true)
 			if err != nil {
@@ -177,22 +198,13 @@ func (c *Core) SeatAssign(ctx context.Context, op Operator, req SeatRequest) (*D
 				}
 			}
 		}
-		// The identity moves to the seat; its worker keeps working under a new identity.
-		worker := b.Worker
-		if _, err := tx.Exec(ctx, `UPDATE bots SET mode = 'seat', seat = $2, worker_id = NULL, epoch = epoch + 1, updated_at = $3 WHERE id = $1`, b.ID, s.ID, now); err != nil {
-			return err
-		}
-		if err := c.fenceAttempts(ctx, tx, now, "seat_changed", `acting_bot = $1`, b.ID); err != nil {
-			return err
-		}
-		if worker != "" {
-			if _, err := c.insertBot(ctx, tx, now, b.Tenant, b.Role, "worker", worker, "", "seat.assign"); err != nil {
-				return err
-			}
-		}
 		seq, err := c.moveSeat(ctx, tx, now, s, b.ID, "held", "seat.assigned.v1", "seat.assign", op.Principal)
 		out.AuditSeq = seq
-		return err
+		if err != nil {
+			return err
+		}
+		// A seat that waited with an offer of its previous holder hands it to the new one.
+		return c.pickUpOffers(ctx, tx, now, cat, b.Tenant, b.Role, s.ID, b.ID)
 	})
 	if err != nil {
 		return nil, err

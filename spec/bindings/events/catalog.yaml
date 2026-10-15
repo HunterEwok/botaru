@@ -344,6 +344,11 @@ entries:
     data_schema: spec/model/seat-event.schema.json
     producer: [core]
     rules: [IDN-10, GOV-29, GOV-21]
+  - id: fact.rejected.v1
+    since: v0.1
+    data_schema: spec/model/event-data/fact-rejected.schema.json
+    producer: [core]
+    rules: [MEM-6]
   - id: proposal.rejected.v1
     since: v0.1
     data_schema: spec/model/proposal-rejected.schema.json

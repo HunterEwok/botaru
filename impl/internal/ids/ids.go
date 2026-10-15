@@ -33,6 +33,8 @@ const (
 	Subject   = "sr"
 	Step      = "es"
 	Proposal  = "prp"
+	Fact      = "fct"
+	FactOffer = "fo"
 )
 
 var (

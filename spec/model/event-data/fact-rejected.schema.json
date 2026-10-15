@@ -1,0 +1,36 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:botaru:schema:fact-rejected:1",
+  "title": "Data of the event fact.rejected",
+  "description": "A fact proposal of an attempt that the core refused: no record is created, only this event remains (MEM-6, spec/lifecycles/fact.md).",
+  "x-botaru-direction": "output",
+  "x-botaru-rules": [
+    "MEM-6"
+  ],
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "task",
+    "reason"
+  ],
+  "properties": {
+    "task": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/object_id",
+      "description": "The task whose attempt proposed the fact."
+    },
+    "predicate": {
+      "type": "string",
+      "maxLength": 64,
+      "pattern": "^[a-z][a-z0-9_]*(\\.[a-z0-9_]+)*$",
+      "description": "The predicate of the proposal, when it had one."
+    },
+    "reason": {
+      "description": "fact_insufficient: less evidence than min_samples, or a predicate the core does not derive in this version; output_schema_invalid: the proposal does not pass the schema, its kind or subject type does not fit the predicate, or it is over memory.facts.per_attempt; not_found: the subject is not an object of the tenant.",
+      "enum": [
+        "fact_insufficient",
+        "output_schema_invalid",
+        "not_found"
+      ]
+    }
+  }
+}

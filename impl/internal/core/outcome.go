@@ -289,6 +289,21 @@ func (c *Core) completeAttempt(ctx context.Context, tx pgx.Tx, now time.Time, w 
 	if err != nil {
 		return err
 	}
+	// The facts a type with memory.facts: propose may hand in sit beside its result; the core
+	// takes them out before the result check and writes them below (MEM-6).
+	var proposedFacts any
+	if tt.Memory != nil && tt.Memory.Facts == "propose" {
+		if f, ok := result["facts"]; ok {
+			proposedFacts = f
+			rest := make(map[string]any, len(result))
+			for k, v := range result {
+				if k != "facts" {
+					rest[k] = v
+				}
+			}
+			result = rest
+		}
+	}
 	// The schema of the type at claim; a lease taken before the upgrade has none and uses the
 	// current type.
 	schema := att.ResultSchema
@@ -350,6 +365,16 @@ func (c *Core) completeAttempt(ctx context.Context, tx pgx.Tx, now time.Time, w 
 	// Proposals are born only here, in the transaction of a successful complete (INS-3).
 	if err := c.createProposals(ctx, tx, now, cat, w, l.WorkID, typ, rec, bodies); err != nil {
 		return err
+	}
+	// So are facts: a failed, canceled or fenced attempt leaves none (MEM-6).
+	if proposedFacts != nil {
+		var recMap map[string]any
+		if err := json.Unmarshal(rec, &recMap); err != nil {
+			return err
+		}
+		if err := c.proposeFacts(ctx, tx, now, cat, w, l, recMap, proposedFacts); err != nil {
+			return err
+		}
 	}
 	if err := releaseTaskReserve(ctx, tx, l.WorkID); err != nil {
 		return err
