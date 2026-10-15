@@ -11,6 +11,7 @@ import (
 
 	"github.com/HunterEwok/botaru/impl/internal/ids"
 	"github.com/HunterEwok/botaru/impl/internal/mcp"
+	"github.com/jackc/pgx/v5"
 )
 
 // scriptBench is the tool bench with web1 bound to the node web1.example.org: the scripts
@@ -409,5 +410,31 @@ func TestScriptRunHandout(t *testing.T) {
 	}
 	if g := recv(t, ch); !strings.Contains(callText(g.r), "forbidden") {
 		t.Fatalf("a held run: %s", callText(g.r))
+	}
+	var heldState string
+	if err := b.c.st.Pool.QueryRow(ctx, `SELECT state FROM toolcalls WHERE tool = $1 ORDER BY created_at DESC LIMIT 1`, scriptRight).Scan(&heldState); err != nil || heldState != "denied" {
+		t.Fatalf("a held run is recorded as %s %v", heldState, err)
+	}
+
+	// The note of an action a person approved for a bot names the bot of the asking task; a
+	// person's own action names nobody (MON-8).
+	var task, worker string
+	if err := b.c.st.Pool.QueryRow(ctx, `SELECT work_id, worker_id FROM leases WHERE kind = 'attempt' ORDER BY created_at DESC LIMIT 1`).Scan(&task, &worker); err != nil {
+		t.Fatal(err)
+	}
+	if err := b.c.tx(ctx, func(tx pgx.Tx, now time.Time) error {
+		if _, err := tx.Exec(ctx, `INSERT INTO approvals (id, tenant, source_task, initiator, action, args_hash, state, record, nonce, expires_at, created_at, updated_at)
+			VALUES ('ap_note', 'demo', $1, 'alice', 'service.control', 'h', 'executed', '{}', 'n', $2, $2, $2)`, task, now); err != nil {
+			return err
+		}
+		if bot, err := noteBot(ctx, tx, "tk_action", "ap_note"); err != nil || bot != worker {
+			t.Errorf("the bot of an approved action: %q %v", bot, err)
+		}
+		if bot, err := noteBot(ctx, tx, "tk_action", ""); err != nil || bot != "" {
+			t.Errorf("a person's own action: %q %v", bot, err)
+		}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
 	}
 }

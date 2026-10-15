@@ -535,7 +535,10 @@ func (a *Adapter) SyncScripts(ctx context.Context) error {
 			}
 		}
 		sort.Slice(list, func(i, j int) bool { return list[i].ScriptID < list[j].ScriptID })
-		list = list[:min(len(list), 64)]
+		if len(list) > 64 {
+			a.log.Warn("a host has more than 64 scripts for the adapter user; the list is cut by scriptid", "resource", resource, "scripts", len(list))
+			list = list[:64]
+		}
 		raw, _ := json.Marshal(list)
 		sum := sha256.Sum256(raw)
 		hash := "sha256:" + hex.EncodeToString(sum[:16])

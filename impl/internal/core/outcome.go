@@ -553,10 +553,15 @@ func (c *Core) requeue(ctx context.Context, tx pgx.Tx, now time.Time, l *leaseRo
 		}
 		if kind == "monitor_script" {
 			// A script is handed out once (MON-10): a released run ends, as a released call does.
+			// The adapter may have run it before releasing, so nobody knows whether it ran (APR-7).
 			if _, err := tx.Exec(ctx, `UPDATE deliveries SET state = 'dead', reason = 'worker_drain', updated_at = $2 WHERE id = $1 AND state = 'sending'`, l.WorkID, now); err != nil {
 				return err
 			}
 			if err := c.scriptFailed(ctx, tx, now, l.WorkID, "worker_drain"); err != nil {
+				return err
+			}
+			if err := c.appendEvent(ctx, tx, now, l.Tenant, Event{Type: "delivery.dead", Subject: l.WorkID,
+				Data: map[string]any{"delivery": l.WorkID, "kind": kind, "reason": "worker_drain"}}); err != nil {
 				return err
 			}
 			return notifyWork(ctx, tx)

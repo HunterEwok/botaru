@@ -562,7 +562,10 @@ func (c *Core) scriptFailed(ctx context.Context, tx pgx.Tx, now time.Time, deliv
 		return nil
 	}
 	switch reason {
-	case "forbidden", "script_unknown", "provider_unavailable", "held", "no_executor", "worker_drain":
+	case "held":
+		// As a hold at the call and in the sweep: the run never started (HLD-3).
+		return c.endToolCall(ctx, tx, now, s.Toolcall, "denied", reason, nil)
+	case "forbidden", "script_unknown", "provider_unavailable", "no_executor":
 		return c.endToolCall(ctx, tx, now, s.Toolcall, "error", reason, nil)
 	}
 	return c.endToolCall(ctx, tx, now, s.Toolcall, "exec_unknown", "exec_unknown", nil)
@@ -849,7 +852,7 @@ func (c *Core) monitorNote(ctx context.Context, tx pgx.Tx, now time.Time, callID
 	if err != nil {
 		return err
 	}
-	bot, err := noteBot(ctx, tx, task)
+	bot, err := noteBot(ctx, tx, task, deref(approval))
 	if err != nil || bot == "" {
 		return err
 	}
@@ -864,12 +867,13 @@ func (c *Core) monitorNote(ctx context.Context, tx pgx.Tx, now time.Time, callID
 	return err
 }
 
-// noteBot is the bot of a note: the worker of the task's last attempt. An action task of a
-// person has no attempt and no bot, so it gets no note: the mark would name a bot that did
-// nothing (MON-8).
-func noteBot(ctx context.Context, tx pgx.Tx, task string) (string, error) {
+// noteBot is the bot of a note: the worker of the last attempt of the task, or, for an action
+// task a person approved, of the bot's task that asked for it. A person's own action has no
+// bot and gets no note: the mark would name a bot that did nothing (MON-8).
+func noteBot(ctx context.Context, tx pgx.Tx, task, approval string) (string, error) {
 	var w string
-	err := tx.QueryRow(ctx, `SELECT worker_id FROM leases WHERE work_id = $1 AND kind = 'attempt' ORDER BY lease_no DESC LIMIT 1`, task).Scan(&w)
+	err := tx.QueryRow(ctx, `SELECT worker_id FROM leases WHERE kind = 'attempt' AND work_id = coalesce(
+		(SELECT source_task FROM approvals WHERE id = nullif($2, '') AND source_task IS NOT NULL), $1) ORDER BY lease_no DESC LIMIT 1`, task, approval).Scan(&w)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return "", nil
 	}
