@@ -56,6 +56,7 @@ CODES = {
     'self_approve_production': ('production tenant with self_approve: true', 'APR-9'),
     'builtin_command': ('tenant command takes a built-in channel command', 'PRM-17'),
     'assistant_in_default_types': ('assistant type in default_types', 'DSP-10'),
+    'summary_fields_required': ('a type in default_types for a group chat has no summary_fields', 'REP-11'),
     'run_needs_approval_none': ('run starts a type without run.approval: none', 'APR-17'),
     'run_arg_unknown': ('run argument is not in the closed schema of the type or action', 'APR-17'),
     'run_not_readonly': ('type with run.approval: none is claimed by a role with actions or write tools', 'APR-17'),

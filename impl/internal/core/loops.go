@@ -32,6 +32,7 @@ func (c *Core) RecoverLeases(ctx context.Context) error {
 // Run starts the background loops of the core (spec/ports/background-loops.md) and blocks
 // until ctx ends: the work listener, reaper and deadline. RecoverLeases runs before it.
 func (c *Core) Run(ctx context.Context) {
+	c.running.Store(true)
 	go c.listen(ctx)
 	t := time.NewTicker(time.Second)
 	defer t.Stop()

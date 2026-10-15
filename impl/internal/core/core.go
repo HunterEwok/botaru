@@ -108,6 +108,11 @@ type Core struct {
 	restoring atomic.Bool
 	// manual is set when the loops tick only by loop.tick on a test bench.
 	manual atomic.Bool
+	// running is set when Run drives the loops; startedAt is the store time, in Unix
+	// nanoseconds, of the first indicators pass after that, from which a loop that never
+	// ticked counts its age (OBS-4).
+	running   atomic.Bool
+	startedAt atomic.Int64
 }
 
 // New opens the core over a migrated store.

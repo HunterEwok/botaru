@@ -79,13 +79,14 @@ def cron_valid(expr):
         return False
     for f, (lo, hi) in zip(fields, ((0, 59), (0, 23), (1, 31), (1, 12), (0, 7))):
         for part in f.split(','):
-            rng, _, step = part.partition('/')
-            if step and (not re.fullmatch(r'[0-9]+', step) or int(step) < 1):
+            # An empty step or range end ('*/', '5-') is refused, as the core does at apply.
+            rng, slash, step = part.partition('/')
+            if slash and (not re.fullmatch(r'[0-9]+', step) or int(step) < 1):
                 return False
             if rng == '*':
                 continue
-            a, _, b = rng.partition('-')
-            if not re.fullmatch(r'[0-9]+', a) or (b and not re.fullmatch(r'[0-9]+', b)):
+            a, dash, b = rng.partition('-')
+            if not re.fullmatch(r'[0-9]+', a) or (dash and not re.fullmatch(r'[0-9]+', b)):
                 return False
             a, b = int(a), int(b) if b else int(a)
             if a < lo or b > hi or a > b:
@@ -555,6 +556,9 @@ def lint(docs, today=None, farm_hosts=None, examples_mode=False, claimed=None, s
                 f.error('assistant_in_default_types', where, f'assistant type {t} in default_types (DSP-10)')
             elif types and t not in types:
                 f.error('ref_missing', where, f'default_types: type {t} is not in the set')
+            elif (isinstance(dt, dict) and t in types and not types[t].get('summary_fields')
+                  and any(ch == 'group' or str(ch).startswith('chat:') for ch in dt.get('chats') or [])):
+                f.error('summary_fields_required', where, f'default_types: type {t} for a group chat has no summary_fields (REP-11)')
         for rname, r in (ts.get('run') or {}).items():
             if 'type' in r:
                 tt = types.get(r['type'])

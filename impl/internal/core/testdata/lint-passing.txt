@@ -93,6 +93,8 @@ fx-man-sch-01#7
 fx-man-sch-01#8
 fx-man-ten-01#0
 fx-man-ten-01#1
+fx-man-ten-01#10
+fx-man-ten-01#11
 fx-man-ten-01#2
 fx-man-ten-01#3
 fx-man-ten-01#4

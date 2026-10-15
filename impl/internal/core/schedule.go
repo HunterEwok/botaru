@@ -74,13 +74,23 @@ func (c *Core) runSchedule(ctx context.Context, tx pgx.Tx, now time.Time, cat *C
 	err = tx.QueryRow(ctx, `SELECT cron, timezone, last_slot FROM schedule_state WHERE tenant = $1 AND name = $2 FOR UPDATE`, tv.Name, name).Scan(&cron, &zone, &last)
 	if errors.Is(err, pgx.ErrNoRows) || (err == nil && (cron != sc.Cron || zone != tz)) {
 		// A new schedule, or a changed cron or zone, takes effect from the next slot after
-		// the apply; a slot key in UTC never runs an instant twice (TIM-3).
-		_, err = tx.Exec(ctx, `INSERT INTO schedule_state (tenant, name, cron, timezone, last_slot, updated_at) VALUES ($1, $2, $3, $4, $5, $5)
-			ON CONFLICT (tenant, name) DO UPDATE SET cron = $3, timezone = $4, last_slot = $5, updated_at = $5`,
-			tv.Name, name, sc.Cron, tz, now.Truncate(time.Minute))
-		return err
-	}
-	if err != nil {
+		// the apply, not after this tick, so the first slot after the apply is not lost; a slot
+		// key in UTC never runs an instant twice (TIM-3).
+		from := now
+		var applied time.Time
+		if err := tx.QueryRow(ctx, `SELECT applied_at FROM apply_status WHERE id = 1`).Scan(&applied); err == nil && applied.Before(now) {
+			from = applied
+		} else if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+			return err
+		}
+		_, err = tx.Exec(ctx, `INSERT INTO schedule_state (tenant, name, cron, timezone, last_slot, updated_at) VALUES ($1, $2, $3, $4, $5, $6)
+			ON CONFLICT (tenant, name) DO UPDATE SET cron = $3, timezone = $4, last_slot = $5, updated_at = $6`,
+			tv.Name, name, sc.Cron, tz, from.Truncate(time.Minute), now)
+		if err != nil || !from.Before(now.Truncate(time.Minute)) {
+			return err
+		}
+		last = from.Truncate(time.Minute)
+	} else if err != nil {
 		return err
 	}
 	from := last
@@ -122,6 +132,12 @@ func (c *Core) runSchedule(ctx context.Context, tx pgx.Tx, now time.Time, cat *C
 		if waiting {
 			return skip("waiting")
 		}
+		// The provider circuit of the model slot the type needs is open (TIM-3).
+		if open, err := circuitOpenFor(ctx, tx, now, cat, tv.Name, sc.Task.Type); err != nil {
+			return err
+		} else if open {
+			return skip("waiting")
+		}
 	}
 	tt := cat.TaskTypes[sc.Task.Type]
 	// Analysis keeps to the run limit and the merge window of its role (INS-4).
@@ -157,6 +173,27 @@ func (c *Core) runSchedule(ctx context.Context, tx pgx.Tx, now time.Time, cat *C
 		return c.scheduleRefused(ctx, tx, now, tv, name, slot, res.Rejected, skip)
 	}
 	return c.resolveAlarm(ctx, tx, now, scheduleAlarm(tv, name))
+}
+
+// circuitOpenFor says whether every role that claims the type waits for an open provider
+// circuit of its main model slot; a type no role claims does not wait.
+func circuitOpenFor(ctx context.Context, tx pgx.Tx, now time.Time, cat *Catalog, tenant, typ string) (bool, error) {
+	claimed := false
+	for _, name := range slices.Sorted(mapKeys(cat.Roles)) {
+		role := cat.Roles[name]
+		if !slices.Contains(role.Claims, typ) {
+			continue
+		}
+		claimed = true
+		wait, err := pairWait(ctx, tx, now, cat, tenant, role)
+		if err != nil {
+			return false, err
+		}
+		if wait != "provider_unavailable" {
+			return false, nil
+		}
+	}
+	return claimed, nil
 }
 
 func scheduleAlarm(tv *TenantView, name string) Alarm {

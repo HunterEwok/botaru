@@ -44,6 +44,11 @@ func (c *Core) retentionLoop(ctx context.Context) error {
 	}
 	steps := []func(tx pgx.Tx, now time.Time) (int64, error){
 		func(tx pgx.Tx, now time.Time) (int64, error) {
+			tag, err := tx.Exec(ctx, `DELETE FROM activity_outcomes WHERE (tenant, key) IN (SELECT tenant, key FROM activity_outcomes
+				WHERE created_at <= $1 LIMIT $2 FOR UPDATE SKIP LOCKED)`, now.AddDate(0, 0, -contentDays), retentionBatch)
+			return tag.RowsAffected(), err
+		},
+		func(tx pgx.Tx, now time.Time) (int64, error) {
 			tag, err := tx.Exec(ctx, `UPDATE tasks SET body = NULL, result = NULL WHERE id IN (SELECT id FROM tasks
 				WHERE (body IS NOT NULL OR result IS NOT NULL) AND state IN ('completed', 'failed', 'canceled') AND updated_at <= $1
 				ORDER BY updated_at LIMIT $2 FOR UPDATE SKIP LOCKED)`, now.AddDate(0, 0, -contentDays), retentionBatch)

@@ -434,7 +434,7 @@ func (c *Core) mydataCommand(ctx context.Context, tx pgx.Tx, now time.Time, pc p
 		}
 		return pc.reply(c, "cmd.mydata.summary", map[string]any{"records": records, "sessions": sessions}), nil
 	case "erase":
-		id, err := c.createSubjectRequest(ctx, tx, now, pc.tv, "erase", pc.person, pc.person, nil)
+		id, err := c.createSubjectRequest(ctx, tx, now, pc.tv, "erase", pc.person, pc.person, nil, nil)
 		if err != nil {
 			return nil, err
 		}

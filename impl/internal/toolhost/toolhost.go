@@ -59,6 +59,11 @@ type Host struct {
 	heartbeatS int
 	log        *slog.Logger
 	byName     map[string]Plugin
+	// mu guards fps and down: the fingerprint of each plugin's last answered tools/list and
+	// the plugins whose last check failed, which hello and heartbeat report (OBS-10).
+	mu   sync.Mutex
+	fps  map[string]string
+	down map[string]bool
 }
 
 // New returns a toolhost.
@@ -85,7 +90,7 @@ func New(cfg Config) (*Host, error) {
 		}
 		by[p.Name] = p
 	}
-	return &Host{cfg: cfg, heartbeatS: 20, log: cfg.Logger, byName: by}, nil
+	return &Host{cfg: cfg, heartbeatS: 20, log: cfg.Logger, byName: by, fps: map[string]string{}, down: map[string]bool{}}, nil
 }
 
 // maxMessage bounds one message from a plugin.
@@ -96,18 +101,7 @@ const maxMessage = 8 << 20
 func (h *Host) Fingerprints(ctx context.Context) (map[string]string, string, error) {
 	by := map[string]string{}
 	for name, p := range h.byName {
-		var res mcp.ListResult
-		err := h.session(ctx, p, func(s *session) error {
-			raw, err := s.request(ctx, "tools/list", mcp.ListParams{Meta: mcp.ClientMeta("botaru-toolhost", version.Version)})
-			if err != nil {
-				return err
-			}
-			return json.Unmarshal(raw, &res)
-		})
-		if err != nil {
-			return nil, "", fmt.Errorf("plugin %s: %w", name, err)
-		}
-		fp, err := toolspec.Fingerprint(res.Tools)
+		fp, err := h.fingerprint(ctx, p)
 		if err != nil {
 			return nil, "", fmt.Errorf("plugin %s: %w", name, err)
 		}
@@ -117,9 +111,64 @@ func (h *Host) Fingerprints(ctx context.Context) (map[string]string, string, err
 	return by, all, err
 }
 
-// Hello reports the toolhost with its plugins, placement and the live fingerprint (INJ-2).
+// fingerprint is the fingerprint of one plugin's live tools/list.
+func (h *Host) fingerprint(ctx context.Context, p Plugin) (string, error) {
+	var res mcp.ListResult
+	err := h.session(ctx, p, func(s *session) error {
+		raw, err := s.request(ctx, "tools/list", mcp.ListParams{Meta: mcp.ClientMeta("botaru-toolhost", version.Version)})
+		if err != nil {
+			return err
+		}
+		return json.Unmarshal(raw, &res)
+	})
+	if err != nil {
+		return "", err
+	}
+	return toolspec.Fingerprint(res.Tools)
+}
+
+// check asks every plugin for its live tools/list: a plugin that answers is up with its
+// fingerprint, one that does not is down and keeps the fingerprint of its last answer. The
+// combined fingerprint needs every plugin to have answered once.
+func (h *Host) check(ctx context.Context) (string, error) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	for name, p := range h.byName {
+		fp, err := h.fingerprint(ctx, p)
+		if err != nil {
+			if _, seen := h.fps[name]; !seen {
+				return "", fmt.Errorf("plugin %s: %w", name, err)
+			}
+			h.down[name] = true
+			continue
+		}
+		h.fps[name], h.down[name] = fp, false
+	}
+	return toolspec.CombinedFingerprint(h.fps)
+}
+
+// health is the health report of every plugin by its last check (OBS-10).
+func (h *Host) health() []map[string]any {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	at := time.Now().UTC().Format("2006-01-02T15:04:05.000000Z")
+	out := make([]map[string]any, 0, len(h.down))
+	for name, down := range h.down {
+		state := "ok"
+		if down {
+			state = "down"
+		}
+		out = append(out, map[string]any{"component": "plugin", "name": name, "state": state, "time": at})
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i]["name"].(string) < out[j]["name"].(string) })
+	return out
+}
+
+// Hello reports the toolhost with its plugins, placement, the live fingerprint (INJ-2) and the
+// health of each plugin (OBS-10). Run says hello again every heartbeat interval, so a plugin
+// that stops or comes back narrows or widens dispatch.
 func (h *Host) Hello(ctx context.Context) error {
-	_, fp, err := h.Fingerprints(ctx)
+	fp, err := h.check(ctx)
 	if err != nil {
 		return err
 	}
@@ -133,7 +182,7 @@ func (h *Host) Hello(ctx context.Context) error {
 	}
 	err = h.cfg.Core.Call(ctx, "hello", "", map[string]any{
 		"kind": "toolhost", "implementation": "botaru-toolhost " + version.Version, "capacity": 1, "protocol_versions": []string{"v1"},
-		"plugins": names, "placement": h.cfg.Placement, "tools_fingerprint": fp,
+		"plugins": names, "placement": h.cfg.Placement, "tools_fingerprint": fp, "health": h.health(),
 	}, &out)
 	if err == nil && out.HeartbeatS > 0 {
 		h.heartbeatS = out.HeartbeatS
@@ -157,8 +206,15 @@ func (h *Host) Run(ctx context.Context) error {
 		}
 		sleep(ctx, 5*time.Second)
 	}
+	hello := time.Now()
 	for ctx.Err() == nil {
-		if _, err := h.Once(ctx, 30); err != nil && ctx.Err() == nil {
+		if every := time.Duration(h.heartbeatS) * time.Second; time.Since(hello) >= every {
+			if err := h.Hello(ctx); err != nil && ctx.Err() == nil {
+				h.log.Warn("hello failed", "err", err)
+			}
+			hello = time.Now()
+		}
+		if _, err := h.Once(ctx, min(30, h.heartbeatS)); err != nil && ctx.Err() == nil {
 			h.log.Warn("call loop", "err", err)
 			sleep(ctx, 2*time.Second)
 		}
@@ -279,7 +335,7 @@ func (h *Host) keepLease(ctx context.Context, cancel context.CancelFunc, lease s
 		// The heartbeat ends at the local cutoff: a stalled request never keeps the call
 		// running past it.
 		hctx, hcancel := context.WithDeadline(ctx, cutoff)
-		err := h.cfg.Core.Call(hctx, "heartbeat", lease, map[string]any{}, &out)
+		err := h.cfg.Core.Call(hctx, "heartbeat", lease, map[string]any{"health": h.health()}, &out)
 		hcancel()
 		if r := p1client.Reason(err); r == "fenced" || r == "lease_mismatch" || out.CancelRequested {
 			close(lost)

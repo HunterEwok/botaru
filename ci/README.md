@@ -282,6 +282,7 @@ The codes of `check_manifests.py` that fixtures refer to (`expect: {error: <code
 | `state_agent_producer` | state message kind has producers other than code | STA-1, MSG-2 |
 | `status_in_git` | manifest has a status field: status is kept by the core | MAN-1 |
 | `subprocessor_undeclared` | profile provider or subprocessor is not declared in privacy.subprocessors | GW-15 |
+| `summary_fields_required` | a type in default_types for a group chat has no summary_fields | REP-11 |
 | `system_decision_cap` | system-ops group holds a decision or control capability | PRM-10 |
 | `system_ops_missing` | route or schedule type is not granted to system-ops | PRM-10 |
 | `takeover_confirm_threshold` | takeover.confirm_above_eur above 0 would lift the takeover card | MGR-21 |

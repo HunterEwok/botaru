@@ -257,6 +257,8 @@ type spendRow struct {
 	// reconciliation compares (BUD-10).
 	Provider string
 	Micros   int64
+	// LeaseNo is the lease of the attempt of a model call line (CNT-4); 0 for none.
+	LeaseNo int
 }
 
 // reserveSpend writes the reserve of a call after the limits pass (BUD-2): the windows of
@@ -297,10 +299,14 @@ func (c *Core) reserveSpend(ctx context.Context, tx pgx.Tx, now time.Time, tv *T
 	if acting.Bot != "" {
 		be = acting.BotEpoch
 	}
-	_, err := tx.Exec(ctx, `INSERT INTO spend (id, tenant, task, root, subject, role, worker, line, purpose, unit, profile, state, eur_micros, time, fingerprint, toolcall, provider, acting_bot, bot_epoch)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, 'reserved', $12, $13, $14, $15, $16, $17, $18)`,
+	var leaseNo any
+	if r.LeaseNo > 0 {
+		leaseNo = r.LeaseNo
+	}
+	_, err := tx.Exec(ctx, `INSERT INTO spend (id, tenant, task, root, subject, role, worker, line, purpose, unit, profile, state, eur_micros, time, fingerprint, toolcall, provider, acting_bot, bot_epoch, attempt_lease_no)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, 'reserved', $12, $13, $14, $15, $16, $17, $18, $19)`,
 		r.ID, r.Tenant, r.Task, r.Root, r.Subject, r.Role, r.Worker, r.Line, nullable(r.Purpose), r.Unit, nullable(r.Profile), r.Micros, now,
-		nullable(r.Fingerprint), nullable(r.Toolcall), nullable(r.Provider), nullable(acting.Bot), be)
+		nullable(r.Fingerprint), nullable(r.Toolcall), nullable(r.Provider), nullable(acting.Bot), be, leaseNo)
 	return err
 }
 

@@ -667,6 +667,10 @@ func (c *Core) lintManifests(docs []manifest.Doc, index []int, personas personaL
 				f.add(o, "assistant_in_default_types", path)
 			} else if len(types) > 0 && types[t] == nil {
 				c.lintWarn(o, "ref_missing", path)
+			} else if m, ok := dt.(map[string]any); ok && types[t] != nil && len(mlist(types[t], "summary_fields")) == 0 &&
+				slices.ContainsFunc(mstrs(m, "chats"), func(ch string) bool { return ch == "group" || strings.HasPrefix(ch, "chat:") }) {
+				// A type for group chats carries a code table in its summary (REP-11, DLV-15).
+				f.add(o, "summary_fields_required", path)
 			}
 		}
 		for _, rn := range slices.Sorted(mapKeys(mmap(ts, "run"))) {

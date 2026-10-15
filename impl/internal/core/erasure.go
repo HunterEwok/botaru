@@ -4,6 +4,8 @@ package core
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"regexp"
@@ -65,13 +67,19 @@ type erasureSpec struct {
 
 var storeKeyBad = regexp.MustCompile(`[^a-z0-9_]`)
 
-// storeKey is the key of a store in the request results.
+// storeKey is the key of a store in the request results. A name that sanitising changed or
+// that is too long gets a hash of the kind and the name, so two stores never share a key and
+// a step (unique per request and key) is never lost.
 func storeKey(kind, name string) string {
 	k := kind + "_" + storeKeyBad.ReplaceAllString(strings.ToLower(name), "_")
-	if len(k) > 32 {
-		k = k[:32]
+	if k == kind+"_"+name && len(k) <= 32 {
+		return k
 	}
-	return k
+	sum := sha256.Sum256([]byte(kind + "\x00" + name))
+	if len(k) > 23 {
+		k = k[:23]
+	}
+	return k + "_" + hex.EncodeToString(sum[:])[:8]
 }
 
 func subjectRequestDays(tv *TenantView) int {
@@ -541,10 +549,14 @@ func (c *Core) erasureOverdue(ctx context.Context) error {
 // claimErasure takes the oldest pending erasure step of this sink or monitoring adapter
 // (RET-4): the work item carries the scope and, until the request closes, the needles.
 func (c *Core) claimErasure(ctx context.Context, tx pgx.Tx, now time.Time, w *Worker) (*WorkItem, error) {
-	var id, request string
+	// A match of a person's request comes first: its card waits for it (SEC-11).
+	if item, err := c.claimMatch(ctx, tx, now, w); err != nil || item != nil {
+		return item, err
+	}
+	var id, request, store string
 	var leaseNo int
-	err := tx.QueryRow(ctx, `SELECT id, request, lease_no FROM erasure_steps WHERE tenant = $1 AND kind = $2 AND target = $3 AND state = 'pending'
-		AND (run_at IS NULL OR run_at <= $4) ORDER BY updated_at LIMIT 1 FOR UPDATE SKIP LOCKED`, w.Tenant, w.Kind, w.Target, now).Scan(&id, &request, &leaseNo)
+	err := tx.QueryRow(ctx, `SELECT id, request, lease_no, store FROM erasure_steps WHERE tenant = $1 AND kind = $2 AND target = $3 AND state = 'pending'
+		AND (run_at IS NULL OR run_at <= $4) ORDER BY updated_at LIMIT 1 FOR UPDATE SKIP LOCKED`, w.Tenant, w.Kind, w.Target, now).Scan(&id, &request, &leaseNo, &store)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, nil
 	}
@@ -569,6 +581,16 @@ func (c *Core) claimErasure(ctx context.Context, tx pgx.Tx, now time.Time, w *Wo
 	}
 	if len(r.Scope.IDs) > 0 {
 		scope["ids"] = r.Scope.IDs
+		// The erasure of an erase_match gives an edge store the ids its own match found.
+		var raw []byte
+		err := tx.QueryRow(ctx, `SELECT found FROM subject_requests WHERE erasure = $1 AND kind = 'erase_match'`, r.ID).Scan(&raw)
+		if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+			return nil, err
+		}
+		var found map[string][]string
+		if len(raw) > 0 && json.Unmarshal(raw, &found) == nil && len(found[store]) > 0 {
+			scope["ids"] = found[store]
+		}
 	}
 	payload := map[string]any{
 		"request_id": r.ID, "op": "erase", "reason": r.Reason,
@@ -583,9 +605,10 @@ func (c *Core) claimErasure(ctx context.Context, tx pgx.Tx, now time.Time, w *Wo
 
 // erasureOutcome is erasure-outcome.
 type erasureOutcome struct {
-	Outcome string `json:"outcome"`
-	Reason  string `json:"reason"`
-	Basis   string `json:"basis"`
+	Outcome string   `json:"outcome"`
+	Reason  string   `json:"reason"`
+	Basis   string   `json:"basis"`
+	IDs     []string `json:"ids"`
 }
 
 // completeErasure writes the outcome of an edge store into its step (RET-4).
@@ -598,12 +621,22 @@ func (c *Core) completeErasure(ctx context.Context, tx pgx.Tx, now time.Time, l 
 	if err := json.Unmarshal(raw, &o); err != nil {
 		return err
 	}
+	if match, err := isMatchStep(ctx, tx, l.WorkID); err != nil {
+		return err
+	} else if match {
+		return c.endMatchStep(ctx, tx, now, l, o.Outcome, o.Reason, o.IDs, false)
+	}
 	return c.endErasureStep(ctx, tx, now, l, o.Outcome, o.Basis, o.Reason, false)
 }
 
 // endErasureStep closes or requeues an erasure step at the end of its lease; the loop settles
 // the request.
 func (c *Core) endErasureStep(ctx context.Context, tx pgx.Tx, now time.Time, l *leaseRow, state, basis, reason string, retry bool) error {
+	if match, err := isMatchStep(ctx, tx, l.WorkID); err != nil {
+		return err
+	} else if match {
+		return c.endMatchStep(ctx, tx, now, l, state, reason, nil, retry)
+	}
 	if retry {
 		_, err := tx.Exec(ctx, `UPDATE erasure_steps SET state = 'pending', run_at = $3, reason = $4, updated_at = $5 WHERE id = $1 AND lease_no = $2 AND state = 'leased'`,
 			l.WorkID, l.LeaseNo, now.Add(erasureRetry), nullable(reason), now)

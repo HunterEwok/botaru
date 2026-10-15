@@ -225,12 +225,13 @@ func (c *Core) redriveTask(ctx context.Context, tx pgx.Tx, now time.Time, cat *C
 func (c *Core) redriveDelivery(ctx context.Context, tx pgx.Tx, now time.Time, op Operator, id string) (string, error) {
 	var d plannedDelivery
 	var state string
-	var task, recipient, mark, notice, alarmkey *string
+	var task, recipient, mark, notice, alarmkey, subjectKind, subjectID *string
 	var episode *int64
 	var body []byte
-	err := tx.QueryRow(ctx, `SELECT tenant, task, kind, addr, target_kind, target_id, exec_kind, exec_name, recipient, state, body, data_mark, dataorigin, notice_version, alarmkey, episode
+	// The subject goes along, so a redriven card or card update is built again (APR-3).
+	err := tx.QueryRow(ctx, `SELECT tenant, task, kind, addr, target_kind, target_id, exec_kind, exec_name, recipient, state, body, data_mark, dataorigin, notice_version, alarmkey, episode, subject_kind, subject_id
 		FROM deliveries WHERE id = $1 FOR UPDATE`, id).Scan(&d.Tenant, &task, &d.Kind, &d.Addr, &d.TargetKind, &d.TargetID, &d.ExecKind, &d.ExecName,
-		&recipient, &state, &body, &mark, &d.DataOrigin, &notice, &alarmkey, &episode)
+		&recipient, &state, &body, &mark, &d.DataOrigin, &notice, &alarmkey, &episode, &subjectKind, &subjectID)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return "", refuse("not_found", "no such delivery")
 	}
@@ -250,6 +251,7 @@ func (c *Core) redriveDelivery(ctx context.Context, tx pgx.Tx, now time.Time, op
 		return "", err
 	}
 	d.Task, d.Recipient, d.DataMark, d.NoticeVersion, d.Alarmkey = deref(task), deref(recipient), deref(mark), deref(notice), deref(alarmkey)
+	d.SubjectKind, d.SubjectID = deref(subjectKind), deref(subjectID)
 	if episode != nil {
 		d.Episode = *episode
 	}

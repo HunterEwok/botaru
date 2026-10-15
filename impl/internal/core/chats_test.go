@@ -132,6 +132,12 @@ func TestGroupChat(t *testing.T) {
 	if bd, _ := bindingByName(ctx, b.c.st.Pool, "demo", "lab"); bd == nil || bd.MembersUnknown {
 		t.Fatalf("binding again did not clear the mark: %+v", bd)
 	}
+	// The newly bound chat got ai_notice and privacy_notice once, not again at the rebind
+	// (DLV-12).
+	var notices int
+	if err := b.c.st.Pool.QueryRow(ctx, `SELECT count(*) FROM deliveries WHERE target_id = 'group:-500' AND kind IN ('ai_notice', 'privacy_notice')`).Scan(&notices); err != nil || notices != 2 {
+		t.Fatalf("notices to the bound chat %d %v", notices, err)
+	}
 }
 
 // An admin with admin:people grants a delegated group from a private chat, and the admins hear
@@ -157,6 +163,20 @@ func TestDelegatedGrant(t *testing.T) {
 	}
 	if r := b.say(t, "4", "telegram:1002", "1002", "/ungrant telegram:1001 researcher"); !strings.Contains(r.Text, "no longer") {
 		t.Fatalf("ungrant %+v", r)
+	}
+	// A retried update gets the reply of the first and changes nothing again (DLV-5).
+	if r := b.say(t, "4", "telegram:1002", "1002", "/ungrant telegram:1001 researcher"); !strings.Contains(r.Text, "no longer") {
+		t.Fatalf("a retried ungrant %+v", r)
+	}
+	if r := b.say(t, "1", "telegram:1002", "1002", "/grant telegram:1001 researcher"); !strings.Contains(r.Text, "is now in group researcher") {
+		t.Fatalf("a retried grant %+v", r)
+	}
+	if err := b.c.st.Pool.QueryRow(ctx, `SELECT count(*) FROM memberships WHERE principal = $1 AND grp = 'researcher'`, b.alice).Scan(&n); err != nil || n != 0 {
+		t.Fatalf("a retried grant granted again: %d %v", n, err)
+	}
+	var audits int
+	if err := b.c.st.Pool.QueryRow(ctx, `SELECT count(*) FROM audit WHERE record->>'command' = 'grant' AND record->'actor'->>'via' = 'channel'`).Scan(&audits); err != nil || audits != 1 {
+		t.Fatalf("grant audit records %d %v", audits, err)
 	}
 }
 

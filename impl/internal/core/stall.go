@@ -11,8 +11,8 @@ import (
 )
 
 // stalls ends the attempts that made no progress for longer than their type's stall_after
-// (CNT-4): the latest of the attempt start, the last finished tool or model call and the last
-// change of the heartbeat progress. A tool call still queued or leased does not count as
+// (CNT-4): the latest of the attempt start, the last finished tool or model call of this
+// attempt's lease and the last change of the heartbeat progress. A tool call still queued or leased does not count as
 // progress, but while it runs the attempt is not stalled: the call's own deadlines hold it.
 // A stalled attempt is spent and retried, and the core raises alarm.task.stalled, which
 // resolves when the task is no longer stalled.
@@ -38,7 +38,7 @@ func (c *Core) stalls(ctx context.Context) error {
 				AND NOT EXISTS (SELECT 1 FROM toolcalls tc WHERE tc.task = l.work_id AND tc.state IN ('queued', 'leased'))
 				AND greatest(l.created_at, coalesce(l.progress_at, l.created_at),
 					coalesce((SELECT max(tc.ended_at) FROM toolcalls tc WHERE tc.task = l.work_id AND tc.attempt_lease_no = l.lease_no AND tc.state IN ('done', 'error')), l.created_at),
-					coalesce((SELECT max(sp.settled_at) FROM spend sp WHERE sp.task = l.work_id AND sp.unit <> 'task' AND sp.state IN ('committed', 'estimated') AND sp.settled_at >= l.created_at), l.created_at))
+					coalesce((SELECT max(sp.settled_at) FROM spend sp WHERE sp.task = l.work_id AND sp.unit <> 'task' AND sp.state IN ('committed', 'estimated') AND sp.attempt_lease_no = l.lease_no AND sp.settled_at >= l.created_at), l.created_at))
 					+ (s.after - 'epoch'::timestamptz) <= $3
 				ORDER BY l.created_at LIMIT 1 FOR UPDATE OF l SKIP LOCKED`, types, afters, now).
 				Scan(&l.WorkID, &l.LeaseNo, &l.Kind, &l.Tenant, &l.WorkerID, &l.Epoch, &l.State, &l.Until)

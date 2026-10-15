@@ -4,6 +4,7 @@ package core
 
 import (
 	"context"
+	"slices"
 	"testing"
 	"time"
 
@@ -169,9 +170,12 @@ func TestScheduleNoSkip(t *testing.T) {
 	if _, err := b.c.HoldRelease(ctx, OperatorActor(b.op), HoldReleaseRequest{ID: set.ID}); err != nil {
 		t.Fatal(err)
 	}
-	// A changed zone takes effect from the next slot: the tick that sees it runs nothing, the
-	// next slot runs once.
+	// A changed zone takes effect from the next slot after its apply: the tick that sees it
+	// runs nothing, the next slot runs once.
 	if _, err := b.c.st.Pool.Exec(ctx, `UPDATE schedule_state SET timezone = 'UTC'`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := b.c.st.Pool.Exec(ctx, `UPDATE apply_status SET applied_at = '2027-04-01T14:00:30Z'`); err != nil {
 		t.Fatal(err)
 	}
 	b.at(t, "2027-04-01T14:00:30Z")
@@ -183,6 +187,58 @@ func TestScheduleNoSkip(t *testing.T) {
 	b.tick(t, "schedule")
 	b.tick(t, "schedule")
 	if k := b.scheduled(t); len(k) != 3 || k[2] != "system:schedule:morning:2027-04-01T15:00Z" {
+		t.Fatalf("tasks %v", k)
+	}
+	// The first slot after an apply runs even when the loop sees the change only after it.
+	if _, err := b.c.st.Pool.Exec(ctx, `UPDATE schedule_state SET timezone = 'Europe/Berlin'`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := b.c.st.Pool.Exec(ctx, `UPDATE apply_status SET applied_at = '2027-04-01T15:59:50Z'`); err != nil {
+		t.Fatal(err)
+	}
+	b.at(t, "2027-04-01T16:00:20Z")
+	b.tick(t, "schedule")
+	if k := b.scheduled(t); len(k) != 4 || k[3] != "system:schedule:morning:2027-04-01T16:00Z" {
+		t.Fatalf("the first slot after the apply was lost: %v", k)
+	}
+}
+
+// With skip_if_waiting a slot whose model slot has an open provider circuit is skipped with
+// waiting (TIM-3).
+func TestScheduleSkipsOpenCircuit(t *testing.T) {
+	b := newScheduleBench(t, "0 * * * *", nil)
+	ctx := context.Background()
+	b.at(t, "2027-04-01T10:30:00Z")
+	b.tick(t, "schedule")
+	cat, err := b.c.Catalog(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	opened := 0
+	for _, r := range cat.Roles {
+		if !slices.Contains(r.Claims, "hello.greet.v1") {
+			continue
+		}
+		_, name := mainSlot(r)
+		p, ok := cat.Profile("demo", name)
+		if !ok {
+			continue
+		}
+		if _, err := b.c.st.Pool.Exec(ctx, `INSERT INTO provider_pairs (tenant, pool, state, until, updated_at) VALUES ('demo', $1, 'open', '2027-04-02T00:00:00Z', now())
+			ON CONFLICT DO NOTHING`, pairPool(name, p)); err != nil {
+			t.Fatal(err)
+		}
+		opened++
+	}
+	if opened == 0 {
+		t.Fatal("no role claims the scheduled type")
+	}
+	b.at(t, "2027-04-01T11:00:00Z")
+	b.tick(t, "schedule")
+	if s := b.skips(t); len(s) != 1 || s[0] != "2027-04-01T11:00Z waiting" {
+		t.Fatalf("skips %v", s)
+	}
+	if k := b.scheduled(t); len(k) != 0 {
 		t.Fatalf("tasks %v", k)
 	}
 }

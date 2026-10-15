@@ -140,11 +140,33 @@ func (c *Core) ChatBind(ctx context.Context, op Operator, req ChatBindRequest) (
 		if !errors.Is(err, pgx.ErrNoRows) {
 			return err
 		}
+		var known bool
+		if err := tx.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM chat_bindings WHERE tenant = $1 AND name = $2)`, op.Tenant, name).Scan(&known); err != nil {
+			return err
+		}
 		if _, err := tx.Exec(ctx, `INSERT INTO chat_bindings (tenant, name, channel, chat, ceiling, locale, model_text, created_by, created_at, updated_at)
 			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $9)
 			ON CONFLICT (tenant, name) DO UPDATE SET ceiling = $5, locale = $6, model_text = $7, members_unknown = false, updated_at = $9`,
 			op.Tenant, name, req.Channel, chat, req.Ceiling, nullable(req.Locale), modelText, op.Principal, now); err != nil {
 			return err
+		}
+		// A newly bound chat on a channel with ai_disclosure: first_contact gets ai_notice and
+		// privacy_notice, as a person does at first contact (DLV-12).
+		if !known && tv.Channels[req.Channel].AIDisclosure == "first_contact" {
+			params, err := c.privacyNoticeParams(tv)
+			if err != nil {
+				return err
+			}
+			for _, n := range []plannedDelivery{
+				{Kind: "ai_notice", Body: map[string]any{"form": "text_code", "text_key": "notice.ai", "params": c.aiNoticeParams(tv)}},
+				{Kind: "privacy_notice", Body: map[string]any{"form": "text_code", "text_key": "notice.privacy", "params": params},
+					NoticeVersion: tv.Spec.Privacy.NoticeVersionString()},
+			} {
+				n.Tenant, n.Addr, n.TargetKind, n.TargetID, n.ExecKind, n.ExecName, n.DataOrigin = op.Tenant, "chat:"+name, "chat", chat, "channel", req.Channel, "code"
+				if _, err := c.planDelivery(ctx, tx, now, n); err != nil {
+					return err
+				}
+			}
 		}
 		out = Done{OK: true, ID: name}
 		_, err = c.appendAudit(ctx, tx, now, Audit{
