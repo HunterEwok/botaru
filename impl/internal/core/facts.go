@@ -26,16 +26,17 @@ const (
 	defaultFactsMaxActive = 100
 	defaultFactsPerTry    = 3
 	defaultOfferMax       = 100
-	// failsWithShare is the smallest share of a reason among the attempts of a type for
-	// task.fails_with; the skeleton leaves it to the predicate's ADR (MEM-6).
-	failsWithShare = 0.2
 	// durationTolerance is the recheck tolerance of task.duration.p95_min.
 	durationTolerance = 0.1
 )
 
 // factMinSamples is the smallest number of evidence items of a predicate: the outcome
 // min_samples of the core series it reads (spec/model/core-series.yaml).
-var factMinSamples = map[string]int{"task.duration.p95_min": 10, "task.fails_with": 14}
+var factMinSamples = map[string]int{"task.duration.p95_min": 10}
+
+// factSeries is the core series a predicate reads; the role of the space owner reads a fact only
+// if it may read that series (MEM-6, MEM-7).
+var factSeries = map[string]string{"task.duration.p95_min": seriesAttemptTime}
 
 // factSubject is the subject of a fact.
 type factSubject struct {
@@ -54,9 +55,9 @@ type factValue struct {
 
 // computeFact derives the value of a predicate for a subject over a window from the records of
 // the tenant; ok is false when there is too little evidence. In this version the core derives
-// task.duration.p95_min and task.fails_with; the other predicates need records it does not keep
-// yet (datasets, catalog scopes of attempts, free space series, incidents), and their proposals
-// end as fact_insufficient.
+// only task.duration.p95_min; the other predicates need records it does not keep yet (attempt
+// failure reasons, datasets, catalog scopes of attempts, free space series, incidents), and
+// their proposals end as fact_insufficient.
 func computeFact(ctx context.Context, q store.Querier, tenant, predicate string, s factSubject, from, to time.Time) (*factValue, bool, error) {
 	switch predicate {
 	case "task.duration.p95_min":
@@ -70,37 +71,6 @@ func computeFact(ctx context.Context, q store.Querier, tenant, predicate string,
 		}
 		return &factValue{Value: math.Round(*p95/6) / 10, Unit: "min", Mark: coreSeriesMark,
 			Evidence: []map[string]any{{"kind": "obs_points", "series": seriesAttemptTime, "samples": n}}}, true, nil
-	case "task.fails_with":
-		rows, err := q.Query(ctx, `SELECT enum, count(*) FROM obs_points
-			WHERE tenant = $1 AND series = $2 AND subject = $3 AND at >= $4 AND at < $5 AND enum IS NOT NULL GROUP BY enum ORDER BY count(*) DESC, enum`,
-			tenant, seriesTaskOutcome, "task_type:"+s.ID, from, to)
-		if err != nil {
-			return nil, false, err
-		}
-		type row struct {
-			code string
-			n    int
-		}
-		list, err := pgx.CollectRows(rows, func(r pgx.CollectableRow) (row, error) {
-			var x row
-			return x, r.Scan(&x.code, &x.n)
-		})
-		if err != nil {
-			return nil, false, err
-		}
-		total := 0
-		for _, r := range list {
-			total += r.n
-		}
-		if total < factMinSamples[predicate] {
-			return nil, false, nil
-		}
-		for _, r := range list {
-			if r.code != "done" && float64(r.n)/float64(total) >= failsWithShare {
-				return &factValue{Value: r.code, Mark: coreSeriesMark,
-					Evidence: []map[string]any{{"kind": "obs_points", "series": seriesTaskOutcome, "samples": total}}}, true, nil
-			}
-		}
 	}
 	return nil, false, nil
 }
@@ -135,6 +105,26 @@ func factSubjectOK(cat *Catalog, s factSubject) bool {
 		return ok
 	}
 	return true
+}
+
+// factEvidenceOK says whether the evidence of a fact is available to a role: the attempts of a
+// task type the role claims itself, or a series it reads for one of its types (MEM-6). The
+// recheck of a copied fact runs with the permissions of the successor's role (MEM-7).
+func (c *Core) factEvidenceOK(cat *Catalog, tenant, role, predicate string, s factSubject) bool {
+	series := factSeries[predicate]
+	if series == "" {
+		return false
+	}
+	claims := cat.Roles[role].Claims
+	if s.Type == "tasktype" && slices.Contains(claims, s.ID) {
+		return true
+	}
+	for _, typ := range claims {
+		if slices.Contains(c.readableSeries(cat, tenant, role, typ), series) {
+			return true
+		}
+	}
+	return false
 }
 
 // proposeFacts writes the facts an attempt proposed, in the transaction of its successful
@@ -182,7 +172,7 @@ func (c *Core) proposeFacts(ctx context.Context, tx pgx.Tx, now time.Time, cat *
 			}
 			continue
 		}
-		if !factSubjectOK(cat, s) {
+		if !factSubjectOK(cat, s) || !c.factEvidenceOK(cat, w.Tenant, w.Role, predicate, s) {
 			if err := reject("not_found", predicate); err != nil {
 				return err
 			}
@@ -198,6 +188,12 @@ func (c *Core) proposeFacts(ctx context.Context, tx pgx.Tx, now time.Time, cat *
 				return err
 			}
 			continue
+		}
+		// A newer fact of the same predicate and subject replaces the older one.
+		subj, _ := json.Marshal(s)
+		if _, err := tx.Exec(ctx, `DELETE FROM facts WHERE tenant = $1 AND bot = $2 AND state = 'active' AND predicate = $3 AND subject = $4`,
+			w.Tenant, l.Acting.Bot, predicate, subj); err != nil {
+			return err
 		}
 		if _, err := c.insertFact(ctx, tx, now, w.Tenant, l.Acting.Bot, mstr(m, "kind"), predicate, s, v, from, now, untrusted, personal, l.Acting, nil); err != nil {
 			return err
@@ -317,7 +313,7 @@ func (c *Core) taskFacts(ctx context.Context, tx pgx.Tx, now time.Time, cat *Cat
 	var used []string
 	personal := false
 	for _, f := range list {
-		if (tt.Purpose == "review" || tt.Purpose == "manage") && f.Untrusted {
+		if (tt.Purpose == "review" || tt.Purpose == "manage" || roleMemory(cat.Roles[w.Role]) == "read_bot") && f.Untrusted {
 			continue
 		}
 		if mark == "" || c.higherMark(mark, f.Mark) != mark {
@@ -417,7 +413,7 @@ func (c *Core) copyOffer(ctx context.Context, tx pgx.Tx, now time.Time, cat *Cat
 			if room <= 0 {
 				break
 			}
-			if !slices.Contains(factIDs, f.ID) || !factSubjectOK(cat, f.Subject) {
+			if !slices.Contains(factIDs, f.ID) || !factSubjectOK(cat, f.Subject) || !c.factEvidenceOK(cat, tenant, to.Role, f.Predicate, f.Subject) {
 				continue
 			}
 			v, reason, err := recheck(ctx, tx, tenant, f)

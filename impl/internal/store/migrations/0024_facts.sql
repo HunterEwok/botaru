@@ -27,6 +27,7 @@ CREATE TABLE facts (
     created_at       timestamptz NOT NULL
 );
 CREATE INDEX facts_space ON facts (tenant, bot, state);
+CREATE INDEX facts_bot ON facts (bot);
 
 CREATE TABLE fact_offers (
     id              text PRIMARY KEY,
@@ -44,3 +45,4 @@ CREATE TABLE fact_offers (
     closed_at       timestamptz
 );
 CREATE INDEX fact_offers_open ON fact_offers (tenant, state, role, seat);
+CREATE INDEX fact_offers_from ON fact_offers (from_bot);

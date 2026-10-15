@@ -166,17 +166,6 @@ func (c *Core) SeatAssign(ctx context.Context, op Operator, req SeatRequest) (*D
 		if b.State != "active" || b.Mode != "worker" || !slices.Contains(functionaryProfiles, profileOf(cat, b.Role)) {
 			return refuse("forbidden", "only an active functionary identity of the tenant takes a seat")
 		}
-		if s.Holder != "" {
-			prev, err := loadBot(ctx, tx, s.Holder, true)
-			if err != nil {
-				return err
-			}
-			if prev != nil {
-				if _, err := c.retireBot(ctx, tx, now, cat, prev, "replaced_by_human", b.ID, op.Principal); err != nil {
-					return err
-				}
-			}
-		}
 		// The identity moves to the seat; its worker keeps working under a new identity.
 		worker := b.Worker
 		if _, err := tx.Exec(ctx, `UPDATE bots SET mode = 'seat', seat = $2, worker_id = NULL, epoch = epoch + 1, updated_at = $3 WHERE id = $1`, b.ID, s.ID, now); err != nil {
@@ -194,6 +183,19 @@ func (c *Core) SeatAssign(ctx context.Context, op Operator, req SeatRequest) (*D
 			// holder keeps its own (MEM-7).
 			if err := c.offerFacts(ctx, tx, now, cat, b, next, "", now.Add(charterDuration(cat, b.Tenant, "memory", "seal_ttl", defaultSealTTL))); err != nil {
 				return err
+			}
+		}
+		// The previous holder leaves only after the worker split, so its facts go to the new
+		// holder alone and not on to the worker's new identity (MEM-7).
+		if s.Holder != "" {
+			prev, err := loadBot(ctx, tx, s.Holder, true)
+			if err != nil {
+				return err
+			}
+			if prev != nil {
+				if _, err := c.retireBot(ctx, tx, now, cat, prev, "replaced_by_human", b.ID, op.Principal); err != nil {
+					return err
+				}
 			}
 		}
 		seq, err := c.moveSeat(ctx, tx, now, s, b.ID, "held", "seat.assigned.v1", "seat.assign", op.Principal)

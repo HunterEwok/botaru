@@ -292,7 +292,7 @@ func (c *Core) retireBot(ctx context.Context, tx pgx.Tx, now time.Time, cat *Cat
 	// The facts go to the successor: the new identity of the worker, the next holder of the
 	// seat, or the first identity enrolled in the role before the seal ends; a role that left
 	// the catalog has none. Then they are sealed (MEM-4, MEM-7).
-	if reason != "role_removed" {
+	if reason != "role_removed" && reason != "tenant_offboarded" {
 		seat := ""
 		if b.Mode == "seat" && successor == "" {
 			seat = b.Seat

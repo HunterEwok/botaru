@@ -76,15 +76,14 @@ func TestFactsProposeAndRead(t *testing.T) {
 		t.Fatal(err)
 	}
 	var p95 float64
-	var code string
-	if err := b.c.st.Pool.QueryRow(ctx, `SELECT (SELECT value::text::float FROM facts WHERE bot = $1 AND predicate = 'task.duration.p95_min'),
-		(SELECT value #>> '{}' FROM facts WHERE bot = $1 AND predicate = 'task.fails_with')`, bot.ID).Scan(&p95, &code); err != nil {
+	if err := b.c.st.Pool.QueryRow(ctx, `SELECT value::text::float FROM facts WHERE bot = $1 AND predicate = 'task.duration.p95_min'`, bot.ID).Scan(&p95); err != nil {
 		t.Fatal(err)
 	}
-	if p95 != 10 || code != "failed" {
-		t.Fatalf("values %v %q", p95, code)
+	if p95 != 10 {
+		t.Fatalf("value %v", p95)
 	}
-	if n := countEvents(t, b, "fact.rejected.v1", att.Token.WorkID); n != 1 {
+	// task.fails_with is not derived in this version, and dataset.stored_on has no records.
+	if n := countEvents(t, b, "fact.rejected.v1", att.Token.WorkID); n != 2 {
 		t.Fatalf("rejected events %d", n)
 	}
 	var result string
@@ -101,18 +100,18 @@ func TestFactsProposeAndRead(t *testing.T) {
 	}
 	_, att = b.helloAttempt(t, "3", "internal")
 	facts, _ := att.Payload["facts"].([]any)
-	if len(facts) != 2 {
+	if len(facts) != 1 {
 		t.Fatalf("facts read %v", att.Payload["facts"])
 	}
 	if f := facts[0].(map[string]any); f["from_bot"] != nil || f["acting_bot"] != nil || f["window"] == nil {
 		t.Fatalf("fact view %v", f)
 	}
-	// Four proposals are over the per-attempt limit and the schema refuses them all.
+	// A fourth proposal is over the per-attempt limit, and a repeat replaces the older fact.
 	if _, err := b.c.Complete(ctx, b.agent, header(t, att), CompleteRequest{Result: map[string]any{"answer": "hi",
 		"facts": append(append([]any{}, factProposals...), factProposals[0])}}); err != nil {
 		t.Fatal(err)
 	}
-	if n := factCount(t, b, bot.ID, "active"); n != 2 {
+	if n := factCount(t, b, bot.ID, "active"); n != 1 {
 		t.Fatalf("active facts %d", n)
 	}
 }
@@ -132,11 +131,11 @@ func TestFactsOffer(t *testing.T) {
 		t.Fatal(err)
 	}
 	next := b.botOf(t, b.agent.ID)
-	if factCount(t, b, old.ID, "sealed") != 2 || factCount(t, b, next.ID, "active") != 2 {
+	if factCount(t, b, old.ID, "sealed") != 1 || factCount(t, b, next.ID, "active") != 1 {
 		t.Fatalf("sealed %d copied %d", factCount(t, b, old.ID, "sealed"), factCount(t, b, next.ID, "active"))
 	}
 	var inherited int
-	if err := b.c.st.Pool.QueryRow(ctx, `SELECT count(*) FROM facts WHERE bot = $1 AND inherited->>'from_bot' = $2`, next.ID, old.ID).Scan(&inherited); err != nil || inherited != 2 {
+	if err := b.c.st.Pool.QueryRow(ctx, `SELECT count(*) FROM facts WHERE bot = $1 AND inherited->>'from_bot' = $2`, next.ID, old.ID).Scan(&inherited); err != nil || inherited != 1 {
 		t.Fatalf("inherited %d %v", inherited, err)
 	}
 	// The worker goes: its identity leaves after unbound_ttl and its offer waits.
@@ -150,7 +149,7 @@ func TestFactsOffer(t *testing.T) {
 		t.Fatalf("waiting offers %d %v", waiting, err)
 	}
 	w := b.enroll(t, EnrollRequest{Tenant: "demo", Role: "hello", Kind: "agent"})
-	if n := factCount(t, b, b.botOf(t, w.ID).ID, "active"); n != 2 {
+	if n := factCount(t, b, b.botOf(t, w.ID).ID, "active"); n != 1 {
 		t.Fatalf("facts of the first enrolled identity %d", n)
 	}
 	// At the end of the seal the facts of the retired identities are wiped with it.
