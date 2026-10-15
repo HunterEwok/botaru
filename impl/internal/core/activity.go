@@ -153,7 +153,7 @@ func (c *Core) SubmitActivity(ctx context.Context, w *Worker, a Activity) (*Acti
 			if err := closeFollowups(ctx, tx, w.Tenant, "c:"+a.Channel+":"+a.Chat.ID(), principal); err != nil {
 				return err
 			}
-			if err := c.firstContact(ctx, tx, now, tv, a.Channel, principal, a.Chat); err != nil {
+			if err := c.firstContact(ctx, tx, now, tv, a.Channel, principal, noticeChat(a)); err != nil {
 				return err
 			}
 			pc := personCommand{tv: tv, cat: cat, person: principal, groups: groups, locale: locale,
@@ -193,7 +193,7 @@ func (c *Core) SubmitActivity(ctx context.Context, w *Worker, a Activity) (*Acti
 			return nil
 		}
 		origin := &Origin{Channel: a.Channel, Chat: a.Chat}
-		if err := c.firstContact(ctx, tx, now, tv, a.Channel, principal, a.Chat); err != nil {
+		if err := c.firstContact(ctx, tx, now, tv, a.Channel, principal, noticeChat(a)); err != nil {
 			return err
 		}
 		body := map[string]any{"type": typ, "goal": goal}
@@ -318,4 +318,14 @@ func groupCommand(a Activity) (string, bool) {
 		word = word[:i]
 	}
 	return word, true
+}
+
+// noticeChat is where the first-contact notices of an activity go: its chat, or for a group
+// the sender's direct chat, so the notices reach the person and not the group (DLV-12).
+func noticeChat(a Activity) Chat {
+	if a.Chat.Kind != "group" {
+		return a.Chat
+	}
+	_, ext, _ := strings.Cut(a.Sender.Identity, ":")
+	return Chat{Kind: "direct", ExternalID: ext}
 }

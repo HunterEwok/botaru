@@ -699,7 +699,10 @@ func (c *Core) lintManifests(docs []manifest.Doc, index []int) ([]ApplyError, er
 				case base == "action.request" || base == "service.control" || base == "monitor.script_run" || decisionCaps[base] ||
 					strings.HasPrefix(base, "admin") || strings.HasPrefix(cp, "admin"):
 					bad = true
-				case base == "task" && types[arg] != nil:
+				case (base == "task" || base == "task.read") && strings.Contains(arg, "*"):
+					// A wildcard reaches types of any tier (PRM-16).
+					bad = true
+				case (base == "task" || base == "task.read") && types[arg] != nil:
 					tier, _ := mnum(types[arg], "tier")
 					if tier >= 3 || order(mstr(types[arg], "data_class")) > 1 {
 						bad = true

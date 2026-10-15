@@ -366,9 +366,13 @@ func (c *Core) completeAttempt(ctx context.Context, tx pgx.Tx, now time.Time, w 
 	if !record.reportsToOrigin() {
 		return nil
 	}
-	window, err := c.openFollowup(ctx, tx, now, l.WorkID, tt, result)
-	if err != nil {
-		return err
+	// The follow-up window is for a direct chat: in a group the answer goes privately, where a
+	// plain reply does not continue the group's task (CNT-5).
+	var window time.Duration
+	if record.Origin.Chat.Kind != "group" {
+		if window, err = c.openFollowup(ctx, tx, now, l.WorkID, tt, result); err != nil {
+			return err
+		}
 	}
 	text, fields := resultText(result, tt.SummaryFields)
 	if window > 0 {
@@ -713,6 +717,11 @@ func (c *Core) endDelivery(ctx context.Context, tx pgx.Tx, now time.Time, tenant
 		if err := c.appendEvent(ctx, tx, now, tenant, Event{Type: "delivery.withheld", Subject: l.WorkID, Data: map[string]any{"delivery": l.WorkID, "kind": kind, "reason": reason}}); err != nil {
 			return nil, err
 		}
+		if kind == "privacy_notice" {
+			if err := resetPrivacyNotice(ctx, tx, l.WorkID); err != nil {
+				return nil, err
+			}
+		}
 		b, err := loadBinding(ctx, tx, tenant, channel, targetID)
 		if err != nil {
 			return nil, err
@@ -767,8 +776,7 @@ func (c *Core) endDelivery(ctx context.Context, tx pgx.Tx, now time.Time, tenant
 	// A privacy notice that never arrived is planned again at the next contact; model text for
 	// the recipient waits until then (DLV-12).
 	if kind == "privacy_notice" {
-		if _, err := tx.Exec(ctx, `UPDATE contacts ct SET privacy_version = NULL FROM deliveries d
-			WHERE d.id = $1 AND ct.tenant = d.tenant AND ct.channel = d.exec_name AND ct.principal = d.recipient`, l.WorkID); err != nil {
+		if err := resetPrivacyNotice(ctx, tx, l.WorkID); err != nil {
 			return nil, err
 		}
 	}
@@ -834,5 +842,13 @@ func releaseTaskReserve(ctx context.Context, tx pgx.Tx, task string) error {
 		return err
 	}
 	_, err := tx.Exec(ctx, `UPDATE spend SET state = 'estimated' WHERE root = (SELECT coalesce(record->>'root', id) FROM tasks WHERE id = $1) AND task = $1 AND unit <> 'task' AND toolcall IS NULL AND state = 'reserved'`, task)
+	return err
+}
+
+// resetPrivacyNotice clears the notice version of the recipient of a privacy notice that never
+// arrived, so the next contact plans it again (DLV-12).
+func resetPrivacyNotice(ctx context.Context, tx pgx.Tx, delivery string) error {
+	_, err := tx.Exec(ctx, `UPDATE contacts ct SET privacy_version = NULL FROM deliveries d
+		WHERE d.id = $1 AND ct.tenant = d.tenant AND ct.channel = d.exec_name AND ct.principal = d.recipient`, delivery)
 	return err
 }

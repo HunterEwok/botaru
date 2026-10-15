@@ -130,6 +130,8 @@ texts:
   cmd.grant.done: "{subject} is now in group {group}."
   cmd.ungrant.done: "{subject} is no longer in group {group}."
   notice.delegated_grant: "{by} granted {subject} the delegated group {group}."
+  notice.delegated_ungrant: "{by} removed {subject} from the delegated group {group}."
+  cmd.ungrant.not_member: "{subject} is not in group {group}."
   cmd.direct_only: This command can only be given in a private chat with the bot.
   cmd.help.group_header: "In this chat you can ask in plain text:"
   cmd.help.group_row: "- {title}"

@@ -565,6 +565,11 @@ func (c *Core) claimDelivery(ctx context.Context, tx pgx.Tx, now time.Time, cat 
 				if err := c.appendEvent(ctx, tx, now, w.Tenant, Event{Type: "delivery.withheld", Subject: id, Data: map[string]any{"delivery": id, "kind": kind, "reason": reason}}); err != nil {
 					return nil, err
 				}
+				if kind == "privacy_notice" {
+					if err := resetPrivacyNotice(ctx, tx, id); err != nil {
+						return nil, err
+					}
+				}
 				continue
 			}
 		}
