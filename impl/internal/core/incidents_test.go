@@ -138,12 +138,12 @@ func TestIncidentLifecycle(t *testing.T) {
 		t.Fatalf("after resolve.for: %s", r.State)
 	}
 	// Back within an hour: the same number, reopened without the acks of the last round; the
-	// first measure still holds, so there is no second one.
+	// first measure still holds, so it contains the incident without a second hold.
 	b.diskAlarm(t, true, 2)
 	b.advance(t, 6*60)
 	b.loop(t, "incident")
 	list = incidentsOf(t, b, "disk_full")
-	if len(list) != 1 || list[0].State != "reopened" || list[0].Handled || list[0].Record["taken_by"] != nil {
+	if len(list) != 1 || list[0].State != "contained" || list[0].Handled || list[0].Record["taken_by"] != nil {
 		t.Fatalf("after the return %d %+v", len(list), list[0])
 	}
 	if countEvents(t, b, "incident.reopened.v1", r.ID) != 1 {

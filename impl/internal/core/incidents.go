@@ -461,7 +461,8 @@ func (c *Core) containAuto(ctx context.Context, tx pgx.Tx, now time.Time, cat *C
 		if ttl <= 0 {
 			continue
 		}
-		// A reopened incident whose first measure still holds gets no second hold on the scope.
+		// A scope that a first measure of the class still holds gets no second hold: the
+		// incident counts as contained by it.
 		k := scope.key()
 		var held bool
 		if err := tx.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM holds WHERE state = 'active' AND author_kind = 'contain_auto' AND source = $1
@@ -470,6 +471,7 @@ func (c *Core) containAuto(ctx context.Context, tx pgx.Tx, now time.Time, cat *C
 			return err
 		}
 		if held {
+			applied = true
 			continue
 		}
 		until := now.Add(ttl)
@@ -479,7 +481,7 @@ func (c *Core) containAuto(ctx context.Context, tx pgx.Tx, now time.Time, cat *C
 		}
 		applied = true
 	}
-	if !applied {
+	if !applied || r.State == "contained" {
 		return nil
 	}
 	r.State = "contained"
