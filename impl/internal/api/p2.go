@@ -153,6 +153,29 @@ func (s *Server) p2(w http.ResponseWriter, r *http.Request) {
 		} else {
 			out, err = s.c.SeatVacate(ctx, oper, req)
 		}
+	case "incident.list":
+		req, derr := decode[core.TenantRequest](m)
+		if derr != nil {
+			s.fail(w, derr)
+			return
+		}
+		out, err = s.c.IncidentList(ctx, oper, req)
+	case "incident.show", "incident.ack", "incident.close", "incident.dismiss":
+		req, derr := decode[core.IncidentRequest](m)
+		if derr != nil {
+			s.fail(w, derr)
+			return
+		}
+		switch op {
+		case "incident.show":
+			out, err = s.c.IncidentShow(ctx, oper, req)
+		case "incident.ack":
+			out, err = s.c.IncidentAck(ctx, oper, req)
+		case "incident.close":
+			out, err = s.c.IncidentClose(ctx, oper, req)
+		default:
+			out, err = s.c.IncidentDismiss(ctx, oper, req)
+		}
 	case "hold.set":
 		req, derr := decode[core.HoldSetRequest](m)
 		if derr != nil {

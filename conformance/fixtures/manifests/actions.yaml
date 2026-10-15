@@ -113,7 +113,7 @@ cases:
             properties:
               path: {type: string, pattern: "^/data/.*$"}
           executor: {plugin: pipeline, tool: cleanup_tmp, os_mechanism: {oneshot: {unit: "pipeline-tmp-clean-{tenant}.service", started_by: "pipeline-tmp-clean-{tenant}.path", wait: false}}}
-    expect: {error: schema_invalid, also: [cap_unknown_action, ref_missing]}
+    expect: {error: schema_invalid, also: [cap_unknown_action, ref_missing, incident_class_ref]}
   - name: approvals 2 in v0.1
     rules: [APR-10, APR-16]
     manifests:

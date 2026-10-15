@@ -198,6 +198,8 @@ The codes of `check_manifests.py` that fixtures refer to (`expect: {error: <code
 | `high_risk_one_approver` | production tenant lets a high risk action with approvals: 1 be requested | APR-16 |
 | `host_two_tenants` | host or service in catalogs of two tenants | TEN-4 |
 | `human_subject_in_record` | a result read by code names a human principal or the kind human | DLV-14 |
+| `incident_class_ref` | an incident class names an alarm outside the events catalog, a condition atom or field outside the closed list, an unknown involvement function, operation, action or pinnable type, or services and monitoring scripts for a farm subject | MGR-7 |
+| `incident_contain_auto` | a first measure of an incident class is not a hold with one tenant scope, known effects and an expiry | MGR-7, HLD-2 |
 | `ingress_missing` | source channel (direction: in) without ingress | ING-1 |
 | `ingress_token_tier` | route from an event of a tls_token source enqueues a type above tier 0 | ING-1 |
 | `ingress_tolerance` | source with auth: signature without ingress.tolerance or with more than 5m | ING-1 |

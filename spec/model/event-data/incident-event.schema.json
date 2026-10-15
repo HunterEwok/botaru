@@ -1,0 +1,69 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:botaru:schema:incident-event:1",
+  "title": "Data of the incident events",
+  "description": "Data of incident.opened, incident.contained, incident.resolved, incident.reopened, incident.acked, incident.closed and incident.dismissed: every transition of an incident writes one in its transaction (spec/lifecycles/incident.md). Codes and ids only: the Details text of a dismissal never goes into an event (MGR-8).",
+  "x-botaru-direction": "output",
+  "x-botaru-rules": [
+    "MGR-8"
+  ],
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "incident",
+    "class",
+    "state",
+    "subject"
+  ],
+  "properties": {
+    "incident": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/object_id",
+      "description": "Incident id."
+    },
+    "class": {
+      "type": "string",
+      "maxLength": 63,
+      "pattern": "^[a-z][a-z0-9_]{0,62}$",
+      "description": "Incident class."
+    },
+    "state": {
+      "enum": [
+        "open",
+        "contained",
+        "mitigating",
+        "resolved",
+        "reopened",
+        "closed",
+        "dismissed"
+      ],
+      "description": "State after the transition."
+    },
+    "severity": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/incident_severity"
+    },
+    "subject": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind"
+      ],
+      "properties": {
+        "kind": {
+          "enum": [
+            "resource",
+            "farm",
+            "tenant",
+            "role",
+            "worker"
+          ]
+        },
+        "id": {
+          "type": "string",
+          "maxLength": 64,
+          "pattern": "^[a-z0-9:_.-]{1,64}$"
+        }
+      },
+      "description": "Incident subject."
+    }
+  }
+}

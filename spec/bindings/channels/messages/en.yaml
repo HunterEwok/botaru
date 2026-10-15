@@ -142,6 +142,11 @@ texts:
   cmd.grant.not_covered: You can grant only a group whose rights you hold yourself; {group} has more.
   cmd.grant.done: "{subject} is now in group {group}."
   cmd.ungrant.done: "{subject} is no longer in group {group}."
+  cmd.incident.usage: "Usage: /incident ack <number>, /incident close <number> or /incident dismiss <number> <reason> <details>."
+  cmd.incident.dismiss_reason: "A dismissal needs a reason (false_alarm, threshold_misconfigured, maintenance, duplicate, test or other) and details of up to 500 characters."
+  cmd.incident.not_found: There is no such incident in this tenant.
+  cmd.incident.conflict: The incident cannot change this way now; it closes only after it is resolved.
+  cmd.incident.done: "Incident {incident} is now {state}."
   notice.delegated_grant: "{by} granted {subject} the delegated group {group}."
   notice.delegated_ungrant: "{by} removed {subject} from the delegated group {group}."
   cmd.ungrant.not_member: "{subject} is not in group {group}."
