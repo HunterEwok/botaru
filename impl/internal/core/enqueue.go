@@ -67,6 +67,9 @@ type enqueueInput struct {
 	Refs []string
 	// Chain makes the task a child or a continuation in an existing tree (PRM-6, CNT-3).
 	Chain *chainLink
+	// CoInitiators are the initiators of what the enqueuing tree read, beside the initiator
+	// (MSG-7); a chain carries its own.
+	CoInitiators []string
 	// Continues is the task this one continues: a reply or the follow-up window (CNT-5).
 	Continues string
 	// Untrusted carries untrusted_seen over from the continued task (CNT-5).
@@ -200,6 +203,21 @@ func durationOr(s string, def time.Duration) time.Duration {
 		return d
 	}
 	return def
+}
+
+// coInitiatorsOf are the initiators of what the enqueuing tree read, other than the initiator.
+func coInitiatorsOf(in enqueueInput) []string {
+	var out []string
+	all := slices.Clone(in.CoInitiators)
+	if in.Chain != nil {
+		all = append(all, in.Chain.CoInitiators...)
+	}
+	for _, id := range all {
+		if id != in.Initiator && !slices.Contains(out, id) {
+			out = append(out, id)
+		}
+	}
+	return out
 }
 
 // parseDuration reads the duration form of the schemas: 15m, 60s, 2h, 7d.
@@ -362,6 +380,24 @@ func (c *Core) enqueue(ctx context.Context, tx pgx.Tx, now time.Time, cat *Catal
 		pr.Needs = []string{"data:" + mark}
 		return reject(pr)
 	}
+	// The initiators of what the tree read narrow it as the initiator does: C2 intersects with
+	// each of them (MSG-7).
+	for _, id := range coInitiatorsOf(in) {
+		cg, err := principalGroups(ctx, tx, now, tv, id)
+		if err != nil {
+			return nil, err
+		}
+		if !hasCap(tv, cg, capName) {
+			pr := refuse("no_group_cap", "an initiator of what the tree read has no %s", capName)
+			pr.Needs = groupsWithCap(tv, capName)
+			return reject(pr)
+		}
+		if !hasData(tv, cg, mark) {
+			pr := refuse("no_data_class", "an initiator of what the tree read has no data:%s", mark)
+			pr.Needs = []string{"data:" + mark}
+			return reject(pr)
+		}
+	}
 	if in.Chain != nil {
 		if p, err := c.checkChain(ctx, tx, tv, tt, in.Chain); err != nil {
 			return nil, err
@@ -484,6 +520,9 @@ func (c *Core) enqueue(ctx context.Context, tx pgx.Tx, now time.Time, cat *Catal
 	if ch := in.Chain; ch != nil {
 		root = ch.Root
 		record["parent"], record["root"], record["correlationid"], record["depth"] = ch.Parent, ch.Root, ch.Root, ch.Depth
+		if len(ch.CoInitiators) > 0 {
+			record["co_initiators"] = ch.CoInitiators
+		}
 		record["data_mark"], record["max_tier"] = mark, min(tt.Tier, ch.MaxTier)
 		if ch.Untrusted {
 			record["untrusted_seen"] = true

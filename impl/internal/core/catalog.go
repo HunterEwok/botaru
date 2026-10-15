@@ -29,8 +29,10 @@ type Catalog struct {
 	// Profiles are keyed by tenant and name; a farm-wide profile has the tenant "".
 	Profiles map[[2]string]manifest.ModelProfile
 	// Plugins are the ToolPlugin manifests by name (global, D-92).
-	Plugins    map[string]toolspec.Plugin
-	RawGlobals map[manifest.Key]map[string]any
+	Plugins map[string]toolspec.Plugin
+	// MessageTypes are the MessageType manifests by name (global, MSG-2).
+	MessageTypes map[string]manifest.MessageType
+	RawGlobals   map[manifest.Key]map[string]any
 	// Hashes are the hashes of the applied manifests (spec/hashing.md), for the parts of the
 	// run fingerprint (PRV-1) and the catalog version of an attempt (OUT-1).
 	Hashes map[manifest.Key]string
@@ -46,6 +48,8 @@ type TenantView struct {
 	Channels map[string]manifest.Channel
 	// Schedules are the Schedule manifests of the tenant by name (TIM-3).
 	Schedules map[string]manifest.Schedule
+	// BotGroups are the BotGroup manifests of the tenant by name (BGR-1).
+	BotGroups map[string]manifest.BotGroup
 }
 
 // Profile resolves a model profile for a tenant: the tenant's own profile of that name, else
@@ -60,21 +64,23 @@ func (c *Catalog) Profile(tenant, name string) (manifest.ModelProfile, bool) {
 
 func newCatalog() *Catalog {
 	return &Catalog{
-		Tenants:    map[string]*TenantView{},
-		Roles:      map[string]manifest.Role{},
-		TaskTypes:  map[string]manifest.TaskType{},
-		Actions:    map[string]manifest.Action{},
-		Profiles:   map[[2]string]manifest.ModelProfile{},
-		Plugins:    map[string]toolspec.Plugin{},
-		RawGlobals: map[manifest.Key]map[string]any{},
-		Hashes:     map[manifest.Key]string{},
+		Tenants:      map[string]*TenantView{},
+		Roles:        map[string]manifest.Role{},
+		TaskTypes:    map[string]manifest.TaskType{},
+		Actions:      map[string]manifest.Action{},
+		Profiles:     map[[2]string]manifest.ModelProfile{},
+		Plugins:      map[string]toolspec.Plugin{},
+		MessageTypes: map[string]manifest.MessageType{},
+		RawGlobals:   map[manifest.Key]map[string]any{},
+		Hashes:       map[manifest.Key]string{},
 	}
 }
 
 func (c *Catalog) tenant(name string) *TenantView {
 	t, ok := c.Tenants[name]
 	if !ok {
-		t = &TenantView{Name: name, Groups: map[string]manifest.Group{}, Channels: map[string]manifest.Channel{}, Schedules: map[string]manifest.Schedule{}}
+		t = &TenantView{Name: name, Groups: map[string]manifest.Group{}, Channels: map[string]manifest.Channel{}, Schedules: map[string]manifest.Schedule{},
+			BotGroups: map[string]manifest.BotGroup{}}
 		c.Tenants[name] = t
 	}
 	return t
@@ -130,6 +136,18 @@ func buildCatalog(docs []manifest.Doc) (*Catalog, error) {
 			var sc manifest.Schedule
 			if sc, err = manifest.Decode[manifest.Schedule](d); err == nil {
 				c.tenant(d.Tenant).Schedules[d.Name] = sc
+			}
+			c.RawGlobals[d.Key()] = d.Value
+		case "MessageType":
+			var mt manifest.MessageType
+			if mt, err = manifest.Decode[manifest.MessageType](d); err == nil {
+				c.MessageTypes[d.Name] = mt
+			}
+			c.RawGlobals[d.Key()] = d.Value
+		case "BotGroup":
+			var bg manifest.BotGroup
+			if bg, err = manifest.Decode[manifest.BotGroup](d); err == nil {
+				c.tenant(d.Tenant).BotGroups[d.Name] = bg
 			}
 			c.RawGlobals[d.Key()] = d.Value
 		case "ToolPlugin":

@@ -30,6 +30,8 @@ const (
 	Grant     = "sg"
 	Session   = "s"
 	Memory    = "m"
+	// Message shares the prefix m with memory items: the message schema fixes m_<ulid>.
+	Message   = "m"
 	Subject   = "sr"
 	Step      = "es"
 	Proposal  = "prp"

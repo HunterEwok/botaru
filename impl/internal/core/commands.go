@@ -410,6 +410,9 @@ func (c *Core) cancelTaskIDs(ctx context.Context, tx pgx.Tx, now time.Time, tena
 		if _, err := tx.Exec(ctx, `UPDATE leases SET state = 'revoked', reason = $3, closed_at = $2 WHERE work_id = $1 AND state = 'active'`, id, now, reason); err != nil {
 			return err
 		}
+		if err := c.settleMessages(ctx, tx, now, id); err != nil {
+			return err
+		}
 		if _, err := tx.Exec(ctx, `UPDATE tasks SET state = 'canceled', reason = $2, run_at = NULL, updated_at = $3 WHERE id = $1`, id, reason, now); err != nil {
 			return err
 		}

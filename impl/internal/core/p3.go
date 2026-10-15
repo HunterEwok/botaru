@@ -43,6 +43,19 @@ type toolsGrant struct {
 	InitiatorGroups []string
 	// HostScripts are the latest script lists of the adapter by catalog host (MON-10).
 	HostScripts map[string][]adapterScript
+	// CoGroups are the groups of each initiator of what the attempt read: C2 intersects the
+	// attempt's permissions with theirs (MSG-7).
+	CoGroups [][]string
+}
+
+// coHave says whether every initiator of what the attempt read has the capability (MSG-7).
+func (g *toolsGrant) coHave(tv *TenantView, cap string) bool {
+	for _, gs := range g.CoGroups {
+		if !hasCap(tv, groupClosure(tv, gs), cap) {
+			return false
+		}
+	}
+	return true
 }
 
 // catalogTool is one entry of the P3 catalog of an attempt.
@@ -110,14 +123,29 @@ func (c *Core) loadGrantTask(ctx context.Context, q store.Querier, g *toolsGrant
 		return err
 	}
 	var r struct {
-		MaxTier  int    `json:"max_tier"`
-		DataMark string `json:"data_mark"`
-		Purpose  string `json:"purpose"`
+		MaxTier      int      `json:"max_tier"`
+		DataMark     string   `json:"data_mark"`
+		Purpose      string   `json:"purpose"`
+		CoInitiators []string `json:"co_initiators"`
 	}
 	if err := json.Unmarshal(rec, &r); err != nil {
 		return err
 	}
 	g.MaxTier, g.Mark, g.Purpose = r.MaxTier, r.DataMark, r.Purpose
+	g.CoGroups = nil
+	if len(r.CoInitiators) > 0 {
+		var now time.Time
+		if err := q.QueryRow(ctx, `SELECT botaru_now()`).Scan(&now); err != nil {
+			return err
+		}
+		for _, id := range r.CoInitiators {
+			gs, err := rawGroups(ctx, q, now, g.Tenant, id)
+			if err != nil {
+				return err
+			}
+			g.CoGroups = append(g.CoGroups, append([]string{}, gs...))
+		}
+	}
 	// The groups of an active initiator: a person, or a service or system principal whose
 	// rights to a built-in write tool come only from explicit rows (APR-18).
 	if g.Initiator != "" {
@@ -220,6 +248,14 @@ func (c *Core) toolCatalog(cat *Catalog, g *toolsGrant) ([]catalogTool, error) {
 		out = append(out, *ct)
 	}
 	if it := c.inspectTool(cat, g); it != nil {
+		out = append(out, *it)
+	}
+	if mt, err := c.sendMessageTool(cat, g); err != nil {
+		return nil, err
+	} else if mt != nil {
+		out = append(out, *mt)
+	}
+	if it := c.inboxReadTool(cat, g); it != nil {
 		out = append(out, *it)
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
@@ -437,6 +473,14 @@ func (c *Core) P3ToolsCall(ctx context.Context, handle string, p mcp.CallParams)
 				args = map[string]any{}
 			}
 			builtin, err = c.controlToolCall(ctx, tx, now, cat, g, offered, args)
+			return err
+		}
+		if msgToolName(p.Name) {
+			args := p.Arguments
+			if args == nil {
+				args = map[string]any{}
+			}
+			builtin, err = c.msgToolCall(ctx, tx, now, cat, g, p.Name, offeredTool(tools, p.Name), args)
 			return err
 		}
 		if p.Name == inspectToolName {

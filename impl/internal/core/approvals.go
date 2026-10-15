@@ -194,7 +194,7 @@ func requestableActions(cat *Catalog, g *toolsGrant) []string {
 	groups := groupClosure(tv, g.InitiatorGroups)
 	var out []string
 	for _, a := range role.ActionsMayRequest {
-		if _, ok := cat.Actions[a]; ok && hasCap(tv, groups, "action.request:"+a) {
+		if _, ok := cat.Actions[a]; ok && hasCap(tv, groups, "action.request:"+a) && g.coHave(tv, "action.request:"+a) {
 			out = append(out, a)
 		}
 	}

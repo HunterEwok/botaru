@@ -281,6 +281,9 @@ func (c *Core) revokeWorkOf(ctx context.Context, tx pgx.Tx, now time.Time, tv *T
 		if _, err := tx.Exec(ctx, `UPDATE leases SET state = 'revoked', reason = $3, closed_at = $2 WHERE work_id = $1 AND state = 'active'`, w.id, now, reason); err != nil {
 			return err
 		}
+		if err := c.settleMessages(ctx, tx, now, w.id); err != nil {
+			return err
+		}
 		if err := c.failTask(ctx, tx, now, tv.Name, w.id, principal, w.rec, reason); err != nil {
 			return err
 		}

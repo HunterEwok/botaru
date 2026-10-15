@@ -59,8 +59,10 @@ func (c *Core) stalls(ctx context.Context) error {
 			if err := c.fireAlarm(ctx, tx, now, Alarm{Tenant: l.Tenant, Name: "task.stalled", Subject: AlarmSubject{Kind: "task", ID: strings.ToLower(l.WorkID)}, Severity: "warn"}); err != nil {
 				return err
 			}
-			_, err = c.endAttempt(ctx, tx, now, l.Tenant, &l, "stalled", true, true, 0, "")
-			return err
+			if _, err = c.endAttempt(ctx, tx, now, l.Tenant, &l, "stalled", true, true, 0, ""); err != nil {
+				return err
+			}
+			return c.settleMessages(ctx, tx, now, l.WorkID)
 		})
 		if err != nil {
 			return err

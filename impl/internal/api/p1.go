@@ -199,6 +199,39 @@ func (s *Server) p1(w http.ResponseWriter, r *http.Request) {
 			s.fail(w, err)
 			return
 		}
+	case "msg.send":
+		req, err := decode[core.MsgSendRequest](m)
+		if err != nil {
+			s.fail(w, err)
+			return
+		}
+		out, err = s.c.MsgSend(ctx, wk, lease, req)
+		if err != nil {
+			s.fail(w, err)
+			return
+		}
+	case "msg.receive":
+		req, err := decode[core.MsgReceiveRequest](m)
+		if err != nil {
+			s.fail(w, err)
+			return
+		}
+		out, err = s.c.MsgReceive(ctx, wk, lease, req)
+		if err != nil {
+			s.fail(w, err)
+			return
+		}
+	case "msg.ack", "msg.nack":
+		req, err := decode[core.MsgAckRequest](m)
+		if err != nil {
+			s.fail(w, err)
+			return
+		}
+		out, err = s.c.MsgAck(ctx, wk, lease, req, op == "msg.nack")
+		if err != nil {
+			s.fail(w, err)
+			return
+		}
 	default:
 		Problem(w, &core.Problem{Reason: "not_found", Detail: "the operation is not implemented in this build"})
 		return

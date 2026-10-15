@@ -887,6 +887,9 @@ func (c *Core) preemptAttempt(ctx context.Context, tx pgx.Tx, now time.Time, tas
 	if err := closeLease(ctx, tx, now, &l, "preempted", "preempted", "heartbeat", nil, &HeartbeatResult{CancelRequested: true}); err != nil {
 		return err
 	}
+	if err := c.settleMessages(ctx, tx, now, l.WorkID); err != nil {
+		return err
+	}
 	if err := c.requeue(ctx, tx, now, &l, now); err != nil {
 		return err
 	}
