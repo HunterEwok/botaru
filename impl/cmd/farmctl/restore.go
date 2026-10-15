@@ -70,7 +70,7 @@ func restore(c *client, args []string) error {
 		}
 		ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
 		defer cancel()
-		cc, closeStore, err := offlineCore(ctx, cfg, false)
+		cc, closeStore, err := offlineCore(ctx, cfg, true)
 		if err != nil {
 			return err
 		}
