@@ -978,6 +978,8 @@ def lint(docs, today=None, farm_hosts=None, examples_mode=False, claimed=None, s
         rs = ts.get('result_schema') or {}
         if read_by_code(rs) and names_human(rs):
             f.error('human_subject_in_record', where, f'type {tname}: a result read by code names a human principal (DLV-14)')
+        if 'provenance' in (rs.get('properties') or {}):
+            f.error('provenance_in_result', where, f'type {tname}: the result has a provenance field; only the core writes it (PRV-2)')
     for _, tname, where, ts in S.each('TaskType'):
         budget = ts.get('tree_budget_eur')
         if ts.get('worker_kind') != 'agent' or not isinstance(budget, (int, float)) or isinstance(budget, bool):

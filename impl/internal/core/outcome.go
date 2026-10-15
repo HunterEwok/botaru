@@ -271,6 +271,10 @@ func personalSeen(rec []byte) []string {
 }
 
 func (c *Core) completeAttempt(ctx context.Context, tx pgx.Tx, now time.Time, w *Worker, l *leaseRow, result map[string]any) error {
+	// Only the core writes provenance; a result that brings its own is refused (PRV-2).
+	if _, has := result["provenance"]; has {
+		return refuse("output_schema_invalid", "a result carries no provenance: the core writes it")
+	}
 	cat, err := c.Catalog(ctx)
 	if err != nil {
 		return err

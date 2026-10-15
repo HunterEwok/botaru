@@ -25,7 +25,9 @@ type Activity struct {
 	Text      string `json:"text,omitempty"`
 	ReplyTo   string `json:"reply_to,omitempty"`
 	Forwarded bool   `json:"forwarded,omitempty"`
-	Quoted    bool   `json:"quoted,omitempty"`
+	// Attachments are the files the channel put on behalf of the sender (ART-1).
+	Attachments []string `json:"attachments,omitempty"`
+	Quoted      bool     `json:"quoted,omitempty"`
 	// ForwardedFrom and QuotedFrom name the author of someone else's text when the messenger
 	// shows a person (AUD-5).
 	ForwardedFrom string `json:"forwarded_from,omitempty"`
@@ -202,9 +204,26 @@ func (c *Core) SubmitActivity(ctx context.Context, w *Worker, a Activity) (*Acti
 			EnqueuedBy: "channel:" + a.Channel, Origin: origin, Source: "interactive", Cause: key,
 			Forwarded: a.Forwarded, Quoted: a.Quoted,
 		}
+		// The sender's own uploads only: a file_ref of someone else's file is refused (ART-1,
+		// TEN-7).
+		var attached []any
+		for _, ref := range a.Attachments {
+			f, err := loadFile(ctx, tx, w.Tenant, ref)
+			if err != nil {
+				return err
+			}
+			if f == nil || f.Origin != "upload" || f.Producer != principal {
+				reply("activity.attachment_invalid")
+				return nil
+			}
+			attached = append(attached, map[string]any{"file_ref": ref})
+		}
+		if len(attached) > 0 {
+			body["attachments"] = attached
+		}
 		if prev != nil {
 			// The outcome of the earlier task is an attachment block of the new one (CNT-5).
-			body["attachments"] = []any{map[string]any{"data": prev.Data}}
+			body["attachments"] = append(attached, map[string]any{"data": prev.Data})
 			in.Continues, in.Untrusted, in.ContinuesMark = prev.ID, prev.Untrusted, prev.Mark
 		}
 		if in.Subjects, err = c.textAuthors(ctx, tx, w.Tenant, principal, a); err != nil {

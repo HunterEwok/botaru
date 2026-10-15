@@ -181,6 +181,11 @@ func (s *Server) body(w http.ResponseWriter, r *http.Request, schema string) (ma
 		Problem(w, &core.Problem{Reason: "input_schema_invalid", Detail: "the body could not be read"})
 		return nil, false
 	}
+	return s.object(w, raw, schema)
+}
+
+// object parses and checks a JSON object body against a schema.
+func (s *Server) object(w http.ResponseWriter, raw []byte, schema string) (map[string]any, bool) {
 	if len(raw) == 0 {
 		raw = []byte("{}")
 	}

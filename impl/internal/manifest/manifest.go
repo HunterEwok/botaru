@@ -163,6 +163,10 @@ type Tenant struct {
 	Attention        TenantAttention   `json:"attention"`
 	// Run holds the pipelines of the command /run <name> (APR-17).
 	Run map[string]RunEntry `json:"run"`
+	// Retention holds the file period (ART-1, RET-9).
+	Retention struct {
+		Files string `json:"files"`
+	} `json:"retention"`
 	// Campaigns holds the tree limit of a root (PRM-6, ORC-8).
 	Campaigns struct {
 		MaxTreeTasks int `json:"max_tree_tasks"`
@@ -359,6 +363,8 @@ type TaskType struct {
 	Retry         Retry             `json:"retry"`
 	TreeBudgetEUR float64           `json:"tree_budget_eur"`
 	GoalTrust     string            `json:"goal_trust"`
+	// ResultTTL is the period of the files that became the type's result (ART-1).
+	ResultTTL string `json:"result_ttl"`
 	// SummaryForManagers is the description of the type that a manager sees (ORC-13).
 	SummaryForManagers string `json:"summary_for_managers"`
 	// MaxChildren limits the direct children of a task; 10 when absent (PRM-6).

@@ -33,7 +33,7 @@ const defaultSubjectRequestDays = 30
 const erasureRetry = time.Minute
 
 // coreStores are the content stores of the core in the order they are erased.
-var coreStores = []string{"tasks", "deliveries", "toolcalls", "sessions", "memory"}
+var coreStores = []string{"tasks", "deliveries", "toolcalls", "sessions", "memory", "files"}
 
 // ErasureScope is the scope of an erasure request (deletion-request).
 type ErasureScope struct {
@@ -383,6 +383,17 @@ func (c *Core) eraseCore(ctx context.Context, tx pgx.Tx, now time.Time, cat *Cat
 		}
 		_, err := tx.Exec(ctx, `DELETE FROM sessions WHERE tenant = $1 AND ($2 = '' OR subjects @> ARRAY[$2]) AND (cardinality($3::text[]) = 0 OR id = ANY($3))`,
 			r.Tenant, sc.Subject, idsWith(sc.IDs, "s_"))
+		return err
+	case "files":
+		// The bytes go, the record stays as a tombstone so the file_ref is never reused (RET-3).
+		if len(sc.IDs) > 0 && len(idsWith(sc.IDs, "t_", "file:")) == 0 {
+			return nil
+		}
+		_, err := tx.Exec(ctx, `UPDATE files SET state = 'purged', content = NULL WHERE tenant = $1 AND state <> 'purged' AND (
+			(cardinality($4::text[]) = 0 AND ($2 = '' OR producer = $2) AND cardinality($3::text[]) = 0)
+			OR producer IN (`+tasksIn+`) AND (cardinality($3::text[]) > 0 OR ($2 <> '' AND cardinality($4::text[]) = 0))
+			OR file_ref = ANY($4))`,
+			r.Tenant, sc.Subject, idsWith(sc.IDs, "t_"), idsWith(sc.IDs, "file:"))
 		return err
 	case "memory":
 		if len(sc.IDs) > 0 && len(idsWith(sc.IDs, "m_")) == 0 {

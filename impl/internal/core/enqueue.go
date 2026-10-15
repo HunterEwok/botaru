@@ -299,6 +299,22 @@ func (c *Core) enqueue(ctx context.Context, tx pgx.Tx, now time.Time, cat *Catal
 	if in.ContinuesMark != "" {
 		mark = c.higherMark(mark, in.ContinuesMark)
 	}
+	// An attached file must be a stored file of the tenant; the task takes its mark and is
+	// untrusted from the start (ART-2, ART-3, TEN-7).
+	files, err := attachedFiles(in.Body)
+	if err != nil {
+		return reject(refuse("input_schema_invalid", "attachments"))
+	}
+	for _, ref := range files {
+		f, err := loadFile(ctx, tx, in.Tenant, ref)
+		if err != nil {
+			return nil, err
+		}
+		if f == nil || f.State != "stored" || (f.Expires != nil && !f.Expires.After(now)) {
+			return reject(refuse("ref_invalid", "no such file"))
+		}
+		mark = c.higherMark(mark, f.Mark)
+	}
 	if !hasData(tv, groups, mark) {
 		pr := refuse("no_data_class", "the initiator has no data:%s", mark)
 		pr.Needs = []string{"data:" + mark}
@@ -444,6 +460,13 @@ func (c *Core) enqueue(ctx context.Context, tx pgx.Tx, now time.Time, cat *Catal
 		record["continues"] = in.Continues
 		record["refs"] = append(slices.Clone(in.Refs), in.Continues)
 	}
+	if len(files) > 0 {
+		record["data_mark"] = mark
+		record["untrusted_seen"] = true
+		if record["untrusted_source"] == nil {
+			record["untrusted_source"] = "attachment"
+		}
+	}
 	if in.Untrusted {
 		// The continued task saw untrusted text: so does its follow-up (CNT-5).
 		record["untrusted_seen"] = true
@@ -548,4 +571,24 @@ func taskEstimate(ctx context.Context, tx pgx.Tx, now time.Time, tenant, typ str
 		return money.FromEUR(tt.TreeBudgetEUR), nil
 	}
 	return 0, nil
+}
+
+// attachedFiles are the file_refs of a task body's attachments.
+func attachedFiles(body map[string]any) ([]string, error) {
+	raw, ok := body["attachments"]
+	if !ok {
+		return nil, nil
+	}
+	list, ok := raw.([]any)
+	if !ok {
+		return nil, errors.New("attachments is not a list")
+	}
+	var out []string
+	for _, a := range list {
+		m, _ := a.(map[string]any)
+		if ref, ok := m["file_ref"].(string); ok {
+			out = append(out, ref)
+		}
+	}
+	return out, nil
 }
