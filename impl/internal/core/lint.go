@@ -316,7 +316,10 @@ func (r *lintRegs) parseCap(cp string) (string, string) {
 }
 
 // lintManifests runs the set lint (MAN-6: an error fails the whole set).
-func (c *Core) lintManifests(docs []manifest.Doc, index []int) ([]ApplyError, error) {
+// personaLookup gives the text of a persona of a tenant by its hash, when apply has it.
+type personaLookup func(tenant, sha string) (string, bool)
+
+func (c *Core) lintManifests(docs []manifest.Doc, index []int, personas personaLookup) ([]ApplyError, error) {
 	r, err := c.lintRegistries()
 	if err != nil {
 		return nil, err
@@ -1537,6 +1540,9 @@ func (c *Core) lintManifests(docs []manifest.Doc, index []int) ([]ApplyError, er
 			}
 		}
 	}
+	if err := c.lintGovernance(S, f, personas); err != nil {
+		return nil, err
+	}
 	sort.SliceStable(f.out, func(i, j int) bool { return f.out[i].Path < f.out[j].Path })
 	return f.out, nil
 }
@@ -1793,4 +1799,103 @@ func namesHuman(v any) bool {
 		}
 	}
 	return false
+}
+
+// governanceName says whether a name is an event or operation of governance, attribution or
+// seats, which no bot reaches (GOV-6, GOV-29); with incidents, also of incident records, which
+// no bot creates or changes (GOV-13).
+func governanceName(n string, incidents bool) bool {
+	for _, p := range []string{"governance.", "attribution.", "seat."} {
+		if strings.HasPrefix(n, p) {
+			return true
+		}
+	}
+	return incidents && strings.HasPrefix(n, "incident.")
+}
+
+// lintGovernance checks the personas of the charters (GOV-4, COM-19), the unawareness of the
+// texts bots read (GOV-29) and that nothing of a bot refers to governance (GOV-6, GOV-13).
+func (c *Core) lintGovernance(S *lintSet, f *lintFindings, personas personaLookup) error {
+	u, err := c.unawarenessTerms()
+	if err != nil {
+		return err
+	}
+	for _, o := range S.each("Governance") {
+		com := mmap(o.spec, "commission")
+		for i, sv := range mlist(com, "seats") {
+			sm, _ := sv.(map[string]any)
+			if l := mstr(sm, "lens"); l != "" && mstr(mmap(mmap(mmap(com, "lenses"), l), "persona"), "ref") == "" {
+				f.add(o, "lens_persona_missing", fmt.Sprintf("/commission/seats/%d/lens", i))
+			}
+		}
+		refs := charterPersonas(o.spec)
+		for _, path := range slices.Sorted(mapKeys(refs)) {
+			r := refs[path]
+			if !r.pinned() {
+				continue
+			}
+			text, ok := "", false
+			if personas != nil {
+				text, ok = personas(o.tenant, r.SHA256)
+			}
+			if !ok {
+				// A charter of an earlier apply whose text the store lacks (pinned before the
+				// core kept persona texts) runs without its persona until it is applied again
+				// with the file; it does not block an apply of other objects.
+				if o.i >= 0 {
+					f.add(o, "persona_missing", path)
+				}
+				continue
+			}
+			position := "lens"
+			if strings.HasPrefix(path, "/positions/") {
+				position = strings.Split(path, "/")[2]
+			}
+			for _, code := range personaFindings(text, position, u) {
+				f.add(o, code, path)
+			}
+		}
+	}
+	for _, o := range S.each("TaskType") {
+		if u.linked(mstr(o.spec, "instruction"), false) {
+			f.add(o, "unaware_text", "/instruction")
+		}
+		for j, e := range mstrs(o.spec, "events") {
+			if governanceName(e, true) {
+				f.add(o, "governance_ref", fmt.Sprintf("/events/%d", j))
+			}
+		}
+	}
+	for _, o := range S.each("ToolPlugin") {
+		for j, tv := range mlist(o.spec, "tools") {
+			if tm, ok := tv.(map[string]any); ok && u.linked(mstr(tm, "description"), false) {
+				f.add(o, "unaware_text", fmt.Sprintf("/tools/%d/description", j))
+			}
+		}
+	}
+	for _, o := range S.each("Role") {
+		for j, a := range mstrs(o.spec, "actions_may_request") {
+			if governanceName(a, true) {
+				f.add(o, "governance_ref", fmt.Sprintf("/actions_may_request/%d", j))
+			}
+		}
+		for j, t := range mstrs(o.spec, "may_enqueue") {
+			if governanceName(t, true) {
+				f.add(o, "governance_ref", fmt.Sprintf("/may_enqueue/%d", j))
+			}
+		}
+	}
+	for _, kind := range []string{"Action", "MessageType", "TaskType"} {
+		for _, o := range S.each(kind) {
+			if governanceName(o.name, true) {
+				f.add(o, "governance_ref", "/metadata/name")
+			}
+		}
+	}
+	for _, o := range S.each("Route") {
+		if governanceName(mstr(mmap(o.spec, "on"), "event"), false) {
+			f.add(o, "governance_ref", "/on/event")
+		}
+	}
+	return nil
 }

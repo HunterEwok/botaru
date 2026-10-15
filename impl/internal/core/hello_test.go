@@ -68,7 +68,11 @@ func newBenchWith(t *testing.T, edit func(root string, ms []map[string]any) []ma
 		ms = edit(root, ms)
 	}
 	op := Operator{Principal: ids.PrincipalID(), Tenant: "demo"}
-	res, err := c.Apply(ctx, op, ApplyRequest{Commit: "0000000000000000000000000000000000000000", Manifests: ms})
+	personas, err := testbench.Personas(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	res, err := c.Apply(ctx, op, ApplyRequest{Commit: "0000000000000000000000000000000000000000", Manifests: ms, Personas: personas})
 	if err != nil {
 		t.Fatal(err)
 	}

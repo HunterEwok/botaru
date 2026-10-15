@@ -6,7 +6,10 @@
 package testbench
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
+	"os"
 	"path/filepath"
 	"strconv"
 
@@ -107,6 +110,25 @@ func ExampleActions(root string) ([]map[string]any, error) {
 	}
 	if _, err := DropUnsupported(sp, out); err != nil {
 		return nil, err
+	}
+	return out, nil
+}
+
+// Personas are the texts of the example persona files by their SHA-256, as farmctl apply sends
+// the files that charters pin (GOV-4).
+func Personas(root string) (map[string]string, error) {
+	files, err := filepath.Glob(filepath.Join(root, "examples/personas/*.md"))
+	if err != nil {
+		return nil, err
+	}
+	out := map[string]string{}
+	for _, f := range files {
+		b, err := os.ReadFile(f)
+		if err != nil {
+			return nil, err
+		}
+		sum := sha256.Sum256(b)
+		out[hex.EncodeToString(sum[:])] = string(b)
 	}
 	return out, nil
 }

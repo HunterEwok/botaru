@@ -19,6 +19,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -335,6 +336,10 @@ func apply(c *client, args []string) error {
 		}
 	}
 	req := map[string]any{"commit": *commit, "manifests": ms, "dry_run": *dry}
+	// The persona files the charters pin go with the set, by their hash (GOV-4).
+	if ps := personaFiles(docs); len(ps) > 0 {
+		req["personas"] = ps
+	}
 	// The commit message carries the Botaru-Proposal and Botaru-Revert lines (PRP-19, PRP-20).
 	if out, err := exec.Command("git", "-C", dir, "log", "-1", "--format=%B", *commit).Output(); err == nil {
 		if msg := strings.TrimSpace(string(out)); msg != "" {
@@ -561,4 +566,68 @@ func (c *client) print(op string, req any) error {
 	b, _ := json.MarshalIndent(out, "", "  ")
 	fmt.Println(string(b))
 	return nil
+}
+
+// personaFiles reads the persona files that the charters of a set pin: a ref is relative to the
+// charter's folder or one of its parents. A file whose hash differs from the pin is still sent,
+// and apply answers persona_missing for the pin.
+func personaFiles(docs []manifest.Doc) map[string]string {
+	out := map[string]string{}
+	for _, d := range docs {
+		if d.Kind != "Governance" {
+			continue
+		}
+		spec, _ := d.Value["spec"].(map[string]any)
+		for _, ref := range personaRefs(spec) {
+			file, _, _ := strings.Cut(d.Source, "#")
+			dir, _ := filepath.Abs(filepath.Dir(file))
+			for {
+				b, err := os.ReadFile(filepath.Join(dir, ref[0]))
+				if err == nil {
+					sum := sha256.Sum256(b)
+					h := hex.EncodeToString(sum[:])
+					if h != ref[1] {
+						fmt.Fprintf(os.Stderr, "warning: %s: %s does not match its sha256 in the charter\n", d.Source, ref[0])
+					}
+					out[h] = string(b)
+					break
+				}
+				parent := filepath.Dir(dir)
+				if parent == dir {
+					fmt.Fprintf(os.Stderr, "warning: %s: persona file %s is not found\n", d.Source, ref[0])
+					break
+				}
+				dir = parent
+			}
+		}
+	}
+	return out
+}
+
+// personaRefRe is the path of a persona file as the charter schema allows it: no other file
+// of the operator's machine is read.
+var personaRefRe = regexp.MustCompile(`^personas/[a-z][a-z0-9-]*\.md$`)
+
+// personaRefs are the pinned persona references of a charter spec: ref and sha256.
+func personaRefs(spec map[string]any) [][2]string {
+	var out [][2]string
+	add := func(v any) {
+		m, _ := v.(map[string]any)
+		p, _ := m["persona"].(map[string]any)
+		ref, _ := p["ref"].(string)
+		sha, _ := p["sha256"].(string)
+		if personaRefRe.MatchString(ref) && len(sha) == 64 {
+			out = append(out, [2]string{ref, sha})
+		}
+	}
+	pos, _ := spec["positions"].(map[string]any)
+	for _, v := range pos {
+		add(v)
+	}
+	com, _ := spec["commission"].(map[string]any)
+	lenses, _ := com["lenses"].(map[string]any)
+	for _, v := range lenses {
+		add(v)
+	}
+	return out
 }

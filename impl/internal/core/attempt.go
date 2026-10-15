@@ -34,12 +34,13 @@ type attemptRecord struct {
 
 // runFingerprint computes the run fingerprint by the row "run fingerprint" of spec/hashing.md:
 // an object of part hashes, an absent part null, and the hash of that object. This version has
-// no skills (an empty array), no bot identity persona and no sandbox; the catalog part is the P3
+// no skills (an empty array) and no sandbox; the persona part is the hashes of the persona and
+// lens addendum the attempt got (GOV-4), null without one; the catalog part is the P3
 // catalog of the attempt, null for a role without tools. The
 // model part is the profile configured for the slot at claim. The runtime part takes the
 // role's runtime driver, or the implementation name the worker reported at hello, and the
 // version it reported; P1 hello carries no describe() values, so describe is null.
-func runFingerprint(cat *Catalog, w *Worker, roleName, typ, slot, profile string, tools []catalogTool) (string, map[string]any, error) {
+func runFingerprint(cat *Catalog, w *Worker, roleName, typ, slot, profile string, tools []catalogTool, persona []string) (string, map[string]any, error) {
 	hashOf := func(v any) (any, error) {
 		h, err := jcs.Hash(v)
 		if err != nil {
@@ -57,6 +58,11 @@ func runFingerprint(cat *Catalog, w *Worker, roleName, typ, slot, profile string
 	}
 	if parts["skills"], err = hashOf([]any{}); err != nil {
 		return "", nil, err
+	}
+	if len(persona) > 0 {
+		if parts["persona"], err = hashOf(persona); err != nil {
+			return "", nil, err
+		}
 	}
 	if len(tools) > 0 {
 		h, err := catalogPart(tools)
@@ -288,8 +294,8 @@ func asList(v any) []any {
 }
 
 // prepareAttempt computes the attempt record at claim.
-func (c *Core) prepareAttempt(cat *Catalog, w *Worker, tenant, typ, mark, slot, profile string, tools []catalogTool) (*attemptRecord, error) {
-	fp, parts, err := runFingerprint(cat, w, w.Role, typ, slot, profile, tools)
+func (c *Core) prepareAttempt(cat *Catalog, w *Worker, tenant, typ, mark, slot, profile string, tools []catalogTool, persona []string) (*attemptRecord, error) {
+	fp, parts, err := runFingerprint(cat, w, w.Role, typ, slot, profile, tools, persona)
 	if err != nil {
 		return nil, err
 	}

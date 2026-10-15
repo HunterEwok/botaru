@@ -1198,6 +1198,7 @@ def lint(docs, today=None, farm_hosts=None, examples_mode=False, claimed=None, s
     lint_v02_features(S, f, types, tools, roles, claimed)
     lint_series(S, f, tools)
     lint_insight_types(S, f, roles)
+    lint_governance(S, f)
     return f
 
 
@@ -1210,6 +1211,137 @@ def outcome_complete(o):
     o = o if isinstance(o, dict) else {}
     return bool(o.get('compare') and o.get('better') and o.get('min_samples')
                 and ('tolerance_pct' in o or 'tolerance_pp' in o))
+
+
+VALUE_PATH_MARK = '<!-- value-path -->'
+PERSONA_LINK = re.compile(r'(?i)(https?://|ftp://|www\.|mailto:|[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,})')
+PERSONA_ID = re.compile(r'(?i)(\bbot_[0-9a-z]{6,}|\bcommission:[0-9]+|\bfarm-manager\b|\bcse_|\bcmsg_)')
+PERSONA_ENV = re.compile(r'\b[A-Z][A-Z0-9]*_(KEY|TOKEN|SECRET|PASSWORD)\b')
+WORD = re.compile(r'[^\W\d_][\w-]*')
+
+
+def unaware_terms():
+    out = {}
+    for e in model_registry('unawareness-terms').values():
+        for loc in ('en', 'ru', 'et'):
+            out.setdefault(e.get('group'), []).extend(e.get(loc) or [])
+    return out
+
+
+def paragraphs(text):
+    return [p.strip() for p in re.split(r'\n[ \t]*\n', text.replace('\r\n', '\n')) if p.strip()]
+
+
+def has_term(terms, group, text):
+    words = WORD.findall(text.lower())
+    return any(w.startswith(s.lower()) for w in words for s in terms.get(group, []))
+
+
+def unaware_linked(terms, text, value_path):
+    """A paragraph links an act with an outcome (GOV-29); the value-path paragraph of a functionary persona is the exception."""
+    for p in paragraphs(text or ''):
+        if value_path and p.startswith(VALUE_PATH_MARK):
+            continue
+        if has_term(terms, 'act', p) and has_term(terms, 'outcome', p):
+            return True
+    return False
+
+
+def persona_findings(text, position, terms):
+    """Lint codes of a persona text for a position, or 'lens' for a lens addendum (GOV-4, COM-19, GOV-29)."""
+    out = []
+    if len(text.encode()) > 4096:
+        out.append('persona_size')
+    if PERSONA_LINK.search(text) or PERSONA_ID.search(text) or PERSONA_ENV.search(text):
+        out.append('persona_link')
+    if any(p.startswith(VALUE_PATH_MARK) for p in paragraphs(text)) != (position == 'functional'):
+        out.append('persona_value_path')
+    if unaware_linked(terms, text, position == 'functional') or any(
+            not p.startswith(VALUE_PATH_MARK) and has_term(terms, 'soul', p) for p in paragraphs(text)):
+        out.append('unaware_text')
+    return out
+
+
+def find_persona(where, ref):
+    """The persona file of a charter: ref is relative to the charter's folder or one of its parents."""
+    d = os.path.dirname(os.path.abspath(where.split('#')[0]))
+    while True:
+        p = os.path.join(d, ref)
+        if os.path.isfile(p):
+            return p
+        parent = os.path.dirname(d)
+        if parent == d:
+            return None
+        d = parent
+
+
+def governance_name(n, incidents=True):
+    return isinstance(n, str) and (n.startswith(('governance.', 'attribution.', 'seat.')) or (incidents and n.startswith('incident.')))
+
+
+def lint_governance(S, f):
+    """Personas of the charters (GOV-4, COM-19), unawareness of bot texts (GOV-29) and no bot reference to governance (GOV-6, GOV-13)."""
+    import hashlib
+    terms = unaware_terms()
+    for tenant, gname, where, gs in S.each('Governance'):
+        com = gs.get('commission') or {}
+        for s in com.get('seats') or []:
+            lens = s.get('lens')
+            if lens and not (((com.get('lenses') or {}).get(lens) or {}).get('persona') or {}).get('ref'):
+                f.error('lens_persona_missing', where, f'charter {gname}: seat {s.get("id")} names lens {lens} without a persona addendum (COM-19)')
+        refs = []
+        for pos, pv in (gs.get('positions') or {}).items():
+            if isinstance(pv, dict) and isinstance(pv.get('persona'), dict):
+                refs.append((pos, pv['persona']))
+        for lens, lv in (com.get('lenses') or {}).items():
+            if isinstance(lv, dict) and isinstance(lv.get('persona'), dict):
+                refs.append(('lens', lv['persona']))
+        for position, pr in refs:
+            sha = pr.get('sha256', '')
+            if len(sha) != 64:
+                continue  # "..." in an example: nothing is pinned
+            path = find_persona(where, pr.get('ref', ''))
+            if path is None:
+                f.error('persona_missing', where, f'charter {gname}: persona file {pr.get("ref")} is not found (GOV-4)')
+                continue
+            with open(path, 'rb') as fh:
+                data = fh.read()
+            text = data.decode('utf-8', errors='replace')
+            if hashlib.sha256(data).hexdigest() != sha:
+                f.error('persona_hash', where, f'charter {gname}: {pr.get("ref")} does not match its sha256 (GOV-4)')
+                continue
+            codes = persona_findings(text, position, terms)
+            what = f'charter {gname}: persona {pr.get("ref")} ({position})'
+            if 'persona_size' in codes:
+                f.error('persona_size', where, f'{what} is longer than 4 KiB (GOV-4)')
+            if 'persona_link' in codes:
+                f.error('persona_link', where, f'{what} holds a link, an address, an id or a secret name (GOV-4)')
+            if 'persona_value_path' in codes:
+                f.error('persona_value_path', where, f'{what}: the value-path paragraph is only and always in a functionary persona (GOV-4)')
+            if 'unaware_text' in codes:
+                f.error('unaware_text', where, f'{what} speaks of the seat, the queue, departure, voting or stops (GOV-29)')
+    for _, tname, where, ts in S.each('TaskType'):
+        if unaware_linked(terms, ts.get('instruction'), False):
+            f.error('unaware_text', where, f'type {tname}: the instruction links scores or reviews with a seat, the queue or departure (GOV-29)')
+        for e in ts.get('events') or []:
+            if governance_name(e):
+                f.error('governance_ref', where, f'type {tname}: event {e} is of governance (GOV-6, GOV-13)')
+    for _, pname, where, ps in S.each('ToolPlugin'):
+        for t in ps.get('tools') or []:
+            if isinstance(t, dict) and unaware_linked(terms, t.get('description'), False):
+                f.error('unaware_text', where, f'plugin {pname}: the description of {t.get("name")} links scores or reviews with a seat, the queue or departure (GOV-29)')
+    for _, rname, where, rs in S.each('Role'):
+        for n in (rs.get('actions_may_request') or []) + (rs.get('may_enqueue') or []):
+            if governance_name(n):
+                f.error('governance_ref', where, f'role {rname}: {n} is of governance (GOV-6, GOV-13)')
+    for kind in ('Action', 'MessageType', 'TaskType'):
+        for _, n, where, _ in S.each(kind):
+            if governance_name(n):
+                f.error('governance_ref', where, f'{kind} {n} is named as governance (GOV-6, GOV-13)')
+    for _, n, where, rs in S.each('Route'):
+        ev = (rs.get('on') or {}).get('event')
+        if governance_name(ev, incidents=False):
+            f.error('governance_ref', where, f'route {n} starts on {ev} (GOV-29)')
 
 
 def lint_insight(f, rname, where, rs, types):
