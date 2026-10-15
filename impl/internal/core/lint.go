@@ -224,6 +224,7 @@ type lintRegs struct {
 	capForms     map[string]map[string]any
 	dataClasses  map[string]map[string]any
 	roleProfiles map[string]map[string]any
+	lenses       map[string]map[string]any
 	purposes     map[string]bool
 	forbidden    map[string]bool
 	kinds        map[string]map[string]any
@@ -233,7 +234,7 @@ type lintRegs struct {
 
 func (c *Core) lintRegistries() (*lintRegs, error) {
 	r := &lintRegs{formats: map[string]*regexp.Regexp{}, capForms: map[string]map[string]any{}, dataClasses: map[string]map[string]any{},
-		roleProfiles: map[string]map[string]any{}, purposes: map[string]bool{}, kinds: map[string]map[string]any{},
+		roleProfiles: map[string]map[string]any{}, lenses: map[string]map[string]any{}, purposes: map[string]bool{}, kinds: map[string]map[string]any{},
 		retention: map[string]map[string]any{}, driverForbid: map[string]bool{}}
 	load := func(path string, fn func(id string, e map[string]any)) error {
 		reg, err := c.spec.Registry(path)
@@ -265,6 +266,13 @@ func (c *Core) lintRegistries() (*lintRegs, error) {
 			r.capForms[id] = e
 		case "data_class":
 			r.dataClasses[id] = e
+		}
+	}); err != nil {
+		return nil, err
+	}
+	if err := load("spec/model/lenses.yaml", func(id string, e map[string]any) {
+		if e["since"] == "v0.1" && e["subject"] == "proposal" {
+			r.lenses[id] = e
 		}
 	}); err != nil {
 		return nil, err
@@ -1301,6 +1309,40 @@ func (c *Core) lintManifests(docs []manifest.Doc, index []int) ([]ApplyError, er
 						f.add(o, "rank_exceeded", "/commission")
 					}
 				}
+			}
+		}
+	}
+	// Every veto lens has an executor: a seat of the lens whose fallback role claims the lens
+	// review type (COM-7). A lens review answers in at most 2000 output tokens (COM-6).
+	for _, o := range S.each("Governance") {
+		if _, ok := o.spec["commission"]; !ok || len(roles) == 0 {
+			continue
+		}
+		seats := mlist(mmap(o.spec, "commission"), "seats")
+		for _, id := range slices.Sorted(mapKeys(r.lenses)) {
+			l := r.lenses[id]
+			if l["veto"] != true {
+				continue
+			}
+			covered := slices.ContainsFunc(seats, func(s any) bool {
+				sm, _ := s.(map[string]any)
+				fr, ok := roles[mstr(sm, "fallback_role")]
+				return mstr(sm, "lens") == id && ok && slices.Contains(mstrs(fr.spec, "claims"), mstr(l, "review_type"))
+			})
+			if !covered {
+				f.add(o, "veto_lens_no_executor", "/commission/seats")
+			}
+		}
+	}
+	for _, rn := range slices.Sorted(mapKeys(roles)) {
+		ro := roles[rn]
+		review := slices.ContainsFunc(mstrs(ro.spec, "claims"), func(tn string) bool { return types[tn] != nil && mstr(types[tn], "purpose") == "review" })
+		if !review {
+			continue
+		}
+		for _, ps := range variants(ro.tenant, mstr(mmap(ro.spec, "models"), "base")) {
+			if out, ok := mnum(ps, "max_output_tokens"); ok && out > 2000 {
+				f.add(ro, "lens_profile_output", "/models/base")
 			}
 		}
 	}

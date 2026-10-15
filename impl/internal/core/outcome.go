@@ -327,6 +327,19 @@ func (c *Core) completeAttempt(ctx context.Context, tx pgx.Tx, now time.Time, w 
 			return err
 		}
 	}
+	// A lens review hands in review-result for its own lens and never as a shadow, which only
+	// the shadow executor writes (COM-3, COM-9).
+	if tt.Purpose == "review" {
+		var lens struct {
+			Lens string `json:"lens"`
+		}
+		if err := json.Unmarshal(rec, &lens); err != nil {
+			return err
+		}
+		if c.spec.Validate("urn:botaru:schema:review-result:1", result) != nil || result["lens"] != lens.Lens || result["shadow"] == true {
+			return refuse("output_schema_invalid", "the result is not a review-result of the task's lens")
+		}
+	}
 	raw, err := json.Marshal(result)
 	if err != nil {
 		return err
