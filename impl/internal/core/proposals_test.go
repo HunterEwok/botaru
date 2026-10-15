@@ -446,3 +446,32 @@ func TestMyOutcomesRejectedWorker(t *testing.T) {
 		t.Fatalf("rows of the author %d, of the other worker %d", a, o)
 	}
 }
+
+// Rollups keep no producer, so the self influence over a window longer than the raw points of
+// its series is marked partial (PRP-22).
+func TestSelfInfluencePartial(t *testing.T) {
+	b := newInsightBench(t, nil)
+	ctx := context.Background()
+	cat, err := b.c.Catalog(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	series := b.c.tenantSeries(cat, "demo")
+	a := proposalAuthor{Tenant: "demo", Role: "hello", Worker: b.agent.ID}
+	err = b.c.tx(ctx, func(tx pgx.Tx, now time.Time) error {
+		out, _, err := selfInfluence(ctx, tx, now, a, []evidenceRef{{Series: seriesAttemptTime, Window: "93d"}, {Series: seriesTaskOutcome, Window: "1d"}}, series)
+		if err != nil {
+			return err
+		}
+		if long := out[0].(map[string]any); long["partial"] != true {
+			t.Errorf("a 93d window over 14 days of points: %v", long)
+		}
+		if short := out[1].(map[string]any); short["partial"] != nil {
+			t.Errorf("a 1d window marked partial: %v", short)
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+}

@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"path/filepath"
 	"slices"
 	"sort"
 	"strings"
@@ -458,6 +459,22 @@ func (c *Core) observeRunFinished(ctx context.Context, tx pgx.Tx, now time.Time,
 		p.Series, p.Enum = seriesExtOutcome, outcome
 		pts = append(pts, p)
 	}
+	// A tenant series of source job takes its closed field of the event on the event's
+	// catalog subject; a value outside the series writes nothing (OBV-1, OBV-7).
+	for _, d := range c.tenantSeries(cat, tenant) {
+		if d.Source != "job" || d.Field == "" {
+			continue
+		}
+		subject := d.CatalogKind + ":" + asString(data["subject"])
+		v, ok := lookupField(data, d.Field)
+		if !ok || !c.subjectOfTenant(cat, tenant, d.CatalogKind, subject) {
+			continue
+		}
+		p := obsPoint{Tenant: tenant, Series: d.Name, Subject: subject, Source: "job", Mark: d.DataClass, Worker: worker, Role: role, At: at, Key: "event:" + id}
+		if d.setValue(&p, v) {
+			pts = append(pts, p)
+		}
+	}
 	for _, p := range pts {
 		if err := writePoint(ctx, tx, now, p); err != nil {
 			return err
@@ -564,9 +581,10 @@ func rollupValue(function, good string, nums []float64, enums []string) (float64
 	return sorted[max(i, 0)], true
 }
 
-// observeRollups recomputes the hour and day rollups of the periods of the last two days for
-// the rollups a tenant series declares, and day.max of the backup age (OBV-4). A rollup is
-// kept longer than the points, so a window past the points still has numbers.
+// observeRollups recomputes the hour and day rollups of the periods since the last rollup
+// written (at least the last two days) for the rollups a tenant series declares, and day.max of
+// the backup age (OBV-4). A rollup is kept longer than the points, so a window past the points
+// still has numbers.
 func (c *Core) observeRollups(ctx context.Context, cat *Catalog) error {
 	defs := c.rollups()
 	return c.tx(ctx, func(tx pgx.Tx, now time.Time) error {
@@ -584,7 +602,11 @@ func (c *Core) observeRollups(ctx context.Context, cat *Catalog) error {
 					if s.Outcome != nil {
 						good = s.Outcome.Good
 					}
-					groups, err := readPoints(ctx, tx, tenant, name, "", periodStart(d.Period, now.Add(-48*time.Hour)), now)
+					from, err := rollupFrom(ctx, tx, tenant, name, id, s.RawDays, now)
+					if err != nil {
+						return err
+					}
+					groups, err := readPoints(ctx, tx, tenant, name, "", periodStart(d.Period, from), now)
 					if err != nil {
 						return err
 					}
@@ -610,6 +632,30 @@ func (c *Core) observeRollups(ctx context.Context, cat *Catalog) error {
 		}
 		return nil
 	})
+}
+
+// rollupFrom is where a rollup reads points from: the start of its last period written, so
+// periods missed during an outage or before the first run are rolled up too, and never later
+// than two days back for late points; bounded by the raw retention, past which no point is
+// left (OBV-4).
+func rollupFrom(ctx context.Context, tx pgx.Tx, tenant, series, rollup string, rawDays int, now time.Time) (time.Time, error) {
+	from := now.Add(-48 * time.Hour)
+	var last *time.Time
+	if err := tx.QueryRow(ctx, `SELECT max(period_start) FROM obs_rollups WHERE tenant = $1 AND series = $2 AND rollup = $3`,
+		tenant, series, rollup).Scan(&last); err != nil {
+		return from, err
+	}
+	floor := now.AddDate(0, 0, -max(rawDays, 2))
+	switch {
+	case last == nil:
+		from = floor
+	case last.Before(from):
+		from = *last
+	}
+	if from.Before(floor) {
+		from = floor
+	}
+	return from, nil
 }
 
 func periodLen(period string) time.Duration {
@@ -748,6 +794,9 @@ func (c *Core) queryObservations(ctx context.Context, q store.Querier, now time.
 	stored := d.Period != "window" && slices.Contains(s.Rollups, req.Rollup)
 	if !stored && days > s.RawDays {
 		return nil, refuse("input_schema_invalid", "the series keeps raw points for %d days; this window needs a stored rollup", s.RawDays)
+	}
+	if stored && days > s.RollDays {
+		return nil, refuse("input_schema_invalid", "the series keeps rollups for %d days; the window is longer", s.RollDays)
 	}
 	from := now.AddDate(0, 0, -days)
 	readFrom := from
@@ -1009,15 +1058,33 @@ func (c *Core) Emit(ctx context.Context, w *Worker, header string, req EmitReque
 		if err := tx.QueryRow(ctx, `SELECT type FROM tasks WHERE id = $1`, l.WorkID).Scan(&typ); err != nil {
 			return err
 		}
-		if !slices.Contains(cat.TaskTypes[typ].Events, req.Type) || req.Type != runFinishedType {
+		if !slices.Contains(cat.TaskTypes[typ].Events, req.Type) {
 			return refuse("type_not_allowed", "the task type does not publish %s", req.Type)
 		}
-		if err := c.spec.Validate("run-finished", req.Data); err != nil {
+		// Any declared type of the events catalog that a job produces, checked by its own data
+		// schema (IDM-4).
+		schema, ok, err := c.jobEventSchema(req.Type)
+		if err != nil {
+			return err
+		}
+		if !ok {
+			return refuse("type_not_allowed", "%s is not an event a job publishes", req.Type)
+		}
+		if err := c.spec.Validate(schema, req.Data); err != nil {
 			return refuse("input_schema_invalid", "the event data is outside its schema")
 		}
 		subject := asString(req.Data["subject"])
+		if m, ok := req.Data["subject"].(map[string]any); ok {
+			subject = asString(m["id"])
+		}
 		if !slices.Contains(catalogResources(cat, l.Tenant), subject) && !slices.Contains(catalogHosts(cat, l.Tenant), subject) {
 			return refuse("ref_invalid", "the subject is not in the catalog of the tenant")
+		}
+		if strings.HasPrefix(req.Type, "alarm.") {
+			// A job's alarm takes the one alarm path, with its episodes (INJ-7, MON-1, OBS-6).
+			id, err := c.emitAlarm(ctx, tx, now, l.Tenant, req)
+			out.ID = id
+			return err
 		}
 		data := map[string]any{}
 		for k, v := range req.Data {
@@ -1038,6 +1105,56 @@ func (c *Core) Emit(ctx context.Context, w *Worker, header string, req EmitReque
 		return nil, err
 	}
 	return &out, nil
+}
+
+// emitAlarm fires or resolves the alarm a job published and answers with the id of the latest
+// event of its alarmkey: a repeated firing writes no event of its own (OBS-6).
+func (c *Core) emitAlarm(ctx context.Context, tx pgx.Tx, now time.Time, tenant string, req EmitRequest) (string, error) {
+	subj, _ := req.Data["subject"].(map[string]any)
+	a := Alarm{Tenant: tenant, Name: strings.TrimSuffix(strings.TrimPrefix(req.Type, "alarm."), ".v1"),
+		Subject: AlarmSubject{Kind: asString(subj["kind"]), ID: asString(subj["id"])}, Severity: asString(req.Data["severity"])}
+	if a.eventType() != req.Type || asString(req.Data["alarmkey"]) != a.key() {
+		return "", refuse("input_schema_invalid", "the alarmkey is not the alarm name and its subject")
+	}
+	var err error
+	if req.Data["state"] == "resolved" {
+		err = c.resolveAlarm(ctx, tx, now, a)
+	} else {
+		err = c.fireAlarm(ctx, tx, now, a)
+	}
+	if err != nil {
+		return "", err
+	}
+	var id string
+	err = tx.QueryRow(ctx, `SELECT id FROM events WHERE tenant = $1 AND type = $2 AND subject = $3 ORDER BY time DESC, id DESC LIMIT 1`,
+		tenant, req.Type, a.key()).Scan(&id)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return "", refuse("not_found", "the alarm has no open episode to resolve")
+	}
+	return id, err
+}
+
+// jobEventSchema is the short name of the data schema of an event type of the events catalog
+// that a job worker produces; ok is false for any other type.
+func (c *Core) jobEventSchema(typ string) (string, bool, error) {
+	reg, err := c.spec.Registry("spec/bindings/events/catalog.yaml")
+	if err != nil {
+		return "", false, err
+	}
+	e, ok := reg.Entry(typ)
+	if !ok {
+		return "", false, nil
+	}
+	prod, _ := e["producer"].([]any)
+	if !slices.Contains(prod, any("job")) {
+		return "", false, nil
+	}
+	path, _ := e["data_schema"].(string)
+	name := strings.TrimSuffix(filepath.Base(path), ".schema.json")
+	if _, ok := c.spec.ID(name); !ok || path == "" {
+		return "", false, nil
+	}
+	return name, true, nil
 }
 
 // ObsQueryRequest is p1-obs-query-request and p2-obs-series-request.

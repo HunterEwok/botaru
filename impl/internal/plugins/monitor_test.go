@@ -5,6 +5,7 @@ package plugins
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -126,7 +127,10 @@ func TestMonitor(t *testing.T) {
 	if p0["class"] != "disk_free" || p0["eventid"] != int64(9001) || p0["triggerid"] != int64(500) || p0["state"] != "open" || p0["severity"] != 4 || p0["resource"] != "db1" {
 		t.Fatalf("problem %v", p0)
 	}
-	if p1["class"] != "unknown" || p1["state"] != "resolved" {
+	if p0["item"] != "log[/var/log/app.log]" {
+		t.Fatalf("the catalog item is missing: %v", p0)
+	}
+	if _, ok := p1["item"]; p1["class"] != "unknown" || p1["state"] != "resolved" || ok {
 		t.Fatalf("problem without a catalog trigger %v", p1)
 	}
 
@@ -200,5 +204,42 @@ func TestMonitorHistoryNewest(t *testing.T) {
 	end := int64(1760004000)
 	if got["sortorder"] != "DESC" || got["time_from"] != float64(end-end%60-499*60) {
 		t.Fatalf("history.get %v", got)
+	}
+}
+
+// item_text keeps the newest values within the output limit, so the cut drops the oldest ones.
+func TestMonitorItemTextNewest(t *testing.T) {
+	z := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var req struct {
+			Method string `json:"method"`
+			ID     int    `json:"id"`
+		}
+		_ = json.NewDecoder(r.Body).Decode(&req)
+		var result any = []any{}
+		switch req.Method {
+		case "host.get":
+			result = []any{map[string]any{"hostid": "101", "host": "node-a"}}
+		case "item.get":
+			result = []any{map[string]any{"itemid": "2", "value_type": "2"}}
+		case "history.get":
+			// Newest first, 200 values of 100 bytes: more than the 16 KiB limit.
+			list := []any{}
+			for i := 199; i >= 0; i-- {
+				list = append(list, map[string]any{"clock": "1760000000", "value": fmt.Sprintf("v%03d", i) + strings.Repeat(".", 96)})
+			}
+			result = list
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{"jsonrpc": "2.0", "result": result, "id": req.ID})
+	}))
+	defer z.Close()
+	m := &Monitor{API: z.URL, Token: "t", Hosts: map[string]string{"db1": "node-a"},
+		Triggers: map[string]MonitorTrigger{"500": {Class: "disk_free", Item: "log[/var/log/app.log]"}}, Items: DefaultMonitorItems}
+	r, err := m.Call(context.Background(), "item_text", map[string]any{"host": "db1", "trigger": "500"}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := r.Content[0].Text
+	if len(text) > 16<<10 || !strings.HasSuffix(text, "v199"+strings.Repeat(".", 96)+"\n") || strings.Contains(text, "v000") {
+		t.Fatalf("item_text kept %d bytes, from %.4s to %.4s", len(text), text, text[len(text)-101:])
 	}
 }

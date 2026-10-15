@@ -197,16 +197,20 @@ func (m *Monitor) problems(ctx context.Context, host, hostid string, args map[st
 			return nil, errors.New("the monitoring system answer is not valid")
 		}
 		// The class comes from the catalog and only from the closed table of classes; the
-		// item stays in the catalog, where the trigger id finds it.
-		class := "unknown"
+		// item comes from the same catalog row (MON-6).
+		class, item := "unknown", ""
 		if t, ok := m.Triggers[e.ObjectID]; ok && monitorClasses[t.Class] {
-			class = t.Class
+			class, item = t.Class, t.Item
 		}
 		state := "open"
 		if e.REventID != "" && e.REventID != "0" {
 			state = "resolved"
 		}
-		list = append(list, map[string]any{"eventid": eid, "triggerid": tid, "class": class, "resource": host, "severity": sev, "state": state, "time": unixTime(e.Clock)})
+		p := map[string]any{"eventid": eid, "triggerid": tid, "class": class, "resource": host, "severity": sev, "state": state, "time": unixTime(e.Clock)}
+		if item != "" {
+			p["item"] = item
+		}
+		list = append(list, p)
 	}
 	return structured(map[string]any{"host": host, "problems": list}), nil
 }
@@ -347,6 +351,9 @@ func (m *Monitor) itemHistory(ctx context.Context, hostid string, args map[strin
 	return structured(map[string]any{"item": field, "step": stepName, "points": list}), nil
 }
 
+// itemTextBudget is the output limit of item_text in the manifest (output_limit_kb: 16).
+const itemTextBudget = 16 << 10
+
 // itemText gives the latest values of the text or log item of a catalog trigger: text others
 // wrote, so the tool's output is untrusted (INJ-13).
 func (m *Monitor) itemText(ctx context.Context, hostid string, args map[string]any) (*mcp.CallResult, error) {
@@ -376,8 +383,15 @@ func (m *Monitor) itemText(ctx context.Context, hostid string, args map[string]a
 		"output": []string{"clock", "value"}, "sortfield": "clock", "sortorder": "DESC", "limit": 200}, &pts); err != nil {
 		return nil, err
 	}
+	// The output is cut to its prefix by the limit of the manifest, so the newest values are
+	// kept first up to that budget and only then put oldest-first.
+	keep, size := 0, 0
+	for keep < len(pts) && size+len(pts[keep].Value)+1 <= itemTextBudget {
+		size += len(pts[keep].Value) + 1
+		keep++
+	}
 	var b strings.Builder
-	for i := len(pts) - 1; i >= 0; i-- {
+	for i := keep - 1; i >= 0; i-- {
 		b.WriteString(pts[i].Value)
 		b.WriteByte('\n')
 	}

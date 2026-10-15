@@ -93,9 +93,11 @@ func (c *Core) exportEpisode(ctx context.Context, tx pgx.Tx, now time.Time, ep *
 	if err := ensureMonitorRow(ctx, tx, ep.Tenant); err != nil {
 		return err
 	}
-	// A newer change of the same alarm replaces one not handed out yet (MON-11).
+	// A newer change of the same alarm replaces one not handed out yet; a firing is never
+	// replaced, so resolved with seq 2 never reaches the monitoring system without seq 1 (MON-11).
 	if _, err := tx.Exec(ctx, `UPDATE deliveries SET state = 'withheld', reason = 'superseded', updated_at = $3
-		WHERE tenant = $1 AND kind = 'monitor_alarm' AND alarmkey = $2 AND state = 'planned'`, ep.Tenant, ep.Tenant+"/"+ep.Alarmkey, now); err != nil {
+		WHERE tenant = $1 AND kind = 'monitor_alarm' AND alarmkey = $2 AND state = 'planned'
+			AND body->>'state' IS DISTINCT FROM 'firing'`, ep.Tenant, ep.Tenant+"/"+ep.Alarmkey, now); err != nil {
 		return err
 	}
 	_, err := c.planDelivery(ctx, tx, now, plannedDelivery{
@@ -576,10 +578,11 @@ func (c *Core) profiles() []string {
 }
 
 // exportSuperseded withholds a failed export that a newer one replaces: an alarm change with a
-// later change of the same alarm waiting, or a head with a newer head waiting (MON-11).
+// later change of the same alarm waiting, or a head with a newer head waiting (MON-11). A
+// firing is never withheld: its resolution must not go out alone.
 func exportSuperseded(ctx context.Context, tx pgx.Tx, now time.Time, id, kind string) (bool, error) {
 	tag, err := tx.Exec(ctx, `UPDATE deliveries d SET state = 'withheld', reason = 'superseded', updated_at = $2
-		WHERE d.id = $1 AND EXISTS (SELECT 1 FROM deliveries n WHERE n.tenant = d.tenant AND n.kind = $3 AND n.id <> d.id
+		WHERE d.id = $1 AND d.body->>'state' IS DISTINCT FROM 'firing' AND EXISTS (SELECT 1 FROM deliveries n WHERE n.tenant = d.tenant AND n.kind = $3 AND n.id <> d.id
 			AND n.state IN ('planned', 'sending') AND n.created_at >= d.created_at
 			AND ($3 = 'monitor_audit_head' OR n.alarmkey = d.alarmkey))`, id, now, kind)
 	return tag.RowsAffected() > 0, err

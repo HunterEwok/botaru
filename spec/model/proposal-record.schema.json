@@ -146,6 +146,10 @@
             "type": "number",
             "minimum": 0,
             "maximum": 1
+          },
+          "partial": {
+            "type": "boolean",
+            "description": "The window is longer than the raw points of the series; the shares cover only the points kept, since rollups keep no producer."
           }
         }
       },

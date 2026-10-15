@@ -227,6 +227,11 @@ func (c *Core) createProposal(ctx context.Context, tx pgx.Tx, now time.Time, cat
 	if err != nil {
 		return "", err
 	}
+	// Two submissions of one fingerprint take turns, so the second sees the first as an open
+	// duplicate instead of inserting a second open proposal (PRP-5).
+	if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtextextended($1, 7300104))`, a.Tenant+"/"+fp); err != nil {
+		return fp, err
+	}
 	// A fingerprint people declined is not taken again inside redecide_after unless the
 	// evidence moved by more than the share (PRP-5).
 	tv := cat.Tenants[a.Tenant]
@@ -264,7 +269,7 @@ func (c *Core) createProposal(ctx context.Context, tx pgx.Tx, now time.Time, cat
 	} else if limited {
 		return fp, rejection("proposal_rate_limited")
 	}
-	influence, self, err := selfInfluence(ctx, tx, now, a, b.Evidence)
+	influence, self, err := selfInfluence(ctx, tx, now, a, b.Evidence, series)
 	if err != nil {
 		return fp, err
 	}
@@ -561,8 +566,10 @@ func proposalLimited(ctx context.Context, tx pgx.Tx, now time.Time, cat *Catalog
 }
 
 // selfInfluence is the share of the author's and its role's own points in the evidence series
-// over the cited window; self_evidence is an author share of 0.3 or more (PRP-22).
-func selfInfluence(ctx context.Context, tx pgx.Tx, now time.Time, a proposalAuthor, ev []evidenceRef) ([]any, bool, error) {
+// over the cited window; self_evidence is an author share of 0.3 or more (PRP-22). Rollups
+// keep no producer, so a window longer than the raw points of its series is counted over the
+// points kept and marked partial.
+func selfInfluence(ctx context.Context, tx pgx.Tx, now time.Time, a proposalAuthor, ev []evidenceRef, series map[string]seriesDef) ([]any, bool, error) {
 	out := []any{}
 	self := false
 	done := map[string]bool{}
@@ -585,7 +592,11 @@ func selfInfluence(ctx context.Context, tx pgx.Tx, now time.Time, a proposalAuth
 		if as >= 0.3 {
 			self = true
 		}
-		out = append(out, map[string]any{"series": e.Series, "author_share": as, "role_share": rs})
+		si := map[string]any{"series": e.Series, "author_share": as, "role_share": rs}
+		if d, ok := series[e.Series]; ok && days > d.RawDays {
+			si["partial"] = true
+		}
+		out = append(out, si)
 	}
 	return out, self, nil
 }

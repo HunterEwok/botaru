@@ -424,7 +424,8 @@ def lint(docs, today=None, farm_hosts=None, examples_mode=False, claimed=None, s
     for tenant, name, where, cs in S.each('Catalog'):
         lists = {'hosts': [h['id'] for h in cs.get('hosts', [])],
                  'services': [s['name'] for h in cs.get('hosts', []) for s in h.get('services', [])],
-                 'monitor_triggers': [t['triggerid'] for t in cs.get('monitor_triggers', [])]}
+                 'monitor_triggers': [t['triggerid'] for t in cs.get('monitor_triggers', [])],
+                 'monitor_items': [t['item'] for t in cs.get('monitor_triggers', [])]}
         for r in cs.get('resources', []):
             fmt = r.get('format', 'id')
             if fmt not in FORMATS:
@@ -1985,7 +1986,8 @@ def context(f_docs):
         elif k == 'Catalog':
             lists = {'hosts': [h['id'] for h in spec.get('hosts', [])],
                      'services': [s['name'] for h in spec.get('hosts', []) for s in h.get('services', [])],
-                     'monitor_triggers': [t['triggerid'] for t in spec.get('monitor_triggers', [])]}
+                     'monitor_triggers': [t['triggerid'] for t in spec.get('monitor_triggers', [])],
+                     'monitor_items': [t['item'] for t in spec.get('monitor_triggers', [])]}
             for r in spec.get('resources', []):
                 if r.get('list'):
                     lists.setdefault(r['list'], []).extend(str(v) for v in r.get('values', []))

@@ -332,8 +332,13 @@ func (a *Adapter) runScript(ctx context.Context, item *p1client.WorkItem, body m
 	list, known := a.scripts[resource]
 	a.mu.Unlock()
 	if !known {
-		// After a restart the list is read before the first run.
-		if err := a.SyncScripts(ctx); err != nil {
+		// After a restart the list is read before the first run, bounded well inside the lease
+		// so the run's outcome is still handed in (MON-10); the periodic sync started by Run
+		// usually fills it first.
+		wctx, cancel := context.WithTimeout(ctx, scriptsWarmTimeout)
+		err := a.SyncScripts(wctx)
+		cancel()
+		if err != nil {
 			return a.fail(ctx, item, "provider_unavailable", false)
 		}
 		a.mu.Lock()
@@ -480,6 +485,10 @@ func (a *Adapter) loadHostIDs(ctx context.Context) error {
 // choiceForm is the form of a choice of a script input list in ext.monitor.scripts.v1.
 var choiceForm = regexp.MustCompile(`^[A-Za-z0-9_.:-]+$`)
 
+// scriptsWarmTimeout bounds the script-list read a run makes on a cold cache: far below the
+// delivery lease, so the outcome is handed in before the lease ends.
+const scriptsWarmTimeout = 20 * time.Second
+
 // SyncScripts reads the scripts Zabbix gives the adapter user on each catalog host and sends
 // the list of a host to the core when its hash changed (MON-10). The script name is dropped.
 func (a *Adapter) SyncScripts(ctx context.Context) error {
@@ -506,7 +515,12 @@ func (a *Adapter) SyncScripts(ctx context.Context) error {
 		ValidatorType string `json:"manualinput_validator_type"`
 		Validator     string `json:"manualinput_validator"`
 	}
-	if err := a.call(ctx, "script.getscriptsbyhosts", map[string]any{"hostids": ids}, &res); err != nil {
+	// Zabbix 7.0 takes one host object per host, with an optional manualinput.
+	hosts := make([]map[string]string, 0, len(ids))
+	for _, id := range ids {
+		hosts = append(hosts, map[string]string{"hostid": id})
+	}
+	if err := a.call(ctx, "script.getscriptsbyhosts", hosts, &res); err != nil {
 		return err
 	}
 	for _, hostid := range ids {

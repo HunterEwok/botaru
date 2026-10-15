@@ -446,6 +446,7 @@ func (c *Core) lintManifests(docs []manifest.Doc, index []int, personas personaL
 		for _, tr := range mlist(o.spec, "monitor_triggers") {
 			tm, _ := tr.(map[string]any)
 			lists["monitor_triggers"] = append(lists["monitor_triggers"], mstr(tm, "triggerid"))
+			lists["monitor_items"] = append(lists["monitor_items"], mstr(tm, "item"))
 		}
 		for j, res := range mlist(o.spec, "resources") {
 			rm, _ := res.(map[string]any)
