@@ -136,6 +136,28 @@ func (s *Server) p1(w http.ResponseWriter, r *http.Request) {
 			s.fail(w, err)
 			return
 		}
+	case "emit":
+		req, err := decode[core.EmitRequest](m)
+		if err != nil {
+			s.fail(w, err)
+			return
+		}
+		out, err = s.c.Emit(ctx, wk, lease, req)
+		if err != nil {
+			s.fail(w, err)
+			return
+		}
+	case "obs.query":
+		req, err := decode[core.ObsQueryRequest](m)
+		if err != nil {
+			s.fail(w, err)
+			return
+		}
+		out, err = s.c.ObsQuery(ctx, wk, lease, req)
+		if err != nil {
+			s.fail(w, err)
+			return
+		}
 	case "submit_activity":
 		req, err := decode[core.Activity](m)
 		if err != nil {

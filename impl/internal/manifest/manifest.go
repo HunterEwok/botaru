@@ -322,7 +322,9 @@ type Role struct {
 	// MonitorScripts names the catalog scripts of the monitoring system the role may run, or
 	// ["*"] (MON-10).
 	MonitorScripts []string `json:"monitor_scripts"`
-	Runtime        struct {
+	// Insight is the seat analysis of the role (INS-1).
+	Insight *RoleInsight `json:"insight"`
+	Runtime struct {
 		Driver string `json:"driver"`
 	} `json:"runtime"`
 }
@@ -384,6 +386,12 @@ type TaskType struct {
 	Run *struct {
 		Approval string `json:"approval"`
 	} `json:"run"`
+	// Events are the event types a job of the type may publish through P1 emit (IDM-4).
+	Events []string `json:"events"`
+	// Observes are the series a job of the type reads through P1 obs.query (OBV-3).
+	Observes []string `json:"observes"`
+	// MakesBackup marks a backup type: its run.finished.v1 events give the backup age (OBV-7).
+	MakesBackup bool `json:"makes_backup"`
 }
 
 // Timeouts are the type deadlines as durations (15m, 60s).
@@ -506,4 +514,24 @@ type Schedule struct {
 	} `json:"task"`
 	DeliverTo     []any `json:"deliver_to"`
 	SkipIfWaiting *bool `json:"skip_if_waiting"`
+}
+
+// RoleInsight is the insight section of a role: the analysis types, the series and tools it
+// reads and its limits (INS-1, INS-2, INS-4).
+type RoleInsight struct {
+	Types            []string `json:"types"`
+	Observes         []string `json:"observes"`
+	Tools            []string `json:"tools"`
+	MaxData          string   `json:"max_data"`
+	MaxRuns          *RunsPer `json:"max_runs"`
+	MaxEventRuns     *RunsPer `json:"max_event_runs"`
+	MergeWindow      string   `json:"merge_window"`
+	MaxOpenProposals *int     `json:"max_open_proposals"`
+	MaxPerWeek       *int     `json:"max_per_week"`
+}
+
+// RunsPer is a run limit per window.
+type RunsPer struct {
+	Per   string `json:"per"`
+	Count int    `json:"count"`
 }

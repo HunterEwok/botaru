@@ -1353,6 +1353,69 @@ func (c *Core) lintManifests(docs []manifest.Doc, index []int) ([]ApplyError, er
 			}
 		}
 	}
+	// Observation series: the source fits its kind, the data class is not below the source
+	// tool's output_class, rollups come from spec/model/rollups.yaml, and a trial guard of a
+	// tenant names only a series with a complete outcome block (OBV-2, OBV-4, OBV-6, OBV-7).
+	rollups := map[string]bool{}
+	coreOutcome := map[string]map[string]any{}
+	if reg, err := c.spec.Registry("spec/model/rollups.yaml"); err == nil {
+		for _, e := range reg.Entries {
+			rollups[asString(e["id"])] = true
+		}
+	}
+	if reg, err := c.spec.Registry("spec/model/core-series.yaml"); err == nil {
+		for _, e := range reg.Entries {
+			o, _ := e["outcome"].(map[string]any)
+			coreOutcome[asString(e["id"])] = o
+		}
+	}
+	tenantSeriesOutcome := map[[2]string]map[string]any{}
+	for _, o := range S.each("ObservationSeries") {
+		tenantSeriesOutcome[[2]string{o.tenant, o.name}] = mmap(o.spec, "outcome")
+		if _, core := coreOutcome[o.name]; core || strings.HasPrefix(o.name, "farm.") {
+			f.add(o, "series_name_reserved", "/metadata/name")
+		}
+		if dc, ok := r.dataClasses[mstr(o.spec, "data_class")]; !ok || truthy(dc["reserved"]) {
+			f.add(o, "cap_data_class", "/data_class")
+		}
+		src := mmap(o.spec, "source")
+		switch kind, tool, field := mstr(src, "kind"), mstr(src, "tool"), mstr(src, "field"); {
+		case kind == "tool" && (tool == "" || field == ""):
+			f.add(o, "series_source_invalid", "/source")
+		case kind == "tool":
+			if tr, ok := tools[tool]; !ok {
+				if len(S.each("ToolPlugin")) > 0 {
+					f.add(o, "ref_missing", "/source/tool")
+				}
+			} else if order(mstr(o.spec, "data_class")) < order(mstr(tr.t, "output_class")) {
+				f.add(o, "series_class_below_source", "/data_class")
+			}
+		case tool != "", kind == "job" && field == "":
+			f.add(o, "series_source_invalid", "/source")
+		}
+		for j, r := range mstrs(o.spec, "rollups") {
+			if !rollups[r] {
+				f.add(o, "rollup_unknown", fmt.Sprintf("/rollups/%d", j))
+			}
+		}
+		if r := mstr(mmap(o.spec, "outcome"), "compare"); r != "" && !rollups[r] {
+			f.add(o, "rollup_unknown", "/outcome/compare")
+		}
+	}
+	for _, o := range S.each("Tenant") {
+		for j, lv := range mlist(mmap(o.spec, "insights"), "extra_guards") {
+			line, _ := lv.(map[string]any)
+			for _, n := range append([]string{mstr(line, "metric")}, mstrs(line, "guards")...) {
+				out, isCore := coreOutcome[n]
+				if !isCore {
+					out = tenantSeriesOutcome[[2]string{o.name, n}]
+				}
+				if out == nil || !decodeOutcome(out).Complete {
+					f.add(o, "guard_not_metric", fmt.Sprintf("/insights/extra_guards/%d", j))
+				}
+			}
+		}
+	}
 	sort.SliceStable(f.out, func(i, j int) bool { return f.out[i].Path < f.out[j].Path })
 	return f.out, nil
 }

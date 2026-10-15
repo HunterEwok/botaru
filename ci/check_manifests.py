@@ -1161,7 +1161,58 @@ def lint(docs, today=None, farm_hosts=None, examples_mode=False, claimed=None, s
                     f.error('global_tenant_data', where, f'{kind} {name}: value {s!r} looks like tenant data (TEN-6)')
                     break
     lint_v02_features(S, f, types, tools, roles, claimed)
+    lint_series(S, f, tools)
     return f
+
+
+ROLLUPS = model_registry('rollups')
+CORE_SERIES = model_registry('core-series')
+
+
+def outcome_complete(o):
+    """A complete outcome block: the rollup for comparison, the direction, a tolerance and min_samples (OBV-6)."""
+    o = o if isinstance(o, dict) else {}
+    return bool(o.get('compare') and o.get('better') and o.get('min_samples')
+                and ('tolerance_pct' in o or 'tolerance_pp' in o))
+
+
+def lint_series(S, f, tools):
+    """Observation series (OBV-2, OBV-4, OBV-6): the source exists and fits its kind, the data class is not
+    below the source tool's output_class, rollups come from spec/model/rollups.yaml, and a trial guard of the
+    tenant names only a series with a complete outcome block."""
+    order = lambda d: (DATA_CLASSES.get(d) or {}).get('order', 0)
+    series = {}
+    for tenant, name, where, ss in S.each('ObservationSeries'):
+        series[(tenant, name)] = ss
+        if name in CORE_SERIES or name.startswith('farm.'):
+            f.error('series_name_reserved', where, f'series {name}: the name belongs to the core series (OBV-6)')
+        if ss.get('data_class') not in DATA_CLASSES or DATA_CLASSES[ss['data_class']].get('reserved'):
+            f.error('cap_data_class', where, f'series {name}: data class {ss.get("data_class")} is not accepted (OBV-2)')
+        src = ss.get('source') or {}
+        kind = src.get('kind')
+        if kind == 'tool':
+            if not src.get('tool') or not src.get('field'):
+                f.error('series_source_invalid', where, f'series {name}: a tool source names the tool and its field (OBV-2)')
+            elif src['tool'] not in tools:
+                if S.names('ToolPlugin'):
+                    f.error('ref_missing', where, f'series {name}: tool {src["tool"]} is not in the set')
+            elif order(ss.get('data_class')) < order(tools[src['tool']][2].get('output_class')):
+                f.error('series_class_below_source', where,
+                        f'series {name}: data_class {ss.get("data_class")} is below the output_class of {src["tool"]} (OBV-2)')
+        elif src.get('tool'):
+            f.error('series_source_invalid', where, f'series {name}: a {kind} source names no tool (OBV-2)')
+        elif kind == 'job' and not src.get('field'):
+            f.error('series_source_invalid', where, f'series {name}: a job source names the field of run.finished.v1 (OBV-7)')
+        for r in ss.get('rollups', []) + ([ss['outcome']['compare']] if (ss.get('outcome') or {}).get('compare') else []):
+            if r not in ROLLUPS:
+                f.error('rollup_unknown', where, f'series {name}: rollup {r} is not in spec/model/rollups.yaml (OBV-4)')
+    for tenant, _, where, ts in S.each('Tenant'):
+        for line in (ts.get('insights') or {}).get('extra_guards', []):
+            for n in [line.get('metric')] + list(line.get('guards', [])):
+                o = (CORE_SERIES.get(n) or {}).get('outcome') if n in CORE_SERIES else (series.get((tenant, n)) or {}).get('outcome')
+                if not outcome_complete(o):
+                    f.error('guard_not_metric', where,
+                            f'tenant {tenant}: insights.extra_guards names {n}, which is not a series with a complete outcome block (OBV-6)')
 
 
 WAIT_CEILING_S = 7 * 86400  # farm ceiling of a run with wait or await steps (SCR-13)
