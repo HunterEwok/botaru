@@ -323,14 +323,14 @@ func (c *Core) seatExecutor(ctx context.Context, tx pgx.Tx, now time.Time, tenan
 		if err != nil {
 			return nil, err
 		}
-		if s == nil || s.Holder == "" {
+		if s == nil || s.Holder == "" || s.State != "held" {
 			continue
 		}
 		b, err := loadBot(ctx, tx, s.Holder, false)
 		if err != nil {
 			return nil, err
 		}
-		if b == nil {
+		if b == nil || b.State != "active" {
 			continue
 		}
 		if held, err := botHeld(ctx, tx, now, b); err != nil {
