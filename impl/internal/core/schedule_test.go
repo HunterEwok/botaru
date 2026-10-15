@@ -175,7 +175,7 @@ func TestScheduleNoSkip(t *testing.T) {
 	if _, err := b.c.st.Pool.Exec(ctx, `UPDATE schedule_state SET timezone = 'UTC'`); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := b.c.st.Pool.Exec(ctx, `UPDATE apply_status SET applied_at = '2027-04-01T14:00:30Z'`); err != nil {
+	if _, err := b.c.st.Pool.Exec(ctx, `UPDATE manifests SET applied_at = '2027-04-01T14:00:30Z' WHERE tenant = 'demo' AND kind IN ('Schedule', 'Tenant')`); err != nil {
 		t.Fatal(err)
 	}
 	b.at(t, "2027-04-01T14:00:30Z")
@@ -189,11 +189,15 @@ func TestScheduleNoSkip(t *testing.T) {
 	if k := b.scheduled(t); len(k) != 3 || k[2] != "system:schedule:morning:2027-04-01T15:00Z" {
 		t.Fatalf("tasks %v", k)
 	}
-	// The first slot after an apply runs even when the loop sees the change only after it.
+	// The first slot after an apply runs even when the loop sees the change only after it, and
+	// after a later apply that did not touch the schedule.
 	if _, err := b.c.st.Pool.Exec(ctx, `UPDATE schedule_state SET timezone = 'Europe/Berlin'`); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := b.c.st.Pool.Exec(ctx, `UPDATE apply_status SET applied_at = '2027-04-01T15:59:50Z'`); err != nil {
+	if _, err := b.c.st.Pool.Exec(ctx, `UPDATE manifests SET applied_at = '2027-04-01T15:59:50Z' WHERE tenant = 'demo' AND kind IN ('Schedule', 'Tenant')`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := b.c.st.Pool.Exec(ctx, `UPDATE apply_status SET applied_at = '2027-04-01T16:00:10Z'`); err != nil {
 		t.Fatal(err)
 	}
 	b.at(t, "2027-04-01T16:00:20Z")
