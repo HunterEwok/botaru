@@ -4,6 +4,7 @@ package core
 
 import (
 	"context"
+	"maps"
 	"slices"
 	"testing"
 	"time"
@@ -374,5 +375,36 @@ func TestProposalMerge(t *testing.T) {
 		if ch["kind"] == "none" && (r["data_mark"] != "internal" || us["value"] != true || r["seen_count"] != float64(2)) {
 			t.Fatalf("merged %v %v %v", r["data_mark"], us, r["seen_count"])
 		}
+	}
+}
+
+// An analysis whose class is above insight.max_data of its role does not start, even when a
+// catalog got past the lint (INS-2).
+func TestAnalysisAboveMaxData(t *testing.T) {
+	ctx := context.Background()
+	b := newInsightBench(t, nil)
+	err := b.c.tx(ctx, func(tx pgx.Tx, now time.Time) error {
+		cat, err := b.c.Catalog(ctx)
+		if err != nil {
+			return err
+		}
+		ins := *cat.Roles["hello"].Insight
+		ins.MaxData = "summary"
+		role := cat.Roles["hello"]
+		role.Insight = &ins
+		roles := maps.Clone(cat.Roles)
+		roles["hello"] = role
+		narrow := *cat
+		narrow.Roles = roles
+		cat = &narrow
+		res, err := b.c.enqueue(ctx, tx, now, cat, enqueueInput{Tenant: "demo", Type: "hello.insight.v1", Body: map[string]any{"type": "hello.insight.v1", "goal": "look"},
+			IdempotencyKey: "system:schedule:insight:1", Initiator: "system", EnqueuedBy: "schedule:insight", Source: "schedule", SourceID: "insight"})
+		if err == nil && res.Rejected == nil {
+			t.Error("an analysis above max_data started")
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
 	}
 }
