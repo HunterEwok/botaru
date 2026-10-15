@@ -40,6 +40,8 @@ type toolsGrant struct {
 	Purpose   string
 	// InitiatorGroups are the groups of an active initiator, for the built-in tools.
 	InitiatorGroups []string
+	// HostScripts are the latest script lists of the adapter by catalog host (MON-10).
+	HostScripts map[string][]adapterScript
 }
 
 // catalogTool is one entry of the P3 catalog of an attempt.
@@ -143,7 +145,12 @@ func (c *Core) loadGrantTask(ctx context.Context, q store.Querier, g *toolsGrant
 			}
 		}
 	}
-	return q.QueryRow(ctx, `SELECT role FROM workers WHERE id = $1`, g.Worker).Scan(&g.Role)
+	if err := q.QueryRow(ctx, `SELECT role FROM workers WHERE id = $1`, g.Worker).Scan(&g.Role); err != nil {
+		return err
+	}
+	var err error
+	g.HostScripts, err = c.hostScripts(ctx, q, g.Tenant)
+	return err
 }
 
 // toolCatalog builds the P3 catalog of an attempt by the assembly steps of the P3 sheet: the
@@ -183,6 +190,9 @@ func (c *Core) toolCatalog(cat *Catalog, g *toolsGrant) ([]catalogTool, error) {
 		out = append(out, *rt)
 	}
 	if st := c.serviceControlTool(cat, g); st != nil {
+		out = append(out, *st)
+	}
+	if st := c.scriptRunTool(cat, g); st != nil {
 		out = append(out, *st)
 	}
 	if ct := c.enqueueChildTool(cat, g); ct != nil {
@@ -342,8 +352,9 @@ func (c *Core) P3ToolsCall(ctx context.Context, handle string, p mcp.CallParams)
 	var refusal *toolRefusal
 	var builtin *mcp.CallResult
 	var grantID string
+	var script bool
 	err = c.tx(ctx, func(tx pgx.Tx, now time.Time) error {
-		callID, refusal, builtin, grantID = "", nil, nil, ""
+		callID, refusal, builtin, grantID, script = "", nil, nil, "", false
 		g, err := c.resolveToolsHandle(ctx, tx, handle)
 		if err != nil {
 			return err
@@ -386,6 +397,26 @@ func (c *Core) P3ToolsCall(ctx context.Context, handle string, p mcp.CallParams)
 			builtin = res.call()
 			return nil
 		}
+		if p.Name == scriptToolName {
+			offered := slices.ContainsFunc(tools, func(t catalogTool) bool { return t.Builtin && t.Name == scriptToolName })
+			args := p.Arguments
+			if args == nil {
+				args = map[string]any{}
+			}
+			res, id, grant, err := c.scriptRun(ctx, tx, now, cat, g, offered, args)
+			if errors.Is(err, errSchema) {
+				refusal = &toolRefusal{state: "error", reason: "input_schema_invalid"}
+				return nil
+			}
+			if err != nil {
+				return err
+			}
+			if res != nil {
+				builtin = res.call()
+			}
+			callID, grantID, script = id, grant, true
+			return nil
+		}
 		if p.Name == serviceToolName {
 			offered := slices.ContainsFunc(tools, func(t catalogTool) bool { return t.Builtin && t.Name == serviceToolName })
 			args := p.Arguments
@@ -425,6 +456,9 @@ func (c *Core) P3ToolsCall(ctx context.Context, handle string, p mcp.CallParams)
 		// A grant call is a write call: the model gets only the closed outcome (APR-18).
 		if _, err := c.awaitToolCall(ctx, cat, callID); err != nil {
 			return nil, err
+		}
+		if script {
+			return c.scriptOutcome(ctx, callID, grantID)
 		}
 		return c.serviceOutcome(ctx, callID, grantID)
 	}

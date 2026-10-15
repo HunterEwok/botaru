@@ -319,6 +319,9 @@ type Role struct {
 	MayEnqueue []string `json:"may_enqueue"`
 	// ServiceControl names the catalog services the role may control, or ["*"] (APR-18).
 	ServiceControl []string `json:"service_control"`
+	// MonitorScripts names the catalog scripts of the monitoring system the role may run, or
+	// ["*"] (MON-10).
+	MonitorScripts []string `json:"monitor_scripts"`
 	Runtime        struct {
 		Driver string `json:"driver"`
 	} `json:"runtime"`

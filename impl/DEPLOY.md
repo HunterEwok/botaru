@@ -258,6 +258,29 @@ farmctl hold release h_...
 
 Farm alarms (a silent worker, a task nobody took) come as messages to the private chats of the tenant's admins, people with `admin:people` or `hold.release`. This version cannot grant such a group yet (PRM-13), so the core logs a warning instead of sending.
 
+## Monitoring with Zabbix
+
+The monitor profile needs Zabbix 7.0 or later. Each adapter process has its own Zabbix user with the permissions of `deploy/monitor/<tenant>/monitor.yaml` and an API token; the farm host `botaru-core` holds the trapper items `botaru.alarm[info]`, `botaru.alarm[warn]`, `botaru.alarm[page]`, `botaru.audit.head[<tenant>]` and `botaru.adapter.alive[<tenant>]` (`spec/bindings/monitor/zabbix.md`).
+
+In `/etc/botaru/core.yaml`:
+
+```yaml
+monitor:
+  enabled: true
+```
+
+Restart the core, then enroll the adapter of each tenant and start it:
+
+```sh
+$F worker enroll -tenant demo -kind monitor -target zabbix -token-out /etc/botaru/secrets/monitor-demo
+/opt/botaru/bin/botaru-zabbix -core http://127.0.0.1:8401 -token-file /etc/botaru/secrets/monitor-demo \
+  -tenant demo -api https://zabbix.example.org/api_jsonrpc.php -api-token-file /etc/botaru/secrets/zabbix-demo \
+  -catalog /srv/botaru-config/tenants/demo -listen :8443 -tls-cert /etc/botaru/tls/mon.crt -tls-key /etc/botaru/tls/mon.key \
+  -webhook-token-file /etc/botaru/secrets/webhook-demo
+```
+
+In Zabbix add a media type of type Webhook that sends `POST https://<adapter>:8443/` with the header `Authorization: Bearer <webhook token>` and the body `{"eventid": "{EVENT.ID}", "triggerid": "{TRIGGER.ID}", "host": "{HOST.HOST}", "value": "{EVENT.VALUE}"}`, and an action with a condition on the catalog hosts and a recovery operation. The `farm` process runs the same way with `-tenant farm` and without `-listen`. A script runs only if its `scriptid` is in `monitor_scripts_allowed` of the catalog, Zabbix gives it to the adapter user on that host with scope "Manual host action", and its input is none or a list equal to the catalog's `choices`.
+
 ## Backups and restore
 
 The backup is your own job, run as its own user off the core process; the core only checks that it happens. One way, on the core machine every night, with the encryption key of the backup on this machine only:

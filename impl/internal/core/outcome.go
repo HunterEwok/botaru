@@ -465,6 +465,11 @@ func (c *Core) completeDelivery(ctx context.Context, tx pgx.Tx, now time.Time, w
 			return err
 		}
 	}
+	if kind == "monitor_script" {
+		if err := c.scriptDone(ctx, tx, now, l.WorkID, r); err != nil {
+			return err
+		}
+	}
 	if kind == "ai_notice" {
 		if _, err := tx.Exec(ctx, `UPDATE contacts SET ai_notice_at = $2 WHERE ai_notice_delivery = $1`, l.WorkID, now); err != nil {
 			return err
@@ -716,6 +721,20 @@ func (c *Core) endDelivery(ctx context.Context, tx pgx.Tx, now time.Time, tenant
 	if err := tx.QueryRow(ctx, `SELECT d.attempts, d.kind, d.exec_name, d.target_id, d.task, d.fallback_chat, coalesce(e.state = 'firing', false) FROM deliveries d
 		LEFT JOIN alarm_episodes e ON e.id = d.episode WHERE d.id = $1 FOR UPDATE OF d`, l.WorkID).Scan(&attempts, &kind, &channel, &targetID, &task, &fallback, &episodeOpen); err != nil {
 		return nil, err
+	}
+	// A script runs at most once: any end of its delivery ends the call, by the reason (MON-10,
+	// APR-7).
+	if kind == "monitor_script" {
+		if _, err := tx.Exec(ctx, `UPDATE deliveries SET state = 'dead', reason = $2, updated_at = $3 WHERE id = $1`, l.WorkID, reason, now); err != nil {
+			return nil, err
+		}
+		if err := c.scriptFailed(ctx, tx, now, l.WorkID, reason); err != nil {
+			return nil, err
+		}
+		if err := c.appendEvent(ctx, tx, now, tenant, Event{Type: "delivery.dead", Subject: l.WorkID, Data: map[string]any{"delivery": l.WorkID, "kind": kind, "reason": reason}}); err != nil {
+			return nil, err
+		}
+		return &FailResult{Final: true, Reason: reason}, nil
 	}
 	// The channel saw an unknown member in a group chat: the delivery is withheld and the chat
 	// gets nothing more until the operator binds it again (DLV-7).

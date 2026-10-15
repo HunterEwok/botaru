@@ -1455,7 +1455,7 @@ func (c *Core) driverConfigForbidden() (map[string]bool, error) {
 // claimsProfile says whether this core claims a conformance profile; it claims only core, so
 // the checks of the manager seat (MGR-20) and of monitoring as a recipient (MON-1, D-88) wait
 // for their profiles.
-func (c *Core) claimsProfile(name string) bool { return name == "core" }
+func (c *Core) claimsProfile(name string) bool { return slices.Contains(c.profiles(), name) }
 
 // lintEgress checks a plugin's network list (INJ-6): every address is a machine or a resource
 // of a tenant catalog of the set; the address monitor-api of the monitor plugin comes from
