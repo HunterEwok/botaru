@@ -64,7 +64,7 @@ cases:
         spec:
           caps: ["task:data.sensor_check.v1", "task:data.sensor_watch.v1", "task:report.sensor.v1", "task:check.http.v1",
                  "task:pipeline.watch.v1", "task:pipeline.status.v1", "task:pipeline.ctd_qc.report.v1",
-                 "task:report.monthly.numbers.v1", "task:report.monthly.v1", "proposal.decide:schedule"]
+                 "task:report.monthly.numbers.v1", "task:report.monthly.v1", "task:ops.insight.v1", "proposal.decide:schedule"]
           data: [summary, internal]
     expect: {error: system_decision_cap}
   - name: schedule type without a row in system-ops

@@ -15,6 +15,7 @@ import (
 
 	"github.com/HunterEwok/botaru/impl/internal/ids"
 	"github.com/HunterEwok/botaru/impl/internal/jcs"
+	"github.com/HunterEwok/botaru/impl/internal/manifest"
 	"github.com/HunterEwok/botaru/impl/internal/mcp"
 	"github.com/HunterEwok/botaru/impl/internal/store"
 	"github.com/HunterEwok/botaru/impl/internal/toolspec"
@@ -164,17 +165,31 @@ func (c *Core) toolCatalog(cat *Catalog, g *toolsGrant) ([]catalogTool, error) {
 		return nil, nil
 	}
 	maxOrder, markOK := c.markOrder(g.Mark)
+	rights, maxTier := roleTools(cat, role), g.MaxTier
+	// Analysis reads only insight.tools, at tier 1 at most and up to insight.max_data (INS-2).
+	insightMax, insightOK := -1, true
+	if g.Purpose == "insight" {
+		var only []string
+		if role.Insight != nil {
+			only = roleTools(cat, manifest.Role{Tools: strAny(role.Insight.Tools)})
+			if role.Insight.MaxData != "" {
+				insightMax, insightOK = c.markOrder(role.Insight.MaxData)
+			}
+		}
+		rights = slices.DeleteFunc(rights, func(r string) bool { return !slices.Contains(only, r) })
+		maxTier = min(maxTier, 1)
+	}
 	var out []catalogTool
-	for _, right := range roleTools(cat, role) {
+	for _, right := range rights {
 		plugin, tool, _ := cutTool(right)
 		p := cat.Plugins[plugin]
 		t, _ := p.Tool(tool)
-		if !t.On() || t.Access != "read" || t.Tier > g.MaxTier {
+		if !t.On() || t.Access != "read" || t.Tier > maxTier {
 			continue
 		}
 		if t.OutputClass != "" {
 			o, ok := c.markOrder(t.OutputClass)
-			if !ok || !markOK || o > maxOrder {
+			if !ok || !markOK || o > maxOrder || insightMax >= 0 && o > insightMax || !insightOK {
 				continue
 			}
 		}
@@ -449,7 +464,7 @@ func (c *Core) P3ToolsCall(ctx context.Context, handle string, p mcp.CallParams)
 			callID, grantID = id, grant
 			return nil
 		}
-		callID, refusal, err = c.recordToolCall(ctx, tx, now, cat, g, p)
+		callID, refusal, err = c.recordToolCall(ctx, tx, now, cat, g, tools, p)
 		return err
 	})
 	if err != nil {
@@ -478,7 +493,7 @@ func (c *Core) P3ToolsCall(ctx context.Context, handle string, p mcp.CallParams)
 }
 
 // recordToolCall checks a call and writes its record: queued, or denied or error at once.
-func (c *Core) recordToolCall(ctx context.Context, tx pgx.Tx, now time.Time, cat *Catalog, g *toolsGrant, p mcp.CallParams) (string, *toolRefusal, error) {
+func (c *Core) recordToolCall(ctx context.Context, tx pgx.Tx, now time.Time, cat *Catalog, g *toolsGrant, tools []catalogTool, p mcp.CallParams) (string, *toolRefusal, error) {
 	role := cat.Roles[g.Role]
 	plugin, tool, _ := strings.Cut(p.Name, "_")
 	// A name of the model maps back to <plugin>/<tool>; plugin names have no underscore
@@ -508,6 +523,11 @@ func (c *Core) recordToolCall(ctx context.Context, tx pgx.Tx, now time.Time, cat
 		return id, &toolRefusal{state: state, reason: reason}, nil
 	}
 	if !havePlugin || !haveTool || !containsString(roleTools(cat, role), right) || !t.On() {
+		return deny("denied", "forbidden")
+	}
+	// Analysis calls only what its catalog offers: insight.tools, tier 1 at most and up to
+	// insight.max_data (INS-2).
+	if g.Purpose == "insight" && !slices.ContainsFunc(tools, func(ct catalogTool) bool { return !ct.Builtin && ct.Right == right }) {
 		return deny("denied", "forbidden")
 	}
 	// Holds come before rights (HLD-1): no_tool on the farm, the tenant, the role, the type, the

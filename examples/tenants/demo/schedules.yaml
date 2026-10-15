@@ -35,3 +35,12 @@ spec:
 # The schedule month-report-archive from flow 7 is not declared here: the params_schema of task type
 # report.monthly.numbers.v1 requires month, and a schedule has no way yet to say "last month"
 # (open question in docs/open-questions.md).
+---
+# Weekly analysis of ops-reader (INS-1, INS-4): system starts it; the role's run limit and merge window apply.
+apiVersion: botaru/v1alpha1
+kind: Schedule
+metadata: {name: ops-insight, tenant: demo}
+spec:
+  cron: "0 5 * * 1"
+  task: {type: ops.insight.v1}
+  proposable: false

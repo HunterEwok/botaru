@@ -38,8 +38,10 @@ type Catalog struct {
 
 // TenantView holds a tenant manifest and the objects of that tenant.
 type TenantView struct {
-	Name     string
-	Spec     manifest.Tenant
+	Name string
+	Spec manifest.Tenant
+	// Raw is the Tenant manifest as applied, for the fields a proposal reads (PRP-3).
+	Raw      map[string]any
 	Groups   map[string]manifest.Group
 	Channels map[string]manifest.Channel
 	// Schedules are the Schedule manifests of the tenant by name (TIM-3).
@@ -92,6 +94,7 @@ func buildCatalog(docs []manifest.Doc) (*Catalog, error) {
 			var t manifest.Tenant
 			if t, err = manifest.Decode[manifest.Tenant](d); err == nil {
 				c.tenant(d.Name).Spec = t
+				c.tenant(d.Name).Raw = d.Value
 			}
 		case "Group":
 			var g manifest.Group

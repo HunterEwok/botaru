@@ -927,6 +927,10 @@ func (c *Core) lintManifests(docs []manifest.Doc, index []int) ([]ApplyError, er
 			if !slices.Contains(purposes, mstr(ts, "purpose")) {
 				f.add(o, "role_profile_purpose", path)
 			}
+			// An insight type is claimed only with the role's insight section naming it (INS-1).
+			if mstr(ts, "purpose") == "insight" && !slices.Contains(mstrs(mmap(rs, "insight"), "types"), tn) {
+				f.add(o, "insight_type_invalid", path)
+			}
 			if tier, _ := mnum(ts, "tier"); hasMax && tier > maxTier {
 				f.add(o, "role_profile_tier", path)
 			}
@@ -947,6 +951,38 @@ func (c *Core) lintManifests(docs []manifest.Doc, index []int) ([]ApplyError, er
 		for _, field := range []string{"service_control", "monitor_scripts", "insight"} {
 			if truthy(rs[field]) && !slices.Contains(mstrs(prof, "may_declare"), field) {
 				f.add(o, "role_profile_forbidden", "/"+field)
+			}
+		}
+		// The insight section: insight types of tier 1 at most that the role claims, without
+		// their own result_schema; tools among the role's own; a merge window of at least an
+		// hour (INS-1, INS-2, INS-4).
+		ins := mmap(rs, "insight")
+		for j, tn := range mstrs(ins, "types") {
+			ts := types[tn]
+			path := fmt.Sprintf("/insight/types/%d", j)
+			if ts == nil {
+				if len(types) > 0 {
+					f.add(o, "ref_missing", path)
+				}
+				continue
+			}
+			tier, _ := mnum(ts, "tier")
+			// The type's class is not above max_data, so the attempt's mark stays within it (INS-2).
+			wider := ins["max_data"] != nil && order(mstr(ts, "data_class")) > order(mstr(ins, "max_data"))
+			if mstr(ts, "purpose") != "insight" || !slices.Contains(mstrs(rs, "claims"), tn) || tier > 1 || ts["result_schema"] != nil || wider {
+				f.add(o, "insight_type_invalid", path)
+			}
+		}
+		own := mstrs(rs, "tools")
+		for j, t := range mstrs(ins, "tools") {
+			plugin, _, _ := strings.Cut(t, "/")
+			if !slices.Contains(own, t) && !slices.Contains(own, plugin) {
+				f.add(o, "insight_wider", fmt.Sprintf("/insight/tools/%d", j))
+			}
+		}
+		if mw, ok := ins["merge_window"]; ok {
+			if d, ok := parseDuration(asString(mw)); !ok || d < time.Hour {
+				f.add(o, "insight_merge_window", "/insight/merge_window")
 			}
 		}
 		mem := "none"
@@ -1351,6 +1387,21 @@ func (c *Core) lintManifests(docs []manifest.Doc, index []int) ([]ApplyError, er
 			if bad {
 				f.add(o, "global_tenant_data", "")
 			}
+		}
+	}
+	// Each insight type is in the insight section of exactly one role (INS-1, INS-4).
+	for _, o := range S.each("TaskType") {
+		if mstr(o.spec, "purpose") != "insight" {
+			continue
+		}
+		n := 0
+		for _, rn := range roleNames {
+			if slices.Contains(mstrs(mmap(roles[rn].spec, "insight"), "types"), o.name) {
+				n++
+			}
+		}
+		if n != 1 {
+			f.add(o, "insight_type_invalid", "/purpose")
 		}
 	}
 	// Observation series: the source fits its kind, the data class is not below the source

@@ -167,10 +167,34 @@ type Tenant struct {
 	Retention struct {
 		Files string `json:"files"`
 	} `json:"retention"`
+	// Insights holds the improvement cycle settings of the tenant (INS-6, PRP-5, DIG-1).
+	Insights TenantInsights `json:"insights"`
 	// Campaigns holds the tree limit of a root (PRM-6, ORC-8).
 	Campaigns struct {
 		MaxTreeTasks int `json:"max_tree_tasks"`
 	} `json:"campaigns"`
+}
+
+// TenantInsights is the insights block of a tenant: where the digest goes, who realizes
+// accepted changes and the deadlines and limits of the proposal flow.
+type TenantInsights struct {
+	PresentTo any `json:"present_to"`
+	Digest    struct {
+		Schedule string `json:"schedule"`
+		MaxItems int    `json:"max_items"`
+	} `json:"digest"`
+	Realizers     []string `json:"realizers"`
+	RealizeBy     string   `json:"realize_by"`
+	DecideTTL     string   `json:"decide_ttl"`
+	RecommendTTL  string   `json:"recommend_ttl"`
+	ParkTTL       string   `json:"park_ttl"`
+	ReviewWaitMax string   `json:"review_wait_max"`
+	RedecideAfter string   `json:"redecide_after"`
+	MaxInReview   *int     `json:"max_in_review"`
+	ExtraGuards   []struct {
+		Metric string   `json:"metric"`
+		Guards []string `json:"guards"`
+	} `json:"extra_guards"`
 }
 
 // RunEntry is one pipeline of /run: a task type or an action, with its positional arguments.
@@ -390,6 +414,8 @@ type TaskType struct {
 	Events []string `json:"events"`
 	// Observes are the series a job of the type reads through P1 obs.query (OBV-3).
 	Observes []string `json:"observes"`
+	// Proposable false keeps the type and its schedules out of proposals (PRP-10).
+	Proposable *bool `json:"proposable"`
 	// MakesBackup marks a backup type: its run.finished.v1 events give the backup age (OBV-7).
 	MakesBackup bool `json:"makes_backup"`
 }
@@ -514,6 +540,8 @@ type Schedule struct {
 	} `json:"task"`
 	DeliverTo     []any `json:"deliver_to"`
 	SkipIfWaiting *bool `json:"skip_if_waiting"`
+	// Proposable false keeps the schedule out of proposals (PRP-10).
+	Proposable *bool `json:"proposable"`
 }
 
 // RoleInsight is the insight section of a role: the analysis types, the series and tools it

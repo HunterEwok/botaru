@@ -19,6 +19,7 @@ spec:
       governance: {month_eur: 5}
       manager: {day_eur: 2, month_eur: 30}
   attention: {cards_per_tenant_hour: 20}
+  insights: {present_to: "group:ops-oncall", redecide_after: 30d, max_in_review: 10}
   delegated_groups: [researcher]
   farm_manager: {enabled: true}
   link_allowlist: [www.example.org, docs.example.org]
