@@ -336,6 +336,9 @@ func TestManagerReading(t *testing.T) {
 	}
 	card := cardOf(t, b.drain(t), controlCard, "direct:1002")
 	body := asMap(card.body["card"])
+	if facts := asMap(asMap(body["context"])["finding_facts"]); facts["kind"] != "worker_misbehaving" || asMap(facts["values"])["errors"] != float64(12) || facts["note"] != nil {
+		t.Fatalf("finding facts on the card %v", body["context"])
+	}
 	req := DecideRequest{SubjectKind: "control", ID: body["id"].(string), Nonce: body["nonce"].(string), Decision: "approve"}
 	res, err := b.c.Decide(ctx, b.channel, press("telegram:1002", "direct:1002", card.external), req)
 	if err != nil || res.State != "applied" {

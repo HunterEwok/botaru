@@ -312,7 +312,7 @@ func (c *Core) managerDaily(ctx context.Context, cat *Catalog) error {
 			if n.empty() {
 				return nil
 			}
-			return c.noticeAdmins(ctx, tx, now, cat, []string{t}, "manager_daily", "notice.manager_daily", n.params(true))
+			return c.noticeAdmins(ctx, tx, now, cat, []string{t}, "manager_daily", "notice.manager_daily", n.params(true), "admin:people")
 		})
 		if err != nil {
 			return err
@@ -340,7 +340,7 @@ func (c *Core) managerDaily(ctx context.Context, cat *Catalog) error {
 		if farm.empty() {
 			return nil
 		}
-		return c.noticeAdmins(ctx, tx, now, cat, []string{farmTenant}, "manager_daily", "notice.manager_daily_farm", farm.params(false))
+		return c.noticeAdmins(ctx, tx, now, cat, []string{farmTenant}, "manager_daily", "notice.manager_daily_farm", farm.params(false), "admin:governance")
 	})
 }
 

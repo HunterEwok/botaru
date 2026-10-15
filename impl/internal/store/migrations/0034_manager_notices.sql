@@ -3,8 +3,8 @@
 -- chat, of the route tenant (the people of the incident's tenant) or farm (the farm operators,
 -- codes and numbers only). The row names the delivery of the first message; later deliveries
 -- edit it through the channel driver's edit, or, on a driver without edit, send the new lines
--- of the basis log at most once in 15 minutes. sent_lines counts the lines of the log the
--- recipient has seen.
+-- of the basis log at most once in 15 minutes; each delivery records in its body the lines it
+-- carries (lines_to), so the next batch starts after the last delivered one.
 CREATE TABLE manager_notices (
     delivery    text PRIMARY KEY,
     tenant      text NOT NULL,
@@ -15,7 +15,6 @@ CREATE TABLE manager_notices (
     channel     text NOT NULL,
     target_id   text NOT NULL,
     edit        boolean NOT NULL,
-    sent_lines  int NOT NULL DEFAULT 0,
     batch_at    timestamptz,
     created_at  timestamptz NOT NULL
 );

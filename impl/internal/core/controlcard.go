@@ -88,6 +88,9 @@ type controlCardRow struct {
 	ID, Tenant, Finding, Incident, State, Nonce, DecidedBy string
 	Request                                                ControlRequest
 	Expires                                                time.Time
+	// FindingFacts are the closed fields of the finding: its kind, confidence and numbers,
+	// never its note.
+	FindingFacts map[string]any
 }
 
 func loadControlCard(ctx context.Context, tx pgx.Tx, tenant, id string, lock bool) (*controlCardRow, error) {
@@ -104,7 +107,30 @@ func loadControlCard(ctx context.Context, tx pgx.Tx, tenant, id string, lock boo
 	if err != nil {
 		return nil, err
 	}
-	return &r, json.Unmarshal(raw, &r.Request)
+	if err := json.Unmarshal(raw, &r.Request); err != nil {
+		return nil, err
+	}
+	var kind string
+	var body []byte
+	err = tx.QueryRow(ctx, `SELECT kind, body FROM findings WHERE tenant = $1 AND lower(id) = lower($2)`, tenant, r.Finding).Scan(&kind, &body)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return &r, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	var fb map[string]any
+	if err := json.Unmarshal(body, &fb); err != nil {
+		return nil, err
+	}
+	r.FindingFacts = map[string]any{"kind": kind}
+	if v := mstr(fb, "confidence"); v != "" {
+		r.FindingFacts["confidence"] = v
+	}
+	if v := asMap(fb["values"]); len(v) > 0 {
+		r.FindingFacts["values"] = v
+	}
+	return &r, nil
 }
 
 // card draws the control card from the record: the operation, the target, the incident and the
@@ -121,6 +147,9 @@ func (r *controlCardRow) card() map[string]any {
 		"finding": r.Finding, "origin": "finding:" + r.Finding, "label": "manager output from reading tenant data, untrusted"}
 	if r.Incident != "" {
 		ctx["incident"] = r.Incident
+	}
+	if r.FindingFacts != nil {
+		ctx["finding_facts"] = r.FindingFacts
 	}
 	return map[string]any{
 		"card": controlCard, "subject_kind": "control", "id": r.ID, "nonce": r.Nonce,

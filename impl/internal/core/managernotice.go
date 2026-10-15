@@ -170,7 +170,7 @@ func (c *Core) managerNoticeBody(ctx context.Context, tx pgx.Tx, now time.Time, 
 	var tenant, route string
 	var edit bool
 	var sentLines int
-	err = tx.QueryRow(ctx, `SELECT tenant, route, edit, sent_lines FROM manager_notices WHERE delivery = $1 FOR UPDATE`, first).Scan(&tenant, &route, &edit, &sentLines)
+	err = tx.QueryRow(ctx, `SELECT tenant, route, edit FROM manager_notices WHERE delivery = $1 FOR UPDATE`, first).Scan(&tenant, &route, &edit)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, "", "ref_invalid", false, nil
 	}
@@ -201,8 +201,15 @@ func (c *Core) managerNoticeBody(ctx context.Context, tx pgx.Tx, now time.Time, 
 		if err := tx.QueryRow(ctx, `SELECT state, external_id FROM deliveries WHERE id = $1`, of).Scan(&state, &ext); err != nil && !errors.Is(err, pgx.ErrNoRows) {
 			return nil, "", "", false, err
 		}
+		// Updates of one message go out in order: one waits while an earlier one is being sent,
+		// so an older snapshot never lands after a newer one.
+		var earlier bool
+		if err := tx.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM deliveries WHERE id <> $1 AND kind = $2 AND body->>'of' = $3 AND state = 'sending' AND seq < (SELECT seq FROM deliveries WHERE id = $1))`,
+			id, managerNoticeKind, of).Scan(&earlier); err != nil {
+			return nil, "", "", false, err
+		}
 		switch {
-		case state == "planned" || state == "sending":
+		case state == "planned" || state == "sending" || earlier:
 			return nil, "", "", true, nil
 		case edit && (state != "delivered" || ext == nil):
 			// The first message never arrived: there is nothing to edit.
@@ -214,12 +221,21 @@ func (c *Core) managerNoticeBody(ctx context.Context, tx pgx.Tx, now time.Time, 
 	if of == "" || edit {
 		out = c.noticeWhole(loc, route, r, log)
 	} else {
+		// A batch starts after the lines of the last delivered message of the notice, so a
+		// batch that was handed out but never arrived is sent again.
+		if err := tx.QueryRow(ctx, `SELECT coalesce(max((body->>'lines_to')::int), 0) FROM deliveries
+			WHERE (id = $1 OR body->>'of' = $1) AND kind = $2 AND state = 'delivered' AND body ? 'lines_to'`, first, managerNoticeKind).Scan(&sentLines); err != nil {
+			return nil, "", "", false, err
+		}
 		if sentLines >= len(log) {
 			return nil, "", "no_op", false, nil
 		}
 		out = c.noticeBatch(loc, route, r, log[sentLines:])
 	}
-	if _, err := tx.Exec(ctx, `UPDATE manager_notices SET sent_lines = $2, batch_at = $3 WHERE delivery = $1`, first, len(log), now); err != nil {
+	if _, err := tx.Exec(ctx, `UPDATE deliveries SET body = body || jsonb_build_object('lines_to', $2::int) WHERE id = $1`, id, len(log)); err != nil {
+		return nil, "", "", false, err
+	}
+	if _, err := tx.Exec(ctx, `UPDATE manager_notices SET batch_at = $2 WHERE delivery = $1`, first, now); err != nil {
 		return nil, "", "", false, err
 	}
 	return out, replaces, "", false, nil
