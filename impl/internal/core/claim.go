@@ -431,6 +431,14 @@ func (c *Core) claimAttempt(ctx context.Context, tx pgx.Tx, now time.Time, cat *
 	if tt.ResultSchema != nil {
 		payload["result_schema"] = tt.ResultSchema
 	}
+	// An analysis task carries the author's "My outcomes", the last rows by code (DIG-7, INS-5).
+	if tt.Purpose == "insight" {
+		mo, err := myOutcomes(ctx, tx, w.Tenant, w.ID, myOutcomesRows)
+		if err != nil {
+			return nil, err
+		}
+		payload["my_outcomes"] = mo
+	}
 	item.Payload = payload
 	if err := c.appendEvent(ctx, tx, now, w.Tenant, Event{Type: "task.working", Subject: id, Data: map[string]any{"task": id, "lease_no": leaseNo, "fingerprint": att.Fingerprint}}); err != nil {
 		return nil, err
@@ -624,7 +632,7 @@ func (c *Core) claimDelivery(ctx context.Context, tx pgx.Tx, now time.Time, cat 
 				continue
 			}
 		}
-		if deref(subjectKind) == "approval" {
+		if sk := deref(subjectKind); sk == "approval" || sk == "proposal" {
 			// A card is drawn from the record now, so it shows the current state (APR-3). An
 			// update waits while the card it edits is being sent, and is dropped when that card
 			// never arrived: the card itself then shows the current state.
@@ -632,7 +640,14 @@ func (c *Core) claimDelivery(ctx context.Context, tx pgx.Tx, now time.Time, cat 
 			if err := json.Unmarshal(body, &b); err != nil {
 				return nil, err
 			}
-			drawn, replaces, err := c.approvalCardBody(ctx, tx, cat, w.Tenant, kind, deref(subjectID), targetID, deref(recipient), w.Target, b)
+			var drawn map[string]any
+			var replaces string
+			var err error
+			if sk == "approval" {
+				drawn, replaces, err = c.approvalCardBody(ctx, tx, cat, w.Tenant, kind, deref(subjectID), targetID, deref(recipient), w.Target, b)
+			} else {
+				drawn, replaces, err = c.proposalCardBody(ctx, tx, cat, kind, deref(subjectID), targetID, deref(recipient), w.Target, b)
+			}
 			if err != nil {
 				return nil, err
 			}

@@ -116,7 +116,7 @@ type sent struct {
 }
 
 // drain takes every delivery of the channel and hands each in with an external id.
-func (b *actionBench) drain(t *testing.T) []sent {
+func (b *bench) drain(t *testing.T) []sent {
 	t.Helper()
 	var out []sent
 	for range 50 {

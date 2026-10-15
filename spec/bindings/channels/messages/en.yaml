@@ -96,9 +96,20 @@ texts:
   card.deadline: "Decide by {deadline}."
   card.state: "State: {state}"
   card.footer: "You get this card because you hold {why_you}. If nobody decides by {until}: {on_silence}."
+  card.realization.footer: "You get this card as the executor of the accepted change. If it is not done by {until}: {on_silence}."
+  card.executor.footer: "You get this card as the executor of the accepted change. Otherwise: {on_silence}."
   card.button.approve: Approve
   card.button.reject: Reject
   card.button.details: Details
+  card.button.accept: Accept
+  card.button.defer: Postpone
+  # Proposal cards and the proposal digest, drawn by code from the records (DIG-1, DIG-3, PRP-18)
+  card.proposal.title: "Bot proposal: {title}"
+  card.realization.title: "Change to carry out: {title}"
+  card.rollback.title: "A change may need reverting: {title}"
+  proposal.digest: "Recommended bot proposals ({count}); each has its card in your private chat:\n{items}"
+  proposal.digest.with_loop_off: "Recommended bot proposals ({count}); each has its card in your private chat:\n{items}\nAnalysis is off: {loop_off}."
+  proposal.digest.loop_off: "No proposals this time. Analysis is off: {loop_off}."
   card.answer.accepted: Accepted.
   card.answer.forbidden: You cannot decide on this card.
   card.answer.expired: The card has expired.

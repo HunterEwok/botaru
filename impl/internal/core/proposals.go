@@ -290,9 +290,11 @@ type proposalBody struct {
 	Evidence []evidenceRef  `json:"evidence"`
 	Change   proposalChange `json:"change"`
 	Benefit  *struct {
-		Metric    string `json:"metric"`
-		Subject   string `json:"subject"`
-		Direction string `json:"direction"`
+		Metric            string   `json:"metric"`
+		Subject           string   `json:"subject"`
+		Direction         string   `json:"direction"`
+		ExpectedChangePP  *float64 `json:"expected_change_pp"`
+		ExpectedChangePct *float64 `json:"expected_change_pct"`
 	} `json:"benefit"`
 }
 

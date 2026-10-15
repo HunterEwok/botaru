@@ -939,7 +939,7 @@
           "items": {
             "$ref": "urn:botaru:schema:common:1#/$defs/name"
           },
-          "description": "Executors of accepted changes."
+          "description": "Groups whose members execute accepted manifest and manual changes; the person who accepted when empty."
         },
         "realize_by": {
           "$ref": "urn:botaru:schema:common:1#/$defs/duration"

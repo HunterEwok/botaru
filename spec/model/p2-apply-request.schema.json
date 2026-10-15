@@ -23,6 +23,11 @@
       "pattern": "^[0-9a-f]{40}([0-9a-f]{24})?$",
       "description": "Full commit id."
     },
+    "message": {
+      "type": "string",
+      "maxLength": 65536,
+      "description": "The commit message; the core reads its Botaru-Proposal: <id> and Botaru-Revert: <id> <reason> lines and links the commit to those proposals (PRP-19, PRP-20)."
+    },
     "manifests": {
       "type": "array",
       "items": {
