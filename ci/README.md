@@ -193,6 +193,7 @@ The codes of `check_manifests.py` that fixtures refer to (`expect: {error: <code
 | `flow_ref_missing` | flow step type not found |  |
 | `format_unknown` | x-botaru-format or resource format is not in spec/model/formats.yaml | INJ-1, MAN-10 |
 | `global_tenant_data` | a global manifest holds a value that looks like tenant data | TEN-6 |
+| `guard_not_metric` | insights.extra_guards names a series without a complete outcome block | OBV-6 |
 | `high_risk_one_approver` | production tenant lets a high risk action with approvals: 1 be requested | APR-16 |
 | `host_two_tenants` | host or service in catalogs of two tenants | TEN-4 |
 | `human_subject_in_record` | a result read by code names a human principal or the kind human | DLV-14 |
@@ -237,6 +238,7 @@ The codes of `check_manifests.py` that fixtures refer to (`expect: {error: <code
 | `role_profile_tier` | role claims a type above the profile tier | PRF-1 |
 | `role_profile_unknown` | role profile is not in spec/model/role-profiles.yaml | PRF-1 |
 | `role_write_tool` | role has a tool that is not read | APR-1, PRM-2 |
+| `rollup_unknown` | observation series rollup or outcome.compare is not in spec/model/rollups.yaml | OBV-4 |
 | `route_mode` | route mode without its section |  |
 | `routine_fields` | risk: routine fields are incomplete or set on another risk | MAN-9, APR-10 |
 | `run_arg_unknown` | run argument is not in the closed schema of the type or action | APR-17 |
@@ -255,6 +257,8 @@ The codes of `check_manifests.py` that fixtures refer to (`expect: {error: <code
 | `script_wait_fields` | wait or await step with missing or foreign fields, or a wait above the run deadline | SCR-13 |
 | `secret_rotation_missing` | a named secret of the deployment description has no rotation method, or overlap without a window | SEC-5 |
 | `self_approve_production` | production tenant with self_approve: true | APR-9 |
+| `series_class_below_source` | observation series data_class below the output_class of its source tool | OBV-2 |
+| `series_source_invalid` | observation series source does not fit its kind (tool without tool or field, a tool on another kind, job without field) | OBV-2, OBV-7 |
 | `service_no_card` | service no_card holds something other than restart | MON-8 |
 | `service_script_unknown` | no script from monitor_scripts_allowed for a service verb | MON-8, MON-10 |
 | `service_unit_missing` | via: host without unit, or unit with via: monitor | MON-8 |

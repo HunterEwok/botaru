@@ -248,6 +248,11 @@ entries:
     data_schema: spec/model/event-data/erasure-event.schema.json
     producer: [core]
     rules: [RET-7]
+  - id: run.finished.v1
+    since: v0.1
+    data_schema: spec/model/event-data/run-finished.schema.json
+    producer: [job]
+    rules: [OBV-7, IDM-4]
   - id: ext.monitor.problem.v1
     since: v0.1
     data_schema: spec/model/event-data/ext-monitor-problem.schema.json

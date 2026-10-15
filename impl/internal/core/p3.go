@@ -198,6 +198,9 @@ func (c *Core) toolCatalog(cat *Catalog, g *toolsGrant) ([]catalogTool, error) {
 	if ct := c.enqueueChildTool(cat, g); ct != nil {
 		out = append(out, *ct)
 	}
+	if ot := c.obsTool(cat, g); ot != nil {
+		out = append(out, *ot)
+	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
 	return out, nil
 }
@@ -396,6 +399,15 @@ func (c *Core) P3ToolsCall(ctx context.Context, handle string, p mcp.CallParams)
 			}
 			builtin = res.call()
 			return nil
+		}
+		if p.Name == obsToolName {
+			offered := slices.ContainsFunc(tools, func(t catalogTool) bool { return t.Builtin && t.Name == obsToolName })
+			args := p.Arguments
+			if args == nil {
+				args = map[string]any{}
+			}
+			builtin, err = c.obsToolCall(ctx, tx, now, cat, g, offered, args)
+			return err
 		}
 		if p.Name == scriptToolName {
 			offered := slices.ContainsFunc(tools, func(t catalogTool) bool { return t.Builtin && t.Name == scriptToolName })

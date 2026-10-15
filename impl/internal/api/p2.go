@@ -239,6 +239,13 @@ func (s *Server) p2(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		out, err = s.c.PrincipalDataRequest(ctx, oper, req)
+	case "obs.series":
+		req, derr := decode[core.ObsQueryRequest](m)
+		if derr != nil {
+			s.fail(w, derr)
+			return
+		}
+		out, err = s.c.ObsSeries(ctx, oper, req)
 	case "audit.query":
 		req, derr := decode[core.AuditQueryRequest](m)
 		if derr != nil {

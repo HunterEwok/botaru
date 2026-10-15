@@ -352,6 +352,10 @@ func (c *Core) completeToolcall(ctx context.Context, tx pgx.Tx, now time.Time, l
 	if err := c.endToolCall(ctx, tx, now, l.WorkID, "done", "", raw); err != nil {
 		return err
 	}
+	// A closed field of a trusted output becomes a point of the tenant's series (OBV-1).
+	if err := c.toolSeries(ctx, tx, now, cat, l.WorkID, tool, t.TrustedOutput(), clean.StructuredContent); err != nil {
+		return err
+	}
 	if masked(t.Redact, raw) {
 		// The toolhost replaced an address: the attempt saw personal data (AUD-5).
 		if err := addPersonalSeen(ctx, tx, task, "masking"); err != nil {

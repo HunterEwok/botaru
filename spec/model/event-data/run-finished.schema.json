@@ -1,0 +1,76 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:botaru:schema:run-finished:1",
+  "title": "Data of the event run.finished.v1",
+  "description": "The end of work that continues outside the farm after a task result of accepted for run (a pipeline, a backup outside manifests). A job worker submits it through P1 emit when the type is in the events of its task type; the fields are closed, the subject is from the catalog of its own tenant, and the core sets source and id (OBV-7, IDM-4).",
+  "x-botaru-direction": "input",
+  "x-botaru-rules": [
+    "OBV-7",
+    "IDM-4"
+  ],
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "run_id",
+    "subject",
+    "duration_s",
+    "retries",
+    "exit_code",
+    "outcome"
+  ],
+  "properties": {
+    "run_id": {
+      "description": "Id of the work outside the farm.",
+      "type": "string",
+      "maxLength": 64,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,63}$"
+    },
+    "approval_id": {
+      "description": "The approval that started the run; by it a route finds the address approval_initiator (DLV-6).",
+      "anyOf": [
+        {
+          "type": "integer",
+          "minimum": 0
+        },
+        {
+          "type": "string",
+          "maxLength": 64,
+          "pattern": "^[A-Za-z0-9_]{1,64}$"
+        }
+      ]
+    },
+    "subject": {
+      "description": "Id of a resource or host from the catalog of the worker's tenant.",
+      "type": "string",
+      "maxLength": 63,
+      "pattern": "^[a-z0-9][a-z0-9._-]{0,62}$"
+    },
+    "duration_s": {
+      "description": "Duration of the work in seconds.",
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 31622400
+    },
+    "retries": {
+      "description": "Retries of the work.",
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 1000
+    },
+    "exit_code": {
+      "description": "Exit code of the work.",
+      "type": "integer",
+      "minimum": -1000,
+      "maximum": 1000
+    },
+    "outcome": {
+      "description": "Outcome from a closed list.",
+      "enum": [
+        "done",
+        "failed",
+        "timeout",
+        "canceled"
+      ]
+    }
+  }
+}
