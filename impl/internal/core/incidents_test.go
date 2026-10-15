@@ -338,3 +338,32 @@ func TestIncidentTenantSubject(t *testing.T) {
 		t.Fatalf("after the return %d %+v", len(list), list)
 	}
 }
+
+// detect.for counts from when the class conditions last started to hold on the episode's latest
+// numbers: values that stop holding before it reset the count, and values that start holding
+// later start it (MGR-8).
+func TestIncidentDetectFor(t *testing.T) {
+	b := newIncidentBench(t)
+	b.diskAlarm(t, true, 3)
+	b.loop(t, "incident")
+	b.advance(t, 3*60)
+	b.diskAlarm(t, true, 10)
+	b.loop(t, "incident")
+	b.advance(t, 3*60)
+	b.loop(t, "incident")
+	if n := len(incidentsOf(t, b, "disk_full")); n != 0 {
+		t.Fatalf("opened although the values stopped holding: %d", n)
+	}
+	b.diskAlarm(t, true, 2)
+	b.loop(t, "incident")
+	b.advance(t, 4*60)
+	b.loop(t, "incident")
+	if n := len(incidentsOf(t, b, "disk_full")); n != 0 {
+		t.Fatalf("opened before detect.for of the new start: %d", n)
+	}
+	b.advance(t, 2*60)
+	b.loop(t, "incident")
+	if n := len(incidentsOf(t, b, "disk_full")); n != 1 {
+		t.Fatalf("not opened after detect.for: %d", n)
+	}
+}

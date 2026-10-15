@@ -89,6 +89,7 @@ type alarmEpisode struct {
 	Values   map[string]any
 	Origin   string
 	Opened   time.Time
+	ValsAt   time.Time // when the current numbers arrived
 	Resolved *time.Time
 }
 
@@ -281,7 +282,7 @@ func (c *Core) openIncidents(ctx context.Context, cat *Catalog, classes []incide
 	for _, ic := range classes {
 		alarms[mstr(mmap(ic.Spec, "detect"), "alarm")] = true
 	}
-	rows, err := c.st.Pool.Query(ctx, `SELECT id, tenant, alarmkey, alarm, subject, vals, origin, opened_at FROM alarm_episodes
+	rows, err := c.st.Pool.Query(ctx, `SELECT id, tenant, alarmkey, alarm, subject, vals, origin, opened_at, coalesce(vals_at, opened_at) FROM alarm_episodes
 		WHERE state = 'firing' AND alarm = ANY($1) ORDER BY id`, slices.Collect(mapKeys(alarms)))
 	if err != nil {
 		return err
@@ -290,7 +291,7 @@ func (c *Core) openIncidents(ctx context.Context, cat *Catalog, classes []incide
 	for rows.Next() {
 		var ep alarmEpisode
 		var subj, vals []byte
-		if err := rows.Scan(&ep.ID, &ep.Tenant, &ep.Alarmkey, &ep.Alarm, &subj, &vals, &ep.Origin, &ep.Opened); err != nil {
+		if err := rows.Scan(&ep.ID, &ep.Tenant, &ep.Alarmkey, &ep.Alarm, &subj, &vals, &ep.Origin, &ep.Opened, &ep.ValsAt); err != nil {
 			rows.Close()
 			return err
 		}
@@ -303,9 +304,14 @@ func (c *Core) openIncidents(ctx context.Context, cat *Catalog, classes []incide
 		return err
 	}
 	var errs []error
+	// The start of the conditions is forgotten for an episode that no longer fires.
+	if _, err := c.st.Pool.Exec(ctx, `DELETE FROM incident_detect d WHERE NOT EXISTS
+		(SELECT 1 FROM alarm_episodes e WHERE e.id = d.episode AND e.state = 'firing')`); err != nil {
+		errs = append(errs, err)
+	}
 	for _, ep := range eps {
 		for _, ic := range classes {
-			if mstr(mmap(ic.Spec, "detect"), "alarm") != ep.Alarm || !detectHolds(ic.Spec, ep) {
+			if mstr(mmap(ic.Spec, "detect"), "alarm") != ep.Alarm {
 				continue
 			}
 			kind, id, ok := incidentSubject(ic.Spec, ep)
@@ -313,7 +319,22 @@ func (c *Core) openIncidents(ctx context.Context, cat *Catalog, classes []incide
 				continue
 			}
 			if err := c.tx(ctx, func(tx pgx.Tx, now time.Time) error {
-				if ep.Opened.After(now.Add(-specDuration(mmap(ic.Spec, "detect"), "for"))) {
+				// detect.for counts from when the conditions last started to hold on the
+				// episode's latest numbers, not from the episode's start.
+				if !detectHolds(ic.Spec, ep) {
+					_, err := tx.Exec(ctx, `DELETE FROM incident_detect WHERE class = $1 AND episode = $2`, ic.Name, ep.ID)
+					return err
+				}
+				// The conditions hold at least since the current numbers arrived.
+				if _, err := tx.Exec(ctx, `INSERT INTO incident_detect (class, episode, since) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING`,
+					ic.Name, ep.ID, ep.ValsAt); err != nil {
+					return err
+				}
+				var since time.Time
+				if err := tx.QueryRow(ctx, `SELECT since FROM incident_detect WHERE class = $1 AND episode = $2`, ic.Name, ep.ID).Scan(&since); err != nil {
+					return err
+				}
+				if since.After(now.Add(-specDuration(mmap(ic.Spec, "detect"), "for"))) {
 					return nil
 				}
 				return c.openIncident(ctx, tx, now, cat, ic, ep, kind, id)
@@ -365,10 +386,11 @@ func (c *Core) openIncident(ctx context.Context, tx pgx.Tx, now time.Time, cat *
 		}
 		return adoptEpisode(ctx, tx, live.ID, ep)
 	}
-	// The class and subject back within an hour after resolved reopen the incident (MGR-8).
+	// An alarm key of the incident back within an hour after resolved reopens it (MGR-8).
 	r, err := scanIncident(tx.QueryRow(ctx, `SELECT `+incidentCols+` FROM incidents
-		WHERE tenant = $1 AND class = $2 AND subject_kind = $3 AND subject_id = $4 AND state = 'resolved' AND resolved_at >= $5
-		ORDER BY resolved_at DESC LIMIT 1 FOR UPDATE`, ep.Tenant, ic.Name, kind, id, now.Add(-reopenWindow)))
+		WHERE tenant = $1 AND class = $2 AND subject_kind = $3 AND subject_id = $4 AND alarmkeys @> ARRAY[$6::text]
+		AND state = 'resolved' AND resolved_at >= $5
+		ORDER BY resolved_at DESC LIMIT 1 FOR UPDATE`, ep.Tenant, ic.Name, kind, id, now.Add(-reopenWindow), ep.Alarmkey))
 	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
 		return err
 	}
@@ -843,8 +865,13 @@ func (c *Core) IncidentList(ctx context.Context, op Operator, req TenantRequest)
 	if limit <= 0 || limit > 1000 {
 		limit = 1000
 	}
+	// The operator of farm may name a tenant; anyone else sees their own (TEN-2).
+	tenant, err := viewTenant(op, req.Tenant)
+	if err != nil {
+		return nil, err
+	}
 	rows, err := c.st.Pool.Query(ctx, `SELECT id, state, opened_at, class FROM incidents WHERE tenant = $1 AND ($2 = '' OR state = $2)
-		ORDER BY opened_at DESC, id DESC LIMIT $3`, op.Tenant, req.State, limit)
+		ORDER BY opened_at DESC, id DESC LIMIT $3`, tenant, req.State, limit)
 	if err != nil {
 		return nil, err
 	}

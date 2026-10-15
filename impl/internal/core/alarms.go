@@ -110,8 +110,14 @@ func (c *Core) fireAlarm(ctx context.Context, tx pgx.Tx, now time.Time, a Alarm)
 	if err := lockAlarmkey(ctx, tx, a.Tenant, ep.Alarmkey); err != nil {
 		return err
 	}
-	tag, err := tx.Exec(ctx, `UPDATE alarm_episodes SET repeat_count = repeat_count + 1, last_seen_at = $3
-		WHERE tenant = $1 AND alarmkey = $2 AND state = 'firing'`, a.Tenant, ep.Alarmkey, now)
+	// A repeat keeps the episode and carries the latest numbers, which incident conditions read.
+	var latest []byte
+	if a.Values != nil {
+		latest, _ = json.Marshal(a.Values)
+	}
+	tag, err := tx.Exec(ctx, `UPDATE alarm_episodes SET repeat_count = repeat_count + 1, last_seen_at = $3, vals = coalesce($4::jsonb, vals),
+		vals_at = CASE WHEN $4::jsonb IS NOT NULL AND $4::jsonb IS DISTINCT FROM vals THEN $3 ELSE vals_at END
+		WHERE tenant = $1 AND alarmkey = $2 AND state = 'firing'`, a.Tenant, ep.Alarmkey, now, latest)
 	if err != nil {
 		return err
 	}
@@ -127,8 +133,8 @@ func (c *Core) fireAlarm(ctx context.Context, tx pgx.Tx, now time.Time, a Alarm)
 	if origin == "" {
 		origin = "code"
 	}
-	if err := tx.QueryRow(ctx, `INSERT INTO alarm_episodes (tenant, alarmkey, alarm, state, severity, subject, vals, seq, opened_at, last_seen_at, notified_at, origin)
-		VALUES ($1, $2, $3, 'firing', $4, $5, $6, 1, $7, $7, $7, $8) RETURNING id`,
+	if err := tx.QueryRow(ctx, `INSERT INTO alarm_episodes (tenant, alarmkey, alarm, state, severity, subject, vals, seq, opened_at, last_seen_at, notified_at, origin, vals_at)
+		VALUES ($1, $2, $3, 'firing', $4, $5, $6, 1, $7, $7, $7, $8, $7) RETURNING id`,
 		a.Tenant, ep.Alarmkey, ep.Alarm, sev, subj, vals, now, origin).Scan(&ep.ID); err != nil {
 		return err
 	}
