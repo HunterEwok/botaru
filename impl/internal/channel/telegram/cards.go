@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -52,6 +53,10 @@ var buttonCodes = map[string]string{
 	"would_not_accept": "wn", "confirm": "cf", "count": "ct", "full_list": "fl", "pause": "ps", "cancel": "cn",
 }
 
+// openStates are the states of a subject whose card still waits for its person: a pending
+// approval, a presented proposal, a change being carried out.
+var openStates = []string{"pending", "presented", "realizing"}
+
 // subjectPrefixes give the subject kind of a card by the prefix of its id.
 var subjectPrefixes = map[string]string{"a": "approval", "prp": "proposal"}
 
@@ -62,7 +67,7 @@ var buttonLabels = map[string]string{
 }
 
 // titleKeys are the title text keys of the card kinds that are not an approval card.
-var titleKeys = map[string]string{"proposal_card": "card.proposal.title", "realization_card": "card.realization.title"}
+var titleKeys = map[string]string{"proposal_card": "card.proposal.title", "realization_card": "card.realization.title", "rollback_card": "card.rollback.title"}
 
 // flat writes a map of closed fields as key=value pairs in key order.
 func flat(m map[string]any) string {
@@ -120,12 +125,21 @@ func (c *Channel) renderCard(locale string, cd *card) string {
 		}
 		lines = append(lines, t.Render(locale, "card.untrusted", map[string]any{"source": src}))
 	}
-	if cd.State != "" && cd.State != "pending" {
+	// A card still waiting for its person shows the deadline, a closed one its state.
+	switch {
+	case cd.State != "" && !slices.Contains(openStates, cd.State):
 		lines = append(lines, t.Render(locale, "card.state", map[string]any{"state": cd.State}))
-	} else {
+	case cd.ExpiresAt != "":
 		lines = append(lines, t.Render(locale, "card.deadline", map[string]any{"deadline": cd.ExpiresAt}))
 	}
-	lines = append(lines, t.Render(locale, "card.footer", map[string]any{"why_you": cd.Footer.WhyYou, "until": cd.Footer.Until, "on_silence": cd.Footer.OnSilence}))
+	footer := "card.footer"
+	switch {
+	case cd.Card == "realization_card" && cd.Footer.Until != "":
+		footer = "card.realization.footer"
+	case cd.Card == "realization_card" || cd.Card == "rollback_card":
+		footer = "card.executor.footer"
+	}
+	lines = append(lines, t.Render(locale, footer, map[string]any{"why_you": cd.Footer.WhyYou, "until": cd.Footer.Until, "on_silence": cd.Footer.OnSilence}))
 	return strings.Join(lines, "\n")
 }
 

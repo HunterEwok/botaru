@@ -37,6 +37,7 @@ usage: farmctl [-p2 URL] [-token-file FILE] <command> [arguments]
 commands:
   apply [-commit SHA] [-dry-run] [-as-test] [-drop-unsupported [-spec-root DIR]] PATH...
                                              apply the manifests of files and folders as one set
+  proposal link-commit PROPOSAL SHA         link an applied commit to an accepted manifest change (PRP-19)
   principal add [-id ID] [-identity ID] [-locale L]
   principal off|on|offboard ID
   principal set-identity ID IDENTITY         for example telegram:123456
@@ -114,6 +115,11 @@ func run(c *client, args []string) error {
 		return c.print("health", map[string]any{})
 	case "apply":
 		return apply(c, args[1:])
+	case "proposal":
+		if len(args) != 4 || args[1] != "link-commit" {
+			return errors.New("usage: farmctl proposal link-commit PROPOSAL SHA")
+		}
+		return c.print("proposal.link_commit", map[string]any{"proposal": args[2], "commit": args[3]})
 	case "principal":
 		return principal(c, args[1:])
 	case "grant", "ungrant":
@@ -261,11 +267,11 @@ func apply(c *client, args []string) error {
 	if fs.NArg() == 0 {
 		return errors.New("apply needs at least one path")
 	}
+	dir := fs.Arg(0)
+	if st, err := os.Stat(dir); err == nil && !st.IsDir() {
+		dir = filepath.Dir(dir)
+	}
 	if *commit == "" {
-		dir := fs.Arg(0)
-		if st, err := os.Stat(dir); err == nil && !st.IsDir() {
-			dir = filepath.Dir(dir)
-		}
 		out, err := exec.Command("git", "-C", dir, "rev-parse", "HEAD").Output()
 		if err != nil {
 			msg := ""
@@ -304,7 +310,14 @@ func apply(c *client, args []string) error {
 			return err
 		}
 	}
-	return c.print("apply", map[string]any{"commit": *commit, "manifests": ms, "dry_run": *dry})
+	req := map[string]any{"commit": *commit, "manifests": ms, "dry_run": *dry}
+	// The commit message carries the Botaru-Proposal and Botaru-Revert lines (PRP-19, PRP-20).
+	if out, err := exec.Command("git", "-C", dir, "log", "-1", "--format=%B", *commit).Output(); err == nil {
+		if msg := strings.TrimSpace(string(out)); msg != "" {
+			req["message"] = msg
+		}
+	}
+	return c.print("apply", req)
 }
 
 // dropUnsupported asks the core for a plan and removes every field that the plan refuses with

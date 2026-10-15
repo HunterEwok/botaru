@@ -29,6 +29,9 @@ const (
 	maxGuards = 5
 )
 
+// errNoTrial is a proposal whose trial cannot be measured from the catalog.
+var errNoTrial = errors.New("no trial")
+
 // decideProposal is P1 decide on the subject proposal (DIG-3, APR-4): "Accept", "Reject" with a
 // reason, "Postpone" at most twice, by a person with proposal.decide:<category> from the chat of
 // the card. "Accept" creates exactly one object of the ordinary path on behalf of that person
@@ -64,7 +67,8 @@ func (c *Core) decideProposal(ctx context.Context, w *Worker, ob OnBehalf, req D
 		if p.State != "presented" {
 			// A repeat of the same decision by the same person gets the same answer (IDM-3).
 			d := mmapAny(p.Rec["decision"])
-			if d["decided_by"] == press.principal && d["decision"] == req.Decision && p.State != "recommended" {
+			// A postponed proposal keeps the nonce of its card until a later digest presents it.
+			if d["decided_by"] == press.principal && d["decision"] == req.Decision && (p.State != "recommended" || req.Decision == "defer") {
 				out.State = p.State
 				return nil
 			}
@@ -128,6 +132,12 @@ func (c *Core) decideProposal(ctx context.Context, w *Worker, ob OnBehalf, req D
 				state = "noted"
 				break
 			}
+			// Only one of conflicting changes runs at a time (PRP-9).
+			if holders, err := lockHolders(ctx, tx, p.Tenant, p.ID, lockKeys(b)); err != nil {
+				return err
+			} else if len(holders) > 0 {
+				return deny("forbidden", "another accepted change holds the same field")
+			}
 			code, err := c.realize(ctx, tx, now, cat, press, p)
 			if err != nil {
 				return err
@@ -141,9 +151,14 @@ func (c *Core) decideProposal(ctx context.Context, w *Worker, ob OnBehalf, req D
 		if err := c.moveProposal(ctx, tx, now, p, state, reason); err != nil {
 			return err
 		}
+		if state == "realizing" {
+			if err := c.parkConflicts(ctx, tx, now, p); err != nil {
+				return err
+			}
+		}
 		if state == "recommended" {
 			// A postponed proposal goes into a later digest with a new card.
-			if _, err := tx.Exec(ctx, `UPDATE proposals SET nonce = NULL, presented_at = NULL WHERE id = $1`, p.ID); err != nil {
+			if _, err := tx.Exec(ctx, `UPDATE proposals SET presented_at = NULL WHERE id = $1`, p.ID); err != nil {
 				return err
 			}
 		}
@@ -195,6 +210,14 @@ func (c *Core) declineReason(code string) bool {
 func (c *Core) realize(ctx context.Context, tx pgx.Tx, now time.Time, cat *Catalog, press *cardPress, p *proposalRow) (string, error) {
 	tv := press.tv
 	b := p.body()
+	trial, err := c.trialBaseline(ctx, tx, now, cat, p)
+	if errors.Is(err, errNoTrial) {
+		// A change whose trial cannot be measured is not started (PRP-21).
+		return "forbidden", nil
+	}
+	if err != nil {
+		return "", err
+	}
 	realization := map[string]any{"realizer": nil, "realize_by": fmtTime(now.Add(durationOr(tv.Spec.Insights.RealizeBy, defaultRealizeBy))),
 		"object": nil, "commit": nil, "link": nil, "realized_at": nil, "revert_patch": nil, "batch": nil, "revert_reason": nil}
 	switch b.Change.Kind {
@@ -224,10 +247,8 @@ func (c *Core) realize(ctx context.Context, tx pgx.Tx, now time.Time, cat *Catal
 		act, _ := c.actionOf(cat, action)
 		mark := c.personMark(tv, press.groups)
 		schema, err := c.actionArgsSchema(cat, tv.Name, mark, act)
-		if err != nil {
-			return "", err
-		}
-		if c.rs.validate(schema, args) != nil {
+		if err != nil || c.rs.validate(schema, args) != nil {
+			// An action whose arguments cannot be checked is not started (APR-4).
 			return "forbidden", nil
 		}
 		argsHash, err := jcs.Hash(args)
@@ -237,6 +258,12 @@ func (c *Core) realize(ctx context.Context, tx pgx.Tx, now time.Time, cat *Catal
 		risk := act.Risk
 		if risk == "" {
 			risk = "low"
+		}
+		// A hold on the action stops "Accept" before any approval exists (HLD-1).
+		if h, err := heldBy(ctx, tx, now, []string{"no_action", "pause_action"}, approvalScopes(tv.Name, action, "", "")...); err != nil {
+			return "", err
+		} else if h != "" {
+			return "held", nil
 		}
 		id, code, err := c.openApproval(ctx, tx, now, tv, approvalRow{
 			Tenant: tv.Name, Initiator: press.principal, Action: action, ArgsHash: argsHash, Args: args, Risk: risk,
@@ -259,7 +286,7 @@ func (c *Core) realize(ctx context.Context, tx pgx.Tx, now time.Time, cat *Catal
 		}
 		realization["realizer"], realization["object"] = principalObject(press.principal), id
 	case "manifest_change", "human_change":
-		realizer, err := c.realizer(ctx, tx, now, tv, press.principal)
+		realizer, err := c.realizer(ctx, tx, now, tv, press.principal, asString(p.Rec["data_mark"]))
 		if err != nil {
 			return "", err
 		}
@@ -269,10 +296,6 @@ func (c *Core) realize(ctx context.Context, tx pgx.Tx, now time.Time, cat *Catal
 		realization["realizer"] = principalObject(realizer)
 	default:
 		return "forbidden", nil
-	}
-	trial, err := c.trialBaseline(ctx, tx, now, cat, p)
-	if err != nil {
-		return "", err
 	}
 	p.Rec["realization"], p.Rec["trial"] = realization, trial
 	if b.Change.Kind == "manifest_change" || b.Change.Kind == "human_change" {
@@ -296,26 +319,47 @@ func principalObject(principal string) string {
 
 // realizer is the executor of a manifest or a manual change (PRP-18): the person who accepted
 // when they are an active member of a group of insights.realizers, otherwise the first such
-// member; with no realizers the person who accepted.
-func (c *Core) realizer(ctx context.Context, tx pgx.Tx, now time.Time, tv *TenantView, accepter string) (string, error) {
+// member; with no realizers the person who accepted. The executor sees the change in full, so
+// only a person whose ceiling covers the proposal's mark qualifies (DIG-2); "" when nobody does.
+func (c *Core) realizer(ctx context.Context, tx pgx.Tx, now time.Time, tv *TenantView, accepter, mark string) (string, error) {
+	sees := func(person string) (bool, error) {
+		info, err := loadPrincipal(ctx, tx, now, tv.Name, person)
+		if errors.Is(err, pgx.ErrNoRows) {
+			return false, nil
+		}
+		if err != nil {
+			return false, err
+		}
+		return info.State == "active" && c.digestShow(mark, c.personMark(tv, groupClosure(tv, info.Groups))) == "full", nil
+	}
 	groups := tv.Spec.Insights.Realizers
 	if len(groups) == 0 {
+		if ok, err := sees(accepter); err != nil || !ok {
+			return "", err
+		}
 		return accepter, nil
 	}
-	first := ""
+	var cands []string
 	for _, g := range groups {
 		people, err := groupMembers(ctx, tx, now, tv.Name, g)
 		if err != nil {
 			return "", err
 		}
 		if slices.Contains(people, accepter) {
-			return accepter, nil
+			cands = append([]string{accepter}, cands...)
 		}
-		if first == "" && len(people) > 0 {
-			first = people[0]
+		cands = append(cands, people...)
+	}
+	for _, p := range cands {
+		ok, err := sees(p)
+		if err != nil {
+			return "", err
+		}
+		if ok {
+			return p, nil
 		}
 	}
-	return first, nil
+	return "", nil
 }
 
 // trialBaseline is the trial record on "Accept" (PRP-21): the metric of benefit, the promised
@@ -325,12 +369,12 @@ func (c *Core) realizer(ctx context.Context, tx pgx.Tx, now time.Time, tv *Tenan
 func (c *Core) trialBaseline(ctx context.Context, tx pgx.Tx, now time.Time, cat *Catalog, p *proposalRow) (map[string]any, error) {
 	b := p.body()
 	if b.Benefit == nil {
-		return nil, fmt.Errorf("proposal %s of kind %s has no benefit", p.ID, b.Change.Kind)
+		return nil, fmt.Errorf("%w: proposal %s of kind %s has no benefit", errNoTrial, p.ID, b.Change.Kind)
 	}
 	series := c.tenantSeries(cat, p.Tenant)
 	metric := series[b.Benefit.Metric]
 	if metric.Outcome == nil {
-		return nil, fmt.Errorf("proposal %s: metric %s has no outcome block", p.ID, b.Benefit.Metric)
+		return nil, fmt.Errorf("%w: proposal %s: metric %s has no outcome block", errNoTrial, p.ID, b.Benefit.Metric)
 	}
 	subject := b.Benefit.Subject
 	from := now.AddDate(0, 0, -trialDays)
@@ -348,18 +392,27 @@ func (c *Core) trialBaseline(ctx context.Context, tx pgx.Tx, now time.Time, cat 
 		promised["change_pct"] = *b.Benefit.ExpectedChangePct
 	}
 	var guards []any
+	subjects := []any{subject}
 	seen := map[string]bool{metric.Name: true}
 	add := func(name, source string) error {
 		g, ok := series[name]
 		if seen[name] || !ok || g.Outcome == nil || !g.Outcome.Complete || len(guards) >= maxGuards {
 			return nil
 		}
+		gs := c.guardSubject(cat, p, g, subject)
+		if gs == "" {
+			// A guard whose subject the change does not name measures nothing of it.
+			return nil
+		}
 		seen[name] = true
-		v, err := trialValue(ctx, tx, p.Tenant, g, subject, from, now, author, p.Role)
+		v, err := trialValue(ctx, tx, p.Tenant, g, gs, from, now, author, p.Role)
 		if err != nil {
 			return err
 		}
-		guards = append(guards, map[string]any{"series": name, "subject": subject, "compare": g.Outcome.Compare, "before": v["value"],
+		if !slices.Contains(subjects, any(gs)) {
+			subjects = append(subjects, gs)
+		}
+		guards = append(guards, map[string]any{"series": name, "subject": gs, "compare": g.Outcome.Compare, "before": v["value"],
 			"source": source, "broken_at": nil})
 		return nil
 	}
@@ -392,12 +445,57 @@ func (c *Core) trialBaseline(ctx context.Context, tx pgx.Tx, now time.Time, cat 
 			return nil, err
 		}
 	}
+	if len(guards) == 0 {
+		// With no guard on a subject of the change the metric guards itself (trial.guards has
+		// at least one entry).
+		seen[metric.Name] = false
+		if err := add(metric.Name, "metric"); err != nil {
+			return nil, err
+		}
+	}
+	if len(guards) == 0 {
+		return nil, fmt.Errorf("%w: proposal %s: no guard can be measured", errNoTrial, p.ID)
+	}
 	return map[string]any{
 		"metric":   map[string]any{"series": metric.Name, "subject": subject, "compare": metric.Outcome.Compare, "better": metric.Outcome.Better},
-		"promised": promised, "subjects": []any{subject}, "before": before, "guards": guards,
+		"promised": promised, "subjects": subjects, "before": before, "guards": guards,
 		"window": map[string]any{"from": "realized", "days": trialDays, "starts_at": nil}, "state": "baseline",
 		"self_measured": false, "outcome": nil,
 	}, nil
+}
+
+// guardSubject is the subject a guard series is measured on (PRP-21): the benefit subject when
+// the guard is of its catalog kind, otherwise the object of that kind the change targets, or the
+// task type of a targeted schedule; "" when the change names no subject of that kind.
+func (c *Core) guardSubject(cat *Catalog, p *proposalRow, g seriesDef, subject string) string {
+	if k, _, _ := strings.Cut(subject, ":"); k == g.CatalogKind {
+		return subject
+	}
+	kinds := map[string]string{"Schedule": "schedule", "TaskType": "task_type", "Role": "role"}
+	var cands []string
+	if mc := p.body().Change.ManifestChange; mc != nil {
+		for _, op := range mc.Ops {
+			if kinds[op.Target.Kind] == g.CatalogKind {
+				cands = append(cands, g.CatalogKind+":"+op.Target.Name)
+			}
+			if op.Target.Kind == "Schedule" && g.CatalogKind == "task_type" {
+				if sc, ok := cat.Tenants[p.Tenant].Schedules[op.Target.Name]; ok && sc.Task != nil {
+					cands = append(cands, "task_type:"+sc.Task.Type)
+				}
+			}
+		}
+	}
+	if k, id, _ := strings.Cut(subject, ":"); k == "schedule" && g.CatalogKind == "task_type" {
+		if sc, ok := cat.Tenants[p.Tenant].Schedules[id]; ok && sc.Task != nil {
+			cands = append(cands, "task_type:"+sc.Task.Type)
+		}
+	}
+	for _, s := range cands {
+		if c.subjectOfTenant(cat, p.Tenant, g.CatalogKind, s) {
+			return s
+		}
+	}
+	return ""
 }
 
 // targetGuards are the guards of the registry table by the kind of the change target.
@@ -447,8 +545,8 @@ func (c *Core) metricGuards(metric string) []string {
 
 // trialValue computes a metric by its compare rollup over the points of a period: over all
 // points, without the author's worker and without its role (PRP-22). window.share is the share
-// of points equal to the good value, window.p95 the 95th percentile, day.max the mean of the
-// daily maxima, anything else the mean.
+// of points equal to the good value, a window rollup its function over all points, an hour or
+// day rollup the mean of its hourly or daily values.
 func trialValue(ctx context.Context, tx pgx.Tx, tenant string, s seriesDef, subject string, from, to time.Time, worker, role string) (map[string]any, error) {
 	one := func(column, value string) (map[string]any, error) {
 		args := []any{tenant, s.Name, subject, from, to}
@@ -458,16 +556,25 @@ func trialValue(ctx context.Context, tx pgx.Tx, tenant string, s seriesDef, subj
 			where += fmt.Sprintf(` AND %s IS DISTINCT FROM $%d`, column, len(args))
 		}
 		var q string
-		switch s.Outcome.Compare {
-		case "window.share":
+		period, fn, _ := strings.Cut(s.Outcome.Compare, ".")
+		agg := `avg(num)`
+		switch fn {
+		case "max":
+			agg = `max(num)`
+		case "p95":
+			// The nearest rank, as the observe loop computes it (OBV-4).
+			agg = `percentile_disc(0.95) WITHIN GROUP (ORDER BY num)`
+		}
+		switch {
+		case fn == "share":
 			args = append(args, s.Outcome.Good)
 			q = fmt.Sprintf(`SELECT avg(CASE WHEN enum = $%d THEN 1.0 ELSE 0.0 END), count(*) FROM obs_points WHERE %s`, len(args), where)
-		case "window.p95":
-			q = `SELECT percentile_cont(0.95) WITHIN GROUP (ORDER BY num), count(num) FROM obs_points WHERE ` + where
-		case "day.max":
-			q = `SELECT avg(m), coalesce(sum(n), 0)::int FROM (SELECT max(num) AS m, count(num) AS n FROM obs_points WHERE ` + where + ` GROUP BY date_trunc('day', at)) d`
+		case period == "hour" || period == "day":
+			// A rollup per hour or day is compared as the mean of its values over the window.
+			q = `SELECT avg(m), coalesce(sum(n), 0)::int FROM (SELECT ` + agg + ` AS m, count(num) AS n FROM obs_points WHERE ` + where +
+				` GROUP BY date_trunc('` + period + `', at)) d`
 		default:
-			q = `SELECT avg(num), count(num) FROM obs_points WHERE ` + where
+			q = `SELECT ` + agg + `, count(num) FROM obs_points WHERE ` + where
 		}
 		var v *float64
 		var n int
@@ -513,7 +620,8 @@ func (c *Core) presentedStep(ctx context.Context, tx pgx.Tx, now time.Time, tv *
 
 // realizingStep follows the realization (PRP-18, PRP-19): the approval of "Accept" executed is
 // realized with the link object and starts the trial window; an approval that ended otherwise
-// fails as object_failed; no execution by realize_by fails as timeout with the trial canceled.
+// fails as object_failed, and its own expiry ends it; a change done by hand that is not linked by
+// realize_by fails as timeout with the trial canceled.
 // At half of the period the realizer of a manifest or manual change gets a reminder.
 func (c *Core) realizingStep(ctx context.Context, tx pgx.Tx, now time.Time, tv *TenantView, p *proposalRow) error {
 	r := mmapAny(p.Rec["realization"])
@@ -553,6 +661,10 @@ func (c *Core) realizingStep(ctx context.Context, tx pgx.Tx, now time.Time, tv *
 			return c.planProposalCardUpdates(ctx, tx, now, p)
 		case "rejected", "expired", "canceled", "exec_failed", "exec_unknown":
 			return fail("object_failed")
+		default:
+			// The approval's own expiry ends a request nobody approved; one approved or
+			// executing is not timed out under it.
+			return nil
 		}
 	}
 	if now.After(by) {

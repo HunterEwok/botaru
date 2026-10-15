@@ -89,11 +89,12 @@ func (c *Core) digestTenant(ctx context.Context, tx pgx.Tx, now time.Time, cat *
 	return nil
 }
 
-// latestSlot is the last slot of a schedule at or before now, within 32 days.
+// latestSlot is the last slot of a schedule at or before now within the late window and an hour
+// (a slot older than digestLate is not sent anyway).
 func latestSlot(spec *cronSpec, loc *time.Location, now time.Time) (time.Time, bool) {
 	var last time.Time
 	found := false
-	for s, ok := spec.nextSlot(now.AddDate(0, 0, -32), loc); ok && !s.At.After(now); s, ok = spec.nextSlot(s.At, loc) {
+	for s, ok := spec.nextSlot(now.Add(-digestLate-time.Hour), loc); ok && !s.At.After(now); s, ok = spec.nextSlot(s.At, loc) {
 		last, found = s.At, true
 	}
 	return last, found
@@ -180,9 +181,14 @@ func (c *Core) sendDigest(ctx context.Context, tx pgx.Tx, now time.Time, cat *Ca
 		}
 		body["loop_off"] = map[string]any{"reasons": reasons}
 	}
-	shown, err := c.planDigest(ctx, tx, now, tv, items, off)
+	shown, reached, err := c.planDigest(ctx, tx, now, tv, items, off)
 	if err != nil {
 		return err
+	}
+	if !reached {
+		// Nobody gets the digest (no bound chat, no reachable member): nothing is presented
+		// and the slot stays open.
+		return nil
 	}
 	body["items"] = shown
 	if err := c.spec.Validate("urn:botaru:schema:digest:1", body); err != nil {
@@ -248,8 +254,8 @@ func (c *Core) digestShow(item, ceiling string) string {
 
 // planDigest plans the digest text to the present_to address: a bound chat with its ceiling,
 // or the direct chat of every active member of a group with that person's ceiling (DIG-2). It
-// returns the items as the address shows them.
-func (c *Core) planDigest(ctx context.Context, tx pgx.Tx, now time.Time, tv *TenantView, items []*proposalRow, off []loopReason) ([]any, error) {
+// returns the items as the address shows them and whether any target was reached.
+func (c *Core) planDigest(ctx context.Context, tx pgx.Tx, now time.Time, tv *TenantView, items []*proposalRow, off []loopReason) ([]any, bool, error) {
 	addr := asString(tv.Spec.Insights.PresentTo)
 	kind, name, _ := strings.Cut(addr, ":")
 	type target struct {
@@ -260,7 +266,7 @@ func (c *Core) planDigest(ctx context.Context, tx pgx.Tx, now time.Time, tv *Ten
 	case "chat":
 		b, err := bindingByName(ctx, tx, tv.Name, name)
 		if err != nil {
-			return nil, err
+			return nil, false, err
 		}
 		if b != nil {
 			targets = append(targets, target{channel: b.Channel, chat: b.Chat, ceiling: b.Ceiling})
@@ -268,16 +274,16 @@ func (c *Core) planDigest(ctx context.Context, tx pgx.Tx, now time.Time, tv *Ten
 	case "group":
 		people, err := groupMembers(ctx, tx, now, tv.Name, name)
 		if err != nil {
-			return nil, err
+			return nil, false, err
 		}
 		for _, p := range people {
 			info, err := loadPrincipal(ctx, tx, now, tv.Name, p)
 			if err != nil {
-				return nil, err
+				return nil, false, err
 			}
 			channel, chat, ok, err := cardChat(ctx, tx, tv, p)
 			if err != nil {
-				return nil, err
+				return nil, false, err
 			}
 			if ok {
 				targets = append(targets, target{channel: channel, chat: chat.ID(), recipient: p, ceiling: c.personMark(tv, groupClosure(tv, info.Groups))})
@@ -330,17 +336,10 @@ func (c *Core) planDigest(ctx context.Context, tx pgx.Tx, now time.Time, tv *Ten
 			Tenant: tv.Name, Kind: proposalDigest, Addr: addr, TargetKind: "chat", TargetID: t.chat, ExecKind: "channel", ExecName: t.channel,
 			Recipient: t.recipient, Body: map[string]any{"form": "text_code", "text_key": key, "params": params}, DataMark: mark, DataOrigin: "code",
 		}); err != nil {
-			return nil, err
+			return nil, false, err
 		}
 	}
-	if len(targets) == 0 {
-		for _, p := range items {
-			us := mmapAny(p.Rec["untrusted_seen"])
-			shown = append(shown, map[string]any{"proposal": p.ID, "kind": "recommended", "data_mark": asString(p.Rec["data_mark"]), "show": "title_only",
-				"block": nil, "untrusted_seen": us["value"] == true, "self_evidence": p.Rec["self_evidence"] == true})
-		}
-	}
-	return shown, nil
+	return shown, len(targets) > 0, nil
 }
 
 // groupMembers are the active people of a group of the tenant, directly or through a group
@@ -419,7 +418,7 @@ func (c *Core) planProposalCard(ctx context.Context, tx pgx.Tx, now time.Time, t
 // recipient sees its new state.
 func (c *Core) planProposalCardUpdates(ctx context.Context, tx pgx.Tx, now time.Time, p *proposalRow) error {
 	rows, err := tx.Query(ctx, `SELECT id, kind, exec_name, target_id, coalesce(recipient, ''), coalesce(data_mark, '') FROM deliveries
-		WHERE subject_kind = 'proposal' AND subject_id = $1 AND kind IN ('proposal_card', 'realization_card') AND state IN ('planned', 'sending', 'delivered')
+		WHERE subject_kind = 'proposal' AND subject_id = $1 AND kind IN ('proposal_card', 'realization_card', 'rollback_card') AND state IN ('planned', 'sending', 'delivered')
 		ORDER BY seq`, p.ID)
 	if err != nil {
 		return err
@@ -559,6 +558,28 @@ func (c *Core) proposalCardFields(cat *Catalog, p *proposalRow, kind string, rem
 		if by == "" {
 			delete(card["footer"].(map[string]any), "until")
 		}
+	case rollbackCard:
+		r := mmapAny(p.Rec["realization"])
+		card["title"] = cut("Revert: "+title, 200)
+		for i, e := range asList(r["revert_patch"]) {
+			if i >= 5 {
+				break
+			}
+			em := mmapAny(e)
+			tg := mmapAny(em["target"])
+			ctxt[fmt.Sprintf("revert%d", i+1)] = fmt.Sprintf("%s %s %s = %v", tg["kind"], tg["name"], em["field"], em["previous"])
+		}
+		t := mmapAny(p.Rec["trial"])
+		for _, g := range asList(t["guards"]) {
+			if gm := mmapAny(g); gm["broken_at"] != nil {
+				ctxt["guard_broken"] = gm["series"]
+			}
+		}
+		if o := t["outcome"]; o != nil {
+			ctxt["outcome"] = o
+		}
+		ctxt["trailer"] = "Botaru-Revert: " + p.ID + " harm_observed"
+		card["footer"] = map[string]any{"why_you": "the executor of the accepted proposal", "on_silence": "the change trial runs to the end"}
 	}
 	card["buttons"] = buttons
 	return card

@@ -18,6 +18,9 @@ import (
 	"github.com/HunterEwok/botaru/impl/internal/testbench"
 )
 
+// appliedSets keeps the manifest set a commission bench applied, for a later apply.
+var appliedSets = map[*bench][]map[string]any{}
+
 // newCommissionBench is the analysis bench with the demo commission: the charter seats with
 // the fallback reviewers reviewer-a and reviewer-b, the lens review types and the commission
 // thresholds; decide names whether alice may decide on reliability proposals; edits change the
@@ -51,7 +54,8 @@ func newCommissionBench(t *testing.T, decide bool, edits ...func([]map[string]an
 	if _, err := testbench.DropUnsupported(sp, extra); err != nil {
 		t.Fatal(err)
 	}
-	b := newToolBenchWith(t, nil, func(ms []map[string]any) []map[string]any {
+	var kept []map[string]any
+	b := newToolBenchWith(t, &kept, func(ms []map[string]any) []map[string]any {
 		ms = insightEdit(map[string]any{"max_open_proposals": 5})(ms)
 		for _, m := range ms {
 			if m["kind"] == "Group" && m["metadata"].(map[string]any)["name"] == "system-ops" {
@@ -68,6 +72,7 @@ func newCommissionBench(t *testing.T, decide bool, edits ...func([]map[string]an
 		}
 		return ms
 	})
+	appliedSets[b] = kept
 	if decide {
 		// proposal.decide is privileged; the grant flow with a code comes later, so the bench
 		// writes the membership.

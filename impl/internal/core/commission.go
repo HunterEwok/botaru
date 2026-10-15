@@ -164,7 +164,8 @@ func (c *Core) proposalLoop(ctx context.Context) error {
 	}
 	var ids []string
 	if err := c.tx(ctx, func(tx pgx.Tx, now time.Time) error {
-		rows, err := tx.Query(ctx, `SELECT id FROM proposals WHERE state IN ('screened', 'in_review', 'recommended', 'parked', 'presented', 'realizing') ORDER BY created_at, id`)
+		rows, err := tx.Query(ctx, `SELECT id FROM proposals WHERE state IN ('screened', 'in_review', 'recommended', 'parked', 'presented', 'realizing')
+			OR state = 'realized' AND record->'trial'->>'outcome' IS NULL ORDER BY created_at, id`)
 		if err != nil {
 			return err
 		}
@@ -286,6 +287,8 @@ func (c *Core) stepProposal(ctx context.Context, tx pgx.Tx, now time.Time, cat *
 		return c.presentedStep(ctx, tx, now, tv, p)
 	case "realizing":
 		return c.realizingStep(ctx, tx, now, tv, p)
+	case "realized":
+		return c.trialStep(ctx, tx, now, cat, tv, p)
 	case "recommended":
 		if now.Sub(p.StateAt) > durationOr(ins.RecommendTTL, defaultRecommendTTL) {
 			return c.moveProposal(ctx, tx, now, p, "expired", "")
@@ -299,6 +302,16 @@ func (c *Core) stepProposal(ctx context.Context, tx pgx.Tx, now time.Time, cat *
 		case "review_budget":
 			// Money for reviews came back: the proposal is screened again (COM-6).
 			if c.reviewsFit(ctx, tx, now, cat, tv, p, lenses, exec) == nil {
+				return c.moveProposal(ctx, tx, now, p, "screened", "")
+			}
+		case "conflict":
+			// The lock is released when the holding change's trial ends (PRP-9).
+			holders, err := lockHolders(ctx, tx, p.Tenant, p.ID, lockKeys(p.body()))
+			if err != nil {
+				return err
+			}
+			if len(holders) == 0 {
+				p.Rec["conflicts_with"] = []any{}
 				return c.moveProposal(ctx, tx, now, p, "screened", "")
 			}
 		case "veto_lens_missing":
@@ -319,6 +332,13 @@ func (c *Core) screenProposal(ctx context.Context, tx pgx.Tx, now time.Time, cat
 	b := p.body()
 	if noOp(cat, tv, b.Change) {
 		return c.moveProposal(ctx, tx, now, p, "dismissed", "no_op")
+	}
+	// A field another change holds waits until its trial ends (PRP-9).
+	if holders, err := lockHolders(ctx, tx, p.Tenant, p.ID, lockKeys(b)); err != nil {
+		return err
+	} else if len(holders) > 0 {
+		p.Rec["conflicts_with"] = holders
+		return c.moveProposal(ctx, tx, now, p, "parked", "conflict")
 	}
 	if ok, err := hasDecider(ctx, tx, tv, b.Category); err != nil {
 		return err

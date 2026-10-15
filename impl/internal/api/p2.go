@@ -239,6 +239,13 @@ func (s *Server) p2(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		out, err = s.c.PrincipalDataRequest(ctx, oper, req)
+	case "proposal.link_commit":
+		req, derr := decode[core.LinkCommitRequest](m)
+		if derr != nil {
+			s.fail(w, derr)
+			return
+		}
+		out, err = s.c.LinkCommit(ctx, oper, req)
 	case "obs.series":
 		req, derr := decode[core.ObsQueryRequest](m)
 		if derr != nil {

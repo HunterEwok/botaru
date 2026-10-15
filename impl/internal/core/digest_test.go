@@ -4,6 +4,7 @@ package core
 
 import (
 	"context"
+	"strings"
 	"testing"
 )
 
@@ -17,20 +18,18 @@ func presentEdit(ms []map[string]any) {
 // reviewAll hands in every pending lens review with score.
 func (b *bench) reviewAll(t *testing.T, score int) {
 	t.Helper()
-	ra := b.enroll(t, EnrollRequest{Tenant: "demo", Role: "reviewer-a", Kind: "agent"})
-	rb := b.enroll(t, EnrollRequest{Tenant: "demo", Role: "reviewer-b", Kind: "agent"})
-	_, rec := proposalState(t, b)
-	for _, r := range rec["reviews"].([]any) {
-		rm := r.(map[string]any)
-		if rm["state"] != "pending" {
-			continue
-		}
-		w := ra
-		if l := rm["lens"]; l == "cost" || l == "value" {
-			w = rb
-		}
-		if err := b.review(t, w, map[string]any{"lens": rm["lens"], "score": score, "confidence": "high"}); err != nil {
-			t.Fatal(err)
+	for _, role := range []string{"reviewer-a", "reviewer-b"} {
+		w := b.enroll(t, EnrollRequest{Tenant: "demo", Role: role, Kind: "agent"})
+		for {
+			att := b.claim(t, w, "attempt")
+			if att == nil {
+				break
+			}
+			typ := att.Payload["task"].(map[string]any)["type"].(string)
+			lens := strings.TrimSuffix(strings.TrimPrefix(typ, "review."), ".v1")
+			if _, err := b.c.Complete(context.Background(), w, header(t, att), CompleteRequest{Result: map[string]any{"lens": lens, "score": score, "confidence": "high"}}); err != nil {
+				t.Fatal(err)
+			}
 		}
 	}
 }
@@ -72,6 +71,14 @@ func TestProposalDigestDecide(t *testing.T) {
 	r, err := b.c.Decide(ctx, b.channel, press("telegram:1001", "direct:1001", card.external), DecideRequest{SubjectKind: "proposal", ID: id, Nonce: nonce, Decision: "defer"})
 	if err != nil || r.State != "recommended" {
 		t.Fatalf("defer %+v %v", r, err)
+	}
+	// A repeat of "Postpone" from the same card gets the same answer (IDM-3).
+	r, err = b.c.Decide(ctx, b.channel, press("telegram:1001", "direct:1001", card.external), DecideRequest{SubjectKind: "proposal", ID: id, Nonce: nonce, Decision: "defer"})
+	if err != nil || r.State != "recommended" {
+		t.Fatalf("repeat defer %+v %v", r, err)
+	}
+	if _, rec := proposalState(t, b); rec["decision"].(map[string]any)["defer_count"] != float64(1) {
+		t.Fatalf("decision %v", rec["decision"])
 	}
 	cardOf(t, b.drain(t), cardUpdate, "direct:1001")
 	// The next slot presents it again with a new card.
@@ -137,5 +144,22 @@ func TestProposalRealizeTimeout(t *testing.T) {
 	state, rec = proposalState(t, b)
 	if state != "realization_failed" || rec["state_reason"] != "timeout" || rec["trial"].(map[string]any)["outcome"] != "canceled" {
 		t.Fatalf("state %s %v %v", state, rec["state_reason"], rec["trial"])
+	}
+}
+
+// A digest that reaches nobody presents nothing: the item stays recommended (DIG-2).
+func TestProposalDigestNoTarget(t *testing.T) {
+	b := newCommissionBench(t, true, presentEdit, func(ms []map[string]any) {
+		specOf(ms, "Tenant", "demo")["insights"].(map[string]any)["present_to"] = "chat:nowhere"
+	})
+	proposeNone(t, b)
+	b.reviewAll(t, 3)
+	b.loop(t, "proposal")
+	if state, _ := proposalState(t, b); state != "recommended" {
+		t.Fatalf("state %s", state)
+	}
+	var n int
+	if err := b.c.st.Pool.QueryRow(context.Background(), `SELECT count(*) FROM proposal_digests`).Scan(&n); err != nil || n != 0 {
+		t.Fatalf("digests %d %v", n, err)
 	}
 }

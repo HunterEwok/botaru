@@ -22,6 +22,7 @@ import (
 // ApplyRequest is the body of P2 apply (p2-apply-request).
 type ApplyRequest struct {
 	Commit    string           `json:"commit"`
+	Message   string           `json:"message"`
 	Manifests []map[string]any `json:"manifests"`
 	DryRun    bool             `json:"dry_run"`
 	Delete    []ApplyDelete    `json:"delete"`
@@ -250,6 +251,17 @@ func (c *Core) applyOnce(ctx context.Context, op Operator, req ApplyRequest) (*A
 	if len(res.Errors) > 0 {
 		return res, nil
 	}
+	// The lines Botaru-Proposal and Botaru-Revert of the commit message link the commit to
+	// proposals; such a commit changes only the objects of the proposal's tenant (PRP-8).
+	links := parseCommitLines(req.Message)
+	if !req.DryRun {
+		if p, err := c.proposalScope(ctx, links, docs, req.Delete, read); err != nil || p != nil {
+			if err != nil {
+				return nil, err
+			}
+			return nil, p
+		}
+	}
 
 	sort.Slice(docs, func(i, j int) bool {
 		a, b := docs[i].Key(), docs[j].Key()
@@ -311,6 +323,11 @@ func (c *Core) applyOnce(ctx context.Context, op Operator, req ApplyRequest) (*A
 			if err != nil {
 				return err
 			}
+			if ch.Op == "update" {
+				if err := keepVersion(ctx, tx, now, k, req.Commit); err != nil {
+					return err
+				}
+			}
 			if _, err := tx.Exec(ctx, `INSERT INTO manifests (kind, tenant, name, doc, hash, commit, applied_at) VALUES ($1, $2, $3, $4, $5, $6, $7)
 				ON CONFLICT (kind, tenant, name) DO UPDATE SET doc = EXCLUDED.doc, hash = EXCLUDED.hash, commit = EXCLUDED.commit, applied_at = EXCLUDED.applied_at`,
 				k.Kind, k.Tenant, k.Name, raw, h, req.Commit, now); err != nil {
@@ -348,6 +365,9 @@ func (c *Core) applyOnce(ctx context.Context, op Operator, req ApplyRequest) (*A
 					return refuse("forbidden", "task type %s still has tasks that are not finished", k.Name)
 				}
 			}
+			if err := keepVersion(ctx, tx, now, k, req.Commit); err != nil {
+				return err
+			}
 			if _, err := tx.Exec(ctx, `DELETE FROM manifests WHERE kind = $1 AND tenant = $2 AND name = $3`, k.Kind, k.Tenant, k.Name); err != nil {
 				return err
 			}
@@ -374,6 +394,9 @@ func (c *Core) applyOnce(ctx context.Context, op Operator, req ApplyRequest) (*A
 		}
 		// A new configuration may be the fix that tasks waiting on_fix wait for.
 		if _, err := tx.Exec(ctx, `UPDATE tasks SET run_at = $1, reason = NULL, updated_at = $1 WHERE state = 'submitted' AND reason = 'waiting_on_fix'`, now); err != nil {
+			return err
+		}
+		if err := c.linkCommit(ctx, tx, now, req.Commit, links); err != nil {
 			return err
 		}
 		if err := notifyWork(ctx, tx); err != nil {
