@@ -453,6 +453,8 @@ type Price struct {
 	Output     float64  `json:"output"`
 	CacheWrite *float64 `json:"cache_write"`
 	CacheRead  *float64 `json:"cache_read"`
+	// Checked is the date a person checked the prices (GW-17).
+	Checked string `json:"checked"`
 }
 
 // DropPointer removes the field or the array element that a JSON pointer names from a

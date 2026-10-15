@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -58,6 +59,15 @@ func (c *Core) Claim(ctx context.Context, w *Worker, req ClaimRequest) (*ClaimRe
 	default:
 		return nil, refuse("not_ready", "send hello first")
 	}
+	// A draining core hands out no new attempt until the next core starts; tool calls,
+	// deliveries and erasure work of running attempts go on (LCY-6).
+	if until, err := drainUntil(ctx, c.st.Pool); err != nil {
+		return nil, err
+	} else if until != nil && !slices.ContainsFunc(req.Kinds, func(k string) bool { return k != "attempt" }) {
+		p := refuse("not_ready", "the core is draining before a rollout")
+		p.RetryAfterS = 30
+		return nil, p
+	}
 	wait := 30
 	if req.WaitS != nil {
 		wait = *req.WaitS
@@ -101,7 +111,14 @@ func (c *Core) claimOnce(ctx context.Context, w *Worker, kinds []string) (*WorkI
 		if _, err := tx.Exec(ctx, `UPDATE workers SET last_seen = $2 WHERE id = $1`, w.ID, now); err != nil {
 			return err
 		}
+		until, err := drainUntil(ctx, tx)
+		if err != nil {
+			return err
+		}
 		for _, k := range kinds {
+			if k == "attempt" && until != nil {
+				continue
+			}
 			var err error
 			switch {
 			case k == "delivery" && (w.Kind == "channel" || w.Kind == "sink" || w.Kind == "monitor"):

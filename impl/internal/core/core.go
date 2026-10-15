@@ -50,6 +50,8 @@ type Config struct {
 	// Health holds the thresholds of the health indicators and the store headroom (OBS-9,
 	// CAP-5).
 	Health HealthConfig
+	// Spend holds the reconciliation settings (BUD-10).
+	Spend SpendConfig
 	// FreeSpace, when set, measures the store volume instead of Health.StoreVolume: free and
 	// total bytes. A test sets a mock measurement here.
 	FreeSpace func() (free, total uint64, err error)
@@ -72,6 +74,7 @@ func (c *Config) defaults() {
 		c.Logger = slog.Default()
 	}
 	c.Health.defaults()
+	c.Spend.defaults()
 }
 
 // Core holds the store, the specification and the caches.
@@ -90,6 +93,8 @@ type Core struct {
 	// storeDown is set when the store stopped answering and cleared when every loop ticked
 	// again after it returned (OBS-8).
 	storeDown atomic.Bool
+	// budgetAt and retentionAt are the store times of the last slow passes.
+	budgetAt, retentionAt atomic.Int64
 	// manual is set when the loops tick only by loop.tick on a test bench.
 	manual atomic.Bool
 }

@@ -165,6 +165,20 @@ func (s *Server) p2(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		out, err = s.c.Redrive(ctx, oper, req)
+	case "spend.reconcile":
+		req, derr := decode[core.SpendReconcileRequest](m)
+		if derr != nil {
+			s.fail(w, derr)
+			return
+		}
+		out, err = s.c.SpendReconcile(ctx, oper, req)
+	case "core.drain":
+		req, derr := decode[core.CoreDrainRequest](m)
+		if derr != nil {
+			s.fail(w, derr)
+			return
+		}
+		out, err = s.c.CoreDrain(ctx, oper, req)
 	case "chat.bind":
 		req, derr := decode[core.ChatBindRequest](m)
 		if derr != nil {
