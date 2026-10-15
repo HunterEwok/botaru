@@ -22,10 +22,14 @@ func (b *bench) spendLine(t *testing.T, id, state string, micros int64, at time.
 	}
 }
 
-func (b *bench) alarmState(t *testing.T, alarm string) string {
+func (b *bench) alarmState(t *testing.T, alarm string, tenant ...string) string {
 	t.Helper()
+	tn := "demo"
+	if len(tenant) > 0 {
+		tn = tenant[0]
+	}
 	var state string
-	err := b.c.st.Pool.QueryRow(context.Background(), `SELECT state FROM alarm_episodes WHERE tenant = 'demo' AND alarm = $1 ORDER BY id DESC LIMIT 1`, alarm).Scan(&state)
+	err := b.c.st.Pool.QueryRow(context.Background(), `SELECT state FROM alarm_episodes WHERE tenant = $2 AND alarm = $1 ORDER BY id DESC LIMIT 1`, alarm, tn).Scan(&state)
 	if err != nil && err != pgx.ErrNoRows {
 		t.Fatal(err)
 	}

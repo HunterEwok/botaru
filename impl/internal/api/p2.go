@@ -179,6 +179,20 @@ func (s *Server) p2(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		out, err = s.c.CoreDrain(ctx, oper, req)
+	case "backup.report":
+		req, derr := decode[core.BackupReportRequest](m)
+		if derr != nil {
+			s.fail(w, derr)
+			return
+		}
+		out, err = s.c.BackupReport(ctx, oper, req)
+	case "restore.complete":
+		req, derr := decode[core.RestoreCompleteRequest](m)
+		if derr != nil {
+			s.fail(w, derr)
+			return
+		}
+		out, err = s.c.RestoreComplete(ctx, oper, req)
 	case "chat.bind":
 		req, derr := decode[core.ChatBindRequest](m)
 		if derr != nil {

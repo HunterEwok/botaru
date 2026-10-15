@@ -52,6 +52,8 @@ type Config struct {
 	Health HealthConfig
 	// Spend holds the reconciliation settings (BUD-10).
 	Spend SpendConfig
+	// Backup holds the backup locations the core watches (RET-8).
+	Backup BackupConfig
 	// FreeSpace, when set, measures the store volume instead of Health.StoreVolume: free and
 	// total bytes. A test sets a mock measurement here.
 	FreeSpace func() (free, total uint64, err error)
@@ -95,6 +97,8 @@ type Core struct {
 	storeDown atomic.Bool
 	// budgetAt and retentionAt are the store times of the last slow passes.
 	budgetAt, retentionAt atomic.Int64
+	// restoring is set while a restore from a backup waits for restore.complete (RET-6).
+	restoring atomic.Bool
 	// manual is set when the loops tick only by loop.tick on a test bench.
 	manual atomic.Bool
 }
@@ -117,6 +121,12 @@ func New(ctx context.Context, cfg Config, st *store.Store, sp *spec.Spec, tx *te
 	}
 	if cfg.Offline {
 		return c, nil
+	}
+	if err := c.settleRestore(ctx); err != nil {
+		return nil, err
+	}
+	if err := c.loadRestoring(ctx); err != nil {
+		return nil, err
 	}
 	c.warnNoticeFallbacks(cat)
 	if err := c.fillNoticeParams(ctx, cat); err != nil {

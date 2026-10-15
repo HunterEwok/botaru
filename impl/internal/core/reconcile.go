@@ -109,7 +109,7 @@ func (c *Core) SpendReconcile(ctx context.Context, op Operator, req SpendReconci
 				return err
 			}
 		}
-		return nil
+		return c.closeSpendGap(ctx, tx, now)
 	})
 	if err != nil {
 		return nil, err
@@ -295,6 +295,9 @@ func (c *Core) lineUsages(ctx context.Context, tx pgx.Tx, now time.Time, tv *Ten
 // budget line over 30 days next to its limit (BUD-15) and the age of the profile prices
 // (GW-17: older than 60 days warns, older than 120 days fails).
 func (c *Core) doctorMoney(ctx context.Context, tx pgx.Tx, now time.Time, tenant string, add func(DoctorCheck)) error {
+	if err := c.doctorBackup(ctx, tx, now, add); err != nil {
+		return err
+	}
 	until, err := drainUntil(ctx, tx)
 	if err != nil {
 		return err

@@ -54,6 +54,10 @@ commands:
   spend reconcile -provider P -file FILE     hand in the provider's daily sums per workspace, one request
                                              per UTC day; FILE is CSV with the header day,tenant,workspace,eur
   drain [-until 30m]                         drain the core before a rollout; the next core start ends it
+  backup report -kind backup|restore_check -location L -started T -finished T [-ok] [-size N]
+  erasure-log export -config FILE            the erasure log as JSON for its separate backup (core machine)
+  restore begin -config FILE -erasure-log FILE   mark a restored store before the core starts (core machine)
+  restore complete [-spend-pending]          make the core ready after a restore
   hold set KIND [TENANT [NAME]] -effects E[,E] -reason R [-until TIME]
   hold release ID
   hold list [TENANT]
@@ -162,6 +166,15 @@ func run(c *client, args []string) error {
 			return errors.New("spend needs reconcile")
 		}
 		return spendReconcile(c, args[2:])
+	case "backup":
+		if len(args) < 2 || args[1] != "report" {
+			return errors.New("backup needs report")
+		}
+		return backupReport(c, args[2:])
+	case "erasure-log":
+		return erasureLog(args[1:])
+	case "restore":
+		return restore(c, args[1:])
 	case "drain":
 		fs := flag.NewFlagSet("drain", flag.ExitOnError)
 		until := fs.String("until", "", "the drain deadline, for example 30m")

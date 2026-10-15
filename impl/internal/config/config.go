@@ -53,6 +53,8 @@ type Core struct {
 	Health core.HealthConfig `yaml:"health"`
 	// Spend holds the reconciliation settings with the provider report (BUD-10).
 	Spend core.SpendConfig `yaml:"spend"`
+	// Backup holds the backup locations the core watches (RET-8).
+	Backup core.BackupConfig `yaml:"backup"`
 }
 
 // Load reads and checks a settings file.
