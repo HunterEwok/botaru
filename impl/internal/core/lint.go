@@ -927,6 +927,10 @@ func (c *Core) lintManifests(docs []manifest.Doc, index []int) ([]ApplyError, er
 			if !slices.Contains(purposes, mstr(ts, "purpose")) {
 				f.add(o, "role_profile_purpose", path)
 			}
+			// An insight type is claimed only with the role's insight section naming it (INS-1).
+			if mstr(ts, "purpose") == "insight" && !slices.Contains(mstrs(mmap(rs, "insight"), "types"), tn) {
+				f.add(o, "insight_type_invalid", path)
+			}
 			if tier, _ := mnum(ts, "tier"); hasMax && tier > maxTier {
 				f.add(o, "role_profile_tier", path)
 			}
@@ -963,7 +967,9 @@ func (c *Core) lintManifests(docs []manifest.Doc, index []int) ([]ApplyError, er
 				continue
 			}
 			tier, _ := mnum(ts, "tier")
-			if mstr(ts, "purpose") != "insight" || !slices.Contains(mstrs(rs, "claims"), tn) || tier > 1 || ts["result_schema"] != nil {
+			// The type's class is not above max_data, so the attempt's mark stays within it (INS-2).
+			wider := ins["max_data"] != nil && order(mstr(ts, "data_class")) > order(mstr(ins, "max_data"))
+			if mstr(ts, "purpose") != "insight" || !slices.Contains(mstrs(rs, "claims"), tn) || tier > 1 || ts["result_schema"] != nil || wider {
 				f.add(o, "insight_type_invalid", path)
 			}
 		}

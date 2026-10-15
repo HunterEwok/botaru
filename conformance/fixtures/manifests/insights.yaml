@@ -64,3 +64,38 @@ cases:
           max_children: 0
           proposable: false
     expect: {error: insight_type_invalid, also: [sandbox_live_tools]}
+  - name: analysis type of a class above max_data
+    manifests:
+      - apiVersion: botaru/v1alpha1
+        kind: Role
+        metadata: {name: ops-reader}
+        spec:
+          profile: worker
+          worker_kind: agent
+          claims: [ops.investigate.v1, ops.health.v1, ops.summary.v1, ops.insight.v1]
+          tools: [cmd/run, logs/tail, checks/latest, storage/dir_sizes, monitor/problems, monitor/item_history,
+                  monitor/maintenance, monitor/item_text, monitor/problem_comments]
+          actions_may_request: [cleanup_pipeline_tmp]
+          service_control: [nginx]
+          monitor_scripts: [nginx-cache-clear]
+          models: {base: base-std, analysis: analysis-std}
+          memory: none
+          insight: {types: [ops.insight.v1], tools: [monitor/item_history], max_data: summary, merge_window: 1h}
+    expect: {error: insight_type_invalid}
+  - name: analysis type claimed outside the insight section
+    manifests:
+      - apiVersion: botaru/v1alpha1
+        kind: Role
+        metadata: {name: ops-reader}
+        spec:
+          profile: worker
+          worker_kind: agent
+          claims: [ops.investigate.v1, ops.health.v1, ops.summary.v1, ops.insight.v1]
+          tools: [cmd/run, logs/tail, checks/latest, storage/dir_sizes, monitor/problems, monitor/item_history,
+                  monitor/maintenance, monitor/item_text, monitor/problem_comments]
+          actions_may_request: [cleanup_pipeline_tmp]
+          service_control: [nginx]
+          monitor_scripts: [nginx-cache-clear]
+          models: {base: base-std, analysis: analysis-std}
+          memory: none
+    expect: {error: insight_type_invalid}

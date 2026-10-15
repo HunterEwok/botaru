@@ -21,7 +21,7 @@ CODES = {
     'catalog_value_format': ('catalog resource value fails its format', 'MAN-10'),
     'farm_host_in_catalog': ('farm host listed in a tenant catalog', 'DEP-11'),
     'host_two_tenants': ('host or service in catalogs of two tenants', 'TEN-4'),
-    'insight_type_invalid': ('insight type of tier above 1, not claimed, with its own result_schema, or not in exactly one role insight section', 'INS-1'),
+    'insight_type_invalid': ('insight type of tier above 1, not claimed, with its own result_schema, of a class above insight.max_data, claimed outside the insight section, or not in exactly one role insight section', 'INS-1, INS-2'),
     'insight_wider': ('insight tool outside the role tools', 'INS-2'),
     'insight_merge_window': ('insight.merge_window shorter than an hour', 'INS-4'),
     'series_source_invalid': ('observation series source does not fit its kind (tool without tool or field, a tool on another kind, job without field)', 'OBV-2, OBV-7'),

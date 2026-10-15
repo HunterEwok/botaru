@@ -229,6 +229,20 @@ func (c *Core) enqueue(ctx context.Context, tx pgx.Tx, now time.Time, cat *Catal
 	if p := tt.Purpose; (p == "insight" || p == "aggregate") && (in.Initiator != "system" || in.Source != "schedule" && in.Source != "route" || in.Chain != nil) {
 		return nil, refuse("type_not_allowed", "analysis starts only from a schedule or a route")
 	}
+	// The analysis mark stays within insight.max_data of its role (INS-2): the lint refuses such
+	// a set, and the core does not start one that got past it.
+	if tt.Purpose == "insight" {
+		for _, r := range cat.Roles {
+			if r.Insight == nil || r.Insight.MaxData == "" || !slices.Contains(r.Insight.Types, in.Type) {
+				continue
+			}
+			to, ok1 := c.markOrder(tt.DataClass)
+			mo, ok2 := c.markOrder(r.Insight.MaxData)
+			if !ok1 || !ok2 || to > mo {
+				return nil, refuse("type_not_allowed", "the analysis class is above insight.max_data")
+			}
+		}
+	}
 	bodyHash, err := jcs.Hash(in.Body)
 	if err != nil {
 		return nil, err

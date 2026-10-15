@@ -201,7 +201,7 @@ The codes of `check_manifests.py` that fixtures refer to (`expect: {error: <code
 | `ingress_token_tier` | route from an event of a tls_token source enqueues a type above tier 0 | ING-1 |
 | `ingress_tolerance` | source with auth: signature without ingress.tolerance or with more than 5m | ING-1 |
 | `insight_merge_window` | insight.merge_window shorter than an hour | INS-4 |
-| `insight_type_invalid` | insight type of tier above 1, not claimed, with its own result_schema, or not in exactly one role insight section | INS-1 |
+| `insight_type_invalid` | insight type of tier above 1, not claimed, with its own result_schema, of a class above insight.max_data, claimed outside the insight section, or not in exactly one role insight section | INS-1, INS-2 |
 | `insight_wider` | insight tool outside the role tools | INS-2 |
 | `listener_admin_worker_network` | the P2 listener network is a worker network (note) | IDN-7 |
 | `listener_test_in_production` | test-control listener of the core on a kind: production host | DEP-10 |

@@ -37,7 +37,11 @@ func loopOff(ctx context.Context, q pgx.Tx, cat *Catalog, tenant string) ([]loop
 	}
 	roles := 0
 	for _, name := range slices.Sorted(mapKeys(cat.Roles)) {
-		if cat.Roles[name].Insight == nil {
+		// A role counts for the tenant when the tenant's system may start one of its analyses.
+		ins := cat.Roles[name].Insight
+		if ins == nil || !slices.ContainsFunc(ins.Types, func(t string) bool {
+			return hasCap(tv, groupClosure(tv, []string{"system-ops"}), "task:"+t)
+		}) {
 			continue
 		}
 		roles++

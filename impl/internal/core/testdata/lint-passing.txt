@@ -44,6 +44,8 @@ fx-man-ing-01#2
 fx-man-ins-01#0
 fx-man-ins-01#1
 fx-man-ins-01#2
+fx-man-ins-01#4
+fx-man-ins-01#5
 fx-man-model-01#0
 fx-man-model-01#1
 fx-man-model-01#2

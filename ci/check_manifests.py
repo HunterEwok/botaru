@@ -768,6 +768,8 @@ def lint(docs, today=None, farm_hosts=None, examples_mode=False, claimed=None, s
                 f.error('role_profile_tier', where, f'role {rname}: type {tt} of tier {ts["tier"]} is above profile {pname} (PRF-1)')
             if ts['worker_kind'] != rs['worker_kind']:
                 f.error('worker_kind_mismatch', where, f'role {rname}: type {tt} is for {ts["worker_kind"]}')
+            if ts['purpose'] == 'insight' and tt not in (rs.get('insight') or {}).get('types', []):
+                f.error('insight_type_invalid', where, f'role {rname}: insight type {tt} is claimed without the role insight section naming it (INS-1)')
         for field in prof.get('must_be_empty', []):
             head, _, sub = field.partition('.')
             v = rs.get(head)
@@ -1189,10 +1191,12 @@ def lint_insight(f, rname, where, rs, types):
             if types:
                 f.error('ref_missing', where, f'role {rname}: insight type {tt} is not in the set')
             continue
+        order = lambda d: (DATA_CLASSES.get(d) or {}).get('order', 0)
+        wider = 'max_data' in ins and order(ts.get('data_class')) > order(ins['max_data'])
         if (ts['purpose'] != 'insight' or tt not in rs.get('claims', []) or ts.get('tier', 0) > 1
-                or ts.get('result_schema') is not None):
+                or ts.get('result_schema') is not None or wider):
             f.error('insight_type_invalid', where, f'role {rname}: insight type {tt} is an insight type of tier 1 at most, '
-                    'claimed by the role, without its own result_schema (INS-1)')
+                    'claimed by the role, without its own result_schema, of a class not above max_data (INS-1, INS-2)')
     own = set(rs.get('tools', []))
     for t in ins.get('tools', []):
         if t not in own and t.split('/')[0] not in own:
