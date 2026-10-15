@@ -118,16 +118,17 @@ func (c *Core) fireAlarm(ctx context.Context, tx pgx.Tx, now time.Time, a Alarm)
 		return err
 	}
 	// A repeat keeps the episode and carries the latest numbers, which incident conditions read.
-	var latest []byte
+	// A repeat without numbers is an observation without those fields, so the old numbers go.
+	latest := []byte("{}")
 	if a.Values != nil {
 		latest, _ = json.Marshal(a.Values)
 	}
 	var repeatID int64
 	var changed bool
-	err = tx.QueryRow(ctx, `UPDATE alarm_episodes SET repeat_count = repeat_count + 1, last_seen_at = $3, vals = coalesce($4::jsonb, vals),
-		vals_at = CASE WHEN $4::jsonb IS NOT NULL AND $4::jsonb IS DISTINCT FROM vals THEN $3 ELSE vals_at END
+	err = tx.QueryRow(ctx, `UPDATE alarm_episodes SET repeat_count = repeat_count + 1, last_seen_at = $3, vals = $4::jsonb,
+		vals_at = CASE WHEN $4::jsonb IS DISTINCT FROM vals THEN $3 ELSE vals_at END
 		WHERE tenant = $1 AND alarmkey = $2 AND state = 'firing'
-		RETURNING id, $4::jsonb IS NOT NULL AND vals_at = $3`, a.Tenant, ep.Alarmkey, now, latest).Scan(&repeatID, &changed)
+		RETURNING id, vals_at = $3`, a.Tenant, ep.Alarmkey, now, latest).Scan(&repeatID, &changed)
 	if err == nil {
 		if changed {
 			return logAlarmValues(ctx, tx, repeatID, now, latest)

@@ -429,3 +429,18 @@ func TestIncidentDetectLongRun(t *testing.T) {
 		t.Fatalf("a long run of changing matching numbers did not open: %d", n)
 	}
 }
+
+// A repeat without numbers breaks conditions on the missing field (MGR-8).
+func TestIncidentRepeatWithoutValues(t *testing.T) {
+	ctx := context.Background()
+	b := newIncidentBench(t)
+	b.diskAlarm(t, true, 3)
+	b.advance(t, 3*60)
+	a := Alarm{Tenant: "demo", Name: "disk.free.low", Subject: AlarmSubject{Kind: "resource", ID: "db1"}, Origin: "monitor"}
+	b.alarmTx(t, func(tx pgx.Tx, now time.Time) error { return b.c.fireAlarm(ctx, tx, now, a) })
+	b.advance(t, 3*60)
+	b.loop(t, "incident")
+	if n := len(incidentsOf(t, b, "disk_full")); n != 0 {
+		t.Fatalf("opened on numbers a repeat no longer carried: %d", n)
+	}
+}

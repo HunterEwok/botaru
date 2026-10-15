@@ -101,7 +101,8 @@ func incidentSubject(class map[string]any, ep alarmEpisode) (kind, id string, ok
 	kind = mstr(mmap(class, "subject"), "kind")
 	switch kind {
 	case "farm":
-		return kind, "", true
+		// Only an alarm of farm itself is about the farm.
+		return kind, "", ep.Tenant == "farm"
 	case "tenant":
 		return kind, ep.Tenant, ep.Tenant != "farm"
 	case "":
@@ -524,13 +525,14 @@ func (c *Core) containAuto(ctx context.Context, tx pgx.Tx, now time.Time, cat *C
 		if ttl <= 0 {
 			continue
 		}
-		// A scope that a first measure of the class still holds gets no second hold: the
-		// incident counts as contained by it.
+		// A scope that a first measure of the class still holds with all of this measure's
+		// effects gets no second hold: the incident counts as contained by it.
 		k := scope.key()
+		effects := mstrs(mm, "effects")
 		var held bool
 		if err := tx.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM holds WHERE state = 'active' AND author_kind = 'contain_auto' AND source = $1
-			AND scope_kind = $2 AND scope_tenant = $3 AND scope_name = $4 AND (until IS NULL OR until > $5))`,
-			ic.Name, k.kind, k.tenant, k.name, now).Scan(&held); err != nil {
+			AND scope_kind = $2 AND scope_tenant = $3 AND scope_name = $4 AND (until IS NULL OR until > $5) AND effects @> $6::text[])`,
+			ic.Name, k.kind, k.tenant, k.name, now, effects).Scan(&held); err != nil {
 			return err
 		}
 		if held {
@@ -539,7 +541,7 @@ func (c *Core) containAuto(ctx context.Context, tx pgx.Tx, now time.Time, cat *C
 		}
 		until := now.Add(ttl)
 		actor := HoldActor{Principal: "system", Rank: "contain_auto", Tenant: r.Tenant, Via: "system", Source: ic.Name}
-		if _, _, err := c.insertHold(ctx, tx, now, actor, scope, mstrs(mm, "effects"), "contain_auto", &until); err != nil {
+		if _, _, err := c.insertHold(ctx, tx, now, actor, scope, effects, "contain_auto", &until); err != nil {
 			return err
 		}
 		applied = true
