@@ -102,6 +102,21 @@ func (c *Core) SpendReconcile(ctx context.Context, op Operator, req SpendReconci
 			ON CONFLICT (provider, day) DO UPDATE SET created_at = $3`, provider, day, now); err != nil {
 			return err
 		}
+		// A workspace with usage or a correction of the provider that day but no row in the
+		// report billed nothing: it is reconciled to zero, so the complete day holds no stale sum.
+		rows, err := tx.Query(ctx, `SELECT DISTINCT tenant FROM spend WHERE provider = $1 AND time >= $2 AND time < $3`, provider, day, day.Add(24*time.Hour))
+		if err != nil {
+			return err
+		}
+		omitted, err := pgx.CollectRows(rows, pgx.RowTo[string])
+		if err != nil {
+			return err
+		}
+		for _, t := range omitted {
+			if _, ok := sums[t]; !ok {
+				sums[t] = SpendReconcileItem{Tenant: t}
+			}
+		}
 		for _, tenant := range slices.Sorted(mapKeys(sums)) {
 			r := sums[tenant]
 			var known bool

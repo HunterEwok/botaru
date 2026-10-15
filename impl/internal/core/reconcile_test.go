@@ -118,6 +118,13 @@ func TestReconcile(t *testing.T) {
 	if _, err := b.c.st.Pool.Exec(ctx, `DELETE FROM spend WHERE id = 'sp_open'`); err != nil {
 		t.Fatal(err)
 	}
+	// A report without rows for a day with usage reconciles that usage to zero.
+	if _, err := b.c.SpendReconcile(ctx, farm, SpendReconcileRequest{Day: "2027-03-01", Provider: "mock", Rows: []SpendReconcileItem{}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := b.c.st.Pool.QueryRow(ctx, `SELECT count(*), coalesce(sum(correction_eur_micros), 0) FROM spend WHERE unit = 'correction'`).Scan(&n, &corr); err != nil || n != 1 || corr != -5_000_000 {
+		t.Fatalf("correction of an empty report %d lines, %d %v", n, corr, err)
+	}
 	// A model line without a provider (from before the provider column) is not in the farm
 	// sum: the day is refused instead of corrected twice.
 	if _, err := b.c.st.Pool.Exec(ctx, `INSERT INTO spend (id, tenant, line, unit, state, eur_micros, time) VALUES ('sp_old', 'demo', 'work', 'tokens', 'committed', 1000, $1)`, day.Add(-48*time.Hour)); err != nil {

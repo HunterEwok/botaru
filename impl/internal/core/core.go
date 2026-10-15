@@ -109,8 +109,8 @@ type Core struct {
 	// manual is set when the loops tick only by loop.tick on a test bench.
 	manual atomic.Bool
 	// running is set when Run drives the loops; startedAt is the store time, in Unix
-	// nanoseconds, of the first indicators pass after that, from which a loop that never
-	// ticked counts its age (OBS-4).
+	// nanoseconds, at which Run started (or of the first indicators pass, if the store did not
+	// answer then), from which a loop that never ticked counts its age (OBS-4).
 	running   atomic.Bool
 	startedAt atomic.Int64
 }
