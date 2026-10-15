@@ -65,8 +65,9 @@ func (c *Core) lensDefs() map[string]lensDef {
 	return out
 }
 
-// lensExecutor is who reviews a lens: the fallback role of the charter seats of the lens (the
-// seat holders come with bot identity), or nothing (COM-7).
+// lensExecutor is who reviews a lens: the fallback role of the charter seat of the lens (the
+// seat holders come with bot identity), or for a lens without a seat a role of profile
+// reviewer that claims the lens type, or nothing (COM-7, COM-8).
 type lensExecutor struct {
 	Lens, Type, Role, Source string
 }
@@ -81,6 +82,7 @@ func (c *Core) commissionLenses(cat *Catalog, tenant string, kindNone bool, auth
 	seats, _ := com["seats"].([]any)
 	lenses := []string{}
 	exec := map[string]lensExecutor{}
+	seated := map[string]bool{}
 	add := func(l string) {
 		if !slices.Contains(lenses, l) {
 			lenses = append(lenses, l)
@@ -99,6 +101,7 @@ func (c *Core) commissionLenses(cat *Catalog, tenant string, kindNone bool, auth
 			continue
 		}
 		add(l)
+		seated[l] = true
 		if _, has := exec[l]; has {
 			continue
 		}
@@ -107,11 +110,34 @@ func (c *Core) commissionLenses(cat *Catalog, tenant string, kindNone bool, auth
 			exec[l] = lensExecutor{Lens: l, Type: d.ReviewType, Role: role, Source: "fallback_role"}
 		}
 	}
+	// A lens without a seat goes to a reviewer role that claims its type, the first by name.
+	for _, l := range lenses {
+		if seated[l] {
+			continue
+		}
+		for _, rn := range slices.Sorted(mapKeys(cat.Roles)) {
+			if cat.Roles[rn].Profile == "reviewer" && c.independentReviewer(cat, rn, defs[l].ReviewType, authorRole) {
+				exec[l] = lensExecutor{Lens: l, Type: defs[l].ReviewType, Role: rn, Source: "fallback_role"}
+				break
+			}
+		}
+	}
 	if kindNone {
 		lenses = slices.DeleteFunc(lenses, func(l string) bool { return !defs[l].KindNone })
 	}
 	sort.Strings(lenses)
 	return lenses, exec
+}
+
+// vetoCovered says whether every veto lens among lenses has an executor (COM-7).
+func (c *Core) vetoCovered(lenses []string, exec map[string]lensExecutor) bool {
+	defs := c.lensDefs()
+	for _, l := range lenses {
+		if _, ok := exec[l]; !ok && defs[l].Veto {
+			return false
+		}
+	}
+	return true
 }
 
 // independentReviewer: the reviewer role is not the author role, claims the review type, and
@@ -174,7 +200,6 @@ func (p *proposalRow) reason() string { return asString(p.Rec["state_reason"]) }
 
 // moveProposal writes a transition of the table with its reason and an event.
 func (c *Core) moveProposal(ctx context.Context, tx pgx.Tx, now time.Time, p *proposalRow, state, reason string) error {
-	from := p.State
 	p.Rec["state"] = state
 	if reason != "" {
 		p.Rec["state_reason"] = reason
@@ -182,18 +207,35 @@ func (c *Core) moveProposal(ctx context.Context, tx pgx.Tx, now time.Time, p *pr
 		p.Rec["state_reason"] = nil
 	}
 	p.State, p.StateAt = state, now
+	// park_ttl counts from the first park: a parked proposal screened again and parked again
+	// keeps its clock (PRP-6); waiting_since is the start of a wait in screened (COM-6).
+	switch state {
+	case "parked":
+		if p.Rec["parked_since"] == nil {
+			p.Rec["parked_since"] = fmtTime(now)
+		}
+	case "screened":
+	default:
+		delete(p.Rec, "parked_since")
+	}
+	if state != "screened" {
+		delete(p.Rec, "waiting_since")
+		delete(p.Rec, "waiting_for")
+	}
 	raw, err := json.Marshal(p.Rec)
 	if err != nil {
 		return err
 	}
-	if _, err := tx.Exec(ctx, `UPDATE proposals SET state = $2, record = $3, updated_at = $4, state_at = $4 WHERE id = $1`, p.ID, state, raw, now); err != nil {
-		return err
+	_, err = tx.Exec(ctx, `UPDATE proposals SET state = $2, record = $3, updated_at = $4, state_at = $4 WHERE id = $1`, p.ID, state, raw, now)
+	return err
+}
+
+// since reads a time field of the record, or def.
+func (p *proposalRow) since(field string, def time.Time) time.Time {
+	if t, err := time.Parse(time.RFC3339, asString(p.Rec[field])); err == nil {
+		return t
 	}
-	data := map[string]any{"proposal": p.ID, "from": from, "to": state}
-	if reason != "" {
-		data["reason"] = reason
-	}
-	return c.appendEvent(ctx, tx, now, p.Tenant, Event{Type: "proposal.state", Subject: p.ID, Data: data})
+	return def
 }
 
 func (c *Core) saveProposal(ctx context.Context, tx pgx.Tx, now time.Time, p *proposalRow) error {
@@ -234,13 +276,19 @@ func (c *Core) stepProposal(ctx context.Context, tx pgx.Tx, now time.Time, cat *
 			return c.moveProposal(ctx, tx, now, p, "expired", "")
 		}
 	case "parked":
-		if now.Sub(p.StateAt) > durationOr(ins.ParkTTL, defaultParkTTL) {
+		if now.Sub(p.since("parked_since", p.StateAt)) > durationOr(ins.ParkTTL, defaultParkTTL) {
 			return c.moveProposal(ctx, tx, now, p, "expired", "")
 		}
-		// Money for reviews came back: the proposal is screened again (COM-6).
-		if p.reason() == "review_budget" {
-			lenses, exec := c.commissionLenses(cat, p.Tenant, p.kind() == "none", p.Role)
+		lenses, exec := c.commissionLenses(cat, p.Tenant, p.kind() == "none", p.Role)
+		switch p.reason() {
+		case "review_budget":
+			// Money for reviews came back: the proposal is screened again (COM-6).
 			if c.reviewsFit(ctx, tx, now, cat, tv, p, lenses, exec) == nil {
+				return c.moveProposal(ctx, tx, now, p, "screened", "")
+			}
+		case "veto_lens_missing":
+			// The veto lens has an executor again (COM-7).
+			if c.vetoCovered(lenses, exec) {
 				return c.moveProposal(ctx, tx, now, p, "screened", "")
 			}
 		}
@@ -262,21 +310,28 @@ func (c *Core) screenProposal(ctx context.Context, tx pgx.Tx, now time.Time, cat
 		return c.moveProposal(ctx, tx, now, p, "dismissed", "other")
 	}
 	lenses, exec := c.commissionLenses(cat, p.Tenant, b.Change.Kind == "none", p.Role)
-	defs := c.lensDefs()
-	for _, l := range lenses {
-		if _, ok := exec[l]; !ok && defs[l].Veto {
-			return c.moveProposal(ctx, tx, now, p, "parked", "veto_lens_missing")
-		}
+	// Without an executor of a veto lens no review goes out: the proposal enters in_review
+	// with none and the verdict parks it as veto_lens_missing (COM-4, COM-7).
+	if !c.vetoCovered(lenses, exec) {
+		exec = nil
 	}
-	// A proposal that cannot start its reviews waits at most review_wait_max, then parks.
-	wait := func() error {
-		if now.Sub(p.StateAt) > durationOr(tv.Spec.Insights.ReviewWaitMax, defaultReviewWaitMax) {
+	// A proposal that cannot start its reviews waits in screened. Only missing money parks it,
+	// after review_wait_max from the start of the wait (COM-6); any other refusal (a missing
+	// group cap, a hold, capacity) keeps it waiting with the code on the record.
+	wait := func(pr *Problem) error {
+		if p.Rec["waiting_since"] == nil {
+			p.Rec["waiting_since"] = fmtTime(now)
+		}
+		p.Rec["waiting_for"] = pr.Reason
+		if pr.Reason == "budget_exhausted" && now.Sub(p.since("waiting_since", now)) > durationOr(tv.Spec.Insights.ReviewWaitMax, defaultReviewWaitMax) {
 			return c.moveProposal(ctx, tx, now, p, "parked", "review_budget")
 		}
-		return nil
+		return c.saveProposal(ctx, tx, now, p)
 	}
-	if pr := c.reviewsFit(ctx, tx, now, cat, tv, p, lenses, exec); pr != nil {
-		return wait()
+	if len(exec) > 0 {
+		if pr := c.reviewsFit(ctx, tx, now, cat, tv, p, lenses, exec); pr != nil {
+			return wait(pr)
+		}
 	}
 	// The reviews go out together under a savepoint: either every lens task with its reserve,
 	// or none (COM-6).
@@ -289,13 +344,14 @@ func (c *Core) screenProposal(ctx context.Context, tx pgx.Tx, now time.Time, cat
 		_ = sp.Rollback(ctx)
 		var pr *Problem
 		if errors.As(err, &pr) {
-			return wait()
+			return wait(pr)
 		}
 		return err
 	}
 	if err := sp.Commit(ctx); err != nil {
 		return err
 	}
+	p.Rec["review_lenses"] = lenses
 	p.Rec["reviews"] = reviews
 	p.Rec["review_reserved_eur"] = reserved
 	p.Rec["review_started_at"] = fmtTime(now)
@@ -319,7 +375,13 @@ func (c *Core) reviewsFit(ctx context.Context, tx pgx.Tx, now time.Time, cat *Ca
 		return refuse("budget_exhausted", "the review line is 0")
 	}
 	var used float64
-	start := time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, time.UTC)
+	// The month is the tenant's calendar month, as for the budget windows (TIM-2).
+	loc := time.UTC
+	if l, err := time.LoadLocation(tv.Spec.Timezone); err == nil && tv.Spec.Timezone != "" {
+		loc = l
+	}
+	local := now.In(loc)
+	start := time.Date(local.Year(), local.Month(), 1, 0, 0, 0, 0, loc)
 	if err := tx.QueryRow(ctx, `SELECT coalesce(sum((record->>'review_reserved_eur')::float8), 0) FROM proposals
 		WHERE tenant = $1 AND role = $2 AND id <> $3 AND (record->>'review_started_at')::timestamptz >= $4`, p.Tenant, p.Role, p.ID, start).Scan(&used); err != nil {
 		return refuse("not_ready", "store")
@@ -344,8 +406,11 @@ func (c *Core) enqueueReviews(ctx context.Context, tx pgx.Tx, now time.Time, cat
 			continue
 		}
 		body := map[string]any{"type": e.Type, "goal": "Review the proposal through the " + l + " lens.", "params": map[string]any{"input": input}}
+		// The review carries the proposal's mark; enqueue checks data:<mark> for the system
+		// initiator against it (COM-3, PRM-6).
 		res, err := c.enqueue(ctx, tx, now, cat, enqueueInput{Tenant: p.Tenant, Type: e.Type, Body: body,
-			IdempotencyKey: "system:review:" + p.ID + ":" + l, Initiator: "system", EnqueuedBy: "system:proposal", Source: reviewSource, SourceID: p.ID})
+			IdempotencyKey: "system:review:" + p.ID + ":" + l, Initiator: "system", EnqueuedBy: "system:proposal", Source: reviewSource, SourceID: p.ID,
+			ContinuesMark: asString(p.Rec["data_mark"])})
 		if err != nil {
 			return nil, 0, err
 		}
@@ -353,13 +418,6 @@ func (c *Core) enqueueReviews(ctx context.Context, tx pgx.Tx, now time.Time, cat
 			return nil, 0, res.Rejected
 		}
 		extra := map[string]any{"lens": l, "proposal": p.ID, "executor_role": e.Role, "not_worker": asString(origin["worker"])}
-		if mark := asString(p.Rec["data_mark"]); mark != "" {
-			if mo, ok := c.markOrder(mark); ok {
-				if to, ok := c.markOrder(cat.TaskTypes[e.Type].DataClass); !ok || mo > to {
-					extra["data_mark"] = mark
-				}
-			}
-		}
 		raw, err := json.Marshal(extra)
 		if err != nil {
 			return nil, 0, err
@@ -411,11 +469,16 @@ func (c *Core) reviewProposal(ctx context.Context, tx pgx.Tx, now time.Time, cat
 		}
 		var state string
 		var result []byte
-		if err := tx.QueryRow(ctx, `SELECT state, result FROM tasks WHERE id = $1`, rm["task"]).Scan(&state, &result); err != nil {
+		var done time.Time
+		err := tx.QueryRow(ctx, `SELECT state, result, updated_at FROM tasks WHERE id = $1`, rm["task"]).Scan(&state, &result, &done)
+		if errors.Is(err, pgx.ErrNoRows) {
+			state = "failed"
+		} else if err != nil {
 			return err
 		}
 		switch {
-		case state == "completed" && now.After(deadline):
+		// A review counts by the time it was handed in, not by when the loop reads it.
+		case state == "completed" && done.After(deadline):
 			rm["state"], changed = "late", true
 		case state == "completed":
 			var res map[string]any
@@ -449,7 +512,12 @@ func (c *Core) reviewProposal(ctx context.Context, tx pgx.Tx, now time.Time, cat
 	us, _ := p.Rec["untrusted_seen"].(map[string]any)
 	in.Untrusted = us["value"] == true
 	defs := c.lensDefs()
-	lenses, _ := c.commissionLenses(cat, p.Tenant, in.KindNone, p.Role)
+	// The verdict reads the lenses fixed at screening, so the same reviews give the same verdict
+	// whatever the charter says now (COM-4).
+	var lenses []string
+	for _, l := range asList(p.Rec["review_lenses"]) {
+		lenses = append(lenses, asString(l))
+	}
 	in.Lenses = lenses
 	for _, l := range lenses {
 		in.VetoLens[l] = defs[l].Veto
@@ -463,6 +531,16 @@ func (c *Core) reviewProposal(ctx context.Context, tx pgx.Tx, now time.Time, cat
 		}
 		in.Reviews = append(in.Reviews, lr)
 	}
+	// The author role's share counts what the reviews spent once they are over (COM-6).
+	tasks := []string{}
+	for _, r := range reviews {
+		tasks = append(tasks, asString(r.(map[string]any)["task"]))
+	}
+	var spent int64
+	if err := tx.QueryRow(ctx, `SELECT coalesce(sum(eur_micros), 0) FROM spend WHERE root = ANY($1) AND unit <> 'task' AND state <> 'reserved'`, tasks).Scan(&spent); err != nil {
+		return err
+	}
+	p.Rec["review_reserved_eur"] = float64(spent) / 1e6
 	v := verdict(policy, in)
 	v["computed_at"] = fmtTime(now)
 	p.Rec["verdict"] = v

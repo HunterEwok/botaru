@@ -488,6 +488,9 @@ func (c *Core) enqueue(ctx context.Context, tx pgx.Tx, now time.Time, cat *Catal
 		record["continues"] = in.Continues
 		record["refs"] = append(slices.Clone(in.Refs), in.Continues)
 	}
+	if in.ContinuesMark != "" {
+		record["data_mark"] = mark
+	}
 	if len(files) > 0 {
 		record["data_mark"] = mark
 		record["untrusted_seen"] = true

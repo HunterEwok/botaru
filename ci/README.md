@@ -235,6 +235,7 @@ The codes of `check_manifests.py` that fixtures refer to (`expect: {error: <code
 | `ref_missing` | reference to an object that is not in the set |  |
 | `retention_period` | tenant retention period outside the class bounds or longer than the content period | RET-9 |
 | `revert_reason_invalid` | Botaru-Revert reason is not from the closed list | MAN-5, PRP-22 |
+| `reviewer_not_independent` | a commission seat fallback role runs on the analysis profile of a role that writes proposals | COM-2 |
 | `role_profile_forbidden` | role declares what the profile forbids | PRF-1 |
 | `role_profile_memory` | role memory is outside the profile | PRF-1 |
 | `role_profile_purpose` | role claims a type whose purpose is outside the profile | PRF-1 |

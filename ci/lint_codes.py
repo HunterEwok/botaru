@@ -23,6 +23,7 @@ CODES = {
     'host_two_tenants': ('host or service in catalogs of two tenants', 'TEN-4'),
     'insight_type_invalid': ('insight type of tier above 1, not claimed, with its own result_schema, of a class above insight.max_data, claimed outside the insight section, or not in exactly one role insight section', 'INS-1, INS-2'),
     'veto_lens_no_executor': ('a veto lens has no charter seat whose fallback role claims its review type', 'COM-7'),
+    'reviewer_not_independent': ('a commission seat fallback role runs on the analysis profile of a role that writes proposals', 'COM-2'),
     'lens_profile_output': ('a role that claims a lens review has a base profile with max_output_tokens above 2000', 'COM-6'),
     'insight_wider': ('insight tool outside the role tools', 'INS-2'),
     'insight_merge_window': ('insight.merge_window shorter than an hour', 'INS-4'),

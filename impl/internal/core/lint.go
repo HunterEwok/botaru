@@ -1324,13 +1324,39 @@ func (c *Core) lintManifests(docs []manifest.Doc, index []int) ([]ApplyError, er
 			if l["veto"] != true {
 				continue
 			}
+			seated := slices.ContainsFunc(seats, func(s any) bool {
+				sm, _ := s.(map[string]any)
+				return mstr(sm, "lens") == id
+			})
 			covered := slices.ContainsFunc(seats, func(s any) bool {
 				sm, _ := s.(map[string]any)
 				fr, ok := roles[mstr(sm, "fallback_role")]
 				return mstr(sm, "lens") == id && ok && slices.Contains(mstrs(fr.spec, "claims"), mstr(l, "review_type"))
 			})
+			// A lens without a seat goes to a role of profile reviewer that claims its type (COM-8).
+			if !seated {
+				for _, ro := range roles {
+					if mstr(ro.spec, "profile") == "reviewer" && slices.Contains(mstrs(ro.spec, "claims"), mstr(l, "review_type")) {
+						covered = true
+					}
+				}
+			}
 			if !covered {
 				f.add(o, "veto_lens_no_executor", "/commission/seats")
+			}
+		}
+		// A seat's fallback role does not run on the analysis profile of a role that writes
+		// proposals (COM-2).
+		analysis := map[string]bool{}
+		for _, ro := range roles {
+			if a := mstr(mmap(ro.spec, "models"), "analysis"); a != "" {
+				analysis[a] = true
+			}
+		}
+		for _, s := range seats {
+			sm, _ := s.(map[string]any)
+			if fr, ok := roles[mstr(sm, "fallback_role")]; ok && analysis[mstr(mmap(fr.spec, "models"), "base")] {
+				f.add(o, "reviewer_not_independent", "/commission/seats")
 			}
 		}
 	}
