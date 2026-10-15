@@ -33,6 +33,8 @@ type Config struct {
 	TokenKey []byte
 	// KeyID names TokenKey in signed lease tokens.
 	KeyID string
+	// Monitor is the monitor profile of the installation (D-88).
+	Monitor MonitorConfig
 	// PreviousKeys are the token keys of the rotation window by key id: tokens they signed and
 	// secrets they hashed stay valid until the operator removes them (SEC-5).
 	PreviousKeys map[string][]byte

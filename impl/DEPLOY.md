@@ -314,6 +314,12 @@ previous_token_keys:
 
 Restart the core. After the window (every worker has called once, and the longest lease has passed) remove the old key from `previous_token_keys` and restart again.
 
+The signing key of audit heads is derived from the token key. Its public key is kept in the table `audit_head_keys` when it first signs, so heads in the monitoring history stay verifiable after the old token key is removed. Always give a new token key a new `token_key_id`: under an id the store already knows with another key the core signs no head, and `doctor` fails the line `monitor.head_key_id`. Do not put that replacement key into `previous_token_keys` under the old id either: heads signed with the original key would then fail verification until the id is removed. A verifier outside the farm can take the public keys from there:
+
+```sh
+psql -c "SELECT key_id, encode(public_key, 'base64') FROM audit_head_keys"
+```
+
 ## Running with docker compose
 
 `impl/deploy/compose/` runs the same test bench in containers: the store, the core, the agent, the Telegram channel and the mock provider. The containers run as user 10001 with a read-only root, and only the store and core networks connect them; P1 and P2 publish no port.

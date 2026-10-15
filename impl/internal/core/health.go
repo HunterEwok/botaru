@@ -19,6 +19,8 @@ type HealthReport struct {
 	Delivered10mRatio *float64       `json:"delivered_10m_ratio,omitempty"`
 	LoopTickAgeS      map[string]int `json:"loop_tick_age_s,omitempty"`
 	DrainUntilS       *int64         `json:"drain_until_s,omitempty"`
+	// MonitorExportAgeS is the age of the last successful E5 export per tenant (MON-11).
+	MonitorExportAgeS map[string]int64 `json:"monitor_export_age_s,omitempty"`
 }
 
 // HealthConfig holds the thresholds of the deployment binding for the health indicators and
@@ -268,11 +270,21 @@ func (c *Core) Health(ctx context.Context) HealthReport {
 	}
 	var in *indicators
 	var drain *int64
+	var exportAge map[string]int64
 	err := c.tx(ctx, func(tx pgx.Tx, now time.Time) error {
 		var err error
 		in, err = c.indicators(ctx, tx, now)
 		if err != nil {
 			return err
+		}
+		if c.monitorOn() {
+			ages, _, err := exportAges(ctx, tx, now)
+			if err != nil {
+				return err
+			}
+			if len(ages) > 0 {
+				exportAge = ages
+			}
 		}
 		until, err := drainUntil(ctx, tx)
 		if until != nil {
@@ -285,7 +297,7 @@ func (c *Core) Health(ctx context.Context) HealthReport {
 		r.Alive, r.Reason = false, "store_unavailable"
 		return r
 	}
-	r.OldestUrgentAgeS, r.Delivered10mRatio = in.urgentAge, in.share
+	r.OldestUrgentAgeS, r.Delivered10mRatio, r.MonitorExportAgeS = in.urgentAge, in.share, exportAge
 	if len(in.ticks) > 0 {
 		r.LoopTickAgeS = in.ticks
 	}
@@ -313,13 +325,35 @@ type AuditVerifyResult struct {
 	OK           bool   `json:"ok"`
 	CheckedToSeq int64  `json:"checked_to_seq"`
 	BreakAtSeq   int64  `json:"break_at_seq,omitempty"`
+	Reason       string `json:"reason,omitempty"`
 }
 
-// AuditVerify recomputes the audit chain of a tenant (AUD-6).
-func (c *Core) AuditVerify(ctx context.Context, tenant string) (*AuditVerifyResult, error) {
+// AuditVerifyRequest is p2-audit-verify-request: the tenant, and the heads the witness kept in
+// the history of the monitoring system, oldest first (MON-3).
+type AuditVerifyRequest struct {
+	Op     string      `json:"op"`
+	Tenant string      `json:"tenant"`
+	Heads  []AuditHead `json:"heads"`
+}
+
+// AuditVerify recomputes the audit chain of a tenant and checks the heads of its witness
+// (AUD-6, MON-3).
+func (c *Core) AuditVerify(ctx context.Context, tenant string, heads []AuditHead) (*AuditVerifyResult, error) {
 	n, broken, err := c.VerifyAudit(ctx, tenant)
 	if err != nil {
 		return nil, err
 	}
-	return &AuditVerifyResult{Tenant: tenant, OK: broken == 0, CheckedToSeq: n, BreakAtSeq: broken}, nil
+	r := &AuditVerifyResult{Tenant: tenant, OK: broken == 0, CheckedToSeq: n, BreakAtSeq: broken}
+	if broken != 0 {
+		r.Reason = "chain_broken"
+		return r, nil
+	}
+	reason, at, err := c.verifyHeads(ctx, tenant, heads)
+	if err != nil {
+		return nil, err
+	}
+	if reason != "" {
+		r.OK, r.Reason, r.BreakAtSeq = false, reason, max(at, 1)
+	}
+	return r, nil
 }

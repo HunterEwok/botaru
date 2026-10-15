@@ -63,6 +63,8 @@ type Core struct {
 	Spend core.SpendConfig `yaml:"spend"`
 	// Backup holds the backup locations the core watches (RET-8).
 	Backup core.BackupConfig `yaml:"backup"`
+	// Monitor turns on the monitor profile: alarms go to the monitoring system only (D-88).
+	Monitor core.MonitorConfig `yaml:"monitor"`
 }
 
 // Load reads and checks a settings file.
