@@ -25,6 +25,8 @@ const (
 	defaultReviewWaitMax = 7 * 24 * time.Hour
 	// roleReviewShare is the most of the review line one author role may take a month (COM-6).
 	roleReviewShare = 0.3
+	// maxReviewRounds is how many review rounds one proposal gets.
+	maxReviewRounds = 3
 	reviewSource    = "proposal"
 )
 
@@ -288,9 +290,9 @@ func (c *Core) stepProposal(ctx context.Context, tx pgx.Tx, now time.Time, cat *
 				return c.moveProposal(ctx, tx, now, p, "screened", "")
 			}
 		case "veto_lens_missing":
-			// The veto lens has an executor again (COM-7): a role other than the one whose
-			// review was missing, so the same absent reviewer does not loop the proposal.
-			if c.vetoCovered(lenses, exec) && execChanged(mmapAny(p.Rec["missing_exec"]), exec) {
+			// The veto lens has an executor again (COM-7); a proposal gets at most
+			// maxReviewRounds rounds, so an executor that never delivers does not loop it.
+			if c.vetoCovered(lenses, exec) && p.round() < maxReviewRounds {
 				return c.moveProposal(ctx, tx, now, p, "screened", "")
 			}
 		}
@@ -365,8 +367,9 @@ func (c *Core) screenProposal(ctx context.Context, tx pgx.Tx, now time.Time, cat
 		p.Rec["review_started_at"] = fmtTime(now)
 	}
 	p.Rec["review_round_at"] = fmtTime(now)
-	p.Rec["review_round"] = p.round() + 1
-	delete(p.Rec, "missing_exec")
+	if len(reviews) > 0 {
+		p.Rec["review_round"] = p.round() + 1
+	}
 	delete(p.Rec, "waiting_for")
 	return c.moveProposal(ctx, tx, now, p, "in_review", "")
 }
@@ -398,6 +401,10 @@ func (c *Core) reviewsFit(ctx context.Context, tx pgx.Tx, now time.Time, cat *Ca
 	if err := tx.QueryRow(ctx, `SELECT coalesce(sum((record->>'review_reserved_eur')::float8), 0) FROM proposals
 		WHERE tenant = $1 AND role = $2 AND id <> $3 AND (record->>'review_started_at')::timestamptz >= $4`, p.Tenant, p.Role, p.ID, start).Scan(&used); err != nil {
 		return refuse("not_ready", "store")
+	}
+	// The proposal's own earlier rounds count when they started this month.
+	if own, _ := toFloat(p.Rec["review_spent_eur"]); own > 0 && !p.since("review_started_at", time.Time{}).Before(start) {
+		used += own
 	}
 	if used+sum > roleReviewShare**line.MonthEUR+1e-9 {
 		return refuse("budget_exhausted", "the author role's share of the review line is used up")
@@ -564,33 +571,7 @@ func (c *Core) reviewProposal(ctx context.Context, tx pgx.Tx, now time.Time, cat
 	p.Rec["verdict"] = v
 	state, reason, _ := strings.Cut(asString(v["outcome"]), "(")
 	reason = strings.TrimSuffix(reason, ")")
-	if reason == "veto_lens_missing" {
-		// Which role was to review each missing veto lens: the proposal comes back only with
-		// another one (COM-7).
-		roles := map[string]any{}
-		_, exec := c.commissionLenses(cat, p.Tenant, in.KindNone, p.Role)
-		for _, l := range asList(v["missing_lenses"]) {
-			if defs[asString(l)].Veto {
-				roles[asString(l)] = exec[asString(l)].Role
-			}
-		}
-		p.Rec["missing_exec"] = roles
-	}
 	return c.moveProposal(ctx, tx, now, p, state, reason)
-}
-
-// execChanged says whether some lens of missing has an executor role other than the recorded
-// one.
-func execChanged(missing map[string]any, exec map[string]lensExecutor) bool {
-	if len(missing) == 0 {
-		return true
-	}
-	for l, role := range missing {
-		if e, ok := exec[l]; ok && e.Role != asString(role) {
-			return true
-		}
-	}
-	return false
 }
 
 func (p *proposalRow) round() int {

@@ -301,8 +301,8 @@ func TestCommissionWaitsForCap(t *testing.T) {
 	}
 }
 
-// A veto lens review that never comes parks the proposal, and the same absent reviewer does
-// not bring it back (COM-4, COM-7).
+// A veto lens review that never comes parks the proposal; it is reviewed again at most
+// maxReviewRounds times, then stays parked until park_ttl (COM-4, COM-7, PRP-6).
 func TestCommissionVetoReviewMissing(t *testing.T) {
 	b := newCommissionBench(t, true)
 	proposeNone(t, b)
@@ -310,12 +310,12 @@ func TestCommissionVetoReviewMissing(t *testing.T) {
 	if err := b.review(t, rb, map[string]any{"lens": "value", "score": 3, "confidence": "medium"}); err != nil {
 		t.Fatal(err)
 	}
-	b.advance(t, 49*3600)
-	for range 3 {
+	for range 10 {
+		b.advance(t, 49*3600)
 		b.loop(t, "proposal")
-		if state, rec := proposalState(t, b); state != "parked" || rec["state_reason"] != "veto_lens_missing" {
-			t.Fatalf("state %s %v", state, rec["state_reason"])
-		}
+	}
+	if state, rec := proposalState(t, b); state != "parked" || rec["state_reason"] != "veto_lens_missing" || rec["review_round"] != float64(maxReviewRounds) {
+		t.Fatalf("state %s %v round %v", state, rec["state_reason"], rec["review_round"])
 	}
 }
 
