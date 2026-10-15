@@ -1,7 +1,7 @@
 # Gemini review: a second automatic reviewer for when Codex is out of quota. A comment
 # "/gemini review" on a pull request by the owner, a member or a collaborator runs the
-# Gemini CLI over the PR's diff and posts its answer as a PR comment. A change of this workflow
-# on a branch of this repository reviews its own PR, so the workflow can be checked before merge.
+# Gemini CLI over the PR's diff and posts its answer as a PR comment. A comment event always runs
+# this file as it is on the default branch, so a PR cannot change what runs next to the key.
 # The only secret: GEMINI_API_KEY. The PR code is only read: the CLI runs in plan mode
 # (read-only tools), nothing of the PR is executed, and the key is never given to a PR from a
 # fork. Actions are pinned to a full commit SHA; the CLI version is pinned below.
@@ -10,24 +10,20 @@ name: gemini-review
 on:
   issue_comment:
     types: [created]
-  pull_request:
-    paths: [".github/workflows/gemini-review.yml"]
 
 permissions:
   contents: read
 
 concurrency:
-  group: gemini-review-${{ github.event.issue.number || github.event.pull_request.number }}
+  group: gemini-review-${{ github.event.issue.number }}
   cancel-in-progress: false
 
 jobs:
   review:
     if: >-
-      (github.event_name == 'pull_request' &&
-       github.event.pull_request.head.repo.full_name == github.repository) ||
-      (github.event_name == 'issue_comment' && github.event.issue.pull_request &&
-       startsWith(github.event.comment.body, '/gemini review') &&
-       contains(fromJSON('["OWNER", "MEMBER", "COLLABORATOR"]'), github.event.comment.author_association))
+      github.event.issue.pull_request &&
+      startsWith(github.event.comment.body, '/gemini review') &&
+      contains(fromJSON('["OWNER", "MEMBER", "COLLABORATOR"]'), github.event.comment.author_association)
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     permissions:
@@ -36,11 +32,10 @@ jobs:
       issues: write
     env:
       GH_TOKEN: ${{ github.token }}
-      PR: ${{ github.event.issue.number || github.event.pull_request.number }}
+      PR: ${{ github.event.issue.number }}
       GEMINI_CLI: "@google/gemini-cli@0.64.0"
     steps:
       - name: acknowledge
-        if: github.event_name == 'issue_comment'
         run: gh api -X POST "repos/${{ github.repository }}/issues/comments/${{ github.event.comment.id }}/reactions" -f content=eyes >/dev/null
       - name: pull request
         id: pull

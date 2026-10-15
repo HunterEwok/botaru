@@ -115,7 +115,7 @@ Without that run, the words of a PR are checked only after the merge, that is, a
 
 ## Gemini review
 
-The workflow `.github/workflows/gemini-review.yml` is a second automatic reviewer, for when Codex has no quota left. A comment `/gemini review` on a pull request by the owner, a member or a collaborator runs the Gemini CLI (`@google/gemini-cli`, version pinned in the workflow) over the PR's diff in read-only plan mode and posts its findings as a PR comment. Only the default branch is checked out; the PR's changes are read as a diff from the API and never fetched or checked out; a PR that changes the workflow reviews itself. The key is the repository secret `GEMINI_API_KEY` (Settings > Secrets and variables > Actions); a PR from a fork never gets it. The workflow is not a required check.
+The workflow `.github/workflows/gemini-review.yml` is a second automatic reviewer, for when Codex has no quota left. A comment `/gemini review` on a pull request by the owner, a member or a collaborator runs the Gemini CLI (`@google/gemini-cli`, version pinned in the workflow) over the PR's diff in read-only plan mode and posts its findings as a PR comment. Only the default branch is checked out; the PR's changes are read as a diff from the API and never fetched or checked out. The comment always runs the workflow as it is on the default branch, so a change of the workflow takes effect only after its merge. The key is the repository secret `GEMINI_API_KEY` (Settings > Secrets and variables > Actions); a PR from a fork never gets it. The workflow is not a required check.
 
 ## Protecting the main branch
 
