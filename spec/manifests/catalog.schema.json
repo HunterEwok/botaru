@@ -399,6 +399,11 @@
           "volume": {
             "$ref": "urn:botaru:schema:common:1#/$defs/name"
           },
+          "size_bytes": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Size of the volume in bytes. With a class threshold on values.free_pct it gives the used-bytes threshold that the writer quotas must stay below (MGR-33)."
+          },
           "writers": {
             "type": "array",
             "maxItems": 20,

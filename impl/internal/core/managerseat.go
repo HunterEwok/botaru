@@ -506,7 +506,7 @@ func (c *Core) diskStopCondition(ctx context.Context, tx pgx.Tx, now time.Time, 
 		}
 		sum += q
 	}
-	limit, ok := usedThreshold(ic.Spec)
+	limit, ok := usedThreshold(ic.Spec, vol)
 	if !ok {
 		return "quota_threshold_unknown", nil
 	}
@@ -551,15 +551,24 @@ func volumeOf(cat *Catalog, tenant, subject string) map[string]any {
 }
 
 // usedThreshold is the used-bytes threshold of a class: the value of its detect condition gt or
-// ge on values.used_bytes.
-func usedThreshold(spec map[string]any) (float64, bool) {
+// ge on values.used_bytes, or, for a condition lt or le on values.free_pct, the used bytes of a
+// volume with its size_bytes at that free share.
+func usedThreshold(spec, vol map[string]any) (float64, bool) {
 	for _, w := range mlist(mmap(spec, "detect"), "when") {
 		wm := asMap(w)
-		if mstr(wm, "field") != "values.used_bytes" || (mstr(wm, "atom") != "gt" && mstr(wm, "atom") != "ge") {
+		f, ok := toFloat(wm["value"])
+		if !ok {
 			continue
 		}
-		if f, ok := toFloat(wm["value"]); ok {
-			return f, true
+		switch atom := mstr(wm, "atom"); mstr(wm, "field") {
+		case "values.used_bytes":
+			if atom == "gt" || atom == "ge" {
+				return f, true
+			}
+		case "values.free_pct":
+			if size, ok := mnum(vol, "size_bytes"); ok && size > 0 && (atom == "lt" || atom == "le") && f >= 0 && f <= 100 {
+				return size * (1 - f/100), true
+			}
 		}
 	}
 	return 0, false
@@ -586,7 +595,7 @@ func asMap(v any) map[string]any { m, _ := v.(map[string]any); return m }
 // enqueueIncidentTask puts the seat task of a new or reopened incident in its tenant, to run on
 // behalf of the holder; a class of the subject farm, a tenant without the manager or a catalog
 // without the type gets none (MGR-3, MGR-42). An enqueue refusal does not stop the incident.
-func (c *Core) enqueueIncidentTask(ctx context.Context, tx pgx.Tx, now time.Time, cat *Catalog, r *incidentRow) error {
+func (c *Core) enqueueIncidentTask(ctx context.Context, tx pgx.Tx, now time.Time, cat *Catalog, ic incidentClass, r *incidentRow) error {
 	role := managerRole(cat)
 	if r.SubjectKind == "farm" || !managerEnabled(cat, r.Tenant) || role == "" || !slices.Contains(cat.Roles[role].Claims, incidentRespondType) {
 		return nil
@@ -594,7 +603,7 @@ func (c *Core) enqueueIncidentTask(ctx context.Context, tx pgx.Tx, now time.Time
 	if _, ok := cat.TaskTypes[incidentRespondType]; !ok {
 		return nil
 	}
-	body := map[string]any{"type": incidentRespondType, "goal": "Respond to the incident.", "params": map[string]any{"input": map[string]any{"incident": r.ID}}}
+	body := map[string]any{"type": incidentRespondType, "goal": "Respond to the incident.", "params": map[string]any{"input": incidentView(ic, r)}}
 	res, err := c.enqueue(ctx, tx, now, cat, enqueueInput{Tenant: r.Tenant, Type: incidentRespondType, Body: body,
 		IdempotencyKey: "incident:" + r.ID + ":" + strconv.FormatInt(r.Episode, 10), Initiator: "system", EnqueuedBy: "system:incident",
 		Source: seatSource, SourceID: r.ID, Priority: 1})
@@ -611,6 +620,33 @@ func (c *Core) enqueueIncidentTask(ctx context.Context, tx pgx.Tx, now time.Time
 	}
 	_, err = tx.Exec(ctx, `UPDATE tasks SET record = record || $2::jsonb WHERE id = $1`, res.TaskID, extra)
 	return err
+}
+
+// incidentView is the incident/v1 view the seat task gets in its input block: numbers, ids and
+// codes of the incident, its alarm and involved parties, and the responses its class allows,
+// without tenant text (MGR-25, spec/model/manager-incident-view.schema.json).
+func incidentView(ic incidentClass, r *incidentRow) map[string]any {
+	subject := map[string]any{"kind": r.SubjectKind}
+	if r.SubjectID != "" {
+		subject["id"] = r.SubjectID
+	}
+	allowed := map[string]any{}
+	for k, v := range mmap(ic.Spec, "responses") {
+		allowed[k] = v
+	}
+	implicated, _ := r.Record["implicated"].([]any)
+	if implicated == nil {
+		implicated = []any{}
+	}
+	view := map[string]any{"view": "incident/v1", "incident": r.ID, "class": r.Class, "state": r.State, "tenant": r.Tenant,
+		"subject": subject, "implicated": implicated, "allowed": allowed, "humans_took": r.Record["humans_took"] == true}
+	if sev := mstr(r.Record, "severity"); sev != "" {
+		view["severity"] = sev
+	}
+	if a, ok := r.Record["alarm"].(map[string]any); ok {
+		view["alarm"] = a
+	}
+	return view
 }
 
 // managerDisabled applies a tenant's farm_manager.enabled: false in the apply transaction: the

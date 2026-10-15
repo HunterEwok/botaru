@@ -480,7 +480,7 @@ func (c *Core) openIncident(ctx context.Context, tx pgx.Tx, now time.Time, cat *
 	if err := c.containAuto(ctx, tx, now, cat, ic, r); err != nil {
 		return err
 	}
-	return c.enqueueIncidentTask(ctx, tx, now, cat, r)
+	return c.enqueueIncidentTask(ctx, tx, now, cat, ic, r)
 }
 
 // adoptEpisode adds an episode and its alarm key to an incident.

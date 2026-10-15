@@ -24,7 +24,7 @@ texts:
   notice.monitor_export_stalled: "Alarms of tenant {tenant} do not reach the monitoring system: the last successful export was {age_min} minutes ago."
   # The farm manager seat (MGR-31, GOV-22, MGR-35): codes, ids and times only
   notice.manager_holder_changed: "The farm manager seat was {what}: holder {holder}, epoch {epoch}, at {at}."
-  notice.manager_stopped: "The farm manager seat stopped after incident {incident} at {at}. Decide with farmctl: seat resume farm-manager {incident} (after the incidents are dismissed), seat assign farm-manager, or seat vacate farm-manager."
+  notice.manager_stopped: "The farm manager seat stopped after incident {incident} at {at}. Decide with farmctl: seat resume farm-manager --incident {incident} (after the incidents are dismissed), seat assign farm-manager, or seat vacate farm-manager."
   notice.manager_stopped_joined: "Incident {incident} opened at {at} while the farm manager seat is stopped."
   # Channel commands (REP-12, PRM-15, DLV-9)
   cmd.tasks.header: "Your tasks today:"

@@ -255,6 +255,13 @@ func TestManagerSeatTask(t *testing.T) {
 	if item.Token.ActingBot != m.Holder || item.Token.SeatEpoch != m.Epoch {
 		t.Fatalf("acting %+v seat %+v", item.Token, m)
 	}
+	// The task carries the code-built incident view, not only the incident id (MGR-25).
+	task, _ := item.Payload["task"].(map[string]any)
+	in := mmap(mmap(mmap(task, "body"), "params"), "input")
+	if in["view"] != "incident/v1" || in["class"] != "disk_full" || in["tenant"] != "demo" || mstr(mmap(in, "subject"), "kind") != "resource" ||
+		mmap(in, "alarm") == nil || mmap(in, "allowed") == nil || in["implicated"] == nil {
+		t.Fatalf("input %v", in)
+	}
 	// A stop fences the running attempt in the tenant.
 	if _, err := b.c.HoldSet(ctx, OperatorActor(b.farmOp()), HoldSetRequest{Scope: HoldScope{Kind: "seat", Tenant: farmTenant, Name: managerSeatID},
 		Effects: []string{"no_claim"}, Reason: "manual"}); err != nil {
@@ -293,4 +300,20 @@ func (b *bench) loadBot(t *testing.T, id string) *botRow {
 		t.Fatalf("bot %s: %v", id, err)
 	}
 	return r
+}
+
+// A class threshold on the free share gives a used-bytes threshold only with the volume size
+// (MGR-33).
+func TestUsedThreshold(t *testing.T) {
+	spec := map[string]any{"detect": map[string]any{"when": []any{map[string]any{"atom": "lt", "field": "values.free_pct", "value": 5}}}}
+	if _, ok := usedThreshold(spec, map[string]any{}); ok {
+		t.Fatal("a threshold without the volume size")
+	}
+	if got, ok := usedThreshold(spec, map[string]any{"size_bytes": 1000}); !ok || got != 950 {
+		t.Fatalf("free share threshold %v %v", got, ok)
+	}
+	used := map[string]any{"detect": map[string]any{"when": []any{map[string]any{"atom": "ge", "field": "values.used_bytes", "value": 700}}}}
+	if got, ok := usedThreshold(used, nil); !ok || got != 700 {
+		t.Fatalf("used bytes threshold %v %v", got, ok)
+	}
 }
