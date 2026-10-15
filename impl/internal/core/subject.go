@@ -203,6 +203,11 @@ func needlesOf(ctx context.Context, q store.Querier, tenant, principal string) (
 		if err := rows.Scan(&s); err != nil {
 			return nil, err
 		}
+		// The whole identity, as the contract gives it (telegram:1003), and its external part
+		// alone, as a store may hold it without the kind (RET-4).
+		if !slices.Contains(out, s) {
+			out = append(out, s)
+		}
 		if _, ext, ok := strings.Cut(s, ":"); ok && ext != "" && !slices.Contains(out, ext) {
 			out = append(out, ext)
 		}

@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"slices"
 	"strings"
 	"testing"
 
@@ -218,7 +219,7 @@ func TestSubjectErasure(t *testing.T) {
 		t.Fatalf("the request closed before the sink answered: %v", rec)
 	}
 	item := b.claim(t, sink, "erasure")
-	if item == nil || item.Payload["scope"].(map[string]any)["subject"] == nil || len(item.Payload["needles"].([]string)) != 1 {
+	if item == nil || item.Payload["scope"].(map[string]any)["subject"] == nil || !slices.Contains(item.Payload["needles"].([]string), "telegram:1001") {
 		t.Fatalf("erasure work %+v", item)
 	}
 	validOut(t, b.bench, "erasure-work", item.Payload)
@@ -506,7 +507,7 @@ func TestErasureRequestNeedles(t *testing.T) {
 		t.Fatal(err)
 	}
 	var needles string
-	if err := b.c.st.Pool.QueryRow(ctx, `SELECT coalesce(needles::text, '') FROM erasure_requests WHERE id = $1`, d.ID).Scan(&needles); err != nil || needles != "{1001}" {
+	if err := b.c.st.Pool.QueryRow(ctx, `SELECT coalesce(needles::text, '') FROM erasure_requests WHERE id = $1`, d.ID).Scan(&needles); err != nil || needles != "{telegram:1001,1001}" {
 		t.Fatalf("needles %q %v", needles, err)
 	}
 }
