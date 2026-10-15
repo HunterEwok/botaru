@@ -521,6 +521,11 @@ func (c *Core) enqueueReviews(ctx context.Context, tx pgx.Tx, now time.Time, cat
 		extra := map[string]any{"lens": l, "proposal": p.ID, "executor_role": e.Role, "not_worker": asString(origin["worker"])}
 		if e.Source == "seat" {
 			extra["seat"] = e.Seat
+			// The author's bot never reviews its own proposal, even if it takes the seat
+			// before the review is claimed (COM-2); claim checks this against the holder.
+			if a := asString(origin["acting_bot"]); a != "" {
+				extra["not_bot"] = a
+			}
 		}
 		raw, err := json.Marshal(extra)
 		if err != nil {

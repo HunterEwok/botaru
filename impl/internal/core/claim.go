@@ -368,7 +368,7 @@ func (c *Core) claimAttempt(ctx context.Context, tx pgx.Tx, now time.Time, cat *
 			if err != nil {
 				return nil, err
 			}
-			if !ok {
+			if !ok || (a.Bot != "" && a.Bot == notBotOfRecord(rec)) {
 				skip = append(skip, id)
 				continue
 			}

@@ -130,11 +130,18 @@ func (h *Host) fingerprint(ctx context.Context, p Plugin) (string, error) {
 // check asks every plugin for its live tools/list: a plugin that answers is up with its
 // fingerprint, one that does not is down and keeps the fingerprint of its last answer. The
 // combined fingerprint needs every plugin to have answered once.
+// probeTimeout bounds one plugin's answer to tools/list in a health check.
+const probeTimeout = 20 * time.Second
+
 func (h *Host) check(ctx context.Context) (string, error) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	for name, p := range h.byName {
-		fp, err := h.fingerprint(ctx, p)
+		// A plugin that never answers is down after the probe timeout, so one stuck plugin
+		// does not stop the hello and the work of the others (OBS-10).
+		pctx, cancel := context.WithTimeout(ctx, probeTimeout)
+		fp, err := h.fingerprint(pctx, p)
+		cancel()
 		if err != nil {
 			if _, seen := h.fps[name]; !seen {
 				return "", fmt.Errorf("plugin %s: %w", name, err)

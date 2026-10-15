@@ -76,12 +76,17 @@ func (c *Core) runSchedule(ctx context.Context, tx pgx.Tx, now time.Time, cat *C
 		// A new schedule, or a changed cron or zone, takes effect from the next slot after
 		// the apply, not after this tick, so the first slot after the apply is not lost; a slot
 		// key in UTC never runs an instant twice (TIM-3).
+		// The apply that made the change is the schedule's own (its manifest's applied_at),
+		// or, for a zone the schedule takes from its tenant, the tenant's: a later unrelated
+		// apply does not move the start past a slot that was already due.
 		from := now
-		var applied time.Time
-		if err := tx.QueryRow(ctx, `SELECT applied_at FROM apply_status WHERE id = 1`).Scan(&applied); err == nil && applied.Before(now) {
-			from = applied
-		} else if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+		var applied *time.Time
+		if err := tx.QueryRow(ctx, `SELECT max(applied_at) FROM manifests WHERE tenant = $1
+			AND ((kind = 'Schedule' AND name = $2) OR (kind = 'Tenant' AND $3))`, tv.Name, name, sc.Timezone == "").Scan(&applied); err != nil {
 			return err
+		}
+		if applied != nil && applied.Before(now) {
+			from = *applied
 		}
 		_, err = tx.Exec(ctx, `INSERT INTO schedule_state (tenant, name, cron, timezone, last_slot, updated_at) VALUES ($1, $2, $3, $4, $5, $6)
 			ON CONFLICT (tenant, name) DO UPDATE SET cron = $3, timezone = $4, last_slot = $5, updated_at = $6`,
