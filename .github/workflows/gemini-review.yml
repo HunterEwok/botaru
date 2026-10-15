@@ -55,12 +55,20 @@ jobs:
       - name: diff
         env:
           GH_TOKEN: ${{ github.token }}
+          HEAD_SHA: ${{ steps.pull.outputs.head }}
         run: |
           # The PR's changes come from the API as text; nothing of the PR is fetched or checked
           # out. A diff too large for the diff endpoint is rebuilt from the per-file patches.
           if ! gh pr diff "$PR" --repo "${{ github.repository }}" > "$RUNNER_TEMP/full.diff"; then
             gh api --paginate "repos/${{ github.repository }}/pulls/$PR/files" \
               --jq '.[] | "--- a/\(.filename)\n+++ b/\(.filename)\n\(.patch // "(binary or too large)")"' > "$RUNNER_TEMP/full.diff"
+          fi
+          # A push between the head read above and the diff would review another commit than the
+          # one the comment names: the run stops, and a new /gemini review takes the new head.
+          now=$(gh pr view "$PR" --repo "${{ github.repository }}" --json headRefOid --jq .headRefOid)
+          if [ "$now" != "$HEAD_SHA" ]; then
+            echo "The PR head moved from $HEAD_SHA to $now during the run; ask /gemini review again."
+            exit 1
           fi
           # The whole diff, cut at 800 kB.
           head -c 800000 "$RUNNER_TEMP/full.diff" > "$RUNNER_TEMP/pr.diff"
