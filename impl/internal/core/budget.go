@@ -78,12 +78,15 @@ type spendFilter struct {
 // its task reserve. The task reserve of ownRoot is left out: the caller's call is that draw.
 // A task reserve has no role, so a window of one role counts only the calls of that role. The
 // reserve of a task that waits for the provider is kept but not counted: the reserve is taken
-// again before its call (BUD-4, GW-2).
+// again before its call (BUD-4, GW-2). An estimated line counts as zero once a reconciliation
+// reached it or it was released by time, and a correction line counts its signed amount
+// (BUD-10).
 func windowUsed(ctx context.Context, tx pgx.Tx, tenant string, f spendFilter, from time.Time, ownRoot string) (int64, error) {
 	var used int64
 	err := tx.QueryRow(ctx, `WITH w AS (SELECT * FROM spend WHERE tenant = $1 AND time >= $2
 			AND ($3 = '' OR subject = $3) AND ($5 = '' OR line = $5) AND ($6 = '' OR role = $6))
-		SELECT coalesce((SELECT sum(eur_micros) FROM w WHERE unit <> 'task'), 0)
+		SELECT coalesce((SELECT sum(CASE WHEN state = 'estimated' AND (reconciled_at IS NOT NULL OR released_at IS NOT NULL) THEN 0
+				ELSE eur_micros + coalesce(correction_eur_micros, 0) END) FROM w WHERE unit <> 'task'), 0)
 			+ coalesce((SELECT sum(greatest(r.eur_micros - coalesce((SELECT sum(s.eur_micros) FROM spend s WHERE s.root = r.root AND s.unit <> 'task'), 0), 0))
 				FROM w r WHERE r.unit = 'task' AND r.root <> $4
 				AND NOT EXISTS (SELECT 1 FROM tasks t WHERE t.id = r.task AND t.state = 'submitted' AND t.reason IN ('provider_unavailable', 'provider_quota'))), 0)`,
@@ -239,7 +242,10 @@ type spendRow struct {
 	ID, Tenant, Task, Root, Subject, Role, Worker string
 	Line, Purpose, Unit, Profile, Fingerprint     string
 	Toolcall                                      string
-	Micros                                        int64
+	// Provider is the model provider of a call line: with the tenant it names the workspace a
+	// reconciliation compares (BUD-10).
+	Provider string
+	Micros   int64
 }
 
 // reserveSpend writes the reserve of a call after the limits pass (BUD-2): the windows of
@@ -263,10 +269,10 @@ func (c *Core) reserveSpend(ctx context.Context, tx pgx.Tx, now time.Time, tv *T
 			return err
 		}
 	}
-	_, err := tx.Exec(ctx, `INSERT INTO spend (id, tenant, task, root, subject, role, worker, line, purpose, unit, profile, state, eur_micros, time, fingerprint, toolcall)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, 'reserved', $12, $13, $14, $15)`,
+	_, err := tx.Exec(ctx, `INSERT INTO spend (id, tenant, task, root, subject, role, worker, line, purpose, unit, profile, state, eur_micros, time, fingerprint, toolcall, provider)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, 'reserved', $12, $13, $14, $15, $16)`,
 		r.ID, r.Tenant, r.Task, r.Root, r.Subject, r.Role, r.Worker, r.Line, nullable(r.Purpose), r.Unit, nullable(r.Profile), r.Micros, now,
-		nullable(r.Fingerprint), nullable(r.Toolcall))
+		nullable(r.Fingerprint), nullable(r.Toolcall), nullable(r.Provider))
 	return err
 }
 

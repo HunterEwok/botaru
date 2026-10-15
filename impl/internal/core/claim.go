@@ -58,6 +58,14 @@ func (c *Core) Claim(ctx context.Context, w *Worker, req ClaimRequest) (*ClaimRe
 	default:
 		return nil, refuse("not_ready", "send hello first")
 	}
+	// A draining core hands out no work until the next core starts (LCY-6).
+	if until, err := drainUntil(ctx, c.st.Pool); err != nil {
+		return nil, err
+	} else if until != nil {
+		p := refuse("not_ready", "the core is draining before a rollout")
+		p.RetryAfterS = 30
+		return nil, p
+	}
 	wait := 30
 	if req.WaitS != nil {
 		wait = *req.WaitS

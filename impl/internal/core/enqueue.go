@@ -230,9 +230,14 @@ func (c *Core) enqueue(ctx context.Context, tx pgx.Tx, now time.Time, cat *Catal
 	}
 	// The key: the same initiator and body return the existing task (IDM-1).
 	var existingID, existingInit, existingHash string
-	err = tx.QueryRow(ctx, `SELECT id, initiator, body_hash FROM tasks WHERE tenant = $1 AND idempotency_key = $2`, in.Tenant, in.IdempotencyKey).
-		Scan(&existingID, &existingInit, &existingHash)
+	var purged bool
+	err = tx.QueryRow(ctx, `SELECT id, initiator, body_hash, body IS NULL FROM tasks WHERE tenant = $1 AND idempotency_key = $2`, in.Tenant, in.IdempotencyKey).
+		Scan(&existingID, &existingInit, &existingHash, &purged)
 	if err == nil {
+		// A deleted task keeps its key as a tombstone: the key is never a new task (RET-3).
+		if purged {
+			return nil, refuse("gone", "the task of this key is deleted")
+		}
 		if existingInit == in.Initiator && existingHash == bodyHash {
 			return &enqueueOutcome{TaskID: existingID, Existing: true}, nil
 		}

@@ -50,6 +50,8 @@ type Config struct {
 	// Health holds the thresholds of the health indicators and the store headroom (OBS-9,
 	// CAP-5).
 	Health HealthConfig
+	// Spend holds the reconciliation settings (BUD-10).
+	Spend SpendConfig
 	// FreeSpace, when set, measures the store volume instead of Health.StoreVolume: free and
 	// total bytes. A test sets a mock measurement here.
 	FreeSpace func() (free, total uint64, err error)
@@ -72,6 +74,7 @@ func (c *Config) defaults() {
 		c.Logger = slog.Default()
 	}
 	c.Health.defaults()
+	c.Spend.defaults()
 }
 
 // Core holds the store, the specification and the caches.

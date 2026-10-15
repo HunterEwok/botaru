@@ -51,6 +51,8 @@ type Core struct {
 	FarmHosts []string `yaml:"farm_hosts"`
 	// Health holds the thresholds of the health indicators and the store volume (OBS-9, CAP-5).
 	Health core.HealthConfig `yaml:"health"`
+	// Spend holds the reconciliation settings with the provider report (BUD-10).
+	Spend core.SpendConfig `yaml:"spend"`
 }
 
 // Load reads and checks a settings file.

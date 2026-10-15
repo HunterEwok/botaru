@@ -102,7 +102,7 @@ func run(path string, log *slog.Logger) error {
 	}
 	c, err := core.New(ctx, core.Config{
 		TokenKey: []byte(key), TestBench: cfg.TestBench, LeaseS: cfg.LeaseS, HeartbeatS: cfg.HeartbeatS,
-		DeliveryMaxAttempts: cfg.DeliveryMaxAttempts, Operator: cfg.Operator, FarmHosts: cfg.FarmHosts, Health: cfg.Health, Logger: log,
+		DeliveryMaxAttempts: cfg.DeliveryMaxAttempts, Operator: cfg.Operator, FarmHosts: cfg.FarmHosts, Health: cfg.Health, Spend: cfg.Spend, Logger: log,
 	}, st, sp, tx)
 	if err != nil {
 		return err
@@ -128,6 +128,10 @@ func run(path string, log *slog.Logger) error {
 		return err
 	}
 	if err := c.RecoverLeases(ctx); err != nil {
+		return err
+	}
+	// A new core start ends the drain of the rollout (LCY-6).
+	if err := c.ClearDrain(ctx); err != nil {
 		return err
 	}
 	if lt != nil {

@@ -158,7 +158,7 @@ func (c *Core) Reserve(ctx context.Context, g *ModelGrant, micros int64) (string
 		}
 		return c.reserveSpend(ctx, tx, now, tv, spendRow{
 			ID: id, Tenant: g.Tenant, Task: g.Task, Root: g.Root, Subject: g.Initiator, Role: g.Role, Worker: g.Worker,
-			Line: g.Line, Purpose: g.Purpose, Unit: "tokens", Profile: g.ProfileName, Fingerprint: g.Fingerprint, Micros: micros,
+			Line: g.Line, Purpose: g.Purpose, Unit: "tokens", Profile: g.ProfileName, Provider: g.Profile.Provider, Fingerprint: g.Fingerprint, Micros: micros,
 		}, groups, g.TreeBudget)
 	})
 	if err != nil {

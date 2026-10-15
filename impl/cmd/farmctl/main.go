@@ -51,6 +51,9 @@ commands:
   doctor [TENANT]                            farm checks: loop ticks, store volume, indicators, dead work
   dead [TENANT] [-after CURSOR]              dead tasks and deliveries
   redrive task|delivery ID                   new work from dead work
+  spend reconcile -provider P -file FILE     hand in the provider's daily sums per workspace, one request
+                                             per UTC day; FILE is CSV with the header day,tenant,workspace,eur
+  drain [-until 30m]                         drain the core before a rollout; the next core start ends it
   hold set KIND [TENANT [NAME]] -effects E[,E] -reason R [-until TIME]
   hold release ID
   hold list [TENANT]
@@ -154,6 +157,20 @@ func run(c *client, args []string) error {
 			req["after"] = *after
 		}
 		return c.print("deadletter.list", req)
+	case "spend":
+		if len(args) < 2 || args[1] != "reconcile" {
+			return errors.New("spend needs reconcile")
+		}
+		return spendReconcile(c, args[2:])
+	case "drain":
+		fs := flag.NewFlagSet("drain", flag.ExitOnError)
+		until := fs.String("until", "", "the drain deadline, for example 30m")
+		_ = fs.Parse(args[1:])
+		req := map[string]any{}
+		if *until != "" {
+			req["until"] = *until
+		}
+		return c.print("core.drain", req)
 	case "redrive":
 		if len(args) != 3 || (args[1] != "task" && args[1] != "delivery") {
 			return errors.New("redrive task|delivery ID")

@@ -18,6 +18,7 @@ type HealthReport struct {
 	OldestUrgentAgeS  *int64         `json:"oldest_urgent_age_s,omitempty"`
 	Delivered10mRatio *float64       `json:"delivered_10m_ratio,omitempty"`
 	LoopTickAgeS      map[string]int `json:"loop_tick_age_s,omitempty"`
+	DrainUntilS       *int64         `json:"drain_until_s,omitempty"`
 }
 
 // HealthConfig holds the thresholds of the deployment binding for the health indicators and
@@ -257,9 +258,18 @@ func (c *Core) Health(ctx context.Context) HealthReport {
 		return r
 	}
 	var in *indicators
+	var drain *int64
 	err := c.tx(ctx, func(tx pgx.Tx, now time.Time) error {
 		var err error
 		in, err = c.indicators(ctx, tx, now)
+		if err != nil {
+			return err
+		}
+		until, err := drainUntil(ctx, tx)
+		if until != nil {
+			s := max(int64(until.Sub(now).Seconds()), 0)
+			drain = &s
+		}
 		return err
 	})
 	if err != nil {
@@ -271,6 +281,9 @@ func (c *Core) Health(ctx context.Context) HealthReport {
 		r.LoopTickAgeS = in.ticks
 	}
 	switch {
+	case drain != nil:
+		// A planned rollout, which the monitoring system tells from a failure (LCY-6, MON-2).
+		r.Alive, r.Reason, r.DrainUntilS = false, "draining", drain
 	case c.storeDown.Load() || c.capacity.Load() == capacityHard:
 		r.Alive, r.Reason = false, "not_ready"
 	default:
