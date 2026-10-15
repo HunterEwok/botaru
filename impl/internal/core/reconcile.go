@@ -7,6 +7,7 @@ import (
 	"regexp"
 	"slices"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -74,16 +75,29 @@ func (c *Core) SpendReconcile(ctx context.Context, op Operator, req SpendReconci
 	if err != nil {
 		return nil, refuse("input_schema_invalid", "day is not a date")
 	}
+	// The provider report and its workspaces are farm level: only the operator of farm or the
+	// reconciliation process with its key hands them in (BUD-10).
+	if op.Tenant != "farm" {
+		return nil, refuse("forbidden", "only an operator of farm reconciles spend")
+	}
+	provider := strings.ToLower(req.Provider)
+	// Rows of one tenant add up: the farm has one workspace per tenant and provider.
+	sums := map[string]SpendReconcileItem{}
 	for _, r := range req.Rows {
-		if op.Tenant != "farm" && r.Tenant != op.Tenant {
-			return nil, refuse("forbidden", "the operator credential is for another tenant")
+		acc := sums[r.Tenant]
+		acc.Tenant = r.Tenant
+		acc.SpentEURMicros += r.SpentEURMicros
+		if acc.ReportID == "" {
+			acc.ReportID = r.ReportID
 		}
+		sums[r.Tenant] = acc
 	}
 	err = c.tx(ctx, func(tx pgx.Tx, now time.Time) error {
 		if !day.Before(now.UTC().Truncate(24 * time.Hour)) {
 			return refuse("input_schema_invalid", "only a past UTC day is reconciled")
 		}
-		for _, r := range req.Rows {
+		for _, tenant := range slices.Sorted(mapKeys(sums)) {
+			r := sums[tenant]
 			var known bool
 			if err := tx.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM tenants WHERE name = $1)`, r.Tenant).Scan(&known); err != nil {
 				return err
@@ -91,7 +105,7 @@ func (c *Core) SpendReconcile(ctx context.Context, op Operator, req SpendReconci
 			if !known {
 				return refuse("not_found", "no tenant %s", r.Tenant)
 			}
-			if err := c.reconcileDay(ctx, tx, now, op, day, req.Provider, r); err != nil {
+			if err := c.reconcileDay(ctx, tx, now, op, day, provider, r); err != nil {
 				return err
 			}
 		}
@@ -110,9 +124,15 @@ func (c *Core) reconcileDay(ctx context.Context, tx pgx.Tx, now time.Time, op Op
 		return err
 	}
 	var farm int64
-	if err := tx.QueryRow(ctx, `SELECT coalesce(sum(eur_micros), 0) FROM spend WHERE tenant = $1 AND provider = $2 AND time >= $3 AND time < $4
-		AND unit <> 'correction' AND state = 'committed'`, r.Tenant, provider, from, to).Scan(&farm); err != nil {
+	var open bool
+	if err := tx.QueryRow(ctx, `SELECT coalesce(sum(eur_micros) FILTER (WHERE state = 'committed'), 0), bool_or(state = 'reserved') IS TRUE
+		FROM spend WHERE tenant = $1 AND provider = $2 AND time >= $3 AND time < $4 AND unit <> 'correction'`, r.Tenant, provider, from, to).Scan(&farm, &open); err != nil {
 		return err
+	}
+	// A call of the day still waiting for its answer would be counted twice: once in the
+	// correction, once when it settles.
+	if open {
+		return refuse("conflict", "the day still has open reserves of %s; reconcile it later", r.Tenant)
 	}
 	diff := r.SpentEURMicros - farm
 	if _, err := tx.Exec(ctx, `DELETE FROM spend WHERE tenant = $1 AND provider = $2 AND unit = 'correction' AND time = $3`, r.Tenant, provider, from); err != nil {
@@ -178,11 +198,13 @@ type workspaceAge struct {
 }
 
 // workspaceAges lists the workspaces (tenant, provider) that have usage lines, with the age of
-// their last reconciliation.
+// their last reconciliation; spend_workspaces keeps the first line of each, so this reads no
+// usage lines.
 func workspaceAges(ctx context.Context, tx pgx.Tx, tenant string) ([]workspaceAge, error) {
-	rows, err := tx.Query(ctx, `SELECT s.tenant, s.provider, coalesce(max(r.created_at), min(s.time)), max(r.created_at) IS NOT NULL
-		FROM spend s LEFT JOIN spend_reconciliations r ON r.tenant = s.tenant AND r.provider = s.provider
-		WHERE s.provider IS NOT NULL AND ($1 = '' OR s.tenant = $1) GROUP BY s.tenant, s.provider ORDER BY s.tenant, s.provider`, tenant)
+	rows, err := tx.Query(ctx, `SELECT w.tenant, w.provider, coalesce(r.last, w.first_at), r.last IS NOT NULL
+		FROM spend_workspaces w LEFT JOIN (SELECT tenant, provider, max(created_at) AS last FROM spend_reconciliations GROUP BY tenant, provider) r
+			ON r.tenant = w.tenant AND r.provider = w.provider
+		WHERE $1 = '' OR w.tenant = $1 ORDER BY w.tenant, w.provider`, tenant)
 	if err != nil {
 		return nil, err
 	}
@@ -203,6 +225,9 @@ func workspaceAges(ctx context.Context, tx pgx.Tx, tenant string) ([]workspaceAg
 // reconciliation for spend.reconcile_overdue_days; only a reconciliation closes it (BUD-10).
 func (c *Core) budgetLoop(ctx context.Context) error {
 	return c.tx(ctx, func(tx pgx.Tx, now time.Time) error {
+		if !c.slowPass(&c.budgetAt, now) {
+			return nil
+		}
 		if _, err := tx.Exec(ctx, `UPDATE spend SET released_at = $1 WHERE state = 'estimated' AND reconciled_at IS NULL AND released_at IS NULL AND time <= $2`,
 			now, now.Add(-c.cfg.Spend.releaseAfter)); err != nil {
 			return err
@@ -318,7 +343,7 @@ func (c *Core) doctorMoney(ctx context.Context, tx pgx.Tx, now time.Time, tenant
 			continue
 		}
 		days := int64(now.Sub(checked).Hours() / 24)
-		ch := DoctorCheck{ID: checkID("model.price_age_days." + k[1]), OK: true, Severity: "info", Value: days}
+		ch := DoctorCheck{ID: checkID(strings.TrimPrefix(k[0]+".", ".") + "model.price_age_days." + k[1]), OK: true, Severity: "info", Value: days}
 		switch {
 		case days > 120:
 			ch.OK, ch.Severity = false, "fail"
@@ -340,4 +365,17 @@ func checkID(s string) string {
 		s = s[:64]
 	}
 	return s
+}
+
+// slowPassEvery is the pause between two passes of a loop whose work is not urgent (budget,
+// retention): the tick runs every second, the pass at most once a minute by the store clock.
+const slowPassEvery = time.Minute
+
+// slowPass says whether a slow loop runs at now, and records the pass.
+func (c *Core) slowPass(last *atomic.Int64, now time.Time) bool {
+	prev := last.Load()
+	if prev != 0 && now.UnixNano()-prev < int64(slowPassEvery) {
+		return false
+	}
+	return last.CompareAndSwap(prev, now.UnixNano())
 }

@@ -29,4 +29,20 @@ CREATE TABLE spend_reconciliations (
 -- clears it.
 ALTER TABLE farm_meta ADD COLUMN drain_until timestamptz;
 
+-- The workspaces with usage lines and their first line, so the budget loop reads no usage
+-- lines to find them.
+CREATE TABLE spend_workspaces (
+    tenant      text NOT NULL,
+    provider    text NOT NULL,
+    first_at    timestamptz NOT NULL,
+    PRIMARY KEY (tenant, provider)
+);
+INSERT INTO spend_workspaces (tenant, provider, first_at)
+    SELECT tenant, lower(provider), min(time) FROM spend WHERE provider IS NOT NULL GROUP BY tenant, lower(provider);
+
+-- The retention loop finds content past its period by these.
 CREATE INDEX tasks_content_age ON tasks (updated_at) WHERE body IS NOT NULL OR result IS NOT NULL;
+CREATE INDEX deliveries_content_age ON deliveries (updated_at) WHERE body IS NOT NULL;
+CREATE INDEX toolcalls_content_age ON toolcalls (updated_at) WHERE args <> '{}' OR output IS NOT NULL;
+CREATE INDEX sessions_age ON sessions (updated_at);
+CREATE INDEX files_stored_expiry ON files (expires_at) WHERE state = 'stored';

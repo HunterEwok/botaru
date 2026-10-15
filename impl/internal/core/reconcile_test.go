@@ -17,6 +17,9 @@ func (b *bench) spendLine(t *testing.T, id, state string, micros int64, at time.
 		VALUES ($1, 'demo', 'work', 'tokens', $2, $3, 'mock', $4)`, id, state, micros, at); err != nil {
 		t.Fatal(err)
 	}
+	if _, err := b.c.st.Pool.Exec(context.Background(), `INSERT INTO spend_workspaces (tenant, provider, first_at) VALUES ('demo', 'mock', $1) ON CONFLICT DO NOTHING`, at); err != nil {
+		t.Fatal(err)
+	}
 }
 
 func (b *bench) alarmState(t *testing.T, alarm string) string {
@@ -91,9 +94,24 @@ func TestReconcile(t *testing.T) {
 	if b.alarmState(t, "alarm.spend.estimate_drift.v1") == "firing" {
 		t.Fatal("a difference within the tolerance keeps the drift alarm")
 	}
-	// Another operator's tenant and today are refused.
-	if _, err := b.c.SpendReconcile(ctx, b.op, SpendReconcileRequest{Day: "2027-03-01", Provider: "mock", Rows: []SpendReconcileItem{{Tenant: "other", SpentEURMicros: 1}}}); err == nil {
-		t.Fatal("a tenant operator reconciled another tenant")
+	// A tenant operator, today and a day with an open reserve are refused.
+	if _, err := b.c.SpendReconcile(ctx, b.op, SpendReconcileRequest{Day: "2027-03-01", Provider: "mock", Rows: []SpendReconcileItem{{Tenant: "demo", SpentEURMicros: 1}}}); err == nil {
+		t.Fatal("a tenant operator reconciled its own spend")
+	}
+	b.spendLine(t, "sp_open", "reserved", 1_000, day.Add(-24*time.Hour))
+	if _, err := b.c.SpendReconcile(ctx, farm, SpendReconcileRequest{Day: "2027-02-28", Provider: "mock", Rows: req.Rows}); err == nil {
+		t.Fatal("a day with an open reserve was reconciled")
+	}
+	// Two rows of one tenant add up.
+	if _, err := b.c.SpendReconcile(ctx, farm, SpendReconcileRequest{Day: "2027-03-01", Provider: "MOCK", Rows: []SpendReconcileItem{
+		{Tenant: "demo", SpentEURMicros: 5_000_000}, {Tenant: "demo", SpentEURMicros: 400_000}}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := b.c.st.Pool.QueryRow(ctx, `SELECT count(*), coalesce(sum(correction_eur_micros), 0) FROM spend WHERE unit = 'correction'`).Scan(&n, &corr); err != nil || n != 1 || corr != 400_000 {
+		t.Fatalf("correction of two rows %d lines, %d %v", n, corr, err)
+	}
+	if _, err := b.c.st.Pool.Exec(ctx, `DELETE FROM spend WHERE id = 'sp_open'`); err != nil {
+		t.Fatal(err)
 	}
 	if _, err := b.c.SpendReconcile(ctx, farm, SpendReconcileRequest{Day: "2027-03-02", Provider: "mock", Rows: req.Rows}); err == nil {
 		t.Fatal("today was reconciled")
@@ -111,6 +129,7 @@ func TestReconcile(t *testing.T) {
 	_ = b.c.st.Pool.QueryRow(ctx, `SELECT botaru_now()`).Scan(&now)
 	b.spendLine(t, "sp_d", "estimated", 7_000_000, now.Add(-8*24*time.Hour))
 	before := b.used(t)
+	b.advance(t, 61)
 	if err := b.c.tickLoop(ctx, "budget"); err != nil {
 		t.Fatal(err)
 	}
@@ -192,6 +211,9 @@ func TestDrain(t *testing.T) {
 	_, err := b.c.Claim(ctx, b.agent, ClaimRequest{Kinds: []string{"attempt"}, WaitS: &wait})
 	if p, ok := AsProblem(err); !ok || p.Reason != "not_ready" || p.RetryAfterS == 0 {
 		t.Fatalf("claim while draining: %v", err)
+	}
+	if _, err := b.c.Claim(ctx, b.channel, ClaimRequest{Kinds: []string{"delivery"}, WaitS: &wait}); err != nil {
+		t.Fatalf("a delivery claim while draining: %v", err)
 	}
 	h := b.c.Health(ctx)
 	if h.Alive || h.Reason != "draining" || h.DrainUntilS == nil || *h.DrainUntilS < 590 {

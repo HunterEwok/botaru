@@ -29,6 +29,13 @@ func (c *Core) retentionLoop(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+	var pass bool
+	if err := c.tx(ctx, func(tx pgx.Tx, now time.Time) error {
+		pass = c.slowPass(&c.retentionAt, now)
+		return nil
+	}); err != nil || !pass {
+		return err
+	}
 	var noMemory []string
 	for name, r := range cat.Roles {
 		if roleMemory(r) == "none" {
@@ -44,7 +51,7 @@ func (c *Core) retentionLoop(ctx context.Context) error {
 		},
 		func(tx pgx.Tx, now time.Time) (int64, error) {
 			tag, err := tx.Exec(ctx, `UPDATE deliveries SET body = NULL WHERE id IN (SELECT id FROM deliveries
-				WHERE body IS NOT NULL AND state IN ('delivered', 'dead', 'withheld', 'canceled') AND updated_at <= $1
+				WHERE body IS NOT NULL AND state IN ('delivered', 'dead', 'withheld') AND updated_at <= $1
 				LIMIT $2 FOR UPDATE SKIP LOCKED)`, now.AddDate(0, 0, -contentDays), retentionBatch)
 			return tag.RowsAffected(), err
 		},
@@ -62,7 +69,7 @@ func (c *Core) retentionLoop(ctx context.Context) error {
 		},
 		func(tx pgx.Tx, now time.Time) (int64, error) {
 			tag, err := tx.Exec(ctx, `UPDATE files SET state = 'expired', content = NULL WHERE file_ref IN (SELECT file_ref FROM files
-				WHERE state = 'stored' AND (expires_at <= $1 OR created_at <= $2) LIMIT $3 FOR UPDATE SKIP LOCKED)`,
+				WHERE state = 'stored' AND (expires_at <= $1 OR (expires_at IS NULL AND created_at <= $2)) LIMIT $3 FOR UPDATE SKIP LOCKED)`,
 				now, now.AddDate(0, 0, -contentDays), retentionBatch)
 			return tag.RowsAffected(), err
 		},

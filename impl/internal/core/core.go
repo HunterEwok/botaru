@@ -93,6 +93,8 @@ type Core struct {
 	// storeDown is set when the store stopped answering and cleared when every loop ticked
 	// again after it returned (OBS-8).
 	storeDown atomic.Bool
+	// budgetAt and retentionAt are the store times of the last slow passes.
+	budgetAt, retentionAt atomic.Int64
 	// manual is set when the loops tick only by loop.tick on a test bench.
 	manual atomic.Bool
 }

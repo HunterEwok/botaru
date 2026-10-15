@@ -269,6 +269,11 @@ func (c *Core) reserveSpend(ctx context.Context, tx pgx.Tx, now time.Time, tv *T
 			return err
 		}
 	}
+	if r.Provider != "" {
+		if _, err := tx.Exec(ctx, `INSERT INTO spend_workspaces (tenant, provider, first_at) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING`, r.Tenant, r.Provider, now); err != nil {
+			return err
+		}
+	}
 	_, err := tx.Exec(ctx, `INSERT INTO spend (id, tenant, task, root, subject, role, worker, line, purpose, unit, profile, state, eur_micros, time, fingerprint, toolcall, provider)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, 'reserved', $12, $13, $14, $15, $16)`,
 		r.ID, r.Tenant, r.Task, r.Root, r.Subject, r.Role, r.Worker, r.Line, nullable(r.Purpose), r.Unit, nullable(r.Profile), r.Micros, now,
