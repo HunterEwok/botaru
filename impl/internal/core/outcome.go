@@ -744,10 +744,10 @@ func (c *Core) endDelivery(ctx context.Context, tx pgx.Tx, now time.Time, tenant
 	}
 	// The export of an alarm change or of the audit head does not die by attempt count: it is
 	// retried with a pause of at most 10 minutes until it is exported (MON-11).
-	// A refusal the adapter calls final is retried too: a lost alarm change would leave the
-	// monitoring system wrong until the next failure. A newer change of the same alarm replaces
-	// this one, so it is not retried.
-	export := kind == "monitor_alarm" || kind == "monitor_audit_head"
+	// A newer change of the same alarm replaces this one, so it is not retried.
+	// A refusal the adapter calls final is not a failure of the monitoring system: it goes the
+	// common way, by attempts, and does not set off a re-export.
+	export := retryable && (kind == "monitor_alarm" || kind == "monitor_audit_head")
 	if export {
 		if err := monitorFailed(ctx, tx, now, tenant); err != nil {
 			return nil, err

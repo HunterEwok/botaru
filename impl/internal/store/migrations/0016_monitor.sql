@@ -22,3 +22,10 @@ CREATE TABLE audit_head_keys (
     public_key bytea NOT NULL,
     created_at timestamptz NOT NULL
 );
+
+CREATE FUNCTION audit_head_keys_frozen() RETURNS trigger LANGUAGE plpgsql AS $$
+BEGIN
+    RAISE EXCEPTION 'audit_head_keys is insert-only';
+END $$;
+CREATE TRIGGER audit_head_keys_no_change BEFORE UPDATE OR DELETE ON audit_head_keys
+    FOR EACH ROW EXECUTE FUNCTION audit_head_keys_frozen();

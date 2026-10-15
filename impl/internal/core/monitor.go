@@ -3,6 +3,7 @@
 package core
 
 import (
+	"bytes"
 	"context"
 	"crypto/ed25519"
 	"crypto/hmac"
@@ -123,21 +124,38 @@ func (c *Core) headKey(id string) ed25519.PrivateKey {
 	return ed25519.NewKeyFromSeed(m.Sum(nil))
 }
 
-// headPublicKey is the public key of a key id: the one kept in the store, else the one of a
-// configured token key.
+// headPublicKey is the public key of a key id: the one derived from a configured token key
+// (current or of the rotation window), else the one kept in the store for a retired id. A
+// configured id never takes the stored key, so a write to the store alone cannot change what
+// verifies (MON-3).
 func (c *Core) headPublicKey(ctx context.Context, q store.Querier, id string) (ed25519.PublicKey, error) {
-	var pub []byte
-	err := q.QueryRow(ctx, `SELECT public_key FROM audit_head_keys WHERE key_id = $1`, id).Scan(&pub)
-	if err == nil && len(pub) == ed25519.PublicKeySize {
-		return ed25519.PublicKey(pub), nil
-	}
-	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
-		return nil, err
-	}
 	if k := c.headKey(id); k != nil {
 		return k.Public().(ed25519.PublicKey), nil
 	}
-	return nil, nil
+	var pub []byte
+	err := q.QueryRow(ctx, `SELECT public_key FROM audit_head_keys WHERE key_id = $1`, id).Scan(&pub)
+	if errors.Is(err, pgx.ErrNoRows) || err == nil && len(pub) != ed25519.PublicKeySize {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return ed25519.PublicKey(pub), nil
+}
+
+// headKeyConflict says whether the store keeps another public key under the current key id:
+// the token key was replaced without a new token_key_id, so heads signed now would not verify
+// once the id retires. The core then signs no head until the operator picks a new id.
+func (c *Core) headKeyConflict(ctx context.Context, q store.Querier) (bool, error) {
+	var pub []byte
+	err := q.QueryRow(ctx, `SELECT public_key FROM audit_head_keys WHERE key_id = $1`, c.cfg.KeyID).Scan(&pub)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	return !bytes.Equal(pub, c.headKey(c.cfg.KeyID).Public().(ed25519.PublicKey)), nil
 }
 
 // AuditHead is the signed head of an audit chain (monitor-audit-head).
@@ -193,6 +211,9 @@ func (c *Core) planHead(ctx context.Context, tx pgx.Tx, now time.Time, tenant st
 		return err
 	}
 	if _, err := tx.Exec(ctx, `SELECT 1 FROM monitor_exports WHERE tenant = $1 FOR UPDATE`, tenant); err != nil {
+		return err
+	}
+	if conflict, err := c.headKeyConflict(ctx, tx); err != nil || conflict {
 		return err
 	}
 	h := AuditHead{Tenant: tenant, Epoch: c.epoch}
@@ -489,6 +510,13 @@ func (c *Core) doctorMonitor(ctx context.Context, tx pgx.Tx, now time.Time, tena
 		return err
 	}
 	mine := func(t string) bool { return tenant == "farm" || t == tenant }
+	if tenant == "farm" {
+		conflict, err := c.headKeyConflict(ctx, tx)
+		if err != nil {
+			return err
+		}
+		add(DoctorCheck{ID: "monitor.head_key_id", Tenant: "farm", OK: !conflict, Severity: sevOf(!conflict, "fail")})
+	}
 	for _, t := range slices.Sorted(mapKeys(ages)) {
 		if !mine(t) {
 			continue

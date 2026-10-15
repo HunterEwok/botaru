@@ -186,6 +186,20 @@ func TestAuditHead(t *testing.T) {
 	if r, err := rotated.AuditVerify(ctx, "demo", heads); err != nil || !r.OK {
 		t.Fatalf("a good witness after the key rotated away: %+v %v", r, err)
 	}
+	// A new token key under the old key id signs no head, and doctor says why.
+	same, err := New(ctx, Config{TokenKey: []byte("0123456789abcdef0123456789abcdee"), KeyID: b.c.cfg.KeyID, TestBench: true}, b.c.st, b.c.spec, b.c.texts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if conflict, err := same.headKeyConflict(ctx, b.c.st.Pool); err != nil || !conflict {
+		t.Fatalf("a replaced key under the same id: conflict %v %v", conflict, err)
+	}
+	if conflict, err := b.c.headKeyConflict(ctx, b.c.st.Pool); err != nil || conflict {
+		t.Fatalf("the original key: conflict %v %v", conflict, err)
+	}
+	if _, err := b.c.st.Pool.Exec(ctx, `UPDATE audit_head_keys SET created_at = now()`); err == nil {
+		t.Fatal("audit_head_keys changed")
+	}
 	bad := append([]AuditHead{}, heads...)
 	bad[1].Hash = heads[0].Hash
 	if r := verify(bad); r.OK || r.Reason != "head_signature" {

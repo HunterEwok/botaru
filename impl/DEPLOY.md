@@ -314,7 +314,7 @@ previous_token_keys:
 
 Restart the core. After the window (every worker has called once, and the longest lease has passed) remove the old key from `previous_token_keys` and restart again.
 
-The signing key of audit heads is derived from the token key. Its public key is kept in the table `audit_head_keys` when it first signs, so heads in the monitoring history stay verifiable after the old token key is removed. A verifier outside the farm can take the public keys from there:
+The signing key of audit heads is derived from the token key. Its public key is kept in the table `audit_head_keys` when it first signs, so heads in the monitoring history stay verifiable after the old token key is removed. Always give a new token key a new `token_key_id`: under an id the store already knows with another key the core signs no head, and `doctor` fails the line `monitor.head_key_id`. A verifier outside the farm can take the public keys from there:
 
 ```sh
 psql -c "SELECT key_id, encode(public_key, 'base64') FROM audit_head_keys"
