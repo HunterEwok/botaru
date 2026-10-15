@@ -590,6 +590,11 @@ func (c *Core) protectedTarget(ctx context.Context, tx pgx.Tx, cat *Catalog, ten
 		}
 		return protectedType(cat, typ), nil
 	case "worker":
+		// The worker's row lock, which a claim takes first, keeps a claim from slipping in
+		// between this check and the hold.
+		if _, err := tx.Exec(ctx, `SELECT 1 FROM workers WHERE id = $1 FOR UPDATE`, t.ID); err != nil {
+			return false, err
+		}
 		rows, err := tx.Query(ctx, `SELECT t.type FROM leases l JOIN tasks t ON t.id = l.work_id WHERE l.worker_id = $1 AND l.state = 'active' AND l.kind = 'attempt'`, t.ID)
 		if err != nil {
 			return false, err
