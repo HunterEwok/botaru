@@ -399,6 +399,18 @@ func (c *Core) applyOnce(ctx context.Context, op Operator, req ApplyRequest) (*A
 		if err := c.linkCommit(ctx, tx, now, req.Commit, links); err != nil {
 			return err
 		}
+		// The commission seats follow the applied charters (GOV-33).
+		applied, _, err := loadManifests(ctx, tx)
+		if err != nil {
+			return err
+		}
+		next, err := buildCatalog(applied)
+		if err != nil {
+			return err
+		}
+		if err := c.syncSeats(ctx, tx, now, next); err != nil {
+			return err
+		}
 		if err := notifyWork(ctx, tx); err != nil {
 			return err
 		}

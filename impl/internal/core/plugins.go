@@ -142,6 +142,9 @@ func toolhostMismatch(cat *Catalog, w *Worker, req HelloRequest) string {
 // enrollAfter is the after field of the worker.enroll audit record.
 func enrollAfter(w Worker) map[string]any {
 	a := map[string]any{"kind": w.Kind, "role": w.Role}
+	if w.Bot != "" {
+		a["bot"] = w.Bot
+	}
 	if w.Kind == "toolhost" {
 		a["plugins"], a["placement"] = w.Plugins, w.Placement
 		if w.Host != "" {

@@ -285,10 +285,22 @@ func (c *Core) reserveSpend(ctx context.Context, tx pgx.Tx, now time.Time, tv *T
 			return err
 		}
 	}
-	_, err := tx.Exec(ctx, `INSERT INTO spend (id, tenant, task, root, subject, role, worker, line, purpose, unit, profile, state, eur_micros, time, fingerprint, toolcall, provider)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, 'reserved', $12, $13, $14, $15, $16)`,
+	// The usage line names the identity of the attempt that made the call (IDN-8).
+	var acting actingOf
+	if r.Task != "" && r.Worker != "" {
+		var err error
+		if acting, err = leaseActing(ctx, tx, r.Task, r.Worker); err != nil {
+			return err
+		}
+	}
+	var be any
+	if acting.Bot != "" {
+		be = acting.BotEpoch
+	}
+	_, err := tx.Exec(ctx, `INSERT INTO spend (id, tenant, task, root, subject, role, worker, line, purpose, unit, profile, state, eur_micros, time, fingerprint, toolcall, provider, acting_bot, bot_epoch)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, 'reserved', $12, $13, $14, $15, $16, $17, $18)`,
 		r.ID, r.Tenant, r.Task, r.Root, r.Subject, r.Role, r.Worker, r.Line, nullable(r.Purpose), r.Unit, nullable(r.Profile), r.Micros, now,
-		nullable(r.Fingerprint), nullable(r.Toolcall), nullable(r.Provider))
+		nullable(r.Fingerprint), nullable(r.Toolcall), nullable(r.Provider), nullable(acting.Bot), be)
 	return err
 }
 

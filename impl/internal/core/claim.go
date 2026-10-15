@@ -108,8 +108,12 @@ func (c *Core) claimOnce(ctx context.Context, w *Worker, kinds []string) (*WorkI
 	var item *WorkItem
 	err = c.tx(ctx, func(tx pgx.Tx, now time.Time) error {
 		item = nil
-		if _, err := tx.Exec(ctx, `UPDATE workers SET last_seen = $2 WHERE id = $1`, w.ID, now); err != nil {
+		// A worker revoked during the long poll gets no more work: the row lock orders this with
+		// worker.revoke, and a revoked worker never gets a new identity (IDN-8).
+		if tag, err := tx.Exec(ctx, `UPDATE workers SET last_seen = $2 WHERE id = $1 AND state <> 'revoked'`, w.ID, now); err != nil {
 			return err
+		} else if tag.RowsAffected() == 0 {
+			return refuse("unauthenticated", "the worker is revoked")
 		}
 		until, err := drainUntil(ctx, tx)
 		if err != nil {
@@ -139,14 +143,25 @@ func (c *Core) claimOnce(ctx context.Context, w *Worker, kinds []string) (*WorkI
 	return item, err
 }
 
-func (c *Core) newLease(ctx context.Context, tx pgx.Tx, now time.Time, w *Worker, kind, workID string, leaseNo, leaseS int, runID string) (*WorkItem, error) {
+func (c *Core) newLease(ctx context.Context, tx pgx.Tx, now time.Time, w *Worker, kind, workID string, leaseNo, leaseS int, runID string, acting ...actingOf) (*WorkItem, error) {
 	until := now.Add(time.Duration(leaseS) * time.Second)
-	if _, err := tx.Exec(ctx, `INSERT INTO leases (work_id, lease_no, kind, tenant, worker_id, epoch, state, lease_until, run_id, created_at)
-		VALUES ($1, $2, $3, $4, $5, $6, 'active', $7, $8, $9)`,
-		workID, leaseNo, kind, w.Tenant, w.ID, c.epoch, until, nullable(runID), now); err != nil {
+	var a actingOf
+	if len(acting) > 0 {
+		a = acting[0]
+	}
+	var be, se any
+	if a.Bot != "" {
+		be = a.BotEpoch
+	}
+	if a.Seat != "" {
+		se = a.SeatEpoch
+	}
+	if _, err := tx.Exec(ctx, `INSERT INTO leases (work_id, lease_no, kind, tenant, worker_id, epoch, state, lease_until, run_id, created_at, acting_bot, bot_epoch, seat, seat_epoch)
+		VALUES ($1, $2, $3, $4, $5, $6, 'active', $7, $8, $9, $10, $11, $12, $13)`,
+		workID, leaseNo, kind, w.Tenant, w.ID, c.epoch, until, nullable(runID), now, nullable(a.Bot), be, nullable(a.Seat), se); err != nil {
 		return nil, err
 	}
-	tok, err := c.issueToken(c.epoch, workID, leaseNo, w.ID)
+	tok, err := c.issueToken(c.epoch, workID, leaseNo, w.ID, a)
 	if err != nil {
 		return nil, err
 	}
@@ -266,7 +281,19 @@ func (c *Core) claimAttempt(ctx context.Context, tx pgx.Tx, now time.Time, cat *
 	// A hold with no_claim or cancel_running on the farm, the tenant, the role or this worker
 	// gives it no work; one on a type takes that type out of the claim (HLD-3).
 	stop := []string{"no_claim", "cancel_running"}
-	if held, err := heldBy(ctx, tx, now, stop, workerScopes(w)...); err != nil || held != "" {
+	// The worker's own identity; a suspended one gets no tasks (IDN-8).
+	own, err := c.workerBot(ctx, tx, now, cat, w)
+	if err != nil {
+		return nil, err
+	}
+	if own != nil && own.State != "active" {
+		return nil, nil
+	}
+	scopes := workerScopes(w)
+	if own != nil {
+		scopes = append(scopes, scopeRef{kind: "bot", tenant: w.Tenant, name: own.ID})
+	}
+	if held, err := heldBy(ctx, tx, now, stop, scopes...); err != nil || held != "" {
 		return nil, err
 	}
 	open := claims[:0:0]
@@ -306,6 +333,10 @@ func (c *Core) claimAttempt(ctx context.Context, tx pgx.Tx, now time.Time, cat *
 		}
 	}
 	skip := []string{}
+	var acting actingOf
+	if own != nil {
+		acting = actingOf{Bot: own.ID, BotEpoch: own.Epoch}
+	}
 	// A lens review goes only to its executor role and never to the author's worker (COM-2).
 	for picked := false; !picked; {
 		err := tx.QueryRow(ctx, `SELECT id, type, body, record, lease_no, initiator FROM tasks
@@ -319,6 +350,23 @@ func (c *Core) claimAttempt(ctx context.Context, tx pgx.Tx, now time.Time, cat *
 		}
 		if err != nil {
 			return nil, err
+		}
+		// A seat task runs on behalf of the seat's holder with the current seat epoch; a
+		// vacant seat, or one whose holder is stopped, gets no tasks (IDN-10, IDN-12).
+		if seat := seatOfRecord(rec); seat != "" {
+			a, ok, err := c.seatActing(ctx, tx, now, w.Tenant, seat)
+			if err != nil {
+				return nil, err
+			}
+			if !ok {
+				skip = append(skip, id)
+				continue
+			}
+			acting = a
+		} else if own != nil {
+			acting = actingOf{Bot: own.ID, BotEpoch: own.Epoch}
+		} else {
+			acting = actingOf{}
 		}
 		// The initiator's rights are checked again under the task lock: a person disabled or
 		// ungranted after enqueue gets no work done in their name (PRM-8).
@@ -355,11 +403,21 @@ func (c *Core) claimAttempt(ctx context.Context, tx pgx.Tx, now time.Time, cat *
 	leaseS = min(leaseS, maxLeaseS)
 	leaseNo++
 	runID := id + ":" + strconv.Itoa(leaseNo)
-	item, err := c.newLease(ctx, tx, now, w, "attempt", id, leaseNo, leaseS, runID)
+	item, err := c.newLease(ctx, tx, now, w, "attempt", id, leaseNo, leaseS, runID, acting)
 	if err != nil {
 		return nil, err
 	}
 	if _, err := tx.Exec(ctx, `UPDATE tasks SET state = 'working', lease_no = $2, run_at = NULL, reason = NULL, updated_at = $3 WHERE id = $1`, id, leaseNo, now); err != nil {
+		return nil, err
+	}
+	// The task record names the identity of its current attempt, or none; only the core writes
+	// it (IDN-8).
+	if acting.Bot != "" {
+		if _, err := tx.Exec(ctx, `UPDATE tasks SET record = record || jsonb_build_object('acting_bot', $2::text, 'bot_epoch', $3::int) WHERE id = $1`,
+			id, acting.Bot, acting.BotEpoch); err != nil {
+			return nil, err
+		}
+	} else if _, err := tx.Exec(ctx, `UPDATE tasks SET record = record - 'acting_bot' - 'bot_epoch' WHERE id = $1 AND record ? 'acting_bot'`, id); err != nil {
 		return nil, err
 	}
 	var record map[string]any

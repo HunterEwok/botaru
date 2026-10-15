@@ -123,6 +123,36 @@ func (s *Server) p2(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		out, err = s.c.Enroll(ctx, oper, req)
+	case "worker.revoke":
+		req, derr := decode[core.WorkerRequest](m)
+		if derr != nil {
+			s.fail(w, derr)
+			return
+		}
+		out, err = s.c.WorkerRevoke(ctx, oper, req)
+	case "bot.retire":
+		req, derr := decode[core.BotRetireRequest](m)
+		if derr != nil {
+			s.fail(w, derr)
+			return
+		}
+		out, err = s.c.BotRetire(ctx, oper, req)
+	case "bot.list":
+		out, err = s.c.BotList(ctx, oper)
+	case "bot.show":
+		id, _ := m["id"].(string)
+		out, err = s.c.BotShow(ctx, oper, id)
+	case "seat.assign", "seat.vacate":
+		req, derr := decode[core.SeatRequest](m)
+		if derr != nil {
+			s.fail(w, derr)
+			return
+		}
+		if op == "seat.assign" {
+			out, err = s.c.SeatAssign(ctx, oper, req)
+		} else {
+			out, err = s.c.SeatVacate(ctx, oper, req)
+		}
 	case "hold.set":
 		req, derr := decode[core.HoldSetRequest](m)
 		if derr != nil {

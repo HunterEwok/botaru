@@ -77,6 +77,15 @@
         },
         "task": {
           "$ref": "urn:botaru:schema:common:1#/$defs/object_id"
+        },
+        "acting_bot": {
+          "description": "The bot identity of the work, written by the core from the task's lease (IDN-8).",
+          "$ref": "urn:botaru:schema:common:1#/$defs/object_id"
+        },
+        "bot_epoch": {
+          "description": "Binding epoch of the identity.",
+          "type": "integer",
+          "minimum": 0
         }
       }
     },

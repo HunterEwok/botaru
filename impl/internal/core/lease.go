@@ -24,12 +24,23 @@ type LeaseToken struct {
 	WorkID   string `json:"work_id"`
 	LeaseNo  int    `json:"lease_no"`
 	WorkerID string `json:"worker_id"`
-	KeyID    string `json:"key_id,omitempty"`
-	Sig      string `json:"sig,omitempty"`
+	// ActingBot, BotEpoch and SeatEpoch name the identity an attempt runs on behalf of
+	// (IDN-8, IDN-10).
+	ActingBot string `json:"acting_bot,omitempty"`
+	BotEpoch  int    `json:"bot_epoch,omitempty"`
+	SeatEpoch int    `json:"seat_epoch,omitempty"`
+	KeyID     string `json:"key_id,omitempty"`
+	Sig       string `json:"sig,omitempty"`
 }
 
 func (t LeaseToken) fields() map[string]any {
 	m := map[string]any{"epoch": t.Epoch, "work_id": t.WorkID, "lease_no": t.LeaseNo, "worker_id": t.WorkerID}
+	if t.ActingBot != "" {
+		m["acting_bot"], m["bot_epoch"] = t.ActingBot, t.BotEpoch
+	}
+	if t.SeatEpoch != 0 {
+		m["seat_epoch"] = t.SeatEpoch
+	}
 	if t.KeyID != "" {
 		m["key_id"] = t.KeyID
 	}
@@ -48,8 +59,11 @@ func (t LeaseToken) MarshalJSON() ([]byte, error) {
 
 // issueToken signs a token: the signature covers the canonical form of every field but sig
 // (spec/hashing.md, "lease token signature").
-func (c *Core) issueToken(epoch int64, workID string, leaseNo int, workerID string) (LeaseToken, error) {
+func (c *Core) issueToken(epoch int64, workID string, leaseNo int, workerID string, acting ...actingOf) (LeaseToken, error) {
 	t := LeaseToken{Epoch: epoch, WorkID: workID, LeaseNo: leaseNo, WorkerID: workerID, KeyID: c.cfg.KeyID}
+	if len(acting) > 0 {
+		t.ActingBot, t.BotEpoch, t.SeatEpoch = acting[0].Bot, acting[0].BotEpoch, acting[0].SeatEpoch
+	}
 	b, err := jcs.Canonical(t.fields())
 	if err != nil {
 		return t, err
@@ -110,6 +124,7 @@ type leaseRow struct {
 	State    string
 	Until    time.Time
 	Outcome  []byte
+	Acting   actingOf
 }
 
 // heldLease checks a call under a lease (FEN-2, spec/bindings/http/README.md) and locks the lease
@@ -130,9 +145,11 @@ func (c *Core) heldLease(ctx context.Context, tx pgx.Tx, w *Worker, header, op s
 		return nil, nil, refuse("fenced", "the lease token is of another store epoch")
 	}
 	var l leaseRow
-	err = tx.QueryRow(ctx, `SELECT work_id, lease_no, kind, tenant, worker_id, epoch, state, lease_until, outcome FROM leases
+	var bot, seat *string
+	var be, se *int
+	err = tx.QueryRow(ctx, `SELECT work_id, lease_no, kind, tenant, worker_id, epoch, state, lease_until, outcome, acting_bot, bot_epoch, seat, seat_epoch FROM leases
 		WHERE work_id = $1 AND lease_no = $2 FOR UPDATE`, t.WorkID, t.LeaseNo).
-		Scan(&l.WorkID, &l.LeaseNo, &l.Kind, &l.Tenant, &l.WorkerID, &l.Epoch, &l.State, &l.Until, &l.Outcome)
+		Scan(&l.WorkID, &l.LeaseNo, &l.Kind, &l.Tenant, &l.WorkerID, &l.Epoch, &l.State, &l.Until, &l.Outcome, &bot, &be, &seat, &se)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, nil, refuse("lease_mismatch", "no such lease")
 	}
@@ -141,6 +158,16 @@ func (c *Core) heldLease(ctx context.Context, tx pgx.Tx, w *Worker, header, op s
 	}
 	if l.WorkerID != w.ID || l.Tenant != w.Tenant {
 		return nil, nil, refuse("lease_mismatch", "the lease is held by another worker")
+	}
+	l.Acting.Bot, l.Acting.Seat = deref(bot), deref(seat)
+	if be != nil {
+		l.Acting.BotEpoch = *be
+	}
+	if se != nil {
+		l.Acting.SeatEpoch = *se
+	}
+	if t.ActingBot != l.Acting.Bot || t.BotEpoch != l.Acting.BotEpoch || t.SeatEpoch != l.Acting.SeatEpoch {
+		return nil, nil, refuse("lease_mismatch", "the lease token names another identity")
 	}
 	if l.State != "active" {
 		if len(l.Outcome) > 0 {
@@ -162,6 +189,12 @@ func (c *Core) heldLease(ctx context.Context, tx pgx.Tx, w *Worker, header, op s
 			}
 		}
 		return nil, nil, refuse("fenced", "the lease is no longer active")
+	}
+	// A write from an identity or seat that moved on is fenced (IDN-8, IDN-10).
+	if fenced, err := actingFenced(ctx, tx, &l); err != nil {
+		return nil, nil, err
+	} else if fenced {
+		return nil, nil, refuse("fenced", "the identity or seat epoch of the lease is stale")
 	}
 	return &l, nil, nil
 }

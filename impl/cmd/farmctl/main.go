@@ -43,8 +43,11 @@ commands:
   principal set-identity ID IDENTITY         for example telegram:123456
   grant ID GROUP [-until TIME]
   ungrant ID GROUP
-  worker enroll -tenant T -role R -kind K [-target NAME] -token-out FILE
+  worker enroll -tenant T -role R -kind K [-target NAME] [-bot ID] -token-out FILE
                 [-plugins P[,P] -placement host|sandbox [-host MACHINE]]   (toolhost)
+  worker revoke ID                           the token stops working; the bot identity becomes unbound
+  bot list | bot show ID | bot retire ID     bot identities of the credential's tenant (IDN-8, IDN-11)
+  seat assign SEAT BOT | seat vacate SEAT    a commission seat, for example commission:1 (IDN-10)
   audit verify TENANT [-heads FILE]          FILE: the JSON array of heads from the monitoring history, oldest first
   audit query [-kind K] [-command C] [-actor P] [-target-kind K] [-from T] [-to T] [-limit N] [-after-seq N]
                                              the audit of the credential's tenant; the read is audited
@@ -135,10 +138,31 @@ func run(c *client, args []string) error {
 		}
 		return c.print(args[0], req)
 	case "worker":
+		if len(args) == 3 && args[1] == "revoke" {
+			return c.print("worker.revoke", map[string]any{"op": "worker.revoke", "worker": args[2]})
+		}
 		if len(args) < 2 || args[1] != "enroll" {
-			return errors.New("worker needs enroll")
+			return errors.New("worker needs enroll or revoke")
 		}
 		return enroll(c, args[2:])
+	case "bot":
+		switch {
+		case len(args) == 2 && args[1] == "list":
+			return c.print("bot.list", map[string]any{})
+		case len(args) == 3 && args[1] == "show":
+			return c.print("bot.show", map[string]any{"op": "bot.show", "id": args[2]})
+		case len(args) == 3 && args[1] == "retire":
+			return c.print("bot.retire", map[string]any{"bot": args[2]})
+		}
+		return errors.New("usage: farmctl bot list | bot show ID | bot retire ID")
+	case "seat":
+		switch {
+		case len(args) == 4 && args[1] == "assign":
+			return c.print("seat.assign", map[string]any{"seat": args[2], "bot": args[3]})
+		case len(args) == 3 && args[1] == "vacate":
+			return c.print("seat.vacate", map[string]any{"seat": args[2]})
+		}
+		return errors.New("usage: farmctl seat assign SEAT BOT | seat vacate SEAT")
 	case "hold":
 		return hold(c, args[1:])
 	case "audit":
@@ -418,6 +442,7 @@ func enroll(c *client, args []string) error {
 	plugins := fs.String("plugins", "", "toolhost: the plugins, comma separated, for example cmd,logs")
 	placement := fs.String("placement", "", "toolhost: host or sandbox")
 	host := fs.String("host", "", "toolhost of placement host: the catalog machine")
+	bot := fs.String("bot", "", "agent or job: bind this unbound bot identity of the same role again")
 	tokenOut := fs.String("token-out", "", "write the worker token to this file (mode 0600)")
 	p2Out := fs.String("p2-token-out", "", "write the driver's P2 secret, if issued, to this file (default: the token file with .p2 added)")
 	_ = fs.Parse(reorder(args))
@@ -436,6 +461,9 @@ func enroll(c *client, args []string) error {
 	}
 	if *host != "" {
 		req["host"] = *host
+	}
+	if *bot != "" {
+		req["bot"] = *bot
 	}
 	var out struct {
 		Worker  map[string]any `json:"worker"`
