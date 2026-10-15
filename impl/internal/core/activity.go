@@ -70,10 +70,15 @@ func (c *Core) SubmitActivity(ctx context.Context, w *Worker, a Activity) (*Acti
 	if kind := ch.IdentityKind; kind != "" && !strings.HasPrefix(a.Sender.Identity, kind+":") {
 		return nil, refuse("forbidden", "the identity kind does not match the channel driver")
 	}
-	// A group chat is served only after chat.bind and its membership check, which this version
-	// does not have: an answer there would reach members nobody admitted.
+	// A group chat is served only after chat.bind (DLV-7).
+	var binding *chatBinding
 	if a.Chat.Kind != "direct" {
-		return &ActivityResult{Result: "ignored", Reason: "not_subject"}, nil
+		if binding, err = loadBinding(ctx, c.st.Pool, w.Tenant, a.Channel, a.Chat.ID()); err != nil {
+			return nil, err
+		}
+		if binding == nil {
+			return &ActivityResult{Result: "ignored", Reason: "not_subject"}, nil
+		}
 	}
 	key := "system:activity:" + a.Channel + ":" + a.UpdateID
 
@@ -91,6 +96,13 @@ func (c *Core) SubmitActivity(ctx context.Context, w *Worker, a Activity) (*Acti
 		}
 		principal, err := principalByIdentity(ctx, tx, w.Tenant, a.Sender.Identity)
 		if errors.Is(err, pgx.ErrNoRows) {
+			// A person outside the tenant wrote in a bound group: they are a member nobody
+			// admitted, so the chat gets nothing more until the operator binds it again (DLV-7).
+			if binding != nil {
+				if err := c.markMembersUnknown(ctx, tx, now, binding); err != nil {
+					return err
+				}
+			}
 			out = ActivityResult{Result: "ignored", Reason: "not_subject"}
 			return nil
 		}
@@ -115,13 +127,33 @@ func (c *Core) SubmitActivity(ctx context.Context, w *Worker, a Activity) (*Acti
 			return nil
 		}
 		groups := groupClosure(tv, p.Groups)
+		if binding != nil {
+			if binding.Locale != "" {
+				locale = binding.Locale
+			}
+			// In a group only /help and /about run; every other command is given in a private
+			// chat (PRM-15).
+			if word, ok := groupCommand(a); ok {
+				pc := personCommand{tv: tv, cat: cat, person: principal, groups: groups, locale: locale,
+					channel: a.Channel, chat: a.Chat, key: key, binding: binding.Name}
+				switch word {
+				case "/help":
+					out = *c.helpCommand(pc)
+				case "/about":
+					out = *pc.reply(c, "cmd.about.text", map[string]any{"tenant": tv.Name})
+				default:
+					reply("cmd.direct_only")
+				}
+				return nil
+			}
+		}
 		// The commands the core runs by code, without a model and without a task type.
 		if word, rest, ok := commandWord(a); ok && (word == "/service" || word == "/run" || codeCommands[word]) {
 			// A channel command closes the follow-up window (CNT-5).
 			if err := closeFollowups(ctx, tx, w.Tenant, "c:"+a.Channel+":"+a.Chat.ID(), principal); err != nil {
 				return err
 			}
-			if err := c.firstContact(ctx, tx, now, tv, a.Channel, principal, a.Chat); err != nil {
+			if err := c.noticeContact(ctx, tx, now, tv, a, principal); err != nil {
 				return err
 			}
 			pc := personCommand{tv: tv, cat: cat, person: principal, groups: groups, locale: locale,
@@ -141,7 +173,7 @@ func (c *Core) SubmitActivity(ctx context.Context, w *Worker, a Activity) (*Acti
 			out = *r
 			return nil
 		}
-		typ, goal, ok := c.chooseType(cat, tv, a)
+		typ, goal, ok := c.chooseType(cat, tv, a, binding)
 		_, _, command := commandWord(a)
 		prev, err := c.continuesTo(ctx, tx, now, tv, a, principal, groups, command && ok)
 		if err != nil {
@@ -161,7 +193,7 @@ func (c *Core) SubmitActivity(ctx context.Context, w *Worker, a Activity) (*Acti
 			return nil
 		}
 		origin := &Origin{Channel: a.Channel, Chat: a.Chat}
-		if err := c.firstContact(ctx, tx, now, tv, a.Channel, principal, a.Chat); err != nil {
+		if err := c.noticeContact(ctx, tx, now, tv, a, principal); err != nil {
 			return err
 		}
 		body := map[string]any{"type": typ, "goal": goal}
@@ -207,7 +239,7 @@ func (c *Core) rejectText(locale, reason string) string {
 }
 
 // chooseType picks the task type of an activity and the goal text.
-func (c *Core) chooseType(cat *Catalog, tv *TenantView, a Activity) (string, string, bool) {
+func (c *Core) chooseType(cat *Catalog, tv *TenantView, a Activity, binding *chatBinding) (string, string, bool) {
 	text := strings.TrimSpace(a.Text)
 	if a.Chat.Kind == "direct" && !a.Forwarded && !a.Quoted && strings.HasPrefix(text, "/") {
 		word, rest, _ := strings.Cut(text, " ")
@@ -229,7 +261,7 @@ func (c *Core) chooseType(cat *Catalog, tv *TenantView, a Activity) (string, str
 		return "", "", false
 	}
 	for _, d := range tv.Spec.DefaultTypes {
-		if len(d.Chats) > 0 && !containsStr(d.Chats, a.Chat.Kind) {
+		if len(d.Chats) > 0 && !containsStr(d.Chats, a.Chat.Kind) && (binding == nil || !containsStr(d.Chats, "chat:"+binding.Name)) {
 			continue
 		}
 		if _, ok := cat.TaskTypes[d.Type]; !ok {
@@ -272,4 +304,35 @@ func (c *Core) textAuthors(ctx context.Context, tx pgx.Tx, tenant, sender string
 		out = append(out, p)
 	}
 	return out, nil
+}
+
+// groupCommand is the command word of a message in a group chat: the first word starting with
+// a slash, without the bot name; forwarded and quoted text is never a command (IDN-7).
+func groupCommand(a Activity) (string, bool) {
+	text := strings.TrimSpace(a.Text)
+	if a.Chat.Kind != "group" || a.Forwarded || a.Quoted || !strings.HasPrefix(text, "/") {
+		return "", false
+	}
+	word, _, _ := strings.Cut(text, " ")
+	if i := strings.IndexByte(word, '@'); i >= 0 {
+		word = word[:i]
+	}
+	return word, true
+}
+
+// noticeContact plans the first-contact notices of an activity: in its chat, or for a group in
+// the sender's direct chat, so the notices reach the person and not the group (DLV-12).
+// It is the same direct chat the person's half of a split answer goes to; a person without
+// one gets no notices, and the group asks them to open a private chat instead (DLV-15).
+func (c *Core) noticeContact(ctx context.Context, tx pgx.Tx, now time.Time, tv *TenantView, a Activity, principal string) error {
+	chat := a.Chat
+	if chat.Kind == "group" {
+		dm, err := directChat(ctx, tx, tv, principal, a.Channel)
+		if err != nil || dm == "" {
+			return err
+		}
+		_, ext, _ := strings.Cut(dm, ":")
+		chat = Chat{Kind: "direct", ExternalID: ext}
+	}
+	return c.firstContact(ctx, tx, now, tv, a.Channel, principal, chat)
 }

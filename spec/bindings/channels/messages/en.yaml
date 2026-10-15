@@ -120,6 +120,22 @@ texts:
   task.failed: The request could not be completed ({reason}).
   task.continuation_refused: "The follow-up step of your request could not start ({reason})."
   delivery.withheld.channel_ceiling: The answer holds data of a class this chat may not receive, so it was not sent here.
+  delivery.details_private: Details sent privately.
+  delivery.open_private_chat: The answer is ready. Open a private chat with the bot to receive it.
+  cmd.grant.usage: "Usage: /grant <person> <group> or /ungrant <person> <group>; the person is an identity such as telegram:1002."
+  cmd.grant.no_group: There is no group {group} in this tenant.
+  cmd.grant.no_person: There is no such person in this tenant.
+  cmd.grant.privileged: Group {group} is privileged; only the operator grants it.
+  cmd.grant.not_covered: You can grant only a group whose rights you hold yourself; {group} has more.
+  cmd.grant.done: "{subject} is now in group {group}."
+  cmd.ungrant.done: "{subject} is no longer in group {group}."
+  notice.delegated_grant: "{by} granted {subject} the delegated group {group}."
+  notice.delegated_ungrant: "{by} removed {subject} from the delegated group {group}."
+  cmd.ungrant.not_member: "{subject} is not in group {group}."
+  cmd.direct_only: This command can only be given in a private chat with the bot.
+  cmd.help.group_header: "In this chat you can ask in plain text:"
+  cmd.help.group_row: "- {title}"
+  cmd.help.group_hint: Other commands are given in a private chat with the bot.
   activity.not_command: Send a command, for example /hello.
   activity.unknown_command: Unknown command.
   activity.not_verified: The sender of this message is not known, so it is not executed.

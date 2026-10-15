@@ -21,7 +21,7 @@ import (
 
 // codeCommands are the built-in commands this file answers.
 var codeCommands = map[string]bool{"/tasks": true, "/status": true, "/cancel": true, "/help": true, "/me": true, "/lang": true, "/team": true, "/about": true,
-	"/mydata": true, "/forget": true}
+	"/mydata": true, "/forget": true, "/grant": true, "/ungrant": true}
 
 func (c *Core) codeCommand(ctx context.Context, tx pgx.Tx, now time.Time, pc personCommand, word, rest string) (*ActivityResult, error) {
 	switch word {
@@ -41,6 +41,8 @@ func (c *Core) codeCommand(ctx context.Context, tx pgx.Tx, now time.Time, pc per
 		return c.mydataCommand(ctx, tx, now, pc, rest)
 	case "/forget":
 		return c.forgetCommand(ctx, tx, now, pc)
+	case "/grant", "/ungrant":
+		return c.grantCommand(ctx, tx, now, pc, word, rest)
 	}
 	return pc.reply(c, "cmd.about.text", map[string]any{"tenant": pc.tv.Name}), nil
 }
@@ -217,6 +219,9 @@ func (c *Core) cancelTree(ctx context.Context, tx pgx.Tx, now time.Time, tenant,
 
 // helpCommand lists the tenant's commands and /run pipelines the person may use, by title.
 func (c *Core) helpCommand(pc personCommand) *ActivityResult {
+	if pc.binding != "" {
+		return c.groupHelp(pc)
+	}
 	var rows []string
 	for _, cmd := range slices.Sorted(mapKeys(pc.tv.Spec.Commands)) {
 		typ := pc.tv.Spec.Commands[cmd]
@@ -448,4 +453,25 @@ func (c *Core) forgetCommand(ctx context.Context, tx pgx.Tx, now time.Time, pc p
 		return nil, err
 	}
 	return pc.reply(c, "cmd.forget.done", map[string]any{"request": id}), nil
+}
+
+// groupHelp lists what a person can ask in a bound group chat: the free text types of the
+// chat they may use; every command is given in a private chat (PRM-15).
+func (c *Core) groupHelp(pc personCommand) *ActivityResult {
+	var rows []string
+	for _, d := range pc.tv.Spec.DefaultTypes {
+		if len(d.Chats) > 0 && !slices.Contains(d.Chats, "group") && !slices.Contains(d.Chats, "chat:"+pc.binding) {
+			continue
+		}
+		tt, ok := pc.cat.TaskTypes[d.Type]
+		if !ok || !hasCap(pc.tv, pc.groups, "task:"+d.Type) {
+			continue
+		}
+		rows = append(rows, c.texts.Render(pc.locale, "cmd.help.group_row", map[string]any{"title": tt.Title}))
+	}
+	text := c.texts.Render(pc.locale, "cmd.help.group_header", nil)
+	if len(rows) > 0 {
+		text += "\n" + strings.Join(rows, "\n")
+	}
+	return &ActivityResult{Result: "reply", Text: text + "\n" + c.texts.Render(pc.locale, "cmd.help.group_hint", nil)}
 }

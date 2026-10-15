@@ -22,7 +22,7 @@ import (
 
 // builtinCommands are the channel commands that a tenant's commands cannot take (PRM-17).
 var builtinCommands = map[string]bool{"/help": true, "/about": true, "/lang": true, "/mydata": true, "/tasks": true, "/status": true,
-	"/cancel": true, "/me": true, "/team": true, "/run": true, "/service": true, "/forget": true}
+	"/cancel": true, "/me": true, "/team": true, "/run": true, "/service": true, "/forget": true, "/grant": true, "/ungrant": true}
 
 // timeoutCeilings are the farm ceilings of type timeouts in seconds (DLV-16).
 var timeoutCeilings = map[string]int64{"lease": 120, "heartbeat": 30, "tool_start_by": 30}
@@ -699,7 +699,10 @@ func (c *Core) lintManifests(docs []manifest.Doc, index []int) ([]ApplyError, er
 				case base == "action.request" || base == "service.control" || base == "monitor.script_run" || decisionCaps[base] ||
 					strings.HasPrefix(base, "admin") || strings.HasPrefix(cp, "admin"):
 					bad = true
-				case base == "task" && types[arg] != nil:
+				case (base == "task" || base == "task.read") && strings.Contains(arg, "*"):
+					// A wildcard reaches types of any tier (PRM-16).
+					bad = true
+				case (base == "task" || base == "task.read") && types[arg] != nil:
 					tier, _ := mnum(types[arg], "tier")
 					if tier >= 3 || order(mstr(types[arg], "data_class")) > 1 {
 						bad = true
@@ -1197,6 +1200,12 @@ func (c *Core) lintManifests(docs []manifest.Doc, index []int) ([]ApplyError, er
 		}
 	}
 	// The tree limit of an agent type covers the output of one call (GW-2, BUD-2).
+	// No record that code reads from model output names a person or rates one (DLV-14).
+	for _, o := range S.each("TaskType") {
+		if rs := mmap(o.spec, "result_schema"); readByCode(rs) && namesHuman(rs) {
+			f.add(o, "human_subject_in_record", "/result_schema")
+		}
+	}
 	for _, o := range S.each("TaskType") {
 		ts := o.spec
 		budget, ok := mnum(ts, "tree_budget_eur")
@@ -1542,4 +1551,58 @@ func knownZone(name string) bool {
 	}
 	_, err := time.LoadLocation(name)
 	return err == nil
+}
+
+// readByCode says whether a schema has a field marked x-botaru-read-by: code.
+func readByCode(v any) bool {
+	switch x := v.(type) {
+	case map[string]any:
+		if x["x-botaru-read-by"] == "code" {
+			return true
+		}
+		for _, e := range x {
+			if readByCode(e) {
+				return true
+			}
+		}
+	case []any:
+		for _, e := range x {
+			if readByCode(e) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+var reHumanValue = regexp.MustCompile(`^human(:|$)`)
+
+// namesHuman says whether a schema fixes a value naming a human principal or the kind human
+// in a const or an enum (DLV-14).
+func namesHuman(v any) bool {
+	switch x := v.(type) {
+	case map[string]any:
+		if s, ok := x["const"].(string); ok && reHumanValue.MatchString(s) {
+			return true
+		}
+		if e, ok := x["enum"].([]any); ok {
+			for _, s := range e {
+				if str, ok := s.(string); ok && reHumanValue.MatchString(str) {
+					return true
+				}
+			}
+		}
+		for _, e := range x {
+			if namesHuman(e) {
+				return true
+			}
+		}
+	case []any:
+		for _, e := range x {
+			if namesHuman(e) {
+				return true
+			}
+		}
+	}
+	return false
 }

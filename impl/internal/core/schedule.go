@@ -169,7 +169,7 @@ func (c *Core) scheduleRefused(ctx context.Context, tx pgx.Tx, now time.Time, tv
 // deliverScheduled sends the result of a schedule's task to the schedule's deliver_to as the
 // catalog has it now, since an address is checked at every run (DLV-6, PRM-10): a group is a
 // direct message to each active member with data:<mark>, a sink gets the result for its
-// store. An address the version does not serve yet stays without a delivery.
+// store, a bound chat the closed summary only (DLV-15).
 func (c *Core) deliverScheduled(ctx context.Context, tx pgx.Tx, now time.Time, cat *Catalog, tenant, task, name string, tt manifest.TaskType, result map[string]any, mark string) error {
 	tv := cat.Tenants[tenant]
 	if tv == nil {
@@ -217,6 +217,27 @@ func (c *Core) deliverScheduled(ctx context.Context, tx pgx.Tx, now time.Time, c
 				}); err != nil {
 					return err
 				}
+			}
+		case "chat":
+			// A bound group chat gets only the closed summary within its ceiling; the full
+			// result goes only to the other addresses (DLV-15).
+			b, err := bindingByName(ctx, tx, tenant, target)
+			if err != nil {
+				return err
+			}
+			if b == nil || !c.markWithin(mark, b.Ceiling) {
+				continue
+			}
+			sum, sf := closedSummary(tt, result)
+			if sum == "" {
+				continue
+			}
+			if _, err := c.planDelivery(ctx, tx, now, plannedDelivery{
+				Tenant: tenant, Task: task, Kind: "task_result", Addr: addr, TargetKind: "chat", TargetID: b.Chat,
+				ExecKind: "channel", ExecName: b.Channel, Body: map[string]any{"form": "result", "text": sum, "fields": sf},
+				DataMark: mark, DataOrigin: "code",
+			}); err != nil {
+				return err
 			}
 		case "sink":
 			// The sink takes nothing above its ceiling (SEC-9).

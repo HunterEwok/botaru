@@ -165,6 +165,13 @@ func (s *Server) p2(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		out, err = s.c.Redrive(ctx, oper, req)
+	case "chat.bind":
+		req, derr := decode[core.ChatBindRequest](m)
+		if derr != nil {
+			s.fail(w, derr)
+			return
+		}
+		out, err = s.c.ChatBind(ctx, oper, req)
 	case "erasure.request":
 		req, derr := decode[core.ErasureRequestInput](m)
 		if derr != nil {

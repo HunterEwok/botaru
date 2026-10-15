@@ -30,6 +30,10 @@
     "chat": {
       "$ref": "urn:botaru:schema:activity:1#/properties/chat"
     },
+    "name": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/name",
+      "description": "Name of the binding for the address chat:<name> and default_types; without it the core derives <channel>-<external chat id>."
+    },
     "ceiling": {
       "$ref": "urn:botaru:schema:common:1#/$defs/data_mark",
       "description": "Class ceiling of the binding."

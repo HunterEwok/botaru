@@ -411,6 +411,11 @@ func (c *Core) enqueue(ctx context.Context, tx pgx.Tx, now time.Time, cat *Catal
 	if in.Origin != nil {
 		record["origin"] = in.Origin
 		record["conversation"] = "c:" + in.Origin.Channel + ":" + in.Origin.Chat.ID()
+		if in.Origin.Chat.Kind == "group" {
+			// In a group each person has a conversation of their own, so a session never
+			// carries one member's answers to another (PRM-9, DLV-15).
+			record["conversation"] = "c:" + in.Origin.Channel + ":" + in.Origin.Chat.ID() + ":" + in.Initiator
+		}
 	}
 	root := id
 	if ch := in.Chain; ch != nil {
