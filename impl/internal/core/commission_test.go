@@ -61,7 +61,7 @@ func newCommissionBench(t *testing.T, decide bool, edits ...func([]map[string]an
 		}
 		ms = append(append(ms, extra...), map[string]any{
 			"apiVersion": "botaru/v1alpha1", "kind": "Group", "metadata": map[string]any{"name": "deciders", "tenant": "demo"},
-			"spec": map[string]any{"caps": []any{"proposal.decide:reliability"}},
+			"spec": map[string]any{"caps": []any{"proposal.decide:reliability"}, "data": []any{"summary", "internal"}},
 		})
 		for _, e := range edits {
 			e(ms)

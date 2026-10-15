@@ -53,12 +53,16 @@ var buttonCodes = map[string]string{
 }
 
 // subjectPrefixes give the subject kind of a card by the prefix of its id.
-var subjectPrefixes = map[string]string{"a": "approval"}
+var subjectPrefixes = map[string]string{"a": "approval", "prp": "proposal"}
 
 // buttonLabels are the text keys of the button labels this driver draws.
 var buttonLabels = map[string]string{
 	"approve": "card.button.approve", "reject": "card.button.reject", "details": "card.button.details", "remind": "card.copy.remind_button",
+	"accept": "card.button.accept", "defer": "card.button.defer",
 }
+
+// titleKeys are the title text keys of the card kinds that are not an approval card.
+var titleKeys = map[string]string{"proposal_card": "card.proposal.title", "realization_card": "card.realization.title"}
 
 // flat writes a map of closed fields as key=value pairs in key order.
 func flat(m map[string]any) string {
@@ -90,7 +94,11 @@ func (c *Channel) renderCard(locale string, cd *card) string {
 	if cd.Reminder {
 		lines = append(lines, t.Render(locale, "card.remind", map[string]any{"title": cd.Title, "deadline": cd.ExpiresAt, "initiator": cd.InitiatorDisplay}))
 	}
-	lines = append(lines, t.Render(locale, "card.title", map[string]any{"title": cd.Title}))
+	titleKey := "card.title"
+	if k, ok := titleKeys[cd.Card]; ok {
+		titleKey = k
+	}
+	lines = append(lines, t.Render(locale, titleKey, map[string]any{"title": cd.Title}))
 	if cd.Risk != "" {
 		lines = append(lines, t.Render(locale, "card.risk", map[string]any{"risk": cd.Risk}))
 	}

@@ -972,8 +972,10 @@ func (c *Core) Decide(ctx context.Context, w *Worker, ob *OnBehalf, req DecideRe
 		return c.decideMemory(ctx, w, *ob, req)
 	case "subject_request":
 		return c.decideSubject(ctx, w, *ob, req)
+	case "proposal":
+		return c.decideProposal(ctx, w, *ob, req)
 	default:
-		return nil, refuse("not_found", "this build decides approvals, memory records and a person's requests")
+		return nil, refuse("not_found", "this build decides approvals, memory records, a person's requests and proposals")
 	}
 	if req.Decision != "approve" && req.Decision != "reject" {
 		return nil, refuse("input_schema_invalid", "an approval is approved or rejected")
@@ -1525,8 +1527,11 @@ func (c *Core) CardDetails(ctx context.Context, w *Worker, ob *OnBehalf, req Car
 	if ob == nil {
 		return nil, refuse("forbidden", "card.details needs Botaru-On-Behalf and Botaru-Chat")
 	}
+	if req.SubjectKind == "proposal" {
+		return c.proposalDetails(ctx, w, *ob, req)
+	}
 	if req.SubjectKind != "approval" {
-		return nil, refuse("not_found", "this build has cards only for approvals")
+		return nil, refuse("not_found", "this build has card details only for approvals and proposals")
 	}
 	cat, err := c.Catalog(ctx)
 	if err != nil {

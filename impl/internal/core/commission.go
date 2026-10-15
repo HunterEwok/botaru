@@ -164,7 +164,7 @@ func (c *Core) proposalLoop(ctx context.Context) error {
 	}
 	var ids []string
 	if err := c.tx(ctx, func(tx pgx.Tx, now time.Time) error {
-		rows, err := tx.Query(ctx, `SELECT id FROM proposals WHERE state IN ('screened', 'in_review', 'recommended', 'parked') ORDER BY created_at, id`)
+		rows, err := tx.Query(ctx, `SELECT id FROM proposals WHERE state IN ('screened', 'in_review', 'recommended', 'parked', 'presented', 'realizing') ORDER BY created_at, id`)
 		if err != nil {
 			return err
 		}
@@ -179,6 +179,10 @@ func (c *Core) proposalLoop(ctx context.Context) error {
 			errs = append(errs, fmt.Errorf("proposal %s: %w", id, err))
 		}
 	}
+	// The digest goes after the moves, so a proposal recommended in this pass can be in it.
+	if err := c.digestLoop(ctx, cat); err != nil {
+		errs = append(errs, err)
+	}
 	return errors.Join(errs...)
 }
 
@@ -187,6 +191,8 @@ type proposalRow struct {
 	ID, Tenant, Role, State string
 	Rec                     map[string]any
 	StateAt                 time.Time
+	Nonce                   string
+	PresentedAt             *time.Time
 }
 
 func (p *proposalRow) body() proposalBody {
@@ -253,8 +259,10 @@ func (c *Core) saveProposal(ctx context.Context, tx pgx.Tx, now time.Time, p *pr
 func (c *Core) stepProposal(ctx context.Context, tx pgx.Tx, now time.Time, cat *Catalog, id string) error {
 	p := &proposalRow{ID: id}
 	var raw []byte
-	err := tx.QueryRow(ctx, `SELECT tenant, role, state, record, state_at FROM proposals WHERE id = $1 FOR UPDATE SKIP LOCKED`, id).
-		Scan(&p.Tenant, &p.Role, &p.State, &raw, &p.StateAt)
+	var nonce *string
+	err := tx.QueryRow(ctx, `SELECT tenant, role, state, record, state_at, nonce, presented_at FROM proposals WHERE id = $1 FOR UPDATE SKIP LOCKED`, id).
+		Scan(&p.Tenant, &p.Role, &p.State, &raw, &p.StateAt, &nonce, &p.PresentedAt)
+	p.Nonce = deref(nonce)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil
 	}
@@ -274,6 +282,10 @@ func (c *Core) stepProposal(ctx context.Context, tx pgx.Tx, now time.Time, cat *
 		return c.screenProposal(ctx, tx, now, cat, tv, p)
 	case "in_review":
 		return c.reviewProposal(ctx, tx, now, cat, tv, p)
+	case "presented":
+		return c.presentedStep(ctx, tx, now, tv, p)
+	case "realizing":
+		return c.realizingStep(ctx, tx, now, tv, p)
 	case "recommended":
 		if now.Sub(p.StateAt) > durationOr(ins.RecommendTTL, defaultRecommendTTL) {
 			return c.moveProposal(ctx, tx, now, p, "expired", "")
