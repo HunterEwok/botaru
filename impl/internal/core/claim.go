@@ -542,6 +542,32 @@ func (c *Core) claimDelivery(ctx context.Context, tx pgx.Tx, now time.Time, cat 
 				continue
 			}
 		}
+		// A group chat gets a delivery only while it is bound, has no unknown member and the
+		// mark is within the binding ceiling (DLV-7, DLV-15).
+		if w.Kind == "channel" && targetKind == "chat" && strings.HasPrefix(targetID, "group:") {
+			b, err := loadBinding(ctx, tx, w.Tenant, w.Target, targetID)
+			if err != nil {
+				return nil, err
+			}
+			reason := ""
+			switch {
+			case b == nil:
+				reason = "ref_invalid"
+			case b.MembersUnknown:
+				reason = "unknown_member"
+			case deref(dataMark) != "" && !c.markWithin(*dataMark, b.Ceiling):
+				reason = "channel_ceiling"
+			}
+			if reason != "" {
+				if _, err := tx.Exec(ctx, `UPDATE deliveries SET state = 'withheld', reason = $2, updated_at = $3 WHERE id = $1`, id, reason, now); err != nil {
+					return nil, err
+				}
+				if err := c.appendEvent(ctx, tx, now, w.Tenant, Event{Type: "delivery.withheld", Subject: id, Data: map[string]any{"delivery": id, "kind": kind, "reason": reason}}); err != nil {
+					return nil, err
+				}
+				continue
+			}
+		}
 		if tv != nil {
 			reason, err := c.outboundRefusal(ctx, tx, now, tv, w.Kind, w.Target, outgoing{
 				ID: id, Kind: kind, Addr: addr, TargetKind: targetKind, TargetID: targetID,

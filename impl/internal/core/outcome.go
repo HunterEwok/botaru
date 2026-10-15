@@ -383,6 +383,12 @@ func (c *Core) completeAttempt(ctx context.Context, tx pgx.Tx, now time.Time, w 
 	if len(fields) > 0 {
 		body["fields"] = fields
 	}
+	if record.Origin.Chat.Kind == "group" {
+		if tv := cat.Tenants[w.Tenant]; tv != nil {
+			return c.planGroupAnswer(ctx, tx, now, tv, l.WorkID, initiator, record.Origin, tt, result, body, record.DataMark)
+		}
+		return nil
+	}
 	_, err = c.planDelivery(ctx, tx, now, plannedDelivery{
 		Tenant: w.Tenant, Task: l.WorkID, Kind: "task_result", Addr: "origin", TargetKind: "chat", TargetID: record.Origin.Chat.ID(),
 		ExecKind: "channel", ExecName: record.Origin.Channel, Recipient: initiator, Body: body,
@@ -691,11 +697,32 @@ func (c *Core) failTask(ctx context.Context, tx pgx.Tx, now time.Time, tenant, i
 // dead (DLV-3).
 func (c *Core) endDelivery(ctx context.Context, tx pgx.Tx, now time.Time, tenant string, l *leaseRow, reason string, retryable bool, retryAfterS int) (*FailResult, error) {
 	var attempts int
-	var kind string
+	var kind, channel, targetID string
+	var task, fallback *string
 	var episodeOpen bool
-	if err := tx.QueryRow(ctx, `SELECT d.attempts, d.kind, coalesce(e.state = 'firing', false) FROM deliveries d
-		LEFT JOIN alarm_episodes e ON e.id = d.episode WHERE d.id = $1 FOR UPDATE OF d`, l.WorkID).Scan(&attempts, &kind, &episodeOpen); err != nil {
+	if err := tx.QueryRow(ctx, `SELECT d.attempts, d.kind, d.exec_name, d.target_id, d.task, d.fallback_chat, coalesce(e.state = 'firing', false) FROM deliveries d
+		LEFT JOIN alarm_episodes e ON e.id = d.episode WHERE d.id = $1 FOR UPDATE OF d`, l.WorkID).Scan(&attempts, &kind, &channel, &targetID, &task, &fallback, &episodeOpen); err != nil {
 		return nil, err
+	}
+	// The channel saw an unknown member in a group chat: the delivery is withheld and the chat
+	// gets nothing more until the operator binds it again (DLV-7).
+	if reason == "unknown_member" && strings.HasPrefix(targetID, "group:") {
+		if _, err := tx.Exec(ctx, `UPDATE deliveries SET state = 'withheld', reason = $2, updated_at = $3 WHERE id = $1`, l.WorkID, reason, now); err != nil {
+			return nil, err
+		}
+		if err := c.appendEvent(ctx, tx, now, tenant, Event{Type: "delivery.withheld", Subject: l.WorkID, Data: map[string]any{"delivery": l.WorkID, "kind": kind, "reason": reason}}); err != nil {
+			return nil, err
+		}
+		b, err := loadBinding(ctx, tx, tenant, channel, targetID)
+		if err != nil {
+			return nil, err
+		}
+		if b != nil {
+			if err := c.markMembersUnknown(ctx, tx, now, b); err != nil {
+				return nil, err
+			}
+		}
+		return &FailResult{Final: true, Reason: reason}, nil
 	}
 	// An alarm notice does not die by attempt count while its episode is open; it is retried
 	// with a pause of at most 10 minutes (MON-13, like the export of MON-11).
@@ -725,6 +752,17 @@ func (c *Core) endDelivery(ctx context.Context, tx pgx.Tx, now time.Time, tenant
 	}
 	if _, err := tx.Exec(ctx, `UPDATE deliveries SET state = 'dead', reason = $2, updated_at = $3 WHERE id = $1`, l.WorkID, final, now); err != nil {
 		return nil, err
+	}
+	// The direct message of a split group answer never arrived: the group asks the person to
+	// open a private chat with the bot, and the content does not go to the group (DLV-15).
+	if fallback != nil {
+		if _, err := c.planDelivery(ctx, tx, now, plannedDelivery{
+			Tenant: tenant, Task: deref(task), Kind: "task_result", Addr: "origin", TargetKind: "chat", TargetID: *fallback,
+			ExecKind: "channel", ExecName: channel, DataOrigin: "code",
+			Body: map[string]any{"form": "text_code", "text_key": "delivery.open_private_chat"},
+		}); err != nil {
+			return nil, err
+		}
 	}
 	// A privacy notice that never arrived is planned again at the next contact; model text for
 	// the recipient waits until then (DLV-12).

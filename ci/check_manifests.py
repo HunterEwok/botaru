@@ -91,6 +91,26 @@ def cron_valid(expr):
             if a < lo or b > hi or a > b:
                 return False
     return True
+def read_by_code(v):
+    """Whether a schema has a field marked x-botaru-read-by: code."""
+    if isinstance(v, dict):
+        return v.get('x-botaru-read-by') == 'code' or any(read_by_code(e) for e in v.values())
+    if isinstance(v, list):
+        return any(read_by_code(e) for e in v)
+    return False
+
+
+def names_human(v):
+    """Whether a schema fixes a value naming a human principal or the kind human (DLV-14)."""
+    human = re.compile(r'^human(:|$)')
+    if isinstance(v, dict):
+        vals = [v.get('const')] + (v.get('enum') if isinstance(v.get('enum'), list) else [])
+        if any(isinstance(x, str) and human.match(x) for x in vals):
+            return True
+        return any(names_human(e) for e in v.values())
+    if isinstance(v, list):
+        return any(names_human(e) for e in v)
+    return False
 
 def known_zone(name):
     """Whether an IANA time zone name exists in the zone database (TIM-3)."""
@@ -169,7 +189,7 @@ FORBIDDEN_PROGRAMS = set(model_registry('forbidden-programs'))
 REQUIREMENTS = rules()
 # Built-in channel commands: commands cannot take them (PRM-17, docs/task-language.md).
 BUILTIN_COMMANDS = {'/help', '/about', '/lang', '/mydata', '/tasks', '/status', '/cancel', '/me', '/team',
-                    '/run', '/service'}
+                    '/run', '/service', '/forget', '/grant', '/ungrant'}
 # Farm ceilings (docs/tasks-and-delivery.md, "Deadlines and ceilings"; DLV-16).
 CEILINGS = {'lease': 120, 'heartbeat': 30, 'tool_start_by': 30}
 # Decision and management capabilities: system does not have them (PRM-10), nor do delegated_groups (PRM-16).
@@ -953,6 +973,11 @@ def lint(docs, today=None, farm_hosts=None, examples_mode=False, claimed=None, s
     # max_output_tokens at the output price of the most expensive profile of the slot for the type purpose
     # (analysis for insight and aggregate, base otherwise; GW-7) and its fallbacks.
     # Input is not in the lower bound, so an error means "not enough even for the output".
+    # No record that code reads from model output names a person or rates one (DLV-14).
+    for _, tname, where, ts in S.each('TaskType'):
+        rs = ts.get('result_schema') or {}
+        if read_by_code(rs) and names_human(rs):
+            f.error('human_subject_in_record', where, f'type {tname}: a result read by code names a human principal (DLV-14)')
     for _, tname, where, ts in S.each('TaskType'):
         budget = ts.get('tree_budget_eur')
         if ts.get('worker_kind') != 'agent' or not isinstance(budget, (int, float)) or isinstance(budget, bool):

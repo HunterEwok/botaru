@@ -493,6 +493,8 @@ type personCommand struct {
 	channel string
 	chat    Chat
 	key     string
+	// binding is the name of the bound group chat of the command, or "" in a direct chat.
+	binding string
 }
 
 func (pc personCommand) reply(c *Core, key string, params map[string]any) *ActivityResult {
