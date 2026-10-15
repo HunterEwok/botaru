@@ -455,7 +455,10 @@ func (c *Core) incidentStop(ctx context.Context, tx pgx.Tx, now time.Time, cat *
 	if err != nil {
 		return err
 	}
-	disk := r.SubjectKind == "resource"
+	// A resource subject is a disk when it names a catalog volume or the class watches a disk
+	// alarm; any other resource stops the seat as any other subject does.
+	disk := r.SubjectKind == "resource" && (volumeOf(cat, r.Tenant, r.SubjectID) != nil ||
+		strings.HasPrefix(mstr(mmap(ic.Spec, "detect"), "alarm"), "alarm.disk."))
 	effect := ""
 	switch {
 	case !managerEnabled(cat, r.Tenant):
@@ -513,28 +516,51 @@ func (c *Core) diskStopCondition(ctx context.Context, tx pgx.Tx, now time.Time, 
 	if sum >= limit {
 		return "quota_over_threshold", nil
 	}
-	// MGR-34: a disk_filling incident open on the disk for the whole window, the used size
-	// grew over it by the code numbers, and one holder answered for the seat all that time.
-	var raw []byte
-	err := tx.QueryRow(ctx, `SELECT record FROM incidents WHERE tenant = $1 AND class = 'disk_filling' AND subject_kind = $2 AND subject_id = $3
-		AND opened_at <= $4 AND state = ANY($5) ORDER BY opened_at LIMIT 1`, r.Tenant, r.SubjectKind, r.SubjectID, now.Add(-preventWindow), incidentLive).Scan(&raw)
+	// MGR-34: a disk_filling incident live on the disk without a break for the whole window
+	// (its since moves on a reopen), the used size grew between the window's start and its end
+	// by the numbers its alarm logged, and one holder answered for the seat all that time.
+	windowStart := now.Add(-preventWindow)
+	var episodes []int64
+	err := tx.QueryRow(ctx, `SELECT episodes FROM incidents WHERE tenant = $1 AND class = 'disk_filling' AND subject_kind = $2 AND subject_id = $3
+		AND opened_at <= $4 AND since <= $4 AND state = ANY($5) ORDER BY opened_at LIMIT 1`, r.Tenant, r.SubjectKind, r.SubjectID, windowStart, incidentLive).Scan(&episodes)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return "no_filling_incident", nil
 	}
 	if err != nil {
 		return "", err
 	}
-	var filling map[string]any
-	if err := json.Unmarshal(raw, &filling); err != nil {
+	startVals, err := alarmValuesAt(ctx, tx, episodes, windowStart)
+	if err != nil {
 		return "", err
 	}
-	if !diskGrew(mmap(mmap(filling, "alarm"), "values"), mmap(mmap(r.Record, "alarm"), "values")) {
+	endVals, err := alarmValuesAt(ctx, tx, episodes, now)
+	if err != nil {
+		return "", err
+	}
+	if !diskGrew(startVals, endVals) {
 		return "no_growth", nil
 	}
 	if m.ResponsibleSince == nil || m.ResponsibleSince.After(now.Add(-preventWindow)) {
 		return "not_responsible", nil
 	}
 	return "", nil
+}
+
+// alarmValuesAt are the numbers an incident's alarm episodes logged last at or before at, or nil.
+func alarmValuesAt(ctx context.Context, tx pgx.Tx, episodes []int64, at time.Time) (map[string]any, error) {
+	var raw []byte
+	err := tx.QueryRow(ctx, `SELECT vals FROM alarm_values WHERE episode = ANY($1) AND at <= $2 ORDER BY at DESC LIMIT 1`, episodes, at).Scan(&raw)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	var vals map[string]any
+	if err := json.Unmarshal(raw, &vals); err != nil {
+		return nil, err
+	}
+	return vals, nil
 }
 
 // volumeOf is the volume of a tenant catalog that a disk subject names: res:<host>:<volume> or

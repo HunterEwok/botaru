@@ -317,3 +317,33 @@ func TestUsedThreshold(t *testing.T) {
 		t.Fatalf("used bytes threshold %v %v", got, ok)
 	}
 }
+
+// Disk growth compares the numbers logged at the window's start and at its end, not the
+// numbers of the incident's opening (MGR-34).
+func TestAlarmValuesAt(t *testing.T) {
+	ctx := context.Background()
+	b := newManagerBench(t)
+	t0 := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	for i, used := range []float64{100, 200, 200} {
+		if _, err := b.c.st.Pool.Exec(ctx, `INSERT INTO alarm_values (episode, at, vals) VALUES ($1, $2, $3)`,
+			int64(9001+i/2), t0.Add(time.Duration(i)*time.Hour), map[string]any{"used_bytes": used}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	tx, err := b.c.st.Pool.Begin(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+	eps := []int64{9001, 9002}
+	before, _ := alarmValuesAt(ctx, tx, eps, t0.Add(-time.Minute))
+	start, _ := alarmValuesAt(ctx, tx, eps, t0.Add(90*time.Minute))
+	end, err := alarmValuesAt(ctx, tx, eps, t0.Add(3*time.Hour))
+	if err != nil || before != nil || start["used_bytes"] != float64(200) || end["used_bytes"] != float64(200) {
+		t.Fatalf("before %v start %v end %v %v", before, start, end, err)
+	}
+	// Growth before the window and a flat window give no stop.
+	if diskGrew(start, end) {
+		t.Fatal("a flat window counted as growth")
+	}
+}
