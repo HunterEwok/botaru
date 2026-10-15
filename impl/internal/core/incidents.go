@@ -305,11 +305,19 @@ func (c *Core) openIncidents(ctx context.Context, cat *Catalog, classes []incide
 		return err
 	}
 	var errs []error
-	// The number log of an episode that no longer fires is dropped, and a long run keeps its last
-	// week and its latest change.
-	if _, err := c.st.Pool.Exec(ctx, `DELETE FROM alarm_values v WHERE NOT EXISTS
-		(SELECT 1 FROM alarm_episodes e WHERE e.id = v.episode AND e.state = 'firing')
-		OR v.at < now() - interval '7 days' AND EXISTS (SELECT 1 FROM alarm_values n WHERE n.episode = v.episode AND n.at > v.at)`); err != nil {
+	// The number log of an episode that no longer fires is dropped. A firing one keeps the changes
+	// of the longest detect.for and the last change before it, which is all detectSince needs to
+	// see a run that lasted that long.
+	var keep time.Duration
+	for _, ic := range classes {
+		keep = max(keep, specDuration(mmap(ic.Spec, "detect"), "for"))
+	}
+	if err := c.tx(ctx, func(tx pgx.Tx, now time.Time) error {
+		_, err := tx.Exec(ctx, `DELETE FROM alarm_values v WHERE NOT EXISTS
+			(SELECT 1 FROM alarm_episodes e WHERE e.id = v.episode AND e.state = 'firing')
+			OR EXISTS (SELECT 1 FROM alarm_values n WHERE n.episode = v.episode AND n.at > v.at AND n.at < $1)`, now.Add(-keep-time.Hour))
+		return err
+	}); err != nil {
 		errs = append(errs, err)
 	}
 	for _, ep := range eps {
@@ -357,7 +365,7 @@ func (c *Core) openIncidents(ctx context.Context, cat *Catalog, classes []incide
 // episode's numbers: the earliest change of the latest run of matching numbers in its log, or the
 // arrival of the current numbers when the log has none (MGR-8).
 func detectSince(ctx context.Context, tx pgx.Tx, class map[string]any, ep alarmEpisode) (time.Time, error) {
-	rows, err := tx.Query(ctx, `SELECT at, vals FROM alarm_values WHERE episode = $1 ORDER BY at DESC LIMIT 5000`, ep.ID)
+	rows, err := tx.Query(ctx, `SELECT at, vals FROM alarm_values WHERE episode = $1 ORDER BY at DESC`, ep.ID)
 	if err != nil {
 		return time.Time{}, err
 	}

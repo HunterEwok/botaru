@@ -412,3 +412,20 @@ func TestIncidentListPages(t *testing.T) {
 		t.Fatal("the cursor repeated the page")
 	}
 }
+
+// The number log keeps a run of matching numbers as long as the longest detect.for, however
+// often the numbers change (MGR-8).
+func TestIncidentDetectLongRun(t *testing.T) {
+	b := newIncidentBench(t)
+	for i := range 8 {
+		b.diskAlarm(t, true, float64(1+i%3))
+		b.loop(t, "incident")
+		if i < 4 && len(incidentsOf(t, b, "disk_full")) != 0 {
+			t.Fatalf("opened before detect.for at step %d", i)
+		}
+		b.advance(t, 60)
+	}
+	if n := len(incidentsOf(t, b, "disk_full")); n != 1 {
+		t.Fatalf("a long run of changing matching numbers did not open: %d", n)
+	}
+}

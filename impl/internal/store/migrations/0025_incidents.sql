@@ -41,3 +41,8 @@ CREATE TABLE alarm_values (
     vals     jsonb NOT NULL,
     PRIMARY KEY (episode, at)
 );
+
+-- An episode that already fires at the upgrade counts its numbers from the upgrade, never from
+-- its opening: its old numbers were not kept up to date.
+UPDATE alarm_episodes SET vals_at = now() WHERE state = 'firing';
+INSERT INTO alarm_values (episode, at, vals) SELECT id, now(), vals FROM alarm_episodes WHERE state = 'firing';
