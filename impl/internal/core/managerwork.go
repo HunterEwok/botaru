@@ -380,7 +380,7 @@ func dayNumbers(ctx context.Context, tx pgx.Tx, tenant string, since, until time
 	var n managerNumbers
 	err := tx.QueryRow(ctx, `SELECT
 		(SELECT count(*) FROM tasks WHERE tenant = $1 AND created_at >= $2 AND created_at < $4 AND record->>'seat' = $3 AND record ? 'incident'),
-		(SELECT count(*) FROM control_ops WHERE tenant = $1 AND created_at >= $2 AND created_at < $4),
+		(SELECT count(*) FROM control_ops WHERE tenant = $1 AND created_at >= $2 AND created_at < $4 AND (actor_kind = 'seat' OR approved_by IS NOT NULL)),
 		(SELECT count(*) FROM audit WHERE tenant = $1 AND at >= $2 AND at < $4 AND record->>'command' = 'control.revert'),
 		(SELECT count(*) FROM manager_reads WHERE tenant = $1 AND at >= $2 AND at < $4),
 		(SELECT coalesce(sum(eur_micros + coalesce(correction_eur_micros, 0)), 0) FROM spend WHERE tenant = $1 AND time >= $2 AND time < $4 AND line = 'manager' AND unit <> 'task')`,

@@ -989,6 +989,15 @@ func (c *Core) ControlRevert(ctx context.Context, op Operator, req ControlRevert
 				return err
 			}
 		}
+		// So would a pending control card of the seat.
+		if req.Incident != "" {
+			err = c.endPendingCards(ctx, tx, now, `state = 'pending' AND lower(incident) = lower($1) AND ($2 = 'farm' OR tenant = $2)`, "failed", "control_reverted", req.Incident, op.Tenant)
+		} else {
+			err = c.endPendingCards(ctx, tx, now, `state = 'pending' AND created_at >= $1`, "failed", "control_reverted", since)
+		}
+		if err != nil {
+			return err
+		}
 		out = Done{OK: true, State: fmt.Sprintf("released %d", len(list))}
 		if req.Incident == "" || len(list) == 0 {
 			return nil

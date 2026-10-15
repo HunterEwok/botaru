@@ -612,5 +612,16 @@ func (c *Core) ManagerReads(ctx context.Context, op Operator, req ManagerReadsRe
 	if next != "" {
 		out["next"] = next
 	}
+	// A reading of the read log is itself a read in the tenant's audit, like the audit query (AUD-7).
+	err = c.tx(ctx, func(tx pgx.Tx, now time.Time) error {
+		_, err := c.appendAudit(ctx, tx, now, Audit{
+			Tenant: tenant, Kind: "read", Actor: Actor{Principal: op.Principal, Via: "farmctl"},
+			Command: "manager.reads", Target: &Target{Kind: "manager_reads"}, OK: true, After: map[string]any{"records": len(items)},
+		})
+		return err
+	})
+	if err != nil {
+		return nil, err
+	}
 	return out, nil
 }

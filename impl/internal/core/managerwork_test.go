@@ -378,6 +378,26 @@ func TestManagerReading(t *testing.T) {
 	if err := b.c.st.Pool.QueryRow(ctx, `SELECT notice_log @> '[{"kind": "card", "op": "hold", "state": "rejected"}]' FROM incidents WHERE id = $1`, incident).Scan(&logged); err != nil || !logged {
 		t.Fatalf("the rejected card is not in the notice log: %v", err)
 	}
+	// A revert of the incident ends its pending cards too.
+	out = seatCall(t, b, handle, controlToolName, map[string]any{"op": "hold", "target": map[string]any{"kind": "worker", "id": agent},
+		"basis": map[string]any{"incident": incident}, "finding": f["id"], "effects": []any{"no_claim"}, "ttl": "15m"})
+	if out["code"] != "card" {
+		t.Fatalf("a third card: %v", out)
+	}
+	if _, err := b.c.ControlRevert(ctx, b.op, ControlRevertRequest{Incident: incident}); err != nil {
+		t.Fatal(err)
+	}
+	var pending int
+	if err := b.c.st.Pool.QueryRow(ctx, `SELECT count(*) FROM control_cards WHERE state = 'pending'`).Scan(&pending); err != nil || pending != 0 {
+		t.Fatalf("pending cards after a revert %d %v", pending, err)
+	}
+	if _, err := b.c.ManagerReads(ctx, b.op, ManagerReadsRequest{}); err != nil {
+		t.Fatal(err)
+	}
+	var audited int
+	if err := b.c.st.Pool.QueryRow(ctx, `SELECT count(*) FROM audit WHERE record->>'command' = 'manager.reads'`).Scan(&audited); err != nil || audited != 2 {
+		t.Fatalf("reads of the read log in the audit %d %v", audited, err)
+	}
 }
 
 // A release by a directive reaches only a hold whose operation was within the directive's

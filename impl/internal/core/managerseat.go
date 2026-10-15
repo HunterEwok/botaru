@@ -731,6 +731,17 @@ func (c *Core) managerDisabled(ctx context.Context, tx pgx.Tx, now time.Time, ca
 		if err := c.endPendingCards(ctx, tx, now, `state = 'pending' AND tenant = $1`, "failed", "manager_disabled", t); err != nil {
 			return err
 		}
+		// The farm operators no longer follow the tenant's incidents: their messages get no
+		// update (MGR-42).
+		if _, err := tx.Exec(ctx, `UPDATE deliveries SET state = 'withheld', reason = 'manager_disabled', updated_at = $3
+			WHERE kind = $1 AND state = 'planned' AND tenant = $4 AND subject_kind = 'incident'
+			AND subject_id IN (SELECT id FROM incidents WHERE tenant = $2)`, managerNoticeKind, t, now, farmTenant); err != nil {
+			return err
+		}
+		if _, err := tx.Exec(ctx, `DELETE FROM manager_notices WHERE route = 'farm' AND basis_kind = 'incident'
+			AND basis IN (SELECT id FROM incidents WHERE tenant = $1)`, t); err != nil {
+			return err
+		}
 		if m != nil && m.Holder != "" {
 			if err := capHolderHolds(ctx, tx, now, m.Holder, t); err != nil {
 				return err
