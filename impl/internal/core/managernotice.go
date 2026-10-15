@@ -42,18 +42,40 @@ type noticeEntry struct {
 	Op     string         `json:"op,omitempty"`
 	Target *ControlTarget `json:"target,omitempty"`
 	By     string         `json:"by,omitempty"` // seat or person
+	// N numbers the lines of the incident from 1 and Ops counts its operations so far; the log
+	// keeps the latest noticeLogMax lines.
+	N   int `json:"n"`
+	Ops int `json:"ops"`
 }
 
 // noticeLog appends a line to the notice log of an incident and plans the update of its
 // messages (MGR-13: in the transaction of the change).
 func (c *Core) noticeLog(ctx context.Context, tx pgx.Tx, now time.Time, incident string, e noticeEntry, update bool) error {
 	e.At = fmtTime(now)
-	raw, err := json.Marshal([]noticeEntry{e})
+	var raw []byte
+	if err := tx.QueryRow(ctx, `SELECT notice_log FROM incidents WHERE id = $1 FOR UPDATE`, incident).Scan(&raw); err != nil {
+		return err
+	}
+	var log []noticeEntry
+	if err := json.Unmarshal(raw, &log); err != nil {
+		return err
+	}
+	if len(log) > 0 {
+		e.N, e.Ops = log[len(log)-1].N, log[len(log)-1].Ops
+	}
+	e.N++
+	if e.Kind == "op" {
+		e.Ops++
+	}
+	log = append(log, e)
+	if len(log) > noticeLogMax {
+		log = log[len(log)-noticeLogMax:]
+	}
+	out, err := json.Marshal(log)
 	if err != nil {
 		return err
 	}
-	if _, err := tx.Exec(ctx, `UPDATE incidents SET notice_log = notice_log || $2::jsonb WHERE id = $1 AND jsonb_array_length(notice_log) < $3`,
-		incident, raw, noticeLogMax); err != nil {
+	if _, err := tx.Exec(ctx, `UPDATE incidents SET notice_log = $2 WHERE id = $1`, incident, out); err != nil {
 		return err
 	}
 	if !update {
@@ -77,7 +99,12 @@ func (c *Core) noticeOpen(ctx context.Context, tx pgx.Tx, now time.Time, cat *Ca
 		name, tenant string
 		caps         []string
 	}
-	routes := []route{{"tenant", r.Tenant, []string{"incident.manage"}}, {"farm", farmTenant, []string{"admin:governance"}}}
+	routes := []route{{"tenant", r.Tenant, []string{"incident.manage"}}}
+	// The farm operators see a tenant's incidents only where the tenant has the manager
+	// (MGR-42).
+	if managerEnabled(cat, r.Tenant) {
+		routes = append(routes, route{"farm", farmTenant, []string{"admin:governance"}})
+	}
 	if r.Tenant == farmTenant {
 		routes = []route{{"tenant", farmTenant, []string{"incident.manage", "admin:governance"}}}
 	}
@@ -227,12 +254,20 @@ func (c *Core) managerNoticeBody(ctx context.Context, tx pgx.Tx, now time.Time, 
 			WHERE (id = $1 OR body->>'of' = $1) AND kind = $2 AND state = 'delivered' AND body ? 'lines_to'`, first, managerNoticeKind).Scan(&sentLines); err != nil {
 			return nil, "", "", false, err
 		}
-		if sentLines >= len(log) {
+		from := len(log)
+		for from > 0 && log[from-1].N > sentLines {
+			from--
+		}
+		if from == len(log) {
 			return nil, "", "no_op", false, nil
 		}
-		out = c.noticeBatch(loc, route, r, log[sentLines:])
+		out = c.noticeBatch(loc, route, r, log[from:])
 	}
-	if _, err := tx.Exec(ctx, `UPDATE deliveries SET body = body || jsonb_build_object('lines_to', $2::int) WHERE id = $1`, id, len(log)); err != nil {
+	last := 0
+	if len(log) > 0 {
+		last = log[len(log)-1].N
+	}
+	if _, err := tx.Exec(ctx, `UPDATE deliveries SET body = body || jsonb_build_object('lines_to', $2::int) WHERE id = $1`, id, last); err != nil {
 		return nil, "", "", false, err
 	}
 	if _, err := tx.Exec(ctx, `UPDATE manager_notices SET batch_at = $2 WHERE delivery = $1`, first, now); err != nil {
@@ -254,11 +289,9 @@ func scanIncidentLog(row pgx.Row, raw *[]byte) (*incidentRow, error) {
 // noticeWhole is the whole message: the header, the latest lines that fit and the one revert
 // command (MGR-15).
 func (c *Core) noticeWhole(locale, route string, r *incidentRow, log []noticeEntry) map[string]any {
-	ops := 0
-	for _, e := range log {
-		if e.Kind == "op" {
-			ops++
-		}
+	ops, dropped := 0, 0
+	if len(log) > 0 {
+		ops, dropped = log[len(log)-1].Ops, log[0].N-1
 	}
 	params := map[string]any{"incident": r.ID, "class": r.Class, "state": r.State, "opened": fmtTime(r.OpenedAt), "ops": ops}
 	key := "notice.manager_notice.header_farm"
@@ -271,7 +304,7 @@ func (c *Core) noticeWhole(locale, route string, r *incidentRow, log []noticeEnt
 	}
 	return map[string]any{"form": "text_code", "text_key": "notice.manager_notice", "params": map[string]any{
 		"header": cut(c.texts.Render(locale, key, params), 500),
-		"lines":  c.noticeLines(locale, route, log),
+		"lines":  c.noticeLines(locale, route, log, dropped),
 		"revert": c.texts.Render(locale, "notice.manager_notice.revert", map[string]any{"incident": r.ID}),
 	}}
 }
@@ -279,12 +312,13 @@ func (c *Core) noticeWhole(locale, route string, r *incidentRow, log []noticeEnt
 // noticeBatch is the batch of new lines for a driver without edit.
 func (c *Core) noticeBatch(locale, route string, r *incidentRow, log []noticeEntry) map[string]any {
 	return map[string]any{"form": "text_code", "text_key": "notice.manager_notice.batch", "params": map[string]any{
-		"incident": r.ID, "lines": c.noticeLines(locale, route, log)}}
+		"incident": r.ID, "lines": c.noticeLines(locale, route, log, 0)}}
 }
 
 // noticeLines renders the lines of the log, the latest that fit, after a count of the earlier
-// ones. The farm route sees only the codes and the times, never a target or the subject.
-func (c *Core) noticeLines(locale, route string, log []noticeEntry) string {
+// ones, dropped of them no longer kept. The farm route sees only the codes and the times, never
+// a target or the subject.
+func (c *Core) noticeLines(locale, route string, log []noticeEntry, dropped int) string {
 	var lines []string
 	for _, e := range log {
 		switch {
@@ -308,8 +342,8 @@ func (c *Core) noticeLines(locale, route string, log []noticeEntry) string {
 		from--
 	}
 	out := lines[from:]
-	if from > 0 {
-		out = append([]string{c.texts.Render(locale, "notice.manager_notice.earlier", map[string]any{"n": from})}, out...)
+	if from+dropped > 0 {
+		out = append([]string{c.texts.Render(locale, "notice.manager_notice.earlier", map[string]any{"n": from + dropped})}, out...)
 	}
 	return cut(strings.Join(out, "\n"), 500)
 }

@@ -159,6 +159,12 @@ func TestManagerCommand(t *testing.T) {
 	if res := send("m4", "/manager drain worker w_7 it loops", false); res.Result != "reply" || count() != 1 {
 		t.Fatalf("a directive: %+v, %d tasks", res, count())
 	}
+	a := Activity{Kind: "message", Channel: "telegram", UpdateID: "m5", Chat: Chat{Kind: "direct", ExternalID: "1001"}, Text: "/manager drain worker w_7 see file",
+		Attachments: []string{"file_1"}}
+	a.Sender.Identity, a.Sender.Verified = "telegram:1001", true
+	if res, err := b.c.SubmitActivity(ctx, b.channel, a); err != nil || res.Result != "reply" || count() != 1 {
+		t.Fatalf("a directive with an attachment: %+v %v, %d tasks", res, err, count())
+	}
 	var rec []byte
 	if err := b.c.st.Pool.QueryRow(ctx, `SELECT record FROM tasks WHERE type = $1`, directiveType).Scan(&rec); err != nil {
 		t.Fatal(err)

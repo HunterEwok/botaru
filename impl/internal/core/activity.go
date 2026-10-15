@@ -167,7 +167,7 @@ func (c *Core) SubmitActivity(ctx context.Context, w *Worker, a Activity) (*Acti
 				return err
 			}
 			pc := personCommand{tv: tv, cat: cat, person: principal, groups: groups, locale: locale,
-				channel: a.Channel, chat: a.Chat, key: key}
+				channel: a.Channel, chat: a.Chat, key: key, attachments: len(a.Attachments)}
 			var r *ActivityResult
 			switch word {
 			case "/service":

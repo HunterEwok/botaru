@@ -170,6 +170,10 @@ func taskDirective(rec []byte) *directive {
 // manager.direct: the code parses the closed fields, the rest is the person's own text (MGR-4).
 // A forwarded or quoted message never gets here.
 func (c *Core) managerCommand(ctx context.Context, tx pgx.Tx, now time.Time, pc personCommand, rest string) (*ActivityResult, error) {
+	// A directive is the person's own typed text: no attachments (MGR-4).
+	if pc.attachments > 0 {
+		return pc.reply(c, "cmd.manager.usage", nil), nil
+	}
 	f := strings.Fields(rest)
 	var req ManagerDirectRequest
 	if len(f) > 0 && slices.Contains(directiveOps, f[0]) {
@@ -296,7 +300,8 @@ func (c *Core) managerDaily(ctx context.Context, cat *Catalog) error {
 			if err != nil || tag.RowsAffected() == 0 {
 				return err
 			}
-			n, err := dayNumbers(ctx, tx, t, now.Add(-24*time.Hour))
+			// The numbers of the tenant's previous calendar day, so days never overlap.
+			n, err := dayNumbers(ctx, tx, t, day.AddDate(0, 0, -1), day)
 			if err != nil {
 				return err
 			}
@@ -331,7 +336,7 @@ func (c *Core) managerDaily(ctx context.Context, cat *Catalog) error {
 		}
 		var farm managerNumbers
 		for _, t := range enabled {
-			n, err := dayNumbers(ctx, tx, t, now.Add(-24*time.Hour))
+			n, err := dayNumbers(ctx, tx, t, day.AddDate(0, 0, -1), day)
 			if err != nil {
 				return err
 			}
@@ -370,16 +375,16 @@ func (n managerNumbers) params(spend bool) map[string]any {
 	return p
 }
 
-// dayNumbers counts the manager's work in a tenant since an instant.
-func dayNumbers(ctx context.Context, tx pgx.Tx, tenant string, since time.Time) (managerNumbers, error) {
+// dayNumbers counts the manager's work in a tenant in the interval [since, until).
+func dayNumbers(ctx context.Context, tx pgx.Tx, tenant string, since, until time.Time) (managerNumbers, error) {
 	var n managerNumbers
 	err := tx.QueryRow(ctx, `SELECT
-		(SELECT count(*) FROM tasks WHERE tenant = $1 AND created_at >= $2 AND record->>'seat' = $3 AND record ? 'incident'),
-		(SELECT count(*) FROM control_ops WHERE tenant = $1 AND created_at >= $2),
-		(SELECT count(*) FROM audit WHERE tenant = $1 AND at >= $2 AND record->>'command' = 'control.revert'),
-		(SELECT count(*) FROM manager_reads WHERE tenant = $1 AND at >= $2),
-		(SELECT coalesce(sum(eur_micros + coalesce(correction_eur_micros, 0)), 0) FROM spend WHERE tenant = $1 AND time >= $2 AND line = 'manager' AND unit <> 'task')`,
-		tenant, since, managerSeatID).Scan(&n.Incidents, &n.Ops, &n.Reverts, &n.Reads, &n.SpentMicros)
+		(SELECT count(*) FROM tasks WHERE tenant = $1 AND created_at >= $2 AND created_at < $4 AND record->>'seat' = $3 AND record ? 'incident'),
+		(SELECT count(*) FROM control_ops WHERE tenant = $1 AND created_at >= $2 AND created_at < $4),
+		(SELECT count(*) FROM audit WHERE tenant = $1 AND at >= $2 AND at < $4 AND record->>'command' = 'control.revert'),
+		(SELECT count(*) FROM manager_reads WHERE tenant = $1 AND at >= $2 AND at < $4),
+		(SELECT coalesce(sum(eur_micros + coalesce(correction_eur_micros, 0)), 0) FROM spend WHERE tenant = $1 AND time >= $2 AND time < $4 AND line = 'manager' AND unit <> 'task')`,
+		tenant, since, managerSeatID, until).Scan(&n.Incidents, &n.Ops, &n.Reverts, &n.Reads, &n.SpentMicros)
 	return n, err
 }
 

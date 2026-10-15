@@ -146,6 +146,23 @@ func TestManagerNoticeEdit(t *testing.T) {
 	if len(edit) != 1 || !strings.Contains(noticeText(t, b, edit[0]), ": closed") {
 		t.Fatalf("close edit %+v", edit)
 	}
+	// A long log keeps its latest lines, their numbers and the operation count.
+	if err := b.c.tx(ctx, func(tx pgx.Tx, now time.Time) error {
+		for range noticeLogMax + 5 {
+			if err := b.c.noticeLog(ctx, tx, now, inc.ID, noticeEntry{Kind: "op", Op: "hold"}, false); err != nil {
+				return err
+			}
+		}
+		if err := tx.QueryRow(ctx, `SELECT notice_log FROM incidents WHERE id = $1`, inc.ID).Scan(&raw); err != nil {
+			return err
+		}
+		return json.Unmarshal(raw, &log)
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if last := log[len(log)-1]; len(log) != noticeLogMax || last.N != log[0].N+noticeLogMax-1 || last.Ops != noticeLogMax+5+3 {
+		t.Fatalf("trimmed log of %d, first %+v, last %+v", len(log), log[0], last)
+	}
 }
 
 // A driver without edit gets the new lines in a batch at most once in 15 minutes (MGR-39).
