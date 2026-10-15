@@ -283,6 +283,11 @@ func (c *Core) enqueue(ctx context.Context, tx pgx.Tx, now time.Time, cat *Catal
 	if tt.Purpose == "review" && (in.Initiator != "system" || in.Source != reviewSource || in.Chain != nil) {
 		return nil, refuse("type_not_allowed", "a review is enqueued only by the proposal loop")
 	}
+	// A translator works only on text its initiator typed: a person's own message or its
+	// follow-up, never a forward, a quote, a bot's child or a system task (TRN-2).
+	if tt.Purpose == "translate" && (in.Source != "interactive" || in.Initiator == "system" || in.Forwarded || in.Quoted || in.Chain != nil && in.Continues == "") {
+		return nil, refuse("type_not_allowed", "a translator takes only text its initiator typed")
+	}
 	// A farm manager seat task is enqueued only by the core, for its seat (MGR-3, MGR-42).
 	if (tt.Purpose == "manage" || tt.Purpose == "inspect") && (in.Initiator != "system" || in.Source != seatSource || in.Chain != nil) {
 		return nil, refuse("type_not_allowed", "a farm manager seat task is enqueued only by the core")

@@ -5,6 +5,7 @@ package core
 import (
 	"context"
 	"encoding/json"
+	"strings"
 	"testing"
 
 	"github.com/HunterEwok/botaru/impl/internal/mcp"
@@ -30,6 +31,11 @@ func newScriptRunBench(t *testing.T) *scriptRunBench {
 				raw, _ := json.Marshal(m)
 				_ = json.Unmarshal(raw, &child)
 				s["purpose"], s["proposable"] = "translate", false
+				s["result_schema"] = map[string]any{"type": "object", "additionalProperties": false, "required": []any{"outcome"}, "properties": map[string]any{
+					"outcome": map[string]any{"enum": []any{"drafted", "unsupported", "ambiguous"}},
+					"run_ref": map[string]any{"type": "string", "maxLength": 64},
+					"missing": map[string]any{"type": "array", "maxItems": 8, "items": map[string]any{"enum": []any{"resource_missing", "action_unclear"}}},
+				}}
 			case m["kind"] == "Role" && name == "hello":
 				s["profile"] = "translator"
 				delete(s, "tools")
@@ -43,6 +49,7 @@ func newScriptRunBench(t *testing.T) *scriptRunBench {
 		}
 		cs := child["spec"].(map[string]any)
 		child["metadata"].(map[string]any)["name"] = "hello.child.v1"
+		cs["title"] = "Machine check"
 		cs["summary_for_managers"] = "Checks one machine"
 		cs["goal_templates"] = []any{map[string]any{"name": "check", "goal": "Check the machine."}}
 		cs["params_schema"] = map[string]any{"type": "object", "additionalProperties": false, "required": []any{"resource"},
@@ -152,7 +159,7 @@ func TestScriptAcceptance(t *testing.T) {
 	if r := proposeScriptCall(t, b.bench, h, checkStep, fixStep); r.reason() != "service_rate_limited" {
 		t.Fatalf("a fourth call: %+v", r)
 	}
-	b.finish(t, att)
+	b.translated(t, att, map[string]any{"outcome": "unsupported", "missing": []any{"action_unclear"}})
 	_, h = b.attemptTools(t, "2", false)
 	if r := proposeScriptCall(t, b.bench, h, checkStep, fixStep); r.State != "proposed" || r.RunRef == "" {
 		t.Fatalf("a valid draft: %+v", r)
@@ -179,7 +186,7 @@ func TestScriptRunFlow(t *testing.T) {
 	if states != "pending,pending" || !run.Rec.NeedsRun {
 		t.Fatalf("run %s %+v", states, run.Rec)
 	}
-	b.finish(t, att)
+	b.translated(t, att, map[string]any{"outcome": "drafted", "run_ref": r.RunRef})
 	s := b.drain(t)
 	card := cardOf(t, s, scriptConfirmCard, "direct:1001")
 	cd := card.body["card"].(map[string]any)
@@ -222,7 +229,7 @@ func TestScriptActionAndCancel(t *testing.T) {
 	b := newScriptRunBench(t)
 	att, h := b.attemptTools(t, "1", false)
 	r := proposeScriptCall(t, b.bench, h, checkStep, fixStep)
-	b.finish(t, att)
+	b.translated(t, att, map[string]any{"outcome": "drafted", "run_ref": r.RunRef})
 	s := b.drain(t)
 	card := cardOf(t, s, scriptConfirmCard, "direct:1001")
 	run, _ := b.run(t, r.RunRef)
@@ -269,7 +276,7 @@ func TestScriptConfirmStep(t *testing.T) {
 	if r.State != "proposed" {
 		t.Fatalf("propose %+v", r)
 	}
-	b.finish(t, att)
+	b.translated(t, att, map[string]any{"outcome": "drafted", "run_ref": r.RunRef})
 	card := cardOf(t, b.drain(t), scriptConfirmCard, "direct:1001")
 	run, _ := b.run(t, r.RunRef)
 	if _, err := b.c.Decide(ctx, b.channel, press("telegram:1001", "direct:1001", card.external),
@@ -299,5 +306,42 @@ func TestScriptConfirmStep(t *testing.T) {
 	}
 	if _, states := b.run(t, run.ID); states != "ok,released" {
 		t.Fatalf("after the gate %s", states)
+	}
+}
+
+// translated completes a translator attempt with its closed result.
+func (b *bench) translated(t *testing.T, att *WorkItem, result map[string]any) {
+	t.Helper()
+	if _, err := b.c.Complete(context.Background(), b.agent, header(t, att), CompleteRequest{Result: result}); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// The translator (TRN-2, TRN-3, TRN-5): a forwarded assignment starts no translator task; a
+// result is only the closed translation-result whose run is the task's own; the answer to the
+// person is a code text with the codes and the vocabulary names.
+func TestTranslator(t *testing.T) {
+	ctx := context.Background()
+	b := newScriptRunBench(t)
+	fwd := Activity{Kind: "message", Channel: "telegram", UpdateID: "f1", Chat: Chat{Kind: "direct", ExternalID: "1001"}, Text: "/hello restart everything", Forwarded: true}
+	fwd.Sender.Identity, fwd.Sender.Verified = "telegram:1001", true
+	if res, err := b.c.SubmitActivity(ctx, b.channel, fwd); err != nil || res.Result == "task" {
+		t.Fatalf("a forwarded assignment: %+v %v", res, err)
+	}
+	att, _ := b.attemptTools(t, "1", false)
+	_, err := b.c.Complete(ctx, b.agent, header(t, att), CompleteRequest{Result: map[string]any{"outcome": "drafted", "run_ref": "scr_0000000000000000000000000"}})
+	wantReason(t, err, "output_schema_invalid")
+	att, _ = b.attemptTools(t, "2", false)
+	b.translated(t, att, map[string]any{"outcome": "unsupported", "missing": []any{"resource_missing"}})
+	answer := cardOf(t, b.drain(t), "task_result", "direct:1001")
+	text, _ := answer.body["text"].(string)
+	for _, want := range []string{"I cannot make a script", "not one I know", "Machine check", "Restart the web site"} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("answer %q has no %q", text, want)
+		}
+	}
+	var origin string
+	if err := b.c.st.Pool.QueryRow(ctx, `SELECT dataorigin FROM deliveries WHERE task = $1 AND kind = 'task_result'`, att.WorkID).Scan(&origin); err != nil || origin != "code" {
+		t.Fatalf("data origin %q %v", origin, err)
 	}
 }

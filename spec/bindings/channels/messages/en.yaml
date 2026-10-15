@@ -140,6 +140,13 @@ texts:
   card.script.title: "{title}"
   card.script.gate_title: "{title}"
   card.script.footer: "You get this card as {why_you}. Without an answer: {on_silence}."
+  # Translator answers, built by code from the closed result and the vocabulary (TRN-5)
+  translator.drafted: "The script is on its card: check the steps and press Run, or Cancel."
+  translator.unsupported: "I cannot make a script of this: {missing}. I can use the tasks: {types}; the actions: {actions}."
+  translator.ambiguous: "The assignment is not clear enough for a script: {missing}. I can use the tasks: {types}; the actions: {actions}."
+  translator.missing.resource_missing: "a machine or resource it names is not one I know"
+  translator.missing.action_unclear: "it is not clear which action to take"
+  translator.none: "none"
   card.button.pause: Pause
   card.button.cancel: Cancel
   card.realization.title: "Change to carry out: {title}"
