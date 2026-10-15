@@ -168,6 +168,33 @@ func TestManagerSeatHumanStop(t *testing.T) {
 	}
 }
 
+// A stop reason added to or removed from a vacant seat grows the epoch and keeps it vacant.
+func TestManagerVacantSeatStop(t *testing.T) {
+	ctx := context.Background()
+	b := newManagerBench(t)
+	if _, err := b.c.SeatAssign(ctx, b.farmOp(), SeatRequest{Seat: managerSeatID}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := b.c.SeatVacate(ctx, b.farmOp(), SeatRequest{Seat: managerSeatID}); err != nil {
+		t.Fatal(err)
+	}
+	before := b.managerSeat(t).Epoch
+	h, err := b.c.HoldSet(ctx, OperatorActor(b.farmOp()), HoldSetRequest{Scope: HoldScope{Kind: "seat", Tenant: farmTenant, Name: managerSeatID},
+		Effects: []string{"no_claim"}, Reason: "manual"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if m := b.managerSeat(t); m.State != "vacant" || !m.has("human") || m.Epoch != before+1 {
+		t.Fatalf("after the hold %+v", m)
+	}
+	if _, err := b.c.HoldRelease(ctx, OperatorActor(b.farmOp()), HoldReleaseRequest{ID: h.ID}); err != nil {
+		t.Fatal(err)
+	}
+	if m := b.managerSeat(t); m.State != "vacant" || len(m.Reasons) != 0 || m.Epoch != before+2 {
+		t.Fatalf("after the release %+v", m)
+	}
+}
+
 // A new incident of a stopping class stops a held seat, and its seat task waits in the tenant
 // meanwhile; seat.resume ends the stop only after people dismissed the incident; the deadline
 // decide_within retires the holder with replaced_after_incident (GOV-22, MGR-2).

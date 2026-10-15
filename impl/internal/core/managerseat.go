@@ -388,22 +388,20 @@ func (c *Core) SeatResume(ctx context.Context, op Operator, req SeatResumeReques
 	return &out, nil
 }
 
-// stopManager adds a stop reason to the seat. A vacant seat keeps the reason for its next
-// holder; a seat with a holder stops: epoch + 1, and the running seat attempts in every tenant
-// end with seat_changed (MGR-1, MGR-15, GOV-22).
+// stopManager adds a stop reason to the seat with epoch + 1. A vacant seat keeps the reason for
+// its next holder; a seat with a holder stops, and the running seat attempts in every tenant end
+// with seat_changed (MGR-1, MGR-15, GOV-22).
 func (c *Core) stopManager(ctx context.Context, tx pgx.Tx, now time.Time, cat *Catalog, m *managerSeat, reason, incident string) error {
 	if m.has(reason) {
 		return nil
 	}
 	reasons := append(slices.Clone(m.Reasons), stopReason{Reason: reason, At: fmtTime(now), Incident: incident})
-	if m.Holder == "" {
-		m.Reasons = reasons
-		return m.save(ctx, tx)
-	}
+	// A vacant seat stays vacant, but a new reason still grows the epoch with its event and
+	// audit record, so the next holder starts from a visible change (seat.md).
 	if _, err := c.shiftManager(ctx, tx, now, cat, m, m.Holder, reasons, "seat.stopped.v1", reason, "system"); err != nil {
 		return err
 	}
-	if reason == "incident" {
+	if reason == "incident" && m.Holder != "" {
 		return c.noticeManagerStopped(ctx, tx, now, cat, incident, false)
 	}
 	return nil
@@ -426,10 +424,6 @@ func (c *Core) syncHumanStop(ctx context.Context, tx pgx.Tx, now time.Time, cat 
 		return c.stopManager(ctx, tx, now, cat, m, "human", "")
 	case !held && m.has("human"):
 		reasons := m.without("human", "no_control")
-		if m.Holder == "" {
-			m.Reasons = reasons
-			return m.save(ctx, tx)
-		}
 		event := "seat.stopped.v1"
 		if len(reasons) == 0 {
 			event = "seat.resumed.v1"
