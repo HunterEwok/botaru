@@ -1145,6 +1145,19 @@ func (c *Core) executeApproval(ctx context.Context, tx pgx.Tx, now time.Time, ca
 		if task != "" {
 			_ = tx.QueryRow(ctx, `SELECT type FROM tasks WHERE id = $1`, task).Scan(&typ)
 		}
+		// A seat task's approved action runs only within the seat's ops_per_hour at execution,
+		// under the same locks, seat first, as its other operations (MGR-14).
+		if a.SourceTask != "" {
+			var rec []byte
+			if err := tx.QueryRow(ctx, `SELECT record FROM tasks WHERE id = $1`, a.SourceTask).Scan(&rec); err != nil && !errors.Is(err, pgx.ErrNoRows) {
+				return err
+			}
+			if _, limit, err := seatToolGate(ctx, tx, now, cat, rec); err != nil {
+				return err
+			} else if limit != "" {
+				return c.closeApproval(ctx, tx, now, a, "exec_failed", limit)
+			}
+		}
 		code, err := c.serviceGuards(ctx, tx, now, serviceCall{Tenant: a.Tenant, Service: svc, Verb: verb, Initiator: a.Initiator, Role: role, Task: task, Type: typ})
 		if err != nil {
 			return err
