@@ -80,12 +80,12 @@ def cron_valid(expr):
     for f, (lo, hi) in zip(fields, ((0, 59), (0, 23), (1, 31), (1, 12), (0, 7))):
         for part in f.split(','):
             rng, _, step = part.partition('/')
-            if step and (not step.isdigit() or int(step) < 1):
+            if step and (not re.fullmatch(r'[0-9]+', step) or int(step) < 1):
                 return False
             if rng == '*':
                 continue
             a, _, b = rng.partition('-')
-            if not a.isdigit() or (b and not b.isdigit()):
+            if not re.fullmatch(r'[0-9]+', a) or (b and not re.fullmatch(r'[0-9]+', b)):
                 return False
             a, b = int(a), int(b) if b else int(a)
             if a < lo or b > hi or a > b:

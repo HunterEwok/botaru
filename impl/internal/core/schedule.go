@@ -39,12 +39,10 @@ func (c *Core) scheduleLoop(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	var first error
 	for _, tenant := range slices.Sorted(mapKeys(cat.Tenants)) {
 		tv := cat.Tenants[tenant]
 		for _, name := range slices.Sorted(mapKeys(tv.Schedules)) {
-			// One failing schedule does not stop the others; the loop reports the first error
-			// after it ran them all.
+			// One failing schedule does not stop the others, nor the loop's tick: it is logged.
 			if err := c.tx(ctx, func(tx pgx.Tx, now time.Time) error {
 				return c.runSchedule(ctx, tx, now, cat, tv, name, tv.Schedules[name])
 			}); err != nil {
@@ -52,13 +50,10 @@ func (c *Core) scheduleLoop(ctx context.Context) error {
 					return err
 				}
 				c.log.Warn("schedule failed", "tenant", tenant, "schedule", name, "err", err)
-				if first == nil {
-					first = err
-				}
 			}
 		}
 	}
-	return first
+	return nil
 }
 
 func (c *Core) runSchedule(ctx context.Context, tx pgx.Tx, now time.Time, cat *Catalog, tv *TenantView, name string, sc manifest.Schedule) error {
@@ -105,6 +100,7 @@ func (c *Core) runSchedule(ctx context.Context, tx pgx.Tx, now time.Time, cat *C
 	// A slot found long after its time, after a stop of the core, is not run late: a skipped
 	// slot is not caught up (TIM-3).
 	if now.Sub(due.At) > scheduleLateness {
+		c.log.Warn("a schedule slot was found too late and does not run", "tenant", tv.Name, "schedule", name, "slot", fmtSlot(due.At))
 		return nil
 	}
 	slot := fmtSlot(due.At)
