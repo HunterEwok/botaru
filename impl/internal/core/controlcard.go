@@ -26,13 +26,16 @@ const (
 	controlCardTTL = time.Hour
 )
 
-// findingTarget says whether a finding of the tenant names the target as its subject.
-func findingTarget(ctx context.Context, tx pgx.Tx, tenant, finding string, t ControlTarget) (bool, error) {
+// findingTarget says whether a finding of the tenant for the incident names the target as its
+// subject.
+func findingTarget(ctx context.Context, tx pgx.Tx, tenant, incident, finding string, t ControlTarget) (bool, error) {
 	if finding == "" {
 		return false, nil
 	}
+	// Only a finding of a reading for the operation's own incident counts.
 	var kind, id string
-	err := tx.QueryRow(ctx, `SELECT subject_kind, subject_id FROM findings WHERE tenant = $1 AND lower(id) = lower($2)`, tenant, finding).Scan(&kind, &id)
+	err := tx.QueryRow(ctx, `SELECT subject_kind, subject_id FROM findings WHERE tenant = $1 AND lower(id) = lower($2) AND lower(incident) = lower($3)`,
+		tenant, finding, incident).Scan(&kind, &id)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return false, nil
 	}
@@ -155,8 +158,12 @@ func (r *controlCardRow) card() map[string]any {
 	if r.State == "pending" {
 		buttons = append(buttons, button("approve"), button("reject"))
 	}
+	untrusted := r.Why == "finding" || r.Why == "distrust"
 	ctx := map[string]any{"op": r.Request.Op, "target": map[string]any{"kind": r.Request.Target.Kind, "id": r.Request.Target.ID},
-		"origin": cardOrigin(r.Finding), "why": r.Why, "label": "manager output from reading tenant data, untrusted"}
+		"origin": cardOrigin(r.Finding), "why": r.Why, "label": "farm manager operation for a person's decision"}
+	if untrusted {
+		ctx["label"] = "manager output from reading tenant data, untrusted"
+	}
 	if r.Finding != "" {
 		ctx["finding"] = r.Finding
 	}
@@ -166,12 +173,16 @@ func (r *controlCardRow) card() map[string]any {
 	if r.FindingFacts != nil {
 		ctx["finding_facts"] = r.FindingFacts
 	}
-	return map[string]any{
+	card := map[string]any{
 		"card": controlCard, "subject_kind": "control", "id": r.ID, "nonce": r.Nonce,
 		"title": cut("Farm manager: "+r.Request.Op+" "+r.Request.Target.Kind+" "+r.Request.Target.ID, 200), "state": r.State,
-		"buttons": buttons, "context": ctx, "untrusted_seen": true, "untrusted_source": "finding", "expires_at": fmtTime(r.Expires),
+		"buttons": buttons, "context": ctx, "untrusted_seen": untrusted, "expires_at": fmtTime(r.Expires),
 		"footer": map[string]any{"why_you": "control.approve", "until": fmtTime(r.Expires), "on_silence": "the operation is not applied"},
 	}
+	if untrusted {
+		card["untrusted_source"] = "finding"
+	}
+	return card
 }
 
 // decideControl is P1 decide on a control card: once, by a person of the tenant with

@@ -215,10 +215,12 @@ func (c *Core) controlApply(ctx context.Context, tx pgx.Tx, now time.Time, cat *
 		}
 		// What the seat may not do alone goes to a person on a control card: a target from a
 		// finding (MGR-26), a cancellation or a second quarantine in distrust mode (MGR-22), a
-		// role share over the limit.
-		if p != nil && p.Reason == "approval_required" {
+		// role share over the limit, a protected target (MGR-16).
+		if p != nil && (p.Reason == "approval_required" || p.Reason == "protected_target") {
 			why := "share_held"
 			switch {
+			case p.Reason == "protected_target":
+				why = "protected"
 			case strings.HasPrefix(origin, "finding:"):
 				why = "finding"
 			case a.Untrusted && (req.Op == "cancel" || req.Op == "quarantine"):
@@ -432,7 +434,7 @@ func (c *Core) seatChecks(ctx context.Context, tx pgx.Tx, now time.Time, cat *Ca
 	// target, and then only on a person's card (MGR-26).
 	fromFinding := false
 	if inc != nil && !implicatedTarget(inc, req.Target) {
-		ok, err := findingTarget(ctx, tx, tenant, req.Finding, req.Target)
+		ok, err := findingTarget(ctx, tx, tenant, inc.ID, req.Finding, req.Target)
 		if err != nil {
 			return nil, err
 		}

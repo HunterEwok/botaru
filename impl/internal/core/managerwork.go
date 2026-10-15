@@ -227,8 +227,14 @@ func (c *Core) directiveAllows(ctx context.Context, tx pgx.Tx, now time.Time, ca
 	}
 	tv := cat.Tenants[tenant]
 	p, err := loadPrincipal(ctx, tx, now, tenant, d.By)
-	if errors.Is(err, pgx.ErrNoRows) || err == nil && (p.State != "active" || tv == nil || !hasCap(tv, groupClosure(tv, p.Groups), "control.apply")) {
-		return refuse("forbidden", "the person of the directive has no control.apply"), nil
+	// The person's own right to the operation: control.apply:<op>, and hold.release for a
+	// release, as a person would need to do it themselves (PRM-13).
+	want := "control.apply:" + req.Op
+	if req.Op == "release" {
+		want = "hold.release"
+	}
+	if errors.Is(err, pgx.ErrNoRows) || err == nil && (p.State != "active" || tv == nil || !hasCap(tv, groupClosure(tv, p.Groups), want)) {
+		return refuse("forbidden", "the person of the directive has no %s", want), nil
 	}
 	return nil, err
 }

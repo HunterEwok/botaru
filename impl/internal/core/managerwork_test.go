@@ -22,10 +22,10 @@ import (
 var managerWorkFiles = []string{"examples/tasktypes/manager.directive.v1.yaml", "examples/tasktypes/manager.review.v1.yaml",
 	"examples/tasktypes/manager.inspect.v1.yaml", "examples/roles/farm-manager-reader/role.yaml"}
 
-// directors is a group of demo with manager.direct, control.apply and control.approve; a
+// directors is a group of demo with manager.direct, control.apply:hold and :drain and control.approve; a
 // privileged group, so the tests write its memberships into the store.
 var directors = map[string]any{"apiVersion": "botaru/v1alpha1", "kind": "Group", "metadata": map[string]any{"name": "directors", "tenant": "demo"},
-	"spec": map[string]any{"caps": []any{"manager.direct", "control.apply", "control.approve"}, "data": []any{"summary"}}}
+	"spec": map[string]any{"caps": []any{"manager.direct", "control.apply:hold", "control.apply:drain", "control.approve"}, "data": []any{"summary"}}}
 
 // workEdit lets the tenant's consent group for the manager allow every seat type and keeps the
 // reader role to the plugins of the bench.
