@@ -140,6 +140,8 @@ type campaignRec struct {
 	OverDayLimit bool   `json:"over_day_limit,omitempty"`
 	GatePassed   bool   `json:"gate_passed,omitempty"`
 	Role         string `json:"role,omitempty"`
+	ScriptRun    string `json:"script_run,omitempty"`
+	ScriptStep   string `json:"script_step,omitempty"`
 }
 
 func (r campaignRec) kind() string {
@@ -331,6 +333,10 @@ type campaignPlan struct {
 	ForceCard bool
 	// Source is how the card names who asked: bot or human.
 	Source string
+	// ScriptRun and ScriptStep make the campaign a fanout step of a script run: its list was
+	// frozen and its tree and estimate reserved at the run approval, it has no card of its own
+	// unless it has an action, and no progress card or summary (SCR-6, SCR-8, ORC-10).
+	ScriptRun, ScriptStep string
 }
 
 // campaignOutcome is the answer of a proposal: the campaign and its state, or a refusal code.
@@ -1076,15 +1082,17 @@ func (c *Core) admitCampaign(ctx context.Context, tx pgx.Tx, now time.Time, cat 
 	if p.Then != nil {
 		extra++
 	}
-	if _, err := tx.Exec(ctx, `SELECT 1 FROM tasks WHERE id = $1 FOR UPDATE`, p.Root); err != nil {
-		return campaignOutcome{}, err
-	}
-	used, err := treeSize(ctx, tx, p.Tenant, p.Root)
-	if err != nil {
-		return campaignOutcome{}, err
-	}
-	if used+extra > treeLimit {
-		return no("tree_too_large")
+	if p.ScriptRun == "" {
+		if _, err := tx.Exec(ctx, `SELECT 1 FROM tasks WHERE id = $1 FOR UPDATE`, p.Root); err != nil {
+			return campaignOutcome{}, err
+		}
+		used, err := treeSize(ctx, tx, p.Tenant, p.Root)
+		if err != nil {
+			return campaignOutcome{}, err
+		}
+		if used+extra > treeLimit {
+			return no("tree_too_large")
+		}
 	}
 	var itemMicros, thenMicros int64
 	line := "work"
@@ -1102,6 +1110,9 @@ func (c *Core) admitCampaign(ctx context.Context, tx pgx.Tx, now time.Time, cat 
 	}
 	total := itemMicros*int64(n) + thenMicros
 	card := p.Kind == "action" || forceCard
+	if p.ScriptRun != "" {
+		card = p.Kind == "action"
+	}
 	confirmItems := defaultConfirmReadItems
 	if v := tv.Spec.Campaigns.ConfirmReadOver.Items; v > 0 {
 		confirmItems = v
@@ -1110,7 +1121,7 @@ func (c *Core) admitCampaign(ctx context.Context, tx pgx.Tx, now time.Time, cat 
 	if v := tv.Spec.Campaigns.ConfirmReadOver.EUR; v != nil {
 		confirmEUR = *v
 	}
-	if !card && (n > confirmItems || total > money.FromEUR(confirmEUR)) {
+	if !card && p.ScriptRun == "" && (n > confirmItems || total > money.FromEUR(confirmEUR)) {
 		card = true
 	}
 	overDay := false
@@ -1120,7 +1131,9 @@ func (c *Core) admitCampaign(ctx context.Context, tx pgx.Tx, now time.Time, cat 
 	}
 	sysGroups := groupClosure(tv, []string{"system-ops"})
 	var crossed []crossing
-	if !card {
+	if p.ScriptRun != "" {
+		// The run reserve pays the step: its share moves to the campaign below (SCR-8).
+	} else if !card {
 		if pb := c.checkBudget(ctx, tx, now, tv, budgetAsk{subject: p.Initiator, groups: groups, extra: total, line: line, crossed: &crossed}); pb != nil {
 			// Only the person's day short: a card instead of a refusal (ORC-8, D-53).
 			if p.Initiator == "system" || pb.Reason != "budget_exhausted" ||
@@ -1145,7 +1158,8 @@ func (c *Core) admitCampaign(ctx context.Context, tx pgx.Tx, now time.Time, cat 
 		Template: p.Template, Rollout: p.Rollout, Then: p.Then, ToGroup: p.ToGroup, Refs: p.Refs, MaxTier: p.MaxTier, DataMark: mark,
 		Untrusted: campaignUntrusted{Value: p.Untrusted, Source: src}, Reserve: campaignReserve{TreeTasks: extra, EUR: float64(money.CentsUp(total)) / 100},
 		EnqueuedBy: p.EnqueuedBy, Root: p.Root, Depth: p.Depth, Conversation: p.Conversation, Trace: p.Trace, Origin: p.Origin,
-		CoInitiators: p.CoInitiators, WakeTask: p.WakeTask, ItemMicros: itemMicros, Line: line, PaidByCard: card, OverDayLimit: overDay, Role: p.Role,
+		CoInitiators: p.CoInitiators, WakeTask: p.WakeTask, ItemMicros: itemMicros, Line: line, PaidByCard: card || p.ScriptRun != "", OverDayLimit: overDay, Role: p.Role,
+		ScriptRun: p.ScriptRun, ScriptStep: p.ScriptStep,
 	}
 	if p.Source == "human" {
 		rec.EnqueuedBy = nil
@@ -1176,7 +1190,7 @@ func (c *Core) admitCampaign(ctx context.Context, tx pgx.Tx, now time.Time, cat 
 	}
 	if total > 0 {
 		subject := p.Initiator
-		if card {
+		if card || p.ScriptRun != "" {
 			subject = "system"
 		}
 		if _, err := tx.Exec(ctx, `INSERT INTO spend (id, tenant, root, subject, line, purpose, unit, state, eur_micros, time, campaign)
@@ -1186,6 +1200,11 @@ func (c *Core) admitCampaign(ctx context.Context, tx pgx.Tx, now time.Time, cat 
 	}
 	if err := c.emitCrossed(ctx, tx, now, p.Tenant, crossed); err != nil {
 		return campaignOutcome{}, err
+	}
+	if p.ScriptRun != "" {
+		if err := shrinkRunReserve(ctx, tx, p.ScriptRun, total, n); err != nil {
+			return campaignOutcome{}, err
+		}
 	}
 	cmp, err := loadCampaign(ctx, tx, p.Tenant, id, true)
 	if err != nil {
@@ -1225,7 +1244,8 @@ func treeSize(ctx context.Context, q store.Querier, tenant, root string) (int, e
 		+ (SELECT count(*) FROM campaign_items i JOIN campaigns c ON c.id = i.campaign
 			WHERE c.tenant = $1 AND c.record->>'root' = $2 AND c.state = ANY($3) AND i.state = 'pending')
 		+ (SELECT count(*) FROM campaigns c WHERE c.tenant = $1 AND c.record->>'root' = $2 AND c.state = ANY($3) AND c.record->'then' IS NOT NULL
-			AND jsonb_typeof(c.record->'then') = 'object')`, tenant, root, campaignLive).Scan(&n)
+			AND jsonb_typeof(c.record->'then') = 'object')
+		+ (SELECT coalesce(sum(tree_left), 0) FROM script_runs WHERE tenant = $1 AND record->>'root' = $2 AND state IN ('running', 'paused'))`, tenant, root, campaignLive).Scan(&n)
 	return n, err
 }
 
@@ -1294,7 +1314,7 @@ func (c *Core) startCampaign(ctx context.Context, tx pgx.Tx, now time.Time, cat 
 	if err := c.setCampaignState(ctx, tx, now, cmp, "running", "", ""); err != nil {
 		return err
 	}
-	if strings.HasPrefix(cmp.Initiator, "human:") || cmp.Initiator != "system" {
+	if cmp.Initiator != "system" && cmp.Rec.ScriptRun == "" {
 		if err := c.planCampaignCard(ctx, tx, now, tv, cmp, campaignProgressCard, campaignProgressCard, cmp.Initiator); err != nil {
 			return err
 		}
@@ -1778,10 +1798,13 @@ func (c *Core) finishCampaign(ctx context.Context, tx pgx.Tx, now time.Time, cat
 			return err
 		}
 	}
-	if tv := cat.Tenants[cmp.Tenant]; tv != nil && cmp.Initiator != "system" {
+	if tv := cat.Tenants[cmp.Tenant]; tv != nil && cmp.Initiator != "system" && cmp.Rec.ScriptRun == "" {
 		if err := c.planCampaignCard(ctx, tx, now, tv, cmp, campaignSummaryKind, campaignProgressCard, cmp.Initiator); err != nil {
 			return err
 		}
+	}
+	if err := c.scriptCampaignEnded(ctx, tx, now, cmp, state, cmp.StopReason); err != nil {
+		return err
 	}
 	if cmp.Rec.Then == nil || state == "canceled" && cmp.ParentTask != "" && taskCanceled(ctx, tx, cmp.ParentTask) {
 		return nil
@@ -1933,7 +1956,10 @@ func (c *Core) rejectCampaign(ctx context.Context, tx pgx.Tx, now time.Time, cmp
 	if err := c.campaignEvent(ctx, tx, now, cmp, "campaign.rejected.v1", from, reason); err != nil {
 		return err
 	}
-	return c.campaignCardUpdates(ctx, tx, now, cmp, true)
+	if err := c.campaignCardUpdates(ctx, tx, now, cmp, true); err != nil {
+		return err
+	}
+	return c.scriptCampaignEnded(ctx, tx, now, cmp, "rejected", reason)
 }
 
 // pauseHeldCampaigns pauses the running campaigns of a tenant that a hold now covers, in the

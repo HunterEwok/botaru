@@ -64,7 +64,7 @@ var buttonCodes = map[string]string{
 var openStates = []string{"pending", "presented", "realizing"}
 
 // subjectPrefixes give the subject kind of a card by the prefix of its id.
-var subjectPrefixes = map[string]string{"a": "approval", "prp": "proposal", "cmp": "campaign"}
+var subjectPrefixes = map[string]string{"a": "approval", "prp": "proposal", "cmp": "campaign", "scr": "script", "scg": "script_gate"}
 
 // buttonLabels are the text keys of the button labels this driver draws.
 var buttonLabels = map[string]string{
@@ -74,7 +74,8 @@ var buttonLabels = map[string]string{
 
 // titleKeys are the title text keys of the card kinds that are not an approval card.
 var titleKeys = map[string]string{"proposal_card": "card.proposal.title", "realization_card": "card.realization.title", "rollback_card": "card.rollback.title",
-	"campaign_approval": "card.campaign.title", "campaign_progress": "card.campaign.progress_title"}
+	"campaign_approval": "card.campaign.title", "campaign_progress": "card.campaign.progress_title",
+	"script_confirm": "card.script.title", "script_gate_card": "card.script.gate_title"}
 
 // flat writes a map of closed fields as key=value pairs in key order.
 func flat(m map[string]any) string {
@@ -151,6 +152,8 @@ func (c *Channel) renderCard(locale string, cd *card) string {
 		footer = "card.executor.footer"
 	case cd.Card == "campaign_progress":
 		footer = "card.campaign.footer"
+	case cd.Card == "script_confirm" || cd.Card == "script_gate_card":
+		footer = "card.script.footer"
 	}
 	lines = append(lines, t.Render(locale, footer, map[string]any{"why_you": cd.Footer.WhyYou, "until": cd.Footer.Until, "on_silence": cd.Footer.OnSilence}))
 	return strings.Join(lines, "\n")
@@ -264,8 +267,12 @@ func (c *Channel) press(ctx context.Context, q *callbackQuery) error {
 	case "remind":
 		err = c.cfg.Core.CallAs(ctx, "card.remind", headers, map[string]any{"op": "card.remind", "subject_kind": kind, "id": id, "nonce": nonce}, nil)
 	case "pause", "cancel":
-		// Campaign operations go as P1 campaign.control (e1-channel).
-		err = c.cfg.Core.CallAs(ctx, "campaign.control", headers, map[string]any{"id": id, "command": code, "nonce": nonce}, nil)
+		// Campaign and script operations go as P1 campaign.control and script.control (e1-channel).
+		op := "campaign.control"
+		if kind == "script" {
+			op = "script.control"
+		}
+		err = c.cfg.Core.CallAs(ctx, op, headers, map[string]any{"id": id, "command": code, "nonce": nonce}, nil)
 	default:
 		err = c.cfg.Core.CallAs(ctx, "decide", headers, map[string]any{"subject_kind": kind, "id": id, "nonce": nonce, "decision": code}, nil)
 	}

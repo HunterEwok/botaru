@@ -418,6 +418,9 @@ func (c *Core) completeAttempt(ctx context.Context, tx pgx.Tx, now time.Time, w 
 	if err := c.campaignItemEnded(ctx, tx, now, l.WorkID, "completed", ""); err != nil {
 		return err
 	}
+	if err := c.scriptTaskEnded(ctx, tx, now, l.WorkID, "completed", ""); err != nil {
+		return err
+	}
 	// The answer goes to the task origin; the address comes from the record, never from the
 	// result (DLV-6). A child answers its parent, not the person.
 	var record struct {
@@ -806,6 +809,9 @@ func (c *Core) failTask(ctx context.Context, tx pgx.Tx, now time.Time, tenant, i
 		return err
 	}
 	if err := c.campaignItemEnded(ctx, tx, now, id, "failed", reason); err != nil {
+		return err
+	}
+	if err := c.scriptTaskEnded(ctx, tx, now, id, "failed", reason); err != nil {
 		return err
 	}
 	var record treeRecord

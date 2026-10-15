@@ -786,7 +786,10 @@ func (c *Core) closeApproval(ctx context.Context, tx pgx.Tx, now time.Time, a *a
 		Data: map[string]any{"approval": a.ID, "action": a.Action, "reason": reason}}); err != nil {
 		return err
 	}
-	return c.planCardUpdates(ctx, tx, now, a)
+	if err := c.planCardUpdates(ctx, tx, now, a); err != nil {
+		return err
+	}
+	return c.scriptApprovalMoved(ctx, tx, now, a)
 }
 
 // cancelApprovalsOf cancels the pending approvals of an initiator, as P2 principal.off or a
@@ -978,6 +981,10 @@ func (c *Core) Decide(ctx context.Context, w *Worker, ob *OnBehalf, req DecideRe
 		return c.decideControl(ctx, w, *ob, req)
 	case "campaign":
 		return c.decideCampaign(ctx, w, *ob, req)
+	case "script":
+		return c.decideScript(ctx, w, *ob, req)
+	case "script_gate":
+		return c.decideGate(ctx, w, *ob, req)
 	default:
 		return nil, refuse("not_found", "this build decides approvals, memory records, a person's requests, proposals and control cards")
 	}
@@ -1210,6 +1217,9 @@ func (c *Core) executeApproval(ctx context.Context, tx pgx.Tx, now time.Time, ca
 		return err
 	}
 	if err := c.planCardUpdates(ctx, tx, now, a); err != nil {
+		return err
+	}
+	if err := c.scriptApprovalMoved(ctx, tx, now, a); err != nil {
 		return err
 	}
 	// A call that ended at once (no toolhost, a hold) closes the task and the approval now.
@@ -1496,6 +1506,9 @@ func (c *Core) writeCallEnded(ctx context.Context, tx pgx.Tx, now time.Time, cal
 			return err
 		}
 		if err := c.campaignItemEnded(ctx, tx, now, task, taskState, taskReason); err != nil {
+			return err
+		}
+		if err := c.scriptTaskEnded(ctx, tx, now, task, taskState, taskReason); err != nil {
 			return err
 		}
 	}

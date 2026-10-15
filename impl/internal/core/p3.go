@@ -269,6 +269,9 @@ func (c *Core) toolCatalog(cat *Catalog, g *toolsGrant) ([]catalogTool, error) {
 	}
 	out = append(out, statusTools(cat, g)...)
 	out = append(out, c.campaignTools(cat, g)...)
+	if st := c.proposeScriptTool(cat, g); st != nil {
+		out = append(out, *st)
+	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
 	return out, nil
 }
@@ -517,6 +520,10 @@ func (c *Core) P3ToolsCall(ctx context.Context, handle string, p mcp.CallParams)
 		}
 		if p.Name == proposeCampaignName || p.Name == campaignStatusName || p.Name == campaignResultsName {
 			builtin, err = c.campaignToolCall(ctx, tx, now, cat, g, p.Name, offeredTool(tools, p.Name), p.Arguments)
+			return err
+		}
+		if p.Name == proposeScriptName {
+			builtin, err = c.proposeScript(ctx, tx, now, cat, g, offeredTool(tools, p.Name), p.Arguments)
 			return err
 		}
 		if statusToolName(p.Name) {

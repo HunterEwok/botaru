@@ -221,6 +221,28 @@ func (s *Server) p1(w http.ResponseWriter, r *http.Request) {
 			s.fail(w, err)
 			return
 		}
+	case "script.control":
+		req, err := decode[core.ScriptControlRequest](m)
+		if err != nil {
+			s.fail(w, err)
+			return
+		}
+		out, err = s.c.ScriptControl(ctx, wk, onBehalf(r), req)
+		if err != nil {
+			s.fail(w, err)
+			return
+		}
+	case "script.get":
+		req, err := decode[core.ScriptGetRequest](m)
+		if err != nil {
+			s.fail(w, err)
+			return
+		}
+		out, err = s.c.ScriptGet(ctx, wk, lease, req)
+		if err != nil {
+			s.fail(w, err)
+			return
+		}
 	case "msg.send":
 		req, err := decode[core.MsgSendRequest](m)
 		if err != nil {

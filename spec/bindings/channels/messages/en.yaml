@@ -137,6 +137,9 @@ texts:
   card.campaign.rollout: "Rollout: {rollout}"
   card.campaign.footer: "You get this card as the initiator of the campaign."
   card.campaign.list: "All {count} items of the campaign: {items}"
+  card.script.title: "{title}"
+  card.script.gate_title: "{title}"
+  card.script.footer: "You get this card as {why_you}. Without an answer: {on_silence}."
   card.button.pause: Pause
   card.button.cancel: Cancel
   card.realization.title: "Change to carry out: {title}"
