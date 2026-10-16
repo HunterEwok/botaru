@@ -125,6 +125,9 @@ func TestP2Campaigns(t *testing.T) {
 	if _, err := b.c.CampaignControlP2(ctx, alice, P2CampaignControlRequest{ID: r.Campaign, Command: "pause"}); reasonOf(err) != "already_terminal" {
 		t.Fatalf("pause of a canceled campaign: %v", err)
 	}
+	if b.auditCount(t, "campaign.control", r.Campaign, false) != 1 {
+		t.Fatal("the refused pause is not audited")
+	}
 	if b.auditCount(t, "campaign.control", r.Campaign, true) != 3 {
 		t.Fatalf("control audit %d", b.auditCount(t, "campaign.control", r.Campaign, true))
 	}
@@ -141,8 +144,18 @@ func TestP2Campaigns(t *testing.T) {
 	if _, err := b.c.CampaignRetryFailed(ctx, bob, ObjectRequest{Op: "campaign.retry_failed", ID: r.Campaign}); reasonOf(err) != "forbidden" {
 		t.Fatalf("retry by another person: %v", err)
 	}
-	if b.auditCount(t, "campaign.retry_failed", r.Campaign, false) != 1 {
+	if b.auditCount(t, "campaign.retry_failed", r.Campaign, false) != 1 { // bob's
 		t.Fatal("the refused retry is not audited")
+	}
+	// A campaign of a script step is its run's: no retry by a person (SCR-6).
+	if _, err := b.c.st.Pool.Exec(ctx, `UPDATE campaigns SET record = record || '{"script_run": "sr_01JB0000000000000000000099"}' WHERE id = $1`, r.Campaign); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := b.c.CampaignRetryFailed(ctx, alice, ObjectRequest{ID: r.Campaign}); reasonOf(err) != "forbidden" {
+		t.Fatalf("retry of a script step's campaign: %v", err)
+	}
+	if _, err := b.c.st.Pool.Exec(ctx, `UPDATE campaigns SET record = record - 'script_run' WHERE id = $1`, r.Campaign); err != nil {
+		t.Fatal(err)
 	}
 	d, err := b.c.CampaignRetryFailed(ctx, alice, ObjectRequest{Op: "campaign.retry_failed", ID: r.Campaign})
 	if err != nil || d.ID == r.Campaign || d.State != "proposed" {
@@ -180,6 +193,19 @@ func TestCampaignNoExecutor(t *testing.T) {
 		t.Fatalf("before start_by %s", cmp.State)
 	}
 	b.advance(t, 61)
+	// A task that waits for another reason (a waiting_reason) does not count (ORC-4).
+	if _, err := b.c.st.Pool.Exec(ctx, `UPDATE tasks t SET record = t.record || '{"waiting_reason": "type_quota"}'
+		FROM campaign_items i WHERE i.task = t.id AND i.campaign = $1`, r.Campaign); err != nil {
+		t.Fatal(err)
+	}
+	b.loop(t, "campaign")
+	if cmp := b.campaign(t, r.Campaign); cmp.State != "running" {
+		t.Fatalf("with a waiting_reason %s", cmp.State)
+	}
+	if _, err := b.c.st.Pool.Exec(ctx, `UPDATE tasks t SET record = t.record - 'waiting_reason'
+		FROM campaign_items i WHERE i.task = t.id AND i.campaign = $1`, r.Campaign); err != nil {
+		t.Fatal(err)
+	}
 	b.loop(t, "campaign")
 	cmp := b.campaign(t, r.Campaign)
 	if cmp.State != "paused" || cmp.PauseReason != "no_executor" || b.itemStates(t, cmp.ID) != "released,pending,pending" {
@@ -207,7 +233,7 @@ func TestCampaignNoExecutor(t *testing.T) {
 // type and another tenant get not_found; a reader who is no admin gets forbidden for the
 // cancel, which is audited; a person with admin:people cancels a running run in one
 // transaction with its waiting approval (canceled(admin)), a repeat answers the same; the
-// initiator's cancel of a proposed run rejects it with the reason initiator.
+// initiator's cancel of a proposed run rejects it with the reason declined, as its card's button.
 func TestP2Scripts(t *testing.T) {
 	ctx := context.Background()
 	b := newScriptRunBenchWith(t, []map[string]any{
@@ -283,6 +309,9 @@ func TestP2Scripts(t *testing.T) {
 	if _, err := b.c.ScriptCancel(ctx, alice, ObjectRequest{ID: run.ID}); reasonOf(err) != "already_terminal" {
 		t.Fatalf("the initiator after the admin: %v", err)
 	}
+	if b.auditCount(t, "script.cancel", run.ID, false) != 2 {
+		t.Fatal("the refused cancel of an ended run is not audited")
+	}
 	// A proposed run: the initiator's cancel rejects it.
 	att, h = b.attemptTools(t, "2", false)
 	r2 := proposeScriptCall(t, b.bench, h, checkStep)
@@ -290,7 +319,7 @@ func TestP2Scripts(t *testing.T) {
 	if d, err := b.c.ScriptCancel(ctx, alice, ObjectRequest{ID: r2.RunRef}); err != nil || d.State != "rejected" {
 		t.Fatalf("cancel of a proposed run %+v %v", d, err)
 	}
-	if run2, _ := b.run(t, r2.RunRef); run2.Reason != "initiator" {
+	if run2, _ := b.run(t, r2.RunRef); run2.Reason != "declined" {
 		t.Fatalf("reason %s", run2.Reason)
 	}
 }
@@ -298,8 +327,8 @@ func TestP2Scripts(t *testing.T) {
 // P2 proposal.list and proposal.show (PRP-4, DIG-1, PRP-20, PRM-9): a person with
 // proposal.decide sees only proposals shown to people: not while they are screened or in
 // review, then the presented one with its record; the view creates no task, approval, run
-// or delivery; a blind sample item shows no reason, reviews or verdict; a record above the
-// person's ceiling is listed as metadata but not shown; a person without proposal.decide is
+// or delivery; a blind sample item, also one closed without "Would accept", shows no reason,
+// reviews or verdict; a proposal above the person's ceiling is neither listed nor shown; a person without proposal.decide is
 // forbidden, and another tenant gets nothing.
 func TestP2Proposals(t *testing.T) {
 	ctx := context.Background()
@@ -374,11 +403,18 @@ func TestP2Proposals(t *testing.T) {
 		t.Fatalf("a blind record %v %v", rec, err)
 	}
 	validOut(t, b, "p2-proposal-show-response", rec)
-	// Above the person's ceiling (internal): a row, not a record.
+	// Closed without "Would accept": still blind.
+	if _, err := b.c.st.Pool.Exec(ctx, `UPDATE proposals SET state = 'sample_closed', record = record || '{"state": "sample_closed"}' WHERE id = $1`, id); err != nil {
+		t.Fatal(err)
+	}
+	if rec, err = b.c.ProposalShow(ctx, alice, ProposalShowRequest{Proposal: id}); err != nil || rec["verdict"] != nil || rec["state_reason"] != nil {
+		t.Fatalf("a closed blind record %v %v", rec, err)
+	}
+	// Above the person's ceiling (internal): neither a row nor a record.
 	if _, err := b.c.st.Pool.Exec(ctx, `UPDATE proposals SET record = record || '{"data_mark": "raw_logs"}' WHERE id = $1`, id); err != nil {
 		t.Fatal(err)
 	}
-	if l, err := b.c.ProposalList(ctx, alice, ProposalListRequest{}); err != nil || len(l["items"].([]any)) != 1 {
+	if l, err := b.c.ProposalList(ctx, alice, ProposalListRequest{}); err != nil || len(l["items"].([]any)) != 0 {
 		t.Fatalf("the row above the ceiling %v %v", l, err)
 	}
 	if _, err := b.c.ProposalShow(ctx, alice, ProposalShowRequest{Proposal: id}); reasonOf(err) != "not_found" {
@@ -386,10 +422,11 @@ func TestP2Proposals(t *testing.T) {
 	}
 }
 
-// P2 escalation.list and escalation.show (MGR-5, TEN-2): the operators of the tenant and of
-// farm see the record by the escalation schema without the note; only a person of its tenant
-// with audit.read and the data mark gets the note, inside the untrusted wrapper and audited;
-// another tenant's credential gets not_found and may not list the tenant.
+// P2 escalation.list and escalation.show (MGR-5, TEN-2): an active person of the tenant who
+// holds the source task's mark sees the record by the escalation schema without the note; only
+// one with audit.read gets the note, inside the untrusted wrapper and audited, and not once the
+// source task is gone; a credential without a person, farm and another tenant see nothing, and
+// naming the tenant from elsewhere is forbidden.
 func TestP2Escalations(t *testing.T) {
 	ctx := context.Background()
 	nec := seatType(necessityType)
@@ -409,38 +446,41 @@ func TestP2Escalations(t *testing.T) {
 		}
 	})
 	b.escalateOnce(t, b.agent, "u1", map[string]any{"category": "other", "subject": map[string]any{"kind": "self"}, "urgency": "normal", "note": "secret words"})
-	list, err := b.c.EscalationList(ctx, b.op, TenantRequest{})
+	alice := Operator{Principal: b.alice, Tenant: "demo"}
+	list, err := b.c.EscalationList(ctx, alice, TenantRequest{})
 	if err != nil || len(listIDs(list)) != 1 {
 		t.Fatalf("list %v %v", list, err)
 	}
 	validOut(t, b, "p2-list-response", list)
 	id := listIDs(list)[0]
-	farm := Operator{Principal: b.op.Principal, Tenant: "farm"}
-	if l, err := b.c.EscalationList(ctx, farm, TenantRequest{Tenant: "demo"}); err != nil || len(listIDs(l)) != 1 {
-		t.Fatalf("farm's list %v %v", l, err)
+	out, err := b.c.EscalationShow(ctx, alice, ObjectRequest{Op: "escalation.show", ID: id})
+	if err != nil || out["note"] != nil {
+		t.Fatalf("alice: %v %v", out, err)
 	}
-	for _, op := range []Operator{b.op, farm} {
-		out, err := b.c.EscalationShow(ctx, op, ObjectRequest{Op: "escalation.show", ID: id})
-		if err != nil || out["note"] != nil {
-			t.Fatalf("%+v: %v %v", op, out, err)
-		}
-		esc := out["escalation"].(map[string]any)
-		if esc["note_ref"] != id || esc["category"] != "other" || strings.Contains(asString(esc["note_ref"]), "secret") {
-			t.Fatalf("record %v", esc)
-		}
-		if err := b.c.spec.Validate("urn:botaru:schema:escalation:1", esc); err != nil {
-			t.Fatalf("record: %v", err)
+	esc := out["escalation"].(map[string]any)
+	if esc["note_ref"] != id || esc["category"] != "other" {
+		t.Fatalf("record %v", esc)
+	}
+	if err := b.c.spec.Validate("urn:botaru:schema:escalation:1", esc); err != nil {
+		t.Fatalf("record: %v", err)
+	}
+	// A credential without an active person, farm and another tenant see nothing; a tenant
+	// named otherwise is forbidden, also for farm.
+	if l, err := b.c.EscalationList(ctx, b.op, TenantRequest{}); err != nil || len(l["items"].([]any)) != 0 {
+		t.Fatalf("a credential without a person lists %v %v", l, err)
+	}
+	for _, op := range []Operator{b.op, {Principal: b.op.Principal, Tenant: "farm"}, {Principal: b.alice, Tenant: "demo2"}} {
+		if _, err := b.c.EscalationShow(ctx, op, ObjectRequest{ID: id}); reasonOf(err) != "not_found" {
+			t.Fatalf("%+v shows: %v", op, err)
 		}
 	}
-	other := Operator{Principal: b.op.Principal, Tenant: "demo2"}
-	if _, err := b.c.EscalationShow(ctx, other, ObjectRequest{ID: id}); reasonOf(err) != "not_found" {
-		t.Fatalf("another tenant shows: %v", err)
-	}
-	if _, err := b.c.EscalationList(ctx, other, TenantRequest{Tenant: "demo"}); reasonOf(err) != "forbidden" {
-		t.Fatalf("another tenant lists: %v", err)
+	for _, op := range []Operator{{Principal: b.op.Principal, Tenant: "farm"}, {Principal: b.alice, Tenant: "demo2"}} {
+		if _, err := b.c.EscalationList(ctx, op, TenantRequest{Tenant: "demo"}); reasonOf(err) != "forbidden" {
+			t.Fatalf("%+v lists demo: %v", op, err)
+		}
 	}
 	auditor := Operator{Principal: b.addPerson(t, "telegram:1006", "auditors"), Tenant: "demo"}
-	out, err := b.c.EscalationShow(ctx, auditor, ObjectRequest{ID: id})
+	out, err = b.c.EscalationShow(ctx, auditor, ObjectRequest{ID: id})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -449,5 +489,38 @@ func TestP2Escalations(t *testing.T) {
 	}
 	if b.auditCount(t, "escalation.show", id, true) != 1 {
 		t.Fatal("the note read is not audited")
+	}
+	// Without its source task the note is withheld.
+	if _, err := b.c.st.Pool.Exec(ctx, `UPDATE escalations SET task = 't_01JB0000000000000000000099' WHERE id = $1`, id); err != nil {
+		t.Fatal(err)
+	}
+	if out, err = b.c.EscalationShow(ctx, auditor, ObjectRequest{ID: id}); err != nil || out["note"] != nil {
+		t.Fatalf("without the source task %v %v", out, err)
+	}
+}
+
+// "Cancel" of a proposed campaign rejects it; the same cancel again answers the same, while a
+// cancel by another person of the ended campaign is already_terminal (ORC-1, IDM-3).
+func TestP2CampaignCancelProposed(t *testing.T) {
+	ctx := context.Background()
+	b := newCampaignReadBench(t, map[string]any{"confirm_read_over": map[string]any{"items": 2}})
+	att, h := b.attemptTools(t, "1", false)
+	r := proposeCall(t, b, h, map[string]any{
+		"template": map[string]any{"kind": "task", "type": "hello.child.v1", "goal": "Check the machine."},
+		"items":    map[string]any{"resources": []any{"web1", "web2", "web3"}},
+	})
+	if r.State != "proposed" {
+		t.Fatalf("propose %+v", r)
+	}
+	b.finish(t, att)
+	alice := Operator{Principal: b.alice, Tenant: "demo"}
+	for range 2 {
+		if res, err := b.c.CampaignControlP2(ctx, alice, P2CampaignControlRequest{ID: r.Campaign, Command: "cancel"}); err != nil || res.State != "rejected" {
+			t.Fatalf("cancel %+v %v", res, err)
+		}
+	}
+	bob := Operator{Principal: b.addPerson(t, "telegram:1002", "hello"), Tenant: "demo"}
+	if _, err := b.c.CampaignControlP2(ctx, bob, P2CampaignControlRequest{ID: r.Campaign, Command: "cancel"}); reasonOf(err) != "already_terminal" {
+		t.Fatalf("another person's cancel: %v", err)
 	}
 }
