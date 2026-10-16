@@ -816,6 +816,38 @@ func (c *Core) claimDelivery(ctx context.Context, tx pgx.Tx, now time.Time, cat 
 				continue
 			}
 		}
+		// The digest pace of the chat holds at hand-out too (REP-10).
+		if kind == "digest" && targetKind == "chat" && w.Kind == "channel" {
+			wait, err := c.digestHandout(ctx, tx, now, w.Tenant, id, w.Target, targetID)
+			if err != nil {
+				return nil, err
+			}
+			if wait {
+				skip = append(skip, id)
+				continue
+			}
+		}
+		// The first delivery of a limited card sets the expiry of its subject; it is undone
+		// when the card is withheld below, so it holds only for a card that goes to sending
+		// (APR-15). The card is drawn after it, so it shows the new deadline.
+		firstSet := false
+		if recipient != nil && tv != nil && w.Kind == "channel" && c.limitedCard(kind, deref(subjectID)) {
+			if _, err := tx.Exec(ctx, `SAVEPOINT card_first`); err != nil {
+				return nil, err
+			}
+			if err := c.firstCardDelivery(ctx, tx, now, deref(subjectKind), deref(subjectID)); err != nil {
+				return nil, err
+			}
+			firstSet = true
+		}
+		undoFirst := func() error {
+			if !firstSet {
+				return nil
+			}
+			firstSet = false
+			_, err := tx.Exec(ctx, `ROLLBACK TO SAVEPOINT card_first`)
+			return err
+		}
 		if sk := deref(subjectKind); sk == "approval" || sk == "proposal" || sk == "control" || sk == "campaign" || sk == "script" || sk == "script_gate" {
 			// A card is drawn from the record now, so it shows the current state (APR-3). An
 			// update waits while the card it edits is being sent, and is dropped when that card
@@ -843,6 +875,9 @@ func (c *Core) claimDelivery(ctx context.Context, tx pgx.Tx, now time.Time, cat 
 				return nil, err
 			}
 			if drawn == nil && kind != cardUpdate {
+				if err := undoFirst(); err != nil {
+					return nil, err
+				}
 				if _, err := tx.Exec(ctx, `UPDATE deliveries SET state = 'withheld', reason = 'ref_invalid', updated_at = $2 WHERE id = $1`, id, now); err != nil {
 					return nil, err
 				}
@@ -883,6 +918,9 @@ func (c *Core) claimDelivery(ctx context.Context, tx pgx.Tx, now time.Time, cat 
 				return nil, err
 			}
 			if drawn == nil {
+				if err := undoFirst(); err != nil {
+					return nil, err
+				}
 				if _, err := tx.Exec(ctx, `UPDATE deliveries SET state = 'withheld', reason = 'ref_invalid', updated_at = $2 WHERE id = $1`, id, now); err != nil {
 					return nil, err
 				}
@@ -914,6 +952,11 @@ func (c *Core) claimDelivery(ctx context.Context, tx pgx.Tx, now time.Time, cat 
 				continue
 			}
 			cardBody, replacesID = drawn, replaces
+		}
+		if firstSet {
+			if _, err := tx.Exec(ctx, `RELEASE SAVEPOINT card_first`); err != nil {
+				return nil, err
+			}
 		}
 		picked = true
 	}

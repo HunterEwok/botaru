@@ -1109,9 +1109,6 @@ func (c *Core) Decide(ctx context.Context, w *Worker, ob *OnBehalf, req DecideRe
 			out.State = a.State
 			return nil
 		}
-		if err := c.requireDetails(ctx, tx, now, a.Tenant, "approval", a.ID, approvalCard, req.Decision, press.principal); err != nil {
-			return err
-		}
 		scopes, err := c.approvalHoldScopes(ctx, tx, cat, a)
 		if err != nil {
 			return err
@@ -1136,6 +1133,10 @@ func (c *Core) Decide(ctx context.Context, w *Worker, ob *OnBehalf, req DecideRe
 				return err
 			}
 			return &committed{p: refuse("expired", "the card has expired")}
+		}
+		// Holds and the deadline come first; then "Details" before a listed decision (APR-14).
+		if err := c.requireDetails(ctx, tx, now, a.Tenant, "approval", a.ID, approvalCard, req.Decision, press.principal); err != nil {
+			return err
 		}
 		var views int
 		if err := tx.QueryRow(ctx, `SELECT count(*) FROM card_views WHERE subject_kind = 'approval' AND subject_id = $1 AND principal = $2`, a.ID, press.principal).Scan(&views); err != nil {

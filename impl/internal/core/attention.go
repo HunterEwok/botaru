@@ -305,8 +305,7 @@ func (c *Core) decisionKinds() []string {
 // rewrites, once, the expiry of its subject to count from this first delivery. Notices and
 // card updates are not cards of the limit.
 func (c *Core) cardLimit(ctx context.Context, tx pgx.Tx, now time.Time, tv *TenantView, id, kind, recipient, subjectKind, subjectID, exec string) (bool, error) {
-	row := c.decisionPoint(kind)
-	if row == nil || row["kind"] != "decision" || row["attention_limit"] == false || row["urgent"] == true || subjectID == "" {
+	if !c.limitedCard(kind, subjectID) {
 		return false, nil
 	}
 	limit := defaultNoncriticalPerDay
@@ -332,6 +331,11 @@ func (c *Core) cardLimit(ctx context.Context, tx pgx.Tx, now time.Time, tv *Tena
 		if _, err := tx.Exec(ctx, `UPDATE deliveries SET run_at = $2, card_expires_at = $3 WHERE id = $1`, id, next, exp); err != nil {
 			return false, err
 		}
+		// A subject whose card has not gone out yet does not expire while it waits: its
+		// expiry counts at least from the day the card may go (APR-15).
+		if err := deferSubjectExpiry(ctx, tx, tv, subjectKind, subjectID, next); err != nil {
+			return false, err
+		}
 		_, err = tx.Exec(ctx, `INSERT INTO card_excess (tenant, day, count) VALUES ($1, $2, 1) ON CONFLICT (tenant, day) DO UPDATE SET count = card_excess.count + 1`,
 			tv.Name, day.Format(time.DateOnly))
 		return true, err
@@ -343,10 +347,30 @@ func (c *Core) cardLimit(ctx context.Context, tx pgx.Tx, now time.Time, tv *Tena
 		AND o.card_expires_at < d.card_expires_at AND (o.run_at IS NULL OR o.run_at <= $3))`, id, exec, now).Scan(&earlier); err != nil {
 		return false, err
 	}
-	if earlier {
-		return true, nil
+	return earlier, nil
+}
+
+// limitedCard says whether a delivery is a card of the card limit, whose first delivery sets
+// the expiry of its subject (APR-15).
+func (c *Core) limitedCard(kind, subjectID string) bool {
+	row := c.decisionPoint(kind)
+	return row != nil && row["kind"] == "decision" && row["attention_limit"] != false && row["urgent"] != true && subjectID != ""
+}
+
+// deferSubjectExpiry moves the expiry of a subject without a first delivery of its card to
+// count from next at the earliest: a proposal's presentation and a memory record's deadline.
+func deferSubjectExpiry(ctx context.Context, tx pgx.Tx, tv *TenantView, subjectKind, id string, next time.Time) error {
+	const fresh = `NOT EXISTS (SELECT 1 FROM card_first_deliveries f WHERE f.subject_kind = $3 AND f.subject_id = $1)`
+	var err error
+	switch subjectKind {
+	case "proposal":
+		_, err = tx.Exec(ctx, `UPDATE proposals SET presented_at = greatest(presented_at, $2) WHERE id = $1 AND presented_at IS NOT NULL AND `+fresh, id, next, subjectKind)
+	case "memory_record":
+		_, err = tx.Exec(ctx, `UPDATE memory_items SET decide_by = greatest(decide_by, $2::timestamptz + $4::interval) WHERE id = $1 AND decide_by IS NOT NULL AND `+fresh,
+			id, next, subjectKind, memoryCardTTL)
 	}
-	return false, c.firstCardDelivery(ctx, tx, now, subjectKind, subjectID)
+	_ = tv
+	return err
 }
 
 // subjectExpiry is the expiry of the subject of a non-urgent card, or nil.

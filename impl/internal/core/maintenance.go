@@ -39,8 +39,9 @@ type maintenanceEvent struct {
 // no_tool and pause_action (no_action for a host with maintenance_hold: true), reason
 // maintenance, author contain_auto, source system:monitor and the event's until; each later
 // active event of the window moves that until forward, never back. An ended event changes no
-// hold, but a later active event of the same window id is a new period. After a person
-// released the hold, the window sets no new hold while it stays active. A node of the farm
+// hold, but a later active event of the same window id, or one after a gap past the until of
+// the last, is a new period with a new hold. After a person released the hold, the window sets
+// no new hold while that period stays active. A node of the farm
 // itself, or one no catalog host of the tenant binds, sets nothing.
 func (c *Core) maintenanceSignal(ctx context.Context, w *Worker, cat *Catalog, data map[string]any) (*ActivityResult, error) {
 	if err := c.spec.Validate("ext-monitor-maintenance", data); err != nil {
@@ -70,8 +71,9 @@ func (c *Core) maintenanceSignal(ctx context.Context, w *Worker, cat *Catalog, d
 		}
 		var holdID string
 		var released bool
-		err := tx.QueryRow(ctx, `SELECT hold, released FROM maintenance_windows WHERE node = $1 AND maintenance_id = $2 FOR UPDATE`,
-			host.Node, ev.MaintenanceID).Scan(&holdID, &released)
+		var endedAt, periodUntil *time.Time
+		err := tx.QueryRow(ctx, `SELECT hold, released, ended_at, period_until FROM maintenance_windows WHERE node = $1 AND maintenance_id = $2 FOR UPDATE`,
+			host.Node, ev.MaintenanceID).Scan(&holdID, &released, &endedAt, &periodUntil)
 		found := err == nil
 		if err != nil && !errors.Is(err, pgx.ErrNoRows) {
 			return err
@@ -81,9 +83,8 @@ func (c *Core) maintenanceSignal(ctx context.Context, w *Worker, cat *Catalog, d
 			return err
 		}
 		if ev.State == "ended" {
-			// The window is over: the hold ends at its until; a later active event of the same
-			// id (a periodic window) is a new period. The row stays, so a release by a person
-			// is remembered for the window id (MON-9).
+			// The period is over: the hold ends at its until; a later active event of the same
+			// id (a periodic window) is a new period with a new hold (MON-9).
 			_, err := tx.Exec(ctx, `UPDATE maintenance_windows SET ended_at = $3 WHERE node = $1 AND maintenance_id = $2`, host.Node, ev.MaintenanceID, now)
 			return err
 		}
@@ -93,19 +94,22 @@ func (c *Core) maintenanceSignal(ctx context.Context, w *Worker, cat *Catalog, d
 		if !until.After(now) {
 			return nil
 		}
-		if found {
+		// A period lasts while active events come before the until of the last one; after an
+		// ended event or a gap past that until, an active event starts a new period (MON-9).
+		if found && endedAt == nil && periodUntil != nil && periodUntil.After(now) {
+			if _, err := tx.Exec(ctx, `UPDATE maintenance_windows SET period_until = greatest(period_until, $3) WHERE node = $1 AND maintenance_id = $2`,
+				host.Node, ev.MaintenanceID, until); err != nil {
+				return err
+			}
 			if released {
 				return nil
-			}
-			if _, err := tx.Exec(ctx, `UPDATE maintenance_windows SET ended_at = NULL WHERE node = $1 AND maintenance_id = $2`, host.Node, ev.MaintenanceID); err != nil {
-				return err
 			}
 			h, err := loadHold(ctx, tx, holdID, true)
 			if err != nil {
 				return err
 			}
 			if h.State == "released" {
-				// A person released it: no new hold while the window stays active.
+				// A person released it: no new hold while this period stays active.
 				_, err := tx.Exec(ctx, `UPDATE maintenance_windows SET released = true WHERE node = $1 AND maintenance_id = $2`, host.Node, ev.MaintenanceID)
 				return err
 			}
@@ -126,7 +130,8 @@ func (c *Core) maintenanceSignal(ctx context.Context, w *Worker, cat *Catalog, d
 				out = ActivityResult{Result: "accepted"}
 				return nil
 			}
-			// The hold of the last period ended by its until: this is a new period.
+			// The hold expired by an operator's lift or its own until inside the period: a
+			// new hold for the rest of it.
 		}
 		effects := []string{"no_tool", "pause_action"}
 		if host.MaintenanceHold {
@@ -137,9 +142,9 @@ func (c *Core) maintenanceSignal(ctx context.Context, w *Worker, cat *Catalog, d
 		if err != nil {
 			return err
 		}
-		if _, err := tx.Exec(ctx, `INSERT INTO maintenance_windows (node, maintenance_id, tenant, hold, created_at) VALUES ($1, $2, $3, $4, $5)
-			ON CONFLICT (node, maintenance_id) DO UPDATE SET hold = $4, created_at = $5, ended_at = NULL`,
-			host.Node, ev.MaintenanceID, w.Tenant, id, now); err != nil {
+		if _, err := tx.Exec(ctx, `INSERT INTO maintenance_windows (node, maintenance_id, tenant, hold, created_at, period_until) VALUES ($1, $2, $3, $4, $5, $6)
+			ON CONFLICT (node, maintenance_id) DO UPDATE SET hold = $4, created_at = $5, ended_at = NULL, released = false, period_until = $6`,
+			host.Node, ev.MaintenanceID, w.Tenant, id, now, until); err != nil {
 			return err
 		}
 		out = ActivityResult{Result: "accepted"}

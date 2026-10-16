@@ -398,6 +398,12 @@ func TestCardLimitPerDay(t *testing.T) {
 	if got := decideBy.Sub(handed); got != memoryCardTTL {
 		t.Fatalf("the deadline counts %v from the first delivery", got)
 	}
+	// A record whose card waits does not expire before its card may go.
+	var early int
+	if err := b.c.st.Pool.QueryRow(ctx, `SELECT count(*) FROM memory_items m WHERE m.id <> $1 AND m.decide_by IS NOT NULL
+		AND m.decide_by - m.created_at <= $2::interval`, first, memoryCardTTL).Scan(&early); err != nil || early != 0 {
+		t.Fatalf("waiting records with the old deadline %d %v", early, err)
+	}
 	b.advance(t, 24*3600)
 	if got := b.drain(t); len(got) != 2 {
 		t.Fatalf("cards the next day %+v", got)
@@ -504,37 +510,55 @@ func TestDigestPace(t *testing.T) {
 	for i := range 4 {
 		ins(fmt.Sprintf("dl_d%d", i), now.Add(-time.Duration(50-i*10)*time.Minute), nil, "delivered")
 	}
-	pace := func() *time.Time {
+	pace := func() (*time.Time, string) {
 		t.Helper()
 		var out *time.Time
+		var replaced string
 		if err := b.c.tx(ctx, func(tx pgx.Tx, now time.Time) error {
 			var err error
-			out, err = b.c.digestPace(ctx, tx, now, "demo", "telegram", "direct:1001")
+			out, replaced, err = b.c.digestPace(ctx, tx, now, "demo", "telegram", "direct:1001")
 			return err
 		}); err != nil {
 			t.Fatal(err)
 		}
-		return out
+		return out, replaced
 	}
-	slot := pace()
+	slot, _ := pace()
 	if slot == nil || !slot.Equal(now.Add(10*time.Minute)) {
 		t.Fatalf("next free slot %v", slot)
 	}
 	ins("dl_wait", nil, *slot, "planned")
-	// One the person's preferences deferred is never replaced (DLV-10).
+	// One the person's preferences deferred is never replaced at planning (DLV-10).
 	ins("dl_quiet", nil, slot.Add(time.Minute), "planned")
 	if _, err := b.c.st.Pool.Exec(ctx, `UPDATE deliveries SET paced = true WHERE id = 'dl_wait'`); err != nil {
 		t.Fatal(err)
 	}
-	if again := pace(); again == nil || !again.Equal(*slot) {
-		t.Fatalf("the newer digest takes the slot %v", again)
+	if again, replaced := pace(); again == nil || !again.Equal(*slot) || replaced != "dl_wait" {
+		t.Fatalf("the newer digest takes the slot %v of %q", again, replaced)
 	}
-	var state, reason string
-	if err := b.c.st.Pool.QueryRow(ctx, `SELECT state, reason FROM deliveries WHERE id = 'dl_wait'`).Scan(&state, &reason); err != nil || state != "withheld" || reason != "superseded" {
-		t.Fatalf("the waiting digest %s %s %v", state, reason, err)
+	// At hand-out the ceiling holds again: of two due digests the older is replaced and the
+	// newer waits for the next free slot (REP-10).
+	if _, err := b.c.st.Pool.Exec(ctx, `UPDATE deliveries SET state = 'withheld' WHERE id IN ('dl_wait', 'dl_quiet')`); err != nil {
+		t.Fatal(err)
 	}
-	if err := b.c.st.Pool.QueryRow(ctx, `SELECT state FROM deliveries WHERE id = 'dl_quiet'`).Scan(&state); err != nil || state != "planned" {
-		t.Fatalf("the deferred digest %s %v", state, err)
+	ins("dl_due1", nil, nil, "planned")
+	ins("dl_due2", nil, nil, "planned")
+	b.drain(t)
+	got := map[string]string{}
+	rows, err := b.c.st.Pool.Query(ctx, `SELECT id, state || coalesce('/' || reason, '') || CASE WHEN paced THEN '/paced' ELSE '' END FROM deliveries WHERE id LIKE 'dl_due%'`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for rows.Next() {
+		var id, st string
+		if err := rows.Scan(&id, &st); err != nil {
+			t.Fatal(err)
+		}
+		got[id] = st
+	}
+	rows.Close()
+	if got["dl_due1"] != "withheld/superseded" || got["dl_due2"] != "planned/paced" {
+		t.Fatalf("hand-out over the ceiling %v", got)
 	}
 }
 

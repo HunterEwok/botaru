@@ -566,7 +566,7 @@ func (c *Core) deliverDigest(ctx context.Context, tx pgx.Tx, now time.Time, cat 
 	plan := func(addr, targetKind, target, channel, recipient string, group, labeled bool) error {
 		b, origin := body(group, labeled)
 		// The digest pace of the chat (REP-10).
-		runAt, err := c.digestPace(ctx, tx, now, tenant, channel, target)
+		runAt, replaced, err := c.digestPace(ctx, tx, now, tenant, channel, target)
 		if err != nil {
 			return err
 		}
@@ -574,8 +574,17 @@ func (c *Core) deliverDigest(ctx context.Context, tx pgx.Tx, now time.Time, cat 
 			Tenant: tenant, Task: task, Kind: "digest", Addr: addr, TargetKind: targetKind, TargetID: target,
 			ExecKind: "channel", ExecName: channel, Recipient: recipient, Body: b, DataMark: r.DataMark, DataOrigin: origin,
 		})
-		if err != nil || runAt == nil {
+		if err != nil {
 			return err
+		}
+		// The waiting digest ends only once the newer one is planned.
+		if replaced != "" {
+			if err := c.supersedeDigest(ctx, tx, now, tenant, replaced); err != nil {
+				return err
+			}
+		}
+		if runAt == nil {
+			return nil
 		}
 		_, err = tx.Exec(ctx, `UPDATE deliveries SET run_at = $2, paced = true WHERE id = $1`, id, *runAt)
 		return err

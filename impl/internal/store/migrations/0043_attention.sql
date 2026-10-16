@@ -54,6 +54,7 @@ CREATE TABLE maintenance_windows (
     released       boolean NOT NULL DEFAULT false,
     created_at     timestamptz NOT NULL,
     ended_at       timestamptz,            -- the last ended event; the row is removed 30 days later
+    period_until   timestamptz,            -- the until of the last active event of this period
     PRIMARY KEY (node, maintenance_id)
 );
 

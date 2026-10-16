@@ -1358,6 +1358,10 @@ func (c *Core) releaseItems(ctx context.Context, tx pgx.Tx, now time.Time, cat *
 	} else if stop != "" {
 		return c.stopCampaign(ctx, tx, now, cat, cmp, stop)
 	}
+	// An action that needs two approvers since the campaign was approved stops it (APR-16).
+	if campaignTwoApprovers(cat, cmp) {
+		return c.stopCampaign(ctx, tx, now, cat, cmp, "campaign_policy_exceeded")
+	}
 	total := n.total()
 	canary := min(cmp.Rec.Rollout.Canary, total)
 	inCanary := false
@@ -2698,7 +2702,11 @@ func (c *Core) resumeCampaign(ctx context.Context, tx pgx.Tx, now time.Time, cat
 		}
 	}
 	tv := cat.Tenants[cmp.Tenant]
-	if stop, err := c.campaignRights(ctx, tx, now, tv, cmp); err != nil {
+	stop, err := c.campaignRights(ctx, tx, now, tv, cmp)
+	if err == nil && stop == "" && campaignTwoApprovers(cat, cmp) {
+		stop = "campaign_policy_exceeded"
+	}
+	if err != nil {
 		return err
 	} else if stop != "" {
 		if err := c.stopCampaign(ctx, tx, now, cat, cmp, stop); err != nil {
@@ -2719,6 +2727,16 @@ func (c *Core) resumeCampaign(ctx context.Context, tx pgx.Tx, now time.Time, cat
 	}
 	_ = who
 	return ok("")
+}
+
+// campaignTwoApprovers says whether the action of an action campaign now needs two
+// approvers, which the one press of a campaign card does not give (APR-16).
+func campaignTwoApprovers(cat *Catalog, cmp *campaignRow) bool {
+	if cmp.Rec.kind() != "action" {
+		return false
+	}
+	act, ok := cat.Actions[cmp.Rec.action()]
+	return ok && act.Approvals >= 2
 }
 
 // retryCampaign creates the campaign of "Retry failed": the failed, unknown and skipped items of

@@ -117,10 +117,34 @@ func tenantLocale(cat *Catalog, tenant string) string {
 }
 
 // replyLocale is the reply_locale of an attempt (DLV-18): the same order for the recipient of
-// the task result: its own locale (the bound chat for a request from a group chat, the
-// initiator otherwise), then the schedule's for a task of a schedule, the tenant's, en. The
-// model does not choose it.
+// the task result: for a task of a schedule its addresses (the locale of a bound chat among
+// them) and then the schedule's locale; otherwise the bound chat of a request from a group chat
+// or the initiator; then the tenant's, en. The model does not choose it.
 func (c *Core) replyLocale(ctx context.Context, tx pgx.Tx, cat *Catalog, tenant, task, initiator string, r treeRecord) (string, error) {
+	tl := tenantLocale(cat, tenant)
+	// A task of a schedule answers its addresses: the locale of the first bound chat among
+	// them that has one, then the schedule's.
+	if s, err := taskSchedule(ctx, tx, cat, tenant, task); err != nil {
+		return "", err
+	} else if s != nil {
+		own := ""
+		for _, x := range s.deliverTo {
+			addr, _ := x.(string)
+			kind, name, _ := strings.Cut(addr, ":")
+			if kind != "chat" {
+				continue
+			}
+			b, err := bindingByName(ctx, tx, tenant, name)
+			if err != nil {
+				return "", err
+			}
+			if b != nil && b.Locale != "" && slices.Contains(c.texts.Locales(), b.Locale) {
+				own = b.Locale
+				break
+			}
+		}
+		return c.pickLocale(own, s.locale, tl), nil
+	}
 	own := ""
 	var err error
 	if o := r.Origin; o != nil && o.Chat.Kind == "group" {
@@ -131,11 +155,5 @@ func (c *Core) replyLocale(ctx context.Context, tx pgx.Tx, cat *Catalog, tenant,
 	if err != nil {
 		return "", err
 	}
-	sched := ""
-	if s, err := taskSchedule(ctx, tx, cat, tenant, task); err != nil {
-		return "", err
-	} else if s != nil {
-		sched = s.locale
-	}
-	return c.pickLocale(own, sched, tenantLocale(cat, tenant)), nil
+	return c.pickLocale(own, tl), nil
 }
