@@ -1,0 +1,8 @@
+schema: spec/model/p2-incident-cause-request.schema.json
+rules: [MGR-8, GOV-38]
+description: 'incident.cause requests that the schema rejects: no cause, a cause outside the closed list, a free text next to the
+  code.'
+cases:
+  - {incident: inc_01JB8M00000000000000000318}
+  - {incident: inc_01JB8M00000000000000000318, cause: the provider was slow}
+  - {incident: inc_01JB8M00000000000000000318, cause: attack, details: someone from outside}

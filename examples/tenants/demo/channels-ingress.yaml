@@ -1,0 +1,25 @@
+# Source channel of tenant demo (from v0.2, profile ingress): the pipeline system signs its
+# webhooks with Standard Webhooks, and the webhook driver turns each authentic delivery into the
+# event ext.pipeline.run_failed.v1 (spec/bindings/channels/webhook.md, ING-1 to ING-4). The
+# deployment keeps the signing secret (whsec_...) and the driver's P2 secret; the service
+# principal hook:pipeline is created by the operator. The data holds only the mapped closed
+# fields; the rest of the body, the log text included, reaches a task only as an attachment.
+apiVersion: botaru/v1alpha1
+kind: Channel
+metadata: {name: pipeline, tenant: demo}
+spec:
+  driver: webhook
+  direction: in
+  identity_kind: hook
+  identity_assurance: strong
+  membership_assurance: none
+  ai_disclosure: native
+  provenance: metadata
+  ingress:
+    event: ext.pipeline.run_failed.v1
+    auth: signature
+    tolerance: 5m
+    limits: {per_minute: 60, max_body_bytes: 262144}
+    mapping:
+      run_id: {from: /run/id, schema: {type: string, x-botaru-format: id}}
+      status: {from: /run/status, schema: {enum: [failed, cancelled]}}

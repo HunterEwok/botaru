@@ -1,0 +1,9 @@
+schema: spec/manifests/catalog.schema.json
+rules: [HLD-9]
+description: 'A tenant catalog that would make the role hold for incident links looser: more than 3 links, a window shorter than
+  90 days or not in days, an unknown field.'
+cases:
+  - {role_incident_hold: {links: 4}}
+  - {role_incident_hold: {window: 30d}}
+  - {role_incident_hold: {window: 2160h}}
+  - {role_incident_hold: {links: 2, scope: tenant}}

@@ -13,6 +13,12 @@ spec:
   monitor_scripts: [nginx-cache-clear]     # names only from the catalog's monitor_scripts_allowed (MON-10)
   models: {base: base-std, analysis: analysis-std}
   memory: none
+  # From v0.2 (profile knowledge, SKL-2): the skill pinned by the tree hash of examples/skills/pipeline-tmp-cleanup/
+  # (spec/hashing.md: the files in path order as {path, sha256: "sha256:<hex>"}, hashed in the canonical form).
+  skills:
+    - name: pipeline-tmp-cleanup
+      description: How to decide whether the temporary files of the CTD pipeline may be cleaned up, and how to ask for the cleanup.
+      sha256: a6e18f6b3aadf98968046525a84feb2ebd0b24c3fab9b0ab7f3ece4029c7f0a6
   insight:                                 # weekly analysis of its own results (INS-1, INS-2, INS-4)
     types: [ops.insight.v1]
     observes: [farm.task.outcome, farm.task.attempts, farm.attempt.duration]

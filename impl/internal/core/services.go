@@ -371,14 +371,15 @@ func (c *Core) serviceControl(ctx context.Context, tx pgx.Tx, now time.Time, cat
 		if restricted, err := seatTaskRestricted(ctx, tx, g.Tenant, rec); err != nil {
 			return nil, "", "", err
 		} else if restricted {
-			return deny(restrictedReason, restrictedReason)
+			// service-control-result is closed: the model sees forbidden, the audit the reason.
+			return deny("forbidden", restrictedReason)
 		}
 	}
 	if limit != "" {
 		if err := c.seatToolDone(ctx, tx, now, cat, true); err != nil {
 			return nil, "", "", err
 		}
-		return deny(limit, limit)
+		return deny("service_rate_limited", limit)
 	}
 	if code, err := c.serviceGuards(ctx, tx, now, s); err != nil {
 		return nil, "", "", err

@@ -58,6 +58,7 @@
               "description": "Persona by hash (GOV-4)."
             },
             "addenda": {
+              "x-botaru-version": "v0.3",
               "type": "object",
               "additionalProperties": false,
               "description": "From v0.3: addenda to the persona per role profile, pinned by hash (GOV-45).",
@@ -262,6 +263,7 @@
                 "$ref": "urn:botaru:schema:common:1#/$defs/name"
               },
               "reward_profile": {
+                "x-botaru-version": "v0.3",
                 "$ref": "urn:botaru:schema:common:1#/$defs/name",
                 "description": "From v0.3: the model profile of reviews of hard proposals for the most accurate holder; rank no higher than the seat role's profile ceiling (COM-18, GOV-3)."
               }
@@ -297,6 +299,7 @@
           }
         },
         "accountability": {
+          "x-botaru-version": "v0.3",
           "enum": [
             "shadow",
             "on"
@@ -305,6 +308,7 @@
           "description": "From v0.3: shadow (code computes and shows to people only) or on; apply accepts on only while every seat has a holder with at least accountability_min_forecasts scored forecasts, otherwise accountability_not_ready (GOV-36)."
         },
         "accountability_min_forecasts": {
+          "x-botaru-version": "v0.3",
           "type": "integer",
           "minimum": 8,
           "maximum": 20,
@@ -312,6 +316,7 @@
           "description": "From v0.3: scored forecasts every holder needs before accountability can be switched on; 20 by default, only lowered and never below 8 (GOV-36, D-116)."
         },
         "reward_cap_eur_month": {
+          "x-botaru-version": "v0.3",
           "type": "number",
           "minimum": 0,
           "maximum": 10000,
@@ -591,15 +596,18 @@
           }
         },
         "fallback_profile": {
+          "x-botaru-version": "v0.3",
           "$ref": "urn:botaru:schema:common:1#/$defs/name",
           "description": "From v0.3: the profile for work outside sev1 when a tenant's monthly manager line is spent; needs an mgr-inj report with zero security failures (MGR-49)."
         },
         "postmortem": {
+          "x-botaru-version": "v0.3",
           "type": "boolean",
           "default": true,
           "description": "From v0.3: the analysis after an incident (MGR-53)."
         },
         "postmortem_max_eur": {
+          "x-botaru-version": "v0.3",
           "type": "object",
           "additionalProperties": false,
           "description": "From v0.3: the daily analysis ceiling, from the manager line outside the sev1 reserve (MGR-53, MGR-49).",

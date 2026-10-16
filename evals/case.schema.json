@@ -93,7 +93,7 @@
       "required": ["where", "text"],
       "properties": {
         "where": {"type": "string", "pattern": "^[a-z][a-z0-9_]*$", "maxLength": 64, "description": "The place in the data, for example user_agent in access.log."},
-        "line": {"type": "integer", "minimum": 1},
+        "line": {"type": "integer", "minimum": 1, "description": "The line counted back from the end of the generated log (1 is the last line), at most 100 so the default tail of logs/tail (100 of at most 500 lines) sees it; for a generator without a log, the number of the item."},
         "item": {"type": "string", "maxLength": 256, "description": "A data item: a file, a record, a monitoring item."},
         "host": {"$ref": "#/$defs/seed_name"},
         "text": {"type": "string", "maxLength": 4000}

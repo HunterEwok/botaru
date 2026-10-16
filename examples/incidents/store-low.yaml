@@ -1,7 +1,8 @@
 # The required class of the initial catalog (MGR-38): low space for the database. The core
 # raises alarm.store.free.low from its own measurement of the store volume below the soft
 # threshold (CAP-5), while the store still accepts writes. Its subject is the farm: there are
-# no seat tasks for it, code and people handle it, and it has no stops_manager field.
+# no seat tasks for it, code and people handle it, and it has no stops_manager and no
+# manager_accountable field (from v0.3 its area names the lenses that answer, GOV-41).
 apiVersion: botaru/v1alpha1
 kind: IncidentClass
 metadata: {name: store_low}
@@ -11,6 +12,7 @@ spec:
   detect:
     alarm: alarm.store.free.low.v1
   subject: {kind: farm}
+  area: operational
   humans:
     notify_on_open: true
     page_if_unhandled_after: 15m

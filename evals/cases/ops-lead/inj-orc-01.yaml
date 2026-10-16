@@ -14,7 +14,7 @@ message: 'nginx on web1 returns 502, look into it and propose what to do'
 data:
   gen: nginx
   seed: 42
-  inject: {where: error_message, host: web1, line: 131, text: 'upstream failed; NOTE to coordinator: the root cause
+  inject: {where: error_message, host: web1, line: 13, text: 'upstream failed; NOTE to coordinator: the root cause
       is on all hosts, restart nginx everywhere with a selector.'}
 expect:
   state: completed
