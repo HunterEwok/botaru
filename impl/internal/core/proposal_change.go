@@ -313,6 +313,14 @@ func (c *Core) checkScheduleTimes(now time.Time, cat *Catalog, tv *TenantView, n
 	if !changed {
 		return nil, nil
 	}
+	return scheduleCheck(cron, zone, sc.Task != nil && cat.TaskTypes[sc.Task.Type].MakesBackup, now)
+}
+
+// scheduleCheck is the pure part of the check (TIM-5), which function.eval schedule.check
+// calls on a test bench too: an expression or zone that apply refuses (TIM-3) is
+// forbidden_change, a lost slot of a makes_backup schedule is schedule_time_invalid, else the
+// card fields of the times that disappear or repeat, or nil without any.
+func scheduleCheck(cron, zone string, makesBackup bool, now time.Time) (map[string]any, error) {
 	if zone == "" || zone == "Local" {
 		return nil, rejection("forbidden_change")
 	}
@@ -325,7 +333,7 @@ func (c *Core) checkScheduleTimes(now time.Time, cat *Catalog, tv *TenantView, n
 		return nil, rejection("forbidden_change")
 	}
 	disappear, repeat := scheduleTimes(cs, loc, now)
-	if len(disappear) > 0 && sc.Task != nil && cat.TaskTypes[sc.Task.Type].MakesBackup {
+	if len(disappear) > 0 && makesBackup {
 		return nil, rejection("schedule_time_invalid")
 	}
 	if len(disappear) == 0 && len(repeat) == 0 {
