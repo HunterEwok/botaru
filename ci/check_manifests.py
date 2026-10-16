@@ -1409,7 +1409,7 @@ def lint_charter_bounds(tenant, gname, where, gs, f):
         if sid in seen:
             f.error('charter_seat_twice', where, f'charter {gname}: seat {sid} is declared twice (GOV-33)')
         seen.add(sid)
-    if tenant != 'farm' and 'farm_manager' in gs:
+    if tenant != 'farm' and gname != 'farm' and 'farm_manager' in gs:
         f.error('charter_farm_manager', where, f'charter {gname}: only the farm charter declares the manager seat (GOV-33)')
     for block, field, floor in CHARTER_FLOORS:
         v = (gs.get(block) or {}).get(field)
