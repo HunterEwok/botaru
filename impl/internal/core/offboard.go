@@ -57,7 +57,7 @@ func (c *Core) offboard(ctx context.Context, tx pgx.Tx, now time.Time, tv *Tenan
 	}
 	// The event names only the opaque principal id (LCY-3).
 	if err := c.appendEvent(ctx, tx, now, tv.Name, Event{Type: "principal.offboarded.v1", Subject: subject,
-		Data: map[string]any{"subject": "human:" + subject, "erasure": erasure}}); err != nil {
+		Data: map[string]any{"subject": subject, "erasure": erasure}}); err != nil {
 		return "", 0, err
 	}
 	n, err := c.planPrincipalLeft(ctx, tx, now, tv, subject, "offboarding")

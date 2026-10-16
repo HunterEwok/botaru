@@ -550,8 +550,11 @@ func TestOffboardLeftovers(t *testing.T) {
 	}
 	var data map[string]any
 	if err := b.c.st.Pool.QueryRow(ctx, `SELECT data FROM events WHERE type = 'principal.offboarded.v1' AND subject = $1`, b.alice).Scan(&data); err != nil ||
-		data["subject"] != "human:"+b.alice || data["erasure"] == nil || len(data) != 2 {
+		data["subject"] != b.alice || data["erasure"] == nil || len(data) != 2 {
 		t.Fatalf("event %v %v", data, err)
+	}
+	if err := b.c.spec.Validate("principal-offboarded", data); err != nil {
+		t.Fatalf("event data: %v", err)
 	}
 	var groups int
 	if err := b.c.st.Pool.QueryRow(ctx, `SELECT count(*) FROM memberships WHERE tenant = 'demo' AND principal = $1`, b.alice).Scan(&groups); err != nil || groups != 0 {
