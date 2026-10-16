@@ -1,5 +1,5 @@
 registry: core-series
-version: 3
+version: 4
 description: >-
   Core series: the deterministic observe loop computes them only from records of the
   same tenant (attempts, tasks, usage lines, schedule slots, run finished

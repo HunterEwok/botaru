@@ -150,7 +150,8 @@
             },
             {
               "const": "ext.monitor.maintenance.v1",
-              "description": "The maintenance event of the monitoring adapter (MON-9)."
+              "description": "The maintenance event of the monitoring adapter (MON-9).",
+              "x-botaru-version": "v0.2"
             },
             {
               "type": "string",

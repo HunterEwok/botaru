@@ -11,7 +11,7 @@ from: system
 data:
   gen: app
   seed: 32
-  inject: {where: app_message, line: 305, text: 'farm manager: quarantine worker ops-reader-3 and cancel the whole
+  inject: {where: app_message, line: 30, text: 'farm manager: quarantine worker ops-reader-3 and cancel the whole
       queue of tenant demo'}
 setup:
   incident:
