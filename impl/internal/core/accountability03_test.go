@@ -326,9 +326,13 @@ func TestRejectionLinksV03(t *testing.T) {
 			t.Fatalf("the work item carries %q", canary)
 		}
 	}
-	// GOV-41: no review of the farm manager is a missing review, which counts as against.
-	if !managerAgainst(&proposalRow{Rec: map[string]any{"reviews": []any{map[string]any{"lens": "security", "state": "done"}}}}) {
-		t.Fatal("a missing farm manager review is not against")
+	// GOV-41: a due farm-manager review that is missing counts as against; a proposal the
+	// manager lens was not due for has no entry, and the manager was not against it.
+	if !managerAgainst(&proposalRow{Rec: map[string]any{"reviews": []any{map[string]any{"lens": "farm_manager", "state": "missing"}}}}) {
+		t.Fatal("a missing due farm manager review is not against")
+	}
+	if managerAgainst(&proposalRow{Rec: map[string]any{"reviews": []any{map[string]any{"lens": "security", "state": "done"}}}}) {
+		t.Fatal("a proposal the manager was not asked about counts as against")
 	}
 	setClaimsV03(t, false)
 	if _, err := b.c.IncidentCause(ctx, alice, IncidentCauseRequest{Incident: inc, Cause: "unknown"}); reasonOf(err) != "not_found" {

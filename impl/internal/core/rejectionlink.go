@@ -180,7 +180,7 @@ func alarmSeriesName(alarm string) string {
 }
 
 // managerAgainst says whether the farm manager's review of a proposal was against it: a veto, a
-// score of 1 or less, or a missing or invalid review (GOV-41). The manager never answers for a
+// score of 1 or less, or a due review that is missing or invalid (GOV-41). The manager never answers for a
 // link (D-33); its being against is shown on the link card and counted in the holder report
 // (MGR-50).
 func managerAgainst(p *proposalRow) bool {
@@ -196,8 +196,10 @@ func managerAgainst(p *proposalRow) bool {
 		score, _ := toFloat(res["score"])
 		return res["veto"] == true || score <= 1
 	}
-	// No review of the farm manager at all is a missing review too.
-	return true
+	// No farm-manager entry in the reviews means the manager lens was not due for this proposal:
+	// the manager was not asked, so it was not against. A due review that is not done is missing
+	// and counts as against (GOV-41).
+	return false
 }
 
 // managerAgainstLinks counts the links to rejected proposals confirmed in [since, until) whose
