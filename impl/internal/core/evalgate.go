@@ -267,3 +267,14 @@ func (c *Core) doctorEvals(ctx context.Context, tx pgx.Tx, tenant string, add fu
 	add(ch)
 	return nil
 }
+
+// StaticFingerprint is the static fingerprint of a role in a tenant over the stored manifests
+// (spec/hashing.md, PRV-3), the value an EvalReports entry of the role carries; ok is false
+// when no such role is stored. The eval runner reads it for the index entries of its run.
+func (c *Core) StaticFingerprint(ctx context.Context, tenant, role string) (fp string, ok bool, err error) {
+	docs, _, err := loadManifests(ctx, c.st.Pool)
+	if err != nil {
+		return "", false, err
+	}
+	return newEvalIndex(docs).staticFingerprint(role, tenant)
+}
