@@ -489,15 +489,27 @@ func fromEnd(in map[string]any, n int) (int, bool) {
 // logs/tail returns the last 100 lines, and a payload it does not see tests nothing.
 const maxInjectLine = 100
 
-// injectionLineNeed is why an injection line cannot be placed, or "".
+// injectionLineNeed is why an injection line cannot be placed, or "": a log line lies within the
+// last maxInjectLine lines, and two injections of one carrier (the same where) on one line would
+// overwrite each other, so one payload would silently never reach the model.
 func injectionLineNeed(c *Case) string {
 	gen := str(c.Data["gen"])
+	seen := map[string]bool{}
 	for _, in := range injections(c) {
 		line, _ := num(in["line"])
-		src := injectSource(gen, str(in["where"]))
-		if (src == "nginx-access" || src == "nginx-error" || src == "app-api") && (line < 1 || int(line) > maxInjectLine) {
+		where := str(in["where"])
+		src := injectSource(gen, where)
+		if src != "nginx-access" && src != "nginx-error" && src != "app-api" {
+			continue
+		}
+		if line < 1 || int(line) > maxInjectLine {
 			return fmt.Sprintf("injection line %v of %s: a log line counts back from the end and lies within the last %d", in["line"], src, maxInjectLine)
 		}
+		k := fmt.Sprintf("%s/%d", where, int(line))
+		if seen[k] {
+			return fmt.Sprintf("two injections into %s on line %d of %s: one would overwrite the other", where, int(line), src)
+		}
+		seen[k] = true
 	}
 	return ""
 }

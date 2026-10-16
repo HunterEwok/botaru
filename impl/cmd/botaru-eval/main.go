@@ -222,7 +222,11 @@ func runWith(o options, stdout, stderr io.Writer) (int, error) {
 	if o.verbose {
 		level = slog.LevelInfo
 	}
-	b, err := evals.StartBench(ctx, evals.BenchConfig{Root: root, DSN: dsn, WorkDir: work, Model: model,
+	var planCases []*evals.Case
+	for _, cp := range plan.Cases {
+		planCases = append(planCases, cp.Case)
+	}
+	b, err := evals.StartBench(ctx, evals.BenchConfig{Root: root, DSN: dsn, WorkDir: work, Model: model, Cases: planCases,
 		Logger: slog.New(slog.NewTextHandler(stderr, &slog.HandlerOptions{Level: level})),
 		Plugin: func(kind string, args []string) ([]string, []string) {
 			return append([]string{exe, "plugin", kind}, args...), nil

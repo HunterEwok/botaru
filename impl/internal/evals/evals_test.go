@@ -132,6 +132,21 @@ func TestGenerators(t *testing.T) {
 			t.Fatalf("address %s outside the documentation ranges", ip)
 		}
 	}
+	// Two payloads of one carrier on one line would overwrite each other: not run.
+	dup := &Case{Data: map[string]any{"gen": "nginx", "inject": []any{
+		map[string]any{"where": "user_agent", "line": 5, "text": "a"}, map[string]any{"where": "user_agent", "line": 5, "text": "b"}}}}
+	if need := injectionLineNeed(dup); !strings.Contains(need, "overwrite") {
+		t.Fatalf("duplicate injection line: %q", need)
+	}
+	dup.Data["inject"] = []any{map[string]any{"where": "user_agent", "line": 5, "text": "a"}, map[string]any{"where": "request_path", "line": 5, "text": "/b"}}
+	if need := injectionLineNeed(dup); need != "" {
+		t.Fatalf("two fields of one line: %q", need)
+	}
+	dup.Data["inject"] = map[string]any{"where": "app_message", "line": 101, "text": "a"}
+	dup.Data["gen"] = "app"
+	if need := injectionLineNeed(dup); !strings.Contains(need, "within the last 100") {
+		t.Fatalf("line 101: %q", need)
+	}
 	app, err := Generate(t.TempDir(), "app", 7, now, genOptions{})
 	if err != nil || app.Answers["count_restarts_app_api"] == nil {
 		t.Fatalf("app: %v %v", err, app)
@@ -188,6 +203,10 @@ func TestBenchRuns(t *testing.T) {
 	claim := conform.Claim{Version: "v0.1", Profiles: []string{"core"}}
 	p, pr, th := testPlan(t, root, claim, Filter{IDs: ids})
 	hp3, _, _ := testPlan(t, root, claim, Filter{IDs: []string{"hello-001", "hello-002", "hello-003"}})
+	var cases []*Case
+	for _, cp := range p.Cases {
+		cases = append(cases, cp.Case)
+	}
 	status := func(rep *Report) map[string]*Result {
 		m := map[string]*Result{}
 		for _, r := range rep.Results {
@@ -197,7 +216,7 @@ func TestBenchRuns(t *testing.T) {
 	}
 
 	t.Run("mock", func(t *testing.T) {
-		b, err := StartBench(t.Context(), BenchConfig{Root: root, DSN: pgtest.DSN(t), WorkDir: t.TempDir(), Plugin: testPlugin})
+		b, err := StartBench(t.Context(), BenchConfig{Root: root, DSN: pgtest.DSN(t), WorkDir: t.TempDir(), Plugin: testPlugin, Cases: cases})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -226,7 +245,7 @@ func TestBenchRuns(t *testing.T) {
 		mp := mockprovider.New(&mockprovider.Scenario{})
 		srv := httptest.NewServer(mp)
 		defer srv.Close()
-		b, err := StartBench(t.Context(), BenchConfig{Root: root, DSN: pgtest.DSN(t), WorkDir: t.TempDir(), Plugin: testPlugin,
+		b, err := StartBench(t.Context(), BenchConfig{Root: root, DSN: pgtest.DSN(t), WorkDir: t.TempDir(), Plugin: testPlugin, Cases: cases,
 			Model: ModelConfig{Real: true, BaseURL: srv.URL, Key: "test-key"}})
 		if err != nil {
 			t.Fatal(err)

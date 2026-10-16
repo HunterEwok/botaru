@@ -66,6 +66,9 @@ type BenchConfig struct {
 	// arguments): the program, its arguments and its environment.
 	Plugin func(kind string, args []string) ([]string, []string)
 	Logger *slog.Logger
+	// Cases are the cases of the run plan (active and in version for the claim). A person who
+	// sends one of them that checks the first contact (DLV-12) is not confirmed through /me.
+	Cases []*Case
 }
 
 // benchRoles are the roles the bench sets up, with their example manifests: the first bot and
@@ -454,22 +457,25 @@ var reCode = regexp.MustCompile(`\b[0-9]{8}\b`)
 // confirmPending activates the pending privileged seed groups the way an operator does (PRM-13):
 // the person sends /me in their direct chat and reads the verification code in the reply, and
 // the operator repeats the grant with that code. The bench writes no membership itself. A
-// person who sends a first-contact case (DLV-12) is left pending, since /me would be the first
-// contact that case checks; such a person's groups count as ungranted.
+// person who sends a first-contact case (DLV-12) of the run plan is left pending, since /me
+// would be the first contact that case checks; such a person's groups count as ungranted.
 func (b *Bench) confirmPending(ctx context.Context) error {
-	cases, err := LoadCases(b.cfg.Root)
-	if err != nil {
-		return err
-	}
 	firstContact := map[string]string{}
-	for _, c := range cases {
+	others := map[string][]string{}
+	for _, c := range b.cfg.Cases {
 		if slices.Contains(c.Rules, "DLV-12") {
 			firstContact[c.From] = c.ID
+		} else {
+			others[c.From] = append(others[c.From], c.ID)
 		}
 	}
 	for _, name := range slices.Sorted(mapKeys(b.pendingGroups)) {
 		gs := b.pendingGroups[name]
 		if id := firstContact[name]; id != "" {
+			if len(others[name]) > 0 {
+				b.cfg.Logger.Warn("seed: privileged groups left pending for a first contact case, but the person also sends other cases of the run",
+					"person", name, "groups", gs, "first_contact", id, "other_cases", others[name])
+			}
 			b.ungranted[name], b.ungrantedWhy[name] = gs, "privileged seed groups "+strings.Join(gs, ", ")+" stay pending (PRM-13): their code would come from /me, the first contact "+id+" checks"
 			continue
 		}
