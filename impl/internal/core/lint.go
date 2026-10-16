@@ -815,10 +815,10 @@ func (c *Core) lintManifests(docs []manifest.Doc, index []int, personas personaL
 				}
 			}
 			if sub != nil {
-				if mmap(prof, "provider_human_review")["value"] == "yes" {
-					if hr := mstr(mmap(sub, "terms"), "human_review"); hr == "none" || hr == "abuse_only" {
-						f.add(o, "provider_human_review", path)
-					}
+				// Review by the provider's people no higher than the terms allow: none, then
+				// abuse_only, then yes (GW-15).
+				if hr := mstr(mmap(sub, "terms"), "human_review"); hr != "" && humanReviewOrder(mstr(mmap(prof, "provider_human_review"), "value")) > humanReviewOrder(hr) {
+					f.add(o, "provider_human_review", path)
 				}
 				ret := mmap(sub, "retention")
 				if mstr(ret, "mode") == "zero" && truthy(prof["requires_retention"]) {
@@ -828,6 +828,12 @@ func (c *Core) lintManifests(docs []manifest.Doc, index []int, personas personaL
 				maxDays, _ := mnum(ret, "max_days")
 				if mstr(ret, "mode") == "standard" && hasDays && days > maxDays {
 					f.add(o, "provider_retention", path)
+				}
+				// A production tenant whose allowed profile calls a provider in a region outside
+				// the EU needs its own transfer basis for the provider or the region (GW-14,
+				// D-87 (2)).
+				if k := mstr(ts, "kind"); (k == "" || k == "production") && nonEURegion(mstr(sub, "region")) && !transferBasis(ts, mstr(sub, "provider"), mstr(sub, "region")) {
+					f.add(o, "transfer_basis_missing", path)
 				}
 			}
 		}
@@ -2064,6 +2070,49 @@ func governanceName(n string, incidents bool) bool {
 	return incidents && strings.HasPrefix(n, "incident.")
 }
 
+// charterFloors are the durations of a tenant charter that only rise from their default, and
+// charterCeilings the counts that only fall from it (GOV-33). The schema bounds the counts and
+// the audit sample; the durations are strings it cannot compare.
+var charterFloors = []struct {
+	block, field string
+	def          time.Duration
+}{
+	{"promotion", "probation", govProbation}, {"promotion", "min_tenure", govMinTenure}, {"promotion", "swap_cooldown", govSwapCooldown},
+	{"removal", "protect_new", 60 * 24 * time.Hour}, {"attribution", "window", defaultAttributionWindow},
+	{"confirmation", "ttl", 7 * 24 * time.Hour}, {"identity", "unbound_ttl", defaultUnboundTTL}, {"memory", "seal_ttl", defaultSealTTL},
+}
+
+// lintCharterBounds checks what the schema of a charter cannot (GOV-33): a seat id declared
+// twice, the farm_manager block outside the farm charter, a duration below its default, the
+// excluded change kinds without none, and in the farm charter a decide_within above 7 days.
+func lintCharterBounds(o lintObj, f *lintFindings) {
+	seen := map[string]bool{}
+	for i, sv := range mlist(mmap(o.spec, "commission"), "seats") {
+		sm, _ := sv.(map[string]any)
+		id := fmt.Sprint(sm["id"])
+		if seen[id] {
+			f.add(o, "charter_seat_twice", fmt.Sprintf("/commission/seats/%d/id", i))
+		}
+		seen[id] = true
+	}
+	if o.tenant != farmTenant && o.spec["farm_manager"] != nil {
+		f.add(o, "charter_farm_manager", "/farm_manager")
+	}
+	for _, fl := range charterFloors {
+		v := mstr(mmap(o.spec, fl.block), fl.field)
+		if d, ok := parseDuration(v); v != "" && (!ok || d < fl.def) {
+			f.add(o, "charter_direction", "/"+fl.block+"/"+fl.field)
+		}
+	}
+	if p := mmap(o.spec, "promotion"); p["exclude_change_kinds"] != nil && !slices.Contains(strList(p["exclude_change_kinds"]), "none") {
+		f.add(o, "charter_direction", "/promotion/exclude_change_kinds")
+	}
+	v := mstr(mmap(mmap(o.spec, "farm_manager"), "incident_stop"), "decide_within")
+	if d, ok := parseDuration(v); v != "" && (!ok || d > 7*24*time.Hour) {
+		f.add(o, "charter_direction", "/farm_manager/incident_stop/decide_within")
+	}
+}
+
 // lintGovernance checks the personas of the charters (GOV-4, COM-19), the unawareness of the
 // texts bots read (GOV-29) and that nothing of a bot refers to governance (GOV-6, GOV-13).
 func (c *Core) lintGovernance(S *lintSet, f *lintFindings, personas personaLookup) error {
@@ -2079,6 +2128,7 @@ func (c *Core) lintGovernance(S *lintSet, f *lintFindings, personas personaLooku
 				f.add(o, "lens_persona_missing", fmt.Sprintf("/commission/seats/%d/lens", i))
 			}
 		}
+		lintCharterBounds(o, f)
 		// From v0.3 the size of a persona counts with its addenda (GOV-45).
 		v03 := claimsV03()
 		refs := charterPersonas(o.spec, v03)
@@ -2259,4 +2309,22 @@ func managerLineShort(ts, farmManager, seatProfile map[string]any) []string {
 		}
 	}
 	return out
+}
+
+// nonEURegion says whether a subprocessor region is one of the regions outside the EU of the
+// provider binding's table (spec/bindings/model-providers/anthropic.md "Region": us and
+// global); the test regions of the examples are not in it.
+func nonEURegion(region string) bool { return region == "us" || region == "global" }
+
+// transferBasis says whether the tenant spec has a model_transfer entry for the provider (all
+// its regions or this one) or for the region without a provider (GW-14, D-87 (2)).
+func transferBasis(ts map[string]any, provider, region string) bool {
+	for _, e := range mlist(ts, "model_transfer") {
+		em, _ := e.(map[string]any)
+		p, r := mstr(em, "provider"), mstr(em, "region")
+		if p == provider && (r == "" || r == region) || p == "" && r == region {
+			return true
+		}
+	}
+	return false
 }

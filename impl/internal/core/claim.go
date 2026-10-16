@@ -1139,6 +1139,9 @@ func (c *Core) claimDelivery(ctx context.Context, tx pgx.Tx, now time.Time, cat 
 		b = cardBody
 	}
 	d := map[string]any{"id": id, "kind": kind, "to": addr, "body": b}
+	// Implementation extension (MAN-3): the origin mark of the delivery, which the channel
+	// passes the way its driver declares and a sink writes as ai_generated (DLV-13).
+	d["dataorigin"] = origin
 	if replacesID != "" {
 		d["replaces_external_id"] = replacesID
 	}

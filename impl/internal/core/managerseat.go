@@ -679,7 +679,7 @@ func (c *Core) enqueueIncidentTask(ctx context.Context, tx pgx.Tx, now time.Time
 	body := map[string]any{"type": incidentRespondType, "goal": "Respond to the incident.", "params": map[string]any{"input": incidentView(ic, r)}}
 	sev := mstr(r.Record, "severity")
 	res, err := c.enqueue(ctx, tx, now, cat, enqueueInput{Tenant: r.Tenant, Type: incidentRespondType, Body: body,
-		IdempotencyKey: "incident:" + r.ID + ":" + strconv.FormatInt(r.Episode, 10), Initiator: "system", EnqueuedBy: "system:incident",
+		IdempotencyKey: "system:incident:" + r.ID + ":" + strconv.FormatInt(r.Episode, 10), Initiator: "system", EnqueuedBy: "system:incident",
 		Source: seatSource, SourceID: r.ID, Priority: 1, Sev1: sev == "sev1"})
 	if err != nil {
 		return err

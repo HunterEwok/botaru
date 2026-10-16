@@ -791,7 +791,9 @@ func (c *Core) endAttempt(ctx context.Context, tx pgx.Tx, now time.Time, tenant 
 		l.WorkID, l.LeaseNo).Scan(&answered); err != nil {
 		return nil, err
 	}
-	if answered {
+	// A lease that ran out during core downtime is an infrastructure failure: no run counts
+	// (FEN-5).
+	if answered && reason != "core_unavailable" {
 		var runs int
 		if err := tx.QueryRow(ctx, `UPDATE tasks SET runs_counted = runs_counted + 1 WHERE id = $1 RETURNING runs_counted`, l.WorkID).Scan(&runs); err != nil {
 			return nil, err
@@ -818,6 +820,10 @@ func (c *Core) endAttempt(ctx context.Context, tx pgx.Tx, now time.Time, tenant 
 		runAt := now.Add(backoff(tt.Retry.Backoff, spent))
 		if ra := now.Add(time.Duration(retryAfterS) * time.Second); ra.After(runAt) {
 			runAt = ra
+		}
+		// After core downtime the task returns to submitted without a pause (FEN-5).
+		if reason == "core_unavailable" {
+			runAt = now
 		}
 		if deadline == nil || runAt.Before(*deadline) {
 			if err := c.requeue(ctx, tx, now, l, runAt); err != nil {
@@ -930,6 +936,12 @@ func (c *Core) endDelivery(ctx context.Context, tx pgx.Tx, now time.Time, tenant
 	// A script runs at most once: any end of its delivery ends the call, by the reason (MON-10,
 	// APR-7).
 	if kind == "monitor_script" {
+		// A lease that ended without an outcome, by expiry, core downtime or a drain, leaves
+		// the run unknown: the delivery is dead with exec_unknown and is not retried (DLV-1).
+		switch reason {
+		case "lease_expired", "core_unavailable", "worker_drain":
+			reason = "exec_unknown"
+		}
 		if _, err := tx.Exec(ctx, `UPDATE deliveries SET state = 'dead', reason = $2, updated_at = $3 WHERE id = $1`, l.WorkID, reason, now); err != nil {
 			return nil, err
 		}
@@ -965,6 +977,17 @@ func (c *Core) endDelivery(ctx context.Context, tx pgx.Tx, now time.Time, tenant
 			}
 		}
 		return &FailResult{Final: true, Reason: reason}, nil
+	}
+	// A lease that ran out during core downtime returns the delivery to planned at once,
+	// without spending its attempt (FEN-5).
+	if reason == "core_unavailable" {
+		if _, err := tx.Exec(ctx, `UPDATE deliveries SET attempts = greatest(attempts - 1, 0) WHERE id = $1`, l.WorkID); err != nil {
+			return nil, err
+		}
+		if err := c.requeue(ctx, tx, now, l, now); err != nil {
+			return nil, err
+		}
+		return &FailResult{RetryAt: fmtTime(now), Final: false}, nil
 	}
 	// The export of an alarm change or of the audit head does not die by attempt count: it is
 	// retried with a pause of at most 10 minutes until it is exported (MON-11).
