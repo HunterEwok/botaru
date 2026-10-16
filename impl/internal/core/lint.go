@@ -1776,6 +1776,8 @@ func (c *Core) lintManifests(docs []manifest.Doc, index []int, personas personaL
 			}
 		}
 	}
+	// Source channels and routes on events (ING-1, ING-3, ING-4, INJ-7).
+	c.lintIngress(S, f)
 	if err := c.lintGovernance(S, f, personas); err != nil {
 		return nil, err
 	}

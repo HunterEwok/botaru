@@ -749,7 +749,14 @@ func (c *Core) problemSignal(ctx context.Context, w *Worker, cat *Catalog, data 
 		if tag.RowsAffected() == 0 {
 			return nil
 		}
-		if err := c.appendEvent(ctx, tx, now, w.Tenant, Event{Type: "ext.monitor.problem.v1", Subject: key, Data: m}); err != nil {
+		src := "botaru:core/" + w.Tenant
+		evID, err := c.appendEventFrom(ctx, tx, now, w.Tenant, src, Event{Type: "ext.monitor.problem.v1", Subject: key, Data: m})
+		if err != nil {
+			return err
+		}
+		// A route on the problem enqueues a job of system-ops that rechecks it in code (ING-4,
+		// MON-5, PRM-10).
+		if err := c.eventRoutes(ctx, tx, now, cat, w.Tenant, routedEvent{Type: "ext.monitor.problem.v1", ID: evID, Source: src, Subject: key, Data: m}); err != nil {
 			return err
 		}
 		subject := AlarmSubject{Kind: "resource", ID: strings.ToLower(host.ID)}

@@ -194,6 +194,16 @@ func (c *Core) FilePut(ctx context.Context, w *Worker, lease string, ob *OnBehal
 				return refuse("not_ready", "send hello first")
 			}
 			ch, ok := tv.Channels[w.Target]
+			if ok && ch.Direction == "in" {
+				// A source channel puts the body of a delivery on behalf of its hook:<source>
+				// (ING-2); the file is untrusted as every file (ART-2).
+				hook, err := c.sourceFilePut(ctx, tx, now, w.Tenant, ch, ob, len(content))
+				if err != nil {
+					return err
+				}
+				origin, producer, mark = "upload", hook, c.higherMark(defaultAttachmentClass, req.DataMark)
+				break
+			}
 			if !ok || ch.IdentityKind == "" || !strings.HasPrefix(ob.Identity, ch.IdentityKind+":") {
 				return refuse("forbidden", "the identity kind does not match the channel driver")
 			}

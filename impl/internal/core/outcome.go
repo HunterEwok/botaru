@@ -499,6 +499,15 @@ func (c *Core) completeAttempt(ctx context.Context, tx pgx.Tx, now time.Time, w 
 		}
 		return c.deliverScheduled(ctx, tx, now, cat, w.Tenant, l.WorkID, name, tt, result, record.DataMark)
 	}
+	// So does a task of the tree of a route on an event to the route's deliver_to (DLV-6).
+	if addrs, err := eventRouteAddrs(ctx, tx, cat, w.Tenant, record.treeRecord, l.WorkID); err != nil {
+		return err
+	} else if addrs != nil {
+		if record.child() {
+			return nil
+		}
+		return c.deliverResultTo(ctx, tx, now, cat, cat.Tenants[w.Tenant], l.WorkID, addrs, tt, result, record.DataMark)
+	}
 	if !record.reportsToOrigin() {
 		return nil
 	}

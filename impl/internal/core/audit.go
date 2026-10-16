@@ -246,21 +246,29 @@ type Event struct {
 
 // appendEvent writes an event; the core sets source and id (IDM-4).
 func (c *Core) appendEvent(ctx context.Context, tx pgx.Tx, now time.Time, tenant string, e Event) error {
+	_, err := c.appendEventFrom(ctx, tx, now, tenant, "botaru:core/"+tenant, e)
+	return err
+}
+
+// appendEventFrom writes an event of a source the core names, such as a source channel
+// (ING-4), and returns its id; the core sets source and id (IDM-4).
+func (c *Core) appendEventFrom(ctx context.Context, tx pgx.Tx, now time.Time, tenant, source string, e Event) (string, error) {
 	data := e.Data
 	if data == nil {
 		data = map[string]any{}
 	}
 	raw, err := json.Marshal(data)
 	if err != nil {
-		return err
+		return "", err
 	}
 	corr, cause, err := eventCause(ctx, tx, e)
 	if err != nil {
-		return err
+		return "", err
 	}
+	id := ids.New(ids.Event)
 	_, err = tx.Exec(ctx, `INSERT INTO events (id, tenant, type, source, subject, time, data, correlationid, causationid) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
-		ids.New(ids.Event), tenant, e.Type, "botaru:core/"+tenant, nullable(e.Subject), now, raw, nullable(corr), nullable(cause))
-	return err
+		id, tenant, e.Type, source, nullable(e.Subject), now, raw, nullable(corr), nullable(cause))
+	return id, err
 }
 
 // eventCause gives an event its correlationid, the id of the root of the task tree, and its
