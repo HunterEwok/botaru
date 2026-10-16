@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"math"
+	"slices"
 	"strings"
 	"time"
 
@@ -176,6 +177,11 @@ func (c *Core) Heartbeat(ctx context.Context, w *Worker, header string, req Hear
 			if cat, err := c.Catalog(ctx); err == nil {
 				if d, ok := parseDuration(cat.TaskTypes[typ].Timeouts.Lease); ok {
 					leaseS = int(d / time.Second)
+				}
+				// Progress is only a status from a closed list: a stage outside the stages of
+				// the type is refused, and a type without stages has none (DLV-11).
+				if st := cat.TaskTypes[typ].Stages; req.Stage != "" && !slices.Contains(st, req.Stage) {
+					return nil, refuse("input_schema_invalid", "stage %q is not a stage of %s", req.Stage, typ)
 				}
 			}
 			leaseS = min(leaseS, maxLeaseS)

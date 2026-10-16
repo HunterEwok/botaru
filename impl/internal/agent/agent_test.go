@@ -46,6 +46,11 @@ func TestPurgeOutcome(t *testing.T) {
 	if o := purgeOutcome(json.RawMessage(`{"op":"erase","scope":{"tenant":"demo"}}`)); o["outcome"] != "done" || o["ids"] != nil {
 		t.Errorf("erase %v", o)
 	}
+	// MEM-9: the purge of a retired identity names it in scope.bot; this runtime keeps no
+	// session of any identity, so it touches nothing of a successor on the same worker.
+	if o := purgeOutcome(json.RawMessage(`{"op":"erase","reason":"bot_retired","scope":{"tenant":"demo","bot":"bot_01JB00000000000000000000A1"}}`)); o["outcome"] != "done" || o["ids"] != nil {
+		t.Errorf("bot purge %v", o)
+	}
 	if o := purgeOutcome(json.RawMessage(`{"op":"match","needles":["x"]}`)); o["outcome"] != "done" || o["ids"] == nil {
 		t.Errorf("match %v", o)
 	}

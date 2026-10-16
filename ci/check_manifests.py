@@ -322,6 +322,53 @@ def non_eu_regions():
 NON_EU = non_eu_regions()
 
 
+def binding_regions():
+    """{provider: every region of the "Region" table} of the notes spec/bindings/model-providers/<provider>.md (GW-14).
+
+    A provider without a note (the test providers of the examples) or without the section has no entry.
+    """
+    out = {}
+    d = os.path.join(ROOT, 'spec', 'bindings', 'model-providers')
+    for fn in sorted(os.listdir(d)) if os.path.isdir(d) else []:
+        if not fn.endswith('.md') or fn in ('README.md', 'mock.md'):
+            continue
+        inside, regs, seen = False, set(), False
+        for line in read(os.path.join(d, fn)).split('\n'):
+            if line.startswith('## '):
+                inside = line.strip() == '## Region'
+                seen = seen or inside
+                continue
+            if inside and line.startswith('| `'):
+                regs.add(line.split('`')[1])
+        if seen:
+            out[fn[:-3]] = regs
+    return out
+
+
+BINDING_REGIONS = binding_regions()
+
+# The fields of the privacy block that a production tenant may not leave empty (SEC-8): subject_request_days
+# has a default and export_sink is optional; dpia_ref may be an explicit none. subprocessors is required only
+# for a tenant with providers_allowed (without one P4 calls no provider for it), channels only for a tenant
+# with a channel: an empty list is then the true state, not an empty field.
+PRIVACY_REQUIRED = ('purposes', 'controller', 'subprocessors', 'recipients', 'notice_ref', 'notice_version', 'channels',
+                    'dpia_ref', 'ropa_ref')
+# The fields of the block whose change needs a higher notice_version (SEC-13).
+NOTICE_FIELDS = ('controller', 'purposes', 'subprocessors', 'recipients')
+
+
+def privacy_gaps(priv, models, channels):
+    """The JSON pointers below privacy of the empty fields of the block (SEC-8, docs/operations.md)."""
+    need = [k for k in PRIVACY_REQUIRED if (k != 'subprocessors' or models) and (k != 'channels' or channels)]
+    out = [f'/{k}' for k in need if priv.get(k) in (None, '', [], {})]
+    ctl = priv.get('controller') or {}
+    if ctl:
+        out += [f'/controller/{k}' for k in ('name', 'contact', 'agreement_ref') if not ctl.get(k)]
+    for i, sp in enumerate(priv.get('subprocessors') or []):
+        out += [f'/subprocessors/{i}/{k}' for k in ('agreement_ref', 'region', 'retention') if not sp.get(k)]
+    return out
+
+
 def farm_hosts_default():
     p = os.path.join(EXAMPLES, 'deploy', 'farm.yaml')
     if os.path.exists(p):
@@ -695,6 +742,16 @@ def lint(docs, today=None, farm_hosts=None, examples_mode=False, claimed=None, s
             f.error('recipients_monitoring', where, 'privacy.recipients has no monitoring while the monitor profile is claimed '
                     'or the claimed profiles are unknown (MON-1)')
         subs = {s['provider']: s for s in priv.get('subprocessors', [])}
+        # a production tenant has no empty field of the privacy block, and every allowed provider of any tenant
+        # is a subprocessor, so a fallback model cannot add a new one without a decision (SEC-8)
+        if ts.get('kind', 'production') == 'production':
+            models = bool(ts.get('providers_allowed'))
+            channels = any(t == tname for t, _, _, _ in S.each('Channel'))
+            for ptr in privacy_gaps(priv, models, channels):
+                f.error('privacy_incomplete', where, f'tenant {tname}: privacy{ptr} is empty in a production tenant (SEC-8)')
+        for p in ts.get('providers_allowed', []):
+            if p not in subs:
+                f.error('subprocessor_undeclared', where, f'providers_allowed: provider {p} is not in privacy.subprocessors (SEC-8)')
         for mp in ts.get('models_allowed', []):
             prof = profiles.get(mp)
             if prof is None:
@@ -716,6 +773,9 @@ def lint(docs, today=None, farm_hosts=None, examples_mode=False, claimed=None, s
                 f.error('transfer_basis_missing', where,
                         f'profile {mp}: provider {prof["provider"]} with region {sub.get("region")} outside the EU for a production tenant '
                         'without a spec.model_transfer record (GW-14, D-87 (2))')
+            if sub and sub.get('region') and sub['region'] not in BINDING_REGIONS.get(prof['provider'], {sub['region']}):
+                f.error('region_unsupported', where,
+                        f'profile {mp}: region {sub["region"]} is not in the region table of the provider binding {prof["provider"]} (GW-14)')
             if sub:
                 hr = (prof.get('provider_human_review') or {}).get('value')
                 if hr == 'yes' and (sub.get('terms') or {}).get('human_review') in ('none', 'abuse_only'):
@@ -933,6 +993,10 @@ def lint(docs, today=None, farm_hosts=None, examples_mode=False, claimed=None, s
             bad += [t for t in rs.get('tools', []) if t in tools and tools[t][2].get('untrusted_output')]
             if bad:
                 f.error('memory_person', where, f'role {rname}: memory: person with {bad} (MEM-2)')
+            # From v0.2, while the personal assistant is deferred, no role holds person memory (MEM-2,
+            # DSP-10, D-114); the core refuses it the same way.
+            if skeleton_version() >= (0, 2):
+                f.error('person_memory_deferred', where, f'role {rname}: memory: person while the personal assistant is deferred (MEM-2)')
 
     # 9a. One level of aggregators (AGG-3): no aggregator among the sources, no more than max_sources.
     for rname, (where, rs) in roles.items():
@@ -2011,6 +2075,20 @@ def lint_additive(before_docs, after_docs, f):
                 f.error('breaking_change', where, f'{key[0]} {key[1]}: {field}: {"; ".join(diff)}; version .v(N+1) is required (MAN-3)')
 
 
+def lint_notice_version(before_docs, after_docs, f):
+    """SEC-13: a change of controller, purposes, subprocessors or recipients of a tenant needs a higher notice_version."""
+    old = {(d.get('metadata') or {}).get('name'): d for _, d in before_docs if isinstance(d, dict) and d.get('kind') == 'Tenant'}
+    for where, d in after_docs:
+        prev = old.get((d.get('metadata') or {}).get('name')) if d.get('kind') == 'Tenant' else None
+        if prev is None:
+            continue
+        b, a = (prev.get('spec') or {}).get('privacy') or {}, (d.get('spec') or {}).get('privacy') or {}
+        changed = [k for k in NOTICE_FIELDS if b.get(k) != a.get(k)]
+        if changed and (a.get('notice_version') or 0) <= (b.get('notice_version') or 0):
+            f.error('notice_version_not_raised', where,
+                    f'tenant {d["metadata"]["name"]}: privacy {", ".join(changed)} changed without a higher notice_version (SEC-13)')
+
+
 def lint_commit(commit, f, where):
     """MAN-5: Botaru-Proposal and Botaru-Revert lines in the commit message and the tenant folder boundaries."""
     msg = commit.get('message', '')
@@ -2523,6 +2601,7 @@ if os.path.isdir(FIXTURES):
                        skills=case.get('skills')) if (docs or case.get('skills')) else Findings()
             if 'before' in case:
                 lint_additive([(f'{where}/before/{j}', d) for j, d in enumerate(case['before'])], docs, got)
+                lint_notice_version([(f'{where}/before/{j}', d) for j, d in enumerate(case['before'])], docs, got)
             if 'commit' in case:
                 lint_commit(case['commit'], got, where)
             if 'conforms_to' in case:

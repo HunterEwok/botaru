@@ -4673,7 +4673,7 @@
   version: v0.1
   profile: core
   decisions: [D-36, D-87]
-  fixtures: [manifests/model-profiles]
+  fixtures: [manifests/model-profiles, manifests/privacy]
   doc: docs/models-and-money.md
 
 - id: GW-15
@@ -5013,14 +5013,18 @@
     `system:campaign:<campaign>:<n>`; an incident `system:incident:<class>:<subject>:<window>` and
     its closing pass `system:incident:<incident>:close`; a data read by the manager seat
     `system:inspect:<basis>:<n>`; the daily review of the manager seat `system:daily:<tenant>:<day>`
-    (MGR-41); a control operation `system:control:<epoch>:<number>`. An external event
+    (MGR-41); a control operation `system:control:<epoch>:<number>`; a directive to the manager
+    `system:directive:<id>`; the action task of a routine service grant `system:grant:<grant>`
+    (APR-17, D-78). An external event
     `system:ingress:<source>:<delivery id>` (from v0.1 for the monitoring adapter, from v0.2 for
     source channels); from v0.2: an escalation to the manager `system:escalation:<attempt>`, a
     takeover `system:takeover:<task>`, a batch of pending model grant requests
     `system:grants:<tenant>:<window>`, a shadow reviewer task of a lens
     `system:review:<proposal>:<lens>:shadow`, separate from the seat's task, and a review of an
-    escalation to the manager by the necessity lens `system:necessity:<escalation>`. A new core key
-    appears only by editing this list.
+    escalation to the manager by the necessity lens `system:necessity:<escalation>`, and the ingest
+    task of a corpus document `system:kb.ingest:<document>` (KNW-5); from v0.3: the postmortem of an
+    incident `system:postmortem:<incident>` (MGR-53). A new core key appears only by editing this
+    list.
   goal: G1
   check: [blackbox]
   waivable: true
@@ -12271,7 +12275,7 @@
   version: v0.1
   profile: core
   decisions: [D-12, D-36, D-77]
-  fixtures: []
+  fixtures: [manifests/privacy]
   doc: docs/operations.md
 
 - id: SEC-9
@@ -12426,7 +12430,7 @@
   version: v0.1
   profile: core
   decisions: []
-  fixtures: [blackbox:channel/privacy-notice-native, blackbox:channel/privacy-notice-enforced-join]
+  fixtures: [blackbox:channel/privacy-notice-native, blackbox:channel/privacy-notice-enforced-join, manifests/privacy]
   doc: docs/operations.md
 
 - id: SEC-14

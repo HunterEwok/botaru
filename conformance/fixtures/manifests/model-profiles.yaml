@@ -171,6 +171,9 @@ cases:
               ceiling: internal
             notice_ref: https://docs.example.org/botaru/privacy
             notice_version: 3
+            controller: {name: Example Org, contact: privacy@example.org, agreement_ref: contracts/demo-processing}
+            dpia_ref: dpia/demo-2026
+            ropa_ref: ropa/demo
           commands:
             /logs: ops.investigate.v1
             /health: ops.health.v1
@@ -341,6 +344,9 @@ cases:
               ceiling: internal
             notice_ref: https://docs.example.org/botaru/privacy
             notice_version: 3
+            controller: {name: Example Org, contact: privacy@example.org, agreement_ref: contracts/demo-processing}
+            dpia_ref: dpia/demo-2026
+            ropa_ref: ropa/demo
           commands:
             /logs: ops.investigate.v1
             /health: ops.health.v1

@@ -213,8 +213,10 @@
             "kind": {
               "enum": [
                 "bot",
-                "human"
-              ]
+                "human",
+                "service"
+              ],
+              "description": "Kind of the author, from its principal: human for a person, bot for a bot identity or a worker, service for an external program or the system calling P2."
             },
             "principal": {
               "$ref": "urn:botaru:schema:common:1#/$defs/principal_ref"
@@ -246,6 +248,10 @@
         "action": {
           "description": "Action of the routine pipeline (risk routine).",
           "$ref": "urn:botaru:schema:common:1#/$defs/dotted_name"
+        },
+        "initiator": {
+          "description": "The principal on whose behalf the run goes and who holds their own right service.control:<service> or monitor.script_run: for a bot's call the initiator of its task, else the author itself; every record has one (FEN-7, D-73).",
+          "$ref": "urn:botaru:schema:common:1#/$defs/principal_ref"
         },
         "args_hash": {
           "description": "SHA-256 hash of the form sha256:<64 hex digits>.",

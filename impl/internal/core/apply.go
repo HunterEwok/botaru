@@ -373,6 +373,7 @@ func (c *Core) applyOnce(ctx context.Context, op Operator, req ApplyRequest) (*A
 				}
 			}
 		}
+		var privacy []privacyChange
 		for _, d := range docs {
 			h, err := jcs.Hash(d.Value)
 			if err != nil {
@@ -397,6 +398,16 @@ func (c *Core) applyOnce(ctx context.Context, op Operator, req ApplyRequest) (*A
 				return err
 			}
 			if ch.Op == "update" {
+				// A change of the privacy block gives an event and a notice to the admins (SEC-8).
+				if k.Kind == "Tenant" {
+					pc, err := privacyChangeOf(ctx, tx, k.Name, d.Value)
+					if err != nil {
+						return err
+					}
+					if pc != nil {
+						privacy = append(privacy, *pc)
+					}
+				}
 				if err := keepVersion(ctx, tx, now, k, req.Commit); err != nil {
 					return err
 				}
@@ -498,6 +509,9 @@ func (c *Core) applyOnce(ctx context.Context, op Operator, req ApplyRequest) (*A
 			return err
 		}
 		if err := c.applyV03(ctx, tx, now, next); err != nil {
+			return err
+		}
+		if err := c.privacyNotices(ctx, tx, now, next, privacy); err != nil {
 			return err
 		}
 		// The core copies of the skills and the corpus documents of the set (SKL-2, KNW-2, KNW-5).

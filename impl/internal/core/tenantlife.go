@@ -192,6 +192,9 @@ func (c *Core) TenantLifecycle(ctx context.Context, op Operator, req TenantLifec
 			if _, err := tx.Exec(ctx, `UPDATE tenant_states SET state = 'deleted', deleted_at = $2, erasure = $3 WHERE tenant = $1`, req.Tenant, now, erasure); err != nil {
 				return err
 			}
+			if _, err := tx.Exec(ctx, `DELETE FROM monitor_accounts WHERE tenant = $1`, req.Tenant); err != nil {
+				return err
+			}
 			if err := c.appendEvent(ctx, tx, now, req.Tenant, Event{Type: "tenant.deleted.v1", Subject: req.Tenant, Data: map[string]any{"tenant": req.Tenant, "erasure": erasure}}); err != nil {
 				return err
 			}

@@ -205,7 +205,15 @@ func TestBackfillDeliveryFailureLeavesTask(t *testing.T) {
 // check, and a result outside the type's schema sends nothing (DLV-11).
 func TestBackfillNoTextBeforeComplete(t *testing.T) {
 	ctx := context.Background()
-	b := newBench(t)
+	// The stage of a heartbeat comes from the type's stages (DLV-11).
+	b := newBenchWith(t, func(_ string, ms []map[string]any) []map[string]any {
+		for _, m := range ms {
+			if m["kind"] == "TaskType" {
+				m["spec"].(map[string]any)["stages"] = []any{"writing_answer"}
+			}
+		}
+		return ms
+	})
 	task := b.hello(t, "1")
 	b.drain(t)
 	if _, err := b.c.st.Pool.Exec(ctx, `UPDATE contacts SET ai_notice_at = now()`); err != nil {

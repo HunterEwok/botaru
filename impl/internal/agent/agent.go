@@ -173,7 +173,8 @@ func (a *Agent) Once(ctx context.Context, waitS int) (bool, error) {
 // purgeOutcome answers an erasure step of this runtime (E4 purge, RET-11). The runtime keeps
 // nothing with content after an attempt: no working files, caches, transcripts or logs with
 // content (its log lines carry only ids and reasons), so a purge by any scope has nothing left
-// to delete and is done, and a match finds no ids.
+// to delete and is done, and a match finds no ids. A purge of a retired identity
+// (scope.bot, MEM-9) is then done without touching the sessions of any other identity.
 func purgeOutcome(payload json.RawMessage) map[string]any {
 	var p struct {
 		Op string `json:"op"`

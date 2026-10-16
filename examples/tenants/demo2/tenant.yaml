@@ -13,3 +13,8 @@ spec:
     purposes:
       - {purpose: operations, lawful_basis: legitimate_interest}
     recipients: [model_provider, messenger, monitoring]
+    controller: {name: "Example Org", contact: privacy@example.org, agreement_ref: "contracts/demo2-processing"}
+    notice_ref: "https://docs.example.org/botaru/privacy-demo2"
+    notice_version: 1
+    dpia_ref: none
+    ropa_ref: "ropa/demo2"
