@@ -239,6 +239,7 @@ func (c *Core) applyOnce(ctx context.Context, op Operator, req ApplyRequest) (*A
 	// objects of the store that stay (orphaned ones included) overlaid with this set and its
 	// deletions, so that a check across objects does not miss an object of an earlier apply.
 	var after []manifest.Doc
+	var held map[string]bool
 	var skillHashes map[string]string
 	var kerrs, kwarns, syncWarns []ApplyError
 	if len(res.Errors) == 0 {
@@ -270,21 +271,8 @@ func (c *Core) applyOnce(ctx context.Context, op Operator, req ApplyRequest) (*A
 		}
 		res.Errors = append(res.Errors, perrs...)
 		// Groups with members in the store, also when the stored set lacks them (PRM-13).
-		held := map[string]bool{}
-		rows, err := c.st.Pool.Query(ctx, `SELECT DISTINCT tenant, grp FROM memberships`)
+		held, err = heldGroups(ctx, c.st.Pool)
 		if err != nil {
-			return nil, err
-		}
-		for rows.Next() {
-			var t, g string
-			if err := rows.Scan(&t, &g); err != nil {
-				rows.Close()
-				return nil, err
-			}
-			held[t+"/"+g] = true
-		}
-		rows.Close()
-		if err := rows.Err(); err != nil {
 			return nil, err
 		}
 		errs, err := c.lintManifestsHeld(after, lintIndex, lookup, prior, held)
@@ -372,6 +360,19 @@ func (c *Core) applyOnce(ctx context.Context, op Operator, req ApplyRequest) (*A
 		if !maps.Equal(existing, read) {
 			return errStoreChanged
 		}
+		// A grant takes this lock in shared mode: a group that got its first member after the
+		// lint read the memberships is linted again (PRM-13).
+		if held != nil {
+			cur, err := heldGroups(ctx, tx)
+			if err != nil {
+				return err
+			}
+			for g := range cur {
+				if !held[g] {
+					return errStoreChanged
+				}
+			}
+		}
 		for _, d := range docs {
 			h, err := jcs.Hash(d.Value)
 			if err != nil {
@@ -422,10 +423,7 @@ func (c *Core) applyOnce(ctx context.Context, op Operator, req ApplyRequest) (*A
 			}
 			deleted[k] = true
 			res.Changes = append(res.Changes, ApplyChange{Op: "delete", Kind: k.Kind, Tenant: k.Tenant, Name: k.Name})
-			if req.DryRun {
-				continue
-			}
-			if k.Kind == "Tenant" {
+			if k.Kind == "Tenant" && !req.DryRun {
 				return refuse("forbidden", "a tenant is retired, not deleted")
 			}
 			// A group is deleted only without members: its memberships end by ungrant, with the
@@ -448,6 +446,10 @@ func (c *Core) applyOnce(ctx context.Context, op Operator, req ApplyRequest) (*A
 				if open {
 					return refuse("forbidden", "task type %s still has tasks that are not finished", k.Name)
 				}
+			}
+			// A plan reports these refusals too.
+			if req.DryRun {
+				continue
 			}
 			if err := keepVersion(ctx, tx, now, k, req.Commit); err != nil {
 				return err
@@ -613,4 +615,23 @@ func storePersonas(ctx context.Context, tx pgx.Tx, now time.Time, docs []manifes
 		}
 	}
 	return nil
+}
+
+// heldGroups gives the groups with memberships in the store, active or pending, as
+// "<tenant>/<group>" (PRM-13).
+func heldGroups(ctx context.Context, q store.Querier) (map[string]bool, error) {
+	rows, err := q.Query(ctx, `SELECT DISTINCT tenant, grp FROM memberships`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	held := map[string]bool{}
+	for rows.Next() {
+		var t, g string
+		if err := rows.Scan(&t, &g); err != nil {
+			return nil, err
+		}
+		held[t+"/"+g] = true
+	}
+	return held, rows.Err()
 }

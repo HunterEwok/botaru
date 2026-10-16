@@ -8,6 +8,7 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/HunterEwok/botaru/impl/internal/manifest"
 	"github.com/HunterEwok/botaru/impl/internal/spec"
@@ -247,9 +248,19 @@ func TestApplyPrivilegeRaiseAfterDelete(t *testing.T) {
 	if !errors.As(err, &p) || p.Reason != "forbidden" {
 		t.Fatalf("delete of a group with members: %v", err)
 	}
+	// A plan reports the refusal too.
+	_, err = b.c.Apply(ctx, b.op, ApplyRequest{Commit: "3333333333333333333333333333333333333333", Manifests: rest, DryRun: true,
+		Delete: []ApplyDelete{{Kind: "Group", Tenant: "demo", Name: "hello"}}})
+	if !errors.As(err, &p) || p.Reason != "forbidden" {
+		t.Fatalf("dry run of the delete of a group with members: %v", err)
+	}
 	// A group the stored set lacks (deleted by an earlier build) while its members stay.
 	if _, err := b.c.st.Pool.Exec(ctx, `DELETE FROM manifests WHERE kind = 'Group' AND tenant = 'demo' AND name = 'hello'`); err != nil {
 		t.Fatal(err)
+	}
+	// A grant reads the group from the stored set, not from the core's copy.
+	if _, err := b.c.Grant(ctx, b.op, GrantRequest{Op: "grant", Subject: b.alice, Group: "hello"}); !errors.As(err, &p) || p.Reason != "not_found" {
+		t.Fatalf("a grant of a group the stored set lacks: %v", err)
 	}
 	for _, m := range ms {
 		if m["kind"] == "Group" {
@@ -266,5 +277,30 @@ func TestApplyPrivilegeRaiseAfterDelete(t *testing.T) {
 	}
 	if res, err := b.c.Apply(ctx, b.op, ApplyRequest{Commit: "4444444444444444444444444444444444444444", Manifests: ms}); err != nil || !res.Applied {
 		t.Fatalf("a new privileged group without members: %+v %v", res, err)
+	}
+}
+
+// PRM-13: a grant takes the apply lock in shared mode, so it waits while an apply holds it.
+func TestGrantWaitsForApply(t *testing.T) {
+	ctx := context.Background()
+	b := newBench(t)
+	tx, err := b.c.st.Pool.Begin(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock(7300111)`); err != nil {
+		t.Fatal(err)
+	}
+	short, cancel := context.WithTimeout(ctx, 300*time.Millisecond)
+	_, err = b.c.Grant(short, b.op, GrantRequest{Op: "grant", Subject: b.alice, Group: "hello"})
+	cancel()
+	if err == nil {
+		t.Fatal("a grant ran while an apply held the lock")
+	}
+	if err := tx.Rollback(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := b.c.Grant(ctx, b.op, GrantRequest{Op: "grant", Subject: b.alice, Group: "hello"}); err != nil {
+		t.Fatalf("a grant after the apply: %v", err)
 	}
 }

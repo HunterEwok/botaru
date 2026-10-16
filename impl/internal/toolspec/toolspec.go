@@ -375,19 +375,26 @@ func OutsideText(argv []string) bool {
 }
 
 // addressWords are the parameter names, or the last word of a name, that carry a network
-// address: a URL, a host or where to send (INJ-6). A plural (urls, hosts, addresses) counts
-// as the word.
+// address: a URL, a host, a subnet or where to send (INJ-6). A plural (urls, hosts,
+// addresses) counts as the word. The weak words, target and dest, also name things other than
+// an address, so they count only on a string that can hold one: free or of an open format.
 var addressWords = map[string]bool{"url": true, "uri": true, "href": true, "endpoint": true, "host": true, "hostname": true,
-	"address": true, "addr": true, "ip": true, "link": true, "target": true, "server": true, "domain": true, "dest": true, "fqdn": true}
+	"address": true, "addr": true, "ip": true, "link": true, "server": true, "domain": true, "fqdn": true, "subnet": true, "cidr": true}
 
-// addressWord says whether a parameter name, or its last word after _, is an address word or
-// its plural.
-func addressWord(name string) bool {
+var weakAddressWords = map[string]bool{"target": true, "dest": true}
+
+// openFormats are the formats of spec/model/formats.yaml whose values can hold an address:
+// prose (search_query) and a subnet (ipv4_subnet24).
+var openFormats = map[string]bool{"search_query": true, "ipv4_subnet24": true}
+
+// addressWord says whether a parameter name, or its last word after _, or its plural, is in
+// words.
+func addressWord(name string, words map[string]bool) bool {
 	w := name
 	if i := strings.LastIndex(name, "_"); i >= 0 {
 		w = name[i+1:]
 	}
-	return addressWords[w] || addressWords[strings.TrimSuffix(w, "s")] || strings.HasSuffix(w, "es") && addressWords[strings.TrimSuffix(w, "es")]
+	return words[w] || words[strings.TrimSuffix(w, "s")] || strings.HasSuffix(w, "es") && words[strings.TrimSuffix(w, "es")]
 }
 
 // closedValues says whether a schema's values are a closed list: enum, const or a catalog list.
@@ -400,13 +407,42 @@ func closedValues(s map[string]any) bool {
 	return false
 }
 
+// openString says whether a schema is a string that can hold an address: without a format or
+// of an open format.
+func openString(s map[string]any) bool {
+	if s["type"] != "string" {
+		return false
+	}
+	f, ok := s["x-botaru-format"].(string)
+	return !ok || openFormats[f]
+}
+
+// anyBranch says whether a branch of anyOf or oneOf passes the test, and whether the schema
+// has such branches.
+func anyBranch(s map[string]any, test func(map[string]any) bool) (match, has bool) {
+	for _, k := range []string{"anyOf", "oneOf"} {
+		bs, _ := s[k].([]any)
+		for _, b := range bs {
+			has = true
+			if bm, _ := b.(map[string]any); test(bm) {
+				match = true
+			}
+		}
+	}
+	return match, has
+}
+
 // AddressParam says whether a tool parameter is a URL or host argument of the model: its name
 // is an address word and its values are not a closed list (enum, const or a catalog list), so
 // the model would choose where the tool reaches (INJ-6). The items of an array count under the
-// array's name, and the properties of an object under their own names.
+// array's name, the properties of an object under their own names, and a parameter is one when
+// any branch of its anyOf or oneOf is.
 func AddressParam(name string, s map[string]any) bool {
 	if closedValues(s) {
 		return false
+	}
+	if m, has := anyBranch(s, func(b map[string]any) bool { return AddressParam(name, b) }); m || has && s["type"] == nil {
+		return m
 	}
 	switch s["type"] {
 	case "array":
@@ -421,16 +457,19 @@ func AddressParam(name string, s map[string]any) bool {
 		}
 		return false
 	}
-	return addressWord(name)
+	return addressWord(name, addressWords) || addressWord(name, weakAddressWords) && openString(s)
 }
 
 // EgressOpen says whether a parameter of a tool whose plugin has network egress can carry an
-// address whatever its name: a string, also in an array or an object, that is free (no closed
-// list and no format) or of a prose format such as search_query. On such a plugin a free
-// string would let the model name where the tool reaches (INJ-6).
+// address whatever its name: a string, also in an array, an object or a branch of anyOf or
+// oneOf, that is free (no closed list and no format) or of an open format such as search_query
+// or ipv4_subnet24. On such a plugin it would let the model name where the tool reaches (INJ-6).
 func EgressOpen(s map[string]any) bool {
 	if closedValues(s) {
 		return false
+	}
+	if m, _ := anyBranch(s, EgressOpen); m {
+		return true
 	}
 	switch s["type"] {
 	case "array":
@@ -444,11 +483,8 @@ func EgressOpen(s map[string]any) bool {
 			}
 		}
 		return false
-	case "string":
-		f, ok := s["x-botaru-format"].(string)
-		return !ok || proseFormats[f]
 	}
-	return false
+	return openString(s)
 }
 
 // freeParam says whether a parameter schema is a string without enum, enum_from, const or

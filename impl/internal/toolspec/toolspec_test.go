@@ -209,7 +209,12 @@ func TestAddressParam(t *testing.T) {
 		"urls":         {"type": "array", "items": map[string]any{"type": "string"}},
 		"addresses":    {"type": "string"},
 		"link":         {"type": "string"},
-		"target":       {"type": "string", "x-botaru-format": "id"},
+		"target":       {"type": "string"},
+		"dest":         {"type": "string", "x-botaru-format": "search_query"},
+		"subnet":       {"type": "string", "x-botaru-format": "ipv4_subnet24"},
+		"cidrs":        {"type": "array", "items": map[string]any{"type": "string"}},
+		"server":       {"anyOf": []any{map[string]any{"enum": []any{"a"}}, map[string]any{"type": "string"}}},
+		"opt":          {"type": "object", "properties": map[string]any{"x": map[string]any{"oneOf": []any{map[string]any{"type": "integer"}, map[string]any{"type": "object", "properties": map[string]any{"url": map[string]any{"type": "string"}}}}}}},
 		"dest_servers": {"type": "array", "items": map[string]any{"type": "string"}},
 		"fqdn":         {"type": "string"},
 		"domain":       {"type": "string"},
@@ -219,15 +224,25 @@ func TestAddressParam(t *testing.T) {
 			t.Errorf("%s is not an address argument", n)
 		}
 	}
-	if AddressParam("hosts", map[string]any{"type": "array", "items": map[string]any{"enum_from": "catalog.hosts"}}) {
-		t.Error("an array of catalog hosts counts as an address argument")
+	// A closed list, also in every branch, and target or dest of a closed format are no address.
+	for n, s := range map[string]map[string]any{
+		"hosts":  {"type": "array", "items": map[string]any{"enum_from": "catalog.hosts"}},
+		"host":   {"anyOf": []any{map[string]any{"enum": []any{"a"}}, map[string]any{"enum_from": "catalog.hosts"}}},
+		"target": {"type": "string", "x-botaru-format": "id"},
+		"dest":   {"type": "string", "x-botaru-format": "type_name"},
+	} {
+		if AddressParam(n, s) {
+			t.Errorf("%s %v counts as an address argument", n, s)
+		}
 	}
 	// On a plugin with egress a free string or a search_query reaches anywhere, whatever its
 	// name; a formatted value does not.
 	p = readPlugin(t, "checks")
 	p.Network.Egress = []string{"http-check-targets"}
 	for _, s := range []map[string]any{{"type": "string"}, {"type": "string", "x-botaru-format": "search_query"},
-		{"type": "array", "items": map[string]any{"type": "string"}}} {
+		{"type": "array", "items": map[string]any{"type": "string"}}, {"type": "string", "x-botaru-format": "ipv4_subnet24"},
+		{"oneOf": []any{map[string]any{"type": "integer"}, map[string]any{"type": "string"}}},
+		{"anyOf": []any{map[string]any{"type": "integer"}, map[string]any{"type": "string", "x-botaru-format": "search_query"}}}} {
 		p.Tools[0].Params = map[string]map[string]any{"q": s}
 		if got := issueCodes(Check(p, nil)); !slices.Contains(got, "tool_address_param") {
 			t.Errorf("egress and %v: %v", s, got)

@@ -190,10 +190,14 @@ FORBIDDEN_PROGRAMS = set(model_registry('forbidden-programs'))
 # Programs whose output is text written from outside the farm: journalctl prints the service journal (INJ-14).
 # The skeleton names the journal as the example and has no registry of such programs.
 OUTSIDE_TEXT_PROGRAMS = {'journalctl'}
-# Parameter names, or the last word of a name, that carry a network address: a URL, a host or where to send (INJ-6).
-# A plural (urls, hosts, addresses) counts as the word.
-ADDRESS_WORDS = {'url', 'uri', 'href', 'endpoint', 'host', 'hostname', 'address', 'addr', 'ip', 'link', 'target', 'server',
-                 'domain', 'dest', 'fqdn'}
+# Parameter names, or the last word of a name, that carry a network address: a URL, a host, a subnet or where to send
+# (INJ-6). A plural (urls, hosts, addresses) counts as the word. The weak words also name other things, so they count
+# only on a string that can hold an address: free or of an open format.
+ADDRESS_WORDS = {'url', 'uri', 'href', 'endpoint', 'host', 'hostname', 'address', 'addr', 'ip', 'link', 'server',
+                 'domain', 'fqdn', 'subnet', 'cidr'}
+WEAK_ADDRESS_WORDS = {'target', 'dest'}
+# Formats of spec/model/formats.yaml whose values can hold an address (INJ-6).
+OPEN_FORMATS = {'search_query', 'ipv4_subnet24'}
 
 
 def class_refused(cls, output=False):
@@ -202,41 +206,54 @@ def class_refused(cls, output=False):
     return not dc or bool(dc.get('reserved')) or (output and dc.get('output') is False)
 
 
-def address_word(name):
+def address_word(name, words):
     w = name.rsplit('_', 1)[-1]
-    return w in ADDRESS_WORDS or w.removesuffix('s') in ADDRESS_WORDS or (w.endswith('es') and w[:-2] in ADDRESS_WORDS)
+    return w in words or w.removesuffix('s') in words or (w.endswith('es') and w[:-2] in words)
 
 
 def closed_values(schema):
     return any(k in schema for k in ('enum', 'enum_from', 'const'))
 
 
+def open_string(schema):
+    return schema.get('type') == 'string' and ('x-botaru-format' not in schema or schema['x-botaru-format'] in OPEN_FORMATS)
+
+
+def branches(schema):
+    return [b if isinstance(b, dict) else {} for k in ('anyOf', 'oneOf') for b in (schema.get(k) or [])]
+
+
 def address_param(name, schema):
     """A URL or host argument of the model: an address name whose values are not a closed list, also as the items of
-    an array (under the array's name) or a property of an object (INJ-6)."""
+    an array (under the array's name), a property of an object or a branch of anyOf or oneOf (INJ-6)."""
     schema = schema if isinstance(schema, dict) else {}
     if closed_values(schema):
+        return False
+    bs = branches(schema)
+    if any(address_param(name, b) for b in bs):
+        return True
+    if bs and 'type' not in schema:
         return False
     if schema.get('type') == 'array':
         return address_param(name, schema.get('items'))
     if schema.get('type') == 'object':
         return any(address_param(k, v) for k, v in sorted((schema.get('properties') or {}).items()))
-    return address_word(name)
+    return address_word(name, ADDRESS_WORDS) or (address_word(name, WEAK_ADDRESS_WORDS) and open_string(schema))
 
 
 def egress_open(schema):
-    """On a plugin with egress: a string, also in an array or an object, that is free or of a prose format can carry
-    an address whatever its name (INJ-6)."""
+    """On a plugin with egress: a string, also in an array, an object or a branch, that is free or of an open format
+    can carry an address whatever its name (INJ-6)."""
     schema = schema if isinstance(schema, dict) else {}
     if closed_values(schema):
         return False
+    if any(egress_open(b) for b in branches(schema)):
+        return True
     if schema.get('type') == 'array':
         return egress_open(schema.get('items'))
     if schema.get('type') == 'object':
         return any(egress_open(v) for _, v in sorted((schema.get('properties') or {}).items()))
-    if schema.get('type') == 'string':
-        return 'x-botaru-format' not in schema or schema['x-botaru-format'] in PROSE_FORMATS
-    return False
+    return open_string(schema)
 
 
 REQUIREMENTS = rules()
