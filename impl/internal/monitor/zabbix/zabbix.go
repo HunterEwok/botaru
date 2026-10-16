@@ -140,7 +140,13 @@ func (a *Adapter) Run(ctx context.Context) error {
 	}()
 	go func() {
 		defer wg.Done()
-		a.every(ctx, a.cfg.ScriptsEvery, a.SyncScripts)
+		a.every(ctx, a.cfg.ScriptsEvery, func(ctx context.Context) error {
+			// The account report goes with the script lists (MON-4, OBS-11).
+			if err := a.SyncAccount(ctx); err != nil && ctx.Err() == nil {
+				a.log.Warn("account report", "err", err)
+			}
+			return a.SyncScripts(ctx)
+		})
 	}()
 	for ctx.Err() == nil {
 		if _, err := a.ServeOne(ctx, 30); err != nil && ctx.Err() == nil {

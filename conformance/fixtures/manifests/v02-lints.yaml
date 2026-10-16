@@ -11,7 +11,9 @@ description: >-
 cases:
   - name: production tenant, high risk action with one approval that a group may request
     manifests:
-      - {apiVersion: botaru/v1alpha1, kind: Tenant, metadata: {name: demo2}, spec: {kind: production, farm_manager: {enabled: false}, budgets: {month_eur: 60}}}
+      - {apiVersion: botaru/v1alpha1, kind: Tenant, metadata: {name: demo2}, spec: {kind: production, farm_manager: {enabled: false}, budgets: {month_eur: 60},
+          privacy: {purposes: [{purpose: operations}], controller: {name: Example Org, contact: privacy@example.org, agreement_ref: contracts/demo2},
+            recipients: [messenger, monitoring], notice_ref: privacy/demo2, notice_version: 1, dpia_ref: none, ropa_ref: ropa/demo2}}}
       - {apiVersion: botaru/v1alpha1, kind: Group, metadata: {name: ops, tenant: demo2}, spec: {caps: ["action.request:db_restore"]}}
       - apiVersion: botaru/v1alpha1
         kind: Action
@@ -31,7 +33,9 @@ cases:
     expect: {error: high_risk_one_approver}
   - name: the same action that no group or role may request passes
     manifests:
-      - {apiVersion: botaru/v1alpha1, kind: Tenant, metadata: {name: demo2}, spec: {kind: production, farm_manager: {enabled: false}, budgets: {month_eur: 60}}}
+      - {apiVersion: botaru/v1alpha1, kind: Tenant, metadata: {name: demo2}, spec: {kind: production, farm_manager: {enabled: false}, budgets: {month_eur: 60},
+          privacy: {purposes: [{purpose: operations}], controller: {name: Example Org, contact: privacy@example.org, agreement_ref: contracts/demo2},
+            recipients: [messenger, monitoring], notice_ref: privacy/demo2, notice_version: 1, dpia_ref: none, ropa_ref: ropa/demo2}}}
       - {apiVersion: botaru/v1alpha1, kind: Group, metadata: {name: dba, tenant: demo2}, spec: {caps: ["action.approve:db_restore"]}}
       - apiVersion: botaru/v1alpha1
         kind: Action

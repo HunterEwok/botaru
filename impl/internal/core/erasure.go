@@ -148,10 +148,11 @@ func (c *Core) requestErasure(ctx context.Context, tx pgx.Tx, now time.Time, tv 
 
 // addErasureSteps records a step per store a request reaches: forget reaches only memory and
 // sessions (MEM-4), in the core and in every runtime, every other reason every store of the
-// tenant with content; bot_retired reaches only the identity's memory (MEM-9). Every agent
-// worker of the tenant that ran an attempt of it gets a purge step for the working files,
-// caches and logs with content its runtime keeps (RET-11). tv is nil for a tenant no longer in
-// the catalog; then it has no channels.
+// tenant with content; bot_retired reaches only the identity's memory, or with a worker scope
+// only the purge of that worker's runtime (MEM-9). Every agent worker of the tenant that ran an
+// attempt of it gets a purge step for the working files, caches and logs with content its
+// runtime keeps (RET-11). tv is nil for a tenant no longer in the catalog; then it has no
+// channels.
 func addErasureSteps(ctx context.Context, tx pgx.Tx, now time.Time, tenant string, tv *TenantView, id, reason string) error {
 	var channels map[string]manifest.Channel
 	if tv != nil {
@@ -168,6 +169,19 @@ func addErasureSteps(ctx context.Context, tx pgx.Tx, now time.Time, tenant strin
 		_, err := tx.Exec(ctx, `INSERT INTO erasure_steps (id, request, tenant, store, kind, target, state, updated_at) VALUES ($1, $2, $3, $4, 'runtime', $5, 'pending', $6)`,
 			ids.New(ids.Step), id, tenant, storeKey("runtime", strings.ToLower(worker)), worker, now)
 		return err
+	}
+	if reason == "bot_retired" {
+		// A retired identity's runtime_internal sessions and memory: the purge of its worker's
+		// runtime is the only step of the request (MEM-9).
+		var worker string
+		if err := tx.QueryRow(ctx, `SELECT coalesce(scope->>'worker', '') FROM erasure_requests WHERE id = $1`, id).Scan(&worker); err != nil {
+			return err
+		}
+		if worker != "" {
+			_, err := tx.Exec(ctx, `INSERT INTO erasure_steps (id, request, tenant, store, kind, target, state, updated_at) VALUES ($1, $2, $3, $4, 'runtime', $5, 'pending', $6)`,
+				ids.New(ids.Step), id, tenant, storeKey("runtime", worker), worker, now)
+			return err
+		}
 	}
 	for _, st := range coreStores {
 		if reason == "forget" && st != "sessions" && st != "memory" {

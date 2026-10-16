@@ -1,0 +1,149 @@
+id: fx-man-priv-01
+rules: [SEC-8, SEC-13, GW-14]
+description: >-
+  The privacy block at apply. A production tenant has no empty field of the block (an explicit none is
+  allowed for dpia_ref), and every provider of providers_allowed of any tenant is a subprocessor (SEC-8); a
+  change of controller, purposes, subprocessors or recipients needs a higher notice_version (SEC-13); the
+  subprocessor region of an allowed profile's provider is a row of the region table of its provider binding
+  (GW-14).
+cases:
+  - name: production tenant without a controller and a record of processing
+    manifests:
+      - apiVersion: botaru/v1alpha1
+        kind: Tenant
+        metadata: {name: demo2}
+        spec:
+          kind: production
+          farm_manager: {enabled: false}
+          budgets: {month_eur: 60}
+          privacy: {purposes: [{purpose: operations}], recipients: [messenger, monitoring], notice_ref: privacy/demo2,
+            notice_version: 1, dpia_ref: none}
+    expect: {error: privacy_incomplete, at: controller}
+  - name: test tenant with the same block passes
+    manifests:
+      - apiVersion: botaru/v1alpha1
+        kind: Tenant
+        metadata: {name: demo2}
+        spec:
+          kind: test
+          farm_manager: {enabled: false}
+          budgets: {month_eur: 60}
+          privacy: {purposes: [{purpose: operations}], recipients: [messenger, monitoring], notice_ref: privacy/demo2,
+            notice_version: 1, dpia_ref: none}
+    expect: ok
+  - name: an allowed provider that is not a subprocessor
+    manifests:
+      - apiVersion: botaru/v1alpha1
+        kind: Tenant
+        metadata: {name: demo2}
+        spec:
+          kind: test
+          farm_manager: {enabled: false}
+          budgets: {month_eur: 60}
+          providers_allowed: [provider-a]
+          privacy: {purposes: [{purpose: operations}], recipients: [messenger, monitoring]}
+    expect: {error: subprocessor_undeclared, at: providers_allowed}
+  - name: subprocessors changed without a higher notice_version
+    before:
+      - apiVersion: botaru/v1alpha1
+        kind: Tenant
+        metadata: {name: demo2}
+        spec:
+          kind: test
+          farm_manager: {enabled: false}
+          budgets: {month_eur: 60}
+          providers_allowed: [provider-a]
+          privacy:
+            purposes: [{purpose: operations}]
+            recipients: [model_provider, messenger, monitoring]
+            subprocessors: [{provider: provider-a, agreement_ref: contracts/a, region: region-a, retention: {mode: zero}}]
+            notice_version: 2
+    manifests:
+      - apiVersion: botaru/v1alpha1
+        kind: Tenant
+        metadata: {name: demo2}
+        spec:
+          kind: test
+          farm_manager: {enabled: false}
+          budgets: {month_eur: 60}
+          providers_allowed: [provider-a]
+          privacy:
+            purposes: [{purpose: operations}]
+            recipients: [model_provider, messenger, monitoring]
+            subprocessors: [{provider: provider-a, agreement_ref: contracts/a, region: region-b, retention: {mode: zero}}]
+            notice_version: 2
+    expect: {error: notice_version_not_raised, at: subprocessors}
+  - name: the same change with a higher notice_version passes
+    before:
+      - apiVersion: botaru/v1alpha1
+        kind: Tenant
+        metadata: {name: demo2}
+        spec:
+          kind: test
+          farm_manager: {enabled: false}
+          budgets: {month_eur: 60}
+          providers_allowed: [provider-a]
+          privacy:
+            purposes: [{purpose: operations}]
+            recipients: [model_provider, messenger, monitoring]
+            subprocessors: [{provider: provider-a, agreement_ref: contracts/a, region: region-a, retention: {mode: zero}}]
+            notice_version: 2
+    manifests:
+      - apiVersion: botaru/v1alpha1
+        kind: Tenant
+        metadata: {name: demo2}
+        spec:
+          kind: test
+          farm_manager: {enabled: false}
+          budgets: {month_eur: 60}
+          providers_allowed: [provider-a]
+          privacy:
+            purposes: [{purpose: operations}]
+            recipients: [model_provider, messenger, monitoring]
+            subprocessors: [{provider: provider-a, agreement_ref: contracts/a, region: region-b, retention: {mode: zero}}]
+            notice_version: 3
+    expect: ok
+  - name: a region that the provider binding does not list
+    manifests:
+      - apiVersion: botaru/v1alpha1
+        kind: Tenant
+        metadata: {name: demo2}
+        spec:
+          kind: test
+          farm_manager: {enabled: false}
+          budgets: {month_eur: 60}
+          models_allowed: [fx-claude]
+          providers_allowed: [anthropic]
+          privacy:
+            purposes: [{purpose: operations}]
+            recipients: [model_provider, messenger, monitoring]
+            subprocessors: [{provider: anthropic, agreement_ref: contracts/anthropic, region: eu-central, retention: {mode: zero}}]
+      - apiVersion: botaru/v1alpha1
+        kind: ModelProfile
+        metadata: {name: fx-claude}
+        spec: {provider: anthropic, model: model-a-small-2026-09, family: family-a, rank: 1, max_output_tokens: 8000, tokens_per_s: 60,
+               price: {input: 1.0, output: 4.0, checked: '2026-10-01'},
+               provider_training: {value: false, checked: '2026-10-01'}, provider_human_review: {value: abuse_only, checked: '2026-10-01'}}
+    expect: {error: region_unsupported, at: eu-central}
+  - name: a region of the table passes
+    manifests:
+      - apiVersion: botaru/v1alpha1
+        kind: Tenant
+        metadata: {name: demo2}
+        spec:
+          kind: test
+          farm_manager: {enabled: false}
+          budgets: {month_eur: 60}
+          models_allowed: [fx-claude]
+          providers_allowed: [anthropic]
+          privacy:
+            purposes: [{purpose: operations}]
+            recipients: [model_provider, messenger, monitoring]
+            subprocessors: [{provider: anthropic, agreement_ref: contracts/anthropic, region: us, retention: {mode: zero}}]
+      - apiVersion: botaru/v1alpha1
+        kind: ModelProfile
+        metadata: {name: fx-claude}
+        spec: {provider: anthropic, model: model-a-small-2026-09, family: family-a, rank: 1, max_output_tokens: 8000, tokens_per_s: 60,
+               price: {input: 1.0, output: 4.0, checked: '2026-10-01'},
+               provider_training: {value: false, checked: '2026-10-01'}, provider_human_review: {value: abuse_only, checked: '2026-10-01'}}
+    expect: ok

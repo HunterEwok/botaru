@@ -1797,6 +1797,8 @@ func (c *Core) lintManifests(docs []manifest.Doc, index []int, personas personaL
 	if err := lintTranslatorEvals(docs, S, prior, f); err != nil {
 		return nil, err
 	}
+	// The privacy block (SEC-8, SEC-13, GW-14) and the deferred person memory (MEM-2).
+	c.lintPrivacy(S, f, prior)
 	// The provider workspace ceilings and the review line (GW-9, BUD-13).
 	c.lintWorkspaceCeilings(S, f)
 	c.lintReviewLine(docs, S, f)

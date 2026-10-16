@@ -247,6 +247,10 @@
           "description": "Action of the routine pipeline (risk routine).",
           "$ref": "urn:botaru:schema:common:1#/$defs/dotted_name"
         },
+        "initiator": {
+          "description": "The person on whose behalf the run goes and who holds their own right service.control:<service> or monitor.script_run: for a bot's call the initiator of its task, for a person's call the person (FEN-7, D-73).",
+          "$ref": "urn:botaru:schema:common:1#/$defs/principal_ref"
+        },
         "args_hash": {
           "description": "SHA-256 hash of the form sha256:<64 hex digits>.",
           "$ref": "urn:botaru:schema:common:1#/$defs/hash"

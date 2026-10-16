@@ -249,6 +249,8 @@ texts:
   notice.delegated_ungrant: "{by} removed {subject} from the delegated group {group}."
   notice.privileged_grant: "{by} granted {subject} the privileged group {group}."
   notice.privileged_ungrant: "{by} removed {subject} from the privileged group {group}."
+  # A change of the privacy block (SEC-8)
+  notice.privacy_changed: "The privacy block of tenant {tenant} changed: {fields}. Privacy notice version: {notice_version}."
   # Invitations (PRM-7, PRM-13)
   cmd.invite.invalid: This invitation is not valid. Ask the person who invited you for a new one.
   cmd.invite.done: "Welcome. You are now in the groups: {groups}."

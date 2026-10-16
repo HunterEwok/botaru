@@ -294,12 +294,21 @@ func (s serviceCall) grantAuthor() (map[string]any, Actor) {
 }
 
 // writeGrant writes the service_grant audit record whose id the write call carries in place of
-// approval_id (APR-17, APR-18): the author, what runs, the hash of the arguments.
+// approval_id (APR-17, APR-18): the author, what runs, the hash of the arguments, and the
+// initiator whose own right service.control:<service> or monitor.script_run the run stands on
+// (FEN-7, D-73). A person who acts is their own initiator; a bot's call names the initiator of
+// its task in what.
 func (c *Core) writeGrant(ctx context.Context, tx pgx.Tx, now time.Time, tenant string, author map[string]any, actor Actor, what map[string]any, argsHash string) (string, error) {
 	id := ids.New(ids.Grant)
 	block := map[string]any{"author": author, "args_hash": argsHash}
 	for k, v := range what {
 		block[k] = v
+	}
+	if i, _ := block["initiator"].(string); i == "" {
+		delete(block, "initiator")
+		if author["kind"] == "human" {
+			block["initiator"] = author["principal"]
+		}
 	}
 	_, err := c.appendAudit(ctx, tx, now, Audit{
 		Tenant: tenant, Kind: "service_grant", Actor: actor, Command: "service_grant", Target: &Target{Kind: "service_grant", ID: id},
@@ -418,7 +427,7 @@ func (c *Core) serviceControl(ctx context.Context, tx pgx.Tx, now time.Time, cat
 		return &serviceResult{Code: "approval_required", ApprovalID: id}, "", "", nil
 	}
 	author, actor := s.grantAuthor()
-	grant, err := c.writeGrant(ctx, tx, now, g.Tenant, author, actor, map[string]any{"service": name, "verb": verb}, argsHash)
+	grant, err := c.writeGrant(ctx, tx, now, g.Tenant, author, actor, map[string]any{"service": name, "verb": verb, "initiator": s.Initiator}, argsHash)
 	if err != nil {
 		return nil, "", "", err
 	}

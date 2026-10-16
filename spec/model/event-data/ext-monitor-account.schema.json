@@ -1,0 +1,59 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:botaru:schema:ext-monitor-account:1",
+  "title": "Data of the event ext.monitor.account.v1",
+  "description": "The E5 adapter's report of its own monitoring system account, read through the API with its own user (MON-4, OBS-11): the role rights wider than MON-4 allows, and the hosts the user sees and those where it may run a script, each as the SHA-256 of the host name, so no name of the monitoring system reaches the core. The core compares the hashes with the catalog nodes of the tenants and the farm node list; doctor fails the account line of the tenant when the account is wider.",
+  "x-botaru-direction": "input",
+  "x-botaru-rules": [
+    "MON-4",
+    "OBS-11"
+  ],
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "findings",
+    "visible",
+    "scripts"
+  ],
+  "properties": {
+    "findings": {
+      "description": "Role rights wider than MON-4 allows: super_admin, the role actions acknowledge_problems, close_problems, suppress_problems, change_severity, edit_maintenance, the frontend sections alerts.actions and data_collection.maintenance, or role_unreadable.",
+      "type": "array",
+      "maxItems": 16,
+      "uniqueItems": true,
+      "items": {
+        "enum": [
+          "super_admin",
+          "acknowledge_problems",
+          "close_problems",
+          "suppress_problems",
+          "change_severity",
+          "edit_maintenance",
+          "alerts.actions",
+          "data_collection.maintenance",
+          "role_unreadable"
+        ]
+      }
+    },
+    "visible": {
+      "description": "Every host the user sees, as sha256:<hex> of its host name.",
+      "type": "array",
+      "maxItems": 1000,
+      "items": {
+        "$ref": "urn:botaru:schema:common:1#/$defs/hash"
+      }
+    },
+    "scripts": {
+      "description": "Every visible host with a script the user may run, as sha256:<hex> of its host name.",
+      "type": "array",
+      "maxItems": 1000,
+      "items": {
+        "$ref": "urn:botaru:schema:common:1#/$defs/hash"
+      }
+    },
+    "truncated": {
+      "description": "The user sees more than 1000 hosts; visible holds the first 1000.",
+      "type": "boolean"
+    }
+  }
+}

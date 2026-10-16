@@ -34,6 +34,7 @@ spec:
       - {purpose: assistance, lawful_basis: consent}
       - {purpose: data_processing, lawful_basis: legitimate_interest}
       - {purpose: incident_review, lawful_basis: legitimate_interest}
+    controller: {name: "Example Org", contact: privacy@example.org, agreement_ref: "contracts/demo-processing"}
     subprocessors:
       - {provider: provider-a, agreement_ref: "contracts/provider-a-dpa", region: region-a,
          retention: {mode: standard, max_days: 30}}
@@ -46,6 +47,8 @@ spec:
       - {driver: telegram, third_party_storage: true, ceiling: internal}
     notice_ref: "https://docs.example.org/botaru/privacy"
     notice_version: 3
+    dpia_ref: "dpia/demo-2026"
+    ropa_ref: "ropa/demo"
   commands:
     "/logs": ops.investigate.v1
     "/health": ops.health.v1

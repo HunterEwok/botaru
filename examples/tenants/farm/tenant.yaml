@@ -16,3 +16,10 @@ spec:
     purposes:
       - {purpose: operations, lawful_basis: legitimate_interest}
     recipients: [messenger, monitoring]
+    channels:
+      - {driver: telegram, third_party_storage: true, ceiling: internal}
+    controller: {name: "Example Org", contact: privacy@example.org, agreement_ref: "contracts/farm-processing"}
+    notice_ref: "https://docs.example.org/botaru/privacy-farm"
+    notice_version: 1
+    dpia_ref: none
+    ropa_ref: "ropa/farm"

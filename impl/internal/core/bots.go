@@ -308,6 +308,9 @@ func (c *Core) retireBot(ctx context.Context, tx pgx.Tx, now time.Time, cat *Cat
 	if err := c.fenceAttempts(ctx, tx, now, "bot_retired", `acting_bot = $1`, b.ID); err != nil {
 		return "", err
 	}
+	if err := c.purgeRetiredRuntime(ctx, tx, now, cat, b); err != nil {
+		return "", err
+	}
 	// The facts go to the successor: the new identity of the worker, the next holder of the
 	// seat, or the first identity enrolled in the role before the seal ends; a role that left
 	// the catalog has none. Then they are sealed (MEM-4, MEM-7).
