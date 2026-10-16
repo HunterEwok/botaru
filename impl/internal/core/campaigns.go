@@ -1043,7 +1043,7 @@ func (c *Core) admitCampaign(ctx context.Context, tx pgx.Tx, now time.Time, cat 
 		if p.ParentTask != "" {
 			_ = tx.QueryRow(ctx, `SELECT type FROM tasks WHERE id = $1`, p.ParentTask).Scan(&parentType)
 		}
-		if held, err := heldBy(ctx, tx, now, []string{"no_action", "pause_action", "no_enqueue"}, approvalScopes(p.Tenant, p.Action, p.Role, parentType)...); err != nil {
+		if held, err := heldBy(ctx, tx, now, []string{"no_action", "pause_action", "no_enqueue"}, append(approvalScopes(p.Tenant, p.Action, p.Role, parentType), enqueuerWorkerScope(p.Tenant, p.EnqueuedBy)...)...); err != nil {
 			return campaignOutcome{}, err
 		} else if held != "" {
 			return no("held")
@@ -1259,19 +1259,26 @@ func campaignScopes(cmp *campaignRow) []scopeRef {
 	if cmp.Rec.Role != "" {
 		s = append(s, scopeRef{kind: "role", tenant: cmp.Tenant, name: cmp.Rec.Role})
 	}
-	return s
+	return append(s, enqueuerWorkerScope(cmp.Tenant, cmp.Rec.EnqueuedBy)...)
 }
 
-// campaignHoldEffects are the hold effects that pause any campaign (ORC-11).
-var campaignHoldEffects = []string{"no_enqueue", "no_claim", "cancel_running"}
+// enqueuerWorkerScope is the scope of the worker that proposed a campaign or drafted its
+// script, so that worker's own hold covers the campaign too (HLD-9).
+func enqueuerWorkerScope(tenant string, by map[string]any) []scopeRef {
+	if w, _ := by["worker"].(string); w != "" {
+		return []scopeRef{{kind: "worker", tenant: tenant, name: strings.ToLower(w)}}
+	}
+	return nil
+}
+
+// campaignHoldEffects are the hold effects that pause a campaign (ORC-11).
+var campaignHoldEffects = []string{"no_enqueue", "no_claim", "no_action", "cancel_running"}
 
 // campaignHoldEffectsOf are the effects that pause a campaign: of an action campaign
-// no_action, which forbids the release of its items, and pause_action, as it pauses a single
-// waiting approval (HLD-3); a read campaign requests no action, so no_action does not pause it
-// and the read-only work of a held role still runs (ORC-11, HLD-9).
+// pause_action too, as it pauses a single waiting approval (HLD-3).
 func campaignHoldEffectsOf(cmp *campaignRow) []string {
 	if cmp.Rec.action() != "" {
-		return append(slices.Clone(campaignHoldEffects), "no_action", "pause_action")
+		return append(slices.Clone(campaignHoldEffects), "pause_action")
 	}
 	return campaignHoldEffects
 }

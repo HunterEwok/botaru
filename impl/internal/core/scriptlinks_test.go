@@ -177,8 +177,9 @@ func TestScriptLinkRoleHold(t *testing.T) {
 	if n := countEvents(t, b.bench, "alarm.hold.auto.v1", "hold.auto:hello"); n != 1 {
 		t.Fatalf("alarm %d", n)
 	}
-	// Under the hold: a draft with an action is rejected with held, a read-only one runs, and
-	// its read fanout is not paused by no_action (ORC-11).
+	// Under the hold: a draft with an action is rejected with held, a read-only one runs; its
+	// read fanout is a campaign, which no_action pauses like every campaign (ORC-11), so it
+	// fails closed.
 	att, h = b.attemptTools(t, "2", false)
 	if r := proposeScriptCall(t, b.bench, h, checkStep, fixStep); r.reason() != "held" {
 		t.Fatalf("a draft with an action: %+v", r)
@@ -199,8 +200,12 @@ func TestScriptLinkRoleHold(t *testing.T) {
 	if err := b.c.st.Pool.QueryRow(ctx, `SELECT campaign FROM script_steps WHERE run = $1 AND id = 'all'`, run.ID).Scan(&cmpID); err != nil {
 		t.Fatal(err)
 	}
-	if cmp := b.campaign(t, cmpID); cmp.State == "paused" {
-		t.Fatalf("the read fanout paused: %s", cmp.PauseReason)
+	cmp := b.campaign(t, cmpID)
+	if cmp.State != "paused" || cmp.PauseReason != "held" {
+		t.Fatalf("the read fanout under the hold: %s %s", cmp.State, cmp.PauseReason)
+	}
+	if eff := campaignHoldEffectsOf(cmp); !containsString(eff, "no_enqueue") || !containsString(eff, "no_action") || containsString(eff, "pause_action") {
+		t.Fatalf("read campaign hold effects %v", eff)
 	}
 	// A dismissed incident disputes its link and lifts nothing.
 	if _, err := b.c.IncidentDismiss(ctx, b.op, IncidentRequest{Incident: first, ReasonCode: "maintenance", Details: "planned work"}); err != nil {
