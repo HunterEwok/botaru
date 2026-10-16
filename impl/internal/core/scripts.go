@@ -1102,10 +1102,8 @@ func (c *Core) planScriptCard(ctx context.Context, tx pgx.Tx, now time.Time, tv 
 	if err != nil || !ok {
 		return err
 	}
-	mark := ""
-	if kind == scriptSummaryKind {
-		mark = r.Rec.DataMark
-	}
+	// The run card shows the draft's parameters and arguments, so it carries the run's mark.
+	mark := r.Rec.DataMark
 	_, err = c.planDelivery(ctx, tx, now, plannedDelivery{
 		Tenant: tv.Name, Task: r.Anchor, Kind: kind, Addr: "approval_initiator", TargetKind: "chat", TargetID: chat.ID(),
 		ExecKind: "channel", ExecName: channel, Recipient: person, Body: map[string]any{"form": "card", "card": card}, DataOrigin: "code",

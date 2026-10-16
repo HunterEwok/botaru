@@ -829,7 +829,7 @@ func (c *Core) failTask(ctx context.Context, tx pgx.Tx, now time.Time, tenant, i
 		return err
 	}
 	// A draft of a translator that failed afterwards is not started any more.
-	if err := c.cancelRunsOf(ctx, tx, now, tenant, id, reason); err != nil {
+	if err := c.cancelRunsOf(ctx, tx, now, tenant, id, "expired"); err != nil {
 		return err
 	}
 	var record treeRecord
