@@ -365,6 +365,20 @@ func (c *Core) claimAttempt(ctx context.Context, tx pgx.Tx, now time.Time, cat *
 	} else if wait != "" {
 		return nil, markWaiting(ctx, tx, now, w.Tenant, claims, nil, wait)
 	}
+	// A run gets a role's skills only from the core copy whose tree hash equals its skill-ref;
+	// while one is missing the role gets no attempt, and its tasks wait (SKL-2).
+	var skillRefs []any
+	var skillFiles map[string]map[string]string
+	if knowledgeOn() && len(role.Skills) > 0 {
+		var err error
+		skillRefs, skillFiles, err = roleSkills(ctx, tx, role)
+		if errors.Is(err, errSkillMissing) {
+			return nil, nil
+		}
+		if err != nil {
+			return nil, err
+		}
+	}
 	quotas := tv != nil && hasRunningCeiling(tv.Spec.Dispatch)
 	if quotas {
 		// One dispatcher decision at a time per tenant, so two claims never both see the last
@@ -673,6 +687,18 @@ func (c *Core) claimAttempt(ctx context.Context, tx pgx.Tx, now time.Time, cat *
 			return nil, err
 		}
 		payload["my_outcomes"] = mo
+	}
+	// The skills as references, and their files as the extension field skill_files, which a
+	// runtime of runtime.skills: runtime_files writes into its own skill directory (SKL-2, MAN-3).
+	if len(skillRefs) > 0 {
+		payload["skills"] = skillRefs
+		payload["skill_files"] = skillFiles
+	}
+	// An ingest job gets the document it cuts (extension field kb_document, KNW-5).
+	if kd, err := kbDocumentPayload(ctx, tx, id, typ); err != nil {
+		return nil, err
+	} else if kd != nil {
+		payload["kb_document"] = kd
 	}
 	item.Payload = payload
 	if err := c.appendEvent(ctx, tx, now, w.Tenant, Event{Type: "task.working", Subject: id, Data: map[string]any{"task": id, "lease_no": leaseNo, "fingerprint": att.Fingerprint}}); err != nil {

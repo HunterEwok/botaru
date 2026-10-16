@@ -276,8 +276,8 @@ func (c *Core) Grant(ctx context.Context, op Operator, req GrantRequest) (*Done,
 
 // unprivilegedCaps are the capability forms that never make a group privileged
 // (spec/model/capabilities.yaml), bare or with their parameter; task:<type> is privileged from
-// tier 1.
-var unprivilegedCaps = map[string]bool{"task.read": true, "team.view": true, "msg.send": true}
+// tier 1. kb.write is privileged: never as well (PRM-13, KNW-4).
+var unprivilegedCaps = map[string]bool{"task.read": true, "team.view": true, "msg.send": true, "kb.write": true}
 
 func unprivilegedCap(cp string) bool {
 	form, _, _ := strings.Cut(cp, ":")

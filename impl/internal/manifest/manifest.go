@@ -410,6 +410,16 @@ type Role struct {
 	Runtime   struct {
 		Driver string `json:"driver"`
 	} `json:"runtime"`
+	// Skills pin the role's skills by the tree hash of their folder (skill-ref, SKL-2).
+	Skills []SkillRef `json:"skills"`
+}
+
+// SkillRef is a skill-ref of a role: the skill name, its description and the tree hash of its
+// folder in 64 hexadecimal digits (spec/hashing.md, SKL-2).
+type SkillRef struct {
+	Name        string `json:"name"`
+	Description string `json:"description"`
+	SHA256      string `json:"sha256"`
 }
 
 // GoalTemplate is one goal template of a task type for script steps.

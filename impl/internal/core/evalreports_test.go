@@ -53,7 +53,7 @@ func TestTranslatorEvalGate(t *testing.T) {
 		}
 		return ""
 	}
-	fp, err := staticFingerprint(hash("Role"), map[string]string{"fx.translate.v1": hash("TaskType")}, "", "translate-std", "", "")
+	fp, err := staticFingerprint(hash("Role"), map[string]string{"fx.translate.v1": hash("TaskType")}, "", "translate-std", "", "", nil)
 	if err != nil {
 		t.Fatal(err)
 	}

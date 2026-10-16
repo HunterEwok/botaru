@@ -309,6 +309,12 @@ func (s *Server) p1(w http.ResponseWriter, r *http.Request) {
 			s.fail(w, err)
 			return
 		}
+	case "kb.index_put":
+		out, err = s.kbIndexPut(ctx, wk, lease, m)
+		if err != nil {
+			s.fail(w, err)
+			return
+		}
 	default:
 		Problem(w, &core.Problem{Reason: "not_found", Detail: "the operation is not implemented in this build"})
 		return

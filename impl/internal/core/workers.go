@@ -305,6 +305,16 @@ func (c *Core) Hello(ctx context.Context, w *Worker, req HelloRequest) (*HelloRe
 	if w.State == "blocked" {
 		return nil, refuse("blocked", "the worker is blocked")
 	}
+	// Skills reach a runtime only as its own files; skills: farm is not offered (SKL-2, SKL-4).
+	if w.Kind == "agent" && req.Kind == "agent" {
+		cat, err := c.Catalog(ctx)
+		if err != nil {
+			return nil, err
+		}
+		if r := skillsRefusal(req.Runtime, cat.Roles[w.Role]); r != "" {
+			return nil, refuse("version_unsupported", "%s", r)
+		}
+	}
 	mismatch := req.Kind != w.Kind
 	why := "hello does not match the enroll record"
 	if r := runtimeRefusal(w.Kind, req.Runtime); r != "" {

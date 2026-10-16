@@ -259,6 +259,8 @@ func (c *Core) toolCatalog(cat *Catalog, g *toolsGrant) ([]catalogTool, error) {
 	if it := c.inspectTool(cat, g); it != nil {
 		out = append(out, *it)
 	}
+	// The corpus tools of profile knowledge (KNW-1).
+	out = append(out, c.kbTools(cat, g)...)
 	if mt, err := c.sendMessageTool(cat, g); err != nil {
 		return nil, err
 	} else if mt != nil {
@@ -524,6 +526,10 @@ func (c *Core) P3ToolsCall(ctx context.Context, handle string, p mcp.CallParams)
 				args = map[string]any{}
 			}
 			builtin, err = c.controlToolCall(ctx, tx, now, cat, g, offered, args)
+			return err
+		}
+		if kbToolName(p.Name) {
+			builtin, err = c.kbToolCall(ctx, tx, now, cat, g, tools, p.Name, p.Arguments)
 			return err
 		}
 		if msgToolName(p.Name) {

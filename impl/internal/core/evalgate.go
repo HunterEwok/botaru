@@ -101,7 +101,7 @@ func (x evalIndex) staticFingerprint(role, tenant string) (string, bool, error) 
 		ref = personaOf(mmap(mmap(mmap(x.governance(tenant), "positions"), pos), "persona"))
 	}
 	models := mmap(rs, "models")
-	fp, err := staticFingerprint(roleHash, types, ref.SHA256, mstr(models, "base"), mstr(models, "analysis"), mstr(mmap(rs, "runtime"), "driver"))
+	fp, err := staticFingerprint(roleHash, types, ref.SHA256, mstr(models, "base"), mstr(models, "analysis"), mstr(mmap(rs, "runtime"), "driver"), skillRefsOf(rs))
 	return fp, true, err
 }
 
