@@ -39,7 +39,10 @@ func (c *Core) accountSignal(ctx context.Context, w *Worker, data map[string]any
 	if err := c.spec.Validate("ext-monitor-account", data); err != nil {
 		return nil, refuse("input_schema_invalid", "the account report is outside its schema")
 	}
-	// The signal names the hosts; only the event goes without them.
+	// One schema serves the signal and the event of the catalog (ext-monitor-account): the
+	// event goes without the host lists, so the schema cannot require them, and the signal's
+	// need for both lists is checked here. A separate signal schema would be an orphan of the
+	// events catalog.
 	if data["visible"] == nil || data["scripts"] == nil {
 		return nil, refuse("input_schema_invalid", "the account report has no visible or scripts list")
 	}

@@ -323,6 +323,67 @@ func TestRetireRuntimeInternalPurge(t *testing.T) {
 	}
 }
 
+// MEM-9, RET-6: a restore that replays the runtime purge of a retired identity from the
+// separate erasure log keeps it a purge of the runtime only: the replay has the worker, its one
+// step is the runtime's, and closing it leaves the sealed identity and its facts alone.
+func TestRestoreKeepsRuntimePurge(t *testing.T) {
+	ctx := context.Background()
+	b := newBench(t)
+	if _, err := b.c.st.Pool.Exec(ctx, `UPDATE workers SET hello = jsonb_set(coalesce(hello, '{}'), '{runtime}', '{"session": "runtime_internal", "memory": "core"}') WHERE id = $1`, b.agent.ID); err != nil {
+		t.Fatal(err)
+	}
+	old := b.botOf(t, b.agent.ID)
+	if _, err := b.c.BotRetire(ctx, b.op, BotRetireRequest{Bot: old.ID}); err != nil {
+		t.Fatal(err)
+	}
+	var req string
+	if err := b.c.st.Pool.QueryRow(ctx, `SELECT id FROM erasure_requests WHERE reason = 'bot_retired' AND runtime_worker = $1`, b.agent.ID).Scan(&req); err != nil {
+		t.Fatal(err)
+	}
+	log, err := b.c.ErasureLogExport(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	i := slices.IndexFunc(log, func(e ErasureLogEntry) bool { return e.ID == req })
+	if i < 0 || log[i].RuntimeWorker != b.agent.ID {
+		t.Fatalf("MEM-9: the erasure log lost the runtime worker: %+v", log)
+	}
+	// The backup was taken before the request: the store does not have it.
+	if _, err := b.c.st.Pool.Exec(ctx, `DELETE FROM erasure_steps WHERE request = $1`, req); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := b.c.st.Pool.Exec(ctx, `DELETE FROM erasure_requests WHERE id = $1`, req); err != nil {
+		t.Fatal(err)
+	}
+	if n, err := b.c.RestoreBegin(ctx, log); err != nil || n != 1 {
+		t.Fatalf("restore begin: %d %v", n, err)
+	}
+	if err := b.c.settleRestore(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if err := b.c.loadRestoring(ctx); err != nil {
+		t.Fatal(err)
+	}
+	b.loop(t, "erasure")
+	if n := b.count(t, `SELECT count(*) FROM erasure_steps WHERE request = $1`, req); n != 1 {
+		t.Fatalf("MEM-9: the replay has %d steps", n)
+	}
+	if n := b.count(t, `SELECT count(*) FROM erasure_steps WHERE request = $1 AND kind = 'runtime' AND target = $2`, req, b.agent.ID); n != 1 {
+		t.Fatal("MEM-9: the replayed step is not the runtime's purge")
+	}
+	if _, err := b.c.st.Pool.Exec(ctx, `UPDATE erasure_steps SET state = 'done' WHERE request = $1`, req); err != nil {
+		t.Fatal(err)
+	}
+	b.loop(t, "erasure")
+	var state, botState string
+	if err := b.c.st.Pool.QueryRow(ctx, `SELECT state FROM erasure_requests WHERE id = $1`, req).Scan(&state); err != nil || state != "done" {
+		t.Fatalf("MEM-9: replayed request %s %v", state, err)
+	}
+	if err := b.c.st.Pool.QueryRow(ctx, `SELECT state FROM bots WHERE id = $1`, old.ID).Scan(&botState); err != nil || botState != "retired" {
+		t.Fatalf("MEM-9: the replayed purge ended the sealed identity: %s %v", botState, err)
+	}
+}
+
 // FEN-7: the service_grant record whose number a bot's write call carries names, beside the
 // bot as author, the initiator whose own right service.control:<service> the run stands on
 // (D-73); a person's own call names the person.
