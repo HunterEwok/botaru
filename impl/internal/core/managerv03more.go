@@ -124,25 +124,23 @@ func (c *Core) managerSeatRecord(ctx context.Context, tx pgx.Tx) (map[string]any
 	if m.DecideUntil != nil {
 		rec["decide_until"] = fmtTime(*m.DecideUntil)
 	}
-	if claimsV03() {
-		rows, err := tx.Query(ctx, `SELECT tenant, incident, since FROM manager_restrictions WHERE until IS NULL ORDER BY tenant LIMIT 1000`)
-		if err != nil {
-			return nil, err
-		}
-		list, err := pgx.CollectRows(rows, func(row pgx.CollectableRow) (any, error) {
-			var tenant, incident string
-			var since time.Time
-			err := row.Scan(&tenant, &incident, &since)
-			return withTenant(map[string]any{"incident": incident, "since": fmtTime(since)}, tenant), err
-		})
-		if err != nil {
-			return nil, err
-		}
-		if list == nil {
-			list = []any{}
-		}
-		rec["restricted_in"] = list
+	rows, err := tx.Query(ctx, `SELECT tenant, incident, since FROM manager_restrictions WHERE until IS NULL ORDER BY tenant LIMIT 1000`)
+	if err != nil {
+		return nil, err
 	}
+	list, err := pgx.CollectRows(rows, func(row pgx.CollectableRow) (any, error) {
+		var tenant, incident string
+		var since time.Time
+		err := row.Scan(&tenant, &incident, &since)
+		return withTenant(map[string]any{"incident": incident, "since": fmtTime(since)}, tenant), err
+	})
+	if err != nil {
+		return nil, err
+	}
+	if list == nil {
+		list = []any{}
+	}
+	rec["restricted_in"] = list
 	if err := c.spec.Validate("urn:botaru:schema:seat:1", rec); err != nil {
 		return nil, err
 	}
@@ -206,9 +204,6 @@ func authorLevel(seat bool, purpose string) int {
 // deferrable in delivery-kinds.yaml: the manager's notice to people is not urgent, and quiet
 // hours apply to it (MGR-52). The daily digest does not collect it.
 func quietOnlyKinds() []string {
-	if !claimsV03() {
-		return nil
-	}
 	return []string{attentionNotice}
 }
 
@@ -291,9 +286,6 @@ func (c *Core) paragraphAsked(ctx context.Context, tx pgx.Tx, now time.Time, cat
 // and does not use: stops_manager of an IncidentClass and incident_stop of the farm charter
 // (MGR-55, GOV-22, GOV-28). They do not fail the set.
 func ignoredV03(d manifest.Doc, v map[string]any, i int) []ApplyError {
-	if !claimsV03() {
-		return nil
-	}
 	spec, _ := v["spec"].(map[string]any)
 	var path string
 	switch {
@@ -351,7 +343,7 @@ func setPostmortemParagraph(ctx context.Context, tx pgx.Tx, task string) error {
 // enqueuePostmortem (MGR-53).
 func postmortemOn(cat *Catalog, tenant string) bool {
 	role := managerRole(cat)
-	if !claimsV03() || cat.Tenants[tenant] == nil || !managerEnabled(cat, tenant) || managerCharter(cat)["postmortem"] == false || role == "" ||
+	if cat.Tenants[tenant] == nil || !managerEnabled(cat, tenant) || managerCharter(cat)["postmortem"] == false || role == "" ||
 		!slices.Contains(cat.Roles[role].Claims, postmortemType) {
 		return false
 	}

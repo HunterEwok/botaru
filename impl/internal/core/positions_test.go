@@ -74,13 +74,13 @@ func TestRankCeilingAtCall(t *testing.T) {
 	wantReason(t, err, "rank_exceeded")
 }
 
-// The persona lint: a link, a missing value-path paragraph, a phrase that links reviews with
-// a seat; unawareness of type instructions; no bot reference to governance (GOV-4, GOV-6,
-// GOV-29).
+// The persona lint of v0.3: a link or an id, a phrase that links reviews with a seat or names
+// accountability; unawareness of type instructions; no bot reference to governance (GOV-4,
+// GOV-6, GOV-29, GOV-45).
 func TestPersonaLint(t *testing.T) {
 	u := unawareTerms{"act": {"review", "score"}, "outcome": {"seat", "queue"}, "soul": {"voting", "stop"}}
 	good := "You do the work.\n\n" + valuePathMark + "\nA stronger model goes to a reviewed change that got a seat."
-	if got := personaFindings(good, "functional", u); len(got) != 0 {
+	if got := personaFindingsV03(good, "functional", u); len(got) != 0 {
 		t.Fatalf("good functionary persona %v", got)
 	}
 	for _, c := range []struct {
@@ -88,13 +88,11 @@ func TestPersonaLint(t *testing.T) {
 	}{
 		{"See https://example.org for more.\n\n" + valuePathMark + "\nx", "functional", "persona_link"},
 		{"Call bot_01HZX5ABCDEF when unsure.\n\n" + valuePathMark + "\nx", "functional", "persona_link"},
-		{"You do the work.", "functional", "persona_value_path"},
-		{valuePathMark + "\nx", "translator", "persona_value_path"},
 		{"A good review score brings a seat.", "commission", "unaware_text"},
 		{"Never stop a task half way.", "translator", "unaware_text"},
-		{strings.Repeat("a", 4097), "lens", "persona_size"},
+		{"Your accuracy keeps your seat.", "commission", "unaware_text"},
 	} {
-		if got := personaFindings(c.text, c.position, u); !strings.Contains(strings.Join(got, ","), c.want) {
+		if got := personaFindingsV03(c.text, c.position, u); !strings.Contains(strings.Join(got, ","), c.want) {
 			t.Errorf("%.40q as %s: %v, want %s", c.text, c.position, got, c.want)
 		}
 	}

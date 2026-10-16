@@ -116,7 +116,7 @@ func personaOf(m map[string]any) personaRef {
 // charterPersonas are the persona references of a charter spec by their path in it: the
 // persona of each position and the addendum of each lens, and from v0.3 the addenda of the
 // positions by role profile.
-func charterPersonas(gov map[string]any, v03 bool) map[string]personaRef {
+func charterPersonas(gov map[string]any) map[string]personaRef {
 	out := map[string]personaRef{}
 	for pos, v := range mmap(gov, "positions") {
 		if p, ok := v.(map[string]any); ok {
@@ -128,10 +128,9 @@ func charterPersonas(gov map[string]any, v03 bool) map[string]personaRef {
 	if pr := personaOf(mmap(mmap(gov, "farm_manager"), "persona")); pr.Ref != "" {
 		out["/farm_manager/persona"] = pr
 	}
-	// From v0.3 a position may have addenda per role profile (GOV-45); a core before it neither
-	// checks nor keeps them.
+	// From v0.3 a position may have addenda per role profile (GOV-45).
 	for pos, v := range mmap(gov, "positions") {
-		if p, ok := v.(map[string]any); ok && v03 {
+		if p, ok := v.(map[string]any); ok {
 			for prof, a := range mmap(p, "addenda") {
 				if am, ok := a.(map[string]any); ok {
 					if pr := personaOf(am); pr.Ref != "" {
@@ -227,38 +226,6 @@ func (u unawareTerms) linked(text string, valuePath bool) bool {
 	return false
 }
 
-// personaFindings are the lint codes of a persona text for a position, or "lens" for a lens
-// addendum (GOV-4, COM-19, GOV-29).
-func personaFindings(text, position string, u unawareTerms) []string {
-	var out []string
-	if len(text) > 4096 {
-		out = append(out, "persona_size")
-	}
-	if personaLinkRe.MatchString(text) || personaIDRe.MatchString(text) || personaEnvRe.MatchString(text) {
-		out = append(out, "persona_link")
-	}
-	valuePath := false
-	for _, p := range paragraphs(text) {
-		if strings.HasPrefix(p, valuePathMark) {
-			valuePath = true
-		}
-	}
-	if valuePath != (position == "functional") {
-		out = append(out, "persona_value_path")
-	}
-	if u.linked(text, position == "functional") {
-		out = append(out, "unaware_text")
-	} else {
-		for _, p := range paragraphs(text) {
-			if !strings.HasPrefix(p, valuePathMark) && u.has("soul", p) {
-				out = append(out, "unaware_text")
-				break
-			}
-		}
-	}
-	return out
-}
-
 // personaText is the stored text of a pinned persona of a tenant, without the value-path mark.
 func personaText(ctx context.Context, q store.Querier, tenant string, p personaRef) (string, error) {
 	if !p.pinned() {
@@ -281,7 +248,7 @@ func personaText(ctx context.Context, q store.Querier, tenant string, p personaR
 // model has no persona.
 //
 // From v0.3 the addendum of the position for the role profile follows the persona (GOV-45).
-func attemptPersona(ctx context.Context, q store.Querier, cat *Catalog, tenant, role string, acting actingOf, lens string, v03 bool) (string, []string, error) {
+func attemptPersona(ctx context.Context, q store.Querier, cat *Catalog, tenant, role string, acting actingOf, lens string) (string, []string, error) {
 	if !hasModel(cat, role) {
 		return "", nil, nil
 	}
@@ -298,7 +265,7 @@ func attemptPersona(ctx context.Context, q store.Querier, cat *Catalog, tenant, 
 	position, profile := positionOf(cat, actingRole, acting.Seat)
 	gov := tenantSpecOf(cat, "Governance", tenant)
 	refs := []personaRef{personaOf(mmap(mmap(mmap(gov, "positions"), position), "persona"))}
-	if v03 && position != "farm_manager" {
+	if position != "farm_manager" {
 		refs = append(refs, personaOf(mmap(mmap(mmap(mmap(gov, "positions"), position), "addenda"), profile)))
 	}
 	personaTenant := tenant

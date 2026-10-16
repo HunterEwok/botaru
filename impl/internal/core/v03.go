@@ -64,7 +64,7 @@ func v03State(ctx context.Context, q store.Querier, tenant string) (since, onSin
 // core, the charter mode on and its first apply recorded (GOV-36). It returns the time from which
 // incidents and confirmations lead to departures.
 func (c *Core) accountabilityOn(ctx context.Context, q store.Querier, cat *Catalog, tenant string) (*time.Time, error) {
-	if !claimsV03() || accountabilityMode(cat, tenant) != "on" {
+	if accountabilityMode(cat, tenant) != "on" {
 		return nil, nil
 	}
 	_, on, err := v03State(ctx, q, tenant)
@@ -74,9 +74,6 @@ func (c *Core) accountabilityOn(ctx context.Context, q store.Querier, cat *Catal
 // applyV03 writes, in the apply transaction of a v0.3 core, governance.v03_enabled at the first
 // apply of each tenant and commission.accountability_on at the first apply with on (GOV-36).
 func (c *Core) applyV03(ctx context.Context, tx pgx.Tx, now time.Time, cat *Catalog) error {
-	if !claimsV03() {
-		return nil
-	}
 	for _, t := range slices.Sorted(mapKeys(cat.Tenants)) {
 		tag, err := tx.Exec(ctx, `INSERT INTO governance_v03 (tenant, since, updated_at) VALUES ($1, $2, $2) ON CONFLICT DO NOTHING`, t, now)
 		if err != nil {
@@ -205,7 +202,7 @@ func seatsReady(ctx context.Context, q store.Querier, now time.Time, tenant stri
 // readyStep sends the tenant admins with admin:governance the notice accountability_ready while
 // the mode is shadow and every seat is held with enough scored forecasts, once a month (GOV-36).
 func (c *Core) readyStep(ctx context.Context, tx pgx.Tx, now time.Time, cat *Catalog, tv *TenantView) error {
-	if !claimsV03() || accountabilityMode(cat, tv.Name) != "shadow" {
+	if accountabilityMode(cat, tv.Name) != "shadow" {
 		return nil
 	}
 	var sent *time.Time

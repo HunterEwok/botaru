@@ -210,13 +210,11 @@ func (c *Core) successOf(ctx context.Context, tx pgx.Tx, now time.Time, cat *Cat
 	if !slices.Contains(functionaryProfiles, profileOf(cat, b.Role)) || !hasModel(cat, b.Role) {
 		return "", "", nil
 	}
-	if claimsV03() {
-		// A bot that left a seat for a link gets no trigger for 180 days (GOV-42).
-		if at, err := unseatedRecently(ctx, tx, now, botID); err != nil {
-			return "", "", err
-		} else if at != nil {
-			return botID, "after_unseat", nil
-		}
+	// A bot that left a seat for a link gets no trigger for 180 days (GOV-42).
+	if at, err := unseatedRecently(ctx, tx, now, botID); err != nil {
+		return "", "", err
+	} else if at != nil {
+		return botID, "after_unseat", nil
 	}
 	d := mmapAny(p.Rec["decision"])
 	switch {
@@ -423,7 +421,7 @@ func (c *Core) eligible(ctx context.Context, tx pgx.Tx, now time.Time, cat *Cata
 	if err := tx.QueryRow(ctx, `SELECT coalesce((SELECT skip_tenure FROM promotion_entries WHERE tenant = $1 AND bot = $2), false)`, tenant, botID).Scan(&skipTenure); err != nil {
 		return false, err
 	}
-	if claimsV03() && !skipTenure {
+	if !skipTenure {
 		// After leaving a seat for a link: no case for 180 days, and the tenure counts from the
 		// departure; a bot returned after a canceled link waits for no min_tenure (GOV-42).
 		at, err := unseatedRecently(ctx, tx, now, botID)
@@ -779,27 +777,25 @@ func (c *Core) openCase(ctx context.Context, tx pgx.Tx, now time.Time, cat *Cata
 			figures = append(figures, f)
 			holders[s.id], upheld[s.id] = s.holder, up
 		}
-		if claimsV03() {
-			// From v0.3 the card shows the accuracy of every seat of L, and with accountability
-			// on code proposes the leaver (COM-17, GOV-43).
-			lv, err := c.proposeLeaver(ctx, tx, now, cat, tv.Name, seats.list)
-			if err != nil {
-				return err
-			}
-			for _, f := range figures {
-				fm := f.(map[string]any)
-				a := lv.acc[asString(fm["seat"])]
-				fm["accuracy"], fm["scored_forecasts"] = a.view(), a.N
-			}
-			if lv.proposed != "" {
-				proposed = lv.proposed
-			}
-			for _, t := range lv.tied {
-				tiedSeats = append(tiedSeats, t)
-			}
-			if lv.onlyScoredVeto {
-				flags = append(flags, "evicts_only_scored_veto")
-			}
+		// From v0.3 the card shows the accuracy of every seat of L, and with accountability
+		// on code proposes the leaver (COM-17, GOV-43).
+		lv, err := c.proposeLeaver(ctx, tx, now, cat, tv.Name, seats.list)
+		if err != nil {
+			return err
+		}
+		for _, f := range figures {
+			fm := f.(map[string]any)
+			a := lv.acc[asString(fm["seat"])]
+			fm["accuracy"], fm["scored_forecasts"] = a.view(), a.N
+		}
+		if lv.proposed != "" {
+			proposed = lv.proposed
+		}
+		for _, t := range lv.tied {
+			tiedSeats = append(tiedSeats, t)
+		}
+		if lv.onlyScoredVeto {
+			flags = append(flags, "evicts_only_scored_veto")
 		}
 	}
 	rec := map[string]any{"id": id, "tenant": tv.Name, "kind": "promotion", "state": "opened", "hold": false,
@@ -1373,7 +1369,7 @@ func (c *Core) proposeLeaver(ctx context.Context, tx pgx.Tx, now time.Time, cat 
 			}
 		}
 	}
-	if accountabilityMode(cat, tenant) != "on" || !claimsV03() {
+	if accountabilityMode(cat, tenant) != "on" {
 		return out, nil
 	}
 	if on, err := c.accountabilityOn(ctx, tx, cat, tenant); err != nil || on == nil {

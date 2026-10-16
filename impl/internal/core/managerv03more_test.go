@@ -348,7 +348,7 @@ func TestManagerProposalsV03(t *testing.T) {
 		t.Fatal("author levels")
 	}
 	p := &proposalRow{Rec: map[string]any{"origin": map[string]any{"level": 2, "seat": managerSeatID}, "body": map[string]any{"category": "schedule"}}}
-	if in := reviewInput(p, true); in["author_level"] != nil || in["seat"] != nil || in["origin"] != nil {
+	if in := reviewInput(p); in["author_level"] != nil || in["seat"] != nil || in["origin"] != nil {
 		t.Fatalf("reviewer input %v", in)
 	}
 	b := newManagerBench(t)

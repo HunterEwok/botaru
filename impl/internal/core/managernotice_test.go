@@ -295,23 +295,25 @@ func TestManagerStoppedCard(t *testing.T) {
 	}
 }
 
-// The repeat times of fx-mgr-stopped-repeat (MGR-36).
+// The repeats of manager_stopped (MGR-36) end with v0.2: a stop reason incident and an expired
+// decide_within that an earlier core left on the seat are dropped by the manager loop, the
+// holder stays, and no repeat is sent (GOV-47, MGR-55).
 func TestStopRepeats(t *testing.T) {
-	at := time.Date(2026, 11, 24, 5, 10, 0, 0, time.UTC)
-	for _, c := range []struct {
-		days int
-		want []string
-	}{
-		{7, []string{"2026-11-25T05:10:00Z", "2026-11-27T05:10:00Z", "2026-11-30T05:10:00Z"}},
-		{4, []string{"2026-11-25T05:10:00Z", "2026-11-27T05:10:00Z"}},
-		{2, []string{"2026-11-25T05:10:00Z"}},
-	} {
-		var got []string
-		for _, r := range stopRepeats(at, at.Add(time.Duration(c.days)*24*time.Hour)) {
-			got = append(got, r.Format(time.RFC3339))
-		}
-		if strings.Join(got, ",") != strings.Join(c.want, ",") {
-			t.Errorf("decide_within %dd: %v, want %v", c.days, got, c.want)
-		}
+	ctx := context.Background()
+	b := newManagerBench(t)
+	op := b.farmOperator(t)
+	if _, err := b.c.SeatAssign(ctx, b.farmOp(), SeatRequest{Seat: managerSeatID}); err != nil {
+		t.Fatal(err)
+	}
+	holder := b.managerSeat(t).Holder
+	b.exec(t, `UPDATE seats SET state = 'stopped', stop_reasons = '[{"reason": "incident", "incident": "inc_x", "repeats": 1}]',
+		decide_until = botaru_now() - interval '1 hour' WHERE id = $1`, managerSeatID)
+	b.advance(t, 72*3600)
+	b.loop(t, "identity")
+	if m := b.managerSeat(t); m.State != "held" || m.Holder != holder || len(m.Reasons) != 0 || m.DecideUntil != nil {
+		t.Fatalf("seat %+v", m)
+	}
+	if cards := stoppedNotices(t, b, op); len(cards) != 0 {
+		t.Fatalf("repeats %+v", cards)
 	}
 }

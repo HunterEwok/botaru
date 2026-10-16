@@ -371,6 +371,8 @@ func (b *Bench) manifests() ([]map[string]any, error) {
 	if err := b.dropLaterResources(out); err != nil {
 		return nil, err
 	}
+	// The bench set holds no farm charter: the farm manager is off (MGR-20).
+	testbench.ManagerOff(out)
 	if _, err := testbench.DropUnsupported(b.sp, out); err != nil {
 		return nil, err
 	}

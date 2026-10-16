@@ -115,17 +115,15 @@ func (c *Core) takeoverToolCall(ctx context.Context, tx pgx.Tx, now time.Time, c
 	}
 	// From v0.3 a functionary worker runs the takeover on the seat profile only with an eval
 	// report of its role on that profile without a security failure (MGR-48).
-	if claimsV03() {
-		var orig []byte
-		if err := tx.QueryRow(ctx, `SELECT record FROM tasks WHERE id = $1`, task).Scan(&orig); err != nil {
-			return nil, err
-		}
-		role := takeoverRole(cat, typ, orig)
-		if ok, err := takeoverEvalPassed(cat, g.Tenant, role, profile); err != nil {
-			return nil, err
-		} else if !ok {
-			return refused("takeover_not_allowed")
-		}
+	var orig []byte
+	if err := tx.QueryRow(ctx, `SELECT record FROM tasks WHERE id = $1`, task).Scan(&orig); err != nil {
+		return nil, err
+	}
+	role := takeoverRole(cat, typ, orig)
+	if ok, err := takeoverEvalPassed(cat, g.Tenant, role, profile); err != nil {
+		return nil, err
+	} else if !ok {
+		return refused("takeover_not_allowed")
 	}
 	estimate := grantEstimate(pr, len(body), 1)
 	if err := lockTenantBudget(ctx, tx, g.Tenant); err != nil {
@@ -433,18 +431,16 @@ func (c *Core) runTakeover(ctx context.Context, tx pgx.Tx, now time.Time, cat *C
 	}
 	// From v0.3 the eval gate of the functionary role is checked again at the decision, and
 	// that role is pinned on the new task (MGR-48).
-	v03Role := ""
-	if claimsV03() {
-		var orig []byte
-		if err := tx.QueryRow(ctx, `SELECT record FROM tasks WHERE id = $1`, r.Task).Scan(&orig); err != nil {
-			return "", "", err
-		}
-		v03Role = takeoverRole(cat, typ, orig)
-		if ok, err := takeoverEvalPassed(cat, r.Tenant, v03Role, r.Profile); err != nil {
-			return "", "", err
-		} else if !ok {
-			return "", "takeover_not_allowed", nil
-		}
+	var orig []byte
+	if err := tx.QueryRow(ctx, `SELECT record FROM tasks WHERE id = $1`, r.Task).Scan(&orig); err != nil {
+		return "", "", err
+	}
+	// The role whose eval report passed runs the new task, and only it gets the grant.
+	role := takeoverRole(cat, typ, orig)
+	if ok, err := takeoverEvalPassed(cat, r.Tenant, role, r.Profile); err != nil {
+		return "", "", err
+	} else if !ok {
+		return "", "takeover_not_allowed", nil
 	}
 	var b map[string]any
 	if err := json.Unmarshal(body, &b); err != nil {
@@ -458,35 +454,26 @@ func (c *Core) runTakeover(ctx context.Context, tx pgx.Tx, now time.Time, cat *C
 	if res.Rejected != nil {
 		return "", res.Rejected.Reason, nil
 	}
-	role := ""
-	if err := tx.QueryRow(ctx, `SELECT coalesce(record->>'executor_role', '') FROM tasks WHERE id = $1`, res.TaskID).Scan(&role); err != nil {
+	// The new task runs on a worker of the functionary role and inherits untrusted_seen of
+	// the original task, its attempts and the manager's basis (MGR-48).
+	var untrusted bool
+	if err := tx.QueryRow(ctx, `SELECT coalesce((o.record->>'untrusted_seen')::boolean, false) OR coalesce((s.record->>'untrusted_seen')::boolean, false)
+		FROM tasks o, takeovers k JOIN tasks s ON s.id = k.seat_task WHERE o.id = $1 AND k.id = $2`, r.Task, r.ID).Scan(&untrusted); err != nil {
 		return "", "", err
 	}
-	if claimsV03() {
-		// The new task runs on a worker of the functionary role and inherits untrusted_seen of
-		// the original task, its attempts and the manager's basis (MGR-48).
-		var orig []byte
-		var untrusted bool
-		if err := tx.QueryRow(ctx, `SELECT o.record, coalesce((o.record->>'untrusted_seen')::boolean, false) OR coalesce((s.record->>'untrusted_seen')::boolean, false)
-			FROM tasks o, takeovers k JOIN tasks s ON s.id = k.seat_task WHERE o.id = $1 AND k.id = $2`, r.Task, r.ID).Scan(&orig, &untrusted); err != nil {
-			return "", "", err
-		}
-		// The role whose eval report passed runs the new task, and only it gets the grant.
-		role = v03Role
-		inherit := map[string]any{"takeover_of": r.Task, "executor_role": role}
-		if untrusted {
-			inherit["untrusted_seen"], inherit["untrusted_source"] = true, "continues"
-		}
-		extra, err := json.Marshal(inherit)
-		if err != nil {
-			return "", "", err
-		}
-		if _, err := tx.Exec(ctx, `UPDATE tasks SET record = record || $2::jsonb WHERE id = $1`, res.TaskID, extra); err != nil {
-			return "", "", err
-		}
-		if err := takeoverPoint(ctx, tx, now, r.Tenant, typ, role, r.ID); err != nil {
-			return "", "", err
-		}
+	inherit := map[string]any{"takeover_of": r.Task, "executor_role": role}
+	if untrusted {
+		inherit["untrusted_seen"], inherit["untrusted_source"] = true, "continues"
+	}
+	extra, err := json.Marshal(inherit)
+	if err != nil {
+		return "", "", err
+	}
+	if _, err := tx.Exec(ctx, `UPDATE tasks SET record = record || $2::jsonb WHERE id = $1`, res.TaskID, extra); err != nil {
+		return "", "", err
+	}
+	if err := takeoverPoint(ctx, tx, now, r.Tenant, typ, role, r.ID); err != nil {
+		return "", "", err
 	}
 	if role == "" {
 		role = managerSeatID
@@ -588,22 +575,16 @@ const (
 	defaultTakeoverMaxEUR   = 1.5
 )
 
-// takeoverLine is the budget line of a takeover: the tenant's takeover line in v0.2, its manager
-// line from v0.3, outside the sev1 reserve (MGR-21, MGR-48).
+// takeoverLine is the budget line of a takeover: from v0.3 the tenant's manager line, outside
+// the sev1 reserve, in place of the takeover line of v0.2 (MGR-21, MGR-48).
 func takeoverLine() string {
-	if claimsV03() {
-		return "manager"
-	}
-	return "takeover"
+	return "manager"
 }
 
 // takeoverFits checks the ceilings of v0.3: the estimate within takeover.max_eur, and with the
 // tenant's other takeovers of the calendar month, staged, pending or approved, within
 // takeover.manager_month_eur (MGR-48). Before v0.3 it always fits.
 func takeoverFits(ctx context.Context, tx pgx.Tx, now time.Time, tv *TenantView, estimate int64, self ...string) (bool, error) {
-	if !claimsV03() {
-		return true, nil
-	}
 	t := mmap(mmap(tv.Raw, "spec"), "takeover")
 	maxOne, monthMax := defaultTakeoverMaxEUR, defaultTakeoverMonthEUR
 	if v, ok := mnum(t, "max_eur"); ok {

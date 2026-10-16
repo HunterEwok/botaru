@@ -113,11 +113,22 @@ func TestProposalSeatsV03(t *testing.T) {
 	}
 }
 
-// A v0.3 core never retires the farm manager as replaced_after_incident (IDN-15, IDN-16).
+// A v0.3 core never retires the farm manager as replaced_after_incident, even when a stop
+// reason incident of an earlier core is still on the seat: people replacing the holder retire
+// it as replaced_by_human (IDN-15, IDN-16).
 func TestLeaveReasonV03(t *testing.T) {
-	m := &managerSeat{Reasons: []stopReason{{Reason: "incident"}}}
-	if m.leaveReason(false) != "replaced_after_incident" || m.leaveReason(true) != "replaced_by_human" {
-		t.Fatal("leave reason")
+	ctx := context.Background()
+	b := newManagerBench(t)
+	if _, err := b.c.SeatAssign(ctx, b.farmOp(), SeatRequest{Seat: managerSeatID}); err != nil {
+		t.Fatal(err)
+	}
+	first := b.managerSeat(t).Holder
+	b.exec(t, `UPDATE seats SET stop_reasons = '[{"reason": "incident", "incident": "inc_x"}]' WHERE id = $1`, managerSeatID)
+	if _, err := b.c.SeatAssign(ctx, b.farmOp(), SeatRequest{Seat: managerSeatID}); err != nil {
+		t.Fatal(err)
+	}
+	if prev := b.loadBot(t, first); prev.State != "retired" || prev.Retired["reason"] != "replaced_by_human" {
+		t.Fatalf("holder %+v", prev)
 	}
 }
 

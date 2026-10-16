@@ -502,7 +502,7 @@ func (c *Core) claimAttempt(ctx context.Context, tx pgx.Tx, now time.Time, cat *
 			}
 			// From v0.3 work outside sev1 waits once 70% of the month of the manager line is
 			// spent, or runs on a checked fallback profile (MGR-49).
-			if seat == managerSeatID && claimsV03() {
+			if seat == managerSeatID {
 				fb, wait, err := c.managerMonthGate(ctx, tx, now, cat, tv, rec, cat.TaskTypes[typ])
 				if err != nil {
 					return nil, err
@@ -655,7 +655,7 @@ func (c *Core) claimAttempt(ctx context.Context, tx pgx.Tx, now time.Time, cat *
 	if tt := cat.TaskTypes[typ]; tt.Purpose == "review" {
 		lens, _ = record["lens"].(string)
 	}
-	persona, personaHashes, err := attemptPersona(ctx, tx, cat, w.Tenant, w.Role, acting, lens, claimsV03())
+	persona, personaHashes, err := attemptPersona(ctx, tx, cat, w.Tenant, w.Role, acting, lens)
 	if err != nil {
 		return nil, err
 	}

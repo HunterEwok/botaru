@@ -298,9 +298,6 @@ func (c *Core) answerers(ctx context.Context, tx pgx.Tx, cat *Catalog, a *attrib
 // waits for its departure, which the pace lets happen at once or later (GOV-42). Only proposals
 // with a commission verdict after governance_v03_since count (GOV-36).
 func (c *Core) linkConfirmed(ctx context.Context, tx pgx.Tx, now time.Time, cat *Catalog, a *attributionRow) error {
-	if !claimsV03() {
-		return nil
-	}
 	since, _, err := v03State(ctx, tx, a.Tenant)
 	if err != nil || since == nil {
 		return err
@@ -370,9 +367,6 @@ func (c *Core) departureStep(ctx context.Context, tx pgx.Tx, now time.Time, cat 
 	if on == nil {
 		// The mode left on: nobody leaves for a link any more, so the waiting departures end
 		// (GOV-36, GOV-42), each with its audit record.
-		if !claimsV03() {
-			return nil
-		}
 		rows, err := tx.Query(ctx, `UPDATE link_departures SET state = 'canceled', reason = 'accountability_shadow', updated_at = $2
 			WHERE tenant = $1 AND state = 'waiting' RETURNING bot, seat, attribution`, tenant, now)
 		if err != nil {

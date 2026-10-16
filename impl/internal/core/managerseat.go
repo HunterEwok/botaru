@@ -25,9 +25,6 @@ import (
 const (
 	managerSeatID = "farm-manager"
 	farmTenant    = "farm"
-	// maxDecideWithin is the default and the longest time people have to decide on an
-	// incident stop before the holder leaves (GOV-22).
-	maxDecideWithin = 7 * 24 * time.Hour
 	// preventWindow is the time a disk incident's holder must have been responsible (MGR-34).
 	preventWindow = 2 * time.Hour
 	// absentAfter is how long the seat may be out of held, or a seat task wait for a worker,
@@ -97,15 +94,6 @@ func (m *managerSeat) has(reason string) bool {
 	return slices.ContainsFunc(m.Reasons, func(r stopReason) bool { return r.Reason == reason })
 }
 
-func (m *managerSeat) reason(reason string) *stopReason {
-	for i := range m.Reasons {
-		if m.Reasons[i].Reason == reason {
-			return &m.Reasons[i]
-		}
-	}
-	return nil
-}
-
 // without is the reason set without the given reasons.
 func (m *managerSeat) without(reasons ...string) []stopReason {
 	out := []stopReason{}
@@ -156,15 +144,6 @@ func managerCharter(cat *Catalog) map[string]any {
 	return mmap(tenantSpecOf(cat, "Governance", farmTenant), "farm_manager")
 }
 
-// decideWithin is incident_stop.decide_within of the farm charter, at most 7 days.
-func decideWithin(cat *Catalog) time.Duration {
-	d := specDuration(mmap(managerCharter(cat), "incident_stop"), "decide_within")
-	if d <= 0 || d > maxDecideWithin {
-		return maxDecideWithin
-	}
-	return d
-}
-
 // shiftManager moves the seat to a holder and a stop reason set in one step: the state follows
 // them (vacant without a holder, held with a holder and no reason, stopped otherwise), the
 // epoch grows, the running attempts of seat tasks in every tenant are fenced, and the seat
@@ -191,7 +170,6 @@ func (c *Core) shiftManager(ctx context.Context, tx pgx.Tx, now time.Time, cat *
 	} else if state == "held" {
 		m.UnheldSince = nil
 	}
-	hadIncident := m.has("incident")
 	// A new holder or a vacant seat ends the restricted mode in every tenant (MGR-47).
 	if holder != m.Holder {
 		if err := c.endRestrictions(ctx, tx, now, m, cause, actor); err != nil {
@@ -199,12 +177,10 @@ func (c *Core) shiftManager(ctx context.Context, tx pgx.Tx, now time.Time, cat *
 		}
 	}
 	m.Reasons = reasons
-	switch {
-	case !m.has("incident"):
+	// No reason incident is added any more (GOV-47): the decide_within deadline of an earlier
+	// core's stop ends with its reason.
+	if !m.has("incident") {
 		m.DecideUntil = nil
-	case !hadIncident || m.DecideUntil == nil:
-		until := now.Add(decideWithin(cat))
-		m.DecideUntil = &until
 	}
 	if err := m.save(ctx, tx); err != nil {
 		return 0, err
@@ -217,18 +193,8 @@ func (c *Core) shiftManager(ctx context.Context, tx pgx.Tx, now time.Time, cat *
 	return seq, nil
 }
 
-// leaveReason is the retirement trigger of a holder that people replace: after an incident stop
-// replaced_after_incident, otherwise replaced_by_human (IDN-11, GOV-22).
-func (m *managerSeat) leaveReason(v03 bool) string {
-	// A v0.3 core never applies replaced_after_incident: there is no stop on an incident
-	// (IDN-15, IDN-16, GOV-47).
-	if m.has("incident") && !v03 {
-		return "replaced_after_incident"
-	}
-	return "replaced_by_human"
-}
-
-// retireHolder retires the holder that leaves the seat: its running attempts are fenced, and the
+// retireHolder retires the holder that leaves the seat as replaced_by_human (IDN-11; a v0.3 core
+// never retires one as replaced_after_incident, IDN-16): its running attempts are fenced, and the
 // holds it set live no longer than 15 minutes (MGR-1).
 func (c *Core) retireHolder(ctx context.Context, tx pgx.Tx, now time.Time, cat *Catalog, m *managerSeat, successor, actor string) error {
 	if m.Holder == "" {
@@ -239,7 +205,7 @@ func (c *Core) retireHolder(ctx context.Context, tx pgx.Tx, now time.Time, cat *
 		return err
 	}
 	if prev != nil {
-		if _, err := c.retireBot(ctx, tx, now, cat, prev, m.leaveReason(claimsV03()), successor, actor); err != nil {
+		if _, err := c.retireBot(ctx, tx, now, cat, prev, "replaced_by_human", successor, actor); err != nil {
 			return err
 		}
 	}
@@ -352,9 +318,9 @@ type SeatResumeRequest struct {
 	Tenant string `json:"tenant,omitempty"`
 }
 
-// SeatResume is P2 seat.resume: it removes only the reason incident, and only after people
-// declared the incident that stopped the seat and the stopping incidents of the same minute
-// false; the epoch grows (GOV-22).
+// SeatResume is P2 seat.resume: from v0.3 it names the tenant whose restricted mode the operator
+// lifts (MGR-47); the v0.1 form by an incident is refused, because no incident stops the seat
+// (GOV-47).
 func (c *Core) SeatResume(ctx context.Context, op Operator, req SeatResumeRequest) (*Done, error) {
 	if req.Seat != managerSeatID {
 		return nil, refuse("not_found", "only the farm manager seat resumes")
@@ -363,74 +329,9 @@ func (c *Core) SeatResume(ctx context.Context, op Operator, req SeatResumeReques
 		return nil, refuse("forbidden", "the farm manager seat is resumed with the operator credential of farm")
 	}
 	if req.Tenant != "" {
-		if !claimsV03() {
-			return nil, refuse("input_schema_invalid", "seat.resume takes a tenant from v0.3")
-		}
 		return c.seatResumeTenant(ctx, op, req.Tenant)
 	}
-	// A v0.3 core requires the tenant: no incident stops the seat any more (GOV-47).
-	if claimsV03() {
-		return nil, refuse("input_schema_invalid", "seat.resume takes the tenant from v0.3")
-	}
-	cat, err := c.Catalog(ctx)
-	if err != nil {
-		return nil, err
-	}
-	var out Done
-	err = c.tx(ctx, func(tx pgx.Tx, now time.Time) error {
-		m, err := loadManagerSeat(ctx, tx, true)
-		if err != nil {
-			return err
-		}
-		if m == nil {
-			return refuse("not_found", "no farm manager seat")
-		}
-		r := m.reason("incident")
-		if r == nil {
-			return refuse("conflict", "the seat has no incident stop")
-		}
-		if !strings.EqualFold(r.Incident, req.Incident) {
-			return refuse("conflict", "the seat was stopped by another incident")
-		}
-		var open int
-		if err := tx.QueryRow(ctx, `SELECT count(*) FROM incidents i JOIN incidents t ON lower(t.id) = lower($1)
-			WHERE i.stops_manager AND date_trunc('minute', i.opened_at) = date_trunc('minute', t.opened_at) AND i.state <> 'dismissed'`,
-			r.Incident).Scan(&open); err != nil {
-			return err
-		}
-		if open > 0 {
-			return refuse("conflict", "the incident and the stopping incidents of its minute are not all dismissed")
-		}
-		seq, err := c.shiftManager(ctx, tx, now, cat, m, m.Holder, m.without("incident"), "seat.resumed.v1", "seat.resume", op.Principal)
-		if err != nil {
-			return err
-		}
-		out = Done{OK: true, ID: managerSeatID, State: m.State, AuditSeq: seq}
-		return c.noticeManagerChanged(ctx, tx, now, cat, m, "resumed")
-	})
-	if err != nil {
-		return nil, err
-	}
-	return &out, nil
-}
-
-// stopManager adds a stop reason to the seat with epoch + 1. A vacant seat keeps the reason for
-// its next holder; a seat with a holder stops, and the running seat attempts in every tenant end
-// with seat_changed (MGR-1, MGR-15, GOV-22).
-func (c *Core) stopManager(ctx context.Context, tx pgx.Tx, now time.Time, cat *Catalog, m *managerSeat, reason, incident string) error {
-	if m.has(reason) {
-		return nil
-	}
-	reasons := append(slices.Clone(m.Reasons), stopReason{Reason: reason, At: fmtTime(now), Incident: incident})
-	// A vacant seat stays vacant, but a new reason still grows the epoch with its event and
-	// audit record, so the next holder starts from a visible change (seat.md).
-	if _, err := c.shiftManager(ctx, tx, now, cat, m, m.Holder, reasons, "seat.stopped.v1", reason, "system"); err != nil {
-		return err
-	}
-	if reason == "incident" && m.Holder != "" {
-		return c.noticeManagerStopped(ctx, tx, now, cat, m, "notice.manager_stopped")
-	}
-	return nil
+	return nil, refuse("input_schema_invalid", "seat.resume takes the tenant: no incident stops the seat (GOV-47)")
 }
 
 // syncHumanStop keeps the reasons human and no_control in step with the holds on the scope seat:
@@ -482,119 +383,6 @@ func (c *Core) syncHumanStop(ctx context.Context, tx pgx.Tx, now time.Time, cat 
 	}
 	_, err = c.shiftManager(ctx, tx, now, cat, m, m.Holder, reasons, event, cause, "system")
 	return err
-}
-
-// incidentStop applies GOV-22 to a new incident of a class with stops_manager: the seat stops
-// with the reason incident when the manager works with the incident's tenant, the seat is held
-// and, for a disk, MGR-33 and MGR-34 hold. Otherwise the record keeps the reason code why there
-// is no stop. A seat already stopped by an incident only gets the incident on its card.
-func (c *Core) incidentStop(ctx context.Context, tx pgx.Tx, now time.Time, cat *Catalog, ic incidentClass, r *incidentRow) error {
-	// From v0.3 no incident stops the seat: stops_manager is a field of v0.1 and v0.2 only, and a
-	// preventable incident restricts the seat instead (IDN-16, GOV-47, MGR-55).
-	if claimsV03() {
-		return c.incidentPreventable(ctx, tx, now, cat, ic, r)
-	}
-	if !truthy(ic.Spec["stops_manager"]) {
-		return nil
-	}
-	if _, err := tx.Exec(ctx, `UPDATE incidents SET stops_manager = true WHERE id = $1`, r.ID); err != nil {
-		return err
-	}
-	m, err := loadManagerSeat(ctx, tx, true)
-	if err != nil {
-		return err
-	}
-	// A resource subject is a disk when it names a catalog volume or the class watches a disk
-	// alarm; any other resource stops the seat as any other subject does.
-	disk := r.SubjectKind == "resource" && (volumeOf(cat, r.Tenant, r.SubjectID) != nil ||
-		strings.HasPrefix(mstr(mmap(ic.Spec, "detect"), "alarm"), "alarm.disk."))
-	effect := ""
-	switch {
-	case !managerEnabled(cat, r.Tenant):
-		effect = "manager_disabled"
-	case m == nil || m.Holder == "" || m.State == "vacant":
-		effect = "seat_vacant"
-	case disk:
-		effect, err = c.diskStopCondition(ctx, tx, now, cat, ic, r, m)
-		if err != nil {
-			return err
-		}
-	}
-	if effect == "" {
-		onlyNoControl := len(m.without("no_control")) == 0
-		switch {
-		case m.State == "held", m.State == "stopped" && disk && onlyNoControl:
-			// The safeguard inside the window of an incident the holder answers for does not
-			// shield it from the stop (GOV-22, MGR-34).
-			return c.stopManager(ctx, tx, now, cat, m, "incident", r.ID)
-		case m.has("incident"):
-			effect = "seat_stopped"
-			// An incident of the stop is appended to the card as its own line (MGR-35).
-			if err := c.noticeAdmins(ctx, tx, now, cat, []string{farmTenant}, "manager_stopped", "notice.manager_stopped_joined",
-				map[string]any{"incident": r.ID, "class": r.Class, "tenant": r.Tenant, "at": fmtTime(now)}, "admin:governance"); err != nil {
-				return err
-			}
-		default:
-			effect = "seat_stopped"
-		}
-	}
-	r.Record["stops_manager_effect"] = effect
-	return r.save(ctx, tx, now)
-}
-
-// diskStopCondition checks MGR-33 and MGR-34 for a disk incident and returns the reason code
-// when one of them does not hold, or "".
-func (c *Core) diskStopCondition(ctx context.Context, tx pgx.Tx, now time.Time, cat *Catalog, ic incidentClass, r *incidentRow, m *managerSeat) (string, error) {
-	// MGR-33: every writer of the disk has a quota, and the quotas add up below the class's
-	// alarm threshold on the used bytes.
-	vol := volumeOf(cat, r.Tenant, r.SubjectID)
-	writers := mlist(vol, "writers")
-	if len(writers) == 0 {
-		return "quota_missing", nil
-	}
-	var sum float64
-	for _, w := range writers {
-		q, ok := mnum(asMap(w), "quota_bytes")
-		if !ok {
-			return "quota_missing", nil
-		}
-		sum += q
-	}
-	limit, ok := usedThreshold(ic.Spec, vol)
-	if !ok {
-		return "quota_threshold_unknown", nil
-	}
-	if sum >= limit {
-		return "quota_over_threshold", nil
-	}
-	// MGR-34: a disk_filling incident live on the disk without a break for the whole window
-	// (its since moves on a reopen), the used size grew between the window's start and its end
-	// by the numbers its alarm logged, and one holder answered for the seat all that time.
-	windowStart := now.Add(-preventWindow)
-	var episodes []int64
-	err := tx.QueryRow(ctx, `SELECT episodes FROM incidents WHERE tenant = $1 AND class = 'disk_filling' AND subject_kind = $2 AND subject_id = $3
-		AND opened_at <= $4 AND since <= $4 AND state = ANY($5) ORDER BY opened_at LIMIT 1`, r.Tenant, r.SubjectKind, r.SubjectID, windowStart, incidentLive).Scan(&episodes)
-	if errors.Is(err, pgx.ErrNoRows) {
-		return "no_filling_incident", nil
-	}
-	if err != nil {
-		return "", err
-	}
-	startVals, err := alarmValuesAt(ctx, tx, episodes, windowStart)
-	if err != nil {
-		return "", err
-	}
-	endVals, err := alarmValuesAt(ctx, tx, episodes, now)
-	if err != nil {
-		return "", err
-	}
-	if !diskGrew(startVals, endVals) {
-		return "no_growth", nil
-	}
-	if m.ResponsibleSince == nil || m.ResponsibleSince.After(now.Add(-preventWindow)) {
-		return "not_responsible", nil
-	}
-	return "", nil
 }
 
 // alarmValuesAt are the numbers an incident's alarm episodes logged last at or before at, or nil.
@@ -803,27 +591,10 @@ func (c *Core) managerLoop(ctx context.Context) error {
 		if err != nil || m == nil {
 			return err
 		}
-		if claimsV03() {
-			// A stop reason incident a v0.2 core left goes; nothing repeats manager_stopped or
-			// retires the holder by decide_within (GOV-47, MGR-55).
-			if err := c.dropIncidentStop(ctx, tx, now, cat, m); err != nil {
-				return err
-			}
-		} else if m.has("incident") && m.DecideUntil != nil && !now.Before(*m.DecideUntil) && m.Holder != "" {
-			if err := c.retireHolder(ctx, tx, now, cat, m, "", "system"); err != nil {
-				return err
-			}
-			if _, err := c.shiftManager(ctx, tx, now, cat, m, "", m.without("incident"), "seat.vacated.v1", "decide_within", "system"); err != nil {
-				return err
-			}
-			if err := c.noticeManagerChanged(ctx, tx, now, cat, m, "vacated"); err != nil {
-				return err
-			}
-		}
-		if !claimsV03() {
-			if err := c.repeatManagerStopped(ctx, tx, now, cat, m); err != nil {
-				return err
-			}
+		// A stop reason incident a v0.2 core left goes; nothing repeats manager_stopped or
+		// retires the holder by decide_within (GOV-47, MGR-55).
+		if err := c.dropIncidentStop(ctx, tx, now, cat, m); err != nil {
+			return err
 		}
 		if err := c.repeatPreventable(ctx, tx, now, cat); err != nil {
 			return err
@@ -872,82 +643,6 @@ func (c *Core) noticeManagerChanged(ctx context.Context, tx pgx.Tx, now time.Tim
 	params := map[string]any{"what": what, "holder": holder, "epoch": m.Epoch, "at": fmtTime(now)}
 	return c.noticeAdmins(ctx, tx, now, cat, slices.Sorted(mapKeys(cat.Tenants)), "manager_holder_changed", "notice.manager_holder_changed", params,
 		"admin:people", "admin:governance")
-}
-
-// noticeManagerStopped sends manager_stopped to the operators with admin:governance in farm,
-// without buttons: the class, number and tenant of the incident that stopped the seat, the stop
-// time, the incidents opened during the stop, the decide_within expiry and the ready farmctl
-// commands from code (MGR-35, PRM-14). key is the first card or a repeat (MGR-36).
-func (c *Core) noticeManagerStopped(ctx context.Context, tx pgx.Tx, now time.Time, cat *Catalog, m *managerSeat, key string) error {
-	r := m.reason("incident")
-	if r == nil {
-		return nil
-	}
-	var inc struct{ tenant, class string }
-	if err := tx.QueryRow(ctx, `SELECT tenant, class FROM incidents WHERE id = $1`, r.Incident).Scan(&inc.tenant, &inc.class); err != nil && !errors.Is(err, pgx.ErrNoRows) {
-		return err
-	}
-	at, _ := time.Parse(time.RFC3339Nano, r.At)
-	rows, err := tx.Query(ctx, `SELECT id FROM incidents WHERE stops_manager AND opened_at >= $1 AND id <> $2 ORDER BY opened_at, id LIMIT 20`, at, r.Incident)
-	if err != nil {
-		return err
-	}
-	joined, err := pgx.CollectRows(rows, pgx.RowTo[string])
-	if err != nil {
-		return err
-	}
-	list := c.texts.Render("en", "notice.manager_stopped.none", nil)
-	if len(joined) > 0 {
-		list = strings.Join(joined, ", ")
-	}
-	until := "-"
-	if m.DecideUntil != nil {
-		until = fmtTime(*m.DecideUntil)
-	}
-	return c.noticeAdmins(ctx, tx, now, cat, []string{farmTenant}, "manager_stopped", key, map[string]any{
-		"incident": r.Incident, "class": inc.class, "tenant": inc.tenant, "at": r.At, "until": until, "joined": cut(list, 500)}, "admin:governance")
-}
-
-// stopRepeats are the times of the manager_stopped repeats: 24 h and 72 h after the stop and
-// 24 h before the end of decide_within; a repeat at or after the end, or at the time of an
-// earlier one, is not sent (MGR-36).
-func stopRepeats(at, until time.Time) []time.Time {
-	var out []time.Time
-	for _, t := range []time.Time{at.Add(24 * time.Hour), at.Add(72 * time.Hour), until.Add(-24 * time.Hour)} {
-		if t.Before(until) && t.After(at) && !slices.ContainsFunc(out, t.Equal) {
-			out = append(out, t)
-		}
-	}
-	slices.SortFunc(out, func(a, b time.Time) int { return a.Compare(b) })
-	return out
-}
-
-// repeatManagerStopped repeats manager_stopped while the seat's reason set holds incident; the
-// repeats end with that reason, which assign, vacate and resume remove (MGR-36).
-func (c *Core) repeatManagerStopped(ctx context.Context, tx pgx.Tx, now time.Time, cat *Catalog, m *managerSeat) error {
-	r := m.reason("incident")
-	if r == nil || m.Holder == "" || m.DecideUntil == nil {
-		return nil
-	}
-	at, err := time.Parse(time.RFC3339Nano, r.At)
-	if err != nil {
-		return nil
-	}
-	due := 0
-	for _, t := range stopRepeats(at, *m.DecideUntil) {
-		if !t.After(now) {
-			due++
-		}
-	}
-	if due <= r.Repeats {
-		return nil
-	}
-	// Repeats the loop missed are not sent one after another: one card covers them.
-	r.Repeats = due
-	if err := m.save(ctx, tx); err != nil {
-		return err
-	}
-	return c.noticeManagerStopped(ctx, tx, now, cat, m, "notice.manager_stopped_repeat")
 }
 
 // noticeAdmins plans a code notice to the people of the tenants with one of the capabilities, in

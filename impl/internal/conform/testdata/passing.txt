@@ -32,6 +32,12 @@ com-fx-12-a
 com-fx-12-b
 com-fx-13-a
 com-fx-13-b
+fx-rep-nn-a
+fx-rep-nn-c
+fx-rep-nn-d
+fx-rep-nn-e
+fx-rep-nn-f
+fx-rep-nn-g
 gov-fx-24-b
 gov-fx-24-c
 gov-fx-26#10

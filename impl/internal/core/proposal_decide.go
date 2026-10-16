@@ -501,22 +501,20 @@ func (c *Core) trialBaseline(ctx context.Context, tx pgx.Tx, now time.Time, cat 
 	}
 	// From v0.3 every trial also guards the farm's work over the whole tenant, and a tenant
 	// cannot remove these guards (PRP-26).
-	if claimsV03() {
-		var farm []any
-		for _, name := range farmGuards {
-			g, ok := series[name]
-			if !ok || g.Outcome == nil {
-				continue
-			}
-			v, err := trialValue(ctx, tx, p.Tenant, g, "tenant:"+p.Tenant, from, now, author, p.Role)
-			if err != nil {
-				return nil, err
-			}
-			farm = append(farm, map[string]any{"series": name, "subject": "tenant:" + p.Tenant, "compare": g.Outcome.Compare, "before": v["value"],
-				"before_samples": v["samples"], "source": "farm", "broken_at": nil})
+	var farm []any
+	for _, name := range farmGuards {
+		g, ok := series[name]
+		if !ok || g.Outcome == nil {
+			continue
 		}
-		out["farm_guards"] = farm
+		v, err := trialValue(ctx, tx, p.Tenant, g, "tenant:"+p.Tenant, from, now, author, p.Role)
+		if err != nil {
+			return nil, err
+		}
+		farm = append(farm, map[string]any{"series": name, "subject": "tenant:" + p.Tenant, "compare": g.Outcome.Compare, "before": v["value"],
+			"before_samples": v["samples"], "source": "farm", "broken_at": nil})
 	}
+	out["farm_guards"] = farm
 	return out, nil
 }
 

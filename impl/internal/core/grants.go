@@ -423,7 +423,7 @@ func claimGrant(ctx context.Context, tx pgx.Tx, now time.Time, cat *Catalog, ten
 		return "", false, nil
 	}
 	// From v0.3 a takeover grant is bound to the role whose eval report passed (MGR-48).
-	if kind == "takeover" && claimsV03() && grantRole != role {
+	if kind == "takeover" && grantRole != role {
 		return "", false, nil
 	}
 	if _, err := tx.Exec(ctx, `UPDATE model_grants SET state = 'active', attempts_left = attempts_left - 1, updated_at = $2 WHERE id = $1`, id, now); err != nil {

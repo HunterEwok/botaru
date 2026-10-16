@@ -483,7 +483,7 @@ func (c *Core) openIncident(ctx context.Context, tx pgx.Tx, now time.Time, cat *
 		}
 		// Only a new incident may stop the farm manager seat (GOV-22), or from v0.3 restrict it
 		// (GOV-47).
-		if err := c.incidentStop(ctx, tx, now, cat, ic, r); err != nil {
+		if err := c.incidentPreventable(ctx, tx, now, cat, ic, r); err != nil {
 			return err
 		}
 	}
@@ -1009,7 +1009,7 @@ type incidentActor struct {
 // raised, and a raised one resolves (MGR-8).
 func (c *Core) IncidentAck(ctx context.Context, op Operator, req IncidentRequest) (*Done, error) {
 	// From v0.3 an operator of farm marks manager_preventable read with it (GOV-47).
-	if op.Tenant == farmTenant && claimsV03() {
+	if op.Tenant == farmTenant {
 		if d, ok, err := c.preventableRead(ctx, op, req); err != nil || ok {
 			return d, err
 		}
@@ -1166,10 +1166,8 @@ func (c *Core) incidentCommand(ctx context.Context, tx pgx.Tx, now time.Time, pc
 	f := strings.Fields(rest)
 	words := []string{"ack", "close", "dismiss"}
 	usage := "cmd.incident.usage"
-	if claimsV03() {
-		// From v0.3 a person may ask for the analysis paragraph (MGR-53).
-		words, usage = append(words, "analyse"), "cmd.incident.usage_v03"
-	}
+	// From v0.3 a person may ask for the analysis paragraph (MGR-53).
+	words, usage = append(words, "analyse"), "cmd.incident.usage_v03"
 	if len(f) < 2 || !slices.Contains(words, f[0]) {
 		return pc.reply(c, usage, nil), nil
 	}

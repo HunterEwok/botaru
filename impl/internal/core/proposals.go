@@ -109,7 +109,7 @@ func (c *Core) createProposals(ctx context.Context, tx pgx.Tx, now time.Time, ca
 		return err
 	}
 	a.Acting = acting
-	a.Seat = seatOfRecord(rec) == managerSeatID && claimsV03()
+	a.Seat = seatOfRecord(rec) == managerSeatID
 	a.Level = authorLevel(a.Seat, cat.TaskTypes[typ].Purpose)
 	// In restricted mode the seat proposes nothing in the tenant, unless its basis is a sev1
 	// incident opened during it (MGR-47); the proposals are dropped.
@@ -212,7 +212,7 @@ func (c *Core) createProposal(ctx context.Context, tx pgx.Tx, now time.Time, cat
 		kind, _, _ := strings.Cut(s, ":")
 		// From v0.3 the author's own tenant is a subject too, the subject of the farm guards
 		// and of tenant incidents a rejected proposal can be linked to (PRP-26, GOV-38).
-		if claimsV03() && s == "tenant:"+a.Tenant {
+		if s == "tenant:"+a.Tenant {
 			continue
 		}
 		if !c.subjectOfTenant(cat, a.Tenant, kind, s) {
@@ -704,9 +704,6 @@ const (
 // the first round's forecasts are scored by the resubmission's trial (COM-16). Reviewers never
 // see it (COM-15). Before v0.3 nothing is marked.
 func (c *Core) resubmission(ctx context.Context, tx pgx.Tx, now time.Time, tenant, fp string, body map[string]any) (map[string]any, error) {
-	if !claimsV03() {
-		return nil, nil
-	}
 	var prev string
 	var verdictAt time.Time
 	var change []byte

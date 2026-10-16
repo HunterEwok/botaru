@@ -31,13 +31,10 @@ const (
 	restrictedReason = "manager_restricted"
 )
 
-// managerClass says whether a class answers for the manager under the claimed version: from
-// v0.3 manager_accountable (MGR-55), before it stops_manager (GOV-28).
+// managerClass says whether a class answers for the manager: manager_accountable (MGR-55); a
+// v0.3 core does not use stops_manager of v0.1 and v0.2 (GOV-28).
 func managerClass(spec map[string]any) bool {
-	if claimsV03() {
-		return truthy(spec["manager_accountable"])
-	}
-	return truthy(spec["stops_manager"])
+	return truthy(spec["manager_accountable"])
 }
 
 // incidentPreventable applies GOV-47 and MGR-45 to a new incident in the transaction of its
@@ -154,9 +151,6 @@ func (c *Core) endRestrictions(ctx context.Context, tx pgx.Tx, now time.Time, m 
 // restriction, and the attempt's basis is not a sev1 incident of the tenant opened during it
 // (MGR-47). Before v0.3 there is no restricted mode.
 func seatRestricted(ctx context.Context, tx pgx.Tx, tenant, incident string) (bool, error) {
-	if !claimsV03() {
-		return false, nil
-	}
 	var since time.Time
 	err := tx.QueryRow(ctx, `SELECT since FROM manager_restrictions WHERE tenant = $1 AND until IS NULL`, tenant).Scan(&since)
 	if errors.Is(err, pgx.ErrNoRows) {

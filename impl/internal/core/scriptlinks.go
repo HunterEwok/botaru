@@ -167,13 +167,11 @@ func (c *Core) scriptActs(cat *Catalog, steps []scriptStep) bool {
 // (GOV-36).
 func (c *Core) createScriptLinks(ctx context.Context, tx pgx.Tx, now time.Time, cat *Catalog, tv *TenantView) error {
 	var from *time.Time
-	if claimsV03() {
-		since, _, err := v03State(ctx, tx, tv.Name)
-		if err != nil || since == nil {
-			return err
-		}
-		from = since
+	since, _, err := v03State(ctx, tx, tv.Name)
+	if err != nil || since == nil {
+		return err
 	}
+	from = since
 	rows, err := tx.Query(ctx, `SELECT i.id, i.class, i.subject_kind, i.subject_id, r.id, coalesce(r.targets, '{}') FROM incidents i JOIN script_runs r ON r.tenant = i.tenant
 		AND r.started_at IS NOT NULL AND i.opened_at >= r.started_at AND (r.ended_at IS NULL OR i.opened_at <= r.ended_at + interval '14 days')
 		AND cardinality(r.targets) > 0 AND ($3::timestamptz IS NULL OR r.started_at >= $3)
@@ -206,7 +204,7 @@ func (c *Core) createScriptLinks(ctx context.Context, tx pgx.Tx, now time.Time, 
 	for _, l := range links {
 		touched := l.kind == "resource" && slices.Contains(l.targets, l.subject)
 		// The hop is of the v0.3 text of TRN-7; an earlier claim links direct targets only.
-		if !touched && claimsV03() {
+		if !touched {
 			d, ok := deps[l.incident]
 			if !ok {
 				if d, err = subjectDeps(ctx, tx, cat, tv.Name, l.kind, l.subject); err != nil {
@@ -417,7 +415,7 @@ func (c *Core) roleIncidentLimits(cat *Catalog, tenant string) (int, time.Durati
 			window = d
 		}
 	}
-	if claimsV03() && cat != nil {
+	if cat != nil {
 		spec, _ := tenantCatalog(cat, tenant)
 		h := mmap(spec, "role_incident_hold")
 		if n, ok := mnum(h, "links"); ok && n >= 1 {

@@ -2311,8 +2311,7 @@ func (c *Core) lintGovernance(S *lintSet, f *lintFindings, personas personaLooku
 		}
 		lintCharterBounds(o, f)
 		// From v0.3 the size of a persona counts with its addenda (GOV-45).
-		v03 := claimsV03()
-		refs := charterPersonas(o.spec, v03)
+		refs := charterPersonas(o.spec)
 		sizes := map[string]int{}
 		for _, path := range slices.Sorted(mapKeys(refs)) {
 			r := refs[path]
@@ -2337,12 +2336,6 @@ func (c *Core) lintGovernance(S *lintSet, f *lintFindings, personas personaLooku
 				position = "farm_manager"
 			} else if strings.HasPrefix(path, "/positions/") {
 				position = strings.Split(path, "/")[2]
-			}
-			if !v03 {
-				for _, code := range personaFindings(text, position, u) {
-					f.add(o, code, path)
-				}
-				continue
 			}
 			kind := position
 			if strings.Contains(path, "/addenda/") {
@@ -2473,21 +2466,17 @@ func managerLineShort(ts, farmManager, seatProfile map[string]any) []string {
 		outPrice, _ := mnum(mmap(seatProfile, "price"), "output")
 		maxOut, _ := mnum(seatProfile, "max_output_tokens")
 		need := seatWorstReadMicros(in, outPrice, int(maxOut))
-		if claimsV03() {
-			need += float64(money.FromEUR(charterReviewMaxEUR(farmManager)) + money.FromEUR(postmortemDayEUR(farmManager)))
-		}
+		need += float64(money.FromEUR(charterReviewMaxEUR(farmManager)) + money.FromEUR(postmortemDayEUR(farmManager)))
 		if d*1e6 < need {
 			out = append(out, "/budgets/lines/manager/day_eur")
 		}
 	}
-	if claimsV03() {
-		tm := defaultTakeoverMonthEUR
-		if v, ok := mnum(mmap(ts, "takeover"), "manager_month_eur"); ok {
-			tm = v
-		}
-		if mm, ok := mnum(line, "month_eur"); ok && mm < tm {
-			out = append(out, "/budgets/lines/manager/month_eur")
-		}
+	tm := defaultTakeoverMonthEUR
+	if v, ok := mnum(mmap(ts, "takeover"), "manager_month_eur"); ok {
+		tm = v
+	}
+	if mm, ok := mnum(line, "month_eur"); ok && mm < tm {
+		out = append(out, "/budgets/lines/manager/month_eur")
 	}
 	return out
 }

@@ -521,8 +521,7 @@ func (c *Core) reviewsFit(ctx context.Context, tx pgx.Tx, now time.Time, cat *Ca
 // system:review:<proposal>:<lens> (COM-2, IDM-2), with the input block the core builds
 // (COM-3); the task goes only to the lens executor role and never to the author's worker.
 func (c *Core) enqueueReviews(ctx context.Context, tx pgx.Tx, now time.Time, cat *Catalog, tv *TenantView, p *proposalRow, lenses []string, exec map[string]lensExecutor) ([]any, float64, error) {
-	v03 := claimsV03()
-	input := reviewInput(p, v03)
+	input := reviewInput(p)
 	reviews := []any{}
 	reserved := 0.0
 	origin, _ := p.Rec["origin"].(map[string]any)
@@ -548,12 +547,11 @@ func (c *Core) enqueueReviews(ctx context.Context, tx pgx.Tx, now time.Time, cat
 		// it to the fallback role (COM-7, IDN-10).
 		extra := map[string]any{"lens": l, "proposal": p.ID, "executor_role": e.Role, "not_worker": asString(origin["worker"])}
 		review := map[string]any{"lens": l, "task": res.TaskID, "executor": e.Source, "state": "pending"}
-		if v03 {
-			// A review enqueued on a v0.3 core hands in review-result.v2 with its forecast,
-			// which code scores (COM-15, COM-16).
-			extra["review_schema"] = "v2"
-			review["v03"], review["enqueued_at"] = true, fmtTime(now)
-		}
+		// A review enqueued on a v0.3 core hands in review-result.v2 with its forecast, which
+		// code scores (COM-15, COM-16); the mark keeps the reviews of an earlier core's
+		// records on review-result.v1.
+		extra["review_schema"] = "v2"
+		review["v03"], review["enqueued_at"] = true, fmtTime(now)
 		if e.Source == "seat" {
 			extra["seat"] = e.Seat
 			// The holder and the seat epoch the review is written for: only reviews of the
@@ -587,7 +585,7 @@ func (c *Core) enqueueReviews(ctx context.Context, tx pgx.Tx, now time.Time, cat
 // author's identity or other lenses' scores (COM-2, COM-3). From v0.3 it has no author level
 // and never says whether the proposal is a resubmission; it carries cost_eur, the spend the cost
 // lens forecasts against (COM-15, COM-16, PRP-24).
-func reviewInput(p *proposalRow, v03 bool) map[string]any {
+func reviewInput(p *proposalRow) map[string]any {
 	body, _ := p.Rec["body"].(map[string]any)
 	in := map[string]any{}
 	for _, k := range []string{"category", "problem", "change", "benefit", "cost", "risk"} {
@@ -595,13 +593,8 @@ func reviewInput(p *proposalRow, v03 bool) map[string]any {
 			in[k] = v
 		}
 	}
-	origin, _ := p.Rec["origin"].(map[string]any)
 	in["evidence"] = p.Rec["evidence_seen"]
-	if v03 {
-		in["cost_eur"] = reviewCostEUR(body)
-	} else {
-		in["author_level"] = origin["level"]
-	}
+	in["cost_eur"] = reviewCostEUR(body)
 	in["self_evidence"] = p.Rec["self_evidence"] == true
 	us, _ := p.Rec["untrusted_seen"].(map[string]any)
 	in["untrusted_seen"] = us["value"] == true

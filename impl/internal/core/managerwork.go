@@ -324,13 +324,7 @@ func (c *Core) managerDaily(ctx context.Context, cat *Catalog) error {
 				}
 			}
 			// From v0.3 the summary is mandatory, with the takeovers and notices (MGR-50).
-			key := "notice.manager_daily"
-			if claimsV03() {
-				key = "notice.manager_daily_v03"
-			} else if n.empty() {
-				return nil
-			}
-			return c.noticeAdmins(ctx, tx, now, cat, []string{t}, "manager_daily", key, n.params(true), "admin:people")
+			return c.noticeAdmins(ctx, tx, now, cat, []string{t}, "manager_daily", "notice.manager_daily_v03", n.params(true), "admin:people")
 		})
 		if err != nil {
 			return err
@@ -355,17 +349,12 @@ func (c *Core) managerDaily(ctx context.Context, cat *Catalog) error {
 			}
 			farm.add(n)
 		}
-		key, params := "notice.manager_daily_farm", farm.params(false)
-		if claimsV03() {
-			// Problems across tenants are found by code and shown only here (MGR-51).
-			key = "notice.manager_daily_farm_v03"
-			if params["recurring"], err = recurringClasses(ctx, tx, day.AddDate(0, 0, -1), day); err != nil {
-				return err
-			}
-		} else if farm.empty() {
-			return nil
+		params := farm.params(false)
+		// Problems across tenants are found by code and shown only here (MGR-51).
+		if params["recurring"], err = recurringClasses(ctx, tx, day.AddDate(0, 0, -1), day); err != nil {
+			return err
 		}
-		return c.noticeAdmins(ctx, tx, now, cat, []string{farmTenant}, "manager_daily", key, params, "admin:governance")
+		return c.noticeAdmins(ctx, tx, now, cat, []string{farmTenant}, "manager_daily", "notice.manager_daily_farm_v03", params, "admin:governance")
 	}); err != nil {
 		return err
 	}
@@ -390,15 +379,11 @@ func (n *managerNumbers) add(o managerNumbers) {
 	n.SpentMicros += o.SpentMicros
 }
 
-func (n managerNumbers) empty() bool { return n == managerNumbers{} }
-
 // params are the parameters of the code text; the usage of the manager line goes only to the
 // tenant's admins, who are its recipients (MGR-41).
 func (n managerNumbers) params(spend bool) map[string]any {
 	p := map[string]any{"incidents": n.Incidents, "ops": n.Ops, "reverts": n.Reverts, "reads": n.Reads}
-	if claimsV03() {
-		p["takeovers"], p["notices"] = n.Takeovers, n.Notices
-	}
+	p["takeovers"], p["notices"] = n.Takeovers, n.Notices
 	if spend {
 		p["spent_cents"] = money.CentsUp(n.SpentMicros)
 	}
