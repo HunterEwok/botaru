@@ -1762,6 +1762,7 @@ func (c *Core) lintManifests(docs []manifest.Doc, index []int, personas personaL
 	if err := c.lintSeatProfiles(S, f); err != nil {
 		return nil, err
 	}
+	c.lintData(S, f)
 	sort.SliceStable(f.out, func(i, j int) bool { return f.out[i].Path < f.out[j].Path })
 	return f.out, nil
 }

@@ -49,6 +49,10 @@ type Tool struct {
 	Commands        map[string]Command        `json:"commands"`
 	Billing         string                    `json:"billing"`
 	PriceEUR        float64                   `json:"price_eur"`
+	// CacheS is the expiry of the tool output cache in seconds; 0 is no cache (PRM-12).
+	CacheS int `json:"cache_s"`
+	// Credential holds per_principal for a tool that acts with a person's connection (SEC-7).
+	Credential map[string]any `json:"credential"`
 }
 
 // Command is a named command of the program launch plugin (INJ-14).

@@ -111,6 +111,10 @@ func (c *Core) requestErasure(ctx context.Context, tx pgx.Tx, now time.Time, tv 
 	if err := addErasureSteps(ctx, tx, now, tv.Name, tv, id, s.Reason); err != nil {
 		return "", err
 	}
+	// Any erasure request of the tenant drops its cached tool output (PRM-12).
+	if _, err := tx.Exec(ctx, `DELETE FROM tool_cache WHERE tenant = $1`, tv.Name); err != nil {
+		return "", err
+	}
 	if err := c.appendEvent(ctx, tx, now, tv.Name, Event{Type: "erasure.requested", Subject: id, Data: map[string]any{
 		"request": id, "scope_kind": s.Scope.kind(), "reason": s.Reason,
 	}}); err != nil {

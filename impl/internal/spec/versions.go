@@ -22,10 +22,25 @@ var Profiles = []string{"core"}
 // index or a map key). apply accepts such a field although the claimed version is earlier; the
 // rest of that version stays refused (MAN-11). Kinds of a later version are listed under the
 // kind with the pointer "/kind". The list shrinks when the claimed version reaches them.
-var Ahead = map[string][]string{}
+var Ahead = map[string][]string{
+	// File limits (ART-4) and the sink of a person's copy (SEC-10, LCY-2).
+	"Tenant": {"/spec/limits/max_file_bytes", "/spec/limits/max_task_files_bytes", "/spec/privacy/export_sink"},
+	// The one recipient of an export sink (SEC-10).
+	"Sink": {"/spec/export_only/recipient_ref"},
+	// The tool output cache (PRM-12).
+	"ToolPlugin": {"/spec/tools/*/cache_s"},
+	// The model exposure of a dataset (PRV-4).
+	"Catalog": {"/spec/resources/*/model_exposure", "/spec/resources/*/kind"},
+	// The eval report index of the quality gate (PRV-3).
+	"EvalReports": {"/kind"},
+}
 
 // ahead says whether the field at ptr of a manifest of kind is in Ahead.
 func ahead(kind, ptr string) bool {
+	if ptr == "" || ptr == "/spec" {
+		// A later kind carries the version mark on the whole document or its spec.
+		ptr = "/kind"
+	}
 	segs := strings.Split(ptr, "/")
 	for _, pat := range Ahead[kind] {
 		ps := strings.Split(pat, "/")

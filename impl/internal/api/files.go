@@ -30,6 +30,12 @@ func (s *Server) filePut(ctx context.Context, w http.ResponseWriter, r *http.Req
 			break
 		}
 		if err != nil {
+			var mbe *http.MaxBytesError
+			if errors.As(err, &mbe) {
+				// A body past the farm ceiling is refused whole (ART-4).
+				Problem(w, &core.Problem{Reason: "file_too_large", Detail: "the file is too large"})
+				return
+			}
 			Problem(w, &core.Problem{Reason: "input_schema_invalid", Detail: "the multipart body could not be read"})
 			return
 		}
@@ -46,7 +52,7 @@ func (s *Server) filePut(ctx context.Context, w http.ResponseWriter, r *http.Req
 			}
 		case "content":
 			if content, err = readContent(part); err != nil {
-				Problem(w, &core.Problem{Reason: "over_capacity", Detail: "the file is too large"})
+				Problem(w, &core.Problem{Reason: "file_too_large", Detail: "the file is too large"})
 				return
 			}
 		}

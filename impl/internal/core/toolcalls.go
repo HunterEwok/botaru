@@ -371,11 +371,16 @@ func (c *Core) completeToolcall(ctx context.Context, tx pgx.Tx, now time.Time, l
 	if err := c.toolSeries(ctx, tx, now, cat, l.WorkID, tool, t.TrustedOutput(), clean.StructuredContent); err != nil {
 		return err
 	}
+	var seen []string
 	if masked(t.Redact, raw) {
 		// The toolhost replaced an address: the attempt saw personal data (AUD-5).
 		if err := addPersonalSeen(ctx, tx, task, "masking"); err != nil {
 			return err
 		}
+		seen = append(seen, "masking")
+	}
+	if cacheable(t) && access == "read" {
+		return storeToolCache(ctx, tx, now, cat, t, l.WorkID, raw, seen)
 	}
 	return nil
 }

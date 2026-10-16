@@ -12,6 +12,7 @@ import (
 	"errors"
 	"mime"
 	"net/http"
+	"path"
 	"slices"
 	"strings"
 	"time"
@@ -62,13 +63,77 @@ func newFileRef() string {
 }
 
 // sniffType is the media type of the bytes, without parameters: the declared type is only for
-// reference (ART-1).
-func sniffType(content []byte) string {
+// reference (ART-1). http.DetectContentType follows the WHATWG MIME Sniffing standard; inside
+// text/*, where the bytes cannot tell a table from plain text, the file name's extension
+// refines text/plain to one of a few fixed text types, never to an active one (ART-5).
+func sniffType(content []byte, filename string) string {
 	mt, _, err := mime.ParseMediaType(http.DetectContentType(content))
 	if err != nil {
 		return "application/octet-stream"
 	}
+	if mt == "text/plain" {
+		if refined, ok := textByExtension[strings.ToLower(path.Ext(filename))]; ok {
+			return refined
+		}
+	}
 	return mt
+}
+
+// baseName is the last element of a file name, without folders; "" for none.
+func baseName(name string) string {
+	if name == "" {
+		return ""
+	}
+	return path.Base(strings.ReplaceAll(name, "\\", "/"))
+}
+
+// textByExtension are the text types an extension refines text/plain to (ART-5).
+var textByExtension = map[string]string{
+	".csv": "text/csv", ".tsv": "text/tab-separated-values", ".md": "text/markdown", ".markdown": "text/markdown",
+}
+
+// activeMediaType says whether a media type is an active format that is never handed out and
+// cannot be declared in result_media_types (ART-5): HTML, XHTML, SVG, JavaScript and every XML
+// type, as a browser may run what XML carries.
+func activeMediaType(mt string) bool {
+	switch mt {
+	case "text/html", "application/xhtml+xml", "image/svg+xml", "text/javascript", "application/javascript",
+		"application/x-javascript", "text/ecmascript", "application/ecmascript", "text/xml", "application/xml":
+		return true
+	}
+	return strings.HasSuffix(mt, "+xml")
+}
+
+// FilesConfig holds the farm ceilings of file sizes from the deployment settings (ART-4). A
+// tenant's limits only lower them.
+type FilesConfig struct {
+	// MaxFileBytes is the ceiling of one file; MaxFileBytes (32 MiB, the store's ceiling) by
+	// default and at most.
+	MaxFileBytes int64 `yaml:"max_file_bytes"`
+	// MaxTaskFilesBytes is the ceiling of all files of one task; 256 MiB by default.
+	MaxTaskFilesBytes int64 `yaml:"max_task_files_bytes"`
+}
+
+func (f *FilesConfig) defaults() {
+	if f.MaxFileBytes <= 0 || f.MaxFileBytes > MaxFileBytes {
+		f.MaxFileBytes = MaxFileBytes
+	}
+	if f.MaxTaskFilesBytes <= 0 {
+		f.MaxTaskFilesBytes = 256 << 20
+	}
+}
+
+// fileLimits are the limits of one file and of the files of one task in a tenant: the farm
+// ceiling, lowered by the tenant's limits (ART-4).
+func (c *Core) fileLimits(tv *TenantView) (file, task int64) {
+	file, task = c.cfg.Files.MaxFileBytes, c.cfg.Files.MaxTaskFilesBytes
+	if l := tv.Spec.Limits.MaxFileBytes; l > 0 && l < file {
+		file = l
+	}
+	if l := tv.Spec.Limits.MaxTaskFilesBytes; l > 0 && l < task {
+		task = l
+	}
+	return file, task
 }
 
 // contentDays is the default period of the retention class content
@@ -97,12 +162,14 @@ func fileExpiry(now time.Time, tenantFiles, resultTTL string) any {
 // under the lease of an attempt or a tool call: the mark is not below the task's, and the core
 // writes the provenance block (PRV-2).
 func (c *Core) FilePut(ctx context.Context, w *Worker, lease string, ob *OnBehalf, req FilePutRequest, content []byte) (*FilePutResult, error) {
-	if len(content) > MaxFileBytes {
-		return nil, refuse("over_capacity", "the file is larger than the core takes")
-	}
 	tv, cat, err := c.requireTenant(ctx, w.Tenant)
 	if err != nil {
 		return nil, err
+	}
+	// A file above the limit is refused whole: no record and nothing truncated (ART-4).
+	maxFile, maxTask := c.fileLimits(tv)
+	if int64(len(content)) > maxFile {
+		return nil, refuse("file_too_large", "the file is larger than %d bytes", maxFile)
 	}
 	if req.DataMark != "" {
 		if _, ok := c.markOrder(req.DataMark); !ok {
@@ -203,6 +270,18 @@ func (c *Core) FilePut(ctx context.Context, w *Worker, lease string, ob *OnBehal
 				origin = "ingested"
 			}
 			expires = fileExpiry(now, tv.Spec.Retention.Files, cat.TaskTypes[typ].ResultTTL)
+			// The files of one task together stay within the task limit, under a task lock so
+			// two puts do not both pass (ART-4).
+			if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock(7300113, hashtext($1))`, task); err != nil {
+				return err
+			}
+			var taskUsed int64
+			if err := tx.QueryRow(ctx, `SELECT coalesce(sum(size), 0) FROM files WHERE tenant = $1 AND producer = $2 AND state <> 'purged'`, w.Tenant, task).Scan(&taskUsed); err != nil {
+				return err
+			}
+			if taskUsed+int64(len(content)) > maxTask {
+				return refuse("file_too_large", "the files of the task would pass %d bytes", maxTask)
+			}
 			if provenance, err = c.fileProvenance(ctx, tx, now, task, toolcall); err != nil {
 				return err
 			}
@@ -227,9 +306,9 @@ func (c *Core) FilePut(ctx context.Context, w *Worker, lease string, ob *OnBehal
 		if provenance != nil {
 			prov, _ = json.Marshal(provenance)
 		}
-		if _, err := tx.Exec(ctx, `INSERT INTO files (file_ref, tenant, origin, producer, media_type, size, sha256, data_mark, personal_seen, state, provenance, content, created_at, expires_at)
-			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'stored', $10, $11, $12, $13)`,
-			ref, w.Tenant, origin, producer, sniffType(content), len(content), hex.EncodeToString(sum[:]), mark, nullable(personal), prov, content, now, expires); err != nil {
+		if _, err := tx.Exec(ctx, `INSERT INTO files (file_ref, tenant, origin, producer, media_type, size, sha256, data_mark, personal_seen, state, provenance, content, created_at, expires_at, filename)
+			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'stored', $10, $11, $12, $13, $14)`,
+			ref, w.Tenant, origin, producer, sniffType(content, req.Filename), len(content), hex.EncodeToString(sum[:]), mark, nullable(personal), prov, content, now, expires, nullable(baseName(req.Filename))); err != nil {
 			return err
 		}
 		out = FilePutResult{FileRef: ref}
@@ -314,7 +393,7 @@ func loadFile(ctx context.Context, q store.Querier, tenant, ref string) (*fileRo
 // is above the recipient's right is not_found; an expired or purged one is gone. An attempt
 // that reads a file is untrusted from then on and its task takes the file's mark (ART-2).
 func (c *Core) FileGet(ctx context.Context, w *Worker, lease string, req FileGetRequest) (*FileGetResult, error) {
-	tv, _, err := c.requireTenant(ctx, w.Tenant)
+	tv, cat, err := c.requireTenant(ctx, w.Tenant)
 	if err != nil {
 		return nil, err
 	}
@@ -346,16 +425,19 @@ func (c *Core) FileGet(ctx context.Context, w *Worker, lease string, req FileGet
 				return err
 			}
 		case "delivery":
-			var recipient, dmark *string
-			var execKind, execName string
+			var recipient, dmark, dtask *string
+			var execKind, execName, dkind string
 			var named bool
 			// A delivery hands out only the files its body names.
-			if err := tx.QueryRow(ctx, `SELECT recipient, data_mark, exec_kind, exec_name, position($2 in coalesce(body::text, '')) > 0 FROM deliveries WHERE id = $1`,
-				l.WorkID, `"`+f.Ref+`"`).Scan(&recipient, &dmark, &execKind, &execName, &named); err != nil {
+			if err := tx.QueryRow(ctx, `SELECT recipient, data_mark, exec_kind, exec_name, position($2 in coalesce(body::text, '')) > 0, task, kind FROM deliveries WHERE id = $1`,
+				l.WorkID, `"`+f.Ref+`"`).Scan(&recipient, &dmark, &execKind, &execName, &named, &dtask, &dkind); err != nil {
 				return err
 			}
 			if !named {
 				return refuse("not_found", "no such file")
+			}
+			if err := c.mediaAllowed(ctx, tx, cat, dkind, deref(dtask), f); err != nil {
+				return err
 			}
 			// The delivery hands out a file no higher than its own mark, which the claim
 			// checked against the recipient and the ceiling.
@@ -399,6 +481,30 @@ func (c *Core) FileGet(ctx context.Context, w *Worker, lease string, req FileGet
 		return nil, err
 	}
 	return &out, nil
+}
+
+// mediaAllowed checks a file a delivery hands out to a person or a sink (ART-5): an export
+// delivery hands out only the export file, any other only a result file of its own task whose
+// sniffed type the task type lists in result_media_types and that is not an active format.
+// Another file is refused with media_type_not_allowed; the task outcome does not change.
+func (c *Core) mediaAllowed(ctx context.Context, tx pgx.Tx, cat *Catalog, kind, task string, f *fileRow) error {
+	if kind == "export" || f.Origin == "export" {
+		if kind == "export" && f.Origin == "export" {
+			return nil
+		}
+		return refuse("media_type_not_allowed", "an export file goes only with its export delivery")
+	}
+	if task == "" || f.Producer != task || activeMediaType(f.MediaType) {
+		return refuse("media_type_not_allowed", "the file type %s is not handed out", f.MediaType)
+	}
+	var typ string
+	if err := tx.QueryRow(ctx, `SELECT type FROM tasks WHERE id = $1`, task).Scan(&typ); err != nil {
+		return err
+	}
+	if !slices.Contains(cat.TaskTypes[typ].ResultMediaTypes, f.MediaType) {
+		return refuse("media_type_not_allowed", "the file type %s is not in the result types of %s", f.MediaType, typ)
+	}
+	return nil
 }
 
 // taintByFile checks a file read for a task: the initiator may see its mark (a person's task

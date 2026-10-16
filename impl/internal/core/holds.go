@@ -319,6 +319,12 @@ func (c *Core) holdChanged(ctx context.Context, tx pgx.Tx, now time.Time, h Hold
 	if err := c.appendEvent(ctx, tx, now, h.Tenant, Event{Type: event, Subject: h.ID, Data: data}); err != nil {
 		return 0, err
 	}
+	// A no_tool hold drops the cached tool output it covers (PRM-12).
+	if event == "hold.set.v1" && holdPurgesCache(h.Effects) {
+		if err := purgeToolCache(ctx, tx, h.Scope); err != nil {
+			return 0, err
+		}
+	}
 	// A new hold pauses the campaigns it covers in the same transaction (ORC-11).
 	if event == "hold.set.v1" {
 		if err := c.pauseHeldCampaigns(ctx, tx, now, h.Scope.Tenant); err != nil {

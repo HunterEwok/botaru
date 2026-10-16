@@ -61,6 +61,8 @@ type Config struct {
 	Spend SpendConfig
 	// Backup holds the backup locations the core watches (RET-8).
 	Backup BackupConfig
+	// Files holds the farm ceilings of file sizes (ART-4).
+	Files FilesConfig
 	// FreeSpace, when set, measures the store volume instead of Health.StoreVolume: free and
 	// total bytes. A test sets a mock measurement here.
 	FreeSpace func() (free, total uint64, err error)
@@ -84,6 +86,7 @@ func (c *Config) defaults() {
 	}
 	c.Health.defaults()
 	c.Spend.defaults()
+	c.Files.defaults()
 }
 
 // Core holds the store, the specification and the caches.

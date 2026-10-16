@@ -64,6 +64,8 @@ type Core struct {
 	Spend core.SpendConfig `yaml:"spend"`
 	// Backup holds the backup locations the core watches (RET-8).
 	Backup core.BackupConfig `yaml:"backup"`
+	// Files holds the farm ceilings of one file and of the files of one task (ART-4).
+	Files core.FilesConfig `yaml:"files"`
 	// Monitor turns on the monitor profile: alarms go to the monitoring system only (D-88).
 	Monitor core.MonitorConfig `yaml:"monitor"`
 }
