@@ -91,6 +91,9 @@ type enqueueInput struct {
 	CampaignItem int
 	Scope        []string
 	PaidByCard   bool
+	// TreeBudgetExtra widens the tree budget of a task a card or a run paid for by that reserve,
+	// so the amount on the card is not capped by the budget of the proposing tree (ORC-8, SCR-8).
+	TreeBudgetExtra int64
 	// ContinuesCampaign makes the task the continuation of a campaign, which reads its results
 	// (ORC-9).
 	ContinuesCampaign string
@@ -592,7 +595,19 @@ func (c *Core) enqueue(ctx context.Context, tx pgx.Tx, now time.Time, cat *Catal
 		if err := tx.QueryRow(ctx, `SELECT type, record FROM tasks WHERE id = $1`, ch.Root).Scan(&rootType, &rootRec); err != nil {
 			return nil, err
 		}
-		record["tree_budget_micros"] = taskTreeBudget(rootRec, cat.TaskTypes[rootType])
+		budget := taskTreeBudget(rootRec, cat.TaskTypes[rootType])
+		// A descendant of a paid step or item keeps the budget its ancestor was given.
+		var parentRec []byte
+		if err := tx.QueryRow(ctx, `SELECT record FROM tasks WHERE id = $1`, ch.Parent).Scan(&parentRec); err != nil && !errors.Is(err, pgx.ErrNoRows) {
+			return nil, err
+		}
+		if pb := taskTreeBudget(parentRec, manifest.TaskType{}); budget > 0 && pb > budget {
+			budget = pb
+		}
+		if budget > 0 && in.PaidByCard {
+			budget += in.TreeBudgetExtra
+		}
+		record["tree_budget_micros"] = budget
 	}
 	// The record keeps the initiators of what the tree read, from the chain or the caller (MSG-7).
 	if co := coInitiatorsOf(in); len(co) > 0 {
@@ -671,7 +686,7 @@ func (c *Core) enqueue(ctx context.Context, tx pgx.Tx, now time.Time, cat *Catal
 			record["scope"] = map[string]any{"resources": in.Scope}
 		}
 	}
-	if in.PaidByCard && (in.Campaign != "" || in.ContinuesCampaign != "") {
+	if in.PaidByCard {
 		record["paid_by_card"] = true
 	}
 	if in.ContinuesCampaign != "" {

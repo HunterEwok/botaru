@@ -1180,6 +1180,18 @@ func (c *Core) buildScriptCard(ctx context.Context, q store.Querier, cat *Catalo
 		} else if s.Kind != "confirm" {
 			e["targets"] = 1
 		}
+		// The person sees what each step acts on before Run (SCR-6).
+		if s.Kind == "fanout" {
+			if l := r.Rec.fanoutList(s.ID); len(l) > 0 {
+				e["resources"] = l
+			}
+		}
+		if len(s.Args) > 0 {
+			e["args"] = s.Args
+		}
+		if len(s.Params) > 0 {
+			e["params"] = s.Params
+		}
 		if s.When != nil {
 			e["condition"] = true
 		}
@@ -1678,6 +1690,7 @@ func (c *Core) releaseStep(ctx context.Context, tx pgx.Tx, now time.Time, cat *C
 		in := enqueueInput{
 			Tenant: r.Tenant, Type: def.Type, Body: body, IdempotencyKey: key, Initiator: r.Initiator,
 			EnqueuedBy: "core", Origin: r.Rec.Origin, Source: "script", SourceID: r.ID, Cause: r.ID, PaidByCard: true,
+			TreeBudgetExtra: r.Rec.Estimate.Micros,
 		}
 		if r.Anchor != "" {
 			in.Chain = &chainLink{
@@ -2090,7 +2103,12 @@ func (c *Core) cancelRun(ctx context.Context, tx pgx.Tx, now time.Time, cat *Cat
 				if err != nil {
 					return err
 				}
-				if err := c.rejectCampaign(ctx, tx, now, cmp, reason); err != nil {
+				// An action fanout an approver already started runs while its step waits.
+				if cmp.State == "proposed" {
+					if err := c.rejectCampaign(ctx, tx, now, cmp, reason); err != nil {
+						return err
+					}
+				} else if err := c.stopCampaign(ctx, tx, now, cat, cmp, reason); err != nil {
 					return err
 				}
 			}
@@ -2296,7 +2314,16 @@ func (c *Core) scriptApprovalMoved(ctx context.Context, tx pgx.Tx, now time.Time
 
 // cancelRunsOf cancels the live runs anchored at a task that was canceled (SCR-11).
 func (c *Core) cancelRunsOf(ctx context.Context, tx pgx.Tx, now time.Time, tenant, task, reason string) error {
-	rows, err := tx.Query(ctx, `SELECT id FROM script_runs WHERE tenant = $1 AND anchor_task = $2 AND state = ANY($3) ORDER BY id`, tenant, task, scriptLive)
+	return c.cancelRuns(ctx, tx, now, tenant, `anchor_task = $2`, task, reason)
+}
+
+// cancelRunsOfTree cancels the live runs anchored in any task of the tree of root.
+func (c *Core) cancelRunsOfTree(ctx context.Context, tx pgx.Tx, now time.Time, tenant, root, reason string) error {
+	return c.cancelRuns(ctx, tx, now, tenant, `anchor_task IN (SELECT id FROM tasks WHERE tenant = $1 AND (id = $2 OR record->>'root' = $2))`, root, reason)
+}
+
+func (c *Core) cancelRuns(ctx context.Context, tx pgx.Tx, now time.Time, tenant, where, arg, reason string) error {
+	rows, err := tx.Query(ctx, `SELECT id FROM script_runs WHERE tenant = $1 AND `+where+` AND state = ANY($3) ORDER BY id FOR UPDATE`, tenant, arg, scriptLive)
 	if err != nil {
 		return err
 	}

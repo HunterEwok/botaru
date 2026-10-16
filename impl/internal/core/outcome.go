@@ -828,6 +828,10 @@ func (c *Core) failTask(ctx context.Context, tx pgx.Tx, now time.Time, tenant, i
 	if err := c.scriptTaskEnded(ctx, tx, now, id, "failed", reason); err != nil {
 		return err
 	}
+	// A draft of a translator that failed afterwards is not started any more.
+	if err := c.cancelRunsOf(ctx, tx, now, tenant, id, reason); err != nil {
+		return err
+	}
 	var record treeRecord
 	if err := json.Unmarshal(rec, &record); err != nil {
 		return err

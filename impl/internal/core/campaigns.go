@@ -1588,6 +1588,7 @@ func (c *Core) releaseItem(ctx context.Context, tx pgx.Tx, now time.Time, cat *C
 			CoInitiators: cmp.Rec.CoInitiators, WakeTask: cmp.Rec.WakeTask,
 		},
 		Campaign: cmp.ID, CampaignItem: n, Scope: []string{resource}, PaidByCard: cmp.Rec.PaidByCard,
+		TreeBudgetExtra: money.FromEUR(cmp.Rec.Reserve.EUR),
 	})
 	reason := ""
 	switch {
@@ -1874,7 +1875,7 @@ func (c *Core) campaignContinuation(ctx context.Context, tx pgx.Tx, now time.Tim
 			CoInitiators: co, WakeTask: cmp.Rec.WakeTask,
 		},
 		// A campaign a card paid for pays its continuation the same way (ORC-8).
-		ContinuesCampaign: cmp.ID, PaidByCard: cmp.Rec.PaidByCard,
+		ContinuesCampaign: cmp.ID, PaidByCard: cmp.Rec.PaidByCard, TreeBudgetExtra: money.FromEUR(cmp.Rec.Reserve.EUR),
 	})
 	reason := ""
 	switch {

@@ -7,6 +7,9 @@ import (
 	"encoding/json"
 	"strings"
 	"testing"
+	"time"
+
+	"github.com/jackc/pgx/v5"
 
 	"github.com/HunterEwok/botaru/impl/internal/mcp"
 )
@@ -203,6 +206,24 @@ func TestScriptRunFlow(t *testing.T) {
 	if _, states = b.run(t, run.ID); states != "released,pending" {
 		t.Fatalf("after the start %s", states)
 	}
+	// A step is paid by the run: out of the person's day limit and with the run's estimate on
+	// top of the tree budget (SCR-8).
+	var stepRec, anchorRec []byte
+	if err := b.c.st.Pool.QueryRow(ctx, `SELECT t.record FROM tasks t JOIN script_steps s ON s.task = t.id WHERE s.run = $1 AND s.id = 'check'`, run.ID).Scan(&stepRec); err != nil {
+		t.Fatal(err)
+	}
+	if err := b.c.st.Pool.QueryRow(ctx, `SELECT record FROM tasks WHERE id = $1`, run.Rec.Root).Scan(&anchorRec); err != nil {
+		t.Fatal(err)
+	}
+	var sr, ar struct {
+		Paid bool  `json:"paid_by_card"`
+		Tree int64 `json:"tree_budget_micros"`
+	}
+	_ = json.Unmarshal(stepRec, &sr)
+	_ = json.Unmarshal(anchorRec, &ar)
+	if !sr.Paid || ar.Tree <= 0 || sr.Tree != ar.Tree+run.Rec.Estimate.Micros {
+		t.Fatalf("step record %+v anchor %+v estimate %d", sr, ar, run.Rec.Estimate.Micros)
+	}
 	item := b.claim(t, b.checker, "attempt")
 	if item == nil {
 		t.Fatal("no check attempt")
@@ -261,6 +282,39 @@ func TestScriptActionAndCancel(t *testing.T) {
 	run, states := b.run(t, run.ID)
 	if run.State != "canceled" || states != "ok,canceled" || b.approval(t, approval).State != "canceled" {
 		t.Fatalf("after the cancel %s %s %s", run.State, states, b.approval(t, approval).State)
+	}
+}
+
+// /cancel on the tree stops a run anchored in it although the anchor has finished: the run and
+// the waiting approval are canceled and nothing more is released (SCR-11).
+func TestScriptTreeCancel(t *testing.T) {
+	ctx := context.Background()
+	b := newScriptRunBench(t)
+	att, h := b.attemptTools(t, "1", false)
+	r := proposeScriptCall(t, b.bench, h, checkStep, fixStep)
+	b.translated(t, att, map[string]any{"outcome": "drafted", "run_ref": r.RunRef})
+	card := cardOf(t, b.drain(t), scriptConfirmCard, "direct:1001")
+	run, _ := b.run(t, r.RunRef)
+	if _, err := b.c.Decide(ctx, b.channel, press("telegram:1001", "direct:1001", card.external),
+		DecideRequest{SubjectKind: "script", ID: run.ID, Nonce: run.Nonce, Decision: "approve"}); err != nil {
+		t.Fatal(err)
+	}
+	item := b.claim(t, b.checker, "attempt")
+	if _, err := b.c.Complete(ctx, b.checker, header(t, item), CompleteRequest{Result: map[string]any{"answer": "down", "healthy": false}}); err != nil {
+		t.Fatal(err)
+	}
+	var approval string
+	if err := b.c.st.Pool.QueryRow(ctx, `SELECT approval FROM script_steps WHERE run = $1 AND id = 'fix'`, run.ID).Scan(&approval); err != nil {
+		t.Fatal(err)
+	}
+	if err := b.c.tx(ctx, func(tx pgx.Tx, now time.Time) error {
+		return b.c.cancelTree(ctx, tx, now, run.Tenant, run.Rec.Root, "initiator")
+	}); err != nil {
+		t.Fatal(err)
+	}
+	run, states := b.run(t, run.ID)
+	if run.State != "canceled" || states != "ok,canceled" || b.approval(t, approval).State != "canceled" {
+		t.Fatalf("after the tree cancel %s %s %s", run.State, states, b.approval(t, approval).State)
 	}
 }
 
