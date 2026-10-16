@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -391,6 +392,8 @@ func (c *Core) replyContinuation(ctx context.Context, tx pgx.Tx, now time.Time, 
 			Parent: src.Parent, Root: src.Root, Depth: src.Depth + 1, Mark: c.higherMark(parent.DataMark, src.DataMark),
 			MaxTier: parent.MaxTier, Untrusted: parent.UntrustedSeen || src.UntrustedSeen, Conversation: src.Conversation, Trace: src.Trace,
 			ParentPriority: priorityOf(ctx, tx, src.Parent), WakeTask: src.WakeTask,
+			// The continuation read what the child and the source read (MSG-7).
+			CoInitiators: unionOf(src.CoInitiators, parent.CoInitiators),
 		},
 	})
 	if err != nil {
@@ -403,4 +406,17 @@ func (c *Core) replyContinuation(ctx context.Context, tx pgx.Tx, now time.Time, 
 		return refused(res.Rejected.Reason)
 	}
 	return nil
+}
+
+// unionOf is the distinct members of the lists in order.
+func unionOf(lists ...[]string) []string {
+	var out []string
+	for _, l := range lists {
+		for _, v := range l {
+			if !slices.Contains(out, v) {
+				out = append(out, v)
+			}
+		}
+	}
+	return out
 }

@@ -779,7 +779,7 @@ func attachedFiles(body map[string]any) ([]string, error) {
 	return out, nil
 }
 
-// wakeShare refuses a wake-up past the personal day limit of a principal its entries came from:
+// wakeShare refuses a wake-up, or a reserve in its subtree, past the personal day limit of a principal its entries came from:
 // the wake-ups their entries caused this day, spent and still reserved, count in that limit
 // beside their own spending, though the wake-ups run as system (MSG-11, BUD-1).
 func (c *Core) wakeShare(ctx context.Context, tx pgx.Tx, now time.Time, tv *TenantView, sub string, groups []string, line string, estimate int64, ownWake string) (*Problem, error) {
@@ -800,17 +800,8 @@ func (c *Core) wakeShare(ctx context.Context, tx pgx.Tx, now time.Time, tv *Tena
 	if err != nil {
 		return nil, err
 	}
-	var wakes int64
-	// Usage lines in full, and of an open wake-up's reserve the part it has not spent yet.
-	// The spend of a wake-up's whole subtree counts, its children's too; a wake-up's own reserve
-	// is the estimate of its subtree. The reserves of ownWake are left out: the caller's reserve
-	// is a draw on them.
-	if err := tx.QueryRow(ctx, `SELECT coalesce(sum(CASE WHEN s.unit <> 'task' THEN CASE WHEN s.time >= $2 THEN s.eur_micros ELSE 0 END
-			WHEN t.state IN ('submitted', 'working') AND w.id <> $4 THEN greatest(s.eur_micros - coalesce((SELECT sum(x.eur_micros) FROM spend x JOIN tasks xt ON xt.id = x.task
-				WHERE x.root = s.root AND x.unit <> 'task' AND (xt.id = s.task OR (s.task = w.id AND xt.record->>'wake_task' = w.id))), 0), 0)
-			ELSE 0 END), 0)
-		FROM spend s JOIN tasks t ON t.id = s.task JOIN tasks w ON w.id = t.record->>'wake_task'
-		WHERE w.tenant = $1 AND (s.time >= $2 OR t.state IN ('submitted', 'working')) AND w.record->'wake_subjects' ? $3`, tv.Name, day, sub, ownWake).Scan(&wakes); err != nil {
+	wakes, err := wakeSum(ctx, tx, tv.Name, day, ownWake, "subject", sub)
+	if err != nil {
 		return nil, err
 	}
 	if own+wakes+estimate > money.FromEUR(*personal) {

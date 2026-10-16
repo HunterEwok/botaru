@@ -399,7 +399,7 @@ func (c *Core) runWake(ctx context.Context, tx pgx.Tx, now time.Time, cat *Catal
 		return err
 	}
 	if eur != nil {
-		used, err := wakeInboxUsed(ctx, tx, tv.Name, rt.On.Inbox, day, "")
+		used, err := wakeSum(ctx, tx, tv.Name, day, "", "inbox", rt.On.Inbox)
 		if err != nil {
 			return err
 		}
@@ -454,20 +454,27 @@ type wakeInput struct {
 	Subjects []string
 }
 
-// wakeInboxUsed is the money of the day of the wake-ups of an inbox: the spend of their whole
-// subtrees this day, and of their open reserves the part not spent yet, a wake-up's own reserve
-// being the estimate of its subtree. The reserves of ownWake are left out: the caller's reserve
-// is a draw on them (MSG-11).
-func wakeInboxUsed(ctx context.Context, tx pgx.Tx, tenant, inbox string, day time.Time, ownWake string) (int64, error) {
-	var used int64
-	err := tx.QueryRow(ctx, `SELECT coalesce(sum(CASE WHEN s.unit <> 'task' THEN CASE WHEN s.time >= $2 THEN s.eur_micros ELSE 0 END
-			WHEN t.state IN ('submitted', 'working') AND w.id <> $4 THEN greatest(s.eur_micros - coalesce((SELECT sum(x.eur_micros) FROM spend x JOIN tasks xt ON xt.id = x.task
-				WHERE x.root = s.root AND x.unit <> 'task' AND (xt.id = s.task OR (s.task = w.id AND xt.record->>'wake_task' = w.id))), 0), 0)
-			ELSE 0 END), 0)
-		FROM spend s JOIN tasks t ON t.id = s.task JOIN tasks w ON w.id = t.record->>'wake_task'
-		WHERE s.tenant = $1 AND w.tenant = $1 AND (s.time >= $2 OR t.state IN ('submitted', 'working')) AND w.record->>'wake_inbox' = $3`,
-		tenant, day, inbox, ownWake).Scan(&used)
-	return used, err
+// wakeSum is the money of the day of the wake-ups of an inbox ("inbox") or of those a
+// principal's entries caused ("subject"): the usage lines of their whole subtrees this day, an
+// estimated line counting zero once reconciled or released as in windowUsed, and of their open
+// reserves the part not spent yet, a wake-up's own reserve being the estimate of its subtree.
+// The reserves of ownWake are left out: the caller's reserve is a draw on them (MSG-11).
+func wakeSum(ctx context.Context, tx pgx.Tx, tenant string, day time.Time, ownWake, by, val string) (int64, error) {
+	cond := `w.record->>'wake_inbox' = $3`
+	if by == "subject" {
+		cond = `w.record->'wake_subjects' ? $3`
+	}
+	var sum int64
+	err := tx.QueryRow(ctx, `SELECT coalesce((SELECT sum(CASE WHEN s.state = 'estimated' AND (s.reconciled_at IS NOT NULL OR s.released_at IS NOT NULL) THEN 0
+				ELSE s.eur_micros + coalesce(s.correction_eur_micros, 0) END)
+			FROM spend s JOIN tasks t ON t.id = s.task JOIN tasks w ON w.id = t.record->>'wake_task'
+			WHERE s.tenant = $1 AND s.time >= $2 AND s.unit <> 'task' AND `+cond+`), 0)
+		+ coalesce((SELECT sum(greatest(s.eur_micros - coalesce((SELECT sum(x.eur_micros) FROM spend x JOIN tasks xt ON xt.id = x.task
+				WHERE x.root = s.root AND x.unit <> 'task' AND (xt.id = s.task OR (s.task = w.id AND xt.record->>'wake_task' = w.id))), 0), 0))
+			FROM spend s JOIN tasks t ON t.id = s.task JOIN tasks w ON w.id = t.record->>'wake_task'
+			WHERE s.tenant = $1 AND s.unit = 'task' AND t.state IN ('submitted', 'working') AND w.id <> $4 AND `+cond+`), 0)`,
+		tenant, day, val, ownWake).Scan(&sum)
+	return sum, err
 }
 
 // wakeLimits checks a reserve in a wake-up's subtree, a task's estimate or a call's, against
@@ -486,7 +493,7 @@ func (c *Core) wakeLimits(ctx context.Context, tx pgx.Tx, now time.Time, tv *Ten
 	}
 	day := tenantDay(tv, now)
 	if eur, _ := wakeCeilings(tv); eur != nil {
-		used, err := wakeInboxUsed(ctx, tx, tv.Name, *inbox, day, wake)
+		used, err := wakeSum(ctx, tx, tv.Name, day, wake, "inbox", *inbox)
 		if err != nil {
 			return nil, err
 		}
@@ -499,9 +506,7 @@ func (c *Core) wakeLimits(ctx context.Context, tx pgx.Tx, now time.Time, tv *Ten
 		if err != nil {
 			return nil, err
 		}
-		if p := c.checkBudget(ctx, tx, now, tv, budgetAsk{subject: sub, groups: sg, extra: extra, line: line}); p != nil {
-			return p, nil
-		}
+		// The tenant and line windows are the caller's own check; here only the person's day.
 		if p, err := c.wakeShare(ctx, tx, now, tv, sub, sg, line, extra, wake); err != nil || p != nil {
 			return p, err
 		}

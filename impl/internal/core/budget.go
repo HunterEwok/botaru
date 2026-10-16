@@ -226,6 +226,14 @@ func (c *Core) checkBudget(ctx context.Context, tx pgx.Tx, now time.Time, tv *Te
 		if err != nil {
 			return refuse("not_ready", "store")
 		}
+		if w.scope == "person_day" {
+			// The wake-ups the person's entries caused count in the person's day (MSG-11, BUD-1).
+			wakes, err := wakeSum(ctx, tx, tv.Name, w.from, "", "subject", ask.subject)
+			if err != nil {
+				return refuse("not_ready", "store")
+			}
+			used += wakes
+		}
 		if over(used, *w.limit) {
 			return refuse("budget_exhausted", "%s", w.why)
 		}

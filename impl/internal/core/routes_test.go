@@ -404,4 +404,19 @@ func TestWakeLimits(t *testing.T) {
 	if p := limits(300000); p == nil || p.Reason != "budget_exhausted" {
 		t.Fatalf("a reserve past alice's day passed: %v", p)
 	}
+	// Alice's own asks count the wake-up her entry caused: its open reserve is a claim on her day.
+	var p *Problem
+	if err := b.c.tx(ctx, func(tx pgx.Tx, now time.Time) error {
+		groups, err := principalGroups(ctx, tx, now, tv, b.alice)
+		if err != nil {
+			return err
+		}
+		p = b.c.checkBudget(ctx, tx, now, tv, budgetAsk{subject: b.alice, groups: groups, extra: 50000, line: "work"})
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if p == nil || p.Reason != "budget_exhausted" {
+		t.Fatalf("alice's own ask passed beside her wake-up: %v", p)
+	}
 }
