@@ -94,6 +94,8 @@ texts:
   cmd.profile.types: "You can ask for: {titles}."
   cmd.profile.actions: "Actions you can request: {titles}."
   cmd.profile.data: "Your data classes: {classes}."
+  cmd.profile.delegated: "{group} (delegated)"
+  cmd.profile.code: "Your verification code for the operator: {code}."
   cmd.lang.unknown: "Unknown language. Available: {locales}."
   cmd.prefs.show: "Quiet hours: {quiet}. Daily digest: {digest}."
   cmd.prefs.usage: "Usage in a private chat: /prefs, /prefs quiet HH:MM-HH:MM, /prefs quiet off, /prefs digest daily or /prefs digest off."
@@ -234,6 +236,12 @@ texts:
   cmd.manager.forwarded: A forwarded or quoted message is not a directive to the farm manager; type the command yourself.
   notice.delegated_grant: "{by} granted {subject} the delegated group {group}."
   notice.delegated_ungrant: "{by} removed {subject} from the delegated group {group}."
+  notice.privileged_grant: "{by} granted {subject} the privileged group {group}."
+  notice.privileged_ungrant: "{by} removed {subject} from the privileged group {group}."
+  # Invitations (PRM-7, PRM-13)
+  cmd.invite.invalid: This invitation is not valid. Ask the person who invited you for a new one.
+  cmd.invite.done: "Welcome. You are now in the groups: {groups}."
+  cmd.invite.pending: "Welcome. Groups {groups} wait for the operator: tell the operator your verification code {code} by voice or in person."
   cmd.ungrant.not_member: "{subject} is not in group {group}."
   cmd.direct_only: This command can only be given in a private chat with the bot.
   cmd.help.group_header: "In this chat you can ask in plain text:"

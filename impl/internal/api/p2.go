@@ -482,8 +482,11 @@ func (s *Server) p2(w http.ResponseWriter, r *http.Request) {
 		}
 		out, err = s.c.AuditVerify(ctx, req.Tenant, req.Heads)
 	default:
-		Problem(w, &core.Problem{Reason: "not_found", Detail: "the operation is not implemented in this build"})
-		return
+		var served bool
+		if out, served, err = s.p2People(ctx, oper, op, m); !served {
+			Problem(w, &core.Problem{Reason: "not_found", Detail: "the operation is not implemented in this build"})
+			return
+		}
 	}
 	if err != nil {
 		s.fail(w, err)

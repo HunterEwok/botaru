@@ -206,6 +206,10 @@ type GrantRequest struct {
 	Subject string `json:"subject"`
 	Group   string `json:"group"`
 	Until   string `json:"until"`
+	// Code is the person's verification code that the operator checked by voice or in person;
+	// RequestedBy the admin who asked for a privileged grant in writing (PRM-13).
+	Code        string `json:"code,omitempty"`
+	RequestedBy string `json:"requested_by,omitempty"`
 }
 
 // Grant runs grant and ungrant: a membership of a principal in a group of the tenant.
@@ -217,13 +221,11 @@ func (c *Core) Grant(ctx context.Context, op Operator, req GrantRequest) (*Done,
 	if _, ok := tv.Groups[req.Group]; !ok {
 		return nil, refuse("not_found", "no such group in the tenant")
 	}
-	// A privileged group needs the verification code and, on a production tenant, the
-	// written request of another person (PRM-13). That flow is not in this version, so
-	// such a grant is refused rather than made active.
-	if req.Op == "grant" && privilegedGroup(tv, cat, req.Group, map[string]bool{}) {
-		return nil, refuse("privileged_group", "a privileged group needs the verification code flow, which this version does not have")
-	}
+	// A privileged group needs the verification code and, on a production tenant, the written
+	// request of another admin; until the code is checked the membership is pending (PRM-13).
+	privileged := c.privilegedNeedsCode(tv, cat, req.Group)
 	var out Done
+	var refusal *Problem
 	err = c.tx(ctx, func(tx pgx.Tx, now time.Time) error {
 		var state string
 		err := tx.QueryRow(ctx, `SELECT state FROM principals WHERE tenant = $1 AND id = $2 FOR UPDATE`, op.Tenant, req.Subject).Scan(&state)
@@ -245,11 +247,40 @@ func (c *Core) Grant(ctx context.Context, op Operator, req GrantRequest) (*Done,
 			}
 			until = t
 		}
+		mstate := "active"
 		switch req.Op {
 		case "grant":
-			if _, err := tx.Exec(ctx, `INSERT INTO memberships (tenant, principal, grp, state, until, created_at) VALUES ($1, $2, $3, 'active', $4, $5)
-				ON CONFLICT (tenant, principal, grp) DO UPDATE SET until = EXCLUDED.until`, op.Tenant, req.Subject, req.Group, until, now); err != nil {
+			if privileged {
+				if p, err := c.privilegedGrantCheck(ctx, tx, now, tv, op, req); err != nil || p != nil {
+					// The refusal keeps its audit record: the transaction commits it.
+					refusal = p
+					return err
+				}
+				if req.Code == "" {
+					mstate = "pending"
+				}
+			}
+			// A pending membership becomes active only with the code; an active one stays.
+			if _, err := tx.Exec(ctx, `INSERT INTO memberships (tenant, principal, grp, state, until, created_at, granted_by, requested_by) VALUES ($1, $2, $3, $6, $4, $5, $7, $8)
+				ON CONFLICT (tenant, principal, grp) DO UPDATE SET until = EXCLUDED.until,
+				state = CASE WHEN memberships.state = 'active' THEN 'active' ELSE EXCLUDED.state END,
+				pending_until = CASE WHEN memberships.state = 'active' OR EXCLUDED.state = 'active' THEN NULL ELSE memberships.pending_until END,
+				granted_by = EXCLUDED.granted_by, requested_by = coalesce(EXCLUDED.requested_by, memberships.requested_by)`,
+				op.Tenant, req.Subject, req.Group, until, now, mstate, op.Principal, nullable(req.RequestedBy)); err != nil {
 				return err
+			}
+			var invite *string
+			if err := tx.QueryRow(ctx, `SELECT state, invite FROM memberships WHERE tenant = $1 AND principal = $2 AND grp = $3`, op.Tenant, req.Subject, req.Group).Scan(&mstate, &invite); err != nil {
+				return err
+			}
+			// The code checked here also confirms the invitation the membership waited on, once
+			// none of its groups waits any more (PRM-13).
+			if invite != nil && mstate == "active" {
+				if _, err := tx.Exec(ctx, `UPDATE invitations SET state = 'confirmed' WHERE id = $1 AND state = 'used'
+					AND NOT EXISTS (SELECT 1 FROM memberships WHERE tenant = $2 AND principal = $3 AND invite = $1 AND state = 'pending')`,
+					*invite, op.Tenant, req.Subject); err != nil {
+					return err
+				}
 			}
 		case "ungrant":
 			if _, err := tx.Exec(ctx, `DELETE FROM memberships WHERE tenant = $1 AND principal = $2 AND grp = $3`, op.Tenant, req.Subject, req.Group); err != nil {
@@ -261,15 +292,39 @@ func (c *Core) Grant(ctx context.Context, op Operator, req GrantRequest) (*Done,
 		default:
 			return refuse("input_schema_invalid", "unknown op")
 		}
+		var after map[string]any
+		if req.Op == "grant" {
+			after = map[string]any{"state": mstate}
+			if privileged {
+				after["privileged"] = true
+			}
+		}
 		seq, err := c.appendAudit(ctx, tx, now, Audit{
 			Tenant: op.Tenant, Kind: "command", Actor: Actor{Principal: op.Principal, Via: "farmctl"},
-			Command: req.Op, Target: &Target{Kind: "membership", ID: req.Subject + "/" + req.Group}, OK: true,
+			Command: req.Op, Target: &Target{Kind: "membership", ID: req.Subject + "/" + req.Group}, OK: true, After: after,
 		})
+		if err != nil {
+			return err
+		}
 		out = Done{OK: true, AuditSeq: seq}
-		return err
+		if req.Op == "grant" {
+			out.State = mstate
+		}
+		// Every admin hears of an active grant and of a removal of a privileged group (PRM-13).
+		if privileged && (req.Op == "ungrant" || mstate == "active") {
+			return c.notifyAdmins(ctx, tx, now, tv, "notice.privileged_"+req.Op, req.Subject, req.Group, op.Principal)
+		}
+		// And of a grant and a removal of a delegated group (PRM-16), as from a chat.
+		if c.delegatedGroup(tv, cat, req.Group) {
+			return c.notifyAdmins(ctx, tx, now, tv, "notice.delegated_"+req.Op, req.Subject, req.Group, op.Principal)
+		}
+		return nil
 	})
 	if err != nil {
 		return nil, err
+	}
+	if refusal != nil {
+		return nil, refusal
 	}
 	return &out, nil
 }

@@ -22,8 +22,9 @@ spec:
       verdict: {enum: [cause_found, no_cause, need_access], x-botaru-read-by: code}
       need_input: {type: boolean, x-botaru-read-by: code}
       services: {type: array, maxItems: 5, items: {enum_from: catalog.services}, x-botaru-read-by: code}
-      # The facts of the answer as separate fields (OUT-1): the numbers are closed fields read by code,
-      # the subnet, URLs and error types are model text with a length ceiling that no code reads. The
+      # The facts of the answer as separate fields (OUT-1): the numbers, the /24 subnet and the URL paths
+      # are closed fields read by code (formats ipv4_subnet24, url_path); the error types are model text
+      # with a length ceiling that no code reads, because nginx error kinds have no closed list. The
       # answer text may round or explain; these fields carry the values copied from the tool output, and
       # the eval cases of ops-reader compare them with the generator answers (evals/fixtures/seed.yaml).
       facts:
@@ -39,10 +40,10 @@ spec:
           peak_hour_5xx: {type: integer, minimum: 0, maximum: 23, x-botaru-read-by: code}
           last_status: {type: integer, minimum: 100, maximum: 599, x-botaru-read-by: code}
           disk_used_pct: {type: integer, minimum: 0, maximum: 100, x-botaru-read-by: code}
-          subnet_401: {type: string, maxLength: 18}
-          top_urls_5xx: {type: array, maxItems: 5, items: {type: string, maxLength: 200}}
-          top_urls_slow: {type: array, maxItems: 5, items: {type: string, maxLength: 200}}
-          top_error_types: {type: array, maxItems: 5, items: {type: string, maxLength: 64}}
+          subnet_401: {type: string, x-botaru-format: ipv4_subnet24, x-botaru-read-by: code}
+          top_urls_5xx: {type: array, maxItems: 3, items: {type: string, x-botaru-format: url_path}, x-botaru-read-by: code}
+          top_urls_slow: {type: array, maxItems: 5, items: {type: string, x-botaru-format: url_path}, x-botaru-read-by: code}
+          top_error_types: {type: array, maxItems: 2, items: {type: string, maxLength: 64}}
   summary_fields: [verdict, services]
   stages: [reading_logs, checking_services, writing_answer]
   dispatch: {priority_class: 3}

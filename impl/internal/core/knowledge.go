@@ -103,8 +103,8 @@ func (c *Core) lintKnowledge(S *lintSet, f *lintFindings) {
 // KnowledgeFolder is one corpus folder of P2 apply: the documents of
 // tenants/<tenant>/knowledge/<corpus>/ of the commit.
 type KnowledgeFolder struct {
-	Tenant    string        `json:"tenant"`
-	Corpus    string        `json:"corpus"`
+	Tenant    string         `json:"tenant"`
+	Corpus    string         `json:"corpus"`
 	Documents []KnowledgeDoc `json:"documents"`
 }
 

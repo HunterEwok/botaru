@@ -57,6 +57,8 @@ const (
 	Notice = "ntc"
 	// Document is a document of a knowledge corpus, the object id in its fragment ids (KNW-4).
 	Document = "kd"
+	// Invite is an invitation into groups (PRM-7).
+	Invite = "inv"
 )
 
 var (

@@ -257,7 +257,6 @@ func TestKnowledgeProfileOffRefuses(t *testing.T) {
 	}
 }
 
-
 // KNW-1: the scope comes from the task tenant's catalog (a canary of demo2 is not found from
 // demo, and a demo2 fragment id is not_found), a corpus above the task mark is not offered and
 // is refused, and a personal corpus sets personal_seen declared.
