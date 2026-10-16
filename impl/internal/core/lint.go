@@ -1011,6 +1011,10 @@ func (c *Core) lintManifests(docs []manifest.Doc, index []int, personas personaL
 				f.add(o, "role_profile_forbidden", "/"+field)
 			}
 		}
+		// A script draft inside a proposal only where the profile may declare it (PRP-3).
+		if mstr(mmap(rs, "scripts"), "propose") == "in_proposal" && !slices.Contains(mstrs(prof, "may_declare"), "scripts_in_proposal") {
+			f.add(o, "role_profile_forbidden", "/scripts/propose")
+		}
 		// The insight section: insight types of tier 1 at most that the role claims, without
 		// their own result_schema; tools among the role's own; a merge window of at least an
 		// hour (INS-1, INS-2, INS-4).
