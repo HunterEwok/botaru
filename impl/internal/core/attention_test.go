@@ -514,3 +514,47 @@ func TestDigestPace(t *testing.T) {
 		t.Fatalf("the waiting digest %s %s %v", state, reason, err)
 	}
 }
+
+// Within a class the next task comes from the fairness key with the fewest running attempts
+// per weight; a key of weight 0 waits while another key has work (DSP-6).
+func TestFairnessWeights(t *testing.T) {
+	ctx := context.Background()
+	b := newBenchWith(t, func(root string, ms []map[string]any) []map[string]any {
+		for _, m := range ms {
+			if m["kind"] == "Tenant" {
+				d, _ := m["spec"].(map[string]any)["dispatch"].(map[string]any)
+				if d == nil {
+					d = map[string]any{}
+					m["spec"].(map[string]any)["dispatch"] = d
+				}
+				d["fairness"] = map[string]any{"weights": map[string]any{"campaign": 0}}
+			}
+		}
+		return ms
+	})
+	b.hello(t, "f1")
+	b.advance(t, 1)
+	a2 := b.hello(t, "f2")
+	b.advance(t, 1)
+	other := b.hello(t, "f3")
+	b.advance(t, 1)
+	idle := b.hello(t, "f4")
+	for id, key := range map[string]string{other: "system:work", idle: "campaign:c1"} {
+		if _, err := b.c.st.Pool.Exec(ctx, `UPDATE tasks SET record = record || jsonb_build_object('fairness_key', $2::text) WHERE id = $1`, id, key); err != nil {
+			t.Fatal(err)
+		}
+	}
+	b.drain(t)
+	var got []string
+	for range 4 {
+		att := b.claim(t, b.agent, "attempt")
+		if att == nil {
+			t.Fatal("no attempt")
+		}
+		got = append(got, att.Payload["task"].(map[string]any)["id"].(string))
+	}
+	// alice's first, then the key without a running attempt, then alice's second, the weight 0 key last.
+	if got[1] != other || got[2] != a2 || got[3] != idle {
+		t.Fatalf("order %v, want [_ %s %s %s]", got, other, a2, idle)
+	}
+}

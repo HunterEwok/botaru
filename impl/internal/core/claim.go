@@ -378,13 +378,39 @@ func (c *Core) claimAttempt(ctx context.Context, tx pgx.Tx, now time.Time, cat *
 		acting = actingOf{Bot: own.ID, BotEpoch: own.Epoch}
 	}
 	// A lens review goes only to its executor role and never to the author's worker (COM-2).
+	// Fairness within a class (DSP-6): the next task comes from the fairness key with the
+	// fewest running attempts per weight of its kind; a key of weight 0 only when no other key
+	// of the class waits; a tie goes to the key whose oldest waiting task came first, then to
+	// the smaller task id.
+	var weights map[string]int
+	if tv != nil && tv.Spec.Dispatch.Fairness != nil {
+		weights = tv.Spec.Dispatch.Fairness.Weights
+		if weights == nil {
+			weights = map[string]int{}
+		}
+	}
 	for picked := false; !picked; {
-		err := tx.QueryRow(ctx, `SELECT id, type, body, record, lease_no, initiator FROM tasks
-			WHERE tenant = $1 AND state = 'submitted' AND body IS NOT NULL AND type = ANY($2) AND (run_at IS NULL OR run_at <= $3) AND (deadline_at IS NULL OR deadline_at > $3)
+		const waiting = `tenant = $1 AND state = 'submitted' AND body IS NOT NULL AND type = ANY($2) AND (run_at IS NULL OR run_at <= $3) AND (deadline_at IS NULL OR deadline_at > $3)
 			AND NOT id = ANY($4)
-			AND (record->>'executor_role' IS NULL OR record->>'executor_role' = $5) AND (record->>'not_worker' IS NULL OR record->>'not_worker' <> $6)
+			AND (record->>'executor_role' IS NULL OR record->>'executor_role' = $5) AND (record->>'not_worker' IS NULL OR record->>'not_worker' <> $6)`
+		var err error
+		if weights == nil {
+			err = tx.QueryRow(ctx, `SELECT id, type, body, record, lease_no, initiator FROM tasks WHERE `+waiting+`
 			ORDER BY priority_class, created_at, id LIMIT 1 FOR UPDATE SKIP LOCKED`, w.Tenant, claims, now, skip, w.Role, w.ID).
-			Scan(&id, &typ, &body, &rec, &leaseNo, &initiator)
+				Scan(&id, &typ, &body, &rec, &leaseNo, &initiator)
+		} else {
+			err = tx.QueryRow(ctx, `WITH keys AS (
+				SELECT priority_class, coalesce(record->>'fairness_key', '') AS fk, min(created_at) AS oldest FROM tasks WHERE `+waiting+` GROUP BY 1, 2),
+			running AS (SELECT coalesce(record->>'fairness_key', '') AS fk, count(*) AS n FROM tasks WHERE tenant = $1 AND state = 'working' GROUP BY 1),
+			weighted AS (SELECT k.priority_class, k.fk, k.oldest, coalesce(r.n, 0) AS n,
+				coalesce(($7::jsonb ->> split_part(k.fk, ':', 1))::int, 1) AS weight FROM keys k LEFT JOIN running r ON r.fk = k.fk)
+			SELECT t.id, t.type, t.body, t.record, t.lease_no, t.initiator FROM tasks t
+			JOIN weighted k ON k.priority_class = t.priority_class AND k.fk = coalesce(t.record->>'fairness_key', '')
+			WHERE `+strings.ReplaceAll(waiting, "tenant = $1", "t.tenant = $1")+`
+			ORDER BY t.priority_class, k.weight = 0, CASE WHEN k.weight = 0 THEN 0 ELSE k.n::float8 / k.weight END, k.oldest, t.created_at, t.id
+			LIMIT 1 FOR UPDATE OF t SKIP LOCKED`, w.Tenant, claims, now, skip, w.Role, w.ID, weights).
+				Scan(&id, &typ, &body, &rec, &leaseNo, &initiator)
+		}
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, nil
 		}

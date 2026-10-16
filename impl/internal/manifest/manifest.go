@@ -237,8 +237,9 @@ type TenantAttention struct {
 // TenantDispatch holds the dispatch rules of the tenant policy (DSP-3, DSP-7).
 type TenantDispatch struct {
 	Rules []DispatchRule `json:"rules"`
-	// Fairness holds the weight of each kind of fairness key within a class (DSP-6).
-	Fairness struct {
+	// Fairness holds the weight of each kind of fairness key within a class (DSP-6); without
+	// it the order within a class is the enqueue time, as in v0.1.
+	Fairness *struct {
 		Weights map[string]int `json:"weights"`
 	} `json:"fairness"`
 }
