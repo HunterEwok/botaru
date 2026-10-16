@@ -156,8 +156,10 @@ func sameJSON(a, b map[string]any) bool {
 // request schema of P2 apply; the runner counts the refusal as the lint error schema_invalid of
 // MAN-1 for the stages schema, lint and apply, and compares the field with every place the
 // manifest breaks its schema, so a manifest broken elsewhere as well fails the case instead of
-// passing it (BUD-9 here). A given manifest of an object of the seed (the demo tenant) changes
-// only the keys it names.
+// passing it (BUD-9 here). A fixture manifest that lacks required fields other than the checked
+// one leaves the case unchecked, since its refusal comes from the fixture. A given manifest of an
+// object of the seed (the demo tenant) changes only the keys it names; expect.apply is the outcome
+// of the given manifests, and given.lint is a label (COM-8 here).
 func TestManifestSchemaRefusal(t *testing.T) {
 	r := testRunner(t)
 	got := runYAML(t, r, `
@@ -206,9 +208,28 @@ cases:
       metadata: {name: demo}
       spec: {timezone: Europe/Berlin}
   expect: {result: ok}
+- id: apply-fact
+  given:
+    lint: budget/types
+    manifest:
+      kind: Commission
+      metadata: {name: default, tenant: demo}
+      spec:
+        weights: {value: 4}
+  expect:
+    apply: {result: rejected}
+- id: apply-unnamed
+  given:
+    manifest:
+      kind: Commission
+      spec:
+        weights: {value: 4}
+  expect:
+    apply: {result: rejected}
 `)
-	wantStatus(t, got, map[string]Status{"extra-field": Passed, "missing-field": Passed, "partial": Failed, "on-base": Passed})
-	if d := got["partial"].Detail; !strings.Contains(d, "besides the field max_tokens") {
+	wantStatus(t, got, map[string]Status{"extra-field": Passed, "missing-field": Passed, "partial": Unchecked, "on-base": Passed,
+		"apply-fact": Passed, "apply-unnamed": Unchecked})
+	if d := got["partial"].Detail; !strings.Contains(d, "lacks the required spec.title") {
 		t.Errorf("partial: %s", d)
 	}
 }

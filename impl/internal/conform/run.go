@@ -200,6 +200,12 @@ func (r *Runner) givenNeeds(c *Case) string {
 				}
 			}
 		case "manifest", "manifests":
+		case "lint":
+			// The name of the lint family the case's manifests check (governance/charter): a
+			// label without data.
+			if _, ok := c.Given[k].(string); !ok {
+				return "given lint " + fmt.Sprint(c.Given[k])
+			}
 		case "holds":
 			for _, h := range asList(c.Given[k]) {
 				hm := asMap(h)
@@ -313,6 +319,15 @@ func isVerb(k string) bool {
 var checkedFacts = map[string]bool{"result": true, "reason": true, "stage": true, "error": true, "note": true, "field": true}
 
 func factNeeds(e map[string]any) string {
+	if a, ok := e["apply"]; ok {
+		if n := factNeeds(applyFact(map[string]any{"apply": a})); n != "" {
+			return "fact apply." + strings.TrimPrefix(n, "fact ")
+		}
+		if applyFact(map[string]any{"apply": a}) == nil {
+			return "fact apply"
+		}
+		e = withoutApply(e)
+	}
 	keys := make([]string, 0, len(e))
 	for k := range e {
 		keys = append(keys, k)
@@ -366,6 +381,9 @@ type outcome struct {
 	// Violations are the places where a manifest the core refused by its kind schema breaks
 	// that schema (manifestRefusal).
 	Violations []violation
+	// Missing are the required fields a refused manifest lacks, as dotted paths of the manifest
+	// (spec.title, metadata.name): a fixture manifest without them is refused for them.
+	Missing []string
 	// Alts are the other errors of a refused apply: an expectation matches the set when it
 	// matches one of its errors.
 	Alts []*outcome
@@ -391,7 +409,8 @@ func (x *exec) run(ctx context.Context) Result {
 		}
 		return res(Failed, "given people: %v", err)
 	}
-	var last *outcome
+	// applied is the outcome of the given manifests or fragments, which expect.apply names.
+	var last, applied *outcome
 	if ms := x.givenManifests(); len(ms) > 0 {
 		// Fields and kinds of a later version than the claim go before apply (MAN-11).
 		if _, err := testbench.DropUnsupported(x.r.spec, ms); err != nil {
@@ -405,9 +424,12 @@ func (x *exec) run(ctx context.Context) Result {
 			return res(Unchecked, "core: %s", o.Unimplemented)
 		}
 		if len(x.c.Steps) > 0 && o.Result != "ok" {
+			if n := incomplete(nil, o); n != "" {
+				return res(Unchecked, "%s", n)
+			}
 			return res(Failed, "given manifests were not applied: %s %s", o.Error, o.Path)
 		}
-		last = o
+		last, applied = o, o
 	}
 	if err := x.seedHolds(ctx); err != nil {
 		if u, ok := err.(errUnchecked); ok {
@@ -426,7 +448,7 @@ func (x *exec) run(ctx context.Context) Result {
 		if o.Unimplemented != "" {
 			return res(Unchecked, "core: %s", o.Unimplemented)
 		}
-		last = o
+		last, applied = o, o
 	}
 	for i, st := range x.c.Steps {
 		o, err := x.step(ctx, st)
@@ -440,17 +462,35 @@ func (x *exec) run(ctx context.Context) Result {
 			return res(Unchecked, "core: %s", o.Unimplemented)
 		}
 		if e := asMap(st["expect"]); len(e) > 0 {
+			if n := incomplete(e, o); n != "" {
+				return res(Unchecked, "step %d: %s", i+1, n)
+			}
 			if d := compare(e, o); d != "" {
 				return res(Failed, "step %d: %s", i+1, d)
 			}
 		}
 		last = o
 	}
-	if len(x.c.Expect) > 0 {
+	if e := applyFact(x.c.Expect); e != nil {
+		// expect.apply is the outcome of applying the given manifests (or fragments).
+		if applied == nil {
+			return res(Failed, "an apply expectation without manifests")
+		}
+		if n := incomplete(e, applied); n != "" {
+			return res(Unchecked, "%s", n)
+		}
+		if d := compare(e, applied); d != "" {
+			return res(Failed, "apply: %s", d)
+		}
+	}
+	if e := withoutApply(x.c.Expect); len(e) > 0 {
 		if last == nil {
 			return res(Failed, "an expectation without an action")
 		}
-		if d := compare(x.c.Expect, last); d != "" {
+		if n := incomplete(e, last); n != "" {
+			return res(Unchecked, "%s", n)
+		}
+		if d := compare(e, last); d != "" {
 			return res(Failed, "%s", d)
 		}
 	}
@@ -488,13 +528,101 @@ func (x *exec) manifestRefusal(o *outcome, body map[string]any) {
 	if sp == nil {
 		sp = map[string]any{}
 	}
+	if str(asMap(mf["metadata"])["name"]) == "" {
+		o.Missing = append(o.Missing, "metadata.name")
+	}
 	var ve *spec.ValidationError
 	if errors.As(x.r.spec.Validate(sch, sp), &ve) {
 		for _, v := range ve.Violations {
 			o.Violations = append(o.Violations, violation{Path: "/manifests/" + m[2] + "/spec" + v.Path, Message: v.Message})
+			o.Missing = append(o.Missing, missingProps(sp, v)...)
 		}
 		o.Path = o.Violations[0].Path
 	}
+}
+
+var listedRe = regexp.MustCompile(`^&\{\[([a-z0-9_ ]+)\]\}$`)
+
+// missingProps are the properties a schema violation lists that the object at its place lacks:
+// the required properties of a manifest that does not have them (a property it lists that the
+// object has is an unexpected one).
+func missingProps(sp map[string]any, v spec.Violation) []string {
+	mm := listedRe.FindStringSubmatch(v.Message)
+	if mm == nil {
+		return nil
+	}
+	var obj any = sp
+	for _, seg := range strings.Split(strings.TrimPrefix(v.Path, "/"), "/") {
+		if seg == "" {
+			continue
+		}
+		switch t := obj.(type) {
+		case map[string]any:
+			obj = t[seg]
+		case []any:
+			i, err := strconv.Atoi(seg)
+			if err != nil || i >= len(t) {
+				return nil
+			}
+			obj = t[i]
+		default:
+			return nil
+		}
+	}
+	om, ok := obj.(map[string]any)
+	if !ok {
+		return nil
+	}
+	prefix := "spec" + strings.ReplaceAll(v.Path, "/", ".")
+	var out []string
+	for _, p := range strings.Fields(mm[1]) {
+		if _, has := om[p]; !has {
+			out = append(out, prefix+"."+p)
+		}
+	}
+	return out
+}
+
+// incomplete is the reason a refusal does not check an expectation: the refused fixture manifest
+// lacks required fields other than the one the expectation names, so the core refused it for
+// them. The case is unchecked: the fixture, not the core, is wrong.
+func incomplete(e map[string]any, o *outcome) string {
+	if o == nil || len(o.Missing) == 0 || o.Result == "ok" {
+		return ""
+	}
+	f := str(e["field"])
+	var other []string
+	for _, m := range o.Missing {
+		if f != "" && (fieldAt("/manifests/0/"+strings.ReplaceAll(m, ".", "/"), "", f)) {
+			continue
+		}
+		other = append(other, m)
+	}
+	if len(other) == 0 {
+		return ""
+	}
+	return "the given manifest lacks the required " + strings.Join(other, ", ") + ", so its refusal does not check the case"
+}
+
+// applyFact is the expectation of the fact apply: apply: ok, or a mapping of expectation fields.
+func applyFact(e map[string]any) map[string]any {
+	switch v := e["apply"].(type) {
+	case string:
+		return map[string]any{"result": v}
+	case map[string]any:
+		return v
+	}
+	return nil
+}
+
+// withoutApply is an expectation without the fact apply.
+func withoutApply(e map[string]any) map[string]any {
+	if _, ok := e["apply"]; !ok {
+		return e
+	}
+	out := shallowCopy(e)
+	delete(out, "apply")
+	return out
 }
 
 // compare checks an outcome against an expectation and returns the first mismatch; a refused
