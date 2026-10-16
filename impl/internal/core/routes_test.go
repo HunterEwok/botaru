@@ -289,7 +289,7 @@ func TestWakeShare(t *testing.T) {
 	}
 }
 
-// atNoon sets the bench clock to noon of today in the zone.
+// atNoon sets the bench clock to the next noon in the zone (today before noon, else tomorrow).
 func (b *bench) atNoon(t *testing.T, zone string) {
 	t.Helper()
 	loc, err := time.LoadLocation(zone)
@@ -298,6 +298,10 @@ func (b *bench) atNoon(t *testing.T, zone string) {
 	}
 	now := time.Now().In(loc)
 	noon := time.Date(now.Year(), now.Month(), now.Day(), 12, 0, 0, 0, loc)
+	// The bench clock only moves forward, so after noon the next day's noon is taken.
+	if !noon.After(now) {
+		noon = noon.AddDate(0, 0, 1)
+	}
 	if _, err := b.c.st.Pool.Exec(context.Background(), `UPDATE farm_meta SET clock_offset_us = $1`, time.Until(noon).Microseconds()); err != nil {
 		t.Fatal(err)
 	}
