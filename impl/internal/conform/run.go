@@ -1113,10 +1113,9 @@ func (x *exec) givenManifests() []map[string]any {
 		if x.r.kinds[str(m["kind"])] == "tenant" {
 			if _, ok := md["tenant"]; !ok {
 				md["tenant"] = "demo"
-				// A charter is named by its tenant (tenants/<t>/governance.yaml, GOV-33): the
-				// charter farm is the farm charter.
-				if str(m["kind"]) == "Governance" && str(md["name"]) != "" {
-					md["tenant"] = md["name"]
+				// The charter named farm is the farm charter (GOV-33).
+				if str(m["kind"]) == "Governance" && str(md["name"]) == "farm" {
+					md["tenant"] = "farm"
 				}
 			}
 		}
