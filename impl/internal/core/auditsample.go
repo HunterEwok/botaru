@@ -45,7 +45,11 @@ var sampleDecisions = []string{"would_accept", "would_not_accept", "override_vet
 // sampleConfig is commission.audit_sample of the tenant charter over the defaults.
 func sampleConfig(cat *Catalog, tenant string) (minPer int, share float64, perDigest int) {
 	gov := tenantSpecOf(cat, "Governance", tenant)
-	as := mmap(mmap(gov, "commission"), "audit_sample")
+	return sampleConfigFrom(mmap(mmap(gov, "commission"), "audit_sample"))
+}
+
+// sampleConfigFrom is commission.audit_sample of a charter over the defaults.
+func sampleConfigFrom(as map[string]any) (minPer int, share float64, perDigest int) {
 	minPer, share, perDigest = defaultSampleMin, defaultSampleShare, defaultSamplePerDigest
 	if n, ok := toFloat(as["min_per_month"]); ok && int(n) >= defaultSampleMin {
 		minPer = int(n)
@@ -97,8 +101,8 @@ func (c *Core) drawSample(ctx context.Context, tx pgx.Tx, now time.Time, cat *Ca
 	}
 	rows, err := tx.Query(ctx, `SELECT id FROM proposals WHERE tenant = $1
 		AND (record->'verdict'->>'computed_at')::timestamptz >= $2 AND (record->'verdict'->>'computed_at')::timestamptz < $3
-		AND (state = 'parked' AND record->>'state_reason' = 'score' OR state = 'dismissed' AND record->>'state_reason' IN ('veto', 'below_min', 'low_score'))
-		ORDER BY id FOR UPDATE`, tv.Name, start, end)
+		AND (state = 'parked' AND record->>'state_reason' = ANY($4) OR state = 'dismissed' AND record->>'state_reason' = ANY($5))
+		ORDER BY id FOR UPDATE`, tv.Name, start, end, sampleParked, sampleDismissed)
 	if err != nil {
 		return err
 	}
@@ -112,10 +116,7 @@ func (c *Core) drawSample(ctx context.Context, tx pgx.Tx, now time.Time, cat *Ca
 	if _, err := crand.Read(seed[:]); err != nil {
 		return err
 	}
-	drawn := slices.Clone(pop)
-	r := rand.New(rand.NewChaCha8(seed))
-	r.Shuffle(len(drawn), func(i, j int) { drawn[i], drawn[j] = drawn[j], drawn[i] })
-	drawn = drawn[:n]
+	drawn := sampleDraw(pop, n, seed)
 	id := ids.New(ids.Sample)
 	tag, err := tx.Exec(ctx, `INSERT INTO audit_samples (id, tenant, month, seed, population, size, drawn, created_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
 		ON CONFLICT (tenant, month) DO NOTHING`, id, tv.Name, month, hex.EncodeToString(seed[:]), len(pop), n, strAny(append([]string{}, drawn...)), now)
@@ -140,6 +141,28 @@ func (c *Core) drawSample(ctx context.Context, tx pgx.Tx, now time.Time, cat *Ca
 		}
 	}
 	return nil
+}
+
+// sampleParked and sampleDismissed are the state reasons of the population of the sample: parked
+// by score, dismissed by a veto, a minimum or a low score; parked by quorum, budget or conflict
+// never enters (DIG-5).
+var (
+	sampleParked    = []string{"score"}
+	sampleDismissed = []string{"veto", "below_min", "low_score"}
+)
+
+// sampleEligible says whether a proposal in state with reason enters the population.
+func sampleEligible(state, reason string) bool {
+	return state == "parked" && slices.Contains(sampleParked, reason) || state == "dismissed" && slices.Contains(sampleDismissed, reason)
+}
+
+// sampleDraw draws n ids of the population uniformly by a seeded shuffle of the ids in order, so
+// the recorded seed and population give the same draw again.
+func sampleDraw(pop []string, n int, seed [32]byte) []string {
+	drawn := slices.Clone(pop)
+	r := rand.New(rand.NewChaCha8(seed))
+	r.Shuffle(len(drawn), func(i, j int) { drawn[i], drawn[j] = drawn[j], drawn[i] })
+	return drawn[:n]
 }
 
 // pickSamples are the sampled items the next digest presents, the oldest first, at most
@@ -446,25 +469,40 @@ func auditSampleStatus(ctx context.Context, tx pgx.Tx, now time.Time, tenant str
 		return nil, err
 	}
 	defer rows.Close()
-	var n int
-	var yes, all float64
+	var answers []sampleAnswer
 	for rows.Next() {
-		var answer string
-		var prob float64
-		if err := rows.Scan(&answer, &prob); err != nil {
+		var a sampleAnswer
+		if err := rows.Scan(&a.answer, &a.prob); err != nil {
 			return nil, err
 		}
-		if prob <= 0 {
-			continue
-		}
-		n++
-		all += 1 / prob
-		if answer == "would_accept" {
-			yes += 1 / prob
-		}
+		answers = append(answers, a)
 	}
 	if err := rows.Err(); err != nil {
 		return nil, err
+	}
+	return sampleShare(answers), nil
+}
+
+// sampleAnswer is one blind answer with the inclusion probability of its item.
+type sampleAnswer struct {
+	answer string
+	prob   float64
+}
+
+// sampleShare is the weighted share of "Would accept" and the commission_underrates flag of a
+// set of blind answers (DIG-5).
+func sampleShare(answers []sampleAnswer) map[string]any {
+	var n int
+	var yes, all float64
+	for _, a := range answers {
+		if a.prob <= 0 {
+			continue
+		}
+		n++
+		all += 1 / a.prob
+		if a.answer == "would_accept" {
+			yes += 1 / a.prob
+		}
 	}
 	out := map[string]any{"answers": n, "would_accept_share": nil, "commission_underrates": false}
 	if all > 0 {
@@ -472,5 +510,5 @@ func auditSampleStatus(ctx context.Context, tx pgx.Tx, now time.Time, tenant str
 		out["would_accept_share"] = share
 		out["commission_underrates"] = n >= sampleUnderMin && share >= sampleUnderShare
 	}
-	return out, nil
+	return out
 }

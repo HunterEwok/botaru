@@ -50,7 +50,7 @@ func (c *Core) leaseHandles(ctx context.Context, tx pgx.Tx, now time.Time, w *Wo
 		h := "bh_" + ids.Secret(32)
 		if _, err := tx.Exec(ctx, `INSERT INTO handles (hash, kind, tenant, work_id, lease_no, epoch, worker_id, ref, created_at)
 			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
-			c.hashSecret(h), kind, w.Tenant, task, leaseNo, c.epoch, w.ID, ref, now); err != nil {
+			c.hashSecret(h), kind, w.Tenant, task, leaseNo, c.epoch.Load(), w.ID, ref, now); err != nil {
 			return err
 		}
 		handles[kind] = h
@@ -143,7 +143,7 @@ func (c *Core) resolveLeaseHandle(ctx context.Context, q store.Querier, handle, 
 	if err != nil {
 		return nil, err
 	}
-	if epoch != c.epoch || state != "active" || !until.After(now) {
+	if epoch != c.epoch.Load() || state != "active" || !until.After(now) {
 		return nil, refuse("fenced", "the lease of the handle is not alive")
 	}
 	h.Ref = deref(ref)

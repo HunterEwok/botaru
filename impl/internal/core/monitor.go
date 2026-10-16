@@ -218,8 +218,8 @@ func (c *Core) planHead(ctx context.Context, tx pgx.Tx, now time.Time, tenant st
 	if conflict, err := c.headKeyConflict(ctx, tx); err != nil || conflict {
 		return err
 	}
-	h := AuditHead{Tenant: tenant, Epoch: c.epoch}
-	err := tx.QueryRow(ctx, `SELECT seq, hash FROM audit_heads WHERE tenant = $1 AND epoch = $2`, tenant, c.epoch).Scan(&h.Seq, &h.Hash)
+	h := AuditHead{Tenant: tenant, Epoch: c.epoch.Load()}
+	err := tx.QueryRow(ctx, `SELECT seq, hash FROM audit_heads WHERE tenant = $1 AND epoch = $2`, tenant, c.epoch.Load()).Scan(&h.Seq, &h.Hash)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil
 	}
@@ -252,7 +252,7 @@ func (c *Core) auditHeadLoop(ctx context.Context) error {
 	}
 	return c.tx(ctx, func(tx pgx.Tx, now time.Time) error {
 		rows, err := tx.Query(ctx, `SELECT h.tenant FROM audit_heads h LEFT JOIN monitor_exports m ON m.tenant = h.tenant
-			WHERE h.epoch = $1 AND (m.head_planned_at IS NULL OR m.head_planned_at <= $2) ORDER BY h.tenant`, c.epoch, now.Add(-headEvery))
+			WHERE h.epoch = $1 AND (m.head_planned_at IS NULL OR m.head_planned_at <= $2) ORDER BY h.tenant`, c.epoch.Load(), now.Add(-headEvery))
 		if err != nil {
 			return err
 		}
@@ -488,7 +488,7 @@ func (c *Core) verifyHeads(ctx context.Context, tenant string, heads []AuditHead
 		if prev != nil && (h.Epoch < prev.Epoch || h.Epoch == prev.Epoch && h.Seq < prev.Seq) {
 			return "head_seq", h.Seq, nil
 		}
-		if h.Epoch == c.epoch {
+		if h.Epoch == c.epoch.Load() {
 			// A head inside the months the retention loop deleted is checked only at the cut
 			// itself, whose hash the cut keeps, and only while the cut is one the loop made: its
 			// period_deleted record is in the chain and its records were older than the shortest
