@@ -471,16 +471,15 @@ func (c *Core) decideAttribution(ctx context.Context, w *Worker, ob OnBehalf, re
 		}
 		if a.Kind == "script_run" {
 			// TRN-7: not the person who pressed "Run", unless nobody else may decide.
-			self, ok, err := scriptLinkDecider(ctx, tx, now, press.tv, a, press.principal)
+			self, ok, err := c.scriptLinkDecider(ctx, tx, now, press.tv, a, press.principal)
 			if err != nil {
 				return err
 			}
 			if !ok {
 				return deny("forbidden", "the person who pressed Run does not decide the link of the run")
 			}
-			if self {
-				a.Rec["self_assessment"] = true
-			}
+			// Every answer sets the mark anew: a later answer by another person is not one.
+			a.Rec["self_assessment"] = self
 		}
 		switch a.State {
 		case "candidate", "unknown", "rejected":

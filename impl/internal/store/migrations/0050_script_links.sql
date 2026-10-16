@@ -1,7 +1,8 @@
 -- SPDX-License-Identifier: AGPL-3.0-only
 -- Script links (TRN-7, HLD-9): an attribution candidate of kind script_run names a script run
 -- instead of a proposal (spec/model/attribution.v2.schema.json); a run keeps the targets fixed
--- at "Run" and when it started and ended, for the rule script_target.
+-- at "Run" and when it started and ended, for the rule script_target, and the role that wrote
+-- its draft and its data mark outside the record, which retention purges (HLD-9).
 ALTER TABLE attributions
     ADD COLUMN kind text NOT NULL DEFAULT 'change',
     ADD COLUMN script_run text,
@@ -12,5 +13,7 @@ CREATE UNIQUE INDEX attributions_script_link ON attributions (incident, script_r
 ALTER TABLE script_runs
     ADD COLUMN targets text[],
     ADD COLUMN started_at timestamptz,
-    ADD COLUMN ended_at timestamptz;
+    ADD COLUMN ended_at timestamptz,
+    ADD COLUMN role text,
+    ADD COLUMN data_mark text;
 CREATE INDEX script_runs_started ON script_runs (tenant, started_at) WHERE started_at IS NOT NULL;

@@ -871,8 +871,9 @@ func (c *Core) acceptScript(ctx context.Context, tx pgx.Tx, now time.Time, cat *
 	// HLD-9, HLD-3: under a no_action hold on the author role, a draft that acts (an action, or
 	// a step that may control services or run monitoring scripts) is rejected; read-only
 	// drafts still pass.
-	if scriptActs(steps, rec.Marks) {
-		held, err := heldBy(ctx, tx, now, []string{"no_action"}, append(tenantScopes(g.Tenant), scopeRef{kind: "role", tenant: g.Tenant, name: g.Role})...)
+	if c.scriptActs(cat, steps) {
+		held, err := heldBy(ctx, tx, now, []string{"no_action"}, append(tenantScopes(g.Tenant), scopeRef{kind: "role", tenant: g.Tenant, name: g.Role},
+			scopeRef{kind: "worker", tenant: g.Tenant, name: strings.ToLower(g.Worker)})...)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -1092,9 +1093,11 @@ func (c *Core) insertRun(ctx context.Context, tx pgx.Tx, now time.Time, cat *Cat
 	if err != nil {
 		return "", false, err
 	}
-	if _, err := tx.Exec(ctx, `INSERT INTO script_runs (id, tenant, anchor_task, initiator, state, plan_hash, record, idempotency_key, nonce, expires_at, created_at, updated_at)
-		VALUES ($1, $2, $3, $4, 'proposed', $5, $6, $7, $8, $9, $10, $10)`,
-		id, g.Tenant, g.Task, g.Initiator, acc.planHash, raw, key, ids.Secret(16), now.Add(scriptCardTTL), now); err != nil {
+	// The role and the mark stay in columns past the purge of the record (TRN-7, HLD-9).
+	if _, err := tx.Exec(ctx, `INSERT INTO script_runs (id, tenant, anchor_task, initiator, state, plan_hash, record, idempotency_key, nonce, expires_at, created_at, updated_at,
+		role, data_mark)
+		VALUES ($1, $2, $3, $4, 'proposed', $5, $6, $7, $8, $9, $10, $10, $11, $12)`,
+		id, g.Tenant, g.Task, g.Initiator, acc.planHash, raw, key, ids.Secret(16), now.Add(scriptCardTTL), now, nullable(acc.rec.Role), nullable(acc.rec.DataMark)); err != nil {
 		return "", false, err
 	}
 	for i, s := range acc.steps {
@@ -1403,7 +1406,15 @@ func scriptScopes(r *scriptRun, steps []scriptStep) []scopeRef {
 	if r.Rec.Role != "" {
 		s = append(s, scopeRef{kind: "role", tenant: r.Tenant, name: r.Rec.Role})
 	}
-	return s
+	return append(s, runWorkerScope(r)...)
+}
+
+// runWorkerScope is the scope of the worker that drafted a run, so its own hold counts too.
+func runWorkerScope(r *scriptRun) []scopeRef {
+	if r.Rec.Worker == "" {
+		return nil
+	}
+	return []scopeRef{{kind: "worker", tenant: r.Tenant, name: strings.ToLower(r.Rec.Worker)}}
 }
 
 // setRunState moves a run and writes its event and card updates.
@@ -1828,7 +1839,7 @@ func (c *Core) releaseActionStep(ctx context.Context, tx pgx.Tx, now time.Time, 
 	if c.rs.validate(schema, args) != nil {
 		return c.endStep(ctx, tx, now, r, s, "failed", "input_schema_invalid", nil, s.Untrusted)
 	}
-	if held, err := heldBy(ctx, tx, now, []string{"no_action", "pause_action"}, approvalScopes(r.Tenant, def.Action, r.Rec.Role, "")...); err != nil {
+	if held, err := heldBy(ctx, tx, now, []string{"no_action", "pause_action"}, append(approvalScopes(r.Tenant, def.Action, r.Rec.Role, ""), runWorkerScope(r)...)...); err != nil {
 		return err
 	} else if held != "" {
 		return c.endStep(ctx, tx, now, r, s, "failed", "held", nil, s.Untrusted)
@@ -2609,7 +2620,7 @@ func (c *Core) scriptCommand(ctx context.Context, w *Worker, ob OnBehalf, id, no
 			}
 			// A read-only run still runs under no_action (HLD-9).
 			effects := []string{"no_enqueue"}
-			if scriptActs(defs, r.Rec.Marks) {
+			if c.scriptActs(cat, defs) {
 				effects = append(effects, "no_action")
 			}
 			if held, err := heldBy(ctx, tx, now, effects, scriptScopes(r, defs)...); err != nil {

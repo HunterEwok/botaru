@@ -1262,14 +1262,16 @@ func campaignScopes(cmp *campaignRow) []scopeRef {
 	return s
 }
 
-// campaignHoldEffects are the hold effects that pause a campaign (ORC-11).
-var campaignHoldEffects = []string{"no_enqueue", "no_claim", "no_action", "cancel_running"}
+// campaignHoldEffects are the hold effects that pause any campaign (ORC-11).
+var campaignHoldEffects = []string{"no_enqueue", "no_claim", "cancel_running"}
 
 // campaignHoldEffectsOf are the effects that pause a campaign: of an action campaign
-// pause_action too, as it pauses a single waiting approval (HLD-3).
+// no_action, which forbids the release of its items, and pause_action, as it pauses a single
+// waiting approval (HLD-3); a read campaign requests no action, so no_action does not pause it
+// and the read-only work of a held role still runs (ORC-11, HLD-9).
 func campaignHoldEffectsOf(cmp *campaignRow) []string {
 	if cmp.Rec.action() != "" {
-		return append(slices.Clone(campaignHoldEffects), "pause_action")
+		return append(slices.Clone(campaignHoldEffects), "no_action", "pause_action")
 	}
 	return campaignHoldEffects
 }

@@ -4,7 +4,12 @@ package core
 
 import (
 	"context"
+	"fmt"
+	"strings"
 	"testing"
+	"time"
+
+	"github.com/jackc/pgx/v5"
 
 	"github.com/HunterEwok/botaru/impl/internal/ids"
 )
@@ -88,6 +93,16 @@ func TestScriptLinkRoleHold(t *testing.T) {
 		t.Fatal(err)
 	}
 	b.drain(t)
+	// Retention purges the finished run's record; its links still count (HLD-9).
+	if err := b.c.tx(ctx, func(tx pgx.Tx, now time.Time) error {
+		n, err := purgeRuns(ctx, tx, "", "SELECT $1::text", run.ID)
+		if err == nil && n != 1 {
+			err = fmt.Errorf("purged %d", n)
+		}
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
 	// One live incident per subject: the later ones are already closed.
 	incident := func(subject, state string) string {
 		id := ids.New(ids.Incident)
@@ -162,12 +177,14 @@ func TestScriptLinkRoleHold(t *testing.T) {
 	if n := countEvents(t, b.bench, "alarm.hold.auto.v1", "hold.auto:hello"); n != 1 {
 		t.Fatalf("alarm %d", n)
 	}
-	// Under the hold: a draft with an action is rejected with held, a read-only one runs.
+	// Under the hold: a draft with an action is rejected with held, a read-only one runs, and
+	// its read fanout is not paused by no_action (ORC-11).
 	att, h = b.attemptTools(t, "2", false)
 	if r := proposeScriptCall(t, b.bench, h, checkStep, fixStep); r.reason() != "held" {
 		t.Fatalf("a draft with an action: %+v", r)
 	}
-	r = proposeScriptCall(t, b.bench, h, checkStep)
+	all := map[string]any{"id": "all", "kind": "fanout", "type": "hello.child.v1", "goal": map[string]any{"template": "check"}, "items": map[string]any{"selector": "webs"}}
+	r = proposeScriptCall(t, b.bench, h, all)
 	if r.State != "proposed" {
 		t.Fatalf("a read-only draft: %+v", r)
 	}
@@ -177,6 +194,13 @@ func TestScriptLinkRoleHold(t *testing.T) {
 	if res, err := b.c.Decide(ctx, b.channel, press("telegram:1001", "direct:1001", card.external),
 		DecideRequest{SubjectKind: "script", ID: run.ID, Nonce: run.Nonce, Decision: "approve"}); err != nil || res.State != "running" {
 		t.Fatalf("a read-only run under the hold %+v %v", res, err)
+	}
+	var cmpID string
+	if err := b.c.st.Pool.QueryRow(ctx, `SELECT campaign FROM script_steps WHERE run = $1 AND id = 'all'`, run.ID).Scan(&cmpID); err != nil {
+		t.Fatal(err)
+	}
+	if cmp := b.campaign(t, cmpID); cmp.State == "paused" {
+		t.Fatalf("the read fanout paused: %s", cmp.PauseReason)
 	}
 	// A dismissed incident disputes its link and lifts nothing.
 	if _, err := b.c.IncidentDismiss(ctx, b.op, IncidentRequest{Incident: first, ReasonCode: "maintenance", Details: "planned work"}); err != nil {
@@ -188,5 +212,14 @@ func TestScriptLinkRoleHold(t *testing.T) {
 	}
 	if res, err := b.c.HoldRelease(ctx, HoldActor{Principal: b.alice, Rank: "tenant_admin", Tenant: "demo", Via: "channel"}, HoldReleaseRequest{ID: hold}); err != nil || res.State != "released" {
 		t.Fatalf("release %+v %v", res, err)
+	}
+	// The drafting worker's own hold counts as well.
+	if _, err := b.c.HoldSet(ctx, OperatorActor(b.op), HoldSetRequest{Scope: HoldScope{Kind: "worker", Tenant: "demo", Name: strings.ToLower(b.agent.ID)},
+		Effects: []string{"no_action"}, Reason: "manual"}); err != nil {
+		t.Fatal(err)
+	}
+	_, h = b.attemptTools(t, "3", false)
+	if r := proposeScriptCall(t, b.bench, h, checkStep, fixStep); r.reason() != "held" {
+		t.Fatalf("a draft with an action under the worker hold: %+v", r)
 	}
 }

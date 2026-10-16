@@ -150,10 +150,11 @@ func unnamedOf(cat *Catalog, tv *TenantView, resources []string, s scriptStep, f
 }
 
 // scriptActs says whether a script changes the world: an action step, a fanout with an action,
-// or a step whose bot may control services or run monitoring scripts (HLD-9).
-func scriptActs(steps []scriptStep, marks map[string][]string) bool {
+// or a step whose bot may control services or run monitoring scripts by the current catalog
+// (HLD-9).
+func (c *Core) scriptActs(cat *Catalog, steps []scriptStep) bool {
 	return slices.ContainsFunc(steps, func(s scriptStep) bool {
-		return s.hasAction() || slices.Contains(marks[s.ID], "may_control_services")
+		return s.hasAction() || slices.Contains(c.stepMarks(cat, s, ""), "may_control_services")
 	})
 }
 
@@ -222,32 +223,57 @@ func (c *Core) createScriptLink(ctx context.Context, tx pgx.Tx, now time.Time, t
 	return c.planScriptLinkCards(ctx, tx, now, tv, id, run, nil)
 }
 
-// scriptLinkPeople are the people who decide a script link: those with governance.attribute
-// but the initiator, who pressed "Run"; when the initiator is the only such person, the
-// initiator, and self is true (TRN-7).
-func scriptLinkPeople(ctx context.Context, tx pgx.Tx, now time.Time, tv *TenantView, initiator string) (people []string, self bool, err error) {
+// runMeta is what a script link reads of its run from the columns, which retention leaves
+// when it purges the record: the initiator, the role that wrote the draft, the data mark, the
+// state, the times and the targets fixed at "Run".
+type runMeta struct {
+	ID, Initiator, Role, Mark, State string
+	CreatedAt                        time.Time
+	StartedAt, EndedAt               *time.Time
+	Targets                          []string
+}
+
+func loadRunMeta(ctx context.Context, tx pgx.Tx, id string) (*runMeta, error) {
+	m := &runMeta{ID: id}
+	err := tx.QueryRow(ctx, `SELECT initiator, coalesce(role, record->>'role', ''), coalesce(data_mark, record->>'data_mark', 'restricted'), state,
+		created_at, started_at, ended_at, coalesce(targets, '{}') FROM script_runs WHERE id = $1`, id).
+		Scan(&m.Initiator, &m.Role, &m.Mark, &m.State, &m.CreatedAt, &m.StartedAt, &m.EndedAt, &m.Targets)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, nil
+	}
+	return m, err
+}
+
+// scriptLinkPeople are the people who decide a script link (TRN-7): those with
+// governance.attribute whose data ceiling covers the run's mark, but the initiator, who pressed
+// "Run"; when no such other person exists, the initiator if they hold governance.attribute,
+// and self is true, so a link is never left without a decider.
+func (c *Core) scriptLinkPeople(ctx context.Context, tx pgx.Tx, now time.Time, tv *TenantView, m *runMeta) (people []string, self bool, err error) {
 	all, err := peopleWithCap(ctx, tx, now, tv, "governance.attribute")
 	if err != nil {
 		return nil, false, err
 	}
-	if len(all) == 1 && all[0] == initiator {
-		return all, true, nil
+	others := slices.DeleteFunc(slices.Clone(all), func(p string) bool { return p == m.Initiator })
+	if others, err = c.withinCeiling(ctx, tx, now, tv, others, m.Mark); err != nil {
+		return nil, false, err
 	}
-	return slices.DeleteFunc(all, func(p string) bool { return p == initiator }), false, nil
+	if len(others) > 0 {
+		return others, false, nil
+	}
+	if slices.Contains(all, m.Initiator) {
+		return []string{m.Initiator}, true, nil
+	}
+	return nil, false, nil
 }
 
-// planScriptLinkCards plans script_link_card to the people who decide it and whose data
-// ceiling covers the run's mark.
+// planScriptLinkCards plans script_link_card to the people who decide it.
 func (c *Core) planScriptLinkCards(ctx context.Context, tx pgx.Tx, now time.Time, tv *TenantView, id, run string, extra map[string]any) error {
-	r, err := loadRun(ctx, tx, tv.Name, run, false)
-	if err != nil {
+	m, err := loadRunMeta(ctx, tx, run)
+	if err != nil || m == nil {
 		return err
 	}
-	people, _, err := scriptLinkPeople(ctx, tx, now, tv, r.Initiator)
+	people, _, err := c.scriptLinkPeople(ctx, tx, now, tv, m)
 	if err != nil {
-		return err
-	}
-	if people, err = c.withinCeiling(ctx, tx, now, tv, people, r.Rec.DataMark); err != nil {
 		return err
 	}
 	_, err = c.planGovCardsTo(ctx, tx, now, tv, "attribution", id, scriptLinkCard, people, extra)
@@ -264,17 +290,16 @@ func (c *Core) scriptLinkCardFields(ctx context.Context, tx pgx.Tx, cat *Catalog
 		return nil, err
 	}
 	ctxt := map[string]any{"incident": a.Incident, "class": class, "subject": kind + ":" + subject, "opened_at": fmtTime(opened), "script_run": a.ScriptRun, "rule": a.Rec["rule"]}
-	var started, ended *time.Time
-	var targets []string
-	err := tx.QueryRow(ctx, `SELECT started_at, ended_at, coalesce(targets, '{}') FROM script_runs WHERE id = $1`, a.ScriptRun).Scan(&started, &ended, &targets)
-	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+	m, err := loadRunMeta(ctx, tx, a.ScriptRun)
+	if err != nil {
 		return nil, err
 	}
-	if r, err := loadRun(ctx, tx, a.Tenant, a.ScriptRun, false); err == nil {
-		ctxt["initiator"], ctxt["role"], ctxt["run_state"], ctxt["targets"] = r.Initiator, r.Rec.Role, r.State, targets
-		// The card shows whether the initiator opened the step list ("Full plan") before Run.
-		viewed, err := detailsOpened(ctx, tx, "script", r.ID, r.Initiator, r.CreatedAt)
-		if err != nil {
+	if m != nil {
+		ctxt["initiator"], ctxt["role"], ctxt["run_state"], ctxt["targets"] = m.Initiator, m.Role, m.State, m.Targets
+		// Whether the initiator opened the step list ("Full plan") before Run.
+		var viewed bool
+		if err := tx.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM card_views WHERE subject_kind = 'script' AND subject_id = $1 AND principal = $2
+			AND opened_at >= $3 AND ($4::timestamptz IS NULL OR opened_at <= $4))`, m.ID, m.Initiator, m.CreatedAt, m.StartedAt).Scan(&viewed); err != nil {
 			return nil, err
 		}
 		ctxt["initiator_opened_steps"] = viewed
@@ -283,7 +308,7 @@ func (c *Core) scriptLinkCardFields(ctx context.Context, tx pgx.Tx, cat *Catalog
 			if err := tx.QueryRow(ctx, `SELECT botaru_now()`).Scan(&now); err != nil {
 				return nil, err
 			}
-			_, self, err := scriptLinkPeople(ctx, tx, now, tv, r.Initiator)
+			_, self, err := c.scriptLinkPeople(ctx, tx, now, tv, m)
 			if err != nil {
 				return nil, err
 			}
@@ -291,14 +316,12 @@ func (c *Core) scriptLinkCardFields(ctx context.Context, tx pgx.Tx, cat *Catalog
 				ctxt["self_assessment"] = true
 			}
 		}
-	} else if !errors.Is(err, pgx.ErrNoRows) {
-		return nil, err
-	}
-	if started != nil {
-		ctxt["started_at"] = fmtTime(*started)
-	}
-	if ended != nil {
-		ctxt["ended_at"] = fmtTime(*ended)
+		if m.StartedAt != nil {
+			ctxt["started_at"] = fmtTime(*m.StartedAt)
+		}
+		if m.EndedAt != nil {
+			ctxt["ended_at"] = fmtTime(*m.EndedAt)
+		}
 	}
 	if ans := mmapAny(a.Rec["answer"]); ans != nil {
 		ctxt["answer"] = ans["decision"]
@@ -323,17 +346,13 @@ func (c *Core) scriptLinkCardFields(ctx context.Context, tx pgx.Tx, cat *Catalog
 }
 
 // scriptLinkDecider checks the person deciding a script link (TRN-7): not the one who pressed
-// "Run" unless the tenant has no other person with governance.attribute; then the answer is a
-// self-assessment.
-func scriptLinkDecider(ctx context.Context, tx pgx.Tx, now time.Time, tv *TenantView, a *attributionRow, principal string) (self, ok bool, err error) {
-	r, err := loadRun(ctx, tx, a.Tenant, a.ScriptRun, false)
-	if errors.Is(err, pgx.ErrNoRows) {
-		return false, true, nil
-	}
-	if err != nil || principal != r.Initiator {
+// "Run" unless no other person may decide it; then the answer is a self-assessment.
+func (c *Core) scriptLinkDecider(ctx context.Context, tx pgx.Tx, now time.Time, tv *TenantView, a *attributionRow, principal string) (self, ok bool, err error) {
+	m, err := loadRunMeta(ctx, tx, a.ScriptRun)
+	if err != nil || m == nil || principal != m.Initiator {
 		return false, err == nil, err
 	}
-	_, self, err = scriptLinkPeople(ctx, tx, now, tv, r.Initiator)
+	_, self, err = c.scriptLinkPeople(ctx, tx, now, tv, m)
 	return self, self, err
 }
 
@@ -377,7 +396,7 @@ func linkRole(ctx context.Context, tx pgx.Tx, a *attributionRow) (string, error)
 	case "change":
 		err = tx.QueryRow(ctx, `SELECT role FROM proposals WHERE id = $1`, a.Proposal).Scan(&role)
 	case "script_run":
-		err = tx.QueryRow(ctx, `SELECT coalesce(record->>'role', '') FROM script_runs WHERE id = $1`, a.ScriptRun).Scan(&role)
+		err = tx.QueryRow(ctx, `SELECT coalesce(role, record->>'role', '') FROM script_runs WHERE id = $1`, a.ScriptRun).Scan(&role)
 	}
 	if errors.Is(err, pgx.ErrNoRows) {
 		return "", nil
@@ -423,7 +442,7 @@ func (c *Core) roleIncidents(ctx context.Context, tx pgx.Tx, now time.Time, a *a
 		LEFT JOIN proposals p ON a.kind = 'change' AND p.id = a.proposal
 		LEFT JOIN script_runs r ON a.kind = 'script_run' AND r.id = a.script_run
 		WHERE a.tenant = $1 AND a.state = 'confirmed' AND a.kind IN ('change', 'script_run')
-		AND coalesce(p.role, r.record->>'role') = $2 AND i.opened_at > $3 AND (a.record->'answer'->>'at')::timestamptz > $4`,
+		AND coalesce(p.role, r.role, r.record->>'role') = $2 AND i.opened_at > $3 AND (a.record->'answer'->>'at')::timestamptz > $4`,
 		a.Tenant, role, now.Add(-window), since).Scan(&n); err != nil {
 		return err
 	}
@@ -462,8 +481,9 @@ func (c *Core) scriptDetails(ctx context.Context, w *Worker, ob OnBehalf, req Ca
 		if err != nil {
 			return err
 		}
+		// The first opening stays: a script link card asks whether it came before Run.
 		if _, err := tx.Exec(ctx, `INSERT INTO card_views (subject_kind, subject_id, principal, opened_at) VALUES ('script', $1, $2, $3)
-			ON CONFLICT (subject_kind, subject_id, principal) DO UPDATE SET opened_at = excluded.opened_at`, r.ID, press.principal, now); err != nil {
+			ON CONFLICT (subject_kind, subject_id, principal) DO NOTHING`, r.ID, press.principal, now); err != nil {
 			return err
 		}
 		card, err := c.buildScriptCard(ctx, tx, cat, r, scriptConfirmCard)
