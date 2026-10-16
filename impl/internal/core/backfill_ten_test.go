@@ -215,3 +215,70 @@ func TestBackfillWorkerDirectory(t *testing.T) {
 		t.Fatalf("ORC-13: the directory %q %v", desc, enum)
 	}
 }
+
+// TEN-5: one attempt sees data of exactly one tenant: a canary in a task, the session and the
+// memory of tenant demo is not in the attempt, the tasks, the sessions, the facts or the
+// messages of tenant demo2, whose worker gets no work of demo.
+func TestBackfillTenantsDoNotMix(t *testing.T) {
+	ctx := context.Background()
+	b := newBenchWith(t, func(_ string, ms []map[string]any) []map[string]any {
+		var add []map[string]any
+		for _, m := range ms {
+			md := m["metadata"].(map[string]any)
+			switch {
+			case m["kind"] == "Tenant":
+				c := deepCopy(m)
+				c["metadata"] = map[string]any{"name": "demo2"}
+				add = append(add, c)
+			case md["tenant"] == "demo" && (m["kind"] == "Channel" || m["kind"] == "Group"):
+				c := deepCopy(m)
+				c["metadata"].(map[string]any)["tenant"] = "demo2"
+				add = append(add, c)
+			}
+		}
+		return append(ms, add...)
+	})
+	op2 := Operator{Principal: ids.PrincipalID(), Tenant: "demo2"}
+	bob := ids.PrincipalID()
+	if _, err := b.c.Principal(ctx, op2, PrincipalRequest{Op: "principal.add", Subject: bob, Identity: "telegram:2001"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := b.c.Grant(ctx, op2, GrantRequest{Op: "grant", Subject: bob, Group: "hello"}); err != nil {
+		t.Fatal(err)
+	}
+	b2 := &bench{c: b.c, op: op2, alice: bob}
+	b2.agent = b2.enroll(t, EnrollRequest{Tenant: "demo2", Role: "hello", Kind: "agent"})
+	b2.channel = b2.enroll(t, EnrollRequest{Tenant: "demo2", Kind: "channel", Target: "telegram"})
+	canary := "CANARY-" + ids.Secret(6)
+	submit := func(w *Worker, identity, chat, update, text string) {
+		t.Helper()
+		a := Activity{Kind: "message", Channel: "telegram", UpdateID: update, Chat: Chat{Kind: "direct", ExternalID: chat}, Text: text}
+		a.Sender.Identity, a.Sender.Verified = identity, true
+		if res, err := b.c.SubmitActivity(ctx, w, a); err != nil || res.Result != "task" {
+			t.Fatalf("submit_activity: %+v %v", res, err)
+		}
+	}
+	submit(b.channel, "telegram:1001", "1001", "1", "/hello "+canary)
+	if w := b2.claim(t, b2.agent, "attempt"); w != nil {
+		t.Fatalf("TEN-5: a worker of demo2 got work of demo: %s", w.WorkID)
+	}
+	own := b.claim(t, b.agent, "attempt")
+	if raw, _ := json.Marshal(own.Payload); !strings.Contains(string(raw), canary) {
+		t.Fatalf("the demo attempt lost its goal: %s", raw)
+	}
+	completeHello(t, b, own)
+	submit(b2.channel, "telegram:2001", "2001", "1", "/hello hi")
+	other := b2.claim(t, b2.agent, "attempt")
+	if other == nil || other.Tenant != "demo2" {
+		t.Fatalf("no demo2 attempt: %+v", other)
+	}
+	if raw, _ := json.Marshal(other.Payload); strings.Contains(string(raw), canary) {
+		t.Fatalf("TEN-5: the demo2 attempt carries the canary of demo: %s", raw)
+	}
+	for _, table := range []string{"tasks", "sessions", "facts", "memory_items", "messages", "deliveries", "files"} {
+		var n int
+		if err := b.c.st.Pool.QueryRow(ctx, `SELECT count(*) FROM `+table+` x WHERE tenant = 'demo2' AND to_jsonb(x)::text LIKE '%' || $1 || '%'`, canary).Scan(&n); err != nil || n != 0 {
+			t.Errorf("TEN-5: %d rows of %s in demo2 hold the canary of demo (%v)", n, table, err)
+		}
+	}
+}

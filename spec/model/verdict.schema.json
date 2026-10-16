@@ -4,6 +4,7 @@
   "title": "Commission verdict",
   "description": "Deterministic code computes the verdict by the commission manifest: the same inputs give the same verdict, and the model does not change it; the code does not read shadow reviews (COM-4, COM-9). The result comes only from a closed list. For the kind none only the lenses value and security count (COM-14).",
   "x-botaru-direction": "record",
+  "x-botaru-retention": "metadata",
   "x-botaru-rules": [
     "COM-4",
     "COM-14",

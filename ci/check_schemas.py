@@ -142,6 +142,8 @@ for sid, doc in schemas.items():
     direction = doc.get('x-botaru-direction')
     if direction not in (None, 'input', 'output', 'record'):
         rep.error(rp, f'[schema_direction] x-botaru-direction {direction!r} is not one of input, output, record')
+    if direction == 'record' and 'x-botaru-retention' not in doc:
+        rep.error(rp, '[schema_retention_missing] a stored object schema (x-botaru-direction: record) names no x-botaru-retention class (RET-1)')
     if 'x-botaru-retention' in doc and retention is not None and doc['x-botaru-retention'] not in retention:
         rep.error(rp, f'[schema_retention] retention class {doc["x-botaru-retention"]!r} is not in retention-classes.yaml')
     for path, node in iter_nodes(doc):
