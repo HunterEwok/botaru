@@ -246,8 +246,8 @@ type RuntimeDecl struct {
 
 // runtimeRefusal says why a runtime declaration blocks the worker, or "" if it does not.
 // A runtime that keeps sessions or memory in its own store must answer erase and match
-// (RT-5); this version of the core sends no erasure work to runtimes yet, so it cannot
-// reach such a store and blocks every runtime_internal declaration.
+// (RT-5); this version of the core sends a runtime purge work (RET-11) but no match work yet,
+// so it cannot search such a store and blocks every runtime_internal declaration.
 func runtimeRefusal(kind string, r *RuntimeDecl) string {
 	if r == nil {
 		return ""
@@ -262,7 +262,7 @@ func runtimeRefusal(kind string, r *RuntimeDecl) string {
 		if !slices.Contains(r.Erasure, "erase") || !slices.Contains(r.Erasure, "match") {
 			return "runtime_internal without erase and match (RT-5)"
 		}
-		return "runtime_internal: this core does not yet send erasure work to a runtime (RT-5)"
+		return "runtime_internal: this core does not yet send match work to a runtime (RT-5)"
 	}
 	return ""
 }

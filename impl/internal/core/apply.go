@@ -418,6 +418,9 @@ func (c *Core) applyOnce(ctx context.Context, op Operator, req ApplyRequest) (*A
 		if err := c.syncSeats(ctx, tx, now, next); err != nil {
 			return err
 		}
+		if err := recordMetadataPeriods(ctx, tx, now, next); err != nil {
+			return err
+		}
 		// A removed schedule loses its state, so one recreated later starts from its apply
 		// and not from the slot its old self handled (TIM-3).
 		var schedTenants, schedNames []string

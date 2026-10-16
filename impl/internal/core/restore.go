@@ -13,7 +13,8 @@ import (
 )
 
 // ErasureLogEntry is one erasure request of the separate erasure log backup (RET-5, RET-7):
-// metadata only, without the strings of an erasure by match.
+// metadata only, without the strings of an erasure by match; such an erasure carries the ids
+// each store found, by which a replay erases without a new search (RET-11).
 type ErasureLogEntry struct {
 	ID        string          `json:"id"`
 	Tenant    string          `json:"tenant"`
@@ -23,12 +24,13 @@ type ErasureLogEntry struct {
 	Scope     json.RawMessage `json:"scope,omitempty"`
 	CreatedAt time.Time       `json:"created_at"`
 	Deadline  *time.Time      `json:"deadline_at,omitempty"`
+	Found     json.RawMessage `json:"found,omitempty"`
 }
 
 // ErasureLogExport reads the erasure log for its separate backup (RET-5): farmctl runs it on the
 // core machine as often as the store backup, at least.
 func (c *Core) ErasureLogExport(ctx context.Context) ([]ErasureLogEntry, error) {
-	rows, err := c.st.Pool.Query(ctx, `SELECT id, tenant, coalesce(subject, ''), reason, author, scope, created_at, deadline_at FROM erasure_requests ORDER BY created_at, id`)
+	rows, err := c.st.Pool.Query(ctx, `SELECT id, tenant, coalesce(subject, ''), reason, author, scope, created_at, deadline_at, found FROM erasure_requests ORDER BY created_at, id`)
 	if err != nil {
 		return nil, err
 	}
@@ -36,12 +38,15 @@ func (c *Core) ErasureLogExport(ctx context.Context) ([]ErasureLogEntry, error) 
 	out := []ErasureLogEntry{}
 	for rows.Next() {
 		var e ErasureLogEntry
-		var scope []byte
-		if err := rows.Scan(&e.ID, &e.Tenant, &e.Subject, &e.Reason, &e.Author, &scope, &e.CreatedAt, &e.Deadline); err != nil {
+		var scope, found []byte
+		if err := rows.Scan(&e.ID, &e.Tenant, &e.Subject, &e.Reason, &e.Author, &scope, &e.CreatedAt, &e.Deadline, &found); err != nil {
 			return nil, err
 		}
 		if scope != nil {
 			e.Scope = scope
+		}
+		if found != nil {
+			e.Found = found
 		}
 		out = append(out, e)
 	}
@@ -78,13 +83,16 @@ func (c *Core) RestoreBegin(ctx context.Context, log []ErasureLogEntry) (int, er
 			return err
 		}
 		for _, e := range log {
-			var scope any
+			var scope, found any
 			if len(e.Scope) > 0 {
 				scope = []byte(e.Scope)
 			}
-			tag, err := tx.Exec(ctx, `INSERT INTO erasure_requests (id, tenant, subject, reason, author, state, scope, created_at, deadline_at, updated_at)
-				VALUES ($1, $2, $3, $4, $5, 'requested', $6, $7, $8, $9) ON CONFLICT (id) DO NOTHING`,
-				e.ID, e.Tenant, nullable(e.Subject), e.Reason, []byte(e.Author), scope, e.CreatedAt, e.Deadline, now)
+			if len(e.Found) > 0 {
+				found = []byte(e.Found)
+			}
+			tag, err := tx.Exec(ctx, `INSERT INTO erasure_requests (id, tenant, subject, reason, author, state, scope, created_at, deadline_at, updated_at, found)
+				VALUES ($1, $2, $3, $4, $5, 'requested', $6, $7, $8, $9, $10) ON CONFLICT (id) DO NOTHING`,
+				e.ID, e.Tenant, nullable(e.Subject), e.Reason, []byte(e.Author), scope, e.CreatedAt, e.Deadline, now, found)
 			if err != nil {
 				return err
 			}

@@ -22,7 +22,11 @@ var Profiles = []string{"core"}
 // index or a map key). apply accepts such a field although the claimed version is earlier; the
 // rest of that version stays refused (MAN-11). Kinds of a later version are listed under the
 // kind with the pointer "/kind". The list shrinks when the claimed version reaches them.
-var Ahead = map[string][]string{}
+var Ahead = map[string][]string{
+	// The tenant retention periods, which the retention loop applies in every copy (RET-9,
+	// RET-10); journals stays refused with the debug profile.
+	"Tenant": {"/spec/retention"},
+}
 
 // ahead says whether the field at ptr of a manifest of kind is in Ahead.
 func ahead(kind, ptr string) bool {

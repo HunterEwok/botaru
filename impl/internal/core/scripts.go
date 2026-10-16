@@ -188,6 +188,9 @@ type scriptRec struct {
 	Conversation string  `json:"conversation,omitempty"`
 	Trace        string  `json:"trace,omitempty"`
 	Origin       *Origin `json:"origin,omitempty"`
+	// Purged marks the tombstone of a finished run past the content period or erased: the
+	// record keeps only the root, and the steps keep their states and links (RET-2, RET-10).
+	Purged bool `json:"purged,omitempty"`
 }
 
 func (r scriptRec) fanoutList(step string) []string {
@@ -1303,6 +1306,9 @@ func (c *Core) scriptCardBody(ctx context.Context, tx pgx.Tx, cat *Catalog, tena
 		if err != nil {
 			return nil, "", err
 		}
+		if r.Rec.Purged {
+			return nil, "", nil
+		}
 		defs, err := parseSteps(r.Rec.Script)
 		if err != nil {
 			return nil, "", err
@@ -1315,6 +1321,9 @@ func (c *Core) scriptCardBody(ctx context.Context, tx pgx.Tx, cat *Catalog, tena
 		}
 		if err != nil {
 			return nil, "", err
+		}
+		if r.Rec.Purged {
+			return nil, "", nil
 		}
 		cardKind, _ := body["card"].(string)
 		if card, err = c.buildScriptCard(ctx, tx, cat, r, cardKind); err != nil {
@@ -2310,6 +2319,23 @@ func (c *Core) scriptApprovalMoved(ctx context.Context, tx pgx.Tx, now time.Time
 	return nil
 }
 
+// purgeRuns turns finished runs into tombstones: the record keeps only the root, a step loses
+// the closed fields of its result and its untrusted sources, and states, links and times stay
+// as metadata (RET-2, RET-10).
+// head is empty or a WITH clause the selection of runs reads.
+func purgeRuns(ctx context.Context, tx pgx.Tx, head, where string, args ...any) (int64, error) {
+	with := "WITH "
+	if head != "" {
+		with = head + ", "
+	}
+	var n int64
+	err := tx.QueryRow(ctx, with+`r AS (UPDATE script_runs SET record = jsonb_build_object('root', record->'root', 'purged', true)
+		WHERE id IN (`+where+`) AND state <> ALL ('{proposed,running,paused}') AND NOT record ? 'purged' RETURNING id),
+		s AS (UPDATE script_steps SET fields = NULL, untrusted = NULL WHERE run IN (SELECT id FROM r))
+		SELECT count(*) FROM r`, args...).Scan(&n)
+	return n, err
+}
+
 // cancelRunsOf cancels the live runs anchored at a task that was canceled (SCR-11).
 func (c *Core) cancelRunsOf(ctx context.Context, tx pgx.Tx, now time.Time, tenant, task, reason string) error {
 	return c.cancelRuns(ctx, tx, now, tenant, `anchor_task = $2`, task, reason)
@@ -2320,7 +2346,7 @@ func (c *Core) cancelRunsOfTree(ctx context.Context, tx pgx.Tx, now time.Time, t
 	return c.cancelRuns(ctx, tx, now, tenant, `anchor_task IN (SELECT id FROM tasks WHERE tenant = $1 AND (id = $2 OR record->>'root' = $2))`, root, reason)
 }
 
-func (c *Core) cancelRuns(ctx context.Context, tx pgx.Tx, now time.Time, tenant, where, arg, reason string) error {
+func (c *Core) cancelRuns(ctx context.Context, tx pgx.Tx, now time.Time, tenant, where string, arg any, reason string) error {
 	rows, err := tx.Query(ctx, `SELECT id FROM script_runs WHERE tenant = $1 AND `+where+` AND state = ANY($3) ORDER BY id FOR UPDATE`, tenant, arg, scriptLive)
 	if err != nil {
 		return err
@@ -2488,6 +2514,10 @@ func (c *Core) scriptCommand(ctx context.Context, w *Worker, ob OnBehalf, id, no
 		}
 		if r.Nonce != nonce {
 			return refuse("forbidden", "the nonce is not the card's")
+		}
+		if r.Rec.Purged {
+			// A tombstone has no script left to act on (RET-10).
+			return refuse("already_terminal", "the run has ended")
 		}
 		kinds := []string{scriptConfirmCard}
 		if command != "approve" && command != "reject" {
@@ -2670,6 +2700,10 @@ func (c *Core) decideGate(ctx context.Context, w *Worker, ob OnBehalf, req Decid
 		if err != nil {
 			return err
 		}
+		if r.Rec.Purged || n > len(steps) {
+			// A tombstone has no script left to read the approvers from (RET-10).
+			return refuse("already_terminal", "the run has ended")
+		}
 		s := steps[n-1]
 		if s.Nonce != req.Nonce {
 			return refuse("forbidden", "the nonce is not the card's")
@@ -2681,6 +2715,9 @@ func (c *Core) decideGate(ctx context.Context, w *Worker, ob OnBehalf, req Decid
 		defs, err := parseSteps(r.Rec.Script)
 		if err != nil {
 			return err
+		}
+		if n > len(defs) {
+			return refuse("already_terminal", "the run has ended")
 		}
 		may := press.principal == r.Initiator
 		if a := defs[n-1].approversOf(); a != "" {
@@ -2781,7 +2818,7 @@ func (c *Core) ScriptGet(ctx context.Context, w *Worker, lease string, req Scrip
 		if err != nil {
 			return err
 		}
-		if r.Rec.Root != tree.Root {
+		if r.Rec.Root != tree.Root || r.Rec.Purged {
 			return refuse("not_found", "no such script run")
 		}
 		out, err = r.Record(ctx, tx)
