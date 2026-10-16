@@ -831,8 +831,13 @@ func TestSKL4SkillReadNotOffered(t *testing.T) {
 		t.Fatal("skill_read offered")
 	}
 	r, err := b.c.P3ToolsCall(context.Background(), h, mcp.CallParams{Name: "skill_read", Arguments: map[string]any{"skill": "disk-triage"}})
-	if err == nil && !r.IsError {
-		t.Fatalf("skill_read answered: %s", callText(r))
+	if err != nil || !r.IsError || !strings.Contains(callText(r), "version_unsupported") {
+		t.Fatalf("skill_read answered: %v", err)
+	}
+	// Any built-in tool of a deferred rule is refused the same way (D-114): link_hint (GOV-39).
+	r, err = b.c.P3ToolsCall(context.Background(), h, mcp.CallParams{Name: "link_hint", Arguments: map[string]any{}})
+	if err != nil || !r.IsError || !strings.Contains(callText(r), "version_unsupported") {
+		t.Fatalf("link_hint answered: %v", err)
 	}
 }
 

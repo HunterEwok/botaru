@@ -20,7 +20,6 @@ import (
 	"github.com/HunterEwok/botaru/impl/internal/ingress"
 	"github.com/HunterEwok/botaru/impl/internal/manifest"
 	"github.com/HunterEwok/botaru/impl/internal/p1client"
-	"github.com/HunterEwok/botaru/impl/internal/spec"
 	"github.com/HunterEwok/botaru/impl/internal/testbench"
 )
 
@@ -30,8 +29,6 @@ import (
 // and one route task whose only attachment is the body; a repeat gives neither again; a forged
 // delivery reaches nothing (ING-1, ING-2, ING-3, ING-4, MSG-16).
 func TestIngressOverTheWire(t *testing.T) {
-	prev := spec.SetProfileOverride("ingress")
-	t.Cleanup(func() { spec.SetProfileOverride(prev...) })
 	ctx := context.Background()
 	r := newRig(t)
 	ms, err := testbench.HelloBotManifests(r.root)

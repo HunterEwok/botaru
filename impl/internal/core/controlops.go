@@ -16,6 +16,7 @@ import (
 
 	"github.com/HunterEwok/botaru/impl/internal/ids"
 	"github.com/HunterEwok/botaru/impl/internal/mcp"
+	"github.com/HunterEwok/botaru/impl/internal/spec"
 	"github.com/HunterEwok/botaru/impl/internal/toolspec"
 )
 
@@ -40,8 +41,8 @@ const (
 	maxPreempts = 2
 )
 
-// controlOpsServed are the operations of control-ops.yaml this version applies; pin_task,
-// request_action and notify are not served yet.
+// controlOpsServed are the operations of control-ops.yaml this version applies; pin_task is of
+// the deferred rule MGR-12, request_action and notify are not served by control.apply.
 var controlOpsServed = []string{"hold", "quarantine", "drain", "preempt", "cancel", "release"}
 
 // excludedProfiles are the role profiles whose workers and roles no seat operation targets
@@ -190,6 +191,9 @@ func resolveTargetID(ctx context.Context, tx pgx.Tx, t *ControlTarget) error {
 func (c *Core) controlApply(ctx context.Context, tx pgx.Tx, now time.Time, cat *Catalog, tenant string, a controlActor, req ControlRequest) (*Done, *Problem, error) {
 	if err := resolveTargetID(ctx, tx, &req.Target); err != nil {
 		return nil, nil, err
+	}
+	if h, ok := spec.DeferredCall(spec.SurfaceOp, "P2.control.apply", map[string]any{"op": req.Op}); ok {
+		return nil, refuse("version_unsupported", "operation %s is of the deferred rule %s (D-114)", req.Op, h.Rule), nil
 	}
 	if !slices.Contains(controlOpsServed, req.Op) {
 		return nil, refuse("input_schema_invalid", "operation %s is not served by this version", req.Op), nil
@@ -908,6 +912,9 @@ func (c *Core) preemptAttempt(ctx context.Context, tx pgx.Tx, now time.Time, tas
 // ControlApply is P2 control.apply: a person of the tenant calls an operation by the seat's code
 // path; preemption is an operator operation of farmctl (PRM-14).
 func (c *Core) ControlApply(ctx context.Context, op Operator, req ControlRequest) (*Done, error) {
+	if h, ok := spec.DeferredCall(spec.SurfaceOp, "P2.control.apply", map[string]any{"op": req.Op}); ok {
+		return nil, refuse("version_unsupported", "operation %s is of the deferred rule %s (D-114)", req.Op, h.Rule)
+	}
 	cat, err := c.Catalog(ctx)
 	if err != nil {
 		return nil, err

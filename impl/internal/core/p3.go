@@ -17,6 +17,7 @@ import (
 	"github.com/HunterEwok/botaru/impl/internal/jcs"
 	"github.com/HunterEwok/botaru/impl/internal/manifest"
 	"github.com/HunterEwok/botaru/impl/internal/mcp"
+	"github.com/HunterEwok/botaru/impl/internal/spec"
 	"github.com/HunterEwok/botaru/impl/internal/store"
 	"github.com/HunterEwok/botaru/impl/internal/toolspec"
 )
@@ -488,6 +489,12 @@ func (c *Core) P3ToolsCall(ctx context.Context, handle string, p mcp.CallParams)
 		}
 		if err := pinnedCatalog(ctx, tx, g.Task, tools); err != nil {
 			return err
+		}
+		// A built-in tool of a deferred rule, or a deferred field of its arguments, is not
+		// offered by this core: version_unsupported (D-114, MAN-11).
+		if _, ok := spec.DeferredCall(spec.SurfaceTool, p.Name, p.Arguments); ok {
+			refusal = &toolRefusal{state: "error", reason: "version_unsupported"}
+			return nil
 		}
 		if p.Name == requestActionName {
 			offered := slices.ContainsFunc(tools, func(t catalogTool) bool { return t.Builtin && t.Name == requestActionName })
