@@ -1814,8 +1814,13 @@ func (c *Core) finishCampaign(ctx context.Context, tx pgx.Tx, now time.Time, cat
 	if err := c.scriptCampaignEnded(ctx, tx, now, cmp, state, cmp.StopReason); err != nil {
 		return err
 	}
-	if cmp.Rec.Then == nil || purged || state == "canceled" && cmp.ParentTask != "" && taskCanceled(ctx, tx, cmp.ParentTask) {
+	if cmp.Rec.Then == nil || state == "canceled" && cmp.ParentTask != "" && taskCanceled(ctx, tx, cmp.ParentTask) {
 		return nil
+	}
+	if purged {
+		// The campaign's content is gone: the continuation that would read it is refused.
+		return c.appendEvent(ctx, tx, now, cmp.Tenant, Event{Type: "continuation.refused", Subject: cmp.ID,
+			Data: map[string]any{"campaign": cmp.ID, "trigger": "campaign", "type": cmp.Rec.Then.Type, "reason": "gone"}})
 	}
 	return c.campaignContinuation(ctx, tx, now, cat, cmp, state, n)
 }
@@ -1905,18 +1910,19 @@ func (c *Core) campaignContinuation(ctx context.Context, tx pgx.Tx, now time.Tim
 // purgeCampaigns strips the content of the selected campaigns (RET-10): the goal, parameters and
 // arguments of the template, and the arguments and result fields of every item that is not
 // pending; the state, rollout, links and argument hashes stay as metadata, and the campaign is
-// marked purged. It is idempotent: a campaign marked before reaches its items again. head is
-// empty or a WITH clause the selection reads.
+// marked purged. It is idempotent: a campaign marked before reaches its items again. It counts
+// only the campaigns it newly marked. head is empty or a WITH clause the selection reads.
 func purgeCampaigns(ctx context.Context, tx pgx.Tx, head, where string, args ...any) (int64, error) {
 	with := "WITH "
 	if head != "" {
 		with = head + ", "
 	}
 	var n int64
-	err := tx.QueryRow(ctx, with+`k AS (UPDATE campaigns SET record = jsonb_set(record, '{template}', coalesce(record->'template', '{}') - 'goal' - 'params' - 'args'),
-		purged_at = coalesce(purged_at, botaru_now()) WHERE id IN (`+where+`) RETURNING id),
+	err := tx.QueryRow(ctx, with+`o AS (SELECT id, purged_at IS NULL AS fresh FROM campaigns WHERE id IN (`+where+`)),
+		k AS (UPDATE campaigns SET record = jsonb_set(record, '{template}', coalesce(record->'template', '{}') - 'goal' - 'params' - 'args'),
+		purged_at = coalesce(purged_at, botaru_now()) WHERE id IN (SELECT id FROM o) RETURNING id),
 		i AS (UPDATE campaign_items SET args = '{}', summary = NULL WHERE campaign IN (SELECT id FROM k) AND state <> 'pending' AND (args <> '{}' OR summary IS NOT NULL))
-		SELECT count(*) FROM k`, args...).Scan(&n)
+		SELECT count(*) FILTER (WHERE fresh) FROM o`, args...).Scan(&n)
 	return n, err
 }
 
@@ -2674,15 +2680,9 @@ func (c *Core) campaignCommand(ctx context.Context, w *Worker, ob OnBehalf, id, 
 			if !slices.Contains([]string{"completed", "failed", "canceled"}, cmp.State) {
 				return refuse("already_decided", "the campaign has not ended")
 			}
-			// Its items kept no arguments past the content period or an erasure (RET-10); an
-			// item stripped before the campaign was marked has empty arguments, which no plan
-			// gives an item (each names its resource).
-			var stripped bool
-			if err := tx.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM campaign_items WHERE campaign = $1 AND state IN ('failed', 'unknown', 'skipped') AND args = '{}')`,
-				cmp.ID).Scan(&stripped); err != nil {
-				return err
-			}
-			if cmp.Purged || stripped {
+			// Its items kept no arguments past the content period or an erasure (RET-10): every
+			// path that strips items marks the campaign purged.
+			if cmp.Purged {
 				return refuse("already_terminal", "the campaign's content is gone")
 			}
 			res, err := c.retryCampaign(ctx, tx, now, cat, cmp)

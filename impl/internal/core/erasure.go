@@ -37,10 +37,12 @@ const defaultSubjectRequestDays = 30
 const erasureRetry = time.Minute
 
 // coreStores are the content stores of the core in the order they are erased.
-// Campaigns and script runs come first: a campaign of the scope is marked purged and stopped
-// before the tasks step cancels its parent task, so it releases no more items and enqueues no
-// continuation; canceling a live run plans its last card, which the deliveries step withholds.
-var coreStores = []string{"campaigns", "scripts", "tasks", "deliveries", "toolcalls", "sessions", "memory", "files"}
+// Script runs and campaigns come first: a run of the scope is canceled before the campaign of
+// one of its steps ends, so no failure or always step of the run is released mid-erasure; a
+// campaign of the scope is marked purged and stopped before the tasks step cancels its parent
+// task, so it releases no more items and enqueues no continuation; canceling a live run plans
+// its last card, which the deliveries step withholds.
+var coreStores = []string{"scripts", "campaigns", "tasks", "deliveries", "toolcalls", "sessions", "memory", "files"}
 
 // ErasureScope is the scope of an erasure request (deletion-request).
 type ErasureScope struct {
@@ -519,6 +521,11 @@ func (c *Core) eraseCore(ctx context.Context, tx pgx.Tx, now time.Time, cat *Cat
 		}
 		live, err := pgx.CollectRows(rows, pgx.RowTo[string])
 		if err != nil {
+			return err
+		}
+		// The campaigns of the runs' steps are marked purged before the cancel stops them, so
+		// they send no summary and enqueue no continuation.
+		if _, err := purgeCampaigns(ctx, tx, "", `SELECT campaign FROM script_steps WHERE campaign IS NOT NULL AND run IN (`+runs+`)`, rargs...); err != nil {
 			return err
 		}
 		if len(live) > 0 {

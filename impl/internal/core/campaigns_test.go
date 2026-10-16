@@ -605,6 +605,9 @@ func TestCampaignErasedPerson(t *testing.T) {
 	if n := b.count(t, `SELECT count(*) FROM tasks WHERE idempotency_key = $1`, "system:cont:campaign:"+cmp.ID); n != 0 {
 		t.Fatal("the continuation was enqueued for the erased person")
 	}
+	if n := b.count(t, `SELECT count(*) FROM events WHERE type = 'continuation.refused' AND subject = $1 AND data->>'reason' = 'gone'`, cmp.ID); n != 1 {
+		t.Fatalf("continuation.refused events %d", n)
+	}
 	if n := b.count(t, `SELECT count(*) FROM tasks WHERE initiator = $1 AND state IN ('submitted', 'working')`, cmp.Initiator); n != 0 {
 		t.Fatalf("%d live tasks of the person left", n)
 	}
