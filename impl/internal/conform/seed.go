@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 
 	"github.com/HunterEwok/botaru/impl/internal/ids"
 	"github.com/HunterEwok/botaru/impl/internal/yamlx"
@@ -109,6 +110,21 @@ func (s *seedData) groupManifests(owner string) []map[string]any {
 		md := map[string]any{"name": n}
 		md["tenant"] = owner
 		out = append(out, map[string]any{"apiVersion": "botaru/v1alpha1", "kind": "Group", "metadata": md, "spec": spec})
+	}
+	return out
+}
+
+// typeNames are the task types the seed groups grant (task:<type>): the seed applies their
+// example types, so a group's privilege follows the tier of its types (PRM-13) and a type the
+// seed grants is known to the core.
+func (s *seedData) typeNames() map[string]bool {
+	out := map[string]bool{}
+	for _, g := range s.groups {
+		for _, cp := range strs(g["caps"]) {
+			if t, ok := strings.CutPrefix(cp, "task:"); ok && !strings.HasPrefix(t, "action.") {
+				out[t] = true
+			}
+		}
 	}
 	return out
 }
