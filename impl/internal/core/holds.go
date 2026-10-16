@@ -174,7 +174,7 @@ func (c *Core) checkHoldRequest(now time.Time, req HoldSetRequest) (*time.Time, 
 			return nil, err
 		}
 		// pause_action goes on a scope that holds approvals (HLD-8).
-		if e == "pause_action" && !pauseScopes[s.Kind] {
+		if e == "pause_action" && !slices.Contains(pauseScopes, s.Kind) {
 			return nil, refuse("input_schema_invalid", "pause_action is set on a scope that holds approvals, not on %s", s.Kind)
 		}
 	}

@@ -393,7 +393,7 @@ func TestMaintenancePoll(t *testing.T) {
 		states = append(states, d["state"].(string))
 		if d["state"] == "active" {
 			u, err := time.Parse(time.RFC3339, d["until"].(string))
-			if err != nil || u.Sub(time.Now()) < 110*time.Second || u.Sub(time.Now()) > 121*time.Second {
+			if err != nil || time.Until(u) < 110*time.Second || time.Until(u) > 121*time.Second {
 				t.Fatalf("until %v %v", d["until"], err)
 			}
 		}

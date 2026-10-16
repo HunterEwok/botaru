@@ -71,7 +71,7 @@ const maxPause = 7 * 24 * time.Hour
 
 // pauseScopes are the scopes that hold approvals, on which a person may set pause_action
 // (HLD-8).
-var pauseScopes = map[string]bool{"tenant": true, "role": true, "tasktype": true, "action": true, "host": true, "resource": true, "bot_group": true, "bot": true}
+var pauseScopes = []string{"tenant", "role", "tasktype", "action", "host", "resource", "bot_group", "bot"}
 
 // approvalHoldScopes are the hold scopes of a pending approval: the farm, the tenant, the
 // action, the role and type of the request, the bot of the attempt that asked, and the machine
