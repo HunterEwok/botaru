@@ -488,7 +488,6 @@ func cardChat(ctx context.Context, q store.Querier, tv *TenantView, principal st
 // approvers are the active people of the tenant with action.approve:<a>, without the
 // initiator unless the tenant allows self approval (APR-9, decision-points approval_card).
 func approvers(ctx context.Context, q store.Querier, now time.Time, tv *TenantView, a *approvalRow) ([]string, error) {
-	initiator := a.Initiator
 	rows, err := q.Query(ctx, `SELECT DISTINCT m.principal FROM memberships m JOIN principals p ON p.tenant = m.tenant AND p.id = m.principal
 		WHERE m.tenant = $1 AND m.state = 'active' AND (m.until IS NULL OR m.until > $2) AND p.state = 'active' AND p.kind = 'human'
 		ORDER BY m.principal`, tv.Name, now)
@@ -511,7 +510,7 @@ func approvers(ctx context.Context, q store.Querier, now time.Time, tv *TenantVi
 	var out []string
 	for _, p := range all {
 		// With two approvers the initiator is never one of them (APR-16).
-		if p == initiator && (!tv.Spec.SelfApprove || a.Approvals == 2) {
+		if selfApproveBarred(tv, p, a) {
 			continue
 		}
 		info, err := loadPrincipal(ctx, q, now, tv.Name, p)
@@ -523,6 +522,25 @@ func approvers(ctx context.Context, q store.Querier, now time.Time, tv *TenantVi
 		}
 	}
 	return out, nil
+}
+
+// selfApproveBarred says whether the principal is the initiator of the approval and may not
+// approve it: the tenant forbids self approval, as a production tenant always does by lint, or
+// the action needs two approvers (APR-9, APR-16).
+func selfApproveBarred(tv *TenantView, principal string, a *approvalRow) bool {
+	return principal == a.Initiator && (!tv.Spec.SelfApprove || a.Approvals == 2)
+}
+
+// approveRefusal is the permission decision of an approval press: why the person may not
+// approve it, or "" (APR-4, APR-9). authorize.eval of the test bench runs it too.
+func approveRefusal(tv *TenantView, groups []string, principal string, a *approvalRow) string {
+	if !mayApprove(tv, groups, a) {
+		return "the person has no action.approve for this action"
+	}
+	if selfApproveBarred(tv, principal, a) {
+		return "the initiator does not approve their own request"
+	}
+	return ""
 }
 
 // planCards plans the card to every approver and the copy to the initiator (APR-3, APR-19). A
@@ -1106,11 +1124,8 @@ func (c *Core) Decide(ctx context.Context, w *Worker, ob *OnBehalf, req DecideRe
 			}
 			return &committed{p: refuse(reason, "%s", detail)}
 		}
-		if !mayApprove(press.tv, press.groups, a) {
-			return deny("forbidden", "the person has no action.approve for this action")
-		}
-		if press.principal == a.Initiator && (!press.tv.Spec.SelfApprove || a.Approvals == 2) {
-			return deny("forbidden", "the initiator does not approve their own request")
+		if detail := approveRefusal(press.tv, press.groups, press.principal, a); detail != "" {
+			return deny("forbidden", detail)
 		}
 		// A repeat of a vote of two approvers changes nothing (IDM-3).
 		if a.voted(press.principal, req.Decision) {

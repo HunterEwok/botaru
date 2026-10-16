@@ -71,7 +71,7 @@ func (c *Core) ResolveModelHandle(ctx context.Context, handle string) (*ModelGra
 	if err != nil {
 		return nil, err
 	}
-	if epoch != c.epoch || state != "active" || !until.After(now) {
+	if epoch != c.epoch.Load() || state != "active" || !until.After(now) {
 		return nil, refuse("fenced", "the lease of the handle is not alive")
 	}
 	// An offboarded tenant's provider key is not used again (LCY-1, GW-3).

@@ -188,6 +188,13 @@ func (cc *catalogCache) get() *Catalog {
 	return cc.cur
 }
 
+// reset forgets the catalog, so the next read builds it from the store again.
+func (cc *catalogCache) reset() {
+	cc.mu.Lock()
+	defer cc.mu.Unlock()
+	cc.cur, cc.hash = nil, ""
+}
+
 func (cc *catalogCache) set(c *Catalog) {
 	cc.mu.Lock()
 	defer cc.mu.Unlock()

@@ -74,6 +74,9 @@ const (
 // freeSpace measures the store volume: by Config.FreeSpace when set (a mock measurement on a
 // test bench), else by the path of the binding. ok is false without a measurement.
 func (c *Core) freeSpace() (free, total uint64, ok bool) {
+	if f, t, on := c.benchSpace(); on {
+		return f, t, true
+	}
 	measure := c.cfg.FreeSpace
 	if measure == nil {
 		if c.cfg.Health.StoreVolume == "" {
