@@ -383,6 +383,10 @@ type Role struct {
 	MayTargetGroups []string `json:"may_target_groups"`
 	// Scripts is the vocabulary of a script author (SCR-5, TRN-2).
 	Scripts *RoleScripts `json:"scripts"`
+	// ModelGrants is the ladder of stronger profiles of request_model_grant (MGR-17).
+	ModelGrants *struct {
+		Ladder []string `json:"ladder"`
+	} `json:"model_grants"`
 	// Aggregate is the sources block of an aggregator (AGG-2, AGG-3).
 	Aggregate *RoleAggregate `json:"aggregate"`
 	Runtime   struct {
@@ -606,6 +610,13 @@ type TaskType struct {
 	Inbox struct {
 		Read []string `json:"read"`
 	} `json:"inbox"`
+	// GrantEligible, GrantEvalSet and Grant are the signs of the right to ask for a stronger
+	// model (MGR-17).
+	GrantEligible bool   `json:"grant_eligible"`
+	GrantEvalSet  string `json:"grant_eval_set"`
+	Grant         *struct {
+		InputTokensMin int `json:"input_tokens_min"`
+	} `json:"grant"`
 }
 
 // Timeouts are the type deadlines as durations (15m, 60s).

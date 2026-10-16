@@ -270,6 +270,14 @@ func (c *Core) retentionLoop(ctx context.Context) error {
 		exec(`UPDATE proposals SET record = record #- '{body,note}' WHERE id IN (SELECT x.id FROM proposals x LEFT JOIN p ON p.tenant = x.tenant
 			WHERE x.record->'body' ? 'note' AND x.state NOT IN ('screened', 'in_review', 'recommended', 'parked', 'presented', 'realizing')
 			AND x.updated_at <= $9 AND x.updated_at <= coalesce(p.content, $6) LIMIT $8 FOR UPDATE OF x SKIP LOCKED)`, base),
+		// The untrusted note of an ended grant request and of an ended escalation is content
+		// (MGR-17, MGR-5); their closed fields are metadata.
+		exec(`UPDATE model_grants SET note = NULL WHERE id IN (SELECT g.id FROM model_grants g LEFT JOIN p ON p.tenant = g.tenant
+			WHERE g.note IS NOT NULL AND g.state IN ('consumed', 'denied', 'expired', 'revoked') AND g.updated_at <= $9
+			AND g.updated_at <= coalesce(p.content, $6) LIMIT $8 FOR UPDATE OF g SKIP LOCKED)`, base),
+		exec(`UPDATE escalations SET note = NULL WHERE id IN (SELECT e.id FROM escalations e LEFT JOIN p ON p.tenant = e.tenant
+			WHERE e.note IS NOT NULL AND e.state IN ('merged', 'dismissed', 'answered', 'expired') AND e.updated_at <= $9
+			AND e.updated_at <= coalesce(p.content, $6) LIMIT $8 FOR UPDATE OF e SKIP LOCKED)`, base),
 		// A sent digest is content once its slot is past (DIG-1): its row only kept the slot.
 		exec(`DELETE FROM proposal_digests WHERE id IN (SELECT d.id FROM proposal_digests d LEFT JOIN p ON p.tenant = d.tenant
 			WHERE d.created_at <= $9 AND d.created_at <= coalesce(p.content, $6) LIMIT $8 FOR UPDATE OF d SKIP LOCKED)`, base),

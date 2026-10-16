@@ -38,6 +38,11 @@ func helloSet(t *testing.T) ([]map[string]any, map[string]int) {
 func TestApplyLaterVersion(t *testing.T) {
 	ctx := context.Background()
 	b := newBench(t)
+	// The test uses EvalReports as a later kind: this build accepts it ahead, so the list keeps
+	// only the tenant retention periods for the test (their journals stay refused).
+	saved := spec.Ahead
+	defer func() { spec.Ahead = saved }()
+	spec.Ahead = map[string][]string{"Tenant": {"/spec/retention"}}
 	ms, at := helloSet(t)
 	tt := ms[at["TaskType"]]["spec"].(map[string]any)
 	tt["title"] = "Greeting, changed"

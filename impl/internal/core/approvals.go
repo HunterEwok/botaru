@@ -987,6 +987,8 @@ func (c *Core) Decide(ctx context.Context, w *Worker, ob *OnBehalf, req DecideRe
 		return c.decideScript(ctx, w, *ob, req)
 	case "script_gate":
 		return c.decideGate(ctx, w, *ob, req)
+	case "takeover":
+		return c.decideTakeover(ctx, w, *ob, req)
 	case "governance_case":
 		return c.decideCase(ctx, w, *ob, req)
 	case "attribution":

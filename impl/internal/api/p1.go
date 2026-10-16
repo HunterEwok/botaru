@@ -243,6 +243,28 @@ func (s *Server) p1(w http.ResponseWriter, r *http.Request) {
 			s.fail(w, err)
 			return
 		}
+	case "grant.request":
+		req, err := decode[core.ModelGrantAsk](m)
+		if err != nil {
+			s.fail(w, err)
+			return
+		}
+		out, err = s.c.RequestModelGrant(ctx, wk, lease, req)
+		if err != nil {
+			s.fail(w, err)
+			return
+		}
+	case "escalation.submit":
+		req, err := decode[core.EscalationSubmitRequest](m)
+		if err != nil {
+			s.fail(w, err)
+			return
+		}
+		out, err = s.c.EscalationSubmit(ctx, wk, lease, req)
+		if err != nil {
+			s.fail(w, err)
+			return
+		}
 	case "msg.send":
 		req, err := decode[core.MsgSendRequest](m)
 		if err != nil {

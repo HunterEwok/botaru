@@ -325,6 +325,10 @@ func (c *Core) holdChanged(ctx context.Context, tx pgx.Tx, now time.Time, h Hold
 		if err := c.pauseHeldCampaigns(ctx, tx, now, h.Scope.Tenant); err != nil {
 			return 0, err
 		}
+		// And the script runs it covers (SCR-10).
+		if err := c.pauseHeldRuns(ctx, tx, now, h.Scope.Tenant); err != nil {
+			return 0, err
+		}
 	}
 	// A hold on the farm manager seat stops the seat in the same transaction (MGR-15).
 	if h.Scope.Kind == "seat" && h.Scope.Name == managerSeatID {

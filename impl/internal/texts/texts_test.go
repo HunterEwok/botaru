@@ -47,6 +47,9 @@ func TestRender(t *testing.T) {
 	if c.Has("number.words") {
 		t.Fatal("a list became a text")
 	}
+	if w := c.List("xx", "number.words"); len(w) < 21 || w[0] != "zero" || w[20] != "twenty" {
+		t.Fatalf("the number words %v", w)
+	}
 	// Every key the code of this implementation renders is in the skeleton catalog.
 	for _, k := range []string{"notice.ai", "notice.privacy", "notice.principal_left", "notice.principal_left.no_chats",
 		"provenance.model", "task.rejected", "task.failed", "activity.not_command", "activity.unknown_command", "activity.not_verified"} {

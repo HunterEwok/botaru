@@ -86,6 +86,25 @@ type lintFindings struct {
 	seen map[string]bool
 }
 
+// refuses says whether the findings already hold an error of the object.
+func (f *lintFindings) refuses(o lintObj) bool {
+	for _, e := range f.out {
+		if e.Kind == o.kind && e.Name == o.name && (o.kind == "Tenant" || e.Tenant == o.tenant) {
+			return true
+		}
+	}
+	return false
+}
+
+// addDetail is add with a detail text on the error.
+func (f *lintFindings) addDetail(o lintObj, code, path, detail string) {
+	n := len(f.out)
+	f.add(o, code, path)
+	if len(f.out) > n {
+		f.out[len(f.out)-1].Detail = detail
+	}
+}
+
 func (f *lintFindings) add(o lintObj, code, path string) {
 	k := fmt.Sprintf("%d/%s/%s", o.i, code, path)
 	if o.i < 0 {
@@ -323,7 +342,7 @@ func (r *lintRegs) parseCap(cp string) (string, string) {
 // personaLookup gives the text of a persona of a tenant by its hash, when apply has it.
 type personaLookup func(tenant, sha string) (string, bool)
 
-func (c *Core) lintManifests(docs []manifest.Doc, index []int, personas personaLookup) ([]ApplyError, error) {
+func (c *Core) lintManifests(docs []manifest.Doc, index []int, personas personaLookup, prior []manifest.Doc) ([]ApplyError, error) {
 	r, err := c.lintRegistries()
 	if err != nil {
 		return nil, err
@@ -640,6 +659,10 @@ func (c *Core) lintManifests(docs []manifest.Doc, index []int, personas personaL
 		}
 		if kind == "production" && ts["self_approve"] == true {
 			f.add(o, "self_approve_production", "/self_approve")
+		}
+		// The takeover card is never lifted: confirm_above_eur is reserved (MGR-21).
+		if v, ok := mnum(mmap(ts, "takeover"), "confirm_above_eur"); ok && v > 0 {
+			f.add(o, "takeover_confirm_threshold", "/takeover/confirm_above_eur")
 		}
 		for _, cmd := range slices.Sorted(mapKeys(mmap(ts, "commands"))) {
 			tt, _ := mmap(ts, "commands")[cmd].(string)
@@ -1764,6 +1787,10 @@ func (c *Core) lintManifests(docs []manifest.Doc, index []int, personas personaL
 		return nil, err
 	}
 	if err := c.lintSeatProfiles(S, f); err != nil {
+		return nil, err
+	}
+	// The translator gate of a production tenant (TRN-6).
+	if err := lintTranslatorEvals(docs, S, prior, f); err != nil {
 		return nil, err
 	}
 	sort.SliceStable(f.out, func(i, j int) bool { return f.out[i].Path < f.out[j].Path })

@@ -32,6 +32,7 @@ texts:
   notice.manager_stopped_repeat: "Reminder: the farm manager seat is stopped since {at} after incident {incident} ({class}, tenant {tenant}). Incidents opened during the stop: {joined}. Without a decision by {until} the holder leaves and the seat is vacant. Decide with farmctl:\nfarmctl seat resume farm-manager --incident {incident} (once the incident and the stopping incidents of its minute are dismissed as false)\nfarmctl seat assign farm-manager\nfarmctl seat vacate farm-manager"
   notice.manager_stopped.none: none
   notice.manager_stopped_joined: "Incident {incident} ({class}, tenant {tenant}) opened at {at} while the farm manager seat is stopped."
+  notice.seat_eval_missing: "The farm manager seat model profile {profile} has no eval report of the set mgr-inj with zero security failures for the seat fingerprint {fingerprint}. Seat tasks of production tenants wait with seat_eval_missing until the EvalReports index has one (tenant {tenant} is waiting)."
   # The message to people about an incident (MGR-39, MGR-13): one per incident and chat, edited
   # on each operation and state change; the farm operators see only codes and numbers
   notice.manager_notice: "{header}\n{lines}\n{revert}"

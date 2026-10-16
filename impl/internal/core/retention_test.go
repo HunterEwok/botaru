@@ -77,7 +77,8 @@ func TestRetentionTenantPeriods(t *testing.T) {
 		t.Fatal(err)
 	}
 	// The content parts of orchestration records (RET-10): a finished script run and its
-	// step, the items of a finished campaign, a finding's note, a closed proposal's note, a digest.
+	// step, the items of a finished campaign, a finding's note, a closed proposal's note, a digest,
+	// the note of an ended grant request and of an ended escalation.
 	for _, sql := range []string{
 		`INSERT INTO script_runs (id, tenant, initiator, state, plan_hash, record, nonce, expires_at, created_at, updated_at)
 			VALUES ('scr_ret10', 'demo', 'x', 'completed', 'h', '{"root": "t_x", "assignment": "CANARY-NOT-A-SECRET-ret10"}', 'n', $1, $1, $1)`,
@@ -90,6 +91,10 @@ func TestRetentionTenantPeriods(t *testing.T) {
 		`INSERT INTO proposals (id, tenant, role, worker, task, fingerprint, kind, state, record, created_at, updated_at, state_at)
 			VALUES ('prp_ret10', 'demo', 'hello', 'w', 't_x', 'f', 'k', 'declined', '{"body": {"note": "CANARY-NOT-A-SECRET-ret10"}}', $1, $1, $1)`,
 		`INSERT INTO proposal_digests (id, tenant, slot_at, urgent, body, created_at) VALUES ('dg_ret10', 'demo', $1, false, '{"x": "CANARY-NOT-A-SECRET-ret10"}', $1)`,
+		`INSERT INTO model_grants (id, tenant, task, role, kind, line, profile, note, state, created_at, updated_at)
+			VALUES ('mg_ret10', 'demo', 't_x', 'hello', 'grant', 'grant', 'p', 'CANARY-NOT-A-SECRET-ret10', 'denied', $1, $1)`,
+		`INSERT INTO escalations (id, tenant, task, lease_no, worker, role, fields, note, state, created_at, updated_at)
+			VALUES ('esc_ret10', 'demo', 't_x', 1, 'w', 'hello', '{}', 'CANARY-NOT-A-SECRET-ret10', 'answered', $1, $1)`,
 	} {
 		args := []any{now}
 		if !strings.Contains(sql, "$1") {
@@ -112,7 +117,8 @@ func TestRetentionTenantPeriods(t *testing.T) {
 		+ (SELECT count(*) FROM script_steps WHERE fields IS NOT NULL OR untrusted IS NOT NULL)
 		+ (SELECT count(*) FROM campaign_items WHERE args <> '{}' OR summary IS NOT NULL)
 		+ (SELECT count(*) FROM findings WHERE note IS NOT NULL) + (SELECT count(*) FROM proposals WHERE record::text LIKE '%CANARY%')
-		+ (SELECT count(*) FROM proposal_digests)`); n != 0 {
+		+ (SELECT count(*) FROM proposal_digests) + (SELECT count(*) FROM model_grants WHERE note IS NOT NULL)
+		+ (SELECT count(*) FROM escalations WHERE note IS NOT NULL)`); n != 0 {
 		t.Fatalf("%d orchestration records kept their content past the period", n)
 	}
 	if n := b.count(t, `SELECT count(*) FROM memory_items WHERE id = 'm_ret10'`) + b.count(t, `SELECT count(*) FROM facts WHERE id = 'fact_ret10'`); n != 2 {
