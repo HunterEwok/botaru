@@ -1,5 +1,5 @@
 registry: formats
-version: 2
+version: 3
 description: >-
   Closed string formats. A string leaf of a schema from a manifest (params_schema,
   result_schema, an action schema, tool arguments) passes only with a format
@@ -64,3 +64,17 @@ entries:
     max_length: 256
     example: sensor calibration
     rules: [INJ-1]
+  - id: ipv4_subnet24
+    since: v0.3
+    meaning: an IPv4 /24 subnet in CIDR notation, the host part zero; a fact of a log answer without a full address
+    pattern: '^((25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])\.){3}0/24$'
+    max_length: 18
+    example: 192.0.2.0/24
+    rules: [INJ-1, OUT-1]
+  - id: url_path
+    since: v0.3
+    meaning: the path of a requested URL without query or fragment, in a closed set of characters
+    pattern: '^/[A-Za-z0-9/_.~-]{0,199}$'
+    max_length: 200
+    example: /api/v1/stations
+    rules: [INJ-1, OUT-1]

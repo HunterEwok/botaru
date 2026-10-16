@@ -66,6 +66,9 @@ texts:
   notice.postmortem_report_farm: "Analysis of incident {incident}: {alarms} alarm readings, {ops} operations, {implicated} involved parties."
   notice.manager_proposal_info: "For information: the farm manager may not propose this change in tenant {tenant} (category {category}, problem {problem})."
   notice.holder_report: "Farm manager holder, last week: {preventable} preventable incidents; {notices} notices, {notices_useful} useful; {takeovers} takeovers, {approved} approved, {done} done, {failed} failed; {analyses} analyses, {analyses_useful} useful; manager lines {spent_cents} of {line_cents} cents a month; sev1 reserve used {sev1} times; Don't know on link cards {dont_know}."
+  # The weekly commission summary (COM-17, GOV-36): numbers and codes only, one row per seat
+  notice.commission_weekly: "Commission of tenant {tenant}, week {week}: accountability {mode}; {cases} new link cases, {departures_done} departures, {departures_waiting} waiting.\n{rows}"
+  notice.commission_weekly.row: "Seat {seat} ({lens}): accuracy {accuracy}, {scored} scored, {missed} missed forecasts."
   # Channel commands (REP-12, PRM-15, DLV-9)
   cmd.tasks.header: "Your tasks today:"
   cmd.tasks.row: "{n}. {title}: {state}{waiting}"

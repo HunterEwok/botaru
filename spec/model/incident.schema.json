@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "urn:botaru:schema:incident:1",
   "title": "Incident",
-  "description": "Incident record (spec/lifecycles/incident.md). Only the core opens it, by a code alarm and a catalog class (MGR-8); only code sets resolved; only a person sets dismissed, with a reason code and a \"Details\" text, which the core shows only to people and does not pass into model context. Code builds the list of involved parties with catalog functions, at most 20 targets. For a class with stops_manager whose subject is a disk, the record keeps a reason code in stops_manager_effect if there is no seat stop (GOV-22, MGR-33, MGR-34). No bot creates, changes or hides the record (GOV-13).",
+  "description": "Incident record (spec/lifecycles/incident.md). Only the core opens it, by a code alarm and a catalog class (MGR-8); only code sets resolved; only a person sets dismissed, with a reason code and a \"Details\" text, which the core shows only to people and does not pass into model context. Code builds the list of involved parties with catalog functions, at most 20 targets. For a class with stops_manager whose subject is a disk, the record keeps a reason code in stops_manager_effect if there is no seat stop (GOV-22, MGR-33, MGR-34). From v0.3 a person may record a cause (cause, MGR-8): an external one keeps the incident out of the links to rejected proposals and out of who answers (GOV-38, GOV-41). No bot creates, changes or hides the record (GOV-13).",
   "x-botaru-direction": "record",
   "x-botaru-retention": "metadata",
   "x-botaru-rules": [
@@ -11,7 +11,9 @@
     "GOV-13",
     "GOV-22",
     "MGR-33",
-    "MGR-34"
+    "MGR-34",
+    "GOV-38",
+    "GOV-41"
   ],
   "type": "object",
   "required": [
@@ -228,6 +230,21 @@
       },
       "description": "Dismissal as false: only people see it, it does not go into model context."
     },
+    "cause": {
+      "x-botaru-version": "v0.3",
+      "$ref": "#/$defs/cause",
+      "description": "From v0.3: the cause a person recorded (MGR-8, GOV-38, GOV-41); absent when nobody recorded one. Only people see it; it does not go into model context."
+    },
+    "cause_by": {
+      "x-botaru-version": "v0.3",
+      "$ref": "urn:botaru:schema:common:1#/$defs/principal_ref",
+      "description": "From v0.3: the person who recorded the cause last."
+    },
+    "cause_at": {
+      "x-botaru-version": "v0.3",
+      "$ref": "urn:botaru:schema:common:1#/$defs/datetime",
+      "description": "From v0.3: when the cause was recorded last."
+    },
     "opened_at": {
       "$ref": "urn:botaru:schema:common:1#/$defs/datetime",
       "description": "Opening."
@@ -294,6 +311,15 @@
             }
           }
         }
+      ]
+    },
+    "cause": {
+      "x-botaru-version": "v0.3",
+      "description": "From v0.3: the cause of an incident that a person recorded through P2 incident.cause (MGR-8): external_load (load from outside the farm), attack (a deliberate attack from outside) or unknown (not known, the default meaning when no cause is recorded). An external cause (external_load, attack) never gives a link candidate (GOV-38) and never makes anyone answer (GOV-41).",
+      "enum": [
+        "external_load",
+        "attack",
+        "unknown"
       ]
     }
   }

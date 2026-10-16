@@ -1,0 +1,34 @@
+# Ingest of one corpus document (from v0.2, profile knowledge, KNW-4, D-97): a job without a
+# model that parses the file of the task attachment and cuts it into fragments for the per-tenant
+# word index. It writes them with P1 kb.index_put; the core takes the corpus and the file from
+# the leased task, so a call that names another corpus or file gets forbidden. The core enqueues
+# it after a P2 kb.upload by a person with kb.write:<corpus>, or after apply for a git corpus.
+apiVersion: botaru/v1alpha1
+kind: TaskType
+metadata: {name: kb.ingest.v1}
+spec:
+  title: "Corpus document ingest"
+  worker_kind: job
+  purpose: work
+  tier: 0
+  data_class: internal
+  params_schema:
+    type: object
+    additionalProperties: false
+    required: [corpus]
+    properties:
+      corpus: {enum_from: catalog.corpora, x-botaru-read-by: code}
+  result_schema:
+    type: object
+    additionalProperties: false
+    required: [fragments]
+    properties:
+      fragments: {type: integer, minimum: 0, maximum: 2000, x-botaru-read-by: code}
+      skipped: {enum: [unreadable, empty, too_large], x-botaru-read-by: code}
+  summary_fields: [fragments]
+  dispatch: {priority_class: 4}
+  timeouts: {start_by: 1h, lease: 120s, heartbeat: 30s, attempt: 15m, deadline: 6h}
+  retry: {max_attempts: 2, max_runs: 2}
+  tree_budget_eur: 0.05
+  max_children: 0
+  proposable: false

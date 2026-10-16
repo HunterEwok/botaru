@@ -1,0 +1,25 @@
+# Analysis after an incident (from v0.3, MGR-53): when an incident of a tenant with the farm
+# manager enabled moves to resolved, the core enqueues one task by the key
+# system:postmortem:<incident> and passes the table it built from records in the input block. The
+# model writes a paragraph only for sev1, when code found link candidates, or on a person's request;
+# code checks its numbers against the table. The farm manager role claims the type and the group
+# farm-manager-ops holds task:manager.postmortem.v1 in a farm that runs it. It is paid from the
+# manager line outside the sev1 reserve within farm_manager.postmortem_max_eur.day.
+apiVersion: botaru/v1alpha1
+kind: TaskType
+metadata: {name: manager.postmortem.v1}
+spec:
+  title: "Analysis after an incident"
+  worker_kind: agent
+  purpose: manage
+  tier: 1
+  data_class: internal
+  instruction: |
+    Analyse the resolved incident from the table in the input block. Cite the rows you rely on by their ids
+    and copy their numbers unchanged; the core checks them. Write no paragraph when the input says so.
+  params_schema: {type: object, additionalProperties: false, properties: {}}   # the core passes its own input block
+  timeouts: {start_by: 6h, lease: 60s, heartbeat: 20s, attempt: 10m, deadline: 48h}
+  retry: {max_attempts: 1, max_runs: 1}
+  tree_budget_eur: 0.40
+  max_children: 0
+  proposable: false
