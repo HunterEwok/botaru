@@ -486,8 +486,9 @@ func (c *Core) FileGet(ctx context.Context, w *Worker, lease string, req FileGet
 }
 
 // mediaAllowed checks a file a delivery hands out to a person or a sink (ART-5): an export
-// delivery hands out only the export file, any other only a result file of its own task whose
-// sniffed type the task type lists in result_media_types and that is not an active format.
+// delivery hands out only the export file, any other only a result file of its own task or of
+// an earlier task of the same tree whose sniffed type the producing task's type lists in
+// result_media_types and that is not an active format.
 // Another file is refused with media_type_not_allowed; the task outcome does not change.
 func (c *Core) mediaAllowed(ctx context.Context, tx pgx.Tx, cat *Catalog, kind, task string, f *fileRow) error {
 	if kind == "export" || f.Origin == "export" {
@@ -496,11 +497,19 @@ func (c *Core) mediaAllowed(ctx context.Context, tx pgx.Tx, cat *Catalog, kind, 
 		}
 		return refuse("media_type_not_allowed", "an export file goes only with its export delivery")
 	}
-	if task == "" || f.Producer != task || activeMediaType(f.MediaType) {
+	if task == "" || f.Origin != "produced" || activeMediaType(f.MediaType) {
 		return refuse("media_type_not_allowed", "the file type %s is not handed out", f.MediaType)
 	}
+	// A result file of the delivery's own task, or of an earlier task of its tree, such as a
+	// chain's child whose outcome a continuation reports; the producer's type lists it.
 	var typ string
-	if err := tx.QueryRow(ctx, `SELECT type FROM tasks WHERE id = $1`, task).Scan(&typ); err != nil {
+	err := tx.QueryRow(ctx, `SELECT p.type FROM tasks p JOIN tasks d ON d.id = $2 AND d.tenant = p.tenant
+		WHERE p.id = $1 AND (p.id = d.id OR coalesce(p.record->>'root', p.id) = coalesce(d.record->>'root', d.id) AND p.created_at <= d.created_at)`,
+		f.Producer, task).Scan(&typ)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return refuse("media_type_not_allowed", "the file is not a result of this task's tree")
+	}
+	if err != nil {
 		return err
 	}
 	if !slices.Contains(cat.TaskTypes[typ].ResultMediaTypes, f.MediaType) {
