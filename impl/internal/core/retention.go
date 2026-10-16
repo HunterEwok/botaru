@@ -263,11 +263,12 @@ func (c *Core) retentionLoop(ctx context.Context) error {
 		},
 		// A person's usage line past 93 days keeps its amounts and loses every reference that
 		// leads back to the person: subject, task and root, and the ids of the tool call,
-		// campaign, script, provider request and attempt; its time goes to the start of its UTC
-		// day and it records subject_kind human. Whole days: a line goes once its day is older
-		// than 93 days (BUD-16, SEC-14).
+		// campaign, script, provider request and attempt; its time and the time it was settled
+		// go to the start of their UTC day and it records subject_kind human. Whole days: a
+		// line goes once its day is older than 93 days (BUD-16, SEC-14).
 		exec(`UPDATE spend SET subject = NULL, task = NULL, root = NULL, toolcall = NULL, campaign = NULL, script = NULL, request_id = NULL,
-			fingerprint = NULL, attempt_lease_no = NULL, subject_kind = 'human', time = date_trunc('day', time, 'UTC')
+			fingerprint = NULL, attempt_lease_no = NULL, subject_kind = 'human', time = date_trunc('day', time, 'UTC'),
+			settled_at = date_trunc('day', settled_at, 'UTC')
 			WHERE id IN (SELECT id FROM spend WHERE subject LIKE 'human:%' AND state <> 'reserved' AND time < $10 LIMIT $8 FOR UPDATE SKIP LOCKED)`,
 			with(periodStart("day", start).Add(-personUsageDays*day))),
 	}
