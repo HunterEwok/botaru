@@ -79,6 +79,8 @@ type enqueueInput struct {
 	// EstimateMin is the least reserve of the task: a review reserves its type's tree budget,
 	// the sum the review line was checked for (COM-6).
 	EstimateMin int64
+	// Wake makes the task a wake-up of a route's inbox (MSG-11).
+	Wake *wakeInput
 	// Sev1 marks a seat task of a sev1 incident: it may use the reserve of the manager line
 	// (MGR-20).
 	Sev1 bool
@@ -417,6 +419,35 @@ func (c *Core) enqueue(ctx context.Context, tx pgx.Tx, now time.Time, cat *Catal
 	if p := c.checkBudget(ctx, tx, now, tv, budgetAsk{subject: in.Initiator, groups: groups, extra: estimate, line: line, sev1: in.Sev1, crossed: &crossed}); p != nil {
 		return reject(p)
 	}
+	// A wake-up reserves in the day limit of each principal the entries came from too (MSG-11).
+	if in.Wake != nil {
+		for _, sub := range in.Wake.Subjects {
+			if sub == "system" || sub == in.Initiator {
+				continue
+			}
+			sg, err := principalGroups(ctx, tx, now, tv, sub)
+			if err != nil {
+				return nil, err
+			}
+			if p := c.checkBudget(ctx, tx, now, tv, budgetAsk{subject: sub, groups: sg, extra: estimate, line: line}); p != nil {
+				return reject(p)
+			}
+			if p, err := c.wakeShare(ctx, tx, now, tv, sub, sg, line, estimate, ""); err != nil {
+				return nil, err
+			} else if p != nil {
+				return reject(p)
+			}
+		}
+	}
+	// A task in a wake-up's subtree draws on the wake-up's money: the inbox's day and the day
+	// limits of the principals its entries came from (MSG-11, BUD-2).
+	if in.Chain != nil && in.Chain.WakeTask != "" {
+		if p, err := c.wakeLimits(ctx, tx, now, tv, in.Chain.WakeTask, estimate, line); err != nil {
+			return nil, err
+		} else if p != nil {
+			return reject(p)
+		}
+	}
 	// The enqueue ceiling of the sliding hour, under the tenant's budget lock (CAP-1).
 	if max := tv.Spec.Limits.MaxEnqueuePerHour; max > 0 {
 		var n int
@@ -533,6 +564,9 @@ func (c *Core) enqueue(ctx context.Context, tx pgx.Tx, now time.Time, cat *Catal
 		if ch.Trace != "" {
 			record["trace"] = ch.Trace
 		}
+		if ch.WakeTask != "" {
+			record["wake_task"] = ch.WakeTask
+		}
 		// The tree draws on the one limit pinned in its root (PRM-6, BUD-1).
 		var rootType string
 		var rootRec []byte
@@ -540,6 +574,55 @@ func (c *Core) enqueue(ctx context.Context, tx pgx.Tx, now time.Time, cat *Catal
 			return nil, err
 		}
 		record["tree_budget_micros"] = taskTreeBudget(rootRec, cat.TaskTypes[rootType])
+	}
+	// The record keeps the initiators of what the tree read, from the chain or the caller (MSG-7).
+	if co := coInitiatorsOf(in); len(co) > 0 {
+		record["co_initiators"] = co
+	}
+	if w := in.Wake; w != nil {
+		record["wake_inbox"], record["depth"] = w.Inbox, w.Depth
+		// The wake-up heads a subtree of its own: the spend of its children counts in its
+		// money (MSG-11).
+		record["wake_task"] = id
+		// The wake-up joins the tree its oldest entry came from: the tree's limits and budget
+		// stay the ones of its root (MSG-12, BUD-1, PRM-6).
+		if w.Correlation != "" {
+			record["correlationid"] = w.Correlation
+			var rootType string
+			var rootRec []byte
+			err := tx.QueryRow(ctx, `SELECT type, record FROM tasks WHERE id = $1 AND tenant = $2`, w.Correlation, in.Tenant).Scan(&rootType, &rootRec)
+			switch {
+			case err == nil:
+				// It is one more task of that tree, within the tree's task limit (PRM-6).
+				limit := defaultMaxTreeTasks
+				if m := tv.Spec.Campaigns.MaxTreeTasks; m > 0 {
+					limit = m
+				}
+				var n int
+				if err := tx.QueryRow(ctx, `SELECT count(*) FROM tasks WHERE tenant = $1 AND (id = $2 OR record->>'root' = $2)`, in.Tenant, w.Correlation).Scan(&n); err != nil {
+					return nil, err
+				}
+				if n >= min(limit, farmMaxTreeTasks) {
+					return reject(refuse("tree_too_large", "the tree of this root has %d tasks", n))
+				}
+				root = w.Correlation
+				record["root"] = root
+				record["tree_budget_micros"] = taskTreeBudget(rootRec, cat.TaskTypes[rootType])
+			case !errors.Is(err, pgx.ErrNoRows):
+				return nil, err
+			}
+		}
+		// The initiators the entries came from narrow what the wake-up's tree may enqueue, as
+		// the co-initiators of a tree that read them (MSG-7).
+		var co []string
+		for _, sub := range w.Subjects {
+			if sub != "system" && sub != in.Initiator && !slices.Contains(co, sub) {
+				co = append(co, sub)
+			}
+		}
+		if len(co) > 0 {
+			record["co_initiators"], record["wake_subjects"] = co, co
+		}
 	}
 	if in.Continues != "" {
 		record["data_mark"] = mark
@@ -581,6 +664,12 @@ func (c *Core) enqueue(ctx context.Context, tx pgx.Tx, now time.Time, cat *Catal
 	}
 	if d, ok := parseDuration(after); ok {
 		startBy = now.Add(d)
+	}
+	// A wake-up starts no later than the latest expiry of its entries (MSG-12).
+	if w := in.Wake; w != nil && w.StartBy != nil {
+		if t, ok := startBy.(time.Time); !ok || w.StartBy.Before(t) {
+			startBy = *w.StartBy
+		}
 	}
 	if _, err := tx.Exec(ctx, `INSERT INTO tasks (id, tenant, type, state, initiator, priority_class, idempotency_key, body_hash, body, record, deadline_at, start_by_at, created_at, updated_at)
 		VALUES ($1, $2, $3, 'submitted', $4, $5, $6, $7, $8, $9, $10, $11, $12, $12)`,
@@ -649,14 +738,17 @@ func (c *Core) validateParams(tt manifest.TaskType, body map[string]any) error {
 }
 
 // taskEstimate is the enqueue estimate of a task (BUD-14): the 90th percentile of the price of
-// the whole tree of the finished tasks of the type in the tenant over the last 30 days, and
+// the whole tree of the finished tasks of the type in the tenant over the last 30 days (of a
+// wake-up its own subtree, and of a root its tree without the wake-ups that joined it), and
 // without such tasks the worst case, the type's tree budget (GW-6). A type without a tree
 // budget and without history has no estimate; P4 still reserves every call (BUD-2).
 func taskEstimate(ctx context.Context, tx pgx.Tx, now time.Time, tenant, typ string, tt manifest.TaskType) (int64, error) {
 	var n int
 	var p90 float64
 	err := tx.QueryRow(ctx, `SELECT count(*), coalesce(percentile_cont(0.9) WITHIN GROUP (ORDER BY cost), 0) FROM (
-		SELECT (SELECT coalesce(sum(s.eur_micros), 0) FROM spend s WHERE s.root = t.id AND s.unit <> 'task') AS cost
+		SELECT (SELECT coalesce(sum(s.eur_micros), 0) FROM spend s LEFT JOIN tasks u ON u.id = s.task
+			WHERE s.unit <> 'task' AND CASE WHEN t.record ? 'wake_inbox' THEN s.root = coalesce(t.record->>'root', t.id) AND u.record->>'wake_task' = t.id
+				ELSE s.root = t.id AND (u.record->>'wake_task') IS NULL END) AS cost
 		FROM tasks t WHERE t.tenant = $1 AND t.type = $2 AND t.state IN ('completed', 'failed') AND t.updated_at >= $3) x`,
 		tenant, typ, now.Add(-30*24*time.Hour)).Scan(&n, &p90)
 	if err != nil {
@@ -689,4 +781,43 @@ func attachedFiles(body map[string]any) ([]string, error) {
 		}
 	}
 	return out, nil
+}
+
+// wakeShare refuses a wake-up, or a reserve in its subtree, past the personal day limit of a principal its entries came from:
+// the wake-ups their entries caused this day, spent and still reserved, count in that limit
+// beside their own spending, though the wake-ups run as system (MSG-11, BUD-1).
+func (c *Core) wakeShare(ctx context.Context, tx pgx.Tx, now time.Time, tv *TenantView, sub string, groups []string, line string, estimate int64, ownWake string) (*Problem, error) {
+	if line != "" && line != "work" {
+		return nil, nil
+	}
+	var personal *float64
+	for _, g := range groups {
+		if l := tv.Groups[g].DayEUR; l != nil && (personal == nil || *l > *personal) {
+			personal = l
+		}
+	}
+	if personal == nil {
+		return nil, nil
+	}
+	limit := *personal
+	// After a restore without the provider report the personal day is halved, as in
+	// checkBudget (RET-6).
+	if halve, err := spendGapOpen(ctx, tx); err != nil {
+		return nil, err
+	} else if halve {
+		limit /= 2
+	}
+	day := tenantDay(tv, now)
+	own, err := windowUsed(ctx, tx, tv.Name, spendFilter{subject: sub, line: "work"}, day, "")
+	if err != nil {
+		return nil, err
+	}
+	wakes, err := wakeSum(ctx, tx, tv.Name, day, ownWake, "subject", sub)
+	if err != nil {
+		return nil, err
+	}
+	if own+wakes+estimate > money.FromEUR(limit) {
+		return refuse("budget_exhausted", "the personal day limit is used up"), nil
+	}
+	return nil, nil
 }

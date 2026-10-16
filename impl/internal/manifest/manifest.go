@@ -421,6 +421,41 @@ type BotGroup struct {
 	} `json:"select"`
 }
 
+// Route is the spec of a Route manifest: what the core does on an inbox, a message or the end
+// of a task (MSG-16). Routes on events are not built in this version.
+type Route struct {
+	On struct {
+		Event         string   `json:"event"`
+		Inbox         string   `json:"inbox"`
+		Kinds         []string `json:"kinds"`
+		Min           int      `json:"min"`
+		Debounce      string   `json:"debounce"`
+		Message       string   `json:"message"`
+		SubjectPrefix string   `json:"subject_prefix"`
+		TaskDone      string   `json:"task_done"`
+	} `json:"on"`
+	Mode string `json:"mode"`
+	Task *struct {
+		Type   string         `json:"type"`
+		Goal   string         `json:"goal"`
+		Params map[string]any `json:"params"`
+	} `json:"task"`
+	Template string `json:"template"`
+	Report   *struct {
+		Type string `json:"type"`
+		To   string `json:"to"`
+	} `json:"report"`
+	DeliverTo []any `json:"deliver_to"`
+}
+
+// RouteMode is the mode of a route: task unless it says otherwise (MSG-16).
+func (r Route) RouteMode() string {
+	if r.Mode == "" {
+		return "task"
+	}
+	return r.Mode
+}
+
 // Action is the spec of an Action manifest: a button with a closed form (MAN-9).
 type Action struct {
 	Title       string         `json:"title"`

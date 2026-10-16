@@ -394,6 +394,9 @@ func (c *Core) completeAttempt(ctx context.Context, tx pgx.Tx, now time.Time, w 
 	if err := releaseTaskReserve(ctx, tx, l.WorkID); err != nil {
 		return err
 	}
+	if err := c.autoReports(ctx, tx, now, w.Tenant, l.WorkID); err != nil {
+		return err
+	}
 	data := map[string]any{"task": l.WorkID}
 	if att.Fingerprint != "" {
 		data["fingerprint"], data["fingerprint_parts"] = att.Fingerprint, att.Parts
@@ -777,6 +780,9 @@ func (c *Core) failTask(ctx context.Context, tx pgx.Tx, now time.Time, tenant, i
 		return err
 	}
 	if err := releaseTaskReserve(ctx, tx, id); err != nil {
+		return err
+	}
+	if err := c.autoReports(ctx, tx, now, tenant, id); err != nil {
 		return err
 	}
 	data := map[string]any{"task": id, "reason": reason}

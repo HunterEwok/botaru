@@ -76,7 +76,7 @@ type spendFilter struct {
 
 // windowUsed sums the spend of a window: usage lines and call reserves in full, and of each
 // task reserve only the part its tree has not spent yet, because the calls of a tree draw on
-// its task reserve. The task reserve of ownRoot is left out: the caller's call is that draw.
+// its task reserve; a wake-up that joined the tree draws on its own reserve, not the root's. The task reserve of ownRoot is left out: the caller's call is that draw.
 // A task reserve has no role, so a window of one role counts only the calls of that role. The
 // reserve of a task that waits for the provider is kept but not counted: the reserve is taken
 // again before its call (BUD-4, GW-2). An estimated line counts as zero once a reconciliation
@@ -88,7 +88,9 @@ func windowUsed(ctx context.Context, tx pgx.Tx, tenant string, f spendFilter, fr
 			AND ($3 = '' OR subject = $3) AND ($5 = '' OR line = $5) AND ($6 = '' OR role = $6))
 		SELECT coalesce((SELECT sum(CASE WHEN state = 'estimated' AND (reconciled_at IS NOT NULL OR released_at IS NOT NULL) THEN 0
 				ELSE eur_micros + coalesce(correction_eur_micros, 0) END) FROM w WHERE unit <> 'task'), 0)
-			+ coalesce((SELECT sum(greatest(r.eur_micros - coalesce((SELECT sum(s.eur_micros) FROM spend s WHERE s.root = r.root AND s.unit <> 'task'), 0), 0))
+			+ coalesce((SELECT sum(greatest(r.eur_micros - coalesce((SELECT sum(s.eur_micros) FROM spend s LEFT JOIN tasks u ON u.id = s.task
+					WHERE s.root = r.root AND s.unit <> 'task' AND s.time >= r.time
+					AND (u.record->>'wake_task') IS NOT DISTINCT FROM (SELECT x.record->>'wake_task' FROM tasks x WHERE x.id = r.task)), 0), 0))
 				FROM w r WHERE r.unit = 'task' AND r.root <> $4
 				AND NOT EXISTS (SELECT 1 FROM tasks t WHERE t.id = r.task AND t.state = 'submitted' AND t.reason IN ('provider_unavailable', 'provider_quota'))), 0)`,
 		tenant, from, f.subject, ownRoot, f.line, f.role).Scan(&used)
@@ -224,6 +226,14 @@ func (c *Core) checkBudget(ctx context.Context, tx pgx.Tx, now time.Time, tv *Te
 		if err != nil {
 			return refuse("not_ready", "store")
 		}
+		if w.scope == "person_day" {
+			// The wake-ups the person's entries caused count in the person's day (MSG-11, BUD-1).
+			wakes, err := wakeSum(ctx, tx, tv.Name, w.from, "", "subject", ask.subject)
+			if err != nil {
+				return refuse("not_ready", "store")
+			}
+			used += wakes
+		}
 		if over(used, *w.limit) {
 			return refuse("budget_exhausted", "%s", w.why)
 		}
@@ -281,6 +291,20 @@ func (c *Core) reserveSpend(ctx context.Context, tx pgx.Tx, now time.Time, tv *T
 		}
 		if p := c.checkBudget(ctx, tx, now, tv, budgetAsk{subject: r.Subject, groups: groups, extra: r.Micros, ownRoot: r.Root, line: r.Line, role: r.Role, sev1: sev1, crossed: &crossed}); p != nil {
 			return p
+		}
+		// A call in a wake-up's subtree draws on the wake-up's money too (MSG-11).
+		var wake *string
+		if r.Task != "" {
+			if err := tx.QueryRow(ctx, `SELECT record->>'wake_task' FROM tasks WHERE id = $1`, r.Task).Scan(&wake); err != nil && !errors.Is(err, pgx.ErrNoRows) {
+				return err
+			}
+		}
+		if wake != nil {
+			if p, err := c.wakeLimits(ctx, tx, now, tv, *wake, r.Micros, r.Line); err != nil {
+				return err
+			} else if p != nil {
+				return p
+			}
 		}
 		if treeBudget > 0 {
 			var used int64

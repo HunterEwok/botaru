@@ -1274,6 +1274,184 @@ func (c *Core) lintManifests(docs []manifest.Doc, index []int, personas personaL
 			}
 		}
 	}
+	// The message graph (MSG-5, MSG-14, MSG-16, PRF-1, INJ-7, BGR-1).
+	msgTypes := map[string]map[string]any{}
+	for _, o := range S.each("MessageType") {
+		msgTypes[o.name] = o.spec
+		if d, ok := parseDuration(mstr(o.spec, "ttl")); ok && d > reportTTLMax {
+			f.add(o, "message_ceiling", "/ttl")
+		}
+		if d, ok := parseDuration(mstr(o.spec, "stale_after")); ok && d > stateStaleMax {
+			f.add(o, "message_ceiling", "/stale_after")
+		}
+		if n, ok := mnum(o.spec, "max_bytes"); ok && n > maxFieldsBytes {
+			f.add(o, "message_ceiling", "/max_bytes")
+		}
+		if n, ok := mnum(mmap(o.spec, "note"), "max_chars"); ok && n > maxNoteChars {
+			f.add(o, "message_ceiling", "/note/max_chars")
+		}
+	}
+	receives := func(ro lintObj, typ string) bool {
+		for _, e := range mlist(mmap(ro.spec, "messages"), "receive") {
+			if em, _ := e.(map[string]any); mstr(em, "type") == typ {
+				return true
+			}
+		}
+		return false
+	}
+	instanceInbox := func(ro lintObj) bool {
+		if v, ok := ro.spec["instance_inbox"].(bool); ok {
+			return v
+		}
+		wk := mstr(ro.spec, "worker_kind")
+		return wk != "" && wk != "agent"
+	}
+	// addrRoles are the roles an inbox address names: the role, or the roles of a bot group of
+	// the tenant (any tenant for a global object).
+	addrRoles := func(tenant, addr string) ([]string, bool) {
+		kind, name, _ := strings.Cut(addr, ":")
+		switch kind {
+		case "role":
+			_, ok := roles[name]
+			return []string{name}, ok
+		case "group":
+			bg := S.get("BotGroup", name, tenant)
+			if bg == nil {
+				return nil, false
+			}
+			return mstrs(mmap(bg, "select"), "roles"), true
+		}
+		return nil, false
+	}
+	// checkPair checks a type sent to an address: a receiving role, no receiver of a profile
+	// that takes no messages, an instance inbox for an all delivery (MSG-5, MSG-14).
+	checkPair := func(o lintObj, path, typ, addr string) {
+		mt := msgTypes[typ]
+		if mt == nil {
+			if len(msgTypes) > 0 {
+				f.add(o, "ref_missing", path)
+			}
+			return
+		}
+		named, ok := addrRoles(o.tenant, addr)
+		if !ok {
+			if len(roles) > 0 {
+				f.add(o, "ref_missing", path)
+			}
+			return
+		}
+		var takers []lintObj
+		for _, rn := range named {
+			ro, ok := roles[rn]
+			if !ok {
+				continue
+			}
+			if noMessageProfiles[mstr(ro.spec, "profile")] {
+				f.add(o, "message_receiver_profile", path)
+			}
+			if receives(ro, typ) {
+				takers = append(takers, ro)
+			}
+		}
+		if len(takers) == 0 && len(roles) > 0 {
+			f.add(o, "message_no_receiver", path)
+		}
+		if mstr(mt, "delivery") == "all" && len(takers) > 0 && !slices.ContainsFunc(takers, instanceInbox) {
+			f.add(o, "message_all_instance_inbox", path)
+		}
+	}
+	for _, rn := range roleNames {
+		o := roles[rn]
+		msgs := mmap(o.spec, "messages")
+		profile := mstr(o.spec, "profile")
+		if noMessageProfiles[profile] && len(mlist(msgs, "receive")) > 0 {
+			f.add(o, "message_receiver_profile", "/messages/receive")
+		}
+		if profile == "reporter" {
+			continue // its sends are refused by its profile (PRF-1)
+		}
+		// The kind of sender the role is: the model of an agent role, the code of a job (MSG-5).
+		producer := "job"
+		if mstr(o.spec, "worker_kind") == "agent" {
+			producer = "agent"
+		}
+		for i, e := range mlist(msgs, "send") {
+			em, _ := e.(map[string]any)
+			if mt := msgTypes[mstr(em, "type")]; mt != nil && !slices.Contains(mstrs(mt, "producers"), producer) {
+				f.add(o, "message_producer", fmt.Sprintf("/messages/send/%d/type", i))
+			}
+			for j, to := range mstrs(em, "to") {
+				checkPair(o, fmt.Sprintf("/messages/send/%d/to/%d", i, j), mstr(em, "type"), to)
+			}
+		}
+	}
+	// A type reads only kinds that every role taking it receives (MSG-8).
+	for _, rn := range roleNames {
+		o := roles[rn]
+		for _, tn := range mstrs(o.spec, "claims") {
+			for _, typ := range mstrs(mmap(types[tn], "inbox"), "read") {
+				if !receives(o, typ) {
+					f.add(o, "inbox_read_not_received", "/claims")
+				}
+			}
+		}
+	}
+	// An alarm type takes nothing from inboxes, so no route hands it model text (INJ-7).
+	for _, o := range S.each("TaskType") {
+		if strings.HasPrefix(o.name, "alarm.") && len(mlist(mmap(o.spec, "inbox"), "read")) > 0 {
+			f.add(o, "alarm_inbox_read", "/inbox/read")
+		}
+	}
+	for _, o := range S.each("Route") {
+		on := mmap(o.spec, "on")
+		mode := mstr(o.spec, "mode")
+		if mode == "" {
+			mode = "task"
+		}
+		// inbox and event only with task, message only with notify, task_done only with
+		// report (MSG-16).
+		want := "task"
+		switch {
+		case mstr(on, "message") != "":
+			want = "notify"
+		case mstr(on, "task_done") != "":
+			want = "report"
+		}
+		if mode != want {
+			f.add(o, "route_mode", "/mode")
+		}
+		if in := mstr(on, "inbox"); in != "" {
+			if _, ok := addrRoles(o.tenant, in); !ok && len(roles) > 0 {
+				f.add(o, "ref_missing", "/on/inbox")
+			}
+		}
+		if typ := mstr(on, "message"); typ != "" {
+			mt := msgTypes[typ]
+			switch {
+			case mt == nil && len(msgTypes) > 0:
+				f.add(o, "ref_missing", "/on/message")
+			case mt != nil && !slices.ContainsFunc(mstrs(mt, "producers"), func(p string) bool { return p != "agent" }):
+				// A notice goes only from entries the code wrote, never from the model's.
+				f.add(o, "route_untrusted_source", "/on/message")
+			}
+			if tpl := mstr(o.spec, "template"); tpl == "" || c.texts != nil && !c.texts.Has("route."+tpl) {
+				f.add(o, "ref_missing", "/template")
+			}
+		}
+		if tt := mstr(on, "task_done"); tt != "" {
+			if types[tt] == nil && len(types) > 0 {
+				f.add(o, "ref_missing", "/on/task_done")
+			}
+			rep := mmap(o.spec, "report")
+			if mt := msgTypes[mstr(rep, "type")]; mt != nil && (mstr(mt, "kind") != "report" || !slices.Contains(mstrs(mt, "producers"), "core")) {
+				f.add(o, "route_report_producer", "/report/type")
+			}
+			if rep != nil {
+				checkPair(o, "/report", mstr(rep, "type"), mstr(rep, "to"))
+			}
+		}
+	}
+
 	// The tree limit of an agent type covers the output of one call (GW-2, BUD-2).
 	// No record that code reads from model output names a person or rates one (DLV-14).
 	for _, o := range S.each("TaskType") {

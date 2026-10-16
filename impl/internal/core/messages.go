@@ -109,6 +109,15 @@ type msgSender struct {
 	Depth       int // the effective depth: the depth and the floor of what was read (MSG-11)
 	Root        string
 	Trace       string
+	// Key is the core's own idempotency key of a message without an attempt: an auto-report's
+	// system:report:<task>:<route> (MSG-16).
+	Key string
+	// TreeTask is the task whose tree the core's own message belongs to: the usage line goes
+	// there (BUD-3).
+	TreeTask string
+	// ModelFields marks the core's auto-report on an agent task: the model wrote what it
+	// carries (MSG-1, MSG-6).
+	ModelFields bool
 }
 
 // msgRecord is the part of a task record that messages read and raise.
@@ -443,9 +452,14 @@ func (c *Core) sendMessage(ctx context.Context, tx pgx.Tx, now time.Time, cat *C
 		return deny("address_invalid", "the address is not valid")
 	}
 	// The initiator of the attempt and every initiator of what it read have msg.send:<type>;
-	// system through system-ops (MSG-5, MSG-7).
-	if s.Task != "" {
-		ok, err := initiatorsHave(ctx, tx, now, tv, "msg.send:"+req.Type, append([]string{s.Initiator}, s.Initiators...)...)
+	// system through system-ops (MSG-5, MSG-7). A route's auto-report is sent by system for the
+	// ended task, so system needs it as well as the task's initiators.
+	if s.Task != "" || s.TreeTask != "" {
+		who := append([]string{s.Initiator}, s.Initiators...)
+		if s.Task == "" && s.Initiator != "system" {
+			who = append(who, "system")
+		}
+		ok, err := initiatorsHave(ctx, tx, now, tv, "msg.send:"+req.Type, who...)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -494,13 +508,16 @@ func (c *Core) sendMessage(ctx context.Context, tx pgx.Tx, now time.Time, cat *C
 		}
 	}
 	id := ids.New(ids.Message)
-	key := fmt.Sprintf("system:msg:%s:%d:%d", s.Task, s.Lease, sent+1)
+	key, own := fmt.Sprintf("system:msg:%s:%d:%d", s.Task, s.Lease, sent+1), s.Key
 	if s.Task == "" {
 		// The core's own message without a key of its own is a message of its own.
 		key = "system:msg:" + id
 	}
 	if req.IdempotencyKey != nil && *req.IdempotencyKey != "" {
-		key = strings.ToLower(s.Worker) + ":" + *req.IdempotencyKey
+		own = strings.ToLower(s.Worker) + ":" + *req.IdempotencyKey
+	}
+	if own != "" {
+		key = own
 		var id, state string
 		var recipients *int
 		err := tx.QueryRow(ctx, `SELECT id, state, (envelope->>'recipients')::int FROM messages WHERE tenant = $1 AND idem_key = $2 ORDER BY seq LIMIT 1`,
@@ -566,7 +583,7 @@ func (c *Core) sendMessage(ctx context.Context, tx pgx.Tx, now time.Time, cat *C
 		untrusted, srcs = true, append(srcs, "note")
 	}
 	origin := "code"
-	if s.Producer == "agent" {
+	if s.Producer == "agent" || s.ModelFields {
 		untrusted, srcs, origin = true, append(srcs, "model"), "model"
 	}
 	mark := s.Mark
@@ -616,10 +633,6 @@ func (c *Core) sendMessage(ctx context.Context, tx pgx.Tx, now time.Time, cat *C
 	if recipients != nil {
 		env["recipients"] = *recipients
 	}
-	if s.Task == "" {
-		env["expiresat"] = fmtTime(now.Add(ttl))
-		delete(env, "ttl_s")
-	}
 	raw, err := json.Marshal(env)
 	if err != nil {
 		return nil, nil, err
@@ -628,17 +641,29 @@ func (c *Core) sendMessage(ctx context.Context, tx pgx.Tx, now time.Time, cat *C
 		return deny("data_schema_invalid", "the envelope is above 8 KiB")
 	}
 	state := "staged"
-	var expires any
-	if s.Task == "" {
-		// The core's own message is published at once, with its expiry.
-		state, expires = "queued", now.Add(ttl)
-	}
-	if _, err := tx.Exec(ctx, `INSERT INTO messages (id, tenant, inbox_kind, inbox_name, type, kind, delivery, state, envelope, note, from_role, from_worker,
+	var seq int64
+	if err := tx.QueryRow(ctx, `INSERT INTO messages (id, tenant, inbox_kind, inbox_name, type, kind, delivery, state, envelope, note, from_role, from_worker,
 		sender_task, sender_lease, idem_key, data_mark, untrusted, hops, expires_at, created_at, updated_at)
-		VALUES ($1, $2, $3, $4, $5, 'report', $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $19)`,
+		VALUES ($1, $2, $3, $4, $5, 'report', $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $19) RETURNING seq`,
 		id, s.Tenant, in.Kind, in.Name, req.Type, deliveryOf(mt), state, raw, nullable(req.Note), s.Role, nullable(s.Worker),
-		nullable(s.Task), nullableInt(s.Lease), key, mark, untrusted, hops, expires, now); err != nil {
+		nullable(s.Task), nullableInt(s.Lease), key, mark, untrusted, hops, nil, now).Scan(&seq); err != nil {
 		return nil, nil, err
+	}
+	if s.Task == "" {
+		// The core's own message is published at once, as an attempt's is at its complete.
+		if err := c.publishRows(ctx, tx, now, cat, s, `seq = $1`, seq); err != nil {
+			return nil, nil, err
+		}
+		// A hold or a full inbox may have discarded it, or refused every copy of an all
+		// delivery: the audit says what happened.
+		// The copies made are the recipients the message reached.
+		var made int
+		if err := tx.QueryRow(ctx, `SELECT count(*), coalesce(min(state), 'discarded') FROM messages WHERE id = $1 AND state <> 'discarded'`, id).Scan(&made, &state); err != nil {
+			return nil, nil, err
+		}
+		if recipients != nil && *recipients > made {
+			recipients = &made
+		}
 	}
 	hash, _ := jcs.Hash(fields)
 	if err := c.msgAudit(ctx, tx, now, s, "msg.send", id, true, "", map[string]any{"type": req.Type, "kind": "report", "to": addr, "bytes": size, "fields_hash": hash, "state": state}); err != nil {
@@ -871,7 +896,6 @@ func (c *Core) sendState(ctx context.Context, tx pgx.Tx, now time.Time, cat *Cat
 // the staged entries (held). An all delivery becomes a copy in the inbox of each recipient
 // worker, at most 50; a copy without room is not made and the core writes an event (MSG-14).
 func (c *Core) publishMessages(ctx context.Context, tx pgx.Tx, now time.Time, cat *Catalog, tenant, task string, lease int, worker string) error {
-	tv := cat.Tenants[tenant]
 	var role string
 	if err := tx.QueryRow(ctx, `SELECT role FROM workers WHERE id = $1`, worker).Scan(&role); err != nil {
 		return err
@@ -881,6 +905,16 @@ func (c *Core) publishMessages(ctx context.Context, tx pgx.Tx, now time.Time, ca
 	if err := c.ackRead(ctx, tx, now, s); err != nil {
 		return err
 	}
+	return c.publishRows(ctx, tx, now, cat, s, `sender_task = $1 AND sender_lease = $2`, task, lease)
+}
+
+// publishRows publishes the staged entries that cond selects, of an attempt or of the core: a
+// held sender or group discards them, an all delivery becomes a copy per recipient worker, the
+// rest are queued with their expiry; each publication writes the usage line of the sender's
+// tree and runs the notification routes of its type (MSG-9, MSG-11, MSG-14, MSG-16).
+func (c *Core) publishRows(ctx context.Context, tx pgx.Tx, now time.Time, cat *Catalog, s *msgSender, cond string, args ...any) error {
+	tenant, task := s.Tenant, s.Task
+	tv := cat.Tenants[tenant]
 	type staged struct {
 		seq            int64
 		id, typ, inbox string
@@ -889,7 +923,7 @@ func (c *Core) publishMessages(ctx context.Context, tx pgx.Tx, now time.Time, ca
 		note           *string
 	}
 	rows, err := tx.Query(ctx, `SELECT seq, id, type, inbox_kind || ':' || inbox_name, delivery, envelope, note FROM messages
-		WHERE sender_task = $1 AND sender_lease = $2 AND state = 'staged' ORDER BY seq FOR UPDATE`, task, lease)
+		WHERE `+cond+` AND state = 'staged' ORDER BY seq FOR UPDATE`, args...)
 	if err != nil {
 		return err
 	}
@@ -999,6 +1033,12 @@ func (c *Core) publishMessages(ctx context.Context, tx pgx.Tx, now time.Time, ca
 			return err
 		}
 		if err := c.msgAudit(ctx, tx, now, s, "msg.publish", st.id, true, "", map[string]any{"type": st.typ, "to": st.inbox, "recipients": recipients}); err != nil {
+			return err
+		}
+		if err := c.messageUsage(ctx, tx, now, s, st.id, st.typ, st.env, st.note); err != nil {
+			return err
+		}
+		if err := c.notifyRoutes(ctx, tx, now, cat, tenant, st.id, st.typ, st.env); err != nil {
 			return err
 		}
 	}
@@ -1470,7 +1510,7 @@ func (c *Core) inboxLoop(ctx context.Context) error {
 	if err := c.tx(ctx, func(tx pgx.Tx, now time.Time) error { return c.settleMessages(ctx, tx, now, "") }); err != nil {
 		return err
 	}
-	return c.tx(ctx, func(tx pgx.Tx, now time.Time) error {
+	if err := c.tx(ctx, func(tx pgx.Tx, now time.Time) error {
 		rows, err := tx.Query(ctx, `UPDATE messages SET state = 'expired', note = NULL, updated_at = $1
 			WHERE seq IN (SELECT seq FROM messages WHERE state = 'queued' AND expires_at <= $1 ORDER BY expires_at LIMIT 500 FOR UPDATE SKIP LOCKED)
 			RETURNING id, tenant, type`, now)
@@ -1501,7 +1541,11 @@ func (c *Core) inboxLoop(ctx context.Context) error {
 		}
 		_, err = tx.Exec(ctx, `UPDATE messages SET state = 'stale', updated_at = $1 WHERE state = 'current' AND expires_at <= $1`, now)
 		return err
-	})
+	}); err != nil {
+		return err
+	}
+	// The wake-up routes see the inboxes as they are after the expiry (MSG-12, MSG-16).
+	return c.wakeRoutes(ctx)
 }
 
 // workerGone ends what the inbox of a revoked worker holds (recipient_gone) and removes its

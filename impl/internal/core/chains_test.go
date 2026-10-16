@@ -209,6 +209,15 @@ func TestTreeFollowup(t *testing.T) {
 	if res, err := b.c.SubmitActivity(ctx, b.channel, a); err != nil || res.Task != "" {
 		t.Fatalf("a follow-up past the depth limit: %+v %v", res, err)
 	}
+	// The follow-up read the earlier outcome: whom that one read narrows it, so an initiator
+	// without the type's cap stops it (MSG-7).
+	if _, err := b.c.st.Pool.Exec(ctx, `UPDATE tasks SET record = record || '{"depth": 2, "co_initiators": ["p_ghost"]}' WHERE id = $1`, cont); err != nil {
+		t.Fatal(err)
+	}
+	a.UpdateID = "11"
+	if res, err := b.c.SubmitActivity(ctx, b.channel, a); err != nil || res.Task != "" {
+		t.Fatalf("a follow-up dropped the co-initiators: %+v %v", res, err)
+	}
 }
 
 // A person's answer continues the earlier task: by a reply to the bot message, or without a
