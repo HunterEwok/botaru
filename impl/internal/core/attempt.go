@@ -33,8 +33,8 @@ type attemptRecord struct {
 }
 
 // runFingerprint computes the run fingerprint by the row "run fingerprint" of spec/hashing.md:
-// an object of part hashes, an absent part null, and the hash of that object. This version has
-// no skills (an empty array) and no sandbox; the persona part is the hashes of the persona and
+// an object of part hashes, an absent part null, and the hash of that object. The skills part is
+// the role's skill tree hashes (an empty array without skills); this version has no sandbox. The persona part is the hashes of the persona and
 // lens addendum the attempt got (GOV-4), null without one; the catalog part is the P3
 // catalog of the attempt, null for a role without tools. The
 // model part is the profile configured for the slot at claim. The runtime part takes the
@@ -56,7 +56,8 @@ func runFingerprint(cat *Catalog, w *Worker, roleName, typ, slot, profile string
 	if h, ok := cat.Hashes[manifest.Key{Kind: "TaskType", Name: typ}]; ok {
 		parts["type"] = h
 	}
-	if parts["skills"], err = hashOf([]any{}); err != nil {
+	// The skills part is the role's pinned tree hashes (PRV-1, SKL-2).
+	if parts["skills"], err = skillsPart(cat.Roles[roleName].Skills); err != nil {
 		return "", nil, err
 	}
 	if len(persona) > 0 {

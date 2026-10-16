@@ -228,6 +228,14 @@ func (c *Core) redriveTask(ctx context.Context, tx pgx.Tx, now time.Time, cat *C
 	if res.Rejected != nil {
 		return "", res.Rejected, nil
 	}
+	// A redriven route task stays the same step of its route chain: the hop count and the mark
+	// of a tls_token source go to the new root (MSG-16, ING-1).
+	if !res.Existing {
+		if _, err := tx.Exec(ctx, `UPDATE tasks n SET record = n.record || jsonb_strip_nulls(jsonb_build_object('event_hops', o.record->'event_hops', 'event_token', o.record->'event_token'))
+			FROM tasks o WHERE n.id = $1 AND o.id = $2`, res.TaskID, id); err != nil {
+			return "", nil, err
+		}
+	}
 	return res.TaskID, nil, nil
 }
 
@@ -468,6 +476,7 @@ func (c *Core) Doctor(ctx context.Context, op Operator, req TenantRequest) (*Doc
 	} else {
 		add(DoctorCheck{ID: "store.free_ratio", OK: true, Severity: "info", Value: nil})
 	}
+	c.doctorDeploy(add)
 	cat, err := c.Catalog(ctx)
 	if err != nil {
 		return nil, err
@@ -548,6 +557,10 @@ func (c *Core) Doctor(ctx context.Context, op Operator, req TenantRequest) (*Doc
 			return err
 		}
 		if err := c.doctorEvals(ctx, tx, tenant, add); err != nil {
+			return err
+		}
+		c.doctorReviewLine(cat, tenant, add)
+		if err := doctorUpstream(ctx, tx, now, tenant, add); err != nil {
 			return err
 		}
 		for _, q := range counts {

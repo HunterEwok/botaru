@@ -245,13 +245,20 @@ func (c *Core) deliverScheduled(ctx context.Context, tx pgx.Tx, now time.Time, c
 	if !ok {
 		return nil
 	}
+	return c.deliverResultTo(ctx, tx, now, cat, tv, task, sc.DeliverTo, tt, result, mark)
+}
+
+// deliverResultTo sends the result of a task to deliver_to addresses as deliverScheduled does:
+// the addresses of a schedule or of a route on an event (DLV-6, DLV-15).
+func (c *Core) deliverResultTo(ctx context.Context, tx pgx.Tx, now time.Time, cat *Catalog, tv *TenantView, task string, addrs []any, tt manifest.TaskType, result map[string]any, mark string) error {
+	tenant := tv.Name
 	text, fields := resultText(result, tt.SummaryFields)
 	body := map[string]any{"form": "result", "text": text}
 	if len(fields) > 0 {
 		body["fields"] = fields
 	}
 	seen := map[string]bool{}
-	for _, a := range sc.DeliverTo {
+	for _, a := range addrs {
 		addr, _ := a.(string)
 		kind, target, _ := strings.Cut(addr, ":")
 		switch kind {

@@ -29,6 +29,8 @@ type Config struct {
 	Core      *p1client.Client
 	MaxTokens int64 // per model call; P4 caps it by the profile
 	Logger    *slog.Logger
+	// SkillsDir is where the skill directories of attempts go (os.TempDir when empty).
+	SkillsDir string
 }
 
 // Agent runs attempts one at a time.
@@ -56,6 +58,9 @@ func (a *Agent) Hello(ctx context.Context) error {
 	}
 	err := a.cfg.Core.Call(ctx, "hello", "", map[string]any{
 		"kind": "agent", "implementation": "botaru-agent " + version.Version, "capacity": 1, "protocol_versions": []string{"v1"},
+		// The role's skills come as files of the work item into a read-only directory of the
+		// attempt; this runtime has no skill_read (SKL-2, SKL-4).
+		"runtime": map[string]any{"skills": "runtime_files"},
 	}, &out)
 	if err == nil && out.HeartbeatS > 0 {
 		a.heartbeatS = out.HeartbeatS
@@ -100,6 +105,9 @@ type attemptPayload struct {
 	// earlier proposals of an analysis task (DIG-7, INS-5).
 	Facts      any `json:"facts"`
 	MyOutcomes any `json:"my_outcomes"`
+	// Skills are the role's skill-refs and SkillFiles their files by path (SKL-2).
+	Skills     []skillRef                   `json:"skills"`
+	SkillFiles map[string]map[string]string `json:"skill_files"`
 }
 
 // dataText is the data of the attempt beside the goal: the facts and "My outcomes", as JSON the
@@ -212,6 +220,12 @@ func (a *Agent) run(ctx context.Context, p attemptPayload) (map[string]any, stri
 	}
 	goal, _ := p.Task.Body["goal"].(string)
 	system := p.Instruction
+	dir, section, err := writeSkills(a.cfg.SkillsDir, p.Skills, p.SkillFiles)
+	if err != nil {
+		return nil, "runtime_error", err
+	}
+	defer func() { _ = removeSkills(dir) }()
+	system += section
 	if p.ResultSchema != nil {
 		schema, _ := json.Marshal(p.ResultSchema)
 		system += "\n\nAnswer with one JSON object that matches this JSON Schema, and nothing else:\n" + string(schema)

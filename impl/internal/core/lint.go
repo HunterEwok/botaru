@@ -1776,6 +1776,8 @@ func (c *Core) lintManifests(docs []manifest.Doc, index []int, personas personaL
 			}
 		}
 	}
+	// Source channels and routes on events (ING-1, ING-3, ING-4, INJ-7).
+	c.lintIngress(S, f)
 	if err := c.lintGovernance(S, f, personas); err != nil {
 		return nil, err
 	}
@@ -1786,10 +1788,14 @@ func (c *Core) lintManifests(docs []manifest.Doc, index []int, personas personaL
 		return nil, err
 	}
 	c.lintData(S, f)
+	c.lintKnowledge(S, f)
 	// The translator gate of a production tenant (TRN-6).
 	if err := lintTranslatorEvals(docs, S, prior, f); err != nil {
 		return nil, err
 	}
+	// The provider workspace ceilings and the review line (GW-9, BUD-13).
+	c.lintWorkspaceCeilings(S, f)
+	c.lintReviewLine(docs, S, f)
 	sort.SliceStable(f.out, func(i, j int) bool { return f.out[i].Path < f.out[j].Path })
 	return f.out, nil
 }

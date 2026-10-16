@@ -37,7 +37,11 @@ services:
     depends_on: {store: {condition: service_healthy}}
     volumes:
       - ./core.yaml:/etc/botaru/core.yaml:ro
-      - workers:/var/lib/botaru/workers          # worker tokens written by farmctl worker enroll
+      - ./deploy.yaml:/etc/botaru/deploy.yaml:ro   # the deployment description (DEP-10)
+      # Worker tokens written by farmctl worker enroll, one volume per worker, so no worker
+      # sees the token of another (SEC-2).
+      - agent-worker:/var/lib/botaru/workers/agent
+      - channel-worker:/var/lib/botaru/workers/channel
     secrets: [store-dsn, token-key, operator, provider-key-demo]
     networks:
       store: {}
@@ -54,16 +58,16 @@ services:
   agent:
     <<: *farm
     profiles: [workers]
-    command: [botaru-agent, -core, "http://core.botaru.example.org:8401", -token-file, /var/lib/botaru/workers/agent]
-    volumes: [workers:/var/lib/botaru/workers:ro]
-    networks: [core, provider-out]
+    command: [botaru-agent, -core, "http://core.botaru.example.org:8401", -token-file, /var/lib/botaru/workers/agent/token]
+    volumes: [agent-worker:/var/lib/botaru/workers/agent:ro]
+    networks: [core]                             # the model only through P4 of the core (DEP-5)
 
   telegram:
     <<: *farm
     profiles: [workers]
-    command: [botaru-telegram, -core, "http://core.botaru.example.org:8401", -token-file, /var/lib/botaru/workers/channel,
+    command: [botaru-telegram, -core, "http://core.botaru.example.org:8401", -token-file, /var/lib/botaru/workers/channel/token,
               -bot-token-file, /run/secrets/bot-token, -spec-root, /opt/botaru/src]
-    volumes: [workers:/var/lib/botaru/workers:ro]
+    volumes: [channel-worker:/var/lib/botaru/workers/channel:ro]
     secrets: [bot-token]
     networks: [core, messenger-out]
 
@@ -75,7 +79,8 @@ networks:
 
 volumes:
   store: {}
-  workers: {}
+  agent-worker: {}
+  channel-worker: {}
 
 secrets:
   store-password: {file: ./secrets/store-password}

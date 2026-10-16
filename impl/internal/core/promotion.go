@@ -103,6 +103,10 @@ func (c *Core) governTenant(ctx context.Context, tx pgx.Tx, now time.Time, cat *
 	if err := c.readyStep(ctx, tx, now, cat, tv); err != nil {
 		return err
 	}
+	// From v0.3 the weekly commission summary to people (COM-17, GOV-36).
+	if err := c.weeklyStep(ctx, tx, now, cat, tv); err != nil {
+		return err
+	}
 	return c.caseStep(ctx, tx, now, cat, tv)
 }
 

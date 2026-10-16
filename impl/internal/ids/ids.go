@@ -55,6 +55,8 @@ const (
 	Escalation = "esc"
 	// Notice is a notice of the farm manager with feedback buttons (MGR-52, MGR-53).
 	Notice = "ntc"
+	// Document is a document of a knowledge corpus, the object id in its fragment ids (KNW-4).
+	Document = "kd"
 	// Invite is an invitation into groups (PRM-7).
 	Invite = "inv"
 )

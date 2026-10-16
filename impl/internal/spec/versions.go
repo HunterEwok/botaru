@@ -18,11 +18,39 @@ import (
 // of a feature profile outside this list is refused at apply (MAN-11).
 var Profiles = []string{"core"}
 
+// profileOverride, when set, lists feature profiles the build behaves as claiming beside
+// Profiles. Only tests set it (SetProfileOverride), to run the paths of a profile whose rules
+// are built before the claim lists it; the core reads the same value (Claims).
+var profileOverride atomic.Pointer[[]string]
+
+// SetProfileOverride makes Claims report the given profiles as claimed too (none follows
+// Profiles again) and returns the previous override.
+func SetProfileOverride(profiles ...string) []string {
+	prev := profileOverride.Swap(&profiles)
+	if prev == nil {
+		return nil
+	}
+	return *prev
+}
+
+// Claims says whether the build claims a conformance profile: one of Profiles, or of the test
+// override.
+func Claims(profile string) bool {
+	if slices.Contains(Profiles, profile) {
+		return true
+	}
+	if o := profileOverride.Load(); o != nil {
+		return slices.Contains(*o, profile)
+	}
+	return false
+}
+
 // AheadField is a field of a later skeleton version that this build already implements: the
 // version that marks it and a JSON pointer into the manifest, where "*" stands for any one
-// segment (a list index or a map key).
+// segment (a list index or a map key). A field of a feature profile names it: it passes only
+// while the build claims that profile (Claims).
 type AheadField struct {
-	Version, Ptr string
+	Version, Ptr, Profile string
 }
 
 // fields lists the pointers of one version.
@@ -32,6 +60,14 @@ func fields(version string, ptrs ...string) []AheadField {
 		out[i] = AheadField{Version: version, Ptr: p}
 	}
 	return out
+}
+
+// profileOnly makes fields of a feature profile.
+func profileOnly(profile string, fs []AheadField) []AheadField {
+	for i := range fs {
+		fs[i].Profile = profile
+	}
+	return fs
 }
 
 // Ahead lists, by manifest kind, the fields of a later skeleton version that this build already
@@ -79,8 +115,15 @@ var Ahead = map[string][]AheadField{
 	"Sink": fields("v0.2", "/spec/export_only/recipient_ref"),
 	// The tool output cache (PRM-12).
 	"ToolPlugin": fields("v0.2", "/spec/tools/*/cache_s"),
-	// The model exposure of a dataset (PRV-4) and the maintenance hold of a host (MON-9).
-	"Catalog": fields("v0.2", "/spec/resources/*/model_exposure", "/spec/resources/*/kind", "/spec/hosts/*/maintenance_hold"),
+	// The model exposure of a dataset (PRV-4) and the maintenance hold of a host (MON-9). With
+	// the knowledge profile the trust and source of a corpus (KNW-2). From v0.3 the stricter
+	// threshold of the role hold for incident links (HLD-9).
+	"Catalog": append(append(fields("v0.2", "/spec/resources/*/model_exposure", "/spec/resources/*/kind", "/spec/hosts/*/maintenance_hold"),
+		profileOnly("knowledge", fields("v0.2", "/spec/resources/*/trust", "/spec/resources/*/source"))...),
+		fields("v0.3", "/spec/role_incident_hold")...),
+	// With the ingress profile a source channel: its direction and its ingress block (ING-1 to
+	// ING-4).
+	"Channel": profileOnly("ingress", fields("v0.2", "/spec/direction", "/spec/ingress")),
 }
 
 // claimOverride, when set, is the skeleton version the build behaves as in place of Version.
@@ -120,7 +163,7 @@ func ahead(kind, ptr string) bool {
 	}
 	segs := strings.Split(ptr, "/")
 	for _, f := range Ahead[kind] {
-		if !aheadAccepted(f.Version) {
+		if !aheadAccepted(f.Version) || f.Profile != "" && !Claims(f.Profile) {
 			continue
 		}
 		ps := strings.Split(f.Ptr, "/")
@@ -567,7 +610,7 @@ func (s *Spec) unsupported(v map[string]any) (map[string]string, error) {
 		out = map[string]string{}
 	}
 	for p, f := range profileFields(kind, nv) {
-		if f.need == "v0.2" && (!VersionLater(f.need, Version) || ahead(kind, p)) || f.need != "v0.2" && slices.Contains(Profiles, f.need) {
+		if f.need == "v0.2" && (!VersionLater(f.need, Version) || ahead(kind, p)) || f.need != "v0.2" && Claims(f.need) {
 			continue
 		}
 		covered := false
