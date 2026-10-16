@@ -121,6 +121,9 @@ var Ahead = map[string][]AheadField{
 	"Catalog": append(append(fields("v0.2", "/spec/resources/*/model_exposure", "/spec/resources/*/kind", "/spec/hosts/*/maintenance_hold"),
 		profileOnly("knowledge", fields("v0.2", "/spec/resources/*/trust", "/spec/resources/*/source"))...),
 		fields("v0.3", "/spec/role_incident_hold")...),
+	// With the ingress profile a source channel: its direction and its ingress block (ING-1 to
+	// ING-4).
+	"Channel": profileOnly("ingress", fields("v0.2", "/spec/direction", "/spec/ingress")),
 }
 
 // claimOverride, when set, is the skeleton version the build behaves as in place of Version.

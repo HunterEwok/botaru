@@ -121,6 +121,46 @@ func objKey(m map[string]any) string {
 // that stopped passing is a regression, one that started to pass is recorded with
 // -update-lint.
 func TestLintFixtures(t *testing.T) {
+	passing := runLintFixtures(t)
+	path := filepath.Join("testdata", "lint-passing.txt")
+	if *updateLint {
+		head := "# Cases of conformance/fixtures/manifests that pass apply (TestLintFixtures); rewrite with -update-lint.\n"
+		if err := os.MkdirAll("testdata", 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte(head+strings.Join(passing, "\n")+"\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		return
+	}
+	b, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := map[string]bool{}
+	for _, l := range strings.Split(string(b), "\n") {
+		if l = strings.TrimSpace(l); l != "" && !strings.HasPrefix(l, "#") {
+			want[l] = true
+		}
+	}
+	got := map[string]bool{}
+	for _, id := range passing {
+		got[id] = true
+		if !want[id] {
+			t.Errorf("%s passes now; record it with go test ./internal/core -run TestLintFixtures -update-lint", id)
+		}
+	}
+	for id := range want {
+		if !got[id] {
+			t.Errorf("%s no longer passes", id)
+		}
+	}
+}
+
+// runLintFixtures runs the cases of conformance/fixtures/manifests and returns the ids of those
+// that pass, sorted.
+func runLintFixtures(t *testing.T) []string {
+	t.Helper()
 	ctx := context.Background()
 	root, err := spec.FindRoot("")
 	if err != nil {
@@ -306,39 +346,7 @@ func TestLintFixtures(t *testing.T) {
 	if os.Getenv("BOTARU_LINT_REPORT") != "" {
 		t.Logf("failing:\n%s", strings.Join(report, "\n"))
 	}
-	path := filepath.Join("testdata", "lint-passing.txt")
-	if *updateLint {
-		head := "# Cases of conformance/fixtures/manifests that pass apply (TestLintFixtures); rewrite with -update-lint.\n"
-		if err := os.MkdirAll("testdata", 0o755); err != nil {
-			t.Fatal(err)
-		}
-		if err := os.WriteFile(path, []byte(head+strings.Join(passing, "\n")+"\n"), 0o644); err != nil {
-			t.Fatal(err)
-		}
-		return
-	}
-	b, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	want := map[string]bool{}
-	for _, l := range strings.Split(string(b), "\n") {
-		if l = strings.TrimSpace(l); l != "" && !strings.HasPrefix(l, "#") {
-			want[l] = true
-		}
-	}
-	got := map[string]bool{}
-	for _, id := range passing {
-		got[id] = true
-		if !want[id] {
-			t.Errorf("%s passes now; record it with go test ./internal/core -run TestLintFixtures -update-lint", id)
-		}
-	}
-	for id := range want {
-		if !got[id] {
-			t.Errorf("%s no longer passes", id)
-		}
-	}
+	return passing
 }
 
 func anyList(v any) []any { l, _ := v.([]any); return l }

@@ -1123,7 +1123,14 @@ func (c *Core) Emit(ctx context.Context, w *Worker, header string, req EmitReque
 			return err
 		}
 		out.ID = id
-		return nil
+		// The routes on the event, in this transaction (MSG-16, IDM-4).
+		hops, token, err := eventHops(ctx, tx, l.WorkID)
+		if err != nil {
+			return err
+		}
+		_, err = c.eventRoutes(ctx, tx, now, cat, l.Tenant, routedEvent{Type: req.Type, ID: id, Source: "botaru:core/" + l.Tenant, Subject: subject, Data: data,
+			Hops: hops, TokenSource: token})
+		return err
 	})
 	if err != nil {
 		return nil, err

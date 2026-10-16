@@ -216,6 +216,14 @@ func (c *Core) retentionLoop(ctx context.Context) error {
 		}
 	}
 	steps := []func(tx pgx.Tx, now time.Time) (int64, error){
+		// The delivery keys of source channels at their keep_until: a day for a signed source,
+		// whose deliveries the driver refuses after the tolerance anyway, and the default content
+		// period for a tls_token source (ING-1, ING-3).
+		func(tx pgx.Tx, now time.Time) (int64, error) {
+			tag, err := tx.Exec(ctx, `DELETE FROM ingress_deliveries WHERE (tenant, key) IN (SELECT tenant, key FROM ingress_deliveries
+				WHERE keep_until <= $1 LIMIT $2 FOR UPDATE SKIP LOCKED)`, start, retentionBatch)
+			return tag.RowsAffected(), err
+		},
 		exec(`DELETE FROM activity_outcomes WHERE (tenant, key) IN (SELECT a.tenant, a.key FROM activity_outcomes a LEFT JOIN p ON p.tenant = a.tenant
 			WHERE a.created_at <= $9 AND a.created_at <= coalesce(p.content, $6) LIMIT $8 FOR UPDATE OF a SKIP LOCKED)`, base),
 		exec(`UPDATE tasks SET body = NULL, result = NULL WHERE id IN (SELECT t.id FROM tasks t LEFT JOIN p ON p.tenant = t.tenant
