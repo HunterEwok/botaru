@@ -58,7 +58,7 @@ Each kind of card and notice is recorded as a row of the decision registry `spec
 
 ## Bindings
 
-- `spec/bindings/channels/<channel>.md`: how channel fields map onto `Activity` and `Delivery`, how authenticity and chat membership are checked (reference `telegram.md`); for a source channel also the incoming format, the authentication methods and a ready field mapping. Monitoring system problems do not go through a source channel, but through the E5 adapter (MON-5).
+- `spec/bindings/channels/<channel>.md`: how channel fields map onto `Activity` and `Delivery`, how authenticity and chat membership are checked (reference `telegram.md`); for a source channel also the incoming format, the authentication methods and a ready field mapping (reference `webhook.md`). Monitoring system problems do not go through a source channel, but through the E5 adapter (MON-5).
 - `spec/model/activity.schema.json`, `delivery.schema.json`; the driver meta-schema in `spec/manifests/drivers/`.
 - The channel check suite `conformance/suites/channel`: IDN-3, IDN-7, APR-3, DLV-5..7, INJ-11, MSG-17; an activity from a non-subject in a chat with `membership_assurance: none` gives no `Activity` and no `file.put`.
 

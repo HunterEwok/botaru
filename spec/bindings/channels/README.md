@@ -2,7 +2,7 @@
 
 ## In short
 
-Sheet E1 (`spec/ports/e1-channel.md`) says "external system", "update", "button" and names no messenger. A channel binding is a file in this folder that says, for one messenger, how its fields map onto `Activity` (`spec/model/activity.schema.json`) and `Delivery` (`spec/model/delivery.schema.json`), how the driver checks the authenticity of an update and the real sender, how it knows the chat membership and how it renders deliveries. There is one reference channel in v0.1: Telegram (`telegram.md`). Another channel is added as a new file with the same content and a new driver under the meta-schema `spec/manifests/drivers/driver-config.schema.json`; sheet E1 and the core do not change.
+Sheet E1 (`spec/ports/e1-channel.md`) says "external system", "update", "button" and names no messenger. A channel binding is a file in this folder that says, for one messenger, how its fields map onto `Activity` (`spec/model/activity.schema.json`) and `Delivery` (`spec/model/delivery.schema.json`), how the driver checks the authenticity of an update and the real sender, how it knows the chat membership and how it renders deliveries. There is one reference channel in v0.1: Telegram (`telegram.md`). From v0.2 the reference source channel (`direction: in`) is the webhook source (`webhook.md`): it has no chats, buttons or deliveries, and its binding describes instead the incoming format, the authentication methods, the delivery id and the field mapping (sheet E1, section "Bindings"). Another channel is added as a new file with the same content and a new driver under the meta-schema `spec/manifests/drivers/driver-config.schema.json`; sheet E1 and the core do not change.
 
 ## What a channel binding must describe
 

@@ -126,7 +126,7 @@
       "$ref": "urn:botaru:schema:common:1#/$defs/datetime"
     },
     "event": {
-      "description": "Only kind signal: the external event of the monitoring adapter, its type and its data by the event data schema (MON-5, MON-10). The channel is the adapter target, the chat a direct chat with the external id monitor, the update id the idempotency part of the event.",
+      "description": "Only kind signal: the external event of the monitoring adapter (MON-5, MON-10) or, from v0.2, of a source channel (ING-1..4, spec/bindings/channels/webhook.md), its type and its data by the event data schema. For the monitoring adapter the channel is the adapter target, the chat a direct chat with the external id monitor, the update id the idempotency part of the event; for a source channel the chat is a direct chat with the external id of the source and the update id the delivery id.",
       "type": "object",
       "additionalProperties": false,
       "required": [
@@ -135,17 +135,28 @@
       ],
       "properties": {
         "type": {
-          "description": "Event type.",
-          "enum": [
-            "ext.monitor.problem.v1",
-            "ext.monitor.scripts.v1"
+          "description": "Event type: an event of the monitoring adapter, or from v0.2 the ingress.event of the source channel, always in ext.* (ING-4).",
+          "anyOf": [
+            {
+              "description": "Event type.",
+              "enum": [
+                "ext.monitor.problem.v1",
+                "ext.monitor.scripts.v1"
+              ]
+            },
+            {
+              "type": "string",
+              "maxLength": 120,
+              "pattern": "^ext\\.[a-z][a-z0-9_]*(\\.[a-z0-9_]+)*\\.v[1-9][0-9]*$",
+              "x-botaru-version": "v0.2"
+            }
           ]
         },
         "data": {
           "description": "Event data, checked by the core against the data schema of the type.",
           "type": "object",
           "maxProperties": 16,
-          "x-botaru-closed-by": "the data schema of the event type in spec/bindings/events/catalog.yaml"
+          "x-botaru-closed-by": "the data schema of the event type in spec/bindings/events/catalog.yaml, or for a source channel the closed schemas of its ingress.mapping"
         }
       }
     }
