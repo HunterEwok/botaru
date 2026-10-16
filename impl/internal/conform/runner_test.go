@@ -206,7 +206,7 @@ cases:
     manifest:
       kind: Tenant
       metadata: {name: demo}
-      spec: {timezone: Etc/GMT-2}
+      spec: {timezone: UTC}
   expect: {result: ok}
 - id: apply-fact
   given:
