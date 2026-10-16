@@ -27,6 +27,12 @@ var appliedSets = map[*bench][]map[string]any{}
 // manifests before apply.
 func newCommissionBench(t *testing.T, decide bool, edits ...func([]map[string]any)) *bench {
 	t.Helper()
+	return newCommissionBenchWith(t, decide, nil, edits...)
+}
+
+// newCommissionBenchWith is the commission bench with more manifests.
+func newCommissionBenchWith(t *testing.T, decide bool, more []map[string]any, edits ...func([]map[string]any)) *bench {
+	t.Helper()
 	root, err := spec.FindRoot("")
 	if err != nil {
 		t.Fatal(err)
@@ -63,7 +69,7 @@ func newCommissionBench(t *testing.T, decide bool, edits ...func([]map[string]an
 				s["caps"] = append(s["caps"].([]any), "task:review.security.v1", "task:review.operational.v1", "task:review.cost.v1", "task:review.value.v1")
 			}
 		}
-		ms = append(append(ms, extra...), map[string]any{
+		ms = append(append(append(ms, extra...), more...), map[string]any{
 			"apiVersion": "botaru/v1alpha1", "kind": "Group", "metadata": map[string]any{"name": "deciders", "tenant": "demo"},
 			"spec": map[string]any{"caps": []any{"proposal.decide:reliability"}, "data": []any{"summary", "internal"}},
 		})
@@ -377,6 +383,7 @@ func TestCommissionReviewReserve(t *testing.T) {
 	}
 	b.loop(t, "proposal")
 	// The finished reviews cost nothing: the p90 of the types is 0 from now on.
+	b.asOtherAuthor(t)
 	if _, err := b.analysis(t, "2", false, map[string]any{"proposals": []any{noneBody("queue_full", 1)}}); err != nil {
 		t.Fatal(err)
 	}

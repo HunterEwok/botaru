@@ -236,6 +236,10 @@ func verdict(p commissionPolicy, in verdictInput) map[string]any {
 }
 
 func weightOf(p commissionPolicy, lens string) float64 {
+	// The farm manager's lens has weight 1 by rule (GOV-25).
+	if lens == managerLens {
+		return 1
+	}
 	if w, ok := p.Weights[lens]; ok && w >= 1 {
 		return w
 	}

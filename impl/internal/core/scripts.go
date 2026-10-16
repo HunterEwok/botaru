@@ -188,6 +188,9 @@ type scriptRec struct {
 	Conversation string  `json:"conversation,omitempty"`
 	Trace        string  `json:"trace,omitempty"`
 	Origin       *Origin `json:"origin,omitempty"`
+	// Purged marks the tombstone of a finished run past the content period or erased: the
+	// record keeps only the root, and the steps keep their states and links (RET-2, RET-10).
+	Purged bool `json:"purged,omitempty"`
 }
 
 func (r scriptRec) fanoutList(step string) []string {
@@ -1303,6 +1306,9 @@ func (c *Core) scriptCardBody(ctx context.Context, tx pgx.Tx, cat *Catalog, tena
 		if err != nil {
 			return nil, "", err
 		}
+		if r.Rec.Purged {
+			return nil, "", nil
+		}
 		defs, err := parseSteps(r.Rec.Script)
 		if err != nil {
 			return nil, "", err
@@ -1315,6 +1321,9 @@ func (c *Core) scriptCardBody(ctx context.Context, tx pgx.Tx, cat *Catalog, tena
 		}
 		if err != nil {
 			return nil, "", err
+		}
+		if r.Rec.Purged {
+			return nil, "", nil
 		}
 		cardKind, _ := body["card"].(string)
 		if card, err = c.buildScriptCard(ctx, tx, cat, r, cardKind); err != nil {
@@ -1374,6 +1383,102 @@ func scriptScopes(r *scriptRun, steps []scriptStep) []scopeRef {
 		s = append(s, scopeRef{kind: "role", tenant: r.Tenant, name: r.Rec.Role})
 	}
 	return s
+}
+
+// runHoldEffects are the hold effects that forbid the release or the execution of a step, and so
+// pause a running run (SCR-10, ORC-11).
+var runHoldEffects = []string{"no_enqueue", "no_claim", "no_action", "cancel_running"}
+
+// runHoldScopes are the scopes that cover a run: those of scriptScopes, and the machines and
+// resources its steps name (the host and resource values of their arguments and the fanout
+// lists). A value is taken for both kinds, so a hold on either covers it (SCR-10).
+func runHoldScopes(r *scriptRun, defs []scriptStep) []scopeRef {
+	s := scriptScopes(r, defs)
+	add := func(v string) {
+		v = strings.ToLower(v)
+		s = append(s, scopeRef{kind: "host", tenant: r.Tenant, name: v}, scopeRef{kind: "resource", tenant: r.Tenant, name: v})
+	}
+	for _, st := range defs {
+		for _, m := range []map[string]any{st.Args, st.Params} {
+			for _, k := range []string{"host", "resource"} {
+				if v, ok := m[k].(string); ok && v != "" {
+					add(v)
+				}
+			}
+		}
+	}
+	for _, f := range r.Rec.FanoutLists {
+		for _, res := range f.Resources {
+			add(res)
+		}
+	}
+	return s
+}
+
+// runHeld is the hold that covers a run with an effect of runHoldEffects, or "".
+func runHeld(ctx context.Context, tx pgx.Tx, now time.Time, r *scriptRun) (string, error) {
+	defs, err := parseSteps(r.Rec.Script)
+	if err != nil {
+		return "", err
+	}
+	scopes := runHoldScopes(r, defs)
+	// The campaigns of its fanout steps: a hold on a campaign's item type, action or role covers
+	// the run as well (SCR-10).
+	rows, err := tx.Query(ctx, `SELECT `+campaignColumns+` FROM campaigns WHERE id IN (SELECT campaign FROM script_steps WHERE run = $1 AND campaign IS NOT NULL)
+		AND state IN ('proposed', 'running', 'paused', 'stopping') ORDER BY id`, r.ID)
+	if err != nil {
+		return "", err
+	}
+	for rows.Next() {
+		cmp, err := scanCampaign(rows)
+		if err != nil {
+			rows.Close()
+			return "", err
+		}
+		scopes = append(scopes, campaignScopes(cmp)...)
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return "", err
+	}
+	return heldBy(ctx, tx, now, runHoldEffects, scopes...)
+}
+
+// pauseHeldRuns moves the running runs of a tenant (every tenant for "") that a hold covers to
+// paused with the reason held, in the transaction of the hold; releasing the hold does not resume
+// them (SCR-10).
+func (c *Core) pauseHeldRuns(ctx context.Context, tx pgx.Tx, now time.Time, tenant string) error {
+	rows, err := tx.Query(ctx, `SELECT id, tenant FROM script_runs WHERE state = 'running' AND ($1 = '' OR tenant = $1) ORDER BY id`, tenant)
+	if err != nil {
+		return err
+	}
+	type key struct{ id, tenant string }
+	list, err := pgx.CollectRows(rows, func(row pgx.CollectableRow) (key, error) {
+		var k key
+		return k, row.Scan(&k.id, &k.tenant)
+	})
+	if err != nil {
+		return err
+	}
+	for _, k := range list {
+		r, err := loadRun(ctx, tx, k.tenant, k.id, true)
+		if err != nil {
+			return err
+		}
+		if r.State != "running" {
+			continue
+		}
+		held, err := runHeld(ctx, tx, now, r)
+		if err != nil {
+			return err
+		}
+		if held != "" {
+			if err := c.setRunState(ctx, tx, now, r, "paused", "held"); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
 }
 
 // setRunState moves a run and writes its event and card updates.
@@ -1479,6 +1584,12 @@ func (c *Core) releaseSteps(ctx context.Context, tx pgx.Tx, now time.Time, cat *
 		}
 		if r.State != "running" {
 			return nil
+		}
+		// While a hold covers the run, nothing of it is released: it pauses (SCR-10).
+		if held, err := runHeld(ctx, tx, now, r); err != nil {
+			return err
+		} else if held != "" {
+			return c.setRunState(ctx, tx, now, r, "paused", "held")
 		}
 		byID := map[string]*stepRow{}
 		for _, s := range steps {
@@ -2310,6 +2421,23 @@ func (c *Core) scriptApprovalMoved(ctx context.Context, tx pgx.Tx, now time.Time
 	return nil
 }
 
+// purgeRuns turns finished runs into tombstones: the record keeps only the root, a step loses
+// the closed fields of its result and its untrusted sources, and states, links and times stay
+// as metadata (RET-2, RET-10).
+// head is empty or a WITH clause the selection of runs reads.
+func purgeRuns(ctx context.Context, tx pgx.Tx, head, where string, args ...any) (int64, error) {
+	with := "WITH "
+	if head != "" {
+		with = head + ", "
+	}
+	var n int64
+	err := tx.QueryRow(ctx, with+`r AS (UPDATE script_runs SET record = jsonb_build_object('root', record->'root', 'purged', true)
+		WHERE id IN (`+where+`) AND state <> ALL ('{proposed,running,paused}') AND NOT record ? 'purged' RETURNING id),
+		s AS (UPDATE script_steps SET fields = NULL, untrusted = NULL WHERE run IN (SELECT id FROM r))
+		SELECT count(*) FROM r`, args...).Scan(&n)
+	return n, err
+}
+
 // cancelRunsOf cancels the live runs anchored at a task that was canceled (SCR-11).
 func (c *Core) cancelRunsOf(ctx context.Context, tx pgx.Tx, now time.Time, tenant, task, reason string) error {
 	return c.cancelRuns(ctx, tx, now, tenant, `anchor_task = $2`, task, reason)
@@ -2320,7 +2448,7 @@ func (c *Core) cancelRunsOfTree(ctx context.Context, tx pgx.Tx, now time.Time, t
 	return c.cancelRuns(ctx, tx, now, tenant, `anchor_task IN (SELECT id FROM tasks WHERE tenant = $1 AND (id = $2 OR record->>'root' = $2))`, root, reason)
 }
 
-func (c *Core) cancelRuns(ctx context.Context, tx pgx.Tx, now time.Time, tenant, where, arg, reason string) error {
+func (c *Core) cancelRuns(ctx context.Context, tx pgx.Tx, now time.Time, tenant, where string, arg any, reason string) error {
 	rows, err := tx.Query(ctx, `SELECT id FROM script_runs WHERE tenant = $1 AND `+where+` AND state = ANY($3) ORDER BY id FOR UPDATE`, tenant, arg, scriptLive)
 	if err != nil {
 		return err
@@ -2489,6 +2617,10 @@ func (c *Core) scriptCommand(ctx context.Context, w *Worker, ob OnBehalf, id, no
 		if r.Nonce != nonce {
 			return refuse("forbidden", "the nonce is not the card's")
 		}
+		if r.Rec.Purged {
+			// A tombstone has no script left to act on (RET-10).
+			return refuse("already_terminal", "the run has ended")
+		}
 		kinds := []string{scriptConfirmCard}
 		if command != "approve" && command != "reject" {
 			kinds = []string{scriptConfirmCard, scriptSummaryKind}
@@ -2620,6 +2752,12 @@ func (c *Core) resumeRun(ctx context.Context, tx pgx.Tx, now time.Time, cat *Cat
 	if r.DeadlineAt != nil && !r.DeadlineAt.After(now) {
 		return deny("deadline_exceeded", "the run deadline has passed")
 	}
+	// A hold that still covers the run keeps it paused (SCR-10).
+	if held, err := runHeld(ctx, tx, now, r); err != nil {
+		return err
+	} else if held != "" {
+		return deny("held", "a hold covers the run")
+	}
 	if err := c.setRunState(ctx, tx, now, r, "running", ""); err != nil {
 		return err
 	}
@@ -2670,6 +2808,10 @@ func (c *Core) decideGate(ctx context.Context, w *Worker, ob OnBehalf, req Decid
 		if err != nil {
 			return err
 		}
+		if r.Rec.Purged || n > len(steps) {
+			// A tombstone has no script left to read the approvers from (RET-10).
+			return refuse("already_terminal", "the run has ended")
+		}
 		s := steps[n-1]
 		if s.Nonce != req.Nonce {
 			return refuse("forbidden", "the nonce is not the card's")
@@ -2681,6 +2823,9 @@ func (c *Core) decideGate(ctx context.Context, w *Worker, ob OnBehalf, req Decid
 		defs, err := parseSteps(r.Rec.Script)
 		if err != nil {
 			return err
+		}
+		if n > len(defs) {
+			return refuse("already_terminal", "the run has ended")
 		}
 		may := press.principal == r.Initiator
 		if a := defs[n-1].approversOf(); a != "" {
@@ -2781,7 +2926,7 @@ func (c *Core) ScriptGet(ctx context.Context, w *Worker, lease string, req Scrip
 		if err != nil {
 			return err
 		}
-		if r.Rec.Root != tree.Root {
+		if r.Rec.Root != tree.Root || r.Rec.Purged {
 			return refuse("not_found", "no such script run")
 		}
 		out, err = r.Record(ctx, tx)

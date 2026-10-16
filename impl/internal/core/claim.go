@@ -131,7 +131,7 @@ func (c *Core) claimOnce(ctx context.Context, w *Worker, kinds []string) (*WorkI
 				item, err = c.claimAttempt(ctx, tx, now, cat, w)
 			case k == "toolcall" && w.Kind == "toolhost":
 				item, err = c.claimToolcall(ctx, tx, now, cat, w)
-			case k == "erasure" && (w.Kind == "sink" || w.Kind == "monitor"):
+			case k == "erasure" && (w.Kind == "sink" || w.Kind == "monitor" || w.Kind == "channel" || w.Kind == "agent"):
 				item, err = c.claimErasure(ctx, tx, now, w)
 			}
 			if err != nil || item != nil {
@@ -403,6 +403,19 @@ func (c *Core) claimAttempt(ctx context.Context, tx pgx.Tx, now time.Time, cat *
 				skip = append(skip, id)
 				continue
 			}
+			// The seat's tasks of a production tenant wait until the seat model profile has
+			// passed the mgr-inj set (MGR-23).
+			if seat == managerSeatID && productionTenant(tv) {
+				if wait, err := c.seatEvalWait(ctx, tx, now, cat, w.Tenant, role); err != nil {
+					return nil, err
+				} else if wait {
+					if err := markWaiting(ctx, tx, now, w.Tenant, nil, []string{id}, "seat_eval_missing"); err != nil {
+						return nil, err
+					}
+					skip = append(skip, id)
+					continue
+				}
+			}
 			acting = a
 		} else if own != nil {
 			acting = actingOf{Bot: own.ID, BotEpoch: own.Epoch}
@@ -516,6 +529,15 @@ func (c *Core) claimAttempt(ctx context.Context, tx pgx.Tx, now time.Time, cat *
 			return nil, err
 		}
 		handles["tools"] = h
+	}
+	// An approved grant of the task gives this attempt the granted slot; the run fingerprint
+	// keeps the profile configured for the role's slot (MGR-18, GW-7, PRV-1).
+	if slot != "" {
+		if gp, ok, err := claimGrant(ctx, tx, now, cat, w.Tenant, id, w.Role); err != nil {
+			return nil, err
+		} else if ok {
+			slot, profile = grantedSlot, gp
+		}
 	}
 	if slot != "" {
 		h := "bh_" + ids.Secret(32)
@@ -780,7 +802,7 @@ func (c *Core) claimDelivery(ctx context.Context, tx pgx.Tx, now time.Time, cat 
 				continue
 			}
 		}
-		if sk := deref(subjectKind); sk == "approval" || sk == "proposal" || sk == "control" || sk == "campaign" || sk == "script" || sk == "script_gate" {
+		if sk := deref(subjectKind); sk == "approval" || sk == "proposal" || sk == "control" || sk == "campaign" || sk == "script" || sk == "script_gate" || sk == "governance_case" || sk == "attribution" || sk == "takeover" {
 			// A card is drawn from the record now, so it shows the current state (APR-3). An
 			// update waits while the card it edits is being sent, and is dropped when that card
 			// never arrived: the card itself then shows the current state.
@@ -798,8 +820,12 @@ func (c *Core) claimDelivery(ctx context.Context, tx pgx.Tx, now time.Time, cat 
 				drawn, replaces, err = c.campaignCardBody(ctx, tx, cat, w.Tenant, kind, deref(subjectID), targetID, deref(recipient), w.Target, b)
 			case "script", "script_gate":
 				drawn, replaces, err = c.scriptCardBody(ctx, tx, cat, w.Tenant, sk, kind, deref(subjectID), targetID, deref(recipient), w.Target, b)
+			case "governance_case", "attribution":
+				drawn, replaces, err = c.govCardBody(ctx, tx, cat, sk, kind, deref(subjectID), targetID, deref(recipient), w.Target, b)
 			case "proposal":
 				drawn, replaces, err = c.proposalCardBody(ctx, tx, cat, kind, deref(subjectID), targetID, deref(recipient), w.Target, b)
+			case "takeover":
+				drawn, replaces, err = takeoverCardBody(ctx, tx, w.Tenant, kind, deref(subjectID), targetID, deref(recipient), w.Target, b)
 			default:
 				drawn, replaces, err = controlCardBody(ctx, tx, w.Tenant, kind, deref(subjectID), targetID, deref(recipient), w.Target, b)
 			}

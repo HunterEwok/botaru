@@ -272,6 +272,18 @@ func (c *Core) toolCatalog(cat *Catalog, g *toolsGrant) ([]catalogTool, error) {
 	if st := c.proposeScriptTool(cat, g); st != nil {
 		out = append(out, *st)
 	}
+	// The farm manager's v0.2 tools: grants, takeover and escalation (MGR-5, MGR-17, MGR-18,
+	// MGR-21).
+	if gt := c.grantTool(cat, g); gt != nil {
+		out = append(out, *gt)
+	}
+	out = append(out, grantSeatTools(cat, g)...)
+	if tt := takeoverTool(cat, g); tt != nil {
+		out = append(out, *tt)
+	}
+	if et := escalateTool(cat, g); et != nil {
+		out = append(out, *et)
+	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
 	return out, nil
 }
@@ -520,6 +532,24 @@ func (c *Core) P3ToolsCall(ctx context.Context, handle string, p mcp.CallParams)
 		}
 		if p.Name == proposeCampaignName || p.Name == campaignStatusName || p.Name == campaignResultsName {
 			builtin, err = c.campaignToolCall(ctx, tx, now, cat, g, p.Name, offeredTool(tools, p.Name), p.Arguments)
+			return err
+		}
+		if p.Name == grantToolName || p.Name == grantsPendingName || p.Name == grantDecideName || p.Name == takeoverToolName || p.Name == escalateToolName {
+			args := p.Arguments
+			if args == nil {
+				args = map[string]any{}
+			}
+			offered := offeredTool(tools, p.Name)
+			switch p.Name {
+			case grantToolName:
+				builtin, err = c.grantToolCall(ctx, tx, now, cat, g, offered, args)
+			case takeoverToolName:
+				builtin, err = c.takeoverToolCall(ctx, tx, now, cat, g, offered, args)
+			case escalateToolName:
+				builtin, err = c.escalateCall(ctx, tx, now, cat, g, offered, args)
+			default:
+				builtin, err = c.grantSeatToolCall(ctx, tx, now, cat, g, p.Name, offered, args)
+			}
 			return err
 		}
 		if p.Name == proposeScriptName {

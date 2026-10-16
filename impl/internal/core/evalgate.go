@@ -7,14 +7,11 @@ import (
 	"fmt"
 	"slices"
 	"sort"
-	"strings"
-	"time"
 
 	"github.com/jackc/pgx/v5"
 
 	"github.com/HunterEwok/botaru/impl/internal/jcs"
 	"github.com/HunterEwok/botaru/impl/internal/manifest"
-	"github.com/HunterEwok/botaru/impl/internal/version"
 )
 
 // The quality gate on a static fingerprint change (PRV-3). The static fingerprint of a role in a
@@ -64,16 +61,6 @@ func (x evalIndex) governance(tenant string) map[string]any {
 	return x.spec("Governance", tenant, names[0])
 }
 
-// majorMinor is the major and minor digits of a version ("v0.2.7" gives "0.2"); a version
-// without them stays as it is (D-103).
-func majorMinor(v string) string {
-	parts := strings.Split(strings.TrimPrefix(v, "v"), ".")
-	if len(parts) < 2 {
-		return v
-	}
-	return parts[0] + "." + parts[1]
-}
-
 // roleTier is the highest tier of the types a role claims.
 func (x evalIndex) roleTier(role map[string]any) int {
 	tier := 0
@@ -85,8 +72,9 @@ func (x evalIndex) roleTier(role map[string]any) int {
 	return tier
 }
 
-// staticFingerprint is the static fingerprint of a role in a tenant (spec/hashing.md, PRV-3);
-// ok is false when the set has no such role.
+// staticFingerprint is the static fingerprint of a role in a tenant (spec/hashing.md, PRV-3)
+// from the parts in the set, computed by the one function TRN-6 uses as well; ok is false when
+// the set has no such role.
 func (x evalIndex) staticFingerprint(role, tenant string) (string, bool, error) {
 	d, ok := x[manifest.Key{Kind: "Role", Name: role}]
 	if !ok {
@@ -97,24 +85,14 @@ func (x evalIndex) staticFingerprint(role, tenant string) (string, bool, error) 
 	if err != nil {
 		return "", false, err
 	}
-	claims := slices.Clone(mstrs(rs, "claims"))
-	sort.Strings(claims)
-	types := []any{}
-	for _, tn := range claims {
+	types := map[string]string{}
+	for _, tn := range mstrs(rs, "claims") {
 		if td, ok := x[manifest.Key{Kind: "TaskType", Name: tn}]; ok {
-			h, err := jcs.Hash(td.Value)
-			if err != nil {
+			if types[tn], err = jcs.Hash(td.Value); err != nil {
 				return "", false, err
 			}
-			types = append(types, h)
 		}
 	}
-	// The skills part as in the run fingerprint: this build gives a run no skills.
-	skills, err := jcs.Hash([]any{})
-	if err != nil {
-		return "", false, err
-	}
-	var persona any
 	var ref personaRef
 	switch pos := profilePosition(mstr(rs, "profile")); pos {
 	case "farm_manager":
@@ -122,22 +100,8 @@ func (x evalIndex) staticFingerprint(role, tenant string) (string, bool, error) 
 	default:
 		ref = personaOf(mmap(mmap(mmap(x.governance(tenant), "positions"), pos), "persona"))
 	}
-	if ref.SHA256 != "" {
-		if persona, err = jcs.Hash([]any{ref.SHA256}); err != nil {
-			return "", false, err
-		}
-	}
 	models := mmap(rs, "models")
-	driver := mstr(mmap(rs, "runtime"), "driver")
-	if driver == "" {
-		driver = "core" // the core agent loop (D-93)
-	}
-	fp, err := jcs.Hash(map[string]any{
-		"role": roleHash, "types": types, "skills": skills, "persona": persona,
-		"models":  map[string]any{"base": nullable(mstr(models, "base")), "analysis": nullable(mstr(models, "analysis"))},
-		"runtime": map[string]any{"driver": driver, "version": majorMinor(version.Version)},
-		"sandbox": nil,
-	})
+	fp, err := staticFingerprint(roleHash, types, ref.SHA256, mstr(models, "base"), mstr(models, "analysis"), mstr(mmap(rs, "runtime"), "driver"))
 	return fp, true, err
 }
 
@@ -155,24 +119,28 @@ func profilePosition(profile string) string {
 }
 
 // reported says whether the EvalReports index has an entry for the role with the fingerprint
-// and zero security failures.
+// and zero security failures; the index is read by the one reader of evalreports.go.
 func (x evalIndex) reported(role, fp string) bool {
-	for k, d := range x {
-		if k.Kind != "EvalReports" {
-			continue
-		}
-		s, _ := d.Value["spec"].(map[string]any)
-		for _, r := range mlist(s, "reports") {
-			rm, _ := r.(map[string]any)
-			sub := mmap(rm, "subject")
-			if mstr(sub, "kind") == "role" && mstr(sub, "name") == role && mstr(rm, "fingerprint") == fp {
-				if n, ok := mnum(rm, "security_failures"); ok && n == 0 {
-					return true
-				}
-			}
+	return slices.ContainsFunc(x.reports(), func(r evalReport) bool {
+		return r.SubjectKind == "role" && r.SubjectName == role && r.Fingerprint == fp && r.SecurityFailures == 0
+	})
+}
+
+// reports are the entries of the EvalReports manifests of the set.
+func (x evalIndex) reports() []evalReport {
+	var keys []manifest.Key
+	for k := range x {
+		if k.Kind == "EvalReports" {
+			keys = append(keys, k)
 		}
 	}
-	return false
+	sort.Slice(keys, func(i, j int) bool { return keys[i].Name < keys[j].Name })
+	var specs []map[string]any
+	for _, k := range keys {
+		s, _ := x[k].Value["spec"].(map[string]any)
+		specs = append(specs, s)
+	}
+	return evalReportsOf(specs)
 }
 
 // tenantKind is the kind of a tenant manifest; production without the field (APR-9).
@@ -237,6 +205,11 @@ func (c *Core) evalGate(after []manifest.Doc, index []int, before []manifest.Doc
 			// Any production tenant refuses the role; a test tenant only warns, once per role,
 			// and the production tenants after it are still checked.
 			if tenantKind(cur.spec("Tenant", "", tenant)) == "production" {
+				// A translator role's refusal in a production tenant is the stricter gate of
+				// TRN-6 in the lint (both translator sets), so it is not given twice.
+				if mstr(cur.spec("Role", "", role), "profile") == "translator" {
+					continue
+				}
 				errs = append(errs, e)
 				break
 			}
@@ -248,10 +221,12 @@ func (c *Core) evalGate(after []manifest.Doc, index []int, before []manifest.Doc
 	return errs, warns, nil
 }
 
-// doctorEval warns eval_report_stale for each role of tier 1 or higher whose current static
-// fingerprint in a production tenant has no EvalReports entry, as after a core minor upgrade
-// without apply (PRV-3).
-func (c *Core) doctorEval(ctx context.Context, tx pgx.Tx, _ time.Time, tenant string, add func(DoctorCheck)) error {
+// doctorEvals gives the one check eval_report_stale of a production tenant: the roles that stay
+// enabled while their current static fingerprint has no passing entry, as after a core minor
+// upgrade without apply. These are the roles of tier 1 or higher without an EvalReports entry
+// with zero security failures (PRV-3) and the translator roles without both passing translator
+// sets (TRN-6); the check warns when the list is not empty.
+func (c *Core) doctorEvals(ctx context.Context, tx pgx.Tx, tenant string, add func(DoctorCheck)) error {
 	docs, _, err := loadManifests(ctx, tx)
 	if err != nil {
 		return err
@@ -261,9 +236,16 @@ func (c *Core) doctorEval(ctx context.Context, tx pgx.Tx, _ time.Time, tenant st
 	if ts == nil || tenantKind(ts) != "production" {
 		return nil
 	}
-	stale := []string{}
+	kinds, err := c.manifestKinds()
+	if err != nil {
+		return err
+	}
+	stale, err := staleTranslatorRoles(docs, kinds, tenant)
+	if err != nil {
+		return err
+	}
 	for k := range x {
-		if k.Kind != "Role" || x.roleTier(x.spec("Role", "", k.Name)) < 1 {
+		if k.Kind != "Role" || x.roleTier(x.spec("Role", "", k.Name)) < 1 || slices.Contains(stale, k.Name) {
 			continue
 		}
 		fp, _, err := x.staticFingerprint(k.Name, tenant)
@@ -275,6 +257,9 @@ func (c *Core) doctorEval(ctx context.Context, tx pgx.Tx, _ time.Time, tenant st
 		}
 	}
 	sort.Strings(stale)
+	if stale == nil {
+		stale = []string{}
+	}
 	ch := DoctorCheck{ID: "eval_report_stale", OK: len(stale) == 0, Severity: "info", Value: stale, Tenant: tenant}
 	if len(stale) > 0 {
 		ch.Severity = "warn"

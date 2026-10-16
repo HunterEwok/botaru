@@ -46,6 +46,9 @@ fx-man-com-07#5
 fx-man-com-v02#0
 fx-man-com-v02#1
 fx-man-com-v02#2
+fx-man-com-v02#3
+fx-man-com-v02#4
+fx-man-com-v02#5
 fx-man-ing-01#0
 fx-man-ing-01#1
 fx-man-ing-01#2
@@ -124,8 +127,13 @@ fx-man-tt-01#7
 fx-man-v02-01#1
 fx-man-v02-01#5
 fx-man-v02-01#6
+fx-man-v02-ret-01#1
+fx-man-v02-ret-01#2
+fx-man-v02-ret-01#3
+fx-man-v02-ret-01#4
 fx-man-v02-sec#1
 fx-man-v02-sec#2
+fx-man-v02-sec#3
 fx-prf-01#0
 fx-prf-01#1
 fx-prf-01#10

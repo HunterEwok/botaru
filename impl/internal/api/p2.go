@@ -320,6 +320,41 @@ func (s *Server) p2(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		out, err = s.c.SpendReconcile(ctx, oper, req)
+	case "model_grant.issue", "model_grant.revoke", "model_grant.list":
+		req, derr := decode[core.ModelGrantRequest](m)
+		if derr != nil {
+			s.fail(w, derr)
+			return
+		}
+		switch op {
+		case "model_grant.issue":
+			out, err = s.c.ModelGrantIssue(ctx, oper, req)
+		case "model_grant.revoke":
+			out, err = s.c.ModelGrantRevoke(ctx, oper, req)
+		default:
+			out, err = s.c.ModelGrantList(ctx, oper, req)
+		}
+	case "msg.list":
+		req, derr := decode[core.MsgListRequest](m)
+		if derr != nil {
+			s.fail(w, derr)
+			return
+		}
+		out, err = s.c.MsgList(ctx, oper, req)
+	case "msg.show":
+		req, derr := decode[core.MsgShowRequest](m)
+		if derr != nil {
+			s.fail(w, derr)
+			return
+		}
+		out, err = s.c.MsgShow(ctx, oper, req)
+	case "inbox.status":
+		req, derr := decode[core.InboxStatusRequest](m)
+		if derr != nil {
+			s.fail(w, derr)
+			return
+		}
+		out, err = s.c.InboxStatus(ctx, oper, req)
 	case "core.drain":
 		req, derr := decode[core.CoreDrainRequest](m)
 		if derr != nil {
@@ -394,6 +429,31 @@ func (s *Server) p2(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		out, err = s.c.LinkCommit(ctx, oper, req)
+	case "governance.list":
+		req, derr := decode[core.TenantRequest](m)
+		if derr != nil {
+			s.fail(w, derr)
+			return
+		}
+		out, err = s.c.GovernanceList(ctx, oper, req)
+	case "governance.show", "governance.cancel":
+		req, derr := decode[core.IncidentRequest](m)
+		if derr != nil {
+			s.fail(w, derr)
+			return
+		}
+		if op == "governance.show" {
+			out, err = s.c.GovernanceShow(ctx, oper, req)
+		} else {
+			out, err = s.c.GovernanceCancel(ctx, oper, req)
+		}
+	case "commission.status":
+		req, derr := decode[core.TenantRequest](m)
+		if derr != nil {
+			s.fail(w, derr)
+			return
+		}
+		out, err = s.c.CommissionStatus(ctx, oper, req)
 	case "obs.series":
 		req, derr := decode[core.ObsQueryRequest](m)
 		if derr != nil {

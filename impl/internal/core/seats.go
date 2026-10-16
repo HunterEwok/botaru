@@ -103,6 +103,9 @@ func (c *Core) syncSeats(ctx context.Context, tx pgx.Tx, now time.Time, cat *Cat
 		} else if tag.RowsAffected() == 0 {
 			return refuse("forbidden", "seat %s of tenant %s has a holder: seat.vacate first", k[1], k[0])
 		}
+		if err := c.seatCaseChanged(ctx, tx, now, k[0], k[1]); err != nil {
+			return err
+		}
 	}
 	for k, lens := range want {
 		if s, ok := have[k]; ok && s.lens == lens {
@@ -166,50 +169,63 @@ func (c *Core) SeatAssign(ctx context.Context, op Operator, req SeatRequest) (*D
 		if b.State != "active" || b.Mode != "worker" || !slices.Contains(functionaryProfiles, profileOf(cat, b.Role)) {
 			return refuse("forbidden", "only an active functionary identity of the tenant takes a seat")
 		}
-		// The identity moves to the seat; its worker keeps working under a new identity.
-		worker := b.Worker
-		if _, err := tx.Exec(ctx, `UPDATE bots SET mode = 'seat', seat = $2, worker_id = NULL, epoch = epoch + 1, updated_at = $3 WHERE id = $1`, b.ID, s.ID, now); err != nil {
-			return err
-		}
-		if err := c.fenceAttempts(ctx, tx, now, "seat_changed", `acting_bot = $1`, b.ID); err != nil {
-			return err
-		}
-		if worker != "" {
-			next, err := c.insertBot(ctx, tx, now, b.Tenant, b.Role, "worker", worker, "", "seat.assign")
-			if err != nil {
-				return err
-			}
-			// The binding changed: the worker's new identity gets copies of the facts, and the
-			// holder keeps its own (MEM-7).
-			if err := c.offerFacts(ctx, tx, now, cat, b, next, "", now.Add(charterDuration(cat, b.Tenant, "memory", "seal_ttl", defaultSealTTL))); err != nil {
-				return err
-			}
-		}
-		// The previous holder leaves only after the worker split, so its facts go to the new
-		// holder alone and not on to the worker's new identity (MEM-7).
-		if s.Holder != "" {
-			prev, err := loadBot(ctx, tx, s.Holder, true)
-			if err != nil {
-				return err
-			}
-			if prev != nil {
-				if _, err := c.retireBot(ctx, tx, now, cat, prev, "replaced_by_human", b.ID, op.Principal); err != nil {
-					return err
-				}
-			}
-		}
-		seq, err := c.moveSeat(ctx, tx, now, s, b.ID, "held", "seat.assigned.v1", "seat.assign", op.Principal)
+		seq, err := c.seatTake(ctx, tx, now, cat, s, b, "replaced_by_human", "seat.assign", op.Principal)
 		out.AuditSeq = seq
 		if err != nil {
 			return err
 		}
-		// A seat that waited with an offer of its previous holder hands it to the new one.
-		return c.pickUpOffers(ctx, tx, now, cat, b.Tenant, b.Role, s.ID, b.ID)
+		// An open promotion case about this seat ends in the same transaction (GOV-12).
+		return c.seatCaseChanged(ctx, tx, now, s.Tenant, s.ID)
 	})
 	if err != nil {
 		return nil, err
 	}
 	return &out, nil
+}
+
+// seatTake moves an active functionary identity into a commission seat (IDN-10): its worker
+// keeps working under a new identity with copies of the facts, the previous holder leaves for
+// retire with the new holder as successor, and the seat epoch grows. P2 seat.assign and a
+// confirmed promotion case use it (GOV-9).
+func (c *Core) seatTake(ctx context.Context, tx pgx.Tx, now time.Time, cat *Catalog, s *seatRow, b *botRow, retire, cause, actor string) (int64, error) {
+	// The identity moves to the seat; its worker keeps working under a new identity.
+	worker := b.Worker
+	if _, err := tx.Exec(ctx, `UPDATE bots SET mode = 'seat', seat = $2, worker_id = NULL, epoch = epoch + 1, updated_at = $3 WHERE id = $1`, b.ID, s.ID, now); err != nil {
+		return 0, err
+	}
+	if err := c.fenceAttempts(ctx, tx, now, "seat_changed", `acting_bot = $1`, b.ID); err != nil {
+		return 0, err
+	}
+	if worker != "" {
+		next, err := c.insertBot(ctx, tx, now, b.Tenant, b.Role, "worker", worker, "", "seat.assign")
+		if err != nil {
+			return 0, err
+		}
+		// The binding changed: the worker's new identity gets copies of the facts, and the
+		// holder keeps its own (MEM-7).
+		if err := c.offerFacts(ctx, tx, now, cat, b, next, "", now.Add(charterDuration(cat, b.Tenant, "memory", "seal_ttl", defaultSealTTL))); err != nil {
+			return 0, err
+		}
+	}
+	// The previous holder leaves only after the worker split, so its facts go to the new
+	// holder alone and not on to the worker's new identity (MEM-7).
+	if s.Holder != "" {
+		prev, err := loadBot(ctx, tx, s.Holder, true)
+		if err != nil {
+			return 0, err
+		}
+		if prev != nil {
+			if _, err := c.retireBot(ctx, tx, now, cat, prev, retire, b.ID, actor); err != nil {
+				return 0, err
+			}
+		}
+	}
+	seq, err := c.moveSeat(ctx, tx, now, s, b.ID, "held", "seat.assigned.v1", cause, actor)
+	if err != nil {
+		return 0, err
+	}
+	// A seat that waited with an offer of its previous holder hands it to the new one.
+	return seq, c.pickUpOffers(ctx, tx, now, cat, b.Tenant, b.Role, s.ID, b.ID)
 }
 
 // SeatVacate is P2 seat.vacate: the holder leaves as replaced_by_human and the seat is vacant.
@@ -245,7 +261,10 @@ func (c *Core) SeatVacate(ctx context.Context, op Operator, req SeatRequest) (*D
 		}
 		seq, err := c.moveSeat(ctx, tx, now, s, "", "vacant", "seat.vacated.v1", "seat.vacate", op.Principal)
 		out.AuditSeq = seq
-		return err
+		if err != nil {
+			return err
+		}
+		return c.seatCaseChanged(ctx, tx, now, s.Tenant, s.ID)
 	})
 	if err != nil {
 		return nil, err
@@ -273,8 +292,10 @@ func (c *Core) seatVacated(ctx context.Context, tx pgx.Tx, now time.Time, cat *C
 	if err != nil || s == nil || s.Holder != b.ID {
 		return err
 	}
-	_, err = c.moveSeat(ctx, tx, now, s, "", "vacant", "seat.vacated.v1", cause, "system")
-	return err
+	if _, err = c.moveSeat(ctx, tx, now, s, "", "vacant", "seat.vacated.v1", cause, "system"); err != nil {
+		return err
+	}
+	return c.seatCaseChanged(ctx, tx, now, s.Tenant, s.ID)
 }
 
 // moveSeat writes the new holder and state with the seat epoch + 1, fences the running

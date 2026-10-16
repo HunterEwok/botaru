@@ -367,7 +367,12 @@ func (c *Core) completeAttempt(ctx context.Context, tx pgx.Tx, now time.Time, w 
 		if err := json.Unmarshal(rec, &lens); err != nil {
 			return err
 		}
-		if c.spec.Validate("urn:botaru:schema:review-result:1", result) != nil || result["lens"] != lens.Lens || result["shadow"] == true {
+		// A necessity review hands in the closed necessity output (COM-13).
+		if lens.Lens == necessityLens {
+			if c.rs.validate(necessitySchema, result) != nil {
+				return refuse("output_schema_invalid", "the result is not a necessity review")
+			}
+		} else if c.spec.Validate("urn:botaru:schema:review-result:1", result) != nil || result["lens"] != lens.Lens || result["shadow"] == true {
 			return refuse("output_schema_invalid", "the result is not a review-result of the task's lens")
 		}
 	}
@@ -402,6 +407,19 @@ func (c *Core) completeAttempt(ctx context.Context, tx pgx.Tx, now time.Time, w 
 	// (MSG-9).
 	if err := c.publishMessages(ctx, tx, now, cat, w.Tenant, l.WorkID, l.LeaseNo, w.ID); err != nil {
 		return err
+	}
+	// So are an escalation and a takeover request the attempt staged (MGR-5, MGR-21), and a
+	// necessity review gives the verdict on its escalation (COM-13).
+	if err := c.publishEscalations(ctx, tx, now, cat, l.WorkID, l.LeaseNo); err != nil {
+		return err
+	}
+	if err := c.publishTakeovers(ctx, tx, now, cat, l.WorkID, l.LeaseNo); err != nil {
+		return err
+	}
+	if esc := escalationOfRecord(rec); esc != "" && tt.Purpose == "review" {
+		if err := c.escalationReviewed(ctx, tx, now, cat, esc, result); err != nil {
+			return err
+		}
 	}
 	if err := releaseTaskReserve(ctx, tx, l.WorkID); err != nil {
 		return err

@@ -163,9 +163,11 @@ type Tenant struct {
 	Attention        TenantAttention   `json:"attention"`
 	// Run holds the pipelines of the command /run <name> (APR-17).
 	Run map[string]RunEntry `json:"run"`
-	// Retention holds the file period (ART-1, RET-9).
+	// Retention holds the tenant's periods: the file period (ART-1) and the periods of the
+	// classes content, memory and metadata (RET-9).
 	Retention struct {
-		Files string `json:"files"`
+		Files   string            `json:"files"`
+		Classes map[string]string `json:"classes"`
 	} `json:"retention"`
 	// Insights holds the improvement cycle settings of the tenant (INS-6, PRP-5, DIG-1).
 	Insights TenantInsights `json:"insights"`
@@ -387,7 +389,13 @@ type Role struct {
 	MayTargetGroups []string `json:"may_target_groups"`
 	// Scripts is the vocabulary of a script author (SCR-5, TRN-2).
 	Scripts *RoleScripts `json:"scripts"`
-	Runtime struct {
+	// ModelGrants is the ladder of stronger profiles of request_model_grant (MGR-17).
+	ModelGrants *struct {
+		Ladder []string `json:"ladder"`
+	} `json:"model_grants"`
+	// Aggregate is the sources block of an aggregator (AGG-2, AGG-3).
+	Aggregate *RoleAggregate `json:"aggregate"`
+	Runtime   struct {
 		Driver string `json:"driver"`
 	} `json:"runtime"`
 }
@@ -404,6 +412,17 @@ type RoleScripts struct {
 	StepTypes []string `json:"step_types"`
 	Actions   []string `json:"actions"`
 	MaxSteps  int      `json:"max_steps"`
+}
+
+// RoleAggregate is what an aggregator reads: only its listed sources (AGG-3).
+type RoleAggregate struct {
+	Sources struct {
+		Roles        []string `json:"roles"`
+		BotGroups    []string `json:"bot_groups"`
+		Series       []string `json:"series"`
+		MessageKinds []string `json:"message_kinds"`
+	} `json:"sources"`
+	MaxSources int `json:"max_sources"`
 }
 
 // RoleCampaigns is the campaigns block of a role: propose is none, read or action.
@@ -599,6 +618,13 @@ type TaskType struct {
 	Inbox struct {
 		Read []string `json:"read"`
 	} `json:"inbox"`
+	// GrantEligible, GrantEvalSet and Grant are the signs of the right to ask for a stronger
+	// model (MGR-17).
+	GrantEligible bool   `json:"grant_eligible"`
+	GrantEvalSet  string `json:"grant_eval_set"`
+	Grant         *struct {
+		InputTokensMin int `json:"input_tokens_min"`
+	} `json:"grant"`
 }
 
 // Timeouts are the type deadlines as durations (15m, 60s).

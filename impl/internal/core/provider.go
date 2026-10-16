@@ -245,7 +245,7 @@ func pairWait(ctx context.Context, tx pgx.Tx, now time.Time, cat *Catalog, tenan
 
 // waitingReasons are the waiting reasons the dispatcher writes on a submitted task; another
 // reason on it (waiting_on_fix) is kept.
-var waitingReasons = []string{"provider_unavailable", "provider_quota", "type_quota"}
+var waitingReasons = []string{"provider_unavailable", "provider_quota", "type_quota", "seat_eval_missing"}
 
 // markWaiting writes the waiting reason on the submitted tasks of types, or on ids.
 func markWaiting(ctx context.Context, tx pgx.Tx, now time.Time, tenant string, types, ids []string, reason string) error {

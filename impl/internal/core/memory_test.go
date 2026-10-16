@@ -43,6 +43,23 @@ func newMemoryBench(t *testing.T) (*actionBench, string) {
 	return &actionBench{bench: b, bob: bob}, bob
 }
 
+// purge answers the runtime purge step of the bench agent, which ran an attempt of the tenant
+// (RET-11): the work names the agent worker and the scope, and the runtime reports done.
+func (b *actionBench) purge(t *testing.T) {
+	t.Helper()
+	item := b.claim(t, b.agent, "erasure")
+	if item == nil {
+		t.Fatal("no purge work for the agent runtime")
+	}
+	validOut(t, b.bench, "erasure-work", item.Payload)
+	if tg := item.Payload["target"].(map[string]any); tg["kind"] != "runtime" || tg["worker_id"] != b.agent.ID {
+		t.Fatalf("purge target %v", tg)
+	}
+	if _, err := b.c.Complete(context.Background(), b.agent, header(t, item), CompleteRequest{Erasure: map[string]any{"outcome": "done"}}); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func (b *actionBench) say(t *testing.T, update, identity, chat, text string) *ActivityResult {
 	t.Helper()
 	a := Activity{Kind: "message", Channel: "telegram", UpdateID: update, Chat: Chat{Kind: "direct", ExternalID: chat}, Text: text}
@@ -161,6 +178,8 @@ func TestForget(t *testing.T) {
 		t.Fatalf("forget %+v", r)
 	}
 	b.tick(t, "erasure")
+	b.purge(t)
+	b.tick(t, "erasure")
 	var sessions, records int
 	if err := b.c.st.Pool.QueryRow(ctx, `SELECT (SELECT count(*) FROM sessions), (SELECT count(*) FROM memory_items)`).Scan(&sessions, &records); err != nil || sessions+records != 0 {
 		t.Fatalf("left %d sessions and %d records %v", sessions, records, err)
@@ -174,7 +193,7 @@ func TestForget(t *testing.T) {
 		t.Fatal(err)
 	}
 	validOut(t, b.bench, "deletion-request", rec)
-	if rec["state"] != "done" || len(rec["results"].(map[string]any)) != 2 {
+	if rec["state"] != "done" || len(rec["results"].(map[string]any)) != 3 || rec["results"].(map[string]any)[storeKey("runtime", b.agent.ID)] != "done" {
 		t.Fatalf("request %v", rec)
 	}
 	if countEvents(t, b.bench, "erasure.done", id) != 1 {
@@ -205,10 +224,29 @@ func TestSubjectErasure(t *testing.T) {
 	if err != nil || r.State != "approved" {
 		t.Fatalf("decide %+v %v", r, err)
 	}
+	// A finished script run of the person keeps only its tombstone (RET-10).
+	if _, err := b.c.st.Pool.Exec(ctx, `INSERT INTO script_runs (id, tenant, initiator, state, plan_hash, record, nonce, expires_at, created_at, updated_at)
+		SELECT 'scr_erase', 'demo', subject, 'completed', 'h', '{"root": "t_x", "assignment": "CANARY-NOT-A-SECRET-scr"}', 'n', now(), now(), now()
+		FROM erasure_requests WHERE state = 'requested';
+		INSERT INTO script_steps (run, n, id, kind, state, fields) VALUES ('scr_erase', 1, 's1', 'task', 'ok', '{"v": "CANARY-NOT-A-SECRET-scr"}');
+		INSERT INTO campaigns (id, tenant, initiator, state, plan_hash, record, nonce, card, created_at, updated_at)
+		SELECT 'cmp_erase', 'demo', subject, 'running', 'h', '{"template": {"kind": "task", "type": "hello.greet.v1", "goal": "CANARY-NOT-A-SECRET-scr"}, "root": "t_x"}', 'n', false, now(), now()
+		FROM erasure_requests WHERE state = 'requested';
+		INSERT INTO campaign_items (campaign, n, resource, args, args_hash, state) VALUES ('cmp_erase', 1, 'r', '{"a": "CANARY-NOT-A-SECRET-scr"}', 'h', 'pending')`); err != nil {
+		t.Fatal(err)
+	}
 	b.tick(t, "erasure")
 	var body, result *string
 	if err := b.c.st.Pool.QueryRow(ctx, `SELECT body::text, result::text FROM tasks WHERE id = $1`, task).Scan(&body, &result); err != nil || body != nil || result != nil {
 		t.Fatalf("the task kept its content: %v %v %v", body, result, err)
+	}
+	if n := b.count(t, `SELECT (SELECT count(*) FROM script_runs WHERE record::text LIKE '%CANARY%') + (SELECT count(*) FROM script_steps WHERE fields IS NOT NULL)`); n != 0 {
+		t.Fatal("the script run kept its content")
+	}
+	// The person's live campaign stops releasing and keeps no content (RET-10).
+	if n := b.count(t, `SELECT (SELECT count(*) FROM campaigns WHERE state IN ('proposed', 'running', 'paused') OR purged_at IS NULL OR record::text LIKE '%CANARY%')
+		+ (SELECT count(*) FROM campaign_items WHERE state = 'pending' OR args <> '{}')`); n != 0 {
+		t.Fatal("the campaign kept running or kept its content")
 	}
 	var erasure string
 	if err := b.c.st.Pool.QueryRow(ctx, `SELECT erasure FROM subject_requests WHERE id = $1`, req.ID).Scan(&erasure); err != nil {
@@ -229,6 +267,7 @@ func TestSubjectErasure(t *testing.T) {
 	if _, err := b.c.Complete(ctx, sink, header(t, item), CompleteRequest{Erasure: map[string]any{"outcome": "done"}}); err != nil {
 		t.Fatal(err)
 	}
+	b.purge(t)
 	b.tick(t, "erasure")
 	rec, _ = b.c.ErasureStatus(ctx, b.op, ErasureIDRequest{Op: "erasure.status", ID: erasure})
 	res := rec["results"].(map[string]any)
@@ -262,6 +301,8 @@ func TestErasureWithoutSteps(t *testing.T) {
 		VALUES ($1, 'demo', $2, 'offboarding', '{"kind":"system"}', 'requested', now(), jsonb_build_object('tenant', 'demo', 'subject', $2::text), now() + interval '30 days', now())`, id, subject); err != nil {
 		t.Fatal(err)
 	}
+	b.tick(t, "erasure")
+	b.purge(t)
 	b.tick(t, "erasure")
 	var body *string
 	if err := b.c.st.Pool.QueryRow(ctx, `SELECT body::text FROM tasks WHERE id = $1`, task).Scan(&body); err != nil || body != nil {
@@ -563,6 +604,9 @@ func TestSubjectFarmFallback(t *testing.T) {
 		t.Fatal(err)
 	}
 	fch.State = "active"
+	if _, err := b.c.st.Pool.Exec(ctx, `UPDATE workers SET hello = jsonb_set(coalesce(hello, '{}'), '{driver}', '{"stores_content": "none"}') WHERE id = $1`, b.channel.ID); err != nil {
+		t.Fatal(err)
+	}
 	d, err := b.c.ErasureMatch(ctx, b.op, MatchRequest{Subject: "system", Needles: []string{"Mari Tamm"}})
 	if err != nil {
 		t.Fatal(err)

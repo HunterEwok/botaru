@@ -519,7 +519,7 @@ func (c *Core) Doctor(ctx context.Context, op Operator, req TenantRequest) (*Doc
 		if err := c.doctorManager(ctx, tx, now, cat, tenant, add); err != nil {
 			return err
 		}
-		if err := c.doctorEval(ctx, tx, now, tenant, add); err != nil {
+		if err := c.doctorEvals(ctx, tx, tenant, add); err != nil {
 			return err
 		}
 		for _, q := range counts {

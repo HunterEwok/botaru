@@ -202,7 +202,7 @@ func (c *Core) proposalLoop(ctx context.Context) error {
 	}
 	var ids []string
 	if err := c.tx(ctx, func(tx pgx.Tx, now time.Time) error {
-		rows, err := tx.Query(ctx, `SELECT id FROM proposals WHERE state IN ('screened', 'in_review', 'recommended', 'parked', 'presented', 'realizing')
+		rows, err := tx.Query(ctx, `SELECT id FROM proposals WHERE state IN ('screened', 'in_review', 'recommended', 'parked', 'presented', 'realizing', 'sample_presented', 'sample_judged')
 			OR state = 'realized' AND record->'trial'->>'outcome' IS NULL ORDER BY created_at, id`)
 		if err != nil {
 			return err
@@ -217,6 +217,10 @@ func (c *Core) proposalLoop(ctx context.Context) error {
 		if err := c.tx(ctx, func(tx pgx.Tx, now time.Time) error { return c.stepProposal(ctx, tx, now, cat, id) }); err != nil {
 			errs = append(errs, fmt.Errorf("proposal %s: %w", id, err))
 		}
+	}
+	// The audit sample of the last month is drawn before the digest that presents it (DIG-5).
+	if err := c.sampleDraws(ctx, cat); err != nil {
+		errs = append(errs, err)
 	}
 	// The digest goes after the moves, so a proposal recommended in this pass can be in it.
 	if err := c.digestLoop(ctx, cat); err != nil {
@@ -323,6 +327,8 @@ func (c *Core) stepProposal(ctx context.Context, tx pgx.Tx, now time.Time, cat *
 		return c.reviewProposal(ctx, tx, now, cat, tv, p)
 	case "presented":
 		return c.presentedStep(ctx, tx, now, tv, p)
+	case "sample_presented", "sample_judged":
+		return c.sampleStep(ctx, tx, now, tv, p)
 	case "realizing":
 		return c.realizingStep(ctx, tx, now, tv, p)
 	case "realized":
@@ -412,28 +418,54 @@ func (c *Core) screenProposal(ctx context.Context, tx pgx.Tx, now time.Time, cat
 		}
 		return c.saveProposal(ctx, tx, now, p)
 	}
+	// The farm manager's advisory lens comes after the others; a review line that is short
+	// for it, or a manager review that cannot go out, skips it and marks the verdict (GOV-25).
+	lenses, exec, manager, err := c.withManagerLens(ctx, tx, now, cat, p, lenses, exec)
+	if err != nil {
+		return err
+	}
+	delete(p.Rec, "no_manager_vote")
+	skipManager := func() {
+		lenses, exec = withoutManagerLens(lenses, exec)
+		manager = false
+		p.Rec["no_manager_vote"] = true
+	}
 	if len(exec) > 0 {
-		if pr := c.reviewsFit(ctx, tx, now, cat, tv, p, lenses, exec); pr != nil {
+		pr := c.reviewsFit(ctx, tx, now, cat, tv, p, lenses, exec)
+		if pr != nil && manager {
+			skipManager()
+			pr = c.reviewsFit(ctx, tx, now, cat, tv, p, lenses, exec)
+		}
+		if pr != nil {
 			return wait(pr)
 		}
 	}
 	// The reviews go out together under a savepoint: either every lens task with its reserve,
 	// or none (COM-6).
-	sp, err := tx.Begin(ctx)
-	if err != nil {
-		return err
-	}
-	reviews, reserved, err := c.enqueueReviews(ctx, sp, now, cat, tv, p, lenses, exec)
-	if err != nil {
-		_ = sp.Rollback(ctx)
-		var pr *Problem
-		if errors.As(err, &pr) {
-			return wait(pr)
+	var reviews []any
+	var reserved float64
+	for {
+		sp, err := tx.Begin(ctx)
+		if err != nil {
+			return err
 		}
-		return err
-	}
-	if err := sp.Commit(ctx); err != nil {
-		return err
+		reviews, reserved, err = c.enqueueReviews(ctx, sp, now, cat, tv, p, lenses, exec)
+		if err != nil {
+			_ = sp.Rollback(ctx)
+			var pr *Problem
+			if errors.As(err, &pr) && manager {
+				skipManager()
+				continue
+			}
+			if errors.As(err, &pr) {
+				return wait(pr)
+			}
+			return err
+		}
+		if err := sp.Commit(ctx); err != nil {
+			return err
+		}
+		break
 	}
 	p.Rec["review_lenses"] = lenses
 	p.Rec["reviews"] = reviews
@@ -657,6 +689,9 @@ func (c *Core) reviewProposal(ctx context.Context, tx pgx.Tx, now time.Time, cat
 	p.Rec["review_spent_eur"], p.Rec["review_reserved_eur"] = total, total
 	v := verdict(policy, in)
 	v["computed_at"] = fmtTime(now)
+	if p.Rec["no_manager_vote"] == true {
+		v["no_manager_vote"] = true
+	}
 	p.Rec["verdict"] = v
 	state, reason, _ := strings.Cut(asString(v["outcome"]), "(")
 	reason = strings.TrimSuffix(reason, ")")

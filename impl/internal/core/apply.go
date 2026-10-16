@@ -44,6 +44,8 @@ type ApplyError struct {
 	Name   string `json:"name,omitempty"`
 	Code   string `json:"code"`
 	Path   string `json:"path,omitempty"`
+	// Detail says more about some codes, such as the expected fingerprint of eval_report_missing.
+	Detail string `json:"detail,omitempty"`
 }
 
 // ApplyChange is one entry of the changes list.
@@ -242,10 +244,12 @@ func (c *Core) applyOnce(ctx context.Context, op Operator, req ApplyRequest) (*A
 		}
 		after = append(after, docs...)
 		lintIndex := append([]int(nil), index...)
+		var prior []manifest.Doc
 		for _, d := range stored {
 			if ki := kinds[d.Kind]; ki.scope == "global" {
 				d.Tenant = ""
 			}
+			prior = append(prior, d)
 			if k := d.Key(); seen[k] || gone[k] {
 				continue
 			}
@@ -257,7 +261,7 @@ func (c *Core) applyOnce(ctx context.Context, op Operator, req ApplyRequest) (*A
 			return nil, err
 		}
 		res.Errors = append(res.Errors, perrs...)
-		errs, err := c.lintManifests(after, lintIndex, lookup)
+		errs, err := c.lintManifests(after, lintIndex, lookup, prior)
 		if err != nil {
 			return nil, err
 		}
@@ -436,6 +440,9 @@ func (c *Core) applyOnce(ctx context.Context, op Operator, req ApplyRequest) (*A
 			return err
 		}
 		if err := c.syncSeats(ctx, tx, now, next); err != nil {
+			return err
+		}
+		if err := recordMetadataPeriods(ctx, tx, now, next); err != nil {
 			return err
 		}
 		// A removed schedule loses its state, so one recreated later starts from its apply
