@@ -490,9 +490,10 @@ func (c *Core) P3ToolsCall(ctx context.Context, handle string, p mcp.CallParams)
 		if err := pinnedCatalog(ctx, tx, g.Task, tools); err != nil {
 			return err
 		}
-		// A built-in tool of a deferred rule, or a deferred field of its arguments, is not
-		// offered by this core: version_unsupported (D-114, MAN-11).
-		if _, ok := spec.DeferredCall(spec.SurfaceTool, p.Name, p.Arguments); ok {
+		// A built-in tool of a deferred rule is not offered by this core: version_unsupported
+		// (D-114, MAN-11). A deferred field of a served tool's arguments is refused by the tool
+		// in its own outcome: propose_campaign (ORC-15), control_ops pin_task (MGR-12).
+		if _, ok := spec.DeferredCall(spec.SurfaceTool, p.Name, nil); ok {
 			refusal = &toolRefusal{state: "error", reason: "version_unsupported"}
 			return nil
 		}

@@ -1,6 +1,6 @@
 # Running the first bot
 
-This guide brings up a farm of version 0.1 of the implementation on one Linux server: the core, one agent of role `hello`, the Telegram channel and the hello-bot example. It runs as a **test bench** (`test_bench: true`): every tenant has `kind: test`, and the model can be the mock provider or a real Anthropic key. A production farm follows once the remaining v0.1 parts are built (README.md, "Not in this version").
+This guide brings up a farm of the implementation on one Linux server; the core claims skeleton 0.3 (unreleased, no tag yet; README.md): the core, one agent of role `hello`, the Telegram channel and the hello-bot example. It runs as a **test bench** (`test_bench: true`): every tenant has `kind: test`, and the model can be the mock provider or a real Anthropic key. A production farm follows once the remaining parts are built (README.md, "Not in this version").
 
 Paths below are examples; the installation files (settings, secrets, your own manifests) stay on the server and never go into this repository.
 
@@ -135,7 +135,7 @@ $F apply -as-test -drop-unsupported examples/hello-bot/role.yaml examples/hello-
   examples/tenants/demo/tenant.yaml examples/tenants/demo/channels.yaml examples/model-profiles/base-std.yaml
 ```
 
-`apply` takes the manifests as one set and records the commit of the checkout; `-as-test` applies the tenant with `kind: test`, as the runner does on a test bench. The example tenant and channel carry fields of v0.2 (`locale`, `retention`, `operator_access`, `rate`), which a v0.1 core refuses with `version_unsupported` (MAN-11); `-drop-unsupported` leaves them out and prints a warning for each. It leaves out only whole optional fields; a later kind or a value that gives a field its meaning (a channel direction, a resource kind, a tier) stops the apply with an error naming the path, and you remove that manifest or value yourself. For a real model, copy `examples/model-profiles/base-std.yaml` to your installation folder, set its `model` to an Anthropic model id, and apply your copy in place of the example one, adding `-commit` with the full commit id of the checkout (`git rev-parse HEAD`), because your copy is outside it.
+`apply` takes the manifests as one set and records the commit of the checkout; `-as-test` applies the tenant with `kind: test`, as the runner does on a test bench. The example tenant and channel carry fields the core does not offer: the channel `rate` (CAP-3, a deferred rule) and the tenant's `operator_access.debug_journal` and `retention.journals` (the profile `debug`, which the core does not claim), which it refuses with `version_unsupported` (MAN-11); `-drop-unsupported` leaves them out and prints a warning for each. It leaves out only whole optional fields; a later kind or a value that gives a field its meaning (a channel direction, a resource kind, a tier) stops the apply with an error naming the path, and you remove that manifest or value yourself. For a real model, copy `examples/model-profiles/base-std.yaml` to your installation folder, set its `model` to an Anthropic model id, and apply your copy in place of the example one, adding `-commit` with the full commit id of the checkout (`git rev-parse HEAD`), because your copy is outside it.
 
 Add yourself with your numeric Telegram id (a bot such as @userinfobot shows it) and the group that may call the greeting:
 
@@ -447,7 +447,14 @@ A farm built from the first version of this guide keeps its store, settings, sec
 7. Start the core first. It applies the new store migrations by itself at start; they keep the old records and move planned notices to the new text names.
 8. Apply the manifests again (section 7) with `-drop-unsupported`, then start the agent and the channel.
 
-A tenant that applied v0.3 fields (for example `commission.accountability` of `Governance`, `area` of `IncidentClass` or `takeover.max_eur` of `Tenant`) on a v0.1 core before this version now gets `version_unsupported` (MAN-11): apply it again with `-drop-unsupported`, or remove those fields.
+The core now claims skeleton v0.3 (it claimed v0.1 before). What changes for stored manifests at the next apply:
+
+- The fields of v0.2 and v0.3 apply as fields of the claimed version.
+- The kinds and fields of deferred rules, and of the profiles the core does not claim (`connections`, `debug`, `sandbox`), are refused with `version_unsupported` and their path (MAN-11): for example the channel `rate`, `commission.shadow` other than `off`, the commission reward fields, a sink with driver `webhook`, `kind: Script` and `Schedule.spec.script`. A whole optional field goes with `-drop-unsupported`; a kind or a value you remove yourself.
+- A role with `memory: person` is refused with `person_memory_deferred` while the personal assistant is deferred (MEM-2, DSP-10); set `memory: none`. A stored role keeps its person memory until that apply.
+- `stops_manager` of an `IncidentClass` and `incident_stop` of the farm charter apply with a warning `version_unsupported` and are not used: no incident stops the farm manager seat (MGR-55, GOV-47). Mark the classes the manager answers for with `manager_accountable`. A seat stop by an incident that the old core left is removed by the core at start.
+- An enabled farm manager needs its seat profile in `models_allowed` (`manager_profile_missing`, MGR-20); a tenant without the farm charter sets `farm_manager.enabled: false`.
+- `farmctl seat resume farm-manager` takes `--tenant <tenant>` only; the form by an incident is gone, and P2 `seat.resume` without a `tenant` is refused with `input_schema_invalid`.
 
 To go back: stop the farm, restore the store from the backup of step 2 into an empty database (`sudo -u postgres dropdb botaru`, `sudo -u postgres createdb -O botaru botaru`, `sudo -u postgres pg_restore -d botaru botaru-before-upgrade.dump`), check out the noted commit, put back the copied programs and settings, and start the core, the agent and the channel. An older core is not guaranteed to work on a store that a newer core has migrated, so never skip the restore. Go back only right after a failed upgrade: the restore drops everything the new core did since, including erasures it ran, and deliveries it made may be sent again. This is not the restore procedure of "Backups and restore" (`farmctl restore begin`), which the first version does not have.
 

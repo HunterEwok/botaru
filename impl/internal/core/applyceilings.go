@@ -8,7 +8,6 @@ import (
 
 	"github.com/HunterEwok/botaru/impl/internal/manifest"
 	"github.com/HunterEwok/botaru/impl/internal/money"
-	"github.com/HunterEwok/botaru/impl/internal/spec"
 )
 
 // Two money checks of apply that compare tenant limits with a ceiling: the provider workspace
@@ -143,7 +142,7 @@ func (c *Core) proposalReviewPrice(cat *Catalog, tenant string) int64 {
 	if !c.vetoCovered(lenses, exec) {
 		return 0
 	}
-	if !spec.VersionLater("v0.2", spec.Version) && managerEnabled(cat, tenant) && sr != "" &&
+	if managerEnabled(cat, tenant) && sr != "" &&
 		slices.Contains(cat.Roles[sr].Claims, managerLensType) && cat.TaskTypes[managerLensType].Purpose == "review" {
 		lenses = append(lenses, managerLens)
 		exec[managerLens] = lensExecutor{Lens: managerLens, Type: managerLensType, Role: sr, Source: "seat"}
