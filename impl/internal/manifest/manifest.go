@@ -383,7 +383,9 @@ type Role struct {
 	MayTargetGroups []string `json:"may_target_groups"`
 	// Scripts is the vocabulary of a script author (SCR-5, TRN-2).
 	Scripts *RoleScripts `json:"scripts"`
-	Runtime struct {
+	// Aggregate is the sources block of an aggregator (AGG-2, AGG-3).
+	Aggregate *RoleAggregate `json:"aggregate"`
+	Runtime   struct {
 		Driver string `json:"driver"`
 	} `json:"runtime"`
 }
@@ -400,6 +402,17 @@ type RoleScripts struct {
 	StepTypes []string `json:"step_types"`
 	Actions   []string `json:"actions"`
 	MaxSteps  int      `json:"max_steps"`
+}
+
+// RoleAggregate is what an aggregator reads: only its listed sources (AGG-3).
+type RoleAggregate struct {
+	Sources struct {
+		Roles        []string `json:"roles"`
+		BotGroups    []string `json:"bot_groups"`
+		Series       []string `json:"series"`
+		MessageKinds []string `json:"message_kinds"`
+	} `json:"sources"`
+	MaxSources int `json:"max_sources"`
 }
 
 // RoleCampaigns is the campaigns block of a role: propose is none, read or action.

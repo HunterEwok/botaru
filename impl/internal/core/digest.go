@@ -184,7 +184,15 @@ func (c *Core) sendDigest(ctx context.Context, tx pgx.Tx, now time.Time, cat *Ca
 		}
 		off = off[:min(len(off), maxLoopOff)]
 	}
-	if len(items) == 0 && len(off) == 0 {
+	// A scheduled digest also carries up to max_per_digest items of the audit sample (DIG-5).
+	var samples []*proposalRow
+	if !urgent {
+		_, _, perDigest := sampleConfig(cat, tv.Name)
+		if samples, err = pickSamples(ctx, tx, tv.Name, min(perDigest, maxDigestItems-len(items))); err != nil {
+			return err
+		}
+	}
+	if len(items) == 0 && len(off) == 0 && len(samples) == 0 {
 		// Nothing to say: the slot stays open for a day, so items recommended later in it
 		// still go out.
 		return nil
@@ -202,7 +210,7 @@ func (c *Core) sendDigest(ctx context.Context, tx pgx.Tx, now time.Time, cat *Ca
 		}
 		body["loop_off"] = map[string]any{"reasons": reasons}
 	}
-	shown, reached, err := c.planDigest(ctx, tx, now, tv, items, off)
+	shown, reached, err := c.planDigest(ctx, tx, now, tv, items, samples, off)
 	if err != nil {
 		return err
 	}
@@ -232,6 +240,11 @@ func (c *Core) sendDigest(ctx context.Context, tx pgx.Tx, now time.Time, cat *Ca
 			return err
 		}
 		if err := c.planProposalCards(ctx, tx, now, tv, p); err != nil {
+			return err
+		}
+	}
+	for _, p := range samples {
+		if err := c.presentSample(ctx, tx, now, tv, p); err != nil {
 			return err
 		}
 	}
@@ -276,7 +289,7 @@ func (c *Core) digestShow(item, ceiling string) string {
 // planDigest plans the digest text to the present_to address: a bound chat with its ceiling,
 // or the direct chat of every active member of a group with that person's ceiling (DIG-2). It
 // returns the items as the address shows them and whether any target was reached.
-func (c *Core) planDigest(ctx context.Context, tx pgx.Tx, now time.Time, tv *TenantView, items []*proposalRow, off []loopReason) ([]any, bool, error) {
+func (c *Core) planDigest(ctx context.Context, tx pgx.Tx, now time.Time, tv *TenantView, items, samples []*proposalRow, off []loopReason) ([]any, bool, error) {
 	addr := asString(tv.Spec.Insights.PresentTo)
 	kind, name, _ := strings.Cut(addr, ":")
 	type target struct {
@@ -345,10 +358,24 @@ func (c *Core) planDigest(ctx context.Context, tx pgx.Tx, now time.Time, tv *Ten
 					"untrusted_seen": us["value"] == true, "self_evidence": p.Rec["self_evidence"] == true})
 			}
 		}
+		// The digest gives only the number of audit sample items; each blind card goes to a
+		// private chat (DIG-5, DIG-6).
+		if len(samples) > 0 {
+			lines = append(lines, fmt.Sprintf("- audit sample: %d items, a blind card for each in a private chat", len(samples)))
+		}
+		for _, p := range samples {
+			if i == 0 {
+				shown = append(shown, map[string]any{"proposal": p.ID, "kind": "audit_sample", "data_mark": asString(p.Rec["data_mark"]), "show": "title_only", "block": nil,
+					"untrusted_seen": mmapAny(p.Rec["untrusted_seen"])["value"] == true, "self_evidence": p.Rec["self_evidence"] == true})
+			}
+		}
 		params := map[string]any{"count": len(items), "items": strings.Join(lines, "\n"), "loop_off": strings.Join(reasons, ", ")}
 		key := "proposal.digest"
 		switch {
-		case len(items) == 0:
+		case len(items) == 0 && len(samples) > 0 && len(reasons) == 0:
+			params["count"] = len(samples)
+			key = "proposal.digest.audit_sample"
+		case len(items) == 0 && len(samples) == 0:
 			key = "proposal.digest.loop_off"
 		case len(reasons) > 0:
 			key = "proposal.digest.with_loop_off"
@@ -445,7 +472,7 @@ func (c *Core) planProposalCard(ctx context.Context, tx pgx.Tx, now time.Time, t
 // recipient sees its new state.
 func (c *Core) planProposalCardUpdates(ctx context.Context, tx pgx.Tx, now time.Time, p *proposalRow) error {
 	rows, err := tx.Query(ctx, `SELECT id, kind, exec_name, target_id, coalesce(recipient, ''), coalesce(data_mark, '') FROM deliveries
-		WHERE subject_kind = 'proposal' AND subject_id = $1 AND kind IN ('proposal_card', 'realization_card', 'rollback_card') AND state IN ('planned', 'sending', 'delivered')
+		WHERE subject_kind = 'proposal' AND subject_id = $1 AND kind IN ('proposal_card', 'proposal_sample_card', 'self_measured_card', 'realization_card', 'rollback_card') AND state IN ('planned', 'sending', 'delivered')
 		ORDER BY seq`, p.ID)
 	if err != nil {
 		return err
@@ -565,6 +592,33 @@ func (c *Core) proposalCardFields(cat *Catalog, p *proposalRow, kind string, rem
 			}
 			buttons = append(buttons, button("details"))
 		}
+	case proposalSampleCard:
+		until := p.StateAt
+		if p.PresentedAt != nil {
+			until = *p.PresentedAt
+		}
+		if tv != nil {
+			until = until.Add(durationOr(tv.Spec.Insights.DecideTTL, defaultDecideTTL))
+		}
+		buttons = c.sampleCardFields(p, card, ctxt, until)
+	case selfMeasuredCard:
+		// The calculation figures of a self-measured trial; "Count it" gives the trigger
+		// (GOV-14).
+		t := mmapAny(p.Rec["trial"])
+		card["title"] = cut("Count this success? "+title, 200)
+		ctxt["outcome"] = t["outcome"]
+		for _, k := range []string{"before", "after"} {
+			if v, ok := mmapAny(t[k])["value"]; ok {
+				ctxt[k] = v
+			}
+		}
+		ctxt["self_measured"] = true
+		until := parseTime(asString(mmapAny(p.Rec["self_measured_card"])["at"])).Add(selfMeasuredTTL)
+		card["expires_at"] = fmtTime(until)
+		card["footer"] = map[string]any{"why_you": "governance.confirm:commission", "until": fmtTime(until), "on_silence": "the success stays only in the track record"}
+		if p.Rec["self_measured_count"] == nil && p.Nonce != "" {
+			buttons = append(buttons, button("count"))
+		}
 	case realizationCard:
 		r := mmapAny(p.Rec["realization"])
 		by := asString(r["realize_by"])
@@ -659,15 +713,22 @@ func (c *Core) proposalDetails(ctx context.Context, w *Worker, ob OnBehalf, req 
 		if p.Nonce == "" || p.Nonce != req.Nonce {
 			return refuse("forbidden", "the nonce is not the card's")
 		}
-		press, err := c.checkPress(ctx, tx, now, cat, w, ob, "proposal", p.ID, []string{proposalCard})
+		press, err := c.checkPress(ctx, tx, now, cat, w, ob, "proposal", p.ID, []string{proposalCard, proposalSampleCard})
 		if err != nil {
 			return err
 		}
-		if _, err := tx.Exec(ctx, `INSERT INTO card_views (subject_kind, subject_id, principal, opened_at) VALUES ('proposal', $1, $2, $3) ON CONFLICT DO NOTHING`,
+		kind := proposalCard
+		upsert := "DO NOTHING"
+		if _, sampled := mmapAny(p.Rec["sample"])["month"]; sampled {
+			// The audit sample keeps the latest opening: "Lift veto" needs one after the
+			// scores were shown (DIG-6, APR-14).
+			kind, upsert = proposalSampleCard, "(subject_kind, subject_id, principal) DO UPDATE SET opened_at = excluded.opened_at"
+		}
+		if _, err := tx.Exec(ctx, `INSERT INTO card_views (subject_kind, subject_id, principal, opened_at) VALUES ('proposal', $1, $2, $3) ON CONFLICT `+upsert,
 			p.ID, press.principal, now); err != nil {
 			return err
 		}
-		card := c.proposalCardFields(cat, p, proposalCard, false)
+		card := c.proposalCardFields(cat, p, kind, false)
 		fields := mmapAny(card["context"])
 		fields["title"], fields["state"] = card["title"], p.State
 		b := mmapAny(p.Rec["body"])
@@ -676,7 +737,8 @@ func (c *Core) proposalDetails(ctx context.Context, w *Worker, ob OnBehalf, req 
 				fields[k] = v
 			}
 		}
-		if v := mmapAny(p.Rec["verdict"]); v != nil {
+		// The blind card shows no verdict before the answer (DIG-6).
+		if v := mmapAny(p.Rec["verdict"]); v != nil && p.State != "sample_presented" {
 			fields["verdict"] = v["outcome"]
 			fields["lenses"] = v["lenses"]
 		}

@@ -317,7 +317,7 @@ func (c *Core) retireBot(ctx context.Context, tx pgx.Tx, now time.Time, cat *Cat
 		return "", err
 	}
 	// A holder that leaves other than by a seat operation frees its seat.
-	if reason != "replaced_by_human" && reason != "replaced_after_incident" {
+	if reason != "replaced_by_human" && reason != "replaced_after_incident" && reason != "removed_by_vote" {
 		if err := c.seatVacated(ctx, tx, now, cat, b, "bot.retire"); err != nil {
 			return "", err
 		}

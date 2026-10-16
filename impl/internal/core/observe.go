@@ -75,6 +75,10 @@ func (c *Core) tenantSeries(cat *Catalog, tenant string) map[string]seriesDef {
 	if reg, err := c.spec.Registry("spec/model/core-series.yaml"); err == nil {
 		for _, e := range reg.Entries {
 			if e["since"] != "v0.1" {
+				// The decision statistics of v0.2 are core series of this build (DIG-4).
+				if d, ok := c.decisionSeries(asString(e["id"])); ok {
+					out[d.Name] = d
+				}
 				continue
 			}
 			d := seriesDef{Name: asString(e["id"]), CatalogKind: asString(e["catalog_kind"]), DataClass: coreSeriesMark, Source: "core",
@@ -1026,6 +1030,13 @@ func (c *Core) readableSeries(cat *Catalog, tenant, role, typ string) []string {
 	case "review":
 		// A reviewer reads any series of the tenant within the task's mark (COM-3).
 		return slices.Sorted(mapKeys(c.tenantSeries(cat, tenant)))
+	case "aggregate":
+		// An aggregator reads only the series its sources list (OBV-3, AGG-3).
+		r, ok := cat.Roles[role]
+		if !ok || r.Aggregate == nil {
+			return nil
+		}
+		return r.Aggregate.Sources.Series
 	}
 	return tt.Observes
 }

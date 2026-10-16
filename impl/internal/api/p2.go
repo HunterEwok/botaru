@@ -366,6 +366,31 @@ func (s *Server) p2(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		out, err = s.c.LinkCommit(ctx, oper, req)
+	case "governance.list":
+		req, derr := decode[core.TenantRequest](m)
+		if derr != nil {
+			s.fail(w, derr)
+			return
+		}
+		out, err = s.c.GovernanceList(ctx, oper, req)
+	case "governance.show", "governance.cancel":
+		req, derr := decode[core.IncidentRequest](m)
+		if derr != nil {
+			s.fail(w, derr)
+			return
+		}
+		if op == "governance.show" {
+			out, err = s.c.GovernanceShow(ctx, oper, req)
+		} else {
+			out, err = s.c.GovernanceCancel(ctx, oper, req)
+		}
+	case "commission.status":
+		req, derr := decode[core.TenantRequest](m)
+		if derr != nil {
+			s.fail(w, derr)
+			return
+		}
+		out, err = s.c.CommissionStatus(ctx, oper, req)
 	case "obs.series":
 		req, derr := decode[core.ObsQueryRequest](m)
 		if derr != nil {

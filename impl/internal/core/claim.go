@@ -753,7 +753,7 @@ func (c *Core) claimDelivery(ctx context.Context, tx pgx.Tx, now time.Time, cat 
 				continue
 			}
 		}
-		if sk := deref(subjectKind); sk == "approval" || sk == "proposal" || sk == "control" || sk == "campaign" || sk == "script" || sk == "script_gate" {
+		if sk := deref(subjectKind); sk == "approval" || sk == "proposal" || sk == "control" || sk == "campaign" || sk == "script" || sk == "script_gate" || sk == "governance_case" || sk == "attribution" {
 			// A card is drawn from the record now, so it shows the current state (APR-3). An
 			// update waits while the card it edits is being sent, and is dropped when that card
 			// never arrived: the card itself then shows the current state.
@@ -771,6 +771,8 @@ func (c *Core) claimDelivery(ctx context.Context, tx pgx.Tx, now time.Time, cat 
 				drawn, replaces, err = c.campaignCardBody(ctx, tx, cat, w.Tenant, kind, deref(subjectID), targetID, deref(recipient), w.Target, b)
 			case "script", "script_gate":
 				drawn, replaces, err = c.scriptCardBody(ctx, tx, cat, w.Tenant, sk, kind, deref(subjectID), targetID, deref(recipient), w.Target, b)
+			case "governance_case", "attribution":
+				drawn, replaces, err = c.govCardBody(ctx, tx, cat, sk, kind, deref(subjectID), targetID, deref(recipient), w.Target, b)
 			case "proposal":
 				drawn, replaces, err = c.proposalCardBody(ctx, tx, cat, kind, deref(subjectID), targetID, deref(recipient), w.Target, b)
 			default:
