@@ -985,6 +985,8 @@ func (c *Core) Decide(ctx context.Context, w *Worker, ob *OnBehalf, req DecideRe
 		return c.decideScript(ctx, w, *ob, req)
 	case "script_gate":
 		return c.decideGate(ctx, w, *ob, req)
+	case "takeover":
+		return c.decideTakeover(ctx, w, *ob, req)
 	default:
 		return nil, refuse("not_found", "this build decides approvals, memory records, a person's requests, proposals and control cards")
 	}

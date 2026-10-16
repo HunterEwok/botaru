@@ -1107,6 +1107,10 @@ func countedReturn(leaseState, reason string) bool {
 // returns to its inbox (MSG-9). A counted return past the third hand-out is dead
 // (delivery_exhausted); an entry past its expiry is expired (MSG-12).
 func (c *Core) settleMessages(ctx context.Context, tx pgx.Tx, now time.Time, task string) error {
+	// What else the ended attempt staged is not published either (MGR-5, MGR-21).
+	if err := dropStaged(ctx, tx, now, task); err != nil {
+		return err
+	}
 	rows, err := tx.Query(ctx, `SELECT m.seq, m.id, m.tenant, m.type, m.state, coalesce(l.state, 'gone'), coalesce(l.reason, ''), m.handouts, m.expires_at,
 			coalesce(m.sender_task, m.reader_task), coalesce(m.sender_lease, m.reader_lease), coalesce(l.worker_id, '')
 		FROM messages m LEFT JOIN leases l ON l.work_id = CASE WHEN m.state = 'staged' THEN m.sender_task ELSE m.reader_task END

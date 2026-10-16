@@ -647,6 +647,10 @@ func (c *Core) lintManifests(docs []manifest.Doc, index []int, personas personaL
 		if kind == "production" && ts["self_approve"] == true {
 			f.add(o, "self_approve_production", "/self_approve")
 		}
+		// The takeover card is never lifted: confirm_above_eur is reserved (MGR-21).
+		if v, ok := mnum(mmap(ts, "takeover"), "confirm_above_eur"); ok && v > 0 {
+			f.add(o, "takeover_confirm_threshold", "/takeover/confirm_above_eur")
+		}
 		for _, cmd := range slices.Sorted(mapKeys(mmap(ts, "commands"))) {
 			tt, _ := mmap(ts, "commands")[cmd].(string)
 			path := "/commands/" + cmd

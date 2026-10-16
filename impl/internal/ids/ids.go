@@ -45,6 +45,11 @@ const (
 	Campaign   = "cmp"
 	Script     = "scr"
 	ScriptGate = "scg"
+	// ModelGrant, Takeover and Escalation are the farm manager's grant, takeover and escalation
+	// records (MGR-5, MGR-17, MGR-21).
+	ModelGrant = "mg"
+	Takeover   = "tko"
+	Escalation = "esc"
 )
 
 var (

@@ -530,6 +530,15 @@ func (c *Core) claimAttempt(ctx context.Context, tx pgx.Tx, now time.Time, cat *
 		}
 		handles["tools"] = h
 	}
+	// An approved grant of the task gives this attempt the granted slot; the run fingerprint
+	// keeps the profile configured for the role's slot (MGR-18, GW-7, PRV-1).
+	if slot != "" {
+		if gp, ok, err := claimGrant(ctx, tx, now, id); err != nil {
+			return nil, err
+		} else if ok {
+			slot, profile = grantedSlot, gp
+		}
+	}
 	if slot != "" {
 		h := "bh_" + ids.Secret(32)
 		if _, err := tx.Exec(ctx, `INSERT INTO handles (hash, kind, tenant, work_id, lease_no, epoch, worker_id, slot, profile, created_at)
@@ -766,7 +775,7 @@ func (c *Core) claimDelivery(ctx context.Context, tx pgx.Tx, now time.Time, cat 
 				continue
 			}
 		}
-		if sk := deref(subjectKind); sk == "approval" || sk == "proposal" || sk == "control" || sk == "campaign" || sk == "script" || sk == "script_gate" {
+		if sk := deref(subjectKind); sk == "approval" || sk == "proposal" || sk == "control" || sk == "campaign" || sk == "script" || sk == "script_gate" || sk == "takeover" {
 			// A card is drawn from the record now, so it shows the current state (APR-3). An
 			// update waits while the card it edits is being sent, and is dropped when that card
 			// never arrived: the card itself then shows the current state.
@@ -786,6 +795,8 @@ func (c *Core) claimDelivery(ctx context.Context, tx pgx.Tx, now time.Time, cat 
 				drawn, replaces, err = c.scriptCardBody(ctx, tx, cat, w.Tenant, sk, kind, deref(subjectID), targetID, deref(recipient), w.Target, b)
 			case "proposal":
 				drawn, replaces, err = c.proposalCardBody(ctx, tx, cat, kind, deref(subjectID), targetID, deref(recipient), w.Target, b)
+			case "takeover":
+				drawn, replaces, err = takeoverCardBody(ctx, tx, w.Tenant, kind, deref(subjectID), targetID, deref(recipient), w.Target, b)
 			default:
 				drawn, replaces, err = controlCardBody(ctx, tx, w.Tenant, kind, deref(subjectID), targetID, deref(recipient), w.Target, b)
 			}

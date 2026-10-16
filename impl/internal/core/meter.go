@@ -37,6 +37,12 @@ type ModelGrant struct {
 	Fingerprint string
 	// LeaseNo is the lease of the attempt, written on its usage lines (CNT-4).
 	LeaseNo int
+	// GrantID is the active model grant of a handle on the granted slot: its calls draw on the
+	// rest of the grant's cap_eur (MGR-18).
+	GrantID string
+	// PayTenant is the tenant whose budget pays the calls when it is not the task's: the farm
+	// for a necessity review it pays (MGR-6, COM-13).
+	PayTenant string
 }
 
 // ResolveModelHandle checks a model handle: it exists, its lease is alive and of the current
@@ -115,12 +121,26 @@ func (c *Core) ResolveModelHandle(ctx context.Context, handle string) (*ModelGra
 		return nil, refuse("provider_config", "the model profile of the slot is not applied")
 	}
 	g.Profile = p
+	// The granted slot holds only under an active grant of this task with its profile; its
+	// calls go on the grant's line (GW-7, MGR-18).
+	if g.Slot == grantedSlot {
+		id, line, err := grantOfHandle(ctx, c.st.Pool, g.Task, g.ProfileName)
+		if err != nil {
+			return nil, err
+		}
+		g.GrantID, g.Line = id, line
+	}
+	if pay := payTenantOf(rec); pay != "" && cat.Tenants[pay] != nil {
+		g.PayTenant = pay
+	}
 	// The rank of the slot's profile against the ceiling of the acting identity's position
-	// (GOV-3).
-	if ok, err := c.rankAllowed(ctx, cat, &g); err != nil {
-		return nil, err
-	} else if !ok {
-		return nil, refuse("rank_exceeded", "the model profile is above the rank ceiling of the acting position")
+	// (GOV-3). A grant is the decision above the ceiling, so the granted slot is not held to it.
+	if g.Slot != grantedSlot {
+		if ok, err := c.rankAllowed(ctx, cat, &g); err != nil {
+			return nil, err
+		} else if !ok {
+			return nil, refuse("rank_exceeded", "the model profile is above the rank ceiling of the acting position")
+		}
 	}
 	if l := tv.Spec.ModelsAllowed; len(l) > 0 && !slices.Contains(l, g.ProfileName) {
 		return nil, refuse("provider_config", "the profile is not in the tenant's models_allowed")
@@ -167,11 +187,30 @@ func (c *Core) Reserve(ctx context.Context, g *ModelGrant, micros int64) (string
 		if p, err := loadPrincipal(ctx, tx, now, g.Tenant, g.Initiator); err == nil {
 			groups = groupClosure(tv, p.Groups)
 		}
-		return c.reserveSpend(ctx, tx, now, tv, spendRow{
-			ID: id, Tenant: g.Tenant, Task: g.Task, Root: g.Root, Subject: g.Initiator, Role: g.Role, Worker: g.Worker,
+		// A call under a grant must fit the rest of its cap_eur first (MGR-18).
+		if g.GrantID != "" {
+			if p, err := c.grantReserve(ctx, tx, now, g, micros); err != nil {
+				return err
+			} else if p != nil {
+				return &committed{p: p}
+			}
+		}
+		payer := g.Tenant
+		if g.PayTenant != "" {
+			payer, tv, groups = g.PayTenant, cat.Tenants[g.PayTenant], nil
+		}
+		if err := c.reserveSpend(ctx, tx, now, tv, spendRow{
+			ID: id, Tenant: payer, Task: g.Task, Root: g.Root, Subject: g.Initiator, Role: g.Role, Worker: g.Worker,
 			Line: g.Line, Purpose: g.Purpose, Unit: "tokens", Profile: g.ProfileName, Provider: strings.ToLower(g.Profile.Provider), Fingerprint: g.Fingerprint, Micros: micros,
 			LeaseNo: g.LeaseNo,
-		}, groups, g.TreeBudget)
+		}, groups, g.TreeBudget); err != nil {
+			return err
+		}
+		if g.GrantID != "" {
+			_, err := tx.Exec(ctx, `UPDATE spend SET grant_id = $2 WHERE id = $1`, id, g.GrantID)
+			return err
+		}
+		return nil
 	})
 	if err != nil {
 		return "", err

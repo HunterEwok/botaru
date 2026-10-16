@@ -25,8 +25,16 @@ var Profiles = []string{"core"}
 var Ahead = map[string][]string{
 	// The eval report index (TRN-6, MGR-23, MGR-17).
 	"EvalReports": {"/kind"},
-	// The translator's eval gate of a tenant (TRN-6).
-	"Tenant": {"/spec/evals"},
+	// The translator's eval gate of a tenant (TRN-6), the grant and takeover lines and the
+	// takeover list (MGR-17, MGR-21).
+	"Tenant": {"/spec/evals", "/spec/takeover", "/spec/budgets/lines/grant", "/spec/budgets/lines/takeover"},
+	// The grant ladder of a role and the grant signs of a type (MGR-17).
+	"Role":     {"/spec/model_grants"},
+	"TaskType": {"/spec/grant_eligible", "/spec/grant_eval_set", "/spec/grant"},
+	// The seat's grant ceilings (MGR-17, MGR-18).
+	"Governance": {"/spec/farm_manager/grant_limits"},
+	// The necessity lens thresholds (COM-13).
+	"Commission": {"/spec/escalation"},
 }
 
 // ahead says whether the field at ptr of a manifest of kind is in Ahead.
