@@ -93,6 +93,12 @@ func (c *Core) retentionLoop(ctx context.Context) error {
 				WHERE until <= $1 LIMIT $2 FOR UPDATE SKIP LOCKED)`, now, retentionBatch)
 			return tag.RowsAffected(), err
 		},
+		// A snapshot of the status views goes with the content of its task (REP-2).
+		func(tx pgx.Tx, now time.Time) (int64, error) {
+			tag, err := tx.Exec(ctx, `DELETE FROM view_snapshots WHERE task IN (SELECT task FROM view_snapshots
+				WHERE created_at <= $1 LIMIT $2 FOR UPDATE SKIP LOCKED)`, now.AddDate(0, 0, -contentDays), retentionBatch)
+			return tag.RowsAffected(), err
+		},
 		// An expired file has no bytes left; the next step records expired -> purged and the
 		// record stays as the tombstone (spec/lifecycles/file.md, RET-2).
 		func(tx pgx.Tx, now time.Time) (int64, error) {

@@ -424,6 +424,10 @@ func (c *Core) completeAttempt(ctx context.Context, tx pgx.Tx, now time.Time, w 
 	if err := json.Unmarshal(rec, &record); err != nil {
 		return err
 	}
+	// A reporter's answer is a digest the code builds (REP-2, REP-9).
+	if purposeOf(tt) == "report" && !record.child() {
+		return c.deliverDigest(ctx, tx, now, cat, w.Tenant, l.WorkID, rec, result)
+	}
 	// A task of a schedule's tree reports to the schedule's addresses where a task with an
 	// origin would report to it: the root and its continuations, never a child (DLV-6, CNT-1).
 	if name, err := scheduleOf(ctx, tx, record.treeRecord, l.WorkID); err != nil {

@@ -339,7 +339,7 @@
                   "description": "Delivery address as the core recorded it (for reference); recipient says where to draw."
                 },
                 "body": {
-                  "description": "Delivery body by the form form: result (the task answer: text that core code assembled from result by summary_fields, and the fields), card (a card by the card schema), text_code (code text by a text catalog key and parameters), data (delivery data for a sink or monitoring adapter by the schema of its kind).",
+                  "description": "Delivery body by the form form: result (the task answer: text that core code assembled from result by summary_fields, and the fields), card (a card by the card schema), text_code (code text by a text catalog key and parameters), digest (a reporter's digest, REP-2), data (delivery data for a sink or monitoring adapter by the schema of its kind).",
                   "oneOf": [
                     {
                       "type": "object",
@@ -418,6 +418,85 @@
                               }
                             ]
                           }
+                        }
+                      },
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "object",
+                      "description": "A reporter's digest (REP-2): the code table from the snapshot of the views, the hidden count and the optional model paragraph as a separate marked part; sources and labeled only when the attempt saw untrusted text.",
+                      "required": [
+                        "form",
+                        "snapshot_id",
+                        "window",
+                        "rows",
+                        "hidden"
+                      ],
+                      "properties": {
+                        "form": {
+                          "const": "digest"
+                        },
+                        "snapshot_id": {
+                          "type": "string",
+                          "maxLength": 80
+                        },
+                        "window": {
+                          "enum": [
+                            "1h",
+                            "24h",
+                            "since_last"
+                          ]
+                        },
+                        "rows": {
+                          "type": "array",
+                          "maxItems": 200,
+                          "items": {
+                            "type": "object",
+                            "required": [
+                              "type",
+                              "title",
+                              "state",
+                              "count"
+                            ],
+                            "properties": {
+                              "type": {
+                                "type": "string",
+                                "maxLength": 120
+                              },
+                              "title": {
+                                "type": "string",
+                                "maxLength": 200
+                              },
+                              "state": {
+                                "type": "string",
+                                "maxLength": 40
+                              },
+                              "count": {
+                                "type": "integer",
+                                "minimum": 0
+                              }
+                            },
+                            "additionalProperties": false
+                          }
+                        },
+                        "hidden": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "text": {
+                          "type": "string",
+                          "maxLength": 800
+                        },
+                        "sources": {
+                          "type": "array",
+                          "maxItems": 16,
+                          "items": {
+                            "type": "string",
+                            "maxLength": 64
+                          }
+                        },
+                        "labeled": {
+                          "type": "boolean"
                         }
                       },
                       "additionalProperties": false

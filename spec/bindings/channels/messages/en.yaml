@@ -147,6 +147,12 @@ texts:
   number.words: [zero, one, two, three, four, five, six, seven, eight, nine, ten, eleven, twelve,
     thirteen, fourteen, fifteen, sixteen, seventeen, eighteen, nineteen, twenty, thirty, forty, fifty,
     sixty, seventy, eighty, ninety, hundred, thousand, million, billion, dozen, half, twice]
+  # A reporter's digest, drawn by code from the snapshot of the views (REP-2)
+  digest.title: "Report, window {window}:"
+  digest.row: "{title}, {state}: {count}"
+  digest.empty: No tasks in the window.
+  digest.hidden: "Hidden as above this chat's class: {count}."
+  digest.sources: "[AI text; it read text from: {sources}]"
   # Refusals and outcomes that the first bot shows (DLV-9, PRM-8)
   provenance.model: "[AI answer]"
   task.rejected: "The request was not accepted: {reason}."
