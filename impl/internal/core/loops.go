@@ -220,6 +220,9 @@ func (c *Core) deadlines(ctx context.Context) error {
 			if err := c.toolcallDeadlines(ctx); err != nil {
 				return err
 			}
+			if err := c.repeatPrincipalLeft(ctx); err != nil {
+				return err
+			}
 			return c.unclaimed(ctx)
 		}
 	}

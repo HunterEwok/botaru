@@ -35,6 +35,15 @@ func (c *Core) offboard(ctx context.Context, tx pgx.Tx, now time.Time, tv *Tenan
 	if err := c.cancelTasksOf(ctx, tx, now, tv.Name, subject, "person_inactive"); err != nil {
 		return "", 0, err
 	}
+	// From v0.2 the person leaves every group in the same transaction; a returning person gets
+	// a new principal without them (IDN-14, D-100). The bound chats where they were seen stay
+	// as leftovers (IDN-13, REP-7).
+	if _, err := tx.Exec(ctx, `DELETE FROM memberships WHERE tenant = $1 AND principal = $2`, tv.Name, subject); err != nil {
+		return "", 0, err
+	}
+	if err := keepLeftovers(ctx, tx, now, tv.Name, subject); err != nil {
+		return "", 0, err
+	}
 	// Deliveries still planned for them are withheld for good: the chat id they carry may later
 	// belong to a new principal of the freed identity (DLV-6).
 	if err := c.withholdDeliveriesTo(ctx, tx, now, tv.Name, subject, "person_inactive"); err != nil {
@@ -44,6 +53,11 @@ func (c *Core) offboard(ctx context.Context, tx pgx.Tx, now time.Time, tv *Tenan
 		Scope: ErasureScope{Tenant: tv.Name, Subject: subject}, Reason: "offboarding", Author: author, Needles: needles,
 	})
 	if err != nil {
+		return "", 0, err
+	}
+	// The event names only the opaque principal id (LCY-3).
+	if err := c.appendEvent(ctx, tx, now, tv.Name, Event{Type: "principal.offboarded.v1", Subject: subject,
+		Data: map[string]any{"subject": "human:" + subject, "erasure": erasure}}); err != nil {
 		return "", 0, err
 	}
 	n, err := c.planPrincipalLeft(ctx, tx, now, tv, subject, "offboarding")
@@ -116,16 +130,20 @@ func (c *Core) cancelTasksOf(ctx context.Context, tx pgx.Tx, now time.Time, tena
 }
 
 // planPrincipalLeft sends the code notice principal_left to the direct chats of the active
-// admins of the tenant with admin:people (IDN-13, REP-5), never to a group. This version has no
-// chat bindings, so the list of chats where the person remains is always empty and the text
-// says so. It returns the number of planned notices.
+// admins of the tenant with admin:people (IDN-13, REP-5), never to a group. It names the bound
+// chats where the person was seen and may still be a member (IDN-14). It returns the number of
+// planned notices.
 func (c *Core) planPrincipalLeft(ctx context.Context, tx pgx.Tx, now time.Time, tv *TenantView, subject, reason string) (int, error) {
 	chats, err := c.adminChats(ctx, tx, now, tv, subject, "admin:people")
 	if err != nil {
 		return 0, err
 	}
+	member, err := memberChats(ctx, tx, tv.Name, subject)
+	if err != nil {
+		return 0, err
+	}
 	for _, a := range chats {
-		params := map[string]any{"subject": subject, "reason": reason, "chats": c.texts.Render(a.Locale, "notice.principal_left.no_chats", nil)}
+		params := map[string]any{"subject": subject, "reason": reason, "chats": c.chatsParam(a.Locale, member)}
 		if _, err := c.planDelivery(ctx, tx, now, plannedDelivery{
 			Tenant: tv.Name, Kind: "principal_left", Addr: "admins", TargetKind: "chat",
 			TargetID: Chat{Kind: "direct", ExternalID: a.ExternalID}.ID(), ExecKind: "channel", ExecName: a.Channel,
