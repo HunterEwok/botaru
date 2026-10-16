@@ -489,7 +489,7 @@ func TestParagraphChecked(t *testing.T) {
 	}
 }
 
-// postmortemDoc is a manager.postmortem.v1 type for the tests; no example declares one.
+// postmortemDoc is a manager.postmortem.v1 type for the tests, as examples/tasktypes declares it.
 func postmortemDoc() map[string]any {
 	return map[string]any{"apiVersion": "botaru/v1alpha1", "kind": "TaskType", "metadata": map[string]any{"name": postmortemType},
 		"spec": map[string]any{"title": "Analysis after an incident", "worker_kind": "agent", "purpose": "manage", "tier": 1, "data_class": "internal",
