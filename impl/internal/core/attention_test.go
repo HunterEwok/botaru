@@ -4,6 +4,8 @@ package core
 
 import (
 	"context"
+	"os"
+	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
@@ -12,6 +14,8 @@ import (
 	"github.com/jackc/pgx/v5"
 
 	"github.com/HunterEwok/botaru/impl/internal/ids"
+	"github.com/HunterEwok/botaru/impl/internal/spec"
+	"github.com/HunterEwok/botaru/impl/internal/texts"
 )
 
 // addApprover adds a person with the identity telegram:<n> to the approvers group of the
@@ -417,5 +421,51 @@ func TestPrefsQuietHours(t *testing.T) {
 	b.advance(t, 3700)
 	if got := b.drain(t); len(got) != 1 || got[0].kind != "digest" {
 		t.Fatalf("after quiet hours %+v", got)
+	}
+}
+
+// The language of a delivery and the reply_locale of an attempt follow the order of DLV-18:
+// the recipient's own locale with a catalog, then the tenant's, then en.
+func TestLocaleOrder(t *testing.T) {
+	ctx := context.Background()
+	b := newBenchWith(t, func(root string, ms []map[string]any) []map[string]any {
+		for _, m := range ms {
+			if m["kind"] == "Tenant" {
+				m["spec"].(map[string]any)["locale"] = "et"
+			}
+		}
+		return ms
+	})
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "et.yaml"), []byte("locale: et\ntexts:\n  notice.ai: Tere.\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	root, _ := spec.FindRoot("")
+	tx, err := texts.Load(root, dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	b.c.texts = tx
+	// A locale without a catalog is passed over.
+	if _, err := b.c.st.Pool.Exec(ctx, `UPDATE principals SET locale = 'ru' WHERE id = $1`, b.alice); err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"et", "en"} {
+		b.hello(t, "lo-"+want)
+		if want == "et" {
+			// The notices of the first contact.
+			d := b.claim(t, b.channel, "delivery")
+			if d == nil || d.Payload["locale"] != want {
+				t.Fatalf("delivery locale %v, want %s", d, want)
+			}
+			b.drain(t)
+		}
+		att := b.claim(t, b.agent, "attempt")
+		if att == nil || att.Payload["reply_locale"] != want {
+			t.Fatalf("reply_locale %v, want %s", att, want)
+		}
+		if _, err := b.c.st.Pool.Exec(ctx, `UPDATE principals SET locale = 'en' WHERE id = $1`, b.alice); err != nil {
+			t.Fatal(err)
+		}
 	}
 }

@@ -541,6 +541,17 @@ func (c *Core) claimAttempt(ctx context.Context, tx pgx.Tx, now time.Time, cat *
 		"instruction": joinInstruction(persona, tt.Instruction),
 		"handles":     handles,
 	}
+	// The language of the answer by the locale order for the recipient of the result; the
+	// model does not choose it (DLV-18).
+	var tr treeRecord
+	if err := json.Unmarshal(rec, &tr); err != nil {
+		return nil, err
+	}
+	rl, err := c.replyLocale(ctx, tx, cat, w.Tenant, id, g.Initiator, tr)
+	if err != nil {
+		return nil, err
+	}
+	payload["reply_locale"] = rl
 	// Implementation extension (MAN-3): the result schema, so that the runtime can ask the
 	// model for a matching answer. The instruction itself stays the trusted text from git.
 	if tt.ResultSchema != nil {
@@ -906,15 +917,12 @@ func (c *Core) claimDelivery(ctx context.Context, tx pgx.Tx, now time.Time, cat 
 		"target":   map[string]any{"kind": w.Kind, "name": w.Target},
 		"delivery": d,
 	}
-	// Implementation extension (MAN-3): the recipient's locale for code texts; without it the
-	// channel takes en (DLV-9).
-	if recipient != nil {
-		var locale *string
-		_ = tx.QueryRow(ctx, `SELECT locale FROM principals WHERE tenant = $1 AND id = $2`, w.Tenant, *recipient).Scan(&locale)
-		if locale != nil && *locale != "" {
-			payload["locale"] = *locale
-		}
+	// Implementation extension (MAN-3): the locale of the code texts by the order of DLV-18.
+	locale, err := c.deliveryLocale(ctx, tx, cat, w.Tenant, w.Target, targetKind, targetID, deref(recipient), deref(task), addr)
+	if err != nil {
+		return nil, err
 	}
+	payload["locale"] = locale
 	item.Payload = payload
 	return item, nil
 }
