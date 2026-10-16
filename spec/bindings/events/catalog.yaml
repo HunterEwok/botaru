@@ -1,5 +1,5 @@
 registry: events-catalog
-version: 5
+version: 6
 description: >-
   Catalog of events for observability, hold, retention and erasure, time and
   external monitoring, plus events of campaigns, scripts, seats and proposal
@@ -269,6 +269,11 @@ entries:
     data_schema: spec/model/event-data/ext-monitor-scripts.schema.json
     producer: [adapter]
     rules: [MON-10]
+  - id: ext.monitor.account.v1
+    since: v0.1
+    data_schema: spec/model/event-data/ext-monitor-account.schema.json
+    producer: [adapter]
+    rules: [MON-4, OBS-11]
   - id: ext.monitor.maintenance.v1
     since: v0.2
     data_schema: spec/model/event-data/ext-monitor-maintenance.schema.json
@@ -279,6 +284,11 @@ entries:
     data_schema: spec/model/event-data/digest-text-dropped.schema.json
     producer: [core]
     rules: [REP-4]
+  - id: tenant.privacy_changed.v1
+    since: v0.1
+    data_schema: spec/model/event-data/privacy-event.schema.json
+    producer: [core]
+    rules: [SEC-8]
   - id: tenant.suspended.v1
     since: v0.2
     producer: [core]

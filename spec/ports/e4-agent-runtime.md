@@ -23,7 +23,7 @@ Beyond the declaration:
 
 - The runtime takes tools only from P3 and reaches the model only through P4, without fallback providers; it does not retry a P4 error, the core retries the task (GW-12).
 - It stops on `cancel_requested` from `heartbeat` before the next heartbeat (FEN-4), and its result is tied to the attempt lease (FEN-1).
-- After an attempt no transcript stays on its disk except under a declared `runtime_internal` session (MEM-4). From v0.2 every runtime that ran an attempt of a tenant takes `erasure` work units for its working files, caches and logs with content (RET-11). The erase operation of a runtime is called `purge` (a work unit with `op: erase`), the search `match`.
+- After an attempt no transcript stays on its disk except under a declared `runtime_internal` session (MEM-4). From v0.2 every runtime that ran an attempt of a tenant takes `erasure` work units for its working files, caches and logs with content (RET-11). The erase operation of a runtime is called `purge` (a work unit with `op: erase`), the search `match`. A purge of reason `bot_retired` names the retired identity in `scope.bot`, and the runtime erases only the `runtime_internal` sessions and memory of that identity, not those of a successor bound to the same worker (MEM-9).
 - A separate runtime process lives in its own container: a read-only config, no container runtime socket, no host volumes, network only to P3, P4 and its adapter (DEP-5). Telemetry goes only through the adapter by the allowlist, without content (OBS-1); handles do not get into the model context (SEC-3).
 - It does not change instructions, skills, the catalog or manifests at the model's request (INJ-10).
 

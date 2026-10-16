@@ -62,7 +62,7 @@
     },
     "scope": {
       "type": "object",
-      "description": "Scope of the erasure request: (tenant), (tenant, subject) or a list of ids (RET-4).",
+      "description": "Scope of the erasure request: (tenant), (tenant, subject) or a list of ids (RET-4); a runtime purge of reason bot_retired also names the retired bot identity (MEM-9).",
       "required": [
         "tenant"
       ],
@@ -82,6 +82,10 @@
           },
           "maxItems": 1000,
           "description": "List of ids of store objects, including those found by its own match operation."
+        },
+        "bot": {
+          "$ref": "urn:botaru:schema:common:1#/$defs/object_id",
+          "description": "Bot identity of a bot_retired runtime purge: the runtime erases only the sessions and memory it keeps for this identity, not those of a successor on the same worker (MEM-9)."
         }
       }
     },

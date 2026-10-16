@@ -238,8 +238,10 @@ The codes of `check_manifests.py` that fixtures refer to (`expect: {error: <code
 | `model_exposure_agent_read` | a resource with model_exposure: none is read by a tool of an agent role | PRV-4 |
 | `model_exposure_not_aggregate` | a resource with model_exposure: aggregates is read by an agent tool whose output is not only numbers and enum values | PRV-4 |
 | `not_in_version` | field or value appears in a later skeleton version | APR-10, APR-16 |
+| `notice_version_not_raised` | privacy controller, purposes, subprocessors or recipients changed without a higher notice_version | SEC-13 |
 | `observes_not_job` | observes on a type that is not a job | OBV-3 |
 | `params_invalid` | route or schedule params fail the closed type schema |  |
+| `person_memory_deferred` | from v0.2 a role with memory: person while the personal assistant is deferred | MEM-2 |
 | `persona_hash` | a persona text sent with apply does not match its SHA-256 | GOV-4 |
 | `persona_link` | a persona or lens addendum holds a link, an address, an id or a secret name | GOV-4 |
 | `persona_missing` | a charter pins a persona by hash and apply has no text of that hash | GOV-4 |
@@ -247,6 +249,7 @@ The codes of `check_manifests.py` that fixtures refer to (`expect: {error: <code
 | `persona_value_path` | a functionary persona without the value-path paragraph, or another persona with one | GOV-4 |
 | `price_old` | profile price older than 60 days (note) | GW-17 |
 | `price_stale` | profile price older than 120 days (a note in examples) | GW-17 |
+| `privacy_incomplete` | a production tenant has an empty field of the privacy block (an explicit none is allowed for dpia_ref) | SEC-8 |
 | `process_tenant_missing` | a channel, toolhost or monitor process of the deployment description names no tenant | SEC-6, TEN-3 |
 | `proposable_required_false` | type or schedule without the required proposable: false | PRP-10 |
 | `proposal_scope` | proposal commit touches files outside the tenant folder | MAN-5, PRP-8 |
@@ -259,6 +262,7 @@ The codes of `check_manifests.py` that fixtures refer to (`expect: {error: <code
 | `recipients_monitoring` | privacy.recipients lacks monitoring while the installation claims the monitor profile or its profiles are unknown | MON-1 |
 | `redact_required` | placement: host and untrusted_output: true without redact [ip, email, secret] | INJ-4 |
 | `ref_missing` | reference to an object that is not in the set |  |
+| `region_unsupported` | the subprocessor region of an allowed profile provider is not in the region table of its provider binding | GW-14 |
 | `retention_period` | tenant retention period outside the class bounds or longer than the content period | RET-9 |
 | `revert_reason_invalid` | Botaru-Revert reason is not from the closed list | MAN-5, PRP-22 |
 | `reviewer_not_independent` | a commission seat fallback role runs on the analysis profile of a role that writes proposals | COM-2 |
@@ -298,7 +302,7 @@ The codes of `check_manifests.py` that fixtures refer to (`expect: {error: <code
 | `skill_format` | skill folder breaks the format: files, types, sizes, front matter or name | SKL-1 |
 | `state_agent_producer` | state message kind has producers other than code | STA-1, MSG-2 |
 | `status_in_git` | manifest has a status field: status is kept by the core | MAN-1 |
-| `subprocessor_undeclared` | profile provider or subprocessor is not declared in privacy.subprocessors | GW-15 |
+| `subprocessor_undeclared` | profile provider, profile subprocessor or a provider of providers_allowed is not declared in privacy.subprocessors | GW-15, SEC-8 |
 | `summary_fields_required` | a type in default_types for a group chat has no summary_fields | REP-11 |
 | `system_decision_cap` | system-ops group holds a decision or control capability | PRM-10 |
 | `system_ops_missing` | route or schedule type is not granted to system-ops | PRM-10 |

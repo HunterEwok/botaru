@@ -25,12 +25,15 @@ type ErasureLogEntry struct {
 	CreatedAt time.Time       `json:"created_at"`
 	Deadline  *time.Time      `json:"deadline_at,omitempty"`
 	Found     json.RawMessage `json:"found,omitempty"`
+	// RuntimeWorker is the worker whose runtime purges a retired identity's sessions: without
+	// it a replayed bot_retired request would erase the sealed core data early (MEM-9).
+	RuntimeWorker string `json:"runtime_worker,omitempty"`
 }
 
 // ErasureLogExport reads the erasure log for its separate backup (RET-5): farmctl runs it on the
 // core machine as often as the store backup, at least.
 func (c *Core) ErasureLogExport(ctx context.Context) ([]ErasureLogEntry, error) {
-	rows, err := c.st.Pool.Query(ctx, `SELECT id, tenant, coalesce(subject, ''), reason, author, scope, created_at, deadline_at, found FROM erasure_requests ORDER BY created_at, id`)
+	rows, err := c.st.Pool.Query(ctx, `SELECT id, tenant, coalesce(subject, ''), reason, author, scope, created_at, deadline_at, found, coalesce(runtime_worker, '') FROM erasure_requests ORDER BY created_at, id`)
 	if err != nil {
 		return nil, err
 	}
@@ -39,7 +42,7 @@ func (c *Core) ErasureLogExport(ctx context.Context) ([]ErasureLogEntry, error) 
 	for rows.Next() {
 		var e ErasureLogEntry
 		var scope, found []byte
-		if err := rows.Scan(&e.ID, &e.Tenant, &e.Subject, &e.Reason, &e.Author, &scope, &e.CreatedAt, &e.Deadline, &found); err != nil {
+		if err := rows.Scan(&e.ID, &e.Tenant, &e.Subject, &e.Reason, &e.Author, &scope, &e.CreatedAt, &e.Deadline, &found, &e.RuntimeWorker); err != nil {
 			return nil, err
 		}
 		if scope != nil {
@@ -100,9 +103,9 @@ func (c *Core) restoreBegin(ctx context.Context, tx pgx.Tx, now time.Time, log [
 			if len(e.Found) > 0 {
 				found = []byte(e.Found)
 			}
-			tag, err := tx.Exec(ctx, `INSERT INTO erasure_requests (id, tenant, subject, reason, author, state, scope, created_at, deadline_at, updated_at, found)
-				VALUES ($1, $2, $3, $4, $5, 'requested', $6, $7, $8, $9, $10) ON CONFLICT (id) DO NOTHING`,
-				e.ID, e.Tenant, nullable(e.Subject), e.Reason, []byte(e.Author), scope, e.CreatedAt, e.Deadline, now, found)
+			tag, err := tx.Exec(ctx, `INSERT INTO erasure_requests (id, tenant, subject, reason, author, state, scope, created_at, deadline_at, updated_at, found, runtime_worker)
+				VALUES ($1, $2, $3, $4, $5, 'requested', $6, $7, $8, $9, $10, $11) ON CONFLICT (id) DO NOTHING`,
+				e.ID, e.Tenant, nullable(e.Subject), e.Reason, []byte(e.Author), scope, e.CreatedAt, e.Deadline, now, found, nullable(e.RuntimeWorker))
 			if err != nil {
 				return err
 			}

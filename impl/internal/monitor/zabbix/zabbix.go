@@ -140,7 +140,13 @@ func (a *Adapter) Run(ctx context.Context) error {
 	}()
 	go func() {
 		defer wg.Done()
-		a.every(ctx, a.cfg.ScriptsEvery, a.SyncScripts)
+		a.every(ctx, a.cfg.ScriptsEvery, func(ctx context.Context) error {
+			// The account report goes with the script lists (MON-4, OBS-11).
+			if err := a.SyncAccount(ctx); err != nil && ctx.Err() == nil {
+				a.log.Warn("account report", "err", err)
+			}
+			return a.SyncScripts(ctx)
+		})
 	}()
 	for ctx.Err() == nil {
 		if _, err := a.ServeOne(ctx, 30); err != nil && ctx.Err() == nil {
@@ -180,6 +186,16 @@ func (e *APIError) Error() string { return fmt.Sprintf("zabbix api %d: %s", e.Co
 
 // call calls one Zabbix API method with the adapter's token.
 func (a *Adapter) call(ctx context.Context, method string, params, out any) error {
+	return a.do(ctx, method, params, out, true)
+}
+
+// callAnon calls a method that Zabbix answers only without authorization, such as
+// user.checkAuthentication.
+func (a *Adapter) callAnon(ctx context.Context, method string, params, out any) error {
+	return a.do(ctx, method, params, out, false)
+}
+
+func (a *Adapter) do(ctx context.Context, method string, params, out any, auth bool) error {
 	a.mu.Lock()
 	a.reqID++
 	id := a.reqID
@@ -193,7 +209,9 @@ func (a *Adapter) call(ctx context.Context, method string, params, out any) erro
 		return err
 	}
 	req.Header.Set("Content-Type", "application/json-rpc")
-	req.Header.Set("Authorization", "Bearer "+a.cfg.APIToken)
+	if auth {
+		req.Header.Set("Authorization", "Bearer "+a.cfg.APIToken)
+	}
 	resp, err := a.cfg.HTTP.Do(req)
 	if err != nil {
 		return fmt.Errorf("zabbix %s: request failed", method)

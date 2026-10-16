@@ -341,7 +341,7 @@ func (c *Core) scriptRun(ctx context.Context, tx pgx.Tx, now time.Time, cat *Cat
 	}
 	grant, err := c.writeGrant(ctx, tx, now, g.Tenant,
 		map[string]any{"kind": "bot", "principal": workerPrincipal(g.Worker), "role": g.Role, "task": g.Task}, actor,
-		map[string]any{"resource": hostID, "script": name}, argsHash)
+		map[string]any{"resource": hostID, "script": name, "initiator": g.Initiator}, argsHash)
 	if err != nil {
 		return nil, "", "", err
 	}
@@ -656,7 +656,7 @@ func (c *Core) scriptSweep(ctx context.Context, tx pgx.Tx, now time.Time) error 
 
 // submitSignal accepts an external event of the monitoring adapter of the tenant (MON-5,
 // MON-10). It never becomes a task in v0.1: a problem raises or resolves a farm alarm by code,
-// a script list closes the values of monitor/script_run.
+// a script list closes the values of monitor/script_run, an account report feeds doctor (MON-4).
 func (c *Core) submitSignal(ctx context.Context, w *Worker, a Activity) (*ActivityResult, error) {
 	if !c.monitorOn() {
 		return nil, refuse("not_ready", "the monitor profile is off")
@@ -678,6 +678,8 @@ func (c *Core) submitSignal(ctx context.Context, w *Worker, a Activity) (*Activi
 		return c.scriptsSignal(ctx, w, cat, a.Event.Data)
 	case "ext.monitor.maintenance.v1":
 		return c.maintenanceSignal(ctx, w, cat, a.Event.Data)
+	case "ext.monitor.account.v1":
+		return c.accountSignal(ctx, w, a.Event.Data)
 	}
 	return nil, refuse("input_schema_invalid", "unknown event type")
 }

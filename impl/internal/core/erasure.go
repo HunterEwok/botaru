@@ -67,12 +67,21 @@ func (s ErasureScope) kind() string {
 	return "tenant"
 }
 
+// runtimeOnly says whether a request reaches only an agent runtime's own store: the purge of
+// a retired identity's runtime_internal sessions (MEM-9).
+func (s erasureSpec) runtimeOnly() bool {
+	return s.Reason == "bot_retired" && s.RuntimeWorker != ""
+}
+
 // erasureSpec is a request to record.
 type erasureSpec struct {
-	Scope   ErasureScope
-	Reason  string
-	Author  string // a principal, or "" for system
-	Needles []string
+	Scope  ErasureScope
+	Reason string
+	Author string // a principal, or "" for system
+	// RuntimeWorker is, for bot_retired, the worker whose runtime purges the identity's
+	// runtime_internal sessions and memory (MEM-9); the recorded scope stays (tenant, bot).
+	RuntimeWorker string
+	Needles       []string
 	// Found are the ids each store's match found, for the erasure of an erase_match: an
 	// empty list for a store that found nothing, no key for one that could not be searched.
 	Found map[string][]string
@@ -120,17 +129,20 @@ func (c *Core) requestErasure(ctx context.Context, tx pgx.Tx, now time.Time, tv 
 	if s.Found != nil {
 		found, _ = json.Marshal(s.Found)
 	}
-	if _, err := tx.Exec(ctx, `INSERT INTO erasure_requests (id, tenant, subject, reason, author, state, created_at, scope, deadline_at, needles, updated_at, found)
-		VALUES ($1, $2, $3, $4, $5, 'requested', $6, $7, $8, $9, $6, $10)`,
-		id, tv.Name, nullable(s.Scope.Subject), s.Reason, author, now, scope, now.Add(time.Duration(subjectRequestDays(tv))*24*time.Hour), needles, found); err != nil {
+	if _, err := tx.Exec(ctx, `INSERT INTO erasure_requests (id, tenant, subject, reason, author, state, created_at, scope, deadline_at, needles, updated_at, found, runtime_worker)
+		VALUES ($1, $2, $3, $4, $5, 'requested', $6, $7, $8, $9, $6, $10, $11)`,
+		id, tv.Name, nullable(s.Scope.Subject), s.Reason, author, now, scope, now.Add(time.Duration(subjectRequestDays(tv))*24*time.Hour), needles, found, nullable(s.RuntimeWorker)); err != nil {
 		return "", err
 	}
-	if err := addErasureSteps(ctx, tx, now, tv.Name, tv, id, s.Reason); err != nil {
+	if err := addErasureSteps(ctx, tx, now, tv.Name, tv, id, s.Reason, s.Scope, s.RuntimeWorker); err != nil {
 		return "", err
 	}
-	// Any erasure request of the tenant drops its cached tool output (PRM-12).
-	if _, err := tx.Exec(ctx, `DELETE FROM tool_cache WHERE tenant = $1`, tv.Name); err != nil {
-		return "", err
+	// Any erasure request of the tenant drops its cached tool output (PRM-12), except the
+	// runtime purge of a retired identity: it reaches only the runtime's own store (MEM-9).
+	if !s.runtimeOnly() {
+		if _, err := tx.Exec(ctx, `DELETE FROM tool_cache WHERE tenant = $1`, tv.Name); err != nil {
+			return "", err
+		}
 	}
 	if err := c.appendEvent(ctx, tx, now, tv.Name, Event{Type: "erasure.requested", Subject: id, Data: map[string]any{
 		"request": id, "scope_kind": s.Scope.kind(), "reason": s.Reason,
@@ -148,25 +160,28 @@ func (c *Core) requestErasure(ctx context.Context, tx pgx.Tx, now time.Time, tv 
 
 // addErasureSteps records a step per store a request reaches: forget reaches only memory and
 // sessions (MEM-4), in the core and in every runtime, every other reason every store of the
-// tenant with content; bot_retired reaches only the identity's memory (MEM-9). Every agent
-// worker of the tenant that ran an attempt of it gets a purge step for the working files,
-// caches and logs with content its runtime keeps (RET-11). tv is nil for a tenant no longer in
-// the catalog; then it has no channels.
-func addErasureSteps(ctx context.Context, tx pgx.Tx, now time.Time, tenant string, tv *TenantView, id, reason string) error {
+// tenant with content; bot_retired reaches only the identity's memory, or with a runtime worker
+// only the purge of that worker's runtime (MEM-9). Every agent worker of the tenant that ran an
+// attempt of it gets a purge step for the working files, caches and logs with content its
+// runtime keeps (RET-11). tv is nil for a tenant no longer in the catalog; then it has no
+// channels.
+func addErasureSteps(ctx context.Context, tx pgx.Tx, now time.Time, tenant string, tv *TenantView, id, reason string, scope ErasureScope, runtimeWorker string) error {
 	var channels map[string]manifest.Channel
 	if tv != nil {
 		channels = tv.Channels
 	}
 	type step struct{ store, kind, target string }
 	var steps []step
-	if reason == "worker_revoke" {
-		// A revoked worker's runtime profile store is the only store of the request (LCY-4).
-		var worker string
-		if err := tx.QueryRow(ctx, `SELECT scope->>'worker' FROM erasure_requests WHERE id = $1`, id).Scan(&worker); err != nil {
-			return err
-		}
+	// A revoked worker's runtime profile store is the only store of a worker_revoke request
+	// (LCY-4); the purge of the worker's runtime for the sessions and memory of a retired
+	// identity is the only one of a bot_retired request with a worker (MEM-9).
+	worker := scope.Worker
+	if reason == "bot_retired" {
+		worker = runtimeWorker
+	}
+	if reason == "worker_revoke" || reason == "bot_retired" && worker != "" {
 		_, err := tx.Exec(ctx, `INSERT INTO erasure_steps (id, request, tenant, store, kind, target, state, updated_at) VALUES ($1, $2, $3, $4, 'runtime', $5, 'pending', $6)`,
-			ids.New(ids.Step), id, tenant, storeKey("runtime", strings.ToLower(worker)), worker, now)
+			ids.New(ids.Step), id, tenant, storeKey("runtime", worker), worker, now)
 		return err
 	}
 	for _, st := range coreStores {
@@ -249,18 +264,20 @@ func principalOr(p string) string {
 type erasureRow struct {
 	ID, Tenant, Reason, State string
 	Scope                     ErasureScope
-	Needles                   []string
-	Deadline                  time.Time
+	// RuntimeWorker is the worker whose runtime purges a retired identity's sessions (MEM-9).
+	RuntimeWorker string
+	Needles       []string
+	Deadline      time.Time
 }
 
 func loadErasure(ctx context.Context, q store.Querier, id string, lock bool) (*erasureRow, error) {
-	sql := `SELECT id, tenant, reason, state, scope, coalesce(needles, '{}'), deadline_at FROM erasure_requests WHERE id = $1`
+	sql := `SELECT id, tenant, reason, state, scope, coalesce(needles, '{}'), deadline_at, coalesce(runtime_worker, '') FROM erasure_requests WHERE id = $1`
 	if lock {
 		sql += ` FOR UPDATE`
 	}
 	var r erasureRow
 	var scope []byte
-	if err := q.QueryRow(ctx, sql, id).Scan(&r.ID, &r.Tenant, &r.Reason, &r.State, &scope, &r.Needles, &r.Deadline); err != nil {
+	if err := q.QueryRow(ctx, sql, id).Scan(&r.ID, &r.Tenant, &r.Reason, &r.State, &scope, &r.Needles, &r.Deadline, &r.RuntimeWorker); err != nil {
 		return nil, err
 	}
 	if err := json.Unmarshal(scope, &r.Scope); err != nil {
@@ -323,13 +340,15 @@ func (c *Core) erasureLoop(ctx context.Context) error {
 				return err
 			}
 			if n == 0 {
-				if err := addErasureSteps(ctx, tx, now, r.Tenant, cat.Tenants[r.Tenant], r.ID, r.Reason); err != nil {
+				if err := addErasureSteps(ctx, tx, now, r.Tenant, cat.Tenants[r.Tenant], r.ID, r.Reason, r.Scope, r.RuntimeWorker); err != nil {
 					return err
 				}
 				// A request replayed after a restore drops the cached tool output the backup
 				// brought back, as requestErasure does for a new one (PRM-12).
-				if _, err := tx.Exec(ctx, `DELETE FROM tool_cache WHERE tenant = $1`, r.Tenant); err != nil {
-					return err
+				if !(erasureSpec{Scope: r.Scope, Reason: r.Reason, RuntimeWorker: r.RuntimeWorker}).runtimeOnly() {
+					if _, err := tx.Exec(ctx, `DELETE FROM tool_cache WHERE tenant = $1`, r.Tenant); err != nil {
+						return err
+					}
 				}
 				if err := settleReplayedMatch(ctx, tx, now, r); err != nil {
 					return err
@@ -782,7 +801,8 @@ func (c *Core) settleErasure(ctx context.Context, tx pgx.Tx, now time.Time, r *e
 		if err := c.resolveAlarm(ctx, tx, now, alarm); err != nil {
 			return err
 		}
-		if r.Scope.Bot != "" {
+		// The runtime purge of a retired identity leaves its sealed core data to the seal.
+		if r.Scope.Bot != "" && r.RuntimeWorker == "" {
 			if err := botErased(ctx, tx, now, r.Scope.Bot); err != nil {
 				return err
 			}
@@ -857,6 +877,10 @@ func (c *Core) claimErasure(ctx context.Context, tx pgx.Tx, now time.Time, w *Wo
 		return nil, err
 	}
 	scope := map[string]any{"tenant": r.Scope.Tenant}
+	if r.Scope.Bot != "" && kind == "runtime" {
+		// The runtime purges only the sessions and memory of this identity (MEM-9).
+		scope["bot"] = r.Scope.Bot
+	}
 	if r.Scope.Subject != "" {
 		scope["subject"] = r.Scope.Subject
 	}

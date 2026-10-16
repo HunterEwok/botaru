@@ -308,6 +308,9 @@ func (c *Core) retireBot(ctx context.Context, tx pgx.Tx, now time.Time, cat *Cat
 	if err := c.fenceAttempts(ctx, tx, now, "bot_retired", `acting_bot = $1`, b.ID); err != nil {
 		return "", err
 	}
+	if err := c.purgeRetiredRuntime(ctx, tx, now, cat, b); err != nil {
+		return "", err
+	}
 	// The facts go to the successor: the new identity of the worker, the next holder of the
 	// seat, or the first identity enrolled in the role before the seal ends; a role that left
 	// the catalog has none. Then they are sealed (MEM-4, MEM-7).
@@ -382,6 +385,10 @@ func (c *Core) WorkerRevoke(ctx context.Context, op Operator, req WorkerRequest)
 // cleared and the identity becomes unbound. It returns the audit number.
 func (c *Core) revokeWorker(ctx context.Context, tx pgx.Tx, now time.Time, tenant, id, state, principal, command, reason string) (int64, error) {
 	if _, err := tx.Exec(ctx, `UPDATE workers SET state = 'revoked' WHERE id = $1`, id); err != nil {
+		return 0, err
+	}
+	// A revoked adapter's account report no longer speaks for any account (MON-4).
+	if _, err := tx.Exec(ctx, `DELETE FROM monitor_accounts WHERE worker = $1`, id); err != nil {
 		return 0, err
 	}
 	// A revoked token holds no work of any kind (IDN-4).

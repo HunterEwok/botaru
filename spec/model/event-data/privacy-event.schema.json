@@ -1,0 +1,36 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:botaru:schema:privacy-event:1",
+  "title": "Privacy block change event data",
+  "description": "Data of the event tenant.privacy_changed: an apply changed the privacy block of the tenant (SEC-8). Metadata only: the names of the changed fields of the block and the notice version after the change, without their values.",
+  "x-botaru-direction": "output",
+  "x-botaru-rules": [
+    "SEC-8"
+  ],
+  "type": "object",
+  "required": [
+    "tenant",
+    "fields"
+  ],
+  "properties": {
+    "tenant": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/tenant_name"
+    },
+    "fields": {
+      "description": "The changed fields of the privacy block.",
+      "type": "array",
+      "maxItems": 20,
+      "items": {
+        "type": "string",
+        "pattern": "^[a-z][a-z0-9_]*$",
+        "maxLength": 40
+      }
+    },
+    "notice_version": {
+      "description": "privacy.notice_version after the change (SEC-13).",
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 100000
+    }
+  }
+}

@@ -15,11 +15,11 @@ cases:
     expect: ok
   - name: production tenant with self_approve
     manifests:
-      - {apiVersion: botaru/v1alpha1, kind: Tenant, metadata: {name: demo2}, spec: {kind: production, self_approve: true, farm_manager: {enabled: false}, budgets: {month_eur: 60}}}
+      - {apiVersion: botaru/v1alpha1, kind: Tenant, metadata: {name: demo2}, spec: {privacy: {purposes: [{purpose: operations}], controller: {name: Example Org, contact: privacy@example.org, agreement_ref: contracts/demo2}, recipients: [messenger, monitoring], notice_ref: privacy/demo2, notice_version: 1, dpia_ref: none, ropa_ref: ropa/demo2}, kind: production, self_approve: true, farm_manager: {enabled: false}, budgets: {month_eur: 60}}}
     expect: {error: self_approve_production}
   - name: tenant without a kind field counts as production
     manifests:
-      - {apiVersion: botaru/v1alpha1, kind: Tenant, metadata: {name: demo2}, spec: {self_approve: true, farm_manager: {enabled: false}, budgets: {month_eur: 60}}}
+      - {apiVersion: botaru/v1alpha1, kind: Tenant, metadata: {name: demo2}, spec: {privacy: {purposes: [{purpose: operations}], controller: {name: Example Org, contact: privacy@example.org, agreement_ref: contracts/demo2}, recipients: [messenger, monitoring], notice_ref: privacy/demo2, notice_version: 1, dpia_ref: none, ropa_ref: ropa/demo2}, self_approve: true, farm_manager: {enabled: false}, budgets: {month_eur: 60}}}
     expect: {error: self_approve_production}
   - name: /run on a type without run.approval none
     manifests:
@@ -27,6 +27,7 @@ cases:
         kind: Tenant
         metadata: {name: demo2}
         spec:
+          privacy: {purposes: [{purpose: operations}], controller: {name: Example Org, contact: privacy@example.org, agreement_ref: contracts/demo2}, recipients: [messenger, monitoring], notice_ref: privacy/demo2, notice_version: 1, dpia_ref: none, ropa_ref: ropa/demo2}
           farm_manager: {enabled: false}
           budgets: {month_eur: 60}
           run: {sensors: {type: data.sensor_check.v1, args: [window_h]}}
@@ -37,6 +38,7 @@ cases:
         kind: Tenant
         metadata: {name: demo2}
         spec:
+          privacy: {purposes: [{purpose: operations}], controller: {name: Example Org, contact: privacy@example.org, agreement_ref: contracts/demo2}, recipients: [messenger, monitoring], notice_ref: privacy/demo2, notice_version: 1, dpia_ref: none, ropa_ref: ropa/demo2}
           farm_manager: {enabled: false}
           budgets: {month_eur: 60}
           run: {ctd-qc: {action: pipeline.ctd_qc, args: [month, outdir]}}
@@ -47,6 +49,7 @@ cases:
         kind: Tenant
         metadata: {name: demo2}
         spec:
+          privacy: {purposes: [{purpose: operations}], controller: {name: Example Org, contact: privacy@example.org, agreement_ref: contracts/demo2}, recipients: [messenger, monitoring], notice_ref: privacy/demo2, notice_version: 1, dpia_ref: none, ropa_ref: ropa/demo2}
           farm_manager: {enabled: false}
           budgets: {month_eur: 60}
           default_types: [assist.chat.v1]
@@ -58,6 +61,7 @@ cases:
         kind: Tenant
         metadata: {name: demo2}
         spec:
+          privacy: {purposes: [{purpose: operations}], controller: {name: Example Org, contact: privacy@example.org, agreement_ref: contracts/demo2}, recipients: [messenger, monitoring], notice_ref: privacy/demo2, notice_version: 1, dpia_ref: none, ropa_ref: ropa/demo2}
           farm_manager: {enabled: false}
           budgets: {month_eur: 60}
           commands: {"/status": ops.summary.v1}
@@ -68,6 +72,7 @@ cases:
         kind: Tenant
         metadata: {name: demo2}
         spec:
+          privacy: {purposes: [{purpose: operations}], controller: {name: Example Org, contact: privacy@example.org, agreement_ref: contracts/demo2}, recipients: [messenger, monitoring], notice_ref: privacy/demo2, notice_version: 1, dpia_ref: none, ropa_ref: ropa/demo2}
           farm_manager: {enabled: true}
           budgets: {month_eur: 60, lines: {manager: {month_eur: 10}}}
           models_allowed: [base-std]
@@ -83,6 +88,7 @@ cases:
         kind: Tenant
         metadata: {name: demo2}
         spec:
+          privacy: {purposes: [{purpose: operations}], controller: {name: Example Org, contact: privacy@example.org, agreement_ref: contracts/demo2}, recipients: [messenger, monitoring], notice_ref: privacy/demo2, notice_version: 1, dpia_ref: none, ropa_ref: ropa/demo2}
           farm_manager: {enabled: true}
           budgets: {month_eur: 60}
           models_allowed: [base-std, manager-std]
@@ -100,6 +106,7 @@ cases:
         kind: Tenant
         metadata: {name: demo2}
         spec:
+          privacy: {purposes: [{purpose: operations}], controller: {name: Example Org, contact: privacy@example.org, agreement_ref: contracts/demo2}, recipients: [messenger, monitoring], notice_ref: privacy/demo2, notice_version: 1, dpia_ref: none, ropa_ref: ropa/demo2}
           farm_manager: {enabled: false}
           budgets: {month_eur: 60}
           default_types: [{type: ops.summary.v1, chats: [group, direct]}]
@@ -110,6 +117,7 @@ cases:
         kind: Tenant
         metadata: {name: demo2}
         spec:
+          privacy: {purposes: [{purpose: operations}], controller: {name: Example Org, contact: privacy@example.org, agreement_ref: contracts/demo2}, recipients: [messenger, monitoring], notice_ref: privacy/demo2, notice_version: 1, dpia_ref: none, ropa_ref: ropa/demo2}
           farm_manager: {enabled: false}
           budgets: {month_eur: 60}
           default_types: [{type: data.analyze.v1, chats: ['chat:lab']}]

@@ -127,7 +127,7 @@ func TestLintWorkspaceCeilings(t *testing.T) {
 		"provider-a": {OrganizationEUR: 1000, Workspaces: map[string]float64{"demo": 100, "demo3": 1000}},
 	}}
 	tenant := func(name string, month int) string {
-		return "apiVersion: botaru/v1alpha1\nkind: Tenant\nmetadata: {name: " + name + "}\nspec: {farm_manager: {enabled: false}, budgets: {month_eur: " + strconv.Itoa(month) + "}}\n---\n"
+		return "apiVersion: botaru/v1alpha1\nkind: Tenant\nmetadata: {name: " + name + "}\nspec: {kind: test, farm_manager: {enabled: false}, budgets: {month_eur: " + strconv.Itoa(month) + "}}\n---\n"
 	}
 	got := lintDetails(t, c, tenant("demo", 90)+tenant("demo2", 10))
 	if _, ok := got["workspace_ceiling_missing demo2"]; !ok || len(got) != 1 {
@@ -161,7 +161,7 @@ func TestLintReviewLine(t *testing.T) {
 	docs.WriteString("apiVersion: botaru/v1alpha1\nkind: Role\nmetadata: {name: analyst}\nspec: {insight: {max_per_week: 3}}\n---\n")
 	reviewer := "apiVersion: botaru/v1alpha1\nkind: Role\nmetadata: {name: reviewer}\nspec: {profile: reviewer, claims: [" + strings.Join(types, ", ") + "]}\n---\n"
 	tenant := func(review string) string {
-		return "apiVersion: botaru/v1alpha1\nkind: Tenant\nmetadata: {name: demo}\nspec: {budgets: {lines: {insight: {month_eur: 5}, review: {month_eur: " + review + "}}}}\n"
+		return "apiVersion: botaru/v1alpha1\nkind: Tenant\nmetadata: {name: demo}\nspec: {kind: test, budgets: {lines: {insight: {month_eur: 5}, review: {month_eur: " + review + "}}}}\n"
 	}
 	need := reviewNeed([]int{3}, int64(len(types))*60000)
 	got := lintDetails(t, c, docs.String()+reviewer+tenant("0.5"))
