@@ -28,7 +28,9 @@ func (c *Core) managerLensExecutor(ctx context.Context, tx pgx.Tx, cat *Catalog,
 	if !managerEnabled(cat, p.Tenant) || sr == "" || !slices.Contains(cat.Roles[sr].Claims, managerLensType) {
 		return lensExecutor{}, false, nil
 	}
-	if _, ok := cat.TaskTypes[managerLensType]; !ok {
+	// Only a review type gets the input and the trusted facts of a review (COM-3, GOV-25); the
+	// apply lint for it has no code in the skeleton yet, so the core checks it here.
+	if tt, ok := cat.TaskTypes[managerLensType]; !ok || tt.Purpose != "review" {
 		return lensExecutor{}, false, nil
 	}
 	m, err := loadManagerSeat(ctx, tx, false)

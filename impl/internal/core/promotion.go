@@ -259,6 +259,10 @@ func (c *Core) askSelfMeasured(ctx context.Context, tx pgx.Tx, now time.Time, tv
 	if err != nil {
 		return err
 	}
+	// Only people whose ceiling covers the proposal's mark get its figures (DIG-2).
+	if people, err = c.withinCeiling(ctx, tx, now, tv, people, asString(p.Rec["data_mark"])); err != nil {
+		return err
+	}
 	for _, person := range people {
 		if err := c.planProposalCard(ctx, tx, now, tv, p, selfMeasuredCard, person, nil); err != nil {
 			return err
@@ -396,17 +400,17 @@ type caseRow struct {
 	ID, Tenant, State, Vacancy, Nonce string
 	Rec                               map[string]any
 	Holders, Upheld                   map[string]any
-	PresentedAt, ExpiresAt            *time.Time
+	PresentedAt, ExpiresAt, HeldSince *time.Time
 }
 
 func loadCase(ctx context.Context, tx pgx.Tx, id string, lock bool) (*caseRow, error) {
-	q := `SELECT id, tenant, state, coalesce(vacancy, ''), coalesce(nonce, ''), record, holders, upheld, presented_at, expires_at FROM governance_cases WHERE id = $1`
+	q := `SELECT id, tenant, state, coalesce(vacancy, ''), coalesce(nonce, ''), record, holders, upheld, presented_at, expires_at, held_since FROM governance_cases WHERE id = $1`
 	if lock {
 		q += ` FOR UPDATE`
 	}
 	k := &caseRow{}
 	var rec, holders, upheld []byte
-	err := tx.QueryRow(ctx, q, id).Scan(&k.ID, &k.Tenant, &k.State, &k.Vacancy, &k.Nonce, &rec, &holders, &upheld, &k.PresentedAt, &k.ExpiresAt)
+	err := tx.QueryRow(ctx, q, id).Scan(&k.ID, &k.Tenant, &k.State, &k.Vacancy, &k.Nonce, &rec, &holders, &upheld, &k.PresentedAt, &k.ExpiresAt, &k.HeldSince)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, nil
 	}
@@ -446,8 +450,10 @@ func (c *Core) moveCase(ctx context.Context, tx pgx.Tx, now time.Time, k *caseRo
 	if conf := mmapAny(k.Rec["confirmation"]); conf != nil {
 		after["decision"], after["choice"], after["reason_code"] = conf["decision"], conf["choice"], conf["reason_code"]
 	}
-	if err := c.govAudit(ctx, tx, now, k.Tenant, command, "governance_case", k.ID, principal, after); err != nil {
-		return err
+	if command != "" {
+		if err := c.govAudit(ctx, tx, now, k.Tenant, command, "governance_case", k.ID, principal, after); err != nil {
+			return err
+		}
 	}
 	return c.govCardUpdates(ctx, tx, now, k.Tenant, "governance_case", k.ID)
 }
@@ -501,12 +507,23 @@ func (c *Core) caseStep(ctx context.Context, tx pgx.Tx, now time.Time, cat *Cata
 			return err
 		}
 		if held != (k.Rec["hold"] == true) {
+			// A hold pauses the case: the expiry moves on by the time it was held (GOV-14).
 			k.Rec["hold"] = held
+			switch {
+			case held:
+				k.HeldSince = &now
+			case k.HeldSince != nil && k.ExpiresAt != nil:
+				e := k.ExpiresAt.Add(now.Sub(*k.HeldSince))
+				k.ExpiresAt, k.HeldSince = &e, nil
+			default:
+				k.HeldSince = nil
+			}
 			raw, err := json.Marshal(caseView(k))
 			if err != nil {
 				return err
 			}
-			if _, err := tx.Exec(ctx, `UPDATE governance_cases SET record = $2, updated_at = $3 WHERE id = $1`, k.ID, raw, now); err != nil {
+			if _, err := tx.Exec(ctx, `UPDATE governance_cases SET record = $2, held_since = $3, expires_at = $4, updated_at = $5 WHERE id = $1`,
+				k.ID, raw, k.HeldSince, k.ExpiresAt, now); err != nil {
 				return err
 			}
 		}
@@ -530,7 +547,7 @@ func (c *Core) caseStep(ctx context.Context, tx pgx.Tx, now time.Time, cat *Cata
 // canceled(seat_changed) when a seat of L changed its holder, canceled(candidate_ineligible).
 // It says whether the case is still open.
 func (c *Core) checkCase(ctx context.Context, tx pgx.Tx, now time.Time, cat *Catalog, k *caseRow) (bool, error) {
-	if k.ExpiresAt != nil && now.After(*k.ExpiresAt) {
+	if k.ExpiresAt != nil && k.HeldSince == nil && now.After(*k.ExpiresAt) {
 		// Nobody leaves; the entry stays at the head and the next case waits swap_cooldown.
 		if err := c.moveCase(ctx, tx, now, k, "expired", "", "governance.case.expired", ""); err != nil {
 			return false, err
@@ -540,17 +557,10 @@ func (c *Core) checkCase(ctx context.Context, tx pgx.Tx, now time.Time, cat *Cat
 		}
 		return false, pauseCases(ctx, tx, now, cat, k.Tenant, "case_after")
 	}
-	for seat, holder := range k.Holders {
-		var cur string
-		if err := tx.QueryRow(ctx, `SELECT coalesce(holder, '') FROM seats WHERE tenant = $1 AND id = $2`, k.Tenant, seat).Scan(&cur); err != nil && !errors.Is(err, pgx.ErrNoRows) {
-			return false, err
-		}
-		if cur != holder {
-			if err := c.moveCase(ctx, tx, now, k, "canceled", "seat_changed", "governance.case.canceled", ""); err != nil {
-				return false, err
-			}
-			return false, releaseEntry(ctx, tx, now, k.Tenant, k.candidate())
-		}
+	if same, err := k.seatsSame(ctx, tx, ""); err != nil {
+		return false, err
+	} else if !same {
+		return false, c.cancelSeatChanged(ctx, tx, now, k)
 	}
 	ok, err := c.eligible(ctx, tx, now, cat, k.Tenant, k.candidate())
 	if err != nil || ok {
@@ -561,6 +571,65 @@ func (c *Core) checkCase(ctx context.Context, tx pgx.Tx, now time.Time, cat *Cat
 	}
 	_, err = tx.Exec(ctx, `UPDATE promotion_entries SET state = 'waiting_eligibility', updated_at = $3 WHERE tenant = $1 AND bot = $2 AND state = 'in_case'`, k.Tenant, k.candidate(), now)
 	return false, err
+}
+
+// seatsSame says whether the seats of a case are as at its opening: the vacant seat still
+// vacant, every seat of L held by the same holder (GOV-12). With seat, only that seat.
+func (k *caseRow) seatsSame(ctx context.Context, tx pgx.Tx, seat string) (bool, error) {
+	want := map[string]string{}
+	if k.mode() == "vacancy" {
+		want[k.Vacancy] = ""
+	} else {
+		for s, h := range k.Holders {
+			want[s] = asString(h)
+		}
+	}
+	for s, holder := range want {
+		if seat != "" && s != seat {
+			continue
+		}
+		var cur, state string
+		err := tx.QueryRow(ctx, `SELECT coalesce(holder, ''), state FROM seats WHERE tenant = $1 AND id = $2`, k.Tenant, s).Scan(&cur, &state)
+		if errors.Is(err, pgx.ErrNoRows) {
+			return false, nil
+		}
+		if err != nil {
+			return false, err
+		}
+		if cur != holder || holder == "" && state != "vacant" || holder != "" && state != "held" {
+			return false, nil
+		}
+	}
+	return true, nil
+}
+
+// cancelSeatChanged ends a case whose seat changed: canceled(seat_changed), the entry back.
+func (c *Core) cancelSeatChanged(ctx context.Context, tx pgx.Tx, now time.Time, k *caseRow) error {
+	if err := c.moveCase(ctx, tx, now, k, "canceled", "seat_changed", "governance.case.canceled", ""); err != nil {
+		return err
+	}
+	return releaseEntry(ctx, tx, now, k.Tenant, k.candidate())
+}
+
+// seatCaseChanged cancels, in the transaction of a seat change, the open case of the tenant
+// whose vacant seat or list L holds that seat (GOV-12, IDN-10).
+func (c *Core) seatCaseChanged(ctx context.Context, tx pgx.Tx, now time.Time, tenant, seat string) error {
+	var id string
+	err := tx.QueryRow(ctx, `SELECT id FROM governance_cases WHERE tenant = $1 AND state IN ('opened', 'confirming') AND (vacancy = $2 OR holders ? $2)`, tenant, seat).Scan(&id)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	k, err := loadCase(ctx, tx, id, true)
+	if err != nil || k == nil {
+		return err
+	}
+	if same, err := k.seatsSame(ctx, tx, seat); err != nil || same {
+		return err
+	}
+	return c.cancelSeatChanged(ctx, tx, now, k)
 }
 
 // openCase opens a case for the head of the queue (GOV-12, GOV-14): the first entry by trigger
@@ -667,7 +736,7 @@ func (c *Core) openCase(ctx context.Context, tx pgx.Tx, now time.Time, cat *Cata
 	}
 	// The list L with the figures of its seats goes into audit as ids and numbers (GOV-21).
 	if err := c.govAudit(ctx, tx, now, tv.Name, "governance.case.opened", "governance_case", id, "", map[string]any{
-		"candidate": head.bot, "mode": mode, "trigger": head.trigger, "list": list, "seats": figures, "vacancy": nullable(vacancy)}); err != nil {
+		"candidate": head.bot, "mode": mode, "trigger": head.trigger, "list": list, "seats": figures, "vacancy": nullable(vacancy), "card": promotionCard}); err != nil {
 		return err
 	}
 	k, err := loadCase(ctx, tx, id, true)
@@ -677,7 +746,8 @@ func (c *Core) openCase(ctx context.Context, tx pgx.Tx, now time.Time, cat *Cata
 	if _, err := c.planGovCards(ctx, tx, now, tv, "governance_case", id, promotionCard, "governance.confirm:commission", nil); err != nil {
 		return err
 	}
-	return c.moveCase(ctx, tx, now, k, "confirming", "", "governance.case.opened", "")
+	// The card is sent in the same transaction; the opening audit record covers both steps.
+	return c.moveCase(ctx, tx, now, k, "confirming", "", "", "")
 }
 
 // caseSeat is a commission seat with its holder.
@@ -734,13 +804,13 @@ func (c *Core) caseSeats(ctx context.Context, tx pgx.Tx, now time.Time, cat *Cat
 
 // seatFigures are the symmetric figures of a holder over 180 days (GOV-12): recommendations
 // (a review with score 3 or more and no veto) and vetoes; confirmed are recommendations with
-// the trial outcome better and vetoes people upheld (an audit sample item closed without
-// lifting the veto); refuted are recommendations with the outcome worse or a confirmed
+// the trial outcome better and vetoes people upheld (an audit sample item that ended in
+// sample_closed without lifting the veto); refuted are recommendations with the outcome worse or a confirmed
 // attribution, and vetoes lifted after which the outcome is not worse and there is no
 // attribution. It also returns the upheld vetoes, for the flag evicts_upheld_veto (GOV-19).
 func seatFigures(ctx context.Context, tx pgx.Tx, now time.Time, tenant, holder string) (map[string]any, int, error) {
 	rows, err := tx.Query(ctx, `SELECT (r->'result'->>'score')::int, coalesce((r->'result'->>'veto')::bool, false), coalesce(p.record->'trial'->>'outcome', ''),
-			coalesce((p.record->>'veto_overridden')::bool, false), p.record ? 'sample_answer',
+			coalesce((p.record->>'veto_overridden')::bool, false), p.state = 'sample_closed',
 			EXISTS (SELECT 1 FROM attributions a WHERE a.proposal = p.id AND a.state = 'confirmed')
 		FROM proposals p, jsonb_array_elements(coalesce(p.record->'reviews', '[]')) r
 		WHERE p.tenant = $1 AND r->>'state' = 'done' AND r->>'executor' = 'seat' AND (p.record->'verdict'->>'computed_at')::timestamptz >= $2
@@ -872,7 +942,7 @@ func (c *Core) decideCase(ctx context.Context, w *Worker, ob OnBehalf, req Decid
 		deny := func(reason, detail string) error {
 			if _, err := c.appendAudit(ctx, tx, now, Audit{
 				Tenant: k.Tenant, Kind: "decision", Actor: Actor{Principal: press.principal, Via: "channel"},
-				Command: "decide", Target: &Target{Kind: "governance_case", ID: k.ID}, OK: false, Reason: reason,
+				Command: "governance.decided", Target: &Target{Kind: "governance_case", ID: k.ID}, OK: false, Reason: reason,
 				After: map[string]any{"decision": req.Decision},
 			}); err != nil {
 				return err
@@ -1014,6 +1084,15 @@ func (c *Core) confirmCase(ctx context.Context, tx pgx.Tx, now time.Time, cat *C
 	}
 	if s == nil || b == nil {
 		return refuse("not_found", "the seat or the candidate is gone")
+	}
+	// The seat is checked again under its lock: a seat that changed cancels the case (GOV-12).
+	if same, err := k.seatsSame(ctx, tx, seat); err != nil {
+		return err
+	} else if !same {
+		if err := c.cancelSeatChanged(ctx, tx, now, k); err != nil {
+			return err
+		}
+		return &committed{p: refuse("seat_changed", "the seat changed; the case is canceled")}
 	}
 	k.Rec["confirmation"] = conf
 	if err := c.moveCase(ctx, tx, now, k, "confirming", "", "governance.decided", press.principal); err != nil {

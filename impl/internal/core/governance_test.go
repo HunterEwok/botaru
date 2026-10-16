@@ -319,3 +319,96 @@ func TestPromotionTriggers(t *testing.T) {
 		t.Fatalf("track %v %v", trig, err)
 	}
 }
+
+// openVacancyCase answers the attribution "No" in the store and opens the vacancy case.
+func openVacancyCase(t *testing.T) (*bench, *botRow) {
+	t.Helper()
+	b, _, author := realizedBench(t)
+	b.loop(t, "governance")
+	b.exec(t, `UPDATE attributions SET state = 'rejected', record = record || '{"state": "rejected"}'`)
+	b.loop(t, "governance")
+	if st, _ := b.entry(t, author.ID); st != "in_case" {
+		t.Fatalf("entry %s", st)
+	}
+	return b, author
+}
+
+func (b *bench) caseState(t *testing.T) (state, reason string) {
+	t.Helper()
+	if err := b.c.st.Pool.QueryRow(context.Background(), `SELECT state, coalesce(record->>'cancel_reason', '') FROM governance_cases ORDER BY created_at DESC LIMIT 1`).Scan(&state, &reason); err != nil {
+		t.Fatal(err)
+	}
+	return state, reason
+}
+
+// P2 seat.assign of the vacant seat of an open case cancels the case in the same transaction
+// (canceled(seat_changed)), and the entry goes back to the queue (GOV-12).
+func TestPromotionSeatChanged(t *testing.T) {
+	ctx := context.Background()
+	b, author := openVacancyCase(t)
+	other := b.botOf(t, b.enroll(t, EnrollRequest{Tenant: "demo", Role: "hello", Kind: "agent"}).ID)
+	if _, err := b.c.SeatAssign(ctx, b.op, SeatRequest{Seat: "commission:1", Bot: other.ID}); err != nil {
+		t.Fatal(err)
+	}
+	if st, reason := b.caseState(t); st != "canceled" || reason != "seat_changed" {
+		t.Fatalf("case %s %s", st, reason)
+	}
+	if st, _ := b.entry(t, author.ID); st != "queued" {
+		t.Fatalf("entry %s", st)
+	}
+}
+
+// A hold on the scope governance pauses an open case: it does not expire while held, and its
+// expiry moves on by the held time (GOV-14).
+func TestPromotionHold(t *testing.T) {
+	ctx := context.Background()
+	b, _ := openVacancyCase(t)
+	h, err := b.c.HoldSet(ctx, OperatorActor(b.op), HoldSetRequest{Scope: HoldScope{Kind: "governance", Tenant: "demo", Name: "cases"}, Effects: []string{"no_enqueue"}, Reason: "maintenance"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	b.loop(t, "governance")
+	b.advance(t, 8*86400)
+	b.loop(t, "governance")
+	if st, _ := b.caseState(t); st != "confirming" {
+		t.Fatalf("a held case moved: %s", st)
+	}
+	if _, err := b.c.HoldRelease(ctx, OperatorActor(b.op), HoldReleaseRequest{ID: h.ID}); err != nil {
+		t.Fatal(err)
+	}
+	b.loop(t, "governance")
+	b.advance(t, 86400)
+	b.loop(t, "governance")
+	if st, _ := b.caseState(t); st != "confirming" {
+		t.Fatalf("the expiry did not move on: %s", st)
+	}
+	b.advance(t, 7*86400)
+	b.loop(t, "governance")
+	if st, _ := b.caseState(t); st != "expired" {
+		t.Fatalf("case %s", st)
+	}
+}
+
+// Dismissing the incident cancels its attribution candidate in the same transaction, and the
+// change then gives its trigger (GOV-13, GOV-14).
+func TestPromotionIncidentDismissed(t *testing.T) {
+	ctx := context.Background()
+	b, id, _ := realizedBench(t)
+	b.loop(t, "governance")
+	var inc string
+	if err := b.c.st.Pool.QueryRow(ctx, `SELECT incident FROM attributions`).Scan(&inc); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := b.c.IncidentDismiss(ctx, b.op, IncidentRequest{Incident: inc, ReasonCode: "maintenance", Details: "planned load test"}); err != nil {
+		t.Fatal(err)
+	}
+	var state string
+	if err := b.c.st.Pool.QueryRow(ctx, `SELECT state FROM attributions`).Scan(&state); err != nil || state != "canceled" {
+		t.Fatalf("attribution %s %v", state, err)
+	}
+	b.loop(t, "governance")
+	var trig bool
+	if err := b.c.st.Pool.QueryRow(ctx, `SELECT trigger FROM promotion_track WHERE proposal = $1`, id).Scan(&trig); err != nil || !trig {
+		t.Fatalf("track %v %v", trig, err)
+	}
+}

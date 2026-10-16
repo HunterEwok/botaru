@@ -1,3 +1,4 @@
+-- SPDX-License-Identifier: AGPL-3.0-only
 -- Governance v0.2 (GOV-9..GOV-32): since when the rules hold in a tenant, the promotion track
 -- record and queue, the promotion cases and the incident attribution candidates.
 CREATE TABLE governance_tenants (
@@ -47,6 +48,7 @@ CREATE TABLE governance_cases (
     nonce         text,
     presented_at  timestamptz,
     expires_at    timestamptz,
+    held_since    timestamptz,              -- a hold on the scope governance pauses the expiry
     created_at    timestamptz NOT NULL,
     updated_at    timestamptz NOT NULL
 );

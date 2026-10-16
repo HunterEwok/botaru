@@ -358,11 +358,12 @@ func (c *Core) planDigest(ctx context.Context, tx pgx.Tx, now time.Time, tv *Ten
 					"untrusted_seen": us["value"] == true, "self_evidence": p.Rec["self_evidence"] == true})
 			}
 		}
-		// An audit sample item shows only its code heading in the digest; its blind card goes
-		// to a private chat (DIG-5, DIG-6).
+		// The digest gives only the number of audit sample items; each blind card goes to a
+		// private chat (DIG-5, DIG-6).
+		if len(samples) > 0 {
+			lines = append(lines, fmt.Sprintf("- audit sample: %d items, a blind card for each in a private chat", len(samples)))
+		}
 		for _, p := range samples {
-			b := p.body()
-			lines = append(lines, fmt.Sprintf("- audit sample: %s: %s (%s) [would you accept? card in a private chat]", b.Category, b.Problem.Code, b.Problem.Severity))
 			if i == 0 {
 				shown = append(shown, map[string]any{"proposal": p.ID, "kind": "audit_sample", "data_mark": asString(p.Rec["data_mark"]), "show": "title_only", "block": nil,
 					"untrusted_seen": mmapAny(p.Rec["untrusted_seen"])["value"] == true, "self_evidence": p.Rec["self_evidence"] == true})

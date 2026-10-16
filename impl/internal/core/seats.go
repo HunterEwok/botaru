@@ -103,6 +103,9 @@ func (c *Core) syncSeats(ctx context.Context, tx pgx.Tx, now time.Time, cat *Cat
 		} else if tag.RowsAffected() == 0 {
 			return refuse("forbidden", "seat %s of tenant %s has a holder: seat.vacate first", k[1], k[0])
 		}
+		if err := c.seatCaseChanged(ctx, tx, now, k[0], k[1]); err != nil {
+			return err
+		}
 	}
 	for k, lens := range want {
 		if s, ok := have[k]; ok && s.lens == lens {
@@ -168,7 +171,11 @@ func (c *Core) SeatAssign(ctx context.Context, op Operator, req SeatRequest) (*D
 		}
 		seq, err := c.seatTake(ctx, tx, now, cat, s, b, "replaced_by_human", "seat.assign", op.Principal)
 		out.AuditSeq = seq
-		return err
+		if err != nil {
+			return err
+		}
+		// An open promotion case about this seat ends in the same transaction (GOV-12).
+		return c.seatCaseChanged(ctx, tx, now, s.Tenant, s.ID)
 	})
 	if err != nil {
 		return nil, err
@@ -254,7 +261,10 @@ func (c *Core) SeatVacate(ctx context.Context, op Operator, req SeatRequest) (*D
 		}
 		seq, err := c.moveSeat(ctx, tx, now, s, "", "vacant", "seat.vacated.v1", "seat.vacate", op.Principal)
 		out.AuditSeq = seq
-		return err
+		if err != nil {
+			return err
+		}
+		return c.seatCaseChanged(ctx, tx, now, s.Tenant, s.ID)
 	})
 	if err != nil {
 		return nil, err
@@ -282,8 +292,10 @@ func (c *Core) seatVacated(ctx context.Context, tx pgx.Tx, now time.Time, cat *C
 	if err != nil || s == nil || s.Holder != b.ID {
 		return err
 	}
-	_, err = c.moveSeat(ctx, tx, now, s, "", "vacant", "seat.vacated.v1", cause, "system")
-	return err
+	if _, err = c.moveSeat(ctx, tx, now, s, "", "vacant", "seat.vacated.v1", cause, "system"); err != nil {
+		return err
+	}
+	return c.seatCaseChanged(ctx, tx, now, s.Tenant, s.ID)
 }
 
 // moveSeat writes the new holder and state with the seat epoch + 1, fences the running

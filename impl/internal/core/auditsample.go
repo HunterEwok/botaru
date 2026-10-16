@@ -190,6 +190,37 @@ func (c *Core) presentSample(ctx context.Context, tx pgx.Tx, now time.Time, tv *
 	return nil
 }
 
+// sampleVetoCards sends the judged card of an item with a veto also to the people with
+// proposal.override_veto:<category> whose ceiling covers it and who have no card of it yet, so
+// "Lift veto" reaches them (DIG-6).
+func (c *Core) sampleVetoCards(ctx context.Context, tx pgx.Tx, now time.Time, tv *TenantView, p *proposalRow) error {
+	people, err := peopleWithCap(ctx, tx, now, tv, "proposal.override_veto:"+p.body().Category)
+	if err != nil {
+		return err
+	}
+	mark := asString(p.Rec["data_mark"])
+	if people, err = c.withinCeiling(ctx, tx, now, tv, people, mark); err != nil {
+		return err
+	}
+	rows, err := tx.Query(ctx, `SELECT DISTINCT coalesce(recipient, '') FROM deliveries WHERE subject_kind = 'proposal' AND subject_id = $1 AND kind = $2`, p.ID, proposalSampleCard)
+	if err != nil {
+		return err
+	}
+	have, err := pgx.CollectRows(rows, pgx.RowTo[string])
+	if err != nil {
+		return err
+	}
+	for _, person := range people {
+		if slices.Contains(have, person) {
+			continue
+		}
+		if err := c.planProposalCard(ctx, tx, now, tv, p, proposalSampleCard, person, nil); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // sampleVeto says whether the verdict of an item has a veto of a veto lens.
 func (c *Core) sampleVeto(p *proposalRow) bool {
 	defs := c.lensDefs()
@@ -267,7 +298,13 @@ func (c *Core) decideSample(ctx context.Context, tx pgx.Tx, now time.Time, cat *
 		s := mmapAny(p.Rec["sample"])
 		s["answer"] = req.Decision
 		p.Rec["sample_answer"] = map[string]any{"answer": req.Decision, "by": press.principal, "at": fmtTime(now), "response_ms": responseMS, "details_opened": views > 0}
-		return state, c.moveProposal(ctx, tx, now, p, state, "")
+		if err := c.moveProposal(ctx, tx, now, p, state, ""); err != nil {
+			return "", err
+		}
+		if state == "sample_judged" && c.sampleVeto(p) {
+			return state, c.sampleVetoCards(ctx, tx, now, press.tv, p)
+		}
+		return state, nil
 	}
 	decision := map[string]any{"decision": req.Decision, "reason_code": nil, "decided_by": press.principal, "at": fmtTime(now),
 		"response_ms": responseMS, "details_opened": views > 0, "defer_count": 0}

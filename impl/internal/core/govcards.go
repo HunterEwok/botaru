@@ -20,6 +20,21 @@ const (
 	attributionCard = "attribution_card"
 )
 
+// withinCeiling keeps the people whose data ceiling covers mark (DIG-2).
+func (c *Core) withinCeiling(ctx context.Context, tx pgx.Tx, now time.Time, tv *TenantView, people []string, mark string) ([]string, error) {
+	var out []string
+	for _, p := range people {
+		info, err := loadPrincipal(ctx, tx, now, tv.Name, p)
+		if err != nil {
+			return nil, err
+		}
+		if c.digestShow(mark, c.personMark(tv, groupClosure(tv, info.Groups))) == "full" {
+			out = append(out, p)
+		}
+	}
+	return out, nil
+}
+
 // planGovCards plans a card of a governance subject to the direct chat of every person with
 // cap; it returns how many were planned.
 func (c *Core) planGovCards(ctx context.Context, tx pgx.Tx, now time.Time, tv *TenantView, subjectKind, id, kind, cap string, extra map[string]any) (int, error) {

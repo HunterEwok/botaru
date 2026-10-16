@@ -75,11 +75,28 @@ func attributionWindowOpen(ctx context.Context, tx pgx.Tx, now time.Time, cat *C
 		return true, nil
 	}
 	var tracked, live bool
+	var state, bot string
 	if err := tx.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM promotion_track WHERE proposal = $1),
-		EXISTS (SELECT 1 FROM promotion_entries WHERE trigger_proposal = $1 AND state <> 'removed')`, proposal).Scan(&tracked, &live); err != nil {
+		EXISTS (SELECT 1 FROM promotion_entries WHERE trigger_proposal = $1 AND state <> 'removed'),
+		coalesce((SELECT state FROM proposals WHERE id = $1), ''), coalesce((SELECT record->'origin'->>'acting_bot' FROM proposals WHERE id = $1), '')`,
+		proposal).Scan(&tracked, &live, &state, &bot); err != nil {
 		return false, err
 	}
-	return !tracked || live, nil
+	if live {
+		return true, nil
+	}
+	if tracked || state != "realized" || bot == "" {
+		return false, nil
+	}
+	// Only a change that can still give a trigger keeps the window open: a realized one of a
+	// functionary with a model.
+	var role string
+	if err := tx.QueryRow(ctx, `SELECT role FROM bots WHERE id = $1`, bot).Scan(&role); errors.Is(err, pgx.ErrNoRows) {
+		return false, nil
+	} else if err != nil {
+		return false, err
+	}
+	return slices.Contains(functionaryProfiles, profileOf(cat, role)) && hasModel(cat, role), nil
 }
 
 // attributionStep is the attribution part of the governance loop of a tenant.
@@ -87,7 +104,7 @@ func (c *Core) attributionStep(ctx context.Context, tx pgx.Tx, now time.Time, ca
 	if err := c.createAttributions(ctx, tx, now, cat, tv); err != nil {
 		return err
 	}
-	if err := c.dismissedAttributions(ctx, tx, now, tv); err != nil {
+	if err := c.dismissedAttributions(ctx, tx, now, tv.Name, ""); err != nil {
 		return err
 	}
 	return c.remindAttributions(ctx, tx, now, tv)
@@ -236,11 +253,13 @@ func (c *Core) moveAttribution(ctx context.Context, tx pgx.Tx, now time.Time, a 
 
 // dismissedAttributions: an incident declared false cancels its candidates without "Yes" and
 // disputes a "Yes"; a dispute nobody answers is withdrawn after 7 days (GOV-13, D-79). The
-// dispute card to the author of "Yes" is not built, so a dispute ends by that silence.
-func (c *Core) dismissedAttributions(ctx context.Context, tx pgx.Tx, now time.Time, tv *TenantView) error {
+// dispute card to the author of "Yes" is not built, so a dispute ends by that silence. The
+// incident dismissal calls it for its incident in the same transaction; the governance loop
+// ends the disputes. A canceled candidate gives the trigger back (GOV-14).
+func (c *Core) dismissedAttributions(ctx context.Context, tx pgx.Tx, now time.Time, tenant, incident string) error {
 	rows, err := tx.Query(ctx, `SELECT a.id FROM attributions a JOIN incidents i ON i.id = a.incident
-		WHERE a.tenant = $1 AND (i.state = 'dismissed' AND a.state IN ('candidate', 'unknown', 'rejected', 'confirmed')
-		OR a.state = 'disputed' AND (a.record->>'disputed_at')::timestamptz <= $2) ORDER BY a.id FOR UPDATE OF a`, tv.Name, now.Add(-disputeTTL))
+		WHERE a.tenant = $1 AND ($3 = '' OR a.incident = $3) AND (i.state = 'dismissed' AND a.state IN ('candidate', 'unknown', 'rejected', 'confirmed')
+		OR a.state = 'disputed' AND (a.record->>'disputed_at')::timestamptz <= $2) ORDER BY a.id FOR UPDATE OF a`, tenant, now.Add(-disputeTTL), incident)
 	if err != nil {
 		return err
 	}
@@ -268,8 +287,23 @@ func (c *Core) dismissedAttributions(ctx context.Context, tx pgx.Tx, now time.Ti
 		if err := c.moveAttribution(ctx, tx, now, a, state, "system", "attribution."+state); err != nil {
 			return err
 		}
+		if state == "canceled" {
+			if err := attributionCanceled(ctx, tx, a); err != nil {
+				return err
+			}
+		}
 	}
 	return nil
+}
+
+// attributionCanceled: when no confirmed attribution is left on the change, a track row that
+// lost its trigger to an attribution is dropped, so the governance loop evaluates the change
+// again under the common conditions; the trigger time is then that pass, not earlier than the
+// cancellation, and a removed entry comes back (GOV-14).
+func attributionCanceled(ctx context.Context, tx pgx.Tx, a *attributionRow) error {
+	_, err := tx.Exec(ctx, `DELETE FROM promotion_track WHERE proposal = $1 AND NOT trigger AND reason = 'attribution'
+		AND NOT EXISTS (SELECT 1 FROM attributions WHERE proposal = $1 AND state = 'confirmed')`, a.Proposal)
+	return err
 }
 
 // remindAttributions moves an unanswered candidate to unknown at the card expiry and reminds
