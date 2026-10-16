@@ -4,12 +4,15 @@ package core
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
 	"time"
 
 	"github.com/jackc/pgx/v5"
 
+	"github.com/HunterEwok/botaru/impl/internal/jcs"
 	"github.com/HunterEwok/botaru/impl/internal/manifest"
 )
 
@@ -36,10 +39,10 @@ func (c *Core) preventableRead(ctx context.Context, op Operator, req IncidentReq
 	var out Done
 	found := false
 	err := c.tx(ctx, func(tx pgx.Tx, now time.Time) error {
-		var tenant, incident, state string
+		var tenant, incident string
 		var read *time.Time
-		err := tx.QueryRow(ctx, `SELECT r.tenant, r.incident, r.read_at, coalesce(i.state, '') FROM manager_restrictions r LEFT JOIN incidents i ON i.id = r.incident
-			WHERE lower(r.incident) = lower($1) AND r.until IS NULL FOR UPDATE OF r`, id).Scan(&tenant, &incident, &read, &state)
+		err := tx.QueryRow(ctx, `SELECT tenant, incident, read_at FROM manager_restrictions
+			WHERE lower(incident) = lower($1) AND until IS NULL FOR UPDATE`, id).Scan(&tenant, &incident, &read)
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil
 		}
@@ -47,7 +50,9 @@ func (c *Core) preventableRead(ctx context.Context, op Operator, req IncidentReq
 			return err
 		}
 		found = true
-		out = Done{OK: true, ID: incident, State: state}
+		// The answer names the seat and the read mark only: the tenant's incident and its state
+		// are not farm's to see.
+		out = Done{OK: true, ID: managerSeatID, State: "read"}
 		if read != nil {
 			return nil
 		}
@@ -78,13 +83,20 @@ func (c *Core) dropIncidentStop(ctx context.Context, tx pgx.Tx, now time.Time, c
 	if !m.has("incident") {
 		return nil
 	}
+	// The seat leaves the stop: resumed, unless another reason still stops it.
 	reasons := m.without("incident")
 	event := "seat.resumed.v1"
-	if len(reasons) > 0 || m.Holder == "" {
+	if len(reasons) > 0 && m.Holder != "" {
 		event = "seat.stopped.v1"
 	}
-	_, err := c.shiftManager(ctx, tx, now, cat, m, m.Holder, reasons, event, "incident_stop_ignored", "system")
-	return err
+	if _, err := c.shiftManager(ctx, tx, now, cat, m, m.Holder, reasons, event, "incident_stop_ignored", "system"); err != nil {
+		return err
+	}
+	// A holder's seat back in held is told to the admins as seat.resume tells them (MGR-31).
+	if m.State != "held" {
+		return nil
+	}
+	return c.noticeManagerChanged(ctx, tx, now, cat, m, "resumed")
 }
 
 // managerSeatRecord is the record of the farm manager seat by spec/model/seat.schema.json: the
@@ -174,8 +186,8 @@ func takeoverPoint(ctx context.Context, tx pgx.Tx, now time.Time, tenant, typ, r
 // task (MGR-48, PRP-22). $1 is the tenant.
 const notTakeoverPoints = ` AND NOT (key LIKE 'lease:%' AND split_part(key, ':', 2) IN (SELECT id FROM tasks WHERE tenant = $1 AND record ? 'takeover_of'))` +
 	` AND NOT (key LIKE 'task:%' AND substr(key, 6) IN (SELECT id FROM tasks WHERE tenant = $1 AND record ? 'takeover_of'))` +
-	` AND NOT (key LIKE 'event:%' AND substr(key, 7) IN (SELECT e.id FROM events e JOIN tasks t ON t.id = e.data->>'task'
-		WHERE e.tenant = $1 AND e.type = '` + runFinishedType + `' AND t.record ? 'takeover_of'))`
+	` AND NOT (key LIKE 'event:%' AND substr(key, 7) IN (SELECT e.id FROM tasks t JOIN events e ON e.tenant = t.tenant AND e.data->>'task' = t.id
+		AND e.type = '` + runFinishedType + `' WHERE t.tenant = $1 AND t.record ? 'takeover_of'))`
 
 // authorLevel is origin.level of a proposal: 2 for the farm manager seat (MGR-41, MGR-51), so its
 // proposals never make anyone answer for a link and give no rejected-proposal candidate (GOV-38,
@@ -224,13 +236,17 @@ func paragraphRecent(ctx context.Context, tx pgx.Tx, now time.Time, r *incidentR
 // an analysis that waits for its worker gets it at once; once it started or ended it is too late.
 // With incident_review off, or a paragraph of the same class and object in 7 days, there is none.
 // It returns the answer code: requested, reading_off, recent or late.
-func (c *Core) paragraphAsked(ctx context.Context, tx pgx.Tx, now time.Time, tv *TenantView, person, ref string) (string, string, error) {
+func (c *Core) paragraphAsked(ctx context.Context, tx pgx.Tx, now time.Time, cat *Catalog, tv *TenantView, person, ref string) (string, string, error) {
 	r, err := loadIncident(ctx, tx, tv.Name, ref, true)
 	if err != nil {
 		return "", "", err
 	}
 	if r == nil {
 		return "", "", refuse("not_found", "no such incident in the tenant")
+	}
+	// The tenant gets no analysis at all: nothing to ask for (the conditions of enqueuePostmortem).
+	if !postmortemOn(cat, tv.Name) {
+		return r.ID, "no_analysis", nil
 	}
 	if !incidentReviewOn(tv) {
 		return r.ID, "reading_off", nil
@@ -257,12 +273,11 @@ func (c *Core) paragraphAsked(ctx context.Context, tx pgx.Tx, now time.Time, tv 
 		return r.ID, "recent", nil
 	}
 	if task == "" {
-		r.Record["paragraph_requested"] = map[string]any{"by": person, "at": fmtTime(now)}
-		if err := r.save(ctx, tx, now); err != nil {
+		// Beside the record, which has no such field, so no incident view shows it.
+		if _, err := tx.Exec(ctx, `UPDATE incidents SET paragraph_requested_at = $2, paragraph_requested_by = $3 WHERE id = $1`, r.ID, now, person); err != nil {
 			return "", "", err
 		}
-	} else if _, err := tx.Exec(ctx, `UPDATE tasks SET record = record || '{"paragraph": true}',
-		body = jsonb_set(body, '{params,input,paragraph}', 'true') WHERE id = $1 AND body ? 'params'`, task); err != nil {
+	} else if err := setPostmortemParagraph(ctx, tx, task); err != nil {
 		return "", "", err
 	}
 	_, err = c.appendAudit(ctx, tx, now, Audit{
@@ -295,14 +310,58 @@ func ignoredV03(d manifest.Doc, v map[string]any, i int) []ApplyError {
 
 // paragraphRequested says whether a person asked for the analysis paragraph of an incident
 // before it resolved (MGR-53).
-func paragraphRequested(r *incidentRow) bool {
-	_, ok := r.Record["paragraph_requested"].(map[string]any)
+func paragraphRequested(ctx context.Context, tx pgx.Tx, incident string) (bool, error) {
+	var ok bool
+	err := tx.QueryRow(ctx, `SELECT paragraph_requested_at IS NOT NULL FROM incidents WHERE id = $1`, incident).Scan(&ok)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return false, nil
+	}
+	return ok, err
+}
+
+// setPostmortemParagraph turns the paragraph on in a waiting analysis: in its record and in the
+// input of its body, with the body hash computed again over the new body (MGR-53).
+func setPostmortemParagraph(ctx context.Context, tx pgx.Tx, task string) error {
+	var raw []byte
+	if err := tx.QueryRow(ctx, `SELECT body FROM tasks WHERE id = $1`, task).Scan(&raw); err != nil {
+		return err
+	}
+	var body map[string]any
+	if err := json.Unmarshal(raw, &body); err != nil {
+		return err
+	}
+	input := mmap(mmap(body, "params"), "input")
+	if input == nil {
+		return nil
+	}
+	input["paragraph"] = true
+	hash, err := jcs.Hash(body)
+	if err != nil {
+		return err
+	}
+	nb, err := json.Marshal(body)
+	if err != nil {
+		return err
+	}
+	_, err = tx.Exec(ctx, `UPDATE tasks SET record = record || '{"paragraph": true}', body = $2, body_hash = $3 WHERE id = $1`, task, nb, hash)
+	return err
+}
+
+// postmortemOn says whether a resolved incident of the tenant gets an analysis: the conditions of
+// enqueuePostmortem (MGR-53).
+func postmortemOn(cat *Catalog, tenant string) bool {
+	role := managerRole(cat)
+	if !claimsV03() || cat.Tenants[tenant] == nil || !managerEnabled(cat, tenant) || managerCharter(cat)["postmortem"] == false || role == "" ||
+		!slices.Contains(cat.Roles[role].Claims, postmortemType) {
+		return false
+	}
+	_, ok := cat.TaskTypes[postmortemType]
 	return ok
 }
 
 // analyseCommand is /incident analyse <number> (MGR-53).
 func (c *Core) analyseCommand(ctx context.Context, tx pgx.Tx, now time.Time, pc personCommand, ref string) (*ActivityResult, error) {
-	id, code, err := c.paragraphAsked(ctx, tx, now, pc.tv, pc.person, ref)
+	id, code, err := c.paragraphAsked(ctx, tx, now, pc.cat, pc.tv, pc.person, ref)
 	if p, ok := AsProblem(err); ok && p.Reason == "not_found" {
 		return pc.reply(c, "cmd.incident.not_found", nil), nil
 	}

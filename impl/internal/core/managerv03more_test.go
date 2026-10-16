@@ -5,6 +5,7 @@ package core
 import (
 	"context"
 	"encoding/json"
+	"maps"
 	"slices"
 	"strings"
 	"testing"
@@ -68,7 +69,7 @@ func TestPreventableReadV03(t *testing.T) {
 		t.Fatal("a tenant operator marked the farm notice read")
 	}
 	d, err := b.c.IncidentAck(ctx, b.farmOp(), IncidentRequest{ID: "inc_01j9z3m2q8yb6v4n7t5k0c2d1e"})
-	if err != nil || !d.OK || d.AuditSeq == 0 {
+	if err != nil || !d.OK || d.AuditSeq == 0 || d.ID != managerSeatID || d.State != "read" {
 		t.Fatalf("marked read %+v %v", d, err)
 	}
 	if again, err := b.c.IncidentAck(ctx, b.farmOp(), IncidentRequest{ID: "inc_01J9Z3M2Q8YB6V4N7T5K0C2D1E"}); err != nil || again.AuditSeq != 0 {
@@ -87,7 +88,7 @@ func TestPreventableReadV03(t *testing.T) {
 	wantReason(t, err, "input_schema_invalid")
 	// A stop reason incident from a v0.2 core goes with the next loop pass, without a
 	// manager_stopped repeat and without retiring the holder.
-	epoch := b.managerSeat(t).Epoch
+	epoch, changed := b.managerSeat(t).Epoch, kindTo(t, b, "manager_holder_changed", op)
 	b.exec(t, `UPDATE seats SET state = 'stopped', decide_until = botaru_now() - interval '1 hour',
 		stop_reasons = jsonb_build_array(jsonb_build_object('reason', 'incident', 'at', to_char((botaru_now() - interval '8 days') AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"'), 'incident', 'inc_01J9Z3M2Q8YB6V4N7T5K0C2D1F'))
 		WHERE tenant = 'farm' AND id = $1`, managerSeatID)
@@ -95,6 +96,9 @@ func TestPreventableReadV03(t *testing.T) {
 	m := b.managerSeat(t)
 	if m.State != "held" || m.Holder != holder || m.has("incident") || m.Epoch != epoch+1 {
 		t.Fatalf("seat after the v0.2 reason %+v", m)
+	}
+	if kindTo(t, b, "manager_holder_changed", op) != changed+1 || countEvents(t, b, "seat.resumed.v1", managerSeatID) < 1 {
+		t.Fatal("the seat back in held was not told as resumed")
 	}
 	if n := kindTo(t, b, "manager_stopped", op); n != 0 {
 		t.Fatalf("manager_stopped from v0.3: %d", n)
@@ -241,16 +245,29 @@ func TestPostmortemRequestV03(t *testing.T) {
 		t.Fatal(err)
 	}
 	tv := cat.Tenants["demo"]
-	ask := func(tv *TenantView) string {
+	ask := func(tv *TenantView, cats ...*Catalog) string {
+		cat := cat
+		if len(cats) > 0 {
+			cat = cats[0]
+		}
 		var code string
 		if err := b.c.tx(ctx, func(tx pgx.Tx, now time.Time) error {
 			var err error
-			_, code, err = b.c.paragraphAsked(ctx, tx, now, tv, b.alice, inc.ID)
+			_, code, err = b.c.paragraphAsked(ctx, tx, now, cat, tv, b.alice, inc.ID)
 			return err
 		}); err != nil {
 			t.Fatal(err)
 		}
 		return code
+	}
+	// A tenant whose incidents get no analysis has nothing to ask for.
+	noClaim := *cat
+	noClaim.Roles = maps.Clone(cat.Roles)
+	role := noClaim.Roles[managerRole(cat)]
+	role.Claims = slices.DeleteFunc(slices.Clone(role.Claims), func(c string) bool { return c == postmortemType })
+	noClaim.Roles[managerRole(cat)] = role
+	if code := ask(tv, &noClaim); code != "no_analysis" {
+		t.Fatalf("without the analysis: %s", code)
 	}
 	off := *tv
 	off.Spec.Privacy.Purposes = nil
@@ -259,6 +276,9 @@ func TestPostmortemRequestV03(t *testing.T) {
 	}
 	if code := ask(tv); code != "requested" {
 		t.Fatalf("before resolved: %s", code)
+	}
+	if shown, err := b.c.IncidentShow(ctx, b.op, IncidentRequest{ID: inc.ID}); err != nil || strings.Contains(string(mustJSON(shown)), "paragraph_requested") {
+		t.Fatalf("the request in the incident view %v %v", shown, err)
 	}
 	// A candidate of the rejected proposal rule, which the input must never show.
 	b.exec(t, `INSERT INTO attributions (id, tenant, incident, proposal, state, record, created_at, updated_at, kind)

@@ -329,15 +329,10 @@ func postmortemDayEUR(fm map[string]any) float64 {
 // manager line outside the sev1 reserve within the daily ceiling, and waits for the next day
 // without money (MGR-53).
 func (c *Core) enqueuePostmortem(ctx context.Context, tx pgx.Tx, now time.Time, cat *Catalog, r *incidentRow) error {
-	role := managerRole(cat)
-	fm := managerCharter(cat)
-	tv := cat.Tenants[r.Tenant]
-	if !claimsV03() || tv == nil || !managerEnabled(cat, r.Tenant) || fm["postmortem"] == false || role == "" || !slices.Contains(cat.Roles[role].Claims, postmortemType) {
+	if !postmortemOn(cat, r.Tenant) {
 		return nil
 	}
-	if _, ok := cat.TaskTypes[postmortemType]; !ok {
-		return nil
-	}
+	role, tv := managerRole(cat), cat.Tenants[r.Tenant]
 	// One analysis per incident: a reopened and again resolved incident gets none, whatever
 	// became of the first task (IDM-2).
 	key := "system:postmortem:" + r.ID
@@ -352,7 +347,11 @@ func (c *Core) enqueuePostmortem(ctx context.Context, tx pgx.Tx, now time.Time, 
 	readingOff := !incidentReviewOn(tv)
 	// A paragraph for sev1, for link candidates of any rule code found (GOV-13, GOV-38, TRN-7)
 	// or on a person's request (paragraphAsked).
-	paragraph := !readingOff && (mstr(r.Record, "severity") == "sev1" || len(links) > 0 || paragraphRequested(r))
+	requested, err := paragraphRequested(ctx, tx, r.ID)
+	if err != nil {
+		return err
+	}
+	paragraph := !readingOff && (mstr(r.Record, "severity") == "sev1" || len(links) > 0 || requested)
 	if paragraph {
 		recent, err := paragraphRecent(ctx, tx, now, r, "")
 		if err != nil {
