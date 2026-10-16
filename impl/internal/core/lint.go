@@ -86,6 +86,16 @@ type lintFindings struct {
 	seen map[string]bool
 }
 
+// refuses says whether the findings already hold an error of the object.
+func (f *lintFindings) refuses(o lintObj) bool {
+	for _, e := range f.out {
+		if e.Kind == o.kind && e.Name == o.name && (o.kind == "Tenant" || e.Tenant == o.tenant) {
+			return true
+		}
+	}
+	return false
+}
+
 func (f *lintFindings) add(o lintObj, code, path string) {
 	k := fmt.Sprintf("%d/%s/%s", o.i, code, path)
 	if o.i < 0 {
@@ -1760,6 +1770,10 @@ func (c *Core) lintManifests(docs []manifest.Doc, index []int, personas personaL
 		return nil, err
 	}
 	if err := c.lintSeatProfiles(S, f); err != nil {
+		return nil, err
+	}
+	// The translator gate of a production tenant (TRN-6).
+	if err := lintTranslatorEvals(docs, S, f); err != nil {
 		return nil, err
 	}
 	sort.SliceStable(f.out, func(i, j int) bool { return f.out[i].Path < f.out[j].Path })

@@ -22,7 +22,12 @@ var Profiles = []string{"core"}
 // index or a map key). apply accepts such a field although the claimed version is earlier; the
 // rest of that version stays refused (MAN-11). Kinds of a later version are listed under the
 // kind with the pointer "/kind". The list shrinks when the claimed version reaches them.
-var Ahead = map[string][]string{}
+var Ahead = map[string][]string{
+	// The eval report index (TRN-6, MGR-23, MGR-17).
+	"EvalReports": {"/kind"},
+	// The translator's eval gate of a tenant (TRN-6).
+	"Tenant": {"/spec/evals"},
+}
 
 // ahead says whether the field at ptr of a manifest of kind is in Ahead.
 func ahead(kind, ptr string) bool {
