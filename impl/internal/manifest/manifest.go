@@ -163,9 +163,11 @@ type Tenant struct {
 	Attention        TenantAttention   `json:"attention"`
 	// Run holds the pipelines of the command /run <name> (APR-17).
 	Run map[string]RunEntry `json:"run"`
-	// Retention holds the file period (ART-1, RET-9).
+	// Retention holds the tenant's periods: the file period (ART-1) and the periods of the
+	// classes content, memory and metadata (RET-9).
 	Retention struct {
-		Files string `json:"files"`
+		Files   string            `json:"files"`
+		Classes map[string]string `json:"classes"`
 	} `json:"retention"`
 	// Insights holds the improvement cycle settings of the tenant (INS-6, PRP-5, DIG-1).
 	Insights TenantInsights `json:"insights"`

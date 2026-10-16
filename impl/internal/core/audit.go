@@ -38,6 +38,9 @@ type Audit struct {
 	ServiceGrant map[string]any
 	// Restore is the block of a restore record that opens a new epoch (RET-6, D-86 (7)).
 	Restore map[string]any
+	// Period is the block of a period_deleted record: the bounds, count and last hash of the
+	// months the retention loop deleted (AUD-3).
+	Period map[string]any
 }
 
 // Actor is who made the change.
@@ -132,6 +135,9 @@ func (c *Core) appendAuditAt(ctx context.Context, tx pgx.Tx, now time.Time, epoc
 	if a.Restore != nil {
 		rec["restore"] = a.Restore
 	}
+	if a.Period != nil {
+		rec["period"] = a.Period
+	}
 	h, err := jcs.Hash(rec)
 	if err != nil {
 		return 0, err
@@ -179,13 +185,19 @@ func (c *Core) VerifyAudit(ctx context.Context, tenant string) (count int64, bro
 	return count, 0, nil
 }
 
+// verifyRows checks the chain from its start, or from its cut when the retention loop deleted
+// whole months of it: the cut holds the seq and hash of the last record deleted (AUD-3).
 func (c *Core) verifyRows(ctx context.Context, tx pgx.Tx, tenant string) (count int64, brokenAt int64, prev string, err error) {
-	rows, err := tx.Query(ctx, `SELECT seq, record, hash FROM audit WHERE tenant = $1 AND epoch = $2 ORDER BY seq`, tenant, c.epoch)
+	prev = jcs.ZeroHash
+	err = tx.QueryRow(ctx, `SELECT seq, hash FROM audit_cuts WHERE tenant = $1 AND epoch = $2`, tenant, c.epoch).Scan(&count, &prev)
+	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+		return 0, 0, "", err
+	}
+	rows, err := tx.Query(ctx, `SELECT seq, record, hash FROM audit WHERE tenant = $1 AND epoch = $2 AND seq > $3 ORDER BY seq`, tenant, c.epoch, count)
 	if err != nil {
 		return 0, 0, "", err
 	}
 	defer rows.Close()
-	prev = jcs.ZeroHash
 	for rows.Next() {
 		var seq int64
 		var raw []byte

@@ -77,7 +77,7 @@ func TestApplyLaterVersion(t *testing.T) {
 	want := []string{
 		"/manifests/" + itoa(at["TaskType"]) + "/spec/await",
 		"/manifests/" + itoa(at["Tenant"]) + "/spec/operator_access/debug_journal",
-		"/manifests/" + itoa(at["Tenant"]) + "/spec/retention",
+		"/manifests/" + itoa(at["Tenant"]) + "/spec/retention/journals",
 		"/manifests/" + itoa(at["Role"]) + "/spec/skills",
 		"/manifests/" + itoa(n) + "/kind",
 		"/manifests/" + itoa(n+1) + "/spec/resources/1/kind",

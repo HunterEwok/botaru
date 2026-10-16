@@ -489,8 +489,24 @@ func (c *Core) verifyHeads(ctx context.Context, tenant string, heads []AuditHead
 			return "head_seq", h.Seq, nil
 		}
 		if h.Epoch == c.epoch {
+			// A head inside the months the retention loop deleted is checked only at the cut
+			// itself, whose hash the cut keeps (AUD-3).
 			var stored string
-			err := c.st.Pool.QueryRow(ctx, `SELECT hash FROM audit WHERE tenant = $1 AND epoch = $2 AND seq = $3`, tenant, h.Epoch, h.Seq).Scan(&stored)
+			var cutSeq int64
+			var cutHash string
+			err := c.st.Pool.QueryRow(ctx, `SELECT seq, hash FROM audit_cuts WHERE tenant = $1 AND epoch = $2`, tenant, h.Epoch).Scan(&cutSeq, &cutHash)
+			if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+				return "", 0, err
+			}
+			switch {
+			case h.Seq < cutSeq:
+				prev = &heads[i]
+				continue
+			case h.Seq == cutSeq:
+				stored, err = cutHash, nil
+			default:
+				err = c.st.Pool.QueryRow(ctx, `SELECT hash FROM audit WHERE tenant = $1 AND epoch = $2 AND seq = $3`, tenant, h.Epoch, h.Seq).Scan(&stored)
+			}
 			if errors.Is(err, pgx.ErrNoRows) || err == nil && stored != h.Hash {
 				return "head_mismatch", h.Seq, nil
 			}
