@@ -46,8 +46,8 @@ BEGIN
     IF TG_OP = 'UPDATE' AND (NEW.seq < OLD.seq OR NEW.tenant <> OLD.tenant OR NEW.epoch <> OLD.epoch) THEN
         RAISE EXCEPTION 'an audit cut only moves forward';
     END IF;
-    IF NOT EXISTS (SELECT 1 FROM audit a WHERE a.tenant = NEW.tenant AND a.epoch = NEW.epoch AND a.seq = NEW.seq AND a.hash = NEW.hash
-        AND a.at < botaru_now() - interval '93 days') THEN
+    IF NOT EXISTS (SELECT 1 FROM audit r WHERE r.tenant = NEW.tenant AND r.epoch = NEW.epoch AND r.seq = NEW.seq AND r.hash = NEW.hash
+        AND at < botaru_now() - interval '93 days') THEN
         RAISE EXCEPTION 'an audit cut names a stored record older than 93 days';
     END IF;
     RETURN NEW;
