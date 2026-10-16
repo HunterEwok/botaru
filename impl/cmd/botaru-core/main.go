@@ -110,7 +110,7 @@ func run(path string, log *slog.Logger) error {
 	}
 	c, err := core.New(ctx, core.Config{
 		TokenKey: key, KeyID: keyID, PreviousKeys: prevKeys, TestBench: cfg.TestBench, LeaseS: cfg.LeaseS, HeartbeatS: cfg.HeartbeatS,
-		DeliveryMaxAttempts: cfg.DeliveryMaxAttempts, Operator: cfg.Operator, FarmHosts: cfg.FarmHosts, Health: cfg.Health, Spend: cfg.Spend, Backup: cfg.Backup, Files: cfg.Files, SecretUses: cfg.SecretUses, ExportKeys: exportKeys, Monitor: cfg.Monitor, Logger: log,
+		DeliveryMaxAttempts: cfg.DeliveryMaxAttempts, Operator: cfg.Operator, FarmHosts: cfg.FarmHosts, Health: cfg.Health, Spend: cfg.Spend, Backup: cfg.Backup, Files: cfg.Files, SecretUses: cfg.SecretUses, DeployFile: cfg.DeployDescription, ProviderKeySecrets: cfg.ProviderKeySecrets(), CoreSecrets: cfg.CoreOwnSecrets(), Workspaces: cfg.Workspaces, ExportKeys: exportKeys, Monitor: cfg.Monitor, Logger: log,
 	}, st, sp, tx)
 	if err != nil {
 		return err

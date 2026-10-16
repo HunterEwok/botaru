@@ -43,6 +43,9 @@ type ModelGrant struct {
 	// PayTenant is the tenant whose budget pays the calls when it is not the task's: the farm
 	// for a necessity review it pays (MGR-6, COM-13).
 	PayTenant string
+	// FallbackOf is the slot profile of a call on a fallback profile, with the reason of the
+	// switch (GW-5); empty for a call on the slot profile.
+	FallbackOf, FallbackReason string
 }
 
 // ResolveModelHandle checks a model handle: it exists, its lease is alive and of the current
@@ -71,7 +74,7 @@ func (c *Core) ResolveModelHandle(ctx context.Context, handle string) (*ModelGra
 	if err != nil {
 		return nil, err
 	}
-	if epoch != c.epoch || state != "active" || !until.After(now) {
+	if epoch != c.epoch.Load() || state != "active" || !until.After(now) {
 		return nil, refuse("fenced", "the lease of the handle is not alive")
 	}
 	// An offboarded tenant's provider key is not used again (LCY-1, GW-3).
@@ -150,34 +153,47 @@ func (c *Core) ResolveModelHandle(ctx context.Context, handle string) (*ModelGra
 			return nil, refuse("rank_exceeded", "the model profile is above the rank ceiling of the acting position")
 		}
 	}
-	if l := tv.Spec.ModelsAllowed; len(l) > 0 && !slices.Contains(l, g.ProfileName) {
-		return nil, refuse("provider_config", "the profile is not in the tenant's models_allowed")
+	sp, err := profileAdmitted(tv, g.ProfileName, p)
+	if err != nil {
+		return nil, err
+	}
+	g.Subprocessor = sp
+	return &g, nil
+}
+
+// profileAdmitted checks that a model profile may serve a call of the tenant: it is in the
+// tenant's models_allowed, its provider in providers_allowed and among the subprocessors with
+// terms the profile meets (GW-7, SEC-8, GW-14, GW-15). It returns the subprocessor entry.
+func profileAdmitted(tv *TenantView, name string, p manifest.ModelProfile) (manifest.Subprocessor, error) {
+	var sub manifest.Subprocessor
+	if l := tv.Spec.ModelsAllowed; len(l) > 0 && !slices.Contains(l, name) {
+		return sub, refuse("provider_config", "the profile is not in the tenant's models_allowed")
 	}
 	if l := tv.Spec.ProvidersAllowed; len(l) > 0 && !slices.Contains(l, p.Provider) {
-		return nil, refuse("provider_config", "the provider is not in the tenant's providers_allowed")
+		return sub, refuse("provider_config", "the provider is not in the tenant's providers_allowed")
 	}
 	found := false
 	for _, s := range tv.Spec.Privacy.Subprocessors {
 		if s.Provider == p.Provider {
-			g.Subprocessor, found = s, true
+			sub, found = s, true
 		}
 	}
 	if !found {
-		return nil, refuse("provider_config", "the provider is not a subprocessor of the tenant (SEC-8)")
+		return sub, refuse("provider_config", "the provider is not a subprocessor of the tenant (SEC-8)")
 	}
 	if p.ProviderTraining == nil || p.ProviderTraining.Value {
-		return nil, refuse("provider_config", "the profile does not declare provider_training: false")
+		return sub, refuse("provider_config", "the profile does not declare provider_training: false")
 	}
-	if r := g.Subprocessor.Retention; r.Mode == "zero" || r.MaxDays != nil {
+	if r := sub.Retention; r.Mode == "zero" || r.MaxDays != nil {
 		allowed := 0
 		if r.Mode != "zero" {
 			allowed = *r.MaxDays
 		}
 		if p.ProviderRetentionDays == nil || p.ProviderRetentionDays.Value > allowed {
-			return nil, refuse("provider_config", "the provider retention is above what the tenant allows (GW-15)")
+			return sub, refuse("provider_config", "the provider retention is above what the tenant allows (GW-15)")
 		}
 	}
-	return &g, nil
+	return sub, nil
 }
 
 // Reserve writes the worst-case reserve of a call before it goes out (GW-2, BUD-2). It
@@ -213,6 +229,11 @@ func (c *Core) Reserve(ctx context.Context, g *ModelGrant, micros int64) (string
 			LeaseNo: g.LeaseNo,
 		}, groups, g.TreeBudget); err != nil {
 			return err
+		}
+		if g.FallbackOf != "" {
+			if err := c.recordFallback(ctx, tx, now, g, id); err != nil {
+				return err
+			}
 		}
 		if g.GrantID != "" {
 			_, err := tx.Exec(ctx, `UPDATE spend SET grant_id = $2 WHERE id = $1`, id, g.GrantID)

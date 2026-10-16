@@ -34,7 +34,7 @@ hosts:
          networks: [core, messenger-out], secrets: [bot-token-demo]}
       - {name: ingress-demo, kind: channel, tenant: demo, user: botaru-ingress-demo, networks: [core, ingress-in],
          secrets: [worker-token-ingress-demo, webhook-signing-pipeline, ingress-tls-demo]}   # source channel pipeline (SEC-2, ING-1)
-      - {name: monitor, kind: monitor, user: botaru-mon, networks: [core, monitor-out],
+      - {name: monitor, kind: monitor, tenant: demo, user: botaru-mon, networks: [core, monitor-out],
          secrets: [worker-token-monitor, monitor-api-token]}
   backup1:
     kind: production                       # backups of the store and the erasure log are not on the core machine (RET-5)

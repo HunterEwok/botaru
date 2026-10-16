@@ -11381,8 +11381,8 @@
     the provider report is reconciled (`spend.reconcile`); after reconciliation the alarm moves to
     `resolved` and the limits return. The restore is completed by P2 `restore.complete` or by the
     core itself, if at start it sees that the separate backup of the erasure log is ahead of the
-    store. Fixture: the backup was taken before an approval and before `forget`; after the restore
-    the approval is `canceled(restored)`, the memory record is deleted again, and the old token gets
+    store. Fixture: the backup was taken while an approval was pending, before its decision and
+    before `forget`; after the restore the approval is `canceled(restored)`, the memory record is deleted again, and the old token gets
     `fenced`; `restore.complete --spend-pending` gives readiness, the alarm
     `alarm.spend.unreconciled` and a halved daily limit, and `spend.reconcile` removes both.
   goal: G2

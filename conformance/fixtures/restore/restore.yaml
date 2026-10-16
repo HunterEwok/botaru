@@ -9,14 +9,17 @@ given: {tenant: demo}
 cases:
 - id: rst-fx-01
   rules: [RET-6, RET-7, AUD-6]
-  description: The backup was taken before the approval and before forget; after the restore the approval is canceled(restored), the memory
-    record is deleted again, and the old token gets fenced.
+  description: The backup was taken while the approval was pending, before its decision and before forget; after the restore the approval
+    is canceled(restored), the memory record is deleted again, and the old token gets fenced.
   given: {store_epoch: 7}
   steps:
+  - occur:
+      approval_pending: {approval: a_01JB8M0000000000000000000A}
+    at: '2026-10-12T01:00:00Z'
   - stand: {op: store.snapshot, label: store-daily}
     at: '2026-10-12T02:00:00Z'
   - occur:
-      approval_pending: {approval: a_01JB8M0000000000000000000A}
+      approval_decided: {approval: a_01JB8M0000000000000000000A, decision: approve}
     at: '2026-10-12T08:00:00Z'
   - occur:
       forget: {memory_item: m_01JB8M0000000000000000000M, erasure_request: er_01JB8M0000000000000000000E}

@@ -61,7 +61,17 @@ func (c *Core) ErasureLogExport(ctx context.Context) ([]ErasureLogEntry, error) 
 func (c *Core) RestoreBegin(ctx context.Context, log []ErasureLogEntry) (int, error) {
 	added := 0
 	err := c.tx(ctx, func(tx pgx.Tx, now time.Time) error {
-		added = 0
+		var err error
+		added, err = c.restoreBegin(ctx, tx, now, log)
+		return err
+	})
+	return added, err
+}
+
+// restoreBegin is RestoreBegin inside a transaction; it returns the replayed erasure requests.
+func (c *Core) restoreBegin(ctx context.Context, tx pgx.Tx, now time.Time, log []ErasureLogEntry) (int, error) {
+	added := 0
+	err := func() error {
 		var point *time.Time
 		if err := tx.QueryRow(ctx, `SELECT greatest((SELECT max(time) FROM events), (SELECT max(time) FROM spend), (SELECT max(updated_at) FROM tasks))`).Scan(&point); err != nil {
 			return err
@@ -104,7 +114,7 @@ func (c *Core) RestoreBegin(ctx context.Context, log []ErasureLogEntry) (int, er
 			After: map[string]any{"erasure_requests_replayed": added},
 		})
 		return err
-	})
+	}()
 	return added, err
 }
 

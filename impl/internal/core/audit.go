@@ -69,7 +69,7 @@ func workerPrincipal(workerID string) string { return "worker:" + strings.ToLowe
 // appendAudit numbers the record in the tenant chain and links it to the previous hash
 // (AUD-1, AUD-6). The chain head row is locked, so records of one tenant are serialized.
 func (c *Core) appendAudit(ctx context.Context, tx pgx.Tx, now time.Time, a Audit) (int64, error) {
-	return c.appendAuditAt(ctx, tx, now, c.epoch, a)
+	return c.appendAuditAt(ctx, tx, now, c.epoch.Load(), a)
 }
 
 // appendAuditAt appends to the chain of the given epoch; only a restore writes to an epoch
@@ -173,7 +173,7 @@ func (c *Core) VerifyAudit(ctx context.Context, tenant string) (count int64, bro
 	defer func() { _ = tx.Rollback(context.WithoutCancel(ctx)) }()
 	var headSeq int64
 	headHash := jcs.ZeroHash
-	err = tx.QueryRow(ctx, `SELECT seq, hash FROM audit_heads WHERE tenant = $1 AND epoch = $2`, tenant, c.epoch).Scan(&headSeq, &headHash)
+	err = tx.QueryRow(ctx, `SELECT seq, hash FROM audit_heads WHERE tenant = $1 AND epoch = $2`, tenant, c.epoch.Load()).Scan(&headSeq, &headHash)
 	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
 		return 0, 0, err
 	}
@@ -193,16 +193,16 @@ func (c *Core) VerifyAudit(ctx context.Context, tenant string) (count int64, bro
 // the chain is broken just after the cut.
 func (c *Core) verifyRows(ctx context.Context, tx pgx.Tx, tenant string) (count int64, brokenAt int64, prev string, err error) {
 	prev = jcs.ZeroHash
-	err = tx.QueryRow(ctx, `SELECT seq, hash FROM audit_cuts WHERE tenant = $1 AND epoch = $2`, tenant, c.epoch).Scan(&count, &prev)
+	err = tx.QueryRow(ctx, `SELECT seq, hash FROM audit_cuts WHERE tenant = $1 AND epoch = $2`, tenant, c.epoch.Load()).Scan(&count, &prev)
 	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
 		return 0, 0, "", err
 	}
 	if count > 0 {
-		if ok, err := validCut(ctx, tx, tenant, c.epoch, prev); err != nil || !ok {
+		if ok, err := validCut(ctx, tx, tenant, c.epoch.Load(), prev); err != nil || !ok {
 			return count, count + 1, prev, err
 		}
 	}
-	rows, err := tx.Query(ctx, `SELECT seq, record, hash FROM audit WHERE tenant = $1 AND epoch = $2 AND seq > $3 ORDER BY seq`, tenant, c.epoch, count)
+	rows, err := tx.Query(ctx, `SELECT seq, record, hash FROM audit WHERE tenant = $1 AND epoch = $2 AND seq > $3 ORDER BY seq`, tenant, c.epoch.Load(), count)
 	if err != nil {
 		return 0, 0, "", err
 	}

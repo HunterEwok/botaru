@@ -97,7 +97,7 @@ func TestEraseChannelCacheReplay(t *testing.T) {
 	if n, err := b.c.RestoreBegin(ctx, log); err != nil || n == 0 {
 		t.Fatalf("restore begin %d %v", n, err)
 	}
-	b.c.epoch++
+	b.c.epoch.Add(1)
 	if err := b.c.settleRestore(ctx); err != nil {
 		t.Fatal(err)
 	}
