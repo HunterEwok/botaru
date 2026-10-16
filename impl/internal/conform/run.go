@@ -65,6 +65,8 @@ type Runner struct {
 	spec  *spec.Spec
 	seed  *seedData
 	kinds map[string]string
+	// tables are the decision table kinds of the fixture files read so far (table.go).
+	tables map[string]*tableInfo
 }
 
 // NewRunner loads the specification the runner needs from the skeleton root.
@@ -114,6 +116,15 @@ func (r *Runner) Run(ctx context.Context, cases []*Case) []Result {
 }
 
 func (r *Runner) runCase(ctx context.Context, c *Case) Result {
+	if row, need := r.tableRow(c); row != nil {
+		if need == "" && row.info.function == "" {
+			need = r.givenNeeds(row.c)
+		}
+		if need != "" {
+			return Result{Case: c, Status: Unchecked, Detail: need}
+		}
+		return r.runTable(ctx, row)
+	}
 	if need := r.Needs(c); need != "" {
 		return Result{Case: c, Status: Unchecked, Detail: need}
 	}
@@ -129,6 +140,22 @@ func (r *Runner) runCase(ctx context.Context, c *Case) Result {
 // Needs returns the first thing a case needs that the runner cannot do yet, or "" when the
 // runner can run it. What the core itself lacks shows at run time (unimplemented).
 func (r *Runner) Needs(c *Case) string {
+	if n := r.givenNeeds(c); n != "" {
+		return n
+	}
+	for _, st := range c.Steps {
+		if n := r.stepNeeds(st); n != "" {
+			return n
+		}
+		if n := factNeeds(asMap(st["expect"])); n != "" {
+			return n
+		}
+	}
+	return factNeeds(c.Expect)
+}
+
+// givenNeeds returns the first key of given the runner cannot seed, or "".
+func (r *Runner) givenNeeds(c *Case) string {
 	keys := make([]string, 0, len(c.Given))
 	for k := range c.Given {
 		keys = append(keys, k)
@@ -181,15 +208,7 @@ func (r *Runner) Needs(c *Case) string {
 			return "given " + k
 		}
 	}
-	for _, st := range c.Steps {
-		if n := r.stepNeeds(st); n != "" {
-			return n
-		}
-		if n := factNeeds(asMap(st["expect"])); n != "" {
-			return n
-		}
-	}
-	return factNeeds(c.Expect)
+	return ""
 }
 
 var runnerOps = map[string]bool{
@@ -233,7 +252,9 @@ func (r *Runner) stepNeeds(st map[string]any) string {
 				}
 			}
 		default:
-			return "stand " + op
+			if n := standNeeds(s); n != "" {
+				return n
+			}
 		}
 	case st["lint"] != nil:
 		for k := range asMap(st["lint"]) {
@@ -708,7 +729,7 @@ func (x *exec) stand(ctx context.Context, s map[string]any) (*outcome, error) {
 		}
 		return x.test(ctx, op, body)
 	default:
-		return nil, fmt.Errorf("stand %s", op)
+		return x.standMore(ctx, s)
 	}
 }
 

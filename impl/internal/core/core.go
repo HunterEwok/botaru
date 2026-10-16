@@ -103,7 +103,7 @@ type Core struct {
 	texts *texts.Catalog
 	cat   catalogCache
 	wake  *waker
-	epoch int64
+	epoch atomic.Int64
 	log   *slog.Logger
 	rs    *resultSchemas
 	// capacity is the state of the store volume by the last measurement (CAP-5).
@@ -122,6 +122,8 @@ type Core struct {
 	// answer then), from which a loop that never ticked counts its age (OBS-4).
 	running   atomic.Bool
 	startedAt atomic.Int64
+	// bench holds the faults the test-control port injected (teststand.go); zero elsewhere.
+	bench benchFaults
 }
 
 // New opens the core over a migrated store.
@@ -139,7 +141,8 @@ func New(ctx context.Context, cfg Config, st *store.Store, sp *spec.Spec, tx *te
 	if err != nil {
 		return nil, err
 	}
-	c := &Core{cfg: cfg, st: st, spec: sp, texts: tx, epoch: meta.Epoch, log: cfg.Logger, rs: newResultSchemas()}
+	c := &Core{cfg: cfg, st: st, spec: sp, texts: tx, log: cfg.Logger, rs: newResultSchemas()}
+	c.epoch.Store(meta.Epoch)
 	c.wake = newWaker()
 	cat, err := c.Catalog(ctx)
 	if err != nil {
@@ -168,7 +171,7 @@ func (c *Core) Spec() *spec.Spec { return c.spec }
 func (c *Core) Store() *store.Store { return c.st }
 
 // Epoch returns the store epoch.
-func (c *Core) Epoch() int64 { return c.epoch }
+func (c *Core) Epoch() int64 { return c.epoch.Load() }
 
 // Problem is a refusal with a reason code from spec/model/reasons.yaml. The HTTP binding turns
 // it into problem details (RFC 9457).

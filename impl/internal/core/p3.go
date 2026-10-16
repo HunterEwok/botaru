@@ -112,7 +112,7 @@ func (c *Core) resolveToolsHandle(ctx context.Context, q store.Querier, handle s
 	if err != nil {
 		return nil, err
 	}
-	if epoch != c.epoch || state != "active" || !until.After(now) {
+	if epoch != c.epoch.Load() || state != "active" || !until.After(now) {
 		return nil, refuse("fenced", "the lease of the handle is not alive")
 	}
 	if err := c.loadGrantTask(ctx, q, &g); err != nil {
