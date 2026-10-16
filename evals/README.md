@@ -68,7 +68,7 @@ A case has no task record fields (tenant, initiator, `origin`, conversation, tie
 
 | Who | Tenant | Groups | Chats |
 |---|---|---|---|
-| `alice` | `demo` | `user` (only tier 0 types: `ops.summary.v1`, `ops.health.v1`, `qa.ask.v1`; free text becomes `ops.summary.v1`), `hello` | `alice-dm`, `lab` |
+| `alice` | `demo` | `user` (only tier 0 types: `ops.summary.v1`, `ops.health.v1`; free text becomes `ops.summary.v1`), `hello` | `alice-dm`, `lab` |
 | `bob` | `demo` | `staff` (also `ops.investigate.v1`, `data.describe.v1`, tier 1, class up to `raw_logs`, `action.request:cleanup_pipeline_tmp`), `ops-oncall` (`service.control:nginx`, `monitor.script_run`) | `bob-dm`, `lab`, `staff` |
 | `carol` | `demo` | `staff`, `approver` | `carol-dm`, `staff` |
 | `dave` | `demo` | `user`, `hello`; only for the first contact case `hello-001` | `dave-dm` |

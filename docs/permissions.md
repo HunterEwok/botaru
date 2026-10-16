@@ -99,7 +99,7 @@ A **group** is a set of capabilities, defined in git (`tenants/<t>/groups.yaml`,
 ```yaml
 # tenants/demo/groups.yaml (fragment)
 user:
-  caps: ["task:ops.summary.v1", "task:ops.health.v1", "task:qa.ask.v1"]
+  caps: ["task:ops.summary.v1", "task:ops.health.v1"]
   data: [summary, internal]
   day_eur: 1.0
 lead:                             # reports where money is visible

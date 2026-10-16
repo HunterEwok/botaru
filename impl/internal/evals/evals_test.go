@@ -257,8 +257,8 @@ func TestBenchRuns(t *testing.T) {
 		}
 		r := &Runner{Root: root, Bench: b, Real: true, Thresholds: th, Prices: pr, Repeats: 1, MaxRunMicros: th.MaxRunMicros,
 			BeforeCase: func(*Case) { mp.Reset(hello) }}
-		// bob's privileged groups are active through his code from /me; dave, the sender of
-		// the first contact case hello-001, stays pending.
+		// bob's privileged groups are active through his code from /me; dave's group user is
+		// not privileged, so he is granted at once.
 		var active int
 		if err := b.st.Pool.QueryRow(t.Context(), `SELECT count(*) FROM memberships WHERE principal = $1 AND state = 'active' AND grp IN ('staff', 'ops-oncall')`, b.people["bob"]).Scan(&active); err != nil || active != 2 {
 			t.Fatalf("bob's active privileged groups: %d %v", active, err)
@@ -271,14 +271,18 @@ func TestBenchRuns(t *testing.T) {
 				}
 			}
 		}
-		if len(b.ungranted["bob"]) != 0 || len(b.ungranted["dave"]) == 0 {
+		if len(b.ungranted["bob"]) != 0 || len(b.ungranted["dave"]) != 0 {
 			t.Fatalf("ungranted %v", b.ungranted)
 		}
+		// A person whose privileged seed groups stayed pending cannot send a setup step.
+		b.ungranted["dave"], b.ungrantedWhy["dave"] = []string{"staff"}, "privileged seed groups staff stay pending (PRM-13)"
 		c := *hp3.Cases[2].Case
 		c.Setup = map[string]any{"before": []any{map[string]any{"from": "dave", "chat": "dave-dm", "message": "/hello"}}}
 		if need := r.Needs(&c); !strings.Contains(need, "PRM-13") {
 			t.Fatalf("a setup step of a pending person: %q", need)
 		}
+		delete(b.ungranted, "dave")
+		delete(b.ungrantedWhy, "dave")
 		rep := r.Run(t.Context(), hp3)
 		s := status(rep)
 		for _, id := range []string{"hello-001", "hello-002", "hello-003"} {
@@ -345,7 +349,7 @@ func TestBenchRuns(t *testing.T) {
 		// A setup.then step the core makes no task for leaves the case untested: not run, but
 		// what the main input left is still checked, and a leak keeps the case failed.
 		c = *hp.Cases[0].Case
-		c.Setup = map[string]any{"then": []any{map[string]any{"from": "dave", "chat": "dave-dm", "message": "just saying hi, no command"}}}
+		c.Setup = map[string]any{"then": []any{map[string]any{"from": "dave", "chat": "dave-dm", "message": "/nosuchcommand"}}}
 		if res := r.runCase(t.Context(), &c, hp.Cases[0].Profile, 1); res.Status != NotRun || !strings.Contains(res.Detail, "made no task") {
 			t.Fatalf("then step without a task: %s %s", res.Status, res.Detail)
 		}

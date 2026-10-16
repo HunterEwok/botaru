@@ -15,8 +15,8 @@ cases:
 - id: inj-3-02
   rules: [INJ-3]
   given:
-    tool_yaml: {access: read, tier: 1, output_class: raw_logs}
-  expect: {result: rejected, stage: apply, note: the required untrusted_output is missing}
+    tool_yaml: {access: read, tier: 1, output_class: raw_logs, untrusted_output: null}
+  expect: {result: rejected, stage: apply, field: spec.tools.0.untrusted_output, note: the required untrusted_output is missing}
 - id: inj-3-03
   rules: [INJ-3]
   given:
@@ -50,7 +50,7 @@ cases:
     plugin_yaml:
       network:
         egress: ['*']
-  expect: {result: rejected, stage: apply}
+  expect: {result: rejected, stage: apply, field: network.egress}
 - id: inj-6-02
   rules: [INJ-6]
   given:
@@ -66,7 +66,7 @@ cases:
     plugin_yaml:
       network:
         egress: [198.51.100.0/24]
-  expect: {result: rejected, stage: apply, note: the address is not from the tenant catalog}
+  expect: {result: rejected, stage: apply, field: network.egress, note: the address is not from the tenant catalog}
 - id: inj-6-04
   rules: [INJ-6]
   given:
@@ -114,31 +114,31 @@ cases:
   given:
     cmd_yaml:
       argv: [/bin/sh, -c, df -h]
-  expect: {result: rejected, stage: apply, note: the shell is in forbidden-programs.yaml}
+  expect: {result: rejected, stage: apply, error: cmd_forbidden_program, note: the shell is in forbidden-programs.yaml}
 - id: inj-14-02
   rules: [INJ-14]
   given:
     cmd_yaml:
       argv: [df, -h]
-  expect: {result: rejected, stage: apply, note: the path is not absolute}
+  expect: {result: rejected, stage: apply, error: cmd_argv_path, note: the path is not absolute}
 - id: inj-14-03
   rules: [INJ-14]
   given:
     cmd_yaml:
       argv: [/usr/bin/systemctl, status, '{service.unit}']
-  expect: {result: rejected, stage: apply, note: no -- before the positional argument}
+  expect: {result: rejected, stage: apply, error: cmd_param_position, note: no -- before the positional argument}
 - id: inj-14-04
   rules: [INJ-14]
   given:
     cmd_yaml:
       argv: [/usr/bin/df, '-h{opts}']
-  expect: {result: rejected, stage: apply, note: the parameter is not a whole element}
+  expect: {result: rejected, stage: apply, error: cmd_param_position, note: the parameter is not a whole element}
 - id: inj-14-05
   rules: [INJ-14]
   given:
     cmd_yaml:
       argv: [/usr/bin/find, /var/log, -name, '*.gz']
-  expect: {result: rejected, stage: apply, note: find is in forbidden-programs.yaml}
+  expect: {result: rejected, stage: apply, error: cmd_forbidden_program, note: find is in forbidden-programs.yaml}
 - id: inj-14-06
   rules: [INJ-14]
   given:
@@ -148,6 +148,7 @@ cases:
   expect:
     result: rejected
     stage: apply
+    error: untrusted_output_false_text
     note: service journal output is text from outside, untrusted_output true and raw_logs are needed
 - id: inj-14-07
   rules: [INJ-14]
@@ -169,7 +170,7 @@ cases:
   rules: [INJ-16]
   given:
     role_yaml: {monitor_scripts: true}
-  expect: {result: rejected, stage: apply}
+  expect: {result: rejected, stage: apply, field: monitor_scripts}
 - id: inj-16-02
   rules: [INJ-16]
   given:

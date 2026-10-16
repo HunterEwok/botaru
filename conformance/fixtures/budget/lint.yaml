@@ -13,7 +13,15 @@ cases:
     manifest:
       kind: TaskType
       metadata: {name: ops.investigate.v1}
-      spec: {purpose: work, tree_budget_eur: 0.4, max_tokens: 4000}
+      spec:
+        title: Investigation
+        worker_kind: agent
+        purpose: work
+        tier: 1
+        data_class: internal
+        params_schema: {type: object, additionalProperties: false, properties: {}}
+        tree_budget_eur: 0.4
+        max_tokens: 4000
   expect: {result: rejected, stage: apply, field: max_tokens}
 - id: bud-fx-11
   rules: [BUD-9]
@@ -23,7 +31,13 @@ cases:
     manifest:
       kind: TaskType
       metadata: {name: review.risk.v1}
-      spec: {purpose: review, model: true}
+      spec:
+        title: Risk review
+        worker_kind: agent
+        purpose: review
+        tier: 0
+        data_class: internal
+        params_schema: {type: object, additionalProperties: false, properties: {}}
   expect: {result: rejected, stage: apply, field: tree_budget_eur}
 - id: bud-fx-12
   rules: [BUD-9]
@@ -34,7 +48,14 @@ cases:
     manifest:
       kind: TaskType
       metadata: {name: ops.investigate.v1}
-      spec: {purpose: work, tree_budget_eur: 0.4}
+      spec:
+        title: Investigation
+        worker_kind: agent
+        purpose: work
+        tier: 1
+        data_class: internal
+        params_schema: {type: object, additionalProperties: false, properties: {}}
+        tree_budget_eur: 0.4
   expect: {result: ok}
 - id: bud-fx-13
   rules: [BUD-13]
