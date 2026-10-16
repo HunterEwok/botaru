@@ -534,9 +534,15 @@ func (c *Core) metadataRetention(ctx context.Context, cat *Catalog) error {
 				SELECT count(*) FROM d`),
 			// An export that is done or failed goes by the month it ended (LCY-2, SEC-10): its
 			// row holds ids, the sink, the recipient and the public key; its file stays a
-			// tombstone in files and goes by the file period.
+			// tombstone in files and goes by the file period. The row stays while its file still
+			// has bytes (a person's erasure finds the person's copies through it) and while a
+			// delivery of it is not final.
 			meta(`WITH d AS (DELETE FROM exports WHERE id IN (SELECT x.id FROM exports x WHERE x.tenant = $1 AND x.state IN ('done', 'failed')`+
-				fmt.Sprintf(in, "x.updated_at", "x.updated_at")+` LIMIT $4 FOR UPDATE OF x SKIP LOCKED) RETURNING id) SELECT count(*) FROM d`),
+				fmt.Sprintf(in, "x.updated_at", "x.updated_at")+`
+				AND NOT EXISTS (SELECT 1 FROM files f WHERE f.file_ref = x.file_ref AND f.state = 'stored')
+				AND NOT EXISTS (SELECT 1 FROM deliveries v WHERE v.tenant = x.tenant AND v.kind = 'export' AND v.body->>'export' = x.id
+					AND v.state NOT IN ('delivered', 'dead', 'withheld'))
+				LIMIT $4 FOR UPDATE OF x SKIP LOCKED) RETURNING id) SELECT count(*) FROM d`),
 		)
 		for _, step := range steps {
 			if err := c.batches(ctx, step); err != nil {
