@@ -51,6 +51,8 @@ const (
 	kbMaxSearch = 20
 	// kbMaxWords is how many words of a query count; kbMinWord the shortest word.
 	kbMaxWords, kbMinWord = 16, 2
+	// kbScanLimit bounds the matching fragments one search ranks.
+	kbScanLimit = 2000
 )
 
 // corpusRes is a catalog resource of kind corpus. A corpus without trust is ingested and one
@@ -910,12 +912,13 @@ func kbSearch(ctx context.Context, tx pgx.Tx, tenant, corpus, query string, limi
 	if err != nil || len(words) == 0 {
 		return []map[string]any{}, err
 	}
-	rows, err := tx.Query(ctx, `SELECT f.doc, f.n, coalesce(f.title, ''), f.body,
+	// At most kbScanLimit matching fragments (by document and number) are ranked.
+	rows, err := tx.Query(ctx, `SELECT doc, n, title, body FROM (SELECT f.doc, f.n, coalesce(f.title, '') AS title, f.body,
 			(SELECT coalesce(sum(cardinality(u.positions)), 0) FROM unnest(f.words) u WHERE u.lexeme = ANY($3)) AS hits
 		FROM corpus_fragments f
 		JOIN corpus_documents d ON d.id = f.doc JOIN files fl ON fl.file_ref = d.file_ref
 		WHERE f.tenant = $1 AND f.corpus = $2 AND d.tenant = $1 AND d.state = 'indexed' AND fl.state = 'stored'
-		AND f.words @@ $4::tsquery ORDER BY hits DESC, f.doc, f.n LIMIT $5`, tenant, corpus, words, tsAll(words), limit)
+		AND f.words @@ $4::tsquery ORDER BY f.doc, f.n LIMIT $6) c ORDER BY hits DESC, doc, n LIMIT $5`, tenant, corpus, words, tsAll(words), limit, kbScanLimit)
 	if err != nil {
 		return nil, err
 	}
@@ -924,8 +927,7 @@ func kbSearch(ctx context.Context, tx pgx.Tx, tenant, corpus, query string, limi
 	for rows.Next() {
 		var doc, title, body string
 		var n int
-		var hits int64
-		if err := rows.Scan(&doc, &n, &title, &body, &hits); err != nil {
+		if err := rows.Scan(&doc, &n, &title, &body); err != nil {
 			return nil, err
 		}
 		out = append(out, fragmentOut(doc, n, title, body))

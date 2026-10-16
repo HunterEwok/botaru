@@ -10,6 +10,7 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/HunterEwok/botaru/impl/internal/ids"
 	"github.com/HunterEwok/botaru/impl/internal/kbjob"
@@ -979,5 +980,17 @@ func TestKBGitDocumentStorageCeiling(t *testing.T) {
 	var n int
 	if err := b.c.st.Pool.QueryRow(context.Background(), `SELECT count(*) FROM corpus_documents`).Scan(&n); err != nil || n != 1 {
 		t.Fatalf("documents %d %v", n, err)
+	}
+}
+
+// The log line of a missing skill copy comes at most once per interval for one role's pins.
+func TestSkillMissingWarnRateLimited(t *testing.T) {
+	refs := []manifest.SkillRef{{Name: "a", SHA256: strings.Repeat("1", 64)}}
+	now := time.Now()
+	if !skillWarnDue("t-rl", "r", refs, now) || skillWarnDue("t-rl", "r", refs, now.Add(time.Minute)) {
+		t.Fatal("not limited")
+	}
+	if !skillWarnDue("t-rl", "r", refs, now.Add(skillWarnInterval+time.Second)) || !skillWarnDue("t-rl", "other", refs, now) {
+		t.Fatal("limited too much")
 	}
 }

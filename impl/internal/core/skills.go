@@ -13,6 +13,7 @@ import (
 	"slices"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 	"unicode/utf8"
 
@@ -257,6 +258,26 @@ func storeSkillTrees(ctx context.Context, tx pgx.Tx, now time.Time, sent map[str
 		}
 	}
 	return nil
+}
+
+// skillWarned keeps, by tenant, role and pins, when the core last logged a missing skill copy.
+var skillWarned sync.Map
+
+// skillWarnInterval is how often the missing copy of one role's pins is logged again.
+const skillWarnInterval = 10 * time.Minute
+
+// skillWarnDue says whether the missing skill copy of a role's pins is to be logged now: at
+// most once per skillWarnInterval, so a polling worker does not flood the log.
+func skillWarnDue(tenant, role string, refs []manifest.SkillRef, now time.Time) bool {
+	key := tenant + "\x00" + role
+	for _, r := range refs {
+		key += "\x00" + r.Name + ":" + r.SHA256
+	}
+	if last, ok := skillWarned.Load(key); ok && now.Sub(last.(time.Time)) < skillWarnInterval {
+		return false
+	}
+	skillWarned.Store(key, now)
+	return true
 }
 
 // errSkillMissing: a skill-ref of the role has no core copy of its hash.

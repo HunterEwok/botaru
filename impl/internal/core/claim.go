@@ -539,7 +539,9 @@ func (c *Core) claimAttempt(ctx context.Context, tx pgx.Tx, now time.Time, cat *
 		var err error
 		skillRefs, skillFiles, err = roleSkills(ctx, tx, role)
 		if errors.Is(err, errSkillMissing) {
-			c.log.Warn("a pinned skill has no core copy of its hash; the role's tasks wait", "tenant", w.Tenant, "role", w.Role)
+			if skillWarnDue(w.Tenant, w.Role, role.Skills, time.Now()) {
+				c.log.Warn("a pinned skill has no core copy of its hash; the role's tasks wait", "tenant", w.Tenant, "role", w.Role)
+			}
 			return nil, markWaiting(ctx, tx, now, w.Tenant, claims, nil, "skill_missing")
 		}
 		if err != nil {
