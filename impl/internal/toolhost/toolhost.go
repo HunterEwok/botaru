@@ -382,22 +382,29 @@ func clean(res *mcp.CallResult, kinds []string, limit int) *mcp.CallResult {
 	return out
 }
 
+// callWorkID is the work id a plugin recognizes a repeated write by, shared by all attempts:
+// the approval id, <approval_id>:<n> for a campaign item, the service_grant record of a
+// service or script call, otherwise the id of the call (APR-7, FEN-7).
+func callWorkID(workID string, c callPayload) string {
+	if c.ApprovalID != "" {
+		if c.CampaignItem > 0 {
+			return c.ApprovalID + ":" + strconv.Itoa(c.CampaignItem)
+		}
+		return c.ApprovalID
+	}
+	if c.GrantID != "" {
+		return c.GrantID
+	}
+	return workID
+}
+
 // call runs one tool call in a new plugin process.
 func (h *Host) call(ctx context.Context, p Plugin, workID string, c callPayload) (*mcp.CallResult, error) {
 	var res mcp.CallResult
 	err := h.session(ctx, p, func(s *session) error {
 		meta := mcp.ClientMeta("botaru-toolhost", version.Version)
 		meta.Resolved = c.Resolved
-		meta.WorkID = workID
-		// The plugin recognizes a repeated write by the approval or grant id (APR-7, FEN-7).
-		if c.ApprovalID != "" {
-			meta.WorkID = c.ApprovalID
-			if c.CampaignItem > 0 {
-				meta.WorkID += ":" + strconv.Itoa(c.CampaignItem)
-			}
-		} else if c.GrantID != "" {
-			meta.WorkID = c.GrantID
-		}
+		meta.WorkID = callWorkID(workID, c)
 		raw, err := s.request(ctx, "tools/call", mcp.CallParams{Name: c.Tool, Arguments: c.Args, Meta: meta})
 		if err != nil {
 			return err

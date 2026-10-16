@@ -4,6 +4,7 @@
   "title": "Work item lease",
   "description": "Lease record that the core writes on every P1 claim: of a task attempt, a tool call or a delivery. The lease_no is 1 greater than the previous one of this work item; exactly one holder holds a work item (FEN-1). Every changing call of the holder carries the token, and a call with an outdated token, with a previous store or seat epoch gets fenced without writes (FEN-2). Lease lifecycle: spec/lifecycles/lease.md.",
   "x-botaru-direction": "record",
+  "x-botaru-retention": "metadata",
   "x-botaru-rules": [
     "FEN-1",
     "FEN-2",

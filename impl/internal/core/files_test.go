@@ -196,13 +196,13 @@ func TestFileCeilingAndMarks(t *testing.T) {
 		t.Fatal(err)
 	}
 	// The task took the internal mark of the file; without the group that sees internal the
-	// task stops, though its type's class is summary.
+	// task is canceled with rights_revoked (PRM-3), though its type's class is summary.
 	if _, err := b.c.Grant(ctx, b.op, GrantRequest{Op: "ungrant", Subject: b.alice, Group: "files"}); err != nil {
 		t.Fatal(err)
 	}
-	var state string
-	if err := b.c.st.Pool.QueryRow(ctx, `SELECT state FROM tasks WHERE id = $1`, r.Task).Scan(&state); err != nil || state != "failed" {
-		t.Fatalf("task after the data class was lost: %q %v", state, err)
+	var state, reason string
+	if err := b.c.st.Pool.QueryRow(ctx, `SELECT state, coalesce(reason, '') FROM tasks WHERE id = $1`, r.Task).Scan(&state, &reason); err != nil || state != "canceled" || reason != "rights_revoked" {
+		t.Fatalf("task after the data class was lost: %q %q %v", state, reason, err)
 	}
 	if _, err := b.c.st.Pool.Exec(ctx, `UPDATE files SET expires_at = botaru_now() - interval '1 second' WHERE file_ref = $1`, up.FileRef); err != nil {
 		t.Fatal(err)

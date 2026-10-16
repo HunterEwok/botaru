@@ -426,6 +426,12 @@ func fmtWindow(d time.Duration) string {
 // cancelTaskIDs cancels the tasks: a running attempt loses its lease and handles in the same
 // transaction, so the worker is fenced at its next call.
 func (c *Core) cancelTaskIDs(ctx context.Context, tx pgx.Tx, now time.Time, tenant string, tasks []string, reason string) error {
+	return c.cancelTaskIDsWith(ctx, tx, now, tenant, tasks, reason, nil)
+}
+
+// cancelTaskIDsWith is cancelTaskIDs whose task.canceled events also carry the fields of extra
+// (metadata only, such as the detailed access reason of PRM-8).
+func (c *Core) cancelTaskIDsWith(ctx context.Context, tx pgx.Tx, now time.Time, tenant string, tasks []string, reason string, extra map[string]any) error {
 	for _, id := range tasks {
 		if _, err := tx.Exec(ctx, `DELETE FROM handles WHERE work_id = $1`, id); err != nil {
 			return err
@@ -448,7 +454,11 @@ func (c *Core) cancelTaskIDs(ctx context.Context, tx pgx.Tx, now time.Time, tena
 		if err := kbIngestEnded(ctx, tx, now, id, reason); err != nil {
 			return err
 		}
-		if err := c.appendEvent(ctx, tx, now, tenant, Event{Type: "task.canceled", Subject: id, Data: map[string]any{"task": id, "reason": reason}}); err != nil {
+		data := map[string]any{"task": id, "reason": reason}
+		for k, v := range extra {
+			data[k] = v
+		}
+		if err := c.appendEvent(ctx, tx, now, tenant, Event{Type: "task.canceled", Subject: id, Data: data}); err != nil {
 			return err
 		}
 		if err := c.campaignItemEnded(ctx, tx, now, id, "canceled", reason); err != nil {

@@ -219,6 +219,7 @@ texts:
   task.rejected.held: Requests of this kind are paused right now.
   task.rejected.person_inactive: Your access is turned off.
   task.failed: The request could not be completed ({reason}).
+  task.canceled.rights_revoked: The request was stopped because you no longer have the permission or the data access it needs ({reason}).
   task.continuation_refused: "The follow-up step of your request could not start ({reason})."
   delivery.withheld.channel_ceiling: The answer holds data of a class this chat may not receive, so it was not sent here.
   delivery.details_private: Details sent privately.

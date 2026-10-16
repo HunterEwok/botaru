@@ -213,6 +213,13 @@ func (c *Core) enqueueChild(ctx context.Context, tx pgx.Tx, now time.Time, cat *
 	if !offered || !containsString(childTypes(cat, g), typ) {
 		return deny("type_not_allowed")
 	}
+	// The tool schema has only type, goal and params: a record field the model names, such as
+	// the initiator or the mark, is refused, not dropped (IDN-1).
+	for k := range args {
+		if k != "type" && k != "goal" && k != "params" {
+			return deny("input_schema_invalid")
+		}
+	}
 	if goal == "" || len(goal) > 4000 {
 		return deny("input_schema_invalid")
 	}

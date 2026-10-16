@@ -193,7 +193,39 @@ func profileAdmitted(tv *TenantView, name string, p manifest.ModelProfile) (mani
 			return sub, refuse("provider_config", "the provider retention is above what the tenant allows (GW-15)")
 		}
 	}
+	// A model that needs retention is unavailable with zero retention; review by the provider's
+	// people no higher than the terms allow; every subprocessor of the model is one of the
+	// tenant's (GW-15).
+	if p.RequiresRetention && sub.Retention.Mode == "zero" {
+		return sub, refuse("provider_config", "the model requires retention and the tenant allows none (GW-15)")
+	}
+	if allowed := sub.Terms.HumanReview; allowed != "" {
+		hr := ""
+		if p.ProviderHumanReview != nil {
+			hr = p.ProviderHumanReview.Value
+		}
+		if humanReviewOrder(hr) > humanReviewOrder(allowed) {
+			return sub, refuse("provider_config", "the provider's review of requests is above what the tenant allows (GW-15)")
+		}
+	}
+	for _, ps := range p.Subprocessors {
+		if !slices.ContainsFunc(tv.Spec.Privacy.Subprocessors, func(s manifest.Subprocessor) bool { return s.Provider == ps.Provider }) {
+			return sub, refuse("provider_config", "a subprocessor of the model is not a subprocessor of the tenant (GW-15)")
+		}
+	}
 	return sub, nil
+}
+
+// humanReviewOrder orders the values of provider_human_review: none, abuse_only, yes; a value
+// the profile does not declare counts as the highest (GW-15).
+func humanReviewOrder(v string) int {
+	switch v {
+	case "none":
+		return 0
+	case "abuse_only":
+		return 1
+	}
+	return 2
 }
 
 // Reserve writes the worst-case reserve of a call before it goes out (GW-2, BUD-2). It
