@@ -221,6 +221,11 @@ func TestMetadataWholeMonths(t *testing.T) {
 			VALUES ('cmp_old', 'demo', 'x', 'completed', 'h', '{}', 'n', false, $1, $1)`,
 		`INSERT INTO campaign_items (campaign, n, resource, args, args_hash, state) VALUES ('cmp_old', 1, 'r', '{}', 'h', 'ok')`,
 		`INSERT INTO spend (id, tenant, line, unit, state, eur_micros, time) VALUES ('sp_stuck', 'demo', 'work', 'task', 'reserved', 7, $1)`,
+		// A dismissed incident whose episode still fires stays, or the next tick opens it again.
+		`WITH e AS (INSERT INTO alarm_episodes (tenant, alarmkey, alarm, state, severity, subject, seq, opened_at, last_seen_at)
+			VALUES ('demo', 'k_fire', 'a', 'firing', 'warn', '{}', 1, $1, $1) RETURNING id)
+			INSERT INTO incidents (id, tenant, class, subject_kind, alarmkey, episode, episodes, alarmkeys, state, record, since, implicated_at, opened_at, ended_at, updated_at)
+			SELECT 'inc_fire', 'demo', 'c', 'host', 'k_fire', e.id, ARRAY[e.id], ARRAY['k_fire'], 'dismissed', '{}', $1, $1, $1, $1, $1 FROM e`,
 	} {
 		args := []any{t1}
 		if !strings.Contains(sql, "$1") {
@@ -253,6 +258,9 @@ func TestMetadataWholeMonths(t *testing.T) {
 	}
 	if n := b.count(t, `SELECT count(*) FROM approvals WHERE id = 'ap_live'`) + b.count(t, `SELECT count(*) FROM holds WHERE id = 'h_live'`); n != 2 || others() != 2 {
 		t.Fatalf("terminal records of the month stayed or live ones went: %d of 2 left", others())
+	}
+	if b.count(t, `SELECT count(*) FROM incidents WHERE id = 'inc_fire'`) != 1 {
+		t.Fatal("an incident with a firing episode went")
 	}
 	if n := b.count(t, `SELECT count(*) FROM spend WHERE tenant = 'demo' AND time >= $1 AND time < $2`, monthStart(t1), monthStart(t1).AddDate(0, 1, 0)); n != 0 {
 		t.Fatalf("usage lines of the month stayed: %d", n)

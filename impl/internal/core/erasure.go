@@ -203,6 +203,21 @@ func addErasureSteps(ctx context.Context, tx pgx.Tx, now time.Time, tenant strin
 	return nil
 }
 
+// addMissingCoreSteps gives a request recorded by an earlier build, whose steps cover every
+// core store of that build, the steps of core stores added since (script runs, campaigns), so
+// an upgrade does not close it with their content left. It does nothing for forget and
+// bot_retired, which never reach those stores, and is idempotent.
+func addMissingCoreSteps(ctx context.Context, tx pgx.Tx, now time.Time, r *erasureRow) error {
+	for _, st := range []string{"scripts", "campaigns"} {
+		if _, err := tx.Exec(ctx, `INSERT INTO erasure_steps (id, request, tenant, store, kind, target, state, updated_at)
+			SELECT $1, $2, $3, $4, 'core', $4, 'pending', $5 WHERE EXISTS (SELECT 1 FROM erasure_steps WHERE request = $2 AND store = 'tasks')
+			ON CONFLICT (request, store) DO NOTHING`, ids.New(ids.Step), r.ID, r.Tenant, st, now); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func principalOr(p string) string {
 	if p == "" {
 		return "system"
@@ -289,6 +304,8 @@ func (c *Core) erasureLoop(ctx context.Context) error {
 				if err := settleReplayedMatch(ctx, tx, now, r); err != nil {
 					return err
 				}
+			} else if err := addMissingCoreSteps(ctx, tx, now, r); err != nil {
+				return err
 			}
 			if err := c.runCoreSteps(ctx, tx, now, cat, r); err != nil {
 				return err
@@ -351,12 +368,14 @@ func (c *Core) runCoreSteps(ctx context.Context, tx pgx.Tx, now time.Time, cat *
 			continue
 		}
 		if s.kind == "channel" {
+			// A worker that is revoked or stale (OBS-4) takes no work, the same as for a runtime.
 			var none, live bool
-			if err := tx.QueryRow(ctx, `SELECT coalesce(bool_or(hello->'driver'->>'stores_content' = 'none'), false), count(*) > 0
-				FROM workers WHERE tenant = $1 AND kind = 'channel' AND target = $2 AND state <> 'revoked'`, r.Tenant, s.target).Scan(&none, &live); err != nil {
+			if err := tx.QueryRow(ctx, `SELECT coalesce(bool_or(hello->'driver'->>'stores_content' = 'none'), false),
+				count(*) FILTER (WHERE stale_since IS NULL AND (last_seen IS NULL OR last_seen >= $3)) > 0
+				FROM workers WHERE tenant = $1 AND kind = 'channel' AND target = $2 AND state <> 'revoked'`, r.Tenant, s.target, now.Add(-staleAfter)).Scan(&none, &live); err != nil {
 				return err
 			}
-			if !live {
+			if !none && !live {
 				// No channel worker left to take the work: not_ready, retried by erasure.retry.
 				if err := set(s.store, "failed", "", "not_ready"); err != nil {
 					return err
@@ -507,16 +526,27 @@ func (c *Core) eraseCore(ctx context.Context, tx pgx.Tx, now time.Time, cat *Cat
 		_, err = purgeRuns(ctx, tx, "", runs, rargs...)
 		return err
 	case "campaigns":
-		// The items of a campaign of the person or of a task of the scope lose their arguments
-		// and result fields once they ended; a live campaign stops with its parent task in the
-		// tasks step first, which ends its pending items.
+		// A campaign of the person, of a task of the scope or named by id: a live one is
+		// rejected or stopped first (its pending items are skipped), then it keeps no content.
 		if len(sc.IDs) > 0 && len(idsWith(sc.IDs, "t_", ids.Campaign+"_")) == 0 {
 			return nil
 		}
-		_, err := tx.Exec(ctx, `UPDATE campaign_items SET args = '{}', summary = NULL WHERE (args <> '{}' OR summary IS NOT NULL) AND state NOT IN ('pending', 'released') AND campaign IN (
-			SELECT id FROM campaigns WHERE tenant = $1 AND (
-			(cardinality($3::text[]) = 0 AND cardinality($4::text[]) = 0 AND ($2 = '' OR initiator = $2 OR parent_task IN (`+tasksIn+`)))
-			OR parent_task = ANY($3) OR id = ANY($4)))`, r.Tenant, sc.Subject, idsWith(sc.IDs, "t_"), idsWith(sc.IDs, ids.Campaign+"_"))
+		cmps := `SELECT id FROM campaigns WHERE tenant = $1 AND (
+			(cardinality($3::text[]) = 0 AND cardinality($4::text[]) = 0 AND ($2 = '' OR initiator = $2 OR parent_task IN (` + tasksIn + `)))
+			OR parent_task = ANY($3) OR id = ANY($4))`
+		cargs := []any{r.Tenant, sc.Subject, idsWith(sc.IDs, "t_"), idsWith(sc.IDs, ids.Campaign+"_")}
+		rows, err := tx.Query(ctx, cmps+` AND state = ANY($5) ORDER BY id`, append(cargs, campaignLive)...)
+		if err != nil {
+			return err
+		}
+		live, err := pgx.CollectRows(rows, pgx.RowTo[string])
+		if err != nil {
+			return err
+		}
+		if err := c.endCampaigns(ctx, tx, now, r.Tenant, live); err != nil {
+			return err
+		}
+		_, err = purgeCampaigns(ctx, tx, "", cmps, cargs...)
 		return err
 	case "memory":
 		if len(sc.IDs) > 0 && len(idsWith(sc.IDs, "m_")) == 0 {

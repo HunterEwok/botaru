@@ -2515,6 +2515,10 @@ func (c *Core) scriptCommand(ctx context.Context, w *Worker, ob OnBehalf, id, no
 		if r.Nonce != nonce {
 			return refuse("forbidden", "the nonce is not the card's")
 		}
+		if r.Rec.Purged {
+			// A tombstone has no script left to act on (RET-10).
+			return refuse("already_terminal", "the run has ended")
+		}
 		kinds := []string{scriptConfirmCard}
 		if command != "approve" && command != "reject" {
 			kinds = []string{scriptConfirmCard, scriptSummaryKind}
@@ -2696,6 +2700,10 @@ func (c *Core) decideGate(ctx context.Context, w *Worker, ob OnBehalf, req Decid
 		if err != nil {
 			return err
 		}
+		if r.Rec.Purged || n > len(steps) {
+			// A tombstone has no script left to read the approvers from (RET-10).
+			return refuse("already_terminal", "the run has ended")
+		}
 		s := steps[n-1]
 		if s.Nonce != req.Nonce {
 			return refuse("forbidden", "the nonce is not the card's")
@@ -2707,6 +2715,9 @@ func (c *Core) decideGate(ctx context.Context, w *Worker, ob OnBehalf, req Decid
 		defs, err := parseSteps(r.Rec.Script)
 		if err != nil {
 			return err
+		}
+		if n > len(defs) {
+			return refuse("already_terminal", "the run has ended")
 		}
 		may := press.principal == r.Initiator
 		if a := defs[n-1].approversOf(); a != "" {

@@ -152,7 +152,15 @@ func TestEraseTenantScope(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
+	// As recorded by a build before the scripts and campaigns stores: the loop adds their steps.
+	if _, err := b.c.st.Pool.Exec(ctx, `DELETE FROM erasure_steps WHERE request = $1 AND store IN ('scripts', 'campaigns')`, id); err != nil {
+		t.Fatal(err)
+	}
 	b.tick(t, "erasure")
+	b.tick(t, "erasure")
+	if n := b.count(t, `SELECT count(*) FROM erasure_steps WHERE request = $1 AND store IN ('scripts', 'campaigns') AND state = 'done'`, id); n != 2 {
+		t.Fatalf("steps of the new core stores: %d", n)
+	}
 	if n := b.count(t, `SELECT count(*) FROM sessions WHERE tenant = 'demo'`); n != 0 {
 		t.Fatalf("sessions of the tenant left: %d", n)
 	}

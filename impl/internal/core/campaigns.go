@@ -166,20 +166,20 @@ func (r campaignRec) itemType() string {
 // campaignRow is a campaign as the core reads it.
 type campaignRow struct {
 	ID, Tenant, ParentTask, Initiator, State, PauseReason, StopReason, PlanHash, Nonce, DecidedBy string
-	Card                                                                                          bool
+	Card, Purged                                                                                  bool
 	Rec                                                                                           campaignRec
 	ExpiresAt, DeadlineAt, GateAt, ProgressAt                                                     *time.Time
 	CreatedAt                                                                                     time.Time
 }
 
 const campaignColumns = `id, tenant, coalesce(parent_task, ''), initiator, state, coalesce(pause_reason, ''), coalesce(stop_reason, ''), plan_hash,
-	nonce, coalesce(decided_by, ''), card, record, expires_at, deadline_at, gate_at, progress_at, created_at`
+	nonce, coalesce(decided_by, ''), card, record, expires_at, deadline_at, gate_at, progress_at, created_at, purged_at IS NOT NULL`
 
 func scanCampaign(row pgx.Row) (*campaignRow, error) {
 	var c campaignRow
 	var rec []byte
 	if err := row.Scan(&c.ID, &c.Tenant, &c.ParentTask, &c.Initiator, &c.State, &c.PauseReason, &c.StopReason, &c.PlanHash,
-		&c.Nonce, &c.DecidedBy, &c.Card, &rec, &c.ExpiresAt, &c.DeadlineAt, &c.GateAt, &c.ProgressAt, &c.CreatedAt); err != nil {
+		&c.Nonce, &c.DecidedBy, &c.Card, &rec, &c.ExpiresAt, &c.DeadlineAt, &c.GateAt, &c.ProgressAt, &c.CreatedAt, &c.Purged); err != nil {
 		return nil, err
 	}
 	return &c, json.Unmarshal(rec, &c.Rec)
@@ -1895,6 +1895,23 @@ func (c *Core) campaignContinuation(ctx context.Context, tx pgx.Tx, now time.Tim
 	return nil
 }
 
+// purgeCampaigns strips the content of the selected campaigns (RET-10): the goal, parameters and
+// arguments of the template, and the arguments and result fields of every item that is not
+// pending; the state, rollout, links and argument hashes stay as metadata. head is empty or a
+// WITH clause the selection reads.
+func purgeCampaigns(ctx context.Context, tx pgx.Tx, head, where string, args ...any) (int64, error) {
+	with := "WITH "
+	if head != "" {
+		with = head + ", "
+	}
+	var n int64
+	err := tx.QueryRow(ctx, with+`k AS (UPDATE campaigns SET record = jsonb_set(record, '{template}', coalesce(record->'template', '{}') - 'goal' - 'params' - 'args'),
+		purged_at = botaru_now() WHERE id IN (`+where+`) AND purged_at IS NULL RETURNING id),
+		i AS (UPDATE campaign_items SET args = '{}', summary = NULL WHERE campaign IN (SELECT id FROM k) AND state <> 'pending')
+		SELECT count(*) FROM k`, args...).Scan(&n)
+	return n, err
+}
+
 // cancelCampaignsOf stops the live campaigns of a task that was canceled: a canceled tree has no
 // campaign either (spec/lifecycles/campaign.md).
 func (c *Core) cancelCampaignsOf(ctx context.Context, tx pgx.Tx, now time.Time, tenant, task string) error {
@@ -1902,18 +1919,17 @@ func (c *Core) cancelCampaignsOf(ctx context.Context, tx pgx.Tx, now time.Time, 
 	if err != nil {
 		return err
 	}
-	var list []string
-	for rows.Next() {
-		var id string
-		if err := rows.Scan(&id); err != nil {
-			rows.Close()
-			return err
-		}
-		list = append(list, id)
-	}
-	rows.Close()
-	if err := rows.Err(); err != nil || len(list) == 0 {
+	list, err := pgx.CollectRows(rows, pgx.RowTo[string])
+	if err != nil {
 		return err
+	}
+	return c.endCampaigns(ctx, tx, now, tenant, list)
+}
+
+// endCampaigns rejects the proposed and stops the running or paused campaigns of the list.
+func (c *Core) endCampaigns(ctx context.Context, tx pgx.Tx, now time.Time, tenant string, list []string) error {
+	if len(list) == 0 {
+		return nil
 	}
 	cat, err := c.Catalog(ctx)
 	if err != nil {
@@ -2649,6 +2665,10 @@ func (c *Core) campaignCommand(ctx context.Context, w *Worker, ob OnBehalf, id, 
 			}
 			if !slices.Contains([]string{"completed", "failed", "canceled"}, cmp.State) {
 				return refuse("already_decided", "the campaign has not ended")
+			}
+			if cmp.Purged {
+				// Its items kept no arguments past the content period or an erasure (RET-10).
+				return refuse("already_terminal", "the campaign's content is gone")
 			}
 			res, err := c.retryCampaign(ctx, tx, now, cat, cmp)
 			if err != nil {

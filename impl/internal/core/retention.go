@@ -250,12 +250,14 @@ func (c *Core) retentionLoop(ctx context.Context) error {
 				WHERE r.state IN ('completed', 'failed', 'canceled', 'rejected') AND NOT r.record ? 'purged' AND r.updated_at <= $9
 				AND r.updated_at <= coalesce(p.content, $6) LIMIT $8 FOR UPDATE OF r SKIP LOCKED`, base...)
 		},
-		// The arguments and the result fields of an item of a finished campaign go with the
-		// content of its tasks; the item keeps its state, links and the hash of its arguments.
-		exec(`UPDATE campaign_items SET args = '{}', summary = NULL WHERE (campaign, n) IN (SELECT i.campaign, i.n FROM campaign_items i
-			JOIN campaigns k ON k.id = i.campaign LEFT JOIN p ON p.tenant = k.tenant
-			WHERE (i.args <> '{}' OR i.summary IS NOT NULL) AND k.state IN ('completed', 'failed', 'canceled', 'rejected')
-			AND k.updated_at <= $9 AND k.updated_at <= coalesce(p.content, $6) LIMIT $8 FOR UPDATE OF i SKIP LOCKED)`, base),
+		// A finished campaign past the content period keeps no goal, parameters or arguments in
+		// its template, and its items no arguments or result fields; the campaign is marked
+		// purged, so Retry failed has nothing to plan from.
+		func(tx pgx.Tx, now time.Time) (int64, error) {
+			return purgeCampaigns(ctx, tx, retentionCuts, `SELECT k.id FROM campaigns k LEFT JOIN p ON p.tenant = k.tenant
+				WHERE k.purged_at IS NULL AND k.state IN ('completed', 'failed', 'canceled', 'rejected') AND k.updated_at <= $9
+				AND k.updated_at <= coalesce(p.content, $6) LIMIT $8 FOR UPDATE OF k SKIP LOCKED`, base...)
+		},
 		// The note of a finding and the author note of a closed proposal are content
 		// (MGR-30, PRP-1); the rest of each record is metadata.
 		exec(`UPDATE findings SET note = NULL WHERE id IN (SELECT f.id FROM findings f LEFT JOIN p ON p.tenant = f.tenant
@@ -455,6 +457,8 @@ func (c *Core) metadataRetention(ctx context.Context, cat *Catalog) error {
 			meta(`WITH d AS (DELETE FROM approvals WHERE id IN (SELECT a.id FROM approvals a WHERE a.tenant = $1
 				AND a.state IN ('executed', 'exec_failed', 'rejected', 'expired', 'canceled')`+fmt.Sprintf(in, "a.updated_at", "a.updated_at")+`
 				AND NOT EXISTS (SELECT 1 FROM script_steps st JOIN script_runs r ON r.id = st.run WHERE st.approval = a.id AND r.state = ANY($5))
+				AND NOT EXISTS (SELECT 1 FROM proposals x WHERE x.tenant = a.tenant AND x.record->'realization'->>'object' = a.id
+					AND x.state IN ('screened', 'in_review', 'recommended', 'parked', 'presented', 'realizing'))
 				LIMIT $4 FOR UPDATE OF a SKIP LOCKED) RETURNING id),
 				v AS (DELETE FROM card_views WHERE subject_kind = 'approval' AND subject_id IN (SELECT id FROM d))
 				SELECT count(*) FROM d`, scriptLive),
@@ -464,6 +468,7 @@ func (c *Core) metadataRetention(ctx context.Context, cat *Catalog) error {
 			meta(`WITH d AS (DELETE FROM incidents WHERE id IN (SELECT i.id FROM incidents i WHERE i.tenant = $1 AND i.state IN ('closed', 'dismissed')`+
 				fmt.Sprintf(in, "coalesce(i.ended_at, i.updated_at)", "coalesce(i.ended_at, i.updated_at)")+`
 				AND NOT EXISTS (SELECT 1 FROM control_cards k WHERE k.incident = i.id AND k.state = 'pending')
+				AND NOT EXISTS (SELECT 1 FROM alarm_episodes e WHERE e.id = ANY (i.episodes) AND e.state <> 'resolved')
 				LIMIT $4 FOR UPDATE OF i SKIP LOCKED) RETURNING id),
 				n AS (DELETE FROM manager_notices WHERE basis_kind = 'incident' AND basis IN (SELECT id FROM d))
 				SELECT count(*) FROM d`),
@@ -474,6 +479,8 @@ func (c *Core) metadataRetention(ctx context.Context, cat *Catalog) error {
 				v AS (DELETE FROM alarm_values WHERE episode IN (SELECT id FROM d))
 				SELECT count(*) FROM d`),
 			meta(`WITH d AS (DELETE FROM control_ops WHERE id IN (SELECT o.id FROM control_ops o WHERE o.tenant = $1`+fmt.Sprintf(in, "o.created_at", "o.created_at")+`
+				AND NOT EXISTS (SELECT 1 FROM holds h WHERE h.id = o.hold AND h.state = 'active')
+				AND NOT EXISTS (SELECT 1 FROM incidents i WHERE i.id = o.incident AND i.state NOT IN ('closed', 'dismissed'))
 				LIMIT $4 FOR UPDATE OF o SKIP LOCKED) RETURNING id) SELECT count(*) FROM d`),
 			meta(`WITH d AS (DELETE FROM control_cards WHERE id IN (SELECT k.id FROM control_cards k WHERE k.tenant = $1 AND k.state <> 'pending'`+
 				fmt.Sprintf(in, "k.updated_at", "k.updated_at")+` LIMIT $4 FOR UPDATE OF k SKIP LOCKED) RETURNING id) SELECT count(*) FROM d`),
@@ -485,10 +492,11 @@ func (c *Core) metadataRetention(ctx context.Context, cat *Catalog) error {
 				i AS (DELETE FROM campaign_items WHERE campaign IN (SELECT id FROM c)),
 				d AS (DELETE FROM campaigns WHERE id IN (SELECT id FROM c) RETURNING id)
 				SELECT count(*) FROM d`, scriptLive),
-			// A person's request goes once it was refused or withdrawn, or once its erasure is
-			// done with the ids it found recorded on the erasure itself (the replay reads those).
+			// A person's request goes once it was refused or withdrawn, approved with nothing to
+			// erase (a match that found nothing), or once its erasure is done with the ids it
+			// found recorded on the erasure itself (the replay reads those).
 			meta(`WITH c AS (SELECT q.id FROM subject_requests q LEFT JOIN erasure_requests e ON e.id = q.erasure WHERE q.tenant = $1
-				AND (q.state IN ('rejected', 'withdrawn') OR q.state = 'approved' AND e.state = 'done' AND (q.kind = 'erase' OR e.found IS NOT NULL))`+
+				AND (q.state IN ('rejected', 'withdrawn') OR q.state = 'approved' AND (q.erasure IS NULL OR e.state = 'done' AND (q.kind = 'erase' OR e.found IS NOT NULL)))`+
 				fmt.Sprintf(in, "q.updated_at", "q.updated_at")+` LIMIT $4 FOR UPDATE OF q SKIP LOCKED),
 				m AS (DELETE FROM subject_match_steps WHERE request IN (SELECT id FROM c)),
 				d AS (DELETE FROM subject_requests WHERE id IN (SELECT id FROM c) RETURNING id)

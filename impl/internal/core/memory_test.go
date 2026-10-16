@@ -228,7 +228,11 @@ func TestSubjectErasure(t *testing.T) {
 	if _, err := b.c.st.Pool.Exec(ctx, `INSERT INTO script_runs (id, tenant, initiator, state, plan_hash, record, nonce, expires_at, created_at, updated_at)
 		SELECT 'scr_erase', 'demo', subject, 'completed', 'h', '{"root": "t_x", "assignment": "CANARY-NOT-A-SECRET-scr"}', 'n', now(), now(), now()
 		FROM erasure_requests WHERE state = 'requested';
-		INSERT INTO script_steps (run, n, id, kind, state, fields) VALUES ('scr_erase', 1, 's1', 'task', 'ok', '{"v": "CANARY-NOT-A-SECRET-scr"}')`); err != nil {
+		INSERT INTO script_steps (run, n, id, kind, state, fields) VALUES ('scr_erase', 1, 's1', 'task', 'ok', '{"v": "CANARY-NOT-A-SECRET-scr"}');
+		INSERT INTO campaigns (id, tenant, initiator, state, plan_hash, record, nonce, card, created_at, updated_at)
+		SELECT 'cmp_erase', 'demo', subject, 'running', 'h', '{"template": {"kind": "task", "type": "hello.greet.v1", "goal": "CANARY-NOT-A-SECRET-scr"}, "root": "t_x"}', 'n', false, now(), now()
+		FROM erasure_requests WHERE state = 'requested';
+		INSERT INTO campaign_items (campaign, n, resource, args, args_hash, state) VALUES ('cmp_erase', 1, 'r', '{"a": "CANARY-NOT-A-SECRET-scr"}', 'h', 'pending')`); err != nil {
 		t.Fatal(err)
 	}
 	b.tick(t, "erasure")
@@ -238,6 +242,11 @@ func TestSubjectErasure(t *testing.T) {
 	}
 	if n := b.count(t, `SELECT (SELECT count(*) FROM script_runs WHERE record::text LIKE '%CANARY%') + (SELECT count(*) FROM script_steps WHERE fields IS NOT NULL)`); n != 0 {
 		t.Fatal("the script run kept its content")
+	}
+	// The person's live campaign stops releasing and keeps no content (RET-10).
+	if n := b.count(t, `SELECT (SELECT count(*) FROM campaigns WHERE state IN ('proposed', 'running', 'paused') OR purged_at IS NULL OR record::text LIKE '%CANARY%')
+		+ (SELECT count(*) FROM campaign_items WHERE state = 'pending' OR args <> '{}')`); n != 0 {
+		t.Fatal("the campaign kept running or kept its content")
 	}
 	var erasure string
 	if err := b.c.st.Pool.QueryRow(ctx, `SELECT erasure FROM subject_requests WHERE id = $1`, req.ID).Scan(&erasure); err != nil {
