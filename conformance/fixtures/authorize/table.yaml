@@ -267,7 +267,7 @@ cases:
   given: {tenant: demo}
   steps:
   - lint: {groups_yaml: 'approver: action.approve:*'}
-  expect: {result: rejected, stage: apply}
+  expect: {result: rejected, stage: apply, error: cap_star}
 - id: authz-16
   rules: [PRM-7]
   given: {tenant: demo}
@@ -285,7 +285,7 @@ cases:
   given: {tenant: demo}
   steps:
   - lint: {groups_yaml: 'staff: data:*'}
-  expect: {result: rejected, stage: apply}
+  expect: {result: rejected, stage: apply, error: cap_star}
 - id: authz-19
   rules: [PRM-7]
   given:
@@ -388,13 +388,13 @@ cases:
   given: {tenant: demo}
   steps:
   - lint: {groups_yaml: 'system-ops: task:data.*'}
-  expect: {result: rejected, stage: apply}
+  expect: {result: rejected, stage: apply, error: cap_star}
 - id: authz-26
   rules: [PRM-10]
   given: {tenant: demo}
   steps:
   - lint: {schedule_yaml: 'type: data.sensor_check.v2'}
-  expect: {result: rejected, stage: apply, note: the type is not in system-ops}
+  expect: {result: rejected, stage: apply, error: system_ops_missing, note: the type is not in system-ops}
 - id: authz-27
   rules: [PRM-10, APR-4]
   given: {tenant: demo}
@@ -614,13 +614,13 @@ cases:
   given: {tenant: demo}
   steps:
   - lint: {route_yaml: 'type: action.cleanup_pipeline_tmp.v1'}
-  expect: {result: rejected, stage: apply}
+  expect: {result: rejected, stage: apply, error: action_type_grant}
 - id: authz-45
   rules: [APR-5]
   given: {tenant: demo}
   steps:
   - lint: {role_yaml: 'may_enqueue: [action.cleanup_pipeline_tmp.v1]'}
-  expect: {result: rejected, stage: apply}
+  expect: {result: rejected, stage: apply, error: action_type_grant}
 # Services and scripts (APR-18, INJ-15)
 - id: authz-46
   rules: [APR-18]

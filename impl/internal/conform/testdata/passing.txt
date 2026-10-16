@@ -1,6 +1,5 @@
 # Behaviour cases that pass on the reference core (TestConformance); rewrite with -update.
 apr-self-03
-apr-ttl-04
 authz-01
 authz-02
 authz-03
@@ -32,7 +31,6 @@ gov-fx-26#11
 gov-fx-26#12
 gov-fx-26#15
 gov-fx-26#16
-gov-fx-26#2
 gov-fx-26#4
 gov-fx-26#6
 inj-14-01
@@ -40,10 +38,8 @@ inj-14-02
 inj-14-03
 inj-14-04
 inj-14-05
-inj-14-06
 inj-14-08
 inj-16-01
-inj-3-01
 inj-3-02
 inj-3-04
 inj-6-01

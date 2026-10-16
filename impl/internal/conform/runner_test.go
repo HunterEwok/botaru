@@ -206,7 +206,7 @@ cases:
     manifest:
       kind: Tenant
       metadata: {name: demo}
-      spec: {timezone: Europe/Berlin}
+      spec: {timezone: Etc/GMT-2}
   expect: {result: ok}
 - id: apply-fact
   given:
@@ -217,7 +217,7 @@ cases:
       spec:
         weights: {value: 4}
   expect:
-    apply: {result: rejected}
+    apply: {result: rejected, field: weights.value}
 - id: apply-unnamed
   given:
     manifest:
@@ -272,7 +272,7 @@ cases:
 - id: shell
   given:
     cmd_yaml: {argv: [/bin/sh, -c, df -h]}
-  expect: {result: rejected, stage: apply}
+  expect: {result: rejected, stage: apply, error: cmd_forbidden_program}
 - id: argv-ok
   given:
     cmd_yaml: {argv: [/usr/bin/df, -h, -x, tmpfs]}
@@ -284,7 +284,7 @@ cases:
 - id: untrusted-missing
   steps:
   - lint: {tool_yaml: {access: read, tier: 1, output_class: raw_logs, untrusted_output: null}}
-  expect: {result: rejected, stage: apply}
+  expect: {result: rejected, stage: apply, field: spec.tools.0.untrusted_output}
 - id: prose
   steps:
   - lint: {role_yaml: 'ops-reader with models.base base-alt'}
@@ -416,5 +416,81 @@ cases:
 	})
 	if d := got["wrong-severity"].Detail; !strings.Contains(d, `alarm.severity "page"`) {
 		t.Errorf("wrong-severity: %s", d)
+	}
+}
+
+// TestVagueRefusal: a refusal checks an expected refusal only when the expectation names what is
+// refused and the refusal is at an object the fragment changed. A refusal for an unrelated
+// reason is never counted as a pass: without an error code it is unchecked, with the wrong code
+// it fails; the argv parameters of an example command keep their schemas, so only what the row
+// writes is wrong; a later version of an example type is added under its name.
+func TestVagueRefusal(t *testing.T) {
+	r := testRunner(t)
+	got := runYAML(t, r, `
+id: t-vague
+rules: [INJ-14]
+cases:
+- id: no-code
+  given:
+    cmd_yaml: {argv: [/bin/sh, -c, df -h]}
+  expect: {result: rejected, stage: apply}
+- id: unrelated-code
+  given:
+    cmd_yaml: {argv: [/bin/sh, -c, df -h]}
+  expect: {result: rejected, stage: apply, error: cmd_argv_path}
+- id: param-kept
+  given:
+    cmd_yaml: {argv: [/usr/bin/journalctl, -u, --, '{service.unit}']}
+  expect: {result: ok}
+- id: unrelated-object
+  steps:
+  - lint: {groups_yaml: 'staff: task:ops.summary.v1', tool_yaml: {access: read, tier: 1, output_class: raw_logs, untrusted_output: null}}
+  expect: {result: rejected, stage: apply, error: cap_star}
+- id: next-version
+  steps:
+  - lint: {schedule_yaml: 'type: data.sensor_check.v2'}
+  expect: {result: rejected, stage: apply, error: system_ops_missing}
+`)
+	wantStatus(t, got, map[string]Status{"no-code": Unchecked, "unrelated-code": Failed, "param-kept": Passed, "unrelated-object": Failed,
+		"next-version": Passed})
+	if d := got["no-code"].Detail; !strings.Contains(d, "names no error code") {
+		t.Errorf("no-code: %s", d)
+	}
+	o := &outcome{Result: "rejected", Error: "cmd_forbidden_program", Path: "/manifests/0/spec/tools/0", Touched: map[int]bool{1: true}}
+	if n := vague(map[string]any{"result": "rejected", "error": "cmd_forbidden_program"}, o); !strings.Contains(n, "outside the objects") {
+		t.Errorf("a matching refusal at an object the fragment did not change: %q", n)
+	}
+	o.Touched = map[int]bool{0: true}
+	if n := vague(map[string]any{"result": "rejected", "error": "cmd_forbidden_program"}, o); n != "" {
+		t.Errorf("a matching refusal at the changed object: %q", n)
+	}
+}
+
+// TestRemovedPaths: a field a fragment sets to null is matched by its full path.
+func TestRemovedPaths(t *testing.T) {
+	before := map[string]any{"spec": map[string]any{"tools": []any{map[string]any{"untrusted_output": true, "name": "run"}}, "name": "x"}}
+	after := map[string]any{"spec": map[string]any{"tools": []any{map[string]any{"name": "run"}}, "name": "x"}}
+	out := map[string]bool{}
+	removedPaths(before, after, "", out)
+	if len(out) != 1 || !out["spec.tools.0.untrusted_output"] {
+		t.Fatalf("removed %v", out)
+	}
+}
+
+// TestCodePattern: the verification code is read only from the cmd.profile.code line.
+func TestCodePattern(t *testing.T) {
+	root, err := spec.FindRoot("")
+	if err != nil {
+		t.Fatal(err)
+	}
+	re, err := codePattern(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if m := re.FindStringSubmatch("Your groups: user. Task 12345678.\nYour verification code for the operator: 87654321."); m == nil || m[1] != "87654321" {
+		t.Fatalf("code %v", m)
+	}
+	if re.MatchString("Task 12345678 is done.") {
+		t.Fatal("another 8-digit number read as the code")
 	}
 }

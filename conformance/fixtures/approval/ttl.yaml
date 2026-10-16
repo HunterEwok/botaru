@@ -24,9 +24,14 @@ cases:
   expect: {expires_at: '2026-03-02T11:00:00Z'}
 - id: apr-ttl-04
   rules: [APR-19]
+  description: 'The manifest passes; for risk low the card expiry stays 60 minutes, a shorter ttl does not shorten it.'
+  given:
+    action: {risk: low, ttl: 15m}
+    created_at: '2026-03-02T09:00:00Z'
   steps:
   - lint: {action_yaml: 'risk: low, ttl: 15m'}
-  expect: {result: ok, note: 'the manifest passes; for risk low the card expiry stays 60 minutes, a shorter ttl does not shorten it'}
+    expect: {result: ok}
+  expect: {expires_at: '2026-03-02T10:00:00Z'}
 - id: apr-ttl-05
   rules: [APR-19]
   given:

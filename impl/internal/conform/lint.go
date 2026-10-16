@@ -6,7 +6,9 @@ import (
 	"context"
 	"fmt"
 	"path/filepath"
+	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/HunterEwok/botaru/impl/internal/manifest"
@@ -48,6 +50,16 @@ func lintNeeds(l map[string]any) string {
 		}
 		if _, err := fragment(l[k]); err != nil {
 			return "lint " + k + " in prose"
+		}
+	}
+	if t, ok := l["tool_yaml"]; ok {
+		// Tool annotations are not a manifest field: they come from the toolhost's live
+		// tools/list (INJ-3), so a manifest carrying them is refused by its schema and never
+		// reaches the contradiction the row checks.
+		if f, _ := fragment(t); f != nil {
+			if _, has := f["annotations"]; has {
+				return "lint tool_yaml annotations: the annotations of a tool come from the toolhost's tools/list, which the runner does not play"
+			}
 		}
 	}
 	if t, ok := l["tenant_yaml"]; ok {
@@ -228,9 +240,34 @@ var lintObjects = map[string]lintObject{
 					tool[k] = v
 				}
 			}
+			// A parameter the argv names keeps the schema an example command gives it, so the
+			// row breaks only what it writes; a name no example command has stays undeclared.
+			known := map[string]any{}
+			for _, c := range asMap(tool["commands"]) {
+				for n, sc := range asMap(asMap(c)["params"]) {
+					known[n] = sc
+				}
+			}
+			params := asMap(cmd["params"])
+			for _, a := range asList(cmd["argv"]) {
+				for _, m := range argvParam.FindAllStringSubmatch(str(a), -1) {
+					if sc, ok := known[m[1]]; ok && params[m[1]] == nil {
+						if params == nil {
+							params = map[string]any{}
+						}
+						params[m[1]] = sc
+					}
+				}
+			}
+			if params != nil {
+				cmd["params"] = params
+			}
 			asMap(tool["commands"])["disk_usage"] = cmd
 		}},
 }
+
+// argvParam is a parameter in an argv element: {name} or {name.field}.
+var argvParam = regexp.MustCompile(`\{([a-z_][a-z0-9_]*)(?:\.[a-z0-9_]+)*\}`)
 
 // opsReaderFiles are the reference role ops-reader with what it needs: the demo catalog, its
 // task types, the plugins of its tools and the profile of its analysis slot.
@@ -303,6 +340,9 @@ func (x *exec) lint(ctx context.Context, l map[string]any) (*outcome, error) {
 		changes = append(changes, change{k, target, obj})
 	}
 	set = x.withExecutors(set)
+	// A groups_yaml fragment has no example set of its own: it relies on the seed apply, which
+	// put the seed groups and the types and actions their caps name into the store, so the
+	// changed groups are dry-run on top of it.
 	var groups []map[string]any
 	if g, ok := l["groups_yaml"]; ok {
 		f, _ := fragment(g)
@@ -323,19 +363,39 @@ func (x *exec) lint(ctx context.Context, l map[string]any) (*outcome, error) {
 	removed := map[string]bool{}
 	for _, c := range changes {
 		f, _ := fragment(l[c.key])
-		nullKeys(f, removed)
+		before := deepCopy(c.target)
 		c.obj.apply(c.target, deepCopy(f))
+		removedPaths(before, c.target, "", removed)
 	}
-	o, err := x.apply(ctx, withObjects(set, groups), true)
+	final := withObjects(set, groups)
+	final = withVersions(final, x.base)
+	o, err := x.apply(ctx, final, true)
 	if err != nil {
 		return nil, err
+	}
+	// The objects the fragments change: a refusal checks the row only at one of them.
+	touched := map[int]bool{}
+	for i, m := range final {
+		for _, c := range changes {
+			if sameObject(m, c.target) {
+				touched[i] = true
+			}
+		}
+		for _, g := range groups {
+			if sameObject(m, g) {
+				touched[i] = true
+			}
+		}
+	}
+	for _, oo := range append([]*outcome{o}, o.Alts...) {
+		oo.Touched = touched
 	}
 	// A field the fragment removes (a null value) is absent on purpose: its absence is what the
 	// case checks, not an incomplete fixture manifest.
 	for _, oo := range append([]*outcome{o}, o.Alts...) {
 		var keep []string
 		for _, m := range oo.Missing {
-			if !removed[m[strings.LastIndex(m, ".")+1:]] {
+			if !removed[m] {
 				keep = append(keep, m)
 			}
 		}
@@ -344,13 +404,32 @@ func (x *exec) lint(ctx context.Context, l map[string]any) (*outcome, error) {
 	return o, nil
 }
 
-// nullKeys adds the names a fragment sets to null, at any depth, to out.
-func nullKeys(f map[string]any, out map[string]bool) {
-	for k, v := range f {
-		if v == nil {
-			out[k[strings.LastIndex(k, ".")+1:]] = true
-		} else if m, ok := v.(map[string]any); ok {
-			nullKeys(m, out)
+// removedPaths adds to out the dotted paths (spec.tools.0.untrusted_output) of the fields that
+// were in before and are not in after: the fields a fragment removed with a null value.
+func removedPaths(before, after any, prefix string, out map[string]bool) {
+	join := func(k string) string {
+		if prefix == "" {
+			return k
+		}
+		return prefix + "." + k
+	}
+	switch b := before.(type) {
+	case map[string]any:
+		a, _ := after.(map[string]any)
+		for k, v := range b {
+			av, ok := a[k]
+			if !ok {
+				out[join(k)] = true
+				continue
+			}
+			removedPaths(v, av, join(k), out)
+		}
+	case []any:
+		a, _ := after.([]any)
+		for i, v := range b {
+			if i < len(a) {
+				removedPaths(v, a[i], join(strconv.Itoa(i)), out)
+			}
 		}
 	}
 }
@@ -388,6 +467,49 @@ func (x *exec) groupFragment(f map[string]any) []map[string]any {
 
 // withObjects adds manifests to a set; one of the same kind, tenant and name replaces the one
 // there.
+// reVersion is the version suffix of a task type name.
+var reVersion = regexp.MustCompile(`\.v[0-9]+$`)
+
+// withVersions adds, for a schedule or route whose task type is in neither the set nor the
+// seed, a copy of the set's task type of the same name in another version under that name: a
+// row that names data.sensor_check.v2 means the next version of the example type, not a missing
+// one, so it checks what it writes (the type's grant to system-ops) rather than ref_missing.
+func withVersions(set, base []map[string]any) []map[string]any {
+	have := map[string]bool{}
+	for _, m := range append(append([]map[string]any{}, set...), base...) {
+		if str(m["kind"]) == "TaskType" {
+			have[str(asMap(m["metadata"])["name"])] = true
+		}
+	}
+	out := set
+	for _, m := range set {
+		if k := str(m["kind"]); k != "Schedule" && k != "Route" {
+			continue
+		}
+		t := str(asMap(asMap(m["spec"])["task"])["type"])
+		if t == "" || have[t] || !reVersion.MatchString(t) {
+			continue
+		}
+		for _, tt := range set {
+			n := str(asMap(tt["metadata"])["name"])
+			if str(tt["kind"]) == "TaskType" && n != t && reVersion.ReplaceAllString(n, "") == reVersion.ReplaceAllString(t, "") {
+				c := deepCopy(tt)
+				asMap(c["metadata"])["name"] = t
+				out = append(out, c)
+				have[t] = true
+				break
+			}
+		}
+	}
+	return out
+}
+
+// sameObject tells whether two manifests are the same object: kind, tenant and name.
+func sameObject(a, b map[string]any) bool {
+	amd, bmd := asMap(a["metadata"]), asMap(b["metadata"])
+	return str(a["kind"]) == str(b["kind"]) && str(amd["name"]) == str(bmd["name"]) && str(amd["tenant"]) == str(bmd["tenant"])
+}
+
 func withObjects(set, more []map[string]any) []map[string]any {
 	out := append([]map[string]any{}, set...)
 	for _, m := range more {

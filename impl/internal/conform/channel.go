@@ -5,9 +5,13 @@ package conform
 import (
 	"context"
 	"fmt"
+	"os"
+	"path/filepath"
 	"regexp"
 	"strconv"
 	"strings"
+
+	"github.com/HunterEwok/botaru/impl/internal/yamlx"
 )
 
 // The runner's own channel process (conformance/runner.md, actor channel:<name>): a channel
@@ -19,8 +23,30 @@ import (
 // benchChannel is the channel of the demo tenant in the base set (examples/tenants/demo/channels.yaml).
 const benchChannel = "telegram"
 
-// reCode is the verification code in the /me reply (spec/bindings/channels/messages, cmd.profile.code).
-var reCode = regexp.MustCompile(`\b[0-9]{8}\b`)
+// codeText is the key of the /me line that carries the verification code, in the code text
+// catalog of the demo tenant's locale (spec/bindings/channels/messages/en.yaml).
+const codeText = "cmd.profile.code"
+
+// codePattern is the cmd.profile.code text as a pattern: the text around {code} literally, the
+// code an 8-digit number, so another 8-digit number in the reply is never read as the code.
+func codePattern(root string) (*regexp.Regexp, error) {
+	b, err := os.ReadFile(filepath.Join(root, "spec/bindings/channels/messages/en.yaml"))
+	if err != nil {
+		return nil, err
+	}
+	var cat struct {
+		Texts map[string]any `yaml:"texts"`
+	}
+	if err := yamlx.Unmarshal(b, &cat); err != nil {
+		return nil, err
+	}
+	t := strings.TrimSpace(str(cat.Texts[codeText]))
+	before, after, ok := strings.Cut(t, "{code}")
+	if !ok {
+		return nil, fmt.Errorf("the text %s has no {code}", codeText)
+	}
+	return regexp.Compile(regexp.QuoteMeta(before) + `([0-9]{8})` + regexp.QuoteMeta(after))
+}
 
 // channel returns the P1 token of the runner's channel worker, enrolling it on first use.
 func (x *exec) channel(ctx context.Context) (string, error) {
@@ -98,9 +124,13 @@ func (x *exec) verificationCode(ctx context.Context, identity string) (string, e
 		}
 		return "", fmt.Errorf("/me: %s%s", o.Reason, o.why())
 	}
-	code := reCode.FindString(str(resp["text"]))
-	if code == "" {
+	re, err := codePattern(x.r.Root)
+	if err != nil {
+		return "", err
+	}
+	m := re.FindStringSubmatch(str(resp["text"]))
+	if m == nil {
 		return "", fmt.Errorf("the /me reply carries no verification code: %q", str(resp["text"]))
 	}
-	return code, nil
+	return m[1], nil
 }

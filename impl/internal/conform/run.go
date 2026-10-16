@@ -411,6 +411,9 @@ type outcome struct {
 	// Alts are the other errors of a refused apply: an expectation matches the set when it
 	// matches one of its errors.
 	Alts []*outcome
+	// Touched are the indexes in the applied set of the objects a lint fragment changed; nil
+	// when the outcome is not of a fragment.
+	Touched map[int]bool
 }
 
 // violation is one place a manifest breaks its kind schema: the pointer in the apply body and
@@ -612,10 +615,61 @@ func missingProps(sp map[string]any, v spec.Violation) []string {
 	return out
 }
 
+// manifestIndex is the index of the manifest a refusal points at (/manifests/N/...), or -1.
+var manifestIndex = regexp.MustCompile(`^/manifests/([0-9]+)(/|$)`)
+
+// vague is the reason a refusal does not check an expected refusal: the expectation names no
+// error code, reason or field, so a refusal for any reason would match; or the errors that
+// match it lie outside the objects the row's fragments change.
+func vague(e map[string]any, o *outcome) string {
+	if o == nil || o.Result == "ok" || str(e["result"]) != "rejected" {
+		return ""
+	}
+	_, hasErr := e["error"]
+	_, hasReason := e["reason"]
+	_, hasField := e["field"]
+	if !hasErr && !hasReason && !hasField {
+		return "the expectation names no error code, reason or field, so a refusal for any reason would match (" + o.errors() + ")"
+	}
+	if o.Touched == nil {
+		return ""
+	}
+	var outside []string
+	for _, oo := range append([]*outcome{o}, o.Alts...) {
+		if compareOne(withoutKeys(e, "note"), oo) != "" {
+			continue
+		}
+		m := manifestIndex.FindStringSubmatch(oo.Path)
+		if m != nil {
+			if i, _ := strconv.Atoi(m[1]); oo.Touched[i] {
+				return ""
+			}
+		}
+		outside = append(outside, oo.Error+" at "+oo.Path)
+	}
+	if len(outside) > 0 {
+		return "the matching refusal " + strings.Join(outside, ", ") + " lies outside the objects the fragment changes"
+	}
+	return ""
+}
+
+func withoutKeys(e map[string]any, keys ...string) map[string]any {
+	out := map[string]any{}
+	for k, v := range e {
+		if !contains(keys, k) {
+			out[k] = v
+		}
+	}
+	return out
+}
+
 // incomplete is the reason a refusal does not check an expectation: the refused fixture manifest
 // lacks required fields other than the one the expectation names, so the core refused it for
 // them. The case is unchecked: the fixture, not the core, is wrong.
 func incomplete(e map[string]any, o *outcome) string {
+	if n := vague(e, o); n != "" {
+		return n
+	}
 	if o == nil || len(o.Missing) == 0 || o.Result == "ok" {
 		return ""
 	}
@@ -1052,8 +1106,8 @@ func (x *exec) givenManifests() []map[string]any {
 }
 
 // onBase completes a given manifest of an object the seed already applied (the demo tenant, the
-// hello role): the fixture names the fields that matter, and each of its spec keys replaces the
-// key of the seeded object, so the object stays whole.
+// hello role): the fixture names the fields that matter, and they are merged into the seeded
+// object (deepMerge), so the object stays whole.
 func (x *exec) onBase(m map[string]any) map[string]any {
 	md := asMap(m["metadata"])
 	for _, b := range x.base {
@@ -1062,16 +1116,28 @@ func (x *exec) onBase(m map[string]any) map[string]any {
 			continue
 		}
 		out := deepCopy(b)
-		sp := asMap(out["spec"])
-		for k, v := range asMap(m["spec"]) {
-			sp[k] = v
-		}
+		// The given spec is merged into the seeded one at every depth of maps; a list replaces
+		// the seeded list (the fixture writes the whole list it means).
+		deepMerge(asMap(out["spec"]), deepCopy(asMap(m["spec"])))
 		if str(m["kind"]) == "Tenant" {
-			sp["kind"] = "test"
+			asMap(out["spec"])["kind"] = "test"
 		}
 		return out
 	}
 	return m
+}
+
+// deepMerge merges src into dst: maps merge key by key at every depth, other values replace.
+func deepMerge(dst, src map[string]any) {
+	for k, v := range src {
+		if sm, ok := v.(map[string]any); ok {
+			if dm, ok := dst[k].(map[string]any); ok {
+				deepMerge(dm, sm)
+				continue
+			}
+		}
+		dst[k] = v
+	}
 }
 
 func (x *exec) step(ctx context.Context, st map[string]any) (*outcome, error) {
