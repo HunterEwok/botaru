@@ -20,6 +20,7 @@ import (
 
 // AttributionRequest is the body of P2 attribution.list and attribution.create.
 type AttributionRequest struct {
+	Op     string `json:"op,omitempty"`
 	Tenant string `json:"tenant,omitempty"`
 	// Kind is change (the default), rejected_proposal or script_run.
 	Kind      string `json:"kind,omitempty"`
@@ -52,8 +53,11 @@ type AttributionView struct {
 	Created bool `json:"created,omitempty"`
 }
 
-// attributionKinds are the kinds of attribution.v2.
-var attributionKinds = []string{"change", "rejected_proposal", "script_run"}
+// attributionKinds and attributionStates are the kinds and states of attribution.v2.
+var (
+	attributionKinds  = []string{"change", "rejected_proposal", "script_run"}
+	attributionStates = []string{"candidate", "unknown", "confirmed", "rejected", "disputed", "canceled"}
+)
 
 // AttributionList is P2 attribution.list: the attributions of the tenant, newest first, at most
 // 200, optionally of one kind, state or incident.
@@ -64,6 +68,9 @@ func (c *Core) AttributionList(ctx context.Context, op Operator, req Attribution
 	}
 	if req.Kind != "" && !slices.Contains(attributionKinds, req.Kind) {
 		return nil, refuse("input_schema_invalid", "kind is change, rejected_proposal or script_run")
+	}
+	if req.State != "" && !slices.Contains(attributionStates, req.State) {
+		return nil, refuse("input_schema_invalid", "state is one of %s", strings.Join(attributionStates, ", "))
 	}
 	items := []AttributionView{}
 	err = c.tx(ctx, func(tx pgx.Tx, now time.Time) error {
@@ -178,14 +185,17 @@ func (c *Core) AttributionCreate(ctx context.Context, op Operator, req Attributi
 		if inc.State == "dismissed" {
 			return refuse("conflict", "the incident is declared false; it takes no candidates")
 		}
-		var id string
-		err = tx.QueryRow(ctx, `SELECT id FROM attributions WHERE incident = $1 AND kind = $2 AND state <> 'canceled'
-			AND (lower(proposal) = lower($3) OR lower(script_run) = lower($4))`, inc.ID, kind, req.Proposal, req.ScriptRun).Scan(&id)
+		var id, state string
+		err = tx.QueryRow(ctx, `SELECT id, state FROM attributions WHERE incident = $1 AND kind = $2
+			AND (lower(proposal) = lower($3) OR lower(script_run) = lower($4))`, inc.ID, kind, req.Proposal, req.ScriptRun).Scan(&id, &state)
 		if err != nil && !errors.Is(err, pgx.ErrNoRows) {
 			return err
 		}
 		created := false
 		switch {
+		case state == "canceled":
+			// One candidate per incident and proposal: a canceled one is not made again.
+			return refuse("conflict", "the candidate of this incident and change is canceled")
 		case id != "":
 		case kind != "change":
 			return refuse("not_found", "only code finds a link of kind %s, and it found none for this incident", kind)
@@ -208,11 +218,11 @@ func (c *Core) AttributionCreate(ctx context.Context, op Operator, req Attributi
 			if !open {
 				return refuse("expired", "the attribution window of the change is closed")
 			}
-			if err := c.createAttribution(ctx, tx, now, tv, inc.ID, p.ID, "change", "human", op.Principal); err != nil {
+			if id, err = c.createAttribution(ctx, tx, now, tv, inc.ID, p.ID, "change", "human", op.Principal); err != nil {
 				return err
 			}
-			if err := tx.QueryRow(ctx, `SELECT id FROM attributions WHERE incident = $1 AND proposal = $2`, inc.ID, p.ID).Scan(&id); err != nil {
-				return err
+			if id == "" {
+				return refuse("conflict", "the incident already has a candidate of this change")
 			}
 			created = true
 		}
@@ -221,7 +231,7 @@ func (c *Core) AttributionCreate(ctx context.Context, op Operator, req Attributi
 			return err
 		}
 		if !created {
-			if err := c.presentAttribution(ctx, tx, now, tv, a); err != nil {
+			if err := c.presentAttribution(ctx, tx, now, tv, a, op.Principal); err != nil {
 				return err
 			}
 		}
@@ -237,7 +247,7 @@ func (c *Core) AttributionCreate(ctx context.Context, op Operator, req Attributi
 // presentAttribution sends the card of an open candidate to the people who decide it when none
 // went yet: for a link to a rejected proposal also in shadow, where code sends none by itself
 // (GOV-36, GOV-40).
-func (c *Core) presentAttribution(ctx context.Context, tx pgx.Tx, now time.Time, tv *TenantView, a *attributionRow) error {
+func (c *Core) presentAttribution(ctx context.Context, tx pgx.Tx, now time.Time, tv *TenantView, a *attributionRow, by string) error {
 	if !slices.Contains([]string{"candidate", "unknown", "rejected"}, a.State) {
 		return nil
 	}
@@ -251,13 +261,22 @@ func (c *Core) presentAttribution(ctx context.Context, tx pgx.Tx, now time.Time,
 	if _, err := tx.Exec(ctx, `UPDATE attributions SET presented_at = $2 WHERE id = $1`, subject, now); err != nil {
 		return err
 	}
-	if err := c.govAudit(ctx, tx, now, a.Tenant, "attribution.present", "attribution", subject, "", map[string]any{"kind": a.Kind}); err != nil {
+	if _, err := c.appendAudit(ctx, tx, now, Audit{Tenant: a.Tenant, Kind: "command", Actor: Actor{Principal: by, Via: "farmctl"},
+		Command: "attribution.present", Target: &Target{Kind: "attribution", ID: subject}, OK: true, After: map[string]any{"kind": a.Kind}}); err != nil {
 		return err
 	}
 	if a.Kind == "script_run" {
 		return c.planScriptLinkCards(ctx, tx, now, tv, a.ID, a.ScriptRun, nil)
 	}
-	_, err := c.planGovCards(ctx, tx, now, tv, "attribution", subject, card, "governance.attribute", proposalMark(ctx, tx, a.Proposal), nil)
+	// The card goes by the mark of the proposal of its first candidate, which every member of
+	// the card shares (linkLead, DIG-2).
+	lead, err := a, error(nil)
+	if subject != a.ID {
+		if lead, err = loadAttribution(ctx, tx, subject, false); err != nil || lead == nil {
+			return err
+		}
+	}
+	_, err = c.planGovCards(ctx, tx, now, tv, "attribution", subject, card, "governance.attribute", proposalMark(ctx, tx, lead.Proposal), nil)
 	return err
 }
 
@@ -276,7 +295,7 @@ var incidentCauses = []string{"external_load", "attack", "unknown"}
 // code, the person and the time go into the record and the audit, which only people see. With an
 // external cause the incident gets no new link to a rejected proposal, its open candidates of
 // that kind are canceled in the same transaction, and nobody answers for it: the departures that
-// wait for its links end (GOV-41, GOV-42). A departure that already happened stays.
+// wait for its links end and those done return (GOV-41, GOV-42, externalCause).
 func (c *Core) IncidentCause(ctx context.Context, op Operator, req IncidentCauseRequest) (*Done, error) {
 	if !claimsV03() {
 		return nil, refuse("not_found", "incident.cause arrives with v0.3")
@@ -294,6 +313,11 @@ func (c *Core) IncidentCause(ctx context.Context, op Operator, req IncidentCause
 	}
 	var out Done
 	err = c.tx(ctx, func(tx pgx.Tx, now time.Time) error {
+		// The governance loop reads the cause under this lock, so it never links an incident
+		// whose external cause is being recorded (GOV-38).
+		if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock(7300107, hashtext($1))`, op.Tenant); err != nil {
+			return err
+		}
 		if err := c.personWith(ctx, tx, now, tv, op.Principal, "incident.manage"); err != nil {
 			return err
 		}
@@ -309,40 +333,100 @@ func (c *Core) IncidentCause(ctx context.Context, op Operator, req IncidentCause
 		if err := r.save(ctx, tx, now); err != nil {
 			return err
 		}
+		after := map[string]any{"cause": req.Cause}
+		if slices.Contains(externalCauses, req.Cause) {
+			canceled, departures, returned, err := c.externalCause(ctx, tx, now, r.ID, op.Principal)
+			if err != nil {
+				return err
+			}
+			after["canceled_attributions"], after["canceled_departures"], after["returned_departures"] = canceled, departures, returned
+		}
 		audit, err := c.appendAudit(ctx, tx, now, Audit{Tenant: op.Tenant, Kind: "command", Actor: Actor{Principal: op.Principal, Via: "farmctl"},
 			Command: "incident.cause", Target: &Target{Kind: "incident", ID: r.ID}, OK: true,
-			Before: map[string]any{"cause": before}, After: map[string]any{"cause": req.Cause}})
+			Before: map[string]any{"cause": before}, After: after})
 		if err != nil {
 			return err
 		}
 		out = Done{OK: true, ID: r.ID, State: r.State, AuditSeq: audit}
-		if !slices.Contains(externalCauses, req.Cause) {
-			return nil
-		}
-		rows, err := tx.Query(ctx, `SELECT id FROM attributions WHERE incident = $1 AND kind = 'rejected_proposal' AND state IN ('candidate', 'unknown', 'rejected')
-			ORDER BY id FOR UPDATE`, r.ID)
-		if err != nil {
-			return err
-		}
-		list, err := pgx.CollectRows(rows, pgx.RowTo[string])
-		if err != nil {
-			return err
-		}
-		for _, id := range list {
-			a, err := loadAttribution(ctx, tx, id, true)
-			if err != nil || a == nil {
-				return err
-			}
-			if err := c.moveAttribution(ctx, tx, now, a, "canceled", op.Principal, "attribution.canceled"); err != nil {
-				return err
-			}
-		}
-		_, err = tx.Exec(ctx, `UPDATE link_departures d SET state = 'canceled', reason = 'external_cause', updated_at = $2
-			FROM attributions a WHERE a.id = d.attribution AND a.incident = $1 AND d.state = 'waiting'`, r.ID, now)
-		return err
+		return nil
 	})
 	if err != nil {
 		return nil, err
 	}
 	return &out, nil
+}
+
+// externalCause applies an external cause to the links of an incident (GOV-38, GOV-41, GOV-42):
+// its open candidates to rejected proposals are canceled, nobody answers for its confirmed links
+// any more, so the departures that wait end with external_cause and those already done return
+// as after a canceled link (seat_return_notice while the seat is vacant, else the head of the
+// promotion queue). It is not undone by a later cause: the canceled candidates stay canceled.
+// It gives the ids of the canceled candidates and departures and of the returned departures.
+func (c *Core) externalCause(ctx context.Context, tx pgx.Tx, now time.Time, incident, by string) (canceled []string, departures, returned []int64, err error) {
+	rows, err := tx.Query(ctx, `SELECT id FROM attributions WHERE incident = $1 AND kind = 'rejected_proposal' AND state IN ('candidate', 'unknown', 'rejected')
+		ORDER BY id FOR UPDATE`, incident)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	list, err := pgx.CollectRows(rows, pgx.RowTo[string])
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	canceled = []string{}
+	for _, id := range list {
+		a, err := loadAttribution(ctx, tx, id, true)
+		if err != nil {
+			return nil, nil, nil, err
+		}
+		if a == nil {
+			continue
+		}
+		if err := c.moveAttribution(ctx, tx, now, a, "canceled", by, "attribution.canceled"); err != nil {
+			return nil, nil, nil, err
+		}
+		canceled = append(canceled, id)
+	}
+	rows, err = tx.Query(ctx, `UPDATE link_departures d SET state = 'canceled', reason = 'external_cause', updated_at = $2
+		FROM attributions a WHERE a.id = d.attribution AND a.incident = $1 AND d.state = 'waiting' RETURNING d.id`, incident, now)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	if departures, err = pgx.CollectRows(rows, pgx.RowTo[int64]); err != nil {
+		return nil, nil, nil, err
+	}
+	rows, err = tx.Query(ctx, `SELECT DISTINCT d.attribution, d.id FROM link_departures d JOIN attributions a ON a.id = d.attribution
+		WHERE a.incident = $1 AND d.state = 'done' ORDER BY d.attribution, d.id`, incident)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	type dep struct {
+		Attribution string
+		ID          int64
+	}
+	done, err := pgx.CollectRows(rows, pgx.RowToStructByPos[dep])
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	returned = []int64{}
+	seen := map[string]bool{}
+	for _, d := range done {
+		returned = append(returned, d.ID)
+		if seen[d.Attribution] {
+			continue
+		}
+		seen[d.Attribution] = true
+		a, err := loadAttribution(ctx, tx, d.Attribution, true)
+		if err != nil {
+			return nil, nil, nil, err
+		}
+		if a != nil {
+			if err := c.linkCanceled(ctx, tx, now, a); err != nil {
+				return nil, nil, nil, err
+			}
+		}
+	}
+	if departures == nil {
+		departures = []int64{}
+	}
+	return canceled, departures, returned, nil
 }

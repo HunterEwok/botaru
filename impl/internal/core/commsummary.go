@@ -49,15 +49,15 @@ func (c *Core) weeklyStep(ctx context.Context, tx pgx.Tx, now time.Time, cat *Ca
 // weeklyParams are the numbers of the summary over the 7 days before now.
 func (c *Core) weeklyParams(ctx context.Context, tx pgx.Tx, now time.Time, cat *Catalog, tv *TenantView) (map[string]any, error) {
 	from := now.Add(-7 * 24 * time.Hour)
-	var found, answered, done, waiting int
-	// GOV-38 cases are the link candidates to rejected proposals code found; GOV-41 cases are the
-	// confirmed links for which some holder answers.
+	var cases, done, waiting int
+	// A case is a link to a rejected proposal that code found in the week (GOV-38) or a link
+	// confirmed in the week with some holder answering for it (GOV-41); a link that is both
+	// counts once.
 	if err := tx.QueryRow(ctx, `SELECT
-		(SELECT count(*) FROM attributions WHERE tenant = $1 AND kind = 'rejected_proposal' AND created_at >= $2),
-		(SELECT count(*) FROM attributions WHERE tenant = $1 AND state = 'confirmed' AND jsonb_array_length(coalesce(record->'answerable', '[]')) > 0
-			AND (record->'answer'->>'at')::timestamptz >= $2),
+		(SELECT count(*) FROM attributions WHERE tenant = $1 AND (kind = 'rejected_proposal' AND created_at >= $2
+			OR state = 'confirmed' AND jsonb_array_length(coalesce(record->'answerable', '[]')) > 0 AND (record->'answer'->>'at')::timestamptz >= $2)),
 		(SELECT count(*) FROM link_departures WHERE tenant = $1 AND state = 'done' AND done_at >= $2),
-		(SELECT count(*) FROM link_departures WHERE tenant = $1 AND state = 'waiting')`, tv.Name, from).Scan(&found, &answered, &done, &waiting); err != nil {
+		(SELECT count(*) FROM link_departures WHERE tenant = $1 AND state = 'waiting')`, tv.Name, from).Scan(&cases, &done, &waiting); err != nil {
 		return nil, err
 	}
 	seats := c.proposalSeats(charterSeats(cat, tv.Name))
@@ -78,6 +78,6 @@ func (c *Core) weeklyParams(ctx context.Context, tx pgx.Tx, now time.Time, cat *
 		}
 		rows = append(rows, c.texts.Render(locale, "notice.commission_weekly.row", row))
 	}
-	return map[string]any{"tenant": tv.Name, "mode": accountabilityMode(cat, tv.Name), "cases": found + answered,
+	return map[string]any{"tenant": tv.Name, "mode": accountabilityMode(cat, tv.Name), "cases": cases,
 		"departures_done": done, "departures_waiting": waiting, "rows": cut(strings.Join(rows, "\n"), 2000)}, nil
 }

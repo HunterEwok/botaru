@@ -140,7 +140,7 @@ func (c *Core) createRejectionLinks(ctx context.Context, tx pgx.Tx, now time.Tim
 			if share >= selfAlarmShare {
 				continue
 			}
-			if err := c.createAttribution(ctx, tx, now, tv, i.id, p.ID, "rejected_proposal", rule, "system"); err != nil {
+			if _, err := c.createAttribution(ctx, tx, now, tv, i.id, p.ID, "rejected_proposal", rule, "system"); err != nil {
 				return err
 			}
 		}
@@ -196,7 +196,8 @@ func managerAgainst(p *proposalRow) bool {
 		score, _ := toFloat(res["score"])
 		return res["veto"] == true || score <= 1
 	}
-	return false
+	// No review of the farm manager at all is a missing review too.
+	return true
 }
 
 // managerAgainstLinks counts the links to rejected proposals confirmed in [since, until) whose
@@ -686,15 +687,24 @@ func linkGroup(ctx context.Context, tx pgx.Tx, a *attributionRow) ([]*attributio
 	if err != nil {
 		return nil, err
 	}
+	// Only members whose proposal has the mark of the card's first, as linkLead groups them: the
+	// card never shows a proposal above the ceiling its recipients were chosen by (DIG-2).
 	var out []*attributionRow
+	var mark string
 	for _, id := range list {
 		m, err := loadAttribution(ctx, tx, id, false)
 		if err != nil {
 			return nil, err
 		}
-		if m != nil {
-			out = append(out, m)
+		if m == nil {
+			continue
 		}
+		if len(out) == 0 {
+			mark = proposalMark(ctx, tx, m.Proposal)
+		} else if proposalMark(ctx, tx, m.Proposal) != mark {
+			continue
+		}
+		out = append(out, m)
 	}
 	if len(out) == 0 {
 		out = []*attributionRow{a}

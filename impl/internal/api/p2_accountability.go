@@ -3,7 +3,9 @@
 package api
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 
 	"github.com/HunterEwok/botaru/impl/internal/core"
 )
@@ -13,7 +15,7 @@ import (
 func (s *Server) p2Accountability(ctx context.Context, oper core.Operator, op string, m map[string]any) (any, bool, error) {
 	switch op {
 	case "attribution.list", "attribution.create":
-		req, err := decode[core.AttributionRequest](m)
+		req, err := decodeStrict[core.AttributionRequest](m)
 		if err != nil {
 			return nil, true, err
 		}
@@ -24,7 +26,7 @@ func (s *Server) p2Accountability(ctx context.Context, oper core.Operator, op st
 		out, err := s.c.AttributionCreate(ctx, oper, req)
 		return out, true, err
 	case "incident.cause":
-		req, err := decode[core.IncidentCauseRequest](m)
+		req, err := decodeStrict[core.IncidentCauseRequest](m)
 		if err != nil {
 			return nil, true, err
 		}
@@ -32,4 +34,21 @@ func (s *Server) p2Accountability(ctx context.Context, oper core.Operator, op st
 		return out, true, err
 	}
 	return nil, false, nil
+}
+
+// decodeStrict is decode that refuses a field the request type does not have: the bodies of
+// attribution.list and attribution.create have no schema in the skeleton, and the schema of
+// incident.cause allows no other property.
+func decodeStrict[T any](m map[string]any) (T, error) {
+	var v T
+	b, err := json.Marshal(m)
+	if err != nil {
+		return v, err
+	}
+	d := json.NewDecoder(bytes.NewReader(b))
+	d.DisallowUnknownFields()
+	if err := d.Decode(&v); err != nil {
+		return v, &core.Problem{Reason: "input_schema_invalid", Detail: err.Error()}
+	}
+	return v, nil
 }

@@ -160,8 +160,8 @@ func (c *Core) scriptActs(cat *Catalog, steps []scriptStep) bool {
 
 // createScriptLinks creates the candidates of the rule script_target (TRN-7): an incident of a
 // change_sensitive class about a catalog resource among the targets a run fixed at "Run", or
-// about an object that depends on one of them by one step in the catalog (catalogdeps.go, the
-// step of dependency_1), opened from the start of the run until 14 days after it ended. On a
+// from v0.3 about an object that depends on one of them by one step in the catalog
+// (catalogdeps.go, the step of dependency_1), opened from the start of the run until 14 days after it ended. On a
 // core that claims v0.3 only runs
 // started at or after the tenant's governance_v03_since are linked, none before it is known
 // (GOV-36).
@@ -205,7 +205,8 @@ func (c *Core) createScriptLinks(ctx context.Context, tx pgx.Tx, now time.Time, 
 	deps := map[string][]subjectRef{}
 	for _, l := range links {
 		touched := l.kind == "resource" && slices.Contains(l.targets, l.subject)
-		if !touched {
+		// The hop is of the v0.3 text of TRN-7; an earlier claim links direct targets only.
+		if !touched && claimsV03() {
 			d, ok := deps[l.incident]
 			if !ok {
 				if d, err = subjectDeps(ctx, tx, cat, tv.Name, l.kind, l.subject); err != nil {

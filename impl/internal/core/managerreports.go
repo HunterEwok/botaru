@@ -728,7 +728,11 @@ func (c *Core) holderReportWeek(ctx context.Context, cat *Catalog) error {
 		if err != nil {
 			return err
 		}
-		return c.noticeAdmins(ctx, tx, now, cat, []string{farmTenant}, holderReport, "notice.holder_report", map[string]any{
+		key := "notice.holder_report"
+		if claimsV03() {
+			key = "notice.holder_report_v03"
+		}
+		return c.noticeAdmins(ctx, tx, now, cat, []string{farmTenant}, holderReport, key, map[string]any{
 			"preventable": n.Preventable, "notices": n.Notices, "notices_useful": share(n.NoticesUseful, n.Notices),
 			"takeovers": n.Asked, "approved": n.Approved, "done": n.Done, "failed": n.Failed,
 			"analyses": n.Analyses, "analyses_useful": share(n.AnalysesUseful, n.Analyses),
