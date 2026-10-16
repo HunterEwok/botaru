@@ -508,13 +508,13 @@ type Route struct {
 		// event data by an exact value or one of a list (OUT-1, MSG-16).
 		Subject       string         `json:"subject"`
 		Match         map[string]any `json:"match"`
-		Inbox         string   `json:"inbox"`
-		Kinds         []string `json:"kinds"`
-		Min           int      `json:"min"`
-		Debounce      string   `json:"debounce"`
-		Message       string   `json:"message"`
-		SubjectPrefix string   `json:"subject_prefix"`
-		TaskDone      string   `json:"task_done"`
+		Inbox         string         `json:"inbox"`
+		Kinds         []string       `json:"kinds"`
+		Min           int            `json:"min"`
+		Debounce      string         `json:"debounce"`
+		Message       string         `json:"message"`
+		SubjectPrefix string         `json:"subject_prefix"`
+		TaskDone      string         `json:"task_done"`
 	} `json:"on"`
 	Mode string `json:"mode"`
 	Task *struct {
