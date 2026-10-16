@@ -205,5 +205,11 @@ func (c *Core) prefsCommand(ctx context.Context, tx pgx.Tx, now time.Time, pc pe
 	if p.Digest != "" {
 		digest = p.Digest
 	}
-	return pc.reply(c, "cmd.prefs.show", map[string]any{"quiet": quiet, "digest": digest}), nil
+	// With profile monitor alarms reach people only through the monitoring system, which sets
+	// their silencing and quiet hours; these preferences never touch them (DLV-10, MON-1).
+	key := "cmd.prefs.show"
+	if c.monitorOn() {
+		key = "cmd.prefs.show_monitor"
+	}
+	return pc.reply(c, key, map[string]any{"quiet": quiet, "digest": digest}), nil
 }

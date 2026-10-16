@@ -98,6 +98,7 @@ texts:
   cmd.profile.code: "Your verification code for the operator: {code}."
   cmd.lang.unknown: "Unknown language. Available: {locales}."
   cmd.prefs.show: "Quiet hours: {quiet}. Daily digest: {digest}."
+  cmd.prefs.show_monitor: "Quiet hours: {quiet}. Daily digest: {digest}. Alarms come from the monitoring system, which sets their silencing and quiet hours."
   cmd.prefs.usage: "Usage in a private chat: /prefs, /prefs quiet HH:MM-HH:MM, /prefs quiet off, /prefs digest daily or /prefs digest off."
   cmd.forbidden.needs: This needs the group {group}; contact the tenant administrator.
   cmd.followup.hint: You can simply reply with a message within {minutes} minutes.
