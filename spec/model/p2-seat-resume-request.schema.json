@@ -2,18 +2,19 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "urn:botaru:schema:p2-seat-resume-request:1",
   "title": "P2 seat.resume: request",
-  "description": "Body of P2 seat.resume. An operator operation, only through farmctl, with admin:governance in farm: it removes from the farm manager seat only the reason incident, if people declared the incident that caused the stop and the incidents of the same minute false (dismissed); epoch + 1 (GOV-22).",
+  "description": "Body of P2 seat.resume. An operator operation, only through farmctl, with admin:governance in farm. Up to v0.2 it names the incident and removes from the farm manager seat only the reason incident, if people declared the incident that caused the stop and the incidents of the same minute false (dismissed); epoch + 1 (GOV-22). From v0.3 it names the tenant instead and lifts the restricted mode of the seat in that tenant (GOV-47, MGR-47); a v0.3 core requires tenant, and the epoch does not change.",
   "x-botaru-direction": "input",
   "x-botaru-rules": [
     "GOV-22",
+    "GOV-47",
     "IDN-10",
+    "MGR-47",
     "PRM-14"
   ],
   "type": "object",
   "additionalProperties": false,
   "required": [
-    "seat",
-    "incident"
+    "seat"
   ],
   "properties": {
     "seat": {
@@ -22,7 +23,12 @@
     },
     "incident": {
       "$ref": "urn:botaru:schema:common:1#/$defs/object_id",
-      "description": "The incident that caused the hold."
+      "description": "The incident that caused the hold (up to v0.2, GOV-22)."
+    },
+    "tenant": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/tenant_name",
+      "x-botaru-version": "v0.3",
+      "description": "The tenant whose restricted mode of the farm manager seat the operator lifts (GOV-47, MGR-47)."
     }
   }
 }

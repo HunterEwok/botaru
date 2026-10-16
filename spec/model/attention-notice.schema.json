@@ -50,10 +50,18 @@
       "description": "What the manager proposes: an operation code, or the id of a card or proposal that code issued.",
       "properties": {
         "op": {
-          "type": "string",
-          "pattern": "^[a-z][a-z0-9_]*$",
-          "maxLength": 64,
-          "description": "Operation code."
+          "enum": [
+            "hold",
+            "quarantine",
+            "drain",
+            "preempt",
+            "cancel",
+            "release",
+            "service_start",
+            "service_stop",
+            "service_restart"
+          ],
+          "description": "Operation code: a control operation of spec/model/control-ops.yaml that a core serves to the seat (MGR-15), or a service verb as service_<verb> (MGR-52). The list is closed so that no free model text reaches people; a control operation that becomes served is added here."
         },
         "ref": {
           "$ref": "urn:botaru:schema:common:1#/$defs/object_id",

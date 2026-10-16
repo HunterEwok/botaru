@@ -275,3 +275,11 @@ entries:
       Only widened: the lens names in min and weights may now contain digits, so a tenant lens such as x_iso27001 gets
       its weight (COM-19). The check counts any change of propertyNames as breaking.
     decisions: [D-117]
+  - schema: spec/model/attention-notice.schema.json
+    change: breaking
+    removed: 2026-10-16
+    reason: >-
+      The operation code of proposal.op was an open pattern; MGR-52 allows only closed fields that code checks, so op
+      is now an enum of the served control operations and the service verbs service_start, service_stop and
+      service_restart. The schema was never released, and the reference core already accepted only these values.
+    decisions: [D-110, D-118]

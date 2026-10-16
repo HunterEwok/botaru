@@ -5,6 +5,7 @@ package core
 import (
 	"context"
 	"fmt"
+	"reflect"
 	"slices"
 	"testing"
 	"time"
@@ -364,7 +365,15 @@ func TestManagerAttentionV03(t *testing.T) {
 	if out := seatCall(t, b, handle, attentionToolName, map[string]any{"sees": "free text", "object": d.ID, "threat": "x", "proposal": map[string]any{}}); out["code"] != "input_schema_invalid" {
 		t.Fatalf("free text %v", out)
 	}
-	// The operation is a closed code, never free words.
+	// The operation is a closed code, never free words, and the core list is the schema enum.
+	raw, err := b.c.spec.Raw("urn:botaru:schema:attention-notice:1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	enum := mmapAny(mmapAny(mmapAny(mmapAny(raw["properties"])["proposal"])["properties"])["op"])["enum"]
+	if !reflect.DeepEqual(enum, attentionOps()) {
+		t.Fatalf("op enum %v, core %v", enum, attentionOps())
+	}
 	if out := seatCall(t, b, handle, attentionToolName, map[string]any{"sees": "disk_growth", "object": d.ID, "threat": "disk_full_soon",
 		"proposal": map[string]any{"op": "call_the_admin_now"}}); out["code"] != "input_schema_invalid" {
 		t.Fatalf("a free operation %v", out)

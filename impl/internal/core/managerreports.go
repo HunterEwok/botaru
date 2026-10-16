@@ -75,8 +75,8 @@ func (c *Core) attentionTool(cat *Catalog, g *toolsGrant) *catalogTool {
 }
 
 // attentionOps is the closed list of operation codes a notice may propose: the control
-// operations the core serves and the service verbs (MGR-52). The skeleton schema of the tool
-// leaves the field open; this build closes it so no free model text reaches people.
+// operations the core serves and the service verbs (MGR-52). It equals the enum of op in
+// spec/model/attention-notice.schema.json, so no free model text reaches people.
 func attentionOps() []any {
 	out := []any{}
 	for _, op := range controlOpsServed {

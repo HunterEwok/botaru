@@ -334,8 +334,13 @@ func TestAccountabilityOn(t *testing.T) {
 		t.Fatalf("yes without details: %v", err)
 	}
 	b.govDetails(t, cd, on)
+	b.exec(t, `INSERT INTO promotion_entries (tenant, bot, state, trigger_proposal, trigger_at, updated_at) VALUES ('demo', $1, 'queued', 'prp_x', botaru_now(), botaru_now())`, holders["commission:3"])
 	if r, err := b.govDecide(t, cd, on, "yes", "", ""); err != nil || r.State != "confirmed" {
 		t.Fatalf("yes %+v %v", r, err)
+	}
+	// The queue entry of the parked holder leaves with parked (GOV-42).
+	if n := b.count(t, `SELECT count(*) FROM promotion_entries WHERE bot = $1 AND state = 'removed' AND removed_reason = 'parked'`, holders["commission:3"]); n != 1 {
+		t.Fatalf("promotion entry not parked: %d", n)
 	}
 	var answerable string
 	if err := b.c.st.Pool.QueryRow(ctx, `SELECT record->>'answerable' FROM attributions WHERE kind = 'rejected_proposal'`).Scan(&answerable); err != nil || answerable != "[3, 4]" {
@@ -363,6 +368,10 @@ func TestAccountabilityOn(t *testing.T) {
 	st, err := b.c.CommissionStatus(ctx, Operator{Tenant: "demo"}, TenantRequest{Tenant: "demo"})
 	if acc := mmapAny(st["accountability"]); err != nil || acc["mode"] != "on" || acc["departures_done"] != 1 || acc["departures_waiting"] != 1 || st["governance_v03_since"] == nil {
 		t.Fatalf("status %v %v", st, err)
+	}
+	// The v0.3 fields match the response schema (GOV-36, COM-17).
+	if err := b.c.spec.Validate("urn:botaru:schema:p2-commission-status-response:1", st); err != nil {
+		t.Fatalf("status schema: %v", err)
 	}
 	// Back to shadow the waiting departure ends (GOV-36, GOV-42).
 	if res := b.charter(t, 5, func(com map[string]any) { com["accountability_min_forecasts"] = 8 }); res == nil || !res.Applied {
