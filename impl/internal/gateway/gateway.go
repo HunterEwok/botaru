@@ -124,34 +124,6 @@ func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		g.refuse(w, err)
 		return
 	}
-	// The pair (workspace, model pool) answers at once while its circuit is open or it waits
-	// for the provider (GW-10, GW-11, GW-13).
-	probe, err := g.c.ProviderGateProbe(ctx, grant)
-	if err != nil {
-		g.refuse(w, err)
-		return
-	}
-	// The probe that ends before the provider is called gives the probe back (GW-11).
-	sentToProvider := false
-	defer func() {
-		if probe != nil && !sentToProvider {
-			if err := g.c.ProviderProbeAbandoned(context.WithoutCancel(ctx), grant, *probe); err != nil {
-				g.log.Warn("giving back the probe failed", "err", err)
-			}
-		}
-	}()
-	prov, ok := g.cfg.Providers[grant.Profile.Provider]
-	if !ok || prov.Binding != "anthropic" {
-		g.outcome(ctx, grant, "provider_config", 0)
-		problem(w, "provider_config", "the provider of the profile has no anthropic binding in this deployment", 0)
-		return
-	}
-	key := prov.Keys[grant.Tenant]
-	if key == "" {
-		g.outcome(ctx, grant, "provider_config", 0)
-		problem(w, "provider_config", "no provider key for the tenant's workspace", 0)
-		return
-	}
 	raw, err := io.ReadAll(http.MaxBytesReader(w, r.Body, 32<<20))
 	if err != nil {
 		problem(w, "input_schema_invalid", "the body could not be read", 0)
@@ -170,25 +142,102 @@ func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		g.refuse(w, err)
 		return
 	}
-	out, maxTokens, err := g.providerBody(body, grant)
+	// The fallback profiles the call may switch to; the reserve of the first call is at the
+	// most expensive model P4 may use in it, the slot profile or one of them (GW-6).
+	fallbacks, err := g.c.Fallbacks(ctx, grant)
 	if err != nil {
 		g.refuse(w, err)
 		return
+	}
+	var candidates []manifest.ModelProfile
+	for _, f := range fallbacks {
+		candidates = append(candidates, f.Profile)
+	}
+	// The call goes to the slot profile; on a reason of its fallback_on it goes once to each
+	// fallback profile in order (GW-5).
+	tried := 0
+	switches := func(reason string) bool { return core.SwitchesOn(grant, reason) && tried < len(fallbacks) }
+	for call := grant; ; {
+		reason := g.serveCall(ctx, w, body, call, call == grant, candidates, switches)
+		if reason == "" {
+			return
+		}
+		next := *fallbacks[tried]
+		next.FallbackReason = reason
+		tried++
+		call = &next
+	}
+}
+
+// serveCall makes one provider call for a checked request on the profile of call and writes
+// the answer, unless the call failed for a reason on which switches says the call goes to the
+// next fallback profile (GW-5): then it writes nothing and returns the reason.
+func (g *Gateway) serveCall(ctx context.Context, w http.ResponseWriter, body map[string]any, call *core.ModelGrant, first bool, candidates []manifest.ModelProfile, switches func(string) bool) string {
+	// The pair (workspace, model pool) answers at once while its circuit is open or it waits
+	// for the provider (GW-10, GW-11, GW-13).
+	probe, err := g.c.ProviderGateProbe(ctx, call)
+	if err != nil {
+		// A fallback pair whose circuit is open or that waits passes to the next fallback.
+		if !first && switches(call.FallbackReason) {
+			return call.FallbackReason
+		}
+		// The open circuit of the slot's pair is the model being unavailable (GW-11): the call
+		// goes to a fallback whose pair answers, as after a 500 (GW-5). A pair that waits for a
+		// rate limit or a configuration fix is no fallback reason.
+		if p, ok := core.AsProblem(err); ok && first && p.Reason == "provider_unavailable" && switches("unavailable") {
+			return "unavailable"
+		}
+		g.refuse(w, err)
+		return ""
+	}
+	// The probe that ends before the provider is called gives the probe back (GW-11).
+	sentToProvider := false
+	defer func() {
+		if probe != nil && !sentToProvider {
+			if err := g.c.ProviderProbeAbandoned(context.WithoutCancel(ctx), call, *probe); err != nil {
+				g.log.Warn("giving back the probe failed", "err", err)
+			}
+		}
+	}()
+	prov, ok := g.cfg.Providers[call.Profile.Provider]
+	if !ok || prov.Binding != "anthropic" {
+		g.outcome(ctx, call, "provider_config", 0)
+		problem(w, "provider_config", "the provider of the profile has no anthropic binding in this deployment", 0)
+		return ""
+	}
+	key := prov.Keys[call.Tenant]
+	if key == "" {
+		g.outcome(ctx, call, "provider_config", 0)
+		problem(w, "provider_config", "no provider key for the tenant's workspace", 0)
+		return ""
+	}
+	out, maxTokens, err := g.providerBody(body, call)
+	if err != nil {
+		g.refuse(w, err)
+		return ""
 	}
 	payload, err := json.Marshal(out)
 	if err != nil {
 		g.refuse(w, err)
-		return
+		return ""
 	}
-	reserve := Reserve(grant.Profile, len(payload), maxTokens)
-	spendID, err := g.c.Reserve(ctx, grant, reserve)
+	// own is the worst case of this call's own model: a call without an answer charges it
+	// (BUD-11), the call was on this model only.
+	own := Reserve(call.Profile, len(payload), maxTokens)
+	reserve := own
+	if first {
+		for _, p := range candidates {
+			reserve = max(reserve, Reserve(p, len(payload), maxTokens))
+		}
+	}
+	spendID, err := g.c.Reserve(ctx, call, reserve)
 	if err != nil {
 		g.refuse(w, err)
-		return
+		return ""
 	}
 	// The provider call does not depend on the runtime connection: a dropped runtime does not
 	// break reading the answer, so the usage is still charged (GW-2, BUD-11).
-	callCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), deadline(grant.Profile))
+	callCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), deadline(call.Profile))
 	defer cancel()
 	resp, sent, err := g.send(callCtx, prov, key, payload)
 	sentToProvider = sent
@@ -196,48 +245,78 @@ func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		if !sent {
 			_ = g.c.DropReserve(context.WithoutCancel(ctx), spendID)
 		} else {
-			_ = g.c.Charge(context.WithoutCancel(ctx), spendID, reserve, nil, "", true)
+			_ = g.c.Charge(context.WithoutCancel(ctx), spendID, own, nil, "", true)
 		}
-		g.outcome(ctx, grant, "provider_unavailable", 0)
+		g.outcome(ctx, call, "provider_unavailable", 0)
+		// A dropped connection is the reason unavailable (binding table "Errors").
+		if switches("unavailable") {
+			return "unavailable"
+		}
 		problem(w, "provider_unavailable", "the provider did not answer", 5)
-		return
+		return ""
 	}
 	defer resp.Body.Close()
 	respBody, err := io.ReadAll(io.LimitReader(resp.Body, 64<<20))
 	requestID := resp.Header.Get("request-id")
 	if err != nil {
-		_ = g.c.Charge(context.WithoutCancel(ctx), spendID, reserve, nil, requestID, true)
-		g.outcome(ctx, grant, "provider_unavailable", 0)
+		_ = g.c.Charge(context.WithoutCancel(ctx), spendID, own, nil, requestID, true)
+		g.outcome(ctx, call, "provider_unavailable", 0)
 		problem(w, "provider_unavailable", "the provider answer broke off", 5)
-		return
+		return ""
 	}
 	if resp.StatusCode != http.StatusOK {
 		_ = g.c.Charge(context.WithoutCancel(ctx), spendID, 0, nil, requestID, false)
 		reason, retry := mapError(resp)
-		g.outcome(ctx, grant, reason, retry)
+		g.outcome(ctx, call, reason, retry)
+		if fr := fallbackReason(resp.StatusCode, respBody); fr != "" && switches(fr) {
+			return fr
+		}
 		problem(w, reason, "provider answered "+strconv.Itoa(resp.StatusCode), retry)
-		return
+		return ""
 	}
 	var parsed struct {
 		Usage *Usage `json:"usage"`
 	}
 	if err := json.Unmarshal(respBody, &parsed); err != nil || parsed.Usage == nil {
-		_ = g.c.Charge(context.WithoutCancel(ctx), spendID, reserve, nil, requestID, true)
+		_ = g.c.Charge(context.WithoutCancel(ctx), spendID, own, nil, requestID, true)
 		problem(w, "model_error", "the provider answer has no usage", 0)
-		return
+		return ""
 	}
-	g.outcome(ctx, grant, "", 0)
-	cost, tokens := Cost(grant.Profile.Price, *parsed.Usage)
+	g.outcome(ctx, call, "", 0)
+	cost, tokens := Cost(call.Profile.Price, *parsed.Usage)
 	// The answer goes out only once its usage is recorded (BUD-3). If the store stays away, the
 	// reserve stays in place, so the limit still counts the worst case of the call (BUD-2).
 	if err := g.charge(context.WithoutCancel(ctx), spendID, cost, tokens, requestID); err != nil {
 		g.log.Error("charging a model call failed", "err", err, "spend", spendID)
 		problem(w, "store_unavailable", "the usage of the call could not be recorded", 5)
-		return
+		return ""
 	}
 	// The request-id stays in the usage line, not in the answer to the runtime.
 	w.Header().Set("Content-Type", "application/json")
 	_, _ = w.Write(respBody)
+	return ""
+}
+
+// fallbackReason is the fallback reason of a provider answer (binding, GW-5): 529 overloaded,
+// 500 unavailable, a 404 not_found_error on the model retired; "" for any other answer.
+func fallbackReason(status int, body []byte) string {
+	switch status {
+	case 529:
+		return "overloaded"
+	case 500:
+		return "unavailable"
+	case 404:
+		var e struct {
+			Error struct {
+				Type    string `json:"type"`
+				Message string `json:"message"`
+			} `json:"error"`
+		}
+		if json.Unmarshal(body, &e) == nil && e.Error.Type == "not_found_error" && strings.Contains(strings.ToLower(e.Error.Message), "model") {
+			return "retired"
+		}
+	}
+	return ""
 }
 
 // outcome reports the outcome of a provider call for the circuit of its pair; a failure to
