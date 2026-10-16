@@ -167,7 +167,7 @@ The codes of `check_manifests.py` that fixtures refer to (`expect: {error: <code
 | `builtin_command` | tenant command takes a built-in channel command | PRM-17 |
 | `cache_per_principal` | cache_s on a tool with credential.per_principal | PRM-12, SEC-7 |
 | `cap_data_class` | data class not accepted (unknown or reserved) |  |
-| `cap_star` | wildcard in a capability for actions, data or decisions | PRM-7 |
+| `cap_star` | wildcard in a capability for actions, data or decisions, or any wildcard in system-ops (task wildcards included) | PRM-7, PRM-10 |
 | `cap_unknown` | capability is not in spec/model/capabilities.yaml |  |
 | `cap_unknown_action` | capability for an action that is not in the set |  |
 | `catalog_value_format` | catalog resource value fails its format | MAN-10 |

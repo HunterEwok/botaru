@@ -95,7 +95,7 @@ func TestLeaseEnqueue(t *testing.T) {
 		t.Fatalf("a dry run under a lease: %v", err)
 	}
 	// APR-6: a child is cancelled with its tree, through its root.
-	if _, err := b.c.TaskCancel(ctx, b.op, P2TaskRequest{Op: "task.cancel", Task: ref.ID}); reasonOf(err) != "input_schema_invalid" {
+	if _, err := b.c.TaskCancel(ctx, Operator{Principal: b.alice, Tenant: "demo"}, P2TaskRequest{Op: "task.cancel", Task: ref.ID}); reasonOf(err) != "input_schema_invalid" {
 		t.Fatalf("cancel of a child: %v", err)
 	}
 }
