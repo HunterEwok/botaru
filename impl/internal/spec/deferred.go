@@ -110,7 +110,6 @@ var Deferred = []DeferredEntry{
 		Note: "a script draft with a wait or await step, or with their fields, is refused at acceptance with script_invalid (SCR-5)"},
 	{Rule: "SCR-14", Surface: SurfaceManifest, Kind: "Tenant", Where: "/spec/script_commands",
 		Note: "kind: Script is refused with SCR-12; a draft with params or goals is refused with script_free_goal"},
-	{Rule: "SCR-15", Surface: SurfaceNone, Note: "mechanism removed: the condition-ops registry has only eq, ne and in"},
 	{Rule: "SEC-7", Surface: SurfaceManifest, Kind: "Catalog", Where: "/spec/connection_providers",
 		Note: "a tool credential per_principal belongs to the connections profile, which this core does not claim (MAN-11)"},
 	{Rule: "SEC-7", Surface: SurfaceOp, Where: "P2.connection.register"},

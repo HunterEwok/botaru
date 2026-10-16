@@ -1159,6 +1159,11 @@ func (c *Core) lintManifestsHeld(docs []manifest.Doc, index []int, personas pers
 				f.add(o, "ref_missing", fmt.Sprintf("/actions_may_request/%d", j))
 			}
 		}
+		// While the personal assistant is deferred (DSP-10, D-114), person memory is refused
+		// (MEM-2).
+		if mem == "person" && !spec.Offered("DSP-10") {
+			f.add(o, "person_memory_deferred", "/memory")
+		}
 		if mem == "person" {
 			bad := false
 			for _, tn := range mstrs(rs, "claims") {

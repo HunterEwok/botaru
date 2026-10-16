@@ -13,22 +13,38 @@ import (
 	"github.com/HunterEwok/botaru/impl/internal/ids"
 )
 
-// newMemoryBench is the hello bench whose role keeps person memory, with bob as a person of
-// the group admins (admin:people) and a telegram driver that stores no content.
+// storedPersonMemory gives the stored roles of the bench person memory, as a set applied
+// before v0.2 left them: apply at v0.3 refuses memory: person while the personal assistant is
+// deferred (person_memory_deferred, DSP-10, MEM-2), and the core keeps serving a stored role
+// until the next apply. The person memory mechanism stays in the skeleton for the return of
+// DSP-10, and these benches test it that way.
+func storedPersonMemory(t *testing.T, b *bench) {
+	t.Helper()
+	ctx := context.Background()
+	if _, err := b.c.st.Pool.Exec(ctx, `UPDATE manifests SET doc = jsonb_set(doc, '{spec,memory}', '"person"') WHERE kind = 'Role'`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := b.c.st.Pool.Exec(ctx, `UPDATE apply_status SET set_hash = set_hash || '+person' WHERE id = 1`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := b.c.Catalog(ctx); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// newMemoryBench is the hello bench whose role keeps person memory (storedPersonMemory), with
+// bob as a person of the group admins (admin:people) and a telegram driver that stores no
+// content.
 func newMemoryBench(t *testing.T) (*actionBench, string) {
 	t.Helper()
 	b := newBenchWith(t, func(root string, ms []map[string]any) []map[string]any {
-		for _, m := range ms {
-			if m["kind"] == "Role" {
-				m["spec"].(map[string]any)["memory"] = "person"
-			}
-		}
 		return append(ms, map[string]any{
 			"apiVersion": "botaru/v1alpha1", "kind": "Group",
 			"metadata": map[string]any{"name": "admins", "tenant": "demo"},
 			"spec":     map[string]any{"caps": []any{"admin:people"}, "data": []any{"summary"}},
 		})
 	})
+	storedPersonMemory(t, b)
 	ctx := context.Background()
 	bob := ids.PrincipalID()
 	if _, err := b.c.Principal(ctx, b.op, PrincipalRequest{Op: "principal.add", Subject: bob, Identity: "telegram:1002"}); err != nil {

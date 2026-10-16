@@ -4,7 +4,7 @@ description: >-
   Action manifest (row lint:manifests/action-routine-fields): an action with risk: routine
   declares writes_only, idempotent: true, runs_per_hour and runs_per_day; without any of
   them apply rejects the manifest; routine with approvals: 2 is rejected, and approvals: 2 for
-  another risk in v0.1 is rejected with code not_in_version (APR-10, APR-16); routine fields
+  another risk passes from v0.2 (in v0.1 it was not_in_version; APR-10, APR-16); routine fields
   never appear with another risk; the executor is a write tool of a plugin from the set; for
   the oneshot mechanism wait: false.
 with_examples: true
@@ -114,7 +114,7 @@ cases:
               path: {type: string, pattern: "^/data/.*$"}
           executor: {plugin: pipeline, tool: cleanup_tmp, os_mechanism: {oneshot: {unit: "pipeline-tmp-clean-{tenant}.service", started_by: "pipeline-tmp-clean-{tenant}.path", wait: false}}}
     expect: {error: schema_invalid, also: [cap_unknown_action, ref_missing, incident_class_ref]}
-  - name: approvals 2 in v0.1
+  - name: approvals 2 for another risk from v0.2
     rules: [APR-10, APR-16]
     manifests:
       - apiVersion: botaru/v1alpha1
@@ -135,4 +135,4 @@ cases:
           ttl: 60m
           idempotent: true
           executor: {plugin: pipeline, tool: start_ctd_qc, os_mechanism: {oneshot: {unit: "ctd-qc-queue-{tenant}.service", started_by: "ctd-qc-queue-{tenant}.path", wait: false}}}
-    expect: {error: not_in_version}
+    expect: ok

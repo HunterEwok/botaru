@@ -67,11 +67,11 @@ cases:
   - name: person memory with untrusted output
     manifests:
       - {apiVersion: botaru/v1alpha1, kind: Role, metadata: {name: assistant}, spec: {worker_kind: agent, claims: [assist.chat.v1], tools: [logs/tail], memory: person, models: {base: base-std}}}
-    expect: {error: memory_person}
+    expect: {error: memory_person, also: [person_memory_deferred]}
   - name: person memory for a type of class internal
     manifests:
       - {apiVersion: botaru/v1alpha1, kind: Role, metadata: {name: fx-role}, spec: {worker_kind: agent, claims: [geo.describe.v1], memory: person, models: {base: base-std}}}
-    expect: {error: memory_person}
+    expect: {error: memory_person, also: [person_memory_deferred]}
   - name: manager read role with action requests
     manifests:
       - apiVersion: botaru/v1alpha1

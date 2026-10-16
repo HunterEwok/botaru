@@ -151,8 +151,9 @@ func TestAhead(t *testing.T) {
 	}
 }
 
-// Every deferred rule of conformance/requirements.yaml has a surface in Deferred, or an entry
-// of SurfaceNone with a note, and Deferred names no rule that is not deferred (D-114, D3).
+// Every deferred rule of conformance/requirements.yaml whose mechanism is still in the skeleton
+// has a surface in Deferred, or an entry of SurfaceNone with a note, and Deferred names no other
+// rule (D-114, D3).
 // Every operation surface is a row of the operation map and every tool surface a built-in
 // tool, so an entry cannot silently miss the name it guards.
 func TestDeferredCoversRegistry(t *testing.T) {
@@ -165,9 +166,16 @@ func TestDeferredCoversRegistry(t *testing.T) {
 	if err := yamlx.Unmarshal(raw, &rows); err != nil {
 		t.Fatal(err)
 	}
-	deferred := map[string]bool{}
+	// A deferred rule whose mechanism is removed is named by nothing outside the decision log
+	// and the changelog (ci/check_text.py, rule_deferred), so it has no entry either.
+	deferred, removed := map[string]bool{}, map[string]bool{}
 	for _, r := range rows {
-		if r["status"] == "deferred" {
+		if r["status"] != "deferred" {
+			continue
+		}
+		if r["mechanism_removed"] == true {
+			removed[r["id"].(string)] = true
+		} else {
 			deferred[r["id"].(string)] = true
 		}
 	}
@@ -193,7 +201,7 @@ func TestDeferredCoversRegistry(t *testing.T) {
 	covered := map[string]bool{}
 	for _, e := range Deferred {
 		if !deferred[e.Rule] {
-			t.Errorf("%s is in Deferred but not deferred in the registry", e.Rule)
+			t.Errorf("%s is in Deferred but not a deferred rule with its mechanism in the registry", e.Rule)
 		}
 		covered[e.Rule] = true
 		switch e.Surface {
@@ -219,6 +227,11 @@ func TestDeferredCoversRegistry(t *testing.T) {
 			}
 		default:
 			t.Errorf("%s: unknown surface %q", e.Rule, e.Surface)
+		}
+	}
+	for id := range removed {
+		if covered[id] {
+			t.Errorf("the rule %s has its mechanism removed and is still in Deferred", id)
 		}
 	}
 	for id := range deferred {

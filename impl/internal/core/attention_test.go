@@ -350,15 +350,13 @@ func TestCardLimitPerDay(t *testing.T) {
 	ctx := context.Background()
 	b := newBenchWith(t, func(root string, ms []map[string]any) []map[string]any {
 		for _, m := range ms {
-			switch m["kind"] {
-			case "Role":
-				m["spec"].(map[string]any)["memory"] = "person"
-			case "Tenant":
+			if m["kind"] == "Tenant" {
 				m["spec"].(map[string]any)["attention"] = map[string]any{"noncritical_per_day": 2}
 			}
 		}
 		return ms
 	})
+	storedPersonMemory(t, b)
 	b.hello(t, "1")
 	att := b.claim(t, b.agent, "attempt")
 	mh := att.Payload["handles"].(map[string]any)["memory"].(string)

@@ -1,4 +1,5 @@
-# Personal assistant (flow 8): memory scope person only with task types of class summary and without untrusted output (MEM-2).
+# Personal assistant (flow 8). The personal assistant is deferred (DSP-10, D-114) and apply refuses a role with
+# memory: person (person_memory_deferred, MEM-2), so the example role holds no memory until DSP-10 returns.
 apiVersion: botaru/v1alpha1
 kind: Role
 metadata: {name: assistant}
@@ -7,4 +8,4 @@ spec:
   worker_kind: agent
   claims: [assist.chat.v1]
   models: {base: base-std}
-  memory: person
+  memory: none
