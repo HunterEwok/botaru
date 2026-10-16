@@ -352,6 +352,13 @@ func (r *lintRegs) parseCap(cp string) (string, string) {
 type personaLookup func(tenant, sha string) (string, bool)
 
 func (c *Core) lintManifests(docs []manifest.Doc, index []int, personas personaLookup, prior []manifest.Doc) ([]ApplyError, error) {
+	return c.lintManifestsHeld(docs, index, personas, prior, nil)
+}
+
+// lintManifestsHeld is lintManifests with the groups that have memberships in the store
+// ("<tenant>/<group>"), which apply passes so that a group with members counts as an existing
+// group for the PRM-13 raise check even when the stored set no longer has it.
+func (c *Core) lintManifestsHeld(docs []manifest.Doc, index []int, personas personaLookup, prior []manifest.Doc, held map[string]bool) ([]ApplyError, error) {
 	r, err := c.lintRegistries()
 	if err != nil {
 		return nil, err
@@ -1803,7 +1810,7 @@ func (c *Core) lintManifests(docs []manifest.Doc, index []int, personas personaL
 	}
 	// Source channels and routes on events (ING-1, ING-3, ING-4, INJ-7).
 	c.lintIngress(S, f)
-	lintPrivilegeRaised(S, f, docs, prior)
+	lintPrivilegeRaised(S, f, docs, prior, held)
 	if err := c.lintLensNames(S, f); err != nil {
 		return nil, err
 	}
@@ -2085,10 +2092,14 @@ func namesHuman(v any) bool {
 
 // lintPrivilegeRaised refuses a set in which an ordinary group became privileged (PRM-13): a
 // group of the store that was not privileged is privileged after the set, by its own
-// capabilities or by a type it names, whether or not it has members. A group new in the set
-// is privileged or not from the start and is granted under PRM-13.
-func lintPrivilegeRaised(S *lintSet, f *lintFindings, docs, prior []manifest.Doc) {
-	if len(prior) == 0 {
+// capabilities or by a type it names, whether or not it has members. A group that has
+// memberships in the store (held) counts as a group of the store even when the stored set no
+// longer has it, and one the stored set lacks counts as not privileged before: otherwise a
+// delete and a second apply would hand its members a privilege without the code. Only a group
+// new in the set and without members is privileged or not from the start and is granted under
+// PRM-13.
+func lintPrivilegeRaised(S *lintSet, f *lintFindings, docs, prior []manifest.Doc, held map[string]bool) {
+	if len(prior) == 0 && len(held) == 0 {
 		return
 	}
 	before, err := buildCatalog(prior)
@@ -2100,14 +2111,20 @@ func lintPrivilegeRaised(S *lintSet, f *lintFindings, docs, prior []manifest.Doc
 		return
 	}
 	for _, o := range S.each("Group") {
-		tb, ta := before.Tenants[o.tenant], after.Tenants[o.tenant]
-		if tb == nil || ta == nil {
+		ta := after.Tenants[o.tenant]
+		if ta == nil {
 			continue
 		}
-		if _, ok := tb.Groups[o.name]; !ok {
+		was, stored := false, false
+		if tb := before.Tenants[o.tenant]; tb != nil {
+			if _, stored = tb.Groups[o.name]; stored {
+				was = grantsPrivilege(tb, before, o.name, map[string]bool{})
+			}
+		}
+		if !stored && !held[o.tenant+"/"+o.name] {
 			continue
 		}
-		if !grantsPrivilege(tb, before, o.name, map[string]bool{}) && grantsPrivilege(ta, after, o.name, map[string]bool{}) {
+		if !was && grantsPrivilege(ta, after, o.name, map[string]bool{}) {
 			f.add(o, "privileged_group", "/caps")
 		}
 	}
@@ -2236,6 +2253,10 @@ func lintCharterBounds(o lintObj, f *lintFindings) {
 	seen := map[string]bool{}
 	for i, sv := range mlist(mmap(o.spec, "commission"), "seats") {
 		sm, _ := sv.(map[string]any)
+		// A seat without an id is the schema's finding, not a second declaration.
+		if sm["id"] == nil {
+			continue
+		}
 		id := fmt.Sprint(sm["id"])
 		if seen[id] {
 			f.add(o, "charter_seat_twice", fmt.Sprintf("/commission/seats/%d/id", i))

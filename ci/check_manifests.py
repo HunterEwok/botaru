@@ -190,8 +190,10 @@ FORBIDDEN_PROGRAMS = set(model_registry('forbidden-programs'))
 # Programs whose output is text written from outside the farm: journalctl prints the service journal (INJ-14).
 # The skeleton names the journal as the example and has no registry of such programs.
 OUTSIDE_TEXT_PROGRAMS = {'journalctl'}
-# Parameter names, or the last word of a name, that carry a network address: a URL or a host (INJ-6).
-ADDRESS_WORDS = {'url', 'uri', 'href', 'endpoint', 'host', 'hostname', 'address', 'addr', 'ip'}
+# Parameter names, or the last word of a name, that carry a network address: a URL, a host or where to send (INJ-6).
+# A plural (urls, hosts, addresses) counts as the word.
+ADDRESS_WORDS = {'url', 'uri', 'href', 'endpoint', 'host', 'hostname', 'address', 'addr', 'ip', 'link', 'target', 'server',
+                 'domain', 'dest', 'fqdn'}
 
 
 def class_refused(cls, output=False):
@@ -200,9 +202,43 @@ def class_refused(cls, output=False):
     return not dc or bool(dc.get('reserved')) or (output and dc.get('output') is False)
 
 
+def address_word(name):
+    w = name.rsplit('_', 1)[-1]
+    return w in ADDRESS_WORDS or w.removesuffix('s') in ADDRESS_WORDS or (w.endswith('es') and w[:-2] in ADDRESS_WORDS)
+
+
+def closed_values(schema):
+    return any(k in schema for k in ('enum', 'enum_from', 'const'))
+
+
 def address_param(name, schema):
-    """A URL or host argument of the model: an address name whose values are not a closed list (INJ-6)."""
-    return name.rsplit('_', 1)[-1] in ADDRESS_WORDS and not any(k in (schema or {}) for k in ('enum', 'enum_from', 'const'))
+    """A URL or host argument of the model: an address name whose values are not a closed list, also as the items of
+    an array (under the array's name) or a property of an object (INJ-6)."""
+    schema = schema if isinstance(schema, dict) else {}
+    if closed_values(schema):
+        return False
+    if schema.get('type') == 'array':
+        return address_param(name, schema.get('items'))
+    if schema.get('type') == 'object':
+        return any(address_param(k, v) for k, v in sorted((schema.get('properties') or {}).items()))
+    return address_word(name)
+
+
+def egress_open(schema):
+    """On a plugin with egress: a string, also in an array or an object, that is free or of a prose format can carry
+    an address whatever its name (INJ-6)."""
+    schema = schema if isinstance(schema, dict) else {}
+    if closed_values(schema):
+        return False
+    if schema.get('type') == 'array':
+        return egress_open(schema.get('items'))
+    if schema.get('type') == 'object':
+        return any(egress_open(v) for _, v in sorted((schema.get('properties') or {}).items()))
+    if schema.get('type') == 'string':
+        return 'x-botaru-format' not in schema or schema['x-botaru-format'] in PROSE_FORMATS
+    return False
+
+
 REQUIREMENTS = rules()
 # Built-in channel commands: commands cannot take them (PRM-17, docs/task-language.md).
 BUILTIN_COMMANDS = {'/help', '/about', '/lang', '/mydata', '/tasks', '/status', '/cancel', '/me', '/team',
@@ -764,8 +800,9 @@ def lint(docs, today=None, farm_hosts=None, examples_mode=False, claimed=None, s
             for c in (t.get('commands') or {}).values():
                 for k, v in (c.get('params') or {}).items():
                     all_params.setdefault(k, v)
+            egress = bool((ps.get('network') or {}).get('egress'))
             for k, v in sorted(all_params.items()):
-                if address_param(k, v):
+                if address_param(k, v) or (egress and egress_open(v)):
                     f.error('tool_address_param', where, f'{tid}: parameter {k} is a URL or host argument of the model; '
                             'the address comes from the manifest or the catalog (INJ-6)')
             for cname, c in (t.get('commands') or {}).items():
@@ -1406,6 +1443,8 @@ def lint_charter_bounds(tenant, gname, where, gs, f):
     seen = set()
     for s in (gs.get('commission') or {}).get('seats') or []:
         sid = s.get('id') if isinstance(s, dict) else None
+        if sid is None:
+            continue
         if sid in seen:
             f.error('charter_seat_twice', where, f'charter {gname}: seat {sid} is declared twice (GOV-33)')
         seen.add(sid)

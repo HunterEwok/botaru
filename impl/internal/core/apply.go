@@ -268,7 +268,25 @@ func (c *Core) applyOnce(ctx context.Context, op Operator, req ApplyRequest) (*A
 			return nil, err
 		}
 		res.Errors = append(res.Errors, perrs...)
-		errs, err := c.lintManifests(after, lintIndex, lookup, prior)
+		// Groups with members in the store, also when the stored set lacks them (PRM-13).
+		held := map[string]bool{}
+		rows, err := c.st.Pool.Query(ctx, `SELECT DISTINCT tenant, grp FROM memberships`)
+		if err != nil {
+			return nil, err
+		}
+		for rows.Next() {
+			var t, g string
+			if err := rows.Scan(&t, &g); err != nil {
+				rows.Close()
+				return nil, err
+			}
+			held[t+"/"+g] = true
+		}
+		rows.Close()
+		if err := rows.Err(); err != nil {
+			return nil, err
+		}
+		errs, err := c.lintManifestsHeld(after, lintIndex, lookup, prior, held)
 		if err != nil {
 			return nil, err
 		}
@@ -408,6 +426,18 @@ func (c *Core) applyOnce(ctx context.Context, op Operator, req ApplyRequest) (*A
 			}
 			if k.Kind == "Tenant" {
 				return refuse("forbidden", "a tenant is retired, not deleted")
+			}
+			// A group is deleted only without members: its memberships end by ungrant, with the
+			// audit and the notices of PRM-13, so a later group of the same name gives nobody
+			// rights they were not granted.
+			if k.Kind == "Group" {
+				var members bool
+				if err := tx.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM memberships WHERE tenant = $1 AND grp = $2)`, k.Tenant, k.Name).Scan(&members); err != nil {
+					return err
+				}
+				if members {
+					return refuse("forbidden", "group %s of tenant %s still has members; ungrant them first", k.Name, k.Tenant)
+				}
 			}
 			if k.Kind == "TaskType" {
 				var open bool

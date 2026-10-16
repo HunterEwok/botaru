@@ -3,11 +3,15 @@
 package core
 
 import (
+	"context"
+	"errors"
 	"slices"
 	"strings"
 	"testing"
 
 	"github.com/HunterEwok/botaru/impl/internal/manifest"
+	"github.com/HunterEwok/botaru/impl/internal/spec"
+	"github.com/HunterEwok/botaru/impl/internal/testbench"
 )
 
 // COM-19, COM-8: a seat or the commission manifest names a lens of lenses.yaml or a tenant lens
@@ -214,6 +218,19 @@ func TestLintCharterBounds(t *testing.T) {
 	if got := lintCodes(t, c, charter("demo", ok)); slices.ContainsFunc(got, func(s string) bool { return strings.HasPrefix(s, "charter_") }) {
 		t.Fatalf("raised fields: %v", got)
 	}
+	// A seat without an id is not a second declaration.
+	if got := lintCodes(t, c, charter("demo", `{commission: {seats: [{lens: cost}, {lens: value}]}}`)); slices.Contains(got, "charter_seat_twice") {
+		t.Fatalf("seats without an id: %v", got)
+	}
+	// The farm charter is the one of tenant farm; a charter of tenant demo named farm is a
+	// tenant charter.
+	farmNamed := "apiVersion: botaru/v1alpha1\nkind: Governance\nmetadata: {name: farm, tenant: demo}\nspec: {farm_manager: {max_rank: 4}}\n---\n"
+	if got := lintCodes(t, c, farmNamed); !slices.Contains(got, "charter_farm_manager") {
+		t.Fatalf("a demo charter named farm: %v", got)
+	}
+	if got := lintCodes(t, c, charter("farm", `{farm_manager: {max_rank: 4}}`)); slices.Contains(got, "charter_farm_manager") {
+		t.Fatalf("the farm charter: %v", got)
+	}
 	long := `{farm_manager: {incident_stop: {decide_within: 10d}}}`
 	if got := lintCodes(t, c, charter("farm", long)); !slices.Contains(got, "charter_direction") {
 		t.Fatalf("decide_within above 7 days: %v", got)
@@ -229,5 +246,53 @@ func TestMonitorProblemSeverity(t *testing.T) {
 	c := lintCore(t)
 	if s, err := c.alarmSeverity(Alarm{Name: "monitor.problem"}); err != nil || s != "warn" {
 		t.Fatalf("severity %q %v", s, err)
+	}
+}
+
+// PRM-13, PRM-7: a delete and a second apply do not make a group with members privileged. A
+// group is deleted only without members, and a group of the store's memberships counts as an
+// ordinary group even when the stored set lacks it.
+func TestApplyPrivilegeRaiseAfterDelete(t *testing.T) {
+	ctx := context.Background()
+	b := newBench(t)
+	root, err := spec.FindRoot("")
+	if err != nil {
+		t.Fatal(err)
+	}
+	ms, err := testbench.HelloBotManifests(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var rest []map[string]any
+	for _, m := range ms {
+		if m["kind"] != "Group" {
+			rest = append(rest, m)
+		}
+	}
+	_, err = b.c.Apply(ctx, b.op, ApplyRequest{Commit: "3333333333333333333333333333333333333333", Manifests: rest,
+		Delete: []ApplyDelete{{Kind: "Group", Tenant: "demo", Name: "hello"}}})
+	var p *Problem
+	if !errors.As(err, &p) || p.Reason != "forbidden" {
+		t.Fatalf("delete of a group with members: %v", err)
+	}
+	// A group the stored set lacks (deleted by an earlier build) while its members stay.
+	if _, err := b.c.st.Pool.Exec(ctx, `DELETE FROM manifests WHERE kind = 'Group' AND tenant = 'demo' AND name = 'hello'`); err != nil {
+		t.Fatal(err)
+	}
+	for _, m := range ms {
+		if m["kind"] == "Group" {
+			m["spec"].(map[string]any)["data"] = []any{"summary", "raw_logs"}
+		}
+	}
+	res, err := b.c.Apply(ctx, b.op, ApplyRequest{Commit: "4444444444444444444444444444444444444444", Manifests: ms})
+	if err != nil || res.Applied || !hasCode(res, "privileged_group") {
+		t.Fatalf("a privileged group of the old members: %+v %v", res, err)
+	}
+	// Without members the group is new and is granted under PRM-13.
+	if _, err := b.c.Grant(ctx, b.op, GrantRequest{Op: "ungrant", Subject: b.alice, Group: "hello"}); err != nil {
+		t.Fatal(err)
+	}
+	if res, err := b.c.Apply(ctx, b.op, ApplyRequest{Commit: "4444444444444444444444444444444444444444", Manifests: ms}); err != nil || !res.Applied {
+		t.Fatalf("a new privileged group without members: %+v %v", res, err)
 	}
 }

@@ -292,8 +292,9 @@ func Check(p Plugin, forbidden map[string]bool) []Issue {
 		}
 		// The address a tool reaches comes from the manifest or the catalog: the model has no
 		// URL or host argument other than a closed list (INJ-6).
+		egress := len(p.Network.Egress) > 0
 		for _, n := range sortedKeys(t.AllParams()) {
-			if AddressParam(n, t.AllParams()[n]) {
+			if ps := t.AllParams()[n]; AddressParam(n, ps) || egress && EgressOpen(ps) {
 				out = append(out, Issue{Code: "tool_address_param", Tool: t.Name, Path: n})
 			}
 		}
@@ -374,27 +375,80 @@ func OutsideText(argv []string) bool {
 }
 
 // addressWords are the parameter names, or the last word of a name, that carry a network
-// address: a URL or a host (INJ-6).
+// address: a URL, a host or where to send (INJ-6). A plural (urls, hosts, addresses) counts
+// as the word.
 var addressWords = map[string]bool{"url": true, "uri": true, "href": true, "endpoint": true, "host": true, "hostname": true,
-	"address": true, "addr": true, "ip": true}
+	"address": true, "addr": true, "ip": true, "link": true, "target": true, "server": true, "domain": true, "dest": true, "fqdn": true}
 
-// AddressParam says whether a tool parameter is a URL or host argument of the model: its name
-// is an address word and its values are not a closed list (enum, const or a catalog list), so
-// the model would choose where the tool reaches (INJ-6).
-func AddressParam(name string, s map[string]any) bool {
+// addressWord says whether a parameter name, or its last word after _, is an address word or
+// its plural.
+func addressWord(name string) bool {
 	w := name
 	if i := strings.LastIndex(name, "_"); i >= 0 {
 		w = name[i+1:]
 	}
-	if !addressWords[w] {
-		return false
-	}
+	return addressWords[w] || addressWords[strings.TrimSuffix(w, "s")] || strings.HasSuffix(w, "es") && addressWords[strings.TrimSuffix(w, "es")]
+}
+
+// closedValues says whether a schema's values are a closed list: enum, const or a catalog list.
+func closedValues(s map[string]any) bool {
 	for _, k := range []string{"enum", "enum_from", "const"} {
 		if _, ok := s[k]; ok {
-			return false
+			return true
 		}
 	}
-	return true
+	return false
+}
+
+// AddressParam says whether a tool parameter is a URL or host argument of the model: its name
+// is an address word and its values are not a closed list (enum, const or a catalog list), so
+// the model would choose where the tool reaches (INJ-6). The items of an array count under the
+// array's name, and the properties of an object under their own names.
+func AddressParam(name string, s map[string]any) bool {
+	if closedValues(s) {
+		return false
+	}
+	switch s["type"] {
+	case "array":
+		items, _ := s["items"].(map[string]any)
+		return AddressParam(name, items)
+	case "object":
+		props, _ := s["properties"].(map[string]any)
+		for _, k := range sortedKeys(props) {
+			if ps, _ := props[k].(map[string]any); AddressParam(k, ps) {
+				return true
+			}
+		}
+		return false
+	}
+	return addressWord(name)
+}
+
+// EgressOpen says whether a parameter of a tool whose plugin has network egress can carry an
+// address whatever its name: a string, also in an array or an object, that is free (no closed
+// list and no format) or of a prose format such as search_query. On such a plugin a free
+// string would let the model name where the tool reaches (INJ-6).
+func EgressOpen(s map[string]any) bool {
+	if closedValues(s) {
+		return false
+	}
+	switch s["type"] {
+	case "array":
+		items, _ := s["items"].(map[string]any)
+		return EgressOpen(items)
+	case "object":
+		props, _ := s["properties"].(map[string]any)
+		for _, k := range sortedKeys(props) {
+			if ps, _ := props[k].(map[string]any); EgressOpen(ps) {
+				return true
+			}
+		}
+		return false
+	case "string":
+		f, ok := s["x-botaru-format"].(string)
+		return !ok || proseFormats[f]
+	}
+	return false
 }
 
 // freeParam says whether a parameter schema is a string without enum, enum_from, const or

@@ -219,8 +219,8 @@ The codes of `check_manifests.py` that fixtures refer to (`expect: {error: <code
 | `insight_wider` | insight tool outside the role tools | INS-2 |
 | `lens_persona_missing` | a charter seat names a lens without a persona addendum in commission.lenses | COM-19 |
 | `lens_profile_output` | a role that claims a lens review has a base profile with max_output_tokens above 2000 | COM-6 |
-| `lens_unknown` | a charter seat or the commission manifest names a lens neither in lenses.yaml nor declared with its meaning in the charter | COM-19 |
-| `lens_weight_fixed` | the commission manifest sets the weight of a lens whose weight is set by rule (farm_manager) | COM-8 |
+| `lens_unknown` | a charter seat or the commission manifest names a lens neither in lenses.yaml (lenses since the version: spec/VERSION for this lint, the claimed version for a core) nor declared with its meaning in the charter | COM-19 |
+| `lens_weight_fixed` | the commission manifest sets the weight of a lens whose weight is set by rule (farm_manager from v0.2), whatever the value, 1 included | COM-8 |
 | `listener_admin_worker_network` | the P2 listener network is a worker network (note) | IDN-7 |
 | `listener_test_in_production` | test-control listener of the core on a kind: production host | DEP-10 |
 | `manage_enqueued` | a type of purpose manage in a role may_enqueue, a script step or a continuation | MGR-4 |

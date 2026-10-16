@@ -204,6 +204,39 @@ func TestAddressParam(t *testing.T) {
 		AddressParam("url", map[string]any{"enum": []any{"a"}}) || AddressParam("hostage", map[string]any{"type": "string"}) {
 		t.Fatal("a closed list or another name counts as an address argument")
 	}
+	// Plurals, the other address words, array items and object properties count.
+	for n, s := range map[string]map[string]any{
+		"urls":         {"type": "array", "items": map[string]any{"type": "string"}},
+		"addresses":    {"type": "string"},
+		"link":         {"type": "string"},
+		"target":       {"type": "string", "x-botaru-format": "id"},
+		"dest_servers": {"type": "array", "items": map[string]any{"type": "string"}},
+		"fqdn":         {"type": "string"},
+		"domain":       {"type": "string"},
+		"opts":         {"type": "object", "properties": map[string]any{"endpoint": map[string]any{"type": "string"}}},
+	} {
+		if !AddressParam(n, s) {
+			t.Errorf("%s is not an address argument", n)
+		}
+	}
+	if AddressParam("hosts", map[string]any{"type": "array", "items": map[string]any{"enum_from": "catalog.hosts"}}) {
+		t.Error("an array of catalog hosts counts as an address argument")
+	}
+	// On a plugin with egress a free string or a search_query reaches anywhere, whatever its
+	// name; a formatted value does not.
+	p = readPlugin(t, "checks")
+	p.Network.Egress = []string{"http-check-targets"}
+	for _, s := range []map[string]any{{"type": "string"}, {"type": "string", "x-botaru-format": "search_query"},
+		{"type": "array", "items": map[string]any{"type": "string"}}} {
+		p.Tools[0].Params = map[string]map[string]any{"q": s}
+		if got := issueCodes(Check(p, nil)); !slices.Contains(got, "tool_address_param") {
+			t.Errorf("egress and %v: %v", s, got)
+		}
+	}
+	p.Tools[0].Params = map[string]map[string]any{"q": {"type": "string", "x-botaru-format": "id"}}
+	if got := issueCodes(Check(p, nil)); slices.Contains(got, "tool_address_param") {
+		t.Errorf("egress and an id: %v", got)
+	}
 }
 
 // INJ-14: a command that prints the service journal declares untrusted output of class raw_logs.
