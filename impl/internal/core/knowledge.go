@@ -14,7 +14,6 @@ import (
 	"strconv"
 	"strings"
 	"time"
-	"unicode"
 
 	"github.com/jackc/pgx/v5"
 
@@ -52,8 +51,6 @@ const (
 	kbMaxSearch = 20
 	// kbMaxWords is how many words of a query count; kbMinWord the shortest word.
 	kbMaxWords, kbMinWord = 16, 2
-	// kbScanLimit bounds the matching fragments the core ranks for one search.
-	kbScanLimit = 500
 )
 
 // corpusRes is a catalog resource of kind corpus. A corpus without trust is ingested and one
@@ -64,6 +61,17 @@ type corpusRes struct {
 }
 
 func (r corpusRes) curated() bool { return r.Trust == "curated" }
+
+// mark is the effective class of a corpus: its data_class, or the class of an attachment
+// without one (internal). Its documents are stored with this mark, and it is the output class
+// of kb_search and kb_read (KNW-1, PRM-5), so a corpus without a data_class is never read by
+// a task below internal.
+func (r corpusRes) mark() string {
+	if r.DataClass != "" {
+		return r.DataClass
+	}
+	return defaultAttachmentClass
+}
 
 // tenantCorpora are the corpora of a tenant's catalog by id.
 func tenantCorpora(cat *Catalog, tenant string) map[string]corpusRes {
@@ -174,28 +182,29 @@ func (c *Core) knowledgeLint(ctx context.Context, req ApplyRequest, after []mani
 // tenant and gets a kb.ingest.v1 job; a git document no longer in its folder, and every document
 // of a corpus the catalog no longer has (or whose source changed), is deleted. A folder the
 // apply does not carry keeps its documents, as objects missing from a set stay (MAN-6).
-func (c *Core) syncKnowledge(ctx context.Context, tx pgx.Tx, now time.Time, op Operator, next *Catalog, req ApplyRequest) error {
+func (c *Core) syncKnowledge(ctx context.Context, tx pgx.Tx, now time.Time, op Operator, next *Catalog, req ApplyRequest) ([]ApplyError, error) {
 	if !knowledgeOn() {
-		return nil
+		return nil, nil
 	}
-	type live struct{ id, corpus, source, path, sha, file string }
-	rows, err := tx.Query(ctx, `SELECT id, tenant, corpus, source, coalesce(path, ''), coalesce(git_sha256, ''), file_ref FROM corpus_documents WHERE state <> 'deleted' ORDER BY id FOR UPDATE`)
+	var warns []ApplyError
+	type live struct{ id, corpus, source, path, sha, file, state string }
+	rows, err := tx.Query(ctx, `SELECT id, tenant, corpus, source, coalesce(path, ''), coalesce(git_sha256, ''), file_ref, state FROM corpus_documents WHERE state <> 'deleted' ORDER BY id FOR UPDATE`)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	docs := map[string][]live{}
 	for rows.Next() {
 		var d live
 		var tenant string
-		if err := rows.Scan(&d.id, &tenant, &d.corpus, &d.source, &d.path, &d.sha, &d.file); err != nil {
+		if err := rows.Scan(&d.id, &tenant, &d.corpus, &d.source, &d.path, &d.sha, &d.file, &d.state); err != nil {
 			rows.Close()
-			return err
+			return nil, err
 		}
 		docs[tenant] = append(docs[tenant], d)
 	}
 	rows.Close()
 	if err := rows.Err(); err != nil {
-		return err
+		return nil, err
 	}
 	gone := map[string][]string{}
 	drop := func(tenant string, d live) { gone[tenant] = append(gone[tenant], d.id) }
@@ -208,9 +217,23 @@ func (c *Core) syncKnowledge(ctx context.Context, tx pgx.Tx, now time.Time, op O
 			}
 		}
 	}
-	for _, k := range req.Knowledge {
+	// The storage ceiling of the tenant's files holds for git documents too (CAP-1): a document
+	// that does not fit is left out with a warning, and an older version of it stays.
+	used := map[string]int64{}
+	for i, k := range req.Knowledge {
 		tv := next.Tenants[k.Tenant]
 		corp := tenantCorpora(next, k.Tenant)[k.Corpus]
+		max := tv.Spec.Limits.MaxStorageBytes
+		if _, ok := used[k.Tenant]; !ok && max > 0 {
+			if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock(7300112, hashtext($1))`, k.Tenant); err != nil {
+				return nil, err
+			}
+			var u int64
+			if err := tx.QueryRow(ctx, `SELECT coalesce(sum(size), 0) FROM files WHERE tenant = $1 AND content IS NOT NULL`, k.Tenant).Scan(&u); err != nil {
+				return nil, err
+			}
+			used[k.Tenant] = u
+		}
 		have := map[string]live{}
 		for _, d := range docs[k.Tenant] {
 			if d.corpus == k.Corpus && d.source == "git" && !slices.Contains(gone[k.Tenant], d.id) {
@@ -218,19 +241,24 @@ func (c *Core) syncKnowledge(ctx context.Context, tx pgx.Tx, now time.Time, op O
 			}
 		}
 		sent := map[string]bool{}
-		for _, doc := range k.Documents {
+		for j, doc := range k.Documents {
 			sent[doc.Path] = true
 			sum := sha256.Sum256(doc.Data)
 			sha := hex.EncodeToString(sum[:])
-			if d, ok := have[doc.Path]; ok {
-				if d.sha == sha {
-					continue
-				}
+			d, had := have[doc.Path]
+			if had && d.sha == sha {
+				continue
+			}
+			if max > 0 && used[k.Tenant]+int64(len(doc.Data)) > max {
+				warns = append(warns, ApplyError{Tenant: k.Tenant, Name: k.Corpus, Code: "over_capacity", Path: fmt.Sprintf("/knowledge/%d/documents/%d", i, j)})
+				continue
+			}
+			used[k.Tenant] += int64(len(doc.Data))
+			if had {
 				drop(k.Tenant, d)
 			}
-			mark := c.higherMark(defaultAttachmentClass, corp.DataClass)
-			if _, err := c.addCorpusDocument(ctx, tx, now, next, tv, corp, "git", "git", doc.Path, sha, mark, doc.Data); err != nil {
-				return err
+			if _, err := c.addCorpusDocument(ctx, tx, now, next, tv, corp, "git", "git", doc.Path, sha, corp.mark(), doc.Data); err != nil {
+				return nil, err
 			}
 		}
 		for path, d := range have {
@@ -241,17 +269,28 @@ func (c *Core) syncKnowledge(ctx context.Context, tx pgx.Tx, now time.Time, op O
 	}
 	for _, tenant := range slices.Sorted(mapKeys(gone)) {
 		if err := c.deleteDocuments(ctx, tx, now, next, tenant, op.Principal, gone[tenant]); err != nil {
-			return err
+			return nil, err
 		}
 	}
-	return nil
+	// A document whose ingest was refused or ended without its index gets a new job.
+	for _, tenant := range slices.Sorted(mapKeys(docs)) {
+		for _, d := range docs[tenant] {
+			if d.state != "failed" || slices.Contains(gone[tenant], d.id) {
+				continue
+			}
+			if _, err := c.enqueueIngest(ctx, tx, now, next, tenant, d.id, d.file, d.corpus); err != nil {
+				return nil, err
+			}
+		}
+	}
+	return warns, nil
 }
 
 // addCorpusDocument stores a document of a corpus as a file record of the tenant (ART-1) with
 // its document row, and enqueues the kb.ingest.v1 job that indexes it. A git document is an
 // ingested file (it came neither from a person nor from a task); an upload is the person's
-// upload. A refused enqueue leaves the document pending without a job, so search does not
-// find it; the core logs the reason.
+// upload. A refused enqueue leaves the document failed without a job, so search does not
+// find it; the core logs the reason and the next apply tries again.
 func (c *Core) addCorpusDocument(ctx context.Context, tx pgx.Tx, now time.Time, cat *Catalog, tv *TenantView, corp corpusRes, source, producer, path, gitSHA, mark string, content []byte) (*KBUploadResult, error) {
 	origin := "ingested"
 	if source == "upload" {
@@ -281,38 +320,68 @@ func (c *Core) addCorpusDocument(ctx context.Context, tx pgx.Tx, now time.Time, 
 		return nil, err
 	}
 	out := &KBUploadResult{FileRef: ref, Document: id}
+	task, err := c.enqueueIngest(ctx, tx, now, cat, tv.Name, id, ref, corp.ID)
+	if err != nil {
+		return nil, err
+	}
+	out.Task = task
+	return out, nil
+}
+
+// enqueueIngest enqueues the kb.ingest.v1 job of a document as system and records it. The
+// enqueue runs in a savepoint: a refusal never fails the apply or the upload; it leaves the
+// document failed with the reason, and the next apply enqueues it again (syncKnowledge).
+func (c *Core) enqueueIngest(ctx context.Context, tx pgx.Tx, now time.Time, cat *Catalog, tenant, id, ref, corpus string) (string, error) {
+	var runs int
+	if err := tx.QueryRow(ctx, `UPDATE corpus_documents SET ingest_runs = ingest_runs + 1, updated_at = $2 WHERE id = $1 RETURNING ingest_runs`, id, now).Scan(&runs); err != nil {
+		return "", err
+	}
+	key := "system:kb.ingest:" + id
+	if runs > 1 {
+		key += ":" + strconv.Itoa(runs)
+	}
 	body := map[string]any{"type": kbIngestType, "goal": "Cut the attached corpus document into fragments.",
-		"params": map[string]any{"corpus": corp.ID}, "attachments": []any{map[string]any{"file_ref": ref}}}
-	// The enqueue runs in a savepoint: a refusal leaves the document unindexed, never fails the
-	// apply or the upload.
+		"params": map[string]any{"corpus": corpus}, "attachments": []any{map[string]any{"file_ref": ref}}}
 	sp, err := tx.Begin(ctx)
 	if err != nil {
-		return nil, err
+		return "", err
 	}
 	defer func() { _ = sp.Rollback(ctx) }()
-	res, err := c.enqueue(ctx, sp, now, cat, enqueueInput{Tenant: tv.Name, Type: kbIngestType, Body: body,
-		IdempotencyKey: "system:kb.ingest:" + id, Initiator: "system", EnqueuedBy: "system:kb", Source: "", SourceID: id})
+	res, err := c.enqueue(ctx, sp, now, cat, enqueueInput{Tenant: tenant, Type: kbIngestType, Body: body,
+		IdempotencyKey: key, Initiator: "system", EnqueuedBy: "system:kb", Source: "", SourceID: id})
+	reason := ""
 	if p, ok := AsProblem(err); ok {
-		c.log.Warn("a corpus document has no ingest job: the enqueue was refused", "tenant", tv.Name, "document", id, "reason", p.Reason)
-		return out, nil
-	}
-	if err != nil {
-		return nil, err
-	}
-	if err := sp.Commit(ctx); err != nil {
-		return nil, err
-	}
-	if res.Rejected != nil {
-		c.log.Warn("a corpus document has no ingest job: the enqueue was refused", "tenant", tv.Name, "document", id, "reason", res.Rejected.Reason)
-		return out, nil
-	}
-	if res.TaskID != "" {
-		out.Task = res.TaskID
-		if _, err := tx.Exec(ctx, `UPDATE corpus_documents SET ingest_task = $2 WHERE id = $1`, id, res.TaskID); err != nil {
-			return nil, err
+		reason = p.Reason
+		_ = sp.Rollback(ctx)
+	} else if err != nil {
+		return "", err
+	} else {
+		if err := sp.Commit(ctx); err != nil {
+			return "", err
+		}
+		if res.Rejected != nil {
+			reason = res.Rejected.Reason
+		} else if res.TaskID == "" {
+			reason = "not_found"
 		}
 	}
-	return out, nil
+	if reason != "" {
+		c.log.Warn("a corpus document has no ingest job: the enqueue was refused", "tenant", tenant, "document", id, "reason", reason)
+		_, err := tx.Exec(ctx, `UPDATE corpus_documents SET state = 'failed', fail_reason = $2, ingest_task = NULL, updated_at = $3 WHERE id = $1`, id, reason, now)
+		return "", err
+	}
+	if _, err := tx.Exec(ctx, `UPDATE corpus_documents SET state = 'pending', fail_reason = NULL, ingest_task = $2, updated_at = $3 WHERE id = $1`, id, res.TaskID, now); err != nil {
+		return "", err
+	}
+	return res.TaskID, nil
+}
+
+// kbIngestEnded fails the document of an ingest task that ended without writing its index:
+// the task failed or was canceled, or completed before kb.index_put. The next apply enqueues
+// it again.
+func kbIngestEnded(ctx context.Context, tx pgx.Tx, now time.Time, task, reason string) error {
+	_, err := tx.Exec(ctx, `UPDATE corpus_documents SET state = 'failed', fail_reason = $2, updated_at = $3 WHERE ingest_task = $1 AND state = 'pending'`, task, reason, now)
+	return err
 }
 
 // deleteDocuments deletes corpus documents of a tenant (KNW-5). Search stops finding them at
@@ -378,45 +447,60 @@ func (c *Core) KBUpload(ctx context.Context, op Operator, req KBUploadRequest) (
 	if !knowledgeOn() {
 		return nil, refuse("not_found", "no such operation")
 	}
-	if req.Tenant != op.Tenant {
-		return nil, refuse("forbidden", "the credential is for another tenant")
-	}
-	if req.Corpus == "" || req.Filename == "" || len(req.Filename) > 200 || len(req.Content) == 0 {
-		return nil, refuse("input_schema_invalid", "kb.upload needs corpus, filename and content")
-	}
-	tv, cat, err := c.requireTenant(ctx, req.Tenant)
-	if err != nil {
-		return nil, err
-	}
-	corp, ok := tenantCorpora(cat, req.Tenant)[req.Corpus]
-	if !ok {
-		return nil, refuse("not_found", "no such corpus")
-	}
-	if corp.Source != "upload" {
-		return nil, refuse("forbidden", "the corpus does not take uploads (KNW-2, KNW-4)")
-	}
-	maxFile, _ := c.fileLimits(tv)
-	if int64(len(req.Content)) > maxFile {
-		return nil, refuse("file_too_large", "the file is larger than %d bytes", maxFile)
-	}
 	var out *KBUploadResult
 	var denied error
-	err = c.tx(ctx, func(tx pgx.Tx, now time.Time) error {
-		denied = nil
+	err := c.tx(ctx, func(tx pgx.Tx, now time.Time) error {
+		denied, out = nil, nil
+		// Every refusal is answered after the commit, so its audit record stays (KNW-4).
+		deny := func(reason, format string, args ...any) error {
+			denied = refuse(reason, format, args...)
+			_, err := c.appendAudit(ctx, tx, now, kbUploadAudit(op.Tenant, op.Principal, req.Corpus, false, reason, ""))
+			return err
+		}
+		if req.Tenant != op.Tenant {
+			return deny("forbidden", "the credential is for another tenant")
+		}
+		if req.Corpus == "" || req.Filename == "" || len(req.Filename) > 200 || len(req.Content) == 0 {
+			return deny("input_schema_invalid", "kb.upload needs corpus, filename and content")
+		}
+		// The apply lock, shared: an apply that removes the corpus or changes its source is
+		// either committed before this reads the catalog from the store, or waits for it.
+		if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock_shared(7300111)`); err != nil {
+			return err
+		}
+		applied, _, err := loadManifests(ctx, tx)
+		if err != nil {
+			return err
+		}
+		cat, err := buildCatalog(applied)
+		if err != nil {
+			return err
+		}
+		tv, ok := cat.Tenants[req.Tenant]
+		if !ok || tv.Spec.Kind == "" {
+			return deny("not_found", "tenant is not applied")
+		}
+		corp, ok := tenantCorpora(cat, req.Tenant)[req.Corpus]
+		if !ok {
+			return deny("not_found", "no such corpus")
+		}
+		if corp.Source != "upload" {
+			return deny("forbidden", "the corpus does not take uploads (KNW-2, KNW-4)")
+		}
+		if maxFile, _ := c.fileLimits(tv); int64(len(req.Content)) > maxFile {
+			return deny("file_too_large", "the file is larger than %d bytes", maxFile)
+		}
 		p, err := loadPrincipal(ctx, tx, now, req.Tenant, op.Principal)
 		if errors.Is(err, pgx.ErrNoRows) {
-			return refuse("forbidden", "the credential names no person of the tenant")
+			return deny("forbidden", "the credential names no person of the tenant")
 		}
 		if err != nil {
 			return err
 		}
 		groups := groupClosure(tv, p.Groups)
-		mark := c.higherMark(defaultAttachmentClass, corp.DataClass)
+		mark := corp.mark()
 		if p.State != "active" || p.Kind != "human" || !hasCap(tv, groups, "kb.write:"+corp.ID) || !hasData(tv, groups, mark) {
-			// The refusal is answered after the commit, so its audit record stays.
-			denied = refuse("forbidden", "the person may not write to the corpus")
-			_, err := c.appendAudit(ctx, tx, now, kbUploadAudit(req.Tenant, op.Principal, corp.ID, false, "forbidden", ""))
-			return err
+			return deny("forbidden", "the person may not write to the corpus")
 		}
 		// The storage ceiling of the tenant's files (CAP-1), as at P1 file.put.
 		if max := tv.Spec.Limits.MaxStorageBytes; max > 0 {
@@ -428,7 +512,7 @@ func (c *Core) KBUpload(ctx context.Context, op Operator, req KBUploadRequest) (
 				return err
 			}
 			if used+int64(len(req.Content)) > max {
-				return refuse("over_capacity", "the tenant storage ceiling is reached")
+				return deny("over_capacity", "the tenant storage ceiling is reached")
 			}
 		}
 		if out, err = c.addCorpusDocument(ctx, tx, now, cat, tv, corp, "upload", op.Principal, req.Filename, "", mark, req.Content); err != nil {
@@ -605,10 +689,9 @@ func (c *Core) kbCorpora(cat *Catalog, g *toolsGrant) []corpusRes {
 		if len(g.Scope) > 0 && !slices.Contains(g.Scope, id) {
 			continue
 		}
-		if corp.DataClass != "" {
-			if o, ok := c.markOrder(corp.DataClass); !ok || !markOK || o > maxOrder {
-				continue
-			}
+		// The effective class, the mark its documents are stored with (KNW-1, PRM-5).
+		if o, ok := c.markOrder(corp.mark()); !ok || !markOK || o > maxOrder {
+			continue
 		}
 		out = append(out, corp)
 	}
@@ -790,85 +873,63 @@ func intArg(v any) (int, bool) {
 	return 0, false
 }
 
-// searchWords splits a query into its words: runs of Unicode letters and digits, lowercased;
-// words shorter than two characters are left out, and at most the first 16 count. There are no
-// operators, wildcards or phrases: "pump*" is the word pump and OR a word like any other.
-func searchWords(q string) []string {
-	var out []string
-	for _, w := range strings.FieldsFunc(q, func(r rune) bool { return !unicode.IsLetter(r) && !unicode.IsDigit(r) }) {
-		w = strings.ToLower(w)
-		if len([]rune(w)) < kbMinWord || slices.Contains(out, w) {
-			continue
-		}
-		out = append(out, w)
-		if len(out) == kbMaxWords {
-			break
-		}
+// searchWords splits a query into its words with the same parser that builds the index
+// (to_tsvector of the 'simple' configuration: lowercased, no stemming, no stop words; an email
+// address or a URL stays one word, as in the index), in the order of the query, without
+// repeats; words shorter than two characters are left out, and at most the first 16 count.
+// There are no operators, wildcards or phrases: "pump*" is the word pump.
+func searchWords(ctx context.Context, q store.Querier, query string) ([]string, error) {
+	var words []string
+	err := q.QueryRow(ctx, `SELECT coalesce(array_agg(lexeme ORDER BY first), '{}') FROM (
+		SELECT u.lexeme, min(p) AS first FROM unnest(to_tsvector('simple', $1)) u, unnest(u.positions) p
+		WHERE char_length(u.lexeme) >= $2 GROUP BY u.lexeme) w`, query, kbMinWord).Scan(&words)
+	if err != nil {
+		return nil, err
 	}
-	return out
+	if len(words) > kbMaxWords {
+		words = words[:kbMaxWords]
+	}
+	return words, nil
+}
+
+// tsAll is the tsquery that every word of words matches, each as a quoted lexeme.
+func tsAll(words []string) string {
+	q := make([]string, len(words))
+	for i, w := range words {
+		q[i] = "'" + strings.NewReplacer(`\`, `\\`, "'", "''").Replace(w) + "'"
+	}
+	return strings.Join(q, " & ")
 }
 
 // kbSearch finds the indexed fragments of a corpus of the tenant that hold every word of the
-// query, ordered by the number of word occurrences, then by document and fragment number. The
-// word index narrows the candidates; the count and the order are computed on the words of each
-// fragment by the same split as the query. An empty word list finds nothing.
+// query, ordered in the store by the number of occurrences of the words, then by document and
+// fragment number. An empty word list finds nothing.
 func kbSearch(ctx context.Context, tx pgx.Tx, tenant, corpus, query string, limit int) ([]map[string]any, error) {
-	words := searchWords(query)
-	if len(words) == 0 {
-		return []map[string]any{}, nil
+	words, err := searchWords(ctx, tx, query)
+	if err != nil || len(words) == 0 {
+		return []map[string]any{}, err
 	}
-	rows, err := tx.Query(ctx, `SELECT f.doc, f.n, coalesce(f.title, ''), f.body FROM corpus_fragments f
+	rows, err := tx.Query(ctx, `SELECT f.doc, f.n, coalesce(f.title, ''), f.body,
+			(SELECT coalesce(sum(cardinality(u.positions)), 0) FROM unnest(f.words) u WHERE u.lexeme = ANY($3)) AS hits
+		FROM corpus_fragments f
 		JOIN corpus_documents d ON d.id = f.doc JOIN files fl ON fl.file_ref = d.file_ref
 		WHERE f.tenant = $1 AND f.corpus = $2 AND d.tenant = $1 AND d.state = 'indexed' AND fl.state = 'stored'
-		AND f.words @@ plainto_tsquery('simple', $3) ORDER BY f.doc, f.n LIMIT $4`, tenant, corpus, strings.Join(words, " "), kbScanLimit)
+		AND f.words @@ $4::tsquery ORDER BY hits DESC, f.doc, f.n LIMIT $5`, tenant, corpus, words, tsAll(words), limit)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	type hit struct {
-		doc   string
-		n     int
-		count int
-		frag  map[string]any
-	}
-	var hits []hit
+	out := []map[string]any{}
 	for rows.Next() {
 		var doc, title, body string
 		var n int
-		if err := rows.Scan(&doc, &n, &title, &body); err != nil {
+		var hits int64
+		if err := rows.Scan(&doc, &n, &title, &body, &hits); err != nil {
 			return nil, err
 		}
-		count := 0
-		have := map[string]bool{}
-		for _, w := range strings.FieldsFunc(title+" "+body, func(r rune) bool { return !unicode.IsLetter(r) && !unicode.IsDigit(r) }) {
-			w = strings.ToLower(w)
-			if slices.Contains(words, w) {
-				count++
-				have[w] = true
-			}
-		}
-		if len(have) < len(words) {
-			continue // the index split a word differently: every word must be there
-		}
-		hits = append(hits, hit{doc, n, count, fragmentOut(doc, n, title, body)})
+		out = append(out, fragmentOut(doc, n, title, body))
 	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	sort.SliceStable(hits, func(i, j int) bool {
-		if hits[i].count != hits[j].count {
-			return hits[i].count > hits[j].count
-		}
-		if hits[i].doc != hits[j].doc {
-			return hits[i].doc < hits[j].doc
-		}
-		return hits[i].n < hits[j].n
-	})
-	out := []map[string]any{}
-	for i := 0; i < len(hits) && i < limit; i++ {
-		out = append(out, hits[i].frag)
-	}
-	return out, nil
+	return out, rows.Err()
 }
 
 // kbRead returns up to count fragments of one document from a fragment id on, in document

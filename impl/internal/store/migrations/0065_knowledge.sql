@@ -7,7 +7,9 @@
 -- bytes, so an unchanged document is not ingested again), source upload one a person uploaded
 -- with kb.write:<corpus> (KNW-4). ingest_task is the kb.ingest.v1 job that cuts it into
 -- fragments; only that task writes them (P1 kb.index_put). A deleted document keeps its row
--- without its path as a tombstone, so a late index_put of its task writes nothing.
+-- without its path as a tombstone, so a late index_put of its task writes nothing. A document
+-- whose ingest was refused or ended without an index is failed with the reason, and the next
+-- apply enqueues it again (ingest_runs counts the jobs).
 CREATE TABLE corpus_documents (
     id          text PRIMARY KEY,
     tenant      text NOT NULL,
@@ -16,8 +18,10 @@ CREATE TABLE corpus_documents (
     source      text NOT NULL CHECK (source IN ('git', 'upload')),
     path        text,
     git_sha256  text,
-    state       text NOT NULL CHECK (state IN ('pending', 'indexed', 'deleted')),
+    state       text NOT NULL CHECK (state IN ('pending', 'indexed', 'failed', 'deleted')),
+    fail_reason text,
     ingest_task text,
+    ingest_runs int NOT NULL DEFAULT 0,
     created_at  timestamptz NOT NULL,
     updated_at  timestamptz NOT NULL
 );

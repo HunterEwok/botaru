@@ -10,11 +10,15 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
 
 	"github.com/HunterEwok/botaru/impl/internal/jcs"
 )
+
+// skillName is the folder name of a skill (the common name of the skeleton).
+var skillName = regexp.MustCompile(`^[a-z][a-z0-9-]{0,62}$`)
 
 // skillRef is one skill of the work item: name, description and tree hash (SKL-2).
 type skillRef struct {
@@ -56,7 +60,7 @@ func writeSkills(base string, refs []skillRef, files map[string]map[string]strin
 	section.WriteString("\n\nSkills of your role. Each is a procedure from the farm git; follow it when the task fits its description. Its files are under " + dir + ".")
 	for _, r := range refs {
 		fs := files[r.Name]
-		if h, err := treeHash(fs); err != nil || h != r.SHA256 || filepath.Base(r.Name) != r.Name {
+		if h, err := treeHash(fs); err != nil || h != r.SHA256 || !skillName.MatchString(r.Name) {
 			_ = removeSkills(dir)
 			return "", "", fmt.Errorf("the files of skill %s do not match its hash", r.Name)
 		}

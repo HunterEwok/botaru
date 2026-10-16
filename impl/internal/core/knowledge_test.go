@@ -69,7 +69,8 @@ func newKBBench(t *testing.T, edit func(ms []map[string]any) []map[string]any) *
 					corpusDecl("runbooks", "trust", "curated", "source", "git", "data_class", "summary"),
 					corpusDecl("manuals", "trust", "ingested", "source", "upload", "data_class", "summary"),
 					corpusDecl("people", "source", "upload", "data_class", "summary", "personal", true),
-					corpusDecl("secrets", "trust", "curated", "source", "git", "data_class", "raw_logs"))
+					corpusDecl("secrets", "trust", "curated", "source", "git", "data_class", "raw_logs"),
+					corpusDecl("nodata", "source", "git"))
 			}
 			if m["kind"] == "Tenant" {
 				tenant = m
@@ -251,6 +252,10 @@ func TestKnowledgeProfileOffRefuses(t *testing.T) {
 	if _, err := b.c.KBIndexPut(ctx, b.agent, "", KBIndexPutRequest{}); reasonOf(err) != "not_found" {
 		t.Fatalf("kb.index_put: %v", err)
 	}
+	// Nothing of SKL-4 changes while the claim is off: skills: farm passes hello.
+	if _, err := b.c.Hello(ctx, b.agent, HelloRequest{Kind: "agent", ProtocolVersions: []string{"v1"}, Runtime: &RuntimeDecl{Skills: "farm"}}); err != nil {
+		t.Fatalf("hello with skills: farm without the profile: %v", err)
+	}
 	_, h := b.attemptTools(t, "off1", false)
 	if slices.Contains(toolNames(t, b, h), kbSearchName) {
 		t.Fatal("kb_search offered without the profile")
@@ -269,8 +274,11 @@ func TestKNW2TrustBySource(t *testing.T) {
 			bad = deepCopy(m)
 		}
 	}
-	res := anyList(bad["spec"].(map[string]any)["resources"])
-	res[len(res)-1].(map[string]any)["source"] = "upload"
+	for _, r := range anyList(bad["spec"].(map[string]any)["resources"]) {
+		if r.(map[string]any)["id"] == "secrets" {
+			r.(map[string]any)["source"] = "upload"
+		}
+	}
 	r := b.apply(t, ApplyRequest{Manifests: []map[string]any{bad}, DryRun: true})
 	if !slices.ContainsFunc(r.Errors, func(e ApplyError) bool { return e.Code == "corpus_curated_source" }) {
 		t.Fatalf("lint: %+v", r.Errors)
@@ -419,7 +427,7 @@ func TestKNW4WriteRights(t *testing.T) {
 		t.Fatal(err)
 	}
 	var n int
-	if err := b.c.st.Pool.QueryRow(ctx, `SELECT count(*) FROM audit WHERE record->>'command' = 'kb.upload' AND (record->>'ok')::boolean = false`).Scan(&n); err != nil || n != 1 {
+	if err := b.c.st.Pool.QueryRow(ctx, `SELECT count(*) FROM audit WHERE record->>'command' = 'kb.upload' AND (record->>'ok')::boolean = false`).Scan(&n); err != nil || n != 4 {
 		t.Fatalf("refused upload audits %d %v", n, err)
 	}
 	// The binding of kb.index_put to the leased task.
@@ -586,12 +594,13 @@ func TestKBSearchQueryNotStored(t *testing.T) {
 // The search is a word search: every word must match, ordered by occurrences; there are no
 // operators (D8, docs/capabilities.md). kb_read reads on in document order.
 func TestKBSearchWordsAndRead(t *testing.T) {
-	if got := searchWords("Pump* OR a pump, VALVE x!"); !slices.Equal(got, []string{"pump", "or", "valve"}) {
-		t.Fatalf("words %v", got)
-	}
 	b := newKBBench(t, nil)
+	ctx := context.Background()
+	if got, err := searchWords(ctx, b.c.st.Pool, "Pump* OR a pump, VALVE x! user@example.com"); err != nil || !slices.Equal(got, []string{"pump", "or", "valve", "user@example.com"}) {
+		t.Fatalf("words %v %v", got, err)
+	}
 	long := "# Valves\n\nvalve valve pump\n\n" + strings.Repeat("filler words here. ", 100) + "\n\nvalve pump end"
-	if r := b.apply(t, ApplyRequest{Knowledge: []KnowledgeFolder{folder("demo", "runbooks", "v.md", long, "p.md", "pump only")}}); !r.Applied {
+	if r := b.apply(t, ApplyRequest{Knowledge: []KnowledgeFolder{folder("demo", "runbooks", "v.md", long, "p.md", "pump only", "m.md", "Write to user@example.com, it's O'Brien's box.")}}); !r.Applied {
 		t.Fatalf("apply: %+v", r.Errors)
 	}
 	b.ingestAll(t)
@@ -600,6 +609,12 @@ func TestKBSearchWordsAndRead(t *testing.T) {
 	got := anyList(out["fragments"])
 	if len(got) != 2 || !strings.HasPrefix(got[0].(map[string]any)["text"].(string), "valve valve pump") || got[0].(map[string]any)["title"] != "Valves" {
 		t.Fatalf("search %v", out)
+	}
+	// The query is cut by the parser of the index: an address is one word on both sides.
+	for q, want := range map[string]int{"example": 0, "user@example.com": 1, "o'brien's": 1, `back\slash 'x`: 0} {
+		if out, e := kbCall(t, b.bench, h, kbSearchName, map[string]any{"corpus": "runbooks", "query": q}); out == nil || len(fragTexts(out)) != want {
+			t.Errorf("%q: %v %s", q, out, e)
+		}
 	}
 	first := got[0].(map[string]any)["fragment"].(string)
 	rd, _ := kbCall(t, b.bench, h, kbReadName, map[string]any{"corpus": "runbooks", "fragment": first, "count": 3})
@@ -678,6 +693,17 @@ func TestSKL1SkillFormat(t *testing.T) {
 	}
 }
 
+// helloSkills says hello as a runtime of runtime.skills: runtime_files and keeps the
+// declaration on the bench's worker, as the next P1 call reads it.
+func helloSkills(t *testing.T, b *kbBench) {
+	t.Helper()
+	req := HelloRequest{Kind: "agent", ProtocolVersions: []string{"v1"}, Runtime: &RuntimeDecl{Skills: "runtime_files"}}
+	if _, err := b.c.Hello(context.Background(), b.agent, req); err != nil {
+		t.Fatal(err)
+	}
+	b.agent.Hello = &req
+}
+
 // skilledBench is the knowledge bench with the hello role pinning the skill disk-triage of the
 // given SKILL.md body, applied with its folder.
 func skilledBench(t *testing.T, body string) (*kbBench, string) {
@@ -713,9 +739,12 @@ func TestSKL2SkillsByHash(t *testing.T) {
 	if _, err := b.c.Hello(ctx, b.agent, HelloRequest{Kind: "agent", ProtocolVersions: []string{"v1"}, Runtime: &RuntimeDecl{Skills: "farm"}}); reasonOf(err) != "version_unsupported" {
 		t.Fatalf("hello with skills: farm: %v", err)
 	}
-	if _, err := b.c.Hello(ctx, b.agent, HelloRequest{Kind: "agent", ProtocolVersions: []string{"v1"}, Runtime: &RuntimeDecl{Skills: "runtime_files"}}); err != nil {
-		t.Fatal(err)
+	// A runtime whose last hello did not declare runtime_files gets no attempt (SKL-2).
+	first := b.hello(t, "s2w")
+	if w := b.claim(t, b.agent, "attempt"); w != nil || taskReason(t, b.bench, first) != "no_member_ready" {
+		t.Fatalf("an attempt for a runtime without runtime_files: %v", taskReason(t, b.bench, first))
 	}
+	helloSkills(t, b)
 	att, _ := b.attemptTools(t, "s2", false)
 	refs := anyList(att.Payload["skills"])
 	if len(refs) != 1 || refs[0].(map[string]any)["sha256"] != hash {
@@ -738,9 +767,12 @@ func TestSKL2SkillsByHash(t *testing.T) {
 	if !r.Applied || !slices.ContainsFunc(r.Warnings, func(e ApplyError) bool { return e.Code == "not_found" }) {
 		t.Fatalf("apply %+v %+v", r.Errors, r.Warnings)
 	}
-	b.hello(t, "s2b")
+	waiting := b.hello(t, "s2b")
 	if w := b.claim(t, b.agent, "attempt"); w != nil {
 		t.Fatalf("an attempt without the skill copy: %v", w.Payload["skills"])
+	}
+	if r := taskReason(t, b.bench, waiting); r != "skill_missing" {
+		t.Fatalf("waiting reason %q", r)
 	}
 	// The copy whose files no longer give its key is not given either.
 	if _, err := b.c.st.Pool.Exec(ctx, `UPDATE skill_trees SET sha256 = $1`, strings.Repeat("ab", 32)); err != nil {
@@ -758,9 +790,7 @@ func TestSKL3SkillDoesNotChangeCatalog(t *testing.T) {
 	_, h := plain.attemptTools(t, "s3a", false)
 	before := toolNames(t, plain.bench, h)
 	b, _ := skilledBench(t, "Run cmd/run with rm -rf, then logs/tail and monitor/script_run.\n")
-	if _, err := b.c.Hello(context.Background(), b.agent, HelloRequest{Kind: "agent", ProtocolVersions: []string{"v1"}, Runtime: &RuntimeDecl{Skills: "runtime_files"}}); err != nil {
-		t.Fatal(err)
-	}
+	helloSkills(t, b)
 	att, h2 := b.attemptTools(t, "s3b", false)
 	if after := toolNames(t, b.bench, h2); !slices.Equal(before, after) {
 		t.Fatalf("tools/list changed: %v then %v", before, after)
@@ -802,9 +832,7 @@ func emptyListHash(t *testing.T) string {
 // is refused; runtime.skills: farm is version_unsupported (TestSKL2SkillsByHash).
 func TestSKL4SkillReadNotOffered(t *testing.T) {
 	b, _ := skilledBench(t, "Body.\n")
-	if _, err := b.c.Hello(context.Background(), b.agent, HelloRequest{Kind: "agent", ProtocolVersions: []string{"v1"}, Runtime: &RuntimeDecl{Skills: "runtime_files"}}); err != nil {
-		t.Fatal(err)
-	}
+	helloSkills(t, b)
 	_, h := b.attemptTools(t, "s4", false)
 	if slices.Contains(toolNames(t, b.bench, h), "skill_read") {
 		t.Fatal("skill_read offered")
@@ -815,22 +843,142 @@ func TestSKL4SkillReadNotOffered(t *testing.T) {
 	}
 }
 
-// The ingest job's cut: paragraphs joined up to the target, headings as titles, limits.
-func TestKBIngestCut(t *testing.T) {
-	frags, skipped := kbjob.Cut([]byte("# One\n\nalpha\n\nbeta\n## Two\ngamma"))
-	if skipped != "" || len(frags) != 2 || frags[0].Title != "One" || frags[0].Text != "alpha\n\nbeta" || frags[1].Title != "Two" || frags[1].N != 1 {
-		t.Fatalf("cut %+v %q", frags, skipped)
+// KNW-1, PRM-5: a corpus without data_class has the class of its documents' mark (internal):
+// a summary task is not offered it and is refused, a task whose mark covers internal reads it.
+func TestKNW1CorpusWithoutClass(t *testing.T) {
+	b := newKBBench(t, nil)
+	ctx := context.Background()
+	if r := b.apply(t, ApplyRequest{Knowledge: []KnowledgeFolder{folder("demo", "nodata", "n.md", "internal note about the valve")}}); !r.Applied {
+		t.Fatalf("apply: %+v", r.Errors)
 	}
-	if _, s := kbjob.Cut([]byte{0xff, 0xfe}); s != "unreadable" {
-		t.Fatalf("binary %q", s)
+	b.ingestAll(t)
+	var mark string
+	if err := b.c.st.Pool.QueryRow(ctx, `SELECT f.data_mark FROM files f JOIN corpus_documents d ON d.file_ref = f.file_ref WHERE d.corpus = 'nodata'`).Scan(&mark); err != nil || mark != "internal" {
+		t.Fatalf("mark %q %v", mark, err)
 	}
-	if _, s := kbjob.Cut([]byte(" \n\n ")); s != "empty" {
-		t.Fatalf("empty %q", s)
-	}
-	big, _ := kbjob.Cut([]byte(strings.Repeat("word ", 3000)))
-	for _, f := range big {
-		if len([]rune(f.Text)) > 4000 {
-			t.Fatal("a fragment above 4000 characters")
+	_, h := b.attemptTools(t, "nc1", false)
+	if slices.Contains(toolNames(t, b.bench, h), kbSearchName) {
+		l, _ := b.c.P3ToolsList(ctx, h)
+		raw, _ := json.Marshal(l)
+		if strings.Contains(string(raw), "nodata") {
+			t.Fatal("a summary task is offered a corpus of class internal")
 		}
+	}
+	if out, e := kbCall(t, b.bench, h, kbSearchName, map[string]any{"corpus": "nodata", "query": "valve"}); out != nil || e == "" {
+		t.Fatalf("a summary task read an internal corpus: %v", out)
+	}
+	_, h2 := b.attemptTools(t, "nc2", true)
+	if out, _ := kbCall(t, b.bench, h2, kbSearchName, map[string]any{"corpus": "nodata", "query": "valve"}); out == nil || len(fragTexts(out)) != 1 {
+		t.Fatalf("a task with the mark did not read it: %v", out)
+	}
+}
+
+// KNW-5, RET-10: an expired git document is gone from search, and the next apply that carries
+// its folder brings it back for a new ingest.
+func TestKNW5ExpiredGitDocumentComesBack(t *testing.T) {
+	b := newKBBench(t, nil)
+	ctx := context.Background()
+	f := folder("demo", "runbooks", "a.md", "alpha valve")
+	if r := b.apply(t, ApplyRequest{Knowledge: []KnowledgeFolder{f}}); !r.Applied {
+		t.Fatalf("apply: %+v", r.Errors)
+	}
+	b.ingestAll(t)
+	if _, err := b.c.st.Pool.Exec(ctx, `UPDATE files SET expires_at = now() - interval '1 day' WHERE file_ref IN (SELECT file_ref FROM corpus_documents)`); err != nil {
+		t.Fatal(err)
+	}
+	b.loop(t, "retention")
+	if r := b.apply(t, ApplyRequest{Knowledge: []KnowledgeFolder{f}}); !r.Applied {
+		t.Fatalf("apply: %+v", r.Errors)
+	}
+	if n := len(b.ingestAll(t)); n != 1 {
+		t.Fatalf("re-ingested %d", n)
+	}
+	_, h := b.attemptTools(t, "ke", false)
+	if out, _ := kbCall(t, b.bench, h, kbSearchName, map[string]any{"corpus": "runbooks", "query": "alpha"}); out == nil || len(fragTexts(out)) != 1 {
+		t.Fatalf("not back: %v", out)
+	}
+}
+
+// A refused ingest enqueue and a failed ingest task leave the document failed with the reason;
+// the next apply enqueues it again.
+func TestKBIngestFailedRetriedAtApply(t *testing.T) {
+	b := newKBBench(t, nil)
+	ctx := context.Background()
+	noOps := make([]map[string]any, 0, len(b.ms))
+	for _, m := range b.ms {
+		m = deepCopy(m)
+		if m["kind"] == "Group" && m["metadata"].(map[string]any)["name"] == "system-ops" {
+			m["spec"].(map[string]any)["caps"] = []any{}
+		}
+		noOps = append(noOps, m)
+	}
+	if r := b.apply(t, ApplyRequest{Manifests: noOps, Knowledge: []KnowledgeFolder{folder("demo", "runbooks", "a.md", "alpha")}}); !r.Applied {
+		t.Fatalf("apply: %+v", r.Errors)
+	}
+	state := func() (string, string) {
+		var st string
+		var why *string
+		if err := b.c.st.Pool.QueryRow(ctx, `SELECT state, fail_reason FROM corpus_documents`).Scan(&st, &why); err != nil {
+			t.Fatal(err)
+		}
+		if why == nil {
+			return st, ""
+		}
+		return st, *why
+	}
+	if st, why := state(); st != "failed" || why == "" {
+		t.Fatalf("after a refused enqueue: %s %q", st, why)
+	}
+	if r := b.apply(t, ApplyRequest{}); !r.Applied {
+		t.Fatalf("apply: %+v", r.Errors)
+	}
+	if st, _ := state(); st != "pending" {
+		t.Fatalf("after the next apply: %s", st)
+	}
+	att := b.claim(t, b.job, "attempt")
+	if att == nil {
+		t.Fatal("no ingest attempt")
+	}
+	if _, err := b.c.Fail(ctx, b.job, header(t, att), FailRequest{Reason: "runtime_error", Retryable: false}); err != nil {
+		t.Fatal(err)
+	}
+	if st, why := state(); st != "failed" || why == "" {
+		t.Fatalf("after a failed ingest: %s %q", st, why)
+	}
+	if r := b.apply(t, ApplyRequest{}); !r.Applied {
+		t.Fatalf("apply: %+v", r.Errors)
+	}
+	if n := len(b.ingestAll(t)); n != 1 {
+		t.Fatalf("re-ingested %d", n)
+	}
+	if st, _ := state(); st != "indexed" {
+		t.Fatalf("after the retry: %s", st)
+	}
+}
+
+// CAP-1: a git document over the tenant's storage ceiling is left out with a warning.
+func TestKBGitDocumentStorageCeiling(t *testing.T) {
+	b := newKBBench(t, nil)
+	ms := make([]map[string]any, 0, len(b.ms))
+	for _, m := range b.ms {
+		m = deepCopy(m)
+		if m["kind"] == "Tenant" && m["metadata"].(map[string]any)["name"] == "demo" {
+			sp := m["spec"].(map[string]any)
+			lim, _ := sp["limits"].(map[string]any)
+			if lim == nil {
+				lim = map[string]any{}
+				sp["limits"] = lim
+			}
+			lim["max_storage_bytes"] = 1000
+		}
+		ms = append(ms, m)
+	}
+	r := b.apply(t, ApplyRequest{Manifests: ms, Knowledge: []KnowledgeFolder{folder("demo", "runbooks", "small.md", "fits", "big.md", strings.Repeat("x", 2000))}})
+	if !r.Applied || !slices.ContainsFunc(r.Warnings, func(e ApplyError) bool { return e.Code == "over_capacity" && e.Path == "/knowledge/0/documents/1" }) {
+		t.Fatalf("apply %+v %+v", r.Errors, r.Warnings)
+	}
+	var n int
+	if err := b.c.st.Pool.QueryRow(context.Background(), `SELECT count(*) FROM corpus_documents`).Scan(&n); err != nil || n != 1 {
+		t.Fatalf("documents %d %v", n, err)
 	}
 }

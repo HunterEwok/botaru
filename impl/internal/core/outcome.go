@@ -456,6 +456,10 @@ func (c *Core) completeAttempt(ctx context.Context, tx pgx.Tx, now time.Time, w 
 	if att.Fingerprint != "" {
 		data["fingerprint"], data["fingerprint_parts"] = att.Fingerprint, att.Parts
 	}
+	// An ingest that completed without its index leaves its document failed (KNW-5).
+	if err := kbIngestEnded(ctx, tx, now, l.WorkID, "runtime_error"); err != nil {
+		return err
+	}
 	if err := c.appendEvent(ctx, tx, now, w.Tenant, Event{Type: "task.completed", Subject: l.WorkID, Data: data}); err != nil {
 		return err
 	}
@@ -869,6 +873,9 @@ func (c *Core) failTask(ctx context.Context, tx pgx.Tx, now time.Time, tenant, i
 	}
 	if json.Unmarshal(rec, &last) == nil && last.Provider != "" && reason == "deadline_exceeded" {
 		data["provider_reason"] = last.Provider
+	}
+	if err := kbIngestEnded(ctx, tx, now, id, reason); err != nil {
+		return err
 	}
 	if err := c.appendEvent(ctx, tx, now, tenant, Event{Type: "task.failed", Subject: id, Data: data}); err != nil {
 		return err

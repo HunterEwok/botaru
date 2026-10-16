@@ -316,6 +316,8 @@ func skillsPart(refs []manifest.SkillRef) (string, error) {
 // use (SKL-2). Both answer version_unsupported, as for any mechanism this core does not offer.
 func skillsRefusal(r *RuntimeDecl, role manifest.Role) string {
 	switch {
+	case !knowledgeOn():
+		return ""
 	case r != nil && r.Skills == "farm":
 		return "runtime.skills: farm and skill_read are not offered by this core (SKL-4)"
 	case len(role.Skills) > 0 && knowledgeOn() && (r == nil || r.Skills != "runtime_files"):

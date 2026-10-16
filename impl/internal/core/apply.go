@@ -239,7 +239,7 @@ func (c *Core) applyOnce(ctx context.Context, op Operator, req ApplyRequest) (*A
 	// deletions, so that a check across objects does not miss an object of an earlier apply.
 	var after []manifest.Doc
 	var skillHashes map[string]string
-	var kerrs, kwarns []ApplyError
+	var kerrs, kwarns, syncWarns []ApplyError
 	if len(res.Errors) == 0 {
 		stored, _, err := loadManifests(ctx, c.st.Pool)
 		if err != nil {
@@ -477,7 +477,7 @@ func (c *Core) applyOnce(ctx context.Context, op Operator, req ApplyRequest) (*A
 		if err := storeSkillTrees(ctx, tx, now, req.Skills, skillHashes); err != nil {
 			return err
 		}
-		if err := c.syncKnowledge(ctx, tx, now, op, next, req); err != nil {
+		if syncWarns, err = c.syncKnowledge(ctx, tx, now, op, next, req); err != nil {
 			return err
 		}
 		if err := recordMetadataPeriods(ctx, tx, now, next); err != nil {
@@ -524,6 +524,7 @@ func (c *Core) applyOnce(ctx context.Context, op Operator, req ApplyRequest) (*A
 		return nil, err
 	}
 	res.Applied = !req.DryRun
+	res.Warnings = append(res.Warnings, syncWarns...)
 	if res.Applied {
 		cat, err := c.Catalog(ctx)
 		if err != nil {
