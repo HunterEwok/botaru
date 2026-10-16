@@ -139,7 +139,7 @@ func (c *Core) attentionToolCall(ctx context.Context, tx pgx.Tx, now time.Time, 
 	if !offered || tool == nil {
 		return toolAnswer(map[string]any{"code": "forbidden"}, true), nil
 	}
-	if err := c.rs.validate(tool.Schema, args); err != nil {
+	if err := c.rs.validate(tool.Schema, args); err != nil || !c.attentionChecked(args) {
 		return toolAnswer(map[string]any{"code": "input_schema_invalid"}, true), nil
 	}
 	acting, err := leaseActing(ctx, tx, g.Task, g.Worker)
@@ -350,12 +350,12 @@ func (c *Core) enqueuePostmortem(ctx context.Context, tx pgx.Tx, now time.Time, 
 		return err
 	}
 	readingOff := !incidentReviewOn(tv)
-	paragraph := !readingOff && (mstr(r.Record, "severity") == "sev1" || len(links) > 0)
+	// A paragraph for sev1, for link candidates of any rule code found (GOV-13, GOV-38, TRN-7)
+	// or on a person's request (paragraphAsked).
+	paragraph := !readingOff && (mstr(r.Record, "severity") == "sev1" || len(links) > 0 || paragraphRequested(r))
 	if paragraph {
-		var recent bool
-		if err := tx.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM tasks t JOIN incidents i ON i.id = t.record->>'postmortem'
-			WHERE t.tenant = $1 AND t.type = $2 AND (t.record->>'paragraph')::boolean AND t.created_at > $3 AND i.class = $4 AND i.subject_kind = $5 AND i.subject_id = $6)`,
-			r.Tenant, postmortemType, now.Add(-paragraphEvery), r.Class, r.SubjectKind, r.SubjectID).Scan(&recent); err != nil {
+		recent, err := paragraphRecent(ctx, tx, now, r, "")
+		if err != nil {
 			return err
 		}
 		paragraph = !recent
@@ -428,7 +428,8 @@ func postmortemClaimBudget(ctx context.Context, tx pgx.Tx, now time.Time, cat *C
 	return own + left, true, nil
 }
 
-// linkCandidates are the attribution candidates code found for an incident (GOV-13); only
+// linkCandidates are the link candidates code found for an incident under every rule: a change
+// (GOV-13), a rejected proposal (GOV-38) and a script run (TRN-7), all attribution records; only
 // people with governance.attribute see them (MGR-54).
 func linkCandidates(ctx context.Context, tx pgx.Tx, tenant, incident string) ([]string, error) {
 	rows, err := tx.Query(ctx, `SELECT id FROM attributions WHERE tenant = $1 AND incident = $2 AND state <> 'canceled' ORDER BY id`, tenant, incident)

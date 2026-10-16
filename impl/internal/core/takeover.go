@@ -484,6 +484,9 @@ func (c *Core) runTakeover(ctx context.Context, tx pgx.Tx, now time.Time, cat *C
 		if _, err := tx.Exec(ctx, `UPDATE tasks SET record = record || $2::jsonb WHERE id = $1`, res.TaskID, extra); err != nil {
 			return "", "", err
 		}
+		if err := takeoverPoint(ctx, tx, now, r.Tenant, typ, role, r.ID); err != nil {
+			return "", "", err
+		}
 	}
 	if role == "" {
 		role = managerSeatID
