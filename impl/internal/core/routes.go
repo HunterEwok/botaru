@@ -399,14 +399,17 @@ func (c *Core) runWake(ctx context.Context, tx pgx.Tx, now time.Time, cat *Catal
 	}
 	if eur != nil {
 		var used int64
-		if err := tx.QueryRow(ctx, `SELECT coalesce(sum(s.eur_micros), 0) FROM spend s JOIN tasks t ON t.id = s.task
-			WHERE t.tenant = $1 AND t.created_at >= $2 AND t.record->>'wake_inbox' = $3 AND s.unit <> 'task'`, tv.Name, day, rt.On.Inbox).Scan(&used); err != nil {
+		// The spend of the day of every wake-up of the inbox, with its children (MSG-11).
+		if err := tx.QueryRow(ctx, `SELECT coalesce(sum(s.eur_micros), 0) FROM spend s JOIN tasks t ON t.id = s.task JOIN tasks w ON w.id = t.record->>'wake_task'
+			WHERE w.tenant = $1 AND s.time >= $2 AND w.record->>'wake_inbox' = $3 AND s.unit <> 'task'`, tv.Name, day, rt.On.Inbox).Scan(&used); err != nil {
 			return err
 		}
 		var reserved int64
-		if err := tx.QueryRow(ctx, `SELECT coalesce(sum(s.eur_micros), 0) FROM spend s JOIN tasks t ON t.id = s.task
-			WHERE t.tenant = $1 AND t.created_at >= $2 AND t.record->>'wake_inbox' = $3 AND s.unit = 'task' AND t.state IN ('submitted', 'working')`,
-			tv.Name, day, rt.On.Inbox).Scan(&reserved); err != nil {
+		// Of an open reserve in a wake-up's subtree, the part its task has not spent yet.
+		if err := tx.QueryRow(ctx, `SELECT coalesce(sum(greatest(s.eur_micros - coalesce((SELECT sum(x.eur_micros) FROM spend x WHERE x.task = s.task AND x.unit <> 'task'), 0), 0)), 0)
+			FROM spend s JOIN tasks t ON t.id = s.task JOIN tasks w ON w.id = t.record->>'wake_task'
+			WHERE w.tenant = $1 AND w.record->>'wake_inbox' = $2 AND s.unit = 'task' AND t.state IN ('submitted', 'working')`,
+			tv.Name, rt.On.Inbox).Scan(&reserved); err != nil {
 			return err
 		}
 		if used+reserved+estimate > money.FromEUR(*eur) {

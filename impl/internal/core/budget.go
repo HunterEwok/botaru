@@ -76,7 +76,7 @@ type spendFilter struct {
 
 // windowUsed sums the spend of a window: usage lines and call reserves in full, and of each
 // task reserve only the part its tree has not spent yet, because the calls of a tree draw on
-// its task reserve. The task reserve of ownRoot is left out: the caller's call is that draw.
+// its task reserve; a wake-up that joined the tree draws on its own reserve, not the root's. The task reserve of ownRoot is left out: the caller's call is that draw.
 // A task reserve has no role, so a window of one role counts only the calls of that role. The
 // reserve of a task that waits for the provider is kept but not counted: the reserve is taken
 // again before its call (BUD-4, GW-2). An estimated line counts as zero once a reconciliation
@@ -88,7 +88,9 @@ func windowUsed(ctx context.Context, tx pgx.Tx, tenant string, f spendFilter, fr
 			AND ($3 = '' OR subject = $3) AND ($5 = '' OR line = $5) AND ($6 = '' OR role = $6))
 		SELECT coalesce((SELECT sum(CASE WHEN state = 'estimated' AND (reconciled_at IS NOT NULL OR released_at IS NOT NULL) THEN 0
 				ELSE eur_micros + coalesce(correction_eur_micros, 0) END) FROM w WHERE unit <> 'task'), 0)
-			+ coalesce((SELECT sum(greatest(r.eur_micros - coalesce((SELECT sum(s.eur_micros) FROM spend s WHERE s.root = r.root AND s.unit <> 'task' AND s.time >= r.time), 0), 0))
+			+ coalesce((SELECT sum(greatest(r.eur_micros - coalesce((SELECT sum(s.eur_micros) FROM spend s LEFT JOIN tasks u ON u.id = s.task
+					WHERE s.root = r.root AND s.unit <> 'task' AND s.time >= r.time
+					AND (u.record->>'wake_task') IS NOT DISTINCT FROM (SELECT x.record->>'wake_task' FROM tasks x WHERE x.id = r.task)), 0), 0))
 				FROM w r WHERE r.unit = 'task' AND r.root <> $4
 				AND NOT EXISTS (SELECT 1 FROM tasks t WHERE t.id = r.task AND t.state = 'submitted' AND t.reason IN ('provider_unavailable', 'provider_quota'))), 0)`,
 		tenant, from, f.subject, ownRoot, f.line, f.role).Scan(&used)

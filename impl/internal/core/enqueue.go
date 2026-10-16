@@ -555,6 +555,9 @@ func (c *Core) enqueue(ctx context.Context, tx pgx.Tx, now time.Time, cat *Catal
 		if ch.Trace != "" {
 			record["trace"] = ch.Trace
 		}
+		if ch.WakeTask != "" {
+			record["wake_task"] = ch.WakeTask
+		}
 		// The tree draws on the one limit pinned in its root (PRM-6, BUD-1).
 		var rootType string
 		var rootRec []byte
@@ -565,6 +568,9 @@ func (c *Core) enqueue(ctx context.Context, tx pgx.Tx, now time.Time, cat *Catal
 	}
 	if w := in.Wake; w != nil {
 		record["wake_inbox"], record["depth"] = w.Inbox, w.Depth
+		// The wake-up heads a subtree of its own: the spend of its children counts in its
+		// money (MSG-11).
+		record["wake_task"] = id
 		// The wake-up joins the tree its oldest entry came from: the tree's limits and budget
 		// stay the ones of its root (MSG-12, BUD-1, PRM-6).
 		if w.Correlation != "" {
@@ -719,14 +725,17 @@ func (c *Core) validateParams(tt manifest.TaskType, body map[string]any) error {
 }
 
 // taskEstimate is the enqueue estimate of a task (BUD-14): the 90th percentile of the price of
-// the whole tree of the finished tasks of the type in the tenant over the last 30 days, and
+// the whole tree of the finished tasks of the type in the tenant over the last 30 days (of a
+// wake-up its own subtree, and of a root its tree without the wake-ups that joined it), and
 // without such tasks the worst case, the type's tree budget (GW-6). A type without a tree
 // budget and without history has no estimate; P4 still reserves every call (BUD-2).
 func taskEstimate(ctx context.Context, tx pgx.Tx, now time.Time, tenant, typ string, tt manifest.TaskType) (int64, error) {
 	var n int
 	var p90 float64
 	err := tx.QueryRow(ctx, `SELECT count(*), coalesce(percentile_cont(0.9) WITHIN GROUP (ORDER BY cost), 0) FROM (
-		SELECT (SELECT coalesce(sum(s.eur_micros), 0) FROM spend s WHERE s.root = t.id AND s.unit <> 'task') AS cost
+		SELECT (SELECT coalesce(sum(s.eur_micros), 0) FROM spend s LEFT JOIN tasks u ON u.id = s.task
+			WHERE s.unit <> 'task' AND CASE WHEN t.record ? 'wake_inbox' THEN u.record->>'wake_task' = t.id
+				ELSE s.root = t.id AND (u.record->>'wake_task') IS NULL END) AS cost
 		FROM tasks t WHERE t.tenant = $1 AND t.type = $2 AND t.state IN ('completed', 'failed') AND t.updated_at >= $3) x`,
 		tenant, typ, now.Add(-30*24*time.Hour)).Scan(&n, &p90)
 	if err != nil {
@@ -784,11 +793,12 @@ func (c *Core) wakeShare(ctx context.Context, tx pgx.Tx, now time.Time, tv *Tena
 	}
 	var wakes int64
 	// Usage lines in full, and of an open wake-up's reserve the part it has not spent yet.
-	if err := tx.QueryRow(ctx, `SELECT coalesce(sum(CASE WHEN s.unit <> 'task' THEN s.eur_micros
+	// The spend of a wake-up's whole subtree counts, its children's too.
+	if err := tx.QueryRow(ctx, `SELECT coalesce(sum(CASE WHEN s.unit <> 'task' THEN CASE WHEN s.time >= $2 THEN s.eur_micros ELSE 0 END
 			WHEN t.state IN ('submitted', 'working') THEN greatest(s.eur_micros - coalesce((SELECT sum(x.eur_micros) FROM spend x WHERE x.task = s.task AND x.unit <> 'task'), 0), 0)
 			ELSE 0 END), 0)
-		FROM spend s JOIN tasks t ON t.id = s.task
-		WHERE t.tenant = $1 AND t.created_at >= $2 AND t.record->'wake_subjects' ? $3`, tv.Name, day, sub).Scan(&wakes); err != nil {
+		FROM spend s JOIN tasks t ON t.id = s.task JOIN tasks w ON w.id = t.record->>'wake_task'
+		WHERE w.tenant = $1 AND (s.time >= $2 OR t.state IN ('submitted', 'working')) AND w.record->'wake_subjects' ? $3`, tv.Name, day, sub).Scan(&wakes); err != nil {
 		return nil, err
 	}
 	if own+wakes+estimate > money.FromEUR(*personal) {

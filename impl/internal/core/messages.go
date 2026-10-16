@@ -656,11 +656,13 @@ func (c *Core) sendMessage(ctx context.Context, tx pgx.Tx, now time.Time, cat *C
 		}
 		// A hold or a full inbox may have discarded it, or refused every copy of an all
 		// delivery: the audit says what happened.
-		err := tx.QueryRow(ctx, `SELECT state FROM messages WHERE id = $1`, id).Scan(&state)
-		if errors.Is(err, pgx.ErrNoRows) {
-			state = "discarded"
-		} else if err != nil {
+		// The copies made are the recipients the message reached.
+		var made int
+		if err := tx.QueryRow(ctx, `SELECT count(*), coalesce(min(state), 'discarded') FROM messages WHERE id = $1 AND state <> 'discarded'`, id).Scan(&made, &state); err != nil {
 			return nil, nil, err
+		}
+		if recipients != nil && *recipients > made {
+			recipients = &made
 		}
 	}
 	hash, _ := jcs.Hash(fields)

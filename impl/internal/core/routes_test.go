@@ -243,7 +243,10 @@ func TestWakeShare(t *testing.T) {
 	ctx := context.Background()
 	b := newRouteBench(t)
 	if _, err := b.c.st.Pool.Exec(ctx, `INSERT INTO tasks (id, tenant, type, state, initiator, priority_class, idempotency_key, body_hash, body, record, deadline_at, created_at, updated_at)
-		VALUES ('t_wake', 'demo', 'lead.review.v1', 'completed', 'system', 1, 'old-wake', 'h', '{}', jsonb_build_object('root', 't_wake', 'wake_subjects', jsonb_build_array($1::text)), now(), now(), now())`, b.alice); err != nil {
+		VALUES ('t_wake', 'demo', 'lead.review.v1', 'completed', 'system', 1, 'old-wake', 'h', '{}',
+			jsonb_build_object('root', 't_other', 'wake_inbox', 'role:lead', 'wake_task', 't_wake', 'wake_subjects', jsonb_build_array($1::text)), now(), now(), now()),
+		('t_wchild', 'demo', 'hello.greet.v1', 'completed', 'system', 1, 'old-wake-child', 'h', '{}',
+			'{"root": "t_other", "parent": "t_wake", "wake_task": "t_wake"}', now(), now(), now())`, b.alice); err != nil {
 		t.Fatal(err)
 	}
 	cat, err := b.c.Catalog(ctx)
@@ -268,12 +271,21 @@ func TestWakeShare(t *testing.T) {
 	if p := share(); p != nil {
 		t.Fatalf("an unspent day refused: %v", p)
 	}
+	// The spend of a child of the wake-up counts as the wake-up's, in the tree it joined.
 	if _, err := b.c.st.Pool.Exec(ctx, `INSERT INTO spend (id, tenant, task, root, subject, line, purpose, unit, state, eur_micros, time)
-		VALUES ('sp_wake', 'demo', 't_wake', 't_wake', 'system', 'work', 'work', 'tokens', 'committed', 2000000, now())`); err != nil {
+		VALUES ('sp_wake', 'demo', 't_wchild', 't_other', 'system', 'work', 'work', 'tokens', 'committed', 2000000, now())`); err != nil {
 		t.Fatal(err)
 	}
 	if p := share(); p == nil || p.Reason != "budget_exhausted" {
 		t.Fatalf("the wake-ups of the day passed: %v", p)
+	}
+	// The estimate of the type is the price of the wake-up's own subtree (BUD-14).
+	var est int64
+	if err := b.c.tx(ctx, func(tx pgx.Tx, now time.Time) error {
+		est, err = taskEstimate(ctx, tx, now, "demo", "lead.review.v1", cat.TaskTypes["lead.review.v1"])
+		return err
+	}); err != nil || est != 2000000 {
+		t.Fatalf("estimate %d %v", est, err)
 	}
 }
 

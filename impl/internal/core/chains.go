@@ -50,6 +50,9 @@ type chainLink struct {
 	ParentPriority int
 	// CoInitiators are the initiators of what the tree read (MSG-7).
 	CoInitiators []string
+	// WakeTask is the wake-up whose subtree the task is in: its spend counts in that wake-up's
+	// money (MSG-11).
+	WakeTask string
 }
 
 // treeRecord is the part of a task record a chain reads.
@@ -59,6 +62,7 @@ type treeRecord struct {
 	Depth         int      `json:"depth"`
 	DepthFloor    int      `json:"depth_floor"`
 	CoInitiators  []string `json:"co_initiators"`
+	WakeTask      string   `json:"wake_task"`
 	MaxTier       int      `json:"max_tier"`
 	DataMark      string   `json:"data_mark"`
 	UntrustedSeen bool     `json:"untrusted_seen"`
@@ -249,7 +253,7 @@ func (c *Core) enqueueChild(ctx context.Context, tx pgx.Tx, now time.Time, cat *
 			// A tree that read a message is at least as deep as its hops (MSG-11).
 			Parent: g.Task, Root: parent.Root, Depth: max(parent.Depth, parent.DepthFloor) + 1, Mark: parent.DataMark, MaxTier: parent.MaxTier,
 			Untrusted: parent.UntrustedSeen, Conversation: parent.Conversation, Trace: parent.Trace,
-			ParentPriority: priorityOf(ctx, tx, g.Task), CoInitiators: parent.CoInitiators,
+			ParentPriority: priorityOf(ctx, tx, g.Task), CoInitiators: parent.CoInitiators, WakeTask: parent.WakeTask,
 		},
 	})
 	if err != nil {
@@ -386,7 +390,7 @@ func (c *Core) replyContinuation(ctx context.Context, tx pgx.Tx, now time.Time, 
 		Chain: &chainLink{
 			Parent: src.Parent, Root: src.Root, Depth: src.Depth + 1, Mark: c.higherMark(parent.DataMark, src.DataMark),
 			MaxTier: parent.MaxTier, Untrusted: parent.UntrustedSeen || src.UntrustedSeen, Conversation: src.Conversation, Trace: src.Trace,
-			ParentPriority: priorityOf(ctx, tx, src.Parent),
+			ParentPriority: priorityOf(ctx, tx, src.Parent), WakeTask: src.WakeTask,
 		},
 	})
 	if err != nil {
