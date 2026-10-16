@@ -330,8 +330,7 @@ func TestKNW1TenantScopeClassPersonal(t *testing.T) {
 	if err := b.c.st.Pool.QueryRow(ctx, `SELECT id FROM corpus_documents WHERE tenant = 'demo2'`).Scan(&doc2); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := b.c.st.Pool.Exec(ctx, `INSERT INTO corpus_fragments (doc, n, tenant, corpus, body) VALUES ($1, 0, 'demo2', 'runbooks', $2);
-		`, doc2, "Secret of demo2: "+canary); err != nil {
+	if _, err := b.c.st.Pool.Exec(ctx, `INSERT INTO corpus_fragments (doc, n, tenant, corpus, body, words) VALUES ($1, 0, 'demo2', 'runbooks', $2, to_tsvector('simple', $2))`, doc2, "Secret of demo2: "+canary); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := b.c.st.Pool.Exec(ctx, `UPDATE corpus_documents SET state = 'indexed' WHERE id = $1`, doc2); err != nil {

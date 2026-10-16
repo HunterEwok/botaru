@@ -613,7 +613,8 @@ func (c *Core) KBIndexPut(ctx context.Context, w *Worker, lease string, req KBIn
 			return err
 		}
 		for _, f := range req.Fragments {
-			if _, err := tx.Exec(ctx, `INSERT INTO corpus_fragments (doc, n, tenant, corpus, title, body) VALUES ($1, $2, $3, $4, $5, $6)`,
+			if _, err := tx.Exec(ctx, `INSERT INTO corpus_fragments (doc, n, tenant, corpus, title, body, words)
+				VALUES ($1, $2, $3, $4, $5, $6, to_tsvector('simple', coalesce($5, '') || ' ' || $6))`,
 				id, f.N, tenant, corpus, nullable(f.Title), f.Text); err != nil {
 				return err
 			}

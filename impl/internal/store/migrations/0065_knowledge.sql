@@ -39,7 +39,9 @@ CREATE TABLE corpus_fragments (
     corpus  text NOT NULL,
     title   text,
     body    text NOT NULL,
-    words   tsvector GENERATED ALWAYS AS (to_tsvector('simple', coalesce(title, '') || ' ' || body)) STORED,
+    -- to_tsvector('simple', title || ' ' || body), written with the row (a plain column, so a
+    -- store copy restores it as it is).
+    words   tsvector NOT NULL,
     PRIMARY KEY (doc, n)
 );
 CREATE INDEX corpus_fragments_words ON corpus_fragments USING gin (words);
