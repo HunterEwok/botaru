@@ -36,6 +36,11 @@ func (c *Core) campaignFullList(ctx context.Context, w *Worker, ob OnBehalf, req
 		if err != nil {
 			return err
 		}
+		// The list shows every item with its arguments: only a person who may decide the
+		// campaign and read its mark gets it, as rights stand at the press.
+		if !mayDecideCampaign(press.tv, press.groups, cmp) || cmp.Rec.DataMark != "" && !hasData(press.tv, press.groups, cmp.Rec.DataMark) {
+			return refuse("forbidden", "the person may not decide this campaign")
+		}
 		out = &DecideResult{SubjectKind: "campaign", ID: cmp.ID, Decision: req.Decision, State: cmp.State}
 		n, err := campaignCount(ctx, tx, cmp.ID)
 		if err != nil {

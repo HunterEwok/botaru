@@ -6,6 +6,9 @@ import (
 	"context"
 	"strings"
 	"testing"
+	"time"
+
+	"github.com/jackc/pgx/v5"
 )
 
 // scriptProposalEdit gives the hello role scripts with propose: in_proposal over its own
@@ -71,8 +74,35 @@ func TestProposalScriptChange(t *testing.T) {
 		t.Fatalf("realization %v", rec["realization"])
 	}
 	run, states := b.run(t, runID)
-	if run.State != "proposed" || run.Initiator != b.alice || states != "pending" {
-		t.Fatalf("run %s %s %s", run.State, run.Initiator, states)
+	if run.State != "proposed" || run.Initiator != b.alice || states != "pending" || run.Rec.Assignment != "" {
+		t.Fatalf("run %s %s %s %q", run.State, run.Initiator, states, run.Rec.Assignment)
+	}
+	var key string
+	if err := b.c.st.Pool.QueryRow(ctx, `SELECT idempotency_key FROM script_runs WHERE id = $1`, runID).Scan(&key); err != nil || !strings.HasPrefix(key, "system:script:proposal:"+id+":") {
+		t.Fatalf("run key %q %v", key, err)
+	}
+	// A proposal whose analysis task is gone is refused cleanly at "Accept".
+	if err := b.c.tx(ctx, func(tx pgx.Tx, now time.Time) error {
+		cat, err := b.c.Catalog(ctx)
+		if err != nil {
+			return err
+		}
+		pr, err := loadProposal(ctx, tx, id)
+		if err != nil {
+			return err
+		}
+		pr.Rec["origin"].(map[string]any)["task"] = "t_01J9Z3M2Q8YB6V4N7T5K0C2D1E"
+		var groups []string
+		if err := tx.QueryRow(ctx, `SELECT coalesce(array_agg(grp), '{}') FROM memberships WHERE principal = $1 AND state = 'active'`, b.alice).Scan(&groups); err != nil {
+			return err
+		}
+		_, code, err := b.c.realizeScript(ctx, tx, now, cat, &cardPress{tv: cat.Tenants["demo"], principal: b.alice, groups: groups}, pr)
+		if err == nil && code != "forbidden" {
+			t.Errorf("a missing analysis task: %q", code)
+		}
+		return err
+	}); err != nil {
+		t.Fatal(err)
 	}
 	// The run card goes to the person who accepted; the run is not started without "Run".
 	sc := cardOf(t, b.drain(t), scriptConfirmCard, "direct:1001")

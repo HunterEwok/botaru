@@ -73,8 +73,17 @@ func (c *Core) approvalWaits(ctx context.Context, tx pgx.Tx, now time.Time, cat 
 		return false, nil
 	}
 	busy, err := resourceBusy(ctx, tx, a.Tenant, act, resource)
-	if err != nil || !busy {
+	if err != nil {
 		return false, err
+	}
+	// A freshly decided approval does not overtake older ones waiting for the same resource.
+	if !busy && a.State == "pending" {
+		if busy, err = c.olderWaiting(ctx, tx, cat, a, act, resource); err != nil {
+			return false, err
+		}
+	}
+	if !busy {
+		return false, nil
 	}
 	if a.State == "approved" {
 		return true, nil
@@ -124,13 +133,51 @@ func (c *Core) releaseWaitingApprovals(ctx context.Context, cat *Catalog) error 
 				return err
 			}
 			tv := cat.Tenants[a.Tenant]
-			if a.State != "approved" || tv == nil {
+			if a.State != "approved" || a.Reason != "resource_busy" || tv == nil {
 				return nil
+			}
+			// The holds of the approval stand while it waits (HLD-3, HLD-8): no_action cancels
+			// it, pause_action keeps it waiting.
+			scopes, err := c.approvalHoldScopes(ctx, tx, cat, a)
+			if err != nil {
+				return err
+			}
+			if held, err := heldBy(ctx, tx, now, []string{"no_action"}, scopes...); err != nil {
+				return err
+			} else if held != "" {
+				return c.closeApproval(ctx, tx, now, a, "canceled", "held")
+			}
+			if held, err := heldBy(ctx, tx, now, []string{"pause_action"}, scopes...); err != nil || held != "" {
+				return err
 			}
 			return c.executeApproval(ctx, tx, now, cat, tv, a)
 		}); err != nil {
-			return err
+			if ctx.Err() != nil {
+				return ctx.Err()
+			}
+			// One bad row does not stop the others (log and go on).
+			c.log.Error("releasing a waiting approval failed", "tenant", x.tenant, "approval", x.id, "error", err)
 		}
 	}
 	return nil
+}
+
+// olderWaiting says whether another approval of the same tool already waits for the resource.
+func (c *Core) olderWaiting(ctx context.Context, tx pgx.Tx, cat *Catalog, a *approvalRow, act manifest.Action, resource string) (bool, error) {
+	rows, err := tx.Query(ctx, `SELECT `+approvalColumns+` FROM approvals WHERE tenant = $1 AND id <> $2 AND state = 'approved' AND reason = 'resource_busy'
+		ORDER BY decided_at NULLS LAST, id LIMIT 500`, a.Tenant, a.ID)
+	if err != nil {
+		return false, err
+	}
+	others, err := pgx.CollectRows(rows, func(r pgx.CollectableRow) (*approvalRow, error) { return scanApproval(r) })
+	if err != nil {
+		return false, err
+	}
+	for _, o := range others {
+		oa, ok := c.actionOf(cat, o.Action)
+		if ok && oa.Executor.Plugin == act.Executor.Plugin && oa.Executor.Tool == act.Executor.Tool && c.approvalResource(cat, o, oa) == resource {
+			return true, nil
+		}
+	}
+	return false, nil
 }

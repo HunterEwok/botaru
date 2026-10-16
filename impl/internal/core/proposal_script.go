@@ -66,13 +66,23 @@ func (c *Core) realizeScript(ctx context.Context, tx pgx.Tx, now time.Time, cat 
 	origin := mmapAny(p.Rec["origin"])
 	g := &toolsGrant{
 		Tenant: press.tv.Name, Task: asString(origin["task"]), Role: asString(origin["role"]), Worker: asString(origin["worker"]),
-		Initiator: press.principal, InitiatorGroups: press.groups, MaxTier: 3, Mark: asString(p.Rec["data_mark"]), Purpose: "insight",
+		Initiator: press.principal, InitiatorGroups: press.groups, Mark: asString(p.Rec["data_mark"]),
 	}
 	role, ok := cat.Roles[g.Role]
-	if !ok || role.Scripts == nil || role.Scripts.Propose != "in_proposal" || b.Change.Script == nil {
+	if !ok || role.Scripts == nil || role.Scripts.Propose != "in_proposal" || b.Change.Script == nil || g.Task == "" {
 		return "", "forbidden", nil
 	}
-	acc, prob, err := c.acceptScript(ctx, tx, now, cat, g, map[string]any{"script": b.Change.Script})
+	// The run is anchored to the analysis task; one that is gone refuses the press.
+	var exists bool
+	if err := tx.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM tasks WHERE id = $1 AND tenant = $2)`, g.Task, g.Tenant).Scan(&exists); err != nil {
+		return "", "", err
+	}
+	if !exists {
+		return "", "forbidden", nil
+	}
+	// The analysis task's goal is no person's assignment: the run has none, and the step
+	// marks are computed without one.
+	acc, prob, err := c.acceptScriptAs(ctx, tx, now, cat, g, map[string]any{"script": b.Change.Script}, true)
 	if err != nil {
 		return "", "", err
 	}
@@ -82,8 +92,7 @@ func (c *Core) realizeScript(ctx context.Context, tx pgx.Tx, now time.Time, cat 
 		}
 		return "", "forbidden", nil
 	}
-	// The analysis task's goal is no assignment of the person: the run has none.
-	acc.rec.Assignment = ""
+	acc.key = "system:script:proposal:" + p.ID + ":" + acc.planHash
 	id, _, err := c.insertRun(ctx, tx, now, cat, g, acc)
 	if err != nil {
 		return "", "", err

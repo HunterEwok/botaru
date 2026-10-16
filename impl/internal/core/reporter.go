@@ -446,11 +446,20 @@ func (c *Core) snapshotOf(ctx context.Context, tx pgx.Tx, now time.Time, cat *Ca
 	if err := prows.Err(); err != nil {
 		return nil, err
 	}
-	if err := c.snapshotWorkers(ctx, tx, now, cat, tenant, f, snap); err != nil {
+	// The worker and campaign rows are computed only for a role that has those views.
+	views, err := snapshotViews(ctx, tx, cat, task)
+	if err != nil {
 		return nil, err
 	}
-	if err := c.snapshotCampaigns(ctx, tx, cat, tenant, campaign, from, f, snap); err != nil {
-		return nil, err
+	if slices.Contains(views, statusWorkersName) {
+		if err := c.snapshotWorkers(ctx, tx, now, cat, tenant, f, snap); err != nil {
+			return nil, err
+		}
+	}
+	if slices.Contains(views, statusCampaignsName) {
+		if err := c.snapshotCampaigns(ctx, tx, cat, tenant, campaign, root, from, f, snap); err != nil {
+			return nil, err
+		}
 	}
 	raw, err = json.Marshal(snap)
 	if err != nil {

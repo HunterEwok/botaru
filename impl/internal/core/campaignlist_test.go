@@ -93,4 +93,13 @@ func TestCampaignFullList(t *testing.T) {
 	_, err = b.c.Decide(ctx, b.channel, press("telegram:1002", "direct:1002", small.external),
 		DecideRequest{SubjectKind: "campaign", ID: small3.ID, Nonce: small3.Nonce, Decision: "full_list"})
 	wantReason(t, err, "input_schema_invalid")
+	// A person who lost the right to decide the campaign gets no list.
+	if _, err := b.c.st.Pool.Exec(ctx, `DELETE FROM memberships WHERE principal <> $1`, b.alice); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := b.c.st.Pool.Exec(ctx, `DELETE FROM deliveries WHERE kind = $1`, campaignListKind); err != nil {
+		t.Fatal(err)
+	}
+	_, err = b.c.Decide(ctx, b.channel, press("telegram:1002", "direct:1002", big.external), list)
+	wantReason(t, err, "forbidden")
 }

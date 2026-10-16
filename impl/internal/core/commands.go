@@ -387,7 +387,7 @@ func (c *Core) teamCommand(ctx context.Context, tx pgx.Tx, now time.Time, pc per
 		lines = append(lines, c.texts.Render(pc.locale, "cmd.team.row", map[string]any{"title": tt.Title, "done": r.done, "failed": r.failed, "waiting": r.waiting}))
 	}
 	var pending int
-	if err := tx.QueryRow(ctx, `SELECT count(*) FROM approvals WHERE tenant = $1 AND state = 'pending' AND initiator IN
+	if err := tx.QueryRow(ctx, `SELECT count(*) FROM approvals WHERE tenant = $1 AND state IN ('pending', 'approved') AND initiator IN
 		(SELECT principal FROM memberships WHERE tenant = $1 AND grp = $2 AND state = 'active')`, pc.tv.Name, group).Scan(&pending); err != nil {
 		return nil, err
 	}

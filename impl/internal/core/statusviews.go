@@ -11,6 +11,8 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
+
+	"github.com/HunterEwok/botaru/impl/internal/spec"
 )
 
 // The views status.workers and status.campaigns (PRF-1, REP-8, STA-3). Like status.tasks they
@@ -104,7 +106,9 @@ func (c *Core) snapshotWorkers(ctx context.Context, tx pgx.Tx, now time.Time, ca
 			return err
 		}
 		row := map[string]any{"worker": strings.ToLower(r.id), "role": r.role, "observed": observed, "reported": nil, "mismatch": nil}
-		if rep != nil {
+		// The self-report column and the mismatch code are of STA-3 (v0.2, deferred from the
+		// claim): before the claim reaches v0.2 the row has the core observation only.
+		if rep != nil && claimsV02() {
 			row["reported"] = map[string]any{"state": rep.phase, "source": "state_message", "at": fmtTime(rep.at)}
 			waiting, err := workWaits(ctx, tx, now, cat, tenant, r.role)
 			if err != nil {
@@ -214,14 +218,16 @@ func samePlugins(a, b []string) bool {
 }
 
 // snapshotCampaigns adds the campaigns of the window to a snapshot: a campaign changed in the
-// window or still live, with the scope of a campaign report only that campaign. A campaign
+// window or still live, with the scope of a campaign report only that campaign and with the
+// scope of a root only the campaigns of that tree. A campaign
 // every principal of the audience may not read (its item type and mark) is left out
 // uncounted; one above the mark counts only in hidden (REP-7, PRM-9).
-func (c *Core) snapshotCampaigns(ctx context.Context, tx pgx.Tx, cat *Catalog, tenant, only string, from time.Time, f *viewFilter, snap *viewSnapshot) error {
+func (c *Core) snapshotCampaigns(ctx context.Context, tx pgx.Tx, cat *Catalog, tenant, only, root string, from time.Time, f *viewFilter, snap *viewSnapshot) error {
 	snap.Campaigns = []map[string]any{}
 	rows, err := tx.Query(ctx, `SELECT id, state, coalesce(pause_reason, ''), coalesce(stop_reason, ''), record, updated_at FROM campaigns
 		WHERE tenant = $1 AND (updated_at >= $2 OR state IN ('proposed', 'running', 'paused', 'stopping')) AND ($3 = '' OR id = $3)
-		ORDER BY updated_at DESC, id LIMIT 1000`, tenant, from, only)
+		AND ($4 = '' OR record->>'root' = $4)
+		ORDER BY updated_at DESC, id LIMIT 1000`, tenant, from, only, root)
 	if err != nil {
 		return err
 	}
@@ -283,4 +289,21 @@ func (c *Core) snapshotCampaigns(ctx context.Context, tx pgx.Tx, cat *Catalog, t
 		snap.Campaigns = append(snap.Campaigns, row)
 	}
 	return nil
+}
+
+// claimsV02 says whether the effective claim reaches v0.2, for v0.2 behaviour deferred from
+// the claim (STA-3).
+func claimsV02() bool { return !spec.VersionLater("v0.2", spec.Effective()) }
+
+// snapshotViews are the status views of the role of the task's latest attempt.
+func snapshotViews(ctx context.Context, tx pgx.Tx, cat *Catalog, task string) ([]string, error) {
+	var role string
+	err := tx.QueryRow(ctx, `SELECT w.role FROM leases l JOIN workers w ON w.id = l.worker_id WHERE l.work_id = $1 ORDER BY l.lease_no DESC LIMIT 1`, task).Scan(&role)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return cat.Roles[role].Views, nil
 }

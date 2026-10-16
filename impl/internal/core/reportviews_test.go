@@ -42,6 +42,8 @@ func viewOf(t *testing.T, b *bench, att *WorkItem, name string) map[string]any {
 // kind, state and item counts, one above the mark only counts in hidden.
 func TestStatusWorkersCampaigns(t *testing.T) {
 	ctx := context.Background()
+	// The self-report column is of STA-3, which needs the v0.2 claim.
+	setClaimsV03(t, false)
 	b := newBenchWith(t, func(root string, ms []map[string]any) []map[string]any {
 		ms = reporterManifests(ms)
 		for _, m := range ms {

@@ -376,7 +376,9 @@ func (c *Core) openApproval(ctx context.Context, tx pgx.Tx, now time.Time, tv *T
 		return "", "", err
 	}
 	var existing string
-	err := tx.QueryRow(ctx, `SELECT id FROM approvals WHERE tenant = $1 AND action = $2 AND args_hash = $3 AND state = 'pending'
+	// A waiting approval of the same write counts as the same request (APR-2, ORC-12).
+	err := tx.QueryRow(ctx, `SELECT id FROM approvals WHERE tenant = $1 AND action = $2 AND args_hash = $3
+		AND (state = 'pending' OR state = 'approved' AND reason = 'resource_busy')
 		AND initiator = $4 AND coalesce(source_task, '') = $5`, a.Tenant, a.Action, a.ArgsHash, a.Initiator, a.SourceTask).Scan(&existing)
 	if err == nil {
 		return existing, "pending", nil
@@ -794,7 +796,11 @@ func (c *Core) approvalLoop(ctx context.Context) error {
 			}
 			return nil
 		}); err != nil {
-			return err
+			if ctx.Err() != nil {
+				return ctx.Err()
+			}
+			// One bad row does not stop the expiry and reminders of the others.
+			c.log.Error("an approval pass failed", "tenant", x.tenant, "approval", x.id, "error", err)
 		}
 	}
 	return nil
