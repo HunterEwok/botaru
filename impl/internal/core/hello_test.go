@@ -687,8 +687,10 @@ func TestDeleteTaskTypeWithOpenTasks(t *testing.T) {
 	if err := b.c.st.Pool.QueryRow(ctx, `SELECT type FROM tasks WHERE id = $1`, res.Task).Scan(&typ); err != nil {
 		t.Fatal(err)
 	}
-	// Without members the group may lose the type (an unknown type counts as privileged).
-	if _, err := b.c.Grant(ctx, b.op, GrantRequest{Op: "ungrant", Subject: b.alice, Group: "hello"}); err != nil {
+	// Without members the group may lose the type (an unknown type counts as privileged). An
+	// ungrant would cancel the queued task (PRM-3); a membership that ran out leaves it open
+	// until the claim checks it again.
+	if _, err := b.c.st.Pool.Exec(ctx, `UPDATE memberships SET until = botaru_now() - interval '1 second' WHERE principal = $1`, b.alice); err != nil {
 		t.Fatal(err)
 	}
 	_, err = b.c.Apply(ctx, b.op, ApplyRequest{Commit: "3333333333333333333333333333333333333333", Delete: []ApplyDelete{{Kind: "TaskType", Name: typ}}})
