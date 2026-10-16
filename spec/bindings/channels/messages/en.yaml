@@ -232,6 +232,12 @@ texts:
   cmd.incident.not_found: There is no such incident in this tenant.
   cmd.incident.conflict: The incident cannot change this way now; it closes only after it is resolved.
   cmd.incident.done: "Incident {incident} is now {state}."
+  cmd.incident.usage_v03: "Usage: /incident ack <number>, /incident close <number>, /incident dismiss <number> <reason> <details> or /incident analyse <number>."
+  cmd.incident.analyse_requested: "The analysis of incident {incident} will have a model paragraph."
+  cmd.incident.analyse_reading_off: "Reading is off in this tenant: the analysis of incident {incident} is the table only."
+  cmd.incident.analyse_recent: "An analysis of the same class and object had a model paragraph in the last 7 days; incident {incident} gets the table only."
+  cmd.incident.analyse_no_analysis: "This tenant gets no analysis after an incident, so incident {incident} has none to add a paragraph to."
+  cmd.incident.analyse_late: "The analysis of incident {incident} has already started or ended; it gets no paragraph now."
   cmd.manager.usage: "Usage: /manager [operation] <role|worker|resource|incident> <id> [your text], for example /manager drain worker w_7 it loops."
   cmd.manager.disabled: The farm manager is turned off in this tenant.
   cmd.manager.done: "The farm manager got your directive (task {task})."

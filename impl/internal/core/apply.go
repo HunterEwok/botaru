@@ -195,6 +195,7 @@ func (c *Core) applyOnce(ctx context.Context, op Operator, req ApplyRequest) (*A
 			}
 			continue
 		}
+		res.Warnings = append(res.Warnings, ignoredV03(d, v, i)...)
 		if d.Kind == "Tenant" {
 			// The id of a deleted tenant is a tombstone and is not used again (LCY-1, RET-3).
 			var dead int
