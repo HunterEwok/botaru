@@ -447,6 +447,8 @@ A farm built from the first version of this guide keeps its store, settings, sec
 7. Start the core first. It applies the new store migrations by itself at start; they keep the old records and move planned notices to the new text names.
 8. Apply the manifests again (section 7) with `-drop-unsupported`, then start the agent and the channel.
 
+A tenant that applied v0.3 fields (for example `commission.accountability` of `Governance`, `area` of `IncidentClass` or `takeover.max_eur` of `Tenant`) on a v0.1 core before this version now gets `version_unsupported` (MAN-11): apply it again with `-drop-unsupported`, or remove those fields.
+
 To go back: stop the farm, restore the store from the backup of step 2 into an empty database (`sudo -u postgres dropdb botaru`, `sudo -u postgres createdb -O botaru botaru`, `sudo -u postgres pg_restore -d botaru botaru-before-upgrade.dump`), check out the noted commit, put back the copied programs and settings, and start the core, the agent and the channel. An older core is not guaranteed to work on a store that a newer core has migrated, so never skip the restore. Go back only right after a failed upgrade: the restore drops everything the new core did since, including erasures it ran, and deliveries it made may be sent again. This is not the restore procedure of "Backups and restore" (`farmctl restore begin`), which the first version does not have.
 
 ## Troubleshooting

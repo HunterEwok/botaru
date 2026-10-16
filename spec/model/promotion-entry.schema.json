@@ -8,7 +8,8 @@
   "x-botaru-version": "v0.2",
   "x-botaru-rules": [
     "GOV-14",
-    "GOV-31"
+    "GOV-31",
+    "GOV-42"
   ],
   "type": "object",
   "required": [
@@ -68,14 +69,15 @@
             "retired",
             "wrong_candidate",
             "seated",
-            "attribution"
+            "attribution",
+            "parked"
           ]
         },
         {
           "type": "null"
         }
       ],
-      "description": "Why the entry left the queue."
+      "description": "Why the entry left the queue; from v0.3 parked when its bot left a seat for a confirmed link and was parked (GOV-42)."
     }
   }
 }

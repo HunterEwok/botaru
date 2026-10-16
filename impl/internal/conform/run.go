@@ -466,12 +466,9 @@ func (x *exec) seedBase(ctx context.Context) error {
 			if listed := x.givenGroups("human:" + p.Name); listed != nil && !listed[g] {
 				continue
 			}
-			o, err := x.p2(ctx, "demo", "grant", map[string]any{"op": "grant", "subject": p.ID, "group": g})
+			o, err := x.seedGrant(ctx, p.ID, g)
 			if err != nil {
 				return err
-			}
-			if o.Reason == "privileged_group" {
-				return errUnchecked("core: grant of the privileged group " + g + " (PRM-13)")
 			}
 			if o.Result != "ok" {
 				return fmt.Errorf("grant %s %s: %s%s", p.Name, g, o.Reason, o.why())
@@ -591,12 +588,9 @@ func (x *exec) seedPeople(ctx context.Context) error {
 			if contains(have, g) {
 				continue
 			}
-			o, err := x.p2(ctx, "demo", "grant", map[string]any{"op": "grant", "subject": id, "group": g})
+			o, err := x.seedGrant(ctx, id, g)
 			if err != nil {
 				return err
-			}
-			if o.Reason == "privileged_group" {
-				return errUnchecked("core: grant of the privileged group " + g + " (PRM-13)")
 			}
 			if o.Result != "ok" {
 				return fmt.Errorf("grant %s %s: %s%s", handle, g, o.Reason, o.why())
@@ -791,6 +785,21 @@ func (x *exec) p2(ctx context.Context, tenant, op string, body map[string]any) (
 		return nil, err
 	}
 	return problemOutcome(status, resp), nil
+}
+
+// seedGrant grants a seed group. A privileged group stays pending until the person's
+// verification code is checked (PRM-13), and the runner does not read that code from a chat
+// yet, so a case with such a seed is unchecked.
+func (x *exec) seedGrant(ctx context.Context, subject, g string) (*outcome, error) {
+	status, resp, err := x.post(ctx, x.ep.P2+"/v1/p2/grant", x.ep.Operators["demo"], map[string]any{"op": "grant", "subject": subject, "group": g})
+	if err != nil {
+		return nil, err
+	}
+	o := problemOutcome(status, resp)
+	if o.Reason == "privileged_group" || (o.Result == "ok" && str(resp["state"]) == "pending") {
+		return nil, errUnchecked("core: the verification code of the privileged group " + g + " in a seed (PRM-13)")
+	}
+	return o, nil
 }
 
 func (x *exec) p2ok(ctx context.Context, tenant, op string, body map[string]any) error {

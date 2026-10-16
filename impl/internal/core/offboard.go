@@ -41,6 +41,10 @@ func (c *Core) offboard(ctx context.Context, tx pgx.Tx, now time.Time, tv *Tenan
 	if _, err := tx.Exec(ctx, `DELETE FROM memberships WHERE tenant = $1 AND principal = $2`, tv.Name, subject); err != nil {
 		return "", 0, err
 	}
+	// The unused invitations they issued go with them (IDN-14).
+	if err := revokeInvitationsOf(ctx, tx, tv.Name, subject); err != nil {
+		return "", 0, err
+	}
 	if err := keepLeftovers(ctx, tx, now, tv.Name, subject); err != nil {
 		return "", 0, err
 	}

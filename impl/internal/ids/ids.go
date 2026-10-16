@@ -55,6 +55,8 @@ const (
 	Escalation = "esc"
 	// Notice is a notice of the farm manager with feedback buttons (MGR-52, MGR-53).
 	Notice = "ntc"
+	// Invite is an invitation into groups (PRM-7).
+	Invite = "inv"
 )
 
 var (

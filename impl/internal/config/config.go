@@ -42,10 +42,12 @@ type Core struct {
 	TestListen    string `yaml:"test_listen"`
 	TestKeySHA256 string `yaml:"test_key_sha256"`
 	// TextsDir holds extra locales of the code text catalog (<locale>.yaml).
-	TextsDir         string             `yaml:"texts_dir"`
-	Operators        []api.OperatorCred `yaml:"operators"`
-	HealthKeysSHA256 []string           `yaml:"health_keys_sha256"`
-	ReportKeysSHA256 []string           `yaml:"report_keys_sha256"`
+	TextsDir  string             `yaml:"texts_dir"`
+	Operators []api.OperatorCred `yaml:"operators"`
+	// Programs are the keys of external programs by hash, tenant and key id (D-47, IDN-4).
+	Programs         []api.ProgramCred `yaml:"programs"`
+	HealthKeysSHA256 []string          `yaml:"health_keys_sha256"`
+	ReportKeysSHA256 []string          `yaml:"report_keys_sha256"`
 	Providers        map[string]struct {
 		Binding string `yaml:"binding"`
 		BaseURL string `yaml:"base_url"`

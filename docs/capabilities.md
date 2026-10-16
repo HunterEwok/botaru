@@ -101,7 +101,7 @@ External systems send their own formats with free text, so input from outside is
 
 An external source can produce nothing outside `ext.*` ([ING-4](../conformance/rules.md#ING-4)); a farm alarm from it comes only from a `job` that rechecks the condition in code (INJ-7). A new file is not a special mechanism: a scheduled `job` watches a catalog folder and publishes `data.arrived.v1` with the `file_ref`.
 
-**Connecting a source**, a recipe: an E1 driver with this system's authenticity check and a binding note in `spec/bindings/channels/`; a source manifest with authentication, limits, mapping and event name; a `service` principal `hook:<source>`; a route to a `system-ops` type; the fixture "annotation with an instruction", whose text appears neither in event data nor in a goal.
+**Connecting a source**, a recipe: an E1 driver with this system's authenticity check and a binding note in `spec/bindings/channels/` (the reference is `webhook.md`: Standard Webhooks signatures or a token over TLS, example `examples/tenants/demo/channels-ingress.yaml`); a source manifest with authentication, limits, mapping and event name; a `service` principal `hook:<source>`; a route to a `system-ops` type; the fixture "annotation with an instruction", whose text appears neither in event data nor in a goal.
 
 ### Versions
 

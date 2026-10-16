@@ -96,7 +96,7 @@ func TestAhead(t *testing.T) {
 	s := load(t)
 	saved := Ahead
 	defer func() { Ahead = saved }()
-	Ahead = map[string][]string{"Schedule": {"/spec/locale"}, "Catalog": {"/spec/hosts/*/maintenance_hold"}}
+	Ahead = map[string][]AheadField{"Schedule": fields("v0.2", "/spec/locale"), "Catalog": fields("v0.2", "/spec/hosts/*/maintenance_hold")}
 	m := map[string]any{
 		"apiVersion": "botaru/v1alpha1", "kind": "Schedule",
 		"metadata": map[string]any{"name": "nightly", "tenant": "demo"},
@@ -109,5 +109,29 @@ func TestAhead(t *testing.T) {
 		"spec": map[string]any{"hosts": []any{map[string]any{"name": "web1", "maintenance_hold": true}}}}
 	if got, _ := s.Unsupported(m); len(got) != 0 {
 		t.Fatalf("catalog: %v", got)
+	}
+}
+
+// A v0.3 field of Ahead passes apply only while the effective claim reaches v0.3, because its
+// behaviour runs only under that claim; a v0.1 claim refuses it (MAN-11).
+func TestAheadByVersion(t *testing.T) {
+	s := load(t)
+	m := func() map[string]any {
+		return map[string]any{"apiVersion": "botaru/v1alpha1", "kind": "IncidentClass", "metadata": map[string]any{"name": "disk_full"},
+			"spec": map[string]any{"title": "Disk full", "severity": "sev1", "problem_codes": []any{"disk_growth"},
+				"detect": map[string]any{"alarm": "alarm.disk.free.low.v1"}, "subject": map[string]any{"kind": "resource"}}}
+	}
+	prev := SetClaimOverride("")
+	defer SetClaimOverride(prev)
+	if got, _ := s.Unsupported(m()); !slices.Equal(got, []string{"/spec/problem_codes"}) {
+		t.Fatalf("v0.1 claim: %v", got)
+	}
+	SetClaimOverride("v0.3")
+	if got, _ := s.Unsupported(m()); len(got) != 0 {
+		t.Fatalf("v0.3 claim: %v", got)
+	}
+	SetClaimOverride("v0.2")
+	if got, _ := s.Unsupported(m()); len(got) != 1 {
+		t.Fatalf("v0.2 claim: %v", got)
 	}
 }

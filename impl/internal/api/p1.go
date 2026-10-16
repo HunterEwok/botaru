@@ -54,6 +54,10 @@ func (s *Server) p1(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, out)
 		return
 	}
+	// An external program authenticates with its own key (D-47).
+	if s.programCall(ctx, w, r, op, info) {
+		return
+	}
 	wk, err := s.c.AuthenticateWorker(ctx, bearer(r))
 	if err != nil {
 		s.fail(w, err)
@@ -305,6 +309,12 @@ func (s *Server) p1(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		out, err = s.c.MsgAck(ctx, wk, lease, req, op == "msg.nack")
+		if err != nil {
+			s.fail(w, err)
+			return
+		}
+	case "enqueue", "cancel", "task.get", "campaign.propose":
+		out, err = s.workerTaskOp(ctx, wk, lease, op, m)
 		if err != nil {
 			s.fail(w, err)
 			return

@@ -455,7 +455,8 @@ func (c *Core) parkHolder(ctx context.Context, tx pgx.Tx, now time.Time, cat *Ca
 	if err := c.offerFacts(ctx, tx, now, cat, b, "", s.ID, now.Add(parkedFactsFor)); err != nil {
 		return err
 	}
-	if err := c.removeEntry(ctx, tx, now, s.Tenant, b.ID, "attribution"); err != nil {
+	// Its earlier queue entry leaves with parked (GOV-42).
+	if err := c.removeEntry(ctx, tx, now, s.Tenant, b.ID, "parked"); err != nil {
 		return err
 	}
 	if err := c.govAudit(ctx, tx, now, s.Tenant, "governance.seat.parked", "bot", b.ID, "", map[string]any{"seat": s.ID, "role": b.Role, "attribution": attribution}); err != nil {

@@ -190,6 +190,12 @@ func (c *Core) AuthenticateWorker(ctx context.Context, token string) (*Worker, e
 		RETURNING id, tenant, role, kind, target, state, labels, hello, plugins, placement, host`, hashes, hashes[0]).
 		Scan(&w.ID, &w.Tenant, &w.Role, &w.Kind, &target, &w.State, &labels, &hello, &plugins, &placement, &host)
 	if errors.Is(err, pgx.ErrNoRows) {
+		// The token before a worker.rotate is valid until the end of its window (IDN-4).
+		err = c.st.Pool.QueryRow(ctx, `UPDATE workers SET last_seen = botaru_now() WHERE prev_token_hash = ANY($1) AND prev_valid_until > botaru_now()
+			RETURNING id, tenant, role, kind, target, state, labels, hello, plugins, placement, host`, hashes).
+			Scan(&w.ID, &w.Tenant, &w.Role, &w.Kind, &target, &w.State, &labels, &hello, &plugins, &placement, &host)
+	}
+	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, refuse("unauthenticated", "unknown worker token")
 	}
 	if err != nil {

@@ -1,0 +1,8 @@
+schema: spec/manifests/catalog.schema.json
+rules: [HLD-9]
+description: 'A tenant catalog that makes the role hold for incident links stricter (fewer links, a longer window) or sets one
+  part of it.'
+cases:
+  - {role_incident_hold: {links: 2, window: 180d}}
+  - {role_incident_hold: {links: 3, window: 90d}}
+  - {role_incident_hold: {window: 365d}}

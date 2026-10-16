@@ -1,4 +1,7 @@
 schema: spec/model/p2-seat-resume-request.schema.json
-rules: [GOV-22]
-description: A seat.resume request for the farm manager seat by incident that the schema accepts.
-data: {seat: farm-manager, incident: inc_01JB8M00000000000000000318}
+rules: [GOV-22, GOV-47]
+description: 'seat.resume requests for the farm manager seat that the schema accepts: by incident (up to v0.2, GOV-22) and by tenant
+  (from v0.3, GOV-47).'
+cases:
+  - {seat: farm-manager, incident: inc_01JB8M00000000000000000318}
+  - {seat: farm-manager, tenant: demo}

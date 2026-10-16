@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -52,6 +53,14 @@ func exampleManifests(t *testing.T, root string, sp *spec.Spec) []map[string]any
 			if err != nil {
 				return err
 			}
+			// A catalog resource of a profile this core does not claim (a corpus of the
+			// knowledge profile) leaves the example set with its element, so the rest of the
+			// tenant catalog still takes part in the fixtures.
+			if d.Kind == "Catalog" && dropLaterResources(d.Value, ptrs) {
+				if ptrs, err = sp.Unsupported(d.Value); err != nil {
+					return err
+				}
+			}
 			ok := true
 			for _, ptr := range ptrs {
 				if ptr == "/kind" || sp.Droppable(d.Value, ptr) != nil || !manifest.DropPointer(d.Value, ptr) {
@@ -69,6 +78,35 @@ func exampleManifests(t *testing.T, root string, sp *spec.Spec) []map[string]any
 		t.Fatal(err)
 	}
 	return out
+}
+
+// dropLaterResources removes from a Catalog the resources that a pointer of ptrs names, and
+// says whether it removed any.
+func dropLaterResources(m map[string]any, ptrs []string) bool {
+	spec, _ := m["spec"].(map[string]any)
+	list, _ := spec["resources"].([]any)
+	drop := map[int]bool{}
+	for _, ptr := range ptrs {
+		rest, ok := strings.CutPrefix(ptr, "/spec/resources/")
+		if !ok {
+			continue
+		}
+		i, err := strconv.Atoi(strings.SplitN(rest, "/", 2)[0])
+		if err == nil && i >= 0 && i < len(list) {
+			drop[i] = true
+		}
+	}
+	if len(drop) == 0 {
+		return false
+	}
+	kept := make([]any, 0, len(list))
+	for i, r := range list {
+		if !drop[i] {
+			kept = append(kept, r)
+		}
+	}
+	spec["resources"] = kept
+	return true
 }
 
 func objKey(m map[string]any) string {

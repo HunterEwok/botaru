@@ -99,9 +99,18 @@ func (c *Core) higherMark(a, b string) string {
 // childTypes are the types the attempt may enqueue as children: the role's may_enqueue,
 // without action types, that every initiator may enqueue (PRM-6, ORC-13).
 func childTypes(cat *Catalog, g *toolsGrant) []string {
+	if role, ok := cat.Roles[g.Role]; !ok || role.Profile != "manager" && !g.P1 {
+		return nil
+	}
+	return mayEnqueueTypes(cat, g)
+}
+
+// mayEnqueueTypes are the role's may_enqueue types that every initiator may enqueue, for the
+// built-in tool of a manager and for P1 enqueue under an attempt lease (PRM-6).
+func mayEnqueueTypes(cat *Catalog, g *toolsGrant) []string {
 	role, ok := cat.Roles[g.Role]
 	tv := cat.Tenants[g.Tenant]
-	if !ok || tv == nil || role.Profile != "manager" || g.Purpose != "" && g.Purpose != "work" {
+	if !ok || tv == nil || g.Purpose != "" && g.Purpose != "work" {
 		return nil
 	}
 	groups := groupClosure(tv, g.InitiatorGroups)
@@ -227,10 +236,17 @@ func (c *Core) enqueueChild(ctx context.Context, tx pgx.Tx, now time.Time, cat *
 		return childResult{}, err
 	}
 	key := "system:child:" + g.Task + ":" + hash
+	if g.ChildKey != "" {
+		// A P1 caller names its own key: the same key with another body is a conflict (IDM-1).
+		key = "system:child:" + g.Task + ":p1:" + g.ChildKey
+	}
 	// A repeat of the same call is the same child, even at the limit.
-	var existing string
-	err = tx.QueryRow(ctx, `SELECT id FROM tasks WHERE tenant = $1 AND idempotency_key = $2`, g.Tenant, key).Scan(&existing)
+	var existing, existingHash string
+	err = tx.QueryRow(ctx, `SELECT id, body_hash FROM tasks WHERE tenant = $1 AND idempotency_key = $2`, g.Tenant, key).Scan(&existing, &existingHash)
 	if err == nil {
+		if existingHash != hash {
+			return deny("idempotency_conflict")
+		}
 		return childResult{Code: "enqueued", ID: existing, Existing: true}, nil
 	}
 	if !errors.Is(err, pgx.ErrNoRows) {
