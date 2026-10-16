@@ -2087,7 +2087,7 @@ var charterFloors = []struct {
 }
 
 // lintCharterBounds checks what the schema of a charter cannot (GOV-33): a seat id declared
-// twice, the farm_manager block outside the farm charter, a duration below its default, the
+// twice, the farm_manager block outside the farm charter (by tenant or by the name farm), a duration below its default, the
 // excluded change kinds without none, and in the farm charter a decide_within above 7 days.
 func lintCharterBounds(o lintObj, f *lintFindings) {
 	seen := map[string]bool{}
@@ -2099,7 +2099,7 @@ func lintCharterBounds(o lintObj, f *lintFindings) {
 		}
 		seen[id] = true
 	}
-	if o.tenant != farmTenant && o.spec["farm_manager"] != nil {
+	if o.tenant != farmTenant && o.name != farmTenant && o.spec["farm_manager"] != nil {
 		f.add(o, "charter_farm_manager", "/farm_manager")
 	}
 	for _, fl := range charterFloors {
