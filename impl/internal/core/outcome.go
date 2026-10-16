@@ -362,17 +362,19 @@ func (c *Core) completeAttempt(ctx context.Context, tx pgx.Tx, now time.Time, w 
 	// the shadow executor writes (COM-3, COM-9).
 	if tt.Purpose == "review" {
 		var lens struct {
-			Lens string `json:"lens"`
+			Lens   string `json:"lens"`
+			Schema string `json:"review_schema"`
 		}
 		if err := json.Unmarshal(rec, &lens); err != nil {
 			return err
 		}
-		// A necessity review hands in the closed necessity output (COM-13).
+		// A necessity review hands in the closed necessity output (COM-13). From v0.3 a lens
+		// review carries its forecast: review-result.v2 (COM-15).
 		if lens.Lens == necessityLens {
 			if c.rs.validate(necessitySchema, result) != nil {
 				return refuse("output_schema_invalid", "the result is not a necessity review")
 			}
-		} else if c.spec.Validate("urn:botaru:schema:review-result:1", result) != nil || result["lens"] != lens.Lens || result["shadow"] == true {
+		} else if c.spec.Validate(reviewResultSchema(map[string]any{"review_schema": lens.Schema}), result) != nil || result["lens"] != lens.Lens || result["shadow"] == true {
 			return refuse("output_schema_invalid", "the result is not a review-result of the task's lens")
 		}
 	}

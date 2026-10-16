@@ -2079,7 +2079,10 @@ func (c *Core) lintGovernance(S *lintSet, f *lintFindings, personas personaLooku
 				f.add(o, "lens_persona_missing", fmt.Sprintf("/commission/seats/%d/lens", i))
 			}
 		}
-		refs := charterPersonas(o.spec)
+		// From v0.3 the size of a persona counts with its addenda (GOV-45).
+		v03 := c.claimsV03()
+		refs := charterPersonas(o.spec, v03)
+		sizes := map[string]int{}
 		for _, path := range slices.Sorted(mapKeys(refs)) {
 			r := refs[path]
 			if !r.pinned() {
@@ -2104,8 +2107,25 @@ func (c *Core) lintGovernance(S *lintSet, f *lintFindings, personas personaLooku
 			} else if strings.HasPrefix(path, "/positions/") {
 				position = strings.Split(path, "/")[2]
 			}
-			for _, code := range personaFindings(text, position, u) {
+			if !v03 {
+				for _, code := range personaFindings(text, position, u) {
+					f.add(o, code, path)
+				}
+				continue
+			}
+			kind := position
+			if strings.Contains(path, "/addenda/") {
+				kind = "addendum"
+			}
+			for _, code := range personaFindingsV03(text, kind, u) {
 				f.add(o, code, path)
+			}
+			key := path
+			if strings.HasPrefix(path, "/positions/") {
+				key = "/positions/" + position
+			}
+			if sizes[key] += len(text); sizes[key] > 4096 {
+				f.add(o, "persona_size", path)
 			}
 		}
 	}

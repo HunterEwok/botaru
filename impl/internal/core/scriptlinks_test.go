@@ -103,6 +103,10 @@ func TestScriptLinkRoleHold(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
+	// On a v0.3 core a confirmed script link skips the seat accounting of a link to a proposal
+	// (GOV-41) and still counts for the role (HLD-9).
+	b.c.v03.Store(true)
+	b.exec(t, `INSERT INTO governance_v03 (tenant, since, updated_at) VALUES ('demo', botaru_now(), botaru_now())`)
 	// One live incident per subject: the later ones are already closed.
 	incident := func(subject, state string) string {
 		id := ids.New(ids.Incident)

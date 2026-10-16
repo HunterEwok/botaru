@@ -1447,11 +1447,18 @@ func runHoldScopes(r *scriptRun, defs []scriptStep) []scopeRef {
 	return s
 }
 
-// runHeld is the hold that covers a run with an effect of runHoldEffects, or "".
-func runHeld(ctx context.Context, tx pgx.Tx, now time.Time, r *scriptRun) (string, error) {
+// runHeld is the hold that covers a run with an effect of runHoldEffects, or "". no_action
+// forbids only what acts, so it covers a run only when the run acts by the catalog at the check:
+// read-only scripts still run under it (HLD-9); a read fanout's campaign still pauses by itself
+// (ORC-11).
+func (c *Core) runHeld(ctx context.Context, tx pgx.Tx, now time.Time, cat *Catalog, r *scriptRun) (string, error) {
 	defs, err := parseSteps(r.Rec.Script)
 	if err != nil {
 		return "", err
+	}
+	effects := runHoldEffects
+	if !c.scriptActs(cat, defs) {
+		effects = slices.DeleteFunc(slices.Clone(runHoldEffects), func(e string) bool { return e == "no_action" })
 	}
 	scopes := runHoldScopes(r, defs)
 	// The campaigns of its fanout steps: a hold on a campaign's item type, action or role covers
@@ -1473,7 +1480,7 @@ func runHeld(ctx context.Context, tx pgx.Tx, now time.Time, r *scriptRun) (strin
 	if err := rows.Err(); err != nil {
 		return "", err
 	}
-	return heldBy(ctx, tx, now, runHoldEffects, scopes...)
+	return heldBy(ctx, tx, now, effects, scopes...)
 }
 
 // pauseHeldRuns moves the running runs of a tenant (every tenant for "") that a hold covers to
@@ -1489,6 +1496,10 @@ func (c *Core) pauseHeldRuns(ctx context.Context, tx pgx.Tx, now time.Time, tena
 		var k key
 		return k, row.Scan(&k.id, &k.tenant)
 	})
+	if err != nil || len(list) == 0 {
+		return err
+	}
+	cat, err := c.Catalog(ctx)
 	if err != nil {
 		return err
 	}
@@ -1500,7 +1511,7 @@ func (c *Core) pauseHeldRuns(ctx context.Context, tx pgx.Tx, now time.Time, tena
 		if r.State != "running" {
 			continue
 		}
-		held, err := runHeld(ctx, tx, now, r)
+		held, err := c.runHeld(ctx, tx, now, cat, r)
 		if err != nil {
 			return err
 		}
@@ -1627,7 +1638,7 @@ func (c *Core) releaseSteps(ctx context.Context, tx pgx.Tx, now time.Time, cat *
 			return nil
 		}
 		// While a hold covers the run, nothing of it is released: it pauses (SCR-10).
-		if held, err := runHeld(ctx, tx, now, r); err != nil {
+		if held, err := c.runHeld(ctx, tx, now, cat, r); err != nil {
 			return err
 		} else if held != "" {
 			return c.setRunState(ctx, tx, now, r, "paused", "held")
@@ -2799,7 +2810,7 @@ func (c *Core) resumeRun(ctx context.Context, tx pgx.Tx, now time.Time, cat *Cat
 		return deny("deadline_exceeded", "the run deadline has passed")
 	}
 	// A hold that still covers the run keeps it paused (SCR-10).
-	if held, err := runHeld(ctx, tx, now, r); err != nil {
+	if held, err := c.runHeld(ctx, tx, now, cat, r); err != nil {
 		return err
 	} else if held != "" {
 		return deny("held", "a hold covers the run")

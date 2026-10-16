@@ -264,8 +264,10 @@ func (c *Core) revertByCommit(ctx context.Context, tx pgx.Tx, now time.Time, p *
 	return c.planProposalCardUpdates(ctx, tx, now, p)
 }
 
+// guardBroken says whether a guard of the trial broke, a farm guard included: a change that
+// improved its metric but tripped a farm guard is worse (PRP-22, PRP-26).
 func guardBroken(t map[string]any) bool {
-	for _, g := range asList(t["guards"]) {
+	for _, g := range append(asList(t["guards"]), asList(t["farm_guards"])...) {
 		if mmapAny(g)["broken_at"] != nil {
 			return true
 		}

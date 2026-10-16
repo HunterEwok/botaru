@@ -18,7 +18,13 @@ import (
 const (
 	promotionCard   = "promotion_card"
 	attributionCard = "attribution_card"
+	// rejectionLinkCard asks a person whether a rejected proposal could have prevented an
+	// incident (GOV-40).
+	rejectionLinkCard = "rejection_link_card"
 )
+
+// attributionCards are the card kinds of the attribution subject.
+var attributionCards = []string{attributionCard, rejectionLinkCard, scriptLinkCard}
 
 // withinCeiling keeps the people whose data ceiling covers mark (DIG-2).
 func (c *Core) withinCeiling(ctx context.Context, tx pgx.Tx, now time.Time, tv *TenantView, people []string, mark string) ([]string, error) {
@@ -167,7 +173,7 @@ func (c *Core) govDetails(ctx context.Context, w *Worker, ob OnBehalf, req CardO
 	err = c.tx(ctx, func(tx pgx.Tx, now time.Time) error {
 		table, kinds := "governance_cases", []string{promotionCard}
 		if req.SubjectKind == "attribution" {
-			table, kinds = "attributions", []string{attributionCard, scriptLinkCard}
+			table, kinds = "attributions", attributionCards
 		}
 		var tenant string
 		var nonce *string

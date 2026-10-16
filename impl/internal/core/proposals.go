@@ -186,6 +186,11 @@ func (c *Core) createProposal(ctx context.Context, tx pgx.Tx, now time.Time, cat
 	}
 	for _, s := range subjects {
 		kind, _, _ := strings.Cut(s, ":")
+		// From v0.3 the author's own tenant is a subject too, the subject of the farm guards
+		// and of tenant incidents a rejected proposal can be linked to (PRP-26, GOV-38).
+		if c.claimsV03() && s == "tenant:"+a.Tenant {
+			continue
+		}
 		if !c.subjectOfTenant(cat, a.Tenant, kind, s) {
 			return "", rejection("forbidden_change")
 		}
@@ -266,6 +271,12 @@ func (c *Core) createProposal(ctx context.Context, tx pgx.Tx, now time.Time, cat
 	if !errors.Is(err, pgx.ErrNoRows) {
 		return fp, err
 	}
+	// From v0.3 a fingerprint the commission rejected comes back as a resubmission, no earlier
+	// than 30 days after that verdict and once per 90 days (PRP-24).
+	resub, err := c.resubmission(ctx, tx, now, a.Tenant, fp, body)
+	if err != nil {
+		return fp, err
+	}
 	// The flow limits of the role and the tenant (INS-4, PRP-5).
 	if limited, err := proposalLimited(ctx, tx, now, cat, a); err != nil {
 		return fp, err
@@ -294,6 +305,9 @@ func (c *Core) createProposal(ctx context.Context, tx pgx.Tx, now time.Time, cat
 		"state": "screened", "state_reason": nil, "body": body, "reviews": []any{}, "verdict": nil, "decision": nil,
 		"realization": nil, "trial": nil,
 		"evidence_seen": seen, "guarded": chk.Guarded, "targets": chk.Targets, "created_at": fmtTime(now),
+	}
+	if resub != nil {
+		record["resubmission"] = resub
 	}
 	recRaw, err := json.Marshal(record)
 	if err != nil {
@@ -628,4 +642,59 @@ func strAny(ss []string) []any {
 		out[i] = s
 	}
 	return out
+}
+
+const (
+	// resubmitAfter is the wait after a rejecting verdict before its fingerprint comes back, and
+	// resubmitEvery the window with at most one resubmission per fingerprint (PRP-24).
+	resubmitAfter = 30 * 24 * time.Hour
+	resubmitEvery = 90 * 24 * time.Hour
+)
+
+// resubmission marks a new proposal whose fingerprint equals that of a proposal the commission
+// dismissed or parked by score (PRP-24): from any bot, with the credit to the new author, no
+// earlier than 30 days after that verdict and at most once per fingerprint in 90 days, otherwise
+// rejected(resubmit_too_early). The mark says whether the values of the change are the same, so
+// the first round's forecasts are scored by the resubmission's trial (COM-16). Reviewers never
+// see it (COM-15). Before v0.3 nothing is marked.
+func (c *Core) resubmission(ctx context.Context, tx pgx.Tx, now time.Time, tenant, fp string, body map[string]any) (map[string]any, error) {
+	if !c.claimsV03() {
+		return nil, nil
+	}
+	var prev string
+	var verdictAt time.Time
+	var change []byte
+	err := tx.QueryRow(ctx, `SELECT id, (record->'verdict'->>'computed_at')::timestamptz, coalesce(record->'body'->'change', 'null') FROM proposals
+		WHERE tenant = $1 AND fingerprint = $2 AND record->'verdict'->>'outcome' = ANY($3) ORDER BY (record->'verdict'->>'computed_at')::timestamptz DESC, id DESC LIMIT 1`,
+		tenant, fp, rejectedVerdicts).Scan(&prev, &verdictAt, &change)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	if now.Before(verdictAt.Add(resubmitAfter)) {
+		return nil, rejection("resubmit_too_early")
+	}
+	var recent bool
+	if err := tx.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM proposals WHERE tenant = $1 AND fingerprint = $2 AND record ? 'resubmission' AND created_at > $3)`,
+		tenant, fp, now.Add(-resubmitEvery)).Scan(&recent); err != nil {
+		return nil, err
+	}
+	if recent {
+		return nil, rejection("resubmit_too_early")
+	}
+	var old any
+	if err := json.Unmarshal(change, &old); err != nil {
+		return nil, err
+	}
+	a, err := jcs.Hash(old)
+	if err != nil {
+		return nil, err
+	}
+	b, err := jcs.Hash(body["change"])
+	if err != nil {
+		return nil, err
+	}
+	return map[string]any{"of": prev, "verdict_at": fmtTime(verdictAt), "same_values": a == b}, nil
 }
