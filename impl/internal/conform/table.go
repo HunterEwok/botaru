@@ -195,7 +195,7 @@ func (r *Runner) runTable(ctx context.Context, row *tableRow) Result {
 		return Result{Case: c, Status: Failed, Detail: "test bench: " + err.Error()}
 	}
 	defer stop()
-	x := &exec{r: r, ep: ep, c: c, ids: map[string]string{}, granted: map[string][]string{}}
+	x := newExec(r, ep, c)
 	res := func(s Status, f string, a ...any) Result {
 		return Result{Case: c, Status: s, Detail: fmt.Sprintf(f, a...)}
 	}
@@ -375,8 +375,8 @@ func (x *exec) standMore(ctx context.Context, s map[string]any) (*outcome, error
 var typeName = regexp.MustCompile(`^[a-z][a-z0-9_]*(\.[a-z0-9_]+)*\.v[0-9]+$`)
 
 // exampleTypes reads the example task types a row's steps name, as task:<type> or as a bare
-// type name, without the fields this core refuses as later; the hello-bot seed has none of
-// them. An action type or a name with no example file is left to the core.
+// type name, without the fields this core refuses as later. An action type or a name with no
+// example file is left to the core.
 func exampleTypes(root string, sp *spec.Spec, c *Case) ([]map[string]any, error) {
 	names := map[string]bool{}
 	var walk func(v any)
@@ -400,6 +400,12 @@ func exampleTypes(root string, sp *spec.Spec, c *Case) ([]map[string]any, error)
 	for _, st := range c.Steps {
 		walk(map[string]any(st))
 	}
+	return loadExampleTypes(root, sp, names)
+}
+
+// loadExampleTypes reads the example task types of examples/tasktypes by name; a name without an
+// example file is left out.
+func loadExampleTypes(root string, sp *spec.Spec, names map[string]bool) ([]map[string]any, error) {
 	var paths []string
 	for n := range names {
 		p := filepath.Join(root, "examples/tasktypes", n+".yaml")

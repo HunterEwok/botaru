@@ -12,6 +12,9 @@ cases:
       metadata: {name: ops-runner}
       spec:
         profile: worker
+        worker_kind: agent
+        claims: [ops.insight.v1]
+        models: {base: base-std}
         insight:
           types: [ops.insight.v1]
           merge_window: 30m

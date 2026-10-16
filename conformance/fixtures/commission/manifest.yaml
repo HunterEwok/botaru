@@ -24,47 +24,62 @@ cases:
 - id: com-fx-11
   rules: [COM-8]
   description: A manifest declares a lens that is not in lenses.yaml, or removes a veto; apply is rejected.
-  given:
-    manifests:
-    - kind: Commission
-      metadata: {name: default, tenant: demo}
-      spec:
-        weights: {privacy: 2}
-    - kind: Commission
-      metadata: {name: default, tenant: demo}
-      spec:
-        lenses:
-        - {id: security, veto: false}
   expect: {result: rejected, stage: apply}
+  cases:
+  - id: com-fx-11-a
+    given:
+      manifest:
+        kind: Commission
+        metadata: {name: default, tenant: demo}
+        spec:
+          weights: {privacy: 2}
+  - id: com-fx-11-b
+    given:
+      manifest:
+        kind: Commission
+        metadata: {name: default, tenant: demo}
+        spec:
+          lenses:
+          - {id: security, veto: false}
 - id: com-fx-12
   rules: [COM-8]
   description: The weight of farm_manager is not set in the manifest; a weight of 4 for any lens is outside the range 1-3.
-  given:
-    manifests:
-    - kind: Commission
-      metadata: {name: default, tenant: demo}
-      spec:
-        weights: {farm_manager: 2}
-    - kind: Commission
-      metadata: {name: default, tenant: demo}
-      spec:
-        weights: {value: 4}
   expect: {result: rejected, stage: apply}
+  cases:
+  - id: com-fx-12-a
+    given:
+      manifest:
+        kind: Commission
+        metadata: {name: default, tenant: demo}
+        spec:
+          weights: {farm_manager: 2}
+  - id: com-fx-12-b
+    given:
+      manifest:
+        kind: Commission
+        metadata: {name: default, tenant: demo}
+        spec:
+          weights: {value: 4}
 - id: com-fx-13
   rules: [COM-8]
   description: A manifest that changes the order or composition of the code checks or names lens executors does not pass
     apply.
-  given:
-    manifests:
-    - kind: Commission
-      metadata: {name: default, tenant: demo}
-      spec:
-        checks: [schema, budget, evidence]
-    - kind: Commission
-      metadata: {name: default, tenant: demo}
-      spec:
-        executors: {security: reviewer-a}
   expect: {result: rejected, stage: apply}
+  cases:
+  - id: com-fx-13-a
+    given:
+      manifest:
+        kind: Commission
+        metadata: {name: default, tenant: demo}
+        spec:
+          checks: [schema, budget, evidence]
+  - id: com-fx-13-b
+    given:
+      manifest:
+        kind: Commission
+        metadata: {name: default, tenant: demo}
+        spec:
+          executors: {security: reviewer-a}
 - id: com-fx-14
   rules: [COM-9]
   description: A review with shadow true passes the review-result schema, the verdict code does not read it, and it is not shown to people or

@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -65,6 +66,10 @@ type Runner struct {
 	spec  *spec.Spec
 	seed  *seedData
 	kinds map[string]string
+	// kindSchemas are the spec schemas of the manifest kinds (kinds.yaml).
+	kindSchemas map[string]string
+	// seedTypes are the example task types the seed groups grant (seedData.typeNames).
+	seedTypes []map[string]any
 	// tables are the decision table kinds of the fixture files read so far (table.go).
 	tables map[string]*tableInfo
 }
@@ -92,12 +97,17 @@ func NewRunner(root string, claim Claim, bench Bench) (*Runner, error) {
 	if err != nil {
 		return nil, err
 	}
-	kinds := map[string]string{}
+	kinds, kindSchemas := map[string]string{}, map[string]string{}
 	for _, e := range reg.Entries {
 		kinds[str(e["id"])] = str(e["scope"])
+		kindSchemas[str(e["id"])] = str(e["schema"])
+	}
+	seedTypes, err := loadExampleTypes(root, sp, seed.typeNames())
+	if err != nil {
+		return nil, err
 	}
 	return &Runner{Root: root, Rules: rules, Claim: claim, Bench: bench, Client: &http.Client{Timeout: 30 * time.Second},
-		spec: sp, seed: seed, kinds: kinds}, nil
+		spec: sp, seed: seed, kinds: kinds, kindSchemas: kindSchemas, seedTypes: seedTypes}, nil
 }
 
 // Run selects the cases of the claim and runs them; skipped cases are reported as skipped.
@@ -133,7 +143,7 @@ func (r *Runner) runCase(ctx context.Context, c *Case) Result {
 		return Result{Case: c, Status: Failed, Detail: "test bench: " + err.Error()}
 	}
 	defer stop()
-	x := &exec{r: r, ep: ep, c: c, ids: map[string]string{}, granted: map[string][]string{}}
+	x := newExec(r, ep, c)
 	return x.run(ctx)
 }
 
@@ -308,12 +318,18 @@ func factNeeds(e map[string]any) string {
 	return ""
 }
 
+func newExec(r *Runner, ep *Endpoints, c *Case) *exec {
+	return &exec{r: r, ep: ep, c: c, ids: map[string]string{}, identities: map[string]string{}, granted: map[string][]string{}}
+}
+
 // exec is one case on one bench.
 type exec struct {
 	r   *Runner
 	ep  *Endpoints
 	c   *Case
 	ids map[string]string // training handle -> principal id
+	// identities are the channel identities of the seeded people by handle.
+	identities map[string]string
 	// granted are the groups the seed gave each person.
 	granted map[string][]string
 	start   time.Time
@@ -321,6 +337,12 @@ type exec struct {
 	// types are example task types the seed applies besides the hello-bot set: a row of the
 	// permission table names them.
 	types []map[string]any
+	// chanToken is the P1 token of the runner's channel worker once enrolled (channel.go), and
+	// updates counts the activities it submitted.
+	chanToken string
+	updates   int
+	// base is the manifest set the seed applied (seedBase).
+	base []map[string]any
 }
 
 // outcome is what one action gave, in the terms of the expectations.
@@ -333,7 +355,17 @@ type outcome struct {
 	Detail string
 	// Unimplemented is set when the core answered that this build lacks the operation.
 	Unimplemented string
+	// Violations are the places where a manifest the core refused by its kind schema breaks
+	// that schema (manifestRefusal).
+	Violations []violation
+	// Alts are the other errors of a refused apply: an expectation matches the set when it
+	// matches one of its errors.
+	Alts []*outcome
 }
+
+// violation is one place a manifest breaks its kind schema: the pointer in the apply body and
+// the schema's message.
+type violation struct{ Path, Message string }
 
 func (x *exec) run(ctx context.Context) Result {
 	res := func(s Status, f string, a ...any) Result {
@@ -401,8 +433,62 @@ func (x *exec) run(ctx context.Context) Result {
 	return res(Passed, "")
 }
 
-// compare checks an outcome against an expectation and returns the first mismatch.
+var manifestPtr = regexp.MustCompile(` at (/manifests/([0-9]+)(/\S*)?)$`)
+
+// manifestRefusal reads an input_schema_invalid refusal of P2 apply that points into a manifest:
+// the manifest fails the schema of its kind, which is the lint error schema_invalid of MAN-1
+// (ci/lint_codes.py), refused at the request schema. The wire names one place of the oneOf of
+// the wrapper schema, often a kind branch that does not apply, so the runner reads where the
+// refused manifest breaks the spec schema of its kind from the skeleton schema and keeps every
+// place, which the field fact is compared with.
+func (x *exec) manifestRefusal(o *outcome, body map[string]any) {
+	if o.Reason != "input_schema_invalid" {
+		return
+	}
+	m := manifestPtr.FindStringSubmatch(o.Detail)
+	if m == nil {
+		return
+	}
+	n, _ := strconv.Atoi(m[2])
+	list := asList(body["manifests"])
+	if n >= len(list) {
+		return
+	}
+	o.Error, o.Path = "schema_invalid", m[1]
+	mf := asMap(list[n])
+	sch := x.r.kindSchemas[str(mf["kind"])]
+	if sch == "" {
+		return
+	}
+	sp := asMap(mf["spec"])
+	if sp == nil {
+		sp = map[string]any{}
+	}
+	var ve *spec.ValidationError
+	if errors.As(x.r.spec.Validate(sch, sp), &ve) {
+		for _, v := range ve.Violations {
+			o.Violations = append(o.Violations, violation{Path: "/manifests/" + m[2] + "/spec" + v.Path, Message: v.Message})
+		}
+		o.Path = o.Violations[0].Path
+	}
+}
+
+// compare checks an outcome against an expectation and returns the first mismatch; a refused
+// apply matches when one of its errors does.
 func compare(e map[string]any, o *outcome) string {
+	d := compareOne(e, o)
+	for _, a := range o.Alts {
+		if d == "" {
+			break
+		}
+		if compareOne(e, a) == "" {
+			d = ""
+		}
+	}
+	return d
+}
+
+func compareOne(e map[string]any, o *outcome) string {
 	if v, ok := e["result"]; ok && str(v) != o.Result {
 		return fmt.Sprintf("result %s, expected %s%s", o.Result, str(v), o.why())
 	}
@@ -422,16 +508,47 @@ func compare(e map[string]any, o *outcome) string {
 	}
 	if v, ok := e["field"]; ok {
 		f := str(v)
-		if o.Path != "/"+f && !strings.HasSuffix(o.Path, "/"+f) && !strings.Contains(o.Path, "/"+f+"/") {
+		if len(o.Violations) > 0 {
+			// A manifest refused by its kind schema: every place it breaks the schema is the
+			// field, so a fixture manifest broken elsewhere as well does not check the field.
+			for _, vi := range o.Violations {
+				if !fieldAt(vi.Path, vi.Message, f) {
+					return fmt.Sprintf("the manifest breaks its schema at %s (%s) besides the field %s", vi.Path, vi.Message, f)
+				}
+			}
+		} else if !fieldAt(o.Path, "", f) {
 			return fmt.Sprintf("field at %q, expected %s%s", o.Path, f, o.why())
 		}
 	}
 	return ""
 }
 
+// fieldAt tells whether a refusal at a pointer names a field. A field is written as a name
+// (max_tokens) or as a dotted path from the manifest (spec.insight.merge_window); a manifest
+// field without spec. or metadata. is a spec field. A schema names a missing or an unexpected
+// property at the object that holds it, with the property in its message.
+func fieldAt(path, msg, f string) bool {
+	fp := "/" + strings.ReplaceAll(f, ".", "/")
+	if strings.HasPrefix(path, "/manifests/") && !strings.HasPrefix(f, "spec.") && !strings.HasPrefix(f, "metadata.") {
+		fp = "/spec" + fp
+	}
+	if strings.HasSuffix(path, fp) || strings.Contains(path, fp+"/") || (!strings.HasPrefix(path, "/manifests/") && strings.HasSuffix(path, "/"+f)) {
+		return true
+	}
+	i := strings.LastIndex(fp, "/")
+	parent, last := fp[:i], fp[i+1:]
+	return msg != "" && strings.HasSuffix(path, parent) && regexp.MustCompile(`\b`+regexp.QuoteMeta(last)+`\b`).MatchString(msg)
+}
+
 // stageMatches compares the stage of a refusal. The wire does not tell the manifest lint from
 // applying the set: both come back as errors of P2 apply, so either stage matches an apply error.
+//
+// A manifest that fails the schema of its kind is refused by the manifest's schema and by the
+// lint of apply alike (MAN-1, the lint code schema_invalid), so it matches the three stages.
 func stageMatches(want string, o *outcome) bool {
+	if o.Error == "schema_invalid" && (want == "lint" || want == "apply" || want == "schema") {
+		return true
+	}
 	switch want {
 	case "lint", "apply":
 		return o.Stage == "lint" || o.Stage == "apply"
@@ -460,6 +577,18 @@ func (x *exec) seedBase(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+	// The seed's other tenants, farm and demo2, as kind: test (seed.yaml, "Initial state").
+	more, err := manifest.ReadFiles([]string{filepath.Join(x.r.Root, "examples/tenants/farm/tenant.yaml"), filepath.Join(x.r.Root, "examples/tenants/demo2/tenant.yaml")})
+	if err != nil {
+		return err
+	}
+	for _, d := range more {
+		asMap(d.Value["spec"])["kind"] = "test"
+		ms = append(ms, d.Value)
+	}
+	if _, err := testbench.DropUnsupported(x.r.spec, ms); err != nil {
+		return err
+	}
 	ms = append(ms, x.r.seed.groupManifests("demo")...)
 	// The seed groups may request the example actions; apply refuses a permission on an action
 	// outside the set (APR-5, cap_unknown_action), so the actions come along.
@@ -468,7 +597,8 @@ func (x *exec) seedBase(ctx context.Context) error {
 		return err
 	}
 	ms = append(ms, acts...)
-	ms = append(ms, x.types...)
+	ms = append(ms, withTypes(x.r.seedTypes, x.types)...)
+	x.base = ms
 	o, err := x.apply(ctx, ms, false)
 	if err != nil {
 		return err
@@ -487,6 +617,7 @@ func (x *exec) seedBase(ctx context.Context) error {
 			continue
 		}
 		x.ids["human:"+p.Name] = p.ID
+		x.identities["human:"+p.Name] = p.Identity
 		if err := x.addPerson(ctx, p.ID, p.Identity); err != nil {
 			return err
 		}
@@ -494,7 +625,7 @@ func (x *exec) seedBase(ctx context.Context) error {
 			if listed := x.givenGroups("human:" + p.Name); listed != nil && !listed[g] {
 				continue
 			}
-			o, err := x.seedGrant(ctx, p.ID, g)
+			o, err := x.seedGrant(ctx, p.ID, p.Identity, g)
 			if err != nil {
 				return err
 			}
@@ -505,6 +636,22 @@ func (x *exec) seedBase(ctx context.Context) error {
 		}
 	}
 	return nil
+}
+
+// withTypes adds the task types of more to base, each name once.
+func withTypes(base, more []map[string]any) []map[string]any {
+	out := append([]map[string]any{}, base...)
+	have := map[string]bool{}
+	for _, m := range base {
+		have[str(asMap(m["metadata"])["name"])] = true
+	}
+	for _, m := range more {
+		if n := str(asMap(m["metadata"])["name"]); !have[n] {
+			have[n] = true
+			out = append(out, m)
+		}
+	}
+	return out
 }
 
 // givenGroups returns the groups given.people lists for a person, or nil when it does not
@@ -532,7 +679,7 @@ func (x *exec) seedHolds(ctx context.Context) error {
 		if reason == "" {
 			reason = "manual"
 		}
-		body := map[string]any{"scope": hm["scope"], "effects": hm["effects"], "reason": reason, "until": hm["until"]}
+		body := map[string]any{"scope": x.holdScope(asMap(hm["scope"])), "effects": hm["effects"], "reason": reason, "until": hm["until"]}
 		status, resp, err := x.post(ctx, x.ep.P2+"/v1/p2/hold.set", x.ep.Operators["farm"], body)
 		if err != nil {
 			return err
@@ -552,6 +699,30 @@ func (x *exec) seedHolds(ctx context.Context) error {
 		}
 	}
 	return nil
+}
+
+// holdScope completes a hold scope of a fixture for hold.set: a scope of a tenant's object
+// without tenant is of the case's tenant, and a tenant scope written with the tenant as its name
+// ({kind: tenant, name: demo}) names it in tenant, where the hold schema has it.
+func (x *exec) holdScope(sc map[string]any) map[string]any {
+	out := shallowCopy(sc)
+	switch k := str(out["kind"]); {
+	case k == "farm" || k == "seat":
+	case k == "tenant" && out["tenant"] == nil && out["name"] != nil:
+		out["tenant"] = out["name"]
+		delete(out, "name")
+	case out["tenant"] == nil:
+		out["tenant"] = x.tenant()
+	}
+	return out
+}
+
+// tenant is the case's tenant (given.tenant), demo by default.
+func (x *exec) tenant() string {
+	if t, ok := x.c.Given["tenant"].(string); ok && t != "" {
+		return t
+	}
+	return "demo"
 }
 
 // errUnchecked marks a seed step the core cannot do yet: the case is unchecked, not failed.
@@ -616,7 +787,7 @@ func (x *exec) seedPeople(ctx context.Context) error {
 			if contains(have, g) {
 				continue
 			}
-			o, err := x.seedGrant(ctx, id, g)
+			o, err := x.seedGrant(ctx, id, x.identities[handle], g)
 			if err != nil {
 				return err
 			}
@@ -661,9 +832,32 @@ func (x *exec) givenManifests() []map[string]any {
 				md["tenant"] = "demo"
 			}
 		}
-		out = append(out, m)
+		out = append(out, x.onBase(m))
 	}
 	return out
+}
+
+// onBase completes a given manifest of an object the seed already applied (the demo tenant, the
+// hello role): the fixture names the fields that matter, and each of its spec keys replaces the
+// key of the seeded object, so the object stays whole.
+func (x *exec) onBase(m map[string]any) map[string]any {
+	md := asMap(m["metadata"])
+	for _, b := range x.base {
+		bmd := asMap(b["metadata"])
+		if str(b["kind"]) != str(m["kind"]) || str(bmd["name"]) != str(md["name"]) || str(bmd["tenant"]) != str(md["tenant"]) {
+			continue
+		}
+		out := deepCopy(b)
+		sp := asMap(out["spec"])
+		for k, v := range asMap(m["spec"]) {
+			sp[k] = v
+		}
+		if str(m["kind"]) == "Tenant" {
+			sp["kind"] = "test"
+		}
+		return out
+	}
+	return m
 }
 
 func (x *exec) step(ctx context.Context, st map[string]any) (*outcome, error) {
@@ -793,16 +987,23 @@ func (x *exec) applyBody(ctx context.Context, body map[string]any) (*outcome, er
 		return nil, err
 	}
 	if status != 200 {
-		return problemOutcome(status, resp), nil
+		o := problemOutcome(status, resp)
+		x.manifestRefusal(o, body)
+		return o, nil
 	}
 	errs := asList(resp["errors"])
 	if len(errs) == 0 {
 		return &outcome{Result: "ok"}, nil
 	}
-	e := asMap(errs[0])
-	o := &outcome{Result: "rejected", Error: str(e["code"]), Path: str(e["path"]), Stage: "apply"}
-	if o.Error == "schema_invalid" {
-		o.Stage = "schema"
+	var o *outcome
+	for _, raw := range errs {
+		e := asMap(raw)
+		one := &outcome{Result: "rejected", Error: str(e["code"]), Path: str(e["path"]), Stage: "apply", Detail: str(e["message"])}
+		if o == nil {
+			o = one
+		} else {
+			o.Alts = append(o.Alts, one)
+		}
 	}
 	return o, nil
 }
@@ -816,16 +1017,31 @@ func (x *exec) p2(ctx context.Context, tenant, op string, body map[string]any) (
 }
 
 // seedGrant grants a seed group. A privileged group stays pending until the person's
-// verification code is checked (PRM-13), and the runner does not read that code from a chat
-// yet, so a case with such a seed is unchecked.
-func (x *exec) seedGrant(ctx context.Context, subject, g string) (*outcome, error) {
-	status, resp, err := x.post(ctx, x.ep.P2+"/v1/p2/grant", x.ep.Operators["demo"], map[string]any{"op": "grant", "subject": subject, "group": g})
+// verification code is checked (PRM-13): the runner plays /me in the person's direct chat through
+// its channel, reads the code from the reply and repeats the grant with it, as an operator does
+// with the code the person reads out. The membership is never written around the core.
+func (x *exec) seedGrant(ctx context.Context, subject, identity, g string) (*outcome, error) {
+	req := map[string]any{"op": "grant", "subject": subject, "group": g}
+	status, resp, err := x.post(ctx, x.ep.P2+"/v1/p2/grant", x.ep.Operators["demo"], req)
 	if err != nil {
 		return nil, err
 	}
 	o := problemOutcome(status, resp)
-	if o.Reason == "privileged_group" || (o.Result == "ok" && str(resp["state"]) == "pending") {
-		return nil, errUnchecked("core: the verification code of the privileged group " + g + " in a seed (PRM-13)")
+	if o.Result != "ok" || str(resp["state"]) != "pending" {
+		return o, nil
+	}
+	code, err := x.verificationCode(ctx, identity)
+	if err != nil {
+		return nil, err
+	}
+	req["code"] = code
+	status, resp, err = x.post(ctx, x.ep.P2+"/v1/p2/grant", x.ep.Operators["demo"], req)
+	if err != nil {
+		return nil, err
+	}
+	o = problemOutcome(status, resp)
+	if o.Result == "ok" && str(resp["state"]) != "active" {
+		return nil, fmt.Errorf("grant %s with the verification code: %s", g, str(resp["state"]))
 	}
 	return o, nil
 }
@@ -861,6 +1077,10 @@ func problemOutcome(status int, resp map[string]any) *outcome {
 }
 
 func (x *exec) post(ctx context.Context, url, token string, body map[string]any) (int, map[string]any, error) {
+	return x.postWith(ctx, url, token, nil, body)
+}
+
+func (x *exec) postWith(ctx context.Context, url, token string, headers map[string]string, body map[string]any) (int, map[string]any, error) {
 	b, err := json.Marshal(body)
 	if err != nil {
 		return 0, nil, err
@@ -872,6 +1092,9 @@ func (x *exec) post(ctx context.Context, url, token string, body map[string]any)
 	req.Header.Set("Content-Type", "application/json")
 	if token != "" {
 		req.Header.Set("Authorization", "Bearer "+token)
+	}
+	for k, v := range headers {
+		req.Header.Set(k, v)
 	}
 	resp, err := x.r.Client.Do(req)
 	if err != nil {

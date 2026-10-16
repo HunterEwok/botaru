@@ -1,4 +1,27 @@
 # Behaviour cases that pass on the reference core (TestConformance); rewrite with -update.
 apr-self-03
+authz-01
+authz-02
+authz-03
+authz-04
+authz-05
+authz-06
+authz-08
+authz-09
+authz-14
 authz-24
+bud-fx-10
+bud-fx-11
+bud-fx-12
+com-04#1
 com-fx-10
+com-fx-11-b
+com-fx-12-b
+com-fx-13-a
+com-fx-13-b
+ins-05#1
+prp-13#3
+tim-fx-12
+tim-fx-13
+tim-fx-14
+tim-fx-17

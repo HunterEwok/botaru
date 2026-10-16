@@ -11,7 +11,7 @@ cases:
     manifest:
       kind: Schedule
       metadata: {name: daily-report}
-      spec: {cron: 30 3 * * *, timezone: Mars/Olympus}
+      spec: {cron: 30 3 * * *, timezone: Mars/Olympus, task: {type: hello.greet.v1}}
   expect: {result: rejected, stage: apply, field: timezone}
 - id: tim-fx-13
   rules: [TIM-3]
@@ -20,7 +20,7 @@ cases:
     manifest:
       kind: Schedule
       metadata: {name: daily-report}
-      spec: {cron: CRON_TZ=Europe/Berlin 30 3 * * *}
+      spec: {cron: CRON_TZ=Europe/Berlin 30 3 * * *, task: {type: hello.greet.v1}}
   expect: {result: rejected, stage: apply, field: cron}
 - id: tim-fx-14
   rules: [TIM-3]
@@ -29,7 +29,7 @@ cases:
     manifest:
       kind: Schedule
       metadata: {name: daily-report}
-      spec: {cron: TZ=UTC 30 3 * * *}
+      spec: {cron: TZ=UTC 30 3 * * *, task: {type: hello.greet.v1}}
   expect: {result: rejected, stage: apply, field: cron}
 - id: tim-fx-15
   rules: [TIM-3]
@@ -58,5 +58,13 @@ cases:
     manifest:
       kind: TaskType
       metadata: {name: report.daily.v1}
-      spec: {timezone: Europe/Berlin}
+      spec:
+        title: Daily report
+        worker_kind: agent
+        purpose: work
+        tier: 0
+        data_class: summary
+        params_schema: {type: object, additionalProperties: false, properties: {}}
+        tree_budget_eur: 0.05
+        timezone: Europe/Berlin
   expect: {result: rejected, stage: apply, field: timezone}
