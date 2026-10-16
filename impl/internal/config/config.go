@@ -66,6 +66,9 @@ type Core struct {
 	Backup core.BackupConfig `yaml:"backup"`
 	// Files holds the farm ceilings of one file and of the files of one task (ART-4).
 	Files core.FilesConfig `yaml:"files"`
+	// SecretUses lists for each named secret of the deployment description the scopes that use
+	// it, as hold scopes (kind channel, plugin, worker, sink or tenant), for secret.revoke (SEC-6).
+	SecretUses map[string][]core.HoldScope `yaml:"secret_uses"`
 	// Monitor turns on the monitor profile: alarms go to the monitoring system only (D-88).
 	Monitor core.MonitorConfig `yaml:"monitor"`
 }

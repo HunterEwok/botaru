@@ -148,6 +148,13 @@ func (s *Server) p2(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		out, err = s.c.WorkerDrain(ctx, oper, req)
+	case "secret.revoke":
+		req, derr := decode[core.SecretRevokeRequest](m)
+		if derr != nil {
+			s.fail(w, derr)
+			return
+		}
+		out, err = s.c.SecretRevoke(ctx, oper, req)
 	case "worker.revoke":
 		req, derr := decode[core.WorkerRequest](m)
 		if derr != nil {

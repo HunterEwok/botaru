@@ -63,6 +63,9 @@ type Config struct {
 	Backup BackupConfig
 	// Files holds the farm ceilings of file sizes (ART-4).
 	Files FilesConfig
+	// SecretUses are the hold scopes of each named deployment secret, as the deployment
+	// description uses it (SEC-6): what secret.revoke stops besides the core's own credentials.
+	SecretUses map[string][]HoldScope
 	// FreeSpace, when set, measures the store volume instead of Health.StoreVolume: free and
 	// total bytes. A test sets a mock measurement here.
 	FreeSpace func() (free, total uint64, err error)

@@ -360,37 +360,7 @@ func (c *Core) WorkerRevoke(ctx context.Context, op Operator, req WorkerRequest)
 		if state == "revoked" {
 			return nil
 		}
-		if _, err := tx.Exec(ctx, `UPDATE workers SET state = 'revoked' WHERE id = $1`, req.Worker); err != nil {
-			return err
-		}
-		// A revoked token holds no work of any kind (IDN-4).
-		if err := c.fenceLeases(ctx, tx, now, "worker_revoke", `worker_id = $1`, req.Worker); err != nil {
-			return err
-		}
-		// Its own inbox and its state values go with it (MSG-14, STA-2).
-		if err := c.workerGone(ctx, tx, now, tenant, req.Worker); err != nil {
-			return err
-		}
-		// A runtime that keeps sessions or memory in its own store is cleared (LCY-4).
-		if err := c.purgeRuntimeStore(ctx, tx, now, tenant, req.Worker, op.Principal); err != nil {
-			return err
-		}
-		b, err := scanBot(tx.QueryRow(ctx, `SELECT `+botCols+` FROM bots WHERE worker_id = $1 AND mode = 'worker' AND state IN ('active', 'suspended') FOR UPDATE`, req.Worker))
-		if err != nil && !errors.Is(err, pgx.ErrNoRows) {
-			return err
-		}
-		after := map[string]any{"state": "revoked"}
-		if b != nil {
-			if _, err := tx.Exec(ctx, `UPDATE bots SET state = 'unbound', unbound_at = $2, epoch = epoch + 1, updated_at = $2 WHERE id = $1`, b.ID, now); err != nil {
-				return err
-			}
-			after["bot"], after["bot_state"] = b.ID, "unbound"
-		}
-		seq, err := c.appendAudit(ctx, tx, now, Audit{
-			Tenant: tenant, Kind: "command", Actor: Actor{Principal: op.Principal, Via: "farmctl"},
-			Command: "worker.revoke", Target: &Target{Kind: "worker", ID: req.Worker}, OK: true,
-			Before: map[string]any{"state": state}, After: after,
-		})
+		seq, err := c.revokeWorker(ctx, tx, now, tenant, req.Worker, state, op.Principal, "worker.revoke", "")
 		out.AuditSeq = seq
 		return err
 	})
@@ -398,6 +368,43 @@ func (c *Core) WorkerRevoke(ctx context.Context, op Operator, req WorkerRequest)
 		return nil, err
 	}
 	return &out, nil
+}
+
+// revokeWorker revokes a worker token in a transaction (IDN-4): the token stops at the next
+// call, the leases end without spending, the inbox and state values go, a runtime store is
+// cleared and the identity becomes unbound. It returns the audit number.
+func (c *Core) revokeWorker(ctx context.Context, tx pgx.Tx, now time.Time, tenant, id, state, principal, command, reason string) (int64, error) {
+	if _, err := tx.Exec(ctx, `UPDATE workers SET state = 'revoked' WHERE id = $1`, id); err != nil {
+		return 0, err
+	}
+	// A revoked token holds no work of any kind (IDN-4).
+	if err := c.fenceLeases(ctx, tx, now, "worker_revoke", `worker_id = $1`, id); err != nil {
+		return 0, err
+	}
+	// Its own inbox and its state values go with it (MSG-14, STA-2).
+	if err := c.workerGone(ctx, tx, now, tenant, id); err != nil {
+		return 0, err
+	}
+	// A runtime that keeps sessions or memory in its own store is cleared (LCY-4).
+	if err := c.purgeRuntimeStore(ctx, tx, now, tenant, id, principal); err != nil {
+		return 0, err
+	}
+	b, err := scanBot(tx.QueryRow(ctx, `SELECT `+botCols+` FROM bots WHERE worker_id = $1 AND mode = 'worker' AND state IN ('active', 'suspended') FOR UPDATE`, id))
+	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+		return 0, err
+	}
+	after := map[string]any{"state": "revoked"}
+	if b != nil {
+		if _, err := tx.Exec(ctx, `UPDATE bots SET state = 'unbound', unbound_at = $2, epoch = epoch + 1, updated_at = $2 WHERE id = $1`, b.ID, now); err != nil {
+			return 0, err
+		}
+		after["bot"], after["bot_state"] = b.ID, "unbound"
+	}
+	return c.appendAudit(ctx, tx, now, Audit{
+		Tenant: tenant, Kind: "command", Actor: Actor{Principal: principal, Via: "farmctl"},
+		Command: command, Target: &Target{Kind: "worker", ID: id}, OK: true, Reason: reason,
+		Before: map[string]any{"state": state}, After: after,
+	})
 }
 
 // BotRetireRequest is p2-bot-retire-request.

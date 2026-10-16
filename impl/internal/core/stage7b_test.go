@@ -595,3 +595,66 @@ func TestOffboardLeftovers(t *testing.T) {
 		t.Fatalf("leftovers after a new bind %d %v", rest, err)
 	}
 }
+
+// Revocation on compromise (SEC-6, HLD-2): a worker token stops at the next call with no
+// window, the worker scope and the scopes the settings list for a deployment secret get a hold
+// without expiry with reason compromised, and only the operator releases it.
+func TestSecretRevokeCompromised(t *testing.T) {
+	ctx := context.Background()
+	b := newBench(t)
+	r, err := b.c.Enroll(ctx, b.op, EnrollRequest{Tenant: "demo", Role: "hello", Kind: "agent"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := b.c.SecretRevoke(ctx, b.op, SecretRevokeRequest{Secret: "unknown-secret", Compromised: true}); !hasReason(err, "not_found") {
+		t.Fatalf("unknown secret: %v", err)
+	}
+	done, err := b.c.SecretRevoke(ctx, b.op, SecretRevokeRequest{Secret: r.Worker.ID, Compromised: true})
+	if err != nil || done.ID != r.Worker.ID {
+		t.Fatalf("revoke: %+v %v", done, err)
+	}
+	if _, err := b.c.AuthenticateWorker(ctx, r.Token); !hasReason(err, "unauthenticated") {
+		t.Fatalf("the revoked token still works: %v", err)
+	}
+	b.c.cfg.SecretUses = map[string][]HoldScope{"bot-token-demo": {{Kind: "channel", Tenant: "demo", Name: "telegram"}, {Kind: "channel", Tenant: "other", Name: "x"}}}
+	if _, err := b.c.SecretRevoke(ctx, b.op, SecretRevokeRequest{Secret: "bot-token-demo", Compromised: true}); err != nil {
+		t.Fatal(err)
+	}
+	rows, err := b.c.st.Pool.Query(ctx, `SELECT id, scope_kind, scope_name, until IS NULL, author_kind, effects FROM holds WHERE reason = 'compromised' ORDER BY scope_kind`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	type hold struct {
+		id, kind, name, author string
+		forever                bool
+		effects                []string
+	}
+	var hs []hold
+	for rows.Next() {
+		var h hold
+		if err := rows.Scan(&h.id, &h.kind, &h.name, &h.forever, &h.author, &h.effects); err != nil {
+			t.Fatal(err)
+		}
+		hs = append(hs, h)
+	}
+	rows.Close()
+	if len(hs) != 2 || hs[0].kind != "channel" || hs[0].name != "telegram" || hs[1].kind != "worker" || hs[1].name != strings.ToLower(r.Worker.ID) ||
+		!hs[0].forever || hs[0].author != "operator" || !slices.Contains(hs[0].effects, "no_delivery") {
+		t.Fatalf("holds %+v", hs)
+	}
+	admin := HoldActor{Principal: b.alice, Rank: "tenant_admin", Tenant: "demo", Via: "channel"}
+	if _, err := b.c.HoldRelease(ctx, admin, HoldReleaseRequest{ID: hs[0].id}); !hasReason(err, "forbidden") {
+		t.Fatalf("a tenant admin released a compromised hold: %v", err)
+	}
+	if d, err := b.c.HoldRelease(ctx, OperatorActor(b.op), HoldReleaseRequest{ID: hs[0].id}); err != nil || d.State != "released" {
+		t.Fatalf("operator release %+v %v", d, err)
+	}
+	if _, err := b.c.SecretRevoke(ctx, b.op, SecretRevokeRequest{Connections: map[string]any{"provider": "mail"}, Compromised: true}); err == nil {
+		t.Fatal("connections are not built")
+	}
+}
+
+func hasReason(err error, reason string) bool {
+	p, ok := AsProblem(err)
+	return ok && p.Reason == reason
+}
