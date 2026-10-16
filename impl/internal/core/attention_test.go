@@ -4,6 +4,7 @@ package core
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"slices"
@@ -467,5 +468,49 @@ func TestLocaleOrder(t *testing.T) {
 		if _, err := b.c.st.Pool.Exec(ctx, `UPDATE principals SET locale = 'en' WHERE id = $1`, b.alice); err != nil {
 			t.Fatal(err)
 		}
+	}
+}
+
+// Digests to one chat go out at most max_per_hour times an hour, 4 for a private chat by
+// default; one over the ceiling waits for the next free slot, and a newer one replaces the
+// waiting one (REP-10).
+func TestDigestPace(t *testing.T) {
+	ctx := context.Background()
+	b := newBench(t)
+	ins := func(id string, handed, runAt any, state string) {
+		t.Helper()
+		if _, err := b.c.st.Pool.Exec(ctx, `INSERT INTO deliveries (id, tenant, kind, addr, target_kind, target_id, exec_kind, exec_name, state, dataorigin,
+			body, created_at, updated_at, handed_at, run_at) VALUES ($1, 'demo', 'digest', 'origin', 'chat', 'direct:1001', 'channel', 'telegram', $4, 'code', '{}',
+			botaru_now(), botaru_now(), $2, $3)`, id, handed, runAt, state); err != nil {
+			t.Fatal(err)
+		}
+	}
+	now := b.now(t)
+	for i := range 4 {
+		ins(fmt.Sprintf("dl_d%d", i), now.Add(-time.Duration(50-i*10)*time.Minute), nil, "delivered")
+	}
+	pace := func() *time.Time {
+		t.Helper()
+		var out *time.Time
+		if err := b.c.tx(ctx, func(tx pgx.Tx, now time.Time) error {
+			var err error
+			out, err = b.c.digestPace(ctx, tx, now, "demo", "telegram", "direct:1001")
+			return err
+		}); err != nil {
+			t.Fatal(err)
+		}
+		return out
+	}
+	slot := pace()
+	if slot == nil || !slot.Equal(now.Add(10*time.Minute)) {
+		t.Fatalf("next free slot %v", slot)
+	}
+	ins("dl_wait", nil, *slot, "planned")
+	if again := pace(); again == nil || !again.Equal(*slot) {
+		t.Fatalf("the newer digest takes the slot %v", again)
+	}
+	var state, reason string
+	if err := b.c.st.Pool.QueryRow(ctx, `SELECT state, reason FROM deliveries WHERE id = 'dl_wait'`).Scan(&state, &reason); err != nil || state != "withheld" || reason != "superseded" {
+		t.Fatalf("the waiting digest %s %s %v", state, reason, err)
 	}
 }

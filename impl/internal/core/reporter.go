@@ -565,10 +565,19 @@ func (c *Core) deliverDigest(ctx context.Context, tx pgx.Tx, now time.Time, cat 
 	}
 	plan := func(addr, targetKind, target, channel, recipient string, group, labeled bool) error {
 		b, origin := body(group, labeled)
-		_, err := c.planDelivery(ctx, tx, now, plannedDelivery{
+		// The digest pace of the chat (REP-10).
+		runAt, err := c.digestPace(ctx, tx, now, tenant, channel, target)
+		if err != nil {
+			return err
+		}
+		id, err := c.planDelivery(ctx, tx, now, plannedDelivery{
 			Tenant: tenant, Task: task, Kind: "digest", Addr: addr, TargetKind: targetKind, TargetID: target,
 			ExecKind: "channel", ExecName: channel, Recipient: recipient, Body: b, DataMark: r.DataMark, DataOrigin: origin,
 		})
+		if err != nil || runAt == nil {
+			return err
+		}
+		_, err = tx.Exec(ctx, `UPDATE deliveries SET run_at = $2 WHERE id = $1`, id, *runAt)
 		return err
 	}
 	name, err := scheduleOf(ctx, tx, r.treeRecord, task)
