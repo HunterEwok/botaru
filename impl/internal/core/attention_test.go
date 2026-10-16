@@ -759,3 +759,50 @@ func b0Role(ms []map[string]any) string {
 	}
 	return ""
 }
+
+// The expiry of a promotion case and of an attribution counts from the first delivery of
+// their card (APR-15): the presentation (and the case's expiry with it) moves once, and
+// self_measured_card, a later card on a presented proposal, rewrites nothing.
+func TestFirstDeliveryGovernance(t *testing.T) {
+	ctx := context.Background()
+	b := newBench(t)
+	t0 := time.Date(2026, 1, 5, 10, 0, 0, 0, time.UTC)
+	if _, err := b.c.st.Pool.Exec(ctx, `INSERT INTO governance_cases (id, tenant, state, record, presented_at, expires_at, created_at, updated_at)
+		VALUES ('gc_fd', 'demo', 'confirming', '{}', $1, $2, $1, $1)`, t0, t0.Add(7*24*time.Hour)); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := b.c.st.Pool.Exec(ctx, `INSERT INTO attributions (id, tenant, incident, proposal, state, record, presented_at, created_at, updated_at)
+		VALUES ('at_fd', 'demo', 'inc_fd', 'prp_fd', 'candidate', '{}', $1, $1, $1)`, t0); err != nil {
+		t.Fatal(err)
+	}
+	at := t0.Add(30 * time.Hour)
+	run := func(when time.Time, kind, sk, id string) {
+		t.Helper()
+		err := b.c.tx(ctx, func(tx pgx.Tx, _ time.Time) error { return b.c.firstCardDelivery(ctx, tx, when, kind, sk, id) })
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	run(at, promotionCard, "governance_case", "gc_fd")
+	run(at, attributionCard, "attribution", "at_fd")
+	// A second delivery changes nothing.
+	run(at.Add(time.Hour), promotionCard, "governance_case", "gc_fd")
+	run(at.Add(time.Hour), attributionCard, "attribution", "at_fd")
+	var pres, exp, apres time.Time
+	if err := b.c.st.Pool.QueryRow(ctx, `SELECT presented_at, expires_at FROM governance_cases WHERE id = 'gc_fd'`).Scan(&pres, &exp); err != nil {
+		t.Fatal(err)
+	}
+	if !pres.Equal(at) || !exp.Equal(at.Add(7*24*time.Hour)) {
+		t.Fatalf("case presented %v expires %v", pres, exp)
+	}
+	if err := b.c.st.Pool.QueryRow(ctx, `SELECT presented_at FROM attributions WHERE id = 'at_fd'`).Scan(&apres); err != nil {
+		t.Fatal(err)
+	}
+	if !apres.Equal(at) {
+		t.Fatalf("attribution presented %v", apres)
+	}
+	run(at, selfMeasuredCard, "proposal", "prp_fd")
+	if n := b.count(t, `SELECT count(*) FROM card_first_deliveries WHERE subject_kind = 'proposal' AND subject_id = 'prp_fd'`); n != 0 {
+		t.Fatalf("self_measured_card recorded a first delivery")
+	}
+}

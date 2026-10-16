@@ -40,15 +40,16 @@ func (c *Core) detailsRequired(cardKind, decision string) bool {
 
 // requireDetails refuses a decision with details_not_opened when the decision of this card
 // kind needs "Details" and this person did not open them for the subject before deciding
-// (APR-14). An opening is the record of P1 card.details in card_views; every subject that
-// decides on a card calls it before it records the decision, so a new subject with a listed
-// decision only needs its card.details to write the opening. The refusal is recorded in the
+// (APR-14). An opening is the record of P1 card.details in card_views; approvals and proposals
+// call it after their holds and expiry and before they record the decision; the other subjects
+// check missingDetails at the same point, so a new subject with a listed decision only needs
+// its card.details to write the opening. The refusal is recorded in the
 // audit and the card answer asks to open "Details" first (card.answer.details_first).
 func (c *Core) requireDetails(ctx context.Context, tx pgx.Tx, now time.Time, tenant, subjectKind, id, cardKind, decision, principal string) error {
 	if !c.detailsRequired(cardKind, decision) {
 		return nil
 	}
-	opened, err := detailsOpened(ctx, tx, subjectKind, id, principal)
+	opened, err := detailsOpened(ctx, tx, subjectKind, id, principal, time.Time{})
 	if err != nil || opened {
 		return err
 	}
@@ -62,11 +63,26 @@ func (c *Core) requireDetails(ctx context.Context, tx pgx.Tx, now time.Time, ten
 	return &committed{p: refuse("details_not_opened", "open \"Details\" of the card before this decision")}
 }
 
-// detailsOpened says whether a person opened "Details" of a subject's card.
-func detailsOpened(ctx context.Context, q store.Querier, subjectKind, id, principal string) (bool, error) {
+// missingDetails says whether a decision on a card of this kind is refused for want of
+// "Details" (APR-14): its row needs them and the person did not open them. The subjects that
+// record details_opened in their decision (promotion cases, attributions, the audit sample)
+// read the opening themselves since their card was shown and refuse with their own audit.
+func (c *Core) missingDetails(cardKind, decision string, opened bool) bool {
+	return !opened && c.detailsRequired(cardKind, decision)
+}
+
+// detailsOpened says whether a person opened "Details" of a subject's card (the P1
+// card.details record in card_views) at or after since; the zero since counts any opening.
+func detailsOpened(ctx context.Context, q store.Querier, subjectKind, id, principal string, since time.Time) (bool, error) {
 	var ok bool
-	err := q.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM card_views WHERE subject_kind = $1 AND subject_id = $2 AND principal = $3)`,
-		subjectKind, id, principal).Scan(&ok)
+	var err error
+	if since.IsZero() {
+		err = q.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM card_views WHERE subject_kind = $1 AND subject_id = $2 AND principal = $3)`,
+			subjectKind, id, principal).Scan(&ok)
+	} else {
+		err = q.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM card_views WHERE subject_kind = $1 AND subject_id = $2 AND principal = $3 AND opened_at >= $4)`,
+			subjectKind, id, principal, since).Scan(&ok)
+	}
 	return ok, err
 }
 
@@ -327,7 +343,7 @@ func (c *Core) cardLimit(ctx context.Context, tx pgx.Tx, now time.Time, tv *Tena
 		// A subject whose card has not gone out yet does not expire while it waits: its
 		// expiry counts at least from the day the card may go (APR-15). The order of the
 		// waiting cards takes the expiry as it stands after that.
-		if err := deferSubjectExpiry(ctx, tx, subjectKind, subjectID, next); err != nil {
+		if err := deferSubjectExpiry(ctx, tx, kind, subjectKind, subjectID, next); err != nil {
 			return false, err
 		}
 		exp, err := c.subjectExpiry(ctx, tx, tv, subjectKind, subjectID)
@@ -359,12 +375,22 @@ func (c *Core) limitedCard(kind, subjectID string) bool {
 }
 
 // deferSubjectExpiry moves the expiry of a subject without a first delivery of its card to
-// count from next at the earliest. It covers a proposal's presentation and a memory record's
-// deadline only; a person's request keeps its deadline, which counts from the first delivery.
-func deferSubjectExpiry(ctx context.Context, tx pgx.Tx, subjectKind, id string, next time.Time) error {
+// count from next at the earliest. It covers a proposal's presentation, a memory record's
+// deadline and the presentation (and so the expiry) of a promotion case or an attribution; a
+// person's request keeps its deadline, which counts from the first delivery. self_measured_card
+// keeps its own window, counted from its sending in the proposal record (firstCardDelivery).
+func deferSubjectExpiry(ctx context.Context, tx pgx.Tx, kind, subjectKind, id string, next time.Time) error {
+	if kind == selfMeasuredCard {
+		return nil
+	}
 	const fresh = `NOT EXISTS (SELECT 1 FROM card_first_deliveries f WHERE f.subject_kind = $3 AND f.subject_id = $1)`
 	var err error
 	switch subjectKind {
+	case "governance_case":
+		_, err = tx.Exec(ctx, `UPDATE governance_cases SET expires_at = expires_at + ($2 - presented_at), presented_at = $2
+			WHERE id = $1 AND presented_at IS NOT NULL AND expires_at IS NOT NULL AND presented_at < $2 AND `+fresh, id, next, subjectKind)
+	case "attribution":
+		_, err = tx.Exec(ctx, `UPDATE attributions SET presented_at = $2 WHERE id = $1 AND presented_at IS NOT NULL AND presented_at < $2 AND `+fresh, id, next, subjectKind)
 	case "proposal":
 		_, err = tx.Exec(ctx, `UPDATE proposals SET presented_at = greatest(presented_at, $2) WHERE id = $1 AND presented_at IS NOT NULL AND `+fresh, id, next, subjectKind)
 	case "memory_record":
@@ -390,6 +416,15 @@ func (c *Core) subjectExpiry(ctx context.Context, tx pgx.Tx, tv *TenantView, sub
 		err = tx.QueryRow(ctx, `SELECT decide_by FROM memory_items WHERE id = $1`, id).Scan(&at)
 	case "subject_request":
 		err = tx.QueryRow(ctx, `SELECT deadline_at FROM subject_requests WHERE id = $1`, id).Scan(&at)
+	case "governance_case":
+		err = tx.QueryRow(ctx, `SELECT expires_at FROM governance_cases WHERE id = $1`, id).Scan(&at)
+	case "attribution":
+		var presented *time.Time
+		err = tx.QueryRow(ctx, `SELECT presented_at FROM attributions WHERE id = $1`, id).Scan(&presented)
+		if presented != nil {
+			t := presented.Add(attributionTTL)
+			at = &t
+		}
 	}
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, nil
@@ -400,9 +435,15 @@ func (c *Core) subjectExpiry(ctx context.Context, tx pgx.Tx, tv *TenantView, sub
 // firstCardDelivery rewrites, once, the expiry of a subject of a non-urgent card in the
 // transaction of the first delivery of its card to any recipient, so the deadline counts from
 // it (APR-15): the presentation time of a proposal, the deadline of a memory record set to the
-// first delivery plus its card TTL, and the deadline of a person's request moved by the time
-// since it was created.
-func (c *Core) firstCardDelivery(ctx context.Context, tx pgx.Tx, now time.Time, subjectKind, id string) error {
+// first delivery plus its card TTL, the deadline of a person's request moved by the time
+// since it was created, and the presentation of a promotion case (its expiry moved with it) or
+// an attribution, from which its 7 days count. self_measured_card, a later card on a proposal
+// that was already presented, is not a first delivery of its subject: its window stays counted
+// from its sending in the proposal record.
+func (c *Core) firstCardDelivery(ctx context.Context, tx pgx.Tx, now time.Time, kind, subjectKind, id string) error {
+	if kind == selfMeasuredCard {
+		return nil
+	}
 	tag, err := tx.Exec(ctx, `INSERT INTO card_first_deliveries (subject_kind, subject_id, delivered_at) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING`,
 		subjectKind, id, now)
 	if err != nil || tag.RowsAffected() == 0 {
@@ -418,6 +459,11 @@ func (c *Core) firstCardDelivery(ctx context.Context, tx pgx.Tx, now time.Time, 
 			id, now, memoryCardTTL)
 	case "subject_request":
 		_, err = tx.Exec(ctx, `UPDATE subject_requests SET deadline_at = deadline_at + ($2 - created_at) WHERE id = $1 AND $2 > created_at`, id, now)
+	case "governance_case":
+		_, err = tx.Exec(ctx, `UPDATE governance_cases SET expires_at = expires_at + ($2 - presented_at), presented_at = $2
+			WHERE id = $1 AND presented_at IS NOT NULL AND expires_at IS NOT NULL AND presented_at < $2`, id, now)
+	case "attribution":
+		_, err = tx.Exec(ctx, `UPDATE attributions SET presented_at = $2 WHERE id = $1 AND presented_at IS NOT NULL AND presented_at < $2`, id, now)
 	}
 	return err
 }

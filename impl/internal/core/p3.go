@@ -272,6 +272,18 @@ func (c *Core) toolCatalog(cat *Catalog, g *toolsGrant) ([]catalogTool, error) {
 	if st := c.proposeScriptTool(cat, g); st != nil {
 		out = append(out, *st)
 	}
+	// The farm manager's v0.2 tools: grants, takeover and escalation (MGR-5, MGR-17, MGR-18,
+	// MGR-21).
+	if gt := c.grantTool(cat, g); gt != nil {
+		out = append(out, *gt)
+	}
+	out = append(out, grantSeatTools(cat, g)...)
+	if tt := takeoverTool(cat, g); tt != nil {
+		out = append(out, *tt)
+	}
+	if et := escalateTool(cat, g); et != nil {
+		out = append(out, *et)
+	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
 	return out, nil
 }
@@ -522,6 +534,24 @@ func (c *Core) P3ToolsCall(ctx context.Context, handle string, p mcp.CallParams)
 			builtin, err = c.campaignToolCall(ctx, tx, now, cat, g, p.Name, offeredTool(tools, p.Name), p.Arguments)
 			return err
 		}
+		if p.Name == grantToolName || p.Name == grantsPendingName || p.Name == grantDecideName || p.Name == takeoverToolName || p.Name == escalateToolName {
+			args := p.Arguments
+			if args == nil {
+				args = map[string]any{}
+			}
+			offered := offeredTool(tools, p.Name)
+			switch p.Name {
+			case grantToolName:
+				builtin, err = c.grantToolCall(ctx, tx, now, cat, g, offered, args)
+			case takeoverToolName:
+				builtin, err = c.takeoverToolCall(ctx, tx, now, cat, g, offered, args)
+			case escalateToolName:
+				builtin, err = c.escalateCall(ctx, tx, now, cat, g, offered, args)
+			default:
+				builtin, err = c.grantSeatToolCall(ctx, tx, now, cat, g, p.Name, offered, args)
+			}
+			return err
+		}
 		if p.Name == proposeScriptName {
 			builtin, err = c.proposeScript(ctx, tx, now, cat, g, offeredTool(tools, p.Name), p.Arguments)
 			return err
@@ -693,11 +723,30 @@ func (c *Core) recordToolCall(ctx context.Context, tx pgx.Tx, now time.Time, cat
 	} else if held != "" {
 		return deny("denied", "held")
 	}
+	// A dataset reaches an agent role only by its model exposure (PRV-4).
+	if cat.Roles[g.Role].WorkerKind == "agent" && !exposureAllows(cat, g.Tenant, target.resource, t) {
+		return deny("denied", "forbidden")
+	}
 	host := target.host
 	row := toolCallRow{
 		ID: id, Tenant: g.Tenant, Task: g.Task, LeaseNo: g.LeaseNo, Tool: right, Access: "read", Args: args,
 		Plugin: plugin, Placement: pl.Placement, Host: host, Resource: target.resource, Resolved: resolved, Untrusted: !t.TrustedOutput(), State: "queued",
 		DefHash: toolDefHash(pl.Placement, t),
+	}
+	// After the full check of this call, an answer may come from the cache (PRM-12).
+	if cacheable(t) {
+		row.CacheCatalog, row.CacheMark = catalogVersion(cat, g.Tenant), g.Mark
+		key, err := toolCacheKey(g.Tenant, right, row.DefHash, row.CacheCatalog, row.CacheMark, args)
+		if err != nil {
+			return "", nil, err
+		}
+		hit, err := lookupToolCache(ctx, tx, now, g.Tenant, key)
+		if err != nil {
+			return "", nil, err
+		}
+		if hit != nil {
+			return id, nil, c.serveCachedCall(ctx, tx, now, cat, g, row, hit)
+		}
 	}
 	// A target without a live toolhost ends at once (DLV-16, OBS-10).
 	live, err := c.liveToolhost(ctx, tx, now, cat, g.Tenant, plugin, pl.Placement, host)

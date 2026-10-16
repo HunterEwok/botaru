@@ -531,6 +531,9 @@ func (c *Core) Doctor(ctx context.Context, op Operator, req TenantRequest) (*Doc
 		if err := c.doctorTwoApprovers(ctx, tx, now, cat, tenant, add); err != nil {
 			return err
 		}
+		if err := c.doctorEvals(ctx, tx, tenant, add); err != nil {
+			return err
+		}
 		for _, q := range counts {
 			var n int64
 			if err := tx.QueryRow(ctx, q.sql, q.args...).Scan(&n); err != nil {

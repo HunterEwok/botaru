@@ -138,6 +138,11 @@ func (c *Core) SubmitActivity(ctx context.Context, w *Worker, a Activity) (*Acti
 		}
 		groups := groupClosure(tv, p.Groups)
 		if binding != nil {
+			// The core does not see group membership: a person seen here counts as a member
+			// for the notice when they leave (IDN-13, IDN-14).
+			if err := noteChatSeen(ctx, tx, now, w.Tenant, binding.Name, principal); err != nil {
+				return err
+			}
 			locale = c.pickLocale(binding.Locale, tv.Spec.Locale)
 			// In a group only /help and /about run; every other command is given in a private
 			// chat (PRM-15).

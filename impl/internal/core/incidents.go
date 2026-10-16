@@ -280,7 +280,7 @@ func (c *Core) incidentLoop(ctx context.Context) error {
 	// page.
 	classes := incidentClasses(cat)
 	return errors.Join(c.openIncidents(ctx, cat, classes), c.resolveIncidents(ctx, cat),
-		c.refreshImplicated(ctx, cat), c.unhandledIncidents(ctx, cat))
+		c.refreshImplicated(ctx, cat), c.unhandledIncidents(ctx, cat), c.escalationLoop(ctx, cat))
 }
 
 // openIncidents opens or reopens an incident for every firing episode that a class detects and
@@ -1110,6 +1110,10 @@ func (c *Core) incidentActTx(ctx context.Context, tx pgx.Tx, now time.Time, tena
 			return nil, err
 		}
 		if err := c.settleUnhandled(ctx, tx, now, r); err != nil {
+			return nil, err
+		}
+		// A false incident cancels its attribution candidates without "Yes" (GOV-13).
+		if err := c.dismissedAttributions(ctx, tx, now, r.Tenant, r.ID); err != nil {
 			return nil, err
 		}
 		// The audit keeps the reason code and the Details text for people; no model reads the

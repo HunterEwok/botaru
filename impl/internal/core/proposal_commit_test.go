@@ -42,7 +42,11 @@ func acceptLimits(t *testing.T, b *bench) (string, string) {
 	ctx := context.Background()
 	b.helloDone(t, "1", "", "hi")
 	b.loop(t, "observe")
-	if _, err := b.analysis(t, "1", false, map[string]any{"proposals": []any{changeBody("slow", limitsChange(7)), changeBody("queue_full", limitsChange(9))}}); err != nil {
+	if _, err := b.analysis(t, "1", false, map[string]any{"proposals": []any{changeBody("slow", limitsChange(7))}}); err != nil {
+		t.Fatal(err)
+	}
+	b.asOtherAuthor(t)
+	if _, err := b.analysis(t, "1b", false, map[string]any{"proposals": []any{changeBody("queue_full", limitsChange(9))}}); err != nil {
 		t.Fatal(err)
 	}
 	b.loop(t, "proposal")

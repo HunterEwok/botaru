@@ -216,6 +216,12 @@ func TestLintFixtures(t *testing.T) {
 					if withEx && base[e.Kind+"/"+e.Name+"/"+e.Code] && !ownKeys[e.Kind+"/"+e.Name] {
 						continue
 					}
+					// The quality gate of PRV-3 reads the eval report index of the
+					// installation, which these cases do not give; the skeleton lint has no
+					// such check (fx-prv-03 gives its reports to the runner).
+					if e.Code == "eval_report_missing" {
+						continue
+					}
 					got[e.Code] = true
 					if os.Getenv("BOTARU_LINT_CASE") == id {
 						t.Logf("%s: %+v", id, e)

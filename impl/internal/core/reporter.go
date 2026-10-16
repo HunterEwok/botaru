@@ -121,7 +121,14 @@ func (c *Core) reportAudience(ctx context.Context, tx pgx.Tx, now time.Time, cat
 		}
 		a.Ceiling, a.Group = c.lowerMark(a.Ceiling, b.Ceiling), true
 		ps, err := c.channelPrincipals(ctx, tx, now, tv, b.Channel)
+		if err != nil {
+			return err
+		}
 		addPrincipals(ps)
+		// A person who left but may still be a member counts as a participant without
+		// permissions, so the views for the chat carry nothing (IDN-14, REP-7).
+		left, err := chatLeftovers(ctx, tx, tv.Name, b.Name)
+		addPrincipals(left)
 		return err
 	}
 	switch {
@@ -563,12 +570,28 @@ func (c *Core) deliverDigest(ctx context.Context, tx pgx.Tx, now time.Time, cat 
 		}
 		return b, origin
 	}
+	numbers := digestNumberCheck(cat, tenant, snap)
 	plan := func(addr, targetKind, target, channel, recipient string, group, labeled bool) error {
 		b, origin := body(group, labeled)
 		// The digest pace of the chat (REP-10).
 		runAt, replaced, err := c.digestPace(ctx, tx, now, tenant, channel, target)
 		if err != nil {
 			return err
+		}
+		// The paragraph carries no numbers: one rejected token and the digest goes without it
+		// (REP-4).
+		var checked, rejected int
+		var locale string
+		if _, ok := b["text"]; ok {
+			if locale, err = recipientLocale(ctx, tx, tv, recipient); err != nil {
+				return err
+			}
+			if checked, rejected = numbers.paragraphNumbers(paragraph, c.texts.List(locale, "number.words")); rejected > 0 {
+				delete(b, "text")
+				delete(b, "sources")
+				delete(b, "labeled")
+				origin = "code"
+			}
 		}
 		id, err := c.planDelivery(ctx, tx, now, plannedDelivery{
 			Tenant: tenant, Task: task, Kind: "digest", Addr: addr, TargetKind: targetKind, TargetID: target,
@@ -583,11 +606,17 @@ func (c *Core) deliverDigest(ctx context.Context, tx pgx.Tx, now time.Time, cat 
 				return err
 			}
 		}
-		if runAt == nil {
+		if runAt != nil {
+			if _, err := tx.Exec(ctx, `UPDATE deliveries SET run_at = $2, paced = true WHERE id = $1`, id, *runAt); err != nil {
+				return err
+			}
+		}
+		if rejected == 0 {
 			return nil
 		}
-		_, err = tx.Exec(ctx, `UPDATE deliveries SET run_at = $2, paced = true WHERE id = $1`, id, *runAt)
-		return err
+		// Counts and ids only, never the text or its numbers (D-95, AUD-2).
+		return c.appendEvent(ctx, tx, now, tenant, Event{Type: "digest.text_dropped.v1", Subject: id, Data: map[string]any{
+			"delivery": id, "snapshot_id": snap.ID, "locale": locale, "numbers_checked": checked, "numbers_unmatched": rejected}})
 	}
 	name, err := scheduleOf(ctx, tx, r.treeRecord, task)
 	if err != nil {

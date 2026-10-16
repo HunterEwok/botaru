@@ -166,20 +166,20 @@ func (r campaignRec) itemType() string {
 // campaignRow is a campaign as the core reads it.
 type campaignRow struct {
 	ID, Tenant, ParentTask, Initiator, State, PauseReason, StopReason, PlanHash, Nonce, DecidedBy string
-	Card                                                                                          bool
+	Card, Purged                                                                                  bool
 	Rec                                                                                           campaignRec
 	ExpiresAt, DeadlineAt, GateAt, ProgressAt                                                     *time.Time
 	CreatedAt                                                                                     time.Time
 }
 
 const campaignColumns = `id, tenant, coalesce(parent_task, ''), initiator, state, coalesce(pause_reason, ''), coalesce(stop_reason, ''), plan_hash,
-	nonce, coalesce(decided_by, ''), card, record, expires_at, deadline_at, gate_at, progress_at, created_at`
+	nonce, coalesce(decided_by, ''), card, record, expires_at, deadline_at, gate_at, progress_at, created_at, purged_at IS NOT NULL`
 
 func scanCampaign(row pgx.Row) (*campaignRow, error) {
 	var c campaignRow
 	var rec []byte
 	if err := row.Scan(&c.ID, &c.Tenant, &c.ParentTask, &c.Initiator, &c.State, &c.PauseReason, &c.StopReason, &c.PlanHash,
-		&c.Nonce, &c.DecidedBy, &c.Card, &rec, &c.ExpiresAt, &c.DeadlineAt, &c.GateAt, &c.ProgressAt, &c.CreatedAt); err != nil {
+		&c.Nonce, &c.DecidedBy, &c.Card, &rec, &c.ExpiresAt, &c.DeadlineAt, &c.GateAt, &c.ProgressAt, &c.CreatedAt, &c.Purged); err != nil {
 		return nil, err
 	}
 	return &c, json.Unmarshal(rec, &c.Rec)
@@ -1657,7 +1657,8 @@ func (c *Core) campaignItemEnded(ctx context.Context, tx pgx.Tx, now time.Time, 
 	}
 	_ = json.Unmarshal(rec, &tr)
 	var summary any
-	if itemState == "ok" && len(result) > 0 {
+	// A campaign whose content went (an erasure, RET-10) records no result fields any more.
+	if itemState == "ok" && len(result) > 0 && !cmp.Purged {
 		var res map[string]any
 		if json.Unmarshal(result, &res) == nil {
 			summary = summaryOf(cat.TaskTypes[typ], res)
@@ -1806,7 +1807,13 @@ func (c *Core) finishCampaign(ctx context.Context, tx pgx.Tx, now time.Time, cat
 			return err
 		}
 	}
-	if tv := cat.Tenants[cmp.Tenant]; tv != nil && cmp.Initiator != "system" && cmp.Rec.ScriptRun == "" {
+	// A campaign an erasure stopped is purged first: it sends no summary of its items and
+	// enqueues no continuation for the erased person (RET-10, SEC-11).
+	var purged bool
+	if err := tx.QueryRow(ctx, `SELECT purged_at IS NOT NULL FROM campaigns WHERE id = $1`, cmp.ID).Scan(&purged); err != nil {
+		return err
+	}
+	if tv := cat.Tenants[cmp.Tenant]; tv != nil && cmp.Initiator != "system" && cmp.Rec.ScriptRun == "" && !purged {
 		if err := c.planCampaignCard(ctx, tx, now, tv, cmp, campaignSummaryKind, campaignProgressCard, cmp.Initiator); err != nil {
 			return err
 		}
@@ -1816,6 +1823,11 @@ func (c *Core) finishCampaign(ctx context.Context, tx pgx.Tx, now time.Time, cat
 	}
 	if cmp.Rec.Then == nil || state == "canceled" && cmp.ParentTask != "" && taskCanceled(ctx, tx, cmp.ParentTask) {
 		return nil
+	}
+	if purged {
+		// The campaign's content is gone: the continuation that would read it is refused.
+		return c.appendEvent(ctx, tx, now, cmp.Tenant, Event{Type: "continuation.refused", Subject: cmp.ID,
+			Data: map[string]any{"campaign": cmp.ID, "trigger": "campaign", "type": cmp.Rec.Then.Type, "reason": "gone"}})
 	}
 	return c.campaignContinuation(ctx, tx, now, cat, cmp, state, n)
 }
@@ -1902,6 +1914,25 @@ func (c *Core) campaignContinuation(ctx context.Context, tx pgx.Tx, now time.Tim
 	return nil
 }
 
+// purgeCampaigns strips the content of the selected campaigns (RET-10): the goal, parameters and
+// arguments of the template, and the arguments and result fields of every item that is not
+// pending; the state, rollout, links and argument hashes stay as metadata, and the campaign is
+// marked purged. It is idempotent: a campaign marked before reaches its items again. It counts
+// only the campaigns it newly marked. head is empty or a WITH clause the selection reads.
+func purgeCampaigns(ctx context.Context, tx pgx.Tx, head, where string, args ...any) (int64, error) {
+	with := "WITH "
+	if head != "" {
+		with = head + ", "
+	}
+	var n int64
+	err := tx.QueryRow(ctx, with+`o AS (SELECT id, purged_at IS NULL AS fresh FROM campaigns WHERE id IN (`+where+`)),
+		k AS (UPDATE campaigns SET record = jsonb_set(record, '{template}', coalesce(record->'template', '{}') - 'goal' - 'params' - 'args'),
+		purged_at = coalesce(purged_at, botaru_now()) WHERE id IN (SELECT id FROM o) RETURNING id),
+		i AS (UPDATE campaign_items SET args = '{}', summary = NULL WHERE campaign IN (SELECT id FROM k) AND state <> 'pending' AND (args <> '{}' OR summary IS NOT NULL))
+		SELECT count(*) FILTER (WHERE fresh) FROM o`, args...).Scan(&n)
+	return n, err
+}
+
 // cancelCampaignsOf stops the live campaigns of a task that was canceled: a canceled tree has no
 // campaign either (spec/lifecycles/campaign.md).
 func (c *Core) cancelCampaignsOf(ctx context.Context, tx pgx.Tx, now time.Time, tenant, task string) error {
@@ -1909,18 +1940,17 @@ func (c *Core) cancelCampaignsOf(ctx context.Context, tx pgx.Tx, now time.Time, 
 	if err != nil {
 		return err
 	}
-	var list []string
-	for rows.Next() {
-		var id string
-		if err := rows.Scan(&id); err != nil {
-			rows.Close()
-			return err
-		}
-		list = append(list, id)
-	}
-	rows.Close()
-	if err := rows.Err(); err != nil || len(list) == 0 {
+	list, err := pgx.CollectRows(rows, pgx.RowTo[string])
+	if err != nil {
 		return err
+	}
+	return c.endCampaigns(ctx, tx, now, tenant, list, "initiator")
+}
+
+// endCampaigns rejects the proposed and stops the running or paused campaigns of the list.
+func (c *Core) endCampaigns(ctx context.Context, tx pgx.Tx, now time.Time, tenant string, list []string, reason string) error {
+	if len(list) == 0 {
+		return nil
 	}
 	cat, err := c.Catalog(ctx)
 	if err != nil {
@@ -1932,12 +1962,12 @@ func (c *Core) cancelCampaignsOf(ctx context.Context, tx pgx.Tx, now time.Time, 
 			return err
 		}
 		if cmp.State == "proposed" {
-			if err := c.rejectCampaign(ctx, tx, now, cmp, "initiator"); err != nil {
+			if err := c.rejectCampaign(ctx, tx, now, cmp, reason); err != nil {
 				return err
 			}
 			continue
 		}
-		if err := c.stopCampaign(ctx, tx, now, cat, cmp, "initiator"); err != nil {
+		if err := c.stopCampaign(ctx, tx, now, cat, cmp, reason); err != nil {
 			return err
 		}
 	}
@@ -2656,6 +2686,11 @@ func (c *Core) campaignCommand(ctx context.Context, w *Worker, ob OnBehalf, id, 
 			}
 			if !slices.Contains([]string{"completed", "failed", "canceled"}, cmp.State) {
 				return refuse("already_decided", "the campaign has not ended")
+			}
+			// Its items kept no arguments past the content period or an erasure (RET-10): every
+			// path that strips items marks the campaign purged.
+			if cmp.Purged {
+				return refuse("already_terminal", "the campaign's content is gone")
 			}
 			res, err := c.retryCampaign(ctx, tx, now, cat, cmp)
 			if err != nil {

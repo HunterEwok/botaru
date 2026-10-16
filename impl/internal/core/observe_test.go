@@ -5,6 +5,7 @@ package core
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"testing"
 	"time"
 
@@ -156,28 +157,45 @@ func TestEmitRunFinished(t *testing.T) {
 	}
 }
 
-// Points go after the raw period and rollups after the rollup period, in whole days (OBV-4).
+// Points go after the raw period and rollups after the rollup period, only in whole calendar
+// months: a month goes once its last day is past the period (OBV-4, RET-10).
 func TestObserveRetention(t *testing.T) {
 	ctx := context.Background()
 	b := newObsBench(t)
-	now := time.Now()
-	for _, days := range []int{20, 5} {
+	// The clock goes to the 21st day of a month, so the months below are known.
+	now := b.storeNow(t)
+	day21 := monthStart(now).AddDate(0, 2, 20).Add(12 * time.Hour)
+	b.advance(t, int(day21.Sub(now)/time.Second))
+	m := monthStart(day21)
+	// The last day of the previous month is 21 days past: its month goes. The first day of this
+	// month is 20 days past the 14 days, but its month has not ended: it stays, as does 5 days.
+	for i, at := range []time.Time{m.Add(-12 * time.Hour), m.Add(time.Hour), day21.AddDate(0, 0, -5)} {
 		if _, err := b.c.st.Pool.Exec(ctx, `INSERT INTO obs_points (tenant, series, subject, at, num, source, data_mark, key, created_at)
-			VALUES ('demo', $1, 'task_type:hello.greet.v1', $2, 1, 'core', 'internal', $3, now())`, seriesTaskAttempts, now.AddDate(0, 0, -days), "t:"+time.Duration(days).String()); err != nil {
+			VALUES ('demo', $1, 'task_type:hello.greet.v1', $2, 1, 'core', 'internal', $3, now())`, seriesTaskAttempts, at, fmt.Sprint("t:", i)); err != nil {
 			t.Fatal(err)
 		}
 	}
-	if _, err := b.c.st.Pool.Exec(ctx, `INSERT INTO obs_rollups (tenant, series, subject, rollup, period_start, value, samples, data_mark, updated_at)
-		VALUES ('demo', $1, 'task_type:hello.greet.v1', 'day.p95', $2, 1, 1, 'internal', now())`, seriesTaskAttempts, now.AddDate(0, 0, -100).Truncate(24*time.Hour)); err != nil {
-		t.Fatal(err)
+	// A rollup of the last day of the month that ended more than 93 days ago goes; one of the
+	// first day of the next month, 113 days old, stays until that month is past.
+	old := m.AddDate(0, -3, 0)
+	for _, at := range []time.Time{old.AddDate(0, 0, -1), old} {
+		if _, err := b.c.st.Pool.Exec(ctx, `INSERT INTO obs_rollups (tenant, series, subject, rollup, period_start, value, samples, data_mark, updated_at)
+			VALUES ('demo', $1, 'task_type:hello.greet.v1', 'day.p95', $2, 1, 1, 'internal', now())`, seriesTaskAttempts, at); err != nil {
+			t.Fatal(err)
+		}
 	}
 	b.loop(t, "observe")
-	if n := b.obsCount(t, seriesTaskAttempts); n != 1 {
+	if n := b.obsCount(t, seriesTaskAttempts); n != 2 {
 		t.Fatalf("points after retention %d", n)
 	}
-	var n int
-	if err := b.c.st.Pool.QueryRow(ctx, `SELECT count(*) FROM obs_rollups WHERE period_start < now() - interval '93 days'`).Scan(&n); err != nil || n != 0 {
-		t.Fatalf("old rollups %d %v", n, err)
+	if n := b.count(t, `SELECT count(*) FROM obs_points WHERE at < $1`, m); n != 0 {
+		t.Fatalf("a point of the past month stayed: %d", n)
+	}
+	if n := b.count(t, `SELECT count(*) FROM obs_rollups WHERE period_start < $1`, old); n != 0 {
+		t.Fatalf("old rollups %d", n)
+	}
+	if n := b.count(t, `SELECT count(*) FROM obs_rollups WHERE period_start = $1`, old); n != 1 {
+		t.Fatalf("a rollup of a month not yet past went: %d", n)
 	}
 }
 

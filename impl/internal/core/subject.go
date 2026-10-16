@@ -25,6 +25,14 @@ import (
 
 const subjectCard = "subject_request_erase"
 
+// subjectCardOf is the card of a request kind: a copy has its own (SEC-10).
+func subjectCardOf(kind string) string {
+	if kind == "export" {
+		return "subject_request_export"
+	}
+	return subjectCard
+}
+
 // maxMatchIDs is the most object ids an erase_match records; the erasure request takes as many.
 const maxMatchIDs = 1000
 
@@ -71,6 +79,9 @@ func (r *subjectRequest) card() map[string]any {
 		ctx["subject"] = r.Subject
 		title = "Erase the data of " + r.Subject
 	}
+	if r.Kind == "export" {
+		title = "Send " + r.Subject + " a copy of their data, encrypted with their key"
+	}
 	if r.Kind == "erase_match" {
 		counts := map[string]any{}
 		for k, v := range r.Found {
@@ -79,7 +90,7 @@ func (r *subjectRequest) card() map[string]any {
 		ctx["found"] = counts
 	}
 	return map[string]any{
-		"card": subjectCard, "subject_kind": "subject_request", "id": r.ID, "nonce": r.Nonce,
+		"card": subjectCardOf(r.Kind), "subject_kind": "subject_request", "id": r.ID, "nonce": r.Nonce,
 		"title": cut(title, 200), "state": r.State, "buttons": buttons, "context": ctx,
 		"expires_at": fmtTime(r.Deadline),
 		"footer":     map[string]any{"why_you": "admin:people", "until": fmtTime(r.Deadline), "on_silence": "the request is not executed"},
@@ -92,9 +103,9 @@ func (r *subjectRequest) card() map[string]any {
 // answer; the card goes out then (SEC-11).
 func (c *Core) createSubjectRequest(ctx context.Context, tx pgx.Tx, now time.Time, tv *TenantView, kind, subject, author string, found map[string][]string, needles []string) (string, error) {
 	// A repeated request about the same person while one is open is that request (IDM-3).
-	if kind == "erase" {
+	if kind == "erase" || kind == "export" {
 		var id string
-		err := tx.QueryRow(ctx, `SELECT id FROM subject_requests WHERE tenant = $1 AND kind = 'erase' AND subject = $2 AND state = 'pending'`, tv.Name, subject).Scan(&id)
+		err := tx.QueryRow(ctx, `SELECT id FROM subject_requests WHERE tenant = $1 AND kind = $3 AND subject = $2 AND state = 'pending'`, tv.Name, subject, kind).Scan(&id)
 		if err == nil {
 			return id, nil
 		}
@@ -143,6 +154,11 @@ func (c *Core) planSubjectCards(ctx context.Context, tx pgx.Tx, now time.Time, t
 	if err != nil {
 		return err
 	}
+	var kind string
+	if err := tx.QueryRow(ctx, `SELECT kind FROM subject_requests WHERE id = $1`, id).Scan(&kind); err != nil {
+		return err
+	}
+	card := subjectCardOf(kind)
 	chats, tenant := deciders, tv.Name
 	// A tenant with no second person with admin:people: a farm admin decides and counts as
 	// the second person (SEC-11, D-86 (8)).
@@ -174,12 +190,12 @@ func (c *Core) planSubjectCards(ctx context.Context, tx pgx.Tx, now time.Time, t
 				continue
 			}
 		}
-		body := map[string]any{"form": "card", "card": subjectCard}
+		body := map[string]any{"form": "card", "card": card}
 		if reminder {
 			body["reminder"] = true
 		}
 		if _, err := c.planDelivery(ctx, tx, now, plannedDelivery{
-			Tenant: tenant, Kind: subjectCard, Addr: "admins", TargetKind: "chat",
+			Tenant: tenant, Kind: card, Addr: "admins", TargetKind: "chat",
 			TargetID: Chat{Kind: "direct", ExternalID: a.ExternalID}.ID(), ExecKind: "channel", ExecName: a.Channel,
 			Recipient: a.Principal, Body: body, DataOrigin: "code", SubjectKind: "subject_request", SubjectID: id,
 		}); err != nil {
@@ -237,7 +253,7 @@ func (c *Core) decideSubject(ctx context.Context, w *Worker, ob OnBehalf, req De
 		if r.Nonce != req.Nonce {
 			return refuse("forbidden", "the nonce is not the card's")
 		}
-		press, err := c.checkPress(ctx, tx, now, cat, w, ob, "subject_request", r.ID, []string{subjectCard})
+		press, err := c.checkPress(ctx, tx, now, cat, w, ob, "subject_request", r.ID, []string{subjectCardOf(r.Kind)})
 		if err != nil {
 			return err
 		}
@@ -280,7 +296,21 @@ func (c *Core) decideSubject(ctx context.Context, w *Worker, ob OnBehalf, req De
 			}
 		}
 		erasure := ""
-		if want == "approved" {
+		if want == "approved" && r.Kind == "export" {
+			// The copy goes only to the export sink with recipient_ref self, encrypted with the
+			// person's key (SEC-10).
+			sink := tv.Spec.Privacy.ExportSink
+			if rec, _, err := exportSink(cat, tv.Name, sink); sink == "" || err != nil || rec != "self" {
+				return refuse("not_ready", "the tenant has no export sink with recipient_ref self")
+			}
+			var key string
+			if err := tx.QueryRow(ctx, `SELECT coalesce(recipient_key, '') FROM subject_requests WHERE id = $1`, r.ID).Scan(&key); err != nil {
+				return err
+			}
+			if _, err := c.queueExport(ctx, tx, now, tv.Name, "principal", r.Subject, sink, "self", key, r.ID, press.principal); err != nil {
+				return err
+			}
+		} else if want == "approved" {
 			spec := erasureSpec{Scope: ErasureScope{Tenant: r.Tenant}, Reason: "subject_request", Author: press.principal}
 			if r.Kind == "erase" {
 				spec.Scope.Subject = r.Subject
@@ -290,6 +320,11 @@ func (c *Core) decideSubject(ctx context.Context, w *Worker, ob OnBehalf, req De
 			} else {
 				for _, k := range slices.Sorted(mapKeys(r.Found)) {
 					spec.Scope.IDs = append(spec.Scope.IDs, r.Found[k]...)
+				}
+				// The request records the ids of each store and which stores found nothing,
+				// so a replay after a restore erases by these and never searches (RET-11).
+				if spec.Found, err = matchRecord(ctx, tx, r); err != nil {
+					return err
 				}
 				if len(spec.Scope.IDs) > maxMatchIDs {
 					spec.Scope.IDs = spec.Scope.IDs[:maxMatchIDs]
@@ -329,7 +364,7 @@ func (c *Core) decideSubject(ctx context.Context, w *Worker, ob OnBehalf, req De
 			return err
 		}
 		if err := c.appendEvent(ctx, tx, now, r.Tenant, Event{Type: "decision.made", Subject: r.ID, Data: map[string]any{
-			"subject": map[string]any{"kind": "subject_request", "id": r.ID}, "card": subjectCard, "decision": req.Decision,
+			"subject": map[string]any{"kind": "subject_request", "id": r.ID}, "card": subjectCardOf(r.Kind), "decision": req.Decision,
 			"decided_by": press.principal, "channel": w.Target, "chat_kind": ob.Chat.Kind, "via": "decide",
 			"delivered_at": fmtTime(press.deliveredAt), "decided_at": fmtTime(now),
 			"response_ms": max(now.Sub(press.deliveredAt).Milliseconds(), 0),
@@ -404,16 +439,21 @@ func (c *Core) subjectRequestTimers(ctx context.Context, cat *Catalog) error {
 
 // DataRequest is p2-data-request-request.
 type DataRequest struct {
-	Kind    string `json:"kind"`
-	Subject string `json:"subject"`
+	Kind         string `json:"kind"`
+	Subject      string `json:"subject"`
+	RecipientKey string `json:"recipient_key"`
 }
 
 // PrincipalDataRequest is P2 principal.data_request: a request to erase a principal's data,
-// decided on a card by another person with admin:people. The extract (export) arrives in
-// v0.2 (SEC-10).
+// decided on a card by another person with admin:people. A copy (export) is asked only by the
+// person (SEC-10).
 func (c *Core) PrincipalDataRequest(ctx context.Context, op Operator, req DataRequest) (*Done, error) {
+	if req.Kind == "export" {
+		// A copy goes only to the person, who asks with /mydata export and their key (SEC-10).
+		return nil, refuse("export_recipient_not_subject", "a copy of a person's data is requested only by that person")
+	}
 	if req.Kind != "erase" {
-		return nil, refuse("version_unsupported", "the data extract arrives in v0.2")
+		return nil, refuse("input_schema_invalid", "unknown kind %s", req.Kind)
 	}
 	if req.Subject == "" {
 		return nil, refuse("input_schema_invalid", "subject is required")
@@ -646,11 +686,12 @@ func (c *Core) ErasureRetry(ctx context.Context, op Operator, req ErasureIDReque
 	return &out, err
 }
 
-// addMatchSteps records a match step for every sink and monitoring adapter of the tenant, the
-// edge stores the core does not read (SEC-11, RET-4); it says whether there is one. The
-// channel cache gets match in v0.2 (RET-11).
+// addMatchSteps records a match step for every sink and monitoring adapter of the tenant and
+// every channel that did not declare it stores nothing (a cache or saved attachments), the
+// edge stores the core does not read (SEC-11, RET-4, RET-11); it says whether there is one.
 func addMatchSteps(ctx context.Context, tx pgx.Tx, now time.Time, tenant, request string) (bool, error) {
-	rows, err := tx.Query(ctx, `SELECT DISTINCT kind, target FROM workers WHERE tenant = $1 AND kind IN ('sink', 'monitor') AND state <> 'revoked' AND target IS NOT NULL ORDER BY 1, 2`, tenant)
+	rows, err := tx.Query(ctx, `SELECT DISTINCT kind, target FROM workers WHERE tenant = $1 AND state <> 'revoked' AND target IS NOT NULL
+		AND (kind IN ('sink', 'monitor') OR kind = 'channel' AND coalesce(hello->'driver'->>'stores_content', '') <> 'none') ORDER BY 1, 2`, tenant)
 	if err != nil {
 		return false, err
 	}
@@ -677,8 +718,8 @@ func addMatchSteps(ctx context.Context, tx pgx.Tx, now time.Time, tenant, reques
 	return len(stores) > 0, nil
 }
 
-// claimMatch takes the oldest pending match step of this sink or monitoring adapter: the work
-// item carries the needles of the request and asks for ids only (SEC-11).
+// claimMatch takes the oldest pending match step of this channel, sink or monitoring adapter:
+// the work item carries the needles of the request and asks for ids only (SEC-11, RET-11).
 func (c *Core) claimMatch(ctx context.Context, tx pgx.Tx, now time.Time, w *Worker) (*WorkItem, error) {
 	var id, request string
 	var leaseNo int
@@ -820,9 +861,12 @@ func settleEdgeSteps(ctx context.Context, tx pgx.Tx, now time.Time, r *subjectRe
 			return err
 		}
 	}
+	// A channel that declared it stores nothing is closed by the erasure loop (declared_none).
 	rows, err := tx.Query(ctx, `SELECT s.store, m.state, coalesce(m.reason, '') FROM erasure_steps s
 		LEFT JOIN subject_match_steps m ON m.request = $2 AND m.store = s.store
-		WHERE s.request = $1 AND s.kind IN ('sink', 'monitor') AND s.state = 'pending' ORDER BY s.store`, erasure, r.ID)
+		WHERE s.request = $1 AND s.state = 'pending' AND (s.kind IN ('sink', 'monitor')
+			OR s.kind = 'channel' AND NOT EXISTS (SELECT 1 FROM workers w WHERE w.tenant = s.tenant AND w.kind = 'channel' AND w.target = s.target
+				AND w.state <> 'revoked' AND w.hello->'driver'->>'stores_content' = 'none')) ORDER BY s.store`, erasure, r.ID)
 	if err != nil {
 		return err
 	}
@@ -869,4 +913,28 @@ func sharesIdentity(ctx context.Context, tx pgx.Tx, tenantA, principalA, tenantB
 	err := tx.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM identities a JOIN identities b ON a.identity = b.identity
 		WHERE a.tenant = $1 AND a.principal = $2 AND b.tenant = $3 AND b.principal = $4)`, tenantA, principalA, tenantB, principalB).Scan(&same)
 	return same, err
+}
+
+// matchRecord is what an erase_match found, as the erasure request keeps it: the ids per store,
+// and an empty list for a store whose match answered without ids; a store whose match failed
+// or never answered has no key (RET-11).
+func matchRecord(ctx context.Context, tx pgx.Tx, r *subjectRequest) (map[string][]string, error) {
+	out := map[string][]string{}
+	for k, v := range r.Found {
+		out[k] = slices.Clone(v)
+	}
+	rows, err := tx.Query(ctx, `SELECT store FROM subject_match_steps WHERE request = $1 AND state IN ('done', 'not_applicable') ORDER BY store`, r.ID)
+	if err != nil {
+		return nil, err
+	}
+	stores, err := pgx.CollectRows(rows, pgx.RowTo[string])
+	if err != nil {
+		return nil, err
+	}
+	for _, st := range stores {
+		if out[st] == nil {
+			out[st] = []string{}
+		}
+	}
+	return out, nil
 }

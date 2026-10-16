@@ -218,8 +218,11 @@ func closeLease(ctx context.Context, tx pgx.Tx, now time.Time, l *leaseRow, stat
 		return err
 	}
 	// Handles end together with the lease (SEC-3).
-	_, err = tx.Exec(ctx, `DELETE FROM handles WHERE work_id = $1 AND lease_no = $2`, l.WorkID, l.LeaseNo)
-	return err
+	if _, err = tx.Exec(ctx, `DELETE FROM handles WHERE work_id = $1 AND lease_no = $2`, l.WorkID, l.LeaseNo); err != nil {
+		return err
+	}
+	// The grant of an ended attempt is released (MGR-18); other work has none.
+	return grantEnded(ctx, tx, now, l.WorkID)
 }
 
 // argsValue turns request arguments into a JSON value for hashing.

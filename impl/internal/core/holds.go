@@ -139,7 +139,8 @@ func (c *Core) checkHoldRequest(now time.Time, req HoldSetRequest) (*time.Time, 
 		if !ok || e["kind"] != kind {
 			return refuse("input_schema_invalid", "unknown hold %s %s", kind, id)
 		}
-		if since, _ := e["since"].(string); since != "" && spec.VersionLater(since, spec.Version) && !aheadHolds[id] {
+		// The scope governance (a case pause) is of v0.2, which this build implements (GOV-14).
+		if since, _ := e["since"].(string); since != "" && spec.VersionLater(since, spec.Version) && !aheadHolds[id] && !(kind == "scope" && id == "governance") {
 			return refuse("input_schema_invalid", "the hold %s %s is of %s; this core claims %s", kind, id, since, spec.Version)
 		}
 		return nil
@@ -327,9 +328,25 @@ func (c *Core) holdChanged(ctx context.Context, tx pgx.Tx, now time.Time, h Hold
 	if err := c.appendEvent(ctx, tx, now, h.Tenant, Event{Type: event, Subject: h.ID, Data: data}); err != nil {
 		return 0, err
 	}
+	// A no_tool hold drops the cached tool output it covers (PRM-12).
+	if event == "hold.set.v1" && holdPurgesCache(h.Effects) {
+		if err := purgeToolCache(ctx, tx, h.Scope); err != nil {
+			return 0, err
+		}
+	}
+	// The end of the last suspension resumes the tenant (LCY-1).
+	if event == "hold.released.v1" || event == "hold.expired.v1" {
+		if err := c.tenantResumed(ctx, tx, now, h); err != nil {
+			return 0, err
+		}
+	}
 	// A new hold pauses the campaigns it covers in the same transaction (ORC-11).
 	if event == "hold.set.v1" {
 		if err := c.pauseHeldCampaigns(ctx, tx, now, h.Scope.Tenant); err != nil {
+			return 0, err
+		}
+		// And the script runs it covers (SCR-10).
+		if err := c.pauseHeldRuns(ctx, tx, now, h.Scope.Tenant); err != nil {
 			return 0, err
 		}
 	}
@@ -384,6 +401,14 @@ func (c *Core) HoldRelease(ctx context.Context, a HoldActor, req HoldReleaseRequ
 			}
 			if err := c.personCap(ctx, tx, now, a, "hold.release"); err != nil {
 				return err
+			}
+		}
+		// There is no way back from offboarding: its hold stays (LCY-1).
+		if h.Scope.Kind == "tenant" && h.Reason == "offboarding" {
+			if state, _, err := tenantState(ctx, tx, h.Scope.Tenant); err != nil {
+				return err
+			} else if state != "" {
+				return refuse("forbidden", "the hold of an offboarded tenant is not released")
 			}
 		}
 		if rankOrder[a.Rank] > rankOrder[h.AuthorKind] {
@@ -491,6 +516,15 @@ func (c *Core) HoldList(ctx context.Context, a HoldActor, req TenantRequest) (*H
 // scopes, or "". A hold past its until no longer applies, whether or not the hold loop has
 // written its end yet (HLD-1).
 func heldBy(ctx context.Context, q store.Querier, now time.Time, effects []string, scopes ...scopeRef) (string, error) {
+	return heldByExcept(ctx, q, now, effects, nil, scopes...)
+}
+
+// heldByExcept is heldBy that ignores the tenant holds of the given reasons: an export passes
+// a suspension or an offboarding, never a hold of another reason or scope (LCY-1).
+func heldByExcept(ctx context.Context, q store.Querier, now time.Time, effects, tenantReasons []string, scopes ...scopeRef) (string, error) {
+	if tenantReasons == nil {
+		tenantReasons = []string{}
+	}
 	kinds := make([]string, len(scopes))
 	tenants := make([]string, len(scopes))
 	names := make([]string, len(scopes))
@@ -501,7 +535,8 @@ func heldBy(ctx context.Context, q store.Querier, now time.Time, effects []strin
 	err := q.QueryRow(ctx, `SELECT h.id FROM holds h JOIN unnest($1::text[], $2::text[], $3::text[]) AS s(k, t, n)
 		ON h.scope_kind = s.k AND h.scope_tenant = s.t AND h.scope_name = s.n
 		WHERE h.state = 'active' AND (h.until IS NULL OR h.until > $4) AND h.effects && $5::text[]
-		ORDER BY h.created_at, h.id LIMIT 1`, kinds, tenants, names, now, effects).Scan(&id)
+		AND NOT (h.scope_kind = 'tenant' AND h.reason = ANY($6::text[]))
+		ORDER BY h.created_at, h.id LIMIT 1`, kinds, tenants, names, now, effects, tenantReasons).Scan(&id)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return "", nil
 	}

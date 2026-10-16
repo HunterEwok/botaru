@@ -1,5 +1,5 @@
 registry: delivery-kinds
-version: 5
+version: 6
 description: >-
   Delivery kinds (the kind field of the Delivery record) on which the core code and the recipient
   worker branch. A decision card and a notice to people are delivered with
@@ -105,3 +105,8 @@ entries:
     meaning: a code text of a route on message from the route's template with the closed fields of a message the code wrote and nobody distrusts, to the route's deliver_to; never an alarm
     target: [chat, subject]
     rules: [MSG-16, DLV-6, MON-1]
+  - id: export
+    since: v0.2
+    meaning: the encrypted JSON Lines file of a tenant or principal export to the export_only sink named for it; only this delivery hands out an export file, and never to a chat or a model
+    target: [sink]
+    rules: [LCY-2, SEC-10]

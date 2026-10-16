@@ -165,9 +165,11 @@ type Tenant struct {
 	Locale string `json:"locale"`
 	// Run holds the pipelines of the command /run <name> (APR-17).
 	Run map[string]RunEntry `json:"run"`
-	// Retention holds the file period (ART-1, RET-9).
+	// Retention holds the tenant's periods: the file period (ART-1) and the periods of the
+	// classes content, memory and metadata (RET-9).
 	Retention struct {
-		Files string `json:"files"`
+		Files   string            `json:"files"`
+		Classes map[string]string `json:"classes"`
 	} `json:"retention"`
 	// Insights holds the improvement cycle settings of the tenant (INS-6, PRP-5, DIG-1).
 	Insights TenantInsights `json:"insights"`
@@ -266,6 +268,10 @@ type TenantLimits struct {
 	MaxQueued         int   `json:"max_queued"`
 	MaxEnqueuePerHour int   `json:"max_enqueue_per_hour"`
 	MaxStorageBytes   int64 `json:"max_storage_bytes"`
+	// MaxFileBytes and MaxTaskFilesBytes lower the farm ceilings of one file and of all files
+	// of one task (ART-4); 0 keeps the farm ceiling.
+	MaxFileBytes      int64 `json:"max_file_bytes"`
+	MaxTaskFilesBytes int64 `json:"max_task_files_bytes"`
 }
 
 // Budgets are the tenant money limits in euros (BUD-1).
@@ -302,6 +308,8 @@ type Privacy struct {
 	NoticeVersion json.RawMessage  `json:"notice_version"`
 	// SubjectRequestDays is the deadline of a person's request and of an erasure (SEC-11).
 	SubjectRequestDays int `json:"subject_request_days"`
+	// ExportSink is the export_only sink of /mydata export (SEC-10, LCY-2).
+	ExportSink string `json:"export_sink"`
 }
 
 // PrivacyChannel is one channel driver of the privacy block (SEC-9).
@@ -391,7 +399,13 @@ type Role struct {
 	MayTargetGroups []string `json:"may_target_groups"`
 	// Scripts is the vocabulary of a script author (SCR-5, TRN-2).
 	Scripts *RoleScripts `json:"scripts"`
-	Runtime struct {
+	// ModelGrants is the ladder of stronger profiles of request_model_grant (MGR-17).
+	ModelGrants *struct {
+		Ladder []string `json:"ladder"`
+	} `json:"model_grants"`
+	// Aggregate is the sources block of an aggregator (AGG-2, AGG-3).
+	Aggregate *RoleAggregate `json:"aggregate"`
+	Runtime   struct {
 		Driver string `json:"driver"`
 	} `json:"runtime"`
 }
@@ -408,6 +422,17 @@ type RoleScripts struct {
 	StepTypes []string `json:"step_types"`
 	Actions   []string `json:"actions"`
 	MaxSteps  int      `json:"max_steps"`
+}
+
+// RoleAggregate is what an aggregator reads: only its listed sources (AGG-3).
+type RoleAggregate struct {
+	Sources struct {
+		Roles        []string `json:"roles"`
+		BotGroups    []string `json:"bot_groups"`
+		Series       []string `json:"series"`
+		MessageKinds []string `json:"message_kinds"`
+	} `json:"sources"`
+	MaxSources int `json:"max_sources"`
 }
 
 // RoleCampaigns is the campaigns block of a role: propose is none, read or action.
@@ -566,6 +591,8 @@ type TaskType struct {
 	GoalTrust     string            `json:"goal_trust"`
 	// ResultTTL is the period of the files that became the type's result (ART-1).
 	ResultTTL string `json:"result_ttl"`
+	// ResultMediaTypes are the sniffed types of the result files people and sinks get (ART-5).
+	ResultMediaTypes []string `json:"result_media_types"`
 	// SummaryForManagers is the description of the type that a manager sees (ORC-13).
 	SummaryForManagers string `json:"summary_for_managers"`
 	// GoalTemplates are the goals a script step of the type may name (SCR-4).
@@ -601,6 +628,13 @@ type TaskType struct {
 	Inbox struct {
 		Read []string `json:"read"`
 	} `json:"inbox"`
+	// GrantEligible, GrantEvalSet and Grant are the signs of the right to ask for a stronger
+	// model (MGR-17).
+	GrantEligible bool   `json:"grant_eligible"`
+	GrantEvalSet  string `json:"grant_eval_set"`
+	Grant         *struct {
+		InputTokensMin int `json:"input_tokens_min"`
+	} `json:"grant"`
 }
 
 // Timeouts are the type deadlines as durations (15m, 60s).
