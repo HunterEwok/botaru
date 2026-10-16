@@ -889,6 +889,8 @@ type DecideRequest struct {
 	Nonce       string `json:"nonce"`
 	Decision    string `json:"decision"`
 	ReasonCode  string `json:"reason_code,omitempty"`
+	// Choice is the seat a person chose on promotion_card (GOV-12).
+	Choice string `json:"choice,omitempty"`
 }
 
 // DecideResult is p1-decide-response.
@@ -985,6 +987,10 @@ func (c *Core) Decide(ctx context.Context, w *Worker, ob *OnBehalf, req DecideRe
 		return c.decideScript(ctx, w, *ob, req)
 	case "script_gate":
 		return c.decideGate(ctx, w, *ob, req)
+	case "governance_case":
+		return c.decideCase(ctx, w, *ob, req)
+	case "attribution":
+		return c.decideAttribution(ctx, w, *ob, req)
 	default:
 		return nil, refuse("not_found", "this build decides approvals, memory records, a person's requests, proposals and control cards")
 	}
@@ -1577,6 +1583,9 @@ func (c *Core) CardDetails(ctx context.Context, w *Worker, ob *OnBehalf, req Car
 	}
 	if req.SubjectKind == "proposal" {
 		return c.proposalDetails(ctx, w, *ob, req)
+	}
+	if req.SubjectKind == "governance_case" || req.SubjectKind == "attribution" {
+		return c.govDetails(ctx, w, *ob, req)
 	}
 	if req.SubjectKind != "approval" {
 		return nil, refuse("not_found", "this build has card details only for approvals and proposals")

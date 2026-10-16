@@ -471,7 +471,7 @@ func (c *Core) planProposalCard(ctx context.Context, tx pgx.Tx, now time.Time, t
 // recipient sees its new state.
 func (c *Core) planProposalCardUpdates(ctx context.Context, tx pgx.Tx, now time.Time, p *proposalRow) error {
 	rows, err := tx.Query(ctx, `SELECT id, kind, exec_name, target_id, coalesce(recipient, ''), coalesce(data_mark, '') FROM deliveries
-		WHERE subject_kind = 'proposal' AND subject_id = $1 AND kind IN ('proposal_card', 'proposal_sample_card', 'realization_card', 'rollback_card') AND state IN ('planned', 'sending', 'delivered')
+		WHERE subject_kind = 'proposal' AND subject_id = $1 AND kind IN ('proposal_card', 'proposal_sample_card', 'self_measured_card', 'realization_card', 'rollback_card') AND state IN ('planned', 'sending', 'delivered')
 		ORDER BY seq`, p.ID)
 	if err != nil {
 		return err
@@ -600,6 +600,24 @@ func (c *Core) proposalCardFields(cat *Catalog, p *proposalRow, kind string, rem
 			until = until.Add(durationOr(tv.Spec.Insights.DecideTTL, defaultDecideTTL))
 		}
 		buttons = c.sampleCardFields(p, card, ctxt, until)
+	case selfMeasuredCard:
+		// The calculation figures of a self-measured trial; "Count it" gives the trigger
+		// (GOV-14).
+		t := mmapAny(p.Rec["trial"])
+		card["title"] = cut("Count this success? "+title, 200)
+		ctxt["outcome"] = t["outcome"]
+		for _, k := range []string{"before", "after"} {
+			if v, ok := mmapAny(t[k])["value"]; ok {
+				ctxt[k] = v
+			}
+		}
+		ctxt["self_measured"] = true
+		until := parseTime(asString(mmapAny(p.Rec["self_measured_card"])["at"])).Add(selfMeasuredTTL)
+		card["expires_at"] = fmtTime(until)
+		card["footer"] = map[string]any{"why_you": "governance.confirm:commission", "until": fmtTime(until), "on_silence": "the success stays only in the track record"}
+		if p.Rec["self_measured_count"] == nil && p.Nonce != "" {
+			buttons = append(buttons, button("count"))
+		}
 	case realizationCard:
 		r := mmapAny(p.Rec["realization"])
 		by := asString(r["realize_by"])

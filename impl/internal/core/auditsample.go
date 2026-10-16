@@ -39,9 +39,6 @@ const (
 	sampleUnderShare = 0.3
 )
 
-// sampleStates are the states of the audit sample branch.
-var sampleStates = []string{"sampled", "sample_presented", "sample_judged", "sample_closed"}
-
 // sampleDecisions are the buttons of the blind card and of the judged item (DIG-6).
 var sampleDecisions = []string{"would_accept", "would_not_accept", "override_veto"}
 

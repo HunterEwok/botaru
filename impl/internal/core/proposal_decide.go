@@ -37,7 +37,7 @@ var errNoTrial = errors.New("no trial")
 // the card. "Accept" creates exactly one object of the ordinary path on behalf of that person
 // and the trial record in the same transaction (PRP-4, PRP-18, PRP-21).
 func (c *Core) decideProposal(ctx context.Context, w *Worker, ob OnBehalf, req DecideRequest) (*DecideResult, error) {
-	if req.Decision != "accept" && req.Decision != "reject" && req.Decision != "defer" && !slices.Contains(sampleDecisions, req.Decision) {
+	if req.Decision != "accept" && req.Decision != "reject" && req.Decision != "defer" && req.Decision != "count" && !slices.Contains(sampleDecisions, req.Decision) {
 		return nil, refuse("input_schema_invalid", "a proposal is accepted, rejected or postponed")
 	}
 	cat, err := c.Catalog(ctx)
@@ -59,7 +59,7 @@ func (c *Core) decideProposal(ctx context.Context, w *Worker, ob OnBehalf, req D
 		if p.Nonce == "" || p.Nonce != req.Nonce {
 			return refuse("forbidden", "the nonce is not the card's")
 		}
-		press, err := c.checkPress(ctx, tx, now, cat, w, ob, "proposal", p.ID, []string{proposalCard, proposalSampleCard})
+		press, err := c.checkPress(ctx, tx, now, cat, w, ob, "proposal", p.ID, []string{proposalCard, proposalSampleCard, selfMeasuredCard})
 		if err != nil {
 			return err
 		}
@@ -77,6 +77,14 @@ func (c *Core) decideProposal(ctx context.Context, w *Worker, ob OnBehalf, req D
 		var views int
 		if err := tx.QueryRow(ctx, `SELECT count(*) FROM card_views WHERE subject_kind = 'proposal' AND subject_id = $1 AND principal = $2`, p.ID, press.principal).Scan(&views); err != nil {
 			return err
+		}
+		if req.Decision == "count" {
+			// "Count it" on self_measured_card (GOV-14).
+			out.State, err = c.countSelfMeasured(ctx, tx, now, press, p, deny)
+			if err != nil {
+				return err
+			}
+			return c.planProposalCardUpdates(ctx, tx, now, p)
 		}
 		if _, sampled := mmapAny(p.Rec["sample"])["month"]; sampled {
 			// An item of the audit sample has its own branch (DIG-6).

@@ -308,6 +308,10 @@ func (r *lintRegs) parseCap(cp string) (string, string) {
 		if e, ok := r.capForms[base]; ok && strings.Contains(fmt.Sprint(e["form"]), "<") {
 			return base, arg
 		}
+		// A capability whose form has a fixed argument, such as governance.confirm:commission.
+		if e, ok := r.capForms[base]; ok && fmt.Sprint(e["form"]) == cp {
+			return base, arg
+		}
 	}
 	if _, ok := r.capForms[cp]; ok {
 		return cp, ""

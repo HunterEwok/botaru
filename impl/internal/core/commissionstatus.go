@@ -93,8 +93,11 @@ func (c *Core) CommissionStatus(ctx context.Context, op Operator, req TenantRequ
 		if err != nil {
 			return err
 		}
-		var since any
-		out = map[string]any{"tenant": tenant, "lenses": list, "review_line": rl, "audit_sample": sample, "decision_stats": stats, "governance_since": since}
+		since, err := governanceSince(ctx, tx, tenant)
+		if err != nil {
+			return err
+		}
+		out = map[string]any{"tenant": tv.Name, "lenses": list, "review_line": rl, "audit_sample": sample, "decision_stats": stats, "governance_since": since}
 		return nil
 	})
 	return out, err
