@@ -4,6 +4,8 @@ package core
 
 import (
 	"context"
+	"slices"
+	"strings"
 	"testing"
 	"time"
 
@@ -381,4 +383,39 @@ func TestCardLimitPerDay(t *testing.T) {
 		t.Fatalf("cards the next day %+v", got)
 	}
 	_ = created
+}
+
+// A person's quiet hours and daily digest defer only deliveries of a deferrable kind; an admin
+// without admin:people cannot set another person's (DLV-10).
+func TestPrefsQuietHours(t *testing.T) {
+	ctx := context.Background()
+	b := newActionBench(t, nil)
+	b.drain(t)
+	cat, err := b.c.Catalog(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	loc := tenantLocation(cat, "demo")
+	now := b.now(t).In(loc)
+	from, to := now.Add(-time.Hour).Format("15:04"), now.Add(time.Hour).Format("15:04")
+	if res := b.say(t, "p1", "telegram:1001", "1001", "/prefs quiet "+from+"-"+to); !strings.Contains(res.Text, "Quiet hours: "+from+"-"+to) {
+		t.Fatalf("/prefs %q", res.Text)
+	}
+	if res := b.say(t, "p2", "telegram:1001", "1001", "/prefs telegram:1002 digest daily"); !strings.Contains(res.Text, "group") {
+		t.Fatalf("/prefs of another person %q", res.Text)
+	}
+	for _, k := range []string{"digest", "alarm_notice"} {
+		if _, err := b.c.st.Pool.Exec(ctx, `INSERT INTO deliveries (id, tenant, kind, addr, target_kind, target_id, exec_kind, exec_name, recipient, state, dataorigin,
+			body, created_at, updated_at) VALUES ('dl_'||$2, 'demo', $2, 'x', 'chat', 'direct:1001', 'channel', 'telegram', $1, 'planned', 'code', '{}', botaru_now(), botaru_now())`,
+			b.alice, k); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if got := b.drain(t); len(got) == 0 || got[len(got)-1].kind != "alarm_notice" || slices.ContainsFunc(got, func(s sent) bool { return s.kind == "digest" }) {
+		t.Fatalf("inside quiet hours %+v", got)
+	}
+	b.advance(t, 3700)
+	if got := b.drain(t); len(got) != 1 || got[0].kind != "digest" {
+		t.Fatalf("after quiet hours %+v", got)
+	}
 }

@@ -74,6 +74,8 @@ texts:
   cmd.profile.actions: "Actions you can request: {titles}."
   cmd.profile.data: "Your data classes: {classes}."
   cmd.lang.unknown: "Unknown language. Available: {locales}."
+  cmd.prefs.show: "Quiet hours: {quiet}. Daily digest: {digest}."
+  cmd.prefs.usage: "Usage in a private chat: /prefs, /prefs quiet HH:MM-HH:MM, /prefs quiet off, /prefs digest daily or /prefs digest off."
   cmd.forbidden.needs: This needs the group {group}; contact the tenant administrator.
   cmd.followup.hint: You can simply reply with a message within {minutes} minutes.
   # A person's data and memory (MEM-4, SEC-11)

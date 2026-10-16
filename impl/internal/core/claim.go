@@ -768,6 +768,17 @@ func (c *Core) claimDelivery(ctx context.Context, tx pgx.Tx, now time.Time, cat 
 				continue
 			}
 		}
+		// The person's quiet hours and daily digest defer a deferrable delivery (DLV-10).
+		if recipient != nil && w.Kind == "channel" {
+			wait, err := c.prefsDefer(ctx, tx, now, cat, w.Tenant, id, kind, *recipient)
+			if err != nil {
+				return nil, err
+			}
+			if wait {
+				skip = append(skip, id)
+				continue
+			}
+		}
 		if sk := deref(subjectKind); sk == "approval" || sk == "proposal" || sk == "control" || sk == "campaign" || sk == "script" || sk == "script_gate" {
 			// A card is drawn from the record now, so it shows the current state (APR-3). An
 			// update waits while the card it edits is being sent, and is dropped when that card
