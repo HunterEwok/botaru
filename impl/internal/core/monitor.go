@@ -599,10 +599,15 @@ func sevOf(ok bool, bad string) string {
 
 // profiles are the conformance profiles this installation claims (MAN-8, D-88).
 func (c *Core) profiles() []string {
+	out := []string{"core"}
 	if c.monitorOn() {
-		return []string{"core", "monitor"}
+		out = append(out, "monitor")
 	}
-	return []string{"core"}
+	// The knowledge profile once the claim lists it (spec.Claims, KNW-*, SKL-*).
+	if knowledgeOn() {
+		out = append(out, "knowledge")
+	}
+	return out
 }
 
 // exportSuperseded withholds a failed export that a newer one replaces: an alarm change with a

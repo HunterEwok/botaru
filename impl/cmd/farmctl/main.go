@@ -450,6 +450,13 @@ func apply(c *client, args []string) error {
 	if ps := personaFiles(docs); len(ps) > 0 {
 		req["personas"] = ps
 	}
+	// The skill folders and the git corpus folders go with the set (SKL-1, SKL-2, KNW-2).
+	if sk := skillFolders(docs, ms); len(sk) > 0 {
+		req["skills"] = sk
+	}
+	if kn := knowledgeFolders(docs, ms); len(kn) > 0 {
+		req["knowledge"] = kn
+	}
 	// The commit message carries the Botaru-Proposal and Botaru-Revert lines (PRP-19, PRP-20).
 	if out, err := exec.Command("git", "-C", dir, "log", "-1", "--format=%B", *commit).Output(); err == nil {
 		if msg := strings.TrimSpace(string(out)); msg != "" {

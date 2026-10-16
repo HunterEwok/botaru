@@ -169,10 +169,10 @@ func runtimeMajorMinor(v string) string {
 
 // staticFingerprint is the static fingerprint of spec/hashing.md from its parts: the hash of the
 // role manifest, the hashes of its claimed type manifests by type name, the persona pin hash of
-// its position ("" for none), its base and analysis profiles and its runtime driver ("" for the
-// core loop). Skills are not built, so their part is the hash of the empty list as in the run
-// fingerprint; there is no sandbox (PRV-1, PRV-3).
-func staticFingerprint(roleHash string, typeHashes map[string]string, persona, base, analysis, driver string) (string, error) {
+// its position ("" for none), its base and analysis profiles, its runtime driver ("" for the
+// core loop) and its pinned skills, whose part is computed as in the run fingerprint (the hash
+// of the empty list without skills); there is no sandbox (PRV-1, PRV-3, SKL-2).
+func staticFingerprint(roleHash string, typeHashes map[string]string, persona, base, analysis, driver string, skillRefs []manifest.SkillRef) (string, error) {
 	types := []any{}
 	for _, name := range slices.Sorted(mapKeys(typeHashes)) {
 		// A claimed type the set does not have adds no hash.
@@ -184,7 +184,7 @@ func staticFingerprint(roleHash string, typeHashes map[string]string, persona, b
 	if err != nil {
 		return "", err
 	}
-	skills, err := jcs.Hash([]any{})
+	skills, err := skillsPart(skillRefs)
 	if err != nil {
 		return "", err
 	}
@@ -267,7 +267,7 @@ func translatorStates(docs []manifest.Doc, S *lintSet) (map[[2]string]*trnState,
 			}
 			models := mmap(r.spec, "models")
 			fp, err := staticFingerprint(hashes[manifest.Key{Kind: "Role", Name: r.name}], types, pin, mstr(models, "base"), mstr(models, "analysis"),
-				mstr(mmap(r.spec, "runtime"), "driver"))
+				mstr(mmap(r.spec, "runtime"), "driver"), skillRefsOf(r.spec))
 			if err != nil {
 				return nil, err
 			}

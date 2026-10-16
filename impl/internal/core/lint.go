@@ -1788,6 +1788,7 @@ func (c *Core) lintManifests(docs []manifest.Doc, index []int, personas personaL
 		return nil, err
 	}
 	c.lintData(S, f)
+	c.lintKnowledge(S, f)
 	// The translator gate of a production tenant (TRN-6).
 	if err := lintTranslatorEvals(docs, S, prior, f); err != nil {
 		return nil, err

@@ -115,8 +115,10 @@ var Ahead = map[string][]AheadField{
 	"Sink": fields("v0.2", "/spec/export_only/recipient_ref"),
 	// The tool output cache (PRM-12).
 	"ToolPlugin": fields("v0.2", "/spec/tools/*/cache_s"),
-	// The model exposure of a dataset (PRV-4) and the maintenance hold of a host (MON-9).
-	"Catalog": fields("v0.2", "/spec/resources/*/model_exposure", "/spec/resources/*/kind", "/spec/hosts/*/maintenance_hold"),
+	// The model exposure of a dataset (PRV-4) and the maintenance hold of a host (MON-9). With
+	// the knowledge profile the trust and source of a corpus (KNW-2).
+	"Catalog": append(fields("v0.2", "/spec/resources/*/model_exposure", "/spec/resources/*/kind", "/spec/hosts/*/maintenance_hold"),
+		profileOnly("knowledge", fields("v0.2", "/spec/resources/*/trust", "/spec/resources/*/source"))...),
 	// With the ingress profile a source channel: its direction and its ingress block (ING-1 to
 	// ING-4).
 	"Channel": profileOnly("ingress", fields("v0.2", "/spec/direction", "/spec/ingress")),
