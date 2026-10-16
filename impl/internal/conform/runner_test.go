@@ -237,3 +237,90 @@ func jsonText(m map[string]any) string {
 	b, _ := json.Marshal(m)
 	return string(b)
 }
+
+// TestLintFragments: a lint fragment completes the example object of its kind and is applied
+// with dry_run on top of the seed (conformance/runner.md, verb lint), after the same set without
+// the fragment as the control. Rows of INJ-14, APR-5 and INJ-3 here; a fragment in given runs as
+// the row's lint, a fragment in prose and the deployment description stay unchecked.
+func TestLintFragments(t *testing.T) {
+	r := testRunner(t)
+	got := runYAML(t, r, `
+id: t-lint
+rules: [INJ-14]
+cases:
+- id: shell
+  given:
+    cmd_yaml: {argv: [/bin/sh, -c, df -h]}
+  expect: {result: rejected, stage: apply}
+- id: argv-ok
+  given:
+    cmd_yaml: {argv: [/usr/bin/df, -h, -x, tmpfs]}
+  expect: {result: ok}
+- id: action-grant
+  steps:
+  - lint: {groups_yaml: 'staff: task:action.cleanup_pipeline_tmp.v1'}
+  expect: {result: rejected, stage: apply, error: action_type_grant}
+- id: untrusted-missing
+  steps:
+  - lint: {tool_yaml: {access: read, tier: 1, output_class: raw_logs, untrusted_output: null}}
+  expect: {result: rejected, stage: apply}
+- id: prose
+  steps:
+  - lint: {role_yaml: 'ops-reader with models.base base-alt'}
+  expect: {result: ok}
+- id: deploy
+  given:
+    deploy_yaml: {runtime: {secrets: [provider-a]}}
+  expect: {result: rejected, stage: lint}
+`)
+	wantStatus(t, got, map[string]Status{"shell": Passed, "argv-ok": Passed, "action-grant": Passed, "untrusted-missing": Passed,
+		"prose": Unchecked, "deploy": Unchecked})
+}
+
+func TestMergeFragment(t *testing.T) {
+	f, err := fragment("run.approval: none, tier: 3")
+	if err != nil {
+		t.Fatal(err)
+	}
+	dst := map[string]any{"tier": 0, "run": map[string]any{"approval": "card", "max": 1}, "drop": true}
+	f["drop"] = nil
+	mergeInto(dst, f)
+	if want := `{"run":{"approval":"none","max":1},"tier":3}`; jsonText(dst) != want {
+		t.Fatalf("merged %s, want %s", jsonText(dst), want)
+	}
+	if g, err := fragment("approver: action.approve:*"); err != nil || g["approver"] != "action.approve:*" {
+		t.Fatalf("group fragment: %v %v", g, err)
+	}
+	if _, err := fragment("hello with a new persona (tier 0 types only)"); err == nil {
+		t.Fatal("a fragment in prose was read")
+	}
+}
+
+// TestPlainRow: a lint or P1 row of the permission table runs as any other case without the
+// table context (system, roles, catalog) and without the header people it does not name; a C2
+// row goes to authorize.eval and a service row keeps its context.
+func TestPlainRow(t *testing.T) {
+	r := testRunner(t)
+	r.tables = map[string]*tableInfo{"t.yaml": {authorize: true, tenantKind: "production"}}
+	given := map[string]any{"tenant": "demo", "system": []any{"system-ops"}, "catalog": map[string]any{"web1": map[string]any{}},
+		"people": []any{map[string]any{"principal": "human:alice", "groups": []any{"user", "admin"}}}}
+	lint := &Case{File: "t.yaml", Given: given, Steps: []map[string]any{{"lint": map[string]any{"groups_yaml": "staff: data:*"}}}}
+	pc := r.plainRow(lint)
+	if pc == nil || len(pc.Given) != 1 || pc.Given["tenant"] != "demo" || !pc.narrowed {
+		t.Fatalf("lint row: %+v", pc)
+	}
+	if r.plainRow(pc) != nil {
+		t.Fatal("a narrowed row is narrowed again")
+	}
+	c2 := &Case{File: "t.yaml", Given: given, Steps: []map[string]any{{"call": map[string]any{"port": "C2", "op": "authorize"}}}}
+	if r.plainRow(c2) != nil {
+		t.Fatal("a C2 row runs as a plain case")
+	}
+	if row, _ := r.tableRow(c2); row == nil {
+		t.Fatal("a C2 row is no table row")
+	}
+	svc := &Case{File: "t.yaml", Given: map[string]any{"tool": "service/control"}, Steps: lint.Steps}
+	if r.plainRow(svc) != nil {
+		t.Fatal("a service row lost its context")
+	}
+}

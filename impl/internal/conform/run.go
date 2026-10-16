@@ -135,6 +135,11 @@ func (r *Runner) runCase(ctx context.Context, c *Case) Result {
 		}
 		return r.runTable(ctx, row)
 	}
+	if pc := r.plainRow(c); pc != nil {
+		res := r.runCase(ctx, pc)
+		res.Case = c
+		return res
+	}
 	if need := r.Needs(c); need != "" {
 		return Result{Case: c, Status: Unchecked, Detail: need}
 	}
@@ -215,6 +220,16 @@ func (r *Runner) givenNeeds(c *Case) string {
 				}
 			}
 		default:
+			if strings.HasSuffix(k, "_yaml") {
+				// A fragment in given is the row's lint when the case has no steps.
+				if len(c.Steps) > 0 {
+					return "given " + k + " with steps"
+				}
+				if n := lintNeeds(map[string]any{k: c.Given[k]}); n != "" {
+					return n
+				}
+				continue
+			}
 			return "given " + k
 		}
 	}
@@ -267,15 +282,8 @@ func (r *Runner) stepNeeds(st map[string]any) string {
 			}
 		}
 	case st["lint"] != nil:
-		for k := range asMap(st["lint"]) {
-			if k != "tenant_yaml" {
-				return "lint " + k
-			}
-		}
-		// A tenant_yaml row without kind: test lints a production tenant, and a test bench
-		// refuses every production tenant (APR-9), so an apply would not reach the row's check.
-		if str(asMap(asMap(st["lint"])["tenant_yaml"])["kind"]) != "test" {
-			return "lint of a production tenant on a test bench"
+		if n := lintNeeds(asMap(st["lint"])); n != "" {
+			return n
 		}
 	default:
 		for _, v := range []string{"model", "occur", "check"} {
@@ -407,9 +415,25 @@ func (x *exec) run(ctx context.Context) Result {
 		}
 		return res(Failed, "given holds: %v", err)
 	}
+	if frags := x.givenFragments(); len(frags) > 0 {
+		o, err := x.lint(ctx, frags)
+		if err != nil {
+			if u, ok := err.(errUnchecked); ok {
+				return res(Unchecked, "%s", string(u))
+			}
+			return res(Failed, "given fragments: %v", err)
+		}
+		if o.Unimplemented != "" {
+			return res(Unchecked, "core: %s", o.Unimplemented)
+		}
+		last = o
+	}
 	for i, st := range x.c.Steps {
 		o, err := x.step(ctx, st)
 		if err != nil {
+			if u, ok := err.(errUnchecked); ok {
+				return res(Unchecked, "step %d: %s", i+1, string(u))
+			}
 			return res(Failed, "step %d: %v", i+1, err)
 		}
 		if o.Unimplemented != "" {
@@ -654,6 +678,17 @@ func withTypes(base, more []map[string]any) []map[string]any {
 	return out
 }
 
+// givenFragments are the lint fragments of given (keys <kind>_yaml) of a case without steps.
+func (x *exec) givenFragments() map[string]any {
+	out := map[string]any{}
+	for k, v := range x.c.Given {
+		if strings.HasSuffix(k, "_yaml") {
+			out[k] = v
+		}
+	}
+	return out
+}
+
 // givenGroups returns the groups given.people lists for a person, or nil when it does not
 // list the person.
 func (x *exec) givenGroups(handle string) map[string]bool {
@@ -886,25 +921,6 @@ func (x *exec) step(ctx context.Context, st map[string]any) (*outcome, error) {
 		return x.lint(ctx, asMap(st["lint"]))
 	}
 	return nil, fmt.Errorf("no verb")
-}
-
-// lint applies manifest fragments on top of the seed with dry_run.
-func (x *exec) lint(ctx context.Context, l map[string]any) (*outcome, error) {
-	ms, err := manifest.ReadFiles([]string{filepath.Join(x.r.Root, "examples/tenants/demo/tenant.yaml")})
-	if err != nil {
-		return nil, err
-	}
-	// Needs lets through only rows of kind: test; the fragment sets it.
-	t := ms[0].Value
-	sp := asMap(t["spec"])
-	for k, v := range asMap(l["tenant_yaml"]) {
-		sp[k] = v
-	}
-	set := []map[string]any{t}
-	if _, err := testbench.DropUnsupported(x.r.spec, set); err != nil {
-		return nil, err
-	}
-	return x.apply(ctx, set, true)
 }
 
 func (x *exec) stand(ctx context.Context, s map[string]any) (*outcome, error) {

@@ -26,7 +26,7 @@ cases:
   rules: [APR-19]
   steps:
   - lint: {action_yaml: 'risk: low, ttl: 15m'}
-  expect: {result: rejected, stage: apply, note: for risk low the deadline is no less than 60 minutes}
+  expect: {result: ok, note: 'the manifest passes; for risk low the card expiry stays 60 minutes, a shorter ttl does not shorten it'}
 - id: apr-ttl-05
   rules: [APR-19]
   given:

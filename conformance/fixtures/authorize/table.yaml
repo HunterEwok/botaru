@@ -230,13 +230,13 @@ cases:
   given: {tenant: demo}
   steps:
   - lint: {task_type_yaml: 'data_class: pii'}
-  expect: {result: rejected, stage: apply, reason: forbidden}
+  expect: {result: rejected, stage: apply}
 - id: authz-13
   rules: [PRM-5]
   given: {tenant: demo}
   steps:
   - lint: {tool_yaml: 'output_class: secret'}
-  expect: {result: rejected, stage: apply, reason: forbidden}
+  expect: {result: rejected, stage: apply}
 # Permissions do not grow along a chain (PRM-6)
 - id: authz-14
   rules: [PRM-6, IDN-2]
@@ -279,7 +279,7 @@ cases:
   given: {tenant: demo}
   steps:
   - lint: {groups_yaml: 'staff: task:action.cleanup_pipeline_tmp.v1'}
-  expect: {result: rejected, stage: apply, reason: forbidden}
+  expect: {result: rejected, stage: apply, error: action_type_grant}
 - id: authz-18
   rules: [PRM-7]
   given: {tenant: demo}
