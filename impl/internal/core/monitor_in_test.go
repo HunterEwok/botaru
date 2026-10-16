@@ -509,24 +509,23 @@ func TestMaintenanceWindow(t *testing.T) {
 	if hs = holds(); len(hs) != 0 {
 		t.Fatalf("a released window set a new hold %+v", hs)
 	}
-	// The release holds only for that period: after an ended event the next period gets a
-	// new hold, and so does an active event after a gap past the last until (MON-9).
-	poll(70, "ended", 0)
-	poll(71, "active", 120*time.Second)
+	// A gap in the polls keeps the release; only an ended event closes the period, and the
+	// next period gets a new hold (MON-9).
+	b.advance(t, 300)
+	poll(70, "active", 120*time.Second)
+	if hs = holds(); len(hs) != 0 {
+		t.Fatalf("a gap undid the release %+v", hs)
+	}
+	poll(71, "ended", 0)
+	poll(72, "active", 120*time.Second)
 	if hs = holds(); len(hs) != 1 {
 		t.Fatalf("the period after a released one %+v", hs)
 	}
-	if _, err := b.c.HoldRelease(ctx, OperatorActor(b.op), HoldReleaseRequest{ID: hs[0].ID}); err != nil {
-		t.Fatal(err)
-	}
-	poll(72, "active", 120*time.Second)
-	if hs = holds(); len(hs) != 0 {
-		t.Fatalf("a released period set a new hold %+v", hs)
-	}
-	b.advance(t, 300)
-	poll(73, "active", 120*time.Second)
-	if hs = holds(); len(hs) != 1 {
-		t.Fatalf("after a poll gap %+v", hs)
+	// A new period while that hold still runs extends it instead of a second hold.
+	poll(73, "ended", 0)
+	poll(74, "active", 300*time.Second)
+	if hs2 := holds(); len(hs2) != 1 || hs2[0].ID != hs[0].ID {
+		t.Fatalf("a second hold beside the running one %+v", hs2)
 	}
 	if _, err := b.c.HoldRelease(ctx, OperatorActor(b.op), HoldReleaseRequest{ID: hs[0].ID}); err != nil {
 		t.Fatal(err)

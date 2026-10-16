@@ -123,7 +123,8 @@ func tenantLocale(cat *Catalog, tenant string) string {
 func (c *Core) replyLocale(ctx context.Context, tx pgx.Tx, cat *Catalog, tenant, task, initiator string, r treeRecord) (string, error) {
 	tl := tenantLocale(cat, tenant)
 	// A task of a schedule answers its addresses: the locale of the first bound chat among
-	// them that has one, then the schedule's.
+	// them that has one, then the schedule's. Only chat:<binding> addresses count: a
+	// group:<people> address has a locale per person, so it falls back to the schedule's.
 	if s, err := taskSchedule(ctx, tx, cat, tenant, task); err != nil {
 		return "", err
 	} else if s != nil {

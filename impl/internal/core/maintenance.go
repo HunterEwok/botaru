@@ -39,9 +39,10 @@ type maintenanceEvent struct {
 // no_tool and pause_action (no_action for a host with maintenance_hold: true), reason
 // maintenance, author contain_auto, source system:monitor and the event's until; each later
 // active event of the window moves that until forward, never back. An ended event changes no
-// hold, but a later active event of the same window id, or one after a gap past the until of
-// the last, is a new period with a new hold. After a person released the hold, the window sets
-// no new hold while that period stays active. A node of the farm
+// hold, but a later active event of the same window id is a new period: it extends the hold
+// of the last period while that still runs, and sets a new one otherwise. A gap in the polls
+// alone changes no hold and starts no period. After a person released the hold, the window
+// sets no new hold until an ended event closes that period. A node of the farm
 // itself, or one no catalog host of the tenant binds, sets nothing.
 func (c *Core) maintenanceSignal(ctx context.Context, w *Worker, cat *Catalog, data map[string]any) (*ActivityResult, error) {
 	if err := c.spec.Validate("ext-monitor-maintenance", data); err != nil {
@@ -94,44 +95,58 @@ func (c *Core) maintenanceSignal(ctx context.Context, w *Worker, cat *Catalog, d
 		if !until.After(now) {
 			return nil
 		}
-		// A period lasts while active events come before the until of the last one; after an
-		// ended event or a gap past that until, an active event starts a new period (MON-9).
-		if found && endedAt == nil && periodUntil != nil && periodUntil.After(now) {
-			if _, err := tx.Exec(ctx, `UPDATE maintenance_windows SET period_until = greatest(period_until, $3) WHERE node = $1 AND maintenance_id = $2`,
-				host.Node, ev.MaintenanceID, until); err != nil {
-				return err
-			}
-			if released {
+		// extend moves the until of an active hold of the window forward, never back: the
+		// only way a hold's deadline grows (HLD-2).
+		extend := func(h *holdRow) error {
+			if !until.After(*h.until) {
 				return nil
 			}
+			if _, err := tx.Exec(ctx, `UPDATE holds SET until = $2 WHERE id = $1`, h.ID, until); err != nil {
+				return err
+			}
+			_, err := c.appendAudit(ctx, tx, now, Audit{
+				Tenant: h.Tenant, Kind: "command", Actor: Actor{Principal: "system", Via: "system"},
+				Command: "hold.extend", Target: &Target{Kind: "hold", ID: h.ID}, OK: true,
+				After: map[string]any{"until": fmtTime(until), "source": maintenanceSource},
+			})
+			return err
+		}
+		if found {
 			h, err := loadHold(ctx, tx, holdID, true)
 			if err != nil {
 				return err
 			}
-			if h.State == "released" {
-				// A person released it: no new hold while this period stays active.
-				_, err := tx.Exec(ctx, `UPDATE maintenance_windows SET released = true WHERE node = $1 AND maintenance_id = $2`, host.Node, ev.MaintenanceID)
-				return err
-			}
-			if h.State == "active" && h.until != nil && h.until.After(now) {
-				// The only way a hold's deadline grows (HLD-2): forward, never back.
-				if until.After(*h.until) {
-					if _, err := tx.Exec(ctx, `UPDATE holds SET until = $2 WHERE id = $1`, h.ID, until); err != nil {
-						return err
-					}
-					if _, err := c.appendAudit(ctx, tx, now, Audit{
-						Tenant: h.Tenant, Kind: "command", Actor: Actor{Principal: "system", Via: "system"},
-						Command: "hold.extend", Target: &Target{Kind: "hold", ID: h.ID}, OK: true,
-						After: map[string]any{"until": fmtTime(until), "source": maintenanceSource},
-					}); err != nil {
-						return err
-					}
+			live := h.State == "active" && h.until != nil && h.until.After(now)
+			if endedAt == nil {
+				// The same period: only an ended event ends it, so a gap in the polls alone
+				// changes no hold and keeps a person's release (MON-9).
+				if _, err := tx.Exec(ctx, `UPDATE maintenance_windows SET period_until = greatest(period_until, $3) WHERE node = $1 AND maintenance_id = $2`,
+					host.Node, ev.MaintenanceID, until); err != nil {
+					return err
+				}
+				if released {
+					return nil
+				}
+				if h.State == "released" {
+					// A person released it: no new hold while this period stays active.
+					_, err := tx.Exec(ctx, `UPDATE maintenance_windows SET released = true WHERE node = $1 AND maintenance_id = $2`, host.Node, ev.MaintenanceID)
+					return err
+				}
+				if live {
+					out = ActivityResult{Result: "accepted"}
+					return extend(h)
+				}
+				// The hold ran out by its until inside the period: a new hold for the rest.
+			} else if live {
+				// A new period while the hold of the last one still runs: that hold is
+				// extended instead of a second one beside it.
+				if _, err := tx.Exec(ctx, `UPDATE maintenance_windows SET ended_at = NULL, released = false, period_until = $3 WHERE node = $1 AND maintenance_id = $2`,
+					host.Node, ev.MaintenanceID, until); err != nil {
+					return err
 				}
 				out = ActivityResult{Result: "accepted"}
-				return nil
+				return extend(h)
 			}
-			// The hold expired by an operator's lift or its own until inside the period: a
-			// new hold for the rest of it.
 		}
 		effects := []string{"no_tool", "pause_action"}
 		if host.MaintenanceHold {

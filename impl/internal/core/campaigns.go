@@ -1360,7 +1360,7 @@ func (c *Core) releaseItems(ctx context.Context, tx pgx.Tx, now time.Time, cat *
 	}
 	// An action that needs two approvers since the campaign was approved stops it (APR-16).
 	if campaignTwoApprovers(cat, cmp) {
-		return c.stopCampaign(ctx, tx, now, cat, cmp, "campaign_policy_exceeded")
+		return c.stopTwoApprovers(ctx, tx, now, cat, cmp)
 	}
 	total := n.total()
 	canary := min(cmp.Rec.Rollout.Canary, total)
@@ -2703,12 +2703,16 @@ func (c *Core) resumeCampaign(ctx context.Context, tx pgx.Tx, now time.Time, cat
 	}
 	tv := cat.Tenants[cmp.Tenant]
 	stop, err := c.campaignRights(ctx, tx, now, tv, cmp)
-	if err == nil && stop == "" && campaignTwoApprovers(cat, cmp) {
-		stop = "campaign_policy_exceeded"
-	}
 	if err != nil {
 		return err
-	} else if stop != "" {
+	}
+	if stop == "" && campaignTwoApprovers(cat, cmp) {
+		if err := c.stopTwoApprovers(ctx, tx, now, cat, cmp); err != nil {
+			return err
+		}
+		return ok("admin")
+	}
+	if stop != "" {
 		if err := c.stopCampaign(ctx, tx, now, cat, cmp, stop); err != nil {
 			return err
 		}
@@ -2737,6 +2741,19 @@ func campaignTwoApprovers(cat *Catalog, cmp *campaignRow) bool {
 	}
 	act, ok := cat.Actions[cmp.Rec.action()]
 	return ok && act.Approvals >= 2
+}
+
+// stopTwoApprovers stops a campaign whose action an admin's catalog change gave a second
+// approval: the listed stop reason admin, with the cause in the audit record (APR-16).
+func (c *Core) stopTwoApprovers(ctx context.Context, tx pgx.Tx, now time.Time, cat *Catalog, cmp *campaignRow) error {
+	if _, err := c.appendAudit(ctx, tx, now, Audit{
+		Tenant: cmp.Tenant, Kind: "command", Actor: Actor{Principal: "system", Via: "core"},
+		Command: "campaign.stop", Target: &Target{Kind: "campaign", ID: cmp.ID}, OK: true, Reason: "admin",
+		After: map[string]any{"cause": "action_needs_two_approvers", "action": cmp.Rec.action()},
+	}); err != nil {
+		return err
+	}
+	return c.stopCampaign(ctx, tx, now, cat, cmp, "admin")
 }
 
 // retryCampaign creates the campaign of "Retry failed": the failed, unknown and skipped items of

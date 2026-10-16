@@ -40,11 +40,11 @@ func digestLimit(ctx context.Context, tx pgx.Tx, tenant, channel, target string)
 }
 
 // digestsLastHour are the times of the digests to a chat in the last hour, latest first: the
-// handed-out ones, and with planned also the ones about to go, at now.
-func digestsLastHour(ctx context.Context, tx pgx.Tx, now time.Time, tenant, channel, target string, planned bool) ([]time.Time, error) {
+// handed-out ones, and with planned also the ones about to go, at now; exclude leaves one out.
+func digestsLastHour(ctx context.Context, tx pgx.Tx, now time.Time, tenant, channel, target string, planned bool, exclude string) ([]time.Time, error) {
 	rows, err := tx.Query(ctx, `SELECT coalesce(handed_at, $5) FROM deliveries WHERE tenant = $1 AND kind = 'digest' AND exec_name = $2 AND target_id = $3
 		AND (handed_at > $4 OR ($6 AND handed_at IS NULL AND (state = 'sending' OR state = 'planned' AND NOT paced AND (run_at IS NULL OR run_at <= $5))))
-		ORDER BY 1 DESC`, tenant, channel, target, now.Add(-time.Hour), now, planned)
+		AND id <> $7 ORDER BY 1 DESC`, tenant, channel, target, now.Add(-time.Hour), now, planned, exclude)
 	if err != nil {
 		return nil, err
 	}
@@ -78,7 +78,7 @@ func (c *Core) digestPace(ctx context.Context, tx pgx.Tx, now time.Time, tenant,
 	if err != nil {
 		return nil, "", err
 	}
-	sent, err := digestsLastHour(ctx, tx, now, tenant, channel, target, true)
+	sent, err := digestsLastHour(ctx, tx, now, tenant, channel, target, true, "")
 	if err != nil || len(sent) < limit {
 		return nil, "", err
 	}
@@ -104,7 +104,8 @@ func (c *Core) digestHandout(ctx context.Context, tx pgx.Tx, now time.Time, tena
 	if err != nil {
 		return false, err
 	}
-	sent, err := digestsLastHour(ctx, tx, now, tenant, channel, target, false)
+	// A requeued digest keeps its first handed_at; it does not count against itself.
+	sent, err := digestsLastHour(ctx, tx, now, tenant, channel, target, false, id)
 	if err != nil || len(sent) < limit {
 		return false, err
 	}

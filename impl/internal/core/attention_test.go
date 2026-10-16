@@ -560,6 +560,14 @@ func TestDigestPace(t *testing.T) {
 	if got["dl_due1"] != "withheld/superseded" || got["dl_due2"] != "planned/paced" {
 		t.Fatalf("hand-out over the ceiling %v", got)
 	}
+	// A requeued digest does not count its own earlier hand-out against the ceiling.
+	if _, err := b.c.st.Pool.Exec(ctx, `UPDATE deliveries SET state = CASE WHEN id = 'dl_d3' THEN 'planned' ELSE 'withheld' END
+		WHERE id IN ('dl_d3', 'dl_due2')`); err != nil {
+		t.Fatal(err)
+	}
+	if out := b.drain(t); len(out) != 1 {
+		t.Fatalf("the requeued digest %+v", out)
+	}
 }
 
 // Within a class the next task comes from the fairness key with the fewest running attempts
