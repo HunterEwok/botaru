@@ -59,6 +59,12 @@ func New(prefix string) string {
 	return prefix + "_" + ulid.MustNew(ulid.Timestamp(time.Now()), entropy).String()
 }
 
+// Untimed returns a new id of the form prefix_<ULID> whose time part is zero and whose random
+// part is drawn afresh, so it says nothing about when or in which order it was made (SEC-14).
+func Untimed(prefix string) string {
+	return prefix + "_" + ulid.MustNew(0, rand.Reader).String()
+}
+
 // PrincipalID returns a new opaque person id human:p_<ULID>.
 func PrincipalID() string { return "human:" + New(Principal) }
 

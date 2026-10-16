@@ -35,15 +35,25 @@ BEGIN
     RAISE EXCEPTION 'audit is append-only';
 END
 $$;
+-- A cut names a record that exists with that hash and is older than the shortest metadata
+-- period a tenant may set (93 days, RET-9), so no cut, made by the loop or written by hand, lets
+-- a delete through for recent audit. A cut only moves forward and is never removed.
 CREATE FUNCTION audit_cut_forward() RETURNS trigger LANGUAGE plpgsql AS $$
 BEGIN
-    IF TG_OP = 'DELETE' OR NEW.seq < OLD.seq OR NEW.tenant <> OLD.tenant OR NEW.epoch <> OLD.epoch THEN
+    IF TG_OP = 'DELETE' THEN
+        RAISE EXCEPTION 'an audit cut is never removed';
+    END IF;
+    IF TG_OP = 'UPDATE' AND (NEW.seq < OLD.seq OR NEW.tenant <> OLD.tenant OR NEW.epoch <> OLD.epoch) THEN
         RAISE EXCEPTION 'an audit cut only moves forward';
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM audit a WHERE a.tenant = NEW.tenant AND a.epoch = NEW.epoch AND a.seq = NEW.seq AND a.hash = NEW.hash
+        AND a.at < botaru_now() - interval '93 days') THEN
+        RAISE EXCEPTION 'an audit cut names a stored record older than 93 days';
     END IF;
     RETURN NEW;
 END
 $$;
-CREATE TRIGGER audit_cuts_forward BEFORE UPDATE OR DELETE ON audit_cuts
+CREATE TRIGGER audit_cuts_forward BEFORE INSERT OR UPDATE OR DELETE ON audit_cuts
     FOR EACH ROW EXECUTE FUNCTION audit_cut_forward();
 
 -- The memory class with a tenant period reaches facts by age.

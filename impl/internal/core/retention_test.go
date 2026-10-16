@@ -4,6 +4,7 @@ package core
 
 import (
 	"context"
+	"strings"
 	"testing"
 	"time"
 
@@ -239,6 +240,16 @@ func TestAuditMonthCut(t *testing.T) {
 	if _, err := b.c.st.Pool.Exec(ctx, `UPDATE audit_cuts SET seq = 0 WHERE tenant = 'demo'`); err == nil {
 		t.Fatal("the cut moved back")
 	}
+	// A cut written by hand that names a recent record is refused, so it cannot open recent
+	// audit to a delete.
+	if _, err := b.c.st.Pool.Exec(ctx, `UPDATE audit_cuts c SET seq = a.seq, hash = a.hash FROM audit a
+		WHERE c.tenant = 'demo' AND a.tenant = 'demo' AND a.epoch = c.epoch AND a.seq = (SELECT max(seq) FROM audit WHERE tenant = 'demo')`); err == nil {
+		t.Fatal("a cut moved onto a recent record")
+	}
+	if _, err := b.c.st.Pool.Exec(ctx, `INSERT INTO audit_cuts (tenant, epoch, seq, hash, updated_at) SELECT tenant, epoch, seq, hash, now() FROM audit
+		WHERE tenant = 'farm' ORDER BY seq DESC LIMIT 1`); err == nil {
+		t.Fatal("a cut was written for a recent record")
+	}
 }
 
 // A person's usage line older than 93 days keeps its amounts and loses subject, task, root and
@@ -253,21 +264,27 @@ func TestUsageAnonymized(t *testing.T) {
 		id, subject string
 		age         time.Duration
 	}{{"sp_old", b.alice, 94 * day}, {"sp_young", b.alice, 92 * day}, {"sp_system", "system", 94 * day}} {
-		if _, err := b.c.st.Pool.Exec(ctx, `INSERT INTO spend (id, tenant, task, root, subject, role, line, unit, state, eur_micros, toolcall, time)
-			VALUES ($1, 'demo', 't_x', 't_x', $2, 'hello', 'work', 'model_call', 'committed', 1234, 'c_x', $3)`, l.id, l.subject, now.Add(-l.age)); err != nil {
+		if _, err := b.c.st.Pool.Exec(ctx, `INSERT INTO spend (id, tenant, task, root, subject, role, worker, acting_bot, line, unit, state, eur_micros, toolcall, message, time, settled_at)
+			VALUES ($1, 'demo', 't_x', 't_x', $2, 'hello', 'w_x', 'bot_x', 'work', 'model_call', 'committed', 1234, 'c_x', '{"kind": "report", "size": 321}', $3, $3)`, l.id, l.subject, now.Add(-l.age)); err != nil {
 			t.Fatal(err)
 		}
 	}
 	b.loop(t, "retention")
-	var subject, task, root, call, kind *string
-	var at time.Time
+	var id, message string
+	var subject, task, root, call, worker, bot *string
+	var at, settled time.Time
 	var micros int64
 	var role string
-	if err := b.c.st.Pool.QueryRow(ctx, `SELECT subject, task, root, toolcall, subject_kind, time, eur_micros, role FROM spend WHERE id = 'sp_old'`).Scan(&subject, &task, &root, &call, &kind, &at, &micros, &role); err != nil {
+	if err := b.c.st.Pool.QueryRow(ctx, `SELECT id, subject, task, root, toolcall, worker, acting_bot, message::text, time, settled_at, eur_micros, role FROM spend WHERE subject_kind = 'human'`).Scan(
+		&id, &subject, &task, &root, &call, &worker, &bot, &message, &at, &settled, &micros, &role); err != nil {
 		t.Fatal(err)
 	}
-	if subject != nil || task != nil || root != nil || call != nil || kind == nil || *kind != "human" || !at.Equal(periodStart("day", at)) || micros != 1234 || role != "hello" {
-		t.Fatalf("old line %v %v %v %v %v %v %d %s", subject, task, root, call, kind, at, micros, role)
+	if subject != nil || task != nil || root != nil || call != nil || worker != nil || bot != nil || !at.Equal(periodStart("day", at)) || !settled.Equal(at) || micros != 1234 || role != "hello" {
+		t.Fatalf("old line %v %v %v %v %v %v %v %v %d %s", subject, task, root, call, worker, bot, at, settled, micros, role)
+	}
+	// Its new id carries no time, and the message keeps only its kind.
+	if id == "sp_old" || !strings.HasPrefix(id, "sp_0000000000") || message != `{"kind": "report"}` {
+		t.Fatalf("old line id %s message %s", id, message)
 	}
 	if n := b.count(t, `SELECT count(*) FROM spend WHERE id IN ('sp_young', 'sp_system') AND subject IS NOT NULL AND task = 't_x' AND subject_kind IS NULL`); n != 2 {
 		t.Fatalf("a line that keeps its subject was changed: %d", n)

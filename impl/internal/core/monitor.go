@@ -490,13 +490,25 @@ func (c *Core) verifyHeads(ctx context.Context, tenant string, heads []AuditHead
 		}
 		if h.Epoch == c.epoch {
 			// A head inside the months the retention loop deleted is checked only at the cut
-			// itself, whose hash the cut keeps (AUD-3).
+			// itself, whose hash the cut keeps, and only while the cut is one the loop made: its
+			// period_deleted record is in the chain and its records were older than the shortest
+			// metadata period, which the store also holds every cut to (AUD-3). Below any other
+			// cut a head is a mismatch.
 			var stored string
 			var cutSeq int64
 			var cutHash string
 			err := c.st.Pool.QueryRow(ctx, `SELECT seq, hash FROM audit_cuts WHERE tenant = $1 AND epoch = $2`, tenant, h.Epoch).Scan(&cutSeq, &cutHash)
 			if err != nil && !errors.Is(err, pgx.ErrNoRows) {
 				return "", 0, err
+			}
+			if h.Seq <= cutSeq {
+				ok, err := validCut(ctx, c.st.Pool, tenant, h.Epoch, cutHash)
+				if err != nil {
+					return "", 0, err
+				}
+				if !ok {
+					return "head_mismatch", h.Seq, nil
+				}
 			}
 			switch {
 			case h.Seq < cutSeq:

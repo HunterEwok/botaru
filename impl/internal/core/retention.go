@@ -10,6 +10,8 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
+
+	"github.com/HunterEwok/botaru/impl/internal/ids"
 )
 
 // The default periods of the retention classes (spec/model/retention-classes.yaml, RET-1,
@@ -262,15 +264,35 @@ func (c *Core) retentionLoop(ctx context.Context) error {
 			return n, err
 		},
 		// A person's usage line past 93 days keeps its amounts and loses every reference that
-		// leads back to the person: subject, task and root, and the ids of the tool call,
-		// campaign, script, provider request and attempt; its time and the time it was settled
-		// go to the start of their UTC day and it records subject_kind human. Whole days: a
-		// line goes once its day is older than 93 days (BUD-16, SEC-14).
-		exec(`UPDATE spend SET subject = NULL, task = NULL, root = NULL, toolcall = NULL, campaign = NULL, script = NULL, request_id = NULL,
-			fingerprint = NULL, attempt_lease_no = NULL, subject_kind = 'human', time = date_trunc('day', time, 'UTC'),
-			settled_at = date_trunc('day', settled_at, 'UTC')
-			WHERE id IN (SELECT id FROM spend WHERE subject LIKE 'human:%' AND state <> 'reserved' AND time < $10 LIMIT $8 FOR UPDATE SKIP LOCKED)`,
-			with(periodStart("day", start).Add(-personUsageDays*day))),
+		// leads back to the person (BUD-16, SEC-14): subject, task and root; the ids of the tool
+		// call, campaign, script, provider request, attempt, worker and bot identity (a worker
+		// and a time find the lease and its task); the exact message size; and its own id,
+		// whose ULID carries the millisecond of the line, which gets a new id without time.
+		// Its times go to the start of their UTC day and it records subject_kind human. Whole
+		// days: a line goes once its day is older than 93 days. Nothing refers to a spend id
+		// once the line is no longer reserved.
+		func(tx pgx.Tx, now time.Time) (int64, error) {
+			rows, err := tx.Query(ctx, `SELECT id FROM spend WHERE subject LIKE 'human:%' AND state <> 'reserved' AND time < $1 LIMIT $2 FOR UPDATE SKIP LOCKED`,
+				periodStart("day", start).Add(-personUsageDays*day), retentionBatch)
+			if err != nil {
+				return 0, err
+			}
+			old, err := pgx.CollectRows(rows, pgx.RowTo[string])
+			if err != nil || len(old) == 0 {
+				return 0, err
+			}
+			fresh := make([]string, len(old))
+			for i := range old {
+				fresh[i] = ids.Untimed(ids.Spend)
+			}
+			tag, err := tx.Exec(ctx, `UPDATE spend s SET id = n.fresh, subject = NULL, task = NULL, root = NULL, toolcall = NULL, campaign = NULL, script = NULL,
+				request_id = NULL, fingerprint = NULL, attempt_lease_no = NULL, worker = NULL, acting_bot = NULL, bot_epoch = NULL, subject_kind = 'human',
+				message = CASE WHEN s.message ? 'kind' THEN jsonb_build_object('kind', s.message->'kind') END,
+				time = date_trunc('day', s.time, 'UTC'), settled_at = date_trunc('day', s.settled_at, 'UTC'),
+				reconciled_at = date_trunc('day', s.reconciled_at, 'UTC'), released_at = date_trunc('day', s.released_at, 'UTC')
+				FROM unnest($1::text[], $2::text[]) n (old, fresh) WHERE s.id = n.old`, old, fresh)
+			return tag.RowsAffected(), err
+		},
 	}
 	for _, step := range steps {
 		if err := c.batches(ctx, step); err != nil {
