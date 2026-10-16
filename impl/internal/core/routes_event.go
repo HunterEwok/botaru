@@ -38,7 +38,9 @@ type routedEvent struct {
 	// File is the body of an external delivery: untrusted, it reaches a task only as an
 	// attachment (ING-2).
 	File string
-	// TokenSource marks an event of a tls_token source, which has no replay protection (ING-1).
+	// TokenSource marks an event of a tls_token source, which has no replay protection (ING-1),
+	// or one a task published whose tree a route started from such an event: the mark goes
+	// along every hop of a chain.
 	TokenSource bool
 	// Hops counts the route steps before this event: those of the publishing task.
 	Hops int
@@ -48,13 +50,18 @@ type routedEvent struct {
 // of system-ops (PRM-10), explicitly listed when the event is external (ING-4), never action.*
 // (APR-5), only of tier 0 from a tls_token source (ING-1). A type with alarm.* in its events gets
 // the closed fields of the event and never the untrusted body (INJ-7). The goal comes from the
-// route or the type, never from the event (ING-2). A refusal of the enqueue writes its own audit
-// and leaves the event as it is.
-func (c *Core) eventRoutes(ctx context.Context, tx pgx.Tx, now time.Time, cat *Catalog, tenant string, ev routedEvent) error {
+// route or the type, never from the event (ING-2). A route the guards stop and a refusal of the
+// enqueue each write an authorize record with the decision deny and leave the event as it is.
+// Routes on events run only while the build claims the profile ingress, the part of this build
+// that brings them; until then a route with on: event enqueues nothing.
+//
+// It returns the tasks the routes enqueued, in route name order.
+func (c *Core) eventRoutes(ctx context.Context, tx pgx.Tx, now time.Time, cat *Catalog, tenant string, ev routedEvent) ([]string, error) {
 	tv := cat.Tenants[tenant]
-	if tv == nil || ev.Hops >= eventHopsMax {
-		return nil
+	if !ingressOn() || tv == nil || ev.Hops >= eventHopsMax {
+		return nil, nil
 	}
+	var tasks []string
 	external := strings.HasPrefix(ev.Type, "ext.")
 	for _, name := range slices.Sorted(mapKeys(tv.Routes)) {
 		rt := tv.Routes[name]
@@ -79,6 +86,9 @@ func (c *Core) eventRoutes(ctx context.Context, tx pgx.Tx, now time.Time, cat *C
 		}
 		if why != "" {
 			c.log.Warn("a route on an event was not run", "tenant", tenant, "route", name, "event", ev.ID, "why", why)
+			if err := c.denyRoute(ctx, tx, now, tenant, name, typ, ev.ID, "type_not_allowed"); err != nil {
+				return nil, err
+			}
 			continue
 		}
 		goal := rt.Task.Goal
@@ -115,21 +125,37 @@ func (c *Core) eventRoutes(ctx context.Context, tx pgx.Tx, now time.Time, cat *C
 		})
 		if p, ok := AsProblem(err); ok {
 			c.log.Warn("a route on an event was refused", "tenant", tenant, "route", name, "event", ev.ID, "reason", p.Reason)
+			if err := c.denyRoute(ctx, tx, now, tenant, name, typ, ev.ID, p.Reason); err != nil {
+				return nil, err
+			}
 			continue
 		} else if err != nil {
-			return err
+			return nil, err
 		}
 		if res.Rejected != nil {
 			c.log.Warn("a route on an event was refused", "tenant", tenant, "route", name, "event", ev.ID, "reason", res.Rejected.Reason)
 			continue
 		}
+		tasks = append(tasks, res.TaskID)
 		if !res.Existing {
-			if _, err := tx.Exec(ctx, `UPDATE tasks SET record = record || jsonb_build_object('event_hops', $2::int) WHERE id = $1`, res.TaskID, ev.Hops+1); err != nil {
-				return err
+			if _, err := tx.Exec(ctx, `UPDATE tasks SET record = record || jsonb_build_object('event_hops', $2::int, 'event_token', $3::bool) WHERE id = $1`,
+				res.TaskID, ev.Hops+1, ev.TokenSource); err != nil {
+				return nil, err
 			}
 		}
 	}
-	return nil
+	return tasks, nil
+}
+
+// denyRoute writes the authorize record of a route on an event that enqueued nothing, as the
+// enqueue writes its own rejections (AUD-1).
+func (c *Core) denyRoute(ctx context.Context, tx pgx.Tx, now time.Time, tenant, route, typ, event, reason string) error {
+	_, err := c.appendAudit(ctx, tx, now, Audit{
+		Tenant: tenant, Kind: "authorize", Actor: Actor{Principal: "system", Via: "core"},
+		Command: "task.enqueue", Target: &Target{Kind: "task_type", ID: typ}, OK: false, Reason: reason,
+		After: map[string]any{"type": typ, "decision": "deny", "route": route, "event": event},
+	})
+	return err
 }
 
 // alarmType says whether a type's events hold an alarm (INJ-7).
@@ -194,13 +220,18 @@ func scalarNumber(v any) (float64, bool) {
 	return 0, false
 }
 
-// eventHops is the number of route steps of a task's tree: what a route on an event wrote in the
-// record of its root, so a child of a route task counts as its root does.
-func eventHops(ctx context.Context, tx pgx.Tx, task string) (int, error) {
+// eventHops is the number of route steps of a task's tree and whether a tls_token source began
+// the chain: what a route on an event wrote in the record of its root, so a child of a route
+// task counts as its root does (ING-1).
+func eventHops(ctx context.Context, tx pgx.Tx, task string) (int, bool, error) {
 	var n int
-	err := tx.QueryRow(ctx, `SELECT coalesce((SELECT (r.record->>'event_hops')::int FROM tasks r WHERE r.id = coalesce(t.record->>'root', t.id)), 0)
-		FROM tasks t WHERE t.id = $1`, task).Scan(&n)
-	return n, err
+	var token bool
+	err := tx.QueryRow(ctx, `SELECT coalesce((r.record->>'event_hops')::int, 0), coalesce((r.record->>'event_token')::bool, false)
+		FROM tasks t JOIN tasks r ON r.id = coalesce(t.record->>'root', t.id) WHERE t.id = $1`, task).Scan(&n, &token)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return 0, false, nil
+	}
+	return n, token, err
 }
 
 // eventRouteAddrs are the deliver_to addresses of the route on an event whose task started the

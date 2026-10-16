@@ -83,6 +83,9 @@ type Driver struct {
 	// without a second file.
 	done     map[string]bool
 	doneList []string
+	// inflight holds the delivery ids being passed to the core now, so two identical
+	// deliveries at once do not both put a body file.
+	inflight map[string]bool
 }
 
 // doneMax is the number of delivery ids the driver remembers; older repeats reach the core,
@@ -122,7 +125,7 @@ func New(cfg Config) (*Driver, error) {
 	if cfg.Logger == nil {
 		cfg.Logger = slog.Default()
 	}
-	return &Driver{cfg: cfg, ing: ing, source: ing.Source(), log: cfg.Logger, done: map[string]bool{}}, nil
+	return &Driver{cfg: cfg, ing: ing, source: ing.Source(), log: cfg.Logger, done: map[string]bool{}, inflight: map[string]bool{}}, nil
 }
 
 // Path is the path of the source: /hooks/<source>.
@@ -185,10 +188,18 @@ func (d *Driver) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		status(w, http.StatusBadRequest)
 		return
 	}
-	if d.seen(id) {
+	// 7. The delivery id is claimed before the body is put: a remembered one is answered at
+	// once, and one in flight is asked again later, since the first may still fail (ING-3).
+	switch d.claim(id) {
+	case claimDone:
 		status(w, http.StatusNoContent)
 		return
+	case claimBusy:
+		w.Header().Set("Retry-After", "5")
+		status(w, http.StatusServiceUnavailable)
+		return
 	}
+	defer d.release(id)
 	switch err := d.submit(r.Context(), id, doc, body, now); {
 	case err == nil:
 		d.remember(id)
@@ -424,10 +435,32 @@ func (d *Driver) take(list *[]time.Time, now time.Time, ceiling int) time.Durati
 	return 0
 }
 
-func (d *Driver) seen(id string) bool {
+const (
+	claimNew = iota
+	claimDone
+	claimBusy
+)
+
+// claim takes a delivery id for this request: claimDone when the core already took it,
+// claimBusy when another request passes it now.
+func (d *Driver) claim(id string) int {
 	d.mu.Lock()
 	defer d.mu.Unlock()
-	return d.done[id]
+	switch {
+	case d.done[id]:
+		return claimDone
+	case d.inflight[id]:
+		return claimBusy
+	}
+	d.inflight[id] = true
+	return claimNew
+}
+
+// release ends the claim of a request.
+func (d *Driver) release(id string) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	delete(d.inflight, id)
 }
 
 func (d *Driver) remember(id string) {

@@ -60,6 +60,20 @@ func hookPrincipal(ctx context.Context, tx pgx.Tx, now time.Time, tenant, source
 // closed kinds that pass their schemas (ING-2), in the ext.* namespace and never an alarm
 // (ING-4). The body file stays an attachment of the tasks the routes on the event enqueue.
 func (c *Core) submitIngress(ctx context.Context, w *Worker, tv *TenantView, cat *Catalog, ch manifest.Channel, a Activity) (*ActivityResult, error) {
+	out, err := c.submitIngressTx(ctx, w, cat, ch, a)
+	if _, ok := AsProblem(err); ok && ch.Ingress != nil {
+		// A refused delivery keeps no body: the file the driver put for it is dropped, so a
+		// sender's retries leave no orphan files (ART-1, ING-3).
+		if derr := c.tx(ctx, func(tx pgx.Tx, now time.Time) error {
+			return dropSourceFiles(ctx, tx, w.Tenant, ch.Ingress.Source(), a.Attachments)
+		}); derr != nil {
+			return nil, derr
+		}
+	}
+	return out, err
+}
+
+func (c *Core) submitIngressTx(ctx context.Context, w *Worker, cat *Catalog, ch manifest.Channel, a Activity) (*ActivityResult, error) {
 	if !ingressOn() {
 		return nil, refuse("not_ready", "the ingress profile is off")
 	}
@@ -92,6 +106,8 @@ func (c *Core) submitIngress(ctx context.Context, w *Worker, tv *TenantView, cat
 		}
 	}
 	key := "system:ingress:" + source + ":" + a.UpdateID
+	// A delivery whose routes enqueued tasks answers task with the first of them, and a repeat
+	// the same task with existing (DLV-5); a delivery no route took is ignored (ING-3).
 	out := ActivityResult{Result: "ignored"}
 	err := c.tx(ctx, func(tx pgx.Tx, now time.Time) error {
 		hook, err := hookPrincipal(ctx, tx, now, w.Tenant, source)
@@ -116,8 +132,18 @@ func (c *Core) submitIngress(ctx context.Context, w *Worker, tv *TenantView, cat
 			return err
 		}
 		if tag.RowsAffected() == 0 {
-			// A repeat of the delivery: the same answer, no second event (ING-3, IDM-2).
-			return nil
+			// A repeat of the delivery: no second event and no second body; the file the
+			// driver put again is dropped (ING-3, IDM-2).
+			var first *string
+			if err := tx.QueryRow(ctx, `SELECT (SELECT t.id FROM tasks t WHERE t.tenant = d.tenant AND t.idempotency_key LIKE 'system:event:%'
+				AND right(t.idempotency_key, length(d.event) + length($3) + 2) = ':' || $3 || ':' || d.event ORDER BY t.idempotency_key COLLATE "C" LIMIT 1)
+				FROM ingress_deliveries d WHERE d.tenant = $1 AND d.key = $2`, w.Tenant, key, "botaru:ingress/"+w.Tenant+"/"+source).Scan(&first); err != nil {
+				return err
+			}
+			if first != nil {
+				out = ActivityResult{Result: "task", Task: *first, Existing: true}
+			}
+			return dropSourceFiles(ctx, tx, w.Tenant, source, a.Attachments)
 		}
 		src := "botaru:ingress/" + w.Tenant + "/" + source
 		id, err := c.appendEventFrom(ctx, tx, now, w.Tenant, src, Event{Type: ing.Event, Subject: key, Data: data})
@@ -127,9 +153,13 @@ func (c *Core) submitIngress(ctx context.Context, w *Worker, tv *TenantView, cat
 		if _, err := tx.Exec(ctx, `UPDATE ingress_deliveries SET event = $3 WHERE tenant = $1 AND key = $2`, w.Tenant, key, id); err != nil {
 			return err
 		}
-		return c.eventRoutes(ctx, tx, now, cat, w.Tenant, routedEvent{
+		tasks, err := c.eventRoutes(ctx, tx, now, cat, w.Tenant, routedEvent{
 			Type: ing.Event, ID: id, Source: src, Subject: key, Data: data, File: file, TokenSource: ing.Auth == "tls_token",
 		})
+		if len(tasks) > 0 {
+			out = ActivityResult{Result: "task", Task: tasks[0]}
+		}
+		return err
 	})
 	if err != nil {
 		return nil, err
@@ -178,4 +208,18 @@ func systemOpsLists(tv *TenantView, typ string) bool {
 		}
 	}
 	return false
+}
+
+// dropSourceFiles drops the body files a source channel put for a delivery that the core did not
+// keep: only stored uploads of hook:<source> that no kept delivery names lose their content.
+func dropSourceFiles(ctx context.Context, tx pgx.Tx, tenant, source string, refs []string) error {
+	if len(refs) == 0 {
+		return nil
+	}
+	_, err := tx.Exec(ctx, `UPDATE files f SET state = 'expired', content = NULL, filename = NULL
+		WHERE f.tenant = $1 AND f.file_ref = ANY($2) AND f.origin = 'upload' AND f.state = 'stored'
+		AND f.producer = (SELECT principal FROM identities WHERE tenant = $1 AND identity = $3)
+		AND NOT EXISTS (SELECT 1 FROM ingress_deliveries d WHERE d.tenant = $1 AND d.file_ref = f.file_ref)`,
+		tenant, refs, "hook:"+source)
+	return err
 }

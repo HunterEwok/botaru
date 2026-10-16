@@ -88,6 +88,13 @@ func (c *Core) lintIngress(S *lintSet, f *lintFindings) {
 	for _, o := range S.each("Route") {
 		ev := mstr(mmap(o.spec, "on"), "event")
 		tt := mstr(mmap(o.spec, "task"), "type")
+		// The subject of an external event is its delivery or problem key, never a catalog id,
+		// so on.subject cannot match it; the apply notes it in its log, since the codes of
+		// the lint have no such note (MSG-16).
+		if strings.HasPrefix(ev, "ext.") && mstr(mmap(o.spec, "on"), "subject") != "" {
+			c.log.Warn("apply: a route on an external event with on.subject never matches", "code", "route_subject_external",
+				"tenant", o.tenant, "route", o.name, "event", ev)
+		}
 		if ev == "" || tt == "" {
 			continue
 		}

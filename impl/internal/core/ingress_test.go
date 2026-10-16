@@ -75,7 +75,8 @@ func routeDoc(name string, on map[string]any, typ string, extra map[string]any) 
 // tokens (tls_token), their service principals, the job role piper with three types, and the
 // routes: react on failed pipeline runs to pipeline.react.v1 with the answer to group hello,
 // alarm on every pipeline run to the alarm job pipeline.alarm.v1, ping on the token source to
-// tier 0, and done on run.finished.v1 of web1-logs. ms is the applied set.
+// tier 0, pingemit on the token source to the emitting type, done on run.finished.v1 of web1-logs
+// and deepdone on run.finished.v1 of web-checks to the tier 1 type. ms is the applied set.
 type ingressBench struct {
 	*bench
 	ms    []map[string]any
@@ -111,6 +112,8 @@ func newIngressBench(t *testing.T) *ingressBench {
 			routeDoc("ping", map[string]any{"event": "ext.tokensrc.ping.v1"}, "pipeline.react.v1", nil),
 			routeDoc("done", map[string]any{"event": "run.finished.v1", "subject": "web1-logs", "match": map[string]any{"outcome": []any{"failed", "partial"}}},
 				"pipeline.emit.v1", nil),
+			routeDoc("pingemit", map[string]any{"event": "ext.tokensrc.ping.v1"}, "pipeline.emit.v1", nil),
+			routeDoc("deepdone", map[string]any{"event": "run.finished.v1", "subject": "web-checks"}, "pipeline.deep.v1", nil),
 		)
 	})
 	ib := &ingressBench{bench: b, ms: ms, hooks: map[string]string{}}
@@ -308,16 +311,21 @@ func TestIngressDelivery(t *testing.T) {
 		t.Fatal(err)
 	}
 	data := map[string]any{"run_id": "run-42", "status": "failed", "host": "web1"}
-	// Refused signals give no event (ING-1, ING-4).
+	// Refused signals give no event (ING-1, ING-4), and the body file put for a refused one is
+	// dropped (ING-3).
+	junk, err := b.putBody(t, src, "pipeline", body)
+	if err != nil {
+		t.Fatal(err)
+	}
 	other := b.source(t, "tokens")
 	otherFile, err := b.putBody(t, other, "tokensrc", []byte(`{}`))
 	if err != nil {
 		t.Fatal(err)
 	}
 	for name, a := range map[string]Activity{
-		"another type":    ingressSignal("pipeline", "pipeline", "ext.monitor.problem.v1", "d1", data, file),
-		"another sender":  ingressSignal("pipeline", "tokensrc", "ext.pipeline.run_failed.v1", "d1", data, file),
-		"a field outside": ingressSignal("pipeline", "pipeline", "ext.pipeline.run_failed.v1", "d1", map[string]any{"run_id": "run-42", "log": "rm -rf"}, file),
+		"another type":    ingressSignal("pipeline", "pipeline", "ext.monitor.problem.v1", "d1", data, junk),
+		"another sender":  ingressSignal("pipeline", "tokensrc", "ext.pipeline.run_failed.v1", "d1", data, junk),
+		"a field outside": ingressSignal("pipeline", "pipeline", "ext.pipeline.run_failed.v1", "d1", map[string]any{"run_id": "run-42", "log": "rm -rf"}, junk),
 		"a foreign file":  ingressSignal("pipeline", "pipeline", "ext.pipeline.run_failed.v1", "d1", data, otherFile),
 		"text on a source": func() Activity {
 			a := ingressSignal("pipeline", "pipeline", "ext.pipeline.run_failed.v1", "d1", data)
@@ -344,6 +352,12 @@ func TestIngressDelivery(t *testing.T) {
 	if n := countEvents(t, b.bench, "ext.pipeline.run_failed.v1", ""); n != 0 {
 		t.Fatalf("refused signals gave %d events", n)
 	}
+	if st := fileState(t, b.bench, junk); st != "expired" {
+		t.Fatalf("the body of a refused delivery is %s", st)
+	}
+	if st := fileState(t, b.bench, otherFile); st != "stored" {
+		t.Fatalf("another source's file was dropped: %s", st)
+	}
 	// A value outside its schema gives no field (ING-2).
 	bad := map[string]any{"run_id": "run-42", "status": "unknown", "host": "db9"}
 	if _, err := b.c.SubmitActivity(ctx, src, ingressSignal("pipeline", "pipeline", "ext.pipeline.run_failed.v1", "d0", bad)); err != nil {
@@ -353,12 +367,26 @@ func TestIngressDelivery(t *testing.T) {
 	if err := b.c.st.Pool.QueryRow(ctx, `SELECT data FROM events WHERE type = 'ext.pipeline.run_failed.v1'`).Scan(&keys); err != nil || strings.Contains(string(keys), "db9") || strings.Contains(string(keys), "unknown") {
 		t.Fatalf("a value outside the catalog reached the event: %s %v", keys, err)
 	}
+	// A new delivery answers its first route task (alarm before react); a repeat, carrying a
+	// body the driver put again, answers the same task as existing, and its body is dropped.
 	a := ingressSignal("pipeline", "pipeline", "ext.pipeline.run_failed.v1", "msg_2KXyz.1", data, file)
-	for range 2 {
-		r, err := b.c.SubmitActivity(ctx, src, a)
-		if err != nil || r.Result != "ignored" {
-			t.Fatalf("submit %+v %v", r, err)
-		}
+	first, err := b.c.SubmitActivity(ctx, src, a)
+	if err != nil || first.Result != "task" || first.Existing || first.Task == "" {
+		t.Fatalf("submit %+v %v", first, err)
+	}
+	again, err := b.putBody(t, src, "pipeline", body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if r, err := b.c.SubmitActivity(ctx, src, ingressSignal("pipeline", "pipeline", "ext.pipeline.run_failed.v1", "msg_2KXyz.1", data, again)); err != nil ||
+		r.Result != "task" || !r.Existing || r.Task != first.Task {
+		t.Fatalf("repeat %+v %v", r, err)
+	}
+	if st := fileState(t, b.bench, again); st != "expired" {
+		t.Fatalf("the body of a repeat is %s", st)
+	}
+	if st := fileState(t, b.bench, file); st != "stored" {
+		t.Fatalf("the body of the kept delivery is %s", st)
 	}
 	if n := countEvents(t, b.bench, "ext.pipeline.run_failed.v1", "system:ingress:pipeline:msg_2KXyz.1"); n != 1 {
 		t.Fatalf("a repeated delivery gave %d events", n)
@@ -377,8 +405,8 @@ func TestIngressDelivery(t *testing.T) {
 	}
 	// The route tasks: one each, also after the repeat.
 	react, alarm := routeTasks(t, b.bench, "react"), routeTasks(t, b.bench, "alarm")
-	if len(react) != 1 || len(alarm) != 2 {
-		t.Fatalf("react %v alarm %v", react, alarm)
+	if len(react) != 1 || len(alarm) != 2 || first.Task != alarm[1] {
+		t.Fatalf("react %v alarm %v first %s", react, alarm, first.Task)
 	}
 	var initiator, key string
 	var tb, rec []byte
@@ -473,13 +501,14 @@ func TestIngressRouteGuards(t *testing.T) {
 			{Type: "ext.tokensrc.ping.v1", ID: "ev_x1", Source: "s", TokenSource: true},
 			{Type: "ext.pipeline.run_failed.v1", ID: "ev_x2", Source: "s", Data: map[string]any{"status": "failed"}},
 		} {
-			if err := b.c.eventRoutes(ctx, tx, now, &c2, "demo", ev); err != nil {
+			if _, err := b.c.eventRoutes(ctx, tx, now, &c2, "demo", ev); err != nil {
 				return err
 			}
 		}
 		// A chain of route steps stops (MSG-16).
-		return b.c.eventRoutes(ctx, tx, now, cat, "demo", routedEvent{Type: "ext.pipeline.run_failed.v1", ID: "ev_x3", Source: "s",
+		_, err := b.c.eventRoutes(ctx, tx, now, cat, "demo", routedEvent{Type: "ext.pipeline.run_failed.v1", ID: "ev_x3", Source: "s",
 			Data: map[string]any{"status": "failed"}, Hops: eventHopsMax})
+		return err
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -487,6 +516,22 @@ func TestIngressRouteGuards(t *testing.T) {
 	if p, r, a := len(routeTasks(t, b.bench, "ping")), len(routeTasks(t, b.bench, "react")), len(routeTasks(t, b.bench, "alarm")); p != 1 || r != 0 || a != 0 {
 		t.Fatalf("guards: ping %d react %d alarm %d", p, r, a)
 	}
+	// Each stopped route leaves an authorize record with the decision deny (AUD-1).
+	for _, route := range []string{"ping", "react", "alarm"} {
+		if n := b.count(t, `SELECT count(*) FROM audit WHERE record->>'kind' = 'authorize' AND record->>'command' = 'task.enqueue'
+			AND record->'after'->>'route' = $1 AND record->'after'->>'decision' = 'deny' AND record->>'reason' = 'type_not_allowed'`, route); n != 1 {
+			t.Fatalf("route %s: %d deny records", route, n)
+		}
+	}
+}
+
+func fileState(t *testing.T, b *bench, ref string) string {
+	t.Helper()
+	var st string
+	if err := b.c.st.Pool.QueryRow(context.Background(), `SELECT state FROM files WHERE file_ref = $1`, ref).Scan(&st); err != nil {
+		t.Fatal(err)
+	}
+	return st
 }
 
 // A job publishes run.finished.v1: the route on it with a subject and a match on a closed field
@@ -539,6 +584,17 @@ func TestEventRouteJobEvent(t *testing.T) {
 	if len(done) != 1 {
 		t.Fatalf("done tasks %d", len(done))
 	}
+	// A chain no token source began reaches a tier 1 type.
+	if n := len(routeTasks(t, b.bench, "deepdone")); n != 1 {
+		t.Fatalf("deepdone tasks %d", n)
+	}
+	// Without the ingress claim a job event starts no route (MAN-11).
+	prev := spec.SetProfileOverride()
+	emit("r4", "web1-logs", "failed")
+	spec.SetProfileOverride(prev...)
+	if n := len(routeTasks(t, b.bench, "done")); n != 1 {
+		t.Fatalf("a route ran without the claim: %d", n)
+	}
 	var key string
 	var rec []byte
 	if err := b.c.st.Pool.QueryRow(ctx, `SELECT idempotency_key, record FROM tasks WHERE id = $1`, done[0]).Scan(&key, &rec); err != nil {
@@ -565,5 +621,111 @@ func TestIngressLintFixtures(t *testing.T) {
 		if !got[id] {
 			t.Errorf("%s does not pass with the ingress claim", id)
 		}
+	}
+}
+
+// The tier 0 limit of a tls_token source holds along the whole chain: the token delivery's route
+// task publishes run.finished.v1, and the route on it to a tier 1 type is stopped and audited,
+// while the route on it to a tier 0 type runs and carries the mark one hop on (ING-1, MSG-16).
+func TestIngressTokenChain(t *testing.T) {
+	ctx := context.Background()
+	b := newIngressBench(t)
+	tok := b.source(t, "tokens")
+	if _, err := b.c.SubmitActivity(ctx, tok, ingressSignal("tokens", "tokensrc", "ext.tokensrc.ping.v1", "p1", nil)); err != nil {
+		t.Fatal(err)
+	}
+	emitters := routeTasks(t, b.bench, "pingemit")
+	if len(emitters) != 1 {
+		t.Fatalf("pingemit tasks %d", len(emitters))
+	}
+	if n := b.count(t, `SELECT count(*) FROM tasks WHERE id = $1 AND (record->>'event_token')::bool AND (record->>'event_hops')::int = 1`, emitters[0]); n != 1 {
+		t.Fatal("the route task of a token source has no token mark")
+	}
+	it := claimFor(t, b.bench, b.job, emitters[0])
+	h := header(t, it)
+	for _, ev := range [][2]string{{"r1", "web-checks"}, {"r2", "web1-logs"}} {
+		if _, err := b.c.Emit(ctx, b.job, h, EmitRequest{Type: runFinishedType, Data: map[string]any{
+			"run_id": ev[0], "subject": ev[1], "duration_s": 3, "retries": 0, "exit_code": 1, "outcome": "failed"}}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if n := len(routeTasks(t, b.bench, "deepdone")); n != 0 {
+		t.Fatalf("a token chain reached a tier 1 type: %d", n)
+	}
+	if n := b.count(t, `SELECT count(*) FROM audit WHERE record->'after'->>'route' = 'deepdone' AND record->'after'->>'decision' = 'deny'`); n != 1 {
+		t.Fatalf("deepdone deny records %d", n)
+	}
+	done := routeTasks(t, b.bench, "done")
+	if len(done) != 1 {
+		t.Fatalf("done tasks %d", len(done))
+	}
+	if n := b.count(t, `SELECT count(*) FROM tasks WHERE id = $1 AND (record->>'event_token')::bool AND (record->>'event_hops')::int = 2`, done[0]); n != 1 {
+		t.Fatal("the second hop lost the token mark")
+	}
+}
+
+// The body of a delivery is an upload of the service principal hook:<source>: in a production
+// tenant, or with uploads_personal, it is declared personal_seen, and a route task reading it
+// inherits the flag (ART-6, AUD-5).
+func TestIngressBodyPersonal(t *testing.T) {
+	ctx := context.Background()
+	b := newIngressBench(t)
+	if _, err := b.c.st.Pool.Exec(ctx, `UPDATE manifests SET doc = jsonb_set(doc, '{spec,kind}', '"production"') WHERE kind = 'Tenant' AND name = 'demo'`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := b.c.st.Pool.Exec(ctx, `UPDATE apply_status SET set_hash = set_hash || 'x'`); err != nil {
+		t.Fatal(err)
+	}
+	src := b.source(t, "pipeline")
+	file, err := b.putBody(t, src, "pipeline", []byte(`{"run":{"id":"run-7","status":"failed"}}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n := b.count(t, `SELECT count(*) FROM files WHERE file_ref = $1 AND personal_seen = 'declared'`, file); n != 1 {
+		t.Fatal("the body of a production tenant's source is not declared personal")
+	}
+	if _, err := b.c.SubmitActivity(ctx, src, ingressSignal("pipeline", "pipeline", "ext.pipeline.run_failed.v1", "d7",
+		map[string]any{"run_id": "run-7", "status": "failed"}, file)); err != nil {
+		t.Fatal(err)
+	}
+	react := routeTasks(t, b.bench, "react")
+	if len(react) != 1 {
+		t.Fatalf("react tasks %d", len(react))
+	}
+	it := claimFor(t, b.bench, b.job, react[0])
+	if _, err := b.c.FileGet(ctx, b.job, header(t, it), FileGetRequest{FileRef: file}); err != nil {
+		t.Fatal(err)
+	}
+	if n := b.count(t, `SELECT count(*) FROM tasks WHERE id = $1 AND record->'personal_seen' ? 'inherited'`, react[0]); n != 1 {
+		t.Fatal("the route task did not inherit personal_seen")
+	}
+}
+
+// The delivery keys are kept a day against repeats: the retention loop deletes older ones, and
+// tenant offboarding deletes the rest of the tenant (ING-3, RET-9).
+func TestIngressDeliveriesPurge(t *testing.T) {
+	ctx := context.Background()
+	b := newIngressBench(t)
+	src := b.source(t, "pipeline")
+	for _, id := range []string{"old1", "new1"} {
+		if _, err := b.c.SubmitActivity(ctx, src, ingressSignal("pipeline", "pipeline", "ext.pipeline.run_failed.v1", id, map[string]any{"status": "failed"})); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := b.c.st.Pool.Exec(ctx, `UPDATE ingress_deliveries SET created_at = created_at - interval '25 hours' WHERE key = 'system:ingress:pipeline:old1'`); err != nil {
+		t.Fatal(err)
+	}
+	b.loop(t, "retention")
+	if n := b.count(t, `SELECT count(*) FROM ingress_deliveries WHERE key = 'system:ingress:pipeline:old1'`); n != 0 {
+		t.Fatal("a delivery key older than a day was kept")
+	}
+	if n := b.count(t, `SELECT count(*) FROM ingress_deliveries WHERE key = 'system:ingress:pipeline:new1'`); n != 1 {
+		t.Fatal("a fresh delivery key was deleted")
+	}
+	if _, err := b.c.TenantLifecycle(ctx, b.op, TenantLifecycleRequest{Op: "tenant.offboard", Tenant: "demo", ExportWindow: "1d"}); err != nil {
+		t.Fatal(err)
+	}
+	if n := b.count(t, `SELECT count(*) FROM ingress_deliveries WHERE tenant = 'demo'`); n != 0 {
+		t.Fatalf("offboarding kept %d delivery keys", n)
 	}
 }

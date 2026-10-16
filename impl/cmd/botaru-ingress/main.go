@@ -38,7 +38,7 @@ func main() {
 	certFile := flag.String("tls-cert", "", "the TLS certificate of the listener")
 	keyFile := flag.String("tls-key", "", "the TLS key of the listener")
 	secretFiles := flag.String("secret-files", "", "auth: signature: comma-separated files with the signing secrets whsec_... (two during a rotation)")
-	sourceTokenFile := flag.String("source-token-file", "", "auth: tls_token: the file with the source token, or with sha256:<hex> of it")
+	sourceTokenFiles := flag.String("source-token-files", "", "auth: tls_token: comma-separated files with the source tokens, or with sha256:<hex> of them (two during a rotation)")
 	listenerPerMinute := flag.Int("listener-per-minute", 0, "the ceiling on all requests to the path in a sliding minute (0: ten times ingress.limits.per_minute)")
 	specRoot := flag.String("spec-root", "", "the skeleton checkout with spec/model/formats.yaml (default: $BOTARU_SPEC_ROOT or a parent folder with spec/VERSION)")
 	flag.Parse()
@@ -93,8 +93,11 @@ func main() {
 		keys = append(keys, k)
 	}
 	var hashes [][sha256.Size]byte
-	if *sourceTokenFile != "" {
-		s, err := config.Secret(*sourceTokenFile)
+	for _, f := range strings.Split(*sourceTokenFiles, ",") {
+		if f = strings.TrimSpace(f); f == "" {
+			continue
+		}
+		s, err := config.Secret(f)
 		if err != nil {
 			fail("reading the source token", err)
 		}

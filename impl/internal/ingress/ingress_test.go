@@ -29,6 +29,8 @@ type fakeCore struct {
 	headers    []map[string]string
 	activities []map[string]any
 	refuse     error
+	// entered and release, when set, hold a FilePut until the test lets it go.
+	entered, release chan struct{}
 }
 
 func (f *fakeCore) Call(_ context.Context, op, _ string, req, _ any) error {
@@ -42,6 +44,10 @@ func (f *fakeCore) Call(_ context.Context, op, _ string, req, _ any) error {
 }
 
 func (f *fakeCore) FilePut(_ context.Context, headers map[string]string, _ map[string]any, content []byte) (string, error) {
+	if f.entered != nil {
+		f.entered <- struct{}{}
+		<-f.release
+	}
 	f.files = append(f.files, content)
 	f.headers = append(f.headers, headers)
 	return "f_" + strconv.Itoa(len(f.files)), nil
@@ -343,5 +349,26 @@ func TestIngressConfig(t *testing.T) {
 	ch, err := LoadChannel([]string{root + "/examples/tenants/demo/channels-ingress.yaml"}, "demo", "pipeline")
 	if err != nil || ch.Ingress.Source() != "pipeline" || ch.Ingress.Auth != "signature" {
 		t.Fatalf("example channel %+v %v", ch, err)
+	}
+}
+
+// The delivery id is claimed before the body is put: an identical delivery while the first is in
+// flight puts no second file and is asked to come again, since the first may still fail (ING-3).
+func TestIngressInFlight(t *testing.T) {
+	r := newRig(t, "signature", nil)
+	r.core.entered, r.core.release = make(chan struct{}), make(chan struct{})
+	done := make(chan int)
+	go func() { done <- r.post("msg_9", r.now, "", body, nil).Code }()
+	<-r.core.entered
+	if rec := r.post("msg_9", r.now, "", body, nil); rec.Code != http.StatusServiceUnavailable || rec.Header().Get("Retry-After") == "" {
+		t.Fatalf("in flight %d", rec.Code)
+	}
+	close(r.core.release)
+	if code := <-done; code != http.StatusNoContent {
+		t.Fatalf("first %d", code)
+	}
+	r.core.entered = nil
+	if rec := r.post("msg_9", r.now, "", body, nil); rec.Code != http.StatusNoContent || len(r.core.files) != 1 {
+		t.Fatalf("repeat %d files %d", rec.Code, len(r.core.files))
 	}
 }

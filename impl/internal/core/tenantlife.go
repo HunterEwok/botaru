@@ -156,6 +156,10 @@ func (c *Core) TenantLifecycle(ctx context.Context, op Operator, req TenantLifec
 			if _, err := tx.Exec(ctx, `DELETE FROM driver_secrets WHERE tenant = $1`, req.Tenant); err != nil {
 				return err
 			}
+			// The delivery keys of the tenant's source channels go with its channels (ING-3).
+			if _, err := tx.Exec(ctx, `DELETE FROM ingress_deliveries WHERE tenant = $1`, req.Tenant); err != nil {
+				return err
+			}
 			if err := c.cancelTenantApprovals(ctx, tx, now, req.Tenant); err != nil {
 				return err
 			}
