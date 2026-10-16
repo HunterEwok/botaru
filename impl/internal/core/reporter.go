@@ -304,6 +304,12 @@ type viewSnapshot struct {
 	PropsHidden   int              `json:"proposals_hidden"`
 	TasksMore     int              `json:"tasks_more"`
 	ProposalsMore int              `json:"proposals_more"`
+	// Workers and Campaigns are the rows of status.workers and status.campaigns (STA-3, PRF-1).
+	Workers         []map[string]any `json:"workers,omitempty"`
+	WorkersMore     int              `json:"workers_more,omitempty"`
+	Campaigns       []map[string]any `json:"campaigns,omitempty"`
+	CampaignsHidden int              `json:"campaigns_hidden,omitempty"`
+	CampaignsMore   int              `json:"campaigns_more,omitempty"`
 }
 
 // snapshotOf returns the snapshot of the views of a task, taking it if there is none.
@@ -342,15 +348,20 @@ func (c *Core) snapshotOf(ctx context.Context, tx pgx.Tx, now time.Time, cat *Ca
 	_ = json.Unmarshal(body, &b)
 	snap := &viewSnapshot{ID: task + ":" + fmtTime(now), Window: window, From: fmtTime(from), Tasks: []map[string]any{}, Counts: []map[string]any{}, Proposals: []map[string]any{}}
 	// The tasks of the window: metadata and closed fields only (REP-8).
-	root := ""
+	root, campaign := "", ""
 	switch b.Params.Scope.Kind {
 	case "root":
 		root = b.Params.Scope.ID
 	case "campaign":
-		root = "-" // campaigns are not built yet: nothing is in such a scope
+		// The items of one campaign (ORC-10).
+		campaign = b.Params.Scope.ID
+		if campaign == "" {
+			campaign = "-"
+		}
 	}
 	rows, err := tx.Query(ctx, `SELECT id, type, state, coalesce(reason, ''), coalesce(record->>'data_mark', ''), updated_at FROM tasks
-		WHERE tenant = $1 AND id <> $2 AND updated_at >= $3 AND ($4 = '' OR record->>'root' = $4) ORDER BY updated_at DESC, id LIMIT 5000`, tenant, task, from, root)
+		WHERE tenant = $1 AND id <> $2 AND updated_at >= $3 AND ($4 = '' OR record->>'root' = $4) AND ($5 = '' OR record->>'campaign' = $5)
+		ORDER BY updated_at DESC, id LIMIT 5000`, tenant, task, from, root, campaign)
 	if err != nil {
 		return nil, err
 	}
@@ -435,6 +446,12 @@ func (c *Core) snapshotOf(ctx context.Context, tx pgx.Tx, now time.Time, cat *Ca
 	if err := prows.Err(); err != nil {
 		return nil, err
 	}
+	if err := c.snapshotWorkers(ctx, tx, now, cat, tenant, f, snap); err != nil {
+		return nil, err
+	}
+	if err := c.snapshotCampaigns(ctx, tx, cat, tenant, campaign, from, f, snap); err != nil {
+		return nil, err
+	}
 	raw, err = json.Marshal(snap)
 	if err != nil {
 		return nil, err
@@ -451,7 +468,7 @@ func (c *Core) snapshotOf(ctx context.Context, tx pgx.Tx, now time.Time, cat *Ca
 }
 
 // statusViews are the status.* views an attempt gets: the role's views of a profile and
-// purpose that have them (PRF-1, REP-8). status.workers and status.campaigns are not built yet.
+// purpose that have them (PRF-1, REP-8).
 func statusViews(cat *Catalog, g *toolsGrant) []string {
 	role, ok := cat.Roles[g.Role]
 	if !ok || g.Purpose != "" && g.Purpose != "work" && g.Purpose != "report" {
@@ -462,7 +479,7 @@ func statusViews(cat *Catalog, g *toolsGrant) []string {
 	}
 	var out []string
 	for _, v := range role.Views {
-		if (v == statusTasksName || v == statusProposalsName) && !slices.Contains(out, v) {
+		if statusToolName(v) && !slices.Contains(out, v) {
 			out = append(out, v)
 		}
 	}
@@ -474,16 +491,12 @@ func statusTools(cat *Catalog, g *toolsGrant) []catalogTool {
 	var out []catalogTool
 	empty := map[string]any{"type": "object", "additionalProperties": false, "properties": map[string]any{}}
 	for _, v := range statusViews(cat, g) {
-		desc := "Tasks of the tenant in the report window: type, title, state and reason codes only; rows above your class only count in hidden."
-		if v == statusProposalsName {
-			desc = "Proposals of the tenant from recommended on: kind, state and category only; rows above your class only count in hidden."
-		}
-		out = append(out, catalogTool{Name: v, Builtin: true, Tool: toolspec.Tool{Description: desc}, Schema: empty})
+		out = append(out, catalogTool{Name: v, Builtin: true, Tool: toolspec.Tool{Description: statusViewDescriptions[v]}, Schema: empty})
 	}
 	return out
 }
 
-func statusToolName(name string) bool { return name == statusTasksName || name == statusProposalsName }
+func statusToolName(name string) bool { return slices.Contains(statusViewNames, name) }
 
 // statusToolCall answers a status.* view from the task's snapshot.
 func (c *Core) statusToolCall(ctx context.Context, tx pgx.Tx, now time.Time, cat *Catalog, g *toolsGrant, name string, offered bool) (*mcp.CallResult, error) {
@@ -495,10 +508,24 @@ func (c *Core) statusToolCall(ctx context.Context, tx pgx.Tx, now time.Time, cat
 		return nil, err
 	}
 	out := map[string]any{"snapshot_id": snap.ID, "window": snap.Window, "from": snap.From}
-	if name == statusTasksName {
+	switch name {
+	case statusTasksName:
 		out["tasks"], out["counts"], out["hidden"], out["more"] = snap.Tasks, snap.Counts, snap.TasksHidden, snap.TasksMore
-	} else {
+	case statusProposalsName:
 		out["proposals"], out["hidden"], out["more"] = snap.Proposals, snap.PropsHidden, snap.ProposalsMore
+	case statusWorkersName:
+		// A snapshot taken before this view existed has no worker rows.
+		ws := snap.Workers
+		if ws == nil {
+			ws = []map[string]any{}
+		}
+		out["workers"], out["more"] = ws, snap.WorkersMore
+	case statusCampaignsName:
+		cs := snap.Campaigns
+		if cs == nil {
+			cs = []map[string]any{}
+		}
+		out["campaigns"], out["hidden"], out["more"] = cs, snap.CampaignsHidden, snap.CampaignsMore
 	}
 	b, err := json.Marshal(out)
 	if err != nil {

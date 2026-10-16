@@ -394,6 +394,7 @@ type deliveryPayload struct {
 			Rows    []digestRow `json:"rows"`
 			Hidden  int         `json:"hidden"`
 			Sources []string    `json:"sources"`
+			Labeled bool        `json:"labeled"`
 		} `json:"body"`
 		ReplacesExternalID string `json:"replaces_external_id"`
 	} `json:"delivery"`
@@ -489,7 +490,7 @@ func (c *Channel) render(p deliveryPayload) (string, bool) {
 		}
 		return c.renderCard(p.Locale, b.Card), true
 	case "digest":
-		return c.renderDigest(p.Locale, b.Window, b.Rows, b.Hidden, b.Text, b.Sources), true
+		return c.renderDigest(p.Locale, b.Window, b.Rows, b.Hidden, b.Text, b.Sources, b.Labeled), true
 	}
 	return "", false
 }
@@ -503,8 +504,10 @@ type digestRow struct {
 
 // renderDigest draws a digest: the code table and the hidden count from the catalog texts, then
 // the model paragraph as a separate part under the provenance line, with its sources when the
-// attempt saw untrusted text (REP-2).
-func (c *Channel) renderDigest(locale, window string, rows []digestRow, hidden int, text string, sources []string) string {
+// attempt saw untrusted text (REP-2). A group chat bound with model_text: labeled gets the
+// paragraph of such an attempt under the code line "bot text, check the numbers against the
+// table" before the sources, and still after the table.
+func (c *Channel) renderDigest(locale, window string, rows []digestRow, hidden int, text string, sources []string, labeled bool) string {
 	lines := []string{c.cfg.Texts.Render(locale, "digest.title", map[string]any{"window": window})}
 	for _, r := range rows {
 		lines = append(lines, c.cfg.Texts.Render(locale, "digest.row", map[string]any{"title": r.Title, "state": r.State, "count": r.Count}))
@@ -520,7 +523,11 @@ func (c *Channel) renderDigest(locale, window string, rows []digestRow, hidden i
 		if sources != nil {
 			label = c.cfg.Texts.Render(locale, "digest.sources", map[string]any{"sources": strings.Join(sources, ", ")})
 		}
-		lines = append(lines, "", label, c.cutLinks(text))
+		lines = append(lines, "")
+		if labeled {
+			lines = append(lines, c.cfg.Texts.Render(locale, "digest.labeled", nil))
+		}
+		lines = append(lines, label, c.cutLinks(text))
 	}
 	return strings.Join(lines, "\n")
 }

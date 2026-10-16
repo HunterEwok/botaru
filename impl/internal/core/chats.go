@@ -128,8 +128,10 @@ func (c *Core) ChatBind(ctx context.Context, op Operator, req ChatBindRequest) (
 	if modelText == "" {
 		modelText = "summary_only"
 	}
-	if modelText != "summary_only" {
-		return nil, refuse("version_unsupported", "this build sends only the closed summary to a group (model_text: summary_only)")
+	// labeled lets the marked model paragraph of a digest into the group even after untrusted
+	// text, under the code line and the sources (REP-2, DLV-15).
+	if modelText != "summary_only" && modelText != "labeled" {
+		return nil, refuse("input_schema_invalid", "model_text is summary_only or labeled")
 	}
 	// The notices repeat at most once a day and at least once a year (MSG-17).
 	if d, ok := parseDuration(req.NoticeRepeat); req.NoticeRepeat != "" && (!ok || d < 24*time.Hour || d > 366*24*time.Hour) {

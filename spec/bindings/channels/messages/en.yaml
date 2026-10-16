@@ -204,6 +204,7 @@ texts:
   digest.empty: No tasks in the window.
   digest.hidden: "Hidden as above this chat's class: {count}."
   digest.sources: "[AI text; it read text from: {sources}]"
+  digest.labeled: "Bot text, check the numbers against the table."
   # Refusals and outcomes that the first bot shows (DLV-9, PRM-8)
   provenance.model: "[AI answer]"
   task.rejected: "The request was not accepted: {reason}."
