@@ -10,7 +10,11 @@
     "MAN-6",
     "PRM-13",
     "PRM-14",
-    "GOV-4"
+    "GOV-4",
+    "SKL-1",
+    "SKL-2",
+    "KNW-2",
+    "KNW-4"
   ],
   "type": "object",
   "required": [
@@ -77,6 +81,98 @@
         "maxLength": 65536
       },
       "description": "Texts of the persona files that the charters of the set pin, by their SHA-256; the core checks each hash, lints the text and keeps it in the tenant of the charter (GOV-4, COM-19)."
+    },
+    "skills": {
+      "type": "object",
+      "maxProperties": 200,
+      "x-botaru-version": "v0.2",
+      "propertyNames": {
+        "$ref": "urn:botaru:schema:common:1#/$defs/name"
+      },
+      "additionalProperties": {
+        "type": "array",
+        "maxItems": 100,
+        "items": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "path",
+            "data"
+          ],
+          "properties": {
+            "path": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 400,
+              "description": "Path relative to the folder, with / as the separator."
+            },
+            "data": {
+              "type": "string",
+              "maxLength": 22369624,
+              "contentEncoding": "base64",
+              "description": "The file bytes as git stores them in the commit, in base64."
+            },
+            "mode": {
+              "enum": [
+                "file",
+                "executable",
+                "link"
+              ],
+              "description": "The git mode of the entry: a file, an executable file or a symbolic link; file when absent."
+            }
+          }
+        }
+      },
+      "description": "From v0.2 (profile knowledge): the files of the skills/ folder of the farm git by skill name, each with its path in skills/<name>/ (SKL-1, SKL-2). The core lints each tree, computes its tree hash by spec/hashing.md and keeps its own copy, from which runs get the skills their role pins."
+    },
+    "knowledge": {
+      "type": "array",
+      "maxItems": 200,
+      "x-botaru-version": "v0.2",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "tenant",
+          "corpus",
+          "documents"
+        ],
+        "properties": {
+          "tenant": {
+            "$ref": "urn:botaru:schema:common:1#/$defs/tenant_name"
+          },
+          "corpus": {
+            "$ref": "urn:botaru:schema:common:1#/$defs/name"
+          },
+          "documents": {
+            "type": "array",
+            "maxItems": 500,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "path",
+                "data"
+              ],
+              "properties": {
+                "path": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 400,
+                  "description": "Path relative to the folder, with / as the separator."
+                },
+                "data": {
+                  "type": "string",
+                  "maxLength": 22369624,
+                  "contentEncoding": "base64",
+                  "description": "The file bytes as git stores them in the commit, in base64."
+                }
+              }
+            }
+          }
+        }
+      },
+      "description": "From v0.2 (profile knowledge): the documents of the folders tenants/<tenant>/knowledge/<corpus>/ of the git commit, for every corpus with source: git of a catalog in the set; the path is relative to the corpus folder. The listed documents replace the corpus's git documents: a new or changed one is ingested into the per-tenant index by a kb.ingest.v1 job, one no longer listed is deleted with its fragments (KNW-2, KNW-4, KNW-5, MAN-5)."
     }
   },
   "additionalProperties": false

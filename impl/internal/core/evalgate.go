@@ -115,7 +115,7 @@ func (x evalIndex) fingerprintOn(role, tenant, slot, profile string) (string, bo
 	case "analysis":
 		analysis = profile
 	}
-	fp, err := staticFingerprint(roleHash, types, ref.SHA256, base, analysis, mstr(mmap(rs, "runtime"), "driver"))
+	fp, err := staticFingerprint(roleHash, types, ref.SHA256, base, analysis, mstr(mmap(rs, "runtime"), "driver"), skillRefsOf(rs))
 	return fp, true, err
 }
 
