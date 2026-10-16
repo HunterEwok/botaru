@@ -612,6 +612,8 @@ func (c *Core) claimDelivery(ctx context.Context, tx pgx.Tx, now time.Time, cat 
 	}
 	var cardBody map[string]any
 	replacesID := ""
+	// skip are the deliveries this claim passed over: a deferred card behind an earlier one.
+	skip := []string{}
 	for picked := false; !picked; {
 		err := tx.QueryRow(ctx, `SELECT d.id, d.kind, d.addr, d.target_kind, d.target_id, d.recipient, d.data_mark, d.body, d.lease_no, d.task, d.dataorigin, d.subject_kind, d.subject_id FROM deliveries d
 		WHERE d.tenant = $1 AND d.exec_kind = $2 AND d.exec_name = $3 AND d.state = 'planned' AND (d.run_at IS NULL OR d.run_at <= $4)
@@ -624,7 +626,8 @@ func (c *Core) claimDelivery(ctx context.Context, tx pgx.Tx, now time.Time, cat 
 				AND p.kind = 'privacy_notice' AND p.state = 'delivered' AND p.notice_version IS NOT DISTINCT FROM nullif($5, ''))))
 		AND NOT (d.alarmkey IS NOT NULL AND EXISTS (SELECT 1 FROM deliveries o WHERE o.tenant = d.tenant AND o.alarmkey = d.alarmkey
 			AND o.recipient IS NOT DISTINCT FROM d.recipient AND o.seq < d.seq AND o.state IN ('planned', 'sending')))
-		ORDER BY d.seq LIMIT 1 FOR UPDATE SKIP LOCKED`, w.Tenant, w.Kind, w.Target, now, version).
+		AND NOT d.id = ANY($6)
+		ORDER BY d.seq LIMIT 1 FOR UPDATE SKIP LOCKED`, w.Tenant, w.Kind, w.Target, now, version, skip).
 			Scan(&id, &kind, &addr, &targetKind, &targetID, &recipient, &dataMark, &body, &leaseNo, &task, &origin, &subjectKind, &subjectID)
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, nil
@@ -753,6 +756,18 @@ func (c *Core) claimDelivery(ctx context.Context, tx pgx.Tx, now time.Time, cat 
 				continue
 			}
 		}
+		// The card limit per person per day: a non-urgent card over it waits until the next day
+		// (APR-15).
+		if recipient != nil && tv != nil && w.Kind == "channel" {
+			wait, err := c.cardLimit(ctx, tx, now, tv, id, kind, *recipient, deref(subjectKind), deref(subjectID), w.Target)
+			if err != nil {
+				return nil, err
+			}
+			if wait {
+				skip = append(skip, id)
+				continue
+			}
+		}
 		if sk := deref(subjectKind); sk == "approval" || sk == "proposal" || sk == "control" || sk == "campaign" || sk == "script" || sk == "script_gate" {
 			// A card is drawn from the record now, so it shows the current state (APR-3). An
 			// update waits while the card it edits is being sent, and is dropped when that card
@@ -856,7 +871,8 @@ func (c *Core) claimDelivery(ctx context.Context, tx pgx.Tx, now time.Time, cat 
 	if err != nil {
 		return nil, err
 	}
-	if _, err := tx.Exec(ctx, `UPDATE deliveries SET state = 'sending', lease_no = $2, attempts = attempts + 1, run_at = NULL, updated_at = $3 WHERE id = $1`,
+	if _, err := tx.Exec(ctx, `UPDATE deliveries SET state = 'sending', lease_no = $2, attempts = attempts + 1, run_at = NULL, updated_at = $3,
+		handed_at = coalesce(handed_at, $3) WHERE id = $1`,
 		id, leaseNo, now); err != nil {
 		return nil, err
 	}

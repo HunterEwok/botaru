@@ -319,3 +319,66 @@ func TestPauseActionAtMostSevenDays(t *testing.T) {
 		t.Fatalf("after 7 days: %s", got.State)
 	}
 }
+
+// The card limit per person per day (APR-15): with noncritical_per_day 2 and an urgent card
+// the person already got today, one memory record card goes out and the others wait in
+// planned until the next day, counted as excess without names; the card that went out counts
+// its deadline from its first delivery; the next day the waiting cards go in order of expiry.
+func TestCardLimitPerDay(t *testing.T) {
+	ctx := context.Background()
+	b := newBenchWith(t, func(root string, ms []map[string]any) []map[string]any {
+		for _, m := range ms {
+			switch m["kind"] {
+			case "Role":
+				m["spec"].(map[string]any)["memory"] = "person"
+			case "Tenant":
+				m["spec"].(map[string]any)["attention"] = map[string]any{"noncritical_per_day": 2}
+			}
+		}
+		return ms
+	})
+	b.hello(t, "1")
+	att := b.claim(t, b.agent, "attempt")
+	mh := att.Payload["handles"].(map[string]any)["memory"].(string)
+	b.drain(t) // the notices of the first contact
+	// An urgent card alice got today counts toward the limit.
+	if _, err := b.c.st.Pool.Exec(ctx, `INSERT INTO deliveries (id, tenant, kind, addr, target_kind, target_id, exec_kind, exec_name, recipient, state, dataorigin,
+		created_at, updated_at, handed_at) VALUES ('dl_urgent', 'demo', 'approval_card', 'approval_initiator', 'chat', 'direct:1001', 'channel', 'telegram', $1,
+		'delivered', 'code', botaru_now(), botaru_now(), botaru_now())`, b.alice); err != nil {
+		t.Fatal(err)
+	}
+	var first string
+	for i, k := range []string{"pref.a", "pref.b", "pref.c"} {
+		p, err := b.c.MemoryPropose(ctx, mh, MemoryProposeRequest{Key: k, Content: "Prefers " + k})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if i == 0 {
+			first = p.ID
+		}
+		b.advance(t, 1)
+	}
+	if got := b.drain(t); len(got) != 1 || got[0].kind != memoryCard {
+		t.Fatalf("cards today %+v", got)
+	}
+	var waiting, excess int
+	if err := b.c.st.Pool.QueryRow(ctx, `SELECT count(*) FROM deliveries WHERE kind = $1 AND state = 'planned' AND run_at IS NOT NULL`, memoryCard).Scan(&waiting); err != nil || waiting != 2 {
+		t.Fatalf("waiting %d %v", waiting, err)
+	}
+	if err := b.c.st.Pool.QueryRow(ctx, `SELECT sum(count) FROM card_excess WHERE tenant = 'demo'`).Scan(&excess); err != nil || excess != 2 {
+		t.Fatalf("excess %d %v", excess, err)
+	}
+	var created, decideBy, handed time.Time
+	if err := b.c.st.Pool.QueryRow(ctx, `SELECT m.created_at, m.decide_by, f.delivered_at FROM memory_items m JOIN card_first_deliveries f
+		ON f.subject_kind = 'memory_record' AND f.subject_id = m.id WHERE m.id = $1`, first).Scan(&created, &decideBy, &handed); err != nil {
+		t.Fatal(err)
+	}
+	if got := decideBy.Sub(handed); got != memoryCardTTL {
+		t.Fatalf("the deadline counts %v from the first delivery", got)
+	}
+	b.advance(t, 24*3600)
+	if got := b.drain(t); len(got) != 2 {
+		t.Fatalf("cards the next day %+v", got)
+	}
+	_ = created
+}

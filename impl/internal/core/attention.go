@@ -228,3 +228,114 @@ func (c *Core) doctorTwoApprovers(ctx context.Context, tx pgx.Tx, now time.Time,
 	add(ch)
 	return nil
 }
+
+// defaultNoncriticalPerDay is attention.noncritical_per_day when the tenant sets none (APR-15).
+const defaultNoncriticalPerDay = 10
+
+// decisionKinds are the card kinds of the rows of kind decision in decision-points.yaml: the
+// cards that count toward a person's daily limit (APR-15).
+func (c *Core) decisionKinds() []string {
+	reg, err := c.spec.Registry("spec/model/decision-points.yaml")
+	if err != nil {
+		return nil
+	}
+	var out []string
+	for _, e := range reg.Entries {
+		if id, _ := e["id"].(string); e["kind"] == "decision" && e["attention_limit"] != false {
+			out = append(out, id)
+		}
+	}
+	return out
+}
+
+// cardLimit applies the card limit per person per day at the hand-out of a card (APR-15). A
+// card of a decision row with urgent: false waits in planned until the next local day of the
+// tenant once the person got noncritical_per_day decision cards today, urgent ones included,
+// and the excess is counted per tenant and day without names; deferred cards go out in order
+// of the expiry of their subject. It reports whether the delivery waits. A card that goes out
+// rewrites, once, the expiry of its subject to count from this first delivery. Notices and
+// card updates are not cards of the limit.
+func (c *Core) cardLimit(ctx context.Context, tx pgx.Tx, now time.Time, tv *TenantView, id, kind, recipient, subjectKind, subjectID, exec string) (bool, error) {
+	row := c.decisionPoint(kind)
+	if row == nil || row["kind"] != "decision" || row["attention_limit"] == false || row["urgent"] == true || subjectID == "" {
+		return false, nil
+	}
+	limit := defaultNoncriticalPerDay
+	if p := tv.Spec.Attention.NoncriticalPerDay; p != nil {
+		limit = *p
+	}
+	day := tenantDay(tv, now)
+	var got int
+	if err := tx.QueryRow(ctx, `SELECT count(*) FROM deliveries WHERE tenant = $1 AND recipient = $2 AND handed_at >= $3 AND kind = ANY($4)`,
+		tv.Name, recipient, day, c.decisionKinds()).Scan(&got); err != nil {
+		return false, err
+	}
+	if got >= limit {
+		exp, err := c.subjectExpiry(ctx, tx, tv, subjectKind, subjectID)
+		if err != nil {
+			return false, err
+		}
+		next := day.AddDate(0, 0, 1)
+		if _, err := tx.Exec(ctx, `UPDATE deliveries SET run_at = $2, card_expires_at = $3 WHERE id = $1`, id, next, exp); err != nil {
+			return false, err
+		}
+		_, err = tx.Exec(ctx, `INSERT INTO card_excess (tenant, day, count) VALUES ($1, $2, 1) ON CONFLICT (tenant, day) DO UPDATE SET count = card_excess.count + 1`,
+			tv.Name, day.Format(time.DateOnly))
+		return true, err
+	}
+	// Cards that waited go out in order of the expiry of their subject.
+	var earlier bool
+	if err := tx.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM deliveries o, deliveries d WHERE d.id = $1 AND d.card_expires_at IS NOT NULL
+		AND o.tenant = d.tenant AND o.recipient = d.recipient AND o.exec_name = $2 AND o.state = 'planned' AND o.id <> d.id
+		AND o.card_expires_at < d.card_expires_at AND (o.run_at IS NULL OR o.run_at <= $3))`, id, exec, now).Scan(&earlier); err != nil {
+		return false, err
+	}
+	if earlier {
+		return true, nil
+	}
+	return false, c.firstCardDelivery(ctx, tx, now, subjectKind, subjectID)
+}
+
+// subjectExpiry is the expiry of the subject of a non-urgent card, or nil.
+func (c *Core) subjectExpiry(ctx context.Context, tx pgx.Tx, tv *TenantView, subjectKind, id string) (*time.Time, error) {
+	var at *time.Time
+	var err error
+	switch subjectKind {
+	case "proposal":
+		var presented *time.Time
+		err = tx.QueryRow(ctx, `SELECT coalesce(presented_at, state_at) FROM proposals WHERE id = $1`, id).Scan(&presented)
+		if presented != nil {
+			t := presented.Add(durationOr(tv.Spec.Insights.DecideTTL, defaultDecideTTL))
+			at = &t
+		}
+	case "memory_record":
+		err = tx.QueryRow(ctx, `SELECT decide_by FROM memory_items WHERE id = $1`, id).Scan(&at)
+	case "subject_request":
+		err = tx.QueryRow(ctx, `SELECT deadline_at FROM subject_requests WHERE id = $1`, id).Scan(&at)
+	}
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, nil
+	}
+	return at, err
+}
+
+// firstCardDelivery rewrites, once, the expiry of a subject of a non-urgent card in the
+// transaction of the first delivery of its card to any recipient, so the deadline counts from
+// it (APR-15): the presentation time of a proposal, and the deadline of a memory record or a
+// person's request moved by the time since it was created.
+func (c *Core) firstCardDelivery(ctx context.Context, tx pgx.Tx, now time.Time, subjectKind, id string) error {
+	tag, err := tx.Exec(ctx, `INSERT INTO card_first_deliveries (subject_kind, subject_id, delivered_at) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING`,
+		subjectKind, id, now)
+	if err != nil || tag.RowsAffected() == 0 {
+		return err
+	}
+	switch subjectKind {
+	case "proposal":
+		_, err = tx.Exec(ctx, `UPDATE proposals SET presented_at = $2 WHERE id = $1 AND presented_at IS NOT NULL`, id, now)
+	case "memory_record":
+		_, err = tx.Exec(ctx, `UPDATE memory_items SET decide_by = decide_by + ($2 - created_at) WHERE id = $1 AND decide_by IS NOT NULL AND $2 > created_at`, id, now)
+	case "subject_request":
+		_, err = tx.Exec(ctx, `UPDATE subject_requests SET deadline_at = deadline_at + ($2 - created_at) WHERE id = $1 AND $2 > created_at`, id, now)
+	}
+	return err
+}
