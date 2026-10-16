@@ -172,3 +172,40 @@ func TestEraseTenantScope(t *testing.T) {
 		t.Fatalf("request %s %v", state, res)
 	}
 }
+
+// A channel with no worker left and an agent runtime that is no longer seen fail their steps
+// not_ready instead of holding the request open for good; erasure.retry runs them again once
+// the runtime is back (RET-11, RET-7, OBS-4).
+func TestErasureGoneEdges(t *testing.T) {
+	ctx := context.Background()
+	b, _ := newMemoryBench(t)
+	b.hello(t, "1")
+	b.finish(t, b.claim(t, b.agent, "attempt"))
+	if _, err := b.c.st.Pool.Exec(ctx, `UPDATE workers SET state = 'revoked' WHERE id = $1;`, b.channel.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := b.c.st.Pool.Exec(ctx, `UPDATE workers SET stale_since = last_seen WHERE id = $1`, b.agent.ID); err != nil {
+		t.Fatal(err)
+	}
+	d, err := b.c.ErasureRequest(ctx, b.op, ErasureRequestInput{Scope: ErasureScope{Tenant: "demo", Subject: b.alice}, Reason: "manual"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	b.tick(t, "erasure")
+	rt := storeKey("runtime", b.agent.ID)
+	if state, res := b.erasureState(t, d.ID); state != "failed" || res["channel_telegram"] != "failed" || res[rt] != "failed" || res["tasks"] != "done" {
+		t.Fatalf("request %s %v", state, res)
+	}
+	if _, err := b.c.st.Pool.Exec(ctx, `UPDATE workers SET stale_since = NULL, last_seen = botaru_now() WHERE id = $1`, b.agent.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := b.c.ErasureRetry(ctx, b.op, ErasureIDRequest{Op: "erasure.retry", ID: d.ID}); err != nil {
+		t.Fatal(err)
+	}
+	b.tick(t, "erasure")
+	b.purge(t)
+	b.tick(t, "erasure")
+	if state, res := b.erasureState(t, d.ID); state != "failed" || res["channel_telegram"] != "failed" || res[rt] != "done" {
+		t.Fatalf("retried request %s %v", state, res)
+	}
+}

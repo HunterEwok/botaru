@@ -76,6 +76,29 @@ func TestRetentionTenantPeriods(t *testing.T) {
 		VALUES ('fo_ret10', 'demo', 'bot_old', 'hello', ARRAY['fact_ret10'], 'open', 'waiting', $2, $1)`, now, now.Add(60*day)); err != nil {
 		t.Fatal(err)
 	}
+	// The content parts of orchestration records (RET-10): a finished script run and its
+	// step, the items of a finished campaign, a finding's note, a closed proposal's note, a digest.
+	for _, sql := range []string{
+		`INSERT INTO script_runs (id, tenant, initiator, state, plan_hash, record, nonce, expires_at, created_at, updated_at)
+			VALUES ('scr_ret10', 'demo', 'x', 'completed', 'h', '{"root": "t_x", "assignment": "CANARY-NOT-A-SECRET-ret10"}', 'n', $1, $1, $1)`,
+		`INSERT INTO script_steps (run, n, id, kind, state, fields, untrusted) VALUES ('scr_ret10', 1, 's1', 'task', 'ok', '{"v": "CANARY-NOT-A-SECRET-ret10"}', '{"value": true}')`,
+		`INSERT INTO campaigns (id, tenant, initiator, state, plan_hash, record, nonce, card, created_at, updated_at)
+			VALUES ('cmp_ret10', 'demo', 'x', 'completed', 'h', '{}', 'n', false, $1, $1)`,
+		`INSERT INTO campaign_items (campaign, n, resource, args, args_hash, state, summary) VALUES ('cmp_ret10', 1, 'r', '{"a": "CANARY-NOT-A-SECRET-ret10"}', 'h', 'ok', '{"s": 1}')`,
+		`INSERT INTO findings (id, tenant, task, kind, subject_kind, subject_id, body, note, created_at)
+			VALUES ('fd_ret10', 'demo', 't_x', 'k', 'task', 't_x', '{}', 'CANARY-NOT-A-SECRET-ret10', $1)`,
+		`INSERT INTO proposals (id, tenant, role, worker, task, fingerprint, kind, state, record, created_at, updated_at, state_at)
+			VALUES ('prp_ret10', 'demo', 'hello', 'w', 't_x', 'f', 'k', 'declined', '{"body": {"note": "CANARY-NOT-A-SECRET-ret10"}}', $1, $1, $1)`,
+		`INSERT INTO proposal_digests (id, tenant, slot_at, urgent, body, created_at) VALUES ('dg_ret10', 'demo', $1, false, '{"x": "CANARY-NOT-A-SECRET-ret10"}', $1)`,
+	} {
+		args := []any{now}
+		if !strings.Contains(sql, "$1") {
+			args = nil
+		}
+		if _, err := b.c.st.Pool.Exec(ctx, sql, args...); err != nil {
+			t.Fatal(err)
+		}
+	}
 	events := b.count(t, `SELECT count(*) FROM events WHERE subject = $1`, task)
 	b.advance(t, 3*24*3600)
 	b.loop(t, "retention")
@@ -84,6 +107,13 @@ func TestRetentionTenantPeriods(t *testing.T) {
 	}
 	if n := b.count(t, `SELECT count(*) FROM session_entries WHERE content::text LIKE '%CANARY%'`); n != 0 {
 		t.Fatal("the session outlived the content period")
+	}
+	if n := b.count(t, `SELECT (SELECT count(*) FROM script_runs WHERE record::text LIKE '%CANARY%' OR NOT record ? 'purged')
+		+ (SELECT count(*) FROM script_steps WHERE fields IS NOT NULL OR untrusted IS NOT NULL)
+		+ (SELECT count(*) FROM campaign_items WHERE args <> '{}' OR summary IS NOT NULL)
+		+ (SELECT count(*) FROM findings WHERE note IS NOT NULL) + (SELECT count(*) FROM proposals WHERE record::text LIKE '%CANARY%')
+		+ (SELECT count(*) FROM proposal_digests)`); n != 0 {
+		t.Fatalf("%d orchestration records kept their content past the period", n)
 	}
 	if n := b.count(t, `SELECT count(*) FROM memory_items WHERE id = 'm_ret10'`) + b.count(t, `SELECT count(*) FROM facts WHERE id = 'fact_ret10'`); n != 2 {
 		t.Fatalf("memory went before its period: %d left", n)

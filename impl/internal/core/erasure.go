@@ -37,7 +37,9 @@ const defaultSubjectRequestDays = 30
 const erasureRetry = time.Minute
 
 // coreStores are the content stores of the core in the order they are erased.
-var coreStores = []string{"tasks", "deliveries", "toolcalls", "sessions", "memory", "files"}
+// A script run and a campaign come before the deliveries: canceling a live one plans its
+// last card, which the deliveries step then withholds.
+var coreStores = []string{"tasks", "scripts", "campaigns", "deliveries", "toolcalls", "sessions", "memory", "files"}
 
 // ErasureScope is the scope of an erasure request (deletion-request).
 type ErasureScope struct {
@@ -305,9 +307,10 @@ func (c *Core) erasureLoop(ctx context.Context) error {
 // runCoreSteps erases the core stores of a request and closes the step of a channel whose
 // driver declared it stores no content as not_applicable with the basis declared_none; any
 // other channel takes its step as erase work through claim and answers itself, failed when it
-// lacks the operation (SEC-11, RET-11).
+// lacks the operation (SEC-11, RET-11). A channel step with no channel worker left and the
+// step of a runtime that is revoked or stale fail not_ready, so erasure.retry can run them.
 func (c *Core) runCoreSteps(ctx context.Context, tx pgx.Tx, now time.Time, cat *Catalog, r *erasureRow) error {
-	rows, err := tx.Query(ctx, `SELECT store, kind, target FROM erasure_steps WHERE request = $1 AND state = 'pending' AND kind IN ('core', 'channel') ORDER BY id`, r.ID)
+	rows, err := tx.Query(ctx, `SELECT store, kind, target FROM erasure_steps WHERE request = $1 AND state = 'pending' AND kind IN ('core', 'channel', 'runtime') ORDER BY id`, r.ID)
 	if err != nil {
 		return err
 	}
@@ -331,11 +334,34 @@ func (c *Core) runCoreSteps(ctx context.Context, tx pgx.Tx, now time.Time, cat *
 		return err
 	}
 	for _, s := range steps {
-		if s.kind == "channel" {
-			var none bool
-			if err := tx.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM workers WHERE tenant = $1 AND kind = 'channel' AND target = $2 AND state <> 'revoked'
-				AND hello->'driver'->>'stores_content' = 'none')`, r.Tenant, s.target).Scan(&none); err != nil {
+		if s.kind == "runtime" {
+			// An agent that is revoked or no longer seen (stale, OBS-4) would hold the request
+			// open for good: its step fails not_ready, and erasure.retry runs it again once the
+			// runtime is back.
+			var gone bool
+			if err := tx.QueryRow(ctx, `SELECT NOT EXISTS (SELECT 1 FROM workers WHERE id = $1 AND state <> 'revoked' AND stale_since IS NULL
+				AND (last_seen IS NULL OR last_seen >= $2))`, s.target, now.Add(-staleAfter)).Scan(&gone); err != nil {
 				return err
+			}
+			if gone {
+				if err := set(s.store, "failed", "", "not_ready"); err != nil {
+					return err
+				}
+			}
+			continue
+		}
+		if s.kind == "channel" {
+			var none, live bool
+			if err := tx.QueryRow(ctx, `SELECT coalesce(bool_or(hello->'driver'->>'stores_content' = 'none'), false), count(*) > 0
+				FROM workers WHERE tenant = $1 AND kind = 'channel' AND target = $2 AND state <> 'revoked'`, r.Tenant, s.target).Scan(&none, &live); err != nil {
+				return err
+			}
+			if !live {
+				// No channel worker left to take the work: not_ready, retried by erasure.retry.
+				if err := set(s.store, "failed", "", "not_ready"); err != nil {
+					return err
+				}
+				continue
 			}
 			if none {
 				if err := set(s.store, "not_applicable", "declared_none", ""); err != nil {
@@ -454,6 +480,43 @@ func (c *Core) eraseCore(ctx context.Context, tx pgx.Tx, now time.Time, cat *Cat
 			OR producer IN (`+tasksIn+`) AND (cardinality($3::text[]) > 0 OR ($2 <> '' AND cardinality($4::text[]) = 0))
 			OR file_ref = ANY($4))`,
 			r.Tenant, sc.Subject, idsWith(sc.IDs, "t_"), idsWith(sc.IDs, "file:"))
+		return err
+	case "scripts":
+		// A run of the person or anchored in a task of the scope: a live one is canceled, then
+		// it keeps only its tombstone (RET-10).
+		if len(sc.IDs) > 0 && len(idsWith(sc.IDs, "t_", ids.Script+"_")) == 0 {
+			return nil
+		}
+		runs := `SELECT id FROM script_runs WHERE tenant = $1 AND (
+			(cardinality($3::text[]) = 0 AND cardinality($4::text[]) = 0 AND ($2 = '' OR initiator = $2 OR anchor_task IN (` + tasksIn + `)))
+			OR anchor_task = ANY($3) OR id = ANY($4))`
+		rargs := []any{r.Tenant, sc.Subject, idsWith(sc.IDs, "t_"), idsWith(sc.IDs, ids.Script+"_")}
+		rows, err := tx.Query(ctx, runs+` AND state = ANY($5)`, append(rargs, scriptLive)...)
+		if err != nil {
+			return err
+		}
+		live, err := pgx.CollectRows(rows, pgx.RowTo[string])
+		if err != nil {
+			return err
+		}
+		if len(live) > 0 {
+			if err := c.cancelRuns(ctx, tx, now, r.Tenant, `id = ANY($2::text[])`, live, r.Reason); err != nil {
+				return err
+			}
+		}
+		_, err = purgeRuns(ctx, tx, "", runs, rargs...)
+		return err
+	case "campaigns":
+		// The items of a campaign of the person or of a task of the scope lose their arguments
+		// and result fields once they ended; a live campaign stops with its parent task in the
+		// tasks step first, which ends its pending items.
+		if len(sc.IDs) > 0 && len(idsWith(sc.IDs, "t_", ids.Campaign+"_")) == 0 {
+			return nil
+		}
+		_, err := tx.Exec(ctx, `UPDATE campaign_items SET args = '{}', summary = NULL WHERE (args <> '{}' OR summary IS NOT NULL) AND state NOT IN ('pending', 'released') AND campaign IN (
+			SELECT id FROM campaigns WHERE tenant = $1 AND (
+			(cardinality($3::text[]) = 0 AND cardinality($4::text[]) = 0 AND ($2 = '' OR initiator = $2 OR parent_task IN (`+tasksIn+`)))
+			OR parent_task = ANY($3) OR id = ANY($4)))`, r.Tenant, sc.Subject, idsWith(sc.IDs, "t_"), idsWith(sc.IDs, ids.Campaign+"_"))
 		return err
 	case "memory":
 		if len(sc.IDs) > 0 && len(idsWith(sc.IDs, "m_")) == 0 {

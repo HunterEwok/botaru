@@ -224,10 +224,20 @@ func TestSubjectErasure(t *testing.T) {
 	if err != nil || r.State != "approved" {
 		t.Fatalf("decide %+v %v", r, err)
 	}
+	// A finished script run of the person keeps only its tombstone (RET-10).
+	if _, err := b.c.st.Pool.Exec(ctx, `INSERT INTO script_runs (id, tenant, initiator, state, plan_hash, record, nonce, expires_at, created_at, updated_at)
+		SELECT 'scr_erase', 'demo', subject, 'completed', 'h', '{"root": "t_x", "assignment": "CANARY-NOT-A-SECRET-scr"}', 'n', now(), now(), now()
+		FROM erasure_requests WHERE state = 'requested';
+		INSERT INTO script_steps (run, n, id, kind, state, fields) VALUES ('scr_erase', 1, 's1', 'task', 'ok', '{"v": "CANARY-NOT-A-SECRET-scr"}')`); err != nil {
+		t.Fatal(err)
+	}
 	b.tick(t, "erasure")
 	var body, result *string
 	if err := b.c.st.Pool.QueryRow(ctx, `SELECT body::text, result::text FROM tasks WHERE id = $1`, task).Scan(&body, &result); err != nil || body != nil || result != nil {
 		t.Fatalf("the task kept its content: %v %v %v", body, result, err)
+	}
+	if n := b.count(t, `SELECT (SELECT count(*) FROM script_runs WHERE record::text LIKE '%CANARY%') + (SELECT count(*) FROM script_steps WHERE fields IS NOT NULL)`); n != 0 {
+		t.Fatal("the script run kept its content")
 	}
 	var erasure string
 	if err := b.c.st.Pool.QueryRow(ctx, `SELECT erasure FROM subject_requests WHERE id = $1`, req.ID).Scan(&erasure); err != nil {

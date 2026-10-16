@@ -244,6 +244,28 @@ func (c *Core) retentionLoop(ctx context.Context) error {
 		// A snapshot of the status views goes with the content of its task (REP-2).
 		exec(`DELETE FROM view_snapshots WHERE task IN (SELECT v.task FROM view_snapshots v JOIN tasks t ON t.id = v.task LEFT JOIN p ON p.tenant = t.tenant
 			WHERE v.created_at <= $9 AND v.created_at <= coalesce(p.content, $6) LIMIT $8 FOR UPDATE OF v SKIP LOCKED)`, base),
+		// A finished script run past the content period keeps a tombstone (RET-10).
+		func(tx pgx.Tx, now time.Time) (int64, error) {
+			return purgeRuns(ctx, tx, retentionCuts, `SELECT r.id FROM script_runs r LEFT JOIN p ON p.tenant = r.tenant
+				WHERE r.state IN ('completed', 'failed', 'canceled', 'rejected') AND NOT r.record ? 'purged' AND r.updated_at <= $9
+				AND r.updated_at <= coalesce(p.content, $6) LIMIT $8 FOR UPDATE OF r SKIP LOCKED`, base...)
+		},
+		// The arguments and the result fields of an item of a finished campaign go with the
+		// content of its tasks; the item keeps its state, links and the hash of its arguments.
+		exec(`UPDATE campaign_items SET args = '{}', summary = NULL WHERE (campaign, n) IN (SELECT i.campaign, i.n FROM campaign_items i
+			JOIN campaigns k ON k.id = i.campaign LEFT JOIN p ON p.tenant = k.tenant
+			WHERE (i.args <> '{}' OR i.summary IS NOT NULL) AND k.state IN ('completed', 'failed', 'canceled', 'rejected')
+			AND k.updated_at <= $9 AND k.updated_at <= coalesce(p.content, $6) LIMIT $8 FOR UPDATE OF i SKIP LOCKED)`, base),
+		// The note of a finding and the author note of a closed proposal are content
+		// (MGR-30, PRP-1); the rest of each record is metadata.
+		exec(`UPDATE findings SET note = NULL WHERE id IN (SELECT f.id FROM findings f LEFT JOIN p ON p.tenant = f.tenant
+			WHERE f.note IS NOT NULL AND f.created_at <= $9 AND f.created_at <= coalesce(p.content, $6) LIMIT $8 FOR UPDATE OF f SKIP LOCKED)`, base),
+		exec(`UPDATE proposals SET record = record #- '{body,note}' WHERE id IN (SELECT x.id FROM proposals x LEFT JOIN p ON p.tenant = x.tenant
+			WHERE x.record->'body' ? 'note' AND x.state NOT IN ('screened', 'in_review', 'recommended', 'parked', 'presented', 'realizing')
+			AND x.updated_at <= $9 AND x.updated_at <= coalesce(p.content, $6) LIMIT $8 FOR UPDATE OF x SKIP LOCKED)`, base),
+		// A sent digest is content once its slot is past (DIG-1): its row only kept the slot.
+		exec(`DELETE FROM proposal_digests WHERE id IN (SELECT d.id FROM proposal_digests d LEFT JOIN p ON p.tenant = d.tenant
+			WHERE d.created_at <= $9 AND d.created_at <= coalesce(p.content, $6) LIMIT $8 FOR UPDATE OF d SKIP LOCKED)`, base),
 		// An expired file has no bytes left; the next step records expired -> purged and the
 		// record stays as the tombstone (spec/lifecycles/file.md, RET-2).
 		exec(`UPDATE files SET state = 'purged', content = NULL WHERE file_ref IN (SELECT file_ref FROM files
