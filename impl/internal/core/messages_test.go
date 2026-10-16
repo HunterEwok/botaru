@@ -606,7 +606,8 @@ func TestMessageHidden(t *testing.T) {
 }
 
 // An apply that takes an inbox away ends its live entries with recipient_gone, and an ended
-// entry leaves the store with its fields after the period of class content (MSG-12, RET-2).
+// entry leaves the store with its fields after the tenant's content period (90 days in the
+// example tenant) (MSG-12, RET-2, RET-9).
 func TestMessageGoneRetention(t *testing.T) {
 	ctx := context.Background()
 	b := newMsgBench(t)
@@ -626,7 +627,7 @@ func TestMessageGoneRetention(t *testing.T) {
 	if _, err := b.c.st.Pool.Exec(ctx, `UPDATE messages SET state = 'acked' WHERE state = 'queued'`); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := b.c.st.Pool.Exec(ctx, `UPDATE messages SET updated_at = updated_at - interval '31 days'`); err != nil {
+	if _, err := b.c.st.Pool.Exec(ctx, `UPDATE messages SET updated_at = updated_at - interval '91 days'`); err != nil {
 		t.Fatal(err)
 	}
 	b.loop(t, "retention")

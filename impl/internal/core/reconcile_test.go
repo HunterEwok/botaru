@@ -178,14 +178,15 @@ func TestReconcile(t *testing.T) {
 	}
 }
 
-// Retention (RET-2, RET-3, blackbox:core/retention-minimal, blackbox:core/tombstone): the
-// content of a task finished more than 30 days ago is deleted by the loop while its metadata
-// stays, a younger one keeps its content, and the key of a deleted task answers gone.
+// Retention (RET-2, RET-3, RET-9, blackbox:core/retention-minimal, blackbox:core/tombstone):
+// the content of a task finished longer ago than the tenant's content period (90 days in the
+// example tenant) is deleted by the loop while its metadata stays, a younger one keeps its
+// content, and the key of a deleted task answers gone.
 func TestRetention(t *testing.T) {
 	ctx := context.Background()
 	b := newBench(t)
 	old := b.helloDone(t, "1", "", "old answer")
-	b.advance(t, 20*24*3600)
+	b.advance(t, 80*24*3600)
 	young := b.helloDone(t, "2", "", "young answer")
 	b.advance(t, 11*24*3600)
 	if err := b.c.tickLoop(ctx, "retention"); err != nil {

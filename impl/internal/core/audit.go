@@ -15,6 +15,7 @@ import (
 
 	"github.com/HunterEwok/botaru/impl/internal/ids"
 	"github.com/HunterEwok/botaru/impl/internal/jcs"
+	"github.com/HunterEwok/botaru/impl/internal/store"
 )
 
 // Audit is the content of an audit record before the core numbers and chains it
@@ -38,6 +39,9 @@ type Audit struct {
 	ServiceGrant map[string]any
 	// Restore is the block of a restore record that opens a new epoch (RET-6, D-86 (7)).
 	Restore map[string]any
+	// Period is the block of a period_deleted record: the bounds, count and last hash of the
+	// months the retention loop deleted (AUD-3).
+	Period map[string]any
 }
 
 // Actor is who made the change.
@@ -132,6 +136,9 @@ func (c *Core) appendAuditAt(ctx context.Context, tx pgx.Tx, now time.Time, epoc
 	if a.Restore != nil {
 		rec["restore"] = a.Restore
 	}
+	if a.Period != nil {
+		rec["period"] = a.Period
+	}
 	h, err := jcs.Hash(rec)
 	if err != nil {
 		return 0, err
@@ -152,9 +159,10 @@ func (c *Core) appendAuditAt(ctx context.Context, tx pgx.Tx, now time.Time, epoc
 }
 
 // VerifyAudit recomputes the chain of a tenant in the current epoch (P2 audit.verify, AUD-6).
-// It returns the number of records and the seq of the first broken record, or 0. The seq
-// numbers must run from 1 without gaps, and the last record must be the one the audit head
-// names, so a deleted tail is found too.
+// It returns the seq checked up to (the number of records ever written to the chain, the
+// records below a cut included) and the seq of the first broken record, or 0. The seq
+// numbers must run from 1, or from the cut, without gaps, and the last record must be the one
+// the audit head names, so a deleted tail is found too.
 // The head and the rows are read in one snapshot, so a record appended meanwhile is in both
 // or in neither.
 func (c *Core) VerifyAudit(ctx context.Context, tenant string) (count int64, brokenAt int64, err error) {
@@ -179,13 +187,26 @@ func (c *Core) VerifyAudit(ctx context.Context, tenant string) (count int64, bro
 	return count, 0, nil
 }
 
+// verifyRows checks the chain from its start, or from its cut when the retention loop deleted
+// whole months of it: the cut holds the seq and hash of the last record deleted (AUD-3). A cut
+// holds only when the kept chain has the period_deleted record of that cut (validCut); else
+// the chain is broken just after the cut.
 func (c *Core) verifyRows(ctx context.Context, tx pgx.Tx, tenant string) (count int64, brokenAt int64, prev string, err error) {
-	rows, err := tx.Query(ctx, `SELECT seq, record, hash FROM audit WHERE tenant = $1 AND epoch = $2 ORDER BY seq`, tenant, c.epoch)
+	prev = jcs.ZeroHash
+	err = tx.QueryRow(ctx, `SELECT seq, hash FROM audit_cuts WHERE tenant = $1 AND epoch = $2`, tenant, c.epoch).Scan(&count, &prev)
+	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+		return 0, 0, "", err
+	}
+	if count > 0 {
+		if ok, err := validCut(ctx, tx, tenant, c.epoch, prev); err != nil || !ok {
+			return count, count + 1, prev, err
+		}
+	}
+	rows, err := tx.Query(ctx, `SELECT seq, record, hash FROM audit WHERE tenant = $1 AND epoch = $2 AND seq > $3 ORDER BY seq`, tenant, c.epoch, count)
 	if err != nil {
 		return 0, 0, "", err
 	}
 	defer rows.Close()
-	prev = jcs.ZeroHash
 	for rows.Next() {
 		var seq int64
 		var raw []byte
@@ -284,4 +305,27 @@ func nullable(s string) any {
 		return nil
 	}
 	return s
+}
+
+// auditMinPeriod is the shortest metadata period a tenant may set (min_days of the class
+// metadata, RET-9): no audit younger than it is ever cut.
+const auditMinPeriod = 93 * 24 * time.Hour
+
+// validCut says whether the cut of a chain with the hash cutHash is one the retention loop made:
+// the kept chain has a period_deleted record whose last_hash is the cut hash and whose newest
+// deleted record (period.to) was older than the shortest metadata period when the record was
+// written (AUD-3, RET-10).
+func validCut(ctx context.Context, q store.Querier, tenant string, epoch int64, cutHash string) (bool, error) {
+	var at time.Time
+	var to string
+	err := q.QueryRow(ctx, `SELECT at, record->'period'->>'to' FROM audit WHERE tenant = $1 AND epoch = $2 AND record->>'kind' = 'period_deleted'
+		AND record->'period'->>'last_hash' = $3 ORDER BY seq LIMIT 1`, tenant, epoch, cutHash).Scan(&at, &to)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	end, err := time.Parse(time.RFC3339Nano, to)
+	return err == nil && !end.Add(auditMinPeriod).After(at), nil
 }

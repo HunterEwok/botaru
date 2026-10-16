@@ -717,30 +717,37 @@ func bucket(pts []obsRead, period string) map[time.Time]obsValues {
 	return out
 }
 
-// observeRetention deletes points and rollups past the periods of class observation, in whole
-// days (OBV-4, RET-2).
+// observeRetention deletes points and rollups past the periods of class observation (the
+// series' own raw and rollup periods, 14 and 93 days by default, OBV-4) only in whole calendar
+// months: a month goes once its last day is past the period, never a single point or rollup
+// (RET-2, RET-10). obsCut gives the first instant that stays.
 func (c *Core) observeRetention(ctx context.Context, cat *Catalog) error {
 	return c.tx(ctx, func(tx pgx.Tx, now time.Time) error {
-		today := periodStart("day", now)
 		rawMax, rollMax := obsRollupDays, 366
 		for _, tenant := range slices.Sorted(mapKeys(cat.Tenants)) {
 			for name, s := range c.tenantSeries(cat, tenant) {
 				rawMax, rollMax = max(rawMax, s.RawDays), max(rollMax, s.RollDays)
-				if _, err := tx.Exec(ctx, `DELETE FROM obs_points WHERE tenant = $1 AND series = $2 AND at < $3`, tenant, name, today.AddDate(0, 0, -s.RawDays)); err != nil {
+				if _, err := tx.Exec(ctx, `DELETE FROM obs_points WHERE tenant = $1 AND series = $2 AND at < $3`, tenant, name, obsCut(now, s.RawDays)); err != nil {
 					return err
 				}
-				if _, err := tx.Exec(ctx, `DELETE FROM obs_rollups WHERE tenant = $1 AND series = $2 AND period_start < $3`, tenant, name, today.AddDate(0, 0, -s.RollDays)); err != nil {
+				if _, err := tx.Exec(ctx, `DELETE FROM obs_rollups WHERE tenant = $1 AND series = $2 AND period_start < $3`, tenant, name, obsCut(now, s.RollDays)); err != nil {
 					return err
 				}
 			}
 		}
 		// Points of a series that is gone, or of a tenant that is gone, go after the longest periods.
-		if _, err := tx.Exec(ctx, `DELETE FROM obs_points WHERE at < $1`, today.AddDate(0, 0, -rawMax)); err != nil {
+		if _, err := tx.Exec(ctx, `DELETE FROM obs_points WHERE at < $1`, obsCut(now, rawMax)); err != nil {
 			return err
 		}
-		_, err := tx.Exec(ctx, `DELETE FROM obs_rollups WHERE period_start < $1`, today.AddDate(0, 0, -rollMax))
+		_, err := tx.Exec(ctx, `DELETE FROM obs_rollups WHERE period_start < $1`, obsCut(now, rollMax))
 		return err
 	})
+}
+
+// obsCut is the start of the oldest calendar month not yet wholly past days: everything before
+// it is older than the period, whole months only (RET-10).
+func obsCut(now time.Time, days int) time.Time {
+	return monthStart(now.AddDate(0, 0, -days))
 }
 
 // obsQuery is a closed observation query (OBV-3).

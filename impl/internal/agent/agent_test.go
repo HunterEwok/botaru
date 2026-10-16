@@ -39,3 +39,14 @@ func TestDataText(t *testing.T) {
 		t.Error("an attempt without data got a data text")
 	}
 }
+
+// The runtime keeps no content after an attempt, so its purge of any scope is done and a match
+// finds no ids (RET-11, blackbox:core/purge-any-runtime).
+func TestPurgeOutcome(t *testing.T) {
+	if o := purgeOutcome(json.RawMessage(`{"op":"erase","scope":{"tenant":"demo"}}`)); o["outcome"] != "done" || o["ids"] != nil {
+		t.Errorf("erase %v", o)
+	}
+	if o := purgeOutcome(json.RawMessage(`{"op":"match","needles":["x"]}`)); o["outcome"] != "done" || o["ids"] == nil {
+		t.Errorf("match %v", o)
+	}
+}

@@ -83,3 +83,25 @@ func TestDroppable(t *testing.T) {
 		t.Error("a pointer the skeleton does not refuse was droppable")
 	}
 }
+
+// A field listed in Ahead is accepted before the claimed version reaches it; the other fields
+// of that version stay refused.
+func TestAhead(t *testing.T) {
+	s := load(t)
+	saved := Ahead
+	defer func() { Ahead = saved }()
+	Ahead = map[string][]string{"Schedule": {"/spec/locale"}, "Catalog": {"/spec/hosts/*/maintenance_hold"}}
+	m := map[string]any{
+		"apiVersion": "botaru/v1alpha1", "kind": "Schedule",
+		"metadata": map[string]any{"name": "nightly", "tenant": "demo"},
+		"spec":     map[string]any{"cron": "0 3 * * *", "script": "cleanup", "locale": "en"},
+	}
+	if got, _ := s.Unsupported(m); !slices.Equal(got, []string{"/spec/script"}) {
+		t.Fatalf("schedule: %v", got)
+	}
+	m = map[string]any{"apiVersion": "botaru/v1alpha1", "kind": "Catalog", "metadata": map[string]any{"name": "c", "tenant": "demo"},
+		"spec": map[string]any{"hosts": []any{map[string]any{"name": "web1", "maintenance_hold": true}}}}
+	if got, _ := s.Unsupported(m); len(got) != 0 {
+		t.Fatalf("catalog: %v", got)
+	}
+}

@@ -120,6 +120,10 @@ fx-man-tt-01#5
 fx-man-tt-01#6
 fx-man-tt-01#7
 fx-man-v02-01#1
+fx-man-v02-ret-01#1
+fx-man-v02-ret-01#2
+fx-man-v02-ret-01#3
+fx-man-v02-ret-01#4
 fx-prf-01#0
 fx-prf-01#1
 fx-prf-01#10
