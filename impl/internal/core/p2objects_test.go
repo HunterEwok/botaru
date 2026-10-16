@@ -6,6 +6,9 @@ import (
 	"context"
 	"strings"
 	"testing"
+	"time"
+
+	"github.com/jackc/pgx/v5"
 
 	"github.com/HunterEwok/botaru/impl/internal/ids"
 )
@@ -193,17 +196,21 @@ func TestCampaignNoExecutor(t *testing.T) {
 		t.Fatalf("before start_by %s", cmp.State)
 	}
 	b.advance(t, 61)
-	// A task that waits for another reason (a waiting_reason) does not count (ORC-4).
-	if _, err := b.c.st.Pool.Exec(ctx, `UPDATE tasks t SET record = t.record || '{"waiting_reason": "type_quota"}'
-		FROM campaign_items i WHERE i.task = t.id AND i.campaign = $1`, r.Campaign); err != nil {
+	// A task the dispatcher marks as waiting for another reason does not count (ORC-4).
+	var items []string
+	if err := b.c.st.Pool.QueryRow(ctx, `SELECT array_agg(task) FROM campaign_items WHERE campaign = $1 AND task IS NOT NULL`, r.Campaign).Scan(&items); err != nil {
+		t.Fatal(err)
+	}
+	if err := b.c.tx(ctx, func(tx pgx.Tx, now time.Time) error {
+		return markWaiting(ctx, tx, now, "demo", nil, items, "type_quota")
+	}); err != nil {
 		t.Fatal(err)
 	}
 	b.loop(t, "campaign")
 	if cmp := b.campaign(t, r.Campaign); cmp.State != "running" {
-		t.Fatalf("with a waiting_reason %s", cmp.State)
+		t.Fatalf("with a waiting reason %s", cmp.State)
 	}
-	if _, err := b.c.st.Pool.Exec(ctx, `UPDATE tasks t SET record = t.record - 'waiting_reason'
-		FROM campaign_items i WHERE i.task = t.id AND i.campaign = $1`, r.Campaign); err != nil {
+	if _, err := b.c.st.Pool.Exec(ctx, `UPDATE tasks SET reason = NULL WHERE id = ANY($1)`, items); err != nil {
 		t.Fatal(err)
 	}
 	b.loop(t, "campaign")

@@ -331,20 +331,18 @@ func (c *Core) CampaignControlP2(ctx context.Context, op Operator, req P2Campaig
 				if err := c.rejectCampaign(ctx, tx, now, cmp, reason); err != nil {
 					return err
 				}
+				if _, err := tx.Exec(ctx, `UPDATE campaigns SET record = jsonb_set(record, '{rejected_by}', to_jsonb($2::text)) WHERE id = $1`, cmp.ID, reason); err != nil {
+					return err
+				}
 			case "running", "paused":
 				if err := c.stopCampaign(ctx, tx, now, cat, cmp, reason); err != nil {
 					return err
 				}
 			default:
 				// The same cancellation again answers as the first did (IDM-3); a rejected
-				// campaign keeps no stop reason, so its own audit record says it.
-				same := cmp.StopReason == reason && (cmp.State == "stopping" || cmp.State == "canceled")
-				if cmp.State == "rejected" {
-					if err := tx.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM audit WHERE tenant = $1 AND record->>'command' = 'campaign.control'
-						AND record->'target'->>'id' = $2 AND (record->>'ok')::boolean AND record->>'reason' = $3)`, tv.Name, cmp.ID, reason).Scan(&same); err != nil {
-						return err
-					}
-				}
+				// campaign keeps no stop reason, so the record keeps the reason of the P2 cancel.
+				same := cmp.StopReason == reason && (cmp.State == "stopping" || cmp.State == "canceled") ||
+					cmp.State == "rejected" && cmp.Rec.RejectedBy == reason
 				if !same {
 					return c.p2Refusal(ctx, tx, now, tv.Name, v, "campaign.control", target, map[string]any{"command": req.Command}, "already_terminal", "the campaign has ended")
 				}

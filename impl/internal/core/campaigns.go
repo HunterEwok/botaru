@@ -145,6 +145,9 @@ type campaignRec struct {
 	// ExecutorFrom is the resume of a no_executor pause: a released item gets its start_by
 	// window again from then (ORC-4).
 	ExecutorFrom *time.Time `json:"executor_from,omitempty"`
+	// RejectedBy is the reason of a P2 cancel that rejected the proposed campaign, so a repeat
+	// answers the same (IDM-3).
+	RejectedBy string `json:"rejected_by,omitempty"`
 }
 
 func (r campaignRec) kind() string {
@@ -2149,7 +2152,7 @@ func (c *Core) campaignLoop(ctx context.Context) error {
 }
 
 // noExecutor says whether no worker took a released item of a read campaign by the start_by
-// of its task while it waits for no other reason (a waiting_reason): the campaign pauses with no_executor and releases nothing more until a person
+// of its task while the dispatcher marks no other waiting reason on it (markWaiting): the campaign pauses with no_executor and releases nothing more until a person
 // resumes it, which gives the items a new start_by window (ORC-4). An action item does not
 // wait for a toolhost: its write call ends with error(no_executor) and fails the item (DLV-16).
 func noExecutor(ctx context.Context, tx pgx.Tx, now time.Time, cmp *campaignRow) (bool, error) {
@@ -2159,8 +2162,8 @@ func noExecutor(ctx context.Context, tx pgx.Tx, now time.Time, cmp *campaignRow)
 	var stuck bool
 	err := tx.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM campaign_items i JOIN tasks t ON t.id = i.task
 		WHERE i.campaign = $1 AND i.state = 'released' AND t.state = 'submitted' AND t.lease_no = 0 AND t.start_by_at IS NOT NULL
-		AND coalesce(t.record->>'waiting_reason', '') = ''
-		AND greatest(t.start_by_at, $2::timestamptz + (t.start_by_at - i.released_at)) <= $3)`, cmp.ID, cmp.Rec.ExecutorFrom, now).Scan(&stuck)
+		AND NOT (coalesce(t.reason, '') = ANY($4))
+		AND greatest(t.start_by_at, $2::timestamptz + (t.start_by_at - i.released_at)) <= $3)`, cmp.ID, cmp.Rec.ExecutorFrom, now, waitingReasons).Scan(&stuck)
 	return stuck, err
 }
 
