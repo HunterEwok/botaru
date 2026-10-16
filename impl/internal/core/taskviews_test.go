@@ -15,7 +15,14 @@ import (
 // another's task is canceled(admin), and a finished task is already_terminal.
 func TestTaskViews(t *testing.T) {
 	ctx := context.Background()
-	b := newPeopleBench(t, nil)
+	b := newPeopleBench(t, func(ms []map[string]any) {
+		for _, m := range ms {
+			if m["kind"] == "Group" && m["metadata"].(map[string]any)["name"] == "staff" {
+				s := m["spec"].(map[string]any)
+				s["caps"] = append(s["caps"].([]any), "admin:people")
+			}
+		}
+	})
 	alice := b.aliceTask(t, "1")
 	aliceOp := Operator{Principal: b.alice, Tenant: "demo"}
 	v, err := b.c.TaskShow(ctx, aliceOp, P2TaskRequest{Op: "task.show", Task: alice})
@@ -83,7 +90,19 @@ func TestTaskViews(t *testing.T) {
 	}
 	validOut(t, b.bench, "done-response", d)
 	other := b.aliceTask(t, "2")
-	if _, err := b.c.TaskCancel(ctx, b.op, P2TaskRequest{Op: "task.cancel", Task: other}); err != nil {
+	// A reader who is no admin may not cancel it, and the refusal is audited; an operator
+	// credential without a person of the tenant does not see it (PRM-9).
+	if _, err := b.c.TaskCancel(ctx, bob, P2TaskRequest{Op: "task.cancel", Task: other}); reasonOf(err) != "forbidden" {
+		t.Fatalf("a reader cancels: %v", err)
+	}
+	if b.auditCount(t, "task.cancel", other, false) != 1 {
+		t.Fatal("the refused cancel is not audited")
+	}
+	if _, err := b.c.TaskCancel(ctx, b.op, P2TaskRequest{Op: "task.cancel", Task: other}); reasonOf(err) != "not_found" {
+		t.Fatalf("a credential without a person cancels: %v", err)
+	}
+	admin := Operator{Principal: b.addPerson(t, "telegram:1009", "staff"), Tenant: "demo"}
+	if _, err := b.c.TaskCancel(ctx, admin, P2TaskRequest{Op: "task.cancel", Task: other}); err != nil {
 		t.Fatal(err)
 	}
 	var reasons []string
@@ -103,6 +122,20 @@ func TestTaskViews(t *testing.T) {
 	}
 	if _, err := b.c.TaskCancel(ctx, aliceOp, P2TaskRequest{Op: "task.cancel", Task: done}); reasonOf(err) != "already_terminal" {
 		t.Fatalf("a finished task: %v", err)
+	}
+	// An inactive initiator neither sees nor cancels its task, nor lists it.
+	live := b.aliceTask(t, "4")
+	if _, err := b.c.Principal(ctx, b.op, PrincipalRequest{Op: "principal.off", Subject: b.alice}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := b.c.TaskShow(ctx, aliceOp, P2TaskRequest{Op: "task.show", Task: live}); reasonOf(err) != "not_found" {
+		t.Fatalf("an inactive initiator reads: %v", err)
+	}
+	if _, err := b.c.TaskCancel(ctx, aliceOp, P2TaskRequest{Op: "task.cancel", Task: live}); reasonOf(err) != "not_found" {
+		t.Fatalf("an inactive initiator cancels: %v", err)
+	}
+	if l, err := b.c.TaskList(ctx, aliceOp, TaskListRequest{Op: "task.list"}); err != nil || len(l.Items) != 0 {
+		t.Fatalf("an inactive initiator lists %+v %v", l, err)
 	}
 }
 
