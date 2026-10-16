@@ -66,7 +66,12 @@ operator: "Example operator"     # the operator named in the AI notice (notice.a
 farm_hosts: [core1]              # the farm nodes (DEP-11): apply refuses a catalog that names them
 # deploy_description: /etc/botaru/deploy.yaml   # optional: the deployment description (DEP-10, deploy-topology schema);
 #   the core lints it at start and refuses to start when it fails, doctor lints it again (deploy.*),
-#   its farm_hosts must equal these, and secret.revoke reads the uses of a secret from it (SEC-6)
+#   its farm_hosts must equal these, and secret.revoke reads the uses of a secret from it (SEC-6).
+#   A secret of a process in it is the file name of its secret file: here the core process names
+#   secrets: [dsn, token.key, operator, anthropic-demo]. The core does not start when the core
+#   process names a secret that is neither a key_files provider key nor a secret file of these
+#   settings or farm_secrets, or when a key_files file is missing from the core's secrets.
+# farm_secrets: [operator]       # with deploy_description: the core's own secrets beyond the files above
 # workspaces:                    # optional: the spend ceilings set at the provider (GW-9); apply checks month_eur against them
 #   share: 0.9                   # the part of a ceiling the farm limits may take
 #   providers:

@@ -239,6 +239,7 @@ The codes of `check_manifests.py` that fixtures refer to (`expect: {error: <code
 | `persona_value_path` | a functionary persona without the value-path paragraph, or another persona with one | GOV-4 |
 | `price_old` | profile price older than 60 days (note) | GW-17 |
 | `price_stale` | profile price older than 120 days (a note in examples) | GW-17 |
+| `process_tenant_missing` | a channel, toolhost or monitor process of the deployment description names no tenant | SEC-6, TEN-3 |
 | `proposable_required_false` | type or schedule without the required proposable: false | PRP-10 |
 | `proposal_scope` | proposal commit touches files outside the tenant folder | MAN-5, PRP-8 |
 | `provenance_in_result` | a result schema has a provenance field | PRV-2 |

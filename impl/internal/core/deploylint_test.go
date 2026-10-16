@@ -74,7 +74,7 @@ func deployCodes(t *testing.T, c *Core, doc string) []string {
 // deployment lint, and the base of these tests does too (DEP-10, D-88).
 func TestDeployLintExamples(t *testing.T) {
 	c := lintCore(t)
-	for _, p := range []string{"examples/deploy/farm.yaml", "examples/deploy/single.yaml", "impl/deploy/compose/deploy.yaml"} {
+	for _, p := range []string{"examples/deploy/farm.yaml", "examples/deploy/single.yaml", "deploy/compose.example.yaml", "impl/deploy/compose/deploy.yaml"} {
 		b, err := os.ReadFile(filepath.Join(c.spec.Root, p))
 		if err != nil {
 			t.Fatal(err)

@@ -8,7 +8,8 @@ import (
 )
 
 // The provider key of the compose farm is the secret provider-key-demo of tenant demo, so
-// secret.revoke of it holds the tenant (SEC-6).
+// secret.revoke of it holds the tenant; the core's own secrets are those of its settings and
+// farm_secrets, the names TestDeployStartAndDoctor starts the compose description with (SEC-6).
 func TestProviderKeySecrets(t *testing.T) {
 	c, err := Load("../../deploy/compose/core.yaml")
 	if err != nil {
@@ -16,5 +17,8 @@ func TestProviderKeySecrets(t *testing.T) {
 	}
 	if got := c.ProviderKeySecrets()["provider-key-demo"]; !slices.Equal(got, []string{"demo"}) {
 		t.Fatalf("provider key secrets %v", c.ProviderKeySecrets())
+	}
+	if got := c.CoreOwnSecrets(); !slices.Equal(got, []string{"operator", "store-dsn", "token-key"}) {
+		t.Fatalf("core secrets %v", got)
 	}
 }

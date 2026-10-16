@@ -169,6 +169,7 @@ CODES = {
                               'GW-14'),
     'not_in_version': ('field or value appears in a later skeleton version', 'APR-10, APR-16'),
     'listener_test_in_production': ('test-control listener of the core on a kind: production host', 'DEP-10'),
+    'process_tenant_missing': ('a channel, toolhost or monitor process of the deployment description names no tenant', 'SEC-6, TEN-3'),
     'listener_admin_worker_network': ('the P2 listener network is a worker network (note)', 'IDN-7'),
     'tools_list_mismatch': ('the plugin server tools/list output does not match the tools of tool.yaml', 'INJ-2'),
     'aggregator_source_aggregator': ('an aggregator names an aggregator role among its sources, directly or through a bot group',

@@ -76,6 +76,10 @@ type Config struct {
 	// ProviderKeySecrets maps the name of a secret that is a provider key to the tenants whose
 	// workspace it serves (SEC-6): a compromised key holds those tenants.
 	ProviderKeySecrets map[string][]string
+	// CoreSecrets are the names of the farm's own secrets of the core (SEC-6): with a
+	// deployment description, each secret it gives the core is one of these or a provider key,
+	// and each provider key is among the core's secrets, or the core does not start.
+	CoreSecrets []string
 	// Workspaces are the provider workspace ceilings the deployment describes (GW-9).
 	Workspaces WorkspaceCeilings
 	// FreeSpace, when set, measures the store volume instead of Health.StoreVolume: free and

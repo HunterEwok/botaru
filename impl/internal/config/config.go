@@ -68,6 +68,11 @@ type Core struct {
 	Backup core.BackupConfig `yaml:"backup"`
 	// Files holds the farm ceilings of one file and of the files of one task (ART-4).
 	Files core.FilesConfig `yaml:"files"`
+	// FarmSecrets names the secrets the deployment description gives the core process that are
+	// the farm's own beyond the secret files of these settings, such as the operator token of
+	// farmctl next to the core (SEC-6). The core does not start when the description gives the
+	// core a secret that is neither (DEP-10).
+	FarmSecrets []string `yaml:"farm_secrets"`
 	// SecretUses lists for each named secret of the deployment description the scopes that use
 	// it, as hold scopes (kind channel, plugin, worker, sink or tenant), for secret.revoke (SEC-6).
 	SecretUses map[string][]core.HoldScope `yaml:"secret_uses"`
@@ -140,6 +145,26 @@ func (c *Core) ProviderKeySecrets() map[string][]string {
 		slices.Sort(ts)
 	}
 	return out
+}
+
+// CoreOwnSecrets are the names of the farm's own secrets of the core: the file names of the
+// store connection, the token keys and the export keys, and farm_secrets (SEC-6).
+func (c *Core) CoreOwnSecrets() []string {
+	out := slices.Clone(c.FarmSecrets)
+	files := []string{c.StoreDSNFile, c.TokenKeyFile}
+	for _, p := range c.PreviousTokenKeys {
+		files = append(files, p.File)
+	}
+	for _, f := range c.ExportKeyFiles {
+		files = append(files, f)
+	}
+	for _, f := range files {
+		if f != "" {
+			out = append(out, filepath.Base(f))
+		}
+	}
+	slices.Sort(out)
+	return slices.Compact(out)
 }
 
 // TokenKeys reads the current token key and the previous keys of the rotation window (SEC-5).

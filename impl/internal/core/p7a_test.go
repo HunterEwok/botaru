@@ -209,8 +209,29 @@ func TestDeployStartAndDoctor(t *testing.T) {
 	if err := c.loadDeploy(); err == nil || !strings.Contains(err.Error(), "farm_hosts") {
 		t.Fatalf("farm_hosts mismatch: %v", err)
 	}
+	// The core's secrets fail closed (SEC-6): one that is neither a provider key nor the core's
+	// own stops the start, and so does a provider key the core does not hold.
 	c = lintCore(t)
 	c.cfg.DeployFile = good
+	if err := c.loadDeploy(); err == nil || !strings.Contains(err.Error(), "store-core") {
+		t.Fatalf("an unknown core secret: %v", err)
+	}
+	c = lintCore(t)
+	c.cfg.DeployFile, c.cfg.CoreSecrets = good, []string{"store-core"}
+	c.cfg.ProviderKeySecrets = map[string][]string{"anthropic-demo": {"demo"}}
+	if err := c.loadDeploy(); err == nil || !strings.Contains(err.Error(), "anthropic-demo") {
+		t.Fatalf("a provider key outside the description: %v", err)
+	}
+	// The shipped compose description with the secrets of compose core.yaml starts.
+	c = lintCore(t)
+	c.cfg.DeployFile = filepath.Join(c.spec.Root, "impl/deploy/compose/deploy.yaml")
+	c.cfg.CoreSecrets = []string{"operator", "store-dsn", "token-key"}
+	c.cfg.ProviderKeySecrets = map[string][]string{"provider-key-demo": {"demo"}}
+	if err := c.loadDeploy(); err != nil {
+		t.Fatalf("compose: %v", err)
+	}
+	c = lintCore(t)
+	c.cfg.DeployFile, c.cfg.CoreSecrets = good, []string{"store-core"}
 	if err := c.loadDeploy(); err != nil || c.deploy == nil || !slices.Equal(c.cfg.FarmHosts, []string{"core1"}) {
 		t.Fatalf("good description: %v %v", err, c.cfg.FarmHosts)
 	}
@@ -264,6 +285,33 @@ func TestSecretRevokeByDescription(t *testing.T) {
 	// Uses only in a tenant the credential does not reach.
 	if err := revoke(strings.Replace(deployBase, "tenant: demo, placement: host, user: botaru-read", "tenant: demo2, placement: host, user: botaru-read", 1), "wt-read"); !hasReason(err, "forbidden") {
 		t.Fatalf("another tenant's secret: %v", err)
+	}
+	// A provider key two tenants share: forbidden unless the credential reaches both.
+	b.c.cfg.ProviderKeySecrets = map[string][]string{"shared-key": {"demo", "demo2"}}
+	if err := revoke(deployBase, "shared-key"); !hasReason(err, "forbidden") {
+		t.Fatalf("a shared provider key: %v", err)
+	}
+	farmRevoke := func(doc, secret string) error {
+		t.Helper()
+		l, err := LintDeploy(b.c.spec, []byte(doc))
+		if err != nil {
+			t.Fatal(err)
+		}
+		b.c.deploy = l.Description
+		_, err = b.c.SecretRevoke(ctx, b.farmOp(), SecretRevokeRequest{Secret: secret, Compromised: true})
+		return err
+	}
+	if err := farmRevoke(deployBase, "shared-key"); err != nil || holds("scope_kind = 'tenant' AND scope_tenant = 'demo2'") != 1 {
+		t.Fatalf("the farm operator on a shared key: %v", err)
+	}
+	// A process of tenant farm: the farm operator holds the tenant farm's scope; a tenant
+	// operator is forbidden.
+	farmDoc := strings.Replace(deployBase, "tenant: demo, placement: sandbox", "tenant: farm, placement: sandbox", 1)
+	if err := revoke(farmDoc, "wt-sbx"); !hasReason(err, "forbidden") {
+		t.Fatalf("a farm process by a tenant operator: %v", err)
+	}
+	if err := farmRevoke(farmDoc, "wt-sbx"); err != nil || holds("scope_kind = 'tenant' AND scope_tenant = 'farm'") != 1 {
+		t.Fatalf("a farm process by the farm operator: %v", err)
 	}
 	if err := revoke(deployBase, "nothing-uses-this"); !hasReason(err, "not_found") {
 		t.Fatalf("an unknown secret: %v", err)

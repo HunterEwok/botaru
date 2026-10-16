@@ -691,7 +691,36 @@ func (c *Core) loadDeploy() error {
 	case !sameSet(c.cfg.FarmHosts, d.FarmHosts):
 		return fmt.Errorf("core: farm_hosts %v of the settings differ from farm_hosts %v of the deployment description (DEP-11)", c.cfg.FarmHosts, d.FarmHosts)
 	}
+	if err := c.coreSecretsKnown(d); err != nil {
+		return err
+	}
 	c.deploy = d
+	return nil
+}
+
+// coreSecretsKnown fails closed on the secrets of the core process (SEC-6): secret.revoke
+// treats a core secret as the farm's own unless it is a provider key, so each secret the
+// description gives the core must be a provider key of key_files (by its file name) or one of
+// the core's own secrets, and each provider key must be among the core's secrets, or the
+// tenants a key serves would get no hold when it is revoked.
+func (c *Core) coreSecretsKnown(d *DeployDescription) error {
+	held := map[string]bool{}
+	for _, p := range d.processes() {
+		if p.Kind != "core" {
+			continue
+		}
+		for _, s := range p.Secrets {
+			held[s] = true
+			if _, key := c.cfg.ProviderKeySecrets[s]; !key && !slices.Contains(c.cfg.CoreSecrets, s) {
+				return fmt.Errorf("core: the deployment description gives the core process the secret %s, which is neither a provider key of key_files nor a secret file of the settings or farm_secrets (SEC-6)", s)
+			}
+		}
+	}
+	for _, s := range slices.Sorted(mapKeys(c.cfg.ProviderKeySecrets)) {
+		if !held[s] {
+			return fmt.Errorf("core: the provider key %s of key_files is not among the core's secrets in the deployment description (SEC-6)", s)
+		}
+	}
 	return nil
 }
 
