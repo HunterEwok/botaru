@@ -52,6 +52,14 @@ func (c *Core) SubmitActivity(ctx context.Context, w *Worker, a Activity) (*Acti
 	if w.Kind == "monitor" {
 		return c.submitSignal(ctx, w, a)
 	}
+	// A source channel submits only the signals of its ingress block (ING-1 to ING-4).
+	if w.Kind == "channel" && a.Channel == w.Target && (w.State == "active" || w.State == "draining") {
+		if tv, cat, err := c.requireTenant(ctx, w.Tenant); err == nil {
+			if ch, ok := sourceChannel(tv, w); ok {
+				return c.submitIngress(ctx, w, tv, cat, ch, a)
+			}
+		}
+	}
 	if a.Kind == "signal" || a.Event != nil {
 		return nil, refuse("forbidden", "only a monitoring adapter submits a signal")
 	}

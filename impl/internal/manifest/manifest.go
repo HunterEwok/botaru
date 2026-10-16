@@ -509,18 +509,22 @@ type BotGroup struct {
 	} `json:"select"`
 }
 
-// Route is the spec of a Route manifest: what the core does on an inbox, a message or the end
-// of a task (MSG-16). Routes on events are not built in this version.
+// Route is the spec of a Route manifest: what the core does on an event, an inbox, a message or
+// the end of a task (MSG-16, ING-4).
 type Route struct {
 	On struct {
-		Event         string   `json:"event"`
-		Inbox         string   `json:"inbox"`
-		Kinds         []string `json:"kinds"`
-		Min           int      `json:"min"`
-		Debounce      string   `json:"debounce"`
-		Message       string   `json:"message"`
-		SubjectPrefix string   `json:"subject_prefix"`
-		TaskDone      string   `json:"task_done"`
+		Event string `json:"event"`
+		// Subject and Match filter an event: the subject exactly, and closed fields of the
+		// event data by an exact value or one of a list (OUT-1, MSG-16).
+		Subject       string         `json:"subject"`
+		Match         map[string]any `json:"match"`
+		Inbox         string         `json:"inbox"`
+		Kinds         []string       `json:"kinds"`
+		Min           int            `json:"min"`
+		Debounce      string         `json:"debounce"`
+		Message       string         `json:"message"`
+		SubjectPrefix string         `json:"subject_prefix"`
+		TaskDone      string         `json:"task_done"`
 	} `json:"on"`
 	Mode string `json:"mode"`
 	Task *struct {
@@ -692,6 +696,41 @@ type Channel struct {
 		Files   bool `json:"files"`
 		Edit    bool `json:"edit"`
 	} `json:"capabilities"`
+	// Ingress is the block of a source channel, direction: in (ING-1 to ING-4).
+	Ingress *Ingress `json:"ingress"`
+}
+
+// Ingress is the source block of a Channel: the event it gives, the authenticity check, the
+// limits and the mapping of body fields to closed kinds (ING-1 to ING-4).
+type Ingress struct {
+	Event     string `json:"event"`
+	Auth      string `json:"auth"`
+	Tolerance string `json:"tolerance"`
+	Limits    struct {
+		PerMinute    int   `json:"per_minute"`
+		MaxBodyBytes int64 `json:"max_body_bytes"`
+	} `json:"limits"`
+	Mapping map[string]IngressField `json:"mapping"`
+}
+
+// IngressField is one entry of ingress.mapping: a JSON pointer into the delivery body and the
+// closed schema its value passes (ING-2).
+type IngressField struct {
+	From   string         `json:"from"`
+	Schema map[string]any `json:"schema"`
+}
+
+// Source is the source of a source channel: the second segment of ingress.event, which names
+// the service principal hook:<source>, the path and the delivery key (ING-3).
+func (i *Ingress) Source() string {
+	if i == nil {
+		return ""
+	}
+	parts := strings.Split(i.Event, ".")
+	if len(parts) < 3 || parts[0] != "ext" {
+		return ""
+	}
+	return parts[1]
 }
 
 // ModelProfile is the spec of a ModelProfile manifest.

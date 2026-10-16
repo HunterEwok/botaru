@@ -722,12 +722,22 @@ func (c *Core) holderReportWeek(ctx context.Context, cat *Catalog) error {
 		if err != nil {
 			return err
 		}
-		return c.noticeAdmins(ctx, tx, now, cat, []string{farmTenant}, holderReport, "notice.holder_report", map[string]any{
+		// The links to rejected proposals confirmed in the week that the manager was against
+		// (GOV-41): shown, never a departure of the manager (D-33).
+		against, err := managerAgainstLinks(ctx, tx, now.Add(-7*24*time.Hour), now)
+		if err != nil {
+			return err
+		}
+		key := "notice.holder_report"
+		if claimsV03() {
+			key = "notice.holder_report_v03"
+		}
+		return c.noticeAdmins(ctx, tx, now, cat, []string{farmTenant}, holderReport, key, map[string]any{
 			"preventable": n.Preventable, "notices": n.Notices, "notices_useful": share(n.NoticesUseful, n.Notices),
 			"takeovers": n.Asked, "approved": n.Approved, "done": n.Done, "failed": n.Failed,
 			"analyses": n.Analyses, "analyses_useful": share(n.AnalysesUseful, n.Analyses),
 			"spent_cents": money.CentsUp(n.SpentMicros), "line_cents": money.CentsUp(n.LineMicros), "sev1": n.Sev1Uses,
-			"dont_know": share(n.DontKnow, n.Answered)}, "admin:governance")
+			"dont_know": share(n.DontKnow, n.Answered), "manager_against": against}, "admin:governance")
 	})
 }
 
