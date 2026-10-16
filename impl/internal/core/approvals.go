@@ -1097,10 +1097,6 @@ func (c *Core) Decide(ctx context.Context, w *Worker, ob *OnBehalf, req DecideRe
 		out.State = a.State
 		return nil
 	})
-	var cm *committed
-	if errors.As(err, &cm) {
-		return nil, cm.p
-	}
 	if err != nil {
 		return nil, err
 	}

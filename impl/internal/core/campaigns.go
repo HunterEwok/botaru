@@ -2307,7 +2307,8 @@ func (c *Core) buildCampaignCard(ctx context.Context, q store.Querier, cat *Cata
 	case "running":
 		buttons = append(buttons, button("pause"), button("cancel"))
 	case "paused":
-		if cmp.PauseReason != "estimate_exceeded" {
+		// Continue on the initiator's progress card works only for a campaign without a card.
+		if cmp.PauseReason != "estimate_exceeded" && (kind != campaignProgressCard || !cmp.Card) {
 			buttons = append(buttons, button("approve"))
 		}
 		buttons = append(buttons, button("cancel"))
@@ -2501,7 +2502,7 @@ func (c *Core) campaignCommand(ctx context.Context, w *Worker, ob OnBehalf, id, 
 				if err := c.rejectCampaign(ctx, tx, now, cmp, "expired"); err != nil {
 					return err
 				}
-				return &committed{p: refuse("expired", "the card has expired")}
+				return deny("expired", "the card has expired")
 			}
 			// Holds and lost rights are checked before the decision is written, so a refused
 			// approval leaves no decided_by and no decision.made.
@@ -2512,7 +2513,7 @@ func (c *Core) campaignCommand(ctx context.Context, w *Worker, ob OnBehalf, id, 
 					if err := c.rejectCampaign(ctx, tx, now, cmp, "held"); err != nil {
 						return err
 					}
-					return &committed{p: refuse("held", "a hold cancels the campaign")}
+					return deny("held", "a hold cancels the campaign")
 				}
 				// A pause_action hold keeps the card waiting: no decision while it holds (HLD-3).
 				if held, err := heldBy(ctx, tx, now, []string{"pause_action"}, campaignScopes(cmp)...); err != nil {
@@ -2526,7 +2527,7 @@ func (c *Core) campaignCommand(ctx context.Context, w *Worker, ob OnBehalf, id, 
 					if err := c.rejectCampaign(ctx, tx, now, cmp, stop); err != nil {
 						return err
 					}
-					return &committed{p: refuse("forbidden", "the initiator no longer has the rights")}
+					return deny("forbidden", "the initiator no longer has the rights")
 				}
 			}
 			if _, err := tx.Exec(ctx, `UPDATE campaigns SET decided_by = $2, updated_at = $3 WHERE id = $1`, cmp.ID, press.principal, now); err != nil {
@@ -2639,10 +2640,6 @@ func (c *Core) campaignCommand(ctx context.Context, w *Worker, ob OnBehalf, id, 
 		}
 		return refuse("input_schema_invalid", "unknown command")
 	})
-	var cm *committed
-	if errors.As(err, &cm) {
-		return nil, cm.p
-	}
 	if err != nil {
 		return nil, err
 	}
