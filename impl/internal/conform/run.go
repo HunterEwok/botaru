@@ -149,6 +149,11 @@ func (r *Runner) runCase(ctx context.Context, c *Case) Result {
 	}
 	defer stop()
 	x := newExec(r, ep, c)
+	defer func() {
+		for _, f := range x.cleanup {
+			f()
+		}
+	}()
 	return x.run(ctx)
 }
 
@@ -200,6 +205,10 @@ func (r *Runner) givenNeeds(c *Case) string {
 				}
 			}
 		case "manifest", "manifests":
+		case "catalog":
+			if n := catalogNeeds(c.Given[k]); n != "" {
+				return n
+			}
 		case "lint":
 			// The name of the lint family the case's manifests check (governance/charter): a
 			// label without data.
@@ -291,6 +300,10 @@ func (r *Runner) stepNeeds(st map[string]any) string {
 		if n := lintNeeds(asMap(st["lint"])); n != "" {
 			return n
 		}
+	case st["occur"] != nil:
+		if n := occurNeeds(st["occur"]); n != "" {
+			return n
+		}
 	default:
 		for _, v := range []string{"model", "occur", "check"} {
 			if _, ok := st[v]; ok {
@@ -334,6 +347,12 @@ func factNeeds(e map[string]any) string {
 	}
 	sort.Strings(keys)
 	for _, k := range keys {
+		if k == "alarm" {
+			if n := alarmNeeds(e[k]); n != "" {
+				return n
+			}
+			continue
+		}
 		if !checkedFacts[k] {
 			return "fact " + k
 		}
@@ -366,6 +385,11 @@ type exec struct {
 	updates   int
 	// base is the manifest set the seed applied (seedBase).
 	base []map[string]any
+	// catalog is the spec of the given catalog; mon is the monitoring system of the bench once
+	// started (monitor.go); cleanup stops what the case started.
+	catalog map[string]any
+	mon     *bench5
+	cleanup []func()
 }
 
 // outcome is what one action gave, in the terms of the expectations.
@@ -408,6 +432,11 @@ func (x *exec) run(ctx context.Context) Result {
 			return res(Unchecked, "%s", string(u))
 		}
 		return res(Failed, "given people: %v", err)
+	}
+	if o, err := x.seedCatalog(ctx); err != nil {
+		return res(Failed, "given catalog: %v", err)
+	} else if o != nil && o.Result != "ok" {
+		return res(Failed, "given catalog was not applied: %s %s%s", o.Error, o.Path, o.why())
 	}
 	// applied is the outcome of the given manifests or fragments, which expect.apply names.
 	var last, applied *outcome
@@ -465,7 +494,7 @@ func (x *exec) run(ctx context.Context) Result {
 			if n := incomplete(e, o); n != "" {
 				return res(Unchecked, "step %d: %s", i+1, n)
 			}
-			if d := compare(e, o); d != "" {
+			if d := x.compare(e, o); d != "" {
 				return res(Failed, "step %d: %s", i+1, d)
 			}
 		}
@@ -490,7 +519,7 @@ func (x *exec) run(ctx context.Context) Result {
 		if n := incomplete(e, last); n != "" {
 			return res(Unchecked, "%s", n)
 		}
-		if d := compare(e, last); d != "" {
+		if d := x.compare(e, last); d != "" {
 			return res(Failed, "%s", d)
 		}
 	}
@@ -623,6 +652,28 @@ func withoutApply(e map[string]any) map[string]any {
 	out := shallowCopy(e)
 	delete(out, "apply")
 	return out
+}
+
+// compare checks the facts the runner reads from the bench (the alarm the monitoring system
+// got) and then the outcome.
+func (x *exec) compare(e map[string]any, o *outcome) string {
+	if a, ok := e["alarm"]; ok {
+		// The alarm fact is read from the monitoring system, not from the outcome.
+		if d := x.alarmFact(asMap(a)); d != "" {
+			return d
+		}
+		rest := map[string]any{}
+		for k, v := range e {
+			if k != "alarm" {
+				rest[k] = v
+			}
+		}
+		if len(rest) == 0 {
+			return ""
+		}
+		e = rest
+	}
+	return compare(e, o)
 }
 
 // compare checks an outcome against an expectation and returns the first mismatch; a refused
@@ -1047,6 +1098,8 @@ func (x *exec) step(ctx context.Context, st map[string]any) (*outcome, error) {
 		return x.stand(ctx, asMap(st["stand"]))
 	case st["lint"] != nil:
 		return x.lint(ctx, asMap(st["lint"]))
+	case st["occur"] != nil:
+		return x.occur(ctx, st["occur"])
 	}
 	return nil, fmt.Errorf("no verb")
 }

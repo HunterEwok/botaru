@@ -345,3 +345,76 @@ func TestPlainRow(t *testing.T) {
 		t.Fatal("a service row lost its context")
 	}
 }
+
+// TestMonitorProblem: a monitoring problem the fixture lets occur goes through the bench's
+// monitoring system and the E5 adapter to the core, and the alarm fact is read from what the
+// monitoring system was given. The class table sets the alarm and its severity (MON-5); a
+// wrong expectation fails; a shorthand catalog and an unknown event stay unchecked.
+func TestMonitorProblem(t *testing.T) {
+	r := testRunner(t)
+	got := runYAML(t, r, `
+id: t-monitor
+rules: [MON-5]
+given:
+  tenant: demo
+  catalog:
+    hosts:
+    - {id: db1, monitor_host: db1.example.org}
+    monitor_triggers:
+    - {triggerid: '17021', class: disk_free, item: vfs.fs.size.free_pct}
+cases:
+- id: open
+  steps:
+  - occur:
+      event:
+        type: ext.monitor.problem.v1
+        data: {eventid: '700', triggerid: '17021', resource: db1, severity: 2, state: open}
+  expect:
+    alarm: {type: alarm.disk.free.low.v1, severity: page, origin: monitor, alarmkey: 'disk.free.low:db1', state: firing, seq: 1}
+- id: unknown-trigger
+  steps:
+  - occur:
+      event:
+        type: ext.monitor.problem.v1
+        data: {eventid: '701', triggerid: '99999', resource: db1, severity: 5, state: open}
+  expect:
+    alarm: {type: alarm.monitor.problem.v1, origin: monitor}
+- id: closed
+  steps:
+  - occur:
+      event:
+        type: ext.monitor.problem.v1
+        data: {eventid: '700', triggerid: '17021', resource: db1, severity: 2, state: open}
+  - occur:
+      event:
+        type: ext.monitor.problem.v1
+        data: {eventid: '700', triggerid: '17021', resource: db1, severity: 2, state: resolved}
+  expect:
+    alarm: {type: alarm.disk.free.low.v1, state: resolved, seq: 2}
+- id: wrong-severity
+  steps:
+  - occur:
+      event:
+        type: ext.monitor.problem.v1
+        data: {eventid: '700', triggerid: '17021', resource: db1, severity: 4, state: open}
+  expect:
+    alarm: {type: alarm.disk.free.low.v1, severity: warn}
+- id: shorthand-catalog
+  given:
+    catalog:
+      web1: {monitor_scripts_allowed: [app-api-restart]}
+  expect: {result: ok}
+- id: other-event
+  steps:
+  - occur:
+      event: {type: ext.monitor.maintenance.v1, data: {resource: db1}}
+  expect: {result: ok}
+`)
+	wantStatus(t, got, map[string]Status{
+		"open": Passed, "unknown-trigger": Passed, "closed": Passed, "wrong-severity": Failed,
+		"shorthand-catalog": Unchecked, "other-event": Unchecked,
+	})
+	if d := got["wrong-severity"].Detail; !strings.Contains(d, `alarm.severity "page"`) {
+		t.Errorf("wrong-severity: %s", d)
+	}
+}
