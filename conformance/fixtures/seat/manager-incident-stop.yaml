@@ -330,7 +330,7 @@ cases:
           farm_manager:
             incident_stop: {decide_within: 10d}
     expect:
-      apply: {result: rejected}
+      apply: {result: rejected, error: charter_direction}
   - id: gov-fx-24-c
     given:
       lint: governance/farm

@@ -33,6 +33,7 @@ cases:
         metadata: {name: default, tenant: demo}
         spec:
           weights: {privacy: 2}
+    expect: {result: rejected, stage: apply, field: weights.privacy}
   - id: com-fx-11-b
     given:
       manifest:
@@ -54,6 +55,7 @@ cases:
         metadata: {name: default, tenant: demo}
         spec:
           weights: {farm_manager: 2}
+    expect: {result: rejected, stage: apply, field: weights.farm_manager}
   - id: com-fx-12-b
     given:
       manifest:

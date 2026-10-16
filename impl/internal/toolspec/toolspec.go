@@ -290,6 +290,26 @@ func Check(p Plugin, forbidden map[string]bool) []Issue {
 		if !t.Untrusted() && t.OutputSchema != nil && freeText(t.OutputSchema) {
 			out = append(out, Issue{Code: "untrusted_output_false_text", Tool: t.Name})
 		}
+		// The address a tool reaches comes from the manifest or the catalog: the model has no
+		// URL or host argument other than a closed list (INJ-6).
+		for _, n := range sortedKeys(t.AllParams()) {
+			if AddressParam(n, t.AllParams()[n]) {
+				out = append(out, Issue{Code: "tool_address_param", Tool: t.Name, Path: n})
+			}
+		}
+		// A command that prints text written from outside, such as the service journal,
+		// declares untrusted output of class raw_logs (INJ-14).
+		for _, n := range sortedKeys(t.Commands) {
+			if !OutsideText(t.Commands[n].Argv) {
+				continue
+			}
+			if !t.Untrusted() {
+				out = append(out, Issue{Code: "untrusted_output_false_text", Tool: t.Name, Path: n})
+			}
+			if t.OutputClass != "raw_logs" {
+				out = append(out, Issue{Code: "untrusted_output_class", Tool: t.Name, Path: n})
+			}
+		}
 		// The model sees one schema per parameter name, so the tool and all its commands must
 		// agree on it; otherwise a value allowed for one command reaches another.
 		seen := map[string]map[string]any{}
@@ -341,6 +361,40 @@ func checkCommand(t Tool, name string, c Command, forbidden map[string]bool) []I
 		}
 	}
 	return out
+}
+
+// outsideTextPrograms are the programs whose output is text written from outside the farm:
+// journalctl prints the service journal (INJ-14). The skeleton names the journal as the
+// example and has no registry of such programs; ci/check_manifests.py keeps the same list.
+var outsideTextPrograms = map[string]bool{"journalctl": true}
+
+// OutsideText says whether a command prints text written from outside (INJ-14).
+func OutsideText(argv []string) bool {
+	return len(argv) > 0 && outsideTextPrograms[path.Base(argv[0])]
+}
+
+// addressWords are the parameter names, or the last word of a name, that carry a network
+// address: a URL or a host (INJ-6).
+var addressWords = map[string]bool{"url": true, "uri": true, "href": true, "endpoint": true, "host": true, "hostname": true,
+	"address": true, "addr": true, "ip": true}
+
+// AddressParam says whether a tool parameter is a URL or host argument of the model: its name
+// is an address word and its values are not a closed list (enum, const or a catalog list), so
+// the model would choose where the tool reaches (INJ-6).
+func AddressParam(name string, s map[string]any) bool {
+	w := name
+	if i := strings.LastIndex(name, "_"); i >= 0 {
+		w = name[i+1:]
+	}
+	if !addressWords[w] {
+		return false
+	}
+	for _, k := range []string{"enum", "enum_from", "const"} {
+		if _, ok := s[k]; ok {
+			return false
+		}
+	}
+	return true
 }
 
 // freeParam says whether a parameter schema is a string without enum, enum_from, const or

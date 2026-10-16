@@ -319,7 +319,7 @@ cases:
             - {id: 1, lens: security}
             - {id: 1, lens: cost}
     expect:
-      apply: {result: rejected}
+      apply: {result: rejected, error: charter_seat_twice}
       note: the seat is declared twice
   - given:
       seat: {id: 'commission:4', holder: bot_12}
@@ -350,7 +350,7 @@ cases:
         spec:
           farm_manager: {max_rank: 4}
     expect:
-      apply: {result: rejected}
+      apply: {result: rejected, error: charter_farm_manager}
       note: only the farm charter declares the manager seat
   - given:
       manifests:
@@ -368,7 +368,7 @@ cases:
         spec:
           promotion: {probation: 7d}
     expect:
-      apply: {result: rejected}
+      apply: {result: rejected, error: charter_direction}
   - given:
       manifests:
       - kind: Governance
@@ -376,7 +376,7 @@ cases:
         spec:
           promotion: {min_tenure: 20d}
     expect:
-      apply: {result: rejected}
+      apply: {result: rejected, error: charter_direction}
   - given:
       manifests:
       - kind: Governance
@@ -384,7 +384,7 @@ cases:
         spec:
           removal: {protect_new: 30d}
     expect:
-      apply: {result: rejected}
+      apply: {result: rejected, error: charter_direction}
   - given:
       manifests:
       - kind: Governance
@@ -392,7 +392,7 @@ cases:
         spec:
           memory: {seal_ttl: 10d}
     expect:
-      apply: {result: rejected}
+      apply: {result: rejected, error: charter_direction}
   - given:
       manifests:
       - kind: Governance
@@ -418,7 +418,7 @@ cases:
         spec:
           identity: {unbound_ttl: 10d}
     expect:
-      apply: {result: rejected}
+      apply: {result: rejected, error: charter_direction}
   - given:
       manifests:
       - kind: Governance
@@ -427,7 +427,7 @@ cases:
           promotion:
             exclude_change_kinds: [script]
     expect:
-      apply: {result: rejected}
+      apply: {result: rejected, error: charter_direction}
       note: kind none is always in the list
   - given:
       manifests:

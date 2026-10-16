@@ -93,7 +93,7 @@ cases:
   rules: [APR-17]
   steps:
   - lint: {type_yaml: 'run.approval: none, tier: 3'}
-  expect: {result: rejected, stage: apply, note: a pipeline without a card does not change working machines}
+  expect: {result: rejected, stage: apply, error: run_not_readonly, note: a pipeline without a card does not change working machines}
 - id: apr-run-06
   rules: [APR-17]
   given:

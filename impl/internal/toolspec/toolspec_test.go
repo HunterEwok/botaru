@@ -143,6 +143,7 @@ func TestCheck(t *testing.T) {
 	// A parameter name has one schema across the tool and its commands; the same schema twice
 	// is fine.
 	shared := tool("/usr/bin/systemctl", "status", "--", "{unit}")
+	shared.Tools[0].OutputClass = "raw_logs" // the journal is text from outside (INJ-14)
 	shared.Tools[0].Commands["d"] = Command{Argv: []string{"/usr/bin/journalctl", "--", "{unit}"},
 		Params: map[string]map[string]any{"unit": {"enum_from": "catalog.services"}}}
 	if is := Check(shared, nil); len(is) > 0 {
@@ -172,5 +173,55 @@ func TestExamplesPass(t *testing.T) {
 		if is := Check(readPlugin(t, n), map[string]bool{"sh": true}); len(is) > 0 {
 			t.Errorf("%s: %v", n, is)
 		}
+	}
+}
+
+func issueCodes(is []Issue) []string {
+	var out []string
+	for _, i := range is {
+		if !slices.Contains(out, i.Code) {
+			out = append(out, i.Code)
+		}
+	}
+	slices.Sort(out)
+	return out
+}
+
+// INJ-6: the model has no URL or host argument; an address comes from a closed list of the
+// manifest or the catalog.
+func TestAddressParam(t *testing.T) {
+	p := readPlugin(t, "checks")
+	p.Tools[0].Params = map[string]map[string]any{"url": {"type": "string", "x-botaru-format": "id"}}
+	if got := issueCodes(Check(p, nil)); !slices.Contains(got, "tool_address_param") {
+		t.Fatalf("a url parameter: %v", got)
+	}
+	p.Tools[0].Params = map[string]map[string]any{"target_host": {"type": "string", "x-botaru-format": "id"}}
+	if got := issueCodes(Check(p, nil)); !slices.Contains(got, "tool_address_param") {
+		t.Fatalf("a host parameter: %v", got)
+	}
+	// A catalog list or an enum is the catalog's address, not the model's.
+	if !slices.Equal(issueCodes(Check(readPlugin(t, "cmd"), nil)), nil) || AddressParam("host", map[string]any{"enum_from": "catalog.hosts"}) ||
+		AddressParam("url", map[string]any{"enum": []any{"a"}}) || AddressParam("hostage", map[string]any{"type": "string"}) {
+		t.Fatal("a closed list or another name counts as an address argument")
+	}
+}
+
+// INJ-14: a command that prints the service journal declares untrusted output of class raw_logs.
+func TestOutsideTextCommand(t *testing.T) {
+	p := readPlugin(t, "cmd")
+	run := &p.Tools[0]
+	run.Commands["disk_usage"] = Command{Argv: []string{"/usr/bin/journalctl", "-u", "--", "{service.unit}"},
+		Params: map[string]map[string]any{"service": {"enum_from": "catalog.services"}}}
+	if got := issueCodes(Check(p, nil)); len(got) > 0 {
+		t.Fatalf("untrusted raw_logs journal: %v", got)
+	}
+	f := false
+	run.UntrustedOutput = &f
+	if got := issueCodes(Check(p, nil)); !slices.Equal(got, []string{"untrusted_output_false_text"}) {
+		t.Fatalf("journal with untrusted_output false: %v", got)
+	}
+	run.UntrustedOutput, run.OutputClass = nil, "internal"
+	if got := issueCodes(Check(p, nil)); !slices.Equal(got, []string{"untrusted_output_class"}) {
+		t.Fatalf("journal of class internal: %v", got)
 	}
 }

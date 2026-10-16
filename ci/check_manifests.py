@@ -187,6 +187,22 @@ ROLE_PROFILES = model_registry('role-profiles')
 PURPOSES = model_registry('task-purposes')
 FAMILIES = model_registry('model-families')
 FORBIDDEN_PROGRAMS = set(model_registry('forbidden-programs'))
+# Programs whose output is text written from outside the farm: journalctl prints the service journal (INJ-14).
+# The skeleton names the journal as the example and has no registry of such programs.
+OUTSIDE_TEXT_PROGRAMS = {'journalctl'}
+# Parameter names, or the last word of a name, that carry a network address: a URL or a host (INJ-6).
+ADDRESS_WORDS = {'url', 'uri', 'href', 'endpoint', 'host', 'hostname', 'address', 'addr', 'ip'}
+
+
+def class_refused(cls, output=False):
+    """A data class a manifest may not set: unknown or reserved (pii), for an output class also secret (PRM-5)."""
+    dc = DATA_CLASSES.get(cls)
+    return not dc or bool(dc.get('reserved')) or (output and dc.get('output') is False)
+
+
+def address_param(name, schema):
+    """A URL or host argument of the model: an address name whose values are not a closed list (INJ-6)."""
+    return name.rsplit('_', 1)[-1] in ADDRESS_WORDS and not any(k in (schema or {}) for k in ('enum', 'enum_from', 'const'))
 REQUIREMENTS = rules()
 # Built-in channel commands: commands cannot take them (PRM-17, docs/task-language.md).
 BUILTIN_COMMANDS = {'/help', '/about', '/lang', '/mydata', '/tasks', '/status', '/cancel', '/me', '/team',
@@ -428,6 +444,8 @@ def lint(docs, today=None, farm_hosts=None, examples_mode=False, claimed=None, s
                  'monitor_triggers': [t['triggerid'] for t in cs.get('monitor_triggers', [])],
                  'monitor_items': [t['item'] for t in cs.get('monitor_triggers', [])]}
         for r in cs.get('resources', []):
+            if r.get('data_class') and class_refused(r['data_class']):
+                f.error('cap_data_class', where, f'resource {r["id"]}: data class {r["data_class"]!r} is not accepted (PRM-5)')
             fmt = r.get('format', 'id')
             if fmt not in FORMATS:
                 f.error('format_unknown', where, f'resource {r["id"]}: format {fmt!r} is not in formats.yaml (MAN-10)')
@@ -682,7 +700,12 @@ def lint(docs, today=None, farm_hosts=None, examples_mode=False, claimed=None, s
         must_false = ts['purpose'] != 'work' or alarms or ts.get('makes_backup')
         if must_false and ts.get('proposable', True) is not False:
             f.error('proposable_required_false', where, f'type {tname}: proposable: false is required (PRP-10)')
+        if ts.get('data_class') and class_refused(ts['data_class']):
+            f.error('cap_data_class', where, f'type {tname}: data class {ts["data_class"]!r} is not accepted (PRM-5)')
         if (ts.get('run') or {}).get('approval') == 'none':
+            if isinstance(ts.get('tier'), int) and ts['tier'] >= 3:
+                f.error('run_not_readonly', where, f'type {tname} with run.approval: none is of tier {ts["tier"]}: '
+                        'without a card a pipeline changes nothing on work machines (APR-17)')
             for rn, (rw, rs) in roles.items():
                 if tname in rs.get('claims', []):
                     writes = [t for t in rs.get('tools', []) if t in tools and tools[t][2].get('access') == 'write']
@@ -697,6 +720,8 @@ def lint(docs, today=None, farm_hosts=None, examples_mode=False, claimed=None, s
             if t.get('enabled') is False:
                 continue
             tid = f'{pname}/{t["name"]}'
+            if t.get('output_class') and class_refused(t['output_class'], output=True):
+                f.error('cap_data_class', where, f'{tid}: output_class {t["output_class"]!r} is not accepted (PRM-5)')
             params = dict(t.get('params') or {})
             if t.get('args_from'):
                 act = actions.get(t['args_from'].split(':', 1)[1])
@@ -735,8 +760,23 @@ def lint(docs, today=None, farm_hosts=None, examples_mode=False, claimed=None, s
                         f.error('cmd_param_conflict', where,
                                 f'{tid} {cname}: parameter {k} has another schema elsewhere in the tool (INJ-14)')
                     seen_params.setdefault(k, v)
+            all_params = dict(t.get('params') or {})
+            for c in (t.get('commands') or {}).values():
+                for k, v in (c.get('params') or {}).items():
+                    all_params.setdefault(k, v)
+            for k, v in sorted(all_params.items()):
+                if address_param(k, v):
+                    f.error('tool_address_param', where, f'{tid}: parameter {k} is a URL or host argument of the model; '
+                            'the address comes from the manifest or the catalog (INJ-6)')
             for cname, c in (t.get('commands') or {}).items():
                 argv = c['argv']
+                if os.path.basename(argv[0]) in OUTSIDE_TEXT_PROGRAMS:
+                    if t.get('untrusted_output') is False:
+                        f.error('untrusted_output_false_text', where,
+                                f'{tid} {cname}: {argv[0]} prints text written from outside; untrusted_output: true is required (INJ-14)')
+                    if t.get('output_class') != 'raw_logs':
+                        f.error('untrusted_output_class', where,
+                                f'{tid} {cname}: {argv[0]} prints text written from outside; output_class raw_logs is required (INJ-14)')
                 if not argv[0].startswith('/'):
                     f.error('cmd_argv_path', where, f'{tid} {cname}: program path is not absolute (INJ-14)')
                 if os.path.basename(argv[0]) in FORBIDDEN_PROGRAMS:
@@ -1324,10 +1364,72 @@ def governance_name(n, incidents=True):
     return isinstance(n, str) and (n.startswith(('governance.', 'attribution.', 'seat.')) or (incidents and n.startswith('incident.')))
 
 
+# Durations of a tenant charter that only rise from their default (GOV-33); the schema bounds the counts.
+CHARTER_FLOORS = {('promotion', 'probation'): 14 * 86400, ('promotion', 'min_tenure'): 30 * 86400,
+                  ('promotion', 'swap_cooldown'): 30 * 86400, ('removal', 'protect_new'): 60 * 86400,
+                  ('attribution', 'window'): 14 * 86400, ('confirmation', 'ttl'): 7 * 86400,
+                  ('identity', 'unbound_ttl'): 30 * 86400, ('memory', 'seal_ttl'): 30 * 86400}
+
+
+def version_tuple(v):
+    try:
+        major, minor = str(v).lstrip('v').split('.')[:2]
+        return int(major), int(minor)
+    except ValueError:
+        return (99, 0)
+
+
+def lint_charter_bounds(S, f):
+    """What the charter schema cannot say (GOV-33): a seat declared twice, the farm_manager block outside the farm
+    charter, a duration below its default, exclude_change_kinds without none, decide_within above 7 days (GOV-22)."""
+    for tenant, gname, where, gs in S.each('Governance'):
+        seen = set()
+        for s in (gs.get('commission') or {}).get('seats') or []:
+            if str(s.get('id')) in seen:
+                f.error('charter_seat_twice', where, f'charter {gname}: seat {s.get("id")} is declared twice (GOV-33)')
+            seen.add(str(s.get('id')))
+        if tenant != 'farm' and 'farm_manager' in gs:
+            f.error('charter_farm_manager', where, f'charter {gname}: only the farm charter declares the manager seat (GOV-33)')
+        for (block, field), floor in CHARTER_FLOORS.items():
+            v = (gs.get(block) or {}).get(field)
+            if v is not None and (seconds(v) is None or seconds(v) < floor):
+                f.error('charter_direction', where, f'charter {gname}: {block}.{field} {v} is below its default (GOV-33)')
+        kinds = (gs.get('promotion') or {}).get('exclude_change_kinds')
+        if kinds is not None and 'none' not in kinds:
+            f.error('charter_direction', where, f'charter {gname}: promotion.exclude_change_kinds lacks none (GOV-14, GOV-33)')
+        dw = ((gs.get('farm_manager') or {}).get('incident_stop') or {}).get('decide_within')
+        if dw is not None and (seconds(dw) is None or seconds(dw) > 7 * 86400):
+            f.error('charter_direction', where, f'charter {gname}: incident_stop.decide_within {dw} is above 7 days (GOV-22, GOV-33)')
+
+
+def lint_lens_names(S, f):
+    """A seat or the commission manifest names a lens of lenses.yaml of the skeleton version or a tenant lens x_<name>
+    declared with its meaning in the charter (COM-19); the weight of a lens with a weight by rule is not set (COM-8)."""
+    skeleton = {k: e for k, e in model_registry('lenses').items() if version_tuple(e.get('since')) <= skeleton_version()}
+    own = {}
+    for tenant, _, _, gs in S.each('Governance'):
+        own.setdefault(tenant, set()).update(k for k, v in ((gs.get('commission') or {}).get('lenses') or {}).items()
+                                             if k.startswith('x_') and isinstance(v, dict) and v.get('meaning'))
+    for tenant, gname, where, gs in S.each('Governance'):
+        for s in (gs.get('commission') or {}).get('seats') or []:
+            lens = s.get('lens')
+            if lens and lens not in skeleton and lens not in own.get(tenant, set()):
+                f.error('lens_unknown', where, f'charter {gname}: seat {s.get("id")} names lens {lens}, neither in lenses.yaml nor in the charter (COM-19)')
+    for tenant, cname, where, cs in S.each('Commission'):
+        for block in ('weights', 'min'):
+            for lens in sorted(cs.get(block) or {}):
+                if lens not in skeleton and lens not in own.get(tenant, set()):
+                    f.error('lens_unknown', where, f'commission {cname}: {block}.{lens} names a lens neither in lenses.yaml nor in the charter (COM-19)')
+                elif block == 'weights' and (skeleton.get(lens) or {}).get('weight') is not None:
+                    f.error('lens_weight_fixed', where, f'commission {cname}: the weight of lens {lens} is set by rule (COM-8)')
+
+
 def lint_governance(S, f):
     """Personas of the charters (GOV-4, COM-19), unawareness of bot texts (GOV-29) and no bot reference to governance (GOV-6, GOV-13)."""
     import hashlib
     terms = unaware_terms()
+    lint_charter_bounds(S, f)
+    lint_lens_names(S, f)
     for tenant, gname, where, gs in S.each('Governance'):
         com = gs.get('commission') or {}
         for s in com.get('seats') or []:

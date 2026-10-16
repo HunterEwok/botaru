@@ -14,6 +14,7 @@ import (
 
 	"github.com/HunterEwok/botaru/impl/internal/manifest"
 	"github.com/HunterEwok/botaru/impl/internal/money"
+	"github.com/HunterEwok/botaru/impl/internal/spec"
 )
 
 // The set lint of apply: the checks of ci/check_manifests.py that span objects of the set and
@@ -312,6 +313,13 @@ func (c *Core) lintRegistries() (*lintRegs, error) {
 	return r, nil
 }
 
+// classRefused says whether a data class is refused where a manifest sets one: unknown or
+// reserved (pii), and for an output class one that is never an output (secret) (PRM-5).
+func (r *lintRegs) classRefused(cls string, output bool) bool {
+	dc, ok := r.dataClasses[cls]
+	return !ok || truthy(dc["reserved"]) || output && dc["output"] == false
+}
+
 // formatOK says whether v passes a registry format; a format the registry has without a
 // pattern Go can run passes here and is left to the schema checks.
 func (r *lintRegs) formatOK(format, v string) bool {
@@ -475,6 +483,10 @@ func (c *Core) lintManifests(docs []manifest.Doc, index []int, personas personaL
 		for j, res := range mlist(o.spec, "resources") {
 			rm, _ := res.(map[string]any)
 			path := fmt.Sprintf("/resources/%d", j)
+			// Class pii is reserved in the catalog (PRM-5).
+			if dc := mstr(rm, "data_class"); dc != "" && r.classRefused(dc, false) {
+				f.add(o, "cap_data_class", path+"/data_class")
+			}
 			fm := mstr(rm, "format")
 			if fm == "" {
 				fm = "id"
@@ -877,7 +889,16 @@ func (c *Core) lintManifests(docs []manifest.Doc, index []int, personas personaL
 		if mustFalse && ts["proposable"] != false {
 			f.add(o, "proposable_required_false", "/proposable")
 		}
+		// Class pii is reserved in types (PRM-5).
+		if dc := mstr(ts, "data_class"); dc != "" && r.classRefused(dc, false) {
+			f.add(o, "cap_data_class", "/data_class")
+		}
 		if mstr(mmap(ts, "run"), "approval") == "none" {
+			// Without a card a pipeline changes nothing on work machines: level 3 runs only
+			// with a card, under APR-18 or as a routine action (APR-17).
+			if n, _ := mnum(ts, "tier"); n >= 3 {
+				f.add(o, "run_not_readonly", "/tier")
+			}
 			for _, rn := range roleNames {
 				rs := roles[rn].spec
 				if !slices.Contains(mstrs(rs, "claims"), o.name) {
@@ -905,6 +926,10 @@ func (c *Core) lintManifests(docs []manifest.Doc, index []int, personas personaL
 				continue
 			}
 			path := fmt.Sprintf("/tools/%d", j)
+			// secret is never an output class, and pii is reserved in tools (PRM-5).
+			if oc := mstr(tm, "output_class"); oc != "" && r.classRefused(oc, true) {
+				f.add(o, "cap_data_class", path+"/output_class")
+			}
 			if af := mstr(tm, "args_from"); af != "" {
 				_, an, _ := strings.Cut(af, ":")
 				act := actions[an]
@@ -1778,6 +1803,10 @@ func (c *Core) lintManifests(docs []manifest.Doc, index []int, personas personaL
 	}
 	// Source channels and routes on events (ING-1, ING-3, ING-4, INJ-7).
 	c.lintIngress(S, f)
+	lintPrivilegeRaised(S, f, docs, prior)
+	if err := c.lintLensNames(S, f); err != nil {
+		return nil, err
+	}
 	if err := c.lintGovernance(S, f, personas); err != nil {
 		return nil, err
 	}
@@ -2066,6 +2095,171 @@ func governanceName(n string, incidents bool) bool {
 	return incidents && strings.HasPrefix(n, "incident.")
 }
 
+// charterFloors are the durations of a tenant charter that only rise from their default, and
+// charterCeilings the counts that only fall from it (GOV-33). The schema bounds the counts and
+// the audit sample; the durations are strings it cannot compare.
+var charterFloors = []struct {
+	block, field string
+	def          time.Duration
+}{
+	{"promotion", "probation", govProbation}, {"promotion", "min_tenure", govMinTenure}, {"promotion", "swap_cooldown", govSwapCooldown},
+	{"removal", "protect_new", 60 * 24 * time.Hour}, {"attribution", "window", defaultAttributionWindow},
+	{"confirmation", "ttl", 7 * 24 * time.Hour}, {"identity", "unbound_ttl", defaultUnboundTTL}, {"memory", "seal_ttl", defaultSealTTL},
+}
+
+// lintCharterBounds checks what the schema of a charter cannot (GOV-33): a seat id declared
+// twice, the farm_manager block outside the farm charter, a duration below its default, the
+// excluded change kinds without none, and in the farm charter a decide_within above 7 days.
+// A core that claims v0.3 does not use incident_stop (MGR-55), so it does not check it.
+func lintCharterBounds(o lintObj, f *lintFindings) {
+	seen := map[string]bool{}
+	for i, sv := range mlist(mmap(o.spec, "commission"), "seats") {
+		sm, _ := sv.(map[string]any)
+		id := fmt.Sprint(sm["id"])
+		if seen[id] {
+			f.add(o, "charter_seat_twice", fmt.Sprintf("/commission/seats/%d/id", i))
+		}
+		seen[id] = true
+	}
+	if o.tenant != farmTenant && o.spec["farm_manager"] != nil {
+		f.add(o, "charter_farm_manager", "/farm_manager")
+	}
+	for _, fl := range charterFloors {
+		v := mstr(mmap(o.spec, fl.block), fl.field)
+		if d, ok := parseDuration(v); v != "" && (!ok || d < fl.def) {
+			f.add(o, "charter_direction", "/"+fl.block+"/"+fl.field)
+		}
+	}
+	if p := mmap(o.spec, "promotion"); p["exclude_change_kinds"] != nil && !slices.Contains(strList(p["exclude_change_kinds"]), "none") {
+		f.add(o, "charter_direction", "/promotion/exclude_change_kinds")
+	}
+	v := mstr(mmap(mmap(o.spec, "farm_manager"), "incident_stop"), "decide_within")
+	if d, ok := parseDuration(v); !claimsV03() && v != "" && (!ok || d > 7*24*time.Hour) {
+		f.add(o, "charter_direction", "/farm_manager/incident_stop/decide_within")
+	}
+}
+
+// lintPrivilegeRaised refuses a set in which an ordinary group became privileged (PRM-13): a
+// group of the store that was not privileged is privileged after the set, by its own
+// capabilities or by a type it names, whether or not it has members. A group new in the set
+// is privileged or not from the start and is granted under PRM-13.
+func lintPrivilegeRaised(S *lintSet, f *lintFindings, docs, prior []manifest.Doc) {
+	if len(prior) == 0 {
+		return
+	}
+	before, err := buildCatalog(prior)
+	if err != nil {
+		return
+	}
+	after, err := buildCatalog(docs)
+	if err != nil {
+		return
+	}
+	for _, o := range S.each("Group") {
+		tb, ta := before.Tenants[o.tenant], after.Tenants[o.tenant]
+		if tb == nil || ta == nil {
+			continue
+		}
+		if _, ok := tb.Groups[o.name]; !ok {
+			continue
+		}
+		if !grantsPrivilege(tb, before, o.name, map[string]bool{}) && grantsPrivilege(ta, after, o.name, map[string]bool{}) {
+			f.add(o, "privileged_group", "/caps")
+		}
+	}
+}
+
+// grantsPrivilege applies the PRM-13 rule to what a group grants in one state of the set: a
+// task capability counts by the types it covers there (a wildcard by prefix, capCovers), so a
+// capability of a type that is not in the set grants nothing, unlike privilegedGroup, which
+// counts anything unknown as privileged for a grant.
+func grantsPrivilege(tv *TenantView, cat *Catalog, name string, seen map[string]bool) bool {
+	if seen[name] {
+		return false
+	}
+	seen[name] = true
+	g, ok := tv.Groups[name]
+	if !ok {
+		return false
+	}
+	for _, cp := range g.Caps {
+		if unprivilegedCap(cp) {
+			continue
+		}
+		if !strings.HasPrefix(cp, "task:") {
+			return true
+		}
+		for tn, tt := range cat.TaskTypes {
+			if tt.Tier >= 1 && capCovers(cp, "task:"+tn) {
+				return true
+			}
+		}
+	}
+	for _, d := range g.Data {
+		if d != "summary" && d != "internal" {
+			return true
+		}
+	}
+	for _, in := range g.Inherits {
+		if grantsPrivilege(tv, cat, in, seen) {
+			return true
+		}
+	}
+	return false
+}
+
+// lintLensNames checks the lenses that a charter seat and the commission manifest name: a lens
+// of spec/model/lenses.yaml of the claimed version or a tenant lens x_<name> declared with its
+// meaning in the tenant's charter, else lens_unknown (COM-19). The weight of a lens that has
+// one by rule (farm_manager, from v0.2) is not set by the manifest (COM-8).
+func (c *Core) lintLensNames(S *lintSet, f *lintFindings) error {
+	reg, err := c.spec.Registry("spec/model/lenses.yaml")
+	if err != nil {
+		return err
+	}
+	skeleton := map[string]map[string]any{}
+	for _, e := range reg.Entries {
+		if !spec.VersionLater(asString(e["since"]), spec.Effective()) {
+			skeleton[asString(e["id"])] = e
+		}
+	}
+	known := func(tenant, lens string) bool {
+		if _, ok := skeleton[lens]; ok {
+			return true
+		}
+		if !strings.HasPrefix(lens, "x_") {
+			return false
+		}
+		for _, ch := range S.each("Governance") {
+			if ch.tenant == tenant && mstr(mmap(mmap(mmap(ch.spec, "commission"), "lenses"), lens), "meaning") != "" {
+				return true
+			}
+		}
+		return false
+	}
+	for _, o := range S.each("Governance") {
+		for i, sv := range mlist(mmap(o.spec, "commission"), "seats") {
+			sm, _ := sv.(map[string]any)
+			if l := mstr(sm, "lens"); l != "" && !known(o.tenant, l) {
+				f.add(o, "lens_unknown", fmt.Sprintf("/commission/seats/%d/lens", i))
+			}
+		}
+	}
+	for _, o := range S.each("Commission") {
+		for _, k := range []string{"weights", "min"} {
+			for _, l := range slices.Sorted(mapKeys(mmap(o.spec, k))) {
+				switch {
+				case !known(o.tenant, l):
+					f.add(o, "lens_unknown", "/"+k+"/"+l)
+				case k == "weights" && skeleton[l]["weight"] != nil:
+					f.add(o, "lens_weight_fixed", "/weights/"+l)
+				}
+			}
+		}
+	}
+	return nil
+}
+
 // lintGovernance checks the personas of the charters (GOV-4, COM-19), the unawareness of the
 // texts bots read (GOV-29) and that nothing of a bot refers to governance (GOV-6, GOV-13).
 func (c *Core) lintGovernance(S *lintSet, f *lintFindings, personas personaLookup) error {
@@ -2081,6 +2275,7 @@ func (c *Core) lintGovernance(S *lintSet, f *lintFindings, personas personaLooku
 				f.add(o, "lens_persona_missing", fmt.Sprintf("/commission/seats/%d/lens", i))
 			}
 		}
+		lintCharterBounds(o, f)
 		// From v0.3 the size of a persona counts with its addenda (GOV-45).
 		v03 := claimsV03()
 		refs := charterPersonas(o.spec, v03)
