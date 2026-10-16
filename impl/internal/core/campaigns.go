@@ -702,6 +702,12 @@ func (c *Core) campaignResultsCall(ctx context.Context, tx pgx.Tx, cmp *campaign
 // proposeCampaign is P3 propose_campaign: it turns the request into a plan from the attempt's
 // tree and admits it (ORC-1).
 func (c *Core) proposeCampaign(ctx context.Context, tx pgx.Tx, now time.Time, cat *Catalog, g *toolsGrant, offered bool, args map[string]any) (campaignOutcome, error) {
+	return c.proposeCampaignKeyed(ctx, tx, now, cat, g, offered, args, "")
+}
+
+// proposeCampaignKeyed is proposeCampaign with the idempotency key of P1 campaign.propose; P3
+// carries none (IDM-1, IDM-2).
+func (c *Core) proposeCampaignKeyed(ctx context.Context, tx pgx.Tx, now time.Time, cat *Catalog, g *toolsGrant, offered bool, args map[string]any, key string) (campaignOutcome, error) {
 	deny := func(reason string) (campaignOutcome, error) {
 		if _, err := c.appendAudit(ctx, tx, now, Audit{
 			Tenant: g.Tenant, Kind: "authorize", Actor: Actor{Principal: workerPrincipal(g.Worker), Via: "bot", Role: g.Role, Task: g.Task},
@@ -714,7 +720,7 @@ func (c *Core) proposeCampaign(ctx context.Context, tx pgx.Tx, now time.Time, ca
 	if !offered || roleProposes(cat, g) == "none" {
 		return deny("forbidden")
 	}
-	if err := c.spec.Validate("campaign-propose-request", args); err != nil || args["idempotency_key"] != nil {
+	if err := c.spec.Validate("campaign-propose-request", args); err != nil || key == "" && args["idempotency_key"] != nil {
 		return deny("input_schema_invalid")
 	}
 	tmpl, _ := args["template"].(map[string]any)
@@ -811,6 +817,11 @@ func (c *Core) proposeCampaign(ctx context.Context, tx pgx.Tx, now time.Time, ca
 	// One attempt may propose several campaigns; a retried call with the same plan is the same
 	// campaign (IDM-2).
 	p.Key = "system:propose:" + g.Task + ":"
+	if key != "" {
+		// The P1 key of the proposer, under the prefix of its task; it is not completed with
+		// the plan hash, so another plan under it is a conflict (ORC-1).
+		p.Key = "system:propose:" + g.Task + ":p1:" + key + "."
+	}
 	out, err := c.admitCampaign(ctx, tx, now, cat, &p)
 	if err != nil {
 		return campaignOutcome{}, err

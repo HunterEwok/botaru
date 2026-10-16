@@ -99,9 +99,18 @@ func (c *Core) higherMark(a, b string) string {
 // childTypes are the types the attempt may enqueue as children: the role's may_enqueue,
 // without action types, that every initiator may enqueue (PRM-6, ORC-13).
 func childTypes(cat *Catalog, g *toolsGrant) []string {
+	if role, ok := cat.Roles[g.Role]; !ok || role.Profile != "manager" && !g.P1 {
+		return nil
+	}
+	return mayEnqueueTypes(cat, g)
+}
+
+// mayEnqueueTypes are the role's may_enqueue types that every initiator may enqueue, for the
+// built-in tool of a manager and for P1 enqueue under an attempt lease (PRM-6).
+func mayEnqueueTypes(cat *Catalog, g *toolsGrant) []string {
 	role, ok := cat.Roles[g.Role]
 	tv := cat.Tenants[g.Tenant]
-	if !ok || tv == nil || role.Profile != "manager" || g.Purpose != "" && g.Purpose != "work" {
+	if !ok || tv == nil || g.Purpose != "" && g.Purpose != "work" {
 		return nil
 	}
 	groups := groupClosure(tv, g.InitiatorGroups)

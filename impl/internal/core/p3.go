@@ -50,6 +50,9 @@ type toolsGrant struct {
 	// (ORC-9). Scope is the resource scope of a campaign item (ORC-7).
 	CampaignCont string
 	Scope        []string
+	// P1 marks a call over P1 under an attempt lease rather than a P3 tool call: P1 enqueue of a
+	// job or agent attempt takes the role's may_enqueue without the manager profile (PRM-6).
+	P1 bool
 }
 
 // coHave says whether every initiator of what the attempt read has the capability (MSG-7).

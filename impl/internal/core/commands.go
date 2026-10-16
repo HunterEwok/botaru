@@ -295,11 +295,21 @@ func (c *Core) meCommand(pc personCommand) *ActivityResult {
 		}
 		return strings.Join(xs, ", ")
 	}
+	// A group of delegated_groups carries the attribute delegated (PRM-16).
+	shown := make([]string, 0, len(pc.groups))
+	for _, g := range pc.groups {
+		if slices.Contains(pc.tv.Spec.DelegatedGroups, g) && c.delegable(pc.tv, pc.cat, g) {
+			g = c.texts.Render(pc.locale, "cmd.profile.delegated", map[string]any{"group": g})
+		}
+		shown = append(shown, g)
+	}
 	lines := []string{
-		c.texts.Render(pc.locale, "cmd.profile.groups", map[string]any{"groups": list(pc.groups)}),
+		c.texts.Render(pc.locale, "cmd.profile.groups", map[string]any{"groups": list(shown)}),
 		c.texts.Render(pc.locale, "cmd.profile.types", map[string]any{"titles": list(types)}),
 		c.texts.Render(pc.locale, "cmd.profile.actions", map[string]any{"titles": list(actions)}),
 		c.texts.Render(pc.locale, "cmd.profile.data", map[string]any{"classes": list(data)}),
+		// The person tells this code to the operator for a privileged group (PRM-13).
+		c.texts.Render(pc.locale, "cmd.profile.code", map[string]any{"code": c.verificationCode(pc.tv.Name, pc.person)}),
 	}
 	return &ActivityResult{Result: "reply", Text: strings.Join(lines, "\n")}
 }

@@ -32,6 +32,16 @@ type OperatorCred struct {
 	Tenant      string `json:"tenant" yaml:"tenant"`
 }
 
+// ProgramCred is the key of an external program (D-47): the deployment issues the key and keeps
+// only its hash with the tenant and the key id; the core finds the service principal with the
+// identity api:<key_id> in the tenant (IDN-4, TEN-2). During a rotation two entries with the same
+// key id are valid.
+type ProgramCred struct {
+	TokenSHA256 string `json:"token_sha256" yaml:"token_sha256"`
+	Tenant      string `json:"tenant" yaml:"tenant"`
+	KeyID       string `json:"key_id" yaml:"key_id"`
+}
+
 // Config is the HTTP side of the deployment settings.
 type Config struct {
 	Operators []OperatorCred
@@ -40,6 +50,9 @@ type Config struct {
 	// ReportKeysSHA256 are the hex SHA-256 of the report keys of the backup and reconciliation
 	// processes: they open only backup.report and spend.reconcile (P2 "Who calls").
 	ReportKeysSHA256 []string
+	// Programs are the keys of the external programs; they open only P1 enqueue, task.get and
+	// cancel.
+	Programs []ProgramCred
 	// TestKeySHA256 is the hex SHA-256 of the test bench key that opens the test-control port.
 	TestKeySHA256 string
 	MaxBodyBytes  int64
