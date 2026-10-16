@@ -366,6 +366,14 @@ func (c *Core) serviceControl(ctx context.Context, tx pgx.Tx, now time.Time, cat
 	if err != nil {
 		return nil, "", "", err
 	}
+	if seatTask {
+		// The restricted mode refuses without counting for the safeguard (MGR-47).
+		if restricted, err := seatTaskRestricted(ctx, tx, g.Tenant, rec); err != nil {
+			return nil, "", "", err
+		} else if restricted {
+			return deny(restrictedReason, restrictedReason)
+		}
+	}
 	if limit != "" {
 		if err := c.seatToolDone(ctx, tx, now, cat, true); err != nil {
 			return nil, "", "", err
@@ -390,7 +398,8 @@ func (c *Core) serviceControl(ctx context.Context, tx pgx.Tx, now time.Time, cat
 	if err != nil {
 		return nil, "", "", err
 	}
-	if !slices.Contains(svc.NoCard, verb) || s.UntrustedSeen {
+	// A takeover task never controls a service without a card (MGR-48).
+	if !slices.Contains(svc.NoCard, verb) || s.UntrustedSeen || takeoverOf(rec) != "" {
 		id, code, err := c.openApproval(ctx, tx, now, tv, approvalRow{
 			Tenant: g.Tenant, SourceTask: g.Task, Initiator: g.Initiator, Action: serviceAction, ArgsHash: argsHash, Args: s.args(), Risk: "low",
 			RequestedBy:   map[string]any{"kind": "bot", "role": g.Role, "task": g.Task},

@@ -107,7 +107,7 @@ func (c *Core) attributionStep(ctx context.Context, tx pgx.Tx, now time.Time, ca
 	if err := c.createScriptLinks(ctx, tx, now, cat, tv); err != nil {
 		return err
 	}
-	if c.claimsV03() {
+	if claimsV03() {
 		if err := c.createRejectionLinks(ctx, tx, now, cat, tv); err != nil {
 			return err
 		}
@@ -188,7 +188,7 @@ func (c *Core) createAttribution(ctx context.Context, tx pgx.Tx, now time.Time, 
 	rec := map[string]any{"id": id, "tenant": tv.Name, "incident": incident, "proposal": proposal, "rule": rule, "created_by": by,
 		"created_at": fmtTime(now), "state": "candidate", "answer": nil, "reminders": 0, "cancel_reason": nil}
 	schema := "urn:botaru:schema:attribution:1"
-	if c.claimsV03() {
+	if claimsV03() {
 		rec["kind"], schema = kind, "urn:botaru:schema:attribution:2"
 	}
 	if err := c.spec.Validate(schema, rec); err != nil {

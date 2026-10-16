@@ -498,7 +498,7 @@ func (c *Core) Doctor(ctx context.Context, op Operator, req TenantRequest) (*Doc
 		add(urgent)
 		// Parked bots and how long the longest has waited for a worker of its role, on a core
 		// that claims v0.3 (GOV-42).
-		if c.claimsV03() {
+		if claimsV03() {
 			var parked int
 			var since *time.Time
 			if err := tx.QueryRow(ctx, `SELECT count(*), min((record->'parked'->>'since')::timestamptz) FROM bots WHERE tenant = $1 AND state = 'unbound' AND record ? 'parked'`,

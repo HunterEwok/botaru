@@ -495,7 +495,7 @@ func (c *Core) trialBaseline(ctx context.Context, tx pgx.Tx, now time.Time, cat 
 	}
 	// From v0.3 every trial also guards the farm's work over the whole tenant, and a tenant
 	// cannot remove these guards (PRP-26).
-	if c.claimsV03() {
+	if claimsV03() {
 		var farm []any
 		for _, name := range farmGuards {
 			g, ok := series[name]
@@ -610,10 +610,13 @@ func trialValue(ctx context.Context, tx pgx.Tx, tenant string, s seriesDef, subj
 	}
 	one := func(column, value string) (map[string]any, error) {
 		args := []any{tenant, s.Name, subject, from, to}
-		where := `tenant = $1 AND series = $2 AND subject = $3 AND at >= $4 AND at < $5`
+		// The attempts of a takeover on the seat model do not enter the trial of the role
+		// (MGR-48, PRP-22): the points keyed by their leases are left out.
+		const notTakeover = ` AND NOT (key LIKE 'lease:%' AND split_part(key, ':', 2) IN (SELECT id FROM tasks WHERE tenant = $1 AND record ? 'takeover_of'))`
+		where := `tenant = $1 AND series = $2 AND subject = $3 AND at >= $4 AND at < $5` + notTakeover
 		if subject == "tenant:"+tenant {
 			// A farm guard reads the series over every subject of the tenant (PRP-26).
-			where = `tenant = $1 AND series = $2 AND $3 <> '' AND at >= $4 AND at < $5`
+			where = `tenant = $1 AND series = $2 AND $3 <> '' AND at >= $4 AND at < $5` + notTakeover
 		}
 		if column != "" {
 			args = append(args, value)

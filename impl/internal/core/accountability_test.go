@@ -30,7 +30,7 @@ func v03Bench(t *testing.T) *bench {
 			"detect": map[string]any{"alarm": "alarm.disk.free.low.v1"}, "subject": map[string]any{"kind": "tenant"}},
 	}, storeLowManifest()}, presentEdit)
 	b.exec(t, `INSERT INTO memberships (tenant, principal, grp, state, created_at) VALUES ('demo', $1, 'governors', 'active', now())`, b.alice)
-	b.c.v03.Store(true)
+	setClaimsV03(t, true)
 	b.charter(t, 1, nil)
 	return b
 }
@@ -404,7 +404,7 @@ func TestAccountabilityOn(t *testing.T) {
 func TestTrialFarmGuards(t *testing.T) {
 	ctx := context.Background()
 	b := newCommissionBench(t, true, presentEdit)
-	b.c.v03.Store(true)
+	setClaimsV03(t, true)
 	id, _ := acceptLimits(t, b)
 	if res, err := b.c.Apply(ctx, b.op, ApplyRequest{Commit: "a000000000000000000000000000000000000002", Message: "Raise the queue\n\nBotaru-Proposal: " + id, Manifests: withLimit(t, b, 7)}); err != nil || !res.Applied {
 		t.Fatalf("apply %+v %v", res, err)

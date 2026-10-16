@@ -284,6 +284,10 @@ func (c *Core) toolCatalog(cat *Catalog, g *toolsGrant) ([]catalogTool, error) {
 	if et := escalateTool(cat, g); et != nil {
 		out = append(out, *et)
 	}
+	// The v0.3 notice of the manager to people (MGR-52).
+	if at := c.attentionTool(cat, g); at != nil {
+		out = append(out, *at)
+	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
 	return out, nil
 }
@@ -532,6 +536,14 @@ func (c *Core) P3ToolsCall(ctx context.Context, handle string, p mcp.CallParams)
 		}
 		if p.Name == proposeCampaignName || p.Name == campaignStatusName || p.Name == campaignResultsName {
 			builtin, err = c.campaignToolCall(ctx, tx, now, cat, g, p.Name, offeredTool(tools, p.Name), p.Arguments)
+			return err
+		}
+		if p.Name == attentionToolName {
+			args := p.Arguments
+			if args == nil {
+				args = map[string]any{}
+			}
+			builtin, err = c.attentionToolCall(ctx, tx, now, cat, g, offeredTool(tools, p.Name), args)
 			return err
 		}
 		if p.Name == grantToolName || p.Name == grantsPendingName || p.Name == grantDecideName || p.Name == takeoverToolName || p.Name == escalateToolName {

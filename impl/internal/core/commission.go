@@ -526,7 +526,7 @@ func (c *Core) reviewsFit(ctx context.Context, tx pgx.Tx, now time.Time, cat *Ca
 // system:review:<proposal>:<lens> (COM-2, IDM-2), with the input block the core builds
 // (COM-3); the task goes only to the lens executor role and never to the author's worker.
 func (c *Core) enqueueReviews(ctx context.Context, tx pgx.Tx, now time.Time, cat *Catalog, tv *TenantView, p *proposalRow, lenses []string, exec map[string]lensExecutor) ([]any, float64, error) {
-	v03 := c.claimsV03()
+	v03 := claimsV03()
 	input := reviewInput(p, v03)
 	reviews := []any{}
 	reserved := 0.0

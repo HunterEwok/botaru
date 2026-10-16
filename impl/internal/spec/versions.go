@@ -30,10 +30,12 @@ var Ahead = map[string][]string{
 	// tenant (TRN-6), the grant and takeover lines and the takeover list (MGR-17, MGR-21).
 	// File limits (ART-4) and the sink of a person's copy (SEC-10, LCY-2). The card limit
 	// (APR-15), the tenant locale (DLV-18) and the dispatch fairness (DSP-6). The widest machine
-	// selector the script run card does not mark (TRN-10).
+	// selector the script run card does not mark (TRN-10). From v0.3 the takeover ceilings on the
+	// manager line and the manager's notices per person (MGR-48, MGR-52).
 	"Tenant": {"/spec/retention", "/spec/evals", "/spec/takeover", "/spec/budgets/lines/grant", "/spec/budgets/lines/takeover",
 		"/spec/limits/max_file_bytes", "/spec/limits/max_task_files_bytes", "/spec/privacy/export_sink",
-		"/spec/attention/noncritical_per_day", "/spec/locale", "/spec/dispatch/fairness", "/spec/scripts/unnamed_targets_max"},
+		"/spec/attention/noncritical_per_day", "/spec/locale", "/spec/dispatch/fairness", "/spec/scripts/unnamed_targets_max",
+		"/spec/takeover/manager_month_eur", "/spec/takeover/max_eur", "/spec/attention/manager_notices_per_person_day"},
 	// The locale of a schedule's texts (DLV-18).
 	"Schedule": {"/spec/locale"},
 	// The grant ladder of a role and the grant signs of a type (MGR-17).

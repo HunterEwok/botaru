@@ -31,7 +31,7 @@ func (b *bench) reviewAll(t *testing.T, score int) {
 			typ := att.Payload["task"].(map[string]any)["type"].(string)
 			lens := strings.TrimSuffix(strings.TrimPrefix(typ, "review."), ".v1")
 			res := map[string]any{"lens": lens, "score": score, "confidence": "high"}
-			if b.c.claimsV03() {
+			if claimsV03() {
 				res["forecast"] = reviewForecast(lens, score)
 			}
 			if _, err := b.c.Complete(context.Background(), w, header(t, att), CompleteRequest{Result: res}); err != nil {

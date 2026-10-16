@@ -230,7 +230,7 @@ type outcomeOf struct {
 // it changed since the last look, or once a day for outcomes that come with time (an attribution
 // window that closes); the proposal is read without a lock and locked only to add a score.
 func (c *Core) scoreStep(ctx context.Context, tx pgx.Tx, now time.Time, cat *Catalog, tv *TenantView) error {
-	if !c.claimsV03() {
+	if !claimsV03() {
 		return nil
 	}
 	rows, err := tx.Query(ctx, `DELETE FROM forecast_scores s USING attributions a WHERE s.tenant = $1 AND a.id = s.attribution AND a.state = 'canceled'

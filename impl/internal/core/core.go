@@ -117,9 +117,6 @@ type Core struct {
 	restoring atomic.Bool
 	// manual is set when the loops tick only by loop.tick on a test bench.
 	manual atomic.Bool
-	// v03 switches the paths of the v0.3 rules on before the claimed version reaches v0.3 (a
-	// test bench sets it; claimsV03).
-	v03 atomic.Bool
 	// running is set when Run drives the loops; startedAt is the store time, in Unix
 	// nanoseconds, at which Run started (or of the first indicators pass, if the store did not
 	// answer then), from which a loop that never ticked counts its age (OBS-4).

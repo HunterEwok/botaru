@@ -166,7 +166,7 @@ func (c *Core) scriptActs(cat *Catalog, steps []scriptStep) bool {
 // (GOV-36).
 func (c *Core) createScriptLinks(ctx context.Context, tx pgx.Tx, now time.Time, cat *Catalog, tv *TenantView) error {
 	var from *time.Time
-	if c.claimsV03() {
+	if claimsV03() {
 		since, _, err := v03State(ctx, tx, tv.Name)
 		if err != nil || since == nil {
 			return err

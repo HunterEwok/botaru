@@ -46,6 +46,8 @@ type proposalAuthor struct {
 	Untrusted bool
 	Sources   []string
 	Readable  []string
+	// Seat marks a proposal of the farm manager seat from v0.3 (MGR-51).
+	Seat bool
 }
 
 // rejection is the refusal of one proposal body: no record, an event with the reason (PRP-1).
@@ -107,6 +109,22 @@ func (c *Core) createProposals(ctx context.Context, tx pgx.Tx, now time.Time, ca
 		return err
 	}
 	a.Acting = acting
+	a.Seat = seatOfRecord(rec) == managerSeatID && claimsV03()
+	// In restricted mode the seat proposes nothing in the tenant, unless its basis is a sev1
+	// incident opened during it (MGR-47); the proposals are dropped.
+	if a.Seat && len(bodies) > 0 {
+		if restricted, err := seatTaskRestricted(ctx, tx, w.Tenant, rec); err != nil {
+			return err
+		} else if restricted {
+			c.log.Info("proposals of the restricted farm manager seat dropped", "tenant", w.Tenant, "task", task, "count", len(bodies))
+			_, err := c.appendAudit(ctx, tx, now, Audit{
+				Tenant: w.Tenant, Kind: "command", Actor: Actor{Principal: principalOr(acting.Bot), Via: "seat", Role: w.Role, Task: task},
+				Command: "proposal.create", Target: &Target{Kind: "task", ID: task}, OK: false, Reason: restrictedReason,
+				After: map[string]any{"dropped": len(bodies)},
+			})
+			return err
+		}
+	}
 	// An aggregator's proposal takes the mark and the untrusted flag of its task, which carry
 	// the highest mark and the logical OR of the inputs it read (AGG-4).
 	if cat.TaskTypes[typ].Purpose == "aggregate" {
@@ -118,6 +136,13 @@ func (c *Core) createProposals(ctx context.Context, tx pgx.Tx, now time.Time, ca
 		if errors.As(err, &rj) {
 			if err := c.proposalRejected(ctx, tx, now, a, body, fp, string(rj)); err != nil {
 				return err
+			}
+			// A change the manager may not propose reaches the farm operators only as a code
+			// notice for information (MGR-51).
+			if a.Seat && rj == "forbidden_change" {
+				if err := c.managerProposalInfo(ctx, tx, now, cat, a.Tenant, body); err != nil {
+					return err
+				}
 			}
 			continue
 		}
@@ -188,7 +213,7 @@ func (c *Core) createProposal(ctx context.Context, tx pgx.Tx, now time.Time, cat
 		kind, _, _ := strings.Cut(s, ":")
 		// From v0.3 the author's own tenant is a subject too, the subject of the farm guards
 		// and of tenant incidents a rejected proposal can be linked to (PRP-26, GOV-38).
-		if c.claimsV03() && s == "tenant:"+a.Tenant {
+		if claimsV03() && s == "tenant:"+a.Tenant {
 			continue
 		}
 		if !c.subjectOfTenant(cat, a.Tenant, kind, s) {
@@ -198,6 +223,10 @@ func (c *Core) createProposal(ctx context.Context, tx pgx.Tx, now time.Time, cat
 	kind := b.Change.Kind
 	// Permissions and security only for information (PRP-3).
 	if b.Category == "security" && kind != "none" {
+		return "", rejection("forbidden_change")
+	}
+	// The manager never proposes a change of its own seat, limits or catalog (MGR-16, MGR-51).
+	if a.Seat && managerRecusal(cat, a.Tenant, b.Change) {
 		return "", rejection("forbidden_change")
 	}
 	// After untrusted text only none or a manifest change in the safe direction (PRP-7).
@@ -277,11 +306,19 @@ func (c *Core) createProposal(ctx context.Context, tx pgx.Tx, now time.Time, cat
 	if err != nil {
 		return fp, err
 	}
-	// The flow limits of the role and the tenant (INS-4, PRP-5).
+	// The flow limits of the role and the tenant (INS-4, PRP-5), and the manager's 2 a month
+	// (MGR-51).
 	if limited, err := proposalLimited(ctx, tx, now, cat, a); err != nil {
 		return fp, err
 	} else if limited {
 		return fp, rejection("proposal_rate_limited")
+	}
+	if a.Seat {
+		if limited, err := managerProposalLimited(ctx, tx, now, cat, a.Tenant); err != nil {
+			return fp, err
+		} else if limited {
+			return fp, rejection("proposal_rate_limited")
+		}
 	}
 	influence, self, err := selfInfluence(ctx, tx, now, a, b.Evidence, series)
 	if err != nil {
@@ -296,9 +333,14 @@ func (c *Core) createProposal(ctx context.Context, tx pgx.Tx, now time.Time, cat
 	if a.Acting.Bot != "" {
 		actingBot, botEpoch = a.Acting.Bot, a.Acting.BotEpoch
 	}
+	origin := map[string]any{"role": a.Role, "worker": a.Worker, "acting_bot": actingBot, "bot_epoch": botEpoch, "task": a.Task, "level": a.Level}
+	if a.Seat {
+		// The seat's proposals never make anyone answer for a link (GOV-41, MGR-51).
+		origin["seat"] = managerSeatID
+	}
 	record := map[string]any{
 		"id": id, "tenant": a.Tenant,
-		"origin":      map[string]any{"role": a.Role, "worker": a.Worker, "acting_bot": actingBot, "bot_epoch": botEpoch, "task": a.Task, "level": a.Level},
+		"origin":      origin,
 		"fingerprint": fp, "data_mark": a.Mark,
 		"untrusted_seen": map[string]any{"value": a.Untrusted, "sources": sources},
 		"self_influence": influence, "self_evidence": self, "conflicts_with": []any{}, "seen_count": 1,
@@ -661,7 +703,7 @@ const (
 // the first round's forecasts are scored by the resubmission's trial (COM-16). Reviewers never
 // see it (COM-15). Before v0.3 nothing is marked.
 func (c *Core) resubmission(ctx context.Context, tx pgx.Tx, now time.Time, tenant, fp string, body map[string]any) (map[string]any, error) {
-	if !c.claimsV03() {
+	if !claimsV03() {
 		return nil, nil
 	}
 	var prev string

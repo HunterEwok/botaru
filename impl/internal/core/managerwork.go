@@ -267,8 +267,11 @@ func directiveScopeHolds(ctx context.Context, tx pgx.Tx, tenant string, d *direc
 }
 
 // reviewMaxEUR is control_limits.daily_review_max_eur of the farm charter (MGR-41).
-func reviewMaxEUR(cat *Catalog) float64 {
-	if v, ok := mnum(mmap(managerCharter(cat), "control_limits"), "daily_review_max_eur"); ok && v >= 0 {
+func reviewMaxEUR(cat *Catalog) float64 { return charterReviewMaxEUR(managerCharter(cat)) }
+
+// charterReviewMaxEUR is daily_review_max_eur of a farm_manager block of the charter.
+func charterReviewMaxEUR(fm map[string]any) float64 {
+	if v, ok := mnum(mmap(fm, "control_limits"), "daily_review_max_eur"); ok && v >= 0 {
 		return v
 	}
 	return defaultReviewMaxEUR
@@ -320,10 +323,14 @@ func (c *Core) managerDaily(ctx context.Context, cat *Catalog) error {
 					return err
 				}
 			}
-			if n.empty() {
+			// From v0.3 the summary is mandatory, with the takeovers and notices (MGR-50).
+			key := "notice.manager_daily"
+			if claimsV03() {
+				key = "notice.manager_daily_v03"
+			} else if n.empty() {
 				return nil
 			}
-			return c.noticeAdmins(ctx, tx, now, cat, []string{t}, "manager_daily", "notice.manager_daily", n.params(true), "admin:people")
+			return c.noticeAdmins(ctx, tx, now, cat, []string{t}, "manager_daily", key, n.params(true), "admin:people")
 		})
 		if err != nil {
 			return err
@@ -331,7 +338,7 @@ func (c *Core) managerDaily(ctx context.Context, cat *Catalog) error {
 	}
 	// The farm's numbers have their own day mark and are counted in their own transaction, so a
 	// failure in any tenant leaves them for the next run whole.
-	return c.tx(ctx, func(tx pgx.Tx, now time.Time) error {
+	if err := c.tx(ctx, func(tx pgx.Tx, now time.Time) error {
 		day := now.UTC()
 		if tv := cat.Tenants[farmTenant]; tv != nil {
 			day = tenantDay(tv, now)
@@ -348,17 +355,29 @@ func (c *Core) managerDaily(ctx context.Context, cat *Catalog) error {
 			}
 			farm.add(n)
 		}
-		if farm.empty() {
+		key, params := "notice.manager_daily_farm", farm.params(false)
+		if claimsV03() {
+			// Problems across tenants are found by code and shown only here (MGR-51).
+			key = "notice.manager_daily_farm_v03"
+			if params["recurring"], err = recurringClasses(ctx, tx, day.AddDate(0, 0, -1), day); err != nil {
+				return err
+			}
+		} else if farm.empty() {
 			return nil
 		}
-		return c.noticeAdmins(ctx, tx, now, cat, []string{farmTenant}, "manager_daily", "notice.manager_daily_farm", farm.params(false), "admin:governance")
-	})
+		return c.noticeAdmins(ctx, tx, now, cat, []string{farmTenant}, "manager_daily", key, params, "admin:governance")
+	}); err != nil {
+		return err
+	}
+	return c.holderReportWeek(ctx, cat)
 }
 
 // managerNumbers are the numbers of a day of the manager in a tenant, codes and counts only.
 type managerNumbers struct {
 	Incidents, Ops, Reverts, Reads int
-	SpentMicros                    int64
+	// Takeovers and Notices count from v0.3 (MGR-50).
+	Takeovers, Notices int
+	SpentMicros        int64
 }
 
 func (n *managerNumbers) add(o managerNumbers) {
@@ -366,6 +385,8 @@ func (n *managerNumbers) add(o managerNumbers) {
 	n.Ops += o.Ops
 	n.Reverts += o.Reverts
 	n.Reads += o.Reads
+	n.Takeovers += o.Takeovers
+	n.Notices += o.Notices
 	n.SpentMicros += o.SpentMicros
 }
 
@@ -375,6 +396,9 @@ func (n managerNumbers) empty() bool { return n == managerNumbers{} }
 // tenant's admins, who are its recipients (MGR-41).
 func (n managerNumbers) params(spend bool) map[string]any {
 	p := map[string]any{"incidents": n.Incidents, "ops": n.Ops, "reverts": n.Reverts, "reads": n.Reads}
+	if claimsV03() {
+		p["takeovers"], p["notices"] = n.Takeovers, n.Notices
+	}
 	if spend {
 		p["spent_cents"] = money.CentsUp(n.SpentMicros)
 	}
@@ -389,8 +413,10 @@ func dayNumbers(ctx context.Context, tx pgx.Tx, tenant string, since, until time
 		(SELECT count(*) FROM control_ops WHERE tenant = $1 AND created_at >= $2 AND created_at < $4 AND (actor_kind = 'seat' OR approved_by IS NOT NULL)),
 		(SELECT count(*) FROM audit WHERE tenant = $1 AND at >= $2 AND at < $4 AND record->>'command' = 'control.revert'),
 		(SELECT count(*) FROM manager_reads WHERE tenant = $1 AND at >= $2 AND at < $4),
-		(SELECT coalesce(sum(eur_micros + coalesce(correction_eur_micros, 0)), 0) FROM spend WHERE tenant = $1 AND time >= $2 AND time < $4 AND line = 'manager' AND unit <> 'task')`,
-		tenant, since, managerSeatID, until).Scan(&n.Incidents, &n.Ops, &n.Reverts, &n.Reads, &n.SpentMicros)
+		(SELECT coalesce(sum(eur_micros + coalesce(correction_eur_micros, 0)), 0) FROM spend WHERE tenant = $1 AND time >= $2 AND time < $4 AND line = 'manager' AND unit <> 'task'),
+		(SELECT count(*) FROM takeovers WHERE tenant = $1 AND created_at >= $2 AND created_at < $4 AND state <> 'staged'),
+		(SELECT count(*) FROM manager_feedback WHERE tenant = $1 AND created_at >= $2 AND created_at < $4 AND kind = $5)`,
+		tenant, since, managerSeatID, until, attentionNotice).Scan(&n.Incidents, &n.Ops, &n.Reverts, &n.Reads, &n.SpentMicros, &n.Takeovers, &n.Notices)
 	return n, err
 }
 

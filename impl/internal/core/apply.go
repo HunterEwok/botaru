@@ -275,7 +275,7 @@ func (c *Core) applyOnce(ctx context.Context, op Operator, req ApplyRequest) (*A
 		res.Warnings = append(res.Warnings, warns...)
 		// accountability on needs every seat held with enough scored forecasts, on a core that
 		// claims v0.3 (GOV-36).
-		if c.claimsV03() {
+		if claimsV03() {
 			current, err := c.Catalog(ctx)
 			if err != nil {
 				return nil, err
@@ -485,7 +485,7 @@ func (c *Core) applyOnce(ctx context.Context, op Operator, req ApplyRequest) (*A
 		}
 		// The texts go to every charter of the store that pins them, the ones applied earlier
 		// included.
-		if err := storePersonas(ctx, tx, now, after, req.Personas, c.claimsV03()); err != nil {
+		if err := storePersonas(ctx, tx, now, after, req.Personas, claimsV03()); err != nil {
 			return err
 		}
 		if err := notifyWork(ctx, tx); err != nil {
