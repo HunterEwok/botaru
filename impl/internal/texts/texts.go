@@ -27,6 +27,8 @@ const CatalogDir = "spec/bindings/channels/messages"
 // Catalog maps locale -> key -> text.
 type Catalog struct {
 	byLocale map[string]map[string]string
+	// lists are the word lists of a catalog by locale and key (number.words, REP-4).
+	lists map[string]map[string][]string
 }
 
 type file struct {
@@ -38,7 +40,7 @@ type file struct {
 // file in dir (dir may be empty). A file of the installation replaces texts key by key. The
 // skeleton must have the en catalog.
 func Load(root, dir string) (*Catalog, error) {
-	c := &Catalog{byLocale: map[string]map[string]string{}}
+	c := &Catalog{byLocale: map[string]map[string]string{}, lists: map[string]map[string][]string{}}
 	if err := c.addDir(filepath.Join(root, CatalogDir)); err != nil {
 		return nil, err
 	}
@@ -85,9 +87,21 @@ func (c *Catalog) add(b []byte, src string) error {
 		c.byLocale[f.Locale] = m
 	}
 	for k, v := range f.Texts {
-		// Lists (the number words of REP-4) are not texts.
-		if s, ok := v.(string); ok {
-			m[k] = strings.TrimSpace(s)
+		// Lists (the number words of REP-4) are not texts; they are kept apart.
+		switch x := v.(type) {
+		case string:
+			m[k] = strings.TrimSpace(x)
+		case []any:
+			var words []string
+			for _, w := range x {
+				if s, ok := w.(string); ok {
+					words = append(words, strings.ToLower(strings.TrimSpace(s)))
+				}
+			}
+			if c.lists[f.Locale] == nil {
+				c.lists[f.Locale] = map[string][]string{}
+			}
+			c.lists[f.Locale][k] = words
 		}
 	}
 	return nil
@@ -95,6 +109,14 @@ func (c *Catalog) add(b []byte, src string) error {
 
 // Has reports whether the fallback locale has the key.
 func (c *Catalog) Has(key string) bool { _, ok := c.byLocale[Fallback][key]; return ok }
+
+// List returns the word list of key in locale, or the fallback list, in lower case.
+func (c *Catalog) List(locale, key string) []string {
+	if l, ok := c.lists[locale][key]; ok {
+		return l
+	}
+	return c.lists[Fallback][key]
+}
 
 // Locales lists the loaded locales.
 func (c *Catalog) Locales() []string {
