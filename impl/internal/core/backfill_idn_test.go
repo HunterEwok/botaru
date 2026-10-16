@@ -179,9 +179,42 @@ func TestBackfillRealSender(t *testing.T) {
 	if r := submit("wh", "telegram:1001", true, false, "/help"); r.Result != "reply" || r.Text == b.c.texts.Render("en", "activity.not_verified", nil) {
 		t.Fatalf("/help on a weak channel: %+v", r)
 	}
-	// IDN-3: no decision.
-	if _, err := b.c.Decide(ctx, b.channel, press("telegram:1001", "direct:1001", "1"), DecideRequest{SubjectKind: "approval", ID: "ap_x", Nonce: "n", Decision: "approve"}); err == nil {
-		t.Fatal("a weak channel took a decision")
+}
+
+// A channel with weak sender verification takes no decision: a valid press on the card of a
+// pending approval is refused only for the channel's weakness, the approval stays pending, and
+// the same press counts once the channel is strong again (IDN-3).
+func TestBackfillWeakChannelNoDecision(t *testing.T) {
+	ctx := context.Background()
+	b := newActionBench(t, nil)
+	att, h := b.attemptTools(t, "1", false)
+	r := b.request(t, h, map[string]any{"action": "fix_web", "args": map[string]any{"host": "web1"}})
+	b.finish(t, att)
+	b.tick(t, "approval-expiry")
+	card := cardOf(t, b.drain(t), approvalCard, "direct:1002")
+	a := b.approval(t, r.ApprovalID)
+	tv, _, err := b.c.requireTenant(ctx, "demo")
+	if err != nil {
+		t.Fatal(err)
+	}
+	set := func(v string) {
+		ch := tv.Channels["telegram"]
+		ch.IdentityAssurance = v
+		tv.Channels["telegram"] = ch
+	}
+	req := DecideRequest{SubjectKind: "approval", ID: a.ID, Nonce: a.Nonce, Decision: "approve"}
+	set("weak")
+	_, err = b.c.Decide(ctx, b.channel, press("telegram:1002", "direct:1002", card.external), req)
+	wantReason(t, err, "forbidden")
+	if p, ok := AsProblem(err); !ok || !strings.Contains(p.Detail, "strong identity") {
+		t.Fatalf("refused for another cause: %v", err)
+	}
+	if a = b.approval(t, a.ID); a.State != "pending" {
+		t.Fatalf("the approval after a weak press: %s", a.State)
+	}
+	set("strong")
+	if _, err := b.c.Decide(ctx, b.channel, press("telegram:1002", "direct:1002", card.external), req); err != nil {
+		t.Fatalf("the same press on a strong channel: %v", err)
 	}
 }
 

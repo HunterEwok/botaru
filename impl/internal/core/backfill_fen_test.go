@@ -109,3 +109,42 @@ func TestBackfillCoreDowntime(t *testing.T) {
 		t.Fatalf("the task is not handed out at once: lease %d", w.LeaseNo)
 	}
 }
+
+// Only the core ends a lease with core_unavailable: a worker's fail with it, or another reason
+// the core alone determines, is refused and changes nothing, so a holder cannot requeue a
+// delivery forever or skip retry.max_runs (FEN-5, DLV-1).
+func TestBackfillDowntimeReasonCoreOnly(t *testing.T) {
+	ctx := context.Background()
+	b := newBench(t)
+	task := b.helloDone(t, "1", "", "Hello!")
+	var delivery *WorkItem
+	for w := b.claim(t, b.channel, "delivery"); w != nil; w = b.claim(t, b.channel, "delivery") {
+		if w.Payload["delivery"].(map[string]any)["kind"] == "task_result" {
+			delivery = w
+			break
+		}
+		if _, err := b.c.Complete(ctx, b.channel, header(t, w), CompleteRequest{Receipt: &Receipt{ExternalID: "x" + w.WorkID}}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if delivery == nil {
+		t.Fatalf("no answer delivery of %s", task)
+	}
+	attempt := claimFor(t, b, b.agent, b.hello(t, "2"))
+	for _, reason := range []string{"core_unavailable", "lease_expired", "worker_drain", "seat_changed", "preempted", "stalled"} {
+		if _, err := b.c.Fail(ctx, b.channel, header(t, delivery), FailRequest{Reason: reason, Retryable: true}); err == nil {
+			t.Errorf("a channel failed a delivery with %s", reason)
+		} else {
+			wantReason(t, err, "input_schema_invalid")
+		}
+		if _, err := b.c.Fail(ctx, b.agent, header(t, attempt), FailRequest{Reason: reason, Retryable: true}); err == nil {
+			t.Errorf("an agent failed an attempt with %s", reason)
+		}
+	}
+	if n := b.count(t, `SELECT count(*) FROM leases WHERE work_id IN ($1, $2) AND state = 'active'`, delivery.WorkID, attempt.WorkID); n != 2 {
+		t.Fatalf("active leases after the refused fails: %d", n)
+	}
+	if n := b.count(t, `SELECT count(*) FROM deliveries WHERE id = $1 AND attempts = 1`, delivery.WorkID); n != 1 {
+		t.Fatal("the delivery's attempt was given back")
+	}
+}

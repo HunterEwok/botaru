@@ -6,6 +6,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"maps"
+	"os"
+	"path/filepath"
 	"regexp"
 	"slices"
 	"sort"
@@ -832,7 +834,7 @@ func (c *Core) lintManifests(docs []manifest.Doc, index []int, personas personaL
 				// A production tenant whose allowed profile calls a provider in a region outside
 				// the EU needs its own transfer basis for the provider or the region (GW-14,
 				// D-87 (2)).
-				if k := mstr(ts, "kind"); (k == "" || k == "production") && nonEURegion(mstr(sub, "region")) && !transferBasis(ts, mstr(sub, "provider"), mstr(sub, "region")) {
+				if k := mstr(ts, "kind"); (k == "" || k == "production") && c.nonEURegion(mstr(sub, "provider"), mstr(sub, "region")) && !transferBasis(ts, mstr(sub, "provider"), mstr(sub, "region")) {
 					f.add(o, "transfer_basis_missing", path)
 				}
 			}
@@ -2311,10 +2313,32 @@ func managerLineShort(ts, farmManager, seatProfile map[string]any) []string {
 	return out
 }
 
-// nonEURegion says whether a subprocessor region is one of the regions outside the EU of the
-// provider binding's table (spec/bindings/model-providers/anthropic.md "Region": us and
-// global); the test regions of the examples are not in it.
-func nonEURegion(region string) bool { return region == "us" || region == "global" }
+// nonEURegion says whether a region of a provider is outside the EU by the provider binding's
+// table: a row of the "Region" section of spec/bindings/model-providers/<provider>.md whose
+// name does not start with eu, as ci/check_manifests.py reads it (D-86 (6), GW-14). A provider
+// without a binding note, such as the test providers of the examples, has no such region.
+func (c *Core) nonEURegion(provider, region string) bool {
+	if region == "" || provider == "" || strings.ContainsAny(provider, "/\\.") || provider == "README" || provider == "mock" {
+		return false
+	}
+	raw, err := os.ReadFile(filepath.Join(c.spec.Root, "spec", "bindings", "model-providers", provider+".md"))
+	if err != nil {
+		return false
+	}
+	inside := false
+	for _, line := range strings.Split(string(raw), "\n") {
+		if strings.HasPrefix(line, "## ") {
+			inside = strings.TrimSpace(line) == "## Region"
+			continue
+		}
+		if inside && strings.HasPrefix(line, "| `") {
+			if name := strings.Split(line, "`")[1]; name == region {
+				return !strings.HasPrefix(name, "eu")
+			}
+		}
+	}
+	return false
+}
 
 // transferBasis says whether the tenant spec has a model_transfer entry for the provider (all
 // its regions or this one) or for the region without a provider (GW-14, D-87 (2)).

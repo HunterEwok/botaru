@@ -83,8 +83,10 @@ spec: {profile: aggregator, worker_kind: agent, claims: [], models: {base: base-
 	}
 }
 
-// An aggregator's proposal carries the highest mark of the inputs its task read and the
-// logical OR of their untrusted flags with the sources (AGG-4).
+// An aggregator's proposal carries the mark and the untrusted flag with its sources from the task
+// record that the inputs it read raised: the test writes the record as reading a raw_logs input
+// with an untrusted source would, and the proposal follows it (AGG-4). Raising the record while
+// reading is the job of the read tools and is not exercised here.
 func TestBackfillAggregatorMarks(t *testing.T) {
 	ctx := context.Background()
 	b := newToolBenchWith(t, nil, aggEdit)

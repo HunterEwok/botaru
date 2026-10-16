@@ -4,6 +4,7 @@ package core
 
 import (
 	"context"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -63,6 +64,28 @@ func TestBackfillGovernanceInTenant(t *testing.T) {
 			t.Fatalf("%s: %d", q, n)
 		}
 	}
+	// GOV-16: a canary of demo appears in no record of another tenant: no task, fact, case,
+	// identity or seat outside demo carries it.
+	const canary = "CANARY-gov16-7f3a"
+	act := Activity{Kind: "message", Channel: "telegram", UpdateID: "canary", Chat: Chat{Kind: "direct", ExternalID: "1001"}, Text: "/hello " + canary}
+	act.Sender.Identity, act.Sender.Verified = "telegram:1001", true
+	if res, err := b.c.SubmitActivity(ctx, b.channel, act); err != nil || res.Result != "task" {
+		t.Fatalf("the canary task: %+v %v", res, err)
+	}
+	for _, q := range []string{
+		`SELECT count(*) FROM tasks WHERE tenant <> 'demo' AND (body::text LIKE $1 OR record::text LIKE $1)`,
+		`SELECT count(*) FROM facts f WHERE f.tenant <> 'demo' AND row_to_json(f)::text LIKE $1`,
+		`SELECT count(*) FROM governance_cases g WHERE g.tenant <> 'demo' AND row_to_json(g)::text LIKE $1`,
+		`SELECT count(*) FROM bots x WHERE x.tenant <> 'demo' AND row_to_json(x)::text LIKE $1`,
+		`SELECT count(*) FROM seats x WHERE x.tenant <> 'demo' AND row_to_json(x)::text LIKE $1`,
+	} {
+		if n := b.count(t, q, "%"+canary+"%"); n != 0 {
+			t.Fatalf("%s: the canary of demo in %d rows", q, n)
+		}
+	}
+	if n := b.count(t, `SELECT count(*) FROM tasks WHERE tenant = 'demo' AND body::text LIKE $1`, "%"+canary+"%"); n != 1 {
+		t.Fatal("the canary is not in its own tenant")
+	}
 	// GOV-16: the spend of the seat task, if any, is on the line of demo.
 	if n := b.count(t, `SELECT count(*) FROM spend WHERE task = $1 AND tenant <> 'demo'`, item.WorkID); n != 0 {
 		t.Fatal("the seat task spends on another tenant")
@@ -98,35 +121,37 @@ func TestBackfillOnlyCharterDeclaresSeats(t *testing.T) {
 		t.Fatalf("the example set: %+v", errs)
 	}
 	for _, tc := range []struct {
-		name string
-		edit func(gov, com map[string]any)
+		name, code, path string
+		edit             func(gov, com map[string]any)
 	}{
-		{"seats in the commission manifest", func(_, com map[string]any) { com["seats"] = []any{map[string]any{"id": 5, "lens": "cost"}} }},
-		{"a seat declared twice", func(gov, _ map[string]any) {
+		{"seats in the commission manifest", "schema_invalid", "", func(_, com map[string]any) { com["seats"] = []any{map[string]any{"id": 5, "lens": "cost"}} }},
+		{"a seat declared twice", "charter_seat_twice", "/spec/commission/seats/4/id", func(gov, _ map[string]any) {
 			c := sub(gov, "commission")
 			c["seats"] = append(c["seats"].([]any), map[string]any{"id": 1, "lens": "cost", "fallback_role": "reviewer-b"})
 		}},
-		{"a block outside the list", func(gov, _ map[string]any) { gov["rewards"] = map[string]any{} }},
-		{"the farm manager in a tenant charter", func(gov, _ map[string]any) { gov["farm_manager"] = map[string]any{"max_rank": 4} }},
-		{"probation shortened", func(gov, _ map[string]any) { sub(gov, "promotion")["probation"] = "7d" }},
-		{"min_tenure shortened", func(gov, _ map[string]any) { sub(gov, "promotion")["min_tenure"] = "20d" }},
-		{"swap_cooldown shortened", func(gov, _ map[string]any) { sub(gov, "promotion")["swap_cooldown"] = "10d" }},
-		{"protect_new shortened", func(gov, _ map[string]any) { sub(gov, "removal")["protect_new"] = "30d" }},
-		{"attribution window shortened", func(gov, _ map[string]any) { sub(gov, "attribution")["window"] = "7d" }},
-		{"confirmation ttl shortened", func(gov, _ map[string]any) { sub(gov, "confirmation")["ttl"] = "3d" }},
-		{"unbound_ttl shortened", func(gov, _ map[string]any) { sub(gov, "identity")["unbound_ttl"] = "10d" }},
-		{"seal_ttl shortened", func(gov, _ map[string]any) { sub(gov, "memory")["seal_ttl"] = "10d" }},
-		{"max_active raised", func(gov, _ map[string]any) { sub(sub(gov, "memory"), "facts")["max_active"] = 200 }},
-		{"per_attempt raised", func(gov, _ map[string]any) { sub(sub(gov, "memory"), "facts")["per_attempt"] = 4 }},
-		{"offer max raised", func(gov, _ map[string]any) { sub(sub(gov, "memory"), "offer")["max"] = 120 }},
-		{"none left out of the excluded kinds", func(gov, _ map[string]any) {
+		{"a block outside the list", "schema_invalid", "", func(gov, _ map[string]any) { gov["rewards"] = map[string]any{} }},
+		{"the farm manager in a tenant charter", "charter_farm_manager", "/spec/farm_manager", func(gov, _ map[string]any) { gov["farm_manager"] = map[string]any{"max_rank": 4} }},
+		{"probation shortened", "charter_direction", "/promotion/probation", func(gov, _ map[string]any) { sub(gov, "promotion")["probation"] = "7d" }},
+		{"min_tenure shortened", "charter_direction", "/promotion/min_tenure", func(gov, _ map[string]any) { sub(gov, "promotion")["min_tenure"] = "20d" }},
+		{"swap_cooldown shortened", "charter_direction", "/promotion/swap_cooldown", func(gov, _ map[string]any) { sub(gov, "promotion")["swap_cooldown"] = "10d" }},
+		{"protect_new shortened", "charter_direction", "/removal/protect_new", func(gov, _ map[string]any) { sub(gov, "removal")["protect_new"] = "30d" }},
+		{"attribution window shortened", "charter_direction", "/attribution/window", func(gov, _ map[string]any) { sub(gov, "attribution")["window"] = "7d" }},
+		{"confirmation ttl shortened", "charter_direction", "/confirmation/ttl", func(gov, _ map[string]any) { sub(gov, "confirmation")["ttl"] = "3d" }},
+		{"unbound_ttl shortened", "charter_direction", "/identity/unbound_ttl", func(gov, _ map[string]any) { sub(gov, "identity")["unbound_ttl"] = "10d" }},
+		{"seal_ttl shortened", "charter_direction", "/memory/seal_ttl", func(gov, _ map[string]any) { sub(gov, "memory")["seal_ttl"] = "10d" }},
+		{"max_active raised", "schema_invalid", "", func(gov, _ map[string]any) { sub(sub(gov, "memory"), "facts")["max_active"] = 200 }},
+		{"per_attempt raised", "schema_invalid", "", func(gov, _ map[string]any) { sub(sub(gov, "memory"), "facts")["per_attempt"] = 4 }},
+		{"offer max raised", "schema_invalid", "", func(gov, _ map[string]any) { sub(sub(gov, "memory"), "offer")["max"] = 120 }},
+		{"none left out of the excluded kinds", "charter_direction", "/promotion/exclude_change_kinds", func(gov, _ map[string]any) {
 			sub(gov, "promotion")["exclude_change_kinds"] = []any{"script"}
 		}},
-		{"audit sample lowered", func(gov, _ map[string]any) { sub(sub(gov, "commission"), "audit_sample")["min_per_month"] = 2 }},
+		{"audit sample lowered", "schema_invalid", "", func(gov, _ map[string]any) { sub(sub(gov, "commission"), "audit_sample")["min_per_month"] = 2 }},
 	} {
-		// GOV-33: each is refused.
-		if errs := try(tc.name, tc.edit); len(errs) == 0 {
-			t.Errorf("%s: accepted", tc.name)
+		// GOV-33: each is refused with its code, at its path for a lint finding; the schema
+		// refuses the counts, the commission seats and an unknown block.
+		errs := try(tc.name, tc.edit)
+		if !slices.ContainsFunc(errs, func(e ApplyError) bool { return e.Code == tc.code && strings.HasSuffix(e.Path, tc.path) }) {
+			t.Errorf("%s: errors %+v, want %s at %s", tc.name, errs, tc.code, tc.path)
 		}
 	}
 	// GOV-33: moves in the allowed direction pass.

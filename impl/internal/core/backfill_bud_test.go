@@ -9,6 +9,8 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
+
+	"github.com/HunterEwok/botaru/impl/internal/ids"
 )
 
 // doctorChecks runs doctor for the bench tenant and returns its checks by id.
@@ -84,10 +86,20 @@ func TestBackfillDoctorLineUsage(t *testing.T) {
 // A read campaign over the card threshold is paid from the tenant's month and its budget line
 // for the amount on the card, reserved whole at the proposal, not from the initiator's day; a
 // campaign without a card that lacks only the initiator's day gets a card instead of a refusal;
-// the paused estimate_exceeded is not cleared by Continue (BUD-12).
+// an item that overruns the reserve pauses the campaign with estimate_exceeded, which Continue
+// does not clear (BUD-12).
 func TestBackfillCampaignPaidByCard(t *testing.T) {
 	ctx := context.Background()
 	b := newCampaignReadBench(t, map[string]any{"confirm_read_over": map[string]any{"items": 2}})
+	// A second person of the group, who may approve the card.
+	bob := ids.PrincipalID()
+	if _, err := b.c.Principal(ctx, b.op, PrincipalRequest{Op: "principal.add", Subject: bob, Identity: "telegram:1002"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := b.c.st.Pool.Exec(ctx, `INSERT INTO memberships (tenant, principal, grp, state, created_at)
+		SELECT tenant, $2, grp, 'active', now() FROM memberships WHERE principal = $1`, b.alice, bob); err != nil {
+		t.Fatal(err)
+	}
 	// The initiator's day limit: 0.15 EUR, of which 0.06 are used.
 	cat, err := b.c.Catalog(ctx)
 	if err != nil {
@@ -133,16 +145,31 @@ func TestBackfillCampaignPaidByCard(t *testing.T) {
 	if !b.campaign(t, r2.Campaign).Rec.OverDayLimit || b.campaign(t, r.Campaign).Rec.OverDayLimit {
 		t.Error("the day-limit card is not marked")
 	}
-	// BUD-12: an item that does not fit the rest of the reserve pauses the campaign with
-	// estimate_exceeded, and Continue does not clear it.
+	// BUD-12: an item that no longer fits the rest of the reserve pauses the campaign with
+	// estimate_exceeded, and Continue does not clear it. The second person approves the card; the
+	// first item then costs far more than its estimate, which raises the estimate of the next.
+	card := cardOf(t, b.drain(t), campaignApprovalCard, "direct:1002")
 	cmp := b.campaign(t, r.Campaign)
-	err = b.c.tx(ctx, func(tx pgx.Tx, now time.Time) error {
-		return b.c.setCampaignState(ctx, tx, now, cmp, "paused", "estimate_exceeded", "")
-	})
-	if err != nil {
+	if res, err := b.c.Decide(ctx, b.channel, press("telegram:1002", "direct:1002", card.external),
+		DecideRequest{SubjectKind: "campaign", ID: cmp.ID, Nonce: cmp.Nonce, Decision: "approve"}); err != nil || res.State != "running" {
+		t.Fatalf("approve %+v %v", res, err)
+	}
+	var item string
+	if err := b.c.st.Pool.QueryRow(ctx, `SELECT task FROM campaign_items WHERE campaign = $1 AND n = 1`, cmp.ID).Scan(&item); err != nil {
 		t.Fatal(err)
 	}
-	cmp = b.campaign(t, r.Campaign)
+	ia := claimFor(t, b, b.agent, item)
+	if _, err := b.c.st.Pool.Exec(ctx, `INSERT INTO spend (id, tenant, task, root, line, unit, state, eur_micros, time)
+		VALUES ('spd_over', 'demo', $1, $1, 'work', 'tokens', 'committed', 5000000, botaru_now())`, item); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := b.c.Complete(ctx, b.agent, header(t, ia), CompleteRequest{Result: map[string]any{"answer": "checked", "healthy": true}}); err != nil {
+		t.Fatal(err)
+	}
+	b.loop(t, "campaign")
+	if cmp = b.campaign(t, r.Campaign); cmp.State != "paused" || cmp.PauseReason != "estimate_exceeded" {
+		t.Fatalf("after the overrun: %s %s", cmp.State, cmp.PauseReason)
+	}
 	err = b.c.tx(ctx, func(tx pgx.Tx, now time.Time) error {
 		return b.c.resumeCampaign(ctx, tx, now, cat, cmp, b.alice,
 			func(reason, detail string) error { return refuse(reason, "%s", detail) }, func(string) error { return nil })

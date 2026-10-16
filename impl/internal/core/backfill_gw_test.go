@@ -139,12 +139,18 @@ func TestBackfillProviderRegion(t *testing.T) {
 		{"production, region us, basis for another provider", "production", us, "  model_transfer: [{provider: provider-b, basis: scc, checked: '2026-10-01'}]\n", true},
 		{"production, a test region", "production", `{provider: provider-a, region: region-a, retention: {mode: standard, max_days: 30}}`, "", false},
 		{"test tenant", "test", us, "", false},
+		{"production, region eu-west", "production", `{provider: provider-a, region: eu-west, retention: {mode: standard, max_days: 30}}`, "", false},
 	} {
-		got := lintCodes(t, c, gwTenant(tc.kind, tc.sub, tc.transfer, terms))
+		// The regions outside the EU come from the binding note of the provider (anthropic.md).
+		got := lintCodes(t, c, strings.ReplaceAll(gwTenant(tc.kind, tc.sub, tc.transfer, terms), "provider-a", "anthropic"))
 		// GW-14: the transfer basis belongs to the controller tenant.
 		if refused := slices.Contains(got, "transfer_basis_missing"); refused != tc.refused {
 			t.Errorf("%s: %v", tc.name, got)
 		}
+	}
+	// GW-14: a provider without a binding note has no region outside the EU.
+	if got := lintCodes(t, c, gwTenant("production", us, "", terms)); slices.Contains(got, "transfer_basis_missing") {
+		t.Errorf("a provider without a binding: %v", got)
 	}
 }
 

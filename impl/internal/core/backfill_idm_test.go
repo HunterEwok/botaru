@@ -6,19 +6,51 @@ import (
 	"go/ast"
 	"go/parser"
 	"go/token"
+	"os"
 	"path/filepath"
+	"regexp"
 	"slices"
 	"strconv"
 	"strings"
 	"testing"
+
+	"github.com/HunterEwok/botaru/impl/internal/spec"
 )
 
-// coreKeyKinds are the kinds of the closed list of core keys system:<kind>:... (IDM-2), with the
-// keys other rules name: system:postmortem (MGR-53) and the keys this build writes beyond the
-// list, which the implementation notes name (system:directive, system:kb.ingest).
-var coreKeyKinds = []string{"schedule", "approval", "grant", "event", "activity", "redrive", "child", "msg", "wake", "report", "review",
-	"cont", "script", "campaign", "incident", "inspect", "daily", "control", "ingress", "escalation", "takeover", "grants", "necessity",
-	"postmortem", "directive", "kb.ingest"}
+// coreKeyExtras are the core keys of this build beyond the closed list of IDM-2, each named in
+// the implementation notes: system:postmortem (named by MGR-53), system:grant (the action task
+// of a routine service grant), system:directive and system:kb.ingest.
+var coreKeyExtras = []string{"postmortem", "grant", "directive", "kb.ingest"}
+
+// coreKeyKinds reads the kinds system:<kind>:... of the closed list from the text of IDM-2 in
+// conformance/rules.md and adds the extras.
+func coreKeyKinds(t *testing.T) []string {
+	t.Helper()
+	root, err := spec.FindRoot("")
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw, err := os.ReadFile(filepath.Join(root, "conformance/rules.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(raw)
+	start := strings.Index(text, "### IDM-2.")
+	end := strings.Index(text[start:], "Checked by:")
+	if start < 0 || end < 0 {
+		t.Fatal("no text of IDM-2")
+	}
+	var kinds []string
+	for _, m := range regexp.MustCompile("`system:([a-z_.]+):").FindAllStringSubmatch(text[start:start+end], -1) {
+		if !slices.Contains(kinds, m[1]) {
+			kinds = append(kinds, m[1])
+		}
+	}
+	if len(kinds) < 20 {
+		t.Fatalf("the list of IDM-2 has %d kinds", len(kinds))
+	}
+	return append(kinds, coreKeyExtras...)
+}
 
 // keyPrefix is the leading string literal of a key expression: a literal, a concatenation that
 // starts with one, a fmt.Sprintf format, or a local variable assigned one of them.
@@ -53,6 +85,7 @@ func keyPrefix(e ast.Expr, vars map[string][]ast.Expr, depth int) []string {
 // with system:, which no sender may use, and a double firing of one trigger gives one task
 // (IDM-2, blackbox:core/system-key-list).
 func TestBackfillCoreKeys(t *testing.T) {
+	kinds := coreKeyKinds(t)
 	fset := token.NewFileSet()
 	files, err := filepath.Glob("*.go")
 	if err != nil {
@@ -96,7 +129,7 @@ func TestBackfillCoreKeys(t *testing.T) {
 					pos := fset.Position(kv.Pos())
 					// IDM-2: a core key starts with system: and names a kind of the list.
 					kind, _, _ := strings.Cut(strings.TrimPrefix(p, "system:"), ":")
-					if !strings.HasPrefix(p, "system:") || !slices.Contains(coreKeyKinds, kind) {
+					if !strings.HasPrefix(p, "system:") || !slices.Contains(kinds, kind) {
 						t.Errorf("%s:%d: the core key %q is not of the closed list", pos.Filename, pos.Line, p)
 					}
 				}

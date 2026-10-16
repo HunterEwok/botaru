@@ -647,6 +647,12 @@ func (c *Core) completeDelivery(ctx context.Context, tx pgx.Tx, now time.Time, w
 	return err
 }
 
+// coreReasons end a lease only from the core: the reaper, the downtime pass, the seat epoch, a
+// preemption, the stall check, the deadline and the limits, and release for a drain. A toolhost
+// still reports exec_failed of a write.
+var coreReasons = map[string]bool{"core_unavailable": true, "lease_expired": true, "worker_drain": true, "seat_changed": true,
+	"preempted": true, "stalled": true, "deadline_exceeded": true, "attempts_exhausted": true, "runs_exhausted": true}
+
 // Fail ends a lease without an outcome. Whether the attempt is spent is decided by the reason
 // registry (FEN-3).
 func (c *Core) Fail(ctx context.Context, w *Worker, header string, req FailRequest) (*FailResult, error) {
@@ -657,6 +663,12 @@ func (c *Core) Fail(ctx context.Context, w *Worker, header string, req FailReque
 	entry, ok := reasons.Entry(req.Reason)
 	if !ok {
 		return nil, refuse("input_schema_invalid", "unknown reason code")
+	}
+	// A reason the core alone determines is not the holder's to give: a worker naming
+	// core_unavailable would otherwise requeue a delivery forever and skip retry.max_runs (FEN-5,
+	// DLV-1).
+	if coreReasons[req.Reason] {
+		return nil, refuse("input_schema_invalid", "the reason is set only by the core")
 	}
 	return underLease(ctx, c, w, header, "fail", req, func(tx pgx.Tx, now time.Time, l *leaseRow) (*FailResult, error) {
 		var res *FailResult
