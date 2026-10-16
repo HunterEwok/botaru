@@ -17,9 +17,11 @@ import (
 	"github.com/HunterEwok/botaru/impl/internal/ids"
 )
 
-// The incident attribution, minimal (GOV-13, GOV-30): the governance loop creates a candidate
-// by the rule direct of attribution-rules.yaml (an incident of a class with change_sensitive
-// whose subject is a target of an executed change, opened within the attribution window), a
+// The incident attribution (GOV-13, GOV-30): the governance loop creates a candidate by the
+// rules direct and dependency_1 of attribution-rules.yaml (an incident of a class with
+// change_sensitive whose subject is a target of an executed change or depends on one by one
+// step in the catalog, opened within the attribution window), or a person through P2
+// attribution.create (attributionops.go); a
 // person with governance.attribute answers "Yes", "No" or "Don't know" on attribution_card,
 // silence leaves it unknown, and undecided candidates get a weekly reminder at most 3 times.
 // A dismissed incident cancels the candidates without "Yes" and disputes a "Yes".
@@ -54,7 +56,7 @@ func snakeKind(kind string) string {
 }
 
 // changeTouches says whether a change names the incident subject as a target directly (the
-// rule direct). The rule dependency_1 needs the catalog dependencies and is not built.
+// rule direct); changeTouchesDep is the step of dependency_1 (catalogdeps.go).
 func changeTouches(ch proposalChange, subjectKind, subjectID string) bool {
 	if ch.ManifestChange == nil {
 		return false
@@ -129,6 +131,7 @@ func (c *Core) createAttributions(ctx context.Context, tx pgx.Tx, now time.Time,
 	type inc struct {
 		id, class, kind, subject string
 		at                       time.Time
+		deps                     []subjectRef
 	}
 	var incs []inc
 	for rows.Next() {
@@ -144,6 +147,11 @@ func (c *Core) createAttributions(ctx context.Context, tx pgx.Tx, now time.Time,
 	rows.Close()
 	if err := rows.Err(); err != nil || len(incs) == 0 {
 		return err
+	}
+	for k := range incs {
+		if incs[k].deps, err = subjectDeps(ctx, tx, cat, tv.Name, incs[k].kind, incs[k].subject); err != nil {
+			return err
+		}
 	}
 	prows, err := tx.Query(ctx, `SELECT id FROM proposals WHERE tenant = $1 AND state IN ('realized', 'reverted')
 		AND record->'realization'->>'realized_at' IS NOT NULL ORDER BY id`, tv.Name)
@@ -162,7 +170,9 @@ func (c *Core) createAttributions(ctx context.Context, tx pgx.Tx, now time.Time,
 		realized := parseTime(asString(mmapAny(p.Rec["realization"])["realized_at"]))
 		ch := p.body().Change
 		for _, i := range incs {
-			if i.at.Before(realized) || !changeTouches(ch, i.kind, i.subject) {
+			// The rule direct, else dependency_1: the subject depends on a target by one step.
+			rule := changeRule(ch, i.kind, i.subject, i.deps, "direct", "dependency_1")
+			if i.at.Before(realized) || rule == "" {
 				continue
 			}
 			open, err := attributionWindowOpen(ctx, tx, i.at, cat, tv.Name, p.ID, realized)
@@ -172,7 +182,7 @@ func (c *Core) createAttributions(ctx context.Context, tx pgx.Tx, now time.Time,
 			if !open {
 				continue
 			}
-			if err := c.createAttribution(ctx, tx, now, tv, i.id, p.ID, "change", "direct", "system"); err != nil {
+			if _, err := c.createAttribution(ctx, tx, now, tv, i.id, p.ID, "change", rule, "system"); err != nil {
 				return err
 			}
 		}
@@ -183,7 +193,7 @@ func (c *Core) createAttributions(ctx context.Context, tx pgx.Tx, now time.Time,
 // createAttribution writes a candidate once per incident and proposal and sends its card: the
 // attribution card for a change, and from v0.3 the link card for a rejected proposal only with
 // commission.accountability on (GOV-36, GOV-40). A v0.3 core writes attribution.v2.
-func (c *Core) createAttribution(ctx context.Context, tx pgx.Tx, now time.Time, tv *TenantView, incident, proposal, kind, rule, by string) error {
+func (c *Core) createAttribution(ctx context.Context, tx pgx.Tx, now time.Time, tv *TenantView, incident, proposal, kind, rule, by string) (string, error) {
 	id := ids.New(ids.Attribution)
 	rec := map[string]any{"id": id, "tenant": tv.Name, "incident": incident, "proposal": proposal, "rule": rule, "created_by": by,
 		"created_at": fmtTime(now), "state": "candidate", "answer": nil, "reminders": 0, "cancel_reason": nil}
@@ -192,29 +202,53 @@ func (c *Core) createAttribution(ctx context.Context, tx pgx.Tx, now time.Time, 
 		rec["kind"], schema = kind, "urn:botaru:schema:attribution:2"
 	}
 	if err := c.spec.Validate(schema, rec); err != nil {
-		return fmt.Errorf("attribution record: %w", err)
+		return "", fmt.Errorf("attribution record: %w", err)
 	}
 	raw, err := json.Marshal(rec)
 	if err != nil {
-		return err
+		return "", err
 	}
-	tag, err := tx.Exec(ctx, `INSERT INTO attributions (id, tenant, incident, proposal, state, record, nonce, presented_at, created_at, updated_at, kind)
-		VALUES ($1, $2, $3, $4, 'candidate', $5, $6, $7, $7, $7, $8) ON CONFLICT (incident, proposal) DO NOTHING`, id, tv.Name, incident, proposal, raw, ids.Secret(16), now, kind)
+	// The candidates to rejected proposals of one incident share the card of the first (GOV-40),
+	// but only those whose proposals carry the same data mark, so the card goes to the same people
+	// and nobody sees or decides a member above their ceiling (DIG-2); a card holds at most
+	// linksPerIncident candidates, and a candidate that fits no card starts its own.
+	var cardOf *string
+	if kind == "rejected_proposal" {
+		lead, err := linkLead(ctx, tx, incident, proposalMark(ctx, tx, proposal))
+		if err != nil {
+			return "", err
+		}
+		if lead == "" {
+			lead = id
+		}
+		cardOf = &lead
+	}
+	tag, err := tx.Exec(ctx, `INSERT INTO attributions (id, tenant, incident, proposal, state, record, nonce, presented_at, created_at, updated_at, kind, card_of)
+		VALUES ($1, $2, $3, $4, 'candidate', $5, $6, $7, $7, $7, $8, $9) ON CONFLICT (incident, proposal) DO NOTHING`, id, tv.Name, incident, proposal, raw, ids.Secret(16), now, kind, cardOf)
 	if err != nil || tag.RowsAffected() == 0 {
-		return err
+		return "", err
+	}
+	// A person creates a candidate through P2 attribution.create (attributionops.go).
+	actor := Actor{Principal: "system", Via: "core"}
+	if by != "system" {
+		actor = Actor{Principal: by, Via: "farmctl"}
 	}
 	if _, err := c.appendAudit(ctx, tx, now, Audit{
-		Tenant: tv.Name, Kind: "command", Actor: Actor{Principal: "system", Via: "core"}, Command: "attribution.create",
+		Tenant: tv.Name, Kind: "command", Actor: actor, Command: "attribution.create",
 		Target: &Target{Kind: "attribution", ID: id}, OK: true, After: map[string]any{"incident": incident, "proposal": proposal, "rule": rule, "state": "candidate", "kind": kind},
 	}); err != nil {
-		return err
+		return "", err
+	}
+	if cardOf != nil && *cardOf != id {
+		// A later candidate joins the card already planned or delivered for the incident.
+		return id, c.govCardUpdates(ctx, tx, now, tv.Name, "attribution", *cardOf)
 	}
 	card, err := c.attributionCardKind(ctx, tx, tv, kind)
 	if err != nil || card == "" {
-		return err
+		return id, err
 	}
 	_, err = c.planGovCards(ctx, tx, now, tv, "attribution", id, card, "governance.attribute", proposalMark(ctx, tx, proposal), nil)
-	return err
+	return id, err
 }
 
 // attributionCardKind is the card of a candidate of a kind, or "" when none goes: a link to a
@@ -258,19 +292,31 @@ func cardOfAttributionKind(kind string) string {
 type attributionRow struct {
 	ID, Tenant, Incident, Proposal, State, Nonce string
 	Kind, ScriptRun                              string
-	Rec                                          map[string]any
-	PresentedAt, RemindedAt                      *time.Time
+	// CardOf is the candidate whose card this one shares: the candidates to rejected proposals
+	// of one incident go on one card (GOV-40); "" for the other kinds.
+	CardOf                  string
+	Rec                     map[string]any
+	PresentedAt, RemindedAt *time.Time
+}
+
+// cardSubject is the candidate whose card carries this one's buttons: its group's first
+// candidate for a link to a rejected proposal (GOV-40), else itself.
+func (a *attributionRow) cardSubject() string {
+	if a.CardOf != "" {
+		return a.CardOf
+	}
+	return a.ID
 }
 
 func loadAttribution(ctx context.Context, tx pgx.Tx, id string, lock bool) (*attributionRow, error) {
-	q := `SELECT id, tenant, incident, coalesce(proposal, ''), state, record, coalesce(nonce, ''), presented_at, reminded_at, kind, coalesce(script_run, '')
-		FROM attributions WHERE id = $1`
+	q := `SELECT id, tenant, incident, coalesce(proposal, ''), state, record, coalesce(nonce, ''), presented_at, reminded_at, kind, coalesce(script_run, ''),
+		coalesce(card_of, '') FROM attributions WHERE id = $1`
 	if lock {
 		q += ` FOR UPDATE`
 	}
 	a := &attributionRow{}
 	var raw []byte
-	err := tx.QueryRow(ctx, q, id).Scan(&a.ID, &a.Tenant, &a.Incident, &a.Proposal, &a.State, &raw, &a.Nonce, &a.PresentedAt, &a.RemindedAt, &a.Kind, &a.ScriptRun)
+	err := tx.QueryRow(ctx, q, id).Scan(&a.ID, &a.Tenant, &a.Incident, &a.Proposal, &a.State, &raw, &a.Nonce, &a.PresentedAt, &a.RemindedAt, &a.Kind, &a.ScriptRun, &a.CardOf)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, nil
 	}
@@ -308,7 +354,7 @@ func (c *Core) moveAttribution(ctx context.Context, tx pgx.Tx, now time.Time, a 
 	}); err != nil {
 		return err
 	}
-	return c.govCardUpdates(ctx, tx, now, a.Tenant, "attribution", a.ID)
+	return c.govCardUpdates(ctx, tx, now, a.Tenant, "attribution", a.cardSubject())
 }
 
 // dismissedAttributions: an incident declared false cancels its candidates without "Yes" and
@@ -377,9 +423,12 @@ func attributionCanceled(ctx context.Context, tx pgx.Tx, a *attributionRow) erro
 }
 
 // remindAttributions moves an unanswered candidate to unknown at the card expiry and reminds
-// the people once a week about the undecided ones, at most 3 times each (GOV-30).
+// the people once a week about the undecided ones, at most 3 times each (GOV-30). The links to
+// rejected proposals of one incident are reminded together on the card of the first, while any
+// of them is undecided (GOV-40).
 func (c *Core) remindAttributions(ctx context.Context, tx pgx.Tx, now time.Time, tv *TenantView) error {
-	rows, err := tx.Query(ctx, `SELECT id FROM attributions WHERE tenant = $1 AND state IN ('candidate', 'unknown') ORDER BY id FOR UPDATE`, tv.Name)
+	rows, err := tx.Query(ctx, `SELECT id FROM attributions a WHERE tenant = $1 AND (state IN ('candidate', 'unknown')
+		OR card_of = id AND EXISTS (SELECT 1 FROM attributions g WHERE g.card_of = a.id AND g.state IN ('candidate', 'unknown'))) ORDER BY id FOR UPDATE`, tv.Name)
 	if err != nil {
 		return err
 	}
@@ -397,6 +446,9 @@ func (c *Core) remindAttributions(ctx context.Context, tx pgx.Tx, now time.Time,
 			if err := c.moveAttribution(ctx, tx, now, a, "unknown", "system", "attribution.unknown"); err != nil {
 				return err
 			}
+		}
+		if a.cardSubject() != a.ID {
+			continue
 		}
 		n, _ := toFloat(a.Rec["reminders"])
 		last := a.PresentedAt
@@ -512,7 +564,8 @@ func (c *Core) decideAttribution(ctx context.Context, w *Worker, ob OnBehalf, re
 		if a.Nonce == "" || a.Nonce != req.Nonce {
 			return refuse("forbidden", "the nonce is not the card's")
 		}
-		press, err := c.checkPress(ctx, tx, now, cat, w, ob, "attribution", a.ID, attributionCards)
+		// A link to a rejected proposal is pressed on the card of its incident (GOV-40).
+		press, err := c.checkPress(ctx, tx, now, cat, w, ob, "attribution", a.cardSubject(), attributionCards)
 		if err != nil {
 			return err
 		}
@@ -533,6 +586,11 @@ func (c *Core) decideAttribution(ctx context.Context, w *Worker, ob OnBehalf, re
 		}
 		if !hasCap(press.tv, press.groups, "governance.attribute") {
 			return deny("forbidden", "the person has no governance.attribute")
+		}
+		// DIG-2: the person's data ceiling covers this candidate's own proposal, also when it
+		// shares the card of another candidate.
+		if a.Kind != "script_run" && c.digestShow(proposalMark(ctx, tx, a.Proposal), c.personMark(press.tv, press.groups)) != "full" {
+			return deny("forbidden", "the proposal of the candidate is above the person's data ceiling")
 		}
 		if a.Kind == "script_run" {
 			// TRN-7: not the person who pressed "Run", unless nobody else may decide.
@@ -580,7 +638,7 @@ func (c *Core) decideAttribution(ctx context.Context, w *Worker, ob OnBehalf, re
 		opened := false
 		if a.PresentedAt != nil {
 			// APR-14: "Yes" and "No" only after "Details" of this card.
-			if opened, err = detailsOpened(ctx, tx, "attribution", a.ID, press.principal, *a.PresentedAt); err != nil {
+			if opened, err = detailsOpened(ctx, tx, "attribution", a.cardSubject(), press.principal, *a.PresentedAt); err != nil {
 				return err
 			}
 		}
@@ -589,7 +647,7 @@ func (c *Core) decideAttribution(ctx context.Context, w *Worker, ob OnBehalf, re
 		}
 		state := map[string]string{"yes": "confirmed", "no": "rejected", "unknown": "unknown"}[req.Decision]
 		a.Rec["answer"] = map[string]any{"decision": req.Decision, "by": press.principal, "at": fmtTime(now),
-			"response_ms": max(now.Sub(press.deliveredAt).Milliseconds(), 0), "details_opened": opened}
+			"response_ms": max(now.Sub(shownSince(press.deliveredAt, a.PresentedAt)).Milliseconds(), 0), "details_opened": opened}
 		if err := c.moveAttribution(ctx, tx, now, a, state, press.principal, "decide"); err != nil {
 			return err
 		}
@@ -625,6 +683,39 @@ func (c *Core) decideAttribution(ctx context.Context, w *Worker, ob OnBehalf, re
 
 // proposalMark is the data mark of a proposal, for the ceiling of the attribution card (DIG-2);
 // "restricted" when it cannot be read, so the card goes only to the people who see everything.
+// shownSince is when a person could first see a candidate: the delivery of its card, or the
+// candidate's own presentation when it joined the card later (GOV-40).
+func shownSince(delivered time.Time, presented *time.Time) time.Time {
+	if presented != nil && presented.After(delivered) {
+		return *presented
+	}
+	return delivered
+}
+
+// linkLead is the first candidate of an incident's link card that a candidate to a proposal of
+// mark may join: its own proposal has the same mark and the card has room; "" when none.
+func linkLead(ctx context.Context, tx pgx.Tx, incident, mark string) (string, error) {
+	rows, err := tx.Query(ctx, `SELECT a.id, coalesce(a.proposal, ''), (SELECT count(*) FROM attributions g WHERE g.card_of = a.id)
+		FROM attributions a WHERE a.incident = $1 AND a.kind = 'rejected_proposal' AND a.card_of = a.id ORDER BY a.created_at, a.id`, incident)
+	if err != nil {
+		return "", err
+	}
+	type lead struct {
+		ID, Proposal string
+		N            int
+	}
+	leads, err := pgx.CollectRows(rows, pgx.RowToStructByPos[lead])
+	if err != nil {
+		return "", err
+	}
+	for _, l := range leads {
+		if l.N < linksPerIncident && proposalMark(ctx, tx, l.Proposal) == mark {
+			return l.ID, nil
+		}
+	}
+	return "", nil
+}
+
 func proposalMark(ctx context.Context, tx pgx.Tx, proposal string) string {
 	var mark string
 	if err := tx.QueryRow(ctx, `SELECT coalesce(record->>'data_mark', '') FROM proposals WHERE id = $1`, proposal).Scan(&mark); err != nil || mark == "" {

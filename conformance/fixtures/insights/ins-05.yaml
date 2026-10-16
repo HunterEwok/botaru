@@ -7,15 +7,34 @@ description: 'Analysis frequency and merge window. The insight.merge_window is n
 cases:
 - description: A role with insight.merge_window 30m does not pass apply.
   given:
-    manifest:
-      kind: Role
+    manifests:
+    - kind: Role
       metadata: {name: ops-runner}
       spec:
         profile: worker
+        worker_kind: agent
+        claims: [ops.insight.v1]
+        models: {base: base-std}
         insight:
           types: [ops.insight.v1]
           merge_window: 30m
           max_event_runs: {per: day, count: 1}
+    # The analysis type the role claims, as examples/tasktypes/ops.insight.v1.yaml declares it.
+    - kind: TaskType
+      metadata: {name: ops.insight.v1}
+      spec:
+        title: "Weekly look at the role's own results"
+        worker_kind: agent
+        purpose: insight
+        tier: 1
+        data_class: internal
+        instruction: Look at the outcomes, attempts and durations of this role's tasks and at the machine load.
+        params_schema: {type: object, additionalProperties: false, properties: {}}
+        timeouts: {start_by: 1h, lease: 60s, heartbeat: 20s, attempt: 5m, deadline: 2h}
+        retry: {max_attempts: 1, max_runs: 2}
+        tree_budget_eur: 0.10
+        max_children: 0
+        proposable: false
   expect: {result: rejected, stage: apply, field: spec.insight.merge_window}
 - description: The default window is 1h; two alarm.* events within an hour give one analysis run.
   given:

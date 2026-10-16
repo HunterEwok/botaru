@@ -6,30 +6,22 @@ description: 'Time lint: all times in contracts are UTC in datetime format, a ti
 cases:
 - id: tim-fx-12
   rules: [TIM-3]
-  description: An unknown time zone name does not pass apply.
+  description: An unknown time zone name does not pass apply. The fragment changes the example schedule sensor-nightly, whose
+    type is in system-ops and has a deadline, so only the time zone is wrong.
   given:
-    manifest:
-      kind: Schedule
-      metadata: {name: daily-report}
-      spec: {cron: 30 3 * * *, timezone: Mars/Olympus}
+    schedule_yaml: {timezone: Mars/Olympus}
   expect: {result: rejected, stage: apply, field: timezone}
 - id: tim-fx-13
   rules: [TIM-3]
   description: A time zone inside cron (CRON_TZ) does not pass apply.
   given:
-    manifest:
-      kind: Schedule
-      metadata: {name: daily-report}
-      spec: {cron: CRON_TZ=Europe/Berlin 30 3 * * *}
+    schedule_yaml: {cron: CRON_TZ=Europe/Berlin 30 3 * * *}
   expect: {result: rejected, stage: apply, field: cron}
 - id: tim-fx-14
   rules: [TIM-3]
   description: A time zone inside cron (TZ) does not pass apply.
   given:
-    manifest:
-      kind: Schedule
-      metadata: {name: daily-report}
-      spec: {cron: TZ=UTC 30 3 * * *}
+    schedule_yaml: {cron: TZ=UTC 30 3 * * *}
   expect: {result: rejected, stage: apply, field: cron}
 - id: tim-fx-15
   rules: [TIM-3]
@@ -58,5 +50,13 @@ cases:
     manifest:
       kind: TaskType
       metadata: {name: report.daily.v1}
-      spec: {timezone: Europe/Berlin}
+      spec:
+        title: Daily report
+        worker_kind: agent
+        purpose: work
+        tier: 0
+        data_class: summary
+        params_schema: {type: object, additionalProperties: false, properties: {}}
+        tree_budget_eur: 0.05
+        timezone: Europe/Berlin
   expect: {result: rejected, stage: apply, field: timezone}

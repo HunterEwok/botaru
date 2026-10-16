@@ -66,7 +66,7 @@ principals:
     chats: []
     note: An external program for the task input; it enqueues tasks through P1 enqueue with its own key (D-47).
 groups:
-  user: {caps: ["task:ops.summary.v1", "task:ops.health.v1", "task:qa.ask.v1"], tier: 0, free_text_type: ops.summary.v1}
+  user: {caps: ["task:ops.summary.v1", "task:ops.health.v1"], tier: 0, free_text_type: ops.summary.v1}
   staff: {inherits: [user], caps: ["task:ops.investigate.v1", "task:data.describe.v1", "action.request:cleanup_pipeline_tmp"], tier: 1, data_up_to: raw_logs}
   ops-oncall: {caps: ["service.control:nginx", "monitor.script_run"]}
   approver: {caps: ["action.approve:service.control"]}

@@ -48,6 +48,8 @@ type Case struct {
 	Expect  map[string]any
 	// OwnSteps is false when the steps come from a parent or there are none.
 	OwnSteps bool
+	// narrowed marks a permission table row whose given the runner narrowed (plainRow).
+	narrowed bool
 }
 
 // Claim is what an implementation claims in conforms_to: a skeleton version and profiles.

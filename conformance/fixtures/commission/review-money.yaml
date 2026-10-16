@@ -11,7 +11,13 @@ cases:
     manifest:
       kind: TaskType
       metadata: {name: review.value.v1}
-      spec: {purpose: review}
+      spec:
+        title: Value review
+        worker_kind: agent
+        purpose: review
+        tier: 0
+        data_class: internal
+        params_schema: {type: object, additionalProperties: false, properties: {}}
   expect: {result: rejected, stage: apply, field: spec.tree_budget_eur}
 - description: A lens profile with max_output_tokens 4000 does not pass apply.
   given:
