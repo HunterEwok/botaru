@@ -216,10 +216,12 @@ func mergePeople(parent, own []any) []any {
 
 // Select returns the cases of the claim: a case is in when one of its rules is an active rule of
 // a claimed profile whose version is not newer than the claim and whose until, if set, is not
-// older (MAN-8). A case whose own version is newer than the claim is returned in skipped.
+// older (MAN-8), and none of its rules ended before the claim: such a case checks behaviour that
+// the rules of its superseded_by replaced (D-113). A case whose own version is newer than the
+// claim is returned in skipped.
 func Select(rules map[string]*Rule, cases []*Case, claim Claim) (in, skipped []*Case) {
 	for _, c := range cases {
-		if len(InScopeRules(rules, c, claim)) == 0 {
+		if len(InScopeRules(rules, c, claim)) == 0 || endedRule(rules, c, claim) {
 			continue
 		}
 		v := c.Version
@@ -233,6 +235,16 @@ func Select(rules map[string]*Rule, cases []*Case, claim Claim) (in, skipped []*
 		in = append(in, c)
 	}
 	return in, skipped
+}
+
+// endedRule says whether a case names a rule whose until is older than the claim.
+func endedRule(rules map[string]*Rule, c *Case, claim Claim) bool {
+	for _, id := range c.Rules {
+		if r, ok := rules[id]; ok && r.Until != "" && cmpVersion(r.Until, claim.Version) < 0 {
+			return true
+		}
+	}
+	return false
 }
 
 // InScopeRules returns the rules of a case that the claim checks.
