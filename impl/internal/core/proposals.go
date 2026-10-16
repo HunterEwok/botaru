@@ -173,9 +173,10 @@ func (c *Core) proposalRejected(ctx context.Context, tx pgx.Tx, now time.Time, a
 	return c.appendEvent(ctx, tx, now, a.Tenant, Event{Type: proposalRejectedType, Subject: a.Task, Data: data})
 }
 
-func validCategory(s string) bool {
-	return slices.Contains([]string{"schedule", "backup", "capacity", "cost", "reliability", "security", "data_quality", "config"}, s)
-}
+// proposalCategories are the categories of proposal-body.
+var proposalCategories = []string{"schedule", "backup", "capacity", "cost", "reliability", "security", "data_quality", "config"}
+
+func validCategory(s string) bool { return slices.Contains(proposalCategories, s) }
 
 func problemCodeOK(s string) bool {
 	if s == "" || len(s) > 64 || s[0] < 'a' || s[0] > 'z' {

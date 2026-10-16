@@ -39,6 +39,11 @@ commands:
   apply [-commit SHA] [-dry-run] [-as-test] [-drop-unsupported [-spec-root DIR]] PATH...
                                              apply the manifests of files and folders as one set
   proposal link-commit PROPOSAL SHA         link an applied commit to an accepted manifest change (PRP-19)
+  proposal list | proposal show ID          the proposals shown to people that the person may decide (DIG-1)
+  campaign list | campaign show|pause|cancel|retry-failed ID
+  script list | script show|cancel ID        campaigns and script runs the person may read (ORC-1, SCR-11)
+  escalation list [TENANT] | escalation show ID
+                                             bot escalations; the note only to the tenant's people (MGR-5)
   principal add [-id ID] [-identity ID] [-locale L]
   principal off|on|offboard ID
   principal set-identity ID IDENTITY         for example telegram:123456
@@ -107,6 +112,26 @@ func main() {
 	}
 }
 
+// objectView runs the P2 views and controls of campaigns, script runs and escalations.
+func objectView(c *client, args []string) error {
+	kind := args[0]
+	switch {
+	case len(args) == 2 && args[1] == "list":
+		return c.print(kind+".list", map[string]any{})
+	case len(args) == 3 && args[1] == "list" && kind == "escalation":
+		return c.print(kind+".list", map[string]any{"tenant": args[2]})
+	case len(args) == 3 && args[1] == "show":
+		return c.print(kind+".show", map[string]any{"op": kind + ".show", "id": args[2]})
+	case len(args) == 3 && kind == "campaign" && (args[1] == "pause" || args[1] == "cancel"):
+		return c.print("campaign.control", map[string]any{"id": args[2], "command": args[1]})
+	case len(args) == 3 && kind == "campaign" && args[1] == "retry-failed":
+		return c.print("campaign.retry_failed", map[string]any{"op": "campaign.retry_failed", "id": args[2]})
+	case len(args) == 3 && kind == "script" && args[1] == "cancel":
+		return c.print("script.cancel", map[string]any{"op": "script.cancel", "id": args[2]})
+	}
+	return errors.New("usage: farmctl campaign list|show ID|pause ID|cancel ID|retry-failed ID | script list|show ID|cancel ID | escalation list [TENANT]|show ID")
+}
+
 func envOr(k, def string) string {
 	if v := os.Getenv(k); v != "" {
 		return v
@@ -135,10 +160,17 @@ func run(c *client, args []string) error {
 	case "apply":
 		return apply(c, args[1:])
 	case "proposal":
-		if len(args) != 4 || args[1] != "link-commit" {
-			return errors.New("usage: farmctl proposal link-commit PROPOSAL SHA")
+		switch {
+		case len(args) == 4 && args[1] == "link-commit":
+			return c.print("proposal.link_commit", map[string]any{"proposal": args[2], "commit": args[3]})
+		case len(args) == 2 && args[1] == "list":
+			return c.print("proposal.list", map[string]any{})
+		case len(args) == 3 && args[1] == "show":
+			return c.print("proposal.show", map[string]any{"proposal": args[2]})
 		}
-		return c.print("proposal.link_commit", map[string]any{"proposal": args[2], "commit": args[3]})
+		return errors.New("usage: farmctl proposal list | proposal show ID | proposal link-commit PROPOSAL SHA")
+	case "campaign", "script", "escalation":
+		return objectView(c, args)
 	case "principal":
 		return principal(c, args[1:])
 	case "grant", "ungrant":

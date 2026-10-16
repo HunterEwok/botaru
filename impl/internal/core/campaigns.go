@@ -142,6 +142,9 @@ type campaignRec struct {
 	Role         string `json:"role,omitempty"`
 	ScriptRun    string `json:"script_run,omitempty"`
 	ScriptStep   string `json:"script_step,omitempty"`
+	// ExecutorFrom is the resume of a no_executor pause: a released item gets its start_by
+	// window again from then (ORC-4).
+	ExecutorFrom *time.Time `json:"executor_from,omitempty"`
 }
 
 func (r campaignRec) kind() string {
@@ -2121,6 +2124,13 @@ func (c *Core) campaignLoop(ctx context.Context) error {
 			case (cmp.State == "running" || cmp.State == "paused") && cmp.DeadlineAt != nil && !cmp.DeadlineAt.After(now):
 				return c.stopCampaign(ctx, tx, now, cat, cmp, "deadline_exceeded")
 			case cmp.State == "running" || cmp.State == "stopping":
+				if cmp.State == "running" {
+					if stuck, err := noExecutor(ctx, tx, now, cmp); err != nil {
+						return err
+					} else if stuck {
+						return c.setCampaignState(ctx, tx, now, cmp, "paused", "no_executor", "")
+					}
+				}
 				if err := c.releaseItems(ctx, tx, now, cat, cmp); err != nil {
 					return err
 				}
@@ -2136,6 +2146,21 @@ func (c *Core) campaignLoop(ctx context.Context) error {
 		}
 	}
 	return nil
+}
+
+// noExecutor says whether no worker took a released item of a read campaign by the start_by
+// of its task: the campaign pauses with no_executor and releases nothing more until a person
+// resumes it, which gives the items a new start_by window (ORC-4). An action item does not
+// wait for a toolhost: its write call ends with error(no_executor) and fails the item (DLV-16).
+func noExecutor(ctx context.Context, tx pgx.Tx, now time.Time, cmp *campaignRow) (bool, error) {
+	if cmp.Rec.kind() != "task" {
+		return false, nil
+	}
+	var stuck bool
+	err := tx.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM campaign_items i JOIN tasks t ON t.id = i.task
+		WHERE i.campaign = $1 AND i.state = 'released' AND t.state = 'submitted' AND t.lease_no = 0 AND t.start_by_at IS NOT NULL
+		AND greatest(t.start_by_at, $2::timestamptz + (t.start_by_at - i.released_at)) <= $3)`, cmp.ID, cmp.Rec.ExecutorFrom, now).Scan(&stuck)
+	return stuck, err
 }
 
 // campaignApprovers are the people who decide a campaign: active humans with
@@ -2779,6 +2804,12 @@ func (c *Core) resumeCampaign(ctx context.Context, tx pgx.Tx, now time.Time, cat
 	}
 	if cmp.PauseReason == "gate" {
 		if err := c.passGate(ctx, tx, cmp); err != nil {
+			return err
+		}
+	}
+	if cmp.PauseReason == "no_executor" {
+		cmp.Rec.ExecutorFrom = &now
+		if _, err := tx.Exec(ctx, `UPDATE campaigns SET record = jsonb_set(record, '{executor_from}', to_jsonb($2::text)) WHERE id = $1`, cmp.ID, fmtTime(now)); err != nil {
 			return err
 		}
 	}
