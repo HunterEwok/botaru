@@ -306,7 +306,7 @@ func genNginx(dir string, seed int64, now time.Time, opt genOptions) (*Generated
 		at := errorAt(i)
 		typ := errTypes[pickWeighted(r, weights)]
 		msg := typ + " while reading response header from upstream, client: " + docNets[r.IntN(3)] + fmt.Sprint(2+r.IntN(250)) +
-			", server: www.example.org, request: \"GET " + errPaths[r.IntN(len(errPaths))] + " HTTP/1.1\", upstream: \"http://app-backend:8081/\""
+			", server: www.example.org, request: \"GET " + errPaths[r.IntN(len(errPaths))] + " HTTP/1.1\", upstream: \"http://app.example.org:8081/\""
 		if t, ok := injErr[i]; ok {
 			msg = t
 		} else if i >= errorLines-errorRecent {

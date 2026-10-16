@@ -137,7 +137,9 @@ func (s *Seed) GroupManifests(tenant string, classes []string, skip []string) []
 		if inh := strs(g["inherits"]); len(inh) > 0 {
 			spec["inherits"] = toAny(inh)
 		}
-		out = append(out, map[string]any{"apiVersion": "botaru/v1alpha1", "kind": "Group", "metadata": map[string]any{"name": n, "tenant": tenant}, "spec": spec})
+		md := map[string]any{"name": n}
+		md["tenant"] = tenant
+		out = append(out, map[string]any{"apiVersion": "botaru/v1alpha1", "kind": "Group", "metadata": md, "spec": spec})
 	}
 	return out
 }

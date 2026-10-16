@@ -160,7 +160,9 @@ func (b *Bench) collect(ctx context.Context, since time.Time, sender, key string
 		}
 		var am map[string]any
 		_ = json.Unmarshal(args, &am)
-		o.ToolCalls = append(o.ToolCalls, map[string]any{"task": task, "tool": tool, "args": am, "tenant": tenant, "state": state, "reason": reason})
+		call := map[string]any{"task": task, "tool": tool, "args": am, "state": state, "reason": reason}
+		call["tenant"] = tenant
+		o.ToolCalls = append(o.ToolCalls, call)
 	}
 	trows.Close()
 	if err := trows.Err(); err != nil {

@@ -924,7 +924,9 @@ func (b *Bench) stopSpend(ctx context.Context) error {
 	}
 	for _, tenant := range slices.Sorted(mapKeys(b.ops)) {
 		var out map[string]any
-		req := map[string]any{"scope": map[string]any{"kind": "tenant", "tenant": tenant},
+		scope := map[string]any{"kind": "tenant"}
+		scope["tenant"] = tenant
+		req := map[string]any{"scope": scope,
 			"effects": []any{"no_enqueue", "no_claim", "cancel_running"}, "reason": "budget_exhausted", "until": nil}
 		if err := b.P2(ctx, tenant, "hold.set", req, &out); err != nil {
 			return fmt.Errorf("hold.set %s: %w", tenant, err)
