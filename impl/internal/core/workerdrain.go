@@ -92,8 +92,7 @@ func drainedLease(ctx context.Context, tx pgx.Tx, l *leaseRow) (bool, error) {
 // its scope and the reason worker_revoke for the runtime's profile store (LCY-4, RT-1, RT-2).
 func (c *Core) purgeRuntimeStore(ctx context.Context, tx pgx.Tx, now time.Time, tenant, worker, author string) error {
 	var internal bool
-	if err := tx.QueryRow(ctx, `SELECT coalesce(hello->'runtime'->>'session' = 'runtime_internal' OR hello->'runtime'->>'memory' = 'runtime_internal', false)
-		FROM workers WHERE id = $1`, worker).Scan(&internal); err != nil {
+	if err := tx.QueryRow(ctx, `SELECT `+runtimeInternal+` FROM workers WHERE id = $1`, worker).Scan(&internal); err != nil {
 		return err
 	}
 	if !internal {
@@ -111,10 +110,11 @@ func (c *Core) purgeRuntimeStore(ctx context.Context, tx pgx.Tx, now time.Time, 
 	return err
 }
 
-// runtimeStepOutcome closes the runtime step of a worker_revoke request. This build sends no
-// purge work to a runtime and blocks every runtime_internal runtime at hello (RT-5), so such a
-// worker never ran an attempt and its store holds nothing of the tenant: not_applicable with
-// the basis tenant_absent. A worker that did run attempts would fail the step instead.
+// runtimeStepOutcome closes the runtime step of a worker_revoke request. A revoked worker
+// takes no more work, so the core cannot send its runtime the purge: a worker that never ran
+// an attempt holds nothing of the tenant (not_applicable with the basis tenant_absent), one
+// that did fails the step with not_ready, and the request stays open with its alarm (RET-7)
+// until the operator clears the runtime's store by hand.
 func runtimeStepOutcome(ctx context.Context, tx pgx.Tx, worker string) (state, basis, reason string, err error) {
 	var ran bool
 	if err := tx.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM leases WHERE worker_id = $1 AND kind = 'attempt')`, worker).Scan(&ran); err != nil {
@@ -125,3 +125,7 @@ func runtimeStepOutcome(ctx context.Context, tx pgx.Tx, worker string) (state, b
 	}
 	return "not_applicable", "tenant_absent", "", nil
 }
+
+// runtimeInternal is the condition on a workers row that its runtime declared session or
+// memory runtime_internal at hello (RT-1, RT-2, RT-5).
+const runtimeInternal = `coalesce(hello->'runtime'->>'session' = 'runtime_internal' OR hello->'runtime'->>'memory' = 'runtime_internal', false)`
