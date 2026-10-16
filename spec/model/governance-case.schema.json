@@ -151,6 +151,7 @@
                 "description": "Recommendations with the outcome worse or a confirmed attribution, and vetoes lifted by people with the trial outcome not worse and no attributions."
               },
               "accuracy": {
+                "x-botaru-version": "v0.3",
                 "description": "From v0.3: accuracy of the holder in its lens, or insufficient (COM-17).",
                 "anyOf": [
                   {
@@ -167,6 +168,7 @@
                 ]
               },
               "scored_forecasts": {
+                "x-botaru-version": "v0.3",
                 "type": "integer",
                 "minimum": 0,
                 "description": "From v0.3: scored forecasts of the holder (COM-16)."
@@ -175,6 +177,7 @@
           }
         },
         "proposed": {
+          "x-botaru-version": "v0.3",
           "description": "From v0.3: the leaver code proposes by accuracy, or null when code proposes nobody and a person chooses (GOV-43).",
           "anyOf": [
             {

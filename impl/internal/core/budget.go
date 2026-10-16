@@ -174,6 +174,12 @@ func (c *Core) checkBudget(ctx context.Context, tx pgx.Tx, now time.Time, tv *Te
 		v := *b.MonthEUR / 20
 		dayLimit = &v
 	}
+	// A live budget.set lowers a window or a line until its expiry (MAN-5).
+	ov, err := budgetOverrides(ctx, tx, now, tv.Name)
+	if err != nil {
+		return refuse("not_ready", "store")
+	}
+	b.MonthEUR, dayLimit = lowered(b.MonthEUR, ov, "month"), lowered(dayLimit, ov, "day")
 	type window struct {
 		limit  *float64
 		from   time.Time
@@ -189,6 +195,7 @@ func (c *Core) checkBudget(ctx context.Context, tx pgx.Tx, now time.Time, tv *Te
 		zero := 0.0
 		lineMonth = &zero
 	}
+	lineMonth = lowered(lineMonth, ov, line)
 	windows := []window{
 		{b.MonthEUR, month, spendFilter{}, "the tenant limit is used up", "tenant_month"},
 		{dayLimit, day, spendFilter{}, "the tenant limit is used up", "tenant_day"},

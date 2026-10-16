@@ -100,6 +100,9 @@ type enqueueInput struct {
 	// ContinuesCampaign makes the task the continuation of a campaign, which reads its results
 	// (ORC-9).
 	ContinuesCampaign string
+	// OwnRefs makes the refs and the attached files of a sender's request pass TEN-7: each must
+	// be an object of the tenant that the initiator uploaded or created.
+	OwnRefs bool
 }
 
 // fairnessKey writes the dispatcher fairness key <kind>:<id> from the task source (DSP-2,
@@ -740,7 +743,29 @@ func (c *Core) authorizeEnqueue(ctx context.Context, tx pgx.Tx, now time.Time, c
 		if f == nil || f.Origin == "export" || f.State != "stored" || (f.Expires != nil && !f.Expires.After(now)) {
 			return deny(refuse("ref_invalid", "no such file"))
 		}
+		// A sender's request carries only files its initiator uploaded or its tasks produced;
+		// a foreign file answers as a missing one (TEN-7).
+		if in.OwnRefs {
+			own, err := ownedRef(ctx, tx, in.Tenant, in.Initiator, ref)
+			if err != nil {
+				return nil, nil, err
+			}
+			if !own {
+				return deny(refuse("ref_invalid", "no such file"))
+			}
+		}
 		mark = c.higherMark(mark, f.Mark)
+	}
+	if in.OwnRefs {
+		for _, ref := range in.Refs {
+			own, err := ownedRef(ctx, tx, in.Tenant, in.Initiator, ref)
+			if err != nil {
+				return nil, nil, err
+			}
+			if !own {
+				return deny(refuse("ref_invalid", "no such reference"))
+			}
+		}
 	}
 	if !hasData(tv, groups, mark) {
 		pr := refuse("no_data_class", "the initiator has no data:%s", mark)

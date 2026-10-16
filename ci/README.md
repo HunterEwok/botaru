@@ -206,6 +206,9 @@ The codes of `check_manifests.py` that fixtures refer to (`expect: {error: <code
 | `incident_contain_auto` | a first measure of an incident class is not a hold with one tenant scope, known effects and an expiry | MGR-7, HLD-2 |
 | `incident_store_low` | an incident catalog lacks the class store_low, or store_low is not a farm class opened by alarm.store.free.low or carries stops_manager | MGR-38 |
 | `ingress_missing` | source channel (direction: in) without ingress | ING-1 |
+| `ingress_reserved_source` | source channel whose ingress.event has the source monitor, reserved for the E5 adapter | ING-4 |
+| `ingress_source_duplicate` | two source channels of one tenant with the same ingress.event source | ING-3 |
+| `ingress_source_too_long` | source channel whose ingress.event source is longer than 32 characters | ING-3 |
 | `ingress_token_tier` | route from an event of a tls_token source enqueues a type above tier 0 | ING-1 |
 | `ingress_tolerance` | source with auth: signature without ingress.tolerance or with more than 5m | ING-1 |
 | `insight_merge_window` | insight.merge_window shorter than an hour | INS-4 |

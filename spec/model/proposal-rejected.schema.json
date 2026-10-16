@@ -5,12 +5,14 @@
   "description": "A refusal when creating a proposal creates no record: the core writes the event proposal.rejected.v1 with a reason from a closed list, like a task enqueue refusal. The author sees their refusals in \"My results\" (DIG-7).",
   "x-botaru-direction": "output",
   "x-botaru-rules": [
+    "MGR-47",
     "PRP-1",
     "PRP-2",
     "PRP-3",
     "PRP-5",
     "PRP-11",
-    "PRP-21"
+    "PRP-21",
+    "PRP-24"
   ],
   "type": "object",
   "required": [
@@ -27,9 +29,11 @@
         "untrusted_direction",
         "metric_unknown",
         "recently_declined",
-        "proposal_rate_limited"
+        "proposal_rate_limited",
+        "resubmit_too_early",
+        "manager_restricted"
       ],
-      "description": "Refusal reason.",
+      "description": "Refusal reason; from v0.3 also resubmit_too_early (PRP-24) and manager_restricted for a proposal of the farm manager seat in restricted mode (MGR-47).",
       "x-botaru-registry": "reasons"
     },
     "task": {

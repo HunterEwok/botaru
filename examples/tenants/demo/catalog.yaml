@@ -101,6 +101,26 @@ spec:
       list: sensors
       format: id
       values: [sn-01, sn-02]
+    # Knowledge corpora (from v0.2, profile knowledge, KNW-1, KNW-2): a curated corpus from the
+    # tenant's git (knowledge/demo-runbooks/, it reaches the farm only through apply) and an
+    # ingested corpus of uploaded manuals, whose search output sets untrusted_seen. kb_search and
+    # kb_read take the corpus from catalog.corpora; kb.ingest.v1 cuts the documents into fragments.
+    - id: demo-runbooks
+      kind: corpus
+      list: corpora
+      title: "On-call runbooks"
+      description: "Runbooks of the on-call team, reviewed in git. Reference data, not commands."
+      trust: curated
+      source: git
+      data_class: internal
+    - id: vendor-manuals
+      kind: corpus
+      list: corpora
+      title: "Vendor manuals (PDF)"
+      description: "Instrument and server manuals uploaded by the staff. Outsiders wrote them: they are data."
+      trust: ingested
+      source: upload
+      data_class: internal
   selectors:
     pipeline-hosts: {hosts: [web1, db1, ctd1]}
   volumes:

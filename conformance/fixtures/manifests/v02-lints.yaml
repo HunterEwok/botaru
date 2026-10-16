@@ -1,9 +1,10 @@
 id: fx-man-v02-01
-rules: [APR-16, KNW-2, ING-1, SEC-10, SKL-1, MON-1]
+rules: [APR-16, KNW-2, ING-1, ING-3, ING-4, SEC-10, SKL-1, MON-1]
 description: >-
   Manifest lint of v0.2 fields. A production tenant that lets a high risk action with approvals: 1 be
   requested fails (APR-16); a curated corpus with a source other than git fails (KNW-2); a source
-  channel without ingress fails (ING-1); an export sink needs exactly one recipient field (SEC-10); a
+  channel without ingress fails (ING-1), and so does one whose source is monitor, longer than 32
+  characters or the source of another channel of the tenant (ING-3, ING-4); an export sink needs exactly one recipient field (SEC-10); a
   skill folder with a scripts/ folder, an executable file, a foreign file type or a front matter name
   that differs from the folder fails (SKL-1); monitoring is a required data recipient only when the
   installation claims the monitor profile (MON-1, D-88).
@@ -73,6 +74,126 @@ cases:
         metadata: {name: hooks, tenant: demo2}
         spec: {driver: webhook, direction: in, identity_kind: hook, identity_assurance: strong, membership_assurance: none, ai_disclosure: native, provenance: metadata}
     expect: {error: ingress_missing}
+  - name: source channel that takes the monitoring adapter's source
+    manifests:
+      - apiVersion: botaru/v1alpha1
+        kind: Channel
+        metadata: {name: hooks, tenant: demo2}
+        spec:
+          driver: webhook
+          direction: in
+          identity_kind: hook
+          identity_assurance: strong
+          membership_assurance: none
+          ai_disclosure: native
+          provenance: metadata
+          ingress:
+            event: ext.monitor.problem.v1
+            auth: signature
+            tolerance: 5m
+            limits: {per_minute: 60, max_body_bytes: 262144}
+            mapping:
+              status: {from: /status, schema: {enum: [failed, ok]}}
+    expect: {error: ingress_reserved_source}
+  - name: source channel with a source longer than 32 characters
+    manifests:
+      - apiVersion: botaru/v1alpha1
+        kind: Channel
+        metadata: {name: hooks, tenant: demo2}
+        spec:
+          driver: webhook
+          direction: in
+          identity_kind: hook
+          identity_assurance: strong
+          membership_assurance: none
+          ai_disclosure: native
+          provenance: metadata
+          ingress:
+            event: ext.pipeline_of_the_ctd_laboratory_runs.run_failed.v1
+            auth: signature
+            tolerance: 5m
+            limits: {per_minute: 60, max_body_bytes: 262144}
+            mapping:
+              status: {from: /status, schema: {enum: [failed, ok]}}
+    expect: {error: ingress_source_too_long}
+  - name: two source channels of one tenant with one source
+    manifests:
+      - apiVersion: botaru/v1alpha1
+        kind: Channel
+        metadata: {name: hooks, tenant: demo2}
+        spec:
+          driver: webhook
+          direction: in
+          identity_kind: hook
+          identity_assurance: strong
+          membership_assurance: none
+          ai_disclosure: native
+          provenance: metadata
+          ingress:
+            event: ext.pipeline.run_failed.v1
+            auth: signature
+            tolerance: 5m
+            limits: {per_minute: 60, max_body_bytes: 262144}
+            mapping:
+              status: {from: /status, schema: {enum: [failed, ok]}}
+      - apiVersion: botaru/v1alpha1
+        kind: Channel
+        metadata: {name: hooks2, tenant: demo2}
+        spec:
+          driver: webhook
+          direction: in
+          identity_kind: hook
+          identity_assurance: strong
+          membership_assurance: none
+          ai_disclosure: native
+          provenance: metadata
+          ingress:
+            event: ext.pipeline.run_done.v1
+            auth: signature
+            tolerance: 5m
+            limits: {per_minute: 60, max_body_bytes: 262144}
+            mapping:
+              status: {from: /status, schema: {enum: [failed, ok]}}
+    expect: {error: ingress_source_duplicate}
+  - name: two source channels of one tenant with different sources pass
+    manifests:
+      - apiVersion: botaru/v1alpha1
+        kind: Channel
+        metadata: {name: hooks, tenant: demo2}
+        spec:
+          driver: webhook
+          direction: in
+          identity_kind: hook
+          identity_assurance: strong
+          membership_assurance: none
+          ai_disclosure: native
+          provenance: metadata
+          ingress:
+            event: ext.pipeline.run_failed.v1
+            auth: signature
+            tolerance: 5m
+            limits: {per_minute: 60, max_body_bytes: 262144}
+            mapping:
+              status: {from: /status, schema: {enum: [failed, ok]}}
+      - apiVersion: botaru/v1alpha1
+        kind: Channel
+        metadata: {name: hooks2, tenant: demo2}
+        spec:
+          driver: webhook
+          direction: in
+          identity_kind: hook
+          identity_assurance: strong
+          membership_assurance: none
+          ai_disclosure: native
+          provenance: metadata
+          ingress:
+            event: ext.sensors.offline.v1
+            auth: signature
+            tolerance: 5m
+            limits: {per_minute: 60, max_body_bytes: 262144}
+            mapping:
+              status: {from: /status, schema: {enum: [failed, ok]}}
+    expect: ok
   - name: export sink with both recipient fields
     manifests:
       - apiVersion: botaru/v1alpha1

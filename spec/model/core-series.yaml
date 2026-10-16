@@ -1,5 +1,5 @@
 registry: core-series
-version: 2
+version: 4
 description: >-
   Core series: the deterministic observe loop computes them only from records of the
   same tenant (attempts, tasks, usage lines, schedule slots, run finished
@@ -99,6 +99,11 @@ entries:
     meaning: share of each decline reason from decline-reasons.yaml among declined proposals, by role and category
     catalog_kind: role
     rules: [DIG-4]
+  - id: farm.takeover.count
+    since: v0.3
+    meaning: number of takeovers by the farm manager seat, by the functionary role and the task type of the original task; input for people, not a trial metric
+    catalog_kind: task_type
+    rules: [MGR-48]
 target_guards:
   - target: schedule
     guards: [farm.schedule.slot, farm.attempt.duration]
