@@ -6,6 +6,7 @@ import (
 	"context"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/HunterEwok/botaru/impl/internal/ids"
 )
@@ -30,7 +31,8 @@ func (b *bench) grantManagers(t *testing.T) string {
 // A takeover request of the seat is refused under distrust (takeover_untrusted) and without its
 // conditions (takeover_not_allowed); a valid one is staged, published at the end of the seat
 // attempt as the takeover_confirm card, and "Approve" makes the new task system:takeover:<task>
-// with a takeover grant on the seat profile for one attempt on the takeover line, the original
+// with a takeover grant on the seat profile (untrusted text seen after staging drops the request
+// at publication instead) for one attempt on the takeover line, the original
 // canceled as superseded_by_takeover (MGR-21). An apply refuses a takeover card threshold above
 // 0 (takeover_confirm_threshold).
 func TestTakeover(t *testing.T) {
@@ -76,6 +78,32 @@ func TestTakeover(t *testing.T) {
 	if out := callTool(t, b, h, takeoverToolName, map[string]any{"task": orig}); out["staged"] != true {
 		t.Fatalf("takeover %v", out)
 	}
+	// Untrusted text seen after staging drops the request at publication (rolled back here).
+	func() {
+		tx, err := b.c.st.Pool.Begin(ctx)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer func() { _ = tx.Rollback(ctx) }()
+		var leaseNo int
+		var state string
+		if _, err := tx.Exec(ctx, `UPDATE tasks SET record = record || '{"untrusted_seen": true}' WHERE id = $1`, seatTask); err != nil {
+			t.Fatal(err)
+		}
+		if err := tx.QueryRow(ctx, `SELECT lease_no FROM takeovers WHERE seat_task = $1`, seatTask).Scan(&leaseNo); err != nil {
+			t.Fatal(err)
+		}
+		cat, err := b.c.Catalog(ctx)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := b.c.publishTakeovers(ctx, tx, time.Now(), cat, seatTask, leaseNo); err != nil {
+			t.Fatal(err)
+		}
+		if err := tx.QueryRow(ctx, `SELECT state || ':' || coalesce(reason, '') FROM takeovers WHERE seat_task = $1`, seatTask).Scan(&state); err != nil || state != "dropped:takeover_untrusted" {
+			t.Fatalf("untrusted at publication %s %v", state, err)
+		}
+	}()
 	if _, err := b.c.Complete(ctx, mw, header(t, item), CompleteRequest{Result: map[string]any{"summary": "asked"}}); err != nil {
 		t.Fatal(err)
 	}

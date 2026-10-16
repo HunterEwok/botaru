@@ -222,7 +222,12 @@ func TestViewFilterAudience(t *testing.T) {
 // catalog or as the snapshot time or a window bound, and a number word never passes (REP-4).
 func TestParagraphNumbers(t *testing.T) {
 	at := time.Date(2026, 10, 16, 9, 30, 0, 0, time.UTC)
-	n := numberCheck{names: map[string]bool{"web1": true, "hello.greet.v1": true}, times: []time.Time{at, at.Add(-24 * time.Hour)}, loc: time.UTC}
+	n := numberCheck{names: map[string]bool{"web1": true, "hello.greet.v1": true, "42": true}, exact: map[string]bool{"db7": true},
+		times: []time.Time{at, at.Add(-24 * time.Hour)}, loc: time.UTC}
+	// Built from a digest: a word of a multi-word title is no name.
+	if got := digestNumberCheck(newCatalog(), "demo", &viewSnapshot{Counts: []map[string]any{{"title": "Disk 3 alarm", "type": "web2"}}}); got.names["3"] || !got.names["web2"] {
+		t.Errorf("names %v", got.names)
+	}
 	words := []string{"zero", "one", "two", "three", "twenty"}
 	for text, want := range map[string][2]int{
 		"All went well on web1.":                {1, 0},
@@ -231,6 +236,9 @@ func TestParagraphNumbers(t *testing.T) {
 		"About 40% failed (hello.greet.v1)":     {2, 1},
 		"Twenty-one runs, web2 down at 10:00":   {3, 3},
 		"Nothing to report.":                    {0, 0},
+		"It was 42 and db7 was calm":            {2, 1},
+		"About ½ of them, x² more":              {2, 2},
+		"Choose one/two or three.five":          {2, 2},
 	} {
 		if c, r := n.paragraphNumbers(text, words); c != want[0] || r != want[1] {
 			t.Errorf("%q: checked %d rejected %d, want %v", text, c, r, want)

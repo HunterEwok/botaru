@@ -31,7 +31,8 @@ spec: {profile: translator, worker_kind: agent, claims: [fx.translate.v1], model
 `
 
 // A translator role of a production tenant passes apply only with both translator sets in the
-// EvalReports index for its static fingerprint; a test tenant needs none (TRN-6).
+// EvalReports index for its static fingerprint; a test tenant needs none. A stored role is
+// checked again on every apply by its current fingerprint (TRN-6).
 func TestTranslatorEvalGate(t *testing.T) {
 	c := lintCore(t)
 	base := fmt.Sprintf(trnSet, "production")
@@ -81,6 +82,40 @@ spec:
 			t.Errorf("%s: eval_report_missing %v, want %v", tc.name, got, tc.missing)
 		}
 	}
+
+	// The role and its type are stored; a new production tenant, or a changed stored type, takes
+	// the reports away, and the finding goes on the object of the apply.
+	stored := func(docs string, submitted ...string) []ApplyError {
+		ds, err := manifest.ParseYAML(strings.NewReader(docs), "test")
+		if err != nil {
+			t.Fatal(err)
+		}
+		index := make([]int, len(ds))
+		for i := range ds {
+			index[i] = -1
+			if slices.Contains(submitted, ds[i].Kind) {
+				index[i] = i
+			}
+			if ds[i].Kind != "Tenant" {
+				ds[i].Tenant = ""
+			}
+		}
+		errs, err := c.lintManifests(ds, index, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return slices.DeleteFunc(errs, func(e ApplyError) bool { return e.Code != "eval_report_missing" })
+	}
+	if errs := stored(base, "Tenant"); len(errs) != 1 || errs[0].Kind != "Tenant" {
+		t.Errorf("new production tenant over a stored role: %+v", errs)
+	}
+	if errs := stored(base+reports(0.95, 30, 0), "Tenant"); len(errs) != 0 {
+		t.Errorf("stored role with reports: %+v", errs)
+	}
+	changed := strings.Replace(base, `title: "Translation"`, `title: "Translation 2"`, 1)
+	if errs := stored(changed+reports(0.95, 30, 0), "TaskType"); len(errs) != 1 || errs[0].Kind != "TaskType" {
+		t.Errorf("changed claimed type: %+v", errs)
+	}
 }
 
 // setStoredDoc changes a stored manifest in place and moves the set hash, so the next catalog
@@ -98,7 +133,8 @@ func (b *bench) setStoredDoc(t *testing.T, kind, tenant, name, doc string) {
 }
 
 // A seat task of a production tenant waits with seat_eval_missing while the EvalReports index
-// has no mgr-inj entry without security failures for the seat model profile, and the farm
+// has no mgr-inj entry without security failures for the seat model profile and its current
+// fingerprint (model, parameters and manager persona), and the farm
 // operators get seat_eval_missing_notice once; with the entry the task is handed out (MGR-23).
 func TestSeatEvalGate(t *testing.T) {
 	ctx := context.Background()
@@ -129,8 +165,24 @@ func TestSeatEvalGate(t *testing.T) {
 	if err := b.c.st.Pool.QueryRow(ctx, `SELECT count(*) FROM deliveries WHERE kind = 'seat_eval_missing_notice' AND recipient = $1`, person).Scan(&notices); err != nil || notices != 1 {
 		t.Fatalf("notices %d %v", notices, err)
 	}
-	b.setStoredDoc(t, "EvalReports", "", "evals", `{"apiVersion": "botaru/v1alpha1", "kind": "EvalReports", "metadata": {"name": "evals"},
-		"spec": {"reports": [{"subject": {"kind": "seat", "name": "manager-std"}, "suite": "mgr-inj", "date": "2026-10-02", "cases": 12, "failures": 0, "security_failures": 0}]}}`)
+	cat, err := b.c.Catalog(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	fp, err := seatFingerprint(cat, "manager-std")
+	if err != nil || fp == "" {
+		t.Fatalf("fingerprint %q %v", fp, err)
+	}
+	seatReport := func(fp string) string {
+		return fmt.Sprintf(`{"apiVersion": "botaru/v1alpha1", "kind": "EvalReports", "metadata": {"name": "evals"},
+		"spec": {"reports": [{"fingerprint": "%s", "subject": {"kind": "seat", "name": "manager-std"}, "suite": "mgr-inj", "date": "2026-10-02", "cases": 12, "failures": 0, "security_failures": 0}]}}`, fp)
+	}
+	// A clean report of another fingerprint (an earlier model or persona) does not count.
+	b.setStoredDoc(t, "EvalReports", "", "evals", seatReport("sha256:"+strings.Repeat("0", 64)))
+	if item := b.claim(t, w, "attempt"); item != nil {
+		t.Fatal("a seat task was handed out with the report of another fingerprint")
+	}
+	b.setStoredDoc(t, "EvalReports", "", "evals", seatReport(fp))
 	if item := b.claim(t, w, "attempt"); item == nil {
 		t.Fatal("the seat task waits with a passing seat eval")
 	}

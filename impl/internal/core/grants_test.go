@@ -8,7 +8,11 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
+	"github.com/jackc/pgx/v5"
+
+	"github.com/HunterEwok/botaru/impl/internal/ids"
 	"github.com/HunterEwok/botaru/impl/internal/mcp"
 )
 
@@ -73,8 +77,8 @@ func callTool(t *testing.T, b *bench, handle, name string, args map[string]any) 
 }
 
 // An executor asks for a stronger model with request_model_grant: the answer is {staged: true},
-// the attempt ends without spending and the task waits; evidence not of the task is refused
-// with grant_not_eligible and the attempt goes on (MGR-17). The grant loop gives the held seat
+// the attempt ends without spending and the task waits; evidence not of the task is refused:
+// the answer is grant_not_eligible and the attempt goes on (MGR-17). The grant loop gives the held seat
 // one manager.grants.v1 batch for the tenant's window; grant_decide issues it, the next attempt
 // runs on the granted slot, a call over the rest of cap_eur does not start and consumes the
 // grant without spending the attempt, and an unanswered request expires (MGR-18, GW-7).
@@ -98,7 +102,7 @@ func TestModelGrant(t *testing.T) {
 		t.Fatalf("lease %s task %s grant %s %v", lease, reason, state, err)
 	}
 	other, h2 := b.attemptTools(t, "u2", false)
-	if out := ask(h2, att.WorkID+":1"); out["staged"] != true {
+	if out := ask(h2, att.WorkID+":1"); out["code"] != "grant_not_eligible" {
 		t.Fatalf("request %v", out)
 	}
 	if err := b.c.st.Pool.QueryRow(ctx, `SELECT l.state, g.state || ':' || g.reason FROM leases l JOIN model_grants g ON g.task = l.work_id WHERE l.work_id = $1`,
@@ -226,5 +230,52 @@ func TestModelGrantP2(t *testing.T) {
 	if err := b.c.st.Pool.QueryRow(ctx, `SELECT l.state, l.reason, t.attempts_spent FROM leases l JOIN tasks t ON t.id = l.work_id WHERE l.work_id = $1 AND l.lease_no = $2`,
 		att.WorkID, again.LeaseNo).Scan(&lease, &reason, &spent); err != nil || lease != "released" || reason != "grant_revoked" || spent != 0 {
 		t.Fatalf("lease %s %s spent %d %v", lease, reason, spent, err)
+	}
+}
+
+// An approved grant is bound to the role that asked and to its ladder: an attempt of another
+// role, or a profile the role's ladder no longer has, gets no granted slot and leaves the grant
+// approved. The seat's daily grant ceiling is on without seat_grants_eur_day, per UTC calendar
+// day (MGR-18, GW-7).
+func TestGrantBoundToRole(t *testing.T) {
+	ctx := context.Background()
+	b := managerV02Bench(t, nil, nil)
+	task := b.hello(t, "u1")
+	cat, err := b.c.Catalog(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	grant := func(profile string) {
+		if _, err := b.c.st.Pool.Exec(ctx, `DELETE FROM model_grants WHERE task = $1`, task); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := b.c.st.Pool.Exec(ctx, `INSERT INTO model_grants (id, tenant, task, role, kind, line, profile, attempts, attempts_left, estimate_micros, cap_micros, expires_at, state, created_at, updated_at)
+			VALUES ($1, 'demo', $2, 'hello', 'grant', 'grant', $3, 1, 1, 1000, 1000, now() + interval '1 hour', 'approved', now(), now())`, ids.New(ids.ModelGrant), task, profile); err != nil {
+			t.Fatal(err)
+		}
+	}
+	try := func(role string) bool {
+		var ok bool
+		if err := b.c.tx(ctx, func(tx pgx.Tx, now time.Time) error {
+			_, ok, err = claimGrant(ctx, tx, now, cat, "demo", task, role)
+			return err
+		}); err != nil {
+			t.Fatal(err)
+		}
+		return ok
+	}
+	grant("review-a")
+	if try("other-role") || !try("hello") {
+		t.Fatal("the grant went to the wrong role")
+	}
+	grant("base-a")
+	if try("hello") {
+		t.Fatal("a profile off the ladder was granted")
+	}
+	if l := grantLimitsOf(newCatalog()); l.seatDayMicros != 20_000_000 {
+		t.Fatalf("seat day ceiling %d", l.seatDayMicros)
+	}
+	if d := utcDayStart(time.Date(2026, 10, 16, 23, 59, 0, 0, time.FixedZone("x", -3*3600))); !d.Equal(time.Date(2026, 10, 17, 0, 0, 0, 0, time.UTC)) {
+		t.Fatalf("day start %v", d)
 	}
 }

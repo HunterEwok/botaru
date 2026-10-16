@@ -533,7 +533,7 @@ func (c *Core) claimAttempt(ctx context.Context, tx pgx.Tx, now time.Time, cat *
 	// An approved grant of the task gives this attempt the granted slot; the run fingerprint
 	// keeps the profile configured for the role's slot (MGR-18, GW-7, PRV-1).
 	if slot != "" {
-		if gp, ok, err := claimGrant(ctx, tx, now, id); err != nil {
+		if gp, ok, err := claimGrant(ctx, tx, now, cat, w.Tenant, id, w.Role); err != nil {
 			return nil, err
 		} else if ok {
 			slot, profile = grantedSlot, gp

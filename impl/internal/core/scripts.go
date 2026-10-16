@@ -1412,7 +1412,27 @@ func runHeld(ctx context.Context, tx pgx.Tx, now time.Time, r *scriptRun) (strin
 	if err != nil {
 		return "", err
 	}
-	return heldBy(ctx, tx, now, runHoldEffects, runHoldScopes(r, defs)...)
+	scopes := runHoldScopes(r, defs)
+	// The campaigns of its fanout steps: a hold on a campaign's item type, action or role covers
+	// the run as well (SCR-10).
+	rows, err := tx.Query(ctx, `SELECT `+campaignColumns+` FROM campaigns WHERE id IN (SELECT campaign FROM script_steps WHERE run = $1 AND campaign IS NOT NULL)
+		AND state IN ('proposed', 'running', 'paused', 'stopping') ORDER BY id`, r.ID)
+	if err != nil {
+		return "", err
+	}
+	for rows.Next() {
+		cmp, err := scanCampaign(rows)
+		if err != nil {
+			rows.Close()
+			return "", err
+		}
+		scopes = append(scopes, campaignScopes(cmp)...)
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return "", err
+	}
+	return heldBy(ctx, tx, now, runHoldEffects, scopes...)
 }
 
 // pauseHeldRuns moves the running runs of a tenant (every tenant for "") that a hold covers to

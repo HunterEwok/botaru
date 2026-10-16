@@ -41,6 +41,9 @@ const (
 	grantWaitMax            = 15 * time.Minute
 	grantRequestsPerRoleDay = 3
 	grantFailShareMin       = 0.3
+	// grantSeatDayMicros is seat_grants_eur_day when the farm charter sets none: the value of
+	// the docs example (docs/farm-manager.md), so the seat's daily ceiling is always on.
+	grantSeatDayMicros = 20_000_000
 	// grantTTLMax is the longest expiry of a grant, and grantTTLDefault the expiry of a decision
 	// that names none.
 	grantTTLMax     = 6 * time.Hour
@@ -50,16 +53,15 @@ const (
 
 // grantLimits are the farm charter's farm_manager.grant_limits with their defaults.
 type grantLimits struct {
-	waitMax         time.Duration
-	perRoleDay      int
-	failShareMin    float64
-	seatDayMicros   int64
-	seatDayLimitSet bool
+	waitMax       time.Duration
+	perRoleDay    int
+	failShareMin  float64
+	seatDayMicros int64
 }
 
 func grantLimitsOf(cat *Catalog) grantLimits {
 	m := mmap(managerCharter(cat), "grant_limits")
-	l := grantLimits{waitMax: grantWaitMax, perRoleDay: grantRequestsPerRoleDay, failShareMin: grantFailShareMin}
+	l := grantLimits{waitMax: grantWaitMax, perRoleDay: grantRequestsPerRoleDay, failShareMin: grantFailShareMin, seatDayMicros: grantSeatDayMicros}
 	if d := specDuration(m, "grant_wait_max"); d > 0 {
 		l.waitMax = d
 	}
@@ -70,7 +72,7 @@ func grantLimitsOf(cat *Catalog) grantLimits {
 		l.failShareMin = v
 	}
 	if v, ok := mnum(m, "seat_grants_eur_day"); ok {
-		l.seatDayMicros, l.seatDayLimitSet = money.FromEUR(v), true
+		l.seatDayMicros = money.FromEUR(v)
 	}
 	return l
 }
@@ -156,7 +158,7 @@ func (c *Core) grantTool(cat *Catalog, g *toolsGrant) *catalogTool {
 			"note":              map[string]any{"type": "string", "maxLength": 500},
 		},
 	}
-	desc := "Ask for a stronger model for this task, with a reason and your own attempts of this task as evidence. The answer is only {staged: true}; this attempt then ends and the task waits for a decision."
+	desc := "Ask for a stronger model for this task, with a reason and your own attempts of this task as evidence. The answer is {staged: true}, and this attempt then ends and the task waits for a decision; a request the code refuses answers with its code (grant_not_eligible, grant_rate_limited, grant_over_budget)."
 	return &catalogTool{Name: grantToolName, Builtin: true, Tool: toolspec.Tool{Description: desc}, Schema: schema}
 }
 
@@ -253,8 +255,8 @@ func grantEstimate(p manifest.ModelProfile, bodyBytes, attempts int) int64 {
 	return int64(per+0.999999) * int64(max(attempts, 1))
 }
 
-// requestGrant takes a request: one per task; a refusal by code is recorded as denied and the
-// attempt goes on, an accepted one waits as pending and the attempt ends without spending with
+// requestGrant takes a request: one per task; a refusal by code is recorded as denied, answered
+// with its code and the attempt goes on, an accepted one waits as pending and the attempt ends without spending with
 // awaiting_model_grant, the task waiting with model_grant_pending (MGR-17).
 func (c *Core) requestGrant(ctx context.Context, tx pgx.Tx, now time.Time, cat *Catalog, a grantAsker, args map[string]any) (*Problem, error) {
 	var exists bool
@@ -320,7 +322,7 @@ func (c *Core) requestGrant(ctx context.Context, tx pgx.Tx, now time.Time, cat *
 	if deny == "" {
 		var n int
 		if err := tx.QueryRow(ctx, `SELECT count(*) FROM model_grants WHERE tenant = $1 AND role = $2 AND kind = 'grant' AND created_at > $3
-			AND request ? 'accepted'`, a.Tenant, a.Role, now.Add(-24*time.Hour)).Scan(&n); err != nil {
+			AND request ? 'accepted'`, a.Tenant, a.Role, utcDayStart(now)).Scan(&n); err != nil {
 			return nil, err
 		}
 		if n >= limits.perRoleDay {
@@ -358,7 +360,8 @@ func (c *Core) requestGrant(ctx context.Context, tx pgx.Tx, now time.Time, cat *
 		return nil, err
 	}
 	if deny != "" {
-		return nil, nil
+		// A refusal by code answers with its code; the record stays and the attempt goes on.
+		return refuse(deny, "the request was refused by code"), nil
 	}
 	return nil, c.endAttemptUnspent(ctx, tx, now, a.Task, a.LeaseNo, "awaiting_model_grant", "model_grant_pending", infinity)
 }
@@ -401,16 +404,27 @@ func grantEnded(ctx context.Context, tx pgx.Tx, now time.Time, task string) erro
 }
 
 // claimGrant gives an attempt the granted slot when its task has an approved grant with attempts
-// left before its expiry; the grant becomes active and spends one attempt (MGR-18, GW-7).
-func claimGrant(ctx context.Context, tx pgx.Tx, now time.Time, task string) (string, bool, error) {
-	var profile string
-	err := tx.QueryRow(ctx, `UPDATE model_grants SET state = 'active', attempts_left = attempts_left - 1, updated_at = $2
-		WHERE id = (SELECT id FROM model_grants WHERE task = $1 AND state = 'approved' AND attempts_left > 0 AND expires_at > $2 ORDER BY created_at LIMIT 1)
-		RETURNING profile`, task, now).Scan(&profile)
+// left before its expiry; the grant becomes active and spends one attempt (MGR-18, GW-7). A grant
+// of kind grant is bound to the role that asked and to that role's ladder as the tenant allows it
+// now: another role claiming the task runs on its own slot and the grant stays approved. A
+// takeover grant goes to the attempt of the new task whichever role claims its type (MGR-21).
+func claimGrant(ctx context.Context, tx pgx.Tx, now time.Time, cat *Catalog, tenant, task, role string) (string, bool, error) {
+	var id, kind, grantRole, profile string
+	err := tx.QueryRow(ctx, `SELECT id, kind, role, profile FROM model_grants WHERE task = $1 AND state = 'approved' AND attempts_left > 0 AND expires_at > $2
+		ORDER BY created_at LIMIT 1 FOR UPDATE`, task, now).Scan(&id, &kind, &grantRole, &profile)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return "", false, nil
 	}
-	return profile, err == nil, err
+	if err != nil {
+		return "", false, err
+	}
+	if kind == "grant" && (grantRole != role || !slices.Contains(grantLadder(cat, tenant, cat.Roles[role]), profile)) {
+		return "", false, nil
+	}
+	if _, err := tx.Exec(ctx, `UPDATE model_grants SET state = 'active', attempts_left = attempts_left - 1, updated_at = $2 WHERE id = $1`, id, now); err != nil {
+		return "", false, err
+	}
+	return profile, true, nil
 }
 
 // grantOfHandle is the active grant of a handle on the granted slot: P4 allows the slot only
@@ -586,34 +600,27 @@ func (c *Core) decideGrant(ctx context.Context, tx pgx.Tx, now time.Time, cat *C
 	if d.CapEUR != nil {
 		capMicros = money.FromEUR(*d.CapEUR)
 	}
-	if p := c.checkBudget(ctx, tx, now, tv, budgetAsk{subject: "system", extra: capMicros, line: "grant"}); p != nil {
+	// The open caps of grants count against the line as their reserve.
+	open, err := openGrantMicros(ctx, tx, tenant, "grant")
+	if err != nil {
+		return "", "", err
+	}
+	if p := c.checkBudget(ctx, tx, now, tv, budgetAsk{subject: "system", extra: capMicros + open, line: "grant"}); p != nil {
 		if p.Reason != "budget_exhausted" {
 			return "", "", p
 		}
 		return "pending", "grant_over_budget", nil
 	}
-	// The open caps of grants count against the line as their reserve.
-	var open int64
-	if err := tx.QueryRow(ctx, `SELECT coalesce(sum(g.cap_micros - coalesce((SELECT sum(s.eur_micros) FROM spend s WHERE s.grant_id = g.id), 0)), 0)
-		FROM model_grants g WHERE g.tenant = $1 AND g.line = 'grant' AND g.state IN ('approved', 'active')`, tenant).Scan(&open); err != nil {
-		return "", "", err
-	}
-	if open > 0 {
-		if p := c.checkBudget(ctx, tx, now, tv, budgetAsk{subject: "system", extra: capMicros + open, line: "grant"}); p != nil {
-			return "pending", "grant_over_budget", nil
-		}
-	}
 	if by.Seat {
-		limits := grantLimitsOf(cat)
-		if limits.seatDayLimitSet {
-			var today int64
-			if err := tx.QueryRow(ctx, `SELECT coalesce(sum(cap_micros), 0) FROM model_grants WHERE decided_by->>'kind' = 'seat' AND state <> 'denied' AND decided_at > $1`,
-				now.Add(-24*time.Hour)).Scan(&today); err != nil {
-				return "", "", err
-			}
-			if today+capMicros > limits.seatDayMicros {
-				return "pending", "grant_over_budget", nil
-			}
+		// The seat's daily ceiling counts the caps the seat issued since the start of the UTC
+		// calendar day, in every tenant; it is always on (MGR-18).
+		var today int64
+		if err := tx.QueryRow(ctx, `SELECT coalesce(sum(cap_micros), 0) FROM model_grants WHERE kind = 'grant' AND decided_by->>'kind' = 'seat' AND state <> 'denied' AND decided_at >= $1`,
+			utcDayStart(now)).Scan(&today); err != nil {
+			return "", "", err
+		}
+		if today+capMicros > grantLimitsOf(cat).seatDayMicros {
+			return "pending", "grant_over_budget", nil
 		}
 	}
 	if _, err := tx.Exec(ctx, `UPDATE model_grants SET state = 'approved', profile = $2, attempts = $3, attempts_left = $3, cap_micros = $4, expires_at = $5,
@@ -1064,4 +1071,21 @@ func (c *Core) ModelGrantList(ctx context.Context, op Operator, req ModelGrantRe
 		return rows.Err()
 	})
 	return out, err
+}
+
+// utcDayStart is the start of the UTC calendar day of t.
+func utcDayStart(t time.Time) time.Time {
+	y, m, d := t.UTC().Date()
+	return time.Date(y, m, d, 0, 0, 0, 0, time.UTC)
+}
+
+// openGrantMicros is the rest of the caps of a tenant's approved and active grants on a line:
+// cap_micros less what the spend rows of each grant hold. A running call's reserve is a spend
+// row of its grant, so it is counted once, in the line's spend, and not again here (MGR-18,
+// MGR-21).
+func openGrantMicros(ctx context.Context, tx pgx.Tx, tenant, line string) (int64, error) {
+	var open int64
+	err := tx.QueryRow(ctx, `SELECT coalesce(sum(greatest(g.cap_micros - coalesce((SELECT sum(s.eur_micros) FROM spend s WHERE s.grant_id = g.id), 0), 0)), 0)
+		FROM model_grants g WHERE g.tenant = $1 AND g.line = $2 AND g.state IN ('approved', 'active')`, tenant, line).Scan(&open)
+	return open, err
 }

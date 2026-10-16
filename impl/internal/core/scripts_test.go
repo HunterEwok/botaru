@@ -400,7 +400,8 @@ func TestTranslator(t *testing.T) {
 	}
 }
 
-// A hold that covers a running run pauses it with the reason held in the hold's transaction;
+// A hold that covers a running run (here a host of a step, then the item type of a step
+// campaign) pauses it with the reason held in the hold's transaction;
 // resume gets held while the hold acts, its release does not resume the run, only resume from
 // the initiator does, and at the deadline a paused run is canceled (SCR-10).
 func TestScriptHoldPausesRun(t *testing.T) {
@@ -436,6 +437,28 @@ func TestScriptHoldPausesRun(t *testing.T) {
 	b.loop(t, "script")
 	if run, _ = b.run(t, run.ID); run.State != "paused" {
 		t.Fatalf("the release resumed the run: %s", run.State)
+	}
+	if res, err := ctl("resume"); err != nil || res.State != "running" {
+		t.Fatalf("resume %+v %v", res, err)
+	}
+	// A hold on the item type of a step's campaign covers the run too.
+	if _, err := b.c.st.Pool.Exec(ctx, `INSERT INTO campaigns (id, tenant, initiator, state, plan_hash, record, nonce, card, created_at, updated_at)
+		VALUES ('cmp_held', 'demo', 'x', 'paused', 'x', '{"template": {"type": "hello.camp.v1"}}', 'x', false, now(), now())`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := b.c.st.Pool.Exec(ctx, `UPDATE script_steps SET campaign = 'cmp_held' WHERE run = $1 AND id = 'check'`, run.ID); err != nil {
+		t.Fatal(err)
+	}
+	hold, err = b.c.HoldSet(ctx, OperatorActor(b.op), HoldSetRequest{Scope: HoldScope{Kind: "tasktype", Tenant: "demo", Name: "hello.camp.v1"},
+		Effects: []string{"no_enqueue"}, Reason: "manual"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if run, _ = b.run(t, run.ID); run.State != "paused" || run.Reason != "held" {
+		t.Fatalf("after the campaign hold %s %s", run.State, run.Reason)
+	}
+	if _, err := b.c.HoldRelease(ctx, OperatorActor(b.op), HoldReleaseRequest{ID: hold.ID}); err != nil {
+		t.Fatal(err)
 	}
 	if res, err := ctl("resume"); err != nil || res.State != "running" {
 		t.Fatalf("resume %+v %v", res, err)

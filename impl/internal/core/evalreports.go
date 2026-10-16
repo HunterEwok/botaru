@@ -84,12 +84,29 @@ func catalogEvalReports(cat *Catalog) []evalReport {
 	return evalReportsOf(specs)
 }
 
-// seatEvalPassed says whether the index has an mgr-inj entry for the seat model profile with no
-// security failure (MGR-23).
-func seatEvalPassed(reports []evalReport, profile string) bool {
+// seatEvalPassed says whether the index has an mgr-inj entry for the seat model profile, with the
+// current seat fingerprint, and no security failure (MGR-23).
+func seatEvalPassed(reports []evalReport, profile, fingerprint string) bool {
 	return profile != "" && slices.ContainsFunc(reports, func(r evalReport) bool {
-		return r.SubjectKind == "seat" && r.SubjectName == profile && r.Suite == suiteManagerInjection && r.SecurityFailures == 0
+		return r.SubjectKind == "seat" && r.SubjectName == profile && r.Fingerprint == fingerprint &&
+			r.Suite == suiteManagerInjection && r.SecurityFailures == 0
 	})
+}
+
+// seatFingerprint is the fingerprint an mgr-inj entry of the seat carries (eval-reports.schema:
+// "for a seat, of the seat profile"): the hash of the profile name, its provider, model and
+// max_output_tokens, and the persona pin of the farm manager position, so a change of the model,
+// its parameters or the manager persona asks for a new report (MGR-23, GOV-4).
+func seatFingerprint(cat *Catalog, profile string) (string, error) {
+	p, ok := cat.Profile(farmTenant, profile)
+	if !ok {
+		return "", nil
+	}
+	parts := map[string]any{"profile": profile, "provider": p.Provider, "model": p.Model, "max_output_tokens": p.MaxOutputTokens, "persona": nil}
+	if pr := personaOf(mmap(managerCharter(cat), "persona")); pr.pinned() {
+		parts["persona"] = pr.SHA256
+	}
+	return jcs.Hash(parts)
 }
 
 // translatorEvalPassed says whether a translator role's static fingerprint has both sets: the
@@ -182,13 +199,22 @@ func staticFingerprint(roleHash string, typeHashes map[string]string, persona, b
 
 // lintTranslatorEvals refuses, when the set holds a production tenant (a tenant without kind is
 // one, APR-9), a role of profile translator whose static fingerprint has no passing reports of
-// both translator sets in the index of the set (TRN-6, eval_report_missing). The fingerprint is
-// taken per production tenant, with the persona its charter pins for the translator position,
-// and the threshold is that tenant's evals.translator_structural_match.
+// both translator sets in the index of the set (TRN-6, eval_report_missing). Every translator
+// role is checked on every apply, a stored one too, by its current fingerprint: a change of the
+// tenant, a claimed type, the persona pin or the index can take the role's reports away. The
+// fingerprint is taken per production tenant, with the persona its charter pins for the
+// translator position, and the threshold is that tenant's evals.translator_structural_match. The
+// finding goes on the object of the apply that moved it (the role, a claimed type, the tenant,
+// its Governance, an EvalReports manifest, in this order); when the apply holds none of them, on
+// the stored role.
 func lintTranslatorEvals(docs []manifest.Doc, S *lintSet, f *lintFindings) error {
 	var specs []map[string]any
+	var indexes []lintObj
 	for _, o := range S.each("EvalReports") {
 		specs = append(specs, o.spec)
+		if o.i >= 0 {
+			indexes = append(indexes, o)
+		}
 	}
 	reports := evalReportsOf(specs)
 	hashes := map[manifest.Key]string{}
@@ -201,6 +227,14 @@ func lintTranslatorEvals(docs []manifest.Doc, S *lintSet, f *lintFindings) error
 			hashes[manifest.Key{Kind: d.Kind, Name: d.Name}] = h
 		}
 	}
+	submitted := func(kind, name, tenant string) (lintObj, bool) {
+		for _, o := range S.each(kind) {
+			if o.i >= 0 && o.name == name && (tenant == "" || o.tenant == tenant) {
+				return o, true
+			}
+		}
+		return lintObj{}, false
+	}
 	for _, t := range S.each("Tenant") {
 		if mstr(t.spec, "kind") == "test" {
 			continue
@@ -210,9 +244,13 @@ func lintTranslatorEvals(docs []manifest.Doc, S *lintSet, f *lintFindings) error
 			threshold = v
 		}
 		var gov map[string]any
+		var govObj *lintObj
 		for _, g := range S.each("Governance") {
 			if g.tenant == t.name {
 				gov = g.spec
+				if g.i >= 0 {
+					govObj = &g
+				}
 				break
 			}
 		}
@@ -222,9 +260,8 @@ func lintTranslatorEvals(docs []manifest.Doc, S *lintSet, f *lintFindings) error
 			pin = persona.SHA256
 		}
 		for _, r := range S.each("Role") {
-			// Only a role of the submitted set is checked (a stored role stays enabled until its
-			// parts change), and a role the lint already refuses needs no second refusal.
-			if mstr(r.spec, "profile") != "translator" || r.i < 0 || f.refuses(r) {
+			// A role the lint already refuses needs no second refusal.
+			if mstr(r.spec, "profile") != "translator" || f.refuses(r) {
 				continue
 			}
 			types := map[string]string{}
@@ -237,9 +274,29 @@ func lintTranslatorEvals(docs []manifest.Doc, S *lintSet, f *lintFindings) error
 			if err != nil {
 				return err
 			}
-			if !translatorEvalPassed(reports, r.name, fp, threshold) {
-				f.add(r, "eval_report_missing", "")
+			if translatorEvalPassed(reports, r.name, fp, threshold) {
+				continue
 			}
+			on := r
+			if r.i < 0 {
+				found := false
+				for _, typ := range slices.Sorted(mapKeys(types)) {
+					if o, ok := submitted("TaskType", typ, ""); ok {
+						on, found = o, true
+						break
+					}
+				}
+				switch {
+				case found:
+				case t.i >= 0:
+					on = t
+				case govObj != nil:
+					on = *govObj
+				case len(indexes) > 0:
+					on = indexes[0]
+				}
+			}
+			f.add(on, "eval_report_missing", "")
 		}
 	}
 	return nil
@@ -266,10 +323,14 @@ func seatProfile(cat *Catalog, role manifest.Role) string {
 // seat_eval_missing_notice once a day per profile (MGR-23).
 func (c *Core) seatEvalWait(ctx context.Context, tx pgx.Tx, now time.Time, cat *Catalog, waiting string, role manifest.Role) (bool, error) {
 	profile := seatProfile(cat, role)
-	if seatEvalPassed(catalogEvalReports(cat), profile) {
+	fp, err := seatFingerprint(cat, profile)
+	if err != nil {
+		return false, err
+	}
+	if fp != "" && seatEvalPassed(catalogEvalReports(cat), profile, fp) {
 		return false, nil
 	}
-	first, err := markOnce(ctx, tx, now, farmTenant, "seat_eval_missing:"+profile, 24*time.Hour)
+	first, err := markOnce(ctx, tx, now, farmTenant, "seat_eval_missing:"+profile+":"+fp, 24*time.Hour)
 	if err != nil || !first {
 		return true, err
 	}

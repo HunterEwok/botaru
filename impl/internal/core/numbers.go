@@ -14,15 +14,28 @@ import (
 // The number check of a model paragraph to people (REP-4): all numbers of a digest come from the
 // code table, so the paragraph the model writes holds none. Code reads it by tokens and rejects a
 // token with a digit and a number word of the digest locale (number.words of the message
-// catalog). A token with a digit passes only as a name of the table or of the tenant catalog of
-// the same digest, or as a date or time equal to the snapshot time or a window bound.
+// catalog). A token with a digit (any Unicode number, so also superscripts and fractions) passes
+// only as a whole name of the table that also holds letters, as an exact name of the tenant
+// catalog of the same digest, or as a date or time equal to the snapshot time or a window bound.
+// A word of a multi-word name is no name of its own.
 
 // numberCheck is what the check needs from one digest: the names it may mention, the instants
 // its dates and times may name, and the time zone of the tenant.
 type numberCheck struct {
+	// names are whole names of the table rows; one passes only when it holds letters too.
 	names map[string]bool
+	// exact are the exact names of the tenant catalog.
+	exact map[string]bool
 	times []time.Time
 	loc   *time.Location
+}
+
+func hasNumber(s string) bool { return strings.IndexFunc(s, unicode.IsNumber) >= 0 }
+func hasLetter(s string) bool { return strings.IndexFunc(s, unicode.IsLetter) >= 0 }
+
+// nameAllowed says whether a token is a name the digest may mention.
+func (n numberCheck) nameAllowed(low string) bool {
+	return n.exact[low] || n.names[low] && hasLetter(low)
 }
 
 // trimToken strips the punctuation around a token of running text.
@@ -43,15 +56,15 @@ func (n numberCheck) paragraphNumbers(text string, words []string) (checked, rej
 			continue
 		}
 		low := strings.ToLower(tok)
-		if strings.IndexFunc(tok, unicode.IsDigit) >= 0 {
+		if hasNumber(tok) {
 			checked++
-			if !n.names[low] && !n.timeAllowed(tok) {
+			if !n.nameAllowed(low) && !n.timeAllowed(tok) {
 				rejected++
 			}
 			continue
 		}
-		// A number word, alone or as a part of a compound such as twenty-one.
-		for _, part := range strings.FieldsFunc(low, func(r rune) bool { return r == '-' || r == '\'' }) {
+		// A number word, alone or as a part of a compound such as twenty-one or one/two.
+		for _, part := range strings.FieldsFunc(low, func(r rune) bool { return unicode.IsPunct(r) || unicode.IsSymbol(r) }) {
 			if isWord[part] {
 				checked++
 				rejected++
@@ -86,12 +99,16 @@ func (n numberCheck) timeAllowed(tok string) bool {
 // states) and of the tenant catalog (the ids and names of its lists), and the snapshot time and
 // the window start.
 func digestNumberCheck(cat *Catalog, tenant string, snap *viewSnapshot) numberCheck {
-	n := numberCheck{names: map[string]bool{}, loc: time.UTC}
+	n := numberCheck{names: map[string]bool{}, exact: map[string]bool{}, loc: time.UTC}
+	whole := func(s string) string { return strings.ToLower(trimToken(strings.TrimSpace(s))) }
 	addName := func(s string) {
-		for _, f := range strings.Fields(s) {
-			if f = strings.ToLower(trimToken(f)); f != "" {
-				n.names[f] = true
-			}
+		if s = whole(s); s != "" && !strings.ContainsFunc(s, unicode.IsSpace) {
+			n.names[s] = true
+		}
+	}
+	addExact := func(s string) {
+		if s = whole(s); s != "" {
+			n.exact[s] = true
 		}
 	}
 	for _, r := range snap.Counts {
@@ -107,12 +124,12 @@ func digestNumberCheck(cat *Catalog, tenant string, snap *viewSnapshot) numberCh
 			m := asMap(x)
 			for _, k := range []string{"id", "name", "host", "volume"} {
 				if s, ok := m[k].(string); ok {
-					addName(s)
+					addExact(s)
 				}
 			}
 			if h, v := mstr(m, "host"), mstr(m, "volume"); h != "" && v != "" {
-				addName(h + ":" + v)
-				addName("res:" + h + ":" + v)
+				addExact(h + ":" + v)
+				addExact("res:" + h + ":" + v)
 			}
 		}
 	}

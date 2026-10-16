@@ -103,7 +103,11 @@ func (c *Core) takeoverToolCall(ctx context.Context, tx pgx.Tx, now time.Time, c
 		return refused("takeover_not_allowed")
 	}
 	estimate := grantEstimate(pr, len(body), 1)
-	if p := c.checkBudget(ctx, tx, now, tv, budgetAsk{subject: "system", extra: estimate, line: "takeover"}); p != nil {
+	open, err := openGrantMicros(ctx, tx, g.Tenant, "takeover")
+	if err != nil {
+		return nil, err
+	}
+	if p := c.checkBudget(ctx, tx, now, tv, budgetAsk{subject: "system", extra: estimate + open, line: "takeover"}); p != nil {
 		if p.Reason != "budget_exhausted" {
 			return nil, p
 		}
@@ -129,6 +133,17 @@ func (c *Core) takeoverToolCall(ctx context.Context, tx pgx.Tx, now time.Time, c
 // publishTakeovers publishes the staged takeover requests of a completed seat attempt: each
 // opens its takeover_confirm card (MGR-21).
 func (c *Core) publishTakeovers(ctx context.Context, tx pgx.Tx, now time.Time, cat *Catalog, task string, leaseNo int) error {
+	// The attempt may have seen untrusted text after it staged the request: then the request
+	// is dropped as takeover_untrusted (MGR-21).
+	var untrusted bool
+	if err := tx.QueryRow(ctx, `SELECT coalesce((record->>'untrusted_seen')::boolean, false) FROM tasks WHERE id = $1`, task).Scan(&untrusted); err != nil {
+		return err
+	}
+	if untrusted {
+		_, err := tx.Exec(ctx, `UPDATE takeovers SET state = 'dropped', reason = 'takeover_untrusted', updated_at = $3 WHERE seat_task = $1 AND lease_no = $2 AND state = 'staged'`,
+			task, leaseNo, now)
+		return err
+	}
 	rows, err := tx.Query(ctx, `UPDATE takeovers SET state = 'pending', expires_at = $3, updated_at = $4 WHERE seat_task = $1 AND lease_no = $2 AND state = 'staged'
 		RETURNING id, tenant`, task, leaseNo, now.Add(takeoverCardTTL), now)
 	if err != nil {
@@ -346,7 +361,11 @@ func (c *Core) runTakeover(ctx context.Context, tx pgx.Tx, now time.Time, cat *C
 	if state == "completed" || state == "failed" || state == "canceled" || !lineOpen(tv, "takeover") {
 		return "", "takeover_not_allowed", nil
 	}
-	if p := c.checkBudget(ctx, tx, now, tv, budgetAsk{subject: "system", extra: r.Estimate, line: "takeover"}); p != nil {
+	open, err := openGrantMicros(ctx, tx, r.Tenant, "takeover")
+	if err != nil {
+		return "", "", err
+	}
+	if p := c.checkBudget(ctx, tx, now, tv, budgetAsk{subject: "system", extra: r.Estimate + open, line: "takeover"}); p != nil {
 		return "", "takeover_not_allowed", nil
 	}
 	var b map[string]any

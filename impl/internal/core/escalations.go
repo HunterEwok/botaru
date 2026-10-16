@@ -242,6 +242,10 @@ func (c *Core) publishEscalations(ctx context.Context, tx pgx.Tx, now time.Time,
 
 // screenEscalation is the code screening of a published escalation (MGR-6).
 func (c *Core) screenEscalation(ctx context.Context, tx pgx.Tx, now time.Time, cat *Catalog, e *escalationRow) error {
+	// The duplicate and rate counts of a tenant are read and moved one screening at a time.
+	if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock(7300151, hashtext($1))`, e.Tenant); err != nil {
+		return err
+	}
 	subject, _ := json.Marshal(mmap(e.Fields, "subject"))
 	// A duplicate within an hour raises dup_count of the first record and makes none.
 	var first string
@@ -543,33 +547,50 @@ func (c *Core) escalationReviewed(ctx context.Context, tx pgx.Tx, now time.Time,
 // escalation_ttl (1 h) expires, a parked one goes to review once the money is there, and a
 // screened one left by a refused enqueue is tried again (MGR-6, MGR-2).
 func (c *Core) escalationLoop(ctx context.Context, cat *Catalog) error {
-	return c.tx(ctx, func(tx pgx.Tx, now time.Time) error {
-		if _, err := tx.Exec(ctx, `UPDATE escalations SET state = 'expired', updated_at = $1
-			WHERE state IN ('screened', 'parked', 'in_review', 'forwarded', 'taken') AND published_at <= $2`, now, now.Add(-escalationTTL)); err != nil {
-			return err
-		}
-		rows, err := tx.Query(ctx, `SELECT `+escalationCols+` FROM escalations WHERE state IN ('screened', 'parked') ORDER BY published_at, id LIMIT 100 FOR UPDATE`)
+	var tenants []string
+	if err := c.tx(ctx, func(tx pgx.Tx, now time.Time) error {
+		rows, err := tx.Query(ctx, `SELECT DISTINCT tenant FROM escalations WHERE state IN ('screened', 'parked', 'in_review', 'forwarded', 'taken') ORDER BY tenant`)
 		if err != nil {
 			return err
 		}
-		var es []*escalationRow
-		for rows.Next() {
-			e, err := scanEscalation(rows)
+		tenants, err = pgx.CollectRows(rows, pgx.RowTo[string])
+		return err
+	}); err != nil {
+		return err
+	}
+	// One transaction per tenant: a failure in one tenant does not hold back the others.
+	for _, tenant := range tenants {
+		if err := c.tx(ctx, func(tx pgx.Tx, now time.Time) error {
+			if _, err := tx.Exec(ctx, `UPDATE escalations SET state = 'expired', updated_at = $1
+				WHERE tenant = $3 AND state IN ('screened', 'parked', 'in_review', 'forwarded', 'taken') AND published_at <= $2`, now, now.Add(-escalationTTL), tenant); err != nil {
+				return err
+			}
+			rows, err := tx.Query(ctx, `SELECT `+escalationCols+` FROM escalations WHERE tenant = $1 AND state IN ('screened', 'parked') ORDER BY published_at, id LIMIT 100 FOR UPDATE`, tenant)
 			if err != nil {
-				rows.Close()
 				return err
 			}
-			es = append(es, e)
-		}
-		rows.Close()
-		if err := rows.Err(); err != nil {
-			return err
-		}
-		for _, e := range es {
-			if err := c.reviewEscalation(ctx, tx, now, cat, e); err != nil {
+			var es []*escalationRow
+			for rows.Next() {
+				e, err := scanEscalation(rows)
+				if err != nil {
+					rows.Close()
+					return err
+				}
+				es = append(es, e)
+			}
+			rows.Close()
+			if err := rows.Err(); err != nil {
 				return err
 			}
+			for _, e := range es {
+				if err := c.reviewEscalation(ctx, tx, now, cat, e); err != nil {
+					return err
+				}
+			}
+			return nil
+		}); err != nil {
+			c.log.Error("the escalation pass of a tenant failed", "tenant", tenant, "error", err)
 		}
-		return nil
-	})
+	}
+	return nil
 }
