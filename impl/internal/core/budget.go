@@ -284,6 +284,20 @@ func (c *Core) reserveSpend(ctx context.Context, tx pgx.Tx, now time.Time, tv *T
 		if p := c.checkBudget(ctx, tx, now, tv, budgetAsk{subject: r.Subject, groups: groups, extra: r.Micros, ownRoot: r.Root, line: r.Line, role: r.Role, sev1: sev1, crossed: &crossed}); p != nil {
 			return p
 		}
+		// A call in a wake-up's subtree draws on the wake-up's money too (MSG-11).
+		var wake *string
+		if r.Task != "" {
+			if err := tx.QueryRow(ctx, `SELECT record->>'wake_task' FROM tasks WHERE id = $1`, r.Task).Scan(&wake); err != nil && !errors.Is(err, pgx.ErrNoRows) {
+				return err
+			}
+		}
+		if wake != nil {
+			if p, err := c.wakeLimits(ctx, tx, now, tv, *wake, r.Micros, r.Line); err != nil {
+				return err
+			} else if p != nil {
+				return p
+			}
+		}
 		if treeBudget > 0 {
 			var used int64
 			if err := tx.QueryRow(ctx, `SELECT coalesce(sum(eur_micros), 0) FROM spend WHERE root = $1 AND unit <> 'task'`, r.Root).Scan(&used); err != nil {

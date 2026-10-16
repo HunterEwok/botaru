@@ -261,7 +261,7 @@ func TestWakeShare(t *testing.T) {
 			if err != nil {
 				return err
 			}
-			p, err = b.c.wakeShare(ctx, tx, now, tv, b.alice, groups, "work", 0)
+			p, err = b.c.wakeShare(ctx, tx, now, tv, b.alice, groups, "work", 0, "")
 			return err
 		}); err != nil {
 			t.Fatal(err)
@@ -361,5 +361,47 @@ func TestRouteWakeGuards(t *testing.T) {
 	}
 	if s := skipped(b); len(s) != 1 || s[0] == "held" || denials > 1 {
 		t.Fatalf("wake.skipped %v, denials %d", s, denials)
+	}
+}
+
+// A child or a call in a wake-up's subtree draws on the day limit of the people its entries came
+// from while it runs, not only at the wake-up's admission (MSG-11, BUD-2).
+func TestWakeLimits(t *testing.T) {
+	ctx := context.Background()
+	b := newRouteBench(t)
+	if _, err := b.c.st.Pool.Exec(ctx, `INSERT INTO tasks (id, tenant, type, state, initiator, priority_class, idempotency_key, body_hash, body, record, deadline_at, created_at, updated_at)
+		VALUES ('t_wake', 'demo', 'lead.review.v1', 'working', 'system', 1, 'open-wake', 'h', '{}',
+			jsonb_build_object('root', 't_wake', 'wake_inbox', 'role:lead', 'wake_task', 't_wake', 'wake_subjects', jsonb_build_array($1::text)), now(), now(), now())`, b.alice); err != nil {
+		t.Fatal(err)
+	}
+	cat, err := b.c.Catalog(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tv := cat.Tenants["demo"]
+	limits := func(extra int64) *Problem {
+		var p *Problem
+		if err := b.c.tx(ctx, func(tx pgx.Tx, now time.Time) error {
+			p, err = b.c.wakeLimits(ctx, tx, now, tv, "t_wake", extra, "work")
+			return err
+		}); err != nil {
+			t.Fatal(err)
+		}
+		return p
+	}
+	if p := limits(100000); p != nil {
+		t.Fatalf("a small reserve refused: %v", p)
+	}
+	// The wake-up's open reserve is a draw of its own subtree, not counted against its calls.
+	if _, err := b.c.st.Pool.Exec(ctx, `INSERT INTO spend (id, tenant, task, root, subject, line, purpose, unit, state, eur_micros, time)
+		VALUES ('sp_res', 'demo', 't_wake', 't_wake', 'system', 'work', 'work', 'task', 'reserved', 900000, now()),
+		('sp_own', 'demo', NULL, 'r_alice', $1, 'work', 'work', 'tokens', 'committed', 900000, now())`, b.alice); err != nil {
+		t.Fatal(err)
+	}
+	if p := limits(50000); p != nil {
+		t.Fatalf("a reserve within alice's day refused: %v", p)
+	}
+	if p := limits(300000); p == nil || p.Reason != "budget_exhausted" {
+		t.Fatalf("a reserve past alice's day passed: %v", p)
 	}
 }

@@ -5,6 +5,7 @@ package core
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"math"
 	"slices"
 	"strconv"
@@ -398,21 +399,11 @@ func (c *Core) runWake(ctx context.Context, tx pgx.Tx, now time.Time, cat *Catal
 		return err
 	}
 	if eur != nil {
-		var used int64
-		// The spend of the day of every wake-up of the inbox, with its children (MSG-11).
-		if err := tx.QueryRow(ctx, `SELECT coalesce(sum(s.eur_micros), 0) FROM spend s JOIN tasks t ON t.id = s.task JOIN tasks w ON w.id = t.record->>'wake_task'
-			WHERE w.tenant = $1 AND s.time >= $2 AND w.record->>'wake_inbox' = $3 AND s.unit <> 'task'`, tv.Name, day, rt.On.Inbox).Scan(&used); err != nil {
+		used, err := wakeInboxUsed(ctx, tx, tv.Name, rt.On.Inbox, day, "")
+		if err != nil {
 			return err
 		}
-		var reserved int64
-		// Of an open reserve in a wake-up's subtree, the part its task has not spent yet.
-		if err := tx.QueryRow(ctx, `SELECT coalesce(sum(greatest(s.eur_micros - coalesce((SELECT sum(x.eur_micros) FROM spend x WHERE x.task = s.task AND x.unit <> 'task'), 0), 0)), 0)
-			FROM spend s JOIN tasks t ON t.id = s.task JOIN tasks w ON w.id = t.record->>'wake_task'
-			WHERE w.tenant = $1 AND w.record->>'wake_inbox' = $2 AND s.unit = 'task' AND t.state IN ('submitted', 'working')`,
-			tv.Name, rt.On.Inbox).Scan(&reserved); err != nil {
-			return err
-		}
-		if used+reserved+estimate > money.FromEUR(*eur) {
+		if used+estimate > money.FromEUR(*eur) {
 			return skip("budget_exhausted")
 		}
 	}
@@ -461,4 +452,59 @@ type wakeInput struct {
 	// Subjects are the origin initiators of the entries: the wake-up reserves in each one's
 	// day limit too.
 	Subjects []string
+}
+
+// wakeInboxUsed is the money of the day of the wake-ups of an inbox: the spend of their whole
+// subtrees this day, and of their open reserves the part not spent yet, a wake-up's own reserve
+// being the estimate of its subtree. The reserves of ownWake are left out: the caller's reserve
+// is a draw on them (MSG-11).
+func wakeInboxUsed(ctx context.Context, tx pgx.Tx, tenant, inbox string, day time.Time, ownWake string) (int64, error) {
+	var used int64
+	err := tx.QueryRow(ctx, `SELECT coalesce(sum(CASE WHEN s.unit <> 'task' THEN CASE WHEN s.time >= $2 THEN s.eur_micros ELSE 0 END
+			WHEN t.state IN ('submitted', 'working') AND w.id <> $4 THEN greatest(s.eur_micros - coalesce((SELECT sum(x.eur_micros) FROM spend x JOIN tasks xt ON xt.id = x.task
+				WHERE x.root = s.root AND x.unit <> 'task' AND (xt.id = s.task OR (s.task = w.id AND xt.record->>'wake_task' = w.id))), 0), 0)
+			ELSE 0 END), 0)
+		FROM spend s JOIN tasks t ON t.id = s.task JOIN tasks w ON w.id = t.record->>'wake_task'
+		WHERE s.tenant = $1 AND w.tenant = $1 AND (s.time >= $2 OR t.state IN ('submitted', 'working')) AND w.record->>'wake_inbox' = $3`,
+		tenant, day, inbox, ownWake).Scan(&used)
+	return used, err
+}
+
+// wakeLimits checks a reserve in a wake-up's subtree, a task's estimate or a call's, against
+// the wake-up's money: the day ceiling of its inbox and the day limits of the principals its
+// entries came from. The wake-up's admission checked them once; its children and calls are
+// checked again, so the subtree does not spend past them while it runs (MSG-11, BUD-2).
+func (c *Core) wakeLimits(ctx context.Context, tx pgx.Tx, now time.Time, tv *TenantView, wake string, extra int64, line string) (*Problem, error) {
+	var inbox *string
+	var subjects []string
+	err := tx.QueryRow(ctx, `SELECT record->>'wake_inbox', coalesce((SELECT array_agg(x) FROM jsonb_array_elements_text(coalesce(record->'wake_subjects', '[]')) x), '{}')
+		FROM tasks WHERE tenant = $1 AND id = $2`, tv.Name, wake).Scan(&inbox, &subjects)
+	if errors.Is(err, pgx.ErrNoRows) || (err == nil && inbox == nil) {
+		return nil, nil
+	} else if err != nil {
+		return nil, err
+	}
+	day := tenantDay(tv, now)
+	if eur, _ := wakeCeilings(tv); eur != nil {
+		used, err := wakeInboxUsed(ctx, tx, tv.Name, *inbox, day, wake)
+		if err != nil {
+			return nil, err
+		}
+		if used+extra > money.FromEUR(*eur) {
+			return refuse("budget_exhausted", "the wake-ups of the inbox used up their day"), nil
+		}
+	}
+	for _, sub := range subjects {
+		sg, err := principalGroups(ctx, tx, now, tv, sub)
+		if err != nil {
+			return nil, err
+		}
+		if p := c.checkBudget(ctx, tx, now, tv, budgetAsk{subject: sub, groups: sg, extra: extra, line: line}); p != nil {
+			return p, nil
+		}
+		if p, err := c.wakeShare(ctx, tx, now, tv, sub, sg, line, extra, wake); err != nil || p != nil {
+			return p, err
+		}
+	}
+	return nil, nil
 }
