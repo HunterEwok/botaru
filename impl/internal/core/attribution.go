@@ -240,6 +240,18 @@ func (c *Core) attributionCardKind(ctx context.Context, tx pgx.Tx, tv *TenantVie
 	return rejectionLinkCard, nil
 }
 
+// cardOfAttributionKind is the decision row of a candidate's card in decision-points.yaml,
+// whatever the mode: the row's details_required applies to every kind (APR-14).
+func cardOfAttributionKind(kind string) string {
+	switch kind {
+	case "script_run":
+		return scriptLinkCard
+	case "rejected_proposal":
+		return rejectionLinkCard
+	}
+	return attributionCard
+}
+
 // attributionRow is an attribution candidate under its lock; Kind is change, rejected_proposal
 // (GOV-38) or script_run (TRN-7), and ScriptRun names the run of a script link, which has no
 // proposal.
@@ -572,7 +584,7 @@ func (c *Core) decideAttribution(ctx context.Context, w *Worker, ob OnBehalf, re
 				return err
 			}
 		}
-		if req.Decision != "unknown" && !opened {
+		if c.missingDetails(cardOfAttributionKind(a.Kind), req.Decision, opened) {
 			return deny("details_not_opened", `open "Details" first`)
 		}
 		state := map[string]string{"yes": "confirmed", "no": "rejected", "unknown": "unknown"}[req.Decision]

@@ -152,16 +152,6 @@ func (c *Core) govCardBody(ctx context.Context, tx pgx.Tx, cat *Catalog, sk, kin
 	return map[string]any{"form": "card", "card": card}, replaces, nil
 }
 
-// detailsOpened is the local check of APR-14: the person opened "Details" of this subject's
-// card at or after since (the P1 card.details record). A reusable check of APR-14 replaces it.
-// APR-14
-func detailsOpened(ctx context.Context, tx pgx.Tx, subjectKind, id, principal string, since time.Time) (bool, error) {
-	var ok bool
-	err := tx.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM card_views WHERE subject_kind = $1 AND subject_id = $2 AND principal = $3 AND opened_at >= $4)`,
-		subjectKind, id, principal, since).Scan(&ok)
-	return ok, err
-}
-
 // govDetails is P1 card.details on a promotion or attribution card: the closed fields of the
 // card to the same chat, and the opening is recorded for APR-14 and details_opened (APR-11).
 func (c *Core) govDetails(ctx context.Context, w *Worker, ob OnBehalf, req CardOp) (map[string]any, error) {

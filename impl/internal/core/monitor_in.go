@@ -57,6 +57,8 @@ var eventItem = regexp.MustCompile(`^[A-Za-z0-9_.\[\],-]+$`)
 type monitorHost struct {
 	ID, Node string
 	Scripts  []allowedScript
+	// MaintenanceHold gives a maintenance window no_action instead of pause_action (MON-9).
+	MaintenanceHold bool
 }
 
 type allowedScript struct {
@@ -82,7 +84,7 @@ func monitorHosts(cat *Catalog, tenant string) map[string]monitorHost {
 		if node == "" {
 			continue
 		}
-		mh := monitorHost{ID: asString(hm["id"]), Node: node}
+		mh := monitorHost{ID: asString(hm["id"]), Node: node, MaintenanceHold: hm["maintenance_hold"] == true}
 		scripts, _ := hm["monitor_scripts_allowed"].([]any)
 		for _, s := range scripts {
 			sm, _ := s.(map[string]any)
@@ -662,6 +664,8 @@ func (c *Core) submitSignal(ctx context.Context, w *Worker, a Activity) (*Activi
 		return c.problemSignal(ctx, w, cat, a.Event.Data)
 	case "ext.monitor.scripts.v1":
 		return c.scriptsSignal(ctx, w, cat, a.Event.Data)
+	case "ext.monitor.maintenance.v1":
+		return c.maintenanceSignal(ctx, w, cat, a.Event.Data)
 	}
 	return nil, refuse("input_schema_invalid", "unknown event type")
 }

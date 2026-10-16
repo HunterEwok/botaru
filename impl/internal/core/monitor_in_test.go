@@ -5,6 +5,7 @@ package core
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -436,5 +437,103 @@ func TestScriptRunHandout(t *testing.T) {
 		return nil
 	}); err != nil {
 		t.Fatal(err)
+	}
+}
+
+// A maintenance window of the monitoring system (MON-9): the first active event sets one hold
+// of scope host with no_tool and pause_action, reason maintenance, author contain_auto and
+// source system:monitor; later polls move its until forward, never back; a slot naming the
+// machine is held; after the window ends a later period of the same window is a new hold;
+// after a person released the hold the window sets no new one; a farm node sets nothing.
+func TestMaintenanceWindow(t *testing.T) {
+	ctx := context.Background()
+	b := newScriptBench(t)
+	poll := func(n int, state string, until time.Duration) *ActivityResult {
+		d := map[string]any{"maintenanceid": "77", "resource": "web1", "state": state}
+		if state == "active" {
+			d["until"] = b.now(t).Add(until).UTC().Format(time.RFC3339Nano)
+		}
+		return b.signal(t, "ext.monitor.maintenance.v1", fmt.Sprintf("maint-%d", n), d)
+	}
+	holds := func() []Hold {
+		l, err := b.c.HoldList(ctx, OperatorActor(b.op), TenantRequest{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return l.Items
+	}
+	poll(1, "active", 120*time.Second)
+	hs := holds()
+	if len(hs) != 1 || hs[0].Scope.Kind != "host" || hs[0].Scope.Name != "web1" || hs[0].Reason != "maintenance" || hs[0].AuthorKind != "contain_auto" ||
+		hs[0].Source != "system:monitor" || strings.Join(hs[0].Effects, ",") != "no_tool,pause_action" {
+		t.Fatalf("holds %+v", hs)
+	}
+	first := *hs[0].Until
+	b.advance(t, 60)
+	poll(2, "active", 120*time.Second)
+	poll(3, "active", 30*time.Second)
+	if hs = holds(); len(hs) != 1 || *hs[0].Until <= first {
+		t.Fatalf("after the polls %+v (first until %s)", hs, first)
+	}
+	err := b.c.tx(ctx, func(tx pgx.Tx, now time.Time) error {
+		cat, _ := b.c.Catalog(ctx)
+		if held, err := b.c.scheduleHostHeld(ctx, tx, now, cat, "demo", map[string]any{"hosts": []any{"web1"}}); err != nil || !held {
+			t.Errorf("a slot on web1: %v %v", held, err)
+		}
+		if held, err := b.c.scheduleHostHeld(ctx, tx, now, cat, "demo", map[string]any{"mode": "fast"}); err != nil || held {
+			t.Errorf("a slot on no machine: %v %v", held, err)
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The window ends: the hold stays to its until; the next period is a new hold.
+	poll(4, "ended", 0)
+	b.advance(t, 200)
+	if err := b.c.tickLoop(ctx, "hold"); err != nil {
+		t.Fatal(err)
+	}
+	if hs = holds(); len(hs) != 0 {
+		t.Fatalf("after the window %+v", hs)
+	}
+	poll(5, "active", 120*time.Second)
+	if hs = holds(); len(hs) != 1 {
+		t.Fatalf("the next period %+v", hs)
+	}
+	if _, err := b.c.HoldRelease(ctx, OperatorActor(b.op), HoldReleaseRequest{ID: hs[0].ID}); err != nil {
+		t.Fatal(err)
+	}
+	poll(6, "active", 120*time.Second)
+	poll(7, "active", 120*time.Second)
+	if hs = holds(); len(hs) != 0 {
+		t.Fatalf("a released window set a new hold %+v", hs)
+	}
+	// A gap in the polls keeps the release; only an ended event closes the period, and the
+	// next period gets a new hold (MON-9).
+	b.advance(t, 300)
+	poll(70, "active", 120*time.Second)
+	if hs = holds(); len(hs) != 0 {
+		t.Fatalf("a gap undid the release %+v", hs)
+	}
+	poll(71, "ended", 0)
+	poll(72, "active", 120*time.Second)
+	if hs = holds(); len(hs) != 1 {
+		t.Fatalf("the period after a released one %+v", hs)
+	}
+	// A new period while that hold still runs extends it instead of a second hold.
+	poll(73, "ended", 0)
+	poll(74, "active", 300*time.Second)
+	if hs2 := holds(); len(hs2) != 1 || hs2[0].ID != hs[0].ID {
+		t.Fatalf("a second hold beside the running one %+v", hs2)
+	}
+	if _, err := b.c.HoldRelease(ctx, OperatorActor(b.op), HoldReleaseRequest{ID: hs[0].ID}); err != nil {
+		t.Fatal(err)
+	}
+	b.c.cfg.FarmHosts = []string{"web1.example.org"}
+	defer func() { b.c.cfg.FarmHosts = nil }()
+	poll(8, "ended", 0)
+	if r := poll(9, "active", 120*time.Second); r.Reason != "not_subject" || len(holds()) != 0 {
+		t.Fatalf("a farm node %+v", r)
 	}
 }

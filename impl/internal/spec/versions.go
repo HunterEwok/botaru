@@ -28,11 +28,14 @@ var Ahead = map[string][]string{
 	// The tenant retention periods, which the retention loop applies in every copy (RET-9,
 	// RET-10); journals stays refused with the debug profile. The translator's eval gate of a
 	// tenant (TRN-6), the grant and takeover lines and the takeover list (MGR-17, MGR-21).
-	// File limits (ART-4) and the sink of a person's copy (SEC-10, LCY-2). The widest machine
+	// File limits (ART-4) and the sink of a person's copy (SEC-10, LCY-2). The card limit
+	// (APR-15), the tenant locale (DLV-18) and the dispatch fairness (DSP-6). The widest machine
 	// selector the script run card does not mark (TRN-10).
 	"Tenant": {"/spec/retention", "/spec/evals", "/spec/takeover", "/spec/budgets/lines/grant", "/spec/budgets/lines/takeover",
 		"/spec/limits/max_file_bytes", "/spec/limits/max_task_files_bytes", "/spec/privacy/export_sink",
-		"/spec/scripts/unnamed_targets_max"},
+		"/spec/attention/noncritical_per_day", "/spec/locale", "/spec/dispatch/fairness", "/spec/scripts/unnamed_targets_max"},
+	// The locale of a schedule's texts (DLV-18).
+	"Schedule": {"/spec/locale"},
 	// The grant ladder of a role and the grant signs of a type (MGR-17).
 	"Role":     {"/spec/model_grants"},
 	"TaskType": {"/spec/grant_eligible", "/spec/grant_eval_set", "/spec/grant"},
@@ -44,8 +47,8 @@ var Ahead = map[string][]string{
 	"Sink": {"/spec/export_only/recipient_ref"},
 	// The tool output cache (PRM-12).
 	"ToolPlugin": {"/spec/tools/*/cache_s"},
-	// The model exposure of a dataset (PRV-4).
-	"Catalog": {"/spec/resources/*/model_exposure", "/spec/resources/*/kind"},
+	// The model exposure of a dataset (PRV-4) and the maintenance hold of a host (MON-9).
+	"Catalog": {"/spec/resources/*/model_exposure", "/spec/resources/*/kind", "/spec/hosts/*/maintenance_hold"},
 }
 
 // ahead says whether the field at ptr of a manifest of kind is in Ahead.

@@ -22,6 +22,9 @@ func TestVersionLater(t *testing.T) {
 // and only in the branch of the manifest's own kind (MAN-11).
 func TestUnsupported(t *testing.T) {
 	s := load(t)
+	saved := Ahead
+	defer func() { Ahead = saved }()
+	Ahead = nil // the walk of the skeleton itself, without the fields built ahead
 	m := map[string]any{
 		"apiVersion": "botaru/v1alpha1", "kind": "Schedule",
 		"metadata": map[string]any{"name": "nightly", "tenant": "demo", "deprecated": true},
@@ -54,6 +57,9 @@ func TestUnsupported(t *testing.T) {
 // gives a field its meaning may not (MAN-11, farmctl -drop-unsupported).
 func TestDroppable(t *testing.T) {
 	s := load(t)
+	saved := Ahead
+	defer func() { Ahead = saved }()
+	Ahead = nil // the walk of the skeleton itself, without the fields built ahead
 	cases := []struct {
 		m    map[string]any
 		ptr  string

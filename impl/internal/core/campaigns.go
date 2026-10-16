@@ -466,7 +466,8 @@ func campaignActions(cat *Catalog, g *toolsGrant) []string {
 	}
 	var out []string
 	for _, a := range requestableActions(cat, g) {
-		if act, ok := cat.Actions[a]; ok && act.Campaign != nil && act.Campaign.Allowed {
+		// An action with two approvers is not offered: a campaign card takes one press (APR-16).
+		if act, ok := cat.Actions[a]; ok && act.Campaign != nil && act.Campaign.Allowed && act.Approvals < 2 {
 			out = append(out, a)
 		}
 	}
@@ -904,7 +905,9 @@ func (c *Core) admitCampaign(ctx context.Context, tx pgx.Tx, now time.Time, cat 
 	var actCampaign *manifest.ActionCampaign
 	if p.Kind == "action" {
 		a, ok := cat.Actions[p.Action]
-		if !ok || a.Campaign == nil || !a.Campaign.Allowed {
+		// The campaign approval is one press; an action that needs two approvers is never
+		// run under it (APR-16).
+		if !ok || a.Campaign == nil || !a.Campaign.Allowed || a.Approvals >= 2 {
 			return no("campaign_policy_exceeded")
 		}
 		act, actCampaign = a, a.Campaign
@@ -1363,6 +1366,10 @@ func (c *Core) releaseItems(ctx context.Context, tx pgx.Tx, now time.Time, cat *
 		return err
 	} else if stop != "" {
 		return c.stopCampaign(ctx, tx, now, cat, cmp, stop)
+	}
+	// An action that needs two approvers since the campaign was approved stops it (APR-16).
+	if campaignTwoApprovers(cat, cmp) {
+		return c.stopTwoApprovers(ctx, tx, now, cat, cmp)
 	}
 	total := n.total()
 	canary := min(cmp.Rec.Rollout.Canary, total)
@@ -2739,9 +2746,17 @@ func (c *Core) resumeCampaign(ctx context.Context, tx pgx.Tx, now time.Time, cat
 		}
 	}
 	tv := cat.Tenants[cmp.Tenant]
-	if stop, err := c.campaignRights(ctx, tx, now, tv, cmp); err != nil {
+	stop, err := c.campaignRights(ctx, tx, now, tv, cmp)
+	if err != nil {
 		return err
-	} else if stop != "" {
+	}
+	if stop == "" && campaignTwoApprovers(cat, cmp) {
+		if err := c.stopTwoApprovers(ctx, tx, now, cat, cmp); err != nil {
+			return err
+		}
+		return ok("admin")
+	}
+	if stop != "" {
 		if err := c.stopCampaign(ctx, tx, now, cat, cmp, stop); err != nil {
 			return err
 		}
@@ -2760,6 +2775,29 @@ func (c *Core) resumeCampaign(ctx context.Context, tx pgx.Tx, now time.Time, cat
 	}
 	_ = who
 	return ok("")
+}
+
+// campaignTwoApprovers says whether the action of an action campaign now needs two
+// approvers, which the one press of a campaign card does not give (APR-16).
+func campaignTwoApprovers(cat *Catalog, cmp *campaignRow) bool {
+	if cmp.Rec.kind() != "action" {
+		return false
+	}
+	act, ok := cat.Actions[cmp.Rec.action()]
+	return ok && act.Approvals >= 2
+}
+
+// stopTwoApprovers stops a campaign whose action an admin's catalog change gave a second
+// approval: the listed stop reason admin, with the cause in the audit record (APR-16).
+func (c *Core) stopTwoApprovers(ctx context.Context, tx pgx.Tx, now time.Time, cat *Catalog, cmp *campaignRow) error {
+	if _, err := c.appendAudit(ctx, tx, now, Audit{
+		Tenant: cmp.Tenant, Kind: "command", Actor: Actor{Principal: "system", Via: "core"},
+		Command: "campaign.stop", Target: &Target{Kind: "campaign", ID: cmp.ID}, OK: true, Reason: "admin",
+		After: map[string]any{"cause": "action_needs_two_approvers", "action": cmp.Rec.action()},
+	}); err != nil {
+		return err
+	}
+	return c.stopCampaign(ctx, tx, now, cat, cmp, "admin")
 }
 
 // retryCampaign creates the campaign of "Retry failed": the failed, unknown and skipped items of

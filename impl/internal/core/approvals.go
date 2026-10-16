@@ -59,6 +59,21 @@ type approvalRow struct {
 	// Mark is the data mark the arguments were checked with at the request; execution checks
 	// them again with the same mark (MAN-10).
 	Mark string
+	// Approvals is how many different people approve, fixed from the action at the request
+	// (APR-16); Votes are the presses so far.
+	Approvals int
+	Votes     []approvalVote
+	// PausedSince is when the current pause under a pause_action hold began; PausedTotalS is
+	// how long the approval was pending under such holds before it (HLD-8).
+	PausedSince  *time.Time
+	PausedTotalS int64
+}
+
+// approvalVote is one press of an approval with approvals: 2 (APR-16).
+type approvalVote struct {
+	By       string `json:"by"`
+	Decision string `json:"decision"`
+	At       string `json:"at"`
 }
 
 // approvalRecordJSON is the immutable part of the approval record kept in approvals.record.
@@ -70,17 +85,22 @@ type approvalRecordJSON struct {
 	UntrustedSource string         `json:"untrusted_source,omitempty"`
 	Context         map[string]any `json:"context,omitempty"`
 	DataMark        string         `json:"data_mark,omitempty"`
+	Approvals       int            `json:"approvals,omitempty"`
 }
 
 const approvalColumns = `id, tenant, coalesce(source_task, ''), initiator, action, args_hash, state, nonce, record, expires_at,
 	reminded_at, remind_at, cards_at, decided_at, coalesce(decided_by, ''), coalesce(decision, ''), coalesce(reason, ''),
-	coalesce(action_task, ''), coalesce(toolcall, ''), created_at`
+	coalesce(action_task, ''), coalesce(toolcall, ''), created_at, votes, paused_since, paused_total_s`
 
 func scanApproval(row pgx.Row) (*approvalRow, error) {
 	var a approvalRow
-	var rec []byte
+	var rec, votes []byte
 	if err := row.Scan(&a.ID, &a.Tenant, &a.SourceTask, &a.Initiator, &a.Action, &a.ArgsHash, &a.State, &a.Nonce, &rec, &a.ExpiresAt,
-		&a.RemindedAt, &a.RemindAt, &a.CardsAt, &a.DecidedAt, &a.DecidedBy, &a.Decision, &a.Reason, &a.ActionTask, &a.Toolcall, &a.CreatedAt); err != nil {
+		&a.RemindedAt, &a.RemindAt, &a.CardsAt, &a.DecidedAt, &a.DecidedBy, &a.Decision, &a.Reason, &a.ActionTask, &a.Toolcall, &a.CreatedAt,
+		&votes, &a.PausedSince, &a.PausedTotalS); err != nil {
+		return nil, err
+	}
+	if err := json.Unmarshal(votes, &a.Votes); err != nil {
 		return nil, err
 	}
 	var r approvalRecordJSON
@@ -88,7 +108,7 @@ func scanApproval(row pgx.Row) (*approvalRow, error) {
 		return nil, err
 	}
 	a.Args, a.Risk, a.RequestedBy, a.UntrustedSeen, a.UntrustedSource, a.Context = r.Args, r.Risk, r.RequestedBy, r.UntrustedSeen, r.UntrustedSource, r.Context
-	a.Mark = r.DataMark
+	a.Mark, a.Approvals = r.DataMark, max(r.Approvals, 1)
 	return &a, nil
 }
 
@@ -104,7 +124,7 @@ func loadApproval(ctx context.Context, q store.Querier, tenant, id string, lock 
 func (a *approvalRow) Record() map[string]any {
 	r := map[string]any{
 		"id": a.ID, "tenant": a.Tenant, "initiator": a.Initiator, "requested_by": a.RequestedBy, "action": a.Action,
-		"args": a.Args, "args_hash": a.ArgsHash, "nonce": a.Nonce, "risk": a.Risk, "approvals": 1,
+		"args": a.Args, "args_hash": a.ArgsHash, "nonce": a.Nonce, "risk": a.Risk, "approvals": max(a.Approvals, 1),
 		"untrusted_seen": a.UntrustedSeen, "expires_at": fmtTime(a.ExpiresAt), "state": a.State,
 	}
 	set := func(k, v string) {
@@ -125,6 +145,9 @@ func (a *approvalRow) Record() map[string]any {
 	}
 	if a.DecidedAt != nil {
 		r["decided_at"] = fmtTime(*a.DecidedAt)
+	}
+	if len(a.Votes) > 0 {
+		r["votes"] = a.Votes
 	}
 	switch a.State {
 	case "canceled":
@@ -299,6 +322,18 @@ func (c *Core) requestAction(ctx context.Context, tx pgx.Tx, now time.Time, cat 
 	if err := c.rs.validate(schema, actArgs); err != nil {
 		return deny("input_schema_invalid", "input_schema_invalid")
 	}
+	// The machine and resource the arguments name are scopes of the request too: a
+	// maintenance window on the host pauses new requests (HLD-3, MON-9).
+	scopes, err := c.approvalHoldScopes(ctx, tx, cat, &approvalRow{Tenant: g.Tenant, Action: name, Args: actArgs, SourceTask: g.Task,
+		RequestedBy: map[string]any{"role": g.Role}})
+	if err != nil {
+		return requestActionResult{}, err
+	}
+	if held, err := heldBy(ctx, tx, now, []string{"no_action", "pause_action"}, scopes...); err != nil {
+		return requestActionResult{}, err
+	} else if held != "" {
+		return deny("forbidden", "held")
+	}
 	argsHash, err := jcs.Hash(actArgs)
 	if err != nil {
 		return requestActionResult{}, err
@@ -382,9 +417,19 @@ func approvalScopes(tenant, action, role, typ string) []scopeRef {
 // length the Telegram binding needs for its buttons (APR-3).
 func (c *Core) insertApproval(ctx context.Context, tx pgx.Tx, now time.Time, a approvalRow) (string, error) {
 	a.ID, a.Nonce, a.State = ids.New(ids.Approval), ids.Secret(16), "pending"
+	// The number of approvers is the action's at the request and does not change (APR-16).
+	if a.Approvals == 0 {
+		cat, err := c.Catalog(ctx)
+		if err != nil {
+			return "", err
+		}
+		if act, ok := c.actionOf(cat, a.Action); ok && act.Approvals == 2 {
+			a.Approvals = 2
+		}
+	}
 	rec, err := json.Marshal(approvalRecordJSON{
 		RequestedBy: a.RequestedBy, Args: a.Args, Risk: a.Risk, UntrustedSeen: a.UntrustedSeen, UntrustedSource: a.UntrustedSource, Context: a.Context,
-		DataMark: a.Mark,
+		DataMark: a.Mark, Approvals: a.Approvals,
 	})
 	if err != nil {
 		return "", err
@@ -465,7 +510,8 @@ func approvers(ctx context.Context, q store.Querier, now time.Time, tv *TenantVi
 	}
 	var out []string
 	for _, p := range all {
-		if p == initiator && !tv.Spec.SelfApprove {
+		// With two approvers the initiator is never one of them (APR-16).
+		if p == initiator && (!tv.Spec.SelfApprove || a.Approvals == 2) {
 			continue
 		}
 		info, err := loadPrincipal(ctx, q, now, tv.Name, p)
@@ -573,7 +619,7 @@ func (c *Core) buildCard(ctx context.Context, q store.Querier, cat *Catalog, a *
 	card := map[string]any{
 		"card": kind, "subject_kind": "approval", "id": a.ID, "nonce": a.Nonce, "title": cut(title, 200),
 		"args": a.Args, "requested_by": req, "initiator_display": display, "untrusted_seen": a.UntrustedSeen,
-		"risk": a.Risk, "expires_at": fmtTime(a.ExpiresAt), "state": a.State,
+		"risk": a.Risk, "expires_at": fmtTime(a.ExpiresAt), "state": cardState(a),
 		"footer": map[string]any{"why_you": "action.approve:" + a.Action, "until": fmtTime(a.ExpiresAt), "on_silence": "the action is not executed"},
 	}
 	if a.UntrustedSource != "" {
@@ -582,8 +628,9 @@ func (c *Core) buildCard(ctx context.Context, q store.Querier, cat *Catalog, a *
 	if len(a.Context) > 0 {
 		card["context"] = a.Context
 	}
-	if a.State != "pending" && a.Decision == "approve" && a.DecidedBy != "" {
-		card["approved_by"] = []any{a.DecidedBy}
+	// The card shows who has already approved: each vote of two approvers (APR-16).
+	if by := approvedBy(a); len(by) > 0 {
+		card["approved_by"] = by
 	}
 	if reminder {
 		card["reminder"] = true
@@ -689,11 +736,25 @@ func (c *Core) approvalLoop(ctx context.Context) error {
 			if a.SourceTask != "" {
 				_ = tx.QueryRow(ctx, `SELECT type FROM tasks WHERE id = $1`, a.SourceTask).Scan(&typ)
 			}
-			role, _ := a.RequestedBy["role"].(string)
-			if held, err := heldBy(ctx, tx, now, []string{"no_action"}, approvalScopes(a.Tenant, a.Action, role, typ)...); err != nil {
+			scopes, err := c.approvalHoldScopes(ctx, tx, cat, a)
+			if err != nil {
+				return err
+			}
+			// no_action wins over pause_action (HLD-8).
+			if held, err := heldBy(ctx, tx, now, []string{"no_action"}, scopes...); err != nil {
 				return err
 			} else if held != "" {
 				return c.closeApproval(ctx, tx, now, a, "canceled", "held")
+			}
+			// A paused approval does not expire and gets no reminder, unless it has been pending
+			// under pause_action for 7 days in total (HLD-8).
+			if paused, err := c.syncPause(ctx, tx, now, a, scopes); err != nil {
+				return err
+			} else if paused {
+				if a.pausedTooLong(now) {
+					return c.closeApproval(ctx, tx, now, a, "expired", "expired")
+				}
+				return nil
 			}
 			if !a.ExpiresAt.After(now) {
 				return c.closeApproval(ctx, tx, now, a, "expired", "expired")
@@ -760,6 +821,10 @@ func (c *Core) remindApprovers(ctx context.Context, tx pgx.Tx, now time.Time, tv
 	}
 	n := 0
 	for _, p := range people {
+		// One who already voted on a two approver request is not reminded (APR-16).
+		if slices.ContainsFunc(a.Votes, func(v approvalVote) bool { return v.By == p }) {
+			continue
+		}
 		var had bool
 		if err := tx.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM deliveries WHERE subject_kind = 'approval' AND subject_id = $1 AND kind = 'approval_card' AND recipient = $2)`,
 			a.ID, p).Scan(&had); err != nil {
@@ -1022,7 +1087,7 @@ func (c *Core) Decide(ctx context.Context, w *Worker, ob *OnBehalf, req DecideRe
 		out = &DecideResult{SubjectKind: "approval", ID: a.ID, Decision: req.Decision}
 		if a.State != "pending" {
 			// A repeat of the same decision by the same person gets the same answer (IDM-3).
-			if a.DecidedBy == press.principal && a.Decision == req.Decision {
+			if a.DecidedBy == press.principal && a.Decision == req.Decision || a.voted(press.principal, req.Decision) {
 				out.State = a.State
 				return nil
 			}
@@ -1044,21 +1109,19 @@ func (c *Core) Decide(ctx context.Context, w *Worker, ob *OnBehalf, req DecideRe
 		if !mayApprove(press.tv, press.groups, a) {
 			return deny("forbidden", "the person has no action.approve for this action")
 		}
-		if press.principal == a.Initiator && !press.tv.Spec.SelfApprove {
+		if press.principal == a.Initiator && (!press.tv.Spec.SelfApprove || a.Approvals == 2) {
 			return deny("forbidden", "the initiator does not approve their own request")
 		}
-		if !a.ExpiresAt.After(now) {
-			if err := c.closeApproval(ctx, tx, now, a, "expired", "expired"); err != nil {
-				return err
-			}
-			return &committed{p: refuse("expired", "the card has expired")}
+		// A repeat of a vote of two approvers changes nothing (IDM-3).
+		if a.voted(press.principal, req.Decision) {
+			out.State = a.State
+			return nil
 		}
-		typ := ""
-		if a.SourceTask != "" {
-			_ = tx.QueryRow(ctx, `SELECT type FROM tasks WHERE id = $1`, a.SourceTask).Scan(&typ)
+		scopes, err := c.approvalHoldScopes(ctx, tx, cat, a)
+		if err != nil {
+			return err
 		}
-		role, _ := a.RequestedBy["role"].(string)
-		if held, err := heldBy(ctx, tx, now, []string{"no_action"}, approvalScopes(a.Tenant, a.Action, role, typ)...); err != nil {
+		if held, err := heldBy(ctx, tx, now, []string{"no_action"}, scopes...); err != nil {
 			return err
 		} else if held != "" {
 			if err := c.closeApproval(ctx, tx, now, a, "canceled", "held"); err != nil {
@@ -1066,20 +1129,53 @@ func (c *Core) Decide(ctx context.Context, w *Worker, ob *OnBehalf, req DecideRe
 			}
 			return &committed{p: refuse("held", "a hold cancels pending approvals")}
 		}
-		if held, err := heldBy(ctx, tx, now, []string{"pause_action"}, approvalScopes(a.Tenant, a.Action, role, typ)...); err != nil {
+		// Under pause_action a press changes nothing; a pause that ended moves the deadline
+		// first (HLD-8).
+		if paused, err := c.syncPause(ctx, tx, now, a, scopes); err != nil {
 			return err
-		} else if held != "" {
-			return refuse("held", "a hold pauses decisions on this approval")
+		} else if paused {
+			return &committed{p: refuse("held", "a hold pauses decisions on this approval")}
+		}
+		if !a.ExpiresAt.After(now) {
+			if err := c.closeApproval(ctx, tx, now, a, "expired", "expired"); err != nil {
+				return err
+			}
+			return &committed{p: refuse("expired", "the card has expired")}
+		}
+		// Holds and the deadline come first; then "Details" before a listed decision (APR-14).
+		if err := c.requireDetails(ctx, tx, now, a.Tenant, "approval", a.ID, approvalCard, req.Decision, press.principal); err != nil {
+			return err
 		}
 		var views int
 		if err := tx.QueryRow(ctx, `SELECT count(*) FROM card_views WHERE subject_kind = 'approval' AND subject_id = $1 AND principal = $2`, a.ID, press.principal).Scan(&views); err != nil {
 			return err
 		}
-		if _, err := tx.Exec(ctx, `UPDATE approvals SET decided_by = $2, decided_at = $3, decision = $4, updated_at = $3 WHERE id = $1`,
-			a.ID, press.principal, now, req.Decision); err != nil {
-			return err
+		// Two approvers: each press is a vote of its own, and the initiator is checked again at
+		// every press (APR-16).
+		final := true
+		if a.Approvals == 2 {
+			if reason, err := c.initiatorLost(ctx, tx, now, press.tv, a); err != nil {
+				return err
+			} else if reason != "" {
+				if err := c.closeApproval(ctx, tx, now, a, "canceled", reason); err != nil {
+					return err
+				}
+				out.State = a.State
+				return nil
+			}
+			a.Votes = append(a.Votes, approvalVote{By: press.principal, Decision: req.Decision, At: fmtTime(now)})
+			if _, err := tx.Exec(ctx, `UPDATE approvals SET votes = $2, updated_at = $3 WHERE id = $1`, a.ID, mustJSON(a.Votes), now); err != nil {
+				return err
+			}
+			final = req.Decision == "reject" || len(approvedBy(a)) >= 2
 		}
-		a.DecidedBy, a.Decision, a.DecidedAt = press.principal, req.Decision, &now
+		if final {
+			if _, err := tx.Exec(ctx, `UPDATE approvals SET decided_by = $2, decided_at = $3, decision = $4, updated_at = $3 WHERE id = $1`,
+				a.ID, press.principal, now, req.Decision); err != nil {
+				return err
+			}
+			a.DecidedBy, a.Decision, a.DecidedAt = press.principal, req.Decision, &now
+		}
 		ev := map[string]any{
 			"subject": map[string]any{"kind": "approval", "id": a.ID}, "card": approvalCard, "decision": req.Decision,
 			"decided_by": press.principal, "channel": w.Target, "chat_kind": ob.Chat.Kind, "via": "decide",
@@ -1106,6 +1202,12 @@ func (c *Core) Decide(ctx context.Context, w *Worker, ob *OnBehalf, req DecideRe
 			out.State = "rejected"
 			return nil
 		}
+		if !final {
+			// The first of two approvals: the cards show who approved, the request waits for a
+			// second, different person.
+			out.State = "pending"
+			return c.planCardUpdates(ctx, tx, now, a)
+		}
 		if err := c.executeApproval(ctx, tx, now, cat, press.tv, a); err != nil {
 			return err
 		}
@@ -1129,17 +1231,10 @@ func (c *Core) executeApproval(ctx context.Context, tx pgx.Tx, now time.Time, ca
 	}
 	// Every initiator but the literal system is a principal row: a person, a service or a
 	// system principal loses the release with its state or its right (APR-6, APR-18).
-	if a.Initiator != "" && a.Initiator != "system" {
-		p, err := loadPrincipal(ctx, tx, now, a.Tenant, a.Initiator)
-		if errors.Is(err, pgx.ErrNoRows) || err == nil && p.State != "active" {
-			return c.closeApproval(ctx, tx, now, a, "canceled", "person_inactive")
-		}
-		if err != nil {
-			return err
-		}
-		if !hasCap(tv, groupClosure(tv, p.Groups), requestCap(a.Action, a.Args)) {
-			return c.closeApproval(ctx, tx, now, a, "canceled", "rights_revoked")
-		}
+	if reason, err := c.initiatorLost(ctx, tx, now, tv, a); err != nil {
+		return err
+	} else if reason != "" {
+		return c.closeApproval(ctx, tx, now, a, "canceled", reason)
 	}
 	// A service action from a bot needs the role's permission at the decision too (APR-18),
 	// and every service action passes the guards of MON-8 again: the verb is still allowed,
@@ -1719,4 +1814,56 @@ func (c *Core) approvalCardBody(ctx context.Context, tx pgx.Tx, cat *Catalog, te
 		replaces = *ext
 	}
 	return map[string]any{"form": "card", "card": card}, replaces, nil
+}
+
+// approvedBy are the people who approved, in the order of their presses.
+func approvedBy(a *approvalRow) []any {
+	var out []any
+	for _, v := range a.Votes {
+		if v.Decision == "approve" {
+			out = append(out, v.By)
+		}
+	}
+	if len(out) == 0 && a.State != "pending" && a.Decision == "approve" && a.DecidedBy != "" {
+		out = append(out, a.DecidedBy)
+	}
+	return out
+}
+
+// voted says whether a person already pressed this decision on an approval of two approvers.
+func (a *approvalRow) voted(principal, decision string) bool {
+	for _, v := range a.Votes {
+		if v.By == principal && v.Decision == decision {
+			return true
+		}
+	}
+	return false
+}
+
+// initiatorLost is the cancel reason when the initiator of an approval is no longer active
+// (person_inactive) or lost action.request (rights_revoked), or "" (APR-6, APR-16).
+func (c *Core) initiatorLost(ctx context.Context, tx pgx.Tx, now time.Time, tv *TenantView, a *approvalRow) (string, error) {
+	if a.Initiator == "" || a.Initiator == "system" {
+		return "", nil
+	}
+	p, err := loadPrincipal(ctx, tx, now, a.Tenant, a.Initiator)
+	if errors.Is(err, pgx.ErrNoRows) || err == nil && p.State != "active" {
+		return "person_inactive", nil
+	}
+	if err != nil {
+		return "", err
+	}
+	if !hasCap(tv, groupClosure(tv, p.Groups), requestCap(a.Action, a.Args)) {
+		return "rights_revoked", nil
+	}
+	return "", nil
+}
+
+// cardState is the state a card shows: paused for a pending approval under pause_action, which
+// the channel draws as card.paused (HLD-8), else the approval's state.
+func cardState(a *approvalRow) string {
+	if a.State == "pending" && a.PausedSince != nil {
+		return "paused"
+	}
+	return a.State
 }

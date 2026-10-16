@@ -573,12 +573,16 @@ func (c *Core) deliverDigest(ctx context.Context, tx pgx.Tx, now time.Time, cat 
 	numbers := digestNumberCheck(cat, tenant, snap)
 	plan := func(addr, targetKind, target, channel, recipient string, group, labeled bool) error {
 		b, origin := body(group, labeled)
+		// The digest pace of the chat (REP-10).
+		runAt, replaced, err := c.digestPace(ctx, tx, now, tenant, channel, target)
+		if err != nil {
+			return err
+		}
 		// The paragraph carries no numbers: one rejected token and the digest goes without it
 		// (REP-4).
 		var checked, rejected int
 		var locale string
 		if _, ok := b["text"]; ok {
-			var err error
 			if locale, err = recipientLocale(ctx, tx, tv, recipient); err != nil {
 				return err
 			}
@@ -593,8 +597,22 @@ func (c *Core) deliverDigest(ctx context.Context, tx pgx.Tx, now time.Time, cat 
 			Tenant: tenant, Task: task, Kind: "digest", Addr: addr, TargetKind: targetKind, TargetID: target,
 			ExecKind: "channel", ExecName: channel, Recipient: recipient, Body: b, DataMark: r.DataMark, DataOrigin: origin,
 		})
-		if err != nil || rejected == 0 {
+		if err != nil {
 			return err
+		}
+		// The waiting digest ends only once the newer one is planned.
+		if replaced != "" {
+			if err := c.supersedeDigest(ctx, tx, now, tenant, replaced); err != nil {
+				return err
+			}
+		}
+		if runAt != nil {
+			if _, err := tx.Exec(ctx, `UPDATE deliveries SET run_at = $2, paced = true WHERE id = $1`, id, *runAt); err != nil {
+				return err
+			}
+		}
+		if rejected == 0 {
+			return nil
 		}
 		// Counts and ids only, never the text or its numbers (D-95, AUD-2).
 		return c.appendEvent(ctx, tx, now, tenant, Event{Type: "digest.text_dropped.v1", Subject: id, Data: map[string]any{

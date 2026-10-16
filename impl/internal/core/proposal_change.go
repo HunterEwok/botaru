@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"maps"
 	"math"
 	"regexp"
 	"slices"
@@ -22,11 +23,14 @@ import (
 type changeCheck struct {
 	Guarded bool
 	Targets []any
+	// Times are the local times of a changed schedule that disappear or repeat at the time
+	// transitions of the next year, for the card (TIM-5).
+	Times map[string]any
 }
 
 // checkChange applies the allowlist of the change kinds (PRP-3, PRP-8, PRP-10, PRP-11,
 // PRP-12, PRP-13). A refusal is a rejection with the reason of the closed list.
-func (c *Core) checkChange(ctx context.Context, tx pgx.Tx, cat *Catalog, a proposalAuthor, ch proposalChange) (changeCheck, error) {
+func (c *Core) checkChange(ctx context.Context, tx pgx.Tx, now time.Time, cat *Catalog, a proposalAuthor, ch proposalChange) (changeCheck, error) {
 	switch ch.Kind {
 	case "none":
 		return changeCheck{Targets: []any{}}, nil
@@ -35,7 +39,7 @@ func (c *Core) checkChange(ctx context.Context, tx pgx.Tx, cat *Catalog, a propo
 	case "human_change":
 		return c.checkHumanChange(cat, a, ch)
 	case "manifest_change":
-		return c.checkManifestChange(cat, a, ch)
+		return c.checkManifestChange(now, cat, a, ch)
 	}
 	// A script draft needs the scripts section of the author role with propose: in_proposal
 	// and the SCR-5 acceptance, which this build does not serve.
@@ -150,7 +154,7 @@ var tenantDownField = regexp.MustCompile(`^spec\.(limits|campaigns|scripts)\.([a
 // checkManifestChange: set operations on the allowlist proposable-fields.yaml for objects of
 // the author's tenant only; after untrusted text only fields with a safe direction, in it
 // (PRP-3, PRP-8, PRP-10, PRP-11, PRP-12).
-func (c *Core) checkManifestChange(cat *Catalog, a proposalAuthor, ch proposalChange) (changeCheck, error) {
+func (c *Core) checkManifestChange(now time.Time, cat *Catalog, a proposalAuthor, ch proposalChange) (changeCheck, error) {
 	mc := ch.ManifestChange
 	if mc == nil || len(mc.Ops) == 0 || len(mc.Ops) > 10 {
 		return changeCheck{}, rejection("schema_invalid")
@@ -167,6 +171,8 @@ func (c *Core) checkManifestChange(cat *Catalog, a proposalAuthor, ch proposalCh
 		_ = json.Unmarshal(b, &tenantSpec)
 	}
 	tenantTouched := false
+	// The cron and zone ops of each schedule, checked together after the loop (TIM-5).
+	schedOps := map[string][]manifestOp{}
 	for _, op := range mc.Ops {
 		// A template from git is not served by this build.
 		if op.Op != "set" {
@@ -185,6 +191,7 @@ func (c *Core) checkManifestChange(cat *Catalog, a proposalAuthor, ch proposalCh
 				return changeCheck{}, err
 			}
 			guarded = g
+			schedOps[op.Target.Name] = append(schedOps[op.Target.Name], op)
 		case "Tenant":
 			if op.Target.Name != a.Tenant {
 				return changeCheck{}, rejection("forbidden_change")
@@ -200,6 +207,23 @@ func (c *Core) checkManifestChange(cat *Catalog, a proposalAuthor, ch proposalCh
 		}
 		out.Guarded = out.Guarded || guarded
 		out.Targets = append(out.Targets, map[string]any{"kind": op.Target.Kind, "name": op.Target.Name, "field": op.Field})
+	}
+	for _, name := range slices.Sorted(maps.Keys(schedOps)) {
+		times, err := c.checkScheduleTimes(now, cat, tv, name, schedOps[name])
+		if err != nil {
+			return changeCheck{}, err
+		}
+		if times != nil {
+			if out.Times == nil {
+				out.Times = map[string]any{}
+			}
+			for k, v := range times {
+				if prev, ok := out.Times[k].([]string); ok {
+					v = append(prev, v.([]string)...)
+				}
+				out.Times[k] = v
+			}
+		}
 	}
 	// The patched tenant spec still passes its schema: the bounds of every changed field.
 	if tenantTouched && c.spec.Validate("urn:botaru:schema:tenant:1", tenantSpec) != nil {
@@ -263,6 +287,58 @@ func (c *Core) checkScheduleOp(cat *Catalog, tv *TenantView, a proposalAuthor, o
 		return false, nil
 	}
 	return false, rejection("forbidden_change")
+}
+
+// checkScheduleTimes checks the schedule a cron or zone change gives with code (TIM-5): the
+// local times of the next year that disappear or repeat at the transitions of its zone go to
+// the card, and a schedule of a type with makes_backup: true that loses a slot on any day is
+// rejected(schedule_time_invalid), so it gets no "Accept" button. The model takes no part.
+func (c *Core) checkScheduleTimes(now time.Time, cat *Catalog, tv *TenantView, name string, ops []manifestOp) (map[string]any, error) {
+	sc := tv.Schedules[name]
+	cron, zone := sc.Cron, scheduleTZ(tv, sc)
+	changed := false
+	for _, op := range ops {
+		value, _ := op.Value.(string)
+		switch op.Field {
+		case "spec.cron":
+			cron, changed = value, true
+		case "spec.timezone":
+			// The zone names apply takes (TIM-3): never empty and never the host's Local.
+			if value == "" || value == "Local" {
+				return nil, rejection("forbidden_change")
+			}
+			zone, changed = value, true
+		}
+	}
+	if !changed {
+		return nil, nil
+	}
+	if zone == "" || zone == "Local" {
+		return nil, rejection("forbidden_change")
+	}
+	cs, err := parseCron(cron)
+	if err != nil {
+		return nil, rejection("forbidden_change")
+	}
+	loc, err := time.LoadLocation(zone)
+	if err != nil {
+		return nil, rejection("forbidden_change")
+	}
+	disappear, repeat := scheduleTimes(cs, loc, now)
+	if len(disappear) > 0 && sc.Task != nil && cat.TaskTypes[sc.Task.Type].MakesBackup {
+		return nil, rejection("schedule_time_invalid")
+	}
+	if len(disappear) == 0 && len(repeat) == 0 {
+		return nil, nil
+	}
+	out := map[string]any{}
+	if len(disappear) > 0 {
+		out["times_disappear"] = disappear
+	}
+	if len(repeat) > 0 {
+		out["times_repeat"] = repeat
+	}
+	return out, nil
 }
 
 // cronShift compares two expressions as a shift of the window (PRP-3, PRP-11): the day,

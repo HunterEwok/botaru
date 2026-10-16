@@ -16,12 +16,12 @@ import (
 )
 
 // The commands of a person answered by code, without a model and without a task (PRM-17,
-// REP-12): /tasks, /status, /cancel, /help, /me, /lang, /team, /about, /mydata and /forget. Every text comes from
+// REP-12): /tasks, /status, /cancel, /help, /me, /lang, /team, /about, /mydata, /forget and /prefs. Every text comes from
 // the code text catalog; a type is shown by its title, never by its name.
 
 // codeCommands are the built-in commands this file answers.
 var codeCommands = map[string]bool{"/tasks": true, "/status": true, "/cancel": true, "/help": true, "/me": true, "/lang": true, "/team": true, "/about": true,
-	"/mydata": true, "/forget": true, "/grant": true, "/ungrant": true, "/incident": true, "/manager": true}
+	"/mydata": true, "/forget": true, "/grant": true, "/ungrant": true, "/incident": true, "/manager": true, "/prefs": true}
 
 func (c *Core) codeCommand(ctx context.Context, tx pgx.Tx, now time.Time, pc personCommand, word, rest string) (*ActivityResult, error) {
 	switch word {
@@ -47,6 +47,12 @@ func (c *Core) codeCommand(ctx context.Context, tx pgx.Tx, now time.Time, pc per
 		return c.incidentCommand(ctx, tx, now, pc, rest)
 	case "/manager":
 		return c.managerCommand(ctx, tx, now, pc, rest)
+	case "/prefs":
+		if pc.binding != "" {
+			// The preferences of a person are not shown in a group chat (DLV-10).
+			return pc.reply(c, "cmd.prefs.usage", nil), nil
+		}
+		return c.prefsCommand(ctx, tx, now, pc, rest)
 	}
 	return pc.reply(c, "cmd.about.text", map[string]any{"tenant": pc.tv.Name}), nil
 }

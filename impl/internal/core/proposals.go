@@ -204,7 +204,7 @@ func (c *Core) createProposal(ctx context.Context, tx pgx.Tx, now time.Time, cat
 	if a.Untrusted && kind != "none" && kind != "manifest_change" {
 		return "", rejection("untrusted_direction")
 	}
-	chk, err := c.checkChange(ctx, tx, cat, a, b.Change)
+	chk, err := c.checkChange(ctx, tx, now, cat, a, b.Change)
 	if err != nil {
 		return "", err
 	}
@@ -308,6 +308,9 @@ func (c *Core) createProposal(ctx context.Context, tx pgx.Tx, now time.Time, cat
 	}
 	if resub != nil {
 		record["resubmission"] = resub
+	}
+	if chk.Times != nil {
+		record["schedule_times"] = chk.Times
 	}
 	recRaw, err := json.Marshal(record)
 	if err != nil {

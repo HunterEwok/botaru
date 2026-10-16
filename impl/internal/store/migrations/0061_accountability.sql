@@ -59,7 +59,7 @@ CREATE INDEX forecast_scores_lens ON forecast_scores (tenant, lens, scored_at);
 
 -- What a candidate links an incident to (attribution.v2): an executed change, a proposal the
 -- commission rejected (GOV-38) or a script run. The column and its script_run part come with
--- 0059_script_links; this closes the list of kinds, and only a script link has no proposal.
+-- 0060_script_links; this closes the list of kinds, and only a script link has no proposal.
 ALTER TABLE attributions ADD CONSTRAINT attributions_kind
     CHECK (kind IN ('change', 'rejected_proposal', 'script_run') AND (kind = 'script_run' OR proposal IS NOT NULL));
 

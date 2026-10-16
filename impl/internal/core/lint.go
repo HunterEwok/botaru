@@ -22,7 +22,7 @@ import (
 
 // builtinCommands are the channel commands that a tenant's commands cannot take (PRM-17).
 var builtinCommands = map[string]bool{"/help": true, "/about": true, "/lang": true, "/mydata": true, "/tasks": true, "/status": true,
-	"/cancel": true, "/me": true, "/team": true, "/run": true, "/service": true, "/forget": true, "/grant": true, "/ungrant": true, "/incident": true, "/manager": true}
+	"/cancel": true, "/me": true, "/team": true, "/run": true, "/service": true, "/forget": true, "/grant": true, "/ungrant": true, "/incident": true, "/manager": true, "/prefs": true}
 
 // timeoutCeilings are the farm ceilings of type timeouts in seconds (DLV-16).
 var timeoutCeilings = map[string]int64{"lease": 120, "heartbeat": 30, "tool_start_by": 30}
@@ -950,10 +950,6 @@ func (c *Core) lintManifests(docs []manifest.Doc, index []int, personas personaL
 					f.add(o, "routine_fields", "/"+k)
 				}
 			}
-			if n, _ := mnum(a, "approvals"); n == 2 {
-				// Two approvers arrive in v0.2 (APR-10, APR-16).
-				f.add(o, "not_in_version", "/approvals")
-			}
 		}
 		ex := mmap(a, "executor")
 		tr, ok := tools[mstr(ex, "plugin")+"/"+mstr(ex, "tool")]
@@ -964,6 +960,8 @@ func (c *Core) lintManifests(docs []manifest.Doc, index []int, personas personaL
 			f.add(o, "executor_unknown", "/executor")
 		}
 	}
+
+	c.lintTwoApprovers(f, S)
 
 	// Roles (PRF-1, GOV-3, MEM-2, APR-1, APR-5).
 	for _, rn := range roleNames {
@@ -2182,4 +2180,50 @@ func groupDefault(dt any) bool {
 	}
 	chats := mstrs(m, "chats")
 	return len(chats) == 0 || slices.ContainsFunc(chats, func(ch string) bool { return ch == "group" || strings.HasPrefix(ch, "chat:") })
+}
+
+// lintTwoApprovers checks the actions of risk high in a production tenant (APR-16): one that a
+// group of the tenant grants action.request for, or that a role lists in actions_may_request,
+// needs approvals: 2 (high_risk_one_approver); with approvals: 2 and no group of the tenant
+// granting action.approve the apply only notes approvers_fewer_than_two in its log, since the
+// response has no notes, and doctor counts the people.
+func (c *Core) lintTwoApprovers(f *lintFindings, S *lintSet) {
+	for _, t := range S.each("Tenant") {
+		if k := mstr(t.spec, "kind"); k != "" && k != "production" {
+			continue
+		}
+		grants := func(cp string) bool {
+			for _, g := range S.each("Group") {
+				if g.tenant == t.name && slices.Contains(mstrs(g.spec, "caps"), cp) {
+					return true
+				}
+			}
+			return false
+		}
+		for _, a := range S.each("Action") {
+			if mstr(a.spec, "risk") != "high" {
+				continue
+			}
+			n, ok := mnum(a.spec, "approvals")
+			if !ok {
+				n = 1
+			}
+			requested := grants("action.request:" + a.name)
+			if n == 1 {
+				// A role of the tenant, or one without a tenant, that lists the action.
+				for _, r := range S.each("Role") {
+					if (r.tenant == "" || r.tenant == t.name) && slices.Contains(mstrs(r.spec, "actions_may_request"), a.name) {
+						requested = true
+					}
+				}
+				if requested {
+					f.add(a, "high_risk_one_approver", "/approvals")
+				}
+			} else if !grants("action.approve:" + a.name) {
+				// The note does not depend on who may request the action (APR-16).
+				c.log.Warn("apply: no group grants action.approve for a high risk action with two approvers", "code", "approvers_fewer_than_two",
+					"tenant", t.name, "action", a.name)
+			}
+		}
+	}
 }
