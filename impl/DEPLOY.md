@@ -64,6 +64,13 @@ p2_listen: 127.0.0.1:8402        # farmctl only; a separate listener (IDN-7)
 texts_dir: /etc/botaru/texts     # optional: ru.yaml and other locales of the code texts
 operator: "Example operator"     # the operator named in the AI notice (notice.ai)
 farm_hosts: [core1]              # the farm nodes (DEP-11): apply refuses a catalog that names them
+# deploy_description: /etc/botaru/deploy.yaml   # optional: the deployment description (DEP-10, deploy-topology schema);
+#   the core lints it at start and refuses to start when it fails, doctor lints it again (deploy.*),
+#   its farm_hosts must equal these, and secret.revoke reads the uses of a secret from it (SEC-6)
+# workspaces:                    # optional: the spend ceilings set at the provider (GW-9); apply checks month_eur against them
+#   share: 0.9                   # the part of a ceiling the farm limits may take
+#   providers:
+#     anthropic: {organization_eur: 1000, workspaces: {demo: 300}, test_bench_eur: 50}
 health:                          # optional thresholds of P2 health and its alarms (OBS-9, CAP-5)
   store_volume: /var/lib/postgresql   # the store volume, when the store runs on this machine
   # urgent_age_s: 600, delivery_window_s: 3600, delivery_share_min: 0.9, loop_tick_s: 30,
@@ -406,8 +413,8 @@ $X apply -as-test -drop-unsupported -commit $(git -C /opt/botaru/src rev-parse H
   examples/tenants/demo/tenant.yaml examples/tenants/demo/channels.yaml examples/model-profiles/base-std.yaml
 $X principal add -identity telegram:<your id> -locale ru
 $X grant <the principal id> hello
-$X worker enroll -tenant demo -role hello -kind agent -token-out /var/lib/botaru/workers/agent
-$X worker enroll -tenant demo -role telegram -kind channel -target telegram -token-out /var/lib/botaru/workers/channel
+$X worker enroll -tenant demo -role hello -kind agent -token-out /var/lib/botaru/workers/agent/token
+$X worker enroll -tenant demo -role telegram -kind channel -target telegram -token-out /var/lib/botaru/workers/channel/token
 docker compose --profile mock --profile workers up -d
 ```
 

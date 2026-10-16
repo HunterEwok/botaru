@@ -1,0 +1,49 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+# The deployment description of the compose farm (DEP-10), by spec/model/deploy-topology.schema.json.
+# The file is not run: the core lints it at start (deploy_description in core.yaml) and refuses to
+# start when it fails, and farmctl doctor lints it again (the checks deploy.*). secret.revoke reads
+# from it which tenant processes use a secret (SEC-6).
+#
+# One machine, core1, runs the store, the core, the agent and the Telegram channel of compose.yaml.
+# The agent worker has no process kind in the schema, so it is not listed: its container is on the
+# core network only, holds only its worker token and reaches the model only through P4 (DEP-5).
+# The mock provider runs only on a test bench and holds nothing. The watchdog and the backup job are
+# not services of compose.yaml: the installation runs them on the host as their own users, the
+# backup as in DEPLOY.md, section "Backups and restore", and the watchdog polls P2 health with the
+# health key (whose SHA-256 goes into health_keys_sha256 of core.yaml) and alerts by its own mail
+# address (MON-2, D-88).
+farm_hosts: [core1]
+health_keys: [health-key]
+watch: {notify_ref: watch-notify, interval_s: 60}
+backup:
+  target: external
+  url: https://backup.example.org/farm
+  location_id: offsite-1
+  encrypted: true                    # encrypted on core1 before it leaves; the storage has no key (RET-5)
+  key_ref: backup-key
+  credentials_ref: backup-write-only
+secrets:                             # rotation method of each named secret (SEC-5, docs/operations.md)
+  backup-key:            {rotation: overlap, window: 60d}
+  backup-write-only:     {rotation: overlap, window: 1d}
+  bot-token:             {rotation: cutover}
+  health-key:            {rotation: overlap, window: 1d}
+  operator:              {rotation: overlap, window: 1d}
+  provider-key-demo:     {rotation: overlap, window: 7d}
+  store-dsn:             {rotation: overlap, window: 1d}
+  store-password:        {rotation: overlap, window: 1d}
+  token-key:             {rotation: overlap, window: 7d}
+  watch-notify:          {rotation: cutover}
+  worker-token-channel:  {rotation: overlap, window: 7d}
+hosts:
+  core1:
+    kind: production
+    processes:
+      # P2 listens on the loopback of the core container only (p2_listen 127.0.0.1); admin names it.
+      - {name: core, kind: core, user: botaru, networks: [core, store, provider-out],
+         secrets: [store-dsn, token-key, operator, provider-key-demo],
+         listeners: {p1: {networks: [core]}, p2: {networks: [admin]}}}
+      - {name: store, kind: store, user: postgres, networks: [store], secrets: [store-password]}
+      - {name: telegram, kind: channel, tenant: demo, user: botaru, networks: [core, messenger-out],
+         secrets: [bot-token, worker-token-channel]}
+      - {name: watch, kind: watch, user: botaru-watch, networks: [admin, notify-out], secrets: [health-key, watch-notify]}
+      - {name: backup, kind: backup, user: botaru-backup, networks: [store, backup-out], secrets: [backup-key, backup-write-only]}

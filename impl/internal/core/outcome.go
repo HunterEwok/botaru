@@ -147,6 +147,11 @@ func (c *Core) Heartbeat(ctx context.Context, w *Worker, header string, req Hear
 				return nil, err
 			}
 		}
+		if w.Kind == "channel" {
+			if err := channelUpstream(ctx, tx, w, req.Health); err != nil {
+				return nil, err
+			}
+		}
 		leaseS := c.cfg.LeaseS
 		cancel := false
 		if l.Kind == "attempt" {

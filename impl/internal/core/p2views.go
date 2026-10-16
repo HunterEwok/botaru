@@ -468,6 +468,7 @@ func (c *Core) Doctor(ctx context.Context, op Operator, req TenantRequest) (*Doc
 	} else {
 		add(DoctorCheck{ID: "store.free_ratio", OK: true, Severity: "info", Value: nil})
 	}
+	c.doctorDeploy(add)
 	cat, err := c.Catalog(ctx)
 	if err != nil {
 		return nil, err
@@ -548,6 +549,10 @@ func (c *Core) Doctor(ctx context.Context, op Operator, req TenantRequest) (*Doc
 			return err
 		}
 		if err := c.doctorEvals(ctx, tx, tenant, add); err != nil {
+			return err
+		}
+		c.doctorReviewLine(cat, tenant, add)
+		if err := doctorUpstream(ctx, tx, now, tenant, add); err != nil {
 			return err
 		}
 		for _, q := range counts {

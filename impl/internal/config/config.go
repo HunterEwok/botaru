@@ -72,6 +72,14 @@ type Core struct {
 	// ExportKeyFiles maps the key_ref of an export_only sink to the file with the recipient's
 	// X25519 public key (x25519:<base64>); the core encrypts every export (LCY-2, SEC-10).
 	ExportKeyFiles map[string]string `yaml:"export_key_files"`
+	// DeployDescription is the file of the deployment description (DEP-10,
+	// spec/model/deploy-topology.schema.json): the core lints it at start and refuses to start
+	// when it fails, doctor lints it again, its farm_hosts are the farm nodes, and secret.revoke
+	// reads the uses of a secret from it (SEC-6).
+	DeployDescription string `yaml:"deploy_description"`
+	// Workspaces are the spend ceilings set at the provider for the organization and each
+	// workspace, which apply checks the tenant limits against (GW-9).
+	Workspaces core.WorkspaceCeilings `yaml:"workspaces"`
 	// Monitor turns on the monitor profile: alarms go to the monitoring system only (D-88).
 	Monitor core.MonitorConfig `yaml:"monitor"`
 }

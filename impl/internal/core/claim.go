@@ -330,6 +330,16 @@ func (c *Core) claimAttempt(ctx context.Context, tx pgx.Tx, now time.Time, cat *
 	if own != nil && own.State != "active" {
 		return nil, nil
 	}
+	// A runtime with model_attribution per_profile has capacity 1: while it holds a live
+	// attempt lease it gets no second attempt, so the profile's handle and its usage belong to
+	// that one lease (RT-3).
+	if perProfile(w) {
+		var busy bool
+		if err := tx.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM leases WHERE worker_id = $1 AND kind = 'attempt' AND state = 'active' AND lease_until > $2)`,
+			w.ID, now).Scan(&busy); err != nil || busy {
+			return nil, err
+		}
+	}
 	scopes := workerScopes(w)
 	if own != nil {
 		scopes = append(scopes, scopeRef{kind: "bot", tenant: w.Tenant, name: own.ID})

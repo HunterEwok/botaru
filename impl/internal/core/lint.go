@@ -1790,6 +1790,9 @@ func (c *Core) lintManifests(docs []manifest.Doc, index []int, personas personaL
 	if err := lintTranslatorEvals(docs, S, prior, f); err != nil {
 		return nil, err
 	}
+	// The provider workspace ceilings and the review line (GW-9, BUD-13).
+	c.lintWorkspaceCeilings(S, f)
+	c.lintReviewLine(S, f)
 	sort.SliceStable(f.out, func(i, j int) bool { return f.out[i].Path < f.out[j].Path })
 	return f.out, nil
 }

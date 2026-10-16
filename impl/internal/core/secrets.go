@@ -19,7 +19,9 @@ import (
 // channel driver (named by the driver) stop at the next call without an overlap window. For
 // any secret the core sets a hold without expiry with reason compromised on every scope that
 // uses it: the worker of a token, the channels of a driver, the plugins whose manifest names
-// the secret and the scopes the core settings list for a deployment secret (secret_uses).
+// the secret, the scopes the core settings list for a deployment secret (secret_uses) and the
+// scopes of the processes that the deployment description gives the secret (DEP-10). A secret
+// the description names only for farm processes is revoked with no hold.
 // The hold's author is the operator, so only the operator releases it.
 
 // SecretRevokeRequest is p2-secret-revoke-request.
@@ -138,7 +140,16 @@ func (c *Core) SecretRevoke(ctx context.Context, op Operator, req SecretRevokeRe
 			}
 			add(s)
 		}
-		if len(scopes) == 0 && kind == "deployment" {
+		// The uses of a deployment secret by the deployment description (SEC-6, DEP-10).
+		if c.deploy != nil {
+			channel := func(t, name string) bool { return cat.Tenants[t].channel(name) }
+			for _, s := range c.deploy.secretScopes(req.Secret, channel) {
+				if reach(s.Tenant) {
+					add(s)
+				}
+			}
+		}
+		if len(scopes) == 0 && kind == "deployment" && (c.deploy == nil || !c.deploy.names(req.Secret)) {
 			return refuse("not_found", "no credential or use of the secret is known in the tenants of the credential")
 		}
 		var holds []any

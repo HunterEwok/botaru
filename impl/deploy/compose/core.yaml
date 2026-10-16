@@ -8,6 +8,7 @@ p1_listen: 0.0.0.0:8401          # the core network of the compose file only, no
 p2_listen: 127.0.0.1:8402        # farmctl inside the core container only (IDN-7)
 operator: "Example operator"
 farm_hosts: [core1]
+deploy_description: /etc/botaru/deploy.yaml   # linted at start and by doctor (DEP-10)
 operators:
   - token_sha256: <the SHA-256 of secrets/operator>
     principal: human:p_01JB00000000000000000000A1

@@ -69,6 +69,12 @@ type Config struct {
 	// ExportKeys are the public keys of export sinks by their key_ref (x25519:<base64>), for a
 	// tenant export and for a person's copy without a key of its own request (LCY-2, SEC-10).
 	ExportKeys map[string]string
+	// DeployFile is the deployment description (DEP-10): linted at start and by doctor, the
+	// source of the farm nodes and of the secret uses of secret.revoke (SEC-6). Empty means
+	// none: doctor warns.
+	DeployFile string
+	// Workspaces are the provider workspace ceilings the deployment describes (GW-9).
+	Workspaces WorkspaceCeilings
 	// FreeSpace, when set, measures the store volume instead of Health.StoreVolume: free and
 	// total bytes. A test sets a mock measurement here.
 	FreeSpace func() (free, total uint64, err error)
@@ -122,6 +128,8 @@ type Core struct {
 	// answer then), from which a loop that never ticked counts its age (OBS-4).
 	running   atomic.Bool
 	startedAt atomic.Int64
+	// deploy is the deployment description read at start, nil without one (DEP-10).
+	deploy *DeployDescription
 }
 
 // New opens the core over a migrated store.
@@ -141,6 +149,9 @@ func New(ctx context.Context, cfg Config, st *store.Store, sp *spec.Spec, tx *te
 	}
 	c := &Core{cfg: cfg, st: st, spec: sp, texts: tx, epoch: meta.Epoch, log: cfg.Logger, rs: newResultSchemas()}
 	c.wake = newWaker()
+	if err := c.loadDeploy(); err != nil {
+		return nil, err
+	}
 	cat, err := c.Catalog(ctx)
 	if err != nil {
 		return nil, err

@@ -686,12 +686,16 @@ func (c *Core) ErasureRetry(ctx context.Context, op Operator, req ErasureIDReque
 	return &out, err
 }
 
-// addMatchSteps records a match step for every sink and monitoring adapter of the tenant and
-// every channel that did not declare it stores nothing (a cache or saved attachments), the
-// edge stores the core does not read (SEC-11, RET-4, RET-11); it says whether there is one.
+// addMatchSteps records a match step for every sink and monitoring adapter of the tenant, every
+// channel that did not declare it stores nothing (a cache or saved attachments) and every agent
+// runtime that declared runtime_internal, the edge stores the core does not read (SEC-11,
+// RET-4, RET-11, RT-5); it says whether there is one.
 func addMatchSteps(ctx context.Context, tx pgx.Tx, now time.Time, tenant, request string) (bool, error) {
+	// An agent whose runtime keeps sessions or memory itself is a store the core does not
+	// read either: it is searched by its worker id (RT-5).
 	rows, err := tx.Query(ctx, `SELECT DISTINCT kind, target FROM workers WHERE tenant = $1 AND state <> 'revoked' AND target IS NOT NULL
-		AND (kind IN ('sink', 'monitor') OR kind = 'channel' AND coalesce(hello->'driver'->>'stores_content', '') <> 'none') ORDER BY 1, 2`, tenant)
+		AND (kind IN ('sink', 'monitor') OR kind = 'channel' AND coalesce(hello->'driver'->>'stores_content', '') <> 'none')
+		UNION SELECT DISTINCT 'runtime', id FROM workers WHERE tenant = $1 AND state <> 'revoked' AND kind = 'agent' AND `+runtimeInternal+` ORDER BY 1, 2`, tenant)
 	if err != nil {
 		return false, err
 	}
@@ -718,15 +722,20 @@ func addMatchSteps(ctx context.Context, tx pgx.Tx, now time.Time, tenant, reques
 	return len(stores) > 0, nil
 }
 
-// claimMatch takes the oldest pending match step of this channel, sink or monitoring adapter:
-// the work item carries the needles of the request and asks for ids only (SEC-11, RET-11).
+// claimMatch takes the oldest pending match step of this channel, sink, monitoring adapter or
+// agent runtime: the work item carries the needles of the request and asks for ids only
+// (SEC-11, RET-11, RT-5).
 func (c *Core) claimMatch(ctx context.Context, tx pgx.Tx, now time.Time, w *Worker) (*WorkItem, error) {
 	var id, request string
 	var leaseNo int
 	var needles []string
+	kind, target := w.Kind, w.Target
+	if w.Kind == "agent" {
+		kind, target = "runtime", w.ID
+	}
 	err := tx.QueryRow(ctx, `SELECT m.id, m.request, m.lease_no, coalesce(r.needles, '{}') FROM subject_match_steps m JOIN subject_requests r ON r.id = m.request
 		WHERE m.tenant = $1 AND m.kind = $2 AND m.target = $3 AND m.state = 'pending' AND (m.run_at IS NULL OR m.run_at <= $4)
-		ORDER BY m.updated_at LIMIT 1 FOR UPDATE OF m SKIP LOCKED`, w.Tenant, w.Kind, w.Target, now).Scan(&id, &request, &leaseNo, &needles)
+		ORDER BY m.updated_at LIMIT 1 FOR UPDATE OF m SKIP LOCKED`, w.Tenant, kind, target, now).Scan(&id, &request, &leaseNo, &needles)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, nil
 	}
@@ -741,9 +750,13 @@ func (c *Core) claimMatch(ctx context.Context, tx pgx.Tx, now time.Time, w *Work
 	if _, err := tx.Exec(ctx, `UPDATE subject_match_steps SET state = 'leased', lease_no = $2, updated_at = $3 WHERE id = $1`, id, leaseNo, now); err != nil {
 		return nil, err
 	}
+	tgt := map[string]any{"kind": kind, "name": target}
+	if kind == "runtime" {
+		tgt = map[string]any{"kind": kind, "worker_id": target}
+	}
 	item.Payload = map[string]any{
 		"request_id": request, "op": "match", "reason": "subject_request",
-		"target": map[string]any{"kind": w.Kind, "name": w.Target}, "scope": map[string]any{"tenant": w.Tenant},
+		"target": tgt, "scope": map[string]any{"tenant": w.Tenant},
 		"needles": needles,
 	}
 	return item, nil
@@ -832,7 +845,8 @@ func (c *Core) endMatchStep(ctx context.Context, tx pgx.Tx, now time.Time, l *le
 // erasure request that have nothing to erase by ids: a store whose match found nothing is
 // not_applicable (no_match); a store whose match failed, or that matched nothing because it
 // came later, fails, since unmatched is not "not found" (SEC-11). A store with found ids gets
-// erase work by its own ids (claimErasure).
+// erase work by its own ids (claimErasure). A runtime that was searched (RT-5) counts the same
+// way; one without a match step erases by the request's scope.
 func settleEdgeSteps(ctx context.Context, tx pgx.Tx, now time.Time, r *subjectRequest, erasure string) error {
 	// A store that answered the match but whose worker was revoked since gets no step from
 	// the active workers; it gets one from its match step, so its found ids stay owed and the
@@ -866,7 +880,8 @@ func settleEdgeSteps(ctx context.Context, tx pgx.Tx, now time.Time, r *subjectRe
 		LEFT JOIN subject_match_steps m ON m.request = $2 AND m.store = s.store
 		WHERE s.request = $1 AND s.state = 'pending' AND (s.kind IN ('sink', 'monitor')
 			OR s.kind = 'channel' AND NOT EXISTS (SELECT 1 FROM workers w WHERE w.tenant = s.tenant AND w.kind = 'channel' AND w.target = s.target
-				AND w.state <> 'revoked' AND w.hello->'driver'->>'stores_content' = 'none')) ORDER BY s.store`, erasure, r.ID)
+				AND w.state <> 'revoked' AND w.hello->'driver'->>'stores_content' = 'none')
+			OR s.kind = 'runtime' AND m.store IS NOT NULL) ORDER BY s.store`, erasure, r.ID)
 	if err != nil {
 		return err
 	}
