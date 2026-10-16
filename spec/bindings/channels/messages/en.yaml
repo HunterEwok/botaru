@@ -49,6 +49,19 @@ texts:
   # The day of the farm manager (MGR-41): numbers only; the usage of the manager line only to the tenant's admins
   notice.manager_daily: "Farm manager, last day: {incidents} incidents, {ops} operations, {reverts} reverts, {reads} reads; manager line {spent_cents} cents."
   notice.manager_daily_farm: "Farm manager on the whole farm, last day: {incidents} incidents, {ops} operations, {reverts} reverts, {reads} reads."
+  # The farm manager from v0.3 (GOV-47, MGR-50 to MGR-53): codes, ids, numbers and times only
+  notice.manager_daily_v03: "Farm manager, last day: {incidents} incidents, {ops} operations, {reverts} reverts, {reads} reads, {takeovers} takeovers, {notices} notices; manager line {spent_cents} cents."
+  notice.manager_daily_farm_v03: "Farm manager on the whole farm, last day: {incidents} incidents, {ops} operations, {reverts} reverts, {reads} reads, {takeovers} takeovers, {notices} notices. Incident classes in two tenants or more: {recurring}."
+  notice.manager_preventable: "Incident {incident} ({class}, tenant {tenant}) at {at} was preventable by the farm manager seat ({sign}). The seat is restricted in the tenant: it only reads and sends notices. Decide with farmctl:\nfarmctl seat resume farm-manager --tenant {tenant}\nfarmctl seat assign farm-manager\nfarmctl seat vacate farm-manager"
+  notice.manager_preventable_repeat: "Reminder: the farm manager seat is restricted in tenant {tenant} since {at} after the preventable incident {incident} ({class}). Decide with farmctl:\nfarmctl seat resume farm-manager --tenant {tenant}\nfarmctl seat assign farm-manager\nfarmctl seat vacate farm-manager"
+  notice.manager_attention: "The farm manager sees {sees} on {object}, which threatens {threat}. It proposes: {op}{ref}."
+  notice.postmortem_report: "Analysis of incident {incident} ({class}, {severity}): opened {opened}, resolved {resolved}; {alarms} alarm readings, {ops} operations, {implicated} involved parties.{paragraph}{links}"
+  notice.postmortem.paragraph: "\nModel text, not checked by people (sources: {sources}): {text}"
+  notice.postmortem.reading_off: "\nReading off: the analysis is the table only."
+  notice.postmortem.links: "\nLink candidates: {links}"
+  notice.postmortem_report_farm: "Analysis of incident {incident}: {alarms} alarm readings, {ops} operations, {implicated} involved parties."
+  notice.manager_proposal_info: "For information: the farm manager may not propose this change in tenant {tenant} (category {category}, problem {problem})."
+  notice.holder_report: "Farm manager holder, last week: {preventable} preventable incidents; {notices} notices, {notices_useful} useful; {takeovers} takeovers, {approved} approved, {done} done, {failed} failed; {analyses} analyses, {analyses_useful} useful; manager lines {spent_cents} of {line_cents} cents a month; sev1 reserve used {sev1} times; Don't know on link cards {dont_know}."
   # Channel commands (REP-12, PRM-15, DLV-9)
   cmd.tasks.header: "Your tasks today:"
   cmd.tasks.row: "{n}. {title}: {state}{waiting}"

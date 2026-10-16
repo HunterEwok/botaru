@@ -701,6 +701,16 @@ func (c *Core) grantSeatToolCall(ctx context.Context, tx pgx.Tx, now time.Time, 
 		}
 		return toolAnswer(map[string]any{"tenant": g.Tenant, "requests": list}, false), nil
 	}
+	// grant_decide writes; the restricted mode leaves only the reading (MGR-47).
+	var rec []byte
+	if err := tx.QueryRow(ctx, `SELECT record FROM tasks WHERE id = $1`, g.Task).Scan(&rec); err != nil {
+		return nil, err
+	}
+	if restricted, err := seatTaskRestricted(ctx, tx, g.Tenant, rec); err != nil {
+		return nil, err
+	} else if restricted {
+		return toolAnswer(map[string]any{"code": restrictedReason}, true), nil
+	}
 	var tool catalogTool
 	for _, t := range grantSeatTools(cat, g) {
 		if t.Name == grantDecideName {

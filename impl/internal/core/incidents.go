@@ -649,6 +649,10 @@ func (c *Core) resolveIncidents(ctx context.Context, cat *Catalog) error {
 			if err := c.incidentEvent(ctx, tx, now, r, "resolved"); err != nil {
 				return err
 			}
+			// The analysis after the incident (MGR-53).
+			if err := c.enqueuePostmortem(ctx, tx, now, cat, r); err != nil {
+				return err
+			}
 			return c.settleUnhandled(ctx, tx, now, r)
 		}); err != nil {
 			errs = append(errs, c.incidentFailed(ctx, err, "resolve", d.class, d.id))
@@ -1116,6 +1120,10 @@ func (c *Core) incidentActTx(ctx context.Context, tx pgx.Tx, now time.Time, tena
 		if err := c.dismissedAttributions(ctx, tx, now, r.Tenant, r.ID); err != nil {
 			return nil, err
 		}
+		// Nor does a false incident get an analysis (MGR-53).
+		if err := c.cancelPostmortem(ctx, tx, now, r.Tenant, r.ID); err != nil {
+			return nil, err
+		}
 		// The audit keeps the reason code and the Details text for people; no model reads the
 		// audit (MGR-8).
 		audit["reason_code"], audit["details"] = req.ReasonCode, req.Details
@@ -1268,8 +1276,43 @@ func (c *Core) lintIncidentClasses(S *lintSet, f *lintFindings) error {
 			}
 		}
 	}
+	lintAccountable(S, f)
 	lintStoreLow(S, f)
 	return nil
+}
+
+// lintAccountable checks that a class with manager_accountable builds its alarm only from code
+// series: every task type of the set that publishes the class's alarm has no purpose of the
+// manager or the commission, and every role that claims it is a job role without a model slot
+// and without a profile of the seat or the commission (GOV-48, GOV-28, MGR-55).
+func lintAccountable(S *lintSet, f *lintFindings) {
+	for _, o := range S.each("IncidentClass") {
+		if o.i < 0 || !truthy(o.spec["manager_accountable"]) {
+			continue
+		}
+		alarm := mstr(mmap(o.spec, "detect"), "alarm")
+		bad := false
+		for _, t := range S.each("TaskType") {
+			if !slices.Contains(mstrs(t.spec, "events"), alarm) {
+				continue
+			}
+			if slices.Contains(excludedPurposes, mstr(t.spec, "purpose")) {
+				bad = true
+			}
+			for _, r := range S.each("Role") {
+				if !slices.Contains(mstrs(r.spec, "claims"), t.name) {
+					continue
+				}
+				if mstr(r.spec, "worker_kind") != "job" || len(mmap(r.spec, "models")) > 0 ||
+					slices.Contains([]string{"reviewer", "farm-manager", "farm-manager-reader"}, mstr(r.spec, "profile")) {
+					bad = true
+				}
+			}
+		}
+		if bad {
+			f.add(o, "incident_class_ref", "/manager_accountable")
+		}
+	}
 }
 
 // storeLowClass is the required class of the initial catalog (MGR-38).

@@ -292,11 +292,23 @@ func (c *Core) scriptRun(ctx context.Context, tx pgx.Tx, now time.Time, cat *Cat
 	if tr.UntrustedSeen {
 		return deny("forbidden", "untrusted_seen")
 	}
+	// Nor does a takeover task run a script without a card (MGR-48).
+	if takeoverOf(rec) != "" {
+		return deny("forbidden", "forbidden")
+	}
 	// A seat task's service actions and scripts share the seat's ops_per_hour, and their
 	// refusals count toward its safeguard (MGR-14).
 	seatTask, limit, err := seatToolGate(ctx, tx, now, cat, rec)
 	if err != nil {
 		return nil, "", "", err
+	}
+	if seatTask {
+		// The restricted mode refuses without counting for the safeguard (MGR-47).
+		if restricted, err := seatTaskRestricted(ctx, tx, g.Tenant, rec); err != nil {
+			return nil, "", "", err
+		} else if restricted {
+			return deny(restrictedReason, restrictedReason)
+		}
 	}
 	if limit != "" {
 		if err := c.seatToolDone(ctx, tx, now, cat, true); err != nil {

@@ -112,6 +112,9 @@ type budgetAsk struct {
 	// sev1 marks a seat ask for a sev1 incident, which may use the reserve of the manager line
 	// (MGR-20).
 	sev1 bool
+	// fallback marks a seat ask of work outside sev1 on the farm charter's fallback_profile after
+	// the month of the manager line is spent (MGR-49).
+	fallback bool
 	// crossed collects the windows whose 80% threshold the ask reaches. The caller gives the
 	// events only once the ask is accepted, so a refused ask takes no threshold slot (BUD-4).
 	crossed *[]crossing
@@ -193,6 +196,16 @@ func (c *Core) checkBudget(ctx context.Context, tx pgx.Tx, now time.Time, tv *Te
 	if line == "manager" && lb.DayEUR != nil && !ask.sev1 {
 		v := *lb.DayEUR * managerNonSev1Share
 		windows = append(windows, window{&v, day, spendFilter{line: line}, "the manager line keeps its sev1 reserve", ""})
+	}
+	// From v0.3 the month of the manager line stops work outside sev1 at 70% as the day does;
+	// sev1 runs from the day's reserve, and the fallback profile from the day alone (MGR-49).
+	if line == "manager" && claimsV03() {
+		if ask.sev1 || ask.fallback {
+			windows[2].limit = nil
+		} else if lb.MonthEUR != nil {
+			v := *lb.MonthEUR * managerNonSev1Share
+			windows = append(windows, window{&v, month, spendFilter{line: line}, "the manager line keeps its sev1 reserve", ""})
+		}
 	}
 	if ask.role != "" {
 		windows = append(windows, window{lb.PerRoleMonthEUR, month, spendFilter{line: line, role: ask.role}, "the budget line of the role is used up", ""})
@@ -289,7 +302,12 @@ func (c *Core) reserveSpend(ctx context.Context, tx pgx.Tx, now time.Time, tv *T
 		if err != nil {
 			return err
 		}
-		if p := c.checkBudget(ctx, tx, now, tv, budgetAsk{subject: r.Subject, groups: groups, extra: r.Micros, ownRoot: r.Root, line: r.Line, role: r.Role, sev1: sev1, crossed: &crossed}); p != nil {
+		fallback, err := taskFallback(ctx, tx, r.Line, r.Task)
+		if err != nil {
+			return err
+		}
+		if p := c.checkBudget(ctx, tx, now, tv, budgetAsk{subject: r.Subject, groups: groups, extra: r.Micros, ownRoot: r.Root, line: r.Line, role: r.Role,
+			sev1: sev1, fallback: fallback, crossed: &crossed}); p != nil {
 			return p
 		}
 		// A call in a wake-up's subtree draws on the wake-up's money too (MSG-11).
@@ -363,6 +381,35 @@ func taskSev1(ctx context.Context, tx pgx.Tx, line, task string) (bool, error) {
 		return false, nil
 	}
 	return sev == "sev1", err
+}
+
+// taskFallback says whether a task of the manager line runs on the fallback profile the core
+// chose at claim (MGR-49).
+func taskFallback(ctx context.Context, tx pgx.Tx, line, task string) (bool, error) {
+	if line != "manager" || task == "" || !claimsV03() {
+		return false, nil
+	}
+	var fb bool
+	err := tx.QueryRow(ctx, `SELECT coalesce((record->>'seat_fallback')::boolean, false) FROM tasks WHERE id = $1`, task).Scan(&fb)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return false, nil
+	}
+	return fb, err
+}
+
+// managerMonthSpent says whether work outside sev1 has used its 70% of the month of the tenant's
+// manager line (MGR-49); a line without a month limit is never spent this way.
+func managerMonthSpent(ctx context.Context, tx pgx.Tx, now time.Time, tv *TenantView) (bool, error) {
+	lb := tv.Spec.Budgets.Lines["manager"]
+	if lb.MonthEUR == nil {
+		return false, nil
+	}
+	day := tenantDay(tv, now)
+	used, err := windowUsed(ctx, tx, tv.Name, spendFilter{line: "manager"}, time.Date(day.Year(), day.Month(), 1, 0, 0, 0, 0, day.Location()), "")
+	if err != nil {
+		return false, err
+	}
+	return float64(used) >= float64(money.FromEUR(*lb.MonthEUR))*managerNonSev1Share, nil
 }
 
 // toolPrice is the price of one call in micro-euros: the manifest price of a tool the farm

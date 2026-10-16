@@ -377,6 +377,8 @@ func (c *Core) claimAttempt(ctx context.Context, tx pgx.Tx, now time.Time, cat *
 	if own != nil {
 		acting = actingOf{Bot: own.ID, BotEpoch: own.Epoch}
 	}
+	// fallback is the farm charter's fallback_profile when a seat task runs on it (MGR-49).
+	fallback := ""
 	// A lens review goes only to its executor role and never to the author's worker (COM-2).
 	for picked := false; !picked; {
 		err := tx.QueryRow(ctx, `SELECT id, type, body, record, lease_no, initiator FROM tasks
@@ -415,6 +417,22 @@ func (c *Core) claimAttempt(ctx context.Context, tx pgx.Tx, now time.Time, cat *
 					skip = append(skip, id)
 					continue
 				}
+			}
+			// From v0.3 work outside sev1 waits once 70% of the month of the manager line is
+			// spent, or runs on a checked fallback profile (MGR-49).
+			if seat == managerSeatID && claimsV03() {
+				fb, wait, err := c.managerMonthGate(ctx, tx, now, cat, tv, rec, cat.TaskTypes[typ])
+				if err != nil {
+					return nil, err
+				}
+				if wait {
+					if err := markWaiting(ctx, tx, now, w.Tenant, nil, []string{id}, "budget_exhausted"); err != nil {
+						return nil, err
+					}
+					skip = append(skip, id)
+					continue
+				}
+				fallback = fb
 			}
 			acting = a
 		} else if own != nil {
@@ -485,6 +503,12 @@ func (c *Core) claimAttempt(ctx context.Context, tx pgx.Tx, now time.Time, cat *
 	if seatOfRecord(rec) == managerSeatID {
 		if mp := mstr(managerCharter(cat), "model_profile"); mp != "" {
 			slot, profile = "seat", mp
+		}
+		if fallback != "" {
+			slot, profile = "seat", fallback
+			if _, err := tx.Exec(ctx, `UPDATE tasks SET record = record || '{"seat_fallback": true}'::jsonb WHERE id = $1`, id); err != nil {
+				return nil, err
+			}
 		}
 	}
 	mark, _ := record["data_mark"].(string)

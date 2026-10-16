@@ -180,6 +180,17 @@ func (s *Server) p1(w http.ResponseWriter, r *http.Request) {
 			s.fail(w, err)
 			return
 		}
+	case "card.feedback":
+		req, err := decode[core.CardFeedbackRequest](m)
+		if err != nil {
+			s.fail(w, err)
+			return
+		}
+		out, err = s.c.CardFeedback(ctx, wk, onBehalf(r), req)
+		if err != nil {
+			s.fail(w, err)
+			return
+		}
 	case "card.details", "card.remind":
 		req, err := decode[core.CardOp](m)
 		if err != nil {

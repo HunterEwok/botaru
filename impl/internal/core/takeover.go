@@ -12,6 +12,7 @@ import (
 	"github.com/jackc/pgx/v5"
 
 	"github.com/HunterEwok/botaru/impl/internal/ids"
+	"github.com/HunterEwok/botaru/impl/internal/manifest"
 	"github.com/HunterEwok/botaru/impl/internal/mcp"
 	"github.com/HunterEwok/botaru/impl/internal/money"
 	"github.com/HunterEwok/botaru/impl/internal/toolspec"
@@ -81,6 +82,15 @@ func (c *Core) takeoverToolCall(ctx context.Context, tx pgx.Tx, now time.Time, c
 	if untrusted {
 		return refused("takeover_untrusted")
 	}
+	var rec []byte
+	if err := tx.QueryRow(ctx, `SELECT record FROM tasks WHERE id = $1`, g.Task).Scan(&rec); err != nil {
+		return nil, err
+	}
+	if restricted, err := seatTaskRestricted(ctx, tx, g.Tenant, rec); err != nil {
+		return nil, err
+	} else if restricted {
+		return refused(restrictedReason)
+	}
 	task := mstr(args, "task")
 	var typ, state string
 	var body []byte
@@ -94,7 +104,8 @@ func (c *Core) takeoverToolCall(ctx context.Context, tx pgx.Tx, now time.Time, c
 	tv := cat.Tenants[g.Tenant]
 	types := mstrs(mmap(mmap(tv.Raw, "spec"), "takeover"), "types")
 	profile := mstr(managerCharter(cat), "model_profile")
-	if !slices.Contains(types, typ) || profile == "" || !lineOpen(tv, "takeover") ||
+	line := takeoverLine()
+	if !slices.Contains(types, typ) || profile == "" || !lineOpen(tv, line) ||
 		!hasCap(tv, groupClosure(tv, []string{"farm-manager-ops"}), "task.takeover:"+typ) {
 		return refused("takeover_not_allowed")
 	}
@@ -102,15 +113,34 @@ func (c *Core) takeoverToolCall(ctx context.Context, tx pgx.Tx, now time.Time, c
 	if !ok {
 		return refused("takeover_not_allowed")
 	}
+	// From v0.3 a functionary worker runs the takeover on the seat profile only with an eval
+	// report of its role on that profile without a security failure (MGR-48).
+	if claimsV03() {
+		var orig []byte
+		if err := tx.QueryRow(ctx, `SELECT record FROM tasks WHERE id = $1`, task).Scan(&orig); err != nil {
+			return nil, err
+		}
+		role := takeoverRole(cat, typ, orig)
+		if ok, err := takeoverEvalPassed(cat, g.Tenant, role, profile); err != nil {
+			return nil, err
+		} else if !ok {
+			return refused("takeover_not_allowed")
+		}
+	}
 	estimate := grantEstimate(pr, len(body), 1)
 	if err := lockTenantBudget(ctx, tx, g.Tenant); err != nil {
 		return nil, err
 	}
-	open, err := openGrantMicros(ctx, tx, g.Tenant, "takeover")
+	if fits, err := takeoverFits(ctx, tx, now, tv, estimate); err != nil {
+		return nil, err
+	} else if !fits {
+		return refused("takeover_not_allowed")
+	}
+	open, err := openGrantMicros(ctx, tx, g.Tenant, line)
 	if err != nil {
 		return nil, err
 	}
-	if p := c.checkBudget(ctx, tx, now, tv, budgetAsk{subject: "system", extra: estimate + open, line: "takeover"}); p != nil {
+	if p := c.checkBudget(ctx, tx, now, tv, budgetAsk{subject: "system", extra: estimate + open, line: line}); p != nil {
 		if p.Reason != "budget_exhausted" {
 			return nil, p
 		}
@@ -380,17 +410,25 @@ func (c *Core) runTakeover(ctx context.Context, tx pgx.Tx, now time.Time, cat *C
 		return "", "", err
 	}
 	tv := cat.Tenants[r.Tenant]
-	if state == "completed" || state == "failed" || state == "canceled" || !lineOpen(tv, "takeover") {
+	line := takeoverLine()
+	if state == "completed" || state == "failed" || state == "canceled" || !lineOpen(tv, line) {
 		return "", "takeover_not_allowed", nil
 	}
 	if err := lockTenantBudget(ctx, tx, r.Tenant); err != nil {
 		return "", "", err
 	}
-	open, err := openGrantMicros(ctx, tx, r.Tenant, "takeover")
+	// The month's takeovers other than this one, which is still pending, and the ceilings
+	// (MGR-48).
+	if fits, err := takeoverFits(ctx, tx, now, tv, r.Estimate, r.ID); err != nil {
+		return "", "", err
+	} else if !fits {
+		return "", "takeover_not_allowed", nil
+	}
+	open, err := openGrantMicros(ctx, tx, r.Tenant, line)
 	if err != nil {
 		return "", "", err
 	}
-	if p := c.checkBudget(ctx, tx, now, tv, budgetAsk{subject: "system", extra: r.Estimate + open, line: "takeover"}); p != nil {
+	if p := c.checkBudget(ctx, tx, now, tv, budgetAsk{subject: "system", extra: r.Estimate + open, line: line}); p != nil {
 		return "", "takeover_not_allowed", nil
 	}
 	var b map[string]any
@@ -409,6 +447,30 @@ func (c *Core) runTakeover(ctx context.Context, tx pgx.Tx, now time.Time, cat *C
 	if err := tx.QueryRow(ctx, `SELECT coalesce(record->>'executor_role', '') FROM tasks WHERE id = $1`, res.TaskID).Scan(&role); err != nil {
 		return "", "", err
 	}
+	if claimsV03() {
+		// The new task runs on a worker of the functionary role and inherits untrusted_seen of
+		// the original task, its attempts and the manager's basis (MGR-48).
+		var orig []byte
+		var untrusted bool
+		if err := tx.QueryRow(ctx, `SELECT o.record, coalesce((o.record->>'untrusted_seen')::boolean, false) OR coalesce((s.record->>'untrusted_seen')::boolean, false)
+			FROM tasks o, takeovers k JOIN tasks s ON s.id = k.seat_task WHERE o.id = $1 AND k.id = $2`, r.Task, r.ID).Scan(&orig, &untrusted); err != nil {
+			return "", "", err
+		}
+		if role == "" {
+			role = takeoverRole(cat, typ, orig)
+		}
+		inherit := map[string]any{"takeover_of": r.Task}
+		if untrusted {
+			inherit["untrusted_seen"], inherit["untrusted_source"] = true, "continues"
+		}
+		extra, err := json.Marshal(inherit)
+		if err != nil {
+			return "", "", err
+		}
+		if _, err := tx.Exec(ctx, `UPDATE tasks SET record = record || $2::jsonb WHERE id = $1`, res.TaskID, extra); err != nil {
+			return "", "", err
+		}
+	}
 	if role == "" {
 		role = managerSeatID
 	}
@@ -416,8 +478,8 @@ func (c *Core) runTakeover(ctx context.Context, tx pgx.Tx, now time.Time, cat *C
 	decided, _ := json.Marshal(map[string]any{"kind": "human", "principal": by})
 	if _, err := tx.Exec(ctx, `INSERT INTO model_grants (id, tenant, task, role, kind, line, profile, attempts, attempts_left, estimate_micros, cap_micros, expires_at,
 		decided_by, decided_at, state, created_at, updated_at)
-		VALUES ($1, $2, $3, $4, 'takeover', 'takeover', $5, 1, 1, $6, $6, $7, $8, $9, 'approved', $9, $9)`,
-		gid, r.Tenant, res.TaskID, role, r.Profile, r.Estimate, now.Add(takeoverGrantTTL), decided, now); err != nil {
+		VALUES ($1, $2, $3, $4, 'takeover', $10, $5, 1, 1, $6, $6, $7, $8, $9, 'approved', $9, $9)`,
+		gid, r.Tenant, res.TaskID, role, r.Profile, r.Estimate, now.Add(takeoverGrantTTL), decided, now, line); err != nil {
 		return "", "", err
 	}
 	if err := c.cancelTaskIDs(ctx, tx, now, r.Tenant, []string{r.Task}, "superseded_by_takeover"); err != nil {
@@ -501,4 +563,102 @@ func (c *Core) expireTakeovers(ctx context.Context, tx pgx.Tx, now time.Time, _ 
 		}
 	}
 	return nil
+}
+
+// Defaults of the takeover ceilings from v0.3 (MGR-48).
+const (
+	defaultTakeoverMonthEUR = 10.0
+	defaultTakeoverMaxEUR   = 1.5
+)
+
+// takeoverLine is the budget line of a takeover: the tenant's takeover line in v0.2, its manager
+// line from v0.3, outside the sev1 reserve (MGR-21, MGR-48).
+func takeoverLine() string {
+	if claimsV03() {
+		return "manager"
+	}
+	return "takeover"
+}
+
+// takeoverFits checks the ceilings of v0.3: the estimate within takeover.max_eur, and with the
+// tenant's other takeovers of the calendar month, staged, pending or approved, within
+// takeover.manager_month_eur (MGR-48). Before v0.3 it always fits.
+func takeoverFits(ctx context.Context, tx pgx.Tx, now time.Time, tv *TenantView, estimate int64, self ...string) (bool, error) {
+	if !claimsV03() {
+		return true, nil
+	}
+	t := mmap(mmap(tv.Raw, "spec"), "takeover")
+	maxOne, monthMax := defaultTakeoverMaxEUR, defaultTakeoverMonthEUR
+	if v, ok := mnum(t, "max_eur"); ok {
+		maxOne = v
+	}
+	if v, ok := mnum(t, "manager_month_eur"); ok {
+		monthMax = v
+	}
+	if estimate > money.FromEUR(maxOne) {
+		return false, nil
+	}
+	day := tenantDay(tv, now)
+	month := time.Date(day.Year(), day.Month(), 1, 0, 0, 0, 0, day.Location())
+	var used int64
+	if err := tx.QueryRow(ctx, `SELECT coalesce(sum(estimate_micros), 0) FROM takeovers WHERE tenant = $1 AND created_at >= $2
+		AND state IN ('staged', 'pending', 'approved') AND NOT id = ANY($3)`, tv.Name, month, append([]string{}, self...)).Scan(&used); err != nil {
+		return false, err
+	}
+	return used+estimate <= money.FromEUR(monthMax), nil
+}
+
+// takeoverRole is the functionary role of a task: the executor role its record names, or the
+// first role by name that claims its type and is no seat role (MGR-48).
+func takeoverRole(cat *Catalog, typ string, rec []byte) string {
+	var r struct {
+		Role string `json:"executor_role"`
+	}
+	_ = json.Unmarshal(rec, &r)
+	if r.Role != "" {
+		return r.Role
+	}
+	for _, name := range slices.Sorted(mapKeys(cat.Roles)) {
+		if slices.Contains(cat.Roles[name].Claims, typ) && !slices.Contains(managerProfiles, profileOf(cat, name)) {
+			return name
+		}
+	}
+	return ""
+}
+
+// takeoverEvalPassed says whether the eval index has a report of the role on the seat profile
+// without a security failure: an entry of the role whose fingerprint is the role's static
+// fingerprint with the seat profile as its base model (MGR-48).
+func takeoverEvalPassed(cat *Catalog, tenant, role, profile string) (bool, error) {
+	r, ok := cat.Roles[role]
+	if role == "" || !ok {
+		return false, nil
+	}
+	types := map[string]string{}
+	for _, typ := range r.Claims {
+		types[typ] = cat.Hashes[manifest.Key{Kind: "TaskType", Name: typ}]
+	}
+	pin := ""
+	position, _ := positionOf(cat, role, "")
+	if p := personaOf(mmap(mmap(mmap(tenantSpecOf(cat, "Governance", tenant), "positions"), position), "persona")); p.pinned() {
+		pin = p.SHA256
+	}
+	raw := cat.RawGlobals[manifest.Key{Kind: "Role", Name: role}]
+	fp, err := staticFingerprint(cat.Hashes[manifest.Key{Kind: "Role", Name: role}], types, pin, profile, mstr(mmap(mmap(raw, "spec"), "models"), "analysis"),
+		mstr(mmap(mmap(raw, "spec"), "runtime"), "driver"))
+	if err != nil {
+		return false, err
+	}
+	return slices.ContainsFunc(catalogEvalReports(cat), func(e evalReport) bool {
+		return e.SubjectKind == "role" && e.SubjectName == role && e.Fingerprint == fp && e.Cases > 0 && e.SecurityFailures == 0
+	}), nil
+}
+
+// takeoverOf is the original task a takeover task replaces, or "" (MGR-48).
+func takeoverOf(rec []byte) string {
+	var r struct {
+		Of string `json:"takeover_of"`
+	}
+	_ = json.Unmarshal(rec, &r)
+	return r.Of
 }

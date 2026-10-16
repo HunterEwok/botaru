@@ -28,7 +28,10 @@ var Ahead = map[string][]string{
 	// The tenant retention periods, which the retention loop applies in every copy (RET-9,
 	// RET-10); journals stays refused with the debug profile. The translator's eval gate of a
 	// tenant (TRN-6), the grant and takeover lines and the takeover list (MGR-17, MGR-21).
-	"Tenant": {"/spec/retention", "/spec/evals", "/spec/takeover", "/spec/budgets/lines/grant", "/spec/budgets/lines/takeover"},
+	// From v0.3 the takeover ceilings on the manager line and the manager's notices per person
+	// (MGR-48, MGR-52).
+	"Tenant": {"/spec/retention", "/spec/evals", "/spec/takeover", "/spec/budgets/lines/grant", "/spec/budgets/lines/takeover",
+		"/spec/takeover/manager_month_eur", "/spec/takeover/max_eur", "/spec/attention/manager_notices_per_person_day"},
 	// The grant ladder of a role and the grant signs of a type (MGR-17).
 	"Role":     {"/spec/model_grants"},
 	"TaskType": {"/spec/grant_eligible", "/spec/grant_eval_set", "/spec/grant"},

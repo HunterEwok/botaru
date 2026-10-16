@@ -584,7 +584,10 @@ func trialValue(ctx context.Context, tx pgx.Tx, tenant string, s seriesDef, subj
 	}
 	one := func(column, value string) (map[string]any, error) {
 		args := []any{tenant, s.Name, subject, from, to}
-		where := `tenant = $1 AND series = $2 AND subject = $3 AND at >= $4 AND at < $5`
+		// The attempts of a takeover on the seat model do not enter the trial of the role
+		// (MGR-48, PRP-22): the points keyed by their leases are left out.
+		where := `tenant = $1 AND series = $2 AND subject = $3 AND at >= $4 AND at < $5
+			AND NOT (key LIKE 'lease:%' AND split_part(key, ':', 2) IN (SELECT id FROM tasks WHERE tenant = $1 AND record ? 'takeover_of'))`
 		if column != "" {
 			args = append(args, value)
 			where += fmt.Sprintf(` AND %s IS DISTINCT FROM $%d`, column, len(args))

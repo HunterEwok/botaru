@@ -46,6 +46,8 @@ type proposalAuthor struct {
 	Untrusted bool
 	Sources   []string
 	Readable  []string
+	// Seat marks a proposal of the farm manager seat from v0.3 (MGR-51).
+	Seat bool
 }
 
 // rejection is the refusal of one proposal body: no record, an event with the reason (PRP-1).
@@ -107,6 +109,7 @@ func (c *Core) createProposals(ctx context.Context, tx pgx.Tx, now time.Time, ca
 		return err
 	}
 	a.Acting = acting
+	a.Seat = seatOfRecord(rec) == managerSeatID && claimsV03()
 	// An aggregator's proposal takes the mark and the untrusted flag of its task, which carry
 	// the highest mark and the logical OR of the inputs it read (AGG-4).
 	if cat.TaskTypes[typ].Purpose == "aggregate" {
@@ -118,6 +121,13 @@ func (c *Core) createProposals(ctx context.Context, tx pgx.Tx, now time.Time, ca
 		if errors.As(err, &rj) {
 			if err := c.proposalRejected(ctx, tx, now, a, body, fp, string(rj)); err != nil {
 				return err
+			}
+			// A change the manager may not propose reaches the farm operators only as a code
+			// notice for information (MGR-51).
+			if a.Seat && rj == "forbidden_change" {
+				if err := c.managerProposalInfo(ctx, tx, now, cat, a.Tenant, body); err != nil {
+					return err
+				}
 			}
 			continue
 		}
@@ -195,6 +205,10 @@ func (c *Core) createProposal(ctx context.Context, tx pgx.Tx, now time.Time, cat
 	if b.Category == "security" && kind != "none" {
 		return "", rejection("forbidden_change")
 	}
+	// The manager never proposes a change of its own seat, limits or catalog (MGR-16, MGR-51).
+	if a.Seat && managerRecusal(cat, a.Tenant, b.Change) {
+		return "", rejection("forbidden_change")
+	}
 	// After untrusted text only none or a manifest change in the safe direction (PRP-7).
 	if a.Untrusted && kind != "none" && kind != "manifest_change" {
 		return "", rejection("untrusted_direction")
@@ -266,11 +280,19 @@ func (c *Core) createProposal(ctx context.Context, tx pgx.Tx, now time.Time, cat
 	if !errors.Is(err, pgx.ErrNoRows) {
 		return fp, err
 	}
-	// The flow limits of the role and the tenant (INS-4, PRP-5).
+	// The flow limits of the role and the tenant (INS-4, PRP-5), and the manager's 2 a month
+	// (MGR-51).
 	if limited, err := proposalLimited(ctx, tx, now, cat, a); err != nil {
 		return fp, err
 	} else if limited {
 		return fp, rejection("proposal_rate_limited")
+	}
+	if a.Seat {
+		if limited, err := managerProposalLimited(ctx, tx, now, cat, a.Tenant); err != nil {
+			return fp, err
+		} else if limited {
+			return fp, rejection("proposal_rate_limited")
+		}
 	}
 	influence, self, err := selfInfluence(ctx, tx, now, a, b.Evidence, series)
 	if err != nil {
@@ -285,9 +307,14 @@ func (c *Core) createProposal(ctx context.Context, tx pgx.Tx, now time.Time, cat
 	if a.Acting.Bot != "" {
 		actingBot, botEpoch = a.Acting.Bot, a.Acting.BotEpoch
 	}
+	origin := map[string]any{"role": a.Role, "worker": a.Worker, "acting_bot": actingBot, "bot_epoch": botEpoch, "task": a.Task, "level": a.Level}
+	if a.Seat {
+		// The seat's proposals never make anyone answer for a link (GOV-41, MGR-51).
+		origin["seat"] = managerSeatID
+	}
 	record := map[string]any{
 		"id": id, "tenant": a.Tenant,
-		"origin":      map[string]any{"role": a.Role, "worker": a.Worker, "acting_bot": actingBot, "bot_epoch": botEpoch, "task": a.Task, "level": a.Level},
+		"origin":      origin,
 		"fingerprint": fp, "data_mark": a.Mark,
 		"untrusted_seen": map[string]any{"value": a.Untrusted, "sources": sources},
 		"self_influence": influence, "self_evidence": self, "conflicts_with": []any{}, "seen_count": 1,

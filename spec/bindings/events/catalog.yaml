@@ -116,6 +116,12 @@ entries:
     producer: [core]
     severity: page
     rules: [MGR-14, OBS-6]
+  - id: alarm.manager.preventable.v1
+    since: v0.3
+    data_schema: spec/model/event-data/alarm.schema.json
+    producer: [core]
+    severity: page
+    rules: [GOV-47, OBS-6]
   - id: alarm.disk.free.low.v1
     since: v0.1
     data_schema: spec/model/event-data/alarm.schema.json
