@@ -69,7 +69,7 @@ func loadBinding(ctx context.Context, q store.Querier, tenant, channel, chat str
 		return nil, err
 	}
 	b.Locale = deref(locale)
-	b.NoticeRepeat = durationOr(deref(repeat), defaultNoticeRepeat)
+	b.NoticeRepeat = min(max(durationOr(deref(repeat), defaultNoticeRepeat), 24*time.Hour), 366*24*time.Hour)
 	return &b, nil
 }
 
@@ -127,8 +127,9 @@ func (c *Core) ChatBind(ctx context.Context, op Operator, req ChatBindRequest) (
 	if modelText != "summary_only" {
 		return nil, refuse("version_unsupported", "this build sends only the closed summary to a group (model_text: summary_only)")
 	}
-	if _, ok := parseDuration(req.NoticeRepeat); req.NoticeRepeat != "" && !ok {
-		return nil, refuse("input_schema_invalid", "notice_repeat")
+	// The notices repeat at most once a day and at least once a year (MSG-17).
+	if d, ok := parseDuration(req.NoticeRepeat); req.NoticeRepeat != "" && (!ok || d < 24*time.Hour || d > 366*24*time.Hour) {
+		return nil, refuse("input_schema_invalid", "notice_repeat is a duration from 1d to 366d")
 	}
 	chat := req.Chat.ID()
 	var out Done

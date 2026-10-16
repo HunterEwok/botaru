@@ -192,10 +192,15 @@ func (f viewFilter) readable(typ, mark string) bool {
 	return true
 }
 
-func (c *Core) viewFilterOf(ctx context.Context, tx pgx.Tx, now time.Time, tv *TenantView, rec []byte) (*viewFilter, *audience, error) {
+// viewFilterOf is the filter of a task's views. A reporter task reads for the audience fixed
+// at its enqueue; another task with views (a worker's or a manager's) reads for its initiator
+// and the initiators of what its tree read. Without a principal to read for, a view shows
+// nothing: the less the audience is known, the less it sees (REP-3, REP-7, PRM-9).
+func (c *Core) viewFilterOf(ctx context.Context, tx pgx.Tx, now time.Time, tv *TenantView, initiator string, rec []byte) (*viewFilter, *audience, error) {
 	var r struct {
-		DataMark string    `json:"data_mark"`
-		Audience *audience `json:"audience"`
+		DataMark     string    `json:"data_mark"`
+		Audience     *audience `json:"audience"`
+		CoInitiators []string  `json:"co_initiators"`
 	}
 	if err := json.Unmarshal(rec, &r); err != nil {
 		return nil, nil, err
@@ -203,10 +208,20 @@ func (c *Core) viewFilterOf(ctx context.Context, tx pgx.Tx, now time.Time, tv *T
 	a := r.Audience
 	if a == nil {
 		a = &audience{}
+		for _, p := range append([]string{initiator}, r.CoInitiators...) {
+			if p != "system" && !slices.Contains(a.Principals, p) {
+				a.Principals = append(a.Principals, p)
+			}
+		}
 	}
-	f := &viewFilter{tv: tv, mark: r.DataMark}
+	mark := r.DataMark
+	if a.Ceiling != "" {
+		mark = c.lowerMark(mark, a.Ceiling)
+	}
+	f := &viewFilter{tv: tv, mark: mark}
 	if len(a.Principals) == 0 {
-		f.groups = [][]string{groupClosure(tv, []string{"system-ops"})}
+		// One reader with no groups: it reads nothing.
+		f.groups = [][]string{nil}
 	}
 	for _, p := range a.Principals {
 		gs, err := principalGroups(ctx, tx, now, tv, p)
@@ -218,9 +233,19 @@ func (c *Core) viewFilterOf(ctx context.Context, tx pgx.Tx, now time.Time, tv *T
 	return f, a, nil
 }
 
+// readableMark says whether every principal of the audience holds the data class of a mark.
+func (f viewFilter) readableMark(mark string) bool {
+	for _, gs := range f.groups {
+		if len(gs) == 0 || mark != "" && !hasData(f.tv, gs, mark) {
+			return false
+		}
+	}
+	return true
+}
+
 // reportWindow is the start of the window of a reporter task: its params.window, since_last
 // being the end of the last completed task of the type from the same source (at most 7 days).
-func reportWindow(ctx context.Context, tx pgx.Tx, now time.Time, task, typ string, body, rec []byte) (time.Time, string, error) {
+func reportWindow(ctx context.Context, tx pgx.Tx, now time.Time, tenant, task, typ string, body, rec []byte) (time.Time, string, error) {
 	var b struct {
 		Params struct {
 			Window string `json:"window"`
@@ -238,8 +263,8 @@ func reportWindow(ctx context.Context, tx pgx.Tx, now time.Time, task, typ strin
 		_ = json.Unmarshal(rec, &r)
 		by = r.EnqueuedBy
 		var last *time.Time
-		if err := tx.QueryRow(ctx, `SELECT max(updated_at) FROM tasks WHERE type = $1 AND id <> $2 AND state = 'completed' AND record->>'enqueued_by' = $3`,
-			typ, task, by).Scan(&last); err != nil {
+		if err := tx.QueryRow(ctx, `SELECT max(updated_at) FROM tasks WHERE tenant = $4 AND type = $1 AND id <> $2 AND state = 'completed' AND record->>'enqueued_by' = $3`,
+			typ, task, by, tenant).Scan(&last); err != nil {
 			return time.Time{}, "", err
 		}
 		if last != nil && now.Sub(*last) < 7*24*time.Hour {
@@ -278,16 +303,16 @@ func (c *Core) snapshotOf(ctx context.Context, tx pgx.Tx, now time.Time, cat *Ca
 		return nil, err
 	}
 	tv := cat.Tenants[tenant]
-	var typ string
+	var typ, initiator string
 	var body, rec []byte
-	if err := tx.QueryRow(ctx, `SELECT type, body, record FROM tasks WHERE id = $1`, task).Scan(&typ, &body, &rec); err != nil {
+	if err := tx.QueryRow(ctx, `SELECT type, initiator, body, record FROM tasks WHERE id = $1 AND tenant = $2`, task, tenant).Scan(&typ, &initiator, &body, &rec); err != nil {
 		return nil, err
 	}
-	f, _, err := c.viewFilterOf(ctx, tx, now, tv, rec)
+	f, _, err := c.viewFilterOf(ctx, tx, now, tv, initiator, rec)
 	if err != nil {
 		return nil, err
 	}
-	from, window, err := reportWindow(ctx, tx, now, task, typ, body, rec)
+	from, window, err := reportWindow(ctx, tx, now, tenant, task, typ, body, rec)
 	if err != nil {
 		return nil, err
 	}
@@ -360,7 +385,7 @@ func (c *Core) snapshotOf(ctx context.Context, tx pgx.Tx, now time.Time, cat *Ca
 		snap.Counts = append(snap.Counts, map[string]any{"type": k[0], "title": title, "state": k[1], "count": counts[k]})
 	}
 	// The proposals from recommended on, never an audit sample item (REP-8, DIG-6).
-	prows, err := tx.Query(ctx, `SELECT id, kind, state, coalesce(record->>'category', ''), coalesce(record->>'data_mark', ''), state_at FROM proposals
+	prows, err := tx.Query(ctx, `SELECT id, kind, state, coalesce(record->'body'->>'category', ''), coalesce(record->>'data_mark', ''), state_at FROM proposals
 		WHERE tenant = $1 AND state = ANY($2) AND state_at >= $3 ORDER BY state_at DESC, id LIMIT 1000`, tenant, proposalViewStates, from)
 	if err != nil {
 		return nil, err
@@ -371,6 +396,10 @@ func (c *Core) snapshotOf(ctx context.Context, tx pgx.Tx, now time.Time, cat *Ca
 		if err := prows.Scan(&id, &kind, &state, &category, &mark, &at); err != nil {
 			prows.Close()
 			return nil, err
+		}
+		// A proposal every participant may not read is left out and not counted (REP-7).
+		if !f.readableMark(mark) {
+			continue
 		}
 		if mark != "" && !c.markWithin(mark, f.mark) {
 			snap.PropsHidden++
@@ -390,8 +419,15 @@ func (c *Core) snapshotOf(ctx context.Context, tx pgx.Tx, now time.Time, cat *Ca
 	if err != nil {
 		return nil, err
 	}
-	_, err = tx.Exec(ctx, `INSERT INTO view_snapshots (task, body, created_at) VALUES ($1, $2, $3)`, task, raw, now)
-	return snap, err
+	// Two reads of one attempt may take it together: the first one written is the snapshot.
+	tag, err := tx.Exec(ctx, `INSERT INTO view_snapshots (task, body, created_at) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING`, task, raw, now)
+	if err != nil {
+		return nil, err
+	}
+	if tag.RowsAffected() == 0 {
+		return c.snapshotOf(ctx, tx, now, cat, tenant, task)
+	}
+	return snap, nil
 }
 
 // statusViews are the status.* views an attempt gets: the role's views of a profile and

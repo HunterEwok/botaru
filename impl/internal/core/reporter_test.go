@@ -7,6 +7,9 @@ import (
 	"encoding/json"
 	"strings"
 	"testing"
+	"time"
+
+	"github.com/jackc/pgx/v5"
 )
 
 // newReporterBench is the hello bench with a reporter role of the views status.tasks and
@@ -170,5 +173,47 @@ func TestActivityNotSubject(t *testing.T) {
 	var tasks int
 	if err := b.c.st.Pool.QueryRow(ctx, `SELECT count(*) FROM tasks`).Scan(&tasks); err != nil || tasks != 0 {
 		t.Fatalf("tasks %d %v", tasks, err)
+	}
+}
+
+// A view with no principal to read for shows nothing, a task without an audience reads for its
+// initiator, and the since_last window is the tenant's own (REP-3, REP-7, PRM-9).
+func TestViewFilterAudience(t *testing.T) {
+	ctx := context.Background()
+	b := newReporterBench(t)
+	cat, err := b.c.Catalog(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tv := cat.Tenants["demo"]
+	if err := b.c.tx(ctx, func(tx pgx.Tx, now time.Time) error {
+		f, _, err := b.c.viewFilterOf(ctx, tx, now, tv, "system", []byte(`{"data_mark": "summary"}`))
+		if err != nil {
+			return err
+		}
+		if f.readable("hello.greet.v1", "") || f.readableMark("") {
+			t.Fatalf("a view with no audience reads")
+		}
+		f, _, err = b.c.viewFilterOf(ctx, tx, now, tv, b.alice, []byte(`{"data_mark": "summary"}`))
+		if err != nil {
+			return err
+		}
+		if !f.readable("hello.greet.v1", "") || f.readable("report.status.v1x", "") {
+			t.Fatalf("the initiator's filter is wrong")
+		}
+		if _, err := tx.Exec(ctx, `INSERT INTO tasks (id, tenant, type, state, initiator, priority_class, idempotency_key, body_hash, body, record, deadline_at, created_at, updated_at)
+			VALUES ('t_other', 'other', 'report.status.v1', 'completed', 'system', 1, 'other-report', 'h', '{}', '{"enqueued_by": "schedule:daily"}', $1, $1, $1)`, now.Add(-time.Hour)); err != nil {
+			return err
+		}
+		from, _, err := reportWindow(ctx, tx, now, "demo", "t_x", "report.status.v1", []byte(`{"params": {"window": "since_last"}}`), []byte(`{"enqueued_by": "schedule:daily"}`))
+		if err != nil {
+			return err
+		}
+		if !from.Before(now.Add(-24 * time.Hour)) {
+			t.Fatalf("another tenant's report started the window: %v", from)
+		}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
 	}
 }
