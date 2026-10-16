@@ -159,9 +159,10 @@ func (c *Core) scriptActs(cat *Catalog, steps []scriptStep) bool {
 }
 
 // createScriptLinks creates the candidates of the rule script_target (TRN-7): an incident of a
-// change_sensitive class about a catalog resource among the targets a run fixed at "Run",
-// opened from the start of the run until 14 days after it ended. The hop over the catalog
-// dependencies is not built, as for the rule dependency_1. On a core that claims v0.3 only runs
+// change_sensitive class about a catalog resource among the targets a run fixed at "Run", or
+// from v0.3 about an object that depends on one of them by one step in the catalog
+// (catalogdeps.go, the step of dependency_1), opened from the start of the run until 14 days after it ended. On a
+// core that claims v0.3 only runs
 // started at or after the tenant's governance_v03_since are linked, none before it is known
 // (GOV-36).
 func (c *Core) createScriptLinks(ctx context.Context, tx pgx.Tx, now time.Time, cat *Catalog, tv *TenantView) error {
@@ -173,20 +174,23 @@ func (c *Core) createScriptLinks(ctx context.Context, tx pgx.Tx, now time.Time, 
 		}
 		from = since
 	}
-	rows, err := tx.Query(ctx, `SELECT i.id, i.class, r.id FROM incidents i JOIN script_runs r ON r.tenant = i.tenant
+	rows, err := tx.Query(ctx, `SELECT i.id, i.class, i.subject_kind, i.subject_id, r.id, coalesce(r.targets, '{}') FROM incidents i JOIN script_runs r ON r.tenant = i.tenant
 		AND r.started_at IS NOT NULL AND i.opened_at >= r.started_at AND (r.ended_at IS NULL OR i.opened_at <= r.ended_at + interval '14 days')
-		AND i.subject_kind = 'resource' AND i.subject_id = ANY(r.targets) AND ($3::timestamptz IS NULL OR r.started_at >= $3)
+		AND cardinality(r.targets) > 0 AND ($3::timestamptz IS NULL OR r.started_at >= $3)
 		WHERE i.tenant = $1 AND i.state <> 'dismissed' AND i.opened_at >= $2
 		AND NOT EXISTS (SELECT 1 FROM attributions a WHERE a.incident = i.id AND a.script_run = r.id)
 		ORDER BY i.opened_at, i.id, r.id`, tv.Name, now.Add(-attributionLookback), from)
 	if err != nil {
 		return err
 	}
-	type link struct{ incident, class, run string }
+	type link struct {
+		incident, class, kind, subject, run string
+		targets                             []string
+	}
 	var links []link
 	for rows.Next() {
 		var l link
-		if err := rows.Scan(&l.incident, &l.class, &l.run); err != nil {
+		if err := rows.Scan(&l.incident, &l.class, &l.kind, &l.subject, &l.run, &l.targets); err != nil {
 			rows.Close()
 			return err
 		}
@@ -198,7 +202,24 @@ func (c *Core) createScriptLinks(ctx context.Context, tx pgx.Tx, now time.Time, 
 	if err := rows.Err(); err != nil {
 		return err
 	}
+	deps := map[string][]subjectRef{}
 	for _, l := range links {
+		touched := l.kind == "resource" && slices.Contains(l.targets, l.subject)
+		// The hop is of the v0.3 text of TRN-7; an earlier claim links direct targets only.
+		if !touched && claimsV03() {
+			d, ok := deps[l.incident]
+			if !ok {
+				if d, err = subjectDeps(ctx, tx, cat, tv.Name, l.kind, l.subject); err != nil {
+					return err
+				}
+				deps[l.incident] = d
+			}
+			// A machine or a resource the run named is a resource of the catalog.
+			touched = slices.ContainsFunc(d, func(r subjectRef) bool { return r.Kind == "resource" && slices.Contains(l.targets, r.ID) })
+		}
+		if !touched {
+			continue
+		}
 		if err := c.createScriptLink(ctx, tx, now, tv, l.incident, l.run); err != nil {
 			return err
 		}
@@ -378,8 +399,10 @@ func scriptLinkWindowOpen(ctx context.Context, tx pgx.Tx, now time.Time, run str
 	return ended == nil || now.Before(ended.Add(defaultAttributionWindow)), nil
 }
 
-// roleIncidentLimits are the threshold and the window of HLD-9 from spec/model/holds.yaml.
-func (c *Core) roleIncidentLimits() (int, time.Duration, error) {
+// roleIncidentLimits are the threshold and the window of HLD-9 from spec/model/holds.yaml; from
+// v0.3 the tenant catalog's role_incident_hold may only make them stricter, fewer links or a
+// longer window, so a looser value never applies even if one passed the schema.
+func (c *Core) roleIncidentLimits(cat *Catalog, tenant string) (int, time.Duration, error) {
 	links, window := 3, 90*24*time.Hour
 	reg, err := c.spec.Registry("spec/model/holds.yaml")
 	if err != nil {
@@ -392,6 +415,16 @@ func (c *Core) roleIncidentLimits() (int, time.Duration, error) {
 		}
 		if d, ok := parseDuration(asString(th["window"])); ok {
 			window = d
+		}
+	}
+	if claimsV03() && cat != nil {
+		spec, _ := tenantCatalog(cat, tenant)
+		h := mmap(spec, "role_incident_hold")
+		if n, ok := mnum(h, "links"); ok && n >= 1 {
+			links = min(links, int(n))
+		}
+		if d, ok := parseDuration(mstr(h, "window")); ok {
+			window = max(window, d)
 		}
 	}
 	return links, window, nil
@@ -425,7 +458,11 @@ func (c *Core) roleIncidents(ctx context.Context, tx pgx.Tx, now time.Time, a *a
 	if err != nil || role == "" {
 		return err
 	}
-	threshold, window, err := c.roleIncidentLimits()
+	cat, err := c.Catalog(ctx)
+	if err != nil {
+		return err
+	}
+	threshold, window, err := c.roleIncidentLimits(cat, a.Tenant)
 	if err != nil {
 		return err
 	}
