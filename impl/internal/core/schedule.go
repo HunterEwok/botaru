@@ -148,6 +148,18 @@ func (c *Core) runSchedule(ctx context.Context, tx pgx.Tx, now time.Time, cat *C
 			return skip("waiting")
 		}
 	}
+	// A hold on the schedule itself, such as its auto-stop, skips the slot (TIM-3, CAP-4); so
+	// does a maintenance window on a machine the slot's task names, without catch-up (MON-9).
+	if held, err := heldBy(ctx, tx, now, []string{"no_enqueue"}, scopeRef{kind: "schedule", tenant: tv.Name, name: name}); err != nil {
+		return err
+	} else if held != "" {
+		return skip("held")
+	}
+	if held, err := c.scheduleHostHeld(ctx, tx, now, cat, tv.Name, sc.Task.Params); err != nil {
+		return err
+	} else if held {
+		return skip("held")
+	}
 	tt := cat.TaskTypes[sc.Task.Type]
 	// Analysis keeps to the run limit and the merge window of its role (INS-4).
 	if tt.Purpose == "insight" {

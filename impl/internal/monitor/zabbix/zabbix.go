@@ -49,8 +49,11 @@ type Config struct {
 	WebhookToken string
 	ScriptsEvery time.Duration
 	TickEvery    time.Duration
-	HTTP         *http.Client
-	Logger       *slog.Logger
+	// MaintenanceEvery is maintenance_poll_s of the deployment binding: how often the maintenance
+	// status of the catalog nodes is read, 60 seconds by default and at most 300 (MON-9).
+	MaintenanceEvery time.Duration
+	HTTP             *http.Client
+	Logger           *slog.Logger
 }
 
 // Adapter runs one adapter process.
@@ -63,6 +66,8 @@ type Adapter struct {
 	sent    map[string]string
 	hostIDs map[string]string // Zabbix host name -> hostid
 	reqID   int
+	// inMaintenance is the window id of each node found in maintenance at the last poll.
+	inMaintenance map[string]string
 }
 
 type script struct {
@@ -85,13 +90,18 @@ func New(cfg Config) *Adapter {
 	if cfg.TickEvery == 0 {
 		cfg.TickEvery = time.Minute
 	}
+	if cfg.MaintenanceEvery <= 0 {
+		cfg.MaintenanceEvery = time.Minute
+	}
+	cfg.MaintenanceEvery = min(cfg.MaintenanceEvery, MaxMaintenanceEvery)
 	if cfg.HTTP == nil {
 		cfg.HTTP = &http.Client{Timeout: 90 * time.Second}
 	}
 	if cfg.Logger == nil {
 		cfg.Logger = slog.Default()
 	}
-	return &Adapter{cfg: cfg, log: cfg.Logger, scripts: map[string][]script{}, sent: map[string]string{}, hostIDs: map[string]string{}}
+	return &Adapter{cfg: cfg, log: cfg.Logger, scripts: map[string][]script{}, sent: map[string]string{}, hostIDs: map[string]string{},
+		inMaintenance: map[string]string{}}
 }
 
 // Hello reports the adapter to the core.
@@ -119,7 +129,11 @@ func (a *Adapter) Run(ctx context.Context) error {
 		sleep(ctx, 5*time.Second)
 	}
 	var wg sync.WaitGroup
-	wg.Add(2)
+	wg.Add(3)
+	go func() {
+		defer wg.Done()
+		a.every(ctx, a.cfg.MaintenanceEvery, a.PollMaintenance)
+	}()
 	go func() {
 		defer wg.Done()
 		a.every(ctx, a.cfg.TickEvery, a.Tick)
@@ -679,4 +693,77 @@ func digits(s string) bool {
 		}
 	}
 	return true
+}
+
+// MaxMaintenanceEvery is the longest maintenance poll interval (MON-9).
+const MaxMaintenanceEvery = 300 * time.Second
+
+// PollMaintenance reads the maintenance status of the catalog nodes and sends one
+// ext.monitor.maintenance.v1 per node in maintenance with state active and until = the poll
+// time plus two poll intervals, and one with state ended at the first poll that finds a node
+// out of the maintenance it was in (MON-9). It does not read the time periods of a window:
+// the end of a window is found by the polls, not computed (D-100).
+func (a *Adapter) PollMaintenance(ctx context.Context) error {
+	nodes := make([]string, 0, len(a.cfg.Hosts))
+	for n := range a.cfg.Hosts {
+		nodes = append(nodes, n)
+	}
+	sort.Strings(nodes)
+	if len(nodes) == 0 {
+		return nil
+	}
+	var hosts []struct {
+		Host          string `json:"host"`
+		Status        string `json:"maintenance_status"`
+		MaintenanceID string `json:"maintenanceid"`
+	}
+	if err := a.call(ctx, "host.get", map[string]any{"output": []string{"hostid", "host", "maintenance_status", "maintenanceid"},
+		"filter": map[string]any{"host": nodes}}, &hosts); err != nil {
+		return err
+	}
+	now := time.Now().UTC()
+	until := now.Add(2 * a.cfg.MaintenanceEvery).Format(time.RFC3339)
+	found := map[string]string{}
+	for _, h := range hosts {
+		if _, ok := a.cfg.Hosts[h.Host]; ok && h.Status == "1" && digits(h.MaintenanceID) && len(h.MaintenanceID) <= 20 {
+			found[h.Host] = h.MaintenanceID
+		}
+	}
+	var firstErr error
+	for _, node := range nodes {
+		resource := a.cfg.Hosts[node]
+		a.mu.Lock()
+		prev := a.inMaintenance[node]
+		a.mu.Unlock()
+		mid, active := found[node]
+		var data map[string]any
+		switch {
+		case active:
+			data = map[string]any{"maintenanceid": mid, "resource": resource, "state": "active", "until": until}
+		case prev != "":
+			data = map[string]any{"maintenanceid": prev, "resource": resource, "state": "ended"}
+		default:
+			continue
+		}
+		// An ended window of another id comes before the active one of the new id.
+		if active && prev != "" && prev != mid {
+			if _, err := a.signal(ctx, "ext.monitor.maintenance.v1", "maint:"+resource+":"+prev+":ended:"+now.Format("20060102T150405"),
+				map[string]any{"maintenanceid": prev, "resource": resource, "state": "ended"}); err != nil {
+				firstErr = cmp.Or(firstErr, err)
+				continue
+			}
+		}
+		if _, err := a.signal(ctx, "ext.monitor.maintenance.v1", "maint:"+resource+":"+data["maintenanceid"].(string)+":"+data["state"].(string)+":"+now.Format("20060102T150405"), data); err != nil {
+			firstErr = cmp.Or(firstErr, err)
+			continue
+		}
+		a.mu.Lock()
+		if active {
+			a.inMaintenance[node] = mid
+		} else {
+			delete(a.inMaintenance, node)
+		}
+		a.mu.Unlock()
+	}
+	return firstErr
 }
