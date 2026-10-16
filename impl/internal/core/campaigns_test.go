@@ -111,6 +111,17 @@ func TestCampaignActionFlow(t *testing.T) {
 	if r := proposeCall(t, b.bench, h, map[string]any{"template": tmpl, "items": map[string]any{"resources": []any{"web1", "web2", "web3", "web4"}}}); r.Reason != "campaign_policy_exceeded" {
 		t.Fatalf("items above the ceiling: %+v", r)
 	}
+	// An item acts on its own machine with the template's arguments only: the card shows both
+	// (ORC-2, ORC-7).
+	for _, bad := range []map[string]any{
+		{"template": map[string]any{"kind": "action", "action": "fix_web", "args": map[string]any{"host": "web2"}}, "items": map[string]any{"resources": []any{"web1"}}},
+		{"template": tmpl, "items": map[string]any{"resources": []any{"web1", "web2"}, "args": []any{map[string]any{}, map[string]any{"host": "web1"}}}},
+		{"template": tmpl, "items": map[string]any{"resources": []any{"web1", "web2"}, "args": []any{map[string]any{}, map[string]any{"force": true}}}},
+	} {
+		if r := proposeCall(t, b.bench, h, bad); r.Reason != "input_schema_invalid" {
+			t.Fatalf("an item past its card: %v %+v", bad, r)
+		}
+	}
 	r := proposeCall(t, b.bench, h, map[string]any{"template": tmpl, "items": map[string]any{"selector": "webs"}})
 	if r.State != "proposed" || r.Campaign == "" {
 		t.Fatalf("propose %+v", r)

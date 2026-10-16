@@ -839,6 +839,16 @@ func campaignDefaults(r *campaignRollout, act *manifest.ActionCampaign) {
 	}
 }
 
+// actionTargetParam is the parameter of an action's executor that names its machine, or "".
+func actionTargetParam(cat *Catalog, act manifest.Action) string {
+	if pl, ok := cat.Plugins[act.Executor.Plugin]; ok {
+		if t, ok := pl.Tool(act.Executor.Tool); ok && t.Target != "any" && t.TargetFrom != "" {
+			return t.TargetFrom
+		}
+	}
+	return ""
+}
+
 // itemArgs builds the arguments of one item: the template's, the item's own over them, and the
 // resource in the parameter the executor targets (an action) or in params.resource (a task).
 func itemArgs(cat *Catalog, p *campaignPlan, i int) map[string]any {
@@ -858,11 +868,9 @@ func itemArgs(cat *Catalog, p *campaignPlan, i int) map[string]any {
 	res := p.Resources[i]
 	if p.Kind == "action" {
 		act := cat.Actions[p.Action]
-		if pl, ok := cat.Plugins[act.Executor.Plugin]; ok {
-			if t, ok := pl.Tool(act.Executor.Tool); ok && t.Target != "any" && t.TargetFrom != "" {
-				if _, set := out[t.TargetFrom]; !set {
-					out[t.TargetFrom] = res
-				}
+		if tf := actionTargetParam(cat, act); tf != "" {
+			if _, set := out[tf]; !set {
+				out[tf] = res
 			}
 		}
 		return actionDefaults(act, out)
@@ -963,6 +971,24 @@ func (c *Core) admitCampaign(ctx context.Context, tx pgx.Tx, now time.Time, cat 
 	}
 	for i := range n {
 		args[i] = itemArgs(cat, p, i)
+		// An item acts on its own machine and nothing else: the card shows the machines and the
+		// template, so an action item has no arguments of its own beside its target, and the
+		// target is the item's resource (ORC-2, ORC-7, ORC-12).
+		if p.Kind == "action" {
+			tf := actionTargetParam(cat, act)
+			if tf != "" && args[i][tf] != p.Resources[i] {
+				return no("input_schema_invalid")
+			}
+			if i < len(p.ItemArgs) {
+				for k := range p.ItemArgs[i] {
+					if k != tf {
+						return no("input_schema_invalid")
+					}
+				}
+			}
+		} else if r, set := args[i]["resource"]; set && r != p.Resources[i] {
+			return no("input_schema_invalid")
+		}
 		if p.Kind == "action" {
 			if c.rs.validate(argsSchema, args[i]) != nil {
 				return no("input_schema_invalid")
@@ -1219,6 +1245,15 @@ func campaignScopes(cmp *campaignRow) []scopeRef {
 // campaignHoldEffects are the hold effects that pause a campaign (ORC-11).
 var campaignHoldEffects = []string{"no_enqueue", "no_claim", "no_action", "cancel_running"}
 
+// campaignHoldEffectsOf are the effects that pause a campaign: of an action campaign
+// pause_action too, as it pauses a single waiting approval (HLD-3).
+func campaignHoldEffectsOf(cmp *campaignRow) []string {
+	if cmp.Rec.action() != "" {
+		return append(slices.Clone(campaignHoldEffects), "pause_action")
+	}
+	return campaignHoldEffects
+}
+
 // setCampaignState moves a campaign and writes its event and card updates.
 func (c *Core) setCampaignState(ctx context.Context, tx pgx.Tx, now time.Time, cmp *campaignRow, state, pause, stop string) error {
 	from := cmp.State
@@ -1237,10 +1272,19 @@ func (c *Core) setCampaignState(ctx context.Context, tx pgx.Tx, now time.Time, c
 	return c.campaignCardUpdates(ctx, tx, now, cmp, true)
 }
 
+// campaignDefaultDeadline is the deadline of a campaign whose rollout names none.
+const campaignDefaultDeadline = 7 * 24 * time.Hour
+
 // startCampaign moves a proposed campaign to running: the deadline starts, the initiator gets
 // the progress card, and the first items are released, or it pauses at once under a hold.
 func (c *Core) startCampaign(ctx context.Context, tx pgx.Tx, now time.Time, cat *Catalog, tv *TenantView, cmp *campaignRow) error {
-	if d, ok := parseDuration(cmp.Rec.Rollout.Deadline); ok {
+	// Without a deadline of its own a campaign ends after campaignDefaultDeadline: a paused
+	// campaign nobody resumes does not hold its reserve and its tree forever (ORC-4).
+	d, ok := parseDuration(cmp.Rec.Rollout.Deadline)
+	if !ok {
+		d, ok = campaignDefaultDeadline, true
+	}
+	if ok {
 		at := now.Add(d)
 		cmp.DeadlineAt = &at
 		if _, err := tx.Exec(ctx, `UPDATE campaigns SET deadline_at = $2 WHERE id = $1`, cmp.ID, at); err != nil {
@@ -1280,7 +1324,7 @@ func (c *Core) releaseItems(ctx context.Context, tx pgx.Tx, now time.Time, cat *
 	if cmp.State != "running" {
 		return nil
 	}
-	if held, err := heldBy(ctx, tx, now, campaignHoldEffects, campaignScopes(cmp)...); err != nil {
+	if held, err := heldBy(ctx, tx, now, campaignHoldEffectsOf(cmp), campaignScopes(cmp)...); err != nil {
 		return err
 	} else if held != "" {
 		return c.setCampaignState(ctx, tx, now, cmp, "paused", "held", "")
@@ -1689,6 +1733,12 @@ func (c *Core) stopCampaign(ctx context.Context, tx pgx.Tx, now time.Time, cat *
 		if err := c.cancelTaskIDs(ctx, tx, now, cmp.Tenant, tasks, reason); err != nil {
 			return err
 		}
+		// The canceled items may have ended the campaign already.
+		fresh, err := loadCampaign(ctx, tx, cmp.Tenant, cmp.ID, false)
+		if err != nil {
+			return err
+		}
+		*cmp = *fresh
 	}
 	return c.releaseItems(ctx, tx, now, cat, cmp)
 }
@@ -1696,6 +1746,15 @@ func (c *Core) stopCampaign(ctx context.Context, tx pgx.Tx, now time.Time, cat *
 // finishCampaign ends a campaign whose items are all terminal: the rest of the reserve goes, the
 // final summary is delivered and the continuation is enqueued once (ORC-4, ORC-8, ORC-10, CNT-1).
 func (c *Core) finishCampaign(ctx context.Context, tx pgx.Tx, now time.Time, cat *Catalog, cmp *campaignRow, n campaignCounters) error {
+	// A stop that cancels the last items ends the campaign from inside: it ends once.
+	var cur string
+	if err := tx.QueryRow(ctx, `SELECT state FROM campaigns WHERE id = $1`, cmp.ID).Scan(&cur); err != nil {
+		return err
+	}
+	if slices.Contains([]string{"completed", "failed", "canceled", "rejected"}, cur) {
+		cmp.State = cur
+		return nil
+	}
 	state := "completed"
 	switch cmp.StopReason {
 	case "threshold_exceeded", "deadline_exceeded":
@@ -1748,6 +1807,32 @@ func (c *Core) campaignContinuation(ctx context.Context, tx pgx.Tx, now time.Tim
 	if err := tx.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM campaign_items WHERE campaign = $1 AND untrusted)`, cmp.ID).Scan(&untrusted); err != nil {
 		return err
 	}
+	// The continuation reads what the items read: their highest mark and every initiator of
+	// what they read (DLV-7, MSG-7).
+	mark, co := cmp.Rec.DataMark, slices.Clone(cmp.Rec.CoInitiators)
+	irows, err := tx.Query(ctx, `SELECT coalesce(t.record->>'data_mark', ''), coalesce(t.record->'co_initiators', '[]') FROM campaign_items i JOIN tasks t ON t.id = i.task
+		WHERE i.campaign = $1 ORDER BY i.n`, cmp.ID)
+	if err != nil {
+		return err
+	}
+	for irows.Next() {
+		var m string
+		var raw []byte
+		if err := irows.Scan(&m, &raw); err != nil {
+			irows.Close()
+			return err
+		}
+		if m != "" {
+			mark = c.higherMark(mark, m)
+		}
+		var list []string
+		_ = json.Unmarshal(raw, &list)
+		co = unionOf(co, list)
+	}
+	irows.Close()
+	if err := irows.Err(); err != nil {
+		return err
+	}
 	if len(table) > maxResultFields {
 		table = table[:maxResultFields]
 	}
@@ -1761,11 +1846,12 @@ func (c *Core) campaignContinuation(ctx context.Context, tx pgx.Tx, now time.Tim
 		Tenant: cmp.Tenant, Type: cmp.Rec.Then.Type, Body: body, IdempotencyKey: "system:cont:campaign:" + cmp.ID, Initiator: cmp.Initiator,
 		EnqueuedBy: "core", Origin: cmp.Rec.Origin, Source: "campaign", SourceID: cmp.ID, Cause: cmp.ID,
 		Chain: &chainLink{
-			Parent: cmp.ParentTask, Root: cmp.Rec.Root, Depth: cmp.Rec.Depth + 2, Mark: cmp.Rec.DataMark, MaxTier: cmp.Rec.MaxTier,
+			Parent: cmp.ParentTask, Root: cmp.Rec.Root, Depth: cmp.Rec.Depth + 2, Mark: mark, MaxTier: cmp.Rec.MaxTier,
 			Untrusted: cmp.Rec.Untrusted.Value || untrusted, Conversation: cmp.Rec.Conversation, Trace: cmp.Rec.Trace, ParentPriority: prio,
-			CoInitiators: cmp.Rec.CoInitiators, WakeTask: cmp.Rec.WakeTask,
+			CoInitiators: co, WakeTask: cmp.Rec.WakeTask,
 		},
-		ContinuesCampaign: cmp.ID,
+		// A campaign a card paid for pays its continuation the same way (ORC-8).
+		ContinuesCampaign: cmp.ID, PaidByCard: cmp.Rec.PaidByCard,
 	})
 	reason := ""
 	switch {
@@ -1893,7 +1979,7 @@ func (c *Core) pauseHeldCampaigns(ctx context.Context, tx pgx.Tx, now time.Time,
 			}
 			continue
 		}
-		held, err := heldBy(ctx, tx, now, campaignHoldEffects, campaignScopes(cmp)...)
+		held, err := heldBy(ctx, tx, now, campaignHoldEffectsOf(cmp), campaignScopes(cmp)...)
 		if err != nil {
 			return err
 		}
@@ -1954,7 +2040,11 @@ func (c *Core) campaignLoop(ctx context.Context) error {
 			}
 			return nil
 		}); err != nil {
-			return err
+			// One campaign that fails its pass does not stop the others.
+			if ctx.Err() != nil {
+				return err
+			}
+			c.log.Error("a campaign pass failed", "tenant", x.tenant, "campaign", x.id, "error", err)
 		}
 	}
 	return nil
@@ -2355,7 +2445,7 @@ func (c *Core) campaignCommand(ctx context.Context, w *Worker, ob OnBehalf, id, 
 			return refuse("forbidden", "the nonce is not the card's")
 		}
 		kinds := []string{campaignApprovalCard}
-		if command == "pause" || command == "cancel" || command == "retry_failed" {
+		if command == "pause" || command == "cancel" || command == "retry_failed" || command == "resume" && !cmp.Card {
 			kinds = []string{campaignApprovalCard, campaignProgressCard, campaignSummaryKind}
 		}
 		press, err := c.checkPress(ctx, tx, now, cat, w, ob, "campaign", cmp.ID, kinds)
@@ -2434,6 +2524,12 @@ func (c *Core) campaignCommand(ctx context.Context, w *Worker, ob OnBehalf, id, 
 				}
 				return &committed{p: refuse("held", "a hold cancels the campaign")}
 			}
+			// A pause_action hold keeps the card waiting: no decision while it holds (HLD-3).
+			if held, err := heldBy(ctx, tx, now, []string{"pause_action"}, campaignScopes(cmp)...); err != nil {
+				return err
+			} else if held != "" && cmp.Rec.action() != "" {
+				return deny("held", "a hold pauses the action")
+			}
 			if stop, err := c.campaignRights(ctx, tx, now, press.tv, cmp); err != nil {
 				return err
 			} else if stop != "" {
@@ -2447,7 +2543,9 @@ func (c *Core) campaignCommand(ctx context.Context, w *Worker, ob OnBehalf, id, 
 			}
 			return ok("")
 		case "resume":
-			if !decider {
+			// A campaign that started without a card is resumed by its initiator, who could
+			// start it (ORC-2).
+			if !decider && (cmp.Card || press.principal != cmp.Initiator) {
 				return deny("forbidden", "the person does not decide this campaign")
 			}
 			return c.resumeCampaign(ctx, tx, now, cat, cmp, press.principal, deny, ok)
@@ -2555,7 +2653,7 @@ func (c *Core) resumeCampaign(ctx context.Context, tx pgx.Tx, now time.Time, cat
 	case "estimate_exceeded":
 		return deny("estimate_exceeded", "a new campaign with a new estimate is needed")
 	case "held":
-		held, err := heldBy(ctx, tx, now, campaignHoldEffects, campaignScopes(cmp)...)
+		held, err := heldBy(ctx, tx, now, campaignHoldEffectsOf(cmp), campaignScopes(cmp)...)
 		if err != nil {
 			return err
 		}
@@ -2628,8 +2726,18 @@ func (c *Core) retryCampaign(ctx context.Context, tx pgx.Tx, now time.Time, cat 
 	if p.Kind == "task" {
 		p.Template = cloneWithout(p.Template, "params")
 	} else {
+		// An action item differs from the others only by its target: the shared arguments
+		// are the template again, so the card shows them (ORC-2).
+		tf := actionTargetParam(cat, cat.Actions[p.Action])
+		shared := map[string]any{}
+		for k, v := range p.ItemArgs[0] {
+			if k != tf {
+				shared[k] = v
+			}
+		}
 		p.Template = cloneWithout(p.Template, "args")
-		p.Template["args"] = map[string]any{}
+		p.Template["args"] = shared
+		p.ItemArgs = nil
 	}
 	return c.admitCampaign(ctx, tx, now, cat, &p)
 }

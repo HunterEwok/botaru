@@ -355,6 +355,15 @@ func (c *Core) completeToolcall(ctx context.Context, tx pgx.Tx, now time.Time, l
 	if err != nil {
 		return err
 	}
+	if untrusted {
+		// The first untrusted output sets untrusted_seen on the attempt; it never goes back
+		// (INJ-13). The first source stays. It is set before the call ends, so a
+		// campaign item that ends with the call carries it (ORC-9).
+		if _, err := tx.Exec(ctx, `UPDATE tasks SET record = record || jsonb_build_object('untrusted_seen', true,
+			'untrusted_source', coalesce(record->>'untrusted_source', $2::text)) WHERE id = $1`, task, untrustedSource(tool)); err != nil {
+			return err
+		}
+	}
 	if err := c.endToolCall(ctx, tx, now, l.WorkID, "done", "", raw); err != nil {
 		return err
 	}
@@ -365,15 +374,6 @@ func (c *Core) completeToolcall(ctx context.Context, tx pgx.Tx, now time.Time, l
 	if masked(t.Redact, raw) {
 		// The toolhost replaced an address: the attempt saw personal data (AUD-5).
 		if err := addPersonalSeen(ctx, tx, task, "masking"); err != nil {
-			return err
-		}
-	}
-	if untrusted {
-		// The first untrusted output sets untrusted_seen on the attempt; it never goes back
-		// (INJ-13).
-		// The first source stays.
-		if _, err := tx.Exec(ctx, `UPDATE tasks SET record = record || jsonb_build_object('untrusted_seen', true,
-			'untrusted_source', coalesce(record->>'untrusted_source', $2::text)) WHERE id = $1`, task, untrustedSource(tool)); err != nil {
 			return err
 		}
 	}
