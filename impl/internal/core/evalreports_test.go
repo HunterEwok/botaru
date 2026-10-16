@@ -129,6 +129,12 @@ spec:
 	if errs := apply(base+emptyIndex, base+reports(0.95, 30, 0), "EvalReports"); len(errs) != 1 || errs[0].Kind != "EvalReports" || errs[0].Name != "evals" {
 		t.Errorf("entries taken away: %+v", errs)
 	}
+	// An EvalReports manifest that never held the role's entries is not the trigger; a delete
+	// that removes them is named in the detail.
+	otherIndex := "---\napiVersion: botaru/v1alpha1\nkind: EvalReports\nmetadata: {name: other}\nspec: {reports: []}\n"
+	if errs := apply(base+otherIndex, base+reports(0.95, 30, 0), "EvalReports"); len(errs) != 1 || errs[0].Kind != "Role" || !strings.Contains(errs[0].Detail, "deleted EvalReports evals") {
+		t.Errorf("entries deleted: %+v", errs)
+	}
 	// Stale before the apply (a core minor upgrade, or a role stored before the gate).
 	if errs := apply(base+emptyIndex, base, "EvalReports"); len(errs) != 0 {
 		t.Errorf("stale role refused: %+v", errs)

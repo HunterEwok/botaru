@@ -282,9 +282,10 @@ func translatorStates(docs []manifest.Doc, S *lintSet) (map[[2]string]*trnState,
 // the persona pin; a new fingerprint), or takes its passing entry away (an EvalReports change or a
 // higher threshold). A role already enabled that went stale with none of these, as after a core
 // minor upgrade, stays enabled, and doctor warns eval_report_stale. The finding goes on the object
-// of the apply that moved it (the role, a claimed type, the Governance, the tenant, the EvalReports
-// manifest that held the role's entries, in this order) and names the tenant and the expected
-// fingerprint. prior is the stored set before the apply.
+// of the apply that moved it (the role, a claimed type, the Governance, the tenant, the submitted
+// EvalReports manifest whose stored version held the role's entries, in this order; else the
+// stored role) and names the tenant, the expected fingerprint and a deleted EvalReports manifest
+// that held the role's entries. prior is the stored set before the apply.
 func lintTranslatorEvals(docs []manifest.Doc, S *lintSet, prior []manifest.Doc, f *lintFindings) error {
 	now, err := translatorStates(docs, S)
 	if err != nil {
@@ -307,28 +308,31 @@ func lintTranslatorEvals(docs []manifest.Doc, S *lintSet, prior []manifest.Doc, 
 		}
 		return lintObj{}, false
 	}
+	holds := func(spec map[string]any, role string) bool {
+		return slices.ContainsFunc(evalReportsOf([]map[string]any{spec}), func(r evalReport) bool { return r.SubjectKind == "role" && r.SubjectName == role })
+	}
 	// The submitted EvalReports manifest whose stored version held entries of the role.
 	heldEntries := func(role string) (lintObj, bool) {
-		var first *lintObj
 		for _, o := range S.each("EvalReports") {
 			if o.i < 0 {
 				continue
 			}
-			if first == nil {
-				first = &o
+			if old := P.get("EvalReports", o.name, ""); old != nil && holds(old, role) {
+				return o, true
 			}
-			if old := P.get("EvalReports", o.name, ""); old != nil {
-				for _, r := range evalReportsOf([]map[string]any{old}) {
-					if r.SubjectKind == "role" && r.SubjectName == role {
-						return o, true
-					}
-				}
-			}
-		}
-		if first != nil {
-			return *first, true
 		}
 		return lintObj{}, false
+	}
+	// The stored EvalReports manifests holding entries of the role that the apply deletes.
+	deleted := func(role string) []string {
+		var out []string
+		for _, o := range P.each("EvalReports") {
+			if S.get("EvalReports", o.name, "") == nil && holds(o.spec, role) {
+				out = append(out, o.name)
+			}
+		}
+		slices.Sort(out)
+		return out
 	}
 	keys := slices.SortedFunc(mapKeys(now), func(a, b [2]string) int { return strings.Compare(a[0]+"/"+a[1], b[0]+"/"+b[1]) })
 	for _, k := range keys {
@@ -360,7 +364,11 @@ func lintTranslatorEvals(docs []manifest.Doc, S *lintSet, prior []manifest.Doc, 
 		if !found {
 			on = st.role
 		}
-		f.addDetail(on, "eval_report_missing", "", fmt.Sprintf("role %s in tenant %s needs reports for static fingerprint %s", st.role.name, st.tenant.name, st.fp))
+		detail := fmt.Sprintf("role %s in tenant %s needs reports for static fingerprint %s", st.role.name, st.tenant.name, st.fp)
+		if gone := deleted(st.role.name); len(gone) > 0 {
+			detail += "; the deleted EvalReports " + strings.Join(gone, ", ") + " held its entries"
+		}
+		f.addDetail(on, "eval_report_missing", "", detail)
 	}
 	return nil
 }
