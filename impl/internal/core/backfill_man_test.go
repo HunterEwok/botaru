@@ -119,8 +119,12 @@ func TestBackfillApplyAtomic(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// Only the third object is wrong; the first two would pass on their own.
-	if res.Applied || len(res.Errors) == 0 || slices.ContainsFunc(res.Errors, func(e ApplyError) bool { return e.Code != "cap_star" || e.Kind != "Group" }) {
+	// Only the third object is wrong; the first two would pass on their own. The group with
+	// members also becomes privileged (PRM-13).
+	if res.Applied || !slices.ContainsFunc(res.Errors, func(e ApplyError) bool { return e.Code == "cap_star" }) ||
+		slices.ContainsFunc(res.Errors, func(e ApplyError) bool {
+			return e.Code != "cap_star" && e.Code != "privileged_group" || e.Kind != "Group"
+		}) {
 		t.Fatalf("MAN-6: the set with a bad group: %+v", res)
 	}
 	if storedHash(t, b, "Role", "", "hello") != role || storedHash(t, b, "TaskType", "", "hello.greet.v1") != typ || storedHash(t, b, "Group", "demo", "hello") != group {

@@ -218,7 +218,8 @@ func (c *Core) Grant(ctx context.Context, op Operator, req GrantRequest) (*Done,
 	if err != nil {
 		return nil, err
 	}
-	if _, ok := tv.Groups[req.Group]; !ok {
+	// An ungrant also ends a membership of a group the set no longer has.
+	if _, ok := tv.Groups[req.Group]; !ok && req.Op != "ungrant" {
 		return nil, refuse("not_found", "no such group in the tenant")
 	}
 	// A privileged group needs the verification code and, on a production tenant, the written
@@ -227,8 +228,17 @@ func (c *Core) Grant(ctx context.Context, op Operator, req GrantRequest) (*Done,
 	var out Done
 	var refusal *Problem
 	err = c.tx(ctx, func(tx pgx.Tx, now time.Time) error {
+		// The group and its privilege as the stored set has them, under the apply lock.
+		stv, scat, err := c.grantView(ctx, tx, op.Tenant)
+		if err != nil {
+			return err
+		}
+		if _, ok := stv.Groups[req.Group]; !ok && req.Op != "ungrant" {
+			return refuse("not_found", "no such group in the tenant")
+		}
+		privileged = c.privilegedNeedsCode(stv, scat, req.Group)
 		var state string
-		err := tx.QueryRow(ctx, `SELECT state FROM principals WHERE tenant = $1 AND id = $2 FOR UPDATE`, op.Tenant, req.Subject).Scan(&state)
+		err = tx.QueryRow(ctx, `SELECT state FROM principals WHERE tenant = $1 AND id = $2 FOR UPDATE`, op.Tenant, req.Subject).Scan(&state)
 		if errors.Is(err, pgx.ErrNoRows) {
 			return refuse("not_found", "no such principal")
 		}
@@ -327,6 +337,29 @@ func (c *Core) Grant(ctx context.Context, op Operator, req GrantRequest) (*Done,
 		return nil, refusal
 	}
 	return &out, nil
+}
+
+// grantView takes the apply lock in shared mode, so that a grant does not interleave with an
+// apply: apply reads the memberships for its raise check (PRM-13) before its transaction and
+// again under the exclusive lock. It returns the tenant view of the stored set, which no apply
+// changes while the lock is held; a tenant without a stored view has no groups.
+func (c *Core) grantView(ctx context.Context, tx pgx.Tx, tenant string) (*TenantView, *Catalog, error) {
+	if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock_shared(7300111)`); err != nil {
+		return nil, nil, err
+	}
+	docs, _, err := loadManifests(ctx, tx)
+	if err != nil {
+		return nil, nil, err
+	}
+	cat, err := buildCatalog(docs)
+	if err != nil {
+		return nil, nil, err
+	}
+	tv := cat.Tenants[tenant]
+	if tv == nil {
+		tv = &TenantView{Name: tenant}
+	}
+	return tv, cat, nil
 }
 
 // unprivilegedCaps are the capability forms that never make a group privileged

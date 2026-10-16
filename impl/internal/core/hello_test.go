@@ -587,7 +587,8 @@ func TestOffRevokesWork(t *testing.T) {
 	}
 }
 
-// TestApplyRefusesPrivilegeRaise: a group with members does not become privileged by apply.
+// TestApplyRefusesPrivilegeRaise: apply rejects a set in which an ordinary group became
+// privileged, with members or without (PRM-13, PRM-7).
 func TestApplyRefusesPrivilegeRaise(t *testing.T) {
 	ctx := context.Background()
 	b := newBench(t)
@@ -604,15 +605,14 @@ func TestApplyRefusesPrivilegeRaise(t *testing.T) {
 			m["spec"].(map[string]any)["data"] = []any{"summary", "raw_logs"}
 		}
 	}
-	_, err = b.c.Apply(ctx, b.op, ApplyRequest{Commit: "2222222222222222222222222222222222222222", Manifests: ms})
-	var p *Problem
-	if !errors.As(err, &p) || p.Reason != "privileged_group" {
-		t.Fatalf("apply: %v", err)
+	res, err := b.c.Apply(ctx, b.op, ApplyRequest{Commit: "2222222222222222222222222222222222222222", Manifests: ms})
+	if err != nil || res.Applied || !hasCode(res, "privileged_group") {
+		t.Fatalf("apply: %+v %v", res, err)
 	}
 	if _, err := b.c.Grant(ctx, b.op, GrantRequest{Op: "ungrant", Subject: b.alice, Group: "hello"}); err != nil {
 		t.Fatal(err)
 	}
-	if res, err := b.c.Apply(ctx, b.op, ApplyRequest{Commit: "2222222222222222222222222222222222222222", Manifests: ms}); err != nil || !res.Applied {
+	if res, err := b.c.Apply(ctx, b.op, ApplyRequest{Commit: "2222222222222222222222222222222222222222", Manifests: ms}); err != nil || res.Applied || !hasCode(res, "privileged_group") {
 		t.Fatalf("apply of an empty group: %+v %v", res, err)
 	}
 }

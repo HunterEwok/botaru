@@ -8257,7 +8257,7 @@
     token is rejected; a problem that is not in the mock monitoring system API raises no alarm; a
     trigger name with a canary appears neither in the event nor in the alarm; a trigger with a
     `disk_free` class tag that is not in `monitor_triggers` gives `alarm.monitor.problem` with
-    `info`, not `alarm.disk.free.low`; a `demo2` catalog with `monitor_host: db1.example.org`,
+    `warn`, not `alarm.disk.free.low`; a `demo2` catalog with `monitor_host: db1.example.org`,
     already linked by the `demo` catalog, does not pass `apply`.
   goal: G4
   check: [adapter, fixture, blackbox]

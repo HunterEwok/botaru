@@ -81,11 +81,16 @@ func (c *Core) grantOnce(ctx context.Context, tx pgx.Tx, now time.Time, pc perso
 		return pc.reply(c, "task.rejected.no_group_cap", nil), nil
 	}
 	who, group := f[0], f[1]
-	if _, ok := pc.tv.Groups[group]; !ok {
+	// The group and its privilege as the stored set has them, under the apply lock (PRM-13).
+	stv, scat, err := c.grantView(ctx, tx, pc.tv.Name)
+	if err != nil {
+		return nil, err
+	}
+	if _, ok := stv.Groups[group]; !ok {
 		return pc.reply(c, "cmd.grant.no_group", map[string]any{"group": group}), nil
 	}
-	delegated := slices.Contains(pc.tv.Spec.DelegatedGroups, group) && c.delegable(pc.tv, pc.cat, group)
-	if !delegated && privilegedGroup(pc.tv, pc.cat, group, map[string]bool{}) {
+	delegated := slices.Contains(stv.Spec.DelegatedGroups, group) && c.delegable(stv, scat, group)
+	if !delegated && privilegedGroup(stv, scat, group, map[string]bool{}) {
 		return pc.reply(c, "cmd.grant.privileged", map[string]any{"group": group}), nil
 	}
 	if !coversGroup(pc.tv, pc.groups, group) {
@@ -103,7 +108,7 @@ func (c *Core) grantOnce(ctx context.Context, tx pgx.Tx, now time.Time, pc perso
 		subject = p
 	}
 	var state, kind string
-	err := tx.QueryRow(ctx, `SELECT state, kind FROM principals WHERE tenant = $1 AND id = $2 FOR UPDATE`, pc.tv.Name, subject).Scan(&state, &kind)
+	err = tx.QueryRow(ctx, `SELECT state, kind FROM principals WHERE tenant = $1 AND id = $2 FOR UPDATE`, pc.tv.Name, subject).Scan(&state, &kind)
 	if errors.Is(err, pgx.ErrNoRows) || (err == nil && kind != "human") {
 		return pc.reply(c, "cmd.grant.no_person", nil), nil
 	}

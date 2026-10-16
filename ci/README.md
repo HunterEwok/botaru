@@ -219,6 +219,8 @@ The codes of `check_manifests.py` that fixtures refer to (`expect: {error: <code
 | `insight_wider` | insight tool outside the role tools | INS-2 |
 | `lens_persona_missing` | a charter seat names a lens without a persona addendum in commission.lenses | COM-19 |
 | `lens_profile_output` | a role that claims a lens review has a base profile with max_output_tokens above 2000 | COM-6 |
+| `lens_unknown` | a charter seat or the commission manifest names a lens neither in lenses.yaml (lenses since the version: spec/VERSION for this lint, the claimed version for a core) nor declared with its meaning in the charter | COM-19 |
+| `lens_weight_fixed` | the commission manifest sets the weight of a lens whose weight is set by rule (farm_manager from v0.2), whatever the value, 1 included | COM-8 |
 | `listener_admin_worker_network` | the P2 listener network is a worker network (note) | IDN-7 |
 | `listener_test_in_production` | test-control listener of the core on a kind: production host | DEP-10 |
 | `manage_enqueued` | a type of purpose manage in a role may_enqueue, a script step or a continuation | MGR-4 |
@@ -272,7 +274,7 @@ The codes of `check_manifests.py` that fixtures refer to (`expect: {error: <code
 | `routine_fields` | risk: routine fields are incomplete or set on another risk | MAN-9, APR-10 |
 | `run_arg_unknown` | run argument is not in the closed schema of the type or action | APR-17 |
 | `run_needs_approval_none` | run starts a type without run.approval: none | APR-17 |
-| `run_not_readonly` | type with run.approval: none is claimed by a role with actions or write tools | APR-17 |
+| `run_not_readonly` | type with run.approval: none is of tier 3 or is claimed by a role with actions or write tools | APR-17 |
 | `sandbox_live_tools` | role that claims a tier 2 type has a tool with placement: host | SBX-1 |
 | `sandbox_not_claimed` | tier 2 type or tool, or a sandbox plugin, while the sandbox profile is not claimed | MAN-11, SBX-1 |
 | `sandbox_placement` | tier 2 tool outside a sandbox plugin, or a sandbox plugin tool that is not a tier 2 read tool with target: any | SBX-1 |
@@ -305,6 +307,7 @@ The codes of `check_manifests.py` that fixtures refer to (`expect: {error: <code
 | `tenant_on_global` | global kind with metadata.tenant | TEN-6 |
 | `timeout_ceiling` | type timeouts above the farm ceiling | DLV-16 |
 | `timezone_unknown` | tenant or schedule timezone is not in the IANA database | TIM-3 |
+| `tool_address_param` | a tool parameter is a URL or host argument of the model outside a closed list | INJ-6 |
 | `tool_target_missing` | tool lacks exactly one of target_from and target: any | TEN-3a |
 | `tool_target_unknown` | target_from is not a tool parameter with a catalog list | TEN-3a |
 | `tools_list_mismatch` | the plugin server tools/list output does not match the tools of tool.yaml | INJ-2 |
@@ -312,7 +315,8 @@ The codes of `check_manifests.py` that fixtures refer to (`expect: {error: <code
 | `tree_budget_below_call` | tree budget of a model task type is below the reserve of one model call | GW-2, BUD-2, BUD-9 |
 | `unaware_text` | a persona, type instruction or tool description links scores, reviews, proposals or votes with promotion, a seat, the queue or departure, or a persona speaks of voting or stops | GOV-29 |
 | `unknown_kind` | manifest kind has no registered schema in spec/manifests/kinds.yaml | MAN-1 |
-| `untrusted_output_false_text` | untrusted_output: false while the output has free text | INJ-3 |
+| `untrusted_output_class` | a command that prints text written from outside (the service journal) has an output class other than raw_logs | INJ-14 |
+| `untrusted_output_false_text` | untrusted_output: false while the output has free text, or a command prints text written from outside (the service journal) | INJ-3, INJ-14 |
 | `veto_lens_no_executor` | a veto lens has no charter seat whose fallback role claims its review type | COM-7 |
 | `watch_missing` | neither a monitoring system nor a kind: watch process with notify_ref | MON-2 |
 | `watch_same_host` | the watch process runs only on the core machine (note) | MON-2 |

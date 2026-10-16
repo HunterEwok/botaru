@@ -239,6 +239,7 @@ func (c *Core) applyOnce(ctx context.Context, op Operator, req ApplyRequest) (*A
 	// objects of the store that stay (orphaned ones included) overlaid with this set and its
 	// deletions, so that a check across objects does not miss an object of an earlier apply.
 	var after []manifest.Doc
+	var held map[string]bool
 	var skillHashes map[string]string
 	var kerrs, kwarns, syncWarns []ApplyError
 	if len(res.Errors) == 0 {
@@ -269,7 +270,12 @@ func (c *Core) applyOnce(ctx context.Context, op Operator, req ApplyRequest) (*A
 			return nil, err
 		}
 		res.Errors = append(res.Errors, perrs...)
-		errs, err := c.lintManifests(after, lintIndex, lookup, prior)
+		// Groups with members in the store, also when the stored set lacks them (PRM-13).
+		held, err = heldGroups(ctx, c.st.Pool)
+		if err != nil {
+			return nil, err
+		}
+		errs, err := c.lintManifestsHeld(after, lintIndex, lookup, prior, held)
 		if err != nil {
 			return nil, err
 		}
@@ -354,11 +360,18 @@ func (c *Core) applyOnce(ctx context.Context, op Operator, req ApplyRequest) (*A
 		if !maps.Equal(existing, read) {
 			return errStoreChanged
 		}
-		if p, err := c.privilegeRaised(ctx, tx, now, docs, req.Delete); err != nil || p != nil {
+		// A grant takes this lock in shared mode: a group that got its first member after the
+		// lint read the memberships is linted again (PRM-13).
+		if held != nil {
+			cur, err := heldGroups(ctx, tx)
 			if err != nil {
 				return err
 			}
-			return p
+			for g := range cur {
+				if !held[g] {
+					return errStoreChanged
+				}
+			}
 		}
 		for _, d := range docs {
 			h, err := jcs.Hash(d.Value)
@@ -410,11 +423,20 @@ func (c *Core) applyOnce(ctx context.Context, op Operator, req ApplyRequest) (*A
 			}
 			deleted[k] = true
 			res.Changes = append(res.Changes, ApplyChange{Op: "delete", Kind: k.Kind, Tenant: k.Tenant, Name: k.Name})
-			if req.DryRun {
-				continue
-			}
-			if k.Kind == "Tenant" {
+			if k.Kind == "Tenant" && !req.DryRun {
 				return refuse("forbidden", "a tenant is retired, not deleted")
+			}
+			// A group is deleted only without members: its memberships end by ungrant, with the
+			// audit and the notices of PRM-13, so a later group of the same name gives nobody
+			// rights they were not granted.
+			if k.Kind == "Group" {
+				var members bool
+				if err := tx.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM memberships WHERE tenant = $1 AND grp = $2)`, k.Tenant, k.Name).Scan(&members); err != nil {
+					return err
+				}
+				if members {
+					return refuse("forbidden", "group %s of tenant %s still has members; ungrant them first", k.Name, k.Tenant)
+				}
 			}
 			if k.Kind == "TaskType" {
 				var open bool
@@ -424,6 +446,10 @@ func (c *Core) applyOnce(ctx context.Context, op Operator, req ApplyRequest) (*A
 				if open {
 					return refuse("forbidden", "task type %s still has tasks that are not finished", k.Name)
 				}
+			}
+			// A plan reports these refusals too.
+			if req.DryRun {
+				continue
 			}
 			if err := keepVersion(ctx, tx, now, k, req.Commit); err != nil {
 				return err
@@ -536,65 +562,6 @@ func (c *Core) applyOnce(ctx context.Context, op Operator, req ApplyRequest) (*A
 	return res, nil
 }
 
-// privilegeRaised refuses a set that makes a group privileged while it has members: they would
-// gain the privilege without the verification that grant asks for (PRM-13). Such a group is
-// emptied first and granted again after the change.
-func (c *Core) privilegeRaised(ctx context.Context, tx pgx.Tx, now time.Time, docs []manifest.Doc, del []ApplyDelete) (*Problem, error) {
-	cur, _, err := loadManifests(ctx, tx)
-	if err != nil {
-		return nil, err
-	}
-	next := map[manifest.Key]manifest.Doc{}
-	for _, d := range cur {
-		next[d.Key()] = d
-	}
-	for _, d := range docs {
-		next[d.Key()] = d
-	}
-	for _, d := range del {
-		delete(next, manifest.Key{Kind: d.Kind, Tenant: d.Tenant, Name: d.Name})
-	}
-	var nextDocs []manifest.Doc
-	for _, d := range next {
-		nextDocs = append(nextDocs, d)
-	}
-	before, err := buildCatalog(cur)
-	if err != nil {
-		return nil, err
-	}
-	after, err := buildCatalog(nextDocs)
-	if err != nil {
-		return nil, err
-	}
-	rows, err := tx.Query(ctx, `SELECT DISTINCT tenant, grp FROM memberships WHERE state = 'active' AND (until IS NULL OR until > $1) ORDER BY tenant, grp`, now)
-	if err != nil {
-		return nil, err
-	}
-	var held [][2]string
-	for rows.Next() {
-		var t, g string
-		if err := rows.Scan(&t, &g); err != nil {
-			rows.Close()
-			return nil, err
-		}
-		held = append(held, [2]string{t, g})
-	}
-	rows.Close()
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	for _, h := range held {
-		tb, ta := before.Tenants[h[0]], after.Tenants[h[0]]
-		if tb == nil || ta == nil {
-			continue
-		}
-		if !privilegedGroup(tb, before, h[1], map[string]bool{}) && privilegedGroup(ta, after, h[1], map[string]bool{}) {
-			return refuse("privileged_group", "group %s of tenant %s becomes privileged while it has members", h[1], h[0]), nil
-		}
-	}
-	return nil, nil
-}
-
 // personaTexts checks the persona texts of an apply against their hashes and gives the lint
 // these texts with the ones the store keeps (GOV-4).
 func (c *Core) personaTexts(ctx context.Context, sent map[string]string) (personaLookup, []ApplyError, error) {
@@ -648,4 +615,23 @@ func storePersonas(ctx context.Context, tx pgx.Tx, now time.Time, docs []manifes
 		}
 	}
 	return nil
+}
+
+// heldGroups gives the groups with memberships in the store, active or pending, as
+// "<tenant>/<group>" (PRM-13).
+func heldGroups(ctx context.Context, q store.Querier) (map[string]bool, error) {
+	rows, err := q.Query(ctx, `SELECT DISTINCT tenant, grp FROM memberships`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	held := map[string]bool{}
+	for rows.Next() {
+		var t, g string
+		if err := rows.Scan(&t, &g); err != nil {
+			return nil, err
+		}
+		held[t+"/"+g] = true
+	}
+	return held, rows.Err()
 }
