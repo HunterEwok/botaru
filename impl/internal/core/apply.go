@@ -63,6 +63,9 @@ type ApplyResult struct {
 	SetHash string        `json:"set_hash,omitempty"`
 	Changes []ApplyChange `json:"changes"`
 	Errors  []ApplyError  `json:"errors"`
+	// Warnings are findings that do not fail the set, such as eval_report_missing in a test
+	// tenant (PRV-3); an extension field of the answer (MAN-3).
+	Warnings []ApplyError `json:"warnings,omitempty"`
 }
 
 type kindInfo struct {
@@ -188,6 +191,16 @@ func (c *Core) applyOnce(ctx context.Context, op Operator, req ApplyRequest) (*A
 			continue
 		}
 		if d.Kind == "Tenant" {
+			// The id of a deleted tenant is a tombstone and is not used again (LCY-1, RET-3).
+			var dead int
+			if err := c.st.Pool.QueryRow(ctx, `SELECT count(*) FROM tenant_states WHERE tenant = $1 AND state = 'deleted'`, d.Name).Scan(&dead); err != nil {
+				return nil, err
+			}
+			if dead > 0 {
+				e.Code, e.Path = "gone", fmt.Sprintf("/manifests/%d/metadata/name", i)
+				res.Errors = append(res.Errors, e)
+				continue
+			}
 			spec, _ := v["spec"].(map[string]any)
 			if c.cfg.TestBench && spec["kind"] != "test" {
 				// A test bench store never holds a tenant other than kind: test (APR-9).
@@ -253,6 +266,13 @@ func (c *Core) applyOnce(ctx context.Context, op Operator, req ApplyRequest) (*A
 			return nil, err
 		}
 		res.Errors = append(res.Errors, errs...)
+		// The quality gate on a static fingerprint change (PRV-3).
+		gate, warns, err := c.evalGate(after, lintIndex, stored)
+		if err != nil {
+			return nil, err
+		}
+		res.Errors = append(res.Errors, gate...)
+		res.Warnings = append(res.Warnings, warns...)
 	}
 	if len(res.Errors) == 0 {
 		if _, err := buildCatalog(after); err != nil {

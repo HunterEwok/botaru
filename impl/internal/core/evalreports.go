@@ -21,8 +21,9 @@ import (
 // The eval report index (spec/manifests/eval-reports.schema.json): the EvalReports manifests of
 // the installation hold only run metadata, the static fingerprint, the subject, the set, the date
 // and the failure counts. The core reads it for the translator gate at apply (TRN-6), the seat
-// check before seat work (MGR-23) and the grant sign of a type's history (MGR-17). This file is a
-// small reader of its own; the quality gate of PRV-3 reads the same index.
+// check before seat work (MGR-23), the grant sign of a type's history (MGR-17) and the quality gate
+// of PRV-3 (evalgate.go). This file is the one reader of the index, and staticFingerprint is the
+// one computation of the static fingerprint for both gates.
 
 const (
 	// suiteManagerInjection is the eval set of the farm manager seat (MGR-23).
@@ -174,7 +175,10 @@ func runtimeMajorMinor(v string) string {
 func staticFingerprint(roleHash string, typeHashes map[string]string, persona, base, analysis, driver string) (string, error) {
 	types := []any{}
 	for _, name := range slices.Sorted(mapKeys(typeHashes)) {
-		types = append(types, typeHashes[name])
+		// A claimed type the set does not have adds no hash.
+		if typeHashes[name] != "" {
+			types = append(types, typeHashes[name])
+		}
 	}
 	typesHash, err := jcs.Hash(types)
 	if err != nil {
@@ -397,27 +401,6 @@ func staleTranslatorRoles(stored []manifest.Doc, kinds map[string]kindInfo, tena
 	}
 	slices.Sort(out)
 	return out, nil
-}
-
-// doctorEvals warns eval_report_stale, one check per translator role of a production tenant that
-// stays enabled while its current static fingerprint has no passing reports (PRV-3, TRN-6).
-func (c *Core) doctorEvals(ctx context.Context, tx pgx.Tx, tenant string, add func(DoctorCheck)) error {
-	stored, _, err := loadManifests(ctx, tx)
-	if err != nil {
-		return err
-	}
-	kinds, err := c.manifestKinds()
-	if err != nil {
-		return err
-	}
-	roles, err := staleTranslatorRoles(stored, kinds, tenant)
-	if err != nil {
-		return err
-	}
-	for _, r := range roles {
-		add(DoctorCheck{ID: "eval_report_stale", OK: false, Severity: "warn", Value: r, Tenant: tenant})
-	}
-	return nil
 }
 
 // productionTenant says whether a tenant counts as production: kind production, or no kind

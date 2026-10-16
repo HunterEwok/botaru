@@ -258,6 +258,10 @@ type TenantLimits struct {
 	MaxQueued         int   `json:"max_queued"`
 	MaxEnqueuePerHour int   `json:"max_enqueue_per_hour"`
 	MaxStorageBytes   int64 `json:"max_storage_bytes"`
+	// MaxFileBytes and MaxTaskFilesBytes lower the farm ceilings of one file and of all files
+	// of one task (ART-4); 0 keeps the farm ceiling.
+	MaxFileBytes      int64 `json:"max_file_bytes"`
+	MaxTaskFilesBytes int64 `json:"max_task_files_bytes"`
 }
 
 // Budgets are the tenant money limits in euros (BUD-1).
@@ -294,6 +298,8 @@ type Privacy struct {
 	NoticeVersion json.RawMessage  `json:"notice_version"`
 	// SubjectRequestDays is the deadline of a person's request and of an erasure (SEC-11).
 	SubjectRequestDays int `json:"subject_request_days"`
+	// ExportSink is the export_only sink of /mydata export (SEC-10, LCY-2).
+	ExportSink string `json:"export_sink"`
 }
 
 // PrivacyChannel is one channel driver of the privacy block (SEC-9).
@@ -575,6 +581,8 @@ type TaskType struct {
 	GoalTrust     string            `json:"goal_trust"`
 	// ResultTTL is the period of the files that became the type's result (ART-1).
 	ResultTTL string `json:"result_ttl"`
+	// ResultMediaTypes are the sniffed types of the result files people and sinks get (ART-5).
+	ResultMediaTypes []string `json:"result_media_types"`
 	// SummaryForManagers is the description of the type that a manager sees (ORC-13).
 	SummaryForManagers string `json:"summary_for_managers"`
 	// GoalTemplates are the goals a script step of the type may name (SCR-4).

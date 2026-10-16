@@ -723,11 +723,30 @@ func (c *Core) recordToolCall(ctx context.Context, tx pgx.Tx, now time.Time, cat
 	} else if held != "" {
 		return deny("denied", "held")
 	}
+	// A dataset reaches an agent role only by its model exposure (PRV-4).
+	if cat.Roles[g.Role].WorkerKind == "agent" && !exposureAllows(cat, g.Tenant, target.resource, t) {
+		return deny("denied", "forbidden")
+	}
 	host := target.host
 	row := toolCallRow{
 		ID: id, Tenant: g.Tenant, Task: g.Task, LeaseNo: g.LeaseNo, Tool: right, Access: "read", Args: args,
 		Plugin: plugin, Placement: pl.Placement, Host: host, Resource: target.resource, Resolved: resolved, Untrusted: !t.TrustedOutput(), State: "queued",
 		DefHash: toolDefHash(pl.Placement, t),
+	}
+	// After the full check of this call, an answer may come from the cache (PRM-12).
+	if cacheable(t) {
+		row.CacheCatalog, row.CacheMark = catalogVersion(cat, g.Tenant), g.Mark
+		key, err := toolCacheKey(g.Tenant, right, row.DefHash, row.CacheCatalog, row.CacheMark, args)
+		if err != nil {
+			return "", nil, err
+		}
+		hit, err := lookupToolCache(ctx, tx, now, g.Tenant, key)
+		if err != nil {
+			return "", nil, err
+		}
+		if hit != nil {
+			return id, nil, c.serveCachedCall(ctx, tx, now, cat, g, row, hit)
+		}
 	}
 	// A target without a live toolhost ends at once (DLV-16, OBS-10).
 	live, err := c.liveToolhost(ctx, tx, now, cat, g.Tenant, plugin, pl.Placement, host)

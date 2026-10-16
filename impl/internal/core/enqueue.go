@@ -393,7 +393,8 @@ func (c *Core) enqueue(ctx context.Context, tx pgx.Tx, now time.Time, cat *Catal
 		if err != nil {
 			return nil, err
 		}
-		if f == nil || f.State != "stored" || (f.Expires != nil && !f.Expires.After(now)) {
+		// An export file is never a task input (LCY-2, SEC-10).
+		if f == nil || f.Origin == "export" || f.State != "stored" || (f.Expires != nil && !f.Expires.After(now)) {
 			return reject(refuse("ref_invalid", "no such file"))
 		}
 		mark = c.higherMark(mark, f.Mark)

@@ -162,6 +162,11 @@ func (c *Core) ChatBind(ctx context.Context, op Operator, req ChatBindRequest) (
 			op.Tenant, name, req.Channel, chat, req.Ceiling, nullable(req.Locale), modelText, op.Principal, now, nullable(req.NoticeRepeat)); err != nil {
 			return err
 		}
+		// Binding the chat again means the operator checked its members: the persons who left
+		// are no longer counted in it (IDN-14).
+		if _, err := tx.Exec(ctx, `DELETE FROM chat_leftovers WHERE tenant = $1 AND binding = $2`, op.Tenant, name); err != nil {
+			return err
+		}
 		// A newly bound chat on a channel with ai_disclosure: first_contact gets ai_notice and
 		// privacy_notice, as a person does at first contact (DLV-12).
 		if !known && tv.Channels[req.Channel].AIDisclosure == "first_contact" {

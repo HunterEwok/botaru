@@ -121,7 +121,14 @@ func (c *Core) reportAudience(ctx context.Context, tx pgx.Tx, now time.Time, cat
 		}
 		a.Ceiling, a.Group = c.lowerMark(a.Ceiling, b.Ceiling), true
 		ps, err := c.channelPrincipals(ctx, tx, now, tv, b.Channel)
+		if err != nil {
+			return err
+		}
 		addPrincipals(ps)
+		// A person who left but may still be a member counts as a participant without
+		// permissions, so the views for the chat carry nothing (IDN-14, REP-7).
+		left, err := chatLeftovers(ctx, tx, tv.Name, b.Name)
+		addPrincipals(left)
 		return err
 	}
 	switch {

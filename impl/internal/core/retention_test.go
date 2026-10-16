@@ -260,8 +260,25 @@ func TestMetadataWholeMonths(t *testing.T) {
 	if events("after") != 1 || events("before") != 1 || others() != 8 {
 		t.Fatal("a month went before all of it was past the period")
 	}
+	// Two finished exports of the month: the row of one whose file still has bytes stays, so a
+	// person's erasure still finds the copy through it (LCY-2, SEC-11).
+	for _, sql := range []string{
+		`INSERT INTO exports (id, tenant, kind, subject, sink, recipient_ref, recipient_key, author, state, file_ref, created_at, updated_at)
+			VALUES ('exp_old', 'demo', 'principal', 'x', 'mine', 'r', 'k', '{}', 'done', 'file:exp_old', $1, $1),
+			('exp_held', 'demo', 'principal', 'x', 'mine', 'r', 'k', '{}', 'done', 'file:exp_held', $1, $1)`,
+		`INSERT INTO files (file_ref, tenant, origin, producer, media_type, size, sha256, data_mark, state, content, created_at, expires_at)
+			VALUES ('file:exp_old', 'demo', 'export', 'exp_old', 'application/octet-stream', 4, 'h', 'personal', 'purged', NULL, $1, $1),
+			('file:exp_held', 'demo', 'export', 'exp_held', 'application/octet-stream', 4, 'h', 'personal', 'stored', 'seal', botaru_now(), botaru_now() + interval '1 day')`,
+	} {
+		if _, err := b.c.st.Pool.Exec(ctx, sql, t1); err != nil {
+			t.Fatal(err)
+		}
+	}
 	b.advance(t, 2*3600)
 	b.loop(t, "retention")
+	if b.count(t, `SELECT count(*) FROM exports WHERE id = 'exp_old'`) != 0 || b.count(t, `SELECT count(*) FROM exports WHERE id = 'exp_held'`) != 1 {
+		t.Fatal("a finished export went with its file still stored, or one without bytes stayed")
+	}
 	if events("after") != 0 {
 		t.Fatal("the month past the period stayed")
 	}
@@ -369,5 +386,50 @@ func TestUsageAnonymized(t *testing.T) {
 	}
 	if n := b.count(t, `SELECT count(*) FROM spend WHERE id IN ('sp_young', 'sp_system') AND subject IS NOT NULL AND task = 't_x' AND subject_kind IS NULL`); n != 2 {
 		t.Fatalf("a line that keeps its subject was changed: %d", n)
+	}
+}
+
+// The cached tool output is content (PRM-12, RET-10): an entry goes at its own expiry or past
+// the tenant's content period, whichever comes first. A person's erasure purges the bytes and
+// the file name of the person's own export copy (LCY-2, SEC-11).
+func TestToolCacheAndExportPurged(t *testing.T) {
+	ctx := context.Background()
+	b := newBenchWith(t, retentionSet(map[string]any{"classes": map[string]any{"content": "2d"}}))
+	now := b.storeNow(t)
+	for _, row := range []struct {
+		key string
+		ttl time.Duration
+	}{{"long", 30 * day}, {"short", time.Hour}} {
+		if _, err := b.c.st.Pool.Exec(ctx, `INSERT INTO tool_cache (tenant, key, plugin, tool, output, source_call, created_at, expires_at)
+			VALUES ('demo', $1, 'checks', 'disk', '{"v": "CANARY-NOT-A-SECRET-prm12"}', 'c_x', $2, $3)`, row.key, now, now.Add(row.ttl)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	b.advance(t, 2*3600)
+	b.loop(t, "retention")
+	if n := b.count(t, `SELECT count(*) FROM tool_cache WHERE key = 'short'`) + b.count(t, `SELECT count(*) FROM tool_cache WHERE key = 'long'`)*10; n != 10 {
+		t.Fatalf("after the short entry's expiry: %d", n)
+	}
+	b.advance(t, 3*24*3600)
+	b.loop(t, "retention")
+	if n := b.count(t, `SELECT count(*) FROM tool_cache`); n != 0 {
+		t.Fatal("a cached output outlived the tenant's content period")
+	}
+
+	now = b.storeNow(t)
+	if _, err := b.c.st.Pool.Exec(ctx, `INSERT INTO exports (id, tenant, kind, subject, sink, recipient_ref, recipient_key, author, state, file_ref, created_at, updated_at)
+		VALUES ('exp_ret', 'demo', 'principal', $1, 'mine', 'r', 'x25519:k', '{}', 'done', 'file:exp_ret', $2, $2)`, b.alice, now); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := b.c.st.Pool.Exec(ctx, `INSERT INTO files (file_ref, tenant, origin, producer, media_type, size, sha256, data_mark, state, content, created_at, expires_at, filename)
+		VALUES ('file:exp_ret', 'demo', 'export', 'exp_ret', 'application/octet-stream', 4, 'h', 'personal', 'stored', 'seal', $1, $2, 'exp_ret.jsonl.hpke')`, now, now.Add(30*day)); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := b.c.ErasureRequest(ctx, b.op, ErasureRequestInput{Scope: ErasureScope{Tenant: "demo", Subject: b.alice}, Reason: "manual"}); err != nil {
+		t.Fatal(err)
+	}
+	b.loop(t, "erasure")
+	if n := b.count(t, `SELECT count(*) FROM files WHERE file_ref = 'file:exp_ret' AND state = 'purged' AND content IS NULL AND filename IS NULL`); n != 1 {
+		t.Fatal("the person's export copy survived the person's erasure")
 	}
 }

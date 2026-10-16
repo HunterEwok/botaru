@@ -23,12 +23,14 @@ var Profiles = []string{"core"}
 // rest of that version stays refused (MAN-11). Kinds of a later version are listed under the
 // kind with the pointer "/kind". The list shrinks when the claimed version reaches them.
 var Ahead = map[string][]string{
-	// The eval report index (TRN-6, MGR-23, MGR-17).
+	// The eval report index (TRN-6, MGR-23, MGR-17) and of the quality gate (PRV-3).
 	"EvalReports": {"/kind"},
 	// The tenant retention periods, which the retention loop applies in every copy (RET-9,
 	// RET-10); journals stays refused with the debug profile. The translator's eval gate of a
 	// tenant (TRN-6), the grant and takeover lines and the takeover list (MGR-17, MGR-21).
-	"Tenant": {"/spec/retention", "/spec/evals", "/spec/takeover", "/spec/budgets/lines/grant", "/spec/budgets/lines/takeover"},
+	// File limits (ART-4) and the sink of a person's copy (SEC-10, LCY-2).
+	"Tenant": {"/spec/retention", "/spec/evals", "/spec/takeover", "/spec/budgets/lines/grant", "/spec/budgets/lines/takeover",
+		"/spec/limits/max_file_bytes", "/spec/limits/max_task_files_bytes", "/spec/privacy/export_sink"},
 	// The grant ladder of a role and the grant signs of a type (MGR-17).
 	"Role":     {"/spec/model_grants"},
 	"TaskType": {"/spec/grant_eligible", "/spec/grant_eval_set", "/spec/grant"},
@@ -36,10 +38,20 @@ var Ahead = map[string][]string{
 	"Governance": {"/spec/farm_manager/grant_limits"},
 	// The necessity lens thresholds (COM-13).
 	"Commission": {"/spec/escalation"},
+	// The one recipient of an export sink (SEC-10).
+	"Sink": {"/spec/export_only/recipient_ref"},
+	// The tool output cache (PRM-12).
+	"ToolPlugin": {"/spec/tools/*/cache_s"},
+	// The model exposure of a dataset (PRV-4).
+	"Catalog": {"/spec/resources/*/model_exposure", "/spec/resources/*/kind"},
 }
 
 // ahead says whether the field at ptr of a manifest of kind is in Ahead.
 func ahead(kind, ptr string) bool {
+	if ptr == "" || ptr == "/spec" {
+		// A later kind carries the version mark on the whole document or its spec.
+		ptr = "/kind"
+	}
 	segs := strings.Split(ptr, "/")
 	for _, pat := range Ahead[kind] {
 		ps := strings.Split(pat, "/")

@@ -141,6 +141,34 @@ func (s *Server) p2(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		out, err = s.c.Enroll(ctx, oper, req)
+	case "worker.drain":
+		req, derr := decode[core.WorkerRequest](m)
+		if derr != nil {
+			s.fail(w, derr)
+			return
+		}
+		out, err = s.c.WorkerDrain(ctx, oper, req)
+	case "tenant.suspend", "tenant.offboard", "tenant.delete":
+		req, derr := decode[core.TenantLifecycleRequest](m)
+		if derr != nil {
+			s.fail(w, derr)
+			return
+		}
+		out, err = s.c.TenantLifecycle(ctx, oper, req)
+	case "tenant.export", "principal.export":
+		req, derr := decode[core.ExportRequest](m)
+		if derr != nil {
+			s.fail(w, derr)
+			return
+		}
+		out, err = s.c.Export(ctx, oper, req)
+	case "secret.revoke":
+		req, derr := decode[core.SecretRevokeRequest](m)
+		if derr != nil {
+			s.fail(w, derr)
+			return
+		}
+		out, err = s.c.SecretRevoke(ctx, oper, req)
 	case "worker.revoke":
 		req, derr := decode[core.WorkerRequest](m)
 		if derr != nil {

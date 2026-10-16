@@ -32,6 +32,8 @@ type HeartbeatResult struct {
 	LeaseUntil      string `json:"lease_until,omitempty"`
 	LeaseRemainingS int    `json:"lease_remaining_s"`
 	CancelRequested bool   `json:"cancel_requested"`
+	// ReleaseRequested asks a draining worker past its deadline to hand the work back (LCY-4).
+	ReleaseRequested bool `json:"release_requested,omitempty"`
 }
 
 // CompleteRequest is p1-complete-request.
@@ -191,7 +193,11 @@ func (c *Core) Heartbeat(ctx context.Context, w *Worker, header string, req Hear
 				return nil, err
 			}
 		}
-		return &HeartbeatResult{LeaseUntil: fmtTime(until), LeaseRemainingS: leaseS, CancelRequested: cancel}, nil
+		release, err := drainPassed(ctx, tx, now, w.ID)
+		if err != nil {
+			return nil, err
+		}
+		return &HeartbeatResult{LeaseUntil: fmtTime(until), LeaseRemainingS: leaseS, CancelRequested: cancel, ReleaseRequested: release}, nil
 	})
 }
 
@@ -579,6 +585,11 @@ func (c *Core) completeDelivery(ctx context.Context, tx pgx.Tx, now time.Time, w
 	}
 	if kind == "monitor_script" {
 		if err := c.scriptDone(ctx, tx, now, l.WorkID, r); err != nil {
+			return err
+		}
+	}
+	if kind == "export" {
+		if err := c.exportDelivered(ctx, tx, now, w.Tenant, l.WorkID, r); err != nil {
 			return err
 		}
 	}

@@ -40,6 +40,9 @@ type Done struct {
 	ID       string `json:"id,omitempty"`
 	AuditSeq int64  `json:"audit_seq,omitempty"`
 	State    string `json:"state,omitempty"`
+	// OperatorSteps are the steps outside the farm the operator does after the operation, as
+	// codes (LCY-1, D-103).
+	OperatorSteps []string `json:"operator_steps,omitempty"`
 }
 
 func (c *Core) requireTenant(ctx context.Context, name string) (*TenantView, *Catalog, error) {
