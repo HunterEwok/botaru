@@ -4,6 +4,7 @@ package core
 
 import (
 	"context"
+	"fmt"
 	"slices"
 	"testing"
 	"time"
@@ -406,6 +407,65 @@ func TestManagerAttentionV03(t *testing.T) {
 	}
 	if out := seatCall(t, b, handle, takeoverToolName, map[string]any{"task": d.ID}); out["code"] != restrictedReason {
 		t.Fatalf("a takeover in restricted mode: %v", out)
+	}
+}
+
+// The manager's notices count in the person's daily card limit together with decision cards
+// (MGR-52, APR-15): with 9 decision cards handed out today alice gets one notice, which makes
+// the tenth card of her day; the next notice no longer reaches her though the 3 notices a day
+// are not used up, and a decision card for her would wait.
+func TestManagerAttentionCardLimitV03(t *testing.T) {
+	ctx := context.Background()
+	b := newManagerBenchWith(t, managerWorkFiles, append(withIncidentTeam(nil), directors), workEdit)
+	b.member(t, "demo", b.alice, "incident-team")
+	d, err := b.c.ManagerDirect(ctx, b.op, ManagerDirectRequest{Scope: ControlTarget{Kind: "resource", ID: "db1"}, Op: "hold", Text: "Look at db1."})
+	if err != nil {
+		t.Fatal(err)
+	}
+	withV03(t)
+	w := b.enroll(t, EnrollRequest{Tenant: "demo", Kind: "agent", Role: "farm-manager"})
+	if _, err := b.c.SeatAssign(ctx, b.farmOp(), SeatRequest{Seat: managerSeatID}); err != nil {
+		t.Fatal(err)
+	}
+	item := b.claim(t, w, "attempt")
+	if item == nil {
+		t.Fatal("no attempt")
+	}
+	for i := range defaultNoncriticalPerDay - 1 {
+		b.exec(t, `INSERT INTO deliveries (id, tenant, kind, addr, target_kind, target_id, exec_kind, exec_name, recipient, state, dataorigin,
+			created_at, updated_at, handed_at) VALUES ($2, 'demo', 'approval_card', 'approval_initiator', 'chat', 'direct:1001', 'channel', 'telegram', $1,
+			'delivered', 'code', botaru_now(), botaru_now(), botaru_now())`, b.alice, fmt.Sprintf("dl_alice%d", i))
+	}
+	handle := item.Payload["handles"].(map[string]any)["tools"].(string)
+	args := map[string]any{"sees": "disk_growth", "object": d.ID, "threat": "disk_full_soon", "proposal": map[string]any{"op": "hold"}}
+	notices := func() int {
+		var n int
+		if err := b.c.st.Pool.QueryRow(ctx, `SELECT count(*) FROM manager_feedback WHERE kind = $1 AND recipient = $2`, attentionNotice, b.alice).Scan(&n); err != nil {
+			t.Fatal(err)
+		}
+		return n
+	}
+	seatCall(t, b, handle, attentionToolName, args)
+	if n := notices(); n != 1 {
+		t.Fatalf("notices before the limit %d", n)
+	}
+	seatCall(t, b, handle, attentionToolName, args)
+	if n := notices(); n != 1 {
+		t.Fatalf("a notice over the card limit %d", n)
+	}
+	cat, err := b.c.Catalog(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tv := cat.Tenants["demo"]
+	if err := b.c.tx(ctx, func(tx pgx.Tx, now time.Time) error {
+		n, err := b.c.cardsToday(ctx, tx, "demo", b.alice, tenantDay(tv, now))
+		if err == nil && n < noncriticalPerDay(tv) {
+			err = fmt.Errorf("cards today %d: a decision card would not wait", n)
+		}
+		return err
+	}); err != nil {
+		t.Fatal(err)
 	}
 }
 

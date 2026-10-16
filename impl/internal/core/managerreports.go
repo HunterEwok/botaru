@@ -39,9 +39,6 @@ const (
 	// defaultPostmortemDayEUR is farm_manager.postmortem_max_eur.day when the charter sets none
 	// (MGR-53).
 	defaultPostmortemDayEUR = 0.40
-	// defaultCardsPerPersonDay is attention.noncritical_per_day (APR-15), the per-person limit of
-	// the analysis reports (MGR-53).
-	defaultCardsPerPersonDay = 10
 	// paragraphEvery is how often one class and object get a model paragraph (MGR-53).
 	paragraphEvery = 7 * 24 * time.Hour
 	// managerProposalsMonth is how many proposals the manager submits to a tenant a month
@@ -194,7 +191,12 @@ func (c *Core) attentionToolCall(ctx context.Context, tx pgx.Tx, now time.Time, 
 			if err != nil {
 				return nil, err
 			}
-			ok = n < limit
+			// The notice also counts in the person's daily card limit (MGR-52, APR-15).
+			cards, err := c.cardsToday(ctx, tx, g.Tenant, ch.Principal, day)
+			if err != nil {
+				return nil, err
+			}
+			ok = n < limit && cards < noncriticalPerDay(tv)
 		}
 		if ok {
 			if err := c.feedbackCard(ctx, tx, now, g.Tenant, attentionNotice, g.Task, ch, "notice.manager_attention", params, !seen, nil); err != nil {
@@ -580,10 +582,7 @@ func (c *Core) postmortemDone(ctx context.Context, tx pgx.Tx, now time.Time, cat
 	if err != nil {
 		return err
 	}
-	limit := defaultCardsPerPersonDay
-	if v, ok := mnum(mmap(mmap(tv.Raw, "spec"), "attention"), "noncritical_per_day"); ok && v >= 0 {
-		limit = int(v)
-	}
+	limit := noncriticalPerDay(tv)
 	if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock(7300552, hashtext($1))`, tenant); err != nil {
 		return err
 	}
@@ -612,8 +611,13 @@ func (c *Core) postmortemDone(ctx context.Context, tx pgx.Tx, now time.Time, cat
 			if err != nil {
 				return err
 			}
+			// The reports and every card of the person's daily limit together (APR-15).
+			cards, err := c.cardsToday(ctx, tx, tenant, ch.Principal, day)
+			if err != nil {
+				return err
+			}
 			// The excess waits for the next day.
-			if n >= limit {
+			if n >= limit || cards >= limit {
 				runAt = &next
 			}
 			later[ch.Principal] = runAt

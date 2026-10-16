@@ -298,7 +298,8 @@ func (c *Core) doctorTwoApprovers(ctx context.Context, tx pgx.Tx, now time.Time,
 const defaultNoncriticalPerDay = 10
 
 // decisionKinds are the card kinds of the rows of kind decision in decision-points.yaml: the
-// cards that count toward a person's daily limit (APR-15).
+// cards that count toward a person's daily limit (APR-15). replay_item (DIG-9, not built) is such
+// a row; when it is built it needs attention_limit: false or a test that it counts.
 func (c *Core) decisionKinds() []string {
 	reg, err := c.spec.Registry("spec/model/decision-points.yaml")
 	if err != nil {
@@ -313,6 +314,30 @@ func (c *Core) decisionKinds() []string {
 	return out
 }
 
+// noncriticalPerDay is attention.noncritical_per_day of the tenant (APR-15).
+func noncriticalPerDay(tv *TenantView) int {
+	if p := tv.Spec.Attention.NoncriticalPerDay; p != nil {
+		return *p
+	}
+	return defaultNoncriticalPerDay
+}
+
+// managerNoticeKinds are the manager's notices to people, which count in the person's daily
+// card limit like decision cards (MGR-52, MGR-53, APR-15).
+var managerNoticeKinds = []string{attentionNotice, postmortemReport}
+
+// cardsToday is how many cards of the card limit a person got in the tenant since day (the
+// start of the tenant's local day): decision cards and manager notices handed out, and manager
+// notices already planned for the day, which code sends without the hand-out check (APR-15,
+// MGR-52).
+func (c *Core) cardsToday(ctx context.Context, tx pgx.Tx, tenant, recipient string, day time.Time) (int, error) {
+	var n int
+	err := tx.QueryRow(ctx, `SELECT count(*) FROM deliveries WHERE tenant = $1 AND recipient = $2 AND kind = ANY($4)
+		AND (handed_at >= $3 OR handed_at IS NULL AND kind = ANY($5) AND state = 'planned' AND (run_at IS NULL OR run_at < $6))`,
+		tenant, recipient, day, append(c.decisionKinds(), managerNoticeKinds...), managerNoticeKinds, day.AddDate(0, 0, 1)).Scan(&n)
+	return n, err
+}
+
 // cardLimit applies the card limit per person per day at the hand-out of a card (APR-15). A
 // card of a decision row with urgent: false waits in planned until the next local day of the
 // tenant once the person got noncritical_per_day decision cards today, urgent ones included,
@@ -324,18 +349,13 @@ func (c *Core) cardLimit(ctx context.Context, tx pgx.Tx, now time.Time, tv *Tena
 	if !c.limitedCard(kind, subjectID) {
 		return false, nil
 	}
-	limit := defaultNoncriticalPerDay
-	if p := tv.Spec.Attention.NoncriticalPerDay; p != nil {
-		limit = *p
-	}
-	day := tenantDay(tv, now)
+	limit, day := noncriticalPerDay(tv), tenantDay(tv, now)
 	// One count per person at a time, so two claims cannot both pass the limit.
 	if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtextextended($1, 7300107))`, tv.Name+"/"+recipient); err != nil {
 		return false, err
 	}
-	var got int
-	if err := tx.QueryRow(ctx, `SELECT count(*) FROM deliveries WHERE tenant = $1 AND recipient = $2 AND handed_at >= $3 AND kind = ANY($4)`,
-		tv.Name, recipient, day, c.decisionKinds()).Scan(&got); err != nil {
+	got, err := c.cardsToday(ctx, tx, tv.Name, recipient, day)
+	if err != nil {
 		return false, err
 	}
 	if got >= limit {
