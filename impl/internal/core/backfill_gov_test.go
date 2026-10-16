@@ -183,3 +183,26 @@ func TestBackfillOnlyCharterDeclaresSeats(t *testing.T) {
 		t.Fatal("the held seat changed")
 	}
 }
+
+// The farm charter is the Governance of tenant farm, or one named farm without a tenant; a
+// charter of another tenant named farm is a tenant charter and may not declare the manager seat
+// (GOV-33).
+func TestBackfillFarmCharterByTenant(t *testing.T) {
+	c := lintCore(t)
+	charter := func(meta string) string {
+		return "apiVersion: botaru/v1alpha1\nkind: Governance\nmetadata: " + meta + "\nspec:\n  farm_manager: {incident_stop: {decide_within: 3d}}\n"
+	}
+	for _, tc := range []struct {
+		meta    string
+		refused bool
+	}{
+		{"{name: farm, tenant: farm}", false},
+		{"{name: farm}", false},
+		{"{name: farm, tenant: demo}", true},
+		{"{name: demo, tenant: demo}", true},
+	} {
+		if got := slices.Contains(lintCodes(t, c, charter(tc.meta)), "charter_farm_manager"); got != tc.refused {
+			t.Errorf("%s: charter_farm_manager %v, want %v", tc.meta, got, tc.refused)
+		}
+	}
+}

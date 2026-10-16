@@ -1113,6 +1113,10 @@ func (x *exec) givenManifests() []map[string]any {
 		if x.r.kinds[str(m["kind"])] == "tenant" {
 			if _, ok := md["tenant"]; !ok {
 				md["tenant"] = "demo"
+				// The charter named farm is the farm charter (GOV-33).
+				if str(m["kind"]) == "Governance" && str(md["name"]) == "farm" {
+					md["tenant"] = "farm"
+				}
 			}
 		}
 		out = append(out, x.onBase(m))
