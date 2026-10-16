@@ -207,14 +207,16 @@ func TestToolOutputCache(t *testing.T) {
 		return c
 	}
 	att, h := b.attemptTools(t, "1", false)
-	other := ids.PrincipalID()
-	if _, err := b.c.st.Pool.Exec(ctx, `UPDATE tasks SET record = record || jsonb_build_object('personal_subjects', jsonb_build_array($2::text)) WHERE id = $1`, att.WorkID, other); err != nil {
+	other, absent := ids.PrincipalID(), ids.PrincipalID()
+	if _, err := b.c.st.Pool.Exec(ctx, `UPDATE tasks SET record = record || jsonb_build_object('personal_subjects', jsonb_build_array($2::text, $3::text)) WHERE id = $1`, att.WorkID, other, absent); err != nil {
 		t.Fatal(err)
 	}
+	out["content"] = []any{map[string]any{"type": "text", "text": "checked by " + other}}
 	viaHost(h)
-	// The first call's flags are kept with the entry, the task's personal_subjects among them.
+	// The first call's flags are kept with the entry: of the task's personal_subjects only the
+	// one the output names.
 	var subjects string
-	if err := b.c.st.Pool.QueryRow(ctx, `SELECT personal_subjects::text FROM tool_cache`).Scan(&subjects); err != nil || !strings.Contains(subjects, other) {
+	if err := b.c.st.Pool.QueryRow(ctx, `SELECT personal_subjects::text FROM tool_cache`).Scan(&subjects); err != nil || !strings.Contains(subjects, other) || strings.Contains(subjects, absent) {
 		t.Fatalf("cached personal_subjects %q %v", subjects, err)
 	}
 	if _, err := b.c.st.Pool.Exec(ctx, `UPDATE tool_cache SET personal_seen = '["masking"]'`); err != nil {
@@ -693,6 +695,11 @@ func TestTenantLifecycle(t *testing.T) {
 	var effects []string
 	if err := b.c.st.Pool.QueryRow(ctx, `SELECT effects FROM holds WHERE id = $1 AND reason = 'suspended' AND scope_kind = 'tenant' AND until IS NULL`, s.ID).Scan(&effects); err != nil || len(effects) != 5 {
 		t.Fatalf("suspension hold %v %v", effects, err)
+	}
+	// No admin:people holder in this bench: no notice, and the audit record says so (HLD-3).
+	var why string
+	if err := b.c.st.Pool.QueryRow(ctx, `SELECT record->'after'->>'admins_notice' FROM audit WHERE record->>'command' = 'tenant.suspend'`).Scan(&why); err != nil || why != "no_recipient" {
+		t.Fatalf("suspension audit %q %v", why, err)
 	}
 	admin := HoldActor{Principal: b.alice, Rank: "tenant_admin", Tenant: "demo", Via: "channel"}
 	if _, err := b.c.HoldRelease(ctx, admin, HoldReleaseRequest{ID: s.ID}); !hasReason(err, "forbidden") {

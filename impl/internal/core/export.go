@@ -371,7 +371,8 @@ func (c *Core) exportContent(ctx context.Context, tx pgx.Tx, tv *TenantView, kin
 	{
 		rows, err := tx.Query(ctx, `SELECT id, scope, subject, role, key, content, state, personal_seen, created_at, decide_by, decided_at
 			FROM memory_items WHERE tenant = $1 AND ($2 = '' OR subject = $2) AND state IN ('proposed', 'active')
-				AND ($2 <> '' OR NOT EXISTS (SELECT 1 FROM tasks t WHERE t.id = memory_items.source_task AND `+privateTask("t")+`))
+				AND (($2 = '' AND NOT EXISTS (SELECT 1 FROM tasks t WHERE t.id = memory_items.source_task AND `+privateTask("t")+`))
+					OR ($2 <> '' AND NOT EXISTS (SELECT 1 FROM tasks t WHERE t.id = memory_items.source_task AND `+othersNamed("t", "$2")+`)))
 			ORDER BY created_at, id`, tn, subject)
 		if err != nil {
 			return nil, err
@@ -512,10 +513,10 @@ func (c *Core) runExports(ctx context.Context) error {
 		done := true
 		var cur string
 		err := c.tx(ctx, func(tx pgx.Tx, now time.Time) error {
-			var id, tenant, kind, sink, recipient, key string
+			var id, tenant, kind, sink, recipient, key, request string
 			var subject *string
-			err := tx.QueryRow(ctx, `SELECT id, tenant, kind, subject, sink, recipient_ref, recipient_key FROM exports
-				WHERE state = 'queued' ORDER BY created_at, id LIMIT 1 FOR UPDATE SKIP LOCKED`).Scan(&id, &tenant, &kind, &subject, &sink, &recipient, &key)
+			err := tx.QueryRow(ctx, `SELECT id, tenant, kind, subject, sink, recipient_ref, recipient_key, coalesce(subject_request, '') FROM exports
+				WHERE state = 'queued' ORDER BY created_at, id LIMIT 1 FOR UPDATE SKIP LOCKED`).Scan(&id, &tenant, &kind, &subject, &sink, &recipient, &key, &request)
 			if errors.Is(err, pgx.ErrNoRows) {
 				return nil
 			}
@@ -538,7 +539,7 @@ func (c *Core) runExports(ctx context.Context) error {
 				return fail("gone")
 			}
 			// The sink is checked again: an apply may have changed it since the request.
-			rec, _, err := exportSink(cat, tenant, sink)
+			rec, keyRef, err := exportSink(cat, tenant, sink)
 			if err != nil {
 				p, _ := AsProblem(err)
 				if p == nil {
@@ -548,6 +549,19 @@ func (c *Core) runExports(ctx context.Context) error {
 			}
 			if err := checkRecipient(kind, deref(subject), rec); err != nil || rec != recipient {
 				return fail("export_recipient_not_subject")
+			}
+			// An operator export is sealed with the key the settings give for the sink's
+			// key_ref now, not the one at the request: a key changed in between is used, and a
+			// key removed fails the export with not_ready. A person's copy keeps the key the
+			// person sent (SEC-10).
+			if request == "" {
+				key = c.cfg.ExportKeys[keyRef]
+				if key == "" || checkExportKey(key) != nil {
+					return fail("not_ready")
+				}
+				if _, err := tx.Exec(ctx, `UPDATE exports SET recipient_key = $2 WHERE id = $1`, id, key); err != nil {
+					return err
+				}
 			}
 			w, err := c.exportContent(ctx, tx, tv, kind, deref(subject))
 			if err != nil {
@@ -630,7 +644,9 @@ func othersNamed(t, subject string) string {
 }
 
 // exportDelivered runs when the sink took an export (SEC-10): a person's /mydata export tells
-// the person in their private chat where the encrypted copy is, and closes the request.
+// the person in their private chat where the encrypted copy is, whatever the request's state,
+// as the copy is written, and closes an approved request. A person with no private chat gets
+// no notice; the audit record of the delivery says so.
 func (c *Core) exportDelivered(ctx context.Context, tx pgx.Tx, now time.Time, tenant, delivery string, r Receipt) error {
 	var id, ref, request, subject string
 	err := tx.QueryRow(ctx, `SELECT e.id, coalesce(e.file_ref, ''), coalesce(e.subject_request, ''), coalesce(e.subject, '')
@@ -650,6 +666,15 @@ func (c *Core) exportDelivered(ctx context.Context, tx pgx.Tx, now time.Time, te
 		if err != nil {
 			return err
 		}
+		if !ok {
+			if _, err := c.appendAudit(ctx, tx, now, Audit{
+				Tenant: tenant, Kind: "command", Actor: Actor{Principal: "system", Via: "core"},
+				Command: "export.notice", Target: &Target{Kind: "export", ID: id}, OK: false,
+				After: map[string]any{"request": request, "notice": "no_private_chat"},
+			}); err != nil {
+				return err
+			}
+		}
 		if ok {
 			location := r.Location
 			if location == "" {
@@ -658,7 +683,8 @@ func (c *Core) exportDelivered(ctx context.Context, tx pgx.Tx, now time.Time, te
 			if _, err := c.planDelivery(ctx, tx, now, plannedDelivery{
 				Tenant: tenant, Kind: "notice", Addr: "approval_initiator", TargetKind: "chat", TargetID: chat.ID(),
 				ExecKind: "channel", ExecName: channel, Recipient: subject, DataOrigin: "code",
-				SubjectKind: "subject_request", SubjectID: request,
+				// No subject: a subject_request delivery is drawn as the request's card, and a
+				// closed request would withhold it. The file is built, so the person hears of it.
 				Body: map[string]any{"form": "text_code", "text_key": "notice.export_ready",
 					"params": map[string]any{"request": request, "location": location}},
 			}); err != nil {

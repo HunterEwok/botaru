@@ -13,6 +13,9 @@ import (
 	"encoding/json"
 	"strings"
 	"testing"
+	"time"
+
+	"github.com/jackc/pgx/v5"
 
 	"github.com/HunterEwok/botaru/impl/internal/ids"
 	"github.com/HunterEwok/botaru/impl/internal/testbench"
@@ -214,11 +217,30 @@ func TestExportLines(t *testing.T) {
 	if err != nil || d.State != "queued" {
 		t.Fatalf("principal.export %+v %v", d, err)
 	}
-	lines := exported(t, b, "mine", keys["mine"])
+	// The key of the sink's key_ref changes while the export waits: the export is sealed with
+	// the key of the settings when it is written.
+	rotated, rotatedPriv := exportKey(t)
+	b.c.cfg.ExportKeys["EXPORT_ALICE"] = rotated
+	lines := exported(t, b, "mine", rotatedPriv)
 	tasks := lines["urn:botaru:schema:task-record:1"]
-	if !hasID(tasks, own) || hasID(tasks, shared) || len(lines["urn:botaru:schema:principal:1"]) != 1 {
+	// The person's export leaves out the task and the memory item that name bob.
+	mems := lines["urn:botaru:schema:memory-item:1"]
+	if !hasID(tasks, own) || hasID(tasks, shared) || len(lines["urn:botaru:schema:principal:1"]) != 1 || !hasID(mems, mem[own]) || hasID(mems, mem[shared]) {
 		t.Fatalf("principal export %v", lines)
 	}
+	// A key removed from the settings fails a waiting export with not_ready.
+	if _, err := b.c.Export(ctx, b.op, ExportRequest{Op: "principal.export", Tenant: "demo", Subject: b.alice, Sink: "mine"}); err != nil {
+		t.Fatal(err)
+	}
+	delete(b.c.cfg.ExportKeys, "EXPORT_ALICE")
+	if err := b.c.tickLoop(ctx, "erasure"); err != nil {
+		t.Fatal(err)
+	}
+	var failed string
+	if err := b.c.st.Pool.QueryRow(ctx, `SELECT reason FROM exports WHERE state = 'failed' AND sink = 'mine'`).Scan(&failed); err != nil || failed != "not_ready" {
+		t.Fatalf("export without its key %q %v", failed, err)
+	}
+	_ = keys["mine"]
 	for schema := range lines {
 		if strings.Contains(schema, "manifest") {
 			t.Fatalf("a manifest in the export: %s", schema)
@@ -234,7 +256,7 @@ func TestExportLines(t *testing.T) {
 	lines = exported(t, b, "office", keys["office"])
 	tasks = lines["urn:botaru:schema:task-record:1"]
 	// The tenant export leaves out the private-chat tasks and their memory items (LCY-2).
-	mems := lines["urn:botaru:schema:memory-item:1"]
+	mems = lines["urn:botaru:schema:memory-item:1"]
 	if hasID(tasks, own) || !hasID(tasks, shared) || hasID(tasks, conn) || len(lines["urn:botaru:schema:session-entry:1"]) != 1 ||
 		len(lines["urn:botaru:schema:principal:1"]) != 2 || hasID(mems, mem[own]) || !hasID(mems, mem[shared]) {
 		t.Fatalf("tenant export %v", lines)
@@ -296,9 +318,20 @@ func TestMydataExport(t *testing.T) {
 	}
 	var target, key, location string
 	if err := b.c.st.Pool.QueryRow(ctx, `SELECT target_id, body->>'text_key', body->'params'->>'location' FROM deliveries
-		WHERE kind = 'notice' AND subject_id = $1`, req.ID).Scan(&target, &key, &location); err != nil ||
+		WHERE kind = 'notice' AND body->'params'->>'request' = $1`, req.ID).Scan(&target, &key, &location); err != nil ||
 		target != "direct:1001" || key != "notice.export_ready" || !strings.HasPrefix(location, "/srv/copies/") {
 		t.Fatalf("notice %s %s %s %v", target, key, location, err)
+	}
+	// The closed request does not withhold it: the channel gets the text with the location.
+	item := b.claim(t, b.channel, "delivery")
+	if item == nil {
+		t.Fatal("the export_ready notice is not handed to the channel")
+	}
+	dl, _ := item.Payload["delivery"].(map[string]any)
+	db, _ := dl["body"].(map[string]any)
+	params, _ := db["params"].(map[string]any)
+	if text := b.c.texts.Render("en", "notice.export_ready", params); dl["kind"] != "notice" || db["text_key"] != "notice.export_ready" || !strings.Contains(text, location) {
+		t.Fatalf("export_ready delivery %+v", item.Payload)
 	}
 }
 
@@ -347,11 +380,43 @@ func TestExportHolds(t *testing.T) {
 		t.Fatalf("an export through a held sink %+v", item.Payload)
 	}
 
+	// A tenant-hold notice passes only the suspension or offboarding it names: one naming the
+	// sink's compromised hold is withheld by the suspension.
+	var sinkHold string
+	if err := b.c.st.Pool.QueryRow(ctx, `SELECT id FROM holds WHERE scope_kind = 'sink' AND reason = 'compromised'`).Scan(&sinkHold); err != nil {
+		t.Fatal(err)
+	}
+	var stray string
+	err = b.c.tx(ctx, func(tx pgx.Tx, now time.Time) error {
+		var err error
+		stray, err = b.c.planDelivery(ctx, tx, now, plannedDelivery{
+			Tenant: "demo", Kind: "notice", Addr: "admins", TargetKind: "chat", TargetID: "direct:1002", ExecKind: "channel", ExecName: "telegram",
+			Recipient: b.bob, DataOrigin: "code",
+			Body: map[string]any{"form": "text_code", "text_key": "notice.tenant_held", "about_hold": sinkHold, "params": map[string]any{"tenant": "demo", "state": "suspended", "hold": sinkHold}},
+		})
+		return err
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if item := b.claim(t, b.channel, "delivery"); item != nil {
+		t.Fatalf("a notice about another hold passed the suspension %+v", item.Payload)
+	}
+	var strayState string
+	if err := b.c.st.Pool.QueryRow(ctx, `SELECT state FROM deliveries WHERE id = $1`, stray).Scan(&strayState); err != nil || strayState != "withheld" {
+		t.Fatalf("stray notice %s %v", strayState, err)
+	}
+
 	if _, err := b.c.HoldRelease(ctx, OperatorActor(b.op), HoldReleaseRequest{ID: s.ID}); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := b.c.TenantLifecycle(ctx, b.op, TenantLifecycleRequest{Op: "tenant.offboard", Tenant: "demo", ExportWindow: "1d"}); err != nil {
 		t.Fatal(err)
+	}
+	// The channels are revoked: no notice is planned, and the audit record says why.
+	var why string
+	if err := b.c.st.Pool.QueryRow(ctx, `SELECT record->'after'->>'admins_notice' FROM audit WHERE record->>'command' = 'tenant.offboard'`).Scan(&why); err != nil || why != "channels_revoked" {
+		t.Fatalf("offboarding audit %q %v", why, err)
 	}
 	if _, err := b.c.Enroll(ctx, b.op, EnrollRequest{Tenant: "demo", Role: "hello", Kind: "agent"}); !hasReason(err, "forbidden") {
 		t.Fatalf("an agent enrolled while offboarding: %v", err)

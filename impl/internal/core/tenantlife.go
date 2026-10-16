@@ -95,13 +95,20 @@ func (c *Core) TenantLifecycle(ctx context.Context, op Operator, req TenantLifec
 			if err := c.cancelTenantApprovals(ctx, tx, now, req.Tenant); err != nil {
 				return err
 			}
-			if err := c.tenantHeldNotice(ctx, tx, now, tv, hold, "suspended"); err != nil {
+			notified, err := c.tenantHeldNotice(ctx, tx, now, tv, hold, "suspended")
+			if err != nil {
 				return err
 			}
 			if err := c.appendEvent(ctx, tx, now, req.Tenant, Event{Type: "tenant.suspended.v1", Subject: req.Tenant, Data: map[string]any{"tenant": req.Tenant, "hold": hold}}); err != nil {
 				return err
 			}
-			seq, err := c.tenantAudit(ctx, tx, now, op, req.Tenant, req.Op, "active", "suspended", map[string]any{"hold": hold})
+			more := map[string]any{"hold": hold, "admins_notified": notified}
+			if notified == 0 {
+				// Nobody to tell in the farm: the audit record and the log say so (HLD-3).
+				more["admins_notice"] = "no_recipient"
+				c.log.Warn("tenant suspended: no admin:people holder has a private chat with a channel, so no notice was sent", "hold", hold)
+			}
+			seq, err := c.tenantAudit(ctx, tx, now, op, req.Tenant, req.Op, "active", "suspended", more)
 			out = Done{OK: true, ID: hold, State: "suspended", AuditSeq: seq}
 			return err
 		case "tenant.offboard":
@@ -152,14 +159,16 @@ func (c *Core) TenantLifecycle(ctx context.Context, op Operator, req TenantLifec
 			if err := c.cancelTenantApprovals(ctx, tx, now, req.Tenant); err != nil {
 				return err
 			}
-			if err := c.tenantHeldNotice(ctx, tx, now, tv, hold, "offboarded"); err != nil {
-				return err
-			}
+			// The channel workers are revoked above and no channel enrolls while the tenant is
+			// offboarding, so a notice to the admins could not go out: none is planned, and the
+			// audit record and the log say so; the operator tells the admins outside the farm
+			// (HLD-3).
+			c.log.Warn("tenant offboarded: its channels are revoked, so the admins get no notice in the farm", "hold", hold)
 			if err := c.appendEvent(ctx, tx, now, req.Tenant, Event{Type: "tenant.offboarding.v1", Subject: req.Tenant,
 				Data: map[string]any{"tenant": req.Tenant, "hold": hold, "export_until": fmtTime(until)}}); err != nil {
 				return err
 			}
-			seq, err := c.tenantAudit(ctx, tx, now, op, req.Tenant, req.Op, "active", "offboarding", map[string]any{"hold": hold, "export_until": fmtTime(until), "workers_revoked": len(ws)})
+			seq, err := c.tenantAudit(ctx, tx, now, op, req.Tenant, req.Op, "active", "offboarding", map[string]any{"hold": hold, "export_until": fmtTime(until), "workers_revoked": len(ws), "admins_notified": 0, "admins_notice": "channels_revoked"})
 			out = Done{OK: true, ID: hold, State: "offboarding", AuditSeq: seq, OperatorSteps: steps}
 			return err
 		case "tenant.delete":
@@ -252,10 +261,10 @@ func (c *Core) tenantResumed(ctx context.Context, tx pgx.Tx, now time.Time, h Ho
 // offboarding in their direct chats. The notice names its hold, and the delivery handoff lets
 // it pass that tenant hold: deliveries are withheld except messages to admins about the hold
 // itself (HLD-3).
-func (c *Core) tenantHeldNotice(ctx context.Context, tx pgx.Tx, now time.Time, tv *TenantView, hold, state string) error {
+func (c *Core) tenantHeldNotice(ctx context.Context, tx pgx.Tx, now time.Time, tv *TenantView, hold, state string) (int, error) {
 	chats, err := c.adminChats(ctx, tx, now, tv, "", "admin:people")
 	if err != nil {
-		return err
+		return 0, err
 	}
 	for _, a := range chats {
 		if _, err := c.planDelivery(ctx, tx, now, plannedDelivery{
@@ -265,8 +274,8 @@ func (c *Core) tenantHeldNotice(ctx context.Context, tx pgx.Tx, now time.Time, t
 			Body: map[string]any{"form": "text_code", "text_key": "notice.tenant_held", "about_hold": hold,
 				"params": map[string]any{"tenant": tv.Name, "state": state, "hold": hold}},
 		}); err != nil {
-			return err
+			return 0, err
 		}
 	}
-	return nil
+	return len(chats), nil
 }

@@ -3,10 +3,12 @@
 package core
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"slices"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -82,9 +84,10 @@ func lookupToolCache(ctx context.Context, tx pgx.Tx, now time.Time, tenant, key 
 }
 
 // storeToolCache keeps the output of a finished call with the flags it gave its attempt: the
-// personal_seen sources of the call and the personal_subjects of its task, a superset of what
-// the call itself brought, so a hit never carries fewer flags than the original (AUD-5). Expired entries of the tenant go at
-// the same time.
+// personal_seen sources of the call, and of the personal_subjects of its task those the output
+// names, by principal id or by an identity (whole, or the part after its kind), so a hit flags
+// only the persons the cached result is about (AUD-5). Expired entries of the tenant go at the
+// same time.
 func storeToolCache(ctx context.Context, tx pgx.Tx, now time.Time, t toolspec.Tool, call string, output []byte, personalSeen []string) error {
 	var tenant, right, defHash, catalog, mark string
 	var argsRaw, subjects []byte
@@ -111,6 +114,9 @@ func storeToolCache(ctx context.Context, tx pgx.Tx, now time.Time, t toolspec.To
 		personalSeen = []string{}
 	}
 	seen, _ := json.Marshal(personalSeen)
+	if subjects, err = subjectsIn(ctx, tx, tenant, subjects, output); err != nil {
+		return err
+	}
 	plugin, _, _ := cutTool(right)
 	_, err = tx.Exec(ctx, `INSERT INTO tool_cache (tenant, key, plugin, tool, output, personal_seen, personal_subjects, source_call, created_at, expires_at)
 		VALUES ($1, $2, $3, $4, $5, $6, $10, $7, $8, $9)
@@ -181,3 +187,40 @@ func purgeToolCache(ctx context.Context, tx pgx.Tx, s HoldScope) error {
 
 // holdPurgesCache says whether a new hold drops cached output.
 func holdPurgesCache(effects []string) bool { return slices.Contains(effects, "no_tool") }
+
+// subjectsIn keeps the subjects (a JSON array of principal ids) that the output names by their
+// id or by one of their identities, and returns them as a JSON array.
+func subjectsIn(ctx context.Context, tx pgx.Tx, tenant string, subjects, output []byte) ([]byte, error) {
+	var all []string
+	_ = json.Unmarshal(subjects, &all)
+	kept := []string{}
+	for _, p := range all {
+		names := []string{p}
+		rows, err := tx.Query(ctx, `SELECT identity FROM identities WHERE tenant = $1 AND principal = $2`, tenant, p)
+		if err != nil {
+			return nil, err
+		}
+		for rows.Next() {
+			var id string
+			if err := rows.Scan(&id); err != nil {
+				rows.Close()
+				return nil, err
+			}
+			names = append(names, id)
+			if _, bare, ok := strings.Cut(id, ":"); ok && bare != "" {
+				names = append(names, bare)
+			}
+		}
+		rows.Close()
+		if err := rows.Err(); err != nil {
+			return nil, err
+		}
+		for _, n := range names {
+			if bytes.Contains(output, []byte(n)) {
+				kept = append(kept, p)
+				break
+			}
+		}
+	}
+	return json.Marshal(kept)
+}

@@ -688,8 +688,20 @@ func (c *Core) claimDelivery(ctx context.Context, tx pgx.Tx, now time.Time, cat 
 			// hold still stops it.
 			// The admins' notice about a suspension or an offboarding passes it too (HLD-3).
 			var except []string
-			if kind == "export" || kind == "notice" && aboutTenantHold(body) {
+			if kind == "export" {
 				except = []string{"suspended", "offboarding"}
+			} else if hold := aboutTenantHold(body); kind == "notice" && hold != "" {
+				// Only the kind of hold the notice is about, and only when that hold is a
+				// suspension or an offboarding of this very tenant.
+				var reason string
+				err := tx.QueryRow(ctx, `SELECT reason FROM holds WHERE id = $1 AND scope_kind = 'tenant' AND scope_tenant = $2
+					AND reason IN ('suspended', 'offboarding')`, hold, w.Tenant).Scan(&reason)
+				if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+					return nil, err
+				}
+				if reason != "" {
+					except = []string{reason}
+				}
 			}
 			held, err := heldByExcept(ctx, tx, now, []string{"no_delivery"}, except, scopes...)
 			if err != nil {
@@ -919,11 +931,14 @@ func joinInstruction(persona, instruction string) string {
 	return persona + "\n\n" + instruction
 }
 
-// aboutTenantHold says whether a delivery body is the admins' notice about a tenant hold.
-func aboutTenantHold(body []byte) bool {
+// aboutTenantHold is the hold the admins' notice about a tenant hold names, or "".
+func aboutTenantHold(body []byte) string {
 	var b struct {
 		AboutHold string `json:"about_hold"`
 		TextKey   string `json:"text_key"`
 	}
-	return json.Unmarshal(body, &b) == nil && b.AboutHold != "" && b.TextKey == "notice.tenant_held"
+	if json.Unmarshal(body, &b) != nil || b.TextKey != "notice.tenant_held" {
+		return ""
+	}
+	return b.AboutHold
 }

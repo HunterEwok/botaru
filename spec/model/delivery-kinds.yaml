@@ -1,5 +1,5 @@
 registry: delivery-kinds
-version: 5
+version: 6
 description: >-
   Delivery kinds (the kind field of the Delivery record) on which the core code and the recipient
   worker branch. A decision card and a notice to people are delivered with
