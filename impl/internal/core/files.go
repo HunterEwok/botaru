@@ -501,10 +501,10 @@ func (c *Core) mediaAllowed(ctx context.Context, tx pgx.Tx, cat *Catalog, kind, 
 	if task == "" || f.Origin != "produced" || activeMediaType(f.MediaType) {
 		return refuse("media_type_not_allowed", "the file type %s is not handed out", f.MediaType)
 	}
-	// A result file of the delivery's own task, of one of its ancestors, of a finished
-	// descendant, or of an earlier task of its tree with the same initiator, such as a chain's
-	// child whose outcome a continuation reports; the producer's type lists it. A task of the
-	// tree another person started is not handed out.
+	// A result file of the delivery's own task, or of a task of its chain with the same
+	// initiator or a co-initiator: one of its ancestors, a finished descendant, or an earlier task
+	// of its tree, such as a chain's child whose outcome a continuation reports; the producer's
+	// type lists it. A task another principal started is not handed out.
 	var typ string
 	err := tx.QueryRow(ctx, `WITH RECURSIVE up(id, n) AS (
 			SELECT record->>'parent', 1 FROM tasks WHERE id = $2
@@ -514,9 +514,10 @@ func (c *Core) mediaAllowed(ctx context.Context, tx pgx.Tx, cat *Catalog, kind, 
 			UNION ALL SELECT t.record->>'parent', pup.n + 1 FROM tasks t JOIN pup ON t.id = pup.id WHERE pup.n < 16)
 		SELECT p.type FROM tasks p JOIN tasks d ON d.id = $2 AND d.tenant = p.tenant
 		WHERE p.id = $1 AND (p.id = d.id
-			OR p.id IN (SELECT id FROM up WHERE id IS NOT NULL)
-			OR d.id IN (SELECT id FROM pup WHERE id IS NOT NULL) AND p.state IN ('completed', 'failed', 'canceled')
-			OR coalesce(p.record->>'root', p.id) = coalesce(d.record->>'root', d.id) AND p.initiator = d.initiator AND p.created_at <= d.created_at)`,
+			OR (p.initiator = d.initiator OR coalesce(d.record->'co_initiators', '[]') ? p.initiator OR coalesce(p.record->'co_initiators', '[]') ? d.initiator)
+			AND (p.id IN (SELECT id FROM up WHERE id IS NOT NULL)
+				OR d.id IN (SELECT id FROM pup WHERE id IS NOT NULL) AND p.state IN ('completed', 'failed', 'canceled')
+				OR coalesce(p.record->>'root', p.id) = coalesce(d.record->>'root', d.id) AND p.created_at <= d.created_at))`,
 		f.Producer, task).Scan(&typ)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return refuse("media_type_not_allowed", "the file is not a result of this task's chain")
