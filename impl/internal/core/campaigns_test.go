@@ -214,6 +214,17 @@ func TestCampaignActionFlow(t *testing.T) {
 	if err := b.c.st.Pool.QueryRow(ctx, `SELECT count(*) FROM audit WHERE record->'target'->>'id' = $1 AND record->>'ok' = 'false' AND record->>'reason' = 'forbidden'`, cmp.ID).Scan(&refused); err != nil || refused != 1 {
 		t.Fatalf("refused presses in the audit %d %v", refused, err)
 	}
+	// A campaign whose content went (RET-10) has no arguments to plan a retry from.
+	setPurged := func(on bool) {
+		t.Helper()
+		if _, err := b.c.st.Pool.Exec(ctx, `UPDATE campaigns SET purged_at = CASE WHEN $2 THEN botaru_now() END WHERE id = $1`, cmp.ID, on); err != nil {
+			t.Fatal(err)
+		}
+	}
+	setPurged(true)
+	_, err = b.c.CampaignControl(ctx, b.channel, press("telegram:1001", "direct:1001", summary.external), retry)
+	wantReason(t, err, "already_terminal")
+	setPurged(false)
 	again, err := b.c.CampaignControl(ctx, b.channel, press("telegram:1001", "direct:1001", summary.external), retry)
 	if err != nil || again.State != "proposed" || again.ID == cmp.ID {
 		t.Fatalf("retry %+v %v", again, err)

@@ -221,6 +221,9 @@ func TestMetadataWholeMonths(t *testing.T) {
 			VALUES ('cmp_old', 'demo', 'x', 'completed', 'h', '{}', 'n', false, $1, $1)`,
 		`INSERT INTO campaign_items (campaign, n, resource, args, args_hash, state) VALUES ('cmp_old', 1, 'r', '{}', 'h', 'ok')`,
 		`INSERT INTO spend (id, tenant, line, unit, state, eur_micros, time) VALUES ('sp_stuck', 'demo', 'work', 'task', 'reserved', 7, $1)`,
+		// A control operation of an active hold stays with it; one of a released hold goes.
+		`INSERT INTO control_ops (id, tenant, op, target_kind, target_id, actor_kind, actor, hold, created_at)
+			VALUES ('op_live', 'demo', 'hold', 'role', 'r', 'person', 'x', 'h_live', $1), ('op_old', 'demo', 'hold', 'role', 'r', 'person', 'x', 'h_old', $1)`,
 		// A dismissed incident whose episode still fires stays, or the next tick opens it again.
 		`WITH e AS (INSERT INTO alarm_episodes (tenant, alarmkey, alarm, state, severity, subject, seq, opened_at, last_seen_at)
 			VALUES ('demo', 'k_fire', 'a', 'firing', 'warn', '{}', 1, $1, $1) RETURNING id)
@@ -258,6 +261,9 @@ func TestMetadataWholeMonths(t *testing.T) {
 	}
 	if n := b.count(t, `SELECT count(*) FROM approvals WHERE id = 'ap_live'`) + b.count(t, `SELECT count(*) FROM holds WHERE id = 'h_live'`); n != 2 || others() != 2 {
 		t.Fatalf("terminal records of the month stayed or live ones went: %d of 2 left", others())
+	}
+	if b.count(t, `SELECT count(*) FROM control_ops WHERE id = 'op_live'`) != 1 || b.count(t, `SELECT count(*) FROM control_ops`) != 1 {
+		t.Fatal("a control operation of an active hold went, or one of a released hold stayed")
 	}
 	if b.count(t, `SELECT count(*) FROM incidents WHERE id = 'inc_fire'`) != 1 {
 		t.Fatal("an incident with a firing episode went")
