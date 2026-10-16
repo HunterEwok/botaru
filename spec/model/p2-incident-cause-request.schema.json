@@ -1,0 +1,29 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:botaru:schema:p2-incident-cause-request:1",
+  "title": "P2 incident.cause: request",
+  "description": "Body of P2 incident.cause, from v0.3: only a principal of kind human with incident.manage in the tenant of the incident records its cause (MGR-8); otherwise the denial forbidden. A later call replaces the cause; unknown records that the cause is not known. The core writes the code, the person and the time into the incident record and the audit, shows them only to people and does not pass them into model context. With an external cause (external_load, attack) the incident has no link candidate to a rejected proposal (GOV-38) and makes nobody answer (GOV-41).",
+  "x-botaru-direction": "input",
+  "x-botaru-version": "v0.3",
+  "x-botaru-rules": [
+    "GOV-38",
+    "GOV-41",
+    "MGR-8"
+  ],
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "incident",
+    "cause"
+  ],
+  "properties": {
+    "incident": {
+      "$ref": "urn:botaru:schema:common:1#/$defs/object_id",
+      "description": "Incident."
+    },
+    "cause": {
+      "$ref": "urn:botaru:schema:incident:1#/$defs/cause",
+      "description": "The cause code."
+    }
+  }
+}

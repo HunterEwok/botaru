@@ -41,8 +41,16 @@ var Ahead = map[string][]string{
 	// The grant ladder of a role and the grant signs of a type (MGR-17).
 	"Role":     {"/spec/model_grants"},
 	"TaskType": {"/spec/grant_eligible", "/spec/grant_eval_set", "/spec/grant"},
-	// The seat's grant ceilings (MGR-17, MGR-18).
-	"Governance": {"/spec/farm_manager/grant_limits"},
+	// The seat's grant ceilings (MGR-17, MGR-18). From v0.3 the accountability mode and its
+	// minimum of forecasts (GOV-36), the persona addenda (GOV-45), the manager's fallback
+	// profile (MGR-49) and the analysis after an incident (MGR-53); the reward fields of the
+	// deferred COM-18 stay refused.
+	"Governance": {"/spec/farm_manager/grant_limits", "/spec/commission/accountability", "/spec/commission/accountability_min_forecasts",
+		"/spec/positions/functional/addenda", "/spec/farm_manager/fallback_profile", "/spec/farm_manager/postmortem",
+		"/spec/farm_manager/postmortem_max_eur"},
+	// From v0.3 the class fields of the preventable incident, the answering lenses and the
+	// problem codes of a link (MGR-55, GOV-47, GOV-41, GOV-38).
+	"IncidentClass": {"/spec/manager_accountable", "/spec/area", "/spec/problem_codes"},
 	// The necessity lens thresholds (COM-13).
 	"Commission": {"/spec/escalation"},
 	// The one recipient of an export sink (SEC-10).

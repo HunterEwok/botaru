@@ -940,6 +940,15 @@ entries:
     rules: [MGR-8, GOV-13]
     profiles: [manager, governance]
     contract: false
+  - id: P2.incident.cause
+    port: P2
+    op: incident.cause
+    since: v0.3
+    request: p2-incident-cause-request
+    response: done-response
+    rules: [MGR-8, GOV-38, GOV-41]
+    profiles: [manager, governance]
+    contract: false
   - id: P2.manager.direct
     port: P2
     op: manager.direct
