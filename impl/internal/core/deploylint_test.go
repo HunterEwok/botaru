@@ -115,6 +115,14 @@ func TestDeployLintRules(t *testing.T) {
 		{"DEP-7", "networks: [core], secrets: [wt-act]", "networks: [core, lan], secrets: [wt-act]", "toolhost_network"},
 		{"DEP-7", "tenant: demo, placement: sandbox, user: botaru-sbx", "tenant: demo2, placement: sandbox, user: botaru-read", "tenant_user_shared"},
 		{"DEP-7", "{name: logs, kind: plugin, parent: th-read, mode: stdio}", "{name: logs, kind: plugin, parent: th-none, mode: stdio}", "plugin_parent_unknown"},
+		// One toolhost described on two machines is one process: its token and its plugin's user
+		// are not shared (SEC-2, DEP-7).
+		{"SEC-2", "  sbx1:\n", "  web2:\n    kind: production\n    processes:\n" +
+			"      - {name: th-read, kind: toolhost, tenant: demo, placement: host, user: botaru-read, networks: [core, plug-metrics], secrets: [wt-read]}\n" +
+			"      - {name: metrics, kind: plugin, parent: th-read, mode: container, user: botaru-metrics, networks: [plug-metrics], secrets: [metrics-token], egress: [metrics.example.org]}\n" +
+			"  sbx1:\n", ""},
+		// SEC-6, TEN-3: a channel, a toolhost and a monitoring adapter name their tenant.
+		{"SEC-6", "{name: telegram, kind: channel, tenant: demo, ", "{name: telegram, kind: channel, ", "process_tenant_missing"},
 		// DEP-8: only core processes reach the store.
 		{"DEP-8", "user: botaru-ch, networks: [core]", "user: botaru-ch, networks: [core, store]", "store_network_reachable"},
 		// DEP-9: the action toolhost's OS user is no other process's.
@@ -143,9 +151,18 @@ func TestDeployLintRules(t *testing.T) {
 			t.Fatalf("%s %s: the base has no %q", tc.rule, tc.want, tc.old)
 		}
 		got := deployCodes(t, c, strings.Replace(deployBase, tc.old, tc.new, 1))
-		if !slices.Contains(got, tc.want) {
+		if tc.want == "" && len(got) > 0 {
+			t.Errorf("%s: want no error, got %v", tc.rule, got)
+		}
+		if tc.want != "" && !slices.Contains(got, tc.want) {
 			t.Errorf("%s: want %s, got %v", tc.rule, tc.want, got)
 		}
+	} // A core without a P1 listener leaves the P1 networks unknown: a toolhost network is a
+	// note, not an error (DEP-7).
+	doc := strings.Replace(strings.Replace(deployBase, ",\n         listeners: {p1: {networks: [core]}, p2: {networks: [admin]}}", "", 1),
+		"networks: [core], secrets: [wt-act]", "networks: [core, lan], secrets: [wt-act]", 1)
+	if got := deployCodes(t, c, doc); slices.Contains(got, "toolhost_network") {
+		t.Errorf("unknown P1 networks: %v", got)
 	}
 }
 
@@ -166,11 +183,12 @@ func TestDeploySecretScopes(t *testing.T) {
 		"wt-read":       {{Kind: "tenant", Tenant: "demo"}},
 		"store-core":    nil,
 	} {
-		if got := d.secretScopes(secret, channel); !slices.Equal(got, want) {
-			t.Errorf("%s: %v, want %v", secret, got, want)
+		if got := d.secretScopes(secret, channel, nil); !slices.Equal(got.Scopes, want) || got.Unresolved || got.Farm != (secret == "store-core") {
+			t.Errorf("%s: %+v, want %v", secret, got, want)
 		}
 	}
-	if !d.names("store-core") || d.names("nothing") {
-		t.Fatal("names")
+	// The core holds a tenant's provider key: the tenant's scope, not a farm secret.
+	if got := d.secretScopes("store-core", channel, []string{"demo"}); !slices.Equal(got.Scopes, []HoldScope{{Kind: "tenant", Tenant: "demo"}}) || got.Farm {
+		t.Errorf("provider key %+v", got)
 	}
 }

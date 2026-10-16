@@ -67,7 +67,7 @@ func fallbackSet(t *testing.T, root string, attest string) []map[string]any {
 		_ = json.Unmarshal(b, &p)
 		p["metadata"] = map[string]any{"name": name}
 		ps := p["spec"].(map[string]any)
-		ps["model"], ps["fallback"] = "model-"+name, []any{}
+		ps["model"], ps["fallback"], ps["pool"] = "model-"+name, []any{}, "pool-"+name
 		// The fallback is the most expensive model of the call: 3x the output price (GW-6).
 		ps["price"].(map[string]any)["output"] = 12.0
 		ps["max_output_tokens"] = 1000.0
@@ -246,6 +246,22 @@ func TestFallbackChecked(t *testing.T) {
 	var ev map[string]any
 	if err := json.Unmarshal(data, &ev); err != nil || ev["reason"] != "overloaded" || ev["fallback_profile"] != "base-alt" || ev["profile"] != "base-std" {
 		t.Fatalf("event %s", data)
+	}
+	// The slot's circuit opens during the attempt: the call goes to the fallback at once, as for
+	// unavailable.
+	h3 := handle("3")
+	if _, err := st.Pool.Exec(ctx, `INSERT INTO provider_pairs (tenant, pool, state, until, updated_at) VALUES ('demo', 'family-a', 'open', botaru_now() + interval '1 hour', botaru_now())
+		ON CONFLICT (tenant, pool) DO UPDATE SET state = 'open', until = EXCLUDED.until`); err != nil {
+		t.Fatal(err)
+	}
+	prov.models = nil
+	if code, out := call(h3); code != 200 || out["model"] != "model-base-alt" || strings.Join(prov.models, ",") != "model-base-alt" {
+		t.Fatalf("open circuit: %d %v %v", code, out, prov.models)
+	}
+	// Only a 404 on the model is retired (binding "Errors").
+	if fallbackReason(404, []byte(`{"type":"error","error":{"type":"not_found_error","message":"model: model-x"}}`)) != "retired" ||
+		fallbackReason(404, []byte(`{"type":"error","error":{"type":"not_found_error","message":"not found"}}`)) != "" {
+		t.Fatal("404 on the model")
 	}
 	on := &core.ModelGrant{Profile: manifest.ModelProfile{FallbackOn: []string{"overloaded"}}}
 	if !core.SwitchesOn(on, "overloaded") || core.SwitchesOn(on, "rate_limited") {

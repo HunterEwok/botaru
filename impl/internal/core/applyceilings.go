@@ -6,7 +6,9 @@ import (
 	"fmt"
 	"slices"
 
+	"github.com/HunterEwok/botaru/impl/internal/manifest"
 	"github.com/HunterEwok/botaru/impl/internal/money"
+	"github.com/HunterEwok/botaru/impl/internal/spec"
 )
 
 // Two money checks of apply that compare tenant limits with a ceiling: the provider workspace
@@ -98,7 +100,7 @@ func (c *Core) lintWorkspaceCeilings(S *lintSet, f *lintFindings) {
 	}
 }
 
-// weeksPerMonth is 4.4 weeks in a month, as tenths (BUD-13).
+// weeksPerMonthTenths is 4.4 weeks in a month, as tenths (BUD-13).
 const weeksPerMonthTenths = 44
 
 // reviewNeed is the formula of BUD-13 in micro-euros: the sum over the roles of max_per_week
@@ -111,81 +113,92 @@ func reviewNeed(maxPerWeek []int, price int64) int64 {
 	return (int64(weeks)*price*weeksPerMonthTenths + 9) / 10
 }
 
-// reviewLensTypes are the review types of the lenses that review a proposal in a tenant, the
-// lenses COM-6 reserves for: the veto lenses, the lenses of the charter's commission seats and,
-// unless the tenant opted out of the manager (D-77), the farm_manager lens.
-func (c *Core) reviewLensTypes(gov map[string]any, managerOn bool) []string {
-	defs := c.lensDefs()
-	var lenses []string
-	for _, l := range slices.Sorted(mapKeys(defs)) {
-		if defs[l].Veto {
-			lenses = append(lenses, l)
-		}
-	}
-	for _, s := range mlist(mmap(gov, "commission"), "seats") {
-		l := mstr(asMap(s), "lens")
-		if _, ok := defs[l]; ok && !slices.Contains(lenses, l) {
-			lenses = append(lenses, l)
-		}
-	}
-	types := make([]string, 0, len(lenses)+1)
+// reviewPrice is the price of the reviews of one proposal: the tree_budget_eur of the review
+// type of each lens that has an executor. COM-6 reserves it in the review line when a proposal
+// moves to review, and BUD-13 multiplies it, so both compute one number.
+func reviewPrice(cat *Catalog, lenses []string, exec map[string]lensExecutor) int64 {
+	var sum int64
 	for _, l := range lenses {
-		types = append(types, defs[l].ReviewType)
+		if e, ok := exec[l]; ok {
+			sum += money.FromEUR(cat.TaskTypes[e.Type].TreeBudgetEUR)
+		}
 	}
-	if managerOn {
-		types = append(types, managerLensType)
+	return sum
+}
+
+// proposalReviewPrice is the review price COM-6 reserves for a proposal of the tenant, from the
+// manifests alone: the commission lenses (the veto lenses and the charter seat lenses) with a
+// fallback role, or whose seat role may review them, and, from v0.2, the farm_manager lens when
+// the tenant works with the manager and the seat role claims its type. A tenant whose veto
+// lenses have no executor sends no reviews (COM-7): its price is 0.
+func (c *Core) proposalReviewPrice(cat *Catalog, tenant string) int64 {
+	lenses, exec := c.commissionLenses(cat, tenant, false, "")
+	defs := c.lensDefs()
+	sr := seatRole(cat, tenant)
+	for _, l := range lenses {
+		if _, ok := exec[l]; !ok && sr != "" && c.independentReviewer(cat, sr, defs[l].ReviewType, "") {
+			exec[l] = lensExecutor{Lens: l, Type: defs[l].ReviewType, Role: sr, Source: "seat"}
+		}
 	}
-	return types
+	if !c.vetoCovered(lenses, exec) {
+		return 0
+	}
+	if !spec.VersionLater("v0.2", spec.Version) && managerEnabled(cat, tenant) && sr != "" &&
+		slices.Contains(cat.Roles[sr].Claims, managerLensType) && cat.TaskTypes[managerLensType].Purpose == "review" {
+		lenses = append(lenses, managerLens)
+		exec[managerLens] = lensExecutor{Lens: managerLens, Type: managerLensType, Role: sr, Source: "seat"}
+	}
+	return reviewPrice(cat, lenses, exec)
 }
 
 // reviewNeedOf gives the need of BUD-13 of a tenant and whether the formula applies: the
-// tenant's insight or aggregate line is above 0. budget is the tree_budget_eur of a type.
-func (c *Core) reviewNeedOf(ts, gov map[string]any, roles []map[string]any, budget func(string) float64) (int64, bool) {
-	lines := mmap(mmap(ts, "budgets"), "lines")
-	insight, _ := mnum(mmap(lines, "insight"), "month_eur")
-	aggregate, _ := mnum(mmap(lines, "aggregate"), "month_eur")
-	if insight <= 0 && aggregate <= 0 {
+// tenant's insight or aggregate line is above 0.
+func (c *Core) reviewNeedOf(cat *Catalog, tenant string) (int64, bool) {
+	tv := cat.Tenants[tenant]
+	if tv == nil {
 		return 0, false
 	}
-	var price int64
-	for _, t := range c.reviewLensTypes(gov, mmap(ts, "farm_manager")["enabled"] != false) {
-		price += money.FromEUR(budget(t))
+	lines := tv.Spec.Budgets.Lines
+	above := func(l string) bool { m := lines[l].MonthEUR; return m != nil && *m > 0 }
+	if !above("insight") && !above("aggregate") {
+		return 0, false
 	}
 	var weeks []int
-	for _, r := range roles {
-		if n, ok := mnum(mmap(r, "insight"), "max_per_week"); ok {
-			weeks = append(weeks, int(n))
+	for _, name := range slices.Sorted(mapKeys(cat.Roles)) {
+		if r := cat.Roles[name]; r.Insight != nil && r.Insight.MaxPerWeek != nil {
+			weeks = append(weeks, *r.Insight.MaxPerWeek)
 		}
 	}
-	return reviewNeed(weeks, price), true
+	return reviewNeed(weeks, c.proposalReviewPrice(cat, tenant)), true
+}
+
+// reviewShort is the missing amount of the review line of a tenant by BUD-13, and the need.
+func (c *Core) reviewShort(cat *Catalog, tenant string) (short, need int64, ok bool) {
+	need, ok = c.reviewNeedOf(cat, tenant)
+	if !ok {
+		return 0, 0, false
+	}
+	var have int64
+	if l := cat.Tenants[tenant].Spec.Budgets.Lines["review"].MonthEUR; l != nil {
+		have = money.FromEUR(*l)
+	}
+	return max(need-have, 0), need, true
 }
 
 // lintReviewLine rejects a tenant whose review line is below the need of BUD-13
-// (review_line_too_small, with the missing amount).
-func (c *Core) lintReviewLine(S *lintSet, f *lintFindings) {
-	var roles []map[string]any
-	for _, o := range S.each("Role") {
-		roles = append(roles, o.spec)
+// (review_line_too_small, with the missing amount), on the catalog of the set being applied.
+func (c *Core) lintReviewLine(docs []manifest.Doc, S *lintSet, f *lintFindings) {
+	cat, err := buildCatalog(docs)
+	if err != nil {
+		return // the decode error is a finding of its own
 	}
-	budget := func(t string) float64 { n, _ := mnum(S.get("TaskType", t, ""), "tree_budget_eur"); return n }
 	for _, o := range S.each("Tenant") {
 		if o.name == farmTenant {
 			continue
 		}
-		var gov map[string]any
-		for _, g := range S.each("Governance") {
-			if g.tenant == o.name {
-				gov = g.spec
-			}
-		}
-		need, ok := c.reviewNeedOf(o.spec, gov, roles, budget)
-		if !ok {
-			continue
-		}
-		line, _ := mnum(mmap(mmap(mmap(o.spec, "budgets"), "lines"), "review"), "month_eur")
-		if have := money.FromEUR(line); have < need {
+		if short, need, ok := c.reviewShort(cat, o.name); ok && short > 0 {
 			f.addDetail(o, "review_line_too_small", "/budgets/lines/review/month_eur",
-				fmt.Sprintf("the review line needs %s EUR a month, %s EUR more (BUD-13)", eurCents(need), eurCents(need-have)))
+				fmt.Sprintf("the review line needs %s EUR a month, %s EUR more (BUD-13)", eurCents(need), eurCents(short)))
 		}
 	}
 }
@@ -199,27 +212,10 @@ func eurCents(micros int64) string {
 // doctorReviewLine shows the missing amount of the review line of a tenant by BUD-13 in
 // micro-euros: 0 when the line covers the need, a failing check when it does not.
 func (c *Core) doctorReviewLine(cat *Catalog, tenant string, add func(DoctorCheck)) {
-	tv := cat.Tenants[tenant]
-	if tv == nil {
-		return
-	}
-	var roles []map[string]any
-	for _, name := range slices.Sorted(mapKeys(cat.Roles)) {
-		r := cat.Roles[name]
-		if r.Insight != nil && r.Insight.MaxPerWeek != nil {
-			roles = append(roles, map[string]any{"insight": map[string]any{"max_per_week": float64(*r.Insight.MaxPerWeek)}})
-		}
-	}
-	budget := func(t string) float64 { return cat.TaskTypes[t].TreeBudgetEUR }
-	need, ok := c.reviewNeedOf(mmap(tv.Raw, "spec"), tenantSpecOf(cat, "Governance", tenant), roles, budget)
+	short, _, ok := c.reviewShort(cat, tenant)
 	if !ok {
 		return
 	}
-	var have int64
-	if l := tv.Spec.Budgets.Lines["review"].MonthEUR; l != nil {
-		have = money.FromEUR(*l)
-	}
-	short := max(need-have, 0)
 	ch := DoctorCheck{ID: "budget.review_shortfall_eur_micros", OK: short == 0, Severity: "info", Value: short, Tenant: tenant}
 	if short > 0 {
 		ch.Severity = "fail"

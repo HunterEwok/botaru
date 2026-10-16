@@ -181,6 +181,12 @@ func (g *Gateway) serveCall(ctx context.Context, w http.ResponseWriter, body map
 		if !first && switches(call.FallbackReason) {
 			return call.FallbackReason
 		}
+		// The open circuit of the slot's pair is the model being unavailable (GW-11): the call
+		// goes to a fallback whose pair answers, as after a 500 (GW-5). A pair that waits for a
+		// rate limit or a configuration fix is no fallback reason.
+		if p, ok := core.AsProblem(err); ok && first && p.Reason == "provider_unavailable" && switches("unavailable") {
+			return "unavailable"
+		}
 		g.refuse(w, err)
 		return ""
 	}
@@ -215,7 +221,10 @@ func (g *Gateway) serveCall(ctx context.Context, w http.ResponseWriter, body map
 		g.refuse(w, err)
 		return ""
 	}
-	reserve := Reserve(call.Profile, len(payload), maxTokens)
+	// own is the worst case of this call's own model: a call without an answer charges it
+	// (BUD-11), the call was on this model only.
+	own := Reserve(call.Profile, len(payload), maxTokens)
+	reserve := own
 	if first {
 		for _, p := range candidates {
 			reserve = max(reserve, Reserve(p, len(payload), maxTokens))
@@ -236,7 +245,7 @@ func (g *Gateway) serveCall(ctx context.Context, w http.ResponseWriter, body map
 		if !sent {
 			_ = g.c.DropReserve(context.WithoutCancel(ctx), spendID)
 		} else {
-			_ = g.c.Charge(context.WithoutCancel(ctx), spendID, reserve, nil, "", true)
+			_ = g.c.Charge(context.WithoutCancel(ctx), spendID, own, nil, "", true)
 		}
 		g.outcome(ctx, call, "provider_unavailable", 0)
 		// A dropped connection is the reason unavailable (binding table "Errors").
@@ -250,7 +259,7 @@ func (g *Gateway) serveCall(ctx context.Context, w http.ResponseWriter, body map
 	respBody, err := io.ReadAll(io.LimitReader(resp.Body, 64<<20))
 	requestID := resp.Header.Get("request-id")
 	if err != nil {
-		_ = g.c.Charge(context.WithoutCancel(ctx), spendID, reserve, nil, requestID, true)
+		_ = g.c.Charge(context.WithoutCancel(ctx), spendID, own, nil, requestID, true)
 		g.outcome(ctx, call, "provider_unavailable", 0)
 		problem(w, "provider_unavailable", "the provider answer broke off", 5)
 		return ""
@@ -259,7 +268,7 @@ func (g *Gateway) serveCall(ctx context.Context, w http.ResponseWriter, body map
 		_ = g.c.Charge(context.WithoutCancel(ctx), spendID, 0, nil, requestID, false)
 		reason, retry := mapError(resp)
 		g.outcome(ctx, call, reason, retry)
-		if fr := fallbackReason(resp.StatusCode); fr != "" && switches(fr) {
+		if fr := fallbackReason(resp.StatusCode, respBody); fr != "" && switches(fr) {
 			return fr
 		}
 		problem(w, reason, "provider answered "+strconv.Itoa(resp.StatusCode), retry)
@@ -269,7 +278,7 @@ func (g *Gateway) serveCall(ctx context.Context, w http.ResponseWriter, body map
 		Usage *Usage `json:"usage"`
 	}
 	if err := json.Unmarshal(respBody, &parsed); err != nil || parsed.Usage == nil {
-		_ = g.c.Charge(context.WithoutCancel(ctx), spendID, reserve, nil, requestID, true)
+		_ = g.c.Charge(context.WithoutCancel(ctx), spendID, own, nil, requestID, true)
 		problem(w, "model_error", "the provider answer has no usage", 0)
 		return ""
 	}
@@ -289,15 +298,23 @@ func (g *Gateway) serveCall(ctx context.Context, w http.ResponseWriter, body map
 }
 
 // fallbackReason is the fallback reason of a provider answer (binding, GW-5): 529 overloaded,
-// 500 unavailable, 404 on the model retired; "" for any other answer.
-func fallbackReason(status int) string {
+// 500 unavailable, a 404 not_found_error on the model retired; "" for any other answer.
+func fallbackReason(status int, body []byte) string {
 	switch status {
 	case 529:
 		return "overloaded"
 	case 500:
 		return "unavailable"
 	case 404:
-		return "retired"
+		var e struct {
+			Error struct {
+				Type    string `json:"type"`
+				Message string `json:"message"`
+			} `json:"error"`
+		}
+		if json.Unmarshal(body, &e) == nil && e.Error.Type == "not_found_error" && strings.Contains(strings.ToLower(e.Error.Message), "model") {
+			return "retired"
+		}
 	}
 	return ""
 }

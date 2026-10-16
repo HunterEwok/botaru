@@ -19,9 +19,10 @@ import (
 // channel driver (named by the driver) stop at the next call without an overlap window. For
 // any secret the core sets a hold without expiry with reason compromised on every scope that
 // uses it: the worker of a token, the channels of a driver, the plugins whose manifest names
-// the secret, the scopes the core settings list for a deployment secret (secret_uses) and the
-// scopes of the processes that the deployment description gives the secret (DEP-10). A secret
-// the description names only for farm processes is revoked with no hold.
+// the secret, the scopes the core settings list for a deployment secret (secret_uses), the
+// tenants whose provider key it is and the scopes of the processes that the deployment
+// description gives the secret (DEP-10). A secret only the core, the store, the watchdog or the
+// backup holds is revoked with no hold; a secret no use is known of is not_found.
 // The hold's author is the operator, so only the operator releases it.
 
 // SecretRevokeRequest is p2-secret-revoke-request.
@@ -140,16 +141,45 @@ func (c *Core) SecretRevoke(ctx context.Context, op Operator, req SecretRevokeRe
 			}
 			add(s)
 		}
-		// The uses of a deployment secret by the deployment description (SEC-6, DEP-10).
+		// A provider key the core holds for a tenant's workspace: the tenant's whole scope.
+		described := 0
+		for _, t := range c.cfg.ProviderKeySecrets[req.Secret] {
+			described++
+			if reach(t) {
+				add(HoldScope{Kind: "tenant", Tenant: t})
+			}
+		}
+		// The uses of a deployment secret by the deployment description (SEC-6, DEP-10). A
+		// secret of the farm's own processes only gets no hold; one held by a process whose
+		// tenant the description does not give holds every tenant, so nothing it might serve
+		// keeps running.
+		farmOnly := false
 		if c.deploy != nil {
 			channel := func(t, name string) bool { return cat.Tenants[t].channel(name) }
-			for _, s := range c.deploy.secretScopes(req.Secret, channel) {
+			use := c.deploy.secretScopes(req.Secret, channel, c.cfg.ProviderKeySecrets[req.Secret])
+			if use.Unresolved {
+				for _, t := range slices.Sorted(mapKeys(cat.Tenants)) {
+					if t == farmTenant {
+						continue
+					}
+					if !reach(t) {
+						return refuse("forbidden", "the secret is held by a process of no known tenant: only the farm operator revokes it")
+					}
+					add(HoldScope{Kind: "tenant", Tenant: t})
+				}
+			}
+			for _, s := range use.Scopes {
+				described++
 				if reach(s.Tenant) {
 					add(s)
 				}
 			}
+			farmOnly = use.Farm && described == 0 && !use.Unresolved
 		}
-		if len(scopes) == 0 && kind == "deployment" && (c.deploy == nil || !c.deploy.names(req.Secret)) {
+		if len(scopes) == 0 && described > 0 {
+			return refuse("forbidden", "the secret is used only by tenants the credential does not reach")
+		}
+		if len(scopes) == 0 && kind == "deployment" && !farmOnly {
 			return refuse("not_found", "no credential or use of the secret is known in the tenants of the credential")
 		}
 		var holds []any

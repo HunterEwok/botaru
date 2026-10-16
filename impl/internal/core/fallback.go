@@ -5,6 +5,7 @@ package core
 import (
 	"context"
 	"slices"
+	"sync"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -53,11 +54,10 @@ func (c *Core) fallbackGrants(ctx context.Context, g *ModelGrant) ([]*ModelGrant
 	if tv == nil {
 		return nil, nil
 	}
-	docs, _, err := loadManifests(ctx, c.st.Pool)
+	attestedOn, err := c.fallbackAttested(ctx, cat.SetHash)
 	if err != nil {
 		return nil, err
 	}
-	x := newEvalIndex(docs)
 	reports := catalogEvalReports(cat)
 	var out []*ModelGrant
 	for _, name := range g.Profile.Fallback {
@@ -85,11 +85,9 @@ func (c *Core) fallbackGrants(ctx context.Context, g *ModelGrant) ([]*ModelGrant
 		attested := false
 		switch g.Slot {
 		case "base", "analysis":
-			fp, found, err := x.fingerprintOn(g.Role, g.Tenant, g.Slot, name)
-			if err != nil {
+			if attested, err = attestedOn(g.Role, g.Tenant, g.Slot, name); err != nil {
 				return nil, err
 			}
-			attested = found && x.reported(g.Role, fp)
 		case "seat":
 			fp, err := seatFingerprint(cat, name)
 			if err != nil {
@@ -102,6 +100,50 @@ func (c *Core) fallbackGrants(ctx context.Context, g *ModelGrant) ([]*ModelGrant
 		}
 	}
 	return out, nil
+}
+
+// fallbackCache keeps, for one manifest set, the eval index and whether the role's eval passed
+// on a fallback profile in a slot, so a model call does not read the manifests again: the set
+// hash changes with every apply.
+type fallbackCache struct {
+	mu       sync.Mutex
+	hash     string
+	index    evalIndex
+	attested map[[4]string]bool
+}
+
+// fallbackAttested gives the check of a pass attestation of the role's eval on a fallback in a
+// base or analysis slot for the manifest set of the hash.
+func (c *Core) fallbackAttested(ctx context.Context, hash string) (func(role, tenant, slot, profile string) (bool, error), error) {
+	fc := &c.fallbacks
+	fc.mu.Lock()
+	defer fc.mu.Unlock()
+	if fc.index == nil || fc.hash != hash {
+		docs, loaded, err := loadManifests(ctx, c.st.Pool)
+		if err != nil {
+			return nil, err
+		}
+		fc.hash, fc.index, fc.attested = loaded, newEvalIndex(docs), map[[4]string]bool{}
+	}
+	x, memo := fc.index, fc.attested
+	return func(role, tenant, slot, profile string) (bool, error) {
+		key := [4]string{role, tenant, slot, profile}
+		fc.mu.Lock()
+		ok, seen := memo[key]
+		fc.mu.Unlock()
+		if seen {
+			return ok, nil
+		}
+		fp, found, err := x.fingerprintOn(role, tenant, slot, profile)
+		if err != nil {
+			return false, err
+		}
+		ok = found && x.reported(role, fp)
+		fc.mu.Lock()
+		memo[key] = ok
+		fc.mu.Unlock()
+		return ok, nil
+	}, nil
 }
 
 // recordFallback marks the usage line of a call on a fallback profile and writes the event

@@ -73,6 +73,9 @@ type Config struct {
 	// source of the farm nodes and of the secret uses of secret.revoke (SEC-6). Empty means
 	// none: doctor warns.
 	DeployFile string
+	// ProviderKeySecrets maps the name of a secret that is a provider key to the tenants whose
+	// workspace it serves (SEC-6): a compromised key holds those tenants.
+	ProviderKeySecrets map[string][]string
 	// Workspaces are the provider workspace ceilings the deployment describes (GW-9).
 	Workspaces WorkspaceCeilings
 	// FreeSpace, when set, measures the store volume instead of Health.StoreVolume: free and
@@ -130,6 +133,8 @@ type Core struct {
 	startedAt atomic.Int64
 	// deploy is the deployment description read at start, nil without one (DEP-10).
 	deploy *DeployDescription
+	// fallbacks caches the eval attestations of fallback profiles per manifest set (GW-5).
+	fallbacks fallbackCache
 }
 
 // New opens the core over a migrated store.

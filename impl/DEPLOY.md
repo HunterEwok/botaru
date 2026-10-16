@@ -418,6 +418,8 @@ $X worker enroll -tenant demo -role telegram -kind channel -target telegram -tok
 docker compose --profile mock --profile workers up -d
 ```
 
+Upgrading a compose farm from a build that had one `workers` volume: each worker now has its own token volume (`agent-worker`, `channel-worker`), so no worker reads another's token (SEC-2), and the core reads `deploy.yaml`, which the compose file mounts. The old tokens stay in the old volume, which no worker mounts any more. After `docker compose up -d store core`, enroll the agent and the channel again with the two `worker enroll` lines above, revoke the old workers (`$X worker revoke <the old worker id>` for each; `$X doctor` names them as stale workers), start the workers, and remove the old volume (`docker volume rm <project>_workers`).
+
 The check is the same as section 8. For a real model, set `base_url` in `core.yaml` to `https://api.anthropic.com`, leave the `mock` profile out, and apply your copy of the model profile as in section 7 (mount it into the core container).
 
 ## Upgrading from the first version

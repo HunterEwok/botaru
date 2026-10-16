@@ -845,8 +845,9 @@ func (c *Core) endMatchStep(ctx context.Context, tx pgx.Tx, now time.Time, l *le
 // erasure request that have nothing to erase by ids: a store whose match found nothing is
 // not_applicable (no_match); a store whose match failed, or that matched nothing because it
 // came later, fails, since unmatched is not "not found" (SEC-11). A store with found ids gets
-// erase work by its own ids (claimErasure). A runtime that was searched (RT-5) counts the same
-// way; one without a match step erases by the request's scope.
+// erase work by its own ids (claimErasure). A runtime that keeps sessions or memory itself
+// (RT-5) counts the same way, and fails without a match answer like a channel; any other
+// runtime erases by the request's scope.
 func settleEdgeSteps(ctx context.Context, tx pgx.Tx, now time.Time, r *subjectRequest, erasure string) error {
 	// A store that answered the match but whose worker was revoked since gets no step from
 	// the active workers; it gets one from its match step, so its found ids stay owed and the
@@ -881,7 +882,7 @@ func settleEdgeSteps(ctx context.Context, tx pgx.Tx, now time.Time, r *subjectRe
 		WHERE s.request = $1 AND s.state = 'pending' AND (s.kind IN ('sink', 'monitor')
 			OR s.kind = 'channel' AND NOT EXISTS (SELECT 1 FROM workers w WHERE w.tenant = s.tenant AND w.kind = 'channel' AND w.target = s.target
 				AND w.state <> 'revoked' AND w.hello->'driver'->>'stores_content' = 'none')
-			OR s.kind = 'runtime' AND m.store IS NOT NULL) ORDER BY s.store`, erasure, r.ID)
+			OR s.kind = 'runtime' AND (m.store IS NOT NULL OR EXISTS (SELECT 1 FROM workers w WHERE w.id = s.target AND `+runtimeInternal+`))) ORDER BY s.store`, erasure, r.ID)
 	if err != nil {
 		return err
 	}

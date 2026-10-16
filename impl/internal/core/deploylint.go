@@ -214,6 +214,25 @@ func (d *DeployDescription) userOf(p *DeployProcess) string {
 	return ""
 }
 
+// identity names a process across machines: a toolhost of a tenant described on two machines
+// under one name is one process (one worker token), and so are its plugins; any other process
+// is itself on its machine.
+func (d *DeployDescription) identity(p *DeployProcess) string {
+	switch {
+	case p.Kind == "toolhost":
+		return "toolhost/" + p.Tenant + "/" + p.Name
+	case p.Kind == "plugin" && d.parentOf[p] != nil:
+		return d.identity(d.parentOf[p]) + "/" + p.Name
+	}
+	return p.Kind + "/" + p.Name + "@" + d.hostOf[p]
+}
+
+// tenantKinds are the processes that act for one tenant and name it (SEC-6, TEN-3).
+var tenantKinds = []string{"channel", "toolhost", "monitor"}
+
+// farmKinds are the processes of the farm itself, which no tenant's work runs in.
+var farmKinds = []string{"core", "store", "watch", "backup"}
+
 // coreKinds are the processes of the core side: the core with farmctl next to it (DEP-8), the
 // store and the backup of the store.
 var coreKinds = []string{"core", "store", "backup"}
@@ -226,10 +245,20 @@ func lintDeployDescription(d *DeployDescription, f func(level, code, format stri
 	isFarm := func(h string) bool { return slices.Contains(d.FarmHosts, h) }
 	core := map[string]bool{}
 	var p1Nets []string
+	p1Known := true
 	for _, p := range procs {
 		if p.Kind == "core" {
 			core[d.hostOf[p]] = true
-			p1Nets = append(p1Nets, p.Listeners["p1"].Networks...)
+			l, ok := p.Listeners["p1"]
+			p1Known = p1Known && ok && len(l.Networks) > 0
+			p1Nets = append(p1Nets, l.Networks...)
+		}
+	}
+	// SEC-6, TEN-3: a channel, a toolhost and a monitoring adapter act for one tenant, and the
+	// description names it, so a revoked secret holds that tenant's scope.
+	for _, p := range procs {
+		if slices.Contains(tenantKinds, p.Kind) && p.Tenant == "" {
+			f("error", "process_tenant_missing", "process %s of kind %s on %s names no tenant (SEC-6, TEN-3)", p.Name, p.Kind, d.hostOf[p])
 		}
 	}
 	production := false
@@ -361,7 +390,9 @@ func lintDeployDescription(d *DeployDescription, f func(level, code, format stri
 	owners := map[string][]string{}
 	for _, p := range procs {
 		for _, s := range p.Secrets {
-			owners[s] = append(owners[s], p.Name+"@"+d.hostOf[p])
+			if id := d.identity(p); !slices.Contains(owners[s], id) {
+				owners[s] = append(owners[s], id)
+			}
 		}
 	}
 	for _, s := range slices.Sorted(mapKeys(owners)) {
@@ -487,7 +518,7 @@ func lintDeployDescription(d *DeployDescription, f func(level, code, format stri
 			}
 			continue
 		}
-		if p.User != "" && (p.User == parent.User || slices.ContainsFunc(procs, func(q *DeployProcess) bool { return q != p && q.User == p.User })) {
+		if p.User != "" && (p.User == parent.User || slices.ContainsFunc(procs, func(q *DeployProcess) bool { return d.identity(q) != d.identity(p) && q.User == p.User })) {
 			f("error", "plugin_user_shared", "plugin container %s on %s runs as %s, which another process uses (DEP-7)", p.Name, d.hostOf[p], p.User)
 		}
 		if len(p.Networks) == 0 {
@@ -495,7 +526,7 @@ func lintDeployDescription(d *DeployDescription, f func(level, code, format stri
 		}
 		for _, n := range p.Networks {
 			for _, q := range netMembers[n] {
-				if q != p && q != parent {
+				if id := d.identity(q); id != d.identity(p) && id != d.identity(parent) {
 					f("error", "plugin_network_shared", "plugin container %s on %s shares network %s with %s: it accepts connections only from its toolhost (DEP-6, DEP-7)", p.Name, d.hostOf[p], n, q.Name)
 				}
 			}
@@ -512,7 +543,11 @@ func lintDeployDescription(d *DeployDescription, f func(level, code, format stri
 			own := slices.ContainsFunc(netMembers[n], func(q *DeployProcess) bool {
 				return q.Kind == "plugin" && q.Mode == "container" && d.parentOf[q] == p
 			})
-			if !own {
+			switch {
+			case own:
+			case !p1Known:
+				f("note", "toolhost_network", "toolhost %s on %s is on network %s; the core names no P1 network, so the lint cannot tell whether it is P1 (DEP-6, DEP-7)", p.Name, d.hostOf[p], n)
+			default:
 				f("error", "toolhost_network", "toolhost %s on %s is on network %s, which is neither P1 nor a network of its plugin containers (DEP-6, DEP-7)", p.Name, d.hostOf[p], n)
 			}
 		}
@@ -581,17 +616,28 @@ func onlyOn(a, b map[string]bool) bool {
 	return true
 }
 
-// secretScopes are the hold scopes the description gives a named secret for secret.revoke
-// (SEC-6): a plugin of a tenant is its plugin scope, a channel process named as a channel of
-// its tenant is that channel, and any other process of a tenant (a toolhost, a monitoring
-// adapter, a channel process by another name) is the whole tenant, so a revoked secret stops
-// at least everything that could use it. A farm process without a tenant (the core, the store,
-// the watchdog, the backup) gives no scope: the operator replaces such a secret by the recipe.
-func (d *DeployDescription) secretScopes(secret string, channels func(tenant, name string) bool) []HoldScope {
-	var out []HoldScope
+// secretUses are the uses of a named secret by the deployment description for secret.revoke
+// (SEC-6): Scopes are the hold scopes, Farm says a process of the farm itself holds it, and
+// Unresolved says a process holds it whose tenant the description does not give.
+type secretUses struct {
+	Scopes     []HoldScope
+	Farm       bool
+	Unresolved bool
+}
+
+// secretScopes are the uses the description gives a named secret: a plugin of a tenant is its
+// plugin scope, a channel process named as a channel of its tenant is that channel, and any
+// other process of a tenant (a toolhost, a monitoring adapter, a channel process by another
+// name) is the whole tenant, so a revoked secret stops at least everything that could use it.
+// The core holds the provider keys of the tenants' workspaces: providerTenants are the tenants
+// whose provider key the secret is, each a tenant scope. Any other secret of the core, the
+// store, the watchdog or the backup is the farm's own: the operator replaces it by the recipe.
+// A process of any other kind without a tenant is unresolved.
+func (d *DeployDescription) secretScopes(secret string, channels func(tenant, name string) bool, providerTenants []string) secretUses {
+	var u secretUses
 	add := func(s HoldScope) {
-		if !slices.Contains(out, s) {
-			out = append(out, s)
+		if !slices.Contains(u.Scopes, s) {
+			u.Scopes = append(u.Scopes, s)
 		}
 	}
 	for _, p := range d.processes() {
@@ -600,7 +646,14 @@ func (d *DeployDescription) secretScopes(secret string, channels func(tenant, na
 		}
 		t := d.tenantOf(p)
 		switch {
+		case p.Kind == "core" && len(providerTenants) > 0:
+			for _, pt := range providerTenants {
+				add(HoldScope{Kind: "tenant", Tenant: pt})
+			}
+		case slices.Contains(farmKinds, p.Kind):
+			u.Farm = true
 		case t == "":
+			u.Unresolved = true
 		case p.Kind == "plugin":
 			add(HoldScope{Kind: "plugin", Tenant: t, Name: p.Name})
 		case p.Kind == "channel" && channels(t, p.Name):
@@ -609,15 +662,7 @@ func (d *DeployDescription) secretScopes(secret string, channels func(tenant, na
 			add(HoldScope{Kind: "tenant", Tenant: t})
 		}
 	}
-	return out
-}
-
-// names says whether the description names a secret anywhere.
-func (d *DeployDescription) names(secret string) bool {
-	if _, ok := d.Secrets[secret]; ok {
-		return true
-	}
-	return slices.ContainsFunc(d.processes(), func(p *DeployProcess) bool { return slices.Contains(p.Secrets, secret) })
+	return u
 }
 
 // loadDeploy lints the deployment description of the settings at core start (DEP-10): a

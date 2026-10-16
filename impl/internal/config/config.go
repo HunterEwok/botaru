@@ -9,6 +9,8 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
+	"slices"
 	"strings"
 
 	"github.com/HunterEwok/botaru/impl/internal/api"
@@ -119,6 +121,25 @@ func Load(path string) (*Core, error) {
 		}
 	}
 	return &c, nil
+}
+
+// ProviderKeySecrets maps the name of each provider key secret to the tenants whose workspace
+// it serves (SEC-6). The name of a secret is the file name of its key file, as a container
+// secret is mounted at /run/secrets/<name>.
+func (c *Core) ProviderKeySecrets() map[string][]string {
+	out := map[string][]string{}
+	for _, p := range c.Providers {
+		for tenant, f := range p.KeyFiles {
+			name := filepath.Base(f)
+			if !slices.Contains(out[name], tenant) {
+				out[name] = append(out[name], tenant)
+			}
+		}
+	}
+	for _, ts := range out {
+		slices.Sort(ts)
+	}
+	return out
 }
 
 // TokenKeys reads the current token key and the previous keys of the rotation window (SEC-5).
