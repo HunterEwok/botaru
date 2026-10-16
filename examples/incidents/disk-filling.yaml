@@ -9,6 +9,9 @@ spec:
   severity: sev2
   change_sensitive: false
   stops_manager: false
+  manager_accountable: false
+  area: operational
+  problem_codes: [disk_growth]
   inspect: false
   detect:
     alarm: alarm.disk.free.low.v1

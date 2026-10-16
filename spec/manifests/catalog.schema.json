@@ -11,7 +11,8 @@
     "DEP-11",
     "MON-8",
     "MON-10",
-    "INJ-16"
+    "INJ-16",
+    "HLD-9"
   ],
   "type": "object",
   "additionalProperties": false,
@@ -523,6 +524,27 @@
             "maximum": 400,
             "description": "Longest expiry of a connection, in days; 90 by default."
           }
+        }
+      }
+    },
+    "role_incident_hold": {
+      "x-botaru-version": "v0.3",
+      "type": "object",
+      "additionalProperties": false,
+      "description": "From v0.3: a stricter threshold of the role hold for confirmed incident links in this tenant (HLD-9, spec/model/holds.yaml role_incidents_three, 3 links in 90 days). It can only be stricter: fewer links or a longer window; the schema refuses a looser value. A field left out keeps the default.",
+      "properties": {
+        "links": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 3,
+          "description": "Confirmed links within the window that set the hold; at most 3."
+        },
+        "window": {
+          "type": "string",
+          "maxLength": 4,
+          "pattern": "^(9[0-9]|[12][0-9]{2}|3[0-5][0-9]|36[0-5])d$",
+          "x-botaru-format": "duration",
+          "description": "The window of the count in days, from 90d to 365d; at least the default 90d."
         }
       }
     }

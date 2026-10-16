@@ -7,7 +7,12 @@ spec:
   title: "Disk full"
   severity: sev1
   change_sensitive: true
+  # Up to v0.2 the class stops the farm manager seat (GOV-22); a v0.3 core does not use
+  # stops_manager and decides by manager_accountable whether the incident was preventable (GOV-47).
   stops_manager: true
+  manager_accountable: true
+  area: operational
+  problem_codes: [disk_growth, tmp_cleanup_missing]
   inspect: true
   detect:
     alarm: alarm.disk.free.low.v1
