@@ -48,10 +48,11 @@ func catalogVersion(cat *Catalog, tenant string) string {
 	return h
 }
 
-// toolCacheKey is the key of a call's entry.
-func toolCacheKey(cat *Catalog, tn, right, defHash string, args map[string]any) (string, error) {
+// toolCacheKey is the key of a call's entry: the tenant, the plugin, the tool, the arguments,
+// the definition hash, and the catalog version and data mark of the task at the call's check.
+func toolCacheKey(tn, right, defHash, catalog, mark string, args map[string]any) (string, error) {
 	plugin, tool, _ := cutTool(right)
-	k := map[string]any{"plugin": plugin, "tool": tool, "args": args, "catalog": catalogVersion(cat, tn), "definition": defHash}
+	k := map[string]any{"plugin": plugin, "tool": tool, "args": args, "catalog": catalog, "mark": mark, "definition": defHash}
 	k["tenant"] = tn
 	return jcs.Hash(k)
 }
@@ -81,19 +82,25 @@ func lookupToolCache(ctx context.Context, tx pgx.Tx, now time.Time, tenant, key 
 }
 
 // storeToolCache keeps the output of a finished call with the flags it gave its attempt: the
-// personal_seen sources and the personal_subjects (AUD-5). Expired entries of the tenant go at
+// personal_seen sources of the call and the personal_subjects of its task, a superset of what
+// the call itself brought, so a hit never carries fewer flags than the original (AUD-5). Expired entries of the tenant go at
 // the same time.
-func storeToolCache(ctx context.Context, tx pgx.Tx, now time.Time, cat *Catalog, t toolspec.Tool, call string, output []byte, personalSeen []string) error {
-	var tenant, right, defHash string
-	var argsRaw []byte
-	if err := tx.QueryRow(ctx, `SELECT tenant, tool, coalesce(tool_def_hash, ''), args FROM toolcalls WHERE id = $1`, call).Scan(&tenant, &right, &defHash, &argsRaw); err != nil {
+func storeToolCache(ctx context.Context, tx pgx.Tx, now time.Time, t toolspec.Tool, call string, output []byte, personalSeen []string) error {
+	var tenant, right, defHash, catalog, mark string
+	var argsRaw, subjects []byte
+	if err := tx.QueryRow(ctx, `SELECT c.tenant, c.tool, coalesce(c.tool_def_hash, ''), coalesce(c.cache_catalog, ''), coalesce(c.cache_mark, ''), c.args,
+		coalesce(t.record->'personal_subjects', '[]'::jsonb) FROM toolcalls c JOIN tasks t ON t.id = c.task WHERE c.id = $1`, call).
+		Scan(&tenant, &right, &defHash, &catalog, &mark, &argsRaw, &subjects); err != nil {
 		return err
+	}
+	if catalog == "" {
+		return nil // checked before the cache existed: no key
 	}
 	var args map[string]any
 	if err := json.Unmarshal(argsRaw, &args); err != nil {
 		return err
 	}
-	key, err := toolCacheKey(cat, tenant, right, defHash, args)
+	key, err := toolCacheKey(tenant, right, defHash, catalog, mark, args)
 	if err != nil {
 		return err
 	}
@@ -106,10 +113,10 @@ func storeToolCache(ctx context.Context, tx pgx.Tx, now time.Time, cat *Catalog,
 	seen, _ := json.Marshal(personalSeen)
 	plugin, _, _ := cutTool(right)
 	_, err = tx.Exec(ctx, `INSERT INTO tool_cache (tenant, key, plugin, tool, output, personal_seen, personal_subjects, source_call, created_at, expires_at)
-		VALUES ($1, $2, $3, $4, $5, $6, '[]', $7, $8, $9)
+		VALUES ($1, $2, $3, $4, $5, $6, $10, $7, $8, $9)
 		ON CONFLICT (tenant, key) DO UPDATE SET output = EXCLUDED.output, personal_seen = EXCLUDED.personal_seen,
 			personal_subjects = EXCLUDED.personal_subjects, source_call = EXCLUDED.source_call, created_at = EXCLUDED.created_at, expires_at = EXCLUDED.expires_at`,
-		tenant, key, plugin, right, output, seen, call, now, now.Add(time.Duration(t.CacheS)*time.Second))
+		tenant, key, plugin, right, output, seen, call, now, now.Add(time.Duration(t.CacheS)*time.Second), subjects)
 	return err
 }
 

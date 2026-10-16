@@ -214,6 +214,7 @@ func (c *Core) evalGate(after []manifest.Doc, index []int, before []manifest.Doc
 		if cur.roleTier(cur.spec("Role", "", role)) < 1 {
 			continue
 		}
+		warned := false
 		for _, tenant := range tenants {
 			fp, _, err := cur.staticFingerprint(role, tenant)
 			if err != nil {
@@ -233,12 +234,15 @@ func (c *Core) evalGate(after []manifest.Doc, index []int, before []manifest.Doc
 			if i := at[role]; i >= 0 {
 				e.Path = fmt.Sprintf("/manifests/%d/spec", i)
 			}
+			// Any production tenant refuses the role; a test tenant only warns, once per role,
+			// and the production tenants after it are still checked.
 			if tenantKind(cur.spec("Tenant", "", tenant)) == "production" {
 				errs = append(errs, e)
 				break
 			}
-			warns = append(warns, e)
-			break
+			if !warned {
+				warns, warned = append(warns, e), true
+			}
 		}
 	}
 	return errs, warns, nil

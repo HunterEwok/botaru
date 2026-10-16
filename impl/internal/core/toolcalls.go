@@ -38,6 +38,8 @@ type toolCallRow struct {
 	ArgsHash, ApprovalID, GrantID string
 	// CampaignItem is the item number of a campaign write call (ORC-3).
 	CampaignItem int
+	// CacheCatalog and CacheMark are the key parts of a cacheable call at its check (PRM-12).
+	CacheCatalog, CacheMark string
 }
 
 func (c *Core) insertToolCall(ctx context.Context, tx pgx.Tx, now time.Time, r toolCallRow) error {
@@ -57,11 +59,12 @@ func (c *Core) insertToolCall(ctx context.Context, tx pgx.Tx, now time.Time, r t
 		ended = &now
 	}
 	_, err = tx.Exec(ctx, `INSERT INTO toolcalls (id, tenant, task, attempt_lease_no, tool, access, args, target_plugin, target_placement, target_host,
-		resolved, untrusted_output, state, reason, start_by, created_at, updated_at, ended_at, target_resource, tool_def_hash, args_hash, approval_id, grant_id, campaign_item)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $16, $17, $18, $19, $20, $21, $22, $23)`,
+		resolved, untrusted_output, state, reason, start_by, created_at, updated_at, ended_at, target_resource, tool_def_hash, args_hash, approval_id, grant_id, campaign_item,
+		cache_catalog, cache_mark)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25)`,
 		r.ID, r.Tenant, r.Task, leaseNo(r), r.Tool, r.Access, args, r.Plugin, r.Placement, nullable(r.Host),
 		resolved, r.Untrusted, r.State, nullable(r.Reason), startBy, now, ended, nullable(r.Resource), nullable(r.DefHash),
-		nullable(r.ArgsHash), nullable(r.ApprovalID), nullable(r.GrantID), nullableInt(r.CampaignItem))
+		nullable(r.ArgsHash), nullable(r.ApprovalID), nullable(r.GrantID), nullableInt(r.CampaignItem), nullable(r.CacheCatalog), nullable(r.CacheMark))
 	return err
 }
 
@@ -380,7 +383,7 @@ func (c *Core) completeToolcall(ctx context.Context, tx pgx.Tx, now time.Time, l
 		seen = append(seen, "masking")
 	}
 	if cacheable(t) && access == "read" {
-		return storeToolCache(ctx, tx, now, cat, t, l.WorkID, raw, seen)
+		return storeToolCache(ctx, tx, now, t, l.WorkID, raw, seen)
 	}
 	return nil
 }

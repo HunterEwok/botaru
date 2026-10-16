@@ -207,8 +207,16 @@ func TestToolOutputCache(t *testing.T) {
 		return c
 	}
 	att, h := b.attemptTools(t, "1", false)
+	other := ids.PrincipalID()
+	if _, err := b.c.st.Pool.Exec(ctx, `UPDATE tasks SET record = record || jsonb_build_object('personal_subjects', jsonb_build_array($2::text)) WHERE id = $1`, att.WorkID, other); err != nil {
+		t.Fatal(err)
+	}
 	viaHost(h)
-	// The first call's flags are kept with the entry.
+	// The first call's flags are kept with the entry, the task's personal_subjects among them.
+	var subjects string
+	if err := b.c.st.Pool.QueryRow(ctx, `SELECT personal_subjects::text FROM tool_cache`).Scan(&subjects); err != nil || !strings.Contains(subjects, other) {
+		t.Fatalf("cached personal_subjects %q %v", subjects, err)
+	}
 	if _, err := b.c.st.Pool.Exec(ctx, `UPDATE tool_cache SET personal_seen = '["masking"]'`); err != nil {
 		t.Fatal(err)
 	}
@@ -399,6 +407,12 @@ func TestEvalReportGate(t *testing.T) {
 	ms[at["Tenant"]]["spec"].(map[string]any)["kind"] = "test"
 	if res := apply(append(slices.Clone(ms), reports(fp, 0)), true); len(res.Errors) != 0 || len(res.Warnings) != 1 || res.Warnings[0].Code != "eval_report_missing" {
 		t.Fatalf("a test tenant: %+v", res)
+	}
+	// A production tenant after a test tenant still refuses the role.
+	demo2 := map[string]any{"apiVersion": "botaru/v1alpha1", "kind": "Tenant", "metadata": map[string]any{"name": "demo2"},
+		"spec": map[string]any{"kind": "production", "farm_manager": map[string]any{"enabled": false}, "budgets": map[string]any{"month_eur": 60}}}
+	if res := apply(append(slices.Clone(ms), reports(fp, 0), demo2), true); !hasCode(res, "eval_report_missing") {
+		t.Fatalf("a production tenant after a test tenant: %+v", res)
 	}
 }
 

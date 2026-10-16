@@ -705,7 +705,8 @@ func (c *Core) recordToolCall(ctx context.Context, tx pgx.Tx, now time.Time, cat
 	}
 	// After the full check of this call, an answer may come from the cache (PRM-12).
 	if cacheable(t) {
-		key, err := toolCacheKey(cat, g.Tenant, right, row.DefHash, args)
+		row.CacheCatalog, row.CacheMark = catalogVersion(cat, g.Tenant), g.Mark
+		key, err := toolCacheKey(g.Tenant, right, row.DefHash, row.CacheCatalog, row.CacheMark, args)
 		if err != nil {
 			return "", nil, err
 		}
