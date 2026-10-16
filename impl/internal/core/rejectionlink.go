@@ -41,11 +41,13 @@ const (
 // externalCauses are the causes a person records for an incident that never link it (GOV-38).
 var externalCauses = []string{"external_load", "attack"}
 
-// createRejectionLinks creates the candidates of the rule rejected_direct (GOV-38): an incident
-// whose subject is among the subjects of the problem of a proposal the commission dismissed (veto,
-// below the minimum, low score) or parked by score and that expired, with that verdict after
-// governance_v03_since, earlier than the incident opened and not earlier than 90 days before; the
-// change names the subject as its target; the problem code is in the class's problem_codes; the
+// createRejectionLinks creates the candidates of the rules rejected_direct and
+// rejected_dependency_1 (GOV-38): an incident whose subject is among the subjects of the problem
+// of a proposal the commission dismissed (veto, below the minimum, low score) or parked by score
+// and that expired, with that verdict after governance_v03_since, earlier than the incident
+// opened and not earlier than 90 days before; the change names the subject as its target, or an
+// object the subject depends on by one step in the catalog (catalogdeps.go, the same step as
+// dependency_1 of GOV-13); the problem code is in the class's problem_codes; the
 // problem names at most 3 subjects. Never for an external cause, untrusted_seen, a proposal of
 // the farm manager seat holder (origin.level 2), or an alarm series written by the author's role
 // with a share of 0.3 or more in the 7 days before; at most one case per proposal, 3 candidates
@@ -83,6 +85,10 @@ func (c *Core) createRejectionLinks(ctx context.Context, tx pgx.Tx, now time.Tim
 		if len(codes) == 0 {
 			continue
 		}
+		deps, err := subjectDeps(ctx, tx, cat, tv.Name, i.kind, i.subject)
+		if err != nil {
+			return err
+		}
 		prows, err := tx.Query(ctx, `SELECT id FROM proposals WHERE tenant = $1 AND kind <> 'none'
 			AND (record->'verdict'->>'outcome' = ANY($2) OR record->'verdict'->>'outcome' = 'parked(score)' AND state = 'expired')
 			AND (record->'verdict'->>'computed_at')::timestamptz < $3 AND (record->'verdict'->>'computed_at')::timestamptz >= $4
@@ -112,8 +118,9 @@ func (c *Core) createRejectionLinks(ctx context.Context, tx pgx.Tx, now time.Tim
 			b := p.body()
 			origin := mmapAny(p.Rec["origin"])
 			level, _ := toFloat(origin["level"])
+			rule := changeRule(b.Change, i.kind, i.subject, deps, "rejected_direct", "rejected_dependency_1")
 			if level == 2 || mmapAny(p.Rec["untrusted_seen"])["value"] == true || !slices.Contains(codes, b.Problem.Code) ||
-				len(b.Problem.Subjects) > 3 || !slices.Contains(b.Problem.Subjects, subject) || !changeTouches(b.Change, i.kind, i.subject) {
+				len(b.Problem.Subjects) > 3 || !slices.Contains(b.Problem.Subjects, subject) || rule == "" {
 				continue
 			}
 			var hasCase bool
@@ -133,7 +140,7 @@ func (c *Core) createRejectionLinks(ctx context.Context, tx pgx.Tx, now time.Tim
 			if share >= selfAlarmShare {
 				continue
 			}
-			if err := c.createAttribution(ctx, tx, now, tv, i.id, p.ID, "rejected_proposal", "rejected_direct", "system"); err != nil {
+			if err := c.createAttribution(ctx, tx, now, tv, i.id, p.ID, "rejected_proposal", rule, "system"); err != nil {
 				return err
 			}
 		}
@@ -170,6 +177,35 @@ func alarmSeriesName(alarm string) string {
 		name = name[:i]
 	}
 	return name
+}
+
+// managerAgainst says whether the farm manager's review of a proposal was against it: a veto, a
+// score of 1 or less, or a missing or invalid review (GOV-41). The manager never answers for a
+// link (D-33); its being against is shown on the link card and counted in the holder report
+// (MGR-50).
+func managerAgainst(p *proposalRow) bool {
+	for _, r := range asList(p.Rec["reviews"]) {
+		rm := mmapAny(r)
+		if asString(rm["lens"]) != "farm_manager" {
+			continue
+		}
+		if rm["state"] != "done" {
+			return true
+		}
+		res := mmapAny(rm["result"])
+		score, _ := toFloat(res["score"])
+		return res["veto"] == true || score <= 1
+	}
+	return false
+}
+
+// managerAgainstLinks counts the links to rejected proposals confirmed in [since, until) whose
+// proposal the farm manager was against (GOV-41, MGR-50), across the farm.
+func managerAgainstLinks(ctx context.Context, tx pgx.Tx, since, until time.Time) (int, error) {
+	var n int
+	err := tx.QueryRow(ctx, `SELECT count(*) FROM attributions WHERE kind = 'rejected_proposal' AND state = 'confirmed'
+		AND record->>'manager_against' = 'true' AND (record->'answer'->>'at')::timestamptz >= $1 AND (record->'answer'->>'at')::timestamptz < $2`, since, until).Scan(&n)
+	return n, err
 }
 
 // answerer is a seat holder's review of a linked proposal as GOV-41 reads it.
@@ -287,6 +323,9 @@ func (c *Core) linkConfirmed(ctx context.Context, tx pgx.Tx, now time.Time, cat 
 		}
 	}
 	a.Rec["answerable"] = seats
+	if a.Kind == "rejected_proposal" {
+		a.Rec["manager_against"] = managerAgainst(p)
+	}
 	raw, err := json.Marshal(a.Rec)
 	if err != nil {
 		return err
@@ -294,7 +333,7 @@ func (c *Core) linkConfirmed(ctx context.Context, tx pgx.Tx, now time.Time, cat 
 	if _, err := tx.Exec(ctx, `UPDATE attributions SET record = $2 WHERE id = $1`, a.ID, raw); err != nil {
 		return err
 	}
-	if err := c.govAudit(ctx, tx, now, a.Tenant, "governance.link.confirmed", "attribution", a.ID, "", map[string]any{"kind": a.Kind, "seats": seats}); err != nil {
+	if err := c.govAudit(ctx, tx, now, a.Tenant, "governance.link.confirmed", "attribution", a.ID, "", map[string]any{"kind": a.Kind, "seats": seats, "manager_against": a.Rec["manager_against"] == true}); err != nil {
 		return err
 	}
 	on, err := c.accountabilityOn(ctx, tx, cat, a.Tenant)
@@ -549,51 +588,70 @@ func unseatedRecently(ctx context.Context, tx pgx.Tx, now time.Time, bot string)
 }
 
 // rejectionLinkCardFields draws rejection_link_card from the records (GOV-40), without model
-// text: what the proposal would have changed, the incident, the rule, where the alarm came from
-// and whether code writes its series, the author's share in it, who would leave and whether each
-// one's lens changed the verdict; "Yes" and "No" after "Details".
+// text: one card per incident with up to 3 candidates. The card shows the incident, where the
+// alarm came from and whether code writes its series, and per candidate what the proposal would
+// have changed, the rule by which code linked them, the author's share in the series, who would
+// leave and whether each one's lens changed the verdict, and whether the farm manager was
+// against it (GOV-41). Every open candidate has "Yes" and "No", and "Don't know" while the
+// buttons fit the card (8): with three candidates "Don't know" is left to silence, which moves a
+// candidate to unknown as well. One "Details" opens all candidates of the card (APR-14). a is
+// the candidate that carries the card.
 func (c *Core) rejectionLinkCardFields(ctx context.Context, tx pgx.Tx, cat *Catalog, a *attributionRow) (map[string]any, error) {
-	var class, kind, subject string
+	var class, kind, subject, origin string
 	var opened time.Time
-	if err := tx.QueryRow(ctx, `SELECT class, subject_kind, subject_id, opened_at FROM incidents WHERE id = $1`, a.Incident).Scan(&class, &kind, &subject, &opened); err != nil && !errors.Is(err, pgx.ErrNoRows) {
+	if err := tx.QueryRow(ctx, `SELECT class, subject_kind, subject_id, opened_at, coalesce(record->'alarm'->>'origin', '') FROM incidents WHERE id = $1`, a.Incident).
+		Scan(&class, &kind, &subject, &opened, &origin); err != nil && !errors.Is(err, pgx.ErrNoRows) {
 		return nil, err
 	}
-	p, err := readProposal(ctx, tx, a.Proposal)
-	if err != nil {
-		return nil, err
-	}
-	b := p.body()
 	ic := classByName(cat, class)
-	share, err := authorAlarmShare(ctx, tx, a.Tenant, kind+":"+subject, mstr(mmap(ic, "detect"), "alarm"), opened, asString(mmapAny(p.Rec["origin"])["worker"]), p.Role)
+	alarm := mstr(mmap(ic, "detect"), "alarm")
+	group, err := linkGroup(ctx, tx, a)
 	if err != nil {
 		return nil, err
 	}
-	var targets []string
-	if mc := b.Change.ManifestChange; mc != nil {
-		for _, op := range mc.Ops {
-			targets = append(targets, op.Target.Kind+"/"+op.Target.Name+" "+op.Field)
+	ctxt := map[string]any{"incident": a.Incident, "class": class, "subject": kind + ":" + subject, "opened_at": fmtTime(opened),
+		"alarm": alarm, "alarm_origin": origin, "series_by_code": alarmSeriesName(alarm) != ""}
+	open := []*attributionRow{}
+	state := a.State
+	for n, m := range group {
+		p, err := readProposal(ctx, tx, m.Proposal)
+		if err != nil {
+			return nil, err
 		}
-	}
-	ctxt := map[string]any{"incident": a.Incident, "class": class, "subject": kind + ":" + subject, "opened_at": fmtTime(opened), "proposal": a.Proposal,
-		"rule": a.Rec["rule"], "change": b.Change.Kind, "targets": cut(strings.Join(targets, "; "), 300), "problem_code": b.Problem.Code,
-		"verdict": mmapAny(p.Rec["verdict"])["outcome"], "alarm": mstr(mmap(ic, "detect"), "alarm"), "series_by_code": share == 0,
-		"author_share": fmt.Sprintf("%.2f", share)}
-	list, err := c.answerers(ctx, tx, cat, a, p)
-	if err != nil {
-		return nil, err
-	}
-	for i, x := range list {
-		if i >= 8 {
-			break
+		b := p.body()
+		share, err := authorAlarmShare(ctx, tx, a.Tenant, kind+":"+subject, alarm, opened, asString(mmapAny(p.Rec["origin"])["worker"]), p.Role)
+		if err != nil {
+			return nil, err
 		}
-		ctxt[fmt.Sprintf("seat%d", i+1)] = fmt.Sprintf("%s %s against=%v veto=%v leaves=%v", x.Seat, x.Lens, x.Against, x.Veto, x.Answers)
-	}
-	if ans := mmapAny(a.Rec["answer"]); ans != nil {
-		ctxt["answer"] = ans["decision"]
+		var targets []string
+		if mc := b.Change.ManifestChange; mc != nil {
+			for _, op := range mc.Ops {
+				targets = append(targets, op.Target.Kind+"/"+op.Target.Name+" "+op.Field)
+			}
+		}
+		list, err := c.answerers(ctx, tx, cat, m, p)
+		if err != nil {
+			return nil, err
+		}
+		var seats []string
+		for _, x := range list {
+			seats = append(seats, fmt.Sprintf("%s %s against=%v veto=%v leaves=%v", x.Seat, x.Lens, x.Against, x.Veto, x.Answers))
+		}
+		line := fmt.Sprintf("%s: %s (%s) problem %s, %s, rule %s, author share %.2f; seats: %s; manager against=%v; state %s",
+			m.Proposal, b.Change.Kind, strings.Join(targets, "; "), b.Problem.Code, asString(mmapAny(p.Rec["verdict"])["outcome"]), asString(m.Rec["rule"]),
+			share, strings.Join(seats, ", "), managerAgainst(p), m.State)
+		if ans := mmapAny(m.Rec["answer"]); ans != nil {
+			line += ", answer " + asString(ans["decision"])
+		}
+		ctxt[fmt.Sprintf("candidate%d", n+1)] = cut(line, 600)
+		if slices.Contains([]string{"candidate", "unknown", "rejected"}, m.State) && m.Nonce != "" {
+			open = append(open, m)
+			state = "candidate"
+		}
 	}
 	card := map[string]any{"card": rejectionLinkCard, "subject_kind": "attribution", "id": a.ID, "nonce": a.Nonce,
-		"title": cut(fmt.Sprintf("Could the rejected proposal have prevented the incident? %s on %s:%s", class, kind, subject), 200), "context": ctxt,
-		"requested_by": map[string]any{"initiator": "system", "source": "proposal"}, "initiator_display": "the governance loop", "state": a.State,
+		"title": cut(fmt.Sprintf("Could a rejected proposal have prevented the incident? %s on %s:%s", class, kind, subject), 200), "context": ctxt,
+		"requested_by": map[string]any{"initiator": "system", "source": "proposal"}, "initiator_display": "the governance loop", "state": state,
 		"footer": map[string]any{"why_you": "governance.attribute", "on_silence": "nothing changes; nobody leaves"}}
 	if a.PresentedAt != nil {
 		until := a.PresentedAt.Add(attributionTTL)
@@ -601,11 +659,45 @@ func (c *Core) rejectionLinkCardFields(ctx context.Context, tx pgx.Tx, cat *Cata
 		card["footer"].(map[string]any)["until"] = fmtTime(until)
 	}
 	buttons := []any{}
-	if slices.Contains([]string{"candidate", "unknown", "rejected"}, a.State) && a.Nonce != "" {
-		for _, code := range []string{"yes", "no", "unknown", "details"} {
-			buttons = append(buttons, map[string]any{"code": code, "subject_kind": "attribution", "id": a.ID, "nonce": a.Nonce})
+	codes := []string{"yes", "no", "unknown"}
+	if len(open) > 2 {
+		codes = codes[:2]
+	}
+	for _, m := range open {
+		for _, code := range codes {
+			buttons = append(buttons, map[string]any{"code": code, "subject_kind": "attribution", "id": m.ID, "nonce": m.Nonce})
 		}
+	}
+	if len(open) > 0 && a.Nonce != "" {
+		buttons = append(buttons, map[string]any{"code": "details", "subject_kind": "attribution", "id": a.ID, "nonce": a.Nonce})
 	}
 	card["buttons"] = buttons
 	return card, nil
+}
+
+// linkGroup are the candidates to rejected proposals that share the card of a's incident (GOV-40),
+// in the order they were found: at most 3 per incident (GOV-38).
+func linkGroup(ctx context.Context, tx pgx.Tx, a *attributionRow) ([]*attributionRow, error) {
+	rows, err := tx.Query(ctx, `SELECT id FROM attributions WHERE card_of = $1 ORDER BY created_at, id LIMIT $2`, a.cardSubject(), linksPerIncident)
+	if err != nil {
+		return nil, err
+	}
+	list, err := pgx.CollectRows(rows, pgx.RowTo[string])
+	if err != nil {
+		return nil, err
+	}
+	var out []*attributionRow
+	for _, id := range list {
+		m, err := loadAttribution(ctx, tx, id, false)
+		if err != nil {
+			return nil, err
+		}
+		if m != nil {
+			out = append(out, m)
+		}
+	}
+	if len(out) == 0 {
+		out = []*attributionRow{a}
+	}
+	return out, nil
 }
