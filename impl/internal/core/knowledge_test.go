@@ -21,13 +21,6 @@ import (
 	"github.com/HunterEwok/botaru/impl/internal/yamlx"
 )
 
-// knowledgeOnT claims the knowledge profile for one test, as the flip of the profile will.
-func knowledgeOnT(t *testing.T) {
-	t.Helper()
-	prev := spec.SetProfileOverride("knowledge")
-	t.Cleanup(func() { spec.SetProfileOverride(prev...) })
-}
-
 type kbBench struct {
 	*bench
 	ms       []map[string]any
@@ -51,7 +44,6 @@ func corpusDecl(id string, kv ...any) map[string]any {
 // tenant demo2 has a git corpus runbooks of its own.
 func newKBBench(t *testing.T, edit func(ms []map[string]any) []map[string]any) *kbBench {
 	t.Helper()
-	knowledgeOnT(t)
 	var keep []map[string]any
 	b := newToolBenchWith(t, &keep, func(ms []map[string]any) []map[string]any {
 		root, err := spec.FindRoot("")
@@ -223,6 +215,7 @@ func kbRecord(t *testing.T, b *bench, task string) map[string]any {
 // (MAN-11; the profile seam of the flip).
 func TestKnowledgeProfileOffRefuses(t *testing.T) {
 	ctx := context.Background()
+	withoutProfile(t, "knowledge")
 	b := newToolBench(t)
 	res, err := b.c.Apply(ctx, b.op, ApplyRequest{Commit: strings.Repeat("2", 40), DryRun: true,
 		Manifests: []map[string]any{toolCatalogManifest()},

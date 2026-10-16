@@ -68,6 +68,13 @@ func newManagerBenchWith(t *testing.T, more []string, add []map[string]any, edit
 			"apiVersion": "botaru/v1alpha1", "kind": "Group", "metadata": map[string]any{"name": "farm-manager-ops", "tenant": "demo"},
 			"spec": map[string]any{"caps": []any{"task:" + incidentRespondType, "control.apply:hold", "control.apply:quarantine",
 				"control.apply:drain", "control.apply:preempt"}, "data": []any{"summary", "internal"}}})
+		// The bench holds the farm charter with the seat profile, so the manager of demo is on
+		// as in the example tenant (MGR-20).
+		for _, m := range ms {
+			if m["kind"] == "Tenant" && mstr(asMap(m["metadata"]), "name") == "demo" {
+				asMap(m["spec"])["farm_manager"] = map[string]any{"enabled": true}
+			}
+		}
 		for _, e := range edits {
 			e(ms)
 		}
@@ -202,16 +209,16 @@ func TestManagerVacantSeatStop(t *testing.T) {
 	}
 }
 
-// A new incident of a stopping class stops a held seat, and its seat task waits in the tenant
-// meanwhile; seat.resume ends the stop only after people dismissed the incident; the deadline
-// decide_within retires the holder with replaced_after_incident (GOV-22, MGR-2).
+// At the v0.3 claim a new incident of a class with stops_manager does not stop a held seat:
+// the field is not used, the seat keeps its holder, epoch and empty reasons, no decide_within
+// deadline retires the holder, and seat.resume by the incident is refused (GOV-47, MGR-55).
 func TestManagerIncidentStop(t *testing.T) {
 	ctx := context.Background()
 	b := newManagerBench(t)
 	if _, err := b.c.SeatAssign(ctx, b.farmOp(), SeatRequest{Seat: managerSeatID}); err != nil {
 		t.Fatal(err)
 	}
-	holder := b.managerSeat(t).Holder
+	before := b.managerSeat(t)
 	b.stopAlarm(t, true)
 	b.advance(t, 6*60)
 	b.loop(t, "incident")
@@ -221,46 +228,18 @@ func TestManagerIncidentStop(t *testing.T) {
 	}
 	inc := list[0]
 	m := b.managerSeat(t)
-	if m.State != "stopped" || !m.has("incident") || m.reason("incident").Incident != inc.ID || m.DecideUntil == nil {
+	if m.State != "held" || m.has("incident") || len(m.Reasons) != 0 || m.DecideUntil != nil || m.Epoch != before.Epoch {
 		t.Fatalf("seat %+v", m)
 	}
-	// The disk class of the same alarm does not stop it: no volume quotas (MGR-33).
-	if disk := incidentsOf(t, b, "disk_full"); len(disk) != 1 || disk[0].Record["stops_manager_effect"] != nil {
-		t.Fatalf("disk incident %+v", disk)
+	if n := b.count(t, `SELECT count(*) FROM incidents WHERE id = $1 AND stops_manager`, inc.ID); n != 0 {
+		t.Fatal("the incident is marked as stopping the manager")
 	}
-	if _, err := b.c.SeatResume(ctx, b.farmOp(), SeatResumeRequest{Seat: managerSeatID, Incident: inc.ID}); err == nil {
-		t.Fatal("resumed before the incident was dismissed")
-	}
-	if _, err := b.c.IncidentDismiss(ctx, b.op, IncidentRequest{ID: inc.ID, ReasonCode: "false_alarm", Details: "a test alarm"}); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := b.c.SeatResume(ctx, b.farmOp(), SeatResumeRequest{Seat: managerSeatID, Incident: inc.ID}); err != nil {
-		t.Fatal(err)
-	}
-	if m = b.managerSeat(t); m.State != "held" || m.Holder != holder || len(m.Reasons) != 0 {
-		t.Fatalf("after resume %+v", m)
-	}
-	// A second stop that nobody decides: the holder leaves after decide_within.
-	b.stopAlarm(t, false)
-	b.advance(t, 2*3600)
-	b.loop(t, "incident")
-	b.stopAlarm(t, true)
-	b.advance(t, 6*60)
-	b.loop(t, "incident")
-	if m = b.managerSeat(t); m.State != "stopped" {
-		t.Fatalf("no second stop %+v", m)
-	}
+	_, err := b.c.SeatResume(ctx, b.farmOp(), SeatResumeRequest{Seat: managerSeatID, Incident: inc.ID})
+	wantReason(t, err, "input_schema_invalid")
 	b.advance(t, 7*24*3600+60)
 	b.loop(t, "identity")
-	if m = b.managerSeat(t); m.State != "vacant" || m.Holder != "" {
-		t.Fatalf("after decide_within %+v", m)
-	}
-	if prev := b.loadBot(t, holder); prev.State != "retired" || prev.Retired["reason"] != "replaced_after_incident" {
-		t.Fatalf("holder %+v", prev)
-	}
-	// The seat has been out of held for longer than 5 minutes.
-	if openAlarms(t, b, "alarm.manager.absent.v1") != 1 {
-		t.Fatal("no alarm.manager.absent")
+	if m = b.managerSeat(t); m.State != "held" || m.Holder != before.Holder {
+		t.Fatalf("after a week %+v", m)
 	}
 }
 

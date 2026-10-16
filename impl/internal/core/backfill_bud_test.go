@@ -42,7 +42,7 @@ func TestBackfillDoctorLineUsage(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	on := newBench(t)
+	on := newManagerBench(t)
 	spend(on)
 	checks := doctorChecks(t, on)
 	// BUD-15: the usage of the last 30 days next to the line's limit.

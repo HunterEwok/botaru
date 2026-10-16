@@ -23,7 +23,6 @@ func v03Bench(t *testing.T) *bench {
 	t.Helper()
 	// The bench set carries the v0.3 problem_codes, which apply accepts only under the v0.3
 	// claim (MAN-11).
-	setClaimsV03(t, true)
 	b := newCommissionBenchWith(t, true, []map[string]any{{
 		"apiVersion": "botaru/v1alpha1", "kind": "Group", "metadata": map[string]any{"name": "governors", "tenant": "demo"},
 		"spec": map[string]any{"caps": []any{"governance.confirm:commission", "governance.attribute"}, "data": []any{"summary", "internal"}},
@@ -422,7 +421,6 @@ func TestAccountabilityOn(t *testing.T) {
 func TestTrialFarmGuards(t *testing.T) {
 	ctx := context.Background()
 	b := newCommissionBench(t, true, presentEdit)
-	setClaimsV03(t, true)
 	id, _ := acceptLimits(t, b)
 	if res, err := b.c.Apply(ctx, b.op, ApplyRequest{Commit: "a000000000000000000000000000000000000002", Message: "Raise the queue\n\nBotaru-Proposal: " + id, Manifests: withLimit(t, b, 7)}); err != nil || !res.Applied {
 		t.Fatalf("apply %+v %v", res, err)

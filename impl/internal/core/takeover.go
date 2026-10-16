@@ -647,10 +647,22 @@ func takeoverRole(cat *Catalog, typ string, rec []byte) string {
 // without a security failure: an entry of the role whose fingerprint is the role's static
 // fingerprint with the seat profile as its base model (MGR-48).
 func takeoverEvalPassed(cat *Catalog, tenant, role, profile string) (bool, error) {
-	r, ok := cat.Roles[role]
-	if role == "" || !ok {
+	if _, ok := cat.Roles[role]; role == "" || !ok {
 		return false, nil
 	}
+	fp, err := takeoverFingerprint(cat, tenant, role, profile)
+	if err != nil {
+		return false, err
+	}
+	return slices.ContainsFunc(catalogEvalReports(cat), func(e evalReport) bool {
+		return e.SubjectKind == "role" && e.SubjectName == role && e.Fingerprint == fp && e.Cases > 0 && e.SecurityFailures == 0
+	}), nil
+}
+
+// takeoverFingerprint is the static fingerprint of a functionary role on the seat profile, the
+// subject of the eval report a takeover needs (MGR-48, PRV-3).
+func takeoverFingerprint(cat *Catalog, tenant, role, profile string) (string, error) {
+	r := cat.Roles[role]
 	types := map[string]string{}
 	for _, typ := range r.Claims {
 		types[typ] = cat.Hashes[manifest.Key{Kind: "TaskType", Name: typ}]
@@ -661,14 +673,8 @@ func takeoverEvalPassed(cat *Catalog, tenant, role, profile string) (bool, error
 		pin = p.SHA256
 	}
 	raw := cat.RawGlobals[manifest.Key{Kind: "Role", Name: role}]
-	fp, err := staticFingerprint(cat.Hashes[manifest.Key{Kind: "Role", Name: role}], types, pin, profile, mstr(mmap(mmap(raw, "spec"), "models"), "analysis"),
-		mstr(mmap(mmap(raw, "spec"), "runtime"), "driver"), cat.Roles[role].Skills)
-	if err != nil {
-		return false, err
-	}
-	return slices.ContainsFunc(catalogEvalReports(cat), func(e evalReport) bool {
-		return e.SubjectKind == "role" && e.SubjectName == role && e.Fingerprint == fp && e.Cases > 0 && e.SecurityFailures == 0
-	}), nil
+	return staticFingerprint(cat.Hashes[manifest.Key{Kind: "Role", Name: role}], types, pin, profile, mstr(mmap(mmap(raw, "spec"), "models"), "analysis"),
+		mstr(mmap(mmap(raw, "spec"), "runtime"), "driver"), r.Skills)
 }
 
 // takeoverOf is the original task a takeover task replaces, or "" (MGR-48).

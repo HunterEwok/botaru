@@ -32,17 +32,13 @@ func helloSet(t *testing.T) ([]map[string]any, map[string]int) {
 	return ms, at
 }
 
-// A core that claims v0.1 with [core] refuses a kind and fields of a later version and of the
-// feature profiles it does not claim, with the path; nothing of the set is applied, and the
-// same set without them passes (MAN-11, blackbox:core/apply-later-version).
+// A core that claims v0.3 refuses the fields of the feature profiles it does not claim (debug,
+// sandbox) and the fields of deferred rules (CNT-6 await, DLV-17 webhook sink), with the path;
+// nothing of the set is applied, and the same set without them passes (MAN-11, D-114,
+// blackbox:core/apply-later-version). Role skills, of the claimed knowledge profile, pass.
 func TestApplyLaterVersion(t *testing.T) {
 	ctx := context.Background()
 	b := newBench(t)
-	// The test uses EvalReports as a later kind: this build accepts it ahead, so the list keeps
-	// only the tenant retention periods for the test (their journals stay refused).
-	saved := spec.Ahead
-	defer func() { spec.Ahead = saved }()
-	spec.Ahead = map[string][]spec.AheadField{"Tenant": {{Version: "v0.2", Ptr: "/spec/retention"}}}
 	ms, at := helloSet(t)
 	tt := ms[at["TaskType"]]["spec"].(map[string]any)
 	tt["title"] = "Greeting, changed"
@@ -51,11 +47,8 @@ func TestApplyLaterVersion(t *testing.T) {
 	ms[at["Tenant"]]["spec"].(map[string]any)["operator_access"] = map[string]any{"debug_journal": "notify"}
 	ms[at["Role"]]["spec"].(map[string]any)["skills"] = []any{}
 	extra := []map[string]any{
-		{"apiVersion": "botaru/v1alpha1", "kind": "Catalog", "metadata": map[string]any{"name": "demo", "tenant": "demo"},
-			"spec": map[string]any{"resources": []any{
-				map[string]any{"id": "manuals", "title": "Manuals"},
-				map[string]any{"id": "docs", "title": "Documents", "kind": "corpus"},
-			}}},
+		{"apiVersion": "botaru/v1alpha1", "kind": "Sink", "metadata": map[string]any{"name": "hook", "tenant": "demo"},
+			"spec": map[string]any{"driver": "webhook", "base": "https://example.org/hook", "ceiling": "summary"}},
 		{"apiVersion": "botaru/v1alpha1", "kind": "TaskType", "metadata": map[string]any{"name": "data.sandboxed.v1"},
 			"spec": map[string]any{"title": "Sandbox", "worker_kind": "agent", "purpose": "work", "tier": 2, "data_class": "internal",
 				"instruction": "Run.", "params_schema": map[string]any{"type": "object", "additionalProperties": false, "properties": map[string]any{}},
@@ -81,8 +74,7 @@ func TestApplyLaterVersion(t *testing.T) {
 		"/manifests/" + itoa(at["TaskType"]) + "/spec/await",
 		"/manifests/" + itoa(at["Tenant"]) + "/spec/operator_access/debug_journal",
 		"/manifests/" + itoa(at["Tenant"]) + "/spec/retention/journals",
-		"/manifests/" + itoa(at["Role"]) + "/spec/skills",
-		"/manifests/" + itoa(n) + "/spec/resources/1/kind",
+		"/manifests/" + itoa(n) + "/spec/driver",
 		"/manifests/" + itoa(n+1) + "/spec/tier",
 	}
 	slices.Sort(got)
@@ -101,7 +93,7 @@ func TestApplyLaterVersion(t *testing.T) {
 	// The same set without these fields and objects passes.
 	ms, _ = helloSet(t)
 	ms[at["TaskType"]]["spec"].(map[string]any)["title"] = "Greeting, changed"
-	extra[0]["spec"] = map[string]any{"resources": []any{map[string]any{"id": "manuals", "title": "Manuals"}}}
+	extra[0]["spec"] = map[string]any{"driver": "disk", "base": "/srv/botaru/hook", "ceiling": "summary"}
 	res, err = b.c.Apply(ctx, b.op, ApplyRequest{Commit: "5555555555555555555555555555555555555555", Manifests: append(ms, extra[0])})
 	if err != nil || !res.Applied {
 		t.Fatalf("apply: %+v %v", res, err)

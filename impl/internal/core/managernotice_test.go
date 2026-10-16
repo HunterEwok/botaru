@@ -267,59 +267,31 @@ func stoppedNotices(t *testing.T, b *bench, person string) []map[string]any {
 	return out
 }
 
-// The manager_stopped card goes to the farm operators with admin:governance without buttons,
-// with the class, number and tenant of the incident, the stop time, the incidents of the stop,
-// the decide_within expiry and the ready farmctl commands; it repeats after 24 h and 72 h, and
-// the repeats end when the seat is assigned (MGR-35, MGR-36).
+// At the v0.3 claim an incident of a class with stops_manager sends no manager_stopped notice
+// and nothing repeats one: the seat is not stopped by incidents (GOV-47, MGR-55); a
+// preventable incident sends manager_preventable instead (TestPreventableRepeats).
 func TestManagerStoppedCard(t *testing.T) {
-	ctx := context.Background()
 	b := newManagerBench(t)
 	op := b.farmOperator(t)
-	if _, err := b.c.SeatAssign(ctx, b.farmOp(), SeatRequest{Seat: managerSeatID}); err != nil {
+	if _, err := b.c.SeatAssign(context.Background(), b.farmOp(), SeatRequest{Seat: managerSeatID}); err != nil {
 		t.Fatal(err)
 	}
 	b.stopAlarm(t, true)
 	b.advance(t, 6*60)
 	b.loop(t, "incident")
-	inc := incidentsOf(t, b, "spend_storm")[0]
-	m := b.managerSeat(t)
-	cards := stoppedNotices(t, b, op)
-	if len(cards) != 1 || cards[0]["form"] != "text_code" || cards[0]["text_key"] != "notice.manager_stopped" {
+	if len(incidentsOf(t, b, "spend_storm")) != 1 {
+		t.Fatal("no incident")
+	}
+	if cards := stoppedNotices(t, b, op); len(cards) != 0 {
 		t.Fatalf("cards %+v", cards)
 	}
-	p := cards[0]["params"].(map[string]any)
-	if p["incident"] != inc.ID || p["class"] != "spend_storm" || p["tenant"] != "demo" || p["until"] != fmtTime(*m.DecideUntil) || p["at"] != m.reason("incident").At {
-		t.Fatalf("card params %+v", p)
-	}
-	text := b.c.texts.Render("en", "notice.manager_stopped", p)
-	for _, want := range []string{"farmctl seat resume farm-manager --incident " + inc.ID, "farmctl seat assign farm-manager", "farmctl seat vacate farm-manager"} {
-		if !strings.Contains(text, want) {
-			t.Fatalf("card %q lacks %q", text, want)
-		}
-	}
-	// The tenant admin of demo is not an operator of farm.
-	var demo int
-	if err := b.c.st.Pool.QueryRow(ctx, `SELECT count(*) FROM deliveries WHERE kind = 'manager_stopped' AND tenant <> 'farm'`).Scan(&demo); err != nil || demo != 0 {
-		t.Fatalf("cards outside farm %d %v", demo, err)
-	}
-	b.advance(t, 24*3600)
+	b.advance(t, 72*3600)
 	b.loop(t, "identity")
-	b.loop(t, "identity")
-	if cards = stoppedNotices(t, b, op); len(cards) != 2 || cards[1]["text_key"] != "notice.manager_stopped_repeat" {
-		t.Fatalf("after 24 h %+v", cards)
+	if cards := stoppedNotices(t, b, op); len(cards) != 0 {
+		t.Fatalf("after 72 h %+v", cards)
 	}
-	b.advance(t, 48*3600)
-	b.loop(t, "identity")
-	if cards = stoppedNotices(t, b, op); len(cards) != 3 {
-		t.Fatalf("after 72 h %d", len(cards))
-	}
-	if _, err := b.c.SeatAssign(ctx, b.farmOp(), SeatRequest{Seat: managerSeatID}); err != nil {
-		t.Fatal(err)
-	}
-	b.advance(t, 3*24*3600)
-	b.loop(t, "identity")
-	if cards = stoppedNotices(t, b, op); len(cards) != 3 {
-		t.Fatalf("a repeat after the assignment: %d", len(cards))
+	if n := b.count(t, `SELECT count(*) FROM deliveries WHERE kind = 'manager_stopped'`); n != 0 {
+		t.Fatalf("manager_stopped deliveries %d", n)
 	}
 }
 

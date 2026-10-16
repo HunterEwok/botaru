@@ -12,5 +12,5 @@ import "github.com/HunterEwok/botaru/impl/internal/spec"
 // same override decides which v0.3 fields of spec.Ahead apply accepts, so a v0.3 field passes
 // apply only when its behaviour runs (MAN-11).
 func claimsV03() bool {
-	return !spec.VersionLater("v0.3", spec.Effective())
+	return !spec.VersionLater("v0.3", spec.Version)
 }

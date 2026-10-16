@@ -33,7 +33,7 @@ var update = flag.Bool("update", false, "rewrite testdata/passing.txt from this 
 
 // claim is what the reference core is checked against while v0.1 is being built: every
 // profile of v0.1, so the table shows the whole way to the claim.
-var claim = Claim{Version: "v0.1", Profiles: []string{
+var claim = Claim{Version: "v0.3", Profiles: []string{
 	"core", "insights", "governance", "manager", "messaging", "campaign", "monitor", "knowledge", "ingress", "connections", "debug", "sandbox",
 }}
 

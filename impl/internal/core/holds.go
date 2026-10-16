@@ -120,10 +120,6 @@ func (s HoldScope) key() scopeRef {
 	return scopeRef{kind: s.Kind, tenant: s.Tenant, name: name}
 }
 
-// aheadHolds are the scopes and effects of a later version that this build implements: the
-// pause of approvals set by a person (HLD-8) and the scope of one schedule (CAP-4).
-var aheadHolds = map[string]bool{"pause_action": true, "schedule": true}
-
 // scopeRef is one scope a check point asks about.
 type scopeRef struct{ kind, tenant, name string }
 
@@ -139,8 +135,7 @@ func (c *Core) checkHoldRequest(now time.Time, req HoldSetRequest) (*time.Time, 
 		if !ok || e["kind"] != kind {
 			return refuse("input_schema_invalid", "unknown hold %s %s", kind, id)
 		}
-		// The scope governance (a case pause) is of v0.2, which this build implements (GOV-14).
-		if since, _ := e["since"].(string); since != "" && spec.VersionLater(since, spec.Version) && !aheadHolds[id] && !(kind == "scope" && id == "governance") {
+		if since, _ := e["since"].(string); since != "" && spec.VersionLater(since, spec.Version) {
 			return refuse("input_schema_invalid", "the hold %s %s is of %s; this core claims %s", kind, id, since, spec.Version)
 		}
 		return nil

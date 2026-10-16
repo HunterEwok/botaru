@@ -45,7 +45,7 @@ func newScheduleBenchZone(t *testing.T, cron string, skipIfWaiting *bool, zone s
 		}, map[string]any{
 			"apiVersion": "botaru/v1alpha1", "kind": "Sink",
 			"metadata": map[string]any{"name": "archive", "tenant": "demo"},
-			"spec":     map[string]any{"driver": "webhook", "ceiling": "summary"},
+			"spec":     map[string]any{"driver": "disk", "base": "/srv/botaru/archive", "ceiling": "summary"},
 		}, map[string]any{
 			"apiVersion": "botaru/v1alpha1", "kind": "Schedule",
 			"metadata": map[string]any{"name": "morning", "tenant": "demo"},

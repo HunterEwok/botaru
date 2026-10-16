@@ -106,9 +106,9 @@ func (c *Core) snapshotWorkers(ctx context.Context, tx pgx.Tx, now time.Time, ca
 			return err
 		}
 		row := map[string]any{"worker": strings.ToLower(r.id), "role": r.role, "observed": observed, "reported": nil, "mismatch": nil}
-		// The self-report column and the mismatch code are of STA-3 (v0.2, deferred from the
-		// claim): before the claim reaches v0.2 the row has the core observation only.
-		if rep != nil && claimsV02() {
+		// The self-report column and the mismatch code are of STA-3, which is deferred: the row
+		// has the core observation only while the rule is not offered.
+		if rep != nil && spec.Offered("STA-3") {
 			row["reported"] = map[string]any{"state": rep.phase, "source": "state_message", "at": fmtTime(rep.at)}
 			waiting, err := workWaits(ctx, tx, now, cat, tenant, r.role)
 			if err != nil {
@@ -290,10 +290,6 @@ func (c *Core) snapshotCampaigns(ctx context.Context, tx pgx.Tx, cat *Catalog, t
 	}
 	return nil
 }
-
-// claimsV02 says whether the effective claim reaches v0.2, for v0.2 behaviour deferred from
-// the claim (STA-3).
-func claimsV02() bool { return !spec.VersionLater("v0.2", spec.Effective()) }
 
 // snapshotViews are the status views of the role of the task's latest attempt.
 func snapshotViews(ctx context.Context, tx pgx.Tx, cat *Catalog, task string) ([]string, error) {

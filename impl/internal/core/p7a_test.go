@@ -127,7 +127,7 @@ func TestLintWorkspaceCeilings(t *testing.T) {
 		"provider-a": {OrganizationEUR: 1000, Workspaces: map[string]float64{"demo": 100, "demo3": 1000}},
 	}}
 	tenant := func(name string, month int) string {
-		return "apiVersion: botaru/v1alpha1\nkind: Tenant\nmetadata: {name: " + name + "}\nspec: {budgets: {month_eur: " + strconv.Itoa(month) + "}}\n---\n"
+		return "apiVersion: botaru/v1alpha1\nkind: Tenant\nmetadata: {name: " + name + "}\nspec: {farm_manager: {enabled: false}, budgets: {month_eur: " + strconv.Itoa(month) + "}}\n---\n"
 	}
 	got := lintDetails(t, c, tenant("demo", 90)+tenant("demo2", 10))
 	if _, ok := got["workspace_ceiling_missing demo2"]; !ok || len(got) != 1 {

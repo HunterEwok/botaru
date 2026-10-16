@@ -27,8 +27,9 @@ var HelloBotFiles = []string{
 	"examples/model-profiles/base-std.yaml",
 }
 
-// HelloBotManifests reads the hello-bot manifests, rewrites every Tenant to kind: test and
-// drops the fields that a core of this version refuses (DropUnsupported).
+// HelloBotManifests reads the hello-bot manifests, rewrites every Tenant to kind: test with the
+// farm manager off (managerOff) and drops the fields that a core of this version refuses
+// (DropUnsupported).
 func HelloBotManifests(root string) ([]map[string]any, error) {
 	paths := make([]string, len(HelloBotFiles))
 	for i, f := range HelloBotFiles {
@@ -47,6 +48,7 @@ func HelloBotManifests(root string) ([]map[string]any, error) {
 		}
 		out = append(out, d.Value)
 	}
+	managerOff(out)
 	sp, err := spec.Load(root)
 	if err != nil {
 		return nil, err
@@ -84,6 +86,23 @@ func DropUnsupported(sp *spec.Spec, ms []map[string]any) ([]string, error) {
 		}
 	}
 	return dropped, nil
+}
+
+// managerOff switches the farm manager off, in place, in every Tenant of a set: the hello-bot
+// sequence holds no farm charter with the seat profile, and with the claim of the manager
+// profile the tenant lint refuses an enabled manager without its profile
+// (manager_profile_missing, MGR-20). A bench that adds the charter switches it on again.
+func managerOff(ms []map[string]any) {
+	for _, m := range ms {
+		if sp, _ := m["spec"].(map[string]any); m["kind"] == "Tenant" && sp != nil {
+			fm, _ := sp["farm_manager"].(map[string]any)
+			if fm == nil {
+				fm = map[string]any{}
+				sp["farm_manager"] = fm
+			}
+			fm["enabled"] = false
+		}
+	}
 }
 
 func metaName(m map[string]any) any {

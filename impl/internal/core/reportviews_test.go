@@ -36,14 +36,13 @@ func viewOf(t *testing.T, b *bench, att *WorkItem, name string) map[string]any {
 	return v
 }
 
-// The views status.workers and status.campaigns of a reporter (PRF-1, REP-8, STA-3): the
-// worker's own report reaches the reporter only as its phase beside the core observation, with
-// the mismatch code of the table, never through the reporter's inbox; a campaign shows its
-// kind, state and item counts, one above the mark only counts in hidden.
+// The views status.workers and status.campaigns of a reporter (PRF-1, REP-8): the self-report
+// column and the mismatch code are of the deferred STA-3, so a worker's own report does not
+// reach the reporter at all, neither in the view nor through the reporter's inbox, and the row
+// holds the core observation only; a campaign shows its kind, state and item counts, one above
+// the mark only counts in hidden.
 func TestStatusWorkersCampaigns(t *testing.T) {
 	ctx := context.Background()
-	// The self-report column is of STA-3, which needs the v0.2 claim.
-	setClaimsV03(t, false)
 	b := newBenchWith(t, func(root string, ms []map[string]any) []map[string]any {
 		ms = reporterManifests(ms)
 		for _, m := range ms {
@@ -96,8 +95,7 @@ func TestStatusWorkersCampaigns(t *testing.T) {
 		t.Fatalf("workers %v", ws)
 	}
 	obs := agent["observed"].(map[string]any)
-	if obs["presence"] != "stale" || obs["lifecycle"] != "active" || agent["mismatch"] != "reported_ready_unreachable" ||
-		agent["reported"].(map[string]any)["state"] != "busy" || agent["reported"].(map[string]any)["source"] != "state_message" {
+	if obs["presence"] != "stale" || obs["lifecycle"] != "active" || agent["mismatch"] != nil || agent["reported"] != nil {
 		t.Fatalf("agent row %v", agent)
 	}
 	if rep["observed"].(map[string]any)["presence"] != "connected" || rep["reported"] != nil || rep["mismatch"] != nil {
@@ -117,12 +115,12 @@ func TestStatusWorkersCampaigns(t *testing.T) {
 	if c0["campaign"] != "cmp_01" || c0["state"] != "running" || c0["items"] != float64(2) || c0["counts"].(map[string]any)["ok"] != float64(1) {
 		t.Fatalf("campaign row %v", c0)
 	}
-	// Both views come from the one snapshot: a later state value does not show.
+	// Both views come from the one snapshot: a later state value and heartbeat do not show.
 	if _, err := b.c.MsgSend(ctx, b.agent, "", MsgSendRequest{Type: "state.worker.v1", Fields: map[string]any{"phase": "idle"}}); err != nil {
 		t.Fatal(err)
 	}
 	for _, w := range viewOf(t, b, att, statusWorkersName)["workers"].([]any) {
-		if m := w.(map[string]any); m["worker"] == strings.ToLower(b.agent.ID) && m["reported"].(map[string]any)["state"] != "busy" {
+		if m := w.(map[string]any); m["worker"] == strings.ToLower(b.agent.ID) && (m["reported"] != nil || m["observed"].(map[string]any)["presence"] != "stale") {
 			t.Fatalf("snapshot moved %v", m)
 		}
 	}

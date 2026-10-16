@@ -105,8 +105,8 @@ func TestScriptLinkRoleHold(t *testing.T) {
 	}
 	// On a v0.3 core a confirmed script link skips the seat accounting of a link to a proposal
 	// (GOV-41) and still counts for the role (HLD-9).
-	setClaimsV03(t, true)
-	b.exec(t, `INSERT INTO governance_v03 (tenant, since, updated_at) VALUES ('demo', botaru_now(), botaru_now())`)
+	b.exec(t, `INSERT INTO governance_v03 (tenant, since, updated_at) VALUES ('demo', botaru_now(), botaru_now())
+		ON CONFLICT (tenant) DO UPDATE SET since = excluded.since`)
 	// Only runs started since the tenant moved to v0.3 are linked (GOV-36); this one started
 	// before, until the start is moved back.
 	runSinceV03 := func() { b.exec(t, `UPDATE governance_v03 SET since = since - interval '1 day' WHERE tenant = 'demo'`) }

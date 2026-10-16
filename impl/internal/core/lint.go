@@ -2192,7 +2192,7 @@ func (c *Core) lintLensNames(S *lintSet, f *lintFindings) error {
 	}
 	skeleton := map[string]map[string]any{}
 	for _, e := range reg.Entries {
-		if !spec.VersionLater(asString(e["since"]), spec.Effective()) {
+		if !spec.VersionLater(asString(e["since"]), spec.Version) {
 			skeleton[asString(e["id"])] = e
 		}
 	}

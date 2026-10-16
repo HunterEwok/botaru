@@ -15,18 +15,23 @@ import (
 )
 
 // Profiles are the conformance profiles this implementation claims (MAN-8). A manifest field
-// of a feature profile outside this list is refused at apply (MAN-11).
-var Profiles = []string{"core"}
+// of a feature profile outside this list is refused at apply (MAN-11): connections, debug and
+// sandbox are not claimed.
+var Profiles = []string{"core", "monitor", "insights", "governance", "manager", "messaging", "campaign", "knowledge", "ingress"}
 
-// profileOverride, when set, lists feature profiles the build behaves as claiming beside
-// Profiles. Only tests set it (SetProfileOverride), to run the paths of a profile whose rules
-// are built before the claim lists it; the core reads the same value (Claims).
+// profileOverride, when set, is the list of profiles the build behaves as claiming in place of
+// Profiles. Only tests set it (SetProfileOverride), to run a path without the claim of its
+// profile; the core reads the same value (Claims).
 var profileOverride atomic.Pointer[[]string]
 
-// SetProfileOverride makes Claims report the given profiles as claimed too (none follows
-// Profiles again) and returns the previous override.
+// SetProfileOverride makes Claims report exactly the given profiles as claimed (a nil list
+// follows Profiles again) and returns the previous override.
 func SetProfileOverride(profiles ...string) []string {
-	prev := profileOverride.Swap(&profiles)
+	var next *[]string
+	if profiles != nil {
+		next = &profiles
+	}
+	prev := profileOverride.Swap(next)
 	if prev == nil {
 		return nil
 	}
@@ -34,15 +39,12 @@ func SetProfileOverride(profiles ...string) []string {
 }
 
 // Claims says whether the build claims a conformance profile: one of Profiles, or of the test
-// override.
+// override when one is set.
 func Claims(profile string) bool {
-	if slices.Contains(Profiles, profile) {
-		return true
-	}
 	if o := profileOverride.Load(); o != nil {
 		return slices.Contains(*o, profile)
 	}
-	return false
+	return slices.Contains(Profiles, profile)
 }
 
 // AheadField is a field of a later skeleton version that this build already implements: the
@@ -53,107 +55,13 @@ type AheadField struct {
 	Version, Ptr, Profile string
 }
 
-// fields lists the pointers of one version.
-func fields(version string, ptrs ...string) []AheadField {
-	out := make([]AheadField, len(ptrs))
-	for i, p := range ptrs {
-		out[i] = AheadField{Version: version, Ptr: p}
-	}
-	return out
-}
-
-// profileOnly makes fields of a feature profile.
-func profileOnly(profile string, fs []AheadField) []AheadField {
-	for i := range fs {
-		fs[i].Profile = profile
-	}
-	return fs
-}
-
-// Ahead lists, by manifest kind, the fields of a later skeleton version that this build already
-// implements. apply accepts such a field although the claimed version is earlier; the rest of
-// that version stays refused (MAN-11). Kinds of a later version are listed under the kind with
-// the pointer "/kind". A v0.2 field is accepted at any claim, because its behaviour is not gated
-// by the version. A field of v0.3 or later is accepted only while the effective claim (Effective)
-// reaches its version, because its behaviour runs only under that claim (claimsV03 of the core):
-// accepting it earlier would apply a field that does nothing. The list shrinks when the claimed
-// version reaches them.
-var Ahead = map[string][]AheadField{
-	// The eval report index (TRN-6, MGR-23, MGR-17) and of the quality gate (PRV-3).
-	"EvalReports": fields("v0.2", "/kind"),
-	// The tenant retention periods, which the retention loop applies in every copy (RET-9,
-	// RET-10); journals stays refused with the debug profile. The translator's eval gate of a
-	// tenant (TRN-6), the grant and takeover lines and the takeover list (MGR-17, MGR-21).
-	// File limits (ART-4) and the sink of a person's copy (SEC-10, LCY-2). The card limit
-	// (APR-15), the tenant locale (DLV-18) and the dispatch fairness (DSP-6). The widest machine
-	// selector the script run card does not mark (TRN-10). From v0.3 the takeover ceilings on the
-	// manager line and the manager's notices per person (MGR-48, MGR-52).
-	"Tenant": append(fields("v0.2", "/spec/retention", "/spec/evals", "/spec/takeover", "/spec/budgets/lines/grant",
-		"/spec/budgets/lines/takeover", "/spec/limits/max_file_bytes", "/spec/limits/max_task_files_bytes",
-		"/spec/privacy/export_sink", "/spec/attention/noncritical_per_day", "/spec/locale", "/spec/dispatch/fairness",
-		"/spec/scripts/unnamed_targets_max"),
-		fields("v0.3", "/spec/takeover/manager_month_eur", "/spec/takeover/max_eur", "/spec/attention/manager_notices_per_person_day")...),
-	// The locale of a schedule's texts (DLV-18).
-	"Schedule": fields("v0.2", "/spec/locale"),
-	// The grant ladder of a role and the grant signs of a type (MGR-17).
-	"Role":     fields("v0.2", "/spec/model_grants"),
-	"TaskType": fields("v0.2", "/spec/grant_eligible", "/spec/grant_eval_set", "/spec/grant"),
-	// The seat's grant ceilings (MGR-17, MGR-18). From v0.3 the accountability mode and its
-	// minimum of forecasts (GOV-36), the persona addenda (GOV-45), the manager's fallback
-	// profile (MGR-49) and the analysis after an incident (MGR-53); the reward fields of the
-	// deferred COM-18 stay refused.
-	"Governance": append(fields("v0.2", "/spec/farm_manager/grant_limits"),
-		fields("v0.3", "/spec/commission/accountability", "/spec/commission/accountability_min_forecasts",
-			"/spec/positions/functional/addenda", "/spec/farm_manager/fallback_profile", "/spec/farm_manager/postmortem",
-			"/spec/farm_manager/postmortem_max_eur")...),
-	// From v0.3 the class fields of the preventable incident, the answering lenses and the
-	// problem codes of a link (MGR-55, GOV-47, GOV-41, GOV-38).
-	"IncidentClass": fields("v0.3", "/spec/manager_accountable", "/spec/area", "/spec/problem_codes"),
-	// The necessity lens thresholds (COM-13).
-	"Commission": fields("v0.2", "/spec/escalation"),
-	// The one recipient of an export sink (SEC-10).
-	"Sink": fields("v0.2", "/spec/export_only/recipient_ref"),
-	// The tool output cache (PRM-12).
-	"ToolPlugin": fields("v0.2", "/spec/tools/*/cache_s"),
-	// The model exposure of a dataset (PRV-4) and the maintenance hold of a host (MON-9). With
-	// the knowledge profile the trust and source of a corpus (KNW-2). From v0.3 the stricter
-	// threshold of the role hold for incident links (HLD-9).
-	"Catalog": append(append(fields("v0.2", "/spec/resources/*/model_exposure", "/spec/resources/*/kind", "/spec/hosts/*/maintenance_hold"),
-		profileOnly("knowledge", fields("v0.2", "/spec/resources/*/trust", "/spec/resources/*/source"))...),
-		fields("v0.3", "/spec/role_incident_hold")...),
-	// With the ingress profile a source channel: its direction and its ingress block (ING-1 to
-	// ING-4).
-	"Channel": profileOnly("ingress", fields("v0.2", "/spec/direction", "/spec/ingress")),
-}
-
-// claimOverride, when set, is the skeleton version the build behaves as in place of Version.
-// Only tests set it (SetClaimOverride), to run the paths of a later version before the claimed
-// version moves; the core reads the same value for claimsV03.
-var claimOverride atomic.Pointer[string]
-
-// SetClaimOverride makes Effective return version ("" follows Version again) and returns the
-// previous override.
-func SetClaimOverride(version string) string {
-	prev := claimOverride.Swap(&version)
-	if prev == nil {
-		return ""
-	}
-	return *prev
-}
-
-// Effective is the skeleton version the build behaves as: the test override, or Version.
-func Effective() string {
-	if v := claimOverride.Load(); v != nil && *v != "" {
-		return *v
-	}
-	return Version
-}
-
-// aheadAccepted says whether a field of Ahead of this version passes now: a v0.2 field always,
-// a later one only while the effective claim reaches it.
-func aheadAccepted(version string) bool {
-	return !VersionLater(version, "v0.2") || !VersionLater(version, Effective())
-}
+// Ahead lists, by manifest kind, the fields of a skeleton version later than Version that this
+// build already implements; apply accepts such a field although the claimed version is
+// earlier, and the rest of that version stays refused (MAN-11). Kinds of a later version are
+// listed under the kind with the pointer "/kind". The list is empty since the claim reached
+// v0.3: every v0.2 and v0.3 field the build serves is of the claimed version, and the fields of
+// deferred rules are refused by Deferred.
+var Ahead = map[string][]AheadField{}
 
 // ahead says whether the field at ptr of a manifest of kind is in Ahead.
 func ahead(kind, ptr string) bool {
@@ -163,25 +71,29 @@ func ahead(kind, ptr string) bool {
 	}
 	segs := strings.Split(ptr, "/")
 	for _, f := range Ahead[kind] {
-		if !aheadAccepted(f.Version) || f.Profile != "" && !Claims(f.Profile) {
+		if f.Profile != "" && !Claims(f.Profile) {
 			continue
 		}
-		ps := strings.Split(f.Ptr, "/")
-		if len(ps) != len(segs) {
-			continue
-		}
-		ok := true
-		for i := range ps {
-			if ps[i] != "*" && ps[i] != segs[i] {
-				ok = false
-				break
-			}
-		}
-		if ok {
+		if ptrMatches(f.Ptr, segs) {
 			return true
 		}
 	}
 	return false
+}
+
+// ptrMatches says whether a pointer pattern ("*" for any one segment) matches the segments of
+// a pointer.
+func ptrMatches(pattern string, segs []string) bool {
+	ps := strings.Split(pattern, "/")
+	if len(ps) != len(segs) {
+		return false
+	}
+	for i := range ps {
+		if ps[i] != "*" && ps[i] != segs[i] {
+			return false
+		}
+	}
+	return true
 }
 
 // VersionLater reports whether the skeleton version a (v0.2) is later than b (v0.1). A value
@@ -555,8 +467,9 @@ func profileFields(kind string, v map[string]any) map[string]profileField {
 // Unsupported returns the JSON pointers in a manifest that a core of this implementation
 // refuses with version_unsupported (MAN-11): the whole kind ("/kind") when its since in
 // spec/manifests/kinds.yaml is later than the claimed skeleton version, the fields the schemas
-// mark with a later x-botaru-version, and the fields of a feature profile the core does not
-// claim. A field inside a listed field is not listed again.
+// mark with a later x-botaru-version, the fields of a feature profile the core does not claim,
+// and the kinds and fields of deferred rules (Deferred). A field inside a listed field is not
+// listed again.
 func (s *Spec) Unsupported(v map[string]any) ([]string, error) {
 	why, err := s.unsupported(v)
 	if err != nil {
@@ -605,6 +518,12 @@ func (s *Spec) unsupported(v map[string]any) (map[string]string, error) {
 			return map[string]string{"/kind": "the kind is of a later version; the whole manifest is refused"}, nil
 		}
 	}
+	deferred := DeferredManifest(kind, nv)
+	for _, h := range deferred {
+		if h.Ptr == "/kind" {
+			return map[string]string{"/kind": "the kind is of the deferred rule " + h.Rule + "; the whole manifest is refused"}, nil
+		}
+	}
 	out := s.laterFields("manifest:manifest", nv, Version)
 	if out == nil {
 		out = map[string]string{}
@@ -630,7 +549,34 @@ func (s *Spec) unsupported(v map[string]any) (map[string]string, error) {
 			out[p] = whyVariant
 		}
 	}
+	// The fields of deferred rules, which the claimed version no longer marks as later (D-114).
+	for _, h := range deferred {
+		covered := false
+		for q := range out {
+			if q == h.Ptr || strings.HasPrefix(h.Ptr, q+"/") {
+				covered = true
+			}
+		}
+		if !covered {
+			out[h.Ptr] = ""
+			if deferredValue(kind, h.Ptr) {
+				out[h.Ptr] = whyVariant
+			}
+		}
+	}
 	return out, nil
+}
+
+// deferredValue says whether a deferred manifest surface at ptr is a value that gives its field
+// the meaning (a sink driver), which must not be left out.
+func deferredValue(kind, ptr string) bool {
+	segs := strings.Split(ptr, "/")
+	for _, e := range Deferred {
+		if e.Surface == SurfaceManifest && (e.Kind == kind || e.Kind == "*") && e.Value != nil && ptrMatches(e.Where, segs) {
+			return true
+		}
+	}
+	return false
 }
 
 func escape(k string) string {

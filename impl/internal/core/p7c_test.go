@@ -44,10 +44,7 @@ spec:
 	if got := lintCodes(t, c, strings.Replace(charter, "lens: x_privacy", "lens: x_other", 1)); !has(got, "lens_unknown") {
 		t.Fatalf("a seat with a lens of no charter: %v", got)
 	}
-	if got := lintCodes(t, c, com("{farm_manager: 1}")); !has(got, "lens_unknown") {
-		t.Fatalf("farm_manager in a v0.1 commission: %v", got)
-	}
-	setClaimsV03(t, false) // v0.2
+	// farm_manager is a lens of the claimed version (since v0.2) whose weight is set by rule.
 	if got := lintCodes(t, c, com("{farm_manager: 1}")); !has(got, "lens_weight_fixed") || has(got, "lens_unknown") {
 		t.Fatalf("farm_manager weight from v0.2: %v", got)
 	}

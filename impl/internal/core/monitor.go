@@ -20,6 +20,7 @@ import (
 	"github.com/jackc/pgx/v5"
 
 	"github.com/HunterEwok/botaru/impl/internal/jcs"
+	"github.com/HunterEwok/botaru/impl/internal/spec"
 	"github.com/HunterEwok/botaru/impl/internal/store"
 )
 
@@ -599,13 +600,13 @@ func sevOf(ok bool, bad string) string {
 
 // profiles are the conformance profiles this installation claims (MAN-8, D-88).
 func (c *Core) profiles() []string {
-	out := []string{"core"}
-	if c.monitorOn() {
-		out = append(out, "monitor")
-	}
-	// The knowledge profile once the claim lists it (spec.Claims, KNW-*, SKL-*).
-	if knowledgeOn() {
-		out = append(out, "knowledge")
+	var out []string
+	for _, p := range spec.Profiles {
+		// An installation without the monitoring system does not claim monitor (D-88).
+		if !spec.Claims(p) || p == "monitor" && !c.monitorOn() {
+			continue
+		}
+		out = append(out, p)
 	}
 	return out
 }

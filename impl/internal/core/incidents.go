@@ -1335,7 +1335,7 @@ func lintAccountable(S *lintSet, f *lintFindings) {
 const storeLowClass = "store_low"
 
 // lintStoreLow requires the class store_low in an incident catalog: subject farm, opened by the
-// core's own alarm.store.free.low, without stops_manager (MGR-38). A set without incident
+// core's own alarm.store.free.low (MGR-38). A set without incident
 // classes has no catalog to check.
 func lintStoreLow(S *lintSet, f *lintFindings) {
 	classes := S.each("IncidentClass")
@@ -1356,9 +1356,6 @@ func lintStoreLow(S *lintSet, f *lintFindings) {
 			f.add(o, "incident_store_low", "/detect/alarm")
 		}
 		// A v0.3 core does not use stops_manager: apply only warns of it (MGR-55).
-		if _, ok := o.spec["stops_manager"]; ok && !claimsV03() {
-			f.add(o, "incident_store_low", "/stops_manager")
-		}
 		return
 	}
 	for _, o := range classes {
