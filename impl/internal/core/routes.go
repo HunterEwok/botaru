@@ -386,7 +386,10 @@ func (c *Core) runWake(ctx context.Context, tx pgx.Tx, now time.Time, cat *Catal
 		return err
 	}
 	day := tenantDay(tv, now)
-	eur, perDay := wakeCeilings(tv)
+	eur, perDay, err := wakeCeilingsNow(ctx, tx, tv)
+	if err != nil {
+		return err
+	}
 	var wakes int
 	if err := tx.QueryRow(ctx, `SELECT count(*) FROM tasks WHERE tenant = $1 AND created_at >= $2 AND record ? 'wake_inbox'`, tv.Name, day).Scan(&wakes); err != nil {
 		return err
@@ -495,7 +498,11 @@ func (c *Core) wakeLimits(ctx context.Context, tx pgx.Tx, now time.Time, tv *Ten
 		return nil, err
 	}
 	day := tenantDay(tv, now)
-	if eur, _ := wakeCeilings(tv); eur != nil {
+	eur, _, err := wakeCeilingsNow(ctx, tx, tv)
+	if err != nil {
+		return nil, err
+	}
+	if eur != nil {
 		used, err := wakeSum(ctx, tx, tv.Name, day, wake, "inbox", *inbox)
 		if err != nil {
 			return nil, err
@@ -515,4 +522,22 @@ func (c *Core) wakeLimits(ctx context.Context, tx pgx.Tx, now time.Time, tv *Ten
 		}
 	}
 	return nil, nil
+}
+
+// wakeCeilingsNow are the wake-up ceilings of the tenant, the money halved while a spend gap is
+// open as every daily limit is (RET-6).
+func wakeCeilingsNow(ctx context.Context, tx pgx.Tx, tv *TenantView) (*float64, int, error) {
+	eur, perDay := wakeCeilings(tv)
+	if eur == nil {
+		return nil, perDay, nil
+	}
+	halve, err := spendGapOpen(ctx, tx)
+	if err != nil {
+		return nil, 0, err
+	}
+	if halve {
+		v := *eur / 2
+		eur = &v
+	}
+	return eur, perDay, nil
 }
