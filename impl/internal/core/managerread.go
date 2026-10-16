@@ -551,6 +551,9 @@ func (c *Core) doctorManager(ctx context.Context, tx pgx.Tx, now time.Time, cat 
 		if err := doctorManagerMonth(ctx, tx, now, tv, add); err != nil {
 			return err
 		}
+		if err := c.doctorRestricted(ctx, tx, tenant, add); err != nil {
+			return err
+		}
 	}
 	if !incidentReviewOn(tv) {
 		return nil

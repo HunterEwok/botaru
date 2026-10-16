@@ -7,7 +7,7 @@ given:
   tenant: demo
   catalog:
     hosts:
-    - {name: db1, monitor_host: db1.example.org}
+    - {id: db1, monitor_host: db1.example.org}
     monitor_triggers:
     - {triggerid: '17021', class: disk_free, item: vfs.fs.size.free_pct}
     - {triggerid: '17022', class: disk_fill, item: vfs.fs.size.fill_rate}
@@ -57,8 +57,13 @@ cases:
     route_task_untrusted_seen: true
 - id: mon-fx-04
   rules: [MON-5]
-  description: Closing a problem after a recheck by a job task closes the farm alarm.
+  description: Closing a problem after a recheck by a job task closes the farm alarm. Cases do not share state, so the problem
+    of mon-fx-01 opens first; the closing is the second episode change of the alarm (seq 2, MON-11).
   steps:
+  - occur:
+      event:
+        type: ext.monitor.problem.v1
+        data: {eventid: '8812345', triggerid: '17021', resource: db1, severity: 2, state: open}
   - occur:
       event:
         type: ext.monitor.problem.v1

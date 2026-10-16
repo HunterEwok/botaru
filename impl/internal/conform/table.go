@@ -95,34 +95,77 @@ func (r *Runner) tableRow(c *Case) (*tableRow, string) {
 	if len(c.Steps) == 0 {
 		return nil, ""
 	}
+	if !c2Row(c) {
+		return nil, ""
+	}
+	row := &tableRow{info: t}
+	g, need := r.narrowRow(c)
+	if need != "" {
+		return row, need
+	}
+	if b := asMap(c.Given["budget"]); b != nil {
+		row.exhausted = b["exhausted"] == true
+	}
+	rc := *c
+	rc.Given = g
+	row.c = &rc
+	return row, ""
+}
+
+// c2Row tells whether every step of a case is a C2 authorize call.
+func c2Row(c *Case) bool {
 	for _, st := range c.Steps {
 		call := asMap(st["call"])
 		if str(call["port"]) != "C2" || str(call["op"]) != "authorize" {
-			return nil, ""
+			return false
 		}
 		for k := range st {
 			switch k {
 			case "call", "by", "note", "expect":
 			default:
-				return nil, ""
+				return false
 			}
 		}
 	}
-	row := &tableRow{info: t}
+	return true
+}
+
+// plainRow is a lint or P1 row of the permission table, which runs as any other case, with its
+// given narrowed as for a C2 row (the table context belongs to the service rows); nil for any
+// other case.
+func (r *Runner) plainRow(c *Case) *Case {
+	t := r.table(c)
+	if t == nil || !t.authorize || len(c.Steps) == 0 || c.narrowed || c2Row(c) {
+		return nil
+	}
+	if _, service := c.Given["tool"]; service {
+		return nil
+	}
+	g, need := r.narrowRow(c)
+	if need != "" {
+		return nil
+	}
+	rc := *c
+	rc.Given, rc.narrowed = g, true
+	return &rc
+}
+
+// narrowRow is the given of a permission table row without the table context (system, roles,
+// catalog: the context of the service and script rows, while a C2 row reads only the principal,
+// its groups, the holds and the budget) and without the people of the table header that the row
+// does not name.
+func (r *Runner) narrowRow(c *Case) (map[string]any, string) {
 	g := map[string]any{}
 	for k, v := range c.Given {
 		switch k {
 		case "system", "roles", "catalog":
-			// The table context of the service and script rows: a C2 row reads only the
-			// principal, its groups, the holds and the budget.
 		case "budget":
 			b := asMap(v)
 			for f := range b {
 				if f != "line" && f != "exhausted" {
-					return row, "given budget " + f
+					return nil, "given budget " + f
 				}
 			}
-			row.exhausted = b["exhausted"] == true
 		default:
 			g[k] = v
 		}
@@ -143,7 +186,7 @@ func (r *Runner) tableRow(c *Case) (*tableRow, string) {
 			// system acts through its own group system-ops only (PRM-10), which the core sets.
 			for _, gr := range strs(pm["groups"]) {
 				if gr != "system-ops" {
-					return row, "given system in group " + gr
+					return nil, "given system in group " + gr
 				}
 			}
 			continue
@@ -157,10 +200,7 @@ func (r *Runner) tableRow(c *Case) (*tableRow, string) {
 	} else {
 		delete(g, "people")
 	}
-	rc := *c
-	rc.Given = g
-	row.c = &rc
-	return row, ""
+	return g, ""
 }
 
 // functionNeeds is what a case of a function.eval table needs: steps only of the mock model's
@@ -195,7 +235,7 @@ func (r *Runner) runTable(ctx context.Context, row *tableRow) Result {
 		return Result{Case: c, Status: Failed, Detail: "test bench: " + err.Error()}
 	}
 	defer stop()
-	x := &exec{r: r, ep: ep, c: c, ids: map[string]string{}, granted: map[string][]string{}}
+	x := newExec(r, ep, c)
 	res := func(s Status, f string, a ...any) Result {
 		return Result{Case: c, Status: s, Detail: fmt.Sprintf(f, a...)}
 	}
@@ -375,8 +415,8 @@ func (x *exec) standMore(ctx context.Context, s map[string]any) (*outcome, error
 var typeName = regexp.MustCompile(`^[a-z][a-z0-9_]*(\.[a-z0-9_]+)*\.v[0-9]+$`)
 
 // exampleTypes reads the example task types a row's steps name, as task:<type> or as a bare
-// type name, without the fields this core refuses as later; the hello-bot seed has none of
-// them. An action type or a name with no example file is left to the core.
+// type name, without the fields this core refuses as later. An action type or a name with no
+// example file is left to the core.
 func exampleTypes(root string, sp *spec.Spec, c *Case) ([]map[string]any, error) {
 	names := map[string]bool{}
 	var walk func(v any)
@@ -400,6 +440,12 @@ func exampleTypes(root string, sp *spec.Spec, c *Case) ([]map[string]any, error)
 	for _, st := range c.Steps {
 		walk(map[string]any(st))
 	}
+	return loadExampleTypes(root, sp, names)
+}
+
+// loadExampleTypes reads the example task types of examples/tasktypes by name; a name without an
+// example file is left out.
+func loadExampleTypes(root string, sp *spec.Spec, names map[string]bool) ([]map[string]any, error) {
 	var paths []string
 	for n := range names {
 		p := filepath.Join(root, "examples/tasktypes", n+".yaml")
