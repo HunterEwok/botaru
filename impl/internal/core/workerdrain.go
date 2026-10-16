@@ -112,8 +112,9 @@ func (c *Core) purgeRuntimeStore(ctx context.Context, tx pgx.Tx, now time.Time, 
 
 // purgeRetiredRuntime enqueues, in the retirement transaction of an identity whose worker's
 // runtime declared session or memory runtime_internal at hello, an erasure request with reason
-// bot_retired and the worker as scope: the core cannot seal what the runtime keeps itself, so
-// the runtime deletes it with the E4 purge (MEM-9, RET-4, RET-7). An unbound identity or a
+// bot_retired, the identity as scope and the worker as the runtime that purges: the core cannot
+// seal what the runtime keeps itself, so the runtime deletes it with the E4 purge (MEM-9, RET-4,
+// RET-7). An unbound identity or a
 // revoked worker has nothing here: revoking the worker already cleared its runtime store
 // (worker_revoke, LCY-4).
 func (c *Core) purgeRetiredRuntime(ctx context.Context, tx pgx.Tx, now time.Time, cat *Catalog, b *botRow) error {
@@ -132,7 +133,9 @@ func (c *Core) purgeRetiredRuntime(ctx context.Context, tx pgx.Tx, now time.Time
 	if tv == nil {
 		tv = &TenantView{Name: b.Tenant}
 	}
-	_, err = c.requestErasure(ctx, tx, now, tv, erasureSpec{Scope: ErasureScope{Tenant: b.Tenant, Worker: b.Worker}, Reason: "bot_retired"})
+	// The scope names the retired identity: a successor bound to the same worker keeps its own
+	// sessions, and the runtime purges only the ones of this identity.
+	_, err = c.requestErasure(ctx, tx, now, tv, erasureSpec{Scope: ErasureScope{Tenant: b.Tenant, Bot: b.ID}, Reason: "bot_retired", RuntimeWorker: b.Worker})
 	return err
 }
 

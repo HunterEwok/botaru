@@ -4,9 +4,16 @@ package core
 
 import (
 	"context"
+	"encoding/json"
+	"fmt"
+	"os"
+	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
+	"time"
+
+	"github.com/jackc/pgx/v5"
 
 	"github.com/HunterEwok/botaru/impl/internal/manifest"
 	"github.com/HunterEwok/botaru/impl/internal/mcp"
@@ -154,7 +161,7 @@ func TestPersonMemoryDeferred(t *testing.T) {
 	}
 }
 
-// SEC-8: an apply that changes the privacy block gives the event tenant.privacy_changed with the
+// SEC-8: an apply that changes the privacy block gives the event tenant.privacy_changed.v1 with the
 // names of the changed fields and a code notice to each admin (admin:people); an apply that
 // keeps the block gives neither.
 func TestPrivacyChangeNotice(t *testing.T) {
@@ -196,18 +203,33 @@ func TestPrivacyChangeNotice(t *testing.T) {
 	notices := func() int {
 		return b.count(t, `SELECT count(*) FROM deliveries WHERE tenant = 'demo' AND kind = 'notice' AND recipient = $1 AND body->>'text_key' = 'notice.privacy_changed'`, bob)
 	}
-	before := countEvents(t, b, "tenant.privacy_changed", "demo")
+	before := countEvents(t, b, "tenant.privacy_changed.v1", "demo")
 	apply("2", set(7, []any{"model_provider", "messenger", "monitoring"}))
-	if n := countEvents(t, b, "tenant.privacy_changed", "demo"); n != before+1 {
+	if n := countEvents(t, b, "tenant.privacy_changed.v1", "demo"); n != before+1 {
 		t.Fatalf("SEC-8: %d events after a change", n-before)
 	}
 	var fields, version string
-	if err := b.c.st.Pool.QueryRow(ctx, `SELECT data->>'fields', data->>'notice_version' FROM events WHERE type = 'tenant.privacy_changed' ORDER BY time DESC, id DESC LIMIT 1`).Scan(&fields, &version); err != nil {
+	if err := b.c.st.Pool.QueryRow(ctx, `SELECT data->>'fields', data->>'notice_version' FROM events WHERE type = 'tenant.privacy_changed.v1' ORDER BY time DESC, id DESC LIMIT 1`).Scan(&fields, &version); err != nil {
 		t.Fatal(err)
 	}
 	if !strings.Contains(fields, "notice_version") || version != "7" {
 		t.Fatalf("SEC-8: event fields %s version %s", fields, version)
 	}
+	// The event is the one of the events catalog, with its data schema.
+	reg, err := b.c.spec.Registry("spec/bindings/events/catalog.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if e, ok := reg.Entry("tenant.privacy_changed.v1"); !ok || e["data_schema"] != "spec/model/event-data/privacy-event.schema.json" {
+		t.Fatalf("SEC-8: the event is not in the catalog: %v", e)
+	}
+	var evData map[string]any
+	var evRaw []byte
+	if err := b.c.st.Pool.QueryRow(ctx, `SELECT data FROM events WHERE type = 'tenant.privacy_changed.v1' ORDER BY time DESC, id DESC LIMIT 1`).Scan(&evRaw); err != nil {
+		t.Fatal(err)
+	}
+	_ = json.Unmarshal(evRaw, &evData)
+	validOut(t, b, "privacy-event", evData)
 	if n := notices(); n != 1 {
 		t.Fatalf("SEC-8: %d notices to the admin", n)
 	}
@@ -217,7 +239,7 @@ func TestPrivacyChangeNotice(t *testing.T) {
 	}
 	// The same block again: nothing new.
 	apply("3", set(7, []any{"model_provider", "messenger", "monitoring"}))
-	if n := countEvents(t, b, "tenant.privacy_changed", "demo"); n != before+1 || notices() != 1 {
+	if n := countEvents(t, b, "tenant.privacy_changed.v1", "demo"); n != before+1 || notices() != 1 {
 		t.Fatalf("SEC-8: an unchanged block gave an event or a notice: %d events, %d notices", n-before, notices())
 	}
 	// SEC-13 at apply: recipients change at the same version is refused.
@@ -238,12 +260,30 @@ func TestRetireRuntimeInternalPurge(t *testing.T) {
 		t.Fatal(err)
 	}
 	old := b.botOf(t, b.agent.ID)
+	now := b.storeNow(t)
+	if _, err := b.c.st.Pool.Exec(ctx, `INSERT INTO tool_cache (tenant, key, plugin, tool, output, source_call, created_at, expires_at)
+		VALUES ('demo', 'k', 'checks', 'disk', '{"v": 1}', 'c_x', $1, $2)`, now, now.Add(time.Hour)); err != nil {
+		t.Fatal(err)
+	}
 	if _, err := b.c.BotRetire(ctx, b.op, BotRetireRequest{Bot: old.ID}); err != nil {
 		t.Fatal(err)
 	}
 	var req, state string
-	if err := b.c.st.Pool.QueryRow(ctx, `SELECT id, state FROM erasure_requests WHERE reason = 'bot_retired' AND scope->>'worker' = $1`, b.agent.ID).Scan(&req, &state); err != nil {
-		t.Fatalf("MEM-9: no bot_retired request for the runtime: %v", err)
+	if err := b.c.st.Pool.QueryRow(ctx, `SELECT id, state FROM erasure_requests WHERE reason = 'bot_retired' AND runtime_worker = $1 AND scope->>'bot' = $2 AND NOT scope ? 'worker'`, b.agent.ID, old.ID).Scan(&req, &state); err != nil {
+		t.Fatalf("MEM-9: no bot_retired request for the retired identity on the runtime: %v", err)
+	}
+	rec, err := erasureRecord(ctx, b.c.st.Pool, "demo", req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	validOut(t, b, "deletion-request", rec)
+	// The successor bound to the same worker is not the scope of the purge.
+	if succ := b.botOf(t, b.agent.ID); succ.ID == old.ID {
+		t.Fatal("MEM-9: no successor identity on the worker")
+	}
+	// The runtime purge reaches only the runtime: the tenant's tool cache stays.
+	if n := b.count(t, `SELECT count(*) FROM tool_cache WHERE tenant = 'demo'`); n != 1 {
+		t.Fatal("MEM-9: the runtime purge of a retired identity dropped the tenant's tool cache")
 	}
 	if n := b.count(t, `SELECT count(*) FROM erasure_steps WHERE request = $1`, req); n != 1 {
 		t.Fatalf("MEM-9: %d steps", n)
@@ -256,9 +296,11 @@ func TestRetireRuntimeInternalPurge(t *testing.T) {
 	if w == nil {
 		t.Fatal("MEM-9: the runtime got no purge")
 	}
-	if w.Payload["op"] != "erase" || w.Payload["reason"] != "bot_retired" || w.Payload["target"].(map[string]any)["worker_id"] != b.agent.ID {
+	if w.Payload["op"] != "erase" || w.Payload["reason"] != "bot_retired" || w.Payload["target"].(map[string]any)["worker_id"] != b.agent.ID ||
+		w.Payload["scope"].(map[string]any)["bot"] != old.ID {
 		t.Fatalf("MEM-9: purge payload %v", w.Payload)
 	}
+	validOut(t, b, "erasure-work", w.Payload)
 	if _, err := b.c.Complete(ctx, b.agent, header(t, w), CompleteRequest{Erasure: map[string]any{"outcome": "done"}}); err != nil {
 		t.Fatal(err)
 	}
@@ -307,6 +349,51 @@ func TestServiceGrantInitiator(t *testing.T) {
 	validOut(t, b.bench, "audit-record", gs[0])
 }
 
+// MEM-2: the core lint and the skeleton lint gate person_memory_deferred on the same version:
+// the core's claim spec.Version, outside tests, is the major and minor of spec/VERSION that
+// ci/check_manifests.py reads.
+func TestPersonMemoryVersionSource(t *testing.T) {
+	root, err := spec.FindRoot("")
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw, err := os.ReadFile(filepath.Join(root, "spec", "VERSION"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	parts := strings.SplitN(strings.TrimSpace(string(raw)), ".", 3)
+	if len(parts) < 2 || "v"+parts[0]+"."+parts[1] != spec.Version {
+		t.Fatalf("MEM-2: spec/VERSION %s and the core claim %s differ", raw, spec.Version)
+	}
+}
+
+// FEN-7: every service_grant record names an initiator: a bot's grant whose task has no
+// initiator names the bot itself, and the author kind follows the author's principal, so an
+// operator credential of an external program is not recorded as a person.
+func TestServiceGrantInitiatorFallback(t *testing.T) {
+	ctx := context.Background()
+	b := newServiceBench(t)
+	for p, want := range map[string]string{"human:p_01JB00000000000000000000A1": "human", "bot:bot_01jb": "bot", "worker:wk_01": "bot", "service:ci-exporter": "service", "system": "service"} {
+		if got := grantAuthorKind(p); got != want {
+			t.Errorf("FEN-7: author kind of %s is %s", p, got)
+		}
+	}
+	bot := "bot:bot_01jbtest"
+	if err := b.c.tx(ctx, func(tx pgx.Tx, now time.Time) error {
+		_, err := b.c.writeGrant(ctx, tx, now, "demo", map[string]any{"kind": "bot", "principal": bot}, Actor{Principal: bot, Via: "bot"},
+			map[string]any{"service": "nginx", "verb": "restart", "initiator": ""}, "sha256:"+strings.Repeat("0", 64))
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
+	gs := b.grants(t)
+	g := gs[len(gs)-1]["service_grant"].(map[string]any)
+	if g["initiator"] != bot {
+		t.Fatalf("FEN-7: a grant without a task initiator %v", g)
+	}
+	validOut(t, b.bench, "audit-record", gs[len(gs)-1])
+}
+
 // DLV-11: progress is only a stage from the closed list of the type's stages: a heartbeat with
 // another stage is refused, one from the list extends the lease.
 func TestHeartbeatStageFromList(t *testing.T) {
@@ -330,6 +417,14 @@ func TestHeartbeatStageFromList(t *testing.T) {
 	wantReason(t, err, "input_schema_invalid")
 	if _, err := b.c.Heartbeat(ctx, b.agent, h, HeartbeatRequest{}); err != nil {
 		t.Fatalf("DLV-11: a heartbeat without a stage %v", err)
+	}
+	// A type without stages has no stage to show: any stage is refused, a percentage passes.
+	b2 := newBench(t)
+	h2 := header(t, claimFor(t, b2, b2.agent, b2.hello(t, "1")))
+	_, err = b2.c.Heartbeat(ctx, b2.agent, h2, HeartbeatRequest{Stage: "writing_answer", Progress: &p})
+	wantReason(t, err, "input_schema_invalid")
+	if _, err := b2.c.Heartbeat(ctx, b2.agent, h2, HeartbeatRequest{Progress: &p}); err != nil {
+		t.Fatalf("DLV-11: a percentage without a stage %v", err)
 	}
 }
 
@@ -355,36 +450,55 @@ func TestAccountWider(t *testing.T) {
 	}
 	farm := []string{"core1", "backup1"}
 	h := nodeHash
-	if got := accountWider(cat, farm, "demo", accountReport{Visible: []string{h("web1.example.org")}, Scripts: []string{h("web1.example.org")}}); len(got) != 0 {
-		t.Fatalf("MON-4: a narrow demo account %v", got)
+	for _, named := range []bool{false, true} {
+		if got := accountWider(cat, farm, "demo", accountReport{Visible: []string{h("web1.example.org")}, Scripts: []string{h("web1.example.org")}}, named); len(got) != 0 {
+			t.Fatalf("MON-4: a narrow demo account %v", got)
+		}
+		if got := accountWider(cat, farm, "farm", accountReport{Visible: []string{h("core1"), h("backup1")}}, named); len(got) != 0 {
+			t.Fatalf("MON-4: a narrow farm account %v", got)
+		}
 	}
-	got := accountWider(cat, farm, "demo", accountReport{Findings: []string{"acknowledge_problems"},
-		Visible: []string{h("web1.example.org"), h("web2.example.org"), h("core1"), h("db9.example.org")}, Scripts: []string{h("core1")}})
-	if want := []string{"acknowledge_problems", "sees:core1", "sees:web2.example.org", "sees_unlinked:1", "script:core1"}; !slices.Equal(got, want) {
-		t.Fatalf("MON-4: a wide demo account %v", got)
+	wide := accountReport{Findings: []string{"acknowledge_problems"},
+		Visible: []string{h("web1.example.org"), h("web2.example.org"), h("core1"), h("db9.example.org")}, Scripts: []string{h("core1")}}
+	// The farm operator reads the node names; any other viewer only counts by class.
+	if got, want := accountWider(cat, farm, "demo", wide, true), []string{"acknowledge_problems", "sees:core1", "sees:web2.example.org", "sees_unlinked:1", "script:core1"}; !slices.Equal(got, want) {
+		t.Fatalf("MON-4: a wide demo account for the farm operator %v", got)
 	}
-	if got := accountWider(cat, farm, "farm", accountReport{Visible: []string{h("core1"), h("backup1")}}); len(got) != 0 {
-		t.Fatalf("MON-4: a narrow farm account %v", got)
+	if got, want := accountWider(cat, farm, "demo", wide, false), []string{"acknowledge_problems", "sees_other_tenant:1", "sees_farm:1", "sees_unlinked:1", "script_farm:1"}; !slices.Equal(got, want) {
+		t.Fatalf("MON-4: a wide demo account for the tenant %v", got)
 	}
-	if got := accountWider(cat, farm, "farm", accountReport{Visible: []string{h("core1"), h("web2.example.org")}, Scripts: []string{h("backup1")}, Truncated: true}); !slices.Equal(got, []string{"sees:web2.example.org", "script:backup1", "truncated"}) {
+	farmWide := accountReport{Visible: []string{h("core1"), h("web2.example.org")}, Scripts: []string{h("backup1")}, Truncated: true}
+	if got := accountWider(cat, farm, "farm", farmWide, true); !slices.Equal(got, []string{"sees:web2.example.org", "script:backup1", "truncated"}) {
 		t.Fatalf("MON-4: a wide farm account %v", got)
+	}
+	if got := accountWider(cat, farm, "farm", farmWide, false); !slices.Equal(got, []string{"sees_other_tenant:1", "script_farm:1", "truncated"}) {
+		t.Fatalf("MON-4: a wide farm account by counts %v", got)
 	}
 }
 
-// OBS-11: doctor shows per tenant whether its adapter account sees only what MON-4 allows: a
-// warning while no report is younger than an hour, a failure on a wider account, a pass on a
-// narrow one; the adapter's report arrives as ext.monitor.account.v1.
+// OBS-11: doctor shows per tenant whether every adapter account of the tenant sees only what
+// MON-4 allows: a warning while a worker sent no report younger than an hour, a failure when any
+// worker's account is wider, a pass when all are narrow; the adapter's report arrives as
+// ext.monitor.account.v1. Only the farm operator reads node names: the tenant's own view counts
+// by class and names no node of the farm or of another tenant, and the event log holds no host
+// list. A revoked worker's report goes with it.
 func TestDoctorAccountScope(t *testing.T) {
 	ctx := context.Background()
 	b := newBench(t)
 	mon := b.monitorOn(t)
 	b.c.cfg.FarmHosts = []string{"core1", "backup1"}
-	line := func() DoctorCheck {
+	farmOp := Operator{Principal: b.op.Principal, Tenant: "farm"}
+	doctor := func(op Operator) *DoctorResult {
 		t.Helper()
-		d, err := b.c.Doctor(ctx, b.op, TenantRequest{})
+		d, err := b.c.Doctor(ctx, op, TenantRequest{Tenant: "demo"})
 		if err != nil {
 			t.Fatal(err)
 		}
+		return d
+	}
+	lineOf := func(op Operator) DoctorCheck {
+		t.Helper()
+		d := doctor(op)
 		for _, ch := range d.Checks {
 			if ch.ID == "monitor.account_scope" && ch.Tenant == "demo" {
 				return ch
@@ -393,41 +507,83 @@ func TestDoctorAccountScope(t *testing.T) {
 		t.Fatalf("no account line in %v", d.Checks)
 		return DoctorCheck{}
 	}
+	line := func() DoctorCheck { t.Helper(); return lineOf(b.op) }
 	if ch := line(); ch.OK || ch.Severity != "warn" || ch.Value != "unchecked" {
 		t.Fatalf("OBS-11: no report yet %+v", ch)
 	}
-	report := func(findings []any, visible ...string) {
+	report := func(w *Worker, findings []any, visible ...string) {
 		t.Helper()
 		hs := []any{}
 		for _, v := range visible {
 			hs = append(hs, nodeHash(v))
 		}
-		a := Activity{Kind: "signal", Channel: "zabbix", UpdateID: "account:" + strings.Join(visible, ","), Chat: Chat{Kind: "direct", ExternalID: "monitor"},
+		a := Activity{Kind: "signal", Channel: w.Target, UpdateID: "account:" + w.ID + strings.Join(visible, ","), Chat: Chat{Kind: "direct", ExternalID: "monitor"},
 			Event: &SignalEvent{Type: "ext.monitor.account.v1", Data: map[string]any{"findings": findings, "visible": hs, "scripts": []any{}}}}
 		a.Sender.Identity, a.Sender.Verified = "hook:monitor", true
-		if _, err := b.c.SubmitActivity(ctx, mon, a); err != nil {
+		if _, err := b.c.SubmitActivity(ctx, w, a); err != nil {
 			t.Fatal(err)
 		}
 	}
-	report([]any{"acknowledge_problems"}, "core1")
-	if ch := line(); ch.OK || ch.Severity != "fail" || ch.Value != "acknowledge_problems, sees:core1" {
-		t.Fatalf("MON-4: a wide account %+v", ch)
+	report(mon, []any{"acknowledge_problems"}, "core1")
+	if ch := line(); ch.OK || ch.Severity != "fail" || ch.Value != "acknowledge_problems, sees_farm:1" {
+		t.Fatalf("MON-4: a wide account for the tenant %+v", ch)
 	}
-	if n := countEvents(t, b, "ext.monitor.account.v1", "demo"); n != 1 {
+	raw, _ := json.Marshal(doctor(b.op))
+	if strings.Contains(string(raw), "core1") {
+		t.Fatalf("MON-4: the tenant's doctor names a farm node: %s", raw)
+	}
+	if ch := lineOf(farmOp); ch.OK || ch.Value != "acknowledge_problems, sees:core1" {
+		t.Fatalf("MON-4: a wide account for the farm operator %+v", ch)
+	}
+	if n := countEvents(t, b, "ext.monitor.account.v1", mon.ID); n != 1 {
 		t.Fatalf("%d account events", n)
 	}
-	report([]any{})
+	var data map[string]any
+	var evRaw []byte
+	if err := b.c.st.Pool.QueryRow(ctx, `SELECT data FROM events WHERE type = 'ext.monitor.account.v1' AND subject = $1`, mon.ID).Scan(&evRaw); err != nil {
+		t.Fatal(err)
+	}
+	_ = json.Unmarshal(evRaw, &data)
+	if _, ok := data["visible"]; ok || data["visible_count"] != 1.0 || strings.Contains(string(evRaw), nodeHash("core1")) {
+		t.Fatalf("MON-4: the event log holds the host list: %s", evRaw)
+	}
+	validOut(t, b, "ext-monitor-account", data)
+	report(mon, []any{})
 	if ch := line(); !ch.OK || ch.Severity != "info" {
 		t.Fatalf("MON-4: a narrow account %+v", ch)
+	}
+	// A second adapter worker of the tenant: unchecked until it reports, and its wide report
+	// fails the line although the first account is narrow.
+	mon2 := b.enroll(t, EnrollRequest{Tenant: "demo", Kind: "monitor", Target: "zabbix2"})
+	if ch := line(); ch.OK || ch.Value != "unchecked" {
+		t.Fatalf("OBS-11: a worker without a report %+v", ch)
+	}
+	report(mon2, []any{"close_problems"})
+	if ch := line(); ch.OK || ch.Severity != "fail" || ch.Value != "close_problems" {
+		t.Fatalf("MON-4: one wide worker of two %+v", ch)
+	}
+	if _, err := b.c.WorkerRevoke(ctx, b.op, WorkerRequest{Op: "worker.revoke", Worker: mon2.ID}); err != nil {
+		t.Fatal(err)
+	}
+	if n := b.count(t, `SELECT count(*) FROM monitor_accounts WHERE worker = $1`, mon2.ID); n != 0 {
+		t.Fatal("MON-4: a revoked worker's report stays")
+	}
+	if ch := line(); !ch.OK {
+		t.Fatalf("MON-4: after the revoke %+v", ch)
 	}
 	b.advance(t, 2*3600)
 	if ch := line(); ch.OK || ch.Value != "unchecked" {
 		t.Fatalf("OBS-11: a stale report %+v", ch)
 	}
-	// A report outside its schema is refused.
-	a := Activity{Kind: "signal", Channel: "zabbix", UpdateID: "account:bad", Chat: Chat{Kind: "direct", ExternalID: "monitor"},
-		Event: &SignalEvent{Type: "ext.monitor.account.v1", Data: map[string]any{"findings": []any{"Admin " + "role"}, "visible": []any{}, "scripts": []any{}}}}
-	a.Sender.Identity, a.Sender.Verified = "hook:monitor", true
-	_, err := b.c.SubmitActivity(ctx, mon, a)
-	wantReason(t, err, "input_schema_invalid")
+	// A report outside its schema is refused, and so is one without its host lists.
+	for _, d := range []map[string]any{
+		{"findings": []any{"Admin " + "role"}, "visible": []any{}, "scripts": []any{}},
+		{"findings": []any{}},
+	} {
+		a := Activity{Kind: "signal", Channel: "zabbix", UpdateID: "account:bad" + fmt.Sprint(len(d)), Chat: Chat{Kind: "direct", ExternalID: "monitor"},
+			Event: &SignalEvent{Type: "ext.monitor.account.v1", Data: d}}
+		a.Sender.Identity, a.Sender.Verified = "hook:monitor", true
+		_, err := b.c.SubmitActivity(ctx, mon, a)
+		wantReason(t, err, "input_schema_invalid")
+	}
 }

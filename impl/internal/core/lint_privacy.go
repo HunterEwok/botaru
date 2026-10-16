@@ -261,7 +261,7 @@ func privacyChangeOf(ctx context.Context, tx pgx.Tx, name string, doc map[string
 }
 
 // privacyNotices gives each tenant whose privacy block changed the event
-// tenant.privacy_changed and a code notice to its admins (admin:people) in their private chats,
+// tenant.privacy_changed.v1 and a code notice to its admins (admin:people) in their private chats,
 // in the apply transaction (SEC-8). Both carry only the names of the changed fields and the
 // notice version.
 func (c *Core) privacyNotices(ctx context.Context, tx pgx.Tx, now time.Time, cat *Catalog, changes []privacyChange) error {
@@ -270,7 +270,7 @@ func (c *Core) privacyNotices(ctx context.Context, tx pgx.Tx, now time.Time, cat
 		if ch.noticeVersion != nil {
 			data["notice_version"] = ch.noticeVersion
 		}
-		if err := c.appendEvent(ctx, tx, now, ch.tenant, Event{Type: "tenant.privacy_changed", Subject: ch.tenant, Data: data}); err != nil {
+		if err := c.appendEvent(ctx, tx, now, ch.tenant, Event{Type: "tenant.privacy_changed.v1", Subject: ch.tenant, Data: data}); err != nil {
 			return err
 		}
 		tv := cat.Tenants[ch.tenant]

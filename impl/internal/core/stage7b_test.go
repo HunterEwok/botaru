@@ -737,9 +737,16 @@ func TestTenantLifecycle(t *testing.T) {
 		t.Fatalf("delete in the window: %v", err)
 	}
 	b.advance(t, 86400+1)
+	if _, err := b.c.st.Pool.Exec(ctx, `INSERT INTO monitor_accounts (tenant, worker, report, checked_at) VALUES ('demo', 'wk_x', '{}', now())`); err != nil {
+		t.Fatal(err)
+	}
 	del, err := b.c.TenantLifecycle(ctx, b.op, TenantLifecycleRequest{Op: "tenant.delete", Tenant: "demo"})
 	if err != nil || del.State != "deleted" {
 		t.Fatalf("delete %+v %v", del, err)
+	}
+	// MON-4: a deleted tenant's account reports go with it.
+	if n := b.count(t, `SELECT count(*) FROM monitor_accounts WHERE tenant = 'demo'`); n != 0 {
+		t.Fatal("account reports of a deleted tenant")
 	}
 	var reason string
 	if err := b.c.st.Pool.QueryRow(ctx, `SELECT reason FROM erasure_requests WHERE id = $1 AND tenant = 'demo' AND subject IS NULL`, del.ID).Scan(&reason); err != nil || reason != "tenant_delete" {

@@ -106,7 +106,7 @@ func (c *Core) ServiceControl(ctx context.Context, op Operator, req ServiceContr
 			out = &serviceResult{Code: "approval_required", ApprovalID: id}
 			return nil
 		}
-		author := map[string]any{"kind": "human", "principal": op.Principal}
+		author := map[string]any{"kind": grantAuthorKind(op.Principal), "principal": op.Principal}
 		grant, err := c.writeGrant(ctx, tx, now, tv.Name, author, actor, map[string]any{"service": req.Service, "verb": req.Verb}, argsHash)
 		if err != nil {
 			return err

@@ -304,17 +304,28 @@ func (c *Core) writeGrant(ctx context.Context, tx pgx.Tx, now time.Time, tenant 
 	for k, v := range what {
 		block[k] = v
 	}
+	// Every record names its initiator: the task's initiator for a bot's call, else the author
+	// itself, a person or the bot whose task has none (FEN-7).
 	if i, _ := block["initiator"].(string); i == "" {
-		delete(block, "initiator")
-		if author["kind"] == "human" {
-			block["initiator"] = author["principal"]
-		}
+		block["initiator"] = author["principal"]
 	}
 	_, err := c.appendAudit(ctx, tx, now, Audit{
 		Tenant: tenant, Kind: "service_grant", Actor: actor, Command: "service_grant", Target: &Target{Kind: "service_grant", ID: id},
 		OK: true, ServiceGrant: block,
 	})
 	return id, err
+}
+
+// grantAuthorKind is the author kind of a service_grant record by the author's principal: a
+// person, a bot identity or worker, or an external program or the system (FEN-7).
+func grantAuthorKind(principal string) string {
+	switch {
+	case strings.HasPrefix(principal, "human:"):
+		return "human"
+	case strings.HasPrefix(principal, "bot:"), strings.HasPrefix(principal, "worker:"):
+		return "bot"
+	}
+	return "service"
 }
 
 // serviceControl is the call of the built-in service/control from a bot (APR-18, INJ-15). It

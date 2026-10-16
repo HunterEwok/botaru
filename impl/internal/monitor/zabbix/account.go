@@ -29,7 +29,7 @@ func NodeHash(node string) string {
 	return "sha256:" + hex.EncodeToString(sum[:])
 }
 
-// AccountReport reads the adapter's own user and role through the API (user.get, role.get)
+// AccountReport reads the adapter's own user and role through the API (user.checkAuthentication, role.get)
 // and what the user sees (host.get, script.getscriptsbyhosts), as the data of
 // ext.monitor.account.v1 (MON-4, OBS-11): the role rights that are wider than the rule allows
 // (findings: super_admin, a forbidden action or frontend section by its rule name), the hashes
@@ -37,15 +37,31 @@ func NodeHash(node string) string {
 // (scripts). The core decides what of it is wider: a node of another tenant or of the farm, a
 // node outside the catalog, a script on a farm node. Host, script and role names stay here.
 func (a *Adapter) AccountReport(ctx context.Context) (map[string]any, error) {
-	var users []struct {
+	// The adapter's own user: the one its API token belongs to, by user.checkAuthentication
+	// (Zabbix 7.0), never the first row of a user list.
+	var self struct {
+		UserID string `json:"userid"`
 		RoleID string `json:"roleid"`
 	}
-	// A user's API token reads only that user: the answer is the adapter's own account.
-	if err := a.call(ctx, "user.get", map[string]any{"output": []string{"userid", "roleid"}}, &users); err != nil {
+	if err := a.callAnon(ctx, "user.checkAuthentication", map[string]any{"token": a.cfg.APIToken}, &self); err != nil {
 		return nil, err
 	}
+	if self.UserID != "" && self.RoleID == "" {
+		var users []struct {
+			UserID string `json:"userid"`
+			RoleID string `json:"roleid"`
+		}
+		if err := a.call(ctx, "user.get", map[string]any{"output": []string{"userid", "roleid"}, "userids": []string{self.UserID}}, &users); err != nil {
+			return nil, err
+		}
+		for _, u := range users {
+			if u.UserID == self.UserID {
+				self.RoleID = u.RoleID
+			}
+		}
+	}
 	findings := []string{}
-	if len(users) == 0 || users[0].RoleID == "" {
+	if self.UserID == "" || self.RoleID == "" {
 		findings = append(findings, "role_unreadable")
 	} else {
 		var roles []struct {
@@ -57,7 +73,7 @@ func (a *Adapter) AccountReport(ctx context.Context) (map[string]any, error) {
 				ActionsDefaultAccess string `json:"actions.default_access"`
 			} `json:"rules"`
 		}
-		if err := a.call(ctx, "role.get", map[string]any{"output": []string{"roleid", "type"}, "roleids": []string{users[0].RoleID}, "selectRules": "extend"}, &roles); err != nil {
+		if err := a.call(ctx, "role.get", map[string]any{"output": []string{"roleid", "type"}, "roleids": []string{self.RoleID}, "selectRules": "extend"}, &roles); err != nil {
 			return nil, err
 		}
 		if len(roles) == 0 {

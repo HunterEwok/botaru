@@ -387,6 +387,10 @@ func (c *Core) revokeWorker(ctx context.Context, tx pgx.Tx, now time.Time, tenan
 	if _, err := tx.Exec(ctx, `UPDATE workers SET state = 'revoked' WHERE id = $1`, id); err != nil {
 		return 0, err
 	}
+	// A revoked adapter's account report no longer speaks for any account (MON-4).
+	if _, err := tx.Exec(ctx, `DELETE FROM monitor_accounts WHERE worker = $1`, id); err != nil {
+		return 0, err
+	}
 	// A revoked token holds no work of any kind (IDN-4).
 	if err := c.fenceLeases(ctx, tx, now, "worker_revoke", `worker_id = $1`, id); err != nil {
 		return 0, err

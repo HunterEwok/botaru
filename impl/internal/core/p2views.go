@@ -547,7 +547,7 @@ func (c *Core) Doctor(ctx context.Context, op Operator, req TenantRequest) (*Doc
 		if err := c.doctorMonitor(ctx, tx, now, tenant, add); err != nil {
 			return err
 		}
-		if err := c.doctorAccounts(ctx, tx, now, cat, tenant, add); err != nil {
+		if err := c.doctorAccounts(ctx, tx, now, cat, tenant, op.Tenant == farmTenant, add); err != nil {
 			return err
 		}
 		if err := c.doctorInsights(ctx, tx, now, cat, tenant, add); err != nil {

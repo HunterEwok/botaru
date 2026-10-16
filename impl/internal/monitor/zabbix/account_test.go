@@ -40,9 +40,29 @@ func (z *fakeAccount) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return out
 	}
 	switch req.Method {
+	case "user.checkAuthentication":
+		// Answered only without authorization, for the token in the parameters.
+		var p struct {
+			Token string `json:"token"`
+		}
+		_ = json.Unmarshal(req.Params, &p)
+		if r.Header.Get("Authorization") != "" || p.Token != "t" {
+			_ = json.NewEncoder(w).Encode(map[string]any{"jsonrpc": "2.0", "id": req.ID, "error": map[string]any{"code": -32602, "message": "Invalid params."}})
+			return
+		}
+		result = map[string]any{"userid": "7", "username": "adapter", "roleid": "11"}
 	case "user.get":
-		result = []any{map[string]any{"userid": "7", "roleid": "11", "role": map[string]any{"roleid": "11", "type": z.roleType}}}
+		// A wide token may list other users; the super admin comes first.
+		result = []any{map[string]any{"userid": "1", "roleid": "3"}, map[string]any{"userid": "7", "roleid": "11"}}
 	case "role.get":
+		var p struct {
+			RoleIDs []string `json:"roleids"`
+		}
+		_ = json.Unmarshal(req.Params, &p)
+		if len(p.RoleIDs) == 1 && p.RoleIDs[0] == "3" {
+			result = []any{map[string]any{"roleid": "3", "type": "3", "rules": map[string]any{}}}
+			break
+		}
 		result = []any{map[string]any{"roleid": "11", "type": z.roleType, "rules": map[string]any{
 			"ui": rules(z.ui), "ui.default_access": "0", "actions": rules(z.actions), "actions.default_access": "0"}}}
 	case "host.get":
@@ -81,7 +101,8 @@ func sortedKeys(m map[string]string) []string {
 	return out
 }
 
-// MON-4, OBS-11: the adapter reads its own user's role and scope through the API and reports
+// MON-4, OBS-11: the adapter reads its own user (by its token, not the first user a list holds),
+// that user's role and scope through the API and reports
 // the rights wider than the rule allows by their rule names, and the hosts it sees and may run
 // scripts on only as hashes of their names: the right to acknowledge problems; a demo account
 // that sees a demo2 node; a script on the farm node core1. No Zabbix name leaves the adapter.
