@@ -68,6 +68,14 @@ func (c *Core) ResolveModelHandle(ctx context.Context, handle string) (*ModelGra
 	if epoch != c.epoch || state != "active" || !until.After(now) {
 		return nil, refuse("fenced", "the lease of the handle is not alive")
 	}
+	// An offboarded tenant's provider key is not used again (LCY-1, GW-3).
+	var gone int
+	if err := c.st.Pool.QueryRow(ctx, `SELECT count(*) FROM tenant_states WHERE tenant = $1`, g.Tenant).Scan(&gone); err != nil {
+		return nil, err
+	}
+	if gone > 0 {
+		return nil, refuse("held", "the tenant is offboarded")
+	}
 	g.LeaseNo = leaseNo
 	if slot != nil {
 		g.Slot = *slot

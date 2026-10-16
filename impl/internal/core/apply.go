@@ -189,6 +189,16 @@ func (c *Core) applyOnce(ctx context.Context, op Operator, req ApplyRequest) (*A
 			continue
 		}
 		if d.Kind == "Tenant" {
+			// The id of a deleted tenant is a tombstone and is not used again (LCY-1, RET-3).
+			var dead int
+			if err := c.st.Pool.QueryRow(ctx, `SELECT count(*) FROM tenant_states WHERE tenant = $1 AND state = 'deleted'`, d.Name).Scan(&dead); err != nil {
+				return nil, err
+			}
+			if dead > 0 {
+				e.Code, e.Path = "gone", fmt.Sprintf("/manifests/%d/metadata/name", i)
+				res.Errors = append(res.Errors, e)
+				continue
+			}
 			spec, _ := v["spec"].(map[string]any)
 			if c.cfg.TestBench && spec["kind"] != "test" {
 				// A test bench store never holds a tenant other than kind: test (APR-9).

@@ -325,6 +325,12 @@ func (c *Core) holdChanged(ctx context.Context, tx pgx.Tx, now time.Time, h Hold
 			return 0, err
 		}
 	}
+	// The end of the last suspension resumes the tenant (LCY-1).
+	if event == "hold.released.v1" || event == "hold.expired.v1" {
+		if err := c.tenantResumed(ctx, tx, now, h); err != nil {
+			return 0, err
+		}
+	}
 	// A new hold pauses the campaigns it covers in the same transaction (ORC-11).
 	if event == "hold.set.v1" {
 		if err := c.pauseHeldCampaigns(ctx, tx, now, h.Scope.Tenant); err != nil {
@@ -382,6 +388,14 @@ func (c *Core) HoldRelease(ctx context.Context, a HoldActor, req HoldReleaseRequ
 			}
 			if err := c.personCap(ctx, tx, now, a, "hold.release"); err != nil {
 				return err
+			}
+		}
+		// There is no way back from offboarding: its hold stays (LCY-1).
+		if h.Scope.Kind == "tenant" && h.Reason == "offboarding" {
+			if state, _, err := tenantState(ctx, tx, h.Scope.Tenant); err != nil {
+				return err
+			} else if state != "" {
+				return refuse("forbidden", "the hold of an offboarded tenant is not released")
 			}
 		}
 		if rankOrder[a.Rank] > rankOrder[h.AuthorKind] {
