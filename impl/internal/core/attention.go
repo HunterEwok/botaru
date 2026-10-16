@@ -377,8 +377,9 @@ func (c *Core) limitedCard(kind, subjectID string) bool {
 // deferSubjectExpiry moves the expiry of a subject without a first delivery of its card to
 // count from next at the earliest. It covers a proposal's presentation, a memory record's
 // deadline and the presentation (and so the expiry) of a promotion case or an attribution; a
-// person's request keeps its deadline, which counts from the first delivery. self_measured_card
-// keeps its own window, counted from its sending in the proposal record (firstCardDelivery).
+// person's request keeps its deadline, which counts from the first delivery. The first delivery
+// sets the presentation again to its own time, earlier or later than this. self_measured_card
+// has its own window, which counts from its first delivery (firstCardDelivery).
 func deferSubjectExpiry(ctx context.Context, tx pgx.Tx, kind, subjectKind, id string, next time.Time) error {
 	if kind == selfMeasuredCard {
 		return nil
@@ -437,12 +438,13 @@ func (c *Core) subjectExpiry(ctx context.Context, tx pgx.Tx, tv *TenantView, sub
 // it (APR-15): the presentation time of a proposal, the deadline of a memory record set to the
 // first delivery plus its card TTL, the deadline of a person's request moved by the time
 // since it was created, and the presentation of a promotion case (its expiry moved with it) or
-// an attribution, from which its 7 days count. self_measured_card, a later card on a proposal
-// that was already presented, is not a first delivery of its subject: its window stays counted
-// from its sending in the proposal record.
+// an attribution, from which its 7 days count; the presentation becomes this delivery even when
+// a recipient over the limit moved it to a later day, so "Details" opened now counts (APR-14).
+// self_measured_card is a later card on a proposal that was already presented: its mark has
+// the card kind as subject kind, and its 7-day window in the proposal record counts from it.
 func (c *Core) firstCardDelivery(ctx context.Context, tx pgx.Tx, now time.Time, kind, subjectKind, id string) error {
 	if kind == selfMeasuredCard {
-		return nil
+		subjectKind = selfMeasuredCard
 	}
 	tag, err := tx.Exec(ctx, `INSERT INTO card_first_deliveries (subject_kind, subject_id, delivered_at) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING`,
 		subjectKind, id, now)
@@ -461,9 +463,12 @@ func (c *Core) firstCardDelivery(ctx context.Context, tx pgx.Tx, now time.Time, 
 		_, err = tx.Exec(ctx, `UPDATE subject_requests SET deadline_at = deadline_at + ($2 - created_at) WHERE id = $1 AND $2 > created_at`, id, now)
 	case "governance_case":
 		_, err = tx.Exec(ctx, `UPDATE governance_cases SET expires_at = expires_at + ($2 - presented_at), presented_at = $2
-			WHERE id = $1 AND presented_at IS NOT NULL AND expires_at IS NOT NULL AND presented_at < $2`, id, now)
+			WHERE id = $1 AND presented_at IS NOT NULL AND expires_at IS NOT NULL`, id, now)
 	case "attribution":
-		_, err = tx.Exec(ctx, `UPDATE attributions SET presented_at = $2 WHERE id = $1 AND presented_at IS NOT NULL AND presented_at < $2`, id, now)
+		_, err = tx.Exec(ctx, `UPDATE attributions SET presented_at = $2 WHERE id = $1 AND presented_at IS NOT NULL`, id, now)
+	case selfMeasuredCard:
+		_, err = tx.Exec(ctx, `UPDATE proposals SET record = jsonb_set(record, '{self_measured_card,at}', to_jsonb($2::text))
+			WHERE id = $1 AND record ? 'self_measured_card'`, id, fmtTime(now))
 	}
 	return err
 }

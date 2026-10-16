@@ -532,6 +532,14 @@ func (c *Core) metadataRetention(ctx context.Context, cat *Catalog) error {
 				f AS (DELETE FROM card_first_deliveries WHERE subject_kind = 'subject_request' AND subject_id IN (SELECT id FROM c)),
 				d AS (DELETE FROM subject_requests WHERE id IN (SELECT id FROM c) RETURNING id)
 				SELECT count(*) FROM d`),
+			// The mark of the first delivery of a card of a proposal, a promotion case or an
+			// attribution (APR-15) goes by the month of that delivery: by then the card's
+			// deadline is long past, and the mark holds only a subject id and a time.
+			meta(`WITH d AS (DELETE FROM card_first_deliveries WHERE (subject_kind, subject_id) IN (SELECT f.subject_kind, f.subject_id FROM card_first_deliveries f
+				WHERE (f.subject_kind IN ('proposal', 'self_measured_card') AND EXISTS (SELECT 1 FROM proposals x WHERE x.id = f.subject_id AND x.tenant = $1)
+					OR f.subject_kind = 'governance_case' AND EXISTS (SELECT 1 FROM governance_cases x WHERE x.id = f.subject_id AND x.tenant = $1)
+					OR f.subject_kind = 'attribution' AND EXISTS (SELECT 1 FROM attributions x WHERE x.id = f.subject_id AND x.tenant = $1))`+
+				fmt.Sprintf(in, "f.delivered_at", "f.delivered_at")+` LIMIT $4 FOR UPDATE OF f SKIP LOCKED) RETURNING 1) SELECT count(*) FROM d`),
 			// An export that is done or failed goes by the month it ended (LCY-2, SEC-10): its
 			// row holds ids, the sink, the recipient and the public key; its file stays a
 			// tombstone in files and goes by the file period. The row stays while its file still

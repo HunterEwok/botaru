@@ -762,7 +762,7 @@ func b0Role(ms []map[string]any) string {
 
 // The expiry of a promotion case and of an attribution counts from the first delivery of
 // their card (APR-15): the presentation (and the case's expiry with it) moves once, and
-// self_measured_card, a later card on a presented proposal, rewrites nothing.
+// self_measured_card, a later card on a presented proposal, has a mark of its own.
 func TestFirstDeliveryGovernance(t *testing.T) {
 	ctx := context.Background()
 	b := newBench(t)
@@ -803,6 +803,40 @@ func TestFirstDeliveryGovernance(t *testing.T) {
 	}
 	run(at, selfMeasuredCard, "proposal", "prp_fd")
 	if n := b.count(t, `SELECT count(*) FROM card_first_deliveries WHERE subject_kind = 'proposal' AND subject_id = 'prp_fd'`); n != 0 {
-		t.Fatalf("self_measured_card recorded a first delivery")
+		t.Fatalf("self_measured_card took the proposal's first delivery")
+	}
+	if n := b.count(t, `SELECT count(*) FROM card_first_deliveries WHERE subject_kind = 'self_measured_card' AND subject_id = 'prp_fd'`); n != 1 {
+		t.Fatalf("self_measured_card has no mark of its own")
+	}
+}
+
+// A promotion case with two recipients (APR-15, APR-14): the card of the one over the card
+// limit is claimed first and waits for the next day, the other's goes now, and that person
+// opens "Details" and confirms today: the first delivery sets the presentation to its time.
+func TestCaseDeferredRecipient(t *testing.T) {
+	ctx := context.Background()
+	b, _, _ := realizedBench(t)
+	bob := ids.PrincipalID()
+	if _, err := b.c.Principal(ctx, b.op, PrincipalRequest{Op: "principal.add", Subject: bob, Identity: "telegram:1002"}); err != nil {
+		t.Fatal(err)
+	}
+	b.exec(t, `INSERT INTO memberships (tenant, principal, grp, state, created_at) VALUES ('demo', $1, 'governors', 'active', now())`, bob)
+	for i := range defaultNoncriticalPerDay {
+		b.exec(t, `INSERT INTO deliveries (id, tenant, kind, addr, target_kind, target_id, exec_kind, exec_name, recipient, state, dataorigin,
+			created_at, updated_at, handed_at) VALUES ($2, 'demo', 'approval_card', 'approval_initiator', 'chat', 'direct:1002', 'channel', 'telegram', $1,
+			'delivered', 'code', botaru_now(), botaru_now(), botaru_now())`, bob, fmt.Sprintf("dl_bob%d", i))
+	}
+	b.loop(t, "governance")
+	b.exec(t, `UPDATE attributions SET state = 'rejected', record = record || '{"state": "rejected"}'`)
+	b.loop(t, "governance")
+	// bob's card comes first in the queue.
+	b.exec(t, `UPDATE deliveries SET seq = -seq WHERE recipient = $1 AND kind = 'promotion_card'`, bob)
+	cd, on := b.govCard(t, promotionCard)
+	if n := b.count(t, `SELECT count(*) FROM deliveries WHERE recipient = $1 AND kind = 'promotion_card' AND state = 'planned' AND run_at > botaru_now()`, bob); n != 1 {
+		t.Fatalf("the card over the limit did not wait: %d", n)
+	}
+	b.govDetails(t, cd, on)
+	if r, err := b.govDecide(t, cd, on, "confirm", "", ""); err != nil || r.State != "effective" {
+		t.Fatalf("confirm today %+v %v", r, err)
 	}
 }
