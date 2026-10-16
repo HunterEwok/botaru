@@ -75,13 +75,13 @@ func (s erasureSpec) runtimeOnly() bool {
 
 // erasureSpec is a request to record.
 type erasureSpec struct {
-	Scope   ErasureScope
-	Reason  string
-	Author  string // a principal, or "" for system
+	Scope  ErasureScope
+	Reason string
+	Author string // a principal, or "" for system
 	// RuntimeWorker is, for bot_retired, the worker whose runtime purges the identity's
 	// runtime_internal sessions and memory (MEM-9); the recorded scope stays (tenant, bot).
 	RuntimeWorker string
-	Needles []string
+	Needles       []string
 	// Found are the ids each store's match found, for the erasure of an erase_match: an
 	// empty list for a store that found nothing, no key for one that could not be searched.
 	Found map[string][]string
@@ -266,8 +266,8 @@ type erasureRow struct {
 	Scope                     ErasureScope
 	// RuntimeWorker is the worker whose runtime purges a retired identity's sessions (MEM-9).
 	RuntimeWorker string
-	Needles                   []string
-	Deadline                  time.Time
+	Needles       []string
+	Deadline      time.Time
 }
 
 func loadErasure(ctx context.Context, q store.Querier, id string, lock bool) (*erasureRow, error) {

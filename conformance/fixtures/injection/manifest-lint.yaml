@@ -73,7 +73,7 @@ cases:
     tool_yaml:
       params:
         url: {type: string, x-botaru-format: id}
-  expect: {result: rejected, stage: apply, note: the model has no URL or host argument}
+  expect: {result: rejected, stage: apply, error: tool_address_param, note: the model has no URL or host argument}
 - id: inj-6-05
   rules: [INJ-6]
   given:

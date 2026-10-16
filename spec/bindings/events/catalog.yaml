@@ -1,5 +1,5 @@
 registry: events-catalog
-version: 5
+version: 6
 description: >-
   Catalog of events for observability, hold, retention and erasure, time and
   external monitoring, plus events of campaigns, scripts, seats and proposal
@@ -140,7 +140,7 @@ entries:
     since: v0.1
     data_schema: spec/model/event-data/alarm.schema.json
     producer: [job]
-    severity: info
+    severity: warn
     origin: monitor
     rules: [MON-5, OBS-6]
   - id: alarm.service.control.rate.v1

@@ -290,6 +290,27 @@ func Check(p Plugin, forbidden map[string]bool) []Issue {
 		if !t.Untrusted() && t.OutputSchema != nil && freeText(t.OutputSchema) {
 			out = append(out, Issue{Code: "untrusted_output_false_text", Tool: t.Name})
 		}
+		// The address a tool reaches comes from the manifest or the catalog: the model has no
+		// URL or host argument other than a closed list (INJ-6).
+		egress := len(p.Network.Egress) > 0
+		for _, n := range sortedKeys(t.AllParams()) {
+			if ps := t.AllParams()[n]; AddressParam(n, ps) || egress && EgressOpen(ps) {
+				out = append(out, Issue{Code: "tool_address_param", Tool: t.Name, Path: n})
+			}
+		}
+		// A command that prints text written from outside, such as the service journal,
+		// declares untrusted output of class raw_logs (INJ-14).
+		for _, n := range sortedKeys(t.Commands) {
+			if !OutsideText(t.Commands[n].Argv) {
+				continue
+			}
+			if !t.Untrusted() {
+				out = append(out, Issue{Code: "untrusted_output_false_text", Tool: t.Name, Path: n})
+			}
+			if t.OutputClass != "raw_logs" {
+				out = append(out, Issue{Code: "untrusted_output_class", Tool: t.Name, Path: n})
+			}
+		}
 		// The model sees one schema per parameter name, so the tool and all its commands must
 		// agree on it; otherwise a value allowed for one command reaches another.
 		seen := map[string]map[string]any{}
@@ -341,6 +362,129 @@ func checkCommand(t Tool, name string, c Command, forbidden map[string]bool) []I
 		}
 	}
 	return out
+}
+
+// outsideTextPrograms are the programs whose output is text written from outside the farm:
+// journalctl prints the service journal (INJ-14). The skeleton names the journal as the
+// example and has no registry of such programs; ci/check_manifests.py keeps the same list.
+var outsideTextPrograms = map[string]bool{"journalctl": true}
+
+// OutsideText says whether a command prints text written from outside (INJ-14).
+func OutsideText(argv []string) bool {
+	return len(argv) > 0 && outsideTextPrograms[path.Base(argv[0])]
+}
+
+// addressWords are the parameter names, or the last word of a name, that carry a network
+// address: a URL, a host, a subnet or where to send (INJ-6). A plural (urls, hosts,
+// addresses) counts as the word. The weak words, target and dest, also name things other than
+// an address, so they count only on a string that can hold one: free or of an open format.
+var addressWords = map[string]bool{"url": true, "uri": true, "href": true, "endpoint": true, "host": true, "hostname": true,
+	"address": true, "addr": true, "ip": true, "link": true, "server": true, "domain": true, "fqdn": true, "subnet": true, "cidr": true}
+
+var weakAddressWords = map[string]bool{"target": true, "dest": true}
+
+// openFormats are the formats of spec/model/formats.yaml whose values can hold an address:
+// prose (search_query) and a subnet (ipv4_subnet24).
+var openFormats = map[string]bool{"search_query": true, "ipv4_subnet24": true}
+
+// addressWord says whether a parameter name, or its last word after _, or its plural, is in
+// words.
+func addressWord(name string, words map[string]bool) bool {
+	w := name
+	if i := strings.LastIndex(name, "_"); i >= 0 {
+		w = name[i+1:]
+	}
+	return words[w] || words[strings.TrimSuffix(w, "s")] || strings.HasSuffix(w, "es") && words[strings.TrimSuffix(w, "es")]
+}
+
+// closedValues says whether a schema's values are a closed list: enum, const or a catalog list.
+func closedValues(s map[string]any) bool {
+	for _, k := range []string{"enum", "enum_from", "const"} {
+		if _, ok := s[k]; ok {
+			return true
+		}
+	}
+	return false
+}
+
+// openString says whether a schema is a string that can hold an address: without a format or
+// of an open format.
+func openString(s map[string]any) bool {
+	if s["type"] != "string" {
+		return false
+	}
+	f, ok := s["x-botaru-format"].(string)
+	return !ok || openFormats[f]
+}
+
+// anyBranch says whether a branch of anyOf or oneOf passes the test, and whether the schema
+// has such branches.
+func anyBranch(s map[string]any, test func(map[string]any) bool) (match, has bool) {
+	for _, k := range []string{"anyOf", "oneOf"} {
+		bs, _ := s[k].([]any)
+		for _, b := range bs {
+			has = true
+			if bm, _ := b.(map[string]any); test(bm) {
+				match = true
+			}
+		}
+	}
+	return match, has
+}
+
+// AddressParam says whether a tool parameter is a URL or host argument of the model: its name
+// is an address word and its values are not a closed list (enum, const or a catalog list), so
+// the model would choose where the tool reaches (INJ-6). The items of an array count under the
+// array's name, the properties of an object under their own names, and a parameter is one when
+// any branch of its anyOf or oneOf is.
+func AddressParam(name string, s map[string]any) bool {
+	if closedValues(s) {
+		return false
+	}
+	if m, has := anyBranch(s, func(b map[string]any) bool { return AddressParam(name, b) }); m || has && s["type"] == nil {
+		return m
+	}
+	switch s["type"] {
+	case "array":
+		items, _ := s["items"].(map[string]any)
+		return AddressParam(name, items)
+	case "object":
+		props, _ := s["properties"].(map[string]any)
+		for _, k := range sortedKeys(props) {
+			if ps, _ := props[k].(map[string]any); AddressParam(k, ps) {
+				return true
+			}
+		}
+		return false
+	}
+	return addressWord(name, addressWords) || addressWord(name, weakAddressWords) && openString(s)
+}
+
+// EgressOpen says whether a parameter of a tool whose plugin has network egress can carry an
+// address whatever its name: a string, also in an array, an object or a branch of anyOf or
+// oneOf, that is free (no closed list and no format) or of an open format such as search_query
+// or ipv4_subnet24. On such a plugin it would let the model name where the tool reaches (INJ-6).
+func EgressOpen(s map[string]any) bool {
+	if closedValues(s) {
+		return false
+	}
+	if m, _ := anyBranch(s, EgressOpen); m {
+		return true
+	}
+	switch s["type"] {
+	case "array":
+		items, _ := s["items"].(map[string]any)
+		return EgressOpen(items)
+	case "object":
+		props, _ := s["properties"].(map[string]any)
+		for _, k := range sortedKeys(props) {
+			if ps, _ := props[k].(map[string]any); EgressOpen(ps) {
+				return true
+			}
+		}
+		return false
+	}
+	return openString(s)
 }
 
 // freeParam says whether a parameter schema is a string without enum, enum_from, const or

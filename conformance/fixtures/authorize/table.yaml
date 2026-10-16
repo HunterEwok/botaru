@@ -230,13 +230,13 @@ cases:
   given: {tenant: demo}
   steps:
   - lint: {task_type_yaml: 'data_class: pii'}
-  expect: {result: rejected, stage: apply}
+  expect: {result: rejected, stage: apply, error: cap_data_class}
 - id: authz-13
   rules: [PRM-5]
   given: {tenant: demo}
   steps:
   - lint: {tool_yaml: 'output_class: secret'}
-  expect: {result: rejected, stage: apply}
+  expect: {result: rejected, stage: apply, error: cap_data_class}
 # Permissions do not grow along a chain (PRM-6)
 - id: authz-14
   rules: [PRM-6, IDN-2]
@@ -273,7 +273,7 @@ cases:
   given: {tenant: demo}
   steps:
   - lint: {groups_yaml: 'user: task:ops.*', adds_type: ops.investigate.v1 (tier 1)}
-  expect: {result: rejected, stage: apply, note: the asterisk would make an ordinary group privileged}
+  expect: {result: rejected, stage: apply, error: privileged_group, note: the asterisk would make an ordinary group privileged}
 - id: authz-17
   rules: [PRM-7, APR-5]
   given: {tenant: demo}
