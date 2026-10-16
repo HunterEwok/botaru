@@ -125,8 +125,8 @@ fx-man-tt-01#6
 fx-man-tt-01#7
 fx-man-v02-01#0
 fx-man-v02-01#1
-fx-man-v02-01#5
-fx-man-v02-01#6
+fx-man-v02-01#10
+fx-man-v02-01#9
 fx-man-v02-ret-01#1
 fx-man-v02-ret-01#2
 fx-man-v02-ret-01#3

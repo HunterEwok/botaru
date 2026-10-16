@@ -1,5 +1,5 @@
 registry: decision-points
-version: 5
+version: 6
 description: >-
   Registry of human decisions (APR-12): one row for each kind of card and
   notice. A kind without a row does not pass the skeleton CI, and the core does not create such
@@ -499,6 +499,16 @@ entries:
     undo: none
     urgent: false
     rules: [APR-12, MGR-50]
+  - id: commission_weekly
+    since: v0.3
+    kind: notice
+    subject: null
+    recipients: tenant admins with admin:governance, once a week; built by code from numbers only, per lens and seat the accuracy of the holder in its lens (or insufficient) with the scored and missed forecasts, the accountability mode, the cases of GOV-38 and GOV-41 found in the week and the departures that happened or wait; no buttons and no model text (COM-17, GOV-36)
+    ttl: none
+    on_silence: {state: null, outcome: nothing}
+    undo: none
+    urgent: false
+    rules: [APR-12, COM-17, GOV-36]
   - id: replay_item
     since: v0.3
     kind: decision

@@ -36,11 +36,13 @@
       "description": "v0.1 and v0.2: stops the seat; only for a class whose alarm is built from series with dataorigin: code (GOV-28). A v0.3 core does not use it: from v0.3 the class has manager_accountable (MGR-55)."
     },
     "manager_accountable": {
+      "x-botaru-version": "v0.3",
       "type": "boolean",
       "default": false,
       "description": "From v0.3: an incident of the class can be preventable by the farm manager (GOV-47, MGR-45); only for a class whose alarm is built from series with dataorigin: code (GOV-48, MGR-55)."
     },
     "area": {
+      "x-botaru-version": "v0.3",
       "enum": [
         "security",
         "operational",
@@ -49,6 +51,7 @@
       "description": "From v0.3: which lenses answer for a recommended change linked to an incident of the class, by the accountable_for of spec/model/lenses.yaml (GOV-41, MGR-55)."
     },
     "problem_codes": {
+      "x-botaru-version": "v0.3",
       "type": "array",
       "maxItems": 20,
       "uniqueItems": true,

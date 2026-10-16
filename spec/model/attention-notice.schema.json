@@ -50,10 +50,20 @@
       "description": "What the manager proposes: an operation code, or the id of a card or proposal that code issued.",
       "properties": {
         "op": {
-          "type": "string",
-          "pattern": "^[a-z][a-z0-9_]*$",
-          "maxLength": 64,
-          "description": "Operation code."
+          "enum": [
+            "hold",
+            "quarantine",
+            "drain",
+            "preempt",
+            "cancel",
+            "pin_task",
+            "request_action",
+            "release",
+            "service_start",
+            "service_stop",
+            "service_restart"
+          ],
+          "description": "Operation code: an operation of spec/model/control-ops.yaml that a core may serve to the seat (MGR-9, MGR-15), or a service verb as service_<verb> (MGR-52). notify is not one: from v0.3 this notice is the only way the seat reaches people. The list is closed so that no free model text reaches people; a core offers only the operations it serves, a subset of this list."
         },
         "ref": {
           "$ref": "urn:botaru:schema:common:1#/$defs/object_id",

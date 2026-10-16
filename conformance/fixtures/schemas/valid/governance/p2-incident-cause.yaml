@@ -1,0 +1,7 @@
+schema: spec/model/p2-incident-cause-request.schema.json
+rules: [MGR-8, GOV-38]
+description: 'incident.cause requests that the schema accepts: an external cause and a cause that is not known.'
+cases:
+  - {incident: inc_01JB8M00000000000000000318, cause: external_load}
+  - {incident: inc_01JB8M00000000000000000318, cause: attack}
+  - {incident: inc_01JB8M00000000000000000318, cause: unknown}

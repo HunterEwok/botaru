@@ -13,6 +13,7 @@ import (
 
 	"github.com/HunterEwok/botaru/impl/internal/manifest"
 	"github.com/HunterEwok/botaru/impl/internal/money"
+	"github.com/HunterEwok/botaru/impl/internal/spec"
 )
 
 // withV03 makes the core claim v0.3 for the rest of the test. Benches apply their catalog
@@ -26,13 +27,12 @@ func withV03(t *testing.T) {
 // version.
 func setClaimsV03(t *testing.T, on bool) {
 	t.Helper()
-	prev := v03Forced.Load()
-	v := int32(v03Off)
+	v := "v0.2"
 	if on {
-		v = v03On
+		v = "v0.3"
 	}
-	v03Forced.Store(v)
-	t.Cleanup(func() { v03Forced.Store(prev) })
+	prev := spec.SetClaimOverride(v)
+	t.Cleanup(func() { spec.SetClaimOverride(prev) })
 }
 
 // accountableEdit marks the disk class manager_accountable and adds disk_filling on the same
@@ -78,8 +78,9 @@ func restricted(t *testing.T, b *bench, tenant, incident string) bool {
 // that stops_manager stops nothing any more (GOV-47, MGR-45, MGR-47, MGR-55).
 func TestManagerPreventableV03(t *testing.T) {
 	ctx := context.Background()
-	b := newManagerBenchWith(t, nil, []map[string]any{fillingClass()}, accountableEdit)
+	// manager_accountable is a v0.3 field, which apply accepts only under the v0.3 claim (MAN-11).
 	withV03(t)
+	b := newManagerBenchWith(t, nil, []map[string]any{fillingClass()}, accountableEdit)
 	op := b.farmOperator(t)
 	if _, err := b.c.SeatAssign(ctx, b.farmOp(), SeatRequest{Seat: managerSeatID}); err != nil {
 		t.Fatal(err)
@@ -364,7 +365,18 @@ func TestManagerAttentionV03(t *testing.T) {
 	if out := seatCall(t, b, handle, attentionToolName, map[string]any{"sees": "free text", "object": d.ID, "threat": "x", "proposal": map[string]any{}}); out["code"] != "input_schema_invalid" {
 		t.Fatalf("free text %v", out)
 	}
-	// The operation is a closed code, never free words.
+	// The operation is a closed code, never free words, and the core list is a subset of the
+	// schema enum.
+	raw, err := b.c.spec.Raw("urn:botaru:schema:attention-notice:1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	enum, _ := mmapAny(mmapAny(mmapAny(mmapAny(raw["properties"])["proposal"])["properties"])["op"])["enum"].([]any)
+	for _, op := range attentionOps() {
+		if !slices.Contains(enum, op) {
+			t.Fatalf("op %v is not in the schema enum %v", op, enum)
+		}
+	}
 	if out := seatCall(t, b, handle, attentionToolName, map[string]any{"sees": "disk_growth", "object": d.ID, "threat": "disk_full_soon",
 		"proposal": map[string]any{"op": "call_the_admin_now"}}); out["code"] != "input_schema_invalid" {
 		t.Fatalf("a free operation %v", out)
@@ -480,7 +492,7 @@ func TestParagraphChecked(t *testing.T) {
 	}
 }
 
-// postmortemDoc is a manager.postmortem.v1 type for the tests; no example declares one.
+// postmortemDoc is a manager.postmortem.v1 type for the tests, as examples/tasktypes declares it.
 func postmortemDoc() map[string]any {
 	return map[string]any{"apiVersion": "botaru/v1alpha1", "kind": "TaskType", "metadata": map[string]any{"name": postmortemType},
 		"spec": map[string]any{"title": "Analysis after an incident", "worker_kind": "agent", "purpose": "manage", "tier": 1, "data_class": "internal",

@@ -1,6 +1,6 @@
 # Operation map of the ports. Edited together with the port sheets spec/ports/*.md.
 registry: operations
-version: 2
+version: 3
 description: 'Operation map of the ports: one row per sheet operation. id is <port>.<operation>; port is P1-P4, C1-C4, E1-E5 or
   T (the test-control port spec/ports/test-control.md); since is the skeleton version; request and response are the name of the schema spec/model/<name>.schema.json
   (null if there is no schema, and then note says why); rules are rule numbers. For edge operations request is what the edge receives
@@ -862,8 +862,8 @@ entries:
     since: v0.1
     request: p2-seat-resume-request
     response: done-response
-    rules: [GOV-22, IDN-10, PRM-14]
-    profiles: [core, governance]
+    rules: [GOV-22, GOV-47, IDN-10, MGR-47, PRM-14]
+    profiles: [core, governance, manager]
     contract: false
     operator_only: true
   - id: P2.control.revert
@@ -938,6 +938,15 @@ entries:
     request: p2-incident-dismiss-request
     response: done-response
     rules: [MGR-8, GOV-13]
+    profiles: [manager, governance]
+    contract: false
+  - id: P2.incident.cause
+    port: P2
+    op: incident.cause
+    since: v0.3
+    request: p2-incident-cause-request
+    response: done-response
+    rules: [MGR-8, GOV-38, GOV-41]
     profiles: [manager, governance]
     contract: false
   - id: P2.manager.direct

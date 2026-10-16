@@ -275,3 +275,20 @@ entries:
       Only widened: the lens names in min and weights may now contain digits, so a tenant lens such as x_iso27001 gets
       its weight (COM-19). The check counts any change of propertyNames as breaking.
     decisions: [D-117]
+  - schema: spec/model/attention-notice.schema.json
+    change: breaking
+    removed: 2026-10-16
+    reason: >-
+      The operation code of proposal.op was an open pattern; MGR-52 allows only closed fields that code checks, so op
+      is now an enum of the operations of control-ops.yaml that a core may serve to the seat (all but notify, since
+      this notice is itself the seat's only way to people) and the service verbs service_start, service_stop and
+      service_restart. The schema was never released; the reference core offers a subset of these values.
+    decisions: [D-110, D-118]
+  - schema: spec/model/p2-seat-resume-request.schema.json
+    change: breaking
+    removed: 2026-10-16
+    reason: >-
+      It widens the schema of the branch point, where incident was required: a body now names exactly one of
+      incident (up to v0.2, GOV-22) or tenant (from v0.3, GOV-47), and a body with only seat stays invalid as
+      before; the check counts the new oneOf as a narrowing.
+    decisions: [D-118]

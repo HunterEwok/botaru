@@ -2,16 +2,19 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "urn:botaru:schema:p2-commission-status-response:1",
   "title": "P2 commission.status: response",
-  "description": "The tenant's commission lenses and who covers them: seats or the fallback role (COM-7); usage of the review line (COM-6); for a lens the shadow share or \"shadow off\" (shadow: off, COM-10); since v0.2 \"commission locked\" (commission_locked) with the basis of the commission_review card (GOV-35). Denial: forbidden.",
+  "description": "The tenant's commission lenses and who covers them: seats or the fallback role (COM-7); usage of the review line (COM-6); for a lens the shadow share or \"shadow off\" (shadow: off, COM-10); since v0.2 \"commission locked\" (commission_locked) with the basis of the commission_review card (GOV-35). From v0.3: governance_v03_since, the accountability mode with its counts (GOV-36, GOV-42) and per seat holder the accuracy in its lens with the numbers of scored and missed forecasts (COM-17). Denial: forbidden.",
   "x-botaru-direction": "output",
   "x-botaru-rules": [
     "COM-6",
     "COM-7",
     "COM-8",
     "COM-10",
+    "COM-17",
     "DIG-5",
     "GOV-14",
-    "GOV-35"
+    "GOV-35",
+    "GOV-36",
+    "GOV-42"
   ],
   "type": "object",
   "required": [
@@ -34,6 +37,18 @@
       ],
       "description": "Since v0.2: when the v0.2 governance rules took effect in the tenant (audit governance.enabled); null before. Successes whose promotion probation ended earlier give no trigger (GOV-14).",
       "x-botaru-version": "v0.2"
+    },
+    "governance_v03_since": {
+      "anyOf": [
+        {
+          "$ref": "urn:botaru:schema:common:1#/$defs/datetime"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "description": "Since v0.3: the time of the audit record governance.v03_enabled, written by the first apply of the tenant on a core that claims v0.3; null before. Only reviews, verdicts, recommendations and confirmations after it count (GOV-36).",
+      "x-botaru-version": "v0.3"
     },
     "lenses": {
       "type": "array",
@@ -85,6 +100,31 @@
                 },
                 "held_by_stop": {
                   "type": "boolean"
+                },
+                "accuracy": {
+                  "anyOf": [
+                    {
+                      "type": "number",
+                      "maximum": 1
+                    },
+                    {
+                      "const": "insufficient"
+                    }
+                  ],
+                  "description": "Since v0.3: the accuracy of the holder in this lens over its forecasts scored in the last 180 days, 1 - B / B_ref, above 0 is better than the reference; insufficient below 10 scored forecasts (COM-17). Compared only within the lens.",
+                  "x-botaru-version": "v0.3"
+                },
+                "scored_forecasts": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "description": "Since v0.3: the number of the holder's forecasts scored in the last 180 days (COM-16, COM-17).",
+                  "x-botaru-version": "v0.3"
+                },
+                "missed_forecasts": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "description": "Since v0.3: the number of reviews whose warning disagrees with their own forecast, counted with the worst Brier score (COM-17).",
+                  "x-botaru-version": "v0.3"
                 }
               }
             },
@@ -201,6 +241,52 @@
       },
       "description": "From v0.2: the audit sample over 180 days: the number of answers, the weighted share of \"Would accept\" and the flag commission_underrates (DIG-5).",
       "x-botaru-version": "v0.2"
+    },
+    "accountability": {
+      "type": "object",
+      "description": "Since v0.3: the accountability of the commission in the tenant (GOV-36, GOV-42).",
+      "x-botaru-version": "v0.3",
+      "properties": {
+        "mode": {
+          "enum": [
+            "shadow",
+            "on"
+          ],
+          "description": "The charter field commission.accountability; shadow by default (GOV-36)."
+        },
+        "accountability_on_since": {
+          "anyOf": [
+            {
+              "$ref": "urn:botaru:schema:common:1#/$defs/datetime"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "The time of the audit record commission.accountability_on of the first apply with on; null before (GOV-36)."
+        },
+        "min_forecasts": {
+          "type": "integer",
+          "minimum": 8,
+          "maximum": 20,
+          "description": "commission.accountability_min_forecasts of the charter: 20 by default, never below 8 (GOV-36, D-116)."
+        },
+        "rejection_links_confirmed": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Confirmed links of incidents to proposals the commission rejected (GOV-38, GOV-40)."
+        },
+        "departures_waiting": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Confirmed departures for a link that wait for their turn (at most one per tenant in 30 days, GOV-42)."
+        },
+        "departures_done": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Departures for a link that happened (GOV-42)."
+        }
+      }
     }
   }
 }
