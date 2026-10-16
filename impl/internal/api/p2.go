@@ -334,6 +334,8 @@ func (s *Server) p2(w http.ResponseWriter, r *http.Request) {
 		default:
 			out, err = s.c.ModelGrantList(ctx, oper, req)
 		}
+	case "kb.upload":
+		out, err = s.kbUpload(ctx, oper, m)
 	case "msg.list":
 		req, derr := decode[core.MsgListRequest](m)
 		if derr != nil {

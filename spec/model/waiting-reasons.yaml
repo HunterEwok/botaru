@@ -1,5 +1,5 @@
 registry: waiting-reasons
-version: 3
+version: 4
 description: >-
   Reasons why a task in `submitted` cannot be handed out right now. A waiting task carries the field
   `waiting_reason` of the task record from this list; work is not dropped under pressure, and the attempt
@@ -76,3 +76,7 @@ entries:
     meaning: 'The same role has a running attempt in the conversation, or an earlier task of the conversation waits (`conversation_concurrency: serial`).'
     predicate: D17
     rules: [DSP-7, MEM-5]
+  - id: skill_missing
+    since: v0.2
+    meaning: A skill the role pins has no core copy whose tree hash matches the skill-ref; the role's tasks wait until an apply brings it (SKL-2).
+    rules: [DSP-7, SKL-2]
