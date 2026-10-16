@@ -219,7 +219,7 @@ func (c *Core) tenantAudit(ctx context.Context, tx pgx.Tx, now time.Time, op Ope
 // cancelTenantApprovals cancels every pending approval of a tenant with the reason held, as a
 // suspension or an offboarding does (LCY-1).
 func (c *Core) cancelTenantApprovals(ctx context.Context, tx pgx.Tx, now time.Time, tenant string) error {
-	rows, err := tx.Query(ctx, `SELECT `+approvalColumns+` FROM approvals WHERE tenant = $1 AND state = 'pending' ORDER BY id FOR UPDATE`, tenant)
+	rows, err := tx.Query(ctx, `SELECT `+approvalColumns+` FROM approvals WHERE tenant = $1 AND state IN ('pending', 'approved') ORDER BY id FOR UPDATE`, tenant)
 	if err != nil {
 		return err
 	}

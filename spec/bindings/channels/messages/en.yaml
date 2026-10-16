@@ -179,6 +179,7 @@ texts:
   translator.none: "none"
   card.button.pause: Pause
   card.button.cancel: Cancel
+  card.button.full_list: Full list
   card.realization.title: "Change to carry out: {title}"
   card.rollback.title: "A change may need reverting: {title}"
   proposal.digest: "Recommended bot proposals ({count}); each has its card in your private chat:\n{items}"

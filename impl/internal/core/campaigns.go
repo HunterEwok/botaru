@@ -1532,10 +1532,9 @@ func (c *Core) campaignRights(ctx context.Context, tx pgx.Tx, now time.Time, tv 
 // action (ORC-12), or the tenant queue of its type is at queue_max.
 func (c *Core) itemWait(ctx context.Context, tx pgx.Tx, cat *Catalog, cmp *campaignRow, resource string, queueMax int) (string, error) {
 	if a := cmp.Rec.action(); a != "" && cat.Actions[a].Exclusive == "resource" {
-		act := cat.Actions[a]
-		var busy bool
-		if err := tx.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM toolcalls WHERE tenant = $1 AND access = 'write' AND state IN ('queued', 'leased')
-			AND tool = $2 AND (target_host = $3 OR target_resource = $3))`, cmp.Tenant, toolspec.RightName(act.Executor.Plugin, act.Executor.Tool), resource).Scan(&busy); err != nil {
+		// Single approvals count too, under the same resource lock (approvalwait.go).
+		busy, err := resourceBusy(ctx, tx, cmp.Tenant, cat.Actions[a], resource)
+		if err != nil {
 			return "", err
 		}
 		if busy {
@@ -2185,25 +2184,17 @@ func mayDecideCampaign(tv *TenantView, groups []string, cmp *campaignRow) bool {
 	return hasCap(tv, groups, "task:"+cmp.Rec.itemType())
 }
 
-// planCampaignCards plans the approval card to every approver, and the full list as a separate
-// delivery when the card shows only the first items (ORC-2).
+// planCampaignCards plans the approval card to every approver. A card that shows only the
+// first items carries the "full list" button, whose press gets the list as a separate delivery
+// (ORC-2, campaignlist.go).
 func (c *Core) planCampaignCards(ctx context.Context, tx pgx.Tx, now time.Time, cat *Catalog, tv *TenantView, cmp *campaignRow) error {
 	people, err := campaignApprovers(ctx, tx, now, tv, cmp)
-	if err != nil {
-		return err
-	}
-	n, err := campaignCount(ctx, tx, cmp.ID)
 	if err != nil {
 		return err
 	}
 	for _, p := range people {
 		if err := c.planCampaignCard(ctx, tx, now, tv, cmp, campaignApprovalCard, campaignApprovalCard, p); err != nil {
 			return err
-		}
-		if n.total() > campaignItemFirstOnCard {
-			if err := c.planCampaignCard(ctx, tx, now, tv, cmp, campaignListKind, campaignApprovalCard, p); err != nil {
-				return err
-			}
 		}
 	}
 	_ = cat
@@ -2401,6 +2392,10 @@ func (c *Core) buildCampaignCard(ctx context.Context, q store.Querier, cat *Cata
 		}
 		buttons = append(buttons, button("cancel"))
 	}
+	// The card shows the first items; the full list comes on a press (ORC-2).
+	if kind == campaignApprovalCard && n.total() > campaignItemFirstOnCard {
+		buttons = append(buttons, button("full_list"))
+	}
 	card["buttons"] = buttons
 	return card, nil
 }
@@ -2481,6 +2476,9 @@ func (c *Core) decideCampaign(ctx context.Context, w *Worker, ob OnBehalf, req D
 		command = "approve"
 	case "reject":
 		command = "reject"
+	case "full_list":
+		// Not a decision: the list of every item goes to the person who pressed (ORC-2).
+		return c.campaignFullList(ctx, w, ob, req)
 	default:
 		return nil, refuse("input_schema_invalid", "a campaign is approved or rejected")
 	}

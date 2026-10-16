@@ -13,7 +13,7 @@ import (
 	"github.com/HunterEwok/botaru/impl/internal/mcp"
 )
 
-// campaignHosts adds the machines web2..web4 and the selector webs to the tool bench catalog.
+// campaignHosts adds the machines web2..web6 and the selector webs to the tool bench catalog.
 func campaignHosts(ms []map[string]any) {
 	for _, m := range ms {
 		if m["kind"] != "Catalog" {
@@ -21,7 +21,7 @@ func campaignHosts(ms []map[string]any) {
 		}
 		s := m["spec"].(map[string]any)
 		hosts := s["hosts"].([]any)
-		for _, h := range []string{"web2", "web3", "web4"} {
+		for _, h := range []string{"web2", "web3", "web4", "web5", "web6"} {
 			hosts = append(hosts, map[string]any{"id": h})
 		}
 		s["hosts"] = hosts

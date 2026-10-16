@@ -2273,7 +2273,8 @@ func (c *Core) cancelRun(ctx context.Context, tx pgx.Tx, now time.Time, cat *Cat
 				if err != nil {
 					return err
 				}
-				if a.State == "pending" {
+				// One that waits for its resource has not run yet either (ORC-12).
+				if a.State == "pending" || a.State == "approved" {
 					if err := c.closeApproval(ctx, tx, now, a, "canceled", reason); err != nil {
 						return err
 					}

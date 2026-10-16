@@ -70,6 +70,7 @@ var subjectPrefixes = map[string]string{"a": "approval", "prp": "proposal", "cmp
 var buttonLabels = map[string]string{
 	"approve": "card.button.approve", "reject": "card.button.reject", "details": "card.button.details", "remind": "card.copy.remind_button",
 	"accept": "card.button.accept", "defer": "card.button.defer", "pause": "card.button.pause", "cancel": "card.button.cancel",
+	"full_list": "card.button.full_list",
 }
 
 // titleKeys are the title text keys of the card kinds that are not an approval card.
