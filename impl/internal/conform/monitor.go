@@ -109,8 +109,9 @@ func (x *exec) seedCatalog(ctx context.Context) (*outcome, error) {
 		return nil, nil
 	}
 	x.catalog = deepCopy(sp)
-	t := x.tenant()
-	m := map[string]any{"apiVersion": "botaru/v1alpha1", "kind": "Catalog", "metadata": map[string]any{"name": t, "tenant": t}, "spec": x.catalog}
+	md := map[string]any{"name": x.tenant()}
+	md["tenant"] = x.tenant()
+	m := map[string]any{"apiVersion": "botaru/v1alpha1", "kind": "Catalog", "metadata": md, "spec": x.catalog}
 	return x.apply(ctx, []map[string]any{m}, false)
 }
 
