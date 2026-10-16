@@ -240,9 +240,9 @@ func (c *Core) taskMark(rec []byte, class string) string {
 	return c.higherMark(class, r.DataMark)
 }
 
-// revokeWorkOf ends the tasks a principal has in work once their access no longer covers
+// revokeWorkOf cancels the tasks a principal has in work once their access no longer covers
 // them: the lease and handles go in the same transaction, so the worker is fenced at its next
-// call and no more task data reaches the model in their name (PRM-8, FEN-4).
+// call and no more task data reaches the model in their name (PRM-3, PRM-8, FEN-4).
 func (c *Core) revokeWorkOf(ctx context.Context, tx pgx.Tx, now time.Time, tv *TenantView, principal string) error {
 	cat, err := c.Catalog(ctx)
 	if err != nil {
@@ -254,7 +254,8 @@ func (c *Core) revokeWorkOf(ctx context.Context, tx pgx.Tx, now time.Time, tv *T
 	}
 	// An action task is not stopped: its write call may already run; only a pending approval
 	// is canceled (APR-6).
-	rows, err := tx.Query(ctx, `SELECT id, type, record FROM tasks WHERE tenant = $1 AND initiator = $2 AND state = 'working' AND type NOT LIKE 'action.%' ORDER BY id FOR UPDATE`, tv.Name, principal)
+	// Queued tasks go in the same transaction as running ones (spec/lifecycles/task.md, PRM-3).
+	rows, err := tx.Query(ctx, `SELECT id, type, record FROM tasks WHERE tenant = $1 AND initiator = $2 AND state IN ('submitted', 'working') AND type NOT LIKE 'action.%' ORDER BY id FOR UPDATE`, tv.Name, principal)
 	if err != nil {
 		return err
 	}
@@ -279,20 +280,54 @@ func (c *Core) revokeWorkOf(ctx context.Context, tx pgx.Tx, now time.Time, tv *T
 		if reason == "" {
 			continue
 		}
-		if _, err := tx.Exec(ctx, `DELETE FROM handles WHERE work_id = $1`, w.id); err != nil {
-			return err
-		}
-		if _, err := tx.Exec(ctx, `UPDATE leases SET state = 'revoked', reason = $3, closed_at = $2 WHERE work_id = $1 AND state = 'active'`, w.id, now, reason); err != nil {
-			return err
-		}
-		if err := c.settleMessages(ctx, tx, now, w.id); err != nil {
-			return err
-		}
-		if err := c.failTask(ctx, tx, now, tv.Name, w.id, principal, w.rec, reason); err != nil {
+		if err := c.revokeTask(ctx, tx, now, tv.Name, w.id, principal, w.rec, reason); err != nil {
 			return err
 		}
 	}
 	return c.recheckApprovalsOf(ctx, tx, now, tv, principal)
+}
+
+// revokeTask cancels a task whose initiator lost access (PRM-3) with the ends a failure had:
+// the task.canceled event keeps the detailed access reason (PRM-8), a child answers its
+// parent's continuation (CNT-1..CNT-3), a scheduled slot ends, and for a lost right the origin
+// chat gets the code text task.canceled.rights_revoked.
+func (c *Core) revokeTask(ctx context.Context, tx pgx.Tx, now time.Time, tenant, id, initiator string, rec []byte, access string) error {
+	reason := revokedReason(access)
+	if err := c.cancelTaskIDsWith(ctx, tx, now, tenant, []string{id}, reason, map[string]any{"access_reason": access}); err != nil {
+		return err
+	}
+	if err := c.replyContinuation(ctx, tx, now, tenant, id, "canceled"); err != nil {
+		return err
+	}
+	if err := c.scheduleSlotEnded(ctx, tx, now, tenant, id, rec, reason); err != nil {
+		return err
+	}
+	if reason != "rights_revoked" {
+		return nil
+	}
+	var record treeRecord
+	if err := json.Unmarshal(rec, &record); err != nil {
+		return err
+	}
+	if !record.reportsToOrigin() {
+		return nil
+	}
+	_, err := c.planDelivery(ctx, tx, now, plannedDelivery{
+		Tenant: tenant, Task: id, Kind: "task_result", Addr: "origin", TargetKind: "chat", TargetID: record.Origin.Chat.ID(),
+		ExecKind: "channel", ExecName: record.Origin.Channel, Recipient: initiator, DataOrigin: "code",
+		Body: map[string]any{"form": "text_code", "text_key": "task.canceled.rights_revoked", "params": map[string]any{"reason": access}},
+	})
+	return err
+}
+
+// revokedReason is the cancellation reason of a task whose initiator lost access (PRM-3): a
+// disabled or unknown initiator gives person_inactive, a lost task:<type> or data:<class>
+// right gives rights_revoked.
+func revokedReason(reason string) string {
+	if reason == "person_inactive" {
+		return reason
+	}
+	return "rights_revoked"
 }
 
 // hasLabels says whether a worker has every label a task type requires.
@@ -519,7 +554,8 @@ func (c *Core) claimAttempt(ctx context.Context, tx pgx.Tx, now time.Time, cat *
 		if reason, err := c.accessLost(ctx, tx, now, tv, accessPrincipal(initiator, rec), "task:"+typ, cat.TaskTypes[typ].DataClass); err != nil {
 			return nil, err
 		} else if reason != "" {
-			if err := c.failTask(ctx, tx, now, w.Tenant, id, initiator, rec, reason); err != nil {
+			// The task is canceled, not failed, without spending an attempt (PRM-3).
+			if err := c.revokeTask(ctx, tx, now, w.Tenant, id, initiator, rec, reason); err != nil {
 				return nil, err
 			}
 			continue
@@ -1139,6 +1175,9 @@ func (c *Core) claimDelivery(ctx context.Context, tx pgx.Tx, now time.Time, cat 
 		b = cardBody
 	}
 	d := map[string]any{"id": id, "kind": kind, "to": addr, "body": b}
+	// Implementation extension (MAN-3): the origin mark of the delivery, which the channel
+	// passes the way its driver declares and a sink writes as ai_generated (DLV-13).
+	d["dataorigin"] = origin
 	if replacesID != "" {
 		d["replaces_external_id"] = replacesID
 	}

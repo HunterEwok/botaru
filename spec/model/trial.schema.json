@@ -4,6 +4,7 @@
   "title": "Change trial",
   "description": "A change trial record in the trial field of a proposal. The core creates it on \"Accept\" or \"Override veto\" of any kind except none, in the same transaction: the metric from benefit.metric (a series with a full outcome block), the promise, the subjects, the before values over 14 days and from one to five guards with before values (PRP-21). The window is 14 days from realized; only code computes the result (PRP-22). The model does not write to the record.",
   "x-botaru-direction": "record",
+  "x-botaru-retention": "metadata",
   "x-botaru-rules": [
     "PRP-21",
     "PRP-22",

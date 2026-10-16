@@ -368,6 +368,10 @@ func (c *Core) SeatResume(ctx context.Context, op Operator, req SeatResumeReques
 		}
 		return c.seatResumeTenant(ctx, op, req.Tenant)
 	}
+	// A v0.3 core requires the tenant: no incident stops the seat any more (GOV-47).
+	if claimsV03() {
+		return nil, refuse("input_schema_invalid", "seat.resume takes the tenant from v0.3")
+	}
 	cat, err := c.Catalog(ctx)
 	if err != nil {
 		return nil, err
@@ -679,7 +683,7 @@ func (c *Core) enqueueIncidentTask(ctx context.Context, tx pgx.Tx, now time.Time
 	body := map[string]any{"type": incidentRespondType, "goal": "Respond to the incident.", "params": map[string]any{"input": incidentView(ic, r)}}
 	sev := mstr(r.Record, "severity")
 	res, err := c.enqueue(ctx, tx, now, cat, enqueueInput{Tenant: r.Tenant, Type: incidentRespondType, Body: body,
-		IdempotencyKey: "incident:" + r.ID + ":" + strconv.FormatInt(r.Episode, 10), Initiator: "system", EnqueuedBy: "system:incident",
+		IdempotencyKey: "system:incident:" + r.ID + ":" + strconv.FormatInt(r.Episode, 10), Initiator: "system", EnqueuedBy: "system:incident",
 		Source: seatSource, SourceID: r.ID, Priority: 1, Sev1: sev == "sev1"})
 	if err != nil {
 		return err
@@ -799,7 +803,13 @@ func (c *Core) managerLoop(ctx context.Context) error {
 		if err != nil || m == nil {
 			return err
 		}
-		if m.has("incident") && m.DecideUntil != nil && !now.Before(*m.DecideUntil) && m.Holder != "" {
+		if claimsV03() {
+			// A stop reason incident a v0.2 core left goes; nothing repeats manager_stopped or
+			// retires the holder by decide_within (GOV-47, MGR-55).
+			if err := c.dropIncidentStop(ctx, tx, now, cat, m); err != nil {
+				return err
+			}
+		} else if m.has("incident") && m.DecideUntil != nil && !now.Before(*m.DecideUntil) && m.Holder != "" {
 			if err := c.retireHolder(ctx, tx, now, cat, m, "", "system"); err != nil {
 				return err
 			}
@@ -810,8 +820,10 @@ func (c *Core) managerLoop(ctx context.Context) error {
 				return err
 			}
 		}
-		if err := c.repeatManagerStopped(ctx, tx, now, cat, m); err != nil {
-			return err
+		if !claimsV03() {
+			if err := c.repeatManagerStopped(ctx, tx, now, cat, m); err != nil {
+				return err
+			}
 		}
 		if err := c.repeatPreventable(ctx, tx, now, cat); err != nil {
 			return err

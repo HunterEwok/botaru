@@ -403,7 +403,7 @@ func TestModelTextWaitsForAINotice(t *testing.T) {
 	}
 }
 
-// TestAccessRecheckedAtClaim: an ungrant after enqueue fails the queued task, and disabling
+// TestAccessRecheckedAtClaim: an ungrant after enqueue cancels the queued task (PRM-3), and disabling
 // the recipient after completion withholds the model text.
 func TestAccessRecheckedAtClaim(t *testing.T) {
 	ctx := context.Background()
@@ -421,7 +421,7 @@ func TestAccessRecheckedAtClaim(t *testing.T) {
 		t.Fatalf("a task of an ungranted initiator was leased: %v", w.WorkID)
 	}
 	var state, reason string
-	if err := b.c.st.Pool.QueryRow(ctx, `SELECT state, coalesce(reason, '') FROM tasks WHERE id = $1`, res.Task).Scan(&state, &reason); err != nil || state != "failed" || reason != "no_group_cap" {
+	if err := b.c.st.Pool.QueryRow(ctx, `SELECT state, coalesce(reason, '') FROM tasks WHERE id = $1`, res.Task).Scan(&state, &reason); err != nil || state != "canceled" || reason != "rights_revoked" {
 		t.Fatalf("task %s %s %v", state, reason, err)
 	}
 
@@ -558,7 +558,8 @@ func TestFailRetriesThenExhausts(t *testing.T) {
 	}
 }
 
-// TestOffRevokesWork: disabling the initiator ends the task in work and fences its worker.
+// TestOffRevokesWork: disabling the initiator cancels the task in work with person_inactive
+// and fences its worker (PRM-3).
 func TestOffRevokesWork(t *testing.T) {
 	ctx := context.Background()
 	b := newBench(t)
@@ -578,7 +579,7 @@ func TestOffRevokesWork(t *testing.T) {
 	var state, reason string
 	var handles int
 	if err := b.c.st.Pool.QueryRow(ctx, `SELECT state, coalesce(reason, ''), (SELECT count(*) FROM handles WHERE work_id = $1) FROM tasks WHERE id = $1`, res.Task).
-		Scan(&state, &reason, &handles); err != nil || state != "failed" || reason != "person_inactive" || handles != 0 {
+		Scan(&state, &reason, &handles); err != nil || state != "canceled" || reason != "person_inactive" || handles != 0 {
 		t.Fatalf("task %s %s handles %d %v", state, reason, handles, err)
 	}
 	if _, err := b.c.Complete(ctx, b.agent, header(t, att), CompleteRequest{Result: map[string]any{"answer": "hi"}}); err == nil {
@@ -686,8 +687,10 @@ func TestDeleteTaskTypeWithOpenTasks(t *testing.T) {
 	if err := b.c.st.Pool.QueryRow(ctx, `SELECT type FROM tasks WHERE id = $1`, res.Task).Scan(&typ); err != nil {
 		t.Fatal(err)
 	}
-	// The group loses the type it names; the open tasks stop the delete.
-	if _, err := b.c.Grant(ctx, b.op, GrantRequest{Op: "ungrant", Subject: b.alice, Group: "hello"}); err != nil {
+	// Without members the group may lose the type (an unknown type counts as privileged). An
+	// ungrant would cancel the queued task (PRM-3); a membership that ran out leaves it open
+	// until the claim checks it again.
+	if _, err := b.c.st.Pool.Exec(ctx, `UPDATE memberships SET until = botaru_now() - interval '1 second' WHERE principal = $1`, b.alice); err != nil {
 		t.Fatal(err)
 	}
 	_, err = b.c.Apply(ctx, b.op, ApplyRequest{Commit: "3333333333333333333333333333333333333333", Delete: []ApplyDelete{{Kind: "TaskType", Name: typ}}})

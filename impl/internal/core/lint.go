@@ -6,6 +6,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"maps"
+	"os"
+	"path/filepath"
 	"regexp"
 	"slices"
 	"sort"
@@ -834,10 +836,10 @@ func (c *Core) lintManifestsHeld(docs []manifest.Doc, index []int, personas pers
 				}
 			}
 			if sub != nil {
-				if mmap(prof, "provider_human_review")["value"] == "yes" {
-					if hr := mstr(mmap(sub, "terms"), "human_review"); hr == "none" || hr == "abuse_only" {
-						f.add(o, "provider_human_review", path)
-					}
+				// Review by the provider's people no higher than the terms allow: none, then
+				// abuse_only, then yes (GW-15).
+				if hr := mstr(mmap(sub, "terms"), "human_review"); hr != "" && humanReviewOrder(mstr(mmap(prof, "provider_human_review"), "value")) > humanReviewOrder(hr) {
+					f.add(o, "provider_human_review", path)
 				}
 				ret := mmap(sub, "retention")
 				if mstr(ret, "mode") == "zero" && truthy(prof["requires_retention"]) {
@@ -847,6 +849,12 @@ func (c *Core) lintManifestsHeld(docs []manifest.Doc, index []int, personas pers
 				maxDays, _ := mnum(ret, "max_days")
 				if mstr(ret, "mode") == "standard" && hasDays && days > maxDays {
 					f.add(o, "provider_retention", path)
+				}
+				// A production tenant whose allowed profile calls a provider in a region outside
+				// the EU needs its own transfer basis for the provider or the region (GW-14,
+				// D-87 (2)).
+				if k := mstr(ts, "kind"); (k == "" || k == "production") && c.nonEURegion(mstr(sub, "provider"), mstr(sub, "region")) && !transferBasis(ts, mstr(sub, "provider"), mstr(sub, "region")) {
+					f.add(o, "transfer_basis_missing", path)
 				}
 			}
 		}
@@ -1042,6 +1050,10 @@ func (c *Core) lintManifestsHeld(docs []manifest.Doc, index []int, personas pers
 			if truthy(rs[field]) && !slices.Contains(mstrs(prof, "may_declare"), field) {
 				f.add(o, "role_profile_forbidden", "/"+field)
 			}
+		}
+		// A script draft inside a proposal only where the profile may declare it (PRP-3).
+		if mstr(mmap(rs, "scripts"), "propose") == "in_proposal" && !slices.Contains(mstrs(prof, "may_declare"), "scripts_in_proposal") {
+			f.add(o, "role_profile_forbidden", "/scripts/propose")
 		}
 		// The insight section: insight types of tier 1 at most that the role claims, without
 		// their own result_schema; tools among the role's own; a merge window of at least an
@@ -2478,4 +2490,47 @@ func managerLineShort(ts, farmManager, seatProfile map[string]any) []string {
 		}
 	}
 	return out
+}
+
+// reProviderName is the shape of a provider name that may name a binding note: one path segment.
+var reProviderName = regexp.MustCompile(`^[A-Za-z0-9_-]+$`)
+
+// nonEURegion says whether a region of a provider is outside the EU by the provider binding's
+// table: a row of the "Region" section of spec/bindings/model-providers/<provider>.md whose
+// name does not start with eu, as ci/check_manifests.py reads it (D-86 (6), GW-14). A provider
+// without a binding note, such as the test providers of the examples, has no such region.
+func (c *Core) nonEURegion(provider, region string) bool {
+	if region == "" || !reProviderName.MatchString(provider) || provider == "README" || provider == "mock" {
+		return false
+	}
+	raw, err := os.ReadFile(filepath.Join(c.spec.Root, "spec", "bindings", "model-providers", provider+".md"))
+	if err != nil {
+		return false
+	}
+	inside := false
+	for _, line := range strings.Split(string(raw), "\n") {
+		if strings.HasPrefix(line, "## ") {
+			inside = strings.TrimSpace(line) == "## Region"
+			continue
+		}
+		if inside && strings.HasPrefix(line, "| `") {
+			if name := strings.Split(line, "`")[1]; name == region {
+				return !strings.HasPrefix(name, "eu")
+			}
+		}
+	}
+	return false
+}
+
+// transferBasis says whether the tenant spec has a model_transfer entry for the provider (all
+// its regions or this one) or for the region without a provider (GW-14, D-87 (2)).
+func transferBasis(ts map[string]any, provider, region string) bool {
+	for _, e := range mlist(ts, "model_transfer") {
+		em, _ := e.(map[string]any)
+		p, r := mstr(em, "provider"), mstr(em, "region")
+		if p == provider && (r == "" || r == region) || p == "" && r == region {
+			return true
+		}
+	}
+	return false
 }

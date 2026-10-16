@@ -110,6 +110,7 @@ func (c *Core) createProposals(ctx context.Context, tx pgx.Tx, now time.Time, ca
 	}
 	a.Acting = acting
 	a.Seat = seatOfRecord(rec) == managerSeatID && claimsV03()
+	a.Level = authorLevel(a.Seat, cat.TaskTypes[typ].Purpose)
 	// In restricted mode the seat proposes nothing in the tenant, unless its basis is a sev1
 	// incident opened during it (MGR-47); the proposals are dropped.
 	if a.Seat && len(bodies) > 0 {
@@ -125,11 +126,8 @@ func (c *Core) createProposals(ctx context.Context, tx pgx.Tx, now time.Time, ca
 			return err
 		}
 	}
-	// An aggregator's proposal takes the mark and the untrusted flag of its task, which carry
-	// the highest mark and the logical OR of the inputs it read (AGG-4).
-	if cat.TaskTypes[typ].Purpose == "aggregate" {
-		a.Level = 1
-	}
+	// An aggregator's proposal (level 1, authorLevel) takes the mark and the untrusted flag of
+	// its task, which carry the highest mark and the logical OR of the inputs it read (AGG-4).
 	for _, body := range bodies {
 		fp, err := c.createProposal(ctx, tx, now, cat, a, body)
 		var rj rejection
@@ -420,6 +418,8 @@ type proposalChange struct {
 		Direction string `json:"direction"`
 		Value     any    `json:"value"`
 	} `json:"human_change"`
+	// Script is a botaru.script/v1 draft of a script change (PRP-3).
+	Script map[string]any `json:"script"`
 }
 
 type manifestOp struct {

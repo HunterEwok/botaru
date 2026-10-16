@@ -193,46 +193,18 @@ func TestLintPrivilegeRaised(t *testing.T) {
 	}
 }
 
-// GOV-33, GOV-22: a seat declared twice, the farm_manager block in a tenant charter and a
-// field against its one direction fail apply.
+// GOV-33, GOV-22: what TestBackfillOnlyCharterDeclaresSeats and TestBackfillFarmCharterByTenant
+// leave out: a decide_within of the farm charter above 7 days fails apply, a shorter one passes,
+// and seats without an id are not a seat declared twice.
 func TestLintCharterBounds(t *testing.T) {
 	c := lintCore(t)
 	charter := func(tenant, spec string) string {
 		return "apiVersion: botaru/v1alpha1\nkind: Governance\nmetadata: {name: " + tenant + ", tenant: " + tenant + "}\nspec: " + spec + "\n---\n"
 	}
-	for spec, want := range map[string]string{
-		`{commission: {seats: [{id: 1, lens: security}, {id: 1, lens: cost}]}}`: "charter_seat_twice",
-		`{farm_manager: {max_rank: 4}}`:                                         "charter_farm_manager",
-		`{promotion: {probation: 7d}}`:                                          "charter_direction",
-		`{promotion: {min_tenure: 20d}}`:                                        "charter_direction",
-		`{removal: {protect_new: 30d}}`:                                         "charter_direction",
-		`{memory: {seal_ttl: 10d}}`:                                             "charter_direction",
-		`{identity: {unbound_ttl: 10d}}`:                                        "charter_direction",
-		`{promotion: {exclude_change_kinds: [script]}}`:                         "charter_direction",
-	} {
-		if got := lintCodes(t, c, charter("demo", spec)); !slices.Contains(got, want) {
-			t.Errorf("%s: %v, want %s", spec, got, want)
-		}
-	}
-	ok := `{promotion: {probation: 21d, swap_cooldown: 45d, exclude_change_kinds: [none, script]}, memory: {seal_ttl: 45d}}`
-	if got := lintCodes(t, c, charter("demo", ok)); slices.ContainsFunc(got, func(s string) bool { return strings.HasPrefix(s, "charter_") }) {
-		t.Fatalf("raised fields: %v", got)
-	}
-	// A seat without an id is not a second declaration.
 	if got := lintCodes(t, c, charter("demo", `{commission: {seats: [{lens: cost}, {lens: value}]}}`)); slices.Contains(got, "charter_seat_twice") {
 		t.Fatalf("seats without an id: %v", got)
 	}
-	// The farm charter is the one of tenant farm; a charter of tenant demo named farm is a
-	// tenant charter.
-	farmNamed := "apiVersion: botaru/v1alpha1\nkind: Governance\nmetadata: {name: farm, tenant: demo}\nspec: {farm_manager: {max_rank: 4}}\n---\n"
-	if got := lintCodes(t, c, farmNamed); !slices.Contains(got, "charter_farm_manager") {
-		t.Fatalf("a demo charter named farm: %v", got)
-	}
-	if got := lintCodes(t, c, charter("farm", `{farm_manager: {max_rank: 4}}`)); slices.Contains(got, "charter_farm_manager") {
-		t.Fatalf("the farm charter: %v", got)
-	}
-	long := `{farm_manager: {incident_stop: {decide_within: 10d}}}`
-	if got := lintCodes(t, c, charter("farm", long)); !slices.Contains(got, "charter_direction") {
+	if got := lintCodes(t, c, charter("farm", `{farm_manager: {incident_stop: {decide_within: 10d}}}`)); !slices.Contains(got, "charter_direction") {
 		t.Fatalf("decide_within above 7 days: %v", got)
 	}
 	if got := lintCodes(t, c, charter("farm", `{farm_manager: {incident_stop: {decide_within: 3d}}}`)); slices.Contains(got, "charter_direction") {

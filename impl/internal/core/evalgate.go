@@ -105,7 +105,7 @@ func (x evalIndex) fingerprintOn(role, tenant, slot, profile string) (string, bo
 	case "farm_manager":
 		ref = personaOf(mmap(mmap(x.governance(farmTenant), "farm_manager"), "persona"))
 	default:
-		ref = personaOf(mmap(mmap(mmap(x.governance(tenant), "positions"), pos), "persona"))
+		ref = x.positionPersona(tenant, role, pos)
 	}
 	models := mmap(rs, "models")
 	base, analysis := mstr(models, "base"), mstr(models, "analysis")

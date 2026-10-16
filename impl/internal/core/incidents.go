@@ -481,7 +481,8 @@ func (c *Core) openIncident(ctx context.Context, tx pgx.Tx, now time.Time, cat *
 		if err := c.noticeOpen(ctx, tx, now, cat, r); err != nil {
 			return err
 		}
-		// Only a new incident may stop the farm manager seat (GOV-22).
+		// Only a new incident may stop the farm manager seat (GOV-22), or from v0.3 restrict it
+		// (GOV-47).
 		if err := c.incidentStop(ctx, tx, now, cat, ic, r); err != nil {
 			return err
 		}
@@ -1007,6 +1008,12 @@ type incidentActor struct {
 // IncidentAck is P2 incident.ack: a person took up the incident; the unhandled alarm is not
 // raised, and a raised one resolves (MGR-8).
 func (c *Core) IncidentAck(ctx context.Context, op Operator, req IncidentRequest) (*Done, error) {
+	// From v0.3 an operator of farm marks manager_preventable read with it (GOV-47).
+	if op.Tenant == farmTenant && claimsV03() {
+		if d, ok, err := c.preventableRead(ctx, op, req); err != nil || ok {
+			return d, err
+		}
+	}
 	return c.incidentAct(ctx, op.Tenant, incidentActor{Principal: op.Principal, Via: "farmctl"}, "ack", req)
 }
 
@@ -1157,11 +1164,20 @@ func afterFields(s string, n int) string {
 // the tenant with incident.manage (MGR-8).
 func (c *Core) incidentCommand(ctx context.Context, tx pgx.Tx, now time.Time, pc personCommand, rest string) (*ActivityResult, error) {
 	f := strings.Fields(rest)
-	if len(f) < 2 || !slices.Contains([]string{"ack", "close", "dismiss"}, f[0]) {
-		return pc.reply(c, "cmd.incident.usage", nil), nil
+	words := []string{"ack", "close", "dismiss"}
+	usage := "cmd.incident.usage"
+	if claimsV03() {
+		// From v0.3 a person may ask for the analysis paragraph (MGR-53).
+		words, usage = append(words, "analyse"), "cmd.incident.usage_v03"
+	}
+	if len(f) < 2 || !slices.Contains(words, f[0]) {
+		return pc.reply(c, usage, nil), nil
 	}
 	if !hasCap(pc.tv, pc.groups, "incident.manage") {
 		return pc.reply(c, "task.rejected.no_group_cap", nil), nil
+	}
+	if f[0] == "analyse" {
+		return c.analyseCommand(ctx, tx, now, pc, f[1])
 	}
 	req := IncidentRequest{ID: f[1]}
 	if f[0] == "dismiss" {
@@ -1339,7 +1355,8 @@ func lintStoreLow(S *lintSet, f *lintFindings) {
 		if mstr(mmap(o.spec, "detect"), "alarm") != "alarm.store.free.low.v1" {
 			f.add(o, "incident_store_low", "/detect/alarm")
 		}
-		if _, ok := o.spec["stops_manager"]; ok {
+		// A v0.3 core does not use stops_manager: apply only warns of it (MGR-55).
+		if _, ok := o.spec["stops_manager"]; ok && !claimsV03() {
 			f.add(o, "incident_store_low", "/stops_manager")
 		}
 		return

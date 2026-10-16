@@ -85,13 +85,20 @@ func TestRenderDigest(t *testing.T) {
 		t.Fatal(err)
 	}
 	c := New(Config{Texts: tx})
-	got := c.renderDigest("en", "24h", []digestRow{{Title: "Greeting", State: "completed", Count: 2}}, 1, "All quiet.", []string{"web"})
+	got := c.renderDigest("en", "24h", []digestRow{{Title: "Greeting", State: "completed", Count: 2}}, 1, "All quiet.", []string{"web"}, false)
 	for _, want := range []string{"Report, window 24h:", "Greeting, completed: 2", "Hidden as above this chat's class: 1.", "[AI text; it read text from: web]\nAll quiet."} {
 		if !strings.Contains(got, want) {
 			t.Fatalf("%q lacks %q", got, want)
 		}
 	}
-	if got := c.renderDigest("en", "1h", nil, 0, "", nil); got != "Report, window 1h:\nNo tasks in the window." {
+	if got := c.renderDigest("en", "1h", nil, 0, "", nil, false); got != "Report, window 1h:\nNo tasks in the window." {
 		t.Fatalf("%q", got)
+	}
+	// A group bound with model_text: labeled gets the code line before the sources, after the
+	// table, and the paragraph never replaces the table (REP-2).
+	got = c.renderDigest("en", "24h", []digestRow{{Title: "Greeting", State: "completed", Count: 2}}, 0, "All quiet.", []string{"tool:web/fetch"}, true)
+	want := "Greeting, completed: 2\n\nBot text, check the numbers against the table.\n[AI text; it read text from: tool:web/fetch]\nAll quiet."
+	if !strings.Contains(got, want) {
+		t.Fatalf("%q lacks %q", got, want)
 	}
 }

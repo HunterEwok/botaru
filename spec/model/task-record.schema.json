@@ -4,6 +4,7 @@
   "title": "Task record",
   "description": "A task record that only the core writes. The sender sends the body (task-body); the schema rejects a request with any record field (IDN-1). The record belongs to exactly one tenant, and it does not change (TEN-1). There are five stored states: rejected is an answer to an enqueue, and there is no task record with it. Task lifecycle: spec/lifecycles/task.md.",
   "x-botaru-direction": "record",
+  "x-botaru-retention": "content",
   "x-botaru-rules": [
     "IDN-1",
     "TEN-1",

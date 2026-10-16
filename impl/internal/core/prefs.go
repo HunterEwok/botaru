@@ -92,7 +92,10 @@ func quietUntil(q *QuietHours, now time.Time, loc *time.Location) time.Time {
 // the person's daily digest slot and goes out there with the others collected for that slot.
 // It reports whether the delivery waits.
 func (c *Core) prefsDefer(ctx context.Context, tx pgx.Tx, now time.Time, cat *Catalog, tenant, id, kind, recipient string) (bool, error) {
-	if !slices.Contains(c.deferrableKinds(), kind) {
+	// A notice of quietOnlyKinds waits for the end of quiet hours only, never for the digest
+	// (MGR-52).
+	quietOnly := slices.Contains(quietOnlyKinds(), kind)
+	if !quietOnly && !slices.Contains(c.deferrableKinds(), kind) {
 		return false, nil
 	}
 	var raw []byte
@@ -111,7 +114,7 @@ func (c *Core) prefsDefer(ctx context.Context, tx pgx.Tx, now time.Time, cat *Ca
 	}
 	loc := tenantLocation(cat, tenant)
 	until := quietUntil(p.QuietHours, now, loc)
-	if until.IsZero() && p.Digest == "daily" && digestOf == nil {
+	if until.IsZero() && p.Digest == "daily" && digestOf == nil && !quietOnly {
 		m := digestHour * 60
 		if p.QuietHours != nil {
 			m = minutesOf(p.QuietHours.To)
@@ -122,7 +125,7 @@ func (c *Core) prefsDefer(ctx context.Context, tx pgx.Tx, now time.Time, cat *Ca
 		return false, nil
 	}
 	mark := digestOf
-	if p.Digest == "daily" {
+	if p.Digest == "daily" && !quietOnly {
 		s := "daily:" + until.UTC().Format(time.RFC3339)
 		mark = &s
 	}
@@ -205,5 +208,11 @@ func (c *Core) prefsCommand(ctx context.Context, tx pgx.Tx, now time.Time, pc pe
 	if p.Digest != "" {
 		digest = p.Digest
 	}
-	return pc.reply(c, "cmd.prefs.show", map[string]any{"quiet": quiet, "digest": digest}), nil
+	// With profile monitor alarms reach people only through the monitoring system, which sets
+	// their silencing and quiet hours; these preferences never touch them (DLV-10, MON-1).
+	key := "cmd.prefs.show"
+	if c.monitorOn() {
+		key = "cmd.prefs.show_monitor"
+	}
+	return pc.reply(c, key, map[string]any{"quiet": quiet, "digest": digest}), nil
 }

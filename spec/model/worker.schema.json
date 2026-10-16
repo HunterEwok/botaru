@@ -4,6 +4,7 @@
   "title": "Worker",
   "description": "A worker record that P2 worker.enroll writes: tenant, role, kind, labels, and for a toolhost the plugins, placement and machine. A worker process serves one tenant (TEN-4). Liveness is last_seen at the core, not a worker self-report (STA-2). A worker record has no owner field: a personal assistant is a pool of workers, and the core writes the owner into the lease (DSP-10). Worker lifecycle: spec/lifecycles/worker.md.",
   "x-botaru-direction": "record",
+  "x-botaru-retention": "metadata",
   "x-botaru-rules": ["TEN-4", "STA-2", "DSP-10", "TEN-1"],
   "type": "object",
   "required": ["id", "tenant", "kind", "state"],

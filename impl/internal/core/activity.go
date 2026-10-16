@@ -45,6 +45,11 @@ type ActivityResult struct {
 	Text     string `json:"text,omitempty"`
 }
 
+// weakRefused are the commands that act with the sender's rights: a channel with identity_assurance
+// weak runs none of them (IDN-3). The read-only commands and /help stay.
+var weakRefused = map[string]bool{"/run": true, "/service": true, "/cancel": true, "/forget": true, "/grant": true, "/ungrant": true,
+	"/incident": true, "/manager": true}
+
 // SubmitActivity turns a channel activity into a task by code (IDN-6): a command of the first
 // word in a direct chat by the tenant's commands, else a default type of the chat kind. The text
 // never chooses anything else; forwarded and quoted text is never a command (IDN-7).
@@ -184,6 +189,11 @@ func (c *Core) SubmitActivity(ctx context.Context, w *Worker, a Activity) (*Acti
 		}
 		// The commands the core runs by code, without a model and without a task type.
 		if word, rest, ok := commandWord(a); ok && (word == "/service" || word == "/run" || codeCommands[word]) {
+			// A channel with weak sender verification runs no privileged command (IDN-3).
+			if ch.IdentityAssurance != "strong" && weakRefused[word] {
+				reply("activity.not_verified")
+				return nil
+			}
 			// A channel command closes the follow-up window (CNT-5).
 			if err := closeFollowups(ctx, tx, w.Tenant, "c:"+a.Channel+":"+a.Chat.ID(), principal); err != nil {
 				return err
