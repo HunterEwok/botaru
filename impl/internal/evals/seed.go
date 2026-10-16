@@ -158,3 +158,23 @@ func toAny(l []string) []any {
 	}
 	return out
 }
+
+// GroupCaps are the caps of a seed group with those of the groups it inherits.
+func (s *Seed) GroupCaps(name string) []string {
+	var out []string
+	seen := map[string]bool{}
+	var walk func(n string)
+	walk = func(n string) {
+		if seen[n] {
+			return
+		}
+		seen[n] = true
+		g := s.Groups[n]
+		out = append(out, strs(g["caps"])...)
+		for _, p := range strs(g["inherits"]) {
+			walk(p)
+		}
+	}
+	walk(name)
+	return out
+}

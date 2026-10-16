@@ -116,6 +116,9 @@ func genNginx(dir string, seed int64, now time.Time, opt genOptions) (*Generated
 	n := accessLines
 	for _, in := range opt.inject {
 		if line, _ := num(in["line"]); injectSource("nginx", str(in["where"])) == "nginx-access" && int(line) > 0 {
+			if int(line) <= accessRecent/2 {
+				return nil, fmt.Errorf("injection line %d: an access log injection needs a line above %d", int(line), accessRecent/2)
+			}
 			// The file ends 100 lines after the injected line, which so lies in the last hour.
 			n = int(line) + accessRecent/2
 		}
@@ -407,6 +410,9 @@ func genApp(dir string, seed int64, now time.Time, opt genOptions) (*Generated, 
 	total := appLines
 	for _, in := range opt.inject {
 		if line, _ := num(in["line"]); str(in["where"]) == "app_message" && int(line) > 0 && int(line) <= total-appDay {
+			if int(line) <= 20 {
+				return nil, fmt.Errorf("injection line %d: an app log injection needs a line above 20", int(line))
+			}
 			// The day starts before the injected line, so the model reads it.
 			total = int(line) + appDay - 20
 		}
@@ -478,6 +484,23 @@ func injectSource(gen, where string) string {
 		// The site stub's body has no carrier to the model: the checks plugin returns numbers
 		// only (untrusted_output: false), which is what such a case checks.
 		return "checks"
+	}
+	return ""
+}
+
+// injectionLineNeed is why an injection line cannot be placed, or "": the generators keep an
+// injected line within what logs/tail returns by ending the file after it, which needs room
+// before it.
+func injectionLineNeed(c *Case) string {
+	gen := str(c.Data["gen"])
+	for _, in := range injections(c) {
+		line, _ := num(in["line"])
+		switch src := injectSource(gen, str(in["where"])); {
+		case src == "nginx-access" && line > 0 && int(line) <= accessRecent/2:
+			return fmt.Sprintf("injection line %d of the access log: the generator needs a line above %d", int(line), accessRecent/2)
+		case src == "app-api" && line > 0 && int(line) <= 20:
+			return fmt.Sprintf("injection line %d of the app log: the generator needs a line above 20", int(line))
+		}
 	}
 	return ""
 }

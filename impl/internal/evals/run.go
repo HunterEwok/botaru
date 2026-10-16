@@ -4,6 +4,7 @@ package evals
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"path/filepath"
@@ -65,6 +66,9 @@ type Report struct {
 	// Invalid is set when the run is invalid: too many unrated cases, or a model name that
 	// differs from the profile.
 	Invalid string
+	// Scope are all active cases of the claim, whatever the filters: an index entry needs every
+	// case of its set and every blocking case of its role to have run (PRV-3).
+	Scope []*Case
 }
 
 // Counts returns the number of results per status and the security failures.
@@ -124,6 +128,9 @@ func (r *Runner) Needs(c *Case) string {
 			return "injection into " + where + " is not built"
 		}
 	}
+	if need := injectionLineNeed(c); need != "" {
+		return need
+	}
 	for _, k := range slices.Sorted(mapKeys(c.Setup)) {
 		if !slices.Contains(allowedSetup, k) {
 			return "setup." + k + " is not built in the runner"
@@ -143,8 +150,14 @@ func (r *Runner) Needs(c *Case) string {
 			if after := str(sm["after"]); after != "" && after != "0m" {
 				return "a follow-up after " + after + " needs the store clock to move, which the runner does not do"
 			}
-			if need := r.inputNeeds(str(sm["from"]), str(sm["chat"])); need != "" {
+			from := str(sm["from"])
+			if need := r.inputNeeds(from, str(sm["chat"])); need != "" {
 				return need
+			}
+			// A setup step that the core refuses leaves the case untested (iso-02 would pass
+			// trivially), so a step of a person with an ungranted seed group is not run (PRM-13).
+			if gs := r.Bench.ungranted[from]; len(gs) > 0 {
+				return "setup." + key + " input from " + from + ": " + ungrantedText(gs)
 			}
 		}
 	}
@@ -188,12 +201,36 @@ func injections(c *Case) []map[string]any {
 
 // Run runs the plan's cases one after another (the workers are not restarted between cases)
 // and applies the thresholds.
+//
+// The spend of the run is read from the store: the sum of the bench tenants' provider spend,
+// before and after every attempt, failed ones and setup steps included. A case starts only
+// when its reserve, n runs times (retries+1) attempts times its estimate, fits under the cap,
+// and the run stops as soon as the store total reaches the cap, also in the middle of a case.
 func (r *Runner) Run(ctx context.Context, p *Plan) *Report {
-	rep := &Report{Mode: "mock", Date: time.Now().UTC().Format("2006-01-02")}
+	rep := &Report{Mode: "mock", Date: time.Now().UTC().Format("2006-01-02"), Scope: p.Scope}
 	if r.Real {
 		rep.Mode = "real"
 	}
+	b := r.Bench
+	start, err := b.spendTotal(ctx)
+	if err != nil {
+		rep.Invalid = "the spend of the store cannot be read: " + err.Error()
+		return rep
+	}
+	b.spendCap = 0
+	if r.Real {
+		b.spendCap = start + r.MaxRunMicros
+	}
+	defer func() { b.spendCap = 0 }()
+	spent := func() int64 {
+		t, err := b.spendTotal(ctx)
+		if err != nil {
+			return rep.Spend
+		}
+		return t - start
+	}
 	repeats := max(r.Repeats, 1)
+	attempts := int64(r.Thresholds.Retries + 1)
 	for _, cp := range p.Cases {
 		c := cp.Case
 		if need := r.Needs(c); need != "" {
@@ -208,19 +245,24 @@ func (r *Runner) Run(ctx context.Context, p *Plan) *Report {
 		if c.Blocking {
 			n = repeats
 		}
+		rep.Spend = spent()
 		// The cost guard: the case does not start when its reserve would take the run over the cap.
-		if r.Real && rep.Spend+int64(n)*cp.Estimate > r.MaxRunMicros {
-			rep.Stopped = fmt.Sprintf("the next case %s would take the spend from %s over the cap of %s EUR", c.ID, formatEUR(rep.Spend), formatEUR(r.MaxRunMicros))
+		if r.Real && rep.Spend+int64(n)*attempts*cp.Estimate > r.MaxRunMicros {
+			rep.Stopped = fmt.Sprintf("the reserve of the next case %s would take the spend from %s over the cap of %s EUR", c.ID, formatEUR(rep.Spend), formatEUR(r.MaxRunMicros))
 			rep.Results = append(rep.Results, &Result{Case: c, Status: NotRun, Detail: "the run stopped at the spend cap"})
 			continue
 		}
 		res := r.runCase(ctx, c, cp.Profile, n)
-		rep.Spend += res.Spend
 		rep.Results = append(rep.Results, res)
+		rep.Spend = spent()
+		if r.Real && rep.Spend >= r.MaxRunMicros && rep.Stopped == "" {
+			rep.Stopped = fmt.Sprintf("the spend reached %s EUR during case %s, at the cap of %s EUR", formatEUR(rep.Spend), c.ID, formatEUR(r.MaxRunMicros))
+		}
 		if r.Progress != nil {
 			fmt.Fprintf(r.Progress, "%-22s %-8s %s\n", c.ID, res.Status, res.Detail)
 		}
 	}
+	rep.Spend = spent()
 	for _, c := range p.Later {
 		rep.Results = append(rep.Results, &Result{Case: c, Status: Skipped, Detail: "the case is of a later version or pending"})
 	}
@@ -238,6 +280,14 @@ func (r *Runner) Run(ctx context.Context, p *Plan) *Report {
 	return rep
 }
 
+// notRunError is a case the bench could not set up while it ran: a setup step made no task.
+type notRunError struct{ reason string }
+
+func (e *notRunError) Error() string { return e.reason }
+
+// errSpendCap stops an attempt when the store total of the run reaches the cap.
+var errSpendCap = errors.New("the spend of the run reached the cap")
+
 // runCase runs a case n times; every run must pass. A run without an outcome is retried once
 // (infra.retries); still none is a failure for a blocking case and unrated otherwise.
 func (r *Runner) runCase(ctx context.Context, c *Case, profile string, n int) *Result {
@@ -249,12 +299,27 @@ func (r *Runner) runCase(ctx context.Context, c *Case, profile string, n int) *R
 		var env *checkEnv
 		var err error
 		for try := 0; try <= r.Thresholds.Retries; try++ {
+			before, _ := r.Bench.spendTotal(ctx)
 			o, env, err = r.once(ctx, c, profile)
-			if err == nil {
+			// Every attempt's spend counts, a failed one too.
+			if after, serr := r.Bench.spendTotal(ctx); serr == nil {
+				res.Spend += after - before
+			}
+			var nr *notRunError
+			if err == nil || errors.As(err, &nr) || errors.Is(err, errSpendCap) {
 				break
 			}
 		}
 		res.Repeats = i + 1
+		var nr *notRunError
+		switch {
+		case errors.As(err, &nr):
+			res.Status, res.Detail = NotRun, nr.reason
+			return res
+		case errors.Is(err, errSpendCap):
+			res.Status, res.Detail = NotRun, "the run stopped at the spend cap during this case"
+			return res
+		}
 		if err != nil {
 			if c.Blocking {
 				res.Status, res.Detail = Failed, "no outcome after the retry: "+err.Error()
@@ -263,7 +328,6 @@ func (r *Runner) runCase(ctx context.Context, c *Case, profile string, n int) *R
 			}
 			return res
 		}
-		res.Spend += o.Spend
 		if o.Unscripted > 0 {
 			res.Status, res.Detail = NotRun, "the case called a model, and the mock model has no script for it: needs a real model"
 			return res
@@ -300,25 +364,45 @@ func (r *Runner) runCase(ctx context.Context, c *Case, profile string, n int) *R
 	return res
 }
 
+// ungrantedText says why seed groups are missing.
+func ungrantedText(gs []string) string {
+	return "seed groups " + strings.Join(gs, ", ") + " are privileged and cannot be granted without the verification code flow (PRM-13)"
+}
+
 // ungrantedNeed is the not-run reason of a case the core refused because the person lacks a
 // seed group the bench could not grant: PRM-13 refuses a privileged group without the
 // verification code flow, which this version does not have, and the bench does not write the
-// membership around it. It applies only when the input made no task and found no
-// failure of an absence check, counter or common check, so a leak is never hidden behind it.
+// membership around it. It applies only when the input made no task, the core refused it with
+// no_group_cap for a type one of the ungranted groups holds (so the refusal says nothing about
+// the case, whether it expects one or not), and no absence check, counter or common check
+// failed, so a leak is never hidden behind it.
 func (r *Runner) ungrantedNeed(c *Case, o *Observation, findings []*Finding) string {
 	gs := r.Bench.ungranted[c.From]
-	if len(gs) == 0 || o.Self != nil || c.State == "rejected" {
+	if len(gs) == 0 || o.Self != nil {
 		return ""
 	}
 	for _, f := range findings {
-		// Only a check that needs the work done (a value, a text, a store row) may have failed;
-		// an absence check, a counter or a common check that failed keeps the case failed.
+		// Only a check that needs the work done (a value, a text, a store row) may have failed.
 		if f.Check == "state" || f.Kind == "equals" || f.Kind == "contains" || f.Kind == "store" {
 			continue
 		}
 		return ""
 	}
-	return "input from " + c.From + " refused: seed groups " + strings.Join(gs, ", ") + " are privileged and cannot be granted without the verification code flow (PRM-13)"
+	if o.Refusal == nil {
+		if c.State == "rejected" {
+			return ""
+		}
+		return "input from " + c.From + " made no task: " + ungrantedText(gs)
+	}
+	if o.Refusal.Reason != "no_group_cap" {
+		return ""
+	}
+	for _, g := range gs {
+		if slices.Contains(r.Bench.seed.GroupCaps(g), "task:"+o.Refusal.Type) {
+			return "input from " + c.From + " refused no_group_cap for " + o.Refusal.Type + ", which group " + g + " allows: " + ungrantedText(gs)
+		}
+	}
+	return ""
 }
 
 // once prepares the data of a case, plays its inputs and collects what it left.
@@ -359,8 +443,8 @@ func (r *Runner) once(ctx context.Context, c *Case, profile string) (*Observatio
 	timeout := time.Duration(r.Thresholds.CaseTimeoutS) * time.Second
 	for _, st := range asList(c.Setup["before"]) {
 		sm := asMap(st)
-		if err := b.play(ctx, str(sm["from"]), str(sm["chat"]), str(sm["message"]), timeout); err != nil {
-			return nil, nil, fmt.Errorf("before: %w", err)
+		if err := b.step(ctx, "before", sm, timeout); err != nil {
+			return nil, nil, err
 		}
 	}
 	mark := b.rec.count()
@@ -369,16 +453,17 @@ func (r *Runner) once(ctx context.Context, c *Case, profile string) (*Observatio
 	if err != nil {
 		return nil, nil, err
 	}
-	if err := b.play(ctx, c.From, c.Chat, c.Message, timeout); err != nil {
+	key, _, err := b.play(ctx, c.From, c.Chat, c.Message, timeout)
+	if err != nil {
 		return nil, nil, err
 	}
 	for _, st := range asList(c.Setup["then"]) {
 		sm := asMap(st)
-		if err := b.play(ctx, str(sm["from"]), str(sm["chat"]), str(sm["message"]), timeout); err != nil {
-			return nil, nil, fmt.Errorf("then: %w", err)
+		if err := b.step(ctx, "then", sm, timeout); err != nil {
+			return nil, nil, err
 		}
 	}
-	o, err := b.collect(ctx, selfAfter, selfAfter)
+	o, err := b.collect(ctx, selfAfter, b.people[c.From], key)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -398,42 +483,61 @@ func (r *Runner) once(ctx context.Context, c *Case, profile string) (*Observatio
 	return o, env, nil
 }
 
+// step plays a setup.before or setup.then input; a step the core made no task for leaves the
+// case untested, so the case is not run.
+func (b *Bench) step(ctx context.Context, key string, sm map[string]any, timeout time.Duration) error {
+	from := str(sm["from"])
+	_, task, err := b.play(ctx, from, str(sm["chat"]), str(sm["message"]), timeout)
+	if err != nil {
+		return fmt.Errorf("%s: %w", key, err)
+	}
+	if task == "" {
+		return &notRunError{reason: "setup." + key + " input from " + from + " made no task, so the case would not test what it says"}
+	}
+	return nil
+}
+
 // play sends one message of a seed person to a seed chat through the fake Bot API and waits
-// until the channel took it and the work it made is done.
-func (b *Bench) play(ctx context.Context, from, chat, text string, timeout time.Duration) error {
+// until the channel took it and the work it made is done. It returns the idempotency key of the
+// message (the channel's update id, as the core keys an activity) and the task it made, if any.
+func (b *Bench) play(ctx context.Context, from, chat, text string, timeout time.Duration) (key, task string, err error) {
 	p := b.seed.Person(from)
 	ch := b.seed.Chat(chat)
 	uid, err := strconv.ParseInt(telegramUserID(p.Identity), 10, 64)
 	if err != nil {
-		return fmt.Errorf("person %s has no telegram identity", from)
+		return "", "", fmt.Errorf("person %s has no telegram identity", from)
 	}
 	cid, err := strconv.ParseInt(ch.ExternalID, 10, 64)
 	if err != nil {
-		return err
+		return "", "", err
 	}
 	since, err := b.storeNow(ctx)
 	if err != nil {
-		return err
+		return "", "", err
 	}
 	id := b.bot.message(uid, cid, ch.Kind == "direct", text)
+	key = "system:activity:" + benchChannel + ":" + strconv.FormatInt(int64(id), 10)
 	deadline := time.Now().Add(timeout)
 	for !b.bot.taken(id) {
 		if time.Now().After(deadline) {
-			return fmt.Errorf("the channel did not take the message within %v", timeout)
+			return key, "", fmt.Errorf("the channel did not take the message within %v", timeout)
 		}
 		if err := sleepCtx(ctx, 100*time.Millisecond); err != nil {
-			return err
+			return key, "", err
 		}
 	}
 	// Done when nothing of the case is pending twice in a row half a second apart.
 	quiet := 0
 	for quiet < 2 {
 		if time.Now().After(deadline) {
-			return fmt.Errorf("the case did not end within %v", timeout)
+			return key, "", fmt.Errorf("the case did not end within %v", timeout)
+		}
+		if err := b.checkCap(ctx); err != nil {
+			return key, "", err
 		}
 		busy, err := b.pending(ctx, since)
 		if err != nil {
-			return err
+			return key, "", err
 		}
 		if busy {
 			quiet = 0
@@ -441,8 +545,24 @@ func (b *Bench) play(ctx context.Context, from, chat, text string, timeout time.
 			quiet++
 		}
 		if err := sleepCtx(ctx, 500*time.Millisecond); err != nil {
-			return err
+			return key, "", err
 		}
+	}
+	err = b.st.Pool.QueryRow(ctx, `SELECT coalesce(max(id), '') FROM tasks WHERE tenant = 'demo' AND idempotency_key = $1`, key).Scan(&task)
+	return key, task, err
+}
+
+// checkCap answers errSpendCap once the store total of the run reached the cap.
+func (b *Bench) checkCap(ctx context.Context) error {
+	if b.spendCap <= 0 {
+		return nil
+	}
+	t, err := b.spendTotal(ctx)
+	if err != nil {
+		return err
+	}
+	if t >= b.spendCap {
+		return errSpendCap
 	}
 	return nil
 }

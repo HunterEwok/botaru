@@ -15,8 +15,6 @@ import (
 	"strings"
 
 	"go.yaml.in/yaml/v3"
-
-	"github.com/HunterEwok/botaru/impl/internal/yamlx"
 )
 
 type junitSuites struct {
@@ -155,47 +153,73 @@ func suiteOf(id string) string { return reCaseNumber.ReplaceAllString(id, "") }
 // roleNames are the role manifest names of the bench role folders.
 var roleNames = map[string]string{"hello": "hello", "ops-reader": "ops-reader"}
 
-// IndexEntries are the EvalReports entries of a real run (PRV-3): one per role and set whose
-// cases all have an outcome, with the static fingerprint of the role as the bench applied it, the
-// date and the counts; metadata only, no inputs and no model text. A set with a case not run or
-// not rated gets no entry, so an entry never stands for cases that did not run; a mock run
-// writes none, because it does not measure a model.
+// IndexEntries are the EvalReports entries of a real run (PRV-3): one per role and set, with
+// the static fingerprint of the role as the bench applied it, the date and the counts; metadata
+// only, no inputs and no model text. An entry is written only when the run holds every active
+// case of that role and set for the claim, each with an outcome, and every blocking case of the
+// role has an outcome, so an entry never stands for cases that did not run: a run narrowed with
+// -case or -role, or with cases not run, writes no entry for the sets it leaves incomplete. A
+// mock run writes none, because it does not measure a model.
 func IndexEntries(ctx context.Context, b *Bench, rep *Report) ([]map[string]any, []string, error) {
 	if rep.Mode != "real" || rep.Stopped != "" || rep.Invalid != "" {
 		return nil, nil, nil
 	}
 	type key struct{ role, suite string }
-	groups := map[key][]*Result{}
+	got := map[string]*Result{}
+	sets := map[key]bool{}
 	for _, r := range rep.Results {
 		if r.Status == Skipped {
 			continue
 		}
-		k := key{r.Case.Role, suiteOf(r.Case.ID)}
-		groups[k] = append(groups[k], r)
+		got[r.Case.ID] = r
+		sets[key{r.Case.Role, suiteOf(r.Case.ID)}] = true
 	}
-	keys := slices.SortedFunc(mapKeys(groups), func(a, b key) int { return strings.Compare(a.role+"/"+a.suite, b.role+"/"+b.suite) })
+	rated := func(id string) bool {
+		r := got[id]
+		return r != nil && (r.Status == Passed || r.Status == Failed)
+	}
+	keys := slices.SortedFunc(mapKeys(sets), func(a, b key) int { return strings.Compare(a.role+"/"+a.suite, b.role+"/"+b.suite) })
 	var out []map[string]any
 	var notes []string
 	for _, k := range keys {
-		rs := groups[k]
 		role := roleNames[k.role]
 		if role == "" {
 			continue
 		}
-		failures, sec, open := 0, 0, 0
-		for _, r := range rs {
-			switch r.Status {
-			case Failed:
+		var missing, open, blocking []string
+		failures, sec, n := 0, 0, 0
+		for _, c := range rep.Scope {
+			if c.Role != k.role {
+				continue
+			}
+			if c.Blocking && !rated(c.ID) {
+				blocking = append(blocking, c.ID)
+			}
+			if suiteOf(c.ID) != k.suite {
+				continue
+			}
+			n++
+			switch r := got[c.ID]; {
+			case r == nil:
+				missing = append(missing, c.ID)
+			case !rated(c.ID):
+				open = append(open, c.ID)
+			case r.Status == Failed:
 				failures++
 				if r.Security() {
 					sec++
 				}
-			case NotRun, Unrated:
-				open++
 			}
 		}
-		if open > 0 {
-			notes = append(notes, fmt.Sprintf("%s/%s: %d of %d cases without an outcome, no index entry", k.role, k.suite, open, len(rs)))
+		switch {
+		case len(missing) > 0:
+			notes = append(notes, fmt.Sprintf("%s/%s: no index entry, the run does not hold every case of the set (missing %s)", k.role, k.suite, strings.Join(missing, ", ")))
+			continue
+		case len(open) > 0:
+			notes = append(notes, fmt.Sprintf("%s/%s: no index entry, cases without an outcome: %s", k.role, k.suite, strings.Join(open, ", ")))
+			continue
+		case len(blocking) > 0:
+			notes = append(notes, fmt.Sprintf("%s/%s: no index entry, blocking cases of the role without an outcome: %s", k.role, k.suite, strings.Join(blocking, ", ")))
 			continue
 		}
 		fp, ok, err := b.c.StaticFingerprint(ctx, "demo", role)
@@ -203,7 +227,7 @@ func IndexEntries(ctx context.Context, b *Bench, rep *Report) ([]map[string]any,
 			return nil, nil, err
 		}
 		e := map[string]any{"subject": map[string]any{"kind": "role", "name": role}, "suite": k.suite, "date": rep.Date,
-			"cases": len(rs), "failures": failures, "security_failures": sec}
+			"cases": n, "failures": failures, "security_failures": sec}
 		if ok {
 			e["fingerprint"] = fp
 		}
@@ -213,39 +237,85 @@ func IndexEntries(ctx context.Context, b *Bench, rep *Report) ([]map[string]any,
 }
 
 // WriteIndex adds entries to the EvalReports manifest of evals/reports/index.yaml, creating it
-// when it does not exist (spec/manifests/eval-reports.schema.json).
+// when it does not exist (spec/manifests/eval-reports.schema.json). The comments of an existing
+// file are kept, and the file is replaced by a rename, so a crash never leaves half of it.
 func WriteIndex(path string, entries []map[string]any) error {
-	doc := map[string]any{"apiVersion": "botaru/v1alpha1", "kind": "EvalReports", "metadata": map[string]any{"name": "evals"},
-		"spec": map[string]any{"reports": []any{}}}
+	var root yaml.Node
+	head := ""
 	if raw, err := os.ReadFile(path); err == nil {
-		var old map[string]any
-		if err := yamlx.Unmarshal(raw, &old); err != nil {
+		if err := yaml.Unmarshal(raw, &root); err != nil {
 			return fmt.Errorf("%s: %w", path, err)
 		}
-		if str(old["kind"]) != "EvalReports" {
-			return fmt.Errorf("%s is not an EvalReports manifest", path)
-		}
-		doc = old
 	} else if !os.IsNotExist(err) {
 		return err
 	}
-	sp := asMap(doc["spec"])
-	if sp == nil {
-		sp = map[string]any{}
-		doc["spec"] = sp
+	if len(root.Content) == 0 {
+		head = "# The eval report index (PRV-3): run metadata only, written by botaru-eval.\n"
+		doc := map[string]any{"apiVersion": "botaru/v1alpha1", "kind": "EvalReports", "metadata": map[string]any{"name": "evals"},
+			"spec": map[string]any{"reports": []any{}}}
+		var m yaml.Node
+		if err := m.Encode(doc); err != nil {
+			return err
+		}
+		root = yaml.Node{Kind: yaml.DocumentNode, Content: []*yaml.Node{&m}}
 	}
-	reports := asList(sp["reports"])
+	doc := root.Content[0]
+	if doc.Kind != yaml.MappingNode || nodeValue(doc, "kind") == nil || nodeValue(doc, "kind").Value != "EvalReports" {
+		return fmt.Errorf("%s is not an EvalReports manifest", path)
+	}
+	spec := nodeValue(doc, "spec")
+	if spec == nil || spec.Kind != yaml.MappingNode {
+		return fmt.Errorf("%s: spec is not a mapping", path)
+	}
+	reports := nodeValue(spec, "reports")
+	if reports == nil {
+		spec.Content = append(spec.Content, &yaml.Node{Kind: yaml.ScalarNode, Value: "reports"}, &yaml.Node{Kind: yaml.SequenceNode})
+		reports = spec.Content[len(spec.Content)-1]
+	}
+	if reports.Kind != yaml.SequenceNode {
+		return fmt.Errorf("%s: spec.reports is not a list", path)
+	}
+	reports.Style = 0
 	for _, e := range entries {
-		reports = append(reports, e)
+		var n yaml.Node
+		if err := n.Encode(e); err != nil {
+			return err
+		}
+		reports.Content = append(reports.Content, &n)
 	}
-	sp["reports"] = reports
-	out, err := yaml.Marshal(doc)
+	out, err := yaml.Marshal(&root)
 	if err != nil {
 		return err
 	}
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+	dir := filepath.Dir(path)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return err
 	}
-	head := "# The eval report index (PRV-3): run metadata only, written by botaru-eval.\n"
-	return os.WriteFile(path, append([]byte(head), out...), 0o644)
+	tmp, err := os.CreateTemp(dir, ".index-*.yaml")
+	if err != nil {
+		return err
+	}
+	defer os.Remove(tmp.Name())
+	if _, err := tmp.Write(append([]byte(head), out...)); err != nil {
+		tmp.Close()
+		return err
+	}
+	if err := tmp.Chmod(0o644); err != nil {
+		tmp.Close()
+		return err
+	}
+	if err := tmp.Close(); err != nil {
+		return err
+	}
+	return os.Rename(tmp.Name(), path)
+}
+
+// nodeValue is the value of key in a YAML mapping node, or nil.
+func nodeValue(m *yaml.Node, key string) *yaml.Node {
+	for i := 0; i+1 < len(m.Content); i += 2 {
+		if m.Content[i].Value == key {
+			return m.Content[i+1]
+		}
+	}
+	return nil
 }

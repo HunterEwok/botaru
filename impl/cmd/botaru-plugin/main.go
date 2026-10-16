@@ -36,10 +36,7 @@ func main() {
 		}
 		return
 	}
-	if err := pluginmain.Main(kind, os.Args[2:]); err != nil {
-		fmt.Fprintln(os.Stderr, "botaru-plugin:", err)
-		os.Exit(1)
-	}
+	pluginmain.Exit("botaru-plugin", pluginmain.Main(kind, os.Args[2:]))
 }
 
 // polkit prints the rule for the via: host services of one machine of a catalog manifest.

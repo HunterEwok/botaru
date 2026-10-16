@@ -8,6 +8,7 @@ package pluginmain
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"os"
@@ -56,6 +57,26 @@ func (s sources) Set(v string) error {
 	return nil
 }
 
+// UsageError is a bad flag; the flag package has already printed the usage.
+type UsageError struct{ Err error }
+
+func (e *UsageError) Error() string { return e.Err.Error() }
+func (e *UsageError) Unwrap() error { return e.Err }
+
+// Exit ends the process for the outcome of Main, with the codes of flag.ExitOnError: 0 for
+// success and -h, 2 for a bad flag, and 1, after printing the error with prefix, otherwise.
+func Exit(prefix string, err error) {
+	var u *UsageError
+	switch {
+	case err == nil, errors.Is(err, flag.ErrHelp):
+		os.Exit(0)
+	case errors.As(err, &u):
+		os.Exit(2)
+	}
+	fmt.Fprintln(os.Stderr, prefix+":", err)
+	os.Exit(1)
+}
+
 // Main parses the flags of one plugin kind and serves it until its input ends.
 func Main(kind string, args []string) error {
 	fs := flag.NewFlagSet(kind, flag.ContinueOnError)
@@ -74,7 +95,10 @@ func Main(kind string, args []string) error {
 	fs.StringVar(&mon.tenant, "tenant", "", "monitor: the tenant of the catalog")
 	fs.Var(mon.items, "item", "monitor: <field>=<Zabbix item key>, overrides a key of item_history, repeated")
 	if err := fs.Parse(args); err != nil {
-		return err
+		if errors.Is(err, flag.ErrHelp) {
+			return err
+		}
+		return &UsageError{err}
 	}
 	return run(kind, *manifestPath, *specRoot, *host, *results, *systemctl, *queue, src, mon)
 }

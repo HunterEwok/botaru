@@ -3,7 +3,6 @@
 package evals
 
 import (
-	"fmt"
 	"os"
 	"testing"
 
@@ -14,11 +13,7 @@ import (
 func TestMain(m *testing.M) {
 	// The test binary is also the plugin process of the bench toolhosts.
 	if kind := os.Getenv("BOTARU_EVAL_PLUGIN"); kind != "" {
-		if err := pluginmain.Main(kind, os.Args[1:]); err != nil {
-			fmt.Fprintln(os.Stderr, err)
-			os.Exit(1)
-		}
-		os.Exit(0)
+		pluginmain.Exit("plugin", pluginmain.Main(kind, os.Args[1:]))
 	}
 	pgtest.Main(m)
 }

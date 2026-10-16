@@ -91,6 +91,8 @@ type Bench struct {
 	done    sync.WaitGroup
 	closers []func()
 	people  map[string]string // seed name -> principal id
+	// spendCap is the store spend total at which a running case stops (0: none).
+	spendCap int64
 	// ungranted are the seed groups of a person the bench could not grant (PRM-13).
 	ungranted map[string][]string
 	// Profiles are the model profile names and models the bench applied.
@@ -470,7 +472,7 @@ func (b *Bench) startWorkers(ctx, runCtx context.Context, tx *texts.Catalog, bot
 	if err != nil {
 		return err
 	}
-	ch := telegram.New(telegram.Config{Core: &p1client.Client{BaseURL: b.p1, Token: tok}, Channel: "telegram", BotAPI: botURL, BotToken: "EVAL:TOKEN",
+	ch := telegram.New(telegram.Config{Core: &p1client.Client{BaseURL: b.p1, Token: tok}, Channel: benchChannel, BotAPI: botURL, BotToken: "EVAL:TOKEN",
 		Texts: tx, LinkAllowlist: b.linkAllowlist, PollTimeoutS: 1, Logger: b.cfg.Logger})
 	if err := ch.Hello(ctx); err != nil {
 		return err
@@ -812,4 +814,16 @@ func (fakeMonitor) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(map[string]any{"jsonrpc": "2.0", "result": result, "id": req.ID})
+}
+
+// benchChannel is the farm channel of the bench; the core keys a message's task by it and the
+// update id.
+const benchChannel = "telegram"
+
+// spendTotal is the provider spend of all bench tenants in the store, reserved and settled,
+// with corrections; the task budget reservations (unit task) are not spend.
+func (b *Bench) spendTotal(ctx context.Context) (int64, error) {
+	var n int64
+	err := b.st.Pool.QueryRow(ctx, `SELECT coalesce(sum(eur_micros + coalesce(correction_eur_micros, 0)), 0) FROM spend WHERE unit <> 'task'`).Scan(&n)
+	return n, err
 }

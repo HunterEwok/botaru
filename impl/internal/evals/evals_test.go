@@ -5,6 +5,7 @@ package evals
 import (
 	"bytes"
 	"encoding/base64"
+	"errors"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
@@ -175,7 +176,7 @@ func TestCommonChecks(t *testing.T) {
 // writes EvalReports entries with the static fingerprint (PRV-3).
 func TestBenchRuns(t *testing.T) {
 	root := testRoot(t)
-	ids := []string{"hello-001", "hello-002", "hello-003", "ops-001"}
+	ids := []string{"hello-001", "hello-002", "hello-003", "ops-001", "iso-02"}
 	claim := conform.Claim{Version: "v0.1", Profiles: []string{"core"}}
 	p, pr, th := testPlan(t, root, claim, Filter{IDs: ids})
 	status := func(rep *Report) map[string]*Result {
@@ -238,9 +239,22 @@ func TestBenchRuns(t *testing.T) {
 		if s["ops-001"].Status != NotRun || !strings.Contains(s["ops-001"].Detail, "PRM-13") {
 			t.Fatalf("ops-001: %s %s", s["ops-001"].Status, s["ops-001"].Detail)
 		}
-		es, _, err := IndexEntries(t.Context(), b, rep)
+		// iso-02's setup.before is bob's: refused, it would leave the case passing untested.
+		if s["iso-02"].Status != NotRun || !strings.Contains(s["iso-02"].Detail, "setup.before") {
+			t.Fatalf("iso-02: %s %s", s["iso-02"].Status, s["iso-02"].Detail)
+		}
+		if rep.Spend <= 0 {
+			t.Fatalf("spend %d, want the store's spend of the hello cases", rep.Spend)
+		}
+		es, notes, err := IndexEntries(t.Context(), b, rep)
 		if err != nil || len(es) != 1 || es[0]["fingerprint"] == nil || es[0]["suite"] != "hello" {
-			t.Fatalf("index entries %v %v", es, err)
+			t.Fatalf("index entries %v %v %v", es, notes, err)
+		}
+		// A run that does not hold every case of the set writes no entry for it.
+		part := *rep
+		part.Results = slices.DeleteFunc(slices.Clone(rep.Results), func(r *Result) bool { return r.Case.ID == "hello-002" })
+		if es, notes, _ := IndexEntries(t.Context(), b, &part); len(es) != 0 || len(notes) == 0 || !strings.Contains(strings.Join(notes, " "), "hello-002") {
+			t.Fatalf("partial set: %v %v", es, notes)
 		}
 		path := filepath.Join(t.TempDir(), "index.yaml")
 		if err := WriteIndex(path, es); err != nil {
@@ -250,19 +264,33 @@ func TestBenchRuns(t *testing.T) {
 			t.Fatal(err)
 		}
 		raw, _ := os.ReadFile(path)
-		if strings.Count(string(raw), "suite: hello") != 2 || !strings.Contains(string(raw), "kind: EvalReports") {
+		if strings.Count(string(raw), "suite: hello") != 2 || !strings.Contains(string(raw), "kind: EvalReports") || !strings.HasPrefix(string(raw), "# The eval report index") {
 			t.Fatalf("index:\n%s", raw)
 		}
 
-		// The cost guard: with a cap below one case's estimate the run stops before the case.
+		// The cost guard: with a cap below one case's reserve the run stops before the case.
 		r.MaxRunMicros = 1
 		hp, _, _ := testPlan(t, root, claim, Filter{IDs: []string{"hello-003"}})
 		rep = r.Run(t.Context(), hp)
-		if rep.Stopped == "" || status(rep)["hello-003"].Status != NotRun {
-			t.Fatalf("cap: stopped %q, %+v", rep.Stopped, status(rep)["hello-003"])
+		if rep.Stopped == "" || status(rep)["hello-003"].Status != NotRun || rep.Spend != 0 {
+			t.Fatalf("cap: stopped %q, spend %d, %+v", rep.Stopped, rep.Spend, status(rep)["hello-003"])
 		}
 		if es, _, _ := IndexEntries(t.Context(), b, rep); len(es) != 0 {
 			t.Fatal("a stopped run wrote index entries")
+		}
+		// A reserve that fits but spend that crosses the cap stops the run during the case.
+		hp.Cases[0].Estimate = 0
+		hp.Cases = append(hp.Cases, &CasePlan{Case: hp.Cases[0].Case, Profile: hp.Cases[0].Profile})
+		rep = r.Run(t.Context(), hp)
+		if !strings.Contains(rep.Stopped, "reached") || rep.Spend < 1 || rep.Results[1].Status != NotRun {
+			t.Fatalf("cap during a case: stopped %q, spend %d, %+v", rep.Stopped, rep.Spend, rep.Results)
+		}
+
+		// A setup step the core makes no task for leaves the case untested: not run.
+		err = b.step(t.Context(), "before", map[string]any{"from": "dave", "chat": "dave-dm", "message": "just saying hi, no command"}, 30*time.Second)
+		var nr *notRunError
+		if !errors.As(err, &nr) || !strings.Contains(nr.reason, "made no task") {
+			t.Fatalf("step without a task: %v", err)
 		}
 	})
 }

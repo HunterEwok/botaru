@@ -5,9 +5,12 @@ package evals
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"slices"
 	"strings"
 	"time"
+
+	"github.com/jackc/pgx/v5"
 )
 
 // Observation is what a case left on the bench, collected after the run: the tasks of the case,
@@ -27,13 +30,16 @@ type Observation struct {
 	ModelCalls []modelCall
 	// Unscripted counts mock model calls of a case without a script.
 	Unscripted int
-	// Spend is the case's spend in micro-euros, reserved and committed.
-	Spend int64
+	// Refusal is the first refusal of the input's sender by the core, when it made no task.
+	Refusal *Refusal
 	// Answers are the generator answers of the case.
 	Answers map[string]any
 	// DataIPs are the full addresses of the generated data (INJ-4).
 	DataIPs []string
 }
+
+// Refusal is a task.enqueue the core denied: the reason and the task type.
+type Refusal struct{ Reason, Type string }
 
 // TaskRow is one task of a case.
 type TaskRow struct {
@@ -62,14 +68,15 @@ func (o *Observation) taskIDs() []string {
 }
 
 // collect reads what happened on the bench since the case started: tasks created at or after
-// since in tenant demo, with their deliveries, tool calls and audit records.
-func (b *Bench) collect(ctx context.Context, since time.Time, selfAfter time.Time) (*Observation, error) {
+// since in tenant demo, with their deliveries, tool calls and audit records. The task of the
+// case is the one of the input's sender with the input's idempotency key (its update id).
+func (b *Bench) collect(ctx context.Context, since time.Time, sender, key string) (*Observation, error) {
 	o := &Observation{}
 	names := map[string]string{}
 	for n, id := range b.people {
 		names[id] = n
 	}
-	rows, err := b.st.Pool.Query(ctx, `SELECT id, type, state, coalesce(reason, ''), initiator, coalesce(result, 'null'::jsonb), record, created_at
+	rows, err := b.st.Pool.Query(ctx, `SELECT id, type, state, coalesce(reason, ''), initiator, idempotency_key, coalesce(result, 'null'::jsonb), record, created_at
 		FROM tasks WHERE tenant = 'demo' AND created_at >= $1 ORDER BY created_at, id`, since)
 	if err != nil {
 		return nil, err
@@ -77,19 +84,20 @@ func (b *Bench) collect(ctx context.Context, since time.Time, selfAfter time.Tim
 	for rows.Next() {
 		t := &TaskRow{}
 		var res, rec []byte
-		if err := rows.Scan(&t.ID, &t.Type, &t.State, &t.Reason, &t.Initiator, &res, &rec, &t.Created); err != nil {
+		var idem string
+		if err := rows.Scan(&t.ID, &t.Type, &t.State, &t.Reason, &t.Initiator, &idem, &res, &rec, &t.Created); err != nil {
 			rows.Close()
 			return nil, err
 		}
 		_ = json.Unmarshal(res, &t.Result)
 		_ = json.Unmarshal(rec, &t.Record)
+		if o.Self == nil && idem == key && t.Initiator == sender {
+			o.Self = t
+		}
 		if n := names[t.Initiator]; n != "" {
 			t.Initiator = n
 		}
 		o.Tasks = append(o.Tasks, t)
-		if o.Self == nil && !t.Created.Before(selfAfter) {
-			o.Self = t
-		}
 	}
 	rows.Close()
 	if err := rows.Err(); err != nil {
@@ -174,8 +182,16 @@ func (b *Bench) collect(ctx context.Context, since time.Time, selfAfter time.Tim
 	if err := arows.Err(); err != nil {
 		return nil, err
 	}
-	if err := b.st.Pool.QueryRow(ctx, `SELECT coalesce(sum(eur_micros), 0) FROM spend WHERE task = ANY($1)`, ids).Scan(&o.Spend); err != nil {
-		return nil, err
+	if o.Self == nil {
+		var reason, typ string
+		err := b.st.Pool.QueryRow(ctx, `SELECT coalesce(record->>'reason', ''), coalesce(record->'after'->>'type', record->'target'->>'id', '') FROM audit
+			WHERE tenant = 'demo' AND record->>'command' = 'task.enqueue' AND record->>'ok' = 'false' AND record->'actor'->>'principal' = $1
+			AND (record->>'at')::timestamptz >= $2 ORDER BY epoch, seq LIMIT 1`, sender, since).Scan(&reason, &typ)
+		if err == nil {
+			o.Refusal = &Refusal{Reason: reason, Type: typ}
+		} else if !errors.Is(err, pgx.ErrNoRows) {
+			return nil, err
+		}
 	}
 	return o, nil
 }

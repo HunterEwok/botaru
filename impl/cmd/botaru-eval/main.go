@@ -21,9 +21,12 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"math"
+	"net/url"
 	"os"
 	"os/signal"
 	"path/filepath"
+	"slices"
 	"strings"
 	"syscall"
 
@@ -48,11 +51,7 @@ func main() {
 			fmt.Fprintln(os.Stderr, "usage: botaru-eval plugin KIND [flags]")
 			os.Exit(2)
 		}
-		if err := pluginmain.Main(os.Args[2], os.Args[3:]); err != nil {
-			fmt.Fprintln(os.Stderr, "botaru-eval plugin:", err)
-			os.Exit(1)
-		}
-		return
+		pluginmain.Exit("botaru-eval plugin", pluginmain.Main(os.Args[2], os.Args[3:]))
 	}
 	os.Exit(run(os.Args[1:], os.Stdout, os.Stderr))
 }
@@ -62,6 +61,7 @@ type options struct {
 	dryPlan, real, keepDB, verbose           bool
 	modelProfiles, keyFile, providerURL      string
 	maxEUR                                   float64
+	maxEURSet                                bool
 	repeats                                  int
 	out, index                               string
 }
@@ -91,6 +91,15 @@ func run(args []string, stdout, stderr io.Writer) int {
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}
+	if fs.NArg() > 0 {
+		fmt.Fprintln(stderr, "botaru-eval: unexpected arguments:", strings.Join(fs.Args(), " "))
+		return 2
+	}
+	fs.Visit(func(f *flag.Flag) {
+		if f.Name == "max-eur" {
+			o.maxEURSet = true
+		}
+	})
 	if *showVersion {
 		fmt.Fprintln(stdout, version.String("botaru-eval"))
 		return 0
@@ -142,7 +151,14 @@ func runWith(o options, stdout, stderr io.Writer) (int, error) {
 	if err != nil {
 		return 1, err
 	}
-	in, later := evals.Select(all, evals.Filter{Roles: split(o.roles), IDs: split(o.cases), Version: claim.Version})
+	f := evals.Filter{Roles: split(o.roles), IDs: split(o.cases), Version: claim.Version}
+	in, later := evals.Select(all, f)
+	if (len(f.Roles) > 0 || len(f.IDs) > 0) && len(in)+len(later) == 0 {
+		return 2, errors.New("-role and -case select no case")
+	}
+	if unknown := unknownIDs(all, f.IDs); len(unknown) > 0 {
+		return 2, fmt.Errorf("-case names no case file: %s", strings.Join(unknown, ", "))
+	}
 	prices, err := evals.Prices(root, o.modelProfiles)
 	if err != nil {
 		return 1, err
@@ -155,7 +171,10 @@ func runWith(o options, stdout, stderr io.Writer) (int, error) {
 
 	// The cost guard (docs/quality.md, "Cost"): a run may only lower budget.max_eur_per_run.
 	capMicros := th.MaxRunMicros
-	if o.maxEUR > 0 {
+	if o.maxEURSet {
+		if !(o.maxEUR > 0) || math.IsInf(o.maxEUR, 0) {
+			return 2, fmt.Errorf("-max-eur must be a positive amount, got %v", o.maxEUR)
+		}
 		capMicros = money.FromEUR(o.maxEUR)
 		if capMicros > th.MaxRunMicros {
 			return 2, fmt.Errorf("-max-eur %.2f is above budget.max_eur_per_run of evals/thresholds.yaml; a run can only lower it (split the run with -role)", o.maxEUR)
@@ -169,8 +188,8 @@ func runWith(o options, stdout, stderr io.Writer) (int, error) {
 		}
 		model.Key = key
 		est := plan.EstimateWith(repeats)
-		fmt.Fprintf(stdout, "Real run: %d cases, estimate %s EUR (%d repeats of the blocking cases), cap %s EUR\n",
-			len(plan.Cases), eur(est), repeats, eur(capMicros))
+		fmt.Fprintf(stdout, "Real run: %d cases, estimate %s EUR (%d repeats of the blocking cases), cap %s EUR; a case starts only when %d attempts of its estimate fit under the cap\n",
+			len(plan.Cases), eur(est), repeats, eur(capMicros), th.Retries+1)
 		if est > capMicros {
 			fmt.Fprintln(stdout, "The estimate is above the cap: the run stops before the case that would cross it.")
 		}
@@ -186,7 +205,7 @@ func runWith(o options, stdout, stderr io.Writer) (int, error) {
 		return 1, err
 	}
 	if o.keepDB {
-		fmt.Fprintln(stderr, "botaru-eval: keeping the database", dsn)
+		fmt.Fprintln(stderr, "botaru-eval: keeping the database", redactDSN(dsn))
 	} else {
 		defer drop()
 	}
@@ -313,20 +332,51 @@ func freshDatabase(ctx context.Context, dsn string) (string, func(), error) {
 	return withDatabase(dsn, name), drop, nil
 }
 
-// withDatabase is dsn with its database replaced by db.
+// withDatabase is dsn with its database replaced by db: the URL path, or the dbname keyword;
+// a dbname or database query parameter of a URL is dropped, since it would win over the path.
 func withDatabase(dsn, db string) string {
-	if strings.Contains(dsn, "://") {
-		head, query, _ := strings.Cut(dsn, "?")
-		if i := strings.Index(head[strings.Index(head, "://")+3:], "/"); i >= 0 {
-			head = head[:strings.Index(head, "://")+3+i]
-		}
-		out := head + "/" + db
-		if query != "" {
-			out += "?" + query
-		}
-		return out
+	if u, err := url.Parse(dsn); err == nil && (u.Scheme == "postgres" || u.Scheme == "postgresql") {
+		q := u.Query()
+		q.Del("dbname")
+		q.Del("database")
+		u.RawQuery = q.Encode()
+		u.Path = "/" + db
+		u.RawPath = ""
+		return u.String()
 	}
-	return dsn + " dbname=" + db
+	var kept []string
+	for _, f := range strings.Fields(dsn) {
+		if k, _, _ := strings.Cut(f, "="); k != "dbname" {
+			kept = append(kept, f)
+		}
+	}
+	return strings.Join(append(kept, "dbname="+db), " ")
+}
+
+// redactDSN is dsn without its password, for printing.
+func redactDSN(dsn string) string {
+	if u, err := url.Parse(dsn); err == nil && u.Scheme != "" {
+		return u.Redacted()
+	}
+	var kept []string
+	for _, f := range strings.Fields(dsn) {
+		if k, _, _ := strings.Cut(f, "="); k == "password" {
+			f = "password=xxxxx"
+		}
+		kept = append(kept, f)
+	}
+	return strings.Join(kept, " ")
+}
+
+// unknownIDs are the ids of -case without a case file.
+func unknownIDs(all []*evals.Case, ids []string) []string {
+	var out []string
+	for _, id := range ids {
+		if !slices.ContainsFunc(all, func(c *evals.Case) bool { return c.ID == id }) {
+			out = append(out, id)
+		}
+	}
+	return out
 }
 
 func eur(m int64) string { return fmt.Sprintf("%.4f", float64(m)/1e6) }

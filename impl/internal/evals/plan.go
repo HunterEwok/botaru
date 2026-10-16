@@ -130,18 +130,19 @@ func Prices(root, dir string) (map[string]Price, error) {
 	if err != nil {
 		return nil, err
 	}
-	if dir != "" {
-		more, err := filepath.Glob(filepath.Join(dir, "*.yaml"))
-		if err != nil {
-			return nil, err
-		}
-		files = append(files, more...)
-	}
-	out := map[string]Price{}
 	docs, err := manifest.ReadFiles(files)
 	if err != nil {
 		return nil, err
 	}
+	if dir != "" {
+		// The same reading as the bench's: every .yaml and .yml file under dir.
+		more, err := manifest.ReadFiles([]string{dir})
+		if err != nil {
+			return nil, err
+		}
+		docs = append(docs, more...)
+	}
+	out := map[string]Price{}
 	for _, d := range docs {
 		if d.Kind != "ModelProfile" {
 			continue
@@ -212,6 +213,8 @@ type Plan struct {
 	Cases       []*CasePlan
 	Later       []*Case
 	EstimateRun int64
+	// Scope are all active cases of the claim, whatever the filters.
+	Scope []*Case
 }
 
 // EvalRules are the active rules of a claim with the eval method.
@@ -250,6 +253,7 @@ func splitRule(id string) (string, int) {
 // NewPlan plans a run of the selected cases against the eval rules of a claim.
 func NewPlan(root string, rules map[string]*conform.Rule, catalog map[string]*CatalogEntry, all, in, later []*Case, claim conform.Claim, prices map[string]Price) *Plan {
 	p := &Plan{Claim: claim, Later: later}
+	p.Scope, _ = Select(all, Filter{Version: claim.Version})
 	byID := map[string]*Case{}
 	for _, c := range all {
 		byID[c.ID] = c
