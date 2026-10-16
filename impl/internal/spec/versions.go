@@ -17,6 +17,35 @@ import (
 // of a feature profile outside this list is refused at apply (MAN-11).
 var Profiles = []string{"core"}
 
+// Ahead lists, by manifest kind, the fields of a later skeleton version that this build already
+// implements, as JSON pointers into the manifest where "*" stands for any one segment (a list
+// index or a map key). apply accepts such a field although the claimed version is earlier; the
+// rest of that version stays refused (MAN-11). Kinds of a later version are listed under the
+// kind with the pointer "/kind". The list shrinks when the claimed version reaches them.
+var Ahead = map[string][]string{}
+
+// ahead says whether the field at ptr of a manifest of kind is in Ahead.
+func ahead(kind, ptr string) bool {
+	segs := strings.Split(ptr, "/")
+	for _, pat := range Ahead[kind] {
+		ps := strings.Split(pat, "/")
+		if len(ps) != len(segs) {
+			continue
+		}
+		ok := true
+		for i := range ps {
+			if ps[i] != "*" && ps[i] != segs[i] {
+				ok = false
+				break
+			}
+		}
+		if ok {
+			return true
+		}
+	}
+	return false
+}
+
 // VersionLater reports whether the skeleton version a (v0.2) is later than b (v0.1). A value
 // that is not of the form vMAJOR.MINOR counts as later, so an unknown mark is never accepted.
 func VersionLater(a, b string) bool {
@@ -67,6 +96,9 @@ func (s *Spec) laterFields(name string, v any, version string) map[string]string
 		return nil
 	}
 	w := &walker{s: s, version: version, why: map[string]string{}}
+	if m, ok := v.(map[string]any); ok && name == "manifest:manifest" {
+		w.kind, _ = m["kind"].(string)
+	}
 	w.walk(root, id, v, "", 0, "it is the whole manifest")
 	return w.why
 }
@@ -75,6 +107,8 @@ type walker struct {
 	s       *Spec
 	version string
 	why     map[string]string
+	// kind is the manifest kind whose Ahead fields the walk accepts; empty outside manifests.
+	kind string
 }
 
 func (w *walker) add(ptr, why string) {
@@ -121,7 +155,7 @@ func (w *walker) walk(node any, doc string, v any, ptr string, depth int, why st
 	if !ok || depth > 64 {
 		return
 	}
-	if xv, ok := m["x-botaru-version"].(string); ok && VersionLater(xv, w.version) {
+	if xv, ok := m["x-botaru-version"].(string); ok && VersionLater(xv, w.version) && !(w.kind != "" && ahead(w.kind, ptr)) {
 		if why == "" && w.meaningful(m, v) {
 			why = whyVariant
 		}
@@ -429,7 +463,7 @@ func (s *Spec) unsupported(v map[string]any) (map[string]string, error) {
 		return nil, err
 	}
 	if e, ok := reg.Entry(kind); ok {
-		if since, _ := e["since"].(string); since != "" && VersionLater(since, Version) {
+		if since, _ := e["since"].(string); since != "" && VersionLater(since, Version) && !ahead(kind, "/kind") {
 			return map[string]string{"/kind": "the kind is of a later version; the whole manifest is refused"}, nil
 		}
 	}
@@ -438,7 +472,7 @@ func (s *Spec) unsupported(v map[string]any) (map[string]string, error) {
 		out = map[string]string{}
 	}
 	for p, f := range profileFields(kind, nv) {
-		if f.need == "v0.2" && !VersionLater(f.need, Version) || f.need != "v0.2" && slices.Contains(Profiles, f.need) {
+		if f.need == "v0.2" && (!VersionLater(f.need, Version) || ahead(kind, p)) || f.need != "v0.2" && slices.Contains(Profiles, f.need) {
 			continue
 		}
 		covered := false
