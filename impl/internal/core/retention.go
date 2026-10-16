@@ -258,6 +258,11 @@ func (c *Core) retentionLoop(ctx context.Context) error {
 				WHERE k.purged_at IS NULL AND k.state IN ('completed', 'failed', 'canceled', 'rejected') AND k.updated_at <= $9
 				AND k.updated_at <= coalesce(p.content, $6) LIMIT $8 FOR UPDATE OF k SKIP LOCKED`, base...)
 		},
+		// An item of a purged campaign that ended after the campaign was marked (one still
+		// stopping then) loses what it got since.
+		exec(`UPDATE campaign_items SET args = '{}', summary = NULL WHERE (campaign, n) IN (SELECT i.campaign, i.n FROM campaign_items i
+			JOIN campaigns k ON k.id = i.campaign WHERE k.purged_at IS NOT NULL AND i.state <> 'pending' AND (i.args <> '{}' OR i.summary IS NOT NULL)
+			LIMIT $8 FOR UPDATE OF i SKIP LOCKED)`, base),
 		// The note of a finding and the author note of a closed proposal are content
 		// (MGR-30, PRP-1); the rest of each record is metadata.
 		exec(`UPDATE findings SET note = NULL WHERE id IN (SELECT f.id FROM findings f LEFT JOIN p ON p.tenant = f.tenant

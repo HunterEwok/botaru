@@ -37,9 +37,10 @@ const defaultSubjectRequestDays = 30
 const erasureRetry = time.Minute
 
 // coreStores are the content stores of the core in the order they are erased.
-// A script run and a campaign come before the deliveries: canceling a live one plans its
-// last card, which the deliveries step then withholds.
-var coreStores = []string{"tasks", "scripts", "campaigns", "deliveries", "toolcalls", "sessions", "memory", "files"}
+// Campaigns and script runs come first: a campaign of the scope is marked purged and stopped
+// before the tasks step cancels its parent task, so it releases no more items and enqueues no
+// continuation; canceling a live run plans its last card, which the deliveries step withholds.
+var coreStores = []string{"campaigns", "scripts", "tasks", "deliveries", "toolcalls", "sessions", "memory", "files"}
 
 // ErasureScope is the scope of an erasure request (deletion-request).
 type ErasureScope struct {
@@ -327,7 +328,9 @@ func (c *Core) erasureLoop(ctx context.Context) error {
 // lacks the operation (SEC-11, RET-11). A channel step with no channel worker left and the
 // step of a runtime that is revoked or stale fail not_ready, so erasure.retry can run them.
 func (c *Core) runCoreSteps(ctx context.Context, tx pgx.Tx, now time.Time, cat *Catalog, r *erasureRow) error {
-	rows, err := tx.Query(ctx, `SELECT store, kind, target FROM erasure_steps WHERE request = $1 AND state = 'pending' AND kind IN ('core', 'channel', 'runtime') ORDER BY id`, r.ID)
+	// Core steps in the order of coreStores, also for steps an upgrade added later.
+	rows, err := tx.Query(ctx, `SELECT store, kind, target FROM erasure_steps WHERE request = $1 AND state = 'pending' AND kind IN ('core', 'channel', 'runtime')
+		ORDER BY array_position($2::text[], store) NULLS LAST, id`, r.ID, coreStores)
 	if err != nil {
 		return err
 	}
@@ -526,8 +529,11 @@ func (c *Core) eraseCore(ctx context.Context, tx pgx.Tx, now time.Time, cat *Cat
 		_, err = purgeRuns(ctx, tx, "", runs, rargs...)
 		return err
 	case "campaigns":
-		// A campaign of the person, of a task of the scope or named by id: a live one is
-		// rejected or stopped first (its pending items are skipped), then it keeps no content.
+		// A campaign of the person, of a task of the scope or named by id is marked purged
+		// first, so ending it sends no summary and enqueues no continuation; a live one is
+		// then rejected or stopped (its pending items are skipped, none is released), and its
+		// items keep no content. The stop reason is admin: the stop reasons of a campaign are a
+		// closed list without one for an erasure, whose own record is the audit trail.
 		if len(sc.IDs) > 0 && len(idsWith(sc.IDs, "t_", ids.Campaign+"_")) == 0 {
 			return nil
 		}
@@ -535,6 +541,9 @@ func (c *Core) eraseCore(ctx context.Context, tx pgx.Tx, now time.Time, cat *Cat
 			(cardinality($3::text[]) = 0 AND cardinality($4::text[]) = 0 AND ($2 = '' OR initiator = $2 OR parent_task IN (` + tasksIn + `)))
 			OR parent_task = ANY($3) OR id = ANY($4))`
 		cargs := []any{r.Tenant, sc.Subject, idsWith(sc.IDs, "t_"), idsWith(sc.IDs, ids.Campaign+"_")}
+		if _, err := purgeCampaigns(ctx, tx, "", cmps, cargs...); err != nil {
+			return err
+		}
 		rows, err := tx.Query(ctx, cmps+` AND state = ANY($5) ORDER BY id`, append(cargs, campaignLive)...)
 		if err != nil {
 			return err
@@ -543,7 +552,7 @@ func (c *Core) eraseCore(ctx context.Context, tx pgx.Tx, now time.Time, cat *Cat
 		if err != nil {
 			return err
 		}
-		if err := c.endCampaigns(ctx, tx, now, r.Tenant, live); err != nil {
+		if err := c.endCampaigns(ctx, tx, now, r.Tenant, live, "admin"); err != nil {
 			return err
 		}
 		_, err = purgeCampaigns(ctx, tx, "", cmps, cargs...)

@@ -1650,7 +1650,8 @@ func (c *Core) campaignItemEnded(ctx context.Context, tx pgx.Tx, now time.Time, 
 	}
 	_ = json.Unmarshal(rec, &tr)
 	var summary any
-	if itemState == "ok" && len(result) > 0 {
+	// A campaign whose content went (an erasure, RET-10) records no result fields any more.
+	if itemState == "ok" && len(result) > 0 && !cmp.Purged {
 		var res map[string]any
 		if json.Unmarshal(result, &res) == nil {
 			summary = summaryOf(cat.TaskTypes[typ], res)
@@ -1799,7 +1800,13 @@ func (c *Core) finishCampaign(ctx context.Context, tx pgx.Tx, now time.Time, cat
 			return err
 		}
 	}
-	if tv := cat.Tenants[cmp.Tenant]; tv != nil && cmp.Initiator != "system" && cmp.Rec.ScriptRun == "" {
+	// A campaign an erasure stopped is purged first: it sends no summary of its items and
+	// enqueues no continuation for the erased person (RET-10, SEC-11).
+	var purged bool
+	if err := tx.QueryRow(ctx, `SELECT purged_at IS NOT NULL FROM campaigns WHERE id = $1`, cmp.ID).Scan(&purged); err != nil {
+		return err
+	}
+	if tv := cat.Tenants[cmp.Tenant]; tv != nil && cmp.Initiator != "system" && cmp.Rec.ScriptRun == "" && !purged {
 		if err := c.planCampaignCard(ctx, tx, now, tv, cmp, campaignSummaryKind, campaignProgressCard, cmp.Initiator); err != nil {
 			return err
 		}
@@ -1807,7 +1814,7 @@ func (c *Core) finishCampaign(ctx context.Context, tx pgx.Tx, now time.Time, cat
 	if err := c.scriptCampaignEnded(ctx, tx, now, cmp, state, cmp.StopReason); err != nil {
 		return err
 	}
-	if cmp.Rec.Then == nil || state == "canceled" && cmp.ParentTask != "" && taskCanceled(ctx, tx, cmp.ParentTask) {
+	if cmp.Rec.Then == nil || purged || state == "canceled" && cmp.ParentTask != "" && taskCanceled(ctx, tx, cmp.ParentTask) {
 		return nil
 	}
 	return c.campaignContinuation(ctx, tx, now, cat, cmp, state, n)
@@ -1897,8 +1904,9 @@ func (c *Core) campaignContinuation(ctx context.Context, tx pgx.Tx, now time.Tim
 
 // purgeCampaigns strips the content of the selected campaigns (RET-10): the goal, parameters and
 // arguments of the template, and the arguments and result fields of every item that is not
-// pending; the state, rollout, links and argument hashes stay as metadata. head is empty or a
-// WITH clause the selection reads.
+// pending; the state, rollout, links and argument hashes stay as metadata, and the campaign is
+// marked purged. It is idempotent: a campaign marked before reaches its items again. head is
+// empty or a WITH clause the selection reads.
 func purgeCampaigns(ctx context.Context, tx pgx.Tx, head, where string, args ...any) (int64, error) {
 	with := "WITH "
 	if head != "" {
@@ -1906,8 +1914,8 @@ func purgeCampaigns(ctx context.Context, tx pgx.Tx, head, where string, args ...
 	}
 	var n int64
 	err := tx.QueryRow(ctx, with+`k AS (UPDATE campaigns SET record = jsonb_set(record, '{template}', coalesce(record->'template', '{}') - 'goal' - 'params' - 'args'),
-		purged_at = botaru_now() WHERE id IN (`+where+`) AND purged_at IS NULL RETURNING id),
-		i AS (UPDATE campaign_items SET args = '{}', summary = NULL WHERE campaign IN (SELECT id FROM k) AND state <> 'pending')
+		purged_at = coalesce(purged_at, botaru_now()) WHERE id IN (`+where+`) RETURNING id),
+		i AS (UPDATE campaign_items SET args = '{}', summary = NULL WHERE campaign IN (SELECT id FROM k) AND state <> 'pending' AND (args <> '{}' OR summary IS NOT NULL))
 		SELECT count(*) FROM k`, args...).Scan(&n)
 	return n, err
 }
@@ -1923,11 +1931,11 @@ func (c *Core) cancelCampaignsOf(ctx context.Context, tx pgx.Tx, now time.Time, 
 	if err != nil {
 		return err
 	}
-	return c.endCampaigns(ctx, tx, now, tenant, list)
+	return c.endCampaigns(ctx, tx, now, tenant, list, "initiator")
 }
 
 // endCampaigns rejects the proposed and stops the running or paused campaigns of the list.
-func (c *Core) endCampaigns(ctx context.Context, tx pgx.Tx, now time.Time, tenant string, list []string) error {
+func (c *Core) endCampaigns(ctx context.Context, tx pgx.Tx, now time.Time, tenant string, list []string, reason string) error {
 	if len(list) == 0 {
 		return nil
 	}
@@ -1941,12 +1949,12 @@ func (c *Core) endCampaigns(ctx context.Context, tx pgx.Tx, now time.Time, tenan
 			return err
 		}
 		if cmp.State == "proposed" {
-			if err := c.rejectCampaign(ctx, tx, now, cmp, "initiator"); err != nil {
+			if err := c.rejectCampaign(ctx, tx, now, cmp, reason); err != nil {
 				return err
 			}
 			continue
 		}
-		if err := c.stopCampaign(ctx, tx, now, cat, cmp, "initiator"); err != nil {
+		if err := c.stopCampaign(ctx, tx, now, cat, cmp, reason); err != nil {
 			return err
 		}
 	}
@@ -2666,8 +2674,15 @@ func (c *Core) campaignCommand(ctx context.Context, w *Worker, ob OnBehalf, id, 
 			if !slices.Contains([]string{"completed", "failed", "canceled"}, cmp.State) {
 				return refuse("already_decided", "the campaign has not ended")
 			}
-			if cmp.Purged {
-				// Its items kept no arguments past the content period or an erasure (RET-10).
+			// Its items kept no arguments past the content period or an erasure (RET-10); an
+			// item stripped before the campaign was marked has empty arguments, which no plan
+			// gives an item (each names its resource).
+			var stripped bool
+			if err := tx.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM campaign_items WHERE campaign = $1 AND state IN ('failed', 'unknown', 'skipped') AND args = '{}')`,
+				cmp.ID).Scan(&stripped); err != nil {
+				return err
+			}
+			if cmp.Purged || stripped {
 				return refuse("already_terminal", "the campaign's content is gone")
 			}
 			res, err := c.retryCampaign(ctx, tx, now, cat, cmp)
