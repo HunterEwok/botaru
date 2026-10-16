@@ -25,8 +25,12 @@ type TenantLifecycleRequest struct {
 // tenantStopEffects are the effects of suspended and offboarding.
 var tenantStopEffects = []string{"no_enqueue", "no_claim", "no_tool", "no_action", "no_delivery"}
 
-// defaultExportWindow is the export window of tenant.offboard, also its ceiling.
-const defaultExportWindow = 30 * 24 * time.Hour
+// defaultExportWindow is the export window of tenant.offboard, also its ceiling; the window is
+// at least a day, so an export queued at offboarding can still run before the deletion.
+const (
+	defaultExportWindow = 30 * 24 * time.Hour
+	minExportWindow     = 24 * time.Hour
+)
 
 // tenantState is the state of a tenant past active, with its export window; "" for active.
 func tenantState(ctx context.Context, tx pgx.Tx, tenant string) (state string, exportUntil time.Time, err error) {
@@ -51,8 +55,8 @@ func (c *Core) TenantLifecycle(ctx context.Context, op Operator, req TenantLifec
 		if !ok || req.Op != "tenant.offboard" {
 			return nil, refuse("input_schema_invalid", "export_window is a duration, only with tenant.offboard")
 		}
-		if d > defaultExportWindow {
-			return nil, refuse("input_schema_invalid", "the export window is at most 30 days")
+		if d > defaultExportWindow || d < minExportWindow {
+			return nil, refuse("input_schema_invalid", "the export window is at least one day and at most 30 days")
 		}
 		window = d
 	}
@@ -89,6 +93,9 @@ func (c *Core) TenantLifecycle(ctx context.Context, op Operator, req TenantLifec
 				return err
 			}
 			if err := c.cancelTenantApprovals(ctx, tx, now, req.Tenant); err != nil {
+				return err
+			}
+			if err := c.tenantHeldNotice(ctx, tx, now, tv, hold, "suspended"); err != nil {
 				return err
 			}
 			if err := c.appendEvent(ctx, tx, now, req.Tenant, Event{Type: "tenant.suspended.v1", Subject: req.Tenant, Data: map[string]any{"tenant": req.Tenant, "hold": hold}}); err != nil {
@@ -143,6 +150,9 @@ func (c *Core) TenantLifecycle(ctx context.Context, op Operator, req TenantLifec
 				return err
 			}
 			if err := c.cancelTenantApprovals(ctx, tx, now, req.Tenant); err != nil {
+				return err
+			}
+			if err := c.tenantHeldNotice(ctx, tx, now, tv, hold, "offboarded"); err != nil {
 				return err
 			}
 			if err := c.appendEvent(ctx, tx, now, req.Tenant, Event{Type: "tenant.offboarding.v1", Subject: req.Tenant,
@@ -236,4 +246,27 @@ func (c *Core) tenantResumed(ctx context.Context, tx pgx.Tx, now time.Time, h Ho
 		return err
 	}
 	return c.appendEvent(ctx, tx, now, h.Scope.Tenant, Event{Type: "tenant.resumed.v1", Subject: h.Scope.Tenant, Data: map[string]any{"tenant": h.Scope.Tenant, "hold": h.ID}})
+}
+
+// tenantHeldNotice tells the tenant's admins (admin:people) about a suspension or an
+// offboarding in their direct chats. The notice names its hold, and the delivery handoff lets
+// it pass that tenant hold: deliveries are withheld except messages to admins about the hold
+// itself (HLD-3).
+func (c *Core) tenantHeldNotice(ctx context.Context, tx pgx.Tx, now time.Time, tv *TenantView, hold, state string) error {
+	chats, err := c.adminChats(ctx, tx, now, tv, "", "admin:people")
+	if err != nil {
+		return err
+	}
+	for _, a := range chats {
+		if _, err := c.planDelivery(ctx, tx, now, plannedDelivery{
+			Tenant: tv.Name, Kind: "notice", Addr: "admins", TargetKind: "chat",
+			TargetID: Chat{Kind: "direct", ExternalID: a.ExternalID}.ID(), ExecKind: "channel", ExecName: a.Channel,
+			Recipient: a.Principal, DataOrigin: "code",
+			Body: map[string]any{"form": "text_code", "text_key": "notice.tenant_held", "about_hold": hold,
+				"params": map[string]any{"tenant": tv.Name, "state": state, "hold": hold}},
+		}); err != nil {
+			return err
+		}
+	}
+	return nil
 }

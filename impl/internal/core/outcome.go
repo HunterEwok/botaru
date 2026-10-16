@@ -570,6 +570,11 @@ func (c *Core) completeDelivery(ctx context.Context, tx pgx.Tx, now time.Time, w
 			return err
 		}
 	}
+	if kind == "export" {
+		if err := c.exportDelivered(ctx, tx, now, w.Tenant, l.WorkID, r); err != nil {
+			return err
+		}
+	}
 	if kind == "ai_notice" {
 		if _, err := tx.Exec(ctx, `UPDATE contacts SET ai_notice_at = $2 WHERE ai_notice_delivery = $1`, l.WorkID, now); err != nil {
 			return err

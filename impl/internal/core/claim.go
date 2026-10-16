@@ -668,16 +668,30 @@ func (c *Core) claimDelivery(ctx context.Context, tx pgx.Tx, now time.Time, cat 
 		if err != nil {
 			return nil, err
 		}
-		// An export still goes: only export is allowed while a tenant is offboarding (LCY-1).
-		if kind != "alarm_notice" && kind != "monitor_alarm" && kind != "monitor_audit_head" && kind != "export" {
-			scopes := append(tenantScopes(w.Tenant), scopeRef{kind: "channel", tenant: w.Tenant, name: w.Target})
+		if kind != "alarm_notice" && kind != "monitor_alarm" && kind != "monitor_audit_head" {
+			// The executor itself: its channel or sink and its worker (HLD-1, SEC-6).
+			scopes := append(tenantScopes(w.Tenant), scopeRef{kind: "worker", tenant: w.Tenant, name: strings.ToLower(w.ID)})
+			switch w.Kind {
+			case "sink":
+				scopes = append(scopes, scopeRef{kind: "sink", tenant: w.Tenant, name: w.Target})
+			default:
+				scopes = append(scopes, scopeRef{kind: "channel", tenant: w.Tenant, name: w.Target})
+			}
 			if role != "" && origin == "model" {
 				// The role whose attempt wrote the text, as the auto-stop of HLD-6 scopes it. A
 				// code text, such as the notice in place of an answer above the ceiling, is not
 				// the role's writing.
 				scopes = append(scopes, scopeRef{kind: "role", tenant: w.Tenant, name: role})
 			}
-			held, err := heldBy(ctx, tx, now, []string{"no_delivery"}, scopes...)
+			// An export passes a suspension or an offboarding of its tenant: only export is
+			// allowed while a tenant is offboarding (LCY-1); a compromised, sink, worker or farm
+			// hold still stops it.
+			// The admins' notice about a suspension or an offboarding passes it too (HLD-3).
+			var except []string
+			if kind == "export" || kind == "notice" && aboutTenantHold(body) {
+				except = []string{"suspended", "offboarding"}
+			}
+			held, err := heldByExcept(ctx, tx, now, []string{"no_delivery"}, except, scopes...)
 			if err != nil {
 				return nil, err
 			}
@@ -903,4 +917,13 @@ func joinInstruction(persona, instruction string) string {
 		return persona
 	}
 	return persona + "\n\n" + instruction
+}
+
+// aboutTenantHold says whether a delivery body is the admins' notice about a tenant hold.
+func aboutTenantHold(body []byte) bool {
+	var b struct {
+		AboutHold string `json:"about_hold"`
+		TextKey   string `json:"text_key"`
+	}
+	return json.Unmarshal(body, &b) == nil && b.AboutHold != "" && b.TextKey == "notice.tenant_held"
 }

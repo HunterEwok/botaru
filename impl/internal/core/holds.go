@@ -503,6 +503,15 @@ func (c *Core) HoldList(ctx context.Context, a HoldActor, req TenantRequest) (*H
 // scopes, or "". A hold past its until no longer applies, whether or not the hold loop has
 // written its end yet (HLD-1).
 func heldBy(ctx context.Context, q store.Querier, now time.Time, effects []string, scopes ...scopeRef) (string, error) {
+	return heldByExcept(ctx, q, now, effects, nil, scopes...)
+}
+
+// heldByExcept is heldBy that ignores the tenant holds of the given reasons: an export passes
+// a suspension or an offboarding, never a hold of another reason or scope (LCY-1).
+func heldByExcept(ctx context.Context, q store.Querier, now time.Time, effects, tenantReasons []string, scopes ...scopeRef) (string, error) {
+	if tenantReasons == nil {
+		tenantReasons = []string{}
+	}
 	kinds := make([]string, len(scopes))
 	tenants := make([]string, len(scopes))
 	names := make([]string, len(scopes))
@@ -513,7 +522,8 @@ func heldBy(ctx context.Context, q store.Querier, now time.Time, effects []strin
 	err := q.QueryRow(ctx, `SELECT h.id FROM holds h JOIN unnest($1::text[], $2::text[], $3::text[]) AS s(k, t, n)
 		ON h.scope_kind = s.k AND h.scope_tenant = s.t AND h.scope_name = s.n
 		WHERE h.state = 'active' AND (h.until IS NULL OR h.until > $4) AND h.effects && $5::text[]
-		ORDER BY h.created_at, h.id LIMIT 1`, kinds, tenants, names, now, effects).Scan(&id)
+		AND NOT (h.scope_kind = 'tenant' AND h.reason = ANY($6::text[]))
+		ORDER BY h.created_at, h.id LIMIT 1`, kinds, tenants, names, now, effects, tenantReasons).Scan(&id)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return "", nil
 	}

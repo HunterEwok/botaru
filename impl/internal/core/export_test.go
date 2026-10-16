@@ -15,6 +15,7 @@ import (
 	"testing"
 
 	"github.com/HunterEwok/botaru/impl/internal/ids"
+	"github.com/HunterEwok/botaru/impl/internal/testbench"
 )
 
 // exportKey is a recipient key pair in the form the core reads.
@@ -39,7 +40,10 @@ func newExportBench(t *testing.T) (*actionBench, map[string]*ecdh.PrivateKey) {
 		}
 		return map[string]any{"apiVersion": "botaru/v1alpha1", "kind": "Sink", "metadata": map[string]any{"name": name, "tenant": "demo"}, "spec": spec}
 	}
-	b := newBenchWith(t, func(root string, ms []map[string]any) []map[string]any {
+	var applied []map[string]any
+	var root string
+	b := newBenchWith(t, func(r string, ms []map[string]any) []map[string]any {
+		root = r
 		for _, m := range ms {
 			if m["kind"] == "Tenant" {
 				spec := m["spec"].(map[string]any)
@@ -51,14 +55,24 @@ func newExportBench(t *testing.T) (*actionBench, map[string]*ecdh.PrivateKey) {
 				p["export_sink"] = "copies"
 			}
 		}
-		return append(ms, map[string]any{
+		applied = append(ms, map[string]any{
 			"apiVersion": "botaru/v1alpha1", "kind": "Group",
 			"metadata": map[string]any{"name": "admins", "tenant": "demo"},
 			"spec":     map[string]any{"caps": []any{"admin:people"}, "data": []any{"summary"}},
 		}, sink("plain", nil), sink("copies", map[string]any{"recipient_ref": "self", "key_ref": "EXPORT_SELF"}),
 			sink("office", map[string]any{"recipient_ref": "admin", "key_ref": "EXPORT_ADMIN"}))
+		return applied
 	})
 	ctx := context.Background()
+	// A sink for alice by name, which takes an operator's principal.export of her data.
+	personas, err := testbench.Personas(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ms := append(applied, sink("mine", map[string]any{"recipient_ref": b.alice, "key_ref": "EXPORT_ALICE"}))
+	if res, err := b.c.Apply(ctx, b.op, ApplyRequest{Commit: "1111111111111111111111111111111111111111", Manifests: ms, Personas: personas}); err != nil || !res.Applied {
+		t.Fatalf("apply %+v %v", res, err)
+	}
 	bob := ids.PrincipalID()
 	if _, err := b.c.Principal(ctx, b.op, PrincipalRequest{Op: "principal.add", Subject: bob, Identity: "telegram:1002"}); err != nil {
 		t.Fatal(err)
@@ -68,8 +82,9 @@ func newExportBench(t *testing.T) (*actionBench, map[string]*ecdh.PrivateKey) {
 	}
 	self, selfPriv := exportKey(t)
 	admin, adminPriv := exportKey(t)
-	b.c.cfg.ExportKeys = map[string]string{"EXPORT_SELF": self, "EXPORT_ADMIN": admin}
-	return &actionBench{bench: b, bob: bob}, map[string]*ecdh.PrivateKey{"copies": selfPriv, "office": adminPriv}
+	mine, minePriv := exportKey(t)
+	b.c.cfg.ExportKeys = map[string]string{"EXPORT_SELF": self, "EXPORT_ADMIN": admin, "EXPORT_ALICE": mine}
+	return &actionBench{bench: b, bob: bob}, map[string]*ecdh.PrivateKey{"copies": selfPriv, "office": adminPriv, "mine": minePriv}
 }
 
 // exported runs the export loop and returns the lines the sink gets, decrypted with the
@@ -107,6 +122,9 @@ func exported(t *testing.T, b *actionBench, sink string, priv *ecdh.PrivateKey) 
 	plain, err := hpke.Open(k, hpke.HKDFSHA256(), hpke.ChaCha20Poly1305(), []byte(exportInfo), f.Content)
 	if err != nil {
 		t.Fatalf("decrypt: %v", err)
+	}
+	if _, err := b.c.Complete(ctx, sw, header(t, item), CompleteRequest{Receipt: &Receipt{Location: "/srv/" + sink + "/" + ref}}); err != nil {
+		t.Fatal(err)
 	}
 	out := map[string][]map[string]any{}
 	sc := bufio.NewScanner(bytes.NewReader(plain))
@@ -155,6 +173,19 @@ func TestExportLines(t *testing.T) {
 	if _, err := b.c.st.Pool.Exec(ctx, `UPDATE tasks SET record = record || '{"personal_seen": ["connection"]}' WHERE id = $1`, conn); err != nil {
 		t.Fatal(err)
 	}
+	// The shared task came from a group chat; the others from alice's private chat.
+	if _, err := b.c.st.Pool.Exec(ctx, `UPDATE tasks SET record = record || jsonb_build_object('conversation', 'c:telegram:group:-500:' || initiator,
+		'origin', '{"channel": "telegram", "chat": {"kind": "group", "external_id": "-500"}}'::jsonb) WHERE id = $1`, shared); err != nil {
+		t.Fatal(err)
+	}
+	// A memory item from a private-chat task and one from the group chat.
+	mem := map[string]string{own: ids.New("mem"), shared: ids.New("mem")}
+	for i, src := range []string{own, shared} {
+		if _, err := b.c.st.Pool.Exec(ctx, `INSERT INTO memory_items (id, tenant, scope, subject, role, key, content, content_hash, state, nonce, source_task, created_at, updated_at)
+			VALUES ($1, 'demo', 'person', $2, 'hello', 'k', $3, $3, 'active', 'n', $4, now(), now())`, mem[src], b.alice, "fact "+string(rune('a'+i)), src); err != nil {
+			t.Fatal(err)
+		}
+	}
 	for conv, sid := range map[string]string{"c:telegram:direct:1001": "00000000-0000-4000-8000-000000000001", "c:telegram:group:-500": "00000000-0000-4000-8000-000000000002"} {
 		if _, err := b.c.st.Pool.Exec(ctx, `INSERT INTO sessions (id, tenant, role, conversation, subjects, created_at, updated_at) VALUES ($1, 'demo', 'hello', $2, ARRAY[$3], now(), now());
 			`, sid, conv, b.alice); err != nil {
@@ -174,12 +205,16 @@ func TestExportLines(t *testing.T) {
 	try("tenant.export", "", "plain", "sink_not_export")
 	try("principal.export", b.alice, "office", "export_recipient_not_subject")
 	try("tenant.export", "", "copies", "export_recipient_not_subject")
+	// A self sink takes only the person's own /mydata export: the operator's key_ref would
+	// open it.
+	try("principal.export", b.alice, "copies", "export_recipient_not_subject")
+	try("principal.export", b.bob, "mine", "export_recipient_not_subject")
 
-	d, err := b.c.Export(ctx, b.op, ExportRequest{Op: "principal.export", Tenant: "demo", Subject: b.alice, Sink: "copies"})
+	d, err := b.c.Export(ctx, b.op, ExportRequest{Op: "principal.export", Tenant: "demo", Subject: b.alice, Sink: "mine"})
 	if err != nil || d.State != "queued" {
 		t.Fatalf("principal.export %+v %v", d, err)
 	}
-	lines := exported(t, b, "copies", keys["copies"])
+	lines := exported(t, b, "mine", keys["mine"])
 	tasks := lines["urn:botaru:schema:task-record:1"]
 	if !hasID(tasks, own) || hasID(tasks, shared) || len(lines["urn:botaru:schema:principal:1"]) != 1 {
 		t.Fatalf("principal export %v", lines)
@@ -198,8 +233,10 @@ func TestExportLines(t *testing.T) {
 	}
 	lines = exported(t, b, "office", keys["office"])
 	tasks = lines["urn:botaru:schema:task-record:1"]
-	if !hasID(tasks, own) || !hasID(tasks, shared) || hasID(tasks, conn) || len(lines["urn:botaru:schema:session-entry:1"]) != 1 ||
-		len(lines["urn:botaru:schema:principal:1"]) != 2 {
+	// The tenant export leaves out the private-chat tasks and their memory items (LCY-2).
+	mems := lines["urn:botaru:schema:memory-item:1"]
+	if hasID(tasks, own) || !hasID(tasks, shared) || hasID(tasks, conn) || len(lines["urn:botaru:schema:session-entry:1"]) != 1 ||
+		len(lines["urn:botaru:schema:principal:1"]) != 2 || hasID(mems, mem[own]) || !hasID(mems, mem[shared]) {
 		t.Fatalf("tenant export %v", lines)
 	}
 	// The export file is handed out only with its export delivery.
@@ -226,6 +263,11 @@ func TestMydataExport(t *testing.T) {
 	if r := b.say(t, "2", "telegram:1001", "1001", "/mydata export"); r.Text != b.c.texts.Render("en", "cmd.mydata.export_key", nil) {
 		t.Fatalf("no key: %+v", r)
 	}
+	// A low-order key would give a zero shared secret: it is refused when given.
+	low := "x25519:" + base64.StdEncoding.EncodeToString(make([]byte, 32))
+	if r := b.say(t, "4", "telegram:1001", "1001", "/mydata export "+low); r.Text != b.c.texts.Render("en", "cmd.mydata.export_key", nil) {
+		t.Fatalf("low-order key: %+v", r)
+	}
 	pub, priv := exportKey(t)
 	if r := b.say(t, "3", "telegram:1001", "1001", "/mydata export "+pub); !strings.Contains(r.Text, "recorded") {
 		t.Fatalf("mydata export %+v", r)
@@ -246,5 +288,78 @@ func TestMydataExport(t *testing.T) {
 	lines := exported(t, b, "copies", priv)
 	if len(lines["urn:botaru:schema:principal:1"]) != 1 || lines["urn:botaru:schema:principal:1"][0]["id"] != b.alice {
 		t.Fatalf("copy %v", lines)
+	}
+	// Once the sink took the copy the person is told where it is, and the request is closed.
+	var state string
+	if err := b.c.st.Pool.QueryRow(ctx, `SELECT state FROM subject_requests WHERE id = $1`, req.ID).Scan(&state); err != nil || state != "done" {
+		t.Fatalf("request %s %v", state, err)
+	}
+	var target, key, location string
+	if err := b.c.st.Pool.QueryRow(ctx, `SELECT target_id, body->>'text_key', body->'params'->>'location' FROM deliveries
+		WHERE kind = 'notice' AND subject_id = $1`, req.ID).Scan(&target, &key, &location); err != nil ||
+		target != "direct:1001" || key != "notice.export_ready" || !strings.HasPrefix(location, "/srv/copies/") {
+		t.Fatalf("notice %s %s %s %v", target, key, location, err)
+	}
+}
+
+// Holds at delivery (HLD-1, HLD-3, LCY-1, SEC-6): a suspension plans the admins' notice, which
+// passes the suspension like an export does; a sink hold stops an export; an offboarding tenant
+// enrolls only its export sinks; the export window is at least a day.
+func TestExportHolds(t *testing.T) {
+	ctx := context.Background()
+	b, keys := newExportBench(t)
+	if _, err := b.c.TenantLifecycle(ctx, b.op, TenantLifecycleRequest{Op: "tenant.offboard", Tenant: "demo", ExportWindow: "1h"}); !hasReason(err, "input_schema_invalid") {
+		t.Fatalf("export window below a day: %v", err)
+	}
+	s, err := b.c.TenantLifecycle(ctx, b.op, TenantLifecycleRequest{Op: "tenant.suspend", Tenant: "demo"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	item := b.claim(t, b.channel, "delivery")
+	var dl map[string]any
+	if item != nil {
+		dl, _ = item.Payload["delivery"].(map[string]any)
+	}
+	body, _ := dl["body"].(map[string]any)
+	rcpt, _ := dl["recipient"].(map[string]any)
+	chat, _ := rcpt["chat"].(map[string]any)
+	if dl["kind"] != "notice" || chat["external_id"] != "1002" || body["about_hold"] != s.ID {
+		t.Fatalf("the admins' notice of the suspension %+v", item)
+	}
+	if _, err := b.c.Export(ctx, b.op, ExportRequest{Op: "tenant.export", Tenant: "demo", Sink: "office"}); err != nil {
+		t.Fatal(err)
+	}
+	exported(t, b, "office", keys["office"])
+
+	// The sink's credential is compromised: its sink hold stops the next export (SEC-6).
+	b.c.cfg.SecretUses = map[string][]HoldScope{"office-key": {{Kind: "sink", Tenant: "demo", Name: "office"}}}
+	if _, err := b.c.SecretRevoke(ctx, b.op, SecretRevokeRequest{Secret: "office-key", Compromised: true}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := b.c.Export(ctx, b.op, ExportRequest{Op: "tenant.export", Tenant: "demo", Sink: "office"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := b.c.tickLoop(ctx, "erasure"); err != nil {
+		t.Fatal(err)
+	}
+	sw := b.enroll(t, EnrollRequest{Tenant: "demo", Kind: "sink", Target: "office"})
+	if item := b.claim(t, sw, "delivery"); item != nil {
+		t.Fatalf("an export through a held sink %+v", item.Payload)
+	}
+
+	if _, err := b.c.HoldRelease(ctx, OperatorActor(b.op), HoldReleaseRequest{ID: s.ID}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := b.c.TenantLifecycle(ctx, b.op, TenantLifecycleRequest{Op: "tenant.offboard", Tenant: "demo", ExportWindow: "1d"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := b.c.Enroll(ctx, b.op, EnrollRequest{Tenant: "demo", Role: "hello", Kind: "agent"}); !hasReason(err, "forbidden") {
+		t.Fatalf("an agent enrolled while offboarding: %v", err)
+	}
+	if _, err := b.c.Enroll(ctx, b.op, EnrollRequest{Tenant: "demo", Kind: "sink", Target: "plain"}); !hasReason(err, "forbidden") {
+		t.Fatalf("a sink without export_only enrolled while offboarding: %v", err)
+	}
+	if _, err := b.c.Enroll(ctx, b.op, EnrollRequest{Tenant: "demo", Kind: "sink", Target: "office"}); err != nil {
+		t.Fatalf("the export sink while offboarding: %v", err)
 	}
 }

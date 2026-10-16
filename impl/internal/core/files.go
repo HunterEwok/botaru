@@ -410,7 +410,9 @@ func (c *Core) FileGet(ctx context.Context, w *Worker, lease string, req FileGet
 		if err != nil {
 			return err
 		}
-		if f == nil {
+		// An export file exists only for its export delivery: an attempt or a tool call never
+		// sees it (LCY-2, SEC-10).
+		if f == nil || f.Origin == "export" && l.Kind != "delivery" {
 			return refuse("not_found", "no such file")
 		}
 		if f.State != "stored" || (f.Expires != nil && !f.Expires.After(now)) {

@@ -480,7 +480,7 @@ func (c *Core) mydataExport(ctx context.Context, tx pgx.Tx, now time.Time, pc pe
 	if key == "" || len(key) > 8192 {
 		return pc.reply(c, "cmd.mydata.export_key", nil), nil
 	}
-	if _, err := exportPublicKey(key); err != nil {
+	if err := checkExportKey(key); err != nil {
 		return pc.reply(c, "cmd.mydata.export_key", nil), nil
 	}
 	if rec, _, err := exportSink(pc.cat, pc.tv.Name, pc.tv.Spec.Privacy.ExportSink); pc.tv.Spec.Privacy.ExportSink == "" || err != nil || rec != "self" {

@@ -61,6 +61,14 @@ func exportPublicKey(s string) (hpke.PublicKey, error) {
 	return hpke.NewDHKEMPublicKey(pub)
 }
 
+// checkExportKey parses a recipient key and seals an empty test message with it, so a key the
+// export could not use later, such as a low-order point whose shared secret is zero, is refused
+// when it is given (SEC-10).
+func checkExportKey(key string) error {
+	_, err := sealExport(key, nil)
+	return err
+}
+
 // sealExport encrypts an export for its recipient.
 func sealExport(key string, plain []byte) ([]byte, error) {
 	pk, err := exportPublicKey(key)
@@ -128,11 +136,16 @@ func (c *Core) Export(ctx context.Context, op Operator, req ExportRequest) (*Don
 	if err := checkRecipient(kind, req.Subject, recipient); err != nil {
 		return nil, err
 	}
+	// A self sink is sealed with the person's own key, which only their /mydata export request
+	// brings: the operator's key_ref would let the operator open the copy (SEC-10).
+	if recipient == "self" {
+		return nil, refuse("export_recipient_not_subject", "a self sink takes only the person's own /mydata export; name the person in recipient_ref")
+	}
 	key := c.cfg.ExportKeys[keyRef]
 	if key == "" {
 		return nil, refuse("not_ready", "no public key for key_ref %s in the core settings: an export is always encrypted", keyRef)
 	}
-	if _, err := exportPublicKey(key); err != nil {
+	if err := checkExportKey(key); err != nil {
 		return nil, refuse("not_ready", "the public key for key_ref %s: %v", keyRef, err)
 	}
 	var out Done
@@ -267,7 +280,7 @@ func (c *Core) exportContent(ctx context.Context, tx pgx.Tx, tv *TenantView, kin
 	// Tasks with their body and result.
 	var taskIDs []string
 	{
-		filter := `NOT coalesce(record->'personal_seen', '[]'::jsonb) ? 'connection'`
+		filter := `NOT ` + privateTask("tasks")
 		if one {
 			filter = `initiator = $2 AND NOT EXISTS (SELECT 1 FROM jsonb_array_elements_text(coalesce(record->'personal_subjects', '[]'::jsonb)) s WHERE s <> $2)`
 		}
@@ -325,7 +338,12 @@ func (c *Core) exportContent(ctx context.Context, tx pgx.Tx, tv *TenantView, kin
 	}
 	// Approvals the person initiated, or all of the tenant.
 	{
-		q := `SELECT ` + approvalColumns + ` FROM approvals WHERE tenant = $1 AND ($2 = '' OR initiator = $2) ORDER BY id`
+		// A tenant export leaves out the approvals of private-chat tasks; a person's export
+		// leaves out those whose task names another person (LCY-2, SEC-10).
+		q := `SELECT ` + approvalColumns + ` FROM approvals WHERE tenant = $1 AND (
+				($2 = '' AND NOT EXISTS (SELECT 1 FROM tasks t WHERE t.id = approvals.source_task AND ` + privateTask("t") + `))
+				OR ($2 <> '' AND initiator = $2 AND NOT EXISTS (SELECT 1 FROM tasks t WHERE t.id = approvals.source_task AND ` + othersNamed("t", "$2") + `)))
+			ORDER BY id`
 		rows, err := tx.Query(ctx, q, tn, subject)
 		if err != nil {
 			return nil, err
@@ -352,7 +370,9 @@ func (c *Core) exportContent(ctx context.Context, tx pgx.Tx, tv *TenantView, kin
 	// Memory records about the person, or all of the tenant.
 	{
 		rows, err := tx.Query(ctx, `SELECT id, scope, subject, role, key, content, state, personal_seen, created_at, decide_by, decided_at
-			FROM memory_items WHERE tenant = $1 AND ($2 = '' OR subject = $2) AND state IN ('proposed', 'active') ORDER BY created_at, id`, tn, subject)
+			FROM memory_items WHERE tenant = $1 AND ($2 = '' OR subject = $2) AND state IN ('proposed', 'active')
+				AND ($2 <> '' OR NOT EXISTS (SELECT 1 FROM tasks t WHERE t.id = memory_items.source_task AND `+privateTask("t")+`))
+			ORDER BY created_at, id`, tn, subject)
 		if err != nil {
 			return nil, err
 		}
@@ -434,10 +454,15 @@ func (c *Core) exportContent(ctx context.Context, tx pgx.Tx, tv *TenantView, kin
 			}
 		}
 	}
-	// File records (not their content) of the exported tasks and of the person's uploads.
+	// File records (not their content) of the exported tasks, of the uploads and ingested files
+	// those tasks name, and of the person's own uploads. A file of a left-out task (a private
+	// chat or a connection's personal data) and an upload no exported task names stay out.
 	{
 		q := `SELECT file_ref, origin, producer, media_type, size, data_mark, coalesce(personal_seen, ''), state, created_at, expires_at
-			FROM files WHERE tenant = $1 AND origin <> 'export' AND (producer = ANY($2) OR ($3 = '' AND origin <> 'produced') OR producer = $3) ORDER BY created_at, file_ref`
+			FROM files WHERE tenant = $1 AND origin <> 'export' AND (producer = ANY($2) OR ($3 <> '' AND producer = $3)
+				OR (origin <> 'produced' AND EXISTS (SELECT 1 FROM tasks t WHERE t.id = ANY($2)
+					AND strpos(coalesce(t.body::text, '') || coalesce(t.record::text, ''), files.file_ref) > 0)))
+			ORDER BY created_at, file_ref`
 		rows, err := tx.Query(ctx, q, tn, taskIDs, subject)
 		if err != nil {
 			return nil, err
@@ -485,6 +510,7 @@ func (c *Core) runExports(ctx context.Context) error {
 	}
 	for {
 		done := true
+		var cur string
 		err := c.tx(ctx, func(tx pgx.Tx, now time.Time) error {
 			var id, tenant, kind, sink, recipient, key string
 			var subject *string
@@ -497,6 +523,7 @@ func (c *Core) runExports(ctx context.Context) error {
 				return err
 			}
 			done = false
+			cur = id
 			fail := func(reason string) error {
 				_, err := tx.Exec(ctx, `UPDATE exports SET state = 'failed', reason = $2, updated_at = $3 WHERE id = $1`, id, reason, now)
 				return err
@@ -568,6 +595,18 @@ func (c *Core) runExports(ctx context.Context) error {
 			})
 			return err
 		})
+		if err != nil && cur != "" {
+			// One export that cannot be written does not hold up the others or the erasure
+			// loop: it fails in its own transaction (LCY-2).
+			c.log.Warn("export failed", "export", cur, "error", err)
+			if ferr := c.tx(ctx, func(tx pgx.Tx, now time.Time) error {
+				_, err := tx.Exec(ctx, `UPDATE exports SET state = 'failed', reason = 'store_unavailable', updated_at = $2 WHERE id = $1 AND state = 'queued'`, cur, now)
+				return err
+			}); ferr != nil {
+				return fmt.Errorf("export: %w", ferr)
+			}
+			continue
+		}
 		if err != nil {
 			return fmt.Errorf("export: %w", err)
 		}
@@ -575,4 +614,58 @@ func (c *Core) runExports(ctx context.Context) error {
 			return nil
 		}
 	}
+}
+
+// privateTask is the SQL test that a task (by its table alias) came from a private chat or saw
+// a connection's personal data: a tenant export leaves it out with what hangs off it (LCY-2).
+func privateTask(t string) string {
+	return `(` + t + `.record->>'conversation' LIKE 'c:%:direct:%' OR ` + t + `.record->'origin'->'chat'->>'kind' = 'direct'
+		OR coalesce(` + t + `.record->'personal_seen', '[]'::jsonb) ? 'connection')`
+}
+
+// othersNamed is the SQL test that a task names a person other than the subject among its
+// personal subjects: a person's export leaves it out (LCY-2).
+func othersNamed(t, subject string) string {
+	return `EXISTS (SELECT 1 FROM jsonb_array_elements_text(coalesce(` + t + `.record->'personal_subjects', '[]'::jsonb)) s WHERE s <> ` + subject + `)`
+}
+
+// exportDelivered runs when the sink took an export (SEC-10): a person's /mydata export tells
+// the person in their private chat where the encrypted copy is, and closes the request.
+func (c *Core) exportDelivered(ctx context.Context, tx pgx.Tx, now time.Time, tenant, delivery string, r Receipt) error {
+	var id, ref, request, subject string
+	err := tx.QueryRow(ctx, `SELECT e.id, coalesce(e.file_ref, ''), coalesce(e.subject_request, ''), coalesce(e.subject, '')
+		FROM deliveries d JOIN exports e ON e.id = d.body->>'export' WHERE d.id = $1`, delivery).Scan(&id, &ref, &request, &subject)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil
+	}
+	if err != nil || request == "" {
+		return err
+	}
+	cat, err := c.Catalog(ctx)
+	if err != nil {
+		return err
+	}
+	if tv := cat.Tenants[tenant]; tv != nil && subject != "" {
+		channel, chat, ok, err := cardChat(ctx, tx, tv, subject)
+		if err != nil {
+			return err
+		}
+		if ok {
+			location := r.Location
+			if location == "" {
+				location = ref
+			}
+			if _, err := c.planDelivery(ctx, tx, now, plannedDelivery{
+				Tenant: tenant, Kind: "notice", Addr: "approval_initiator", TargetKind: "chat", TargetID: chat.ID(),
+				ExecKind: "channel", ExecName: channel, Recipient: subject, DataOrigin: "code",
+				SubjectKind: "subject_request", SubjectID: request,
+				Body: map[string]any{"form": "text_code", "text_key": "notice.export_ready",
+					"params": map[string]any{"request": request, "location": location}},
+			}); err != nil {
+				return err
+			}
+		}
+	}
+	_, err = tx.Exec(ctx, `UPDATE subject_requests SET state = 'done', updated_at = $2 WHERE id = $1 AND state = 'approved'`, request, now)
+	return err
 }

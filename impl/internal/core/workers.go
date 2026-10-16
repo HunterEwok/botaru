@@ -112,6 +112,18 @@ func (c *Core) Enroll(ctx context.Context, op Operator, req EnrollRequest) (*Enr
 	w := Worker{ID: ids.New(ids.Worker), Tenant: req.Tenant, Role: req.Role, Kind: req.Kind, Target: req.Target, State: "enrolled", Labels: labels,
 		Plugins: plugins, Placement: req.Placement, Host: req.Host}
 	err = c.tx(ctx, func(tx pgx.Tx, now time.Time) error {
+		// An offboarding tenant gets only the sink worker of an export, as only export is
+		// allowed; a deleted one gets none (LCY-1).
+		switch state, _, err := tenantState(ctx, tx, req.Tenant); {
+		case err != nil:
+			return err
+		case state == "deleted":
+			return refuse("gone", "the tenant is deleted")
+		case state == "offboarding":
+			if _, _, err := exportSink(cat, req.Tenant, req.Target); req.Kind != "sink" || err != nil {
+				return refuse("forbidden", "an offboarding tenant enrolls only the sink worker of an export")
+			}
+		}
 		lb, _ := json.Marshal(labels)
 		pb, _ := json.Marshal(nonNil(plugins))
 		if _, err := tx.Exec(ctx, `INSERT INTO workers (id, tenant, role, kind, labels, target, plugins, placement, host, state, token_hash, created_at)

@@ -84,6 +84,8 @@ texts:
   cmd.mydata.export_key: "Usage: /mydata export <your public key>, an X25519 key written x25519:<base64>. The copy is encrypted with it and goes only to you."
   cmd.mydata.export_recorded: "Your request {request} for a copy of your data is recorded; a person with admin:people decides it within {days} days. The copy is encrypted with your key and goes only to you."
   cmd.mydata.export_unavailable: The tenant has no sink for copies of personal data; ask an admin.
+  notice.tenant_held: "The operator has {state} tenant {tenant} with hold {hold}: no new tasks, tools, actions or messages until the operator ends it."
+  notice.export_ready: "The copy of your data from request {request} is written: {location}. It is encrypted with the key you sent; only your private key opens it."
   cmd.forget.done: "Your memory records and conversations are being erased for real (request {request})."
   # Service control and pipelines by command, without a model (PRM-18, APR-17)
   cmd.service.usage: "Usage: /service <verb> <service>, for example /service restart nginx."
