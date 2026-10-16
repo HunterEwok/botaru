@@ -260,8 +260,25 @@ func TestMetadataWholeMonths(t *testing.T) {
 	if events("after") != 1 || events("before") != 1 || others() != 8 {
 		t.Fatal("a month went before all of it was past the period")
 	}
+	// Two finished exports of the month: the row of one whose file still has bytes stays, so a
+	// person's erasure still finds the copy through it (LCY-2, SEC-11).
+	for _, sql := range []string{
+		`INSERT INTO exports (id, tenant, kind, subject, sink, recipient_ref, recipient_key, author, state, file_ref, created_at, updated_at)
+			VALUES ('exp_old', 'demo', 'principal', 'x', 'mine', 'r', 'k', '{}', 'done', 'file:exp_old', $1, $1),
+			('exp_held', 'demo', 'principal', 'x', 'mine', 'r', 'k', '{}', 'done', 'file:exp_held', $1, $1)`,
+		`INSERT INTO files (file_ref, tenant, origin, producer, media_type, size, sha256, data_mark, state, content, created_at, expires_at)
+			VALUES ('file:exp_old', 'demo', 'export', 'exp_old', 'application/octet-stream', 4, 'h', 'personal', 'purged', NULL, $1, $1),
+			('file:exp_held', 'demo', 'export', 'exp_held', 'application/octet-stream', 4, 'h', 'personal', 'stored', 'seal', botaru_now(), botaru_now() + interval '1 day')`,
+	} {
+		if _, err := b.c.st.Pool.Exec(ctx, sql, t1); err != nil {
+			t.Fatal(err)
+		}
+	}
 	b.advance(t, 2*3600)
 	b.loop(t, "retention")
+	if b.count(t, `SELECT count(*) FROM exports WHERE id = 'exp_old'`) != 0 || b.count(t, `SELECT count(*) FROM exports WHERE id = 'exp_held'`) != 1 {
+		t.Fatal("a finished export went with its file still stored, or one without bytes stayed")
+	}
 	if events("after") != 0 {
 		t.Fatal("the month past the period stayed")
 	}
