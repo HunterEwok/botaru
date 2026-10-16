@@ -21,7 +21,8 @@ spec:
   attention: {cards_per_tenant_hour: 20}
   insights: {present_to: "group:ops-oncall", redecide_after: 30d, max_in_review: 10}
   delegated_groups: [researcher]
-  farm_manager: {enabled: true}
+  # Off: the first-bot set of impl/DEPLOY.md holds no farm charter with a seat profile (MGR-20).
+  farm_manager: {enabled: false}
   link_allowlist: [www.example.org, docs.example.org]
   models_allowed: [base-std, analysis-std, review-a, review-b, seat-std, seat-alt, manager-std, translate-std]
   providers_allowed: [provider-a, provider-b]

@@ -602,13 +602,17 @@ func sevOf(ok bool, bad string) string {
 func (c *Core) profiles() []string {
 	var out []string
 	for _, p := range spec.Profiles {
-		// An installation without the monitoring system does not claim monitor (D-88).
-		if !spec.Claims(p) || p == "monitor" && !c.monitorOn() {
-			continue
+		if c.claims(p) {
+			out = append(out, p)
 		}
-		out = append(out, p)
 	}
 	return out
+}
+
+// claims says whether the installation claims a profile: the build claims it, and an
+// installation without the monitoring system does not claim monitor (D-88).
+func (c *Core) claims(profile string) bool {
+	return spec.Claims(profile) && (profile != "monitor" || c.monitorOn())
 }
 
 // exportSuperseded withholds a failed export that a newer one replaces: an alarm change with a

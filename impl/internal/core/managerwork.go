@@ -290,8 +290,8 @@ func tenantDay(tv *TenantView, now time.Time) time.Time {
 // managerDaily runs the farm manager's day in every tenant with the manager enabled, once per
 // local day: the review manager.review.v1 when the catalog has it, with a tree budget of
 // daily_review_max_eur from the manager line, and the numbers of the last day to the tenant's
-// admins; tenant farm's admins get the numbers of the whole farm (MGR-41). A day without any
-// manager work sends no numbers.
+// admins; tenant farm's admins get the numbers of the whole farm (MGR-41). The summary goes every
+// day, also a day without manager work, and counts takeovers and notices (MGR-50).
 func (c *Core) managerDaily(ctx context.Context, cat *Catalog) error {
 	if managerRole(cat) == "" {
 		return nil

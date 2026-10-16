@@ -209,10 +209,11 @@ Three refused calls in a row, counted across all tenants, trip the safeguard: th
 **Until v0.2: a stop.** A new incident of a class with `stops_manager` while the seat is `held` adds the reason `incident` ([GOV-22](../conformance/rules.md#GOV-22)). The class's alarm must come only from code series without a model ([GOV-28](../conformance/rules.md#GOV-28)), and for a disk two more conditions make "could have prevented" checkable rather than an opinion: everyone who writes to the disk has a quota and the quotas sum below the threshold ([MGR-33](../conformance/rules.md#MGR-33)), and for the 2 hours before, a `disk_filling` incident was open, the used space grew, and the seat was held by this holder, leaving `held` at most for `no_control` ([MGR-34](../conformance/rules.md#MGR-34)). A safeguard stop the holder caused itself does not remove its responsibility. Operators get the card `manager_stopped`, which has no buttons, only commands to run on their own machine ([MGR-35](../conformance/rules.md#MGR-35)), so a hijacked channel account cannot change the holder. It repeats after 24 h, 72 h and before `decide_within` (7 days), after which the holder leaves ([MGR-36](../conformance/rules.md#MGR-36)).
 
 ```
-farmctl seat resume farm-manager --incident i-318   # only if the incident was dismissed as false
 farmctl seat assign farm-manager                    # a new manager, always a new bot
 farmctl seat vacate farm-manager
 ```
+
+From v0.3 no incident stops the seat, so `farmctl` has no resume by incident any more: a v0.3 core drops a stop reason `incident` an earlier core left, and `farmctl seat resume farm-manager --tenant <tenant>` lifts a restriction in one tenant (below).
 
 **From v0.3: a page and a restriction.** The core never adds `incident` ([GOV-47](../conformance/rules.md#GOV-47)). A class may set `manager_accountable` together with `area` and `problem_codes` ([MGR-55](../conformance/rules.md#MGR-55)), with its alarm built only from code series ([GOV-48](../conformance/rules.md#GOV-48)). An incident is preventable only when code finds the class's sign and the holder was responsible for the whole window ([MGR-45](../conformance/rules.md#MGR-45)). For the critical classes of [goals.md](goals.md) (D-114):
 

@@ -2257,10 +2257,16 @@ var charterFloors = []struct {
 	{"confirmation", "ttl", 7 * 24 * time.Hour}, {"identity", "unbound_ttl", defaultUnboundTTL}, {"memory", "seal_ttl", defaultSealTTL},
 }
 
+// isFarmCharter says whether a Governance manifest is the farm charter: the one of tenant farm,
+// or one named farm without a tenant.
+func isFarmCharter(tenant, name string) bool {
+	return tenant == farmTenant || tenant == "" && name == farmTenant
+}
+
 // lintCharterBounds checks what the schema of a charter cannot (GOV-33): a seat id declared
-// twice, the farm_manager block outside the farm charter (of tenant farm, or named farm
-// without a tenant), a duration below its default, the
-// excluded change kinds without none, and in the farm charter a decide_within above 7 days.
+// twice, the farm_manager block outside the farm charter (isFarmCharter), a duration below its
+// default and the excluded change kinds without none. incident_stop.decide_within is not
+// checked: a v0.3 core does not use incident_stop (MGR-55; apply warns, ignoredV03).
 func lintCharterBounds(o lintObj, f *lintFindings) {
 	seen := map[string]bool{}
 	for i, sv := range mlist(mmap(o.spec, "commission"), "seats") {
@@ -2275,8 +2281,7 @@ func lintCharterBounds(o lintObj, f *lintFindings) {
 		}
 		seen[id] = true
 	}
-	// The farm charter is the one of tenant farm, or one named farm without a tenant.
-	if farmCharter := o.tenant == farmTenant || o.tenant == "" && o.name == farmTenant; !farmCharter && o.spec["farm_manager"] != nil {
+	if !isFarmCharter(o.tenant, o.name) && o.spec["farm_manager"] != nil {
 		f.add(o, "charter_farm_manager", "/farm_manager")
 	}
 	for _, fl := range charterFloors {
@@ -2287,10 +2292,6 @@ func lintCharterBounds(o lintObj, f *lintFindings) {
 	}
 	if p := mmap(o.spec, "promotion"); p["exclude_change_kinds"] != nil && !slices.Contains(strList(p["exclude_change_kinds"]), "none") {
 		f.add(o, "charter_direction", "/promotion/exclude_change_kinds")
-	}
-	v := mstr(mmap(mmap(o.spec, "farm_manager"), "incident_stop"), "decide_within")
-	if d, ok := parseDuration(v); v != "" && (!ok || d > 7*24*time.Hour) {
-		f.add(o, "charter_direction", "/farm_manager/incident_stop/decide_within")
 	}
 }
 

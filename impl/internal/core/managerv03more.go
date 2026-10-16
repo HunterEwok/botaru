@@ -92,6 +92,12 @@ func (c *Core) dropIncidentStop(ctx context.Context, tx pgx.Tx, now time.Time, c
 	if _, err := c.shiftManager(ctx, tx, now, cat, m, m.Holder, reasons, event, "incident_stop_ignored", "system"); err != nil {
 		return err
 	}
+	// The manager_stopped cards that the earlier core planned (a quiet hour, the card limit) are
+	// about a stop that no longer holds: they are withheld, never sent.
+	if _, err := tx.Exec(ctx, `UPDATE deliveries SET state = 'withheld', reason = 'superseded', updated_at = $1
+		WHERE kind = 'manager_stopped' AND state = 'planned'`, now); err != nil {
+		return err
+	}
 	// A holder's seat back in held is told to the admins as seat.resume tells them (MGR-31).
 	if m.State != "held" {
 		return nil
@@ -291,7 +297,7 @@ func ignoredV03(d manifest.Doc, v map[string]any, i int) []ApplyError {
 	switch {
 	case d.Kind == "IncidentClass" && spec["stops_manager"] != nil:
 		path = "/spec/stops_manager"
-	case d.Kind == "Governance" && d.Tenant == farmTenant && mmap(spec, "farm_manager")["incident_stop"] != nil:
+	case d.Kind == "Governance" && isFarmCharter(d.Tenant, d.Name) && mmap(spec, "farm_manager")["incident_stop"] != nil:
 		path = "/spec/farm_manager/incident_stop"
 	default:
 		return nil

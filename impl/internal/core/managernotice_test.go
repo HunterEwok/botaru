@@ -308,8 +308,16 @@ func TestStopRepeats(t *testing.T) {
 	holder := b.managerSeat(t).Holder
 	b.exec(t, `UPDATE seats SET state = 'stopped', stop_reasons = '[{"reason": "incident", "incident": "inc_x", "repeats": 1}]',
 		decide_until = botaru_now() - interval '1 hour' WHERE id = $1`, managerSeatID)
+	// A manager_stopped card the earlier core planned for a quiet hour is withheld, not sent.
+	b.exec(t, `INSERT INTO deliveries (id, tenant, kind, addr, target_kind, target_id, exec_kind, exec_name, state, dataorigin,
+		created_at, updated_at) VALUES ('dl_stopped', 'farm', 'manager_stopped', 'admins', 'chat', 'direct:1001', 'channel', 'telegram',
+		'planned', 'code', botaru_now(), botaru_now())`)
 	b.advance(t, 72*3600)
 	b.loop(t, "identity")
+	var state, reason string
+	if err := b.c.st.Pool.QueryRow(ctx, `SELECT state, coalesce(reason, '') FROM deliveries WHERE id = 'dl_stopped'`).Scan(&state, &reason); err != nil || state != "withheld" || reason != "superseded" {
+		t.Fatalf("planned manager_stopped %s %s %v", state, reason, err)
+	}
 	if m := b.managerSeat(t); m.State != "held" || m.Holder != holder || len(m.Reasons) != 0 || m.DecideUntil != nil {
 		t.Fatalf("seat %+v", m)
 	}

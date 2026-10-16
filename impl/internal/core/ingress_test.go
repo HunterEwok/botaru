@@ -682,6 +682,8 @@ func TestIngressTokenChain(t *testing.T) {
 func TestEventRoutesClaims(t *testing.T) {
 	ctx := context.Background()
 	b := newIngressBench(t)
+	// The installation claims monitor only with the monitoring system configured (D-88).
+	b.c.cfg.Monitor = MonitorConfig{Enabled: true}
 	cat, err := b.c.Catalog(ctx)
 	if err != nil {
 		t.Fatal(err)

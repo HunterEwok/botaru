@@ -411,6 +411,11 @@ spec:
 	if w := ignoredV03(manifest.Doc{Kind: "Governance", Tenant: "demo"}, gv, 1); w != nil {
 		t.Fatalf("a tenant charter %+v", w)
 	}
+	// The farm charter by name without a tenant is the farm charter too, as for the charter
+	// bounds lint (isFarmCharter).
+	if w := ignoredV03(manifest.Doc{Kind: "Governance", Name: "farm"}, gv, 2); len(w) != 1 || w[0].Path != "/manifests/2/spec/farm_manager/incident_stop" {
+		t.Fatalf("farm charter without a tenant %+v", w)
+	}
 	if codes := lintCodes(t, c, storeLow); slices.Contains(codes, "incident_store_low") {
 		t.Fatalf("v0.3 lint %v", codes)
 	}

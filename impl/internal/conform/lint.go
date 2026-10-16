@@ -151,8 +151,6 @@ func (x *exec) example(files ...string) ([]map[string]any, error) {
 		out = append(out, d.Value)
 	}
 	out = dropLaterResources(x, out)
-	// No lint context holds the farm charter: the farm manager is off (MGR-20).
-	testbench.ManagerOff(out)
 	if _, err := testbench.DropUnsupported(x.r.spec, out); err != nil {
 		return nil, err
 	}
